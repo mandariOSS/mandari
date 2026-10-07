@@ -5,6 +5,7 @@ OParl Database Models (Django ORM)
 Migriert von SQLAlchemy zu Django ORM.
 """
 
+import re
 import uuid
 from typing import Any
 
@@ -46,6 +47,8 @@ DEPUBLISHED_REASONS = frozenset({REASON_WITHDRAWN, REASON_NOT_PUBLIC, REASON_PRI
 
 #: Slugs, die mit festen Adressen kollidieren (``/sitemap-insight-index.xml`` ist der Sitemap-Index)
 RESERVED_BODY_SLUGS = frozenset({"index"})
+#: Endungen der nummerierten Sitemaps (``/sitemap-insight-<slug>-vorgaenge-2.xml``, Issue #914)
+RESERVED_BODY_SLUG_SUFFIX_RE = re.compile(r"-(?:vorgaenge|sitzungen)-\d+$")
 BODY_SLUG_RE = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 
 
@@ -54,7 +57,7 @@ def validate_body_slug(value: str) -> None:
     RegexValidator(
         BODY_SLUG_RE, "Nur Kleinbuchstaben (ohne Umlaute), Ziffern und einzelne Bindestriche zwischen Wörtern."
     )(value)
-    if value in RESERVED_BODY_SLUGS:
+    if value in RESERVED_BODY_SLUGS or RESERVED_BODY_SLUG_SUFFIX_RE.search(value):
         raise ValidationError(f"„{value}“ ist reserviert.")
 
 

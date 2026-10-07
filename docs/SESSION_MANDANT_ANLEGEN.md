@@ -214,13 +214,17 @@ python manage.py set_body_slugs <id>=muenster <id>=koeln --dry-run
 python manage.py set_body_slugs <id>=muenster <id>=koeln
 ```
 
-Erlaubt sind Kleinbuchstaben, Ziffern und einzelne Bindestriche; `index` ist reserviert (Sitemap-Index).
+Erlaubt sind Kleinbuchstaben, Ziffern und einzelne Bindestriche; `index` ist reserviert (Sitemap-Index),
+ebenso Slugs, die auf `-vorgaenge-<Zahl>` oder `-sitzungen-<Zahl>` enden (nummerierte Sitemaps).
 Der Slug eines Session-Mandanten bleibt dessen Portal: Admin und Befehl lehnen ihn für eine andere
 Kommune ab. Einen schon gesetzten Slug ersetzt der Befehl nur mit `--replace`, weil alte Links dann ins
 Leere führen. Das Verzeichnis der Kommune im Dokument-Cache ändert sich mit dem Slug nicht; wo es als
 Adresse passt, den Slug trotzdem gleich dem Cache-Verzeichnis wählen (Rückfall, siehe
 `docs/FILE_CACHE.md`). Der Sitemap-Index (`/sitemap-insight-index.xml`) führt jede gelistete Kommune,
-ohne Slug unter ihrer ID.
+ohne Slug unter ihrer ID: die Grund-Sitemap (`/sitemap-insight-<slug>.xml` mit Stadtseite, Gremien,
+Personen mit laufender Mitgliedschaft und Ratsfragen) und alle Vorgänge und Sitzungen in nummerierten
+Dateien mit höchstens 10.000 Einträgen (`/sitemap-insight-<slug>-vorgaenge-1.xml`,
+`/sitemap-insight-<slug>-sitzungen-1.xml` …).
 
 Im Einstieg gilt:
 

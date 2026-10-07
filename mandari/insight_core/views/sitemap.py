@@ -1,25 +1,23 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Views für Mandari Insight Core.
+robots.txt und Sitemaps des Bürgerportals (mandari Insight).
 
-Server-Side Rendering mit Django Templates + HTMX.
+Aufteilung und Abfragen der Sitemaps: ``insight_core/services/sitemaps.py`` (Issue #914).
 """
 
 import uuid
+from datetime import UTC
 
 from django.db.models import Q
 from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
 from django.urls import reverse
-from django.views.decorators.http import require_GET
+
+# GET und HEAD: Suchmaschinen und Prüfwerkzeuge fragen robots.txt und Sitemaps auch per HEAD an (Issue #914)
+from django.views.decorators.http import require_safe
 
 from .. import publication
-from ..models import (
-    OParlBody,
-    OParlMeeting,
-    OParlOrganization,
-    OParlPaper,
-    OParlPerson,
-)
+from ..models import OParlBody
+from ..services import sitemaps
 
 # =============================================================================
 # SEO: robots.txt und Sitemaps
@@ -32,7 +30,7 @@ def _site_url():
     return getattr(settings, "SITE_URL", "https://mandari.de")
 
 
-@require_GET
+@require_safe
 def robots_txt(request):
     """robots.txt mit Verweis auf den Insight-Sitemap-Index.
 
@@ -61,37 +59,61 @@ def _sitemap_key(body):
     return body.slug or str(body.id)
 
 
-@require_GET
-def sitemap_index(request):
-    """Sitemap-Index: listet die Body-Sitemaps aller gelisteten Kommunen (Slug, sonst ID)."""
-    site_url = _site_url()
-    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
-    xml_parts.append('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
-    bodies = OParlBody.objects.listed().only("id", "slug", "last_sync").order_by("name")
-    for body in bodies:
-        xml_parts.append("  <sitemap>")
-        xml_parts.append(f"    <loc>{site_url}/sitemap-insight-{_sitemap_key(body)}.xml</loc>")
-        if body.last_sync:
-            xml_parts.append(f"    <lastmod>{body.last_sync.strftime('%Y-%m-%dT%H:%M:%S+00:00')}</lastmod>")
-        xml_parts.append("  </sitemap>")
-    xml_parts.append("</sitemapindex>")
+def _w3c(zeitpunkt):
+    """Zeitpunkt im W3C-Format in UTC; Werte ohne Zeitzone stammen aus der Datenbank und sind schon UTC."""
+    if zeitpunkt.tzinfo is None:
+        zeitpunkt = zeitpunkt.replace(tzinfo=UTC)
+    return zeitpunkt.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
+
+def _xml_antwort(xml_parts):
     response = HttpResponse("\n".join(xml_parts), content_type="application/xml; charset=utf-8")
+    # Cache für 24 Stunden
     response["Cache-Control"] = "public, max-age=86400"
     return response
 
 
-@require_GET
-def body_sitemap(request, body_slug):
+@require_safe
+def sitemap_index(request):
     """
-    Generiert die Sitemap für eine Kommune.
+    Sitemap-Index: je gelistete Kommune die Grund-Sitemap und die nummerierten Dateien für Vorgänge und Sitzungen.
 
-    Enthält alle Vorgänge, Sitzungen, Gremien und Personen.
+    Kennung ist der Slug, für Kommunen ohne Slug die ID. ``lastmod`` der Grund-Sitemap ist der letzte Abgleich,
+    der nummerierten Dateien die jüngste Änderung ihrer Einträge (Issue #914).
     """
-    from django.conf import settings
+    site_url = _site_url()
+    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
+    xml_parts.append('<sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
 
-    site_url = getattr(settings, "SITE_URL", "https://mandari.de")
+    def add_sitemap(pfad, lastmod):
+        xml_parts.append("  <sitemap>")
+        xml_parts.append(f"    <loc>{site_url}{pfad}</loc>")
+        if lastmod:
+            xml_parts.append(f"    <lastmod>{_w3c(lastmod)}</lastmod>")
+        xml_parts.append("  </sitemap>")
 
+    bodies = OParlBody.objects.listed().only("id", "slug", "last_sync").order_by("name")
+    for body in bodies:
+        kennung = _sitemap_key(body)
+        add_sitemap(reverse("insight_core:body_sitemap", kwargs={"body_slug": kennung}), body.last_sync)
+        for art in sitemaps.ARTEN.values():
+            for datei in sitemaps.dateien(art, body.pk):
+                pfad = reverse(
+                    "insight_core:body_sitemap_seite",
+                    kwargs={"body_slug": kennung, "art": art.kennung, "seite": datei.seite},
+                )
+                add_sitemap(pfad, datei.lastmod)
+    xml_parts.append("</sitemapindex>")
+    return _xml_antwort(xml_parts)
+
+
+def _kommune_der_sitemap(body_slug, umleitung):
+    """
+    Kommune einer Sitemap – oder die Antwort, die an ihre Stelle tritt.
+
+    Kommunen mit Slug haben nur die Adresse mit Slug, die ID leitet dauerhaft um (``umleitung`` baut das Ziel
+    aus dem Slug). Dauerhaft zurückgenommen: 410, vorübergehend abgeschaltet: 503 mit Retry-After (Issue #618).
+    """
     body = OParlBody.objects.listed().filter(slug=body_slug).first()
     body_id = None
     if body is None:
@@ -102,14 +124,16 @@ def body_sitemap(request, body_slug):
             body_id = None
         body = OParlBody.objects.listed().filter(pk=body_id).first() if body_id else None
         if body is not None and body.slug:
-            return HttpResponsePermanentRedirect(reverse("insight_core:body_sitemap", kwargs={"body_slug": body.slug}))
+            return None, HttpResponsePermanentRedirect(umleitung(body.slug))
     if body is None:
         # Dauerhaft zurückgenommen (Issue #618): „nicht mehr verfügbar“ statt „gibt es nicht“
         kennung = (Q(slug=body_slug) | Q(pk=body_id)) if body_id else Q(slug=body_slug)
         gone = OParlBody.objects.filter(kennung).values_list("id", flat=True).first()
         state = publication.body_state(gone)
         if state is not None and state.withdrawn:
-            return HttpResponse("Sitemap nicht mehr verfügbar", status=410, content_type="text/plain; charset=utf-8")
+            return None, HttpResponse(
+                "Sitemap nicht mehr verfügbar", status=410, content_type="text/plain; charset=utf-8"
+            )
         raise Http404("Kommune nicht gefunden")
 
     # Vorübergehend abgeschaltet (Issue #618): wie die Seiten 503 mit Retry-After, Suchmaschinen
@@ -121,63 +145,82 @@ def body_sitemap(request, body_slug):
         )
         response["Retry-After"] = str(publication.RETRY_AFTER_SECONDS)
         response["Cache-Control"] = "no-store"
-        return response
+        return None, response
+    return body, None
 
-    # XML generieren
-    xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
-    xml_parts.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
 
-    def add_url(loc, lastmod=None, changefreq="monthly", priority=0.5):
-        xml_parts.append("  <url>")
-        xml_parts.append(f"    <loc>{site_url}{loc}</loc>")
-        if lastmod:
-            xml_parts.append(f"    <lastmod>{lastmod.strftime('%Y-%m-%dT%H:%M:%S+00:00')}</lastmod>")
-        xml_parts.append(f"    <changefreq>{changefreq}</changefreq>")
-        xml_parts.append(f"    <priority>{priority}</priority>")
-        xml_parts.append("  </url>")
+class _Urlset:
+    """``<urlset>`` einer Sitemap, Eintrag für Eintrag."""
 
-    # Vorgänge (max 10000 pro Sitemap für Performance)
-    for paper in OParlPaper.objects.filter(body=body, deleted=False).order_by("-date")[:10000]:
-        add_url(
-            f"/insight/vorgaenge/{paper.id}/",
-            paper.oparl_modified or paper.updated_at,
-            "monthly",
-            0.6,
+    def __init__(self):
+        self.site_url = _site_url()
+        self.xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']
+        self.xml_parts.append('<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">')
+
+    def add(self, loc, lastmod=None, changefreq="monthly", priority="0.5"):
+        # Ein Teil je Eintrag statt je Zeile: Bei 10.000 Einträgen hält die Liste ein Sechstel der Objekte
+        zeitpunkt = f"\n    <lastmod>{_w3c(lastmod)}</lastmod>" if lastmod else ""
+        self.xml_parts.append(
+            f"  <url>\n    <loc>{self.site_url}{loc}</loc>{zeitpunkt}\n"
+            f"    <changefreq>{changefreq}</changefreq>\n    <priority>{priority}</priority>\n  </url>"
         )
 
-    # Sitzungen
-    for meeting in OParlMeeting.objects.filter(body=body, deleted=False).order_by("-start")[:10000]:
-        add_url(
-            f"/insight/termine/{meeting.id}/",
-            meeting.oparl_modified or meeting.updated_at,
-            "weekly",
-            0.7,
-        )
+    def antwort(self):
+        self.xml_parts.append("</urlset>")
+        return _xml_antwort(self.xml_parts)
 
-    # Gremien
-    for org in OParlOrganization.objects.filter(body=body, deleted=False).order_by("name")[:5000]:
-        add_url(f"/insight/gremien/{org.id}/", org.oparl_modified or org.updated_at, "monthly", 0.5)
 
-    # Personen
-    for person in OParlPerson.objects.filter(body=body, deleted=False).order_by("family_name")[:5000]:
-        add_url(
-            f"/insight/personen/{person.id}/",
-            person.oparl_modified or person.updated_at,
-            "monthly",
-            0.4,
-        )
+@require_safe
+def body_sitemap(request, body_slug):
+    """
+    Grund-Sitemap einer Kommune: Stadtseite, Gremien, Personen mit laufender Mitgliedschaft und Ratsfragen.
 
+    Vorgänge und Sitzungen stehen in eigenen, nummerierten Dateien (``body_sitemap_seite``, Issue #914).
+    """
+    body, antwort = _kommune_der_sitemap(
+        body_slug, lambda slug: reverse("insight_core:body_sitemap", kwargs={"body_slug": slug})
+    )
+    if antwort is not None:
+        return antwort
+
+    urlset = _Urlset()
+    if body.slug:
+        # Stadtseite der Kommune (/insight/k/<slug>/): Einstieg für „Ratsinformationen <Kommune>“
+        stadtseite = reverse("insight_core:insight:portal_entry", kwargs={"slug": body.slug})
+        urlset.add(stadtseite, body.last_sync, "daily", "0.9")
+    for org_id, lastmod in sitemaps.gremien(body.pk):
+        urlset.add(f"/insight/gremien/{org_id}/", lastmod, "monthly", "0.5")
+    # Nur Personen mit laufender Mitgliedschaft; die übrigen Personenseiten tragen noindex
+    for person_id, lastmod in sitemaps.personen(body.pk):
+        urlset.add(f"/insight/personen/{person_id}/", lastmod, "monthly", "0.4")
     # Ratsfragen (öffentlich, mit eigener URL)
-    from ..models import PublicQuestion
+    for question_id, lastmod in sitemaps.ratsfragen(body.pk):
+        urlset.add(f"/insight/fragen/{question_id}/", lastmod, "weekly", "0.5")
+    return urlset.antwort()
 
-    for question in PublicQuestion.objects.filter(body=body, status="published").order_by("-published_at")[:5000]:
-        add_url(f"/insight/fragen/{question.id}/", question.updated_at, "weekly", 0.5)
 
-    xml_parts.append("</urlset>")
+@require_safe
+def body_sitemap_seite(request, body_slug, art, seite):
+    """Nummerierte Sitemap mit den Vorgängen bzw. Sitzungen einer Kommune, je Datei höchstens 10.000 (Issue #914)."""
+    sitemap_art = sitemaps.ARTEN.get(art)
+    if sitemap_art is None:
+        raise Http404("Keine Sitemap unter dieser Adresse")
+    nummer = int(seite)
+    body, antwort = _kommune_der_sitemap(
+        body_slug,
+        lambda slug: reverse(
+            "insight_core:body_sitemap_seite", kwargs={"body_slug": slug, "art": art, "seite": nummer}
+        ),
+    )
+    if antwort is not None:
+        return antwort
 
-    response = HttpResponse("\n".join(xml_parts), content_type="application/xml; charset=utf-8")
-
-    # Cache für 24 Stunden
-    response["Cache-Control"] = "public, max-age=86400"
-
-    return response
+    urlset = _Urlset()
+    leer = True
+    for eintrag_id, lastmod in sitemaps.eintraege(sitemap_art, body.pk, nummer):
+        leer = False
+        urlset.add(f"{sitemap_art.pfad}{eintrag_id}/", lastmod, sitemap_art.changefreq, sitemap_art.priority)
+    if leer:
+        # Hinter der letzten Datei gibt es keine weitere; der Index nennt nur Dateien mit Einträgen
+        raise Http404("Keine Sitemap unter dieser Adresse")
+    return urlset.antwort()

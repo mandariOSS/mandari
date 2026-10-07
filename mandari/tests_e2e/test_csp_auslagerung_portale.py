@@ -61,7 +61,11 @@ class TestInsight:
         _kommune(2, "Südheim")
         goto("/insight/")
         wait_for_component(page, "kommunenWahl")
-        expect(page.get_by_text("Südheim")).to_have_count(0)
+        # Die Auswahl selbst listet keine Kommunen; einzige Ausnahme außerhalb davon ist die Textzeile mit
+        # höchstens zwölf Stadtseiten (Issue #914)
+        auswahl = page.locator('[x-data="kommunenWahl"]')
+        expect(auswahl.get_by_text("Südheim")).to_have_count(0)
+        expect(page.get_by_role("link", name="Südheim")).to_have_count(1)
 
         page.fill("#auswahl-eingabe", "nord")
         treffer = page.locator("#auswahl-ergebnisse a[data-kommune-ziel]", has_text="Nordstadt")

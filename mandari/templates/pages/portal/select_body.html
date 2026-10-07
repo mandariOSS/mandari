@@ -14,6 +14,11 @@ Name, Ortsteil oder Postleitzahl, in der Nähe oder über das Stöbern Land → 
 {% if hat_kommunen %}
 <c-insight.band aria-label="Kommune suchen">
     {% include "components/kommunen_wahl.html" with id="auswahl" stufe_start=stoebern_start %}
+    {% if stadtseiten %}
+    {# Direkte Links auf die Stadtseiten, auch ohne JavaScript und Sitzung (Issue #914): eine Textzeile, höchstens zwölf #}
+    <p class="mt-8 max-w-3xl text-[0.95rem] leading-relaxed text-gray-700 dark:text-gray-300">Direkt zu den Ratsinformationen:
+        {% for stadt in stadtseiten %}<a href="{{ stadt.url }}" class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">{{ stadt.name }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+    {% endif %}
 </c-insight.band>
 
 <c-insight.band ton="grau" aria-labelledby="alle-kommunen-titel">

@@ -167,13 +167,18 @@ class PersonDetailView(DetailView):
 
         # SEO-Kontext
         from ..seo import get_person_seo
+        from ..services.indexierung import robots_fuer_person
 
-        context["seo"] = get_person_seo(
-            person,
-            self.request,
-            funktion=context["funktion"] or context["council_role"] or "",
-            fraktion=context["faction"],
-            mitgliedschaften=context["active_memberships"],
-        ).to_dict()
+        # Ohne laufende Mitgliedschaft noindex (Issue #914); die Mitgliedschaften sind oben schon geladen
+        context["seo"] = robots_fuer_person(
+            get_person_seo(
+                person,
+                self.request,
+                funktion=context["funktion"] or context["council_role"] or "",
+                fraktion=context["faction"],
+                mitgliedschaften=context["active_memberships"],
+            ).to_dict(),
+            context["active_memberships"],
+        )
 
         return context

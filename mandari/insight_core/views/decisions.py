@@ -16,6 +16,7 @@ from apps.common.params import uuid_param
 
 from .. import publication, throttle
 from ..models import DecisionSubscription
+from ..seo import get_page_seo
 from ..services import decision_tracking
 from ._helpers import ActiveBodyRequiredMixin, get_active_body, link_confirmation
 
@@ -61,6 +62,14 @@ class DecisionListView(ActiveBodyRequiredMixin, TemplateView):
         body = get_active_body(self.request)
         context["active_body"] = body
         context["nav"] = "decision_list"
+        # robots und kanonische Adresse wie die übrigen Listen; mit Filtern noindex (urls.py, Issue #914)
+        context["seo"] = get_page_seo(
+            self.request,
+            title="Beschlüsse und Umsetzung",
+            description="Was wurde aus den Beschlüssen des Rats? Umsetzungsstand, Fristen und Meldungen der Verwaltung.",
+            body=body,
+            keywords=["Beschlüsse", "Umsetzung", "Kommunalpolitik", "Transparenz"],
+        ).to_dict()
         tenants = decision_tracking.publishing_tenants(body)
         context["publishing"] = tenants.exists()
         if not context["publishing"]:
@@ -154,6 +163,9 @@ class DecisionDetailView(TemplateView):
         context = super().get_context_data(**kwargs)
         item = kwargs.get("item") or self._get_item()
         body = item.meeting.tenant.oparl_body
+        status_label = decision_tracking.PUBLIC_STATUS_LABELS.get(
+            item.implementation_status, item.get_implementation_status_display()
+        )
         # Kommune der Seite folgt dem Beschluss (Deep-Links aus E-Mails)
         if str(self.request.session.get("active_body_id")) != str(body.id):
             self.request.session["active_body_id"] = str(body.id)
@@ -164,9 +176,7 @@ class DecisionDetailView(TemplateView):
                 "item": item,
                 "tenant": item.meeting.tenant,
                 "timeline": decision_tracking.timeline(item),
-                "status_label": decision_tracking.PUBLIC_STATUS_LABELS.get(
-                    item.implementation_status, item.get_implementation_status_display()
-                ),
+                "status_label": status_label,
                 "overdue": bool(
                     item.implementation_deadline
                     and item.implementation_status != "done"
@@ -181,10 +191,11 @@ class DecisionDetailView(TemplateView):
                 "can_subscribe": getattr(self, "visibility", None) == decision_tracking.VISIBLE,
             }
         )
-        # Titel mit Kommune, Description und strukturierte Daten aus dem schon Geladenen (Issue #914)
+        # Titel mit Kommune, Description, robots, kanonische Adresse und strukturierte Daten aus dem schon
+        # Geladenen (Issue #914): Der Umsetzungsstand ist eine eigene, öffentliche Seite
         from ..seo import get_decision_seo
 
-        context["seo"] = get_decision_seo(item, body, str(context["status_label"]), self.request).to_dict()
+        context["seo"] = get_decision_seo(item, body, str(status_label), self.request).to_dict()
         return context
 
     def post(self, request, *args, **kwargs):

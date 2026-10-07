@@ -190,6 +190,7 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
         if age > timedelta(days=critical_days):
             stale_days = age.days
 
+    from .services.indexierung import stadtseite_url
     from .services.kommunenverzeichnis import ort_der_koerperschaft
 
     # Am Handy liegt der Bereich im Blatt „Mehr“: dann ist „Mehr“ in der Leiste unten hervorgehoben (Stufe 3) – aber
@@ -212,6 +213,9 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
         "page_body_foreign": page_body is not None
         and portal is None
         and (body is None or str(page_body.pk) != str(body.pk)),
+        # Stadtseite der Kommune der Seite (/insight/k/<slug>/): Ziel der Brotkrume ohne Umweg über die Wahl, so
+        # finden Suchmaschinen ohne Sitzung die Stadtseiten (Issue #914); leer ohne Slug oder nicht gelistet
+        "page_body_stadtseite": stadtseite_url(page_body) if portal is None else "",
         "available_bodies": bodies,
         "show_all_bodies": show_all_bodies,
         "insight_decisions_published": decisions_published,

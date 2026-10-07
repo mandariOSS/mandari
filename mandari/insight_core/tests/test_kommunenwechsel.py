@@ -365,7 +365,10 @@ class TestSchnittstellen:
         url = reverse("insight_core:insight:kommunen")
         html = client.get(url, {"q": "Übungsheim"}).content.decode()
         assert "Landkreis Musterkreis, Hessen" in html and "noch nicht verfügbar" in html
-        assert reverse("insight_core:insight:set_body", args=[verzeichnis_mit_daten["uebungsheim"].id]) in html
+        waehlen = reverse("insight_core:insight:set_body", args=[verzeichnis_mit_daten["uebungsheim"].id])
+        assert waehlen in html
+        # Die Wahl ist ein Umweg über die Sitzung: Suchmaschinen folgen ihm nicht (Issue #914)
+        assert f'<a href="{waehlen}" rel="nofollow"' in html
         assert 'content="noindex, follow"' in html
         stufe = client.get(url, {"land": "03"}).content.decode()
         assert "Landkreis Heideland" in stufe and "?land=03&amp;kreis=03399" in stufe

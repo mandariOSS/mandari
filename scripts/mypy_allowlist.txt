@@ -186,7 +186,6 @@ insight_core.admin
 insight_core.admin_dashboard
 insight_core.admin_monitoring
 insight_core.api
-insight_core.context_processors
 insight_core.forms
 insight_core.management.commands.add_oparl_source
 insight_core.management.commands.backfill_oparl_locations

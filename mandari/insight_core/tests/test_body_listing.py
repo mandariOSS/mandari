@@ -103,6 +103,7 @@ def test_sitemaps_skip_hidden_body(listed_bodies: list[OParlBody], hidden_body: 
     assert "sitemap-insight-aachen.xml" in index
     assert "abc-demo" not in index
     assert client.get("/sitemap-insight-abc-demo.xml").status_code == 404
+    assert client.get("/sitemap-insight-abc-demo-vorgaenge-1.xml").status_code == 404
 
 
 def test_public_stats_api_hides_body(listed_bodies: list[OParlBody], hidden_body: OParlBody) -> None:
