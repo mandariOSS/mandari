@@ -1,0 +1,35 @@
+{% load static django_vite %}
+{% comment %}
+Schlanke Basisvorlage für den Kinomodus der Live-Seite (Issue #915): immer dunkel, ohne Kopf, Fuß und Navigation von
+Insight, dieselben CSS-/JS-Bündel. Blöcke: title, content.
+{% endcomment %}
+<!DOCTYPE html>
+<html lang="de" class="dark h-full bg-black" data-portal="insight">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#000000">
+    {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
+    <title>{% block title %}mandari{% endblock %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}</title>
+
+    <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
+    <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
+    <link rel="apple-touch-icon" sizes="180x180" href="{% static 'brand/apple-touch-icon.png' %}">
+
+    <link rel="preload" href="{% static 'vendor/inter/inter-latin.woff2' %}" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="{% static 'css/schrift-inter.css' %}">
+    <link rel="stylesheet" href="{% static 'css/styles.css' %}">
+
+    <meta name="csrf-token" content="{{ csrf_token }}">
+    {% vite_hmr_client %}
+    {% vite_asset 'frontend/js/main.ts' %}
+
+    <style nonce="{{ csp_nonce }}">
+        :focus-visible { outline: 2px solid #fff; outline-offset: 2px; border-radius: 0.25rem; }
+    </style>
+</head>
+
+<body class="h-full bg-black text-gray-100 antialiased">
+    {% block content %}{% endblock %}
+</body>
+</html>

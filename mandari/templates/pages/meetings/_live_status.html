@@ -1,0 +1,2 @@
+{% comment %}Statussatz der Live-Seite und des Kinomodus (Issue #915). Erwartet: stand (hub.live.selectors.LiveStand).{% endcomment %}
+{% if stand.status == "live" %}Die Übertragung läuft seit {{ stand.begonnen_am|date:"H:i" }} Uhr.{% elif stand.status == "beendet" %}Die Übertragung wurde um {{ stand.beendet_am|date:"H:i" }} Uhr beendet.{% elif stand.status == "nicht_uebertragen" %}Diese Sitzung wurde nicht übertragen.{% else %}Die Übertragung hat noch nicht begonnen.{% endif %}

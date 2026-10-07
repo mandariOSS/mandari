@@ -64,8 +64,10 @@ insight_patterns = [
     path("termine/kalender.ics", ohne_index(views.calendar_feed), name="calendar_feed"),
     path("termine/jahresplan/", listenseite(views.MeetingYearPlanView.as_view()), name="meeting_year_plan"),
     path("termine/<uuid:pk>/", views.MeetingDetailView.as_view(), name="meeting_detail"),
-    # Live-Seite einer Sitzung (Issue #915): bewusst nicht verlinkt, noindex (setzt den X-Robots-Tag selbst)
+    # Live-Seite einer Sitzung und Kinomodus (Issue #915): bewusst nicht verlinkt, noindex (setzen den
+    # X-Robots-Tag selbst)
     path("termine/<uuid:pk>/live/", views.meeting_live, name="meeting_live"),
+    path("termine/<uuid:pk>/live/kino/", views.meeting_live_kino, name="meeting_live_kino"),
     path("termine/partials/calendar-events/", ohne_index(views.calendar_events), name="calendar_events"),
     # Dokumente (Files)
     path("dokumente/", views.FileListView.as_view(), name="file_list"),

@@ -5,7 +5,8 @@ Lesezugriffe auf die Live-Übertragungen (Issue #915).
 - ``live_stand(meeting_id)``: alles für die öffentliche Live-Seite in Insight (Sitzung, Status, Player, jetzt
   laufender TOP, wer am Wort ist, Verlauf). ``None``, wenn es für kein Gremium der Sitzung eine Quelle gibt.
   Ohne Übertragungsdatensatz gilt eine Sitzung als ``geplant``, länger als ``NICHT_UEBERTRAGEN_NACH`` nach ihrem
-  Beginn als ``nicht_uebertragen`` (die Seite fragt dann nicht mehr nach).
+  Beginn als ``nicht_uebertragen`` (die Seite fragt dann nicht mehr nach). Nach dem Ende fragt sie weiter nach,
+  solange die Übertragung nach einer langen Pause wieder anlaufen kann (``LiveStand.nachfragen``).
 - ``wortmeldung(speech_id)``: Angaben einer Wortmeldung für Abonnenten von ``ris.broadcast.speaker_changed``
   (z. B. die Fraktionszuordnung, Issue #916): Person, Kommune, gelesene Fraktion bzw. Funktion, Zuordnung und Zahl
   gleicher Lesungen.
@@ -28,7 +29,7 @@ from insight_core.models import OParlConsultation, OParlMeeting
 
 from .anbieter import anbieter
 from .models import Broadcast, BroadcastSection, BroadcastSource, BroadcastSpeech, BroadcastStatus, SpeechAssignment
-from .services import NICHT_UEBERTRAGEN_NACH
+from .services import NICHT_UEBERTRAGEN_NACH, WIEDERAUFNAHME
 
 
 @dataclass(frozen=True)
@@ -66,10 +67,21 @@ class LiveStand:
     verlauf: list[AbschnittStand]
     #: Wortmeldungen vor dem ersten erkannten TOP
     ohne_abschnitt: list[WortmeldungStand]
+    #: Anzeigename der Körperschaft (Link „Offizielle Übertragung“)
+    koerperschaft: str = ""
 
     @property
     def laeuft(self) -> bool:
         return self.status == BroadcastStatus.LIVE
+
+    @property
+    def nachfragen(self) -> bool:
+        """Kann sich der Status noch ändern? Nach dem Ende nur, solange die Übertragung wieder anlaufen kann."""
+        if self.status == BroadcastStatus.NICHT_UEBERTRAGEN:
+            return False
+        if self.status == BroadcastStatus.BEENDET and self.beendet_am is not None:
+            return timezone.now() - self.beendet_am <= WIEDERAUFNAHME
+        return True
 
 
 def quelle_fuer_sitzung(meeting: OParlMeeting) -> BroadcastSource | None:
@@ -194,6 +206,7 @@ def live_stand(meeting_id: uuid.UUID) -> LiveStand | None:
         am_wort=am_wort,
         verlauf=list(reversed(verlauf)),
         ohne_abschnitt=ohne_abschnitt,
+        koerperschaft=meeting.body.get_display_name() if meeting.body is not None else "",
     )
 
 

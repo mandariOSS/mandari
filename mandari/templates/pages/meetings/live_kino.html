@@ -1,0 +1,68 @@
+{% extends "base_kino.html" %}
+{% comment %}
+Kinomodus der Live-Seite (Issue #915), nur über den Knopf „Kinomodus“ der Live-Seite erreichbar. Erwartet wie die
+Live-Seite: stand, meeting, abspielbar, player, zustimmung, statuswechsel, aktualisierung, version, teil.
+Das Video steht so groß wie möglich (16:9, ohne Scrollen), die Leiste darunter, in Fenstern deutlich breiter als 16:9
+daneben (dort wird das Video so größer). Die Leiste („jetzt“) lädt sich per htmx neu; den Bildbereich schickt die
+Antwort nur bei einem Statuswechsel mit (hx-swap-oob), ein laufender Player lädt sonst nicht neu. Links öffnen in
+neuem Tab, damit das Video weiterläuft. „Vollbild“ schaltet den ganzen Bereich (Video und Leiste) ins Vollbild.
+{% endcomment %}
+
+{% block title %}Kinomodus: {{ meeting.get_display_name }}{% endblock %}
+
+{% block content %}
+{% url 'insight_core:insight:meeting_live' meeting.pk as live_url %}
+<div id="kino" class="flex h-dvh w-full flex-col bg-black pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] [@media(min-aspect-ratio:13/7)]:flex-row">
+    <h1 class="sr-only">Kinomodus: {{ meeting.get_display_name }}</h1>
+    <div class="min-h-0 min-w-0 flex-1 [container-type:size]">
+        {% partialdef bild inline %}
+        <div id="kino-bild" class="grid h-full w-full place-items-center"{% if teil %} hx-swap-oob="true"{% endif %}>
+            {% if player %}
+            <iframe src="{{ stand.einbettung_url }}" title="Übertragung: {{ meeting.get_display_name }}"
+                    class="block aspect-video w-[min(100cqw,calc(100cqh*16/9))] bg-black" allow="autoplay; picture-in-picture"
+                    referrerpolicy="strict-origin-when-cross-origin"></iframe>
+            {% elif abspielbar %}
+            <div class="max-w-xl px-6 text-center">
+                <p class="text-[0.95rem] leading-relaxed text-gray-200">
+                    Die Übertragung kommt von der Kommune über {{ stand.anbieter_name }}. Wenn Sie sie laden, gehen
+                    Daten wie Ihre IP-Adresse an diesen Anbieter.
+                </p>
+                <p class="mt-5"><c-ui.button href="?player=1" icon="play">Übertragung laden</c-ui.button></p>
+            </div>
+            {% else %}
+            <p class="px-6 text-center text-[0.95rem] text-gray-300">{% include "pages/meetings/_live_status.html" %}</p>
+            {% endif %}
+        </div>
+        {% endpartialdef %}
+    </div>
+
+    <aside aria-label="Stand der Übertragung"
+           class="flex shrink-0 flex-wrap items-center justify-between gap-x-8 gap-y-2 bg-gray-900 px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] text-sm text-gray-300 sm:px-6 [@media(min-aspect-ratio:13/7)]:w-56 [@media(min-aspect-ratio:13/7)]:lg:w-72 [@media(min-aspect-ratio:13/7)]:flex-col [@media(min-aspect-ratio:13/7)]:flex-nowrap [@media(min-aspect-ratio:13/7)]:items-stretch [@media(min-aspect-ratio:13/7)]:overflow-y-auto [@media(min-aspect-ratio:13/7)]:py-5">
+        <div id="kino-stand" aria-live="polite" class="flex min-w-0 flex-wrap gap-x-6 gap-y-1 [@media(min-aspect-ratio:13/7)]:flex-col [@media(min-aspect-ratio:13/7)]:gap-y-3">
+            {% partialdef jetzt inline %}
+            <p class="font-medium text-white" data-testid="live-status">
+                {% if stand.status == "live" %}<span class="mr-2 inline-block h-2 w-2 rounded-full bg-red-600 align-middle" aria-hidden="true"></span>Läuft seit {{ stand.begonnen_am|date:"H:i" }} Uhr{% elif stand.status == "beendet" %}Beendet um {{ stand.beendet_am|date:"H:i" }} Uhr{% elif stand.status == "nicht_uebertragen" %}Nicht übertragen{% else %}Noch nicht begonnen{% endif %}
+            </p>
+            {% if stand.laeuft %}
+            <p class="min-w-0 text-gray-100"><span class="text-gray-400">Jetzt:</span> {% if stand.jetzt_abschnitt %}{% include "pages/meetings/_live_top.html" with abschnitt=stand.jetzt_abschnitt neuer_tab=True %}{% else %}noch kein Tagesordnungspunkt erkannt{% endif %}</p>
+            <p class="min-w-0 text-gray-100"><span class="text-gray-400">Am Wort:</span> {% if stand.am_wort %}{% include "pages/meetings/_live_person.html" with wortmeldung=stand.am_wort neuer_tab=True %}{% else %}–{% endif %}</p>
+            {% endif %}
+            {% if stand.nachfragen %}
+            <span hidden hx-get="?teil=stand{% if zustimmung %}&amp;player=1{% endif %}&amp;v={{ version|urlencode }}" hx-trigger="every {{ aktualisierung }}s" hx-target="#kino-stand" hx-swap="innerHTML"></span>
+            {% endif %}
+            {% if statuswechsel %}{% partial bild %}{% endif %}
+            {% endpartialdef %}
+        </div>
+        <p class="flex flex-wrap items-center gap-x-5 gap-y-2 [@media(min-aspect-ratio:13/7)]:flex-col [@media(min-aspect-ratio:13/7)]:items-start [@media(min-aspect-ratio:13/7)]:gap-y-3">
+            {% if stand.seiten_url %}
+            <a href="{{ stand.seiten_url }}" target="_blank" rel="noopener noreferrer" data-testid="live-quelle" class="underline underline-offset-4 hover:text-white">
+                Offizielle Übertragung{% if stand.koerperschaft %}: {{ stand.koerperschaft }}{% endif %}<span class="sr-only"> (öffnet in neuem Fenster)</span>
+            </a>
+            {% endif %}
+            <button type="button" hidden data-action="fullscreen" data-target="#kino" aria-pressed="false"
+                    class="h-8 rounded border border-gray-600 px-3 text-gray-100 hover:border-gray-400 hover:text-white">Vollbild</button>
+            <a href="{{ live_url }}{% if zustimmung %}?player=1{% endif %}" class="underline underline-offset-4 hover:text-white">Kinomodus verlassen</a>
+        </p>
+    </aside>
+</div>
+{% endblock %}
