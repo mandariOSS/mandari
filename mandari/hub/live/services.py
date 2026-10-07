@@ -216,7 +216,11 @@ def _ausserhalb_abschliessen(quelle: BroadcastSource, jetzt: datetime) -> None:
         source=quelle, status=BroadcastStatus.LIVE, meeting__start__lt=jetzt - FENSTER
     ).select_related("source", "meeting"):
         with transaction.atomic():
-            gesperrt = Broadcast.objects.select_for_update().select_related("source", "meeting").get(pk=broadcast.pk)
+            gesperrt = (
+                Broadcast.objects.select_for_update(of=("self",))
+                .select_related("source", "meeting")
+                .get(pk=broadcast.pk)
+            )
             if gesperrt.status == BroadcastStatus.LIVE:
                 _beenden(gesperrt, jetzt, jetzt, "zeitfenster")
                 gesperrt.save()
@@ -288,7 +292,9 @@ def abfragen(
         zeit=jetzt,
     )
     with transaction.atomic():
-        gesperrt = Broadcast.objects.select_for_update().select_related("source", "meeting").get(pk=broadcast.pk)
+        gesperrt = (
+            Broadcast.objects.select_for_update(of=("self",)).select_related("source", "meeting").get(pk=broadcast.pk)
+        )
         uebergang(gesperrt, status, jetzt)
     if gesperrt.status == BroadcastStatus.LIVE and info.hls_url:
         einreihen(gesperrt)
@@ -435,7 +441,7 @@ def lesung_verarbeiten(
     """Entprellt eine Lesung und führt TOP-Abschnitt und Wortmeldung (eine Transaktion)."""
     with transaction.atomic():
         broadcast = (
-            Broadcast.objects.select_for_update()
+            Broadcast.objects.select_for_update(of=("self",))
             .select_related("source", "meeting", "current_section", "current_speech")
             .filter(pk=broadcast_id)
             .first()
@@ -490,7 +496,9 @@ def abschnitt_von_hand(broadcast: Broadcast, nummer: str, jetzt: datetime | None
     if gesucht is None:
         raise ValueError("TOP-Nummer ohne Ziffern")
     with transaction.atomic():
-        gesperrt = Broadcast.objects.select_for_update().select_related("source", "meeting").get(pk=broadcast.pk)
+        gesperrt = (
+            Broadcast.objects.select_for_update(of=("self",)).select_related("source", "meeting").get(pk=broadcast.pk)
+        )
         abschnitt = _neuer_abschnitt(gesperrt, gesucht, None, jetzt or timezone.now(), SectionOrigin.HAND)
         gesperrt.debounce = {k: v for k, v in (gesperrt.debounce or {}).items() if k != "top"}
         gesperrt.save()
