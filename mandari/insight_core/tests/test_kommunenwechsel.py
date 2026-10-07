@@ -569,14 +569,33 @@ def test_insight_vorlagen_ohne_links_ohne_adresse() -> None:
     assert fehlend == []
 
 
-def test_caddyfile_erlaubt_den_standort_fuer_die_eigene_seite() -> None:
-    """„In meiner Nähe“ scheitert sonst sofort: Permissions-Policy ``geolocation=()`` sperrt die Abfrage im Browser."""
+def _caddyfile_permissions_policy() -> str:
+    """Die Zeile mit der Permissions-Policy im mitgelieferten Caddyfile (ohne Kommentare)."""
     from pathlib import Path
 
     from django.conf import settings
 
     caddyfile = (Path(settings.BASE_DIR).parent / "Caddyfile").read_text(encoding="utf-8")
-    (zeile,) = [z.strip() for z in caddyfile.splitlines() if z.strip().startswith("Permissions-Policy")]
-    regeln = {regel.strip() for regel in zeile.split('"')[1].split(",")}
+    (zeile,) = [
+        z.strip() for z in caddyfile.splitlines() if "Permissions-Policy" in z and not z.strip().startswith("#")
+    ]
+    return zeile
+
+
+def test_caddyfile_erlaubt_den_standort_fuer_die_eigene_seite() -> None:
+    """„In meiner Nähe“ scheitert sonst sofort: Permissions-Policy ``geolocation=()`` sperrt die Abfrage im Browser."""
+    regeln = {regel.strip() for regel in _caddyfile_permissions_policy().split('"')[1].split(",")}
     assert "geolocation=(self)" in regeln
     assert {"camera=()", "microphone=()"} <= regeln, "Kamera und Mikrofon bleiben gesperrt"
+
+
+def test_caddyfile_setzt_die_permissions_policy_nur_als_vorgabe() -> None:
+    """Die Website unter derselben Domain schickt eine eigene, strengere Policy (Teil von #914).
+
+    Der Header-Block löscht ``Server`` und ``X-Powered-By`` und wirkt deshalb erst nach dem Proxy: Ohne ``?``
+    überschriebe Caddy die Policy der Website. Mit ``?`` setzt er seine nur, wenn die Antwort keine mitbringt.
+    Eigene ``header``-Anweisung, weil Caddy alle ``?``-Felder eines Blocks zu einer Bedingung zusammenfasst: Im Block
+    mit ``?Content-Security-Policy`` fiele die Ersatz-CSP weg, sobald die Website ihre Permissions-Policy schickt,
+    und die Permissions-Policy, sobald die Anwendung eine eigene CSP schickt (Sandbox bei Anlagen).
+    """
+    assert _caddyfile_permissions_policy().startswith("header ?Permissions-Policy ")

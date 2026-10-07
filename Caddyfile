@@ -36,14 +36,18 @@
 		X-Content-Type-Options "nosniff"
 		X-Frame-Options "SAMEORIGIN"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		# Standort nur für die eigene Seite: „In meiner Nähe“ im Kommunenwechsel fragt ihn auf Klick ab
-		# (docs/INSIGHT_KOMMUNENWECHSEL.md); Kamera und Mikrofon bleiben gesperrt
-		Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
 		# "?" = nur setzen, wenn die Anwendung keine eigene CSP schickt (z. B. die Sandbox-CSP bei Anlagen)
 		?Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' wss:; frame-ancestors 'self';"
 		-Server
 		-X-Powered-By
 	}
+	# Standort nur für die eigene Seite: „In meiner Nähe“ im Kommunenwechsel fragt ihn auf Klick ab
+	# (docs/INSIGHT_KOMMUNENWECHSEL.md); Kamera und Mikrofon bleiben gesperrt.
+	# "?" = nur als Vorgabe: Die Website (Wagtail) unter derselben Domain schickt eine eigene, strengere Policy, die
+	# der Block oben überschriebe (er wirkt wegen "-Server" erst nach dem Proxy). Als eigene Anweisung, weil Caddy
+	# alle "?"-Felder eines Blocks zu einer Bedingung zusammenfasst (gesetzt wird nur, wenn alle fehlen): Sonst fiele
+	# die Ersatz-CSP weg, sobald die Website ihre Permissions-Policy schickt, und umgekehrt (#914).
+	header ?Permissions-Policy "camera=(), microphone=(), geolocation=(self)"
 
 	# HSTS only for production domains (not localhost)
 	@production not host localhost
