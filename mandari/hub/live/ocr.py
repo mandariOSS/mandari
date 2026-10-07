@@ -6,6 +6,9 @@ Tesseract läuft wie in ``mandari_dokumente.ocr`` als Unterprozess mit einem Thr
 Zeitgrenze und unter Linux mit einer Grenze für den Adressraum (``ulimit -v`` über ``/bin/sh``). Das Bild geht als
 PNG über die Standardeingabe hinein, der Text über die Standardausgabe heraus: Es entsteht keine Datei.
 
+Erlaubte Zeichen (``zeichen``, z. B. nur Ziffern, Punkt und „TOP“ im TOP-Feld) gehen als
+``-c tessedit_char_whitelist=…`` mit; leer = alle Zeichen.
+
 Einstellungen: ``LIVE_TESSERACT_CMD`` (Standard ``tesseract``), ``LIVE_TESSDATA_DIR`` (leer = Vorgabe von Tesseract),
 ``LIVE_OCR_MEMORY_LIMIT_MB`` (Standard 256), ``LIVE_OCR_TIMEOUT_SECONDS`` (Standard 20).
 """
@@ -23,8 +26,8 @@ from typing import Final
 from django.conf import settings
 from PIL import Image
 
-#: Texterkennung eines Ausschnitts: (Bild, psm) → Text; in Tests ersetzbar
-Erkenner = Callable[[Image.Image, int], str]
+#: Texterkennung eines Ausschnitts: (Bild, psm, erlaubte Zeichen oder leer) → Text; in Tests ersetzbar
+Erkenner = Callable[[Image.Image, int, str], str]
 
 SPRACHE: Final = "deu"
 
@@ -62,16 +65,18 @@ def sprache_verfuegbar() -> bool:
     return SPRACHE in {zeile.strip() for zeile in ausgabe.splitlines()}
 
 
-def _befehl(psm: int) -> list[str]:
+def _befehl(psm: int, zeichen: str = "") -> list[str]:
     befehl = [_programm(), "stdin", "stdout", "-l", SPRACHE, "--psm", str(psm), *_tessdata()]
+    if zeichen:
+        befehl += ["-c", f"tessedit_char_whitelist={zeichen}"]
     speicher = int(getattr(settings, "LIVE_OCR_MEMORY_LIMIT_MB", 256))
     if speicher > 0 and os.name == "posix" and Path("/bin/sh").exists():
         return ["/bin/sh", "-c", 'ulimit -v "$0" && exec "$@"', str(speicher * 1024), *befehl]
     return befehl
 
 
-def tesseract(bild: Image.Image, psm: int) -> str:
-    """Text eines Ausschnitts; wirft ``OcrError``."""
+def tesseract(bild: Image.Image, psm: int, zeichen: str = "") -> str:
+    """Text eines Ausschnitts (nur ``zeichen``, falls angegeben); wirft ``OcrError``."""
     puffer = io.BytesIO()
     bild.save(puffer, format="PNG")
     umgebung = dict(os.environ)
@@ -79,7 +84,7 @@ def tesseract(bild: Image.Image, psm: int) -> str:
     umgebung["OMP_THREAD_LIMIT"] = "1"
     try:
         ergebnis = subprocess.run(  # noqa: S603 – fester Befehl, Programm aus den Einstellungen
-            _befehl(psm),
+            _befehl(psm, zeichen),
             input=puffer.getvalue(),
             capture_output=True,
             timeout=float(getattr(settings, "LIVE_OCR_TIMEOUT_SECONDS", 20)),

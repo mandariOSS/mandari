@@ -300,7 +300,7 @@ Beispiel 2:
 
 ### ris.broadcast.agenda_item_started v1
 
-**Tagesordnungspunkt in der Übertragung begonnen.** Laut Einblendung der Kommune (zweimal gleich gelesen) bzw. von Hand beginnt in der Übertragung ein Tagesordnungspunkt (hub.live, Issue #915). Aggregat: Broadcast. Fehlt agenda_item, ließ sich die gelesene Nummer keinem Tagesordnungspunkt der Sitzung zuordnen.
+**Tagesordnungspunkt in der Übertragung begonnen.** Laut Einblendung der Kommune (TOP-Nummer mit Titelprüfung, zweimal gleich zugeordnet) bzw. von Hand beginnt in der Übertragung ein Tagesordnungspunkt (hub.live, Issue #915, #47). Aggregat: Broadcast. Fehlt agenda_item, ließ sich die gelesene Angabe keinem Tagesordnungspunkt der Sitzung zuordnen.
 
 - Art: Ereignis
 - Eigentümer: `hub.live`
@@ -313,7 +313,7 @@ Beispiel 2:
 | `meeting` | ja | Zeichenkette (uuid) | Kanonische Kennung der Sitzung. |
 | `section` | ja | Zeichenkette (uuid) | Kennung des Abschnitts der Übertragung. |
 | `agenda_item` | nein | Zeichenkette (uuid) | Kanonische Kennung des zugeordneten Tagesordnungspunkts. |
-| `number` | ja | Zeichenkette (Muster `^[0-9]{1,3}(?:[.][0-9]{1,3}){0,3}$`) | Gelesene TOP-Nummer in Normalform, z. B. 5 oder 1.1. |
+| `number` | ja | Zeichenkette (Muster `^[0-9]{1,3}(?:[.][0-9]{1,3}){0,3}$`) | TOP-Nummer in Normalform, z. B. 5 oder 1.1: die des zugeordneten Tagesordnungspunkts, ohne Zuordnung die gelesene. |
 | `origin` | ja | Code: `einblendung`, `hand` | Herkunft: einblendung (Texterkennung) oder hand (Verwaltung). |
 
 Beispiel 1:

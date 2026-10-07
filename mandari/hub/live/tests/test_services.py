@@ -27,11 +27,12 @@ from hub.live.models import (
     BroadcastSpeech,
     BroadcastStatus,
     LogKind,
+    SectionConfidence,
     SpeechAssignment,
 )
 from hub.live.profil import lade_profil, vorlage
 from hub.live.tests.bilder import einblendung
-from hub.live.tests.conftest import Welt, kennung
+from hub.live.tests.conftest import TAGESORDNUNG, Tagesordnung, Welt, kennung
 from insight_core.models import OParlMeeting
 
 pytestmark = pytest.mark.django_db
@@ -226,8 +227,14 @@ def laufend(welt: Welt) -> Broadcast:
     )
 
 
+#: Eingeblendeter Titel je gelesener Nummer (Tagesordnung der Fixture welt); verlesene Nummern („6“, „8“)
+#: zeigen weiter den Titel von TOP 5
+TITEL: dict[str | None, str] = {"1": "Eröffnung der Sitzung", "5.1": "Haushaltssatzung 2027"}
+
+
 def _lesung(top: str | None = "5", name: str | None = "Erika Muster", fraktion: str | None = "Fraktion A") -> Lesung:
-    return Lesung(balken=True, top=top, titel="Neubau einer Grundschule", name=name, fraktion=fraktion)
+    titel = TITEL.get(top, "Neubau einer Grundschule")
+    return Lesung(balken=True, top=top, titel=titel, name=name, fraktion=fraktion)
 
 
 def test_wechsel_erst_nach_zwei_gleichen_lesungen(welt: Welt, laufend: Broadcast) -> None:
@@ -286,6 +293,49 @@ def test_top_reihenfolge_ist_nicht_monoton(welt: Welt, laufend: Broadcast) -> No
     assert all(a.ended_at == b.started_at for a, b in zip(abschnitte, abschnitte[1:], strict=False))
     assert abschnitte[-1].ended_at is None
     assert Event.objects.filter(type="ris.broadcast.agenda_item_started").count() == 4
+
+
+def test_top_entprellung_ueber_den_tagesordnungspunkt(welt: Welt, tagesordnung: Tagesordnung) -> None:
+    """
+    Die Texterkennung verliert Punkte („TOP 1.1“ → „11“): Mit dem eingeblendeten Titel gilt das als TOP 1.1. Lesungen
+    „11“ und „1.1“ mit diesem Titel sind derselbe TOP (Entprellung über den Tagesordnungspunkt, nicht die Nummer).
+    """
+    t = tagesordnung
+    jetzt = welt.jetzt
+
+    def lesen(sekunde: int, top: str, titel_von: str) -> services.Verarbeitung:
+        lesung = Lesung(balken=True, top=top, titel=TAGESORDNUNG[titel_von], name=None)
+        return services.lesung_verarbeiten(t.broadcast.pk, lesung, jetzt + timedelta(seconds=sekunde), PROFIL)
+
+    assert lesen(0, "11", "1.1").neuer_abschnitt is None
+    abschnitt = lesen(10, "1.1", "1.1").neuer_abschnitt
+    assert abschnitt is not None, "„11“ und „1.1“ mit dem Titel von 1.1 zählen als zwei gleiche Lesungen"
+    assert (abschnitt.agenda_item, abschnitt.number, abschnitt.number_read) == (t.punkte["1.1"], "1.1", "1.1")
+    assert abschnitt.confidence == SectionConfidence.NUMMER_UND_TITEL and abschnitt.title_similarity == 1.0
+    for sekunde, top in ((20, "11"), (30, "1.1"), (40, "11")):
+        assert lesen(sekunde, top, "1.1").neuer_abschnitt is None, "derselbe TOP, kein neuer Abschnitt"
+
+    lesen(50, "12", "1.2")
+    zweiter = lesen(60, "12", "1.2").neuer_abschnitt
+    assert zweiter is not None
+    assert (zweiter.agenda_item, zweiter.number, zweiter.number_read) == (t.punkte["1.2"], "1.2", "12")
+    assert t.punkte["1.2"].meeting_id == t.sitzung.pk, "nie die andere Sitzung mit denselben Nummern"
+    ereignis = Event.objects.filter(type="ris.broadcast.agenda_item_started").order_by("id").last()
+    assert ereignis is not None
+    assert ereignis.payload["agenda_item"] == str(t.punkte["1.2"].pk) and ereignis.payload["number"] == "1.2"
+    abschnitte = list(BroadcastSection.objects.filter(broadcast=t.broadcast).order_by("started_at"))
+    assert [a.agenda_item for a in abschnitte] == [t.punkte["1.1"], t.punkte["1.2"]]
+
+
+def test_top_ohne_passenden_titel_mit_niedriger_sicherheit(welt: Welt, tagesordnung: Tagesordnung) -> None:
+    t = tagesordnung
+    lesung = Lesung(balken=True, top="11", titel="Lorem ipsum dolor sit amet", name=None)
+    services.lesung_verarbeiten(t.broadcast.pk, lesung, welt.jetzt, PROFIL)
+    abschnitt = services.lesung_verarbeiten(
+        t.broadcast.pk, lesung, welt.jetzt + timedelta(seconds=10), PROFIL
+    ).neuer_abschnitt
+    assert abschnitt is not None and abschnitt.agenda_item == t.punkte["11"]
+    assert abschnitt.confidence == SectionConfidence.NUMMER and (abschnitt.title_similarity or 0) < 0.6
 
 
 def test_lesarten_einer_fraktion_sind_keine_neue_wortmeldung(welt: Welt, laufend: Broadcast) -> None:
@@ -358,6 +408,12 @@ def test_abschnitt_von_hand(welt: Welt, laufend: Broadcast) -> None:
     assert Event.objects.get().payload["origin"] == "hand"
 
 
+def test_abschnitt_von_hand_ohne_lesarten(welt: Welt, tagesordnung: Tagesordnung) -> None:
+    """Von Hand gilt die Nummer der Verwaltung: „11“ ist TOP 11, auch wenn es 1.1 gibt."""
+    abschnitt = services.abschnitt_von_hand(tagesordnung.broadcast, "11", welt.jetzt)
+    assert (abschnitt.agenda_item, abschnitt.number) == (tagesordnung.punkte["11"], "11")
+
+
 # =============================================================================
 # Leseschleife
 # =============================================================================
@@ -392,7 +448,7 @@ def test_leseschleife_im_takt_ohne_bildspeicher(welt: Welt, laufend: Broadcast) 
         laufend.pk,
         dauer=50,
         bildquelle=bildquelle,
-        erkenner=lambda bild, psm: next(texte),
+        erkenner=lambda bild, psm, zeichen: next(texte),
         schlafen=uhr.schlafen,
         uhr=uhr,
     )

@@ -19,8 +19,12 @@ def einblendung(
     titel: str = "Neubau einer Grundschule",
     balken: bool = True,
     groesse: tuple[int, int] = (1920, 1080),
+    titel_links: float = 0.57,
 ) -> Image.Image:
-    """Bild mit Einblendung im Layout der Vorlage (Balken unten, Name links, TOP Mitte, Titel rechts)."""
+    """
+    Bild mit Einblendung im Layout der Vorlage (Balken unten, Name links, TOP Mitte, Titel rechts); ``titel_links``
+    ist der Beginn des Titels relativ zur Bildbreite.
+    """
     breite, hoehe = groesse
     bild = Image.new("RGB", groesse, (40, 40, 40))
     if not balken:
@@ -33,7 +37,7 @@ def einblendung(
     zeichnen.text((int(breite * 0.06), int(hoehe * 0.83)), name, font=gross, fill=weiss)
     zeichnen.text((int(breite * 0.06), int(hoehe * 0.88)), fraktion, font=klein, fill=weiss)
     zeichnen.text((int(breite * 0.37), int(hoehe * 0.885)), top, font=gross, fill=weiss)
-    zeichnen.text((int(breite * 0.57), int(hoehe * 0.835)), titel, font=klein, fill=weiss)
+    zeichnen.text((int(breite * titel_links), int(hoehe * 0.835)), titel, font=klein, fill=weiss)
     return bild
 
 

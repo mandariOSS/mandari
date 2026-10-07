@@ -7,7 +7,18 @@ from typing import Any
 
 import pytest
 
-from hub.live.profil import FELDER, VORLAGEN, Box, ProfilError, lade_profil, pruefe_profil, vorlage
+from hub.live.profil import (
+    FELDER,
+    TITEL_ALLEIN,
+    TITEL_ZUR_NUMMER,
+    TOP_ZEICHEN,
+    VORLAGEN,
+    Box,
+    ProfilError,
+    lade_profil,
+    pruefe_profil,
+    vorlage,
+)
 
 
 def test_vorlage_ist_gueltig_und_wird_kopiert() -> None:
@@ -20,6 +31,38 @@ def test_vorlage_ist_gueltig_und_wird_kopiert() -> None:
     kopie = vorlage("balken_unten_dreizeilig")
     kopie["felder"]["top"]["psm"] = 13
     assert VORLAGEN["balken_unten_dreizeilig"]["felder"]["top"]["psm"] == 7, "Vorlage bleibt unverändert"
+
+
+def test_vorlage_titel_ab_0545_ohne_ueberlappung_mit_dem_top_feld() -> None:
+    """Der Titel beginnt bei 0.545 (vorher fehlte der erste Buchstabe); das TOP-Feld ragt nicht hinein."""
+    felder = lade_profil(vorlage("balken_unten_dreizeilig")).felder
+    assert felder["titel"].box.links == 0.545
+    assert felder["top"].box.rechts <= felder["titel"].box.links
+
+
+def test_top_feld_liest_nur_ziffern_punkt_und_top() -> None:
+    profil = lade_profil(vorlage("balken_unten_dreizeilig"))
+    assert profil.felder["top"].zeichen == TOP_ZEICHEN
+    assert {profil.felder[name].zeichen for name in ("name", "fraktion", "titel")} == {""}
+    assert "zeichen" not in vorlage("balken_unten_dreizeilig")["felder"]["top"], "ältere Images kennen die Angabe nicht"
+    # eigenes Muster (andere Beschriftung): ohne Einschränkung; ausdrücklich leer: ebenso
+    assert lade_profil(_mit(top_muster="Punkt (\\d+)")).felder["top"].zeichen == ""
+    daten = vorlage("balken_unten_dreizeilig")
+    daten["felder"]["top"]["zeichen"] = ""
+    assert lade_profil(daten).felder["top"].zeichen == ""
+    daten["felder"]["top"]["zeichen"] = "0123456789."
+    assert lade_profil(daten).felder["top"].zeichen == "0123456789."
+    daten["felder"]["top"]["zeichen"] = "0 1'"
+    assert any("felder.top.zeichen" in p for p in pruefe_profil(daten))
+
+
+def test_schwellen_der_titelpruefung() -> None:
+    profil = lade_profil(vorlage("balken_unten_dreizeilig"))
+    assert (profil.titel_zur_nummer, profil.titel_allein) == (TITEL_ZUR_NUMMER, TITEL_ALLEIN) == (0.6, 0.75)
+    assert lade_profil(_mit(titel_zur_nummer=0.5, titel_allein=0.9)).titel_allein == 0.9
+    assert any("titel_allein" in p for p in pruefe_profil(_mit(titel_zur_nummer=0.8, titel_allein=0.7)))
+    assert any("titel_zur_nummer" in p for p in pruefe_profil(_mit(titel_zur_nummer=1.5)))
+    assert any("titel_allein" in p for p in pruefe_profil(_mit(titel_allein="hoch")))
 
 
 def test_box_rechnet_relativ_zur_bildgroesse() -> None:

@@ -24,7 +24,17 @@ class BroadcastSourceAdmin(ModelAdmin):  # type: ignore[misc]
 class BroadcastSectionInline(TabularInline):  # type: ignore[misc]
     model = BroadcastSection
     extra = 0
-    fields = ("number", "agenda_item", "title_read", "title_similarity", "origin", "started_at", "ended_at")
+    fields = (
+        "number",
+        "number_read",
+        "agenda_item",
+        "title_read",
+        "title_similarity",
+        "confidence",
+        "origin",
+        "started_at",
+        "ended_at",
+    )
     raw_id_fields = ("agenda_item",)
 
 
@@ -48,8 +58,18 @@ class BroadcastAdmin(ModelAdmin):  # type: ignore[misc]
 
 @admin.register(BroadcastSection)
 class BroadcastSectionAdmin(ModelAdmin):  # type: ignore[misc]
-    list_display = ("number", "broadcast", "agenda_item", "title_similarity", "origin", "started_at", "ended_at")
-    list_filter = ("origin",)
+    list_display = (
+        "number",
+        "number_read",
+        "broadcast",
+        "agenda_item",
+        "title_similarity",
+        "confidence",
+        "origin",
+        "started_at",
+        "ended_at",
+    )
+    list_filter = ("origin", "confidence")
     raw_id_fields = ("broadcast", "agenda_item")
 
 

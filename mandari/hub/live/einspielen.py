@@ -11,7 +11,8 @@ Der Prototyp (Live-Wächter) schreibt je Zeile ein JSON-Objekt mit ``zeit`` (ISO
 - ``fehler`` (``wo``, ``fehler``), ``lebenszeichen``, ``start``, ``wartet``, ``beginnt``, ``ende``.
 
 Daraus entstehen Übertragung, TOP-Abschnitte, Wortmeldungen und Protokolleinträge wie im Betrieb, nur ohne
-Ereignisse der Datendrehscheibe (die Sitzung ist vorbei; Abonnenten sollen nicht nachträglich reagieren).
+Ereignisse der Datendrehscheibe (die Sitzung ist vorbei; Abonnenten sollen nicht nachträglich reagieren). TOPs
+werden wie im Betrieb mit Nummer und Titel zugeordnet (``zuordnung.top_zuordnen``).
 **Idempotent:** Jede Zeile trägt im Protokoll ihren Prüfwert; Abschnitte und Wortmeldungen mit gleichem Beginn
 werden nicht doppelt angelegt. Bild-Adressen aus ``status`` werden verworfen.
 """
@@ -26,6 +27,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from insight_core.models import OParlMeeting
@@ -42,8 +44,8 @@ from .models import (
     BroadcastStatus,
     LogKind,
 )
-from .profil import STANDARD_FUNKTIONEN, ProfilError, lade_profil
-from .zuordnung import aehnlichkeit, normalisiere_nummer, person_zuordnen, tagesordnungspunkt
+from .profil import STANDARD_FUNKTIONEN, TITEL_ALLEIN, TITEL_ZUR_NUMMER, ProfilError, lade_profil
+from .zuordnung import kandidaten, normalisiere_nummer, person_zuordnen, top_zuordnen
 
 
 @dataclass
@@ -91,11 +93,14 @@ def _protokoll(
 def einspielen(zeilen: Iterable[str], *, meeting: OParlMeeting, quelle: BroadcastSource) -> Bilanz:
     """Spielt die Zeilen ein (eine Transaktion); liefert die Bilanz."""
     bilanz = Bilanz()
+    zur_nummer, allein = TITEL_ZUR_NUMMER, TITEL_ALLEIN
     try:
         profil = lade_profil(quelle.overlay_profile)
         funktionen, profil_fraktionen = profil.funktionen, profil.fraktionen
+        zur_nummer, allein = profil.titel_zur_nummer, profil.titel_allein
     except ProfilError:
         funktionen, profil_fraktionen = STANDARD_FUNKTIONEN, ()
+    punkte = kandidaten(meeting.pk)
     with transaction.atomic():
         broadcast, _ = Broadcast.objects.select_for_update().get_or_create(source=quelle, meeting=meeting)
         abschnitt = broadcast.current_section
@@ -136,16 +141,28 @@ def einspielen(zeilen: Iterable[str], *, meeting: OParlMeeting, quelle: Broadcas
                     bilanz.uebersprungen += 1
                     continue
                 titel = str(zeile.get("titel_ocr") or "")[:500]
-                vorhanden = BroadcastSection.objects.filter(broadcast=broadcast, number=nummer, started_at=zeit).first()
+                # gleiche Zeile schon eingespielt (auch vor der Titelprüfung: dann steht die gelesene Nummer in number)
+                vorhanden = (
+                    BroadcastSection.objects.filter(broadcast=broadcast, started_at=zeit)
+                    .filter(Q(number_read=nummer) | Q(number_read="", number=nummer))
+                    .first()
+                )
                 if vorhanden is None:
                     BroadcastSection.objects.filter(broadcast=broadcast, ended_at__isnull=True).update(ended_at=zeit)
-                    punkt = tagesordnungspunkt(meeting.pk, nummer)
+                    top = top_zuordnen(
+                        meeting.pk, nummer, titel, titel_zur_nummer=zur_nummer, titel_allein=allein, punkte=punkte
+                    )
+                    if top is None:  # nicht erreichbar: die Nummer hat Ziffern (oben geprüft)
+                        bilanz.uebersprungen += 1
+                        continue
                     vorhanden = BroadcastSection.objects.create(
                         broadcast=broadcast,
-                        agenda_item=punkt,
-                        number=nummer,
+                        agenda_item=top.punkt,
+                        number=top.nummer,
+                        number_read=top.gelesen,
                         title_read=titel,
-                        title_similarity=aehnlichkeit(titel, punkt.name if punkt else None),
+                        title_similarity=top.titel_aehnlichkeit,
+                        confidence=top.sicherheit,
                         started_at=zeit,
                     )
                     bilanz.abschnitte += 1
