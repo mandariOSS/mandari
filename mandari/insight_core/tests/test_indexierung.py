@@ -243,6 +243,30 @@ class TestSitemapIndex:
         ]
 
 
+class TestHead:
+    """Suchmaschinen und Prüfwerkzeuge fragen robots.txt und Sitemaps auch per HEAD an (vorher 405)."""
+
+    @pytest.mark.parametrize(
+        "pfad",
+        [
+            "/robots.txt",
+            "/sitemap-insight-index.xml",
+            "/sitemap-insight-koeln.xml",
+            "/sitemap-insight-koeln-vorgaenge-1.xml",
+            "/sitemap-insight-koeln-sitzungen-1.xml",
+        ],
+    )
+    def test_head_wie_get_ohne_inhalt(self, client: Client, stadt: dict[str, Any], pfad: str) -> None:
+        antwort = client.head(pfad)
+
+        assert antwort.status_code == 200
+        assert antwort.content == b""
+        assert antwort["Content-Type"] == client.get(pfad)["Content-Type"]
+
+    def test_andere_methoden_bleiben_abgelehnt(self, client: Client, stadt: dict[str, Any]) -> None:
+        assert client.post("/sitemap-insight-index.xml").status_code == 405
+
+
 class TestNummerierteDateien:
     def test_alle_vorgaenge_genau_einmal_in_der_reihenfolge_des_eingangs(
         self, client: Client, stadt: dict[str, Any]

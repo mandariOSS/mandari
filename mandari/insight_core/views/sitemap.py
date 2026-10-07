@@ -11,7 +11,9 @@ from datetime import UTC
 from django.db.models import Q
 from django.http import Http404, HttpResponse, HttpResponsePermanentRedirect
 from django.urls import reverse
-from django.views.decorators.http import require_GET
+
+# GET und HEAD: Suchmaschinen und Prüfwerkzeuge fragen robots.txt und Sitemaps auch per HEAD an (Issue #914)
+from django.views.decorators.http import require_safe
 
 from .. import publication
 from ..models import OParlBody
@@ -28,7 +30,7 @@ def _site_url():
     return getattr(settings, "SITE_URL", "https://mandari.de")
 
 
-@require_GET
+@require_safe
 def robots_txt(request):
     """robots.txt mit Verweis auf den Insight-Sitemap-Index.
 
@@ -71,7 +73,7 @@ def _xml_antwort(xml_parts):
     return response
 
 
-@require_GET
+@require_safe
 def sitemap_index(request):
     """
     Sitemap-Index: je gelistete Kommune die Grund-Sitemap und die nummerierten Dateien für Vorgänge und Sitzungen.
@@ -168,7 +170,7 @@ class _Urlset:
         return _xml_antwort(self.xml_parts)
 
 
-@require_GET
+@require_safe
 def body_sitemap(request, body_slug):
     """
     Grund-Sitemap einer Kommune: Stadtseite, Gremien, Personen mit laufender Mitgliedschaft und Ratsfragen.
@@ -197,7 +199,7 @@ def body_sitemap(request, body_slug):
     return urlset.antwort()
 
 
-@require_GET
+@require_safe
 def body_sitemap_seite(request, body_slug, art, seite):
     """Nummerierte Sitemap mit den Vorgängen bzw. Sitzungen einer Kommune, je Datei höchstens 10.000 (Issue #914)."""
     sitemap_art = sitemaps.ARTEN.get(art)
