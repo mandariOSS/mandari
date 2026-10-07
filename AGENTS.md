@@ -597,7 +597,7 @@ python manage.py fix_permissions   # Probelauf: zeigt, was fehlt
 python manage.py fix_permissions --fix  # ergänzt fehlende Rechte/Standardrollen, ändert keine vorhandenen
 
 # OParl-Daten (Sync läuft im Ingestor, siehe oben)
-python manage.py extract_texts      # OCR für PDFs
+python manage.py extract_texts      # Texterkennung einplanen (Aufträge file.extract_text, lädt nicht)
 
 # Elasticsearch konfigurieren (Synonyme, Typo-Toleranz)
 python manage.py setup_elasticsearch

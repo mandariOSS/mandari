@@ -11,18 +11,19 @@ def add_extraction_arguments(
     batch_size: int,
     workers: int,
     workers_note: str = "",
+    limit_help: str | None = None,
 ) -> None:
     """
     ``--limit``, ``--batch-size``, ``--workers``, ``--body``, ``--verbose``, ``--reprocess`` und ``--dry-run``.
 
     ``noun`` benennt die verarbeiteten Objekte in den Hilfetexten („Dateien“, „Papers“),
-    ``workers_note`` ergänzt den Hilfetext von ``--workers``.
+    ``workers_note`` ergänzt den Hilfetext von ``--workers``, ``limit_help`` ersetzt den von ``--limit``.
     """
     parser.add_argument(
         "--limit",
         type=int,
         default=0,
-        help=f"Maximale Anzahl zu verarbeitender {noun} (0 = unbegrenzt)",
+        help=limit_help or f"Maximale Anzahl zu verarbeitender {noun} (0 = unbegrenzt)",
     )
     parser.add_argument(
         "--batch-size",

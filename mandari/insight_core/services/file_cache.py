@@ -25,8 +25,10 @@ Beanspruchung stehen dort. Dieses Modul ist die Fassade für ``insight_core`` (`
 Abgelegt werden gelistete Kommunen; mit ``TEXT_EXTRACTION_RUNNER=worker`` alle Quellen mit erlaubtem Abruf ab
 ihrem Stichtag (``hub.ris.abruf.stores_file``). Ausgeblendete Quellen (Piloten, Tests) luden früher ihr ganzes
 Archiv nach – im September 2026 rund 46 GB, knapp die Hälfte des Caches, für Kommunen, die niemand im Portal
-sieht. Wird eine Kommune gelistet, füllt sich ihr Cache von selbst; ``prune_file_cache --unlisted`` räumt den
-Bestand ausgeblendeter Kommunen ab, die nichts ablegen.
+sieht. Wird eine Kommune gelistet, füllt sich ihr Cache von selbst – mit ``TEXT_EXTRACTION_RUNNER=worker`` und
+gesetztem Stichtag (``document_since``) nur ab dem Stichtag; ihren Altbestand legt erst ``document_backfill`` ab
+(``docs/FILE_CACHE.md``, „Ablage für alle Quellen“). ``prune_file_cache --unlisted`` räumt den Bestand
+ausgeblendeter Kommunen ab, die nichts ablegen.
 
 Die Gesamtgröße lässt sich begrenzen (``FILE_CACHE_MAX_TOTAL_GB``, Issue #961): Darüber verdrängt das stündliche
 Aufräumen die am wenigsten gebrauchten Dokumente (``services/file_cache_limit.py``), und ``cache_pending`` lädt nur
@@ -41,7 +43,7 @@ import re
 import shutil
 from collections import Counter
 from pathlib import Path
-from typing import IO, Any
+from typing import IO
 
 from django.conf import settings
 from django.db.models import Q, Sum
@@ -361,18 +363,6 @@ def fetch_and_cache(file_obj, client=None, *, include_errors: bool = False, forc
     from hub.ris import abruf
 
     return abruf.abrufen(file_obj, client=client, include_errors=include_errors, force=force)
-
-
-def download_to_file(url: str, **kwargs: Any) -> Any:
-    """
-    Datei gestreamt in eine temporäre Datei laden, ohne sie abzulegen (``hub.ris.abruf.download_to_file``).
-
-    Nur noch für den Auftrag ``file.extract_text`` bei Dateien, die nicht abgelegt werden; er ruft ab Etappe 1,
-    Teil B der Dokumentkette (Issue #919) nicht mehr selbst bei der Quelle ab.
-    """
-    from hub.ris import abruf
-
-    return abruf.download_to_file(url, **kwargs)
 
 
 def pending_queryset(body=None, retry_errors: bool = False, retry_evicted: bool = False):

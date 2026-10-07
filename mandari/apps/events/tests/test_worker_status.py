@@ -74,6 +74,7 @@ def test_alles_in_ordnung(client: Client, mit_bedarf: Any) -> None:
         "gescheitert",
         "texterkennung",
         "dokumentabruf",
+        "dokumenttext",
     }
     assert all(c["ok"] for c in daten["checks"].values()), daten
     assert daten["checks"]["lebenszeichen"]["detail"] == "1 Worker (dispatch, scheduler, sequencer, tasks)"
@@ -220,6 +221,7 @@ def test_unbekannte_pruefung_400_ohne_echo(client: Client) -> None:
         "gescheitert",
         "texterkennung",
         "dokumentabruf",
+        "dokumenttext",
     ]
 
 
@@ -240,6 +242,7 @@ def test_texte_der_pruefungen_nur_fuer_die_eigene_ueberwachung(client: Client, m
             "gescheitert": {"ok": False},
             "texterkennung": {"ok": True},
             "dokumentabruf": {"ok": True},
+            "dokumenttext": {"ok": True},
         },
     }
 

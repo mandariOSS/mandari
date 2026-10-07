@@ -526,6 +526,7 @@ Beispiel 2:
 | `file` | ja | Zeichenkette (uuid) | Kanonische Kennung der Datei. |
 | `method` | ja | Zeichenkette (Muster `^[a-z][a-z0-9_]{0,31}$`) | Verfahren der Erkennung als Code, z. B. pypdf, tesseract, mistral. |
 | `characters` | nein | Ganzzahl (0 bis …) | Länge des erkannten Texts in Zeichen. |
+| `sha256` | nein | Zeichenkette (Muster `^[0-9a-f]{64}$`) | SHA-256 des abgelegten Inhalts, aus dem der Text erkannt wurde (Issue #919, optional; nur der Auftrag file.extract_text meldet ihn). Kein Inhalt und keine Adresse der Quelle. |
 
 Beispiel 1:
 
@@ -538,6 +539,17 @@ Beispiel 1:
 ```
 
 Beispiel 2:
+
+```json
+{
+  "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
+  "method": "tesseract",
+  "characters": 2048,
+  "sha256": "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+}
+```
+
+Beispiel 3:
 
 ```json
 {
