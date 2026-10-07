@@ -1632,3 +1632,105 @@ class PageFeedbackAdmin(ReadOnlyAdminMixin, ModelAdmin):
                 "rows": [[r["label"], r["yes"], r["no"], r["comments"]] for r in by_page],
             }
         return response
+
+
+# =============================================================================
+# Fraktionszuordnung ohne OParl-Fraktion (Issue #916)
+# =============================================================================
+
+from .models import PersonFraktion  # noqa: E402
+from .services import fraktionen as fraktionen_service  # noqa: E402
+
+
+class PersonFraktionForm(forms.ModelForm):
+    """Pflege von Hand; die Körperschaft folgt ohne Angabe der Person."""
+
+    class Meta:
+        model = PersonFraktion
+        fields = ["person", "body", "bezeichnung", "partei", "organisation", "gueltig_ab", "gueltig_bis"]
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        if "body" in self.fields:
+            self.fields["body"].required = False
+            self.fields["body"].help_text = "Leer lassen: die Körperschaft der Person."
+
+    def clean(self) -> dict[str, Any]:
+        daten = super().clean()
+        person = daten.get("person")
+        if person is not None and not daten.get("body"):
+            daten["body"] = person.body
+            self.instance.body = person.body
+        return daten
+
+    def validate_constraints(self) -> None:
+        # Eine neue laufende Zuordnung beendet die bisherige (fraktionen.speichern), statt am Formular zu scheitern.
+        # Den Zeitraum prüft PersonFraktion.clean.
+        return None
+
+
+@admin.register(PersonFraktion)
+class PersonFraktionAdmin(ModelAdmin):
+    """
+    Fraktionen von Personen, die das RIS nicht über OParl liefert (Issue #916).
+
+    Vorschläge aus der Einblendung der Live-Übertragung bestätigen oder ablehnen; „Bestätigen“ beendet die bisherige
+    laufende Zuordnung der Person am Vortag. Von Hand angelegte oder inhaltlich geänderte Zuordnungen gelten als
+    „von Hand gepflegt“ und werden von der automatischen Übernahme nie geändert.
+    """
+
+    form = PersonFraktionForm
+    list_display = [
+        "person",
+        "bezeichnung",
+        "body",
+        "status_display",
+        "quelle",
+        "gueltig_ab",
+        "gueltig_bis",
+        "belege",
+        "zuletzt_gesehen",
+    ]
+    list_filter = ["status", "quelle", "body"]
+    list_select_related = ["person", "body"]
+    search_fields = ["person__name", "person__family_name", "person__given_name", "bezeichnung", "partei"]
+    raw_id_fields = ["person", "organisation"]
+    readonly_fields = ["quelle", "status", "belege", "zuletzt_gesehen", "angelegt", "geaendert"]
+    ordering = ["status", "-geaendert"]
+    actions = ["bestaetigen_auswahl", "ablehnen_auswahl"]
+
+    @admin.display(description="Status", ordering="status")
+    def status_display(self, obj: PersonFraktion) -> str:
+        farben = {
+            PersonFraktion.STATUS_BESTAETIGT: "#16a34a",
+            PersonFraktion.STATUS_VORSCHLAG: "#d97706",
+            PersonFraktion.STATUS_ABGELEHNT: "#64748b",
+        }
+        return status_text(farben.get(obj.status, "#64748b"), obj.get_status_display())
+
+    def save_model(self, request: HttpRequest, obj: PersonFraktion, form: Any, change: bool) -> None:
+        if not change:
+            obj.quelle = PersonFraktion.QUELLE_HAND
+            obj.status = PersonFraktion.STATUS_BESTAETIGT
+        elif {"bezeichnung", "partei", "organisation"} & set(form.changed_data):
+            obj.quelle = PersonFraktion.QUELLE_HAND
+        self._beendet_melden(request, fraktionen_service.speichern(obj))
+
+    def _beendet_melden(self, request: HttpRequest, beendet: list[PersonFraktion]) -> None:
+        for andere in beendet:
+            messages.info(request, f"Bisherige Zuordnung „{andere}“ endet am {andere.gueltig_bis:%d.%m.%Y}.")
+
+    @admin.action(description="Ausgewählte Zuordnungen bestätigen")
+    def bestaetigen_auswahl(self, request: HttpRequest, queryset: QuerySet[PersonFraktion]) -> None:
+        anzahl = 0
+        for zuordnung in queryset.select_related("person").order_by("angelegt"):
+            if zuordnung.status == PersonFraktion.STATUS_BESTAETIGT:
+                continue
+            self._beendet_melden(request, fraktionen_service.bestaetigen(zuordnung))
+            anzahl += 1
+        messages.success(request, f"{anzahl} Zuordnung(en) bestätigt.")
+
+    @admin.action(description="Ausgewählte Zuordnungen ablehnen")
+    def ablehnen_auswahl(self, request: HttpRequest, queryset: QuerySet[PersonFraktion]) -> None:
+        anzahl = sum(fraktionen_service.ablehnen(zuordnung) for zuordnung in queryset)
+        messages.success(request, f"{anzahl} Zuordnung(en) abgelehnt.")

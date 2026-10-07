@@ -11,8 +11,8 @@ from typing import Any
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
-from django.db.models import Q
-from django.db.models.functions import Now
+from django.db.models import F, Q
+from django.db.models.functions import Lower, Now
 from django.utils import timezone
 from mandari_oparl.extensions import (
     APPROVAL_MODE_LABELS,
@@ -2713,3 +2713,120 @@ class PageFeedback(models.Model):
 
     def __str__(self) -> str:
         return f"{'Ja' if self.helpful else 'Nein'} – {self.page_type} ({self.created_on:%d.%m.%Y})"
+
+
+# =============================================================================
+# Fraktionszuordnung ohne OParl-Fraktion (Issue #916)
+# =============================================================================
+
+
+class PersonFraktion(models.Model):
+    """Fraktion einer Person in einer Körperschaft, wenn das RIS sie nicht über OParl liefert (Issue #916).
+
+    Viele Kommunen führen Fraktionen nicht als Gremium mit Mitgliedschaften. Die Zuordnung entsteht aus der
+    Einblendung einer Live-Übertragung (``einblendung``), von Hand im Admin (``hand``) oder aus OParl (``oparl``).
+    Angezeigt wird nur eine bestätigte Zuordnung, und nur, wenn OParl selbst keine Fraktion nennt; die Quelle bleibt
+    öffentlich erkennbar (``hinweis``). Vorschläge warten im Admin auf Bestätigung. Regeln der automatischen
+    Übernahme: ``services/fraktionen.py``.
+
+    Eigene Tabelle statt Spalten an ``oparl_*``: Der Ingestor schreibt diese Tabellen und kennt die Zuordnung nicht.
+    Verweise auf den RIS-Bestand nie mit ``CASCADE`` (ADR ``docs/adr/20260929-fremdschluessel-ris-bestand.md``):
+    Person und Körperschaft ``PROTECT``, das optionale Gremium ``SET_NULL``.
+    """
+
+    QUELLE_EINBLENDUNG = "einblendung"
+    QUELLE_HAND = "hand"
+    QUELLE_OPARL = "oparl"
+    QUELLE_CHOICES = [
+        (QUELLE_EINBLENDUNG, "Einblendung der Live-Übertragung"),
+        (QUELLE_HAND, "Von Hand gepflegt"),
+        (QUELLE_OPARL, "Ratsinformationssystem (OParl)"),
+    ]
+    #: Öffentlicher Hinweis auf die Quelle (Personenliste und Personenseite)
+    HINWEISE = {
+        QUELLE_EINBLENDUNG: "laut Einblendung der Live-Übertragung",
+        QUELLE_HAND: "redaktionell gepflegt",
+        QUELLE_OPARL: "laut Ratsinformationssystem",
+    }
+
+    STATUS_BESTAETIGT = "bestaetigt"
+    STATUS_VORSCHLAG = "vorschlag"
+    STATUS_ABGELEHNT = "abgelehnt"
+    STATUS_CHOICES = [
+        (STATUS_BESTAETIGT, "Bestätigt"),
+        (STATUS_VORSCHLAG, "Vorschlag"),
+        (STATUS_ABGELEHNT, "Abgelehnt"),
+    ]
+
+    BEZEICHNUNG_MAX_LENGTH = 200
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    person = models.ForeignKey(
+        OParlPerson, on_delete=models.PROTECT, related_name="fraktionen_lokal", verbose_name="Person"
+    )
+    body = models.ForeignKey(
+        OParlBody, on_delete=models.PROTECT, related_name="person_fraktionen", verbose_name="Körperschaft"
+    )
+    bezeichnung = models.CharField("Fraktion", max_length=BEZEICHNUNG_MAX_LENGTH)
+    organisation = models.ForeignKey(
+        OParlOrganization,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="person_fraktionen",
+        verbose_name="Gremium im RIS",
+        help_text="Optional: die Fraktion als Gremium im Ratsinformationssystem, falls es sie dort gibt.",
+    )
+    partei = models.CharField("Partei", max_length=200, blank=True, default="")
+    gueltig_ab = models.DateField("Gültig ab", blank=True, null=True)
+    gueltig_bis = models.DateField("Gültig bis", blank=True, null=True)
+    quelle = models.CharField("Quelle", max_length=20, choices=QUELLE_CHOICES, default=QUELLE_HAND)
+    status = models.CharField("Status", max_length=20, choices=STATUS_CHOICES, default=STATUS_BESTAETIGT)
+    belege = models.PositiveIntegerField(
+        "Lesungen", default=0, help_text="Wie oft die Einblendung einer Live-Übertragung diese Fraktion gezeigt hat."
+    )
+    zuletzt_gesehen = models.DateTimeField("Zuletzt gelesen", blank=True, null=True)
+    angelegt = models.DateTimeField("Angelegt", auto_now_add=True)
+    geaendert = models.DateTimeField("Geändert", auto_now=True)
+
+    class Meta:
+        db_table = "insight_person_fraktionen"
+        verbose_name = "Fraktionszuordnung"
+        verbose_name_plural = "Fraktionszuordnungen"
+        ordering = ["-geaendert"]
+        constraints = [
+            # Höchstens eine laufende bestätigte Zuordnung je Person und Körperschaft
+            models.UniqueConstraint(
+                fields=["person", "body"],
+                condition=Q(status="bestaetigt", gueltig_bis__isnull=True),
+                name="personfraktion_eine_laufende",
+            ),
+            # Ein offener Vorschlag je Bezeichnung: weitere Lesungen zählen ihn hoch
+            models.UniqueConstraint(
+                models.F("person"),
+                models.F("body"),
+                Lower("bezeichnung"),
+                condition=Q(status="vorschlag"),
+                name="personfraktion_ein_vorschlag_je_bezeichnung",
+            ),
+            models.CheckConstraint(
+                condition=Q(gueltig_ab__isnull=True)
+                | Q(gueltig_bis__isnull=True)
+                | Q(gueltig_bis__gte=F("gueltig_ab")),
+                name="personfraktion_zeitraum",
+            ),
+        ]
+        indexes = [models.Index(fields=["body", "status"], name="personfraktion_body_status")]
+
+    def __str__(self) -> str:
+        return f"{self.person} – {self.bezeichnung}"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.gueltig_ab and self.gueltig_bis and self.gueltig_bis < self.gueltig_ab:
+            raise ValidationError({"gueltig_bis": "Das Ende liegt vor dem Beginn."})
+
+    @property
+    def hinweis(self) -> str:
+        """Öffentlicher Hinweis auf die Quelle, z. B. „laut Einblendung der Live-Übertragung“."""
+        return self.HINWEISE.get(self.quelle, "")

@@ -40,6 +40,7 @@ die diese Person nennen, im Journal geleert.
 | `ris.paper.created` | Ereignis | 1 | `hub.ris` | nichtoeffentlich | Vorlage angelegt |
 | `ris.paper.released` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Vorlage freigegeben |
 | `ris.person.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Person geändert |
+| `ris.person.faction_assigned` | Ereignis | 1 | `hub.ris` | oeffentlich | Fraktion einer Person zugeordnet |
 | `ris.protocol.approved` | Ereignis | 1 | `hub.ris` | nichtoeffentlich | Niederschrift genehmigt |
 | `ris.protocol.published` | Ereignis | 1 | `hub.ris` | oeffentlich | Niederschrift veröffentlicht |
 | `ris.resolution.adopted` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Beschluss gefasst |
@@ -817,6 +818,51 @@ Beispiel 2:
     "familyName",
     "membership"
   ]
+}
+```
+
+### ris.person.faction_assigned v1
+
+**Fraktion einer Person zugeordnet.** Einer Person wurde in ihrer Körperschaft eine Fraktion zugeordnet, die das RIS nicht über OParl liefert, oder eine solche Zuordnung hat sich geändert (Zeitraum, Gremium, Ablehnung). Quelle ist die Einblendung einer Live-Übertragung, die Pflege von Hand oder OParl. Gemeldet wird nur, was bestätigt ist oder war; Vorschläge bleiben intern. Aggregat: Person. Die Nutzlast enthält nur Kennungen, Codes und Daten; Bezeichnung und Partei liest der Empfänger aus dem RIS-Bestand.
+
+- Art: Ereignis
+- Eigentümer: `hub.ris`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.person.faction_assigned/v1.json`](../mandari/hub/contracts/schemas/ris.person.faction_assigned/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `assignment` | ja | Zeichenkette (uuid) | Kennung der Fraktionszuordnung. |
+| `person` | ja | Zeichenkette (uuid) | Kanonische Kennung der Person. |
+| `source` | ja | Code: `einblendung`, `hand`, `oparl` | Quelle der Zuordnung: einblendung (Einblendung einer Live-Übertragung), hand (von Hand gepflegt), oparl (aus dem RIS). |
+| `status` | ja | Code: `bestaetigt`, `abgelehnt` | Stand der Zuordnung: bestaetigt (gilt im angegebenen Zeitraum) oder abgelehnt (gilt nicht mehr, war falsch zugeordnet). |
+| `organization` | nein | Zeichenkette (uuid) | Kanonische Kennung der Fraktion als Gremium im RIS, falls es sie dort gibt. |
+| `valid_from` | nein | Zeichenkette (date) | Beginn der Zuordnung. |
+| `valid_until` | nein | Zeichenkette (date) | Ende der Zuordnung; fehlt, solange sie läuft. |
+
+Beispiel 1:
+
+```json
+{
+  "assignment": "0b6f3c2a-1d4e-4f5a-9b8c-7d6e5f4a3b2c",
+  "person": "6d1e2f3a-4b5c-5d6e-8f7a-9b0c1d2e3f4a",
+  "source": "einblendung",
+  "status": "bestaetigt",
+  "valid_from": "2026-10-07"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "assignment": "0b6f3c2a-1d4e-4f5a-9b8c-7d6e5f4a3b2c",
+  "person": "6d1e2f3a-4b5c-5d6e-8f7a-9b0c1d2e3f4a",
+  "source": "hand",
+  "status": "bestaetigt",
+  "organization": "3f2b8c1d-6e4a-5b7c-9d8e-1a2b3c4d5e6f",
+  "valid_from": "2025-11-01",
+  "valid_until": "2026-09-30"
 }
 ```
 

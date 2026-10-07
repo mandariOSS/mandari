@@ -5,6 +5,9 @@ Angaben der Personenliste im Bürgerportal (Issue #841): Fraktion, Funktion und 
 Die Spalte „Funktion“ zeigte bisher nur Rollen im Gremium mit dem Namen „Rat“ aus einer festen Liste – in Kommunen,
 deren Hauptorgan anders heißt oder deren RIS andere Rollennamen führt, blieb sie überall leer. Jetzt kommt sie aus den
 laufenden Mitgliedschaften: die wichtigste Rolle je Person, eine Abfrage für die ganze Seite.
+
+Nennt OParl keine Fraktion (viele Kommunen führen Fraktionen nicht als Gremium), gilt die bestätigte
+Fraktionszuordnung aus Insight (Issue #916, ``services/fraktionen.py``) – mit Hinweis auf ihre Quelle.
 """
 
 from __future__ import annotations
@@ -18,7 +21,8 @@ from typing import Any
 from django.db.models import Q
 from django.utils import timezone
 
-from ..models import OParlMembership, OParlOrganization, OParlPerson, withdrawn_q
+from ..models import OParlMembership, OParlOrganization, OParlPerson, PersonFraktion, withdrawn_q
+from .fraktionen import aktuelle_fraktionen
 from .question_service import COUNCIL_ORG_NAMES
 
 #: Rollen ohne eigene Aussage („Mitglied“) – sie sagen nur, dass jemand dabei ist
@@ -45,6 +49,20 @@ class PersonAngaben:
     fraktion: OParlOrganization | None = None
     funktion: str = ""
     gremien: list[str] = field(default_factory=list)
+    #: Fraktionszuordnung aus Insight, nur wenn OParl keine Fraktion nennt (Issue #916)
+    fraktion_lokal: PersonFraktion | None = None
+
+    @property
+    def fraktion_name(self) -> str:
+        """Fraktion für die Anzeige: aus OParl (Kurzname, sonst Name), sonst aus der Zuordnung in Insight."""
+        if self.fraktion is not None:
+            return self.fraktion.short_name or self.fraktion.name or ""
+        return self.fraktion_lokal.bezeichnung if self.fraktion_lokal is not None else ""
+
+    @property
+    def fraktion_hinweis(self) -> str:
+        """Quelle einer Fraktion, die nicht aus OParl kommt („laut Einblendung der Live-Übertragung“), sonst leer."""
+        return self.fraktion_lokal.hinweis if self.fraktion is None and self.fraktion_lokal is not None else ""
 
     @property
     def gremien_kurz(self) -> str:
@@ -148,7 +166,12 @@ def funktion_aus(mitgliedschaften: Iterable[OParlMembership]) -> str:
 
 
 def angaben_fuer(personen: Iterable[OParlPerson], stichtag: date | None = None) -> dict[Any, PersonAngaben]:
-    """``{person_id: PersonAngaben}`` aus den laufenden Mitgliedschaften, eine Abfrage für alle Personen."""
+    """
+    ``{person_id: PersonAngaben}`` aus den laufenden Mitgliedschaften, eine Abfrage für alle Personen.
+
+    Ohne Fraktion aus OParl kommt sie aus den bestätigten Zuordnungen in Insight (eine weitere Abfrage).
+    """
+    personen = list(personen)
     ids = [p.pk for p in personen]
     if not ids:
         return {}
@@ -173,4 +196,7 @@ def angaben_fuer(personen: Iterable[OParlPerson], stichtag: date | None = None) 
             elif not ist_hauptorgan(m.organization) and _org_name(m.organization) not in angaben.gremien:
                 angaben.gremien.append(_org_name(m.organization))
         ergebnis[pid] = angaben
+    ohne_fraktion = [p for p in personen if ergebnis[p.pk].fraktion is None]
+    for pid, zuordnung in aktuelle_fraktionen(ohne_fraktion, stichtag=stichtag).items():
+        ergebnis[pid].fraktion_lokal = zuordnung
     return ergebnis
