@@ -4,9 +4,9 @@ Management Command: Dokument-Cache ausgeblendeter Kommunen leeren bzw. auf eine 
 
 **Ausgeblendete Kommunen** (``--unlisted``):
 
-Zwischengespeichert werden nur gelistete Kommunen (siehe ``services/file_cache.py``). Dieser
-Befehl räumt den Bestand ab, der vorher für ausgeblendete Kommunen (Piloten, Tests) entstanden
-ist: Er löscht deren Verzeichnisse im Cache und setzt die Dateien in der Datenbank auf „nicht
+Zwischengespeichert werden gelistete Kommunen, mit ``TEXT_EXTRACTION_RUNNER=worker`` auch ausgeblendete ab
+ihrem Stichtag (``hub.ris.abruf.stores_file``); deren Kopien bleiben. Dieser Befehl räumt den Bestand ab, der
+vorher für ausgeblendete Kommunen (Piloten, Tests) entstanden ist: Er löscht deren Verzeichnisse im Cache und setzt die Dateien in der Datenbank auf „nicht
 zwischengespeichert“ zurück. Extrahierte Texte bleiben erhalten – Suche und Verortung sind nicht
 betroffen. Wird eine Kommune später gelistet, lädt ``cache_files`` ihre Dokumente neu. Kommunen synthetischer
 Quellen (Domäne ``.invalid``, etwa die Demo) bleiben unangetastet – ihre Dateien lassen sich nie neu abrufen.
@@ -230,7 +230,7 @@ class Command(BaseCommand):
 
     def _unlisted(self, dry_run: bool) -> None:
         from insight_core.models import OParlBody, OParlFile
-        from insight_core.services.file_cache import body_dir_name, cache_root
+        from insight_core.services.file_cache import body_dir_name, cache_root, caches_body
         from insight_core.services.file_store import release_queryset
 
         # Ein Verzeichnis, das auch eine gelistete Kommune nutzt, bleibt unangetastet.
@@ -239,6 +239,10 @@ class Command(BaseCommand):
         for body in OParlBody.objects.filter(is_listed=False).select_related("source").order_by("name"):
             if _nicht_abrufbar(body):
                 self.stdout.write(f"{body.name[:45]:<45} übersprungen – Quelle nicht abrufbar, Kopie wäre verloren")
+                continue
+            if caches_body(body):
+                # Ablage für alle Quellen mit erlaubtem Abruf (TEXT_EXTRACTION_RUNNER=worker, Issue #919)
+                self.stdout.write(f"{body.name[:45]:<45} übersprungen – legt Dokumente ab (Stichtag gesetzt)")
                 continue
             verzeichnis = cache_root() / body_dir_name(body)
             dateien = OParlFile.objects.filter(body=body).exclude(local_status="none")

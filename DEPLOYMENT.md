@@ -210,6 +210,11 @@ sh deploy/scripts/deploy.sh rollback v0.11.0  # bestimmte Version
 ./backup.sh --restore <Sicherungsdatei>       # Daten aus einer Sicherung zurückspielen
 ```
 
+Zurück auf ein Image vor der Dokumentkette (Migration `insight_core.0057`, Issue #919): **vorher** mit dem
+laufenden Image `docker exec mandari python manage.py dokumentkette zuruecksetzen` ausführen (idempotent, nur
+Zustandsspalten). Ein älteres Image kennt die Zustände `retry`, `fetching` und `refused` nicht; danach stehen sie
+wieder als `none` bzw. `error` da (`docs/FILE_CACHE.md`, „Zustände des Abrufs“).
+
 ### Datenbank-Migration
 
 Migrationen laufen beim Update, nicht im Entrypoint: verträgliche vor dem Umschalten
@@ -967,7 +972,9 @@ weiteren Versuch; gelingt er, beginnt der Zähler von vorn.
 **Umstellen auf Aufträge:** Ein Worker bedient `ocr` (`docker compose ps worker-heavy`), dann
 `TEXT_EXTRACTION_RUNNER=worker` in der `.env` setzen (Compose reicht die Variable an Anwendung, Worker und
 Ingestor weiter; eigene Override-Dateien für einen OCR-Worker brauchen sie ebenfalls) und Anwendung, Worker
-und Ingestor-Dienste neu starten.
+und Ingestor-Dienste neu starten. Ab dann legt der Dokument-Cache alle Quellen mit erlaubtem Abruf ab, je Quelle
+ab ihrem Stichtag (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“); den Stichtag trägt der nächste Lauf von
+`cache_files` nach (vorher setzen bzw. ansehen: `python manage.py dokumentkette umschalten [--probelauf]`).
 Dateien, die der OCR-Worker gerade bearbeitet, löst die Zeitgrenze auf. **Rückweg:** Variable entfernen
 (bzw. `ingestor`) und dieselben Dienste neu starten; eingereihte Aufträge erledigen sich noch oder finden
 ihre Datei bereits bearbeitet.
@@ -991,7 +998,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:fetch_person_photos` | montags 03:00 | Personenfotos |
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
-| `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, neueste fehlende Dateien zuerst (`docs/FILE_CACHE.md`) |
+| `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, liegen gebliebene Abrufe freigeben, fällige Wiederholungen und neueste fehlende Dateien zuerst, je Quelle höchstens `DOCUMENT_FETCH_MAX_QUEUED` (`docs/FILE_CACHE.md`) |
 | `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
 | `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788); hält mit `FILE_CACHE_MAX_TOTAL_GB` auch die Obergrenze des Dokument-Caches ein (Issue #961) |
 | `befehl:generate_alerts` | täglich 07:45 | Benachrichtigungen der Abos zu Themen und Orten; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |

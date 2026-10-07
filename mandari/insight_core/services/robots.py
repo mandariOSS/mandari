@@ -29,6 +29,7 @@ from typing import Any
 
 import httpx
 from django.core.cache import cache
+from django.db.models import Q
 from mandari_oparl.crawler import PRODUCT_TOKEN, product_token, user_agent
 from mandari_oparl.robots import (
     CACHE_SECONDS,
@@ -241,7 +242,9 @@ def cached_check(
 def requeue_blocked_files(source: Any) -> dict[str, int]:
     """
     Wegen der robots.txt übersprungene Dateien einer Quelle neu einreihen (nach Freigabe oder geänderter
-    robots.txt): Textextraktion wieder ``pending``, Dokument-Cache wieder ``none``. Rückgabe: Anzahl je Weg.
+    robots.txt): Textextraktion wieder ``pending``, Dokument-Cache wieder ``none`` – verweigerte Abrufe
+    (``refused`` mit Fehlercode ``robots``, ``hub.ris.abruf``) und ältere Einträge mit ``error``. Rückgabe:
+    Anzahl je Weg.
     """
     from ..models import OParlFile
 
@@ -249,7 +252,10 @@ def requeue_blocked_files(source: Any) -> dict[str, int]:
     extraction = files.filter(
         text_extraction_status="skipped", text_extraction_error__startswith=SKIP_ERROR_PREFIX
     ).update(text_extraction_status="pending", text_extraction_error=None)
-    file_cache = files.filter(local_status="error", local_error__startswith=SKIP_ERROR_PREFIX).update(
-        local_status="none", local_error=""
+    gesperrt = Q(local_status="refused", fetch_error="robots") | Q(
+        local_status="error", local_error__startswith=SKIP_ERROR_PREFIX
+    )
+    file_cache = files.filter(gesperrt).update(
+        local_status="none", local_error="", fetch_error="", fetch_attempts=0, fetch_next_at=None
     )
     return {"extraction": extraction, "file_cache": file_cache}

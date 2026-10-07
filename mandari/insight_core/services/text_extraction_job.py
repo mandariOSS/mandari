@@ -339,7 +339,6 @@ def extract_file(file_id: str) -> str:
         RobotsBlockedError,
         RobotsUnreachableError,
         SourceBusyError,
-        download_to_file,
         extraction_config,
     )
 
@@ -360,16 +359,19 @@ def extract_file(file_id: str) -> str:
 
     downloaded: DownloadedFile | None = None
     try:
-        # Dokumentablage: vorhandene Kopie nutzen, sonst einmal für Ablage und Text laden (gelistete Kommunen)
+        # Dokumentablage: vorhandene Kopie nutzen, sonst einmal für Ablage und Text laden (Regel der Ablage,
+        # hub.ris.abruf). Bis Teil B der Dokumentkette (Issue #919) lädt der Auftrag nicht abzulegende Dateien selbst.
         local = file_cache.local_file(file)
-        if local is None and file.body is not None and file_cache.caches_body(file.body):
-            file_cache.fetch_and_cache(file)
-            file.refresh_from_db(fields=["local_path", "sha256_hash"])
+        if local is None and file_cache.stores_file(file):
+            if file_cache.fetch_and_cache(file) == "storage_error":
+                # Ablage bzw. Objektspeicher gestört: kein Abruf bei der Quelle, später erneut
+                return _defer(file)
+            file.refresh_from_db(fields=["local_path", "sha256_hash", "local_status", "blob"])
             local = file_cache.local_file(file)
         if local is not None:
             source, sha256 = local, file.sha256_hash
         else:
-            downloaded = download_to_file(
+            downloaded = file_cache.download_to_file(
                 url,
                 max_bytes=_max_bytes(),
                 extra_headers=file_cache.download_headers(file.body),

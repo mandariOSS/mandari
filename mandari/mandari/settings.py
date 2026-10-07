@@ -128,6 +128,8 @@ INSTALLED_APPS = [
     "hub.projections",
     # Datendrehscheibe: Live-Übertragungen von Gremiensitzungen (Issue #915, docs/LIVE_UEBERTRAGUNG.md)
     "hub.live",
+    # Datendrehscheibe: RIS-Bestand, ohne Modelle – Abruf der Dateien (Issue #919), Befehl dokumentkette
+    "hub.ris",
     "apps.provisioning",
     "apps.work",
     # Mandari Session RIS (OSS - AGPL-3.0-or-later)
@@ -557,6 +559,12 @@ FILE_STORE_LAYOUT = os.environ.get("FILE_STORE_LAYOUT", "sha256")
 # Der Ingestor legt Dateien, die er für den Text lädt, selbst in der Ablage ab (OPARL_FILES_ROOT im
 # Ingestor). Dann holt der Dokument-Cache Dateien in der Texterkennung nicht ein zweites Mal.
 INGESTOR_STORES_FILES = os.environ.get("INGESTOR_STORES_FILES", "false").lower() in ("1", "true", "yes")
+# Abruf der RIS-Dateien (Issue #919, hub/ris/abruf.py): Ein Abruf beansprucht seine Datei höchstens so lange
+# (danach gibt cache_files sie frei), je Quelle und Lauf höchstens so viele Abrufe, und die Prüfung
+# „dokumentabruf“ (/health/worker/) scheitert, wenn fällige Wiederholungen länger als so viele Stunden liegen.
+DOCUMENT_FETCH_STALE_MINUTES = int(os.environ.get("DOCUMENT_FETCH_STALE_MINUTES", "30"))
+DOCUMENT_FETCH_MAX_QUEUED = int(os.environ.get("DOCUMENT_FETCH_MAX_QUEUED", "200"))
+DOCUMENT_FETCH_RETRY_ALERT_HOURS = float(os.environ.get("DOCUMENT_FETCH_RETRY_ALERT_HOURS", "6"))
 # S3-kompatibler Objektspeicher für die Ablage (Issue #788), Standard aus. Zugangsdaten nur aus der Umgebung.
 # Eingeschaltet ist die lokale Ablage ein Zwischenspeicher mit höchstens OBJ_CACHE_MAX_GB.
 OBJ_ENABLED = os.environ.get("OBJ_ENABLED", "false").lower() in ("1", "true", "yes")
@@ -568,7 +576,7 @@ OBJ_REGION = os.environ.get("OBJ_REGION", "")
 OBJ_ADDRESSING_STYLE = os.environ.get("OBJ_ADDRESSING_STYLE", "auto")
 OBJ_TIMEOUT_SECONDS = float(os.environ.get("OBJ_TIMEOUT_SECONDS", "30"))
 OBJ_CACHE_MAX_GB = int(os.environ.get("OBJ_CACHE_MAX_GB", "60"))
-# Gesamtdauer eines Abrufs aus dem Objektspeicher in der Vorschau (danach Rückfall auf die Quelle)
+# Gesamtdauer eines Abrufs aus dem Objektspeicher (danach gilt er als gestört; kein Abruf bei der Quelle, #919)
 OBJ_FETCH_TOTAL_SECONDS = float(os.environ.get("OBJ_FETCH_TOTAL_SECONDS", "60"))
 # Prüfsummen beim Upload: "when_required" (verträglich mit S3-kompatiblen Anbietern) oder "when_supported"
 OBJ_CHECKSUMS = os.environ.get("OBJ_CHECKSUMS", "when_required")
