@@ -821,6 +821,18 @@ GEOREF_TEXT_MAX_CHARS = int(os.environ.get("GEOREF_TEXT_MAX_CHARS", "8000"))
 GEOREF_AUTO_ENABLED = os.environ.get("GEOREF_AUTO_ENABLED", "True").lower() in ("true", "1", "yes")
 GEOREF_AUTO_LIMIT = int(os.environ.get("GEOREF_AUTO_LIMIT", "50"))  # Papers pro Lauf
 GEOREF_AUTO_INTERVAL_MINUTES = int(os.environ.get("GEOREF_AUTO_INTERVAL_MINUTES", "15"))
+# Nachfolger der Texterkennung als Abonnements der Datendrehscheibe (Issue #919, ADR Dokumentkette, Abschnitt 9,
+# DEPLOYMENT.md „Nachfolger der Texterkennung“): Neuer Text (ris.file.text_extracted) stößt die Verortung seines
+# Vorgangs an (GEOREF_SUBSCRIPTION, Abonnement insight.verortung) und verwirft dessen KI-Zusammenfassung
+# (SUMMARY_SUBSCRIPTION, Abonnement insight.zusammenfassung). "aus" (Standard) registriert kein Abonnement,
+# "schatten" zählt nur, was geschähe, "aktiv" wirkt. Der Zeitplan verortung_automatisch bleibt das Sicherheitsnetz.
+GEOREF_SUBSCRIPTION = os.environ.get("GEOREF_SUBSCRIPTION", "aus").strip().lower() or "aus"
+SUMMARY_SUBSCRIPTION = os.environ.get("SUMMARY_SUBSCRIPTION", "aus").strip().lower() or "aus"
+for _name, _modus in (("GEOREF_SUBSCRIPTION", GEOREF_SUBSCRIPTION), ("SUMMARY_SUBSCRIPTION", SUMMARY_SUBSCRIPTION)):
+    if _modus not in ("aus", "schatten", "aktiv"):
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(f"{_name} muss aus, schatten oder aktiv sein.")
 # Fraktionssitzungen: periodische Erzeugung aus Sitzungsreihen (Issue #61)
 FACTION_SCHEDULE_INTERVAL_MINUTES = int(os.environ.get("FACTION_SCHEDULE_INTERVAL_MINUTES", "60"))
 FACTION_SCHEDULE_HORIZON_DAYS = int(os.environ.get("FACTION_SCHEDULE_HORIZON_DAYS", "90"))

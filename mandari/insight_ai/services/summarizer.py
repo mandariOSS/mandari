@@ -3,11 +3,26 @@
 Summary service for OParl documents.
 
 Generates AI-powered multi-perspective summaries of municipal documents.
-Includes on-demand text extraction from PDFs if text_content is not available.
+
+Der Dienst liest nur den gespeicherten Text der Anlagen; er lädt keine Dateien und erkennt keinen Text
+(Issue #919, ADR Dokumentkette, Abschnitt 9; Prüfung ``insight_ai/tests/test_keine_dateien.py``). Fehlt der
+Text, weil die Erkennung der Anlagen noch aussteht, meldet er das (``TextPendingError``, die Ansicht zeigt einen
+Hinweis) und plant die Erkennung dieser Anlagen mit Vorrang ein – aber nur, wenn Aufträge im Worker laufen
+(``TASKS_BACKEND=journal``) und der Worker auch den Text erkennt (``TEXT_EXTRACTION_RUNNER=worker``). Mit dem
+sofort ausführenden Backend liefe die Erkennung sonst in der Webanfrage; mit ``ingestor`` erkennt der OCR-Worker
+des Ingestors den Text, ein Auftrag wäre ein zweiter Weg zur Quelle.
+
+Neuer Text verwirft eine gespeicherte Zusammenfassung (Abonnement ``insight.zusammenfassung``,
+``insight_ai/abonnement.py``); erzeugt wird sie wie bisher erst auf Abruf. Kommt während der Erstellung neuer Text
+hinzu, wird das Ergebnis ausgegeben, aber nicht gespeichert.
 """
 
 import logging
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import TYPE_CHECKING, Any, Final
+
+from django.conf import settings
+from django.utils import timezone
 
 from apps.common.db_connections import release_idle_thread_connections
 from insight_ai.providers import get_insight_provider
@@ -16,12 +31,18 @@ from insight_ai.providers.base import STANDARD_MAX_AUSGABE, ChatMessage
 from .prompts import PAPER_SUMMARY_SYSTEM_PROMPT, build_paper_summary_user_prompt
 
 if TYPE_CHECKING:
-    from insight_core.models import OParlFile, OParlPaper
+    from insight_core.models import OParlPaper
 
 logger = logging.getLogger(__name__)
 
-#: Höchstens so viele Anlagen werden bei Bedarf heruntergeladen und ausgelesen (Dauer, OCR-Kosten)
-MAX_ON_DEMAND_EXTRACTIONS = 3
+#: Höchstens so viele Anlagen je Anfrage werden mit Vorrang zur Texterkennung eingeplant (Last der Warteschlange ocr)
+MAX_PRIORITY_EXTRACTIONS: Final = 3
+#: Priorität dieser Aufträge: vor denen aus Zeitplan und Ereignissen (Standard 0), damit der Text bald vorliegt
+EXTRACTION_PRIORITY: Final = 80
+#: Stände der Texterkennung, in denen der Text noch kommen kann
+TEXT_PENDING_STATUSES: Final = ("pending", "processing")
+#: Schalter der Quelle für den Dateiabruf (gleich ``file_cache.FILE_DOWNLOADS_KEY``): ``false`` = nie abrufen
+FILE_DOWNLOADS_KEY: Final = "file_downloads"
 
 
 class SummaryError(Exception):
@@ -48,32 +69,32 @@ class SummaryRevokedError(SummaryError):
     pass
 
 
+class TextPendingError(SummaryError):
+    """Noch kein Text, aber die Texterkennung mindestens einer Anlage steht aus: später erneut versuchen."""
+
+
 class SummaryService:
     """
     Service for generating AI summaries of OParl documents.
 
     Nutzt den KI-Endpunkt des Bürgerportals aus der zentralen KI-Konfiguration (``get_insight_provider``).
-    Automatically extracts text from PDFs on-demand if needed.
+    Liest nur gespeicherten Text; lädt und erkennt nichts selbst (siehe Moduldokumentation).
     """
 
-    def __init__(self, provider=None, *, pace_max_wait: float | None = None):
+    def __init__(self, provider: Any = None) -> None:
         """
         Initialize the summary service.
 
         Args:
             provider: Optional AI provider. Standard: ``get_insight_provider()`` (KI-Einstellungen).
-            pace_max_wait: Höchstwartezeit auf die Drossel je Host beim Nachladen von Dokumenten. In einer
-                Web-Anfrage immer setzen: Ohne freien Zeitpunkt bricht die Erstellung dann mit der Bitte um
-                einen neuen Versuch ab, statt die Anfrage lange schlafen zu lassen.
         """
         self.provider = provider or get_insight_provider()
-        self.pace_max_wait = pace_max_wait
 
     def generate_summary(self, paper: "OParlPaper", save: bool = True) -> str:
         """
         Generate a summary for an OParl paper.
 
-        Automatically extracts text from files if not already available.
+        Uses only the stored text of the files; never downloads or recognizes text itself.
 
         Args:
             paper: OParlPaper instance to summarize
@@ -83,7 +104,8 @@ class SummaryService:
             Generated summary text
 
         Raises:
-            NoTextContentError: If no text content is available after extraction
+            TextPendingError: No text yet, but text recognition of a file is pending (planned with priority)
+            NoTextContentError: If no text content is available
             APINotConfiguredError: If the API is not configured
             SummaryError: For other generation errors
         """
@@ -96,11 +118,16 @@ class SummaryService:
         # Stand zu Beginn: Wird der Vorgang oder eine dieser Anlagen während der Erstellung
         # zurückgenommen, darf das Ergebnis weder gespeichert noch ausgegeben werden
         started = (bool(paper.deleted), list(self._current_files(paper).values_list("pk", flat=True)))
+        # Neuer Text ab hier verwirft die Zusammenfassung (Abonnement); ein Ergebnis aus dem älteren Text wird
+        # deshalb nicht gespeichert
+        started_at = timezone.now()
 
-        # Collect text content from all files (with on-demand extraction)
-        text_content = self._collect_text_content_with_extraction(paper)
+        # Nur gespeicherter Text; der Dienst lädt und erkennt nichts selbst
+        text_content = self._collect_text_content(paper)
 
         if not text_content:
+            if self._text_pending(paper):
+                raise TextPendingError("Die Texterkennung der Anlagen steht noch aus.")
             raise NoTextContentError(
                 "Keine Textinhalte verfügbar. Das Dokument enthält keine "
                 "Dateien oder die Textextraktion ist fehlgeschlagen."
@@ -179,11 +206,15 @@ class SummaryService:
             if self._withdrawn_since(paper, started):
                 raise SummaryRevokedError("Vorgang oder Anlage wurde während der Erstellung zurückgenommen.")
 
-            # Save to paper if requested
+            # Save to paper if requested – nicht, wenn inzwischen neuer Text vorliegt: Das Abonnement hätte die
+            # Zusammenfassung verworfen, sie stammt aus dem älteren Text
             if save:
-                paper.summary = summary
-                paper.save(update_fields=["summary"])
-                logger.info(f"Summary saved to paper {paper.id}")
+                if self._text_changed_since(paper, started_at):
+                    logger.info(f"Summary for paper {paper.id} not saved: new text since the start")
+                else:
+                    paper.summary = summary
+                    paper.save(update_fields=["summary"])
+                    logger.info(f"Summary saved to paper {paper.id}")
 
             return summary
 
@@ -196,11 +227,9 @@ class SummaryService:
                 "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
             ) from e
 
-    def _collect_text_content_with_extraction(self, paper: "OParlPaper") -> str:
+    def _collect_text_content(self, paper: "OParlPaper") -> str:
         """
-        Collect text content from all files, extracting on-demand if needed.
-
-        If a file doesn't have text_content, attempts to download and extract it.
+        Gespeicherten Text aller aktuellen Anlagen zusammenführen (ohne Abruf, ohne Erkennung).
 
         Args:
             paper: OParlPaper instance
@@ -209,97 +238,54 @@ class SummaryService:
             Combined text content from all files
         """
         texts = []
-        files_to_extract = []
-
-        # First pass: collect existing text and identify files needing extraction
         for file in self._current_files(paper):
             if file.text_content and file.text_content.strip():
                 file_name = file.name or file.file_name or "Dokument"
                 texts.append(f"### {file_name}\n{file.text_content.strip()}")
-            elif file.download_url or file.access_url:
-                files_to_extract.append(file)
-
-        # Second pass: extract text from files that need it
-        if files_to_extract and not texts:
-            files_to_extract = files_to_extract[:MAX_ON_DEMAND_EXTRACTIONS]
-            logger.info(f"Extracting text from {len(files_to_extract)} files on-demand")
-            for file in files_to_extract:
-                extracted_text = self._extract_text_from_file(file)
-                if extracted_text:
-                    file_name = file.name or file.file_name or "Dokument"
-                    texts.append(f"### {file_name}\n{extracted_text}")
-
         return "\n\n---\n\n".join(texts)
 
-    def _extract_text_from_file(self, file: "OParlFile") -> str:
+    def _text_pending(self, paper: "OParlPaper") -> bool:
         """
-        Extract text from a single file on-demand.
+        Steht die Texterkennung einer aktuellen Anlage noch aus? Dann ihre Erkennung mit Vorrang einplanen.
 
-        Downloads the file and extracts text using OCR if needed.
-        Saves the extracted text to the file object.
-
-        Args:
-            file: OParlFile instance
-
-        Returns:
-            Extracted text or empty string on failure
+        Eingeplant werden höchstens ``MAX_PRIORITY_EXTRACTIONS`` wartende Anlagen (``pending``) mit abgelegtem
+        Inhalt (``local_status = ok``) und nur unter den Bedingungen aus der Moduldokumentation; sonst bleibt es beim
+        Hinweis. Der Auftrag liest nur aus der Ablage (``hub/ris/erkennung.py``); Anlagen ohne abgelegten Inhalt holt
+        zuerst der Abruf, danach plant sie der Zeitplan ein. Ein Fehler beim Einplanen ändert den Hinweis nicht.
+        Anlagen in Bearbeitung (``processing``) sind schon beansprucht. Hat die Quelle den Dateiabruf abgeschaltet
+        (Dokumente nur hinter einer Prüfung für Menschen), kommt kein Text: dann ``False``.
         """
-        from insight_core.services import robots
-        from insight_core.services.document_extraction import (
-            DocumentDownloadError,
-            RobotsUnreachableError,
-            SourceBusyError,
-            download_and_extract,
-        )
-        from insight_core.services.file_cache import download_headers
+        if self._downloads_disabled(paper):
+            return False
+        offen = [
+            file
+            for file in self._current_files(paper)
+            .filter(text_extraction_status__in=TEXT_PENDING_STATUSES)
+            .only("id", "download_url", "access_url", "text_extraction_status", "local_status")
+            .order_by("created_at", "id")
+            if file.download_url or file.access_url
+        ]
+        if not offen:
+            return False
+        wartend = [file.pk for file in offen if file.text_extraction_status == "pending" and file.local_status == "ok"]
+        if wartend and priority_extraction_enabled():
+            try:
+                plan_priority_extraction(wartend[:MAX_PRIORITY_EXTRACTIONS])
+            except Exception:
+                logger.exception("Texterkennung für Vorgang %s nicht mit Vorrang eingeplant", paper.pk)
+        return True
 
-        url = file.download_url or file.access_url
-        if not url:
-            logger.warning(f"File {file.id} has no download URL")
-            return ""
+    @staticmethod
+    def _downloads_disabled(paper: "OParlPaper") -> bool:
+        """Hat die Quelle des Vorgangs den Dateiabruf abgeschaltet (``sync_config["file_downloads"] = false``)?"""
+        source = getattr(paper.body, "source", None) if paper.body_id else None
+        config = getattr(source, "sync_config", None)
+        return isinstance(config, dict) and config.get(FILE_DOWNLOADS_KEY) is False
 
-        try:
-            logger.info(f"Extracting text from file {file.id}: {url}")
-
-            # Einstellungen der Quelle (robots-Ausnahme, Download-Header samt User-Agent) noch mit Verbindung
-            # lesen; Download und OCR dauern, die Datenbankverbindung geht solange an den Pool zurück
-            sync_config = robots.sync_config_of(file)
-            extra_headers = download_headers(file.body)
-            release_idle_thread_connections()
-            result = download_and_extract(
-                url=url,
-                mime_type=file.mime_type,
-                original_name=file.file_name or file.name or "",
-                timeout=120.0,
-                extra_headers=extra_headers,
-                sync_config=sync_config,
-                max_wait=self.pace_max_wait,
-                # Öffentliche RIS-Datei: externe Texterkennung zulässig (nur mit Endpunkt aus KI_ERLAUBTE_HOSTS)
-                allow_external=True,
-            )
-
-            if result.text and result.text.strip():
-                # Save extracted text to file for future use
-                file.text_content = result.text
-                file.save(update_fields=["text_content"])
-                logger.info(f"Extracted {len(result.text)} chars from file {file.id} (OCR: {result.ocr_performed})")
-                return result.text
-
-            logger.warning(f"No text extracted from file {file.id}")
-            return ""
-
-        except (SourceBusyError, RobotsUnreachableError) as e:
-            # Vorübergehend: nicht als „kein Text“ werten, sondern um einen neuen Versuch bitten
-            logger.info(f"File {file.id} not fetched now: {e}")
-            raise SummaryError(
-                "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
-            ) from e
-        except DocumentDownloadError as e:
-            logger.warning(f"Failed to download file {file.id}: {e}")
-            return ""
-        except Exception as e:
-            logger.exception(f"Failed to extract text from file {file.id}: {e}")
-            return ""
+    @staticmethod
+    def _text_changed_since(paper: "OParlPaper", started_at: datetime) -> bool:
+        """Liegt für eine Anlage des Vorgangs seit ``started_at`` neuer Text vor?"""
+        return paper.files.filter(text_extraction_status="completed", text_extracted_at__gt=started_at).exists()
 
     @staticmethod
     def _withdrawn_since(paper: "OParlPaper", started: tuple[bool, list]) -> bool:
@@ -334,3 +320,53 @@ class SummaryService:
             True if the AI provider is properly configured
         """
         return self.provider.is_available()
+
+
+def priority_extraction_enabled() -> bool:
+    """
+    Darf die Zusammenfassung die Texterkennung mit Vorrang einplanen?
+
+    Nur, wenn der Auftrag ``file.extract_text`` im Journal landet (``TASKS_BACKEND=journal``; das sofort ausführende
+    Backend erkennte den Text in der Webanfrage) und der Worker den Text erkennt (``TEXT_EXTRACTION_RUNNER=worker``;
+    mit ``ingestor`` macht das der OCR-Worker des Ingestors).
+    """
+    if str(getattr(settings, "TEXT_EXTRACTION_RUNNER", "ingestor")).strip().lower() != "worker":
+        return False
+    from django.tasks import task_backends
+
+    from apps.events.tasks_backend import JournalBackend
+    from insight_core.background_tasks import file_extract_text
+
+    return isinstance(task_backends[file_extract_text.backend], JournalBackend)
+
+
+def plan_priority_extraction(file_ids: list[Any]) -> int:
+    """
+    Reiht ``file.extract_text`` je Datei mit Vorrang ein (``EXTRACTION_PRIORITY``); Rückgabe: Zahl der Aufträge.
+
+    Nur aufrufen, wenn ``priority_extraction_enabled()``. Wartet für eine Datei schon ein Auftrag mit Vorrang (ein
+    früherer Klick), entsteht kein zweiter. Einen gewöhnlichen wartenden Auftrag überholt der neue; welcher zuerst
+    beansprucht, erkennt, der andere endet ohne Wirkung.
+    """
+    from apps.events.models import Task, TaskStatus
+    from insight_core.background_tasks import file_extract_text
+
+    if not file_ids:
+        return 0
+    schon_vorrang: set[str] = set()
+    for args in Task.objects.filter(
+        task_path=file_extract_text.module_path, status=TaskStatus.WARTEND, priority__gte=EXTRACTION_PRIORITY
+    ).values_list("args", flat=True):
+        werte = args.get("args") if isinstance(args, dict) else None
+        if werte:
+            schon_vorrang.add(str(werte[0]))
+    vorrang = file_extract_text.using(priority=EXTRACTION_PRIORITY)
+    eingereiht = 0
+    for file_id in file_ids:
+        if str(file_id) in schon_vorrang:
+            continue
+        vorrang.enqueue(str(file_id))
+        eingereiht += 1
+    if eingereiht:
+        logger.info("Texterkennung: %d Anlagen für eine Zusammenfassung mit Vorrang eingereiht", eingereiht)
+    return eingereiht

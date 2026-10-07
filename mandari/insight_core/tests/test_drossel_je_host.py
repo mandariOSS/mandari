@@ -242,7 +242,7 @@ def test_vorschau_laedt_robots_txt_nur_mit_hoechstwartezeit(
 
 
 def test_zusammenfassung_wartet_nicht_auf_den_takt(uhr: _Uhr, settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Die Zusammenfassung lädt Dokumente in der Web-Anfrage nach: nur mit Höchstwartezeit, sonst neuer Versuch."""
+    """Die Zusammenfassung lädt nie selbst (Issue #919): auch bei belegtem Takt kein Abruf, Hinweis statt Fehler."""
     from unittest import mock
 
     from insight_ai.services.summarizer import NoTextContentError, SummaryError, SummaryService
@@ -267,7 +267,7 @@ def test_zusammenfassung_wartet_nicht_auf_den_takt(uhr: _Uhr, settings: Any, mon
     anbieter = mock.Mock()
     anbieter.is_available.return_value = True
     with pytest.raises(SummaryError) as fehler:
-        SummaryService(provider=anbieter, pace_max_wait=2).generate_summary(paper, save=False)
-    # Vorübergehend, nicht „kein Text“ (das würde sich die Ansicht merken)
+        SummaryService(provider=anbieter).generate_summary(paper, save=False)
+    # Die Erkennung steht aus: Hinweis, nicht „kein Text“ (das würde sich die Ansicht merken)
     assert not isinstance(fehler.value, NoTextContentError)
     anbieter.chat_completion.assert_not_called()

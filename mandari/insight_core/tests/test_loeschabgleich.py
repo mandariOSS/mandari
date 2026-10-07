@@ -719,7 +719,7 @@ class TestKeinTextGesperrter:
             body, tmp_path, "weg.pdf", paper=paper, text_content="Entfernter Text", source_missing_since=timezone.now()
         )
         dienst = SummaryService(provider=object())
-        text = dienst._collect_text_content_with_extraction(paper)
+        text = dienst._collect_text_content(paper)
         assert "Sichtbarer Text" in text
         assert "Entfernter Text" not in text
         # Gesperrt während der Erstellung: das Ergebnis wird verworfen
