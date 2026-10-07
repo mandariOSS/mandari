@@ -286,7 +286,8 @@ verify_installation() {
         "${COMPOSE_PROJECT_NAME}-caddy:Caddy" \
         "${COMPOSE_PROJECT_NAME}-ingestor:Ingestor" \
         "${COMPOSE_PROJECT_NAME}-worker:Worker" \
-        "${COMPOSE_PROJECT_NAME}-worker-heavy:Worker OCR/KI" \n        "${COMPOSE_PROJECT_NAME}-worker-live:Worker Live"; do
+        "${COMPOSE_PROJECT_NAME}-worker-heavy:Worker OCR/KI" \
+        "${COMPOSE_PROJECT_NAME}-worker-live:Worker Live"; do
         container="${entry%%:*}"
         label="${entry#*:}"
         local status
