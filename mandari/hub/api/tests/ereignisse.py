@@ -34,6 +34,7 @@ AGGREGATE: dict[str, tuple[str, str]] = {
     "ris.organization.changed": ("Organization", "organization"),
     "ris.paper.changed": ("Paper", "paper"),
     "ris.person.changed": ("Person", "person"),
+    "ris.person.faction_assigned": ("Person", "person"),
     "ris.paper.released": ("Paper", "paper"),
     "ris.protocol.published": ("Meeting", "meeting"),
     "ris.resolution.adopted": ("AgendaItem", "agenda_item"),

@@ -2,8 +2,9 @@
 """
 Ausgelieferte Schemas des Startumfangs (Issue #518): 27 Ereignistypen und vier Befehle mit
 Eigentümer, Sichtbarkeit und Beispielen; keine Freitextfelder bei nichtöffentlichen und
-personenbezogenen Daten. Seither ergänzt: Änderungen an Gremien und Personen (Issue #821) sowie an
-Mitgliedschaften, Orten, Wahlperioden und Kommunen (Issue #553).
+personenbezogenen Daten. Seither ergänzt: Änderungen an Gremien und Personen (Issue #821), an
+Mitgliedschaften, Orten, Wahlperioden und Kommunen (Issue #553) sowie die Fraktionszuordnung ohne OParl-Fraktion
+(Issue #916).
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ STARTUMFANG: dict[str, tuple[str, str, frozenset[str]]] = {
     "ris.object.depublished": (EVENT, "hub.ris", frozenset({OE})),
     "ris.organization.changed": (EVENT, "hub.ris", frozenset({OE})),
     "ris.person.changed": (EVENT, "hub.ris", frozenset({OE})),
+    "ris.person.faction_assigned": (EVENT, "hub.ris", frozenset({OE})),
     "ris.membership.changed": (EVENT, "hub.ris", frozenset({OE})),
     "ris.location.changed": (EVENT, "hub.ris", frozenset({OE})),
     "ris.legislativeterm.changed": (EVENT, "hub.ris", frozenset({OE})),
@@ -124,7 +126,7 @@ def _vertrag(register: Registry, name: str) -> Contract:
 
 
 def test_register_enthaelt_genau_den_startumfang(register: Registry) -> None:
-    assert len(register.names(EVENT)) == 35
+    assert len(register.names(EVENT)) == 36
     assert len(register.names(COMMAND)) == 4
     assert set(register.names()) == set(STARTUMFANG)
     assert all(register.versions(name) == (1,) for name in STARTUMFANG)
