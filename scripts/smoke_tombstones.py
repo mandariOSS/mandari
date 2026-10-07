@@ -317,8 +317,15 @@ check(
     str(meeting_kept.id) in event_ids and str(meeting_gone.id) not in event_ids,
 )
 
-resp = client.get("/sitemap-insight-musterstadt.xml")
-sitemap = resp.content.decode("utf-8")
+# Vorgänge und Sitzungen stehen seit Issue #914 in nummerierten Dateien neben der Grund-Sitemap
+sitemap = "".join(
+    client.get(pfad).content.decode("utf-8")
+    for pfad in (
+        "/sitemap-insight-musterstadt.xml",
+        "/sitemap-insight-musterstadt-vorgaenge-1.xml",
+        "/sitemap-insight-musterstadt-sitzungen-1.xml",
+    )
+)
 check(
     "Sitemap: markierte Objekte fehlen",
     str(paper_kept.id) in sitemap and str(paper_gone.id) not in sitemap and str(meeting_gone.id) not in sitemap,

@@ -225,7 +225,14 @@ page = html(resp)
 check("GET /insight/ mit 8 Kommunen: 200 (Auswahlseite)", resp.status_code == 200, f"status={resp.status_code}")
 check("Headline vorhanden", "hlen Sie Ihre Kommune" in page)
 check("Suchfeld vorhanden", 'id="auswahl-eingabe"' in page)
-check("Keine Liste aller Kommunen (#783)", not any(name in page for name, _ in CITY_SPECS))
+# Einzige Ausnahme (Issue #914): eine Textzeile mit höchstens zwölf direkten Links auf Stadtseiten
+vor_der_zeile, _, rest = page.partition("Direkt zu den Ratsinformationen:")
+stadtzeile, _, nach_der_zeile = rest.partition("</p>")
+check(
+    "Keine Liste aller Kommunen (#783)",
+    not any(name in vor_der_zeile + nach_der_zeile for name, _ in CITY_SPECS),
+)
+check("Stadtseiten: eine Zeile, höchstens zwölf Links (#914)", stadtzeile.count("<a ") <= 12)
 check(
     "Vorschläge, Nähe und Stöbern angebunden",
     all(f"data-{art}-url" in page for art in ("vorschlaege", "naehe", "stoebern")),
