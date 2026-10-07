@@ -9,6 +9,8 @@ Lesezugriffe auf die Live-Übertragungen (Issue #915).
 - ``wortmeldung(speech_id)``: Angaben einer Wortmeldung für Abonnenten von ``ris.broadcast.speaker_changed``
   (z. B. die Fraktionszuordnung, Issue #916): Person, Kommune, gelesene Fraktion bzw. Funktion, Zuordnung und Zahl
   gleicher Lesungen.
+- ``wortmeldungen_mit_fraktion(...)``: Kennungen vorhandener Wortmeldungen mit Person und gelesener Fraktion, in
+  zeitlicher Folge (Fraktionen nachträglich ableiten, etwa für eingespielte Protokolle).
 
 Personenseiten werden nur bei eindeutiger Zuordnung verlinkt; sonst steht nur der gelesene Name da.
 """
@@ -236,3 +238,17 @@ def wortmeldung(speech_id: uuid.UUID | str) -> WortmeldungDaten | None:
         lesungen=speech.readings,
         begonnen_am=speech.started_at,
     )
+
+
+def wortmeldungen_mit_fraktion(
+    *, meeting_id: uuid.UUID | None = None, body_id: uuid.UUID | None = None
+) -> list[uuid.UUID]:
+    """Kennungen der Wortmeldungen mit Person und gelesener Fraktion (ohne Funktion), älteste zuerst."""
+    wortmeldungen = (
+        BroadcastSpeech.objects.filter(person__isnull=False).exclude(faction_read="").filter(function_read="")
+    )
+    if meeting_id is not None:
+        wortmeldungen = wortmeldungen.filter(broadcast__meeting_id=meeting_id)
+    if body_id is not None:
+        wortmeldungen = wortmeldungen.filter(broadcast__source__body_id=body_id)
+    return list(wortmeldungen.order_by("started_at", "id").values_list("id", flat=True))

@@ -60,11 +60,7 @@ def ziel_pruefen(url: str | httpx.URL) -> httpx.URL:
             raise AnbieterError("Adresse im eigenen Netz")
         return ziel
     endung = host.rsplit(".", 1)[-1]
-    if (
-        "." not in host
-        or host.endswith(".localhost")
-        or not (endung.isalpha() or endung.startswith("xn--"))
-    ):
+    if "." not in host or host.endswith(".localhost") or not (endung.isalpha() or endung.startswith("xn--")):
         raise AnbieterError("Adresse im eigenen Netz")
     return ziel
 

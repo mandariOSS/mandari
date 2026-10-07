@@ -53,8 +53,8 @@ einem Einzelbild je rund 10 Sekunden TOP, Name und Fraktion zuverlässig liest (
   (Umlautfehler, abgeschnittene lange Namen), Kürzel müssen genau gleich sein.
 - **Ereignisse** `ris.broadcast.started`, `.agenda_item_started`, `.speaker_changed`, `.ended` (v1) mit eigenem
   Objekttyp `Broadcast`, nur Kennungen und Codes, in derselben Transaktion wie der Zustand (Nachtrag in A5).
-  Die Fraktionszuordnung (#916) wird Abonnent von `ris.broadcast.speaker_changed`, statt dass `hub.live` sie
-  direkt aufruft.
+  Die Fraktionszuordnung (#916) ist Abonnent von `ris.broadcast.speaker_changed` (`insight.fraktionen_live`,
+  idempotent je Wortmeldung), statt dass `hub.live` sie direkt aufruft.
 - **Eigener Worker** `worker-live` (Warteschlange `live`, Parallelität 2, 512 MB): Statusabfrage und
   Leseaufträge (je rund 50 Sekunden, höchstens einer je Übertragung, Sperre per Lease) warten nie hinter
   Texterkennung von Dokumenten oder Mailversand.

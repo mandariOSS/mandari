@@ -47,6 +47,27 @@ aktuelle_fraktion(person, body, *, stichtag=None) -> PersonFraktion | None
 - Nebenläufig: Sperre der Zuordnungen von Person und Körperschaft, Unique-Constraints und neuer Versuch, wenn eine
   gleichzeitige Lesung die Zuordnung eben angelegt hat.
 
+## Aus Live-Übertragungen
+
+Das Abonnement `insight.fraktionen_live` (`insight_core/services/fraktionen_live.py`, registriert in
+`insight_core/subscribers.py`) ruft `fraktion_aus_einblendung` für jede neue Wortmeldung einer Live-Übertragung
+auf (`ris.broadcast.speaker_changed`, [Live-Übertragungen](LIVE_UEBERTRAGUNG.md)):
+
+- Angaben über `hub.live.selectors.wortmeldung`; nur Wortmeldungen mit zugeordneter Person und gelesener Fraktion,
+  Funktionen zählen nicht.
+- `eindeutig`: Person eindeutig zugeordnet und mindestens zweimal gleich gelesen; sonst ein Vorschlag.
+- Idempotent: `insight_core.PersonFraktionBeleg` (Tabelle `insight_person_fraktion_belege`, Migration
+  `insight_core/0054_person_fraktion_beleg`) hält jede verbuchte Wortmeldung fest, nur mit Kennungen. Erneute
+  Zustellung und Nachholen zählen sie nicht noch einmal.
+- Registriert, solange `LIVE_UEBERTRAGUNG_AKTIV` an ist; transaktional, ohne Schattenbetrieb (es gibt keinen
+  bisherigen Weg). Abschalten: Abonnement im Admin pausieren.
+- Nachholen für vorhandene Wortmeldungen, etwa aus eingespielten Protokollen (die schreiben keine Ereignisse):
+
+  ```bash
+  python manage.py fraktionen_aus_wortmeldungen --meeting <uuid> --probelauf   # nur zählen
+  python manage.py fraktionen_aus_wortmeldungen --meeting <uuid>               # oder --body <uuid>, ohne: alle
+  ```
+
 ## Anzeige
 
 Personenverzeichnis und Personenseite zeigen die bestätigte Zuordnung nur, wenn OParl keine Fraktion nennt

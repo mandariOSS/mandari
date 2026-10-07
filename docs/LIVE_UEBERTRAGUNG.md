@@ -90,6 +90,10 @@ Leseaufträge und Statusabfragen liegen.
   unter 0,5 deuten auf eine falsch gelesene Nummer oder eine abweichende Nummerierung.
 - **Wortmeldungen:** Zuordnung `eindeutig`, `unsicher` oder `keine`. Die Person lässt sich im Admin korrigieren;
   die Live-Seite verlinkt Personen nur bei `eindeutig`.
+- **Fraktionen:** Aus Wortmeldungen mit Person und gelesener Fraktion leitet das Abonnement
+  `insight.fraktionen_live` die Fraktion der Person ab (bestätigt bei eindeutiger Zuordnung und zwei gleichen
+  Lesungen, sonst Vorschlag im Admin; [Fraktionen ohne OParl-Fraktion](INSIGHT_FRAKTIONEN.md)). Für eingespielte
+  Protokolle: `python manage.py fraktionen_aus_wortmeldungen --meeting <uuid>`.
 - **Prototyp-Protokoll einspielen:** Ein JSONL-Protokoll des lokalen Live-Wächters (Zeilen mit `zeit` und
   `art`) wird mit `python manage.py live_protokoll_einspielen <datei.jsonl> --meeting <uuid>` zur Übertragung
   der Sitzung, ohne Ereignisse der Datendrehscheibe. Mehrfaches Einspielen legt nichts doppelt an.
