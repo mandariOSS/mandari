@@ -52,7 +52,8 @@
                     {% for item in agenda_items %}
                     {% with item_number=item.number|default:"" %}
                     {% with is_subitem=item_number|slice:":1" %}
-                    <div class="px-6 py-4 {% if '.' in item_number %}bg-gray-50/50 dark:bg-gray-700/20{% endif %}">
+                    {# Sprungmarke für Links von der Live-Seite (top-<uuid>); scroll-mt hält den Punkt unter dem festen Kopf #}
+                    <div id="top-{{ item.pk }}" class="scroll-mt-20 px-6 py-4 {% if '.' in item_number %}bg-gray-50/50 dark:bg-gray-700/20{% endif %} target:bg-primary-50 dark:target:bg-primary-900/20">
                         <div class="flex items-start gap-4 {% if '.' in item_number %}ml-6{% endif %}">
                             <span class="flex-shrink-0 {% if '.' in item_number %}w-10 h-6 text-xs{% else %}w-8 h-8 text-sm{% endif %} rounded-lg bg-gray-100 dark:bg-gray-700 flex items-center justify-center font-medium text-gray-600 dark:text-gray-400">
                                 {{ item.number|default:forloop.counter }}
