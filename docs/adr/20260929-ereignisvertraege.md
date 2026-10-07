@@ -226,6 +226,23 @@ Ereignisse (die alte mit `valid_until`, die neue). Erzeuger ist `hub.ris.faction
 Ingestors (`INGESTOR_EVENTS_ENABLED`, `sync_config["events_enabled"]`). Im Änderungsfeed erscheint das Ereignis
 als Änderung der Person, die Suche aktualisiert sie wie bei `ris.person.changed`.
 
+## Nachtrag: Live-Übertragungen von Sitzungen (#915)
+
+Die Drehscheibe meldet, was sie während einer Live-Übertragung erkennt (`hub.live`,
+[Live-Übertragung](20261007-live-uebertragung.md)): `ris.broadcast.started`, `ris.broadcast.agenda_item_started`,
+`ris.broadcast.ended` (je v1, `oeffentlich`) und `ris.broadcast.speaker_changed` (v1, `intern`). Eigentümer ist
+`hub.live`, Mandant wie beim Ingestor die Quelle der Kommune.
+
+- **Nur Kennungen und Codes**: Übertragung, Sitzung, Gremium, Abschnitt, Tagesordnungspunkt, Wortmeldung, Person,
+  die TOP-Nummer in Normalform (Muster `^[0-9]{1,3}(?:[.][0-9]{1,3}){0,3}$`, neu in der Liste der Muster) und
+  Codes (Herkunft, Zuordnung, Grund des Endes). Gelesene Texte (Name, Fraktion, Titel) stehen nie in der
+  Nutzlast; ein berechtigter Empfänger liest sie über `hub.live.selectors`.
+- **Eigener Objekttyp `Broadcast`**: Der OParl-Änderungsfeed nimmt nur die Objekttypen des kanonischen Modells
+  (`hub.api.changes`), Suchindex und RIS-Projektor abonnieren `ris.meeting.*` und die übrigen Bestandstypen,
+  nicht `ris.broadcast.*`. Eine Übertragung ändert den RIS-Bestand nicht und löst dort nichts aus.
+- `ris.broadcast.speaker_changed` ist `intern`: Die Person ist zwar eine öffentliche Person des RIS, die
+  Zuordnung aus der Texterkennung kann aber falsch sein. Abonnent wird die Fraktionszuordnung (#916).
+
 ## Bezug
 
 - [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md),

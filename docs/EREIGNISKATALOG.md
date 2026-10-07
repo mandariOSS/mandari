@@ -25,6 +25,10 @@ die diese Person nennen, im Journal geleert.
 | `invitation.acknowledge` | Befehl | 1 | `apps.session` | personenbezogen | Empfang einer Ladung bestätigen |
 | `ris.agendaitem.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Tagesordnung geändert |
 | `ris.body.changed` | Ereignis | 1 | `hub.ris` | oeffentlich | Kommune geändert |
+| `ris.broadcast.agenda_item_started` | Ereignis | 1 | `hub.live` | oeffentlich | Tagesordnungspunkt in der Übertragung begonnen |
+| `ris.broadcast.ended` | Ereignis | 1 | `hub.live` | oeffentlich | Live-Übertragung beendet |
+| `ris.broadcast.speaker_changed` | Ereignis | 1 | `hub.live` | intern | Wortmeldung in der Übertragung |
+| `ris.broadcast.started` | Ereignis | 1 | `hub.live` | oeffentlich | Live-Übertragung begonnen |
 | `ris.consultation.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Beratungsfolge geändert |
 | `ris.file.changed` | Ereignis | 1 | `hub.ris` | nichtoeffentlich, oeffentlich | Anlage geändert |
 | `ris.file.text_extracted` | Ereignis | 1 | `hub.ris` | intern | Text einer Anlage erkannt |
@@ -291,6 +295,141 @@ Beispiel 2:
     "legislativeTerm",
     "website"
   ]
+}
+```
+
+### ris.broadcast.agenda_item_started v1
+
+**Tagesordnungspunkt in der Übertragung begonnen.** Laut Einblendung der Kommune (zweimal gleich gelesen) bzw. von Hand beginnt in der Übertragung ein Tagesordnungspunkt (hub.live, Issue #915). Aggregat: Broadcast. Fehlt agenda_item, ließ sich die gelesene Nummer keinem Tagesordnungspunkt der Sitzung zuordnen.
+
+- Art: Ereignis
+- Eigentümer: `hub.live`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.broadcast.agenda_item_started/v1.json`](../mandari/hub/contracts/schemas/ris.broadcast.agenda_item_started/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `broadcast` | ja | Zeichenkette (uuid) | Kennung der Übertragung. |
+| `meeting` | ja | Zeichenkette (uuid) | Kanonische Kennung der Sitzung. |
+| `section` | ja | Zeichenkette (uuid) | Kennung des Abschnitts der Übertragung. |
+| `agenda_item` | nein | Zeichenkette (uuid) | Kanonische Kennung des zugeordneten Tagesordnungspunkts. |
+| `number` | ja | Zeichenkette (Muster `^[0-9]{1,3}(?:[.][0-9]{1,3}){0,3}$`) | Gelesene TOP-Nummer in Normalform, z. B. 5 oder 1.1. |
+| `origin` | ja | Code: `einblendung`, `hand` | Herkunft: einblendung (Texterkennung) oder hand (Verwaltung). |
+
+Beispiel 1:
+
+```json
+{
+  "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+  "section": "1d2e3f4a-5b6c-4d7e-8f9a-0b1c2d3e4f5a",
+  "agenda_item": "9a8b7c6d-5e4f-4a3b-2c1d-0e9f8a7b6c5d",
+  "number": "5.1",
+  "origin": "einblendung"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+  "section": "1d2e3f4a-5b6c-4d7e-8f9a-0b1c2d3e4f5a",
+  "number": "12",
+  "origin": "einblendung"
+}
+```
+
+### ris.broadcast.ended v1
+
+**Live-Übertragung beendet.** Die Übertragung einer Sitzung ist beendet (hub.live, Issue #915). Aggregat: Broadcast. reason nennt, woran das Ende erkannt wurde.
+
+- Art: Ereignis
+- Eigentümer: `hub.live`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.broadcast.ended/v1.json`](../mandari/hub/contracts/schemas/ris.broadcast.ended/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `broadcast` | ja | Zeichenkette (uuid) | Kennung der Übertragung. |
+| `meeting` | ja | Zeichenkette (uuid) | Kanonische Kennung der Sitzung. |
+| `reason` | ja | Code: `anbieter`, `ohne_signal`, `zeitfenster`, `hand` | anbieter (Anbieter meldet das Ende), ohne_signal (länger kein Stream), zeitfenster (Ende des Zeitfensters) oder hand (Verwaltung). |
+
+Beispiel 1:
+
+```json
+{
+  "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+  "reason": "anbieter"
+}
+```
+
+### ris.broadcast.speaker_changed v1
+
+**Wortmeldung in der Übertragung.** Laut Einblendung der Kommune (zweimal gleich gelesen) ist eine andere Person am Wort (hub.live, Issue #915). Aggregat: Broadcast. Ohne Ende und ohne Dauer: Redezeiten werden nicht erfasst. Gelesenen Namen, Fraktion und Funktion liest ein berechtigter Empfänger über hub.live.selectors.
+
+- Art: Ereignis
+- Eigentümer: `hub.live`
+- Sichtbarkeit: intern
+- Schema: [`ris.broadcast.speaker_changed/v1.json`](../mandari/hub/contracts/schemas/ris.broadcast.speaker_changed/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `broadcast` | ja | Zeichenkette (uuid) | Kennung der Übertragung. |
+| `meeting` | ja | Zeichenkette (uuid) | Kanonische Kennung der Sitzung. |
+| `speech` | ja | Zeichenkette (uuid) | Kennung der Wortmeldung. |
+| `section` | nein | Zeichenkette (uuid) | Kennung des laufenden Abschnitts der Übertragung. |
+| `person` | nein | Zeichenkette (uuid) | Kanonische Kennung der zugeordneten Person (fehlt ohne Zuordnung). |
+| `assignment` | ja | Code: `eindeutig`, `unsicher`, `keine` | Zuordnung der Person: eindeutig, unsicher oder keine. |
+
+Beispiel 1:
+
+```json
+{
+  "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+  "speech": "2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+  "section": "1d2e3f4a-5b6c-4d7e-8f9a-0b1c2d3e4f5a",
+  "person": "3f4a5b6c-7d8e-4f9a-0b1c-2d3e4f5a6b7c",
+  "assignment": "eindeutig"
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+  "speech": "2e3f4a5b-6c7d-4e8f-9a0b-1c2d3e4f5a6b",
+  "assignment": "keine"
+}
+```
+
+### ris.broadcast.started v1
+
+**Live-Übertragung begonnen.** Der Streaming-Anbieter meldet, dass die Übertragung einer Sitzung läuft (hub.live, Issue #915). Aggregat: Broadcast (eigener Typ, damit weder Änderungsfeed noch Suchindex reagieren). Die Nutzlast enthält nur Kennungen und Codes; den Stand liest der Empfänger über hub.live.selectors.
+
+- Art: Ereignis
+- Eigentümer: `hub.live`
+- Sichtbarkeit: oeffentlich
+- Schema: [`ris.broadcast.started/v1.json`](../mandari/hub/contracts/schemas/ris.broadcast.started/v1.json)
+
+| Feld | Pflicht | Typ | Beschreibung |
+|---|---|---|---|
+| `broadcast` | ja | Zeichenkette (uuid) | Kennung der Übertragung. |
+| `meeting` | ja | Zeichenkette (uuid) | Kanonische Kennung der Sitzung. |
+| `organization` | nein | Zeichenkette (uuid) | Kanonische Kennung des Gremiums. |
+
+Beispiel 1:
+
+```json
+{
+  "broadcast": "0b6f7a2e-3c1d-4e5f-8a9b-1c2d3e4f5a6b",
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7",
+  "organization": "5b2d7c1e-8f3a-5e9b-a4c6-1d2e3f4a5b6c"
 }
 ```
 
