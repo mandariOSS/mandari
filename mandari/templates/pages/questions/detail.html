@@ -1,6 +1,7 @@
 {% extends "base_insight.html" %}
 
-{% block title %}{{ question.subject }} – Frage an {{ person.display_name }}{% endblock %}
+{% block title %}{% if seo.title %}{{ seo.title }}{% else %}{{ question.subject }} – Frage an {{ person.display_name }}{% endif %}{% endblock %}
+{% block title_suffix %}mandari Insight{% endblock %}
 
 {% block content %}
 <div x-data="{ copied: false }">

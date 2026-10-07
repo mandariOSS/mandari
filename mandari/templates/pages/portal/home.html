@@ -1,9 +1,10 @@
 {% extends "base_insight.html" %}
 {% load l10n %}
 
-{% block title %}{% if active_body %}{{ active_body.get_display_name }} - Ratsinformationen{% else %}mandari Insight{% endif %}{% endblock %}
+{% block title %}{% if active_body %}{{ seo.title }}{% else %}mandari Insight{% endif %}{% endblock %}
+{% block title_suffix %}{% if active_body %}mandari Insight{% else %}{{ block.super }}{% endif %}{% endblock %}
 
-{% block meta_description %}{% if active_body %}Ratsinformationen für {{ active_body.get_display_name }}: Sitzungen, Vorgänge, Gremien und Personen transparent einsehen.{% else %}Kommunalpolitische Transparenz: Ratsinformationen durchsuchen und verstehen.{% endif %}{% endblock %}
+{% block meta_description %}{% if active_body %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz: Ratsinformationen durchsuchen und verstehen.{% endif %}{% endblock %}
 
 {% comment %}
 Übersicht einer Kommune (Issue #783, Stufe 2) in Bändern: Kopfband in der Kennfarbe mit Titel, einem Satz und der

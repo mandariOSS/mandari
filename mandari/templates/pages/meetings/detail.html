@@ -1,7 +1,8 @@
 {% extends "base_insight.html" %}
 {% load static %}
 
-{% block title %}{{ meeting.get_display_name }}{% endblock %}
+{% block title %}{% if seo.title %}{{ seo.title }}{% else %}{{ meeting.get_display_name }}{% endif %}{% endblock %}
+{% block title_suffix %}mandari Insight{% endblock %}
 
 {% block extra_head %}
 {% if location_coordinates %}

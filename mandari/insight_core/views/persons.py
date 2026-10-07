@@ -168,6 +168,12 @@ class PersonDetailView(DetailView):
         # SEO-Kontext
         from ..seo import get_person_seo
 
-        context["seo"] = get_person_seo(person, self.request).to_dict()
+        context["seo"] = get_person_seo(
+            person,
+            self.request,
+            funktion=context["funktion"] or context["council_role"] or "",
+            fraktion=context["faction"],
+            mitgliedschaften=context["active_memberships"],
+        ).to_dict()
 
         return context

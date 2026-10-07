@@ -181,6 +181,10 @@ class DecisionDetailView(TemplateView):
                 "can_subscribe": getattr(self, "visibility", None) == decision_tracking.VISIBLE,
             }
         )
+        # Titel mit Kommune, Description und strukturierte Daten aus dem schon Geladenen (Issue #914)
+        from ..seo import get_decision_seo
+
+        context["seo"] = get_decision_seo(item, body, str(context["status_label"]), self.request).to_dict()
         return context
 
     def post(self, request, *args, **kwargs):

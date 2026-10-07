@@ -67,7 +67,12 @@ class TestEinstieg:
         assert kontext.name == "Musterstadt-Nord" and kontext.accent_color == "#0f766e"
         assert "/media/bodies/logos/nord.svg" in seite
         assert "--portal-accent: #0f766e" in seite
-        assert "| Musterstadt-Nord</title>" in seite
+        # Die Übersicht nennt die Kommune im Titel genau einmal (Issue #914), das Portal bleibt Name der Website
+        assert (
+            "<title>Ratsinformationen Musterstadt-Nord – Sitzungen, Vorlagen, Beschlüsse | mandari Insight</title>"
+            in seite
+        )
+        assert '<meta property="og:site_name" content="Musterstadt-Nord">' in seite
         assert antwort.context["available_bodies"] == [kommunen["nord"]]
         assert antwort.context["active_body"] == kommunen["nord"]
 
@@ -89,6 +94,7 @@ class TestEinstieg:
         assert termine.context["insight_portal"].body == kommunen["nord"]
         seite = termine.content.decode()
         assert "Sitzung Nord" in seite and "Sitzung Süd" not in seite
+        assert "<title>Sitzungen | Musterstadt-Nord</title>" in seite, "Listen tragen den Namen des Portals"
         assert 'href="/insight/k/nord/"' in seite, "Übersicht führt zurück zum Einstieg"
 
     def test_kommunenauswahl_ist_festgelegt(self, kommunen: dict[str, OParlBody]) -> None:
