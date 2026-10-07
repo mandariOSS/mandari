@@ -3,7 +3,7 @@
 ``deploy/scripts/staging_update.sh`` (Issue #737): Staging zieht den neuesten grünen dev-Stand nach.
 
 Das Skript fragt die GitHub-API nach dem neuesten Commit mit erfolgreichem Release-Lauf und erfolgreicher
-CI (nach dem Push oder in der Merge-Queue), vergleicht mit dem laufenden ``IMAGE_TAG`` und ruft dann
+CI (in der Merge-Queue oder direkt auf dem Zweig; seit Issue #935 ohne Lauf nach dem Push), vergleicht mit dem laufenden ``IMAGE_TAG`` und ruft dann
 ``deploy.sh plan`` und ``deploy.sh apply`` auf. Hier läuft es gegen ein nachgebautes ``curl`` (liefert
 vorgegebene API-Antworten) und ein nachgebautes ``deploy.sh`` (protokolliert die Aufrufe und schaltet das
 Tag in der ``.env`` um), damit die CI den Ablauf ohne Netz und ohne Docker prüft.
@@ -47,7 +47,7 @@ if [ -n "${FAKE_STDIN_LOG:-}" ]; then cat >> "$FAKE_STDIN_LOG"; fi
 case "$url" in
   *"/actions/workflows/release.yml/runs"*) datei=release ;;
   *"/actions/workflows/pr-check.yml/runs"*"event=merge_group"*) datei=ci_queue ;;
-  *"/actions/workflows/pr-check.yml/runs"*) datei=ci_push ;;
+  *"/actions/workflows/pr-check.yml/runs"*) datei=ci_zweig ;;
   *"/compare/"*) datei=compare ;;
   *) exit 22 ;;
 esac
@@ -89,10 +89,14 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _laeufe(*shas: str, zweig: str = "dev", ergebnis: str = "success") -> dict[str, Any]:
+def _laeufe(
+    *shas: str, zweig: str = "dev", ergebnis: str = "success", ereignis: str = "workflow_dispatch"
+) -> dict[str, Any]:
     return {
         "total_count": len(shas),
-        "workflow_runs": [{"head_sha": s, "head_branch": zweig, "conclusion": ergebnis} for s in shas],
+        "workflow_runs": [
+            {"head_sha": s, "head_branch": zweig, "conclusion": ergebnis, "event": ereignis} for s in shas
+        ],
     }
 
 
@@ -166,13 +170,13 @@ class Umgebung:
         self,
         *,
         release: dict[str, Any] | None = None,
-        ci_push: dict[str, Any] | None = None,
+        ci_zweig: dict[str, Any] | None = None,
         ci_queue: dict[str, Any] | None = None,
         vergleich: str | None = "ahead",
     ) -> None:
         for name, daten in (
             ("release", release if release is not None else _laeufe()),
-            ("ci_push", ci_push if ci_push is not None else _laeufe()),
+            ("ci_zweig", ci_zweig if ci_zweig is not None else _laeufe()),
             ("ci_queue", ci_queue if ci_queue is not None else _queue()),
             ("compare", {"status": vergleich} if vergleich is not None else None),
         ):
@@ -223,7 +227,7 @@ class Umgebung:
 
 def test_neuer_gruener_stand_wird_mit_plan_und_apply_deployt(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU, ALT), ci_push=_laeufe(NEU, ALT))
+    u.antworten(release=_laeufe(NEU, ALT), ci_zweig=_laeufe(NEU, ALT))
 
     lauf = u.lauf()
 
@@ -245,7 +249,7 @@ def test_neuer_gruener_stand_wird_mit_plan_und_apply_deployt(tmp_path: Path) -> 
 
 def test_zweiter_lauf_ohne_neuen_stand_tut_nichts(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU, ALT), ci_push=_laeufe(NEU, ALT))
+    u.antworten(release=_laeufe(NEU, ALT), ci_zweig=_laeufe(NEU, ALT))
     assert u.lauf().rc == 0
 
     lauf = u.lauf()
@@ -260,7 +264,7 @@ def test_zweiter_lauf_ohne_neuen_stand_tut_nichts(tmp_path: Path) -> None:
 def test_release_ohne_gruene_ci_zaehlt_nicht(tmp_path: Path) -> None:
     """Das neueste Commit hat Images, aber die CI läuft noch (oder ist rot): das ältere grüne gilt."""
     u = Umgebung(tmp_path, tag=f"dev-{ALT[:7]}")
-    u.antworten(release=_laeufe(NEU, MITTE, ALT), ci_push=_laeufe(MITTE, ALT))
+    u.antworten(release=_laeufe(NEU, MITTE, ALT), ci_zweig=_laeufe(MITTE, ALT))
 
     lauf = u.lauf()
 
@@ -270,7 +274,7 @@ def test_release_ohne_gruene_ci_zaehlt_nicht(tmp_path: Path) -> None:
 
 def test_gruene_ci_ohne_release_zaehlt_nicht(tmp_path: Path) -> None:
     u = Umgebung(tmp_path, tag=f"dev-{ALT[:7]}")
-    u.antworten(release=_laeufe(ALT), ci_push=_laeufe(NEU, ALT))
+    u.antworten(release=_laeufe(ALT), ci_zweig=_laeufe(NEU, ALT))
 
     lauf = u.lauf()
 
@@ -283,13 +287,40 @@ def test_ci_aus_der_merge_queue_zaehlt_nur_fuer_den_eigenen_zweig(tmp_path: Path
     # NEU wurde in der Queue von main geprüft, MITTE in der Queue von dev
     queue = _queue(MITTE)
     queue["workflow_runs"] = [*_queue(NEU, zweig="main")["workflow_runs"], *queue["workflow_runs"]]
-    u.antworten(release=_laeufe(NEU, MITTE, ALT), ci_push=_laeufe(ALT), ci_queue=queue)
+    u.antworten(release=_laeufe(NEU, MITTE, ALT), ci_zweig=_laeufe(ALT), ci_queue=queue)
 
     lauf = u.lauf()
 
     assert lauf.rc == 0, lauf.ausgabe
     assert lauf.tag == f"dev-{MITTE[:7]}"
     assert any("event=merge_group" in url for url in lauf.urls)
+
+
+def test_merge_queue_allein_genuegt_ohne_lauf_nach_dem_push(tmp_path: Path) -> None:
+    """Issue #935: Ein Push auf dev startet keine CI mehr; die Queue hat genau dieses Commit geprüft."""
+    u = Umgebung(tmp_path)
+    u.antworten(release=_laeufe(NEU, ALT, ereignis="push"), ci_zweig=_laeufe(), ci_queue=_queue(NEU))
+
+    lauf = u.lauf()
+
+    assert lauf.rc == 0, lauf.ausgabe
+    assert lauf.tag == f"dev-{NEU[:7]}"
+    # Läufe auf dem Zweig werden ohne Ereignisfilter abgefragt (von Hand, Nachtlauf, ältere push-Läufe)
+    zweig = [url for url in lauf.urls if "pr-check.yml/runs" in url and "merge_group" not in url]
+    assert len(zweig) == 1 and "event=" not in zweig[0], zweig
+
+
+def test_lauf_auf_dem_zweig_zaehlt_ein_pull_request_davon_nicht(tmp_path: Path) -> None:
+    # Ein Pull Request dev -> main prüft die Zusammenführung mit main, nicht das Commit auf dev
+    u = Umgebung(tmp_path)
+    zweig = _laeufe(NEU, ereignis="pull_request")
+    zweig["workflow_runs"] += _laeufe(MITTE, ereignis="workflow_dispatch")["workflow_runs"]
+    u.antworten(release=_laeufe(NEU, MITTE, ALT), ci_zweig=zweig)
+
+    lauf = u.lauf()
+
+    assert lauf.rc == 0, lauf.ausgabe
+    assert lauf.tag == f"dev-{MITTE[:7]}"
 
 
 def test_laeufe_anderer_zweige_und_ungueltige_kennungen_zaehlen_nicht(tmp_path: Path) -> None:
@@ -300,7 +331,7 @@ def test_laeufe_anderer_zweige_und_ungueltige_kennungen_zaehlen_nicht(tmp_path: 
         *_laeufe(NEU, zweig="feature")["workflow_runs"],
         *_laeufe(ALT, ergebnis="failure")["workflow_runs"],
     ]
-    u.antworten(release=release, ci_push=_laeufe(NEU, ALT, "nicht-hex;rm -rf /", NEU[:12]))
+    u.antworten(release=release, ci_zweig=_laeufe(NEU, ALT, "nicht-hex;rm -rf /", NEU[:12]))
 
     lauf = u.lauf()
 
@@ -312,7 +343,7 @@ def test_laeufe_anderer_zweige_und_ungueltige_kennungen_zaehlen_nicht(tmp_path: 
 def test_ohne_kennzeichnung_als_staging_bricht_es_ab(tmp_path: Path) -> None:
     """Schutz vor Fehlkonfiguration: Ein Verzeichnis ohne MANDARI_UMGEBUNG=staging wird nie angefasst."""
     u = Umgebung(tmp_path, staging_zeile=None)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
 
     lauf = u.lauf()
 
@@ -323,13 +354,13 @@ def test_ohne_kennzeichnung_als_staging_bricht_es_ab(tmp_path: Path) -> None:
 
     (tmp_path / "prod").mkdir()
     u = Umgebung(tmp_path / "prod", staging_zeile="MANDARI_UMGEBUNG=produktion")
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
     assert u.lauf().rc == 1
 
 
 def test_ohne_mandari_dir_bricht_es_ab(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
 
     lauf = u.lauf(MANDARI_DIR="")
 
@@ -340,7 +371,7 @@ def test_ohne_mandari_dir_bricht_es_ab(tmp_path: Path) -> None:
 
 def test_deploy_env_wird_geladen_das_verzeichnis_bleibt_das_gepruefte(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
 
     lauf = u.lauf()
 
@@ -353,7 +384,7 @@ def test_deploy_env_wird_geladen_das_verzeichnis_bleibt_das_gepruefte(tmp_path: 
 
 def test_gescheiterter_apply_wird_nicht_wiederholt(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
 
     lauf = u.lauf(FAKE_APPLY_EXIT="1")
 
@@ -368,7 +399,7 @@ def test_gescheiterter_apply_wird_nicht_wiederholt(tmp_path: Path) -> None:
     assert "schon einmal gescheitert" in nochmal.ausgabe
 
     # Ein neuerer Stand wird wieder versucht
-    u.antworten(release=_laeufe("4" * 40, NEU), ci_push=_laeufe("4" * 40, NEU))
+    u.antworten(release=_laeufe("4" * 40, NEU), ci_zweig=_laeufe("4" * 40, NEU))
     weiter = u.lauf()
     assert weiter.rc == 0, weiter.ausgabe
     assert weiter.tag == "dev-4444444"
@@ -376,7 +407,7 @@ def test_gescheiterter_apply_wird_nicht_wiederholt(tmp_path: Path) -> None:
 
 def test_gescheiterte_vorbereitung_hoechstens_dreimal(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
 
     for versuch in range(3):
         lauf = u.lauf(FAKE_PLAN_EXIT="1")
@@ -392,7 +423,7 @@ def test_gescheiterte_vorbereitung_hoechstens_dreimal(tmp_path: Path) -> None:
 
 def test_neuerer_laufender_stand_wird_nicht_ueberschrieben(tmp_path: Path) -> None:
     u = Umgebung(tmp_path, tag=f"dev-{NEU[:7]}")
-    u.antworten(release=_laeufe(MITTE), ci_push=_laeufe(MITTE), vergleich="behind")
+    u.antworten(release=_laeufe(MITTE), ci_zweig=_laeufe(MITTE), vergleich="behind")
 
     lauf = u.lauf()
 
@@ -405,7 +436,7 @@ def test_neuerer_laufender_stand_wird_nicht_ueberschrieben(tmp_path: Path) -> No
 def test_ohne_vergleich_gilt_der_gruene_stand(tmp_path: Path) -> None:
     """Laufendes Tag ohne Commit-Bezug (z. B. eine Version) oder Vergleich nicht möglich: der grüne Stand gilt."""
     u = Umgebung(tmp_path, tag="v0.11.0")
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU), vergleich=None)
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU), vergleich=None)
 
     lauf = u.lauf()
 
@@ -416,7 +447,7 @@ def test_ohne_vergleich_gilt_der_gruene_stand(tmp_path: Path) -> None:
 
 def test_pause_und_pruefmodus_aendern_nichts(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
 
     pruefen = u.lauf("pruefen")
     assert pruefen.rc == 0, pruefen.ausgabe
@@ -433,7 +464,7 @@ def test_pause_und_pruefmodus_aendern_nichts(tmp_path: Path) -> None:
 
 def test_api_nicht_erreichbar_ist_ein_fehler_ohne_deploy(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
     (u.api / "ci_queue.json").unlink()
 
     lauf = u.lauf()
@@ -451,7 +482,7 @@ def test_api_nicht_erreichbar_ist_ein_fehler_ohne_deploy(tmp_path: Path) -> None
 
 def test_aktive_sperre_verhindert_einen_zweiten_lauf(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
     sperre = u.staging / "staging-update" / "lauf.sperre"
     sperre.mkdir(parents=True)
     pid_datei = tmp_path / "pid"
@@ -478,7 +509,7 @@ def test_aktive_sperre_verhindert_einen_zweiten_lauf(tmp_path: Path) -> None:
 
 def test_verwaiste_sperre_wird_uebernommen_und_freigegeben(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
     sperre = u.staging / "staging-update" / "lauf.sperre"
     sperre.mkdir(parents=True)
     (sperre / "pid").write_text("4999999\n", encoding="utf-8")
@@ -493,7 +524,7 @@ def test_verwaiste_sperre_wird_uebernommen_und_freigegeben(tmp_path: Path) -> No
 
 def test_token_geht_nicht_ueber_die_befehlszeile(tmp_path: Path) -> None:
     u = Umgebung(tmp_path)
-    u.antworten(release=_laeufe(NEU), ci_push=_laeufe(NEU))
+    u.antworten(release=_laeufe(NEU), ci_zweig=_laeufe(NEU))
     stdin_log = tmp_path / "stdin.log"
 
     lauf = u.lauf("pruefen", GITHUB_TOKEN="geheim-123", FAKE_STDIN_LOG=str(stdin_log))

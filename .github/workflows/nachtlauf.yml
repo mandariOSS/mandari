@@ -1,0 +1,38 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# =============================================================================
+# Nächtlicher Volllauf der CI auf dev (Issue #935)
+# =============================================================================
+# Seit Issue #935 startet ein Push auf dev keine CI mehr: Die Merge-Queue prüft
+# genau das Commit, das danach auf dev landet. Pull Requests und die Queue lassen
+# die Migrationstests aus, wenn weder Migrationen noch Migrationstests geändert
+# sind. Dieser Lauf startet deshalb jede Nacht die CI (pr-check.yml) mit
+# workflow_dispatch auf dev: alle Jobs, auch die Migrationstests. Ein grüner Lauf
+# zählt zudem für die Staging-Aktualisierung (deploy/scripts/staging_update.sh).
+#
+# Zeitpläne laufen immer auf dem Standardzweig (main); der Lauf selbst nennt dev
+# deshalb ausdrücklich. Kein Checkout, keine Geheimnisse; das Token darf nur
+# Workflows starten.
+# =============================================================================
+
+name: Nachtlauf
+
+on:
+  schedule:
+    - cron: '41 1 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ci-auf-dev:
+    name: CI-Volllauf auf dev starten
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      - name: pr-check.yml auf dev starten
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pr-check.yml --repo "$GITHUB_REPOSITORY" --ref dev

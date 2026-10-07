@@ -109,8 +109,8 @@ mit dem externen Validator [oparl-validator-rs](https://github.com/konstin/oparl
 (Pflichtfelder, Feldtypen, externe Listen, Abrufbarkeit verlinkter Objekte) und mit einer eigenen
 Typprüfung (Datums- und Zeitformate, `organizationType`, unbekannte Eigenschaften, gelöschte
 Objekte; `mandari/hub/api/tests/konformitaet.py`). Ohne `--validator` läuft nur die eigene
-Prüfung. In der CI läuft beides im Job „OParl-Validator“ bei Änderungen an den Schnittstellen und
-bei jedem Push auf `dev` und `main`. Den Hinweis des Validators auf unverschlüsseltes HTTP wertet
+Prüfung. In der CI läuft beides im Job „OParl-Validator“ bei Änderungen an den Schnittstellen, in
+der Merge-Queue und bei jedem Push auf `main`. Den Hinweis des Validators auf unverschlüsseltes HTTP wertet
 das Skript nicht, weil die Testinstanz lokal läuft.
 
 ## Adressen und Weiterleitungen

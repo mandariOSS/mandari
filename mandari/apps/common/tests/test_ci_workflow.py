@@ -16,6 +16,7 @@ gegen picomatch 2.3.1 abgeglichen; die Nachbildung deckt nur die hier genutzten 
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import shutil
@@ -172,11 +173,14 @@ def _bash() -> str | None:
     return shutil.which("bash")
 
 
-def _ergebnis_schritt_ausfuehren(tmp_path: Path, ereignis: str, filter_json: str) -> dict[str, str]:
+def _ergebnis_schritt_ausfuehren(
+    tmp_path: Path, ereignis: str, filter_json: str, migrationstests: str = ""
+) -> dict[str, str]:
     """Führt das Skript des Schritts "Ergebnis festlegen" wie in GitHub Actions aus (bash, jq)."""
     bash = _bash()
     if bash is None or shutil.which("jq") is None:
         pytest.skip("bash oder jq nicht vorhanden (in der CI beides da)")
+    tmp_path.mkdir(parents=True, exist_ok=True)
     skript = tmp_path / "ergebnis.sh"
     skript.write_text(_schritt("changes", "ergebnis")["run"], encoding="utf-8", newline="\n")
     ausgabe = tmp_path / "output"
@@ -185,6 +189,7 @@ def _ergebnis_schritt_ausfuehren(tmp_path: Path, ereignis: str, filter_json: str
         "EREIGNIS": ereignis,
         "ZIELZWEIG": "",
         "FILTER": filter_json,
+        "MIGRATIONSTESTS": migrationstests,
         "CODEQL_ERWEITERT": "",
         "GITHUB_OUTPUT": str(ausgabe),
         "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
@@ -193,15 +198,121 @@ def _ergebnis_schritt_ausfuehren(tmp_path: Path, ereignis: str, filter_json: str
     return dict(zeile.split("=", 1) for zeile in ausgabe.read_text(encoding="utf-8").splitlines())
 
 
-def test_merge_queue_laesst_alle_jobs_laufen(tmp_path: Path) -> None:
-    # In der Queue läuft der Pfadfilter nicht (nur pull_request); das Ergebnis muss trotzdem "alles" sein
+def test_merge_queue_laesst_alle_jobs_ausser_den_migrationstests_laufen(tmp_path: Path) -> None:
+    # In der Queue laufen alle Jobs ohne Rücksicht auf den Filter; nur die Migrationstests folgen ihm (Issue #935)
     werte = _ergebnis_schritt_ausfuehren(tmp_path, "merge_group", "{}")
     bereiche = _bereiche_im_ergebnis_schritt()
-    assert {b: werte[b] for b in bereiche} == dict.fromkeys(bereiche, "true")
+    assert {b: werte[b] for b in bereiche} == {b: "false" if b == "migrationen" else "true" for b in bereiche}
 
-    (tmp_path / "pr").mkdir()
     werte = _ergebnis_schritt_ausfuehren(tmp_path / "pr", "pull_request", '{"verweise": "true"}')
     assert werte["verweise"] == "true" and werte["test"] == "false", "Gegenprobe: im PR wirkt der Filter"
+
+
+@pytest.mark.parametrize("ereignis", ["pull_request", "merge_group"])
+@pytest.mark.parametrize(
+    ("filter_json", "migrationstests", "erwartet"),
+    [
+        ('{"test": "true"}', "false", "false"),
+        ('{"test": "true", "migrationen": "true"}', "false", "true"),
+        ('{"test": "true"}', "true", "true"),  # geänderte Testdatei mit Migrationstest (Schritt davor)
+        ('{"sicherheitsnetz": "true"}', "false", "true"),
+    ],
+)
+def test_migrationstests_im_pull_request_und_in_der_queue_nach_derselben_regel(
+    tmp_path: Path, ereignis: str, filter_json: str, migrationstests: str, erwartet: str
+) -> None:
+    werte = _ergebnis_schritt_ausfuehren(tmp_path, ereignis, filter_json, migrationstests)
+    assert werte["migrationen"] == erwartet
+
+
+@pytest.mark.parametrize("ereignis", ["push", "schedule", "workflow_dispatch"])
+def test_volllaeufe_fuehren_auch_die_migrationstests_aus(tmp_path: Path, ereignis: str) -> None:
+    werte = _ergebnis_schritt_ausfuehren(tmp_path, ereignis, "{}")
+    assert werte["migrationen"] == "true" and werte["test"] == "true"
+
+
+def test_kein_lauf_bei_push_auf_dev() -> None:
+    """Issue #935: Die Queue hat genau das Commit geprüft, das auf dev landet; main läuft weiter bei jedem Push."""
+    push = _ausloeser()["push"]
+    assert push["branches"] == ["main"]
+    assert "workflow_dispatch" in _ausloeser() and "schedule" in _ausloeser()
+    nachtlauf = yaml.safe_load((REPO / ".github" / "workflows" / "nachtlauf.yml").read_text(encoding="utf-8"))
+    schritte = [s["run"] for job in nachtlauf["jobs"].values() for s in job["steps"] if "run" in s]
+    assert schritte == ['gh workflow run pr-check.yml --repo "$GITHUB_REPOSITORY" --ref dev']
+    assert (nachtlauf.get("on") or nachtlauf[True])["schedule"], "Nachtlauf braucht einen Zeitplan"
+
+
+def _pytest_aufruf(job: str) -> str:
+    aufrufe = [s["run"] for s in _jobs()[job]["steps"] if re.search(r"^\s*pytest ", s.get("run", ""), re.M)]
+    assert len(aufrufe) == 1, f"{job}: genau ein pytest-Aufruf erwartet"
+    return " ".join(aufrufe[0].replace("\\\n", " ").split())
+
+
+def test_test_job_in_teilen_ohne_migrationstests_mit_vorlage() -> None:
+    job = _jobs()["test"]
+    teile = job["strategy"]["matrix"]["teil"]
+    assert teile == list(range(1, len(teile) + 1)) and len(teile) >= 2
+    assert job["strategy"]["fail-fast"] is False
+    aufruf = _pytest_aufruf("test")
+    assert '-m "not migrationen"' in aufruf
+    assert f"--teil ${{{{ matrix.teil }}}}/{len(teile)}" in aufruf
+    assert "--teil-protokoll" in aufruf and "--cov=apps" in aufruf
+    vorlage = [s for s in job["steps"] if "MANDARI_TEST_DB_VORLAGE" in s.get("env", {})]
+    assert len(vorlage) == 1 and "pytest " in vorlage[0]["run"]
+    # Das Ergebnis prüft genau so viele Teile, wie die Matrix startet
+    pruefung = [s["run"] for s in _jobs()["test-ergebnis"]["steps"] if "ci_testteile.py" in s.get("run", "")]
+    assert len(pruefung) == 1 and f"--teile {len(teile)}" in pruefung[0]
+
+
+def test_migrationstests_im_eigenen_job() -> None:
+    job = _jobs()["migrationstests"]
+    assert job["if"] == "needs.changes.outputs.migrationen == 'true'"
+    aufruf = _pytest_aufruf("migrationstests")
+    assert "-m migrationen" in aufruf and "--teil-protokoll" in aufruf and "--cov=apps" in aufruf
+    assert "postgres" in job["services"]
+
+
+def test_test_ergebnis_prueft_coverage_auch_ohne_migrationsjob() -> None:
+    """Ohne !cancelled() übersprünge GitHub den Job mit dem nicht nötigen Migrationsjob – samt Coverage-Grenze."""
+    job = _jobs()["test-ergebnis"]
+    assert _needs(job) == {"changes", "test", "migrationstests"}
+    assert job["if"].startswith("${{ !cancelled() && (")
+    assert "needs.changes.outputs.test == 'true' || needs.changes.outputs.journal == 'true'" in job["if"]
+    befehle = "\n".join(s.get("run", "") for s in job["steps"])
+    grenze = re.search(r"coverage report .*--fail-under=(\d+)", befehle)
+    assert grenze, "Coverage-Grenze fehlt im Job Test-Ergebnis"
+    # Issue #157: Die Schwelle darf nur steigen
+    assert int(grenze.group(1)) >= 38
+
+
+def _ci_ergebnis_ausfuehren(tmp_path: Path, ergebnisse: dict[str, str], test: str, migrationen: str) -> int:
+    bash = _bash()
+    if bash is None or shutil.which("jq") is None:
+        pytest.skip("bash oder jq nicht vorhanden (in der CI beides da)")
+    skript = tmp_path / "ci_ergebnis.sh"
+    skript.write_text(_jobs()["ci-ergebnis"]["steps"][0]["run"], encoding="utf-8", newline="\n")
+    alle = dict.fromkeys(_needs(_jobs()["ci-ergebnis"]), "skipped") | {"changes": "success"} | ergebnisse
+    env = {
+        **os.environ,
+        "ERGEBNISSE": json.dumps({job: {"result": ergebnis} for job, ergebnis in alle.items()}),
+        "TEST_NOETIG": test,
+        "MIGRATIONEN_NOETIG": migrationen,
+        "GITHUB_STEP_SUMMARY": str(tmp_path / "summary"),
+    }
+    lauf = subprocess.run([bash, str(skript)], env=env, capture_output=True, timeout=60, check=False)  # noqa: S603
+    return lauf.returncode
+
+
+def test_ci_ergebnis_verlangt_noetige_test_jobs(tmp_path: Path) -> None:
+    gruen = {"test": "success", "test-ergebnis": "success"}
+    assert _ci_ergebnis_ausfuehren(tmp_path, gruen, "true", "false") == 0
+    # Übersprungen zählt nicht, wenn der Job nötig war
+    assert _ci_ergebnis_ausfuehren(tmp_path, {"test": "success"}, "true", "false") == 1
+    assert _ci_ergebnis_ausfuehren(tmp_path, gruen, "true", "true") == 1
+    assert _ci_ergebnis_ausfuehren(tmp_path, gruen | {"migrationstests": "success"}, "true", "true") == 0
+    # Nicht nötig: übersprungen ist in Ordnung, ein Fehlschlag nie
+    assert _ci_ergebnis_ausfuehren(tmp_path, {}, "false", "false") == 0
+    assert _ci_ergebnis_ausfuehren(tmp_path, {"migrationstests": "failure"}, "false", "false") == 1
 
 
 def test_filter_nennen_nur_vorhandene_dateien() -> None:
@@ -317,6 +428,12 @@ def test_reuse_workflow_prueft_blockierend() -> None:
         ("scripts/check_event_contracts.py", {"qualitaet", "vertrag", "test", "codeql_python"}),
         ("scripts/smoke_tombstones.py", {"qualitaet", "test", "smoke", "codeql_python"}),
         ("mandari/Dockerfile", {"qualitaet", "docker"}),
+        # Migrationen und die Werkzeuge der Migrationstests lösen den Job "Migrationstests" aus (Issue #935)
+        (
+            "mandari/apps/tenants/migrations/0001_initial.py",
+            {"qualitaet", "python", "test", "migrationen", "smoke", "codeql_python"},
+        ),
+        ("mandari/conftest.py", {"qualitaet", "python", "test", "migrationen", "smoke", "e2e", "codeql_python"}),
         (".github/workflows/pr-check.yml", {"sicherheitsnetz", "qualitaet", "test"}),
         # Lock-Datei der Django-Anwendung und ihr Export: Daraus installieren alle Jobs (Sicherheitsnetz); dazu
         # die SHACL-Prüfung der Datenkataloge, weil ein Update von rdflib die Serialisierung ändern kann

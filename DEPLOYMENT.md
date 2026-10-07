@@ -126,8 +126,9 @@ Eine Staging-Umgebung kann sich selbst auf dem neuesten geprüften `dev`-Stand h
 Ein Lauf
 
 1. ermittelt das neueste Commit auf `dev`, für das der **Release-Lauf** (Images gebaut und veröffentlicht)
-   **und die CI** erfolgreich waren. Als CI zählt der Lauf nach dem Push auf `dev` oder der Lauf in der
-   Merge-Queue für genau dieses Commit;
+   **und die CI** erfolgreich waren. Als CI zählt der Lauf in der Merge-Queue für genau dieses Commit
+   (ein Push auf `dev` startet keine CI, die Queue hat das Commit schon geprüft) oder ein Lauf direkt
+   auf `dev` (von Hand oder der nächtliche Volllauf);
 2. vergleicht dessen Tag `dev-<commit>` mit dem laufenden `IMAGE_TAG`. Gleich oder älter: nichts zu tun;
 3. ruft sonst den vorhandenen Deploy-Weg auf: `deploy.sh plan <tag>` (Images ziehen, `migrate --plan`,
    `check`), dann `deploy.sh apply <tag>` mit Sicherung, Migration, Umschalten, Anwendungs- und
@@ -138,8 +139,9 @@ Ein Lauf
 Damit zeigt Staging einen neuen Stand spätestens rund 30 Minuten nach grüner CI (fünf Minuten bis zur
 nächsten Abfrage plus Deploy). Ein Tag, dessen `apply` gescheitert ist, versucht das Skript nicht noch
 einmal; eine gescheiterte Vorbereitung (`plan`, etwa ein nicht abrufbares Image) höchstens dreimal. Der
-nächste neuere Stand wird wieder versucht. Ein Commit, das nur Markdown ändert, startet auf `dev` keine CI
-und wird deshalb nicht einzeln ausgerollt; es kommt mit dem nächsten Commit mit.
+nächste neuere Stand wird wieder versucht. Ein Commit, das an der Merge-Queue vorbei auf `dev` kommt,
+hat keine geprüfte CI und wird deshalb erst nach dem nächsten Volllauf oder mit dem nächsten Commit
+ausgerollt.
 
 **Schutz vor Verwechslung:** Das Skript arbeitet nur in einem Verzeichnis, dessen `.env` die Zeile
 `MANDARI_UMGEBUNG=staging` enthält, und bricht sonst ab, bevor es etwas verändert. Eine Produktion trägt

@@ -49,7 +49,10 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
 - Jeder neue Endpunkt bringt einen Berechtigungs- und einen Mandanten-Isolationstest mit.
 - Smoke-Skripte unter `scripts/smoke_*.py` sind Bestandsschutz und werden bei Berührung in Testmodule
   unter `apps/<app>/tests/` überführt.
-- Coverage wird gemessen und als Gate mit steigender Schwelle geführt.
+- Coverage wird gemessen und als Gate mit steigender Schwelle geführt; die CI führt sie über alle Teile des
+  Jobs „Test“ zusammen und belegt, dass jeder Test genau einmal lief (CONTRIBUTING.md, „Tests und Prüfungen“).
+- Tests, die Migrationen zurück- und wieder vorspielen, tragen das Kennzeichen `migrationen` (automatisch
+  erkannt) und laufen in einem eigenen CI-Job, wenn Migrationen oder diese Tests sich ändern, sowie nächtlich.
 
 ## 4. Sicherheit
 

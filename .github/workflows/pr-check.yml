@@ -5,15 +5,26 @@
 #
 # Pfadfilter (Issue #621): Der Job "Geänderte Bereiche" ordnet die Dateien eines
 # Pull Requests Bereichen zu; jeder Job läuft nur, wenn sein Bereich betroffen
-# ist. Sicherheitsnetz: push auf dev/main, die Merge-Queue, der Wochenlauf, manuelle
+# ist. Sicherheitsnetz: push auf main, die Merge-Queue, der Wochenlauf, manuelle
 # Starts, Pull Requests gegen main und jede Änderung an .github/ oder an
-# Abhängigkeitsdateien lassen ALLE Jobs laufen.
+# Abhängigkeitsdateien lassen ALLE Jobs laufen. Einzige Ausnahme in der Merge-Queue:
+# Die Migrationstests laufen dort nach derselben Regel wie im Pull Request.
 #
 # Merge-Queue (Issue #737): Pull Requests auf dev werden über die Queue gemergt
 # (gh pr merge <n> --squash --auto). Die Queue prüft den kombinierten Stand aus dev
 # und allen PRs davor (Ereignis merge_group) mit allen Jobs und merged erst, wenn
 # "CI-Ergebnis" grün ist. Der Pflicht-Check muss deshalb auch für merge_group
 # berichten; jeder weitere Pflicht-Check braucht diesen Auslöser ebenfalls.
+#
+# Kein Lauf bei push auf dev (Issue #935): Auf dev landet genau das Commit, das die
+# Queue geprüft hat (gleiche Commit-Kennung); ein zweiter Lauf prüfte denselben Stand
+# noch einmal. Den nächtlichen Volllauf auf dev startet .github/workflows/nachtlauf.yml
+# (workflow_dispatch), die Staging-Aktualisierung zählt den Lauf der Queue.
+#
+# Job "Test" (Issue #935): drei parallele Teile nach gemessenen Laufzeiten, jede
+# Testdatenbank als Kopie einer einmal migrierten Vorlage, Migrationstests in einem
+# eigenen Job; "Test-Ergebnis" führt die Coverage zusammen, prüft die Grenze und dass
+# jeder Test genau einmal lief.
 #
 # Kein workflow-weiter paths-Filter für Pull Requests: "CI-Ergebnis" muss in
 # jedem Pull Request berichten, damit es später Pflicht-Check werden kann.
@@ -23,10 +34,10 @@ name: CI
 
 on:
   push:
+    # Nur main: dev bekommt jedes Commit über die Merge-Queue, die genau dieses Commit prüft (Issue #935)
     branches:
-      - dev
       - main
-    # Reine Text-Doku braucht auf dev/main keinen Lauf (push hat keine Pflicht-Checks)
+    # Reine Text-Doku braucht auf main keinen Lauf (push hat keine Pflicht-Checks)
     paths-ignore:
       - '**/*.md'
       - 'docs/examples/**'
@@ -43,12 +54,13 @@ on:
   # und pip-audit/npm audit gegen neu veröffentlichte Schwachstellen
   schedule:
     - cron: '23 4 * * 1'
+  # Von Hand und nächtlich auf dev (nachtlauf.yml): alle Jobs samt Migrationstests
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# Neuer Push in einen PR bricht dessen laufende Prüfung ab; dev/main laufen immer vollständig durch
+# Neuer Push in einen PR bricht dessen laufende Prüfung ab; alle anderen Läufe laufen vollständig durch
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -63,7 +75,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      pull-requests: read   # Dateiliste des Pull Requests über die API (kein Checkout nötig)
+      pull-requests: read   # Dateiliste des Pull Requests über die API
     outputs:
       qualitaet: ${{ steps.ergebnis.outputs.qualitaet }}
       verweise: ${{ steps.ergebnis.outputs.verweise }}
@@ -72,6 +84,7 @@ jobs:
       templates: ${{ steps.ergebnis.outputs.templates }}
       frontend: ${{ steps.ergebnis.outputs.frontend }}
       test: ${{ steps.ergebnis.outputs.test }}
+      migrationen: ${{ steps.ergebnis.outputs.migrationen }}
       journal: ${{ steps.ergebnis.outputs.journal }}
       ereignisse: ${{ steps.ergebnis.outputs.ereignisse }}
       smoke: ${{ steps.ergebnis.outputs.smoke }}
@@ -82,11 +95,20 @@ jobs:
       docker: ${{ steps.ergebnis.outputs.docker }}
       codeql: ${{ steps.ergebnis.outputs.codeql }}
     steps:
+      # Pull Request und Merge-Queue: Die Queue vergleicht per git mit ihrem Basisstand (merge_group.base_sha),
+      # der Schritt "Geänderte Migrationstests" liest die geänderten Testdateien.
+      - name: Checkout
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
       # some-with-excludes: Eine Datei zählt, wenn sie mindestens ein positives Muster trifft und
       # kein "!"-Muster. Neue Verzeichnisse lösen die Django-Tests deshalb im Zweifel aus.
+      # In der Merge-Queue wirkt davon nur "migrationen" (und das Sicherheitsnetz dafür), sonst laufen dort alle Jobs.
       - name: Dateien des Pull Requests zuordnen
         id: filter
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
         # Drittanbieter-Action, die über alle Prüfungen entscheidet: auf den Commit gepinnt statt auf
         # den verschiebbaren Tag. Dependabot (github-actions) hebt den Pin samt Kommentar an.
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -145,6 +167,13 @@ jobs:
               - '!**/Dockerfile'
               - '!.dockerignore'
               - '!mandari/docker-entrypoint.sh'
+            # Job "Migrationstests" (Issue #935): Migrationen sowie Erkennung, Auswahl und Datenbankvorlage der
+            # Migrationstests. Geänderte Testdateien mit Migrationstests erkennt der Schritt danach am Inhalt.
+            migrationen:
+              - 'mandari/**/migrations/**'
+              - 'mandari/conftest.py'
+              - 'mandari/apps/common/tests/testlauf.py'
+              - 'scripts/testdb_vorlage.py'
             # Journal der Ereignistechnik, wie der Ingestor es kennt und beschreibt. Der Test, der seine
             # INSERT-Anweisung gegen die Tabelle aus den Django-Migrationen ausführt (Trigger,
             # Prüfbedingungen), braucht PostgreSQL und läuft deshalb nur im Job "Test"
@@ -260,12 +289,37 @@ jobs:
               - '**/*.{js,mjs,cjs,jsx,ts,mts,cts,tsx,html,htm,vue}'
               - 'mandari/tsconfig.json'
 
+      # Eine geänderte Testdatei mit Migrationstests löst den Job "Migrationstests" aus. Erkannt wird sie wie in
+      # apps/common/tests/testlauf.py am Aufruf von ….migrate( oder call_command("migrate"); ein Treffer zu
+      # viel startet nur den Job.
+      - name: Geänderte Migrationstests erkennen
+        id: migrationstests
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          BASIS: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASIS"
+          geaendert=false
+          while IFS= read -r -d '' datei; do
+            case "$datei" in
+              mandari/*test_*.py|mandari/*_test.py) ;;
+              *) continue ;;
+            esac
+            if [ -f "$datei" ] && grep -qE '\.migrate\(|call_command\([[:space:]]*.migrate' "$datei"; then
+              echo "Migrationstest geändert: $datei"
+              geaendert=true
+            fi
+          done < <(git diff -z --name-only --no-renames "$BASIS" HEAD)
+          echo "geaendert=$geaendert" >> "$GITHUB_OUTPUT"
+
       - name: Ergebnis festlegen (Sicherheitsnetz, CodeQL-Sprachen)
         id: ergebnis
         env:
           EREIGNIS: ${{ github.event_name }}
           ZIELZWEIG: ${{ github.base_ref }}
           FILTER: ${{ toJSON(steps.filter.outputs) }}
+          MIGRATIONSTESTS: ${{ steps.migrationstests.outputs.geaendert }}
           # Schalter für den Wechsel vom CodeQL-Default-Setup auf diesen Workflow (siehe Job "codeql")
           CODEQL_ERWEITERT: ${{ vars.CODEQL_ERWEITERT }}
         # Fehlerfest: Jeder Wert muss "true" oder "false" sein. Ein leerer Wert würde Jobs still
@@ -280,11 +334,18 @@ jobs:
               *) echo "::error::Unerwarteter Filterwert für $1: '$w'" >&2; return 1 ;;
             esac
           }
+          migrationstests="${MIGRATIONSTESTS:-false}"
+          case "$migrationstests" in
+            true|false) ;;
+            *) echo "::error::Unerwarteter Wert für geänderte Migrationstests: '$migrationstests'" >&2; exit 1 ;;
+          esac
 
           alle=false
           grund="Pfadfilter"
           netz=$(wert sicherheitsnetz)
-          if [ "$EREIGNIS" != "pull_request" ]; then
+          if [ "$EREIGNIS" = "merge_group" ]; then
+            alle=true; grund="Merge-Queue, Migrationstests nach der Regel des Pull Requests"
+          elif [ "$EREIGNIS" != "pull_request" ]; then
             alle=true; grund="Ereignis $EREIGNIS"
           elif [ "$ZIELZWEIG" = "main" ]; then
             alle=true; grund="Pull Request gegen main"
@@ -297,8 +358,23 @@ jobs:
             echo "| Bereich | Job läuft |"
             echo "|---|---|"
           } >> "$GITHUB_STEP_SUMMARY"
-          ergebnis() { if [ "$alle" = "true" ]; then echo true; else wert "$1"; fi; }
-          for bereich in qualitaet verweise python vertrag templates frontend test journal ereignisse smoke oparl e2e ingestor audit docker; do
+          # Migrationstests (Issue #935): im Pull Request und in der Merge-Queue nur, wenn Migrationen, Migrationstests
+          # oder ihre Werkzeuge geändert sind oder das Sicherheitsnetz greift; bei jedem anderen Volllauf immer.
+          regel_migrationen() {
+            if [ "$netz" = "true" ] || [ "$migrationstests" = "true" ]; then echo true; else wert migrationen; fi
+          }
+          ergebnis() {
+            if [ "$1" = "migrationen" ] && [ "$EREIGNIS" = "merge_group" ]; then
+              regel_migrationen
+            elif [ "$alle" = "true" ]; then
+              echo true
+            elif [ "$1" = "migrationen" ]; then
+              regel_migrationen
+            else
+              wert "$1"
+            fi
+          }
+          for bereich in qualitaet verweise python vertrag templates frontend test migrationen journal ereignisse smoke oparl e2e ingestor audit docker; do
             e=$(ergebnis "$bereich")
             echo "$bereich=$e" >> "$GITHUB_OUTPUT"
             echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
@@ -543,7 +619,7 @@ jobs:
           args: --offline --include-fragments '**/*.md'
 
       # Mit Netz, nur für die Dateien des öffentlichen Auftritts: README, Mitwirken, Sicherheit,
-      # Verhaltenskodex, Danksagungen, Betrieb, Issue- und PR-Vorlagen. Nicht bei push auf dev/main
+      # Verhaltenskodex, Danksagungen, Betrieb, Issue- und PR-Vorlagen. Nicht bei push auf main
       # und nicht in der Merge-Queue: Dort hat der Pull Request schon geprüft, und ein langsamer
       # fremder Server soll keinen Merge aufhalten; verwaiste Verweise findet der Wochenlauf.
       - name: Externe Verweise (öffentlicher Auftritt)
@@ -560,14 +636,31 @@ jobs:
             .github/ISSUE_TEMPLATE/config.yml
 
   # ===========================================================================
-  # Django System Checks & Tests
+  # Django System Checks & Tests: drei parallele Teile (Issue #935)
   # ===========================================================================
+  # Jeder Teil führt ganze Testdateien aus, verteilt nach den gemessenen Laufzeiten in
+  # mandari/testdauern.json (apps/common/tests/testlauf.py, --teil). Die Testdatenbank jedes
+  # xdist-Workers ist eine Kopie der Vorlage, die der Job einmal migriert
+  # (scripts/testdb_vorlage.py, MANDARI_TEST_DB_VORLAGE); früher migrierte jeder Worker selbst
+  # (rund 150 s). Migrationstests laufen im Job "Migrationstests". Coverage-Grenze und
+  # Vollständigkeit prüft "Test-Ergebnis" über alle Teile zusammen.
   test:
     name: Test
     needs: changes
     # journal: Änderungen am Journal auf der Seite des Ingestors (siehe Filter)
     if: needs.changes.outputs.test == 'true' || needs.changes.outputs.journal == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      # Alle Teile laufen zu Ende, damit jeder rote Test auf einmal sichtbar ist
+      fail-fast: false
+      matrix:
+        teil: [1, 2, 3]
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
+      SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+      DEBUG: 'false'
 
     services:
       postgres:
@@ -633,49 +726,229 @@ jobs:
       - name: Frontend-Assets bauen (Vite-Manifest für django-vite)
         run: cd mandari && npm ci --ignore-scripts && npx vite build
 
+      # Einmal genügt: Die Prüfung hängt nicht vom Teil ab
       - name: Run Django system checks
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
-          REDIS_URL: redis://localhost:6379
-          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-          DEBUG: 'false'
+        if: matrix.teil == 1
         run: |
           cd mandari
           python manage.py check --deploy --fail-level WARNING
           python manage.py check
 
-      - name: Run migrations
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
-          REDIS_URL: redis://localhost:6379
-          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-          DEBUG: 'false'
-        run: |
-          cd mandari
-          python manage.py migrate --noinput
-
       - name: Collect static files
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
-          REDIS_URL: redis://localhost:6379
-          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-          DEBUG: 'false'
         run: |
           cd mandari
           python manage.py collectstatic --noinput
 
+      # Vorlage und Tests nutzen denselben Schlüssel (sonst zöge jeder Prozess einen eigenen)
+      - name: Schlüssel der Feldverschlüsselung für diesen Job
+        run: |
+          schluessel=$(python -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')
+          echo "::add-mask::$schluessel"
+          echo "ENCRYPTION_MASTER_KEY=$schluessel" >> "$GITHUB_ENV"
+
+      # Einmal migrieren (Test-Settings, gemessen mit coverage wie früher das Migrieren je Worker)
+      - name: Testdatenbank-Vorlage migrieren
+        run: python scripts/testdb_vorlage.py --coverage "$RUNNER_TEMP/testteil/coverage-vorlage.daten"
+
       - name: Run tests
         env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
-          REDIS_URL: redis://localhost:6379
-          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
-          DEBUG: 'false'
+          MANDARI_TEST_DB_VORLAGE: mandari_testvorlage
         run: |
           cd mandari
+          # Parallel auf allen Kernen (pytest-xdist; je Worker eine Kopie der Vorlage), Tests einer Datei
+          # bleiben auf einem Worker. --durations zeigt die langsamsten Tests für gezielte Arbeit.
+          # Coverage-Gate (Issue #157) im Job "Test-Ergebnis" über alle Teile zusammen.
+          pytest -n auto --dist loadfile -m "not migrationen" --teil ${{ matrix.teil }}/3 \
+            --teil-protokoll "$RUNNER_TEMP/testteil" -q -rfE --durations=25 \
+            --cov=apps --cov=hub --cov=insight_core --cov-report= --ignore=tests_e2e
+          mv .coverage "$RUNNER_TEMP/testteil/coverage-teil.daten"
+
+      - name: Protokoll und Coverage-Daten ablegen
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: testteil-${{ matrix.teil }}
+          path: ${{ runner.temp }}/testteil/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ===========================================================================
+  # Migrationstests (Issue #935)
+  # ===========================================================================
+  # Tests, die Migrationen zurück- und wieder vorspielen, brauchen einzeln bis zu zwei Minuten. Sie
+  # tragen das Kennzeichen "migrationen" (automatisch, apps/common/tests/testlauf.py) und laufen nur
+  # hier: im Pull Request und in der Merge-Queue, wenn Migrationen, Migrationstests oder deren
+  # Werkzeuge geändert sind (oder das Sicherheitsnetz greift), sonst bei jedem Volllauf (push auf
+  # main, manueller Start, Nacht- und Wochenlauf). Dazu das Migrieren mit den Betriebs-Settings
+  # (settings.py, DEBUG aus), das früher der Job "Test" vor jedem Lauf machte.
+  migrationstests:
+    name: Migrationstests
+    needs: changes
+    if: needs.changes.outputs.migrationen == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      DATABASE_URL: postgresql://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379
+      SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+      DEBUG: 'false'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --tmpfs /var/lib/postgresql/data:rw
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libcairo2-dev libpango1.0-dev libffi-dev shared-mime-info pkg-config poppler-utils tesseract-ocr tesseract-ocr-deu
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+          cache: 'pip'
+          cache-dependency-path: mandari/uv.lock
+
+      - uses: astral-sh/setup-uv@v7
+      - name: Install dependencies
+        run: |
+          sh scripts/export_requirements.sh /tmp/requirements.lock
+          pip install -r /tmp/requirements.lock
+          pip install --no-deps shared/
+          pip install pytest pytest-django pytest-cov pytest-xdist factory-boy
+          pip install "moto[s3]>=5.1"
+          pip install "sqlalchemy>=2.0"
+
+      - name: Schlüssel der Feldverschlüsselung für diesen Job
+        run: |
+          schluessel=$(python -c 'import base64, secrets; print(base64.b64encode(secrets.token_bytes(32)).decode())')
+          echo "::add-mask::$schluessel"
+          echo "ENCRYPTION_MASTER_KEY=$schluessel" >> "$GITHUB_ENV"
+
+      # Beide Läufe gleichzeitig, jeder in seiner Datenbank: Betriebs-Settings auf "test", Test-Settings
+      # für die Vorlage der Testdatenbanken
+      - name: Migrationen mit den Betriebs-Settings und Testdatenbank-Vorlage
+        run: |
+          (cd mandari && python manage.py migrate --noinput) > "$RUNNER_TEMP/migrate-betrieb.log" 2>&1 &
+          betrieb=$!
+          python scripts/testdb_vorlage.py --coverage "$RUNNER_TEMP/testteil/coverage-vorlage.daten"
+          if ! wait "$betrieb"; then
+            cat "$RUNNER_TEMP/migrate-betrieb.log"
+            echo "::error::migrate mit den Betriebs-Settings (settings.py, DEBUG aus) ist gescheitert"
+            exit 1
+          fi
+          tail -n 20 "$RUNNER_TEMP/migrate-betrieb.log"
+
+      - name: Migrationstests
+        env:
+          MANDARI_TEST_DB_VORLAGE: mandari_testvorlage
+        run: |
+          cd mandari
+          # Jeder Test braucht seine eigene Zeit; --dist load verteilt sie einzeln auf die Worker
+          pytest -n auto --dist load -m migrationen --teil-protokoll "$RUNNER_TEMP/testteil" -q -rfE \
+            --durations=0 --cov=apps --cov=hub --cov=insight_core --cov-report= --ignore=tests_e2e
+          mv .coverage "$RUNNER_TEMP/testteil/coverage-migrationstests.daten"
+
+      - name: Protokoll und Coverage-Daten ablegen
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: testteil-migrationstests
+          path: ${{ runner.temp }}/testteil/
+          retention-days: 7
+          if-no-files-found: warn
+
+  # ===========================================================================
+  # Test-Ergebnis: Coverage über alle Teile, jeder Test genau einmal (Issue #935)
+  # ===========================================================================
+  # Läuft, sobald "Test" nötig war, auch wenn "Migrationstests" nicht nötig war: Ohne !cancelled()
+  # übersprünge GitHub diesen Job zusammen mit dem übersprungenen Migrationsjob, und die
+  # Coverage-Grenze fiele still weg. "CI-Ergebnis" verlangt seinen Erfolg, wenn "Test" nötig war.
+  test-ergebnis:
+    name: Test-Ergebnis (Coverage, Vollständigkeit)
+    needs: [changes, test, migrationstests]
+    if: ${{ !cancelled() && (needs.changes.outputs.test == 'true' || needs.changes.outputs.journal == 'true') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TEST_ERGEBNIS: ${{ needs.test.result }}
+      MIGRATIONSTESTS_ERGEBNIS: ${{ needs.migrationstests.result }}
+      MIGRATIONEN_NOETIG: ${{ needs.changes.outputs.migrationen }}
+    steps:
+      - name: Alle Teile bestanden
+        run: |
+          if [ "$TEST_ERGEBNIS" != "success" ]; then
+            echo "::error::Mindestens ein Teil des Jobs Test ist nicht bestanden ($TEST_ERGEBNIS)."
+            exit 1
+          fi
+          if [ "$MIGRATIONEN_NOETIG" = "true" ] && [ "$MIGRATIONSTESTS_ERGEBNIS" != "success" ]; then
+            echo "::error::Der Job Migrationstests war nötig und ist nicht bestanden ($MIGRATIONSTESTS_ERGEBNIS)."
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      - name: Protokolle und Coverage-Daten der Teile
+        uses: actions/download-artifact@v7
+        with:
+          pattern: testteil-*
+          path: ${{ runner.temp }}/teile
+
+      # Belegt, dass über alle Teile jeder gesammelte Test genau einmal lief, und zeigt die Zahlen je Teil
+      - name: Jeder Test genau einmal (Tests je Teil)
+        run: >-
+          python scripts/ci_testteile.py "$RUNNER_TEMP/teile" --teile 3
+          --migrationen-noetig "$MIGRATIONEN_NOETIG"
+          --dauern-ausgabe "$RUNNER_TEMP/testdauern.json"
+          --zusammenfassung "$GITHUB_STEP_SUMMARY"
+
+      - name: Coverage zusammenführen und Grenze prüfen
+        run: |
+          pip install "coverage>=7.10"
+          cd mandari
+          find "$RUNNER_TEMP/teile" -name '*.daten' -print0 | xargs -0 coverage combine --data-file=.coverage
           # Coverage-Gate (Issue #157): Stand 09/2026 40 % – Schwelle darf nur steigen.
-          # Parallel auf allen Kernen (pytest-xdist; je Worker eine eigene Test-Datenbank), Tests einer
-          # Datei bleiben auf einem Worker. --durations zeigt die langsamsten Tests für gezielte Arbeit.
-          pytest -n auto --dist loadfile -q -rfE --durations=25 --cov=apps --cov=hub --cov=insight_core --cov-report=term --cov-report=xml --cov-fail-under=38 --ignore=tests_e2e
+          coverage report --data-file=.coverage --fail-under=38
+          coverage xml --data-file=.coverage -o coverage.xml
+
+      # Gemessene Laufzeiten für eine neue Aufteilung (mandari/testdauern.json ersetzen) und Coverage als XML
+      - name: Laufzeiten und Coverage ablegen
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-ergebnis
+          path: |
+            ${{ runner.temp }}/testdauern.json
+            mandari/coverage.xml
+          retention-days: 14
+          if-no-files-found: warn
 
   # ===========================================================================
   # Ereignistechnik hinter PgBouncer (Transaktionsmodus), Issue #505
@@ -913,8 +1186,8 @@ jobs:
   # ===========================================================================
   # Prüft beide OParl-Ausgaben (Aggregator und Session-Schnittstelle) mit oparl-validator-rs
   # (https://github.com/konstin/oparl-validator-rs, MIT oder Apache-2.0) und der eigenen Typprüfung
-  # (scripts/oparl_validator.py). Läuft bei Änderungen an den Schnittstellen und bei jedem push auf
-  # dev/main. Der Validator wird nur ausgeführt: festgelegter Stand der vom Projekt gebauten
+  # (scripts/oparl_validator.py). Läuft bei Änderungen an den Schnittstellen, in der Merge-Queue und
+  # bei jedem push auf main. Der Validator wird nur ausgeführt: festgelegter Stand der vom Projekt gebauten
   # Programmdatei (Commit im Zweig gh-pages, gebaut aus 9ae12e7), geprüft per SHA-256. Das Archiv
   # liegt im Zwischenspeicher der Actions (Schlüssel: Prüfsumme) und wird nur geladen, wenn es dort
   # fehlt – der Job hängt so nicht bei jedem Lauf an der fremden Adresse. Die Prüfsumme gilt auch für
@@ -1001,7 +1274,7 @@ jobs:
   # ===========================================================================
   # Abhängigkeiten: bekannte Schwachstellen, Lockfile-Abgleich
   # ===========================================================================
-  # Läuft bei geänderten Abhängigkeitsdateien (Sicherheitsnetz), bei jedem push auf dev/main
+  # Läuft bei geänderten Abhängigkeitsdateien (Sicherheitsnetz), in der Merge-Queue, bei jedem push auf main
   # und im Wochenlauf – dort fallen neu veröffentlichte Schwachstellen ohne Codeänderung auf.
   dependency-audit:
     name: Abhängigkeiten prüfen (pip-audit, npm audit)
@@ -1204,6 +1477,8 @@ jobs:
   # ===========================================================================
   # Übersprungene Jobs (Bereich nicht betroffen) gelten als bestanden; ein fehlgeschlagener oder
   # abgebrochener Job lässt das Ergebnis scheitern. Neue Jobs hier unter needs eintragen.
+  # Ausnahme (Issue #935): War "Test" bzw. "Migrationstests" nötig, müssen er und "Test-Ergebnis"
+  # (Coverage-Grenze, Vollständigkeit) bestanden haben; übersprungen zählt dann nicht.
   ci-ergebnis:
     name: CI-Ergebnis
     if: always()
@@ -1212,6 +1487,8 @@ jobs:
       - qualitaet
       - verweise
       - test
+      - migrationstests
+      - test-ergebnis
       - events-pgbouncer
       - smoke
       - oparl-validator
@@ -1226,6 +1503,8 @@ jobs:
       - name: Alle benötigten Jobs bestanden oder bewusst übersprungen
         env:
           ERGEBNISSE: ${{ toJSON(needs) }}
+          TEST_NOETIG: ${{ needs.changes.outputs.test == 'true' || needs.changes.outputs.journal == 'true' }}
+          MIGRATIONEN_NOETIG: ${{ needs.changes.outputs.migrationen == 'true' }}
         run: |
           set -euo pipefail
           {
@@ -1242,5 +1521,21 @@ jobs:
           if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<<"$ERGEBNISSE" >/dev/null; then
             echo "::error::Mindestens ein Job ist fehlgeschlagen oder wurde abgebrochen."
             exit 1
+          fi
+          # Nötige Jobs, die nur über andere Jobs übersprungen werden könnten, müssen bestanden haben
+          bestanden() {
+            local ergebnis
+            ergebnis=$(jq -r --arg j "$1" '.[$j].result // "fehlt"' <<<"$ERGEBNISSE")
+            if [ "$ergebnis" != "success" ]; then
+              echo "::error::Der Job $1 war nötig, sein Ergebnis ist aber '$ergebnis'."
+              exit 1
+            fi
+          }
+          if [ "$TEST_NOETIG" = "true" ]; then
+            bestanden test
+            bestanden test-ergebnis
+          fi
+          if [ "$MIGRATIONEN_NOETIG" = "true" ]; then
+            bestanden migrationstests
           fi
           echo "Alle benötigten Jobs bestanden oder waren für diese Änderung nicht nötig."

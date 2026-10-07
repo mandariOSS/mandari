@@ -3,12 +3,38 @@
 Gemeinsame pytest-Fixtures für das Django-Projekt.
 
 Settings: mandari.settings_test (siehe pyproject.toml). Fabriken: apps.common.tests.factories.
+Migrationstests, Aufteilung auf CI-Teile und deren Protokoll: apps.common.tests.testlauf (Issue #935).
 """
+
+import os
 
 import pytest
 from django.test import Client
 
 from apps.common.tests.factories import MembershipFactory, OrganizationFactory, RoleFactory, UserFactory
+
+pytest_plugins = ["apps.common.tests.testlauf"]
+
+
+@pytest.fixture(scope="session")
+def django_db_modify_db_settings(django_db_modify_db_settings_parallel_suffix):
+    """Testdatenbank aus einer migrierten Vorlage kopieren statt je xdist-Worker zu migrieren (Issue #935).
+
+    Mit ``MANDARI_TEST_DB_VORLAGE=<name>`` legt Django jede Testdatenbank per ``CREATE DATABASE … TEMPLATE
+    <name>`` an (PostgreSQL, Einstellung ``TEST.TEMPLATE``); das folgende ``migrate`` findet dann nichts
+    mehr zu tun. Die Vorlage erzeugt ``scripts/testdb_vorlage.py``. Fehlt darin eine neuere Migration,
+    spielt ``migrate`` nur diese nach – das Ergebnis bleibt richtig, nur langsamer. Ohne die Variable
+    (Standard, auch mit SQLite) migriert jede Testdatenbank wie bisher selbst.
+    """
+    vorlage = os.environ.get("MANDARI_TEST_DB_VORLAGE", "").strip()
+    if not vorlage:
+        return
+    from django.conf import settings
+
+    datenbank = settings.DATABASES["default"]
+    if not datenbank["ENGINE"].endswith("postgresql"):
+        pytest.fail("MANDARI_TEST_DB_VORLAGE gilt nur für PostgreSQL (DATABASE_URL=postgresql://…)", pytrace=False)
+    datenbank.setdefault("TEST", {})["TEMPLATE"] = vorlage
 
 
 @pytest.fixture
