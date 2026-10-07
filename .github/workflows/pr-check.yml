@@ -756,9 +756,11 @@ jobs:
         run: |
           cd mandari
           # Parallel auf allen Kernen (pytest-xdist; je Worker eine Kopie der Vorlage), Tests einer Datei
-          # bleiben auf einem Worker. --durations zeigt die langsamsten Tests für gezielte Arbeit.
+          # bleiben auf einem Worker. --dist worksteal war im Messlauf nicht schneller und ließ zwei von der
+          # Reihenfolge abhängige Tests scheitern (Issue #935). --durations zeigt die langsamsten Tests.
+          # COVERAGE_CORE=sysmon braucht es nicht: coverage misst unter Python 3.14 von sich aus mit sys.monitoring.
           # Coverage-Gate (Issue #157) im Job "Test-Ergebnis" über alle Teile zusammen.
-          pytest -n auto --dist worksteal -m "not migrationen" --teil=${{ matrix.teil }}/3 \
+          pytest -n auto --dist loadfile -m "not migrationen" --teil=${{ matrix.teil }}/3 \
             --teil-protokoll="$RUNNER_TEMP/testteil" -q -rfE --durations=25 \
             --cov=apps --cov=hub --cov=insight_core --cov-report= --ignore=tests_e2e
           mv .coverage "$RUNNER_TEMP/testteil/coverage-teil.daten"
