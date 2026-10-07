@@ -273,8 +273,13 @@ export function vorbereitung() {
       const gesetzt = basis.filter((i) => i.position && i.position !== 'open').length
       return `${gesetzt} von ${basis.length} mit Position`
     },
-    /** Kurzer Speicherstand für den Kopf; Fehler bleiben ausführlich (ganze Meldung im Tooltip) */
+    /** Kurzer Speicherstand für den Kopf; die ganze Meldung steht im Tooltip (`saveStatusText`) */
     get speicherText(): string {
+      if (this.saveRetrying > 0) {
+        if (this.saveAnmeldung) return 'Nicht gespeichert – bitte anmelden'
+        if (this.saveOffline) return 'Offline – wird nachgeholt'
+        return 'Nicht gespeichert – wird wiederholt'
+      }
       if (this.pendingSaves > 0) return 'Speichert …'
       if (this.saveError) return 'Nicht gespeichert'
       if (this.lastSavedAt) return `Gespeichert ${this.lastSavedAt}`
@@ -334,6 +339,7 @@ export function vorbereitung() {
       if (ziel) this.selectItem(ziel)
       else if (this.items.length > 0) this.selectItem(this.items[0].id)
       window.addEventListener('beforeunload', () => this.teardownRealtime())
+      this.startSpeicherwache()
       this.beobachteReiterleiste()
     },
 

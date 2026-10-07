@@ -340,3 +340,36 @@ class TestVorbereitungNeu:
         expect(page.get_by_label("Neue Aufgabe")).to_be_visible()
         assert page.evaluate("() => document.documentElement.scrollWidth <= window.innerWidth")
         screenshot("vorbereitung_neu_390_aufgaben")
+
+    def test_speichern_ueberbrueckt_neustart(
+        self, page: Any, goto: Any, login: Any, admin: Any, schalter_an: None, tmp_path: Path
+    ) -> None:
+        """Vorfall 07.10.2026 (#854): Position während eines Neustarts gesetzt (502) – wird automatisch nachgeholt."""
+        meeting = _sitzung(admin, tmp_path)
+        top = OParlAgendaItem.objects.get(meeting=meeting, number="2")
+        page.set_viewport_size({"width": 1920, "height": 1080})
+        login(admin.user.email, PASSWORD)
+        goto(f"/work/{admin.organization.slug}/meetings/{meeting.id}/prepare/#top-{top.id}")
+        wait_for_component(page, "vorbereitung")
+        _warte_auf_top(page, str(top.id))
+
+        # Die ersten beiden Versuche scheitern wie beim Deploy (Proxy erreicht die Anwendung nicht)
+        versuche: list[int] = []
+
+        def neustart(route: Any) -> None:
+            versuche.append(1)
+            if len(versuche) <= 2:
+                route.fulfill(status=502, body="Bad Gateway")
+            else:
+                route.continue_()
+
+        page.route(f"**/position/{top.id}/", neustart)
+        page.locator(".vb-leiste .vb-pos", has_text="Zustimmung").click()
+        expect(page.locator("#autosave-status")).to_contain_text("Nicht gespeichert – wird wiederholt")
+        assert not AgendaItemPosition.objects.filter(organization=admin.organization, agenda_item=top).exists()
+
+        # Ohne weiteres Zutun: dritter Versuch geht durch, Anzeige wieder „Gespeichert“
+        expect(page.locator("#autosave-status")).to_contain_text("Gespeichert", timeout=15000)
+        assert len(versuche) == 3, versuche
+        position = AgendaItemPosition.objects.get(organization=admin.organization, agenda_item=top)
+        assert position.position == "for"

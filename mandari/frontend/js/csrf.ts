@@ -12,3 +12,11 @@ export function csrfToken(): string {
   // Über HTTPS trägt das Cookie das Präfix __Host- (siehe settings.py, CSRF_COOKIE_NAME)
   return meta?.content || readCookie('__Host-csrftoken') || readCookie('csrftoken')
 }
+
+/**
+ * Wie `csrfToken`, aber das Cookie zuerst: Nach einer neuen Anmeldung (z. B. in einem anderen Tab) wechselt Django
+ * das Token; das Meta-Tag der offenen Seite ist dann veraltet, das Cookie nicht. Für Wiederholungen beim Speichern.
+ */
+export function csrfTokenAktuell(): string {
+  return readCookie('__Host-csrftoken') || readCookie('csrftoken') || csrfToken()
+}

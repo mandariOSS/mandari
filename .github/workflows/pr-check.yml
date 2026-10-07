@@ -498,6 +498,10 @@ jobs:
         if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
         run: cd mandari && npm run test:navigation
 
+      - name: Frontend-Unit-Tests (Speichern mit Wiederholung)
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: cd mandari && npm run test:speichern
+
       # JS-Vorlagen (z. B. der Service Worker) werden von Django gerendert; Template-Tags nur in
       # Kommentaren oder Strings, sonst kann CodeQL die Datei nicht analysieren.
       - name: JS-Vorlagen sind gültiges JavaScript
