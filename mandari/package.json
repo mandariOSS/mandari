@@ -12,7 +12,8 @@
     "lint": "biome ci .",
     "lint:fix": "biome check --write .",
     "test:paste": "node frontend/editor/test/paste-cleanup.test.mjs",
-    "test:navigation": "node frontend/js/test/navigation.test.mjs"
+    "test:navigation": "node frontend/js/test/navigation.test.mjs",
+    "test:speichern": "node frontend/js/test/speichern.test.mjs"
   },
   "dependencies": {
     "@alpinejs/collapse": "^3.17.4",

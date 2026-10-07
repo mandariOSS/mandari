@@ -54,6 +54,11 @@ Zusammenfassung ins Menü.
         </div>
     </div>
 </header>
+<p class="vb-hinweis" x-show="saveRetrying > 0 && saveAnmeldung" x-cloak>
+    <span x-text="saveStatusText"></span>
+    <a :href="anmeldeAdresse" target="_blank" rel="noopener"
+       x-text="saveAnmeldung === 'zweiter_faktor' ? 'Zweiten Faktor einrichten' : 'In neuem Tab anmelden'"></a>
+</p>
 {% if meeting.deleted %}
 <p class="vb-hinweis" role="status">
     <b>{{ meeting.deletion_label }}.</b>

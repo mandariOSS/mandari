@@ -163,7 +163,11 @@ def save_position(
     if "outcome" in payload and payload["outcome"] not in dict(AgendaItemPosition.OUTCOME_CHOICES):
         raise PreparationError("Ungültiges Ergebnis")
 
-    position, _ = AgendaItemPosition.objects.get_or_create(organization=organization, agenda_item=agenda_item)
+    # Zeile sperren: Gleichzeitige Teil-Saves (z. B. Position und Begründung, auch von zwei Mitgliedern) lesen sonst
+    # beide den alten Stand und das spätere save() setzt das jeweils andere Feld zurück (#854)
+    position, _ = AgendaItemPosition.objects.select_for_update().get_or_create(
+        organization=organization, agenda_item=agenda_item
+    )
     if "position" in payload:
         position.position = payload["position"]
     if "is_final" in payload:
@@ -232,7 +236,8 @@ def save_speech_note(
         if linked_document is None:
             raise PreparationError("Kein Zugriff auf dieses Dokument", status=403)
 
-    note, _ = AgendaSpeechNote.objects.get_or_create(
+    # Zeile sperren wie bei save_position: gleichzeitige Teil-Saves dürfen sich nicht gegenseitig zurücksetzen
+    note, _ = AgendaSpeechNote.objects.select_for_update().get_or_create(
         author=membership, agenda_item=agenda_item, defaults={"organization": organization}
     )
     if "content" in payload:

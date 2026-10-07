@@ -14,8 +14,8 @@ import type { Editor } from '@tiptap/core'
 import type { FormatState } from '../editor/index'
 import { defineComponent } from '../js/alpine/component'
 import { confirmAction } from '../js/alpine/confirm-dialog'
-import { csrfToken } from '../js/csrf'
 import { readJsonScript } from '../js/json-script'
+import { type JsonAntwort, type SpeicherAuftrag, Speicherdienst, type SpeicherStand } from '../js/speichern'
 
 // ---- Konfiguration aus dem View -------------------------------------------------
 
@@ -98,8 +98,7 @@ export interface PrepareConfig {
 
 // ---- Zustandstypen ----------------------------------------------------------------
 
-// biome-ignore lint/suspicious/noExplicitAny: Antworten der JSON-Endpunkte sind nicht schematisiert
-type JsonResponse = Record<string, any>
+type JsonResponse = JsonAntwort
 
 export interface ThreadNote {
   id: string
@@ -184,6 +183,14 @@ const POSITION_CHIPS: Record<string, string> = {
   info: 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300',
 }
 
+/** Bezeichnung der Positionsfelder in Speichermeldungen („Begründung zu TOP 2 nicht gespeichert …“) */
+const POSITIONSFELDER: Record<string, string> = {
+  position: 'Position',
+  reasoning: 'Begründung',
+  outcome: 'Ergebnis',
+  is_final: 'Endgültig-Markierung',
+}
+
 const SUMMARY_ERROR = '<p class="text-sm text-red-600">Zusammenfassung konnte nicht geladen werden.</p>'
 
 function readConfig(): PrepareConfig {
@@ -209,6 +216,9 @@ function markRaw<T extends object>(value: T): T {
 export const preparationApp = defineComponent(() => {
   const config = readConfig()
   const base = `/work/${config.orgSlug}/meetings`
+  // Außerhalb der Reaktivität; meldet seinen Stand an die Komponente, sobald init() die Wache startet
+  let speicherstandMelden: (stand: SpeicherStand) => void = () => {}
+  const speicher = new Speicherdienst({ beiAenderung: (stand) => speicherstandMelden(stand) })
 
   return {
     // ---------- Daten ----------
@@ -224,10 +234,17 @@ export const preparationApp = defineComponent(() => {
     currentUser: config.currentUser,
     positionLabels: config.positionLabels,
 
-    // Auto-Save-Status
+    // Auto-Save-Status (Speicherdienst, #854)
     pendingSaves: 0,
     lastSavedAt: null as string | null,
     saveError: false,
+    /** Aufträge, die nach einer Störung automatisch wiederholt werden */
+    saveRetrying: 0,
+    saveOffline: false,
+    saveAnmeldung: '' as SpeicherStand['anmeldung'],
+    saveAnmeldungZiel: '',
+    /** Endgültig gescheitert (wird nicht wiederholt) */
+    saveErrorText: '',
     _timers: {} as Record<string, number>,
     _pending: {} as Record<string, () => void>,
 
@@ -302,11 +319,40 @@ export const preparationApp = defineComponent(() => {
     get positionedCount(): number {
       return this.items.filter((i) => i.position && i.position !== 'open').length
     },
+    /** Ausführlicher Speicherstand (bisherige Ansicht; in der neuen Ansicht als Tooltip und Hinweis) */
     get saveStatusText(): string {
+      if (this.saveRetrying > 0) {
+        // Nicht in der Vorbereitung weiterarbeiten: der neue Tab dient nur der Anmeldung, sonst überschreibt
+        // die hier wartende (ältere) Eingabe später eine dort neu getroffene Entscheidung
+        if (this.saveAnmeldung === 'zweiter_faktor') {
+          return 'Nicht gespeichert: Ihr Konto muss zuerst einen zweiten Faktor einrichten. Bitte in einem neuen Tab erledigen, ihn dann schließen und hier weiterarbeiten. Ihre Eingabe wird danach automatisch gespeichert.'
+        }
+        if (this.saveAnmeldung) {
+          return 'Nicht gespeichert: Ihre Anmeldung ist abgelaufen. Bitte in einem neuen Tab anmelden, ihn dann schließen und hier weiterarbeiten. Ihre Eingabe wird danach automatisch gespeichert.'
+        }
+        if (this.saveOffline) {
+          return 'Nicht gespeichert: keine Verbindung. Bitte die Seite offen lassen, gespeichert wird, sobald die Verbindung wieder steht.'
+        }
+        return 'Nicht gespeichert: Server gerade nicht erreichbar. Bitte die Seite offen lassen, es wird automatisch erneut versucht.'
+      }
       if (this.pendingSaves > 0) return 'Speichert…'
-      if (this.saveError) return 'Speichern fehlgeschlagen — Änderungen erneut vornehmen'
+      if (this.saveErrorText) return this.saveErrorText
       if (this.lastSavedAt) return 'Gespeichert ' + this.lastSavedAt
       return 'Änderungen werden automatisch gespeichert'
+    },
+    /** Ziel des Hinweises bei abgelaufener Anmeldung bzw. fehlendem zweiten Faktor (öffnet im neuen Tab) */
+    get anmeldeAdresse(): string {
+      if (this.saveAnmeldung === 'zweiter_faktor' && this.saveAnmeldungZiel) {
+        // Nur Ziele derselben Herkunft
+        try {
+          const ziel = new URL(this.saveAnmeldungZiel, window.location.origin)
+          if (ziel.origin === window.location.origin) return ziel.pathname + ziel.search
+        } catch {
+          /* ungültig: Anmeldeseite */
+        }
+      }
+      // Ohne Rücksprung in die Vorbereitung (siehe saveStatusText)
+      return '/accounts/login/'
     },
     get annotationGroups(): Array<{ page: number; entries: Annotation[] }> {
       const byPage: Record<number, Annotation[]> = {}
@@ -326,7 +372,7 @@ export const preparationApp = defineComponent(() => {
         this.selectItem(this.items[0].id)
         if (window.innerWidth >= 1280) this.mobileTab = 'main'
       }
-      window.addEventListener('beforeunload', () => this.teardownRealtime())
+      this.startSpeicherwache()
     },
 
     // ---------- TOP-Auswahl & Navigation ----------
@@ -410,29 +456,86 @@ export const preparationApp = defineComponent(() => {
       }
     },
 
-    async apiSave(url: string, body?: unknown, method = 'POST'): Promise<JsonResponse | null> {
-      this.pendingSaves++
-      try {
-        const headers: Record<string, string> = { 'X-CSRFToken': csrfToken() }
-        const opts: RequestInit = { method, headers }
-        if (body instanceof FormData) {
-          opts.body = body
-        } else if (body !== undefined) {
-          headers['Content-Type'] = 'application/json'
-          opts.body = JSON.stringify(body)
-        }
-        const resp = await fetch(url, opts)
-        if (!resp.ok) throw new Error('HTTP ' + resp.status)
-        this.saveError = false
-        this.lastSavedAt = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-        return (await resp.json()) as JsonResponse
-      } catch (err) {
-        console.error('Speichern fehlgeschlagen:', url, err)
-        this.saveError = true
-        return null
-      } finally {
-        this.pendingSaves--
+    /**
+     * Speicherstand übernehmen und die Seite bewachen: beim Verbergen bzw. Verlassen sofort senden (keepalive),
+     * beim Verlassen mit ungespeicherten Eingaben nachfragen, nach Verbindungsverlust bzw. neuer Anmeldung
+     * sofort wiederholen. Einmal je Seite (aus init der bisherigen und der neuen Ansicht).
+     */
+    startSpeicherwache(): void {
+      speicherstandMelden = (stand) => this.uebernehmeSpeicherstand(stand)
+      // Echtzeit erst beim tatsächlichen Verlassen abbauen (nicht in beforeunload: bricht man dort ab, bliebe die
+      // Seite ohne Echtzeit); aus dem Zurück-Speicher des Browsers wieder verbinden
+      window.addEventListener('pagehide', () => this.teardownRealtime())
+      window.addEventListener('pageshow', (e: PageTransitionEvent) => {
+        if (e.persisted) this.connectRealtime()
+      })
+      const verbergen = () => {
+        speicher.verbergen = true
+        this.flushTimers()
       }
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'hidden') {
+          verbergen()
+        } else {
+          speicher.verbergen = false
+          speicher.jetztWiederholen()
+        }
+      })
+      window.addEventListener('pagehide', verbergen)
+      window.addEventListener('beforeunload', (e: BeforeUnloadEvent) => {
+        // Getipptes sofort senden statt nach 0,8 s; kleine Anfragen überleben das Verlassen (keepalive)
+        verbergen()
+        // Bleibt die Seite (Verlassen abgebrochen), wieder normal senden
+        window.setTimeout(() => {
+          speicher.verbergen = document.visibilityState === 'hidden'
+        }, 0)
+        if (speicher.mussWarnen()) {
+          e.preventDefault()
+          e.returnValue = ''
+        }
+      })
+      window.addEventListener('online', () => speicher.jetztWiederholen())
+      window.addEventListener('focus', () => speicher.jetztWiederholen())
+    },
+
+    uebernehmeSpeicherstand(stand: SpeicherStand): void {
+      this.pendingSaves = stand.sendet
+      this.saveRetrying = stand.wiederholt
+      this.saveOffline = stand.offline
+      this.saveAnmeldung = stand.anmeldung
+      this.saveAnmeldungZiel = stand.anmeldungZiel
+      this.saveErrorText = stand.fehler
+      this.saveError = stand.wiederholt > 0 || !!stand.fehler
+      if (stand.zuletztGespeichert) {
+        this.lastSavedAt = stand.zuletztGespeichert.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+      }
+    },
+
+    /**
+     * Einmal senden (Anlegen, Löschen, Hochladen, Verknüpfen): eine Wiederholung könnte doppelt anlegen.
+     * Reiht sich hinter laufende bzw. wartende Aktualisierungen derselben Adresse ein.
+     */
+    async apiSave(url: string, body?: unknown, method = 'POST'): Promise<JsonResponse | null> {
+      const ergebnis = await speicher.senden({ url, body, method })
+      if (ergebnis.ok) return ergebnis.daten
+      if (!ergebnis.ersetzt) console.error('Speichern fehlgeschlagen:', url, ergebnis.meldung)
+      return null
+    },
+
+    /**
+     * Felder eines Ziels aktualisieren (Position, Notiz, Redebeitrag …): je Adresse der Reihe nach, Felder einer
+     * wartenden Aktualisierung werden zusammengeführt, bei Störung wird automatisch wiederholt. `null` auch, wenn
+     * ein späterer Stand diesen übernommen hat.
+     */
+    async apiSaveStand(
+      url: string,
+      fields: Record<string, unknown>,
+      bezeichnung: SpeicherAuftrag['bezeichnung'],
+    ): Promise<JsonResponse | null> {
+      const ergebnis = await speicher.senden({ url, body: fields, wiederholbar: true, bezeichnung })
+      if (ergebnis.ok) return ergebnis.daten
+      if (!ergebnis.ersetzt) console.error('Speichern fehlgeschlagen:', url, ergebnis.meldung)
+      return null
     },
 
     // ---------- Position & Ergebnis ----------
@@ -456,19 +559,25 @@ export const preparationApp = defineComponent(() => {
       void this.savePositionFields(this.selectedItem, { outcome: this.selectedItem.outcome })
     },
     async savePositionFields(item: PreparedItem, fields: Record<string, unknown>): Promise<void> {
-      await this.apiSave(`${base}/${this.meetingId}/position/${item.id}/`, fields)
+      const benenne = (body: Record<string, unknown>) =>
+        `${Object.keys(body)
+          .map((feld) => POSITIONSFELDER[feld] || feld)
+          .join(', ')} zu TOP ${item.number}`
+      await this.apiSaveStand(`${base}/${this.meetingId}/position/${item.id}/`, fields, benenne)
     },
 
     // ---------- Private Notiz ----------
     async savePrivateNote(item: PreparedItem): Promise<void> {
-      await this.apiSave(`${base}/${this.meetingId}/private-note/${item.id}/`, {
-        content: item.privateNote || '',
-      })
+      await this.apiSaveStand(
+        `${base}/${this.meetingId}/private-note/${item.id}/`,
+        { content: item.privateNote || '' },
+        `Notiz zu TOP ${item.number}`,
+      )
     },
 
     // ---------- Org-Sitzungsnotizen ----------
     async saveOrgNotes(): Promise<void> {
-      await this.apiSave(`${base}/${this.meetingId}/prepare/`, { notes: this.orgNotes || '' })
+      await this.apiSaveStand(`${base}/${this.meetingId}/prepare/`, { notes: this.orgNotes || '' }, 'Sitzungsnotizen')
     },
 
     // ---------- Redebeitrag ----------
@@ -541,7 +650,7 @@ export const preparationApp = defineComponent(() => {
     },
 
     async saveSpeechFields(item: PreparedItem, fields: Record<string, unknown>): Promise<void> {
-      const data = await this.apiSave(this.speechUrl(item), fields)
+      const data = await this.apiSaveStand(this.speechUrl(item), fields, `Redebeitrag zu TOP ${item.number}`)
       if (data?.success) {
         item.hasSpeechNote = true
         if (data.speech) {

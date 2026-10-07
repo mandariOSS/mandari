@@ -112,6 +112,8 @@
                 <i data-lucide="cloud-off" class="w-3.5 h-3.5"></i>
             </template>
             <span x-text="saveStatusText"></span>
+            <a x-show="saveRetrying > 0 && saveAnmeldung" x-cloak :href="anmeldeAdresse" target="_blank" rel="noopener"
+               class="underline" x-text="saveAnmeldung === 'zweiter_faktor' ? 'Zweiten Faktor einrichten' : 'In neuem Tab anmelden'"></a>
         </div>
 
         <div class="flex-1"></div>
