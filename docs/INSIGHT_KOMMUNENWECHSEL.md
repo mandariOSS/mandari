@@ -90,6 +90,8 @@ Umwandlung der Quellen in das Format oben ist ein Schritt beim Betrieb, nachverf
 ## Proxy
 
 „In meiner Nähe“ braucht die Standortfreigabe des Browsers. Das mitgelieferte `Caddyfile` erlaubt sie nur für die
-eigene Seite (`Permissions-Policy: camera=(), microphone=(), geolocation=(self)`). Wer einen eigenen Proxy betreibt,
+eigene Seite (`Permissions-Policy: camera=(), microphone=(), geolocation=(self)`). Es setzt die Policy nur als
+Vorgabe (`?Permissions-Policy`), wenn die Antwort keine eigene mitbringt: Die Website unter derselben Domain schickt
+eine strengere Policy, die der Proxy sonst überschriebe. Wer einen eigenen Proxy betreibt,
 darf `geolocation` nicht ganz sperren (`geolocation=()`): Der Browser lehnt die Abfrage dann ohne Rückfrage ab, und
 der Wechsel meldet nur, dass der Standort nicht freigegeben wurde.
