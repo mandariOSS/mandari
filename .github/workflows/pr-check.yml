@@ -865,8 +865,8 @@ jobs:
           MANDARI_TEST_DB_VORLAGE: mandari_testvorlage
         run: |
           cd mandari
-          # Jeder Test braucht seine eigene Zeit; --dist load verteilt sie einzeln auf die Worker
-          pytest -n auto --dist load -m migrationen --teil-protokoll="$RUNNER_TEMP/testteil" -q -rfE \
+          # 23 Tests von 2 s bis 150 s: worksteal gleicht die Last zwischen den Workern während des Laufs aus
+          pytest -n auto --dist worksteal -m migrationen --teil-protokoll="$RUNNER_TEMP/testteil" -q -rfE \
             --durations=0 --cov=apps --cov=hub --cov=insight_core --cov-report= --ignore=tests_e2e
           mv .coverage "$RUNNER_TEMP/testteil/coverage-migrationstests.daten"
 
