@@ -206,13 +206,13 @@
                     </button>
                     {% endif %}
                 </div>
-                {# Brotkrumen mit der Kommune der Seite; gehört sie nicht zur gewählten, wählen die Links sie erst #}
+                {# Brotkrumen mit der Kommune der Seite; gehört sie nicht zur gewählten, führt die Kommune auf ihre Stadtseite, die übrigen Links wählen sie erst (nofollow, Issue #914) #}
                 <nav aria-label="Brotkrumen" class="hidden lg:block flex-1 min-w-0 text-[0.9rem]">
                     <ol class="flex items-center gap-1.5 min-w-0 text-gray-600 dark:text-gray-400">
                         <li class="shrink-0">
                             {% if insight_breadcrumb or insight_area != "uebersicht" %}
                             {% url 'insight_core:insight:portal_home' as start_url %}
-                            <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% elif page_body_foreign %}{% url 'insight_core:insight:set_body' page_body.id %}?weiter={{ start_url|urlencode }}{% else %}{{ start_url }}{% endif %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{% if insight_portal %}{{ insight_portal.name }}{% elif page_body %}{{ page_body.get_display_name }}{% else %}Alle Kommunen{% endif %}</a>
+                            <a href="{% if insight_portal %}{{ insight_portal.home_url }}{% elif page_body_foreign and page_body_stadtseite %}{{ page_body_stadtseite }}{% elif page_body_foreign %}{% url 'insight_core:insight:set_body' page_body.id %}?weiter={{ start_url|urlencode }}{% else %}{{ start_url }}{% endif %}"{% if page_body_foreign and not page_body_stadtseite %} rel="nofollow"{% endif %} class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{% if insight_portal %}{{ insight_portal.name }}{% elif page_body %}{{ page_body.get_display_name }}{% else %}Alle Kommunen{% endif %}</a>
                             {% else %}
                             <span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100">{% if insight_portal %}{{ insight_portal.name }}{% elif page_body %}{{ page_body.get_display_name }}{% else %}Alle Kommunen{% endif %}</span>
                             {% endif %}
@@ -224,7 +224,7 @@
                             <span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100">{{ insight_breadcrumb.label }}</span>
                             {% else %}
                             {% url insight_breadcrumb.url_name as bereich_url %}
-                            <a href="{% if page_body_foreign %}{% url 'insight_core:insight:set_body' page_body.id %}?weiter={{ bereich_url|urlencode }}{% else %}{{ bereich_url }}{% endif %}" class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{{ insight_breadcrumb.label }}</a>
+                            <a href="{% if page_body_foreign %}{% url 'insight_core:insight:set_body' page_body.id %}?weiter={{ bereich_url|urlencode }}{% else %}{{ bereich_url }}{% endif %}"{% if page_body_foreign %} rel="nofollow"{% endif %} class="hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{{ insight_breadcrumb.label }}</a>
                             {% endif %}
                         </li>
                         {% endif %}

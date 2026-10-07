@@ -186,7 +186,12 @@ class TestVoruebergehend:
 
         sitemap = client.get("/sitemap-insight-bezirk-nord.xml")
         assert sitemap.status_code == 503 and sitemap["Retry-After"]
+        # Die nummerierten Dateien (Issue #914) ebenso: Suchmaschinen behalten die Adressen
+        for datei in ("/sitemap-insight-bezirk-nord-vorgaenge-1.xml", "/sitemap-insight-bezirk-nord-sitzungen-1.xml"):
+            antwort = client.get(datei)
+            assert antwort.status_code == 503 and antwort["Retry-After"], datei
         assert client.get("/sitemap-insight-fremd.xml").status_code == 200
+        assert client.get("/sitemap-insight-fremd-vorgaenge-1.xml").status_code == 200
 
         assert client.get(f"/oparl/v1/meeting/{welt['meeting'].pk}").status_code == 503
         assert client.get(f"/oparl/v1/body/{welt['body'].pk}/papers").status_code == 503
@@ -249,8 +254,12 @@ class TestArchiv:
         client = Client()
 
         assert f"/insight/vorgaenge/{welt['paper'].pk}/" in _suche(client)
-        sitemap = client.get("/sitemap-insight-bezirk-nord.xml")
-        assert sitemap.status_code == 200 and f"/insight/termine/{welt['meeting'].pk}/" in sitemap.content.decode()
+        assert client.get("/sitemap-insight-bezirk-nord.xml").status_code == 200
+        # Sitzungen und Vorgänge stehen seit Issue #914 in nummerierten Dateien
+        sitzungen = client.get("/sitemap-insight-bezirk-nord-sitzungen-1.xml")
+        assert sitzungen.status_code == 200 and f"/insight/termine/{welt['meeting'].pk}/" in sitzungen.content.decode()
+        vorgaenge = client.get("/sitemap-insight-bezirk-nord-vorgaenge-1.xml")
+        assert vorgaenge.status_code == 200 and f"/insight/vorgaenge/{welt['paper'].pk}/" in vorgaenge.content.decode()
         antwort = client.get(f"/oparl/v1/meeting/{welt['meeting'].pk}")
         assert antwort.status_code == 200 and not antwort.json().get("deleted")
 
@@ -298,6 +307,8 @@ class TestDauerhaft:
 
         assert f"/insight/vorgaenge/{welt['paper'].pk}/" not in _suche(client)
         assert client.get("/sitemap-insight-bezirk-nord.xml").status_code == 410
+        assert client.get("/sitemap-insight-bezirk-nord-vorgaenge-1.xml").status_code == 410
+        assert client.get("/sitemap-insight-bezirk-nord-sitzungen-1.xml").status_code == 410
         assert "bezirk-nord" not in client.get("/sitemap-insight-index.xml").content.decode()
 
         objekt = client.get(f"/oparl/v1/meeting/{welt['meeting'].pk}")
@@ -320,6 +331,8 @@ class TestWiederVeroeffentlichen:
             "/insight/k/bezirk-nord/",
             f"/insight/beschluesse/{welt['beschluss'].pk}/",
             "/sitemap-insight-bezirk-nord.xml",
+            "/sitemap-insight-bezirk-nord-vorgaenge-1.xml",
+            "/sitemap-insight-bezirk-nord-sitzungen-1.xml",
             f"/oparl/v1/meeting/{welt['meeting'].pk}",
         ):
             response = client.get(url)

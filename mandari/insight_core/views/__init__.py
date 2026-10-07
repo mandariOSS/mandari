@@ -101,6 +101,7 @@ from .search import (
 )
 from .sitemap import (
     body_sitemap,
+    body_sitemap_seite,
     robots_txt,
     sitemap_index,
 )
@@ -152,6 +153,7 @@ __all__ = [
     "_get_client_ip",
     "_send_confirmation_email",
     "body_sitemap",
+    "body_sitemap_seite",
     "robots_txt",
     "sitemap_index",
     "bookmark_entities",

@@ -39,7 +39,7 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
                 <template x-for="(t, i) in liste().eintraege" :key="t.name + t.ort + (t.hinweis || '') + (t.url || '')">
                     <li :class="i && 'border-t border-gray-200 dark:border-gray-800'">
                         <template x-if="t.verfuegbar">
-                            <a :href="t.url" @click="merken(t)" data-kommune-ziel class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-band-grau focus-visible:bg-band-grau">
+                            <a :href="t.url" rel="nofollow" @click="merken(t)" data-kommune-ziel class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-band-grau focus-visible:bg-band-grau">
                                 <span class="flex-1 min-w-0">
                                     <span class="block font-semibold text-gray-900 dark:text-white truncate" x-text="t.name"></span>
                                     <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate" x-text="zweiteZeile(t)"></span>
@@ -62,7 +62,7 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
             <p x-show="!sucheAktiv() && naehe && naechsteMitDaten" class="mt-3 text-[0.9rem] text-gray-700 dark:text-gray-300" x-cloak>
                 Nächste Kommune mit Daten:
                 <template x-if="naechsteMitDaten && naechsteMitDaten.url">
-                    <a :href="naechsteMitDaten.url" @click="merken(naechsteMitDaten)" data-kommune-ziel class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4" x-text="naechsteMitDaten.name"></a>
+                    <a :href="naechsteMitDaten.url" rel="nofollow" @click="merken(naechsteMitDaten)" data-kommune-ziel class="font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4" x-text="naechsteMitDaten.name"></a>
                 </template>
                 <span x-show="naechsteMitDaten && naechsteMitDaten.entfernung !== undefined" x-text="naechsteMitDaten ? '(' + entfernungText(naechsteMitDaten.entfernung) + ')' : ''"></span>
             </p>
@@ -108,7 +108,7 @@ dahin unsichtbar ihren Platz halten (x-cloak="platz").
                             </button>
                         </template>
                         <template x-if="e.art === 'kommune' && e.verfuegbar">
-                            <a :href="e.url" @click="merken(e)" data-kommune-ziel class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-band-grau focus-visible:bg-band-grau">
+                            <a :href="e.url" rel="nofollow" @click="merken(e)" data-kommune-ziel class="flex items-center gap-3 px-3 py-2.5 rounded-lg hover:bg-band-grau focus-visible:bg-band-grau">
                                 <span class="flex-1 min-w-0">
                                     <span class="block font-semibold text-gray-900 dark:text-white truncate" x-text="e.name"></span>
                                     <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate" x-text="e.ort"></span>

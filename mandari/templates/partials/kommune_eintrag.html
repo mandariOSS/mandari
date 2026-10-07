@@ -1,6 +1,6 @@
-{# Eintrag im Kommunenwechsel ohne JavaScript (pages/portal/kommunen.html): wählbar mit Daten, sonst als Text #}
+{# Eintrag im Kommunenwechsel ohne JavaScript (pages/portal/kommunen.html): wählbar mit Daten, sonst als Text; die Wahl ist ein Umweg über die Sitzung (nofollow) #}
 {% if eintrag.verfuegbar %}
-<a href="{{ eintrag.url }}" class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-band-grau">
+<a href="{{ eintrag.url }}" rel="nofollow" class="flex items-center gap-3 px-3 py-3 rounded-lg hover:bg-band-grau">
     <span class="flex-1 min-w-0">
         <span class="block font-semibold text-gray-900 dark:text-white truncate">{{ eintrag.name }}</span>
         <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{% if eintrag.hinweis %}{{ eintrag.hinweis }}, {% endif %}{{ eintrag.ort }}</span>

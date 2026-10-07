@@ -118,7 +118,7 @@ Der Block steht im `Caddyfile` (`handle_response` im `reverse_proxy` der Anwendu
 handle_response @dokument {
 	root * {$OPARL_FILES_MOUNT:/srv/mandari-files}
 	copy_response_headers {
-		include Content-Type Content-Disposition X-Content-Type-Options Content-Security-Policy Cache-Control X-Mandari-Cache X-Request-ID
+		include Content-Type Content-Disposition X-Content-Type-Options Content-Security-Policy Cache-Control X-Robots-Tag X-Mandari-Cache X-Request-ID
 	}
 	rewrite * {rp.header.X-Accel-Redirect}
 	uri strip_prefix /_mandari/dateien
@@ -131,6 +131,8 @@ handle_response @dokument {
   bei PDF). Caddy übernimmt genau diese Kopfzeilen; `file_server` bestimmt den Typ dann nicht nach der
   Dateiendung. Fehlte die Übernahme, käme eine HTML- oder SVG-Anlage mit ihrem eigenen Typ im Ursprung
   von Insight, Work und Session an.
+- **Nicht in Suchmaschinen:** Auch `X-Robots-Tag: noindex` (Issue #914) kommt aus der Antwort von Django; ohne
+  die Übernahme stünden Dokumente aus der Ablage ohne diese Kopfzeile im Netz.
 - **Nur unterhalb der Ablage:** Django leitet nur Dateien weiter, die nach Auflösen aller Verweise unterhalb
   von `OPARL_FILES_ROOT` liegen und deren Pfadteile nur aus Buchstaben, Ziffern, `.`, `_` und `-` bestehen
   (keine versteckten Dateien, kein `..`). Alles andere liefert Django wie bisher selbst aus.

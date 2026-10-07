@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from django.conf import settings as django_settings
 from django.test import Client, override_settings
 
 from insight_core.models import OParlBody, OParlFile, OParlSource
@@ -72,6 +73,8 @@ class TestWeiterleitung:
         assert response["X-Mandari-Cache"] == "hit"
         assert response["Cache-Control"] == "public, max-age=86400"
         assert "X-Frame-Options" not in response
+        # Dokumente gehören nicht in Suchmaschinen (Issue #914); Caddy übernimmt die Kopfzeile
+        assert response["X-Robots-Tag"] == "noindex"
 
     def test_herunterladen(self, body: OParlBody, ablage: Path) -> None:
         datei = _datei(body, ablage / "beispielstadt" / "2026" / "a1b2.pdf", "application/pdf", "vorlage.pdf")
@@ -106,6 +109,15 @@ class TestWeiterleitung:
             response = _abrufen(datei)
         assert "X-Accel-Redirect" not in response
         assert b"".join(response.streaming_content) == b"%PDF-1.4 test"
+
+
+def test_caddy_uebernimmt_die_kopfzeilen_von_django() -> None:
+    """Was Django für Dokumente aus der Ablage setzt, muss Caddy in die Antwort übernehmen (Caddyfile)."""
+    caddyfile = (Path(django_settings.BASE_DIR).parent / "Caddyfile").read_text(encoding="utf-8")
+    uebernommen = next(z for z in caddyfile.splitlines() if z.strip().startswith("include Content-Type")).split()
+    for kopf in ("Content-Type", "Content-Disposition", "X-Content-Type-Options", "Content-Security-Policy"):
+        assert kopf in uebernommen, kopf
+    assert "X-Robots-Tag" in uebernommen, "sonst stehen Dokumente aus der Ablage ohne noindex im Netz (Issue #914)"
 
 
 class TestNurUnterhalbDerAblage:

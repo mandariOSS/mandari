@@ -95,8 +95,9 @@ class TestErstbesuchUeberSuchmaschine:
             _html(client, reverse("insight_core:insight:meeting_detail", args=[kommunen["sitzung_b"].pk]))
         )
         waehlen = reverse("insight_core:insight:set_body", args=[b.id])
-        assert f'href="{waehlen}?weiter=/insight/"' in krumen
-        assert f'href="{waehlen}?weiter=/insight/termine/"' in krumen
+        # Ohne Slug gibt es keine Stadtseite: Die Links wählen die Kommune, Suchmaschinen folgen nicht (Issue #914)
+        assert f'href="{waehlen}?weiter=/insight/" rel="nofollow"' in krumen
+        assert f'href="{waehlen}?weiter=/insight/termine/" rel="nofollow"' in krumen
 
         antwort = client.get(f"{waehlen}?weiter=/insight/termine/")
         assert antwort.status_code == 302 and antwort["Location"] == "/insight/termine/"
@@ -125,12 +126,14 @@ class TestFremdeKommune:
         zurueck = re.search(r'<nav aria-label="Zurück"[^>]*>\s*<a href="([^"]*)"', html)
         waehlen = reverse("insight_core:insight:set_body", args=[kommunen["b"].id])
         assert zurueck and zurueck.group(1) == f"{waehlen}?weiter=/insight/vorgaenge/", "am Handy zur Liste von B"
+        assert f'<a href="{waehlen}?weiter=/insight/vorgaenge/" rel="nofollow"' in html
 
     def test_eigene_kommune_ohne_umweg_ueber_die_wahl(self, client: Client, kommunen: dict[str, Any]) -> None:
         _waehlen(client, kommunen["a"])
         html = _html(client, reverse("insight_core:insight:paper_detail", args=[kommunen["vorgang_a"].pk]))
         krumen = _brotkrumen(html)
         assert 'href="/insight/"' in krumen and 'href="/insight/vorgaenge/"' in krumen and "weiter=" not in krumen
+        assert "nofollow" not in krumen
         assert "Ratsinformationssystem von Beispielstadt" in _fuss(html)
 
     def test_listen_bleiben_bei_der_gewaehlten_kommune(self, client: Client, kommunen: dict[str, Any]) -> None:

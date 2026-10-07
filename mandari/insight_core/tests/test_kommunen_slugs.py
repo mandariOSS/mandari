@@ -121,7 +121,10 @@ class TestBefehl:
         assert "/media/bodies/logos/muenster.svg" in antwort.content.decode()
         index = client.get("/sitemap-insight-index.xml").content.decode()
         assert "/sitemap-insight-muenster.xml</loc>" in index
-        assert client.get("/sitemap-insight-muenster.xml").status_code == 200
+        sitemap = client.get("/sitemap-insight-muenster.xml")
+        assert sitemap.status_code == 200
+        # Die Stadtseite steht in der Sitemap der Kommune (Issue #914)
+        assert "/insight/k/muenster/</loc>" in sitemap.content.decode()
 
     @pytest.mark.parametrize(
         ("angabe", "meldung"),
@@ -226,6 +229,9 @@ class TestSitemapIndex:
         assert client.get(f"/sitemap-insight-{ohne_slug.pk}.xml").status_code == 200
         umleitung = client.get(f"/sitemap-insight-{muenster.pk}.xml")
         assert umleitung.status_code == 301 and umleitung["Location"] == "/sitemap-insight-muenster.xml"
+        # Ebenso die nummerierten Dateien (Issue #914)
+        umleitung = client.get(f"/sitemap-insight-{muenster.pk}-sitzungen-3.xml")
+        assert umleitung.status_code == 301 and umleitung["Location"] == "/sitemap-insight-muenster-sitzungen-3.xml"
         assert client.get(f"/sitemap-insight-{versteckt.pk}.xml").status_code == 404
         assert client.get(f"/sitemap-insight-{uuid.uuid4()}.xml").status_code == 404
         assert client.get("/sitemap-insight-gibt-es-nicht.xml").status_code == 404

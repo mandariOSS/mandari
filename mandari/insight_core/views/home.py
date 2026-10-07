@@ -23,7 +23,7 @@ from ..models import (
     OParlPaper,
     withdrawn_q,
 )
-from ..services import kommunenverzeichnis
+from ..services import indexierung, kommunenverzeichnis
 from ..services.paper_status import ENTSCHEIDUNG, KEINE_ENTSCHEIDUNG, ist_beschluss
 from ._helpers import get_active_body, is_all_bodies_mode
 
@@ -137,6 +137,9 @@ class PortalHomeView(TemplateView):
                 # Erste Stufe des Stöberns (Länder) gleich im Markup: Sie hält ihren Platz, statt nach dem Laden
                 # alles darunter zu verschieben (CLS), und spart die erste Anfrage
                 context["stoebern_start"] = kommunenverzeichnis.stoebern()
+                # Direkte Links auf die Stadtseiten (Issue #914): ohne JavaScript und ohne Sitzung erreichbar,
+                # so finden auch Suchmaschinen die Kommunen; höchstens zwölf, keine lange Liste
+                context["stadtseiten"] = indexierung.stadtseiten()
             context["upcoming_meetings"] = None
             context["recent_papers"] = None
 
