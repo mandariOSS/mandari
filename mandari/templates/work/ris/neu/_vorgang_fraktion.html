@@ -4,14 +4,13 @@ Spalte des Vorgangs (Issue #853): „Für die Fraktion“ – Positionen je Bera
 Organisation und die Wege in Vorbereitung und Dokumente –, darunter Angaben und Orte. Positionen, Notizen und
 Kommentare nur mit meetings.prepare, Dokumente nach ihren eigenen Rechten (apps/work/ris/fraktion.py).
 {% endcomment %}
-<section aria-labelledby="fraktion-titel" class="ris-fraktion" data-testid="fuer-die-fraktion">
-    <h2 id="fraktion-titel" class="ris-h2">Für die Fraktion</h2>
+<c-rahmen.band ton="grau" dicht titel="Für die Fraktion" titel_id="fraktion-titel" data-testid="fuer-die-fraktion">
     {% if darf_vorbereiten %}
     {% if uebergaben %}
     <ul class="mt-3 space-y-4 text-sm">
         {% for e in uebergaben %}
         <li>
-            <p class="ris-meta">{{ e.organization_name|default:"Sitzung" }}{% if e.date %} am {{ e.date|date:"d.m.Y" }}{% endif %}{% if e.agenda_number %}, TOP {{ e.agenda_number }}{% endif %}</p>
+            <p class="text-gray-600 dark:text-gray-400">{{ e.organization_name|default:"Sitzung" }}{% if e.date %} am {{ e.date|date:"d.m.Y" }}{% endif %}{% if e.agenda_number %}, TOP {{ e.agenda_number }}{% endif %}</p>
             <p class="mt-0.5 text-gray-900 dark:text-gray-100">{% include "work/ris/neu/_position.html" with position=e.position %}{% if e.position.ergebnis %}<span class="text-gray-700 dark:text-gray-300"> · Ergebnis: {{ e.position.ergebnis }}</span>{% endif %}</p>
             {% if e.position.begruendung %}<p class="mt-1 text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ e.position.begruendung }}</p>{% endif %}
         </li>
@@ -28,22 +27,21 @@ Kommentare nur mit meetings.prepare, Dokumente nach ihren eigenen Rechten (apps/
     <h3 class="mt-4 text-sm font-semibold text-gray-900 dark:text-white">Dokumente der Fraktion</h3>
     <ul class="mt-1 space-y-2 text-sm">
         {% for d in dokumente %}
-        <li><a href="{{ d.url }}" class="ris-link break-words">{{ d.titel }}</a><span class="ris-meta"> · {{ d.status }} · {{ d.bezug }}</span></li>
+        <li><c-ui.textlink href="{{ d.url }}" class="break-words">{{ d.titel }}</c-ui.textlink><span class="text-gray-600 dark:text-gray-400"> · {{ d.status }} · {{ d.bezug }}</span></li>
         {% endfor %}
     </ul>
     {% elif not darf_vorbereiten %}
     <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Die Fraktion hat kein Dokument zu diesem Vorgang.</p>
     {% endif %}
     <p class="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-sm">
-        {% if vorbereitung_url %}<a href="{{ vorbereitung_url }}" class="ris-link">Vorbereitung öffnen</a>
-        {% elif darf_sitzungen %}<a href="{% url 'work:meetings' org_slug=organization.slug %}" class="ris-link">Zur Sitzungsvorbereitung</a>{% endif %}
-        {% if darf_dokument_anlegen %}<a href="{% url 'work:document_create' org_slug=organization.slug %}" class="ris-link">Neues Dokument</a>{% endif %}
+        {% if vorbereitung_url %}<c-ui.textlink href="{{ vorbereitung_url }}">Vorbereitung öffnen</c-ui.textlink>
+        {% elif darf_sitzungen %}<c-ui.textlink href="{% url 'work:meetings' org_slug=organization.slug %}">Zur Sitzungsvorbereitung</c-ui.textlink>{% endif %}
+        {% if darf_dokument_anlegen %}<c-ui.textlink href="{% url 'work:document_create' org_slug=organization.slug %}">Neues Dokument</c-ui.textlink>{% endif %}
     </p>
-</section>
+</c-rahmen.band>
 
-<section aria-labelledby="angaben-titel">
-    <h2 id="angaben-titel" class="ris-h2">Angaben</h2>
-    <dl class="mt-2 ris-angaben">
+<c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
+    <c-ui.angaben class="mt-2">
         {% if paper.reference %}<dt>Vorlagen-Nr.</dt><dd class="tabular-nums">{{ paper.reference }}</dd>{% endif %}
         {% if paper.paper_type %}<dt>Art</dt><dd>{{ paper.paper_type }}</dd>{% endif %}
         {% if paper.date %}<dt>Datum</dt><dd class="tabular-nums">{{ paper.date|date:"d.m.Y" }}</dd>{% endif %}
@@ -51,15 +49,14 @@ Kommentare nur mit meetings.prepare, Dokumente nach ihren eigenen Rechten (apps/
         <dt>Kommune</dt><dd>{{ paper.body.get_display_name }}</dd>
         {% if paper.oparl_created %}<dt>Erstellt im RIS</dt><dd class="tabular-nums">{{ paper.oparl_created|date:"d.m.Y, H:i" }} Uhr</dd>{% endif %}
         {% if paper.oparl_modified %}<dt>Zuletzt geändert</dt><dd class="tabular-nums">{{ paper.oparl_modified|date:"d.m.Y, H:i" }} Uhr</dd>{% endif %}
-    </dl>
-</section>
+    </c-ui.angaben>
+</c-rahmen.abschnitt>
 
 {% if orte %}
-<section aria-labelledby="orte-titel">
-    <h2 id="orte-titel" class="ris-h2">Orte</h2>
+<c-rahmen.abschnitt titel="Orte" titel_id="orte-titel">
     <ul class="mt-2 space-y-1 text-sm text-gray-800 dark:text-gray-200">
         {% for ort in orte %}<li>{{ ort.name|default:"Ort ohne Namen" }}</li>{% endfor %}
     </ul>
-    <p class="mt-2 text-sm"><a href="{% url 'work:ris_map' org_slug=organization.slug %}" class="ris-link">Auf der Karte anzeigen</a></p>
-</section>
+    <p class="mt-2 text-sm"><c-ui.textlink href="{% url 'work:ris_map' org_slug=organization.slug %}">Auf der Karte anzeigen</c-ui.textlink></p>
+</c-rahmen.abschnitt>
 {% endif %}

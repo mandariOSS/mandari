@@ -8,10 +8,15 @@ und „Für die Fraktion“: Positionen mit Begründung und Ergebnis, Notizen, D
 Organisation. Ohne Schalter bleiben die bisherigen Seiten. Keine RIS-Funktion entfällt (Wege der bisherigen Seiten
 stehen weiter auf der Seite); Positionen, Notizen und Mitglieder nur mit den Rechten, mit denen sie auch sonst
 sichtbar sind, und nie aus einer anderen Organisation.
+
+Die Seiten nutzen dieselben Bausteine wie Insight statt eigener Nachbauten: Listen und Seitenwahl (c-liste.*, Ziele in
+Work), Kopfband und Band (c-rahmen.*, dicht), Zusammenfassung, Niederschrift, Übertragung, Sitzungsdateien und die
+Fraktion an Personen (Issue #853).
 """
 
 from __future__ import annotations
 
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -36,6 +41,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
     OParlSource,
+    PersonFraktion,
 )
 
 pytestmark = pytest.mark.django_db
@@ -344,3 +350,141 @@ def test_vorgangsliste_ohne_abfrage_je_vorgang(welt: Welt, client_for: Any, djan
 
     with django_assert_max_num_queries(45):
         assert client.get(url).status_code == 200
+
+
+# ---------------------------------------------------------------------------
+# Gemeinsame Bausteine mit Insight (Issue #853)
+# ---------------------------------------------------------------------------
+
+#: Klassen der früheren Nachbauten für die RIS-Seiten (static/css/input.css), ersetzt durch die gemeinsamen Bausteine
+EIGENE_KLASSEN = re.compile(
+    r'class="[^"]*(\bwork-page-header\b|\bris-(h2|meta|link|titel|zeile|fraktion|feld|angaben)\b)'
+)
+
+
+@pytest.mark.parametrize(("name", "kwargs", "neue_vorlage", "alte_vorlage"), SEITEN, ids=[s[0] for s in SEITEN])
+def test_kopfband_und_brotkrumen_aus_den_gemeinsamen_bausteinen(
+    welt: Welt, client_for: Any, name: str, kwargs: dict[str, str], neue_vorlage: str, alte_vorlage: str
+) -> None:
+    werte: dict[str, Any] = {schluessel: getattr(welt, wert).pk for schluessel, wert in kwargs.items()}
+
+    html = _seite(client_for, welt.vorsitz, name, **werte).content.decode()
+
+    # Kopfband von Insight in der dichten Fassung (Titel 24 px), keine eigenen Klassen mehr
+    assert '<h1 class="m-0 text-2xl font-bold' in html
+    assert not EIGENE_KLASSEN.search(html)
+    # Die Brotkrumen enden auf jeder Seite mit der aktuellen Seite
+    krumen = html[html.index('aria-label="Brotkrumen"') :]
+    krumen = krumen[: krumen.index("</nav>")]
+    assert krumen.count('aria-current="page"') == 1
+
+
+def test_listen_sind_die_listen_von_insight_mit_zielen_in_work(welt: Welt, client_for: Any) -> None:
+    slug = welt.org.slug
+    PersonFraktion.objects.create(
+        person=welt.person, body=welt.body, bezeichnung="Fraktion Mitte", quelle=PersonFraktion.QUELLE_EINBLENDUNG
+    )
+    faelle = [
+        ("work:ris_papers", {}, "vorgangsliste", "work:ris_paper_detail", {"paper_id": welt.vorlage.pk}),
+        (
+            "work:ris_meetings",
+            {"view": "all"},
+            "sitzungsliste",
+            "work:ris_meeting_detail",
+            {"meeting_id": welt.sitzung.pk},
+        ),
+        (
+            "work:ris_organizations",
+            {"tab": "all"},
+            "gremienliste",
+            "work:ris_organization_detail",
+            {"org_id": welt.ausschuss.pk},
+        ),
+        ("work:ris_persons", {}, "personenliste", "work:ris_person_detail", {"person_id": welt.person.pk}),
+    ]
+    for name, query, testid, ziel, ziel_kwargs in faelle:
+        html = _seite(client_for, welt.vorsitz, name, query).content.decode()
+        liste = html[html.index(f'data-testid="{testid}"') :]
+        liste = liste[: liste.index("</table>")]
+        # Zeile wie in Insight (ganze Zeile klickbar), das Ziel liegt in Work, ohne Merkliste von Insight
+        assert f'data-href="{reverse(ziel, kwargs={"org_slug": slug, **ziel_kwargs})}"' in liste, name
+        assert "/insight/" not in liste and "bookmarks" not in liste, name
+        assert "Für die Fraktion</th>" in liste, name
+
+    # Fraktion an Personen wie in Insight: auch aus der bestätigten Zuordnung, mit Quelle
+    personen = _seite(client_for, welt.vorsitz, "work:ris_persons").content.decode()
+    assert "Fraktion Mitte" in personen and "laut Einblendung der Live-Übertragung" in personen
+    person = _seite(client_for, welt.vorsitz, "work:ris_person_detail", person_id=welt.person.pk).content.decode()
+    assert "Fraktion Mitte" in person and "Vorsitz, Hauptausschuss" in person
+    gremium = _seite(client_for, welt.vorsitz, "work:ris_organization_detail", org_id=welt.ausschuss.pk)
+    assert "Fraktion Mitte" in gremium.content.decode()
+
+
+def test_seitenwahl_von_insight_behaelt_die_filter(welt: Welt, client_for: Any) -> None:
+    for nummer in range(30):
+        OParlPaper.objects.create(
+            external_id=_kennung("papers"), body=welt.body, name=f"Antrag {nummer}", paper_type="Antrag"
+        )
+
+    html = _seite(client_for, welt.vorsitz, "work:ris_papers", {"type": "Antrag"}).content.decode()
+
+    assert 'aria-label="Seiten"' in html and 'aria-label="Nächste Seite"' in html
+    assert "?type=Antrag&amp;page=2" in html and "min-w-8 h-8" in html
+
+
+def test_sitzung_mit_niederschrift_uebertragung_und_sitzungsdateien_wie_insight(welt: Welt, client_for: Any) -> None:
+    niederschrift = OParlFile.objects.create(
+        external_id=_kennung("files"),
+        body=welt.body,
+        meeting=welt.sitzung,
+        name="Niederschrift öffentlicher Teil",
+        access_url="https://ris.neu.example/niederschrift.pdf",
+        mime_type="application/pdf",
+    )
+    einladung = OParlFile.objects.create(
+        external_id=_kennung("files"),
+        body=welt.body,
+        meeting=welt.sitzung,
+        name="Einladung",
+        access_url="https://ris.neu.example/einladung.pdf",
+        mime_type="application/pdf",
+        text_content="Einladung zur Sitzung",
+    )
+    OParlFile.objects.create(
+        external_id=_kennung("files"), body=welt.body, meeting=welt.sitzung, name="Gelöschte Anlage", deleted=True
+    )
+    welt.sitzung.raw_json = {
+        "resultsProtocol": niederschrift.external_id,
+        "mandari:meetingFormat": "hybrid",
+        "mandari:publicAccess": {"url": "https://stream.example/sitzung", "hint": "Ohne Anmeldung."},
+    }
+    welt.sitzung.save(update_fields=["raw_json"])
+
+    html = _seite(client_for, welt.vorsitz, "work:ris_meeting_detail", meeting_id=welt.sitzung.pk).content.decode()
+
+    # Niederschrift und Teilnahme der Öffentlichkeit aus denselben Bausteinen wie Insight
+    assert 'data-testid="oeffentliche-niederschrift"' in html
+    assert reverse("insight_core:insight:file_proxy", args=[niederschrift.pk]) in html
+    assert (
+        'data-testid="sitzungsformat"' in html
+        and "Hybride Sitzung" in html
+        and "https://stream.example/sitzung" in html
+    )
+    # Übrige Sitzungsdateien als Dokumentzeilen; die Niederschrift steht nicht doppelt, Gelöschtes fehlt
+    dateien = html[html.index('data-testid="sitzungsdateien"') :]
+    dateien = dateien[: dateien.index("</ul>")]
+    assert "Einladung" in dateien and reverse("insight_core:insight:file_proxy", args=[einladung.pk]) in dateien
+    assert 'x-data="documentText"' in dateien and "Niederschrift öffentlicher Teil" not in dateien
+    assert "Gelöschte Anlage" not in html
+
+
+def test_vorgang_mit_zusammenfassung_aus_dem_baustein_von_insight(welt: Welt, client_for: Any) -> None:
+    welt.vorlage.summary = "Kurz gesagt: eine neue Feuerwache im Norden."
+    welt.vorlage.save(update_fields=["summary"])
+
+    html = _seite(client_for, welt.vorsitz, "work:ris_paper_detail", paper_id=welt.vorlage.pk).content.decode()
+
+    zusammenfassung = html[html.index('data-testid="vorgang-zusammenfassung"') :]
+    assert "Kurz gesagt: eine neue Feuerwache" in zusammenfassung
+    assert "Die Zusammenfassung kann Fehler enthalten." in zusammenfassung
+    assert '<h2 class="text-base font-semibold' in zusammenfassung

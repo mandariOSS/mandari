@@ -1,0 +1,37 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Kopfband einer Seite, gemeinsam für Insight und Work (Issues #783, #853): Titel, ein erklärender Satz und darunter
+höchstens eine Aktion bzw. die Filter. Fläche „grau“ (Listen, Detail) oder „marke“ (Übersicht, Kommunenauswahl).
+  <c-rahmen.kopfband titel="Vorgänge" text="Alle Vorlagen und Anträge …">…Filter…</c-rahmen.kopfband>
+  <c-rahmen.kopfband titel="{{ paper.name }}" dicht>
+      <c-slot name="oben"><c-insight.zurueck href="…">Vorgänge</c-insight.zurueck></c-slot>
+      <c-slot name="aktionen"><c-ui.button href="…">Sitzung vorbereiten</c-ui.button></c-slot>
+      …Angaben unter dem Titel…
+  </c-rahmen.kopfband>
+titel_id/text_id (optional): Kennungen für Titel und Satz, etwa wenn HTMX sie out of band aktualisiert (Suche).
+``dicht`` für Arbeitsflächen (Work): Titel 24 px, Satz 14 px, 20 px Rand oben und unten; ``oben`` steht über dem Titel
+(Weg zurück am Handy), ``aktionen`` rechts neben Titel und Satz (höchstens eine Hauptaktion). Ohne ``dicht`` bleibt das
+Markup von Insight gleich (c-insight.kopfband).
+{% endcomment %}
+<c-vars titel="" text="" ton="grau" titel_id="" text_id="" dicht="" oben="" aktionen="" />
+<section class="{% if ton == 'marke' %}bg-primary-100 dark:bg-primary-950{% else %}bg-band-grau{% endif %}" {{ attrs }}>
+    {% if dicht %}
+    <div class="max-w-insight mx-auto px-4 sm:px-8 py-5">
+        {{ oben }}
+        <div class="flex flex-wrap items-end justify-between gap-x-8 gap-y-3">
+            <div class="min-w-0">
+                <h1 {% if titel_id %}id="{{ titel_id }}" {% endif %}class="m-0 text-2xl font-bold tracking-tight text-gray-900 dark:text-white break-words">{{ titel }}</h1>
+                {% if text or text_id %}<p {% if text_id %}id="{{ text_id }}" aria-live="polite" {% endif %}class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300">{{ text }}</p>{% endif %}
+                {% if slot %}<div class="mt-2">{{ slot }}</div>{% endif %}
+            </div>
+            {% if aktionen %}<div class="flex flex-wrap items-center gap-2">{{ aktionen }}</div>{% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="max-w-insight mx-auto px-4 sm:px-8 py-8 sm:py-10">
+        <h1 {% if titel_id %}id="{{ titel_id }}" {% endif %}class="text-[1.75rem] sm:text-[2.25rem] font-bold tracking-tight leading-tight text-gray-900 dark:text-white break-words">{{ titel }}</h1>
+        {% if text or text_id %}<p {% if text_id %}id="{{ text_id }}" aria-live="polite" {% endif %}class="mt-2 max-w-2xl text-[1.0625rem] leading-relaxed text-gray-700 dark:text-gray-300">{{ text }}</p>{% endif %}
+        {% if slot %}<div class="mt-6">{{ slot }}</div>{% endif %}
+    </div>
+    {% endif %}
+</section>

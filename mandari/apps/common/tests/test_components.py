@@ -9,6 +9,8 @@ und die auf Komponenten umgestellten Konto-Seiten (Pilot, Issue #167).
 from __future__ import annotations
 
 import re
+import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -227,6 +229,94 @@ class TestRahmen:
             '<c-insight.blatt-link href="/k/" icon="map" area="karte">Karte</c-insight.blatt-link>', insight_area="x"
         )
         assert "aria-current" not in blatt
+
+
+class _Ziele:
+    """Ziele der gemeinsamen Listen wie in Work (insight_core.ris_links): eigene Adressen statt Insight."""
+
+    def url(self, art: str, kennung: object) -> str:
+        return f"/ziel/{art}/{kennung}/"
+
+
+def _sitzung(**felder: Any) -> SimpleNamespace:
+    werte: dict[str, Any] = {
+        "id": uuid.uuid4(),
+        "get_display_name": "Rat",
+        "cancelled": False,
+        "start": None,
+        "location_name": "",
+        "anzahl_tops": 0,
+    }
+    return SimpleNamespace(**(werte | felder))
+
+
+@pytest.mark.django_db
+class TestGemeinsameBausteine:
+    """Listen, Seitenwahl, Kopfband und Band teilen sich Insight und Work (Issue #853)."""
+
+    def test_liste_fuehrt_ohne_ziele_nach_insight_und_mit_zielen_dorthin(self) -> None:
+        sitzung = _sitzung()
+        insight = render('<c-liste.sitzungen :sitzungen="s" />', s=[sitzung])
+        assert f'data-href="/insight/termine/{sitzung.id}/"' in insight
+        assert "py-3.5" in insight and '<span class="sr-only">Merken</span>' in insight
+
+        work = render(
+            '<c-liste.sitzungen :sitzungen="s" :links="ziele" dicht ohne_merken />', s=[sitzung], ziele=_Ziele()
+        )
+        assert f'data-href="/ziel/sitzung/{sitzung.id}/"' in work and f'href="/ziel/sitzung/{sitzung.id}/"' in work
+        assert "/insight/" not in work and "py-3.5" not in work and "py-2" in work
+        assert '<span class="sr-only">Öffnen</span>' in work and "bookmarks" not in work
+
+    def test_zusatzspalte_je_zeile(self) -> None:
+        html = render(
+            '<c-liste.vorgaenge :vorgaenge="v" :links="ziele" dicht ohne_merken '
+            'zusatz="work/ris/neu/_person_fraktion.html" zusatz_titel="Für die Fraktion" />',
+            v=[SimpleNamespace(id=uuid.uuid4(), name="Radweg", reference="", paper_type="", date=None, konto="x")],
+            ziele=_Ziele(),
+        )
+        # Spalte ab md, darunter unter dem Titel: je Zeile mit ``eintrag``
+        assert "Für die Fraktion</th>" in html and html.count("Ihre Organisation") == 2 and "/ziel/vorgang/" in html
+
+    def test_seitenwahl_im_buergerportal_und_dicht(self) -> None:
+        from django.core.paginator import Paginator
+
+        seite = Paginator(list(range(60)), 25).get_page(2)
+        insight = render('<c-liste.seiten :seite="seite" />', seite=seite)
+        assert 'aria-label="Vorherige Seite"' in insight and "min-w-11 h-11" in insight and "?page=3" in insight
+        dicht = render('<c-liste.seiten :seite="seite" dicht />', seite=seite)
+        assert "min-w-8 h-8" in dicht and "min-w-11" not in dicht and 'aria-current="page"' in dicht
+        assert render('<c-liste.seiten :seite="seite" />', seite=Paginator([1], 25).get_page(1)).strip() == ""
+
+    def test_kopfband_wie_insight_und_dicht(self) -> None:
+        insight = render(
+            '<c-insight.kopfband titel="Vorgänge" text="Alle Vorlagen" data-testid="k">Filter</c-insight.kopfband>'
+        )
+        assert "text-[1.75rem]" in insight and "py-8 sm:py-10" in insight and 'data-testid="k"' in insight
+        assert '<div class="mt-6">Filter</div>' in insight
+        dicht = render(
+            '<c-rahmen.kopfband titel="Vorgang" text="Satz" dicht><c-slot name="oben">Zurück</c-slot>'
+            '<c-slot name="aktionen"><a href="/v/">Vorbereiten</a></c-slot>Angaben</c-rahmen.kopfband>'
+        )
+        assert "text-2xl" in dicht and "py-5" in dicht and "text-[1.75rem]" not in dicht
+        assert dicht.index("Zurück") < dicht.index("<h1") < dicht.index("Angaben") < dicht.index("Vorbereiten")
+
+    def test_band_wie_insight_und_dicht_mit_titel(self) -> None:
+        insight = render('<c-insight.band ton="grau" aria-labelledby="x">Inhalt</c-insight.band>')
+        assert "max-w-insight" in insight and "bg-band-grau" in insight and 'aria-labelledby="x"' in insight
+        dicht = render('<c-rahmen.band ton="grau" dicht titel="Für die Fraktion" titel_id="f">Inhalt</c-rahmen.band>')
+        assert "max-w-insight" not in dicht and "rounded-md px-5 py-5" in dicht
+        assert 'aria-labelledby="f"' in dicht and '<h2 id="f"' in dicht and "Für die Fraktion" in dicht
+
+    def test_abschnitt_textlink_und_angaben(self) -> None:
+        html = render(
+            '<c-rahmen.abschnitt titel="Tagesordnung" titel_id="t" zusatz="3 Punkte">'
+            '<c-slot name="link"><c-ui.textlink href="/a/">Alle</c-ui.textlink></c-slot>Inhalt</c-rahmen.abschnitt>'
+        )
+        assert 'aria-labelledby="t"' in html and '<h2 id="t"' in html and "· 3 Punkte" in html and 'href="/a/"' in html
+        extern = render('<c-ui.textlink href="https://ris.example/" extern class="text-sm">RIS</c-ui.textlink>')
+        assert 'target="_blank" rel="noopener noreferrer"' in extern and "(öffnet in neuem Fenster)" in extern
+        assert "text-sm" in extern
+        assert "<dl" in render("<c-ui.angaben><dt>Datum</dt><dd>1.1.</dd></c-ui.angaben>")
 
 
 class TestUiKitPreview:

@@ -6,7 +6,6 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import contextlib
-from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -25,7 +24,6 @@ from ..models import (
     OParlAgendaItem,
     OParlBody,
     OParlConsultation,
-    OParlFile,
     OParlMeeting,
     OParlOrganization,
     withdrawn_q,
@@ -275,53 +273,10 @@ def calendar_feed(request):
     return response
 
 
-def _protocol_file(meeting):
-    """
-    Öffentliche Niederschrift einer Sitzung (OParl ``resultsProtocol``, sonst ``verbatimProtocol``).
-
-    Quelle ist das gespiegelte Meeting-Objekt; angezeigt wird nur eine nicht zurückgenommene Datei
-    derselben Kommune (Issue #318: mandari Session veröffentlicht hier ausschließlich den
-    öffentlichen Teil, eine Rücknahme markiert die Datei sofort als gelöscht).
-    """
-    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
-    for key in ("resultsProtocol", "verbatimProtocol"):
-        ref = raw.get(key)
-        external_id = ref.get("id") if isinstance(ref, dict) else ref if isinstance(ref, str) else None
-        if not external_id:
-            continue
-        found = (
-            OParlFile.objects.filter(external_id=external_id, deleted=False).defer("text_content", "raw_json").first()
-        )
-        if found is not None and (found.body_id is None or found.body_id == meeting.body_id):
-            return found
-    return None
-
-
-#: Sitzungsformate aus der OParl-Erweiterung von mandari Session (Issue #138)
-BROADCAST_LABELS = {
-    "hybrid": "Hybride Sitzung: Einzelne Mitglieder sind per Bild-Ton-Übertragung zugeschaltet.",
-    "digital": "Digitale Sitzung: Die Mitglieder tagen per Videokonferenz.",
-}
-
-
-def _broadcast_info(meeting: Any) -> dict[str, str] | None:
-    """
-    Sitzungsformat und Hinweis für die Öffentlichkeit (Übertragung, Anmeldung), Issue #138.
-
-    Quelle ist die OParl-Erweiterung ``mandari:meetingFormat``/``mandari:publicAccess``. Die Daten stammen
-    von einer externen Quelle: nur erwartete Typen, eigene Texte für das Format, Links nur mit http(s).
-    """
-    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
-    access = raw.get("mandari:publicAccess")
-    access = access if isinstance(access, dict) else {}
-    url = access.get("url")
-    hint = access.get("hint")
-    info = {
-        "label": BROADCAST_LABELS.get(raw.get("mandari:meetingFormat"), ""),
-        "url": url[:500] if isinstance(url, str) and url.startswith(("https://", "http://")) else "",
-        "hint": hint[:1000] if isinstance(hint, str) else "",
-    }
-    return info if any(info.values()) else None
+#: Niederschrift und Sitzungsformat lesen Insight und Work gemeinsam aus der Lese-Fassade (Issue #853); die bisherigen
+#: Namen bleiben für Aufrufer und Tests
+_protocol_file = ris_selectors.protocol_file
+_broadcast_info = ris_selectors.broadcast_info
 
 
 class MeetingDetailView(DetailView):

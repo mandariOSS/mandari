@@ -1,0 +1,76 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Sitzungsliste, gemeinsam für Insight und Work (Issues #841, #853): ab xl mit der Zahl der öffentlichen
+Tagesordnungspunkte (``anzahl_tops``). Spalten ohne einen einzigen Wert (etwa „Ort“, wenn die Quelle keine Orte nennt)
+entfallen.
+  <c-liste.sitzungen :sitzungen="meetings" />
+  <c-liste.sitzungen :sitzungen="meetings" :links="ris_links" dicht ohne_merken
+                     zusatz="work/ris/neu/_sitzung_fraktion.html" zusatz_titel="Für die Fraktion" />
+Parameter: sitzungen; links (Ziele, insight_core.ris_links, ohne Angabe Insight); dicht (Arbeitsfläche: 14 px,
+Zeilen um 36 px); ohne_merken (ohne Stern der Merkliste); zusatz/zusatz_titel (Vorlage einer weiteren Spalte, je Zeile
+mit ``eintrag``, etwa „Für die Fraktion“ in Work).
+{% endcomment %}
+<c-vars sitzungen="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" />
+{% load insight_listen %}
+{% with sp_ort=sitzungen|hat_wert:"location_name" sp_tops=sitzungen|hat_wert:"anzahl_tops" %}
+<div class="-mx-3">
+    <div class="relative overflow-x-auto">
+    <table class="w-full">
+        <thead>
+            <tr class="border-b border-gray-300 dark:border-gray-700">
+                <th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Sitzung</th>
+                <th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Datum</th>
+                <th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Uhrzeit</th>
+                {% if sp_ort %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Ort</th>{% endif %}
+                {% if sp_tops %}<th class="text-right px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-xl:hidden">Tagesordnung</th>{% endif %}
+                {% if zusatz %}<th class="text-left px-3 py-2 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-md:hidden">{{ zusatz_titel }}</th>{% endif %}
+                <th class="w-10 px-2 {% if dicht %}py-2{% else %}py-3{% endif %}"><span class="sr-only">{% if ohne_merken %}Öffnen{% else %}Merken{% endif %}</span></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
+            {% for meeting in sitzungen %}
+            {% ris_url links "sitzung" meeting.id as ziel %}
+            <tr class="hover:bg-band-grau/70 group cursor-pointer {% if meeting.cancelled %}opacity-60{% endif %}"
+                data-href="{{ ziel }}">
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %}">
+                    <div class="flex items-center gap-2">
+                        <a href="{{ ziel }}"
+                           class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
+                            {{ meeting.get_display_name }}
+                        </a>
+                        {% if meeting.cancelled %}
+                        <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
+                        {% endif %}
+                    </div>
+                    <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                        {% if meeting.start %}{{ meeting.start|date:"d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% endif %}
+                        {% if meeting.location_name %} &middot; {{ meeting.location_name }}{% endif %}
+                    </div>
+                    {% if zusatz %}<div class="md:hidden mt-1 text-sm">{% include zusatz with eintrag=meeting %}</div>{% endif %}
+                </td>
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if meeting.start %}<time datetime="{{ meeting.start|date:'Y-m-d' }}">{{ meeting.start|date:"d.m.Y" }}</time>{% endif %}
+                </td>
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if meeting.start %}{{ meeting.start|date:"H:i" }} Uhr{% endif %}
+                </td>
+                {% if sp_ort %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-600 dark:text-gray-400 max-sm:hidden">{{ meeting.location_name|default:"" }}</td>
+                {% endif %}
+                {% if sp_tops %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-right text-gray-600 dark:text-gray-400 max-xl:hidden whitespace-nowrap">{% if meeting.anzahl_tops %}{{ meeting.anzahl_tops }} Punkt{{ meeting.anzahl_tops|pluralize:"e" }}{% endif %}</td>
+                {% endif %}
+                {% if zusatz %}<td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-200 max-md:hidden">{% include zusatz with eintrag=meeting %}</td>{% endif %}
+                <td class="px-2 {% if dicht %}py-2{% else %}py-3{% endif %}">
+                    <div class="flex items-center gap-1">
+                        {% if not ohne_merken %}{% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="sm" %}{% endif %}
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors" aria-hidden="true"></i>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endwith %}
