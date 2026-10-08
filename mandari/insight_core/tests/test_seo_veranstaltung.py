@@ -15,6 +15,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -47,7 +48,7 @@ ISO_MIT_VERSATZ = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?([+-]\d{2}
 
 
 @pytest.fixture
-def site_url():
+def site_url() -> Iterator[None]:
     with override_settings(SITE_URL=SITE):
         yield
 
