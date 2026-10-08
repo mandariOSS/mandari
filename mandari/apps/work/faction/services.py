@@ -559,7 +559,11 @@ def record_decision(
     item.votes_for = votes_yes
     item.votes_against = votes_no
     item.votes_abstain = votes_abstain
-    item.save()
+    # Nur die Felder des Beschlusses schreiben: Notizen, die die Schriftführung gleichzeitig speichert
+    # (``sitzung.notizen_speichern``), bleiben erhalten statt mit dem Stand vom Beginn der Anfrage überschrieben.
+    # Den Stand der Notizen vorher nachladen, damit auch die Änderungshistorie keine Notizänderung erfindet.
+    item.refresh_from_db(fields=["notes_encrypted", "notes_updated_at"])
+    item.save(update_fields=["has_decision", "votes_for", "votes_against", "votes_abstain", "updated_at"])
 
     apply_approval_item_decision(item, decision, item.meeting, membership)
     return decision

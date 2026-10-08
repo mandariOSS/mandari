@@ -590,7 +590,10 @@ def test_im_beratungsverlauf_aus_der_vorbereitung(
 
     html = client_for(vorsitz.user).get(seite(org, sitzung_laeuft), {"top": str(item.pk)}).content.decode()
     assert "Im Beratungsverlauf" in html
-    assert "Hauptausschuss, 12.10.2026" in html
+    # Gemeinsamer Baustein mit der Sitzungsvorbereitung (c-work.beratungsverlauf, c-work.verlauf-eintrag)
+    assert 'class="wf-verlauf" role="group" aria-labelledby="fs-verlauf-h"' in html
+    vorbereitung_url = reverse("work:meeting_prepare", kwargs={"org_slug": org.slug, "meeting_id": vorberatung.pk})
+    assert f'<a class="wo" href="{vorbereitung_url}">Hauptausschuss, 12.10.2026</a>' in html
     assert "Mit Änderungsantrag" in html and "Ergebnis: angenommen" in html and "endgültig" in html
     assert "Gerätehaus Nord vorziehen" in html
 
@@ -862,7 +865,7 @@ def test_notizen_stehen_in_bisheriger_ansicht_und_niederschrift(
     faction_services.build_faction_protocol_pdf(sitzung_laeuft, internal=False)
     assert "<strong>Hilfsfrist</strong> im Norden" in erzeugt["html"]
     name = vorsitz.user.get_display_name()
-    assert f"{name}, Sitzungsleitung" in erzeugt["html"] and f"{name}, Protokollführung" in erzeugt["html"]
+    assert f"{name}, Sitzungsleitung" in erzeugt["html"] and f"{name}, Schriftführung" in erzeugt["html"]
 
 
 def test_datenexport_nennt_sitzungsleitung_und_schriftfuehrung(
@@ -877,3 +880,111 @@ def test_datenexport_nennt_sitzungsleitung_und_schriftfuehrung(
     vermerke = [(v["action"], v["object"]) for v in daten["vermerke"]]
     assert ("Schriftführung", sitzung_laeuft.title) in vermerke
     assert ("Sitzungsleitung", sitzung_laeuft.title) not in vermerke
+
+
+# ---- Abfragen, gleichzeitiges Speichern, bisherige Ansicht (Review zu #874) ----------------------------
+
+
+def _vereidigte_dazu(org: Any, make_member: Any, meeting: FactionMeeting, anzahl: int, beginn: int) -> None:
+    """Vereidigte Mitglieder mit eigener Rolle und Teilnahme an der Sitzung."""
+    for i in range(beginn, beginn + anzahl):
+        m = make_member(org, [*MITGLIED, "faction.view_non_public"], email=f"vereidigt-{i}@example.org")
+        m.is_sworn_in = True
+        m.save(update_fields=["is_sworn_in"])
+        FactionAttendance.objects.create(meeting=meeting, membership=m, status="present")
+
+
+def test_nichtoeffentlicher_top_fragt_rechte_nicht_je_person_ab(
+    org: Any,
+    vorsitz: Any,
+    sitzung_laeuft: Any,
+    tops: Any,
+    client_for: Any,
+    make_member: Any,
+    django_assert_max_num_queries: Any,
+) -> None:
+    """
+    Vereidigung (Aufgaben an Personen), „stimmberechtigt“ in der Anwesenheit und die Beschlussfähigkeit lesen die
+    Rechte vorgeladen: Zehn Mitglieder mehr ergeben keine einzige Abfrage mehr – im TOP-Wechsel und auf der Seite.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    schalter_an(org)
+    client = client_for(vorsitz.user)
+    _vereidigte_dazu(org, make_member, sitzung_laeuft, 2, 0)
+    top = top_url(org, sitzung_laeuft, tops["noe"])
+    ganze_seite = f"{seite(org, sitzung_laeuft)}?top={tops['noe'].pk}"
+    with CaptureQueriesContext(connection) as top_vorher:
+        assert client.get(top, HTTP_HX_REQUEST="true").status_code == 200
+    with CaptureQueriesContext(connection) as seite_vorher:
+        assert client.get(ganze_seite).status_code == 200
+
+    _vereidigte_dazu(org, make_member, sitzung_laeuft, 10, 2)
+    with django_assert_max_num_queries(len(top_vorher)):
+        html = client.get(top, HTTP_HX_REQUEST="true").content.decode()
+    # Alle Vereidigten stehen zur Auswahl für Aufgaben aus dem nichtöffentlichen TOP
+    assert html.count("vereidigt-") >= 12
+    with django_assert_max_num_queries(len(seite_vorher)):
+        html = client.get(ganze_seite).content.decode()
+    assert html.count(", stimmberechtigt") >= 12
+
+
+def test_beschluss_ueberschreibt_gleichzeitig_gespeicherte_notizen_nicht(
+    org: Any, vorsitz: Any, sitzung_laeuft: Any, tops: Any
+) -> None:
+    """Der Beschluss schreibt nur seine Felder: Notizen, die während der Anfrage gespeichert wurden, bleiben."""
+    from apps.work.faction import services as faction_services
+    from apps.work.faction.models import FactionAuditLog
+
+    # Stand zu Beginn der Anfrage „Beschluss erfassen“: noch ohne Notizen
+    item = FactionAgendaItem.objects.get(pk=tops["oe"].pk)
+    # Die Schriftführung speichert in der Zwischenzeit automatisch
+    sitzung.notizen_speichern(tops["oe"], "<p>Gleichzeitig geschrieben</p>", basis=None, membership=vorsitz)
+    faction_services.record_decision(
+        item, vorsitz, votes_yes=3, votes_no=0, votes_abstain=1, result="accepted", decision_text=""
+    )
+
+    frisch = FactionAgendaItem.objects.get(pk=item.pk)
+    assert "Gleichzeitig geschrieben" in cast(Any, frisch).get_notes_decrypted()
+    assert (frisch.has_decision, frisch.votes_for, frisch.votes_abstain) == (True, 3, 1)
+    # Die Änderungshistorie des Beschlusses erfindet keine Änderung der Notizen
+    beschluss = FactionAuditLog.objects.get(model_name="FactionAgendaItem", object_id=item.pk, action="decision")
+    assert "notes_encrypted" not in (beschluss.changes or {})
+
+
+def test_aktionen_der_bisherigen_ansicht_fuehren_dorthin_zurueck(
+    org: Any, vorsitz: Any, mitglied: Any, sitzung_laeuft: Any, client_for: Any
+) -> None:
+    """Formulare der bisherigen Ansicht ohne HTMX landen wieder in der bisherigen Ansicht, nicht in der neuen."""
+    schalter_an(org)
+    client = client_for(vorsitz.user)
+    url = reverse("work:faction_action", kwargs={"org_slug": org.slug, "meeting_id": sitzung_laeuft.pk})
+    teilnahme = sitzung_laeuft.attendances.get(membership=mitglied)
+    daten = {"action": "check_in", "attendance_id": str(teilnahme.pk)}
+
+    antwort = client.post(url, daten, HTTP_REFERER=f"http://testserver{seite(org, sitzung_laeuft)}?ansicht=bisher")
+    assert antwort.status_code == 302 and antwort["Location"] == f"{seite(org, sitzung_laeuft)}?ansicht=bisher"
+    # Auch über ein Formularfeld (etwa ohne Herkunftsadresse)
+    antwort = client.post(url, {**daten, "ansicht": "bisher"})
+    assert antwort["Location"] == f"{seite(org, sitzung_laeuft)}?ansicht=bisher"
+    # Aus der neuen Ansicht (oder ohne Angabe) wie bisher auf die Sitzungsseite
+    antwort = client.post(url, daten, HTTP_REFERER=f"http://testserver{seite(org, sitzung_laeuft)}?top=1")
+    assert antwort["Location"] == seite(org, sitzung_laeuft)
+    teilnahme.refresh_from_db()
+    assert teilnahme.status == "present"
+
+
+def test_videolink_im_kopf_nur_bei_online_sitzung(
+    org: Any, vorsitz: Any, sitzung_laeuft: Any, tops: Any, client_for: Any
+) -> None:
+    """Wie die bisherige Ansicht: Videoraum nur, wenn die Sitzung als Online-Sitzung markiert ist."""
+    schalter_an(org)
+    sitzung_laeuft.video_link = "https://video.example.org/raum"
+    sitzung_laeuft.save(update_fields=["video_link"])
+    client = client_for(vorsitz.user)
+    assert "video.example.org" not in client.get(seite(org, sitzung_laeuft)).content.decode()
+    sitzung_laeuft.is_virtual = True
+    sitzung_laeuft.save(update_fields=["is_virtual"])
+    html = client.get(seite(org, sitzung_laeuft)).content.decode()
+    assert "per Video" in html and "Videoraum öffnen" in html

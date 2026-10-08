@@ -5,8 +5,8 @@ Sitzungsansicht der laufenden Fraktionssitzung im Browser (Issue #874).
 Vorsitz: Notizen formatiert schreiben, automatisch speichern, neu laden; TOP wechseln (Tagesordnung, Taste J);
 Beschluss in der Leiste unten erfassen; Aufgabe für eine Personengruppe anlegen; Anwesenheit online setzen.
 Zwei Personen schreiben gleichzeitig Notizen zum selben TOP: Keine Eingabe geht verloren.
-Dazu axe-core und Bildschirmfotos (390, 1280, 1440, 1920, 2560) für die Sichtprüfung, mit Vorlage aus dem RIS,
-„Im Beratungsverlauf“ und einem bisherigen Wortbeitrag.
+Dazu axe-core (auch am Handy und mit offenem Anhängen-Dialog) und Bildschirmfotos (390, 1280, 1440, 1920, 2560)
+für die Sichtprüfung, mit Vorlage aus dem RIS, „Im Beratungsverlauf“ und einem bisherigen Wortbeitrag.
 """
 
 from __future__ import annotations
@@ -150,6 +150,7 @@ def sitzung(db: Any, org: Any, make_member: Any) -> tuple[Any, FactionMeeting, l
         status="ongoing",
         location="Fraktionsbüro",
         video_link="https://video.example.org/raum",
+        is_virtual=True,
         created_by=vorsitz,
         minute_taker=vorsitz,
     )
@@ -185,7 +186,7 @@ def test_sitzungsansicht_kernpfade(
     # Unterlagen groß: Hauptdatei der Vorlage als erster Reiter mit ihrem Text, „Im Beratungsverlauf“ im Kopf des TOPs
     expect(page.get_by_role("tab", name="V/2026/D-012")).to_have_attribute("aria-selected", "true")
     expect(page.locator("#fs-dok")).to_contain_text("Der Rat beschließt den Feuerwehrbedarfsplan")
-    expect(page.locator(".fs-verlauf")).to_contain_text("Mit Änderungsantrag")
+    expect(page.locator(".wf-verlauf")).to_contain_text("Mit Änderungsantrag")
     # Bisherige Wortbeiträge bleiben im Protokoll sichtbar
     expect(page.locator(".fs-eintraege")).to_contain_text("Wir tragen den Plan mit")
 
@@ -210,6 +211,18 @@ def test_sitzungsansicht_kernpfade(
     page.set_viewport_size({"width": 1920, "height": 1080})
     screenshot("fraktionssitzung-1920")
     page.set_viewport_size({"width": 1440, "height": 900})
+
+    # Unterlage anhängen: Dialog (c-ui.alpine-modal) barrierefrei, Escape schließt ihn wieder
+    page.locator("#fs-unterlagen").get_by_role("button", name="Unterlage hinzufügen").click()
+    page.get_by_role("menuitem", name="RIS-Vorlage suchen …").click()
+    dialog = page.get_by_role("dialog")
+    expect(dialog).to_be_visible()
+    expect(dialog).to_contain_text("RIS-Vorlage verknüpfen")
+    result = axe()
+    assert not result.failing, result.describe()
+    screenshot("fraktionssitzung-anhaengen-1440")
+    page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
 
     # Neu laden: Notizen sind da
     page.reload()
@@ -307,13 +320,15 @@ def test_anwesenheit_als_spalte_auf_breiten_bildschirmen(
 
 
 def test_sitzungsansicht_am_handy(
-    page: Any, live_server: Any, login: Any, org: Any, sitzung: Any, screenshot: Any
+    page: Any, live_server: Any, login: Any, org: Any, sitzung: Any, axe: Any, screenshot: Any
 ) -> None:
     vorsitz, meeting, tops = sitzung
     page.set_viewport_size({"width": 390, "height": 844})
     login(vorsitz.user.email, PASSWORD)
     oeffnen(page, live_server, org, meeting, tops[1])
     expect(page.locator("#fs-top-titel")).to_contain_text("Feuerwehrbedarfsplan")
+    result = axe()
+    assert not result.failing, result.describe()
     screenshot("fraktionssitzung-390")
     # Tagesordnung als Blatt
     page.locator("#fs-unten").get_by_role("button", name=re.compile("TOP 2")).click()

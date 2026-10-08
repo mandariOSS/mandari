@@ -1,0 +1,245 @@
+/* Gemeinsame Bausteine der Arbeitsflächen in Work (Review zu #874, Bestandsaufnahme #951).
+   Die Sitzungsvorbereitung (#856, work-vorbereitung.css, Präfix vb-) und die Sitzungsansicht der laufenden
+   Fraktionssitzung (#874, fraktionssitzung.css, Präfix fs-) nutzen dieselben Farben, Knöpfe, Eingaben, Menüs, Reiter,
+   Tagesordnungszeilen, „Im Beratungsverlauf“ (Cotton-Baustein c-work.beratungsverlauf), Aufgabenlisten,
+   Werkzeugleisten, die Leiste unten mit dem TOP-Wechsel und Dialoge (Inhalt von c-ui.alpine-modal).
+   Die Seiten setzen die Klasse `wf` an ihre Wurzel (Farben, Fokus); ihre eigenen Dateien regeln nur noch Aufbau,
+   Breiten und was es nur dort gibt. Maße nach „Gestalten ohne KI-Slop“ (Arbeitsplattform): Bedienschrift 13–14 px,
+   Bedienelemente 32 px (28 px in Leisten), Icons 16 px, Radius 4–6 px, Linien nur zum Trennen. */
+@layer components {
+  /* ---------- Farben ---------- */
+  .wf {
+    --wf-tinte: #1f2430;
+    --wf-text2: #535a68;
+    --wf-text3: #687080;
+    --wf-linie: #e4e7ec;
+    --wf-linie-stark: #cdd2da;
+    --wf-flaeche: #fff;
+    --wf-grau: #eef0f4;
+    --wf-grau-hell: #f6f7f9;
+    --wf-papier: #eceef2;
+    --wf-work: rgb(var(--primary-600));
+    --wf-work-text: rgb(var(--primary-700));
+    --wf-work-flaeche: rgb(var(--primary-50));
+    --wf-zust: #15803d;
+    --wf-abl: #b91c1c;
+    --wf-enth: #b45309;
+    --wf-andere: #475569;
+    --wf-offen: #9aa1ad;
+    --wf-warn: #92400e;
+    --wf-warn-flaeche: #fffbeb;
+    color: var(--wf-tinte);
+  }
+  .dark .wf {
+    --wf-tinte: #f3f4f6;
+    --wf-text2: #a3aab6;
+    --wf-text3: #8f97a5;
+    --wf-linie: #2d3748;
+    --wf-linie-stark: #4b5563;
+    --wf-flaeche: #111827;
+    --wf-grau: #182131;
+    --wf-grau-hell: #1f2937;
+    --wf-papier: #0b0f19;
+    --wf-work: rgb(var(--primary-400));
+    --wf-work-text: rgb(var(--primary-300));
+    --wf-work-flaeche: rgb(var(--primary-900) / .45);
+    --wf-zust: #4ade80;
+    --wf-abl: #f87171;
+    --wf-enth: #fbbf24;
+    --wf-andere: #94a3b8;
+    --wf-offen: #6b7280;
+    --wf-warn: #fcd34d;
+    --wf-warn-flaeche: rgb(120 53 15 / .25);
+  }
+  .wf :focus-visible { outline: 2px solid var(--wf-work); outline-offset: 2px; border-radius: 4px; }
+
+  /* ---------- Knöpfe und Textlinks ---------- */
+  .wf-knopf {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 10px;
+    border-radius: 6px; border: 1px solid var(--wf-linie-stark); background: var(--wf-flaeche); color: var(--wf-tinte);
+    font-size: 13.5px; font-weight: 500; white-space: nowrap; text-decoration: none; cursor: pointer;
+  }
+  .wf-knopf:hover:not(:disabled) { background: var(--wf-grau-hell); }
+  .wf-knopf:disabled { opacity: .45; cursor: default; }
+  .wf-knopf svg { width: 16px; height: 16px; flex: none; }
+  .wf-knopf.wf-leise { border-color: transparent; background: transparent; }
+  .wf-knopf.wf-leise:hover:not(:disabled) { background: var(--wf-grau-hell); }
+  .wf-knopf.wf-ik { width: 32px; padding: 0; }
+  /* In Leisten: 28 px */
+  .wf-knopf.wf-klein { height: 28px; min-width: 28px; padding: 0 8px; font-size: 13px; }
+  .wf-knopf.wf-klein.wf-ik { width: 28px; padding: 0; }
+  .wf-knopf[aria-pressed="true"], .wf-knopf[aria-expanded="true"] { background: var(--wf-work-flaeche); color: var(--wf-work-text); }
+  /* Die eine Hauptaktion eines Bereichs; auch im dunklen Modus Kennfarbe 600 (weiße Schrift 6 : 1) */
+  .wf-knopf.wf-haupt { background: rgb(var(--primary-600)); border-color: rgb(var(--primary-600)); color: #fff; font-weight: 600; }
+  .wf-knopf.wf-haupt:hover:not(:disabled) { background: rgb(var(--primary-700)); }
+  /* Textlink und Knöpfe im Linkstil („Mehr“, „Ändern“): wie der Textlink von Insight (c-suche.textlink) */
+  .wf-textlink {
+    color: var(--wf-work-text); font-weight: 500; text-decoration: underline; text-underline-offset: 4px;
+    background: none; border: 0; padding: 0; cursor: pointer; font-size: inherit;
+  }
+  .wf-textlink.gefahr { color: var(--wf-abl); }
+  .wf-textlink.klein { font-size: 12.5px; }
+
+  /* ---------- Eingaben ---------- */
+  .wf-eingabe {
+    min-width: 0; border: 1px solid var(--wf-linie-stark); border-radius: 6px; background-color: var(--wf-flaeche);
+    color: inherit; font-size: 14px;
+  }
+  input.wf-eingabe { height: 32px; padding: 0 10px; }
+  textarea.wf-eingabe { width: 100%; padding: 8px 10px; line-height: 1.55; resize: vertical; display: block; }
+  .wf-eingabe::placeholder { color: var(--wf-text3); }
+  .wf-eingabe:focus { outline: none; border-color: var(--wf-work); box-shadow: 0 0 0 1px var(--wf-work); }
+  select.wf-auswahl {
+    height: 32px; padding: 0 28px 0 10px; appearance: none; -webkit-appearance: none; cursor: pointer;
+    background: var(--wf-flaeche) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23687080' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 8px center / 14px;
+  }
+  select.wf-auswahl.klein { height: 28px; font-size: 12.5px; }
+  select.wf-auswahl.gewaehlt { border-color: var(--wf-work); background-color: var(--wf-work-flaeche); font-weight: 600; }
+  .wf-haken { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+  .wf-haken input { accent-color: var(--wf-work); width: 16px; height: 16px; margin: 0; }
+
+  /* ---------- Positionspunkt (immer zusammen mit Text) ---------- */
+  .wf-punkt { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; background: var(--wf-andere); }
+  .wf-punkt.zustimmung { background: var(--wf-zust); }
+  .wf-punkt.ablehnung { background: var(--wf-abl); }
+  .wf-punkt.enthaltung { background: var(--wf-enth); }
+  .wf-punkt.offen { background: transparent; box-shadow: inset 0 0 0 1.5px var(--wf-offen); }
+
+  /* ---------- Menüs (Weitere Aktionen, weitere Unterlagen, Unterlage hinzufügen) ---------- */
+  .wf-menue-anker { position: relative; display: flex; align-items: center; }
+  .wf-menue {
+    position: absolute; top: calc(100% + 4px); left: 0; min-width: 14rem; max-width: 22rem; padding: 4px 0; z-index: 70;
+    background: var(--wf-flaeche); border: 1px solid var(--wf-linie); border-radius: 8px; box-shadow: 0 8px 24px rgba(17, 24, 39, .12);
+  }
+  .wf-menue.rechts { left: auto; right: 0; }
+  .wf-menue > [role^="menuitem"] {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 6px 12px; border: 0; background: none;
+    font-size: 13.5px; text-align: left; color: inherit; text-decoration: none; cursor: pointer;
+  }
+  .wf-menue > [role^="menuitem"]:hover, .wf-menue > [role^="menuitem"]:focus { background: var(--wf-grau-hell); outline: none; }
+  .wf-menue > [aria-checked="true"] { font-weight: 600; }
+  .wf-menue svg { width: 16px; height: 16px; color: var(--wf-text3); flex: none; }
+  .wf-menue span { overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---------- Werkzeugleiste (Formatierung) ---------- */
+  .wf-wz-knopf {
+    width: 28px; height: 28px; flex: none; display: inline-grid; place-items: center; border: 0; border-radius: 4px;
+    background: none; color: var(--wf-text2); cursor: pointer;
+  }
+  .wf-wz-knopf:hover { background: var(--wf-grau-hell); color: var(--wf-tinte); }
+  .wf-wz-knopf[aria-pressed="true"] { background: var(--wf-work-flaeche); color: var(--wf-work-text); }
+  .wf-wz-knopf svg { width: 16px; height: 16px; }
+  .wf-wz-knopf.mit-text { width: auto; display: inline-flex; gap: 6px; padding: 0 8px; font-size: 13px; }
+  .wf-wz-trenn { width: 1px; height: 16px; flex: none; margin: 0 6px; background: var(--wf-linie-stark); }
+
+  /* ---------- Reiter (Unterlagen des TOPs) ---------- */
+  .wf-reiterleiste {
+    flex: none; display: flex; align-items: center; gap: 4px 12px; min-height: 40px; padding: 0 8px 0 20px;
+    border-bottom: 1px solid var(--wf-linie); min-width: 0;
+  }
+  .wf-reiterleiste > .wf-reiter, .wf-reiterleiste > .wf-menue-anker { align-self: stretch; }
+  .wf-reiter { display: flex; gap: 16px; min-width: 0; overflow: hidden; }
+  .wf-reiter [role="tab"] {
+    display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: min(16rem, 100%); padding: 0 2px; margin-bottom: -1px;
+    border: 0; border-bottom: 2px solid transparent; background: none; color: var(--wf-text2); font-size: 13.5px;
+    white-space: nowrap; cursor: pointer;
+  }
+  .wf-reiter [role="tab"]:hover { color: var(--wf-tinte); }
+  .wf-reiter [role="tab"][aria-selected="true"] { color: var(--wf-tinte); font-weight: 600; border-bottom-color: var(--wf-tinte); }
+  .wf-reiter [role="tab"] svg { width: 13px; height: 13px; color: var(--wf-text3); flex: none; }
+  .wf-reiter .txt { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---------- Tagesordnung ---------- */
+  .wf-tl { list-style: none; margin: 0; padding: 0; }
+  .wf-tl-gruppe { margin: 0; padding: 10px 14px 2px; font-size: 12px; color: var(--wf-text3); }
+  .wf-tl-zeile {
+    position: relative; display: grid; grid-template-columns: 2.25rem minmax(0, 1fr) 16px; gap: 6px; align-items: start; width: 100%;
+    padding: 6px 12px; border: 0; border-left: 2px solid transparent; background: none; text-align: left;
+    font-size: 13.5px; line-height: 1.35; color: var(--wf-tinte); text-decoration: none; cursor: pointer;
+  }
+  .wf-tl-zeile:hover { background: var(--wf-grau-hell); }
+  .wf-tl-zeile[aria-current="true"] { background: var(--wf-work-flaeche); border-left-color: var(--wf-work); }
+  .wf-tl-zeile[aria-current="true"] .titel { font-weight: 600; }
+  .wf-tl-zeile.unter { padding-left: 24px; }
+  .wf-tl-zeile.formal { color: var(--wf-text2); }
+  .wf-tl-zeile .nr { color: var(--wf-text3); font-weight: 500; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+  /* Titel gekürzt (Vorgabe zwei Zeilen, die Seite kann mehr erlauben); nur lange zusammengesetzte Wörter trennen */
+  .wf-tl-zeile .titel {
+    display: -webkit-box; -webkit-line-clamp: var(--wf-tl-zeilen, 2); -webkit-box-orient: vertical; overflow: hidden;
+    hyphens: auto; hyphenate-limit-chars: 12 5 5; overflow-wrap: break-word;
+  }
+  .wf-tl-zeile > .wf-punkt { margin-top: 5px; justify-self: center; }
+  .wf-tl-zeile .stand { color: var(--wf-zust); margin-top: 1px; }
+  .wf-tl-zeile .stand svg { width: 14px; height: 14px; }
+
+  /* ---------- Kopf des TOPs und „Im Beratungsverlauf“ ---------- */
+  .wf-top-h { margin: 0; font-size: 18px; line-height: 1.35; font-weight: 700; letter-spacing: -.01em; outline: none; }
+  .wf-top-nr { color: var(--wf-text3); font-weight: 600; font-variant-numeric: tabular-nums; margin-right: 4px; }
+  .wf-verlauf { display: flex; align-items: baseline; gap: 2px 10px; margin-top: 4px; font-size: 13.5px; line-height: 1.45; min-width: 0; }
+  .wf-verlauf-h { flex: none; display: inline-flex; align-items: center; gap: 5px; color: var(--wf-text2); font-weight: 600; }
+  .wf-verlauf-h svg { width: 14px; height: 14px; color: var(--wf-text3); align-self: center; }
+  .wf-verlauf ul { list-style: none; margin: 0; padding: 0; min-width: 0; flex: 1 1 auto; }
+  /* Je Eintrag eine Zeile; „Mehr“ im Kopf (Klasse .offen am Kopf) zeigt alles */
+  .wf-verlauf li { color: var(--wf-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .offen .wf-verlauf li { white-space: normal; margin-bottom: 2px; }
+  .wf-verlauf .wo { color: var(--wf-tinte); font-weight: 500; text-decoration: none; }
+  .wf-verlauf a.wo:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .wf-verlauf b { color: var(--wf-tinte); font-weight: 600; }
+  .wf-verlauf .wf-punkt { margin: 0 5px 0 4px; vertical-align: 1px; }
+
+  /* ---------- Aufgaben aus dem TOP ---------- */
+  .wf-aufgaben { list-style: none; margin: 0; padding: 0; }
+  .wf-aufgaben li {
+    display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 8px; align-items: start; padding: 8px 0;
+    border-bottom: 1px solid var(--wf-linie); font-size: 14px; line-height: 1.45;
+  }
+  .wf-aufgaben li > svg { width: 16px; height: 16px; margin-top: 2px; color: var(--wf-text3); }
+  /* Abhaken wie im Aufgabenboard; 16 px mit Abstand in der Zeile (WCAG 2.5.8, Ausnahme Abstand) */
+  .wf-aufgabe-haken { accent-color: var(--wf-work); width: 16px; height: 16px; margin: 3px 0 0; cursor: pointer; outline-offset: 4px; }
+  .wf-aufgabe-haken:disabled { cursor: default; }
+  .wf-aufgaben .was { min-width: 0; overflow-wrap: anywhere; }
+  .wf-aufgaben li.erledigt .was > span:first-child { color: var(--wf-text2); text-decoration: line-through; }
+  .wf-aufgaben small { display: block; font-size: 12.5px; color: var(--wf-text2); }
+  /* Titel über die ganze Breite (wichtigstes Feld), darunter Zuständig, Fällig und Anlegen */
+  .wf-aufgabe-neu { display: grid; grid-template-columns: minmax(0, 1fr) 9.5rem auto; gap: 8px; margin-top: 12px; align-items: start; }
+  .wf-aufgabe-neu > input[type="text"], .wf-aufgabe-neu > .ganz { grid-column: 1 / -1; }
+  .wf-aufgabe-neu > input[type="text"] { width: 100%; }
+
+  /* ---------- Leiste unten: Beschluss bzw. Position, voriger und nächster TOP ---------- */
+  .wf-leiste {
+    flex: none; display: flex; align-items: center; gap: 4px 14px; min-height: 48px; min-width: 0;
+    padding: 6px 12px 6px 20px; padding-bottom: calc(6px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--wf-linie); background: var(--wf-flaeche);
+  }
+  .wf-leiste .beschriftung { font-size: 13px; font-weight: 600; flex: none; }
+  .wf-nachbarn { display: flex; gap: 4px; flex: 0 1 auto; min-width: 0; }
+  .wf-nachbar {
+    display: flex; align-items: center; gap: 6px; height: 40px; min-width: 0; padding: 0 10px 0 6px; text-align: left;
+    border: 1px solid transparent; border-radius: 6px; background: none; color: var(--wf-tinte); text-decoration: none; cursor: pointer;
+  }
+  .wf-nachbar.weiter { padding: 0 6px 0 10px; }
+  .wf-nachbar:hover:not(:disabled) { background: var(--wf-grau-hell); }
+  .wf-nachbar:disabled { opacity: .4; cursor: default; }
+  .wf-nachbar > span { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+  .wf-nachbar.weiter > span { text-align: right; }
+  .wf-nachbar small { font-size: 12px; color: var(--wf-text3); white-space: nowrap; }
+  .wf-nachbar b { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .wf-nachbar svg { width: 16px; height: 16px; flex: none; color: var(--wf-text2); }
+
+  /* ---------- Dialoge: Inhalt von c-ui.alpine-modal ---------- */
+  .wf-dialog { padding: 16px 20px 20px; font-size: 14px; color: var(--wf-tinte); }
+  .wf-dialog h2 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+  .wf-dialog-kopf { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .wf-dialog-kopf h2 { margin: 0; }
+  .wf-dialog-fuss { display: flex; align-items: center; justify-content: flex-end; gap: 8px 12px; margin-top: 12px; }
+  .wf-dialog-fuss > .leise:first-child { margin-right: auto; }
+  .wf-dialog .leise { color: var(--wf-text2); font-weight: 400; }
+  .wf-dialog .klein { font-size: 12.5px; }
+  .wf-treffer { list-style: none; margin: 8px 0; padding: 0; max-height: 18rem; overflow-y: auto; }
+  .wf-treffer button {
+    display: flex; flex-direction: column; width: 100%; padding: 8px 10px; border: 0; border-radius: 6px; background: none;
+    text-align: left; cursor: pointer; color: inherit; font-size: 14px;
+  }
+  .wf-treffer button:hover { background: var(--wf-grau-hell); }
+  .wf-treffer small { font-size: 12px; color: var(--wf-text3); }
+}

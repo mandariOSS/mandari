@@ -195,7 +195,7 @@ class TestVorbereitungNeu:
         login(admin.user.email, PASSWORD)
         goto(f"/work/{admin.organization.slug}/meetings/{meeting.id}/prepare/")
         wait_for_component(page, "vorbereitung")
-        assert page.locator(".vb-tl-zeile").count() == 81
+        assert page.locator(".wf-tl-zeile").count() == 81
 
         # Zehn Wechsel hintereinander bleiben flüssig (Speichern, Unterlage und Diskussion je TOP)
         page.locator("#top-titel").focus()
@@ -238,7 +238,7 @@ class TestVorbereitungNeu:
         # Tagesordnung, Unterlagen und Position als Blatt; Leiste der Breite ist ausgeblendet
         expect(page.locator(".vb-leiste-position")).to_be_hidden()
         expect(page.locator(".vb-liste")).to_be_hidden()
-        page.locator(".vb-mobil-unterlagen .vb-knopf").first.click()
+        page.locator(".vb-mobil-unterlagen .wf-knopf").first.click()
         expect(page.locator(".vb-unterlagen.blatt-offen")).to_be_visible()
         expect(page.locator(".vb-seite canvas").first).to_be_visible(timeout=15000)
         screenshot("vorbereitung_neu_390_unterlage")
@@ -287,7 +287,7 @@ class TestVorbereitungNeu:
         page.get_by_label("Neue Aufgabe").fill("Rückfrage an die Verwaltung stellen")
         page.get_by_label("Fällig am").fill("2026-10-19")
         page.get_by_role("button", name="Anlegen").click()
-        eintrag = page.locator(".vb-aufgaben li", has_text="Rückfrage an die Verwaltung stellen")
+        eintrag = page.locator(".wf-aufgaben li", has_text="Rückfrage an die Verwaltung stellen")
         expect(eintrag).to_contain_text("fällig 19.10.2026")
         expect(page.get_by_role("tab", name="Aufgaben")).to_contain_text("1")
 

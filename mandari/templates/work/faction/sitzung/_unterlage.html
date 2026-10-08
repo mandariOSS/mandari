@@ -27,7 +27,7 @@
         {% endif %}
     {% elif u.art == 'ris_vorlage' %}
         <p class="fs-dok-meta"><span>{% if o.paper_type %}{{ o.paper_type }} {% endif %}{{ o.reference|default:"" }}{% if o.date %}, {{ o.date|date:"d.m.Y" }}{% endif %}</span></p>
-        <h4 class="fs-top-h">{{ o.name }}</h4>
+        <h4 class="wf-top-h">{{ o.name }}</h4>
         <p class="fs-meta">Zu dieser Vorlage liegt im Ratsinformationssystem noch keine Datei vor.
             <c-suche.textlink href="{% url 'work:ris_paper_detail' org_slug=org_slug paper_id=o.pk %}">Vorgang im RIS öffnen</c-suche.textlink></p>
     {% elif u.art == 'dokument' %}
@@ -46,7 +46,7 @@
         <ul class="fs-dateien"><c-insight.document-row :file="o" titel="{{ o.filename }}" herunterladen="{{ datei_url }}" dicht /></ul>
         {% endif %}
     {% elif u.art == 'links' %}
-        <ul class="fs-auf-liste">
+        <ul class="fs-links">
             {% for link in o %}
             <li><i data-lucide="external-link" aria-hidden="true"></i><c-suche.textlink href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label|default:link.url }}</c-suche.textlink></li>
             {% endfor %}

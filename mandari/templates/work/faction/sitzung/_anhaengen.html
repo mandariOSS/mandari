@@ -1,18 +1,18 @@
 {# Unterlage in der Sitzung anhängen (Tischvorlage): Datei hochladen, RIS-Vorlage suchen, eigenes Dokument (Issue #874) #}
 {# Kontext: item, meeting, sitzung_urls, ziel ("fokus": TOP ohne Unterlagen, sonst "unterlagen"); Komponente unterlageAnhaengen #}
-<div class="fs-menue" x-data="unterlageAnhaengen" data-item="{{ item.pk }}" data-ziel="{{ ziel }}" @click.outside="menue = false">
-    <button type="button" class="fs-knopf fs-klein{% if ziel != 'fokus' %} fs-leise{% endif %}" aria-haspopup="menu"
+<div class="wf-menue-anker" x-data="unterlageAnhaengen" data-item="{{ item.pk }}" data-ziel="{{ ziel }}" @click.outside="menue = false">
+    <button type="button" class="wf-knopf wf-klein{% if ziel != 'fokus' %} wf-leise{% endif %}" aria-haspopup="menu"
             :aria-expanded="menue ? 'true' : 'false'" @click="menue = !menue">
-        <i data-lucide="paperclip" aria-hidden="true"></i>{% if ziel == 'fokus' %}Unterlage hinzufügen{% else %}<span class="fs-sr">Unterlage hinzufügen</span>{% endif %}
+        <i data-lucide="paperclip" aria-hidden="true"></i>{% if ziel == 'fokus' %}Unterlage hinzufügen{% else %}<span class="sr-only">Unterlage hinzufügen</span>{% endif %}
     </button>
-    <div class="fs-menue-liste" role="menu" x-show="menue" x-cloak>
+    <div class="wf-menue rechts" role="menu" x-show="menue" x-cloak>
         <button type="button" role="menuitem" @click="oeffne('datei')"><i data-lucide="upload" aria-hidden="true"></i>Datei hochladen …</button>
         <button type="button" role="menuitem" @click="oeffne('vorlage')"><i data-lucide="landmark" aria-hidden="true"></i>RIS-Vorlage suchen …</button>
         <button type="button" role="menuitem" @click="oeffne('dokument')"><i data-lucide="file-text" aria-hidden="true"></i>Eigenes Dokument …</button>
     </div>
 
-    <div class="fs-dialog-hg" x-show="dialog !== ''" x-cloak @click.self="dialog = ''" @keydown.escape="dialog = ''">
-        <div class="fs-dialog" role="dialog" aria-modal="true" aria-labelledby="fs-anh-titel" x-trap.inert.noscroll="dialog !== ''">
+    <c-ui.alpine-modal show="dialogOffen" size="md" aria-labelledby="fs-anh-titel">
+        <div class="wf-dialog">
             <h2 id="fs-anh-titel" x-text="titel()">Unterlage hinzufügen</h2>
             <form x-show="dialog === 'datei'" hx-post="{{ sitzung_urls.aktion }}" hx-encoding="multipart/form-data"
                   hx-target="{% if ziel == 'fokus' %}#fs-fokus{% else %}#fs-unterlagen{% endif %}" hx-swap="outerHTML"
@@ -22,17 +22,17 @@
                 <input type="hidden" name="ziel" value="{{ ziel }}">
                 <label class="fs-meta" for="fs-anh-datei">PDF, Office-Dokument oder Bild, höchstens 20 MB</label>
                 <input id="fs-anh-datei" type="file" name="file" required class="block mt-2 text-sm">
-                <div class="fs-dialog-fuss">
-                    <button type="button" class="fs-knopf" @click="dialog = ''">Abbrechen</button>
-                    <button type="submit" class="fs-knopf fs-haupt">Hochladen</button>
+                <div class="wf-dialog-fuss">
+                    <button type="button" class="wf-knopf" @click="dialog = ''">Abbrechen</button>
+                    <button type="submit" class="wf-knopf wf-haupt">Hochladen</button>
                 </div>
             </form>
             <div x-show="dialog === 'vorlage' || dialog === 'dokument'">
-                <label class="fs-sr" for="fs-anh-suche" x-text="dialog === 'vorlage' ? 'Vorlage suchen' : 'Dokument suchen'"></label>
-                <input id="fs-anh-suche" type="search" x-model="suche" @input.debounce.300ms="suchen()" autocomplete="off"
+                <label class="sr-only" for="fs-anh-suche" x-text="dialog === 'vorlage' ? 'Vorlage suchen' : 'Dokument suchen'"></label>
+                <input id="fs-anh-suche" class="wf-eingabe w-full" type="search" x-model="suche" @input.debounce.300ms="suchen()" autocomplete="off"
                        :placeholder="dialog === 'vorlage' ? 'Drucksachennummer oder Titel' : 'Titel des Dokuments'">
                 <p class="fs-meta mt-2" x-show="hinweis" x-text="hinweis"></p>
-                <ul>
+                <ul class="wf-treffer">
                     <template x-for="t in treffer" :key="t.id">
                         <li>
                             <button type="button" @click="verknuepfen(t.id)">
@@ -42,10 +42,10 @@
                         </li>
                     </template>
                 </ul>
-                <div class="fs-dialog-fuss">
-                    <button type="button" class="fs-knopf" @click="dialog = ''">Abbrechen</button>
+                <div class="wf-dialog-fuss">
+                    <button type="button" class="wf-knopf" @click="dialog = ''">Abbrechen</button>
                 </div>
             </div>
         </div>
-    </div>
+    </c-ui.alpine-modal>
 </div>

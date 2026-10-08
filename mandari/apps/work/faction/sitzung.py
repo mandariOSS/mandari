@@ -500,13 +500,18 @@ class Gruppe:
     mitglieder: list[Membership] = field(default_factory=list)
 
 
+#: Was die Rechteprüfung je Mitgliedschaft liest (``PermissionChecker._load_permissions``): vorgeladen prüft die
+#: Vereidigung ohne eigene Abfragen je Person
+RECHTE_VORLADEN = ("roles__permissions", "individual_permissions", "denied_permissions")
+
+
 def _mitglieder(organization: Organization, *, nur_vereidigte: bool) -> list[Membership]:
     from apps.tenants.models import Membership
 
     qs = (
         Membership.objects.filter(organization=organization, is_active=True, is_guest=False)
         .select_related("user")
-        .prefetch_related("roles", "expertise_topics")
+        .prefetch_related("roles", "expertise_topics", *(RECHTE_VORLADEN if nur_vereidigte else ()))
         .order_by("user__last_name", "user__first_name", "user__email")
     )
     return [m for m in qs if not nur_vereidigte or is_sworn_member(m)]
@@ -710,10 +715,15 @@ class Anwesenheit:
 
 
 def anwesenheit(meeting: FactionMeeting) -> Anwesenheit:
-    """Teilnahmen (Mitglieder, dann Gäste) und wie viele Mitglieder anwesend sind."""
+    """
+    Teilnahmen (Mitglieder, dann Gäste) und wie viele Mitglieder anwesend sind.
+
+    Rollen und Rechte sind vorgeladen: Die Liste nennt je Person die Rollen und „stimmberechtigt“
+    (``voting.participate``), ohne eigene Abfragen je Teilnahme.
+    """
     teilnahmen = list(
         meeting.attendances.select_related("membership__user")
-        .prefetch_related("membership__roles")
+        .prefetch_related(*(f"membership__{feld}" for feld in RECHTE_VORLADEN))
         .order_by("is_guest", "membership__user__last_name", "membership__user__first_name", "guest_name")
     )
     mitglieder = [a for a in teilnahmen if not a.is_guest]

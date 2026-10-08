@@ -1,9 +1,9 @@
 {# Unterlagen des TOPs groß in der Mitte: Reiter (Überlauf in „n weitere“), Schriftgröße, Anhängen (Issue #874) #}
 {# Kontext: item, unterlagen (sitzung.Unterlage), aktive_unterlage, unterlage_kontext, rechte, meeting, org_slug, sitzung_urls #}
 <section class="fs-unt" id="fs-unterlagen" aria-labelledby="fs-unt-h" x-data="sitzungsUnterlagen" data-aktiv="{{ aktive_unterlage }}">
-    <div class="fs-unt-kopf">
-        <h3 class="fs-sr" id="fs-unt-h">Unterlagen zu TOP {{ item.number }}</h3>
-        <div class="fs-reiter" role="tablist" aria-labelledby="fs-unt-h" x-ref="reiter" @keydown="reiterTaste($event)">
+    <div class="wf-reiterleiste">
+        <h3 class="sr-only" id="fs-unt-h">Unterlagen zu TOP {{ item.number }}</h3>
+        <div class="wf-reiter" role="tablist" aria-labelledby="fs-unt-h" x-ref="reiter" @keydown="reiterTaste($event)">
             {% for u in unterlagen %}
             <button type="button" role="tab" id="fs-reiter-{{ u.schluessel }}" aria-controls="fs-dok" title="{{ u.titel }}"
                     data-schluessel="{{ u.schluessel }}" data-titel="{{ u.titel }}"
@@ -11,26 +11,26 @@
                     hx-target="#fs-dok" hx-swap="outerHTML" @click="waehle($el.dataset.schluessel)"
                     :aria-selected="istGewaehlt($el.dataset.schluessel) ? 'true' : 'false'"
                     :tabindex="istGewaehlt($el.dataset.schluessel) ? 0 : -1">
-                {% if intern %}<i data-lucide="lock" aria-hidden="true"></i>{% elif u.art == 'anlage' %}<i data-lucide="paperclip" aria-hidden="true"></i>{% elif u.art == 'dokument' %}<i data-lucide="file-pen-line" aria-hidden="true"></i>{% elif u.art == 'links' %}<i data-lucide="link" aria-hidden="true"></i>{% elif u.art == 'protokoll' %}<i data-lucide="file-check" aria-hidden="true"></i>{% endif %}<span>{{ u.titel }}</span>
+                {% if intern %}<i data-lucide="lock" aria-hidden="true"></i>{% elif u.art == 'anlage' %}<i data-lucide="paperclip" aria-hidden="true"></i>{% elif u.art == 'dokument' %}<i data-lucide="file-pen-line" aria-hidden="true"></i>{% elif u.art == 'links' %}<i data-lucide="link" aria-hidden="true"></i>{% elif u.art == 'protokoll' %}<i data-lucide="file-check" aria-hidden="true"></i>{% endif %}<span class="txt">{{ u.titel }}</span>
             </button>
             {% endfor %}
         </div>
-        <div class="fs-menue" x-show="weitere.length" x-cloak @click.outside="weitereOffen = false">
-            <button type="button" class="fs-knopf fs-leise fs-klein" aria-haspopup="menu" :aria-expanded="weitereOffen ? 'true' : 'false'"
+        <div class="wf-menue-anker" x-show="weitere.length" x-cloak @click.outside="weitereOffen = false">
+            <button type="button" class="wf-knopf wf-leise wf-klein" aria-haspopup="menu" :aria-expanded="weitereOffen ? 'true' : 'false'"
                     @click="weitereOffen = !weitereOffen" :aria-label="weitere.length === 1 ? '1 weitere Unterlage' : weitere.length + ' weitere Unterlagen'">
                 <span x-text="weitere.length + ' weitere'"></span><i data-lucide="chevron-down" aria-hidden="true"></i>
             </button>
-            <div class="fs-menue-liste links" role="menu" x-show="weitereOffen">
+            <div class="wf-menue" role="menu" x-show="weitereOffen">
                 <template x-for="w in weitere" :key="w.schluessel">
                     <button type="button" role="menuitem" @click="zeige(w.schluessel)" x-text="w.titel"></button>
                 </template>
             </div>
         </div>
         <div class="fs-werkzeuge">
-            <button type="button" class="fs-knopf fs-leise fs-ik" @click="schrift(-1)" :disabled="groesse <= -2" aria-label="Schrift kleiner">
+            <button type="button" class="wf-knopf wf-leise wf-ik" @click="schrift(-1)" :disabled="groesse <= -2" aria-label="Schrift kleiner">
                 <i data-lucide="a-arrow-down" aria-hidden="true"></i>
             </button>
-            <button type="button" class="fs-knopf fs-leise fs-ik" @click="schrift(1)" :disabled="groesse >= 4" aria-label="Schrift größer">
+            <button type="button" class="wf-knopf wf-leise wf-ik" @click="schrift(1)" :disabled="groesse >= 4" aria-label="Schrift größer">
                 <i data-lucide="a-arrow-up" aria-hidden="true"></i>
             </button>
             {% if rechte.anhaengen %}{% include "work/faction/sitzung/_anhaengen.html" with ziel="unterlagen" %}{% endif %}

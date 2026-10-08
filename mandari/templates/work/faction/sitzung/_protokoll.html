@@ -6,16 +6,16 @@
         <h3 id="fs-prot-h">Protokoll</h3>
         {% if notizen_config.editierbar %}
         <div class="fs-wz" role="toolbar" aria-label="Formatierung der Notizen" aria-controls="fs-notiz" x-show="bereit" x-cloak @mousedown.prevent>
-            <button type="button" @click="befehl('bold')" :aria-pressed="format.bold ? 'true' : 'false'" aria-label="Fett (Strg+B)"><i data-lucide="bold" aria-hidden="true"></i></button>
-            <button type="button" @click="befehl('italic')" :aria-pressed="format.italic ? 'true' : 'false'" aria-label="Kursiv (Strg+I)"><i data-lucide="italic" aria-hidden="true"></i></button>
-            <button type="button" @click="befehl('underline')" :aria-pressed="format.underline ? 'true' : 'false'" aria-label="Unterstrichen (Strg+U)"><i data-lucide="underline" aria-hidden="true"></i></button>
-            <span class="fs-wz-trenn" aria-hidden="true"></span>
-            <button type="button" @click="befehl('heading')" :aria-pressed="format.heading ? 'true' : 'false'" aria-label="Zwischenüberschrift"><i data-lucide="heading" aria-hidden="true"></i></button>
-            <button type="button" @click="befehl('bulletList')" :aria-pressed="format.bulletList ? 'true' : 'false'" aria-label="Aufzählung"><i data-lucide="list" aria-hidden="true"></i></button>
-            <button type="button" @click="befehl('orderedList')" :aria-pressed="format.orderedList ? 'true' : 'false'" aria-label="Nummerierung"><i data-lucide="list-ordered" aria-hidden="true"></i></button>
-            <span class="fs-wz-trenn" aria-hidden="true"></span>
-            <button type="button" @click="befehl('link')" :aria-pressed="format.link ? 'true' : 'false'" aria-label="Link einfügen"><i data-lucide="link" aria-hidden="true"></i></button>
-            <button type="button" class="mit-text" @click="zurAufgabe()" aria-label="Aufgabe aus diesem TOP anlegen"><i data-lucide="square-check" aria-hidden="true"></i><span aria-hidden="true">Aufgabe</span></button>
+            <button type="button" class="wf-wz-knopf" @click="befehl('bold')" :aria-pressed="format.bold ? 'true' : 'false'" aria-label="Fett (Strg+B)"><i data-lucide="bold" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf" @click="befehl('italic')" :aria-pressed="format.italic ? 'true' : 'false'" aria-label="Kursiv (Strg+I)"><i data-lucide="italic" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf" @click="befehl('underline')" :aria-pressed="format.underline ? 'true' : 'false'" aria-label="Unterstrichen (Strg+U)"><i data-lucide="underline" aria-hidden="true"></i></button>
+            <span class="wf-wz-trenn" aria-hidden="true"></span>
+            <button type="button" class="wf-wz-knopf" @click="befehl('heading')" :aria-pressed="format.heading ? 'true' : 'false'" aria-label="Zwischenüberschrift"><i data-lucide="heading" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf" @click="befehl('bulletList')" :aria-pressed="format.bulletList ? 'true' : 'false'" aria-label="Aufzählung"><i data-lucide="list" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf" @click="befehl('orderedList')" :aria-pressed="format.orderedList ? 'true' : 'false'" aria-label="Nummerierung"><i data-lucide="list-ordered" aria-hidden="true"></i></button>
+            <span class="wf-wz-trenn" aria-hidden="true"></span>
+            <button type="button" class="wf-wz-knopf" @click="befehl('link')" :aria-pressed="format.link ? 'true' : 'false'" aria-label="Link einfügen"><i data-lucide="link" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf mit-text" @click="zurAufgabe()" aria-label="Aufgabe aus diesem TOP anlegen"><i data-lucide="square-check" aria-hidden="true"></i><span aria-hidden="true">Aufgabe</span></button>
         </div>
         <span class="fs-status" :class="{ 'fehler': status === 'fehler' }" :title="statusText()" role="status" aria-live="polite" x-show="bereit" x-cloak>
             <i data-lucide="cloud" aria-hidden="true"></i><span x-text="statusText()">Automatisch gespeichert</span>

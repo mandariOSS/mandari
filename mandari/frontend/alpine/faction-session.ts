@@ -186,7 +186,7 @@ export const topKopf = defineComponent(() => {
     init() {
       wurzel = this.$el
       const messen = () => {
-        const zeilen = wurzel ? Array.from(wurzel.querySelectorAll<HTMLElement>('.fs-top-zeile2, .fs-verlauf li')) : []
+        const zeilen = wurzel ? Array.from(wurzel.querySelectorAll<HTMLElement>('.fs-top-zeile2, .wf-verlauf li')) : []
         this.gekuerzt = zeilen.some((el) => el.scrollWidth > el.clientWidth + 1)
       }
       beobachter = new ResizeObserver(messen)
@@ -329,6 +329,14 @@ export const unterlageAnhaengen = defineComponent(() => {
     init() {
       item = this.$el.dataset.item ?? ''
       ziel = this.$el.dataset.ziel ?? 'unterlagen'
+    },
+
+    /** Für c-ui.alpine-modal: offen, solange eine Art gewählt ist; Escape und Klick daneben schließen */
+    get dialogOffen(): boolean {
+      return this.dialog !== ''
+    },
+    set dialogOffen(offen: boolean) {
+      if (!offen) this.dialog = ''
     },
 
     titel(): string {

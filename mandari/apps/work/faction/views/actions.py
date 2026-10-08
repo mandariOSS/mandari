@@ -3,6 +3,7 @@
 
 import logging
 from datetime import datetime
+from urllib.parse import parse_qs, urlsplit
 
 from django.contrib import messages
 from django.db import transaction
@@ -102,7 +103,7 @@ class FactionActionView(WorkViewMixin, View):
         if self.is_htmx:
             return HttpResponse(status=400)
         messages.error(request, "Ungültige Aktion.")
-        return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
+        return self._redirect_detail(meeting)
 
     # -- Render helpers ------------------------------------------------
 
@@ -128,7 +129,17 @@ class FactionActionView(WorkViewMixin, View):
         return _htmx_response(html)
 
     def _redirect_detail(self, meeting):
-        return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
+        url = reverse("work:faction_detail", kwargs={"org_slug": self.organization.slug, "meeting_id": meeting.id})
+        # Aus der bisherigen Ansicht zurück in die bisherige Ansicht, nicht in die neue Sitzungsansicht (Issue #874)
+        return redirect(f"{url}?ansicht=bisher" if self._aus_bisheriger_ansicht() else url)
+
+    def _aus_bisheriger_ansicht(self) -> bool:
+        """Kam die Aktion aus der bisherigen Ansicht (``?ansicht=bisher``)? Formularfeld oder Adresse der Seite."""
+        if self.request.POST.get("ansicht") == "bisher":
+            return True
+        # Nur der Parameter der Herkunftsseite zählt; weitergeleitet wird immer auf die eigene Sitzungsseite
+        herkunft = urlsplit(self.request.META.get("HTTP_REFERER") or "")
+        return "bisher" in parse_qs(herkunft.query).get("ansicht", [])
 
     def _refresh_or_redirect(self, request, meeting, msg=None):
         """Return HX-Refresh for HTMX requests, redirect otherwise."""

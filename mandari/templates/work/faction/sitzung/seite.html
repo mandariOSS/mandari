@@ -17,7 +17,7 @@ Editor-Bundle frontend/editor/index.ts.
 
 {% block work_content %}
 {{ sitzung_urls|json_script:"fs-sitzung-config" }}
-<div class="fs-sitzung" x-data="fraktionssitzung" data-aktuell="{{ item.pk|default:'' }}"
+<div class="fs-sitzung wf" x-data="fraktionssitzung" data-aktuell="{{ item.pk|default:'' }}"
      @keydown.window="taste($event)" @keydown.escape.window="schliessen()">
     {% include "work/faction/sitzung/_kopf.html" %}
     <div class="fs-flaeche">

@@ -6,7 +6,7 @@
     <div class="fs-anw-kopf">
         <h2 id="fs-anw-h">Anwesenheit</h2>
         <span class="fs-meta">{{ anw.anwesend }} von {{ anw.gesamt }}</span>
-        <button type="button" class="fs-knopf fs-leise fs-ik fs-anw-zu" @click="anwesenheitOffen = false" aria-label="Anwesenheit schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+        <button type="button" class="wf-knopf wf-leise wf-ik fs-anw-zu" @click="anwesenheitOffen = false" aria-label="Anwesenheit schließen"><i data-lucide="x" aria-hidden="true"></i></button>
     </div>
     {% if quorum.has_list %}
     <p class="fs-quorum{% if not quorum.met %} nein{% endif %}"><b>{% if quorum.met %}Beschlussfähig.{% else %}Nicht beschlussfähig.{% endif %}</b>
@@ -15,12 +15,12 @@
     <div class="fs-rollen">
         {% if rechte.rollen %}
         <label for="fs-rolle-leitung">Sitzungsleitung</label>
-        <select id="fs-rolle-leitung" data-feld="leitung" @change="rolle($el)">
+        <select class="wf-eingabe wf-auswahl" id="fs-rolle-leitung" data-feld="leitung" @change="rolle($el)">
             <option value="">nicht festgelegt</option>
             {% for m in rollen_auswahl %}<option value="{{ m.pk }}"{% if m.pk == meeting.chaired_by_id %} selected{% endif %}>{{ m.user.get_display_name }}</option>{% endfor %}
         </select>
         <label for="fs-rolle-schrift">Schriftführung</label>
-        <select id="fs-rolle-schrift" data-feld="schriftfuehrung" @change="rolle($el)">
+        <select class="wf-eingabe wf-auswahl" id="fs-rolle-schrift" data-feld="schriftfuehrung" @change="rolle($el)">
             <option value="">nicht festgelegt</option>
             {% for m in rollen_auswahl %}<option value="{{ m.pk }}"{% if m.pk == meeting.minute_taker_id %} selected{% endif %}>{{ m.user.get_display_name }}</option>{% endfor %}
         </select>
@@ -43,7 +43,7 @@
                 <button type="button" data-id="{{ a.pk }}" data-art="online" @click="art($el)" aria-pressed="{% if a.participation_type == 'online' %}true{% else %}false{% endif %}">online</button>
             </span>
             {% else %}
-            <select data-id="{{ a.pk }}" @change="grund($el)" aria-label="Grund für {{ a.get_display_name }}">
+            <select class="wf-eingabe wf-auswahl klein" data-id="{{ a.pk }}" @change="grund($el)" aria-label="Grund für {{ a.get_display_name }}">
                 <option value="absent"{% if a.status != 'excused' %} selected{% endif %}>abwesend</option>
                 <option value="excused"{% if a.status == 'excused' %} selected{% endif %}>entschuldigt</option>
             </select>
@@ -58,9 +58,9 @@
     {% if rechte.anwesenheit %}
     <form class="fs-anw-fuss" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-anwesenheit" hx-swap="outerHTML" autocomplete="off">
         <input type="hidden" name="action" value="gast">
-        <label class="fs-sr" for="fs-gast">Name des Gasts</label>
-        <input id="fs-gast" type="text" name="guest_name" maxlength="200" required placeholder="Gast hinzufügen">
-        <button type="submit" class="fs-knopf fs-klein">Hinzufügen</button>
+        <label class="sr-only" for="fs-gast">Name des Gasts</label>
+        <input class="wf-eingabe" id="fs-gast" type="text" name="guest_name" maxlength="200" required placeholder="Gast hinzufügen">
+        <button type="submit" class="wf-knopf wf-klein">Hinzufügen</button>
     </form>
     {% endif %}
 </aside>

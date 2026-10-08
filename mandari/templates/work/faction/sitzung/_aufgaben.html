@@ -1,20 +1,20 @@
 {# Aufgaben aus dem TOP: Liste (gemeinsam angelegte in einer Zeile, einzelne mit Haken wie im Aufgabenboard) und Anlegen für Personen und Gruppen (Issue #874) #}
 {# Kontext: item, aufgaben (sitzung.AufgabenZeile), zustaendig_config, heute_plus_woche, rechte, sitzung_urls, org_slug #}
 {# Die Liste der Auswahl bekommt ihre Kennung von Alpine ($id): Mit fester Kennung überträgt htmx beim Austausch den Stil der alten Liste und nimmt ihn danach wieder weg – die Liste stünde dann offen. #}
-<section class="fs-aufgaben" id="fs-aufgaben" aria-labelledby="fs-auf-h">
+<section class="fs-aufgabenbereich" id="fs-aufgaben" aria-labelledby="fs-auf-h">
     <h4 id="fs-auf-h">Aufgaben aus TOP {{ item.number }} {% if aufgaben %}<span class="fs-meta">{{ aufgaben|length }}</span>{% endif %}</h4>
     {% if aufgaben %}
-    <ul class="fs-auf-liste">
+    <ul class="wf-aufgaben">
         {% for a in aufgaben %}
         <li{% if a.erledigt == a.gesamt %} class="erledigt"{% endif %}>
             {% if a.darf_abhaken %}
-            <input type="checkbox" class="fs-haken"{% if a.erledigt %} checked{% endif %} aria-label="Erledigt: {{ a.titel }}"
+            <input type="checkbox" class="wf-aufgabe-haken"{% if a.erledigt %} checked{% endif %} aria-label="Erledigt: {{ a.titel }}"
                    hx-post="{{ sitzung_urls.aktion }}" hx-trigger="change" hx-target="#fs-aufgaben" hx-swap="outerHTML"
                    hx-vals='{"action": "aufgabe_erledigt", "item_id": "{{ item.pk }}", "task_id": "{{ a.erste_id }}"}'>
             {% else %}
             <i data-lucide="{% if a.erledigt == a.gesamt %}square-check{% else %}square{% endif %}" aria-hidden="true"></i>
             {% endif %}
-            <span>{{ a.titel }}
+            <span class="was"><span>{{ a.titel }}</span>
                 <small>{% if a.zustaendig %}für {% if a.zustaendig|length > 3 %}{{ a.zustaendig|slice:":2"|join:", " }} und {{ a.zustaendig|length|add:"-2" }} weitere{% else %}{{ a.zustaendig|join:", " }}{% endif %}{% endif %}{% if a.faellig %}{% if a.zustaendig %}, {% endif %}fällig {{ a.faellig|date:"d.m." }}{% endif %}{% if a.gesamt > 1 %}, {{ a.erledigt }} von {{ a.gesamt }} erledigt{% elif a.erledigt %}, erledigt{% endif %}</small>
             </span>
             <span class="fs-meta"><c-suche.textlink href="{% url 'work:tasks' org_slug=org_slug %}?open={{ a.erste_id }}">In Aufgaben<span class="sr-only">: {{ a.titel }}</span></c-suche.textlink></span>
@@ -24,14 +24,14 @@
     {% endif %}
     {% if rechte.protokollieren %}
     {{ zustaendig_config|json_script:"fs-zustaendig-config" }}
-    <form class="fs-auf-neu" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-aufgaben" hx-swap="outerHTML" autocomplete="off"
+    <form class="wf-aufgabe-neu" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-aufgaben" hx-swap="outerHTML" autocomplete="off"
           x-data="zustaendigAuswahl" x-id="['fs-cb-liste']">
         <input type="hidden" name="action" value="aufgaben">
         <input type="hidden" name="item_id" value="{{ item.pk }}">
-        <label class="fs-sr" for="fs-auf-titel">Neue Aufgabe</label>
-        <input class="ganz" id="fs-auf-titel" type="text" name="titel" maxlength="200" required placeholder="Neue Aufgabe aus TOP {{ item.number }}"{% if nach_anlegen %} autofocus{% endif %}>
+        <label class="sr-only" for="fs-auf-titel">Neue Aufgabe</label>
+        <input class="wf-eingabe ganz" id="fs-auf-titel" type="text" name="titel" maxlength="200" required placeholder="Neue Aufgabe aus TOP {{ item.number }}"{% if nach_anlegen %} autofocus{% endif %}>
         <div class="fs-cb" @click.outside="schliessen()">
-            <span class="fs-sr" id="fs-cb-l">Zuständig: Person oder Gruppe</span>
+            <span class="sr-only" id="fs-cb-l">Zuständig: Person oder Gruppe</span>
             <div class="fs-cb-feld" @click="$refs.eingabe.focus()">
                 <template x-for="w in wahl" :key="w.id">
                     <span class="fs-chip">
@@ -63,9 +63,9 @@
                 <li class="fs-cb-gruppe" role="presentation" x-show="!gefilterteGruppen().length && !gefiltertePersonen().length">Keine Treffer</li>
             </ul>
         </div>
-        <label class="fs-sr" for="fs-auf-bis">Fällig bis</label>
-        <input id="fs-auf-bis" type="date" name="faellig" value="{{ heute_plus_woche }}" title="Fällig bis">
-        <button type="submit" class="fs-knopf">Anlegen</button>
+        <label class="sr-only" for="fs-auf-bis">Fällig bis</label>
+        <input class="wf-eingabe" id="fs-auf-bis" type="date" name="faellig" value="{{ heute_plus_woche }}" title="Fällig bis">
+        <button type="submit" class="wf-knopf">Anlegen</button>
         {% if intern %}<p class="fs-meta ganz">Nichtöffentlicher TOP: zur Auswahl stehen nur vereidigte Mitglieder.</p>{% endif %}
     </form>
     {% endif %}

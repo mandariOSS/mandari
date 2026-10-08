@@ -1,50 +1,20 @@
 /* Sitzungsansicht der laufenden Fraktionssitzung (Issue #874, templates/work/faction/sitzung/).
    Nach dem Prototyp „Fraktionssitzungen“, Fassung 2. Maße nach der Gestaltungsregel für Arbeitsflächen: UI 13–14 px,
    Dokument 16 px, Kopf und Leiste unten je 52 px, Bedienelemente 32 px (28 px in Leisten), Icons 16 px, Radius 4–6 px.
+   Farben, Knöpfe, Eingaben, Menüs, Reiter, Tagesordnungszeilen, „Im Beratungsverlauf“, Aufgaben, Werkzeugleiste, Leiste
+   unten und Dialoge teilt die Seite mit der Sitzungsvorbereitung (work-flaeche.css, Präfix wf-); hier stehen Aufbau,
+   Breiten und was es nur in der laufenden Sitzung gibt (Ablaufleiste, Protokoll, Beschluss, Anwesenheit).
    Auf breiten Bildschirmen wachsen Unterlagen und Protokoll mit (keine Leerflächen, Regel aus #841). */
 
 @layer components {
   .fs-sitzung {
-    --fs-tinte: #1f2430;
-    --fs-text2: #535a68;
-    --fs-text3: #687080;
-    --fs-linie: #e4e7ec;
-    --fs-linie-stark: #cdd2da;
-    --fs-grau: #eef0f4;
-    --fs-grau-hell: #f6f7f9;
-    --fs-flaeche: #fff;
-    --fs-work: rgb(var(--primary-600));
-    --fs-work-text: rgb(var(--primary-700));
-    --fs-work-flaeche: rgb(var(--primary-50));
-    --fs-zust: #15803d;
-    --fs-abl: #b91c1c;
-    --fs-enth: #b45309;
-    --fs-andere: #475569;
-    --fs-offen: #9aa1ad;
     --fs-dok-basis: 16px;
     --fs-dok: calc(var(--fs-dok-basis) + var(--fs-dok-plus, 0px));
     display: flex;
     flex-direction: column;
-    color: var(--fs-tinte);
-    background: var(--fs-flaeche);
+    background: var(--wf-flaeche);
     font-size: 14px;
     line-height: 1.45;
-  }
-  .dark .fs-sitzung {
-    --fs-tinte: #e5e7eb;
-    --fs-text2: #aab1bd;
-    --fs-text3: #8b93a1;
-    --fs-linie: #2b3443;
-    --fs-linie-stark: #3b4556;
-    --fs-grau: #182131;
-    --fs-grau-hell: #1f2937;
-    --fs-flaeche: #111827;
-    --fs-work-text: rgb(var(--primary-300));
-    --fs-work-flaeche: rgb(var(--primary-900) / 0.45);
-    --fs-zust: #4ade80;
-    --fs-abl: #f87171;
-    --fs-enth: #fbbf24;
-    --fs-andere: #94a3b8;
   }
   /* Die Seite füllt den Platz unter der Kopfzeile des Rahmens (bisheriger und neuer Rahmen, #852), ohne dessen
      Innenabstand und ohne die Höchstbreite des Inhalts (keine Leerflächen auf breiten Bildschirmen) */
@@ -62,179 +32,9 @@
   body:has(.fs-unten) > div[role="status"].bg-amber-500 {
     bottom: 64px;
   }
-  .fs-sitzung :focus-visible {
-    outline: 2px solid var(--fs-work);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-  .fs-sr {
-    position: absolute !important;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
-  }
-
-  /* Bedienelemente */
-  .fs-knopf {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    height: 32px;
-    padding: 0 12px;
-    border-radius: 6px;
-    border: 1px solid var(--fs-linie-stark);
-    background: var(--fs-flaeche);
-    font-size: 13.5px;
-    font-weight: 500;
-    color: var(--fs-tinte);
-    cursor: pointer;
-    text-decoration: none;
-    white-space: nowrap;
-  }
-  .fs-knopf:hover {
-    background: var(--fs-grau-hell);
-  }
-  .fs-knopf svg {
-    width: 16px;
-    height: 16px;
-    flex: none;
-  }
-  .fs-knopf.fs-klein {
-    height: 28px;
-    padding: 0 10px;
-    font-size: 13px;
-  }
-  .fs-knopf.fs-ik {
-    width: 32px;
-    padding: 0;
-  }
-  .fs-knopf.fs-leise {
-    border-color: transparent;
-    background: transparent;
-  }
-  .fs-knopf.fs-leise:hover {
-    background: var(--fs-grau-hell);
-  }
-  .fs-knopf[aria-expanded="true"],
-  .fs-knopf[aria-pressed="true"] {
-    background: var(--fs-work-flaeche);
-    border-color: transparent;
-    color: var(--fs-work-text);
-  }
-  .fs-knopf.fs-haupt {
-    background: var(--fs-work);
-    border-color: var(--fs-work);
-    color: #fff;
-    font-weight: 600;
-  }
-  .fs-knopf.fs-haupt:hover {
-    background: rgb(var(--primary-700));
-  }
-  .fs-knopf:disabled {
-    opacity: 0.55;
-    cursor: default;
-  }
-  /* Knöpfe, die wie ein Textlink aussehen („Mehr“, „Ändern“): wie der Textlink von Insight (c-suche.textlink),
-     den die Links der Seite selbst verwenden */
-  .fs-textlink {
-    color: var(--fs-work-text);
-    font-weight: 500;
-    text-decoration: underline;
-    text-underline-offset: 4px;
-    background: none;
-    border: 0;
-    padding: 0;
-    cursor: pointer;
-    font-size: inherit;
-  }
   .fs-meta {
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     font-size: 13px;
-  }
-  .fs-sitzung input[type="text"],
-  .fs-sitzung input[type="date"],
-  .fs-sitzung input[type="search"],
-  .fs-sitzung select {
-    height: 32px;
-    padding: 0 8px;
-    border: 1px solid var(--fs-linie-stark);
-    border-radius: 6px;
-    background-color: var(--fs-flaeche);
-    color: var(--fs-tinte);
-    font-size: 14px;
-    min-width: 0;
-  }
-  .fs-sitzung select {
-    padding-right: 28px;
-  }
-  .fs-punkt {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    display: inline-block;
-    flex: none;
-    background: var(--fs-andere);
-  }
-  .fs-punkt.zustimmung {
-    background: var(--fs-zust);
-  }
-  .fs-punkt.ablehnung {
-    background: var(--fs-abl);
-  }
-  .fs-punkt.enthaltung {
-    background: var(--fs-enth);
-  }
-  .fs-punkt.offen {
-    background: transparent;
-    box-shadow: inset 0 0 0 1.5px var(--fs-offen);
-  }
-
-  /* Menüs (Weitere Aktionen, weitere Unterlagen, Unterlage hinzufügen) */
-  .fs-menue {
-    position: relative;
-  }
-  .fs-menue-liste {
-    position: absolute;
-    right: 0;
-    top: calc(100% + 4px);
-    z-index: 60;
-    min-width: 14rem;
-    padding: 4px 0;
-    background: var(--fs-flaeche);
-    border: 1px solid var(--fs-linie);
-    border-radius: 8px;
-    box-shadow: 0 8px 24px rgb(17 24 39 / 0.12);
-  }
-  .fs-menue-liste.links {
-    left: 0;
-    right: auto;
-  }
-  .fs-menue-liste a,
-  .fs-menue-liste button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 6px 12px;
-    border: 0;
-    background: none;
-    font-size: 14px;
-    color: var(--fs-tinte);
-    text-align: left;
-    text-decoration: none;
-    cursor: pointer;
-  }
-  .fs-menue-liste a:hover,
-  .fs-menue-liste button:hover {
-    background: var(--fs-grau-hell);
-  }
-  .fs-menue-liste svg {
-    width: 16px;
-    height: 16px;
-    color: var(--fs-text2);
   }
 
   /* Kopf mit Ablaufleiste */
@@ -245,8 +45,8 @@
     gap: 12px;
     min-height: 52px;
     padding: 4px 12px 4px 8px;
-    border-bottom: 1px solid var(--fs-linie);
-    background: var(--fs-flaeche);
+    border-bottom: 1px solid var(--wf-linie);
+    background: var(--wf-flaeche);
     min-width: 0;
     flex: none;
   }
@@ -268,7 +68,7 @@
   .fs-kopf-meta {
     margin: 0;
     font-size: 12.5px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -300,8 +100,8 @@
     font-size: 12px;
     font-weight: 600;
     border: 1.5px solid #c3c8d1;
-    color: var(--fs-text2);
-    background: var(--fs-flaeche);
+    color: var(--wf-text2);
+    background: var(--wf-flaeche);
     flex: none;
   }
   .fs-stufen .kreis svg {
@@ -312,27 +112,28 @@
     font-size: 13.5px;
     font-weight: 600;
     white-space: nowrap;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     line-height: 1.25;
   }
   .fs-stufen .unter {
     display: block;
     font-size: 12px;
     font-weight: 400;
-    color: var(--fs-text3);
+    color: var(--wf-text3);
   }
+  /* Kennfarbe 600 auch im dunklen Modus: weiße Ziffer gut lesbar */
   .fs-stufen .aktuell .kreis {
-    background: var(--fs-work);
-    border-color: var(--fs-work);
+    background: rgb(var(--primary-600));
+    border-color: rgb(var(--primary-600));
     color: #fff;
   }
   .fs-stufen .aktuell .name,
   .fs-stufen .erledigt .name {
-    color: var(--fs-tinte);
+    color: var(--wf-tinte);
   }
   .fs-stufen .erledigt .kreis {
-    border-color: var(--fs-zust);
-    color: var(--fs-zust);
+    border-color: var(--wf-zust);
+    color: var(--wf-zust);
   }
   .fs-stufen .linie {
     width: 28px;
@@ -341,7 +142,7 @@
     flex: none;
   }
   .fs-stufen .erledigt + .linie {
-    background: var(--fs-zust);
+    background: var(--wf-zust);
   }
   @container fs-kopf (max-width: 1599.98px) {
     .fs-stufen li:not(.aktuell) .unter {
@@ -390,77 +191,26 @@
     grid-template-columns: minmax(0, 1fr);
     min-width: 0;
   }
+  /* Tagesordnung (Zeilen: .wf-tl-zeile); Titel bis vier Zeilen, Unterpunkte eingerückt */
   .fs-tl {
-    border-right: 1px solid var(--fs-linie);
+    --wf-tl-zeilen: 4;
+    border-right: 1px solid var(--wf-linie);
     padding: 12px 0 24px;
     min-width: 0;
-    background: var(--fs-flaeche);
+    background: var(--wf-flaeche);
   }
-  .fs-tl-gruppe {
-    font-size: 12px;
-    color: var(--fs-text3);
+  .fs-tl .wf-tl-gruppe {
     padding: 12px 16px 4px;
   }
-  .fs-tl-gruppe:first-child {
+  .fs-tl .wf-tl-gruppe:first-child {
     padding-top: 0;
-  }
-  .fs-tl ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-  }
-  .fs-tl-zeile {
-    display: grid;
-    grid-template-columns: 2.25rem minmax(0, 1fr) 16px;
-    gap: 6px;
-    align-items: start;
-    padding: 7px 12px 7px 14px;
-    font-size: 13.5px;
-    line-height: 1.35;
-    color: var(--fs-tinte);
-    text-decoration: none;
-    border-left: 2px solid transparent;
-  }
-  .fs-tl-zeile.unter {
-    padding-left: 26px;
-  }
-  .fs-tl-zeile:hover {
-    background: var(--fs-grau-hell);
-  }
-  .fs-tl-zeile[aria-current="true"] {
-    background: var(--fs-work-flaeche);
-    border-left-color: var(--fs-work);
-    font-weight: 600;
-  }
-  .fs-tl-zeile .nr {
-    color: var(--fs-text3);
-    font-variant-numeric: tabular-nums;
-    font-weight: 500;
-  }
-  .fs-tl-zeile .titel {
-    display: -webkit-box;
-    -webkit-line-clamp: 4;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-    hyphens: auto;
-    /* nur lange zusammengesetzte Wörter trennen, nicht „Proto-koll“ */
-    hyphenate-limit-chars: 12 5 5;
-    overflow-wrap: break-word;
-  }
-  .fs-tl-zeile .stand {
-    color: var(--fs-zust);
-    margin-top: 1px;
-  }
-  .fs-tl-zeile .stand svg {
-    width: 14px;
-    height: 14px;
   }
   .fs-tl-gesperrt {
     display: flex;
     gap: 8px;
     padding: 7px 12px 7px 16px;
     font-size: 13.5px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
   }
   .fs-tl-gesperrt svg {
     width: 14px;
@@ -473,97 +223,33 @@
     flex-direction: column;
   }
 
-  /* Kopf des TOPs */
+  /* Kopf des TOPs (Überschrift: .wf-top-h, Beratungsverlauf: c-work.beratungsverlauf) */
   .fs-top-kopf {
     padding: 10px 20px 10px 28px;
     display: flex;
     align-items: flex-start;
     gap: 16px;
-    border-bottom: 1px solid var(--fs-linie);
+    border-bottom: 1px solid var(--wf-linie);
   }
   .fs-top-text {
     flex: 1 1 auto;
     min-width: 0;
   }
-  .fs-top-h {
-    font-size: 18px;
-    line-height: 1.35;
-    font-weight: 700;
-    letter-spacing: -0.01em;
-    margin: 0;
-    outline: none;
-  }
-  .fs-top-nr {
-    color: var(--fs-text3);
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    margin-right: 4px;
-  }
   .fs-top-zeile2 {
     margin: 2px 0 0;
     font-size: 13.5px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
   .fs-top-ort {
-    color: var(--fs-text3);
+    color: var(--wf-text3);
   }
-  .fs-verlauf {
-    display: flex;
-    align-items: baseline;
-    gap: 2px 10px;
+  .fs-top-kopf .wf-verlauf {
     margin-top: 3px;
-    font-size: 13.5px;
-    min-width: 0;
   }
-  .fs-verlauf-h {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    color: var(--fs-text2);
-    font-weight: 600;
-  }
-  .fs-verlauf-h svg {
-    width: 14px;
-    height: 14px;
-    color: var(--fs-text3);
-  }
-  .fs-verlauf ul {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    min-width: 0;
-    flex: 1 1 auto;
-  }
-  .fs-verlauf li {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: var(--fs-text2);
-  }
-  .fs-verlauf .wo,
-  .fs-verlauf .wo a,
-  .fs-verlauf b {
-    color: var(--fs-tinte);
-    font-weight: 500;
-    text-decoration: none;
-  }
-  .fs-verlauf b {
-    font-weight: 600;
-  }
-  .fs-verlauf .wo a:hover {
-    text-decoration: underline;
-    text-underline-offset: 3px;
-  }
-  .fs-verlauf .fs-punkt {
-    margin: 0 5px 0 2px;
-    vertical-align: 1px;
-  }
-  .fs-top-kopf.offen .fs-top-zeile2,
-  .fs-top-kopf.offen .fs-verlauf li {
+  .fs-top-kopf.offen .fs-top-zeile2 {
     white-space: normal;
   }
   .fs-kopf-mehr {
@@ -579,15 +265,6 @@
     grid-template-columns: minmax(0, 1fr);
     min-height: 0;
   }
-  .fs-prot {
-    container: fs-prot / inline-size;
-  }
-  @container fs-prot (max-width: 600px) {
-    .fs-status span,
-    .fs-wz button.mit-text span {
-      display: none;
-    }
-  }
   .fs-unt,
   .fs-prot {
     min-width: 0;
@@ -595,55 +272,8 @@
     flex-direction: column;
     min-height: 0;
   }
-  .fs-unt-kopf,
-  .fs-prot-kopf {
-    display: flex;
-    align-items: center;
-    gap: 4px 12px;
-    min-height: 40px;
-    padding: 0 8px 0 24px;
-    border-bottom: 1px solid var(--fs-linie);
-    min-width: 0;
-    flex: none;
-  }
-  .fs-reiter {
-    display: flex;
-    gap: 16px;
-    align-self: stretch;
-    min-width: 0;
-    overflow: hidden;
-    flex: 0 1 auto;
-  }
-  .fs-reiter [role="tab"] {
-    background: none;
-    border: 0;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    padding: 0 2px;
-    font-size: 13.5px;
-    color: var(--fs-text2);
-    cursor: pointer;
-    white-space: nowrap;
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    max-width: min(16rem, 100%);
-    flex: none;
-  }
-  .fs-reiter [role="tab"] span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .fs-reiter [role="tab"] svg {
-    width: 13px;
-    height: 13px;
-    color: var(--fs-text3);
-    flex: none;
-  }
-  .fs-reiter [role="tab"][aria-selected="true"] {
-    color: var(--fs-tinte);
-    font-weight: 600;
-    border-bottom-color: var(--fs-tinte);
+  .fs-unt .wf-reiterleiste {
+    padding-left: 24px;
   }
   .fs-werkzeuge {
     margin-left: auto;
@@ -661,7 +291,7 @@
   .fs-dok-meta {
     margin: 0 0 12px;
     font-size: 13px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     display: flex;
     flex-wrap: wrap;
     gap: 4px 12px;
@@ -700,7 +330,7 @@
     height: 100%;
     min-height: 60vh;
     border: 0;
-    background: var(--fs-grau);
+    background: var(--wf-grau);
   }
   .fs-dok.mit-rahmen {
     padding: 0;
@@ -713,8 +343,42 @@
     padding: 0;
     max-width: 52rem;
   }
+  /* Links des TOPs */
+  .fs-links {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-width: 52rem;
+  }
+  .fs-links li {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--wf-linie);
+  }
+  .fs-links svg {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    margin-top: 3px;
+    color: var(--wf-text3);
+  }
 
-  /* Protokoll: eine Ansicht aus Notizen, bisherigen Einträgen und Aufgaben */
+  /* Protokoll: eine Ansicht aus Notizen, bisherigen Einträgen und Aufgaben (Werkzeugleiste: .wf-wz-knopf) */
+  .fs-prot {
+    container: fs-prot / inline-size;
+  }
+  .fs-prot-kopf {
+    display: flex;
+    align-items: center;
+    gap: 4px 12px;
+    min-height: 40px;
+    padding: 0 8px 0 24px;
+    border-bottom: 1px solid var(--wf-linie);
+    min-width: 0;
+    flex: none;
+  }
   .fs-prot-kopf h3 {
     font-size: 14px;
     font-weight: 600;
@@ -727,48 +391,10 @@
     gap: 2px;
     min-width: 0;
   }
-  .fs-wz button {
-    width: 28px;
-    height: 28px;
-    border-radius: 4px;
-    display: grid;
-    place-items: center;
-    background: none;
-    border: 0;
-    color: var(--fs-text2);
-    cursor: pointer;
-    flex: none;
-  }
-  .fs-wz button:hover {
-    background: var(--fs-grau-hell);
-    color: var(--fs-tinte);
-  }
-  .fs-wz button[aria-pressed="true"] {
-    background: var(--fs-work-flaeche);
-    color: var(--fs-work-text);
-  }
-  .fs-wz button.mit-text {
-    width: auto;
-    padding: 0 8px;
-    gap: 6px;
-    display: inline-flex;
-    font-size: 13px;
-  }
-  .fs-wz svg {
-    width: 16px;
-    height: 16px;
-  }
-  .fs-wz-trenn {
-    width: 1px;
-    height: 16px;
-    background: var(--fs-linie-stark);
-    margin: 0 6px;
-    flex: none;
-  }
   .fs-status {
     margin-left: auto;
     font-size: 12.5px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     display: inline-flex;
     align-items: center;
     gap: 4px;
@@ -780,7 +406,34 @@
     height: 14px;
   }
   .fs-status.fehler {
-    color: var(--fs-abl);
+    color: var(--wf-abl);
+  }
+  /* Schmales Protokoll (1.280–1.440 px mit Seitenleiste): Speicherstand nur als Symbol, der Text bleibt für
+     Vorleser; „Aufgabe“ nur als Symbol, ohne Trennstriche und mit weniger Rand, damit nichts abgeschnitten wird */
+  @container fs-prot (max-width: 600px) {
+    .fs-status span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .fs-wz .wf-wz-knopf.mit-text span {
+      display: none;
+    }
+  }
+  @container fs-prot (max-width: 480px) {
+    .fs-prot-kopf {
+      padding-left: 16px;
+      gap: 4px 8px;
+    }
+    .fs-prot-kopf h3 {
+      margin-right: 0;
+    }
+    .fs-wz .wf-wz-trenn {
+      display: none;
+    }
   }
   .fs-prot-flaeche {
     padding: 18px 28px 32px;
@@ -814,39 +467,35 @@
     list-style: revert;
   }
   .fs-notiz a {
-    color: var(--fs-work-text);
+    color: var(--wf-work-text);
     text-decoration: underline;
   }
   .fs-notiz .is-editor-empty:first-child::before {
     content: attr(data-placeholder);
-    color: var(--fs-text3);
+    color: var(--wf-text3);
     float: left;
     height: 0;
     pointer-events: none;
   }
   .fs-notiz-leer {
-    color: var(--fs-text3);
+    color: var(--wf-text3);
   }
   .fs-hinweis {
     margin: 0 0 12px;
     padding: 8px 12px;
     border-radius: 6px;
-    background: #fef7e6;
-    color: #6b4a05;
+    background: var(--wf-warn-flaeche);
+    color: var(--wf-warn);
     font-size: 13.5px;
-  }
-  .dark .fs-hinweis {
-    background: #3a2c0c;
-    color: #f5d48a;
   }
   .fs-eintraege {
     margin-top: 20px;
     padding-top: 12px;
-    border-top: 1px solid var(--fs-linie);
+    border-top: 1px solid var(--wf-linie);
     max-width: 60rem;
   }
   .fs-eintraege h4,
-  .fs-aufgaben h4 {
+  .fs-aufgabenbereich h4 {
     font-size: 14px;
     font-weight: 600;
     margin: 0;
@@ -861,7 +510,7 @@
   }
   .fs-eintraege li {
     padding: 6px 0;
-    border-bottom: 1px solid var(--fs-linie);
+    border-bottom: 1px solid var(--wf-linie);
     font-size: 14px;
   }
   /* Die Aufgaben darunter beginnen mit einer Linie: keine zweite direkt davor */
@@ -870,98 +519,55 @@
   }
   .fs-eintraege .art {
     font-size: 12.5px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     display: block;
   }
   .fs-eintraege .inhalt {
     white-space: pre-line;
     overflow-wrap: anywhere;
   }
-  .fs-aufgaben {
+  /* Aufgaben aus dem TOP (Liste: .wf-aufgaben, Anlegen: .wf-aufgabe-neu) */
+  .fs-aufgabenbereich {
     margin-top: 20px;
     padding-top: 12px;
-    border-top: 1px solid var(--fs-linie);
+    border-top: 1px solid var(--wf-linie);
     max-width: 60rem;
   }
-  .fs-auf-liste {
-    list-style: none;
-    margin: 4px 0 0;
-    padding: 0;
+  .fs-aufgabenbereich .wf-aufgaben {
+    margin-top: 4px;
   }
-  .fs-auf-liste li {
-    display: grid;
-    grid-template-columns: 16px minmax(0, 1fr) auto;
-    gap: 8px;
-    align-items: start;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--fs-linie);
-    font-size: 14px;
-  }
-  .fs-auf-liste li > svg {
-    width: 16px;
-    height: 16px;
-    color: var(--fs-text3);
-    margin-top: 2px;
-  }
-  .fs-auf-liste small {
-    display: block;
-    font-size: 12.5px;
-    color: var(--fs-text2);
-  }
-  /* Abhaken wie im Aufgabenboard; 16 px mit Abstand in der Zeile (WCAG 2.5.8, Ausnahme Abstand) */
-  .fs-haken {
-    width: 16px;
-    height: 16px;
-    margin: 2px 0 0;
-    accent-color: var(--fs-work);
-    cursor: pointer;
-    outline-offset: 4px;
-  }
-  .fs-auf-liste li.erledigt > span {
-    color: var(--fs-text2);
-  }
-  .fs-auf-neu {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 9.5rem auto;
-    gap: 8px;
+  .fs-aufgabenbereich .wf-aufgabe-neu {
     margin-top: 10px;
-    align-items: start;
-  }
-  .fs-auf-neu .ganz {
-    grid-column: 1 / -1;
-  }
-  .fs-auf-neu input[type="text"] {
-    width: 100%;
   }
   /* Schmales Protokoll am Desktop (1.280–1.440 px mit Seitenleiste): Was und Fällig, darunter Zuständig breit und
      Anlegen daneben – die offene Auswahl liegt dann unter dem Formular und verdeckt „Anlegen“ nicht */
   @media (min-width: 1024px) {
     @container fs-prot (max-width: 520px) {
-      .fs-auf-neu {
+      .fs-aufgabenbereich .wf-aufgabe-neu {
         grid-template-columns: minmax(0, 1fr) auto;
         grid-template-areas: "titel datum" "wer knopf";
       }
-      .fs-auf-neu #fs-auf-titel {
+      .wf-aufgabe-neu #fs-auf-titel {
         grid-area: titel;
       }
-      .fs-auf-neu #fs-auf-bis {
+      .wf-aufgabe-neu #fs-auf-bis {
         grid-area: datum;
         width: 9.5rem;
       }
-      .fs-auf-neu .fs-cb {
+      .wf-aufgabe-neu .fs-cb {
         grid-area: wer;
       }
-      .fs-auf-neu button[type="submit"] {
+      .wf-aufgabe-neu button[type="submit"] {
         grid-area: knopf;
       }
     }
   }
   /* Breites Protokoll: Aufgabe in einer Zeile – Was, Zuständig, Fällig, Anlegen */
   @container fs-prot (min-width: 840px) {
-    .fs-auf-neu {
+    .fs-aufgabenbereich .wf-aufgabe-neu {
       grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) 9.5rem auto;
     }
-    .fs-auf-neu #fs-auf-titel {
+    .wf-aufgabe-neu #fs-auf-titel {
       grid-column: auto;
     }
   }
@@ -978,24 +584,29 @@
     gap: 4px;
     min-height: 32px;
     padding: 2px 2px 2px 4px;
-    border: 1px solid var(--fs-linie-stark);
+    border: 1px solid var(--wf-linie-stark);
     border-radius: 6px;
-    background: var(--fs-flaeche);
+    background: var(--wf-flaeche);
     cursor: text;
   }
   .fs-cb-feld:focus-within {
-    border-color: var(--fs-work);
-    box-shadow: 0 0 0 1px var(--fs-work);
+    border-color: var(--wf-work);
+    box-shadow: 0 0 0 1px var(--wf-work);
   }
-  .fs-sitzung .fs-cb-feld input[type="text"] {
+  .fs-cb-feld input[type="text"] {
     border: 0;
     height: 26px;
     flex: 1 1 8rem;
     min-width: 6rem;
     padding: 0 4px;
     background: transparent;
+    color: inherit;
+    font-size: 14px;
     box-shadow: none;
     outline: none;
+  }
+  .fs-cb-feld input[type="text"]::placeholder {
+    color: var(--wf-text3);
   }
   .fs-chip {
     display: inline-flex;
@@ -1004,8 +615,8 @@
     height: 24px;
     padding: 0 2px 0 8px;
     border-radius: 4px;
-    background: var(--fs-work-flaeche);
-    color: var(--fs-work-text);
+    background: var(--wf-work-flaeche);
+    color: var(--wf-work-text);
     font-size: 13px;
   }
   .fs-chip button {
@@ -1033,8 +644,8 @@
     list-style: none;
     margin: 0;
     padding: 4px 0;
-    background: var(--fs-flaeche);
-    border: 1px solid var(--fs-linie);
+    background: var(--wf-flaeche);
+    border: 1px solid var(--wf-linie);
     border-radius: 8px;
     box-shadow: 0 8px 24px rgb(17 24 39 / 0.12);
   }
@@ -1046,7 +657,7 @@
   }
   .fs-cb-liste [role="option"].aktiv,
   .fs-cb-liste [role="option"]:hover {
-    background: var(--fs-grau-hell);
+    background: var(--wf-grau-hell);
   }
   .fs-cb-liste [role="option"][aria-selected="true"] {
     font-weight: 600;
@@ -1054,27 +665,20 @@
   .fs-cb-liste small {
     display: block;
     font-size: 12.5px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     font-weight: 400;
   }
   .fs-cb-gruppe {
     padding: 8px 12px 2px;
     font-size: 12px;
-    color: var(--fs-text3);
+    color: var(--wf-text3);
   }
 
-  /* Leiste unten: Beschluss kompakt, voriger und nächster TOP */
+  /* Leiste unten (.wf-leiste mit .wf-nachbarn): Beschluss kompakt, voriger und nächster TOP */
   .fs-unten {
     container: fs-unten / inline-size;
-    display: flex;
-    align-items: center;
     gap: 16px;
     min-height: 52px;
-    padding: 4px 12px 4px 20px;
-    border-top: 1px solid var(--fs-linie);
-    background: var(--fs-flaeche);
-    min-width: 0;
-    flex: none;
   }
   .fs-unten form {
     margin: 0;
@@ -1086,35 +690,32 @@
     min-width: 0;
     flex: 1 1 auto;
   }
-  .fs-beschluss .beschriftung {
-    font-size: 13px;
-    font-weight: 600;
-    flex: none;
-  }
   .fs-zaehler {
     display: flex;
     align-items: center;
     gap: 6px;
     font-size: 13px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     flex: none;
   }
   .fs-zaehler > div {
     display: flex;
     align-items: center;
     height: 32px;
-    border: 1px solid var(--fs-linie-stark);
+    border: 1px solid var(--wf-linie-stark);
     border-radius: 6px;
-    background: var(--fs-flaeche);
+    background: var(--wf-flaeche);
   }
-  .fs-sitzung .fs-zaehler input {
+  .fs-zaehler input {
     border: 0;
     width: 2.25rem;
     height: 30px;
     padding: 0;
     text-align: center;
+    font-size: 14px;
     font-variant-numeric: tabular-nums;
     font-weight: 600;
+    color: inherit;
     background: transparent;
     -moz-appearance: textfield;
   }
@@ -1129,14 +730,14 @@
     border: 0;
     background: none;
     cursor: pointer;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     display: grid;
     place-items: center;
     border-radius: 6px;
   }
   .fs-zaehler button:hover {
-    background: var(--fs-grau-hell);
-    color: var(--fs-tinte);
+    background: var(--wf-grau-hell);
+    color: var(--wf-tinte);
   }
   .fs-zaehler svg {
     width: 14px;
@@ -1147,8 +748,16 @@
     min-width: 6rem;
     max-width: 24rem;
   }
-  .fs-sitzung .fs-beschluss select {
-    width: 10.5rem;
+  .fs-nav {
+    margin-left: auto;
+  }
+  .fs-nav .wf-nachbar {
+    padding: 0 8px;
+    max-width: clamp(9rem, 14vw, 20rem);
+  }
+  /* Breit genug für „Geändert angenommen“ */
+  .fs-beschluss select {
+    width: 12rem;
     flex: none;
   }
   @container fs-unten (max-width: 1320px) {
@@ -1163,10 +772,8 @@
     .fs-unten .fs-nav {
       flex: none;
     }
-  }
-  /* Schmale Leiste (auch am Handy): TOP-Wechsel nur als Pfeil, der Name bleibt für Vorleser */
-  @container fs-unten (max-width: 1150px) {
-    .fs-nav a > span {
+    /* Die Beschriftung „Beschluss“ bleibt für Vorleser; so passt das Ergebnis ganz in die Auswahl (1.280 px) */
+    form.fs-beschluss .beschriftung {
       position: absolute;
       width: 1px;
       height: 1px;
@@ -1174,16 +781,24 @@
       clip-path: inset(50%);
       white-space: nowrap;
     }
-    .fs-nav a {
+  }
+  /* Schmale Leiste (auch am Handy): TOP-Wechsel nur als Pfeil, der Name bleibt für Vorleser */
+  @container fs-unten (max-width: 1150px) {
+    .fs-nav .wf-nachbar > span {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+    .fs-nav .wf-nachbar {
       width: 40px;
       justify-content: center;
       padding: 0;
     }
     .fs-beschluss {
       gap: 8px 10px;
-    }
-    .fs-sitzung .fs-beschluss select {
-      width: 9rem;
     }
   }
   .fs-ergebnis {
@@ -1193,7 +808,7 @@
     min-width: 0;
     font-size: 14px;
   }
-  .fs-ergebnis .fs-punkt {
+  .fs-ergebnis .wf-punkt {
     align-self: center;
   }
   .fs-ergebnis b {
@@ -1201,7 +816,7 @@
     white-space: nowrap;
   }
   .fs-ergebnis .text {
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -1209,57 +824,8 @@
   }
   .fs-warn {
     font-size: 13px;
-    color: var(--fs-abl);
+    color: var(--wf-abl);
     white-space: nowrap;
-  }
-  .fs-nav {
-    display: flex;
-    gap: 4px;
-    flex: 0 1 auto;
-    min-width: 0;
-    margin-left: auto;
-  }
-  .fs-nav a {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    height: 40px;
-    padding: 0 8px;
-    border-radius: 6px;
-    color: var(--fs-tinte);
-    text-decoration: none;
-    min-width: 0;
-    max-width: clamp(9rem, 14vw, 20rem);
-  }
-  .fs-nav a:hover {
-    background: var(--fs-grau-hell);
-  }
-  .fs-nav a > span {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    line-height: 1.25;
-  }
-  .fs-nav a.weiter > span {
-    text-align: right;
-  }
-  .fs-nav small {
-    font-size: 12px;
-    color: var(--fs-text3);
-    white-space: nowrap;
-  }
-  .fs-nav b {
-    font-size: 13px;
-    font-weight: 500;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .fs-nav svg {
-    width: 16px;
-    height: 16px;
-    flex: none;
-    color: var(--fs-text2);
   }
 
   /* Anwesenheit mit Sitzungsleitung und Schriftführung; vor Ort oder online */
@@ -1271,8 +837,8 @@
     max-width: calc(100vw - 32px);
     max-height: calc(100dvh - 180px);
     overflow-y: auto;
-    background: var(--fs-flaeche);
-    border: 1px solid var(--fs-linie);
+    background: var(--wf-flaeche);
+    border: 1px solid var(--wf-linie);
     border-radius: 8px;
     box-shadow: 0 12px 32px rgb(17 24 39 / 0.14);
     z-index: 62;
@@ -1288,20 +854,20 @@
     font-weight: 600;
     margin: 0;
   }
-  .fs-anw-kopf .fs-knopf {
+  .fs-anw-kopf .wf-knopf {
     margin-left: auto;
   }
   .fs-quorum {
     margin: 0;
     padding: 4px 16px 10px;
     font-size: 13px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
   }
   .fs-quorum b {
-    color: var(--fs-tinte);
+    color: var(--wf-tinte);
   }
   .fs-quorum.nein b {
-    color: var(--fs-abl);
+    color: var(--wf-abl);
   }
   .fs-rollen {
     display: grid;
@@ -1309,14 +875,14 @@
     gap: 6px 8px;
     align-items: center;
     padding: 8px 16px 10px;
-    border-top: 1px solid var(--fs-linie);
-    border-bottom: 1px solid var(--fs-linie);
+    border-top: 1px solid var(--wf-linie);
+    border-bottom: 1px solid var(--wf-linie);
     font-size: 13px;
   }
   .fs-rollen p {
     grid-column: 1 / -1;
     margin: 0;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
   }
   .fs-anw-liste {
     list-style: none;
@@ -1331,7 +897,7 @@
     padding: 5px 12px 5px 16px;
   }
   .fs-anw-liste li:hover {
-    background: var(--fs-grau-hell);
+    background: var(--wf-grau-hell);
   }
   .fs-anw-liste label {
     display: flex;
@@ -1344,21 +910,19 @@
   .fs-anw-liste small {
     display: block;
     font-size: 12px;
-    color: var(--fs-text3);
+    color: var(--wf-text3);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .fs-sitzung .fs-anw-liste select {
-    height: 26px;
-    font-size: 12.5px;
+  .fs-anw-liste select {
     width: 8.75rem;
   }
   .fs-art {
     display: inline-flex;
     gap: 2px;
     padding: 2px;
-    background: var(--fs-grau);
+    background: var(--wf-grau);
     border-radius: 6px;
   }
   .fs-art button {
@@ -1368,13 +932,13 @@
     border-radius: 4px;
     background: none;
     font-size: 12.5px;
-    color: var(--fs-text2);
+    color: var(--wf-text2);
     cursor: pointer;
     white-space: nowrap;
   }
   .fs-art button[aria-pressed="true"] {
-    background: var(--fs-flaeche);
-    color: var(--fs-tinte);
+    background: var(--wf-flaeche);
+    color: var(--wf-tinte);
     font-weight: 600;
     box-shadow: 0 1px 2px rgb(17 24 39 / 0.08);
   }
@@ -1386,67 +950,6 @@
   }
   .fs-anw-fuss input[type="text"] {
     flex: 1 1 auto;
-  }
-
-  /* Dialoge (Unterlage anhängen) */
-  .fs-dialog-hg {
-    position: fixed;
-    inset: 0;
-    z-index: 80;
-    background: rgb(17 24 39 / 0.4);
-    display: grid;
-    place-items: center;
-    padding: 16px;
-  }
-  .fs-dialog {
-    width: 100%;
-    max-width: 34rem;
-    max-height: calc(100dvh - 32px);
-    overflow-y: auto;
-    background: var(--fs-flaeche);
-    color: var(--fs-tinte);
-    border-radius: 8px;
-    box-shadow: 0 16px 40px rgb(17 24 39 / 0.2);
-    padding: 16px 20px 20px;
-  }
-  .fs-dialog h2 {
-    font-size: 16px;
-    font-weight: 600;
-    margin: 0 0 12px;
-  }
-  .fs-dialog input[type="search"] {
-    width: 100%;
-  }
-  .fs-dialog ul {
-    list-style: none;
-    margin: 8px 0 0;
-    padding: 0;
-  }
-  .fs-dialog li button {
-    display: block;
-    width: 100%;
-    padding: 8px;
-    border: 0;
-    border-radius: 6px;
-    background: none;
-    text-align: left;
-    cursor: pointer;
-    font-size: 14px;
-    color: inherit;
-  }
-  .fs-dialog li button:hover {
-    background: var(--fs-grau-hell);
-  }
-  .fs-dialog li small {
-    display: block;
-    color: var(--fs-text2);
-    font-size: 12.5px;
-  }
-  .fs-dialog-fuss {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 16px;
   }
 
   /* Mobil: eine Spalte, Tagesordnung als Blatt, Leiste unten fest */
@@ -1499,7 +1002,7 @@
       width: 100%;
     }
     .fs-top-kopf,
-    .fs-unt-kopf,
+    .fs-unt .wf-reiterleiste,
     .fs-prot-kopf {
       padding-left: 16px;
     }
@@ -1510,7 +1013,7 @@
     .fs-dok {
       max-height: 60vh;
     }
-    .fs-auf-neu {
+    .fs-aufgabenbereich .wf-aufgabe-neu {
       grid-template-columns: minmax(0, 1fr);
     }
   }
@@ -1545,7 +1048,7 @@
       grid-template-columns: minmax(0, 1fr);
     }
     .fs-unt {
-      border-right: 1px solid var(--fs-linie);
+      border-right: 1px solid var(--wf-linie);
     }
   }
   @media (min-width: 1800px) {
@@ -1565,7 +1068,7 @@
       max-height: none;
       min-height: 0;
       border: 0;
-      border-left: 1px solid var(--fs-linie);
+      border-left: 1px solid var(--wf-linie);
       border-radius: 0;
       box-shadow: none;
       z-index: auto;

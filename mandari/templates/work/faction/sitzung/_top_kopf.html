@@ -2,27 +2,25 @@
 {# Kontext: item, verlauf (sitzung.VerlaufEintrag), unterlagen, rechte, org_slug, meeting; gekürzte Zeilen öffnet „Mehr“ #}
 <div class="fs-top-kopf" x-data="topKopf" :class="{ 'offen': offen }">
     <div class="fs-top-text">
-        <h2 class="fs-top-h" id="fs-top-titel" tabindex="-1">
-            <span class="fs-top-nr">TOP {{ item.number }}</span> {{ item.title }}
+        <h2 class="wf-top-h" id="fs-top-titel" tabindex="-1">
+            <span class="wf-top-nr">TOP {{ item.number }}</span> {{ item.title }}
         </h2>
         {% if herkunft or beschreibung %}
         <p class="fs-top-zeile2" x-ref="zeile">{% if herkunft %}<span class="fs-top-ort">{{ herkunft }}</span> {% endif %}{{ beschreibung }}</p>
         {% endif %}
         {% if verlauf %}
-        <div class="fs-verlauf" role="group" aria-labelledby="fs-verlauf-h">
-            <span class="fs-verlauf-h" id="fs-verlauf-h"><i data-lucide="git-branch" aria-hidden="true"></i>Im Beratungsverlauf</span>
+        <c-work.beratungsverlauf kennung="fs-verlauf-h">
             <ul x-ref="verlauf">
                 {% for v in verlauf %}
-                <li title="{{ v.wo }}: {{ v.position }}{% if v.ergebnis %}, Ergebnis: {{ v.ergebnis|lower }}{% endif %}{% if v.endgueltig %}, endgültig{% endif %}{% if v.begruendung %}. „{{ v.begruendung }}“{% endif %}">
-                    <span class="wo">{% if v.meeting_id %}<a href="{% url 'work:meeting_prepare' org_slug=org_slug meeting_id=v.meeting_id %}">{{ v.wo }}</a>{% else %}{{ v.wo }}{% endif %}:</span>
-                    <span class="fs-punkt {{ v.punkt }}" aria-hidden="true"></span><b>{{ v.position }}</b>{% if v.ergebnis %}, Ergebnis: {{ v.ergebnis|lower }}{% endif %}{% if v.endgueltig %}, endgültig{% endif %}{% if v.begruendung %}. <q>{{ v.begruendung }}</q>{% endif %}
-                </li>
+                {% url 'work:meeting_prepare' org_slug=org_slug meeting_id=v.meeting_id as vorbereitung_url %}
+                <c-work.verlauf-eintrag wo="{{ v.wo }}" href="{{ vorbereitung_url }}" punkt="{{ v.punkt }}" position="{{ v.position }}"
+                                        titel="{{ v.wo }}: {{ v.position }}{% if v.ergebnis %}, Ergebnis: {{ v.ergebnis|lower }}{% endif %}{% if v.endgueltig %}, endgültig{% endif %}{% if v.begruendung %}. „{{ v.begruendung }}“{% endif %}">{% if v.ergebnis %}, Ergebnis: {{ v.ergebnis|lower }}{% endif %}{% if v.endgueltig %}, endgültig{% endif %}{% if v.begruendung %}. <q>{{ v.begruendung }}</q>{% endif %}</c-work.verlauf-eintrag>
                 {% endfor %}
             </ul>
-        </div>
+        </c-work.beratungsverlauf>
         {% endif %}
     </div>
-    <button type="button" class="fs-textlink fs-kopf-mehr" x-show="gekuerzt || offen" x-cloak
+    <button type="button" class="wf-textlink fs-kopf-mehr" x-show="gekuerzt || offen" x-cloak
             :aria-expanded="offen ? 'true' : 'false'" @click="offen = !offen" x-text="offen ? 'Weniger' : 'Mehr'">Mehr</button>
     {% if not unterlagen and rechte.anhaengen %}
     {% include "work/faction/sitzung/_anhaengen.html" with ziel="fokus" %}
