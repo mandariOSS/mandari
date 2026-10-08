@@ -4,7 +4,8 @@ Suchtreffer mit Kontext (Konzept Insight-Suche, P0.6): Vorgang, Sitzung mit Unte
   <ol><c-suche.treffer-vorgang :treffer="t" /></ol>
 Parameter: treffer (Dict aus insight_core.services.search_presentation.present_groups) mit
   kind, url, title (SafeString), context (Liste: Art, Aktenzeichen, Gremium, Datum), status, status_kind,
-  snippet (SafeString), fundstelle {label, url}, others [{label, url}].
+  snippet (SafeString), fundstelle {label, url}, others [{label, url}]; in Work dazu bezug („Eigener Antrag“,
+  apps/work/ris/bezug.py, Issue #853): warum der Treffer weiter oben steht.
 Aufbau: Kontextzeile, Titel als Link, Stand-Satz, sauberer Ausschnitt, Fundstelle; weitere Dokumente mit Treffer
 klappen ohne JavaScript per <details> auf. Eine Ebene, Linie nur zwischen Listeneinträgen. Ist die Trefferliste
 mindestens 54rem breit (Container-Abfrage auf #treffer-liste, Issue #841), steht die Kontextzeile als Spalte rechts.
@@ -25,6 +26,9 @@ ab 2xl (Filterspalte daneben) bleibt die Spalte durchgehend, statt bis etwa 1.63
         <span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if treffer.status_kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif treffer.status_kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>
         <span>{{ treffer.status }}</span>
     </p>
+    {% endif %}
+    {% if treffer.bezug %}
+    <p class="mt-1 text-sm font-medium text-gray-800 dark:text-gray-200">{{ treffer.bezug }}</p>
     {% endif %}
     {% if treffer.snippet %}
     <p class="mt-2 max-w-3xl text-[0.95rem] leading-relaxed text-gray-700 dark:text-gray-300 break-words">… {{ treffer.snippet }} …</p>

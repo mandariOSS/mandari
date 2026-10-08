@@ -1,32 +1,55 @@
 {# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
 {% comment %}
-Filterleiste der Suche (Konzept Insight-Suche 3.4, Umfang „einfach“ für Insight): Zeitraum, Art, Sortierung.
+Filterleiste der Suche (Konzept Insight-Suche 3.4): Zeitraum, Art, Sortierung; im vollen Umfang (Work, Issue #853)
+dazu Gremium, Kommune und eigener Zeitraum (von/bis).
 Bis 2xl eine Zeile mit Ausklapplisten über den Treffern, ab 2xl eine Spalte mit offenen Listen (c-suche.facette-liste).
-Alle Felder gehören per form="suche-form" zum Suchformular im Kopfband; Parameternamen wie SearchQuery (period,
-paper_type, sort). Work bindet die Leiste später mit vollem Umfang ein (P1.12).
+Alle Felder gehören per form="suche-form" zum Suchformular im Kopfband; Parameternamen wie
+insight_core.services.search_filters.SearchQuery (period, paper_type, sort, gremium, kommune, von, bis).
   <c-suche.filterleiste :zeitraum="period_options" :art="art_options" :sortierung="sort_options" />
-Parameter: zeitraum, art (Optionen für c-suche.facette), sortierung (Liste von {value, label, checked}).
+  <c-suche.filterleiste adresse="…" :zeitraum="…" :art="…" :sortierung="…" :gremien="gremium_options"
+      :kommunen="kommune_options" :frei="zeitraum_frei" />
+Parameter: adresse (Ziel der Filter, Standard die Suche des Bürgerportals), zeitraum, art (Optionen für
+c-suche.facette), sortierung, gremien, kommunen (Listen von {value, label, checked}; leer = ohne), frei ({von, bis}:
+Datumsfelder des eigenen Zeitraums, nur wenn er gewählt ist).
 {% endcomment %}
-<c-vars zeitraum="" art="" sortierung="" />
+<c-vars adresse="" zeitraum="" art="" sortierung="" gremien="" kommunen="" frei="" />
+{% if not adresse %}{% url 'insight_core:insight:search' as adresse %}{% endif %}
 <div class="mt-4 flex flex-wrap items-center gap-3 2xl:mt-0 2xl:block">
     {# Ab 2xl stehen die Filter als offene Listen in der Spalte; die Felder hier tragen dann nur den Stand (Issue #841) #}
     <div class="contents 2xl:hidden">
-        <c-suche.facette titel="Zeitraum" name="period" typ="radio" :optionen="zeitraum" />
-        {% if art %}<c-suche.facette titel="Art" name="paper_type" typ="checkbox" :optionen="art" />{% endif %}
+        {% if zeitraum %}<c-suche.facette titel="Zeitraum" name="period" typ="radio" :optionen="zeitraum" adresse="{{ adresse }}" />{% endif %}
+        {% if art %}<c-suche.facette titel="Art" name="paper_type" typ="checkbox" :optionen="art" adresse="{{ adresse }}" />{% endif %}
     </div>
+    {% if frei %}
+    <fieldset class="flex flex-wrap items-center gap-2 2xl:mb-3">
+        <legend class="sr-only">Eigener Zeitraum</legend>
+        <label for="suche-von" class="text-sm text-gray-700 dark:text-gray-300">Von</label>
+        <input id="suche-von" type="date" name="von" value="{{ frei.von }}" form="suche-form"
+               hx-get="{{ adresse }}" hx-trigger="change" hx-target="#suchergebnis" hx-push-url="true" hx-include="#suche-form, [form='suche-form']"
+               class="min-h-11 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+        <label for="suche-bis" class="text-sm text-gray-700 dark:text-gray-300">bis</label>
+        <input id="suche-bis" type="date" name="bis" value="{{ frei.bis }}" form="suche-form"
+               hx-get="{{ adresse }}" hx-trigger="change" hx-target="#suchergebnis" hx-push-url="true" hx-include="#suche-form, [form='suche-form']"
+               class="min-h-11 px-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
+    </fieldset>
+    {% endif %}
+    {% if gremien %}<c-suche.auswahl id="suche-gremium" name="gremium" titel="Gremium" leer="Alle Gremien" :optionen="gremien" adresse="{{ adresse }}" />{% endif %}
+    {% if kommunen %}<c-suche.auswahl id="suche-kommune" name="kommune" titel="Kommune" leer="Alle Kommunen" :optionen="kommunen" adresse="{{ adresse }}" />{% endif %}
     {# Sortierung neben den Filtern; ab 2xl klebt sie mit, dann nach dem Austausch an den Anfang (Anker #suche-anfang, Issue #841) #}
+    {% if sortierung %}
     <div class="flex items-center gap-2">
         <label for="suche-sortierung" class="text-sm text-gray-700 dark:text-gray-300">Sortieren</label>
         <select id="suche-sortierung" name="sort" form="suche-form"
-                hx-get="{% url 'insight_core:insight:search' %}" hx-trigger="change" hx-target="#suchergebnis"
+                hx-get="{{ adresse }}" hx-trigger="change" hx-target="#suchergebnis"
                 hx-swap="innerHTML show:#suche-anfang:top" hx-push-url="true"
                 hx-include="#suche-form, [form='suche-form']"
                 class="min-h-11 pl-3 pr-8 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white">
             {% for o in sortierung %}<option value="{{ o.value }}" {% if o.checked %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
         </select>
     </div>
+    {% endif %}
     <div class="hidden 2xl:block 2xl:mt-6 2xl:space-y-6">
-        <c-suche.facette-liste titel="Zeitraum" name="period" :optionen="zeitraum" />
+        {% if zeitraum %}<c-suche.facette-liste titel="Zeitraum" name="period" :optionen="zeitraum" />{% endif %}
         {% if art %}<c-suche.facette-liste titel="Art" name="paper_type" :optionen="art" mehrfach />{% endif %}
     </div>
 </div>

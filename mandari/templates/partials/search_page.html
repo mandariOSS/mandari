@@ -2,9 +2,13 @@
 Ergebnisbereich der Suchseite (#suchergebnis, Konzept Insight-Suche 3.1): Ortsband (nur bei erkannter Straße), Reiter
 mit Zählern, Filterleiste, aktive Filter, Liste. Bei HTMX-Austausch aktualisieren Titel und Zahl im Kopfband out of band.
 Kontext: insight_core.services.search_page.build_context.
+Derselbe Bereich dient der Recherche in Work (Issue #853, apps.work.ris.suche): suche_work schaltet auf den Rahmen von
+Work (Abschnitt ohne eigenes Band, klebende Spalte unter der niedrigeren Kopfzeile, kein Abo-Link des Bürgerportals),
+suche_adresse ist das Ziel der Filter, dazu Gremium, Kommune und eigener Zeitraum; ohne Suchdienst zeigt Work die
+Datenbanksuche direkt (datenbanksuche), das Bürgerportal lädt sie nach (fallback).
 {% endcomment %}
 {% if request.htmx %}
-<span hx-swap-oob="innerHTML:#suche-titel">„{{ query }}“{% if active_body %} in {{ active_body.get_display_name }}{% endif %}</span>
+<span hx-swap-oob="innerHTML:#suche-titel">{% if query %}„{{ query }}“{% if active_body and not suche_work %} in {{ active_body.get_display_name }}{% endif %}{% else %}Suche{% endif %}</span>
 <span hx-swap-oob="innerHTML:#suche-zahl">{{ count_sentence }}</span>
 {% endif %}
 {% if place_band %}{% include "partials/search_ortsband.html" with band=place_band %}{% endif %}
@@ -16,14 +20,18 @@ Was in der Spalte #suchergebnis tauscht, springt danach an den Anfang der Suche 
 man nach dem Filtern tief unten am Ende der neuen Liste. Der Anker hat erst ab 2xl eine Box, darunter springt nichts
 (Handy und Tablet wie bisher). Spalte 16rem: Die Liste bleibt ab 2xl mindestens 54rem breit.
 {% endcomment %}
-<c-insight.band aria-labelledby="treffer-titel">
+<c-insight.band ton="{% if suche_work %}ohne{% else %}hell{% endif %}" aria-labelledby="treffer-titel">
     <h2 id="treffer-titel" class="sr-only">Treffer</h2>
     <input type="hidden" name="result_type" value="{{ params.result_type }}" form="suche-form">
+    {% if params.paper_type %}<input type="hidden" name="art" value="{{ params.paper_type }}" form="suche-form">{% endif %}
     <div class="2xl:grid 2xl:grid-cols-[minmax(0,1fr)_16rem] 2xl:gap-x-12 2xl:items-start">
     {% if tabs %}<div class="2xl:col-start-1"><c-suche.reiter :tabs="tabs" /></div>{% endif %}
     {% if not fallback or active_filters or place_url %}
-    <div class="2xl:col-start-2 2xl:row-start-1 2xl:row-span-6 2xl:sticky 2xl:top-20 2xl:max-h-[calc(100vh-6rem)] 2xl:overflow-y-auto 2xl:px-1 2xl:pt-2 2xl:pb-4">
-        {% if not fallback %}
+    <div class="2xl:col-start-2 2xl:row-start-1 2xl:row-span-6 2xl:sticky {% if suche_work %}2xl:top-16 2xl:max-h-[calc(100vh-5rem)]{% else %}2xl:top-20 2xl:max-h-[calc(100vh-6rem)]{% endif %} 2xl:overflow-y-auto 2xl:px-1 2xl:pt-2 2xl:pb-4">
+        {% if suche_work %}
+        <c-suche.filterleiste adresse="{{ suche_adresse }}" :zeitraum="period_options" :art="art_options" :sortierung="sort_options"
+            :gremien="gremium_options" :kommunen="kommune_options" :frei="zeitraum_frei" />
+        {% elif not fallback %}
         <c-suche.filterleiste :zeitraum="period_options" :art="art_options" :sortierung="sort_options" />
         {% endif %}
         {% if active_filters or place_url %}
@@ -35,6 +43,9 @@ man nach dem Filtern tief unten am Ende der neuen Liste. Der Anker hat erst ab 2
     </div>
     {% endif %}
     <div class="min-w-0 2xl:col-start-1">
+    {% if datenbanksuche %}
+    <p class="mt-4 text-[0.95rem] text-gray-800 dark:text-gray-200">Die Volltextsuche ist gerade nicht erreichbar. Gezeigt werden Treffer in Titeln und Aktenzeichen.</p>
+    {% endif %}
     {% if similar_spelling %}
     <p class="mt-4 text-[0.95rem] text-gray-800 dark:text-gray-200">Keine genauen Treffer für „{{ query }}“. Ergebnisse für ähnliche Schreibweisen:</p>
     {% endif %}
@@ -51,15 +62,17 @@ man nach dem Filtern tief unten am Ende der neuen Liste. Der Anker hat erst ab 2
     <div id="mehr-laden" class="pt-4">{% include "partials/search_results_mehr.html" %}</div>
     {% else %}
     <div class="py-8">
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Keine Treffer für „{{ query }}“</h2>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Keine Treffer{% if query %} für „{{ query }}“{% endif %}</h2>
         {% if without_filters_url %}
         <p class="mt-2 text-gray-700 dark:text-gray-300">Mit den gewählten Filtern gibt es nichts. <c-suche.textlink href="{{ without_filters_url }}" hx-get="{{ without_filters_url }}" hx-target="#suchergebnis" hx-push-url="true">Ohne Filter: {{ without_filters_count|default:"Treffer anzeigen" }}</c-suche.textlink></p>
+        {% elif suche_work %}
+        <p class="mt-2 max-w-xl text-gray-700 dark:text-gray-300">Prüfen Sie die Schreibweise oder suchen Sie mit weniger Wörtern. Zusammengesetzte Wörter findet die Suche nur ganz („Feuerwehrbedarfsplan“, nicht „Feuerwehr“ allein).</p>
         {% else %}
         <p class="mt-2 max-w-xl text-gray-700 dark:text-gray-300">Prüfen Sie die Schreibweise oder suchen Sie mit weniger Wörtern. Bei Straßen genügt der Name ohne „Straße“.</p>
         {% endif %}
     </div>
     {% endif %}
-    {% if insight_subscriptions_enabled %}
+    {% if insight_subscriptions_enabled and not suche_work %}
     <p class="mt-8"><c-suche.textlink href="{% url 'insight_core:insight:notifications' %}?keyword={{ query|urlencode }}">Bei neuen Treffern zu „{{ query }}“ benachrichtigen</c-suche.textlink></p>
     {% endif %}
     </div>

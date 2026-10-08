@@ -18,7 +18,7 @@ from elasticsearch.exceptions import NotFoundError
 
 from . import search_ranking
 from .search_presentation import clean_snippet
-from .search_ranking import DATE_FIELD_BY_INDEX
+from .search_ranking import DATE_FIELD_BY_INDEX, RelationBoost
 
 HIGHLIGHT_PRE = '<mark class="bg-yellow-200 dark:bg-yellow-800">'
 HIGHLIGHT_POST = "</mark>"
@@ -213,11 +213,13 @@ class ElasticsearchService:
         sort: str = SORT_RELEVANCE,
         ranking: str | None = None,
         sources: Mapping[str, list[str]] | None = None,
+        boost: RelationBoost | None = None,
     ) -> RankedHits:
         """Schritt 1: Rangfolge der besten ``depth`` Treffer je Index, gemischt; ohne Dokumentinhalte.
 
         ``depth`` gilt für alle Indexe oder je Index; ``sources`` nennt je Index Felder, die schon dieser
-        Schritt liefert (etwa ``paper_id`` der Dateien für die Gruppierung). In v2 folgt bei weniger als ``FUZZY_FALLBACK_BELOW`` genauen Treffern die unscharfe Rückfallsuche.
+        Schritt liefert (etwa ``paper_id`` der Dateien für die Gruppierung). ``boost`` gewichtet nach dem Bezug
+        einer Organisation (Work, ``search_ranking.RelationBoost``), ohne die Treffermenge zu ändern. In v2 folgt bei weniger als ``FUZZY_FALLBACK_BELOW`` genauen Treffern die unscharfe Rückfallsuche.
         """
         if index_names is None:
             index_names = ALL_INDEXES
@@ -237,6 +239,7 @@ class ElasticsearchService:
                 ranking=version,
                 fuzzy=fuzzy,
                 name_part_is_rare=name_part_is_rare,
+                boost=boost,
             )
 
         depths = depth if isinstance(depth, Mapping) else dict.fromkeys(index_names, depth)
@@ -379,6 +382,7 @@ class ElasticsearchService:
         file_paper_filter: Callable[[set[str]], set[str]] | None = None,
         weights: Mapping[str, float] | None = None,
         kinds: set[str] | None = None,
+        boost: RelationBoost | None = None,
     ) -> dict[str, Any]:
         """Treffer nach Vorgang gruppiert (Konzept Insight-Suche, P0.5).
 
@@ -387,6 +391,7 @@ class ElasticsearchService:
         zulässigen Vorgang entfallen dann; die Zahl zählt die gebildeten Gruppen. ``weights`` überschreibt die
         Gewichte der Rangfusion (Index mit 0 wird nur gezählt), ``kinds`` behält nur Gruppen dieser Arten
         (``paper``, ``meeting``, ``file``, ``person``, ``organization``) – so zählt ein Aufruf für alle Reiter.
+        ``boost`` gewichtet nach dem Bezug einer Organisation (Work); die Treffermenge bleibt dieselbe.
 
         Dateien mit Vorgang stehen unter ihm, auch wenn der Vorgang selbst nicht trifft; Unterlagen ohne
         Vorgang unter ihrer Sitzung. Die Reihenfolge entsteht per Rangfusion über die Indexe (Reciprocal Rank
@@ -423,6 +428,7 @@ class ElasticsearchService:
             sort=sort,
             ranking=ranking,
             sources={INDEX_FILES: ["paper_id", "meeting_id"]},
+            boost=boost,
         )
         if file_paper_filter is not None and INDEX_FILES in ranked.hits_by_index:
             files = ranked.hits_by_index[INDEX_FILES]
@@ -469,15 +475,25 @@ class ElasticsearchService:
         date_to: str | None = None,
         ranking: str | None = None,
         today: str = "now/d",
+        boost: RelationBoost | None = None,
+        organization_name: str | None = None,
     ) -> dict[str, Any]:
         """Zähler für die Filter „Art“ (Originalwerte von ``paper_type``) und „Zeitraum“ über die Vorgänge.
 
         Ohne den Art-Filter selbst, damit die anderen Arten wählbar bleiben; mit derselben Mindestrelevanz wie
-        die Liste. Zeitraum: letzte 12 Monate, 2 Jahre, 5 Jahre, älter (``filters``-Aggregation auf ``date``).
+        die Liste und mit dem Gremium-Filter (``organization_name``, Work), wenn gesetzt. Zeitraum: letzte 12 Monate, 2 Jahre, 5 Jahre, älter (``filters``-Aggregation auf ``date``).
         """
         version = ranking_version(ranking)
         es_query = self._build_query(
-            query, body_id, INDEX_PAPERS, date_from=date_from, date_to=date_to, body_ids=body_ids, ranking=version
+            query,
+            body_id,
+            INDEX_PAPERS,
+            date_from=date_from,
+            date_to=date_to,
+            body_ids=body_ids,
+            ranking=version,
+            boost=boost,
+            organization_name=organization_name,
         )
         leer: dict[str, Any] = {"paper_types": {}, "periods": {}}
         try:
@@ -810,8 +826,12 @@ class ElasticsearchService:
         ranking: str | None = None,
         fuzzy: bool = False,
         name_part_is_rare: bool = False,
+        boost: RelationBoost | None = None,
     ) -> dict[str, Any]:
-        """Baut die Elasticsearch-Query für einen Index (v1 wie bis 10/2026, v2 nach ``search_ranking``)."""
+        """Baut die Elasticsearch-Query für einen Index (v1 wie bis 10/2026, v2 nach ``search_ranking``).
+
+        ``boost`` (Bezug einer Organisation, Work) kommt als äußerer Faktor dazu, in beiden Versionen.
+        """
         filter_clauses = self._filter_clauses(
             body_id,
             index_name,
@@ -836,7 +856,7 @@ class ElasticsearchService:
                 )
             else:
                 must.append({"match_all": {}})
-            return {"bool": {"must": must, "filter": filter_clauses}}
+            return search_ranking.with_relation({"bool": {"must": must, "filter": filter_clauses}}, index_name, boost)
 
         if not query:
             text: dict[str, Any] = {"match_all": {}}
@@ -845,7 +865,8 @@ class ElasticsearchService:
         else:
             text = search_ranking.text_query(query, index_name, name_part_is_rare=name_part_is_rare)
         weight = float(getattr(settings, "SEARCH_RECENCY_WEIGHT", 1.0))
-        return search_ranking.with_recency({"bool": {"must": [text], "filter": filter_clauses}}, index_name, weight)
+        recent = search_ranking.with_recency({"bool": {"must": [text], "filter": filter_clauses}}, index_name, weight)
+        return search_ranking.with_relation(recent, index_name, boost)
 
     def _filter_clauses(
         self,
