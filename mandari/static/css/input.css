@@ -1,4 +1,7 @@
 @import "./work-vorbereitung.css";
+/* Sitzungsansicht der laufenden Fraktionssitzung (Issue #874) – eigene Datei, @import muss vor @tailwind stehen */
+@import "./fraktionssitzung.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;

@@ -1,0 +1,56 @@
+{# Inhalt eines Reiters unter „Unterlagen“: Text der RIS-Datei, eigenes Dokument, Vorschau der Anlage, Links (Issue #874) #}
+{# Kontext: unterlage (sitzung.Unterlage), text, html, vorschau_url, ist_pdf, ist_bild, item, meeting, org_slug #}
+{# Dateien ohne Vorschau als Dokumentzeile von Insight (c-insight.document-row), Textlinks wie in Insight (c-suche.textlink) #}
+{% with u=unterlage o=unterlage.objekt %}
+<div class="fs-dok{% if u.art == 'ris_datei' and not text and ist_pdf or u.art == 'anlage' and ist_pdf or u.art == 'protokoll' %} mit-rahmen{% endif %}" id="fs-dok"
+     role="tabpanel" aria-labelledby="fs-reiter-{{ u.schluessel }}" tabindex="0">
+    {% if u.art == 'protokoll' %}
+        {# Niederschrift der vorigen Sitzung zur Genehmigung, in der Fassung, die das Mitglied lesen darf #}
+        <iframe class="fs-dok-rahmen" src="{% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=o.pk variant=u.fassung %}?vorschau"
+                title="{{ u.titel }}: {{ o.title }}" loading="lazy"></iframe>
+    {% elif u.art == 'ris_datei' %}
+        {% if text %}
+        <p class="fs-dok-meta">
+            <span>{% if u.vorlage.paper_type %}{{ u.vorlage.paper_type }} {% endif %}{{ u.vorlage.reference|default:"" }}{% if u.vorlage.date %}, {{ u.vorlage.date|date:"d.m.Y" }}{% endif %}{% if o.name and o.name != u.titel %} · {{ o.name }}{% endif %}</span>
+            <c-suche.textlink href="{{ vorschau_url }}" target="_blank" rel="noopener noreferrer">Original (PDF) öffnen</c-suche.textlink>
+            <c-suche.textlink href="{% url 'work:ris_paper_detail' org_slug=org_slug paper_id=u.vorlage.pk %}">Vorgang im RIS</c-suche.textlink>
+        </p>
+        <div class="fs-dok-text">{{ text }}</div>
+        {% elif ist_pdf %}
+        <iframe class="fs-dok-rahmen" src="{{ vorschau_url }}" title="{{ u.titel }}" loading="lazy"></iframe>
+        {% else %}
+        <p class="fs-dok-meta">
+            <span>{% if u.vorlage.paper_type %}{{ u.vorlage.paper_type }} {% endif %}{{ u.vorlage.reference|default:"" }}{% if u.vorlage.date %}, {{ u.vorlage.date|date:"d.m.Y" }}{% endif %}</span>
+            <c-suche.textlink href="{% url 'work:ris_paper_detail' org_slug=org_slug paper_id=u.vorlage.pk %}">Vorgang im RIS</c-suche.textlink>
+        </p>
+        <ul class="fs-dateien"><c-insight.document-row :file="o" meta="{{ u.vorlage.reference|default:'' }}" dicht /></ul>
+        {% endif %}
+    {% elif u.art == 'ris_vorlage' %}
+        <p class="fs-dok-meta"><span>{% if o.paper_type %}{{ o.paper_type }} {% endif %}{{ o.reference|default:"" }}{% if o.date %}, {{ o.date|date:"d.m.Y" }}{% endif %}</span></p>
+        <h4 class="fs-top-h">{{ o.name }}</h4>
+        <p class="fs-meta">Zu dieser Vorlage liegt im Ratsinformationssystem noch keine Datei vor.
+            <c-suche.textlink href="{% url 'work:ris_paper_detail' org_slug=org_slug paper_id=o.pk %}">Vorgang im RIS öffnen</c-suche.textlink></p>
+    {% elif u.art == 'dokument' %}
+        <p class="fs-dok-meta">
+            <span>Eigenes Dokument{% if o.updated_at %}, zuletzt geändert {{ o.updated_at|date:"d.m.Y" }}{% endif %}</span>
+            <c-suche.textlink href="{% url 'work:document_editor' org_slug=org_slug motion_id=o.pk %}">Im Editor öffnen</c-suche.textlink>
+        </p>
+        <div class="fs-dok-html">{{ html }}</div>
+    {% elif u.art == 'anlage' %}
+        {% url 'work:faction_attachment_download' org_slug=org_slug meeting_id=meeting.pk item_id=item.pk attachment_id=o.pk as datei_url %}
+        {% if ist_pdf %}
+        <iframe class="fs-dok-rahmen" src="{{ datei_url }}?vorschau" title="{{ o.filename }}" loading="lazy"></iframe>
+        {% else %}
+        <p class="fs-dok-meta"><span>Anlage{% if o.uploaded_by %}, angehängt von {{ o.uploaded_by.user.get_display_name }}{% endif %}{% if o.created_at %} am {{ o.created_at|date:"d.m.Y" }}{% endif %}</span></p>
+        {% if ist_bild %}<img src="{{ datei_url }}" alt="{{ o.filename }}" class="max-w-full">{% endif %}
+        <ul class="fs-dateien"><c-insight.document-row :file="o" titel="{{ o.filename }}" herunterladen="{{ datei_url }}" dicht /></ul>
+        {% endif %}
+    {% elif u.art == 'links' %}
+        <ul class="fs-auf-liste">
+            {% for link in o %}
+            <li><i data-lucide="external-link" aria-hidden="true"></i><c-suche.textlink href="{{ link.url }}" target="_blank" rel="noopener noreferrer">{{ link.label|default:link.url }}</c-suche.textlink></li>
+            {% endfor %}
+        </ul>
+    {% endif %}
+</div>
+{% endwith %}

@@ -1,0 +1,13 @@
+{# Eine Zeile der Tagesordnung; Wechsel per HTMX, die Adresse merkt den TOP (?top=) #}
+{# Kontext: zeile (sitzung.TopZeile), meeting, org_slug, oob_zeile (nach einem Beschluss: Zeile austauschen) #}
+<li id="fs-tl-{{ zeile.item.pk }}"{% if oob_zeile %} hx-swap-oob="true"{% endif %}>
+    <a class="fs-tl-zeile{% if zeile.unter %} unter{% endif %}" href="?top={{ zeile.item.pk }}"
+       hx-get="{% url 'work:faction_session_item' org_slug=org_slug meeting_id=meeting.pk item_id=zeile.item.pk %}"
+       hx-target="#fs-fokus" hx-swap="outerHTML" hx-push-url="?top={{ zeile.item.pk }}"
+       data-top-wechsel data-top-id="{{ zeile.item.pk }}"
+       :aria-current="istAktuell($el.dataset.topId) ? 'true' : null">
+        <span class="nr">{{ zeile.item.number }}</span>
+        <span class="titel">{{ zeile.item.title }}</span>
+        <span class="stand">{% if zeile.besprochen %}<i data-lucide="check" aria-hidden="true"></i><span class="fs-sr">, besprochen</span>{% endif %}</span>
+    </a>
+</li>

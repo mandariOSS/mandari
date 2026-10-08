@@ -503,7 +503,7 @@ def discard_open_invitations(membership) -> int:
 
 def preserve_member_names(membership) -> int:
     """
-    Namen eines Mitglieds an Anwesenheit und Protokolleinträgen sichern (Issue #591).
+    Namen eines Mitglieds an Anwesenheit, Protokolleinträgen und Sitzungsrollen sichern (Issue #591, #874).
 
     Wird vor dem Löschen der Mitgliedschaft aufgerufen: Danach leert ``SET_NULL`` die Verweise,
     Protokolle, Anwesenheitslisten und Teilnahmebestätigungen zeigen den hier gesicherten Namen.
@@ -513,14 +513,73 @@ def preserve_member_names(membership) -> int:
     """
     from apps.common.formatting import member_name_snapshot
 
-    from .models import FactionAttendance, FactionProtocolEntry
+    from .models import FactionAttendance, FactionMeeting, FactionProtocolEntry
 
     name = member_name_snapshot(membership)
     count = 0
-    for model in (FactionAttendance, FactionProtocolEntry):
+    # Sitzungsleitung und Schriftführung der Sitzung (Issue #874) wie Anwesenheit und Protokolleinträge
+    for model in (FactionAttendance, FactionProtocolEntry, FactionMeeting):
         for fk, snapshot_field in model.MEMBER_NAME_SNAPSHOTS.items():
             count += model.objects.filter(**{fk: membership}).update(**{snapshot_field: name})
     return count
+
+
+def record_decision(
+    item,
+    membership,
+    *,
+    votes_yes: int,
+    votes_no: int,
+    votes_abstain: int,
+    result: str,
+    decision_text: str,
+    notes: str | None = None,
+):
+    """
+    Abstimmungsergebnis eines TOPs erfassen oder ändern (bisherige Ansicht, TOP-Panel, Sitzungsansicht #874).
+
+    Hält die Kopie am TOP (``has_decision``/``votes_*``) aktuell und genehmigt über den Genehmigungs-TOP das
+    Vorprotokoll. ``notes=None`` lässt vorhandene Anmerkungen unverändert (die Sitzungsansicht hat kein Feld dafür).
+    """
+    from .models import FactionDecision
+
+    defaults = {
+        "votes_yes": votes_yes,
+        "votes_no": votes_no,
+        "votes_abstain": votes_abstain,
+        "result": result,
+        "decision_text": decision_text,
+        "recorded_by": membership,
+    }
+    if notes is not None:
+        defaults["notes"] = notes
+    decision, _created = FactionDecision.objects.update_or_create(agenda_item=item, defaults=defaults)
+
+    item.has_decision = True
+    item.votes_for = votes_yes
+    item.votes_against = votes_no
+    item.votes_abstain = votes_abstain
+    item.save()
+
+    apply_approval_item_decision(item, decision, item.meeting, membership)
+    return decision
+
+
+def apply_approval_item_decision(agenda_item, decision, meeting, membership):
+    """
+    Genehmigungs-TOP auswerten: eine angenommene Abstimmung auf dem
+    automatischen ersten TOP genehmigt das Protokoll der vorherigen Sitzung
+    (ProtocolApprovalService setzt Status, Flag und Genehmigungs-Metadaten).
+    """
+    if not agenda_item.is_approval_item or not agenda_item.approves_meeting_id:
+        return False
+    if decision is None or not decision.passed:
+        return False
+    return ProtocolApprovalService.approve_protocol(
+        agenda_item.approves_meeting,
+        approved_in_meeting=meeting,
+        approved_by=membership,
+    )
 
 
 def safe_link_url(url: str) -> bool:
@@ -550,7 +609,11 @@ def visible_linked_motions(item, membership):
 
 
 def _decorate_protocol_items(items, entries_by_item, *, include_internal: bool):
-    """TOPs für das Niederschrift-PDF mit Einträgen/Beschlüssen anreichern (NÖ-Unterpunkte nur intern)."""
+    """
+    TOPs für das Niederschrift-PDF mit Einträgen/Beschlüssen anreichern (NÖ-Unterpunkte nur intern).
+
+    Notizen aus der Sitzungsansicht (Issue #874) liest das Template über ``FactionAgendaItem.notes_html``.
+    """
     from .visibility import is_item_internal
 
     decorated = []

@@ -112,7 +112,13 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     *_tenant("common.MailOutbox", "payload_encrypted", paths=_ORG, batch_size=_LARGE),
     # --- Work ----------------------------------------------------------------------------------
     *_tenant("work.FactionMeeting", "protocol_encrypted", paths=_ORG),
-    *_tenant("work.FactionAgendaItem", "description_encrypted", "decision_encrypted", paths=("meeting__organization",)),
+    *_tenant(
+        "work.FactionAgendaItem",
+        "description_encrypted",
+        "decision_encrypted",
+        "notes_encrypted",
+        paths=("meeting__organization",),
+    ),
     *_tenant("work.FactionProtocolEntry", "content_encrypted", paths=("meeting__organization",)),
     *_tenant("work.MeetingPreparation", "notes_encrypted", paths=_ORG),
     *_tenant("work.AgendaItemPosition", "reasoning_encrypted", paths=_ORG),

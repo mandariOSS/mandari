@@ -1,8 +1,9 @@
-{% comment %}Einzelner TOP in der Niederschrift (Issue #60). Erwartet: item (mit entries_list, decision_obj).{% endcomment %}
+{% comment %}Einzelner TOP in der Niederschrift (Issue #60). Erwartet: item (mit entries_list, notes_html, decision_obj; Notizen der Sitzungsansicht #874).{% endcomment %}
 <tr>
     <td class="top-nr">{% if item.parent_id %}{{ item.number }}{% else %}TOP {{ item.number }}{% endif %}</td>
     <td>
         <strong>{{ item.title }}</strong>
+        {% if item.notes_html %}<div class="notes">{{ item.notes_html }}</div>{% endif %}
         {% for entry in item.entries_list %}
         <p class="entry">
             <span class="entry-type">{{ entry.type_display }}</span>{% if entry.speaker %} · {{ entry.speaker }}{% endif %}{% if entry.assignee %} · zuständig: {{ entry.assignee }}{% endif %}<br>
