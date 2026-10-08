@@ -19,6 +19,8 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
+from apps.common import ki_anbieter
+from apps.common.ki_anbieter import endpunkt_fuer_insight
 from apps.common.models import AISettings
 from insight_ai.providers import NichtEingerichtet, OpenAIKompatiblerProvider
 from insight_ai.services import chat_service, summarizer
@@ -114,6 +116,22 @@ class TestAnbieterAusDerKonfiguration:
         assert orte and orte[0]["raw"] == "Hauptstraße"
         assert len(anfragen) == 1 and str(anfragen[0].url) == CHAT
 
+    def test_assistent_nutzt_den_uebergebenen_endpunkt(
+        self, anfragen: list[httpx.Request], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Der in der View geprüfte Endpunkt wird gefragt, ohne die Konfiguration erneut aufzulösen."""
+        _einrichten()
+        endpunkt = endpunkt_fuer_insight()
+        assert endpunkt is not None
+
+        def nicht_erneut() -> None:
+            raise AssertionError("Endpunkt erneut aufgelöst")
+
+        monkeypatch.setattr(chat_service, "get_insight_provider", nicht_erneut)
+        monkeypatch.setattr(chat_service, "build_rag_context", lambda query, body_id: ("", []))
+        ergebnis = chat_service.process_chat_message("Was ist geplant?", [], None, endpunkt=endpunkt)
+        assert ergebnis["response"] and len(anfragen) == 1 and str(anfragen[0].url) == CHAT
+
     def test_kein_fester_anbieter_in_den_diensten(self) -> None:
         for modul in (summarizer, chat_service):
             assert not hasattr(modul, "NebiusProvider")
@@ -136,7 +154,8 @@ class TestEinwilligung:
     def test_vorlage_liefert_name_und_ort(self, besucher: Client) -> None:
         _einrichten()
         inhalt = besucher.get(reverse("insight_core:insight:chat")).content.decode()
-        assert "STACKIT AI Model Serving" in inhalt and "Rechenzentren in Deutschland (EU)" in inhalt
+        # „All models are operated in data centers in Germany and Austria“ (STACKIT)
+        assert "STACKIT AI Model Serving" in inhalt and "Rechenzentren in Deutschland und Österreich (EU)" in inhalt
 
     def test_einwilligung_gilt_nur_fuer_den_anbieter(self, besucher: Client, anfragen: list[httpx.Request]) -> None:
         seite, api = reverse("insight_core:insight:chat"), reverse("insight_core:insight:chat_message")
@@ -172,3 +191,49 @@ class TestEinwilligung:
         )
         assert antwort.status_code == 403 and antwort.json()["error"] == "consent_required"
         assert anfragen == []
+
+    def test_neue_frage_bei_geaendertem_ort_oder_namen(self, besucher: Client, anfragen: list[httpx.Request]) -> None:
+        seite, api = reverse("insight_core:insight:chat"), reverse("insight_core:insight:chat_message")
+        _einrichten()
+        assert besucher.post(api, {"consent": True}, content_type="application/json").status_code == 200
+        assert besucher.get(seite).context["has_chat_consent"] is True
+
+        _einrichten(verarbeitungsort="Rechenzentren in Testhausen (EU)")
+        assert besucher.get(seite).context["has_chat_consent"] is False
+        antwort = besucher.post(api, {"message": "Hallo"}, content_type="application/json")
+        assert antwort.status_code == 403 and antwort.json()["error"] == "consent_required"
+
+        assert besucher.post(api, {"consent": True}, content_type="application/json").status_code == 200
+        _einrichten(verarbeitungsort="Rechenzentren in Testhausen (EU)", anzeigename="Anderer Name")
+        assert besucher.get(seite).context["has_chat_consent"] is False
+        assert anfragen == []
+
+    def test_endpunkt_je_anfrage_einmal_aufgeloest(
+        self, besucher: Client, anfragen: list[httpx.Request], monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Einwilligung und KI-Aufruf beziehen sich auf denselben, einmal aufgelösten Endpunkt."""
+        _einrichten()
+        api = reverse("insight_core:insight:chat_message")
+        assert besucher.post(api, {"consent": True}, content_type="application/json").status_code == 200
+
+        aufloesungen: list[str] = []
+        echt = ki_anbieter._baue_endpunkt
+
+        def zaehlen(**werte: Any) -> Any:
+            aufloesungen.append(werte["quelle"])
+            return echt(**werte)
+
+        monkeypatch.setattr(ki_anbieter, "_baue_endpunkt", zaehlen)
+        monkeypatch.setattr(chat_service, "build_rag_context", lambda query, body_id: ("", []))
+        antwort = besucher.post(api, {"message": "Was ist geplant?"}, content_type="application/json")
+        assert antwort.status_code == 200, antwort.content
+        assert aufloesungen == ["KI-Einstellungen, Bürgerportal"]
+        assert len(anfragen) == 1 and str(anfragen[0].url) == CHAT
+
+    def test_keine_rohe_einwilligung_im_seitenkontext(self, besucher: Client) -> None:
+        """Eine Kennung aus der Sitzung ist immer wahr; nur die Chatseite prüft die Einwilligung (Anbieter)."""
+        sitzung = besucher.session
+        sitzung["chat_consent"] = '["stackit", "fremd.example", "X", "Y"]'
+        sitzung.save()
+        kontext = besucher.get(reverse("insight_core:insight:portal_home")).context
+        assert not kontext.get("has_chat_consent")

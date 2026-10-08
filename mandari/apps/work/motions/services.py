@@ -21,7 +21,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, JsonResponse
 
-from apps.common.ki_anbieter import KiEndpunkt, endpunkt_fuer_work
+from apps.common.ki_anbieter import LAENGENLIMIT, KiEndpunkt, endpunkt_fuer_work, ist_laengenlimit
 from apps.common.models import AISettings
 
 from .ai_security import AIInputSanitizer, AIOutputFilter, AIRateLimiter
@@ -245,6 +245,17 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
             return AIResponse(success=True, content=safe_content, total_tokens=total_tokens)
         except httpx.HTTPStatusError as e:
             # Ohne Antworttext: Er kann Teile der Anfrage enthalten
+            if ist_laengenlimit(e.response.status_code, e.response.text):
+                logger.warning(
+                    "KI-Aufruf abgelehnt (HTTP %d): %s (anbieter=%s host=%s modell=%s max_tokens=%d)",
+                    e.response.status_code,
+                    LAENGENLIMIT,
+                    endpunkt.anbieter,
+                    endpunkt.host,
+                    endpunkt.modell,
+                    max_tokens,
+                )
+                return AIResponse(success=False, error="Die Anfrage ist für das KI-Modell zu lang.")
             logger.warning(
                 "KI-Aufruf gescheitert: anbieter=%s host=%s modell=%s status=%s",
                 endpunkt.anbieter,

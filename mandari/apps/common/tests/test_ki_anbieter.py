@@ -8,6 +8,8 @@ Zentrale KI-Konfiguration mit Positivliste erlaubter EU-Hosts (Issue #950).
 - ``endpunkt_fuer_work``/``endpunkt_fuer_insight`` lösen aus den Einstellungen auf, prüfen jede Adresse bei
   jedem Aufruf und lesen nie einen Schlüssel aus der Umgebung.
 - ``KiEndpunkt`` nennt den Schlüssel weder in ``repr`` noch in ``str``.
+- Eine Vorlage gilt nur für ihren Host (Pfad darf abweichen), auch bei Werten direkt aus der Datenbank.
+- Die Einwilligungskennung ändert sich mit Anbieter, Host, Anzeigename und Verarbeitungsort.
 """
 
 from __future__ import annotations
@@ -25,8 +27,10 @@ from apps.common import ki_anbieter
 from apps.common.ki_anbieter import (
     ANBIETER_VORLAGEN,
     KiEndpunkt,
+    KiHinweis,
     endpunkt_fuer_insight,
     endpunkt_fuer_work,
+    ist_laengenlimit,
     pruefe_basis_url,
 )
 from apps.common.models import AISettings
@@ -34,6 +38,7 @@ from apps.common.models import AISettings
 STACKIT = "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1"
 IONOS_HOST = "openai.inference.de-txl.ionos.com"
 IONOS = f"https://{IONOS_HOST}/v1"
+STACKIT_HOST = "api.openai-compat.model-serving.eu01.onstackit.cloud"
 SCHLUESSEL = "ki-testschluessel-geheim-0123456789"
 
 ABGELEHNT = [
@@ -150,6 +155,40 @@ class TestEndpunkt:
     def test_adresse_der_chat_schnittstelle(self) -> None:
         assert self._endpunkt().chat_url == STACKIT + "/chat/completions"
 
+    def test_einwilligungskennung_je_anbieter_host_name_und_ort(self) -> None:
+        basis = KiHinweis(anbieter="stackit", anzeigename="STACKIT", verarbeitungsort="Deutschland", host="a.example")
+        kennung = basis.einwilligungskennung
+        for geaendert in (
+            KiHinweis(anbieter="eigener", anzeigename="STACKIT", verarbeitungsort="Deutschland", host="a.example"),
+            KiHinweis(anbieter="stackit", anzeigename="STACKIT", verarbeitungsort="Deutschland", host="b.example"),
+            KiHinweis(anbieter="stackit", anzeigename="Anderer", verarbeitungsort="Deutschland", host="a.example"),
+            KiHinweis(anbieter="stackit", anzeigename="STACKIT", verarbeitungsort="USA", host="a.example"),
+        ):
+            assert geaendert.einwilligungskennung != kennung
+        assert KiHinweis(**vars(basis)).einwilligungskennung == kennung
+
+
+class TestLaengenlimit:
+    @pytest.mark.parametrize(
+        "text",
+        [
+            '{"error": {"message": "max_tokens must be less than or equal to 8192"}}',
+            "This model's maximum context length is 131072 tokens.",
+            '{"detail": "max_completion_tokens is too large"}',
+        ],
+    )
+    def test_erkannt(self, text: str) -> None:
+        assert ist_laengenlimit(400, text)
+
+    def test_andere_fehler_nicht(self) -> None:
+        assert not ist_laengenlimit(400, '{"error": "model not found"}')
+        assert not ist_laengenlimit(500, "max_tokens")
+        assert not ist_laengenlimit(400, "")
+
+    def test_standard_der_antwortlaenge_im_buergerportal(self) -> None:
+        # STACKIT dokumentiert für openai/gpt-oss-120b höchstens 8192 Tokens je Antwort
+        assert AISettings().insight_max_output_tokens == 8192
+
 
 @pytest.mark.django_db
 class TestAufloesung:
@@ -165,7 +204,7 @@ class TestAufloesung:
         assert (work.base_url, work.modell, work.api_key) == (STACKIT, "modell-a", SCHLUESSEL)
         assert (insight.modell, insight.ausweichmodell, insight.max_output_tokens) == ("modell-b", "modell-c", 1234)
         assert insight.anzeigename == "STACKIT AI Model Serving"
-        assert insight.verarbeitungsort == "Rechenzentren in Deutschland (EU)"
+        assert insight.verarbeitungsort == "Rechenzentren in Deutschland und Österreich (EU)"
 
     def test_buergerportal_nur_mit_schalter(self) -> None:
         _ki(insight_enabled=False)
@@ -200,6 +239,22 @@ class TestAufloesung:
         with override_settings(KI_ERLAUBTE_HOSTS=[IONOS_HOST]):
             endpunkt = endpunkt_fuer_work()
         assert endpunkt is not None and endpunkt.base_url == IONOS
+
+    @override_settings(KI_ERLAUBTE_HOSTS=[STACKIT_HOST, IONOS_HOST])
+    def test_vorlage_mit_fremdem_host_wirkt_nicht(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Sonst nennte die Einwilligung STACKIT, die Anfragen gingen aber an einen anderen Anbieter."""
+        _ki()
+        AISettings.objects.filter(pk=1).update(provider="stackit", base_url=IONOS)
+        cache.delete(AISettings.CACHE_KEY)
+        with caplog.at_level(logging.WARNING):
+            assert endpunkt_fuer_work() is None and endpunkt_fuer_insight() is None
+        assert "Eigener Endpunkt" in caplog.text and SCHLUESSEL not in caplog.text
+
+    def test_vorlage_mit_anderem_pfad(self) -> None:
+        _ki(base_url=STACKIT + "/v2")
+        endpunkt = endpunkt_fuer_work()
+        assert endpunkt is not None and endpunkt.base_url == STACKIT + "/v2"
+        assert endpunkt.anzeigename == "STACKIT AI Model Serving"
 
     def test_frueherer_anbieter_wirkt_nicht(self) -> None:
         _ki()

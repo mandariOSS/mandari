@@ -14,7 +14,7 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 
 from apps.accounts.models import User
-from apps.common.admin import anbieter_auswahl_mit_freigabe, pruefe_ki_endpunkt
+from apps.common.admin import anbieter_auswahl_mit_freigabe, pruefe_ki_endpunkt, pruefe_ki_schluessel
 
 from .models import (
     Membership,
@@ -60,6 +60,11 @@ class OrganizationAdminForm(forms.ModelForm):
         label="KI API Key",
         help_text="Leer lassen, um den bestehenden Key unverändert zu lassen.",
     )
+    ai_api_key_loeschen = forms.BooleanField(
+        required=False,
+        label="Eigenen KI API Key löschen",
+        help_text="Entfernt den eigenen Key; danach gelten die KI-Einstellungen der Plattform.",
+    )
 
     class Meta:
         model = Organization
@@ -85,9 +90,17 @@ class OrganizationAdminForm(forms.ModelForm):
 
     def clean(self):
         cleaned_data = super().clean()
-        if (cleaned_data.get("ai_api_key") or "").strip() and not cleaned_data.get("ai_provider"):
-            # Ein eigener Key ohne eigenen Anbieter bliebe wirkungslos (kein Rückfall auf die Plattform)
-            self.add_error("ai_provider", "Mit eigenem KI API Key bitte einen Anbieter wählen.")
+        # Ein eigener Key ohne eigenen Anbieter schaltet die KI ab (kein Rückfall auf die Plattform); ein
+        # gespeicherter Key gehört zu seinem Anbieter und geht nach einem Wechsel nicht an den neuen
+        pruefe_ki_schluessel(
+            self,
+            anbieter_feld="ai_provider",
+            url_feld="ai_base_url",
+            schluessel_feld="ai_api_key",
+            loeschen_feld="ai_api_key_loeschen",
+            gespeichert=bool(self.instance.pk and self.instance.ai_api_key_encrypted),
+            ohne_anbieter="Anbieter wählen oder eigenen Key löschen.",
+        )
         if any(feld in self.changed_data for feld in self.KI_FELDER):
             pruefe_ki_endpunkt(
                 self,
@@ -103,6 +116,8 @@ class OrganizationAdminForm(forms.ModelForm):
         api_key = self.cleaned_data.get("ai_api_key", "").strip()
         if api_key:
             obj.set_ai_api_key(api_key)
+        elif self.cleaned_data.get("ai_api_key_loeschen"):
+            obj.set_ai_api_key("")
         if commit:
             obj.save()
             self.save_m2m()
@@ -210,6 +225,7 @@ class OrganizationAdmin(ModelAdmin):
                     "ai_verarbeitungsort",
                     "ai_model",
                     "ai_api_key",
+                    "ai_api_key_loeschen",
                     "ai_token_limit_daily",
                     "ai_token_limit_weekly",
                     "ai_token_limit_monthly",

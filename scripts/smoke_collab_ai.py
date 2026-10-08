@@ -76,6 +76,7 @@ from _smoke_db import prepare_database  # noqa: E402
 prepare_database(PROJECT_DIR)
 
 from apps.accounts.models import User  # noqa: E402
+from apps.common.ki_anbieter import endpunkt_fuer_work  # noqa: E402
 from apps.common.models import AISettings  # noqa: E402
 from apps.tenants.models import Membership, Organization, Role  # noqa: E402
 from apps.work.motions.consumers import DocumentCollaborationConsumer  # noqa: E402
@@ -416,7 +417,13 @@ payload = call_args.kwargs.get("json") or {}
 headers = call_args.kwargs.get("headers") or {}
 messages = payload.get("messages") or []
 system_texts = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
-check("Endpunkt: URL der Vorlage + /chat/completions", called_url == STACKIT + "/chat/completions", called_url)
+# Die Adresse der Chat-Schnittstelle bildet nur ki_anbieter (Wächtertest test_keine_nicht_eu_endpunkte)
+erwartet = endpunkt_fuer_work(org)
+check(
+    "Endpunkt: Chat-Schnittstelle der Vorlage (STACKIT)",
+    erwartet is not None and called_url == erwartet.chat_url and called_url.startswith(STACKIT + "/"),
+    called_url,
+)
 check("Endpunkt: Bearer-Auth", headers.get("Authorization") == "Bearer test-key-123", str(headers))
 check("Endpunkt: Modell aus AISettings", payload.get("model") == "modell-smoke", str(payload.get("model")))
 check(

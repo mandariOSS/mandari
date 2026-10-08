@@ -159,3 +159,24 @@ def test_organisation_mit_ki_aus(org: Organization, anfragen: list[httpx.Request
 def test_kein_anbieter_zwang_im_dienst() -> None:
     assert not hasattr(MotionAIService, "PROVIDER_DEFAULTS")
     assert not hasattr(services, "SiteSettings")
+
+
+def test_laengenlimit_verstaendlich_im_protokoll(
+    org: Organization, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _plattform(max_output_tokens=16000)
+    fehlertext = "max_tokens must be <= 8192 (Anfrage: Bitte kürzen)"
+    echter_client = httpx.Client
+
+    def client(**kwargs: Any) -> httpx.Client:
+        kwargs["transport"] = httpx.MockTransport(
+            lambda request: httpx.Response(400, json={"error": {"message": fehlertext}})
+        )
+        return echter_client(**kwargs)
+
+    monkeypatch.setattr(httpx, "Client", client)
+    with caplog.at_level(logging.WARNING):
+        antwort = MotionAIService(organization=org)._call_api(NACHRICHTEN, max_tokens=16000)
+    assert not antwort.success and antwort.error == "Die Anfrage ist für das KI-Modell zu lang."
+    assert "Max. Output-Tokens" in caplog.text and "max_tokens=16000" in caplog.text
+    assert "Bitte kürzen" not in caplog.text and SCHLUESSEL not in caplog.text

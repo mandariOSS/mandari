@@ -88,9 +88,13 @@ class Migration(migrations.Migration):
             model_name="aisettings",
             name="insight_max_output_tokens",
             field=models.PositiveIntegerField(
-                db_default=16000,
-                default=16000,
-                help_text="Obergrenze für die Antwortlänge je KI-Aufruf im Bürgerportal (Zusammenfassungen, Chat).",
+                db_default=8192,
+                default=8192,
+                help_text=(
+                    "Obergrenze für die Antwortlänge je KI-Aufruf im Bürgerportal (Zusammenfassungen, Chat). Höchstens "
+                    "die dokumentierte maximale Antwortlänge des Modells beim Anbieter, bei STACKIT für "
+                    "openai/gpt-oss-120b 8192; größere Werte lehnt der Anbieter ab (HTTP 400)."
+                ),
                 verbose_name="Max. Output-Tokens (Bürgerportal)",
             ),
         ),

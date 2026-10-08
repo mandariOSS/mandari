@@ -15,7 +15,16 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
 from .admin_mixins import SingletonAdminMixin
-from .ki_anbieter import ANBIETER_VORLAGEN, EIGENER, erlaubte_hosts, pruefe_basis_url, vorlage_nutzbar
+from .ki_anbieter import (
+    ANBIETER_VORLAGEN,
+    EIGENER,
+    FREMDER_HOST,
+    erlaubte_hosts,
+    fremder_host_fuer_vorlage,
+    pruefe_basis_url,
+    vorlage_nutzbar,
+    wirksamer_host,
+)
 from .models import AISettings, ProblemReport, SiteSettings
 
 
@@ -207,13 +216,17 @@ def pruefe_ki_endpunkt(
     """
     Gemeinsame Prüfung der Admin-Formulare (KI-Einstellungen, Organisation): Basis-URL bzw. URL der Vorlage
     muss einen Host aus KI_ERLAUBTE_HOSTS haben; beim eigenen Endpunkt sind URL, Anzeigename und
-    Verarbeitungsort Pflicht. Eine eingetragene URL wird normalisiert gespeichert.
+    Verarbeitungsort Pflicht. Bei einer Vorlage darf eine eingetragene URL nur im Pfad abweichen, nicht im Host
+    (sonst nennte die Einwilligung den falschen Anbieter). Eine eingetragene URL wird normalisiert gespeichert.
     """
     data = form.cleaned_data
     anbieter = data.get(anbieter_feld) or ""
     if anbieter not in ANBIETER_VORLAGEN:
         return
     url = (data.get(url_feld) or "").strip()
+    if fremder_host_fuer_vorlage(anbieter, url):
+        form.add_error(url_feld, f"Die Basis-URL gehört nicht zur Vorlage. {FREMDER_HOST}")
+        return
     if anbieter == EIGENER:
         for feld, text in (
             (url_feld, "Beim eigenen Endpunkt ist die Basis-URL Pflicht."),
@@ -234,6 +247,47 @@ def pruefe_ki_endpunkt(
         data[url_feld] = geprueft
 
 
+def pruefe_ki_schluessel(
+    form: forms.ModelForm,
+    *,
+    anbieter_feld: str,
+    url_feld: str,
+    schluessel_feld: str,
+    loeschen_feld: str,
+    gespeichert: bool,
+    ohne_anbieter: str,
+) -> None:
+    """
+    Gemeinsame Prüfung des Schlüssels in den Admin-Formularen (KI-Einstellungen, Organisation).
+
+    - Ein Schlüssel gehört zu genau einem Anbieter: Ist einer gespeichert und ändert sich der Host, an den die
+      Aufrufe gingen (oder war bisher keine Vorlage gewählt, etwa nach Migration common/0011 bzw.
+      tenants/0027), muss der Schlüssel des neuen Anbieters eingetragen werden. Sonst ginge der bisherige
+      Schlüssel an den neuen Anbieter.
+    - Ein Schlüssel ohne Anbieter bliebe wirkungslos (und schaltet bei Organisationen die KI ab): Anbieter
+      wählen oder den Schlüssel löschen.
+    """
+    data = form.cleaned_data
+    neu = bool((data.get(schluessel_feld) or "").strip())
+    loeschen = bool(data.get(loeschen_feld))
+    if neu and loeschen:
+        form.add_error(loeschen_feld, "Entweder einen neuen Key eintragen oder den gespeicherten löschen.")
+        return
+    # Der gespeicherte Schlüssel bliebe in Gebrauch
+    behalten = gespeichert and not loeschen and not neu
+    anbieter = data.get(anbieter_feld) or ""
+    if anbieter not in ANBIETER_VORLAGEN:
+        if neu or behalten:
+            form.add_error(anbieter_feld, ohne_anbieter)
+        return
+    if not behalten:
+        return
+    bisher = wirksamer_host(form.initial.get(anbieter_feld) or "", form.initial.get(url_feld) or "")
+    jetzt = wirksamer_host(anbieter, data.get(url_feld) or "")
+    if bisher is None or bisher != jetzt:
+        form.add_error(schluessel_feld, "Bei einem Anbieterwechsel bitte den Schlüssel des neuen Anbieters eintragen.")
+
+
 class AISettingsAdminForm(forms.ModelForm):
     """KI-Einstellungen mit Schlüssel, der nur geschrieben wird, und Prüfung gegen die Positivliste."""
 
@@ -242,6 +296,11 @@ class AISettingsAdminForm(forms.ModelForm):
         required=False,
         label="API Key",
         help_text="Wird verschlüsselt gespeichert (AES-256-GCM, Master-Key).",
+    )
+    api_key_loeschen = forms.BooleanField(
+        required=False,
+        label="API Key löschen",
+        help_text="Entfernt den gespeicherten Key; die KI bleibt dann aus, bis ein neuer eingetragen ist.",
     )
 
     class Meta:
@@ -265,6 +324,15 @@ class AISettingsAdminForm(forms.ModelForm):
             anzeigename_feld="anzeigename",
             ort_feld="verarbeitungsort",
         )
+        pruefe_ki_schluessel(
+            self,
+            anbieter_feld="provider",
+            url_feld="base_url",
+            schluessel_feld="api_key",
+            loeschen_feld="api_key_loeschen",
+            gespeichert=bool(self.instance.pk and self.instance.api_key_encrypted),
+            ohne_anbieter="Anbieter wählen oder den API Key löschen.",
+        )
         return cleaned_data
 
     def save(self, commit=True):
@@ -272,6 +340,8 @@ class AISettingsAdminForm(forms.ModelForm):
         api_key = self.cleaned_data.get("api_key", "").strip()
         if api_key:
             obj.set_api_key(api_key)
+        elif self.cleaned_data.get("api_key_loeschen"):
+            obj.set_api_key("")
         if commit:
             obj.save()
         return obj
@@ -292,7 +362,7 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
         (
             "Anbieter",
             {
-                "fields": ("provider", "base_url", "anzeigename", "verarbeitungsort", "api_key"),
+                "fields": ("provider", "base_url", "anzeigename", "verarbeitungsort", "api_key", "api_key_loeschen"),
                 "description": (
                     "OpenAI-kompatibler Anbieter mit Verarbeitung in Europa. Ohne Anbieter bleibt die KI aus. "
                     "Freigegeben sind nur Hosts aus der Umgebungsvariable KI_ERLAUBTE_HOSTS (derzeit: {hosts}); "

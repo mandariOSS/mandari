@@ -19,7 +19,7 @@ import re
 from collections.abc import Iterable
 from urllib.parse import urlsplit
 
-#: Standard der Positivliste: STACKIT AI Model Serving (Rechenzentren in Deutschland)
+#: Standard der Positivliste: STACKIT AI Model Serving (Rechenzentren in Deutschland und Österreich)
 STANDARD_ERLAUBTE_HOSTS: tuple[str, ...] = ("api.openai-compat.model-serving.eu01.onstackit.cloud",)
 
 #: Name der Umgebungsvariable (Anwendung und Ingestor)

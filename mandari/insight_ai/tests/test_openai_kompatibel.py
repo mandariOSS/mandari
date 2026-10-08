@@ -153,6 +153,24 @@ def test_antwortlaenge_gekappt() -> None:
     assert json.loads(gesendet[1].content)["max_tokens"] == 100
 
 
+def test_laengenlimit_verstaendlich_im_protokoll(caplog: pytest.LogCaptureFixture) -> None:
+    fehlertext = "max_tokens must be <= 8192 (Anfrage: Worum geht es?)"
+    anbieter, gesendet = _anbieter(lambda request: httpx.Response(400, json={"error": {"message": fehlertext}}))
+    with caplog.at_level(logging.WARNING), pytest.raises(KiAnbieterError, match="Längenlimit"):
+        anbieter.chat_completion(FRAGE, max_tokens=16000)
+    assert len(gesendet) == 1  # kein Ausweichversuch
+    assert "Max. Output-Tokens" in caplog.text and "max_tokens=16000" in caplog.text
+    # Der Antworttext (kann Teile der Anfrage enthalten) und der Schlüssel bleiben draußen
+    assert "Worum geht es" not in caplog.text and SCHLUESSEL not in caplog.text
+
+
+def test_anderer_fehler_400_ohne_laengenhinweis(caplog: pytest.LogCaptureFixture) -> None:
+    anbieter, _ = _anbieter(lambda request: httpx.Response(400, json={"error": {"message": "unknown model"}}))
+    with caplog.at_level(logging.WARNING), pytest.raises(KiAnbieterError) as fehler:
+        anbieter.chat_completion(FRAGE)
+    assert "Längenlimit" not in str(fehler.value) and "Max. Output-Tokens" not in caplog.text
+
+
 def test_schluessel_weder_im_protokoll_noch_in_repr(caplog: pytest.LogCaptureFixture) -> None:
     def antwort(request: httpx.Request) -> httpx.Response:
         if json.loads(request.content)["model"] == "modell-haupt":

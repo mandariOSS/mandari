@@ -321,10 +321,14 @@ class AISettings(models.Model):
         help_text="Obergrenze für die Antwortlänge je KI-Aufruf in Work.",
     )
     insight_max_output_tokens = models.PositiveIntegerField(
-        default=16000,
-        db_default=16000,
+        default=8192,
+        db_default=8192,
         verbose_name="Max. Output-Tokens (Bürgerportal)",
-        help_text="Obergrenze für die Antwortlänge je KI-Aufruf im Bürgerportal (Zusammenfassungen, Chat).",
+        help_text=(
+            "Obergrenze für die Antwortlänge je KI-Aufruf im Bürgerportal (Zusammenfassungen, Chat). Höchstens "
+            "die dokumentierte maximale Antwortlänge des Modells beim Anbieter, bei STACKIT für "
+            "openai/gpt-oss-120b 8192; größere Werte lehnt der Anbieter ab (HTTP 400)."
+        ),
     )
     default_org_monthly_token_limit = models.PositiveIntegerField(
         default=3000000,

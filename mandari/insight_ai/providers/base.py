@@ -6,8 +6,9 @@ Abstract base class for AI providers.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-#: Obergrenze der Antwortlänge, wenn die Konfiguration keine nennt (wie AISettings.insight_max_output_tokens)
-STANDARD_MAX_AUSGABE = 16000
+#: Obergrenze der Antwortlänge, wenn die Konfiguration keine nennt (wie AISettings.insight_max_output_tokens):
+#: dokumentierte maximale Antwortlänge von openai/gpt-oss-120b bei STACKIT AI Model Serving
+STANDARD_MAX_AUSGABE = 8192
 
 
 @dataclass

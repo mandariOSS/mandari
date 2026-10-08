@@ -8,12 +8,17 @@ Handles:
 - Chat completion über den KI-Endpunkt des Bürgerportals (get_insight_provider)
 """
 
-import logging
-from typing import Any
+from __future__ import annotations
 
-from insight_ai.providers import get_insight_provider
+import logging
+from typing import TYPE_CHECKING, Any
+
+from insight_ai.providers import OpenAIKompatiblerProvider, get_insight_provider
 from insight_ai.providers.base import ChatMessage
 from insight_ai.services.prompts import CHAT_SYSTEM_PROMPT
+
+if TYPE_CHECKING:
+    from apps.common.ki_anbieter import KiEndpunkt
 
 logger = logging.getLogger(__name__)
 
@@ -164,6 +169,8 @@ def process_chat_message(
     message: str,
     history: list[dict],
     body_id: str | None,
+    *,
+    endpunkt: KiEndpunkt | None = None,
 ) -> dict[str, Any]:
     """
     Process a chat message with RAG context and AI completion.
@@ -172,6 +179,8 @@ def process_chat_message(
         message: User's message
         history: Chat history [{role, content}, ...]
         body_id: Active municipality UUID (str or None)
+        endpunkt: Der Endpunkt, für den die Einwilligung geprüft wurde (View); die Anfrage geht genau dorthin.
+            Ohne Angabe wird die KI-Konfiguration neu aufgelöst.
 
     Returns:
         {
@@ -183,7 +192,7 @@ def process_chat_message(
     Raises:
         ValueError: If the AI provider is not configured
     """
-    provider = get_insight_provider()
+    provider = OpenAIKompatiblerProvider(endpunkt) if endpunkt is not None else get_insight_provider()
     if not provider.is_available():
         raise ValueError("KI-Assistent ist nicht eingerichtet.")
 

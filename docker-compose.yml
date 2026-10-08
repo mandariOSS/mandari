@@ -135,8 +135,10 @@ x-app-environment: &app-environment
   OPARL_CHANGES_RETENTION_DAYS: ${OPARL_CHANGES_RETENTION_DAYS:-90}
   OPARL_SNAPSHOT_PARALLEL: ${OPARL_SNAPSHOT_PARALLEL:-2}
   # KI (optional, Issue #950): Anbieter, Basis-URL, Modell und Schlüssel im Admin (KI-Einstellungen). Hier nur die
-  # Positivliste erlaubter Hosts (kommagetrennt, leer = Standard) und die Adresse der externen Texterkennung
+  # Positivliste erlaubter Hosts (kommagetrennt, leer = Standard) und die externe Texterkennung (nur mit Schlüssel
+  # UND Basis-URL aus der Positivliste, Standard aus); im Ingestor dieselben Werte
   KI_ERLAUBTE_HOSTS: ${KI_ERLAUBTE_HOSTS:-}
+  MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
   MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-}
   # Live-Übertragungen von Gremiensitzungen (docs/LIVE_UEBERTRAGUNG.md), Standard aus: aus = keine Anfragen an
   # Streaming-Anbieter, kein Zeitplan; an = Dienst worker-live bedient die Warteschlange live
@@ -530,6 +532,10 @@ services:
       OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-384}
       # worker: die Aufträge der Anwendung erkennen den Text, Sync und OCR-Worker ruhen (gleich wie dort)
       TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
+      # Externe Texterkennung und Positivliste wie in der Anwendung (Issue #950), Standard aus
+      KI_ERLAUBTE_HOSTS: ${KI_ERLAUBTE_HOSTS:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-}
     volumes:
       - ingestor_data:/app/data
       - mandari_files:/app/files

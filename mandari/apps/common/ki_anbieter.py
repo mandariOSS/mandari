@@ -15,6 +15,7 @@ Admin, bei Bedarf der Host in ``KI_ERLAUBTE_HOSTS``.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -40,6 +41,16 @@ EIGENER = "eigener"
 #: Hinweis bei einer Adresse, deren Host nicht in der Positivliste steht
 NICHT_FREIGEGEBEN = "nicht freigegebener Endpunkt (KI_ERLAUBTE_HOSTS)"
 
+#: Hinweis bei einer Vorlage mit Basis-URL eines anderen Hosts: Anzeigename und Verarbeitungsort der Vorlage
+#: gälten dann für einen anderen Anbieter (Einwilligung, Hinweise)
+FREMDER_HOST = "Für einen anderen Host „Eigener Endpunkt“ wählen."
+
+#: Hinweis im Protokoll, wenn der Anbieter eine Anfrage wegen ihrer Länge ablehnt (HTTP 400)
+LAENGENLIMIT = (
+    "Längenlimit des Modells überschritten: „Max. Output-Tokens“ in den KI-Einstellungen auf höchstens die "
+    "dokumentierte maximale Antwortlänge des Modells beim Anbieter setzen"
+)
+
 
 @dataclass(frozen=True)
 class AnbieterVorlage:
@@ -56,7 +67,8 @@ ANBIETER_VORLAGEN: dict[str, AnbieterVorlage] = {
     "stackit": AnbieterVorlage(
         anzeigename="STACKIT AI Model Serving",
         vertragspartner="STACKIT GmbH & Co. KG",
-        verarbeitungsort="Rechenzentren in Deutschland (EU)",
+        # „All models are operated in data centers in Germany and Austria“ (stackit.com, Wissen: LLM)
+        verarbeitungsort="Rechenzentren in Deutschland und Österreich (EU)",
         basis_url="https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1",
     ),
     "ionos": AnbieterVorlage(
@@ -101,6 +113,71 @@ def vorlage_nutzbar(anbieter: str) -> bool:
     return anbieter == EIGENER or ist_erlaubter_host(vorlage.basis_url, erlaubte_hosts())
 
 
+def vorlage_host(anbieter: str) -> str | None:
+    """Host der Basis-URL einer Vorlage; ``eigener`` und unbekannte Anbieter haben keinen."""
+    vorlage = ANBIETER_VORLAGEN.get(anbieter or "")
+    if vorlage is None or not vorlage.basis_url:
+        return None
+    return gepruefter_host(vorlage.basis_url)
+
+
+def fremder_host_fuer_vorlage(anbieter: str, url: str) -> bool:
+    """
+    Gehört die eingetragene Basis-URL zu einem anderen Host als die Vorlage?
+
+    Bei einer Vorlage (außer ``eigener``) darf nur der Pfad abweichen; leer gilt die URL der Vorlage. Sonst
+    nennten Einwilligung und Hinweise Anbieter und Verarbeitungsort der Vorlage für einen anderen Anbieter.
+    """
+    roh = (url or "").strip()
+    host = vorlage_host(anbieter)
+    if not roh or host is None:
+        return False
+    return gepruefter_host(roh) != host
+
+
+def wirksamer_host(anbieter: str, url: str) -> str | None:
+    """Host, an den die Aufrufe gingen: eingetragene Basis-URL, sonst die der Vorlage; ohne Vorlage ``None``."""
+    if (anbieter or "") not in ANBIETER_VORLAGEN:
+        return None
+    roh = (url or "").strip() or ANBIETER_VORLAGEN[anbieter].basis_url
+    return gepruefter_host(roh) if roh else None
+
+
+#: Merkmale einer Ablehnung wegen der Länge in der Fehlerantwort (klein geschrieben)
+_LAENGENLIMIT_MERKMALE = (
+    "max_tokens",
+    "max_completion_tokens",
+    "max_new_tokens",
+    "maximum context length",
+    "context length",
+    "context_length",
+    "context window",
+    "too many tokens",
+    "maximum generation",
+)
+
+
+def ist_laengenlimit(status: int, antworttext: str) -> bool:
+    """
+    Lehnt der Anbieter die Anfrage wegen ihrer Länge ab (Antwortlänge oder Kontext über dem Limit des Modells)?
+
+    OpenAI-kompatible Server (etwa vLLM) antworten dann mit HTTP 400 und nennen ``max_tokens`` oder die
+    Kontextlänge. Der Antworttext wird nur durchsucht, nie protokolliert (er kann Teile der Anfrage enthalten).
+    """
+    if status not in (400, 413, 422):
+        return False
+    text = (antworttext or "").lower()
+    return any(merkmal in text for merkmal in _LAENGENLIMIT_MERKMALE)
+
+
+def _host_fuer_protokoll(url: str) -> str:
+    """Hostname einer (auch unzulässigen) Adresse für Warnungen; nie Pfad, Abfrage oder Zugangsdaten."""
+    try:
+        return urlsplit((url or "").strip()).hostname or "(keiner)"
+    except ValueError:
+        return "(unlesbar)"
+
+
 def pruefe_basis_url(url: str) -> str:
     """
     Normalisierte Basis-URL (``https://host/pfad`` ohne Schrägstrich am Ende) oder ``ValidationError``.
@@ -130,8 +207,11 @@ class KiHinweis:
 
     @property
     def einwilligungskennung(self) -> str:
-        """Eine Einwilligung gilt nur für diesen Anbieter an diesem Host."""
-        return f"{self.anbieter}|{self.host}"
+        """
+        Eine Einwilligung gilt nur für diesen Anbieter an diesem Host mit genau diesem Anzeigenamen und
+        Verarbeitungsort; ändert sich eins davon, wird erneut gefragt.
+        """
+        return json.dumps([self.anbieter, self.host, self.anzeigename, self.verarbeitungsort], ensure_ascii=False)
 
 
 @dataclass(frozen=True)
@@ -188,13 +268,22 @@ def _baue_endpunkt(
     if vorlage is None:
         logger.warning("KI aus (%s): kein freigegebener Anbieter gewählt", quelle)
         return None
+    if fremder_host_fuer_vorlage(anbieter, base_url):
+        logger.warning(
+            "KI aus (%s): Basis-URL mit Host %s passt nicht zur Vorlage %s. %s",
+            quelle,
+            _host_fuer_protokoll(base_url),
+            anbieter,
+            FREMDER_HOST,
+        )
+        return None
     try:
         geprueft = pruefe_basis_url(base_url or vorlage.basis_url)
     except ValidationError:
         logger.warning(
             "KI aus (%s): Endpunkt gesperrt, Host %s steht nicht in KI_ERLAUBTE_HOSTS",
             quelle,
-            urlsplit((base_url or vorlage.basis_url).strip()).hostname or "(keiner)",
+            _host_fuer_protokoll(base_url or vorlage.basis_url),
         )
         return None
     anzeigename = (anzeigename or "").strip() or (vorlage.anzeigename if anbieter != EIGENER else "")

@@ -843,9 +843,18 @@ Ein Anbieterwechsel ist reine Konfiguration: Host in `KI_ERLAUBTE_HOSTS` aufnehm
 Vorlage bzw. Basis-URL, Modell und Schlüssel eintragen. Die Einwilligung im KI-Assistenten nennt Anbieter und
 Verarbeitungsort aus dieser Konfiguration und gilt nur für den Anbieter, dem zugestimmt wurde.
 
+Ein gespeicherter Schlüssel gehört zu seinem Anbieter: Wer im Admin den Anbieter wechselt (anderer Host oder
+bisher kein Anbieter gewählt), muss den Schlüssel des neuen Anbieters eintragen. Einen Schlüssel ohne Anbieter
+nimmt der Admin nicht an; „API Key löschen“ (KI-Einstellungen) bzw. „Eigenen KI API Key löschen“ (Organisation)
+entfernt ihn. Eine Vorlage gilt nur für ihren eigenen Host; für einen anderen Host „Eigener Endpunkt“ mit
+Anzeigename und Verarbeitungsort wählen.
+
 **Rückfall auf ein älteres Image:** Die neuen Spalten haben Datenbank-Standardwerte; ein älteres Image läuft
 ohne Rückbau der Migrationen `common/0011` und `tenants/0027` weiter. Die Migrationen setzen frühere Anbieter
-auf „nicht eingerichtet“ und leeren den früheren Nebius-Schlüssel der Systemeinstellungen.
+auf „nicht eingerichtet“ und leeren den früheren Nebius-Schlüssel der Systemeinstellungen. Ein älteres Image
+nutzt Nebius aber wieder, sobald `NEBIUS_API_KEY` in der Umgebung steht. Deshalb beim Deploy dieser Version
+`NEBIUS_API_KEY` aus der `.env` der Produktion entfernen und den Schlüssel beim Anbieter widerrufen; dann
+bleibt die KI auch nach einem Rückfall aus.
 
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 

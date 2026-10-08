@@ -14,7 +14,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
-from apps.common.ki_anbieter import KiHinweis, endpunkt_fuer_insight
+from apps.common.ki_anbieter import KiEndpunkt, KiHinweis, endpunkt_fuer_insight
 
 from ..models import (
     ChatUsage,
@@ -165,8 +165,10 @@ def chat_message(request):
     except json.JSONDecodeError:
         return JsonResponse({"error": "Invalid JSON"}, status=400)
 
-    # 2. Handle consent-set request: gilt nur für den aktuell eingerichteten Anbieter
-    hinweis = _ki_hinweis()
+    # 2. Handle consent-set request: gilt nur für den aktuell eingerichteten Anbieter. Der Endpunkt wird je
+    # Anfrage genau einmal aufgelöst; Einwilligung und KI-Aufruf beziehen sich auf denselben Endpunkt.
+    endpunkt: KiEndpunkt | None = endpunkt_fuer_insight()
+    hinweis = endpunkt.hinweis() if endpunkt is not None else None
     if data.get("consent") is True:
         if hinweis is None:
             return _nicht_verfuegbar()
@@ -181,7 +183,7 @@ def chat_message(request):
         return JsonResponse({"error": "Message is required"}, status=400)
 
     # 3. Check DSGVO consent (für genau diesen Anbieter)
-    if hinweis is None:
+    if endpunkt is None or hinweis is None:
         return _nicht_verfuegbar()
     if not _hat_einwilligung(request, hinweis):
         return JsonResponse(
@@ -260,6 +262,7 @@ def chat_message(request):
             message=message,
             history=history,
             body_id=body_id,
+            endpunkt=endpunkt,
         )
     except ValueError as e:
         # Provider not configured

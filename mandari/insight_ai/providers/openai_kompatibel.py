@@ -15,7 +15,7 @@ from typing import Any
 
 import httpx
 
-from apps.common.ki_anbieter import KiEndpunkt
+from apps.common.ki_anbieter import LAENGENLIMIT, KiEndpunkt, ist_laengenlimit
 
 from .base import AbstractAIProvider, ChatMessage, ChatResponse
 
@@ -113,6 +113,17 @@ class OpenAIKompatiblerProvider(AbstractAIProvider):
             raise _AusweichbarError(f"HTTP {status}")
         if status != 200:
             # Ohne Antworttext: Er kann Teile der Anfrage enthalten
+            if ist_laengenlimit(status, response.text):
+                logger.warning(
+                    "KI-Aufruf abgelehnt (HTTP %d): %s (anbieter=%s host=%s modell=%s max_tokens=%d)",
+                    status,
+                    LAENGENLIMIT,
+                    self.endpunkt.anbieter,
+                    self.host,
+                    modell,
+                    max_tokens,
+                )
+                raise KiAnbieterError(f"KI-Anbieter meldet HTTP {status}: Längenlimit des Modells überschritten")
             raise KiAnbieterError(f"KI-Anbieter meldet HTTP {status}")
         try:
             daten: Any = response.json()

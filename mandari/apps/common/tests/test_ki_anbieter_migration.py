@@ -87,7 +87,7 @@ def test_migrationen_vor_und_zurueck(org: Organization) -> None:
         cache.clear()
         assert AISettings.objects.values_list("provider", flat=True).get(pk=1) == ""
         ki = AISettings.objects.get(pk=1)
-        assert (ki.insight_enabled, ki.insight_max_output_tokens, ki.fallback_model) == (False, 16000, "")
+        assert (ki.insight_enabled, ki.insight_max_output_tokens, ki.fallback_model) == (False, 8192, "")
         assert _nebius_spalten() == (None, "")
         assert Organization.objects.values_list("ai_provider", flat=True).get(pk=org.pk) == ""
 
