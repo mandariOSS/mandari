@@ -113,24 +113,29 @@ CHAT_SYSTEM_PROMPT = (
 )
 
 
-def build_chat_system_prompt(now: datetime, body_name: str | None) -> str:
+def build_chat_system_prompt(
+    now: datetime, body_name: str | None, *, template: str = CHAT_SYSTEM_PROMPT, **extra: str
+) -> str:
     """
     Systemprompt des KI-Assistenten mit Datum, Wochentag, Uhrzeit und Kommune.
 
     Args:
         now: Zeitpunkt der Frage (zeitzonenbewusst; wird in Europe/Berlin dargestellt)
         body_name: Name der gewählten Kommune (``None``: keine gewählt)
+        template: anderer Prompt mit denselben Platzhaltern (Fragen an die Ratsdaten in Work, Issue #853)
+        extra: weitere Platzhalter dieses Prompts
     """
     lokal = timezone.localtime(now) if timezone.is_aware(now) else now
     heute = lokal.date()
     wochenbeginn = heute - timedelta(days=heute.weekday())
-    return CHAT_SYSTEM_PROMPT.format(
+    return template.format(
         kommune=body_name or "(keine Kommune gewählt)",
         wochentag=WOCHENTAGE[heute.weekday()],
         datum=heute.strftime("%d.%m.%Y"),
         uhrzeit=lokal.strftime("%H:%M"),
         wochenbeginn=wochenbeginn.strftime("%d.%m.%Y"),
         wochenende=(wochenbeginn + timedelta(days=6)).strftime("%d.%m.%Y"),
+        **extra,
     )
 
 

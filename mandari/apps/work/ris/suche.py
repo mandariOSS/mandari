@@ -78,10 +78,15 @@ def zu_kurz(params: SearchQuery) -> bool:
     return params.is_empty or (len(params.query) < 2 and not params.has_filters)
 
 
+def ganze_seite(headers: Mapping[str, str]) -> bool:
+    """Ganze Seite statt Ausschnitt: kein HTMX oder Wiederherstellung aus dem Verlauf."""
+    return headers.get("HX-Request") != "true" or headers.get("HX-History-Restore-Request") == "true"
+
+
 def teilvorlage(headers: Mapping[str, str], context: Mapping[str, Any]) -> str | None:
     """Antwort auf einen Austausch per HTMX: Vorlage des Ausschnitts, ``""`` für einen leeren Ergebnisbereich (Feld
     geleert oder zu kurz), ``None`` für die ganze Seite (kein HTMX oder Wiederherstellung aus dem Verlauf)."""
-    if headers.get("HX-Request") != "true" or headers.get("HX-History-Restore-Request") == "true":
+    if ganze_seite(headers):
         return None
     if context.get("suche_leer") or context.get("no_body_linked"):
         return ""

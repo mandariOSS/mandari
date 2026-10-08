@@ -770,7 +770,8 @@ def run_tool(name: str, arguments: str | Mapping[str, Any] | None, ctx: ToolCont
         return dump({"fehler": "Das Werkzeug ist gerade nicht verfügbar."})
 
 
-LINK_RE = re.compile(r"\]\(\s*(?:https?://[^/\s)]+)?(/insight/[^)\s]+)\s*\)")
+#: Markdown-Links auf Seiten des Bürgerportals oder (Fragen an die Ratsdaten in Work, Issue #853) auf Work-Seiten
+LINK_RE = re.compile(r"\]\(\s*(?:https?://[^/\s)]+)?(/(?:insight|work)/[^)\s]+)\s*\)")
 
 
 def select_sources(ctx: ToolContext, answer: str, *, limit: int = 8) -> list[Source]:
