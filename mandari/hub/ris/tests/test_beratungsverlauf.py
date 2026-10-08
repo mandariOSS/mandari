@@ -4,7 +4,9 @@ Lese-Fassade: Beratungsverlauf einer Vorlage und Zuordnungen zwischen Vorlagen u
 
 Die RIS-Seiten von Work im neuen Erscheinungsbild bauen Stand-Satz und Zeitstrahl aus ``consultation_history`` und
 ordnen Positionen über ``agenda_items_of_papers`` bzw. ``papers_of_agenda_items`` zu. Von mandari Session
-zurückgenommene Beratungen, Sitzungen, Punkte und Vorlagen zählen dabei nicht – wie in Insight.
+zurückgenommene Beratungen, Sitzungen, Punkte und Vorlagen zählen dabei nicht – wie in Insight. Die Vorgangsseite von
+Insight liest den Verlauf aus derselben Abfrage, Niederschrift, Sitzungsformat und Sitzungsdateien lesen beide
+Sitzungsseiten aus der Fassade (keine doppelten Abfragen mehr).
 """
 
 from __future__ import annotations
@@ -21,6 +23,7 @@ from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
     OParlConsultation,
+    OParlFile,
     OParlMeeting,
     OParlOrganization,
     OParlPaper,
@@ -130,3 +133,86 @@ def test_vorlagen_je_punkt_in_einer_abfrage(body: OParlBody, django_assert_num_q
 
     with django_assert_num_queries(1):
         assert len(ris.papers_of_agenda_items(punkte)) == 6
+
+
+def test_beratung_ohne_bekannte_sitzung_steht_bei_jetzt_wie_in_insight(body: OParlBody) -> None:
+    vorlage = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Radweg")
+    ausschuss, punkt_ausschuss = _sitzung(body, -10, "Bauausschuss")
+    rat, punkt_rat = _sitzung(body, 5, "Rat")
+    _beratung(vorlage, rat, punkt_rat)
+    OParlConsultation.objects.create(
+        external_id=_kennung("consultations"),
+        body=body,
+        paper=vorlage,
+        meeting_external_id=_kennung("meetings"),
+        role="Kenntnisnahme",
+    )
+    _beratung(vorlage, ausschuss, punkt_ausschuss)
+
+    verlauf = ris.consultation_history(vorlage)
+
+    # Ohne Sitzung zwischen vergangenen und kommenden Beratungen, so wie die Vorgangsseite von Insight sie zeigte
+    assert [e["organization_name"] for e in verlauf] == ["Bauausschuss", None, "Rat"]
+    assert verlauf[1]["role"] == "Kenntnisnahme" and verlauf[1]["organization_count"] is None
+
+
+def test_gremienzahl_aus_den_rohdaten_wenn_kein_gremium_benannt_ist(body: OParlBody) -> None:
+    sitzung = OParlMeeting.objects.create(
+        external_id=_kennung("meetings"),
+        body=body,
+        name="Ausschuss für Planung, Bau und Umwelt",
+        raw_json={"organization": [_kennung("org")]},
+    )
+    assert ris.organization_count(sitzung) == 1
+    sitzung.raw_json = {}
+    assert ris.organization_count(sitzung) is None
+    for name in ("A", "B", "C"):
+        sitzung.organizations.add(OParlOrganization.objects.create(external_id=_kennung("org"), body=body, name=name))
+    # Mehr als zwei zählen für den Stand-Satz nur als „mehrere“
+    assert ris.organization_count(OParlMeeting.objects.prefetch_related("organizations").get(pk=sitzung.pk)) == 2
+
+
+def test_vorgangsseite_von_insight_liest_den_verlauf_aus_der_fassade(
+    body: OParlBody, client: Any, monkeypatch: Any
+) -> None:
+    vorlage = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Radweg")
+    sitzung, punkt = _sitzung(body, -3, "Bauausschuss")
+    _beratung(vorlage, sitzung, punkt)
+    aufrufe: list[Any] = []
+    original = ris.consultation_history
+
+    def mitschreiben(paper: OParlPaper) -> list[dict[str, Any]]:
+        aufrufe.append(paper)
+        return original(paper)
+
+    monkeypatch.setattr(ris, "consultation_history", mitschreiben)
+
+    antwort = client.get(f"/insight/vorgaenge/{vorlage.pk}/")
+
+    assert antwort.status_code == 200 and aufrufe == [vorlage]
+    assert "im Bauausschuss" in antwort.content.decode()
+
+
+def test_niederschrift_format_und_dateien_einer_sitzung(body: OParlBody) -> None:
+    sitzung, _ = _sitzung(body, -3, "Rat")
+    niederschrift = OParlFile.objects.create(external_id=_kennung("files"), body=body, meeting=sitzung, name="N")
+    einladung = OParlFile.objects.create(external_id=_kennung("files"), body=body, meeting=sitzung, name="Einladung")
+    OParlFile.objects.create(external_id=_kennung("files"), body=body, meeting=sitzung, name="Weg", deleted=True)
+    fremd = OParlFile.objects.create(external_id=_kennung("files"), meeting=None, name="Fremd")
+    anderer = OParlBody.objects.create(external_id=_kennung("bodies"), source=body.source, name="Andere Stadt")
+    fremd.body = anderer
+    fremd.save(update_fields=["body"])
+
+    sitzung.raw_json = {"resultsProtocol": {"id": niederschrift.external_id}}
+    assert ris.protocol_file(sitzung) == niederschrift
+    # Eine Niederschrift aus einer anderen Kommune zeigt die Seite nicht
+    sitzung.raw_json = {"verbatimProtocol": fremd.external_id}
+    assert ris.protocol_file(sitzung) is None
+    assert [d.name for d in ris.files_of_meeting(sitzung)] == ["Einladung", "N"]
+    assert ris.files_of_meeting(sitzung, ohne=[niederschrift.pk, "kaputt"]) == [einladung]
+
+    sitzung.raw_json = {"mandari:meetingFormat": "digital", "mandari:publicAccess": {"url": "javascript:alert(1)"}}
+    info = ris.broadcast_info(sitzung)
+    assert info is not None and info["label"].startswith("Digitale Sitzung") and info["url"] == ""
+    sitzung.raw_json = {"mandari:meetingFormat": "praesenz"}
+    assert ris.broadcast_info(sitzung) is None

@@ -1,78 +1,10 @@
-{% load tz insight_listen %}
 {% comment %}
 Gremienliste (Issue #841): Art und Mitgliederzahl als eigene Spalten ab xl, darunter steht die Art unter dem Namen.
 Spalten ohne einen einzigen Wert (etwa „Nächste Sitzung“ in der Sommerpause) entfallen.
+Die Tabelle ist der gemeinsame Baustein c-liste.gremien (mit Work, Issue #853).
 {% endcomment %}
 {% if organizations %}
-{% with sp_art=organizations|hat_wert:"art" sp_mitglieder=organizations|hat_wert:"mitglieder" sp_naechste=organizations|hat_wert:"next_meeting" sp_letzte=organizations|hat_wert:"last_meeting" %}
-<div class="-mx-3">
-    <div class="relative overflow-x-auto">
-    <table class="w-full">
-        <thead>
-            <tr class="border-b border-gray-300 dark:border-gray-700">
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Gremium</th>
-                {% if sp_art %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-xl:hidden">Art</th>{% endif %}
-                {% if sp_mitglieder %}<th class="text-right px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-xl:hidden">Mitglieder</th>{% endif %}
-                {% if sp_naechste %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Nächste Sitzung</th>{% endif %}
-                {% if sp_letzte %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Letzte Sitzung</th>{% endif %}
-                <th class="w-10 px-2 py-3"><span class="sr-only">Merken</span></th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
-            {% for org in organizations %}
-            <tr class="hover:bg-band-grau/70 group cursor-pointer"
-                data-href="{% url 'insight_core:insight:organization_detail' org.id %}">
-                <td class="px-3 py-3.5">
-                    <a href="{% url 'insight_core:insight:organization_detail' org.id %}"
-                       class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
-                        {{ org.name }}
-                    </a>
-                    {% if org.art %}
-                    <p class="text-sm text-gray-600 dark:text-gray-400 xl:hidden">{{ org.art }}</p>
-                    {% endif %}
-                    {# Am Handy: Sitzungsdaten unter dem Namen #}
-                    {% if org.next_meeting or org.last_meeting %}
-                    <div class="flex flex-wrap gap-x-4 gap-y-1 mt-2 sm:hidden text-sm">
-                        {% if org.next_meeting %}
-                        <span class="text-primary-700 dark:text-primary-300">
-                            <span class="text-gray-600 dark:text-gray-400">Nächste:</span> {{ org.next_meeting|date:"d.m.Y" }}
-                        </span>
-                        {% endif %}
-                        {% if org.last_meeting %}
-                        <span class="text-gray-600 dark:text-gray-400">Letzte: {{ org.last_meeting|date:"d.m.Y" }}</span>
-                        {% endif %}
-                    </div>
-                    {% endif %}
-                </td>
-                {% if sp_art %}
-                <td class="px-3 py-3.5 text-sm text-gray-700 dark:text-gray-300 max-xl:hidden">{{ org.art }}</td>
-                {% endif %}
-                {% if sp_mitglieder %}
-                <td class="px-3 py-3.5 text-sm text-right tabular-nums text-gray-700 dark:text-gray-300 max-xl:hidden">{% if org.mitglieder %}{{ org.mitglieder }}{% endif %}</td>
-                {% endif %}
-                {% if sp_naechste %}
-                <td class="px-3 py-3.5 max-sm:hidden whitespace-nowrap">
-                    {% if org.next_meeting %}<span class="text-sm font-medium text-primary-700 dark:text-primary-300">{{ org.next_meeting|date:"d.m.Y" }}</span>{% endif %}
-                </td>
-                {% endif %}
-                {% if sp_letzte %}
-                <td class="px-3 py-3.5 max-sm:hidden whitespace-nowrap">
-                    {% if org.last_meeting %}<span class="text-sm text-gray-600 dark:text-gray-400">{{ org.last_meeting|date:"d.m.Y" }}</span>{% endif %}
-                </td>
-                {% endif %}
-                <td class="px-2 py-3.5">
-                    <div class="flex items-center gap-1">
-                        {% include "components/bookmark_star.html" with entity_type="organization" entity_id=org.id size="sm" %}
-                        <i data-lucide="chevron-right" class="w-5 h-5 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 dark:group-hover:text-primary-400 transition-colors" aria-hidden="true"></i>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</div>
-{% endwith %}
+<c-liste.gremien :gremien="organizations" />
 
 {% include "partials/insight_seiten.html" %}
 

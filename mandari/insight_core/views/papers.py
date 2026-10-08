@@ -13,13 +13,9 @@ from django.views.decorators.http import require_http_methods
 from django.views.generic import DetailView, ListView
 
 from apps.common.mixins import HTMXMixin
+from hub.ris import selectors as ris_selectors
 
-from ..models import (
-    OParlAgendaItem,
-    OParlMeeting,
-    OParlPaper,
-    withdrawn_q,
-)
+from ..models import OParlPaper
 from ..services import file_reconcile
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
@@ -119,10 +115,11 @@ class PaperDetailView(DetailView):
         files = [f for f in paper.files.all() if not f.withdrawn_by_publisher and not file_reconcile.is_blocked(f)]
         context["files"] = files
 
-        # Beratungsverlauf (Consultations mit Meeting-Info), Stand-Satz und Zeitstrahl
+        # Beratungsverlauf (Consultations mit Meeting-Info), Stand-Satz und Zeitstrahl; der Verlauf kommt aus der
+        # Lese-Fassade wie auf der Vorgangsseite von Work (Issue #853)
         from ..services.paper_status import paper_status, timeline
 
-        consultations = self._get_consultations_with_meetings(paper)
+        consultations = ris_selectors.consultation_history(paper)
         now = timezone.now()
         status = paper_status(consultations, now)
         context["paper_status"] = status
@@ -154,85 +151,6 @@ class PaperDetailView(DetailView):
         context["seo"] = get_paper_seo(paper, self.request, stand=status).to_dict()
 
         return context
-
-    def _get_consultations_with_meetings(self, paper):
-        """
-        Lädt Consultations mit aufgelösten Meeting- und AgendaItem-Referenzen.
-
-        OParl-Struktur:
-        - Paper enthält eingebettete Consultation-Objekte
-        - Consultation referenziert Meeting und AgendaItem als URL-Strings
-        - Wir lösen diese Referenzen auf, um den Beratungsverlauf anzuzeigen
-        """
-        # Von mandari Session zurückgenommene Beratungen, Sitzungen und TOPs (z. B. nicht-öffentlich
-        # gestellt) erscheinen nicht – wie in der Session-OParl-API, die solche Verweise auslässt.
-        consultations = list(paper.consultations.exclude(withdrawn_q()))
-        if not consultations:
-            return []
-
-        # Sammle alle meeting_external_ids und agenda_item_external_ids
-        meeting_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
-        agenda_item_ids = [c.agenda_item_external_id for c in consultations if c.agenda_item_external_id]
-
-        # Batch-Lookup für Meetings
-        meetings_by_id = {}
-        if meeting_ids:
-            meetings = (
-                OParlMeeting.objects.filter(external_id__in=meeting_ids)
-                .exclude(withdrawn_q())
-                .prefetch_related("organizations")
-            )
-            meetings_by_id = {m.external_id: m for m in meetings}
-
-        # Batch-Lookup für AgendaItems
-        agenda_items_by_id = {}
-        if agenda_item_ids:
-            agenda_items = (
-                OParlAgendaItem.objects.filter(external_id__in=agenda_item_ids)
-                .exclude(withdrawn_q())
-                .exclude(withdrawn_q("meeting"))
-            )
-            agenda_items_by_id = {a.external_id: a for a in agenda_items}
-
-        # Baue angereicherte Consultation-Liste
-        result = []
-        for consultation in consultations:
-            meeting = meetings_by_id.get(consultation.meeting_external_id)
-            agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id)
-
-            result.append(
-                {
-                    "consultation": consultation,
-                    "meeting": meeting,
-                    "agenda_item": agenda_item,
-                    "date": meeting.start if meeting else None,
-                    "organization_name": meeting.get_display_name() if meeting else None,
-                    "organization_count": _organization_count(meeting) if meeting else None,
-                    "agenda_number": agenda_item.number if agenda_item else None,
-                    "result": agenda_item.result if agenda_item else None,
-                    "public": agenda_item.public if agenda_item else True,
-                    "role": consultation.role,
-                    "authoritative": consultation.authoritative,
-                }
-            )
-
-        # Sortiere nach Datum (älteste zuerst = chronologischer Verlauf)
-        result.sort(key=lambda x: x["date"] or timezone.now(), reverse=False)
-
-        return result
-
-
-def _organization_count(meeting) -> int | None:
-    """Anzahl der Gremien hinter ``OParlMeeting.get_display_name`` (Namen mit Komma verbunden).
-
-    Aus den vorgeladenen Gremien und ohne weitere Abfrage; ``None``, wenn sie so nicht feststeht. Der
-    Stand-Satz beugt danach auch Gremiennamen mit Komma („im Ausschuss für Planung, Bau und Umwelt“).
-    """
-    named = [org for org in list(meeting.organizations.all())[:2] if org.name]
-    if named:
-        return len(named)
-    urls = meeting.raw_json.get("organization") if isinstance(meeting.raw_json, dict) else None
-    return 1 if isinstance(urls, list) and len(urls) == 1 else None
 
 
 NO_TEXT_MESSAGE = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."

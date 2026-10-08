@@ -1,15 +1,16 @@
 {% extends "work/base_work.html" %}
 {% comment %}
 Sitzungen der Gremien im neuen Erscheinungsbild (Issues #852, #853; Bereich Sitzungen, Reiter „Alle Gremien“):
-Kommende, vergangene oder alle Sitzungen, Filter Gremium und Jahr wie bisher (Parameter view, org, year, page), je
-Sitzung der Vorbereitungsstand der Fraktion. Die bisherige Seite bleibt work/ris/meetings.html.
+Kommende, vergangene oder alle Sitzungen, Filter Gremium und Jahr wie bisher (Parameter view, org, year, page). Die
+Liste ist der gemeinsame Baustein von Insight (c-liste.sitzungen) mit der Spalte „Für die Fraktion“
+(Vorbereitungsstand, „Vorbereiten“). Die bisherige Seite bleibt work/ris/meetings.html.
 {% endcomment %}
 
 {% block page_title %}Sitzungen der Gremien{% endblock %}
 
-{% block header_title %}Sitzungen der Gremien{% endblock %}
-{% block header_subtitle %}
-<p class="work-page-subtitle">{% if body %}Alle Gremien von {{ body.get_display_name }}{% if paginator %}: {{ paginator.count }} {% if view_mode == "past" %}vergangene{% elif view_mode == "all" %}{% else %}kommende{% endif %} Sitzung{{ paginator.count|pluralize:"en" }}{% if selected_year %} in {{ selected_year }}{% endif %}{% endif %}.{% endif %} Vorbereiten können Sie direkt aus der Liste.</p>
+{% block work_header %}
+<c-rahmen.kopfband titel="Sitzungen der Gremien" dicht
+    text="{% if body %}Alle Gremien von {{ body.get_display_name }}{% if paginator %}: {{ paginator.count }} {% if view_mode == 'past' %}vergangene{% elif view_mode == 'all' %}{% else %}kommende{% endif %} Sitzung{{ paginator.count|pluralize:'en' }}{% if selected_year %} in {{ selected_year }}{% endif %}{% endif %}.{% endif %} Vorbereiten können Sie direkt aus der Liste." />
 {% endblock %}
 
 {% block work_content %}
@@ -26,31 +27,32 @@ Sitzung der Vorbereitungsstand der Fraktion. Die bisherige Seite bleibt work/ris
     <form method="get" class="flex flex-wrap items-center gap-2">
         <input type="hidden" name="view" value="{{ view_mode }}">
         <label for="filter-gremium" class="sr-only">Gremium</label>
-        <select id="filter-gremium" name="org" data-autosubmit class="ris-feld max-w-[16rem]">
+        <select id="filter-gremium" name="org" data-autosubmit class="h-9 max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
             <option value="">Alle Gremien</option>
             {% for org in organizations %}
             <option value="{{ org.id }}" {% if selected_org == org.id|slugify %}selected{% endif %}>{{ org.short_name|default:org.name }}</option>
             {% endfor %}
         </select>
         <label for="filter-jahr" class="sr-only">Jahr</label>
-        <select id="filter-jahr" name="year" data-autosubmit class="ris-feld">
+        <select id="filter-jahr" name="year" data-autosubmit class="h-9 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
             <option value="">Alle Jahre</option>
             {% for year in years %}
             <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>
             {% endfor %}
         </select>
-        <noscript><button type="submit" class="ris-link text-sm">Anwenden</button></noscript>
-        {% if selected_org or selected_year %}<a href="{% querystring org=None year=None page=None %}" class="text-sm ris-link">Filter zurücksetzen</a>{% endif %}
+        <noscript><button type="submit" class="text-sm font-medium text-primary-700 dark:text-primary-300 underline">Anwenden</button></noscript>
+        {% if selected_org or selected_year %}<c-ui.textlink href="{% querystring org=None year=None page=None %}" class="text-sm">Filter zurücksetzen</c-ui.textlink>{% endif %}
     </form>
 </div>
 
 {% if meetings %}
-<ul class="mt-4 xl:grid xl:grid-cols-2 xl:gap-x-12 min-[1800px]:grid-cols-3 xl:[&>li:nth-child(2)]:border-t-0 min-[1800px]:[&>li:nth-child(3)]:border-t-0" data-testid="sitzungsliste">
-    {% for s in meetings %}{% include "work/ris/neu/_sitzung_zeile.html" %}{% endfor %}
-</ul>
-{% include "work/ris/neu/_seiten.html" with seite=meetings %}
+<div class="mt-4" data-testid="sitzungsliste">
+    <c-liste.sitzungen :sitzungen="meetings" :links="ris_links" dicht ohne_merken
+                       zusatz="work/ris/neu/_sitzung_fraktion.html" zusatz_titel="Für die Fraktion" />
+</div>
+<c-liste.seiten :seite="meetings" dicht />
 {% else %}
-<p class="mt-6 ris-meta">{% if view_mode == "upcoming" %}Es sind keine kommenden Sitzungen angesetzt.{% else %}In diesem Zeitraum gibt es keine Sitzungen.{% endif %}{% if selected_org or selected_year %} <a href="{% querystring org=None year=None page=None %}" class="ris-link">Filter zurücksetzen</a>{% endif %}</p>
+<p class="mt-6 text-sm text-gray-600 dark:text-gray-400">{% if view_mode == "upcoming" %}Es sind keine kommenden Sitzungen angesetzt.{% else %}In diesem Zeitraum gibt es keine Sitzungen.{% endif %}{% if selected_org or selected_year %} <c-ui.textlink href="{% querystring org=None year=None page=None %}">Filter zurücksetzen</c-ui.textlink>{% endif %}</p>
 {% endif %}
 {% endif %}
 {% endblock %}

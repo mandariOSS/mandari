@@ -21,6 +21,7 @@ from django.utils import timezone
 from hub.ris import selectors as ris
 
 from . import fraktion
+from .links import WorkRisLinks
 from .selectors import _natural_key
 
 
@@ -49,6 +50,18 @@ def rechte(membership: Any) -> dict[str, bool]:
     }
 
 
+def basis(organization: Any, membership: Any) -> dict[str, Any]:
+    """Rechte und die Ziele der gemeinsamen Listen von Insight (``c-liste.*``): Einträge öffnen die Recherche."""
+    return {**rechte(membership), "ris_links": WorkRisLinks(organization.slug)}
+
+
+def _angaben(personen: Iterable[Any]) -> dict[Any, Any]:
+    """Fraktion, Funktion und Gremien je Person wie in Insight (Fraktion auch aus der Zuordnung, Issue #916)."""
+    from insight_core.services.personen_liste import angaben_fuer
+
+    return angaben_fuer(personen)
+
+
 # ---------------------------------------------------------------------------
 # Übersicht
 # ---------------------------------------------------------------------------
@@ -71,7 +84,7 @@ def uebersicht(organization: Any, membership: Any, bodies: Any, context: dict[st
     from apps.work.organization.selectors import my_committees
     from insight_core.services.search_presentation import statuses_for_papers
 
-    erlaubt = rechte(membership)
+    erlaubt = basis(organization, membership)
     sitzungen = list(context.get("upcoming_meetings") or [])
     vorgaenge = list(context.get("recent_papers") or [])
     if erlaubt["darf_sitzungen"]:
@@ -103,7 +116,7 @@ ANSICHTEN = (("upcoming", "Kommende"), ("past", "Vergangene"), ("all", "Alle"))
 
 def sitzungen(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[str, Any]:
     """Sitzungsliste: je Sitzung der Vorbereitungsstand der Organisation (Punkte, Vorlagen, Positionen)."""
-    erlaubt = rechte(membership)
+    erlaubt = basis(organization, membership)
     liste = list(seite)
     if erlaubt["darf_sitzungen"]:
         stand = _vorbereitungsstand(organization, liste)
@@ -115,9 +128,12 @@ def sitzungen(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[
 def sitzung(organization: Any, membership: Any, meeting: Any) -> dict[str, Any]:
     """
     Sitzung: Tagesordnung natürlich sortiert, je Punkt alle Vorlagen (eine Abfrage) und – mit ``meetings.prepare`` –
-    Position und Zahl der Notizen der Organisation; dazu Vorbereitungsstand und Dokumente zur Sitzung.
+    Position und Zahl der Notizen der Organisation; dazu Vorbereitungsstand und Dokumente zur Sitzung, und wie in
+    Insight die Niederschrift, die Teilnahme der Öffentlichkeit (Übertragung) und die übrigen Sitzungsdateien.
     """
-    erlaubt = rechte(membership)
+    from insight_core.services import file_reconcile
+
+    erlaubt = basis(organization, membership)
     punkte = sorted(ris.agenda_items(meeting), key=lambda punkt: _natural_key(punkt.number))
     vorlagen = ris.papers_of_agenda_items(punkte)
     positionen: dict[uuid.UUID, fraktion.Position] = {}
@@ -126,6 +142,8 @@ def sitzung(organization: Any, membership: Any, meeting: Any) -> dict[str, Any]:
         positionen = fraktion.positionen(organization, _ids(punkte))
         notizen = fraktion.notizen_je_punkt(organization, _ids(punkte))
     stand = _vorbereitungsstand(organization, [meeting]).get(meeting.pk) if erlaubt["darf_sitzungen"] else None
+    niederschrift = ris.protocol_file(meeting)
+    dateien = ris.files_of_meeting(meeting, ohne=[niederschrift.pk] if niederschrift is not None else [])
     return {
         **erlaubt,
         "tagesordnung": [
@@ -139,6 +157,10 @@ def sitzung(organization: Any, membership: Any, meeting: Any) -> dict[str, Any]:
         ],
         "stand": stand,
         "dokumente": fraktion.dokumente_zur_sitzung(organization, membership, meeting),
+        "protocol_file": niederschrift,
+        "broadcast": ris.broadcast_info(meeting),
+        "sitzungsdateien": [d for d in dateien if not file_reconcile.is_blocked(d)],
+        "sitzungsdateien_gesperrt": [d for d in dateien if file_reconcile.is_blocked(d)],
         "ist_kommend": bool(meeting.start and meeting.start > timezone.now()),
     }
 
@@ -162,7 +184,7 @@ def vorgaenge(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[
     """
     from insight_core.services.search_presentation import statuses_for_papers
 
-    erlaubt = rechte(membership)
+    erlaubt = basis(organization, membership)
     liste = list(seite)
     ids = _ids(liste)
     staende = statuses_for_papers(str(pk) for pk in ids)
@@ -211,7 +233,7 @@ def vorgang(organization: Any, membership: Any, paper: Any) -> dict[str, Any]:
     """
     from insight_core.services.paper_status import paper_status, timeline
 
-    erlaubt = rechte(membership)
+    erlaubt = basis(organization, membership)
     jetzt = timezone.now()
     verlauf = ris.consultation_history(paper)
     status = paper_status(verlauf, jetzt)
@@ -261,13 +283,17 @@ def vorgang(organization: Any, membership: Any, paper: Any) -> dict[str, Any]:
 
 
 def gremien(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[str, Any]:
-    """Gremienliste: „Ihr Gremium“ für die Gremien, denen das Mitglied folgt bzw. die ihm zugewiesen sind."""
+    """
+    Gremienliste: „Ihr Gremium“ für die Gremien, denen das Mitglied folgt bzw. die ihm zugewiesen sind, und die Art
+    des Gremiums für die Spalte der gemeinsamen Liste (Klassifikation, sonst OParl-Typ, wie in Insight).
+    """
     from apps.work.organization.selectors import my_committees
 
     meine = my_committees(membership).ids
     for gremium in seite:
         gremium.ihr_gremium = gremium.pk in meine
-    return rechte(membership)
+        gremium.art = (gremium.classification or "").strip() or (gremium.organization_type or "").strip()
+    return basis(organization, membership)
 
 
 def gremium(
@@ -279,13 +305,15 @@ def gremium(
     """
     from apps.work.organization.selectors import my_committees
 
-    erlaubt = rechte(membership)
+    erlaubt = basis(organization, membership)
     aktive = list(mitglieder)
     aus_fraktion: dict[uuid.UUID, str] = {}
     if erlaubt["darf_mitglieder"]:
         aus_fraktion = fraktion.mitglieder_je_person(organization, [m.person_id for m in aktive if m.person_id])
+    angaben = _angaben(m.person for m in aktive if m.person_id)
     for mitgliedschaft in aktive:
         mitgliedschaft.konto = aus_fraktion.get(mitgliedschaft.person_id, "")
+        mitgliedschaft.angaben = angaben.get(mitgliedschaft.person_id)
     # Gremien der Sitzungen vorladen: die Zeile nennt sie (get_display_name) ohne eine Abfrage je Sitzung
     kommende = list(kommende.prefetch_related("organizations"))
     vergangene = list(vergangene.prefetch_related("organizations"))
@@ -306,19 +334,29 @@ def gremium(
 
 
 def personen(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[str, Any]:
-    """Personenliste: Konto in der Organisation, wenn ein Mitglied mit der Person verknüpft ist (``members.view``)."""
-    erlaubt = rechte(membership)
+    """
+    Personenliste: Fraktion, Funktion und Gremien wie in Insight (``angaben``, eine Abfrage für die Seite) und das
+    Konto in der Organisation, wenn ein Mitglied mit der Person verknüpft ist (``members.view``).
+    """
+    from insight_core.services.personen_liste import PersonAngaben
+
+    erlaubt = basis(organization, membership)
     liste = list(seite)
     konten = fraktion.mitglieder_je_person(organization, _ids(liste)) if erlaubt["darf_mitglieder"] else {}
+    angaben = _angaben(liste)
     for person in liste:
         person.konto = konten.get(person.pk, "")
+        person.angaben = angaben.get(person.pk) or PersonAngaben()
     return erlaubt
 
 
 def person(organization: Any, membership: Any, person_obj: Any) -> dict[str, Any]:
-    """Person: Konto in der Organisation, wenn ein Mitglied mit der Person verknüpft ist (``members.view``)."""
-    erlaubt = rechte(membership)
+    """
+    Person: Funktion und Fraktion wie in Insight (Fraktion auch aus der bestätigten Zuordnung, Issue #916) und das
+    Konto in der Organisation, wenn ein Mitglied mit der Person verknüpft ist (``members.view``).
+    """
+    erlaubt = basis(organization, membership)
     konto = ""
     if erlaubt["darf_mitglieder"]:
         konto = fraktion.mitglieder_je_person(organization, [person_obj.pk]).get(person_obj.pk, "")
-    return {**erlaubt, "konto": konto}
+    return {**erlaubt, "konto": konto, "angaben": _angaben([person_obj]).get(person_obj.pk)}

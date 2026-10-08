@@ -5,8 +5,9 @@ Sitzung, Vorgänge und Vorgang, Gremien und Gremium, Personen und Person.
 
 Je Breite: kein seitliches Überlaufen, ab 1.280 px rechts höchstens ein Viertel der Fensterbreite frei (keine
 Leerflächen auf breiten Bildschirmen), axe ohne schwere Befunde (1.440 px, hell und dunkel), keine Fehler im Browser.
-Der Vorgang zeigt Stand-Satz, Dokumentzeile mit aufklappbarem Text und „Für die Fraktion“ mit der Position.
-Screenshots als CI-Artefakt.
+Der Vorgang zeigt Stand-Satz, Dokumentzeile mit aufklappbarem Text und „Für die Fraktion“ mit der Position; die Listen
+sind die Listen von Insight (ganze Zeile führt in Work weiter), die Sitzung zeigt Niederschrift, Übertragung und
+Sitzungsdateien wie Insight. Screenshots bei 390, 1.280, 1.920 und 2.560 px als CI-Artefakt.
 """
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
     OParlSource,
+    PersonFraktion,
 )
 from tests_e2e.conftest import ADMIN_PASSWORD as PASSWORD
 from tests_e2e.conftest import BrowserProblems
@@ -39,7 +41,7 @@ RIS = "https://ris.recherche-e2e.example/oparl"
 #: rechter Rand des Inhalts: die äußersten Abschnitte, Listen und Spalten der Seite
 RECHTS = """() => {
   const inhalt = document.querySelector('.work-page-content');
-  const teile = [...inhalt.querySelectorAll('section, aside, ul, ol, form, nav')].filter((el) => el.offsetParent);
+  const teile = [...inhalt.querySelectorAll('section, aside, ul, ol, form, nav, table')].filter((el) => el.offsetParent);
   return {breite: window.innerWidth, rechts: Math.max(...teile.map((el) => el.getBoundingClientRect().right)),
           scroll: document.documentElement.scrollWidth};
 }"""
@@ -60,6 +62,32 @@ def recherche(admin: Any) -> dict[str, Any]:
         external_id=f"{RIS}/meeting/1", body=body, start=jetzt - timedelta(days=7), location_name="Rathaus, Saal 1"
     )
     sitzung.organizations.add(ausschuss)
+    # Niederschrift, Übertragung und Sitzungsdateien wie in Insight (Issue #853)
+    niederschrift = OParlFile.objects.create(
+        external_id=f"{RIS}/file/niederschrift",
+        body=body,
+        meeting=sitzung,
+        name="Niederschrift öffentlicher Teil",
+        access_url="https://ris.recherche-e2e.example/niederschrift.pdf",
+        mime_type="application/pdf",
+        size=48000,
+    )
+    OParlFile.objects.create(
+        external_id=f"{RIS}/file/einladung",
+        body=body,
+        meeting=sitzung,
+        name="Einladung",
+        access_url="https://ris.recherche-e2e.example/einladung.pdf",
+        mime_type="application/pdf",
+        size=12000,
+        text_content="Einladung zur Sitzung des Hauptausschusses.",
+    )
+    sitzung.raw_json = {
+        "resultsProtocol": niederschrift.external_id,
+        "mandari:meetingFormat": "hybrid",
+        "mandari:publicAccess": {"url": "https://stream.recherche-e2e.example/live", "hint": "Ohne Anmeldung."},
+    }
+    sitzung.save(update_fields=["raw_json"])
     ratssitzung = OParlMeeting.objects.create(
         external_id=f"{RIS}/meeting/2", body=body, start=jetzt + timedelta(days=6)
     )
@@ -122,6 +150,11 @@ def recherche(admin: Any) -> dict[str, Any]:
         OParlMembership.objects.create(
             external_id=f"{RIS}/membership/{nummer}", person=person, organization=ausschuss, role="Mitglied"
         )
+        if nummer < 2:
+            # Fraktion aus der bestätigten Zuordnung in Insight (Issue #916), mit Quellenhinweis
+            PersonFraktion.objects.create(
+                person=person, body=body, bezeichnung="Fraktion Mitte", quelle=PersonFraktion.QUELLE_EINBLENDUNG
+            )
     admin.followed_organizations.add(ausschuss)
     return {
         "admin": admin,
@@ -139,7 +172,7 @@ def recherche(admin: Any) -> dict[str, Any]:
     }
 
 
-@pytest.mark.parametrize("breite", [1280, 1440, 2560, 390])
+@pytest.mark.parametrize("breite", [390, 1280, 1440, 1920, 2560])
 def test_recherche_seiten(
     page: Any,
     goto: Any,
@@ -164,7 +197,7 @@ def test_recherche_seiten(
         if breite == 1440:
             ergebnis = axe()
             assert not ergebnis.failing, (name, ergebnis.describe())
-        if breite != 1280:
+        if breite != 1440:
             screenshot(f"work-recherche-{name}-{breite}")
     if breite == 1440:
         dark_mode(True)
@@ -195,3 +228,30 @@ def test_vorgang_stand_dokument_und_fraktion(
     page.wait_for_url("**/ris/meetings/**")
     expect(page.get_by_test_id("tagesordnung")).to_contain_text("Mit Änderungsantrag")
     problems.assert_clean("Vorgang und Sitzung")
+
+
+def test_listen_und_sitzung_mit_den_bausteinen_von_insight(
+    page: Any, goto: Any, login: Any, recherche: dict[str, Any], problems: BrowserProblems
+) -> None:
+    admin = recherche["admin"]
+    page.set_viewport_size({"width": 1440, "height": 900})
+    login(admin.user.email, PASSWORD)
+    goto(f"/work/{admin.organization.slug}/ris/papers/")
+
+    # Liste von Insight: Klick in die Zeile öffnet den Vorgang in Work
+    liste = page.get_by_test_id("vorgangsliste")
+    liste.locator("tr", has_text="Trinkwasserbrunnen").locator("td").nth(2).click()
+    page.wait_for_url("**/ris/papers/*-*/")
+    expect(page.get_by_test_id("vorgang-stand")).to_be_visible()
+
+    goto(f"/work/{admin.organization.slug}/ris/persons/")
+    expect(page.get_by_test_id("personenliste")).to_contain_text("Fraktion Mitte")
+
+    goto(f"/work/{admin.organization.slug}/{recherche['seiten'][2][1]}")
+    expect(page.get_by_test_id("oeffentliche-niederschrift")).to_be_visible()
+    expect(page.get_by_test_id("sitzungsformat")).to_contain_text("Hybride Sitzung")
+    dateien = page.get_by_test_id("sitzungsdateien")
+    expect(dateien).to_contain_text("Einladung")
+    dateien.get_by_role("button", name="Text").click()
+    expect(page.get_by_text("Einladung zur Sitzung des Hauptausschusses.")).to_be_visible()
+    problems.assert_clean("Listen und Sitzung")

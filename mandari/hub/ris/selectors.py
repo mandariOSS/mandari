@@ -389,35 +389,123 @@ def files_of_paper(paper: OParlPaper) -> QuerySet[OParlFile]:
     return OParlFile.objects.filter(paper=paper)
 
 
+def protocol_file(meeting: OParlMeeting) -> OParlFile | None:
+    """
+    Öffentliche Niederschrift einer Sitzung (OParl ``resultsProtocol``, sonst ``verbatimProtocol``), Issue #318.
+
+    Quelle ist das gespiegelte Meeting-Objekt; angezeigt wird nur eine nicht zurückgenommene Datei derselben Kommune
+    (mandari Session veröffentlicht hier ausschließlich den öffentlichen Teil, eine Rücknahme markiert die Datei sofort
+    als gelöscht). Sitzungsseiten von Insight und Work (Issue #853).
+    """
+    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
+    for key in ("resultsProtocol", "verbatimProtocol"):
+        ref = raw.get(key)
+        external_id = ref.get("id") if isinstance(ref, dict) else ref if isinstance(ref, str) else None
+        if not external_id:
+            continue
+        found = (
+            OParlFile.objects.filter(external_id=external_id, deleted=False).defer("text_content", "raw_json").first()
+        )
+        if found is not None and (found.body_id is None or found.body_id == meeting.body_id):
+            return found
+    return None
+
+
+#: Sitzungsformate aus der OParl-Erweiterung von mandari Session (Issue #138)
+BROADCAST_LABELS = {
+    "hybrid": "Hybride Sitzung: Einzelne Mitglieder sind per Bild-Ton-Übertragung zugeschaltet.",
+    "digital": "Digitale Sitzung: Die Mitglieder tagen per Videokonferenz.",
+}
+
+
+def broadcast_info(meeting: Any) -> dict[str, str] | None:
+    """
+    Sitzungsformat und Hinweis für die Öffentlichkeit (Übertragung, Anmeldung), Issue #138.
+
+    Quelle ist die OParl-Erweiterung ``mandari:meetingFormat``/``mandari:publicAccess``. Die Daten stammen von einer
+    externen Quelle: nur erwartete Typen, eigene Texte für das Format, Links nur mit http(s). Sitzungsseiten von
+    Insight und Work (Issue #853).
+    """
+    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
+    access = raw.get("mandari:publicAccess")
+    access = access if isinstance(access, dict) else {}
+    url = access.get("url")
+    hint = access.get("hint")
+    format_ = raw.get("mandari:meetingFormat")
+    info = {
+        "label": BROADCAST_LABELS.get(format_, "") if isinstance(format_, str) else "",
+        "url": url[:500] if isinstance(url, str) and url.startswith(("https://", "http://")) else "",
+        "hint": hint[:1000] if isinstance(hint, str) else "",
+    }
+    return info if any(info.values()) else None
+
+
+def files_of_meeting(meeting: OParlMeeting, *, ohne: Iterable[object] = ()) -> list[OParlFile]:
+    """
+    Dateien einer Sitzung (Einladung, Anlagen, Niederschrift) nach Name, ohne gelöschte und von mandari Session
+    zurückgenommene; ``ohne`` lässt Dateien weg, die die Seite schon an anderer Stelle zeigt (etwa die Niederschrift).
+    """
+    ausgelassen = [pk for pk in (_uuid(value) for value in ohne) if pk is not None]
+    return list(
+        OParlFile.objects.filter(meeting=meeting, deleted=False)
+        .exclude(withdrawn_q())
+        .exclude(pk__in=ausgelassen)
+        .defer("raw_json")
+        .order_by("name", "file_name")
+    )
+
+
+def organization_count(meeting: OParlMeeting) -> int | None:
+    """
+    Anzahl der Gremien hinter ``OParlMeeting.get_display_name`` (Namen mit Komma verbunden) für den Stand-Satz.
+
+    Aus den vorgeladenen Gremien und ohne weitere Abfrage; ``None``, wenn sie so nicht feststeht. Der Stand-Satz beugt
+    danach auch Gremiennamen mit Komma („im Ausschuss für Planung, Bau und Umwelt“). Mehr als zwei zählt nicht: Für
+    den Satz heißt es dann nur „mehrere“.
+    """
+    named = [org for org in list(meeting.organizations.all())[:2] if org.name]
+    if named:
+        return len(named)
+    urls = meeting.raw_json.get("organization") if isinstance(meeting.raw_json, dict) else None
+    return 1 if isinstance(urls, list) and len(urls) == 1 else None
+
+
 def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
     """
-    Beratungsverlauf einer Vorlage, chronologisch (ohne Termin am Ende), wie ihn der Stand-Satz und der Zeitstrahl
+    Beratungsverlauf einer Vorlage, chronologisch, wie ihn der Stand-Satz und der Zeitstrahl
     (``insight_core.services.paper_status``) erwarten: je Beratung ``consultation``, ``meeting``, ``agenda_item``,
     ``date``, ``organization_name``, ``organization_count``, ``agenda_number``, ``result``, ``public``, ``role`` und
-    ``authoritative``. Zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte fehlen. Höchstens vier Abfragen.
+    ``authoritative``. Beratungen ohne bekannte Sitzung stehen an der Stelle von „jetzt“ (zwischen vergangenen und
+    kommenden). Zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte fehlen – wie in der Session-OParl-API,
+    die solche Verweise auslässt. Höchstens vier Abfragen.
+
+    Grundlage der Vorgangsseiten von Insight und Work (Issue #853, vorher je eine eigene Abfrage).
     """
     consultations = list(OParlConsultation.objects.filter(paper=paper).exclude(withdrawn_q()))
     if not consultations:
         return []
     meeting_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
     item_ids = [c.agenda_item_external_id for c in consultations if c.agenda_item_external_id]
-    sitzungen = {
-        m.external_id: m
-        for m in OParlMeeting.objects.filter(external_id__in=meeting_ids)
-        .exclude(withdrawn_q())
-        .prefetch_related("organizations")
-    }
-    punkte = {
-        a.external_id: a
-        for a in OParlAgendaItem.objects.filter(external_id__in=item_ids)
-        .exclude(withdrawn_q())
-        .exclude(withdrawn_q("meeting"))
-    }
+    sitzungen: dict[str, OParlMeeting] = {}
+    if meeting_ids:
+        sitzungen = {
+            m.external_id: m
+            for m in OParlMeeting.objects.filter(external_id__in=meeting_ids)
+            .exclude(withdrawn_q())
+            .prefetch_related("organizations")
+        }
+    punkte: dict[str, OParlAgendaItem] = {}
+    if item_ids:
+        punkte = {
+            a.external_id: a
+            for a in OParlAgendaItem.objects.filter(external_id__in=item_ids)
+            .exclude(withdrawn_q())
+            .exclude(withdrawn_q("meeting"))
+        }
     verlauf: list[dict[str, Any]] = []
     for consultation in consultations:
         sitzung = sitzungen.get(consultation.meeting_external_id or "")
         punkt = punkte.get(consultation.agenda_item_external_id or "")
-        gremien = [o for o in sitzung.organizations.all() if o.name] if sitzung else []
         verlauf.append(
             {
                 "consultation": consultation,
@@ -425,7 +513,7 @@ def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
                 "agenda_item": punkt,
                 "date": sitzung.start if sitzung else None,
                 "organization_name": sitzung.get_display_name() if sitzung else None,
-                "organization_count": len(gremien) or None,
+                "organization_count": organization_count(sitzung) if sitzung else None,
                 "agenda_number": punkt.number if punkt else None,
                 "result": punkt.result if punkt else None,
                 "public": punkt.public if punkt else True,
@@ -433,7 +521,8 @@ def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
                 "authoritative": consultation.authoritative,
             }
         )
-    verlauf.sort(key=lambda eintrag: (eintrag["date"] is None, eintrag["date"] or timezone.now()))
+    jetzt = timezone.now()
+    verlauf.sort(key=lambda eintrag: eintrag["date"] or jetzt)
     return verlauf
 
 

@@ -1,15 +1,16 @@
 {% extends "work/base_work.html" %}
 {% comment %}
-Personen im neuen Erscheinungsbild (Issues #852, #853; Recherche › Personen): Suche nach Name und E-Mail (Parameter
-q, page wie bisher), je Person Funktion im Rat, Kontakt und „Für die Fraktion“: ob ein Mitglied der Organisation mit
-ihr verknüpft ist (mit members.view). Ab 1.280 px zwei Spalten. Die bisherige Seite bleibt work/ris/persons.html.
+Personen im neuen Erscheinungsbild (Issues #852, #853, #916; Recherche › Personen): Suche nach Name und E-Mail
+(Parameter q, page wie bisher). Die Liste ist der gemeinsame Baustein von Insight (c-liste.personen: Fraktion samt
+Zuordnung aus Insight, Funktion, Gremien, Kontakt) mit der Spalte „Für die Fraktion“: ob ein Mitglied der Organisation
+mit der Person verknüpft ist (mit members.view). Die bisherige Seite bleibt work/ris/persons.html.
 {% endcomment %}
 
 {% block page_title %}Personen{% endblock %}
 
-{% block header_title %}Personen{% endblock %}
-{% block header_subtitle %}
-<p class="work-page-subtitle">{% if body %}{{ paginator.count }} Person{{ paginator.count|pluralize:"en" }} aus {{ body.get_display_name }}{% if search_query %} für „{{ search_query }}“{% endif %}, nach Nachnamen.{% endif %}</p>
+{% block work_header %}
+<c-rahmen.kopfband titel="Personen" dicht
+    text="{% if body %}{{ paginator.count }} Person{{ paginator.count|pluralize:'en' }} aus {{ body.get_display_name }}{% if search_query %} für „{{ search_query }}“{% endif %}, nach Nachnamen.{% endif %}" />
 {% endblock %}
 
 {% block work_content %}
@@ -18,27 +19,20 @@ ihr verknüpft ist (mit members.view). Ab 1.280 px zwei Spalten. Die bisherige S
 {% else %}
 <form method="get" role="search" class="flex flex-wrap items-center gap-2">
     <label for="personen-suche" class="sr-only">Person suchen</label>
-    <input id="personen-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Name oder E-Mail" class="ris-feld w-full sm:w-80">
-    <button type="submit" class="h-9 px-3 rounded-md bg-primary-600 hover:bg-primary-700 text-sm font-medium text-white">Suchen</button>
-    {% if search_query %}<a href="{% url 'work:ris_persons' org_slug=organization.slug %}" class="text-sm ris-link">Zurücksetzen</a>{% endif %}
+    <input id="personen-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Name oder E-Mail"
+           class="h-9 w-full sm:w-80 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <c-ui.button type="submit" size="sm">Suchen</c-ui.button>
+    {% if search_query %}<c-ui.textlink href="{% url 'work:ris_persons' org_slug=organization.slug %}" class="text-sm">Zurücksetzen</c-ui.textlink>{% endif %}
 </form>
 
 {% if persons %}
-<ul class="mt-4 xl:grid xl:grid-cols-2 xl:gap-x-12 min-[1800px]:grid-cols-3 xl:[&>li:nth-child(2)]:border-t-0 min-[1800px]:[&>li:nth-child(3)]:border-t-0" data-testid="personenliste">
-    {% for person in persons %}
-    <li class="ris-zeile flex items-start gap-3">
-        {% include "components/person_avatar.html" with person=person size="sm" %}
-        <div class="min-w-0 flex-1">
-            <a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=person.id %}" class="ris-titel">{{ person.display_name }}</a>
-            {% if person.council_role or person.konto %}<p class="mt-0.5 ris-meta">{{ person.council_role|default:"" }}{% if person.council_role and person.konto %} · {% endif %}{% if person.konto %}Ihre Organisation{% endif %}</p>{% endif %}
-            {% if person.email %}<p class="mt-1.5 text-sm"><a href="mailto:{{ person.email }}" class="ris-link break-all">{{ person.email }}</a></p>{% endif %}
-        </div>
-    </li>
-    {% endfor %}
-</ul>
-{% include "work/ris/neu/_seiten.html" with seite=persons %}
+<div class="mt-4" data-testid="personenliste">
+    <c-liste.personen :personen="persons" :links="ris_links" dicht ohne_merken
+                      zusatz="{% if darf_mitglieder %}work/ris/neu/_person_fraktion.html{% endif %}" zusatz_titel="Für die Fraktion" />
+</div>
+<c-liste.seiten :seite="persons" dicht />
 {% else %}
-<p class="mt-6 ris-meta">{% if search_query %}Für „{{ search_query }}“ gibt es keine Person. <a href="{% url 'work:ris_persons' org_slug=organization.slug %}" class="ris-link">Zurücksetzen</a>{% else %}Es sind noch keine Personen vorhanden.{% endif %}</p>
+<p class="mt-6 text-sm text-gray-600 dark:text-gray-400">{% if search_query %}Für „{{ search_query }}“ gibt es keine Person. <c-ui.textlink href="{% url 'work:ris_persons' org_slug=organization.slug %}">Zurücksetzen</c-ui.textlink>{% else %}Es sind noch keine Personen vorhanden.{% endif %}</p>
 {% endif %}
 {% endif %}
 {% endblock %}

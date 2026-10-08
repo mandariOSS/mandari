@@ -1,0 +1,82 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Vorgangsliste, gemeinsam für Insight und Work (Issues #841, #853): ab 2xl mit dem Stand aus dem Beratungsverlauf
+(``stand`` wie Vorgangsseite und Suche, insight_core/services/search_presentation.statuses_for_papers). Spalten ohne
+einen einzigen Wert entfallen.
+  <c-liste.vorgaenge :vorgaenge="papers" />
+  <c-liste.vorgaenge :vorgaenge="papers" :links="ris_links" dicht ohne_merken
+                     zusatz="work/ris/neu/_vorgang_zeile_fraktion.html" zusatz_titel="Für die Fraktion" />
+Parameter wie c-liste.sitzungen; ``dicht`` zeigt den Stand unterhalb von 2xl unter dem Titel (Arbeitsfläche).
+{% endcomment %}
+<c-vars vorgaenge="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" />
+{% load insight_listen %}
+{% with sp_nr=vorgaenge|hat_wert:"reference" sp_typ=vorgaenge|hat_wert:"paper_type" sp_datum=vorgaenge|hat_wert:"date" sp_stand=vorgaenge|hat_wert:"stand.text" %}
+<div class="-mx-3">
+    <div class="relative overflow-x-auto">
+    <table class="w-full">
+        <thead>
+            <tr class="border-b border-gray-300 dark:border-gray-700">
+                <th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Vorgang</th>
+                {% if sp_nr %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Vorlagen-Nr.</th>{% endif %}
+                {% if sp_typ %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Typ</th>{% endif %}
+                {% if sp_datum %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Datum</th>{% endif %}
+                {% if sp_stand %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-2xl:hidden">Stand</th>{% endif %}
+                {% if zusatz %}<th class="text-left px-3 py-2 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-md:hidden">{{ zusatz_titel }}</th>{% endif %}
+                <th class="w-10 px-2 {% if dicht %}py-2{% else %}py-3{% endif %}"><span class="sr-only">{% if ohne_merken %}Öffnen{% else %}Merken{% endif %}</span></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
+            {% for paper in vorgaenge %}
+            {% ris_url links "vorgang" paper.id as ziel %}
+            <tr class="hover:bg-band-grau/70 group cursor-pointer"
+                data-href="{{ ziel }}">
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %}">
+                    <a href="{{ ziel }}"
+                       class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
+                        {{ paper.name|default:"Vorgang" }}
+                    </a>
+                    <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
+                        {% if paper.reference %}<span class="font-mono">{{ paper.reference }}</span>{% endif %}
+                        {% if paper.reference and paper.paper_type %} &middot; {% endif %}
+                        {% if paper.paper_type %}{{ paper.paper_type }}{% endif %}
+                    </div>
+                    {% if dicht and paper.stand %}<p class="2xl:hidden mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ paper.stand.text }}</p>{% endif %}
+                    {% if zusatz %}<div class="md:hidden mt-1 text-sm">{% include zusatz with eintrag=paper %}</div>{% endif %}
+                </td>
+                {% if sp_nr %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm max-sm:hidden whitespace-nowrap">
+                    {% if paper.reference %}<span class="font-mono text-gray-600 dark:text-gray-400">{{ paper.reference }}</span>{% endif %}
+                </td>
+                {% endif %}
+                {% if sp_typ %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-600 dark:text-gray-400 max-sm:hidden">{{ paper.paper_type|default:"" }}</td>
+                {% endif %}
+                {% if sp_datum %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
+                    {% if paper.date %}<time datetime="{{ paper.date|date:'Y-m-d' }}">{{ paper.date|date:"d.m.Y" }}</time>{% endif %}
+                </td>
+                {% endif %}
+                {% if sp_stand %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-700 dark:text-gray-300 max-2xl:hidden w-[26rem]">
+                    {% if paper.stand %}
+                    <span class="flex items-baseline gap-2">
+                        <span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if paper.stand.kind == 'decided' %}bg-primary-600 dark:bg-primary-400{% elif paper.stand.kind == 'none' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>
+                        <span>{{ paper.stand.text }}</span>
+                    </span>
+                    {% endif %}
+                </td>
+                {% endif %}
+                {% if zusatz %}<td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-200 max-md:hidden w-60">{% include zusatz with eintrag=paper %}</td>{% endif %}
+                <td class="px-2 {% if dicht %}py-2{% else %}py-3{% endif %}">
+                    <div class="flex items-center gap-1">
+                        {% if not ohne_merken %}{% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="sm" %}{% endif %}
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors" aria-hidden="true"></i>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endwith %}

@@ -1,0 +1,5 @@
+{% comment %}
+Spalte „Für die Fraktion“ eines Gremiums in der gemeinsamen Liste (c-liste.gremien, Issue #853): eines der eigenen
+Gremien. Erwartet: eintrag (OParlOrganization mit ihr_gremium aus apps.work.ris.neu.gremien).
+{% endcomment %}
+{% if eintrag.ihr_gremium %}Ihr Gremium{% endif %}

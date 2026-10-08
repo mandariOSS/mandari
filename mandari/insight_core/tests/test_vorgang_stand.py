@@ -65,7 +65,7 @@ def eintrag(
     entscheidung: bool = False,
     gremien: int | None = None,
 ) -> dict[str, Any]:
-    """Eintrag wie aus ``PaperDetailView._get_consultations_with_meetings``."""
+    """Eintrag wie aus ``hub.ris.selectors.consultation_history`` (Vorgangsseiten von Insight und Work)."""
     return {
         "consultation": None,
         "meeting": SimpleNamespace(cancelled=abgesagt, id=uuid.uuid4()),

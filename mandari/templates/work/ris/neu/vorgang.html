@@ -1,21 +1,21 @@
 {% extends "work/base_work.html" %}
 {% comment %}
 Vorgang im neuen Erscheinungsbild (Issues #852, #853) mit den Bausteinen von Insight: Kopf mit Stand-Satz
-(insight_core.services.paper_status), Dokumentzeilen (c-insight.document-row), Beratungsverlauf als Zeitstrahl
-(c-insight.timeline) – dazu die Spalte „Für die Fraktion“ (work/ris/neu/_vorgang_fraktion.html). Ab 1.600 px stehen
-Dokumente, Verlauf und Spalte nebeneinander, darunter Dokumente und Verlauf übereinander, am Handy alles untereinander.
-Kontext: apps/work/ris/neu.vorgang; die bisherige Seite bleibt work/ris/paper_detail.html.
+(insight_core.services.paper_status), Zusammenfassung (partials/paper_summary.html), Dokumentzeilen
+(c-insight.document-row), Beratungsverlauf als Zeitstrahl (c-insight.timeline) – dazu die Spalte „Für die Fraktion“
+(work/ris/neu/_vorgang_fraktion.html). Ab 1.600 px stehen Dokumente, Verlauf und Spalte nebeneinander, darunter
+Dokumente und Verlauf übereinander, am Handy alles untereinander. Kontext: apps/work/ris/neu.vorgang; die bisherige
+Seite bleibt work/ris/paper_detail.html.
 {% endcomment %}
 
 {% block page_title %}{% if paper %}{{ paper.reference|default:paper.name|truncatechars:50 }}{% else %}Vorgang{% endif %}{% endblock %}
 {% block brotkrumen_aktuell %}{% if paper %}<c-insight.brotkrume>{{ paper.reference|default:paper.name|truncatechars:50 }}</c-insight.brotkrume>{% endif %}{% endblock %}
 
 {% block work_header %}
-<header class="work-page-header">
-    <c-insight.zurueck href="{% url 'work:ris_papers' org_slug=organization.slug %}">Vorgänge</c-insight.zurueck>
+<c-rahmen.kopfband titel="{% if paper %}{{ paper.name|default:'Vorgang' }}{% else %}Vorgang{% endif %}" dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:ris_papers' org_slug=organization.slug %}">Vorgänge</c-insight.zurueck></c-slot>
     {% if paper %}
-    <h1 class="work-page-title max-w-5xl">{{ paper.name|default:"Vorgang" }}</h1>
-    <p class="mt-1 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
         {% if paper.paper_type %}<span>{{ paper.paper_type }}</span>{% endif %}
         {% if paper.reference %}<span class="tabular-nums">{{ paper.reference }}</span>{% endif %}
         {% if paper.date %}<span class="tabular-nums">vom {{ paper.date|date:"d.m.Y" }}</span>{% endif %}
@@ -25,14 +25,12 @@ Kontext: apps/work/ris/neu.vorgang; die bisherige Seite bleibt work/ris/paper_de
         <span class="font-semibold">Stand:</span> {{ paper_status.text }}
     </p>
     <p class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
-        {% if vorbereitung_url %}<a href="{{ vorbereitung_url }}" class="ris-link">In der Vorbereitung öffnen{% if vorbereitung_datum %} ({{ vorbereitung_datum|date:"d.m." }}){% endif %}</a>{% endif %}
-        {% if darf_dokument_anlegen %}<a href="{% url 'work:document_create' org_slug=organization.slug %}" class="ris-link">Neues Dokument anlegen</a>{% endif %}
-        {% if source_url %}<a href="{{ source_url }}" target="_blank" rel="noopener noreferrer" class="ris-link">Im Ratsinformationssystem<span class="sr-only"> (öffnet in neuem Fenster)</span></a>{% endif %}
+        {% if vorbereitung_url %}<c-ui.textlink href="{{ vorbereitung_url }}">In der Vorbereitung öffnen{% if vorbereitung_datum %} ({{ vorbereitung_datum|date:"d.m." }}){% endif %}</c-ui.textlink>{% endif %}
+        {% if darf_dokument_anlegen %}<c-ui.textlink href="{% url 'work:document_create' org_slug=organization.slug %}">Neues Dokument anlegen</c-ui.textlink>{% endif %}
+        {% if source_url %}<c-ui.textlink href="{{ source_url }}" extern>Im Ratsinformationssystem</c-ui.textlink>{% endif %}
     </p>
-    {% else %}
-    <h1 class="work-page-title">Vorgang</h1>
     {% endif %}
-</header>
+</c-rahmen.kopfband>
 {% endblock %}
 
 {% block work_content %}
@@ -40,40 +38,38 @@ Kontext: apps/work/ris/neu.vorgang; die bisherige Seite bleibt work/ris/paper_de
 {% include "work/ris/partials/_no_body_notice.html" %}
 {% else %}
 <div class="grid gap-x-12 gap-y-10 lg:items-start lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[auto_1fr] min-[1600px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_24rem] min-[1600px]:grid-rows-1">
-    <section aria-labelledby="dokumente-titel" class="min-w-0 lg:col-start-1 lg:row-start-1">
+    <div class="min-w-0 lg:col-start-1 lg:row-start-1">
         {% if paper.summary %}
-        <h2 class="ris-h2">Zusammenfassung</h2>
-        <div class="mt-2 max-w-3xl text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200">{{ paper.summary|linebreaks }}</div>
-        <p class="mt-2 mb-8 ris-meta">Mit KI aus den Dokumenten erstellt; sie kann Fehler enthalten.</p>
+        <div class="mb-8" data-testid="vorgang-zusammenfassung">{% include "partials/paper_summary.html" with summary=paper.summary dicht=True %}</div>
         {% endif %}
-        <h2 id="dokumente-titel" class="ris-h2">Dokumente</h2>
-        {% if dateien %}
-        <ul class="mt-1" data-testid="vorgang-dokumente">
-            {% for file in dateien %}
-            <c-insight.document-row :file="file" meta="{% if viewer_committee %}{{ viewer_committee }} · {% endif %}{{ paper.reference|default:'' }}" />
-            {% endfor %}
-        </ul>
-        {% endif %}
-        {% if dateien_roh %}
-        <ul class="mt-2 space-y-2 text-sm">
-            {% for datei in dateien_roh %}
-            <li>
-                <span class="font-medium text-gray-900 dark:text-white">{{ datei.name|default:"Dokument" }}</span>
-                {% if datei.download_url or datei.access_url %}<a href="{{ datei.download_url|default:datei.access_url }}" target="_blank" rel="noopener noreferrer" class="ml-2 ris-link">im Ratsinformationssystem öffnen<span class="sr-only"> (öffnet in neuem Fenster)</span></a>{% endif %}
-            </li>
-            {% endfor %}
-        </ul>
-        {% endif %}
-        {% if dateien_gesperrt %}
-        <p class="mt-3 ris-meta">In der Quelle nicht mehr abrufbar: {% for datei in dateien_gesperrt %}{{ datei.name|default:datei.file_name|default:"Dokument" }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
-        {% endif %}
-        {% if not dateien and not dateien_roh and not dateien_gesperrt %}
-        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Zu diesem Vorgang sind keine Dokumente veröffentlicht.</p>
-        {% endif %}
-    </section>
+        <c-rahmen.abschnitt titel="Dokumente" titel_id="dokumente-titel">
+            {% if dateien %}
+            <ul class="mt-1" data-testid="vorgang-dokumente">
+                {% for file in dateien %}
+                <c-insight.document-row :file="file" meta="{% if viewer_committee %}{{ viewer_committee }} · {% endif %}{{ paper.reference|default:'' }}" />
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% if dateien_roh %}
+            <ul class="mt-2 space-y-2 text-sm">
+                {% for datei in dateien_roh %}
+                <li>
+                    <span class="font-medium text-gray-900 dark:text-white">{{ datei.name|default:"Dokument" }}</span>
+                    {% if datei.download_url or datei.access_url %}<c-ui.textlink href="{{ datei.download_url|default:datei.access_url }}" extern class="ml-2">im Ratsinformationssystem öffnen</c-ui.textlink>{% endif %}
+                </li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% if dateien_gesperrt %}
+            <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">In der Quelle nicht mehr abrufbar: {% for datei in dateien_gesperrt %}{{ datei.name|default:datei.file_name|default:"Dokument" }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+            {% endif %}
+            {% if not dateien and not dateien_roh and not dateien_gesperrt %}
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Zu diesem Vorgang sind keine Dokumente veröffentlicht.</p>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
 
-    <section aria-labelledby="verlauf-titel" class="min-w-0 lg:col-start-1 lg:row-start-2 min-[1600px]:col-start-2 min-[1600px]:row-start-1">
-        <h2 id="verlauf-titel" class="ris-h2">Beratungsverlauf</h2>
+    <c-rahmen.abschnitt titel="Beratungsverlauf" titel_id="verlauf-titel" class="min-w-0 lg:col-start-1 lg:row-start-2 min-[1600px]:col-start-2 min-[1600px]:row-start-1">
         {% if zeitstrahl %}
         <c-insight.timeline class="mt-4" data-testid="vorgang-verlauf">
             {% for item in zeitstrahl %}
@@ -88,7 +84,7 @@ Kontext: apps/work/ris/neu.vorgang; die bisherige Seite bleibt work/ris/paper_de
         {% else %}
         <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Zu diesem Vorgang ist noch keine Beratung bekannt.</p>
         {% endif %}
-    </section>
+    </c-rahmen.abschnitt>
 
     <aside class="min-w-0 space-y-8 lg:col-start-2 lg:row-start-1 lg:row-span-2 min-[1600px]:col-start-3 min-[1600px]:row-span-1" aria-label="Für die Fraktion und Angaben">
         {% include "work/ris/neu/_vorgang_fraktion.html" %}

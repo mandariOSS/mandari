@@ -1,0 +1,80 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Personenliste, gemeinsam für Insight und Work (Issues #841, #853, #916): Fraktion, Funktion und Gremien kommen aus den
+laufenden Mitgliedschaften (``angaben`` aus insight_core/services/personen_liste.py); ohne Fraktion aus OParl gilt die
+bestätigte Zuordnung aus Insight mit Quellenhinweis (c-insight.fraktion). Spalten erscheinen nur, wenn mindestens eine
+Person einen Wert hat; die Gremien erst auf breiten Bildschirmen (2xl), am Handy stehen Funktion und Fraktion unter
+dem Namen.
+  <c-liste.personen :personen="persons" />
+  <c-liste.personen :personen="persons" :links="ris_links" dicht ohne_merken zusatz="…" zusatz_titel="Für die Fraktion" />
+Parameter wie c-liste.sitzungen.
+{% endcomment %}
+<c-vars personen="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" />
+{% load insight_listen %}
+{% with sp_fraktion=personen|hat_wert:"angaben.fraktion_name" sp_funktion=personen|hat_wert:"angaben.funktion" sp_gremien=personen|hat_wert:"angaben.gremien" sp_kontakt=personen|hat_wert:"email" %}
+<div class="-mx-3">
+    <div class="relative overflow-x-auto">
+    <table class="w-full">
+        <thead>
+            <tr class="border-b border-gray-300 dark:border-gray-700">
+                <th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 xl:min-w-[14rem]">Name</th>
+                {% if sp_fraktion %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-md:hidden">Fraktion</th>{% endif %}
+                {% if sp_funktion %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Funktion</th>{% endif %}
+                {% if sp_gremien %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-2xl:hidden">Gremien</th>{% endif %}
+                {% if sp_kontakt %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-xl:hidden">Kontakt</th>{% endif %}
+                {% if zusatz %}<th class="text-left px-3 py-2 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-md:hidden">{{ zusatz_titel }}</th>{% endif %}
+                <th class="w-10 px-2 {% if dicht %}py-2{% else %}py-3{% endif %}"><span class="sr-only">{% if ohne_merken %}Öffnen{% else %}Merken{% endif %}</span></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
+            {% for person in personen %}
+            {% ris_url links "person" person.id as ziel %}
+            <tr class="hover:bg-band-grau/70 group cursor-pointer"
+                data-href="{{ ziel }}">
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %}">
+                    <div class="flex items-center gap-3">
+                        {% include "components/person_avatar.html" with person=person size="sm" %}
+                        <div class="min-w-0">
+                            <a href="{{ ziel }}"
+                               class="font-medium {% if dicht %}text-sm {% endif %}text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">
+                                {{ person.display_name }}
+                            </a>
+                            {% if person.angaben.funktion or person.angaben.fraktion_name %}
+                            <p class="text-sm text-gray-600 dark:text-gray-400 md:hidden">
+                                {% if person.angaben.funktion %}<span class="sm:hidden">{{ person.angaben.funktion }}</span>{% endif %}{% if person.angaben.funktion and person.angaben.fraktion_name %}<span class="sm:hidden" aria-hidden="true"> · </span>{% endif %}{% if person.angaben.fraktion_name %}<span><c-insight.fraktion :angaben="person.angaben" /></span>{% endif %}
+                            </p>
+                            {% endif %}
+                            {% if zusatz %}<div class="md:hidden text-sm">{% include zusatz with eintrag=person %}</div>{% endif %}
+                        </div>
+                    </div>
+                </td>
+                {% if sp_fraktion %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-700 dark:text-gray-300 max-md:hidden">{% if person.angaben.fraktion_name %}<c-insight.fraktion :angaben="person.angaben" />{% endif %}</td>
+                {% endif %}
+                {% if sp_funktion %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-700 dark:text-gray-300 max-sm:hidden">{{ person.angaben.funktion }}</td>
+                {% endif %}
+                {% if sp_gremien %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm text-gray-600 dark:text-gray-400 max-2xl:hidden">{{ person.angaben.gremien_kurz }}</td>
+                {% endif %}
+                {% if sp_kontakt %}
+                <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} max-xl:hidden">
+                    {% if person.email %}
+                    <a href="mailto:{{ person.email }}" class="text-sm text-primary-700 dark:text-primary-300 hover:underline break-all">{{ person.email }}</a>
+                    {% endif %}
+                </td>
+                {% endif %}
+                {% if zusatz %}<td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-200 max-md:hidden">{% include zusatz with eintrag=person %}</td>{% endif %}
+                <td class="px-2 {% if dicht %}py-2{% else %}py-3{% endif %}">
+                    <div class="flex items-center gap-1">
+                        {% if not ohne_merken %}{% include "components/bookmark_star.html" with entity_type="person" entity_id=person.id size="sm" %}{% endif %}
+                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors" aria-hidden="true"></i>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+{% endwith %}
