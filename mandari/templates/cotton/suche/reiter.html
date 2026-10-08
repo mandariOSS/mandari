@@ -3,17 +3,18 @@
 Typ-Reiter der Suche mit Zählern (Konzept Insight-Suche 3.4): Links, die ohne JavaScript funktionieren; mit HTMX
 tauschen sie nur #suchergebnis aus und schreiben die Adresse fort. Reiter ohne Treffer liefert die Seite nicht mit.
   <c-suche.reiter :tabs="tabs" />
-Parameter: tabs (Liste von {key, label, count, url, active}, insight_core.services.search_page.build_context).
+Parameter: tabs (Liste von {key, label, count, url, active}, insight_core.services.search_page.build_context),
+dicht (Reiter 32 px hoch, Schrift 14 px wie in einer Werkzeugleiste; Work. Ohne dicht die Maße des Bürgerportals).
 {% endcomment %}
-<c-vars tabs="" />
+<c-vars tabs="" dicht="" />
 <nav aria-label="Arten der Treffer" class="border-b border-gray-200 dark:border-gray-700">
-    <ul class="flex gap-x-6 overflow-x-auto -mb-px">
+    <ul class="flex {% if dicht %}gap-x-5 text-sm{% else %}gap-x-6{% endif %} overflow-x-auto -mb-px">
         {% for tab in tabs %}
         <li class="shrink-0">
             <a href="{{ tab.url }}" hx-get="{{ tab.url }}" hx-target="#suchergebnis" hx-push-url="true"
                {% if tab.active %}aria-current="page"{% endif %}
-               class="inline-flex items-baseline gap-1.5 min-h-11 pt-2 border-b-2 {% if tab.active %}border-primary-700 dark:border-primary-300 font-semibold text-gray-900 dark:text-white{% else %}border-transparent text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">
-                {{ tab.label }}<span class="tabular-nums text-sm text-gray-600 dark:text-gray-400">{{ tab.count }}</span>
+               class="inline-flex items-baseline gap-1.5 {% if dicht %}min-h-8 pt-1.5{% else %}min-h-11 pt-2{% endif %} border-b-2 {% if tab.active %}border-primary-700 dark:border-primary-300 font-semibold text-gray-900 dark:text-white{% else %}border-transparent text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">
+                {{ tab.label }}<span class="tabular-nums {% if dicht %}text-xs{% else %}text-sm{% endif %} text-gray-600 dark:text-gray-400">{{ tab.count }}</span>
             </a>
         </li>
         {% endfor %}
