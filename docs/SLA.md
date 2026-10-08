@@ -86,7 +86,7 @@ Korrektur folgt nach Release-Politik.
 | Stufe | Servicezeit | Kanäle |
 |---|---|---|
 | Standard | Mo–Fr 08:00–17:00 Uhr (Europe/Berlin), außer gesetzliche Feiertage NRW | Kundenportal (Ticket), E-Mail support@mandari.de |
-| Premium | Mo–Fr 07:00–19:00 Uhr | zusätzlich Telefon |
+| Premium | Mo–Fr 07:00–19:00 Uhr | zusätzlich Rückruf innerhalb der Servicezeit |
 | Enterprise | wie Premium; benannte Ansprechperson; Sitzungstag-Begleitung auf Anfrage | zusätzlich direkter Kanal zur Ansprechperson |
 
 **Rufbereitschaft rund um die Uhr:** In keiner Stufe enthalten. Auf ausdrücklichen Wunsch

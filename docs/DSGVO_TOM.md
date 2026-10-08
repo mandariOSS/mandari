@@ -60,11 +60,11 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
 - Tägliche automatisierte Sicherung aller Datenbanken, Dateien und der
   Konfiguration, vor der Übertragung verschlüsselt (AES-256), in zwei
   räumlich getrennte Rechenzentren (im Betrieb durch mandari: Hetzner Storage
-  Boxen in Falkenstein, Deutschland, und Helsinki, Finnland, EU; auf Wunsch
-  ausschließlich in Deutschland); Aufbewahrung höchstens 30 Tage, danach
-  automatische Löschung. Wöchentliche Integritätsprüfung, monatlicher
-  automatisierter Wiederherstellungstest, Alarmierung bei Fehlern
-  ([Backup-Konzept](BACKUP.md)).
+  Boxen in Falkenstein, Deutschland, und Helsinki, Finnland, EU; bei einer
+  eigenen Instanz auf Wunsch ausschließlich in Deutschland); Aufbewahrung
+  höchstens 30 Tage, danach automatische Löschung. Wöchentliche
+  Integritätsprüfung, monatlicher automatisierter Wiederherstellungstest,
+  Alarmierung bei Fehlern ([Backup-Konzept](BACKUP.md)).
 - Infrastruktur als Container (reproduzierbare Deployments), getrennte
   Staging-/Produktionsumgebung.
 - Monitoring des Sync-/Hintergrunddienstes (Watchdog).
