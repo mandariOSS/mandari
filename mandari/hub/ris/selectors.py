@@ -21,6 +21,7 @@ und ``insight_core``; die Zahl darf nur sinken.
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -146,6 +147,24 @@ def meetings_by_external_id(external_ids: Iterable[str]) -> QuerySet[OParlMeetin
 def agenda_items(meeting: OParlMeeting) -> QuerySet[OParlAgendaItem]:
     """Tagesordnungspunkte einer Sitzung in ihrer Reihenfolge."""
     return OParlAgendaItem.objects.filter(meeting=meeting).order_by("order", "number")
+
+
+def agenda_number_key(number: str | None) -> list[tuple[int, int | str]]:
+    """Natürliche Sortierung von TOP-Nummern: 1, 2, 10 statt 1, 10, 2; Punkte ohne Nummer stehen hinten (wie „999“)."""
+    return [(0, int(p)) if p.isdecimal() else (1, p.lower()) for p in re.split(r"(\d+)", number or "999") if p]
+
+
+def visible_agenda_items(meeting: OParlMeeting) -> list[OParlAgendaItem]:
+    """
+    Tagesordnung, wie die Sitzungsseiten von Insight und Work sie zeigen (Issue #853): ohne in der Quelle gelöschte und
+    von mandari Session zurückgenommene Punkte (etwa nachträglich nichtöffentlich gestellt), natürlich sortiert
+    (``agenda_number_key``, bei gleicher Nummer in der Reihenfolge der Quelle). Eine Abfrage.
+
+    Die Vorbereitung in Work zeigt weiter alle Punkte samt Positionen und Notizen der Organisation.
+    """
+    punkte = list(OParlAgendaItem.objects.filter(meeting=meeting, deleted=False).order_by("order", "number"))
+    punkte.sort(key=lambda punkt: agenda_number_key(punkt.number))
+    return punkte
 
 
 def agenda_item_exists(agenda_item_id: object) -> bool:
@@ -504,7 +523,8 @@ def agenda_items_of_papers(paper_ids: Iterable[object]) -> dict[uuid.UUID, set[u
 def papers_of_agenda_items(agenda_items: Iterable[OParlAgendaItem]) -> dict[uuid.UUID, list[OParlPaper]]:
     """
     Vorlagen je Tagesordnungspunkt (ohne zurückgenommene Beratungen und Vorlagen), in einer Abfrage für alle Punkte
-    einer Sitzung statt einer je Punkt. Punkte ohne Vorlage fehlen.
+    einer Sitzung statt einer je Punkt, je Punkt nach Vorlagen-Nr. und jede Vorlage einmal. Punkte ohne Vorlage fehlen.
+    Sitzungsseiten von Insight und Work (Issue #853).
     """
     punkte = {item.external_id: item.pk for item in agenda_items if item.external_id}
     if not punkte:

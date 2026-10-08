@@ -193,6 +193,58 @@ def test_vorgangsseite_von_insight_liest_den_verlauf_aus_der_fassade(
     assert "im Bauausschuss" in antwort.content.decode()
 
 
+def test_sichtbare_tagesordnung_natuerlich_sortiert_ohne_geloeschte_und_zurueckgenommene(
+    body: OParlBody, django_assert_num_queries: Any
+) -> None:
+    sitzung, punkt_drei = _sitzung(body, 3, "Rat")
+    zehn = OParlAgendaItem.objects.create(external_id=_kennung("items"), meeting=sitzung, number="10", order=1)
+    zwei_b = OParlAgendaItem.objects.create(external_id=_kennung("items"), meeting=sitzung, number="2b", order=3)
+    zwei_a = OParlAgendaItem.objects.create(external_id=_kennung("items"), meeting=sitzung, number="2a", order=2)
+    ohne = OParlAgendaItem.objects.create(external_id=_kennung("items"), meeting=sitzung, number="", order=0)
+    OParlAgendaItem.objects.create(
+        external_id=_kennung("items", SESSION), meeting=sitzung, number="1", name="Zurückgenommen", deleted=True
+    )
+    OParlAgendaItem.objects.create(external_id=_kennung("items"), meeting=sitzung, number="4", deleted=True)
+
+    with django_assert_num_queries(1):
+        punkte = ris.visible_agenda_items(sitzung)
+
+    assert punkte == [zwei_a, zwei_b, punkt_drei, zehn, ohne]
+    # Die bisherige Abfrage der Fassade bleibt vollständig (Vorbereitung, Zuordnungen)
+    assert ris.agenda_items(sitzung).count() == 7
+    assert ris.agenda_number_key("10") > ris.agenda_number_key("9")
+    # Hochgestellte Ziffern sind keine Zahl: kein Fehler beim Sortieren
+    assert ris.agenda_number_key("1²") == [(0, 1), (1, "²")]
+
+
+def test_sitzungsseite_von_insight_liest_tagesordnung_und_vorlagen_aus_der_fassade(
+    body: OParlBody, client: Any, monkeypatch: Any
+) -> None:
+    sitzung, punkt = _sitzung(body, -3, "Bauausschuss")
+    punkt.name = "Radverkehr"
+    punkt.save(update_fields=["name"])
+    vorlage = OParlPaper.objects.create(external_id=_kennung("papers"), body=body, name="Radwegekonzept")
+    _beratung(vorlage, sitzung, punkt)
+    aufrufe: list[str] = []
+    tagesordnung, vorlagen = ris.visible_agenda_items, ris.papers_of_agenda_items
+
+    def tagesordnung_mitschreiben(meeting: OParlMeeting) -> list[OParlAgendaItem]:
+        aufrufe.append("tagesordnung")
+        return tagesordnung(meeting)
+
+    def vorlagen_mitschreiben(punkte: Any) -> dict[uuid.UUID, list[OParlPaper]]:
+        aufrufe.append("vorlagen")
+        return vorlagen(punkte)
+
+    monkeypatch.setattr(ris, "visible_agenda_items", tagesordnung_mitschreiben)
+    monkeypatch.setattr(ris, "papers_of_agenda_items", vorlagen_mitschreiben)
+
+    antwort = client.get(f"/insight/termine/{sitzung.pk}/")
+
+    assert antwort.status_code == 200 and aufrufe == ["tagesordnung", "vorlagen"]
+    assert "Radverkehr" in antwort.content.decode() and "Radwegekonzept" in antwort.content.decode()
+
+
 def test_niederschrift_format_und_dateien_einer_sitzung(body: OParlBody) -> None:
     sitzung, _ = _sitzung(body, -3, "Rat")
     niederschrift = OParlFile.objects.create(external_id=_kennung("files"), body=body, meeting=sitzung, name="N")

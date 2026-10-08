@@ -3,8 +3,8 @@
 Vorgänge im neuen Erscheinungsbild (Issues #852, #853; Recherche › Vorgänge): Suche über Titel und Nummer, Art und
 Jahr wie bisher (Parameter q, type, year, page). Die Liste ist der gemeinsame Baustein von Insight
 (c-liste.vorgaenge, mit Stand-Satz aus dem Beratungsverlauf) mit der Spalte „Für die Fraktion“: zuletzt gesetzte
-Position und Dokumente der Organisation. Kontext: apps/work/ris/neu.vorgaenge; die bisherige Seite bleibt
-work/ris/papers.html.
+Position und Dokumente der Organisation; ohne einen Wert auf der Seite entfällt sie (fraktion_spalte), damit die Titel
+nicht umbrechen. Kontext: apps/work/ris/neu.vorgaenge; die bisherige Seite bleibt work/ris/papers.html.
 {% endcomment %}
 
 {% block page_title %}Vorgänge{% endblock %}
@@ -40,7 +40,7 @@ work/ris/papers.html.
 {% if papers %}
 <div class="mt-4" data-testid="vorgangsliste">
     <c-liste.vorgaenge :vorgaenge="papers" :links="ris_links" dicht ohne_merken
-                       zusatz="work/ris/neu/_vorgang_zeile_fraktion.html" zusatz_titel="Für die Fraktion" />
+                       zusatz="{% if fraktion_spalte %}work/ris/neu/_vorgang_zeile_fraktion.html{% endif %}" zusatz_titel="Für die Fraktion" />
 </div>
 <c-liste.seiten :seite="papers" dicht />
 {% else %}

@@ -3,9 +3,11 @@
 Sitzung eines Gremiums im neuen Erscheinungsbild (Issues #852, #853): Kopf mit Termin, Ort und einer Hauptaktion
 („Sitzung vorbereiten“ mit meetings.prepare), Tagesordnung mit allen Vorlagen je Punkt und je Punkt „Für die
 Fraktion“ (Position, Notizen), daneben Vorbereitungsstand und Dokumente der Fraktion, Niederschrift und Teilnahme der
-Öffentlichkeit wie in Insight (pages/meetings/_protocol_card.html, _broadcast_card.html), die übrigen Sitzungsdateien
-als Dokumentzeilen (c-insight.document-row), Gremien und Angaben. Kontext: apps/work/ris/neu.sitzung; die bisherige
-Seite bleibt work/ris/meeting_detail.html.
+Öffentlichkeit aus denselben Bausteinen wie Insight in der dichten Fassung (pages/meetings/_protocol_card.html,
+_broadcast_card.html mit ``dicht``: Abschnitte ohne Rahmen, Textlinks statt weiterer Hauptaktionen), die übrigen
+Sitzungsdateien als Dokumentzeilen (c-insight.document-row), Gremien und Angaben. Die Tagesordnung zeigt wie Insight
+keine gelöschten und von Session zurückgenommenen Punkte. Kontext: apps/work/ris/neu.sitzung; die bisherige Seite
+bleibt work/ris/meeting_detail.html.
 {% endcomment %}
 
 {% block page_title %}{% if meeting %}{{ meeting.get_display_name|truncatechars:50 }}{% else %}Sitzung{% endif %}{% endblock %}
@@ -77,8 +79,8 @@ Seite bleibt work/ris/meeting_detail.html.
             </p>
         </c-rahmen.band>
 
-        {% include "pages/meetings/_protocol_card.html" %}
-        {% include "pages/meetings/_broadcast_card.html" %}
+        {% include "pages/meetings/_protocol_card.html" with dicht=True %}
+        {% include "pages/meetings/_broadcast_card.html" with dicht=True %}
 
         {% if sitzungsdateien or sitzungsdateien_gesperrt %}
         <c-rahmen.abschnitt titel="Sitzungsdateien" titel_id="sitzungsdateien-titel">

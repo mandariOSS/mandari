@@ -9,7 +9,6 @@ zusätzlich die Session-Mandanten, die mit diesen Kommunen verknüpft sind.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any, cast
@@ -21,6 +20,7 @@ from django.utils import timezone
 from apps.session.models import SessionAgendaItem, SessionOrganization, SessionTenant
 from apps.session.services.resolution_service import DECIDED_ITEMS_ORDERING, DECIDED_RESULTS
 from apps.tenants.models import Organization
+from hub.ris.selectors import agenda_number_key
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -138,14 +138,9 @@ def organizations_for_filter(bodies: Bodies) -> QuerySet[OParlOrganization]:
     return OParlOrganization.objects.filter(body__in=bodies).order_by("name")
 
 
-def _natural_key(number: str | None) -> list[tuple[int, int | str]]:
-    """Natürliche Sortierung von TOP-Nummern: 1, 2, 10 statt 1, 10, 2."""
-    return [(0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", number or "999") if p]
-
-
 def agenda_items_with_papers(meeting: OParlMeeting) -> list[dict[str, Any]]:
     """Tagesordnung natürlich sortiert, je TOP mit verknüpften Vorgängen."""
-    items = sorted(meeting.agenda_items.all(), key=lambda item: _natural_key(item.number))
+    items = sorted(meeting.agenda_items.all(), key=lambda item: agenda_number_key(item.number))
     return [{"item": item, "papers": cast(Any, item).get_papers()} for item in items]
 
 
