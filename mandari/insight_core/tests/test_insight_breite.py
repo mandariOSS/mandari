@@ -321,8 +321,9 @@ class TestBreite:
     @pytest.mark.parametrize(
         "datei",
         [
-            "cotton/insight/band.html",
-            "cotton/insight/kopfband.html",
+            # Band und Kopfband teilen sich Insight und Work (c-insight.* reicht an c-rahmen.* durch, Issue #853)
+            "cotton/rahmen/band.html",
+            "cotton/rahmen/kopfband.html",
             "components/insight_footer.html",
             "pages/portal/home.html",
             "partials/search_ortsband.html",
@@ -466,10 +467,11 @@ class TestBreiteNachPruefung:
     @pytest.mark.parametrize(
         "datei",
         [
-            "partials/person_list_items.html",
-            "partials/organization_list_items.html",
-            "partials/meeting_list_items.html",
-            "partials/paper_list_items.html",
+            # Die Tabellen der Listen-Partials sind gemeinsame Bausteine mit Work (c-liste.*, Issue #853)
+            "cotton/liste/personen.html",
+            "cotton/liste/gremien.html",
+            "cotton/liste/sitzungen.html",
+            "cotton/liste/vorgaenge.html",
         ],
     )
     def test_scrollbehaelter_haelt_sr_only_kopf(self, datei: str) -> None:
