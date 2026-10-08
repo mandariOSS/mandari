@@ -13,8 +13,12 @@ Team und Recherche, darunter Einstellungen, Hilfe und die Person (Entscheidung i
 „Fraktionssitzungen“ als eigener Eintrag, im Kern die bisherige Gliederung). Welcher Bereich aktiv ist, folgt aus dem
 Namen der aufgerufenen Adresse; die rund 70 Seiten brauchen dafür keine eigene Angabe. Sitzungen und Recherche haben
 Reiter über die vorhandenen Listen, die Recherche zusätzlich Unterpunkte in der Seitenleiste (aufklappbar, auf ihren
-Seiten offen). Jede bisherige Seite bleibt unter ihrer Adresse erreichbar, das Ratsinformationssystem bleibt
-vollständig in Work (Entscheidung Sven vom 06.10.2026: keine RIS-Seite fällt weg).
+Seiten offen). Die Sitzungen der Gremien stehen nur unter „Sitzungen › Alle Gremien“. Jede bisherige Seite bleibt unter
+ihrer Adresse erreichbar, das Ratsinformationssystem bleibt vollständig in Work (Entscheidung Sven vom 06.10.2026:
+keine RIS-Seite fällt weg).
+
+Brotkrumen: Raum › Bereich › Reiter › Seite. Kennt der Rahmen die Seite nicht selbst (Detail- und Formularseiten),
+ergänzt ``work/base_work_neu.html`` ihren Titel als letzte Krume (``seite_titel_krume``).
 
 ``aria-current``: ``page`` nur am Eintrag, der genau auf die geöffnete Seite zeigt; ``true`` am Bereich (bzw.
 Unterpunkt), in dem die Seite liegt, z. B. „Recherche“ auf einem Vorgang.
@@ -93,11 +97,10 @@ REITER: dict[str, tuple[Ziel, ...]] = {
     "recherche": (Ziel("uebersicht", "Übersicht", "work:ris_overview"), *_RIS_SEITEN),
 }
 
-#: Unterpunkte in der Seitenleiste (aufklappbar): alle bisherigen Einträge der Gruppe „Ratsinformation“; die
-#: Übersicht ist der Bereich selbst, die Sitzungen der Gremien liegen zugleich unter „Sitzungen › Alle Gremien“.
-UNTERPUNKTE: dict[str, tuple[Ziel, ...]] = {
-    "recherche": (Ziel("alle_gremien", "Sitzungen der Gremien", "work:ris_meetings"), *_RIS_SEITEN),
-}
+#: Unterpunkte in der Seitenleiste (aufklappbar): die bisherigen Einträge der Gruppe „Ratsinformation“. Die Übersicht
+#: ist der Bereich selbst; die Sitzungen der Gremien stehen nur an einer Stelle, unter „Sitzungen › Alle Gremien“
+#: (Bestandsaufnahme vom 08.10.2026, Issue #951: kein doppelter Weg zur selben Liste).
+UNTERPUNKTE: dict[str, tuple[Ziel, ...]] = {"recherche": _RIS_SEITEN}
 
 #: Seiten mit fester Einordnung: Adressname → (Bereich, Reiter, eigene Brotkrume)
 SEITEN: dict[str, tuple[str, str | None, str | None]] = {
@@ -297,6 +300,7 @@ def navigation(organization: Any, membership: Any, url_name: str) -> dict[str, A
         "mehr": mehr,
         "mehr_aktiv": mehr_aktiv,
         "reiter": reiter,
+        "reiter_label": next((b["label"] for b in bereiche if b["aktiv"]), ""),
         "brotkrumen": brotkrumen(organization, hauptbereiche, bereich, reiter_key, seite, url_name),
         "ist_gast": ist_gast,
         "start_url": bereiche[0]["url"],
@@ -315,7 +319,10 @@ def brotkrumen(
     seite: str | None,
     url_name: str,
 ) -> list[dict[str, Any]]:
-    """Raum › Bereich › Reiter › Seite; der letzte Eintrag ist die aktuelle Seite, sofern der Rahmen sie kennt."""
+    """
+    Raum › Bereich › Reiter › Seite; der letzte Eintrag ist die aktuelle Seite, sofern der Rahmen sie kennt. Sonst
+    (Detail- und Formularseiten) ergänzt ``work/base_work_neu.html`` den Seitentitel als letzte Krume.
+    """
     slug = organization.slug
     alle = {z.key: z for z in (*hauptbereiche, EINSTELLUNGEN, HILFE, PERSON, BENACHRICHTIGUNGEN)}
     krumen: list[dict[str, Any]] = [{"label": organization.name, "url": _url(hauptbereiche[0], slug), "aktuell": False}]
@@ -327,10 +334,10 @@ def brotkrumen(
     # Der erste Reiter ist die Startseite des Bereichs und bekommt keine eigene Krume
     if reiter is not None and reiter is erster_reiter:
         reiter = None
-    auf_bereich = url_name == ziel.url_name.split(":", 1)[1] and seite is None
+    auf_bereich = _ist_seite(ziel, url_name) and seite is None
     krumen.append({"label": ziel.label, "url": _url(ziel, slug), "aktuell": auf_bereich})
     if reiter is not None:
-        auf_reiter = url_name == reiter.url_name.split(":", 1)[1] and seite is None
+        auf_reiter = _ist_seite(reiter, url_name) and seite is None
         krumen.append({"label": reiter.label, "url": _url(reiter, slug), "aktuell": auf_reiter})
     if seite:
         krumen.append({"label": seite, "url": "", "aktuell": True})

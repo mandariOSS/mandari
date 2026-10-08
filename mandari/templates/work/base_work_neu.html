@@ -1,4 +1,4 @@
-{% load static %}
+{% load static work_rahmen %}
 <!DOCTYPE html>
 <html lang="de" class="scroll-smooth" data-rahmen="neu" x-data="workRahmen" :class="{ 'dark': darkMode }">
 <head>
@@ -10,7 +10,8 @@
     <meta name="robots" content="noindex, nofollow">
     {% include "pwa/meta.html" %}
 
-    <title>{% block page_title %}Work{% endblock %} | {{ organization.name }}</title>
+    {# Den Seitentitel merkt sich der Rahmen für die letzte Brotkrume (apps/work/templatetags/work_rahmen.py) #}
+    <title>{% merken "seitentitel" %}{% block page_title %}Work{% endblock %}{% endmerken %} | {{ organization.name }}</title>
 
     <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
     <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
@@ -77,7 +78,8 @@
                 <nav aria-label="Brotkrumen" class="hidden lg:block flex-1 min-w-0 text-sm">
                     <ol class="flex items-center gap-1.5 min-w-0 text-gray-600 dark:text-gray-400">
                         {% include "work/rahmen/_brotkrumen.html" %}
-                        {% block brotkrumen_aktuell %}{% endblock %}
+                        {# Detail- und Formularseiten, die der Rahmen nicht selbst kennt: ihr Titel als letzte Krume; eigene Krumen per Block #}
+                        {% block brotkrumen_aktuell %}{% with letzte=work_rahmen.brotkrumen|last %}{% if seitentitel and seitentitel != "Work" and not letzte.aktuell %}<c-rahmen.brotkrume>{{ seitentitel }}</c-rahmen.brotkrume>{% endif %}{% endwith %}{% endblock %}
                     </ol>
                 </nav>
                 {% if work_rahmen.suche_url %}

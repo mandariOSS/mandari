@@ -6,6 +6,8 @@ Geprüft: „Fraktionssitzungen“ ist ein eigener Eintrag der Seitenleiste. Die
 Knopf (auch per Tastatur) auf und zu, führen auf die Seiten des Ratsinformationssystems (aria-current „page“ am
 Unterpunkt, „true“ am Bereich) und bleiben offen, bis man sie wieder zuklappt. Im Druck fehlen Seitenleiste,
 Kopfzeile, Reiter und Leiste unten, der Inhalt beginnt am linken Rand. axe ohne schwere Befunde im Rahmen.
+Brotkrumen nennen auf Formularseiten den Seitentitel und führen zurück; die Sitzungen der Gremien stehen nur unter
+„Sitzungen › Alle Gremien“.
 """
 
 from __future__ import annotations
@@ -76,6 +78,41 @@ class TestNavigation:
         goto(f"/work/{slug}/")
         expect(unterpunkte).to_be_hidden()
         problems.assert_clean("Fraktionssitzungen und Recherche aufklappen")
+
+    @pytest.mark.parametrize("breite", [1280, 1920, 2560])
+    def test_brotkrumen_nennen_die_seite_und_fuehren_zurueck(
+        self, page: Any, goto: Any, login: Any, neu: Any, screenshot: Any, problems: BrowserProblems, breite: int
+    ) -> None:
+        """Formularseiten nennen ihren Titel als letzte Krume; der Bereich davor führt zurück (Issue #951)."""
+        page.set_viewport_size({"width": breite, "height": 900})
+        login(neu.user.email, PASSWORD)
+        slug = neu.organization.slug
+        goto(f"/work/{slug}/organization/members/")
+        krumen = page.locator("nav[aria-label=Brotkrumen]")
+        expect(krumen.locator("[aria-current=page]")).to_have_text("Mitglieder")
+        screenshot(f"work-brotkrumen-mitglieder-{breite}")
+        krumen.get_by_role("link", name="Einstellungen", exact=True).click()
+        page.wait_for_url(f"**/work/{slug}/organization/")
+        expect(krumen.locator("[aria-current=page]")).to_have_text("Einstellungen")
+        expect(krumen.locator("li")).to_have_count(2)
+        problems.assert_clean("Brotkrumen")
+
+    def test_sitzungen_der_gremien_nur_unter_sitzungen(
+        self, page: Any, goto: Any, login: Any, neu: Any, screenshot: Any
+    ) -> None:
+        """Die Recherche verweist nicht ein zweites Mal auf die Sitzungen der Gremien (Issue #951)."""
+        page.set_viewport_size({"width": 390, "height": 844})
+        login(neu.user.email, PASSWORD)
+        slug = neu.organization.slug
+        goto(f"/work/{slug}/meetings/")
+        reiter = page.locator("nav[aria-label=Sitzungen]")
+        expect(reiter.get_by_role("link", name="Alle Gremien", exact=True)).to_be_visible()
+        screenshot("work-sitzungen-reiter-390")
+        page.set_viewport_size({"width": 1280, "height": 900})
+        goto(f"/work/{slug}/ris/")
+        expect(page.locator("#leiste-recherche")).to_be_visible()
+        expect(page.locator("#leiste-recherche").get_by_role("link", name="Vorgänge", exact=True)).to_be_visible()
+        expect(page.locator("#work-navigation").locator(f"a[href='/work/{slug}/ris/meetings/']")).to_have_count(0)
 
     @pytest.mark.parametrize("breite", [1280, 390])
     def test_druck_ohne_rahmen(self, page: Any, goto: Any, login: Any, neu: Any, breite: int) -> None:

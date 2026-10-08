@@ -4,11 +4,12 @@ Rahmen von Work, Teil 2 (Issue #852): Navigation nach der Entscheidung im Issue 
 
 Geprüft: Die Seitenleiste ist kompakt und hat „Fraktionssitzungen“ als eigenen Eintrag (Start, Sitzungen,
 Fraktionssitzungen, Dokumente, Aufgaben, Team, Recherche); „Sitzungen“ hat die Reiter „Für mich“ und „Alle Gremien“;
-die Recherche trägt alle Seiten des Ratsinformationssystems als Unterpunkte (auf ihren Seiten offen, sonst
-aufklappbar). Am Handy: Start, Sitzungen, Fraktion, Recherche und „Mehr“. ``aria-current`` unterscheidet die
-geöffnete Seite (``page``) vom Bereich, in dem sie liegt (``true``). Leiste, Kopfzeile, Reiter und Leiste unten
-fehlen im Druck. Kein Eintrag der bisherigen Navigation geht verloren: Jede Adresse aus dem bisherigen Rahmen steht
-im neuen und antwortet.
+die Recherche trägt die Seiten des Ratsinformationssystems als Unterpunkte (auf ihren Seiten offen, sonst
+aufklappbar), die Sitzungen der Gremien aber nur an einer Stelle (Sitzungen › Alle Gremien, Issue #951). Am Handy:
+Start, Sitzungen, Fraktion, Recherche und „Mehr“. ``aria-current`` unterscheidet die geöffnete Seite (``page``) vom
+Bereich, in dem sie liegt (``true``). Brotkrumen nennen auf Detail- und Formularseiten den Seitentitel als letzte
+Krume. Leiste, Kopfzeile, Reiter und Leiste unten fehlen im Druck. Kein Eintrag der bisherigen Navigation geht
+verloren: Jede Adresse aus dem bisherigen Rahmen steht im neuen und antwortet.
 """
 
 from __future__ import annotations
@@ -28,7 +29,6 @@ from apps.work import rahmen
 ALT_RAHMEN = ("base_work_alt_leiste.html", "base_work_alt_kopf.html")
 SIEBEN = ["Start", "Sitzungen", "Fraktionssitzungen", "Dokumente", "Aufgaben", "Team", "Recherche"]
 RECHERCHE_UNTERPUNKTE = {
-    "ris_meetings": "Sitzungen der Gremien",
     "ris_papers": "Vorgänge",
     "ris_decisions": "Beschlüsse",
     "ris_organizations": "Gremien",
@@ -163,8 +163,8 @@ def test_recherche_offen_auf_ihren_seiten(neu: Organization, admin: Any, client_
         ("ris_overview", "recherche", "page", None, None),
         ("ris_papers", "recherche", "true", "Vorgänge", "page"),
         ("ris_paper_detail", "recherche", "true", "Vorgänge", "true"),
-        ("ris_meetings", "sitzungen", "true", "Sitzungen der Gremien", "page"),
-        ("ris_meeting_detail", "sitzungen", "true", "Sitzungen der Gremien", "true"),
+        ("ris_meetings", "sitzungen", "true", None, None),
+        ("ris_meeting_detail", "sitzungen", "true", None, None),
     ],
 )
 def test_aria_current_unterscheidet_bereich_und_seite(
@@ -267,7 +267,9 @@ def test_kein_eintrag_der_bisherigen_navigation_fehlt(neu: Organization, admin: 
     client = client_for(admin.user)
     html = _html(client.get(_url("dashboard", neu)))
     ziele = [name for name in _bisherige_ziele() if name != "guest_documents"]  # nur für Gäste, Test unten
-    fehlend = [name for name in ziele if f'"{_url(name, neu)}"' not in html]
+    # „Ratsinformation › Sitzungen“ steht nur an einer Stelle: Reiter „Alle Gremien“ auf „Sitzungen“ (Issue #951)
+    reiter_sitzungen = _teil(_html(client.get(_url("meetings", neu))), '<nav aria-label="Sitzungen"', "</nav>")
+    fehlend = [name for name in ziele if f'"{_url(name, neu)}"' not in html + reiter_sitzungen]
     assert fehlend == [], fehlend
     # Das Logo der Organisation führte auf die Startseite von mandari: jetzt im Raum-Dialog
     raum_dialog = html.split('id="raum-dialog"', 1)[1]
@@ -287,3 +289,133 @@ def test_gast_behaelt_freigaben_und_profil(neu: Organization, client_for: Any) -
     assert f'href="{_url("guest_documents", neu)}"' in _leiste(html)
     assert f'href="{_url("profile", neu)}"' in html
     assert 'id="leiste-recherche"' not in html
+
+
+# ---- Sitzungen der Gremien nur an einer Stelle (Issue #951) --------------------------------------------------
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("name", ["dashboard", "ris_overview", "ris_papers", "ris_meetings"])
+def test_sitzungen_der_gremien_nur_unter_sitzungen(neu: Organization, admin: Any, client_for: Any, name: str) -> None:
+    """Die Recherche verweist nicht ein zweites Mal auf die Sitzungen der Gremien; der Weg ist „Sitzungen › Alle
+    Gremien“."""
+    html = _html(client_for(admin.user).get(_url(name, neu)))
+    leiste = _leiste(html)
+    assert f'href="{_url("ris_meetings", neu)}"' not in leiste
+    assert "Sitzungen der Gremien" not in leiste
+    if '<nav aria-label="Recherche"' in html:
+        assert f'href="{_url("ris_meetings", neu)}"' not in _teil(html, '<nav aria-label="Recherche"', "</nav>")
+
+
+# ---- Brotkrumen ----------------------------------------------------------------------------------------------
+
+
+def _krumen(html: str) -> list[tuple[str, str]]:
+    """(Beschriftung, Art) je Brotkrume: ``link``, ``aktuell`` (aria-current) oder ``text``."""
+    teil = _teil(html, 'aria-label="Brotkrumen"', "</nav>")
+    ergebnis = []
+    for li in re.findall(r"<li\b.*?</li>", teil, re.S):
+        treffer = re.search(r"<(a|span)\b([^>]*)>\s*([^<]+?)\s*</(?:a|span)>", li)
+        assert treffer, li
+        art = "link" if treffer.group(1) == "a" else "aktuell" if "aria-current" in treffer.group(2) else "text"
+        ergebnis.append((treffer.group(3), art))
+    return ergebnis
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("name", "erwartet"),
+    [
+        # Formularseiten der Einstellungen: Bereich als Weg zurück, der Seitentitel als aktuelle Seite
+        ("members", [("Einstellungen", "link"), ("Mitglieder", "aktuell")]),
+        ("organization_api_settings", [("Einstellungen", "link"), ("API", "aktuell")]),
+        ("organization_documents", [("Einstellungen", "link"), ("Anträge & Vorgänge", "aktuell")]),
+        ("security", [("Profil", "link"), ("Sicherheit", "aktuell")]),
+        ("document_create", [("Dokumente", "link"), ("Neues Dokument", "aktuell")]),
+        # Seiten, die der Rahmen selbst kennt: keine zweite Krume
+        ("dashboard", [("Start", "aktuell")]),
+        ("dashboard_explicit", [("Start", "aktuell")]),
+        ("meetings", [("Sitzungen", "aktuell")]),
+        ("ris_meetings", [("Sitzungen", "link"), ("Alle Gremien", "aktuell")]),
+        ("meetings_calendar", [("Sitzungen", "link"), ("Kalender", "aktuell")]),
+        ("ris_papers", [("Recherche", "link"), ("Vorgänge", "aktuell")]),
+    ],
+)
+def test_brotkrumen_nennen_die_geoeffnete_seite(
+    neu: Organization, admin: Any, client_for: Any, name: str, erwartet: list[tuple[str, str]]
+) -> None:
+    krumen = _krumen(_html(client_for(admin.user).get(_url(name, neu))))
+    assert krumen[0] == ("Fraktion Test", "link")
+    assert krumen[1:] == erwartet
+    # Genau eine Krume ist die geöffnete Seite
+    assert [k for k in krumen if k[1] == "aktuell"] == [erwartet[-1]]
+
+
+def test_merken_gibt_aus_und_legt_ab() -> None:
+    from django.template import Context, Template
+
+    vorlage = Template(
+        '{% load work_rahmen %}<t>{% merken "titel" %}\n  Vorbereitung:\n  A &amp; B {% endmerken %}</t>{{ titel }}'
+    )
+    assert vorlage.render(Context()) == "<t>\n  Vorbereitung:\n  A &amp; B </t>Vorbereitung: A &amp; B"
+
+
+# ---- Gemeinsame Bausteine ------------------------------------------------------------------------------------
+
+
+def _baustein(source: str, **context: object) -> str:
+    from django.template import engines
+    from django_cotton.compiler_regex import CottonCompiler
+
+    return str(engines["django"].from_string(CottonCompiler().process(source)).render(context))
+
+
+def _flach(html: str) -> str:
+    return re.sub(r">\s+<", "><", " ".join(html.split())).strip()
+
+
+def test_brotkrume_von_insight_bleibt_gleich() -> None:
+    """Insight nutzt den gemeinsamen Baustein, das Markup bleibt wie bisher (Issue #783)."""
+    html = _baustein("<c-insight.brotkrume>Sitzung</c-insight.brotkrume>")
+    assert _flach(html) == (
+        '<li class="flex items-center gap-1.5 min-w-0">'
+        '<i data-lucide="chevron-right" class="w-3.5 h-3.5 shrink-0 text-gray-400" aria-hidden="true"></i>'
+        '<span aria-current="page" class="font-medium text-gray-900 dark:text-gray-100 truncate">Sitzung</span></li>'
+    )
+
+
+def test_brotkrume_mit_adresse_und_als_text() -> None:
+    link = _flach(_baustein('<c-rahmen.brotkrume href="/r/">Recherche</c-rahmen.brotkrume>'))
+    assert '<a href="/r/"' in link and "aria-current" not in link and "chevron-right" in link
+    text = _flach(_baustein('<c-rahmen.brotkrume nur_text="1" erste="1">Raum</c-rahmen.brotkrume>'))
+    assert '<span class="truncate">Raum</span>' in text
+    assert "aria-current" not in text and "chevron-right" not in text
+
+
+def test_link_reiter() -> None:
+    """Allgemeiner Link-Reiter (für Rahmen, Einstellungen, Profil): Links mit aria-current, weitere Attribute am Link."""
+    html = _baustein(
+        '<c-rahmen.reiter label="Einstellungen" class="mb-6">'
+        '<c-rahmen.reiter-link href="/a/" aktiv>Allgemein</c-rahmen.reiter-link>'
+        '<c-rahmen.reiter-link href="/b/" hx-boost="true">Mitglieder</c-rahmen.reiter-link>'
+        '<c-rahmen.reiter-link href="/c/" :aktiv="True" current="true">Rollen</c-rahmen.reiter-link>'
+        "</c-rahmen.reiter>"
+    )
+    nav = _oeffnendes_tag(html, 'aria-label="Einstellungen"')
+    assert nav.startswith("<nav ") and "print:hidden" in nav and "mb-6" in nav
+    assert _current(html, "/a/") == ["page"]
+    assert _current(html, "/b/") == [""]
+    assert _current(html, "/c/") == ["true"]
+    assert 'hx-boost="true"' in _oeffnendes_tag(html, 'href="/b/"')
+    assert re.findall(r'whitespace-nowrap[^"]*">([^<]+)</a>', html) == ["Allgemein", "Mitglieder", "Rollen"]
+
+
+def test_kein_rest_des_bisherigen_rahmens_ausserhalb_seiner_vorlagen() -> None:
+    """Regeln für ``aside.work-sidebar`` stehen nur noch in den Vorlagen des bisherigen Rahmens (Issue #951)."""
+    vorlagen = settings.BASE_DIR / "templates"
+    fundstellen = [
+        str(pfad.relative_to(vorlagen))
+        for pfad in vorlagen.rglob("*.html")
+        if "work-sidebar" in pfad.read_text(encoding="utf-8") and not pfad.name.startswith("base_work_alt")
+    ]
+    assert fundstellen == []

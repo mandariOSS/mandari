@@ -1,17 +1,13 @@
 {% comment %}
 Reiter eines Bereichs über den vorhandenen Listen (Issue #852): Sitzungen „Für mich · Alle Gremien“ (die
 Fraktionssitzungen sind ein eigener Bereich), Recherche mit allen Seiten des Ratsinformationssystems. Nur auf den
-Listen selbst; Detailseiten zeigen den Weg in den Brotkrumen. Am Handy waagerecht verschiebbar, nicht im Druck.
+Listen selbst; Detailseiten zeigen den Weg in den Brotkrumen. Baustein Link-Reiter (c-rahmen.reiter), am Handy
+waagerecht verschiebbar, nicht im Druck.
 {% endcomment %}
 {% if work_rahmen.reiter %}
-<nav aria-label="{% for b in work_rahmen.bereiche %}{% if b.aktiv %}{{ b.label }}{% endif %}{% endfor %}" class="rahmen-zeile shrink-0 print:hidden bg-band-hell border-b border-gray-200 dark:border-gray-800">
-    <ul class="flex gap-5 overflow-x-auto -mb-px">
-        {% for r in work_rahmen.reiter %}
-        <li class="shrink-0">
-            <a href="{{ r.url }}" {% if r.current %}aria-current="{{ r.current }}"{% endif %}
-               class="inline-flex items-center h-10 border-b-2 text-sm whitespace-nowrap {% if r.aktiv %}border-primary-600 font-semibold text-gray-900 dark:border-primary-400 dark:text-white{% else %}border-transparent font-medium text-gray-600 hover:text-gray-900 hover:border-gray-300 dark:text-gray-400 dark:hover:text-white{% endif %}">{{ r.label }}</a>
-        </li>
-        {% endfor %}
-    </ul>
-</nav>
+<c-rahmen.reiter label="{{ work_rahmen.reiter_label }}" class="rahmen-zeile bg-band-hell">
+    {% for r in work_rahmen.reiter %}
+    <c-rahmen.reiter-link href="{{ r.url }}" :aktiv="r.aktiv" current="{{ r.current }}">{{ r.label }}</c-rahmen.reiter-link>
+    {% endfor %}
+</c-rahmen.reiter>
 {% endif %}
