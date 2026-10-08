@@ -30,9 +30,9 @@ from typing import Any
 from django.conf import settings
 from django.utils import timezone
 
-from insight_ai.providers import chat_provider
+from insight_ai.providers import OpenAICompatibleProvider, chat_provider
 from insight_ai.providers.base import ToolChatResponse
-from insight_ai.services.chat_tools import TOOLS, context_for, run_tool, select_sources
+from insight_ai.services.chat_tools import TOOLS, ToolContext, context_for, run_tool, select_sources
 from insight_ai.services.prompts import build_chat_system_prompt
 
 logger = logging.getLogger(__name__)
@@ -112,6 +112,9 @@ def process_chat_message(
     body_id: str | None,
     *,
     now: datetime | None = None,
+    tool_context: ToolContext | None = None,
+    system_prompt: str | None = None,
+    provider: OpenAICompatibleProvider | None = None,
 ) -> dict[str, Any]:
     """
     Eine Frage beantworten: Werkzeugrunden über die Ratsdaten der Kommune, dann die Antwort.
@@ -121,6 +124,10 @@ def process_chat_message(
         history: Verlauf ``[{role, content}, …]`` aus dem Browser
         body_id: Kennung der gewählten Kommune (oder ``None``)
         now: Zeitpunkt der Frage (Standard: jetzt; Tests setzen ihn fest)
+        tool_context: eigener Werkzeugkontext statt dem der Kommune ``body_id`` (Work: Links auf Work-Seiten,
+            Issue #853); wird so verwendet, wie er ist
+        system_prompt: eigener Systemprompt statt dem des Bürgerportals (Work)
+        provider: eigener Anbieter statt dem des Bürgerportals (Work: der KI-Anbieter der Organisation)
 
     Returns:
         ``{"response", "sources", "tokens_used", "prompt_tokens", "completion_tokens", "rounds", "tool_calls"}``
@@ -128,7 +135,8 @@ def process_chat_message(
     Raises:
         ValueError: Der KI-Anbieter ist nicht konfiguriert oder antwortet nicht.
     """
-    provider = chat_provider()
+    eigener_anbieter = provider is not None
+    provider = provider or chat_provider()
     if not provider.is_available():
         raise ValueError("KI-Assistent ist nicht konfiguriert.")
 
@@ -137,13 +145,16 @@ def process_chat_message(
     max_rounds = _setting_int("INSIGHT_CHAT_MAX_TOOL_ROUNDS", 4, 1)
     time_limit = float(_setting_int("INSIGHT_CHAT_TIME_LIMIT_SECONDS", 90, MIN_TIME_LIMIT_SECONDS))
     deadline = started + time_limit
-    tool_model = str(getattr(settings, "INSIGHT_CHAT_TOOL_MODEL", "") or "").strip() or None
+    # Das Werkzeugmodell gehört zum Anbieter des Bürgerportals; ein eigener Anbieter nutzt sein Hauptmodell
+    tool_model = (
+        None if eigener_anbieter else str(getattr(settings, "INSIGHT_CHAT_TOOL_MODEL", "") or "").strip() or None
+    )
 
-    ctx = context_for(body_id, now=now) if body_id else None
+    ctx = tool_context if tool_context is not None else (context_for(body_id, now=now) if body_id else None)
     tools = TOOLS if ctx is not None else None
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_chat_system_prompt(now, ctx.body_name if ctx else None)}
+        {"role": "system", "content": system_prompt or build_chat_system_prompt(now, ctx.body_name if ctx else None)}
     ]
     messages.extend(_build_history_messages(history, MAX_HISTORY_TOKENS))
     messages.append({"role": "user", "content": message})

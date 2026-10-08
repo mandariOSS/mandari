@@ -353,6 +353,8 @@ CASES: list[Case] = [
         method="json",
     ),
     Case("paper_comment_delete", path={"comment_id": "paper_comment"}, method="delete"),
+    # Fragen an die Ratsdaten (Issue #853): nur lesend, schreibt höchstens den KI-Verbrauch der eigenen Organisation
+    Case("ris_frage", data={"frage": "Welche Sitzungen finden diese Woche statt?"}),
     # --- Dokumente ---
     Case(
         "document_create",

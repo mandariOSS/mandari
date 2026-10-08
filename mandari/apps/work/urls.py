@@ -605,6 +605,7 @@ urlpatterns = [
     # RIS (wrapped insight_core views)
     path("<slug:org_slug>/ris/", ris_views.RISOverviewView.as_view(), name="ris_overview"),
     path("<slug:org_slug>/ris/search/", ris_views.RISSearchView.as_view(), name="ris_search"),
+    path("<slug:org_slug>/ris/search/frage/", ris_views.RISFrageView.as_view(), name="ris_frage"),
     path("<slug:org_slug>/ris/papers/", ris_views.RISPapersView.as_view(), name="ris_papers"),
     path(
         "<slug:org_slug>/ris/papers/<uuid:paper_id>/",

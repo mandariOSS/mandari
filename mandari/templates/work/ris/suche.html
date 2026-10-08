@@ -30,6 +30,7 @@ Rahmen behält work/ris/search.html. Den Ergebnisbereich teilt die Seite mit der
         </div>
         <button type="submit" class="shrink-0 min-h-10 px-4 rounded-md bg-primary-700 hover:bg-primary-800 text-white text-sm font-semibold">Suchen</button>
     </form>
+    {% if fragen_verfuegbar %}{% include "work/ris/partials/frage_feld.html" %}{% endif %}
 </header>
 {% endblock %}
 
@@ -39,6 +40,7 @@ Rahmen behält work/ris/search.html. Den Ergebnisbereich teilt die Seite mit der
 {% else %}
 {# Sprungziel nach Filtern in der klebenden Spalte; nur ab 2xl mit Box, darunter springt nichts (wie im Bürgerportal) #}
 <div id="suche-anfang" class="hidden 2xl:block scroll-mt-28" aria-hidden="true"></div>
+{% if fragen_verfuegbar %}<div id="ki-antwort" class="scroll-mt-16" aria-live="polite"></div>{% endif %}
 <div id="suchergebnis">
     {% if not suche_leer %}{% include "partials/search_page.html" %}{% endif %}
 </div>

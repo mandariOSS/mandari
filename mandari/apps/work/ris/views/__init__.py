@@ -17,6 +17,9 @@ from .decisions import (
 from .files import (
     RISFilesView,
 )
+from .fragen import (
+    RISFrageView,
+)
 from .map import (
     RISMapDataView,
     RISMapView,
@@ -48,6 +51,7 @@ __all__ = [
     "RISBodiesMixin",
     "RISDecisionsView",
     "RISFilesView",
+    "RISFrageView",
     "RISMapDataView",
     "RISMapView",
     "RISMeetingDetailView",
