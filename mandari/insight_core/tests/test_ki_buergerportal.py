@@ -117,11 +117,9 @@ class TestAnbieterAusDerKonfiguration:
             chat_service.process_chat_message("Was ist geplant?", [], None)
         assert anfragen == []
 
-    def test_assistent_fragt_den_konfigurierten_endpunkt(
-        self, anfragen: list[httpx.Request], monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_assistent_fragt_den_konfigurierten_endpunkt(self, anfragen: list[httpx.Request]) -> None:
         _einrichten()
-        monkeypatch.setattr(chat_service, "build_rag_context", lambda query, body_id: ("", []))
+        # Ohne Kommune keine Werkzeuge (Issue #899): genau eine Anfrage an den konfigurierten Endpunkt
         ergebnis = chat_service.process_chat_message("Was ist geplant?", [], None)
         assert ergebnis["response"]
         assert len(anfragen) == 1 and str(anfragen[0].url) == CHAT
@@ -147,7 +145,6 @@ class TestAnbieterAusDerKonfiguration:
             raise AssertionError("Endpunkt erneut aufgelöst")
 
         monkeypatch.setattr(chat_service, "get_insight_provider", nicht_erneut)
-        monkeypatch.setattr(chat_service, "build_rag_context", lambda query, body_id: ("", []))
         ergebnis = chat_service.process_chat_message("Was ist geplant?", [], None, endpunkt=endpunkt)
         assert ergebnis["response"] and len(anfragen) == 1 and str(anfragen[0].url) == CHAT
 
@@ -273,7 +270,6 @@ class TestEinwilligung:
             return echt(**werte)
 
         monkeypatch.setattr(ki_anbieter, "_baue_endpunkt", zaehlen)
-        monkeypatch.setattr(chat_service, "build_rag_context", lambda query, body_id: ("", []))
         antwort = besucher.post(api, {"message": "Was ist geplant?"}, content_type="application/json")
         assert antwort.status_code == 200, antwort.content
         assert aufloesungen == ["KI-Einstellungen, Bürgerportal"]

@@ -25,6 +25,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `INSIGHT_QUESTIONS.md` | [Insight → Ratsfragen](https://docs.mandari.de/insight/ratsfragen/) |
 | `INSIGHT_FRAKTIONEN.md` | Insight → Fraktionen ohne OParl-Fraktion (Seite folgt) |
 | `LIVE_UEBERTRAGUNG.md` | Insight → Live-Übertragungen von Gremiensitzungen (Seite folgt) |
+| `INSIGHT_KI_ASSISTENT.md` | Insight → KI-Assistent (Seite folgt) |
 | `SESSION_REMINDERS.md` | [Session → Fristen-Erinnerungen](https://docs.mandari.de/session/fristen-erinnerungen/) |
 | `PROTOKOLLIERUNG.md` | [Datenschutz → Protokollierungskonzept](https://docs.mandari.de/datenschutz/) (Seite folgt) |
 | `SESSION_MANDANT_ANLEGEN.md` | Session → Mandanten anlegen und Bürgerportal je Körperschaft (Seite folgt) |
