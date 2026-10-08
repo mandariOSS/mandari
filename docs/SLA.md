@@ -1,11 +1,14 @@
 # Service Level Agreement (SLA) für mandari Managed Hosting
 
-Vertragsanlage „Service Level“ für Kunden im Managed Hosting, Version 1.0 vom 17.09.2026.
+Vertragsanlage „Service Level“ für Kunden im Managed Hosting, Version 1.1 vom 08.10.2026.
 Grundlage sind das Verfügbarkeitskonzept und die seit September 2026 laufende
 Messung über die Statusseite (Issue #93).
 
-> **Stand:** Version 1.0, beschlossen am 17.09.2026. Verbindlich mit Veröffentlichung auf
-> mandari.de/sla/ und Aufnahme in die AGB. Preise stehen bewusst nicht hier.
+> **Stand:** Version 1.1 vom 08.10.2026 (Version 1.0 beschlossen am 17.09.2026). Verbindlich mit
+> Veröffentlichung auf mandari.de/sla/ und Aufnahme in die AGB. Preise stehen bewusst nicht hier.
+> Änderungen gegenüber 1.0: Rufbereitschaft rund um die Uhr nicht mehr Teil der Stufe Premium,
+> sondern nur auf ausdrücklichen Wunsch mit einem Partner (Abschnitte 2, 4 und 6); die geltende
+> Verfügbarkeitsstufe legt der Vertrag je Betriebsmodell fest (Abschnitt 2).
 
 ## 1. Geltungsbereich
 
@@ -19,8 +22,13 @@ der Kommunen, Mailversand über kundeneigene Server, Videokonferenzdienste).
 | Stufe | Zusage je Kalendermonat | Messung |
 |---|---|---|
 | **Standard** | **99,5 %** | Statusseite status.mandari.de, Prüfintervall 60 s |
-| **Premium** | **99,7 %** | wie Standard, zusätzlich 24/7-Bereitschaft für Klasse 1 |
+| **Premium** | **99,7 %** | wie Standard |
 | **Enterprise** | **99,9 %** | wie Premium, mit zweitem Standort (Stufe 3 des Verfügbarkeitskonzepts) |
+
+**Welche Stufe gilt**, legt der Vertrag fest; sie richtet sich nach dem Betriebsmodell (ein oder
+zwei Standorte, gemeinsame oder eigene Instanz). Die Zahlen oben sind die Stufen, die wir im
+Managed Hosting anbieten, keine allgemeine Zusage. Im Selbstbetrieb gilt diese Anlage nicht; dort
+bestimmt die Infrastruktur des Kunden oder seines Rechenzentrums die Verfügbarkeit.
 
 **Messregel:** Ein Dienst gilt als nicht verfügbar, wenn zwei aufeinanderfolgende
 Prüfungen der Statusseite scheitern; die Ausfallzeit beginnt mit der ersten
@@ -57,7 +65,7 @@ des Verfügbarkeitskonzepts voraus und ist deshalb der Enterprise-Stufe vorbehal
 
 | Klasse | Beschreibung | Reaktion Standard | Reaktion Premium/Enterprise | Wiederherstellungsziel |
 |---|---|---|---|---|
-| **1 – Ausfall** | Dienst für alle Nutzer nicht erreichbar; Datenverlust droht; Sicherheitsvorfall | 1 Stunde (Servicezeit) | 30 Minuten (24/7) | 4 Stunden |
+| **1 – Ausfall** | Dienst für alle Nutzer nicht erreichbar; Datenverlust droht; Sicherheitsvorfall | 1 Stunde (Servicezeit) | 30 Minuten (Servicezeit; rund um die Uhr nur mit vereinbarter Rufbereitschaft, Abschnitt 6) | 4 Stunden |
 | **2 – Erhebliche Störung** | Kernfunktion (Sitzungsmappe, Abstimmung, Editor, Ladung) unbenutzbar, Umgehung nicht möglich | 4 Stunden | 2 Stunden | 1 Werktag |
 | **3 – Störung** | Einschränkung mit Umgehung, Darstellungsfehler, einzelne Nutzer betroffen | 1 Werktag | 4 Stunden | nächstes Release |
 
@@ -78,8 +86,12 @@ Korrektur folgt nach Release-Politik.
 | Stufe | Servicezeit | Kanäle |
 |---|---|---|
 | Standard | Mo–Fr 08:00–17:00 Uhr (Europe/Berlin), außer gesetzliche Feiertage NRW | Kundenportal (Ticket), E-Mail support@mandari.de |
-| Premium | Mo–Fr 07:00–19:00 Uhr; Klasse 1 zusätzlich 24/7 | zusätzlich Bereitschaftsnummer |
+| Premium | Mo–Fr 07:00–19:00 Uhr | zusätzlich Telefon |
 | Enterprise | wie Premium; benannte Ansprechperson; Sitzungstag-Begleitung auf Anfrage | zusätzlich direkter Kanal zur Ansprechperson |
+
+**Rufbereitschaft rund um die Uhr:** In keiner Stufe enthalten. Auf ausdrücklichen Wunsch
+vereinbaren wir eine Bereitschaft außerhalb der Servicezeiten für Störungen der Klasse 1
+zusammen mit einem Partner; Umfang, Erreichbarkeit und Entgelt regelt der Vertrag.
 
 **Eskalation:** Stufe 1 Support → Stufe 2 Betrieb/Entwicklung (nach Ablauf der halben
 Wiederherstellungszeit) → Stufe 3 Geschäftsführung (nach Ablauf der
