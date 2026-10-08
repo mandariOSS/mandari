@@ -2,9 +2,9 @@
 """
 Schalter „neues Design“ in Work je Organisation setzen (Ausrollen #884, Schalter aus #852).
 
-Der neue Rahmen von Work steht hinter dem Feld ``Organization.work_new_design``: Standard aus, die Demo zuerst an.
-So lässt sich das neue Design nach dem Deploy erst prüfen und dann Organisation für Organisation einschalten; der
-bisherige Rahmen bleibt bis zur Freigabe verfügbar, und „aus“ ist der Rückweg.
+Der neue Rahmen von Work steht hinter dem Feld ``Organization.work_new_design``: für neu angelegte Organisationen aus,
+die Demo an; in Produktion ist es seit dem 06.10.2026 für alle Organisationen an (Soll-Stand und Ablauf:
+docs/WORK_NEUES_DESIGN.md). Der bisherige Rahmen bleibt verfügbar, und „aus“ ist der Rückweg.
 
 Gelesen wird der Schalter überall mit :func:`apps.work.rahmen.neues_design`. Gesetzt wird er im Betrieb nur hier
 (Verwaltungsbefehl ``work_neues_design``, Prüfskript): :func:`setzen` ändert genau diese eine Spalte – keine

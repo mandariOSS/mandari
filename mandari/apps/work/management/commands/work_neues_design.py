@@ -4,6 +4,7 @@ Neues Design in Work je Organisation ein- und ausschalten (Issue #884, Schalter 
 
     python manage.py work_neues_design status                       # alle Organisationen
     python manage.py work_neues_design status --org <slug> --json   # maschinenlesbar (Prüfskript)
+    python manage.py work_neues_design status --soll an             # Abgleich mit dem Soll-Stand (nach dem Deploy)
     python manage.py work_neues_design an --org <slug> --probelauf  # zeigt nur, was sich ändern würde
     python manage.py work_neues_design an --org <slug>
     python manage.py work_neues_design aus --org <slug>             # Rückweg für eine Organisation
@@ -11,7 +12,9 @@ Neues Design in Work je Organisation ein- und ausschalten (Issue #884, Schalter 
 
 Der Befehl ändert ausschließlich den Schalter (``apps.work.design_schalter.setzen``): keine anderen Einstellungen, keine
 Inhalte, keine Mitglieder. Eingeschaltet wird bewusst nur je Organisation (``--org``, mehrfach möglich); „alle auf
-einmal“ gibt es nur für den Rückweg. Ablauf beim Ausrollen: docs/WORK_NEUES_DESIGN.md.
+einmal“ gibt es nur für den Rückweg. ``status --soll an|aus`` liest nur: Er nennt die Organisationen, die vom
+abgestimmten Soll-Stand abweichen, und endet dann mit einem Fehler, ohne etwas umzuschalten. Ablauf beim Ausrollen:
+docs/WORK_NEUES_DESIGN.md.
 """
 
 from __future__ import annotations
@@ -37,6 +40,11 @@ class Command(BaseCommand):
         parser.add_argument("--alle", action="store_true", help="alle Organisationen (nur für status und aus)")
         parser.add_argument("--probelauf", action="store_true", help="nur anzeigen, was sich ändern würde")
         parser.add_argument("--json", action="store_true", help="Stand als JSON ausgeben (nur status)")
+        parser.add_argument(
+            "--soll",
+            choices=["an", "aus"],
+            help="nur status: Abweichungen vom Soll-Stand nennen und mit Fehler enden (schaltet nichts um)",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         aktion: str = options["aktion"]
@@ -51,11 +59,15 @@ class Command(BaseCommand):
             raise CommandError("Bitte --org <slug> angeben (für den Rückweg aller Organisationen: aus --alle).")
         if options["json"] and aktion != "status":
             raise CommandError("--json gibt es nur für status.")
+        if options["soll"] and aktion != "status":
+            raise CommandError("--soll gibt es nur für status (Abgleich ohne Umschalten).")
 
         organisationen = self._organisationen(slugs)
 
         if aktion == "status":
             self._status(organisationen, als_json=options["json"])
+            if options["soll"]:
+                self._abgleich(organisationen, soll=options["soll"] == "an")
             return
 
         an = aktion == "an"
@@ -100,6 +112,26 @@ class Command(BaseCommand):
             self.stdout.write(f"{org.slug}{aktiv}: neues Design {self._wort(neues_design(org))}")
         anzahl = sum(neues_design(org) for org in organisationen)
         self.stdout.write(f"Neues Design an: {anzahl} von {len(organisationen)}")
+
+    def _abgleich(self, organisationen: list[Organization], *, soll: bool) -> None:
+        """Abweichungen vom Soll-Stand nennen; schaltet nichts um (Rückweg und Einschalten bleiben bewusste Schritte)."""
+        abweichend = [org for org in organisationen if neues_design(org) != soll]
+        if not abweichend:
+            self.stdout.write(
+                self.style.SUCCESS(
+                    f"Soll-Stand bestätigt ({self._wort(soll)}): {len(organisationen)} Organisation(en)."
+                )
+            )
+            return
+        for org in abweichend:
+            aktiv = "" if org.is_active else " (inaktiv)"
+            self.stdout.write(
+                self.style.WARNING(f"Abweichung: {org.slug}{aktiv} ist {self._wort(not soll)}, Soll {self._wort(soll)}")
+            )
+        raise CommandError(
+            f"{len(abweichend)} von {len(organisationen)} Organisation(en) weichen vom Soll-Stand ({self._wort(soll)}) "
+            "ab. Nichts umgeschaltet: erst mit der Projektleitung klären (docs/WORK_NEUES_DESIGN.md)."
+        )
 
     @staticmethod
     def _wort(an: bool) -> str:

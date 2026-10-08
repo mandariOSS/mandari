@@ -1,17 +1,34 @@
 # Neues Design in Work ausrollen
 
 Das neue Erscheinungsbild von Work (Rahmen wie Insight, Startseite, Sitzungsansicht, Vorbereitung und Editor; Epic
-#850) steht hinter einem **Schalter je Organisation**. Standard ist aus; die Demo-Organisation ist an. So geht das
-neue Design nach dem Deploy erst in der Demo in Betrieb, wird dort geprüft und abgenommen und danach Organisation
-für Organisation eingeschaltet. Der Rückweg ist jederzeit derselbe Schalter.
+#850) steht hinter einem **Schalter je Organisation**. Das Feld steht für neu angelegte Organisationen auf „aus“. In
+Produktion ist das neue Design **seit dem 06.10.2026 für alle Organisationen an** (#852). Diese Anleitung beschreibt,
+wie ein Deploy diesen Stand bestätigt, wie neue Seiten und neue Organisationen dazukommen und wie der Rückweg geht.
+Der Rückweg ist jederzeit derselbe Schalter.
 
 | Was | Wo |
 |---|---|
-| Schalter | Feld `Organization.work_new_design` (#852), Standard aus; Darstellung: `apps/work/rahmen.py` |
+| Schalter | Feld `Organization.work_new_design` (#852), für neue Organisationen aus; Darstellung: `apps/work/rahmen.py` |
+| Soll-Stand | Produktion: alle Organisationen an (seit 06.10.2026); Abgleich mit `work_neues_design status --soll an` |
 | Schalten und Stand | Verwaltungsbefehl `work_neues_design` (`apps/work/management/commands/work_neues_design.py`) |
 | Prüfen | `scripts/pruefe_work_design.py` (Playwright): alle Bereiche, fünf Rollen, fünf Breiten, Schalter an und aus; zählt Seiten ohne neue Gestaltung |
 | Stand je Seite | `data-gestaltung` am Hauptbereich im neuen Rahmen: `neu` setzt die Seite selbst (Block `gestaltung`), sonst `bisher` |
 | Demo-Inhalte | `setup_demo_environment` ruft `setup_demo_work` auf (nächtlicher Neuaufbau der Demo) |
+
+## Soll-Stand je Instanz
+
+| Instanz | Soll | Anmerkung |
+|---|---|---|
+| Produktion | **alle Organisationen an** | beschlossen und ausgerollt am 06.10.2026 (#852); eine neu angelegte Organisation steht zunächst auf „aus“ und wird nach Abschnitt 4 eingeschaltet |
+| Öffentliche Demo | Demo-Organisation an | setzt `setup_demo_environment` bei jedem Neuaufbau |
+| Staging, Selbstbetrieb, lokal | Stand der Datenbank, aus der die Instanz aufgebaut ist | ohne eigenen Beschluss gilt das Feld: neue Organisationen aus, die Demo-Organisation an |
+
+Der Soll-Stand ist eine Entscheidung der Projektleitung. Bleibt eine Organisation bewusst beim bisherigen Rahmen,
+wird das im Issue des Deploys vermerkt und beim Abgleich mit `--org <slug> --soll aus` geprüft.
+
+**Ein Abgleich schaltet nie um.** `work_neues_design status --soll an` nennt nur die Abweichungen und endet dann mit
+einem Fehler. Wer daraufhin pauschal umschaltet, dreht womöglich den beschlossenen Stand zurück; vor allem
+`aus --alle` ist ausschließlich der Notfall-Rückweg aus Abschnitt 5.
 
 ## Was der Schalter ändert – und was nicht
 
@@ -31,6 +48,7 @@ Im App-Container (`docker exec <app-container> python manage.py …`):
 ```bash
 python manage.py work_neues_design status                        # Stand aller Organisationen
 python manage.py work_neues_design status --org <slug> --json    # maschinenlesbar
+python manage.py work_neues_design status --soll an              # Abgleich mit dem Soll-Stand, schaltet nichts um
 python manage.py work_neues_design an  --org <slug> --probelauf  # zeigt nur, was sich ändern würde
 python manage.py work_neues_design an  --org <slug>              # einschalten (mehrere: --org a --org b)
 python manage.py work_neues_design aus --org <slug>              # Rückweg für eine Organisation
@@ -38,13 +56,23 @@ python manage.py work_neues_design aus --alle                    # Rückweg für
 ```
 
 Eingeschaltet wird bewusst nur je Organisation; `an --alle` gibt es nicht. Unbekannte Kurznamen brechen ab, ohne
-etwas zu ändern.
+etwas zu ändern. `status --soll an|aus` (auch mit `--org`) nennt jede Organisation, die abweicht, und endet dann mit
+Exit-Code 1; stimmt alles, meldet er „Soll-Stand bestätigt (an)“ bzw. „(aus)“.
 
 ## Prüfskript
 
 `scripts/pruefe_work_design.py` meldet sich je Rolle an (Vorsitz, Mitglied, Sachkundige, nicht vereidigt, Gast),
 erkundet alle Work-Seiten über die Links, die diese Rolle sieht (nur Seitenaufrufe, keine Aktionen, Downloads oder
-Schnittstellen; je Adressmuster höchstens zwei Seiten), und misst jede Seite in 390, 1280, 1440, 1920 und 2560 px:
+Schnittstellen; je Adressmuster höchstens zwei Seiten), und misst jede Seite in 390, 1280, 1440, 1920 und 2560 px.
+
+**Wo es läuft:** lokal, in der CI, gegen die öffentliche Demo und gegen Staging – **nicht gegen Produktion**.
+Produktion wird nach einem Deploy von Hand angesehen. Lokal folgt das Skript jedem Link außer denen der Sperrliste
+(`AUSGESCHLOSSEN`: Aktionen, Teilstücke, Dateien, Schnittstellen), damit neue Seiten auffallen. Gegen entfernte
+Instanzen ruft es zusätzlich nur Seiten der Erlaubnisliste `ERLAUBT_ENTFERNT` auf, auch mit `--nur`. Eine künftige
+Adresse, deren Aufruf etwas ändert, wird dort also nie aufgerufen, selbst wenn sie auf der Sperrliste fehlt. Andere
+sichtbare Links nennt der Bericht als „nicht geprüft“. Eine neue Seite kommt auf die Erlaubnisliste, wenn ihr Aufruf
+nichts ändert. Der Test `apps/common/tests/test_pruefe_work_design.py` prüft, dass jeder Eintrag eine Seite von Work
+mit GET ist und nicht auf der Sperrliste steht.
 
 | Befund | Schwere |
 |---|---|
@@ -58,6 +86,7 @@ Schnittstellen; je Adressmuster höchstens zwei Seiten), und misst jede Seite in
 | Design passt nicht zum Schalter: `data-rahmen="neu"` bei ausgeschaltetem Schalter | Fehler |
 | Seite ohne neuen Rahmen bei eingeschaltetem Schalter (eigene Vorlage ohne `base_work.html`) | Hinweis |
 | Seite im neuen Rahmen ohne neue Gestaltung (`data-gestaltung` nicht `neu`), gezählt je Adressmuster über alle Rollen | Hinweis in der Zusammenfassung, mit `--gestaltung-pflicht` Fehler |
+| Sichtbarer Link nicht auf der Erlaubnisliste (nur gegen entfernte Instanzen; nicht aufgerufen), je Adressmuster | Hinweis in der Zusammenfassung |
 
 Verbindungsversuche der Zusammenarbeit im Editor (WebSocket) zählen nicht. Exit-Code 1 bei mindestens einem Fehler.
 
@@ -74,9 +103,9 @@ MANDARI_PRUEF_PASSWORT=… python scripts/pruefe_work_design.py --basis http://l
 MANDARI_PRUEF_PASSWORT=… python scripts/pruefe_work_design.py --basis https://demo.mandari.de \
     --bericht demo.json --bilder demo-bilder/
 
-# Andere Instanz mit eigenen Konten je Rolle:
+# Staging mit eigenen Konten je Rolle (nur Seiten der Erlaubnisliste):
 MANDARI_PRUEF_VORSITZ_EMAIL=… MANDARI_PRUEF_VORSITZ_PASSWORT=… \
-    python scripts/pruefe_work_design.py --basis https://<instanz> --org <slug> --rollen vorsitz
+    python scripts/pruefe_work_design.py --basis https://<staging> --org <slug> --rollen vorsitz
 ```
 
 Gegen eine entfernte Instanz schaltet das Skript **nie von sich aus** um. `--schalter an|aus|beide` geht dort nur
@@ -100,7 +129,8 @@ Das Prüfskript nennt am Ende die Zahl der Adressmuster ohne neue Gestaltung und
 `--gestaltung-pflicht` ohne Fehler. Im bisherigen Rahmen gibt es die Kennzeichnung nicht (Schalter aus zählt nicht).
 
 Weitere Schalter: `--rollen`, `--breiten`, `--max-seiten` (Standard 80 je Rolle), `--neu-laden` (je Breite neu
-laden statt Fenster verbreitern; genauer, dauert länger), `--sichtbar` (Browser sichtbar).
+laden statt Fenster verbreitern; genauer, dauert länger), `--sichtbar` (Browser sichtbar), `--nur-erlaubte` (lokal
+wie gegen eine entfernte Instanz nur Seiten der Erlaubnisliste).
 
 Im CI läuft derselbe Ablauf verkleinert als E2E-Test (`tests_e2e/test_work_design_pruefung.py`).
 
@@ -132,52 +162,70 @@ nach jedem nächtlichen Neuaufbau:
 
 ## Ablauf
 
+Produktion steht seit dem 06.10.2026 für alle Organisationen auf „an“. Ein Deploy ändert den Schalter nicht: Er
+bringt neue Seiten und Bausteine, der Stand der Organisationen bleibt, wie er ist. Darum gilt bei jedem Deploy:
+bestätigen statt umschalten.
+
 ### 1. Vor dem Deploy
 
 - [ ] Alle PRs des Updates gemergt, CI auf `dev` grün (einschließlich E2E)
-- [ ] Deploy-Vorschlag mit der Projektleitung abgestimmt: Inhalt, Migrationen (für den Schalter nur das additive
-      Feld aus #852, `db_default` aus), Datenänderungen (keine), Risiko, Rückweg. **Deploy erst nach ausdrücklicher
-      Freigabe.**
+- [ ] Deploy-Vorschlag mit der Projektleitung abgestimmt: Inhalt, Migrationen (für den Schalter keine; das Feld aus
+      #852 ist seit dem 06.10.2026 in Produktion), Datenänderungen (keine), Risiko, Rückweg. **Deploy erst nach
+      ausdrücklicher Freigabe.**
+- [ ] Soll-Stand für Produktion bestätigt (heute: alle an, Ausnahmen im Issue des Deploys) und Stand vor dem Deploy
+      gesichert: `work_neues_design status --json > work-design-vorher.json`
 - [ ] Lokal: Prüfskript mit `--schalter beide` gegen die lokale Demo ohne Fehler
 
 ### 2. Deploy
 
 - [ ] Deploy wie in `DEPLOYMENT.md` (`deploy.sh plan`, dann `apply`); die Prüfung nach dem Deploy ist grün
-- [ ] `work_neues_design status`: In Produktion sind alle Organisationen **aus** (die Demo läuft als eigene
-      Instanz). Ist eine an, ohne dass es beschlossen war: sofort `aus --org <slug>`
+- [ ] `work_neues_design status --soll an` bestätigt den Soll-Stand (Meldung „Soll-Stand bestätigt (an)“, Exit-Code 0).
+      Bewusste Ausnahmen zusätzlich mit `status --org <slug> --soll aus`
+- [ ] Meldet der Abgleich eine Abweichung: **nichts pauschal umschalten**, auf keinen Fall `aus --alle`. Mit dem
+      gesicherten Stand vor dem Deploy vergleichen und mit der Projektleitung klären. Meist ist es eine seit dem
+      letzten Deploy neu angelegte Organisation (Feld „aus“); sie wird nach Abschnitt 4 eingeschaltet
 - [ ] Fehlerprotokoll der ersten Stunde ohne neue 5xx
 
-### 3. Demo prüfen
+### 3. Demo und Staging prüfen
 
-Die öffentliche Demo baut nachts mit dem Image der Produktion neu auf; danach ist das neue Design dort an.
-Soll es früher gehen, baut der Betrieb die Demo von Hand neu auf (wie nachts) – die Demo-Datenbank wird nicht von
-Hand geändert.
+Die öffentliche Demo baut nachts mit dem Image der Produktion neu auf; das neue Design ist dort immer an. Soll es
+früher gehen, baut der Betrieb die Demo von Hand neu auf (wie nachts) – die Demo-Datenbank wird nicht von Hand
+geändert.
 
-- [ ] Prüfskript gegen die Demo: 0 Fehler, Hinweise gesichtet
+- [ ] Prüfskript gegen die Demo (`--bericht demo.json`): 0 Fehler, Hinweise gesichtet
+- [ ] Prüfskript gegen Staging mit eigenen Konten je Rolle (`--bericht staging.json`): 0 Fehler
+- [ ] Ergebnis beider Läufe (Fehler, Hinweise, Seiten je Rolle, nicht geprüfte Adressmuster) im Issue des Deploys
 - [ ] Rundgang mit den Konten Vorsitz und nicht vereidigt: Start (Hinweisband mit der Ankündigung), Sitzungen
       (Für mich, Alle Gremien), Fraktionssitzungen und eine Fraktionssitzung (NÖ-TOPs nur für Vereidigte,
       TOP-Vorschlag), Vorbereitung der Ratssitzung (Beratungsverlauf), Antrag mit Kommentaren, Recherche mit Karte
       und Suche, Handy (390 px)
 - [ ] Zahl der Seiten ohne neue Gestaltung aus dem Bericht des Prüfskripts notieren (Stand für #951)
-- [ ] Abnahme des Rahmens durch die Projektleitung an der Demo (Bilder nur aus der Demo)
+- [ ] Neue oder umgestaltete Seiten nimmt die Projektleitung an der Demo ab (Bilder nur aus der Demo)
 
 ### 4. Organisation einschalten
 
-Erst nach der Abnahme und in Absprache mit der Organisation (Ankündigung im Produkt, #857):
+Gilt für Organisationen, die noch auf „aus“ stehen: in Produktion eine neu angelegte Organisation, auf anderen
+Instanzen (Staging nach einem Neuaufbau, Selbstbetrieb) jede Organisation, für die das neue Design beschlossen ist.
+Die bestehenden Organisationen in Produktion sind schon an. Eingeschaltet wird in Absprache mit der Organisation
+(Ankündigung im Produkt, #857):
 
 - [ ] `work_neues_design an --org <slug> --probelauf`, dann ohne `--probelauf`
-- [ ] `work_neues_design status --org <slug>` zeigt „an“
-- [ ] Sichtprüfung in Work durch die Projektleitung bzw. die Administration der Organisation (Produktion wird nur
-      lesend geprüft; das Prüfskript läuft gegen Produktion nur mit Konten, die dafür vorgesehen sind)
+- [ ] `work_neues_design status --org <slug> --soll an` bestätigt den Stand
+- [ ] Sichtprüfung in Work durch die Projektleitung bzw. die Administration der Organisation (in Produktion nur von
+      Hand und lesend; das Prüfskript läuft dort nicht)
 - [ ] Fehlerprotokoll der ersten Stunde ohne neue 5xx, keine Rückmeldung „Seite fehlt“
 
 ### 5. Rückweg
 
+Jeder Rückweg weicht vom beschlossenen Stand ab und geschieht nur nach Entscheidung der Projektleitung. Danach im
+Issue des Deploys vermerken, welche Organisationen aus sind, damit der nächste Abgleich sie nicht als Fehler meldet
+und niemand sie unbeabsichtigt wieder einschaltet.
+
 | Fall | Vorgehen |
 |---|---|
-| Eine Organisation hat Probleme mit dem neuen Design | `work_neues_design aus --org <slug>` – wirkt beim nächsten Seitenaufruf, Daten bleiben unberührt |
-| Das neue Design stört überall | `work_neues_design aus --alle` |
-| Das Image muss zurück | `deploy.sh rollback <tag>`; das Feld bleibt stehen (additive Migration, ältere Abbilder ignorieren es) |
+| Eine Organisation hat Probleme mit dem neuen Design | `work_neues_design aus --org <slug>` – wirkt beim nächsten Seitenaufruf, Daten bleiben unberührt; danach `status --org <slug> --soll aus` |
+| Das neue Design stört überall | Stand sichern (`status --json > work-design-vor-rueckweg.json`), dann `work_neues_design aus --alle`. Zurück zum beschlossenen Stand mit `an --org <slug>` je Organisation aus der Sicherung (`an --alle` gibt es bewusst nicht) |
+| Das Image muss zurück | `deploy.sh rollback <tag>`; das Feld und der Stand der Organisationen bleiben (additive Migration, ältere Abbilder ignorieren es) |
 | Ein Befund nur in einer Breite oder Rolle | Schalter an lassen, wenn die Arbeit nicht behindert ist; Issue mit Bild aus der Demo |
 
 Weil der Schalter keine Daten verändert, braucht der Rückweg keine Datensicherung und keine Migration.

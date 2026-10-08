@@ -166,6 +166,8 @@ class TestBefehl:
             (("an", "--org", "gibt-es-nicht"), "nicht gefunden: gibt-es-nicht"),
             (("status", "--org", "fraktion-a", "--alle"), "nicht beides"),
             (("an", "--org", "fraktion-a", "--json"), "nur für status"),
+            (("aus", "--alle", "--soll", "an"), "nur für status"),
+            (("an", "--org", "fraktion-a", "--soll", "an"), "nur für status"),
         ],
     )
     def test_fehlbedienung(self, welt: dict[str, Any], argumente: tuple[str, ...], meldung: str) -> None:
@@ -173,6 +175,48 @@ class TestBefehl:
         with pytest.raises(CommandError, match=meldung):
             _befehl(*argumente)
         assert _bestand() == vorher
+
+
+class TestSollStand:
+    """
+    Nach dem Deploy wird der Stand mit dem abgestimmten Soll verglichen (docs/WORK_NEUES_DESIGN.md, Schritt 2).
+
+    In Produktion ist das neue Design für alle Organisationen an (#852). Der Abgleich nennt Abweichungen nur und schaltet
+    nie selbst um – sonst würde ein Abgleich gegen das falsche Soll den beschlossenen Stand zurückdrehen.
+    """
+
+    def test_bestaetigt_den_soll_stand(self, welt: dict[str, Any]) -> None:
+        design_schalter.setzen(welt["org"], True)
+        design_schalter.setzen(welt["andere"], True)
+        ausgabe = _befehl("status", "--soll", "an")
+        assert "Neues Design an: 2 von 2" in ausgabe
+        assert "Soll-Stand bestätigt (an): 2 Organisation(en)." in ausgabe
+
+    def test_abweichung_wird_genannt_und_nichts_umgeschaltet(self, welt: dict[str, Any]) -> None:
+        design_schalter.setzen(welt["org"], True)
+        vorher = _bestand()
+        ausgabe = StringIO()
+        with pytest.raises(CommandError, match=r"1 von 2 Organisation\(en\) weichen vom Soll-Stand \(an\) ab"):
+            call_command("work_neues_design", "status", "--soll", "an", stdout=ausgabe)
+        assert "Abweichung: fraktion-b ist aus, Soll an" in ausgabe.getvalue()
+        assert "fraktion-a" not in ausgabe.getvalue().split("Abweichung", 1)[1]
+        assert _bestand() == vorher, "der Abgleich schaltet nichts um"
+
+    def test_soll_aus_fuer_einzelne_organisation(self, welt: dict[str, Any]) -> None:
+        design_schalter.setzen(welt["andere"], True)
+        assert "Soll-Stand bestätigt (aus): 1 Organisation(en)." in _befehl(
+            "status", "--org", "fraktion-a", "--soll", "aus"
+        )
+        with pytest.raises(CommandError, match=r"weichen vom Soll-Stand \(aus\) ab"):
+            _befehl("status", "--org", "fraktion-b", "--soll", "aus")
+
+    def test_inaktive_organisation_wird_gekennzeichnet(self, welt: dict[str, Any]) -> None:
+        Organization.objects.filter(pk=welt["andere"].pk).update(is_active=False)
+        design_schalter.setzen(welt["org"], True)
+        ausgabe = StringIO()
+        with pytest.raises(CommandError):
+            call_command("work_neues_design", "status", "--soll", "an", stdout=ausgabe)
+        assert "Abweichung: fraktion-b (inaktiv) ist aus, Soll an" in ausgabe.getvalue()
 
 
 # ---- Kennzeichnung der Gestaltung (Prüfskript zählt Seiten ohne neue Gestaltung) ----------------------------

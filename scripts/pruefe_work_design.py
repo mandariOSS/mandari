@@ -44,7 +44,10 @@ unvereidigt, gast). Ohne Zugang wird die Rolle übersprungen.
 
 Gegen eine entfernte Instanz schaltet das Skript den Schalter nie selbst um. ``--schalter an|aus|beide`` geht dort
 nur mit ``--schalt-befehl`` (etwa ein ``docker exec``-Aufruf, Platzhalter ``{aktion}`` und ``{org}``) – das ist eine
-bewusste Entscheidung der Person, die prüft. Ablauf beim Ausrollen: docs/WORK_NEUES_DESIGN.md.
+bewusste Entscheidung der Person, die prüft. Außerdem ruft das Skript dort nur Seiten der Erlaubnisliste
+``ERLAUBT_ENTFERNT`` auf (auch mit ``--nur``); andere sichtbare Links nennt der Bericht als „nicht geprüft“. Gedacht
+ist es für lokale Instanzen, die CI, die Demo und Staging, nicht für Produktion. Ablauf beim Ausrollen:
+docs/WORK_NEUES_DESIGN.md.
 """
 
 from __future__ import annotations
@@ -99,10 +102,120 @@ AUSGESCHLOSSEN = re.compile(
     r"|/bezug/suche/"
     r"|\.(?:pdf|ics|csv|docx|zip|json|xml)$"
 )
+#: Erlaubnisliste für entfernte Instanzen (Demo, Staging): Dort folgt das Skript nur Links auf diese Adressmuster
+#: hinter ``/work/<org>`` (``{id}`` = Kennung, ``{name}`` = Kurzname). Die Sperrliste oben schützt nur vor bekannten
+#: Aktionen; eine künftige Adresse, deren Aufruf etwas ändert, ruft das Skript dort so nie auf. Andere Links nennt der
+#: Bericht als „nicht geprüft“ (Hinweis). Lokal und in der CI gilt nur die Sperrliste, damit neue Seiten auffallen.
+#: Jeder Eintrag muss eine Seite von Work sein, deren Aufruf nichts ändert (Test: test_pruefe_work_design.py).
+ERLAUBT_ENTFERNT = (
+    "",
+    "dashboard/",
+    # Sitzungen
+    "meetings/",
+    "meetings/calendar/",
+    "meetings/ladungen/",
+    "meetings/{id}/",
+    "meetings/{id}/prepare/",
+    "meetings/{id}/summary/",
+    # Fraktionssitzungen
+    "faction/",
+    "faction/historie/",
+    "faction/nachweis/",
+    "faction/settings/",
+    "faction/{id}/",
+    # Dokumente (motions/ leitet auf documents/ weiter)
+    "freigaben/",
+    "documents/",
+    "documents/create/",
+    "documents/import/",
+    "documents/trash/",
+    "documents/{id}/",
+    "documents/{id}/revisions/",
+    "documents/{id}/revisions/{id}/",
+    "motions/",
+    "motions/create/",
+    "motions/import/",
+    "motions/trash/",
+    "motions/{id}/",
+    "motions/{id}/edit/",
+    # Aufgaben und Team
+    "tasks/",
+    "tasks/create/",
+    "tasks/import/",
+    "team/",
+    "team/{id}/",
+    # Recherche (RIS)
+    "ris/",
+    "ris/search/",
+    "ris/papers/",
+    "ris/papers/{id}/",
+    "ris/meetings/",
+    "ris/meetings/{id}/",
+    "ris/organizations/",
+    "ris/organizations/{id}/",
+    "ris/persons/",
+    "ris/persons/{id}/",
+    "ris/files/",
+    "ris/decisions/",
+    "ris/map/",
+    # Organisation
+    "organization/",
+    "organization/api/",
+    "organization/documents-settings/",
+    "organization/email-settings/",
+    "organization/faction-settings/",
+    "organization/parties/",
+    "organization/registration/",
+    "organization/verwaltung/",
+    "organization/members/",
+    "organization/members/invite/",
+    "organization/members/invite-guest/",
+    "organization/members/{id}/",
+    "organization/roles/",
+    "organization/roles/create/",
+    "organization/roles/{id}/",
+    "organization/documents/",
+    "organization/documents/types/",
+    "organization/documents/types/create/",
+    "organization/documents/types/{id}/",
+    "organization/documents/topics/",
+    "organization/documents/templates/",
+    "organization/documents/templates/create/",
+    "organization/documents/templates/{id}/",
+    "organization/documents/letterheads/",
+    "organization/documents/letterheads/create/",
+    "organization/documents/letterheads/{id}/",
+    # Hilfe, Benachrichtigungen, Profil
+    "support/",
+    "support/create/",
+    "support/{id}/",
+    "support/kb/",
+    "support/kb/{name}/",
+    "support/kb/{name}/{name}/",
+    "notifications/",
+    "notifications/preferences/",
+    "profile/",
+    "profile/absence/",
+    "profile/activity/",
+    "profile/committees/",
+    "profile/data/",
+    "profile/notifications/",
+    "profile/requests/",
+    "profile/security/",
+    "profile/visibility/",
+)
 #: Breiten unterhalb dieser Grenze gelten als Handy/Tablet: Die Seite wird dafür neu geladen (Startzustand der
 #: Navigation hängt an der Breite beim Laden), darüber reicht es, das Fenster zu verbreitern.
 HANDY_BIS = 1024
 UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+ERLAUBT_MUSTER = re.compile(
+    "^(?:"
+    + "|".join(
+        re.escape(f"/{eintrag}").replace(r"\{id\}", UUID.pattern).replace(r"\{name\}", r"[-a-zA-Z0-9_]+")
+        for eintrag in ERLAUBT_ENTFERNT
+    )
+    + ")$"
+)
 #: Meldungen der Konsole, die nichts über die Seite sagen (Verbindungen der Zusammenarbeit im Editor)
 KONSOLE_IGNORIERT = re.compile(r"WebSocket|ws://|wss://", re.IGNORECASE)
 #: Meldungen, die nur als Hinweis zählen: fremde Ressourcen (etwa Kartenkacheln), die bei gestörtem Netz oder
@@ -211,6 +324,9 @@ class Lauf:
     #: Seiten im neuen Rahmen, deren Inhalt neu gestaltet ist (``data-gestaltung="neu"``) bzw. noch nicht
     neu_gestaltet: list[str] = field(default_factory=list)
     ohne_neue_gestaltung: list[str] = field(default_factory=list)
+    #: Gegen entfernte Instanzen: Adressmuster sichtbarer Links, die nicht auf der Erlaubnisliste stehen (nicht
+    #: aufgerufen)
+    nicht_geprueft: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -261,6 +377,21 @@ def seitenpfad(basis: str, org: str, href: str, von: str) -> str | None:
 def muster(pfad: str) -> str:
     """Adressmuster: Kennungen durch {id} ersetzt."""
     return UUID.sub("{id}", pfad)
+
+
+def work_pfad(org: str, angabe: str) -> str:
+    """``faction/`` oder ``/work/<org>/faction/`` → ``/work/<org>/faction/`` (Angabe bei ``--nur``)."""
+    pfad = angabe if angabe.startswith("/work/") else f"/work/{org}/{angabe.lstrip('/')}"
+    return pfad if pfad.endswith("/") else f"{pfad}/"
+
+
+def erlaubt_entfernt(pfad: str, org: str) -> bool:
+    """Steht die Work-Seite ``pfad`` (aus :func:`seitenpfad`) auf der Erlaubnisliste für entfernte Instanzen?"""
+    praefix = f"/work/{org}"
+    if not (pfad == praefix or pfad.startswith(f"{praefix}/")):
+        return False
+    rest = pfad[len(praefix) :].rstrip("/") + "/"
+    return bool(ERLAUBT_MUSTER.match(rest))
 
 
 def bewerten(messung: dict[str, Any], *, rolle: str, schalter: str, pfad: str, breite: int) -> list[Befund]:
@@ -357,6 +488,11 @@ def zusammenfassen(laeufe: list[Lauf], *, gestaltung_pflicht: bool = False) -> t
         zeilen.extend(f"  [{schwere}] {m}" for m in offen)
         if gestaltung_pflicht:
             fehler += len(offen)
+    ausgelassen = sorted({m for lauf in laeufe for m in lauf.nicht_geprueft})
+    if ausgelassen:
+        zeilen.append("")
+        zeilen.append(f"Nicht geprüft (nicht auf der Erlaubnisliste für entfernte Instanzen): {len(ausgelassen)}")
+        zeilen.extend(f"  [Hinweis] {m}" for m in ausgelassen)
     details = [b for lauf in laeufe for b in lauf.befunde]
     if details:
         zeilen.append("")
@@ -386,6 +522,7 @@ class Pruefer:
         neu_laden: bool = False,
         bilder: Path | None = None,
         nur: Iterable[str] = (),
+        nur_erlaubte: bool = False,
         zeitlimit_ms: int = 30000,
         protokoll: Callable[[str], None] = print,
     ) -> None:
@@ -395,6 +532,8 @@ class Pruefer:
         self.breiten = sorted(breiten)
         self.max_seiten = max_seiten
         self.neu_laden = neu_laden
+        #: Nur Seiten der Erlaubnisliste aufrufen (entfernte Instanzen)
+        self.nur_erlaubte = nur_erlaubte
         #: Nur diese Seiten prüfen (ohne Erkunden), etwa um einen Befund nachzustellen
         self.nur = [self._pfad(p) for p in nur]
         self.bilder = bilder
@@ -418,9 +557,7 @@ class Pruefer:
         return lauf
 
     def _pfad(self, angabe: str) -> str:
-        """``faction/`` oder ``/work/<org>/faction/`` → ``/work/<org>/faction/``."""
-        pfad = angabe if angabe.startswith("/work/") else f"/work/{self.org}/{angabe.lstrip('/')}"
-        return pfad if pfad.endswith("/") else f"{pfad}/"
+        return work_pfad(self.org, angabe)
 
     # -- Ereignisse ------------------------------------------------------------
 
@@ -513,6 +650,10 @@ class Pruefer:
                 if ziel is None or ziel in gesehen:
                     continue
                 gesehen.add(ziel)
+                if self.nur_erlaubte and not erlaubt_entfernt(ziel, self.org):
+                    if muster(ziel) not in lauf.nicht_geprueft:
+                        lauf.nicht_geprueft.append(muster(ziel))
+                    continue
                 if je_muster[muster(ziel)] >= JE_MUSTER:
                     continue
                 je_muster[muster(ziel)] += 1
@@ -608,6 +749,7 @@ def pruefen(
     neu_laden: bool = False,
     bilder: Path | None = None,
     nur: Iterable[str] = (),
+    nur_erlaubte: bool = False,
     sichtbar: bool = False,
     browser: Any = None,
     protokoll: Callable[[str], None] = print,
@@ -616,6 +758,7 @@ def pruefen(
     Alle Rollen in allen gewünschten Schalterzuständen prüfen; stellt den Schalter danach wieder her.
 
     ``browser``: vorhandener Playwright-Browser (E2E-Tests); sonst startet das Skript Chromium selbst.
+    ``nur_erlaubte``: nur Seiten der Erlaubnisliste aufrufen (``ERLAUBT_ENTFERNT``; gegen entfernte Instanzen immer).
     """
     laeufe: list[Lauf] = []
     vorher: bool | None = None
@@ -634,6 +777,7 @@ def pruefen(
             neu_laden=neu_laden,
             bilder=bilder,
             nur=nur,
+            nur_erlaubte=nur_erlaubte,
             protokoll=protokoll,
         )
         for zustand in zustaende(schalter):
@@ -678,6 +822,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bericht", type=Path, help="Befunde und erreichbare Seiten als JSON")
     parser.add_argument("--sichtbar", action="store_true", help="Browser sichtbar starten")
     parser.add_argument(
+        "--nur-erlaubte",
+        action="store_true",
+        help="nur Seiten der Erlaubnisliste aufrufen (gegen entfernte Instanzen immer, lokal zum Nachstellen)",
+    )
+    parser.add_argument(
         "--gestaltung-pflicht",
         action="store_true",
         help="Seiten im neuen Rahmen ohne neue Gestaltung als Fehler zählen (Abnahme von #951)",
@@ -694,6 +843,12 @@ def main(argv: list[str] | None = None) -> int:
     if not gefunden:
         print("Keine Zugänge – nichts zu prüfen.", file=sys.stderr)
         return 2
+    # Entfernte Instanzen (Demo, Staging): nur Seiten der Erlaubnisliste, auch bei --nur
+    nur_erlaubte = args.nur_erlaubte or not ist_lokal(args.basis)
+    if nur_erlaubte:
+        verboten = [p for p in args.nur if not erlaubt_entfernt(work_pfad(args.org, p), args.org)]
+        if verboten:
+            parser.error(f"nicht auf der Erlaubnisliste für entfernte Instanzen: {', '.join(verboten)}")
     schalten = None
     if args.schalter != "aktuell":
         if not ist_lokal(args.basis) and not args.schalt_befehl:
@@ -711,6 +866,7 @@ def main(argv: list[str] | None = None) -> int:
         neu_laden=args.neu_laden,
         bilder=args.bilder,
         nur=args.nur,
+        nur_erlaubte=nur_erlaubte,
         sichtbar=args.sichtbar,
     )
     text, fehler = zusammenfassen(laeufe, gestaltung_pflicht=args.gestaltung_pflicht)

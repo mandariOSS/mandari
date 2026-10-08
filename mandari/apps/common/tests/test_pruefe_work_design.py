@@ -90,6 +90,68 @@ class TestSeiten:
         assert skript.muster(f"/work/{ORG}/faction/{KENNUNG}/") == f"/work/{ORG}/faction/{{id}}/"
 
 
+class TestErlaubnisliste:
+    """Gegen entfernte Instanzen ruft das Skript nur Seiten der Erlaubnisliste auf (die Sperrliste kennt nur Bekanntes)."""
+
+    @pytest.mark.parametrize(
+        "pfad",
+        [
+            f"/work/{ORG}/",
+            f"/work/{ORG}",
+            f"/work/{ORG}/faction/",
+            f"/work/{ORG}/faction/{KENNUNG}/",
+            f"/work/{ORG}/meetings/{KENNUNG}/prepare/",
+            f"/work/{ORG}/ris/papers/{KENNUNG}/",
+            f"/work/{ORG}/organization/faction-settings/",
+            f"/work/{ORG}/support/kb/erste-schritte/anmelden/",
+        ],
+    )
+    def test_seiten_der_liste(self, pfad: str) -> None:
+        assert skript.erlaubt_entfernt(pfad, ORG) is True
+
+    @pytest.mark.parametrize(
+        "pfad",
+        [
+            # Eine künftige Adresse, deren Aufruf etwas ändert, und die die Sperrliste nicht kennt
+            f"/work/{ORG}/notifications/alle-gelesen/",
+            f"/work/{ORG}/faction/{KENNUNG}/abschliessen/",
+            # Schnittstellen, denen das Skript lokal folgen würde
+            f"/work/{ORG}/meetings/{KENNUNG}/tasks/{KENNUNG}/",
+            f"/work/{ORG}/paper/{KENNUNG}/comments/",
+            f"/work/{ORG}/tasks/labels/{KENNUNG}/",
+            # Kennung, wo eine erwartet wird, fehlt; andere Organisation
+            f"/work/{ORG}/faction/x/",
+            "/work/andere-fraktion/faction/",
+        ],
+    )
+    def test_nicht_auf_der_liste(self, pfad: str) -> None:
+        assert skript.erlaubt_entfernt(pfad, ORG) is False
+
+    def test_lokal_gilt_nur_die_sperrliste(self) -> None:
+        """Lokal folgt das Skript auch unbekannten Seiten (damit neue Seiten geprüft werden), entfernt nicht."""
+        neu = f"/work/{ORG}/notifications/alle-gelesen/"
+        assert skript.seitenpfad(BASIS, ORG, neu, f"{BASIS}/work/{ORG}/") == neu
+        assert skript.erlaubt_entfernt(neu, ORG) is False
+
+    @pytest.mark.parametrize("eintrag", skript.ERLAUBT_ENTFERNT)
+    def test_jeder_eintrag_ist_eine_seite_von_work(self, eintrag: str) -> None:
+        """Kein Eintrag zeigt auf eine Aktion, Schnittstelle oder eine Adresse, die es nicht gibt."""
+        from django.urls import resolve
+
+        pfad = f"/work/{ORG}/" + eintrag.replace("{id}", KENNUNG).replace("{name}", "beispiel")
+        treffer = resolve(pfad)
+        assert treffer.app_name == "work", pfad
+        assert not (treffer.url_name or "").endswith(("_api", "_delete", "_partial", "_download", "_export")), pfad
+        assert skript.seitenpfad(BASIS, ORG, pfad, f"{BASIS}/work/{ORG}/") == pfad, "steht auf der Sperrliste"
+        klasse = getattr(treffer.func, "view_class", None)
+        if klasse is not None:
+            methoden = getattr(treffer.func, "view_initkwargs", {}).get("http_method_names", klasse.http_method_names)
+            assert "get" in methoden and hasattr(klasse, "get"), f"{pfad}: keine Seite (kein GET)"
+
+    def test_eintraege_ohne_doppelte(self) -> None:
+        assert len(set(skript.ERLAUBT_ENTFERNT)) == len(skript.ERLAUBT_ENTFERNT)
+
+
 class TestBewertung:
     def bewerten(self, messung: dict[str, Any], schalter: str = "an", breite: int = 1440) -> list[tuple[str, str]]:
         befunde = skript.bewerten(messung, rolle="vorsitz", schalter=schalter, pfad="/work/x/", breite=breite)
@@ -331,6 +393,81 @@ class TestAnmeldung:
         assert pruefer._anmelden(seite, self.ZUGANG, lauf) is True
         assert seite.eingaben == ["input[name=email]", "input[name=password]"]
         assert lauf.befunde == []
+
+
+class _Netz:
+    """Ersatz für eine Playwright-Seite beim Erkunden: feste Links je Seite, merkt sich jeden Aufruf."""
+
+    def __init__(self, links: dict[str, list[str]]) -> None:
+        self.links = links
+        self.url = ""
+        self.aufrufe: list[str] = []
+
+    def set_viewport_size(self, _: dict[str, int]) -> None:
+        return None
+
+    def goto(self, url: str, **_: Any) -> _Antwort:
+        self.url = url
+        self.aufrufe.append(url.removeprefix(BASIS))
+        return _Antwort(200)
+
+    def wait_for_load_state(self, *_: Any, **__: Any) -> None:
+        return None
+
+    def eval_on_selector_all(self, *_: Any) -> list[str]:
+        return self.links.get(self.url.removeprefix(BASIS), [])
+
+
+class TestErkunden:
+    START = f"/work/{ORG}/"
+    AKTION = f"/work/{ORG}/notifications/alle-gelesen/"
+    LINKS = {START: [f"/work/{ORG}/faction/", AKTION, f"/work/{ORG}/tasks/labels/{KENNUNG}/"]}
+
+    def erkunden(self, *, nur_erlaubte: bool) -> tuple[_Netz, Any]:
+        pruefer = skript.Pruefer(object(), BASIS, ORG, nur_erlaubte=nur_erlaubte, protokoll=lambda _: None)
+        pruefer._messen = lambda *_, **__: None
+        netz = _Netz(self.LINKS)
+        lauf = skript.Lauf("vorsitz", "aktuell")
+        pruefer._erkunden(netz, lauf, [])
+        return netz, lauf
+
+    def test_entfernt_nur_seiten_der_erlaubnisliste(self) -> None:
+        netz, lauf = self.erkunden(nur_erlaubte=True)
+        assert netz.aufrufe == [self.START, f"/work/{ORG}/faction/"]
+        assert lauf.nicht_geprueft == [
+            f"/work/{ORG}/notifications/alle-gelesen/",
+            f"/work/{ORG}/tasks/labels/{{id}}/",
+        ]
+        text, fehler = skript.zusammenfassen([lauf])
+        assert fehler == 0
+        assert "Nicht geprüft (nicht auf der Erlaubnisliste für entfernte Instanzen): 2" in text
+        assert f"  [Hinweis] /work/{ORG}/notifications/alle-gelesen/" in text
+
+    def test_lokal_alle_seiten_ausser_der_sperrliste(self) -> None:
+        netz, lauf = self.erkunden(nur_erlaubte=False)
+        assert self.AKTION in netz.aufrufe
+        assert lauf.nicht_geprueft == []
+
+    def test_entfernte_instanz_immer_mit_erlaubnisliste(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MANDARI_PRUEF_PASSWORT", "x")
+        aufrufe: list[dict[str, Any]] = []
+
+        def pruefen(*_: Any, **optionen: Any) -> list[Any]:
+            aufrufe.append(optionen)
+            return []
+
+        monkeypatch.setattr(skript, "pruefen", pruefen)
+        assert skript.main(["--basis", "https://demo.mandari.de"]) == 0
+        assert skript.main(["--basis", "http://localhost:8000"]) == 0
+        assert skript.main(["--basis", "http://localhost:8000", "--nur-erlaubte"]) == 0
+        assert [k["nur_erlaubte"] for k in aufrufe] == [True, False, True]
+
+    def test_entfernt_auch_nur_mit_seiten_der_liste(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("MANDARI_PRUEF_PASSWORT", "x")
+        monkeypatch.setattr(skript, "pruefen", lambda *a, **k: pytest.fail("darf nicht starten"))
+        with pytest.raises(SystemExit) as abbruch:
+            skript.main(["--basis", "https://demo.mandari.de", "--nur", "notifications/alle-gelesen/"])
+        assert abbruch.value.code == 2
 
 
 class TestKonsole:
