@@ -1,32 +1,56 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Chat service with RAG context from Elasticsearch.
+KI-Assistent in Insight: Antworten aus den strukturierten Ratsdaten (Issue #899).
 
-Handles:
-- RAG context building from Elasticsearch search results
-- Token budget management
-- Chat completion via NebiusProvider
+Ablauf je Frage:
+
+1. Systemprompt mit heutigem Datum, Wochentag und Kommune (``prompts.build_chat_system_prompt``).
+2. Bis zu ``INSIGHT_CHAT_MAX_TOOL_ROUNDS`` Runden mit Werkzeugen (``chat_tools``): Das Modell fragt Sitzungen,
+   Tagesordnungen, Vorgänge, Gremien, Personen und Dokumentausschnitte der gewählten Kommune ab.
+3. Antwort mit Links auf die Insight-Seiten; die verlinkten Einträge werden zu Quellen-Kacheln.
+
+Scheitert eine Werkzeugrunde, antwortet die Schlussrunde mit den bis dahin geholten Ergebnissen; lehnt der Anbieter
+Werkzeuge ab, antwortet das Modell ohne sie (``OpenAICompatibleProvider.chat_with_tools``).
+
+Vorher bekam das Modell fünf Suchtreffer mit je bis zu 4.000 Token Volltext. Jetzt gibt es Volltext nur
+abschnittsweise auf Anforderung. Der Verbrauch (Eingabe/Ausgabe) wird je Antwort protokolliert.
+
+Einstellungen: ``INSIGHT_CHAT_TOOL_MODEL`` (eigenes, günstigeres Modell für die Werkzeugrunden; leer = Hauptmodell),
+``INSIGHT_CHAT_MAX_TOOL_ROUNDS`` und ``INSIGHT_CHAT_TIME_LIMIT_SECONDS``.
 """
 
+from __future__ import annotations
+
 import logging
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
-from insight_ai.providers.base import ChatMessage
-from insight_ai.providers.nebius import NebiusProvider
-from insight_ai.services.prompts import CHAT_SYSTEM_PROMPT
+from django.conf import settings
+from django.utils import timezone
+
+from insight_ai.providers import chat_provider
+from insight_ai.providers.base import ToolChatResponse
+from insight_ai.services.chat_tools import TOOLS, context_for, run_tool, select_sources
+from insight_ai.services.prompts import build_chat_system_prompt
 
 logger = logging.getLogger(__name__)
 
 # Token budget constants
-MAX_TOTAL_TOKENS = 32000
-SYSTEM_PROMPT_TOKENS = 500
-MAX_RAG_TOKENS = 20000
 MAX_HISTORY_TOKENS = 8000
 MAX_RESPONSE_TOKENS = 3000
-SAFETY_BUFFER = 500
+#: Werkzeugaufrufe je Runde; weitere beantwortet der Dienst mit einem Hinweis
+MAX_CALLS_PER_ROUND = 5
+#: So viel Zeit bleibt mindestens für die abschließende Antwort ohne Werkzeuge (Sekunden)
+FINAL_ANSWER_RESERVE_SECONDS = 20.0
+#: Kürzestes Zeitlimit je Antwort (Sekunden): genug für mindestens eine Werkzeugrunde und die Antwort
+MIN_TIME_LIMIT_SECONDS = 45
 
 # Approximate chars per token for German text
 CHARS_PER_TOKEN = 3
+
+NO_ANSWER = "Ich konnte dazu gerade keine Antwort erstellen. Bitte formulieren Sie Ihre Frage etwas anders."
 
 
 def _estimate_tokens(text: str) -> int:
@@ -34,191 +58,166 @@ def _estimate_tokens(text: str) -> int:
     return len(text) // CHARS_PER_TOKEN
 
 
-def _truncate_to_tokens(text: str, max_tokens: int) -> str:
-    """Truncate text to approximately max_tokens."""
-    max_chars = max_tokens * CHARS_PER_TOKEN
-    if len(text) <= max_chars:
-        return text
-    return text[:max_chars] + "\n[...]"
-
-
-def build_rag_context(query: str, body_id: str | None) -> tuple[str, list[dict]]:
+def _build_history_messages(history: list[dict[str, Any]], max_tokens: int) -> list[dict[str, str]]:
     """
-    Search relevant documents via Elasticsearch and build RAG context.
+    Verlauf als Nachrichten, älteste zuerst gekürzt (höchstens die letzten drei Wechsel).
 
-    Args:
-        query: User's question
-        body_id: UUID of the active municipality (or None)
-
-    Returns:
-        Tuple of (context_text, sources_list)
-    """
-    try:
-        from insight_core.services.search_service import get_search_service
-
-        search_service = get_search_service()
-        result = search_service.search_all(
-            query=query,
-            body_id=body_id,
-            page=1,
-            page_size=5,
-        )
-    except Exception as e:
-        logger.warning(f"Elasticsearch RAG search failed: {e}")
-        return "", []
-
-    hits = result.get("results", [])
-    if not hits:
-        return "", []
-
-    context_parts = []
-    sources = []
-
-    for hit in hits:
-        hit_type = hit.get("type", hit.get("_index", "").rstrip("s"))
-        title = hit.get("name") or hit.get("file_name") or "Unbekannt"
-        hit_id = hit.get("id", "")
-
-        # Build URL based on type
-        url = ""
-        if hit_type == "paper":
-            url = f"/insight/vorgaenge/{hit_id}/"
-        elif hit_type == "meeting":
-            url = f"/insight/termine/{hit_id}/"
-        elif hit_type == "organization":
-            url = f"/insight/gremien/{hit_id}/"
-        elif hit_type == "person":
-            url = f"/insight/personen/{hit_id}/"
-        elif hit_type == "file":
-            paper_id = hit.get("paper_id")
-            if paper_id:
-                url = f"/insight/vorgaenge/{paper_id}/"
-
-        # Build context snippet
-        snippet_parts = [f"### {title}"]
-        if hit.get("reference"):
-            snippet_parts.append(f"Vorlagen-Nr.: {hit['reference']}")
-        if hit.get("paper_type"):
-            snippet_parts.append(f"Typ: {hit['paper_type']}")
-        if hit.get("date") or hit.get("start"):
-            snippet_parts.append(f"Datum: {hit.get('date') or hit.get('start', '')}")
-
-        # Add text content (from file or cropped content)
-        text_content = hit.get("text_content") or hit.get("text_preview") or ""
-        if text_content:
-            # Limit per-document text to ~4000 tokens
-            text_content = _truncate_to_tokens(text_content, 4000)
-            snippet_parts.append(f"\n{text_content}")
-
-        context_parts.append("\n".join(snippet_parts))
-
-        if url:
-            sources.append(
-                {
-                    "title": title[:100],
-                    "url": url,
-                    "type": hit_type,
-                }
-            )
-
-    # Join context and truncate to budget
-    context_text = "\n\n---\n\n".join(context_parts)
-    context_text = _truncate_to_tokens(context_text, MAX_RAG_TOKENS)
-
-    return context_text, sources
-
-
-def _build_history_messages(history: list[dict], max_tokens: int) -> list[ChatMessage]:
-    """
-    Convert chat history to ChatMessage list, truncating oldest first.
-
-    Args:
-        history: List of {role, content} dicts
-        max_tokens: Maximum token budget for history
-
-    Returns:
-        List of ChatMessage objects within budget
+    Nur Nachrichten von Nutzer und Assistent mit Text; alles andere aus dem Browser wird verworfen.
     """
     if not history:
         return []
-
-    # Keep only last 6 messages (3 turns)
-    recent = history[-6:]
-
-    # Estimate total tokens
-    total = sum(_estimate_tokens(m.get("content", "")) for m in recent)
-
-    # Remove oldest messages if over budget
-    while total > max_tokens and len(recent) > 0:
+    recent = [m for m in history[-6:] if isinstance(m, dict)]
+    total = sum(_estimate_tokens(str(m.get("content", ""))) for m in recent)
+    while total > max_tokens and recent:
         removed = recent.pop(0)
-        total -= _estimate_tokens(removed.get("content", ""))
-
+        total -= _estimate_tokens(str(removed.get("content", "")))
     return [
-        ChatMessage(role=m["role"], content=m["content"])
+        {"role": str(m["role"]), "content": str(m["content"])}
         for m in recent
-        if m.get("role") in ("user", "assistant") and m.get("content")
+        if m.get("role") in ("user", "assistant") and isinstance(m.get("content"), str) and m.get("content")
     ]
+
+
+@dataclass
+class Usage:
+    """Verbrauch einer Antwort über alle Runden."""
+
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    rounds: int = 0
+    models: list[str] = field(default_factory=list)
+
+    def add(self, response: ToolChatResponse) -> None:
+        self.prompt_tokens += response.input_tokens
+        self.completion_tokens += response.output_tokens
+        self.rounds += 1
+        if response.model not in self.models:
+            self.models.append(response.model)
+
+    @property
+    def total_tokens(self) -> int:
+        return self.prompt_tokens + self.completion_tokens
+
+
+def _setting_int(name: str, default: int, minimum: int) -> int:
+    try:
+        return max(minimum, int(getattr(settings, name, default)))
+    except (TypeError, ValueError):
+        return default
 
 
 def process_chat_message(
     message: str,
-    history: list[dict],
+    history: list[dict[str, Any]],
     body_id: str | None,
+    *,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """
-    Process a chat message with RAG context and AI completion.
+    Eine Frage beantworten: Werkzeugrunden über die Ratsdaten der Kommune, dann die Antwort.
 
     Args:
-        message: User's message
-        history: Chat history [{role, content}, ...]
-        body_id: Active municipality UUID (str or None)
+        message: Frage der Nutzerin bzw. des Nutzers (bereits gefiltert)
+        history: Verlauf ``[{role, content}, …]`` aus dem Browser
+        body_id: Kennung der gewählten Kommune (oder ``None``)
+        now: Zeitpunkt der Frage (Standard: jetzt; Tests setzen ihn fest)
 
     Returns:
-        {
-            "response": "markdown text",
-            "sources": [{"title": ..., "url": ..., "type": ...}],
-            "tokens_used": int,
-        }
+        ``{"response", "sources", "tokens_used", "prompt_tokens", "completion_tokens", "rounds", "tool_calls"}``
 
     Raises:
-        ValueError: If the AI provider is not configured
+        ValueError: Der KI-Anbieter ist nicht konfiguriert oder antwortet nicht.
     """
-    provider = NebiusProvider()
+    provider = chat_provider()
     if not provider.is_available():
-        raise ValueError("KI-Assistent ist nicht konfiguriert. Bitte setzen Sie den NEBIUS_API_KEY.")
+        raise ValueError("KI-Assistent ist nicht konfiguriert.")
 
-    # 1. Build RAG context from Elasticsearch
-    rag_context, sources = build_rag_context(message, body_id)
+    started = time.monotonic()
+    now = now or timezone.now()
+    max_rounds = _setting_int("INSIGHT_CHAT_MAX_TOOL_ROUNDS", 4, 1)
+    time_limit = float(_setting_int("INSIGHT_CHAT_TIME_LIMIT_SECONDS", 90, MIN_TIME_LIMIT_SECONDS))
+    deadline = started + time_limit
+    tool_model = str(getattr(settings, "INSIGHT_CHAT_TOOL_MODEL", "") or "").strip() or None
 
-    # 2. Build system prompt with RAG context
-    if rag_context:
-        system_content = f"{CHAT_SYSTEM_PROMPT}\n\n## RELEVANTE DOKUMENTE\n\n{rag_context}"
-    else:
-        system_content = (
-            f"{CHAT_SYSTEM_PROMPT}\n\n"
-            "Hinweis: Es wurden keine relevanten Dokumente gefunden. "
-            "Antworte basierend auf allgemeinem Wissen über deutsche Kommunalpolitik."
+    ctx = context_for(body_id, now=now) if body_id else None
+    tools = TOOLS if ctx is not None else None
+
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": build_chat_system_prompt(now, ctx.body_name if ctx else None)}
+    ]
+    messages.extend(_build_history_messages(history, MAX_HISTORY_TOKENS))
+    messages.append({"role": "user", "content": message})
+
+    usage = Usage()
+    answer: str | None = None
+    for _round in range(max_rounds if tools else 0):
+        remaining = deadline - time.monotonic()
+        if remaining < FINAL_ANSWER_RESERVE_SECONDS * 1.5:
+            break
+        try:
+            response = provider.chat_with_tools(
+                messages,
+                tools=tools,
+                model=tool_model,
+                max_tokens=MAX_RESPONSE_TOKENS,
+                temperature=0.3,
+                timeout=remaining - FINAL_ANSWER_RESERVE_SECONDS,
+            )
+        except ValueError:
+            # Scheitert eine Werkzeugrunde (Zeitlimit, Fehler des Anbieters), antwortet die Schlussrunde mit dem,
+            # was bis dahin vorliegt, statt die Frage ganz abzulehnen
+            logger.warning("KI-Assistent: Werkzeugrunde %s gescheitert, weiter mit der Schlussrunde", _round + 1)
+            break
+        usage.add(response)
+        if not response.tool_calls or ctx is None:
+            # Ein eigenes Werkzeugmodell wählt nur die Werkzeuge; die Antwort schreibt das Hauptmodell
+            if tool_model is None and response.content.strip():
+                answer = response.content
+            break
+        messages.append(response.message)
+        for index, call in enumerate(response.tool_calls):
+            if index < MAX_CALLS_PER_ROUND:
+                result = run_tool(call.name, call.arguments, ctx)
+            else:
+                result = '{"fehler":"Zu viele Werkzeugaufrufe in einer Runde; bitte gezielter fragen."}'
+            messages.append({"role": "tool", "tool_call_id": call.id, "content": result})
+
+    if answer is None:
+        # Abschließende Antwort ohne weitere Werkzeuge (Runden oder Zeit erschöpft, Werkzeugmodell, ohne Kommune)
+        response = provider.chat_with_tools(
+            messages,
+            tools=tools,
+            tool_choice="none",
+            max_tokens=MAX_RESPONSE_TOKENS,
+            temperature=0.3,
+            timeout=max(FINAL_ANSWER_RESERVE_SECONDS, deadline - time.monotonic()),
         )
+        usage.add(response)
+        answer = response.content.strip() or NO_ANSWER
 
-    # 3. Build message list
-    messages = [ChatMessage(role="system", content=system_content)]
-
-    # 4. Add history (within token budget)
-    history_messages = _build_history_messages(history, MAX_HISTORY_TOKENS)
-    messages.extend(history_messages)
-
-    # 5. Add current user message
-    messages.append(ChatMessage(role="user", content=message))
-
-    # 6. Call AI provider
-    response = provider.chat_completion(
-        messages=messages,
-        max_tokens=MAX_RESPONSE_TOKENS,
-        temperature=0.3,
+    sources = select_sources(ctx, answer) if ctx is not None else []
+    tool_calls = list(ctx.calls) if ctx is not None else []
+    logger.info(
+        "KI-Assistent: Antwort mit %s Eingabe- und %s Ausgabe-Token in %s Runden (Werkzeuge: %s, Modelle: %s, %.1f s)",
+        usage.prompt_tokens,
+        usage.completion_tokens,
+        usage.rounds,
+        ",".join(tool_calls) or "-",
+        ",".join(usage.models),
+        time.monotonic() - started,
+        extra={
+            "chat_prompt_tokens": usage.prompt_tokens,
+            "chat_completion_tokens": usage.completion_tokens,
+            "chat_rounds": usage.rounds,
+            "chat_tool_calls": len(tool_calls),
+        },
     )
-
     return {
-        "response": response.content,
+        "response": answer,
         "sources": sources,
-        "tokens_used": response.total_tokens,
+        "tokens_used": usage.total_tokens,
+        "prompt_tokens": usage.prompt_tokens,
+        "completion_tokens": usage.completion_tokens,
+        "rounds": usage.rounds,
+        "tool_calls": tool_calls,
     }

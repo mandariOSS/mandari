@@ -10,14 +10,18 @@ import os
 
 import httpx
 
-from .base import AbstractAIProvider, ChatMessage, ChatResponse
+from .base import ChatMessage, ChatResponse
+from .openai_compatible import OpenAICompatibleProvider
 
 logger = logging.getLogger(__name__)
 
 
-class NebiusProvider(AbstractAIProvider):
+class NebiusProvider(OpenAICompatibleProvider):
     """
     Nebius TokenFactory provider using direct HTTP requests.
+
+    Runden mit Werkzeugen (KI-Assistent) erbt der Anbieter von ``OpenAICompatibleProvider``; Nebius liefert nur
+    Adresse, Schlüssel und Modelle.
 
     Uses httpx instead of OpenAI SDK to properly handle
     Kimi K2 Thinking's reasoning_content field.
@@ -39,8 +43,7 @@ class NebiusProvider(AbstractAIProvider):
         Args:
             api_key: Optional API key. If not provided, reads from SiteSettings.
         """
-        self._api_key = api_key
-        self._model = self.PRIMARY_MODEL
+        super().__init__(api_key)
 
     def _get_api_key(self) -> str:
         """Get API key from parameter or SiteSettings."""

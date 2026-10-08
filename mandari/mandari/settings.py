@@ -715,6 +715,12 @@ INSIGHT_SEARCH_PLACES_RADIUS = int(os.environ.get("INSIGHT_SEARCH_PLACES_RADIUS"
 
 # Nebius AI (KI-Features: Dokumenten-Assistent, Zusammenfassungen)
 NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
+# KI-Assistent in Insight (Issue #899): höchstens so viele Runden mit Werkzeugen je Antwort und so viele Sekunden
+# je Antwort. INSIGHT_CHAT_TOOL_MODEL wählt ein eigenes Modell nur für die Werkzeugrunden (z. B. ein günstigeres
+# ohne Denkphase); die Antwort schreibt weiter das Hauptmodell. Leer = Hauptmodell für alles.
+INSIGHT_CHAT_TOOL_MODEL = os.environ.get("INSIGHT_CHAT_TOOL_MODEL", "").strip()
+INSIGHT_CHAT_MAX_TOOL_ROUNDS = int(os.environ.get("INSIGHT_CHAT_MAX_TOOL_ROUNDS", "4"))
+INSIGHT_CHAT_TIME_LIMIT_SECONDS = int(os.environ.get("INSIGHT_CHAT_TIME_LIMIT_SECONDS", "90"))
 
 # Mistral API (für OCR)
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")

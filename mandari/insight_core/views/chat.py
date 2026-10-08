@@ -124,8 +124,7 @@ def chat_message(request):
     3. Check DSGVO consent (session)
     4. Check rate limit
     5. Run content filters (PII, spam, injection)
-    6. Build RAG context from Elasticsearch
-    7. Call NebiusProvider via chat_service
+    6-7. Antwort über chat_service: Werkzeugrunden über die Ratsdaten der Kommune (Issue #899)
     8. Log ChatUsage
     9. Return response + sources + remaining counts
     """
@@ -214,7 +213,7 @@ def chat_message(request):
             status=422,
         )
 
-    # 6-7. Build RAG context and call AI
+    # 6-7. Werkzeugrunden über die Ratsdaten der Kommune und Antwort
     # Außerhalb des try: Eine abgeschaltete Kommune endet mit dem Hinweis statt als interner Fehler
     body = get_active_body(request)
     body_id = str(body.id) if body else None
@@ -256,6 +255,9 @@ def chat_message(request):
         message=message[:500],
         filter_result="passed",
         tokens_used=result.get("tokens_used", 0),
+        prompt_tokens=result.get("prompt_tokens", 0),
+        completion_tokens=result.get("completion_tokens", 0),
+        rounds=min(int(result.get("rounds", 0)), 32767),
     )
 
     # Update remaining counts (decrement by 1)

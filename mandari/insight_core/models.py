@@ -2486,6 +2486,11 @@ class ChatUsage(models.Model):
         verbose_name="Filter-Ergebnis",
     )
     tokens_used = models.IntegerField(default=0, verbose_name="Tokens verbraucht")
+    # Verbrauch je Antwort nach Eingabe und Ausgabe sowie Zahl der Modellaufrufe (Issue #899). Mit Vorgabe in der
+    # Datenbank, damit ein älteres Image ohne die Felder weiter Zeilen anlegen kann.
+    prompt_tokens = models.IntegerField(default=0, db_default=0, verbose_name="Eingabe-Token")
+    completion_tokens = models.IntegerField(default=0, db_default=0, verbose_name="Ausgabe-Token")
+    rounds = models.PositiveSmallIntegerField(default=0, db_default=0, verbose_name="Modellaufrufe")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:

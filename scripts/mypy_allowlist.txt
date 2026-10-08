@@ -180,7 +180,6 @@ apps.work.tasks.views.manage
 apps.work.tasks.views.panel
 apps.work.urls
 insight_ai.services.chat_filters
-insight_ai.services.chat_service
 insight_ai.services.summarizer
 insight_core.admin
 insight_core.admin_dashboard

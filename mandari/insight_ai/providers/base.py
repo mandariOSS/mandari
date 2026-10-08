@@ -4,7 +4,8 @@ Abstract base class for AI providers.
 """
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -24,6 +25,30 @@ class ChatResponse:
     input_tokens: int
     output_tokens: int
     total_tokens: int
+
+
+@dataclass
+class ToolCall:
+    """Aufruf eines Werkzeugs, wie ihn das Modell anfordert (OpenAI-kompatibles Function Calling)."""
+
+    id: str
+    name: str
+    #: Argumente als JSON-Text, so wie das Modell sie liefert (kann ungültig sein)
+    arguments: str
+
+
+@dataclass
+class ToolChatResponse:
+    """Antwort einer Runde mit Werkzeugen: Text oder Werkzeugaufrufe, dazu der Verbrauch."""
+
+    content: str
+    model: str
+    input_tokens: int
+    output_tokens: int
+    total_tokens: int
+    tool_calls: list[ToolCall] = field(default_factory=list)
+    #: Nachricht des Assistenten für den Verlauf der nächsten Runde (mit ``tool_calls``)
+    message: dict[str, Any] = field(default_factory=dict)
 
 
 class AbstractAIProvider(ABC):
