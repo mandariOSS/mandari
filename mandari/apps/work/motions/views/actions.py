@@ -628,12 +628,15 @@ class MotionCommentResolveView(WorkViewMixin, View):
             if not vorschlaege.darf_entscheiden(comment, self.membership, entscheidung):
                 return JsonResponse({"error": "Keine Berechtigung"}, status=403)
             if comment.is_resolved:
-                # Schon entschieden (z. B. Wiederholung derselben Anfrage): nichts überschreiben
+                # Schon entschieden (Wiederholung derselben Anfrage oder eine andere Person war schneller): nichts
+                # überschreiben. Der Editor ändert den Text nur, wenn die gespeicherte Entscheidung seine eigene ist.
                 return JsonResponse(
                     {
                         "success": True,
                         "mark_id": str(comment.mark_id) if comment.mark_id else None,
                         "vorschlag_angenommen": comment.vorschlag_angenommen,
+                        "bereits_entschieden": True,
+                        "selbst": comment.resolved_by_id == self.membership.id,
                     }
                 )
             comment.vorschlag_angenommen = entscheidung == vorschlaege.ANNEHMEN

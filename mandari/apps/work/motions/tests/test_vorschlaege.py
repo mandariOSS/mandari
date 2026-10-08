@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import re
 import uuid
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
@@ -199,6 +200,32 @@ class TestEntscheiden:
         vorschlag.refresh_from_db()
         assert vorschlag.vorschlag_angenommen is True
 
+    def test_antwort_meldet_fruehere_entscheidung_einer_anderen_person(
+        self, org: Any, vorschlag: MotionComment, autorin: Any, kommentierer: Any, client_for: Any
+    ) -> None:
+        # Die Vorschlagende zieht zurück; die Autorin nimmt auf einer veralteten Seite an. Der Editor darf den Text
+        # dann nicht ändern: Die Antwort sagt, dass schon (von jemand anderem) entschieden wurde und wie.
+        client_for(kommentierer.user).post(erledigen_url(org, vorschlag), {"entscheidung": "ablehnen"}, **XHR)
+        antwort = client_for(autorin.user).post(erledigen_url(org, vorschlag), {"entscheidung": "annehmen"}, **XHR)
+        assert antwort.status_code == 200
+        daten = antwort.json()
+        assert daten["vorschlag_angenommen"] is False
+        assert daten["bereits_entschieden"] is True
+        assert daten["selbst"] is False
+        vorschlag.refresh_from_db()
+        assert vorschlag.vorschlag_angenommen is False
+        assert vorschlag.resolved_by == kommentierer
+
+    def test_wiederholte_eigene_anfrage_gilt_als_eigene_entscheidung(
+        self, org: Any, vorschlag: MotionComment, autorin: Any, client_for: Any
+    ) -> None:
+        # Ging die Antwort verloren, darf der Editor die eigene, gespeicherte Entscheidung beim zweiten Klick ausführen
+        client = client_for(autorin.user)
+        erste = client.post(erledigen_url(org, vorschlag), {"entscheidung": "annehmen"}, **XHR).json()
+        assert "bereits_entschieden" not in erste
+        zweite = client.post(erledigen_url(org, vorschlag), {"entscheidung": "annehmen"}, **XHR).json()
+        assert (zweite["vorschlag_angenommen"], zweite["bereits_entschieden"], zweite["selbst"]) == (True, True, True)
+
     def test_gewoehnlicher_kommentar_erledigen_wie_bisher(
         self, org: Any, motion: Motion, autorin: Any, kommentierer: Any, client_for: Any
     ) -> None:
@@ -280,3 +307,41 @@ def test_link_ins_ratsinformationssystem_mit_textlink_baustein() -> None:
     assert f'href="/work/musterfraktion/ris/papers/{paper_id}/"' in html
     assert "Im Ratsinformationssystem ansehen" in html
     assert "underline-offset-4" in html
+
+
+def _cotton(quelle: str, **kontext: Any) -> str:
+    from django.template import engines
+    from django_cotton.compiler_regex import CottonCompiler
+
+    return str(engines["django"].from_string(CottonCompiler().process(quelle)).render(kontext))
+
+
+def test_textlink_baustein_gemeinsam_ohne_aenderung_fuer_insight() -> None:
+    """
+    Der Textlink der Suche (cotton/suche/textlink) trägt auch die Textlinks des Editors: als Knopf (``knopf``) und
+    mit Klassen für die Anordnung (``klasse``). Ohne beide ist die Ausgabe dieselbe wie bisher (Insight unverändert).
+    """
+    link = _cotton('<c-suche.textlink href="?q=x" hx-get="?q=x">entfernen</c-suche.textlink>').strip()
+    assert link == (
+        '<a href="?q=x" hx-get="?q=x" class="font-medium text-primary-700 dark:text-primary-300 underline '
+        'underline-offset-4">entfernen</a>'
+    )
+    knopf = _cotton(
+        '<c-suche.textlink knopf klasse="ml-2" @click="offen = !offen" ::aria-expanded="offen.toString()">'
+        "Auswahl ändern</c-suche.textlink>"
+    ).strip()
+    assert knopf.startswith('<button type="button" ')
+    assert '@click="offen = !offen"' in knopf and ':aria-expanded="offen.toString()"' in knopf
+    assert 'underline-offset-4 ml-2"' in knopf and "href" not in knopf
+    assert knopf.endswith(">Auswahl ändern</button>")
+
+
+def test_editor_nutzt_den_textlink_baustein() -> None:
+    """Keine eigene Textlink-Klasse im Editor mehr: Blattkopf und Dialog nutzen den gemeinsamen Baustein."""
+    from django.conf import settings
+
+    vorlagen = Path(settings.BASE_DIR) / "templates" / "work" / "motions" / "partials" / "neu"
+    for datei in ("_blattkopf.html", "_dialoge.html", "_werkzeug.html"):
+        text = (vorlagen / datei).read_text(encoding="utf-8")
+        assert "ke-textlink" not in text, datei
+        assert "<c-suche.textlink" in text, datei

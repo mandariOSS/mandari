@@ -78,9 +78,10 @@ organization, absatzformate.
         {% if ris_application and not is_guest %}
         {# Eingangs- bzw. Drucksachennummer und Ergebnis wie im bisherigen Kopf (Issue #316) #}
         {% if can_submit_ris %}
-        <a class="ke-textlink inline-flex items-center gap-1" href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}" title="Status bei der Verwaltung">
+        {% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id as ris_status_url %}
+        <c-suche.textlink href="{{ ris_status_url }}" klasse="inline-flex items-center gap-1" title="Status bei der Verwaltung">
             <i data-lucide="landmark" class="w-4 h-4" aria-hidden="true"></i>{% include "work/motions/partials/_ris_reference.html" %}
-        </a>
+        </c-suche.textlink>
         {% else %}
         <span class="inline-flex items-center gap-1" title="Stand bei der Verwaltung">
             <i data-lucide="landmark" class="w-4 h-4" aria-hidden="true"></i>{% include "work/motions/partials/_ris_reference.html" %}

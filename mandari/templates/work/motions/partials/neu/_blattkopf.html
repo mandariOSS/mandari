@@ -40,10 +40,10 @@ Kontext: motion, can_edit, is_guest, document_types, letterheads, bezug, comment
     {% if bezug.parent %}
     <span class="ke-bezug" data-testid="kopf-bezug">
         <i data-lucide="corner-down-right" class="w-3.5 h-3.5" aria-hidden="true"></i>Änderungsantrag zu
-        {% if bezug.parent.url %}<a href="{{ bezug.parent.url }}" class="ke-textlink truncate">„{{ bezug.parent.label }}“</a>{% else %}<span class="italic truncate">{{ bezug.parent.label }}</span>{% endif %}
+        {% if bezug.parent.url %}<c-suche.textlink href="{{ bezug.parent.url }}" klasse="truncate">„{{ bezug.parent.label }}“</c-suche.textlink>{% else %}<span class="italic truncate">{{ bezug.parent.label }}</span>{% endif %}
     </span>
     {% endif %}
     {% if comments %}
-    <button type="button" class="ke-textlink ml-auto" @click="panelOeffnen('kommentare')">Alle Kommentare ({{ comments|length }})</button>
+    <c-suche.textlink knopf klasse="ml-auto" @click="panelOeffnen('kommentare')">Alle Kommentare ({{ comments|length }})</c-suche.textlink>
     {% endif %}
 </div>

@@ -451,7 +451,6 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
             context |= editor_neu.kontext(
                 motion=motion,
                 membership=self.membership,
-                organization=self.organization,
                 comments=comments,
                 approvals=approvals,
                 # Status steuern wie MotionStatusView: Bearbeiten-Stufe ohne Status-Sperre (die Sperre gilt nur dem

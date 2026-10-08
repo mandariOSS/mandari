@@ -45,6 +45,25 @@ export function textDerStelle(doc: PMNode, bereich: Bereich): string {
   return doc.textBetween(bereich.from, bereich.to, TRENNER)
 }
 
+/** Antwort des Servers auf „annehmen“ bzw. „ablehnen“ (`MotionCommentResolveView`) */
+export interface EntscheidungAntwort {
+  vorschlag_angenommen?: boolean | null
+  /** Der Vorschlag war vor dieser Anfrage schon entschieden; gespeichert bleibt die frühere Entscheidung */
+  bereits_entschieden?: boolean
+  /** Die frühere Entscheidung stammt von derselben Person (wiederholte Anfrage, deren Antwort verloren ging) */
+  selbst?: boolean
+}
+
+/**
+ * Darf der Editor die Entscheidung am Text ausführen (Stelle ersetzen bzw. Marke lösen)? Nur, wenn der Server genau
+ * diese Entscheidung gespeichert hat und sie nicht schon vorher von jemand anderem getroffen wurde. Sonst arbeitet
+ * die Seite mit einem veralteten Stand: Ein abgelehnter Vorschlag darf dann nicht doch in den Text kommen.
+ */
+export function entscheidungAusfuehren(antwort: EntscheidungAntwort, annehmen: boolean): boolean {
+  if (antwort.vorschlag_angenommen !== annehmen) return false
+  return antwort.bereits_entschieden !== true || antwort.selbst === true
+}
+
 /** Trägt die Stelle mit der Marke `commentId` noch genau den Text `alt`? */
 export function vorschlagPasst(editor: Editor, commentId: string, alt: string): boolean {
   const bereich = markenBereich(editor.state.doc, commentId)

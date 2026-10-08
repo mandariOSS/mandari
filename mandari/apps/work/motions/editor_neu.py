@@ -66,7 +66,6 @@ def kontext(
     *,
     motion: Any,
     membership: Any,
-    organization: Any,
     comments: Any,
     approvals: Any,
     darf_steuern: bool,
@@ -80,10 +79,8 @@ def kontext(
         offene_vorschlaege=offene_vorschlaege,
         darf_steuern=darf_steuern,
     )
-    stimmberechtigt: set[Any] = set()
-    if stand.aktion == "abstimmung":
-        stimmberechtigt = ablauf.stimmberechtigte_ids(organization)
-        stimmberechtigt.discard(membership.id)
+    # Dialog „Zur Abstimmung geben“: nur, wer das Dokument sehen darf oder es durch die Anfrage sehen dürfte
+    kreis = ablauf.abstimmung_kreis(motion, membership) if stand.aktion == "abstimmung" else None
     return {
         "ablauf": stand,
         "darf_steuern": darf_steuern,
@@ -91,9 +88,11 @@ def kontext(
         "offene_vorschlaege": offene_vorschlaege,
         # „Noch offen: 2 Kommentare, 1 Vorschlag“ für die Dialoge des Ablaufs (leer = nichts offen)
         "offen_text": ablauf.offen_text(offene_kommentare, offene_vorschlaege),
-        "stimmberechtigte_ids": stimmberechtigt,
-        # Vorauswahl als Text (Mitgliedschaften haben UUIDs; das Formular vergleicht Zeichenketten)
-        "abstimmung_vorauswahl": sorted(str(member_id) for member_id in stimmberechtigt),
+        "abstimmung_mitglieder": kreis.mitglieder if kreis else [],
+        "stimmberechtigte_ids": kreis.stimmberechtigt if kreis else set(),
+        # Vorauswahl und Mitglieder ohne Zugang als Text (UUIDs; das Formular vergleicht Zeichenketten)
+        "abstimmung_vorauswahl": sorted(str(member_id) for member_id in kreis.vorauswahl) if kreis else [],
+        "abstimmung_ohne_zugang": sorted(str(member_id) for member_id in kreis.ohne_zugang) if kreis else [],
         "abstimmung_art": ABSTIMMUNG_ART,
         "menue_leiste": MENUE_LEISTE,
         "absatzformate": ABSATZFORMATE,

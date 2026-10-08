@@ -14,7 +14,7 @@ import { type AiTarget, applyAiSuggestion, captureAiTarget, textOfRange } from '
 import type { CollabUser } from '../editor/collaboration'
 import type { FormatState } from '../editor/index'
 import { type GliederungsEintrag, gliederungAus, randAnordnen, zuUeberschriftSpringen } from '../editor/rand'
-import { inEinemAbsatz, vorschlagPasst, vorschlagUebernehmen } from '../editor/vorschlag'
+import { entscheidungAusfuehren, inEinemAbsatz, vorschlagPasst, vorschlagUebernehmen } from '../editor/vorschlag'
 import { defineComponent } from '../js/alpine/component'
 import { confirmAction } from '../js/alpine/confirm-dialog'
 import { showToast } from '../js/alpine/toast'
@@ -164,6 +164,8 @@ const CONFIG_ID = 'document-editor-config'
 const PLACEHOLDER = 'Beginnen Sie hier mit dem Schreiben...'
 /** Vorauswahl „Wer stimmt ab“ im Dialog „Zur Abstimmung geben“ (json_script im neuen Editor) */
 const ABSTIMMUNG_ID = 'editor-abstimmung-vorauswahl'
+/** Mitglieder, die das Dokument erst durch die Anfrage sehen (Freigabe „Kommentieren“) */
+const ABSTIMMUNG_OHNE_ZUGANG_ID = 'editor-abstimmung-ohne-zugang'
 /** Einstellungen des neuen Editors je Browser */
 const SPEICHER_GLIEDERUNG = 'mandari.editor.gliederung'
 const SPEICHER_SEITENANSICHT = 'mandari.editor.seitenansicht'
@@ -2166,6 +2168,18 @@ export const documentEditor = defineComponent(() => {
           return
         }
         comment.is_resolved = true
+        if (!entscheidungAusfuehren(antwort, annehmen)) {
+          // Schon entschieden (veraltete Seite): Karte mit dem Stand des Servers schließen, Text nicht anfassen
+          const gespeichert = antwort.vorschlag_angenommen === true
+          comment.vorschlag_angenommen = typeof antwort.vorschlag_angenommen === 'boolean' ? gespeichert : null
+          showToast(
+            `Über den Vorschlag wurde bereits entschieden: ${gespeichert ? 'angenommen' : 'abgelehnt'}. Am Text hat sich hier nichts geändert.`,
+            'info',
+          )
+          if (this.activeCommentId === comment.mark_id) this.activeCommentId = null
+          await this.reloadCommentsSidebar()
+          return
+        }
         comment.vorschlag_angenommen = annehmen
         if (editor) {
           const ergebnis = annehmen
@@ -2378,6 +2392,16 @@ export const documentEditor = defineComponent(() => {
       if (!anzahl) return 'Noch niemand ausgewählt'
       if (gleich) return anzahl === 1 ? '1 stimmberechtigtes Mitglied' : `${anzahl} stimmberechtigte Mitglieder`
       return anzahl === 1 ? '1 Mitglied ausgewählt' : `${anzahl} Mitglieder ausgewählt`
+    },
+
+    /** Hinweis, wenn Ausgewählte das Dokument erst durch die Anfrage sehen (der Freigabe-Weg gibt es ihnen frei) */
+    get abstimmungFreigabeHinweis(): string {
+      const ohneZugang = readJsonScript<string[]>(ABSTIMMUNG_OHNE_ZUGANG_ID) ?? []
+      const anzahl = this.abstimmungAuswahl.filter((id) => ohneZugang.includes(id)).length
+      if (!anzahl) return ''
+      return anzahl === 1
+        ? 'Eine ausgewählte Person sieht das Dokument bisher nicht und erhält Zugriff zum Lesen und Kommentieren.'
+        : `${anzahl} Ausgewählte sehen das Dokument bisher nicht und erhalten Zugriff zum Lesen und Kommentieren.`
     },
 
     /**

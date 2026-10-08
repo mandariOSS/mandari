@@ -17,6 +17,7 @@ import uuid
 from typing import Any, cast
 
 import pytest
+from django.utils import timezone
 
 from apps.work.motions.models import Motion, MotionApproval, MotionComment
 from tests_e2e.conftest import login_via_form, wait_for_bundle
@@ -388,6 +389,74 @@ class TestVorschlagen:
         expect(page.get_by_text("Die Stelle wurde inzwischen geändert.", exact=False)).to_be_visible()
         assert MotionComment.objects.get(motion=antrag, vorschlag="Schulkinder").is_resolved is False
         expect(page.locator(PROSEMIRROR)).to_contain_text("Der Musterweg ist der Schulweg vieler Kinder.")
+
+    def test_schon_abgelehnter_vorschlag_kommt_nicht_in_den_text(
+        self, page: Any, live_server: Any, login: Any, autorin: Any, stimme: Any, org: Any, demo_antrag: Motion
+    ) -> None:
+        page.set_viewport_size(DESKTOP)
+        login(autorin.user.email, PASSWORD)
+        oeffnen(page, f"{live_server.url}/work/{org.slug}/documents/{demo_antrag.id}/")
+        karte = page.locator(".ke-karte[data-vorschlag]")
+        expect(karte).to_contain_text("rund 4.500 Euro brutto")
+
+        # Veraltete Seite (keine Live-Verbindung): Die Vorschlagende hat ihren Vorschlag inzwischen abgelehnt
+        vorschlag = MotionComment.objects.get(motion=demo_antrag, vorschlag__isnull=False)
+        vorschlag.is_resolved = True
+        vorschlag.resolved_by = stimme
+        vorschlag.resolved_at = timezone.now()
+        vorschlag.vorschlag_angenommen = False
+        vorschlag.save()
+
+        karte.get_by_role("button", name="Vorschlag annehmen").click()
+        expect(
+            page.get_by_text("Über den Vorschlag wurde bereits entschieden: abgelehnt.", exact=False)
+        ).to_be_visible()
+        expect(page.locator(".ke-karte[data-vorschlag]")).to_have_count(0)
+        # Der Text bleibt, wie er ist: nichts ersetzt, nichts gespeichert, die Entscheidung bleibt „abgelehnt“
+        expect(page.locator(PROSEMIRROR)).to_contain_text("nach Schätzung unter 5.000 Euro brutto")
+        expect(page.locator(PROSEMIRROR)).not_to_contain_text("rund 4.500 Euro brutto")
+        assert page.evaluate(f"() => {ALPINE_EDITOR}.hasUnsavedChanges()") is False
+        assert "rund 4.500 Euro brutto" not in inhalt(demo_antrag)
+        vorschlag.refresh_from_db()
+        assert (vorschlag.vorschlag_angenommen, vorschlag.resolved_by_id) == (False, stimme.id)
+
+
+class TestAbstimmungPrivat:
+    def test_privates_dokument_vorauswahl_und_freigabe_hinweis(
+        self, page: Any, live_server: Any, login: Any, org: Any, make_member: Any, stimme: Any, axe: Any
+    ) -> None:
+        # Privater Entwurf: Stimmberechtigte sehen ihn noch nicht. Sie sind wählbar (die Person darf teilen), aber nicht
+        # vorausgewählt, und der Dialog sagt, was die Auswahl bewirkt.
+        teilende = _mitglied(make_member, org, "teilende-neu@example.org", [*PERMISSIONS, "motions.share"])
+        motion = Motion.objects.create(
+            organization=org, author=teilende, title="Privater Entwurf", status="draft", visibility="private"
+        )
+        cast(Any, motion).set_content_encrypted(INHALT)
+        motion.save()
+        page.set_viewport_size({"width": 1280, "height": 800})
+        login(teilende.user.email, PASSWORD)
+        oeffnen(page, f"{live_server.url}/work/{org.slug}/documents/{motion.id}/")
+        page.locator(".ke-stufe-knopf[data-stufe=abstimmung]").click()
+        dialog = page.get_by_test_id("dialog-abstimmung")
+        expect(dialog).to_contain_text("Noch niemand ausgewählt")
+        auswahl_knopf = dialog.get_by_role("button", name="Auswahl ändern")
+        # Ohne Vorauswahl ist die Liste gleich offen
+        expect(auswahl_knopf).to_have_attribute("aria-expanded", "true")
+        hinweis = dialog.get_by_test_id("abstimmung-freigabe-hinweis")
+        expect(hinweis).to_be_hidden()
+
+        dialog.locator(f'input[type=checkbox][value="{stimme.id}"]').check()
+        expect(hinweis).to_contain_text("Eine ausgewählte Person sieht das Dokument bisher nicht")
+        expect(hinweis).to_contain_text("nicht mehr privat")
+        expect(dialog).to_contain_text("1 Mitglied ausgewählt")
+        page.add_style_tag(content="[x-data='toastManager']{display:none!important}")
+        axe_sauber(axe, "Dialog Zur Abstimmung geben (privat)")
+        auswahl_knopf.click()
+        expect(auswahl_knopf).to_have_attribute("aria-expanded", "false")
+        # Nur angesehen: nichts angefragt, nichts freigegeben
+        motion.refresh_from_db()
+        assert motion.visibility == "private"
+        assert not MotionApproval.objects.filter(motion=motion).exists()
 
 
 class TestSpeichernMitWiederholung:

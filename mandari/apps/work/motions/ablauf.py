@@ -257,3 +257,84 @@ def stimmberechtigte_ids(organization: Any) -> set[Any]:
         .values_list("id", flat=True)
         .distinct()
     )
+
+
+#: Status nach „Zur Abstimmung geben“: Der Dialog setzt ihn vor den Zustimmungsanfragen
+START_STATUS = "internal_review"
+
+
+@dataclass(frozen=True)
+class AbstimmungKreis:
+    """Wen der Dialog „Zur Abstimmung geben“ anfragen kann (ohne die Person selbst)."""
+
+    #: Mitglieder, deren Anfrage der Freigabe-Weg annimmt, nach Namen sortiert
+    mitglieder: list[Any]
+    #: Stimmberechtigte darunter (Hinweis „stimmberechtigt“ in der Liste)
+    stimmberechtigt: set[Any]
+    #: Vorauswahl: Stimmberechtigte, die das Dokument nach dem Start sehen dürfen
+    vorauswahl: set[Any]
+    #: Mitglieder, die das Dokument erst durch die Anfrage sehen (Freigabe „Kommentieren“, privat wird geteilt)
+    ohne_zugang: set[Any]
+
+
+def abstimmung_kreis(motion: Any, membership: Any) -> AbstimmungKreis:
+    """
+    Auswahl im Dialog „Zur Abstimmung geben“ nach den Zugriffsrechten des Dokuments.
+
+    Angefragt wird über den vorhandenen Freigabe-Weg (``MotionApprovalRequestView``): Wer das Dokument nach dem Start
+    (Status „Interne Absprache“) sehen darf, kann angefragt werden. Wer es nicht sehen darf, nur, wenn die Person
+    es teilen darf; die Anfrage gibt dann „Kommentieren“ frei (ein privates Dokument wird geteilt). Dokumente in
+    „Nichtöffentliche Vorgänge“ lassen sich nie teilen: dort nur Vereidigte. Vorausgewählt werden nur Stimmberechtigte,
+    die das Dokument ohnehin sehen dürfen; mehr Zugriff entsteht erst durch eine bewusste Auswahl.
+
+    Die Regel ist ``Motion.access_level`` (Stufe ≠ ``none``) für Mitglieder ohne Gastzugang, hier für alle Mitglieder
+    auf einmal: Rechte, Freigaben und Zuständigkeit werden vorab geladen statt je Mitglied abgefragt (der Test
+    vergleicht beides).
+    """
+    from apps.tenants.models import Membership
+    from apps.work.faction.visibility import is_sworn_member
+
+    kandidaten = list(
+        Membership.objects.filter(organization_id=motion.organization_id, is_active=True, is_guest=False)
+        .exclude(id=membership.id)
+        .select_related("user")
+        .prefetch_related("roles__permissions", "individual_permissions", "denied_permissions")
+        .order_by("user__first_name", "user__last_name")
+    )
+    nur_vereidigte = motion.is_sworn_in_only()
+    darf_teilen = motion.can_share(membership)
+    zugeordnet = set(motion.contributors.values_list("id", flat=True)) | {motion.responsible_id}
+    freigegeben = set(motion.shares.filter(scope="user").values_list("user_id", flat=True))
+
+    def sieht_nach_start(kandidat: Any) -> bool:
+        if nur_vereidigte and not is_sworn_member(kandidat):
+            return False
+        if not kandidat.has_permission("motions.view"):
+            return False
+        if kandidat.id == motion.author_id or motion.visibility == "organization" or nur_vereidigte:
+            return True
+        if kandidat.id in zugeordnet or (motion.visibility == "shared" and kandidat.user_id in freigegeben):
+            return True
+        # Dokument eines entfernten Mitglieds (Autor:in geleert, #590): mit dem Recht lesbar
+        return motion.author_id is None and kandidat.has_permission("motions.view_former_members")
+
+    stimmberechtigt = stimmberechtigte_ids(motion.organization)
+    mitglieder: list[Any] = []
+    vorauswahl: set[Any] = set()
+    ohne_zugang: set[Any] = set()
+    for kandidat in kandidaten:
+        if sieht_nach_start(kandidat):
+            mitglieder.append(kandidat)
+            if kandidat.id in stimmberechtigt:
+                vorauswahl.add(kandidat.id)
+        elif darf_teilen and kandidat.has_permission("motions.view"):
+            # Die Anfrage gibt das Dokument frei; ohne Leserecht nützt die Freigabe nichts
+            mitglieder.append(kandidat)
+            ohne_zugang.add(kandidat.id)
+    angezeigt = {kandidat.id for kandidat in mitglieder}
+    return AbstimmungKreis(
+        mitglieder=mitglieder,
+        stimmberechtigt=stimmberechtigt & angezeigt,
+        vorauswahl=vorauswahl,
+        ohne_zugang=ohne_zugang,
+    )

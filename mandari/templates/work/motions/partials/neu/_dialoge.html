@@ -3,7 +3,7 @@ Dialoge des Ablaufs im neuen Antragseditor (Teil von #856). Jeder Schritt nutzt,
 - „Zur Abstimmung geben“: Status „Interne Absprache“ und je Mitglied eine Zustimmungsanfrage (Freigabe-Weg).
 - „Fassung freigeben“: Status „Freigegeben“; danach ist der Text gesperrt.
 - „Antrag einreichen“: Einreichung bei der Verwaltung (Seite mit mandari Session und E-Mail) oder Status „Eingereicht“.
-Native <dialog>: Fokusfalle und Escape vom Browser. Kontext: motion, ablauf, org_members, membership,
+Native <dialog>: Fokusfalle und Escape vom Browser. Kontext: motion, ablauf, abstimmung_mitglieder, abstimmung_ohne_zugang,
 stimmberechtigte_ids, approval_type_choices, offen_text, offene_vorschlaege, can_submit_ris, organization.
 {% endcomment %}
 {% load member_tags %}
@@ -22,13 +22,15 @@ stimmberechtigte_ids, approval_type_choices, offen_text, offene_vorschlaege, can
                 <dt id="ke-dlg-wer">Wer stimmt ab</dt>
                 <dd>
                     <span x-text="abstimmungWer"></span>
-                    <button type="button" class="ke-textlink ml-2" @click="abstimmungAuswahlOffen = !abstimmungAuswahlOffen"
-                            :aria-expanded="abstimmungAuswahlOffen.toString()" aria-controls="ke-dlg-auswahl">Auswahl ändern</button>
+                    <c-suche.textlink knopf klasse="ml-2" @click="abstimmungAuswahlOffen = !abstimmungAuswahlOffen"
+                            ::aria-expanded="abstimmungAuswahlOffen.toString()" aria-controls="ke-dlg-auswahl">Auswahl ändern</c-suche.textlink>
                     <div id="ke-dlg-auswahl" x-show="abstimmungAuswahlOffen" x-cloak>
                         <div class="ke-auswahl" role="group" aria-labelledby="ke-dlg-wer">
-                            {% for member in org_members %}{% if member.id != membership.id and not member.is_guest %}
+                            {% for member in abstimmung_mitglieder %}
                             <label><input type="checkbox" value="{{ member.id }}" x-model="abstimmungAuswahl">{{ member.user.get_display_name }}{% if member.id in stimmberechtigte_ids %}<span class="ke-hinweis">stimmberechtigt</span>{% endif %}</label>
-                            {% endif %}{% endfor %}
+                            {% empty %}
+                            <p class="ke-meta">Niemand sonst darf das Dokument sehen, und Sie dürfen es nicht freigeben.</p>
+                            {% endfor %}
                         </div>
                         <label for="ke-dlg-art" class="ke-meta block mt-2">Angefragt als</label>
                         <select id="ke-dlg-art" class="ke-feld" x-model="abstimmungArt">
@@ -39,6 +41,9 @@ stimmberechtigte_ids, approval_type_choices, offen_text, offene_vorschlaege, can
                 <dt>Hinweis an</dt>
                 <dd>die Ausgewählten, in Work und je nach Einstellung per E-Mail</dd>
             </dl>
+            {% if abstimmung_ohne_zugang %}
+            <p class="ke-meta" x-show="abstimmungFreigabeHinweis" x-cloak data-testid="abstimmung-freigabe-hinweis"><span x-text="abstimmungFreigabeHinweis"></span>{% if motion.visibility == "private" %} Das Dokument ist danach nicht mehr privat, sondern für sie freigegeben.{% endif %}</p>
+            {% endif %}
             {% if offen_text %}
             <p class="ke-meta">Noch offen: {{ offen_text }}. Sie können trotzdem abstimmen lassen.</p>
             {% endif %}

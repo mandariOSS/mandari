@@ -139,6 +139,151 @@ def test_stimmberechtigte_nach_rechten(org: Any, make_member: Any) -> None:
     assert gast.id not in ids
 
 
+# ---- Wer zur Abstimmung angefragt werden kann ------------------------------------------------------------------
+
+OHNE_ZUGANG_RE = re.compile(r'<script[^>]*id="editor-abstimmung-ohne-zugang"[^>]*>(.*?)</script>', re.S)
+
+
+def _kreis_mitglieder(org: Any, make_member: Any, motion: Motion) -> dict[str, Any]:
+    """Mitglieder mit allen Zugangswegen: Leserecht ohne Entwürfe, ohne Leserecht, Mitarbeit, Freigabe, Admin …"""
+    from apps.work.motions.models import MotionShare
+
+    mitglieder = {
+        "leser": make_member(org, ["motions.view", "voting.participate"], email="kreis-leser@example.org"),
+        "ohne_leserecht": make_member(org, ["voting.participate"], email="kreis-ohne@example.org"),
+        "mitarbeit": make_member(org, [*EDIT, "voting.participate"], email="kreis-mitarbeit@example.org"),
+        "freigabe": make_member(
+            org, ["motions.view", "motions.comment", "voting.participate"], email="kreis-freigabe@example.org"
+        ),
+        "admin": make_member(org, [], email="kreis-admin@example.org", is_admin=True),
+        "vereidigt": make_member(
+            org, ["motions.view", "voting.participate", "faction.view_non_public"], email="kreis-vereidigt@example.org"
+        ),
+        "beratend": make_member(org, ["motions.view"], email="kreis-beratend@example.org"),
+    }
+    mitglieder["vereidigt"].is_sworn_in = True
+    mitglieder["vereidigt"].save(update_fields=["is_sworn_in"])
+    motion.contributors.add(mitglieder["mitarbeit"])
+    if not motion.is_sworn_in_only():  # Nichtöffentliches lässt sich nicht freigeben (MotionShare.save)
+        MotionShare.objects.create(
+            motion=motion,
+            scope="user",
+            user=mitglieder["freigabe"].user,
+            level="comment",
+            created_by=mitglieder["mitarbeit"].user,
+        )
+    return mitglieder
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("sichtbarkeit", ["organization", "shared", "private"])
+@pytest.mark.parametrize("darf_teilen", [False, True])
+@pytest.mark.parametrize("nichtoeffentlich", [False, True])
+def test_abstimmung_kreis_folgt_der_zugriffsregel(
+    org: Any, make_member: Any, sichtbarkeit: str, darf_teilen: bool, nichtoeffentlich: bool
+) -> None:
+    """Liste, Vorauswahl und „ohne Zugang“ entsprechen Motion.can_access nach dem Start der Abstimmung."""
+    from apps.work.motions.models import DocumentFolder
+
+    rechte = [*EDIT, "voting.participate", "faction.view_non_public", *(["motions.share"] if darf_teilen else [])]
+    autorin = make_member(org, rechte, email="kreis-autorin@example.org")
+    autorin.is_sworn_in = True
+    autorin.save(update_fields=["is_sworn_in"])
+    ordner = (
+        DocumentFolder.objects.create(organization=org, name="Nichtöffentlich", sworn_in_only=True)
+        if nichtoeffentlich
+        else None
+    )
+    motion = Motion.objects.create(
+        organization=org, author=autorin, title="Antrag Kreis", visibility=sichtbarkeit, status="draft", folder=ordner
+    )
+    mitglieder = _kreis_mitglieder(org, make_member, motion)
+    inaktiv = make_member(org, ["motions.view", "voting.participate"], email="kreis-inaktiv@example.org")
+    inaktiv.is_active = False
+    inaktiv.save(update_fields=["is_active"])
+
+    kreis = ablauf.abstimmung_kreis(motion, autorin)
+    angezeigt = {m.id for m in kreis.mitglieder}
+    stimmrecht = ablauf.stimmberechtigte_ids(org)
+    teilen = motion.can_share(autorin)
+    nach_start = Motion.objects.get(pk=motion.pk)
+    nach_start.status = ablauf.START_STATUS
+    for name, mitglied in mitglieder.items():
+        sieht = nach_start.can_access(mitglied)
+        if sieht:
+            assert mitglied.id in angezeigt and mitglied.id not in kreis.ohne_zugang, name
+        elif teilen and mitglied.has_permission("motions.view"):
+            # Die Anfrage gibt das Dokument frei (Freigabe-Weg wie bisher), der Dialog sagt es
+            assert mitglied.id in angezeigt and mitglied.id in kreis.ohne_zugang, name
+        else:
+            assert mitglied.id not in angezeigt, name
+        # Vorausgewählt werden nur Stimmberechtigte, die das Dokument ohnehin sehen dürfen
+        assert (mitglied.id in kreis.vorauswahl) == (sieht and mitglied.id in stimmrecht), name
+    assert autorin.id not in angezeigt
+    assert inaktiv.id not in angezeigt
+    if nichtoeffentlich:
+        # Nichtöffentliches lässt sich nie teilen: nur Vereidigte, niemand „ohne Zugang“
+        assert angezeigt == {mitglieder["vereidigt"].id}
+        assert not kreis.ohne_zugang
+
+
+@pytest.mark.django_db
+def test_abstimmung_kreis_ohne_abfrage_je_mitglied(
+    org: Any, make_member: Any, django_assert_max_num_queries: Any
+) -> None:
+    autorin = make_member(org, [*EDIT, "voting.participate", "motions.share"], email="kreis-zahl@example.org")
+    motion = Motion.objects.create(organization=org, author=autorin, title="Antrag", visibility="shared")
+    for nummer in range(12):
+        make_member(org, ["motions.view", "motions.edit", "voting.participate"], email=f"kreis-{nummer}@example.org")
+    motion = Motion.objects.get(pk=motion.pk)
+    autorin = type(autorin).objects.get(pk=autorin.pk)
+    with django_assert_max_num_queries(15):
+        kreis = ablauf.abstimmung_kreis(motion, autorin)
+    assert len(kreis.mitglieder) == 12
+
+
+@pytest.mark.django_db
+class TestAbstimmungPrivat:
+    """Private Dokumente: Vorausgewählt wird nur, wer es sieht; wer es erst durch die Anfrage sieht, erfährt man."""
+
+    def test_ohne_teilen_recht_nur_wer_es_sieht(
+        self, org: Any, autorin: Any, make_member: Any, client_for: Any, neues_design: None
+    ) -> None:
+        motion = Motion.objects.create(organization=org, author=autorin, title="Privat", visibility="private")
+        stimme = make_member(org, ["motions.view", "voting.participate"], email="privat-stimme@example.org")
+        mitarbeit = make_member(org, [*EDIT, "voting.participate"], email="privat-mitarbeit@example.org")
+        motion.contributors.add(mitarbeit)
+        html = client_for(autorin.user).get(url(org, motion)).content.decode()
+        vorauswahl = VORAUSWAHL_RE.search(html)
+        ohne_zugang = OHNE_ZUGANG_RE.search(html)
+        assert vorauswahl and ohne_zugang
+        assert json.loads(vorauswahl.group(1)) == [str(mitarbeit.id)]
+        assert json.loads(ohne_zugang.group(1)) == []
+        dialog = html[html.index('data-testid="dialog-abstimmung"') :]
+        assert f'value="{mitarbeit.id}"' in dialog
+        assert f'value="{stimme.id}"' not in dialog
+        assert 'data-testid="abstimmung-freigabe-hinweis"' not in html
+
+    def test_mit_teilen_recht_auswahl_moeglich_mit_hinweis(
+        self, org: Any, make_member: Any, client_for: Any, neues_design: None
+    ) -> None:
+        teilende = make_member(org, [*EDIT, "motions.share"], email="privat-teilende@example.org")
+        motion = Motion.objects.create(organization=org, author=teilende, title="Privat", visibility="private")
+        stimme = make_member(org, ["motions.view", "voting.participate"], email="privat-stimme2@example.org")
+        html = client_for(teilende.user).get(url(org, motion)).content.decode()
+        vorauswahl = VORAUSWAHL_RE.search(html)
+        ohne_zugang = OHNE_ZUGANG_RE.search(html)
+        assert vorauswahl and ohne_zugang
+        # Nicht vorausgewählt (sonst gäbe ein Klick das private Dokument allen Stimmberechtigten frei) …
+        assert json.loads(vorauswahl.group(1)) == []
+        # … aber wählbar, und der Dialog sagt, was die Auswahl bewirkt
+        assert json.loads(ohne_zugang.group(1)) == [str(stimme.id)]
+        dialog = html[html.index('data-testid="dialog-abstimmung"') :]
+        assert f'value="{stimme.id}"' in dialog
+        assert 'data-testid="abstimmung-freigabe-hinweis"' in dialog
+        assert "nicht mehr privat" in dialog
+
+
 # ---- Seite und Schalter -----------------------------------------------------------------------------------------
 
 

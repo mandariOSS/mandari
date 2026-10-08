@@ -694,9 +694,6 @@
   .ke-knopf-haupt {
     @apply border-primary-600 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-500 dark:bg-primary-600 dark:hover:bg-primary-500;
   }
-  .ke-textlink {
-    @apply text-primary-700 underline-offset-2 hover:underline dark:text-primary-300;
-  }
 
   /* Fläche: Scrollbereich mit Raster Gliederung | Text | Rand; rechts bei Bedarf ein Bereich (Details, Verlauf …) */
   .ke-flaeche {
