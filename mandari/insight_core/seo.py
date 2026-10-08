@@ -12,7 +12,11 @@ Titel und Descriptions der Detailseiten (Issue #914) nennen, wonach Menschen suc
 Person oder Beschluss und die Kommune – genau einmal, auch im Bürgerportal einer Körperschaft, dessen
 Titelzusatz sonst ebenfalls die Kommune ist. Die Description ergänzt den Titel um Stand, Termin und Umfang.
 Alle Angaben kommen aus dem, was die Views ohnehin laden; hier entstehen keine Abfragen außer über die
-schon genutzten Beziehungen (``body``, vorgeladene Gremien).
+schon genutzten Beziehungen (``body``, vorgeladene Gremien). Ausnahme ist der Ort einer Sitzung
+(``services.sitzungsort``): höchstens je eine kleine Abfrage, wenn die Sitzung ihn nur verweist bzw. keinen nennt.
+
+Die Brotkrumen der strukturierten Daten führen nur über Adressen, die Suchmaschinen direkt erreichen
+(Bürgerportal → Kommune → Objekt, Issue #939).
 """
 
 from __future__ import annotations
@@ -28,11 +32,11 @@ from urllib.parse import urljoin
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
 from django.http import HttpRequest
+from django.templatetags.static import static
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.utils.safestring import SafeString, mark_safe
 
-from .navigation import AREA_PAGES
 from .services.paper_status import NONE as STAND_UNBEKANNT
 from .services.paper_status import PaperStatus, in_committee
 from .services.search_presentation import normalize_paper_type
@@ -210,35 +214,43 @@ def _gebiet(kommune: str) -> dict[str, str] | None:
     return {"@type": "AdministrativeArea", "name": kommune} if kommune else None
 
 
-def _verwaltung(kommune: str) -> dict[str, str] | None:
-    return {"@type": "GovernmentOrganization", "name": kommune} if kommune else None
+def _verwaltung(kommune: str, url: str = "") -> dict[str, str] | None:
+    """Verwaltung der Kommune als Organisation, mit ``url`` (Seite der Kommune), sofern bekannt."""
+    if not kommune:
+        return None
+    verwaltung = {"@type": "GovernmentOrganization", "name": kommune}
+    if url:
+        verwaltung["url"] = url
+    return verwaltung
 
 
 def _absolut(path: str) -> str:
     return urljoin(get_site_url(), path)
 
 
-def brotkrumen(body: Any, bereich: str, name: str, url: str) -> list[tuple[str, str]]:
-    """Brotkrumen einer Detailseite: Bürgerportal → Kommune (mit Einstieg) → Bereich → Objekt.
-
-    ``bereich`` ist ein Bereich der Navigation (``navigation.AREA_PAGES``). Hat die Kommune einen Einstieg
-    (``/insight/k/<slug>/``), führen Kommune und Bereich dorthin, sonst der Bereich auf seine Liste.
-    """
-    start = reverse("insight_core:insight:portal_home")
-    krumen: list[tuple[str, str]] = [("mandari Insight", _absolut(start))]
+def seite_der_kommune(body: Any) -> str:
+    """Absolute Adresse der Seite einer Kommune (``/insight/k/<slug>/``), leer ohne gültigen Slug."""
     slug = str(getattr(body, "slug", "") or "") if body is not None else ""
-    label, list_name = AREA_PAGES[bereich]
-    liste = reverse(f"insight_core:insight:{list_name}")
-    if slug:
-        try:
-            einstieg = reverse("insight_core:insight:portal_entry", kwargs={"slug": slug})
-            liste = reverse(
-                "insight_core:insight:portal_entry_path", kwargs={"slug": slug, "rest": liste[len(start) :]}
-            )
-            krumen.append((_kommune(body), _absolut(einstieg)))
-        except NoReverseMatch:  # Slug aus Altbestand, der nicht mehr zum Muster passt
-            liste = reverse(f"insight_core:insight:{list_name}")
-    krumen.append((label, _absolut(liste)))
+    if not slug:
+        return ""
+    try:
+        return _absolut(reverse("insight_core:insight:portal_entry", kwargs={"slug": slug}))
+    except NoReverseMatch:  # Slug aus Altbestand, der nicht mehr zum Muster passt
+        return ""
+
+
+def brotkrumen(body: Any, name: str, url: str) -> list[tuple[str, str]]:
+    """Brotkrumen einer Detailseite für die strukturierten Daten: Bürgerportal → Kommune → Objekt.
+
+    Die Kommune erscheint mit ihrer Seite (``/insight/k/<slug>/``), sofern sie einen Einstieg hat. Eine Ebene für
+    den Bereich (Sitzungen, Vorgänge …) gibt es nicht: Dessen Listen haben keine eigene Adresse, die Suchmaschinen
+    ohne gewählte Kommune erreichen (``/insight/k/<slug>/termine/`` leitet weiter, Issue #939). Die sichtbaren
+    Brotkrumen der Kopfzeile bleiben davon unberührt.
+    """
+    krumen: list[tuple[str, str]] = [("mandari Insight", _absolut(reverse("insight_core:insight:portal_home")))]
+    seite = seite_der_kommune(body)
+    if seite:
+        krumen.append((_kommune(body), seite))
     krumen.append((name, url))
     return krumen
 
@@ -338,7 +350,7 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
         keywords=[kommune, paper.paper_type or "Vorgang", "Kommunalpolitik"],
         # Letzte Brotkrume wie in der Kopfzeile: Drucksachennummer, sonst der gekürzte Betreff
         breadcrumbs=brotkrumen(
-            body, "vorgaenge", (paper.reference or "").strip() or kuerzen(betreff(paper) or "Vorgang", 50), canonical
+            body, (paper.reference or "").strip() or kuerzen(betreff(paper) or "Vorgang", 50), canonical
         ),
     )
 
@@ -348,14 +360,74 @@ def _uhrzeit(start: datetime) -> str:
     return f"{_WOCHENTAGE[lokal.weekday()]}, {lokal:%d.%m.%Y}, {lokal:%H:%M} Uhr"
 
 
-def get_meeting_seo(meeting: Any, request: HttpRequest, agenda_count: int | None = None) -> SEOContext:
+def _zeitpunkt(value: datetime) -> str:
+    """ISO 8601 mit dem Versatz der Ortszeit („2030-11-05T17:00:00+01:00“)."""
+    return (timezone.localtime(value) if timezone.is_aware(value) else value).isoformat()
+
+
+def _webseite(body: Any) -> str:
+    website = str(getattr(body, "website", "") or "") if body is not None else ""
+    return website if website.startswith(("https://", "http://")) else ""
+
+
+def _bild_der_kommune(body: Any) -> str:
+    """Bild einer Veranstaltung der Kommune (absolut): ihr Logo bzw. Wappen, sonst das Standardbild der Seiten.
+
+    Das Logo im Original: Die Vorschaubilder (``logo_vorschau``, 64 und 128 Pixel) sind für Suchmaschinen zu
+    klein. Das Bild der Portalseite (``hero_image``) bleibt außen vor – es trägt oft einen Bildnachweis, den
+    Suchergebnisse nicht zeigen.
+    """
+    logo = getattr(body, "logo", None) if body is not None else None
+    return _absolut(logo.url if logo else static("images/og-default.png"))
+
+
+def _gremien_der_sitzung(meeting: Any) -> list[dict[str, str]]:
+    """Gremien einer Sitzung als Mitwirkende mit der Adresse ihrer Seite (aus den vorgeladenen Gremien)."""
+    gremien = []
+    for org in meeting.organizations.all():
+        if org.name and not org.withdrawn_by_publisher:
+            seite = reverse("insight_core:insight:organization_detail", kwargs={"pk": org.pk})
+            gremien.append({"@type": "Organization", "name": org.name, "url": _absolut(seite)})
+    return gremien
+
+
+def ist_oeffentlich(tagesordnung: Iterable[Any]) -> bool:
+    """Hat die Sitzung laut Quelle einen öffentlichen Teil?
+
+    Ja, wenn mindestens ein angezeigter Tagesordnungspunkt ausdrücklich öffentlich ist (OParl
+    ``AgendaItem.public: true`` in den Rohdaten). Fehlt die Angabe, steht die Spalte ``public`` nur auf ihrem
+    Standardwert – dann gilt die Sitzung hier nicht als öffentlich. An der Sitzung selbst kennt OParl keine
+    Angabe zur Öffentlichkeit.
+    """
+    return any(
+        getattr(punkt, "public", False) and isinstance(punkt.raw_json, dict) and punkt.raw_json.get("public") is True
+        for punkt in tagesordnung
+    )
+
+
+def get_meeting_seo(
+    meeting: Any,
+    request: HttpRequest,
+    agenda_count: int | None = None,
+    tagesordnung: Iterable[Any] = (),
+) -> SEOContext:
     """
     SEO-Kontext einer Sitzungsseite: „{Gremium} am {Datum} – {Kommune}“.
 
-    ``agenda_count`` ist die Zahl der Tagesordnungspunkte, die die Seite zeigt (ohne weitere Abfrage).
+    ``agenda_count`` ist die Zahl der Tagesordnungspunkte, die die Seite zeigt, ``tagesordnung`` sind diese
+    Punkte (schon geladen, für den Hinweis auf eine öffentliche Sitzung).
+
+    Die Veranstaltung (``Event``) erscheint nur mit Beginn und einem verlässlichen Ort samt Postanschrift
+    (``services.sitzungsort``, Issue #939) – Google wertet sie sonst als ungültig. Ohne beides trägt die Seite nur
+    die Brotkrumen. Veranstalter ist die Verwaltung der Kommune (mit der Seite der Kommune), Mitwirkende sind die
+    Gremien (mit ihren Seiten). Eintritt frei (``offers`` mit Preis 0, ``isAccessibleForFree``) nur bei einer
+    Sitzung mit ausdrücklich öffentlichem Teil, die nicht abgesagt ist.
     """
+    from .services.sitzungsort import sitzungsort
+
     gremium = meeting.get_display_name()
-    kommune = _kommune(meeting.body)
+    body = meeting.body
+    kommune = _kommune(body)
     datum = _datum(meeting.start)
     haupt = f"{kuerzen(gremium, TITEL_BETREFF_MAX)} am {datum}" if datum else kuerzen(gremium, TITEL_BETREFF_MAX)
     title = mit_kommune(haupt, kommune, " – ")
@@ -373,33 +445,45 @@ def get_meeting_seo(meeting: Any, request: HttpRequest, agenda_count: int | None
         teile.append(
             "Tagesordnung mit einem Punkt." if agenda_count == 1 else f"Tagesordnung mit {agenda_count} Punkten."
         )
-    description = beschreibung(*teile)
+    # Nie leer: Der erste Satz nennt mindestens „Sitzung“; der Titel ist nur die Rückfallebene
+    description = beschreibung(*teile) or haupt
     canonical = build_canonical_url(request)
 
-    json_ld = _ohne_leere(
-        {
-            "@context": "https://schema.org",
-            "@type": "Event",
-            "name": haupt,
-            "description": description,
-            "url": canonical,
-            "inLanguage": "de",
-            "startDate": meeting.start.isoformat() if meeting.start else None,
-            "endDate": meeting.end.isoformat() if meeting.end else None,
-            "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
-            "location": {
-                "@type": "Place",
-                "name": meeting.location_name,
-                "address": meeting.location_address or meeting.location_name,
+    ort = sitzungsort(meeting, body) if meeting.start else None
+    json_ld = None
+    if ort is not None:
+        eintritt_frei = not meeting.cancelled and ist_oeffentlich(tagesordnung)
+        json_ld = _ohne_leere(
+            {
+                "@context": "https://schema.org",
+                "@type": "Event",
+                "name": haupt,
+                "description": description,
+                "url": canonical,
+                "inLanguage": "de",
+                "startDate": _zeitpunkt(meeting.start),
+                "endDate": _zeitpunkt(meeting.end) if meeting.end else None,
+                "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode",
+                "eventStatus": "https://schema.org/EventCancelled"
+                if meeting.cancelled
+                else "https://schema.org/EventScheduled",
+                "location": {"@type": "Place", "name": ort.name, "address": ort.postanschrift()},
+                "image": _bild_der_kommune(body),
+                "organizer": _verwaltung(kommune, seite_der_kommune(body) or _webseite(body))
+                or {"@type": "Organization", "name": "Kommune"},
+                "performer": _gremien_der_sitzung(meeting),
+                "isAccessibleForFree": True if eintritt_frei else None,
+                "offers": {
+                    "@type": "Offer",
+                    "price": "0",
+                    "priceCurrency": "EUR",
+                    "availability": "https://schema.org/InStock",
+                    "url": canonical,
+                }
+                if eintritt_frei
+                else None,
             }
-            if meeting.location_name
-            else None,
-            "organizer": _verwaltung(kommune) or {"@type": "Organization", "name": "Kommune"},
-            "eventStatus": "https://schema.org/EventCancelled"
-            if meeting.cancelled
-            else "https://schema.org/EventScheduled",
-        }
-    )
+        )
 
     return SEOContext(
         title=title,
@@ -408,7 +492,7 @@ def get_meeting_seo(meeting: Any, request: HttpRequest, agenda_count: int | None
         og_type="event",
         json_ld=json_ld,
         keywords=["Sitzung", gremium, kommune],
-        breadcrumbs=brotkrumen(meeting.body, "sitzungen", haupt, canonical),
+        breadcrumbs=brotkrumen(body, haupt, canonical),
     )
 
 
@@ -465,7 +549,7 @@ def get_organization_seo(
         og_type="website",
         json_ld=json_ld,
         keywords=[name, art or "Gremium", kommune],
-        breadcrumbs=brotkrumen(organization.body, "gremien", kuerzen(name, TITEL_BETREFF_MAX), canonical),
+        breadcrumbs=brotkrumen(organization.body, kuerzen(name, TITEL_BETREFF_MAX), canonical),
     )
 
 
@@ -544,7 +628,7 @@ def get_person_seo(
         og_type="profile",
         json_ld=json_ld,
         keywords=[name, funktion or "Kommunalpolitik", kommune],
-        breadcrumbs=brotkrumen(person.body, "personen", name, canonical),
+        breadcrumbs=brotkrumen(person.body, name, canonical),
     )
 
 
@@ -590,7 +674,7 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
         og_type="article",
         json_ld=json_ld,
         keywords=["Beschluss", "Umsetzung", kommune],
-        breadcrumbs=brotkrumen(body, "beschluesse", titel, canonical),
+        breadcrumbs=brotkrumen(body, titel, canonical),
     )
 
 

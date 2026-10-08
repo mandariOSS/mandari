@@ -224,15 +224,11 @@ class TestVorgang:
         assert None not in vorgang.values()
         assert krumen["@type"] == "BreadcrumbList"
         eintraege = krumen["itemListElement"]
-        assert [e["name"] for e in eintraege] == ["mandari Insight", "Münster", "Vorgänge", "V/0881/2011"]
-        assert [e["position"] for e in eintraege] == [1, 2, 3, 4]
+        # Ohne Ebene „Vorgänge“: /insight/k/<slug>/vorgaenge/ leitet weiter (Issue #939)
+        assert [e["name"] for e in eintraege] == ["mandari Insight", "Münster", "V/0881/2011"]
+        assert [e["position"] for e in eintraege] == [1, 2, 3]
         pfade = [re.sub(r"^https?://[^/]+", "", e["item"]) for e in eintraege]
-        assert pfade == [
-            "/insight/",
-            "/insight/k/muenster/",
-            "/insight/k/muenster/vorgaenge/",
-            f"/insight/vorgaenge/{paper.id}/",
-        ]
+        assert pfade == ["/insight/", "/insight/k/muenster/", f"/insight/vorgaenge/{paper.id}/"]
 
     def test_brotkrumen_ohne_einstieg_der_kommune(self, muenster: OParlBody) -> None:
         OParlBody.objects.filter(pk=muenster.pk).update(slug=None)
@@ -240,8 +236,8 @@ class TestVorgang:
 
         krumen = _json_ld(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"))[1]["itemListElement"]
 
-        assert [e["name"] for e in krumen] == ["mandari Insight", "Vorgänge", "V/0881/2011"]
-        assert krumen[1]["item"].endswith("/insight/vorgaenge/")
+        assert [e["name"] for e in krumen] == ["mandari Insight", "V/0881/2011"]
+        assert krumen[1]["item"].endswith(f"/insight/vorgaenge/{paper.id}/")
 
 
 # =============================================================================
@@ -274,6 +270,7 @@ class TestSitzung:
             _gremium(muenster, "Bezirksvertretung Mitte"),
             _zeit(2030, 11, 5, 17),
             location_name="Rathaus, Festsaal",
+            location_address="Musterstraße 1, 48143 Münster",
         )
         for nummer in ("1", "2"):
             OParlAgendaItem.objects.create(
@@ -288,7 +285,11 @@ class TestSitzung:
         ereignis, krumen = _json_ld(seite)
         assert ereignis["@type"] == "Event" and ereignis["name"] == "Bezirksvertretung Mitte am 05.11.2030"
         assert ereignis["location"]["name"] == "Rathaus, Festsaal"
-        assert [e["name"] for e in krumen["itemListElement"]][1:3] == ["Münster", "Sitzungen"]
+        assert ereignis["location"]["address"]["streetAddress"] == "Musterstraße 1"
+        assert [e["name"] for e in krumen["itemListElement"]][1:] == [
+            "Münster",
+            "Bezirksvertretung Mitte am 05.11.2030",
+        ]
 
     def test_abgesagte_sitzung(self, muenster: OParlBody) -> None:
         sitzung = _sitzung(muenster, _gremium(muenster, "Rat"), _zeit(2030, 11, 5, 17), cancelled=True)
@@ -319,7 +320,7 @@ class TestGremium:
         gremium, krumen = _json_ld(seite)
         assert gremium["@type"] == "Organization" and gremium["name"] == "GRÜNE"
         assert gremium["parentOrganization"]["name"] == "Münster"
-        assert krumen["itemListElement"][2]["name"] == "Gremien"
+        assert [e["name"] for e in krumen["itemListElement"]] == ["mandari Insight", "Münster", "GRÜNE"]
 
     def test_art_nicht_doppelt_wenn_der_name_sie_traegt(self, muenster: OParlBody) -> None:
         ausschuss = _gremium(muenster, "Ausschuss für Umwelt und Klimaschutz", classification="Ausschuss")
@@ -358,12 +359,7 @@ class TestPerson:
         assert daten["@type"] == "Person" and daten["name"] == "Erika Muster" and daten["jobTitle"] == "Ratsmitglied"
         assert [o["name"] for o in daten["memberOf"]] == ["Rat", "Bezirksvertretung Mitte"]
         assert {o["name"] for o in daten["affiliation"]} == {"Münster", "Fraktion Bündnis 90/Die Grünen"}
-        assert [e["name"] for e in krumen["itemListElement"]] == [
-            "mandari Insight",
-            "Münster",
-            "Personen",
-            "Erika Muster",
-        ]
+        assert [e["name"] for e in krumen["itemListElement"]] == ["mandari Insight", "Münster", "Erika Muster"]
 
     def test_ohne_mandat_nicht_als_ratsmitglied(self, muenster: OParlBody) -> None:
         ausschuss = _gremium(muenster, "Ausschuss für Umwelt", classification="Ausschuss")
@@ -530,7 +526,7 @@ def test_beschluss_mit_gremium_kommune_und_stand(muenster: OParlBody) -> None:
     assert _meta(seite, "name", "description").startswith("Münster: Beschluss im Hauptausschuss vom 01.09.2026.")
     daten, krumen = _json_ld(seite)
     assert daten["name"] == "Radweg an der Hafenstraße" and daten["spatialCoverage"]["name"] == "Münster"
-    assert [e["name"] for e in krumen["itemListElement"]][2:] == ["Beschlüsse", "Radweg an der Hafenstraße"]
+    assert [e["name"] for e in krumen["itemListElement"]][1:] == ["Münster", "Radweg an der Hafenstraße"]
 
 
 # =============================================================================
