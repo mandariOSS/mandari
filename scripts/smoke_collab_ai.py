@@ -10,8 +10,9 @@ Prüft:
 - yjs_save mit HTML → Motion.content_encrypted aktualisiert + Revision (gedrosselt, 10 Min)
 - Disconnect des letzten Teilnehmers → Snapshot-Revision (inhaltsgleiche werden übersprungen)
 - Revision-Restore → yjs_document geleert + reload-Broadcast an verbundene Clients
-- AISettings (Admin-Singleton): verschlüsselter API-Key, Provider-Auflösung,
-  OpenAI-kompatibler und Anthropic-HTTP-Pfad (Mock via unittest.mock auf httpx)
+- AISettings (Admin-Singleton): verschlüsselter API-Key, Auflösung über die zentrale KI-Konfiguration,
+  OpenAI-kompatibler HTTP-Pfad an einen freigegebenen Host, gesperrter Host ohne Aufruf (Issue #950;
+  Mock via unittest.mock auf httpx)
 - Verbrauchsbuchung (OrganizationAITokenUsage) + Monatslimit-Durchsetzung
   (Org-Override, 0 = deaktiviert, leer = Default aus AISettings)
 - Chat sendet Dokumentkontext mit (Payload-Assert)
@@ -51,8 +52,6 @@ os.environ["EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 os.environ["ALLOWED_HOSTS"] = "testserver,localhost"
 # Channels: InMemory-Layer statt Redis (REDIS_URL="" → InMemoryChannelLayer)
 os.environ["REDIS_URL"] = ""
-# Kein globaler Nebius-Fallback-Key aus der Umgebung
-os.environ.pop("NEBIUS_API_KEY", None)
 
 # Sync-Watchdog (insight_sync.apps) nicht starten (erkennt Management-Commands
 # an sys.argv — entsprechend tarnen).
@@ -66,6 +65,7 @@ from django.conf import settings  # noqa: E402
 
 settings.MEDIA_ROOT = str(_tmp_dir / "media")
 
+from django.core.cache import cache  # noqa: E402
 from django.test import Client  # noqa: E402
 from django.test.utils import setup_test_environment  # noqa: E402
 
@@ -348,10 +348,11 @@ print("=== 3. AISettings + KI-Chat ===")
 service = MotionAIService(organization=org, user_id=user.id)
 check("KI ohne Konfiguration nicht verfügbar", service.is_available() is False)
 
+STACKIT = "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1"
 ai_settings = AISettings.get_settings()
 ai_settings.enabled = True
-ai_settings.provider = AISettings.PROVIDER_OPENAI
-ai_settings.model_name = "gpt-4o-mini"
+ai_settings.provider = "stackit"
+ai_settings.model_name = "modell-smoke"
 ai_settings.max_output_tokens = 512
 ai_settings.default_org_monthly_token_limit = 100000
 ai_settings.set_api_key("test-key-123")
@@ -360,7 +361,7 @@ ai_settings.save()
 check("API-Key verschlüsselt gespeichert", ai_settings.api_key_encrypted is not None)
 check("API-Key nicht im Klartext", b"test-key-123" not in bytes(ai_settings.api_key_encrypted))
 check("API-Key entschlüsselbar", ai_settings.get_api_key() == "test-key-123")
-check("Base-URL-Default OpenAI", ai_settings.get_effective_base_url() == "https://api.openai.com/v1/")
+check("Base-URL der Vorlage (STACKIT)", ai_settings.get_effective_base_url() == STACKIT)
 
 service = MotionAIService(organization=org, user_id=user.id)
 check("KI mit AISettings verfügbar", service.is_available() is True)
@@ -415,9 +416,9 @@ payload = call_args.kwargs.get("json") or {}
 headers = call_args.kwargs.get("headers") or {}
 messages = payload.get("messages") or []
 system_texts = " ".join(str(m.get("content", "")) for m in messages if m.get("role") == "system")
-check("OpenAI-Pfad: URL /chat/completions", called_url.endswith("/chat/completions"), called_url)
-check("OpenAI-Pfad: Bearer-Auth", headers.get("Authorization") == "Bearer test-key-123", str(headers))
-check("OpenAI-Pfad: Modell aus AISettings", payload.get("model") == "gpt-4o-mini", str(payload.get("model")))
+check("Endpunkt: URL der Vorlage + /chat/completions", called_url == STACKIT + "/chat/completions", called_url)
+check("Endpunkt: Bearer-Auth", headers.get("Authorization") == "Bearer test-key-123", str(headers))
+check("Endpunkt: Modell aus AISettings", payload.get("model") == "modell-smoke", str(payload.get("model")))
 check(
     "Chat sendet Dokumentkontext mit",
     "Dokumentkontext" in system_texts and "Spielplätze" in system_texts,
@@ -463,17 +464,28 @@ check("Limit 0 → Endpoint 503", resp.status_code == 503, f"got {resp.status_co
 org.ai_token_limit_monthly = None
 org.save(update_fields=["ai_token_limit_monthly"])
 
-# 3d. Anthropic-Pfad (Messages API)
-ai_settings = AISettings.get_settings()
-ai_settings.provider = AISettings.PROVIDER_ANTHROPIC
-ai_settings.model_name = "claude-sonnet-4-5"
-ai_settings.save()
+# 3d. Nicht freigegebener Host (direkt in der Datenbank): kein Aufruf, kein Rückfall
+AISettings.objects.filter(pk=1).update(
+    provider="eigener", base_url="https://ki.beispiel.example/v1", anzeigename="Fremd", verarbeitungsort="unbekannt"
+)
+cache.delete(AISettings.CACHE_KEY)
+service = MotionAIService(organization=org, user_id=user.id)
+check("Gesperrter Host → is_available False", service.is_available() is False)
+mock_client = _mock_httpx_client(openai_response)
+with patch("apps.work.motions.services.httpx.Client", return_value=mock_client):
+    resp = client.post(
+        f"/work/{org.slug}/documents/ai/",
+        {"action": "chat", "text": "<p>x</p>", "instruction": "Hallo", "motion_type": "motion", "history": "[]"},
+    )
+check("Gesperrter Host → Endpoint 503", resp.status_code == 503, f"got {resp.status_code}")
+check("Gesperrter Host: kein HTTP-Call", mock_client.post.call_count == 0, str(mock_client.post.call_count))
 
-anthropic_response = {
-    "content": [{"type": "text", "text": "Antwort von Claude."}],
-    "usage": {"input_tokens": 40, "output_tokens": 20},
-}
-mock_client = _mock_httpx_client(anthropic_response)
+# 3e. Zurück auf die Vorlage: zweiter Aufruf, Verbrauch kumuliert
+AISettings.objects.filter(pk=1).update(provider="stackit", base_url="", anzeigename="", verarbeitungsort="")
+cache.delete(AISettings.CACHE_KEY)
+mock_client = _mock_httpx_client(
+    {"choices": [{"message": {"content": "Zweite Antwort."}}], "usage": {"total_tokens": 60}}
+)
 with patch("apps.work.motions.services.httpx.Client", return_value=mock_client):
     resp = client.post(
         f"/work/{org.slug}/documents/ai/",
@@ -485,28 +497,8 @@ with patch("apps.work.motions.services.httpx.Client", return_value=mock_client):
             "history": "[]",
         },
     )
-check("Anthropic: Endpoint 200", resp.status_code == 200, f"got {resp.status_code}")
-data = resp.json()
-check("Anthropic: Antwort geparst", "Claude" in data.get("content", ""), str(data)[:160])
-check("Anthropic: Tokens input+output", data.get("tokens_used") == 60, str(data.get("tokens_used")))
-
-call_args = mock_client.post.call_args
-called_url = call_args.args[0] if call_args.args else call_args.kwargs.get("url", "")
-payload = call_args.kwargs.get("json") or {}
-headers = call_args.kwargs.get("headers") or {}
-check("Anthropic: URL /messages", called_url.endswith("/messages"), called_url)
-check("Anthropic: x-api-key Header", headers.get("x-api-key") == "test-key-123", str(headers))
-check("Anthropic: anthropic-version Header", headers.get("anthropic-version") == "2023-06-01", str(headers))
-check(
-    "Anthropic: system als Top-Level-Parameter",
-    "Radwege" in str(payload.get("system", "")),
-    str(payload.get("system"))[:160],
-)
-check(
-    "Anthropic: keine system-Rollen in messages",
-    all(m.get("role") != "system" for m in payload.get("messages", [])),
-    str(payload.get("messages"))[:160],
-)
+check("Zweiter Aufruf: Endpoint 200", resp.status_code == 200, f"got {resp.status_code}")
+check("Zweiter Aufruf: Tokens", resp.json().get("tokens_used") == 60, str(resp.json().get("tokens_used")))
 
 used_after = OrganizationAITokenUsage.get_tokens_used(org, OrganizationAITokenUsage.PERIOD_MONTH)
 check("Verbrauch kumuliert (123+60)", used_after == 183, str(used_after))

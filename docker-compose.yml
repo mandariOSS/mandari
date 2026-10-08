@@ -134,8 +134,10 @@ x-app-environment: &app-environment
   OPARL_CHANGES_ENABLED: ${OPARL_CHANGES_ENABLED:-false}
   OPARL_CHANGES_RETENTION_DAYS: ${OPARL_CHANGES_RETENTION_DAYS:-90}
   OPARL_SNAPSHOT_PARALLEL: ${OPARL_SNAPSHOT_PARALLEL:-2}
-  # AI (optional)
-  NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+  # KI (optional, Issue #950): Anbieter, Basis-URL, Modell und Schlüssel im Admin (KI-Einstellungen). Hier nur die
+  # Positivliste erlaubter Hosts (kommagetrennt, leer = Standard) und die Adresse der externen Texterkennung
+  KI_ERLAUBTE_HOSTS: ${KI_ERLAUBTE_HOSTS:-}
+  MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-}
   # Live-Übertragungen von Gremiensitzungen (docs/LIVE_UEBERTRAGUNG.md), Standard aus: aus = keine Anfragen an
   # Streaming-Anbieter, kein Zeitplan; an = Dienst worker-live bedient die Warteschlange live
   LIVE_UEBERTRAGUNG_AKTIV: ${LIVE_UEBERTRAGUNG_AKTIV:-false}

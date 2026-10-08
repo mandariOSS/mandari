@@ -825,6 +825,28 @@ dann ohne `--dry-run` (einzelne Umzüge mit `--eintrag <Kennung>`). Zurückgedre
 früheren Punkt bzw. an der früheren Vorlage und ziehen von dort nie wieder automatisch um. Ein älteres Image läuft
 ohne Rückbau der Migration (zwei neue Tabellen).
 
+### KI-Anbieter: eine Konfiguration, nur freigegebene EU-Endpunkte
+
+Jeder KI-Aufruf (Schreibhilfe und Co-Editor in Work, Zusammenfassung, KI-Assistent und KI-Verortung im
+Bürgerportal) nutzt eine Konfiguration (Issue #950): Anbieter (Vorlage oder eigener OpenAI-kompatibler
+Endpunkt), Basis-URL, Modell und Schlüssel stehen im Admin unter „KI-Einstellungen“, getrennt schaltbar für
+Work und das Bürgerportal; Organisationen können für Work einen eigenen Schlüssel und Anbieter eintragen. Ohne
+Anbieter bleibt die KI aus; einen fest eingebauten Anbieter oder einen Rückfall gibt es nicht.
+
+Technische Sperre ist die Positivliste `KI_ERLAUBTE_HOSTS` (kommagetrennte Hostnamen, in Anwendung und
+Ingestor gleich setzen). Gesetzt ersetzt sie den Standard, leer gilt der Standard aus
+`shared/mandari_dokumente/ki_hosts.py`. Verglichen wird der Host exakt, nur `https`, ohne Zugangsdaten in
+der Adresse, Port nur 443. Jede Adresse wird bei jedem Aufruf neu geprüft, auch wenn sie direkt in der
+Datenbank steht; ein nicht freigegebener Host ergibt „KI aus“ mit Warnung im Protokoll (ohne Schlüssel).
+
+Ein Anbieterwechsel ist reine Konfiguration: Host in `KI_ERLAUBTE_HOSTS` aufnehmen (Neustart), dann im Admin
+Vorlage bzw. Basis-URL, Modell und Schlüssel eintragen. Die Einwilligung im KI-Assistenten nennt Anbieter und
+Verarbeitungsort aus dieser Konfiguration und gilt nur für den Anbieter, dem zugestimmt wurde.
+
+**Rückfall auf ein älteres Image:** Die neuen Spalten haben Datenbank-Standardwerte; ein älteres Image läuft
+ohne Rückbau der Migrationen `common/0011` und `tenants/0027` weiter. Die Migrationen setzen frühere Anbieter
+auf „nicht eingerichtet“ und leeren den früheren Nebius-Schlüssel der Systemeinstellungen.
+
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 
 Den Text der RIS-Dateien erkennt eine Implementierung, die Bibliothek `mandari_dokumente` in `shared/`
@@ -856,7 +878,7 @@ Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 | `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
 | `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
 | `TEXT_EXTRACTION_MAX_SIZE_MB` | `50` | größere Dateien werden übersprungen |
-| `MISTRAL_API_KEY`, `MISTRAL_OCR_MODEL`, `MISTRAL_OCR_RATE_LIMIT` | leer, `pixtral-12b-2409`, `60` | Mistral vor Tesseract, Anfragen je Minute und Prozess |
+| `MISTRAL_API_KEY`, `MISTRAL_BASE_URL`, `MISTRAL_OCR_MODEL`, `MISTRAL_OCR_RATE_LIMIT` | leer, leer, `pixtral-12b-2409`, `60` | Externe Texterkennung vor Tesseract, nur für öffentliche RIS-Dateien und nur mit Basis-URL, deren Host in `KI_ERLAUBTE_HOSTS` steht (siehe „KI-Anbieter“); Anfragen je Minute und Prozess |
 
 Beansprucht wird in kleinen Portionen direkt vor der Bearbeitung (höchstens zwei Dateien je Platz von
 `TEXT_EXTRACTION_CONCURRENCY`); `TEXT_EXTRACTION_BATCH_SIZE` begrenzt nur die Dateien je Kommune und Runde.

@@ -4,6 +4,13 @@
 {% block title %}KI-Assistent{% endblock %}
 
 {% block content %}
+{% if not ki_endpunkt %}
+{# Ohne freigegebenen KI-Endpunkt kein Chat (Issue #950) #}
+<div class="max-w-2xl mx-auto w-full">
+    <h1 class="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2 text-center">KI-Assistent</h1>
+    <c-ui.empty-state icon="sparkles" title="Derzeit nicht verfügbar">Der KI-Assistent ist auf dieser Plattform nicht eingerichtet.</c-ui.empty-state>
+</div>
+{% else %}
 <div x-data="chatApp()" class="flex flex-col flex-1 min-h-0">
 
     {% include "partials/chat_einwilligung.html" %}
@@ -142,9 +149,11 @@
         </div>
     </template>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
+{% if ki_endpunkt %}
 <script src="{% static 'vendor/marked/marked.min.js' %}"></script>
 <script nonce="{{ csp_nonce }}">
 function chatApp() {
@@ -273,4 +282,5 @@ function chatApp() {
     }
 }
 </script>
+{% endif %}
 {% endblock %}

@@ -713,11 +713,18 @@ INSIGHT_SEARCH_PLACES = os.environ.get("INSIGHT_SEARCH_PLACES", "true").lower() 
 INSIGHT_SEARCH_PLACES_MIN_SHARE = float(os.environ.get("INSIGHT_SEARCH_PLACES_MIN_SHARE", "0.5"))
 INSIGHT_SEARCH_PLACES_RADIUS = int(os.environ.get("INSIGHT_SEARCH_PLACES_RADIUS", "500"))
 
-# Nebius AI (KI-Features: Dokumenten-Assistent, Zusammenfassungen)
-NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
+# KI-Anbieter (Issue #950): Anbieter, Basis-URL, Modell und Schlüssel stehen im Admin (KI-Einstellungen, für
+# Work auch je Organisation). Hier nur die Positivliste erlaubter Hosts als technische Sperre, kommagetrennt;
+# gesetzt ersetzt sie den Standard (shared/mandari_dokumente/ki_hosts.py), leer gilt der Standard. Gilt für
+# jeden KI-Aufruf, auch für die Texterkennung über MISTRAL_BASE_URL.
+from mandari_dokumente.ki_hosts import erlaubte_hosts_aus_umgebung
 
-# Mistral API (für OCR)
+KI_ERLAUBTE_HOSTS = list(erlaubte_hosts_aus_umgebung())
+
+# Mistral-kompatible Texterkennung (optional): nur mit Schlüssel UND Basis-URL, deren Host in KI_ERLAUBTE_HOSTS
+# steht; sonst bleibt die Texterkennung lokal (pypdf, Tesseract). Nur für öffentliche RIS-Dateien.
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+MISTRAL_BASE_URL = os.environ.get("MISTRAL_BASE_URL", "").strip()
 MISTRAL_OCR_RATE_LIMIT = int(os.environ.get("MISTRAL_OCR_RATE_LIMIT", "60"))  # Requests pro Minute
 
 MISTRAL_OCR_MODEL = os.environ.get("MISTRAL_OCR_MODEL", "pixtral-12b-2409")

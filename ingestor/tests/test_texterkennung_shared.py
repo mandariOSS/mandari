@@ -1,6 +1,8 @@
 """
 Die eine Texterkennung in ``shared/mandari_dokumente`` (Issue #530): Dateiarten, Mistral-Anbindung mit
 Rückfall auf Tesseract, Ergebnisobjekt. Ohne Netz; Mistral und Unterprozesse sind ersetzt.
+
+Seit Issue #950 wirkt Mistral nur mit Basis-URL, deren Host in der Positivliste ``KI_ERLAUBTE_HOSTS`` steht.
 """
 
 from __future__ import annotations
@@ -12,9 +14,12 @@ from typing import Any
 
 import httpx
 import pytest
-from mandari_dokumente import ExtractionConfig, MistralConfig, extract_text, mistral, ocr
+from mandari_dokumente import ExtractionConfig, MistralConfig, extract_text, ki_hosts, mistral, ocr
 
 from tests.test_ocr_grenzen import pdf_bytes
+
+#: Basis-URL mit Host aus der Standard-Positivliste
+ERLAUBT = "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1"
 
 
 def _ocr_liefert(monkeypatch: pytest.MonkeyPatch, text: str) -> list[list[str]]:
@@ -83,16 +88,18 @@ def test_mistral_vor_tesseract_und_rueckfall(monkeypatch: pytest.MonkeyPatch) ->
     gesendet: list[dict[str, Any]] = []
 
     def post(url: str, **kwargs: Any) -> _Antwort:
-        gesendet.append(kwargs)
+        gesendet.append({"url": url, **kwargs})
         return _Antwort(200, {"choices": [{"message": {"content": " Mistral-Text "}}]})
 
     monkeypatch.setattr(httpx, "post", post)
-    config = ExtractionConfig(mistral=MistralConfig(api_key="k" * 32, requests_per_minute=0))
+    config = ExtractionConfig(mistral=MistralConfig(api_key="k" * 32, url=ERLAUBT, requests_per_minute=0))
     scan = pdf_bytes([(595.0, 842.0, "")])
 
     ergebnis = extract_text(scan, "application/pdf", "scan.pdf", config)
     assert (ergebnis.method, ergebnis.text) == ("mistral", "Mistral-Text")
     assert gesendet[0]["headers"]["Authorization"].startswith("Bearer ")
+    assert gesendet[0]["url"] == ERLAUBT + "/chat/completions"
+    assert gesendet[0]["follow_redirects"] is False
     assert aufrufe == []
 
     # Fehler der Schnittstelle: Rückfall auf Tesseract, Schlüssel nie in Meldungen
@@ -107,3 +114,58 @@ def test_mistral_begrenzung_je_minute() -> None:
     assert not begrenzer.acquire(2, now=2.0)
     assert begrenzer.acquire(2, now=61.0)
     assert begrenzer.acquire(0)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        pytest.param("", id="ohne-url"),
+        pytest.param("https://api.mistral.ai/v1", id="nicht-freigegeben"),
+        pytest.param("http://api.openai-compat.model-serving.eu01.onstackit.cloud/v1", id="http"),
+        pytest.param("https://api.openai-compat.model-serving.eu01.onstackit.cloud.example.com/v1", id="suffix"),
+    ],
+)
+def test_mistral_ohne_freigegebene_adresse_aus(url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ein gesetzter Schlüssel allein schickt nichts nach außen (Issue #950)."""
+    assert MistralConfig(api_key="x").enabled is False
+    config = MistralConfig(api_key="x", url=url)
+    assert config.enabled is False
+    gesendet: list[str] = []
+    monkeypatch.setattr(httpx, "post", lambda url, **kwargs: gesendet.append(url))
+    _ocr_liefert(monkeypatch, "Tesseract-Text")
+    ergebnis = extract_text(
+        pdf_bytes([(595.0, 842.0, "")]), "application/pdf", "scan.pdf", ExtractionConfig(mistral=config)
+    )
+    assert ergebnis.method == "tesseract"
+    assert gesendet == []
+    with pytest.raises(mistral.MistralError):
+        mistral.extract_text_with_mistral(b"%PDF", config)
+
+
+def test_mistral_mit_freigegebener_adresse_an() -> None:
+    assert MistralConfig(api_key="x", url=ERLAUBT).enabled is True
+    assert MistralConfig(api_key="x", url=ERLAUBT + "/chat/completions").endpoint == ERLAUBT + "/chat/completions"
+    assert MistralConfig(api_key="", url=ERLAUBT).enabled is False
+    ionos = "https://openai.inference.de-txl.ionos.com/v1"
+    assert MistralConfig(api_key="x", url=ionos).enabled is False
+    assert MistralConfig(api_key="x", url=ionos, erlaubte_hosts=("openai.inference.de-txl.ionos.com",)).enabled is True
+
+
+def test_schluessel_nicht_in_repr() -> None:
+    assert "geheim-123" not in repr(MistralConfig(api_key="geheim-123", url=ERLAUBT))
+
+
+def test_ingestor_liest_url_und_positivliste(monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.config import settings
+    from src.extraction import extractor
+
+    monkeypatch.setattr(settings, "mistral_api_key", "x")
+    monkeypatch.setattr(settings, "mistral_base_url", "")
+    monkeypatch.setattr(settings, "ki_erlaubte_hosts", "")
+    assert extractor.extraction_config().mistral.enabled is False
+    monkeypatch.setattr(settings, "mistral_base_url", ERLAUBT)
+    assert extractor.extraction_config().mistral.enabled is True
+    monkeypatch.setattr(settings, "ki_erlaubte_hosts", "openai.inference.de-txl.ionos.com")
+    assert extractor.extraction_config().mistral.enabled is False
+    assert extractor.extraction_config().mistral.erlaubte_hosts == ("openai.inference.de-txl.ionos.com",)
+    assert ki_hosts.erlaubte_hosts_aus_umgebung("") == ki_hosts.STANDARD_ERLAUBTE_HOSTS

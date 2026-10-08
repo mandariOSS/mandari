@@ -5,6 +5,10 @@ Bisher gab es zwei: eine asynchrone mit Begrenzung je Minute in der Anwendung un
 Ingestor. Übrig bleibt eine synchrone Anfrage (sie läuft im Arbeitsfaden bzw. Auftrag) mit einer einfachen
 Begrenzung der Anfragen je Minute und Prozess. Fehler werfen eine Ausnahme; die Texterkennung fällt dann
 auf Tesseract zurück. Der API-Schlüssel erscheint nie in Meldungen.
+
+Seit Issue #950 gibt es keinen festen Endpunkt mehr: Die Adresse kommt aus ``MISTRAL_BASE_URL`` (OpenAI-
+kompatible Basis-URL, etwa ``https://…/v1``), und ihr Host muss in der Positivliste ``KI_ERLAUBTE_HOSTS``
+stehen (``ki_hosts``). Ein gesetzter Schlüssel allein schickt also nichts nach außen.
 """
 
 from __future__ import annotations
@@ -13,10 +17,10 @@ import base64
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
-#: Endpunkt der Chat-Schnittstelle mit Bildeingabe
-MISTRAL_URL = "https://api.mistral.ai/v1/chat/completions"
+from .ki_hosts import STANDARD_ERLAUBTE_HOSTS, ist_erlaubter_host
+
 DEFAULT_MODEL = "pixtral-12b-2409"
 
 _PROMPT = (
@@ -29,9 +33,16 @@ _PROMPT = (
 
 @dataclass(frozen=True)
 class MistralConfig:
-    """Zugang und Grenzen; ohne ``api_key`` ist Mistral aus."""
+    """
+    Zugang und Grenzen. Eingeschaltet nur mit Schlüssel, Adresse und erlaubtem Host.
 
-    api_key: str = ""
+    ``url`` ist die OpenAI-kompatible Basis-URL (``…/v1``) oder schon die volle Adresse der
+    Chat-Schnittstelle (``…/chat/completions``); ``erlaubte_hosts`` die Positivliste (``KI_ERLAUBTE_HOSTS``).
+    """
+
+    api_key: str = field(default="", repr=False)
+    url: str = ""
+    erlaubte_hosts: tuple[str, ...] = STANDARD_ERLAUBTE_HOSTS
     model: str = DEFAULT_MODEL
     timeout: float = 120.0
     #: Anfragen je Minute und Prozess; 0 = ohne Begrenzung
@@ -39,7 +50,13 @@ class MistralConfig:
 
     @property
     def enabled(self) -> bool:
-        return bool(self.api_key)
+        return bool(self.api_key) and bool(self.url) and ist_erlaubter_host(self.url, self.erlaubte_hosts)
+
+    @property
+    def endpoint(self) -> str:
+        """Adresse der Chat-Schnittstelle mit Bildeingabe."""
+        basis = self.url.strip().rstrip("/")
+        return basis if basis.endswith("/chat/completions") else basis + "/chat/completions"
 
 
 class MistralError(Exception):
@@ -99,10 +116,11 @@ def extract_text_with_mistral(data: bytes, config: MistralConfig, file_name: str
     }
     try:
         response = httpx.post(
-            MISTRAL_URL,
+            config.endpoint,
             json=payload,
             headers={"Authorization": f"Bearer {config.api_key}"},
             timeout=config.timeout,
+            follow_redirects=False,
         )
     except httpx.HTTPError as exc:
         raise MistralError(f"Mistral nicht erreichbar ({type(exc).__name__})") from exc

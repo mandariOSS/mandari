@@ -10,8 +10,8 @@ import logging
 from typing import TYPE_CHECKING
 
 from apps.common.db_connections import release_idle_thread_connections
-from insight_ai.providers import NebiusProvider
-from insight_ai.providers.base import ChatMessage
+from insight_ai.providers import get_insight_provider
+from insight_ai.providers.base import STANDARD_MAX_AUSGABE, ChatMessage
 
 from .prompts import PAPER_SUMMARY_SYSTEM_PROMPT, build_paper_summary_user_prompt
 
@@ -52,7 +52,7 @@ class SummaryService:
     """
     Service for generating AI summaries of OParl documents.
 
-    Uses Nebius TokenFactory with Kimi K2 Thinking model.
+    Nutzt den KI-Endpunkt des Bürgerportals aus der zentralen KI-Konfiguration (``get_insight_provider``).
     Automatically extracts text from PDFs on-demand if needed.
     """
 
@@ -61,12 +61,12 @@ class SummaryService:
         Initialize the summary service.
 
         Args:
-            provider: Optional AI provider. Defaults to NebiusProvider.
+            provider: Optional AI provider. Standard: ``get_insight_provider()`` (KI-Einstellungen).
             pace_max_wait: Höchstwartezeit auf die Drossel je Host beim Nachladen von Dokumenten. In einer
                 Web-Anfrage immer setzen: Ohne freien Zeitpunkt bricht die Erstellung dann mit der Bitte um
                 einen neuen Versuch ab, statt die Anfrage lange schlafen zu lassen.
         """
-        self.provider = provider or NebiusProvider()
+        self.provider = provider or get_insight_provider()
         self.pace_max_wait = pace_max_wait
 
     def generate_summary(self, paper: "OParlPaper", save: bool = True) -> str:
@@ -90,8 +90,7 @@ class SummaryService:
         # Check if API is available
         if not self.provider.is_available():
             raise APINotConfiguredError(
-                "KI-API nicht konfiguriert. Bitte setzen Sie NEBIUS_API_KEY "
-                "als Umgebungsvariable oder in den Systemeinstellungen."
+                "KI im Bürgerportal nicht eingerichtet (Admin → KI-Einstellungen, nur freigegebene Endpunkte)."
             )
 
         # Stand zu Beginn: Wird der Vorgang oder eine dieser Anlagen während der Erstellung
@@ -160,12 +159,12 @@ class SummaryService:
             # Der KI-Aufruf dauert Minuten: Datenbankverbindung solange an den Pool zurückgeben
             release_idle_thread_connections()
 
-            # Call AI provider
-            # Kimi K2 Thinking needs high max_tokens - the thinking process
-            # can use 10k+ tokens before producing the actual answer
+            # Modelle mit Reasoning brauchen viel Platz vor der eigentlichen Antwort: Obergrenze aus der
+            # KI-Konfiguration (AISettings.insight_max_output_tokens)
+            max_tokens = getattr(self.provider, "max_output_tokens", 0) or STANDARD_MAX_AUSGABE
             response = self.provider.chat_completion(
                 messages=messages,
-                max_tokens=32000,
+                max_tokens=max_tokens,
                 temperature=0.3,
             )
 
@@ -275,6 +274,8 @@ class SummaryService:
                 extra_headers=extra_headers,
                 sync_config=sync_config,
                 max_wait=self.pace_max_wait,
+                # Öffentliche RIS-Datei: externe Texterkennung zulässig (nur mit Endpunkt aus KI_ERLAUBTE_HOSTS)
+                allow_external=True,
             )
 
             if result.text and result.text.strip():

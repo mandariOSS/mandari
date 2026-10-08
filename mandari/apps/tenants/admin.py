@@ -14,6 +14,7 @@ from django.contrib import admin
 from unfold.admin import ModelAdmin
 
 from apps.accounts.models import User
+from apps.common.admin import anbieter_auswahl_mit_freigabe, pruefe_ki_endpunkt
 
 from .models import (
     Membership,
@@ -75,6 +76,27 @@ class OrganizationAdminForm(forms.ModelForm):
             self.fields[
                 "ai_api_key"
             ].help_text = "Ein Key ist gesetzt. Für Rotation neuen Key eintragen, sonst leer lassen."
+        if "ai_provider" in self.fields:
+            self.fields["ai_provider"].choices = anbieter_auswahl_mit_freigabe(list(self.fields["ai_provider"].choices))
+
+    #: Felder der eigenen KI-Konfiguration; geprüft wird nur, wenn sich eines davon ändert, damit andere
+    #: Änderungen an der Organisation nicht an einer inzwischen gesperrten Adresse scheitern
+    KI_FELDER = ("ai_provider", "ai_base_url", "ai_anzeigename", "ai_verarbeitungsort", "ai_api_key")
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if (cleaned_data.get("ai_api_key") or "").strip() and not cleaned_data.get("ai_provider"):
+            # Ein eigener Key ohne eigenen Anbieter bliebe wirkungslos (kein Rückfall auf die Plattform)
+            self.add_error("ai_provider", "Mit eigenem KI API Key bitte einen Anbieter wählen.")
+        if any(feld in self.changed_data for feld in self.KI_FELDER):
+            pruefe_ki_endpunkt(
+                self,
+                anbieter_feld="ai_provider",
+                url_feld="ai_base_url",
+                anzeigename_feld="ai_anzeigename",
+                ort_feld="ai_verarbeitungsort",
+            )
+        return cleaned_data
 
     def save(self, commit=True):
         obj = super().save(commit=False)
@@ -184,6 +206,8 @@ class OrganizationAdmin(ModelAdmin):
                     "ai_enabled",
                     "ai_provider",
                     "ai_base_url",
+                    "ai_anzeigename",
+                    "ai_verarbeitungsort",
                     "ai_model",
                     "ai_api_key",
                     "ai_token_limit_daily",
@@ -191,7 +215,8 @@ class OrganizationAdmin(ModelAdmin):
                     "ai_token_limit_monthly",
                 ),
                 "description": (
-                    "Provider- und Budget-Steuerung fuer den KI-Chat im Dokumenten-Editor. Standard ist Nebius GPT-OSS."
+                    "Budget und optional eine eigene KI-Konfiguration für Schreibhilfe und Co-Editor. Ohne eigenen "
+                    "KI API Key gelten die KI-Einstellungen der Plattform. Nur Hosts aus KI_ERLAUBTE_HOSTS wirken."
                 ),
                 "classes": ("collapse",),
             },

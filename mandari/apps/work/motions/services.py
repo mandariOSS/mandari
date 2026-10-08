@@ -3,7 +3,8 @@
 AI-powered document assistant service for Work DMS.
 
 Key goals:
-- OpenAI-compatible provider integration (Nebius default)
+- Ein OpenAI-kompatibler Endpunkt aus der zentralen KI-Konfiguration (``apps.common.ki_anbieter``, Issue #950):
+  kein fest eingebauter Anbieter, kein Rückfall, nur Hosts aus ``KI_ERLAUBTE_HOSTS``
 - Organization-level API keys and model/provider overrides
 - Hard token budgets per organization (day/week/month)
 - Context-aware chat for collaborative document editing
@@ -20,7 +21,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, JsonResponse
 
-from apps.common.models import AISettings, SiteSettings
+from apps.common.ki_anbieter import KiEndpunkt, endpunkt_fuer_work
+from apps.common.models import AISettings
 
 from .ai_security import AIInputSanitizer, AIOutputFilter, AIRateLimiter
 from .models import OrganizationAITokenUsage
@@ -79,81 +81,24 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         "amendment": "Änderungsantrag",
     }
 
-    PROVIDER_DEFAULTS = {
-        "nebius": {
-            "base_url": "https://api.tokenfactory.nebius.com/v1/",
-            "model": "openai/gpt-oss-120b",
-        },
-        "ovh": {
-            "base_url": "",
-            "model": "openai/gpt-oss-120b",
-        },
-        "ionos": {
-            "base_url": "",
-            "model": "openai/gpt-oss-120b",
-        },
-    }
+    #: Meldung, wenn kein freigegebener Endpunkt eingerichtet ist
+    NICHT_EINGERICHTET = "KI ist nicht eingerichtet."
 
-    def __init__(self, organization=None, user_id: int | None = None):
+    def __init__(self, organization=None, user_id: int | None = None, *, transport: httpx.BaseTransport | None = None):
         self.organization = organization
         self.user_id = user_id
+        # Nur für Tests (httpx.MockTransport); im Betrieb der Standard-Transport von httpx
+        self._transport = transport
 
-    def _resolve_provider_config(self) -> dict:
+    def _resolve_provider_config(self) -> KiEndpunkt | None:
         """
-        Resolve provider/model/key with the following priority:
+        Endpunkt aus der zentralen KI-Konfiguration (``endpunkt_fuer_work``), bei jedem Aufruf neu geprüft.
 
-        1. Organisation mit eigenem API Key (Organization → KI) — volle Org-Konfiguration.
-        2. Globale ``AISettings`` (Admin-Singleton, wenn aktiviert und Key gesetzt).
-        3. Legacy-Fallback: globaler Nebius-Key aus SiteSettings/ENV.
+        1. Organisation mit eigenem API Key (Organization → KI): ihre Konfiguration.
+        2. Sonst die KI-Einstellungen, wenn „KI in Work aktiviert“ und ein Key gesetzt ist.
+        3. Sonst ``None``: Die KI ist aus. Es gibt keinen Rückfall auf einen fest eingebauten Anbieter.
         """
-        # 1) Organisations-spezifische Konfiguration hat Vorrang.
-        org_api_key = self.organization.get_ai_api_key() if self.organization else ""
-        if org_api_key:
-            provider = (getattr(self.organization, "ai_provider", "") or "nebius").lower()
-            defaults = self.PROVIDER_DEFAULTS.get(provider, self.PROVIDER_DEFAULTS["nebius"])
-            model = getattr(self.organization, "ai_model", "") or defaults["model"]
-            base_url = self.organization.get_effective_ai_base_url() or defaults["base_url"]
-            return {
-                "provider": provider,
-                "base_url": base_url,
-                "api_key": org_api_key,
-                "model": model,
-                "max_output_tokens": 0,
-            }
-
-        # 2) Globale KI-Einstellungen (Admin → KI-Einstellungen).
-        ai_settings = AISettings.get_settings()
-        if ai_settings.enabled:
-            global_key = ai_settings.get_api_key()
-            if global_key:
-                return {
-                    "provider": ai_settings.provider,
-                    "base_url": ai_settings.get_effective_base_url(),
-                    "api_key": global_key,
-                    "model": ai_settings.model_name,
-                    "max_output_tokens": ai_settings.max_output_tokens,
-                }
-
-        # 3) Legacy-Fallback: globaler Nebius-Key.
-        provider = (getattr(self.organization, "ai_provider", "") or "nebius").lower()
-        defaults = self.PROVIDER_DEFAULTS.get(provider, self.PROVIDER_DEFAULTS["nebius"])
-        model = getattr(self.organization, "ai_model", "") or defaults["model"]
-        base_url = self.organization.get_effective_ai_base_url() if self.organization else ""
-
-        api_key = ""
-        if provider == "nebius":
-            api_key = SiteSettings.get_nebius_api_key() or getattr(settings, "NEBIUS_API_KEY", "")
-
-        if not base_url:
-            base_url = defaults["base_url"]
-
-        return {
-            "provider": provider,
-            "base_url": base_url,
-            "api_key": api_key,
-            "model": model,
-            "max_output_tokens": 0,
-        }
+        return endpunkt_fuer_work(self.organization)
 
     def _check_rate_limit(self) -> tuple[bool, str]:
         if not self.user_id:
@@ -232,20 +177,19 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         if getattr(settings, "DEMO_INSTANCE", False):
             # Öffentliche Demo (Issue #99): keine Aufrufe an KI-Anbieter oder frei eintragbare Adressen.
             return AIResponse(success=False, error="KI-Funktionen sind in der Demo-Umgebung abgeschaltet.")
+        if self.organization is not None and not self.organization.ai_enabled:
+            return AIResponse(success=False, error="KI ist für diese Organisation deaktiviert.")
         allowed, limit_message = self._check_rate_limit()
         if not allowed:
             return AIResponse(success=False, error=limit_message)
 
-        cfg = self._resolve_provider_config()
-        if not cfg["api_key"]:
-            return AIResponse(success=False, error="Kein KI API Key konfiguriert.")
-        if not cfg["base_url"]:
-            return AIResponse(success=False, error="Kein KI Endpoint (Base URL) konfiguriert.")
+        endpunkt = self._resolve_provider_config()
+        if endpunkt is None:
+            return AIResponse(success=False, error=self.NICHT_EINGERICHTET)
 
-        # Globale Obergrenze für Antwortlänge (AISettings.max_output_tokens).
-        output_cap = int(cfg.get("max_output_tokens") or 0)
-        if output_cap > 0:
-            max_tokens = min(max_tokens, output_cap)
+        # Obergrenze für die Antwortlänge (AISettings.max_output_tokens; 0 = keine)
+        if endpunkt.max_output_tokens > 0:
+            max_tokens = min(max_tokens, endpunkt.max_output_tokens)
 
         estimated_prompt_tokens = sum(_estimate_tokens(str(m.get("content", ""))) for m in messages)
         estimated_total = estimated_prompt_tokens + max_tokens
@@ -253,56 +197,41 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         if not allowed:
             return AIResponse(success=False, error=budget_message)
 
-        if cfg["provider"] == "anthropic":
-            # Anthropic Messages API: system-Prompts als Top-Level-Parameter.
-            url = cfg["base_url"].rstrip("/") + "/messages"
-            system_parts = [str(m.get("content", "")) for m in messages if m.get("role") == "system"]
-            chat_messages = [m for m in messages if m.get("role") != "system"]
-            payload = {
-                "model": cfg["model"],
-                "messages": chat_messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            }
-            if system_parts:
-                payload["system"] = "\n\n".join(system_parts)
-            headers = {
-                "x-api-key": cfg["api_key"],
-                "anthropic-version": "2023-06-01",
-                "Content-Type": "application/json",
-            }
-        else:
-            # OpenAI-kompatible Chat-Completions (OpenAI, Mistral, Nebius, OVH, IONOS).
-            url = cfg["base_url"].rstrip("/") + "/chat/completions"
-            payload = {
-                "model": cfg["model"],
-                "messages": messages,
-                "max_tokens": max_tokens,
-                "temperature": temperature,
-            }
-            headers = {
-                "Authorization": f"Bearer {cfg['api_key']}",
-                "Content-Type": "application/json",
-            }
+        # OpenAI-kompatible Chat-Completions; die Adresse ist geprüft (KI_ERLAUBTE_HOSTS)
+        payload = {
+            "model": endpunkt.modell,
+            "messages": messages,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        headers = {
+            "Authorization": f"Bearer {endpunkt.api_key}",
+            "Content-Type": "application/json",
+        }
 
         try:
             timeout = httpx.Timeout(90.0, connect=15.0)
-            with httpx.Client(timeout=timeout) as client:
-                response = client.post(url, json=payload, headers=headers)
+            with httpx.Client(timeout=timeout, transport=self._transport, follow_redirects=False) as client:
+                response = client.post(endpunkt.chat_url, json=payload, headers=headers)
                 response.raise_for_status()
             data = response.json()
 
-            if cfg["provider"] == "anthropic":
-                blocks = data.get("content") or []
-                content = "".join(b.get("text", "") for b in blocks if isinstance(b, dict) and b.get("type") == "text")
-                usage = data.get("usage") or {}
-                total_tokens = int(usage.get("input_tokens") or 0) + int(usage.get("output_tokens") or 0)
-            else:
-                content = (((data.get("choices") or [{}])[0]).get("message") or {}).get("content", "")
-                usage = data.get("usage") or {}
-                total_tokens = int(usage.get("total_tokens") or 0)
+            message = ((data.get("choices") or [{}])[0]).get("message") or {}
+            content = message.get("content") or ""
+            if not isinstance(content, str):
+                content = ""
+            usage = data.get("usage") or {}
+            total_tokens = int(usage.get("total_tokens") or 0)
             if total_tokens <= 0:
                 total_tokens = _estimate_tokens(content) + estimated_prompt_tokens
+            # Nachweis je Aufruf: Anbieter, Host, Modell, Tokens; nie Inhalt oder Schlüssel
+            logger.info(
+                "KI-Aufruf: anbieter=%s host=%s modell=%s tokens=%d",
+                endpunkt.anbieter,
+                endpunkt.host,
+                endpunkt.modell,
+                total_tokens,
+            )
 
             # Strong post-check to enforce budget strictly.
             allowed, budget_message = self._check_org_token_limits(total_tokens)
@@ -315,10 +244,23 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
             safe_content = AIOutputFilter.filter(content, allow_html=True)
             return AIResponse(success=True, content=safe_content, total_tokens=total_tokens)
         except httpx.HTTPStatusError as e:
-            logger.warning("AI provider HTTP error: %s - %s", e.response.status_code, e.response.text[:500])
+            # Ohne Antworttext: Er kann Teile der Anfrage enthalten
+            logger.warning(
+                "KI-Aufruf gescheitert: anbieter=%s host=%s modell=%s status=%s",
+                endpunkt.anbieter,
+                endpunkt.host,
+                endpunkt.modell,
+                e.response.status_code,
+            )
             return AIResponse(success=False, error=f"KI-Provider Fehler: {e.response.status_code}")
         except Exception as e:
-            logger.exception("AI provider call failed: %s", e)
+            logger.warning(
+                "KI-Aufruf gescheitert: anbieter=%s host=%s modell=%s fehler=%s",
+                endpunkt.anbieter,
+                endpunkt.host,
+                endpunkt.modell,
+                type(e).__name__,
+            )
             return AIResponse(success=False, error="KI-Service nicht verfügbar.")
 
     def improve_text(self, text: str, instruction: str, motion_type: str = "motion", context: str = "") -> AIResponse:
@@ -502,8 +444,7 @@ Text:
         # Effektives Monatslimit 0 = KI für diese Organisation deaktiviert.
         if self.organization and self._effective_monthly_limit() == 0:
             return False
-        cfg = self._resolve_provider_config()
-        return bool(cfg["api_key"] and cfg["base_url"] and cfg["model"])
+        return self._resolve_provider_config() is not None
 
 
 # ---------------------------------------------------------------------------

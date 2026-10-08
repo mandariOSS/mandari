@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-SMTP-Passwort und Nebius-Schlüssel der Systemeinstellungen liegen verschlüsselt in der Datenbank.
+Das SMTP-Passwort der Systemeinstellungen liegt verschlüsselt in der Datenbank.
 
 - Setter verschlüsseln mit dem Hauptschlüssel; Getter, Mail-Konfiguration und Mail-Backend
   liefern den Klartext wie bisher.
-- Die Migration common/0006 verschlüsselt den Bestand und leert die Klartextspalten. Sie ist
-  wiederholbar, bricht ohne gültigen Hauptschlüssel ab, ohne etwas zu ändern, und lässt sich
-  zurückdrehen.
+- Die Migration common/0006 verschlüsselt den Bestand (SMTP-Passwort und den damaligen
+  Nebius-Schlüssel) und leert die Klartextspalten. Sie ist wiederholbar, bricht ohne gültigen
+  Hauptschlüssel ab, ohne etwas zu ändern, und lässt sich zurückdrehen.
 - Das Admin-Formular gibt nie einen Wert aus; ein leeres Feld behält den gespeicherten Wert.
+- Den Nebius-Schlüssel liest und schreibt die Anwendung seit Issue #950 nicht mehr (Migration
+  common/0011 leert die Spalten); das Formular hat kein Feld mehr dafür.
 
 Alle Werte hier sind Testwerte; geprüft wird zusätzlich, dass Protokoll und Fehlermeldungen
 sie nicht enthalten.
@@ -31,7 +33,7 @@ from django.test import Client, override_settings
 
 from apps.common.admin import SiteSettingsAdminForm
 from apps.common.email_backend import SiteSettingsEmailBackend
-from apps.common.models import SiteSettings
+from apps.common.models import SiteSettings, _decrypt_platform_secret, _encrypt_platform_secret
 
 MIGRATION = importlib.import_module("apps.common.migrations.0006_systemeinstellungen_verschluesselt")
 VORHER = ("common", "0005_protokoll_kettenkopf")
@@ -58,12 +60,19 @@ def _enthaelt_klartext(roh: dict[str, Any]) -> bool:
     return SMTP.encode() in gespeichert or NEBIUS.encode() in gespeichert
 
 
+def _nebius_gespeichert() -> str:
+    """Inhalt der früheren Nebius-Spalten (nur noch für die Migrationen relevant)."""
+    zeile = SiteSettings.objects.get(pk=1)
+    return zeile.nebius_api_key_legacy or _decrypt_platform_secret(zeile.nebius_api_key_encrypted, "Nebius")
+
+
 def _mit_geheimnissen() -> SiteSettings:
     einstellungen = SiteSettings.get_settings()
     einstellungen.email_host = "smtp.example.org"
     einstellungen.email_host_user = "versand@example.org"
     einstellungen.set_email_host_password(SMTP)
-    einstellungen.set_nebius_api_key(NEBIUS)
+    # Stand vor common/0011: Nebius-Schlüssel verschlüsselt in der früheren Spalte
+    einstellungen.nebius_api_key_encrypted = _encrypt_platform_secret(NEBIUS)
     cast(Any, einstellungen).save()
     return SiteSettings.objects.get(pk=1)
 
@@ -95,18 +104,15 @@ class TestModell:
         assert roh["email_host_password_legacy"] == "" and roh["nebius_api_key_legacy"] == ""
         assert not _enthaelt_klartext(roh)
 
-    def test_getter_liefern_den_klartext(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    def test_getter_liefern_den_klartext(self) -> None:
         einstellungen = _mit_geheimnissen()
         assert einstellungen.get_email_host_password() == SMTP
-        assert einstellungen.get_stored_nebius_api_key() == NEBIUS
-        assert SiteSettings.get_nebius_api_key() == NEBIUS
         assert SiteSettings.get_email_config()["EMAIL_HOST_PASSWORD"] == SMTP
 
-    def test_umgebungsvariable_geht_vor(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _mit_geheimnissen()
-        monkeypatch.setenv("NEBIUS_API_KEY", "aus-der-umgebung")
-        assert SiteSettings.get_nebius_api_key() == "aus-der-umgebung"
+    def test_kein_zugriff_mehr_auf_den_nebius_schluessel(self) -> None:
+        """Issue #950: kein Getter, kein Setter, keine Umgebungsvariable für den früheren Nebius-Schlüssel."""
+        for name in ("get_nebius_api_key", "set_nebius_api_key", "get_stored_nebius_api_key", "has_nebius_api_key"):
+            assert not hasattr(SiteSettings, name), name
 
     def test_mail_backend_meldet_sich_mit_dem_klartext_an(self) -> None:
         _mit_geheimnissen()
@@ -132,7 +138,6 @@ class TestModell:
         with override_settings(ENCRYPTION_MASTER_KEY=FREMDER_SCHLUESSEL), caplog.at_level(logging.ERROR):
             einstellungen = SiteSettings.objects.get(pk=1)
             assert einstellungen.get_email_host_password() == ""
-            assert einstellungen.get_stored_nebius_api_key() == ""
         assert "nicht lesbar" in caplog.text
         assert SMTP not in caplog.text and NEBIUS not in caplog.text
 
@@ -152,7 +157,7 @@ class TestMigration:
         assert not _enthaelt_klartext(roh)
         einstellungen = SiteSettings.get_settings()
         assert einstellungen.get_email_host_password() == SMTP
-        assert einstellungen.get_stored_nebius_api_key() == NEBIUS
+        assert _nebius_gespeichert() == NEBIUS
 
     def test_wiederholbar(self) -> None:
         _altbestand()
@@ -225,7 +230,7 @@ def test_migration_im_schema_vor_und_zurueck() -> None:
 
 def _formulardaten(einstellungen: SiteSettings, **geheimnisse: str) -> dict[str, Any]:
     daten = {name: wert for name, wert in model_to_dict(einstellungen).items() if wert is not None}
-    return {**daten, "email_host_password": "", "nebius_api_key": "", **geheimnisse}
+    return {**daten, "email_host_password": "", **geheimnisse}
 
 
 @pytest.mark.django_db
@@ -246,7 +251,7 @@ class TestAdmin:
         assert antwort.status_code == 302
         gespeichert = SiteSettings.objects.get(pk=1)
         assert gespeichert.get_email_host_password() == "neues-smtp-testpasswort"
-        assert gespeichert.get_stored_nebius_api_key() == NEBIUS  # leer gelassen: bleibt
+        assert _nebius_gespeichert() == NEBIUS  # nicht im Formular: unberührt
         assert gespeichert.email_host_password_encrypted is not None
         assert b"neues-smtp-testpasswort" not in bytes(gespeichert.email_host_password_encrypted)
         assert gespeichert.email_host_password_legacy == ""
@@ -258,18 +263,23 @@ class TestAdmin:
         assert formular.is_valid(), formular.errors
         formular.save()
         roh = _roh()
-        assert roh["email_host_password_legacy"] == "" and roh["nebius_api_key_legacy"] == ""
-        assert not _enthaelt_klartext(roh)
+        assert roh["email_host_password_legacy"] == ""
+        assert SMTP.encode() not in bytes(roh["email_host_password_encrypted"])
         gespeichert = SiteSettings.objects.get(pk=1)
         assert gespeichert.get_email_host_password() == SMTP
-        assert gespeichert.get_stored_nebius_api_key() == NEBIUS
+
+    def test_kein_formularfeld_fuer_den_nebius_schluessel(self, admin_client: Client) -> None:
+        einstellungen = _mit_geheimnissen()
+        assert "nebius_api_key" not in SiteSettingsAdminForm.base_fields
+        inhalt = admin_client.get(f"/admin/common/sitesettings/{einstellungen.pk}/change/").content.decode()
+        assert "Nebius" not in inhalt
 
     def test_ohne_hauptschluessel_formularfehler_ohne_wert(self) -> None:
         einstellungen = _mit_geheimnissen()
-        daten = _formulardaten(einstellungen, nebius_api_key="nicht-speicherbar-testwert")
+        daten = _formulardaten(einstellungen, email_host_password="nicht-speicherbar-testwert")
         with override_settings(ENCRYPTION_MASTER_KEY=""):
             formular = cast(Any, SiteSettingsAdminForm)(data=daten, instance=einstellungen)
             assert not formular.is_valid()
         assert "ENCRYPTION_MASTER_KEY" in str(formular.non_field_errors())
         assert "nicht-speicherbar-testwert" not in str(formular)
-        assert SiteSettings.objects.get(pk=1).get_stored_nebius_api_key() == NEBIUS
+        assert SiteSettings.objects.get(pk=1).get_email_host_password() == SMTP

@@ -5,14 +5,14 @@ Chat service with RAG context from Elasticsearch.
 Handles:
 - RAG context building from Elasticsearch search results
 - Token budget management
-- Chat completion via NebiusProvider
+- Chat completion über den KI-Endpunkt des Bürgerportals (get_insight_provider)
 """
 
 import logging
 from typing import Any
 
+from insight_ai.providers import get_insight_provider
 from insight_ai.providers.base import ChatMessage
-from insight_ai.providers.nebius import NebiusProvider
 from insight_ai.services.prompts import CHAT_SYSTEM_PROMPT
 
 logger = logging.getLogger(__name__)
@@ -183,9 +183,9 @@ def process_chat_message(
     Raises:
         ValueError: If the AI provider is not configured
     """
-    provider = NebiusProvider()
+    provider = get_insight_provider()
     if not provider.is_available():
-        raise ValueError("KI-Assistent ist nicht konfiguriert. Bitte setzen Sie den NEBIUS_API_KEY.")
+        raise ValueError("KI-Assistent ist nicht eingerichtet.")
 
     # 1. Build RAG context from Elasticsearch
     rag_context, sources = build_rag_context(message, body_id)
