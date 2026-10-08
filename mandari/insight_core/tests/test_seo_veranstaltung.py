@@ -358,6 +358,26 @@ class TestVeranstaltung:
         assert event is not None
         assert event["organizer"]["url"] == "https://www.stadt-muenster.example/"
 
+    def test_veranstalter_einer_nicht_gelisteten_kommune(self, muenster: OParlBody) -> None:
+        # Ausgeblendete Pilotquelle: Ihre Seiten sind direkt erreichbar, ihr Einstieg /insight/k/<slug>/ nicht
+        OParlBody.objects.filter(pk=muenster.pk).update(is_listed=False, website="https://www.stadt-muenster.example/")
+        sitzung = _sitzung(muenster, _gremium(muenster), location_name="Rathaus")
+
+        event = _event(_seite(f"/insight/termine/{sitzung.id}/"))
+
+        assert event is not None
+        assert Client().get("/insight/k/muenster/").status_code == 404
+        assert event["organizer"]["url"] == "https://www.stadt-muenster.example/"
+
+    def test_veranstalter_ohne_erreichbare_seite_ohne_url(self, muenster: OParlBody) -> None:
+        OParlBody.objects.filter(pk=muenster.pk).update(is_listed=False, website=None)
+        sitzung = _sitzung(muenster, _gremium(muenster), location_name="Rathaus")
+
+        event = _event(_seite(f"/insight/termine/{sitzung.id}/"))
+
+        assert event is not None
+        assert event["organizer"] == {"@type": "GovernmentOrganization", "name": "Münster"}
+
     def test_veranstalter_und_mitwirkende_sind_erreichbar(self, muenster: OParlBody) -> None:
         rat = _gremium(muenster, "Rat")
         ausschuss = _gremium(muenster, "Ausschuss für Umwelt")
@@ -493,6 +513,22 @@ class TestBrotkrumen:
 
         assert [e["name"] for e in krumen] == ["mandari Insight", "V/2/2030"]
         assert [_pfad(e["item"]) for e in krumen] == ["/insight/", f"/insight/vorgaenge/{paper.id}/"]
+
+    def test_nicht_gelistete_kommune_ohne_kommune_ebene(self, muenster: OParlBody) -> None:
+        # Ausgeblendete Pilotquelle: Detailseiten antworten, der Einstieg /insight/k/<slug>/ nicht (404)
+        OParlBody.objects.filter(pk=muenster.pk).update(is_listed=False)
+        muenster.refresh_from_db()
+        # Weiter zwei gelistete Kommunen wie in Produktion (sonst leitet /insight/ auf die einzige weiter)
+        OParlBody.objects.create(
+            external_id=BASIS + "body/3", source=muenster.source, name="Stadt Köln", display_name="Köln", slug="koeln"
+        )
+
+        for name, url in self._seiten(muenster).items():
+            krumen = _json_ld(_seite(url))[-1]["itemListElement"]
+
+            assert [e["name"] for e in krumen] == ["mandari Insight", name], url
+            for eintrag in krumen:
+                assert Client().get(_pfad(eintrag["item"])).status_code == 200, (url, eintrag["item"])
 
 
 # =============================================================================

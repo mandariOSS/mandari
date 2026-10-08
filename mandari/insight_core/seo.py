@@ -37,6 +37,7 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.utils.safestring import SafeString, mark_safe
 
+from .services.indexierung import stadtseite_url
 from .services.paper_status import NONE as STAND_UNBEKANNT
 from .services.paper_status import PaperStatus, in_committee
 from .services.search_presentation import normalize_paper_type
@@ -229,23 +230,27 @@ def _absolut(path: str) -> str:
 
 
 def seite_der_kommune(body: Any) -> str:
-    """Absolute Adresse der Seite einer Kommune (``/insight/k/<slug>/``), leer ohne gültigen Slug."""
-    slug = str(getattr(body, "slug", "") or "") if body is not None else ""
-    if not slug:
-        return ""
+    """Absolute Adresse der Seite einer Kommune (``/insight/k/<slug>/``), leer, wo es keine erreichbare gibt.
+
+    Wie die sichtbaren Brotkrumen über ``stadtseite_url``: nur gelistete, nicht gelöschte Kommunen mit Slug.
+    Der Einstieg einer nicht gelisteten Kommune (z. B. einer ausgeblendeten Pilotquelle) antwortet mit 404,
+    obwohl ihre Detailseiten direkt erreichbar bleiben.
+    """
     try:
-        return _absolut(reverse("insight_core:insight:portal_entry", kwargs={"slug": slug}))
+        seite = stadtseite_url(body)
     except NoReverseMatch:  # Slug aus Altbestand, der nicht mehr zum Muster passt
         return ""
+    return _absolut(seite) if seite else ""
 
 
 def brotkrumen(body: Any, name: str, url: str) -> list[tuple[str, str]]:
     """Brotkrumen einer Detailseite für die strukturierten Daten: Bürgerportal → Kommune → Objekt.
 
-    Die Kommune erscheint mit ihrer Seite (``/insight/k/<slug>/``), sofern sie einen Einstieg hat. Eine Ebene für
-    den Bereich (Sitzungen, Vorgänge …) gibt es nicht: Dessen Listen haben keine eigene Adresse, die Suchmaschinen
-    ohne gewählte Kommune erreichen (``/insight/k/<slug>/termine/`` leitet weiter, Issue #939). Die sichtbaren
-    Brotkrumen der Kopfzeile bleiben davon unberührt.
+    Die Kommune erscheint mit ihrer Seite (``/insight/k/<slug>/``), sofern sie eine erreichbare hat
+    (``seite_der_kommune``: gelistet, mit Slug). Eine Ebene für den Bereich (Sitzungen, Vorgänge …) gibt es nicht:
+    Dessen Listen haben keine eigene Adresse, die Suchmaschinen ohne gewählte Kommune erreichen
+    (``/insight/k/<slug>/termine/`` leitet weiter, Issue #939). Die sichtbaren Brotkrumen der Kopfzeile bleiben
+    davon unberührt.
     """
     krumen: list[tuple[str, str]] = [("mandari Insight", _absolut(reverse("insight_core:insight:portal_home")))]
     seite = seite_der_kommune(body)
@@ -419,8 +424,8 @@ def get_meeting_seo(
 
     Die Veranstaltung (``Event``) erscheint nur mit Beginn und einem verlässlichen Ort samt Postanschrift
     (``services.sitzungsort``, Issue #939) – Google wertet sie sonst als ungültig. Ohne beides trägt die Seite nur
-    die Brotkrumen. Veranstalter ist die Verwaltung der Kommune (mit der Seite der Kommune), Mitwirkende sind die
-    Gremien (mit ihren Seiten). Eintritt frei (``offers`` mit Preis 0, ``isAccessibleForFree``) nur bei einer
+    die Brotkrumen. Veranstalter ist die Verwaltung der Kommune (mit der Seite der Kommune, ohne erreichbare Seite
+    mit ihrer Webseite), Mitwirkende sind die Gremien (mit ihren Seiten). Eintritt frei (``offers`` mit Preis 0, ``isAccessibleForFree``) nur bei einer
     Sitzung mit ausdrücklich öffentlichem Teil, die nicht abgesagt ist.
     """
     from .services.sitzungsort import sitzungsort
