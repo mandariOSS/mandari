@@ -451,7 +451,7 @@ def test_listen_sind_die_listen_von_insight_mit_zielen_in_work(welt: Welt, clien
 
 def test_vorgangsliste_ohne_werte_fuer_die_fraktion_ohne_spalte(welt: Welt, client_for: Any) -> None:
     def kopf() -> str:
-        html = _seite(client_for, welt.vorsitz, "work:ris_papers").content.decode()
+        html: str = _seite(client_for, welt.vorsitz, "work:ris_papers").content.decode()
         liste = html[html.index('data-testid="vorgangsliste"') :]
         return liste[: liste.index("</thead>")]
 
