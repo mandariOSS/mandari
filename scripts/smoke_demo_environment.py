@@ -168,7 +168,7 @@ counts_first = demo_counts()
 output_second = run_command()
 counts_second = demo_counts()
 
-check("Erster Lauf legt Demo-Daten an", counts_first["bodies"] == 1 and counts_first["users"] == 7)
+check("Erster Lauf legt Demo-Daten an", counts_first["bodies"] == 1 and counts_first["users"] == 9)
 check(
     "Zweiter Lauf dupliziert nichts (alle Zähler stabil)",
     counts_first == counts_second,
@@ -180,10 +180,10 @@ check("Insight: 6 Sitzungen", counts_second["oparl_meetings"] == 6)
 check("Insight: 12 Vorlagen", counts_second["oparl_papers"] == 12)
 check("Insight: 5 PDF-Dateien", counts_second["oparl_files"] == 5)
 check("Insight: Beratungen vorhanden", counts_second["oparl_consultations"] >= 10)
-check("Work: 3 Mitgliedschaften", counts_second["memberships"] == 3)
-check("Work: 2 Dokumente", counts_second["motions"] == 2)
+check("Work: 5 Mitgliedschaften", counts_second["memberships"] == 5)
+check("Work: 4 Dokumente (2 Anträge, 2 Änderungsanträge)", counts_second["motions"] == 4)
 check("Work: 3 Aufgaben", counts_second["tasks"] == 3)
-check("Work: 1 Fraktionssitzung", counts_second["faction_meetings"] == 1)
+check("Work: Fraktionssitzungen und Reihe", counts_second["faction_meetings"] >= 3)
 check("Work: Ordner-Freigabe für Gast", counts_second["guest_shares"] == 1)
 check("Session: 3 Sitzungen", counts_second["session_meetings"] == 3)
 check("Session: 5 Vorlagen (eine aus dem Trinkwasser-Antrag)", counts_second["session_papers"] == 5)
@@ -193,7 +193,7 @@ check("Session: 3 Anwesenheiten (vergangene Sitzung)", counts_second["session_at
 check("Session: 1 genehmigtes Protokoll", counts_second["session_protocols"] == 1)
 
 demo_logins = parse_demo_logins(output_second)
-check("Passwörter im Output (7 Nutzer)", len(demo_logins) == 7, detail=f"{len(demo_logins)} gefunden")
+check("Passwörter im Output (9 Nutzer)", len(demo_logins) == 9, detail=f"{len(demo_logins)} gefunden")
 
 # PDF-Dateien physisch vorhanden + text_content gesetzt
 pdf_ok = all(

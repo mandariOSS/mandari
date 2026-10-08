@@ -209,6 +209,7 @@ jobs:
               - 'mandari/insight_core/publication.py'
               - 'mandari/insight_sync/session_mirror.py'
               - 'mandari/apps/common/management/commands/setup_demo_*.py'
+              - 'mandari/apps/common/demo_daten.py'
               - 'mandari/apps/session/migrations/**'
               - 'mandari/insight_core/migrations/**'
               - 'shared/**'
@@ -229,6 +230,8 @@ jobs:
               - 'mandari/tsconfig.json'
               - 'mandari/tailwind.config.js'
               - 'mandari/tests_e2e/**'
+              # Prüfskript für das neue Work-Design: läuft verkleinert als E2E-Test (test_work_design_pruefung.py)
+              - 'scripts/pruefe_work_design.py'
               - 'mandari/conftest.py'
               - 'mandari/apps/common/tests/factories.py'
               - 'mandari/apps/work/tests/test_import_text.py'
@@ -243,6 +246,10 @@ jobs:
               - 'mandari/apps/work/motions/**'
               - 'mandari/apps/common/demo.py'
               - 'mandari/apps/common/management/commands/setup_demo_*.py'
+              # Demo-Kennungen, Work-Teil der Demo und Schalter des neuen Designs (Issue #884)
+              - 'mandari/apps/common/demo_daten.py'
+              - 'mandari/apps/work/management/commands/setup_demo_work.py'
+              - 'mandari/apps/work/design_schalter.py'
               # Views und Kontext der Seiten, die die E2E-Tests aufrufen (Alpine-Fehler in der Konsole,
               # Drehbuch): Eine fehlende Kontextvariable für x-data fällt nur im Browser auf. Ruft ein
               # E2E-Test eine neue Seite auf, gehört deren View hierher.

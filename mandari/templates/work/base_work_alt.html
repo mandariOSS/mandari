@@ -113,7 +113,7 @@
     {% include "pwa/ios_install_hint.html" %}
 
     {% block extra_scripts %}{% endblock %}
-    {# Brotkrumen zeigt nur der neue Rahmen (#852); der Block steht hier, damit Seiten ihn für beide Rahmen setzen dürfen #}
-    {% if False %}{% block brotkrumen_aktuell %}{% endblock %}{% endif %}
+    {# Brotkrumen und Kennzeichnung der Gestaltung zeigt nur der neue Rahmen (#852, #884); die Blöcke stehen hier, damit Seiten sie für beide Rahmen setzen dürfen #}
+    {% if False %}{% block brotkrumen_aktuell %}{% endblock %}{% block gestaltung %}{% endblock %}{% endif %}
 </body>
 </html>
