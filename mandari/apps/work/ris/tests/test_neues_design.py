@@ -291,6 +291,34 @@ def test_sitzung_mit_allen_vorlagen_je_punkt_und_position(welt: Welt, client_for
     assert "Rathaus, Saal 2" in html
 
 
+def test_sitzung_ohne_geloeschte_und_zurueckgenommene_punkte_wie_insight(welt: Welt, client_for: Any) -> None:
+    # Von mandari Session zurückgenommen (etwa nachträglich nichtöffentlich gestellt) und in der Quelle gelöscht
+    session = "https://mandari.example/session/stadt/api/oparl"
+    zurueckgenommen = OParlAgendaItem.objects.create(
+        external_id=f"{session}/agendaitem/{uuid.uuid4()}",
+        meeting=welt.sitzung,
+        number="3",
+        name="Grundstücksangelegenheit Nordviertel",
+        deleted=True,
+    )
+    OParlAgendaItem.objects.create(
+        external_id=_kennung("items"), meeting=welt.sitzung, number="4", name="Gestrichener Punkt", deleted=True
+    )
+    _position(welt.org, zurueckgenommen, "against")
+
+    html = _seite(client_for, welt.vorsitz, "work:ris_meeting_detail", meeting_id=welt.sitzung.pk).content.decode()
+
+    tagesordnung = html[html.index('data-testid="tagesordnung"') :]
+    tagesordnung = tagesordnung[: tagesordnung.index("</ol>")]
+    assert "Radwege" in tagesordnung and "Feuerwehr" in tagesordnung
+    assert "Grundstücksangelegenheit" not in html and "Gestrichener Punkt" not in html
+    assert "2 Punkte" in html
+    # Die Vorbereitung zeigt weiter alle Punkte, die Position der Organisation bleibt dort erreichbar
+    vorbereitung = reverse("work:meeting_prepare", kwargs={"org_slug": welt.org.slug, "meeting_id": welt.sitzung.pk})
+    assert vorbereitung in html
+    assert str(zurueckgenommen.pk) in client_for(welt.vorsitz.user).get(vorbereitung).content.decode()
+
+
 def test_listen_mit_stand_und_fuer_die_fraktion(welt: Welt, client_for: Any) -> None:
     _position(welt.org, welt.top_rat, "abstain")
     Motion.objects.create(
@@ -384,6 +412,7 @@ def test_listen_sind_die_listen_von_insight_mit_zielen_in_work(welt: Welt, clien
     PersonFraktion.objects.create(
         person=welt.person, body=welt.body, bezeichnung="Fraktion Mitte", quelle=PersonFraktion.QUELLE_EINBLENDUNG
     )
+    _position(welt.org, welt.top_a, "for")  # ein Wert für die Spalte „Für die Fraktion“ der Vorgangsliste
     faelle = [
         ("work:ris_papers", {}, "vorgangsliste", "work:ris_paper_detail", {"paper_id": welt.vorlage.pk}),
         (
@@ -418,6 +447,20 @@ def test_listen_sind_die_listen_von_insight_mit_zielen_in_work(welt: Welt, clien
     assert "Fraktion Mitte" in person and "Vorsitz, Hauptausschuss" in person
     gremium = _seite(client_for, welt.vorsitz, "work:ris_organization_detail", org_id=welt.ausschuss.pk)
     assert "Fraktion Mitte" in gremium.content.decode()
+
+
+def test_vorgangsliste_ohne_werte_fuer_die_fraktion_ohne_spalte(welt: Welt, client_for: Any) -> None:
+    def kopf() -> str:
+        html = _seite(client_for, welt.vorsitz, "work:ris_papers").content.decode()
+        liste = html[html.index('data-testid="vorgangsliste"') :]
+        return liste[: liste.index("</thead>")]
+
+    # Keine Position und kein Dokument auf der Seite: die Spalte belegt keine Breite (Titel brechen nicht um)
+    assert "Für die Fraktion" not in kopf()
+    Motion.objects.create(
+        organization=welt.org, author=welt.vorsitz, title="Antrag Radwege", status="draft", related_paper=welt.zweite
+    )
+    assert "Für die Fraktion</th>" in kopf()
 
 
 def test_seitenwahl_von_insight_behaelt_die_filter(welt: Welt, client_for: Any) -> None:
@@ -470,6 +513,18 @@ def test_sitzung_mit_niederschrift_uebertragung_und_sitzungsdateien_wie_insight(
         and "Hybride Sitzung" in html
         and "https://stream.example/sitzung" in html
     )
+    # Dichte Fassung: Abschnitte ohne Rahmen und Trennlinie, Textlinks statt weiterer Hauptaktionen neben
+    # „Sitzung vorbereiten“ im Kopf
+    seitenspalte = html[html.index('aria-label="Für die Fraktion, Unterlagen und Angaben"') :]
+    seitenspalte = seitenspalte[: seitenspalte.index("</aside>")]
+    assert "rounded-xl border" not in seitenspalte and "bg-primary-600 hover:bg-primary-700" not in seitenspalte
+    for testid, link in (("oeffentliche-niederschrift", "Herunterladen"), ("sitzungsformat", "Zur Übertragung")):
+        abschnitt = seitenspalte[seitenspalte.index(f'data-testid="{testid}"') :]
+        abschnitt = abschnitt[: abschnitt.index("</section>")]
+        assert link in abschnitt and "text-primary-700" in abschnitt and "border-b" not in abschnitt, testid
+    insight = client_for(welt.vorsitz.user).get(f"/insight/termine/{welt.sitzung.pk}/").content.decode()
+    karte = insight[insight.index('data-testid="oeffentliche-niederschrift"') :]
+    assert "bg-primary-600 hover:bg-primary-700" in karte[: karte.index("</section>")]
     # Übrige Sitzungsdateien als Dokumentzeilen; die Niederschrift steht nicht doppelt, Gelöschtes fehlt
     dateien = html[html.index('data-testid="sitzungsdateien"') :]
     dateien = dateien[: dateien.index("</ul>")]

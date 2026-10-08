@@ -1,5 +1,17 @@
-{% comment %}Öffentliche Niederschrift der Sitzung (OParl resultsProtocol, Issue #318). Erwartet: protocol_file.{% endcomment %}
+{% comment %}Öffentliche Niederschrift der Sitzung (OParl resultsProtocol, Issue #318). Erwartet: protocol_file.
+Mit ``dicht`` (Work, Issue #853) ein Abschnitt ohne Rahmen und Trennlinie wie c-rahmen.abschnitt, „Ansehen“ und
+„Herunterladen“ als Textlinks neben der einen Hauptaktion der Seite: {% include "pages/meetings/_protocol_card.html" with dicht=True %}.
+Ohne ``dicht`` bleibt die Karte von Insight unverändert.{% endcomment %}
 {% if protocol_file %}
+{% if dicht %}
+<c-rahmen.abschnitt titel="Niederschrift" titel_id="niederschrift-titel" zusatz="öffentlicher Teil" data-testid="oeffentliche-niederschrift">
+    {% if protocol_file.file_date or protocol_file.size %}<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{% if protocol_file.file_date %}Veröffentlicht am {{ protocol_file.file_date|date:"d.m.Y" }}{% endif %}{% if protocol_file.size %}{% if protocol_file.file_date %} · {% endif %}{{ protocol_file.size_human }}{% endif %}</p>{% endif %}
+    <p class="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        <c-ui.textlink href="{% url 'insight_core:insight:file_proxy' protocol_file.id %}" extern>Ansehen<span class="sr-only">: Niederschrift</span></c-ui.textlink>
+        <c-ui.textlink href="{% url 'insight_core:insight:file_proxy' protocol_file.id %}?download=1">Herunterladen<span class="sr-only">: Niederschrift</span></c-ui.textlink>
+    </p>
+</c-rahmen.abschnitt>
+{% else %}
 <c-ui.card title="Niederschrift" subtitle="Öffentlicher Teil der Sitzung" data-testid="oeffentliche-niederschrift">
     <p class="text-sm text-gray-600 dark:text-gray-400">
         {% if protocol_file.file_date %}Veröffentlicht am {{ protocol_file.file_date|date:"d.m.Y" }}{% endif %}{% if protocol_file.size %}{% if protocol_file.file_date %} · {% endif %}{{ protocol_file.size_human }}{% endif %}
@@ -9,4 +21,5 @@
         <c-ui.button size="sm" variant="secondary" icon="download" href="{% url 'insight_core:insight:file_proxy' protocol_file.id %}?download=1">Herunterladen</c-ui.button>
     </div>
 </c-ui.card>
+{% endif %}
 {% endif %}

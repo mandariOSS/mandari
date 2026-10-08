@@ -6,8 +6,9 @@ Sitzung, Vorgänge und Vorgang, Gremien und Gremium, Personen und Person.
 Je Breite: kein seitliches Überlaufen, ab 1.280 px rechts höchstens ein Viertel der Fensterbreite frei (keine
 Leerflächen auf breiten Bildschirmen), axe ohne schwere Befunde (1.440 px, hell und dunkel), keine Fehler im Browser.
 Der Vorgang zeigt Stand-Satz, Dokumentzeile mit aufklappbarem Text und „Für die Fraktion“ mit der Position; die Listen
-sind die Listen von Insight (ganze Zeile führt in Work weiter), die Sitzung zeigt Niederschrift, Übertragung und
-Sitzungsdateien wie Insight. Screenshots bei 390, 1.280, 1.920 und 2.560 px als CI-Artefakt.
+sind die Listen von Insight (ganze Zeile führt in Work weiter), die Sitzung zeigt Niederschrift, Übertragung (dichte
+Fassung mit Textlinks) und Sitzungsdateien wie Insight und keine zurückgenommenen Punkte. Screenshots bei 390, 1.280,
+1.920 und 2.560 px als CI-Artefakt.
 """
 
 from __future__ import annotations
@@ -88,6 +89,14 @@ def recherche(admin: Any) -> dict[str, Any]:
         "mandari:publicAccess": {"url": "https://stream.recherche-e2e.example/live", "hint": "Ohne Anmeldung."},
     }
     sitzung.save(update_fields=["raw_json"])
+    # Von mandari Session zurückgenommener Punkt: erscheint wie in Insight nicht auf der Sitzungsseite
+    OParlAgendaItem.objects.create(
+        external_id="https://mandari.example/session/stadt/api/oparl/agendaitem/zurueck",
+        meeting=sitzung,
+        number="5",
+        name="Zurückgenommener Punkt",
+        deleted=True,
+    )
     ratssitzung = OParlMeeting.objects.create(
         external_id=f"{RIS}/meeting/2", body=body, start=jetzt + timedelta(days=6)
     )
@@ -248,8 +257,12 @@ def test_listen_und_sitzung_mit_den_bausteinen_von_insight(
     expect(page.get_by_test_id("personenliste")).to_contain_text("Fraktion Mitte")
 
     goto(f"/work/{admin.organization.slug}/{recherche['seiten'][2][1]}")
-    expect(page.get_by_test_id("oeffentliche-niederschrift")).to_be_visible()
+    expect(page.get_by_test_id("tagesordnung")).not_to_contain_text("Zurückgenommener Punkt")
+    # Niederschrift und Übertragung in der dichten Fassung: Textlinks neben der einen Hauptaktion im Kopf
+    niederschrift = page.get_by_test_id("oeffentliche-niederschrift")
+    expect(niederschrift.get_by_role("link", name="Herunterladen: Niederschrift")).to_be_visible()
     expect(page.get_by_test_id("sitzungsformat")).to_contain_text("Hybride Sitzung")
+    expect(page.get_by_test_id("sitzungsformat").get_by_role("link", name="Zur Übertragung")).to_be_visible()
     dateien = page.get_by_test_id("sitzungsdateien")
     expect(dateien).to_contain_text("Einladung")
     dateien.get_by_role("button", name="Text").click()

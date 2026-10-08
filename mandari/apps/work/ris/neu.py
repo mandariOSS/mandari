@@ -22,7 +22,6 @@ from hub.ris import selectors as ris
 
 from . import fraktion
 from .links import WorkRisLinks
-from .selectors import _natural_key
 
 
 def _ids(objekte: Iterable[Any]) -> list[uuid.UUID]:
@@ -127,14 +126,16 @@ def sitzungen(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[
 
 def sitzung(organization: Any, membership: Any, meeting: Any) -> dict[str, Any]:
     """
-    Sitzung: Tagesordnung natürlich sortiert, je Punkt alle Vorlagen (eine Abfrage) und – mit ``meetings.prepare`` –
-    Position und Zahl der Notizen der Organisation; dazu Vorbereitungsstand und Dokumente zur Sitzung, und wie in
-    Insight die Niederschrift, die Teilnahme der Öffentlichkeit (Übertragung) und die übrigen Sitzungsdateien.
+    Sitzung: Tagesordnung wie in Insight (dieselbe Fassadenfunktion: natürlich sortiert, ohne gelöschte und von Session
+    zurückgenommene Punkte), je Punkt alle Vorlagen (eine Abfrage) und – mit ``meetings.prepare`` – Position und Zahl
+    der Notizen der Organisation; dazu Vorbereitungsstand und Dokumente zur Sitzung, und wie in Insight die
+    Niederschrift, die Teilnahme der Öffentlichkeit (Übertragung) und die übrigen Sitzungsdateien. Die Vorbereitung
+    zeigt weiter alle Punkte samt Positionen und Notizen.
     """
     from insight_core.services import file_reconcile
 
     erlaubt = basis(organization, membership)
-    punkte = sorted(ris.agenda_items(meeting), key=lambda punkt: _natural_key(punkt.number))
+    punkte = ris.visible_agenda_items(meeting)
     vorlagen = ris.papers_of_agenda_items(punkte)
     positionen: dict[uuid.UUID, fraktion.Position] = {}
     notizen: dict[uuid.UUID, int] = {}
@@ -180,7 +181,8 @@ def _letzte_position(
 def vorgaenge(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[str, Any]:
     """
     Vorgangsliste: je Vorgang der Stand-Satz (eine Abfrage für die Seite) und für die Fraktion die zuletzt gesetzte
-    Position (mit ``meetings.prepare``) und die Dokumente der Organisation zur Vorlage.
+    Position (mit ``meetings.prepare``) und die Dokumente der Organisation zur Vorlage. Die Spalte „Für die Fraktion“
+    entfällt wie die übrigen Spalten der Liste, wenn sie in keiner Zeile einen Wert hat (``fraktion_spalte``).
     """
     from insight_core.services.search_presentation import statuses_for_papers
 
@@ -198,7 +200,7 @@ def vorgaenge(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[
         vorgang.stand = staende.get(str(vorgang.pk))
         vorgang.position = _letzte_position(punkte.get(vorgang.pk, ()), positionen)
         vorgang.dokumente = dokumente.get(vorgang.pk, [])
-    return erlaubt
+    return {**erlaubt, "fraktion_spalte": any(v.position is not None or v.dokumente for v in liste)}
 
 
 def _dateien(paper: Any) -> tuple[list[Any], list[Any], list[dict[str, Any]]]:
