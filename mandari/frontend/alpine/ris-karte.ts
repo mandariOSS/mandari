@@ -5,24 +5,30 @@
  * data-vorgang="…/ris/papers/<null-uuid>/" data-zeitraum="12">` mit der Kartenfläche `[data-karte]` und
  * `#ris-karte-config` (json_script: Zentrum und Rahmen der Kommune).
  *
- * - Kacheln kommen über den Kachel-Proxy von mandari, nie direkt von einem Kartendienst.
- * - Punkte lädt die Karte je Ausschnitt und Zeitraum nach (nicht mehr nur die 500 neuesten Vorgänge). Liegen im
- *   Ausschnitt mehr Punkte, als eine Antwort trägt, sagt der Status das und bittet ums Hineinzoomen.
- * - Titel und Ortsnamen gelangen nur als Text in die Popups (`textContent`), nie als HTML.
+ * Karte, Kacheln über den Kachel-Proxy von mandari, Punktgruppe, Abfrage je Ausschnitt und Zeichnen kommen aus dem
+ * gemeinsamen Kartenmodul mit Insight (frontend/js/vorgangskarte.ts). Hier stehen nur die Teile von Work: Zeitraum
+ * in Monaten (in der Adresse), Status als Satz unter der Karte, Popup mit Link zum Vorgang in Work.
  */
 
 import { defineComponent } from '../js/alpine/component'
 import { readJsonScript } from '../js/json-script'
 import { placeStyle } from '../js/paper-map'
+import {
+  ausschnitt,
+  type Gruppe,
+  type KarteAntwort,
+  type KarteFeature,
+  type KarteMap,
+  karteAnlegen,
+  knoten,
+  leaflet,
+  PunkteAbfrage,
+  punkteZeichnen,
+  punktGruppe,
+  type Rahmen,
+} from '../js/vorgangskarte'
 
-type LatLng = [number, number]
-
-interface Rahmen {
-  north: number | null
-  south: number | null
-  east: number | null
-  west: number | null
-}
+export type { KarteAntwort, KarteFeature } from '../js/vorgangskarte'
 
 interface KarteConfig {
   center_lat: number
@@ -31,57 +37,13 @@ interface KarteConfig {
   bbox: Rahmen | null
 }
 
-export interface KarteFeature {
-  geometry: { coordinates: [number, number] }
-  properties: { id: string; title: string; reference: string | null; date: string | null; location_name: string }
-}
-
-export interface KarteAntwort {
-  features: KarteFeature[]
-  truncated: boolean
-}
-
-interface Ausschnitt {
-  toBBoxString(): string
-}
-
-interface Ebene {
-  addTo(map: KarteMap): Ebene
-  bindPopup(content: HTMLElement, options?: Record<string, unknown>): Ebene
-}
-
-interface Gruppe extends Ebene {
-  clearLayers(): Gruppe
-  addLayer(layer: Ebene): Gruppe
-}
-
-interface KarteMap {
-  setView(center: LatLng, zoom: number): KarteMap
-  fitBounds(bounds: unknown, options?: Record<string, unknown>): KarteMap
-  getBounds(): Ausschnitt
-  on(event: string, handler: () => void): KarteMap
-}
-
-interface LeafletApi {
-  map(element: HTMLElement, options: Record<string, unknown>): KarteMap
-  tileLayer(url: string, options: Record<string, unknown>): Ebene
-  circleMarker(latlng: LatLng, options: Record<string, unknown>): Ebene
-  layerGroup(): Gruppe
-  markerClusterGroup?: (options: Record<string, unknown>) => Gruppe
-  latLngBounds(southWest: LatLng, northEast: LatLng): unknown
-}
-
 /** Platzhalter in der Adresse des Vorgangs (`data-vorgang`), wird je Punkt ersetzt */
 const NULL_UUID = '00000000-0000-0000-0000-000000000000'
 const NAMEN: Record<string, string> = { '3': '3 Monate', '12': '12 Monate', '36': '3 Jahre', alle: 'alle Jahre' }
 const zahl = new Intl.NumberFormat('de-DE')
 
-function leaflet(): LeafletApi | undefined {
-  return (window as unknown as { L?: LeafletApi }).L
-}
-
 /** „12.03.2026“ aus einem ISO-Datum, sonst leer */
-export function datumText(iso: string | null): string {
+export function datumText(iso: string | null | undefined): string {
   if (!iso) return ''
   const [jahr, monat, tag] = iso.split('-')
   return jahr && monat && tag ? `${tag.slice(0, 2)}.${monat}.${jahr}` : ''
@@ -104,18 +66,13 @@ export function statusText(antwort: KarteAntwort, zeitraum: string): string {
 /** Popup eines Punkts aus DOM-Knoten: Titel als Link zum Vorgang in Work, darunter Nummer, Datum und Ort */
 export function popupInhalt(feature: KarteFeature, vorgangUrl: string): HTMLElement {
   const p = feature.properties
-  const wurzel = document.createElement('div')
-  wurzel.className = 'ris-karte-popup'
-  const link = document.createElement('a')
+  const wurzel = knoten('div', 'ris-karte-popup')
+  const link = knoten('a', '', p.title || 'Vorgang')
   link.href = vorgangUrl.replace(NULL_UUID, encodeURIComponent(p.id))
-  link.textContent = p.title || 'Vorgang'
   wurzel.append(link)
   const angaben = [p.reference ?? '', datumText(p.date)].filter(Boolean).join(' · ')
   for (const text of [angaben, p.location_name]) {
-    if (!text) continue
-    const zeile = document.createElement('p')
-    zeile.textContent = text
-    wurzel.append(zeile)
+    if (text) wurzel.append(knoten('p', '', text))
   }
   return wurzel
 }
@@ -129,7 +86,7 @@ export const risKarte = defineComponent(() => ({
   // Leaflet-Objekte nicht reaktiv halten (Alpine würde sie in Proxys hüllen)
   _map: undefined as KarteMap | undefined,
   _punkte: undefined as Gruppe | undefined,
-  _abbruch: undefined as AbortController | undefined,
+  _abfrage: new PunkteAbfrage(),
   _timer: 0,
 
   init() {
@@ -145,23 +102,14 @@ export const risKarte = defineComponent(() => ({
       return
     }
     const config = readJsonScript<KarteConfig>('ris-karte-config')
-    const map = L.map(flaeche, { zoomControl: true, attributionControl: true })
-    const rahmen = config?.bbox
-    if (rahmen?.north != null && rahmen.south != null && rahmen.east != null && rahmen.west != null) {
-      map.fitBounds(L.latLngBounds([rahmen.south, rahmen.west], [rahmen.north, rahmen.east]), { padding: [24, 24] })
-    } else {
-      map.setView([config?.center_lat ?? 51.1657, config?.center_lng ?? 10.4515], config ? config.zoom : 6)
-    }
-    L.tileLayer((root.dataset.kacheln ?? '').replace('/0/0/0', '/{z}/{x}/{y}'), {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 18,
-    }).addTo(map)
-    const gruppe = L.markerClusterGroup
-      ? L.markerClusterGroup({ maxClusterRadius: 45, showCoverageOnHover: false, spiderfyOnMaxZoom: true })
-      : L.layerGroup()
-    gruppe.addTo(map)
+    const map = karteAnlegen(L, flaeche, root.dataset.kacheln ?? '', {
+      rahmen: config?.bbox,
+      zentrum: config ? [config.center_lat, config.center_lng] : null,
+      zoom: config?.zoom,
+      rand: 24,
+    })
     this._map = map
-    this._punkte = gruppe
+    this._punkte = punktGruppe(L, map, 45)
     map.on('moveend', () => {
       window.clearTimeout(this._timer)
       this._timer = window.setTimeout(() => void this.laden(), 250)
@@ -181,31 +129,24 @@ export const risKarte = defineComponent(() => ({
   async laden() {
     const map = this._map
     const L = leaflet()
-    if (!map || !L || !this._punkte) return
-    this._abbruch?.abort()
-    const abbruch = new AbortController()
-    this._abbruch = abbruch
+    const gruppe = this._punkte
+    if (!map || !L || !gruppe) return
     this.laedt = true
-    const params = new URLSearchParams({ bbox: map.getBounds().toBBoxString(), zeitraum: this.zeitraum })
     try {
-      const antwort = await fetch(`${this._datenUrl}?${params}`, {
-        signal: abbruch.signal,
-        headers: { Accept: 'application/json' },
-      })
-      if (!antwort.ok) throw new Error(String(antwort.status))
-      const daten = (await antwort.json()) as KarteAntwort
-      this._punkte.clearLayers()
+      const params = new URLSearchParams({ bbox: ausschnitt(map), zeitraum: this.zeitraum })
+      const daten = await this._abfrage.laden(this._datenUrl, params)
+      if (!daten) return
       const stil = placeStyle()
-      for (const feature of daten.features) {
-        const [lon, lat] = feature.geometry.coordinates
-        const punkt = L.circleMarker([lat, lon], stil)
-        punkt.bindPopup(popupInhalt(feature, this._vorgangUrl), { maxWidth: 300 })
-        this._punkte.addLayer(punkt)
-      }
+      punkteZeichnen(
+        gruppe,
+        daten.features,
+        (lage) => L.circleMarker(lage, stil),
+        (feature) => popupInhalt(feature, this._vorgangUrl),
+        { maxWidth: 300 },
+      )
       this.status = statusText(daten, this.zeitraum)
       this.laedt = false
-    } catch (fehler) {
-      if ((fehler as Error).name === 'AbortError') return
+    } catch {
       this.status = 'Die Vorgänge konnten nicht geladen werden. Bitte versuchen Sie es erneut.'
       this.laedt = false
     }

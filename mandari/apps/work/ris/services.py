@@ -20,8 +20,8 @@ from django.utils import timezone
 from django.utils.html import escape
 from django.utils.safestring import SafeString, mark_safe
 
-from hub.ris import selectors as ris
 from insight_core.models import OParlBody
+from insight_core.services import karten_punkte
 
 # ``SearchQuery`` und ``RESULT_TYPES`` liegen seit 10/2026 in ``search_filters`` (Issue #853); die Namen bleiben hier
 from insight_core.services.search_filters import RESULT_TYPES as RESULT_TYPES
@@ -190,43 +190,19 @@ def karte_seite(body: OParlBody, params: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
-def karte_ausschnitt(raw: str | None) -> ris.Area | None:
-    """Kartenausschnitt aus ``west,süd,ost,nord`` (Leaflet ``toBBoxString``); ungültig oder leer ergibt ``None``."""
-    if not raw:
-        return None
-    try:
-        west, south, east, north = (float(teil) for teil in raw.split(","))
-    except ValueError:
-        return None
-    gueltig = -180 <= west <= east <= 180 and -90 <= south <= north <= 90
-    return (west, south, east, north) if gueltig else None
-
-
 def karte_daten(bodies: Bodies, params: Mapping[str, str], *, heute: date | None = None) -> dict[str, Any]:
     """
     Punkte der Karte als GeoJSON: Vorgänge der Kommunen im Ausschnitt (``bbox``) und Zeitraum (``zeitraum``),
     neueste zuerst, ohne gelöschte. Sind es mehr als ``KARTE_HOECHSTENS``, steht ``truncated`` in der Antwort und
-    die Karte bittet ums Hineinzoomen – kein stilles Abschneiden wie früher bei den 500 neuesten.
+    die Karte bittet ums Hineinzoomen – kein stilles Abschneiden wie früher bei den 500 neuesten. Abfrage und
+    Ausschnitt teilt sich Work mit der Karte in Insight (``insight_core.services.karten_punkte``).
     """
     zeitraum = karte_zeitraum(params.get("zeitraum"))
     monate = KARTE_ZEITRAEUME[zeitraum]
     seit = None
     if monate is not None:
         seit = (heute or timezone.localdate()) - timedelta(days=monate * 365 // 12)
-    orte = ris.paper_places(bodies, area=karte_ausschnitt(params.get("bbox")), since=seit, limit=KARTE_HOECHSTENS + 1)
-    truncated = len(orte) > KARTE_HOECHSTENS
-    features = [
-        {
-            "type": "Feature",
-            "geometry": {"type": "Point", "coordinates": [ort.longitude, ort.latitude]},
-            "properties": {
-                "id": str(ort.paper_id),
-                "title": ort.title,
-                "reference": ort.reference,
-                "date": ort.paper_date.isoformat() if ort.paper_date else None,
-                "location_name": ort.place,
-            },
-        }
-        for ort in orte[:KARTE_HOECHSTENS]
-    ]
-    return {"type": "FeatureCollection", "features": features, "truncated": truncated, "zeitraum": zeitraum}
+    daten = karten_punkte.geojson(
+        bodies, area=karten_punkte.ausschnitt(params.get("bbox")), since=seit, hoechstens=KARTE_HOECHSTENS
+    )
+    return {**daten, "zeitraum": zeitraum}

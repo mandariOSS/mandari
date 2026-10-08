@@ -374,12 +374,6 @@ def test_karte_daten_meldet_mehr_punkte_als_die_grenze(
     assert [f["properties"]["title"] for f in daten["features"]] == ["Vorgang 3", "Vorgang 2", "Vorgang 1"]
 
 
-def test_karte_ausschnitt_nur_gueltige_grenzen() -> None:
-    assert services.karte_ausschnitt("7.5,51.9,7.7,52.0") == (7.5, 51.9, 7.7, 52.0)
-    for kaputt in ("", None, "1,2,3", "7.7,51.9,7.5,52.0", "7.5,52.0,7.7,51.9", "7.5,51.9,7.7,95", "x,1,2,3"):
-        assert services.karte_ausschnitt(kaputt) is None
-
-
 @pytest.mark.django_db
 def test_map_config(body: OParlBody) -> None:
     config = services.map_config(body)

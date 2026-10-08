@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Karte der Recherche in Work (Issue #853) im Browser.
+Karte der Recherche in Work und Karte des Bürgerportals (Issue #853) im Browser – beide auf dem gemeinsamen
+Kartenmodul (frontend/js/vorgangskarte.ts) und derselben Abfrage der Punkte.
 
 - Keine Anfrage an fremde Hosts: Kacheln über den Kachel-Proxy, Leaflet aus den eigenen statischen Dateien.
-- Punkte je Zeitraum (Standard 12 Monate, umschaltbar), gelöschte Vorgänge fehlen; ein Klick auf einen Punkt führt
-  zum Vorgang in Work.
-- Neues und bisheriges Erscheinungsbild; axe ohne schwere Befunde, am Handy kein seitliches Überlaufen.
+- Punkte je Zeitraum (Work: Standard 12 Monate, umschaltbar), gelöschte Vorgänge fehlen; ein Klick auf einen Punkt
+  führt zum Vorgang in Work bzw. in Insight.
+- Neues und bisheriges Erscheinungsbild; axe ohne schwere Befunde, kein seitliches Überlaufen. Screenshots bei 390,
+  1.280, 1.920 und 2.560 px.
 """
 
 from __future__ import annotations
@@ -83,7 +85,7 @@ def _status(page: Any) -> Any:
     return page.get_by_role("status").filter(has_text="Ausschnitt")
 
 
-@pytest.mark.parametrize("breite", [1440, 390])
+@pytest.mark.parametrize("breite", [390, 1280, 1920, 2560])
 def test_karte_neu(
     page: Any,
     goto: Any,
@@ -118,7 +120,7 @@ def test_karte_neu(
     assert not ergebnis.failing, ergebnis.describe()
     screenshot(f"work-karte-{breite}")
 
-    if breite >= 1440:
+    if breite == 1280:
         # Ein Punkt öffnet den Vorgang in Work (Popup mit Link, Titel nur als Text)
         page.locator(".leaflet-interactive").first.click(force=True)
         link = page.locator(".ris-karte-popup a")
@@ -145,3 +147,45 @@ def test_karte_bisher(
     expect(page.get_by_text("Gelöschter Vorgang")).to_have_count(0)
     assert not fremde, fremde
     problems.assert_clean("Karte im bisherigen Erscheinungsbild")
+
+
+@pytest.mark.parametrize("breite", [390, 1280, 1920, 2560])
+def test_karte_im_buergerportal_mit_dem_gemeinsamen_modul(
+    page: Any,
+    goto: Any,
+    live_server: Any,
+    karte: Any,
+    axe: Any,
+    screenshot: Any,
+    problems: BrowserProblems,
+    breite: int,
+) -> None:
+    body = karte.organization.body
+    fremde = _nur_eigene_hosts(page, live_server)
+    page.set_viewport_size({"width": breite, "height": 900 if breite > 500 else 844})
+    goto(f"/insight/kommune/{body.id}/")
+
+    goto("/insight/karte/")
+    wait_for_component(page, "insightKarte")
+
+    # Wie bisher: Zeitraum in Wochen (Standard 3 Monate), Zähler der Orte, Marker; gelöschte Vorgänge fehlen
+    expect(page.get_by_text("2 Orte", exact=True)).to_be_visible()
+    page.get_by_role("button", name="Alle", exact=True).click()
+    expect(page.get_by_text("3 Orte", exact=True)).to_be_visible()
+    assert page.evaluate("document.documentElement.scrollWidth") <= breite
+    assert not fremde, fremde
+    ergebnis = axe()
+    assert not ergebnis.failing, ergebnis.describe()
+    screenshot(f"insight-karte-{breite}")
+
+    if breite == 1280:
+        # Ein Marker öffnet das Popup (Titel nur als Text) mit dem Weg zum Vorgang in Insight
+        page.get_by_role("button", name="4 Wo.", exact=True).click()
+        expect(page.get_by_text("1 Orte", exact=True)).to_be_visible()
+        page.locator(".custom-marker").first.click(force=True)
+        popup = page.locator(".leaflet-popup-content")
+        expect(popup).to_contain_text("Spielplatz am Markt")
+        expect(popup).to_contain_text("Ort Spielplatz am Markt")
+        popup.get_by_role("link", name="Details ansehen").click()
+        page.wait_for_url("**/insight/vorgaenge/**")
+    problems.assert_clean(f"Karte im Bürgerportal bei {breite} px")
