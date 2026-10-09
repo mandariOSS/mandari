@@ -260,7 +260,7 @@ def test_listen_und_sitzung_mit_den_bausteinen_von_insight(
     expect(page.get_by_test_id("tagesordnung")).not_to_contain_text("Zurückgenommener Punkt")
     # Niederschrift und Übertragung in der dichten Fassung: Textlinks neben der einen Hauptaktion im Kopf
     niederschrift = page.get_by_test_id("oeffentliche-niederschrift")
-    expect(niederschrift.get_by_role("link", name="Herunterladen: Niederschrift")).to_be_visible()
+    expect(niederschrift.get_by_role("link", name="Herunterladen")).to_be_visible()
     expect(page.get_by_test_id("sitzungsformat")).to_contain_text("Hybride Sitzung")
     expect(page.get_by_test_id("sitzungsformat").get_by_role("link", name="Zur Übertragung")).to_be_visible()
     dateien = page.get_by_test_id("sitzungsdateien")

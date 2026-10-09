@@ -460,7 +460,8 @@ def test_vorgangsliste_ohne_werte_fuer_die_fraktion_ohne_spalte(welt: Welt, clie
     Motion.objects.create(
         organization=welt.org, author=welt.vorsitz, title="Antrag Radwege", status="draft", related_paper=welt.zweite
     )
-    assert "Für die Fraktion</th>" in kopf()
+    # Mit Wert erst ab 2xl als Spalte, darunter wie der Stand unter dem Titel (lange Titel brechen bei 1.280 px nicht um)
+    assert 'max-2xl:hidden">Für die Fraktion</th>' in kopf()
 
 
 def test_seitenwahl_von_insight_behaelt_die_filter(welt: Welt, client_for: Any) -> None:
