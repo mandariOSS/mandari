@@ -10,8 +10,14 @@ kein vollständiger Domainname; Spamfilter werten das ab (rspamd ``MID_RHS_NOT_F
 Verwaltungsbefehle – denselben Namen:
 
 1. ``EMAIL_MESSAGE_ID_DOMAIN``, wenn gesetzt und ein vollständiger Domainname (sonst Warnung ``common.W001``),
-2. sonst die Domain von ``DEFAULT_FROM_EMAIL``,
-3. sonst der Host aus ``SITE_URL`` (ist auch der kein vollständiger Domainname: Warnung ``common.W002``).
+2. sonst die Domain von ``DEFAULT_FROM_EMAIL``, wenn ausdrücklich gesetzt – nie der eingebaute Rückfall
+   ``DEFAULT_FROM_EMAIL_FALLBACK`` (``noreply@mandari.de``), damit sich keine fremde Installation mit mandari.de
+   meldet,
+3. sonst der Host aus ``SITE_URL``,
+4. liefert keiner davon einen vollständigen Domainnamen: eine IP-Adresse als Adressliteral nach RFC 5321
+   (``[192.0.2.10]``, ``[IPv6:2001:db8::1]``), sonst ``localhost``. Ein Rechnername mit Unterstrich oder ohne
+   Punkt wäre als EHLO-Name ungültig oder nichtssagend. Die Systemprüfung warnt (``common.W002``), außer bei
+   einer rein lokalen Installation (``SITE_URL`` auf ``localhost`` oder Loopback).
 
 Der Name gilt für alle Versandwege, weil alle über Djangos ``EmailMessage`` und dessen SMTP-Backend laufen:
 Systemeinstellungen, Umgebung (``SiteSettingsEmailBackend``), eigenes SMTP einer Organisation
@@ -25,6 +31,7 @@ Tests in ``apps/common/tests/test_mail_domain.py`` fehl.
 
 from __future__ import annotations
 
+import ipaddress
 import logging
 import re
 from email.utils import parseaddr
@@ -69,25 +76,53 @@ def domain_of(address: str) -> str:
     return normalize(addr.rpartition("@")[2]) if "@" in addr else ""
 
 
+def address_literal(value: str) -> str:
+    """IP-Adresse als Adressliteral nach RFC 5321 (``[192.0.2.10]``, ``[IPv6:2001:db8::1]``); sonst ``""``.
+
+    Gilt so auch in der Message-ID (RFC 5322 ``no-fold-literal``). Eine Zonenangabe (``%eth0``) entfällt.
+    """
+    roh = (value or "").strip().removeprefix("[").removesuffix("]")
+    try:
+        adresse = ipaddress.ip_address(roh)
+    except ValueError:
+        return ""
+    if adresse.version == 6:
+        return f"[IPv6:{ipaddress.IPv6Address(int(adresse)).compressed}]"
+    return f"[{adresse}]"
+
+
+def sender_domain() -> str:
+    """Domain von ``DEFAULT_FROM_EMAIL``, wenn ausdrücklich gesetzt; beim eingebauten Rückfall ``""``."""
+    absender = str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "").strip()
+    rueckfall = str(getattr(settings, "DEFAULT_FROM_EMAIL_FALLBACK", "") or "").strip()
+    if rueckfall and absender.lower() == rueckfall.lower():
+        return ""
+    return domain_of(absender)
+
+
+def site_host() -> str:
+    """Host aus ``SITE_URL`` (ohne Port und Klammern), unverändert; ``""`` ohne Host."""
+    return urlsplit(str(getattr(settings, "SITE_URL", "") or "")).hostname or ""
+
+
 def explicit_domain() -> str:
     """``EMAIL_MESSAGE_ID_DOMAIN`` normalisiert (leer, wenn nicht gesetzt oder nicht darstellbar)."""
     return normalize(str(getattr(settings, "EMAIL_MESSAGE_ID_DOMAIN", "") or ""))
 
 
 def derived_domain() -> str:
-    """Name ohne Einstellung: Domain von ``DEFAULT_FROM_EMAIL``, sonst Host aus ``SITE_URL``.
+    """Name ohne Einstellung: Domain eines ausdrücklich gesetzten ``DEFAULT_FROM_EMAIL``, sonst Host aus ``SITE_URL``.
 
-    Ist keiner von beiden ein vollständiger Domainname, gilt der erste vorhandene (die Systemprüfung
-    ``common.W002`` meldet das), zuletzt ``localhost`` – nie der Rechnername des Containers.
+    Ist keiner von beiden ein vollständiger Domainname, gilt eine IP-Adresse als Adressliteral, sonst
+    ``localhost`` (die Systemprüfung ``common.W002`` meldet das) – nie der Rechnername des Containers und nie
+    ein ungültiger EHLO-Name wie ``mandari_web``.
     """
-    kandidaten = [
-        domain_of(str(getattr(settings, "DEFAULT_FROM_EMAIL", "") or "")),
-        normalize(urlsplit(str(getattr(settings, "SITE_URL", "") or "")).hostname or ""),
-    ]
+    kandidaten = [sender_domain(), site_host()]
     for kandidat in kandidaten:
-        if is_fqdn(kandidat):
-            return kandidat
-    return next((kandidat for kandidat in kandidaten if kandidat), NOTNAME)
+        name = normalize(kandidat)
+        if is_fqdn(name):
+            return name
+    return next((literal for literal in map(address_literal, kandidaten) if literal), NOTNAME)
 
 
 def configured_domain() -> str:
@@ -114,6 +149,17 @@ def _explicit_invalid() -> bool:
     return bool(roh) and not is_fqdn(explicit_domain())
 
 
+def _local_site() -> bool:
+    """``SITE_URL`` zeigt auf ``localhost`` oder eine Loopback-Adresse (Entwicklung, CI)."""
+    host = site_host().lower().rstrip(".")
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
 @checks.register(checks.Tags.compatibility)
 def check_message_id_domain(app_configs: Any = None, **kwargs: Any) -> list[checks.CheckMessage]:
     """Warnt, wenn ``EMAIL_MESSAGE_ID_DOMAIN`` ungültig ist oder kein vollständiger Domainname gilt.
@@ -130,11 +176,15 @@ def check_message_id_domain(app_configs: Any = None, **kwargs: Any) -> list[chec
                 id="common.W001",
             )
         )
-    if not is_fqdn(domain):
+    # Rein lokal (Entwicklung, CI) ist localhost erwartet; einen ungültigen Wert der Einstellung meldet W001
+    if not is_fqdn(domain) and not _local_site():
         meldungen.append(
             checks.Warning(
                 f"Message-ID und EHLO verwenden „{domain}“, keinen vollständigen Domainnamen; Spamfilter werten das ab.",
-                hint="EMAIL_MESSAGE_ID_DOMAIN setzen oder DEFAULT_FROM_EMAIL mit vollständiger Domain eintragen.",
+                hint=(
+                    "EMAIL_MESSAGE_ID_DOMAIN setzen, DEFAULT_FROM_EMAIL mit vollständiger Domain eintragen oder "
+                    "SITE_URL mit Domainnamen statt IP-Adresse."
+                ),
                 id="common.W002",
             )
         )

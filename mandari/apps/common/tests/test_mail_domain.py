@@ -23,9 +23,11 @@ import uuid
 from collections.abc import Iterator
 from email.message import Message
 from io import StringIO
+from pathlib import Path
 from typing import Any, ClassVar, cast
 
 import pytest
+import yaml
 from django.core import checks
 from django.core.cache import cache
 from django.core.mail import EmailMessage
@@ -42,6 +44,8 @@ from apps.common.models import SiteSettings
 #: So sieht der Rechnername in einem Container aus
 CONTAINER_ID = "a1b2c3d4e5f6"
 DOMAIN = "absender.example"
+#: Wurzel des Repositorys (docker-compose.yml, Helm-Chart)
+REPO = Path(__file__).resolve().parents[4]
 
 
 class AufzeichnenderServer(smtplib.SMTP):
@@ -180,6 +184,65 @@ def test_einstellung_vor_absender_vor_site_url(settings: Any) -> None:
     assert mail_domain.configured_domain() == "portal.example"
 
 
+def test_eingebauter_absender_zaehlt_nicht(settings: Any) -> None:
+    """Ohne gesetztes ``DEFAULT_FROM_EMAIL`` gilt der Host aus ``SITE_URL``, nie mandari.de."""
+    settings.EMAIL_MESSAGE_ID_DOMAIN = ""
+    settings.SITE_URL = "https://rat.kommune.example"
+    settings.DEFAULT_FROM_EMAIL = settings.DEFAULT_FROM_EMAIL_FALLBACK
+    assert settings.DEFAULT_FROM_EMAIL_FALLBACK == "noreply@mandari.de"
+    assert mail_domain.sender_domain() == ""
+    assert mail_domain.configured_domain() == "rat.kommune.example"
+
+    settings.DEFAULT_FROM_EMAIL = " NoReply@Mandari.DE "
+    assert mail_domain.configured_domain() == "rat.kommune.example"
+
+    settings.DEFAULT_FROM_EMAIL = "noreply@kommune.example"
+    assert mail_domain.configured_domain() == "kommune.example"
+
+
+@pytest.mark.parametrize(
+    ("site_url", "erwartet"),
+    [
+        # IP-Adressen als Adressliteral nach RFC 5321, nicht als nackte Zahlenfolge
+        ("http://192.168.0.10:8000", "[192.168.0.10]"),
+        ("http://[::1]:8000", "[IPv6:::1]"),
+        ("https://[2001:DB8::10]/", "[IPv6:2001:db8::10]"),
+        ("http://[fe80::1%25eth0]:8000", "[IPv6:fe80::1]"),
+        # Unterstrich (Dienstname in Compose) oder ohne Punkt: als EHLO-Name ungültig bzw. nichtssagend
+        ("http://mandari_web:8000", "localhost"),
+        ("http://mail_host.example.org", "localhost"),
+        ("http://mandari:8000", "localhost"),
+    ],
+)
+def test_rueckfall_ohne_domainnamen(settings: Any, site_url: str, erwartet: str) -> None:
+    settings.EMAIL_MESSAGE_ID_DOMAIN = ""
+    settings.DEFAULT_FROM_EMAIL = settings.DEFAULT_FROM_EMAIL_FALLBACK
+    settings.SITE_URL = site_url
+    assert mail_domain.configured_domain() == erwartet
+
+
+def test_ip_der_site_url_vor_localhost(settings: Any) -> None:
+    """Ein Adressliteral aus SITE_URL schlägt ``localhost``, auch wenn der Absender zuerst geprüft wird."""
+    settings.EMAIL_MESSAGE_ID_DOMAIN = ""
+    settings.DEFAULT_FROM_EMAIL = "noreply@mail_host"
+    settings.SITE_URL = "http://10.0.0.5"
+    assert mail_domain.configured_domain() == "[10.0.0.5]"
+
+
+@pytest.mark.parametrize(
+    ("eingabe", "erwartet"),
+    [
+        ("192.0.2.10", "[192.0.2.10]"),
+        ("[192.0.2.10]", "[192.0.2.10]"),
+        ("2001:db8:0:0::1", "[IPv6:2001:db8::1]"),
+        ("absender.example", ""),
+        ("", ""),
+    ],
+)
+def test_address_literal(eingabe: str, erwartet: str) -> None:
+    assert mail_domain.address_literal(eingabe) == erwartet
+
+
 def test_ohne_vollstaendigen_namen_nie_der_rechnername(settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(socket, "getfqdn", lambda *args: CONTAINER_ID)
     settings.EMAIL_MESSAGE_ID_DOMAIN = ""
@@ -215,12 +278,25 @@ def test_systempruefung(settings: Any) -> None:
     assert [m.id for m in meldungen] == ["common.W001"] and all(m.level == checks.WARNING for m in meldungen)
     assert DOMAIN in meldungen[0].msg
 
+    # Rein lokal (Entwicklung, CI mit manage.py check --fail-level WARNING): localhost ohne Warnung
     settings.EMAIL_MESSAGE_ID_DOMAIN = ""
-    settings.DEFAULT_FROM_EMAIL = "noreply@localhost"
-    settings.SITE_URL = "http://localhost:8000"
+    settings.DEFAULT_FROM_EMAIL = settings.DEFAULT_FROM_EMAIL_FALLBACK
+    for site_url in ("http://localhost:8000", "http://127.0.0.1:8000", "http://[::1]:8000", "http://app.localhost"):
+        settings.SITE_URL = site_url
+        assert mail_domain.check_message_id_domain() == [], site_url
+
+    settings.SITE_URL = "https://rat.kommune.example"
+    assert mail_domain.check_message_id_domain() == []
+
+    # Rückfall auf Adressliteral oder localhost bei erreichbarer Installation: warnt weiter
+    settings.SITE_URL = "http://192.168.0.10:8000"
+    meldungen = mail_domain.check_message_id_domain()
+    assert [m.id for m in meldungen] == ["common.W002"] and "[192.168.0.10]" in meldungen[0].msg
+    settings.SITE_URL = "http://mandari_web:8000"
     assert [m.id for m in mail_domain.check_message_id_domain()] == ["common.W002"]
 
     settings.EMAIL_MESSAGE_ID_DOMAIN = "10.0.0.1"
+    settings.SITE_URL = "http://10.0.0.1"
     assert [m.id for m in mail_domain.check_message_id_domain()] == ["common.W001", "common.W002"]
 
 
@@ -252,41 +328,83 @@ def test_django_merkt_den_namen_in_fqdn(im_container: str, monkeypatch: pytest.M
 
 
 def test_beim_start_gesetzt() -> None:
-    """``CommonConfig.ready`` hat den Namen in diesem Prozess schon gesetzt."""
-    assert django_mail_utils.DNS_NAME.get_fqdn() == mail_domain.configured_domain()
-    assert mail_domain.is_fqdn(django_mail_utils.DNS_NAME.get_fqdn())
+    """``CommonConfig.ready`` hat den Namen in diesem Prozess schon gesetzt (in den Tests meist ``localhost``)."""
+    name = django_mail_utils.DNS_NAME.get_fqdn()
+    assert name == mail_domain.configured_domain()
+    assert mail_domain.is_fqdn(name) or name == mail_domain.NOTNAME or mail_domain.address_literal(name) == name
 
 
-def test_jeder_prozess_setzt_den_namen_beim_start(settings: Any) -> None:
-    """Ein frischer Prozess (wie Anwendung, Worker, Verwaltungsbefehl) mit Rechnernamen wie im Container."""
+def _frischer_prozess(settings: Any, **umgebung: str) -> tuple[str, str, str]:
+    """Frischer Prozess (wie Anwendung, Worker, Verwaltungsbefehl) mit Rechnernamen wie im Container.
+
+    Liefert EHLO-Namen, Message-ID und ``DEFAULT_FROM_EMAIL`` dieses Prozesses.
+    """
     code = (
         "import socket\n"
         f"socket.getfqdn = lambda *args: {CONTAINER_ID!r}\n"
         "import django\n"
         "django.setup()\n"
+        "from django.conf import settings\n"
         "from django.core.mail import EmailMessage\n"
         "from django.core.mail.utils import DNS_NAME\n"
         "nachricht = EmailMessage('Betreff', 'Text', 'von@example.org', ['an@example.org']).message()\n"
-        "print(DNS_NAME.get_fqdn(), nachricht['Message-ID'])\n"
+        "print(DNS_NAME.get_fqdn(), nachricht['Message-ID'], settings.DEFAULT_FROM_EMAIL)\n"
     )
-    umgebung = {
-        **os.environ,
-        "DJANGO_SETTINGS_MODULE": "mandari.settings_test",
-        "EMAIL_MESSAGE_ID_DOMAIN": "mail.example.org",
-    }
     ergebnis = subprocess.run(
         [sys.executable, "-c", code],
         cwd=settings.BASE_DIR,
-        env=umgebung,
+        env={**os.environ, "DJANGO_SETTINGS_MODULE": "mandari.settings_test", **umgebung},
         capture_output=True,
         text=True,
         timeout=180,
         check=False,
     )
     assert ergebnis.returncode == 0, ergebnis.stderr[-2000:]
-    ehlo, message_id = ergebnis.stdout.strip().splitlines()[-1].split(" ", 1)
+    ehlo, message_id, absender = ergebnis.stdout.strip().splitlines()[-1].split(" ", 2)
+    assert CONTAINER_ID not in ehlo and CONTAINER_ID not in message_id
+    return ehlo, message_id, absender
+
+
+def test_jeder_prozess_setzt_den_namen_beim_start(settings: Any) -> None:
+    ehlo, message_id, _absender = _frischer_prozess(settings, EMAIL_MESSAGE_ID_DOMAIN="mail.example.org")
     assert ehlo == "mail.example.org"
-    assert message_id.endswith("@mail.example.org>") and CONTAINER_ID not in message_id
+    assert message_id.endswith("@mail.example.org>")
+
+
+def test_frischer_prozess_wie_mit_compose_ohne_absender(settings: Any) -> None:
+    """Compose reicht nicht gesetzte Variablen leer durch: Absender bleibt der Rückfall, Domain aus SITE_URL."""
+    ehlo, message_id, absender = _frischer_prozess(
+        settings, DEFAULT_FROM_EMAIL="", EMAIL_MESSAGE_ID_DOMAIN="", SITE_URL="https://rat.kommune.example"
+    )
+    assert absender == "noreply@mandari.de"
+    assert ehlo == "rat.kommune.example"
+    assert message_id.endswith("@rat.kommune.example>")
+
+
+# =============================================================================
+# Bereitstellung: Compose und Helm-Chart reichen die Einstellungen durch
+# =============================================================================
+
+
+def test_compose_reicht_die_einstellungen_durch() -> None:
+    """Anwendung und Worker bekommen nur die Liste aus x-app-environment, keine ganze .env."""
+    compose = yaml.safe_load((REPO / "docker-compose.yml").read_text(encoding="utf-8"))
+    umgebung = compose["x-app-environment"]
+    assert umgebung["EMAIL_MESSAGE_ID_DOMAIN"] == "${EMAIL_MESSAGE_ID_DOMAIN:-}"
+    assert umgebung["DEFAULT_FROM_EMAIL"] == "${DEFAULT_FROM_EMAIL:-}"
+    for dienst in ("mandari", "worker", "worker-heavy"):
+        assert compose["services"][dienst]["environment"] == umgebung, dienst
+
+
+def test_helm_chart_reicht_die_einstellungen_durch() -> None:
+    """Werte ``mail.*`` im Chart, gesetzt in der gemeinsamen Umgebung von Anwendung, Workern und Migrations-Job."""
+    chart = REPO / "deploy" / "kubernetes" / "helm" / "mandari"
+    werte = yaml.safe_load((chart / "values.yaml").read_text(encoding="utf-8"))
+    assert werte["mail"] == {"fromEmail": "", "messageIdDomain": ""}
+    vorlage = (chart / "templates" / "_helpers.tpl").read_text(encoding="utf-8").replace("\r\n", "\n")
+    gemeinsam = vorlage.split('define "mandari.commonEnv"', 1)[1]
+    assert "- name: EMAIL_MESSAGE_ID_DOMAIN\n  value: {{ .messageIdDomain | quote }}" in gemeinsam
+    assert "- name: DEFAULT_FROM_EMAIL\n  value: {{ .fromEmail | quote }}" in gemeinsam
 
 
 # =============================================================================
@@ -387,6 +505,23 @@ def test_djangos_standardweg_ueber_eigenes_backend(
 
     assert backend.send_messages([nachricht]) == 1
     _pruefen(smtp_server)
+
+
+@pytest.mark.django_db
+def test_ip_literal_in_ehlo_und_message_id(
+    settings: Any, monkeypatch: pytest.MonkeyPatch, dns_name_sichern: None, smtp_server: list[AufzeichnenderServer]
+) -> None:
+    """Installation unter einer IP-Adresse: EHLO und Message-ID mit Adressliteral, nicht mit nackter IP."""
+    monkeypatch.setattr(socket, "getfqdn", lambda *args: CONTAINER_ID)
+    settings.EMAIL_MESSAGE_ID_DOMAIN = ""
+    settings.DEFAULT_FROM_EMAIL = settings.DEFAULT_FROM_EMAIL_FALLBACK
+    settings.SITE_URL = "http://192.168.0.10:8000"
+    settings.SMTP_FALLBACK = {**settings.SMTP_FALLBACK, "host": "smtp.example.org", "use_tls": False}
+    assert mail_domain.apply() == "[192.168.0.10]"
+
+    backend = cast(Any, SiteSettingsEmailBackend)()
+    assert backend.send_messages([EmailMessage("Betreff", "Text", "von@example.org", ["an@example.org"])]) == 1
+    _pruefen(smtp_server, domain="[192.168.0.10]")
 
 
 @pytest.mark.django_db

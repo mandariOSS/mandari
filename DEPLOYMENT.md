@@ -411,14 +411,20 @@ Verwaltungsbefehle) für alle Versandwege: Systemeinstellungen, `EMAIL_*`, eigen
 
 | Einstellung | Bedeutung |
 |---|---|
-| `EMAIL_MESSAGE_ID_DOMAIN` | vollständiger Domainname für Message-ID und EHLO, z. B. `example.com`; leer (Standard) = Domain von `DEFAULT_FROM_EMAIL`, sonst Host aus `SITE_URL` |
+| `EMAIL_MESSAGE_ID_DOMAIN` | vollständiger Domainname für Message-ID und EHLO, z. B. `example.com`; leer (Standard) = Domain von `DEFAULT_FROM_EMAIL`, wenn gesetzt, sonst Host aus `SITE_URL` |
+| `DEFAULT_FROM_EMAIL` | Absender, wenn die Systemeinstellungen keinen nennen; ohne Angabe `noreply@mandari.de`, der für Message-ID und EHLO nie zählt |
 
-- Steht in den Systemeinstellungen eine Absenderadresse mit anderer Domain als `DEFAULT_FROM_EMAIL`, diese
-  Domain in `EMAIL_MESSAGE_ID_DOMAIN` eintragen. Gelesen wird der Wert beim Start; nach einer Änderung
-  Anwendung und Worker neu starten.
+- `docker-compose.yml` reicht beide Werte aus der `.env` an Anwendung und Worker durch, das Helm-Chart über
+  `mail.messageIdDomain` und `mail.fromEmail`. Ohne beide gilt der Host aus `SITE_URL`, mit Compose also
+  `DOMAIN`.
+- Weicht der Absender in den Systemeinstellungen von `DEFAULT_FROM_EMAIL` ab (ohne `DEFAULT_FROM_EMAIL`: vom
+  Host aus `SITE_URL`), dessen Domain in `EMAIL_MESSAGE_ID_DOMAIN` eintragen. Gelesen wird der Wert beim Start;
+  nach einer Änderung Anwendung und Worker neu starten.
 - Ein ungültiger Wert (ohne Punkt, mit `@`, IP-Adresse) hält nichts an: mandari versendet mit dem Wert, der
   ohne die Einstellung gälte, und die Systemprüfung warnt bei jedem Verwaltungsbefehl (`common.W001`).
-  Liefert auch der keinen vollständigen Domainnamen, warnt sie ebenso (`common.W002`). Prüfen mit
+  Liefert auch der keinen vollständigen Domainnamen (etwa `SITE_URL` mit IP-Adresse), nimmt mandari eine
+  IP-Adresse als Adressliteral nach RFC 5321 (`[192.0.2.10]`, `[IPv6:2001:db8::1]`), sonst `localhost`, und
+  die Systemprüfung warnt ebenso (`common.W002`; nicht bei `SITE_URL` auf `localhost`). Prüfen mit
   `python manage.py check`.
 - Prüfen: Testmail aus den Systemeinstellungen an ein eigenes Postfach senden und im Quelltext der Mail
   `Message-ID:` ansehen. Für die Zustellbarkeit insgesamt helfen ein Test bei mail-tester.com und Testmails

@@ -81,6 +81,8 @@ Die Manifeste sind aus dem Chart erzeugt. Für Updates ist Helm deutlich bequeme
 | `persistence.files.size` | `50Gi` | Heruntergeladene RIS-Dokumente – wächst mit der Zahl der Kommunen |
 | `secrets.existingSecret` | `""` | Eigenes Secret statt erzeugter Schlüssel |
 | `adminUser.email` / `.password` | `""` | Legt beim ersten Lauf ein Administrationskonto an |
+| `mail.fromEmail` | `""` | Absender, wenn die Systemeinstellungen keinen nennen (`DEFAULT_FROM_EMAIL`) |
+| `mail.messageIdDomain` | `""` | Domain für Message-ID und EHLO (`EMAIL_MESSAGE_ID_DOMAIN`); leer = Domain von `mail.fromEmail`, sonst `domain`. Setzen, wenn der Absender in den Systemeinstellungen eine andere Domain hat (DEPLOYMENT.md, „Mailversand: Message-ID und EHLO“) |
 | `logging.format` | `json` | `json` oder `text` |
 | `tracing.otlpEndpoint` | `""` | Gesetzt: OpenTelemetry aktiv |
 | `networkPolicy.enabled` | `false` | Schränkt den Zugriff auf Datenbank, Cache und Suchindex ein |
