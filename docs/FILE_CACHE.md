@@ -316,7 +316,8 @@ python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
 ```
 
 Mit `--pruefe-objektspeicher` bleibt eine lokale Kopie, deren Inhalt im Objektspeicher fehlt oder eine andere Größe
-hat; fehlt er, wird `remote_at` zurückgesetzt, und das nächste `dokumentablage --hochladen` überträgt ihn erneut.
+hat; in beiden Fällen wird `remote_at` zurückgesetzt. So schützt „nicht hochgeladen“ die Kopie auch vor späteren Läufen
+ohne Prüfung, und das nächste `dokumentablage --hochladen` überträgt den Inhalt erneut.
 Ist der Objektspeicher nicht erreichbar, bricht der Lauf ab. Die Ausgabe nennt geprüft, vorhanden, fehlend und
 abweichend. Der Befehl läuft neben dem Zeitplan; startet er, während das Aufräumen gerade verdrängt, endet er mit
 Hinweis. Ein abgebrochener Lauf hinterlässt nichts Halbes und lässt sich wiederholen. `cache_files --stats` zeigt

@@ -947,10 +947,15 @@ class TestPruefungImObjektspeicher:
         assert ergebnis.skipped == {"nicht_im_objektspeicher": 2} and ergebnis.units == 1
         assert Path(fehlt.local_path or "").exists() and Path(falsch.local_path or "").exists()
         assert not Path(da.local_path or "").exists()
-        # Fehlt der Inhalt, lädt das nächste Hochladen ihn erneut; bei abweichender Größe bleibt der Vermerk
-        assert _blob(fehlt).remote_at is None and _blob(falsch).remote_at is not None
-        assert file_store.upload_pending() == {"uploaded": 1}
+        # Fehlt der Inhalt oder weicht seine Größe ab, gilt er als nicht hochgeladen: ein Lauf ohne Prüfung lässt die
+        # Kopie stehen, und das nächste Hochladen ersetzt den Inhalt im Objektspeicher
+        assert _blob(fehlt).remote_at is None and _blob(falsch).remote_at is None
+        ohne_pruefung = file_cache_limit.enforce(max_bytes=1)
+        assert ohne_pruefung.units == 0
+        assert Path(fehlt.local_path or "").exists() and Path(falsch.local_path or "").exists()
+        assert file_store.upload_pending() == {"uploaded": 2}
         assert object_storage.exists(str(fehlt.blob_id))
+        assert object_storage.remote_size(str(falsch.blob_id)) == GROESSE
 
     def test_ohne_pruefung_wie_bisher(self, body: OParlBody, objektspeicher: Any, ablage: Path) -> None:
         fehlt, _da = self._hochgeladen(body, "fehlt", "da")

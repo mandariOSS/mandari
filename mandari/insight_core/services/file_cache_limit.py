@@ -790,9 +790,9 @@ def _evict_local(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> bo
                 return False
             run.result.verified[state] += 1
             if state != "vorhanden":
-                # Die lokale Kopie ist womöglich die einzige: sie bleibt; fehlt der Inhalt, lädt --hochladen ihn neu
-                if state == "fehlt":
-                    OParlFileBlob.objects.filter(pk=row["key"]).update(remote_at=None)
+                # Die lokale Kopie ist womöglich die einzige: sie bleibt. Fehlt der Inhalt oder weicht seine Größe ab,
+                # lädt --hochladen ihn neu; bis dahin schützt „nicht hochgeladen“ die Kopie auch vor Läufen ohne Prüfung.
+                OParlFileBlob.objects.filter(pk=row["key"]).update(remote_at=None)
                 _skip(run, "nicht_im_objektspeicher")
                 continue
         try:
