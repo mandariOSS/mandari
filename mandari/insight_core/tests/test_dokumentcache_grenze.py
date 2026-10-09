@@ -88,7 +88,9 @@ def _abgelegt(body: OParlBody, name: str, *, alter_tage: int, inhalt: bytes | No
 
 
 def _belegung(root: Path) -> int:
-    return sum(p.stat().st_size for p in (root / "sha256").rglob("*") if p.is_file() and "tmp" not in p.parts)
+    """Inhalte unter ``sha256/`` ohne Teil-Downloads (``sha256/tmp``); nur der Pfad unterhalb der Ablage zählt."""
+    ablage = root / "sha256"
+    return sum(p.stat().st_size for p in ablage.rglob("*") if p.is_file() and p.relative_to(ablage).parts[0] != "tmp")
 
 
 def _status(*dateien: OParlFile) -> list[str]:
