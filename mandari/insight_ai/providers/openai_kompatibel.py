@@ -15,7 +15,7 @@ from typing import Any
 
 import httpx
 
-from apps.common.ki_anbieter import LAENGENLIMIT, KiEndpunkt, ist_laengenlimit
+from apps.common.ki_anbieter import KiEndpunkt, laengenlimit_hinweis
 
 from .base import AbstractAIProvider, ChatMessage, ChatResponse
 
@@ -113,11 +113,12 @@ class OpenAIKompatiblerProvider(AbstractAIProvider):
             raise _AusweichbarError(f"HTTP {status}")
         if status != 200:
             # Ohne Antworttext: Er kann Teile der Anfrage enthalten
-            if ist_laengenlimit(status, response.text):
+            hinweis = laengenlimit_hinweis(status, response.text)
+            if hinweis is not None:
                 logger.warning(
                     "KI-Aufruf abgelehnt (HTTP %d): %s (anbieter=%s host=%s modell=%s max_tokens=%d)",
                     status,
-                    LAENGENLIMIT,
+                    hinweis,
                     self.endpunkt.anbieter,
                     self.host,
                     modell,

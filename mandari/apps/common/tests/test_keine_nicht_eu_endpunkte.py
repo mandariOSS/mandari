@@ -149,8 +149,34 @@ def test_compose_reicht_ki_variablen_einheitlich_weiter() -> None:
 
 
 def test_deployment_nennt_den_rueckfall_auf_nebius() -> None:
-    """Ein älteres Image nutzt Nebius wieder, sobald NEBIUS_API_KEY in der Umgebung steht."""
+    """
+    Ein Image vor #950 schickt eigene Schlüssel der Organisationen an Nebius (auch ohne NEBIUS_API_KEY), und
+    ``update.sh`` bringt beim Rückfall die alte ``.env`` zurück. Die Anleitung nennt die Schritte dagegen und
+    verspricht nicht, dass die KI nach einem Rückfall von selbst aus bliebe.
+    """
     text = (REPO / "DEPLOYMENT.md").read_text(encoding="utf-8")
     abschnitt = text.split("### KI-Anbieter", 1)[1].split("\n### ", 1)[0]
     rueckfall = re.sub(r"\s+", " ", abschnitt.split("**Rückfall auf ein älteres Image:**", 1)[1])
-    assert "NEBIUS_API_KEY" in rueckfall and "entfernen" in rueckfall and "widerrufen" in rueckfall
+    assert "bleibt die KI auch nach einem Rückfall aus" not in rueckfall
+    assert "auch ohne `NEBIUS_API_KEY`" in rueckfall
+    # NEBIUS_API_KEY vor update.sh entfernen, weil update.sh die gesicherte .env zurückkopiert
+    assert "`NEBIUS_API_KEY` **vor** `./update.sh` aus der `.env` entfernen" in rueckfall
+    assert ".env.pre-update" in rueckfall and "--rollback" in rueckfall
+    update_sh = (REPO / "update.sh").read_text(encoding="utf-8")
+    assert "cp .env .env.pre-update" in update_sh and "cp .env.pre-update .env" in update_sh
+    # Vor dem Rückfall eigene Schlüssel und Plattformschlüssel löschen; der Widerruf ist der eigentliche Schutz
+    assert "„Eigenen KI API Key löschen“" in rueckfall and "„API Key löschen“" in rueckfall
+    assert "widerrufen" in rueckfall and "eigentliche Schutz" in rueckfall
+    # Beim Deploy zählen, wie viele Organisationen einen eigenen Schlüssel haben (nur die Zahl, nie Schlüssel)
+    assert "ai_api_key_encrypted__isnull=False).count()" in rueckfall
+
+
+def test_deployment_zaehlt_ueber_vorhandene_felder() -> None:
+    """Zählbefehl und Schaltflächen der Rückfall-Anleitung gibt es wirklich."""
+    from apps.common.admin import AISettingsAdminForm
+    from apps.tenants.admin import OrganizationAdminForm
+    from apps.tenants.models import Organization
+
+    assert Organization._meta.get_field("ai_api_key_encrypted").null
+    assert OrganizationAdminForm.base_fields["ai_api_key_loeschen"].label == "Eigenen KI API Key löschen"
+    assert AISettingsAdminForm.base_fields["api_key_loeschen"].label == "API Key löschen"

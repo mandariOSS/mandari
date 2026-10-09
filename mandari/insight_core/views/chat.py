@@ -172,6 +172,16 @@ def chat_message(request):
     if data.get("consent") is True:
         if hinweis is None:
             return _nicht_verfuegbar()
+        # Die Seite schickt die Kennung des angezeigten Anbieters mit. Hat er seit dem Seitenaufruf gewechselt,
+        # gilt die Zustimmung nicht für den aktuellen; die Seite lädt neu und zeigt ihn im Dialog.
+        if data.get("kennung") != hinweis.einwilligungskennung:
+            return JsonResponse(
+                {
+                    "error": "consent_outdated",
+                    "message": "Der KI-Anbieter hat sich geändert. Bitte stimmen Sie erneut zu.",
+                },
+                status=409,
+            )
         request.session[EINWILLIGUNG] = hinweis.einwilligungskennung
         request.session.modified = True
         return JsonResponse({"status": "consent_granted"})

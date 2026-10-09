@@ -851,10 +851,33 @@ Anzeigename und Verarbeitungsort wählen.
 
 **Rückfall auf ein älteres Image:** Die neuen Spalten haben Datenbank-Standardwerte; ein älteres Image läuft
 ohne Rückbau der Migrationen `common/0011` und `tenants/0027` weiter. Die Migrationen setzen frühere Anbieter
-auf „nicht eingerichtet“ und leeren den früheren Nebius-Schlüssel der Systemeinstellungen. Ein älteres Image
-nutzt Nebius aber wieder, sobald `NEBIUS_API_KEY` in der Umgebung steht. Deshalb beim Deploy dieser Version
-`NEBIUS_API_KEY` aus der `.env` der Produktion entfernen und den Schlüssel beim Anbieter widerrufen; dann
-bleibt die KI auch nach einem Rückfall aus.
+auf „nicht eingerichtet“ bzw. „Plattform-Einstellung“ und leeren den früheren Nebius-Schlüssel der
+Systemeinstellungen. Die KI bleibt nach einem Rückfall auf ein Image vor #950 aber **nicht** von selbst aus:
+Ein solches Image kennt weder die Positivliste noch die neuen Vorlagen.
+
+- Eine Organisation mit eigenem Schlüssel, deren Anbieter leer ist (nach `tenants/0027`) oder eine Vorlage
+  ohne eingetragene Basis-URL (etwa STACKIT oder Scaleway), schickt Schlüssel und Inhalte an Nebius, auch
+  ohne `NEBIUS_API_KEY`.
+- Eine eingetragene Basis-URL (Organisation oder KI-Einstellungen) nutzt es ohne Prüfung gegen
+  `KI_ERLAUBTE_HOSTS`.
+- KI-Assistent und Zusammenfassung im Bürgerportal nutzen Nebius, sobald `NEBIUS_API_KEY` in der Umgebung
+  steht.
+
+Deshalb:
+
+1. Beim Deploy dieser Version zählen, wie viele Organisationen einen eigenen Schlüssel haben (gibt nur die
+   Zahl aus): `docker exec mandari python manage.py shell -c "from apps.tenants.models import Organization;
+   print(Organization.objects.filter(ai_api_key_encrypted__isnull=False).count())"`. Bei mehr als null
+   trifft jeder Rückfall auf ein Image vor #950 diese Organisationen.
+2. `NEBIUS_API_KEY` **vor** `./update.sh` aus der `.env` entfernen. `update.sh` sichert die `.env` als
+   `.env.pre-update` und kopiert sie beim automatischen Rückfall und bei `--rollback` zurück; ein erst danach
+   entfernter Eintrag stünde nach dem Rückfall wieder in der Umgebung.
+3. Vor einem Rückfall auf ein Image vor #950 die eigenen KI-Schlüssel der Organisationen („Eigenen KI API Key
+   löschen“) und den Plattformschlüssel („API Key löschen“ in den KI-Einstellungen) löschen.
+4. Den Nebius-Schlüssel beim Anbieter widerrufen. Der Widerruf ist der eigentliche Schutz: Sicherungen der
+   `.env` können den Eintrag zurückbringen, und ein automatischer Rückfall lässt keine Zeit für Schritt 3.
+   Ist ein Image vor #950 mit eigenen Schlüsseln gelaufen, diese Schlüssel beim jeweiligen Anbieter widerrufen
+   und neu ausstellen.
 
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 

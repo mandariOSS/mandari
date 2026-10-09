@@ -84,6 +84,16 @@ def besucher(client: Client) -> Client:
     return client
 
 
+def _einwilligen(besucher: Client) -> Any:
+    """Wie die Chatseite: Seite laden, dann mit der Kennung des angezeigten Anbieters einwilligen."""
+    kennung = besucher.get(reverse("insight_core:insight:chat")).context["ki_endpunkt"].einwilligungskennung
+    return besucher.post(
+        reverse("insight_core:insight:chat_message"),
+        {"consent": True, "kennung": kennung},
+        content_type="application/json",
+    )
+
+
 class TestAnbieterAusDerKonfiguration:
     def test_zusammenfassung(self) -> None:
         assert isinstance(summarizer.SummaryService().provider, NichtEingerichtet)
@@ -160,7 +170,7 @@ class TestEinwilligung:
     def test_einwilligung_gilt_nur_fuer_den_anbieter(self, besucher: Client, anfragen: list[httpx.Request]) -> None:
         seite, api = reverse("insight_core:insight:chat"), reverse("insight_core:insight:chat_message")
         _einrichten()
-        assert besucher.post(api, {"consent": True}, content_type="application/json").status_code == 200
+        assert _einwilligen(besucher).status_code == 200
         assert besucher.get(seite).context["has_chat_consent"] is True
 
         # Anderer Anbieter (eigener Endpunkt): erneut fragen, keine Anfrage
@@ -195,7 +205,7 @@ class TestEinwilligung:
     def test_neue_frage_bei_geaendertem_ort_oder_namen(self, besucher: Client, anfragen: list[httpx.Request]) -> None:
         seite, api = reverse("insight_core:insight:chat"), reverse("insight_core:insight:chat_message")
         _einrichten()
-        assert besucher.post(api, {"consent": True}, content_type="application/json").status_code == 200
+        assert _einwilligen(besucher).status_code == 200
         assert besucher.get(seite).context["has_chat_consent"] is True
 
         _einrichten(verarbeitungsort="Rechenzentren in Testhausen (EU)")
@@ -203,7 +213,7 @@ class TestEinwilligung:
         antwort = besucher.post(api, {"message": "Hallo"}, content_type="application/json")
         assert antwort.status_code == 403 and antwort.json()["error"] == "consent_required"
 
-        assert besucher.post(api, {"consent": True}, content_type="application/json").status_code == 200
+        assert _einwilligen(besucher).status_code == 200
         _einrichten(verarbeitungsort="Rechenzentren in Testhausen (EU)", anzeigename="Anderer Name")
         assert besucher.get(seite).context["has_chat_consent"] is False
         assert anfragen == []
@@ -214,7 +224,7 @@ class TestEinwilligung:
         """Einwilligung und KI-Aufruf beziehen sich auf denselben, einmal aufgelösten Endpunkt."""
         _einrichten()
         api = reverse("insight_core:insight:chat_message")
-        assert besucher.post(api, {"consent": True}, content_type="application/json").status_code == 200
+        assert _einwilligen(besucher).status_code == 200
 
         aufloesungen: list[str] = []
         echt = ki_anbieter._baue_endpunkt
@@ -237,3 +247,44 @@ class TestEinwilligung:
         sitzung.save()
         kontext = besucher.get(reverse("insight_core:insight:portal_home")).context
         assert not kontext.get("has_chat_consent")
+
+    def test_einwilligung_nur_fuer_den_angezeigten_anbieter(
+        self, besucher: Client, anfragen: list[httpx.Request]
+    ) -> None:
+        """Wechselt der Anbieter zwischen Seitenaufruf und Zustimmung, gilt sie nicht für den neuen (Issue #950)."""
+        seite, api = reverse("insight_core:insight:chat"), reverse("insight_core:insight:chat_message")
+        _einrichten()
+        angezeigt = besucher.get(seite).context["ki_endpunkt"].einwilligungskennung
+
+        _einrichten(
+            provider="eigener",
+            base_url=CHAT.removesuffix("/chat/completions"),
+            anzeigename="Neuer Anbieter",
+            verarbeitungsort="Europa",
+        )
+        for werte in ({"consent": True, "kennung": angezeigt}, {"consent": True}):
+            antwort = besucher.post(api, werte, content_type="application/json")
+            assert antwort.status_code == 409 and antwort.json()["error"] == "consent_outdated"
+        assert "chat_consent" not in besucher.session
+        assert besucher.get(seite).context["has_chat_consent"] is False
+        antwort = besucher.post(api, {"message": "Hallo"}, content_type="application/json")
+        assert antwort.status_code == 403 and antwort.json()["error"] == "consent_required"
+
+        # Nach dem Neuladen zeigt der Dialog den aktuellen Anbieter; dessen Kennung gilt
+        neu = besucher.get(seite)
+        assert "Neuer Anbieter" in neu.content.decode()
+        assert neu.context["ki_endpunkt"].einwilligungskennung != angezeigt
+        assert _einwilligen(besucher).status_code == 200
+        assert besucher.get(seite).context["has_chat_consent"] is True
+        assert anfragen == []
+
+    def test_seite_schickt_die_kennung_des_angezeigten_anbieters(self, besucher: Client) -> None:
+        _einrichten()
+        antwort = besucher.get(reverse("insight_core:insight:chat"))
+        inhalt = antwort.content.decode()
+        kennung = antwort.context["ki_endpunkt"].einwilligungskennung
+        assert f"consentKennung: '{kennung}'" in inhalt
+        assert "JSON.stringify({ consent: true, kennung: this.consentKennung })" in inhalt
+        assert "response.status === 409" in inhalt and "window.location.reload()" in inhalt
+        # Prüfsumme statt Klartext: Der Host des Anbieters steht nicht im Quelltext
+        assert "onstackit.cloud" not in inhalt and SCHLUESSEL not in inhalt

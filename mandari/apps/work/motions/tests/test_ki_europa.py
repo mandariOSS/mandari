@@ -180,3 +180,24 @@ def test_laengenlimit_verstaendlich_im_protokoll(
     assert not antwort.success and antwort.error == "Die Anfrage ist für das KI-Modell zu lang."
     assert "Max. Output-Tokens" in caplog.text and "max_tokens=16000" in caplog.text
     assert "Bitte kürzen" not in caplog.text and SCHLUESSEL not in caplog.text
+
+
+def test_zu_lange_eingabe_mit_eigenem_hinweis(
+    org: Organization, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _plattform()
+    fehlertext = "This model's maximum context length is 131072 tokens (Anfrage: Bitte kürzen)"
+    echter_client = httpx.Client
+
+    def client(**kwargs: Any) -> httpx.Client:
+        kwargs["transport"] = httpx.MockTransport(
+            lambda request: httpx.Response(400, json={"error": {"message": fehlertext}})
+        )
+        return echter_client(**kwargs)
+
+    monkeypatch.setattr(httpx, "Client", client)
+    with caplog.at_level(logging.WARNING):
+        antwort = MotionAIService(organization=org)._call_api(NACHRICHTEN)
+    assert not antwort.success and antwort.error == "Die Anfrage ist für das KI-Modell zu lang."
+    assert "Kontextfenster" in caplog.text and "Max. Output-Tokens" not in caplog.text
+    assert "Bitte kürzen" not in caplog.text and SCHLUESSEL not in caplog.text

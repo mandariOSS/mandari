@@ -164,6 +164,17 @@ def test_laengenlimit_verstaendlich_im_protokoll(caplog: pytest.LogCaptureFixtur
     assert "Worum geht es" not in caplog.text and SCHLUESSEL not in caplog.text
 
 
+def test_zu_lange_eingabe_mit_eigenem_hinweis(caplog: pytest.LogCaptureFixture) -> None:
+    """Passt die Eingabe nicht ins Kontextfenster, hilft „Max. Output-Tokens“ nicht; der Hinweis sagt das."""
+    fehlertext = "This model's maximum context length is 131072 tokens. However, your messages resulted in 140000"
+    anbieter, gesendet = _anbieter(lambda request: httpx.Response(400, json={"error": {"message": fehlertext}}))
+    with caplog.at_level(logging.WARNING), pytest.raises(KiAnbieterError, match="Längenlimit"):
+        anbieter.chat_completion(FRAGE, max_tokens=1000)
+    assert len(gesendet) == 1
+    assert "Kontextfenster" in caplog.text and "Max. Output-Tokens" not in caplog.text
+    assert "140000" not in caplog.text and SCHLUESSEL not in caplog.text
+
+
 def test_anderer_fehler_400_ohne_laengenhinweis(caplog: pytest.LogCaptureFixture) -> None:
     anbieter, _ = _anbieter(lambda request: httpx.Response(400, json={"error": {"message": "unknown model"}}))
     with caplog.at_level(logging.WARNING), pytest.raises(KiAnbieterError) as fehler:

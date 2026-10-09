@@ -26,11 +26,13 @@ from mandari_dokumente import ki_hosts
 from apps.common import ki_anbieter
 from apps.common.ki_anbieter import (
     ANBIETER_VORLAGEN,
+    LAENGENLIMIT_AUSGABE,
+    LAENGENLIMIT_KONTEXT,
     KiEndpunkt,
     KiHinweis,
     endpunkt_fuer_insight,
     endpunkt_fuer_work,
-    ist_laengenlimit,
+    laengenlimit_hinweis,
     pruefe_basis_url,
 )
 from apps.common.models import AISettings
@@ -173,17 +175,33 @@ class TestLaengenlimit:
         "text",
         [
             '{"error": {"message": "max_tokens must be less than or equal to 8192"}}',
-            "This model's maximum context length is 131072 tokens.",
             '{"detail": "max_completion_tokens is too large"}',
+            # vLLM: verlangte Antwortlänge passt nicht neben die Eingabe; senken hilft
+            "'max_tokens' or 'max_completion_tokens' is too large: 16000. This model's maximum context length is "
+            "131072 tokens and your request has 120000 input tokens (16000 > 131072 - 120000).",
         ],
     )
-    def test_erkannt(self, text: str) -> None:
-        assert ist_laengenlimit(400, text)
+    def test_antwortlaenge(self, text: str) -> None:
+        assert laengenlimit_hinweis(400, text) == LAENGENLIMIT_AUSGABE
+        assert "Max. Output-Tokens" in LAENGENLIMIT_AUSGABE
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "This model's maximum context length is 131072 tokens. However, your messages resulted in 140000 tokens.",
+            '{"error": {"code": "context_length_exceeded"}}',
+            "Input is too long for the context window of this model",
+        ],
+    )
+    def test_eingabe_zu_lang(self, text: str) -> None:
+        """Eine zu lange Eingabe empfiehlt Kürzen bzw. ein größeres Kontextfenster, nicht „Max. Output-Tokens“."""
+        assert laengenlimit_hinweis(400, text) == LAENGENLIMIT_KONTEXT
+        assert "Max. Output-Tokens" not in LAENGENLIMIT_KONTEXT and "kürzen" in LAENGENLIMIT_KONTEXT
 
     def test_andere_fehler_nicht(self) -> None:
-        assert not ist_laengenlimit(400, '{"error": "model not found"}')
-        assert not ist_laengenlimit(500, "max_tokens")
-        assert not ist_laengenlimit(400, "")
+        assert laengenlimit_hinweis(400, '{"error": "model not found"}') is None
+        assert laengenlimit_hinweis(500, "max_tokens") is None
+        assert laengenlimit_hinweis(400, "") is None
 
     def test_standard_der_antwortlaenge_im_buergerportal(self) -> None:
         # STACKIT dokumentiert für openai/gpt-oss-120b höchstens 8192 Tokens je Antwort

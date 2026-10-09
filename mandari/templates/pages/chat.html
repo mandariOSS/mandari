@@ -160,6 +160,7 @@ function chatApp() {
     return {
         hasConsent: {{ has_chat_consent|yesno:"true,false" }},
         consentChecked: false,
+        consentKennung: '{{ ki_endpunkt.einwilligungskennung|escapejs }}',
         messages: [],
         input: '',
         isLoading: false,
@@ -192,16 +193,22 @@ function chatApp() {
 
         async giveConsent() {
             if (!this.consentChecked) return;
+            let response = null;
             try {
-                await fetch('{% url "insight_core:insight:chat_message" %}', {
+                response = await fetch('{% url "insight_core:insight:chat_message" %}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': '{{ csrf_token }}'
                     },
-                    body: JSON.stringify({ consent: true })
+                    body: JSON.stringify({ consent: true, kennung: this.consentKennung })
                 });
             } catch (e) { /* consent will be checked server-side anyway */ }
+            if (response && response.status === 409) {
+                // Anbieter seit dem Seitenaufruf gewechselt: Dialog mit dem aktuellen Anbieter neu laden
+                window.location.reload();
+                return;
+            }
             this.hasConsent = true;
         },
 

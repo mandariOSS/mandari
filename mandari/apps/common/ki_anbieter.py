@@ -15,6 +15,7 @@ Admin, bei Bedarf der Host in ``KI_ERLAUBTE_HOSTS``.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
@@ -45,10 +46,16 @@ NICHT_FREIGEGEBEN = "nicht freigegebener Endpunkt (KI_ERLAUBTE_HOSTS)"
 #: gälten dann für einen anderen Anbieter (Einwilligung, Hinweise)
 FREMDER_HOST = "Für einen anderen Host „Eigener Endpunkt“ wählen."
 
-#: Hinweis im Protokoll, wenn der Anbieter eine Anfrage wegen ihrer Länge ablehnt (HTTP 400)
-LAENGENLIMIT = (
-    "Längenlimit des Modells überschritten: „Max. Output-Tokens“ in den KI-Einstellungen auf höchstens die "
+#: Hinweis im Protokoll, wenn der Anbieter die verlangte Antwortlänge ablehnt (``max_tokens`` über dem Limit)
+LAENGENLIMIT_AUSGABE = (
+    "Antwortlänge über dem Limit des Modells: „Max. Output-Tokens“ in den KI-Einstellungen auf höchstens die "
     "dokumentierte maximale Antwortlänge des Modells beim Anbieter setzen"
+)
+
+#: Hinweis im Protokoll, wenn die Eingabe nicht ins Kontextfenster des Modells passt
+LAENGENLIMIT_KONTEXT = (
+    "Eingabe zu lang für das Kontextfenster des Modells: Text bzw. Gesprächsverlauf kürzen oder ein Modell mit "
+    "größerem Kontextfenster wählen (Eingabe und Antwortlänge zählen zusammen)"
 )
 
 
@@ -143,31 +150,41 @@ def wirksamer_host(anbieter: str, url: str) -> str | None:
     return gepruefter_host(roh) if roh else None
 
 
-#: Merkmale einer Ablehnung wegen der Länge in der Fehlerantwort (klein geschrieben)
-_LAENGENLIMIT_MERKMALE = (
+#: Merkmale einer Ablehnung der verlangten Antwortlänge in der Fehlerantwort (klein geschrieben)
+_AUSGABELIMIT_MERKMALE = (
     "max_tokens",
     "max_completion_tokens",
     "max_new_tokens",
+    "maximum generation",
+)
+
+#: Merkmale einer Eingabe, die nicht ins Kontextfenster passt (klein geschrieben)
+_KONTEXTLIMIT_MERKMALE = (
     "maximum context length",
     "context length",
     "context_length",
     "context window",
     "too many tokens",
-    "maximum generation",
 )
 
 
-def ist_laengenlimit(status: int, antworttext: str) -> bool:
+def laengenlimit_hinweis(status: int, antworttext: str) -> str | None:
     """
-    Lehnt der Anbieter die Anfrage wegen ihrer Länge ab (Antwortlänge oder Kontext über dem Limit des Modells)?
+    Hinweis fürs Protokoll, wenn der Anbieter die Anfrage wegen ihrer Länge ablehnt, sonst ``None``.
 
-    OpenAI-kompatible Server (etwa vLLM) antworten dann mit HTTP 400 und nennen ``max_tokens`` oder die
-    Kontextlänge. Der Antworttext wird nur durchsucht, nie protokolliert (er kann Teile der Anfrage enthalten).
+    OpenAI-kompatible Server (etwa vLLM) antworten dann mit HTTP 400 und nennen ``max_tokens`` (verlangte
+    Antwortlänge zu groß: ``LAENGENLIMIT_AUSGABE``) oder nur die Kontextlänge (Eingabe zu lang:
+    ``LAENGENLIMIT_KONTEXT``). Nennt die Antwort beides, liegt es an der verlangten Antwortlänge. Der Antworttext
+    wird nur durchsucht, nie protokolliert (er kann Teile der Anfrage enthalten).
     """
     if status not in (400, 413, 422):
-        return False
+        return None
     text = (antworttext or "").lower()
-    return any(merkmal in text for merkmal in _LAENGENLIMIT_MERKMALE)
+    if any(merkmal in text for merkmal in _AUSGABELIMIT_MERKMALE):
+        return LAENGENLIMIT_AUSGABE
+    if any(merkmal in text for merkmal in _KONTEXTLIMIT_MERKMALE):
+        return LAENGENLIMIT_KONTEXT
+    return None
 
 
 def _host_fuer_protokoll(url: str) -> str:
@@ -210,8 +227,12 @@ class KiHinweis:
         """
         Eine Einwilligung gilt nur für diesen Anbieter an diesem Host mit genau diesem Anzeigenamen und
         Verarbeitungsort; ändert sich eins davon, wird erneut gefragt.
+
+        Prüfsumme statt Klartext: Die Chatseite schickt die Kennung des angezeigten Anbieters beim Einwilligen
+        mit, ohne den Host im Quelltext zu nennen.
         """
-        return json.dumps([self.anbieter, self.host, self.anzeigename, self.verarbeitungsort], ensure_ascii=False)
+        merkmale = json.dumps([self.anbieter, self.host, self.anzeigename, self.verarbeitungsort], ensure_ascii=False)
+        return hashlib.sha256(merkmale.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
