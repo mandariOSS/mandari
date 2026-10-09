@@ -12,7 +12,7 @@ mit pySHACL jeden Katalog in allen drei Formen (Turtle, RDF/XML, JSON-LD):
 - den Katalog des Demo-Mandanten (``/session/<slug>/api/dcat/…``).
 
 **Regeln:** DCAT-AP 3.0.0 der SEMIC in der Fassung, die der DCAT-AP.de-Validator lädt (Repository
-init-dcat-ap-de/DCAT-AP, CC BY 4.0, © Europäische Union), und die DCAT-AP.de-3.0-Regeln von GovData
+SEMICeu/DCAT-AP, CC BY 4.0, © Europäische Union; byte-gleich mit der früheren Spiegelung init-dcat-ap-de/DCAT-AP), und die DCAT-AP.de-3.0-Regeln von GovData
 (GovDataOfficial/DCAT-AP.de-SHACL-Validation, CC0) – dieselbe Zusammenstellung wie das Profil „DCAT-AP.de 3.0 –
 Spezifikation“ des Validators. Sie werden nicht mitgeliefert, sondern in einer festgelegten Fassung (Commit) geladen
 und per SHA-256 geprüft. Neue Fassungen übernimmt man bewusst: Commit und Prüfsumme in ``REGELN`` ändern.
@@ -46,7 +46,9 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "mandari"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-_DCAT_AP = "https://raw.githubusercontent.com/init-dcat-ap-de/DCAT-AP/7600adb91abd4d724625de3325f856806065da73"
+# Offizielle Quelle (SEMIC, EU-Kommission). Die frühere Spiegelung unter init-dcat-ap-de ist seit 09.10.2026
+# nicht mehr erreichbar; der Inhalt ist byte-gleich, die Prüfsumme unten sichert das ab.
+_DCAT_AP = "https://raw.githubusercontent.com/SEMICeu/DCAT-AP/fff059bd9c14c1adff5abfd6f32ff437eaec3390"
 _GOVDATA = (
     "https://raw.githubusercontent.com/GovDataOfficial/DCAT-AP.de-SHACL-Validation/"
     "cb9b73a6ff9e4bdf8605ba84d5336da7086ea844/validator/resources/v3.0/shapes"
