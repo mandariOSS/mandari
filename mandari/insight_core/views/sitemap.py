@@ -79,7 +79,8 @@ def sitemap_index(request):
     Sitemap-Index: je gelistete Kommune die Grund-Sitemap und die nummerierten Dateien für Vorgänge und Sitzungen.
 
     Kennung ist der Slug, für Kommunen ohne Slug die ID. ``lastmod`` der Grund-Sitemap ist der letzte Abgleich,
-    der nummerierten Dateien die jüngste Änderung ihrer Einträge (Issue #914).
+    der nummerierten Dateien die jüngste glaubhafte Änderung ihrer Einträge (Issues #914, #939); ohne glaubhaften
+    Zeitpunkt fehlt ``lastmod``.
     """
     site_url = _site_url()
     xml_parts = ['<?xml version="1.0" encoding="UTF-8"?>']

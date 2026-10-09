@@ -5,6 +5,8 @@ Indexierung des Bürgerportals durch Suchmaschinen (Issue #914).
 - Sitemaps: alle öffentlichen Vorgänge und Sitzungen in nummerierten Dateien (höchstens ``EINTRAEGE_JE_DATEI``),
   im Index gelistet mit ``lastmod`` je Datei; Pfade mit dem Präfix ``/sitemap-insight-``; Stadtseite in der
   Grund-Sitemap; Personen nur mit laufender Mitgliedschaft.
+- ``lastmod`` nur mit glaubhaftem Änderungszeitpunkt (Issue #939): keine Ersatzwerte der Quelle (1999-12-31), keine
+  Zeitpunkte in der Zukunft, kein Rückfall auf den letzten Abgleich.
 - Personen ohne laufende Mitgliedschaft: ``noindex, follow``, Seite bleibt erreichbar.
 - ``noindex`` für Suche, Listen mit Parametern, Teilansichten und Dateien; Beschlussseiten mit robots und Canonical.
 - Crawlbare Wege: Brotkrume auf die Stadtseite ohne Weiterleitung, Umwege über die Wahl der Kommune mit ``nofollow``,
@@ -41,6 +43,7 @@ from insight_core.models import (
     OParlPaper,
     OParlPerson,
     OParlSource,
+    PublicQuestion,
     validate_body_slug,
 )
 from insight_core.services import file_cache, indexierung, safe_fetch, sitemaps
@@ -411,6 +414,200 @@ class TestGrundSitemap:
             )
         assert namen == ["Person 1", "Person 3"]
         assert len(erfasst) == 1
+
+
+# =============================================================================
+# lastmod nur mit glaubhaftem Änderungszeitpunkt (Issue #939)
+# =============================================================================
+
+#: Ersatzwert der Quelle statt eines echten Änderungszeitpunkts (Bonn: ``modified`` fast aller Vorgänge)
+ERSATZWERT = datetime.fromisoformat("1999-12-31T00:00:00+01:00")
+#: Bezugszeitpunkt der Prüfungen mit fester Uhr
+JETZT = datetime(2026, 10, 9, 12, 0, tzinfo=UTC)
+
+
+def _lastmod_je_loc(wurzel: ET.Element, eintrag: str = "url") -> dict[str, str | None]:
+    """``loc`` → ``lastmod`` je Eintrag einer Sitemap (``url``) oder eines Index (``sitemap``); ``None`` ohne Element."""
+    return {
+        element.findtext("s:loc", "", NS): element.findtext("s:lastmod", None, NS)
+        for element in wurzel.iterfind(f"s:{eintrag}", NS)
+    }
+
+
+class TestAenderungszeitpunkt:
+    """Der zentrale Ausdruck: Änderung laut Quelle, sonst Anlage laut Quelle, jeweils nur glaubhaft, sonst nichts."""
+
+    @pytest.mark.parametrize(
+        ("geaendert", "angelegt", "erwartet"),
+        [
+            pytest.param(
+                datetime(2026, 3, 1, 8, 30, tzinfo=UTC),
+                datetime(2020, 1, 1, tzinfo=UTC),
+                datetime(2026, 3, 1, 8, 30, tzinfo=UTC),
+                id="normaler-wert-unveraendert",
+            ),
+            pytest.param(
+                ERSATZWERT, datetime(2015, 5, 6, tzinfo=UTC), datetime(2015, 5, 6, tzinfo=UTC), id="ersatzwert-angelegt"
+            ),
+            pytest.param(ERSATZWERT, ERSATZWERT, None, id="nur-ersatzwerte"),
+            pytest.param(ERSATZWERT, None, None, id="ersatzwert-ohne-anlage"),
+            pytest.param(None, None, None, id="ohne-werte-kein-rueckfall-auf-updated-at"),
+            pytest.param(None, datetime(2018, 2, 3, tzinfo=UTC), datetime(2018, 2, 3, tzinfo=UTC), id="nur-anlage"),
+            pytest.param(
+                datetime(2026, 11, 1, tzinfo=UTC),
+                datetime(2026, 1, 2, tzinfo=UTC),
+                datetime(2026, 1, 2, tzinfo=UTC),
+                id="zukunft-ignoriert",
+            ),
+            pytest.param(datetime(2026, 11, 1, tzinfo=UTC), datetime(2027, 1, 1, tzinfo=UTC), None, id="nur-zukunft"),
+            pytest.param(JETZT + timedelta(hours=23), None, JETZT + timedelta(hours=23), id="im-spielraum"),
+            pytest.param(JETZT + timedelta(hours=25), None, None, id="hinter-dem-spielraum"),
+            pytest.param(datetime(2000, 1, 1, tzinfo=UTC), None, datetime(2000, 1, 1, tzinfo=UTC), id="grenze"),
+            pytest.param(datetime.fromisoformat("2000-01-01T00:00:00+01:00"), None, None, id="vor-der-grenze-in-utc"),
+        ],
+    )
+    def test_glaubhafter_zeitpunkt(
+        self, geaendert: datetime | None, angelegt: datetime | None, erwartet: datetime | None
+    ) -> None:
+        vorgang = _vorgang(_kommune(1, "Bundesstadt Bonn"), 1, oparl_modified=geaendert, oparl_created=angelegt)
+
+        wert = (
+            OParlPaper.objects.filter(pk=vorgang.pk)
+            .values_list(sitemaps.aenderungszeitpunkt(jetzt=JETZT), flat=True)
+            .get()
+        )
+
+        assert wert == erwartet
+
+    def test_grenzen(self) -> None:
+        assert datetime(2000, 1, 1, tzinfo=UTC) == sitemaps.FRUEHESTE_AENDERUNG
+        assert timedelta(days=1) == sitemaps.ZUKUNFT_SPIELRAUM
+        assert "updated_at" not in sitemaps.RIS_ZEITPUNKTE, "der Abgleich setzt updated_at bei jedem Lauf neu"
+
+
+@pytest.fixture
+def bonn(klein: int) -> dict[str, Any]:
+    """
+    Kommune mit Ersatzwerten wie Bonn: neun Vorgänge in drei Dateien (Eingang in Nummernfolge), zwei Sitzungen.
+
+    Datei 1: nur Ersatzwerte, Ersatzwert mit Anlage, normaler Wert. Datei 2: Ersatzwerte oder gar keine Werte.
+    Datei 3: Zukunft mit Anlage, Zukunft ohne Anlage, normaler Wert.
+    """
+    body = _kommune(1, "Bundesstadt Bonn", display_name="Bonn", slug="bonn", last_sync=timezone.now())
+    zukunft = timezone.now() + timedelta(days=30)
+    werte: list[tuple[datetime | None, datetime | None]] = [
+        (ERSATZWERT, ERSATZWERT),
+        (ERSATZWERT, datetime(2024, 5, 6, 7, 8, 9, tzinfo=UTC)),
+        (datetime(2025, 2, 3, tzinfo=UTC), ERSATZWERT),
+        (ERSATZWERT, None),
+        (None, None),
+        (ERSATZWERT, ERSATZWERT),
+        (zukunft, datetime(2025, 7, 8, tzinfo=UTC)),
+        (zukunft, None),
+        (datetime(2025, 9, 1, tzinfo=UTC), datetime(2025, 8, 1, tzinfo=UTC)),
+    ]
+    eingang = datetime(2025, 1, 1, tzinfo=UTC)
+    vorgaenge = []
+    for nummer, (geaendert, angelegt) in enumerate(werte):
+        vorgang = _vorgang(body, nummer, oparl_modified=geaendert, oparl_created=angelegt)
+        OParlPaper.objects.filter(pk=vorgang.pk).update(created_at=eingang + timedelta(hours=nummer))
+        vorgaenge.append(vorgang)
+    sitzungen = [
+        _sitzung(body, 1, oparl_modified=ERSATZWERT, oparl_created=datetime(2023, 3, 4, tzinfo=UTC)),
+        _sitzung(body, 2, oparl_modified=ERSATZWERT, oparl_created=ERSATZWERT),
+    ]
+    return {"body": body, "vorgaenge": vorgaenge, "sitzungen": sitzungen}
+
+
+class TestLastmodNurGlaubhaft:
+    def test_vorgaenge(self, client: Client, bonn: dict[str, Any]) -> None:
+        site = settings.SITE_URL
+        lastmods: dict[str, str | None] = {}
+        for seite in (1, 2, 3):
+            lastmods |= _lastmod_je_loc(_xml(client, f"/sitemap-insight-bonn-vorgaenge-{seite}.xml"))
+
+        erwartet = [
+            None,
+            "2024-05-06T07:08:09+00:00",  # Ersatzwert: Anlage laut Quelle
+            "2025-02-03T00:00:00+00:00",  # normaler Wert unverändert
+            None,
+            None,  # ohne Werte der Quelle: kein Rückfall auf den letzten Abgleich
+            None,
+            "2025-07-08T00:00:00+00:00",  # Zukunft: Anlage laut Quelle
+            None,
+            "2025-09-01T00:00:00+00:00",
+        ]
+        assert lastmods == {
+            f"{site}/insight/vorgaenge/{vorgang.pk}/": wert
+            for vorgang, wert in zip(bonn["vorgaenge"], erwartet, strict=True)
+        }
+
+    def test_sitzungen(self, client: Client, bonn: dict[str, Any]) -> None:
+        site = settings.SITE_URL
+        mit_anlage, ohne = bonn["sitzungen"]
+        assert _lastmod_je_loc(_xml(client, "/sitemap-insight-bonn-sitzungen-1.xml")) == {
+            f"{site}/insight/termine/{mit_anlage.pk}/": "2023-03-04T00:00:00+00:00",
+            f"{site}/insight/termine/{ohne.pk}/": None,
+        }
+
+    def test_index_je_datei(self, client: Client, bonn: dict[str, Any]) -> None:
+        site = settings.SITE_URL
+        lastmods = _lastmod_je_loc(_xml(client, "/sitemap-insight-index.xml"), "sitemap")
+
+        assert lastmods[f"{site}/sitemap-insight-bonn-vorgaenge-1.xml"] == "2025-02-03T00:00:00+00:00"
+        assert lastmods[f"{site}/sitemap-insight-bonn-vorgaenge-2.xml"] is None, "ohne glaubhaften Wert kein lastmod"
+        assert lastmods[f"{site}/sitemap-insight-bonn-vorgaenge-3.xml"] == "2025-09-01T00:00:00+00:00", "ohne Zukunft"
+        assert lastmods[f"{site}/sitemap-insight-bonn-sitzungen-1.xml"] == "2023-03-04T00:00:00+00:00"
+
+    def test_grund_sitemap(self, client: Client, bonn: dict[str, Any]) -> None:
+        body = bonn["body"]
+        rat = _gremium(body, 1, oparl_modified=ERSATZWERT)
+        ausschuss = _gremium(body, 2, oparl_modified=datetime(2025, 1, 2, tzinfo=UTC), oparl_created=ERSATZWERT)
+        person = _person(body, 1, oparl_modified=ERSATZWERT, oparl_created=datetime(2021, 6, 7, tzinfo=UTC))
+        _mitgliedschaft(person, rat)
+        frage = PublicQuestion.objects.create(
+            body=body,
+            recipient=person,
+            questioner_name="Frieda",
+            questioner_email="frieda@example.org",
+            subject="Radweg",
+            question_text="Wann kommt der Radweg?",
+            status="published",
+            published_at=timezone.now(),
+        )
+        site = settings.SITE_URL
+
+        lastmods = _lastmod_je_loc(_xml(client, "/sitemap-insight-bonn.xml"))
+
+        assert lastmods[f"{site}/insight/gremien/{rat.pk}/"] is None
+        assert lastmods[f"{site}/insight/gremien/{ausschuss.pk}/"] == "2025-01-02T00:00:00+00:00"
+        assert lastmods[f"{site}/insight/personen/{person.pk}/"] == "2021-06-07T00:00:00+00:00"
+        # Ratsfragen: updated_at ändert sich nur mit der Seite (Freischalten, Antwort)
+        assert lastmods[f"{site}/insight/fragen/{frage.pk}/"] == frage.updated_at.astimezone(UTC).strftime(
+            "%Y-%m-%dT%H:%M:%S+00:00"
+        )
+
+    def test_kein_ersatzwert_und_kein_leeres_element(self, client: Client, bonn: dict[str, Any]) -> None:
+        for pfad in (
+            "/sitemap-insight-index.xml",
+            "/sitemap-insight-bonn.xml",
+            *(f"/sitemap-insight-bonn-vorgaenge-{seite}.xml" for seite in (1, 2, 3)),
+            "/sitemap-insight-bonn-sitzungen-1.xml",
+        ):
+            inhalt = client.get(pfad).content.decode()
+            assert "<lastmod>1999-" not in inhalt, pfad
+            assert "<lastmod></lastmod>" not in inhalt, pfad
+
+    def test_eintraege_lesen_nur_kennung_und_zeitpunkt(self, client: Client, bonn: dict[str, Any]) -> None:
+        """Speicher wie bisher: Die Datei liest je Eintrag zwei Spalten, den Zeitpunkt prüft die Datenbank."""
+        with CaptureQueriesContext(connection) as erfasst:
+            client.get("/sitemap-insight-bonn-vorgaenge-1.xml")
+        abfragen = [abfrage["sql"] for abfrage in erfasst.captured_queries if '"oparl_papers"' in abfrage["sql"]]
+
+        assert len(abfragen) == 1
+        auswahl = abfragen[0].split(" FROM ")[0]
+        assert "CASE WHEN" in auswahl
+        assert "raw_json" not in auswahl and '"name"' not in auswahl
 
 
 # =============================================================================
