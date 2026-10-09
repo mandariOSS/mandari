@@ -117,7 +117,7 @@ class Verknuepfung:
 
 #: Verknüpfungen mit Tagesordnungspunkten. Neue Felder gehören hierher (Test ``test_alle_verknuepfungen_erfasst``).
 TOP_VERKNUEPFUNGEN = (
-    Verknuepfung("work.AgendaItemPosition", "agenda_item", eindeutig=("organization_id",)),
+    Verknuepfung("work.AgendaItemPosition", "agenda_item", eindeutig=("organization_id",), db_eindeutig=True),
     Verknuepfung("work.AgendaPrivateNote", "agenda_item", eindeutig=("author_id",), db_eindeutig=True),
     Verknuepfung("work.AgendaSpeechNote", "agenda_item", eindeutig=("author_id",), db_eindeutig=True),
     Verknuepfung("work.AgendaItemNote", "agenda_item"),
