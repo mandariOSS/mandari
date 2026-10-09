@@ -5,11 +5,13 @@ Admin-Formulare der KI-Konfiguration (Issue #950): KI-Einstellungen und Organisa
 Nur Anbieter mit Verarbeitung in Europa in der Auswahl, keine Adresse außerhalb von ``KI_ERLAUBTE_HOSTS``, beim
 eigenen Endpunkt Basis-URL, Anzeigename und Verarbeitungsort als Pflicht. Eine Vorlage gilt nur für ihren Host; ein
 gespeicherter Schlüssel geht nach einem Anbieterwechsel nie an den neuen Anbieter, und ein Schlüssel ohne Anbieter
-lässt sich löschen statt die KI stillschweigend abzuschalten.
+lässt sich löschen statt die KI stillschweigend abzuschalten. Die Positivliste hat keinen Standard; die Tests
+geben den Beispiel-Host ausdrücklich frei (Fixture ``_freigabe``).
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
@@ -29,7 +31,8 @@ STACKIT = "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1"
 STACKIT_HOST = "api.openai-compat.model-serving.eu01.onstackit.cloud"
 IONOS_HOST = "openai.inference.de-txl.ionos.com"
 IONOS = f"https://{IONOS_HOST}/v1"
-ENTFALLEN = ("nebius", "anthropic", "openai", "mistral", "ovh")
+ENTFALLEN = ("nebius", "anthropic", "openai", "mistral")
+VORLAGEN = {"stackit", "ionos", "scaleway", "ovh", "deutschlandgpt", "eigener"}
 SCHLUESSEL = "admin-testschluessel-geheim-0123456789"
 WECHSEL = "Bei einem Anbieterwechsel bitte den Schlüssel des neuen Anbieters eintragen."
 
@@ -37,6 +40,13 @@ WECHSEL = "Bei einem Anbieterwechsel bitte den Schlüssel des neuen Anbieters ei
 @pytest.fixture(autouse=True)
 def _frischer_cache() -> None:
     cache.delete(AISettings.CACHE_KEY)
+
+
+@pytest.fixture(autouse=True)
+def _freigabe() -> Iterator[None]:
+    """Die Positivliste hat keinen Standard: Die Tests geben den Beispiel-Host ausdrücklich frei."""
+    with override_settings(KI_ERLAUBTE_HOSTS=[STACKIT_HOST]):
+        yield
 
 
 def _ki_formular(**werte: Any) -> Any:
@@ -86,12 +96,31 @@ def _org_formular(org: Organization, **werte: Any) -> Any:
 class TestKiEinstellungen:
     def test_auswahl_nur_europa(self) -> None:
         auswahl = {key for key, _label in cast(Any, AISettingsAdminForm)().fields["provider"].choices}
-        assert auswahl == {"", "stackit", "ionos", "scaleway", "eigener"}
+        assert auswahl == {"", *VORLAGEN}
         assert not auswahl & set(ENTFALLEN)
 
     def test_stackit_gueltig(self) -> None:
         formular = _ki_formular(provider="stackit", base_url="")
         assert formular.is_valid(), formular.errors
+
+    @override_settings(KI_ERLAUBTE_HOSTS=[])
+    def test_ohne_freigabeliste_keine_vorlage(self, admin_client: Client) -> None:
+        """Ohne KI_ERLAUBTE_HOSTS ist jede Vorlage gekennzeichnet und abgelehnt; die Seite nennt die Sperre."""
+        formular = _ki_formular(provider="stackit", base_url="")
+        assert not formular.is_valid()
+        assert "KI_ERLAUBTE_HOSTS" in str(formular.errors["provider"])
+        for anbieter, label in formular.fields["provider"].choices:
+            if anbieter not in ("", "eigener"):
+                assert "nicht freigegeben" in label, anbieter
+        ki = AISettings.get_settings()
+        inhalt = admin_client.get(f"/admin/common/aisettings/{ki.pk}/change/").content.decode()
+        assert "derzeit: keine, jeder KI-Aufruf ist gesperrt" in inhalt
+
+    @pytest.mark.parametrize("anbieter", ["ovh", "deutschlandgpt"])
+    def test_vorbereitete_vorlagen_nicht_freigegeben(self, anbieter: str) -> None:
+        formular = _ki_formular(provider=anbieter, base_url="")
+        assert not formular.is_valid()
+        assert "nicht freigegeben" in dict(formular.fields["provider"].choices)[anbieter]
 
     def test_gesperrte_adresse_formfehler(self) -> None:
         formular = _ki_formular(
@@ -198,7 +227,7 @@ class TestKiEinstellungen:
 class TestOrganisation:
     def test_auswahl_nur_europa(self, org: Organization) -> None:
         auswahl = {key for key, _label in _org_formular(org).fields["ai_provider"].choices}
-        assert auswahl == {"", "stackit", "ionos", "scaleway", "eigener"}
+        assert auswahl == {"", *VORLAGEN}
 
     def test_gesperrte_adresse_formfehler(self, org: Organization) -> None:
         formular = _org_formular(

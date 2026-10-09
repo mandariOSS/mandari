@@ -52,6 +52,9 @@ os.environ["EMAIL_BACKEND"] = "django.core.mail.backends.locmem.EmailBackend"
 os.environ["ALLOWED_HOSTS"] = "testserver,localhost"
 # Channels: InMemory-Layer statt Redis (REDIS_URL="" → InMemoryChannelLayer)
 os.environ["REDIS_URL"] = ""
+# Die Positivliste der KI-Hosts hat keinen Standard (leer = jeder KI-Aufruf gesperrt, Issue #950): Der Smoke-Test
+# gibt den Host der Vorlage, die er prüft, ausdrücklich frei.
+os.environ["KI_ERLAUBTE_HOSTS"] = "api.openai-compat.model-serving.eu01.onstackit.cloud"
 
 # Sync-Watchdog (insight_sync.apps) nicht starten (erkennt Management-Commands
 # an sys.argv — entsprechend tarnen).

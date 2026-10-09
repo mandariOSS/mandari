@@ -3,9 +3,10 @@
 Eigene KI-Konfiguration der Organisation nur noch mit freigegebenen EU-Endpunkten (Issue #950).
 
 1. Die Anbieterauswahl kennt „Plattform-Einstellung“ (Standard), die Vorlagen mit Verarbeitung in Europa und
-   den eigenen Endpunkt. Organisationen mit „nebius“ oder „ovh“ (keine Vorlage mehr) stehen danach auf
-   „Plattform-Einstellung“; mit eigenem Schlüssel ist ihre KI dann aus, bis jemand einen freigegebenen
-   Anbieter wählt. Eine eingetragene Basis-URL bleibt stehen, wirkt aber nur, wenn ihr Host in
+   den eigenen Endpunkt. Organisationen mit „nebius“ oder „ovh“ stehen danach auf „Plattform-Einstellung“;
+   mit eigenem Schlüssel ist ihre KI dann aus, bis jemand einen freigegebenen Anbieter wählt. „ovh“ wird
+   zurückgesetzt, obwohl es wieder eine Vorlage dieses Namens gibt: Die frühere Einstellung ist nie gegen die
+   neue Vorlage geprüft worden. Eine eingetragene Basis-URL bleibt stehen, wirkt aber nur, wenn ihr Host in
    KI_ERLAUBTE_HOSTS steht.
 2. Neue Felder Anzeigename und Verarbeitungsort (Pflicht beim eigenen Endpunkt), mit Datenbank-
    Standardwert, damit ein älteres Image nach einem Rückfall weiterläuft.
@@ -15,7 +16,7 @@ Rückwärts ändert sich an den Daten nichts.
 
 from django.db import migrations, models
 
-#: Anbieter ohne Vorlage
+#: Frühere Anbieter; „ovh“ trotz neuer Vorlage (frühere Einstellung nie gegen sie geprüft)
 ENTFALLENE_ANBIETER = ("nebius", "ovh")
 
 
@@ -88,6 +89,8 @@ class Migration(migrations.Migration):
                     ("stackit", "STACKIT AI Model Serving"),
                     ("ionos", "IONOS AI Model Hub"),
                     ("scaleway", "Scaleway Generative APIs"),
+                    ("ovh", "OVHcloud AI Endpoints"),
+                    ("deutschlandgpt", "DeutschlandGPT Platform API"),
                     ("eigener", "Eigener OpenAI-kompatibler Endpunkt"),
                 ],
                 default="",

@@ -4,7 +4,8 @@ OpenAI-kompatibler Anbieter des Bürgerportals (Issue #950).
 
 Anfrage an die konfigurierte Adresse, Antwort nur aus ``message.content`` (Denktext bleibt draußen), Ausweichmodell
 nur nach 404/408/429/5xx/Zeitüberschreitung am selben Endpunkt mit demselben Schlüssel, Antwortlänge gekappt,
-Schlüssel weder im Protokoll noch in ``repr``. HTTP nur über ``httpx.MockTransport``.
+Schlüssel weder im Protokoll noch in ``repr``. Ohne Host in ``KI_ERLAUBTE_HOSTS`` kein Anbieter (die Liste hat
+keinen Standard). HTTP nur über ``httpx.MockTransport``.
 """
 
 from __future__ import annotations
@@ -12,6 +13,8 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
+from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 import pytest
@@ -151,6 +154,14 @@ def test_antwortlaenge_gekappt() -> None:
     assert anbieter.max_output_tokens == 4000
     anbieter.chat_completion(FRAGE, max_tokens=100)
     assert json.loads(gesendet[1].content)["max_tokens"] == 100
+    assert "max_completion_tokens" not in json.loads(gesendet[1].content)
+
+
+def test_auch_max_completion_tokens_wenn_der_anbieter_max_tokens_nicht_beachtet() -> None:
+    anbieter, gesendet = _anbieter(lambda request: _ok(), max_output_tokens=4000, auch_max_completion_tokens=True)
+    anbieter.chat_completion(FRAGE, max_tokens=32000)
+    nutzlast = json.loads(gesendet[0].content)
+    assert (nutzlast["max_tokens"], nutzlast["max_completion_tokens"]) == (4000, 4000)
 
 
 def test_laengenlimit_verstaendlich_im_protokoll(caplog: pytest.LogCaptureFixture) -> None:
@@ -206,15 +217,14 @@ class TestAuswahl:
     def _frischer_cache(self) -> None:
         cache.delete(AISettings.CACHE_KEY)
 
-    def _ki(self, *, insight_enabled: bool) -> None:
-        ki = AISettings.get_settings()
-        ki.provider = "stackit"
-        ki.insight_enabled = insight_enabled
-        ki.insight_max_output_tokens = 2048
-        ki.set_api_key(SCHLUESSEL)
-        ki.save()
+    @pytest.fixture(autouse=True)
+    def _freigabe(self, settings: Any) -> None:
+        """Die Positivliste hat keinen Standard: Die Tests geben den Beispiel-Host ausdrücklich frei."""
+        settings.KI_ERLAUBTE_HOSTS = [urlsplit(BASIS).hostname]
 
-    def test_buergerportal_aus(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.fixture
+    def gesendet(self, monkeypatch: pytest.MonkeyPatch) -> list[httpx.Request]:
+        """Jede HTTP-Anfrage landet hier statt im Netz."""
         gesendet: list[httpx.Request] = []
         echter_client = httpx.Client
 
@@ -227,10 +237,31 @@ class TestAuswahl:
             return echter_client(**kwargs)  # type: ignore[arg-type]
 
         monkeypatch.setattr(httpx, "Client", client)
+        return gesendet
+
+    def _ki(self, *, insight_enabled: bool) -> None:
+        ki = AISettings.get_settings()
+        ki.provider = "stackit"
+        ki.insight_enabled = insight_enabled
+        ki.insight_max_output_tokens = 2048
+        ki.set_api_key(SCHLUESSEL)
+        ki.save()
+
+    def test_buergerportal_aus(self, gesendet: list[httpx.Request]) -> None:
         self._ki(insight_enabled=False)
         anbieter = get_insight_provider()
         assert isinstance(anbieter, NichtEingerichtet)
         assert anbieter.is_available() is False
+        with pytest.raises(KiAnbieterError):
+            anbieter.chat_completion(FRAGE)
+        assert gesendet == []
+
+    def test_ohne_freigabeliste_nicht_eingerichtet(self, gesendet: list[httpx.Request], settings: Any) -> None:
+        """Eingerichtet und eingeschaltet, aber KI_ERLAUBTE_HOSTS leer: keine Anfrage."""
+        settings.KI_ERLAUBTE_HOSTS = []
+        self._ki(insight_enabled=True)
+        anbieter = get_insight_provider()
+        assert isinstance(anbieter, NichtEingerichtet)
         with pytest.raises(KiAnbieterError):
             anbieter.chat_completion(FRAGE)
         assert gesendet == []

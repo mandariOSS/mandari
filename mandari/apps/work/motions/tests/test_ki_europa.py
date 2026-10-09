@@ -3,7 +3,8 @@
 Schreibhilfe und Co-Editor in Work nur über die zentrale KI-Konfiguration (Issue #950).
 
 Kein fest eingebauter Anbieter, kein Rückfall auf einen Schlüssel aus der Umgebung, kein Rückfall von einer
-ungültigen Organisationskonfiguration auf die Plattform, nur Hosts aus ``KI_ERLAUBTE_HOSTS``. HTTP läuft nur
+ungültigen Organisationskonfiguration auf die Plattform, nur Hosts aus ``KI_ERLAUBTE_HOSTS``. Die Liste hat
+keinen Standard; die Tests geben den Beispiel-Host ausdrücklich frei (Fixture ``_freigabe``). HTTP läuft nur
 über ``httpx.MockTransport``; gezählt wird jede Anfrage, die das Modul stellen würde.
 """
 
@@ -24,7 +25,8 @@ from apps.work.motions.services import MotionAIService
 
 pytestmark = pytest.mark.django_db
 
-STACKIT_CHAT = "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1/chat/completions"
+STACKIT_HOST = "api.openai-compat.model-serving.eu01.onstackit.cloud"
+STACKIT_CHAT = f"https://{STACKIT_HOST}/v1/chat/completions"
 SCHLUESSEL = "work-testschluessel-geheim-0123456789"
 NACHRICHTEN = [{"role": "user", "content": "Bitte kürzen"}]
 
@@ -56,6 +58,12 @@ def _ohne_umgebungsschluessel(monkeypatch: pytest.MonkeyPatch) -> None:
     # Ein früher üblicher Schlüssel in der Umgebung darf nie wirken
     monkeypatch.setenv("NEBIUS_API_KEY", "nebius-aus-der-umgebung")
     cache.delete(AISettings.CACHE_KEY)
+
+
+@pytest.fixture(autouse=True)
+def _freigabe(settings: Any) -> None:
+    """Die Positivliste hat keinen Standard: Die Tests geben den Beispiel-Host ausdrücklich frei."""
+    settings.KI_ERLAUBTE_HOSTS = [STACKIT_HOST]
 
 
 def _plattform(*, enabled: bool = True, schluessel: str = SCHLUESSEL, **werte: Any) -> AISettings:
@@ -108,11 +116,41 @@ def test_stackit_genau_eine_anfrage(
     assert anfrage.headers["Authorization"] == f"Bearer {SCHLUESSEL}"
     nutzlast = json.loads(anfrage.content)
     assert nutzlast["model"] == "modell-work" and nutzlast["max_tokens"] == 512
+    assert "max_completion_tokens" not in nutzlast
     assert (
         "KI-Aufruf: anbieter=stackit host=api.openai-compat.model-serving.eu01.onstackit.cloud modell=modell-work"
         in caplog.text
     )
     assert SCHLUESSEL not in caplog.text and "Bitte kürzen" not in caplog.text
+
+
+def test_ohne_freigabeliste_kein_aufruf(org: Organization, anfragen: list[httpx.Request], settings: Any) -> None:
+    """Plattform und Organisation vollständig eingerichtet, aber KI_ERLAUBTE_HOSTS leer: keine Anfrage."""
+    settings.KI_ERLAUBTE_HOSTS = []
+    _plattform()
+    dienst = MotionAIService(organization=org)
+    assert dienst.is_available() is False
+    antwort = dienst._call_api(NACHRICHTEN)
+    assert not antwort.success and antwort.error == "KI ist nicht eingerichtet."
+    org.set_ai_api_key("org-testschluessel-geheim")
+    org.ai_provider = "stackit"
+    org.save()
+    assert MotionAIService(organization=org).is_available() is False
+    assert not MotionAIService(organization=org)._call_api(NACHRICHTEN).success
+    assert anfragen == []
+
+
+def test_deutschlandgpt_bekommt_auch_max_completion_tokens(
+    org: Organization, anfragen: list[httpx.Request], settings: Any
+) -> None:
+    """Die Schnittstelle beachtet max_tokens nicht; die Grenze geht zusätzlich als max_completion_tokens mit."""
+    settings.KI_ERLAUBTE_HOSTS = ["api.deutschlandgpt.de"]
+    _plattform(provider="deutschlandgpt", max_output_tokens=512)
+    antwort = MotionAIService(organization=org)._call_api(NACHRICHTEN, max_tokens=2000)
+    assert antwort.success
+    assert len(anfragen) == 1 and str(anfragen[0].url) == "https://api.deutschlandgpt.de/v2/chat/completions"
+    nutzlast = json.loads(anfragen[0].content)
+    assert (nutzlast["max_tokens"], nutzlast["max_completion_tokens"]) == (512, 512)
 
 
 def test_organisation_mit_gesperrter_adresse_ohne_rueckfall(org: Organization, anfragen: list[httpx.Request]) -> None:

@@ -715,8 +715,8 @@ INSIGHT_SEARCH_PLACES_RADIUS = int(os.environ.get("INSIGHT_SEARCH_PLACES_RADIUS"
 
 # KI-Anbieter (Issue #950): Anbieter, Basis-URL, Modell und Schlüssel stehen im Admin (KI-Einstellungen, für
 # Work auch je Organisation). Hier nur die Positivliste erlaubter Hosts als technische Sperre, kommagetrennt;
-# gesetzt ersetzt sie den Standard (shared/mandari_dokumente/ki_hosts.py), leer gilt der Standard. Gilt für
-# jeden KI-Aufruf, auch für die Texterkennung über MISTRAL_BASE_URL.
+# leer ist nichts erlaubt (kein Standard, shared/mandari_dokumente/ki_hosts.py). Gilt für jeden KI-Aufruf, auch
+# für die Texterkennung über MISTRAL_BASE_URL.
 from mandari_dokumente.ki_hosts import erlaubte_hosts_aus_umgebung
 
 KI_ERLAUBTE_HOSTS = list(erlaubte_hosts_aus_umgebung())

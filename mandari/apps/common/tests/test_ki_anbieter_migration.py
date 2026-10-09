@@ -41,7 +41,7 @@ class TestDatenumstellung:
         assert provider == ""
         assert base_url == "https://beispiel.example/v1"  # bleibt stehen, wirkt aber nicht
 
-    @pytest.mark.parametrize("anbieter", ["stackit", "ionos", "scaleway", "eigener", ""])
+    @pytest.mark.parametrize("anbieter", ["stackit", "ionos", "scaleway", "deutschlandgpt", "eigener", ""])
     def test_freigegebene_anbieter_bleiben(self, anbieter: str) -> None:
         AISettings.get_settings()
         AISettings.objects.filter(pk=1).update(provider=anbieter)
@@ -58,8 +58,10 @@ class TestDatenumstellung:
         assert _nebius_spalten() == (None, "")
         assert cache.get(SiteSettings.CACHE_KEY) is None
 
-    def test_organisation_nebius_wird_plattform(self, org: Organization) -> None:
-        Organization.objects.filter(pk=org.pk).update(ai_provider="nebius")
+    @pytest.mark.parametrize("anbieter", ["nebius", "ovh"])
+    def test_organisation_frueherer_anbieter_wird_plattform(self, org: Organization, anbieter: str) -> None:
+        """Auch „ovh“: Die frühere Einstellung wird nicht stillschweigend zur neuen Vorlage gleichen Namens."""
+        Organization.objects.filter(pk=org.pk).update(ai_provider=anbieter)
         TENANTS.anbieter_umstellen(django_apps, None)
         assert Organization.objects.values_list("ai_provider", flat=True).get(pk=org.pk) == ""
 

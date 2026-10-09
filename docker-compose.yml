@@ -135,7 +135,7 @@ x-app-environment: &app-environment
   OPARL_CHANGES_RETENTION_DAYS: ${OPARL_CHANGES_RETENTION_DAYS:-90}
   OPARL_SNAPSHOT_PARALLEL: ${OPARL_SNAPSHOT_PARALLEL:-2}
   # KI (optional, Issue #950): Anbieter, Basis-URL, Modell und Schlüssel im Admin (KI-Einstellungen). Hier nur die
-  # Positivliste erlaubter Hosts (kommagetrennt, leer = Standard) und die externe Texterkennung (nur mit Schlüssel
+  # Positivliste erlaubter Hosts (kommagetrennt, leer = nichts erlaubt) und die externe Texterkennung (nur mit Schlüssel
   # UND Basis-URL aus der Positivliste, Standard aus); im Ingestor dieselben Werte
   KI_ERLAUBTE_HOSTS: ${KI_ERLAUBTE_HOSTS:-}
   MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}

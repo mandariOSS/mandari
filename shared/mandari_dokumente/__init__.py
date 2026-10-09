@@ -5,7 +5,8 @@ Enthält die eine Texterkennung (Issue #530, ``docs/adr/20261004-texterkennung-s
 pypdf, optional Mistral und Tesseract Seite für Seite mit Speicher- und Zeitgrenzen (Issue #817). Ohne
 Django- oder Datenbankbezug; Einstellungen, Abruf und Speichern bleiben beim Aufrufer.
 
-Dazu die Positivliste erlaubter KI-Endpunkte (``ki_hosts``, Issue #950), die Anwendung und Ingestor teilen.
+Dazu die Positivliste erlaubter KI-Endpunkte (``ki_hosts``, Issue #950), die Anwendung und Ingestor teilen. Sie
+hat keinen Standard: Ohne ``KI_ERLAUBTE_HOSTS`` ist jeder Host gesperrt (``STANDARD_ERLAUBTE_HOSTS`` ist leer).
 """
 
 from .ki_hosts import STANDARD_ERLAUBTE_HOSTS, erlaubte_hosts_aus_umgebung, ist_erlaubter_host

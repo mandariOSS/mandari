@@ -8,7 +8,9 @@ KI-Anbieter frei konfigurierbar, nur freigegebene EU-Endpunkte (Issue #950).
 2. Die Anbieterauswahl kennt nur noch Vorlagen mit Verarbeitung in Europa und den eigenen Endpunkt;
    Standard ist „nicht eingerichtet“. Frühere Anbieter (nebius, anthropic, openai, mistral, ovh) werden zu
    „nicht eingerichtet“; die KI bleibt dann aus, bis jemand einen freigegebenen Anbieter wählt. Eine
-   eingetragene Basis-URL bleibt stehen, wirkt aber nur, wenn ihr Host in KI_ERLAUBTE_HOSTS steht.
+   eingetragene Basis-URL bleibt stehen, wirkt aber nur, wenn ihr Host in KI_ERLAUBTE_HOSTS steht. Auch
+   „ovh“ wird zurückgesetzt, obwohl es wieder eine Vorlage dieses Namens gibt: Die frühere Einstellung ist nie
+   gegen die neue Vorlage geprüft worden; wer sie nutzen will, wählt sie neu und trägt den Schlüssel ein.
 3. Der frühere Nebius-Schlüssel der Systemeinstellungen wird geleert (beide Spalten). Die Spalten bleiben,
    damit ein älteres Image weiterläuft; sie entfallen mit einer Folgeversion.
 
@@ -19,7 +21,7 @@ import contextlib
 
 from django.db import migrations, models
 
-#: Anbieter, die es nicht mehr gibt (Verarbeitung nicht zugesichert in Europa oder ohne Vorlage)
+#: Frühere Anbieter (Verarbeitung nicht zugesichert in Europa oder ohne Vorlage); „ovh“ trotz neuer Vorlage
 ENTFALLENE_ANBIETER = ("nebius", "anthropic", "openai", "mistral", "ovh")
 #: Cache-Schlüssel der Singletons (AISettings.CACHE_KEY, SiteSettings.CACHE_KEY)
 CACHE_KEYS = ("ai_settings", "site_settings")
@@ -172,6 +174,8 @@ class Migration(migrations.Migration):
                     ("stackit", "STACKIT AI Model Serving"),
                     ("ionos", "IONOS AI Model Hub"),
                     ("scaleway", "Scaleway Generative APIs"),
+                    ("ovh", "OVHcloud AI Endpoints"),
+                    ("deutschlandgpt", "DeutschlandGPT Platform API"),
                     ("eigener", "Eigener OpenAI-kompatibler Endpunkt"),
                 ],
                 default="",

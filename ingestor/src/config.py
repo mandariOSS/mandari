@@ -155,7 +155,7 @@ class Settings(BaseSettings):
     file_cache_min_free_gb: int = 15
 
     # Mistral-kompatible Texterkennung (optional): nur mit Schlüssel UND Basis-URL (MISTRAL_BASE_URL), deren
-    # Host in der Positivliste KI_ERLAUBTE_HOSTS steht (kommagetrennt, leer = Standard aus
+    # Host in der Positivliste KI_ERLAUBTE_HOSTS steht (kommagetrennt, leer = nichts erlaubt,
     # shared/mandari_dokumente/ki_hosts.py, Issue #950). Sonst lokal per Tesseract; Tesseract bleibt Rückfall.
     mistral_api_key: str = ""
     mistral_base_url: str = ""

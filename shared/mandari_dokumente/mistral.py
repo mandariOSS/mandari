@@ -8,7 +8,7 @@ auf Tesseract zurück. Der API-Schlüssel erscheint nie in Meldungen.
 
 Seit Issue #950 gibt es keinen festen Endpunkt mehr: Die Adresse kommt aus ``MISTRAL_BASE_URL`` (OpenAI-
 kompatible Basis-URL, etwa ``https://…/v1``), und ihr Host muss in der Positivliste ``KI_ERLAUBTE_HOSTS``
-stehen (``ki_hosts``). Ein gesetzter Schlüssel allein schickt also nichts nach außen.
+stehen (``ki_hosts``, leer ist nichts erlaubt). Ein gesetzter Schlüssel allein schickt also nichts nach außen.
 """
 
 from __future__ import annotations
@@ -37,7 +37,8 @@ class MistralConfig:
     Zugang und Grenzen. Eingeschaltet nur mit Schlüssel, Adresse und erlaubtem Host.
 
     ``url`` ist die OpenAI-kompatible Basis-URL (``…/v1``) oder schon die volle Adresse der
-    Chat-Schnittstelle (``…/chat/completions``); ``erlaubte_hosts`` die Positivliste (``KI_ERLAUBTE_HOSTS``).
+    Chat-Schnittstelle (``…/chat/completions``); ``erlaubte_hosts`` die Positivliste (``KI_ERLAUBTE_HOSTS``),
+    im Standard leer: Ohne ausdrücklich erlaubten Host bleibt die externe Texterkennung aus.
     """
 
     api_key: str = field(default="", repr=False)

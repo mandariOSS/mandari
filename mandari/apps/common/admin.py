@@ -409,8 +409,9 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
         return super().changeform_view(request, object_id, form_url, extra_context)
 
     def get_fieldsets(self, request, obj=None):
-        # Die freigegebenen Hosts stehen in der Beschreibung (Umgebung, nicht im Admin änderbar)
-        hosts = ", ".join(erlaubte_hosts())
+        # Die freigegebenen Hosts stehen in der Beschreibung (Umgebung, nicht im Admin änderbar). Ohne Eintrag ist
+        # jeder Host gesperrt; die Beschreibung sagt das, statt eine leere Klammer zu zeigen.
+        hosts = ", ".join(erlaubte_hosts()) or "keine, jeder KI-Aufruf ist gesperrt"
         return [
             (name, {**optionen, "description": optionen.get("description", "").replace("{hosts}", hosts)})
             for name, optionen in super().get_fieldsets(request, obj)

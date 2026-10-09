@@ -74,6 +74,7 @@ REDIS_URL=redis://localhost:6379/0
 ELASTICSEARCH_URL=http://localhost:9200
 
 # KI: Anbieter und Schlüssel im Admin (KI-Einstellungen); hier nur die Positivliste erlaubter Hosts
+# (leer ist nichts erlaubt, die KI bleibt aus)
 KI_ERLAUBTE_HOSTS=
 
 # Django

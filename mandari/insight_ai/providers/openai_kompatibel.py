@@ -95,7 +95,8 @@ class OpenAIKompatiblerProvider(AbstractAIProvider):
         payload = {
             "model": modell,
             "messages": nachrichten,
-            "max_tokens": max_tokens,
+            # max_tokens, bei Anbietern, die es nicht beachten, auch max_completion_tokens
+            **self.endpunkt.laengengrenze(max_tokens),
             "temperature": temperature,
             "stream": False,
         }

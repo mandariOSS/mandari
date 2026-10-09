@@ -201,7 +201,8 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         payload = {
             "model": endpunkt.modell,
             "messages": messages,
-            "max_tokens": max_tokens,
+            # max_tokens, bei Anbietern, die es nicht beachten, auch max_completion_tokens
+            **endpunkt.laengengrenze(max_tokens),
             "temperature": temperature,
         }
         headers = {

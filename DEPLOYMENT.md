@@ -834,14 +834,21 @@ Work und das Bürgerportal; Organisationen können für Work einen eigenen Schl�
 Anbieter bleibt die KI aus; einen fest eingebauten Anbieter oder einen Rückfall gibt es nicht.
 
 Technische Sperre ist die Positivliste `KI_ERLAUBTE_HOSTS` (kommagetrennte Hostnamen, in Anwendung und
-Ingestor gleich setzen). Gesetzt ersetzt sie den Standard, leer gilt der Standard aus
-`shared/mandari_dokumente/ki_hosts.py`. Verglichen wird der Host exakt, nur `https`, ohne Zugangsdaten in
-der Adresse, Port nur 443. Jede Adresse wird bei jedem Aufruf neu geprüft, auch wenn sie direkt in der
-Datenbank steht; ein nicht freigegebener Host ergibt „KI aus“ mit Warnung im Protokoll (ohne Schlüssel).
+Ingestor gleich setzen). Sie hat keinen Standard: Leer ist nichts erlaubt, jeder KI-Aufruf bleibt gesperrt,
+auch die externe Texterkennung über `MISTRAL_BASE_URL` (fail-closed, `shared/mandari_dokumente/ki_hosts.py`).
+Die Vorlagen im Admin (STACKIT, IONOS, Scaleway, OVHcloud, DeutschlandGPT) geben keinen Host frei; sie füllen
+nur Anzeigename, Verarbeitungsort und Basis-URL vor und sind als „nicht freigegeben“ gekennzeichnet, solange ihr
+Host fehlt. Verglichen wird der Host exakt, nur `https`, ohne Zugangsdaten in der Adresse, Port nur 443. Jede
+Adresse wird bei jedem Aufruf neu geprüft, auch wenn sie direkt in der Datenbank steht; ein nicht
+freigegebener Host ergibt „KI aus“ mit Warnung im Protokoll (ohne Schlüssel).
 
-Ein Anbieterwechsel ist reine Konfiguration: Host in `KI_ERLAUBTE_HOSTS` aufnehmen (Neustart), dann im Admin
-Vorlage bzw. Basis-URL, Modell und Schlüssel eintragen. Die Einwilligung im KI-Assistenten nennt Anbieter und
-Verarbeitungsort aus dieser Konfiguration und gilt nur für den Anbieter, dem zugestimmt wurde.
+Solange kein Anbieter vertraglich freigegeben ist, bleibt `KI_ERLAUBTE_HOSTS` leer und die KI überall aus
+(Work, Bürgerportal, externe Texterkennung). Einschalten ist reine Konfiguration: Host in `KI_ERLAUBTE_HOSTS`
+aufnehmen (Anwendung, Worker und Ingestor neu starten), dann im Admin Vorlage bzw. Basis-URL, Modell und
+Schlüssel eintragen und die Schalter für Work und Bürgerportal setzen. Die Einwilligung im KI-Assistenten nennt
+Anbieter und Verarbeitungsort aus dieser Konfiguration und gilt nur für den Anbieter, dem zugestimmt wurde. An
+den Host der DeutschlandGPT-Vorlage geht die Antwortlänge zusätzlich als `max_completion_tokens`, weil die
+Schnittstelle `max_tokens` nicht beachtet.
 
 Ein gespeicherter Schlüssel gehört zu seinem Anbieter: Wer im Admin den Anbieter wechselt (anderer Host oder
 bisher kein Anbieter gewählt), muss den Schlüssel des neuen Anbieters eintragen. Einen Schlüssel ohne Anbieter
@@ -856,8 +863,8 @@ Systemeinstellungen. Die KI bleibt nach einem Rückfall auf ein Image vor #950 a
 Ein solches Image kennt weder die Positivliste noch die neuen Vorlagen.
 
 - Eine Organisation mit eigenem Schlüssel, deren Anbieter leer ist (nach `tenants/0027`) oder eine Vorlage
-  ohne eingetragene Basis-URL (etwa STACKIT oder Scaleway), schickt Schlüssel und Inhalte an Nebius, auch
-  ohne `NEBIUS_API_KEY`.
+  ohne eingetragene Basis-URL (etwa STACKIT, Scaleway oder DeutschlandGPT), schickt Schlüssel und Inhalte an
+  Nebius, auch ohne `NEBIUS_API_KEY`.
 - Eine eingetragene Basis-URL (Organisation oder KI-Einstellungen) nutzt es ohne Prüfung gegen
   `KI_ERLAUBTE_HOSTS`.
 - KI-Assistent und Zusammenfassung im Bürgerportal nutzen Nebius, sobald `NEBIUS_API_KEY` in der Umgebung

@@ -5,12 +5,13 @@ Eine Konfiguration für jeden KI-Aufruf (Issue #950).
 Schreibhilfe und Co-Editor in Work, Zusammenfassung, Bürger-Chat und KI-Verortung im Bürgerportal holen ihren
 Endpunkt nur hier: ``endpunkt_fuer_work()`` bzw. ``endpunkt_fuer_insight()``. Anbieter, Basis-URL, Modell und
 Schlüssel stehen im Admin (KI-Einstellungen, für Work auch je Organisation); die Positivliste erlaubter Hosts
-kommt aus der Umgebung (``KI_ERLAUBTE_HOSTS``, ``mandari_dokumente.ki_hosts``). Es gibt keinen fest
-eingebauten Anbieter und keinen stillen Rückfall: Fehlt etwas oder steht der Host nicht in der Liste, ist die
-KI aus (``None``). Jede Adresse wird bei jedem Aufruf neu geprüft, auch wenn sie direkt in der Datenbank steht.
+kommt aus der Umgebung (``KI_ERLAUBTE_HOSTS``, ``mandari_dokumente.ki_hosts``) und ist ohne Eintrag leer. Es
+gibt keinen fest eingebauten Anbieter und keinen stillen Rückfall: Fehlt etwas oder steht der Host nicht in der
+Liste, ist die KI aus (``None``). Jede Adresse wird bei jedem Aufruf neu geprüft, auch wenn sie direkt in der
+Datenbank steht. Eine Vorlage gibt keinen Host frei; sie füllt nur Anzeigename, Verarbeitungsort und Basis-URL.
 
-Ein Anbieterwechsel ist damit reine Konfiguration: Vorlage oder eigener Endpunkt, Modell und Schlüssel im
-Admin, bei Bedarf der Host in ``KI_ERLAUBTE_HOSTS``.
+Ein Anbieterwechsel ist damit reine Konfiguration: Host in ``KI_ERLAUBTE_HOSTS`` aufnehmen, dann Vorlage oder
+eigener Endpunkt, Modell und Schlüssel im Admin.
 """
 
 from __future__ import annotations
@@ -24,12 +25,7 @@ from urllib.parse import urlsplit
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from mandari_dokumente.ki_hosts import (
-    STANDARD_ERLAUBTE_HOSTS,
-    gepruefter_host,
-    ist_erlaubter_host,
-    normalisiere_host,
-)
+from mandari_dokumente.ki_hosts import gepruefter_host, ist_erlaubter_host, normalisiere_host
 
 if TYPE_CHECKING:
     from apps.tenants.models import Organization
@@ -61,16 +57,25 @@ LAENGENLIMIT_KONTEXT = (
 
 @dataclass(frozen=True)
 class AnbieterVorlage:
-    """Bekannter OpenAI-kompatibler Anbieter: Anzeige, Vertragspartner, Verarbeitungsort, Standard-Basis-URL."""
+    """
+    Bekannter OpenAI-kompatibler Anbieter: Anzeige, Vertragspartner, Verarbeitungsort, Standard-Basis-URL.
+
+    Der Verarbeitungsort erscheint in Einwilligung und Hinweisen; er nennt nur, was eine Quelle des Anbieters
+    belegt (Fundstelle als Kommentar an der Vorlage). ``auch_max_completion_tokens``: Der Anbieter beachtet
+    ``max_tokens`` nicht, die Antwortlänge geht zusätzlich als ``max_completion_tokens`` mit.
+    """
 
     anzeigename: str
     vertragspartner: str
     verarbeitungsort: str
     basis_url: str
+    auch_max_completion_tokens: bool = False
 
 
-#: Vorlagen für die Auswahl im Admin. Nutzbar ist eine Vorlage nur, wenn ihr Host in der Positivliste steht.
+#: Vorlagen für die Auswahl im Admin. Nutzbar ist eine Vorlage nur, wenn ihr Host ausdrücklich in der
+#: Positivliste ``KI_ERLAUBTE_HOSTS`` steht; eine Vorlage allein gibt keinen Host frei.
 ANBIETER_VORLAGEN: dict[str, AnbieterVorlage] = {
+    # Von Sven am 09.10.2026 abgelehnt, nur nach ausdrücklicher Freigabe des Hosts
     "stackit": AnbieterVorlage(
         anzeigename="STACKIT AI Model Serving",
         vertragspartner="STACKIT GmbH & Co. KG",
@@ -81,14 +86,34 @@ ANBIETER_VORLAGEN: dict[str, AnbieterVorlage] = {
     "ionos": AnbieterVorlage(
         anzeigename="IONOS AI Model Hub",
         vertragspartner="IONOS SE",
+        # https://docs.ionos.com/cloud/ai/ai-model-hub/data-handling
         verarbeitungsort="Rechenzentren in Deutschland (EU)",
         basis_url="https://openai.inference.de-txl.ionos.com/v1",
     ),
     "scaleway": AnbieterVorlage(
         anzeigename="Scaleway Generative APIs",
         vertragspartner="Scaleway SAS",
-        verarbeitungsort="Rechenzentren in Frankreich (EU)",
+        # https://www.scaleway.com/en/docs/generative-apis/reference-content/data-privacy/
+        verarbeitungsort="Rechenzentren in Paris, Frankreich (EU)",
         basis_url="https://api.scaleway.ai/v1",
+    ),
+    # Vorbereitet, nicht freigegeben: Die schriftliche Zusage zum Verarbeitungsort steht aus. Der Ort ist bisher
+    # nur eine Angabe des Anbieters (Dokumentation), keine Zusage im Vertrag.
+    "ovh": AnbieterVorlage(
+        anzeigename="OVHcloud AI Endpoints",
+        vertragspartner="OVH GmbH",
+        verarbeitungsort="Rechenzentrum Gravelines, Frankreich (EU) – Angabe des Anbieters",
+        basis_url="https://oai.endpoints.kepler.ai.cloud.ovh.net/v1",
+    ),
+    # Vorbereitet, nicht freigegeben: Schriftliche Zusagen stehen aus. Ort nach dem Auftragsverarbeitungsvertrag
+    # (Anhang III Ziff. 5, deutschlandgpt.de/auftragsverarbeitung). Die Schnittstelle beachtet
+    # ``max_tokens`` nicht; die Antwortlänge geht deshalb zusätzlich als ``max_completion_tokens`` mit.
+    "deutschlandgpt": AnbieterVorlage(
+        anzeigename="DeutschlandGPT Platform API",
+        vertragspartner="DeutschlandGPT GmbH",
+        verarbeitungsort="Speicherung in Deutschland, Verarbeitung in der EU/im EWR – laut AVV des Anbieters",
+        basis_url="https://api.deutschlandgpt.de/v2",
+        auch_max_completion_tokens=True,
     ),
     # Basis-URL, Anzeigename und Verarbeitungsort sind hier Pflicht (Admin-Formular, Auflösung)
     EIGENER: AnbieterVorlage(
@@ -104,12 +129,11 @@ ANBIETER_AUSWAHL: list[tuple[str, str]] = [(key, vorlage.anzeigename) for key, v
 
 
 def erlaubte_hosts() -> tuple[str, ...]:
-    """Positivliste aus den Einstellungen (``KI_ERLAUBTE_HOSTS``); leer gilt der Standard."""
+    """Positivliste aus den Einstellungen (``KI_ERLAUBTE_HOSTS``); leer ist nichts erlaubt."""
     eingestellt: Any = getattr(settings, "KI_ERLAUBTE_HOSTS", None) or ()
     if isinstance(eingestellt, str):
         eingestellt = eingestellt.split(",")
-    hosts = tuple(dict.fromkeys(normalisiere_host(host) for host in eingestellt if str(host).strip()))
-    return hosts or STANDARD_ERLAUBTE_HOSTS
+    return tuple(dict.fromkeys(normalisiere_host(host) for host in eingestellt if str(host).strip()))
 
 
 def vorlage_nutzbar(anbieter: str) -> bool:
@@ -140,6 +164,18 @@ def fremder_host_fuer_vorlage(anbieter: str, url: str) -> bool:
     if not roh or host is None:
         return False
     return gepruefter_host(roh) != host
+
+
+def auch_max_completion_tokens(host: str) -> bool:
+    """
+    Braucht der Host die Antwortlänge zusätzlich als ``max_completion_tokens``?
+
+    Entscheidet der Host, nicht die gewählte Vorlage: Auch ein eigener Endpunkt an diesem Host bekommt die Grenze.
+    """
+    return any(
+        vorlage.auch_max_completion_tokens and vorlage.basis_url and gepruefter_host(vorlage.basis_url) == host
+        for vorlage in ANBIETER_VORLAGEN.values()
+    )
 
 
 def wirksamer_host(anbieter: str, url: str) -> str | None:
@@ -248,6 +284,8 @@ class KiEndpunkt:
     ausweichmodell: str = ""
     #: Obergrenze der Antwortlänge je Aufruf; 0 = keine eigene Grenze
     max_output_tokens: int = 0
+    #: Antwortlänge zusätzlich als ``max_completion_tokens`` schicken (Anbieter beachtet ``max_tokens`` nicht)
+    auch_max_completion_tokens: bool = False
 
     def __repr__(self) -> str:
         return (
@@ -270,6 +308,13 @@ class KiEndpunkt:
         return KiHinweis(
             anbieter=self.anbieter, anzeigename=self.anzeigename, verarbeitungsort=self.verarbeitungsort, host=self.host
         )
+
+    def laengengrenze(self, max_tokens: int) -> dict[str, int]:
+        """Felder der Antwortlänge für die Anfrage: ``max_tokens``, bei Bedarf auch ``max_completion_tokens``."""
+        felder = {"max_tokens": max_tokens}
+        if self.auch_max_completion_tokens:
+            felder["max_completion_tokens"] = max_tokens
+        return felder
 
 
 def _baue_endpunkt(
@@ -324,6 +369,7 @@ def _baue_endpunkt(
         modell=modell.strip(),
         ausweichmodell=(ausweichmodell or "").strip(),
         max_output_tokens=max(0, int(max_output_tokens or 0)),
+        auch_max_completion_tokens=auch_max_completion_tokens(gepruefter_host(geprueft) or ""),
     )
 
 

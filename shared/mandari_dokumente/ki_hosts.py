@@ -6,10 +6,11 @@ Verortung im Bürgerportal, Texterkennung) geht nur an einen Host dieser Liste. 
 Sperre neben dem Vertrag: Auch ein im Admin oder direkt in der Datenbank eingetragener Endpunkt wirkt nur,
 wenn sein Host hier steht.
 
-``KI_ERLAUBTE_HOSTS`` (kommagetrennte Hostnamen) ersetzt den Standard, wenn sie gesetzt ist; leer gilt der
-Standard. Verglichen wird der Hostname exakt (ohne Groß-/Kleinschreibung und ohne Punkt am Ende), nie über
-Präfix oder Suffix. Erlaubt sind nur ``https``-Adressen ohne Zugangsdaten in der Adresse und ohne anderen
-Port als 443.
+``KI_ERLAUBTE_HOSTS`` (kommagetrennte Hostnamen) ist die ganze Liste; leer ist nichts erlaubt. Es gibt keinen
+eingebauten Anbieter (``STANDARD_ERLAUBTE_HOSTS`` ist leer): Ohne Freigabe in der Umgebung geht kein KI-Aufruf
+nach außen (fail-closed). Verglichen wird der Hostname exakt (ohne Groß-/Kleinschreibung und ohne Punkt am
+Ende), nie über Präfix oder Suffix. Erlaubt sind nur ``https``-Adressen ohne Zugangsdaten in der Adresse und
+ohne anderen Port als 443.
 """
 
 from __future__ import annotations
@@ -19,8 +20,9 @@ import re
 from collections.abc import Iterable
 from urllib.parse import urlsplit
 
-#: Standard der Positivliste: STACKIT AI Model Serving (Rechenzentren in Deutschland und Österreich)
-STANDARD_ERLAUBTE_HOSTS: tuple[str, ...] = ("api.openai-compat.model-serving.eu01.onstackit.cloud",)
+#: Standard der Positivliste: leer, also nichts erlaubt. Ein Anbieter wirkt erst, wenn sein Host ausdrücklich in
+#: ``KI_ERLAUBTE_HOSTS`` steht; auch eine Vorlage in ``apps.common.ki_anbieter`` gibt keinen Host frei.
+STANDARD_ERLAUBTE_HOSTS: tuple[str, ...] = ()
 
 #: Name der Umgebungsvariable (Anwendung und Ingestor)
 UMGEBUNGSVARIABLE = "KI_ERLAUBTE_HOSTS"
@@ -38,11 +40,10 @@ def erlaubte_hosts_aus_umgebung(wert: str | None = None) -> tuple[str, ...]:
     """
     Positivliste aus ``KI_ERLAUBTE_HOSTS`` (oder aus ``wert``, etwa aus den Einstellungen des Ingestors).
 
-    Gesetzt ersetzt sie den Standard; leer oder nur aus Trennzeichen gilt ``STANDARD_ERLAUBTE_HOSTS``.
+    Leer, nicht gesetzt oder nur aus Trennzeichen ergibt eine leere Liste: Dann ist kein Host erlaubt.
     """
     roh = os.environ.get(UMGEBUNGSVARIABLE, "") if wert is None else wert
-    hosts = tuple(dict.fromkeys(host for host in (normalisiere_host(teil) for teil in roh.split(",")) if host))
-    return hosts or STANDARD_ERLAUBTE_HOSTS
+    return tuple(dict.fromkeys(host for host in (normalisiere_host(teil) for teil in roh.split(",")) if host))
 
 
 def gepruefter_host(url: str) -> str | None:

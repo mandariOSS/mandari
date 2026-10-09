@@ -4,7 +4,9 @@ KI im Bürgerportal nur über die zentrale KI-Konfiguration (Issue #950).
 
 Zusammenfassung, KI-Assistent und KI-Verortung holen ihren Anbieter aus ``get_insight_provider``; ohne
 Einrichtung keine Anfrage. Die Einwilligung im KI-Assistenten nennt Anbieter und Verarbeitungsort aus der
-Konfiguration, gilt nur für diesen Anbieter, und ohne Endpunkt gibt es keinen Chat.
+Konfiguration, gilt nur für diesen Anbieter, und ohne Endpunkt gibt es keinen Chat. Die Positivliste hat keinen
+Standard: Ohne Host in ``KI_ERLAUBTE_HOSTS`` stellt keiner der drei Dienste eine Anfrage; die übrigen Tests
+geben den Beispiel-Host ausdrücklich frei (Fixture ``_freigabe``).
 """
 
 from __future__ import annotations
@@ -30,12 +32,19 @@ from insight_core.services import georeferencing
 pytestmark = pytest.mark.django_db
 
 SCHLUESSEL = "buergerportal-testschluessel-geheim-0123456789"
-CHAT = "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1/chat/completions"
+STACKIT_HOST = "api.openai-compat.model-serving.eu01.onstackit.cloud"
+CHAT = f"https://{STACKIT_HOST}/v1/chat/completions"
 
 
 @pytest.fixture(autouse=True)
 def _frischer_cache() -> None:
     cache.delete(AISettings.CACHE_KEY)
+
+
+@pytest.fixture(autouse=True)
+def _freigabe(settings: Any) -> None:
+    """Die Positivliste hat keinen Standard: Die Tests geben den Beispiel-Host ausdrücklich frei."""
+    settings.KI_ERLAUBTE_HOSTS = [STACKIT_HOST]
 
 
 @pytest.fixture
@@ -146,6 +155,36 @@ class TestAnbieterAusDerKonfiguration:
         for modul in (summarizer, chat_service):
             assert not hasattr(modul, "NebiusProvider")
             assert hasattr(modul, "get_insight_provider")
+
+
+class TestOhneFreigabeliste:
+    """Vollständig eingerichtet und eingeschaltet, aber KI_ERLAUBTE_HOSTS leer: keine Anfrage, kein Chat."""
+
+    @pytest.fixture(autouse=True)
+    def _leer(self, settings: Any, db: Any) -> None:
+        settings.KI_ERLAUBTE_HOSTS = []
+        _einrichten()
+
+    def test_zusammenfassung(self) -> None:
+        dienst = summarizer.SummaryService()
+        assert isinstance(dienst.provider, NichtEingerichtet) and dienst.is_available() is False
+
+    def test_assistent(self, anfragen: list[httpx.Request]) -> None:
+        with pytest.raises(ValueError, match="nicht eingerichtet"):
+            chat_service.process_chat_message("Was ist geplant?", [], None)
+        assert anfragen == []
+
+    def test_verortung(self, anfragen: list[httpx.Request]) -> None:
+        assert georeferencing.extract_locations_with_ai("Ausbau der Hauptstraße", "Beispielstadt") == []
+        assert anfragen == []
+
+    def test_chatseite_und_schnittstelle(self, besucher: Client, anfragen: list[httpx.Request]) -> None:
+        inhalt = besucher.get(reverse("insight_core:insight:chat")).content.decode()
+        assert "nicht eingerichtet" in inhalt and "chatApp()" not in inhalt
+        api = reverse("insight_core:insight:chat_message")
+        assert besucher.post(api, {"consent": True}, content_type="application/json").status_code == 503
+        assert besucher.post(api, {"message": "Hallo"}, content_type="application/json").status_code == 503
+        assert anfragen == []
 
 
 class TestEinwilligung:
