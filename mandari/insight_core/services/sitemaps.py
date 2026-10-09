@@ -162,7 +162,8 @@ def _dateien_berechnen(art: Art, body_id: Any) -> list[Datei]:
         .values_list("seite", "geaendert")
     )
     innen, parameter = nummeriert.query.sql_with_params()
-    sql = f"SELECT seite, COUNT(*), MAX(geaendert) FROM ({innen}) nummeriert GROUP BY seite ORDER BY seite"  # noqa: S608 – innere Abfrage vom ORM, Werte als Parameter
+    # Innere Abfrage vom ORM, Werte als Parameter
+    sql = f"SELECT seite, COUNT(*), MAX(geaendert) FROM ({innen}) nummeriert GROUP BY seite ORDER BY seite"  # noqa: S608
     with connection.cursor() as cursor:
         cursor.execute(sql, parameter)
         zeilen = cursor.fetchall()
