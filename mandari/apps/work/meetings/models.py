@@ -211,8 +211,13 @@ class AgendaItemPosition(EncryptionMixin, models.Model):
     class Meta:
         verbose_name = "TOP-Position"
         verbose_name_plural = "TOP-Positionen"
-        # Phase 1: alte unique_together bleibt, wird in Phase 3 geändert
         ordering = ["agenda_item__number"]
+        # Eine Position je Organisation und TOP: Ohne die Bedingung konnten zwei gleichzeitige Erst-Saves zwei Zeilen
+        # anlegen, danach scheiterte jedes Speichern mit MultipleObjectsReturned (#926). Zeilen ohne Organisation
+        # (Altlast vor work.0038) fallen nicht darunter, weil NULL in der Bedingung nie gleich ist.
+        constraints = [
+            models.UniqueConstraint(fields=["organization", "agenda_item"], name="agendaitemposition_org_item_unique"),
+        ]
 
     def __str__(self):
         org = self.organization.name if self.organization_id else "?"
