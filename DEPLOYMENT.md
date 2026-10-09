@@ -195,6 +195,8 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
   (Abschnitt „Sicherung“)
 - [ ] Worker läuft (`docker compose ps worker` „healthy“), `python manage.py events_scheduler --list`
   zeigt die Zeitpläne (Abschnitt „Geplante Aufgaben“); in der Crontab nur Aufgaben des Betriebssystems
+- [ ] Testmail aus den Systemeinstellungen: Message-ID endet auf die eigene Domain, nicht auf eine
+  Container-ID (Abschnitt „Mailversand: Message-ID und EHLO“)
 
 ---
 
@@ -398,6 +400,32 @@ aus #256:
 
 Listen- und Detailseiten lagen vorher wie nachher bei 10–50 ms; sie sind durch
 die Umstellung nicht langsamer geworden.
+
+## ✉️ Mailversand: Message-ID und EHLO
+
+Jede Mail trägt eine Message-ID der Form `<…@domain>`, und beim Verbindungsaufbau meldet sich mandari
+beim Mailserver mit einem Namen (EHLO). Django nähme dafür den Rechnernamen, in einem Container also die
+Container-ID. Spamfilter werten eine Message-ID ohne vollständigen Domainnamen ab (rspamd
+`MID_RHS_NOT_FQDN`). mandari setzt den Namen deshalb beim Start jedes Prozesses (Anwendung, Worker,
+Verwaltungsbefehle) für alle Versandwege: Systemeinstellungen, `EMAIL_*`, eigenes SMTP einer Organisation.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `EMAIL_MESSAGE_ID_DOMAIN` | vollständiger Domainname für Message-ID und EHLO, z. B. `example.com`; leer (Standard) = Domain von `DEFAULT_FROM_EMAIL`, sonst Host aus `SITE_URL` |
+
+- Steht in den Systemeinstellungen eine Absenderadresse mit anderer Domain als `DEFAULT_FROM_EMAIL`, diese
+  Domain in `EMAIL_MESSAGE_ID_DOMAIN` eintragen. Gelesen wird der Wert beim Start; nach einer Änderung
+  Anwendung und Worker neu starten.
+- Ein ungültiger Wert (ohne Punkt, mit `@`, IP-Adresse) hält nichts an: mandari versendet mit dem Wert, der
+  ohne die Einstellung gälte, und die Systemprüfung warnt bei jedem Verwaltungsbefehl (`common.W001`).
+  Liefert auch der keinen vollständigen Domainnamen, warnt sie ebenso (`common.W002`). Prüfen mit
+  `python manage.py check`.
+- Prüfen: Testmail aus den Systemeinstellungen an ein eigenes Postfach senden und im Quelltext der Mail
+  `Message-ID:` ansehen. Für die Zustellbarkeit insgesamt helfen ein Test bei mail-tester.com und Testmails
+  an Gmail- und Microsoft-365-Postfächer (Kopfzeile `Authentication-Results`: SPF, DKIM und DMARC `pass`).
+- DMARC: Mit `p=none` beginnen und Aggregatberichte (`rua=`) auswerten. Zeigen sie nur noch eigene,
+  legitime Absender, auf `p=quarantine` und später `p=reject` umstellen.
+- HTML-Mails verstecken nur den Vorschautext (Preheader) im Posteingang, und nur, wenn er Inhalt hat.
 
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 

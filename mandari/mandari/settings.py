@@ -946,6 +946,10 @@ SMTP_FALLBACK = {
 
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@mandari.de")
 SERVER_EMAIL = os.environ.get("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+# Domain hinter dem @ der Message-ID und Name im EHLO gegenüber dem Mailserver (Issue #957). Django nähme
+# socket.getfqdn(), im Container die Container-ID. Leer = Domain von DEFAULT_FROM_EMAIL, sonst Host aus
+# SITE_URL. Gesetzt beim Start in apps.common.mail_domain (gilt für alle Versandwege).
+EMAIL_MESSAGE_ID_DOMAIN = os.environ.get("EMAIL_MESSAGE_ID_DOMAIN", "").strip()
 
 # Mail-Dienst (apps.common.mail, Issue #528): Mailarten, die als Auftrag (Warteschlange "mail") statt in
 # der Anfrage versendet werden – kommagetrennte Muster wie "work.*,konto.passwort" oder "*" für alle.
