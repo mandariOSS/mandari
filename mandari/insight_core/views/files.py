@@ -237,7 +237,8 @@ def file_proxy(request, file_id):
 
     Jeder Abruf zählt im Zugriffsprotokoll (Treffer, Abruf bei der Quelle, Fehler, Sperre; #786),
     Folgeanfragen eines Abrufs in Teilen (Range) nicht. Ausgelieferte Dokumente vermerken ihre letzte
-    Nutzung (höchstens stündlich): Danach richtet sich die Verdrängung unter der Obergrenze (#961).
+    Nutzung (höchstens stündlich, nicht für erkennbare Crawler): Danach richtet sich die Verdrängung unter der
+    Obergrenze (#961).
     """
     file_obj = get_object_or_404(
         OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
@@ -249,7 +250,10 @@ def file_proxy(request, file_id):
         if file_access.counts_as_access(request):
             file_access.record(file_obj, file_access.FAILED)
         raise
-    if file_access.outcome_of(response) in (file_access.HIT, file_access.MISS):
+    # Erkennbare Crawler bestimmen die Rangfolge nicht (#961)
+    if file_access.outcome_of(response) in (file_access.HIT, file_access.MISS) and file_cache_limit.counts_as_use(
+        request
+    ):
         file_cache_limit.mark_used(file_obj)
     return file_access.record_response(file_obj, response, request)
 

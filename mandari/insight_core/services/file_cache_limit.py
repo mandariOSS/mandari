@@ -25,9 +25,21 @@ legte die neuesten Dokumente zuerst ab, sie wären sonst zuerst verdrängt worde
 
 **Nie verdrängt** werden Inhalte, deren Text gerade erkannt wird (``pending``/``processing``: die Erkennung liest die
 lokale Kopie), Kopien aus der letzten Stunde und – ohne Objektspeicher – Dokumente, die sich nicht neu abrufen
-ließen: Quelle in Schonung, Dateiabruf abgeschaltet, synthetische Quelle (Domäne ``.invalid``, etwa die Demo) oder
-keine Download-Adresse. Gesperrte Dokumente (Löschabgleich, #787) behandelt die Grenze wie alle anderen; ihre
-Sperre, Frist und Löschung bleiben, wie sie sind.
+ließen: Quelle in Schonung, Dateiabruf abgeschaltet, synthetische Quelle (Domäne ``.invalid``, etwa die Demo), keine
+Download-Adresse oder eine Quelle, die Dateiabrufe verweigert (robots.txt sperrt Dateien, Dokumente mit
+HTTP 401/403, siehe ``refusing_sources``). Gesperrte Dokumente (Löschabgleich, #787) behandelt die Grenze wie alle
+anderen; ihre Sperre, Frist und Löschung bleiben, wie sie sind.
+
+**Moduswechsel:** Liegen Inhalte laut Datenbank im Objektspeicher (``remote_at``), ist er hier aber nicht
+konfiguriert (``OBJ_ENABLED=false`` im Worker, ein Container ohne ``OBJ_*``), setzt die Grenze aus und meldet das
+(``Result.aborted``): Freigegebene Inhalte würden verwaisen, und das nächste Aufräumen mit Objektspeicher löschte sie
+dort. Ein Handlauf kann ausdrücklich ohne Objektspeicher weitermachen (``without_object_storage``); Inhalte mit
+``remote_at`` bleiben auch dann unangetastet (Grund ``im_objektspeicher``), sie verwaisen nie.
+
+**Prüfung im Objektspeicher** (``verify_remote``, ``prune_file_cache --pruefe-objektspeicher``): Vor dem Löschen einer
+lokalen Kopie fragt ``HEAD`` nach, ob der Inhalt mit seiner Größe im Objektspeicher liegt. Fehlt er, bleibt die Kopie,
+und ``remote_at`` wird zurückgesetzt, damit ``dokumentablage --hochladen`` ihn erneut überträgt. Im Probelauf werden
+alle oder eine Stichprobe der Inhalte geprüft, die gingen; geändert wird dabei nichts.
 
 **Belegung:** Inhalte unter ``<OPARL_FILES_ROOT>/sha256/<ab>/`` auf der Platte (ohne Teil-Downloads) plus Kopien im
 alten Layout je Kommune (Größe aus der Datenbank). Gelöscht wird nur unterhalb von ``OPARL_FILES_ROOT`` und nie über
@@ -44,6 +56,7 @@ from __future__ import annotations
 import heapq
 import logging
 import os
+import random
 import re
 import stat
 from collections import Counter
@@ -56,7 +69,7 @@ from urllib.parse import urlparse
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Case, Count, IntegerField, Max, Q, Sum, Value, When
+from django.db.models import Case, Count, Exists, IntegerField, Max, OuterRef, Q, Sum, Value, When
 from django.db.models.functions import Coalesce, Greatest
 from django.utils import timezone
 
@@ -82,6 +95,20 @@ LOCK_TTL = 3000
 
 MODE_REMOTE = "objektspeicher"
 MODE_RELEASE = "freigeben"
+
+#: Grund, aus dem ein Inhalt ohne konfigurierten Objektspeicher bleibt: Er liegt dort (``remote_at``) und verwaist nie
+PROTECT_REMOTE = "im_objektspeicher"
+#: Fehler, mit denen eine Quelle Dokumentabrufe verweigert (``local_error`` aus ``file_cache.fetch_and_cache``)
+REFUSED_ERRORS = ("HTTP 401", "HTTP 403")
+#: Kennungen von Crawlern und Abrufprogrammen im User-Agent: Ihre Abrufe zählen nicht als Nutzung
+_CRAWLER = re.compile(
+    r"bot|crawl|spider|slurp|scrap|facebookexternalhit|meta-external|anthropic-ai|claude-web|cohere-ai"
+    r"|googleother|google-extended|google-inspectiontool|mediapartners-google|feedfetcher"
+    r"|python-requests|python-httpx|python-urllib|aiohttp|go-http-client|okhttp|curl/|wget/|libwww-perl",
+    re.IGNORECASE,
+)
+#: Nur so viel des User-Agents wird geprüft (die Kopfzeile kommt vom Client)
+_UA_MAX = 512
 
 _KIND_BLOB = 0
 _KIND_LEGACY = 1
@@ -136,9 +163,32 @@ def mode() -> str:
     return MODE_REMOTE if object_storage.enabled() and file_store.uses_blobs() else MODE_RELEASE
 
 
+def remote_without_storage() -> int:
+    """
+    Inhalte, auf die Dokumente verweisen und die laut Datenbank im Objektspeicher liegen, obwohl er hier nicht
+    konfiguriert ist (0 mit Objektspeicher). Mehr als 0 heißt: stiller Moduswechsel, die Grenze setzt aus.
+    """
+    from ..models import OParlFile, OParlFileBlob
+
+    if mode() == MODE_REMOTE:
+        return 0
+    referenced = Exists(OParlFile.objects.filter(blob_id=OuterRef("pk")))
+    return OParlFileBlob.objects.filter(referenced, remote_at__isnull=False).count()
+
+
 # =============================================================================
 # Nutzung vermerken
 # =============================================================================
+
+
+def is_crawler(user_agent: str | None) -> bool:
+    """Erkennbarer Crawler oder Abrufprogramm (``bot``, ``crawler``, ``spider``, GPTBot, ClaudeBot, Bytespider …)?"""
+    return bool(user_agent) and _CRAWLER.search(str(user_agent)[:_UA_MAX]) is not None
+
+
+def counts_as_use(request: Any) -> bool:
+    """Zählt diese Auslieferung für die Rangfolge? Nicht für erkennbare Crawler: Sie sollen sie nicht bestimmen."""
+    return not is_crawler((getattr(request, "META", None) or {}).get("HTTP_USER_AGENT", ""))
 
 
 def mark_used(file_obj: Any, now: datetime | None = None) -> None:
@@ -259,18 +309,75 @@ def _synthetic(url: str | None) -> bool:
     return (urlparse(url or "").hostname or "").endswith(".invalid")
 
 
-def unrefetchable_bodies() -> list[Any]:
-    """Kommunen, deren Dokumente sich gerade nicht neu abrufen ließen (Schonung, kein Dateiabruf, synthetisch)."""
-    from ..models import OParlBody, OParlSource
+def paused_sources() -> set[Any]:
+    """Quellen, die gerade nicht angefragt werden (Schonung, Dateiabruf abgeschaltet) oder synthetisch sind."""
+    from ..models import OParlSource
 
     sources = set(file_cache.sources_without_downloads())
     sources.update(
         OParlSource.objects.filter(consecutive_failures__gte=file_cache.backoff_failures()).values_list("pk", flat=True)
     )
     sources.update(pk for pk, url in OParlSource.objects.values_list("pk", "url") if _synthetic(url))
+    return sources
+
+
+def refusing_sources() -> set[Any]:
+    """
+    Quellen, die Dateiabrufe verweigern, ohne in Schonung zu sein (die Schnittstelle antwortet, die Dokumente nicht):
+
+    * Dokumente mit Vermerk der robots.txt (Cache: ``local_error``, Texterkennung: ``skipped``); eine Freigabe
+      (``robots_override``) reiht sie neu ein und hebt damit auch den Schutz auf,
+    * die robots.txt im gemeinsamen Cache sperrt eine Beispieladresse der Quelle (eine abgelegte Datei); ohne
+      Eintrag im Cache gibt es keine Entscheidung, angefragt wird hier nie,
+    * Dokumente, deren Abruf mit HTTP 401 oder 403 endete (etwa PDFs hinter einer Sperre).
+
+    Bewusst grob: Ein einziges solches Dokument schützt die ganze Quelle. Ohne Objektspeicher wäre eine verdrängte
+    Kopie sonst womöglich verloren; ``cache_files --retry-errors`` hebt den Schutz auf, sobald die Quelle wieder liefert.
+    """
+    from ..models import OParlFile, OParlSource
+    from . import robots
+
+    refused = Q(local_status="error") & (
+        Q(local_error__startswith=robots.SKIP_ERROR_PREFIX) | Q(local_error__in=REFUSED_ERRORS)
+    )
+    refused |= Q(text_extraction_status="skipped", text_extraction_error__startswith=robots.SKIP_ERROR_PREFIX)
+    sources: set[Any] = set(
+        OParlFile.objects.filter(refused).values_list("body__source_id", flat=True).distinct().order_by()
+    )
+    samples = dict(
+        OParlFile.objects.filter(local_status="ok", body__source_id__isnull=False)
+        .exclude(download_url__isnull=True)
+        .exclude(download_url="")
+        .values("body__source_id")
+        .annotate(url=Max("download_url"))
+        .order_by()
+        .values_list("body__source_id", "url")
+    )
+    for source in OParlSource.objects.filter(pk__in=list(samples)).only("pk", "sync_config"):
+        if source.pk in sources:
+            continue
+        url = samples[source.pk]
+        decision = robots.cached_check(
+            url, robots.KIND_FILES, sync_config=source.sync_config, agent=robots.user_agent_for(source)
+        )
+        if decision is not None and decision.blocked:
+            sources.add(source.pk)
+    sources.discard(None)
+    return sources
+
+
+def _bodies_of(sources: set[Any]) -> list[Any]:
+    from ..models import OParlBody
+
     if not sources:
         return []
     return list(OParlBody.objects.filter(source_id__in=sources).values_list("pk", flat=True))
+
+
+def unrefetchable_bodies() -> list[Any]:
+    """Kommunen, deren Dokumente sich gerade nicht neu abrufen ließen (Schonung, kein Dateiabruf, synthetisch,
+    Abrufe verweigert)."""
+    return _bodies_of(paused_sources() | refusing_sources())
 
 
 def _no_url_q() -> Q:
@@ -359,6 +466,9 @@ def _protection(row: dict[str, Any], run_mode: str, now: datetime) -> str | None
         return "frisch"
     if run_mode == MODE_REMOTE and row["kind"] == _KIND_BLOB:
         return None if row["remote"] is not None else "nicht_hochgeladen"
+    if row["remote"] is not None:
+        # Ohne konfigurierten Objektspeicher: Der Inhalt liegt dort und darf nie verwaisen (Moduswechsel)
+        return PROTECT_REMOTE
     if row["blocked"]:
         return "nicht_abrufbar"
     return None
@@ -432,6 +542,12 @@ class Result:
     disabled: bool = False
     #: ein anderer Lauf hält die Sperre
     locked: bool = False
+    #: Inhalte im Objektspeicher (``remote_at``), obwohl er hier nicht konfiguriert ist (stiller Moduswechsel)
+    remote_conflict: int = 0
+    #: Lauf ausgesetzt: Moduswechsel ohne ausdrückliche Zustimmung (``without_object_storage``)
+    aborted: bool = False
+    #: Prüfung im Objektspeicher per ``HEAD``: vorhanden, fehlt, Größe weicht ab
+    verified: Counter[str] = field(default_factory=Counter)
 
     @property
     def reached(self) -> bool:
@@ -445,36 +561,70 @@ class _Run:
     roots: _Roots
     unrefetchable: set[Any]
     lock: Sperre | None
+    #: Quellen, die Dateiabrufe verweigern (einmal je Lauf ermittelt, ``refusing_sources``)
+    refusing: set[Any] = field(default_factory=set)
     names: dict[Any, str] = field(default_factory=dict)
+    #: vor dem Löschen einer lokalen Kopie im Objektspeicher nachfragen
+    verify: bool = False
+    #: Probelauf mit Prüfung: Inhalte, die gingen (Schlüssel, Größe)
+    candidates: list[tuple[str, int]] = field(default_factory=list)
 
 
 def enforce(
-    *, max_bytes: int | None = None, dry_run: bool = False, now: datetime | None = None, batch: int = BATCH
+    *,
+    max_bytes: int | None = None,
+    dry_run: bool = False,
+    now: datetime | None = None,
+    batch: int = BATCH,
+    without_object_storage: bool = False,
+    verify_remote: bool = False,
+    sample: int = 0,
 ) -> Result:
     """
     Belegung auf ``FILE_CACHE_EVICT_TARGET_PERCENT`` der Grenze bringen, sobald sie die Grenze überschreitet.
 
     ``max_bytes`` ersetzt ``FILE_CACHE_MAX_TOTAL_GB`` (Handlauf, ``prune_file_cache --max-gb``). Mit ``dry_run`` wird
     nur berechnet, was ginge.
+
+    ``without_object_storage``: weitermachen, obwohl Inhalte im Objektspeicher liegen, der hier nicht konfiguriert
+    ist (sonst setzt der Lauf aus); diese Inhalte bleiben trotzdem. ``verify_remote``: mit Objektspeicher vor dem
+    Löschen jeder lokalen Kopie per ``HEAD`` nachfragen; im Probelauf alle bzw. ``sample`` zufällig gewählte Inhalte.
     """
     limit = limit_bytes() if max_bytes is None else max(int(max_bytes), 0)
     result = Result(mode=mode(), limit=limit, target=target_bytes(limit), dry_run=dry_run)
     if not limit:
         result.disabled = True
         return result
+    result.remote_conflict = remote_without_storage()
+    if result.remote_conflict and not without_object_storage:
+        result.aborted = True
+        result.before = result.after = usage_bytes()
+        logger.error(
+            "Obergrenze des Dokument-Caches ausgesetzt: %s Inhalte liegen laut Datenbank im Objektspeicher, "
+            "der hier nicht konfiguriert ist (OBJ_ENABLED, OBJ_*)",
+            result.remote_conflict,
+        )
+        return result
     lock = None if dry_run else Sperre(LOCK_NAME, LOCK_TTL)
     if lock is not None and not lock.erwerben():
         result.locked = True
         return result
     try:
-        _enforce(result, now or timezone.now(), max(1, batch), lock)
+        _enforce(
+            result,
+            now or timezone.now(),
+            max(1, batch),
+            lock,
+            verify=verify_remote and result.mode == MODE_REMOTE,
+            sample=max(int(sample), 0),
+        )
     finally:
         if lock is not None:
             lock.freigeben()
     return result
 
 
-def _enforce(result: Result, now: datetime, batch: int, lock: Sperre | None) -> None:
+def _enforce(result: Result, now: datetime, batch: int, lock: Sperre | None, *, verify: bool, sample: int) -> None:
     result.before = result.after = usage_bytes()
     if result.before <= result.limit:
         return
@@ -482,8 +632,17 @@ def _enforce(result: Result, now: datetime, batch: int, lock: Sperre | None) -> 
     if roots is None:
         result.skipped["unsicher"] += 1
         return
-    unrefetchable = unrefetchable_bodies()
-    run = _Run(result=result, now=now, roots=roots, unrefetchable=set(unrefetchable), lock=lock)
+    refusing = refusing_sources()
+    unrefetchable = _bodies_of(paused_sources() | refusing)
+    run = _Run(
+        result=result,
+        now=now,
+        roots=roots,
+        unrefetchable=set(unrefetchable),
+        lock=lock,
+        refusing=refusing,
+        verify=verify,
+    )
     to_free = result.before - result.target
     pending: list[tuple[dict[str, Any], Path, int]] = []
     planned = 0
@@ -507,6 +666,8 @@ def _enforce(result: Result, now: datetime, batch: int, lock: Sperre | None) -> 
     if pending:
         _apply(run, pending)
     result.after = result.before - result.freed
+    if run.verify and result.dry_run:
+        _verify_candidates(run, sample)
 
 
 def _apply(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> bool:
@@ -516,7 +677,11 @@ def _apply(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> bool:
     ok = True
     if run.result.dry_run:
         _count_planned(run, blobs, legacy)
+        if run.verify:
+            run.candidates.extend((row["key"], size) for row, _, size in blobs)
     else:
+        # Schonung und abgeschalteter Dateiabruf können sich seit der Planung geändert haben: je Stapel neu lesen
+        run.unrefetchable = set(_bodies_of(paused_sources() | run.refusing))
         if blobs:
             ok = _evict_local(run, blobs) if run.result.mode == MODE_REMOTE else _release_blobs(run, blobs)
         if legacy and ok:
@@ -577,10 +742,59 @@ def _count_planned(
         _count(run, [legacy_bodies[row["key"]]] if row["key"] in legacy_bodies else [], size)
 
 
+def _remote_state(sha256: str, expected: int | None) -> str:
+    """Liegt der Inhalt im Objektspeicher (``HEAD``)? ``vorhanden``, ``fehlt`` oder ``groesse_abweichend``."""
+    size = object_storage.remote_size(sha256)
+    if size is None:
+        return "fehlt"
+    if expected is not None and size != expected:
+        return "groesse_abweichend"
+    return "vorhanden"
+
+
+def _verify_candidates(run: _Run, sample: int) -> None:
+    """Probelauf: alle bzw. eine zufällige Stichprobe der Inhalte, die gingen, im Objektspeicher nachfragen."""
+    from ..models import OParlFileBlob
+
+    chosen = run.candidates
+    if sample and len(chosen) > sample:
+        chosen = random.sample(chosen, sample)
+    for start in range(0, len(chosen), BATCH):
+        part = chosen[start : start + BATCH]
+        sizes = dict(OParlFileBlob.objects.filter(pk__in=[key for key, _ in part]).values_list("pk", "size"))
+        for key, local in part:
+            try:
+                run.result.verified[_remote_state(key, sizes.get(key, local))] += 1
+            except Exception:
+                logger.warning("Objektspeicher nicht erreichbar, Prüfung abgebrochen", exc_info=True)
+                run.result.verified["fehler"] += 1
+                return
+
+
 def _evict_local(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> bool:
     """Mit Objektspeicher: nur die lokale Kopie löschen, die Dokumente behalten ihre Referenz."""
+    from ..models import OParlFileBlob
+
     bodies = _blob_bodies([row["key"] for row, _, _ in items])
+    sizes: dict[str, int] = {}
+    if run.verify:
+        sizes = dict(OParlFileBlob.objects.filter(pk__in=list(bodies)).values_list("pk", "size"))
     for row, path, size in items:
+        if run.verify:
+            try:
+                state = _remote_state(row["key"], sizes.get(row["key"], size))
+            except Exception:
+                logger.warning("Objektspeicher nicht erreichbar: Verdrängen abgebrochen", exc_info=True)
+                run.result.verified["fehler"] += 1
+                run.result.skipped["fehler"] += 1
+                return False
+            run.result.verified[state] += 1
+            if state != "vorhanden":
+                # Die lokale Kopie ist womöglich die einzige: sie bleibt; fehlt der Inhalt, lädt --hochladen ihn neu
+                if state == "fehlt":
+                    OParlFileBlob.objects.filter(pk=row["key"]).update(remote_at=None)
+                _skip(run, "nicht_im_objektspeicher")
+                continue
         try:
             path.unlink()
         except FileNotFoundError:
@@ -654,12 +868,18 @@ def _release_blobs(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> 
             _skip(run, "gesperrt", len(planned) - len(locked))
             evict: list[str] = []
             for key in locked:
+                if locked[key] is not None:
+                    # Inzwischen (oder aus früherem Betrieb) im Objektspeicher: nie verwaisen lassen, sonst löschte
+                    # ihn das nächste Aufräumen mit eingeschaltetem Objektspeicher dort
+                    _skip(run, PROTECT_REMOTE)
+                    continue
                 rows = files[key]
-                if not rows:
+                count = actual.get(key, 0)
+                if not count:
                     # Kein Verweis mehr: das Aufräumen verwaister Inhalte löscht ihn
                     _skip(run, "ohne_verweis")
                     continue
-                if len(rows) != actual.get(key, 0):
+                if len(rows) != count:
                     # Eine Datei des Inhalts wird gerade geändert (gesperrte Zeile): beim nächsten Lauf
                     _skip(run, "gesperrt")
                     continue
@@ -673,13 +893,8 @@ def _release_blobs(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> 
             OParlFile.objects.filter(pk__in=[row["pk"] for key in evict for row in files[key]]).update(
                 blob=None, local_path=None, local_size=None, local_status=EVICTED, local_error=""
             )
-            # Liegt der Inhalt (aus früherem Betrieb) im Objektspeicher, löscht ihn dort das Aufräumen
-            remote = [key for key in evict if locked[key] is not None]
-            if remote:
-                OParlFileBlob.objects.filter(pk__in=remote).update(ref_count=0, orphaned_at=run.now)
-            gone = [key for key in evict if locked[key] is None]
-            if gone:
-                OParlFileBlob.objects.filter(pk__in=gone).delete()
+            # Kein Dokument verweist mehr auf diese Inhalte, keiner liegt im Objektspeicher: Zeile und Datei gehen
+            OParlFileBlob.objects.filter(pk__in=evict, remote_at__isnull=True).delete()
             # Löschen, solange die Sperre gilt: Wer den Inhalt gleich wieder ablegt, findet die Datei nicht mehr vor
             for key in evict:
                 _unlink(planned[key][1])

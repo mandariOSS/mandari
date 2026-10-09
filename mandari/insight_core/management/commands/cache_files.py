@@ -88,9 +88,21 @@ class Command(EinmaligMixin, BaseCommand):
         self._print_stats(cache_stats())
 
     def _print_stats(self, stats):
+        gb = 1024**3
+        if stats.get("object_storage"):
+            # Mit Objektspeicher liegt nur ein Teil lokal: Platte und Objektspeicher getrennt ausweisen (#961)
+            belegung = (
+                f"{stats['ok']} von {stats['total']} Dokumenten abgelegt ({stats['coverage']} %), "
+                f"lokal {stats['local_bytes'] / gb:.2f} GB (Platte), im Objektspeicher {stats['remote_bytes'] / gb:.2f} GB, "
+                f"zusammen {stats['stored_bytes'] / gb:.2f} GB (je Datei gezählt {stats['cached_gb']} GB)"
+            )
+        else:
+            belegung = (
+                f"{stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
+                f"belegt {stats['stored_bytes'] / gb:.2f} GB (je Datei gezählt {stats['cached_gb']} GB)"
+            )
         self.stdout.write(
-            f"Cache {stats['root']}: {stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
-            f"belegt {stats['stored_bytes'] / 1024**3:.2f} GB (je Datei gezählt {stats['cached_gb']} GB), "
+            f"Cache {stats['root']}: {belegung}, "
             f"{stats['disk_free_bytes'] / 1024**3:.1f} GB frei "
             f"(Schutzgrenze {stats['min_free_gb']} GB); offen={stats['pending']}, 404={stats['missing']}, "
             f"Fehler={stats['error']}, zu groß={stats['too_large']}, verdrängt={stats['evicted']}, "
@@ -108,8 +120,9 @@ class Command(EinmaligMixin, BaseCommand):
         self._print_access()
         for row in stats["per_body"]:
             self.stdout.write(
-                f"  - {row['body']}: {row['files']} Dateien, {row['cached_bytes'] / 1024**3:.2f} GB lokal "
-                "(je Datei gezählt)"
+                f"  - {row['body']}: {row['files']} Dateien, {row['cached_bytes'] / 1024**3:.2f} GB "
+                + ("abgelegt" if stats.get("object_storage") else "lokal")
+                + " (je Datei gezählt)"
             )
 
     def _print_access(self) -> None:

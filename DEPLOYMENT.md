@@ -989,20 +989,26 @@ docker compose exec mandari python manage.py session_publish_protocols
 **Obergrenze des Dokument-Caches** (Issue #961, `docs/FILE_CACHE.md`, „Obergrenze der Gesamtgröße“): Standard
 unbegrenzt, das Update ändert nichts (Migration `insight_core/0056`, nur eine neue Spalte). Wer die Ablage
 begrenzen will, baut einen großen Bestand zuerst von Hand ab und setzt danach die Grenze; ab dann hält das
-stündliche Aufräumen sie ein. `--dry-run` zeigt vorher Anzahl, Größe und Kommunen; der Lauf arbeitet in kurzen
-Stapeln und ist jederzeit abbrechbar und wiederholbar:
+stündliche Aufräumen sie ein. `--dry-run` zeigt vorher Modus, Anzahl, Größe und Kommunen; der Lauf arbeitet in
+kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container der Anwendung ausführen, der dieselben
+`OBJ_*` hat wie der Worker; die erste Zeile muss den erwarteten Modus nennen:
 
 ```bash
 docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10
+# mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte dort liegen (fehlen welche: erst --hochladen)
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
 # danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
 # FILE_CACHE_MAX_TOTAL_GB=10
 ```
 
-Mit Objektspeicher löscht der Abbau nur lokale Kopien; ohne holt die Vorschau verdrängte Dokumente bei Bedarf
-von der Quelle. Eigene Compose-Dateien brauchen `FILE_CACHE_MAX_TOTAL_GB` in der `environment` von Anwendung und
-Worker. Zurück: Variable entfernen bzw. auf `0` setzen und neu starten; ohne Objektspeicher lädt
-`cache_files --verdraengte` verdrängte Dokumente wieder nach.
+Mit Objektspeicher löscht der Abbau nur lokale Kopien, mit `--pruefe-objektspeicher` erst nach erfolgreicher Prüfung
+per `HEAD`; ohne holt die Vorschau verdrängte Dokumente bei Bedarf von der Quelle. Liegen Inhalte laut Datenbank im
+Objektspeicher, ist er im Container aber nicht konfiguriert, bricht der Abbau ab und das stündliche Aufräumen setzt
+die Grenze aus („Obergrenze ausgesetzt“ im Protokoll des Workers): dann `OBJ_*` prüfen. Eigene Compose-Dateien
+brauchen `FILE_CACHE_MAX_TOTAL_GB` in der `environment` von Anwendung und Worker. Zurück: Variable entfernen bzw.
+auf `0` setzen und neu starten; ohne Objektspeicher lädt `cache_files --verdraengte` verdrängte Dokumente wieder
+nach.
 
 Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vorgabe
 `<MEDIA_ROOT>/audit_archive`, also im persistenten Medien-Volume und in der Sicherung; nie per

@@ -89,6 +89,15 @@ class Command(EinmaligMixin, BaseCommand):
         """Obergrenze (#961): nur mit gesetzter Grenze eine Zeile."""
         if result.disabled:
             return
+        if result.aborted:
+            # Stiller Moduswechsel (#961): ohne Objektspeicher würden Inhalte, die dort liegen, verwaisen
+            self.stderr.write(
+                self.style.ERROR(
+                    f"Obergrenze ausgesetzt: {result.remote_conflict} Inhalte liegen laut Datenbank im Objektspeicher, "
+                    "der hier nicht konfiguriert ist (OBJ_ENABLED, OBJ_* im Worker prüfen). Es wird nichts verdrängt."
+                )
+            )
+            return
         if result.locked:
             self.stdout.write("Obergrenze: ein anderer Lauf verdrängt gerade, übersprungen")
             return

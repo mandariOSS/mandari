@@ -543,6 +543,15 @@ def stored_bytes() -> int:
     return int(blobs) + int(legacy)
 
 
+def remote_bytes() -> int:
+    """Inhalte im Objektspeicher (``remote_at``), auf die Dokumente verweisen; jeder Inhalt einmal."""
+    from ..models import OParlFileBlob
+
+    return int(
+        OParlFileBlob.objects.filter(remote_at__isnull=False, ref_count__gt=0).aggregate(s=Sum("size"))["s"] or 0
+    )
+
+
 def cache_stats() -> dict:
     from ..models import OParlFile
     from . import file_cache_limit
@@ -561,6 +570,10 @@ def cache_stats() -> dict:
         | Q(body__source_id__in=sources_without_downloads()),
         local_status="none",
     ).count()
+    # Mit Objektspeicher liegt nur ein Teil lokal: tatsächliche Belegung aus dem Durchlauf über die Platte (wie die
+    # Obergrenze, #961), getrennt von dem, was im Objektspeicher liegt. Ohne ist die Summe aus der Datenbank genau.
+    with_remote = file_cache_limit.mode() == file_cache_limit.MODE_REMOTE
+    stored_total = stored_bytes()
     per_body = []
     for row in (
         qs.values("body__name").annotate(n=Sum(1), cached=Sum(stored, filter=Q(local_status="ok"))).order_by("-n")
@@ -582,8 +595,13 @@ def cache_stats() -> dict:
         "coverage": round(ok / total * 100, 1) if total else 0.0,
         "cached_bytes": cached_bytes,
         "cached_gb": round(cached_bytes / 1024**3, 2),
-        # Tatsächlich belegt: jeder Inhalt einmal (Ablage nach SHA-256) plus Kopien im alten Layout
-        "stored_bytes": stored_bytes(),
+        # Abgelegt: jeder Inhalt einmal (Ablage nach SHA-256) plus Kopien im alten Layout, lokal oder im Objektspeicher
+        "stored_bytes": stored_total,
+        "object_storage": with_remote,
+        # Lokal auf der Platte (mit Objektspeicher gemessen, sonst gleich stored_bytes)
+        "local_bytes": file_cache_limit.usage_bytes() if with_remote else stored_total,
+        # Im Objektspeicher (nur mit eingeschaltetem Objektspeicher)
+        "remote_bytes": remote_bytes() if with_remote else 0,
         # Kopien ohne gemessene Größe: mit ``cache_files --sizes`` nachtragen
         "without_size": without_size,
         "disk_free_bytes": disk_free_bytes(),

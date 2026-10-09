@@ -483,3 +483,512 @@ def test_rangfolge_in_python_wie_in_der_datenbank(ablage: Path, body: OParlBody)
     zeile["file_date"] = None
     zeile["local_accessed_at"] = datetime(2001, 1, 1, tzinfo=jetzt.tzinfo)
     assert file_cache_limit.score_of(zeile) == datei.created_at
+
+
+# =============================================================================
+# Nacharbeit aus der Prüfung (PR #971)
+# =============================================================================
+
+
+def _im_objektspeicher(*dateien: OParlFile) -> None:
+    """Inhalte als hochgeladen vermerken (wie ``dokumentablage --hochladen`` im früheren Betrieb)."""
+    OParlFileBlob.objects.filter(pk__in=[datei.blob_id for datei in dateien]).update(remote_at=timezone.now())
+
+
+def _blob(datei: OParlFile) -> OParlFileBlob:
+    return OParlFileBlob.objects.get(pk=OParlFile.objects.get(pk=datei.pk).blob_id)
+
+
+def _vor_dem_verdraengen(monkeypatch: pytest.MonkeyPatch, aenderung: Any) -> None:
+    """Zwischen Planung und Verdrängen (unter der Sperre) etwas ändern, einmal je Stapel."""
+    original = file_cache_limit._apply
+
+    def apply(run: Any, items: Any) -> bool:
+        aenderung()
+        return bool(original(run, items))
+
+    monkeypatch.setattr(file_cache_limit, "_apply", apply)
+
+
+class TestModuswechsel:
+    """Inhalte im Objektspeicher verwaisen nie, auch wenn der Lauf ihn nicht kennt (stiller Moduswechsel)."""
+
+    def test_lauf_setzt_aus_wenn_inhalte_im_objektspeicher_liegen(self, ablage: Path, body: OParlBody) -> None:
+        oben = _abgelegt(body, "oben", alter_tage=3000)
+        lokal = _abgelegt(body, "lokal", alter_tage=2000)
+        _im_objektspeicher(oben)
+
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis.mode == file_cache_limit.MODE_RELEASE
+        assert ergebnis.aborted and ergebnis.remote_conflict == 1
+        assert ergebnis.units == 0 and not ergebnis.reached
+        assert _status(oben, lokal) == ["ok", "ok"]
+        assert _belegung(ablage) == 2 * GROESSE
+        blob = _blob(oben)
+        assert (blob.ref_count, blob.orphaned_at) == (1, None)
+
+    def test_ausdruecklich_ohne_objektspeicher_bleiben_inhalte_dort(
+        self, body: OParlBody, objektspeicher: Any, ablage: Path, settings: Any
+    ) -> None:
+        oben = _abgelegt(body, "oben", alter_tage=3000)
+        assert file_store.upload_pending() == {"uploaded": 1}
+        lokal = _abgelegt(body, "lokal", alter_tage=2000)
+        sha_oben = str(oben.blob_id)
+
+        # Worker ohne OBJ_*: ausdrücklich ohne Objektspeicher weiter
+        settings.OBJ_ENABLED = False
+        ergebnis = file_cache_limit.enforce(max_bytes=1, without_object_storage=True)
+        assert ergebnis.mode == file_cache_limit.MODE_RELEASE and not ergebnis.aborted
+        assert ergebnis.remote_conflict == 1
+        assert ergebnis.protected == {file_cache_limit.PROTECT_REMOTE: GROESSE}
+        assert _status(oben, lokal) == ["ok", "evicted"]
+        blob = _blob(oben)
+        assert (blob.ref_count, blob.orphaned_at) == (1, None), "nie verwaist"
+        assert Path(OParlFile.objects.get(pk=oben.pk).local_path or "").exists()
+
+        # Objektspeicher wieder an: das Aufräumen verwaister Inhalte lässt ihn dort
+        settings.OBJ_ENABLED = True
+        file_store.cleanup_orphans(min_age=timedelta(0))
+        assert object_storage.exists(sha_oben)
+        assert OParlFileBlob.objects.filter(pk=sha_oben).exists()
+
+    def test_unter_der_sperre_hochgeladen_verwaist_nicht(
+        self, ablage: Path, body: OParlBody, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        _vor_dem_verdraengen(monkeypatch, lambda: _im_objektspeicher(datei))
+
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis.skipped == {file_cache_limit.PROTECT_REMOTE: 1} and ergebnis.units == 0
+        assert _status(datei) == ["ok"]
+        blob = _blob(datei)
+        assert (blob.ref_count, blob.orphaned_at) == (1, None)
+        assert _belegung(ablage) == GROESSE
+
+    def test_dokumentablage_meldet_den_moduswechsel(self, ablage: Path, body: OParlBody, settings: Any) -> None:
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        _im_objektspeicher(datei)
+        settings.FILE_CACHE_MAX_TOTAL_GB = 500 / 1024**3
+        out, err = StringIO(), StringIO()
+        call_command("dokumentablage", "--aufraeumen", stdout=out, stderr=err)
+        assert "Obergrenze ausgesetzt: 1 Inhalte liegen laut Datenbank im Objektspeicher" in err.getvalue()
+        assert _status(datei) == ["ok"] and _belegung(ablage) == GROESSE
+
+    def test_prune_file_cache_verlangt_die_ausdrueckliche_option(self, ablage: Path, body: OParlBody) -> None:
+        oben = _abgelegt(body, "oben", alter_tage=3000)
+        lokal = _abgelegt(body, "lokal", alter_tage=2000)
+        _im_objektspeicher(oben)
+        grenze = str(500 / 1024**3)
+
+        with pytest.raises(CommandError, match="--ohne-objektspeicher"):
+            call_command("prune_file_cache", "--max-gb", grenze, stdout=StringIO())
+        assert _status(oben, lokal) == ["ok", "ok"]
+
+        out = StringIO()
+        call_command("prune_file_cache", "--max-gb", grenze, "--ohne-objektspeicher", stdout=out)
+        assert "Modus: ohne Objektspeicher" in out.getvalue()
+        assert "1 Inhalte liegen im Objektspeicher, der hier nicht konfiguriert ist" in out.getvalue()
+        assert _status(oben, lokal) == ["ok", "evicted"]
+
+    def test_prune_file_cache_nennt_den_modus(self, body: OParlBody, objektspeicher: Any, ablage: Path) -> None:
+        _abgelegt(body, "a", alter_tage=3000)
+        out = StringIO()
+        call_command("prune_file_cache", "--max-gb", "1", "--dry-run", stdout=out)
+        assert out.getvalue().startswith("Modus: mit Objektspeicher")
+
+
+def _aenderung(art: str, datei: OParlFile) -> Any:
+    eigene = OParlFile.objects.filter(pk=datei.pk)
+    assert datei.body is not None
+    quelle = OParlSource.objects.filter(pk=datei.body.source_id)
+    aenderungen: dict[str, Any] = {
+        "texterkennung": lambda: eigene.update(text_extraction_status="processing"),
+        "neu_abgelegt": lambda: eigene.update(local_cached_at=timezone.now()),
+        "genutzt": lambda: file_cache_limit.mark_used(OParlFile.objects.get(pk=datei.pk)),
+        "schonung": lambda: quelle.update(consecutive_failures=99),
+        "dateiabruf_aus": lambda: quelle.update(sync_config={"file_downloads": False}),
+        "ohne_adresse": lambda: eigene.update(download_url=None, access_url=None),
+    }
+    return aenderungen[art]
+
+
+_GRUND = {
+    "texterkennung": "texterkennung",
+    "neu_abgelegt": "frisch",
+    "genutzt": "genutzt",
+    "schonung": "nicht_abrufbar",
+    "dateiabruf_aus": "nicht_abrufbar",
+    "ohne_adresse": "nicht_abrufbar",
+}
+
+
+class TestNachpruefungUnterDerSperre:
+    """Was sich zwischen Planung und Verdrängen ändert, hält den Inhalt (Nachprüfung unter der Sperre)."""
+
+    @pytest.mark.parametrize("layout", ["sha256", "kommune"])
+    @pytest.mark.parametrize("art", list(_GRUND))
+    def test_aenderung_haelt_den_inhalt(
+        self, ablage: Path, body: OParlBody, settings: Any, monkeypatch: pytest.MonkeyPatch, layout: str, art: str
+    ) -> None:
+        settings.FILE_STORE_LAYOUT = layout
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        pfad = Path(datei.local_path or "")
+        _vor_dem_verdraengen(monkeypatch, _aenderung(art, datei))
+
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis.skipped == {_GRUND[art]: 1}
+        assert (ergebnis.units, ergebnis.files, ergebnis.freed) == (0, 0, 0)
+        assert _status(datei) == ["ok"] and pfad.exists()
+
+    @pytest.mark.parametrize("layout", ["sha256", "kommune"])
+    def test_ohne_aenderung_wird_verdraengt(
+        self, ablage: Path, body: OParlBody, settings: Any, monkeypatch: pytest.MonkeyPatch, layout: str
+    ) -> None:
+        """Gegenprobe: Der Haken selbst hält nichts."""
+        settings.FILE_STORE_LAYOUT = layout
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        _vor_dem_verdraengen(monkeypatch, lambda: None)
+        assert file_cache_limit.enforce(max_bytes=1).units == 1
+        assert _status(datei) == ["evicted"]
+
+    def test_neuer_verweis_auf_den_inhalt(self, ablage: Path, body: OParlBody, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Ein junges Dokument legt denselben Inhalt ab: Verweiszahl und Rang ändern sich, der Inhalt bleibt."""
+        inhalt = _inhalt("geteilt")
+        alt = _abgelegt(body, "alt", alter_tage=3000, inhalt=inhalt)
+        neu: list[OParlFile] = []
+
+        def neu_ablegen() -> None:
+            if not neu:
+                neu.append(_abgelegt(body, "neu", alter_tage=1, inhalt=inhalt))
+
+        _vor_dem_verdraengen(monkeypatch, neu_ablegen)
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis.skipped == {"genutzt": 1} and ergebnis.units == 0
+        assert _status(alt, *neu) == ["ok", "ok"]
+        assert _blob(alt).ref_count == 2
+
+    def test_verweis_weggefallen(self, ablage: Path, body: OParlBody, monkeypatch: pytest.MonkeyPatch) -> None:
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        sha = str(datei.blob_id)
+        _vor_dem_verdraengen(monkeypatch, lambda: file_store.release(OParlFile.objects.get(pk=datei.pk)))
+
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis.skipped == {"ohne_verweis": 1} and ergebnis.units == 0
+        # Das Aufräumen verwaister Inhalte löscht ihn, nicht die Grenze
+        assert OParlFileBlob.objects.get(pk=sha).orphaned_at is not None
+
+    def test_alte_kopie_an_anderem_ort(
+        self, ablage: Path, body: OParlBody, settings: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        settings.FILE_STORE_LAYOUT = "kommune"
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        pfad = Path(datei.local_path or "")
+        anders = pfad.with_name("anders.pdf")
+        anders.write_bytes(_inhalt("anders"))
+        _vor_dem_verdraengen(monkeypatch, lambda: OParlFile.objects.filter(pk=datei.pk).update(local_path=str(anders)))
+
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis.skipped == {"unsicher": 1} and ergebnis.units == 0
+        assert pfad.exists() and anders.exists()
+
+
+def _sperrverbindung() -> Any:
+    """Zweite Verbindung zur Testdatenbank an Django vorbei (eigene Transaktion, hält Zeilensperren)."""
+    import psycopg
+    from django.db import connection
+    from psycopg.conninfo import make_conninfo
+
+    einstellungen = connection.settings_dict
+    teile = {
+        "dbname": einstellungen.get("NAME"),
+        "user": einstellungen.get("USER"),
+        "password": einstellungen.get("PASSWORD"),
+        "host": einstellungen.get("HOST"),
+        "port": einstellungen.get("PORT"),
+    }
+    return psycopg.connect(make_conninfo("", **{k: v for k, v in teile.items() if v not in (None, "")}))
+
+
+@pytest.fixture
+def sperre_in_postgres() -> Iterator[Any]:
+    """Sperrt Zeilen in einer zweiten Transaktion (``SELECT … FOR UPDATE``), bis der Test endet."""
+    from django.db import connection
+
+    if connection.vendor != "postgresql":
+        pytest.skip("Zeilensperren mit SKIP LOCKED gibt es nur in PostgreSQL (läuft in der CI)")
+    verbindung = _sperrverbindung()
+
+    def sperren(tabelle: str, spalte: str, wert: Any) -> None:
+        verbindung.execute(f"SELECT 1 FROM {tabelle} WHERE {spalte} = %s FOR UPDATE", [wert])  # noqa: S608
+
+    try:
+        yield sperren
+    finally:
+        verbindung.rollback()
+        verbindung.close()
+
+
+class TestGesperrteZeilen:
+    """Gerade gesperrte Zeilen (eine Datei wird eben abgelegt) überspringt der Lauf, statt zu warten."""
+
+    @pytest.mark.django_db(transaction=True)
+    def test_gesperrte_datei(self, ablage: Path, body: OParlBody, sperre_in_postgres: Any) -> None:
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        sperre_in_postgres(OParlFile._meta.db_table, "id", datei.pk)
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis.skipped == {"gesperrt": 1} and ergebnis.units == 0
+        assert _status(datei) == ["ok"] and _belegung(ablage) == GROESSE
+
+    @pytest.mark.django_db(transaction=True)
+    def test_geteilter_inhalt_mit_einer_gesperrten_datei(
+        self, ablage: Path, body: OParlBody, sperre_in_postgres: Any
+    ) -> None:
+        inhalt = _inhalt("geteilt")
+        erste = _abgelegt(body, "erste", alter_tage=3000, inhalt=inhalt)
+        zweite = _abgelegt(body, "zweite", alter_tage=3000, inhalt=inhalt)
+        sperre_in_postgres(OParlFile._meta.db_table, "id", zweite.pk)
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        # Die freie Datei allein ginge nicht: sonst verwiese die gesperrte auf einen gelöschten Inhalt
+        assert ergebnis.skipped == {"gesperrt": 1} and ergebnis.units == 0
+        assert _status(erste, zweite) == ["ok", "ok"]
+        assert _blob(erste).ref_count == 2
+
+    @pytest.mark.django_db(transaction=True)
+    def test_gesperrter_inhalt(self, ablage: Path, body: OParlBody, sperre_in_postgres: Any) -> None:
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        sperre_in_postgres(OParlFileBlob._meta.db_table, "sha256", datei.blob_id)
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis.skipped == {"gesperrt": 1} and ergebnis.units == 0
+        assert _status(datei) == ["ok"]
+
+
+class TestQuelleVerweigertDateien:
+    """Ohne Objektspeicher bleiben Dokumente von Quellen, die Dateiabrufe verweigern."""
+
+    @pytest.fixture
+    def sperrt(self) -> OParlBody:
+        return OParlBody.objects.create(
+            external_id="https://sperrt.example/oparl/body/1",
+            source=_quelle("Sperrt", "https://sperrt.example/oparl/system"),
+            name="Sperrt Dateien",
+            is_listed=True,
+        )
+
+    @pytest.mark.parametrize(
+        "vermerk",
+        [
+            {"local_status": "error", "local_error": "HTTP 403"},
+            {"local_status": "error", "local_error": "HTTP 401"},
+            {"local_status": "error", "local_error": "robots.txt sperrt den Abruf (Disallow: /)"},
+            {"text_extraction_status": "skipped", "text_extraction_error": "robots.txt sperrt den Abruf"},
+        ],
+    )
+    def test_vermerk_an_einem_dokument_schuetzt_die_quelle(
+        self, ablage: Path, body: OParlBody, sperrt: OParlBody, vermerk: dict[str, str]
+    ) -> None:
+        geschuetzt = _abgelegt(sperrt, "alt", alter_tage=4000)
+        _datei(sperrt, "neu-gesperrt", alter_tage=1, **vermerk)
+        frei = _abgelegt(body, "frei", alter_tage=10)
+
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert _status(geschuetzt, frei) == ["ok", "evicted"]
+        assert ergebnis.protected == {"nicht_abrufbar": GROESSE}
+
+    def test_andere_fehler_schuetzen_nicht(self, ablage: Path, sperrt: OParlBody) -> None:
+        datei = _abgelegt(sperrt, "alt", alter_tage=4000)
+        _datei(sperrt, "neu", alter_tage=1, local_status="error", local_error="HTTP 500")
+        file_cache_limit.enforce(max_bytes=1)
+        assert _status(datei) == ["evicted"]
+
+    def test_robots_txt_im_cache_schuetzt(
+        self, ablage: Path, sperrt: OParlBody, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from django.core.cache import cache
+
+        from insight_core.services import robots
+
+        datei = _abgelegt(sperrt, "alt", alter_tage=4000, download_url="https://sperrt.example/files/alt.pdf")
+        url = str(datei.download_url)
+        monkeypatch.setattr(robots, "_fetch", lambda *a, **k: (200, b"User-agent: *\nDisallow: /files/\n"))
+        robots.load(url)
+        try:
+            assert file_cache_limit.refusing_sources() == {sperrt.source_id}
+            ergebnis = file_cache_limit.enforce(max_bytes=1)
+            assert _status(datei) == ["ok"] and ergebnis.protected == {"nicht_abrufbar": GROESSE}
+
+            # Eine Freigabe für Dateien (robots_override) hebt den Schutz auf
+            OParlSource.objects.filter(pk=sperrt.source_id).update(
+                sync_config={"robots_override": {"scope": "files", "note": "Freigabe der Stelle liegt vor"}}
+            )
+            assert file_cache_limit.refusing_sources() == set()
+            file_cache_limit.enforce(max_bytes=1)
+            assert _status(datei) == ["evicted"]
+        finally:
+            cache.delete(robots._cache_key(url, robots.USER_AGENT))
+
+    def test_ohne_robots_txt_im_cache_keine_anfrage(
+        self, ablage: Path, sperrt: OParlBody, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from insight_core.services import robots
+
+        def keine_anfrage(*args: Any, **kwargs: Any) -> Any:
+            raise AssertionError("Die Grenze darf die robots.txt nicht abrufen")
+
+        monkeypatch.setattr(robots, "_fetch", keine_anfrage)
+        _abgelegt(sperrt, "alt", alter_tage=4000, download_url="https://sperrt-ohne-cache.example/files/alt.pdf")
+        assert file_cache_limit.refusing_sources() == set()
+
+
+class TestCrawler:
+    @pytest.mark.parametrize(
+        "kennung",
+        [
+            "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; GPTBot/1.2; +https://openai.com/gptbot)",
+            "Mozilla/5.0 AppleWebKit/537.36 (KHTML, like Gecko; compatible; ClaudeBot/1.0; +claudebot@anthropic.com)",
+            "Mozilla/5.0 (compatible; Amazonbot/0.1; +https://developer.amazon.com/support/amazonbot)",
+            "Mozilla/5.0 (Linux; Android 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Mobile Safari/537.36 "
+            "(compatible; Bytespider; spider-feedback@bytedance.com)",
+            "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+            "Mozilla/5.0 (compatible; bingbot/2.0; +http://www.bing.com/bingbot.htm)",
+            "ExampleCrawler/3.1",
+            "python-requests/2.32.3",
+        ],
+    )
+    def test_crawler_bestimmen_die_rangfolge_nicht(self, ablage: Path, body: OParlBody, kennung: str) -> None:
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        response = Client(HTTP_USER_AGENT=kennung).get(f"/insight/dokumente/{datei.id}/preview/")
+        assert response.status_code == 200 and response["X-Mandari-Cache"] == "hit"
+        datei.refresh_from_db()
+        assert datei.local_accessed_at is None
+        assert file_cache_limit.is_crawler(kennung)
+
+    @pytest.mark.parametrize(
+        "kennung",
+        [
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:131.0) Gecko/20100101 Firefox/131.0",
+            "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+            "Version/18.0 Mobile/15E148 Safari/604.1",
+            "",
+        ],
+    )
+    def test_menschen_bestimmen_sie(self, ablage: Path, body: OParlBody, kennung: str) -> None:
+        datei = _abgelegt(body, "a", alter_tage=3000)
+        Client(HTTP_USER_AGENT=kennung).get(f"/insight/dokumente/{datei.id}/preview/")
+        datei.refresh_from_db()
+        assert datei.local_accessed_at is not None
+        assert not file_cache_limit.is_crawler(kennung)
+
+
+class TestKennzahlen:
+    def test_mit_objektspeicher_lokal_und_im_objektspeicher_getrennt(
+        self, body: OParlBody, objektspeicher: Any, ablage: Path
+    ) -> None:
+        from insight_core.services.source_health import collect_system_health
+
+        _abgelegt(body, "alt", alter_tage=3000)
+        _abgelegt(body, "neu", alter_tage=1)
+        assert file_store.upload_pending() == {"uploaded": 2}
+        assert file_cache_limit.enforce(max_bytes=GROESSE + 500).units == 1
+
+        stats = file_cache.cache_stats()
+        assert stats["object_storage"] is True
+        assert stats["local_bytes"] == GROESSE, "tatsächlich auf der Platte"
+        assert stats["remote_bytes"] == 2 * GROESSE
+        assert stats["stored_bytes"] == 2 * GROESSE
+        out = StringIO()
+        call_command("cache_files", "--stats", stdout=out)
+        assert "2 von 2 Dokumenten abgelegt" in out.getvalue()
+        assert "(Platte), im Objektspeicher" in out.getvalue()
+
+        zustand = next(c for c in collect_system_health() if c["name"] == "Dokument-Cache")
+        assert "Dokumenten abgelegt" in zustand["detail"] and "im Objektspeicher" in zustand["detail"]
+
+    def test_ohne_objektspeicher_wie_bisher(self, ablage: Path, body: OParlBody) -> None:
+        from insight_core.services.source_health import collect_system_health
+
+        _abgelegt(body, "a", alter_tage=3000)
+        stats = file_cache.cache_stats()
+        assert stats["object_storage"] is False
+        assert stats["local_bytes"] == stats["stored_bytes"] == GROESSE and stats["remote_bytes"] == 0
+        out = StringIO()
+        call_command("cache_files", "--stats", stdout=out)
+        assert "1 von 1 Dokumenten lokal" in out.getvalue() and "im Objektspeicher" not in out.getvalue()
+        zustand = next(c for c in collect_system_health() if c["name"] == "Dokument-Cache")
+        assert "Dokumenten lokal" in zustand["detail"] and "im Objektspeicher" not in zustand["detail"]
+
+
+class TestPruefungImObjektspeicher:
+    def _hochgeladen(self, body: OParlBody, *namen: str) -> list[OParlFile]:
+        dateien = [_abgelegt(body, name, alter_tage=3000 - i) for i, name in enumerate(namen)]
+        assert file_store.upload_pending() == {"uploaded": len(namen)}
+        return [OParlFile.objects.get(pk=datei.pk) for datei in dateien]
+
+    def test_probelauf_findet_fehlende_und_aendert_nichts(
+        self, body: OParlBody, objektspeicher: Any, ablage: Path
+    ) -> None:
+        fehlt, _da, falsch = self._hochgeladen(body, "fehlt", "da", "falsch")
+        objektspeicher.delete_object(Bucket=BUCKET, Key=object_storage.key_for(str(fehlt.blob_id)))
+        objektspeicher.put_object(Bucket=BUCKET, Key=object_storage.key_for(str(falsch.blob_id)), Body=b"kurz")
+
+        ergebnis = file_cache_limit.enforce(max_bytes=1, dry_run=True, verify_remote=True)
+        assert ergebnis.verified == {"vorhanden": 1, "fehlt": 1, "groesse_abweichend": 1}
+        assert _belegung(ablage) == 3 * GROESSE
+        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 3
+
+    def test_echter_lauf_behaelt_was_fehlt_und_laedt_neu_hoch(
+        self, body: OParlBody, objektspeicher: Any, ablage: Path
+    ) -> None:
+        fehlt, da, falsch = self._hochgeladen(body, "fehlt", "da", "falsch")
+        objektspeicher.delete_object(Bucket=BUCKET, Key=object_storage.key_for(str(fehlt.blob_id)))
+        objektspeicher.put_object(Bucket=BUCKET, Key=object_storage.key_for(str(falsch.blob_id)), Body=b"kurz")
+
+        ergebnis = file_cache_limit.enforce(max_bytes=1, verify_remote=True)
+        assert ergebnis.verified == {"vorhanden": 1, "fehlt": 1, "groesse_abweichend": 1}
+        assert ergebnis.skipped == {"nicht_im_objektspeicher": 2} and ergebnis.units == 1
+        assert Path(fehlt.local_path or "").exists() and Path(falsch.local_path or "").exists()
+        assert not Path(da.local_path or "").exists()
+        # Fehlt der Inhalt, lädt das nächste Hochladen ihn erneut; bei abweichender Größe bleibt der Vermerk
+        assert _blob(fehlt).remote_at is None and _blob(falsch).remote_at is not None
+        assert file_store.upload_pending() == {"uploaded": 1}
+        assert object_storage.exists(str(fehlt.blob_id))
+
+    def test_ohne_pruefung_wie_bisher(self, body: OParlBody, objektspeicher: Any, ablage: Path) -> None:
+        fehlt, _da = self._hochgeladen(body, "fehlt", "da")
+        objektspeicher.delete_object(Bucket=BUCKET, Key=object_storage.key_for(str(fehlt.blob_id)))
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis.units == 2 and not ergebnis.verified
+
+    def test_stichprobe(self, body: OParlBody, objektspeicher: Any, ablage: Path) -> None:
+        self._hochgeladen(body, "a", "b", "c")
+        ergebnis = file_cache_limit.enforce(max_bytes=1, dry_run=True, verify_remote=True, sample=2)
+        assert ergebnis.verified == {"vorhanden": 2}
+
+    def test_objektspeicher_gestoert_bricht_ab(
+        self, body: OParlBody, objektspeicher: Any, ablage: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        (datei,) = self._hochgeladen(body, "a")
+
+        def gestoert(sha256: str) -> int:
+            raise OSError("Objektspeicher nicht erreichbar")
+
+        monkeypatch.setattr(object_storage, "remote_size", gestoert)
+        ergebnis = file_cache_limit.enforce(max_bytes=1, verify_remote=True)
+        assert ergebnis.units == 0 and ergebnis.skipped == {"fehler": 1}
+        assert Path(datei.local_path or "").exists()
+
+    def test_befehl(self, body: OParlBody, objektspeicher: Any, ablage: Path) -> None:
+        fehlt, _da = self._hochgeladen(body, "fehlt", "da")
+        objektspeicher.delete_object(Bucket=BUCKET, Key=object_storage.key_for(str(fehlt.blob_id)))
+        grenze = str(500 / 1024**3)
+
+        with pytest.raises(CommandError, match="--stichprobe nur mit --dry-run"):
+            call_command("prune_file_cache", "--max-gb", grenze, "--stichprobe", "5", stdout=StringIO())
+        out = StringIO()
+        call_command("prune_file_cache", "--max-gb", grenze, "--dry-run", "--pruefe-objektspeicher", stdout=out)
+        assert "Objektspeicher geprüft (HEAD): 2 Inhalte, vorhanden 1, fehlen 1" in out.getvalue()
+        assert "Vor dem echten Lauf klären" in out.getvalue()
+
+    def test_befehl_ohne_objektspeicher(self, ablage: Path, body: OParlBody) -> None:
+        _abgelegt(body, "a", alter_tage=3000)
+        with pytest.raises(CommandError, match="braucht einen konfigurierten Objektspeicher"):
+            call_command("prune_file_cache", "--max-gb", "1", "--pruefe-objektspeicher", stdout=StringIO())

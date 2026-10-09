@@ -27,6 +27,18 @@ Hinweis):
 
     python manage.py prune_file_cache --max-gb 10 --dry-run  # nur anzeigen
     python manage.py prune_file_cache --max-gb 10
+
+Die erste Zeile nennt den Modus (mit bzw. ohne Objektspeicher). Liegen Inhalte laut Datenbank im Objektspeicher, ist er
+in diesem Container aber nicht konfiguriert (fehlende ``OBJ_*``, ``OBJ_ENABLED=false``), bricht der Befehl ab:
+Meist läuft er dann im falschen Container. ``--ohne-objektspeicher`` macht ausdrücklich ohne ihn weiter; Inhalte im
+Objektspeicher bleiben auch dann unangetastet.
+
+Mit Objektspeicher prüft ``--pruefe-objektspeicher`` vor dem Löschen jeder lokalen Kopie per ``HEAD``, ob der Inhalt
+mit seiner Größe dort liegt; fehlt er, bleibt die Kopie und wird erneut hochgeladen. Im Probelauf prüft die Option alle
+Inhalte, die gingen, oder mit ``--stichprobe N`` eine zufällige Auswahl:
+
+    python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+    python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
 """
 
 from __future__ import annotations
@@ -86,6 +98,22 @@ class Command(BaseCommand):
             help="Gesamtgröße in GB: verdrängt die am wenigsten gebrauchten Dokumente (wie FILE_CACHE_MAX_TOTAL_GB)",
         )
         parser.add_argument("--dry-run", action="store_true", help="Nur anzeigen, nichts löschen")
+        parser.add_argument(
+            "--ohne-objektspeicher",
+            action="store_true",
+            help="Weitermachen, obwohl Inhalte im Objektspeicher liegen, der hier nicht konfiguriert ist (die bleiben)",
+        )
+        parser.add_argument(
+            "--pruefe-objektspeicher",
+            action="store_true",
+            help="Vor dem Löschen jeder lokalen Kopie per HEAD prüfen, ob der Inhalt im Objektspeicher liegt",
+        )
+        parser.add_argument(
+            "--stichprobe",
+            type=int,
+            default=0,
+            help="Mit --dry-run --pruefe-objektspeicher: nur so viele zufällig gewählte Inhalte prüfen",
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         max_gb = options["max_gb"]
@@ -93,16 +121,46 @@ class Command(BaseCommand):
             raise CommandError("Bitte --unlisted oder --max-gb <GB> angeben (bewusst kein Standard, der etwas löscht).")
         if max_gb is not None and max_gb <= 0:
             raise CommandError("--max-gb muss größer als 0 sein.")
+        if options["stichprobe"] < 0:
+            raise CommandError("--stichprobe darf nicht negativ sein.")
+        if options["stichprobe"] and not (options["dry_run"] and options["pruefe_objektspeicher"]):
+            raise CommandError(
+                "--stichprobe nur mit --dry-run --pruefe-objektspeicher; der echte Lauf prüft mit "
+                "--pruefe-objektspeicher jeden Inhalt."
+            )
         if options["unlisted"]:
             self._unlisted(options["dry_run"])
         if max_gb is not None:
-            self._max_gb(max_gb, options["dry_run"])
+            self._max_gb(max_gb, options)
 
-    def _max_gb(self, max_gb: float, dry_run: bool) -> None:
+    def _max_gb(self, max_gb: float, options: dict[str, Any]) -> None:
         from insight_core.services import file_cache_limit
 
         gb = 1024**3
-        result = file_cache_limit.enforce(max_bytes=round(max_gb * gb), dry_run=dry_run)
+        dry_run = options["dry_run"]
+        remote = file_cache_limit.mode() == file_cache_limit.MODE_REMOTE
+        self.stdout.write(
+            "Modus: mit Objektspeicher (OBJ_ENABLED und Zugangsdaten gesetzt, Ablage nach SHA-256)"
+            if remote
+            else "Modus: ohne Objektspeicher (OBJ_ENABLED aus, OBJ_* unvollständig oder Ablage je Kommune)"
+        )
+        if options["pruefe_objektspeicher"] and not remote:
+            raise CommandError("--pruefe-objektspeicher braucht einen konfigurierten Objektspeicher (OBJ_*).")
+        result = file_cache_limit.enforce(
+            max_bytes=round(max_gb * gb),
+            dry_run=dry_run,
+            without_object_storage=options["ohne_objektspeicher"],
+            verify_remote=options["pruefe_objektspeicher"],
+            sample=options["stichprobe"],
+        )
+        if result.aborted:
+            raise CommandError(
+                f"Abgebrochen: {result.remote_conflict} Inhalte liegen laut Datenbank im Objektspeicher, der in diesem "
+                "Container nicht konfiguriert ist. Meist fehlen hier OBJ_* (falscher Container, OBJ_ENABLED=false). "
+                "Ohne Objektspeicher würden freigegebene Inhalte verwaisen und beim nächsten Aufräumen mit "
+                "Objektspeicher dort gelöscht. Ausdrücklich ohne Objektspeicher weitermachen (diese Inhalte bleiben): "
+                "--ohne-objektspeicher"
+            )
         if result.locked:
             raise CommandError("Ein anderer Lauf verdrängt gerade (Sperre „dokumentcache-grenze“); später erneut.")
         art = (
@@ -112,8 +170,15 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             f"Grenze {result.limit / gb:.2f} GB, Ziel {result.target / gb:.2f} GB ({art}); "
-            f"belegt {result.before / gb:.2f} GB"
+            f"belegt lokal {result.before / gb:.2f} GB"
         )
+        if result.remote_conflict:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"{result.remote_conflict} Inhalte liegen im Objektspeicher, der hier nicht konfiguriert ist: "
+                    "Sie bleiben unangetastet (--ohne-objektspeicher)."
+                )
+            )
         if result.before <= result.limit:
             self.stdout.write(self.style.SUCCESS("Belegung liegt unter der Grenze, nichts zu tun."))
             return
@@ -130,13 +195,38 @@ class Command(BaseCommand):
                 f"danach belegt {result.after / gb:.2f} GB."
             )
         )
+        if result.verified:
+            self._report_verified(result, dry_run)
         if not result.reached:
             self.stdout.write(
                 self.style.WARNING(
-                    "Ziel nicht erreicht: Der Rest ist geschützt (Texterkennung, frisch abgelegt, nicht neu abrufbar) "
-                    "oder gerade in Gebrauch."
+                    "Ziel nicht erreicht: Der Rest ist geschützt (Texterkennung, frisch abgelegt, nicht neu abrufbar, "
+                    "im Objektspeicher ohne Konfiguration) oder gerade in Gebrauch."
                 )
             )
+
+    def _report_verified(self, result: Any, dry_run: bool) -> None:
+        """Ergebnis der Prüfung im Objektspeicher (``--pruefe-objektspeicher``)."""
+        verified = result.verified
+        geprueft = verified.get("vorhanden", 0) + verified.get("fehlt", 0) + verified.get("groesse_abweichend", 0)
+        zeile = (
+            f"Objektspeicher geprüft (HEAD): {geprueft} Inhalte, vorhanden {verified.get('vorhanden', 0)}, "
+            f"fehlen {verified.get('fehlt', 0)}, Größe abweichend {verified.get('groesse_abweichend', 0)}"
+        )
+        if verified.get("fehler"):
+            zeile += "; Objektspeicher nicht erreichbar, abgebrochen"
+        probleme = verified.get("fehlt", 0) + verified.get("groesse_abweichend", 0) + verified.get("fehler", 0)
+        if not probleme:
+            self.stdout.write(self.style.SUCCESS(zeile))
+            return
+        self.stdout.write(self.style.WARNING(zeile))
+        self.stdout.write(
+            self.style.WARNING(
+                "  Vor dem echten Lauf klären (dokumentablage --hochladen, Objektspeicher prüfen)."
+                if dry_run
+                else "  Diese lokalen Kopien bleiben; fehlende lädt dokumentablage --hochladen erneut hoch."
+            )
+        )
 
     def _unlisted(self, dry_run: bool) -> None:
         from insight_core.models import OParlBody, OParlFile
