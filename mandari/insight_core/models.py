@@ -1175,6 +1175,8 @@ class OParlFile(SourceDeletionModel):
         ("missing", "Quelle liefert 404"),
         ("error", "Fehler beim Abruf"),
         ("too_large", "Zu groß für den Cache"),
+        # Obergrenze des Caches (Issue #961): Kopie verdrängt, bei Bedarf holt die Vorschau sie neu
+        ("evicted", "Verdrängt (bei Bedarf neu abrufbar)"),
     ]
     # db_default: Der Ingestor legt Zeilen per SQLAlchemy an, ohne diese Django-Spalten zu kennen;
     # ohne DB-Default würde jeder INSERT an NOT NULL scheitern (Schema-Contract, Issue #161).
@@ -1191,6 +1193,10 @@ class OParlFile(SourceDeletionModel):
     # Gemessene Größe unserer Kopie in Bytes (Issue #786). ``size`` ist die Angabe der Quelle aus OParl und
     # fehlt bei manchen Quellen; als Speichermaß taugt nur diese Spalte.
     local_size = models.BigIntegerField(blank=True, null=True, verbose_name="Größe der Kopie (Bytes)")
+    # Zuletzt über die Vorschau ausgeliefert (Issue #961), höchstens stündlich vermerkt. Grundlage der Verdrängung,
+    # wenn der Cache seine Obergrenze (FILE_CACHE_MAX_TOTAL_GB) erreicht; kein Personenbezug, nur ein Zeitpunkt je
+    # Dokument. Nullable ohne Default: Der Ingestor kennt die Spalte nicht.
+    local_accessed_at = models.DateTimeField(blank=True, null=True, verbose_name="Zuletzt ausgeliefert am")
 
     # Löschabgleich mit der Quelle (Issue #787, services/file_reconcile.py). Gesperrt ist ein Dokument,
     # wenn es in der Quelle gelöscht ist (``deleted``) oder seine Download-Adresse 404/410 liefert.

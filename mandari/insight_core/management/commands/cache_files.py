@@ -11,6 +11,8 @@ Statistik (Belegung, Abdeckung, Abrufe der letzten 30 Tage; läuft immer):
     python manage.py cache_files --stats
 Gemessene Größe vorhandener Kopien nachtragen (einmalig nach dem Update, wiederholbar):
     python manage.py cache_files --sizes
+Mit Obergrenze (FILE_CACHE_MAX_TOTAL_GB, #961) lädt ein Lauf nur bis zur Grenze. Verdrängte Dokumente holt nur
+die Vorschau bei Bedarf; ``--verdraengte`` nimmt sie in den Lauf auf (etwa nach Anheben oder Abschalten der Grenze).
 """
 
 from django.core.management.base import BaseCommand
@@ -31,6 +33,9 @@ class Command(EinmaligMixin, BaseCommand):
         parser.add_argument("--body", help="Kommune (Slug oder Name-Teil); Standard: alle")
         parser.add_argument("--limit", type=int, default=400, help="Max. Dateien je Lauf")
         parser.add_argument("--retry-errors", action="store_true", help="Auch fehlgeschlagene Abrufe erneut versuchen")
+        parser.add_argument(
+            "--verdraengte", action="store_true", help="Auch von der Obergrenze verdrängte Dokumente nachladen"
+        )
         parser.add_argument("--sleep", type=float, default=0.05, help="Pause zwischen Abrufen (Sekunden)")
         parser.add_argument("--stats", action="store_true", help="Nur Statistik ausgeben")
         parser.add_argument(
@@ -62,12 +67,22 @@ class Command(EinmaligMixin, BaseCommand):
                 return
 
         results = cache_pending(
-            body, limit=options["limit"], retry_errors=options["retry_errors"], sleep=options["sleep"]
+            body,
+            limit=options["limit"],
+            retry_errors=options["retry_errors"],
+            retry_evicted=options["verdraengte"],
+            sleep=options["sleep"],
         )
         summary = ", ".join(f"{k}={v}" for k, v in sorted(results.items())) or "nichts zu tun"
         if results.get("disk_full"):
             self.stdout.write(
                 self.style.WARNING("Festplatten-Schutz aktiv: freier Speicher unter FILE_CACHE_MIN_FREE_GB")
+            )
+        if results.get("limit"):
+            self.stdout.write(
+                self.style.WARNING(
+                    "Obergrenze erreicht (FILE_CACHE_MAX_TOTAL_GB): Platz schafft das stündliche Aufräumen"
+                )
             )
         self.stdout.write(self.style.SUCCESS(f"Fertig: {summary}"))
         self._print_stats(cache_stats())
@@ -78,9 +93,14 @@ class Command(EinmaligMixin, BaseCommand):
             f"belegt {stats['stored_bytes'] / 1024**3:.2f} GB (je Datei gezählt {stats['cached_gb']} GB), "
             f"{stats['disk_free_bytes'] / 1024**3:.1f} GB frei "
             f"(Schutzgrenze {stats['min_free_gb']} GB); offen={stats['pending']}, 404={stats['missing']}, "
-            f"Fehler={stats['error']}, zu groß={stats['too_large']}, "
+            f"Fehler={stats['error']}, zu groß={stats['too_large']}, verdrängt={stats['evicted']}, "
             f"wartend auf Quellen in Schonung={stats['paused']}, ausgeblendet (nicht gecacht)={stats['unlisted']}"
         )
+        if stats["max_total_bytes"]:
+            self.stdout.write(
+                f"  Obergrenze {stats['max_total_bytes'] / 1024**3:.2f} GB, verdrängt wird bis "
+                f"{stats['evict_target_percent']} % der Grenze (FILE_CACHE_MAX_TOTAL_GB)"
+            )
         if stats.get("without_size"):
             self.stdout.write(
                 f"  {stats['without_size']} Kopien ohne gemessene Größe (Summe teils aus OParl): cache_files --sizes"

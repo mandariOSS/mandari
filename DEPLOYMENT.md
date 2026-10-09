@@ -898,7 +898,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
 | `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, neueste fehlende Dateien zuerst (`docs/FILE_CACHE.md`) |
 | `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
-| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788) |
+| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788); hält mit `FILE_CACHE_MAX_TOTAL_GB` auch die Obergrenze des Dokument-Caches ein (Issue #961) |
 | `befehl:generate_alerts` | täglich 07:45 | Benachrichtigungen der Abos zu Themen und Orten; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:send_digest` | montags 08:00 | Wochenmail der Abos; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:check_source_health` | stündlich :15 | Zustand der Quellen (Issue #231, `docs/MONITORING.md`) |
@@ -985,6 +985,24 @@ ist wiederholbar, erzeugt nur Fehlendes und kennt `--dry-run` und `--tenant <slu
 ```bash
 docker compose exec mandari python manage.py session_publish_protocols
 ```
+
+**Obergrenze des Dokument-Caches** (Issue #961, `docs/FILE_CACHE.md`, „Obergrenze der Gesamtgröße“): Standard
+unbegrenzt, das Update ändert nichts (Migration `insight_core/0056`, nur eine neue Spalte). Wer die Ablage
+begrenzen will, baut einen großen Bestand zuerst von Hand ab und setzt danach die Grenze; ab dann hält das
+stündliche Aufräumen sie ein. `--dry-run` zeigt vorher Anzahl, Größe und Kommunen; der Lauf arbeitet in kurzen
+Stapeln und ist jederzeit abbrechbar und wiederholbar:
+
+```bash
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10
+# danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
+# FILE_CACHE_MAX_TOTAL_GB=10
+```
+
+Mit Objektspeicher löscht der Abbau nur lokale Kopien; ohne holt die Vorschau verdrängte Dokumente bei Bedarf
+von der Quelle. Eigene Compose-Dateien brauchen `FILE_CACHE_MAX_TOTAL_GB` in der `environment` von Anwendung und
+Worker. Zurück: Variable entfernen bzw. auf `0` setzen und neu starten; ohne Objektspeicher lädt
+`cache_files --verdraengte` verdrängte Dokumente wieder nach.
 
 Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vorgabe
 `<MEDIA_ROOT>/audit_archive`, also im persistenten Medien-Volume und in der Sicherung; nie per
