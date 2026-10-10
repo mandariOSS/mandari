@@ -195,7 +195,8 @@
         </div>
     </c-ui.card>
 
-    <c-ui.card title="Suche: Treffer" subtitle="c-suche.textlink – href; c-suche.reiter – tabs; c-suche.filterleiste – zeitraum, art, sortierung (c-suche.facette); c-suche.treffer-vorgang / -person – treffer">
+    <c-ui.card title="Suche: Treffer" subtitle="c-suche.feld – adresse, wert, platzhalter, fokus; c-suche.textlink – href, knopf, klasse; c-suche.reiter – tabs; c-suche.filterleiste – zeitraum, art, sortierung (c-suche.facette); c-suche.treffer-vorgang / -person – treffer. Feld, Reiter und Filter mit dicht in den Maßen von Work (32 px, 14 px)">
+        <div class="mb-4"><c-suche.feld adresse="#" wert="Radweg" platzhalter="Thema, Straße oder Aktenzeichen" dicht /></div>
         <p class="mb-4 text-sm">Zeitraum: Letzte 2 Jahre · <c-suche.textlink href="#">entfernen</c-suche.textlink></p>
         <c-suche.reiter :tabs="demo_reiter" />
         <c-suche.filterleiste :zeitraum="demo_zeitraum" :art="demo_art" :sortierung="demo_sortierung" />

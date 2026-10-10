@@ -13,7 +13,8 @@ sehen ohne Rückfrage Eingangsnummer, Bearbeitungsstatus und Beratungstermine (I
    sofort geprüft; es entsteht eine `AdministrationConnection` (Organisation ↔ Verwaltung,
    Token-Hash, Präfix). Recht: `faction.manage`.
 3. **Einreichen**: Im Dokument-Editor erscheint für Mitglieder mit `motions.submit_to_ris`
-   die Aktion „Bei Verwaltung einreichen“ (Kopfzeile und Sidebar „Verwaltung“). Die Seite
+   die Aktion „Bei Verwaltung einreichen“ (Kopfzeile und Sidebar „Verwaltung“; im neuen Erscheinungsbild
+   Menü „Ablauf“ und Schritt „Einreichung“). Die Seite
    `documents/<id>/submit-ris/` zeigt die Dokumentvorschau und ein vorbelegtes Formular:
    Titel, Antragsart (aus Dokumenttyp/Titel geraten), Beschlussvorschlag, Begründung,
    finanzielle Auswirkungen (aus Überschriften wie „Beschlussvorschlag“, „Begründung“,

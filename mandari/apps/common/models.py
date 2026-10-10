@@ -11,6 +11,8 @@ from typing import Any
 from django.core.cache import cache
 from django.db import models
 
+from .ki_anbieter import ANBIETER_AUSWAHL, ANBIETER_VORLAGEN
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,10 +43,14 @@ class SiteSettings(models.Model):
     Accessible via Admin, with fallback to environment variables.
     Use SiteSettings.get_settings() to retrieve the instance.
 
-    SMTP-Passwort und Nebius-Schlüssel liegen mit dem ENCRYPTION_MASTER_KEY verschlüsselt
-    in der Datenbank (AES-256-GCM, wie ``AISettings``). Lesen und Schreiben nur über
-    ``get_email_host_password()``/``set_email_host_password()`` und
-    ``get_stored_nebius_api_key()``/``set_nebius_api_key()``.
+    Das SMTP-Passwort liegt mit dem ENCRYPTION_MASTER_KEY verschlüsselt in der Datenbank
+    (AES-256-GCM, wie ``AISettings``). Lesen und Schreiben nur über
+    ``get_email_host_password()``/``set_email_host_password()``.
+
+    Die Spalten des früheren Nebius-Schlüssels sind seit Issue #950 ungenutzt: Die Migration
+    common/0011 leert sie, gelesen und geschrieben werden sie nicht mehr. Sie bleiben nur, damit
+    ein älteres Image nach einem Rückfall weiterläuft, und entfallen mit einer Folgeversion.
+    KI-Zugänge stehen ausschließlich in den KI-Einstellungen (``AISettings``).
 
     Die ``*_legacy``-Felder sind die früheren Klartextspalten. Die Migration common/0006
     verschlüsselt ihren Inhalt und leert sie; neu beschrieben werden sie nur noch von einer
@@ -101,7 +107,7 @@ class SiteSettings(models.Model):
     )
 
     # ==========================================================================
-    # AI API Settings
+    # Früherer KI-Schlüssel: ungenutzt seit Issue #950, von Migration common/0011 geleert
     # ==========================================================================
     nebius_api_key_encrypted = models.BinaryField(
         blank=True,
@@ -182,39 +188,9 @@ class SiteSettings(models.Model):
             self.email_host_password_encrypted, "SMTP-Passwort"
         )
 
-    def set_nebius_api_key(self, value: str) -> None:
-        """Nebius-Schlüssel verschlüsselt ablegen; leer löscht ihn. Erst ``save()`` speichert."""
-        self.nebius_api_key_encrypted = _encrypt_platform_secret(value)
-        self.nebius_api_key_legacy = ""
-
-    def get_stored_nebius_api_key(self) -> str:
-        """Der hier gespeicherte Nebius-Schlüssel (ohne Umgebungsvariable, siehe ``get_nebius_api_key``)."""
-        return self.nebius_api_key_legacy or _decrypt_platform_secret(self.nebius_api_key_encrypted, "Nebius-Schlüssel")
-
     @property
     def has_email_host_password(self) -> bool:
         return bool(self.email_host_password_legacy or self.email_host_password_encrypted)
-
-    @property
-    def has_nebius_api_key(self) -> bool:
-        return bool(self.nebius_api_key_legacy or self.nebius_api_key_encrypted)
-
-    @classmethod
-    def get_nebius_api_key(cls) -> str:
-        """
-        Get Nebius API key.
-
-        Priority: Environment variable > SiteSettings
-        """
-        import os
-
-        # Check environment variable first
-        env_key = os.environ.get("NEBIUS_API_KEY", "").strip()
-        if env_key:
-            return env_key
-
-        # Fallback to SiteSettings
-        return cls.get_settings().get_stored_nebius_api_key()
 
     @classmethod
     def get_email_config(cls) -> dict:
@@ -242,65 +218,81 @@ class SiteSettings(models.Model):
 
 class AISettings(models.Model):
     """
-    Singleton model for global AI configuration (Work DMS editor).
+    Eine Konfiguration für alle KI-Aufrufe der Plattform (Issue #950).
 
-    Configured via Admin (unfold). Serves as the platform-wide default for
-    the document AI assistant; organizations can override provider/model/key
-    via their own fields on ``tenants.Organization``.
+    Gilt für Schreibhilfe und Co-Editor in Work (Organisationen mit eigenem Schlüssel überschreiben sie,
+    ``tenants.Organization``) und für Zusammenfassung, Bürger-Chat und KI-Verortung im Bürgerportal.
+    Aufgelöst wird nur in ``apps.common.ki_anbieter``: Wirksam ist eine Adresse nur, wenn ihr Host in der
+    Positivliste ``KI_ERLAUBTE_HOSTS`` steht. Ohne Anbieter (Standard) bleibt die KI aus.
 
-    The API key is encrypted at rest with the ENCRYPTION_MASTER_KEY
-    (AES-256-GCM) — use ``set_api_key()`` / ``get_api_key()``.
+    Der Schlüssel liegt mit dem ENCRYPTION_MASTER_KEY verschlüsselt (AES-256-GCM), Zugriff nur über
+    ``set_api_key()``/``get_api_key()``. Die neuen Felder haben Datenbank-Standardwerte, damit ein älteres
+    Image nach einem Rückfall weiterläuft.
     """
 
     CACHE_KEY = "ai_settings"
     CACHE_TIMEOUT = 300  # 5 minutes
 
-    PROVIDER_ANTHROPIC = "anthropic"
-    PROVIDER_OPENAI = "openai"
-    PROVIDER_MISTRAL = "mistral"
-    PROVIDER_NEBIUS = "nebius"
-    PROVIDER_OVH = "ovh"
-    PROVIDER_IONOS = "ionos"
-    PROVIDER_CHOICES = [
-        (PROVIDER_ANTHROPIC, "Anthropic (Claude)"),
-        (PROVIDER_OPENAI, "OpenAI"),
-        (PROVIDER_MISTRAL, "Mistral"),
-        (PROVIDER_NEBIUS, "Nebius TokenFactory"),
-        (PROVIDER_OVH, "OVHcloud AI Endpoints"),
-        (PROVIDER_IONOS, "IONOS AI Model Hub"),
-    ]
-
-    # Default base URLs per provider (OpenAI-kompatibel, außer Anthropic).
-    PROVIDER_BASE_URLS = {
-        PROVIDER_ANTHROPIC: "https://api.anthropic.com/v1/",
-        PROVIDER_OPENAI: "https://api.openai.com/v1/",
-        PROVIDER_MISTRAL: "https://api.mistral.ai/v1/",
-        PROVIDER_NEBIUS: "https://api.tokenfactory.nebius.com/v1/",
-        PROVIDER_OVH: "",
-        PROVIDER_IONOS: "",
-    }
+    #: Nicht eingerichtet: Die KI bleibt aus
+    PROVIDER_NONE = ""
+    PROVIDER_CHOICES = [(PROVIDER_NONE, "Nicht eingerichtet (KI aus)"), *ANBIETER_AUSWAHL]
 
     enabled = models.BooleanField(
         default=True,
-        verbose_name="KI aktiviert",
-        help_text="Globaler Schalter für den KI-Assistenten im Dokumenten-Editor.",
+        verbose_name="KI in Work aktiviert",
+        help_text="Schreibhilfe und Co-Editor in Work. Aus: Die KI in Work ist aus, auch mit Schlüssel.",
     )
     provider = models.CharField(
         max_length=20,
         choices=PROVIDER_CHOICES,
-        default=PROVIDER_NEBIUS,
+        default=PROVIDER_NONE,
+        blank=True,
         verbose_name="KI-Anbieter",
+        help_text=(
+            "Vorlage eines OpenAI-kompatiblen Anbieters oder eigener Endpunkt. Wirksam nur, wenn der Host in "
+            "KI_ERLAUBTE_HOSTS steht."
+        ),
     )
     base_url = models.URLField(
         blank=True,
         verbose_name="API Base URL",
-        help_text="Optional. Leer lassen für den Anbieter-Standard (OpenAI-kompatible Endpunkte bzw. Anthropic Messages API).",
+        help_text=(
+            "Leer: Basis-URL der Vorlage. Beim eigenen Endpunkt Pflicht, etwa https://…/v1. Nur https, nur "
+            "Hosts aus KI_ERLAUBTE_HOSTS."
+        ),
+    )
+    anzeigename = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Anzeigename",
+        help_text="Name des Anbieters in Hinweisen und in der Einwilligung. Leer: Name der Vorlage.",
+    )
+    verarbeitungsort = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Verarbeitungsort",
+        help_text="Etwa: Rechenzentren in Deutschland (EU). Leer: Angabe der Vorlage.",
     )
     model_name = models.CharField(
         max_length=100,
         default="openai/gpt-oss-120b",
         verbose_name="Modell",
-        help_text="z.B. openai/gpt-oss-120b (Nebius), gpt-4o-mini (OpenAI), claude-sonnet-4-5 (Anthropic), mistral-small-latest (Mistral).",
+        help_text="Modellname beim gewählten Anbieter, für Work und als Standard für das Bürgerportal.",
+    )
+    fallback_model = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Ausweichmodell",
+        help_text=(
+            "Optional. Wird im Bürgerportal einmal versucht, wenn das Modell nicht antwortet (HTTP 404, 408, "
+            "429, 5xx oder Zeitüberschreitung); gleicher Endpunkt, gleicher Schlüssel."
+        ),
     )
     api_key_encrypted = models.BinaryField(
         blank=True,
@@ -309,10 +301,34 @@ class AISettings(models.Model):
         verbose_name="API Key (verschlüsselt)",
         help_text="AES-256-GCM verschlüsselt mit dem ENCRYPTION_MASTER_KEY.",
     )
+    insight_enabled = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="KI im Bürgerportal aktiviert",
+        help_text="Zusammenfassungen, KI-Assistent und KI-Verortung im Bürgerportal.",
+    )
+    insight_model = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Modell im Bürgerportal",
+        help_text="Leer: dasselbe Modell wie in Work.",
+    )
     max_output_tokens = models.PositiveIntegerField(
         default=2000,
-        verbose_name="Max. Output-Tokens",
-        help_text="Obergrenze für die Antwortlänge pro KI-Aufruf.",
+        verbose_name="Max. Output-Tokens (Work)",
+        help_text="Obergrenze für die Antwortlänge je KI-Aufruf in Work.",
+    )
+    insight_max_output_tokens = models.PositiveIntegerField(
+        default=8192,
+        db_default=8192,
+        verbose_name="Max. Output-Tokens (Bürgerportal)",
+        help_text=(
+            "Obergrenze für die Antwortlänge je KI-Aufruf im Bürgerportal (Zusammenfassungen, Chat). Höchstens "
+            "die dokumentierte maximale Antwortlänge des Modells beim Anbieter, bei STACKIT für "
+            "openai/gpt-oss-120b 8192; größere Werte lehnt der Anbieter ab (HTTP 400)."
+        ),
     )
     default_org_monthly_token_limit = models.PositiveIntegerField(
         default=3000000,
@@ -328,18 +344,18 @@ class AISettings(models.Model):
         verbose_name = "KI-Einstellungen"
         verbose_name_plural = "KI-Einstellungen"
 
-    def __str__(self):
+    def __str__(self) -> str:
         return "KI-Einstellungen"
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         # Ensure only one instance exists (Singleton pattern)
         self.pk = 1
         super().save(*args, **kwargs)
         cache.delete(self.CACHE_KEY)
 
-    def delete(self, *args, **kwargs):
+    def delete(self, *args: Any, **kwargs: Any) -> tuple[int, dict[str, int]]:
         # Prevent deletion
-        pass
+        return 0, {}
 
     @classmethod
     def get_settings(cls) -> "AISettings":
@@ -371,10 +387,11 @@ class AISettings(models.Model):
             return ""
 
     def get_effective_base_url(self) -> str:
-        """Resolve the API endpoint (explicit override or provider default)."""
+        """Eingetragene Basis-URL, sonst die der Vorlage (ungeprüft; geprüft wird in ``ki_anbieter``)."""
         if self.base_url:
             return self.base_url
-        return self.PROVIDER_BASE_URLS.get(self.provider, "")
+        vorlage = ANBIETER_VORLAGEN.get(self.provider or "")
+        return vorlage.basis_url if vorlage else ""
 
 
 class ProblemReport(models.Model):

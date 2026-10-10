@@ -34,7 +34,7 @@ from apps.common import key_rotation
 from apps.common.crypto_registry import ENCRYPTED_FIELDS
 from apps.common.encryption import TenantEncryption, aes_open, decode_master_key
 from apps.common.key_rotation import FieldReport, KeyRotation, RotationError, ScanResult, Status
-from apps.common.models import AISettings, SiteSettings
+from apps.common.models import AISettings, SiteSettings, _decrypt_platform_secret, _encrypt_platform_secret
 from apps.common.tests.factories import MembershipFactory, OrganizationFactory, UserFactory
 from apps.minutes.models import Recording, RecordingSegment, TranscriptSegment
 from apps.minutes.models_compute import ComputeSettings
@@ -125,7 +125,8 @@ def _anlegen() -> Bestand:
     cast(Any, ki).save()
     system = SiteSettings.get_settings()
     system.set_email_host_password("smtp-geheim-system")
-    system.set_nebius_api_key("nebius-geheim-system")
+    # Früherer Nebius-Schlüssel (ungenutzt seit Issue #950): Solange die Spalte besteht, gehört sie zum Wechsel
+    system.nebius_api_key_encrypted = _encrypt_platform_secret("nebius-geheim-system")
     cast(Any, system).save()
     rechenknoten = ComputeSettings.load(use_cache=False)
     rechenknoten.set_client_secret("client-geheim")
@@ -177,7 +178,7 @@ def _lesen(b: Bestand) -> dict[str, str]:
         "transkript_fraktion": entschluesselt(TranscriptSegment, b.transkript_fraktion.pk, "get_text_decrypted"),
         "ki_global": AISettings.objects.get(pk=1).get_api_key(),
         "smtp_system": system.get_email_host_password(),
-        "nebius_system": system.get_stored_nebius_api_key(),
+        "nebius_system": _decrypt_platform_secret(system.nebius_api_key_encrypted, "Nebius"),
         "antrag": entschluesselt(Motion, b.dokument.pk, "get_content_decrypted"),
         "yjs": zustand.hex() if zustand == YJS_ZUSTAND else "abweichend",
         "client": rechenknoten.get_client_secret(),

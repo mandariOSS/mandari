@@ -528,6 +528,11 @@ MEDIA_ROOT = BASE_DIR / "media"
 OPARL_FILES_ROOT = Path(os.environ.get("OPARL_FILES_ROOT", str(MEDIA_ROOT / "oparl_files")))
 FILE_CACHE_MAX_MB = int(os.environ.get("FILE_CACHE_MAX_MB", "80"))
 FILE_CACHE_MIN_FREE_GB = int(os.environ.get("FILE_CACHE_MIN_FREE_GB", "15"))
+# Obergrenze der Gesamtgröße (Issue #961, insight_core/services/file_cache_limit.py): 0 = unbegrenzt. Darüber
+# verdrängt der stündliche Lauf die am wenigsten gebrauchten Dokumente, bis FILE_CACHE_EVICT_TARGET_PERCENT der
+# Grenze erreicht sind (mit Objektspeicher nur lokal, sonst holt die Vorschau sie bei Bedarf neu).
+FILE_CACHE_MAX_TOTAL_GB = float(os.environ.get("FILE_CACHE_MAX_TOTAL_GB", "0") or 0)
+FILE_CACHE_EVICT_TARGET_PERCENT = int(os.environ.get("FILE_CACHE_EVICT_TARGET_PERCENT", "90") or 90)
 FILE_PROXY_TIMEOUT_SECONDS = int(os.environ.get("FILE_PROXY_TIMEOUT_SECONDS", "15"))
 # Lokale Kopien liefert der Webserver aus (X-Accel-Redirect, Range/ETag), Django prüft nur Zugriff und
 # Sperre (Issue #785, docs/FILE_CACHE.md). Erst einschalten, wenn der Webserver die Ablage lesen kann
@@ -713,11 +718,18 @@ INSIGHT_SEARCH_PLACES = os.environ.get("INSIGHT_SEARCH_PLACES", "true").lower() 
 INSIGHT_SEARCH_PLACES_MIN_SHARE = float(os.environ.get("INSIGHT_SEARCH_PLACES_MIN_SHARE", "0.5"))
 INSIGHT_SEARCH_PLACES_RADIUS = int(os.environ.get("INSIGHT_SEARCH_PLACES_RADIUS", "500"))
 
-# Nebius AI (KI-Features: Dokumenten-Assistent, Zusammenfassungen)
-NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
+# KI-Anbieter (Issue #950): Anbieter, Basis-URL, Modell und Schlüssel stehen im Admin (KI-Einstellungen, für
+# Work auch je Organisation). Hier nur die Positivliste erlaubter Hosts als technische Sperre, kommagetrennt;
+# leer ist nichts erlaubt (kein Standard, shared/mandari_dokumente/ki_hosts.py). Gilt für jeden KI-Aufruf, auch
+# für die Texterkennung über MISTRAL_BASE_URL.
+from mandari_dokumente.ki_hosts import erlaubte_hosts_aus_umgebung
 
-# Mistral API (für OCR)
+KI_ERLAUBTE_HOSTS = list(erlaubte_hosts_aus_umgebung())
+
+# Mistral-kompatible Texterkennung (optional): nur mit Schlüssel UND Basis-URL, deren Host in KI_ERLAUBTE_HOSTS
+# steht; sonst bleibt die Texterkennung lokal (pypdf, Tesseract). Nur für öffentliche RIS-Dateien.
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+MISTRAL_BASE_URL = os.environ.get("MISTRAL_BASE_URL", "").strip()
 MISTRAL_OCR_RATE_LIMIT = int(os.environ.get("MISTRAL_OCR_RATE_LIMIT", "60"))  # Requests pro Minute
 
 MISTRAL_OCR_MODEL = os.environ.get("MISTRAL_OCR_MODEL", "pixtral-12b-2409")
@@ -944,8 +956,16 @@ SMTP_FALLBACK = {
     "timeout": int(os.environ.get("EMAIL_TIMEOUT", "30")),
 }
 
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@mandari.de")
+# Absender, wenn weder die Systemeinstellungen noch DEFAULT_FROM_EMAIL einen nennen. Leer gilt als nicht
+# gesetzt (docker-compose.yml reicht die Variable auch leer durch). Message-ID und EHLO richten sich nur nach
+# einem ausdrücklich gesetzten Absender, nie nach diesem Rückfall (apps.common.mail_domain, Issue #957).
+DEFAULT_FROM_EMAIL_FALLBACK = "noreply@mandari.de"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "").strip() or DEFAULT_FROM_EMAIL_FALLBACK
 SERVER_EMAIL = os.environ.get("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+# Domain hinter dem @ der Message-ID und Name im EHLO gegenüber dem Mailserver (Issue #957). Django nähme
+# socket.getfqdn(), im Container die Container-ID. Leer = Domain von DEFAULT_FROM_EMAIL, wenn ausdrücklich
+# gesetzt, sonst Host aus SITE_URL. Gesetzt beim Start in apps.common.mail_domain (gilt für alle Versandwege).
+EMAIL_MESSAGE_ID_DOMAIN = os.environ.get("EMAIL_MESSAGE_ID_DOMAIN", "").strip()
 
 # Mail-Dienst (apps.common.mail, Issue #528): Mailarten, die als Auftrag (Warteschlange "mail") statt in
 # der Anfrage versendet werden – kommagetrennte Muster wie "work.*,konto.passwort" oder "*" für alle.

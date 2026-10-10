@@ -362,12 +362,23 @@ def collect_system_health() -> list[dict]:
             status = "warning"
         else:
             status = "ok"
+        gb = 1024**3
+        if stats.get("object_storage"):
+            # Mit Objektspeicher liegt nur ein Teil lokal (#961): Platte und Objektspeicher getrennt
+            belegung = (
+                f"{stats['ok']} von {stats['total']} Dokumenten abgelegt ({stats['coverage']} %), "
+                f"lokal {stats['local_bytes'] / gb:.2f} GB, im Objektspeicher {stats['remote_bytes'] / gb:.2f} GB"
+            )
+        else:
+            belegung = (
+                f"{stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
+                f"{stats['local_bytes'] / gb:.2f} GB belegt"
+            )
         checks.append(
             _check(
                 "Dokument-Cache",
                 status,
-                f"{stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
-                f"{stats['cached_gb']} GB belegt, {free_gb:.0f} GB frei"
+                f"{belegung}, {free_gb:.0f} GB frei"
                 + (f", {stats['paused']} warten auf Quellen in Schonung" if stats.get("paused") else ""),
             )
         )

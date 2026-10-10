@@ -54,5 +54,9 @@ class Command(BaseCommand):
             return
         vorsilbe = "Würde zurückdrehen" if options["dry_run"] else "Zurückgedreht"
         self.stdout.write(f"{vorsilbe}: {bericht.eintraege} Umzüge, {bericht.datensaetze} Datensätze")
+        if bericht.bereits_zurueck:
+            self.stdout.write(f"  bereits zurück (übersprungen): {bericht.bereits_zurueck} Datensätze")
         for eintrag, name, pk in bericht.nicht_moeglich:
             self.stdout.write(self.style.WARNING(f"  nicht zurückgedreht: {eintrag} {name} {pk}"))
+        for eintrag in bericht.offen:
+            self.stdout.write(self.style.WARNING(f"  bleibt offen (Eindeutigkeit, später erneut versuchen): {eintrag}"))

@@ -18,7 +18,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("work", "0074_sitzungsreihe_automatik"),
+        ("work", "0077_sitzungsansicht"),
     ]
 
     operations = [

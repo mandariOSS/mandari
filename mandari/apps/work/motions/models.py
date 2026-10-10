@@ -1930,6 +1930,12 @@ class MotionComment(models.Model):
     # TipTap mark ID for inline comment highlighting
     mark_id = models.UUIDField(null=True, blank=True, verbose_name="Editor Mark ID")
 
+    # Änderungsvorschlag (Teil von #856, Modus „Vorschlagen“, apps/work/motions/vorschlaege.py): vorgeschlagener
+    # Ersatz für ``selected_text``; ``None`` = gewöhnlicher Kommentar, leer = Stelle streichen
+    vorschlag = models.TextField(null=True, blank=True, default=None, verbose_name="Vorgeschlagener Text")
+    # Entscheidung über den Vorschlag: ``None`` = offen, ``True`` = angenommen, ``False`` = abgelehnt
+    vorschlag_angenommen = models.BooleanField(null=True, blank=True, default=None, verbose_name="Vorschlag angenommen")
+
     # Content
     content = models.TextField(verbose_name="Kommentar")
 

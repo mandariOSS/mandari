@@ -256,12 +256,88 @@ class FactionStandardAgendaItem(models.Model):
         return self.title
 
 
-class FactionMeeting(EncryptionMixin, models.Model):
+class MemberNameSnapshotMixin(models.Model):
+    """
+    Namen beteiligter Mitglieder am Eintrag sichern (Issue #591).
+
+    Anwesenheitslisten, Protokolleinträge und Teilnahmebestätigungen belegen, wer an einer
+    Beschlussfassung beteiligt war. Wird die Mitgliedschaft entfernt, leert ``SET_NULL`` den
+    Verweis (#420); der Name muss trotzdem erhalten bleiben, unabhängig davon, ob das Protokoll
+    schon genehmigt ist. Deshalb hat jeder Verweis aus ``MEMBER_NAME_SNAPSHOTS`` ein Feld mit dem
+    gesicherten Namen. Es wird gesetzt
+
+    - beim Speichern, sobald der Verweis gesetzt oder geändert wird (ein ausdrücklich geleerter
+      Verweis leert auch den Namen),
+    - spätestens beim Entfernen der Mitgliedschaft mit dem dann aktuellen Namen
+      (:func:`apps.work.faction.services.preserve_member_names`, ohne ``save()``).
+
+    Angezeigt wird, solange die Mitgliedschaft besteht, der aktuelle Name, danach der gesicherte
+    (:func:`apps.common.formatting.member_name`).
+    """
+
+    #: Verweis auf die Mitgliedschaft → Feld mit dem gesicherten Namen
+    MEMBER_NAME_SNAPSHOTS: ClassVar[dict[str, str]] = {}
+
+    class Meta:
+        abstract = True
+
+    @classmethod
+    def from_db(cls, db: Any, field_names: Any, values: Any, **kwargs: Any) -> Any:
+        # Geladene Verweise merken: So erkennt save() geänderte und ausdrücklich geleerte Verweise.
+        instance = super().from_db(db, field_names, values, **kwargs)
+        instance._stored_member_ids = instance._loaded_member_ids()
+        return instance
+
+    def _loaded_member_ids(self) -> dict[str, Any]:
+        """Geladene Verweise; zurückgestellte Felder bleiben außen vor (keine zusätzliche Abfrage)."""
+        return {fk: self.__dict__[f"{fk}_id"] for fk in self.MEMBER_NAME_SNAPSHOTS if f"{fk}_id" in self.__dict__}
+
+    def _refresh_member_name_snapshots(self, update_fields: Any) -> list[str]:
+        """Gesicherte Namen zu gesetzten oder geänderten Verweisen nachführen; liefert die geänderten Felder."""
+        stored: dict[str, Any] = getattr(self, "_stored_member_ids", {})
+        changed = []
+        for fk, snapshot_field in self.MEMBER_NAME_SNAPSHOTS.items():
+            attname = f"{fk}_id"
+            if attname not in self.__dict__:
+                continue
+            if update_fields is not None and fk not in update_fields and attname not in update_fields:
+                continue
+            member_id = self.__dict__[attname]
+            current = getattr(self, snapshot_field)
+            if member_id is None:
+                # Nur ein ausdrücklich geleerter Verweis leert den Namen. Beim Entfernen des Mitglieds
+                # leert SET_NULL den Verweis ohne save(); der gesicherte Name bleibt dann stehen.
+                name = "" if stored.get(fk) is not None else current
+            elif current and stored.get(fk) == member_id:
+                continue
+            else:
+                name = formatting.member_name_snapshot(getattr(self, fk))
+            if name != current:
+                setattr(self, snapshot_field, name)
+                changed.append(snapshot_field)
+        return changed
+
+    def save(self, *args: Any, **kwargs: Any) -> None:
+        update_fields = kwargs.get("update_fields")
+        changed = self._refresh_member_name_snapshots(update_fields)
+        if update_fields is not None and changed:
+            kwargs["update_fields"] = [*update_fields, *changed]
+        super().save(*args, **kwargs)
+        self._stored_member_ids = self._loaded_member_ids()
+
+
+class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
     """
     Internal faction/organization meeting.
 
     Separate from public OParl meetings - these are internal.
     """
+
+    # Sitzungsleitung und Schriftführung (Issue #874): Namen bleiben nach dem Entfernen der Mitgliedschaft
+    MEMBER_NAME_SNAPSHOTS = {
+        "chaired_by": "chaired_by_name_snapshot",
+        "minute_taker": "minute_taker_name_snapshot",
+    }
 
     STATUS_CHOICES = [
         ("draft", "Entwurf"),
@@ -330,6 +406,41 @@ class FactionMeeting(EncryptionMixin, models.Model):
     # Timing
     start = models.DateTimeField(verbose_name="Beginn")
     end = models.DateTimeField(blank=True, null=True, verbose_name="Ende")
+    # Tatsächlicher Beginn (Issue #874): gesetzt beim Starten; ältere Sitzungen haben ihn nicht
+    started_at = models.DateTimeField(blank=True, null=True, verbose_name="Gestartet um")
+
+    # Sitzungsleitung und Schriftführung (Issue #874). Wer die Schriftführung hat, darf in der laufenden
+    # Sitzung protokollieren (Notizen, Aufgaben, Beschluss) und die Anwesenheit pflegen.
+    chaired_by = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="chaired_faction_meetings",
+        verbose_name="Sitzungsleitung",
+    )
+    chaired_by_name_snapshot = models.CharField(
+        max_length=formatting.MEMBER_NAME_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Sitzungsleitung (Name, gesichert)",
+    )
+    minute_taker = models.ForeignKey(
+        "tenants.Membership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="minuted_faction_meetings",
+        verbose_name="Schriftführung",
+    )
+    minute_taker_name_snapshot = models.CharField(
+        max_length=formatting.MEMBER_NAME_MAX_LENGTH,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Schriftführung (Name, gesichert)",
+    )
 
     # Location
     location = models.CharField(max_length=500, blank=True, verbose_name="Ort")
@@ -473,6 +584,20 @@ class FactionMeeting(EncryptionMixin, models.Model):
 
     def get_encryption_organization(self):
         return self.organization
+
+    @property
+    def chaired_by_name(self) -> str:
+        """Sitzungsleitung; nach dem Entfernen der Mitgliedschaft der gesicherte Name, sonst leer."""
+        if not self.chaired_by_id and not self.chaired_by_name_snapshot:
+            return ""
+        return formatting.member_name(self.chaired_by, self.chaired_by_name_snapshot)
+
+    @property
+    def minute_taker_name(self) -> str:
+        """Schriftführung; nach dem Entfernen der Mitgliedschaft der gesicherte Name, sonst leer."""
+        if not self.minute_taker_id and not self.minute_taker_name_snapshot:
+            return ""
+        return formatting.member_name(self.minute_taker, self.minute_taker_name_snapshot)
 
     @property
     def is_upcoming(self) -> bool:
@@ -704,6 +829,11 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
         verbose_name="Öffentlicher TOP",
     )
 
+    # Notizen der laufenden Sitzung (Issue #874): formatiert (HTML nach der Positivliste des Editors,
+    # apps/work/sanitize.py), ein gemeinsames Dokument je TOP. Bisherige Protokolleinträge bleiben unverändert.
+    notes_encrypted = EncryptedTextField(verbose_name="Notizen")
+    notes_updated_at = models.DateTimeField(blank=True, null=True, verbose_name="Notizen geändert am")
+
     # Decision (encrypted)
     decision_encrypted = EncryptedTextField(verbose_name="Beschluss")
     has_decision = models.BooleanField(default=False, verbose_name="Beschluss gefasst")
@@ -818,6 +948,19 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
         return self.proposal_status == "rejected"
 
     @property
+    def notes_html(self):
+        """
+        Notizen der Sitzungsansicht (Issue #874) als bereinigtes HTML nach der Positivliste des Editors, sonst leer.
+
+        Für alle lesenden Stellen (Sitzungsansicht, bisherige Ansicht, Niederschrift).
+        """
+        from apps.work.sanitize import safe_editor_html
+
+        if not self.notes_encrypted:
+            return ""
+        return safe_editor_html(self.get_notes_decrypted())
+
+    @property
     def recorded_decision(self):
         """
         Erfasstes Abstimmungsergebnis (FactionDecision) oder ``None``.
@@ -832,76 +975,6 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
             return self.decision
         except ObjectDoesNotExist:
             return None
-
-
-class MemberNameSnapshotMixin(models.Model):
-    """
-    Namen beteiligter Mitglieder am Eintrag sichern (Issue #591).
-
-    Anwesenheitslisten, Protokolleinträge und Teilnahmebestätigungen belegen, wer an einer
-    Beschlussfassung beteiligt war. Wird die Mitgliedschaft entfernt, leert ``SET_NULL`` den
-    Verweis (#420); der Name muss trotzdem erhalten bleiben, unabhängig davon, ob das Protokoll
-    schon genehmigt ist. Deshalb hat jeder Verweis aus ``MEMBER_NAME_SNAPSHOTS`` ein Feld mit dem
-    gesicherten Namen. Es wird gesetzt
-
-    - beim Speichern, sobald der Verweis gesetzt oder geändert wird (ein ausdrücklich geleerter
-      Verweis leert auch den Namen),
-    - spätestens beim Entfernen der Mitgliedschaft mit dem dann aktuellen Namen
-      (:func:`apps.work.faction.services.preserve_member_names`, ohne ``save()``).
-
-    Angezeigt wird, solange die Mitgliedschaft besteht, der aktuelle Name, danach der gesicherte
-    (:func:`apps.common.formatting.member_name`).
-    """
-
-    #: Verweis auf die Mitgliedschaft → Feld mit dem gesicherten Namen
-    MEMBER_NAME_SNAPSHOTS: ClassVar[dict[str, str]] = {}
-
-    class Meta:
-        abstract = True
-
-    @classmethod
-    def from_db(cls, db: Any, field_names: Any, values: Any, **kwargs: Any) -> Any:
-        # Geladene Verweise merken: So erkennt save() geänderte und ausdrücklich geleerte Verweise.
-        instance = super().from_db(db, field_names, values, **kwargs)
-        instance._stored_member_ids = instance._loaded_member_ids()
-        return instance
-
-    def _loaded_member_ids(self) -> dict[str, Any]:
-        """Geladene Verweise; zurückgestellte Felder bleiben außen vor (keine zusätzliche Abfrage)."""
-        return {fk: self.__dict__[f"{fk}_id"] for fk in self.MEMBER_NAME_SNAPSHOTS if f"{fk}_id" in self.__dict__}
-
-    def _refresh_member_name_snapshots(self, update_fields: Any) -> list[str]:
-        """Gesicherte Namen zu gesetzten oder geänderten Verweisen nachführen; liefert die geänderten Felder."""
-        stored: dict[str, Any] = getattr(self, "_stored_member_ids", {})
-        changed = []
-        for fk, snapshot_field in self.MEMBER_NAME_SNAPSHOTS.items():
-            attname = f"{fk}_id"
-            if attname not in self.__dict__:
-                continue
-            if update_fields is not None and fk not in update_fields and attname not in update_fields:
-                continue
-            member_id = self.__dict__[attname]
-            current = getattr(self, snapshot_field)
-            if member_id is None:
-                # Nur ein ausdrücklich geleerter Verweis leert den Namen. Beim Entfernen des Mitglieds
-                # leert SET_NULL den Verweis ohne save(); der gesicherte Name bleibt dann stehen.
-                name = "" if stored.get(fk) is not None else current
-            elif current and stored.get(fk) == member_id:
-                continue
-            else:
-                name = formatting.member_name_snapshot(getattr(self, fk))
-            if name != current:
-                setattr(self, snapshot_field, name)
-                changed.append(snapshot_field)
-        return changed
-
-    def save(self, *args: Any, **kwargs: Any) -> None:
-        update_fields = kwargs.get("update_fields")
-        changed = self._refresh_member_name_snapshots(update_fields)
-        if update_fields is not None and changed:
-            kwargs["update_fields"] = [*update_fields, *changed]
-        super().save(*args, **kwargs)
-        self._stored_member_ids = self._loaded_member_ids()
 
 
 class FactionAttendance(MemberNameSnapshotMixin):

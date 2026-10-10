@@ -1,0 +1,99 @@
+{% load member_tags %}
+{% comment %}
+Kopf des neuen Antragseditors (Teil von #856, Prototyp E1+E2): eine Zeile mit Titel, Stand-Knopf, Speicheranzeige und
+Menüleiste (Datei … Ablauf), daneben die Ablaufleiste Entwurf → Abstimmung → Freigabe → Einreichung, Personen und
+„Weitere“. Darunter am Handy die Ablaufzeile, die Werkzeugleiste und – nur wenn etwas zu tun ist – die Infozeile.
+Kontext: motion, ablauf, can_edit, is_guest, organization; Alpine-Komponente documentEditor.
+{% endcomment %}
+<header class="ke-kopf">
+    <div class="ke-kopfzeile">
+        <a href="{% url 'work:documents' org_slug=organization.slug %}" class="ke-symbol hidden lg:inline-flex" aria-label="Zu den Dokumenten">
+            <i data-lucide="file-text" class="w-[22px] h-[22px]" aria-hidden="true"></i>
+        </a>
+        <a href="{% url 'work:documents' org_slug=organization.slug %}" class="ke-wz lg:hidden" aria-label="Zurück zu den Dokumenten">
+            <i data-lucide="chevron-left" class="w-5 h-5" aria-hidden="true"></i>
+        </a>
+        <div class="ke-titelblock">
+            <div class="ke-titelzeile">
+                {% if can_edit %}
+                <label for="ke-titel" class="sr-only">Titel des Dokuments</label>
+                <input id="ke-titel" type="text" x-model="title" x-ref="titleInput" class="ke-titel" placeholder="Titel eingeben" autocomplete="off">
+                {% else %}
+                <h1 class="ke-titel ke-titel-text">{{ motion.title }}</h1>
+                {% endif %}
+                <div class="relative hidden lg:block">
+                    <button type="button" class="ke-stand" data-menue-knopf="stand" @click="menueUmschalten('stand')"
+                            aria-haspopup="menu" :aria-expanded="(menue === 'stand').toString()" aria-expanded="false"
+                            aria-label="Stand: {{ motion.get_status_display }}. Ablauf anzeigen">
+                        <span class="ke-punkt" data-stand="{{ motion.status }}" aria-hidden="true"></span>{{ motion.get_status_display }}
+                        <i data-lucide="chevron-down" class="w-3.5 h-3.5" aria-hidden="true"></i>
+                    </button>
+                    <div x-show="menue === 'stand'" x-cloak class="ke-menue ke-menue-breit" role="menu" aria-label="Stand und Ablauf">
+                        {% include "work/motions/partials/neu/_menues.html#ablauf" %}
+                    </div>
+                </div>
+                {% if can_edit %}
+                {% include "work/motions/partials/neu/_menues.html#gespeichert" %}
+                {% endif %}
+            </div>
+            <div class="ke-menueleiste hidden lg:flex" role="menubar" aria-label="Menü">
+                {% include "work/motions/partials/neu/_menues.html#leiste" %}
+            </div>
+        </div>
+
+        <ol class="ke-stufen hidden lg:flex" aria-label="Ablauf des Antrags">
+            {% for stufe in ablauf.stufen %}
+            <li class="ke-stufe" data-zustand="{{ stufe.zustand }}"{% if forloop.counter0 == ablauf.jetzt %} data-jetzt{% endif %}>
+                {% if not forloop.first %}<span class="ke-stufe-linie" aria-hidden="true"></span>{% endif %}
+                <button type="button" class="ke-stufe-knopf" data-stufe="{{ stufe.key }}"
+                        {% if forloop.counter0 == ablauf.jetzt %}aria-current="step"{% endif %}
+                        {% if stufe.dialog %}@click="ablaufDialog('{{ stufe.dialog }}')" aria-haspopup="dialog"{% else %}@click="menueUmschalten('stand')" aria-haspopup="menu"{% endif %}>
+                    <span class="ke-kreis" aria-hidden="true">{% if stufe.zustand == 'erledigt' %}<i data-lucide="check" class="w-3.5 h-3.5"></i>{% else %}{{ forloop.counter }}{% endif %}</span>
+                    <span class="ke-stufe-name">{{ stufe.label }}<span class="ke-stufe-unter">{{ stufe.unter }}</span>{% if stufe.zustand == 'erledigt' %}<span class="sr-only">, erledigt</span>{% endif %}</span>
+                </button>
+            </li>
+            {% endfor %}
+        </ol>
+
+        <div class="ke-personen hidden lg:flex" x-show="collabEnabled" x-cloak>
+            <template x-for="u in collabUsers.slice(0, 4)" :key="u.name">
+                <span class="ke-av" :title="u.name === collabUserName ? u.name + ' (Sie)' : u.name" :aria-label="u.name"
+                      x-text="u.name.split(/[\s@.]+/).filter(Boolean).slice(0, 2).map((t) => t.charAt(0)).join('').toUpperCase()" :class="u.name === collabUserName ? 'ke-av-ich' : ''"></span>
+            </template>
+            <span x-show="collabUsers.length > 4" class="text-xs text-gray-500" x-text="'+' + (collabUsers.length - 4)"></span>
+            <span x-show="collabStatus !== 'connected'" class="ke-offline" role="status"
+                  x-text="collabStatus === 'connecting' ? 'Verbindung …' : 'Offline'"></span>
+        </div>
+        {# Glocke des Rahmens (dessen Kopfzeile entfällt hier, editor_neu.html) #}
+        {% include "work/rahmen/_glocke.html" %}
+        <div class="relative">
+            <button type="button" class="ke-wz" data-menue-knopf="weitere" @click="menueUmschalten('weitere')"
+                    aria-haspopup="menu" :aria-expanded="(menue === 'weitere').toString()" aria-expanded="false" aria-label="Weitere Aktionen">
+                <i data-lucide="ellipsis" class="w-5 h-5" aria-hidden="true"></i>
+            </button>
+            <div x-show="menue === 'weitere'" x-cloak class="ke-menue ke-menue-rechts" role="menu" aria-label="Weitere Aktionen">
+                {% include "work/motions/partials/neu/_menues.html#weitere" %}
+            </div>
+        </div>
+    </div>
+
+    {# Handy: Ablauf in einer Zeile (Fortschritt, Stufe mit Stand), Tippen öffnet Stand und Ablauf #}
+    <div class="ke-ablauf-mobil lg:hidden relative">
+        <button type="button" class="ke-ablauf-mobil-knopf" data-menue-knopf="stand-mobil" @click="menueUmschalten('stand-mobil')"
+                aria-haspopup="menu" :aria-expanded="(menue === 'stand-mobil').toString()" aria-expanded="false">
+            <span class="ke-fortschritt" aria-hidden="true">{% for stufe in ablauf.stufen %}<span data-zustand="{{ stufe.zustand }}"></span>{% endfor %}</span>
+            <span class="min-w-0">
+                {% with stufe=ablauf.aktuelle_stufe %}
+                <b class="block truncate">{% if stufe %}{{ stufe.label }}{% else %}{{ motion.get_status_display }}{% endif %}</b>
+                <small class="block truncate">{% if stufe %}{{ stufe.unter }}{% else %}{{ ablauf.info_text|default:motion.get_status_display }}{% endif %}</small>
+                {% endwith %}
+            </span>
+            <i data-lucide="chevron-down" class="w-4 h-4 ml-auto text-gray-500" aria-hidden="true"></i>
+        </button>
+        <div x-show="menue === 'stand-mobil'" x-cloak class="ke-menue ke-menue-breit" role="menu" aria-label="Stand und Ablauf">
+            {% include "work/motions/partials/neu/_menues.html#ablauf" %}
+        </div>
+    </div>
+
+    {% include "work/motions/partials/neu/_werkzeug.html" %}
+</header>

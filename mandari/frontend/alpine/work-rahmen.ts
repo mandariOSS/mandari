@@ -129,6 +129,39 @@ export const workRahmen = defineComponent(() => ({
   },
 }))
 
+/** Speicherschlüssel einer aufklappbaren Gruppe der Seitenleiste (z. B. „Recherche“). */
+export function gruppenSchluessel(gruppe: string): string {
+  return `workLeisteGruppe:${gruppe}`
+}
+
+/**
+ * Ob eine Gruppe der Seitenleiste offen ist: auf ihren eigenen Seiten immer (``serverOffen``), sonst so, wie die
+ * Person sie zuletzt auf- oder zugeklappt hat (Standard zu, damit die Leiste kompakt bleibt).
+ */
+export function gruppeOffen(serverOffen: boolean, gespeichert: string | null): boolean {
+  return serverOffen || gespeichert === 'true'
+}
+
+/**
+ * Aufklappbare Gruppe der Seitenleiste (templates/work/rahmen/_leiste.html): Unterpunkte der Recherche.
+ * Markup: `<li x-data="workGruppe" data-gruppe="recherche" data-offen="true|false">` mit Knopf (aria-expanded) und Liste.
+ */
+export const workGruppe = defineComponent(() => ({
+  offen: false,
+  _schluessel: '',
+
+  init() {
+    const daten = (this.$el as HTMLElement).dataset
+    this._schluessel = gruppenSchluessel(daten.gruppe ?? '')
+    this.offen = gruppeOffen(daten.offen === 'true', lesen(this._schluessel))
+  },
+
+  umschalten() {
+    this.offen = !this.offen
+    schreiben(this._schluessel, String(this.offen))
+  },
+}))
+
 /**
  * Glocke in der Kopfzeile: Zahl ungelesener Benachrichtigungen (alle 30 s), Liste beim Öffnen, „Alle gelesen“.
  * Adressen aus data-zahl-url, data-liste-url, data-gelesen-url am Element.

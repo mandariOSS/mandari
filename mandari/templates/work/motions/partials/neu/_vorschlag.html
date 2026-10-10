@@ -1,0 +1,25 @@
+{% comment %}
+Änderung vorschlagen (neuer Antragseditor, Modus „Vorschlagen“, Teil von #856): neben der markierten Stelle der
+neue Text und eine Notiz. Gespeichert wird ein Kommentar mit Vorschlag (apps/work/motions/vorschlaege.py); der Text
+bleibt unverändert, bis jemand mit Schreibrecht den Vorschlag am Rand annimmt.
+Kontext: can_edit; Alpine-Komponente documentEditor (vorschlagOffen, vorschlagText, vorschlagSenden …).
+{% endcomment %}
+{% if can_edit %}
+<div x-show="vorschlagOffen" x-cloak class="comment-popup ke-vorschlag" role="dialog" aria-labelledby="ke-vorschlag-titel"
+     :style="'top: ' + commentPopupTop + 'px; left: ' + commentPopupLeft + 'px'"
+     @keydown.escape.stop="vorschlagAbbrechen()" @click.stop data-testid="vorschlag-formular">
+    <form @submit.prevent="vorschlagSenden()">
+        <h2 id="ke-vorschlag-titel">Änderung vorschlagen</h2>
+        <p class="ke-meta">Statt „<span x-text="vorschlagZitat"></span>“</p>
+        <textarea id="ke-vorschlag-text" aria-label="Neuer Text" x-ref="vorschlagFeld" rows="3" x-model="vorschlagText"
+                  @keydown.ctrl.enter.prevent="vorschlagSenden()" @keydown.meta.enter.prevent="vorschlagSenden()"></textarea>
+        <p class="ke-meta">Leer lassen, um die Stelle zu streichen.</p>
+        <label for="ke-vorschlag-notiz" class="ke-meta block mt-2">Begründung (optional)</label>
+        <input id="ke-vorschlag-notiz" type="text" class="ke-feld" x-model="vorschlagNotiz" autocomplete="off">
+        <div class="flex justify-end gap-2 mt-3">
+            <button type="button" class="ke-knopf" @click="vorschlagAbbrechen()">Abbrechen</button>
+            <button type="submit" class="ke-knopf ke-knopf-haupt" :disabled="vorschlagSendet || vorschlagText === inlineSelectedText">Vorschlagen</button>
+        </div>
+    </form>
+</div>
+{% endif %}

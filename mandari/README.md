@@ -10,7 +10,8 @@ Mandari Insight ist eine Open-Source-Plattform für die Darstellung und Analyse 
 - **PostgreSQL 15+** - Datenbank
 - **Elasticsearch** - Volltextsuche
 - **Redis** - Caching und Sessions
-- **Groq API** - KI-Features (Zusammenfassungen, Chatbot)
+- **OpenAI-kompatibler KI-Anbieter mit Verarbeitung in Europa** - KI-Features (Zusammenfassungen, Chatbot),
+  eingerichtet im Admin unter „KI-Einstellungen“, nur Hosts aus `KI_ERLAUBTE_HOSTS`
 - **HTMX** - Interaktivität ohne JavaScript-Framework
 - **Alpine.js** - Leichtgewichtiges JavaScript
 - **TailwindCSS** - Utility-first Styling
@@ -72,8 +73,9 @@ REDIS_URL=redis://localhost:6379/0
 # Elasticsearch (optional)
 ELASTICSEARCH_URL=http://localhost:9200
 
-# Groq API (für KI-Features)
-GROQ_API_KEY=your-api-key
+# KI: Anbieter und Schlüssel im Admin (KI-Einstellungen); hier nur die Positivliste erlaubter Hosts
+# (leer ist nichts erlaubt, die KI bleibt aus)
+KI_ERLAUBTE_HOSTS=
 
 # Django
 SECRET_KEY=your-secret-key
@@ -88,7 +90,7 @@ mandari/
 ├── insight_core/      # Hauptanwendung (Views, Templates)
 ├── insight_sync/      # OParl Synchronisation
 ├── insight_search/    # Elasticsearch Integration
-├── insight_ai/        # KI-Features (Groq)
+├── insight_ai/        # KI-Features (OpenAI-kompatibel, zentrale KI-Konfiguration)
 ├── templates/         # Django Templates
 └── static/           # Statische Dateien
 ```

@@ -5,7 +5,7 @@ und den Auftrag ``file.extract_text`` der Anwendung (Issue #530).
 Für PDFs gilt die Kette
 
 1. pypdf (Textebene; liefert auch die Seitengrößen),
-2. Mistral (nur mit API-Schlüssel),
+2. Mistral (nur mit Schlüssel, Adresse und erlaubtem Host, siehe ``MistralConfig.enabled``),
 3. Tesseract Seite für Seite mit Speicher- und Zeitgrenzen (``mandari_dokumente.ocr``).
 
 Text- und HTML-Dateien werden dekodiert, andere Dateien nur, wenn sie wie Text aussehen; Word-Dateien und

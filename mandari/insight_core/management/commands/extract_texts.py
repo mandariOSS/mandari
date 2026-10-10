@@ -178,6 +178,8 @@ class Command(BaseCommand):
                 timeout=120.0,
                 extra_headers=download_headers(file.body),
                 sync_config=robots.sync_config_of(file.body),
+                # Öffentliche RIS-Datei: externe Texterkennung zulässig (nur mit Endpunkt aus KI_ERLAUBTE_HOSTS)
+                allow_external=True,
             )
 
             # Text speichern

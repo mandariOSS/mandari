@@ -1,0 +1,10 @@
+{# Ein TOP der laufenden Sitzung: Kopf, Unterlagen groß in der Mitte, Protokoll als eine Ansicht rechts (Issue #874) #}
+{# Kontext: views.session.top_kontext; mit oob (TOP-Wechsel per HTMX) kommt die Leiste unten mit #}
+<section class="fs-fokus" id="fs-fokus" data-top="{{ item.pk }}" aria-labelledby="fs-top-titel">
+    {% include "work/faction/sitzung/_top_kopf.html" %}
+    <div class="fs-arbeit{% if not unterlagen %} ohne-unterlagen{% endif %}">
+        {% if unterlagen %}{% include "work/faction/sitzung/_unterlagen.html" %}{% endif %}
+        {% include "work/faction/sitzung/_protokoll.html" %}
+    </div>
+</section>
+{% if oob %}{% include "work/faction/sitzung/_unten.html" %}{% endif %}

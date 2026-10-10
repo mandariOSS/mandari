@@ -382,7 +382,8 @@ def extract_file(file_id: str) -> str:
             return UEBERSPRUNGEN
         # Die Erkennung dauert; die Datenbankverbindung geht solange an den Pool zurück
         release_idle_thread_connections()
-        result = extract_text(source, mime, file.file_name or file.name or "", extraction_config())
+        # Öffentliche RIS-Datei: externe Texterkennung zulässig (nur mit Endpunkt aus KI_ERLAUBTE_HOSTS)
+        result = extract_text(source, mime, file.file_name or file.name or "", extraction_config(allow_external=True))
         _store_result(file, result, sha256)
     except RobotsBlockedError as exc:
         _finish(file_id, "skipped", exc.reason)

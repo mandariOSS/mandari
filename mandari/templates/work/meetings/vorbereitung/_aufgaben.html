@@ -4,32 +4,32 @@ wie auf der Karte im Board (wer die Aufgabe bearbeiten darf); mit dem Recht „A
 anlegen (für die Organisation sichtbar, mit TOP und Sitzung verknüpft).
 {% endcomment %}
 <p class="vb-feldname">Aufgaben aus TOP <span x-text="selectedItem.number"></span> <span class="leise">für die Organisation sichtbar</span></p>
-<ul class="vb-aufgaben">
+<ul class="wf-aufgaben">
     <template x-for="a in aufgaben" :key="a.id">
         <li :class="a.done && 'erledigt'">
-            <input type="checkbox" class="vb-aufgabe-haken" x-model="a.done" @change="aufgabeUmschalten(a)"
+            <input type="checkbox" class="wf-aufgabe-haken" x-model="a.done" @change="aufgabeUmschalten(a)"
                    :disabled="!a.canToggle || a.sendet === true" :aria-label="'Erledigt: ' + a.title"
                    :title="a.canToggle ? 'Als erledigt markieren' : 'Abhaken können Erstellende, Zuständige und wer Aufgaben verwalten darf'">
             <span class="was">
                 <span x-text="a.title"></span>
                 <small x-text="[a.assignee ? 'für ' + a.assignee : '', a.due ? 'fällig ' + a.due : ''].filter(Boolean).join(', ')"></small>
             </span>
-            <a class="vb-textlink klein" :href="a.url" :aria-label="'In Aufgaben öffnen: ' + a.title">In Aufgaben</a>
+            <a class="wf-textlink klein" :href="a.url" :aria-label="'In Aufgaben öffnen: ' + a.title">In Aufgaben</a>
         </li>
     </template>
 </ul>
 <p class="vb-leer-text klein" x-show="!aufgabenLaden && !aufgabeFehler && aufgaben.length === 0">Noch keine Aufgaben aus diesem TOP.</p>
 <p class="vb-fehler" x-show="aufgabeFehler && !aufgabenConfig.darfAnlegen" x-text="aufgabeFehler" role="alert"></p>
-<form class="vb-aufgabe-neu" x-show="aufgabenConfig.darfAnlegen" @submit.prevent="aufgabeAnlegen()">
+<form class="wf-aufgabe-neu" x-show="aufgabenConfig.darfAnlegen" @submit.prevent="aufgabeAnlegen()">
     <label class="sr-only" for="aufgabe-titel">Neue Aufgabe</label>
-    <input id="aufgabe-titel" type="text" class="vb-eingabe" x-model="aufgabeTitel" maxlength="200"
+    <input id="aufgabe-titel" type="text" class="wf-eingabe" x-model="aufgabeTitel" maxlength="200"
            :placeholder="'Neue Aufgabe aus TOP ' + selectedItem.number">
-    <select class="vb-eingabe vb-auswahl" x-model="aufgabeZustaendig" aria-label="Zuständig">
+    <select class="wf-eingabe wf-auswahl" x-model="aufgabeZustaendig" aria-label="Zuständig">
         <template x-for="m in aufgabenConfig.mitglieder" :key="m.id">
             <option :value="m.id" x-text="m.id === aufgabenConfig.ich ? m.name + ' (ich)' : m.name"></option>
         </template>
     </select>
-    <input type="date" class="vb-eingabe" x-model="aufgabeFaellig" aria-label="Fällig am">
-    <button type="submit" class="vb-knopf" :disabled="!aufgabeTitel.trim() || aufgabeSendet">Anlegen</button>
-    <p class="vb-fehler" x-show="aufgabeFehler" x-text="aufgabeFehler" role="alert"></p>
+    <input type="date" class="wf-eingabe" x-model="aufgabeFaellig" aria-label="Fällig am">
+    <button type="submit" class="wf-knopf" :disabled="!aufgabeTitel.trim() || aufgabeSendet">Anlegen</button>
+    <p class="vb-fehler ganz" x-show="aufgabeFehler" x-text="aufgabeFehler" role="alert"></p>
 </form>

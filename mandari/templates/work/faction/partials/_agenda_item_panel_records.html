@@ -24,6 +24,13 @@
     {% endif %}
 </c-ui.panel-section>
 
+{# 1a. Notizen aus der Sitzungsansicht (Issue #874), hier nur lesbar #}
+{% with notizen_html=item.notes_html %}{% if notizen_html %}
+<c-ui.panel-section title="Notizen aus der Sitzung">
+    <div class="text-sm text-gray-700 dark:text-gray-300 space-y-1 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_h2]:font-semibold [&_h3]:font-semibold [&_a]:underline">{{ notizen_html }}</div>
+</c-ui.panel-section>
+{% endif %}{% endwith %}
+
 {# 2. Beschluss #}
 <c-ui.panel-section title="Beschluss">
     {% if can_edit or can_protocol %}

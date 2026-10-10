@@ -136,12 +136,17 @@ def delete(sha256: str) -> None:
 
 
 def exists(sha256: str) -> bool:
+    return remote_size(sha256) is not None
+
+
+def remote_size(sha256: str) -> int | None:
+    """Größe des Inhalts im Objektspeicher (``HEAD``), ``None``, wenn er dort fehlt; andere Fehler gehen durch."""
     from botocore.exceptions import ClientError
 
     try:
-        client().head_object(Bucket=settings.OBJ_BUCKET, Key=key_for(sha256))
+        response = client().head_object(Bucket=settings.OBJ_BUCKET, Key=key_for(sha256))
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
-            return False
+            return None
         raise
-    return True
+    return int(response.get("ContentLength") or 0)

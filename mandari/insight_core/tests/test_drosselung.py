@@ -72,7 +72,7 @@ class _Provider:
 @pytest.fixture
 def provider(monkeypatch: Any) -> _Provider:
     anbieter = _Provider()
-    monkeypatch.setattr("insight_ai.services.summarizer.NebiusProvider", lambda: anbieter)
+    monkeypatch.setattr("insight_ai.services.summarizer.get_insight_provider", lambda: anbieter)
     return anbieter
 
 
@@ -147,14 +147,14 @@ class TestZusammenfassung:
 
     def test_kein_ausnahmetext(self, body: OParlBody, monkeypatch: Any) -> None:
         anbieter = _Provider(fehler=RuntimeError("Token sk-geheim-123 abgelehnt"))
-        monkeypatch.setattr("insight_ai.services.summarizer.NebiusProvider", lambda: anbieter)
+        monkeypatch.setattr("insight_ai.services.summarizer.get_insight_provider", lambda: anbieter)
         response = Client().post(_url(_vorgang(body)))
         assert "sk-geheim" not in response.content.decode()
 
     def test_verbindung_waehrend_ki_aufruf_frei(self, body: OParlBody, monkeypatch: Any) -> None:
         ereignisse: list[str] = []
         anbieter = _Provider(ereignisse=ereignisse)
-        monkeypatch.setattr("insight_ai.services.summarizer.NebiusProvider", lambda: anbieter)
+        monkeypatch.setattr("insight_ai.services.summarizer.get_insight_provider", lambda: anbieter)
         monkeypatch.setattr(
             "insight_ai.services.summarizer.release_idle_thread_connections", lambda: ereignisse.append("frei")
         )
@@ -170,7 +170,7 @@ class TestZusammenfassung:
                 OParlFile.objects.filter(pk=anlage.pk).update(deleted=True)
                 return super().chat_completion(messages, **kwargs)
 
-        monkeypatch.setattr("insight_ai.services.summarizer.NebiusProvider", lambda: _Zuruecknehmend())
+        monkeypatch.setattr("insight_ai.services.summarizer.get_insight_provider", lambda: _Zuruecknehmend())
         response = Client().post(_url(paper))
         assert "Kurzfassung des Vorgangs" not in response.content.decode()
         paper.refresh_from_db()
