@@ -60,9 +60,11 @@ __all__ = [
     "KIND_FILES",
     "SKIP_ERROR_PREFIX",
     "USER_AGENT",
+    "cached_check",
     "check",
     "decide",
     "load",
+    "peek",
     "requeue_blocked_files",
     "sync_config_of",
     "user_agent_for",
@@ -203,6 +205,37 @@ def check(
     if override is not None and override.covers(kind):
         return override.decision()
     return decide(url, agent=agent, sync_config=sync_config, max_wait=max_wait)
+
+
+def peek(url: str, *, agent: str | None = None) -> RobotsTxt | None:
+    """
+    Ausgewertete robots.txt zum Host von ``url`` nur aus dem Cache, ohne Abruf und ohne Blick auf die Frische;
+    ``None``, wenn keine vorliegt. War sie zuletzt nicht erreichbar, gilt die letzte gültige Fassung.
+
+    Für Hintergrundläufe, die keine Anfrage an die Quelle stellen dürfen (Obergrenze des Dokument-Caches, #961).
+    """
+    entry: dict[str, Any] | None = cache.get(_cache_key(url, agent or USER_AGENT))
+    if not entry:
+        return None
+    current = _from_entry(entry)
+    last_good = entry.get("last_good")
+    if current.state == STATE_UNREACHABLE and last_good:
+        return _from_entry(last_good)
+    return current
+
+
+def cached_check(
+    url: str, kind: str = KIND_FILES, *, sync_config: Any = None, agent: str | None = None
+) -> Decision | None:
+    """Wie :func:`check`, aber nur mit der robots.txt aus dem Cache (``None``: keine bekannt). Fragt nie an."""
+    override = robots_override(sync_config)
+    if override is not None and override.covers(kind):
+        return override.decision()
+    agent = agent or USER_AGENT
+    robots_txt = peek(url, agent=agent)
+    if robots_txt is None:
+        return None
+    return robots_txt.decide(url, tokens=(product_token(agent), PRODUCT_TOKEN))
 
 
 def requeue_blocked_files(source: Any) -> dict[str, int]:

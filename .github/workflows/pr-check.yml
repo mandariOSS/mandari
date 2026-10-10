@@ -209,6 +209,7 @@ jobs:
               - 'mandari/insight_core/publication.py'
               - 'mandari/insight_sync/session_mirror.py'
               - 'mandari/apps/common/management/commands/setup_demo_*.py'
+              - 'mandari/apps/common/demo_daten.py'
               - 'mandari/apps/session/migrations/**'
               - 'mandari/insight_core/migrations/**'
               - 'shared/**'
@@ -229,6 +230,8 @@ jobs:
               - 'mandari/tsconfig.json'
               - 'mandari/tailwind.config.js'
               - 'mandari/tests_e2e/**'
+              # Prüfskript für das neue Work-Design: läuft verkleinert als E2E-Test (test_work_design_pruefung.py)
+              - 'scripts/pruefe_work_design.py'
               - 'mandari/conftest.py'
               - 'mandari/apps/common/tests/factories.py'
               - 'mandari/apps/work/tests/test_import_text.py'
@@ -243,6 +246,10 @@ jobs:
               - 'mandari/apps/work/motions/**'
               - 'mandari/apps/common/demo.py'
               - 'mandari/apps/common/management/commands/setup_demo_*.py'
+              # Demo-Kennungen, Work-Teil der Demo und Schalter des neuen Designs (Issue #884)
+              - 'mandari/apps/common/demo_daten.py'
+              - 'mandari/apps/work/management/commands/setup_demo_work.py'
+              - 'mandari/apps/work/design_schalter.py'
               # Views und Kontext der Seiten, die die E2E-Tests aufrufen (Alpine-Fehler in der Konsole,
               # Drehbuch): Eine fehlende Kontextvariable für x-data fällt nur im Browser auf. Ruft ein
               # E2E-Test eine neue Seite auf, gehört deren View hierher.
@@ -557,9 +564,10 @@ jobs:
           cache: npm
           cache-dependency-path: mandari/package-lock.json
 
+      # Auch bei Template-Änderungen: Die Icon-Prüfung unten braucht das Lucide-Paket (Issue #645)
       - name: npm ci
         id: npm
-        if: ${{ !cancelled() && needs.changes.outputs.frontend == 'true' }}
+        if: ${{ !cancelled() && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.templates == 'true') }}
         run: cd mandari && npm ci --ignore-scripts
 
       - name: TypeScript (tsc --noEmit)
@@ -577,6 +585,11 @@ jobs:
       - name: Frontend-Unit-Tests (Speichern mit Wiederholung)
         if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
         run: cd mandari && npm run test:speichern
+
+      # Feste Icon-Namen in Templates müssen im Lucide-Paket stehen; Lucide entfernt bei Updates Icons (#645)
+      - name: Icon-Namen der Templates im Lucide-Paket
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: cd mandari && npm run test:icons
 
       # JS-Vorlagen (z. B. der Service Worker) werden von Django gerendert; Template-Tags nur in
       # Kommentaren oder Strings, sonst kann CodeQL die Datei nicht analysieren.
@@ -1477,8 +1490,9 @@ jobs:
   # ===========================================================================
   # Sammel-Ergebnis: läuft immer, geeignet als einziger Pflicht-Check
   # ===========================================================================
-  # Übersprungene Jobs (Bereich nicht betroffen) gelten als bestanden; ein fehlgeschlagener oder
-  # abgebrochener Job lässt das Ergebnis scheitern. Neue Jobs hier unter needs eintragen.
+  # Positivliste (Issue #879): Als bestanden gelten nur "success" und "skipped" (Bereich nicht betroffen).
+  # Jedes andere Ergebnis lässt das Ergebnis scheitern: "failure", "cancelled", "abandoned" (Job hat nie
+  # einen Runner bekommen) und künftige Werte, die GitHub einführt. Neue Jobs hier unter needs eintragen.
   # Ausnahme (Issue #935): War "Test" bzw. "Migrationstests" nötig, müssen er und "Test-Ergebnis"
   # (Coverage-Grenze, Vollständigkeit) bestanden haben; übersprungen zählt dann nicht.
   ci-ergebnis:
@@ -1520,8 +1534,9 @@ jobs:
             echo "::error::Die Zuordnung der geänderten Dateien ist fehlgeschlagen."
             exit 1
           fi
-          if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<<"$ERGEBNISSE" >/dev/null; then
-            echo "::error::Mindestens ein Job ist fehlgeschlagen oder wurde abgebrochen."
+          nicht_bestanden=$(jq -r '[to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key): \(.value.result)"] | join(", ")' <<<"$ERGEBNISSE")
+          if [ -n "$nicht_bestanden" ]; then
+            echo "::error::Nicht bestanden (weder success noch skipped): $nicht_bestanden"
             exit 1
           fi
           # Nötige Jobs, die nur über andere Jobs übersprungen werden könnten, müssen bestanden haben

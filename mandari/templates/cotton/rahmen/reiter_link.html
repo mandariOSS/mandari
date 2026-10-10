@@ -1,0 +1,12 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Ein Reiter in c-rahmen.reiter (Issue #852): Link mit Unterstrich in der Kennfarbe, wenn ``aktiv``. ``current`` gibt den
+Wert von aria-current an (Standard ``page``; ``true``, wenn die geöffnete Seite nur in diesem Reiter liegt). Weitere
+Attribute (z. B. hx-get) gehen an den Link.
+  <c-rahmen.reiter-link href="…" :aktiv="r.aktiv" current="{{ r.current }}">Vorgänge</c-rahmen.reiter-link>
+{% endcomment %}
+<c-vars href="" aktiv="" current="" />
+<li class="shrink-0">
+    <a href="{{ href }}" {% if aktiv %}aria-current="{{ current|default:'page' }}"{% endif %} {{ attrs }}
+       class="inline-flex items-center h-10 border-b-2 text-sm whitespace-nowrap {% if aktiv %}border-primary-600 font-semibold text-gray-900 dark:border-primary-400 dark:text-white{% else %}border-transparent font-medium text-gray-600 hover:text-gray-900 hover:border-gray-300 dark:text-gray-400 dark:hover:text-white{% endif %}">{{ slot }}</a>
+</li>

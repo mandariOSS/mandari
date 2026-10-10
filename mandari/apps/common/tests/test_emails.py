@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import difflib
 import os
+import re
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -27,7 +28,7 @@ from django.template.loader import get_template
 
 from apps.accounts.forms import PasswordResetForm
 from apps.common import mail as mail_dienst
-from apps.common.email import html_to_text, render_email
+from apps.common.email import drop_empty_preheader, html_to_text, render_email
 
 SNAPSHOT_DIR = Path(__file__).parent / "snapshots" / "emails"
 BASE_TEMPLATE = "emails/base_email.html"
@@ -743,6 +744,24 @@ CASES = [
 ALL_MAIL_TEMPLATES = sorted({case.template for case in CASES})
 
 
+#: Preheader nach dem Inliner: Stil und Inhalt
+_PREHEADER_RE = re.compile(r'<span class="preheader" style="([^"]*)">(.*?)</span>', re.DOTALL)
+
+
+def assert_hidden_only_preheader(html: str) -> None:
+    """Versteckt ist höchstens der Preheader, nur mit Inhalt und nicht per Textfarbe (Issue #957).
+
+    Spamfilter zählen versteckte Teile (rspamd ``MANY_INVISIBLE_PARTS``) und Text in der Hintergrundfarbe.
+    """
+    body = html.split("<body", 1)[1]
+    preheaders = _PREHEADER_RE.findall(body)
+    assert len(preheaders) <= 1, "mehr als ein Preheader"
+    assert body.count("display: none") == len(preheaders), "versteckter Teil außer dem Preheader"
+    for style, inhalt in preheaders:
+        assert inhalt.strip(), "leerer Preheader"
+        assert "color" not in style, "Preheader per Textfarbe versteckt"
+
+
 # =============================================================================
 # Tests
 # =============================================================================
@@ -764,6 +783,7 @@ def test_email_snapshot(case: MailCase, org: Any, make_member: Any) -> None:
     for marker in ("{{", "{%"):
         assert marker not in html, f"ungerendertes Template-Tag {marker} im HTML"
         assert marker not in text, f"ungerendertes Template-Tag {marker} im Text"
+    assert_hidden_only_preheader(html)
 
     assert_snapshot(f"{case.name}.html", html)
     assert_snapshot(f"{case.name}.txt", text)
@@ -793,6 +813,28 @@ def test_html_to_text_skips_marked_regions_and_keeps_links() -> None:
     assert "# Titel" in text
     assert "[bestätigen](https://mandari.example/x)" in text
     assert text.endswith("\n") and "\n\n\n" not in text
+
+
+@pytest.mark.django_db
+def test_leerer_preheader_entfaellt(org: Any, make_member: Any) -> None:
+    """Bleibt der Preheader-Block leer, entfällt der versteckte Teil samt Markern; die Wortmarke bleibt."""
+    kontext = work_notification(org, make_member)
+    kontext["notification"].message = ""
+    html, _text = render_email("work/notifications/email/notification.html", kontext)
+
+    assert 'class="preheader"' not in html
+    assert "display: none" not in html.split("<body", 1)[1]
+    assert html.count("<!-- text:skip -->") == 1 and 'class="wordmark"' in html
+    assert_hidden_only_preheader(html)
+
+
+def test_drop_empty_preheader_laesst_preheader_mit_inhalt_stehen() -> None:
+    leer = (
+        '<body>\n    <!-- text:skip -->\n    <span class="preheader"> \n </span>\n    <!-- /text:skip -->\n    <p>x</p>'
+    )
+    assert drop_empty_preheader(leer) == "<body>\n    <p>x</p>"
+    voll = '<body>\n    <!-- text:skip -->\n    <span class="preheader">Vorschau</span>\n    <!-- /text:skip -->\n'
+    assert drop_empty_preheader(voll) == voll
 
 
 @pytest.mark.django_db

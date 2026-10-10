@@ -184,11 +184,11 @@ function chatApp() {
 
         renderMarkdown(text) {
             if (!text) return '';
-            try {
-                return marked.parse(text, { breaks: true, gfm: true });
-            } catch (e) {
-                return text.replace(/\n/g, '<br>');
-            }
+            // Nur bereinigt als HTML (frontend/js/ki-ausgabe.ts); ohne Bundle bleibt es reiner Text
+            if (typeof window.kiMarkdownHtml === 'function') return window.kiMarkdownHtml(text);
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML.replace(/\n/g, '<br>');
         },
 
         async giveConsent() {

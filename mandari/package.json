@@ -13,7 +13,8 @@
     "lint:fix": "biome check --write .",
     "test:paste": "node frontend/editor/test/paste-cleanup.test.mjs",
     "test:navigation": "node frontend/js/test/navigation.test.mjs",
-    "test:speichern": "node frontend/js/test/speichern.test.mjs"
+    "test:speichern": "node frontend/js/test/speichern.test.mjs",
+    "test:icons": "node frontend/js/test/icons.test.mjs"
   },
   "dependencies": {
     "@alpinejs/collapse": "^3.17.4",
@@ -37,7 +38,7 @@
     "alpinejs": "^3.17.4",
     "diff": "^9.0.0",
     "htmx.org": "^2.0.11",
-    "lucide": "^1.51.0",
+    "lucide": "^1.52.0",
     "pdfjs-dist": "^6.4.299",
     "y-indexeddb": "^9.0.12",
     "y-websocket": "^3.1.0",

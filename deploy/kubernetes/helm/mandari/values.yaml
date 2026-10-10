@@ -66,6 +66,17 @@ events:
   redactNeutralize: false
 
 # -----------------------------------------------------------------------------
+# Mailversand (DEPLOYMENT.md, „Mailversand: Message-ID und EHLO“); gilt für Anwendung und Worker
+# -----------------------------------------------------------------------------
+mail:
+  # Absender, wenn die Systemeinstellungen keinen nennen (DEFAULT_FROM_EMAIL), z. B. noreply@meine-kommune.de
+  fromEmail: ""
+  # Domain hinter dem @ der Message-ID und Name im EHLO gegenüber dem Mailserver (EMAIL_MESSAGE_ID_DOMAIN),
+  # ein vollständiger Domainname. Leer = Domain von fromEmail, ohne fromEmail die von `domain`. Setzen, wenn
+  # der Absender in den Systemeinstellungen eine andere Domain hat.
+  messageIdDomain: ""
+
+# -----------------------------------------------------------------------------
 # Anwendung (Django)
 # -----------------------------------------------------------------------------
 app:

@@ -22,7 +22,7 @@ from ..models import (
     OParlMeeting,
     withdrawn_q,
 )
-from ..services import file_accel, file_access, file_delivery, file_reconcile, file_store
+from ..services import file_accel, file_access, file_cache_limit, file_delivery, file_reconcile, file_store
 
 # =============================================================================
 # Dokumente (Files)
@@ -236,7 +236,9 @@ def file_proxy(request, file_id):
     3. Freundliche Fehlerseite, wenn die Quelle nicht erreichbar ist
 
     Jeder Abruf zählt im Zugriffsprotokoll (Treffer, Abruf bei der Quelle, Fehler, Sperre; #786),
-    Folgeanfragen eines Abrufs in Teilen (Range) nicht.
+    Folgeanfragen eines Abrufs in Teilen (Range) nicht. Ausgelieferte Dokumente vermerken ihre letzte
+    Nutzung (höchstens stündlich, nicht für erkennbare Crawler): Danach richtet sich die Verdrängung unter der
+    Obergrenze (#961).
     """
     file_obj = get_object_or_404(
         OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
@@ -248,6 +250,11 @@ def file_proxy(request, file_id):
         if file_access.counts_as_access(request):
             file_access.record(file_obj, file_access.FAILED)
         raise
+    # Erkennbare Crawler bestimmen die Rangfolge nicht (#961)
+    if file_access.outcome_of(response) in (file_access.HIT, file_access.MISS) and file_cache_limit.counts_as_use(
+        request
+    ):
+        file_cache_limit.mark_used(file_obj)
     return file_access.record_response(file_obj, response, request)
 
 
@@ -432,7 +439,7 @@ def _fetch_live(file_obj, url, filename, force_download):
         )
     except httpx.HTTPStatusError as e:
         spool.close()
-        if e.response.status_code == 404 and file_obj.local_status == "none":
+        if e.response.status_code == 404 and file_obj.local_status in ("none", file_cache_limit.EVICTED):
             file_obj.local_status = "missing"
             file_obj.local_error = "HTTP 404"
             file_obj.save(update_fields=["local_status", "local_error"])

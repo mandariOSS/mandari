@@ -218,6 +218,57 @@ def papers_of_agenda_item(agenda_item: OParlAgendaItem) -> QuerySet[OParlPaper]:
     return OParlPaper.objects.filter(id__in=consultations.values("paper_id")).distinct()
 
 
+def paper_ids_of_agenda_items(agenda_item_ids: Iterable[object], *, public_only: bool = True) -> set[uuid.UUID]:
+    """
+    Kennungen der Vorlagen, die unter diesen Tagesordnungspunkten beraten werden (ohne zurückgenommene Beratungen
+    und Vorlagen). Eine Abfrage, etwa für den Bezug einer Fraktion in der Suche (Issue #853).
+
+    ``public_only`` (Standard): nur öffentliche Tagesordnungspunkte. Was jemand zu einem nichtöffentlichen Punkt
+    vermerkt hat, soll sich nicht in der Reihenfolge öffentlicher Vorlagen zeigen (wie bei Fraktionssitzungen).
+    """
+    ids = [pk for pk in (_uuid(value) for value in agenda_item_ids) if pk is not None]
+    if not ids:
+        return set()
+    items = OParlAgendaItem.objects.filter(id__in=ids)
+    if public_only:
+        items = items.filter(public=True)
+    return set(
+        OParlConsultation.objects.filter(agenda_item_external_id__in=items.values("external_id"), paper__isnull=False)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .values_list("paper_id", flat=True)
+    )
+
+
+def paper_ids_on_upcoming_agendas(bodies: Bodies, *, until: datetime, limit: int = 2000) -> set[uuid.UUID]:
+    """
+    Kennungen der Vorlagen, die von jetzt bis ``until`` in einer nicht abgesagten Sitzung der Kommunen beraten werden
+    (ohne zurückgenommene Beratungen und Vorlagen). Eine Abfrage, etwa für die Aktualität in der Suche (Issue #853).
+    """
+    sitzungen = upcoming_meetings(bodies).filter(start__lte=until).values("external_id")
+    return set(
+        OParlConsultation.objects.filter(meeting_external_id__in=sitzungen, paper__isnull=False)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .values_list("paper_id", flat=True)[:limit]
+    )
+
+
+def organization_names(organization_ids: Iterable[object], *, exclude_classifications: Iterable[str] = ()) -> list[str]:
+    """
+    Namen der Gremien zu diesen Kennungen (ohne leere Namen), alphabetisch. ``exclude_classifications`` lässt Gremien
+    mit dieser Einordnung aus (ohne Rücksicht auf Groß- und Kleinschreibung), etwa die Vertretung selbst („Rat“).
+    """
+    ids = [pk for pk in (_uuid(value) for value in organization_ids) if pk is not None]
+    if not ids:
+        return []
+    ohne = {str(value).strip().lower() for value in exclude_classifications}
+    rows = OParlOrganization.objects.filter(id__in=ids).exclude(name="").values_list("name", "classification")
+    return sorted(
+        {name for name, classification in rows if name and (classification or "").strip().lower() not in ohne}
+    )
+
+
 @dataclass(frozen=True)
 class AgendaOverview:
     """Umfang einer Tagesordnung: Zahl der Punkte und die Punkte, unter denen eine Vorlage beraten wird."""

@@ -195,6 +195,8 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
   (Abschnitt „Sicherung“)
 - [ ] Worker läuft (`docker compose ps worker` „healthy“), `python manage.py events_scheduler --list`
   zeigt die Zeitpläne (Abschnitt „Geplante Aufgaben“); in der Crontab nur Aufgaben des Betriebssystems
+- [ ] Testmail aus den Systemeinstellungen: Message-ID endet auf die eigene Domain, nicht auf eine
+  Container-ID (Abschnitt „Mailversand: Message-ID und EHLO“)
 
 ---
 
@@ -398,6 +400,38 @@ aus #256:
 
 Listen- und Detailseiten lagen vorher wie nachher bei 10–50 ms; sie sind durch
 die Umstellung nicht langsamer geworden.
+
+## ✉️ Mailversand: Message-ID und EHLO
+
+Jede Mail trägt eine Message-ID der Form `<…@domain>`, und beim Verbindungsaufbau meldet sich mandari
+beim Mailserver mit einem Namen (EHLO). Django nähme dafür den Rechnernamen, in einem Container also die
+Container-ID. Spamfilter werten eine Message-ID ohne vollständigen Domainnamen ab (rspamd
+`MID_RHS_NOT_FQDN`). mandari setzt den Namen deshalb beim Start jedes Prozesses (Anwendung, Worker,
+Verwaltungsbefehle) für alle Versandwege: Systemeinstellungen, `EMAIL_*`, eigenes SMTP einer Organisation.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `EMAIL_MESSAGE_ID_DOMAIN` | vollständiger Domainname für Message-ID und EHLO, z. B. `example.com`; leer (Standard) = Domain von `DEFAULT_FROM_EMAIL`, wenn gesetzt, sonst Host aus `SITE_URL` |
+| `DEFAULT_FROM_EMAIL` | Absender, wenn die Systemeinstellungen keinen nennen; ohne Angabe `noreply@mandari.de`, der für Message-ID und EHLO nie zählt |
+
+- `docker-compose.yml` reicht beide Werte aus der `.env` an Anwendung und Worker durch, das Helm-Chart über
+  `mail.messageIdDomain` und `mail.fromEmail`. Ohne beide gilt der Host aus `SITE_URL`, mit Compose also
+  `DOMAIN`.
+- Weicht der Absender in den Systemeinstellungen von `DEFAULT_FROM_EMAIL` ab (ohne `DEFAULT_FROM_EMAIL`: vom
+  Host aus `SITE_URL`), dessen Domain in `EMAIL_MESSAGE_ID_DOMAIN` eintragen. Gelesen wird der Wert beim Start;
+  nach einer Änderung Anwendung und Worker neu starten.
+- Ein ungültiger Wert (ohne Punkt, mit `@`, IP-Adresse) hält nichts an: mandari versendet mit dem Wert, der
+  ohne die Einstellung gälte, und die Systemprüfung warnt bei jedem Verwaltungsbefehl (`common.W001`).
+  Liefert auch der keinen vollständigen Domainnamen (etwa `SITE_URL` mit IP-Adresse), nimmt mandari eine
+  IP-Adresse als Adressliteral nach RFC 5321 (`[192.0.2.10]`, `[IPv6:2001:db8::1]`), sonst `localhost`, und
+  die Systemprüfung warnt ebenso (`common.W002`; nicht bei `SITE_URL` auf `localhost`). Prüfen mit
+  `python manage.py check`.
+- Prüfen: Testmail aus den Systemeinstellungen an ein eigenes Postfach senden und im Quelltext der Mail
+  `Message-ID:` ansehen. Für die Zustellbarkeit insgesamt helfen ein Test bei mail-tester.com und Testmails
+  an Gmail- und Microsoft-365-Postfächer (Kopfzeile `Authentication-Results`: SPF, DKIM und DMARC `pass`).
+- DMARC: Mit `p=none` beginnen und Aggregatberichte (`rua=`) auswerten. Zeigen sie nur noch eigene,
+  legitime Absender, auf `p=quarantine` und später `p=reject` umstellen.
+- HTML-Mails verstecken nur den Vorschautext (Preheader) im Posteingang, und nur, wenn er Inhalt hat.
 
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 
@@ -959,7 +993,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
 | `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, neueste fehlende Dateien zuerst (`docs/FILE_CACHE.md`) |
 | `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
-| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788) |
+| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788); hält mit `FILE_CACHE_MAX_TOTAL_GB` auch die Obergrenze des Dokument-Caches ein (Issue #961) |
 | `befehl:generate_alerts` | täglich 07:45 | Benachrichtigungen der Abos zu Themen und Orten; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:send_digest` | montags 08:00 | Wochenmail der Abos; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:check_source_health` | stündlich :15 | Zustand der Quellen (Issue #231, `docs/MONITORING.md`) |
@@ -1046,6 +1080,30 @@ ist wiederholbar, erzeugt nur Fehlendes und kennt `--dry-run` und `--tenant <slu
 ```bash
 docker compose exec mandari python manage.py session_publish_protocols
 ```
+
+**Obergrenze des Dokument-Caches** (Issue #961, `docs/FILE_CACHE.md`, „Obergrenze der Gesamtgröße“): Standard
+unbegrenzt, das Update ändert nichts (Migration `insight_core/0056`, nur eine neue Spalte). Wer die Ablage
+begrenzen will, baut einen großen Bestand zuerst von Hand ab und setzt danach die Grenze; ab dann hält das
+stündliche Aufräumen sie ein. `--dry-run` zeigt vorher Modus, Anzahl, Größe und Kommunen; der Lauf arbeitet in
+kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container der Anwendung ausführen, der dieselben
+`OBJ_*` hat wie der Worker; die erste Zeile muss den erwarteten Modus nennen:
+
+```bash
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
+# mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte dort liegen (fehlen welche: erst --hochladen)
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
+# danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
+# FILE_CACHE_MAX_TOTAL_GB=10
+```
+
+Mit Objektspeicher löscht der Abbau nur lokale Kopien, mit `--pruefe-objektspeicher` erst nach erfolgreicher Prüfung
+per `HEAD`; ohne holt die Vorschau verdrängte Dokumente bei Bedarf von der Quelle. Liegen Inhalte laut Datenbank im
+Objektspeicher, ist er im Container aber nicht konfiguriert, bricht der Abbau ab und das stündliche Aufräumen setzt
+die Grenze aus („Obergrenze ausgesetzt“ im Protokoll des Workers): dann `OBJ_*` prüfen. Eigene Compose-Dateien
+brauchen `FILE_CACHE_MAX_TOTAL_GB` in der `environment` von Anwendung und Worker. Zurück: Variable entfernen bzw.
+auf `0` setzen und neu starten; ohne Objektspeicher lädt `cache_files --verdraengte` verdrängte Dokumente wieder
+nach.
 
 Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vorgabe
 `<MEDIA_ROOT>/audit_archive`, also im persistenten Medien-Volume und in der Sicherung; nie per

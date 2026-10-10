@@ -73,6 +73,9 @@ x-app-environment: &app-environment
   OBJ_REGION: ${OBJ_REGION:-}
   OBJ_CACHE_MAX_GB: ${OBJ_CACHE_MAX_GB:-60}
   OBJ_CHECKSUMS: ${OBJ_CHECKSUMS:-when_required}
+  # Obergrenze der Gesamtgröße des Dokument-Caches in GB (docs/FILE_CACHE.md, „Obergrenze“), 0 = unbegrenzt
+  FILE_CACHE_MAX_TOTAL_GB: ${FILE_CACHE_MAX_TOTAL_GB:-0}
+  FILE_CACHE_EVICT_TARGET_PERCENT: ${FILE_CACHE_EVICT_TARGET_PERCENT:-90}
   # Nur mit Ratsinformationssystem im internen Netz (siehe .env.example)
   INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
   # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus
@@ -95,6 +98,10 @@ x-app-environment: &app-environment
   EVENTS_JOURNAL_RETENTION_DAYS: ${EVENTS_JOURNAL_RETENTION_DAYS:-90}
   EVENTS_TASKS_DONE_RETENTION_DAYS: ${EVENTS_TASKS_DONE_RETENTION_DAYS:-14}
   EVENTS_TASKS_DEAD_RETENTION_DAYS: ${EVENTS_TASKS_DEAD_RETENTION_DAYS:-90}
+  # Absender, wenn die Systemeinstellungen keinen nennen, und Domain für Message-ID und EHLO (DEPLOYMENT.md,
+  # „Mailversand: Message-ID und EHLO“). Leer = Domain von DEFAULT_FROM_EMAIL, ohne den Absender DOMAIN
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-}
+  EMAIL_MESSAGE_ID_DOMAIN: ${EMAIL_MESSAGE_ID_DOMAIN:-}
   # Mailarten, die als Auftrag (Warteschlange mail) statt in der Anfrage rausgehen, siehe .env.example
   MAIL_QUEUE: ${MAIL_QUEUE:-}
   MAIL_QUEUE_MAX_BYTES: ${MAIL_QUEUE_MAX_BYTES:-20971520}

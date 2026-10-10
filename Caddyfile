@@ -4,7 +4,7 @@
 # Automatic HTTPS via Let's Encrypt (HTTP-01 Challenge)
 #
 # Routing:
-#   /insight/*, /work/*, /session/*, /accounts/*, /admin/*, /api/*, /oparl/*, /data/dcat/*, /csp-report/* … → Mandari (Django)
+#   /insight/*, /work/*, /session/*, /accounts/*, /admin/*, /api/*, /oparl/*, /ladung/*, /data/dcat/*, /csp-report/* … → Mandari (Django)
 #   /*  (everything else)                                          → Website (Wagtail)
 #
 # Requirements:
@@ -81,6 +81,8 @@
 		path /insight/* /work/* /session/* /accounts/* /admin/* /api/* /public/* /ws/*
 		# OParl-Endpunkt, Nachweise, Kalender, Feedback und CSP-Verstoßmeldungen (#172) gehören zur Anwendung
 		path /oparl/* /nachweis/* /kalender/* /feedback/* /csp-report/*
+		# Rückmeldelinks aus Ladungsmails (#225, #634); test_caddy_routen.py gleicht die Liste mit mandari/urls.py ab
+		path /ladung/*
 		# Katalog der offenen Ratsinformationen nach DCAT-AP.de für Datenportale (#104)
 		path /data/dcat/*
 		path /static/* /media/*

@@ -9,6 +9,7 @@ Zustand, Speichern und Echtzeit: Alpine-Komponente `vorbereitung` (frontend/alpi
 {% endcomment %}
 
 {% block page_title %}Vorbereitung: {{ meeting.get_display_name|default:"Sitzung" }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
 
 {% block work_extra_head %}
 {% load django_vite %}{% vite_asset 'frontend/editor/index.ts' %}
