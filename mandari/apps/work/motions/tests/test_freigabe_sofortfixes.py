@@ -190,8 +190,8 @@ def test_herunterladen_aus_sperrt_export_und_anhaenge(
         assert export_url in editor and anhang_url in editor
         antwort = client.get(anhang_url)
         assert antwort.status_code == 200
+        # Vollständig gelesen schließt der Test-Client die Datei selbst (kein close(): das beendete die Verbindung)
         assert b"".join(antwort.streaming_content) == PDF_BYTES
-        antwort.close()
         assert _gast_downloads(org) == [{"art": "Anhang", "anhang": "anlage.pdf"}]
 
         freigabe.allow_download = False
