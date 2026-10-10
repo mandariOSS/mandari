@@ -411,9 +411,17 @@ def test_load_preparation_data_and_prepare_config(
 
     preparation.refresh_from_db()
     config = build_prepare_config(
-        organization=org, meeting=meeting, preparation=preparation, data=data, current_user_name="Test"
+        organization=org,
+        meeting=meeting,
+        preparation=preparation,
+        data=data,
+        current_user_name="Test",
+        account_id=str(member.user.pk),
     )
     assert config["orgSlug"] == org.slug
+    # Sicherung im Browser je Konto und Organisation: Kennungen, nicht Namen (#854)
+    assert config["accountId"] == str(member.user.pk)
+    assert config["orgId"] == str(org.id)
     assert config["orgNotes"] == "Allgemeines"
     assert [entry["name"] for entry in config["items"]] == ["Haushalt", "Spielplatz"]
     assert config["items"][0]["position"] == "against"

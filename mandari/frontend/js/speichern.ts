@@ -17,11 +17,15 @@
  * - Alles andere (Anlegen, Löschen, Hochladen, Verknüpfen) wird genau einmal gesendet: Eine Wiederholung könnte
  *   doppelt anlegen. Die Eingabe bleibt beim Aufrufer stehen.
  * - Endgültige Fehler (400, 403, 404 …) werden nicht wiederholt.
+ * - Aktualisierungen mit `sicherung` werden zusätzlich im Browser gesichert, bis der Server sie bestätigt hat (Teil 2,
+ *   frontend/js/eingaben-sicherung.ts; in den localStorage erst bei Störung, ausbleibender Bestätigung oder beim
+ *   Verlassen der Seite): Sie überstehen so auch ein Neuladen oder Schließen der Seite.
  *
  * Das Modul kennt kein Alpine; der Stand wird über `beiAenderung` gemeldet.
  */
 
 import { csrfTokenAktuell } from './csrf'
+import type { Sicherung, SicherungsZiel } from './eingaben-sicherung'
 
 // biome-ignore lint/suspicious/noExplicitAny: Antworten der JSON-Endpunkte sind nicht schematisiert
 export type JsonAntwort = Record<string, any>
@@ -38,6 +42,11 @@ export interface SpeicherAuftrag {
    * (zusammengeführte Aktualisierungen nennen dann alle Felder)
    */
   bezeichnung?: string | ((body: Record<string, unknown>) => string)
+  /**
+   * Nur Aktualisierungen: Felder bis zur Bestätigung durch den Server im Browser sichern (TOP und Bereich).
+   * Gleiche Adresse heißt gleiches Ziel; zusammengeführte Aufträge behalten es.
+   */
+  sicherung?: SicherungsZiel
 }
 
 export type SpeicherErgebnis =
@@ -70,6 +79,8 @@ export interface SpeicherOptionen {
   /** Zeitlimit je Anfrage einer Aktualisierung (danach gilt sie als gestört und wird wiederholt) */
   zeitlimitMs?: number
   fetch?: typeof fetch
+  /** Sicherung der Eingaben im Browser (frontend/js/eingaben-sicherung.ts) */
+  sicherung?: Sicherung
 }
 
 const WARTEZEITEN_MS = [1000, 2000, 4000, 8000, 15000, 30000]
@@ -179,6 +190,7 @@ export class Speicherdienst {
   private readonly anmeldungWartezeit: number
   private readonly zeitlimit: number
   private readonly abrufen: typeof fetch
+  private readonly sicherung: Sicherung | null
 
   constructor(optionen: SpeicherOptionen = {}) {
     this.beiAenderung = optionen.beiAenderung || (() => {})
@@ -186,6 +198,7 @@ export class Speicherdienst {
     this.anmeldungWartezeit = optionen.anmeldungWartezeitMs ?? ANMELDUNG_WARTEZEIT_MS
     this.zeitlimit = optionen.zeitlimitMs ?? ZEITLIMIT_MS
     this.abrufen = optionen.fetch || ((...args: Parameters<typeof fetch>) => fetch(...args))
+    this.sicherung = optionen.sicherung || null
   }
 
   /**
@@ -194,6 +207,10 @@ export class Speicherdienst {
    * wenn gespeichert, endgültig gescheitert oder durch einen späteren Stand ersetzt (zusammengeführt).
    */
   senden(auftrag: SpeicherAuftrag): Promise<SpeicherErgebnis> {
+    // Zuerst sichern (im Speicher der Seite; beim Verlassen schreibt die Vorbereitung es fest)
+    if (auftrag.wiederholbar && auftrag.sicherung && istObjekt(auftrag.body)) {
+      this.sicherung?.merken(auftrag.sicherung, auftrag.body)
+    }
     return new Promise<SpeicherErgebnis>((aufloesen) => {
       let platz = this.plaetze.get(auftrag.url)
       if (!platz) {
@@ -338,12 +355,14 @@ export class Speicherdienst {
 
   private verarbeite(platz: Platz, eintrag: Eintrag, antwort: Antwortart): void {
     platz.laufend = null
-    const { url, wiederholbar, body, method = 'POST' } = eintrag.auftrag
+    const { url, wiederholbar, body, method = 'POST', sicherung } = eintrag.auftrag
 
     if (antwort.art === 'ok') {
       this.offline = false
       this.zuletztGespeichert = new Date()
       this.erledige(url, method, body)
+      // Gespeichert: Sicherung im Browser für genau diese Werte aufgeben (zusammengeführte Felder eingeschlossen)
+      if (wiederholbar && sicherung && istObjekt(body)) this.sicherung?.gespeichert(sicherung, body)
       // Einmal-Fehler gelten wie bisher als erledigt, sobald wieder etwas gespeichert wurde
       for (const k of [...this.fehlgeschlagen.keys()]) {
         if (k.startsWith('einzel:')) this.fehlgeschlagen.delete(k)

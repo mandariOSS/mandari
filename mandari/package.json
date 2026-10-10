@@ -13,7 +13,7 @@
     "lint:fix": "biome check --write .",
     "test:paste": "node frontend/editor/test/paste-cleanup.test.mjs",
     "test:navigation": "node frontend/js/test/navigation.test.mjs",
-    "test:speichern": "node frontend/js/test/speichern.test.mjs",
+    "test:speichern": "node frontend/js/test/speichern.test.mjs && node frontend/js/test/eingaben-sicherung.test.mjs && node frontend/js/test/autosave.test.mjs",
     "test:icons": "node frontend/js/test/icons.test.mjs"
   },
   "dependencies": {

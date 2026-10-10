@@ -5,7 +5,7 @@
 <c-ui.panel-section title="Beschreibung">
     {% if can_edit %}
     <form hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
-          hx-trigger="focusout from:find textarea changed delay:300ms"
+          hx-trigger="focusout from:find textarea changed delay:300ms, autosave-erneut"
           hx-swap="none"
           hx-vals='{"action": "update"}'
           data-autosave="panel">

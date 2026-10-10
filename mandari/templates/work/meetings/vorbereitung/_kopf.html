@@ -59,6 +59,10 @@ Zusammenfassung ins Menü.
     <a :href="anmeldeAdresse" target="_blank" rel="noopener"
        x-text="saveAnmeldung === 'zweiter_faktor' ? 'Zweiten Faktor einrichten' : 'In neuem Tab anmelden'"></a>
 </p>
+{# Eingaben, die beim letzten Aufruf nicht mehr gespeichert wurden (Sicherung im Browser, #854) #}
+<p class="vb-hinweis" id="eingaben-sicherung" role="status" x-show="sicherungAngebot.length > 0" x-cloak>
+    <span x-text="sicherungText"></span>&ensp;<button type="button" class="wf-textlink" @click="sicherungUebernehmen()">Übernehmen</button>&ensp;<button type="button" class="wf-textlink" @click="sicherungVerwerfen()">Verwerfen</button>
+</p>
 {% if meeting.deleted %}
 <p class="vb-hinweis" role="status">
     <b>{{ meeting.deletion_label }}.</b>

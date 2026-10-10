@@ -277,12 +277,12 @@ export function vorbereitung() {
     get speicherText(): string {
       if (this.saveRetrying > 0) {
         if (this.saveAnmeldung) return 'Nicht gespeichert – bitte anmelden'
-        if (this.saveOffline) return 'Offline – wird nachgeholt'
+        if (this.saveOffline) return 'Nicht gespeichert – offline'
         return 'Nicht gespeichert – wird wiederholt'
       }
-      if (this.pendingSaves > 0) return 'Speichert …'
+      if (this.pendingSaves > 0) return 'Wird gespeichert …'
       if (this.saveError) return 'Nicht gespeichert'
-      if (this.lastSavedAt) return `Gespeichert ${this.lastSavedAt}`
+      if (this.lastSavedAt) return `Gespeichert um ${this.lastSavedAt}`
       return 'Automatisch gespeichert'
     },
     get aufgabenZahl(): number {

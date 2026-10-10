@@ -119,7 +119,7 @@ def test_item_panel_provides_action_url_and_alpine_component(
     }
     assert "Haushalt 2027" in html
     assert '@input.debounce.300ms="searchPapers()"' in html
-    assert '@panel-autosaved.window="markSaved()"' in html
+    assert '@panel-autosaved.window="markSaved($event.detail)"' in html
     assert "fetch(" not in html
     assert "X-CSRFToken" not in html
     for section in (

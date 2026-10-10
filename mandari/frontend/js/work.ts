@@ -76,6 +76,11 @@ Alpine.data('workGruppe', workGruppe)
 Alpine.data('workGlocke', workGlocke)
 Alpine.data('workPerson', workPerson)
 
+// ---- Anzeige automatisch speichernder htmx-Formulare (Aufgaben-Panel, #854) ----------------------
+import { autosaveAnzeige } from '../alpine/autosave-anzeige'
+
+Alpine.data('autosaveAnzeige', autosaveAnzeige)
+
 // ---- Recherche: Karte mit Kachel-Proxy, Zeitraum und Ausschnitt (#853) ------------------------------------
 import { risKarte } from '../alpine/ris-karte'
 

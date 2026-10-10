@@ -40,7 +40,8 @@
     {% block work_extra_head %}{% endblock %}
 </head>
 
-<body class="bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}">
+{# data-konto: Sicherungen anderer Konten im Browser löschen (frontend/js/main.ts, #854) #}
+<body class="bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}"{% if user.is_authenticated %} data-konto="{{ user.pk }}"{% endif %}>
     {% if demo_instance %}{% include "partials/demo_hinweis.html" %}{% endif %}
     <div class="work-layout" x-data="{
         sidebarOpen: false,
