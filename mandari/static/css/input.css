@@ -1060,4 +1060,9 @@
     padding-left: 0;
     padding-right: 0;
   }
+  /* Wie in der schmalen Leiste (#908): Unterpunkte der Recherche und ihr Aufklapper entfallen */
+  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-unterpunkte,
+  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-aufklapper {
+    display: none !important;
+  }
 }
