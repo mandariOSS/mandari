@@ -33,6 +33,8 @@ DOPPELZUSTELLUNG = {
     ),
     "insight.fraktionen_live": "insight_core/tests/test_fraktionen_live.py::test_doppelte_zustellung_verbucht_einmal",
     "insight.indexnow": "insight_core/tests/test_indexnow.py::test_doppelte_zustellung_meldet_dieselben_adressen",
+    "insight.verortung": "insight_core/tests/test_verortung_abonnement.py::test_doppelte_zustellung_reiht_einmal_ein",
+    "insight.zusammenfassung": "insight_ai/tests/test_zusammenfassung_abonnement.py::test_doppelte_zustellung_verwirft_einmal",
     "ris.session_projektor": (
         "apps/session/tests/test_ris_projektor.py::test_doppelte_zustellung_aendert_die_schatten_quelle_nicht"
     ),
@@ -45,6 +47,8 @@ SCHALTER = {
     "RIS_SESSION_PROJECTOR": "schatten",
     "LIVE_UEBERTRAGUNG_AKTIV": True,
     "INDEXNOW_KEY": "3f8a1c2e9b7d4a6f8e0c1b2a3d4e5f60",
+    "GEOREF_SUBSCRIPTION": "aktiv",
+    "SUMMARY_SUBSCRIPTION": "aktiv",
 }
 
 

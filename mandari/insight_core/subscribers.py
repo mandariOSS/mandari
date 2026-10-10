@@ -10,6 +10,11 @@ am Ende des Journals; ältere Wortmeldungen verbucht ``manage.py fraktionen_aus_
 ``insight.indexnow`` (``insight_core.services.indexnow``) meldet geänderte Seiten an Suchmaschinen (Issue #939). Es wird
 registriert, sobald ``INDEXNOW_KEY`` gesetzt ist, und beginnt am Ende des Journals: Den Bestand finden die
 Suchmaschinen über die Sitemaps.
+
+``insight.verortung`` (``insight_core.services.georef_abonnement``) stößt nach neuem Text die Verortung des Vorgangs
+an (Issue #919). Es wird nur registriert, wenn ``GEOREF_SUBSCRIPTION`` nicht ``aus`` ist; mit ``schatten`` startet
+ein neu angelegtes Abonnement im Schattenbetrieb und zählt nur. Ein neues Abonnement beginnt am Ende des Journals;
+Vorgänge mit älterem Text verortet der Zeitplan ``verortung_automatisch`` wie bisher.
 """
 
 from __future__ import annotations
@@ -19,7 +24,7 @@ import logging
 from django.conf import settings
 
 from apps.events import subscriber
-from insight_core.services import fraktionen_live, indexnow
+from insight_core.services import fraktionen_live, georef_abonnement, indexnow
 
 logger = logging.getLogger(__name__)
 
@@ -55,5 +60,22 @@ def register_indexnow() -> bool:
     return True
 
 
+def register_verortung() -> bool:
+    """Registriert ``insight.verortung`` je nach Schalter; ``True``, wenn registriert."""
+    modus = getattr(settings, "GEOREF_SUBSCRIPTION", "aus")
+    if modus == "aus":
+        return False
+    subscriber(
+        georef_abonnement.NAME,
+        types=georef_abonnement.TYPES,
+        batch=georef_abonnement.BATCH,
+        queue=georef_abonnement.QUEUE,
+        transactional=True,
+        shadow=modus == "schatten",
+    )(georef_abonnement.verortung)
+    return True
+
+
 register()
 register_indexnow()
+register_verortung()

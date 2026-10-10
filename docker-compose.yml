@@ -125,6 +125,9 @@ x-app-environment: &app-environment
   SEARCH_INDEX_SHADOW_MAX_DOCS: ${SEARCH_INDEX_SHADOW_MAX_DOCS:-100000}
   # Benachrichtigungen als Abonnement (aus, schatten, aktiv; siehe .env.example), Standard aus
   WORK_NOTIFICATION_SUBSCRIPTION: ${WORK_NOTIFICATION_SUBSCRIPTION:-aus}
+  # Nachfolger der Texterkennung als Abonnements (aus, schatten, aktiv; siehe .env.example), Standard aus
+  GEOREF_SUBSCRIPTION: ${GEOREF_SUBSCRIPTION:-aus}
+  SUMMARY_SUBSCRIPTION: ${SUMMARY_SUBSCRIPTION:-aus}
   # RIS-Projektor für Session-Mandanten im Schattenbetrieb (aus, schatten; siehe .env.example), Standard aus
   RIS_SESSION_PROJECTOR: ${RIS_SESSION_PROJECTOR:-aus}
   RIS_SESSION_PROJECTOR_TENANTS: ${RIS_SESSION_PROJECTOR_TENANTS:-}

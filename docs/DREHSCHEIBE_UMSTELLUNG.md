@@ -140,3 +140,17 @@ nicht (#860). Stand der Phasen (in #536/#537 fortgeschrieben):
 - [ ] Schatten in Produktion für einen Mandanten (Session-Ereignisse für ihn eingeschaltet)
 - [ ] Vergleich 14 Tage ohne unerklärte Abweichung (Akzeptanz #536)
 - [ ] Lücken aus #860 geschlossen, Meldungen der Übernahme und Umschalten (#537), Rückfallprobe
+
+## 6. Nachfolger der Texterkennung (#919)
+
+Neuer Text (`ris.file.text_extracted`) stößt die Verortung seines Vorgangs an und verwirft dessen
+KI-Zusammenfassung (ADR Dokumentkette, `docs/adr/20261007-dokumentkette.md`, Abschnitt 9). Beide Abonnements
+sind transaktional, ergänzen den bisherigen Weg und lösen ihn nicht ab: Der Zeitplan
+`verortung_automatisch` bleibt das Sicherheitsnetz, Zusammenfassungen entstehen weiter nur auf Abruf.
+Einen Vergleich mit einem alten Weg gibt es daher nicht; der Schatten zählt nur, was geschähe.
+
+| | Schatten | Aktiv | Rückfall |
+|---|---|---|---|
+| Verortung | `GEOREF_SUBSCRIPTION=schatten` (zählt `mandari_georef_subscription_total{target="schatten"}`) | `GEOREF_SUBSCRIPTION=aktiv`, Zustand in `events_subscription` auf `aktiv` (Admin: pausieren, dann „Fortsetzen (aktiv)“); markiert Vorgänge und reiht mit `TASKS_BACKEND=journal` den Auftrag `verortung_vorgang` ein | `GEOREF_SUBSCRIPTION=aus` |
+| Zusammenfassung | `SUMMARY_SUBSCRIPTION=schatten` (zählt `mandari_summary_subscription_total{target="schatten"}`) | `SUMMARY_SUBSCRIPTION=aktiv`, Zustand wie oben; verwirft die Zusammenfassung des Vorgangs | `SUMMARY_SUBSCRIPTION=aus` |
+| Stand | `/metrics`: `mandari_events_lag_seconds{subscription="insight.verortung"}` bzw. `"insight.zusammenfassung"` | | |

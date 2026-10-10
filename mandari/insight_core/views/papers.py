@@ -5,7 +5,6 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
-from django.conf import settings
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
@@ -154,6 +153,7 @@ class PaperDetailView(DetailView):
 
 
 NO_TEXT_MESSAGE = "Zu diesem Vorgang liegen keine auswertbaren Dokumenttexte vor."
+TEXT_PENDING_MESSAGE = "Die Texte der Dokumente werden gerade erkannt. Bitte versuche es in einigen Minuten erneut."
 RETRY_MESSAGE = "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte versuche es später erneut."
 
 
@@ -218,16 +218,19 @@ def _generate_summary(request, paper):
         NoTextContentError,
         SummaryError,
         SummaryService,
+        TextPendingError,
     )
 
     from ..services import summary_guard
 
     retry = True
     try:
-        # Dokumente nachladen nur mit Höchstwartezeit auf die Drossel je Host (Web-Anfrage)
-        pace_max_wait = float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
-        summary = SummaryService(pace_max_wait=pace_max_wait).generate_summary(paper)
+        # Liest nur gespeicherten Text; Dokumente lädt und erkennt die Zusammenfassung nicht (Issue #919)
+        summary = SummaryService().generate_summary(paper)
         return _summary_response(request, {"paper": paper, "summary": summary})
+    except TextPendingError:
+        # Kein „kein Text“ merken: Die Erkennung steht aus (ggf. mit Vorrang eingeplant), der Text kommt noch
+        error = TEXT_PENDING_MESSAGE
     except NoTextContentError:
         summary_guard.remember_no_text(paper.pk)
         error, retry = NO_TEXT_MESSAGE, False

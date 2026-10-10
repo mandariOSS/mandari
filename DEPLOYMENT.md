@@ -833,6 +833,30 @@ Anwendung mit `schatten` oder `aktiv` nicht (sonst liefe der Mailversand in der 
 Abonnement noch nicht zugestellt hat, bleiben im Journal liegen (ohne Benachrichtigung); vor dem
 Umschalten deshalb warten, bis der Rückstand des Abonnements null ist.
 
+### Nachfolger der Texterkennung
+
+Neuer Text einer Anlage (`ris.file.text_extracted`, vom OCR-Worker des Ingestors oder vom Auftrag
+`file.extract_text`) erreicht seine Nachfolger über Abonnements der Datendrehscheibe (Issue #919, ADR
+Dokumentkette, Abschnitt 9). Beide laufen im Worker (Rolle `dispatch`, Warteschlange `default`), transaktional und
+ohne Aufrufe nach außen.
+
+| Schalter | Abonnement | `aktiv` |
+|---|---|---|
+| `GEOREF_SUBSCRIPTION` | `insight.verortung` | Der Vorgang geht zurück auf `pending`, sofern ihn der automatische Lauf verortet hat (nie bei Ergebnissen der KI), und mit `TASKS_BACKEND=journal` reiht es den Auftrag `verortung_vorgang` ein. Ohne Journal verortet der Zeitplan `verortung_automatisch` beim nächsten Lauf. |
+| `SUMMARY_SUBSCRIPTION` | `insight.zusammenfassung` | Die KI-Zusammenfassung des Vorgangs wird verworfen, nicht neu erzeugt; eine neue entsteht wie bisher erst auf Abruf. |
+
+`aus` (Standard) registriert nichts, `schatten` zählt nur (`mandari_georef_subscription_total`,
+`mandari_summary_subscription_total`). **Einschalten:** `schatten` setzen, Worker neu starten
+(`docker compose up -d worker`), einige Tage die Zähler und `mandari_events_lag_seconds` ansehen. Dann im Admin
+(„Ereignistechnik → Abonnements“) das Abonnement pausieren und „Fortsetzen (aktiv)“, danach `aktiv` setzen und den
+Worker neu starten. Ein neues Abonnement beginnt am Ende des Journals; älterer Text bleibt beim Zeitplan.
+**Rückweg:** `aus` und Neustart des Workers; Verortung und Zusammenfassung arbeiten dann wie vorher.
+
+Die Zusammenfassung selbst lädt keine Dokumente mehr und erkennt keinen Text. Fehlt der Text, weil die Erkennung
+einer Anlage aussteht, zeigt die Vorgangsseite einen Hinweis; mit `TASKS_BACKEND=journal` und
+`TEXT_EXTRACTION_RUNNER=worker` reiht sie dafür bis zu drei Aufträge `file.extract_text` mit Vorrang ein, und zwar
+für Anlagen mit abgelegtem Inhalt (der Auftrag liest nur aus der Ablage; die übrigen holt zuerst der Abruf).
+
 ### Work-Daten nach Neuveröffentlichung im RIS
 
 Veröffentlicht ein RIS eine Tagesordnung oder Vorlage neu (Löschmarkierung und Neuanlage, neue Adressen,

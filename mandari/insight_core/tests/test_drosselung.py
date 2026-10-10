@@ -184,9 +184,7 @@ class TestZusammenfassung:
             aufrufe.append("text")
             return ""
 
-        monkeypatch.setattr(
-            "insight_ai.services.summarizer.SummaryService._collect_text_content_with_extraction", ohne_text
-        )
+        monkeypatch.setattr("insight_ai.services.summarizer.SummaryService._collect_text_content", ohne_text)
         client = Client()
         client.post(_url(paper))
         client.post(_url(paper))

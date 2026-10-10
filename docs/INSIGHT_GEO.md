@@ -37,6 +37,22 @@ Voraussetzung ist `osm_relation_id` an der Kommune. Die Adressabfrage nutzt
 3. `update_paper_georef()` und `apply_oparl_locations()` rufen nach dem Speichern
    `sync_paper_locations()` auf, damit Tabelle und JSON übereinstimmen.
 
+## Verortung nach neuem Text (`services/georef_abonnement.py`, #919)
+
+Der automatische Lauf (Zeitplan `verortung_automatisch`, alle `GEOREF_AUTO_INTERVAL_MINUTES`) verortet Vorgänge im
+Stand `pending` mit erkanntem Text. Mit `GEOREF_SUBSCRIPTION=aktiv` stößt zusätzlich jeder neue Text
+(`ris.file.text_extracted`) die Verortung seines Vorgangs an (Abonnement `insight.verortung`):
+
+- Ein schon automatisch verorteter Vorgang (`completed`, `ai_needed`, `skipped`, `failed`) geht zurück auf `pending`,
+  weil der neue Text weitere Orte nennen kann. Vorgänge mit Ergebnis der KI (`georef_method` mit `ai`,
+  `no_locations`) und laufende bleiben unberührt; offizielle, manuelle und Umring-Orte bleiben bei jedem Lauf
+  erhalten, entfernte gesperrt.
+- Mit `TASKS_BACKEND=journal` reiht das Abonnement je Vorgang den Auftrag `verortung_vorgang` ein, der genau diesen
+  Vorgang wie der Zeitplan verortet (Regex/Gazetteer, nie KI, nie externe Geocoder). Ohne Journal verortet der
+  Zeitplan beim nächsten Lauf.
+- Nur in Kommunen mit Straßenverzeichnis und mit `GEOREF_ENABLED`/`GEOREF_AUTO_ENABLED`. Zeitplan und Auftrag
+  beanspruchen einen Vorgang nur aus `pending`, keiner verortet ihn doppelt.
+
 ## Verortungs-Tabelle und Umkreissuche (`services/paper_locations.py`)
 
 - `sync_paper_locations(paper)`: JSON → Tabelle, idempotent. Regeln:
