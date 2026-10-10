@@ -839,7 +839,7 @@ class MotionShareUpdateView(WorkViewMixin, View):
                 if level not in SHARE_DIALOG_LEVELS:
                     level = "view"
                 # Herunterladen für Gäste (Issue #582); ohne Angabe wie bisher erlaubt
-                allow_download = request.POST.get("allow_download", "1") != "0"
+                allow_download = freigaben.download_choice(request.POST)
 
                 user = User.objects.filter(email=add_user_email).first()
                 # Nur Nutzer mit aktivem Zugang zu DIESER Organisation – sonst
@@ -882,19 +882,9 @@ class MotionShareRemoveView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         share = get_object_or_404(MotionShare, id=kwargs.get("share_id"), motion__organization=self.organization)
 
-        # Check if user can manage this share
-        motion = share.motion
-        # Gast-Verwalter:innen dürfen persönliche Gast-Freigaben entziehen (Issue #77)
-        from apps.tenants.models import Membership
-
-        manages_guest_share = (
-            share.scope == "user"
-            and share.user_id
-            and self.membership.has_permission("guests.manage")
-            and Membership.objects.filter(user_id=share.user_id, organization=self.organization, is_guest=True).exists()
-        )
-        # Entziehen verengt nur den Zugang: Freigaberecht (Motion.can_share) oder Gast-Verwaltung
-        if not motion.can_share(self.membership) and not manages_guest_share:
+        # Entziehen verengt nur den Zugang: Freigaberecht (Motion.can_share) oder – bei persönlichen
+        # Gast-Freigaben – Gast-Verwaltung (Issue #77)
+        if not freigaben.may_manage_document_share(self.membership, share):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         share.delete()
@@ -921,19 +911,11 @@ class MotionShareDownloadView(WorkViewMixin, View):
     permission_required = "motions.share"
 
     def post(self, request, *args, **kwargs):
-        from apps.tenants.models import Membership
-
         share = get_object_or_404(
             MotionShare, id=kwargs.get("share_id"), motion__organization=self.organization, scope="user"
         )
-        manages_guest_share = (
-            share.user_id
-            and self.membership.has_permission("guests.manage")
-            and Membership.objects.filter(user_id=share.user_id, organization=self.organization, is_guest=True).exists()
-        )
-        if not share.motion.can_share(self.membership) and not manages_guest_share:
+        if not freigaben.may_manage_document_share(self.membership, share):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
-        share.allow_download = request.POST.get("allow_download") == "1"
-        share.save(update_fields=["allow_download"])
+        freigaben.set_allow_download(share, freigaben.download_choice(request.POST, default=False))
         return _share_download_response(request, self.organization, share.allow_download)

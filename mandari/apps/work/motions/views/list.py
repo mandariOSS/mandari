@@ -22,6 +22,7 @@ logger = logging.getLogger("apps.work.motions")
 from apps.common.mixins import WorkViewMixin
 from apps.work.stats_text import documents_sentence
 
+from .. import freigaben
 from ..administration_feedback import with_administration_reference
 from ..models import (
     DocumentFolder,
@@ -386,7 +387,7 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
             )
 
         # Herunterladen (Issue #582); ohne Angabe wie bisher erlaubt
-        allow_download = request.POST.get("allow_download", "1") != "0"
+        allow_download = freigaben.download_choice(request.POST)
         previous = FolderGuestShare.objects.filter(folder=folder, user=user).first()
         FolderGuestShare.objects.update_or_create(
             folder=folder,
@@ -450,8 +451,7 @@ class FolderGuestShareDownloadView(WorkViewMixin, View):
         if not _can_manage_folder(self.membership, share.folder):
             return JsonResponse({"error": "Keine Berechtigung für diesen Ordner."}, status=403)
 
-        share.allow_download = request.POST.get("allow_download") == "1"
-        share.save(update_fields=["allow_download"])
+        freigaben.set_allow_download(share, freigaben.download_choice(request.POST, default=False))
         return _share_download_response(request, self.organization, share.allow_download)
 
 

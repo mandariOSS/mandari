@@ -57,6 +57,36 @@ DOWNLOAD_ATTACHMENT = "Anhang"
 # =============================================================================
 
 
+def download_choice(data: Any, *, default: bool = True) -> bool:
+    """„Herunterladen erlauben“ aus Formulardaten: „0“ schaltet ab, jeder andere Wert an, ohne Angabe ``default``."""
+    value = data.get("allow_download")
+    return default if value is None else value != "0"
+
+
+def may_manage_document_share(membership: Membership, share: Any) -> bool:
+    """
+    Darf ``membership`` eine persönliche Dokument-Freigabe entziehen oder ändern?
+
+    Freigaberecht am Dokument (``Motion.can_share``) oder Gast-Verwaltung (``guests.manage``) bei Freigaben an
+    Gäste der Organisation (Issue #77).
+    """
+    if share.motion.can_share(membership):
+        return True
+    if share.scope != "user" or not share.user_id or not membership.has_permission("guests.manage"):
+        return False
+    from apps.tenants.models import Membership as MembershipModel
+
+    return MembershipModel.objects.filter(
+        user_id=share.user_id, organization_id=share.motion.organization_id, is_guest=True
+    ).exists()
+
+
+def set_allow_download(share: Any, allowed: bool) -> None:
+    """Schalter „Herunterladen erlauben“ einer Dokument- oder Ordner-Freigabe setzen."""
+    share.allow_download = allowed
+    share.save(update_fields=["allow_download"])
+
+
 def log_guest_download(
     motion: Motion, membership: Membership, request: Any, kind: str, *, document: MotionDocument | None = None
 ) -> None:
