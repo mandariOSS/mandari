@@ -122,7 +122,9 @@ radweg = top(
     resolution_text="Die Verwaltung plant einen geschützten Radweg.",
     implementation_recipient="Tiefbauamt",
     implementation_deadline=today + timedelta(days=60),
-    implementation_note="INTERN: Vergabevermerk 4711",
+    # Markierung ohne Ziffern und mit Buchstaben außerhalb von a-f: kommt in UUIDs, Tokens und Nonces der Seite
+    # nicht zufällig vor (Issue #782, vorher "4711")
+    implementation_note="INTERN: Vergabevermerk Quokkawurz",
     implementation_public_note="Planung beauftragt, Baubeginn im Frühjahr.",
 )
 spielplatz = top(
@@ -164,6 +166,8 @@ check(
     "Register zeigt Feld für öffentliche Statusmeldung",
     "Öffentliche Statusmeldung" in html(resp) and "öffentlich zeigen" in html(resp),
 )
+# Gegenprobe für die Prüfung in Abschnitt 3: Die Markierung des internen Vermerks erscheint, wo er hingehört
+check("Register (intern) zeigt den internen Vermerk", "Vergabevermerk Quokkawurz" in html(resp))
 
 print()
 print("=== 3. Insight: Liste und Detail ===")
@@ -175,7 +179,7 @@ check(
 )
 check(
     "Öffentliche Statusmeldung statt internem Vermerk",
-    "Planung beauftragt" in page and "INTERN" not in page and "4711" not in page,
+    "Planung beauftragt" in page and "INTERN" not in page and "Quokkawurz" not in page,
 )
 check(
     "Nicht-öffentliche, abgelehnte und nicht freigegebene Beschlüsse fehlen",
@@ -210,7 +214,7 @@ check(
     and "Geplante Umsetzung" in page
     and "Planung beauftragt" in page,
 )
-check("Detail: interner Vermerk nicht sichtbar", "4711" not in page and "INTERN" not in page)
+check("Detail: interner Vermerk nicht sichtbar", "Quokkawurz" not in page and "INTERN" not in page)
 check("Versteckter Beschluss -> 404", anon.get(f"/insight/beschluesse/{versteckt.id}/").status_code == 404)
 check("NÖ-Beschluss -> 404", anon.get(f"/insight/beschluesse/{geheim.id}/").status_code == 404)
 steps = decision_tracking.timeline(spielplatz)
