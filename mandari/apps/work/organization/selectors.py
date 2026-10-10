@@ -530,7 +530,12 @@ def guest_document_shares(organization: Organization, user: User) -> list[Motion
 
 
 def guest_folder_shares(organization: Organization, user: User) -> list[FolderGuestShare]:
-    """Ordner-Freigaben eines Gastes mit ``subfolder_count`` und ``document_count`` (rekursiv)."""
+    """
+    Ordner-Freigaben eines Gastes mit ``subfolder_count`` und ``document_count`` (rekursiv).
+
+    Gezählt werden die Dokumente, die die Freigabe erfasst: organisationsweite und geteilte Dokumente der
+    freigebenden Person, keine privaten (Motion._folder_share_applies, Issue #582).
+    """
     from apps.work.motions.models import FolderGuestShare, Motion
 
     shares = list(
@@ -540,8 +545,12 @@ def guest_folder_shares(organization: Organization, user: User) -> list[FolderGu
     )
     for share in shares:
         descendants = share.folder.get_descendants()
+        applies = Q(visibility="organization")
+        if share.created_by_id is not None:
+            applies |= Q(visibility="shared", author__user_id=share.created_by_id)
         document_count = (
             Motion.objects.filter(organization=organization, folder__in=[share.folder, *descendants])
+            .filter(applies)
             .exclude(status="deleted")
             .count()
         )
@@ -588,8 +597,9 @@ def shareable_folders(organization: Organization, membership: Membership) -> lis
     """
     Ordner, die der Einladende freigeben darf, als [(folder, depth)].
 
-    Eine Ordner-Freigabe öffnet ALLE enthaltenen Dokumente (rekursiv, auch künftige) —
-    daher nur Ordner, die der Einladende auch verwalten darf.
+    Eine Ordner-Freigabe öffnet rekursiv (auch künftig hinzukommende) die organisationsweiten und die geteilten
+    Dokumente der freigebenden Person, nie private (Motion._folder_share_applies, Issue #582) — daher nur Ordner,
+    die der Einladende auch verwalten darf.
     """
     from apps.work.motions.views import _can_manage_folder, _flatten_folder_tree
 

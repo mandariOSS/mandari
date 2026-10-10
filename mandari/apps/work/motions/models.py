@@ -16,7 +16,7 @@ Provides motion management with:
 import hashlib
 import logging
 import uuid
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 from django.db import models
 from django.db.models import F
@@ -285,7 +285,9 @@ class DocumentFolder(models.Model):
     steuern für Mitglieder KEINE Sichtbarkeit (die regeln weiterhin
     ausschließlich Motion.visibility und MotionShare). Einzige Ausnahme:
     Gäste können per FolderGuestShare für einen Ordner (rekursiv inkl.
-    aller Unterordner und enthaltenen Dokumente) freigegeben werden.
+    aller Unterordner) freigegeben werden; die Freigabe umfasst die
+    organisationsweiten und die geteilten Dokumente der freigebenden Person,
+    private Dokumente nie (Issue #582).
 
     Ausnahme „Nichtöffentliche Vorgänge“ (``sworn_in_only``, Issue #873): Dokumente in diesem Ordner
     (und darunter) öffnen ausschließlich vereidigte Mitglieder der Organisation – alle Vereidigten,
@@ -555,7 +557,10 @@ class FolderGuestShare(models.Model):
     Ordner-Freigabe an einzelne Nutzer (insbesondere Gäste).
 
     Die Freigabe gilt für den Ordner UND rekursiv für alle Unterordner
-    sowie alle enthaltenen Dokumente — auch künftig hinzukommende.
+    sowie die enthaltenen Dokumente — auch künftig hinzukommende. Erfasst
+    werden organisationsweite Dokumente und geteilte Dokumente der
+    freigebenden Person; private Dokumente bleiben privat und lassen sich
+    nur einzeln freigeben (Motion._folder_share_applies, Issue #582).
     Zugriffs-Checks laufen zentral über Motion.get_guest_share_level()
     bzw. shared_folder_levels(); Views/Consumer prüfen NICHT einzeln.
     """
@@ -584,6 +589,14 @@ class FolderGuestShare(models.Model):
         verbose_name="Benutzer",
     )
     level = models.CharField(max_length=20, choices=LEVEL_CHOICES, default="view", verbose_name="Berechtigung")
+    # Export (PDF/DOCX) und Anhänge für Gäste (Issue #582). Datenbank-Standardwert: Bestehende Freigaben und
+    # eine ältere Version (Rückfall) behalten das bisherige Verhalten.
+    allow_download = models.BooleanField(
+        default=True,
+        db_default=True,
+        verbose_name="Herunterladen erlauben",
+        help_text="Gäste dürfen das Dokument als PDF oder DOCX exportieren und Anhänge herunterladen.",
+    )
 
     created_by = models.ForeignKey(
         "accounts.User",
@@ -1106,8 +1119,9 @@ class Motion(EncryptionMixin, models.Model):
           organisationsweite und bei geteilten Dokumenten persönlich freigegebene. Entwürfe anderer
           nur mit ``motions.view_drafts``. Dokumente entfernter Mitglieder (ohne Autor:in) zusätzlich
           mit ``motions.view_former_members``, auch Entwürfe und private (Issue #590).
-        - Gäste ausschließlich persönlich freigegebene Dokumente sowie Dokumente in für sie
-          freigegebenen Ordnern (rekursiv) – nie Dokumente im Papierkorb.
+        - Gäste ausschließlich persönlich freigegebene Dokumente sowie in für sie freigegebenen Ordnern
+          (rekursiv) die organisationsweiten und geteilten Dokumente der freigebenden Person – nie private
+          Dokumente über einen Ordner (Issue #582), nie Dokumente im Papierkorb.
         - Dokumente in „Nichtöffentliche Vorgänge“ nur für vereidigte Mitglieder, nie für Gäste (Issue #873).
 
         Args:
@@ -1118,14 +1132,15 @@ class Motion(EncryptionMixin, models.Model):
         if not include_deleted or is_guest:
             qs = qs.exclude(status="deleted")
         if is_guest:
-            # Ordner-Freigaben: organisationsweite und eigene Dokumente der freigebenden Person
+            # Ordner-Freigaben: organisationsweite und geteilte Dokumente der freigebenden Person, nie private
+            # (wie _folder_share_applies, Issue #582)
             folder_q = models.Q(pk__in=[])
             for folder_ids, created_by_id in FolderGuestShare.shared_folder_scopes(
                 membership.user, membership.organization
             ):
                 applies = models.Q(visibility="organization")
                 if created_by_id is not None:
-                    applies |= models.Q(author__user_id=created_by_id)
+                    applies |= models.Q(visibility="shared", author__user_id=created_by_id)
                 folder_q |= models.Q(folder_id__in=folder_ids) & applies
             return qs.filter(models.Q(shares__scope="user", shares__user=membership.user) | folder_q).distinct()
         if not membership.has_permission("motions.view"):
@@ -1180,6 +1195,27 @@ class Motion(EncryptionMixin, models.Model):
             return self.document_type.is_submittable
         return True
 
+    def _guest_shares(self, membership) -> list[tuple[str, datetime, bool]]:
+        """
+        Wirksame Freigaben eines Gast-Zugangs für dieses Dokument als (Stufe, angelegt am, Herunterladen erlaubt).
+
+        Persönliche Dokument-Freigaben (MotionShare, scope=user) und Ordner-Freigaben (FolderGuestShare) auf dem
+        Ordner des Dokuments bzw. seinen Vorfahren, soweit sie das Dokument erfassen (_folder_share_applies).
+        """
+        shares = list(
+            self.shares.filter(scope="user", user=membership.user).values_list("level", "created_at", "allow_download")
+        )
+        # Ordner-Freigaben gelten rekursiv: Ordner des Dokuments + Vorfahren
+        node = self.folder
+        while node is not None:
+            for level, created_at, allow_download, created_by_id in node.guest_shares.filter(
+                user=membership.user
+            ).values_list("level", "created_at", "allow_download", "created_by_id"):
+                if self._folder_share_applies(created_by_id):
+                    shares.append((level, created_at, allow_download))
+            node = node.parent
+        return shares
+
     def get_guest_share_level(self, membership) -> str | None:
         """
         Freigabe-Level eines Gast-Zugangs für dieses Dokument.
@@ -1190,16 +1226,7 @@ class Motion(EncryptionMixin, models.Model):
         übergeordneten Ordner. Returns 'view'/'comment'/'edit'/'admin'
         oder None, wenn keine Freigabe existiert.
         """
-        levels = set(self.shares.filter(scope="user", user=membership.user).values_list("level", flat=True))
-        # Ordner-Freigaben gelten rekursiv: Ordner des Dokuments + Vorfahren
-        node = self.folder
-        while node is not None:
-            for level, created_by_id in node.guest_shares.filter(user=membership.user).values_list(
-                "level", "created_by_id"
-            ):
-                if self._folder_share_applies(created_by_id):
-                    levels.add(level)
-            node = node.parent
+        levels = {level for level, _created_at, _allow_download in self._guest_shares(membership)}
         for level in ("admin", "edit", "comment", "view"):
             if level in levels:
                 return level
@@ -1215,16 +1242,21 @@ class Motion(EncryptionMixin, models.Model):
         die Versionshistorie erst ab diesem Zeitpunkt – Entwürfe und
         Änderungen vor der Freigabe bleiben ihnen verborgen.
         """
-        timestamps = list(self.shares.filter(scope="user", user=membership.user).values_list("created_at", flat=True))
-        node = self.folder
-        while node is not None:
-            for created_at, created_by_id in node.guest_shares.filter(user=membership.user).values_list(
-                "created_at", "created_by_id"
-            ):
-                if self._folder_share_applies(created_by_id):
-                    timestamps.append(created_at)
-            node = node.parent
+        timestamps = [created_at for _level, created_at, _allow_download in self._guest_shares(membership)]
         return min(timestamps) if timestamps else None
+
+    def can_download(self, membership) -> bool:
+        """
+        Darf die Person das Dokument exportieren (PDF/DOCX) und seine Anhänge herunterladen? (Issue #582)
+
+        Mitglieder: wer das Dokument öffnen darf. Gäste: ab der Stufe „Lesen“, solange mindestens eine ihrer
+        wirksamen Freigaben das Herunterladen erlaubt (wie bei den Stufen gilt die weitestgehende Freigabe).
+        """
+        if self.access_level(membership, status_lock=False) == "none":
+            return False
+        if not getattr(membership, "is_guest", False):
+            return True
+        return any(allow_download for _level, _created_at, allow_download in self._guest_shares(membership))
 
     def revisions_for(self, membership):
         """
@@ -1451,12 +1483,16 @@ class Motion(EncryptionMixin, models.Model):
         """
         Gilt eine Ordner-Freigabe (angelegt von ``created_by_id``) für dieses Dokument?
 
-        Ordner-Freigaben umfassen organisationsweite Dokumente und die eigenen Dokumente der
-        freigebenden Person – private oder gezielt geteilte Dokumente anderer bleiben außen vor.
+        Ordner-Freigaben umfassen organisationsweite Dokumente und die geteilten Dokumente der
+        freigebenden Person. Private Dokumente bleiben privat, auch die eigenen der freigebenden Person
+        (Issue #582); gezielt geteilte Dokumente anderer bleiben ebenfalls außen vor. Einzelne
+        Dokumente lassen sich weiterhin persönlich freigeben (MotionShare).
         """
         if self.visibility == "organization":
             return True
-        return created_by_id is not None and self.author is not None and self.author.user_id == created_by_id
+        if self.visibility != "shared" or created_by_id is None:
+            return False
+        return self.author is not None and self.author.user_id == created_by_id
 
     def get_visibility_icon(self) -> str:
         """Get the Lucide icon name for the current visibility."""
@@ -1753,6 +1789,14 @@ class MotionShare(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     message = models.TextField(blank=True, verbose_name="Nachricht", help_text="Optionale Nachricht an den Empfänger")
+    # Export (PDF/DOCX) und Anhänge für Gäste (Issue #582); für Mitglieder ohne Wirkung. Datenbank-Standardwert:
+    # Bestehende Freigaben und eine ältere Version (Rückfall) behalten das bisherige Verhalten.
+    allow_download = models.BooleanField(
+        default=True,
+        db_default=True,
+        verbose_name="Herunterladen erlauben",
+        help_text="Gäste dürfen das Dokument als PDF oder DOCX exportieren und Anhänge herunterladen.",
+    )
 
     class Meta:
         verbose_name = "Antragsfreigabe"

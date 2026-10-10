@@ -1383,6 +1383,8 @@ class FactionAuditLog(models.Model):
         ("internal_document_access", "Nichtöffentliche Unterlage aufgerufen"),
         ("agenda_reminder_sent", "Erinnerung zum Eintragen von TOPs versandt"),
         ("protocol_sent", "Protokoll versandt"),
+        # Export (PDF/DOCX) oder Anhang eines Dokuments durch einen Gast (Issue #582)
+        ("guest_download", "Dokument von Gast heruntergeladen"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

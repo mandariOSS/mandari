@@ -42,9 +42,10 @@ export interface CollabOptions {
   getHtml?: () => string
   /**
    * Called when the server requests a document reload (e.g. after a revision
-   * restore). Default behavior: window.location.reload().
+   * restore). Default behavior: window.location.reload(). `reason` is set when
+   * access was downgraded or revoked (#582).
    */
-  onReloadRequired?: () => void
+  onReloadRequired?: (reason?: ReloadReason) => void
   /**
    * Called after the server persisted a yjs_save (content_hash of the stored
    * HTML). The editor keeps it as the base for conflict detection when it
@@ -52,6 +53,9 @@ export interface CollabOptions {
    */
   onPersisted?: (contentHash: string) => void
 }
+
+/** Grund einer Reload-Aufforderung: Zugriff herabgestuft bzw. entzogen (#582); ohne Grund = neuer Stand. */
+export type ReloadReason = 'access_changed' | 'access_revoked'
 
 export interface CollabUser {
   name: string
@@ -101,7 +105,7 @@ class DjangoYjsProvider {
   private onStatusChange?: (status: CollabStatus) => void
   private onInitialState?: (hasState: boolean) => void
   private getHtml?: () => string
-  private onReloadRequired?: () => void
+  private onReloadRequired?: (reason?: ReloadReason) => void
   private onPersisted?: (contentHash: string) => void
   private _beforeUnloadHandler: (() => void) | null = null
   private _visibilityHandler: (() => void) | null = null
@@ -113,7 +117,7 @@ class DjangoYjsProvider {
     onStatusChange?: (status: CollabStatus) => void,
     onInitialState?: (hasState: boolean) => void,
     getHtml?: () => string,
-    onReloadRequired?: () => void,
+    onReloadRequired?: (reason?: ReloadReason) => void,
     onPersisted?: (contentHash: string) => void,
   ) {
     this.wsUrl = wsUrl
@@ -236,10 +240,15 @@ class DjangoYjsProvider {
       // Server requests a full document reload (e.g. after revision restore or a POST
       // save by someone without connection). Our Yjs state is now stale: a late yjs_save
       // (tab hidden, beforeunload, destroy) must not overwrite the stored content (#184).
+      // After access was downgraded or revoked the server sends a reason (#582). Only the first
+      // request counts – the page is reloading anyway.
+      if (this.reloadRequested) return
       this.reloadRequested = true
       if (this.saveTimer) clearInterval(this.saveTimer)
       if (this.onReloadRequired) {
-        this.onReloadRequired()
+        this.onReloadRequired(
+          msg.reason === 'access_changed' || msg.reason === 'access_revoked' ? msg.reason : undefined,
+        )
       } else {
         window.location.reload()
       }

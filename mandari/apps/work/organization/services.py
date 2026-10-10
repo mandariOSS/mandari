@@ -430,10 +430,13 @@ def invite_guest(
     share_level: str,
     document_ids: list[str],
     folder_ids: list[str],
+    allow_download: bool = True,
 ) -> GuestInviteResult:
     """
     Gast einladen: Konto anlegen (falls nötig), Gast-Mitgliedschaft ohne Rollen, optionale
     Dokument-/Ordner-Freigaben (rekursiv) und Zugangs-Mail. Prüft das Gast-Limit.
+
+    ``allow_download``: Die Freigaben erlauben Export (PDF/DOCX) und Anhänge (Issue #582).
     """
     from apps.work.motions.models import FolderGuestShare, MotionShare
 
@@ -477,7 +480,12 @@ def invite_guest(
                 motion=motion,
                 scope="user",
                 user=user,
-                defaults={"level": share_level, "created_by": inviter_user, "message": note},
+                defaults={
+                    "level": share_level,
+                    "created_by": inviter_user,
+                    "message": note,
+                    "allow_download": allow_download,
+                },
             )
             shared_docs.append(motion)
             # In-App-Hinweis; die E-Mail bündelt alle Freigaben (keine Mail-Flut)
@@ -491,7 +499,9 @@ def invite_guest(
             if folder is None:
                 continue
             FolderGuestShare.objects.update_or_create(
-                folder=folder, user=user, defaults={"level": share_level, "created_by": inviter_user}
+                folder=folder,
+                user=user,
+                defaults={"level": share_level, "created_by": inviter_user, "allow_download": allow_download},
             )
             shared_folders.append(folder)
             hub.notify_folder_shared(folder, guest_membership, share_level, inviter, send_email=False)

@@ -26,6 +26,11 @@ class WorkConfig(AppConfig):
 
         motion_signals.register()
 
+        # Entzug von Freigaben, Mitgliedschaften und Rechten wirkt sofort in geöffneten Bearbeitungen (Issue #582)
+        from apps.work.motions import freigaben
+
+        freigaben.register()
+
         # Mitgliedschaft gelöscht: persönliche Einträge weg, Organisationsinhalte bleiben (Issue #420)
         from apps.work.organization import member_data
 

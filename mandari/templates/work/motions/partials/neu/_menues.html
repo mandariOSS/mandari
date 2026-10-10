@@ -3,7 +3,7 @@ Menüs des neuen Antragseditors (Teil von #856) als Partials: Menüleiste Datei 
 und die Speicheranzeige. Ein Weg je Aktion: Stand-Knopf, Menü „Ablauf“ und Ablaufleiste rufen dieselben Schritte auf.
 Seltenes steht hier statt in der Werkzeugleiste (eine Leiste statt drei). Alle Punkte rufen vorhandene Funktionen auf.
 Kontext: motion, ablauf, darf_steuern, can_edit, can_share, can_delete, can_submit_ris, is_guest, is_sworn_in_only, ris_application,
-organization; Alpine-Komponente documentEditor (menue, befehl, panelOeffnen, ablaufDialog, …).
+download_blocked (Gäste ohne Herunterladen, #582), organization; Alpine-Komponente documentEditor (menue, befehl, panelOeffnen, ablaufDialog, …).
 {% endcomment %}
 
 {% partialdef gespeichert %}
@@ -37,9 +37,11 @@ organization; Alpine-Komponente documentEditor (menue, befehl, panelOeffnen, abl
 {% elif is_sworn_in_only %}
 <p class="ke-menue-hinweis"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich: nur vereidigte Mitglieder, keine Freigaben</p>
 {% endif %}
+{% if not download_blocked %}
 <a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf" target="_blank" rel="noopener"><i data-lucide="eye" aria-hidden="true"></i>Vorschau (PDF)</a>
 <a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=docx"><i data-lucide="download" aria-hidden="true"></i>Herunterladen als Word</a>
 <div role="separator" class="ke-trenn"></div>
+{% endif %}
 <button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('details')"><i data-lucide="sliders-horizontal" aria-hidden="true"></i>Details und Zuständigkeit</button>
 <button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('verlauf')"><i data-lucide="history" aria-hidden="true"></i>Fassungen und Verlauf</button>
 {% if can_edit %}

@@ -66,6 +66,18 @@
                 </select>
             </div>
 
+            <div class="mb-4">
+                <input type="hidden" name="allow_download" value="0">
+                <label class="flex items-start gap-3 cursor-pointer">
+                    <input type="checkbox" name="allow_download" value="1" checked
+                           class="mt-0.5 w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                    <span class="text-sm">
+                        <span class="font-medium text-gray-700 dark:text-gray-300">Herunterladen erlauben</span>
+                        <span class="block text-gray-500">PDF, Word und Anhänge. Gilt für alle Dokument- und Ordner-Freigaben dieser Einladung.</span>
+                    </span>
+                </label>
+            </div>
+
             {% if shareable_documents %}
             <div class="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-700">
                 {% for doc in shareable_documents %}
@@ -90,6 +102,7 @@
             <p class="text-sm text-gray-500 mb-4">
                 Optional: Eine Ordner-Freigabe gilt für den Ordner und rekursiv für alle Unterordner
                 und enthaltenen Dokumente — auch für Dokumente, die später hinzukommen.
+                Private Dokumente bleiben privat; sie lassen sich nur einzeln freigeben.
             </p>
             {% if shareable_folders %}
             <div class="max-h-64 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-700">

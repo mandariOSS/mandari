@@ -265,6 +265,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         # Verwaltungsaktionen: Status, Dokumenttyp, KI, Zuständigkeit, Themen,
         # Frist, Freigaben, Papierkorb — die Views sind nicht guest_allowed (Issue #76)
         context["is_guest"] = bool(getattr(self.membership, "is_guest", False))
+        # Export und Anhänge: Gäste nur, wenn ihre Freigabe das Herunterladen erlaubt (Issue #582)
+        context["download_blocked"] = context["is_guest"] and not motion.can_download(self.membership)
 
         # Comments
         comments = (
@@ -743,8 +745,9 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
         if current_folder is not None:
             # Innerhalb eines Ordners: Unterordner + enthaltene Dokumente
             subfolders = current_folder.children.all()
-            # Nur, was die Freigabe umfasst (Motion.visible_to: organisationsweite und eigene
-            # Dokumente der freigebenden Person, persönliche Freigaben)
+            # Nur, was die Freigabe umfasst (Motion.visible_to wie Motion._folder_share_applies:
+            # organisationsweite und geteilte Dokumente der freigebenden Person, nie private; dazu
+            # persönliche Freigaben)
             folder_documents = list(
                 Motion.visible_to(self.membership)
                 .filter(folder=current_folder)
