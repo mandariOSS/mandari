@@ -381,6 +381,7 @@ CASES: list[Case] = [
     Case("document_folder_delete", path={"folder_id": "folder2"}),
     Case("document_folder_share", path={"folder_id": "folder"}, data={"email": "{guest_email}", "level": "comment"}),
     Case("document_folder_share_remove", path={"share_id": "folder_share"}),
+    Case("document_folder_share_download", path={"share_id": "folder_share"}, data={"allow_download": "0"}),
     Case(
         "document_move_to_folder",
         data={"folder": "{folder2}", "motion_ids": ["{motion}"]},
@@ -401,6 +402,7 @@ CASES: list[Case] = [
         data={"visibility": "shared", "add_user_email": "{member_email}", "level": "comment"},
     ),
     Case("document_share_remove", path={"share_id": "share"}),
+    Case("document_share_download", path={"share_id": "share"}, data={"allow_download": "0"}),
     Case("document_status", path=MOTION, data={"status": "internal_review"}),
     Case(
         "document_meta",

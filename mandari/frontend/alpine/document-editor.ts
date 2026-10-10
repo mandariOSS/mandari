@@ -510,10 +510,17 @@ export const documentEditor = defineComponent(() => {
             this.saveConflict = false
             this._savedSeq = this._changeSeq
           },
-          onReloadRequired: () => {
+          onReloadRequired: (reason) => {
             // Server hat einen neuen Stand (Versions-Wiederherstellung oder Speichern
-            // ohne Verbindung durch eine andere Person) → frisch laden
-            showToast('Das Dokument wurde an anderer Stelle gespeichert — es wird neu geladen.', 'info')
+            // ohne Verbindung durch eine andere Person) oder die Berechtigung hat sich
+            // geändert (#582) → frisch laden
+            if (reason === 'access_revoked') {
+              showToast('Ihr Zugriff auf dieses Dokument wurde entzogen. Die Seite wird neu geladen.', 'info')
+            } else if (reason === 'access_changed') {
+              showToast('Ihre Berechtigung für dieses Dokument wurde geändert. Die Seite wird neu geladen.', 'info')
+            } else {
+              showToast('Das Dokument wurde an anderer Stelle gespeichert — es wird neu geladen.', 'info')
+            }
             this.leaveIntentionally()
             window.setTimeout(() => window.location.reload(), 800)
           },

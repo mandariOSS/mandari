@@ -253,6 +253,8 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         # Verwaltungsaktionen: Status, Dokumenttyp, KI, Zuständigkeit, Themen,
         # Frist, Freigaben, Papierkorb — die Views sind nicht guest_allowed (Issue #76)
         context["is_guest"] = bool(getattr(self.membership, "is_guest", False))
+        # Export und Anhänge: Gäste nur, wenn ihre Freigabe das Herunterladen erlaubt (Issue #582)
+        context["download_blocked"] = context["is_guest"] and not motion.can_download(self.membership)
 
         # Comments
         comments = (

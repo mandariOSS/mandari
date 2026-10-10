@@ -29,7 +29,7 @@ from ..models import (
     Motion,
     MotionType,
 )
-from ._helpers import _can_manage_folder, _flatten_folder_tree, _get_org_folder_or_404
+from ._helpers import _can_manage_folder, _flatten_folder_tree, _get_org_folder_or_404, _share_download_response
 
 # Platzhalter-UUID in Ordner-URLs, die das Frontend clientseitig durch die echte ID ersetzt
 FOLDER_URL_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
@@ -385,11 +385,13 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
                 status=400,
             )
 
+        # Herunterladen (Issue #582); ohne Angabe wie bisher erlaubt
+        allow_download = request.POST.get("allow_download", "1") != "0"
         previous = FolderGuestShare.objects.filter(folder=folder, user=user).first()
         FolderGuestShare.objects.update_or_create(
             folder=folder,
             user=user,
-            defaults={"level": level, "created_by": request.user},
+            defaults={"level": level, "created_by": request.user, "allow_download": allow_download},
         )
         if previous is None or previous.level != level:
             from apps.work.notifications.services import NotificationHub
@@ -431,6 +433,26 @@ class FolderGuestShareRemoveView(WorkViewMixin, View):
             return redirect(next_url)
         list_url = reverse("work:documents", kwargs={"org_slug": self.organization.slug})
         return redirect(f"{list_url}?ordner={folder.id}")
+
+
+class FolderGuestShareDownloadView(WorkViewMixin, View):
+    """„Herunterladen erlauben“ einer Ordner-Freigabe an- oder abschalten (Issue #582); Rechte wie beim Entziehen."""
+
+    permission_required = ["guests.manage", "motions.share"]
+    permission_require_all = False
+
+    def post(self, request, *args, **kwargs):
+        share = get_object_or_404(
+            FolderGuestShare,
+            id=kwargs.get("share_id"),
+            folder__organization=self.organization,
+        )
+        if not _can_manage_folder(self.membership, share.folder):
+            return JsonResponse({"error": "Keine Berechtigung für diesen Ordner."}, status=403)
+
+        share.allow_download = request.POST.get("allow_download") == "1"
+        share.save(update_fields=["allow_download"])
+        return _share_download_response(request, self.organization, share.allow_download)
 
 
 class MotionFolderMoveView(WorkViewMixin, View):

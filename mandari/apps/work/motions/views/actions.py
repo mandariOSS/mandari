@@ -22,7 +22,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import IMPORTABLE_DOCUMENTS, MB, validate_upload
 from apps.work.notifications.services import NotificationHub
 
-from .. import references
+from .. import freigaben, references
 from ..forms import (
     AIAssistantForm,
     MotionCommentForm,
@@ -40,7 +40,7 @@ from ..models import (
     StatusTransitionError,
 )
 from ..services import MotionAIService
-from ._helpers import _broadcast_doc_reload, _get_org_folder_or_404
+from ._helpers import _broadcast_doc_reload, _get_org_folder_or_404, _share_download_response
 
 
 class MotionShareView(WorkViewMixin, TemplateView):
@@ -568,7 +568,9 @@ class MotionDocumentDownloadView(WorkViewMixin, View):
     Anhänge liegen unter media/motions/documents/ und werden vom
     Medien-Handler NICHT direkt ausgeliefert (siehe serve_media) – nur hier,
     nach derselben Zugriffsprüfung wie das Dokument selbst (can_access:
-    Sichtbarkeit bzw. persönliche/Ordner-Freigabe, auch für Gäste).
+    Sichtbarkeit bzw. persönliche/Ordner-Freigabe, auch für Gäste). Gäste
+    zusätzlich nur, wenn ihre Freigabe das Herunterladen erlaubt; ihre
+    Downloads stehen in der Änderungshistorie (Issue #582).
     """
 
     permission_required = "motions.view"
@@ -578,6 +580,8 @@ class MotionDocumentDownloadView(WorkViewMixin, View):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
         if not motion.can_access(self.membership):
             raise PermissionDenied("Keine Berechtigung für dieses Dokument.")
+        if not motion.can_download(self.membership):
+            raise PermissionDenied("Herunterladen ist für diese Freigabe nicht erlaubt.")
         document = get_object_or_404(MotionDocument, id=kwargs.get("document_id"), motion=motion)
         try:
             handle = document.file.open("rb")
@@ -587,6 +591,7 @@ class MotionDocumentDownloadView(WorkViewMixin, View):
             from .. import non_public
 
             non_public.log_access(motion, self.membership, request, non_public.ACCESS_DOWNLOADED, document=document)
+        freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_ATTACHMENT, document=document)
         response = FileResponse(
             handle,
             as_attachment=True,
@@ -637,7 +642,12 @@ class MotionCommentResolveView(WorkViewMixin, View):
 
 
 class MotionExportView(WorkViewMixin, View):
-    """Export motion as PDF or DOCX."""
+    """
+    Export motion as PDF or DOCX.
+
+    Gäste ab der Stufe „Lesen“, solange ihre Freigabe das Herunterladen erlaubt; jeder Export eines Gastes
+    steht in der Änderungshistorie (Issue #582).
+    """
 
     permission_required = "motions.view"
     guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
@@ -651,6 +661,8 @@ class MotionExportView(WorkViewMixin, View):
 
         if not motion.can_access(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+        if not motion.can_download(self.membership):
+            return JsonResponse({"error": "Herunterladen ist für diese Freigabe nicht erlaubt."}, status=403)
 
         export_format = request.GET.get("format", "pdf")
         if export_format in ("pdf", "docx") and motion.is_sworn_in_only():
@@ -668,6 +680,7 @@ class MotionExportView(WorkViewMixin, View):
 
                 response = HttpResponse(pdf_content, content_type="application/pdf")
                 response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_PDF)
                 return response
 
             except Exception as e:
@@ -686,6 +699,7 @@ class MotionExportView(WorkViewMixin, View):
                     content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
                 response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_DOCX)
                 return response
 
             except Exception as e:
@@ -824,6 +838,8 @@ class MotionShareUpdateView(WorkViewMixin, View):
                 level = request.POST.get("level", "view")
                 if level not in SHARE_DIALOG_LEVELS:
                     level = "view"
+                # Herunterladen für Gäste (Issue #582); ohne Angabe wie bisher erlaubt
+                allow_download = request.POST.get("allow_download", "1") != "0"
 
                 user = User.objects.filter(email=add_user_email).first()
                 # Nur Nutzer mit aktivem Zugang zu DIESER Organisation – sonst
@@ -842,7 +858,7 @@ class MotionShareUpdateView(WorkViewMixin, View):
                     motion=motion,
                     scope="user",
                     user=user,
-                    defaults={"level": level, "created_by": request.user},
+                    defaults={"level": level, "created_by": request.user, "allow_download": allow_download},
                 )
                 # Benachrichtigung bei neuer Freigabe oder geänderter Stufe (Issue #75)
                 if previous is None or previous.level != level:
@@ -892,3 +908,32 @@ class MotionShareRemoveView(WorkViewMixin, View):
             messages.success(request, "Freigabe entzogen.")
             return redirect(next_url)
         return HttpResponse(status=204, headers={"HX-Refresh": "true"})
+
+
+class MotionShareDownloadView(WorkViewMixin, View):
+    """
+    „Herunterladen erlauben“ einer persönlichen Freigabe an- oder abschalten (Issue #582).
+
+    Gleiche Berechtigung wie das Entziehen (MotionShareRemoveView): Freigaberecht am Dokument oder
+    Gast-Verwaltung bei Gast-Freigaben.
+    """
+
+    permission_required = "motions.share"
+
+    def post(self, request, *args, **kwargs):
+        from apps.tenants.models import Membership
+
+        share = get_object_or_404(
+            MotionShare, id=kwargs.get("share_id"), motion__organization=self.organization, scope="user"
+        )
+        manages_guest_share = (
+            share.user_id
+            and self.membership.has_permission("guests.manage")
+            and Membership.objects.filter(user_id=share.user_id, organization=self.organization, is_guest=True).exists()
+        )
+        if not share.motion.can_share(self.membership) and not manages_guest_share:
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+
+        share.allow_download = request.POST.get("allow_download") == "1"
+        share.save(update_fields=["allow_download"])
+        return _share_download_response(request, self.organization, share.allow_download)

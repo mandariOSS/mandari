@@ -95,3 +95,22 @@ def _can_manage_folder(membership, folder) -> bool:
     if membership.has_permission("organization.edit"):
         return True
     return folder.created_by_id == membership.id and membership.has_permission("motions.create")
+
+
+def _share_download_response(request, organization, allowed: bool):
+    """
+    Antwort nach dem Umschalten von „Herunterladen erlauben“ (Issue #582): zurück zur aufrufenden Work-Seite
+    (``next``) oder 204 mit Neuladen für HTMX.
+    """
+    from django.contrib import messages
+    from django.http import HttpResponse
+    from django.shortcuts import redirect
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    next_url = request.POST.get("next", "")
+    if next_url.startswith(f"/work/{organization.slug}/") and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts=None
+    ):
+        messages.success(request, "Herunterladen erlaubt." if allowed else "Herunterladen abgeschaltet.")
+        return redirect(next_url)
+    return HttpResponse(status=204, headers={"HX-Refresh": "true"})
