@@ -25,6 +25,15 @@ VORHER = [("common", "0010_postausgang_mail"), ("tenants", "0026_work_neues_ersc
 NACHHER = [("common", "0011_ki_anbieter_europa"), ("tenants", "0027_ki_anbieter_europa")]
 
 
+@pytest.fixture(autouse=True)
+def _frischer_cache() -> None:
+    """
+    Kein zwischengespeichertes Objekt aus einem früheren Test: Dessen Zeile ist längst zurückgerollt, und
+    ``get_settings()`` legte sie aus dem Cache heraus nicht neu an (``DoesNotExist`` je nach Testreihenfolge).
+    """
+    cache.delete_many([AISettings.CACHE_KEY, SiteSettings.CACHE_KEY])
+
+
 def _nebius_spalten() -> tuple[bytes | None, str]:
     wert, alt = SiteSettings.objects.values_list("nebius_api_key_encrypted", "nebius_api_key_legacy").get(pk=1)
     return (bytes(wert) if wert is not None else None), alt
