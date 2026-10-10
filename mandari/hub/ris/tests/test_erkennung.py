@@ -192,6 +192,35 @@ def test_gestoerter_objektspeicher_loest_keinen_quellabruf_aus(
 
 
 # =============================================================================
+# Externe Texterkennung: öffentliche RIS-Datei, nur mit freigegebenem Endpunkt (Issue #950)
+# =============================================================================
+
+#: Beispiel-Host, den der Test ausdrücklich freigibt (``KI_ERLAUBTE_HOSTS`` hat keinen Standard)
+ERLAUBT_HOST = "api.openai-compat.model-serving.eu01.onstackit.cloud"
+
+
+@pytest.mark.parametrize(("freigegeben", "extern"), [([ERLAUBT_HOST], True), ([], False)])
+def test_auftrag_erlaubt_externe_erkennung_nur_mit_freigegebenem_endpunkt(
+    settings: Any, freigegeben: list[str], extern: bool
+) -> None:
+    """Der Auftrag ist der einzige Erkennungsweg für öffentliche RIS-Dateien und gibt ``allow_external=True``.
+
+    Ob Mistral tatsächlich gefragt wird, entscheidet danach allein die Positivliste: mit freigegebenem Host ja,
+    ohne Freigabe bleibt es bei der Erkennung im eigenen Betrieb (fail-closed).
+    """
+    settings.MISTRAL_API_KEY = "schluessel"
+    settings.MISTRAL_BASE_URL = f"https://{ERLAUBT_HOST}/v1"
+    settings.KI_ERLAUBTE_HOSTS = freigegeben
+    datei = _datei(_quelle(), PDF)
+
+    with _erkannt() as erkennen:
+        assert erkennung.erkennen(str(datei.pk)) == erkennung.ERLEDIGT
+
+    konfiguration = erkennen.call_args.args[3]
+    assert konfiguration.mistral.enabled is extern
+
+
+# =============================================================================
 # Bedingtes Schreiben (ADR Abschnitt 4)
 # =============================================================================
 

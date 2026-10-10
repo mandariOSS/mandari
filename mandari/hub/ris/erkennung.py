@@ -436,7 +436,9 @@ def _erkennen(datei: OParlFile, beanspruchung: Beanspruchung) -> str:
         return _spaeter(beanspruchung)
     # Die Erkennung dauert; die Datenbankverbindung geht solange an den Pool zurück
     release_idle_thread_connections()
-    ergebnis = extract_text(pfad, mime, datei.file_name or datei.name or "", extraction_config())
+    # Öffentliche RIS-Datei: externe Texterkennung zulässig (nur mit Endpunkt aus KI_ERLAUBTE_HOSTS, Issue #950).
+    # Ohne die ausdrückliche Erlaubnis bliebe der einzige Erkennungsweg auch mit freigegebenem Endpunkt lokal.
+    ergebnis = extract_text(pfad, mime, datei.file_name or datei.name or "", extraction_config(allow_external=True))
     if not _speichern(datei, ergebnis, sha256):
         return VERWORFEN
     return ERLEDIGT if ergebnis.text else OHNE_TEXT
