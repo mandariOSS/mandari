@@ -5,11 +5,13 @@
  *
  * - `data-autosave="panel"` am automatisch speichernden Formular: vor dessen Anfrage `panel-autosaving`, nach Erfolg
  *   `panel-autosaved`, sonst `panel-autosave-failed` (Detail: Grund und Erklärung, frontend/js/autosave.ts) als
- *   Window-Event (Anzeige in frontend/alpine/autosave-anzeige.ts). Auch 4xx und eine abgelaufene Anmeldung gelten als
- *   gescheitert (#854); die Pflicht zum zweiten Faktor lädt die Seite nicht neu (die Eingabe bliebe sonst nicht
- *   erhalten). Gescheiterte Formulare senden erneut (Ereignis `autosave-erneut` in ihrem `hx-trigger`): auf „Erneut
- *   versuchen“ (`autosave-wiederholen`), nach neuer Anmeldung, sobald die Seite wieder Fokus hat, und wieder online.
- *   Knöpfe im Formular mit eigener Anfrage (Checkliste, Kommentar …) zählen nicht dazu.
+ *   Window-Event (Anzeige in frontend/alpine/autosave-anzeige.ts). Jedes Ereignis trägt die Kennung des Formulars, damit
+ *   ein gelungenes Formular den Fehler eines anderen im selben Panel nicht verdeckt. Auch 4xx und eine abgelaufene
+ *   Anmeldung gelten als gescheitert (#854); die Pflicht zum zweiten Faktor lädt die Seite nicht neu (die Eingabe
+ *   bliebe sonst nicht erhalten). Eine Ablehnung mit neu gezeichnetem Formular (422 mit markierten Feldern) wird
+ *   eingezeichnet. Gescheiterte Formulare senden erneut (Ereignis `autosave-erneut` in ihrem `hx-trigger`): auf
+ *   „Erneut versuchen“ (`autosave-wiederholen`), nach neuer Anmeldung, sobald die Seite wieder Fokus hat, und wieder
+ *   online. Knöpfe im Formular mit eigener Anfrage (Checkliste, Kommentar …) zählen nicht dazu.
  * - `data-after-request="reload|reset|follow-href|notification-read|close-dialog"` nach erfolgreicher Anfrage:
  *   Seite neu laden; Formular zurücksetzen (optional `data-blur="<Selektor>"`); dem eigenen
  *   `href` folgen, sonst `notification:marked-read` auslösen; Benachrichtigung als gelesen
@@ -20,7 +22,15 @@
 import htmx from 'htmx.org'
 import { confirmAction } from './alpine/confirm-dialog'
 import { showToast } from './alpine/toast'
-import { type AutosaveFehler, bewerteAutosave } from './autosave'
+import {
+  type AutosaveFehler,
+  type AutosaveFehlerMeldung,
+  type AutosaveMeldung,
+  autosaveFormular,
+  bewerteAutosave,
+  formularKennung,
+  PFLICHTANGABE_FEHLT,
+} from './autosave'
 import { csrfToken, csrfTokenAktuell } from './csrf'
 
 export { csrfToken }
@@ -58,12 +68,6 @@ function requestSource(event: Event): HTMLElement | null {
 /** Formulare, deren letztes automatisches Speichern scheiterte, mit Grund */
 const gescheitert = new Map<HTMLElement, AutosaveFehler>()
 
-/** Das automatisch speichernde Formular, wenn die Anfrage von ihm selbst kommt */
-function autosaveFormular(event: Event): HTMLElement | null {
-  const source = requestSource(event)
-  return source?.matches('[data-autosave]') ? source : null
-}
-
 function fehlertext(xhr: XMLHttpRequest): string {
   if (xhr.status < 400) return ''
   try {
@@ -87,20 +91,28 @@ function meldeAutosave(form: HTMLElement, detail: RequestDetail | undefined): vo
       })
     : null
   const name = form.dataset.autosave
+  const formular = formularKennung(form)
   if (!fehler && detail?.successful === true) {
     gescheitert.delete(form)
-    window.dispatchEvent(new Event(`${name}-autosaved`))
+    window.dispatchEvent(new CustomEvent<AutosaveMeldung>(`${name}-autosaved`, { detail: { formular } }))
     return
   }
   // Gescheitert ohne erkennbaren Grund (z. B. Antwort nicht verarbeitbar)
-  const grund: AutosaveFehler = fehler ?? {
-    art: 'server',
-    meldung: 'Nicht gespeichert: Fehler auf dem Server. Bitte erneut versuchen.',
-    ziel: '',
-    zielText: '',
-  }
+  meldeGescheitert(
+    form,
+    fehler ?? {
+      art: 'server',
+      meldung: 'Nicht gespeichert: Fehler auf dem Server. Bitte erneut versuchen.',
+      ziel: '',
+      zielText: '',
+    },
+  )
+}
+
+function meldeGescheitert(form: HTMLElement, grund: AutosaveFehler): void {
   gescheitert.set(form, grund)
-  window.dispatchEvent(new CustomEvent<AutosaveFehler>(`${name}-autosave-failed`, { detail: grund }))
+  const detail: AutosaveFehlerMeldung = { ...grund, formular: formularKennung(form) }
+  window.dispatchEvent(new CustomEvent<AutosaveFehlerMeldung>(`${form.dataset.autosave}-autosave-failed`, { detail }))
 }
 
 /** Gescheiterte automatische Speichervorgänge erneut senden (nur Formulare, die noch auf der Seite sind) */
@@ -151,8 +163,23 @@ export function setupHtmx(): void {
   htmx.config.selfRequestsOnly = true
 
   document.body.addEventListener('htmx:beforeRequest', (event) => {
-    const name = autosaveFormular(event)?.dataset.autosave
-    if (name) window.dispatchEvent(new Event(`${name}-autosaving`))
+    const form = autosaveFormular(event)
+    if (!form?.dataset.autosave) return
+    const detail: AutosaveMeldung = { formular: formularKennung(form) }
+    window.dispatchEvent(new CustomEvent<AutosaveMeldung>(`${form.dataset.autosave}-autosaving`, { detail }))
+  })
+
+  // Die Prüfung im Browser hält die Anfrage an (z. B. Pflichtfeld geleert): nichts gesendet, also nicht gespeichert
+  document.body.addEventListener('htmx:validation:halted', (event) => {
+    const form = autosaveFormular(event)
+    if (form) meldeGescheitert(form, { art: 'abgelehnt', meldung: PFLICHTANGABE_FEHLT, ziel: '', zielText: '' })
+  })
+
+  // Abgelehnt mit neu gezeichnetem Formular (422 mit markierten Feldern, z. B. Aufgabentitel nur aus Leerzeichen):
+  // einzeichnen, als gescheitert gilt es trotzdem (kein Haken, Hinweis im Panel)
+  document.body.addEventListener('htmx:beforeSwap', (event) => {
+    const detail = (event as CustomEvent<{ xhr?: XMLHttpRequest; shouldSwap?: boolean }>).detail
+    if (detail?.xhr?.status === 422 && autosaveFormular(event)) detail.shouldSwap = true
   })
 
   // Pflicht zum zweiten Faktor (204 mit HX-Redirect): Beim automatischen Speichern nicht wegnavigieren, sonst wäre

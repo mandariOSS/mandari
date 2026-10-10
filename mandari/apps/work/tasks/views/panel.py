@@ -100,10 +100,12 @@ class TaskPanelActionView(WorkViewMixin, View):
     def _render(self, template: str, context: dict) -> str:
         return render_to_string(template, context, request=self.request)
 
-    def _render_panel(self, task, form=None):
+    def _render_panel(self, task, form=None, autosave_abgelehnt=False):
         context = panel_context(task, self.organization, self.membership)
         if form is not None:
             context["form"] = form
+        # Automatisches Speichern abgelehnt: Das neu gezeichnete Panel zeigt „Nicht gespeichert“ (#854)
+        context["autosave_abgelehnt"] = autosave_abgelehnt
         return self._render("work/tasks/_panel.html", context)
 
     def _render_oob_card(self, task):
@@ -209,12 +211,13 @@ class TaskPanelActionView(WorkViewMixin, View):
         if form.is_valid():
             services.apply_panel_update(form.save(commit=False), self.membership, old_values)
             return HttpResponse(self._render_oob_card(task) + self._render_oob_counts())
-        # Validation error: re-render full panel
-        html = self._render_panel(selectors.reload_for_panel(task), form=form)
-        response = HttpResponse(html)
+        # Ungültig (z. B. Titel nur aus Leerzeichen): Panel mit markierten Feldern neu zeichnen. Status 422, damit das
+        # automatische Speichern als gescheitert gilt und kein Haken erscheint; frontend/js/htmx-setup.ts zeichnet 422
+        # dieser Formulare trotzdem ein. Den Hinweis zeigt das Panel selbst, ohne zusätzlichen Toast (#854).
+        html = self._render_panel(selectors.reload_for_panel(task), form=form, autosave_abgelehnt=True)
+        response = HttpResponse(html, status=422)
         response["HX-Reswap"] = "innerHTML"
         response["HX-Retarget"] = "#task-panel-container"
-        response["HX-Trigger"] = json.dumps({"show-toast": {"message": "Fehler beim Speichern.", "type": "error"}})
         return response
 
     def _handle_save(self, request, task):

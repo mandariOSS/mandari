@@ -5,8 +5,10 @@
  * auf „Speichert …“; eine abgelaufene Anmeldung galt sogar als gespeichert (fetch folgt der Umleitung auf die
  * Anmeldeseite und bekommt 200), und die Pflicht zum zweiten Faktor lud die Seite neu (`HX-Redirect`), womit die
  * Eingabe weg war. Hier wird die Antwort bewertet; frontend/js/htmx-setup.ts meldet das Ergebnis als Ereignis
- * `<name>-autosaved` bzw. `<name>-autosave-failed` (Detail: `AutosaveFehler`), die Anzeige steht in
- * frontend/alpine/autosave-anzeige.ts. Die Texte folgen dem Speicherdienst der Vorbereitung (frontend/js/speichern.ts).
+ * `<name>-autosaved` bzw. `<name>-autosave-failed` (Detail: `AutosaveFehler` und die Kennung des Formulars), die Anzeige
+ * steht in frontend/alpine/autosave-anzeige.ts. Ein Panel kann mehrere automatisch speichernde Formulare haben (TOP:
+ * Kopf und Beschreibung); die Kennung hält sie auseinander. Die Texte folgen dem Speicherdienst der Vorbereitung
+ * (frontend/js/speichern.ts).
  */
 
 /**
@@ -27,6 +29,14 @@ export interface AutosaveFehler {
   zielText: string
 }
 
+/** Detail der Ereignisse `<name>-autosaving` und `<name>-autosaved`: Kennung des Formulars */
+export interface AutosaveMeldung {
+  formular?: string
+}
+
+/** Detail des Ereignisses `<name>-autosave-failed` */
+export type AutosaveFehlerMeldung = AutosaveFehler & AutosaveMeldung
+
 export interface AutosaveAntwort {
   /** HTTP-Status; 0 ohne Antwort (Netzfehler, Abbruch, Zeitüberschreitung) */
   status: number
@@ -42,6 +52,10 @@ export interface AutosaveAntwort {
 }
 
 export const ANMELDESEITE = '/accounts/login/'
+/** Der Server hat das Formular mit markierten Feldern neu gezeichnet (422, z. B. Aufgabentitel nur aus Leerzeichen) */
+export const EINGABE_PRUEFEN = 'Nicht gespeichert: Bitte die markierten Angaben prüfen.'
+/** Die Prüfung im Browser hat das Senden angehalten (z. B. Pflichtfeld geleert) */
+export const PFLICHTANGABE_FEHLT = 'Nicht gespeichert: Eine Pflichtangabe fehlt oder ist ungültig.'
 
 const ANMELDUNG_ABGELAUFEN =
   'Nicht gespeichert: Ihre Anmeldung ist abgelaufen. Bitte in einem neuen Tab anmelden, ihn dann schließen und hier weiterarbeiten. Ihre Eingabe wird danach automatisch gespeichert.'
@@ -120,8 +134,35 @@ export function bewerteAutosave(antwort: AutosaveAntwort): AutosaveFehler | null
     return fehler('abgelehnt', `Nicht gespeichert: Keine Berechtigung für diese Änderung.${text ? ` (${text})` : ''}`)
   }
   if (status === 404) return fehler('abgelehnt', 'Nicht gespeichert: Den Eintrag gibt es nicht mehr.')
+  if (status === 422 && !text) return fehler('abgelehnt', EINGABE_PRUEFEN)
   if (status === 400 || status === 422) {
     return fehler('abgelehnt', `Nicht gespeichert: ${text || 'Die Eingabe wurde nicht angenommen.'}`)
   }
   return fehler('abgelehnt', `Nicht gespeichert (Fehler ${status}).${text ? ` ${text}` : ''}`)
+}
+
+/**
+ * Das automatisch speichernde Formular, wenn eine htmx-Anfrage von ihm selbst kommt (nicht von Knöpfen darin mit
+ * eigener Anfrage). Über `requestConfig.elt` auch dann, wenn das Formular inzwischen ersetzt wurde (htmx meldet
+ * `htmx:afterRequest` dann am nächsten verbliebenen Elternelement) und bei `htmx:beforeSwap` am Ziel.
+ */
+export function autosaveFormular(event: Event): HTMLElement | null {
+  const detail = (event as CustomEvent<{ elt?: Element; requestConfig?: { elt?: Element } }>).detail
+  const quelle = detail?.requestConfig?.elt ?? detail?.elt ?? event.target
+  return quelle instanceof HTMLElement && quelle.matches('[data-autosave]') ? quelle : null
+}
+
+const kennungen = new WeakMap<HTMLElement, string>()
+let naechsteKennung = 0
+
+/** Kennung eines automatisch speichernden Formulars: seine `id`, sonst eine fortlaufende Nummer */
+export function formularKennung(form: HTMLElement): string {
+  if (form.id) return form.id
+  let kennung = kennungen.get(form)
+  if (!kennung) {
+    naechsteKennung += 1
+    kennung = `autosave-${naechsteKennung}`
+    kennungen.set(form, kennung)
+  }
+  return kennung
 }

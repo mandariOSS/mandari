@@ -7,7 +7,8 @@
  * View (`prepare_config`) per `{{ prepare_config|json_script:"prepare-config" }}`.
  *
  * Gespeichert wird über den Speicherdienst (frontend/js/speichern.ts, #854). Was der Server noch nicht bestätigt
- * hat, liegt zusätzlich im Browser (frontend/js/eingaben-sicherung.ts) und wird nach einem Neuladen angeboten.
+ * hat, wird zusätzlich im Browser gesichert (frontend/js/eingaben-sicherung.ts, je Konto und Organisation) und nach
+ * einem Neuladen angeboten; was inzwischen anderweitig geändert wurde, nennt der Hinweis als Konflikt.
  *
  * Markup: `templates/work/meetings/prepare.html` und die `_prepare_*`-Partials.
  * Icons werden vom MutationObserver (frontend/js/icons.ts) nachgezogen.
@@ -17,7 +18,15 @@ import type { Editor } from '@tiptap/core'
 import type { FormatState } from '../editor/index'
 import { defineComponent } from '../js/alpine/component'
 import { confirmAction } from '../js/alpine/confirm-dialog'
-import { Eingabensicherung, type Felder, type SicherungsZiel, type Wert } from '../js/eingaben-sicherung'
+import {
+  type AngebotenesFeld,
+  beiAbmeldungSperren,
+  Eingabensicherung,
+  type Felder,
+  type SicherungsZiel,
+  uebernehmbar,
+  vergleichen,
+} from '../js/eingaben-sicherung'
 import { readJsonScript } from '../js/json-script'
 import { type JsonAntwort, type SpeicherAuftrag, Speicherdienst, type SpeicherStand } from '../js/speichern'
 
@@ -92,6 +101,8 @@ export interface PrepareConfig {
   meetingId: string
   /** Kennung des Kontos für die Sicherung im Browser (nie der Name) */
   accountId: string
+  /** Kennung der Organisation: Die Sicherung im Browser gilt je Organisation wie die Vorbereitung selbst */
+  orgId: string
   currentUser: string
   positionLabels: Record<string, string>
   orgNotes: string
@@ -172,10 +183,8 @@ export interface SicherungsAngebot {
   top: string
   /** „TOP 2“ bzw. „Sitzungsnotizen“ */
   titel: string
-  /** Bezeichnung der Felder, z. B. „Begründung“, „Notiz“ */
-  felder: string[]
-  bereiche: Record<string, Felder>
-  zeit: number
+  /** Angebotene Felder je Bereich, mit Zeitpunkt der Eingabe und Konflikt */
+  bereiche: Record<string, Record<string, AngebotenesFeld>>
 }
 
 const CONFIG_ID = 'prepare-config'
@@ -236,10 +245,43 @@ const GESICHERTE_FELDER: Record<string, { eigenschaft: GesicherteEigenschaft; na
   'rede.is_shared': { eigenschaft: 'speechShared', name: 'Teilen des Redebeitrags' },
 }
 
-/** Gesicherter Wert schon auf dem Server? Leerzeichen am Rand zählen nicht. */
-function gleicherStand(server: unknown, gesichert: Wert): boolean {
-  if (typeof server === 'string' && typeof gesichert === 'string') return server.trim() === gesichert.trim()
-  return server === gesichert
+/** Bezeichnung eines gesicherten Felds im Hinweis */
+function feldname(bereich: string, feld: string): string {
+  return GESICHERTE_FELDER[`${bereich}.${feld}`]?.name || 'Sitzungsnotizen'
+}
+
+/** „TOP 2 (Begründung, Notiz)“ bzw. „Sitzungsnotizen“; nur Konflikte oder alle Felder */
+function angebotTeil(angebot: SicherungsAngebot, nurKonflikte: boolean): string {
+  if (angebot.top === SITZUNGSNOTIZEN) return angebot.titel
+  const namen = Object.entries(angebot.bereiche).flatMap(([bereich, felder]) =>
+    Object.entries(felder)
+      .filter(([, feld]) => !nurKonflikte || feld.konflikt)
+      .map(([feld]) => feldname(bereich, feld)),
+  )
+  return `${angebot.titel} (${namen.join(', ')})`
+}
+
+/** Höchstens drei Teile nennen, den Rest zählen */
+function aufzaehlung(teile: string[]): string {
+  const genannt = teile.slice(0, 3)
+  if (teile.length > 3) genannt.push(`${teile.length - 3} weitere`)
+  return genannt.join('; ')
+}
+
+/** „vom 10.10. um 14:32“; bei mehreren Eingaben der Zeitraum vom ältesten bis zum jüngsten Feld */
+function zeitraum(zeiten: number[]): string {
+  const formatiert = (ms: number) => {
+    const zeit = new Date(ms)
+    return {
+      datum: zeit.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' }),
+      uhrzeit: zeit.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' }),
+    }
+  }
+  const von = formatiert(Math.min(...zeiten))
+  const bis = formatiert(Math.max(...zeiten))
+  if (von.datum !== bis.datum) return `vom ${von.datum} um ${von.uhrzeit} bis ${bis.datum} um ${bis.uhrzeit}`
+  if (von.uhrzeit !== bis.uhrzeit) return `vom ${von.datum} zwischen ${von.uhrzeit} und ${bis.uhrzeit}`
+  return `vom ${von.datum} um ${von.uhrzeit}`
 }
 
 const SUMMARY_ERROR = '<p class="text-sm text-red-600">Zusammenfassung konnte nicht geladen werden.</p>'
@@ -269,8 +311,9 @@ export const preparationApp = defineComponent(() => {
   const base = `/work/${config.orgSlug}/meetings`
   // Außerhalb der Reaktivität; meldet seinen Stand an die Komponente, sobald init() die Wache startet
   let speicherstandMelden: (stand: SpeicherStand) => void = () => {}
-  // Ungespeicherte Eingaben je Konto, Sitzung und TOP im Browser, bis der Server sie bestätigt
-  const sicherung = new Eingabensicherung(config.accountId || '', config.meetingId)
+  // Ungespeicherte Eingaben je Konto, Organisation, Sitzung und TOP im Browser, bis der Server sie bestätigt
+  const sicherung = new Eingabensicherung(config.accountId || '', config.orgId || '', config.meetingId)
+  beiAbmeldungSperren(sicherung)
   const speicher = new Speicherdienst({ beiAenderung: (stand) => speicherstandMelden(stand), sicherung })
 
   return {
@@ -395,18 +438,22 @@ export const preparationApp = defineComponent(() => {
       if (this.lastSavedAt) return 'Gespeichert um ' + this.lastSavedAt
       return 'Änderungen werden automatisch gespeichert'
     },
-    /** Hinweis auf nicht gespeicherte Eingaben aus einem früheren Aufruf; leer, wenn es keine gibt */
+    /**
+     * Hinweis auf nicht gespeicherte Eingaben aus einem früheren Aufruf; leer, wenn es keine gibt. Nennt den Zeitpunkt
+     * der angebotenen Eingaben und, was inzwischen anderweitig geändert wurde (Übernehmen ersetzt diesen Stand).
+     */
     get sicherungText(): string {
       const angebot = this.sicherungAngebot
       if (angebot.length === 0) return ''
-      const zeit = new Date(Math.max(...angebot.map((a) => a.zeit)))
-      const datum = zeit.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
-      const uhrzeit = zeit.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-      const teile = angebot
-        .slice(0, 3)
-        .map((a) => (a.top === SITZUNGSNOTIZEN ? a.titel : `${a.titel} (${a.felder.join(', ')})`))
-      if (angebot.length > 3) teile.push(`${angebot.length - 3} weitere`)
-      return `Nicht gespeicherte Eingaben vom ${datum} um ${uhrzeit}: ${teile.join('; ')}.`
+      const felder = angebot.flatMap((a) => Object.values(a.bereiche).flatMap((b) => Object.values(b)))
+      const teile = aufzaehlung(angebot.map((a) => angebotTeil(a, false)))
+      const text = `Nicht gespeicherte Eingaben ${zeitraum(felder.map((f) => f.zeit))}: ${teile}.`
+      const konflikte = angebot.filter((a) =>
+        Object.values(a.bereiche).some((b) => Object.values(b).some((f) => f.konflikt)),
+      )
+      if (konflikte.length === 0) return text
+      const geaendert = aufzaehlung(konflikte.map((a) => angebotTeil(a, true)))
+      return `${text} Inzwischen anderweitig geändert: ${geaendert}. Übernehmen ersetzt diesen Stand.`
     },
     /** Ziel des Hinweises bei abgelaufener Anmeldung bzw. fehlendem zweiten Faktor (öffnet im neuen Tab) */
     get anmeldeAdresse(): string {
@@ -531,6 +578,7 @@ export const preparationApp = defineComponent(() => {
      */
     startSpeicherwache(): void {
       speicherstandMelden = (stand) => this.uebernehmeSpeicherstand(stand)
+      this.serverstandMerken()
       this.sicherungPruefen()
       // Echtzeit erst beim tatsächlichen Verlassen abbauen (nicht in beforeunload: bricht man dort ab, bliebe die
       // Seite ohne Echtzeit); aus dem Zurück-Speicher des Browsers wieder verbinden
@@ -541,6 +589,8 @@ export const preparationApp = defineComponent(() => {
       const verbergen = () => {
         speicher.verbergen = true
         this.flushTimers()
+        // Noch nicht Bestätigtes in den localStorage: übersteht so auch das Schließen oder Beenden der Seite
+        sicherung.festschreiben()
       }
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'hidden') {
@@ -581,8 +631,8 @@ export const preparationApp = defineComponent(() => {
     },
 
     // ---------- Sicherung im Browser (#854) ----------
-    /** Wert eines gesicherten Felds auf dem Server (Stand beim Laden); `undefined`, wenn es nicht (mehr) passt */
-    serverWert(item: PreparedItem | null, bereich: string, feld: string): unknown {
+    /** Wert eines gesicherten Felds auf der Seite (beim Laden der Stand des Servers); `undefined`, wenn es nicht passt */
+    feldWert(item: PreparedItem | null, bereich: string, feld: string): unknown {
       if (bereich === SITZUNGSNOTIZEN) return feld === 'notes' ? this.orgNotes : undefined
       const platz = GESICHERTE_FELDER[`${bereich}.${feld}`]
       if (!item || !platz) return undefined
@@ -591,9 +641,21 @@ export const preparationApp = defineComponent(() => {
       return item[platz.eigenschaft]
     },
 
+    /** Stand des Servers beim Laden: Grundlage, auf der die Eingaben dieser Seite beruhen */
+    serverstandMerken(): void {
+      for (const item of this.items) {
+        for (const schluessel of Object.keys(GESICHERTE_FELDER)) {
+          const [bereich, feld] = schluessel.split('.')
+          sicherung.serverstandSetzen({ top: item.id, bereich }, { [feld]: this.feldWert(item, bereich, feld) })
+        }
+      }
+      sicherung.serverstandSetzen({ top: SITZUNGSNOTIZEN, bereich: SITZUNGSNOTIZEN }, { notes: this.orgNotes })
+    },
+
     /**
      * Gesicherte Eingaben aus einem früheren Aufruf prüfen: Was der Server schon hat (z. B. beim Verlassen noch
-     * angekommen) und was nicht mehr passt (TOP weg, unbekanntes Feld), wird vergessen; der Rest wird angeboten.
+     * angekommen) und was nicht mehr passt (TOP weg, unbekanntes Feld), wird vergessen; der Rest wird angeboten,
+     * als Konflikt, wenn der Server inzwischen anderweitig geändert wurde.
      */
     sicherungPruefen(): void {
       const angebot: SicherungsAngebot[] = []
@@ -603,50 +665,58 @@ export const preparationApp = defineComponent(() => {
           sicherung.entfernen(top)
           continue
         }
-        const bereiche: Record<string, Felder> = {}
-        const felder: string[] = []
-        for (const [bereich, werte] of Object.entries(eintrag.bereiche)) {
-          const offen: Felder = {}
-          const erledigt: Felder = {}
-          for (const [feld, wert] of Object.entries(werte)) {
-            const server = this.serverWert(item, bereich, feld)
-            if (server === undefined || gleicherStand(server, wert)) {
-              erledigt[feld] = wert
-            } else {
-              offen[feld] = wert
-              felder.push(GESICHERTE_FELDER[`${bereich}.${feld}`]?.name || 'Sitzungsnotizen')
-            }
-          }
-          sicherung.vergessen({ top, bereich }, erledigt)
-          if (Object.keys(offen).length > 0) bereiche[bereich] = offen
+        const bereiche: SicherungsAngebot['bereiche'] = {}
+        for (const [bereich, felder] of Object.entries(eintrag.bereiche)) {
+          const ergebnis = vergleichen(felder, (feld) => this.feldWert(item, bereich, feld))
+          sicherung.vergessen({ top, bereich }, ergebnis.erledigt)
+          if (Object.keys(ergebnis.angebot).length > 0) bereiche[bereich] = ergebnis.angebot
         }
-        if (felder.length === 0) continue
-        const titel = item ? `TOP ${item.number}` : 'Sitzungsnotizen'
-        angebot.push({ top, titel, felder, bereiche, zeit: eintrag.zeit })
+        if (Object.keys(bereiche).length === 0) continue
+        angebot.push({ top, titel: item ? `TOP ${item.number}` : 'Sitzungsnotizen', bereiche })
       }
       // In der Reihenfolge der Tagesordnung, Sitzungsnotizen zuerst
       const rang = (top: string) => this.items.findIndex((i) => i.id === top)
       this.sicherungAngebot = angebot.sort((a, b) => rang(a.top) - rang(b.top))
     },
 
-    /** Angebotene Eingaben in die Felder übernehmen und speichern */
+    /** Felder nicht mehr anbieten, die auf dieser Seite bearbeitet bzw. gespeichert werden (ohne `felder`: alle) */
+    angebotOhne(ziel: SicherungsZiel, felder?: string[]): void {
+      if (this.sicherungAngebot.length === 0) return
+      this.sicherungAngebot = this.sicherungAngebot.flatMap((a) => {
+        const bereich = a.bereiche[ziel.bereich]
+        if (a.top !== ziel.top || !bereich) return [a]
+        const rest = Object.fromEntries(Object.entries(bereich).filter(([feld]) => felder && !felder.includes(feld)))
+        const bereiche = { ...a.bereiche, [ziel.bereich]: rest }
+        if (Object.keys(rest).length === 0) delete bereiche[ziel.bereich]
+        return Object.keys(bereiche).length > 0 ? [{ ...a, bereiche }] : []
+      })
+    },
+
+    /**
+     * Angebotene Eingaben in die Felder übernehmen und speichern. Felder, deren Wert sich auf der Seite seit dem
+     * Angebot geändert hat (per Echtzeit von anderen), bleiben stehen und werden als Konflikt erneut angeboten.
+     */
     sicherungUebernehmen(): void {
       const angebot = this.sicherungAngebot
       this.sicherungAngebot = []
-      for (const { top, bereiche } of angebot) {
-        if (top === SITZUNGSNOTIZEN) {
-          const notizen = bereiche[SITZUNGSNOTIZEN]?.notes
-          if (typeof notizen === 'string') {
-            this.orgNotes = notizen
-            void this.saveOrgNotes()
+      const zurueck: SicherungsAngebot[] = []
+      for (const eintrag of angebot) {
+        const { top, bereiche } = eintrag
+        const item = top === SITZUNGSNOTIZEN ? null : this.items.find((i) => i.id === top)
+        if (item === undefined) continue
+        const offen: SicherungsAngebot['bereiche'] = {}
+        for (const [bereich, felder] of Object.entries(bereiche)) {
+          const { setzen, zurueck: rest } = uebernehmbar(felder, (feld) => this.feldWert(item, bereich, feld))
+          if (Object.keys(rest).length > 0) offen[bereich] = rest
+          if (!item) {
+            if (typeof setzen.notes === 'string') {
+              this.orgNotes = setzen.notes
+              void this.saveOrgNotes()
+            }
+            continue
           }
-          continue
-        }
-        const item = this.items.find((i) => i.id === top)
-        if (!item) continue
-        for (const [bereich, werte] of Object.entries(bereiche)) {
           const gesetzt: Felder = {}
-          for (const [feld, wert] of Object.entries(werte)) {
+          for (const [feld, wert] of Object.entries(setzen)) {
             const platz = GESICHERTE_FELDER[`${bereich}.${feld}`]
             // Nur Werte der erwarteten Art (die Sicherung liegt im Browser und könnte verändert sein)
             if (!platz || typeof item[platz.eigenschaft] !== typeof wert) continue
@@ -659,22 +729,25 @@ export const preparationApp = defineComponent(() => {
           else if (bereich === 'rede') {
             item.hasSpeechNote = true
             void this.saveSpeechFields(item, gesetzt)
+            if (item.id === this.selectedItemId) {
+              this.speechDurationText = this.formatDuration(item.speechDuration || 0)
+              this.speechOpen = true
+              void this.syncSpeechEditor()
+            }
           }
         }
-        if (item.id === this.selectedItemId) {
-          this.speechDurationText = this.formatDuration(item.speechDuration || 0)
-          if (bereiche.rede) {
-            this.speechOpen = true
-            void this.syncSpeechEditor()
-          }
-        }
+        if (Object.keys(offen).length > 0) zurueck.push({ ...eintrag, bereiche: offen })
       }
+      this.sicherungAngebot = zurueck
     },
 
     /** Angebotene Eingaben verwerfen (nur genau diese Werte; neuere Eingaben dieser Seite bleiben gesichert) */
     sicherungVerwerfen(): void {
       for (const { top, bereiche } of this.sicherungAngebot) {
-        for (const [bereich, werte] of Object.entries(bereiche)) sicherung.vergessen({ top, bereich }, werte)
+        for (const [bereich, felder] of Object.entries(bereiche)) {
+          const werte = Object.fromEntries(Object.entries(felder).map(([feld, angeboten]) => [feld, angeboten.wert]))
+          sicherung.vergessen({ top, bereich }, werte)
+        }
       }
       this.sicherungAngebot = []
     },
@@ -702,6 +775,8 @@ export const preparationApp = defineComponent(() => {
       bezeichnung: SpeicherAuftrag['bezeichnung'],
       ziel?: SicherungsZiel,
     ): Promise<JsonResponse | null> {
+      // Hier bearbeitet: ein älterer Stand dieser Felder wird nicht mehr angeboten
+      if (ziel) this.angebotOhne(ziel, Object.keys(fields))
       const ergebnis = await speicher.senden({ url, body: fields, wiederholbar: true, bezeichnung, sicherung: ziel })
       if (ergebnis.ok) return ergebnis.daten
       if (!ergebnis.ersetzt) console.error('Speichern fehlgeschlagen:', url, ergebnis.meldung)
@@ -863,8 +938,13 @@ export const preparationApp = defineComponent(() => {
       if (!item) return
       const data = await this.apiSave(this.speechUrl(item), undefined, 'DELETE')
       if (data?.success) {
-        // Gelöscht: keine alte Eingabe mehr anbieten
+        // Gelöscht: keine alte Eingabe mehr anbieten; der Server hat jetzt keinen Redebeitrag
         sicherung.verwerfen({ top: item.id, bereich: 'rede' })
+        this.angebotOhne({ top: item.id, bereich: 'rede' })
+        sicherung.serverstandSetzen(
+          { top: item.id, bereich: 'rede' },
+          { content: '', title: '', estimated_duration: 0, is_shared: false },
+        )
         item.speechTitle = ''
         item.speechContent = ''
         item.speechDuration = 0
@@ -1082,6 +1162,13 @@ export const preparationApp = defineComponent(() => {
         if (msg.agenda_item_id === item.id && msg.position) {
           // Eigene TOP-Position von anderem Org-Mitglied aktualisiert
           const p = msg.position
+          // Neuer Stand des Servers: Grundlage weiterer Eingaben (Konflikte erkennt die Sicherung im Browser)
+          const stand: Record<string, unknown> = {}
+          if (p.position) stand.position = p.position
+          if ('is_final' in p) stand.is_final = !!p.is_final
+          if ('outcome' in p) stand.outcome = p.outcome || ''
+          if ('reasoning' in p) stand.reasoning = p.reasoning || ''
+          sicherung.serverstandSetzen({ top: item.id, bereich: 'position' }, stand)
           if (p.position) item.position = p.position
           if ('is_final' in p) item.isFinal = !!p.is_final
           if ('outcome' in p) item.outcome = p.outcome || ''

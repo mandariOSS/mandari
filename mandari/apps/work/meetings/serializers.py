@@ -439,14 +439,16 @@ def build_prepare_config(
     """
     Ein JSON-Objekt für den Client (``json_script`` im Template) — keine String-Interpolation in JS.
 
-    ``accountId`` (Kennung des Kontos, nie der Name) trennt die Sicherung ungespeicherter Eingaben im Browser je
-    Konto (#854, frontend/js/eingaben-sicherung.ts).
+    ``accountId`` (Kennung des Kontos, nie der Name) und ``orgId`` trennen die Sicherung ungespeicherter Eingaben im
+    Browser je Konto und Organisation (#854, frontend/js/eingaben-sicherung.ts): Dieselbe Ratssitzung wird in jeder
+    Organisation getrennt vorbereitet.
     """
     from .models import AgendaItemPosition
 
     return {
         "orgSlug": organization.slug,
         "meetingId": str(meeting.id),
+        "orgId": str(organization.id),
         "accountId": account_id,
         "currentUser": current_user_name,
         "positionLabels": {code: str(label) for code, label in AgendaItemPosition.POSITION_CHOICES},

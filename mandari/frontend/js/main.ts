@@ -36,9 +36,10 @@ installActions()
 installFormBehaviors()
 
 // ---- Sicherung ungespeicherter Eingaben im Browser (#854) ---------------------------
-// Nach dem Abmelden (Seite „Abgemeldet“) alle Sicherungen löschen, sonst nur die abgelaufenen (älter als 24 Stunden)
+// Nach dem Abmelden (Seite „Abgemeldet“) alle Sicherungen löschen, sonst die abgelaufenen (älter als 24 Stunden);
+// angemeldet (Kennung des Kontos am body, Work) auch die Sicherungen anderer Konten
 if (document.querySelector('[data-eingaben-loeschen]')) alleLoeschen()
-else aufraeumen()
+else aufraeumen(undefined, Date.now(), document.body?.dataset.konto || '')
 
 // ---- Globals für Templates ----------------------------------------------------
 window.Alpine = Alpine

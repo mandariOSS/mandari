@@ -1,9 +1,11 @@
 /**
  * Tests für die Bewertung automatisch speichernder htmx-Formulare (`frontend/js/autosave.ts`, #854 Teil 2):
- * Auch 4xx, eine abgelaufene Anmeldung und die Pflicht zum zweiten Faktor gelten als „Nicht gespeichert“.
+ * Auch 4xx, eine abgelaufene Anmeldung und die Pflicht zum zweiten Faktor gelten als „Nicht gespeichert“. Dazu die
+ * Anzeige (`frontend/alpine/autosave-anzeige.ts`): Fehler je Formular, damit ein gelungenes Formular den Fehler eines
+ * anderen im selben Panel nicht verdeckt.
  *
  * Ausführen mit: npm run test:speichern
- * (baut autosave.ts via esbuild nach CJS)
+ * (baut beide Module via esbuild nach CJS)
  */
 
 import { execSync } from 'node:child_process'
@@ -14,15 +16,21 @@ import assert from 'node:assert/strict'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const projectRoot = join(here, '..', '..', '..')
-const outFile = join(here, 'build', 'autosave.cjs')
+const build = (quelle, name) => {
+  const ziel = join(here, 'build', `${name}.cjs`)
+  execSync(`npx esbuild ${quelle} --bundle --format=cjs --platform=node --outfile="${ziel}"`, {
+    cwd: projectRoot,
+    stdio: 'inherit',
+  })
+  return ziel
+}
 
-execSync(`npx esbuild frontend/js/autosave.ts --bundle --format=cjs --platform=node --outfile="${outFile}"`, {
-  cwd: projectRoot,
-  stdio: 'inherit',
-})
+// Die Anzeige nutzt window.setTimeout und window.dispatchEvent
+globalThis.window = globalThis
 
 const require = createRequire(import.meta.url)
-const { bewerteAutosave } = require(outFile)
+const { bewerteAutosave, EINGABE_PRUEFEN } = require(build('frontend/js/autosave.ts', 'autosave'))
+const { autosaveZustand, autosaveAnzeige } = require(build('frontend/alpine/autosave-anzeige.ts', 'autosave-anzeige'))
 
 const HERKUNFT = 'https://mandari.example'
 const ZIEL = `${HERKUNFT}/work/fraktion/faction/1/item/2/action/`
@@ -131,6 +139,57 @@ test('Keine Verbindung (Status 0) und Serverfehler: erneut versuchen hilft', () 
     assert.equal(f.art, 'server', `Status ${status}`)
     assert.match(f.meldung, /^Nicht gespeichert/)
   }
+})
+
+test('422 mit neu gezeichnetem Formular (markierte Felder): Hinweis auf die markierten Angaben', () => {
+  const f = bewerteAutosave(antwort({ status: 422, text: '<div x-data="autosaveAnzeige">…</div>' }))
+  assert.equal(f.art, 'abgelehnt')
+  assert.equal(f.meldung, EINGABE_PRUEFEN)
+})
+
+const KOPF = 'agenda-item-update-form'
+const BESCHREIBUNG = 'autosave-1'
+
+test('Panel mit zwei Formularen: Kopf scheitert, Beschreibung gelingt, der Hinweis bleibt', () => {
+  const z = autosaveZustand()
+  z.markSaving()
+  z.markFailed({ ...bewerteAutosave(antwort({ status: 403 })), formular: KOPF })
+  z.markSaving()
+  z.markSaved({ formular: BESCHREIBUNG })
+  assert.equal(z.saving, false)
+  assert.equal(z.saved, false, 'kein Haken, solange der Kopf nicht gespeichert ist')
+  assert.match(z.saveFehler.meldung, /Keine Berechtigung/)
+  // Meldung des Servers per HX-Trigger (ohne Kennung) ändert nichts
+  z.markSaved({ value: true })
+  z.markSaved()
+  assert.match(z.saveFehler.meldung, /Keine Berechtigung/)
+  // Gelingt der Kopf danach, verschwindet der Hinweis
+  z.markSaved({ formular: KOPF })
+  assert.equal(z.saveFehler, null)
+  assert.equal(z.saved, true)
+})
+
+test('Zwei gescheiterte Formulare: Gelingt eines, bleibt der Fehler des anderen', () => {
+  const z = autosaveZustand()
+  z.markFailed({ ...bewerteAutosave(antwort({ status: 0 })), formular: KOPF })
+  z.markFailed({ ...bewerteAutosave(antwort({ status: 400 })), formular: BESCHREIBUNG })
+  z.markSaved({ formular: BESCHREIBUNG })
+  assert.equal(z.saveFehler.art, 'verbindung')
+  assert.equal(z.saved, false)
+})
+
+test('Vom Server neu gezeichnetes Panel nach Ablehnung (422): Hinweis von Anfang an, bis das Formular gelingt', () => {
+  const k = autosaveAnzeige()
+  k.$el = { dataset: { autosaveAbgelehnt: 'task-update-form' } }
+  k.init()
+  assert.equal(k.saveFehler.meldung, EINGABE_PRUEFEN)
+  assert.equal(k.saved, false)
+  k.markSaved({ formular: 'task-update-form' })
+  assert.equal(k.saveFehler, null)
+  const ohne = autosaveAnzeige()
+  ohne.$el = { dataset: {} }
+  ohne.init()
+  assert.equal(ohne.saveFehler, null)
 })
 
 console.log(`\n${passed} bestanden, ${failed} fehlgeschlagen`)

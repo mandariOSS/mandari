@@ -17,8 +17,9 @@
  * - Alles andere (Anlegen, Löschen, Hochladen, Verknüpfen) wird genau einmal gesendet: Eine Wiederholung könnte
  *   doppelt anlegen. Die Eingabe bleibt beim Aufrufer stehen.
  * - Endgültige Fehler (400, 403, 404 …) werden nicht wiederholt.
- * - Aktualisierungen mit `sicherung` liegen zusätzlich im Browser, bis der Server sie bestätigt hat (Teil 2,
- *   frontend/js/eingaben-sicherung.ts): Sie überstehen so auch ein Neuladen oder Schließen der Seite.
+ * - Aktualisierungen mit `sicherung` werden zusätzlich im Browser gesichert, bis der Server sie bestätigt hat (Teil 2,
+ *   frontend/js/eingaben-sicherung.ts; in den localStorage erst bei Störung, ausbleibender Bestätigung oder beim
+ *   Verlassen der Seite): Sie überstehen so auch ein Neuladen oder Schließen der Seite.
  *
  * Das Modul kennt kein Alpine; der Stand wird über `beiAenderung` gemeldet.
  */
@@ -206,7 +207,7 @@ export class Speicherdienst {
    * wenn gespeichert, endgültig gescheitert oder durch einen späteren Stand ersetzt (zusammengeführt).
    */
   senden(auftrag: SpeicherAuftrag): Promise<SpeicherErgebnis> {
-    // Zuerst sichern: Synchron, bevor die Seite womöglich verlassen wird
+    // Zuerst sichern (im Speicher der Seite; beim Verlassen schreibt die Vorbereitung es fest)
     if (auftrag.wiederholbar && auftrag.sicherung && istObjekt(auftrag.body)) {
       this.sicherung?.merken(auftrag.sicherung, auftrag.body)
     }

@@ -4,7 +4,8 @@ Labels, Checkliste, Anhänge und Aktivität. Alpine-Scope: kanbanBoard (closePan
 Kontext: task, form, organization, membership, shared_members, activities
 {% endcomment %}
 <div x-data="autosaveAnzeige"
-     @task-autosaved.window="markSaved()"
+     {% if autosave_abgelehnt %}data-autosave-abgelehnt="task-update-form"{% endif %}
+     @task-autosaved.window="markSaved($event.detail)"
      @task-autosaving.window="markSaving()"
      @task-autosave-failed.window="markFailed($event.detail)"
      class="flex-1 flex flex-col overflow-hidden">
@@ -34,7 +35,6 @@ Kontext: task, form, organization, membership, shared_members, activities
                           class="autosave-indicator text-gray-400 dark:text-gray-500 p-1">
                         <i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i>
                     </span>
-                    <span x-cloak x-show="saveFehler && !saving" class="text-xs font-medium text-red-700 dark:text-red-400 px-1">Nicht gespeichert</span>
                     <span x-cloak x-show="saved && !saving"
                           x-transition:enter="transition ease-out duration-200"
                           x-transition:enter-start="opacity-0 scale-90"

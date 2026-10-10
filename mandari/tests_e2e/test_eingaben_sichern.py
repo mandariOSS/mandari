@@ -5,18 +5,20 @@ Eingaben gehen nicht verloren (#854, Teil 2) – im Browser geprüft.
 Sitzungsvorbereitung: Ohne Netz gesetzte Position und Notiz landen nach der Rückkehr der Verbindung genau einmal in
 der Datenbank; eine Eingabe, deren Speichern beim Neuladen noch offen war, wird angeboten und lässt sich übernehmen;
 bei abgelaufener Anmeldung bzw. fehlendem zweiten Faktor erscheint ein Hinweis, die Eingabe bleibt im Browser und
-wird nach der Anmeldung gespeichert. Die Sicherung im Browser trägt die Kontokennung im Schlüssel und verschwindet,
-sobald gespeichert ist.
+wird nach der Anmeldung gespeichert. Die Sicherung im Browser trägt Konto und Organisation im Schlüssel und
+verschwindet, sobald gespeichert ist. Was inzwischen anderweitig gespeichert wurde, nennt der Hinweis als Konflikt;
+ein auf der Seite neu bearbeitetes Feld wird nicht mehr angeboten.
 
-Automatisch speichernde htmx-Formulare (TOP einer Fraktionssitzung, Aufgaben): 403, 400 und die Pflicht zum zweiten
-Faktor zeigen „Nicht gespeichert“ mit Erklärung statt dauerhaft „Speichert …“; die Seite lädt dabei nicht neu.
+Automatisch speichernde htmx-Formulare (TOP einer Fraktionssitzung, Aufgaben): 403, 400, 422 und die Pflicht zum
+zweiten Faktor zeigen „Nicht gespeichert“ mit Erklärung statt dauerhaft „Speichert …“, ohne zusätzlichen Toast; die
+Seite lädt dabei nicht neu. Gelingt ein anderes Formular im selben Panel, bleibt der Hinweis stehen.
 """
 
 from __future__ import annotations
 
 from datetime import timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.utils import timezone
@@ -73,8 +75,10 @@ class TestSitzungsvorbereitung:
         page.locator("#notiz-eingabe").fill("Rückfrage an die Verwaltung")
         expect(page.locator("#autosave-status")).to_contain_text("Nicht gespeichert")
         _sicherung_mit(page, "Rückfrage an die Verwaltung")
-        # Je Konto, Sitzung und TOP – mit der Kennung des Kontos, nicht dem Namen
-        assert page.evaluate(SICHERUNGEN) == [f"mandari.eingaben.{admin.user.pk}.{meeting.id}.{top.id}"]
+        # Je Konto, Organisation, Sitzung und TOP – mit Kennungen, nicht Namen
+        assert page.evaluate(SICHERUNGEN) == [
+            f"mandari.eingaben.{admin.user.pk}.{admin.organization.id}.{meeting.id}.{top.id}"
+        ]
         assert not AgendaItemPosition.objects.filter(organization=admin.organization, agenda_item=top).exists()
 
         page.context.set_offline(False)
@@ -139,6 +143,66 @@ class TestSitzungsvorbereitung:
         expect(page.locator("#eingaben-sicherung")).to_be_hidden()
         problems.assert_clean("Vorbereitung nach Neuladen")
 
+    def test_inzwischen_anderweitig_gespeichert_wird_als_konflikt_genannt(
+        self, page: Any, goto: Any, login: Any, admin: Any, schalter_an: None, tmp_path: Path
+    ) -> None:
+        _meeting, top = _vorbereitung_oeffnen(page, goto, login, admin, tmp_path)
+
+        # Begründung ohne Verbindung geschrieben, die Seite wird geschlossen, ehe sie gespeichert ist
+        ziel = f"**/position/{top.id}/"
+        page.route(ziel, lambda route: route.abort("connectionrefused"))
+        page.get_by_role("tab", name="Begründung").click()
+        page.locator("#reasoning-input").fill("Offline geschrieben")
+        _sicherung_mit(page, "Offline geschrieben")
+
+        # Inzwischen speichert eine Kollegin (oder dasselbe Konto auf einem anderen Gerät) eine andere Begründung
+        position = AgendaItemPosition(organization=admin.organization, agenda_item=top, position="for")
+        cast(Any, position).set_reasoning_encrypted("Fassung der Kollegin")
+        position.save()
+
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.reload()
+        wait_for_component(page, "vorbereitung")
+        _warte_auf_top(page, str(top.id))
+        hinweis = page.locator("#eingaben-sicherung")
+        expect(hinweis).to_contain_text("Nicht gespeicherte Eingaben vom")
+        expect(hinweis).to_contain_text("Inzwischen anderweitig geändert: TOP 2 (Begründung)")
+        expect(hinweis).to_contain_text("Übernehmen ersetzt diesen Stand")
+
+        # Verwerfen: der neuere Stand bleibt, nichts mehr im Browser
+        page.unroute(ziel)
+        hinweis.get_by_role("button", name="Verwerfen").click()
+        expect(hinweis).to_be_hidden()
+        position.refresh_from_db()
+        assert position.get_reasoning_decrypted() == "Fassung der Kollegin"
+        assert page.evaluate(SICHERUNGEN) == []
+
+    def test_auf_der_seite_neu_bearbeitet_wird_nicht_mehr_angeboten(
+        self, page: Any, goto: Any, login: Any, admin: Any, schalter_an: None, tmp_path: Path
+    ) -> None:
+        _meeting, top = _vorbereitung_oeffnen(page, goto, login, admin, tmp_path)
+        ziel = f"**/private-note/{top.id}/"
+        page.route(ziel, lambda route: route.abort("connectionrefused"))
+        page.get_by_role("tab", name="Notiz").click()
+        page.locator("#notiz-eingabe").fill("Alte Fassung")
+        _sicherung_mit(page, "Alte Fassung")
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.reload()
+        wait_for_component(page, "vorbereitung")
+        _warte_auf_top(page, str(top.id))
+        hinweis = page.locator("#eingaben-sicherung")
+        expect(hinweis).to_contain_text("TOP 2 (Notiz)")
+
+        # Den Hinweis übersehen und neu getippt: gespeichert, das alte Angebot verschwindet
+        page.unroute(ziel)
+        page.get_by_role("tab", name="Notiz").click()
+        page.locator("#notiz-eingabe").fill("Neue Fassung")
+        expect(page.locator("#autosave-status")).to_contain_text("Gespeichert um", timeout=15000)
+        expect(hinweis).to_be_hidden()
+        notiz = AgendaPrivateNote.objects.get(author=admin, agenda_item=top)
+        assert notiz.get_content_decrypted() == "Neue Fassung"
+        assert page.evaluate(SICHERUNGEN) == []
+
     def test_abgelaufene_anmeldung_eingabe_bleibt_und_wird_nachgeholt(
         self, page: Any, goto: Any, login: Any, admin: Any, live_server: Any, schalter_an: None, tmp_path: Path
     ) -> None:
@@ -178,7 +242,7 @@ class TestSitzungsvorbereitung:
         link = hinweis.get_by_role("link", name="Zweiten Faktor einrichten")
         expect(link).to_have_attribute("href", "/accounts/2fa/setup/")
         expect(link).to_have_attribute("target", "_blank")
-        _sicherung_mit(page, '"position":"for"')
+        _sicherung_mit(page, '"wert":"for"')
 
         # Eingerichtet (hier: Antwort wieder normal), zurück in die Vorbereitung: gespeichert, Sicherung weg
         page.unroute(ziel)
@@ -235,6 +299,8 @@ class TestHtmxAutosave:
             created_by=admin,
         )
         item = FactionAgendaItem.objects.create(meeting=meeting, number="1", title="Haushalt 2027", visibility="public")
+        cast(Any, item).set_description_encrypted("Mittelfristige Finanzplanung")
+        item.save()
         login(admin.user.email, PASSWORD)
         goto(f"/work/{admin.organization.slug}/faction/{meeting.id}/")
         wait_for_component(page, "factionDetail")
@@ -248,13 +314,14 @@ class TestHtmxAutosave:
         titel = panel.locator("#agenda-item-update-form input[name=title]")
         hinweis = panel.get_by_role("alert")
 
-        # 403: keine Berechtigung
+        # 403: keine Berechtigung; der Hinweis steht einmal im Panel, kein Toast daneben
         _panel_antwort(page, muster, {"status": 403, "body": ""})
         titel.fill("Haushalt 2027 (Entwurf)")
         titel.blur()
-        expect(panel.get_by_text("Nicht gespeichert", exact=True)).to_be_visible()
-        expect(hinweis).to_contain_text("Keine Berechtigung")
+        expect(hinweis).to_contain_text("Nicht gespeichert: Keine Berechtigung")
         expect(panel.locator('#agenda-item-update-form [x-show="saving"]')).to_be_hidden()
+        page.wait_for_timeout(300)
+        expect(page.locator('[x-data="toastManager"]')).not_to_contain_text("Berechtigung")
 
         # 400 mit Klartext des Servers
         _panel_antwort(page, muster, {"status": 400, "body": "Titel fehlt.", "content_type": "text/plain"})
@@ -279,10 +346,61 @@ class TestHtmxAutosave:
         page.unroute(muster)
         page.evaluate("() => window.dispatchEvent(new Event('focus'))")
         expect(hinweis).to_be_hidden()
-        expect(panel.get_by_text("Nicht gespeichert", exact=True)).to_be_hidden()
         item.refresh_from_db()
         assert item.title == "Haushalt 2027 (Entwurf 3)"
+        # Das Speichern des Titels lässt die Beschreibung stehen
+        assert cast(Any, item).get_description_decrypted() == "Mittelfristige Finanzplanung"
+        expect(page.locator('[x-data="toastManager"]')).not_to_contain_text("Titel fehlt")
         problems.assert_clean("TOP-Panel mit Fehlern beim automatischen Speichern")
+
+    def test_top_panel_beschreibung_gespeichert_kopf_bleibt_gescheitert(
+        self, page: Any, goto: Any, login: Any, admin: Any, problems: BrowserProblems
+    ) -> None:
+        meeting = FactionMeeting.objects.create(
+            organization=admin.organization,
+            title="Fraktionssitzung E2E",
+            start=timezone.now() + timedelta(days=3),
+            status="planned",
+            created_by=admin,
+        )
+        item = FactionAgendaItem.objects.create(meeting=meeting, number="1", title="Haushalt 2027", visibility="public")
+        login(admin.user.email, PASSWORD)
+        goto(f"/work/{admin.organization.slug}/faction/{meeting.id}/")
+        wait_for_component(page, "factionDetail")
+        page.evaluate(
+            "(id) => window.dispatchEvent(new CustomEvent('open-item-panel', { detail: { id } }))", str(item.id)
+        )
+        wait_for_component(page, "agendaItemPanel")
+        panel = page.locator('[x-data="agendaItemPanel"]')
+        hinweis = panel.get_by_role("alert")
+
+        # Nur der Kopf (Titel, Sichtbarkeit) wird abgelehnt (z. B. nicht vereidigt), die Beschreibung geht durch
+        def kopf_ablehnen(route: Any) -> None:
+            daten = route.request.post_data or ""
+            if route.request.method == "POST" and "action=update" in daten and "description=" not in daten:
+                route.fulfill(status=403, body="")
+            else:
+                route.continue_()
+
+        page.route(f"**/item/{item.id}/panel/action/", kopf_ablehnen)
+        panel.locator("#agenda-item-update-form select[name=visibility]").select_option("internal")
+        expect(hinweis).to_contain_text("Nicht gespeichert: Keine Berechtigung")
+
+        beschreibung = panel.locator("textarea[name=description]")
+        beschreibung.fill("Mittelfristige Finanzplanung")
+        beschreibung.blur()
+        # Die Beschreibung ist gespeichert, der Hinweis zum Kopf bleibt (die Auswahl zeigt „Nicht-öffentlich“)
+        for _ in range(50):
+            item.refresh_from_db()
+            if cast(Any, item).get_description_decrypted() == "Mittelfristige Finanzplanung":
+                break
+            page.wait_for_timeout(100)
+        assert cast(Any, item).get_description_decrypted() == "Mittelfristige Finanzplanung"
+        assert item.visibility == "public"
+        page.wait_for_timeout(300)
+        expect(hinweis).to_contain_text("Nicht gespeichert: Keine Berechtigung")
+        expect(panel.locator('[x-show="saved && !saving"]')).to_be_hidden()
+        problems.assert_clean("TOP-Panel: Beschreibung gespeichert, Kopf gescheitert")
 
     def test_aufgaben_panel_zeigt_fehler_und_erneut_versuchen(
         self, page: Any, goto: Any, login: Any, admin: Any, problems: BrowserProblems
@@ -300,8 +418,7 @@ class TestHtmxAutosave:
         titel.fill("Protokoll schreiben und versenden")
         titel.blur()
         hinweis = panel.get_by_role("alert")
-        expect(hinweis).to_contain_text("keine Verbindung")
-        expect(panel.get_by_text("Nicht gespeichert", exact=True)).to_be_visible()
+        expect(hinweis).to_contain_text("Nicht gespeichert: keine Verbindung")
 
         page.unroute(muster)
         hinweis.get_by_role("button", name="Erneut versuchen").click()
@@ -309,3 +426,39 @@ class TestHtmxAutosave:
         task.refresh_from_db()
         assert task.title == "Protokoll schreiben und versenden"
         problems.assert_clean("Aufgaben-Panel mit Fehler beim automatischen Speichern")
+
+    def test_aufgaben_panel_abgelehnt_zeigt_hinweis_statt_haken(
+        self, page: Any, goto: Any, login: Any, admin: Any, problems: BrowserProblems
+    ) -> None:
+        task = Task.objects.create(organization=admin.organization, title="Protokoll schreiben", created_by=admin)
+        login(admin.user.email, PASSWORD)
+        goto(f"/work/{admin.organization.slug}/tasks/?open={task.id}")
+        wait_for_component(page, "autosaveAnzeige")
+        panel = page.locator('[x-data="autosaveAnzeige"]')
+
+        # Titel geleert: die Prüfung im Browser hält das Senden an, auch das ist „Nicht gespeichert“
+        titel = panel.get_by_placeholder("Aufgabentitel")
+        titel.fill("")
+        titel.blur()
+        hinweis = page.locator('[x-data="autosaveAnzeige"]').get_by_role("alert")
+        expect(hinweis).to_contain_text("Nicht gespeichert: Eine Pflichtangabe fehlt oder ist ungültig.")
+
+        # Nur Leerzeichen: der Server lehnt ab (422) und zeichnet das Panel mit markiertem Feld neu
+        titel.fill("   ")
+        titel.blur()
+        expect(hinweis).to_contain_text("Nicht gespeichert: Bitte die markierten Angaben prüfen.")
+        expect(hinweis.get_by_role("button", name="Erneut versuchen")).to_be_hidden()
+        page.wait_for_timeout(300)
+        expect(page.locator('[x-data="autosaveAnzeige"] [x-show="saved && !saving"]')).to_be_hidden()
+        expect(page.locator('[x-data="toastManager"]')).not_to_contain_text("Fehler beim Speichern")
+        task.refresh_from_db()
+        assert task.title == "Protokoll schreiben"
+
+        # Korrigiert: gespeichert, der Hinweis verschwindet
+        titel = page.locator('[x-data="autosaveAnzeige"]').get_by_placeholder("Aufgabentitel")
+        titel.fill("Protokoll schreiben und versenden")
+        titel.blur()
+        expect(hinweis).to_be_hidden()
+        task.refresh_from_db()
+        assert task.title == "Protokoll schreiben und versenden"
+        problems.assert_clean("Aufgaben-Panel mit abgelehntem automatischen Speichern")

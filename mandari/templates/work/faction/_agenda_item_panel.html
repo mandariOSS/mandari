@@ -4,7 +4,7 @@
 {# Zustand und Vorlagensuche: Alpine-Komponente `agendaItemPanel` (frontend/alpine/agenda-item-panel.ts), Konfiguration per json_script. #}
 {{ panel_config|json_script:"agenda-item-panel-config" }}
 <div x-data="agendaItemPanel"
-     @panel-autosaved.window="markSaved()"
+     @panel-autosaved.window="markSaved($event.detail)"
      @panel-autosaving.window="markSaving()"
      @panel-autosave-failed.window="markFailed($event.detail)"
      class="flex flex-col h-full">

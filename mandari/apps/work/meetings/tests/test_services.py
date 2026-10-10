@@ -419,8 +419,9 @@ def test_load_preparation_data_and_prepare_config(
         account_id=str(member.user.pk),
     )
     assert config["orgSlug"] == org.slug
-    # Sicherung im Browser je Konto: Kennung, nicht der Name (#854)
+    # Sicherung im Browser je Konto und Organisation: Kennungen, nicht Namen (#854)
     assert config["accountId"] == str(member.user.pk)
+    assert config["orgId"] == str(org.id)
     assert config["orgNotes"] == "Allgemeines"
     assert [entry["name"] for entry in config["items"]] == ["Haushalt", "Spielplatz"]
     assert config["items"][0]["position"] == "against"
