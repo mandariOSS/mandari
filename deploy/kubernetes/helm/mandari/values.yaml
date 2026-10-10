@@ -97,12 +97,19 @@ app:
   tolerations: []
   affinity: {}
 
-# Marketing-Website (Wagtail) – optional
+# Marketing-Website (Wagtail) – optional. Das Image lauscht auf Port 8001, läuft ohne eigenen
+# Benutzer (hier mit podSecurityContext als UID 1000) und schreibt nur nach /app/staticfiles
+# (emptyDir) und /app/media (eigenes Volume). Migrationen laufen im Migrations-Job.
+# Die Datenbank <postgres.database>_website legt der mitgelieferte Postgres nur beim ersten Start an.
 website:
   enabled: false
   replicas: 1
-  # Eigener Hostname; leer = derselbe Host unter /website
+  # Eigener Hostname für die Website. Leer = kein Ingress-Eintrag, die Website ist dann nur
+  # clusterintern erreichbar (Service <release>-website).
   host: ""
+  media:
+    size: 2Gi
+    className: ""
   resources:
     requests:
       cpu: 100m
@@ -110,11 +117,26 @@ website:
     limits:
       memory: 1Gi
 
-# OParl-Synchronisation (Hintergrunddienst, kein Port)
+# OParl-Synchronisation: python -m src.main daemon (wie im Dienst ingestor in docker-compose.yml)
 ingestor:
   enabled: true
-  # Intervall der inkrementellen Synchronisation in Minuten
+  # Minuten zwischen zwei inkrementellen Synchronisationen (daemon --interval)
   syncInterval: 15
+  # Stunde der täglichen Vollsynchronisation (daemon --full-sync-hour)
+  fullSyncHour: 3
+  # Gleichzeitige HTTP-Anfragen (daemon --concurrent)
+  concurrent: 10
+  # /metrics (Prometheus) und /health (Probes) des Ingestors
+  metricsPort: 9090
+  # Adressraum je Tesseract-Unterprozess (OCR_MEMORY_LIMIT_MB), deutlich unter dem Speicherlimit halten
+  ocrMemoryLimitMb: 384
+  # Zusätzliche Argumente für daemon und Umgebungsvariablen nur für den Ingestor
+  extraArgs: []
+  extraEnv: {}
+  # Arbeitsverzeichnis /app/data (Zwischenstände des Abrufs)
+  data:
+    size: 2Gi
+    className: ""
   resources:
     requests:
       cpu: 100m
@@ -172,6 +194,40 @@ worker:
         memory: 256Mi
       limits:
         memory: 1Gi
+  # Live-Übertragungen (Warteschlange live, docs/LIVE_UEBERTRAGUNG.md) in einem eigenen Worker wie
+  # worker-live in docker-compose.yml: lange OCR- oder Mailaufträge halten die Lesungen nicht auf.
+  # Ohne eigenen Worker bedient der Hauptworker die Warteschlange live mit.
+  live:
+    enabled: true
+    replicas: 1
+    concurrency: "live=2"
+    maxMemoryMb: 400
+    extraArgs: []
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        # Der Runner startet oberhalb von maxMemoryMb neu; Tesseract-Unterprozesse brauchen den Rest
+        memory: 512Mi
+
+# Live-Übertragungen von Gremiensitzungen (LIVE_UEBERTRAGUNG_AKTIV), Standard aus: keine Anfragen an
+# Streaming-Anbieter, kein Zeitplan
+liveStreams:
+  enabled: false
+
+# Dokumentablage und Texterkennung (docs/FILE_CACHE.md); gilt für Anwendung, Worker und Ingestor
+files:
+  # Ablage nach SHA-256 mit Referenzzählung (FILE_STORE_LAYOUT)
+  storeLayout: sha256
+  # Der Ingestor legt Dateien, die er für den Text lädt, selbst ab (INGESTOR_STORES_FILES)
+  ingestorStoresFiles: true
+  # Mindestens so viel Platz frei lassen (FILE_CACHE_MIN_FREE_GB)
+  minFreeGb: 15
+  # Wer den Text der RIS-Dateien erkennt: ingestor oder worker (TEXT_EXTRACTION_RUNNER)
+  textExtractionRunner: ingestor
+  # Adressraum je Tesseract-Unterprozess in Anwendung und Workern (OCR_MEMORY_LIMIT_MB)
+  ocrMemoryLimitMb: 512
 
 # -----------------------------------------------------------------------------
 # Datenhaltung
@@ -248,13 +304,15 @@ persistence:
 # -----------------------------------------------------------------------------
 ingress:
   enabled: true
-  className: nginx
+  # Leer = Standard-Ingress-Klasse des Clusters (k3s: traefik). install-k8s.sh setzt die erkannte Klasse.
+  className: ""
   # TLS über cert-manager. Ohne cert-manager: tls.enabled=false und eigenes
   # Zertifikat als Secret hinterlegen (tls.secretName).
   tls:
     enabled: true
     clusterIssuer: letsencrypt-prod
     secretName: ""
+  # Wirken nur mit ingress-nginx; andere Controller ignorieren sie.
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
@@ -266,10 +324,19 @@ service:
 # -----------------------------------------------------------------------------
 # Betrieb
 # -----------------------------------------------------------------------------
-# Migrationen und Rolleneinrichtung laufen als Job vor jedem Upgrade
+# Migrationen wie update.sh in zwei Schritten (deploy/kubernetes/README.md, „Migrationen“):
+#   Installation: Job <release>-migrate (migrate, Rollen, Suchindex, Admin-Konto, Website)
+#   Upgrade:      pre-upgrade  <release>-migrate-pre  (safemigrate, Website-Migrationen)
+#                 post-upgrade <release>-migrate-post (migrate, Rollen, Suchindex, Admin-Konto)
+# Anwendung, Worker und Ingestor warten per initContainer, bis alle Migrationen eingespielt sind,
+# die vor dem Ausrollen laufen dürfen. Abschalten nur, wenn das Schema anders gepflegt wird.
 migrationJob:
   enabled: true
   backoffLimit: 2
+  # Fertige Installations-Jobs nach so vielen Sekunden entfernen (Logs bis dahin lesbar)
+  ttlSecondsAfterFinished: 86400
+  # Höchstens so lange warten die Pods auf das Schema, dann startet der initContainer neu
+  waitTimeoutSeconds: 1800
   resources:
     requests:
       cpu: 250m

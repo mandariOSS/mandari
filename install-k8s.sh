@@ -9,12 +9,15 @@
 #   ./install-k8s.sh --domain ris.example.de --namespace mandari
 #   ./install-k8s.sh --dry-run                # nur anzeigen, nichts ändern
 #   ./install-k8s.sh --minimal                # kleiner Cluster (ohne Elasticsearch)
+#   ./install-k8s.sh --website-host www.example.de   # mit Marketing-Website unter eigenem Host
+#   ./install-k8s.sh --ingress-class traefik  # Ingress-Klasse vorgeben (sonst erkannt)
 #   ./install-k8s.sh --tag v0.11.0            # feste Version (https://github.com/mandariOSS/mandari/releases)
 #   ./install-k8s.sh --uninstall              # entfernen (Daten bleiben)
 #
 # Voraussetzungen: kubectl mit Zugriff auf den Cluster. Helm wird bei Bedarf
-# installiert. Für HTTPS werden ein Ingress-Controller und cert-manager benötigt;
-# beide bietet der Installer bei Bedarf an.
+# installiert. Für HTTPS werden ein Ingress-Controller und cert-manager benötigt.
+# Den Ingress-Controller erkennt der Installer (k3s: Traefik), er installiert keinen.
+# cert-manager bietet er bei Bedarf an.
 #
 # Für einen einzelnen Server ohne Kubernetes: ./install.sh (Docker Compose)
 # =============================================================================
@@ -41,7 +44,9 @@ ADMIN_EMAIL="${ADMIN_EMAIL:-}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-}"
 CLUSTER_ISSUER="${CLUSTER_ISSUER:-letsencrypt-prod}"
 ACME_EMAIL="${ACME_EMAIL:-}"
-INGRESS_CLASS="${INGRESS_CLASS:-nginx}"
+# Leer = erkennen (Standardklasse des Clusters, auf k3s traefik)
+INGRESS_CLASS="${INGRESS_CLASS:-}"
+WEBSITE_HOST="${WEBSITE_HOST:-}"
 UNATTENDED=false
 DRY_RUN=false
 MINIMAL=false
@@ -84,8 +89,12 @@ parse_args() {
             --tag=*)         IMAGE_TAG="${1#--tag=}" ;;
             --storage-class) STORAGE_CLASS="${2:?--storage-class benötigt einen Wert}"; shift ;;
             --storage-class=*) STORAGE_CLASS="${1#--storage-class=}" ;;
+            --ingress-class) INGRESS_CLASS="${2:?--ingress-class benötigt einen Wert}"; shift ;;
+            --ingress-class=*) INGRESS_CLASS="${1#--ingress-class=}" ;;
+            --website-host)  WEBSITE_HOST="${2:?--website-host benötigt einen Wert}"; WITH_WEBSITE=true; shift ;;
+            --website-host=*) WEBSITE_HOST="${1#--website-host=}"; WITH_WEBSITE=true ;;
             -h|--help)
-                sed -n '2,22p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+                sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
                 exit 0 ;;
             *) error "Unbekanntes Argument: $1 (Hilfe: --help)" ;;
         esac
@@ -127,27 +136,71 @@ install_helm() {
     command -v helm &>/dev/null || error "Helm nach der Installation nicht gefunden."
 }
 
-# Ingress-Controller und cert-manager sind Cluster-weite Bausteine. Ohne sie ist die
-# Installation zwar erreichbar (Port-Forward), aber nicht über die Domain mit HTTPS.
-check_cluster_addons() {
-    local has_ingress=false has_certmanager=false
+# k3s erkennen: Die Kubelet-Version trägt dort den Zusatz "+k3s".
+is_k3s() {
+    kubectl get nodes -o jsonpath='{.items[*].status.nodeInfo.kubeletVersion}' 2>/dev/null | grep -q '+k3s'
+}
 
-    if kubectl get ingressclass "$INGRESS_CLASS" &>/dev/null; then
-        has_ingress=true
-        log "Ingress-Controller „$INGRESS_CLASS“ vorhanden"
-    else
-        local available
-        available=$(kubectl get ingressclass -o name 2>/dev/null | sed 's|ingressclass.networking.k8s.io/||' | tr '\n' ' ')
-        if [ -n "$available" ]; then
-            warn "Ingress-Klasse „$INGRESS_CLASS“ fehlt. Vorhanden: $available"
-            if [ "$UNATTENDED" != "true" ]; then
-                read -r -p "  Welche verwenden? [$INGRESS_CLASS]: " chosen
-                INGRESS_CLASS="${chosen:-$INGRESS_CLASS}"
-                kubectl get ingressclass "$INGRESS_CLASS" &>/dev/null && has_ingress=true
-            fi
+# Ingress-Klasse wählen. Der Installer installiert keinen Ingress-Controller: k3s bringt Traefik
+# mit, ein zweiter Controller konkurrierte um die Ports 80/443 (ingress-nginx ist zudem eingestellt).
+detect_ingress_class() {
+    if [ -n "$INGRESS_CLASS" ]; then
+        if kubectl get ingressclass "$INGRESS_CLASS" &>/dev/null; then
+            log "Ingress-Klasse „$INGRESS_CLASS“ vorhanden"
+            return 0
+        fi
+        warn "Ingress-Klasse „$INGRESS_CLASS“ gibt es im Cluster nicht."
+        INGRESS_CLASS=""
+    fi
+
+    local available default_class
+    available=$(kubectl get ingressclass -o name 2>/dev/null | sed 's|ingressclass.networking.k8s.io/||' | tr '\n' ' ' | sed 's/ *$//')
+    default_class=$(kubectl get ingressclass -o jsonpath='{.items[?(@.metadata.annotations.ingressclass\.kubernetes\.io/is-default-class=="true")].metadata.name}' 2>/dev/null | awk '{print $1}')
+
+    if [ -z "$available" ]; then
+        if is_k3s; then
+            warn "k3s erkannt, aber keine Ingress-Klasse gefunden (mit --disable traefik gestartet?)."
         else
             warn "Kein Ingress-Controller im Cluster gefunden."
         fi
+        return 1
+    fi
+
+    if is_k3s && [[ " $available " == *" traefik "* ]]; then
+        INGRESS_CLASS="traefik"
+        log "k3s erkannt: verwende den mitgelieferten Ingress-Controller Traefik"
+    elif [ -n "$default_class" ]; then
+        INGRESS_CLASS="$default_class"
+        log "Verwende die Standard-Ingress-Klasse „$INGRESS_CLASS“"
+    elif [ "$(wc -w <<<"$available")" -eq 1 ]; then
+        INGRESS_CLASS="$available"
+        log "Verwende die einzige Ingress-Klasse „$INGRESS_CLASS“"
+    elif [ "$UNATTENDED" = "true" ]; then
+        warn "Mehrere Ingress-Klassen ($available), keine ist Standard. Bitte --ingress-class angeben."
+        return 1
+    else
+        info "Ingress-Klassen: $available"
+        while [ -z "$INGRESS_CLASS" ]; do
+            read -r -p "  Welche verwenden? " INGRESS_CLASS
+            if [ -n "$INGRESS_CLASS" ] && ! kubectl get ingressclass "$INGRESS_CLASS" &>/dev/null; then
+                warn "„$INGRESS_CLASS“ gibt es nicht."
+                INGRESS_CLASS=""
+            fi
+        done
+    fi
+    return 0
+}
+
+# Ingress-Controller und cert-manager sind Cluster-weite Bausteine. Ohne sie ist die
+# Installation zwar erreichbar (Port-Forward), aber nicht über die Domain mit HTTPS.
+check_cluster_addons() {
+    local has_certmanager=false
+
+    if ! detect_ingress_class; then
+        NO_INGRESS=true
+        warn "Ohne Ingress-Controller ist mandari nur clusterintern erreichbar (Port-Forward)."
+        echo "  Einen Controller installieren Sie selbst, z. B. Traefik: https://doc.traefik.io/traefik/getting-started/install-traefik/"
+        echo "  Danach erneut aufrufen, bei mehreren Klassen mit --ingress-class <name>."
     fi
 
     if kubectl get crd certificates.cert-manager.io &>/dev/null; then
@@ -157,40 +210,23 @@ check_cluster_addons() {
         warn "cert-manager fehlt (wird für automatische HTTPS-Zertifikate gebraucht)."
     fi
 
-    if [ "$has_ingress" = false ] || [ "$has_certmanager" = false ]; then
-        if [ "$UNATTENDED" = "true" ]; then
-            warn "Fehlende Bausteine werden im unbeaufsichtigten Modus nicht installiert."
-            [ "$has_ingress" = false ] && NO_INGRESS=true
-            [ "$has_certmanager" = false ] && NO_TLS=true
-            return
-        fi
-        echo ""
-        echo "  Fehlende Cluster-Bausteine können jetzt installiert werden:"
-        [ "$has_ingress" = false ]     && echo "    - ingress-nginx (nimmt Anfragen aus dem Internet an)"
-        [ "$has_certmanager" = false ] && echo "    - cert-manager (holt Let's-Encrypt-Zertifikate)"
-        echo ""
-        read -r -p "  Jetzt installieren? [J/n]: " answer
-        if [[ "$answer" =~ ^[Nn]$ ]]; then
-            [ "$has_ingress" = false ] && NO_INGRESS=true
-            [ "$has_certmanager" = false ] && NO_TLS=true
-            warn "Übersprungen. Die Anwendung ist dann nur clusterintern erreichbar."
-        else
-            [ "$has_ingress" = false ] && install_ingress_nginx
-            [ "$has_certmanager" = false ] && install_cert_manager
-        fi
+    if [ "$has_certmanager" = true ]; then
+        return
     fi
-}
-
-install_ingress_nginx() {
-    log "Installiere ingress-nginx..."
-    helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx >/dev/null 2>&1 || true
-    helm repo update ingress-nginx >/dev/null 2>&1 || true
-    helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
-        --namespace ingress-nginx --create-namespace \
-        --set controller.service.externalTrafficPolicy=Local \
-        --wait --timeout 10m || error "Installation von ingress-nginx fehlgeschlagen."
-    INGRESS_CLASS="nginx"
-    log "ingress-nginx installiert"
+    if [ "${NO_INGRESS:-false}" = true ] || [ "$UNATTENDED" = "true" ]; then
+        [ "$UNATTENDED" = "true" ] && warn "cert-manager wird im unbeaufsichtigten Modus nicht installiert, HTTPS bleibt aus."
+        NO_TLS=true
+        return
+    fi
+    echo ""
+    echo "  cert-manager holt Let's-Encrypt-Zertifikate und kann jetzt installiert werden."
+    read -r -p "  Jetzt installieren? [J/n]: " answer
+    if [[ "$answer" =~ ^[Nn]$ ]]; then
+        NO_TLS=true
+        warn "Übersprungen. Die Anwendung ist dann nur über HTTP erreichbar."
+    else
+        install_cert_manager
+    fi
 }
 
 install_cert_manager() {
@@ -288,6 +324,8 @@ configure() {
         read -r -p "  Elasticsearch installieren? [J/n]: " answer
         [[ "$answer" =~ ^[Nn]$ ]] && MINIMAL=true
     fi
+    # Ausdrücklich 0: Ein falscher Vergleich als letzter Befehl beendete das Skript sonst still (set -e)
+    return 0
 }
 
 # -----------------------------------------------------------------------------
@@ -300,16 +338,19 @@ build_helm_args() {
         --create-namespace
         --set "domain=$DOMAIN"
         --set "image.tag=$IMAGE_TAG"
-        --set "ingress.className=$INGRESS_CLASS"
     )
+    [ -n "$INGRESS_CLASS" ] && HELM_ARGS+=(--set "ingress.className=$INGRESS_CLASS")
     [ "$MINIMAL" = true ] && HELM_ARGS+=(--values "$CHART_DIR/values-minimal.yaml")
     [ "$WITH_WEBSITE" = true ] && HELM_ARGS+=(--set website.enabled=true)
+    [ -n "$WEBSITE_HOST" ] && HELM_ARGS+=(--set "website.host=$WEBSITE_HOST")
     [ -n "$STORAGE_CLASS" ] && HELM_ARGS+=(
         --set "postgres.storage.className=$STORAGE_CLASS"
         --set "redis.storage.className=$STORAGE_CLASS"
         --set "elasticsearch.storage.className=$STORAGE_CLASS"
         --set "persistence.media.className=$STORAGE_CLASS"
         --set "persistence.files.className=$STORAGE_CLASS"
+        --set "ingestor.data.className=$STORAGE_CLASS"
+        --set "website.media.className=$STORAGE_CLASS"
     )
     [ -n "$ADMIN_EMAIL" ] && HELM_ARGS+=(
         --set "adminUser.email=$ADMIN_EMAIL"
@@ -321,6 +362,8 @@ build_helm_args() {
         HELM_ARGS+=(--set "ingress.tls.clusterIssuer=$CLUSTER_ISSUER")
     fi
     [ "${NO_INGRESS:-false}" = true ] && HELM_ARGS+=(--set ingress.enabled=false)
+    # Ausdrücklich 0: Ein falscher Vergleich als letzter Befehl beendete das Skript sonst still (set -e)
+    return 0
 }
 
 do_dry_run() {
@@ -334,11 +377,13 @@ do_dry_run() {
 do_install() {
     log "Installiere mandari in Namespace „$NAMESPACE“..."
     echo ""
-    helm upgrade --install "${HELM_ARGS[@]}" --wait --timeout 15m \
+    # Die Pods warten per initContainer auf den Migrations-Job; --wait-for-jobs meldet dessen Fehler direkt.
+    helm upgrade --install "${HELM_ARGS[@]}" --wait --wait-for-jobs --timeout 15m \
         || error "Installation fehlgeschlagen. Ursache suchen mit:
   kubectl -n $NAMESPACE get pods
   kubectl -n $NAMESPACE describe pod -l app.kubernetes.io/instance=$RELEASE
-  kubectl -n $NAMESPACE logs -l app.kubernetes.io/component=migrate --tail=50"
+  kubectl -n $NAMESPACE logs -l app.kubernetes.io/component=migrate --all-containers --tail=50
+  kubectl -n $NAMESPACE logs -l app.kubernetes.io/instance=$RELEASE -c wait-for-schema --tail=20"
 
     log "Warte auf die Anwendung..."
     kubectl -n "$NAMESPACE" rollout status "deploy/$RELEASE" --timeout=10m \

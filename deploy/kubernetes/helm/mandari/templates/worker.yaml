@@ -4,10 +4,11 @@ gleiches Image und dieselbe Umgebung wie die Anwendung. Mehrere Repliken teilen 
 Arbeit (Leader-Leases in events_lease, Aufträge per SKIP LOCKED). Der Migrations-Job läuft
 vor jedem Upgrade (pre-upgrade); Worker und Anwendung rollen danach gemeinsam aus.
 
-Zwei Deployments: <name>-worker (alle Rollen; mit worker.heavy.enabled ohne die Warteschlangen
-ocr und ai) und <name>-worker-heavy (nur Aufträge aus ocr und ai). Jeder Neustart eines Runners
-wartet auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails und
-Suche nicht auf die Texterkennung.
+Bis zu drei Deployments wie in docker-compose.yml: <name>-worker (alle Rollen; ohne die
+Warteschlangen der beiden anderen), <name>-worker-heavy (nur Aufträge aus ocr und ai) und
+<name>-worker-live (nur Aufträge aus live). Jeder Neustart eines Runners wartet auf seinen
+längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails, Suche und Live-Lesungen
+nicht auf die Texterkennung. Alle warten per initContainer auf das Datenbankschema.
 
 Parameter von "mandari.workerDeployment": root (Kontext des Charts), name (Namensteil und
 Komponente), replicas, maxMemoryMb, resources, args (zusätzliche Argumente).
@@ -46,11 +47,15 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml $root.Values.podSecurityContext | nindent 8 }}
+      {{- with (include "mandari.waitForSchema" $root | trim) }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
       # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
       terminationGracePeriodSeconds: 30
       containers:
         - name: worker
-          image: "{{ $root.Values.image.registry }}/{{ $root.Values.image.repository }}/mandari:{{ $root.Values.image.tag }}"
+          image: {{ include "mandari.appImage" $root | quote }}
           imagePullPolicy: {{ $root.Values.image.pullPolicy }}
           command:
             - python
@@ -66,7 +71,7 @@ spec:
           securityContext:
             {{- toYaml $root.Values.securityContext | nindent 12 }}
           env:
-            {{- include "mandari.commonEnv" $root | nindent 12 }}
+            {{- include "mandari.appEnv" $root | nindent 12 }}
             {{- if $root.Values.tracing.otlpEndpoint }}
             - name: OTEL_SERVICE_NAME
               value: mandari-{{ .name }}
@@ -78,10 +83,6 @@ spec:
             # (überschreibbar mit app.extraEnv bzw. worker.extraEnv)
             - name: METRICS_URL
               value: {{ printf "http://%s:%v/metrics/" (include "mandari.fullname" $root) $root.Values.service.port | quote }}
-            {{- range $key, $value := $root.Values.app.extraEnv }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
             {{- range $key, $value := $w.extraEnv }}
             - name: {{ $key }}
               value: {{ $value | quote }}
@@ -143,14 +144,23 @@ spec:
 
 {{- if .Values.worker.enabled }}
 {{- $heavy := .Values.worker.heavy }}
+{{- $live := .Values.worker.live }}
+{{- /* Hauptworker: ohne eigene Worker für ocr/ai und live bedient er alle Warteschlangen */ -}}
 {{- $args := list }}
-{{- if and $heavy.enabled .Values.worker.queues }}
-{{- $args = list "--queues" .Values.worker.queues }}
+{{- if and (or $heavy.enabled $live.enabled) .Values.worker.queues }}
+{{- $queues := list .Values.worker.queues }}
+{{- if not $heavy.enabled }}{{- $queues = append $queues $heavy.queues }}{{- end }}
+{{- if not $live.enabled }}{{- $queues = append $queues "live" }}{{- end }}
+{{- $args = list "--queues" (join "," $queues) }}
 {{- end }}
 {{- $args = concat $args .Values.worker.extraArgs }}
 {{ include "mandari.workerDeployment" (dict "root" . "name" "worker" "replicas" .Values.worker.replicas "maxMemoryMb" .Values.worker.maxMemoryMb "resources" .Values.worker.resources "args" $args) }}
 {{- if $heavy.enabled }}
 ---
 {{ include "mandari.workerDeployment" (dict "root" . "name" "worker-heavy" "replicas" $heavy.replicas "maxMemoryMb" $heavy.maxMemoryMb "resources" $heavy.resources "args" (concat (list "--roles" "tasks" "--queues" $heavy.queues) $heavy.extraArgs)) }}
+{{- end }}
+{{- if $live.enabled }}
+---
+{{ include "mandari.workerDeployment" (dict "root" . "name" "worker-live" "replicas" $live.replicas "maxMemoryMb" $live.maxMemoryMb "resources" $live.resources "args" (concat (list "--roles" "tasks" "--queues" "live" "--concurrency" $live.concurrency) $live.extraArgs)) }}
 {{- end }}
 {{- end }}

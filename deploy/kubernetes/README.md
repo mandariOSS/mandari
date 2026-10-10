@@ -8,8 +8,10 @@ oder Datenbank und Cache als verwaltete Dienste nutzen wollen.
 
 - Kubernetes 1.27 oder neuer, `kubectl` mit Zugriff auf den Cluster
 - Eine Speicherklasse (`kubectl get storageclass`)
-- Für den Zugriff aus dem Internet: ein Ingress-Controller und cert-manager.
-  Der Installer bietet an, beide zu installieren, falls sie fehlen.
+- Für den Zugriff aus dem Internet: ein Ingress-Controller und cert-manager. Den
+  Ingress-Controller erkennt der Installer (auf k3s das mitgelieferte Traefik, sonst die
+  Standardklasse des Clusters, `--ingress-class` gibt sie vor); er installiert selbst keinen.
+  cert-manager bietet er an, falls er fehlt.
 - Helm 3 — wird bei Bedarf vom Installer nachinstalliert
 
 Bedarf: etwa 4 GB Arbeitsspeicher mit Elasticsearch, rund 2 GB ohne.
@@ -32,8 +34,8 @@ Chart und wartet, bis die Anwendung läuft. Ohne Rückfragen:
   --tag latest
 ```
 
-Weitere Schalter: `--minimal` (ohne Elasticsearch), `--with-website`, `--dry-run` (zeigt nur
-die Manifeste), `--storage-class`, `--uninstall`.
+Weitere Schalter: `--minimal` (ohne Elasticsearch), `--with-website`, `--website-host`,
+`--ingress-class`, `--dry-run` (zeigt nur die Manifeste), `--storage-class`, `--uninstall`.
 
 ## Mit Helm direkt
 
@@ -43,8 +45,22 @@ helm upgrade --install mandari deploy/kubernetes/helm/mandari \
   --set domain=ris.meine-kommune.de \
   --set adminUser.email=admin@meine-kommune.de \
   --set adminUser.password='EinLangesPasswort' \
-  --wait
+  --wait --wait-for-jobs
 ```
+
+## Migrationen
+
+Wie `update.sh` in zwei Schritten:
+
+| Wann | Job | Inhalt |
+|---|---|---|
+| Installation | `mandari-migrate` (gewöhnlicher Job, nach einem Tag entfernt) | `migrate`, Rollen, Suchindex, Admin-Konto, Website-Migrationen |
+| Upgrade, vorher | `mandari-migrate-pre` (Hook `pre-upgrade`) | `safemigrate`, Website-Migrationen |
+| Upgrade, nachher | `mandari-migrate-post` (Hook `post-upgrade`) | `migrate` (auch `Safe.after_deploy`), Rollen, Suchindex, Admin-Konto |
+
+Anwendung, Worker und Ingestor warten im initContainer `wait-for-schema`, bis alle Migrationen
+eingespielt sind, die vor dem Ausrollen laufen dürfen; die Website wartet ebenso auf ihre eigenen.
+So startet nichts gegen ein zu altes Schema, auch nicht bei der Erstinstallation mit `--wait`.
 
 ## Ohne Helm
 
@@ -57,7 +73,8 @@ kubectl kustomize deploy/kubernetes/manifests | kubectl apply -f -
 kubectl -n mandari apply -f deploy/kubernetes/manifests/job-migrate.yaml
 ```
 
-Die Manifeste sind aus dem Chart erzeugt. Für Updates ist Helm deutlich bequemer.
+Die Manifeste sind aus dem Chart erzeugt (`python deploy/kubernetes/manifeste_erzeugen.py`; die
+PR-Prüfung vergleicht sie mit dem Chart). Für Updates ist Helm deutlich bequemer.
 
 ## Wichtige Werte
 
@@ -70,7 +87,14 @@ Die Manifeste sind aus dem Chart erzeugt. Für Updates ist Helm deutlich bequeme
 | `redis.enabled` | `true` | Analog mit `externalRedis.url` |
 | `elasticsearch.enabled` | `true` | Aus: Suche läuft über die Datenbank, spart etwa 2 GB Arbeitsspeicher |
 | `website.enabled` | `false` | Marketing-Website (Wagtail) mitinstallieren |
-| `ingestor.syncInterval` | `15` | Minuten zwischen zwei OParl-Synchronisationen |
+| `website.host` | `""` | Eigener Hostname der Website; leer = nur clusterintern erreichbar |
+| `ingress.className` | `""` | Leer = Standard-Ingress-Klasse des Clusters (k3s: `traefik`) |
+| `ingestor.syncInterval` | `15` | Minuten zwischen zwei OParl-Synchronisationen (`daemon --interval`) |
+| `ingestor.fullSyncHour`, `ingestor.concurrent` | `3`, `10` | Stunde der Vollsynchronisation, gleichzeitige Anfragen |
+| `ingestor.extraEnv`, `ingestor.extraArgs` | – | Nur für den Ingestor |
+| `files.*` | – | Dokumentablage und Texterkennung (`FILE_STORE_LAYOUT`, `INGESTOR_STORES_FILES`, `FILE_CACHE_MIN_FREE_GB`, `TEXT_EXTRACTION_RUNNER`, `OCR_MEMORY_LIMIT_MB`) wie in `docker-compose.yml` |
+| `worker.live.enabled` | `true` | Eigenes Deployment `mandari-worker-live` für die Warteschlange `live`; aus = der Hauptworker bedient sie mit |
+| `liveStreams.enabled` | `false` | Live-Übertragungen (`LIVE_UEBERTRAGUNG_AKTIV`) |
 | `worker.enabled` | `true` | Worker für Ereignisse, Aufträge und Zeitpläne (`manage.py events_worker`), gleiches Image und dieselbe Umgebung wie die Anwendung |
 | `worker.replicas` | `1` | Mehrere Worker teilen sich die Arbeit (Leader-Leases, Aufträge per `SKIP LOCKED`) |
 | `worker.maxMemoryMb` | `400` | Speichergrenze des Runners (`TASKS_MAX_MEMORY_MB`), unter `worker.resources.limits.memory` (1Gi; den Rest brauchen die Verwaltungsbefehle der Zeitpläne als eigene Prozesse) halten |
@@ -113,7 +137,7 @@ verschlüsseln. Das Chart prüft das und bricht mit einem Hinweis ab, sowohl fü
 > Schlüssel aus 32 Buchstaben und Ziffern und damit ungültig. Die Feldverschlüsselung war
 > dort nicht nutzbar, ein `helm upgrade` bricht jetzt mit obigem Hinweis ab. Abhilfe: einen
 > gültigen Schlüssel erzeugen, sicher hinterlegen und setzen, zum Beispiel
-> `helm upgrade … --reuse-values --set secrets.encryptionKey="$(openssl rand -base64 32)"`.
+> `helm upgrade … --reset-then-reuse-values --set secrets.encryptionKey="$(openssl rand -base64 32)"`.
 > Bereits eingerichtete zweite Faktoren sind danach nicht mehr lesbar; die betroffenen Konten
 > richten sie neu ein (`python manage.py reset_two_factor <E-Mail> --reason "…"`).
 
@@ -135,13 +159,14 @@ helm upgrade --install mandari deploy/kubernetes/helm/mandari -n mandari \
 
 ## Betrieb
 
-**Aktualisieren.** Migrationen laufen automatisch als Job, bevor die neuen Pods starten.
+**Aktualisieren.** Migrationen laufen automatisch vor und nach dem Ausrollen (siehe „Migrationen“).
 `image.tag` gilt für alle drei Images (mandari, ingestor, website): eine veröffentlichte Version
 (siehe https://github.com/mandariOSS/mandari/releases), `latest` oder `dev`.
 
 ```bash
 helm upgrade mandari deploy/kubernetes/helm/mandari -n mandari \
-  --reuse-values --set image.tag=v0.11.0 --wait
+  --reset-then-reuse-values --set image.tag=v0.11.0 --wait --wait-for-jobs
+# --reset-then-reuse-values (Helm ≥ 3.14) übernimmt neue Standardwerte des Charts und behält eigene Werte.
 ```
 
 **Datenbank sichern.**
@@ -165,7 +190,9 @@ kubectl -n mandari logs -f deploy/mandari
 kubectl -n mandari logs -f deploy/mandari-ingestor
 kubectl -n mandari logs -f deploy/mandari-worker
 kubectl -n mandari logs -f deploy/mandari-worker-heavy
-kubectl -n mandari logs job/mandari-migrate
+kubectl -n mandari logs -f deploy/mandari-worker-live
+kubectl -n mandari logs job/mandari-migrate --all-containers        # Installation
+kubectl -n mandari logs job/mandari-migrate-pre --all-containers    # Upgrade (bleibt nur bei Fehlern)
 ```
 
 **Verwaltungsbefehle.**
@@ -211,7 +238,9 @@ kubectl delete namespace mandari
 | Beobachtung | Ursache und Abhilfe |
 |---|---|
 | Pods bleiben `Pending` | Keine passende Speicherklasse oder zu wenig Ressourcen: `kubectl -n mandari describe pod <name>` |
-| Migrations-Job schlägt fehl | Datenbank nicht erreichbar oder Zugangsdaten passen nicht: `kubectl -n mandari logs job/mandari-migrate` |
+| Migrations-Job schlägt fehl | Datenbank nicht erreichbar oder Zugangsdaten passen nicht: `kubectl -n mandari logs job/mandari-migrate --all-containers` |
+| Pods bleiben in `Init:0/1` | Sie warten auf das Schema: `kubectl -n mandari logs <pod> -c wait-for-schema`, dann den Migrations-Job prüfen |
+| Website-Migration scheitert („database … does not exist“) | Der mitgelieferte Postgres legt `mandari_website` nur beim ersten Start an. Nachträglich: `kubectl -n mandari exec statefulset/mandari-postgres -- createdb -U mandari mandari_website` |
 | Anwendung startet nicht (`CrashLoopBackOff`) | Meist die Datenbankverbindung: `kubectl -n mandari logs deploy/mandari` |
 | Kein Zertifikat | cert-manager oder ClusterIssuer fehlt: `kubectl describe certificate -n mandari` |
 | 502 vom Ingress | Anwendung noch nicht bereit: `kubectl -n mandari get pods` |
