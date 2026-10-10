@@ -30,6 +30,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import (
     agenda_template_service,
     body_service,
@@ -249,6 +250,10 @@ class MeetingListView(BodyFilterMixin, SessionViewMixin, ListView):
     paginate_by = 20
     permission_required = "view_meetings"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzungen.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_queryset(self):
         qs = super().get_queryset()
         # Gemeinsame Sitzungen (Issue #317) vorab markieren – weitere Gremien nur für diese nachladen
@@ -335,6 +340,10 @@ class MeetingDetailView(SessionViewMixin, DetailView):
     context_object_name = "meeting"
     pk_url_kwarg = "meeting_id"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzung.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()

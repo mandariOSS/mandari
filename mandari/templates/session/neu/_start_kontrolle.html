@@ -1,0 +1,41 @@
+{% comment %}
+Start für Kontrollrollen im neuen Rahmen (Issues #708, #944): Stand des Protokolls und Wegweiser in die Bereiche der
+Rolle, als Abschnitte ohne Kacheln. Inhalt und Rechte wie session/partials/dashboard_kontrolle.html.
+{% endcomment %}
+{% if audit_summary %}
+<c-rahmen.abschnitt titel="Protokollkontrolle" titel_id="start-protokoll" data-testid="dashboard-protokollkontrolle">
+    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Revisionssicheres Protokoll dieses Mandanten. Jede Einsicht wird selbst protokolliert.</p>
+    <c-ui.angaben class="mt-3">
+        <dt>Einträge seit {{ audit_summary.since|date:"d.m.Y" }}</dt>
+        <dd class="tabular-nums">{{ audit_summary.recent }}</dd>
+        <dt>Letzter Eintrag</dt>
+        <dd class="tabular-nums">{{ audit_summary.last_at|date:"d.m.Y H:i"|default:"–" }}</dd>
+        {% if audit_summary.with_verify %}
+        <dt>Letzte Kettenprüfung</dt>
+        <dd>{% if audit_summary.last_verify %}{{ audit_summary.last_verify.created_at|date:"d.m.Y" }}: {% if audit_summary.last_verify.changes.intakt %}intakt{% else %}<span class="font-medium text-red-700 dark:text-red-400">Befund</span>{% endif %}{% else %}noch keine{% endif %}</dd>
+        {% endif %}
+    </c-ui.angaben>
+    <p class="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+        <c-ui.textlink href="{% url 'session:audit_log' tenant_slug=tenant_slug %}">Audit-Log öffnen</c-ui.textlink>
+        <c-ui.textlink href="{% url 'session:audit_log' tenant_slug=tenant_slug %}?from={{ audit_summary.since|date:'Y-m-d' }}">Einträge seit {{ audit_summary.since|date:"d.m." }}</c-ui.textlink>
+        {% if audit_summary.with_verify %}<c-ui.textlink href="{% url 'session:audit_log' tenant_slug=tenant_slug %}#kontrolle">Export und Kettenprüfung</c-ui.textlink>{% endif %}
+    </p>
+</c-rahmen.abschnitt>
+{% endif %}
+
+{% if without_content_tiles %}
+<c-rahmen.abschnitt titel="Ihre Bereiche" titel_id="start-bereiche" data-testid="dashboard-bereiche">
+    {% if role_areas %}
+    <ul class="mt-1">
+        {% for area in role_areas %}
+        <li class="py-3 border-t border-gray-200 dark:border-gray-800 first:border-t-0">
+            <a href="{{ area.url }}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4">{{ area.label }}</a>
+            <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400">{{ area.text }}</p>
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{% if audit_summary %}Ihre Rolle umfasst keine Sitzungen, Vorlagen oder Anträge (Funktionstrennung). Deshalb steht hier nur das Protokoll.{% else %}Ihrer Rolle sind keine Sitzungen, Vorlagen, Anträge oder Verwaltungsbereiche zugeordnet. Bitte wenden Sie sich an die Benutzerverwaltung Ihrer Kommune.{% endif %}</p>
+    {% endif %}
+</c-rahmen.abschnitt>
+{% endif %}

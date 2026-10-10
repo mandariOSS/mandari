@@ -41,6 +41,7 @@ from ..models import (
     SessionUser,
 )
 from ..permissions import SessionViewMixin, role_permissions
+from ..rahmen import neues_design
 from ..services import agenda_service, body_service, delegation_service, four_eyes_service, paper_version_service
 from ..visibility import agenda_item_visible, meeting_visible, paper_visible
 from .bodies import BodyFilterMixin
@@ -294,6 +295,10 @@ class PaperListView(BodyFilterMixin, SessionViewMixin, ListView):
     paginate_by = 20
     permission_required = "view_papers"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/vorlagen.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_queryset(self):
         qs = super().get_queryset()
         qs = qs.select_related("main_organization", "originator_organization", "originator_person").order_by(
@@ -370,6 +375,10 @@ class PaperDetailView(SessionViewMixin, DetailView):
     context_object_name = "paper"
     pk_url_kwarg = "paper_id"
     permission_required = "view_papers"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/vorlage.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()

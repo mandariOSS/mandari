@@ -22,6 +22,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import audit_log_service, joint_meeting_service
 
 # =============================================================================
@@ -59,11 +60,42 @@ def role_areas(permissions, tenant_slug: str) -> list[dict]:
     ]
 
 
+def _anzahl(zahl: int, einzahl: str, mehrzahl: str) -> str:
+    return f"{zahl} {einzahl if zahl == 1 else mehrzahl}"
+
+
+def start_satz(stats: dict, review_count: int | None) -> str:
+    """
+    Ein Satz zum Stand für das Kopfband des neuen Starts (Issue #944) statt Zählerkacheln: nur Zahlen, die die Person
+    auch in den Listen sähe (``stats`` aus der Ansicht, ``review_count`` nur mit dem Prüfrecht).
+    """
+    teile = []
+    if "meetings_upcoming" in stats:
+        teile.append(_anzahl(stats["meetings_upcoming"], "anstehende Sitzung", "anstehende Sitzungen"))
+    if "papers_draft" in stats:
+        teile.append(_anzahl(stats["papers_draft"], "Vorlage in Bearbeitung", "Vorlagen in Bearbeitung"))
+    if review_count is not None:
+        teile.append(_anzahl(review_count, "Vorlage zur Prüfung", "Vorlagen zur Prüfung"))
+    if "applications_pending" in stats:
+        teile.append(_anzahl(stats["applications_pending"], "offener Antrag", "offene Anträge"))
+    if not teile:
+        return "Hier finden Sie die Bereiche Ihrer Rolle."
+    if len(teile) == 1:
+        return f"{teile[0]}."
+    return f"{', '.join(teile[:-1])} und {teile[-1]}."
+
+
 class DashboardView(SessionViewMixin, TemplateView):
     """Main dashboard for Session RIS."""
 
     template_name = "session/dashboard.html"
     permission_required = "view_dashboard"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); der bisherige Start bleibt unverändert
+        if neues_design(self.session_tenant):
+            return ["session/neu/start.html"]
+        return [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -175,5 +207,9 @@ class DashboardView(SessionViewMixin, TemplateView):
         if can_applications:
             stats["applications_pending"] = open_applications.count()
         context["stats"] = stats
+        if neues_design(tenant):
+            context["start_satz"] = start_satz(
+                stats, context.get("papers_review_count", 0) if "approve_papers" in permissions else None
+            )
 
         return context

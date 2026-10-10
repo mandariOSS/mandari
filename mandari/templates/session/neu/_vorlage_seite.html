@@ -1,0 +1,54 @@
+{% comment %}
+Rechte Spalte der Vorlage im neuen Rahmen (Issue #944): Angaben, Bezüge, Fassungen und Herkunft aus einem Antrag.
+Eine Ebene: Abschnitte mit Überschrift, keine Kästen. Kontext wie PaperDetailView.
+{% endcomment %}
+<aside class="min-w-0 space-y-8" aria-label="Angaben zur Vorlage">
+    <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
+        <c-ui.angaben class="mt-2" data-testid="vorlage-angaben">
+            <dt>Status</dt>
+            <dd>{{ paper.get_status_display }}</dd>
+            <dt>{{ session_tenant.reference_label }}</dt>
+            <dd class="tabular-nums">{{ paper.display_reference }}</dd>
+            <dt>Art</dt>
+            <dd>{{ paper.get_paper_type_display }}</dd>
+            {% if paper.date %}<dt>Datum</dt><dd class="tabular-nums">{{ paper.date|date:"d.m.Y" }}</dd>{% endif %}
+            {% if paper.deadline %}<dt>Frist</dt><dd class="tabular-nums">{{ paper.deadline|date:"d.m.Y" }}</dd>{% endif %}
+            {% if paper.main_organization %}
+            <dt>Federführend</dt>
+            <dd><c-ui.textlink href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=paper.main_organization.id %}">{{ paper.main_organization.name }}</c-ui.textlink></dd>
+            {% endif %}
+            {% if paper.originator_organization %}
+            <dt>Urheber</dt>
+            <dd><c-ui.textlink href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=paper.originator_organization.id %}">{{ paper.originator_organization.name }}</c-ui.textlink></dd>
+            {% endif %}
+            {% if paper.originator_person %}
+            <dt>Urheber (Person)</dt>
+            <dd><c-ui.textlink href="{% url 'session:person_detail' tenant_slug=tenant_slug person_id=paper.originator_person.id %}">{{ paper.originator_person.display_name }}</c-ui.textlink></dd>
+            {% endif %}
+            <dt>Sichtbarkeit</dt>
+            <dd>{% if paper.is_public %}Öffentlich{% else %}Nichtöffentlich{% endif %}</dd>
+            {% if paper.created_by %}<dt>Erstellt von</dt><dd>{{ paper.created_by.user.email }}</dd>{% endif %}
+            {% if paper.content_edited_by and paper.content_edited_by_id != paper.created_by_id %}<dt>Zuletzt bearbeitet</dt><dd>{{ paper.content_edited_by.user.email }}</dd>{% endif %}
+            {% if paper.approved_by %}
+            <dt>Freigegeben von</dt>
+            <dd>{{ paper.approved_by.user.email }}{% if paper.approved_on_behalf_of %}<br><span class="text-gray-600 dark:text-gray-400">in Vertretung für {{ paper.approved_on_behalf_of.user.email }}</span>{% endif %}{% if paper.approved_at %}<br><span class="tabular-nums text-gray-600 dark:text-gray-400">{{ paper.approved_at|date:"d.m.Y H:i" }}</span>{% endif %}</dd>
+            {% endif %}
+        </c-ui.angaben>
+    </c-rahmen.abschnitt>
+
+    {% include "session/papers/_relations.html" %}
+
+    {% include "session/papers/_versions.html" %}
+
+    {% if paper.source_application %}
+    <c-rahmen.abschnitt titel="Erstellt aus Antrag" titel_id="herkunft-titel">
+        <p class="mt-1 text-sm break-words">
+            {% if "view_applications" in permission_checker.permissions %}
+            <c-ui.textlink href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=paper.source_application.id %}">{{ paper.source_application.reference }}</c-ui.textlink> {{ paper.source_application.title|truncatechars:60 }}
+            {% else %}
+            <span class="tabular-nums">{{ paper.source_application.reference }}</span>
+            {% endif %}
+        </p>
+    </c-rahmen.abschnitt>
+    {% endif %}
+</aside>

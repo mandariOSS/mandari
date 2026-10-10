@@ -1,0 +1,7 @@
+{% comment %}
+Stand eines Vorgangs im neuen Erscheinungsbild (Issue #944): Text mit kleinem Punkt statt farbiger Pille. Rot für
+Abgesagtes, Zurückgezogenes und Überfälliges, Bernstein für Arbeit in Prüfung oder im Gang, Grün für Freigegebenes und
+Versandtes, Kennfarbe für Geplantes, sonst Grau.
+  {% include "session/neu/_status.html" with wert=meeting.meeting_state text=meeting.get_meeting_state_display %}
+{% endcomment %}
+<span class="inline-flex items-center gap-1.5 whitespace-nowrap"><span class="w-2 h-2 shrink-0 rounded-full {% if wert == 'cancelled' or wert == 'withdrawn' or wert == 'rejected' or wert == 'ueberfaellig' %}bg-red-600 dark:bg-red-400{% elif wert == 'review' or wert == 'in_progress' or wert == 'received' or wert == 'in_review' %}bg-amber-500{% elif wert == 'approved' or wert == 'invitation_sent' or wert == 'accepted' or wert == 'converted' %}bg-green-600 dark:bg-green-400{% elif wert == 'scheduled' or wert == 'submitted' %}bg-primary-600 dark:bg-primary-400{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>{{ text }}</span>

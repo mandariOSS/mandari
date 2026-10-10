@@ -1,0 +1,42 @@
+{% comment %}
+Seitenleiste des neuen Rahmens im Sitzungsdienst (Issue #944), wie in Work (templates/work/rahmen/_leiste.html): graue
+Fläche, oben Wortmarke und Mandant (wechseln, immer sichtbar), dann Start, Sitzungen, Vorlagen, Anträge, Beschlüsse,
+Gremien und Personen, unten Leitstellen, Verwaltung (aufklappbar) und Einstellungen sowie die Person. Einträge aus
+session_rahmen (apps/session/rahmen.py), nur mit dem Recht ihrer Seite. Nur ab lg; am Handy übernehmen Leiste unten und
+Blatt „Mehr“ (_leiste_unten.html). Einklappbar wie in Work (data-leiste="schmal"). Nicht im Druck.
+{% endcomment %}
+<aside id="session-navigation" aria-label="Navigation"
+       class="rahmen-leiste hidden lg:flex print:!hidden fixed inset-y-0 left-0 z-40 w-60 flex-col overflow-y-auto overflow-x-hidden bg-band-grau pb-[env(safe-area-inset-bottom)]">
+    <div class="h-12 shrink-0 flex items-center px-4">
+        <a href="{{ session_rahmen.start_url }}" class="inline-flex items-baseline gap-1 leading-none text-gray-900 dark:text-white" aria-label="mandari Sitzungsdienst, Start">
+            <span class="text-[1.05rem] font-bold tracking-tight">m<span class="rahmen-label">andari</span><span class="text-primary-600 dark:text-primary-400" aria-hidden="true">.</span></span>
+            <span class="rahmen-label text-[0.95rem] font-semibold text-primary-700 dark:text-primary-300">Session</span>
+        </a>
+    </div>
+
+    <div class="px-2.5">
+        <button type="button" @click="raumOeffnen($el)" aria-haspopup="dialog" aria-controls="raum-dialog"
+                class="rahmen-eintrag w-full flex items-center gap-2.5 rounded-lg bg-band-hell px-2 py-2 text-left ring-1 ring-transparent hover:ring-gray-300 dark:hover:ring-gray-600">
+            {% include "session/rahmen/_raumzeichen.html" %}
+            <span class="rahmen-label flex-1 min-w-0">
+                <span class="block text-sm font-semibold leading-tight text-gray-900 dark:text-white line-clamp-2">{{ session_tenant.name }}</span>
+                <span class="block mt-0.5 text-xs text-gray-600 dark:text-gray-400 truncate">Sitzungsdienst</span>
+            </span>
+            <i data-lucide="chevrons-up-down" class="rahmen-label w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+            <span class="sr-only">– Mandant wechseln</span>
+        </button>
+    </div>
+
+    <nav class="mt-4 px-2.5" aria-label="Bereiche">
+        <ul class="space-y-0.5">
+            {% for b in session_rahmen.bereiche %}{% include "session/rahmen/_eintrag.html" %}{% endfor %}
+        </ul>
+    </nav>
+
+    <div class="mt-auto px-2.5 pt-6 pb-3">
+        <ul class="space-y-0.5">
+            {% for b in session_rahmen.unten %}{% include "session/rahmen/_eintrag.html" %}{% endfor %}
+            <li class="pt-1">{% include "session/rahmen/_person.html" %}</li>
+        </ul>
+    </div>
+</aside>

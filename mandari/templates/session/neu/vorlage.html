@@ -1,0 +1,73 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Vorlage im neuen Rahmen (Issue #944): Kopfband mit Nummer, Art, Titel, Stand und Gremium; darin der nächste Schritt
+des Freigabelaufs als eine Hauptaktion (zur Freigabe vorlegen bzw. freigeben, daneben zurückweisen mit Anmerkung) und
+„Bearbeiten“. Darunter Sachverhalt, Beschlussvorschlag, Mitzeichnung und finanzielle Auswirkungen, Beratungsfolge,
+Beratungshistorie (Zeitstrahl c-insight.timeline) und Anlagen; rechts Angaben, Bezüge, Fassungen und Herkunft
+(session/neu/_vorlage_seite.html). Alle Aktionen der bisherigen Seite bleiben erreichbar; Rechte und Kontext wie
+PaperDetailView. Die bisherige Seite bleibt session/papers/detail.html.
+{% endcomment %}
+
+{% block page_title %}{{ paper.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume>{{ paper.display_reference|default:paper.name|truncatechars:60 }}</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{{ paper.name }}" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:papers' tenant_slug=tenant_slug %}">Vorlagen</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 tabular-nums" data-testid="vorlagennummer">{{ session_tenant.reference_label }} {{ paper.display_reference }} · {{ paper.get_paper_type_display }}</p>
+    </c-slot>
+    {% if "edit_papers" in permission_checker.permissions %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'session:paper_edit' tenant_slug=tenant_slug paper_id=paper.id %}" variant="secondary" size="sm" icon="pencil">Bearbeiten</c-ui.button></c-slot>
+    {% endif %}
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+        <span>{% include "session/neu/_status.html" with wert=paper.status text=paper.get_status_display %}</span>
+        {% if paper.main_organization %}<span>{{ paper.main_organization.name }}</span>{% endif %}
+        {% if paper.date %}<span class="tabular-nums">{{ paper.date|date:"d.m.Y" }}</span>{% endif %}
+        {% if not paper.is_public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+    </p>
+    {% include "session/neu/_freigabe.html" %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <div class="min-w-0 space-y-10">
+        {% if paper.main_text %}
+        <c-rahmen.abschnitt titel="Sachverhalt" titel_id="sachverhalt-titel">
+            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ paper.main_text }}</div>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if paper.resolution_text %}
+        <c-rahmen.abschnitt titel="Beschlussvorschlag" titel_id="beschlussvorschlag-titel">
+            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ paper.resolution_text }}</div>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if paper.has_financial_impact is not None or cosignatures %}
+        {% include "session/neu/_mitzeichnung.html" %}
+        {% endif %}
+
+        {% include "session/papers/consultation_section.html" %}
+
+        {% if agenda_items %}
+        <c-rahmen.abschnitt titel="Beratungshistorie" titel_id="historie-titel" data-testid="beratungshistorie">
+            <c-insight.timeline class="mt-4" aria-labelledby="historie-titel">
+                {% for item in agenda_items %}
+                {% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=item.meeting.id as sitzung_url %}
+                <c-insight.timeline-entry date="{{ item.meeting.start|date:'d.m.Y' }}" title="{{ item.meeting.organization.name }}" href="{{ sitzung_url }}" state="past">
+                    TOP {{ item.number }}: {{ item.name }}{% if item.vote_result != "pending" %} · Ergebnis: {{ item.get_vote_result_display }}{% endif %}
+                </c-insight.timeline-entry>
+                {% endfor %}
+            </c-insight.timeline>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% include "session/partials/file_section.html" with file_target_type="paper" file_target_id=paper.id %}
+    </div>
+
+    {% include "session/neu/_vorlage_seite.html" %}
+</div>
+{% endblock %}

@@ -14,6 +14,7 @@ import { insightShell } from '../alpine/insight-shell'
 import { kommunenWahl } from '../alpine/kommunen-wahl'
 import { meetingCockpit } from '../alpine/meeting-cockpit'
 import { neighborhoodApp } from '../alpine/neighborhood'
+import { workGruppe, workPerson, workRahmen } from '../alpine/work-rahmen'
 import { installActions } from './actions'
 import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
 import { showToast, toastManager } from './alpine/toast'
@@ -25,6 +26,7 @@ import { initMeetingMap } from './meeting-map'
 import { initPaperMap } from './paper-map'
 import { initSearchPlaceMap } from './search-place-map'
 import { registerBookmarksStore } from './stores/bookmarks'
+import { installTagesordnungSortieren } from './tagesordnung-sortieren'
 
 // ---- HTMX --------------------------------------------------------------------
 setupHtmx()
@@ -71,6 +73,15 @@ if (document.documentElement.dataset.portal === 'insight') {
   } catch (error) {
     console.warn('Karte im Ortsband nicht gezeichnet', error)
   }
+}
+
+if (document.documentElement.dataset.portal === 'session') {
+  // Neuer Rahmen des Sitzungsdienstes (Issue #944): dieselben Komponenten wie der Rahmen von Work (Leiste, Mandant
+  // wechseln, Blatt „Mehr“, Personenmenü); Tagesordnung per Ziehen umsortieren ohne Inline-Skript
+  Alpine.data('workRahmen', workRahmen)
+  Alpine.data('workGruppe', workGruppe)
+  Alpine.data('workPerson', workPerson)
+  installTagesordnungSortieren()
 }
 
 // Mobile: Seitenleiste nach Navigation schließen (Layouts halten `sidebarOpen` am <html>)

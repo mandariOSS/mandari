@@ -1,0 +1,13 @@
+{% comment %}
+Reiter eines Bereichs über den vorhandenen Listen (Issue #944, wie Work): Sitzungen „Alle Sitzungen · Kalender ·
+Jahresplanung · Archiv“, Vorlagen „Alle Vorlagen · Zu prüfen · Meine Mitzeichnungen“ (mit Zahl der offenen Arbeit),
+Beschlüsse „Beschlussregister · Umlaufbeschlüsse“. Nur auf den Listen selbst. Baustein c-rahmen.reiter, am Handy
+waagerecht verschiebbar, nicht im Druck.
+{% endcomment %}
+{% if session_rahmen.reiter %}
+<c-rahmen.reiter label="{{ session_rahmen.reiter_label }}" class="rahmen-zeile bg-band-hell">
+    {% for r in session_rahmen.reiter %}
+    <c-rahmen.reiter-link href="{{ r.url }}" :aktiv="r.aktiv" current="{{ r.current }}">{{ r.label }}{% if r.zahl %}<span class="ml-1.5 tabular-nums text-gray-600 dark:text-gray-400"><span class="sr-only">, </span>{{ r.zahl }}<span class="sr-only"> offen</span></span>{% endif %}</c-rahmen.reiter-link>
+    {% endfor %}
+</c-rahmen.reiter>
+{% endif %}

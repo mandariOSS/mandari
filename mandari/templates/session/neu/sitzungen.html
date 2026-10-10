@@ -1,0 +1,86 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Sitzungen im neuen Rahmen (Issue #944, Bereich Sitzungen, Reiter „Alle Sitzungen“): Kopfband mit Zahl und der einen
+Hauptaktion „Neue Sitzung“, Filter wie bisher (Suche, Gremium, Körperschaft, Status, Wahlperiode; Parameter q,
+organization, body, state, term, from, to, page), darunter die Sitzungen als Liste ohne Tabelle: Datum, Titel, Gremien,
+Ort und Stand stapeln sich am Handy, statt seitlich überzulaufen. Kontext: MeetingListView; die bisherige Seite bleibt
+session/meetings/list.html.
+{% endcomment %}
+
+{% block page_title %}Sitzungen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Sitzungen" text="{{ paginator.count }} Sitzung{{ paginator.count|pluralize:'en' }}{% if request.GET.q or request.GET.organization or request.GET.state or request.GET.term or request.GET.body or request.GET.from or request.GET.to %} für die gewählten Filter{% endif %}, die neuesten zuerst." dicht>
+    {% if "create_meetings" in permission_checker.permissions %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'session:meeting_create' tenant_slug=tenant_slug %}" size="sm" icon="plus">Neue Sitzung</c-ui.button></c-slot>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<form method="get" role="search" aria-label="Sitzungen filtern" class="flex flex-wrap items-center gap-2" data-testid="sitzungen-filter">
+    <label for="filter-suche" class="sr-only">Sitzung suchen</label>
+    <span class="relative block basis-full sm:basis-64 sm:flex-1 min-w-0 max-w-md">
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden="true"></i>
+        <input id="filter-suche" type="search" name="q" value="{{ request.GET.q }}" placeholder="Sitzung oder Gremium suchen"
+               class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    </span>
+    <label for="filter-gremium" class="sr-only">Gremium</label>
+    <select id="filter-gremium" name="organization" class="h-9 min-w-0 flex-1 basis-40 sm:flex-none sm:max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Gremien</option>
+        {% include "session/partials/organization_options.html" with groups=organization_groups organizations=organizations selected=request.GET.organization %}
+    </select>
+    {% include "session/partials/body_filter.html" %}
+    <label for="filter-status" class="sr-only">Status</label>
+    <select id="filter-status" name="state" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Status</option>
+        {% for value, label in meeting_states %}<option value="{{ value }}" {% if request.GET.state == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% if legislative_terms %}
+    <label for="filter-periode" class="sr-only">Wahlperiode</label>
+    <select id="filter-periode" name="term" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Wahlperioden</option>
+        {% for term in legislative_terms %}<option value="{{ term.id }}" {% if selected_term == term.id|stringformat:"s" %}selected{% endif %}>{{ term.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <c-ui.button type="submit" variant="secondary" size="sm">Filtern</c-ui.button>
+    {% if request.GET.q or request.GET.organization or request.GET.state or request.GET.term or request.GET.body %}
+    <c-ui.textlink href="{% url 'session:meetings' tenant_slug=tenant_slug %}" class="text-sm">Filter zurücksetzen</c-ui.textlink>
+    {% endif %}
+</form>
+
+{% if meetings %}
+<ul class="mt-4 border-t border-gray-200 dark:border-gray-800" data-testid="sitzungsliste">
+    {% for meeting in meetings %}
+    <li class="relative grid grid-cols-[5.5rem_minmax(0,1fr)] md:grid-cols-[6.5rem_minmax(0,1fr)_11rem] gap-x-4 gap-y-1 py-3 border-b border-gray-200 dark:border-gray-800 hover:bg-band-grau/60 {% if meeting.cancelled %}text-gray-500{% endif %}">
+        <p class="tabular-nums leading-tight pl-1">
+            <span class="block text-sm font-semibold {% if meeting.cancelled %}text-gray-500 line-through{% else %}text-gray-900 dark:text-white{% endif %}">{{ meeting.start|date:"d.m.Y" }}</span>
+            <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ meeting.start|date:"D" }}, {{ meeting.start|date:"H:i" }}</span>
+        </p>
+        <div class="min-w-0">
+            <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+               class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0 {% if meeting.cancelled %}line-through{% endif %}">{{ meeting.name }}</a>
+            <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400 break-words">
+                {{ meeting.organizations_label }}{% if meeting.is_joint %} (gemeinsame Sitzung){% endif %}{% if body_choice.active and meeting.organization.body %} · {{ meeting.organization.body.label }}{% endif %}{% if meeting.location %} · {{ meeting.location }}{% endif %}
+            </p>
+            {% if not meeting.is_public %}<p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</p>{% endif %}
+        </div>
+        <p class="col-start-2 md:col-start-3 md:row-start-1 text-sm text-gray-700 dark:text-gray-300">
+            {% if meeting.cancelled %}{% include "session/neu/_status.html" with wert="cancelled" text="Abgesagt" %}{% else %}{% include "session/neu/_status.html" with wert=meeting.meeting_state text=meeting.get_meeting_state_display %}{% endif %}
+        </p>
+    </li>
+    {% endfor %}
+</ul>
+{% include "session/neu/_seiten.html" %}
+{% else %}
+<div class="mt-8 max-w-xl">
+    <p class="font-medium text-gray-900 dark:text-white">Keine Sitzungen gefunden</p>
+    <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+        {% if request.GET.q or request.GET.organization or request.GET.state or request.GET.term or request.GET.from or request.GET.to %}Für diese Filter gibt es keine Sitzung. <c-ui.textlink href="{% url 'session:meetings' tenant_slug=tenant_slug %}">Filter zurücksetzen</c-ui.textlink>
+        {% elif "create_meetings" in permission_checker.permissions %}Legen Sie die erste Sitzung an. <c-ui.textlink href="{% url 'session:meeting_create' tenant_slug=tenant_slug %}">Erste Sitzung anlegen</c-ui.textlink>
+        {% else %}Es sind noch keine Sitzungen vorhanden.{% endif %}
+    </p>
+</div>
+{% endif %}
+{% endblock %}

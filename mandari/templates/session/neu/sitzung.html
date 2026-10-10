@@ -1,0 +1,85 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Sitzung im neuen Rahmen (Issue #944): Kopfband mit Gremium, Termin, Ort, Stand und der einen Hauptaktion (Cockpit bzw.
+Live-Ansicht), daneben Ladung und Bearbeiten. Im Mittelpunkt die Tagesordnung (öffentlicher und nichtöffentlicher Teil,
+Aktionen je Punkt als Knöpfe mit 32 px, am Handy unter dem Punkt; Umsortieren per Ziehen ohne Inline-Skript,
+frontend/js/tagesordnung-sortieren.ts), darunter die Anwesenheit. Rechts Angaben, Unterlagen, Niederschrift,
+Sitzungsmappe und Anlagen (session/neu/_sitzung_seite.html). Alle Aktionen der bisherigen Seite bleiben erreichbar;
+Rechte und Kontext wie MeetingDetailView. Die bisherige Seite bleibt session/meetings/detail.html.
+{% endcomment %}
+
+{% block page_title %}{{ meeting.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume>{{ meeting.name|truncatechars:60 }}, {{ meeting.start|date:"d.m.Y" }}</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{{ meeting.name }}" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:meetings' tenant_slug=tenant_slug %}">Sitzungen</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400">{{ meeting.organizations_label }}{% if meeting.is_joint %} · gemeinsame Sitzung{% endif %}</p>
+    </c-slot>
+    <c-slot name="aktionen">
+        {% if "edit_meetings" in permission_checker.permissions %}
+        <c-ui.button href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="send" class="{% if meeting.invitation_overdue %}!text-red-700 dark:!text-red-400{% endif %}">Ladung</c-ui.button>
+        <c-ui.button href="{% url 'session:meeting_edit' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="pencil">Bearbeiten</c-ui.button>
+        {% endif %}
+        <c-ui.button href="{% url 'session:meeting_cockpit' tenant_slug=tenant_slug meeting_id=meeting.id %}" size="sm" icon="monitor-play" data-testid="cockpit-link">{% if "conduct_meetings" in permission_checker.permissions %}Cockpit{% else %}Live-Ansicht{% endif %}</c-ui.button>
+    </c-slot>
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300" data-testid="sitzung-kopf">
+        <span>{{ meeting.start|date:"l, j. F Y" }}, {{ meeting.start|date:"H:i" }}{% if meeting.end %}–{{ meeting.end|date:"H:i" }}{% endif %} Uhr</span>
+        {% if meeting.location %}<span>{{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}</span>{% endif %}
+        <span>{% if meeting.cancelled %}{% include "session/neu/_status.html" with wert="cancelled" text="Abgesagt" %}{% else %}{% include "session/neu/_status.html" with wert=meeting.meeting_state text=meeting.get_meeting_state_display %}{% endif %}</span>
+        {% if not meeting.is_public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+    </p>
+    {% if format_info %}<div class="max-w-3xl">{% include "session/meetings/_format_panel.html" %}</div>{% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <div class="min-w-0 space-y-10">
+        {% with a=agenda_public|length b=agenda_non_public|length %}{% with anzahl=a|add:b %}
+        <c-rahmen.abschnitt titel="Tagesordnung" titel_id="tagesordnung-titel" zusatz="{% if anzahl %}{{ anzahl }} Punkt{{ anzahl|pluralize:'e' }}{% endif %}" data-testid="tagesordnung">
+            {% if protocol_locked %}
+            <c-slot name="link"><span class="inline-flex items-center gap-1 text-gray-600 dark:text-gray-400" data-testid="tagesordnung-gesperrt"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Niederschrift genehmigt, schreibgeschützt</span></c-slot>
+            {% elif agenda_can_edit %}
+            <c-slot name="link"><button type="button" hx-get="{% url 'session:agenda_item_create' tenant_slug=tenant_slug meeting_id=meeting.id %}" hx-target="#agenda-form" hx-swap="innerHTML"
+                    class="inline-flex items-center gap-1 min-h-8 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+                <i data-lucide="plus" class="w-4 h-4" aria-hidden="true"></i>TOP hinzufügen
+            </button></c-slot>
+            {% endif %}
+            <div id="agenda-form"></div>
+            {% if agenda_templates %}{% include "session/meetings/_agenda_template.html" %}{% endif %}
+
+            {% if agenda_public or agenda_non_public %}
+            <div {% if agenda_can_edit %}data-tagesordnung-reihenfolge="{% url 'session:agenda_reorder' tenant_slug=tenant_slug meeting_id=meeting.id %}"{% endif %}>
+                <h3 class="mt-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Öffentlicher Teil</h3>
+                <ol class="mt-1 border-t border-gray-200 dark:border-gray-800" id="agenda-list-public" data-agenda-section="public">
+                    {% for item in agenda_public %}
+                    {% include "session/neu/_top.html" %}
+                    {% empty %}
+                    <li class="py-3 text-sm text-gray-600 dark:text-gray-400">Keine öffentlichen Tagesordnungspunkte.</li>
+                    {% endfor %}
+                </ol>
+                {% if agenda_non_public %}
+                <h3 class="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlicher Teil</h3>
+                <ol class="mt-1 border-t border-gray-200 dark:border-gray-800" id="agenda-list-nonpublic" data-agenda-section="nonpublic">
+                    {% for item in agenda_non_public %}
+                    {% include "session/neu/_top.html" %}
+                    {% endfor %}
+                </ol>
+                {% endif %}
+            </div>
+            {% else %}
+            <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">Noch keine Tagesordnungspunkte.</p>
+            {% endif %}
+        </c-rahmen.abschnitt>
+        {% endwith %}{% endwith %}
+
+        {# Anwesenheit (Issues #30, #139), im neuen Rahmen ohne Kasten #}
+        {% include "session/meetings/_attendance.html" %}
+    </div>
+
+    {% include "session/neu/_sitzung_seite.html" %}
+</div>
+{% endblock %}

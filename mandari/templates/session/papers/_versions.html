@@ -2,11 +2,16 @@
 Fassungen einer Vorlage in der Seitenleiste (Issue #226): beschlossene und neueste Fassung, Link zu
 Übersicht und Vergleich, „Fassung sichern“. Kontext: paper, version_latest, version_resolved, version_can_save.
 {% endcomment %}
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" data-testid="fassungen">
+<div class="{% if not session_neues_design %}bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6{% endif %}" data-testid="fassungen">
+    {% if session_neues_design %}
+    {# Neues Erscheinungsbild (Issue #944): Abschnitt ohne Kasten #}
+    <h2 class="mb-2 text-base font-semibold text-gray-900 dark:text-white">Fassungen</h2>
+    {% else %}
     <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
         <i data-lucide="history" class="w-5 h-5 text-indigo-500" aria-hidden="true"></i>
         Fassungen
     </h3>
+    {% endif %}
     {% if version_resolved %}
     <p class="mb-2">
         <a href="{% url 'session:paper_version_detail' tenant_slug=tenant_slug paper_id=paper.id number=version_resolved.number %}"
