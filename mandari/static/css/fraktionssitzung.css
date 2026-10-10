@@ -1006,6 +1006,17 @@
     .fs-prot-kopf {
       padding-left: 16px;
     }
+    /* Schmal: „Mehr“ in eigener Zeile rechts, damit gekürzte Verlaufseinträge nicht an die Zielfläche reichen (WCAG 2.5.8) */
+    .fs-top-kopf {
+      flex-wrap: wrap;
+      row-gap: 2px;
+    }
+    .fs-top-text {
+      flex-basis: 100%;
+    }
+    .fs-kopf-mehr {
+      margin-left: auto;
+    }
     .fs-dok,
     .fs-prot-flaeche {
       padding: 16px;
