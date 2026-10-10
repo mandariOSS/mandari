@@ -6,6 +6,9 @@
  * Anmerkungen, Anhänge, Zusammenfassung und Autosave. Die Konfiguration kommt aus dem
  * View (`prepare_config`) per `{{ prepare_config|json_script:"prepare-config" }}`.
  *
+ * Gespeichert wird über den Speicherdienst (frontend/js/speichern.ts, #854). Was der Server noch nicht bestätigt
+ * hat, liegt zusätzlich im Browser (frontend/js/eingaben-sicherung.ts) und wird nach einem Neuladen angeboten.
+ *
  * Markup: `templates/work/meetings/prepare.html` und die `_prepare_*`-Partials.
  * Icons werden vom MutationObserver (frontend/js/icons.ts) nachgezogen.
  */
@@ -14,6 +17,7 @@ import type { Editor } from '@tiptap/core'
 import type { FormatState } from '../editor/index'
 import { defineComponent } from '../js/alpine/component'
 import { confirmAction } from '../js/alpine/confirm-dialog'
+import { Eingabensicherung, type Felder, type SicherungsZiel, type Wert } from '../js/eingaben-sicherung'
 import { readJsonScript } from '../js/json-script'
 import { type JsonAntwort, type SpeicherAuftrag, Speicherdienst, type SpeicherStand } from '../js/speichern'
 
@@ -86,6 +90,8 @@ export interface PreparedItem {
 export interface PrepareConfig {
   orgSlug: string
   meetingId: string
+  /** Kennung des Kontos für die Sicherung im Browser (nie der Name) */
+  accountId: string
   currentUser: string
   positionLabels: Record<string, string>
   orgNotes: string
@@ -160,6 +166,18 @@ interface RealtimeMessage {
 
 type RealtimeMode = 'ws' | 'poll' | 'off'
 
+/** Nicht gespeicherte Eingaben aus einem früheren Aufruf, zur Übernahme angeboten */
+export interface SicherungsAngebot {
+  /** TOP-Kennung bzw. `SITZUNGSNOTIZEN` */
+  top: string
+  /** „TOP 2“ bzw. „Sitzungsnotizen“ */
+  titel: string
+  /** Bezeichnung der Felder, z. B. „Begründung“, „Notiz“ */
+  felder: string[]
+  bereiche: Record<string, Felder>
+  zeit: number
+}
+
 const CONFIG_ID = 'prepare-config'
 
 const POSITION_DOTS: Record<string, string> = {
@@ -191,6 +209,39 @@ const POSITIONSFELDER: Record<string, string> = {
   is_final: 'Endgültig-Markierung',
 }
 
+/** Sicherung im Browser: Ziel der Sitzungsnotizen (kein TOP) */
+const SITZUNGSNOTIZEN = 'sitzung'
+
+type GesicherteEigenschaft =
+  | 'position'
+  | 'reasoning'
+  | 'outcome'
+  | 'isFinal'
+  | 'privateNote'
+  | 'speechContent'
+  | 'speechTitle'
+  | 'speechDuration'
+  | 'speechShared'
+
+/** Gesicherte Felder („Bereich.Feld“ wie gesendet) mit ihrem Platz am TOP und ihrer Bezeichnung */
+const GESICHERTE_FELDER: Record<string, { eigenschaft: GesicherteEigenschaft; name: string }> = {
+  'position.position': { eigenschaft: 'position', name: 'Position' },
+  'position.reasoning': { eigenschaft: 'reasoning', name: 'Begründung' },
+  'position.outcome': { eigenschaft: 'outcome', name: 'Ergebnis' },
+  'position.is_final': { eigenschaft: 'isFinal', name: 'Endgültig-Markierung' },
+  'notiz.content': { eigenschaft: 'privateNote', name: 'Notiz' },
+  'rede.content': { eigenschaft: 'speechContent', name: 'Redebeitrag' },
+  'rede.title': { eigenschaft: 'speechTitle', name: 'Titel des Redebeitrags' },
+  'rede.estimated_duration': { eigenschaft: 'speechDuration', name: 'Redezeit' },
+  'rede.is_shared': { eigenschaft: 'speechShared', name: 'Teilen des Redebeitrags' },
+}
+
+/** Gesicherter Wert schon auf dem Server? Leerzeichen am Rand zählen nicht. */
+function gleicherStand(server: unknown, gesichert: Wert): boolean {
+  if (typeof server === 'string' && typeof gesichert === 'string') return server.trim() === gesichert.trim()
+  return server === gesichert
+}
+
 const SUMMARY_ERROR = '<p class="text-sm text-red-600">Zusammenfassung konnte nicht geladen werden.</p>'
 
 function readConfig(): PrepareConfig {
@@ -218,7 +269,9 @@ export const preparationApp = defineComponent(() => {
   const base = `/work/${config.orgSlug}/meetings`
   // Außerhalb der Reaktivität; meldet seinen Stand an die Komponente, sobald init() die Wache startet
   let speicherstandMelden: (stand: SpeicherStand) => void = () => {}
-  const speicher = new Speicherdienst({ beiAenderung: (stand) => speicherstandMelden(stand) })
+  // Ungespeicherte Eingaben je Konto, Sitzung und TOP im Browser, bis der Server sie bestätigt
+  const sicherung = new Eingabensicherung(config.accountId || '', config.meetingId)
+  const speicher = new Speicherdienst({ beiAenderung: (stand) => speicherstandMelden(stand), sicherung })
 
   return {
     // ---------- Daten ----------
@@ -245,6 +298,8 @@ export const preparationApp = defineComponent(() => {
     saveAnmeldungZiel: '',
     /** Endgültig gescheitert (wird nicht wiederholt) */
     saveErrorText: '',
+    /** Nicht gespeicherte Eingaben aus einem früheren Aufruf (Sicherung im Browser), zur Übernahme angeboten */
+    sicherungAngebot: [] as SicherungsAngebot[],
     _timers: {} as Record<string, number>,
     _pending: {} as Record<string, () => void>,
 
@@ -335,10 +390,23 @@ export const preparationApp = defineComponent(() => {
         }
         return 'Nicht gespeichert: Server gerade nicht erreichbar. Bitte die Seite offen lassen, es wird automatisch erneut versucht.'
       }
-      if (this.pendingSaves > 0) return 'Speichert…'
+      if (this.pendingSaves > 0) return 'Wird gespeichert …'
       if (this.saveErrorText) return this.saveErrorText
-      if (this.lastSavedAt) return 'Gespeichert ' + this.lastSavedAt
+      if (this.lastSavedAt) return 'Gespeichert um ' + this.lastSavedAt
       return 'Änderungen werden automatisch gespeichert'
+    },
+    /** Hinweis auf nicht gespeicherte Eingaben aus einem früheren Aufruf; leer, wenn es keine gibt */
+    get sicherungText(): string {
+      const angebot = this.sicherungAngebot
+      if (angebot.length === 0) return ''
+      const zeit = new Date(Math.max(...angebot.map((a) => a.zeit)))
+      const datum = zeit.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' })
+      const uhrzeit = zeit.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+      const teile = angebot
+        .slice(0, 3)
+        .map((a) => (a.top === SITZUNGSNOTIZEN ? a.titel : `${a.titel} (${a.felder.join(', ')})`))
+      if (angebot.length > 3) teile.push(`${angebot.length - 3} weitere`)
+      return `Nicht gespeicherte Eingaben vom ${datum} um ${uhrzeit}: ${teile.join('; ')}.`
     },
     /** Ziel des Hinweises bei abgelaufener Anmeldung bzw. fehlendem zweiten Faktor (öffnet im neuen Tab) */
     get anmeldeAdresse(): string {
@@ -463,6 +531,7 @@ export const preparationApp = defineComponent(() => {
      */
     startSpeicherwache(): void {
       speicherstandMelden = (stand) => this.uebernehmeSpeicherstand(stand)
+      this.sicherungPruefen()
       // Echtzeit erst beim tatsächlichen Verlassen abbauen (nicht in beforeunload: bricht man dort ab, bliebe die
       // Seite ohne Echtzeit); aus dem Zurück-Speicher des Browsers wieder verbinden
       window.addEventListener('pagehide', () => this.teardownRealtime())
@@ -511,6 +580,105 @@ export const preparationApp = defineComponent(() => {
       }
     },
 
+    // ---------- Sicherung im Browser (#854) ----------
+    /** Wert eines gesicherten Felds auf dem Server (Stand beim Laden); `undefined`, wenn es nicht (mehr) passt */
+    serverWert(item: PreparedItem | null, bereich: string, feld: string): unknown {
+      if (bereich === SITZUNGSNOTIZEN) return feld === 'notes' ? this.orgNotes : undefined
+      const platz = GESICHERTE_FELDER[`${bereich}.${feld}`]
+      if (!item || !platz) return undefined
+      // Mit verknüpftem Dokument kommt der Redetext aus dem Dokument
+      if (platz.eigenschaft === 'speechContent' && item.speechLinkedDocument) return undefined
+      return item[platz.eigenschaft]
+    },
+
+    /**
+     * Gesicherte Eingaben aus einem früheren Aufruf prüfen: Was der Server schon hat (z. B. beim Verlassen noch
+     * angekommen) und was nicht mehr passt (TOP weg, unbekanntes Feld), wird vergessen; der Rest wird angeboten.
+     */
+    sicherungPruefen(): void {
+      const angebot: SicherungsAngebot[] = []
+      for (const { top, eintrag } of sicherung.alle()) {
+        const item = this.items.find((i) => i.id === top) || null
+        if (!item && top !== SITZUNGSNOTIZEN) {
+          sicherung.entfernen(top)
+          continue
+        }
+        const bereiche: Record<string, Felder> = {}
+        const felder: string[] = []
+        for (const [bereich, werte] of Object.entries(eintrag.bereiche)) {
+          const offen: Felder = {}
+          const erledigt: Felder = {}
+          for (const [feld, wert] of Object.entries(werte)) {
+            const server = this.serverWert(item, bereich, feld)
+            if (server === undefined || gleicherStand(server, wert)) {
+              erledigt[feld] = wert
+            } else {
+              offen[feld] = wert
+              felder.push(GESICHERTE_FELDER[`${bereich}.${feld}`]?.name || 'Sitzungsnotizen')
+            }
+          }
+          sicherung.vergessen({ top, bereich }, erledigt)
+          if (Object.keys(offen).length > 0) bereiche[bereich] = offen
+        }
+        if (felder.length === 0) continue
+        const titel = item ? `TOP ${item.number}` : 'Sitzungsnotizen'
+        angebot.push({ top, titel, felder, bereiche, zeit: eintrag.zeit })
+      }
+      // In der Reihenfolge der Tagesordnung, Sitzungsnotizen zuerst
+      const rang = (top: string) => this.items.findIndex((i) => i.id === top)
+      this.sicherungAngebot = angebot.sort((a, b) => rang(a.top) - rang(b.top))
+    },
+
+    /** Angebotene Eingaben in die Felder übernehmen und speichern */
+    sicherungUebernehmen(): void {
+      const angebot = this.sicherungAngebot
+      this.sicherungAngebot = []
+      for (const { top, bereiche } of angebot) {
+        if (top === SITZUNGSNOTIZEN) {
+          const notizen = bereiche[SITZUNGSNOTIZEN]?.notes
+          if (typeof notizen === 'string') {
+            this.orgNotes = notizen
+            void this.saveOrgNotes()
+          }
+          continue
+        }
+        const item = this.items.find((i) => i.id === top)
+        if (!item) continue
+        for (const [bereich, werte] of Object.entries(bereiche)) {
+          const gesetzt: Felder = {}
+          for (const [feld, wert] of Object.entries(werte)) {
+            const platz = GESICHERTE_FELDER[`${bereich}.${feld}`]
+            // Nur Werte der erwarteten Art (die Sicherung liegt im Browser und könnte verändert sein)
+            if (!platz || typeof item[platz.eigenschaft] !== typeof wert) continue
+            Object.assign(item, { [platz.eigenschaft]: wert })
+            gesetzt[feld] = wert
+          }
+          if (Object.keys(gesetzt).length === 0) continue
+          if (bereich === 'position') void this.savePositionFields(item, gesetzt)
+          else if (bereich === 'notiz') void this.savePrivateNote(item)
+          else if (bereich === 'rede') {
+            item.hasSpeechNote = true
+            void this.saveSpeechFields(item, gesetzt)
+          }
+        }
+        if (item.id === this.selectedItemId) {
+          this.speechDurationText = this.formatDuration(item.speechDuration || 0)
+          if (bereiche.rede) {
+            this.speechOpen = true
+            void this.syncSpeechEditor()
+          }
+        }
+      }
+    },
+
+    /** Angebotene Eingaben verwerfen (nur genau diese Werte; neuere Eingaben dieser Seite bleiben gesichert) */
+    sicherungVerwerfen(): void {
+      for (const { top, bereiche } of this.sicherungAngebot) {
+        for (const [bereich, werte] of Object.entries(bereiche)) sicherung.vergessen({ top, bereich }, werte)
+      }
+      this.sicherungAngebot = []
+    },
+
     /**
      * Einmal senden (Anlegen, Löschen, Hochladen, Verknüpfen): eine Wiederholung könnte doppelt anlegen.
      * Reiht sich hinter laufende bzw. wartende Aktualisierungen derselben Adresse ein.
@@ -524,15 +692,17 @@ export const preparationApp = defineComponent(() => {
 
     /**
      * Felder eines Ziels aktualisieren (Position, Notiz, Redebeitrag …): je Adresse der Reihe nach, Felder einer
-     * wartenden Aktualisierung werden zusammengeführt, bei Störung wird automatisch wiederholt. `null` auch, wenn
-     * ein späterer Stand diesen übernommen hat.
+     * wartenden Aktualisierung werden zusammengeführt, bei Störung wird automatisch wiederholt. Mit `ziel` liegen
+     * die Felder bis zur Bestätigung zusätzlich im Browser. `null` auch, wenn ein späterer Stand diesen übernommen
+     * hat.
      */
     async apiSaveStand(
       url: string,
       fields: Record<string, unknown>,
       bezeichnung: SpeicherAuftrag['bezeichnung'],
+      ziel?: SicherungsZiel,
     ): Promise<JsonResponse | null> {
-      const ergebnis = await speicher.senden({ url, body: fields, wiederholbar: true, bezeichnung })
+      const ergebnis = await speicher.senden({ url, body: fields, wiederholbar: true, bezeichnung, sicherung: ziel })
       if (ergebnis.ok) return ergebnis.daten
       if (!ergebnis.ersetzt) console.error('Speichern fehlgeschlagen:', url, ergebnis.meldung)
       return null
@@ -563,7 +733,10 @@ export const preparationApp = defineComponent(() => {
         `${Object.keys(body)
           .map((feld) => POSITIONSFELDER[feld] || feld)
           .join(', ')} zu TOP ${item.number}`
-      await this.apiSaveStand(`${base}/${this.meetingId}/position/${item.id}/`, fields, benenne)
+      await this.apiSaveStand(`${base}/${this.meetingId}/position/${item.id}/`, fields, benenne, {
+        top: item.id,
+        bereich: 'position',
+      })
     },
 
     // ---------- Private Notiz ----------
@@ -572,12 +745,16 @@ export const preparationApp = defineComponent(() => {
         `${base}/${this.meetingId}/private-note/${item.id}/`,
         { content: item.privateNote || '' },
         `Notiz zu TOP ${item.number}`,
+        { top: item.id, bereich: 'notiz' },
       )
     },
 
     // ---------- Org-Sitzungsnotizen ----------
     async saveOrgNotes(): Promise<void> {
-      await this.apiSaveStand(`${base}/${this.meetingId}/prepare/`, { notes: this.orgNotes || '' }, 'Sitzungsnotizen')
+      await this.apiSaveStand(`${base}/${this.meetingId}/prepare/`, { notes: this.orgNotes || '' }, 'Sitzungsnotizen', {
+        top: SITZUNGSNOTIZEN,
+        bereich: SITZUNGSNOTIZEN,
+      })
     },
 
     // ---------- Redebeitrag ----------
@@ -650,7 +827,10 @@ export const preparationApp = defineComponent(() => {
     },
 
     async saveSpeechFields(item: PreparedItem, fields: Record<string, unknown>): Promise<void> {
-      const data = await this.apiSaveStand(this.speechUrl(item), fields, `Redebeitrag zu TOP ${item.number}`)
+      const data = await this.apiSaveStand(this.speechUrl(item), fields, `Redebeitrag zu TOP ${item.number}`, {
+        top: item.id,
+        bereich: 'rede',
+      })
       if (data?.success) {
         item.hasSpeechNote = true
         if (data.speech) {
@@ -683,6 +863,8 @@ export const preparationApp = defineComponent(() => {
       if (!item) return
       const data = await this.apiSave(this.speechUrl(item), undefined, 'DELETE')
       if (data?.success) {
+        // Gelöscht: keine alte Eingabe mehr anbieten
+        sicherung.verwerfen({ top: item.id, bereich: 'rede' })
         item.speechTitle = ''
         item.speechContent = ''
         item.speechDuration = 0

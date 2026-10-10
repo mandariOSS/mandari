@@ -3,8 +3,13 @@
  * Bestätigungsdialog für `hx-confirm`, Server-Toasts per `HX-Trigger` und deklarative
  * Nachbearbeitung statt `hx-on`-Inline-JavaScript (#172, CSP ohne unsafe-eval):
  *
- * - `data-autosave="panel"`: vor der Anfrage `panel-autosaving`, nach Erfolg `panel-autosaved`
- *   als Window-Event (Anzeige „wird gespeichert …“ in Alpine-Komponenten).
+ * - `data-autosave="panel"` am automatisch speichernden Formular: vor dessen Anfrage `panel-autosaving`, nach Erfolg
+ *   `panel-autosaved`, sonst `panel-autosave-failed` (Detail: Grund und Erklärung, frontend/js/autosave.ts) als
+ *   Window-Event (Anzeige in frontend/alpine/autosave-anzeige.ts). Auch 4xx und eine abgelaufene Anmeldung gelten als
+ *   gescheitert (#854); die Pflicht zum zweiten Faktor lädt die Seite nicht neu (die Eingabe bliebe sonst nicht
+ *   erhalten). Gescheiterte Formulare senden erneut (Ereignis `autosave-erneut` in ihrem `hx-trigger`): auf „Erneut
+ *   versuchen“ (`autosave-wiederholen`), nach neuer Anmeldung, sobald die Seite wieder Fokus hat, und wieder online.
+ *   Knöpfe im Formular mit eigener Anfrage (Checkliste, Kommentar …) zählen nicht dazu.
  * - `data-after-request="reload|reset|follow-href|notification-read|close-dialog"` nach erfolgreicher Anfrage:
  *   Seite neu laden; Formular zurücksetzen (optional `data-blur="<Selektor>"`); dem eigenen
  *   `href` folgen, sonst `notification:marked-read` auslösen; Benachrichtigung als gelesen
@@ -15,7 +20,8 @@
 import htmx from 'htmx.org'
 import { confirmAction } from './alpine/confirm-dialog'
 import { showToast } from './alpine/toast'
-import { csrfToken } from './csrf'
+import { type AutosaveFehler, bewerteAutosave } from './autosave'
+import { csrfToken, csrfTokenAktuell } from './csrf'
 
 export { csrfToken }
 
@@ -40,12 +46,69 @@ function focusSwapped(target: EventTarget | null): void {
 interface RequestDetail {
   successful?: boolean
   elt?: Element
+  xhr?: XMLHttpRequest
 }
 
 function requestSource(event: Event): HTMLElement | null {
   const elt = (event as CustomEvent<RequestDetail>).detail?.elt
   const source = elt instanceof HTMLElement ? elt : event.target
   return source instanceof HTMLElement ? source : null
+}
+
+/** Formulare, deren letztes automatisches Speichern scheiterte, mit Grund */
+const gescheitert = new Map<HTMLElement, AutosaveFehler>()
+
+/** Das automatisch speichernde Formular, wenn die Anfrage von ihm selbst kommt */
+function autosaveFormular(event: Event): HTMLElement | null {
+  const source = requestSource(event)
+  return source?.matches('[data-autosave]') ? source : null
+}
+
+function fehlertext(xhr: XMLHttpRequest): string {
+  if (xhr.status < 400) return ''
+  try {
+    return xhr.responseText.slice(0, 2000)
+  } catch {
+    return ''
+  }
+}
+
+/** Ergebnis eines automatischen Speicherns melden (Erfolg nur, wenn die Antwort wirklich gespeichert hat) */
+function meldeAutosave(form: HTMLElement, detail: RequestDetail | undefined): void {
+  const xhr = detail?.xhr
+  const fehler = xhr
+    ? bewerteAutosave({
+        status: xhr.status,
+        adresse: xhr.responseURL,
+        umleitung: xhr.getResponseHeader('HX-Redirect'),
+        inhaltstyp: xhr.getResponseHeader('Content-Type') || '',
+        text: fehlertext(xhr),
+        herkunft: window.location.origin,
+      })
+    : null
+  const name = form.dataset.autosave
+  if (!fehler && detail?.successful === true) {
+    gescheitert.delete(form)
+    window.dispatchEvent(new Event(`${name}-autosaved`))
+    return
+  }
+  // Gescheitert ohne erkennbaren Grund (z. B. Antwort nicht verarbeitbar)
+  const grund: AutosaveFehler = fehler ?? {
+    art: 'server',
+    meldung: 'Nicht gespeichert: Fehler auf dem Server. Bitte erneut versuchen.',
+    ziel: '',
+    zielText: '',
+  }
+  gescheitert.set(form, grund)
+  window.dispatchEvent(new CustomEvent<AutosaveFehler>(`${name}-autosave-failed`, { detail: grund }))
+}
+
+/** Gescheiterte automatische Speichervorgänge erneut senden (nur Formulare, die noch auf der Seite sind) */
+function autosaveErneut(passt: (fehler: AutosaveFehler) => boolean): void {
+  for (const [form, fehler] of [...gescheitert]) {
+    if (!form.isConnected) gescheitert.delete(form)
+    else if (passt(fehler)) htmx.trigger(form, 'autosave-erneut')
+  }
 }
 
 function afterRequest(el: HTMLElement): void {
@@ -88,25 +151,38 @@ export function setupHtmx(): void {
   htmx.config.selfRequestsOnly = true
 
   document.body.addEventListener('htmx:beforeRequest', (event) => {
-    const source = requestSource(event)
-    const name = source?.closest<HTMLElement>('[data-autosave]')?.dataset.autosave
+    const name = autosaveFormular(event)?.dataset.autosave
     if (name) window.dispatchEvent(new Event(`${name}-autosaving`))
+  })
+
+  // Pflicht zum zweiten Faktor (204 mit HX-Redirect): Beim automatischen Speichern nicht wegnavigieren, sonst wäre
+  // die Eingabe verloren; stattdessen erklärt die Anzeige, was zu tun ist
+  document.body.addEventListener('htmx:beforeOnLoad', (event) => {
+    const xhr = (event as CustomEvent<RequestDetail>).detail?.xhr
+    if (autosaveFormular(event) && xhr?.getResponseHeader('HX-Redirect')) event.preventDefault()
   })
 
   document.body.addEventListener('htmx:afterRequest', (event) => {
     const source = requestSource(event)
     if (!source) return
-    const successful = (event as CustomEvent<RequestDetail>).detail?.successful === true
-    const autosave = source.closest<HTMLElement>('[data-autosave]')
-    if (autosave && successful) window.dispatchEvent(new Event(`${autosave.dataset.autosave}-autosaved`))
+    const detail = (event as CustomEvent<RequestDetail>).detail
+    const successful = detail?.successful === true
+    const autosave = autosaveFormular(event)
+    if (autosave) meldeAutosave(autosave, detail)
     const after = source.closest<HTMLElement>('[data-after-request]')
     if (after && (successful || after.dataset.afterRequest === 'reload')) afterRequest(after)
   })
 
   document.body.addEventListener('htmx:configRequest', (event) => {
     const detail = (event as CustomEvent<{ headers: Record<string, string> }>).detail
-    detail.headers['X-CSRFToken'] = csrfToken()
+    // Automatisches Speichern: Token aus dem Cookie, damit es nach einer neuen Anmeldung in einem anderen Tab gilt
+    detail.headers['X-CSRFToken'] = autosaveFormular(event) ? csrfTokenAktuell() : csrfToken()
   })
+
+  window.addEventListener('autosave-wiederholen', () => autosaveErneut(() => true))
+  // Zurück aus dem Tab mit der Anmeldung bzw. wieder online: ohne Zutun erneut senden
+  window.addEventListener('focus', () => autosaveErneut((f) => f.art === 'anmeldung' || f.art === 'verbindung'))
+  window.addEventListener('online', () => autosaveErneut((f) => f.art === 'verbindung'))
 
   // Ein Hook für alles Nachgelagerte: Icons werden per MutationObserver ersetzt,
   // hier bleiben Fokus und die Ankündigung für Screenreader.
@@ -121,11 +197,14 @@ export function setupHtmx(): void {
   // zeigte jede Meldung doppelt an (Sitzungscockpit, Issue #140).
 
   // Netzwerk- und Serverfehler sichtbar machen statt still zu scheitern
+  // (automatisches Speichern zeigt Fehler selbst am Formular, siehe meldeAutosave)
   document.body.addEventListener('htmx:responseError', (event) => {
     const status = (event as CustomEvent<{ xhr: XMLHttpRequest }>).detail?.xhr?.status
+    if (autosaveFormular(event)) return
     if (status && status >= 500) showToast('Der Server hat einen Fehler gemeldet. Bitte erneut versuchen.', 'error')
   })
-  document.body.addEventListener('htmx:sendError', () => {
+  document.body.addEventListener('htmx:sendError', (event) => {
+    if (autosaveFormular(event)) return
     showToast('Keine Verbindung zum Server.', 'error')
   })
 

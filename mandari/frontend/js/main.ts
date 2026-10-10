@@ -17,6 +17,7 @@ import { neighborhoodApp } from '../alpine/neighborhood'
 import { installActions } from './actions'
 import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
 import { showToast, toastManager } from './alpine/toast'
+import { alleLoeschen, aufraeumen } from './eingaben-sicherung'
 import { installFormBehaviors } from './form-behaviors'
 import { setupHtmx } from './htmx-setup'
 import { installIconObserver, renderIcons } from './icons'
@@ -32,6 +33,11 @@ setupHtmx()
 installActions()
 // Formularhelfer (URL-Kürzel, abhängige Auswahl, Textbausteine, Fehlerbericht) statt Inline-Skripten
 installFormBehaviors()
+
+// ---- Sicherung ungespeicherter Eingaben im Browser (#854) ---------------------------
+// Nach dem Abmelden (Seite „Abgemeldet“) alle Sicherungen löschen, sonst nur die abgelaufenen (älter als 24 Stunden)
+if (document.querySelector('[data-eingaben-loeschen]')) alleLoeschen()
+else aufraeumen()
 
 // ---- Globals für Templates ----------------------------------------------------
 window.Alpine = Alpine

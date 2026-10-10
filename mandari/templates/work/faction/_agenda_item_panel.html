@@ -6,6 +6,7 @@
 <div x-data="agendaItemPanel"
      @panel-autosaved.window="markSaved()"
      @panel-autosaving.window="markSaving()"
+     @panel-autosave-failed.window="markFailed($event.detail)"
      class="flex flex-col h-full">
 
     {# Kopf mit Auto-Save (Titel, Sichtbarkeit) #}

@@ -143,6 +143,12 @@
         </div>
     </div>
 
+    {# Eingaben, die beim letzten Aufruf nicht mehr gespeichert wurden (Sicherung im Browser, #854) #}
+    <p id="eingaben-sicherung" role="status" x-show="sicherungAngebot.length > 0" x-cloak
+       class="mb-4 px-4 py-2 text-sm text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 rounded-lg">
+        <span x-text="sicherungText"></span>&ensp;<button type="button" class="underline underline-offset-2" @click="sicherungUebernehmen()">Übernehmen</button>&ensp;<button type="button" class="underline underline-offset-2" @click="sicherungVerwerfen()">Verwerfen</button>
+    </p>
+
     <!-- ================= Org-Sitzungsnotizen (aufklappbar) ================= -->
     <div x-show="orgNotesOpen" x-collapse x-cloak class="mb-4">
         <div class="px-4 py-3 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl">
