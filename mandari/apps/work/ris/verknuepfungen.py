@@ -405,16 +405,14 @@ def _umhaengen(
             offen.append(zeile)
 
         if verknuepfung.parken:
-            ziehen, konflikte = _endzustand(umzuege, stehend, offen, pruefen=bool(eindeutig))
-            zuege = [(pk, von, umzuege[von]) for pk, von, _ in ziehen]
-            umgezogen, zurueck = _geparkt_umhaengen(manager, spalte, verknuepfung.parken, zuege)
+            # Wer zieht, entscheidet der Helfer unter Sperre am frischen Stand (auch was seit dem Lesen dazukam)
+            zuege = [(pk, von, umzuege[von]) for pk, von, _ in offen]
+            umgezogen, geblieben = _geparkt_umhaengen(verknuepfung, organisation, zuege)
             for nummer, (pk, von, _nach) in enumerate(zuege):
                 if nummer in umgezogen:
                     ergebnis[von].verschoben.setdefault(name, []).append(str(pk))
-                elif nummer in zurueck:
-                    konflikte.append((pk, von, ()))
-            for pk, von, _ in konflikte:
-                ergebnis[von].konflikte.setdefault(name, []).append(str(pk))
+                elif nummer in geblieben:
+                    ergebnis[von].konflikte.setdefault(name, []).append(str(pk))
             continue
 
         # Schlüssel, die am jeweiligen Objekt belegt sind: im Endzustand nur die bleibenden, sonst die heutigen
@@ -447,93 +445,116 @@ def _umhaengen(
     return ergebnis, dict(vorher)
 
 
-Zeile = tuple[Any, uuid.UUID, tuple[Any, ...]]
+Werte = tuple[Any, ...]
 
 
 def _endzustand(
-    umzuege: Mapping[uuid.UUID, uuid.UUID], stehend: list[Zeile], offen: list[Zeile], *, pruefen: bool
-) -> tuple[list[Zeile], list[Zeile]]:
+    stehend: Iterable[tuple[Any, Werte]], zuege: list[tuple[Any, Any, Werte]], *, pruefen: bool
+) -> tuple[list[int], list[int]]:
     """
-    Wer zieht und wer bleibt, gemessen am Endzustand: Ein Datensatz bleibt, wenn am Ziel schon einer mit denselben
-    Werten steht oder ein früherer dorthin zieht. Wer bleibt, belegt seinen alten Platz; das kann weitere Umzüge
-    dorthin aufhalten, deshalb bis zum Stillstand. Liefert (ziehen, bleiben).
+    Wer zieht und wer bleibt, gemessen am Endzustand. ``stehend``: (Objekt, Werte) der Datensätze, die nicht
+    umziehen; ``zuege``: (von, nach, Werte). Ein Datensatz bleibt, wenn am Ziel einer mit denselben Werten steht
+    oder ein früherer dorthin zieht. Wer bleibt, belegt seinen alten Platz; das kann weitere Umzüge dorthin aufhalten,
+    deshalb bis zum Stillstand. Liefert die Nummern in ``zuege`` (ziehen, bleiben).
     """
 
-    def zaehlt(schluessel: tuple[Any, ...]) -> bool:
+    def zaehlt(schluessel: Werte) -> bool:
         return pruefen and None not in schluessel
 
-    belegt = {(objekt, schluessel) for _pk, objekt, schluessel in stehend if zaehlt(schluessel)}
-    ziehen: list[Zeile] = list(offen)
-    bleiben: list[Zeile] = []
+    belegt = {(objekt, schluessel) for objekt, schluessel in stehend if zaehlt(schluessel)}
+    ziehen = list(range(len(zuege)))
+    bleiben: list[int] = []
     while True:
-        ziele: set[tuple[Any, tuple[Any, ...]]] = set()
-        weiter: list[Zeile] = []
-        aufgehalten: list[Zeile] = []
-        for zeile in ziehen:
-            _pk, von, schluessel = zeile
-            ziel = (umzuege[von], schluessel)
-            if zaehlt(schluessel) and (ziel in belegt or ziel in ziele):
-                aufgehalten.append(zeile)
+        ziele: set[tuple[Any, Werte]] = set()
+        weiter: list[int] = []
+        aufgehalten: list[int] = []
+        for nummer in ziehen:
+            _von, nach, schluessel = zuege[nummer]
+            if zaehlt(schluessel) and ((nach, schluessel) in belegt or (nach, schluessel) in ziele):
+                aufgehalten.append(nummer)
                 continue
             if zaehlt(schluessel):
-                ziele.add(ziel)
-            weiter.append(zeile)
+                ziele.add((nach, schluessel))
+            weiter.append(nummer)
         if not aufgehalten:
-            return weiter, bleiben
+            return weiter, sorted(bleiben)
         bleiben += aufgehalten
-        belegt.update((von, schluessel) for _pk, von, schluessel in aufgehalten if zaehlt(schluessel))
+        belegt.update((zuege[n][0], zuege[n][2]) for n in aufgehalten if zaehlt(zuege[n][2]))
         ziehen = weiter
 
 
 def _geparkt_umhaengen(
-    manager: Any, spalte: str, parken: str, zuege: list[tuple[Any, Any, Any]]
+    verknuepfung: Verknuepfung, organisation: Any, zuege: list[tuple[Any, Any, Any]]
 ) -> tuple[set[int], set[int]]:
     """
-    Hängt Zeilen ``(pk, von, nach)`` um, deren Eindeutigkeit als Bedingung in der Datenbank steht – auch im Tausch,
-    im Ring und in Ketten, wo ein Zwischenstand die Bedingung verletzen würde.
+    Hängt Datensätze ``(pk, von, nach)`` einer Organisation um, deren Eindeutigkeit als Bedingung in der Datenbank
+    steht – auch im Tausch, im Ring und in Ketten, wo ein Zwischenstand die Bedingung verletzen würde.
 
-    Die Zeilen werden gesperrt und zuerst geparkt: Die Spalte ``parken`` wird ``NULL``, damit die Zeile aus der
-    Bedingung fällt (``NULL`` ist nie gleich); der Fremdschlüssel auf das RIS-Objekt bleibt dabei gültig. Dann zieht
-    jede Zeile an ihr Ziel und bekommt ihren Wert in derselben Anweisung zurück. Trifft sie dort auf eine stehende
-    Zeile, kommt sie mit ihrem Wert an den alten Platz zurück. Geht auch das nicht, bleibt alles wie vorher
-    (Savepoint). Die Bedingung bleibt sofort wirksam, auch während des Umhängens.
+    1. Sperren und frisch lesen (``select_for_update``): die umziehenden Zeilen und alles, was der Organisation an
+       den Zielen gehört, auch was seit einem früheren, ungesperrten Lesen dazukam.
+    2. Am Endzustand entscheiden, wer zieht und wer bleibt (``_endzustand``).
+    3. Parken: Die Spalte ``verknuepfung.parken`` wird ``NULL``, damit die Zeile aus der Bedingung fällt (``NULL``
+       ist nie gleich); der Fremdschlüssel auf das RIS-Objekt bleibt gültig.
+    4. Jede geparkte Zeile zieht an ihr Ziel und bekommt ihren Wert in derselben Anweisung zurück. Trifft sie dort
+       doch auf eine Zeile, kommt sie mit ihrem Wert an den alten Platz zurück; geht auch das nicht, setzt ein
+       Savepoint alles zurück. Nie bleibt etwas geparkt. Die Bedingung bleibt sofort wirksam.
 
-    Liefert die Nummern in ``zuege`` (umgezogen, zurück am alten Platz). Zeilen, die nicht mehr an ``von`` hängen,
-    fehlen in beiden.
+    Liefert die Nummern in ``zuege`` (umgezogen, geblieben). Geblieben sind Zeilen, die nach Schritt 2 bleiben oder
+    in Schritt 4 zurückkamen, beim Zurücksetzen alle geparkten. Zeilen, die nicht mehr an ``von`` hängen, fehlen in
+    beiden.
     """
     if not zuege:
         return set(), set()
+    tabelle, spalte, eindeutig = verknuepfung.tabelle()
+    manager = tabelle._base_manager
+    parken = verknuepfung.parken
+    stelle = eindeutig.index(parken)
+    ziele = {nach for _pk, _von, nach in zuege}
+    bleiben: list[int] = []
+    geparkt: list[int] = []
     try:
         with transaction.atomic():
-            werte = {
-                str(pk): wert
-                for pk, wert in manager.select_for_update()
-                .filter(pk__in=[pk for pk, _von, _nach in zuege])
+            zeilen = {
+                str(werte[0]): (werte[1], tuple(werte[2:]))
+                for werte in manager.select_for_update()
+                .filter(
+                    models.Q(pk__in=[pk for pk, _von, _nach in zuege])
+                    | models.Q(**{f"{spalte}__in": ziele, verknuepfung.organisation: organisation})
+                )
                 .order_by("pk")
-                .values_list("pk", parken)
+                .values_list("pk", spalte, *eindeutig)
             }
-            geparkt = [
-                nummer
-                for nummer, (pk, von, _nach) in enumerate(zuege)
-                if str(pk) in werte and manager.filter(pk=pk, **{spalte: von}).update(**{parken: None})
-            ]
+            kandidaten: dict[str, int] = {}
+            for nummer, (pk, von, _nach) in enumerate(zuege):
+                if str(pk) not in kandidaten and str(pk) in zeilen and zeilen[str(pk)][0] == von:
+                    kandidaten[str(pk)] = nummer
+            nummern = sorted(kandidaten.values())
+            stehend = [stand for pk, stand in zeilen.items() if pk not in kandidaten and stand[0] in ziele]
+            plan = [(zuege[n][1], zuege[n][2], zeilen[str(zuege[n][0])][1]) for n in nummern]
+            ziehen, halten = _endzustand(stehend, plan, pruefen=True)
+            bleiben = [nummern[i] for i in halten]
+
+            for i in ziehen:
+                pk, von, _nach = zuege[nummern[i]]
+                manager.filter(pk=pk, **{spalte: von}).update(**{parken: None})
+                geparkt.append(nummern[i])
             umgezogen: set[int] = set()
             zurueck: set[int] = set()
             for nummer in geparkt:
                 pk, _von, nach = zuege[nummer]
                 try:
                     with transaction.atomic():
-                        manager.filter(pk=pk).update(**{spalte: nach, parken: werte[str(pk)]})
+                        manager.filter(pk=pk).update(**{spalte: nach, parken: zeilen[str(pk)][1][stelle]})
                     umgezogen.add(nummer)
                 except IntegrityError:
                     zurueck.add(nummer)
             for nummer in zurueck:
                 pk = zuege[nummer][0]
-                manager.filter(pk=pk).update(**{parken: werte[str(pk)]})
-            return umgezogen, zurueck
+                manager.filter(pk=pk).update(**{parken: zeilen[str(pk)][1][stelle]})
+            return umgezogen, set(bleiben) | zurueck
     except IntegrityError:
         logger.warning("RIS-Umhängen über Zwischenplatz nicht möglich, alles bleibt am alten Platz.", exc_info=True)
-        return set(), set(range(len(zuege)))
+        return set(), set(bleiben) | set(geparkt)
 
 
 def _status_setzen(felder: dict[str, Any], anker: RisAnker, status: str, jetzt: datetime) -> None:
@@ -899,6 +920,8 @@ class Rueckbericht:
     datensaetze: int = 0
     #: (Protokolleintrag, Verknüpfung, Datensatz): hängt nicht mehr am Ziel oder scheitert an einer Eindeutigkeit
     nicht_moeglich: list[tuple[str, str, str]] = field(default_factory=list)
+    #: Protokolleinträge, die offen bleiben, weil ein Datensatz an einer Eindeutigkeit scheitert
+    offen: list[str] = field(default_factory=list)
 
 
 def _festhalten(eintrag: RisNeuzuordnung, datensaetze: Datensaetze) -> None:
@@ -928,17 +951,19 @@ def _festhalten(eintrag: RisNeuzuordnung, datensaetze: Datensaetze) -> None:
 def _geparkt_zurueckdrehen(
     offen: list[tuple[RisNeuzuordnung, str, str]], zurueck: dict[uuid.UUID, Datensaetze], bericht: Rueckbericht
 ) -> tuple[list[tuple[RisNeuzuordnung, str, str]], bool]:
-    """Rückzüge, die einzeln an der Bedingung scheitern, gemeinsam über den Zwischenplatz (``Verknuepfung.parken``)."""
-    gruppen: dict[Verknuepfung, list[tuple[RisNeuzuordnung, str, str]]] = defaultdict(list)
+    """
+    Rückzüge, die einzeln an der Bedingung scheitern, gemeinsam über den Zwischenplatz (``Verknuepfung.parken``), je
+    Verknüpfung und Organisation. Was am Endzustand nicht aufgeht, bleibt und hält nichts anderes auf.
+    """
+    gruppen: dict[tuple[Verknuepfung, Any], list[tuple[RisNeuzuordnung, str, str]]] = defaultdict(list)
     for eintrag, name, pk in offen:
         verknuepfung = _NACH_NAME.get((eintrag.art, name))
         if verknuepfung is not None and verknuepfung.parken:
-            gruppen[verknuepfung].append((eintrag, name, pk))
+            gruppen[(verknuepfung, eintrag.organization_id)].append((eintrag, name, pk))
     erledigt: set[tuple[Any, str, str]] = set()
-    for verknuepfung, liste in gruppen.items():
-        tabelle, spalte, _ = verknuepfung.tabelle()
+    for (verknuepfung, organisation), liste in gruppen.items():
         zuege = [(pk, eintrag.nach, eintrag.von) for eintrag, _name, pk in liste]
-        umgezogen, _zurueck = _geparkt_umhaengen(tabelle._base_manager, spalte, verknuepfung.parken, zuege)
+        umgezogen, _geblieben = _geparkt_umhaengen(verknuepfung, organisation, zuege)
         for nummer in sorted(umgezogen):
             eintrag, name, pk = liste[nummer]
             zurueck[eintrag.pk].setdefault(name, []).append(pk)
@@ -954,7 +979,9 @@ def zurueckdrehen(eintraege: Iterable[RisNeuzuordnung], *, probe: bool = False) 
 
     Datensätze, die noch am Ziel hängen, kommen an ihr früheres Objekt und bleiben dort (``zurueckgelassen``).
     Jüngste Umzüge zuerst, damit Ketten aufgehen; was an einer Eindeutigkeit scheitert, versucht der nächste
-    Durchgang erneut. Inhalte und ``updated_at`` bleiben unberührt.
+    Durchgang erneut, Festgefahrenes (Tausch) über den Zwischenplatz. Einträge, bei denen danach noch ein Datensatz
+    an einer Eindeutigkeit hängt, bleiben offen (``Rueckbericht.offen``). Inhalte und ``updated_at`` bleiben
+    unberührt.
     """
     liste = sorted(
         (e for e in eintraege if e.ergebnis == ris_neu.NACHFOLGER and e.nach and e.zurueckgedreht_am is None),
@@ -1000,10 +1027,16 @@ def zurueckdrehen(eintraege: Iterable[RisNeuzuordnung], *, probe: bool = False) 
                     # Festgefahren, etwa ein Tausch zweier Positionen: gemeinsam über den Zwischenplatz, wo möglich
                     offen, weiter = _geparkt_zurueckdrehen(offen, zurueck, bericht)
             bericht.nicht_moeglich.extend((str(e.pk), name, pk) for e, name, pk in offen)
+            # Was an einer Eindeutigkeit hängen blieb, lässt seinen Eintrag offen (ein späterer Lauf versucht es
+            # erneut); als zurückgedreht gilt nur, was keinen solchen Datensatz mehr hat
+            blockiert = {pk for _e, _name, pk in offen}
             jetzt = timezone.now()
             for eintrag in liste:
                 if zurueck.get(eintrag.pk):
                     _festhalten(eintrag, zurueck[eintrag.pk])
+                if any(str(pk) in blockiert for pks in (eintrag.verschoben or {}).values() for pk in pks):
+                    bericht.offen.append(str(eintrag.pk))
+                    continue
                 RisNeuzuordnung.objects.filter(pk=eintrag.pk).update(zurueckgedreht_am=jetzt)
     finally:
         cache.delete(_SPERRE)

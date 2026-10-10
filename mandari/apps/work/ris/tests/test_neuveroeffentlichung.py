@@ -440,6 +440,140 @@ def test_ring_mit_bleibender_position_haengt_nichts_doppelt(org: Any, ris: Ris, 
     assert _ruhig(uhr, sitzung, alle=True).umgehaengt == 0
 
 
+POSITIONEN = "work.AgendaItemPosition.agenda_item"
+
+
+def _umzug(org: Any, von: OParlAgendaItem, nach: OParlAgendaItem, *positionen: Any) -> RisNeuzuordnung:
+    """Protokolleintrag eines Umzugs, wie ihn der Abgleich schreibt."""
+    return RisNeuzuordnung.objects.create(
+        organization=org,
+        art=RisAnker.ART_TOP,
+        von=von.id,
+        nach=nach.id,
+        ergebnis="nachfolger",
+        verschoben={POSITIONEN: [str(p.pk) for p in positionen]},
+    )
+
+
+def _an(position: Any) -> Any:
+    return AgendaItemPosition.objects.get(pk=position.pk).agenda_item_id
+
+
+def test_rueckweg_tausch_geht_auf_obwohl_eine_kette_blockiert(org: Any, ris: Ris, mitglied: Any) -> None:
+    """
+    Rückweg (#926): Ein Tausch A↔B geht zurück, auch wenn in derselben Organisation eine Kette C→D, E→C festhängt,
+    weil an E inzwischen eine neue Position steht. Die Kette bleibt, ihre Einträge bleiben offen; eine zweite
+    Organisation mit eigenem Tausch an denselben Punkten geht ebenso zurück.
+    """
+    sitzung = ris.sitzung()
+    a, b, c, d, e = (ris.top(sitzung, f"top/{n}", n, n) for n in "ABCDE")
+    # Stand nach dem Abgleich: pos_1 A→B, pos_2 B→A, pos_3 C→D, pos_4 E→C; danach entstand S an E
+    pos_1 = AgendaItemPosition.objects.create(organization=org, agenda_item=b, position="for")
+    pos_2 = AgendaItemPosition.objects.create(organization=org, agenda_item=a, position="against")
+    pos_3 = AgendaItemPosition.objects.create(organization=org, agenda_item=d, position="for")
+    pos_4 = AgendaItemPosition.objects.create(organization=org, agenda_item=c, position="against")
+    s_neu = AgendaItemPosition.objects.create(organization=org, agenda_item=e, position="abstain")
+    andere = cast(Any, OrganizationFactory)(name="Fraktion Anders", slug="fraktion-anders")
+    q_1 = AgendaItemPosition.objects.create(organization=andere, agenda_item=b, position="for")
+    q_2 = AgendaItemPosition.objects.create(organization=andere, agenda_item=a, position="against")
+    tausch = [_umzug(org, a, b, pos_1), _umzug(org, b, a, pos_2), _umzug(andere, a, b, q_1), _umzug(andere, b, a, q_2)]
+    kette = [_umzug(org, c, d, pos_3), _umzug(org, e, c, pos_4)]
+
+    rueck = verknuepfungen.zurueckdrehen(RisNeuzuordnung.objects.all())
+
+    assert [_an(p) for p in (pos_1, pos_2, q_1, q_2)] == [a.id, b.id, a.id, b.id]
+    assert [_an(p) for p in (pos_3, pos_4, s_neu)] == [d.id, c.id, e.id]
+    assert rueck.datensaetze == 4
+    assert {pk for _e, _n, pk in rueck.nicht_moeglich} == {str(pos_3.pk), str(pos_4.pk)}
+    assert set(rueck.offen) == {str(k.pk) for k in kette}
+    assert all(RisNeuzuordnung.objects.get(pk=t.pk).zurueckgedreht_am for t in tausch)
+    assert not any(RisNeuzuordnung.objects.get(pk=k.pk).zurueckgedreht_am for k in kette)
+    assert not AgendaItemPosition.objects.filter(organization__isnull=True).exists(), "nichts bleibt geparkt"
+
+    # Ist der Weg frei, holt ein späterer Rückweg die Kette nach
+    s_neu.delete()
+    rueck = verknuepfungen.zurueckdrehen(RisNeuzuordnung.objects.all())
+    assert [_an(p) for p in (pos_3, pos_4)] == [c.id, e.id]
+    assert rueck.offen == [] and rueck.datensaetze == 2
+    assert all(RisNeuzuordnung.objects.get(pk=k.pk).zurueckgedreht_am for k in kette)
+
+
+def test_position_entsteht_waehrend_des_abgleichs(
+    org: Any, ris: Ris, mitglied: Any, uhr: Uhr, monkeypatch: Any
+) -> None:
+    """
+    Legt jemand zwischen dem Lesen und dem Sperren eine Position am Ziel an (#926), entscheidet der Abgleich am
+    frischen Stand: Die betroffene Rotation bleibt mit Konflikt, ein unabhängiger Tausch derselben Organisation geht
+    trotzdem durch.
+    """
+    sitzung = ris.sitzung()
+    vorlagen = {n: ris.vorlage(f"paper/{n}", f"V/{n}") for n in "ABCDE"}
+    tops = {n: ris.top(sitzung, f"top/{n}", n, n, vorlage=vorlagen[n]) for n in "ABCDE"}
+    pos_1 = AgendaItemPosition.objects.create(organization=org, agenda_item=tops["A"], position="for")
+    notiz = _verschluesselt(AgendaItemNote, organization=org, agenda_item=tops["B"], author=mitglied)
+    pos_3 = AgendaItemPosition.objects.create(organization=org, agenda_item=tops["C"], position="against")
+    pos_4 = AgendaItemPosition.objects.create(organization=org, agenda_item=tops["D"], position="for")
+    pos_5 = AgendaItemPosition.objects.create(organization=org, agenda_item=tops["E"], position="against")
+    uhr.lauf()
+
+    # Rotation A→B→C→A und Tausch D↔E
+    for top, inhalt in (("A", "C"), ("B", "A"), ("C", "B"), ("D", "E"), ("E", "D")):
+        OParlAgendaItem.objects.filter(pk=tops[top].pk).update(name=inhalt)
+        ris.beraten(vorlagen[inhalt], tops[top])
+    uhr.abruf(sitzung)
+
+    from django.db.models.query import QuerySet
+
+    echt = QuerySet.select_for_update
+    dazwischen: list[AgendaItemPosition] = []
+
+    def mit_rennen(self: QuerySet[Any], *args: Any, **kwargs: Any) -> Any:
+        if self.model is AgendaItemPosition and not dazwischen:
+            # Speichern am neuen Inhalt von B, nachdem der Abgleich gelesen, aber bevor er gesperrt hat
+            dazwischen.append(
+                AgendaItemPosition.objects.create(organization=org, agenda_item=tops["B"], position="abstain")
+            )
+        return echt(self, *args, **kwargs)
+
+    monkeypatch.setattr(QuerySet, "select_for_update", mit_rennen)
+    bericht = uhr.lauf()
+
+    assert dazwischen and bericht.fehler == 0
+    assert [_an(p) for p in (pos_4, pos_5)] == [tops["E"].id, tops["D"].id], "Tausch geht durch"
+    assert [_an(p) for p in (pos_1, pos_3, dazwischen[0])] == [tops["A"].id, tops["C"].id, tops["B"].id]
+    assert AgendaItemNote.objects.get(pk=notiz.pk).agenda_item_id == tops["C"].id
+    assert bericht.konflikte == 2
+    assert not AgendaItemPosition.objects.filter(organization__isnull=True).exists()
+
+
+@pytest.mark.parametrize("fall", ["zurueck", "alles_zuruecksetzen"])
+def test_fehlerzweige_beim_parken(org: Any, ris: Ris, monkeypatch: Any, fall: str) -> None:
+    """
+    Fehlerzweige (#926), erzwungen durch einen veralteten Plan, der alle ziehen lässt: Trifft eine Zeile am Ziel auf
+    eine andere, kommt sie zurück; geht auch das nicht, wird alles zurückgesetzt. Nie bleibt etwas geparkt, und als
+    geblieben zählen nur Zeilen, die geparkt waren.
+    """
+    monkeypatch.setattr(verknuepfungen, "_endzustand", lambda stehend, zuege, pruefen: (list(range(len(zuege))), []))
+    verknuepfung = verknuepfungen._NACH_NAME[(RisAnker.ART_TOP, POSITIONEN)]
+    sitzung = ris.sitzung()
+    t1, t2, t3, t4, t5 = (ris.top(sitzung, f"top/{n}", str(n), str(n)) for n in range(1, 6))
+    x = AgendaItemPosition.objects.create(organization=org, agenda_item=t1, position="for")
+    AgendaItemPosition.objects.create(organization=org, agenda_item=t2, position="abstain")
+    y = AgendaItemPosition.objects.create(organization=org, agenda_item=t3, position="against")
+    z = AgendaItemPosition.objects.create(organization=org, agenda_item=t5, position="for")
+    zuege = [(x.pk, t1.id, t2.id)]
+    if fall == "alles_zuruecksetzen":
+        # y zieht in den Platz von x; x kann dann nicht zurück. z hängt nicht mehr dort, wo der Plan ihn vermutet.
+        zuege += [(y.pk, t3.id, t1.id), (z.pk, t4.id, t3.id)]
+
+    umgezogen, geblieben = verknuepfungen._geparkt_umhaengen(verknuepfung, org.id, zuege)
+
+    assert umgezogen == set()
+    assert geblieben == ({0} if fall == "zurueck" else {0, 1})
+    assert [_an(p) for p in (x, y, z)] == [t1.id, t3.id, t5.id]
+    assert set(AgendaItemPosition.objects.values_list("organization_id", flat=True)) == {org.id}
+
+
 def test_anderer_punkt_unter_alter_kennung_wird_nicht_zugeordnet(
     org: Any, ris: Ris, mitglied: Any, uhr: Uhr, client_for: Any
 ) -> None:

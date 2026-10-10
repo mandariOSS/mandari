@@ -42,38 +42,36 @@ def _stand(model: Any, pk: Any) -> dict[str, Any]:
     return zeile
 
 
+def _anleger(position: Any, org: Any) -> Any:
+    """Zeilen im historischen Modell anlegen, mit festen Zeitpunkten (Stunden nach t0)."""
+    t0 = timezone.now() - timedelta(days=10)
+
+    def anlegen(top: Any, angelegt: int, geaendert: int, organisation: Any = org, **werte: Any) -> Any:
+        zeile = position.objects.create(
+            organization_id=getattr(organisation, "pk", None), agenda_item_id=top.pk, **werte
+        )
+        position.objects.filter(pk=zeile.pk).update(
+            created_at=t0 + timedelta(hours=angelegt), updated_at=t0 + timedelta(hours=geaendert)
+        )
+        return zeile.pk
+
+    return anlegen
+
+
 @pytest.mark.django_db(transaction=True)
 def test_migration_fuehrt_dubletten_verlustfrei_zusammen(org: Any, make_member: Any) -> None:
     erste, zweite = make_member(org, email="erste@example.org"), make_member(org, email="zweite@example.org")
     top_doppelt, top_einzeln, top_altlast = _tops(org, 3)
-    t0 = timezone.now() - timedelta(days=10)
 
     executor = MigrationExecutor(connection)
     executor.migrate(VORHER)
     try:
         position = executor.loader.project_state(VORHER).apps.get_model("work", "AgendaItemPosition")
+        anlegen = _anleger(position, org)
 
-        def anlegen(top: Any, angelegt: int, geaendert: int, organisation: Any = org, **werte: Any) -> Any:
-            zeile = position.objects.create(
-                organization_id=getattr(organisation, "pk", None), agenda_item_id=top.pk, **werte
-            )
-            position.objects.filter(pk=zeile.pk).update(
-                created_at=t0 + timedelta(hours=angelegt), updated_at=t0 + timedelta(hours=geaendert)
-            )
-            return zeile.pk
-
-        # Drei Zeilen zum selben TOP: die jüngste ist fast leer, die älteren tragen die Inhalte
-        alt = anlegen(
-            top_doppelt,
-            0,
-            1,
-            position="for",
-            is_final=True,
-            reasoning_encrypted=b"alt",
-            outcome="accepted",
-            set_by_id=erste.pk,
-        )
-        mittel = anlegen(top_doppelt, 2, 3, position="against", set_by_id=zweite.pk)
+        # Drei Zeilen zum selben TOP, die sich ergänzen: die jüngste ist fast leer, die älteren tragen die Inhalte
+        alt = anlegen(top_doppelt, 0, 1, position="for", is_final=True, reasoning_encrypted=b"alt", set_by_id=erste.pk)
+        mittel = anlegen(top_doppelt, 2, 3, position="for", set_by_id=zweite.pk)
         neu = anlegen(top_doppelt, 4, 5, outcome="rejected")
         einzeln = anlegen(top_einzeln, 0, 1, position="abstain", reasoning_encrypted=b"einzeln", set_by_id=erste.pk)
         altlast = [anlegen(top_altlast, 0, 1, organisation=None, position=wert) for wert in ("for", "against")]
@@ -88,11 +86,11 @@ def test_migration_fuehrt_dubletten_verlustfrei_zusammen(org: Any, make_member: 
     assert list(AgendaItemPosition.objects.filter(agenda_item=top_doppelt).values_list("pk", flat=True)) == [neu]
     zusammen = _stand(AgendaItemPosition, neu)
     assert zusammen == {
-        # Position kommt aus der jüngsten Zeile mit Wert, „Endgültig“ folgt ihr
+        # Leere Felder der erhaltenen Zeile kommen aus der jüngsten Zeile mit Wert
         "position": vorher[mittel]["position"],
-        "is_final": vorher[mittel]["is_final"],
+        "is_final": vorher[alt]["is_final"],
         "reasoning_encrypted": vorher[alt]["reasoning_encrypted"],
-        # Eigene Werte der erhaltenen Zeile gehen vor
+        # Eigene Werte der erhaltenen Zeile bleiben
         "outcome": vorher[neu]["outcome"],
         "set_by_id": vorher[mittel]["set_by_id"],
         "preparation_id": None,
@@ -106,3 +104,44 @@ def test_migration_fuehrt_dubletten_verlustfrei_zusammen(org: Any, make_member: 
     # Danach verhindert die Datenbank neue Dubletten
     with pytest.raises(IntegrityError), transaction.atomic():
         AgendaItemPosition.objects.create(organization=org, agenda_item=top_doppelt)
+
+
+@pytest.mark.parametrize(
+    ("eins", "zwei", "feld"),
+    [
+        ({"outcome": "accepted"}, {"outcome": "rejected"}, "Ergebnis"),
+        ({"position": "for"}, {"position": "against"}, "Position"),
+        ({"reasoning_encrypted": b"eins"}, {"reasoning_encrypted": b"zwei"}, "Begründung"),
+    ],
+)
+@pytest.mark.django_db(transaction=True)
+def test_migration_bricht_bei_widerspruch_ab_und_aendert_nichts(
+    org: Any, eins: dict[str, Any], zwei: dict[str, Any], feld: str
+) -> None:
+    top_widerspruch, top_ergaenzend = _tops(org, 2)
+
+    executor = MigrationExecutor(connection)
+    executor.migrate(VORHER)
+    position = executor.loader.project_state(VORHER).apps.get_model("work", "AgendaItemPosition")
+    try:
+        anlegen = _anleger(position, org)
+        zeilen = [
+            anlegen(top_widerspruch, 0, 1, **eins),
+            anlegen(top_widerspruch, 2, 3, **zwei),
+            # Eine Gruppe, die sich ergänzt, wird wegen der anderen ebenfalls nicht angefasst
+            anlegen(top_ergaenzend, 0, 1, position="for"),
+            anlegen(top_ergaenzend, 2, 3, outcome="accepted"),
+        ]
+        vorher = {pk: _stand(position, pk) for pk in zeilen}
+
+        with pytest.raises(
+            RuntimeError, match=f"(?s)nichts geändert.*TOP {top_widerspruch.pk}: 2 Zeilen, widersprüchlich in {feld}$"
+        ):
+            MigrationExecutor(connection).migrate(NACHHER)
+
+        assert {pk: _stand(position, pk) for pk in zeilen} == vorher
+        assert position.objects.count() == len(zeilen)
+    finally:
+        position.objects.all().delete()
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
