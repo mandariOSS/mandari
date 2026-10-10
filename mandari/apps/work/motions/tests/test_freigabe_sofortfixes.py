@@ -207,6 +207,45 @@ def test_herunterladen_aus_sperrt_export_und_anhaenge(
 
 
 @pytest.mark.django_db
+def test_neuer_editor_ohne_herunterladen_ohne_export_im_menue(
+    org: Any, freigebende: Any, client_for: Any, tmp_path: Any
+) -> None:
+    """Neuer Antragseditor (#856): Menü „Datei“ ohne Vorschau und Word-Export, Anhänge ohne Link."""
+    org.work_new_design = True
+    org.save(update_fields=["work_new_design"])
+    with override_settings(MEDIA_ROOT=str(tmp_path)):
+        dokument = Motion.objects.create(organization=org, author=freigebende, title="Antrag", visibility="private")
+        anhang = MotionDocument.objects.create(
+            motion=dokument,
+            file=SimpleUploadedFile("anlage.pdf", PDF_BYTES, content_type="application/pdf"),
+            filename="anlage.pdf",
+            mime_type="application/pdf",
+            file_size=len(PDF_BYTES),
+            uploaded_by=freigebende,
+        )
+        gast = _gast(org)
+        freigabe = MotionShare.objects.create(
+            motion=dokument, scope="user", user=gast.user, level="view", created_by=freigebende.user
+        )
+        client = client_for(gast.user)
+        editor_url = _url("document_editor", org, motion_id=dokument.id)
+        export_url = _url("document_export", org, motion_id=dokument.id)
+        anhang_url = _url("document_file_download", org, motion_id=dokument.id, document_id=anhang.id)
+
+        antwort = client.get(editor_url)
+        assert [t.name for t in antwort.templates][0] == "work/motions/editor_neu.html"
+        seite = antwort.content.decode()
+        assert export_url in seite and "Herunterladen als Word" in seite and anhang_url in seite
+
+        freigabe.allow_download = False
+        cast(Any, freigabe).save()
+
+        seite = client.get(editor_url).content.decode()
+        assert export_url not in seite and "Herunterladen als Word" not in seite and anhang_url not in seite
+        assert "anlage.pdf" in seite
+
+
+@pytest.mark.django_db
 @pytest.mark.usefixtures("export_ohne_renderer")
 def test_weitestgehende_freigabe_entscheidet_ueber_das_herunterladen(
     org: Any, freigebende: Any, client_for: Any
