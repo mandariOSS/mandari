@@ -9,5 +9,7 @@ declare global {
     lucide: { createIcons: () => void }
     showToast: (message: string, type?: string) => void
     confirmAction: (options: ConfirmOptions) => Promise<boolean>
+    bereinigeKiHtml: (html: string | null | undefined) => string
+    kiMarkdownHtml: (text: string | null | undefined) => string
   }
 }
