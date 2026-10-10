@@ -4,6 +4,13 @@
 {% block title %}KI-Assistent{% endblock %}
 
 {% block content %}
+{% if not ki_endpunkt %}
+{# Ohne freigegebenen KI-Endpunkt kein Chat (Issue #950) #}
+<div class="max-w-2xl mx-auto w-full">
+    <h1 class="text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white mb-2 text-center">KI-Assistent</h1>
+    <c-ui.empty-state icon="sparkles" title="Derzeit nicht verfügbar">Der KI-Assistent ist auf dieser Plattform nicht eingerichtet.</c-ui.empty-state>
+</div>
+{% else %}
 <div x-data="chatApp()" class="flex flex-col flex-1 min-h-0">
 
     {% include "partials/chat_einwilligung.html" %}
@@ -142,15 +149,18 @@
         </div>
     </template>
 </div>
+{% endif %}
 {% endblock %}
 
 {% block extra_scripts %}
+{% if ki_endpunkt %}
 <script src="{% static 'vendor/marked/marked.min.js' %}"></script>
 <script nonce="{{ csp_nonce }}">
 function chatApp() {
     return {
         hasConsent: {{ has_chat_consent|yesno:"true,false" }},
         consentChecked: false,
+        consentKennung: '{{ ki_endpunkt.einwilligungskennung|escapejs }}',
         messages: [],
         input: '',
         isLoading: false,
@@ -183,16 +193,22 @@ function chatApp() {
 
         async giveConsent() {
             if (!this.consentChecked) return;
+            let response = null;
             try {
-                await fetch('{% url "insight_core:insight:chat_message" %}', {
+                response = await fetch('{% url "insight_core:insight:chat_message" %}', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                         'X-CSRFToken': '{{ csrf_token }}'
                     },
-                    body: JSON.stringify({ consent: true })
+                    body: JSON.stringify({ consent: true, kennung: this.consentKennung })
                 });
             } catch (e) { /* consent will be checked server-side anyway */ }
+            if (response && response.status === 409) {
+                // Anbieter seit dem Seitenaufruf gewechselt: Dialog mit dem aktuellen Anbieter neu laden
+                window.location.reload();
+                return;
+            }
             this.hasConsent = true;
         },
 
@@ -273,4 +289,5 @@ function chatApp() {
     }
 }
 </script>
+{% endif %}
 {% endblock %}

@@ -646,8 +646,14 @@ ELASTICSEARCH_AUTO_INDEX=True
 TEXT_EXTRACTION_ENABLED=True
 TEXT_EXTRACTION_MAX_SIZE_MB=50
 
-# Mistral OCR (optional, für bessere PDF-OCR)
+# KI (Issue #950): Anbieter, Basis-URL, Modell und Schlüssel im Admin (KI-Einstellungen), kein fester Anbieter
+# im Code. Jeder KI-Aufruf nur an Hosts dieser Positivliste; leer ist nichts erlaubt (KI aus, kein Standard).
+# Erst nach Freigabe eines Anbieters dessen Host eintragen, etwa KI_ERLAUBTE_HOSTS=<host-des-anbieters>
+KI_ERLAUBTE_HOSTS=
+
+# Externe Texterkennung (optional, nur öffentliche RIS-Dateien): nur mit Basis-URL aus KI_ERLAUBTE_HOSTS
 MISTRAL_API_KEY=sk-...
+MISTRAL_BASE_URL=https://<host-aus-KI_ERLAUBTE_HOSTS>/v1
 MISTRAL_OCR_RATE_LIMIT=60
 ```
 

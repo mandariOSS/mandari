@@ -6,6 +6,10 @@ Abstract base class for AI providers.
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+#: Obergrenze der Antwortlänge, wenn die Konfiguration keine nennt (wie AISettings.insight_max_output_tokens):
+#: dokumentierte maximale Antwortlänge von openai/gpt-oss-120b bei STACKIT AI Model Serving
+STANDARD_MAX_AUSGABE = 8192
+
 
 @dataclass
 class ChatMessage:
@@ -68,3 +72,8 @@ class AbstractAIProvider(ABC):
     def model_name(self) -> str:
         """Return the model name being used."""
         pass
+
+    @property
+    def max_output_tokens(self) -> int:
+        """Obergrenze der Antwortlänge je Aufruf (aus der KI-Konfiguration, sonst der Standard)."""
+        return STANDARD_MAX_AUSGABE

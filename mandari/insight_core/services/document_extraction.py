@@ -7,6 +7,10 @@ ist die gemeinsame Bibliothek ``mandari_dokumente`` (shared/, Issue #530) – di
 OCR-Worker des Ingestors: pypdf, optional Mistral, sonst Tesseract Seite für Seite mit Speicher- und
 Zeitgrenzen (Issue #817). Die frühere eigene Umsetzung (alle Seiten auf einmal, eigene Mistral-Anbindung) ist
 entfallen. Grenzen und Mistral-Zugang kommen aus den Einstellungen (``OCR_*``, ``MISTRAL_*``).
+
+Externe Texterkennung (Mistral) nur auf ausdrücklichen Wunsch (``allow_external=True``) und nur für öffentliche
+RIS-Dateien; Standard ist die Erkennung im eigenen Betrieb (pypdf, Tesseract), etwa für den Work-Import und
+Anlagen in Session (Issue #950). Auch dann wirkt Mistral nur mit Basis-URL aus ``KI_ERLAUBTE_HOSTS``.
 """
 
 from __future__ import annotations
@@ -31,6 +35,8 @@ from mandari_dokumente import (
     OcrMemoryLimitError,
     extract_text,
 )
+
+from apps.common.ki_anbieter import erlaubte_hosts
 
 logger = logging.getLogger(__name__)
 
@@ -149,12 +155,14 @@ class RobotsUnreachableError(DocumentDownloadError):
         self.reason = reason
 
 
-def extraction_config(ocr_max_pages: int | None = None, *, allow_external: bool = True) -> ExtractionConfig:
+def extraction_config(ocr_max_pages: int | None = None, *, allow_external: bool = False) -> ExtractionConfig:
     """
     Grenzen der Texterkennung und Mistral-Zugang aus den Einstellungen; ``ocr_max_pages`` begrenzt enger.
 
-    ``allow_external=False``: nur Erkennung im eigenen Betrieb (pypdf, Tesseract), nie ein externer Dienst –
-    für vertrauliche Unterlagen wie nichtöffentliche Sitzungsunterlagen (Issue #873).
+    Standard (``allow_external=False``): nur Erkennung im eigenen Betrieb (pypdf, Tesseract), nie ein externer
+    Dienst – für alles außer öffentlichen RIS-Dateien, etwa nichtöffentliche Sitzungsunterlagen (Issue #873),
+    den Work-Import und Anlagen in Session (Issue #950). ``True`` übergeben nur die Aufrufer für öffentliche
+    RIS-Dateien; Mistral wirkt auch dann nur mit Basis-URL aus ``KI_ERLAUBTE_HOSTS``.
     """
     max_pages = int(getattr(settings, "OCR_MAX_PAGES", 100))
     if ocr_max_pages is not None:
@@ -165,6 +173,8 @@ def extraction_config(ocr_max_pages: int | None = None, *, allow_external: bool 
         ocr=_ocr_limits(max_pages),
         mistral=MistralConfig(
             api_key=str(getattr(settings, "MISTRAL_API_KEY", "") or ""),
+            url=str(getattr(settings, "MISTRAL_BASE_URL", "") or ""),
+            erlaubte_hosts=erlaubte_hosts(),
             model=str(getattr(settings, "MISTRAL_OCR_MODEL", "pixtral-12b-2409")),
             requests_per_minute=int(getattr(settings, "MISTRAL_OCR_RATE_LIMIT", 60)),
         ),
@@ -295,7 +305,7 @@ def extract_text_from_file(
     file_name: str = "",
     ocr_max_pages: int | None = None,
     *,
-    allow_external: bool = True,
+    allow_external: bool = False,
 ) -> tuple[str, bool, int | None, str]:
     """
     Text aus Binärdaten mit der gemeinsamen Texterkennung.
@@ -305,7 +315,7 @@ def extract_text_from_file(
     der Prozess endet, löscht sie ``purge_leftover_temp_files`` nach ``TEMP_MAX_AGE_SECONDS``. ``ocr_max_pages``
     begrenzt die erkannten Seiten (etwa beim Import im laufenden Seitenaufruf). Scheitert die Erkennung an der
     Speichergrenze, ist das Ergebnis leer (Methode ``none``); Aufrufer brechen deshalb nie ab.
-    ``allow_external=False`` schließt externe Dienste (Mistral) aus, siehe ``extraction_config``.
+    Externe Dienste (Mistral) nur mit ``allow_external=True`` (öffentliche RIS-Dateien), siehe ``extraction_config``.
 
     Returns:
         Tuple mit (text, ocr_performed, page_count, extraction_method)
@@ -336,6 +346,7 @@ def download_and_extract(
     extra_headers: dict[str, str] | None = None,
     sync_config: Any = None,
     max_wait: float | None = None,
+    allow_external: bool = False,
 ) -> ExtractedDocument:
     """
     Lädt ein Dokument herunter und extrahiert Text.
@@ -347,6 +358,7 @@ def download_and_extract(
         timeout: HTTP-Timeout in Sekunden
         sync_config: ``sync_config`` der Quelle (Ausnahme von der robots.txt, Abstand der Drossel)
         max_wait: höchstens so lange auf die Drossel je Host warten (Web-Anfragen)
+        allow_external: externe Texterkennung zulassen (nur öffentliche RIS-Dateien, siehe ``extraction_config``)
 
     Raises:
         RobotsBlockedError: die robots.txt sperrt das Dokument
@@ -363,6 +375,7 @@ def download_and_extract(
         binary,
         mime_type=resolved_mime,
         file_name=original_name or url.split("/")[-1],
+        allow_external=allow_external,
     )
 
     return ExtractedDocument(

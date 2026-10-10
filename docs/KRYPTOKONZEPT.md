@@ -35,7 +35,7 @@ Insgesamt sind **41 Felder** verschlüsselt:
   Editors), Support (2), Protokollassistenz (2) sowie SMTP-Passwort und KI-Schlüssel der
   Organisation (2)
 - **5 mit dem Hauptschlüssel** – plattformweite Zugangsdaten: SMTP-Passwort und
-  Nebius-Schlüssel der Systemeinstellungen, KI-Anbieter, GPU-Rechenknoten (2)
+  früherer KI-Schlüssel der Systemeinstellungen (seit Issue #950 geleert und ungenutzt), KI-Anbieter, GPU-Rechenknoten (2)
 - **2 für den zweiten Faktor** – TOTP-Geheimnis und Backup-Codes
 
 Dazu kommen die Mandantenschlüssel selbst, eingepackt mit dem Hauptschlüssel. Maßgeblich

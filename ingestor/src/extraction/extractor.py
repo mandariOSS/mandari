@@ -46,6 +46,7 @@ from mandari_dokumente import (
     MistralConfig,
     OcrLimits,
     OcrMemoryLimitError,
+    erlaubte_hosts_aus_umgebung,
     extract_text,
 )
 from mandari_oparl.abgleich import looks_like_html
@@ -570,7 +571,12 @@ def runs_elsewhere() -> bool:
 
 
 def extraction_config() -> ExtractionConfig:
-    """Grenzen der Texterkennung und Mistral-Zugang aus den Einstellungen (``OCR_*``, ``MISTRAL_*``)."""
+    """
+    Grenzen der Texterkennung und Mistral-Zugang aus den Einstellungen (``OCR_*``, ``MISTRAL_*``).
+
+    Mistral wirkt nur mit Basis-URL, deren Host in ``KI_ERLAUBTE_HOSTS`` steht (``MistralConfig.enabled``). Der
+    Ingestor erkennt nur öffentliche RIS-Dateien.
+    """
     return ExtractionConfig(
         ocr=OcrLimits(
             dpi=settings.ocr_dpi,
@@ -582,6 +588,8 @@ def extraction_config() -> ExtractionConfig:
         ),
         mistral=MistralConfig(
             api_key=settings.mistral_api_key,
+            url=settings.mistral_base_url,
+            erlaubte_hosts=erlaubte_hosts_aus_umgebung(settings.ki_erlaubte_hosts),
             model=settings.mistral_ocr_model,
             timeout=settings.text_extraction_timeout,
             requests_per_minute=settings.mistral_ocr_rate_limit,

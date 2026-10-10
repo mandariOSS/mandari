@@ -3,7 +3,9 @@
 KI-Antworten werden nur bereinigt als HTML dargestellt (frontend/js/ki-ausgabe.ts).
 
 - KI-Assistent im Bürgerportal: Markdown der Antwort ohne Bilder, Ereignis-Attribute oder Skript-Links; Links nur
-  auf die eigene Seite oder https, externe mit ``rel="noopener noreferrer"``.
+  auf die eigene Seite oder https, externe mit ``rel="noopener noreferrer"``. Die Chatseite gibt es nur mit
+  eingerichtetem Endpunkt aus der zentralen KI-Konfiguration (Issue #950, Fixture ``ki_eingerichtet``); die
+  Einwilligung mit der Kennung des angezeigten Anbieters prüft der Server, die Antwort bildet der Test nach.
 - KI-Hilfe im Work-Editor: Antworttext und Hinweise erscheinen nur bereinigt bzw. als Text.
 - Die Bereinigung selbst gegen eine Reihe typischer Muster, ausgeführt im echten Browser.
 """
@@ -12,10 +14,13 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from typing import Any, cast
 
 import pytest
+from django.core.cache import cache
 
+from apps.common.models import AISettings
 from apps.work.motions.models import Motion
 from apps.work.motions.services import MotionAIService
 from insight_core.models import OParlBody, OParlSource
@@ -28,6 +33,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 RIS = "https://ris.ki-ausgabe.e2e.example/oparl"
 PASSWORD = "E2e-Passwort-123456"
+#: Host der Vorlage „stackit“; die Positivliste ``KI_ERLAUBTE_HOSTS`` hat keinen Standard
+KI_HOST = "api.openai-compat.model-serving.eu01.onstackit.cloud"
 
 ANTWORT = (
     "Hallo **fett**\n\n"
@@ -90,6 +97,27 @@ def _kommune() -> OParlBody:
     )
 
 
+@pytest.fixture
+def ki_eingerichtet(settings: Any) -> Iterator[None]:
+    """
+    KI im Bürgerportal über die zentrale KI-Konfiguration: freigegebener Host, Anbieter, Modell, Schlüssel.
+
+    Ohne Endpunkt zeigt die Chatseite nur „Derzeit nicht verfügbar“. Eine Anfrage an den Anbieter stellt der Test
+    nie, die Antwort auf die Chatnachricht bildet ``page.route`` nach. Der Live-Server läuft im selben Prozess und
+    sieht Einstellungen und Cache des Tests; danach darf kein eingerichteter Stand im Cache bleiben.
+    """
+    settings.KI_ERLAUBTE_HOSTS = [KI_HOST]
+    cache.delete(AISettings.CACHE_KEY)
+    ki = AISettings.get_settings()
+    ki.provider = "stackit"
+    ki.insight_enabled = True
+    ki.insight_model = "modell-e2e"
+    ki.set_api_key("e2e-testschluessel-ohne-wirkung-0123456789")
+    ki.save()
+    yield
+    cache.delete(AISettings.CACHE_KEY)
+
+
 def _ki_ausgefuehrt(page: Any) -> Any:
     page.wait_for_timeout(300)  # Bilder/Fehlerereignisse hätten jetzt gefeuert
     return page.evaluate("() => window.__ki_xss")
@@ -97,14 +125,14 @@ def _ki_ausgefuehrt(page: Any) -> Any:
 
 class TestKiAssistent:
     def test_antwort_ohne_bilder_skripte_und_fremde_links(
-        self, page: Any, goto: Any, live_server: Any, problems: BrowserProblems
+        self, page: Any, goto: Any, live_server: Any, problems: BrowserProblems, ki_eingerichtet: None
     ) -> None:
         _kommune()
 
         def antworten(route: Any) -> None:
             daten = json.loads(route.request.post_data or "{}")
             if daten.get("consent"):
-                route.fulfill(json={"status": "consent_granted"})
+                route.continue_()  # Einwilligung mit Kennung des angezeigten Anbieters prüft der Server
                 return
             route.fulfill(
                 json={
@@ -118,7 +146,9 @@ class TestKiAssistent:
         page.route("**/insight/chat/api/message/", antworten)
         goto("/insight/chat/")
         page.get_by_role("checkbox", name=re.compile("Datenschutzerklärung gelesen")).check()
-        page.get_by_role("button", name="Zustimmen").click()
+        with page.expect_response(lambda antwort: antwort.url.endswith("/insight/chat/api/message/")) as einwilligung:
+            page.get_by_role("button", name="Zustimmen").click()
+        assert einwilligung.value.json() == {"status": "consent_granted"}
         page.locator("textarea").fill("Was beschließt der Rat?")
         page.locator("form:has(textarea) button[type=submit]").click()
 

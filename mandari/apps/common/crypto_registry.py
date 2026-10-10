@@ -96,6 +96,7 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     EncryptedField("session.SessionTenant", "encryption_key_previous", KeyKind.TENANT_KEY),
     # --- Plattformweite Zugangsdaten (Hauptschlüssel) -------------------------------------------
     EncryptedField("common.SiteSettings", "email_host_password_encrypted", KeyKind.MASTER),
+    # Früherer Nebius-Schlüssel: ungenutzt, von common/0011 geleert (#950); bleibt, solange die Spalte besteht
     EncryptedField("common.SiteSettings", "nebius_api_key_encrypted", KeyKind.MASTER),
     EncryptedField("common.AISettings", "api_key_encrypted", KeyKind.MASTER),
     EncryptedField("minutes.ComputeSettings", "client_secret_encrypted", KeyKind.MASTER),
