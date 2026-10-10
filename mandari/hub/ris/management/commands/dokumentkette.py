@@ -4,8 +4,8 @@ Befehl ``dokumentkette``: Pflege der Zustände des Abrufs (Issue #919, ``docs/ad
 
     python manage.py dokumentkette zuruecksetzen [--probelauf]
         Vor einem Rückfall auf ein älteres Image (ohne Rückbau der Migration): ``retry`` und ``fetching`` werden
-        ``none``, ``refused`` wird ``error`` mit dem Fehlertext, an dem ein älteres Image die Sperre erkennt.
-        Idempotent; es ändern sich nur Zustandsspalten.
+        ``none``, ``refused`` wird ``error`` mit dem Fehlertext, an dem ein älteres Image die Sperre erkennt;
+        verdrängte Dokumente (``evicted``, #961) bleiben. Idempotent; es ändern sich nur Zustandsspalten.
 
     python manage.py dokumentkette freigeben <quelle> [--code robots|html] [--probelauf]
         Verweigerte Abrufe einer Quelle neu einreihen (``refused`` → ``none``), etwa nachdem die Quelle den
@@ -21,7 +21,8 @@ Befehl ``dokumentkette``: Pflege der Zustände des Abrufs (Issue #919, ``docs/ad
     python manage.py dokumentkette nacharbeiten [--ausfuehren]
         Dateien, deren Texterkennung an einem Abruffehler gescheitert ist (``failed``, Fehlertext beginnt mit
         „Download“), zurück in die Kette (``hub/ris/erkennung.py``): mit abgelegtem Inhalt zurück in die Erkennung,
-        ohne Inhalt zusätzlich in den Abruf; nicht abzulegende Dateien (nicht freigegebener Altbestand) bleiben
+        ohne Inhalt zusätzlich in den Abruf; nicht abzulegende Dateien (nicht freigegebener Altbestand) und von der
+        Obergrenze verdrängte (``evicted``, #961; ausdrücklich nachladen: ``cache_files --verdraengte``) bleiben
         unverändert. Standard ist der Probelauf mit Zahlen je Quelle; ``--ausfuehren`` erst, wenn die Erkennung im
         Worker läuft (``TEXT_EXTRACTION_RUNNER=worker``), sonst lüde der Ingestor erneut bei der Quelle – und nur nach
         Freigabe. Idempotent; es ändern sich nur Zustandsspalten.
@@ -119,6 +120,7 @@ class Command(BaseCommand):
             (erkennung.NACH_ABRUF, "Abruf und Erkennung"),
             (erkennung.NACH_WARTET, "Erkennung, Abruf läuft bzw. wartet auf Freigabe"),
             (erkennung.NACH_UNVERAENDERT, "unverändert (nicht abzulegen)"),
+            (erkennung.NACH_VERDRAENGT, "unverändert (von der Obergrenze verdrängt)"),
         )
         for kennung, zahlen in sorted(stand.je_quelle.items(), key=lambda e: str(namen.get(e[0], e[0]))):
             teile = ", ".join(f"{text} {zahlen[schluessel]}" for schluessel, text in spalten if zahlen[schluessel])

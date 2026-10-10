@@ -92,6 +92,13 @@ class Command(BaseCommand):
             )
         if stand.schon_eingereiht:
             self.stdout.write(f"Schon eingereiht: {stand.schon_eingereiht}")
+        if stand.verdraengt:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Von der Obergrenze verdrängt (kein Abruf von selbst, ausdrücklich: cache_files --verdraengte): "
+                    f"{stand.verdraengt}"
+                )
+            )
         if stand.ohne_inhalt:
             self.stdout.write(
                 self.style.WARNING(f"Ohne abgelegten Inhalt (holt zuerst der Abruf): {stand.ohne_inhalt}")

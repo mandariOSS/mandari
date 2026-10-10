@@ -29,6 +29,12 @@ ein, für die noch kein Auftrag wartet, Zeitplan und ``extract_texts`` (ohne ``-
 ``failed`` heißt nur noch: Inhalt nicht lesbar oder Speichergrenze. Ein Abruffehler ändert die Erkennung nie; eine
 Datei, deren Abruf an der Größengrenze endet (``local_status = too_large``), wird ``skipped``.
 
+**Obergrenze des Dokument-Caches** (#961): Ein verdrängtes Dokument (``local_status = evicted``) gilt nicht als
+abgelegt. Die Erkennung beansprucht es nicht, es löst keinen Abruf aus (auch nicht über ``dokumentkette nacharbeiten``)
+und zählt nicht in ``mandari_files_stored_without_text``; wartet seine Erkennung, bleibt sie, bis es ausdrücklich
+wieder abgerufen wird (Vorschau, ``cache_files --verdraengte``). Solange die Erkennung wartet oder läuft (auch mit
+eingereihtem Auftrag), verdrängt die Grenze die Kopie nicht (``file_cache_limit``).
+
 **Bedingt speichern** (Abschnitt 4): ``UPDATE … WHERE id = … AND sha256_hash IS NOT DISTINCT FROM …`` (nicht über
 ``blob_id``, das im alten Layout leer ist), dazu: noch beansprucht und nicht ausgeschlossen – sonst schriebe ein
 Auftrag den Text einer eben nach #787 geleerten Datei zurück. Hat sich der Inhalt inzwischen geändert, wird das
@@ -560,6 +566,8 @@ class Einplanung:
     zurueckgesetzt: int = 0
     #: warten auf ihren Inhalt (noch nicht abgelegt): die holt zuerst der Abruf
     ohne_inhalt: int = 0
+    #: warten, sind aber von der Obergrenze verdrängt (#961): kein Abruf von selbst (``cache_files --verdraengte``)
+    verdraengt: int = 0
     #: für sie wartet schon ein Auftrag
     schon_eingereiht: int = 0
     #: bereit, aber nicht eingereiht: plant der Zeitplan ``texterkennung_einplanen`` schrittweise ein
@@ -602,7 +610,9 @@ def befehl_einplanen(
             stand.zurueckgesetzt = offen.update(
                 text_extraction_status=PENDING, text_extraction_attempts=0, updated_at=timezone.now()
             )
-        stand.ohne_inhalt = basis.filter(text_extraction_status=PENDING).exclude(local_status=abruf.OK).count()
+        wartend = basis.filter(text_extraction_status=PENDING)
+        stand.verdraengt = wartend.filter(local_status=abruf.EVICTED).count()
+        stand.ohne_inhalt = wartend.exclude(local_status__in=[abruf.OK, abruf.EVICTED]).count()
         eingereiht = set(queued_file_ids())
         bereit = basis.filter(claimable_q())
         stand.schon_eingereiht = bereit.filter(pk__in=eingereiht).count() if eingereiht else 0
@@ -626,6 +636,8 @@ NACH_ERKENNUNG: Final = "erkennung"
 NACH_ABRUF: Final = "abruf_und_erkennung"
 NACH_WARTET: Final = "erkennung_wartet_auf_abruf"
 NACH_UNVERAENDERT: Final = "unveraendert"
+#: Von der Obergrenze verdrängt (#961): bleibt unverändert, kein Abruf (nur ausdrücklich, ``cache_files --verdraengte``)
+NACH_VERDRAENGT: Final = "verdraengt_unveraendert"
 
 
 @dataclass
@@ -647,7 +659,8 @@ def nacharbeiten(*, ausfuehren: bool = False, chunk: int = 1000) -> Nacharbeit:
     zurück in die Kette (ADR Abschnitt 11, Etappe 1). Mit abgelegtem Inhalt: Erkennung ``pending``. Ohne: Abruf
     ``none`` (aus ``none``/``error``; ein laufender oder geplanter Abruf, eine Verweigerung, ``missing`` und
     ``too_large`` behalten ihren Zustand) und Erkennung ``pending``. Dateien, die nicht abgelegt werden (nicht
-    freigegebener Altbestand, Quelle ohne Dateiabruf, Stichtag ausstehend), bleiben ohne Inhalt unverändert.
+    freigegebener Altbestand, Quelle ohne Dateiabruf, Stichtag ausstehend), bleiben ohne Inhalt unverändert, ebenso
+    von der Obergrenze verdrängte (``evicted``, #961): Sie zurückzusetzen hieße, sie von selbst neu abzurufen.
     Ohne ``ausfuehren`` nur zählen. Idempotent: Zurückgesetzte Dateien sind nicht mehr ``failed``.
     """
     auswahl = (
@@ -670,6 +683,8 @@ def nacharbeiten(*, ausfuehren: bool = False, chunk: int = 1000) -> Nacharbeit:
     for datei in auswahl.iterator(chunk_size=chunk):
         if datei.local_status == abruf.OK:
             ergebnis = NACH_ERKENNUNG
+        elif datei.local_status == abruf.EVICTED:
+            ergebnis = NACH_VERDRAENGT
         elif not abruf.stores_file(datei):
             ergebnis = NACH_UNVERAENDERT
         elif datei.local_status in (abruf.NONE, abruf.ERROR):
