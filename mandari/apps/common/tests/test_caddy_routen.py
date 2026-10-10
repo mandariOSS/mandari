@@ -9,6 +9,7 @@ Ladungsmail (``/ladung/<token>/``) bei der Website statt bei mandari.
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from fnmatch import fnmatchcase
 from pathlib import Path
 
@@ -53,7 +54,7 @@ def _beispielpfad(route: str, ist_include: bool) -> str:
     return "/" + route + ("x" if ist_include else "")
 
 
-def _oberste_ebene(muster: list, praefix: str = "") -> list[str]:
+def _oberste_ebene(muster: Sequence[URLPattern | URLResolver], praefix: str = "") -> list[str]:
     """Beispielpfade aller Routen der obersten Ebene; ``include`` ohne eigenen Präfix wird aufgelöst."""
     pfade: list[str] = []
     for eintrag in muster:
