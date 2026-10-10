@@ -1,0 +1,69 @@
+{% comment %}
+Ein Tagesordnungspunkt im neuen Rahmen (Issues #26, #944). Kontext wie session/partials/agenda_item_row.html: item,
+tenant_slug, agenda_can_edit, agenda_can_retract, is_sub (optional). Nummer, Titel, Kennzeichen als Text (keine
+Pillen), Vorlage und Beratungsfolge, Ergebnis; die Aktionen (nach oben, nach unten, bearbeiten, absetzen bzw. Absetzung
+aufheben, löschen) sind Knöpfe mit 32 px und stehen ab sm rechts, am Handy unter dem Punkt.
+{% endcomment %}
+<li class="grid grid-cols-[2.5rem_minmax(0,1fr)] sm:grid-cols-[2.5rem_minmax(0,1fr)_auto] gap-x-3 gap-y-1 py-3 border-b border-gray-200 dark:border-gray-800 {% if is_sub %}pl-8 sm:pl-10{% endif %}"
+    {% if agenda_can_edit and not is_sub %}draggable="true" data-agenda-item="{{ item.id }}"{% endif %} data-testid="top">
+    <span class="pt-px tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ item.number }}</span>
+    <div class="min-w-0">
+        <p class="font-medium break-words {% if item.is_withdrawn %}line-through text-gray-500 dark:text-gray-400{% else %}text-gray-900 dark:text-white{% endif %}">{{ item.name }}</p>
+        {% if not item.is_public or item.is_withdrawn or item.kind == "residents_questions" or item.is_supplementary or item.vote_result != "pending" %}
+        <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+            {% if not item.is_public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+            {% if item.is_withdrawn %}<span class="font-medium text-amber-800 dark:text-amber-300">Abgesetzt{% if item.withdrawn_reason %}: {{ item.withdrawn_reason }}{% endif %}</span>{% endif %}
+            {% if item.kind == "residents_questions" %}<span>Einwohnerfragestunde</span>{% endif %}
+            {% if item.is_supplementary %}<span title="Nach Versand der Einladung hinzugefügt">Nachtrag</span>{% endif %}
+            {% if item.vote_result != "pending" %}<span>Ergebnis: {% include "session/neu/_status.html" with wert=item.vote_result text=item.get_vote_result_display %}</span>{% endif %}
+        </p>
+        {% endif %}
+        {% if item.residents_questions_note %}<p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400" data-testid="einwohnerfragestunde-hinweis">{{ item.residents_questions_note }}</p>{% endif %}
+        {% if item.paper and item.paper_visible %}
+        <p class="mt-0.5 text-sm"><c-ui.textlink href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=item.paper.id %}">Vorlage {{ item.paper.reference }}</c-ui.textlink></p>
+        {% endif %}
+        {% if item.consultation_chain %}
+        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words" title="Beratungsfolge der Vorlage (Issue #34)">
+            Beratungsfolge:
+            {% for station in item.consultation_chain %}<span class="{% if station.agenda_item_id == item.id %}font-semibold text-gray-800 dark:text-gray-200{% endif %}">{{ station.organization.short_name|default:station.organization.name }} ({{ station.get_role_display }}{% if station.result != "pending" %}: {{ station.get_result_display }}{% endif %})</span>{% if not forloop.last %} › {% endif %}{% endfor %}
+        </p>
+        {% endif %}
+    </div>
+    {% if agenda_can_edit %}
+    <div class="col-start-2 sm:col-start-3 sm:row-start-1 flex flex-wrap items-center gap-0.5 -ml-2 sm:ml-0 text-gray-600 dark:text-gray-400">
+        {% if not is_sub %}<span class="hidden lg:inline-flex items-center justify-center w-8 h-8 cursor-grab text-gray-400" title="Ziehen zum Umsortieren" aria-hidden="true"><i data-lucide="grip-vertical" class="w-4 h-4"></i></span>{% endif %}
+        <form method="post" action="{% url 'session:agenda_item_move' tenant_slug=tenant_slug item_id=item.id %}">
+            {% csrf_token %}<input type="hidden" name="direction" value="up">
+            <button type="submit" class="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-band-grau hover:text-gray-900 dark:hover:text-white" title="Nach oben" aria-label="TOP {{ item.number }} nach oben"><i data-lucide="chevron-up" class="w-4 h-4" aria-hidden="true"></i></button>
+        </form>
+        <form method="post" action="{% url 'session:agenda_item_move' tenant_slug=tenant_slug item_id=item.id %}">
+            {% csrf_token %}<input type="hidden" name="direction" value="down">
+            <button type="submit" class="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-band-grau hover:text-gray-900 dark:hover:text-white" title="Nach unten" aria-label="TOP {{ item.number }} nach unten"><i data-lucide="chevron-down" class="w-4 h-4" aria-hidden="true"></i></button>
+        </form>
+        <a href="{% url 'session:agenda_item_edit' tenant_slug=tenant_slug item_id=item.id %}" class="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-band-grau hover:text-gray-900 dark:hover:text-white" title="Bearbeiten" aria-label="TOP {{ item.number }} bearbeiten"><i data-lucide="pencil" class="w-4 h-4" aria-hidden="true"></i></a>
+        {% if item.is_withdrawn %}
+        <form method="post" action="{% url 'session:agenda_item_withdraw' tenant_slug=tenant_slug item_id=item.id %}">
+            {% csrf_token %}<input type="hidden" name="restore" value="1">
+            <button type="submit" class="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-band-grau hover:text-green-700" title="Absetzung aufheben" aria-label="Absetzung von TOP {{ item.number }} aufheben"><i data-lucide="rotate-ccw" class="w-4 h-4" aria-hidden="true"></i></button>
+        </form>
+        {% else %}
+        <form method="post" action="{% url 'session:agenda_item_withdraw' tenant_slug=tenant_slug item_id=item.id %}" data-prompt="Grund der Absetzung (optional):" data-prompt-field="reason">
+            {% csrf_token %}<input type="hidden" name="reason" value="">
+            <button type="submit" class="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-band-grau hover:text-amber-700" title="Absetzen (dokumentiert)" aria-label="TOP {{ item.number }} absetzen"><i data-lucide="circle-off" class="w-4 h-4" aria-hidden="true"></i></button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'session:agenda_item_delete' tenant_slug=tenant_slug item_id=item.id %}" data-confirm="TOP wirklich löschen? Für reguläre Änderungen bitte absetzen statt löschen.">
+            {% csrf_token %}
+            <button type="submit" class="inline-flex items-center justify-center w-8 h-8 rounded-md hover:bg-band-grau hover:text-red-700" title="Löschen" aria-label="TOP {{ item.number }} löschen"><i data-lucide="trash-2" class="w-4 h-4" aria-hidden="true"></i></button>
+        </form>
+    </div>
+    {% elif agenda_can_retract and item.is_public and not item.parent_id %}
+    {# Genehmigte Niederschrift: nur noch Rücknahme auf nichtöffentlich (Unterpunkte folgen ihrem TOP) #}
+    <div class="col-start-2 sm:col-start-3 sm:row-start-1 -ml-2 sm:ml-0">
+        <a href="{% url 'session:agenda_item_edit' tenant_slug=tenant_slug item_id=item.id %}" class="inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 dark:text-gray-400 hover:bg-band-grau hover:text-gray-900" title="Auf nichtöffentlich setzen" aria-label="TOP {{ item.number }} auf nichtöffentlich setzen"><i data-lucide="eye-off" class="w-4 h-4" aria-hidden="true"></i></a>
+    </div>
+    {% endif %}
+</li>
+{% for sub in item.children_list %}
+{% include "session/neu/_top.html" with item=sub is_sub=True %}
+{% endfor %}

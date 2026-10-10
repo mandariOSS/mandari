@@ -1,0 +1,81 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Vorlagen im neuen Rahmen (Issue #944, Bereich Vorlagen, Reiter „Alle Vorlagen“): Kopfband mit Zahl und der einen
+Hauptaktion „Neue Vorlage“, Filter wie bisher (Suche, Typ, Status, Wahlperiode, Körperschaft; Parameter q, type,
+status, term, body, organization, page), darunter die Vorlagen als Liste ohne Tabelle: Nummer, Art, Gremium und Datum
+über dem Titel, der Stand rechts bzw. am Handy darunter. Kontext: PaperListView; die bisherige Seite bleibt
+session/papers/list.html.
+{% endcomment %}
+
+{% block page_title %}Vorlagen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Vorlagen" text="{{ paginator.count }} Vorlage{{ paginator.count|pluralize:'n' }}{% if request.GET.q or request.GET.type or request.GET.status or request.GET.term or request.GET.body or request.GET.organization %} für die gewählten Filter{% endif %}, die neuesten zuerst." dicht>
+    {% if "create_papers" in permission_checker.permissions %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'session:paper_create' tenant_slug=tenant_slug %}" size="sm" icon="plus">Neue Vorlage</c-ui.button></c-slot>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<form method="get" role="search" aria-label="Vorlagen filtern" class="flex flex-wrap items-center gap-2" data-testid="vorlagen-filter">
+    {% if request.GET.organization %}<input type="hidden" name="organization" value="{{ request.GET.organization }}">{% endif %}
+    <label for="filter-suche" class="sr-only">Vorlage suchen</label>
+    <span class="relative block basis-full sm:basis-64 sm:flex-1 min-w-0 max-w-md">
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden="true"></i>
+        <input id="filter-suche" type="search" name="q" value="{{ request.GET.q }}" placeholder="Titel, Nummer oder Text"
+               class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    </span>
+    <label for="filter-typ" class="sr-only">Vorlagenart</label>
+    <select id="filter-typ" name="type" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Arten</option>
+        {% for value, label in paper_types %}<option value="{{ value }}" {% if request.GET.type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <label for="filter-status" class="sr-only">Status</label>
+    <select id="filter-status" name="status" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Status</option>
+        {% for value, label in paper_statuses %}<option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% if legislative_terms %}
+    <label for="filter-periode" class="sr-only">Wahlperiode</label>
+    <select id="filter-periode" name="term" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Wahlperioden</option>
+        {% for term in legislative_terms %}<option value="{{ term.id }}" {% if selected_term == term.id|stringformat:"s" %}selected{% endif %}>{{ term.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    {% include "session/partials/body_filter.html" %}
+    <c-ui.button type="submit" variant="secondary" size="sm">Filtern</c-ui.button>
+    {% if request.GET.q or request.GET.type or request.GET.status or request.GET.term or request.GET.body or request.GET.organization %}
+    <c-ui.textlink href="{% url 'session:papers' tenant_slug=tenant_slug %}" class="text-sm">Filter zurücksetzen</c-ui.textlink>
+    {% endif %}
+</form>
+
+{% if papers %}
+<ul class="mt-4 border-t border-gray-200 dark:border-gray-800" data-testid="vorlagenliste">
+    {% for paper in papers %}
+    <li class="relative grid md:grid-cols-[minmax(0,1fr)_11rem] gap-x-4 gap-y-1 py-3 pl-1 border-b border-gray-200 dark:border-gray-800 hover:bg-band-grau/60">
+        <div class="min-w-0">
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums break-words">
+                {{ paper.display_reference }} · {{ paper.get_paper_type_display }}{% if paper.main_organization %} · {{ paper.main_organization.name }}{% endif %}{% if body_choice.active and paper.body %} · {{ paper.body.label }}{% endif %}{% if paper.date %} · {{ paper.date|date:"d.m.Y" }}{% endif %}
+            </p>
+            <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
+               class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ paper.name }}</a>
+            {% if not paper.is_public %}<p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</p>{% endif %}
+        </div>
+        <p class="md:pt-5 text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=paper.status text=paper.get_status_display %}</p>
+    </li>
+    {% endfor %}
+</ul>
+{% include "session/neu/_seiten.html" %}
+{% else %}
+<div class="mt-8 max-w-xl">
+    <p class="font-medium text-gray-900 dark:text-white">Keine Vorlagen gefunden</p>
+    <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">
+        {% if request.GET.q or request.GET.type or request.GET.status or request.GET.term or request.GET.body or request.GET.organization %}Für diese Filter gibt es keine Vorlage. <c-ui.textlink href="{% url 'session:papers' tenant_slug=tenant_slug %}">Filter zurücksetzen</c-ui.textlink>
+        {% elif "create_papers" in permission_checker.permissions %}Legen Sie die erste Vorlage an. <c-ui.textlink href="{% url 'session:paper_create' tenant_slug=tenant_slug %}">Erste Vorlage anlegen</c-ui.textlink>
+        {% else %}Es sind noch keine Vorlagen vorhanden.{% endif %}
+    </p>
+</div>
+{% endif %}
+{% endblock %}

@@ -24,6 +24,7 @@ from django.views import View
 
 from ..models import SessionMeeting, SessionMeetingPackage, SessionTenant, SessionUser
 from ..permissions import SessionPermissionChecker, SessionViewMixin
+from ..rahmen import neues_design
 from ..services import meeting_package_service
 from ..services.meeting_package_plan import VARIANT_LABELS, variants_for
 
@@ -68,6 +69,8 @@ class _MeetingPackageView(SessionViewMixin, View):
             "entries": entries,
             "polling": any(entry.in_progress for entry in entries),
             "poll_seconds": POLL_SECONDS,
+            # Erscheinungsbild des Mandanten (Issue #944): im neuen Rahmen ohne Kasten
+            "session_neues_design": neues_design(self.tenant),
         }
         return render(self.request, "session/partials/meeting_package.html", context)
 

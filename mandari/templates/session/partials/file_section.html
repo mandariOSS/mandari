@@ -9,16 +9,10 @@ Erwarteter Kontext:
 - file_content_locked: bool (optional) — Inhalt festgeschrieben: nur Ö/NÖ umstellbar, kein Upload/Ersetzen/Löschen
 - file_content_locked_message: Hinweis dazu (optional)
 - tenant_slug
+Im neuen Erscheinungsbild (session_neues_design, Issue #944) ohne Kasten: Überschrift und Zeilen direkt auf der Fläche.
 {% endcomment %}
 
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">
-    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
-        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <i data-lucide="paperclip" class="w-5 h-5 text-gray-500"></i>
-            Anlagen ({{ files|length }})
-        </h2>
-    </div>
-
+{% partialdef inhalt %}
     {% if files %}
     <div class="divide-y divide-gray-200 dark:divide-gray-700">
         {% for file in files %}
@@ -88,7 +82,7 @@ Erwarteter Kontext:
         {% endfor %}
     </div>
     {% else %}
-    <div class="px-6 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+    <div class="px-6 {% if session_neues_design %}py-2 text-gray-600{% else %}py-6 text-center text-gray-500{% endif %} text-sm dark:text-gray-400">
         Noch keine Anlagen vorhanden.
     </div>
     {% endif %}
@@ -140,4 +134,19 @@ Erwarteter Kontext:
         </form>
     </div>
     {% endif %}
+{% endpartialdef %}
+{% if session_neues_design %}
+<c-rahmen.abschnitt titel="Anlagen" titel_id="anlagen-titel" zusatz="{% if files %}{{ files|length }}{% endif %}" class="[&_.px-6]:px-0" data-testid="anlagen">
+    <div class="mt-1">{% partial inhalt %}</div>
+</c-rahmen.abschnitt>
+{% else %}
+<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden" data-testid="anlagen">
+    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="paperclip" class="w-5 h-5 text-gray-500"></i>
+            Anlagen ({{ files|length }})
+        </h2>
+    </div>
+    {% partial inhalt %}
 </div>
+{% endif %}
