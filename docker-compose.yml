@@ -73,6 +73,9 @@ x-app-environment: &app-environment
   OBJ_REGION: ${OBJ_REGION:-}
   OBJ_CACHE_MAX_GB: ${OBJ_CACHE_MAX_GB:-60}
   OBJ_CHECKSUMS: ${OBJ_CHECKSUMS:-when_required}
+  # Obergrenze der Gesamtgröße des Dokument-Caches in GB (docs/FILE_CACHE.md, „Obergrenze“), 0 = unbegrenzt
+  FILE_CACHE_MAX_TOTAL_GB: ${FILE_CACHE_MAX_TOTAL_GB:-0}
+  FILE_CACHE_EVICT_TARGET_PERCENT: ${FILE_CACHE_EVICT_TARGET_PERCENT:-90}
   # Nur mit Ratsinformationssystem im internen Netz (siehe .env.example)
   INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
   # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus

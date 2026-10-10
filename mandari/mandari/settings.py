@@ -528,6 +528,11 @@ MEDIA_ROOT = BASE_DIR / "media"
 OPARL_FILES_ROOT = Path(os.environ.get("OPARL_FILES_ROOT", str(MEDIA_ROOT / "oparl_files")))
 FILE_CACHE_MAX_MB = int(os.environ.get("FILE_CACHE_MAX_MB", "80"))
 FILE_CACHE_MIN_FREE_GB = int(os.environ.get("FILE_CACHE_MIN_FREE_GB", "15"))
+# Obergrenze der Gesamtgröße (Issue #961, insight_core/services/file_cache_limit.py): 0 = unbegrenzt. Darüber
+# verdrängt der stündliche Lauf die am wenigsten gebrauchten Dokumente, bis FILE_CACHE_EVICT_TARGET_PERCENT der
+# Grenze erreicht sind (mit Objektspeicher nur lokal, sonst holt die Vorschau sie bei Bedarf neu).
+FILE_CACHE_MAX_TOTAL_GB = float(os.environ.get("FILE_CACHE_MAX_TOTAL_GB", "0") or 0)
+FILE_CACHE_EVICT_TARGET_PERCENT = int(os.environ.get("FILE_CACHE_EVICT_TARGET_PERCENT", "90") or 90)
 FILE_PROXY_TIMEOUT_SECONDS = int(os.environ.get("FILE_PROXY_TIMEOUT_SECONDS", "15"))
 # Lokale Kopien liefert der Webserver aus (X-Accel-Redirect, Range/ETag), Django prüft nur Zugriff und
 # Sperre (Issue #785, docs/FILE_CACHE.md). Erst einschalten, wenn der Webserver die Ablage lesen kann
