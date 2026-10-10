@@ -324,8 +324,11 @@ def _store_found(file_obj: Any, source: IO[bytes], content_type: str) -> None:
     """
     Der Abgleich hat den unveränderten Inhalt geladen: ablegen, wenn die Datei abgelegt wird und noch keine Kopie
     hat (kein zweiter Abruf, Issue #919); eine als ``missing`` vermerkte Datei sonst wieder für den Abruf öffnen.
+    Ein verdrängtes Dokument (``evicted``, Obergrenze #961) bleibt verdrängt: Sein Text gilt weiter, und der Abgleich
+    holte sonst zurück, was die Grenze eben verdrängt hat. Ein geänderter Inhalt wird dagegen abgelegt
+    (``replace_content``), weil sein Text neu erkannt werden muss und die Erkennung nur aus der Ablage liest.
     """
-    if file_obj.local_status == "ok" or abruf.is_being_fetched(file_obj):
+    if file_obj.local_status in ("ok", abruf.EVICTED) or abruf.is_being_fetched(file_obj):
         return
     if abruf.stores_file(file_obj) and file_cache.has_room_for(0):
         source.seek(0)

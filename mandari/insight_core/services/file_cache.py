@@ -509,7 +509,8 @@ def cache_stats() -> dict:
         "refused": by_status.get("refused", 0),
         "error": by_status.get("error", 0),
         "too_large": by_status.get("too_large", 0),
-        # Von der Obergrenze verdrängt (#961, ohne Objektspeicher): holt die Vorschau bei Bedarf neu
+        # Von der Obergrenze verdrängt (#961, ohne Objektspeicher): holt die Vorschau bei Bedarf neu, sonst nur
+        # cache_files --verdraengte (kein Zustand, aus dem der Abruf von selbst beansprucht)
         "evicted": by_status.get("evicted", 0),
         "paused": paused,
         "coverage": round(ok / total * 100, 1) if total else 0.0,

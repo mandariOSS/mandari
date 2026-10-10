@@ -26,6 +26,12 @@ unverändert.
   „gesperrt“ im Sinn des Löschabgleichs (#787).
 - ``too_large``: größer als ``FILE_CACHE_MAX_MB``.
 - ``error``: sonstige Fehler (etwa 403) und erschöpfte Wiederholungen; ein neuer Versuch nach einer Woche.
+- ``evicted``: von der Obergrenze des Dokument-Caches verdrängt (#961, ``insight_core/services/file_cache_limit.py``,
+  nur ohne Objektspeicher). **Kein** Zustand, aus dem der Abruf von selbst beansprucht (nicht in ``due_q``,
+  ``pending_queryset`` und Kennzahlen), sonst lüde der nächste Lauf wieder, was die Grenze eben verdrängt hat.
+  Ausdrücklich geholt wird er nur von der Vorschau (Live-Abruf mit Write-Through; Fehlschläge wie bei ``none``,
+  ``record_live_failure``), von ``cache_files --verdraengte`` (``include_evicted``) und von der Admin-Aktion von Hand
+  (``force``). Ein bestätigtes Fehlen der Kopie (``mark_content_missing``) setzt ihn nie auf ``none``.
 
 Der Fehlercode steht in ``fetch_error`` (Kennzahl ``mandari_files_fetch_errors_total`` je Quelle und Code), der
 lesbare Grund wie bisher in ``local_error``. Ein Abruffehler ändert ``text_extraction_status`` nie.
@@ -44,7 +50,8 @@ Stichtag gilt nur für Quellen mit gelisteter Kommune (die bisher abgelegten); `
 vollständiger Sync noch nicht beendet, nichts abrufen. ``stichtage_setzen`` trägt die Stichtage nach (bei
 ``TEXT_EXTRACTION_RUNNER=worker`` zu Beginn jedes Laufs von ``cache_files``, von Hand mit ``dokumentkette
 umschalten``). Ein neuer Inhalt wird im selben Abruf in den Objektspeicher geladen; ``FILE_CACHE_MIN_FREE_GB``
-gilt immer.
+gilt immer. Mit Obergrenze (``FILE_CACHE_MAX_TOTAL_GB``, #961) lädt ``nachladen`` nur bis zur Grenze (Ergebnis
+``limit``), auch für die Ablage für alle; verdrängt wird nur im stündlichen Aufräumen, nie in einer Anfrage.
 """
 
 from __future__ import annotations
@@ -70,7 +77,7 @@ from mandari_oparl.abgleich import GONE_STATUS, looks_like_html
 from prometheus_client import Counter as PromCounter
 
 from insight_core.models import OParlBody, OParlFile, OParlSource
-from insight_core.services import file_cache, file_store, host_pacing, robots, safe_fetch
+from insight_core.services import file_cache, file_cache_limit, file_store, host_pacing, robots, safe_fetch
 from insight_core.services.document_extraction import (
     TEMP_FILE_PREFIX,
     DocumentDownloadError,
@@ -92,6 +99,8 @@ MISSING: Final = "missing"
 REFUSED: Final = "refused"
 ERROR: Final = "error"
 TOO_LARGE: Final = "too_large"
+#: Von der Obergrenze des Dokument-Caches verdrängt (#961): nur ausdrücklich wieder abgerufen
+EVICTED: Final = file_cache_limit.EVICTED
 
 # --- Ergebnisse ohne eigenen Zustand ----------------------------------------------------------------------
 #: Nichts zu tun: schon abgelegt, schon beansprucht oder nicht fällig
@@ -106,6 +115,8 @@ DISK_FULL: Final = "disk_full"
 STORAGE_ERROR: Final = "storage_error"
 #: Takt der Drossel je Host belegt (nur mit Höchstwartezeit): später erneut, kein Versuch gezählt
 BUSY: Final = "busy"
+#: Obergrenze des Dokument-Caches erreicht (#961): ``nachladen`` endet, Platz schafft das stündliche Aufräumen
+LIMIT: Final = "limit"
 
 # --- Fehlercodes (``OParlFile.fetch_error``) -------------------------------------------------------------
 CODE_TIMEOUT: Final = "timeout"
@@ -357,11 +368,12 @@ def is_excluded(file_obj: Any) -> bool:
     )
 
 
-def due_q(now: datetime, *, include_errors: bool = False, force: bool = False) -> Q:
+def due_q(now: datetime, *, include_errors: bool = False, force: bool = False, include_evicted: bool = False) -> Q:
     """
     Zustände, aus denen ein Abruf beanspruchen darf: ``none``, fälliges ``retry``/``error``, verfallene
-    Beanspruchung. ``include_errors``: auch nicht fällige ``error`` (``cache_files --retry-errors``); ``force``: jeder
-    Zustand außer ``ok`` und einem laufenden Abruf (Admin-Aktion von Hand).
+    Beanspruchung. ``include_errors``: auch nicht fällige ``error`` (``cache_files --retry-errors``);
+    ``include_evicted``: auch verdrängte (``cache_files --verdraengte``, #961); ``force``: jeder Zustand außer ``ok``
+    und einem laufenden Abruf (Admin-Aktion von Hand, auch verdrängte). Ohne diese Angaben nie ``evicted``.
     """
     bedingung = (
         Q(local_status=NONE)
@@ -370,8 +382,10 @@ def due_q(now: datetime, *, include_errors: bool = False, force: bool = False) -
     )
     if include_errors:
         bedingung |= Q(local_status=ERROR)
+    if include_evicted:
+        bedingung |= Q(local_status=EVICTED)
     if force:
-        bedingung |= Q(local_status__in=[RETRY, ERROR, MISSING, REFUSED, TOO_LARGE])
+        bedingung |= Q(local_status__in=[RETRY, ERROR, MISSING, REFUSED, TOO_LARGE, EVICTED])
     return bedingung
 
 
@@ -394,7 +408,12 @@ class Claim:
 
 
 def claim(
-    file_id: Any, *, now: datetime | None = None, include_errors: bool = False, force: bool = False
+    file_id: Any,
+    *,
+    now: datetime | None = None,
+    include_errors: bool = False,
+    force: bool = False,
+    include_evicted: bool = False,
 ) -> Claim | None:
     """Datei atomar beanspruchen (``fetching``); ``None``, wenn sie schon beansprucht, erledigt oder ausgeschlossen ist."""
     now = now or timezone.now()
@@ -403,7 +422,7 @@ def claim(
             OParlFile.objects.select_for_update(skip_locked=True)
             .filter(pk=file_id)
             .filter(not_excluded_q())
-            .filter(due_q(now, include_errors=include_errors, force=force))
+            .filter(due_q(now, include_errors=include_errors, force=force, include_evicted=include_evicted))
             .values("local_status", "fetch_next_at", "fetch_attempts")
             .first()
         )
@@ -497,10 +516,14 @@ def record_live_failure(file_obj: Any, code: str, message: str, now: datetime | 
     Fehlschlag eines Live-Abrufs der Vorschau vermerken – mit denselben Zuständen, ohne Beanspruchung.
 
     Nur wenn ein Abruf jetzt beanspruchen dürfte (``none`` bzw. fälliges ``retry``/``error``): Viele Aufrufe einer
-    Vorschau zählen so nicht als viele Fehlschläge, und ein laufender Abruf wird nicht überschrieben.
+    Vorschau zählen so nicht als viele Fehlschläge, und ein laufender Abruf wird nicht überschrieben. Ein verdrängtes
+    Dokument (``evicted``, #961) holt nur die Vorschau; für ihren Live-Abruf gilt dieselbe Tabelle wie für ``none``
+    (404/410 kurz nach der Erfassung wird wiederholt, später ``missing``).
     """
     now = now or timezone.now()
-    condition = not_excluded_q() & (Q(local_status=NONE) | Q(local_status__in=[RETRY, ERROR], fetch_next_at__lte=now))
+    condition = not_excluded_q() & (
+        Q(local_status__in=[NONE, EVICTED]) | Q(local_status__in=[RETRY, ERROR], fetch_next_at__lte=now)
+    )
     attempts = int(getattr(file_obj, "fetch_attempts", 0) or 0) + 1
     return _record_failure(file_obj, condition, attempts, code, message, now)
 
@@ -523,7 +546,8 @@ def mark_content_missing(file_obj: Any) -> bool:
     """
     Bestätigt fehlende Kopie (weder lokal noch im Objektspeicher): ``ok`` → ``none``, damit der Abruf sie holt.
 
-    Nur nach bestätigtem Fehlen (``file_store.local_copy`` mit Zustand „fehlt“), nie bei einer Störung.
+    Nur nach bestätigtem Fehlen (``file_store.local_copy`` mit Zustand „fehlt“), nie bei einer Störung. Nur aus
+    ``ok``: Ein verdrängtes Dokument (``evicted``, #961) hat bewusst keine Kopie und bleibt verdrängt.
     """
     if not OParlFile.objects.filter(pk=file_obj.pk, local_status=OK).update(local_status=NONE, fetch_next_at=None):
         return False
@@ -728,6 +752,7 @@ def abrufen(
     client: httpx.Client | None = None,
     include_errors: bool = False,
     force: bool = False,
+    include_evicted: bool = False,
     max_wait: float | None = None,
     now: datetime | None = None,
 ) -> str:
@@ -736,8 +761,9 @@ def abrufen(
     ``refused``, ``too_large``, ``error``) oder ein Ergebnis ohne Zustand (``skipped``, ``paused``, ``excluded``,
     ``disk_full``, ``storage_error``, ``busy``).
 
-    ``include_errors``: auch nicht fällige ``error`` (``cache_files --retry-errors``); ``force``: jeder Zustand außer
-    ``ok`` (Admin-Aktion von Hand). ``max_wait``: so lange höchstens auf die Drossel je Host warten (sonst ``busy``,
+    ``include_errors``: auch nicht fällige ``error`` (``cache_files --retry-errors``); ``include_evicted``: auch
+    verdrängte (``cache_files --verdraengte``, #961); ``force``: jeder Zustand außer ``ok`` (Admin-Aktion von Hand).
+    ``max_wait``: so lange höchstens auf die Drossel je Host warten (sonst ``busy``,
     Zustand wiederhergestellt).
     """
     now = now or timezone.now()
@@ -755,7 +781,9 @@ def abrufen(
             # Eine Störung der Ablage löst nie einen Abruf bei der Quelle aus
             return STORAGE_ERROR
         mark_content_missing(file_obj)
-    beanspruchung = claim(file_obj.pk, now=now, include_errors=include_errors, force=force)
+    beanspruchung = claim(
+        file_obj.pk, now=now, include_errors=include_errors, force=force, include_evicted=include_evicted
+    )
     if beanspruchung is None:
         return SKIPPED
     file_obj.local_status = FETCHING
@@ -836,16 +864,19 @@ def _abrufen_beansprucht(
 # =============================================================================
 
 
-def pending_queryset(body: Any = None, *, retry_errors: bool = False, now: datetime | None = None) -> QuerySet[Any]:
+def pending_queryset(
+    body: Any = None, *, retry_errors: bool = False, retry_evicted: bool = False, now: datetime | None = None
+) -> QuerySet[Any]:
     """
     Dateien, die ein Lauf abrufen soll: abzulegen, nicht ausgeschlossen, fällig und nicht aus Quellen in Schonung.
-    Fällige Wiederholungen zuerst, dann die neuesten Dateien (neue Dateien vor dem Altbestand).
+    Fällige Wiederholungen zuerst, dann die neuesten Dateien (neue Dateien vor dem Altbestand). Verdrängte Dokumente
+    (#961) nur mit ``retry_evicted`` (``cache_files --verdraengte``).
     """
     now = now or timezone.now()
     # text_content/raw_json sind riesig (extrahierter Volltext) — nie mitladen
     qs = (
         OParlFile.objects.filter(not_excluded_q())
-        .filter(due_q(now, include_errors=retry_errors))
+        .filter(due_q(now, include_errors=retry_errors, include_evicted=retry_evicted))
         .filter(storable_q())
         .exclude(body__source__consecutive_failures__gte=file_cache.backoff_failures())
         .select_related("body", "body__source")
@@ -863,11 +894,22 @@ def pending_queryset(body: Any = None, *, retry_errors: bool = False, now: datet
     return qs.annotate(abruf_vorrang=vorrang).order_by("abruf_vorrang", "-file_date", "-oparl_created", "-created_at")
 
 
-def nachladen(body: Any = None, *, limit: int = 500, retry_errors: bool = False, sleep: float = 0.05) -> Counter[str]:
+def nachladen(
+    body: Any = None,
+    *,
+    limit: int = 500,
+    retry_errors: bool = False,
+    retry_evicted: bool = False,
+    sleep: float = 0.05,
+) -> Counter[str]:
     """
     Fehlende Kopien nachladen (``cache_files``): liegen gebliebene Beanspruchungen freigeben, Stichtage nachtragen
     (nur mit ``TEXT_EXTRACTION_RUNNER=worker``), dann höchstens ``limit`` Abrufe, je Quelle höchstens
     ``DOCUMENT_FETCH_MAX_QUEUED``. Jeder Abruf beansprucht selbst; der Lauf wählt nur aus.
+
+    Mit Obergrenze (``FILE_CACHE_MAX_TOTAL_GB``, #961) nur bis zur Grenze (Ergebnis ``limit``), für jede Ablage
+    dieses Wegs, auch die Ablage für alle mit ``TEXT_EXTRACTION_RUNNER=worker``. Verdrängt wird hier nie, sondern im
+    stündlichen Aufräumen (``dokumentablage --aufraeumen``). ``retry_evicted``: auch verdrängte Dokumente.
     """
     results: Counter[str] = Counter()
     release_stale()
@@ -876,30 +918,42 @@ def nachladen(body: Any = None, *, limit: int = 500, retry_errors: bool = False,
     if not file_cache.has_room_for(0):
         results[DISK_FULL] += 1
         return results
+    # Platz bis zur Obergrenze (None: keine Grenze); einmal je Lauf gemessen, danach je Ablage abgezogen
+    platz = file_cache_limit.room_bytes()
+    if platz is not None and platz <= 0:
+        results[LIMIT] += 1
+        return results
     grenze = max_queued()
     je_quelle: Counter[Any] = Counter()
     erledigt = 0
     with fetch_client() as client:
-        for file_obj in _kandidaten(body, retry_errors, limit):
+        for file_obj in _kandidaten(body, retry_errors, retry_evicted, limit):
             if erledigt >= limit:
                 break
             schluessel = file_obj.body.source_id if file_obj.body is not None else None
             if je_quelle[schluessel] >= grenze:
                 continue
             je_quelle[schluessel] += 1
-            status = abrufen(file_obj, client=client, include_errors=retry_errors)
+            status = abrufen(file_obj, client=client, include_errors=retry_errors, include_evicted=retry_evicted)
             results[status] += 1
             erledigt += 1
             if status == DISK_FULL:
                 break
+            if status == OK and platz is not None:
+                # Ein geteilter Inhalt belegt nichts zusätzlich; gezählt wird trotzdem (vorsichtig)
+                platz -= int(getattr(file_obj, "local_size", 0) or 0)
+                if platz <= 0:
+                    results[LIMIT] += 1
+                    break
             if sleep:
                 time.sleep(sleep)
     return results
 
 
-def _kandidaten(body: Any, retry_errors: bool, limit: int) -> Iterable[Any]:
+def _kandidaten(body: Any, retry_errors: bool, retry_evicted: bool, limit: int) -> Iterable[Any]:
     # Ein Fenster über dem Limit, damit die Grenze je Quelle andere Quellen nachrücken lässt
-    return pending_queryset(body, retry_errors=retry_errors)[: max(limit, 1) * 10].iterator(chunk_size=200)
+    auswahl = pending_queryset(body, retry_errors=retry_errors, retry_evicted=retry_evicted)
+    return auswahl[: max(limit, 1) * 10].iterator(chunk_size=200)
 
 
 # =============================================================================
@@ -919,7 +973,9 @@ def zuruecksetzen() -> dict[str, int]:
     """
     Zustände für ein älteres Image zurücksetzen (Rückfall ohne Rückbau der Migration; idempotent): ``retry`` und
     ``fetching`` → ``none``, ``refused`` → ``error`` mit dem Fehlertext, an dem ein älteres Image die Sperre
-    erkennt (robots.txt-Präfix bzw. „HTML statt Datei“). Spalten und übrige Inhalte bleiben.
+    erkennt (robots.txt-Präfix bzw. „HTML statt Datei“). Spalten und übrige Inhalte bleiben. Verdrängte Dokumente
+    (``evicted``, #961) bleiben unberührt: Als ``none`` lüde ein älteres Image sie alle nach; so behandelt es sie wie
+    einen unbekannten Zustand (die Vorschau holt bei Bedarf live).
     """
     prefix = robots.SKIP_ERROR_PREFIX
     verweigert = OParlFile.objects.filter(local_status=REFUSED)

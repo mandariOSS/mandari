@@ -333,12 +333,14 @@ def test_datenmigration_verweigert_und_zurueck() -> None:
         html_pk = anlegen("error", MIGRATION.HTML_TEXT)
         sonst_pk = anlegen("error", "HTTP 403")
         ok_pk = anlegen("ok", "")
+        # Von der Obergrenze verdrängt (0056, #961): bleibt in beide Richtungen verdrängt
+        verdraengt_pk = anlegen("evicted", "")
 
         executor = MigrationExecutor(connection)
         executor.migrate([NACHHER])
         stand = dict(OParlFile.objects.values_list("pk", "local_status"))
         assert stand[robots_pk] == stand[html_pk] == "refused"
-        assert (stand[sonst_pk], stand[ok_pk]) == ("error", "ok")
+        assert (stand[sonst_pk], stand[ok_pk], stand[verdraengt_pk]) == ("error", "ok", "evicted")
         assert OParlFile.objects.get(pk=robots_pk).fetch_error == "robots"
         assert OParlFile.objects.get(pk=html_pk).local_error == MIGRATION.HTML_TEXT, "Fehlertext bleibt"
 
@@ -351,6 +353,7 @@ def test_datenmigration_verweigert_und_zurueck() -> None:
             .objects.values_list("pk", "local_status")
         )
         assert zurueck[robots_pk] == zurueck[html_pk] == zurueck[sonst_pk] == "error"
+        assert zurueck[verdraengt_pk] == "evicted"
     finally:
         executor = MigrationExecutor(connection)
         executor.migrate(executor.loader.graph.leaf_nodes())
