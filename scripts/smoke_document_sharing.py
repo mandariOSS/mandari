@@ -383,6 +383,11 @@ FolderGuestShare.objects.create(folder=folder_rev, user=user_guest3, level="view
 neu2 = MotionRevision(motion=doc_rev, version=4, changed_by=m_admin, change_summary="Nach Ordner-Freigabe")
 neu2.set_content_encrypted("<p>v4</p>")
 neu2.save()
+# Privat bleibt privat: Die Ordner-Freigabe erfasst erst das geteilte Dokument (Issue #582)
+resp = c_guest3.get(rev_url, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
+check("Ordner-Freigabe: privates Dokument bleibt privat", resp.status_code == 403, f"got {resp.status_code}")
+doc_rev.visibility = "shared"
+doc_rev.save(update_fields=["visibility"])
 resp = c_guest3.get(rev_url, HTTP_X_REQUESTED_WITH="XMLHttpRequest")
 versions = [r["version"] for r in resp.json().get("revisions", [])]
 check("Ordner-Freigabe: nur Versionen ab deren Beginn", versions == [4], str(versions))

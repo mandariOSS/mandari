@@ -113,9 +113,10 @@ def _send(groups: list[str]) -> None:
         send = async_to_sync(channel_layer.group_send)
         for group in groups:
             send(group, dict(RECHECK_EVENT))
-    except Exception:
-        # Best Effort: Schreibende prüft der Consumer beim Speichern zusätzlich nach
-        logger.warning("Neuprüfung offener Bearbeitungen nicht gesendet", exc_info=True)
+    except Exception as exc:
+        # Best Effort: Schreibende prüft der Consumer beim Speichern zusätzlich nach. Ohne Kanal-Layer (etwa Redis
+        # nicht erreichbar) bricht der erste Fehler die übrigen Gruppen ab, eine Zeile im Protokoll genügt.
+        logger.warning("Neuprüfung offener Bearbeitungen nicht gesendet: %s", str(exc)[:200])
 
 
 def _motion_saved(
