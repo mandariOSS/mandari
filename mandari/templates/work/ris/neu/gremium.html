@@ -1,0 +1,105 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Gremium im neuen Erscheinungsbild (Issues #852, #853): Mitglieder (ehemalige aufklappbar, Fraktion wie in Insight über
+c-insight.fraktion) und Sitzungen (gemeinsame Liste c-liste.sitzungen, vergangene aufklappbar) nebeneinander statt in
+Reitern, dazu „Für die Fraktion“ – eigenes Gremium, Mitglieder der Organisation im Gremium, nächste Sitzung mit
+Vorbereitungsstand – und die Angaben. Kontext: apps/work/ris/neu.gremium; die bisherige Seite bleibt
+work/ris/organization_detail.html.
+{% endcomment %}
+
+{% block page_title %}{% if org %}{{ org.short_name|default:org.name }}{% else %}Gremium{% endif %}{% endblock %}
+{% block brotkrumen_aktuell %}{% if org %}<c-insight.brotkrume>{{ org.name|default:org.short_name|truncatechars:60 }}</c-insight.brotkrume>{% endif %}{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if org %}{{ org.name|default:org.short_name }}{% else %}Gremium{% endif %}" dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:ris_organizations' org_slug=organization.slug %}">Gremien</c-insight.zurueck></c-slot>
+    {% if org %}
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+        <span>{% if org.is_active %}Aktiv{% else %}Beendet{% endif %}</span>
+        {% if org.classification %}<span>{{ org.classification }}</span>{% elif org.organization_type %}<span>{{ org.organization_type }}</span>{% endif %}
+        {% if org.short_name and org.short_name != org.name %}<span>{{ org.short_name }}</span>{% endif %}
+        <span>{{ aktive_mitglieder|length }} aktive{% if aktive_mitglieder|length == 1 %}s{% endif %} Mitglied{{ aktive_mitglieder|length|pluralize:"er" }}</span>
+    </p>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<div class="grid gap-x-12 gap-y-10 lg:items-start lg:grid-cols-[minmax(0,1fr)_20rem] lg:grid-rows-[auto_1fr] min-[1600px]:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_22rem] min-[1600px]:grid-rows-1">
+    <c-rahmen.abschnitt titel="Mitglieder und Vertretungen" titel_id="mitglieder-titel" class="min-w-0">
+        {% if aktive_mitglieder %}
+        <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800" data-testid="gremium-mitglieder">
+            {% for m in aktive_mitglieder %}
+            <li class="py-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-sm">
+                <span class="min-w-0"><a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=m.person.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4">{{ m.person.display_name|default:m.person.name }}</a>{% if m.angaben.fraktion_name %}<span class="text-gray-600 dark:text-gray-400"> · <c-insight.fraktion :angaben="m.angaben" /></span>{% endif %}{% if m.konto %}<span class="text-gray-600 dark:text-gray-400"> · Ihre Organisation</span>{% endif %}</span>
+                <span class="text-gray-600 dark:text-gray-400">{{ m.role|default:"" }}{% if m.role and m.start_date %} · {% endif %}{% if m.start_date %}seit {{ m.start_date|date:"d.m.Y" }}{% endif %}</span>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Keine aktiven Mitglieder.</p>
+        {% endif %}
+        {% if past_members %}
+        <details class="mt-4">
+            <summary class="cursor-pointer text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Ehemalige Mitglieder ({{ past_members|length }})</summary>
+            <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800">
+                {% for m in past_members %}
+                <li class="py-2 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-sm">
+                    <a href="{% url 'work:ris_person_detail' org_slug=organization.slug person_id=m.person.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4">{{ m.person.display_name|default:m.person.name }}</a>
+                    <span class="text-gray-600 dark:text-gray-400">{{ m.role|default:"" }}{% if m.role and m.end_date %} · {% endif %}{% if m.end_date %}bis {{ m.end_date|date:"d.m.Y" }}{% endif %}</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </details>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Kommende Sitzungen" titel_id="sitzungen-titel" class="min-w-0 lg:col-start-1 min-[1600px]:col-start-2 min-[1600px]:row-start-1">
+        {% if upcoming_meetings %}
+        <div class="mt-2">
+            <c-liste.sitzungen :sitzungen="upcoming_meetings" :links="ris_links" dicht ohne_merken
+                               zusatz="work/ris/neu/_sitzung_fraktion.html" zusatz_titel="Für die Fraktion" />
+        </div>
+        {% else %}
+        <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Keine kommenden Sitzungen angesetzt.</p>
+        {% endif %}
+        {% if past_meetings %}
+        <details class="mt-4">
+            <summary class="cursor-pointer text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Vergangene Sitzungen ({{ past_meetings|length }})</summary>
+            <div class="mt-2">
+                <c-liste.sitzungen :sitzungen="past_meetings" :links="ris_links" dicht ohne_merken />
+            </div>
+        </details>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    <aside class="min-w-0 space-y-8 lg:col-start-2 lg:row-start-1 lg:row-span-2 min-[1600px]:col-start-3 min-[1600px]:row-span-1" aria-label="Für die Fraktion und Angaben">
+        <c-rahmen.band ton="grau" dicht titel="Für die Fraktion" titel_id="fraktion-titel" data-testid="fuer-die-fraktion">
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200">{% if ihr_gremium %}Eines Ihrer Gremien.{% else %}Sie folgen diesem Gremium nicht. <c-ui.textlink href="{% url 'work:profile_committees' org_slug=organization.slug %}">Gremien wählen</c-ui.textlink>{% endif %}</p>
+            {% if aus_fraktion %}<p class="mt-2 text-sm text-gray-800 dark:text-gray-200">Aus Ihrer Organisation: {{ aus_fraktion|join:", " }}.</p>{% endif %}
+            {% if naechste_sitzung %}
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200">Nächste Sitzung am {{ naechste_sitzung.start|date:"d.m.Y" }}{% if naechste_stand and naechste_stand.vorlagen %}: Positionen zu {{ naechste_stand.positionen }} von {{ naechste_stand.vorlagen }} Vorlage{{ naechste_stand.vorlagen|pluralize:"n" }}{% endif %}.</p>
+            {% if darf_vorbereiten %}<p class="mt-2 text-sm"><c-ui.textlink href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=naechste_sitzung.id %}">Nächste Sitzung vorbereiten</c-ui.textlink></p>{% endif %}
+            {% endif %}
+        </c-rahmen.band>
+
+        <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
+            <c-ui.angaben class="mt-2">
+                <dt>Name</dt><dd>{{ org.name|default:"–" }}</dd>
+                {% if org.short_name %}<dt>Kurzname</dt><dd>{{ org.short_name }}</dd>{% endif %}
+                {% if org.organization_type %}<dt>Typ</dt><dd>{{ org.organization_type }}</dd>{% endif %}
+                {% if org.classification %}<dt>Klassifizierung</dt><dd>{{ org.classification }}</dd>{% endif %}
+                {% if org.start_date %}<dt>Gründung</dt><dd class="tabular-nums">{{ org.start_date|date:"d.m.Y" }}</dd>{% endif %}
+                {% if org.end_date %}<dt>Aufgelöst</dt><dd class="tabular-nums">{{ org.end_date|date:"d.m.Y" }}</dd>{% endif %}
+                {% if org.website %}<dt>Website</dt><dd><c-ui.textlink href="{% if '://' not in org.website %}https://{% endif %}{{ org.website }}" extern class="break-all">{{ org.website }}</c-ui.textlink></dd>{% endif %}
+                <dt>Aktive Mitglieder</dt><dd class="tabular-nums">{{ aktive_mitglieder|length }}</dd>
+                {% if past_members %}<dt>Ehemalige</dt><dd class="tabular-nums">{{ past_members|length }}</dd>{% endif %}
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% endif %}
+{% endblock %}

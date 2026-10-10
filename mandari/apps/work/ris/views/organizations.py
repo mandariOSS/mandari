@@ -12,7 +12,7 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 
-from .. import selectors
+from .. import neu, selectors
 from ._mixins import RISBodiesMixin
 
 
@@ -20,6 +20,7 @@ class RISOrganizationsView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS organizations list."""
 
     template_name = "work/ris/organizations.html"
+    neue_vorlage = "work/ris/neu/gremien.html"
     permission_required = "ris.view"
 
     def get_context_data(self, **kwargs):
@@ -45,6 +46,8 @@ class RISOrganizationsView(RISBodiesMixin, WorkViewMixin, TemplateView):
         paginator = Paginator(selectors.ranked_organizations(organizations), 25)
         context["organizations"] = paginator.get_page(self.request.GET.get("page", 1))
         context["paginator"] = paginator
+        if self.neu:
+            context |= neu.gremien(self.organization, self.membership, context["organizations"])
         return context
 
 
@@ -52,6 +55,7 @@ class RISOrganizationDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS organization detail view."""
 
     template_name = "work/ris/organization_detail.html"
+    neue_vorlage = "work/ris/neu/gremium.html"
     permission_required = "ris.view"
 
     def get_context_data(self, **kwargs):
@@ -75,4 +79,8 @@ class RISOrganizationDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
         context["past_meetings"] = meetings["past"]
 
         context["active_tab"] = self.request.GET.get("tab", "members")
+        if self.neu:
+            context |= neu.gremium(
+                self.organization, self.membership, org, members["active"], meetings["upcoming"], meetings["past"]
+            )
         return context

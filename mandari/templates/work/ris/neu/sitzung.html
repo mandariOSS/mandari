@@ -1,0 +1,123 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Sitzung eines Gremiums im neuen Erscheinungsbild (Issues #852, #853): Kopf mit Termin, Ort und einer Hauptaktion
+(„Sitzung vorbereiten“ mit meetings.prepare), Tagesordnung mit allen Vorlagen je Punkt und je Punkt „Für die
+Fraktion“ (Position, Notizen), daneben Vorbereitungsstand und Dokumente der Fraktion, Niederschrift und Teilnahme der
+Öffentlichkeit aus denselben Bausteinen wie Insight in der dichten Fassung (pages/meetings/_protocol_card.html,
+_broadcast_card.html mit ``dicht``: Abschnitte ohne Rahmen, Textlinks statt weiterer Hauptaktionen), die übrigen
+Sitzungsdateien als Dokumentzeilen (c-insight.document-row), Gremien und Angaben. Die Tagesordnung zeigt wie Insight
+keine gelöschten und von Session zurückgenommenen Punkte. Kontext: apps/work/ris/neu.sitzung; die bisherige Seite
+bleibt work/ris/meeting_detail.html.
+{% endcomment %}
+
+{% block page_title %}{% if meeting %}{{ meeting.get_display_name|truncatechars:50 }}{% else %}Sitzung{% endif %}{% endblock %}
+{% block brotkrumen_aktuell %}{% if meeting %}<c-insight.brotkrume>{{ meeting.get_display_name|truncatechars:60 }}{% if meeting.start %}, {{ meeting.start|date:"d.m.Y" }}{% endif %}</c-insight.brotkrume>{% endif %}{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if meeting %}{{ meeting.get_display_name }}{% else %}Sitzung{% endif %}" dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:ris_meetings' org_slug=organization.slug %}">Sitzungen der Gremien</c-insight.zurueck></c-slot>
+    {% if darf_vorbereiten and meeting and not meeting.cancelled %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}" size="sm">Sitzung vorbereiten</c-ui.button></c-slot>
+    {% endif %}
+    {% if meeting %}
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+        {% if meeting.start %}<span>{{ meeting.start|date:"l, j. F Y" }}, {{ meeting.start|date:"H:i" }}{% if meeting.end %}–{{ meeting.end|date:"H:i" }}{% endif %} Uhr</span>{% endif %}
+        {% if meeting.location_name %}<span>{{ meeting.location_name }}</span>{% endif %}
+        {% if meeting.cancelled %}<span class="font-semibold text-red-700 dark:text-red-400">Abgesagt</span>{% elif meeting.meeting_state %}<span>{{ meeting.meeting_state|capfirst }}</span>{% endif %}
+    </p>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <c-rahmen.abschnitt titel="Tagesordnung" titel_id="tagesordnung-titel" zusatz="{% if tagesordnung %}{{ tagesordnung|length }} Punkt{{ tagesordnung|length|pluralize:'e' }}{% endif %}" class="min-w-0">
+        {% if tagesordnung %}
+        <ol class="mt-2 divide-y divide-gray-200 dark:divide-gray-800" data-testid="tagesordnung">
+            {% for e in tagesordnung %}
+            <li id="top-{{ e.item.pk }}" class="scroll-mt-20 py-3 grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3 target:bg-primary-50 dark:target:bg-primary-900/20">
+                <span class="tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ e.item.number|default:forloop.counter }}</span>
+                <div class="min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white break-words">{{ e.item.name|default:"Tagesordnungspunkt" }}</p>
+                    {% if not e.item.public %}<p class="text-sm text-gray-600 dark:text-gray-400">Nichtöffentlich</p>{% endif %}
+                    {% if e.item.result %}<p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">Ergebnis: {{ e.item.result }}</p>{% endif %}
+                    {% for paper in e.papers %}
+                    <p class="mt-1 text-sm"><c-ui.textlink href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}" class="break-words">{{ paper.name|default:"Vorgang" }}</c-ui.textlink>{% if paper.reference %}<span class="text-gray-600 dark:text-gray-400"> · {{ paper.reference }}</span>{% endif %}</p>
+                    {% endfor %}
+                    {% if e.position or e.notizen %}
+                    <p class="mt-1.5 text-sm text-gray-800 dark:text-gray-200">Für die Fraktion: {% if e.position %}{% include "work/ris/neu/_position.html" with position=e.position %}{% endif %}{% if e.position and e.notizen %} · {% endif %}{% if e.notizen %}{{ e.notizen }} Notiz{{ e.notizen|pluralize:"en" }}{% endif %}</p>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">Zu dieser Sitzung ist keine Tagesordnung veröffentlicht.</p>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    <aside class="min-w-0 space-y-8" aria-label="Für die Fraktion, Unterlagen und Angaben">
+        <c-rahmen.band ton="grau" dicht titel="Für die Fraktion" titel_id="fraktion-titel" data-testid="fuer-die-fraktion">
+            {% if darf_sitzungen and stand %}
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200">{% if stand.vorlagen %}Positionen zu {{ stand.positionen }} von {{ stand.vorlagen }} Vorlage{{ stand.vorlagen|pluralize:"n" }} auf der Tagesordnung.{% else %}Auf der Tagesordnung steht keine Vorlage.{% endif %}</p>
+            {% endif %}
+            {% if dokumente %}
+            <ul class="mt-3 space-y-2 text-sm">
+                {% for d in dokumente %}
+                <li><c-ui.textlink href="{{ d.url }}" class="break-words">{{ d.titel }}</c-ui.textlink><span class="text-gray-600 dark:text-gray-400"> · {{ d.status }}</span></li>
+                {% endfor %}
+            </ul>
+            {% elif not stand %}
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Zu dieser Sitzung gibt es noch keine Vorbereitung und keine Dokumente der Fraktion.</p>
+            {% endif %}
+            <p class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm">
+                {% if darf_vorbereiten and not meeting.cancelled %}<c-ui.textlink href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}">Vorbereitung öffnen</c-ui.textlink>{% endif %}
+                {% if darf_dokument_anlegen %}<c-ui.textlink href="{% url 'work:document_create' org_slug=organization.slug %}">Neues Dokument</c-ui.textlink>{% endif %}
+            </p>
+        </c-rahmen.band>
+
+        {% include "pages/meetings/_protocol_card.html" with dicht=True %}
+        {% include "pages/meetings/_broadcast_card.html" with dicht=True %}
+
+        {% if sitzungsdateien or sitzungsdateien_gesperrt %}
+        <c-rahmen.abschnitt titel="Sitzungsdateien" titel_id="sitzungsdateien-titel">
+            {% if sitzungsdateien %}
+            <ul class="mt-1" data-testid="sitzungsdateien">
+                {% for file in sitzungsdateien %}
+                <c-insight.document-row :file="file" meta="{{ meeting.get_display_name }}{% if meeting.start %} · {{ meeting.start|date:'d.m.Y' }}{% endif %}" />
+                {% endfor %}
+            </ul>
+            {% endif %}
+            {% if sitzungsdateien_gesperrt %}
+            <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">In der Quelle nicht mehr abrufbar: {% for datei in sitzungsdateien_gesperrt %}{{ datei.name|default:datei.file_name|default:"Dokument" }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>
+            {% endif %}
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if organizations %}
+        <c-rahmen.abschnitt titel="Gremien" titel_id="gremien-titel">
+            <ul class="mt-2 space-y-1 text-sm">
+                {% for org in organizations %}
+                <li><c-ui.textlink href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=org.id %}">{{ org.name|default:org.short_name }}</c-ui.textlink></li>
+                {% endfor %}
+            </ul>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
+            <c-ui.angaben class="mt-2">
+                {% if meeting.start %}<dt>Datum</dt><dd class="tabular-nums">{{ meeting.start|date:"l, d.m.Y" }}</dd>
+                <dt>Uhrzeit</dt><dd class="tabular-nums">{{ meeting.start|date:"H:i" }}{% if meeting.end %}–{{ meeting.end|date:"H:i" }}{% endif %} Uhr</dd>{% endif %}
+                {% if meeting.location_name %}<dt>Ort</dt><dd>{{ meeting.location_name }}</dd>{% endif %}
+                {% if meeting.location_address %}<dt>Adresse</dt><dd>{{ meeting.location_address }}</dd>{% endif %}
+                {% if meeting.oparl_modified %}<dt>Stand der Quelle</dt><dd class="tabular-nums">{{ meeting.oparl_modified|date:"d.m.Y, H:i" }} Uhr</dd>{% endif %}
+            </c-ui.angaben>
+            <p class="mt-3 text-sm"><c-ui.textlink href="{% url 'work:meetings_calendar' org_slug=organization.slug %}">Im Kalender anzeigen</c-ui.textlink></p>
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% endif %}
+{% endblock %}

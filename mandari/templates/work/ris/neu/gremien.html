@@ -1,0 +1,46 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Gremien im neuen Erscheinungsbild (Issues #852, #853; Recherche › Gremien): aktive oder alle Gremien mit Zahl, Suche
+nach Name (Parameter tab, q, page wie bisher). Die Liste ist der gemeinsame Baustein von Insight (c-liste.gremien:
+Art, nächste und letzte Sitzung) mit der Spalte „Für die Fraktion“: ob es eines der eigenen Gremien ist.
+Kontext: apps/work/ris/neu.gremien; die bisherige Seite bleibt work/ris/organizations.html.
+{% endcomment %}
+
+{% block page_title %}Gremien{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Gremien" dicht
+    text="{% if body %}{{ active_count|default:0 }} aktive von {{ all_count|default:0 }} Gremien in {{ body.get_display_name }}, Rat und Ausschüsse zuerst. {% endif %}Gremien, denen Sie folgen, sind als „Ihr Gremium“ markiert." />
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+    <nav aria-label="Auswahl" class="inline-flex rounded-md bg-band-grau p-0.5 text-sm">
+        <a href="{% querystring tab='active' page=None %}" {% if tab == 'active' %}aria-current="page"{% endif %}
+           class="inline-flex items-center h-8 px-3 rounded font-medium {% if tab == 'active' %}bg-band-hell text-gray-900 dark:text-white shadow-sm{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">Aktiv ({{ active_count|default:0 }})</a>
+        <a href="{% querystring tab='all' page=None %}" {% if tab == 'all' %}aria-current="page"{% endif %}
+           class="inline-flex items-center h-8 px-3 rounded font-medium {% if tab == 'all' %}bg-band-hell text-gray-900 dark:text-white shadow-sm{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">Alle ({{ all_count|default:0 }})</a>
+    </nav>
+    <form method="get" role="search" class="flex items-center gap-2 w-full sm:w-auto">
+        <input type="hidden" name="tab" value="{{ tab }}">
+        <label for="gremien-suche" class="sr-only">Gremium suchen</label>
+        <input id="gremien-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Gremium suchen"
+               class="h-9 flex-1 sm:w-72 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <c-ui.button type="submit" size="sm">Suchen</c-ui.button>
+    </form>
+</div>
+
+{% if organizations %}
+<div class="mt-4" data-testid="gremienliste">
+    <c-liste.gremien :gremien="organizations" :links="ris_links" dicht ohne_merken
+                     zusatz="work/ris/neu/_gremium_fraktion.html" zusatz_titel="Für die Fraktion" />
+</div>
+<c-liste.seiten :seite="organizations" dicht />
+{% else %}
+<p class="mt-6 text-sm text-gray-600 dark:text-gray-400">{% if search_query %}Für „{{ search_query }}“ gibt es kein Gremium.{% elif tab == 'all' %}Es gibt keine Gremien.{% else %}Es gibt keine aktiven Gremien. <c-ui.textlink href="{% querystring tab='all' page=None %}">Alle Gremien anzeigen</c-ui.textlink>{% endif %}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

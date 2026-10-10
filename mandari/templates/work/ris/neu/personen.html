@@ -1,0 +1,38 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Personen im neuen Erscheinungsbild (Issues #852, #853, #916; Recherche › Personen): Suche nach Name und E-Mail
+(Parameter q, page wie bisher). Die Liste ist der gemeinsame Baustein von Insight (c-liste.personen: Fraktion samt
+Zuordnung aus Insight, Funktion, Gremien, Kontakt) mit der Spalte „Für die Fraktion“: ob ein Mitglied der Organisation
+mit der Person verknüpft ist (mit members.view). Die bisherige Seite bleibt work/ris/persons.html.
+{% endcomment %}
+
+{% block page_title %}Personen{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Personen" dicht
+    text="{% if body %}{{ paginator.count }} Person{{ paginator.count|pluralize:'en' }} aus {{ body.get_display_name }}{% if search_query %} für „{{ search_query }}“{% endif %}, nach Nachnamen.{% endif %}" />
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<form method="get" role="search" class="flex flex-wrap items-center gap-2">
+    <label for="personen-suche" class="sr-only">Person suchen</label>
+    <input id="personen-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Name oder E-Mail"
+           class="h-9 w-full sm:w-80 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <c-ui.button type="submit" size="sm">Suchen</c-ui.button>
+    {% if search_query %}<c-ui.textlink href="{% url 'work:ris_persons' org_slug=organization.slug %}" class="text-sm">Zurücksetzen</c-ui.textlink>{% endif %}
+</form>
+
+{% if persons %}
+<div class="mt-4" data-testid="personenliste">
+    <c-liste.personen :personen="persons" :links="ris_links" dicht ohne_merken
+                      zusatz="{% if darf_mitglieder %}work/ris/neu/_person_fraktion.html{% endif %}" zusatz_titel="Für die Fraktion" />
+</div>
+<c-liste.seiten :seite="persons" dicht />
+{% else %}
+<p class="mt-6 text-sm text-gray-600 dark:text-gray-400">{% if search_query %}Für „{{ search_query }}“ gibt es keine Person. <c-ui.textlink href="{% url 'work:ris_persons' org_slug=organization.slug %}">Zurücksetzen</c-ui.textlink>{% else %}Es sind noch keine Personen vorhanden.{% endif %}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

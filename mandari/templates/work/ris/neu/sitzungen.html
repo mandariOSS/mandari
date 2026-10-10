@@ -1,0 +1,58 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Sitzungen der Gremien im neuen Erscheinungsbild (Issues #852, #853; Bereich Sitzungen, Reiter „Alle Gremien“):
+Kommende, vergangene oder alle Sitzungen, Filter Gremium und Jahr wie bisher (Parameter view, org, year, page). Die
+Liste ist der gemeinsame Baustein von Insight (c-liste.sitzungen) mit der Spalte „Für die Fraktion“
+(Vorbereitungsstand, „Vorbereiten“). Die bisherige Seite bleibt work/ris/meetings.html.
+{% endcomment %}
+
+{% block page_title %}Sitzungen der Gremien{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Sitzungen der Gremien" dicht
+    text="{% if body %}Alle Gremien von {{ body.get_display_name }}{% if paginator %}: {{ paginator.count }} {% if view_mode == 'past' %}vergangene{% elif view_mode == 'all' %}{% else %}kommende{% endif %} Sitzung{{ paginator.count|pluralize:'en' }}{% if selected_year %} in {{ selected_year }}{% endif %}{% endif %}.{% endif %} Vorbereiten können Sie direkt aus der Liste." />
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+    <nav aria-label="Zeitraum" class="inline-flex rounded-md bg-band-grau p-0.5 text-sm">
+        {% for wert, name in ansichten %}
+        <a href="{% querystring view=wert page=None %}" {% if view_mode == wert %}aria-current="page"{% endif %}
+           class="inline-flex items-center h-8 px-3 rounded font-medium {% if view_mode == wert %}bg-band-hell text-gray-900 dark:text-white shadow-sm{% else %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% endif %}">{{ name }}</a>
+        {% endfor %}
+    </nav>
+    <form method="get" class="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="view" value="{{ view_mode }}">
+        <label for="filter-gremium" class="sr-only">Gremium</label>
+        <select id="filter-gremium" name="org" data-autosubmit class="h-9 max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+            <option value="">Alle Gremien</option>
+            {% for org in organizations %}
+            <option value="{{ org.id }}" {% if selected_org == org.id|slugify %}selected{% endif %}>{{ org.short_name|default:org.name }}</option>
+            {% endfor %}
+        </select>
+        <label for="filter-jahr" class="sr-only">Jahr</label>
+        <select id="filter-jahr" name="year" data-autosubmit class="h-9 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+            <option value="">Alle Jahre</option>
+            {% for year in years %}
+            <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>
+            {% endfor %}
+        </select>
+        <noscript><button type="submit" class="text-sm font-medium text-primary-700 dark:text-primary-300 underline">Anwenden</button></noscript>
+        {% if selected_org or selected_year %}<c-ui.textlink href="{% querystring org=None year=None page=None %}" class="text-sm">Filter zurücksetzen</c-ui.textlink>{% endif %}
+    </form>
+</div>
+
+{% if meetings %}
+<div class="mt-4" data-testid="sitzungsliste">
+    <c-liste.sitzungen :sitzungen="meetings" :links="ris_links" dicht ohne_merken
+                       zusatz="work/ris/neu/_sitzung_fraktion.html" zusatz_titel="Für die Fraktion" />
+</div>
+<c-liste.seiten :seite="meetings" dicht />
+{% else %}
+<p class="mt-6 text-sm text-gray-600 dark:text-gray-400">{% if view_mode == "upcoming" %}Es sind keine kommenden Sitzungen angesetzt.{% else %}In diesem Zeitraum gibt es keine Sitzungen.{% endif %}{% if selected_org or selected_year %} <c-ui.textlink href="{% querystring org=None year=None page=None %}">Filter zurücksetzen</c-ui.textlink>{% endif %}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

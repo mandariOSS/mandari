@@ -1,0 +1,86 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Übersicht der Recherche im neuen Erscheinungsbild (Issues #852, #853): die Kennzahlen der bisherigen Kacheln als ein
+Satz, eine Suche als Hauptaktion, darunter nächste Sitzungen mit Vorbereitungsstand und neue Vorgänge mit Stand-Satz
+(gemeinsame Listen von Insight: c-liste.sitzungen, c-liste.vorgaenge) und daneben „Für die Fraktion“ (eigene Gremien,
+eingereichte Dokumente). Die bisherigen Kacheln zu Vorgängen, Sitzungen, Gremien, Personen, Karte und Suche ersetzen
+die Reiter des Rahmens. Die bisherige Seite bleibt work/ris/overview.html.
+{% endcomment %}
+
+{% block page_title %}Recherche{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Recherche" dicht data-testid="uebersicht-kopf"
+    text="{% if no_body_linked %}Zugang zum Ratsinformationssystem Ihrer Kommune.{% else %}{{ uebersicht_satz }}{% endif %}">
+    {% if not no_body_linked %}
+    <c-slot name="aktionen">
+    <form action="{% url 'work:ris_search' org_slug=organization.slug %}" method="get" role="search" class="flex w-full sm:w-auto items-center gap-2">
+        <label for="uebersicht-suche" class="sr-only">Ratsinformationen durchsuchen</label>
+        <input id="uebersicht-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …"
+               class="h-9 flex-1 sm:w-80 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <c-ui.button type="submit" size="sm">Suchen</c-ui.button>
+    </form>
+    </c-slot>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<div class="grid gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem] xl:items-start">
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="Nächste Sitzungen" titel_id="uebersicht-sitzungen">
+            <c-slot name="link"><c-ui.textlink href="{% url 'work:ris_meetings' org_slug=organization.slug %}">Alle Sitzungen der Gremien</c-ui.textlink></c-slot>
+            {% if upcoming_meetings %}
+            <div class="mt-2">
+                <c-liste.sitzungen :sitzungen="upcoming_meetings" :links="ris_links" dicht ohne_merken
+                                   zusatz="work/ris/neu/_sitzung_fraktion.html" zusatz_titel="Für die Fraktion" />
+            </div>
+            {% else %}
+            <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">Es sind keine Sitzungen angesetzt.</p>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Neue Vorgänge" titel_id="uebersicht-vorgaenge">
+            <c-slot name="link"><c-ui.textlink href="{% url 'work:ris_papers' org_slug=organization.slug %}">Alle Vorgänge</c-ui.textlink></c-slot>
+            {% if recent_papers %}
+            <div class="mt-2">
+                <c-liste.vorgaenge :vorgaenge="recent_papers" :links="ris_links" dicht ohne_merken />
+            </div>
+            {% else %}
+            <p class="mt-3 text-sm text-gray-600 dark:text-gray-400">Es sind noch keine Vorgänge vorhanden.</p>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
+
+    <c-rahmen.band ton="grau" dicht titel="Für die Fraktion" titel_id="uebersicht-fraktion" data-testid="fuer-die-fraktion">
+        <div class="md:grid md:grid-cols-2 md:gap-x-12 xl:block">
+            <div>
+                <h3 class="mt-3 text-sm font-semibold text-gray-900 dark:text-white">Ihre Gremien</h3>
+                {% if meine_gremien %}
+                <ul class="mt-1 space-y-1 text-sm">
+                    {% for g in meine_gremien %}<li><c-ui.textlink href="{% url 'work:ris_organization_detail' org_slug=organization.slug org_id=g.id %}">{{ g.name|default:g.short_name }}</c-ui.textlink></li>{% endfor %}
+                </ul>
+                {% else %}
+                <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">Sie folgen noch keinem Gremium. <c-ui.textlink href="{% url 'work:profile_committees' org_slug=organization.slug %}">Gremien wählen</c-ui.textlink></p>
+                {% endif %}
+            </div>
+            <div>
+                <h3 class="mt-5 md:mt-3 xl:mt-5 text-sm font-semibold text-gray-900 dark:text-white">Eingereichte Dokumente</h3>
+                {% if eingereichte_dokumente %}
+                <ul class="mt-1 space-y-2 text-sm">
+                    {% for d in eingereichte_dokumente %}
+                    <li><c-ui.textlink href="{{ d.url }}" class="break-words">{{ d.titel }}</c-ui.textlink><span class="text-gray-600 dark:text-gray-400"> · </span><a href="{{ d.vorlage_url }}" class="text-gray-600 dark:text-gray-400 hover:underline underline-offset-4">{{ d.vorlage }}</a></li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">Noch kein Dokument der Fraktion hat eine Vorlage im Ratsinformationssystem.</p>
+                {% endif %}
+            </div>
+        </div>
+    </c-rahmen.band>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,50 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Vorgänge im neuen Erscheinungsbild (Issues #852, #853; Recherche › Vorgänge): Suche über Titel und Nummer, Art und
+Jahr wie bisher (Parameter q, type, year, page). Die Liste ist der gemeinsame Baustein von Insight
+(c-liste.vorgaenge, mit Stand-Satz aus dem Beratungsverlauf) mit der Spalte „Für die Fraktion“: zuletzt gesetzte
+Position und Dokumente der Organisation; ohne einen Wert auf der Seite entfällt sie (fraktion_spalte), unterhalb von
+2xl steht sie wie der Stand unter dem Titel (zusatz_ab), damit die Titel nicht umbrechen. Kontext: apps/work/ris/neu.vorgaenge; die bisherige Seite bleibt work/ris/papers.html.
+{% endcomment %}
+
+{% block page_title %}Vorgänge{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Vorgänge" dicht
+    text="{% if body %}{{ paginator.count }} Vorgang{{ paginator.count|pluralize:'e' }} aus {{ body.get_display_name }}{% if search_query or selected_type or selected_year %} für Ihre Auswahl{% endif %}, neueste zuerst. {% endif %}Volltext über alle Dokumente bietet die Suche." />
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice.html" %}
+{% else %}
+<form method="get" role="search" class="flex flex-wrap items-center gap-2">
+    <label for="vorgaenge-suche" class="sr-only">Vorgang suchen</label>
+    <input id="vorgaenge-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Titel oder Vorlagen-Nr."
+           class="h-9 w-full sm:w-80 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <label for="vorgaenge-art" class="sr-only">Art</label>
+    <select id="vorgaenge-art" name="type" data-autosubmit class="h-9 max-w-[14rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Arten</option>
+        {% for art in paper_types %}{% if art %}<option value="{{ art }}" {% if selected_type == art %}selected{% endif %}>{{ art }}</option>{% endif %}{% endfor %}
+    </select>
+    <label for="vorgaenge-jahr" class="sr-only">Jahr</label>
+    <select id="vorgaenge-jahr" name="year" data-autosubmit class="h-9 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Jahre</option>
+        {% for year in years %}<option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>{% endfor %}
+    </select>
+    <c-ui.button type="submit" size="sm">Suchen</c-ui.button>
+    {% if search_query or selected_type or selected_year %}<c-ui.textlink href="{% url 'work:ris_papers' org_slug=organization.slug %}" class="text-sm">Zurücksetzen</c-ui.textlink>{% endif %}
+    <c-ui.textlink href="{% url 'work:ris_search' org_slug=organization.slug %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}" class="text-sm sm:ml-auto">Volltextsuche</c-ui.textlink>
+</form>
+
+{% if papers %}
+<div class="mt-4" data-testid="vorgangsliste">
+    <c-liste.vorgaenge :vorgaenge="papers" :links="ris_links" dicht ohne_merken
+                       zusatz="{% if fraktion_spalte %}work/ris/neu/_vorgang_zeile_fraktion.html{% endif %}" zusatz_titel="Für die Fraktion" zusatz_ab="2xl" />
+</div>
+<c-liste.seiten :seite="papers" dicht />
+{% else %}
+<p class="mt-6 text-sm text-gray-600 dark:text-gray-400">{% if search_query or selected_type or selected_year %}Für diese Auswahl gibt es keine Vorgänge. <c-ui.textlink href="{% url 'work:ris_papers' org_slug=organization.slug %}">Zurücksetzen</c-ui.textlink>{% else %}Es sind noch keine Vorgänge vorhanden.{% endif %}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

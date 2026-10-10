@@ -1,5 +1,15 @@
-{% comment %}Sitzungsformat und Übertragung für die Öffentlichkeit (mandari Session, Issue #138). Erwartet: broadcast.{% endcomment %}
+{% comment %}Sitzungsformat und Übertragung für die Öffentlichkeit (mandari Session, Issue #138). Erwartet: broadcast.
+Mit ``dicht`` (Work, Issue #853) ein Abschnitt ohne Rahmen und Trennlinie wie c-rahmen.abschnitt, „Zur Übertragung“
+als Textlink neben der einen Hauptaktion der Seite: {% include "pages/meetings/_broadcast_card.html" with dicht=True %}.
+Ohne ``dicht`` bleibt die Karte von Insight unverändert.{% endcomment %}
 {% if broadcast %}
+{% if dicht %}
+<c-rahmen.abschnitt titel="Teilnahme der Öffentlichkeit" titel_id="sitzungsformat-titel" data-testid="sitzungsformat">
+    {% if broadcast.label %}<p class="mt-1 text-sm text-gray-700 dark:text-gray-300">{{ broadcast.label }}</p>{% endif %}
+    {% if broadcast.hint %}<p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{{ broadcast.hint }}</p>{% endif %}
+    {% if broadcast.url %}<p class="mt-2 text-sm"><c-ui.textlink href="{{ broadcast.url }}" extern>Zur Übertragung</c-ui.textlink></p>{% endif %}
+</c-rahmen.abschnitt>
+{% else %}
 <c-ui.card title="Teilnahme der Öffentlichkeit" data-testid="sitzungsformat">
     {% if broadcast.label %}<p class="text-sm text-gray-700 dark:text-gray-300">{{ broadcast.label }}</p>{% endif %}
     {% if broadcast.hint %}<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">{{ broadcast.hint }}</p>{% endif %}
@@ -9,4 +19,5 @@
     </div>
     {% endif %}
 </c-ui.card>
+{% endif %}
 {% endif %}

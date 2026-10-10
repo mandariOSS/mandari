@@ -6,7 +6,6 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 import contextlib
-from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -24,11 +23,8 @@ from hub.ris import selectors as ris_selectors
 from ..models import (
     OParlAgendaItem,
     OParlBody,
-    OParlConsultation,
-    OParlFile,
     OParlMeeting,
     OParlOrganization,
-    withdrawn_q,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 from ._withdrawn import withdrawn_response
@@ -275,53 +271,10 @@ def calendar_feed(request):
     return response
 
 
-def _protocol_file(meeting):
-    """
-    Öffentliche Niederschrift einer Sitzung (OParl ``resultsProtocol``, sonst ``verbatimProtocol``).
-
-    Quelle ist das gespiegelte Meeting-Objekt; angezeigt wird nur eine nicht zurückgenommene Datei
-    derselben Kommune (Issue #318: mandari Session veröffentlicht hier ausschließlich den
-    öffentlichen Teil, eine Rücknahme markiert die Datei sofort als gelöscht).
-    """
-    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
-    for key in ("resultsProtocol", "verbatimProtocol"):
-        ref = raw.get(key)
-        external_id = ref.get("id") if isinstance(ref, dict) else ref if isinstance(ref, str) else None
-        if not external_id:
-            continue
-        found = (
-            OParlFile.objects.filter(external_id=external_id, deleted=False).defer("text_content", "raw_json").first()
-        )
-        if found is not None and (found.body_id is None or found.body_id == meeting.body_id):
-            return found
-    return None
-
-
-#: Sitzungsformate aus der OParl-Erweiterung von mandari Session (Issue #138)
-BROADCAST_LABELS = {
-    "hybrid": "Hybride Sitzung: Einzelne Mitglieder sind per Bild-Ton-Übertragung zugeschaltet.",
-    "digital": "Digitale Sitzung: Die Mitglieder tagen per Videokonferenz.",
-}
-
-
-def _broadcast_info(meeting: Any) -> dict[str, str] | None:
-    """
-    Sitzungsformat und Hinweis für die Öffentlichkeit (Übertragung, Anmeldung), Issue #138.
-
-    Quelle ist die OParl-Erweiterung ``mandari:meetingFormat``/``mandari:publicAccess``. Die Daten stammen
-    von einer externen Quelle: nur erwartete Typen, eigene Texte für das Format, Links nur mit http(s).
-    """
-    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
-    access = raw.get("mandari:publicAccess")
-    access = access if isinstance(access, dict) else {}
-    url = access.get("url")
-    hint = access.get("hint")
-    info = {
-        "label": BROADCAST_LABELS.get(raw.get("mandari:meetingFormat"), ""),
-        "url": url[:500] if isinstance(url, str) and url.startswith(("https://", "http://")) else "",
-        "hint": hint[:1000] if isinstance(hint, str) else "",
-    }
-    return info if any(info.values()) else None
+#: Niederschrift und Sitzungsformat lesen Insight und Work gemeinsam aus der Lese-Fassade (Issue #853); die bisherigen
+#: Namen bleiben für Aufrufer und Tests
+_protocol_file = ris_selectors.protocol_file
+_broadcast_info = ris_selectors.broadcast_info
 
 
 class MeetingDetailView(DetailView):
@@ -345,35 +298,13 @@ class MeetingDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         meeting = self.object
 
-        # Tagesordnungspunkte mit batch-loaded Papers (vermeidet N+1 Queries); zurückgezogene TOPs
-        # (z. B. in Session nicht-öffentlich gestellt) erscheinen nicht mehr
-        agenda_items = list(meeting.agenda_items.filter(deleted=False))
-        # Natural sort: 1, 2, 10 instead of 1, 10, 2
-        import re
-
-        agenda_items.sort(
-            key=lambda x: [
-                (0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", x.number or "999") if p
-            ]
-        )
-        if agenda_items:
-            ext_ids = [item.external_id for item in agenda_items]
-            # Alle Consultations + Papers in 1 Query laden; von Session zurückgenommene Vorlagen
-            # und Beratungen erscheinen nicht mehr
-            consultations = (
-                OParlConsultation.objects.filter(agenda_item_external_id__in=ext_ids)
-                .exclude(withdrawn_q())
-                .exclude(withdrawn_q("paper"))
-                .select_related("paper")
-            )
-            # Papers pro AgendaItem zuordnen
-            papers_by_agenda = {}
-            for c in consultations:
-                if c.paper:
-                    papers_by_agenda.setdefault(c.agenda_item_external_id, []).append(c.paper)
-            # An jedes AgendaItem anhängen
-            for item in agenda_items:
-                item._prefetched_papers = papers_by_agenda.get(item.external_id, [])
+        # Tagesordnung und Vorlagen je Punkt aus der Lese-Fassade, gemeinsam mit der Sitzungsseite in Work (Issue #853):
+        # natürlich sortiert, zurückgezogene TOPs (z. B. in Session nicht-öffentlich gestellt) erscheinen nicht mehr,
+        # ebenso wenig von Session zurückgenommene Vorlagen und Beratungen; zwei Abfragen statt einer je Punkt
+        agenda_items = ris_selectors.visible_agenda_items(meeting)
+        papers_by_item = ris_selectors.papers_of_agenda_items(agenda_items)
+        for item in agenda_items:
+            item._prefetched_papers = papers_by_item.get(item.pk, [])
         # Abstimmungsergebnisse aus dem Quell-RIS (Issue #41): Summen + namentliche Stimmen, aus dem kanonischen
         # Modell über die Lese-Fassade (Issue #525)
         for item in agenda_items:

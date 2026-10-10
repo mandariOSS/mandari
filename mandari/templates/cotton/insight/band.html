@@ -2,10 +2,8 @@
 {% comment %}
 Band einer Seite des Bürgerportals (Issue #783, Stufe 2): volle Breite, eine Fläche, Inhalt direkt darauf – keine
 Karte in der Karte. „hell“ für den Hauptinhalt, „grau“ für Ergänzendes; nie zwei gleiche Bänder nebeneinander.
-„ohne“ für gemeinsame Bereiche in Work (Issue #853): nur der Abschnitt, Breite und Abstände gibt der Rahmen von Work vor.
   <c-insight.band ton="grau" aria-labelledby="naehe-titel">…</c-insight.band>
+Das Markup teilt sich Insight mit Work: c-rahmen.band (Issue #853). Dort auch „ohne“ für die Suche in Work.
 {% endcomment %}
 <c-vars ton="hell" />
-{% if ton == "ohne" %}<section {{ attrs }}>{{ slot }}</section>{% else %}<section class="{% if ton == 'grau' %}bg-band-grau{% else %}bg-band-hell{% endif %}" {{ attrs }}>
-    <div class="max-w-insight mx-auto px-4 sm:px-8 py-8 sm:py-12">{{ slot }}</div>
-</section>{% endif %}
+<c-rahmen.band :ton="ton" :attrs="attrs">{{ slot }}</c-rahmen.band>
