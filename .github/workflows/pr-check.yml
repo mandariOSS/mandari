@@ -564,9 +564,10 @@ jobs:
           cache: npm
           cache-dependency-path: mandari/package-lock.json
 
+      # Auch bei Template-Änderungen: Die Icon-Prüfung unten braucht das Lucide-Paket (Issue #645)
       - name: npm ci
         id: npm
-        if: ${{ !cancelled() && needs.changes.outputs.frontend == 'true' }}
+        if: ${{ !cancelled() && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.templates == 'true') }}
         run: cd mandari && npm ci --ignore-scripts
 
       - name: TypeScript (tsc --noEmit)
@@ -584,6 +585,11 @@ jobs:
       - name: Frontend-Unit-Tests (Speichern mit Wiederholung)
         if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
         run: cd mandari && npm run test:speichern
+
+      # Feste Icon-Namen in Templates müssen im Lucide-Paket stehen; Lucide entfernt bei Updates Icons (#645)
+      - name: Icon-Namen der Templates im Lucide-Paket
+        if: ${{ !cancelled() && steps.npm.outcome == 'success' }}
+        run: cd mandari && npm run test:icons
 
       # JS-Vorlagen (z. B. der Service Worker) werden von Django gerendert; Template-Tags nur in
       # Kommentaren oder Strings, sonst kann CodeQL die Datei nicht analysieren.
