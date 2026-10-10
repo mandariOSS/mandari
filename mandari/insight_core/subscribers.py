@@ -6,6 +6,10 @@ Abonnements von Insight (``apps.events.registry.load_subscribers`` importiert di
 Live-Übertragungen die Fraktion von Personen ab (Issue #915, #916). Es wird registriert, solange
 ``LIVE_UEBERTRAGUNG_AKTIV`` an ist; ohne Live-Übertragungen gibt es keine Wortmeldungen. Ein neues Abonnement beginnt
 am Ende des Journals; ältere Wortmeldungen verbucht ``manage.py fraktionen_aus_wortmeldungen``.
+
+``insight.indexnow`` (``insight_core.services.indexnow``) meldet geänderte Seiten an Suchmaschinen (Issue #939). Es wird
+registriert, sobald ``INDEXNOW_KEY`` gesetzt ist, und beginnt am Ende des Journals: Den Bestand finden die
+Suchmaschinen über die Sitemaps.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from __future__ import annotations
 from django.conf import settings
 
 from apps.events import subscriber
-from insight_core.services import fraktionen_live
+from insight_core.services import fraktionen_live, indexnow
 
 
 def register() -> bool:
@@ -30,4 +34,20 @@ def register() -> bool:
     return True
 
 
+def register_indexnow() -> bool:
+    """Registriert ``insight.indexnow``, wenn ein gültiger Schlüssel gesetzt ist; ``True``, wenn registriert."""
+    if not indexnow.schluessel():
+        return False
+    subscriber(
+        indexnow.NAME,
+        types=indexnow.TYPES,
+        batch=indexnow.BATCH,
+        queue=indexnow.QUEUE,
+        # Fremdsystem: außerhalb der Transaktion, Zustellung mindestens einmal (eine doppelte Meldung schadet nicht)
+        transactional=False,
+    )(indexnow.indexnow)
+    return True
+
+
 register()
+register_indexnow()

@@ -838,6 +838,12 @@ if OPARL_CHANGES_RETENTION_DAYS < 30:
 
     raise ImproperlyConfigured("OPARL_CHANGES_RETENTION_DAYS muss mindestens 30 sein (Zusage des Änderungsfeeds).")
 
+# IndexNow (Issue #939, insight_core/services/indexnow.py): meldet neue, geänderte und entfernte Seiten des
+# Bürgerportals an Bing, Yandex & Co. (Abonnement insight.indexnow, Warteschlange adapter). Ohne Schlüssel aus.
+# Schlüssel: 8–128 Zeichen aus A–Z, a–z, 0–9 und -; die Anwendung liefert ihn unter /insight/<schlüssel>.txt aus.
+INDEXNOW_KEY = os.environ.get("INDEXNOW_KEY", "").strip()
+INDEXNOW_ENDPOINT = os.environ.get("INDEXNOW_ENDPOINT", "https://api.indexnow.org/indexnow").strip()
+
 # Katalog der offenen Ratsinformationen nach DCAT-AP.de 3.0 (Issue #104, docs/DCAT_KATALOG.md): alle gelisteten
 # Kommunen unter /data/dcat/catalog, je Kommune unter /data/dcat/body/<uuid>/catalog (.ttl, .rdf, .jsonld).
 # Standard aus: Herausgeber und Kontakt müssen stimmen, bevor ein Datenportal den Katalog einsammelt.
