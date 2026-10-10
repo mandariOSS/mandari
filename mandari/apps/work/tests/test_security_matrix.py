@@ -57,6 +57,7 @@ import apps.work.urls as work_urls
 from apps.accounts.models import User
 from apps.common.models import AISettings, SiteSettings
 from apps.common.tests.factories import DEFAULT_PASSWORD, MembershipFactory, OrganizationFactory, UserFactory
+from apps.common.tests.festgeschriebene_testdaten import sicherheitsprotokoll_zuruecksetzen
 from apps.tenants.models import (
     AdministrationContact,
     CouncilParty,
@@ -1354,7 +1355,11 @@ def _changes(before: Snapshot, foreign_refs: frozenset[str] = frozenset()) -> li
 def world(django_db_setup: None, django_db_blocker: Any, tmp_path_factory: pytest.TempPathFactory) -> Iterator[World]:
     """Modulweite Testdaten; Uploads landen in einem temporären MEDIA_ROOT."""
     media_root = tmp_path_factory.mktemp("work-matrix-media")
-    with override_settings(MEDIA_ROOT=str(media_root)), django_db_blocker.unblock():
+    with (
+        override_settings(MEDIA_ROOT=str(media_root)),
+        django_db_blocker.unblock(),
+        sicherheitsprotokoll_zuruecksetzen(),
+    ):
         created_permissions: list[str] = []
         users: list[User] = []
         source = OParlSource.objects.create(name="Matrix-RIS", url="https://ris.example.org/matrix/system")

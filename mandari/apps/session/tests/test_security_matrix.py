@@ -34,6 +34,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.common.tests.factories import UserFactory
+from apps.common.tests.festgeschriebene_testdaten import sicherheitsprotokoll_zuruecksetzen
 from apps.session.models import (
     SessionAgendaItem,
     SessionAPIToken,
@@ -556,7 +557,11 @@ def _build_world() -> World:
 def world(django_db_setup: None, django_db_blocker: Any, tmp_path_factory: pytest.TempPathFactory) -> Iterator[World]:
     """Modulweite Testdaten (lesend genutzt); Uploads landen in einem temporären MEDIA_ROOT."""
     media_root = tmp_path_factory.mktemp("session-media")
-    with override_settings(MEDIA_ROOT=str(media_root)), django_db_blocker.unblock():
+    with (
+        override_settings(MEDIA_ROOT=str(media_root)),
+        django_db_blocker.unblock(),
+        sicherheitsprotokoll_zuruecksetzen(),
+    ):
         built = _build_world()
         yield built
         SessionTenant.objects.filter(pk__in=[built.tenant_a.pk, built.tenant_b.pk]).delete()
