@@ -117,6 +117,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Repository-Auftritt: Der REUSE-Badge der README zeigt den Stand der Lizenzprüfung auf `main` statt eines festen „konform“ mit totem Verweis, der Status-Badge den Zustand der Statusseite; `reuse lint` läuft wieder ohne Befund und als eigener Workflow. Eine Link-Prüfung (lychee) in der CI prüft Verweise und Anker der Dokumentation. Defekte Verweise und veraltete Angaben sind korrigiert (Django-Version, Testzahl, Fristen und unterstützte Versionen in `SECURITY.md` nach `docs/RELEASE_POLITIK.md`, Containernamen in `DEPLOYMENT.md`), und `scripts/build_sbom.sh` legt die Frontend-Stückliste wieder zu den Release-Anhängen (#690).
 
 ### Sicherheit
+- KI-Assistent im Bürgerportal und KI-Hilfe im Work-Editor: Antworten werden nur bereinigt dargestellt (enge Positivliste an Elementen, Links nur auf die eigene Seite oder `https`, externe mit `rel="noopener noreferrer"`).
 - Work: Dateien der Datenauskunft und der Dokument-Cache werden ausschließlich über die zugriffsgeprüften Download-Wege ausgeliefert.
 - `fix_permissions --fix` ergänzt nur noch fehlende Berechtigungen und Standardrollen und vergibt keine Rollen mehr automatisch. Gezielte Zuweisung an Mitgliedschaften ohne Rolle: `--org <slug> --assign-role <Rolle>` (nie Rollen mit Vollzugriff, nie an Gast-Zugänge).
 - Session: Die Meldung „Vertretung gesucht“ geht bei nichtöffentlichen Sitzungen nur an Personen, die die Sitzung sehen dürfen.

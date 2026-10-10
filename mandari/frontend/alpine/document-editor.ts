@@ -17,6 +17,7 @@ import { confirmAction } from '../js/alpine/confirm-dialog'
 import { showToast } from '../js/alpine/toast'
 import { csrfToken } from '../js/csrf'
 import { readJsonScript } from '../js/json-script'
+import { bereinigeKiHtml } from '../js/ki-ausgabe'
 import { installMotionTracking } from '../js/motion-tracking'
 import { navigateTo } from '../js/navigation'
 
@@ -1593,14 +1594,14 @@ export const documentEditor = defineComponent(() => {
           let actionContent: string | null = null
 
           if (data.content) {
-            content = String(data.content).replace(/\n/g, '<br>')
+            content = bereinigeKiHtml(String(data.content).replace(/\n/g, '<br>'))
             hasAction = action !== 'chat'
             actionContent = data.content
           }
           if (Array.isArray(data.suggestions) && data.suggestions.length > 0) {
             content += '<ul class="mt-2 space-y-1">'
             for (const s of data.suggestions) {
-              content += `<li class="text-sm">${s}</li>`
+              content += `<li class="text-sm">${escapeHtml(String(s))}</li>`
             }
             content += '</ul>'
           }
@@ -1610,7 +1611,9 @@ export const documentEditor = defineComponent(() => {
         } else {
           this.chatMessages.push({
             role: 'ai',
-            content: 'Entschuldigung, es ist ein Fehler aufgetreten: ' + (data.error || 'Unbekannter Fehler'),
+            content:
+              'Entschuldigung, es ist ein Fehler aufgetreten: ' +
+              escapeHtml(String(data.error || 'Unbekannter Fehler')),
           })
         }
       } catch {
@@ -1630,7 +1633,8 @@ export const documentEditor = defineComponent(() => {
     applyAiContent(content: string | null | undefined): void {
       if (content && editor) {
         this.aiOriginalContent = this.getContent()
-        this.aiPreviewContent = content
+        // Vorschau per x-html: nur bereinigt (frontend/js/ki-ausgabe.ts)
+        this.aiPreviewContent = bereinigeKiHtml(content)
         this.previewMode = 'suggested'
         this.aiPreviewActive = true
       }
