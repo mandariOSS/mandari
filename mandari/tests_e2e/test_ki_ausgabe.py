@@ -97,7 +97,7 @@ def _ki_ausgefuehrt(page: Any) -> Any:
 
 class TestKiAssistent:
     def test_antwort_ohne_bilder_skripte_und_fremde_links(
-        self, page: Any, goto: Any, problems: BrowserProblems
+        self, page: Any, goto: Any, live_server: Any, problems: BrowserProblems
     ) -> None:
         _kommune()
 
@@ -127,7 +127,9 @@ class TestKiAssistent:
         assert _ki_ausgefuehrt(page) is None
         assert antwort.locator("img, svg, script, iframe").count() == 0
         assert antwort.locator("[onerror]").count() == 0
-        assert antwort.locator('a[href^="javascript:"], a[href^="data:"], a[href^="http:"]').count() == 0
+        assert antwort.locator('a[href^="javascript:"], a[href^="data:"]').count() == 0
+        # http nur für die eigene Seite (der Testserver läuft ohne TLS)
+        assert antwort.locator(f'a[href^="http:"]:not([href^="{live_server.url}/"])').count() == 0
         expect(antwort).to_contain_text("Skript")  # Text des entfernten Links bleibt
         expect(antwort).to_contain_text("roh")
 
