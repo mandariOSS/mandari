@@ -477,24 +477,36 @@ def test_rueckweg_tausch_geht_auf_obwohl_eine_kette_blockiert(org: Any, ris: Ris
     q_1 = AgendaItemPosition.objects.create(organization=andere, agenda_item=b, position="for")
     q_2 = AgendaItemPosition.objects.create(organization=andere, agenda_item=a, position="against")
     tausch = [_umzug(org, a, b, pos_1), _umzug(org, b, a, pos_2), _umzug(andere, a, b, q_1), _umzug(andere, b, a, q_2)]
+    # Mit pos_3 zog auch eine Notiz von C nach D; sie kann zurück, ihr Eintrag bleibt trotzdem offen
+    notiz = _verschluesselt(AgendaItemNote, organization=org, agenda_item=d, author=mitglied)
     kette = [_umzug(org, c, d, pos_3), _umzug(org, e, c, pos_4)]
+    kette[0].verschoben["work.AgendaItemNote.agenda_item"] = [str(notiz.pk)]
+    kette[0].save(update_fields=["verschoben"])
 
     rueck = verknuepfungen.zurueckdrehen(RisNeuzuordnung.objects.all())
 
     assert [_an(p) for p in (pos_1, pos_2, q_1, q_2)] == [a.id, b.id, a.id, b.id]
     assert [_an(p) for p in (pos_3, pos_4, s_neu)] == [d.id, c.id, e.id]
-    assert rueck.datensaetze == 4
+    assert AgendaItemNote.objects.get(pk=notiz.pk).agenda_item_id == c.id
+    assert rueck.datensaetze == 5
     assert {pk for _e, _n, pk in rueck.nicht_moeglich} == {str(pos_3.pk), str(pos_4.pk)}
     assert set(rueck.offen) == {str(k.pk) for k in kette}
     assert all(RisNeuzuordnung.objects.get(pk=t.pk).zurueckgedreht_am for t in tausch)
     assert not any(RisNeuzuordnung.objects.get(pk=k.pk).zurueckgedreht_am for k in kette)
     assert not AgendaItemPosition.objects.filter(organization__isnull=True).exists(), "nichts bleibt geparkt"
 
-    # Ist der Weg frei, holt ein späterer Rückweg die Kette nach
+    # Ist der Weg frei, holt ein späterer Rückweg die Kette nach; die Notiz steht schon zurück und gilt nicht als
+    # „nicht zurückgedreht“
     s_neu.delete()
-    rueck = verknuepfungen.zurueckdrehen(RisNeuzuordnung.objects.all())
+    ausgabe = StringIO()
+    call_command(
+        "ris_neuzuordnung_zurueckdrehen", "--eintrag", str(kette[0].pk), "--eintrag", str(kette[1].pk), stdout=ausgabe
+    )
     assert [_an(p) for p in (pos_3, pos_4)] == [c.id, e.id]
-    assert rueck.offen == [] and rueck.datensaetze == 2
+    assert AgendaItemNote.objects.get(pk=notiz.pk).agenda_item_id == c.id
+    assert "Zurückgedreht: 2 Umzüge, 2 Datensätze" in ausgabe.getvalue()
+    assert "bereits zurück (übersprungen): 1 Datensätze" in ausgabe.getvalue()
+    assert "nicht zurückgedreht" not in ausgabe.getvalue() and "bleibt offen" not in ausgabe.getvalue()
     assert all(RisNeuzuordnung.objects.get(pk=k.pk).zurueckgedreht_am for k in kette)
 
 

@@ -9,14 +9,14 @@ Vor dem Setzen der Bedingung werden vorhandene Dubletten zusammengeführt, ohne 
 
 - Erhalten bleibt die zuletzt geänderte Zeile (``updated_at``, dann ``created_at``).
 - Felder, die dort leer sind, werden aus der jüngsten anderen Zeile übernommen, die einen Wert trägt: Position
-  („open“ gilt als leer), Begründung, Ergebnis, „Gesetzt von“, Altlast-Vorbereitung. „Endgültig“ gilt als gesetzt,
-  wenn eine Zeile es setzt („nicht endgültig“ ist der Ausgangswert).
+  („open“ gilt als leer), Begründung, Ergebnis, „Gesetzt von“, Altlast-Vorbereitung. „Endgültig“ gehört zur Position
+  und kommt aus der Zeile, aus der die Position stammt.
 - ``created_at`` wird der früheste Anlagezeitpunkt der Gruppe, ``updated_at`` bleibt der der erhaltenen Zeile.
 - Die Begründung ist mit dem Schlüssel der Organisation verschlüsselt (ohne Bindung an die Zeile); da alle Zeilen einer
   Gruppe zur selben Organisation gehören, wird der Geheimtext unverändert übernommen.
 - **Widerspruch:** Tragen zwei Zeilen einer Gruppe verschiedene, nicht leere Werte in Position, Ergebnis oder
-  Begründung (Geheimtext byteweise verglichen), bricht die Migration mit einer Liste der Gruppen ab, bevor irgendetwas
-  geändert oder gelöscht wird. Solche Dubletten führt ein Mensch von Hand zusammen, dann läuft die Migration erneut.
+  Begründung (Geheimtext byteweise verglichen), oder ist eine andere Zeile als die, aus der die Position stammt,
+  „endgültig“, bricht die Migration mit einer Liste der Gruppen ab, bevor irgendetwas geändert oder gelöscht wird. Solche Dubletten führt ein Mensch von Hand zusammen, dann läuft die Migration erneut.
 
 Auf ``AgendaItemPosition`` zeigen keine Fremdschlüssel, es muss also nichts umgehängt werden. Zeilen ohne Organisation
 (Altlast vor work.0038) fallen nicht unter die Bedingung und bleiben unberührt. Produktion hatte am 07.10.2026 keine
@@ -28,8 +28,8 @@ Rückweg: Rückwärts wird nur die Bedingung entfernt; zusammengeführte Dublett
 from django.db import migrations, models
 from django.db.models import Count
 
-#: Inhaltliche Felder: zwei verschiedene, nicht leere Werte sind ein Widerspruch
-INHALT = ("position", "is_final", "outcome", "reasoning_encrypted")
+#: Inhaltliche Felder: zwei verschiedene, nicht leere Werte sind ein Widerspruch („Endgültig“ gesondert, an der Position)
+INHALT = ("position", "outcome", "reasoning_encrypted")
 #: Verwaltungsangaben: aus der jüngsten Zeile mit Wert ergänzt
 VERWALTUNG = ("set_by_id", "preparation_id")
 NAMEN = {"position": "Position", "is_final": "Endgültig", "outcome": "Ergebnis", "reasoning_encrypted": "Begründung"}
@@ -38,8 +38,6 @@ NAMEN = {"position": "Position", "is_final": "Endgültig", "outcome": "Ergebnis"
 def _leer(feld: str, wert) -> bool:
     if feld == "position" and wert == "open":
         return True
-    if feld == "is_final":
-        return not wert
     # Begründung ist ein BinaryField (bytes bzw. memoryview), die übrigen Felder Text oder Fremdschlüssel-IDs
     return wert is None or (isinstance(wert, (str, bytes, memoryview)) and len(wert) == 0)
 
@@ -57,7 +55,14 @@ def _plan(zeilen):
         for feld in INHALT
         if len({_wert(getattr(z, feld)) for z in zeilen if not _leer(feld, getattr(z, feld))}) > 1
     ]
+    # „Endgültig“ gehört zur Position: Es kommt aus der Zeile, aus der die Position stammt (die erhaltene, wenn
+    # keine Zeile eine Position trägt). Ist eine andere Zeile endgültig, wäre unklar, was endgültig ist.
+    quelle_position = next((z for z in zeilen if not _leer("position", z.position)), behalten)
+    if any(z.is_final for z in zeilen if z is not quelle_position):
+        widerspruch.insert(1 if "position" in widerspruch else 0, "is_final")
     aenderungen = {}
+    if quelle_position.is_final != behalten.is_final:
+        aenderungen["is_final"] = quelle_position.is_final
     for feld in INHALT + VERWALTUNG:
         if not _leer(feld, getattr(behalten, feld)):
             continue

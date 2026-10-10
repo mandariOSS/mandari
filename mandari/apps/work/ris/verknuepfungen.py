@@ -922,6 +922,8 @@ class Rueckbericht:
     nicht_moeglich: list[tuple[str, str, str]] = field(default_factory=list)
     #: Protokolleinträge, die offen bleiben, weil ein Datensatz an einer Eindeutigkeit scheitert
     offen: list[str] = field(default_factory=list)
+    #: Datensätze, die schon am früheren Objekt stehen (übersprungen)
+    bereits_zurueck: int = 0
 
 
 def _festhalten(eintrag: RisNeuzuordnung, datensaetze: Datensaetze) -> None:
@@ -1020,6 +1022,9 @@ def zurueckdrehen(eintraege: Iterable[RisNeuzuordnung], *, probe: bool = False) 
                     if anzahl:
                         zurueck[eintrag.pk].setdefault(name, []).append(pk)
                         bericht.datensaetze += 1
+                    elif tabelle._base_manager.filter(pk=pk, **{spalte: eintrag.von}).exists():
+                        # Steht schon am früheren Objekt, etwa aus einem früheren Lauf für einen offenen Eintrag
+                        bericht.bereits_zurueck += 1
                     else:
                         bericht.nicht_moeglich.append((str(eintrag.pk), name, pk))
                 offen = rest

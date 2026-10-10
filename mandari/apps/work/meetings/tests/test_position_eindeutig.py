@@ -71,7 +71,7 @@ def test_migration_fuehrt_dubletten_verlustfrei_zusammen(org: Any, make_member: 
 
         # Drei Zeilen zum selben TOP, die sich ergänzen: die jüngste ist fast leer, die älteren tragen die Inhalte
         alt = anlegen(top_doppelt, 0, 1, position="for", is_final=True, reasoning_encrypted=b"alt", set_by_id=erste.pk)
-        mittel = anlegen(top_doppelt, 2, 3, position="for", set_by_id=zweite.pk)
+        mittel = anlegen(top_doppelt, 2, 3, set_by_id=zweite.pk)
         neu = anlegen(top_doppelt, 4, 5, outcome="rejected")
         einzeln = anlegen(top_einzeln, 0, 1, position="abstain", reasoning_encrypted=b"einzeln", set_by_id=erste.pk)
         altlast = [anlegen(top_altlast, 0, 1, organisation=None, position=wert) for wert in ("for", "against")]
@@ -86,8 +86,8 @@ def test_migration_fuehrt_dubletten_verlustfrei_zusammen(org: Any, make_member: 
     assert list(AgendaItemPosition.objects.filter(agenda_item=top_doppelt).values_list("pk", flat=True)) == [neu]
     zusammen = _stand(AgendaItemPosition, neu)
     assert zusammen == {
-        # Leere Felder der erhaltenen Zeile kommen aus der jüngsten Zeile mit Wert
-        "position": vorher[mittel]["position"],
+        # Leere Felder der erhaltenen Zeile kommen aus der jüngsten Zeile mit Wert, „Endgültig“ mit der Position
+        "position": vorher[alt]["position"],
         "is_final": vorher[alt]["is_final"],
         "reasoning_encrypted": vorher[alt]["reasoning_encrypted"],
         # Eigene Werte der erhaltenen Zeile bleiben
@@ -112,6 +112,9 @@ def test_migration_fuehrt_dubletten_verlustfrei_zusammen(org: Any, make_member: 
         ({"outcome": "accepted"}, {"outcome": "rejected"}, "Ergebnis"),
         ({"position": "for"}, {"position": "against"}, "Position"),
         ({"reasoning_encrypted": b"eins"}, {"reasoning_encrypted": b"zwei"}, "Begründung"),
+        # „Endgültig“ ohne Position darf nicht an die Position einer anderen Zeile wandern
+        ({"is_final": True}, {"position": "for"}, "Endgültig"),
+        ({"position": "for", "is_final": True}, {"position": "against"}, "Position, Endgültig"),
     ],
 )
 @pytest.mark.django_db(transaction=True)
