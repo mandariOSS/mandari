@@ -11,6 +11,7 @@
 Suchseite (Konzept Insight-Suche, P0.8/P0.9): Kopfband mit Suchfeld, darunter der Ergebnisbereich (Ortsband, Reiter,
 Filter, Liste). Ergebnisse kommen serverseitig; Live-Suche, Filter und Reiter tauschen per HTMX nur #suchergebnis aus
 und schreiben die Adresse fort (hx-push-url). Filter liegen außerhalb des Formulars und gehören per form="suche-form" dazu.
+Das Suchformular (c-suche.feld) teilt die Seite mit der Recherche in Work.
 {% endcomment %}
 {% block page %}
 {# Sprungziel nach Filtern in der klebenden Spalte; nur ab 2xl mit Box, darunter springt nichts (Issue #841) #}
@@ -18,23 +19,8 @@ und schreiben die Adresse fort (hx-push-url). Filter liegen außerhalb des Formu
 <c-insight.kopfband titel_id="suche-titel" text_id="suche-zahl"
     titel="{% if query and active_body %}„{{ query }}“ in {{ active_body.get_display_name }}{% elif query %}„{{ query }}“{% else %}Suche{% endif %}"
     text="{% if count_sentence %}{{ count_sentence }}{% elif not query %}Vorgänge, Sitzungen, Dokumente, Personen und Gremien{% if active_body %} von {{ active_body.get_display_name }}{% endif %}. Für Straßen genügt der Name.{% endif %}">
-    <form id="suche-form" action="{% url 'insight_core:insight:search' %}" method="get" role="search"
-          hx-get="{% url 'insight_core:insight:search' %}" hx-target="#suchergebnis" hx-push-url="true"
-          hx-include="[form='suche-form']" hx-indicator="#suche-laden" class="flex gap-3 max-w-3xl">
-        <div class="relative flex-1 min-w-0">
-            <label for="suche-eingabe" class="sr-only">Suchbegriff</label>
-            <i data-lucide="search" class="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
-            <input id="suche-eingabe" type="search" name="q" value="{{ query }}" autocomplete="off" enterkeyhint="search"
-                   placeholder="Straße, Thema oder Aktenzeichen"
-                   hx-get="{% url 'insight_core:insight:search' %}" hx-trigger="input changed delay:400ms, search"
-                   hx-target="#suchergebnis" hx-push-url="true" hx-include="#suche-form, [form='suche-form']" hx-indicator="#suche-laden"
-                   class="w-full min-h-12 pl-11 pr-10 rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-[1.0625rem] text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/30 outline-none">
-            <span id="suche-laden" class="htmx-indicator absolute right-3.5 top-1/2 -translate-y-1/2" aria-hidden="true">
-                <i data-lucide="loader-circle" class="w-5 h-5 animate-spin text-primary-700 dark:text-primary-300"></i>
-            </span>
-        </div>
-        <button type="submit" class="shrink-0 min-h-12 px-5 rounded-xl bg-primary-700 hover:bg-primary-800 text-white font-semibold">Suchen</button>
-    </form>
+    {% url 'insight_core:insight:search' as suche_ziel %}
+    <c-suche.feld adresse="{{ suche_ziel }}" :wert="query" platzhalter="Straße, Thema oder Aktenzeichen" />
 </c-insight.kopfband>
 <div id="suchergebnis">
     {% if query|length > 1 %}{% include "partials/search_page.html" %}{% endif %}

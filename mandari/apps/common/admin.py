@@ -15,6 +15,16 @@ from unfold.admin import ModelAdmin
 from unfold.decorators import action
 
 from .admin_mixins import SingletonAdminMixin
+from .ki_anbieter import (
+    ANBIETER_VORLAGEN,
+    EIGENER,
+    FREMDER_HOST,
+    erlaubte_hosts,
+    fremder_host_fuer_vorlage,
+    pruefe_basis_url,
+    vorlage_nutzbar,
+    wirksamer_host,
+)
 from .models import AISettings, ProblemReport, SiteSettings
 
 
@@ -42,16 +52,15 @@ class SiteSettingsAdminForm(forms.ModelForm):
     """
     Systemeinstellungen mit Geheimnissen, die nur geschrieben werden.
 
-    SMTP-Passwort und Nebius-Schlüssel sind reine Formularfelder: Sie werden nie ins HTML
-    ausgegeben, eingetragene Werte verschlüsselt gespeichert (Hauptschlüssel), und ein leer
-    gelassenes Feld behält den gespeicherten Wert. Steht noch ein Klartextwert in der früheren
-    Spalte, wird er beim Speichern verschlüsselt übernommen.
+    Das SMTP-Passwort ist ein reines Formularfeld: Es wird nie ins HTML ausgegeben, ein
+    eingetragener Wert verschlüsselt gespeichert (Hauptschlüssel), und ein leer gelassenes Feld
+    behält den gespeicherten Wert. Steht noch ein Klartextwert in der früheren Spalte, wird er beim
+    Speichern verschlüsselt übernommen. KI-Zugänge stehen in den KI-Einstellungen (Issue #950).
     """
 
     #: Formularfeld → Setter am Modell
     SECRET_FIELDS = {
         "email_host_password": "set_email_host_password",
-        "nebius_api_key": "set_nebius_api_key",
     }
 
     email_host_password = forms.CharField(
@@ -59,16 +68,6 @@ class SiteSettingsAdminForm(forms.ModelForm):
         required=False,
         label="SMTP Passwort",
         help_text="Wird verschlüsselt gespeichert. Leer lassen, um ein vorhandenes Passwort beizubehalten.",
-    )
-
-    nebius_api_key = forms.CharField(
-        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
-        required=False,
-        label="Nebius API Key",
-        help_text=(
-            "API Key für Nebius TokenFactory, wird verschlüsselt gespeichert. "
-            "Kann auch via NEBIUS_API_KEY Umgebungsvariable gesetzt werden."
-        ),
     )
 
     class Meta:
@@ -79,8 +78,6 @@ class SiteSettingsAdminForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
         if self.instance and self.instance.pk and self.instance.has_email_host_password:
             self.fields["email_host_password"].help_text = "Passwort ist gesetzt. Leer lassen, um es beizubehalten."
-        if self.instance and self.instance.pk and self.instance.has_nebius_api_key:
-            self.fields["nebius_api_key"].help_text = "Key ist gesetzt. Leer lassen, um ihn beizubehalten."
 
     def _secret_to_store(self, field: str) -> str:
         """Neu eingetragener Wert, sonst ein Klartextwert einer älteren Version (Rückfall), sonst leer."""
@@ -135,16 +132,6 @@ class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
                 "description": (
                     "Konfiguration des SMTP-Servers für den E-Mail-Versand. "
                     "Wenn leer, werden die Umgebungsvariablen verwendet."
-                ),
-            },
-        ),
-        (
-            "KI-Einstellungen",
-            {
-                "fields": ("nebius_api_key",),
-                "description": (
-                    "Globaler Nebius API Key für KI-Features (Zusammenfassungen, Dokument-Assistent). "
-                    "Wird als Fallback verwendet, wenn keine organisationsspezifische Konfiguration vorhanden ist."
                 ),
             },
         ),
@@ -215,14 +202,105 @@ class SiteSettingsAdmin(SingletonAdminMixin, ModelAdmin):
         return super().changeform_view(request, object_id, form_url, extra_context)
 
 
+def anbieter_auswahl_mit_freigabe(choices: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    """Auswahl der Anbieter; Vorlagen, deren Host nicht in KI_ERLAUBTE_HOSTS steht, sind gekennzeichnet."""
+    return [
+        (key, label if key not in ANBIETER_VORLAGEN or vorlage_nutzbar(key) else f"{label} (nicht freigegeben)")
+        for key, label in choices
+    ]
+
+
+def pruefe_ki_endpunkt(
+    form: forms.ModelForm, *, anbieter_feld: str, url_feld: str, anzeigename_feld: str, ort_feld: str
+) -> None:
+    """
+    Gemeinsame Prüfung der Admin-Formulare (KI-Einstellungen, Organisation): Basis-URL bzw. URL der Vorlage
+    muss einen Host aus KI_ERLAUBTE_HOSTS haben; beim eigenen Endpunkt sind URL, Anzeigename und
+    Verarbeitungsort Pflicht. Bei einer Vorlage darf eine eingetragene URL nur im Pfad abweichen, nicht im Host
+    (sonst nennte die Einwilligung den falschen Anbieter). Eine eingetragene URL wird normalisiert gespeichert.
+    """
+    data = form.cleaned_data
+    anbieter = data.get(anbieter_feld) or ""
+    if anbieter not in ANBIETER_VORLAGEN:
+        return
+    url = (data.get(url_feld) or "").strip()
+    if fremder_host_fuer_vorlage(anbieter, url):
+        form.add_error(url_feld, f"Die Basis-URL gehört nicht zur Vorlage. {FREMDER_HOST}")
+        return
+    if anbieter == EIGENER:
+        for feld, text in (
+            (url_feld, "Beim eigenen Endpunkt ist die Basis-URL Pflicht."),
+            (anzeigename_feld, "Beim eigenen Endpunkt ist der Anzeigename Pflicht."),
+            (ort_feld, "Beim eigenen Endpunkt ist der Verarbeitungsort Pflicht."),
+        ):
+            if not (data.get(feld) or "").strip():
+                form.add_error(feld, text)
+        if not url:
+            return
+    vorlage = ANBIETER_VORLAGEN[anbieter]
+    try:
+        geprueft = pruefe_basis_url(url or vorlage.basis_url)
+    except forms.ValidationError as fehler:
+        form.add_error(url_feld if url else anbieter_feld, fehler)
+        return
+    if url:
+        data[url_feld] = geprueft
+
+
+def pruefe_ki_schluessel(
+    form: forms.ModelForm,
+    *,
+    anbieter_feld: str,
+    url_feld: str,
+    schluessel_feld: str,
+    loeschen_feld: str,
+    gespeichert: bool,
+    ohne_anbieter: str,
+) -> None:
+    """
+    Gemeinsame Prüfung des Schlüssels in den Admin-Formularen (KI-Einstellungen, Organisation).
+
+    - Ein Schlüssel gehört zu genau einem Anbieter: Ist einer gespeichert und ändert sich der Host, an den die
+      Aufrufe gingen (oder war bisher keine Vorlage gewählt, etwa nach Migration common/0011 bzw.
+      tenants/0027), muss der Schlüssel des neuen Anbieters eingetragen werden. Sonst ginge der bisherige
+      Schlüssel an den neuen Anbieter.
+    - Ein Schlüssel ohne Anbieter bliebe wirkungslos (und schaltet bei Organisationen die KI ab): Anbieter
+      wählen oder den Schlüssel löschen.
+    """
+    data = form.cleaned_data
+    neu = bool((data.get(schluessel_feld) or "").strip())
+    loeschen = bool(data.get(loeschen_feld))
+    if neu and loeschen:
+        form.add_error(loeschen_feld, "Entweder einen neuen Key eintragen oder den gespeicherten löschen.")
+        return
+    # Der gespeicherte Schlüssel bliebe in Gebrauch
+    behalten = gespeichert and not loeschen and not neu
+    anbieter = data.get(anbieter_feld) or ""
+    if anbieter not in ANBIETER_VORLAGEN:
+        if neu or behalten:
+            form.add_error(anbieter_feld, ohne_anbieter)
+        return
+    if not behalten:
+        return
+    bisher = wirksamer_host(form.initial.get(anbieter_feld) or "", form.initial.get(url_feld) or "")
+    jetzt = wirksamer_host(anbieter, data.get(url_feld) or "")
+    if bisher is None or bisher != jetzt:
+        form.add_error(schluessel_feld, "Bei einem Anbieterwechsel bitte den Schlüssel des neuen Anbieters eintragen.")
+
+
 class AISettingsAdminForm(forms.ModelForm):
-    """Custom form for AISettings with write-only API key field."""
+    """KI-Einstellungen mit Schlüssel, der nur geschrieben wird, und Prüfung gegen die Positivliste."""
 
     api_key = forms.CharField(
         widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
         required=False,
         label="API Key",
         help_text="Wird verschlüsselt gespeichert (AES-256-GCM, Master-Key).",
+    )
+    api_key_loeschen = forms.BooleanField(
+        required=False,
+        label="API Key löschen",
+        help_text="Entfernt den gespeicherten Key; die KI bleibt dann aus, bis ein neuer eingetragen ist.",
     )
 
     class Meta:
@@ -235,12 +313,35 @@ class AISettingsAdminForm(forms.ModelForm):
             self.fields[
                 "api_key"
             ].help_text = "Ein Key ist gesetzt. Für Rotation neuen Key eintragen, sonst leer lassen."
+        self.fields["provider"].choices = anbieter_auswahl_mit_freigabe(list(self.fields["provider"].choices))
+
+    def clean(self):
+        cleaned_data = super().clean()
+        pruefe_ki_endpunkt(
+            self,
+            anbieter_feld="provider",
+            url_feld="base_url",
+            anzeigename_feld="anzeigename",
+            ort_feld="verarbeitungsort",
+        )
+        pruefe_ki_schluessel(
+            self,
+            anbieter_feld="provider",
+            url_feld="base_url",
+            schluessel_feld="api_key",
+            loeschen_feld="api_key_loeschen",
+            gespeichert=bool(self.instance.pk and self.instance.api_key_encrypted),
+            ohne_anbieter="Anbieter wählen oder den API Key löschen.",
+        )
+        return cleaned_data
 
     def save(self, commit=True):
         obj = super().save(commit=False)
         api_key = self.cleaned_data.get("api_key", "").strip()
         if api_key:
             obj.set_api_key(api_key)
+        elif self.cleaned_data.get("api_key_loeschen"):
+            obj.set_api_key("")
         if commit:
             obj.save()
         return obj
@@ -249,10 +350,10 @@ class AISettingsAdminForm(forms.ModelForm):
 @admin.register(AISettings)
 class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
     """
-    Admin for global AI configuration (Work DMS editor).
+    Eine KI-Konfiguration für Work und Bürgerportal (Issue #950).
 
-    Single-page singleton configuration: provider, model, key, output cap
-    and the default monthly token budget per organization.
+    Anbieter (Vorlage oder eigener Endpunkt), Schlüssel, Modelle, Schalter je Bereich und Grenzen. Wirksam ist
+    eine Adresse nur, wenn ihr Host in der Positivliste KI_ERLAUBTE_HOSTS steht.
     """
 
     form = AISettingsAdminForm
@@ -261,17 +362,35 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
         (
             "Anbieter",
             {
-                "fields": ("enabled", "provider", "base_url", "model_name", "api_key"),
+                "fields": ("provider", "base_url", "anzeigename", "verarbeitungsort", "api_key", "api_key_loeschen"),
                 "description": (
-                    "Globale Standard-Konfiguration für den KI-Assistenten im Dokumenten-Editor. "
-                    "Organisationen mit eigenem API Key (Organization → KI) überschreiben diese Einstellungen."
+                    "OpenAI-kompatibler Anbieter mit Verarbeitung in Europa. Ohne Anbieter bleibt die KI aus. "
+                    "Freigegeben sind nur Hosts aus der Umgebungsvariable KI_ERLAUBTE_HOSTS (derzeit: {hosts}); "
+                    "jede Adresse wird bei jedem Aufruf erneut geprüft."
                 ),
+            },
+        ),
+        (
+            "Work",
+            {
+                "fields": ("enabled", "model_name"),
+                "description": (
+                    "Schreibhilfe und Co-Editor im Dokumenten-Editor. Organisationen mit eigenem Schlüssel "
+                    "(Organization → KI) nutzen ihre eigene Konfiguration."
+                ),
+            },
+        ),
+        (
+            "Bürgerportal",
+            {
+                "fields": ("insight_enabled", "insight_model", "fallback_model"),
+                "description": "Zusammenfassungen, KI-Assistent und KI-Verortung im Bürgerportal.",
             },
         ),
         (
             "Limits",
             {
-                "fields": ("max_output_tokens", "default_org_monthly_token_limit"),
+                "fields": ("max_output_tokens", "insight_max_output_tokens", "default_org_monthly_token_limit"),
                 "description": (
                     "Das Monatslimit gilt für Organisationen ohne eigenes Limit. Pro Organisation überschreibbar "
                     "über Organization → 'Token-Limit pro Monat' (leer = Standard, 0 = KI deaktiviert)."
@@ -288,6 +407,15 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
 
             return redirect(f"/admin/common/aisettings/{instance.pk}/change/")
         return super().changeform_view(request, object_id, form_url, extra_context)
+
+    def get_fieldsets(self, request, obj=None):
+        # Die freigegebenen Hosts stehen in der Beschreibung (Umgebung, nicht im Admin änderbar). Ohne Eintrag ist
+        # jeder Host gesperrt; die Beschreibung sagt das, statt eine leere Klammer zu zeigen.
+        hosts = ", ".join(erlaubte_hosts()) or "keine, jeder KI-Aufruf ist gesperrt"
+        return [
+            (name, {**optionen, "description": optionen.get("description", "").replace("{hosts}", hosts)})
+            for name, optionen in super().get_fieldsets(request, obj)
+        ]
 
 
 @admin.register(ProblemReport)

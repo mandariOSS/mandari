@@ -410,6 +410,23 @@ def ist_oeffentlich(tagesordnung: Iterable[Any]) -> bool:
     )
 
 
+def _gueltig_ab(meeting: Any) -> str | None:
+    """
+    ``offers.validFrom``: seit wann die Sitzung bekannt ist – ``created`` der Quelle, sonst unser erster Abgleich.
+
+    Unglaubhafte Zeitpunkte (vor 2000, in der Zukunft; z. B. Ersatzwerte der Quelle) zählen nicht, wie bei
+    ``lastmod`` der Sitemaps. Nie später als der Beginn der Sitzung.
+    """
+    from .services.sitemaps import FRUEHESTE_AENDERUNG, ZUKUNFT_SPIELRAUM
+
+    grenze = timezone.now() + ZUKUNFT_SPIELRAUM
+    for wert in (getattr(meeting, "oparl_created", None), getattr(meeting, "created_at", None)):
+        if isinstance(wert, datetime) and timezone.is_aware(wert) and FRUEHESTE_AENDERUNG <= wert <= grenze:
+            wert = wert.replace(microsecond=0)
+            return _zeitpunkt(min(wert, meeting.start) if meeting.start else wert)
+    return None
+
+
 def get_meeting_seo(
     meeting: Any,
     request: HttpRequest,
@@ -428,7 +445,7 @@ def get_meeting_seo(
     mit ihrer Webseite), Mitwirkende sind die Gremien (mit ihren Seiten). Eintritt frei (``offers`` mit Preis 0, ``isAccessibleForFree``) nur bei einer
     Sitzung mit ausdrücklich öffentlichem Teil, die nicht abgesagt ist.
     """
-    from .services.sitzungsort import sitzungsort
+    from .services.sitzungsort import ist_platzhalter, sitzungsort
 
     gremium = meeting.get_display_name()
     body = meeting.body
@@ -441,7 +458,7 @@ def get_meeting_seo(
     anzahl = len([org for org in meeting.organizations.all() if org.name]) or None
     wo = in_committee(gremium, anzahl)
     satz = " ".join(t for t in ("Sitzung", wo, f"am {_uhrzeit(meeting.start)}" if meeting.start else "") if t)
-    if meeting.location_name:
+    if not ist_platzhalter(meeting.location_name):
         satz += f", {kuerzen(meeting.location_name, _ORT_MAX)}"
     teile = [f"{kommune}: {satz}." if kommune else f"{satz}."]
     if meeting.cancelled:
@@ -472,7 +489,8 @@ def get_meeting_seo(
                 "eventStatus": "https://schema.org/EventCancelled"
                 if meeting.cancelled
                 else "https://schema.org/EventScheduled",
-                "location": {"@type": "Place", "name": ort.name, "address": ort.postanschrift()},
+                # Ohne Raumangabe heißt der Ort wie die Gemeinde (Google erwartet location.name)
+                "location": {"@type": "Place", "name": ort.name or ort.ort, "address": ort.postanschrift()},
                 "image": _bild_der_kommune(body),
                 "organizer": _verwaltung(kommune, seite_der_kommune(body) or _webseite(body))
                 or {"@type": "Organization", "name": "Kommune"},
@@ -484,6 +502,7 @@ def get_meeting_seo(
                     "priceCurrency": "EUR",
                     "availability": "https://schema.org/InStock",
                     "url": canonical,
+                    "validFrom": _gueltig_ab(meeting),
                 }
                 if eintritt_frei
                 else None,

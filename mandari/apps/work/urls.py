@@ -522,6 +522,22 @@ urlpatterns = [
         faction_views.FactionActionView.as_view(),
         name="faction_action",
     ),
+    # Sitzungsansicht der laufenden Sitzung (Issue #874, hinter dem Schalter der Organisation)
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/sitzung/aktion/",
+        faction_views.FactionSessionActionView.as_view(),
+        name="faction_session_action",
+    ),
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/sitzung/top/<uuid:item_id>/",
+        faction_views.FactionSessionItemView.as_view(),
+        name="faction_session_item",
+    ),
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/sitzung/top/<uuid:item_id>/unterlage/<str:schluessel>/",
+        faction_views.FactionSessionDocumentView.as_view(),
+        name="faction_session_document",
+    ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/item/<uuid:item_id>/panel/",
         faction_views.FactionItemPanelView.as_view(),

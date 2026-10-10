@@ -1,0 +1,49 @@
+{% load member_tags %}
+{% comment %}
+Zeile über dem Text im neuen Antragseditor: Dokumenttyp und Briefpapier (wie bisher im Kopf, hier auswählbar),
+Verfasserin bzw. Verfasser, Bezug (Änderungsantrag zu …) und der Weg zu allen Kommentaren.
+Kontext: motion, can_edit, is_guest, document_types, letterheads, bezug, comments; Alpine-Komponente documentEditor.
+{% endcomment %}
+<div class="ke-blattkopf">
+    {% if can_edit and not is_guest %}
+    <div class="relative">
+        <button type="button" class="ke-blattkopf-knopf" data-menue-knopf="typ" @click="menueUmschalten('typ')" aria-haspopup="menu"
+                :aria-expanded="(menue === 'typ').toString()" aria-expanded="false" aria-label="Dokumenttyp ändern">
+            <span x-text="documentTypeName">{{ motion.get_type_display }}</span><i data-lucide="chevron-down" class="w-3.5 h-3.5" aria-hidden="true"></i>
+        </button>
+        <div x-show="menue === 'typ'" x-cloak class="ke-menue" role="menu" aria-label="Dokumenttyp">
+            {% for dt in document_types %}
+            <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(documentTypeId === '{{ dt.id }}').toString()"
+                    @click="setDocumentType('{{ dt.id }}', '{{ dt.name|escapejs }}'); menueSchliessen()"><i data-lucide="{{ dt.icon|default:'file-text' }}" aria-hidden="true"></i>{{ dt.name }}</button>
+            {% empty %}
+            <p class="ke-menue-hinweis">Keine Typen eingerichtet</p>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="relative">
+        <button type="button" class="ke-blattkopf-knopf" data-menue-knopf="briefpapier" @click="menueUmschalten('briefpapier')" aria-haspopup="menu"
+                :aria-expanded="(menue === 'briefpapier').toString()" aria-expanded="false" aria-label="Briefpapier wählen">
+            <i data-lucide="file-badge" class="w-3.5 h-3.5" aria-hidden="true"></i><span x-text="letterheadName">{{ motion.letterhead.name|default:'Kein Briefpapier' }}</span><i data-lucide="chevron-down" class="w-3.5 h-3.5" aria-hidden="true"></i>
+        </button>
+        <div x-show="menue === 'briefpapier'" x-cloak class="ke-menue" role="menu" aria-label="Briefpapier">
+            <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(letterheadId === '').toString()" @click="setLetterhead('', 'Kein Briefpapier'); menueSchliessen()"><i data-lucide="file-x" aria-hidden="true"></i>Kein Briefpapier</button>
+            {% for lh in letterheads %}
+            <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(letterheadId === '{{ lh.id }}').toString()"
+                    @click="setLetterhead('{{ lh.id }}', '{{ lh.name|escapejs }}'); menueSchliessen()"><i data-lucide="file-badge" aria-hidden="true"></i>{{ lh.name }}{% if lh.is_default %}<span class="ke-hinweis">Standard</span>{% endif %}</button>
+            {% endfor %}
+        </div>
+    </div>
+    {% else %}
+    <span>{{ motion.get_type_display }}</span>
+    {% endif %}
+    <span>{{ motion.author|member_name }}</span>
+    {% if bezug.parent %}
+    <span class="ke-bezug" data-testid="kopf-bezug">
+        <i data-lucide="corner-down-right" class="w-3.5 h-3.5" aria-hidden="true"></i>Änderungsantrag zu
+        {% if bezug.parent.url %}<c-suche.textlink href="{{ bezug.parent.url }}" klasse="truncate">„{{ bezug.parent.label }}“</c-suche.textlink>{% else %}<span class="italic truncate">{{ bezug.parent.label }}</span>{% endif %}
+    </span>
+    {% endif %}
+    {% if comments %}
+    <c-suche.textlink knopf klasse="ml-auto" @click="panelOeffnen('kommentare')">Alle Kommentare ({{ comments|length }})</c-suche.textlink>
+    {% endif %}
+</div>

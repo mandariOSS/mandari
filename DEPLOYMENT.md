@@ -195,6 +195,8 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
   (Abschnitt „Sicherung“)
 - [ ] Worker läuft (`docker compose ps worker` „healthy“), `python manage.py events_scheduler --list`
   zeigt die Zeitpläne (Abschnitt „Geplante Aufgaben“); in der Crontab nur Aufgaben des Betriebssystems
+- [ ] Testmail aus den Systemeinstellungen: Message-ID endet auf die eigene Domain, nicht auf eine
+  Container-ID (Abschnitt „Mailversand: Message-ID und EHLO“)
 
 ---
 
@@ -398,6 +400,38 @@ aus #256:
 
 Listen- und Detailseiten lagen vorher wie nachher bei 10–50 ms; sie sind durch
 die Umstellung nicht langsamer geworden.
+
+## ✉️ Mailversand: Message-ID und EHLO
+
+Jede Mail trägt eine Message-ID der Form `<…@domain>`, und beim Verbindungsaufbau meldet sich mandari
+beim Mailserver mit einem Namen (EHLO). Django nähme dafür den Rechnernamen, in einem Container also die
+Container-ID. Spamfilter werten eine Message-ID ohne vollständigen Domainnamen ab (rspamd
+`MID_RHS_NOT_FQDN`). mandari setzt den Namen deshalb beim Start jedes Prozesses (Anwendung, Worker,
+Verwaltungsbefehle) für alle Versandwege: Systemeinstellungen, `EMAIL_*`, eigenes SMTP einer Organisation.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `EMAIL_MESSAGE_ID_DOMAIN` | vollständiger Domainname für Message-ID und EHLO, z. B. `example.com`; leer (Standard) = Domain von `DEFAULT_FROM_EMAIL`, wenn gesetzt, sonst Host aus `SITE_URL` |
+| `DEFAULT_FROM_EMAIL` | Absender, wenn die Systemeinstellungen keinen nennen; ohne Angabe `noreply@mandari.de`, der für Message-ID und EHLO nie zählt |
+
+- `docker-compose.yml` reicht beide Werte aus der `.env` an Anwendung und Worker durch, das Helm-Chart über
+  `mail.messageIdDomain` und `mail.fromEmail`. Ohne beide gilt der Host aus `SITE_URL`, mit Compose also
+  `DOMAIN`.
+- Weicht der Absender in den Systemeinstellungen von `DEFAULT_FROM_EMAIL` ab (ohne `DEFAULT_FROM_EMAIL`: vom
+  Host aus `SITE_URL`), dessen Domain in `EMAIL_MESSAGE_ID_DOMAIN` eintragen. Gelesen wird der Wert beim Start;
+  nach einer Änderung Anwendung und Worker neu starten.
+- Ein ungültiger Wert (ohne Punkt, mit `@`, IP-Adresse) hält nichts an: mandari versendet mit dem Wert, der
+  ohne die Einstellung gälte, und die Systemprüfung warnt bei jedem Verwaltungsbefehl (`common.W001`).
+  Liefert auch der keinen vollständigen Domainnamen (etwa `SITE_URL` mit IP-Adresse), nimmt mandari eine
+  IP-Adresse als Adressliteral nach RFC 5321 (`[192.0.2.10]`, `[IPv6:2001:db8::1]`), sonst `localhost`, und
+  die Systemprüfung warnt ebenso (`common.W002`; nicht bei `SITE_URL` auf `localhost`). Prüfen mit
+  `python manage.py check`.
+- Prüfen: Testmail aus den Systemeinstellungen an ein eigenes Postfach senden und im Quelltext der Mail
+  `Message-ID:` ansehen. Für die Zustellbarkeit insgesamt helfen ein Test bei mail-tester.com und Testmails
+  an Gmail- und Microsoft-365-Postfächer (Kopfzeile `Authentication-Results`: SPF, DKIM und DMARC `pass`).
+- DMARC: Mit `p=none` beginnen und Aggregatberichte (`rua=`) auswerten. Zeigen sie nur noch eigene,
+  legitime Absender, auf `p=quarantine` und später `p=reject` umstellen.
+- HTML-Mails verstecken nur den Vorschautext (Preheader) im Posteingang, und nur, wenn er Inhalt hat.
 
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 
@@ -825,6 +859,67 @@ dann ohne `--dry-run` (einzelne Umzüge mit `--eintrag <Kennung>`). Zurückgedre
 früheren Punkt bzw. an der früheren Vorlage und ziehen von dort nie wieder automatisch um. Ein älteres Image läuft
 ohne Rückbau der Migration (zwei neue Tabellen).
 
+### KI-Anbieter: eine Konfiguration, nur freigegebene EU-Endpunkte
+
+Jeder KI-Aufruf (Schreibhilfe und Co-Editor in Work, Zusammenfassung, KI-Assistent und KI-Verortung im
+Bürgerportal) nutzt eine Konfiguration (Issue #950): Anbieter (Vorlage oder eigener OpenAI-kompatibler
+Endpunkt), Basis-URL, Modell und Schlüssel stehen im Admin unter „KI-Einstellungen“, getrennt schaltbar für
+Work und das Bürgerportal; Organisationen können für Work einen eigenen Schlüssel und Anbieter eintragen. Ohne
+Anbieter bleibt die KI aus; einen fest eingebauten Anbieter oder einen Rückfall gibt es nicht.
+
+Technische Sperre ist die Positivliste `KI_ERLAUBTE_HOSTS` (kommagetrennte Hostnamen, in Anwendung und
+Ingestor gleich setzen). Sie hat keinen Standard: Leer ist nichts erlaubt, jeder KI-Aufruf bleibt gesperrt,
+auch die externe Texterkennung über `MISTRAL_BASE_URL` (fail-closed, `shared/mandari_dokumente/ki_hosts.py`).
+Die Vorlagen im Admin (STACKIT, IONOS, Scaleway, OVHcloud, DeutschlandGPT) geben keinen Host frei; sie füllen
+nur Anzeigename, Verarbeitungsort und Basis-URL vor und sind als „nicht freigegeben“ gekennzeichnet, solange ihr
+Host fehlt. Verglichen wird der Host exakt, nur `https`, ohne Zugangsdaten in der Adresse, Port nur 443. Jede
+Adresse wird bei jedem Aufruf neu geprüft, auch wenn sie direkt in der Datenbank steht; ein nicht
+freigegebener Host ergibt „KI aus“ mit Warnung im Protokoll (ohne Schlüssel).
+
+Solange kein Anbieter vertraglich freigegeben ist, bleibt `KI_ERLAUBTE_HOSTS` leer und die KI überall aus
+(Work, Bürgerportal, externe Texterkennung). Einschalten ist reine Konfiguration: Host in `KI_ERLAUBTE_HOSTS`
+aufnehmen (Anwendung, Worker und Ingestor neu starten), dann im Admin Vorlage bzw. Basis-URL, Modell und
+Schlüssel eintragen und die Schalter für Work und Bürgerportal setzen. Die Einwilligung im KI-Assistenten nennt
+Anbieter und Verarbeitungsort aus dieser Konfiguration und gilt nur für den Anbieter, dem zugestimmt wurde. An
+den Host der DeutschlandGPT-Vorlage geht die Antwortlänge zusätzlich als `max_completion_tokens`, weil die
+Schnittstelle `max_tokens` nicht beachtet.
+
+Ein gespeicherter Schlüssel gehört zu seinem Anbieter: Wer im Admin den Anbieter wechselt (anderer Host oder
+bisher kein Anbieter gewählt), muss den Schlüssel des neuen Anbieters eintragen. Einen Schlüssel ohne Anbieter
+nimmt der Admin nicht an; „API Key löschen“ (KI-Einstellungen) bzw. „Eigenen KI API Key löschen“ (Organisation)
+entfernt ihn. Eine Vorlage gilt nur für ihren eigenen Host; für einen anderen Host „Eigener Endpunkt“ mit
+Anzeigename und Verarbeitungsort wählen.
+
+**Rückfall auf ein älteres Image:** Die neuen Spalten haben Datenbank-Standardwerte; ein älteres Image läuft
+ohne Rückbau der Migrationen `common/0011` und `tenants/0027` weiter. Die Migrationen setzen frühere Anbieter
+auf „nicht eingerichtet“ bzw. „Plattform-Einstellung“ und leeren den früheren Nebius-Schlüssel der
+Systemeinstellungen. Die KI bleibt nach einem Rückfall auf ein Image vor #950 aber **nicht** von selbst aus:
+Ein solches Image kennt weder die Positivliste noch die neuen Vorlagen.
+
+- Eine Organisation mit eigenem Schlüssel, deren Anbieter leer ist (nach `tenants/0027`) oder eine Vorlage
+  ohne eingetragene Basis-URL (etwa STACKIT, Scaleway oder DeutschlandGPT), schickt Schlüssel und Inhalte an
+  Nebius, auch ohne `NEBIUS_API_KEY`.
+- Eine eingetragene Basis-URL (Organisation oder KI-Einstellungen) nutzt es ohne Prüfung gegen
+  `KI_ERLAUBTE_HOSTS`.
+- KI-Assistent und Zusammenfassung im Bürgerportal nutzen Nebius, sobald `NEBIUS_API_KEY` in der Umgebung
+  steht.
+
+Deshalb:
+
+1. Beim Deploy dieser Version zählen, wie viele Organisationen einen eigenen Schlüssel haben (gibt nur die
+   Zahl aus): `docker exec mandari python manage.py shell -c "from apps.tenants.models import Organization;
+   print(Organization.objects.filter(ai_api_key_encrypted__isnull=False).count())"`. Bei mehr als null
+   trifft jeder Rückfall auf ein Image vor #950 diese Organisationen.
+2. `NEBIUS_API_KEY` **vor** `./update.sh` aus der `.env` entfernen. `update.sh` sichert die `.env` als
+   `.env.pre-update` und kopiert sie beim automatischen Rückfall und bei `--rollback` zurück; ein erst danach
+   entfernter Eintrag stünde nach dem Rückfall wieder in der Umgebung.
+3. Vor einem Rückfall auf ein Image vor #950 die eigenen KI-Schlüssel der Organisationen („Eigenen KI API Key
+   löschen“) und den Plattformschlüssel („API Key löschen“ in den KI-Einstellungen) löschen.
+4. Den Nebius-Schlüssel beim Anbieter widerrufen. Der Widerruf ist der eigentliche Schutz: Sicherungen der
+   `.env` können den Eintrag zurückbringen, und ein automatischer Rückfall lässt keine Zeit für Schritt 3.
+   Ist ein Image vor #950 mit eigenen Schlüsseln gelaufen, diese Schlüssel beim jeweiligen Anbieter widerrufen
+   und neu ausstellen.
+
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 
 Den Text der RIS-Dateien erkennt eine Implementierung, die Bibliothek `mandari_dokumente` in `shared/`
@@ -856,7 +951,7 @@ Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 | `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
 | `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
 | `TEXT_EXTRACTION_MAX_SIZE_MB` | `50` | größere Dateien werden übersprungen |
-| `MISTRAL_API_KEY`, `MISTRAL_OCR_MODEL`, `MISTRAL_OCR_RATE_LIMIT` | leer, `pixtral-12b-2409`, `60` | Mistral vor Tesseract, Anfragen je Minute und Prozess |
+| `MISTRAL_API_KEY`, `MISTRAL_BASE_URL`, `MISTRAL_OCR_MODEL`, `MISTRAL_OCR_RATE_LIMIT` | leer, leer, `pixtral-12b-2409`, `60` | Externe Texterkennung vor Tesseract, nur für öffentliche RIS-Dateien und nur mit Basis-URL, deren Host in `KI_ERLAUBTE_HOSTS` steht (siehe „KI-Anbieter“); Anfragen je Minute und Prozess |
 
 Beansprucht wird in kleinen Portionen direkt vor der Bearbeitung (höchstens zwei Dateien je Platz von
 `TEXT_EXTRACTION_CONCURRENCY`); `TEXT_EXTRACTION_BATCH_SIZE` begrenzt nur die Dateien je Kommune und Runde.
@@ -898,7 +993,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
 | `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, neueste fehlende Dateien zuerst (`docs/FILE_CACHE.md`) |
 | `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
-| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788) |
+| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788); hält mit `FILE_CACHE_MAX_TOTAL_GB` auch die Obergrenze des Dokument-Caches ein (Issue #961) |
 | `befehl:generate_alerts` | täglich 07:45 | Benachrichtigungen der Abos zu Themen und Orten; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:send_digest` | montags 08:00 | Wochenmail der Abos; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:check_source_health` | stündlich :15 | Zustand der Quellen (Issue #231, `docs/MONITORING.md`) |
@@ -985,6 +1080,30 @@ ist wiederholbar, erzeugt nur Fehlendes und kennt `--dry-run` und `--tenant <slu
 ```bash
 docker compose exec mandari python manage.py session_publish_protocols
 ```
+
+**Obergrenze des Dokument-Caches** (Issue #961, `docs/FILE_CACHE.md`, „Obergrenze der Gesamtgröße“): Standard
+unbegrenzt, das Update ändert nichts (Migration `insight_core/0056`, nur eine neue Spalte). Wer die Ablage
+begrenzen will, baut einen großen Bestand zuerst von Hand ab und setzt danach die Grenze; ab dann hält das
+stündliche Aufräumen sie ein. `--dry-run` zeigt vorher Modus, Anzahl, Größe und Kommunen; der Lauf arbeitet in
+kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container der Anwendung ausführen, der dieselben
+`OBJ_*` hat wie der Worker; die erste Zeile muss den erwarteten Modus nennen:
+
+```bash
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
+# mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte dort liegen (fehlen welche: erst --hochladen)
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
+# danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
+# FILE_CACHE_MAX_TOTAL_GB=10
+```
+
+Mit Objektspeicher löscht der Abbau nur lokale Kopien, mit `--pruefe-objektspeicher` erst nach erfolgreicher Prüfung
+per `HEAD`; ohne holt die Vorschau verdrängte Dokumente bei Bedarf von der Quelle. Liegen Inhalte laut Datenbank im
+Objektspeicher, ist er im Container aber nicht konfiguriert, bricht der Abbau ab und das stündliche Aufräumen setzt
+die Grenze aus („Obergrenze ausgesetzt“ im Protokoll des Workers): dann `OBJ_*` prüfen. Eigene Compose-Dateien
+brauchen `FILE_CACHE_MAX_TOTAL_GB` in der `environment` von Anwendung und Worker. Zurück: Variable entfernen bzw.
+auf `0` setzen und neu starten; ohne Objektspeicher lädt `cache_files --verdraengte` verdrängte Dokumente wieder
+nach.
 
 Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vorgabe
 `<MEDIA_ROOT>/audit_archive`, also im persistenten Medien-Volume und in der Sicherung; nie per

@@ -3,7 +3,7 @@
  *
  * Reihenfolge: HTMX konfigurieren, Alpine-Komponenten und -Stores registrieren,
  * Icon-Observer starten, Alpine starten. Die Globals `htmx`, `Alpine`, `lucide`,
- * `showToast` und `confirmAction` bleiben für Templates erhalten.
+ * `showToast`, `confirmAction`, `bereinigeKiHtml` und `kiMarkdownHtml` bleiben für Templates erhalten.
  */
 
 import collapse from '@alpinejs/collapse'
@@ -21,6 +21,7 @@ import { alleLoeschen, aufraeumen } from './eingaben-sicherung'
 import { installFormBehaviors } from './form-behaviors'
 import { setupHtmx } from './htmx-setup'
 import { installIconObserver, renderIcons } from './icons'
+import { bereinigeKiHtml, kiMarkdownHtml } from './ki-ausgabe'
 import { initMeetingMap } from './meeting-map'
 import { initPaperMap } from './paper-map'
 import { initSearchPlaceMap } from './search-place-map'
@@ -44,6 +45,9 @@ window.Alpine = Alpine
 window.lucide = { createIcons: () => renderIcons() }
 window.showToast = showToast
 window.confirmAction = confirmAction
+// KI-Antworten nur bereinigt als HTML ausgeben (KI-Assistent, pages/chat.html)
+window.bereinigeKiHtml = bereinigeKiHtml
+window.kiMarkdownHtml = kiMarkdownHtml
 
 // ---- Alpine: Plugins, Komponenten-Registry, Stores ---------------------------
 Alpine.plugin(collapse)

@@ -39,10 +39,13 @@ worker:
       cpu: 50m
       memory: 192Mi
     limits:
-      memory: 512Mi
-  # Ein Worker für alle Warteschlangen spart einen Pod. Nachteil: Ein Neustart des Runners
-  # wartet auf laufende Texterkennung (bis 30 min), Mails solange auch.
+      # Die Verwaltungsbefehle der Zeitpläne laufen als eigene Prozesse im Worker und brauchen bis 1 GB
+      memory: 1Gi
+  # Ein Worker für alle Warteschlangen spart zwei Pods. Nachteil: Ein Neustart des Runners
+  # wartet auf laufende Texterkennung (bis 30 min), Mails und Live-Lesungen solange auch.
   heavy:
+    enabled: false
+  live:
     enabled: false
 
 postgres:

@@ -64,6 +64,8 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `OPARL_FILES_ROOT` | `<MEDIA_ROOT>/oparl_files` | Wurzelverzeichnis des Caches (Container: `/app/files`) |
 | `FILE_CACHE_MAX_MB` | 80 | Größere Dateien werden nicht gecacht, aber weiter durchgereicht |
 | `FILE_CACHE_MIN_FREE_GB` | 15 | Unter dieser Grenze wird nichts mehr geschrieben (Schutz des Systemlaufwerks) |
+| `FILE_CACHE_MAX_TOTAL_GB` | 0 | Obergrenze der Gesamtgröße in GB, 0 = unbegrenzt (siehe [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße)) |
+| `FILE_CACHE_EVICT_TARGET_PERCENT` | 90 | Über der Obergrenze wird bis zu diesem Anteil der Grenze verdrängt (50 bis 100) |
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
 | `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, 0 = aus) |
 | `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange warten Vorschau und KI-Zusammenfassung höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After` bzw. die Bitte um einen neuen Versuch. Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
@@ -98,6 +100,12 @@ bedient, und gehört aus der Crontab entfernt (Upgrade-Hinweis dort). Abschalten
   Altersklasse des Dokuments (< 30 Tage, < 1 Jahr, < 3 Jahre, älter). Es gibt nur Zähler, keine Adressen,
   Kennungen oder einzelnen Dokumente. `cache_files --stats` zeigt die letzten 30 Tage mit Trefferquote; daraus
   ergibt sich, wie groß ein Zwischenspeicher sein muss. Ein Fehler beim Zählen verhindert die Auslieferung nie.
+  Getrennt davon vermerkt jedes ausgelieferte Dokument, wann es zuletzt ausgeliefert wurde
+  (`OParlFile.local_accessed_at`, höchstens einmal je Stunde, nur der Zeitpunkt): Danach richtet sich die
+  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße). Erkennbare Crawler und Abrufprogramme (`bot`,
+  `crawler`, `spider` im User-Agent, etwa GPTBot, ClaudeBot, Amazonbot, Bytespider, Googlebot, bingbot, dazu
+  `python-requests`, `curl` u. Ä.) zählen im Zugriffsprotokoll weiter mit, vermerken aber keine Nutzung: Sie sollen
+  nicht bestimmen, was im Cache bleibt.
   Mit der Auslieferung über den Webserver laden PDF-Betrachter große Dokumente in Teilen (Range-Anfragen),
   und jede Anfrage läuft durch Django. Gezählt wird nur die erste Anfrage eines Abrufs (ohne `Range` oder mit
   einem Bereich ab Byte 0); Folgeanfragen zählen weder als Abruf noch mit ihrer Größe.
@@ -203,7 +211,8 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
 - `dokumentablage --hochladen` lädt Inhalte ohne Kopie im Objektspeicher hoch (`remote_at`).
 - Die lokale Ablage wird zum **Zwischenspeicher**: `dokumentablage --aufraeumen` verdrängt bei mehr als
   `OBJ_CACHE_MAX_GB` (Standard 60) die am längsten nicht gelesenen Inhalte – nur solche, die sicher im Objektspeicher
-  liegen. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der Zugriffszeit (`atime`) der Datei,
+  liegen. Eine kleinere [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) (`FILE_CACHE_MAX_TOTAL_GB`) wirkt
+  zusätzlich. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der Zugriffszeit (`atime`) der Datei,
   höchstens einmal je Stunde. Die Änderungszeit bleibt unberührt, denn aus ihr bildet der Webserver `ETag` und
   `Last-Modified`; so greifen bedingte Anfragen und Range-Anfragen mit `If-Range` weiter. Ein Mount mit
   `noatime` stört nicht, die Zeit wird ausdrücklich gesetzt.
@@ -225,7 +234,94 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   `befehl:dokumentablage` vor jedem Aufräumen selbst hoch (`--hochladen --aufraeumen`, solange `OBJ_ENABLED` gesetzt ist).
 - Ausschalten: `OBJ_ENABLED=false`. Lokal verdrängte Inhalte holt die Vorschau dann von der Quelle; `cache_files`
   lädt sie nach. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
-  (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie.
+  (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie. Eine
+  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus, solange Inhalte laut Datenbank im
+  Objektspeicher liegen (siehe dort, „Moduswechsel“).
+
+### Obergrenze der Gesamtgröße
+
+Ohne weitere Einstellung wächst die Ablage, bis `FILE_CACHE_MIN_FREE_GB` greift. Mit `FILE_CACHE_MAX_TOTAL_GB`
+(GB, Standard `0` = unbegrenzt) bleibt sie begrenzt (Issue #961, `services/file_cache_limit.py`):
+
+- **Wann:** Das stündliche Aufräumen (`dokumentablage --aufraeumen`, Zeitplan `befehl:dokumentablage` um :50)
+  verdrängt, sobald die Belegung die Grenze überschreitet, bis `FILE_CACHE_EVICT_TARGET_PERCENT` (Standard 90 %)
+  der Grenze erreicht sind. `cache_files` lädt nur bis zur Grenze nach und meldet sonst `limit`; Platz schafft der
+  nächste Aufräumlauf. Was bis dahin sonst abgelegt wird (Vorschau, Texterkennung, Ingestor), kommt hinzu: Die Grenze kann
+  also für höchstens eine Stunde um die Ablagen dieser Stunde überschritten sein.
+- **Belegung:** Inhalte unter `sha256/<ab>/` auf der Platte (ohne Teil-Downloads unter `sha256/tmp`) plus Kopien
+  im alten Layout je Kommune (Größe aus der Datenbank).
+- **Wer zuerst geht:** Dokumente, die am längsten nicht über die Vorschau ausgeliefert wurden; nie ausgelieferte
+  nach dem Datum des Dokuments (Datum, sonst Anlage in der Quelle bzw. bei uns), ältere zuerst. Das ist dieselbe
+  Einteilung wie im Zugriffsprotokoll, nach dem jüngere Dokumente weit häufiger gelesen werden. Ein Inhalt, den
+  mehrere Dokumente teilen, zählt so jung wie das jüngste davon. Der Zeitpunkt der Zwischenspeicherung zählt
+  bewusst nicht: Der Erstabgleich legte die neuesten Dokumente zuerst ab, sie wären sonst zuerst gegangen.
+- **Mit Objektspeicher:** Gelöscht wird nur die lokale Kopie, und nur von Inhalten, die sicher im Objektspeicher
+  liegen. Die Datenbank bleibt unverändert, die Dokumente bleiben „Lokal vorhanden“; die Vorschau holt den Inhalt
+  bei Bedarf aus dem Objektspeicher. Noch nicht hochgeladene Inhalte bleiben, bis `--hochladen` sie übertragen hat.
+  `OBJ_CACHE_MAX_GB` wirkt daneben weiter (nach der Zugriffszeit der Datei); es gilt die kleinere Grenze.
+- **Ohne Objektspeicher:** Alle Dokumente eines Inhalts geben ihre Referenz gemeinsam frei und gehen auf
+  „Verdrängt“ (`local_status=evicted`); danach verweist kein Dokument mehr auf den Inhalt, und er wird gelöscht.
+  Die Vorschau holt ein verdrängtes Dokument bei Bedarf von der Quelle und legt es wieder ab (wie jeden Abruf
+  dort: robots.txt, Drossel je Host, Schonung). `cache_files` lädt verdrängte Dokumente nicht von selbst nach,
+  sonst lüde der nächste Lauf wieder, was die Grenze eben verdrängt hat; `cache_files --verdraengte` nimmt sie
+  ausdrücklich auf (etwa nach Anheben oder Abschalten der Grenze). Liefert die Quelle `404`, wird das Dokument wie
+  bisher als fehlend vermerkt.
+- **Text bleibt:** Extrahierter Text, Status der Texterkennung und Fingerabdruck (`sha256_hash`) bleiben unberührt;
+  es wird nichts neu erkannt. Suche, Vorgangsseiten, OParl-Ausgabe und Löschabgleich arbeiten weiter wie bisher.
+- **Nie verdrängt** werden Inhalte, deren Text gerade erkannt wird (`pending`/`processing`, die Erkennung liest die
+  lokale Kopie), Kopien aus der letzten Stunde und, ohne Objektspeicher, Dokumente, die sich nicht neu abrufen
+  ließen: Quelle in Schonung, Dateiabruf abgeschaltet, synthetische Quelle (Domäne `.invalid`, etwa die Demo),
+  keine Download-Adresse oder eine Quelle, die Dateiabrufe verweigert. Letzteres gilt als erkannt, sobald ein
+  Dokument der Quelle einen Vermerk der robots.txt trägt (Cache oder Texterkennung), die robots.txt im gemeinsamen
+  Cache eine abgelegte Datei der Quelle sperrt (angefragt wird dafür nie) oder ein Abruf mit HTTP 401/403 endete.
+  Das ist bewusst grob: Ein einziges solches Dokument schützt die ganze Quelle; eine Freigabe (`robots_override`)
+  bzw. ein gelungener Neuversuch (`cache_files --retry-errors`) hebt den Schutz auf. Reicht der Rest nicht bis zum
+  Ziel, meldet der Lauf das mit den geschützten Größen je Grund.
+- **Moduswechsel:** Liegen Inhalte laut Datenbank im Objektspeicher (`remote_at`), ist er im laufenden Container aber
+  nicht konfiguriert (`OBJ_ENABLED=false` im Worker, fehlende `OBJ_*`), setzt die Grenze aus: Das stündliche Aufräumen
+  meldet „Obergrenze ausgesetzt“ (Fehlerausgabe und Protokoll), `prune_file_cache` bricht ab. Ohne diesen Halt
+  würden solche Inhalte freigegeben, verwaisten, und das nächste Aufräumen mit Objektspeicher löschte sie dort.
+  `prune_file_cache --ohne-objektspeicher` macht ausdrücklich ohne Objektspeicher weiter; Inhalte mit `remote_at`
+  bleiben auch dann unangetastet (geschützt als `im_objektspeicher`), auch wenn sie erst während des Laufs
+  hochgeladen werden. Die erste Zeile von `prune_file_cache` nennt den Modus.
+- **Nachprüfung unter der Sperre:** Zwischen Planung und Verdrängen prüft jeder Stapel unter Zeilensperre erneut:
+  Texterkennung, frisch abgelegt, inzwischen ausgeliefert oder neu verwiesen (Rang jünger), Quelle in Schonung bzw.
+  Dateiabruf abgeschaltet (je Stapel neu gelesen), Download-Adresse, Zahl der Verweise (eine gesperrte Datei des
+  Inhalts hält ihn) und, ohne Objektspeicher, `remote_at`.
+- **Sicherheit:** Gelöscht wird nur unterhalb von `OPARL_FILES_ROOT`, nie über symbolische Verweise (weder die
+  Datei noch das Verzeichnis `sha256/<ab>` darf einer sein; Kopien im alten Layout müssen nach Auflösen aller
+  Verweise darunter liegen). Liegt `sha256/` selbst außerhalb, wird dort nichts verdrängt.
+- **Last:** Der Durchgang über die Platte summiert nur Größen. Die Rangfolge liefert die Datenbank über einen
+  Cursor, verdrängt wird in Stapeln zu 200 Inhalten in kurzen Transaktionen; gerade gesperrte Zeilen (eine Datei
+  wird eben abgelegt) werden übersprungen statt erwartet. Eine Sperre im gemeinsamen Cache verhindert, dass
+  Zeitplan und Handlauf gleichzeitig verdrängen.
+- **Kennzahlen:** Mit Objektspeicher weisen `cache_files --stats` und die Zustandsprüfung (Monitoring,
+  „Dokument-Cache“) getrennt aus, was lokal auf der Platte liegt (Durchgang wie bei der Grenze) und was im
+  Objektspeicher; „abgelegt“ zählt Dokumente mit Kopie an einem der beiden Orte. Ohne Objektspeicher bleibt es bei
+  „lokal“ mit der Summe aus der Datenbank.
+
+**Einmaliger Abbau eines großen Bestands:** erst ansehen, dann verdrängen, danach die Grenze setzen. Alle Befehle im
+Container, in dem auch der Worker läuft (gleiche `OBJ_*`), sonst bricht der Befehl wegen des Moduswechsels ab:
+
+```bash
+# 1. Modus und Umfang ansehen (ändert nichts): erste Zeile „Modus: mit Objektspeicher“?
+python manage.py prune_file_cache --max-gb 10 --dry-run
+# 2. Mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte, die lokal gingen, dort mit ihrer Größe liegen
+python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+#    fehlen welche: dokumentablage --hochladen --trotz-zeitplan, dann Schritt 2 wiederholen
+#    (ohne --stichprobe prüft der Probelauf alle; das dauert je Inhalt eine Anfrage)
+# 3. Verdrängen; mit Objektspeicher jede lokale Kopie vor dem Löschen per HEAD prüfen
+python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
+# 4. danach FILE_CACHE_MAX_TOTAL_GB=10 setzen (Anwendung und Worker) und neu starten
+```
+
+Mit `--pruefe-objektspeicher` bleibt eine lokale Kopie, deren Inhalt im Objektspeicher fehlt oder eine andere Größe
+hat; in beiden Fällen wird `remote_at` zurückgesetzt. So schützt „nicht hochgeladen“ die Kopie auch vor späteren Läufen
+ohne Prüfung, und das nächste `dokumentablage --hochladen` überträgt den Inhalt erneut.
+Ist der Objektspeicher nicht erreichbar, bricht der Lauf ab. Die Ausgabe nennt geprüft, vorhanden, fehlend und
+abweichend. Der Befehl läuft neben dem Zeitplan; startet er, während das Aufräumen gerade verdrängt, endet er mit
+Hinweis. Ein abgebrochener Lauf hinterlässt nichts Halbes und lässt sich wiederholen. `cache_files --stats` zeigt
+danach die Grenze, die Zahl verdrängter Dokumente und die lokale Belegung.
 
 ### Löschabgleich
 

@@ -1,0 +1,9 @@
+{# Stimmenzähler mit − und + für die Beschlussleiste (Komponente beschlussLeiste); Kontext: name, feld, label #}
+<div class="fs-zaehler">
+    <label for="fs-z-{{ feld }}">{{ label }}</label>
+    <div>
+        <button type="button" @click="minus('{{ feld }}')" aria-label="{{ label }}: eins weniger"><i data-lucide="minus" aria-hidden="true"></i></button>
+        <input id="fs-z-{{ feld }}" type="number" name="{{ name }}" min="0" max="999" inputmode="numeric" x-model.number="stimmen.{{ feld }}">
+        <button type="button" @click="plus('{{ feld }}')" aria-label="{{ label }}: eins mehr"><i data-lucide="plus" aria-hidden="true"></i></button>
+    </div>
+</div>

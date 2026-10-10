@@ -1,0 +1,29 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Suchformular der Suchseiten im Bürgerportal und in Work (Issue #853): Feld mit Lupe und Ladeanzeige, ein Knopf.
+Ohne JavaScript ein gewöhnliches GET-Formular; mit HTMX sucht es beim Tippen (Live-Suche), tauscht nur #suchergebnis
+aus und schreibt die Adresse fort. Filter außerhalb des Formulars gehören per form="suche-form" dazu.
+  <c-suche.feld adresse="{% url 'insight_core:insight:search' %}" wert="{{ query }}" platzhalter="Straße, Thema oder Aktenzeichen" />
+  <c-suche.feld adresse="{{ suche_adresse }}" wert="{{ query }}" platzhalter="Thema, Straße oder Aktenzeichen" dicht fokus />
+Parameter: adresse (Ziel der Suche), wert (Suchbegriff), platzhalter, dicht (Maße einer Arbeitsplattform: Feld
+40 px als die eine Hauptaktion, Schrift 16 px, kleine Lupe; Work. Ohne dicht die Maße des Bürgerportals),
+fokus (Eingabefeld beim Laden fokussieren).
+{% endcomment %}
+<c-vars adresse="" wert="" platzhalter="" dicht="" fokus="" />
+<form id="suche-form" action="{{ adresse }}" method="get" role="search"
+      hx-get="{{ adresse }}" hx-target="#suchergebnis" hx-push-url="true"
+      hx-include="[form='suche-form']" hx-indicator="#suche-laden" class="flex {% if dicht %}gap-2{% else %}gap-3{% endif %} max-w-3xl">
+    <div class="relative flex-1 min-w-0">
+        <label for="suche-eingabe" class="sr-only">Suchbegriff</label>
+        <i data-lucide="search" class="absolute {% if dicht %}left-3{% else %}left-3.5{% endif %} top-1/2 -translate-y-1/2 {% if dicht %}w-4 h-4{% else %}w-5 h-5{% endif %} text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+        <input id="suche-eingabe" type="search" name="q" value="{{ wert }}" autocomplete="off" enterkeyhint="search"
+               placeholder="{{ platzhalter }}" {% if fokus %}autofocus{% endif %}
+               hx-get="{{ adresse }}" hx-trigger="input changed delay:400ms, search"
+               hx-target="#suchergebnis" hx-push-url="true" hx-include="#suche-form, [form='suche-form']" hx-indicator="#suche-laden"
+               class="w-full {% if dicht %}min-h-10 pl-9 pr-9 rounded-md{% else %}min-h-12 pl-11 pr-10 rounded-xl{% endif %} border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 {% if dicht %}text-base{% else %}text-[1.0625rem]{% endif %} text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/30 outline-none">
+        <span id="suche-laden" class="htmx-indicator absolute {% if dicht %}right-3{% else %}right-3.5{% endif %} top-1/2 -translate-y-1/2" aria-hidden="true">
+            <i data-lucide="loader-circle" class="{% if dicht %}w-4 h-4{% else %}w-5 h-5{% endif %} animate-spin text-primary-700 dark:text-primary-300"></i>
+        </span>
+    </div>
+    <button type="submit" class="shrink-0 {% if dicht %}min-h-10 px-4 rounded-md text-sm{% else %}min-h-12 px-5 rounded-xl{% endif %} bg-primary-700 hover:bg-primary-800 text-white font-semibold">Suchen</button>
+</form>

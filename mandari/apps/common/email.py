@@ -27,6 +27,11 @@ logger = logging.getLogger(__name__)
 # Bereiche, die nur im HTML sinnvoll sind (Preheader, Wortmarke), werden im Basis-Layout mit
 # diesen Markern umschlossen und fallen aus der Textfassung heraus.
 _TEXT_SKIP_RE = re.compile(r"<!--\s*text:skip\s*-->.*?<!--\s*/text:skip\s*-->", re.DOTALL)
+# Preheader ohne Inhalt (Issue #957): Der versteckte Teil entfällt samt Markern. Spamfilter zählen versteckte
+# Teile (rspamd MANY_INVISIBLE_PARTS); ein leerer bringt im Posteingang nichts.
+_EMPTY_PREHEADER_RE = re.compile(
+    r"[ \t]*<!--\s*text:skip\s*-->\s*<span class=\"preheader\">\s*</span>\s*<!--\s*/text:skip\s*-->[ \t]*\r?\n?"
+)
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 # html2text maskiert Markdown-Sonderzeichen (z. B. "\-"); in einer reinen Textmail stören die Backslashes.
 _MD_ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!])")
@@ -42,6 +47,11 @@ def get_from_email() -> str:
 # =============================================================================
 # Rendering: Basis-Layout, Inliner, Text-Alternative
 # =============================================================================
+
+
+def drop_empty_preheader(html: str) -> str:
+    """Entfernt den Preheader des Basis-Layouts, wenn sein Block leer geblieben ist."""
+    return _EMPTY_PREHEADER_RE.sub("", html)
 
 
 def inline_css(html: str) -> str:
@@ -85,10 +95,10 @@ def render_email(
     ``template_name`` ist das HTML-Template (z. B. ``emails/contact/confirmation.html``); es
     erweitert ``emails/base_email.html``. Das HTML wird durch den Inliner geschickt. Die
     Textfassung kommt aus ``text_template_name`` bzw. dem gleichnamigen ``.txt``-Template,
-    sofern vorhanden, sonst per html2text aus dem gerenderten HTML.
+    sofern vorhanden, sonst per html2text aus dem gerenderten HTML. Ein leerer Preheader entfällt.
     """
     context = dict(context or {})
-    html = render_to_string(template_name, context, request=request)
+    html = drop_empty_preheader(render_to_string(template_name, context, request=request))
     text_name = text_template_name or _text_template_for(template_name)
     text: str
     try:

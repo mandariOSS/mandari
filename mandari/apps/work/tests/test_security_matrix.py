@@ -57,6 +57,7 @@ import apps.work.urls as work_urls
 from apps.accounts.models import User
 from apps.common.models import AISettings, SiteSettings
 from apps.common.tests.factories import DEFAULT_PASSWORD, MembershipFactory, OrganizationFactory, UserFactory
+from apps.common.tests.festgeschriebene_testdaten import sicherheitsprotokoll_zuruecksetzen
 from apps.tenants.models import (
     AdministrationContact,
     CouncilParty,
@@ -155,6 +156,8 @@ SUB_OBJECTS = frozenset(
         "fentry",
         "fattendance",
         "fattachment",
+        "fitem_live",
+        "fattendance_live",
         "task_checklist",
         "task_checklist2",
         "task_attachment",
@@ -262,6 +265,23 @@ def _top(
     )
 
 
+def _sitzung(
+    action: str,
+    foreign: dict[str, dict[str, Any]] | None = None,
+    files: dict[str, str] | None = None,
+    **data: Any,
+) -> Case:
+    """Sitzungsansicht der laufenden Sitzung (Issue #874): Aktion auf einem TOP der laufenden Sitzung."""
+    return Case(
+        "faction_session_action",
+        action,
+        path={"meeting_id": "fmeeting_ongoing"},
+        data={"action": action, **data},
+        files=files or {},
+        foreign=foreign or {},
+    )
+
+
 def _aufgabe(
     action: str,
     foreign: dict[str, dict[str, Any]] | None = None,
@@ -295,6 +315,9 @@ def _rat(action: str, foreign: dict[str, dict[str, Any]] | None = None, **data: 
 def _sicherheit(action: str, **data: Any) -> Case:
     return Case("security", action, data={"action": action, **data})
 
+
+#: Fremder TOP der laufenden Sitzung in den Nutzdaten der Sitzungsansicht
+LIVE_TOP: dict[str, dict[str, Any]] = {"top": {"item_id": "{a_fitem_live}"}}
 
 CASES: list[Case] = [
     # --- Sitzungsvorbereitung (RIS) ---
@@ -622,6 +645,62 @@ CASES: list[Case] = [
     ),
     _top("add_link", link_label="Quelle", link_url="https://example.org/quelle"),
     _top("remove_link", link_index="0"),
+    # --- Sitzungsansicht der laufenden Sitzung (Issue #874) ---
+    _sitzung("notizen", item_id="{fitem_live}", html="<p>Notiz</p>", foreign=LIVE_TOP),
+    _sitzung(
+        "beschluss",
+        item_id="{fitem_live}",
+        votes_yes="3",
+        votes_no="0",
+        votes_abstain="1",
+        result="accepted",
+        foreign=LIVE_TOP,
+    ),
+    _sitzung("beschluss_aendern", item_id="{fitem_live}", foreign=LIVE_TOP),
+    _sitzung(
+        "aufgaben",
+        item_id="{fitem_live}",
+        titel="Rückfrage stellen",
+        faellig=IN_60_TAGEN,
+        personen="{member}",
+        gruppen="alle",
+        foreign={**LIVE_TOP, "person": {"personen": "{a_member}", "gruppen": ""}},
+    ),
+    _sitzung(
+        "aufgabe_erledigt",
+        item_id="{fitem_live}",
+        task_id="{task}",
+        foreign={**LIVE_TOP, "aufgabe": {"task_id": "{a_task}"}},
+    ),
+    _sitzung("datei", item_id="{fitem_live}", files={"file": "anlage.pdf"}, foreign=LIVE_TOP),
+    _sitzung("vorlage_suchen", item_id="{fitem_live}", q="Radweg", foreign=LIVE_TOP),
+    _sitzung(
+        "vorlage",
+        item_id="{fitem_live}",
+        paper_id="{paper2}",
+        foreign={**LIVE_TOP, "vorlage": {"paper_id": "{a_paper2}"}},
+    ),
+    _sitzung("dokument_suchen", item_id="{fitem_live}", q="Antrag", foreign=LIVE_TOP),
+    _sitzung(
+        "dokument",
+        item_id="{fitem_live}",
+        motion_id="{motion2}",
+        foreign={**LIVE_TOP, "dokument": {"motion_id": "{a_motion2}"}},
+    ),
+    _sitzung(
+        "anwesenheit",
+        attendance_id="{fattendance_live}",
+        status="present",
+        participation_type="online",
+        foreign={"teilnahme": {"attendance_id": "{a_fattendance_live}"}},
+    ),
+    _sitzung("gast", guest_name="Gast aus der Verwaltung"),
+    _sitzung(
+        "rollen",
+        leitung="{admin}",
+        schriftfuehrung="{member}",
+        foreign={"leitung": {"leitung": "{a_admin}"}, "schriftfuehrung": {"schriftfuehrung": "{a_member}"}},
+    ),
     # --- Aufgaben ---
     Case(
         "tasks_api",
@@ -988,6 +1067,9 @@ class _Builder:
         base = f"https://ris.example.org/matrix-{tag}"
         body = OParlBody.objects.create(external_id=f"{base}/body", source=self.source, name=f"Stadt {key}")
         org = _create_org(f"Matrix-Fraktion {key}", SLUGS[key], body)
+        # Neues Erscheinungsbild an: Die Sitzungsansicht (Issue #874) gibt es nur hinter diesem Schalter
+        org.work_new_design = True
+        org.save(update_fields=["work_new_design"])
 
         # Mitglieder: Administrator (Eigentümer), Kollegin, Gast, offene Registrierung
         admin_role = Role.objects.filter(organization=org, is_admin=True).first()
@@ -1152,6 +1234,13 @@ class _Builder:
         fmeeting_ongoing = FactionMeeting.objects.create(
             organization=org, title="Laufende Sitzung", start=now, status="ongoing", created_by=admin
         )
+        # Sitzungsansicht der laufenden Sitzung (Issue #874): ein TOP und eine Teilnahme
+        fitem_live = FactionAgendaItem.objects.create(
+            meeting=fmeeting_ongoing, number="1", title="Bericht", visibility="public", order=1
+        )
+        fattendance_live = FactionAttendance.objects.create(
+            meeting=fmeeting_ongoing, membership=kollege, status="invited"
+        )
         fmeeting_completed = FactionMeeting.objects.create(
             organization=org,
             title="Beendete Sitzung",
@@ -1266,6 +1355,8 @@ class _Builder:
             "fentry": fentry,
             "fattendance": fattendance,
             "fattachment": fattachment,
+            "fitem_live": fitem_live,
+            "fattendance_live": fattendance_live,
             "schedule": schedule,
             "exception": exception,
             "rule": rule,
@@ -1354,7 +1445,11 @@ def _changes(before: Snapshot, foreign_refs: frozenset[str] = frozenset()) -> li
 def world(django_db_setup: None, django_db_blocker: Any, tmp_path_factory: pytest.TempPathFactory) -> Iterator[World]:
     """Modulweite Testdaten; Uploads landen in einem temporären MEDIA_ROOT."""
     media_root = tmp_path_factory.mktemp("work-matrix-media")
-    with override_settings(MEDIA_ROOT=str(media_root)), django_db_blocker.unblock():
+    with (
+        override_settings(MEDIA_ROOT=str(media_root)),
+        django_db_blocker.unblock(),
+        sicherheitsprotokoll_zuruecksetzen(),
+    ):
         created_permissions: list[str] = []
         users: list[User] = []
         source = OParlSource.objects.create(name="Matrix-RIS", url="https://ris.example.org/matrix/system")

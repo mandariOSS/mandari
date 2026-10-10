@@ -32,15 +32,6 @@
 {% block work_extra_head %}
 {% load django_vite %}{% vite_asset 'frontend/editor/index.ts' %}
 <style nonce="{{ csp_nonce }}">
-    /* Sidebar dieser Seite nicht scrollen lassen */
-    aside.work-sidebar,
-    aside.work-sidebar nav {
-        overflow: hidden !important;
-    }
-    aside.work-sidebar nav * {
-        max-width: 100%;
-    }
-
     /* Redebeitrag-Editor (TipTap / ProseMirror) */
     .speech-editor .ProseMirror {
         min-height: 38vh;

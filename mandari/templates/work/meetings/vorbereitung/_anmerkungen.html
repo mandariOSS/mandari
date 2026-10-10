@@ -7,14 +7,14 @@ Anmerkung folgt der sichtbaren Seite der Blattansicht; „Seite n“ springt dor
     <div class="vb-anm-kopf">
         <h3 id="anmerkungen-titel">Anmerkungen <span class="vb-zahl-klein" x-text="annotations.length"></span></h3>
         <span class="leise">für die Organisation</span>
-        <button type="button" class="vb-knopf vb-leise vb-ik" @click="anmerkungenOffen = false" aria-label="Anmerkungen schließen">
+        <button type="button" class="wf-knopf wf-leise wf-ik" @click="anmerkungenOffen = false" aria-label="Anmerkungen schließen">
             <i data-lucide="x" aria-hidden="true"></i>
         </button>
     </div>
     <div class="vb-anm-liste">
         <template x-for="gruppe in annotationGroups" :key="gruppe.page">
             <div>
-                <button type="button" class="vb-textlink klein" @click="previewGotoPage(gruppe.page)" x-text="'Seite ' + gruppe.page"></button>
+                <button type="button" class="wf-textlink klein" @click="previewGotoPage(gruppe.page)" x-text="'Seite ' + gruppe.page"></button>
                 <ul>
                     <template x-for="a in gruppe.entries" :key="a.id">
                         <li>
@@ -34,11 +34,11 @@ Anmerkung folgt der sichtbaren Seite der Blattansicht; „Seite n“ springt dor
     </div>
     <div class="vb-anm-neu" id="anmerkung-neu">
         <label class="vb-anm-seite">Zu Seite
-            <input type="number" min="1" :max="seitenzahl || null" x-model.number="newAnnotationPage" class="vb-eingabe">
+            <input type="number" min="1" :max="seitenzahl || null" x-model.number="newAnnotationPage" class="wf-eingabe">
         </label>
-        <textarea rows="2" x-model="newAnnotationText" class="vb-eingabe" aria-label="Neue Anmerkung"
+        <textarea rows="2" x-model="newAnnotationText" class="wf-eingabe" aria-label="Neue Anmerkung"
                   @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); addAnnotation(); }"
                   placeholder="Anmerkung (Enter speichert)"></textarea>
-        <button type="button" class="vb-knopf" @click="addAnnotation()" :disabled="!newAnnotationText.trim()">Speichern</button>
+        <button type="button" class="wf-knopf" @click="addAnnotation()" :disabled="!newAnnotationText.trim()">Speichern</button>
     </div>
 </aside>

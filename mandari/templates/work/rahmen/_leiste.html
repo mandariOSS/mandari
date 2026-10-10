@@ -1,11 +1,13 @@
 {% comment %}
-Seitenleiste des neuen Rahmens (Issue #852, Konzept Variante A): graue Fläche wie in Insight, oben Wortmarke und
-Raum-Knopf (Organisation wechseln, immer sichtbar), sechs Bereiche, unten Einstellungen, Hilfe und die Person. Nur ab
-lg; am Handy übernehmen Leiste unten und Blatt „Mehr“ (_leiste_unten.html). Einklappbar wie bisher: Dann zeigt sie
-nur Symbole (data-leiste="schmal", static/css/input.css).
+Seitenleiste des neuen Rahmens (Issue #852): graue Fläche wie in Insight, oben Wortmarke und Raum-Knopf (Organisation
+wechseln, immer sichtbar), dann kompakt Start, Sitzungen, Fraktionssitzungen, Dokumente, Aufgaben, Team und Recherche
+(Entscheidung im Issue vom 06.10.2026), unten Einstellungen, Hilfe und die Person. Die Recherche trägt die Seiten des
+Ratsinformationssystems als Unterpunkte: offen auf ihren Seiten, sonst per Knopf aufklappbar (Komponente workGruppe,
+frontend/alpine/work-rahmen.ts). Nur ab lg; am Handy übernehmen Leiste unten und Blatt „Mehr“ (_leiste_unten.html).
+Einklappbar wie bisher: Dann zeigt sie nur Symbole (data-leiste="schmal", static/css/input.css). Nicht im Druck.
 {% endcomment %}
 <aside id="work-navigation" aria-label="Navigation"
-       class="rahmen-leiste hidden lg:flex fixed inset-y-0 left-0 z-40 w-60 flex-col overflow-y-auto overflow-x-hidden bg-band-grau pb-[env(safe-area-inset-bottom)]">
+       class="rahmen-leiste hidden lg:flex print:!hidden fixed inset-y-0 left-0 z-40 w-60 flex-col overflow-y-auto overflow-x-hidden bg-band-grau pb-[env(safe-area-inset-bottom)]">
     <div class="h-12 shrink-0 flex items-center px-4">
         <a href="{{ work_rahmen.start_url }}" class="inline-flex items-baseline gap-1 leading-none text-gray-900 dark:text-white" aria-label="mandari Work, Start">
             <span class="text-[1.05rem] font-bold tracking-tight">m<span class="rahmen-label">andari</span><span class="text-primary-600 dark:text-primary-400" aria-hidden="true">.</span></span>
@@ -29,7 +31,27 @@ nur Symbole (data-leiste="schmal", static/css/input.css).
     <nav class="mt-4 px-2.5" aria-label="Bereiche">
         <ul class="space-y-0.5">
             {% for b in work_rahmen.bereiche %}
-            <li><c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" dicht>{{ b.label }}</c-rahmen.nav-link></li>
+            {% if b.unterpunkte %}
+            <li x-data="workGruppe" data-gruppe="{{ b.key }}" data-offen="{{ b.offen|yesno:'true,false' }}" class="relative">
+                <c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}" dicht>{{ b.label }}</c-rahmen.nav-link>
+                <button type="button" @click="umschalten()" aria-controls="leiste-{{ b.key }}" :aria-expanded="offen.toString()" aria-expanded="{{ b.offen|yesno:'true,false' }}"
+                        aria-label="Unterpunkte von {{ b.label }}"
+                        class="rahmen-aufklapper absolute right-1 top-1.5 inline-flex items-center justify-center w-6 h-6 rounded text-gray-500 hover:text-gray-900 hover:bg-band-hell dark:text-gray-400 dark:hover:text-white">
+                    <i x-show="offen" data-lucide="chevron-down" class="w-4 h-4" aria-hidden="true" {% if not b.offen %}x-cloak{% endif %}></i>
+                    <i x-show="!offen" data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true" {% if b.offen %}x-cloak{% endif %}></i>
+                </button>
+                <ul id="leiste-{{ b.key }}" x-show="offen" {% if not b.offen %}x-cloak{% endif %} class="rahmen-unterpunkte mt-0.5 mb-1 space-y-px" aria-label="{{ b.label }}">
+                    {% for u in b.unterpunkte %}
+                    <li>
+                        <a href="{{ u.url }}" {% if u.current %}aria-current="{{ u.current }}"{% endif %}
+                           class="flex items-center h-8 pl-[2.375rem] pr-2.5 rounded-md text-[0.8125rem] truncate {% if u.aktiv %}font-semibold text-primary-700 dark:text-primary-300{% else %}text-gray-700 dark:text-gray-300 hover:bg-band-hell/70 hover:text-gray-900 dark:hover:text-white{% endif %}">{{ u.label }}</a>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </li>
+            {% else %}
+            <li><c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}" dicht>{{ b.label }}</c-rahmen.nav-link></li>
+            {% endif %}
             {% endfor %}
         </ul>
     </nav>
@@ -37,7 +59,7 @@ nur Symbole (data-leiste="schmal", static/css/input.css).
     <div class="mt-auto px-2.5 pt-6 pb-3">
         <ul class="space-y-0.5">
             {% for b in work_rahmen.unten %}
-            <li><c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" dicht>{{ b.label }}</c-rahmen.nav-link></li>
+            <li><c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}" dicht>{{ b.label }}</c-rahmen.nav-link></li>
             {% endfor %}
             <li class="pt-1">{% include "work/rahmen/_person.html" %}</li>
         </ul>

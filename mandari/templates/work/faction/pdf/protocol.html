@@ -77,11 +77,11 @@
             <tr>
                 <td width="50%">
                     ____________________________<br>
-                    <span class="muted">Sitzungsleitung</span>
+                    <span class="muted">{% if meeting.chaired_by_name %}{{ meeting.chaired_by_name }}, {% endif %}Sitzungsleitung</span>
                 </td>
                 <td width="50%">
                     ____________________________<br>
-                    <span class="muted">Protokollführung</span>
+                    <span class="muted">{% if meeting.minute_taker_name %}{{ meeting.minute_taker_name }}, {% endif %}Schriftführung</span>
                 </td>
             </tr>
         </table>

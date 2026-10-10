@@ -34,8 +34,13 @@ def faction_quorum_status(meeting) -> dict:
     """
     from apps.common.permissions import PermissionChecker
 
+    # Rechte vorgeladen: die Prüfung „stimmberechtigt“ fragt nicht je Teilnahme nach (Issue #874)
     attendances = list(
-        meeting.attendances.filter(is_guest=False, membership__isnull=False).select_related("membership")
+        meeting.attendances.filter(is_guest=False, membership__isnull=False)
+        .select_related("membership")
+        .prefetch_related(
+            "membership__roles__permissions", "membership__individual_permissions", "membership__denied_permissions"
+        )
     )
     voting = [
         a

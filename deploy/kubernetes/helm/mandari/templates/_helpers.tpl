@@ -157,6 +157,17 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
 # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
 - name: EVENTS_REDACT_NEUTRALIZE
   value: {{ .Values.events.redactNeutralize | default false | toString | quote }}
+# Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+{{- with .Values.mail }}
+{{- if .fromEmail }}
+- name: DEFAULT_FROM_EMAIL
+  value: {{ .fromEmail | quote }}
+{{- end }}
+{{- if .messageIdDomain }}
+- name: EMAIL_MESSAGE_ID_DOMAIN
+  value: {{ .messageIdDomain | quote }}
+{{- end }}
+{{- end }}
 {{- if .Values.tracing.otlpEndpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ .Values.tracing.otlpEndpoint | quote }}
@@ -198,4 +209,136 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
 {{- end }}
 - name: OPARL_FILES_ROOT
   value: /app/files
+# Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+- name: FILE_STORE_LAYOUT
+  value: {{ .Values.files.storeLayout | quote }}
+- name: INGESTOR_STORES_FILES
+  value: {{ .Values.files.ingestorStoresFiles | toString | quote }}
+- name: FILE_CACHE_MIN_FREE_GB
+  value: {{ .Values.files.minFreeGb | toString | quote }}
+- name: TEXT_EXTRACTION_RUNNER
+  value: {{ .Values.files.textExtractionRunner | quote }}
+# Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+- name: LIVE_UEBERTRAGUNG_AKTIV
+  value: {{ .Values.liveStreams.enabled | toString | quote }}
+{{- end -}}
+
+{{- define "mandari.appImage" -}}
+{{ .Values.image.registry }}/{{ .Values.image.repository }}/mandari:{{ .Values.image.tag }}
+{{- end -}}
+
+{{- define "mandari.websiteImage" -}}
+{{ .Values.image.registry }}/{{ .Values.image.repository }}/website:{{ .Values.image.tag }}
+{{- end -}}
+
+{{/*
+Umgebung der Anwendung und der Worker: gemeinsame Umgebung, Texterkennung, app.extraEnv.
+*/}}
+{{- define "mandari.appEnv" -}}
+{{ include "mandari.commonEnv" . }}
+# Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+- name: OCR_MEMORY_LIMIT_MB
+  value: {{ .Values.files.ocrMemoryLimitMb | toString | quote }}
+{{- range $key, $value := .Values.app.extraEnv }}
+- name: {{ $key }}
+  value: {{ $value | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
+initContainer "wait-for-schema": wartet, bis alle Migrationen eingespielt sind, die vor dem Ausrollen
+laufen dürfen (Installation: Job <release>-migrate; Upgrade: Hook <release>-migrate-pre mit
+safemigrate). Migrationen, die django-safemigrate erst nach dem Ausrollen erlaubt
+(Safe.after_deploy), spielt der Hook <release>-migrate-post ein; auf sie wartet niemand.
+So starten Anwendung, Worker und Ingestor nie gegen ein zu altes Schema, auch nicht bei der
+Erstinstallation mit "helm install --wait".
+*/}}
+{{- define "mandari.waitForSchema" -}}
+{{- if .Values.migrationJob.enabled }}
+- name: wait-for-schema
+  image: {{ include "mandari.appImage" . | quote }}
+  imagePullPolicy: {{ .Values.image.pullPolicy }}
+  securityContext:
+    {{- toYaml .Values.securityContext | nindent 4 }}
+  command: ["python", "manage.py", "shell", "-c"]
+  args:
+    - |
+      import sys, time
+      from django.db import connections
+      from django.db.migrations.executor import MigrationExecutor
+      from django_safemigrate.management.commands.safemigrate import Command
+
+      frist = {{ .Values.migrationJob.waitTimeoutSeconds | int }}
+      beginn = time.monotonic()
+      letzte_meldung = None
+      while True:
+          try:
+              executor = MigrationExecutor(connections["default"])
+              plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+              pruefer = Command()
+              erklaert = {migration: pruefer.safe(migration) for migration, _ in plan}
+              bereit, verschoben, blockiert = pruefer.categorize(
+                  pruefer.resolve(erklaert, pruefer.detected(erklaert))
+              )
+              if not bereit and not blockiert:
+                  hinweis = f" ({len(verschoben)} Migrationen folgen nach dem Ausrollen)" if verschoben else ""
+                  print("Datenbankschema bereit" + hinweis + ".", flush=True)
+                  sys.exit(0)
+              meldung = f"{len(bereit) + len(blockiert)} Migrationen stehen noch aus"
+          except Exception as fehler:  # Datenbank noch nicht erreichbar, Tabellen fehlen
+              meldung = f"Datenbank noch nicht bereit ({type(fehler).__name__})"
+          connections.close_all()
+          if meldung != letzte_meldung:
+              print(f"Warte auf den Migrations-Job: {meldung}", flush=True)
+              letzte_meldung = meldung
+          if time.monotonic() - beginn > frist:
+              print(f"Schema nach {frist} s nicht bereit. Migrations-Job prüfen: kubectl logs job/<release>-migrate", flush=True)
+              sys.exit(1)
+          time.sleep(5)
+  env:
+    {{- include "mandari.appEnv" . | nindent 4 }}
+  {{- if .Values.app.extraEnvFromSecret }}
+  envFrom:
+    - secretRef:
+        name: {{ .Values.app.extraEnvFromSecret }}
+  {{- end }}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      memory: 512Mi
+{{- end }}
+{{- end -}}
+
+{{/*
+Umgebung der Marketing-Website (Image ghcr.io/mandarioss/website), auch für ihre Migrationen.
+*/}}
+{{- define "mandari.websiteEnv" -}}
+{{- $host := default .Values.domain .Values.website.host -}}
+- name: DEBUG
+  value: "false"
+- name: ALLOWED_HOSTS
+  value: {{ printf "%s,localhost,127.0.0.1" $host | quote }}
+- name: CSRF_TRUSTED_ORIGINS
+  value: {{ printf "https://%s" $host | quote }}
+- name: SITE_URL
+  value: {{ printf "https://%s" $host | quote }}
+- name: TZ
+  value: {{ .Values.timezone | quote }}
+# Das Image legt keinen Benutzer an; als UID ohne Eintrag in /etc/passwd fehlt sonst ein Heimatverzeichnis
+- name: HOME
+  value: /tmp
+- name: MANDARI_API_URL
+  value: {{ printf "http://%s:%v/api" (include "mandari.fullname" .) .Values.service.port | quote }}
+- name: WEBSITE_DATABASE_URL
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "mandari.secretName" . }}
+      key: website-database-url
+- name: WEBSITE_SECRET_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "mandari.secretName" . }}
+      key: website-secret-key
 {{- end -}}

@@ -5,7 +5,7 @@ ein Menü für Seltenes (Legende, Hilfe, Sitzungsdetails, bisherige Ansicht). Am
 Zusammenfassung ins Menü.
 {% endcomment %}
 <header class="vb-kopf">
-    <a class="vb-knopf vb-leise vb-ik" href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
+    <a class="wf-knopf wf-leise wf-ik" href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}"
        aria-label="Zurück zur Sitzung" title="Zurück zur Sitzung">
         <i data-lucide="chevron-left" aria-hidden="true"></i>
     </a>
@@ -20,19 +20,19 @@ Zusammenfassung ins Menü.
         <span class="vb-ikon" x-show="pendingSaves === 0 && !saveError && lastSavedAt" x-cloak><i data-lucide="check" aria-hidden="true"></i></span>
         <span class="vb-speichertext" x-text="speicherText" :title="saveStatusText"></span>
     </span>
-    <button type="button" class="vb-knopf vb-leise vb-nur-breit" @click="sitzungsnotizenOeffnen()">
+    <button type="button" class="wf-knopf wf-leise vb-nur-breit" @click="sitzungsnotizenOeffnen()">
         <i data-lucide="notebook" aria-hidden="true"></i>Sitzungsnotizen
         <span class="vb-punkt-hinweis" x-show="orgNotes && orgNotes.trim()" x-cloak><span class="sr-only">(vorhanden)</span></span>
     </button>
-    <button type="button" class="vb-knopf vb-leise vb-nur-breit" @click="zusammenfassungOeffnen()">
+    <button type="button" class="wf-knopf wf-leise vb-nur-breit" @click="zusammenfassungOeffnen()">
         <i data-lucide="list-checks" aria-hidden="true"></i>Zusammenfassung
     </button>
-    <div class="vb-menue-anker" @click.outside="menueOffen = false" @keydown.escape="menueOffen = false">
-        <button type="button" class="vb-knopf vb-leise vb-ik" @click="menueOffen = !menueOffen"
+    <div class="wf-menue-anker" @click.outside="menueOffen = false" @keydown.escape="menueOffen = false">
+        <button type="button" class="wf-knopf wf-leise wf-ik" @click="menueOffen = !menueOffen"
                 aria-haspopup="menu" :aria-expanded="menueOffen ? 'true' : 'false'" aria-label="Weitere Aktionen" title="Weitere Aktionen">
             <i data-lucide="ellipsis" aria-hidden="true"></i>
         </button>
-        <div class="vb-menue rechts" role="menu" x-show="menueOffen" x-cloak x-transition.opacity>
+        <div class="wf-menue rechts" role="menu" x-show="menueOffen" x-cloak x-transition.opacity>
             <button type="button" role="menuitem" class="vb-nur-schmal" @click="sitzungsnotizenOeffnen()">
                 <i data-lucide="notebook" aria-hidden="true"></i>Sitzungsnotizen
             </button>
@@ -61,7 +61,7 @@ Zusammenfassung ins Menü.
 </p>
 {# Eingaben, die beim letzten Aufruf nicht mehr gespeichert wurden (Sicherung im Browser, #854) #}
 <p class="vb-hinweis" id="eingaben-sicherung" role="status" x-show="sicherungAngebot.length > 0" x-cloak>
-    <span x-text="sicherungText"></span>&ensp;<button type="button" class="vb-textlink" @click="sicherungUebernehmen()">Übernehmen</button>&ensp;<button type="button" class="vb-textlink" @click="sicherungVerwerfen()">Verwerfen</button>
+    <span x-text="sicherungText"></span>&ensp;<button type="button" class="wf-textlink" @click="sicherungUebernehmen()">Übernehmen</button>&ensp;<button type="button" class="wf-textlink" @click="sicherungVerwerfen()">Verwerfen</button>
 </p>
 {% if meeting.deleted %}
 <p class="vb-hinweis" role="status">

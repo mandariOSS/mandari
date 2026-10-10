@@ -1,4 +1,4 @@
-{% load static %}
+{% load static work_rahmen %}
 <!DOCTYPE html>
 <html lang="de" class="scroll-smooth" data-rahmen="neu" x-data="workRahmen" :class="{ 'dark': darkMode }">
 <head>
@@ -10,7 +10,8 @@
     <meta name="robots" content="noindex, nofollow">
     {% include "pwa/meta.html" %}
 
-    <title>{% block page_title %}Work{% endblock %} | {{ organization.name }}</title>
+    {# Den Seitentitel merkt sich der Rahmen für die letzte Brotkrume (apps/work/templatetags/work_rahmen.py) #}
+    <title>{% merken "seitentitel" %}{% block page_title %}Work{% endblock %}{% endmerken %} | {{ organization.name }}</title>
 
     <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
     <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
@@ -51,16 +52,18 @@
     {% block work_extra_head %}{% endblock %}
 </head>
 
-<body class="min-h-screen bg-band-hell text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}">
+<body class="min-h-screen bg-band-hell print:bg-white text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}">
     {% if demo_instance %}{% include "partials/demo_hinweis.html" with ueber_leiste=True %}{% endif %}
     <a href="#inhalt" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white">Zum Inhalt springen</a>
 
     {% include "work/rahmen/_leiste.html" %}
 
-    {# Seitliche Safe-Area (Querformat mit Aussparung); unten Platz für die Leiste am Handy #}
-    <div class="work-main min-h-screen flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-60 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0">
-        {# Kopfzeile: Brotkrumen, Suche (Strg+K), Glocke, Dunkelmodus; am Handy Raum, Suche und Glocke #}
-        <header class="sticky top-0 z-30 shrink-0 pt-[env(safe-area-inset-top)] bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
+    {# Seitliche Safe-Area (Querformat mit Aussparung); unten Platz für die Leiste am Handy; im Druck nur der Inhalt #}
+    <div class="work-main min-h-screen flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-60 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 print:!p-0 print:min-h-0">
+        {% comment %}Kopfzeile: Brotkrumen, Suche (Strg+K), Glocke, Dunkelmodus; am Handy Raum, Suche und Glocke. Seiten mit
+        eigener Kopfzeile (Antragseditor, #856) ersetzen den Block und bringen Glocke, Suche und Dunkelmodus selbst mit.{% endcomment %}
+        {% block rahmen_kopf %}
+        <header class="sticky top-0 z-30 shrink-0 print:hidden pt-[env(safe-area-inset-top)] bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
             <div class="rahmen-zeile h-12 flex items-center gap-2 sm:gap-4">
                 <button type="button" @click="leisteUmschalten()"
                         class="hidden lg:inline-flex items-center justify-center w-8 h-8 -ml-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-band-grau dark:text-gray-400 dark:hover:text-white"
@@ -76,17 +79,9 @@
                 </button>
                 <nav aria-label="Brotkrumen" class="hidden lg:block flex-1 min-w-0 text-sm">
                     <ol class="flex items-center gap-1.5 min-w-0 text-gray-600 dark:text-gray-400">
-                        {% for krume in work_rahmen.brotkrumen %}
-                        <li class="flex items-center gap-1.5 {% if forloop.last %}min-w-0{% else %}shrink-0{% endif %}">
-                            {% if not forloop.first %}<i data-lucide="chevron-right" class="w-3.5 h-3.5 shrink-0 text-gray-400" aria-hidden="true"></i>{% endif %}
-                            {% if krume.aktuell or not krume.url %}
-                            <span aria-current="page" class="truncate font-medium text-gray-900 dark:text-gray-100">{{ krume.label }}</span>
-                            {% else %}
-                            <a href="{{ krume.url }}" class="truncate hover:text-gray-900 dark:hover:text-white hover:underline underline-offset-4">{{ krume.label }}</a>
-                            {% endif %}
-                        </li>
-                        {% endfor %}
-                        {% block brotkrumen_aktuell %}{% endblock %}
+                        {% include "work/rahmen/_brotkrumen.html" %}
+                        {# Detail- und Formularseiten, die der Rahmen nicht selbst kennt: ihr Titel als letzte Krume; eigene Krumen per Block #}
+                        {% block brotkrumen_aktuell %}{% with letzte=work_rahmen.brotkrumen|last %}{% if seitentitel and seitentitel != "Work" and not letzte.aktuell %}<c-rahmen.brotkrume>{{ seitentitel }}</c-rahmen.brotkrume>{% endif %}{% endwith %}{% endblock %}
                     </ol>
                 </nav>
                 {% if work_rahmen.suche_url %}
@@ -96,7 +91,7 @@
                         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
                         <input id="kopf-suche" type="search" name="q" placeholder="Vorgänge, Sitzungen, Personen …" autocomplete="off" aria-keyshortcuts="Control+K"
                                class="w-full h-9 pl-9 pr-16 rounded-md bg-band-grau border border-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
-                        <kbd class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-xs text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true">Strg K</kbd>
+                        <kbd class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-xs text-gray-600 dark:text-gray-400 pointer-events-none" aria-hidden="true">Strg K</kbd>
                     </span>
                 </form>
                 <a href="{{ work_rahmen.suche_url }}" class="lg:hidden inline-flex items-center justify-center w-11 h-11 rounded-md text-gray-700 dark:text-gray-300 hover:bg-band-grau" aria-label="Suche">
@@ -112,8 +107,10 @@
                 </button>
             </div>
         </header>
+        {% endblock %}
 
-        <main id="inhalt" tabindex="-1" class="flex-1 flex flex-col min-h-0 focus:outline-none">
+        {# data-gestaltung: „neu“ setzen Seiten, deren Inhalt schon im neuen Erscheinungsbild steht (Block gestaltung); das Prüfskript zählt die übrigen (Issue #884) #}
+        <main id="inhalt" tabindex="-1" data-gestaltung="{% block gestaltung %}bisher{% endblock %}" class="flex-1 flex flex-col min-h-0 focus:outline-none">
             {% block work_header %}
             <header class="work-page-header">
                 <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">

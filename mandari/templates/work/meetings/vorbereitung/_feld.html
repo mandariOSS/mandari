@@ -5,7 +5,7 @@ Der gewählte Reiter bleibt beim TOP-Wechsel.
 Position selbst steht in der Leiste unten.
 {% endcomment %}
 <section class="vb-feld" aria-label="Arbeit der Fraktion">
-    <div class="vb-reiter" role="tablist" aria-label="Arbeit der Fraktion" @keydown="reiterTaste($event)">
+    <div class="vb-reiter wf-reiter" role="tablist" aria-label="Arbeit der Fraktion" @keydown="reiterTaste($event)">
         <button type="button" role="tab" id="reiter-begruendung" aria-controls="feld-begruendung" @click="reiterWaehlen('begruendung')"
                 :aria-selected="reiter === 'begruendung' ? 'true' : 'false'" :tabindex="reiter === 'begruendung' ? 0 : -1">
             Begründung<span class="vb-punkt-hinweis" x-show="selectedItem && selectedItem.reasoning && selectedItem.reasoning.trim()"></span>
@@ -33,17 +33,17 @@ Position selbst steht in der Leiste unten.
         <div class="vb-feld-koerper">
             <div id="feld-begruendung" role="tabpanel" aria-labelledby="reiter-begruendung" class="vb-feld-inhalt" x-show="reiter === 'begruendung'">
                 <label for="reasoning-input" class="vb-feldname">Begründung der Position <span class="leise">für die Organisation sichtbar</span></label>
-                <textarea id="reasoning-input" class="vb-eingabe vb-wachsend" x-model="selectedItem.reasoning"
+                <textarea id="reasoning-input" class="wf-eingabe vb-wachsend" x-model="selectedItem.reasoning"
                           @input="queueItemSave('reasoning', selectedItem, item => savePositionFields(item, { reasoning: item.reasoning }))"
                           placeholder="Warum diese Position? Kurz, für die Fraktion"></textarea>
                 <label for="outcome-select" class="vb-feldname">Ergebnis der Beratung <span class="leise">nach der Sitzung</span></label>
-                <select id="outcome-select" class="vb-eingabe vb-auswahl" x-model="selectedItem.outcome" @change="saveOutcome()">
+                <select id="outcome-select" class="wf-eingabe wf-auswahl" x-model="selectedItem.outcome" @change="saveOutcome()">
                     {% for code, label in outcome_choices %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
                 </select>
             </div>
             <div id="feld-notiz" role="tabpanel" aria-labelledby="reiter-notiz" class="vb-feld-inhalt" x-show="reiter === 'notiz'" x-cloak>
                 <label for="notiz-eingabe" class="vb-feldname">Meine Notiz <span class="leise"><i data-lucide="lock" aria-hidden="true"></i> nur für Sie sichtbar</span></label>
-                <textarea id="notiz-eingabe" class="vb-eingabe vb-wachsend" x-model="selectedItem.privateNote"
+                <textarea id="notiz-eingabe" class="wf-eingabe vb-wachsend" x-model="selectedItem.privateNote"
                           @input="queueItemSave('private-note', selectedItem, item => savePrivateNote(item))"
                           placeholder="Eigene Gedanken, Fragen, Stichworte zu diesem TOP"></textarea>
             </div>

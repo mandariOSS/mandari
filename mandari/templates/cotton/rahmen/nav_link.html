@@ -1,7 +1,8 @@
 {# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
 {% comment %}
 Eintrag einer Seitenleiste, gemeinsam für Insight und Work (Issue #783, #852): weiße Fläche auf der grauen Leiste,
-Symbol in der Kennfarbe und aria-current="page", wenn der Eintrag aktiv ist.
+Symbol in der Kennfarbe und aria-current, wenn der Eintrag aktiv ist: ``current`` (Standard ``page``) gibt den
+Wert an, ``true`` für den Bereich, in dem die geöffnete Seite liegt (Work).
   <c-rahmen.nav-link href="…" icon="calendar-days" area="sitzungen" aktuell="{{ insight_area }}">Sitzungen</c-rahmen.nav-link>
   <c-rahmen.nav-link href="…" icon="calendar-days" :aktiv="eintrag.aktiv" dicht>Sitzungen</c-rahmen.nav-link>
 Aktiv ist der Eintrag mit ``aktiv`` oder wenn ``area`` dem Bereich ``aktuell`` der Seite entspricht. ``dicht`` für
@@ -9,10 +10,10 @@ Arbeitsflächen (Work: 36 px hoch, 14 px Schrift). Nur dann trägt die Beschrift
 Leiste von Work ist sie nur für Bildschirmleser da (static/css/input.css). Ohne ``dicht`` bleibt das Markup von
 Insight gleich (Tests in insight_core/tests/test_navigation_bereiche.py lesen die Beschriftungen daraus).
 {% endcomment %}
-<c-vars href="" icon="" area="" aktuell="" aktiv="" dicht="" />
+<c-vars href="" icon="" area="" aktuell="" aktiv="" current="" dicht="" />
 <a href="{{ href }}"
     class="rahmen-eintrag flex items-center gap-3 {% if dicht %}h-9 px-2.5 rounded-md text-sm{% else %}h-10 px-3 rounded-lg text-[0.95rem]{% endif %} {% if aktiv or area and area == aktuell %}bg-band-hell font-semibold text-gray-900 dark:text-white shadow-[0_1px_2px_rgba(17,24,39,0.06)]{% else %}font-medium text-gray-700 dark:text-gray-300 hover:bg-band-hell/70 hover:text-gray-900 dark:hover:text-white{% endif %}"
-    {% if aktiv or area and area == aktuell %}aria-current="page"{% endif %} {{ attrs }}>
+    {% if aktiv or area and area == aktuell %}aria-current="{{ current|default:'page' }}"{% endif %} {{ attrs }}>
     <i data-lucide="{{ icon }}" class="{% if dicht %}w-4 h-4{% else %}w-[18px] h-[18px]{% endif %} shrink-0 {% if aktiv or area and area == aktuell %}text-primary-600 dark:text-primary-400{% else %}text-gray-500 dark:text-gray-400{% endif %}" aria-hidden="true"></i>
     <span class="flex-1 min-w-0 truncate{% if dicht %} rahmen-label{% endif %}">{{ slot }}</span>
 </a>

@@ -637,6 +637,18 @@ class TestPersonenseite:
         assert _robots(html) == "noindex, follow"
         assert _canonical(html) == f"{settings.SITE_URL}/insight/personen/{person.pk}/"
 
+    def test_ausgeschieden_noindex_auch_nach_mitternacht_ortszeit(
+        self, client: Client, rat: OParlOrganization, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # 23:30 UTC = 01:30 Uhr in Berlin: Das UTC-Datum ist noch der Vortag. Die Mitgliedschaft endete
+        # gestern (Ortszeit) und darf nicht mehr als laufend gelten – wie in der Sitemap.
+        jetzt = datetime(2026, 10, 9, 23, 30, tzinfo=UTC)
+        monkeypatch.setattr(timezone, "now", lambda: jetzt)
+        assert timezone.localdate() == date(2026, 10, 10)
+        person = _person(rat.body, 1)
+        _mitgliedschaft(person, rat, end_date=date(2026, 10, 9))
+        assert _robots(self._seite(client, person)) == "noindex, follow"
+
     def test_ohne_mitgliedschaft_noindex(self, client: Client, rat: OParlOrganization) -> None:
         assert _robots(self._seite(client, _person(rat.body, 1))) == "noindex, follow"
 

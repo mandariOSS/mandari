@@ -1,0 +1,60 @@
+# =============================================================================
+# Issues aus PR-Texten schließen
+# =============================================================================
+# Seit der Merge-Queue (Issue #737) übernimmt der Squash-Commit nur den PR-Titel. GitHub schließt
+# Issues nur über Schlüsselwörter im Commit auf main; „Closes #N“ im PR-Text wirkt deshalb nicht mehr.
+# Bei jedem push auf main liest scripts/issues_schliessen.py die Pull Requests der neuen Commits und
+# schließt die Issues, die deren Text mit close/fix/resolve (und Varianten) nennt. „Teil von #N“,
+# Verweise in HTML-Kommentaren und Code sowie Verweise in andere Repositorys schließen nichts.
+#
+# Manuell (workflow_dispatch) lässt sich ein Bereich nachholen, mit Trockenlauf zum Ansehen.
+# =============================================================================
+
+name: Issues schließen
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      vorher:
+        description: 'Commit vor dem Bereich (leer = nur "nachher")'
+        required: false
+        default: ''
+      nachher:
+        description: 'Letztes Commit des Bereichs'
+        required: true
+      trockenlauf:
+        description: 'Nur anzeigen, nichts schließen'
+        type: boolean
+        default: true
+
+permissions: {}
+
+concurrency:
+  group: issues-schliessen
+  cancel-in-progress: false
+
+jobs:
+  schliessen:
+    name: Issues aus PR-Texten schließen
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read         # Skript auschecken, Commits vergleichen
+      pull-requests: read    # Pull Requests zu den Commits und deren Text lesen
+      issues: write          # Hinweis schreiben und Issue schließen
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Issues schließen
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VORHER: ${{ github.event_name == 'push' && github.event.before || inputs.vorher }}
+          NACHHER: ${{ github.event_name == 'push' && github.event.after || inputs.nachher }}
+          TROCKENLAUF: ${{ github.event_name == 'workflow_dispatch' && inputs.trockenlauf && '--trockenlauf' || '' }}
+        run: python3 scripts/issues_schliessen.py --vorher "$VORHER" --nachher "$NACHHER" $TROCKENLAUF

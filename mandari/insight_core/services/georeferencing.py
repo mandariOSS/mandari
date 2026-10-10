@@ -413,7 +413,7 @@ def extract_with_regex(text: str) -> list[dict]:
 
 def extract_locations_with_ai(text: str, body_name: str) -> list[dict]:
     """
-    Extract location references using LLM (Nebius provider).
+    Ortsangaben per KI erkennen (KI-Endpunkt des Bürgerportals aus der zentralen KI-Konfiguration).
 
     Args:
         text: Document text content
@@ -423,8 +423,8 @@ def extract_locations_with_ai(text: str, body_name: str) -> list[dict]:
         List of dicts with keys: raw, type, normalized
     """
     try:
+        from insight_ai.providers import get_insight_provider
         from insight_ai.providers.base import ChatMessage
-        from insight_ai.providers.nebius import NebiusProvider
         from insight_ai.services.prompts import (
             GEOREF_SYSTEM_PROMPT,
             build_georef_user_prompt,
@@ -433,9 +433,9 @@ def extract_locations_with_ai(text: str, body_name: str) -> list[dict]:
         logger.warning("insight_ai not available, skipping AI extraction")
         return []
 
-    provider = NebiusProvider()
+    provider = get_insight_provider()
     if not provider.is_available():
-        logger.warning("Nebius provider not available, skipping AI extraction")
+        logger.info("KI-Verortung übersprungen: KI im Bürgerportal nicht eingerichtet")
         return []
 
     user_prompt = build_georef_user_prompt(text, body_name)

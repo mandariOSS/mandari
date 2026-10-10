@@ -1,17 +1,25 @@
 # =============================================================================
 # mandari – Kubernetes-Manifeste (ohne Helm)
 # =============================================================================
-# Erzeugt aus dem Helm-Chart unter deploy/kubernetes/helm/mandari.
+# ERZEUGT aus dem Helm-Chart deploy/kubernetes/helm/mandari, nicht von Hand ändern:
+#   python deploy/kubernetes/manifeste_erzeugen.py
+# Eigene Anpassungen gehören in ein Kustomize-Overlay (siehe kustomization.yaml).
+#
 # Vor dem Einspielen anpassen:
-#   1. Alle Werte "BITTE-ERSETZEN-*" im Secret durch eigene ersetzen
-#      (z. B. openssl rand -base64 32)
+#   1. Alle Werte "BITTE-ERSETZEN-*" im Secret durch eigene ersetzen (Werte unter data: sind
+#      Base64-kodiert; encryption-key: openssl rand -base64 32 | tr -d '\n' | base64)
 #   2. mandari.example.com durch die eigene Domain ersetzen
 #   3. Bei Bedarf Speicherklassen und Größen anpassen
+#   4. Mailversand: Message-ID und EHLO tragen den Host aus SITE_URL. Anderer Absender
+#      oder andere Absenderdomain: DEFAULT_FROM_EMAIL bzw. EMAIL_MESSAGE_ID_DOMAIN
+#      (vollständiger Domainname) im env der Anwendung und der Worker ergänzen
+#      (DEPLOYMENT.md, „Mailversand: Message-ID und EHLO“)
 #
 # Einspielen:
 #   kubectl create namespace mandari
-#   kubectl -n mandari apply -f mandari.yaml
-#   kubectl -n mandari apply -f job-migrate.yaml     # Migrationen, einmalig
+#   kubectl kustomize deploy/kubernetes/manifests | kubectl apply -f -
+#   kubectl -n mandari apply -f deploy/kubernetes/manifests/job-migrate.yaml
+# Anwendung, Worker und Ingestor warten per initContainer, bis der Migrations-Job fertig ist.
 #
 # Empfehlung: Für Updates und Konfiguration ist das Helm-Chart komfortabler.
 # =============================================================================
@@ -20,7 +28,7 @@ kind: ServiceAccount
 metadata:
   name: mandari
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -31,7 +39,7 @@ kind: Secret
 metadata:
   name: mandari-secrets
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -54,9 +62,29 @@ data:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: mandari-ingestor-data
+  labels:
+    helm.sh/chart: mandari-1.1.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: ingestor
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: mandari-media
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -75,7 +103,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: mandari-files
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -94,7 +122,7 @@ kind: Service
 metadata:
   name: mandari
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -117,7 +145,7 @@ kind: Service
 metadata:
   name: mandari-elasticsearch
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -139,7 +167,7 @@ kind: Service
 metadata:
   name: mandari-postgres
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -161,7 +189,7 @@ kind: Service
 metadata:
   name: mandari-redis
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -183,7 +211,7 @@ kind: Deployment
 metadata:
   name: mandari
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -209,13 +237,140 @@ spec:
         app.kubernetes.io/component: app
       annotations:
         # Neustart, wenn sich Zugangsdaten ändern
-        checksum/secret: a4082f145ad9a5a7e5fa32bf35a2d925b80d242d84f48d651bea09056bc0c42e
+        checksum/secret: ohne-helm
     spec:
       serviceAccountName: mandari
       securityContext:
         fsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
+      initContainers:
+        - name: wait-for-schema
+          image: "ghcr.io/mandarioss/mandari:latest"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          command: ["python", "manage.py", "shell", "-c"]
+          args:
+            - |
+              import sys, time
+              from django.db import connections
+              from django.db.migrations.executor import MigrationExecutor
+              from django_safemigrate.management.commands.safemigrate import Command
+        
+              frist = 1800
+              beginn = time.monotonic()
+              letzte_meldung = None
+              while True:
+                  try:
+                      executor = MigrationExecutor(connections["default"])
+                      plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+                      pruefer = Command()
+                      erklaert = {migration: pruefer.safe(migration) for migration, _ in plan}
+                      bereit, verschoben, blockiert = pruefer.categorize(
+                          pruefer.resolve(erklaert, pruefer.detected(erklaert))
+                      )
+                      if not bereit and not blockiert:
+                          hinweis = f" ({len(verschoben)} Migrationen folgen nach dem Ausrollen)" if verschoben else ""
+                          print("Datenbankschema bereit" + hinweis + ".", flush=True)
+                          sys.exit(0)
+                      meldung = f"{len(bereit) + len(blockiert)} Migrationen stehen noch aus"
+                  except Exception as fehler:  # Datenbank noch nicht erreichbar, Tabellen fehlen
+                      meldung = f"Datenbank noch nicht bereit ({type(fehler).__name__})"
+                  connections.close_all()
+                  if meldung != letzte_meldung:
+                      print(f"Warte auf den Migrations-Job: {meldung}", flush=True)
+                      letzte_meldung = meldung
+                  if time.monotonic() - beginn > frist:
+                      print(f"Schema nach {frist} s nicht bereit. Migrations-Job prüfen: kubectl logs job/<release>-migrate", flush=True)
+                      sys.exit(1)
+                  time.sleep(5)
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            # Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+            - name: ENCRYPTION_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key-previous
+                  optional: true
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
       containers:
         - name: mandari
           image: "ghcr.io/mandarioss/mandari:latest"
@@ -240,6 +395,20 @@ spec:
               value: "json"
             - name: LOG_LEVEL
               value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -273,6 +442,21 @@ spec:
               value: "True"
             - name: OPARL_FILES_ROOT
               value: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
           ports:
             - name: http
               containerPort: 8000
@@ -287,6 +471,10 @@ spec:
             httpGet:
               path: /health/live/
               port: http
+              # Der Kubelet fragt sonst mit der Pod-IP als Host an, die nicht in ALLOWED_HOSTS steht
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: 5
             failureThreshold: 60
           # Readiness prüft Datenbank, Redis, Elasticsearch und Speicher (Issue #231);
@@ -295,13 +483,19 @@ spec:
             httpGet:
               path: /health/ready/
               port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: 10
             timeoutSeconds: 5
-          # Liveness wird bei festgefahrenem Datenbank-Pool rot (Issue #344) und startet neu.
           livenessProbe:
             httpGet:
               path: /health/live/
               port: http
+              # Der Kubelet fragt sonst mit der Pod-IP als Host an, die nicht in ALLOWED_HOSTS steht
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
@@ -324,14 +518,14 @@ kind: Deployment
 metadata:
   name: mandari-ingestor
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: ingestor
 spec:
-  # Genau eine Instanz: mehrere Sync-Läufe würden dieselben Quellen doppelt abrufen.
+  # Genau eine Instanz: Eine zweite wartete ohnehin auf die Advisory-Sperre der ersten (#55).
   replicas: 1
   strategy:
     type: Recreate
@@ -347,22 +541,61 @@ spec:
         app.kubernetes.io/instance: mandari
         app.kubernetes.io/component: ingestor
       annotations:
-        checksum/secret: a4082f145ad9a5a7e5fa32bf35a2d925b80d242d84f48d651bea09056bc0c42e
+        checksum/secret: ohne-helm
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9090"
+        prometheus.io/path: /metrics
     spec:
       serviceAccountName: mandari
       securityContext:
         fsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
-      containers:
-        - name: ingestor
-          image: "ghcr.io/mandarioss/ingestor:latest"
+      # Der Ingestor schreibt in Tabellen aus den Django-Migrationen: erst starten, wenn das Schema steht
+      initContainers:
+        - name: wait-for-schema
+          image: "ghcr.io/mandarioss/mandari:latest"
           imagePullPolicy: IfNotPresent
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
               drop:
               - ALL
+          command: ["python", "manage.py", "shell", "-c"]
+          args:
+            - |
+              import sys, time
+              from django.db import connections
+              from django.db.migrations.executor import MigrationExecutor
+              from django_safemigrate.management.commands.safemigrate import Command
+        
+              frist = 1800
+              beginn = time.monotonic()
+              letzte_meldung = None
+              while True:
+                  try:
+                      executor = MigrationExecutor(connections["default"])
+                      plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+                      pruefer = Command()
+                      erklaert = {migration: pruefer.safe(migration) for migration, _ in plan}
+                      bereit, verschoben, blockiert = pruefer.categorize(
+                          pruefer.resolve(erklaert, pruefer.detected(erklaert))
+                      )
+                      if not bereit and not blockiert:
+                          hinweis = f" ({len(verschoben)} Migrationen folgen nach dem Ausrollen)" if verschoben else ""
+                          print("Datenbankschema bereit" + hinweis + ".", flush=True)
+                          sys.exit(0)
+                      meldung = f"{len(bereit) + len(blockiert)} Migrationen stehen noch aus"
+                  except Exception as fehler:  # Datenbank noch nicht erreichbar, Tabellen fehlen
+                      meldung = f"Datenbank noch nicht bereit ({type(fehler).__name__})"
+                  connections.close_all()
+                  if meldung != letzte_meldung:
+                      print(f"Warte auf den Migrations-Job: {meldung}", flush=True)
+                      letzte_meldung = meldung
+                  if time.monotonic() - beginn > frist:
+                      print(f"Schema nach {frist} s nicht bereit. Migrations-Job prüfen: kubectl logs job/<release>-migrate", flush=True)
+                      sys.exit(1)
+                  time.sleep(5)
           env:
             - name: DEBUG
               value: "false"
@@ -378,6 +611,20 @@ spec:
               value: "json"
             - name: LOG_LEVEL
               value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -411,11 +658,149 @@ spec:
               value: "True"
             - name: OPARL_FILES_ROOT
               value: /app/files
-            - name: SYNC_INTERVAL_MINUTES
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
               value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      containers:
+        - name: ingestor
+          image: "ghcr.io/mandarioss/ingestor:latest"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          command:
+            - python
+            - -m
+            - src.main
+            - daemon
+            - --interval
+            - "15"
+            - --full-sync-hour
+            - "3"
+            - --concurrent
+            - "10"
+            - --metrics-port
+            - "9090"
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            # Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+            - name: ENCRYPTION_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key-previous
+                  optional: true
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Der Sync erkennt den Text selbst: Adressraum je Tesseract-Unterprozess unter dem Limit halten (#817)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "384"
+          ports:
+            - name: metrics
+              containerPort: 9090
+              protocol: TCP
           volumeMounts:
+            - name: data
+              mountPath: /app/data
             - name: files
               mountPath: /app/files
+          # /health antwortet, sobald der Daemon seinen Metrik-Server gestartet hat
+          startupProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             limits:
               memory: 1Gi
@@ -423,6 +808,9 @@ spec:
               cpu: 100m
               memory: 256Mi
       volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mandari-ingestor-data
         - name: files
           persistentVolumeClaim:
             claimName: mandari-files
@@ -432,7 +820,7 @@ kind: Deployment
 metadata:
   name: mandari-worker
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -452,7 +840,7 @@ spec:
         app.kubernetes.io/instance: mandari
         app.kubernetes.io/component: worker
       annotations:
-        checksum/secret: a4082f145ad9a5a7e5fa32bf35a2d925b80d242d84f48d651bea09056bc0c42e
+        checksum/secret: ohne-helm
         prometheus.io/scrape: "true"
         prometheus.io/port: "9091"
         prometheus.io/path: /metrics
@@ -462,6 +850,133 @@ spec:
         fsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
+      initContainers:
+        - name: wait-for-schema
+          image: "ghcr.io/mandarioss/mandari:latest"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          command: ["python", "manage.py", "shell", "-c"]
+          args:
+            - |
+              import sys, time
+              from django.db import connections
+              from django.db.migrations.executor import MigrationExecutor
+              from django_safemigrate.management.commands.safemigrate import Command
+        
+              frist = 1800
+              beginn = time.monotonic()
+              letzte_meldung = None
+              while True:
+                  try:
+                      executor = MigrationExecutor(connections["default"])
+                      plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+                      pruefer = Command()
+                      erklaert = {migration: pruefer.safe(migration) for migration, _ in plan}
+                      bereit, verschoben, blockiert = pruefer.categorize(
+                          pruefer.resolve(erklaert, pruefer.detected(erklaert))
+                      )
+                      if not bereit and not blockiert:
+                          hinweis = f" ({len(verschoben)} Migrationen folgen nach dem Ausrollen)" if verschoben else ""
+                          print("Datenbankschema bereit" + hinweis + ".", flush=True)
+                          sys.exit(0)
+                      meldung = f"{len(bereit) + len(blockiert)} Migrationen stehen noch aus"
+                  except Exception as fehler:  # Datenbank noch nicht erreichbar, Tabellen fehlen
+                      meldung = f"Datenbank noch nicht bereit ({type(fehler).__name__})"
+                  connections.close_all()
+                  if meldung != letzte_meldung:
+                      print(f"Warte auf den Migrations-Job: {meldung}", flush=True)
+                      letzte_meldung = meldung
+                  if time.monotonic() - beginn > frist:
+                      print(f"Schema nach {frist} s nicht bereit. Migrations-Job prüfen: kubectl logs job/<release>-migrate", flush=True)
+                      sys.exit(1)
+                  time.sleep(5)
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            # Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+            - name: ENCRYPTION_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key-previous
+                  optional: true
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
       # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
       terminationGracePeriodSeconds: 30
       containers:
@@ -498,6 +1013,20 @@ spec:
               value: "json"
             - name: LOG_LEVEL
               value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -531,9 +1060,28 @@ spec:
               value: "True"
             - name: OPARL_FILES_ROOT
               value: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
             # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
             - name: TASKS_MAX_MEMORY_MB
               value: "400"
+            # Zeitplan check_service_levels läuft im Worker: Metriken der Anwendung über ihren Service
+            # (überschreibbar mit app.extraEnv bzw. worker.extraEnv)
+            - name: METRICS_URL
+              value: "http://mandari:80/metrics/"
           ports:
             - name: metrics
               containerPort: 9091
@@ -559,7 +1107,7 @@ spec:
             failureThreshold: 3
           resources:
             limits:
-              memory: 512Mi
+              memory: 1Gi
             requests:
               cpu: 100m
               memory: 256Mi
@@ -580,7 +1128,7 @@ kind: Deployment
 metadata:
   name: mandari-worker-heavy
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -600,7 +1148,7 @@ spec:
         app.kubernetes.io/instance: mandari
         app.kubernetes.io/component: worker-heavy
       annotations:
-        checksum/secret: a4082f145ad9a5a7e5fa32bf35a2d925b80d242d84f48d651bea09056bc0c42e
+        checksum/secret: ohne-helm
         prometheus.io/scrape: "true"
         prometheus.io/port: "9091"
         prometheus.io/path: /metrics
@@ -610,6 +1158,133 @@ spec:
         fsGroup: 1000
         runAsNonRoot: true
         runAsUser: 1000
+      initContainers:
+        - name: wait-for-schema
+          image: "ghcr.io/mandarioss/mandari:latest"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          command: ["python", "manage.py", "shell", "-c"]
+          args:
+            - |
+              import sys, time
+              from django.db import connections
+              from django.db.migrations.executor import MigrationExecutor
+              from django_safemigrate.management.commands.safemigrate import Command
+        
+              frist = 1800
+              beginn = time.monotonic()
+              letzte_meldung = None
+              while True:
+                  try:
+                      executor = MigrationExecutor(connections["default"])
+                      plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+                      pruefer = Command()
+                      erklaert = {migration: pruefer.safe(migration) for migration, _ in plan}
+                      bereit, verschoben, blockiert = pruefer.categorize(
+                          pruefer.resolve(erklaert, pruefer.detected(erklaert))
+                      )
+                      if not bereit and not blockiert:
+                          hinweis = f" ({len(verschoben)} Migrationen folgen nach dem Ausrollen)" if verschoben else ""
+                          print("Datenbankschema bereit" + hinweis + ".", flush=True)
+                          sys.exit(0)
+                      meldung = f"{len(bereit) + len(blockiert)} Migrationen stehen noch aus"
+                  except Exception as fehler:  # Datenbank noch nicht erreichbar, Tabellen fehlen
+                      meldung = f"Datenbank noch nicht bereit ({type(fehler).__name__})"
+                  connections.close_all()
+                  if meldung != letzte_meldung:
+                      print(f"Warte auf den Migrations-Job: {meldung}", flush=True)
+                      letzte_meldung = meldung
+                  if time.monotonic() - beginn > frist:
+                      print(f"Schema nach {frist} s nicht bereit. Migrations-Job prüfen: kubectl logs job/<release>-migrate", flush=True)
+                      sys.exit(1)
+                  time.sleep(5)
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            # Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+            - name: ENCRYPTION_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key-previous
+                  optional: true
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
       # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
       terminationGracePeriodSeconds: 30
       containers:
@@ -648,6 +1323,20 @@ spec:
               value: "json"
             - name: LOG_LEVEL
               value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -681,9 +1370,28 @@ spec:
               value: "True"
             - name: OPARL_FILES_ROOT
               value: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
             # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
             - name: TASKS_MAX_MEMORY_MB
               value: "800"
+            # Zeitplan check_service_levels läuft im Worker: Metriken der Anwendung über ihren Service
+            # (überschreibbar mit app.extraEnv bzw. worker.extraEnv)
+            - name: METRICS_URL
+              value: "http://mandari:80/metrics/"
           ports:
             - name: metrics
               containerPort: 9091
@@ -726,11 +1434,323 @@ spec:
             claimName: mandari-files
 ---
 apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mandari-worker-live
+  labels:
+    helm.sh/chart: mandari-1.1.0
+    app.kubernetes.io/name: mandari
+    app.kubernetes.io/instance: mandari
+    app.kubernetes.io/version: "latest"
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/component: worker-live
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mandari
+      app.kubernetes.io/instance: mandari
+      app.kubernetes.io/component: worker-live
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mandari
+        app.kubernetes.io/instance: mandari
+        app.kubernetes.io/component: worker-live
+      annotations:
+        checksum/secret: ohne-helm
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9091"
+        prometheus.io/path: /metrics
+    spec:
+      serviceAccountName: mandari
+      securityContext:
+        fsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+      initContainers:
+        - name: wait-for-schema
+          image: "ghcr.io/mandarioss/mandari:latest"
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          command: ["python", "manage.py", "shell", "-c"]
+          args:
+            - |
+              import sys, time
+              from django.db import connections
+              from django.db.migrations.executor import MigrationExecutor
+              from django_safemigrate.management.commands.safemigrate import Command
+        
+              frist = 1800
+              beginn = time.monotonic()
+              letzte_meldung = None
+              while True:
+                  try:
+                      executor = MigrationExecutor(connections["default"])
+                      plan = executor.migration_plan(executor.loader.graph.leaf_nodes())
+                      pruefer = Command()
+                      erklaert = {migration: pruefer.safe(migration) for migration, _ in plan}
+                      bereit, verschoben, blockiert = pruefer.categorize(
+                          pruefer.resolve(erklaert, pruefer.detected(erklaert))
+                      )
+                      if not bereit and not blockiert:
+                          hinweis = f" ({len(verschoben)} Migrationen folgen nach dem Ausrollen)" if verschoben else ""
+                          print("Datenbankschema bereit" + hinweis + ".", flush=True)
+                          sys.exit(0)
+                      meldung = f"{len(bereit) + len(blockiert)} Migrationen stehen noch aus"
+                  except Exception as fehler:  # Datenbank noch nicht erreichbar, Tabellen fehlen
+                      meldung = f"Datenbank noch nicht bereit ({type(fehler).__name__})"
+                  connections.close_all()
+                  if meldung != letzte_meldung:
+                      print(f"Warte auf den Migrations-Job: {meldung}", flush=True)
+                      letzte_meldung = meldung
+                  if time.monotonic() - beginn > frist:
+                      print(f"Schema nach {frist} s nicht bereit. Migrations-Job prüfen: kubectl logs job/<release>-migrate", flush=True)
+                      sys.exit(1)
+                  time.sleep(5)
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            # Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+            - name: ENCRYPTION_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key-previous
+                  optional: true
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: worker
+          image: "ghcr.io/mandarioss/mandari:latest"
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - manage.py
+            - events_worker
+            - --heartbeat-file
+            - /tmp/mandari-worker.heartbeat
+            - --metrics-port
+            - "9091"
+            - "--roles"
+            - "tasks"
+            - "--queues"
+            - "live"
+            - "--concurrency"
+            - "live=2"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
+          env:
+            - name: DEBUG
+              value: "false"
+            - name: ALLOWED_HOSTS
+              value: "mandari.example.com,localhost,127.0.0.1"
+            - name: CSRF_TRUSTED_ORIGINS
+              value: "https://mandari.example.com"
+            - name: SITE_URL
+              value: "https://mandari.example.com"
+            - name: TZ
+              value: "Europe/Berlin"
+            - name: LOG_FORMAT
+              value: "json"
+            - name: LOG_LEVEL
+              value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: database-url
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: redis-url
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: secret-key
+            - name: ENCRYPTION_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key
+            # Nur während eines Schlüsselwechsels gesetzt (docs/KRYPTOKONZEPT.md)
+            - name: ENCRYPTION_MASTER_KEY_PREVIOUS
+              valueFrom:
+                secretKeyRef:
+                  name: mandari-secrets
+                  key: encryption-key-previous
+                  optional: true
+            - name: ELASTICSEARCH_URL
+              value: "http://mandari-elasticsearch:9200"
+            - name: ELASTICSEARCH_AUTO_INDEX
+              value: "True"
+            - name: OPARL_FILES_ROOT
+              value: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
+            # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
+            - name: TASKS_MAX_MEMORY_MB
+              value: "400"
+            # Zeitplan check_service_levels läuft im Worker: Metriken der Anwendung über ihren Service
+            # (überschreibbar mit app.extraEnv bzw. worker.extraEnv)
+            - name: METRICS_URL
+              value: "http://mandari:80/metrics/"
+          ports:
+            - name: metrics
+              containerPort: 9091
+              protocol: TCP
+          volumeMounts:
+            - name: media
+              mountPath: /app/media
+            - name: files
+              mountPath: /app/files
+          startupProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 60
+          # /health antwortet 503, sobald eine Rolle länger als --stale-after (300 s) hängt
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+      # Die Volumes media und files teilt der Worker mit Anwendung und Ingestor. Mit
+      # persistence.accessMode ReadWriteOnce müssen alle diese Pods auf demselben Knoten laufen
+      # (worker.affinity, z. B. podAffinity zur Anwendung); mehrere Knoten oder Repliken auf
+      # verschiedenen Knoten brauchen ReadWriteMany.
+      volumes:
+        - name: media
+          persistentVolumeClaim:
+            claimName: mandari-media
+        - name: files
+          persistentVolumeClaim:
+            claimName: mandari-files
+---
+apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: mandari-elasticsearch
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -807,7 +1827,7 @@ kind: StatefulSet
 metadata:
   name: mandari-postgres
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -883,7 +1903,7 @@ kind: StatefulSet
 metadata:
   name: mandari-redis
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -963,7 +1983,7 @@ kind: Ingress
 metadata:
   name: mandari
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
@@ -973,7 +1993,6 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
     cert-manager.io/cluster-issuer: "letsencrypt-prod"
 spec:
-  ingressClassName: nginx
   tls:
     - hosts:
         - "mandari.example.com"

@@ -1,0 +1,17 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+„Im Beratungsverlauf“: Positionen der eigenen Organisation aus anderen Gremien zur selben Vorlage, gemeinsam für die
+Sitzungsvorbereitung (#856, Einträge per Alpine) und die Sitzungsansicht der laufenden Fraktionssitzung (#874, Einträge
+vom Server mit c-work.verlauf-eintrag). Gestaltung: .wf-verlauf in static/css/work-flaeche.css; „Mehr“ im Kopf des TOPs
+setzt dort die Klasse „offen“ und zeigt die Einträge ungekürzt.
+  <c-work.beratungsverlauf kennung="fs-verlauf-h">
+      <ul><c-work.verlauf-eintrag wo="Hauptausschuss, 06.10.2026" href="…" punkt="zustimmung" position="Zustimmung" /></ul>
+  </c-work.beratungsverlauf>
+Parameter: kennung (id der Überschrift, benennt die Gruppe); weitere Attribute (etwa x-show) gehen an die Gruppe.
+Inhalt: die Liste der Einträge, ggf. ein Hinweis ohne Einträge.
+{% endcomment %}
+<c-vars kennung="" />
+<div class="wf-verlauf" role="group"{% if kennung %} aria-labelledby="{{ kennung }}"{% endif %} {{ attrs }}>
+    <span class="wf-verlauf-h"{% if kennung %} id="{{ kennung }}"{% endif %}><i data-lucide="git-branch" aria-hidden="true"></i>Im Beratungsverlauf</span>
+    {{ slot }}
+</div>

@@ -1,0 +1,54 @@
+{% comment %}
+Versionsliste des Dokumenteditors (Seitenleiste bzw. rechte Spalte); der Vergleich steht im Textbereich
+(_editor_history_view.html). Alpine-Komponente documentEditor.
+{% endcomment %}
+<div class="flex-1 overflow-y-auto p-4 space-y-2">
+    <template x-if="revisions.length === 0 && !revisionsLoading">
+        <div class="text-center py-8">
+            <div class="w-12 h-12 mx-auto mb-3 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center">
+                <i data-lucide="history" class="w-6 h-6 text-gray-400"></i>
+            </div>
+            <p class="text-sm text-gray-500 dark:text-gray-400">Noch keine Änderungen</p>
+            <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">Versionen werden beim Speichern erstellt</p>
+        </div>
+    </template>
+    <template x-if="revisionsLoading">
+        <div class="flex justify-center py-8">
+            <svg class="animate-spin h-6 w-6 text-gray-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+        </div>
+    </template>
+
+    <!-- Current Version (always first) -->
+    <template x-if="revisions.length > 0">
+        <div class="p-3 rounded-lg border-2 transition-colors"
+             :class="!historyMode ? 'border-primary-400 dark:border-primary-600 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 cursor-pointer hover:border-primary-300'"
+             @click="exitHistoryMode()">
+            <div class="flex items-center gap-2">
+                <div class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0"></div>
+                <span class="text-xs font-medium text-gray-900 dark:text-white">Aktuelle Version</span>
+            </div>
+            <p class="text-xs text-gray-500 mt-1 ml-4">Letzte Bearbeitung</p>
+        </div>
+    </template>
+
+    <!-- Revision List -->
+    <template x-for="rev in revisions" :key="rev.id">
+        <button type="button" @click="viewRevision(rev)"
+                class="w-full text-left p-3 rounded-lg border-2 transition-colors"
+                :class="selectedRevision && selectedRevision.id === rev.id
+                    ? 'border-amber-400 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20'
+                    : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-primary-300 dark:hover:border-primary-700'">
+            <div class="flex items-center gap-2 mb-1">
+                <div class="w-2 h-2 rounded-full flex-shrink-0"
+                     :class="selectedRevision && selectedRevision.id === rev.id ? 'bg-amber-500' : 'bg-gray-300 dark:bg-gray-600'"></div>
+                <span class="text-xs font-medium text-gray-900 dark:text-white" x-text="'Version ' + rev.version"></span>
+                <span class="text-xs text-gray-500 ml-auto" x-text="formatTimeAgo(rev.created_at)"></span>
+            </div>
+            <p class="text-xs text-gray-500 ml-4 truncate" x-text="rev.change_summary || 'Automatisch gespeichert'"></p>
+            <p class="text-xs text-gray-400 mt-0.5 ml-4" x-text="rev.changed_by"></p>
+        </button>
+    </template>
+</div>

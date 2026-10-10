@@ -103,6 +103,9 @@ VERMERKE: tuple[Vermerk, ...] = (
         "protocol_approved_at",
         lambda o: o.title,
     ),
+    # Sitzungsleitung und Schriftführung (Issue #874); Zeitpunkt ist der Beginn der Sitzung
+    Vermerk("FactionMeeting.chaired_by", "Fraktion", "Sitzungsleitung", "organization", "start", lambda o: o.title),
+    Vermerk("FactionMeeting.minute_taker", "Fraktion", "Schriftführung", "organization", "start", lambda o: o.title),
     Vermerk(
         "FactionAgendaItem.reviewed_by",
         "Fraktion",

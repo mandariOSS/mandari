@@ -32,6 +32,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.common.tests.factories import UserFactory
+from apps.common.tests.festgeschriebene_testdaten import sicherheitsprotokoll_zuruecksetzen
 from apps.session.models import (
     SessionAPIToken,
     SessionDevice,
@@ -279,7 +280,7 @@ def _build() -> World:
 
 @pytest.fixture(scope="module")
 def world(django_db_setup: None, django_db_blocker: Any) -> Iterator[World]:
-    with django_db_blocker.unblock():
+    with django_db_blocker.unblock(), sicherheitsprotokoll_zuruecksetzen():
         built = _build()
         yield built
         SessionTenant.objects.filter(pk__in=[built.tenant.pk, built.other.pk]).delete()

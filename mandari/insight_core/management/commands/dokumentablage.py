@@ -8,7 +8,8 @@ Schritte von Hand, während der Worker den Zeitplan bedient, mit ``--trotz-zeitp
 
     python manage.py dokumentablage                    # Kennzahlen
     python manage.py dokumentablage --umstellen        # Kopien im Layout je Kommune verschieben (wiederaufnehmbar)
-    python manage.py dokumentablage --aufraeumen       # Inhalte ohne Referenz löschen, Zwischenspeicher begrenzen
+    python manage.py dokumentablage --aufraeumen       # Inhalte ohne Referenz löschen, Zwischenspeicher und
+                                                       # Obergrenze (FILE_CACHE_MAX_TOTAL_GB, #961) einhalten
     python manage.py dokumentablage --hochladen        # Inhalte in den Objektspeicher (nur mit OBJ_ENABLED)
     python manage.py dokumentablage --referenzen       # Referenzzähler aus den Verweisen neu berechnen
 """
@@ -48,7 +49,7 @@ class Command(EinmaligMixin, BaseCommand):
         parser.add_argument("--limit", type=int, default=1000, help="Höchstens so viele Dateien je Schritt")
 
     def handle(self, *args: Any, **options: Any) -> None:
-        from insight_core.services import file_store, object_storage
+        from insight_core.services import file_cache_limit, file_store, object_storage
 
         if (options["umstellen"] or options["hochladen"]) and not file_store.uses_blobs():
             raise CommandError("FILE_STORE_LAYOUT=kommune: keine Ablage nach SHA-256")
@@ -65,6 +66,7 @@ class Command(EinmaligMixin, BaseCommand):
             self._report("Verwaiste Inhalte", file_store.cleanup_orphans())
             if object_storage.enabled():
                 self._report("Zwischenspeicher", file_store.evict_local())
+            self._report_limit(file_cache_limit.enforce())
             removed = file_store.cleanup_tmp()
             if removed:
                 self.stdout.write(f"Liegengebliebene Teil-Downloads entfernt: {removed}")
@@ -82,3 +84,30 @@ class Command(EinmaligMixin, BaseCommand):
     def _report(self, title: str, results: Counter[str]) -> None:
         summary = ", ".join(f"{key}={value}" for key, value in sorted(results.items())) or "nichts zu tun"
         self.stdout.write(f"{title}: {summary}")
+
+    def _report_limit(self, result: Any) -> None:
+        """Obergrenze (#961): nur mit gesetzter Grenze eine Zeile."""
+        if result.disabled:
+            return
+        if result.aborted:
+            # Stiller Moduswechsel (#961): ohne Objektspeicher würden Inhalte, die dort liegen, verwaisen
+            self.stderr.write(
+                self.style.ERROR(
+                    f"Obergrenze ausgesetzt: {result.remote_conflict} Inhalte liegen laut Datenbank im Objektspeicher, "
+                    "der hier nicht konfiguriert ist (OBJ_ENABLED, OBJ_* im Worker prüfen). Es wird nichts verdrängt."
+                )
+            )
+            return
+        if result.locked:
+            self.stdout.write("Obergrenze: ein anderer Lauf verdrängt gerade, übersprungen")
+            return
+        gb = 1024**3
+        line = (
+            f"Obergrenze {result.limit / gb:.2f} GB ({result.mode}): belegt {result.before / gb:.2f} GB"
+            f" → {result.after / gb:.2f} GB, verdrängt {result.units} Inhalte für {result.files} Dokumente"
+            f" ({result.freed / gb:.2f} GB)"
+        )
+        if result.before > result.limit and not result.reached:
+            geschuetzt = ", ".join(f"{key} {value / gb:.2f} GB" for key, value in sorted(result.protected.items()))
+            line += f"; Ziel nicht erreicht (geschützt: {geschuetzt or '-'})"
+        self.stdout.write(line)

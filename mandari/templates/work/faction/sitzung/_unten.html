@@ -1,0 +1,62 @@
+{# Leiste fest am unteren Rand: Beschluss kompakt, voriger und nächster TOP (Issue #874) #}
+{# Kontext: item, decision, beschluss_punkt, vor/nach (sitzung.TopZeile), rechte, quorum, ergebnisse, aendern, oob, oob_zeile, sitzung_urls #}
+<div class="wf-leiste fs-unten" id="fs-unten" role="region" aria-label="Beschluss und TOP wechseln" x-data="beschlussLeiste"
+     data-ja="{{ decision.votes_yes|default:0 }}" data-nein="{{ decision.votes_no|default:0 }}" data-enthaltung="{{ decision.votes_abstain|default:0 }}"
+     :class="{ 'beschluss-offen': offen }"{% if oob %} hx-swap-oob="true"{% endif %}>
+    {% if decision and not aendern %}
+    <div class="fs-beschluss">
+        <span class="beschriftung">Beschluss</span>
+        <span class="fs-ergebnis">
+            <span class="wf-punkt {{ beschluss_punkt }}" aria-hidden="true"></span>
+            <b>{{ decision.get_result_display }}</b>
+            {% if decision.result != 'postponed' %}<span>{{ decision.votes_yes }} dafür, {{ decision.votes_no }} dagegen, {{ decision.votes_abstain }} {% if decision.votes_abstain == 1 %}Enthaltung{% else %}Enthaltungen{% endif %}</span>{% endif %}
+            {% if decision.decision_text %}<span class="text" title="{{ decision.decision_text }}">{{ decision.decision_text }}</span>{% endif %}
+        </span>
+        {% if rechte.protokollieren %}
+        <button type="button" class="wf-textlink" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-unten" hx-swap="outerHTML"
+                hx-vals='{"action": "beschluss_aendern", "item_id": "{{ item.pk }}"}'>Ändern</button>
+        {% endif %}
+    </div>
+    {% elif rechte.protokollieren %}
+    <form class="fs-beschluss" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-unten" hx-swap="outerHTML">
+        <input type="hidden" name="action" value="beschluss">
+        <input type="hidden" name="item_id" value="{{ item.pk }}">
+        <span class="beschriftung" id="fs-bes-h">Beschluss</span>
+        {% include "work/faction/sitzung/_zaehler.html" with name="votes_yes" feld="ja" label="Dafür" %}
+        {% include "work/faction/sitzung/_zaehler.html" with name="votes_no" feld="nein" label="Dagegen" %}
+        {% include "work/faction/sitzung/_zaehler.html" with name="votes_abstain" feld="enthaltung" label="Enthaltung" %}
+        <label class="sr-only" for="fs-bes-ergebnis">Ergebnis</label>
+        <select class="wf-eingabe wf-auswahl" id="fs-bes-ergebnis" name="result">
+            {% for wert, text in ergebnisse.items %}<option value="{{ wert }}"{% if decision and decision.result == wert %} selected{% endif %}>{{ text }}</option>{% endfor %}
+        </select>
+        <label class="sr-only" for="fs-bes-text">Beschlusstext, wenn er vom TOP abweicht</label>
+        <input class="wf-eingabe" id="fs-bes-text" type="text" name="decision_text" value="{{ decision.decision_text|default:'' }}" placeholder="Beschlusstext, wenn abweichend">
+        <button type="submit" class="wf-knopf wf-haupt">Erfassen</button>
+        {% if quorum.has_list and not quorum.met %}<span class="fs-warn">Nicht beschlussfähig</span>{% endif %}
+    </form>
+    {% else %}
+    <div class="fs-beschluss"><span class="beschriftung">Beschluss</span><span class="fs-meta">Noch kein Beschluss.</span></div>
+    {% endif %}
+
+    <nav class="wf-nachbarn fs-nav" aria-label="TOP wechseln">
+        <button type="button" class="wf-knopf wf-klein fs-mobil-nur" @click="tagesordnungOffen = true" aria-controls="fs-tagesordnung">
+            <i data-lucide="list" aria-hidden="true"></i>TOP {{ item.number }}
+        </button>
+        <button type="button" class="wf-knopf wf-klein fs-mobil-nur" @click="offen = !offen" :aria-expanded="offen ? 'true' : 'false'">Beschluss</button>
+        {% if vor %}
+        <a class="wf-nachbar" href="?top={{ vor.item.pk }}" hx-get="{% url 'work:faction_session_item' org_slug=org_slug meeting_id=meeting.pk item_id=vor.item.pk %}"
+           hx-target="#fs-fokus" hx-swap="outerHTML" hx-push-url="?top={{ vor.item.pk }}" data-top-wechsel data-nav="vor" aria-keyshortcuts="K"
+           title="Voriger TOP: {{ vor.item.number }} {{ vor.item.title }} (Taste K)">
+            <i data-lucide="chevron-left" aria-hidden="true"></i><span><small>Voriger TOP</small><b>{{ vor.item.number }} {{ vor.item.title }}</b></span>
+        </a>
+        {% endif %}
+        {% if nach %}
+        <a class="wf-nachbar weiter" href="?top={{ nach.item.pk }}" hx-get="{% url 'work:faction_session_item' org_slug=org_slug meeting_id=meeting.pk item_id=nach.item.pk %}"
+           hx-target="#fs-fokus" hx-swap="outerHTML" hx-push-url="?top={{ nach.item.pk }}" data-top-wechsel data-nav="nach" aria-keyshortcuts="J"
+           title="Nächster TOP: {{ nach.item.number }} {{ nach.item.title }} (Taste J)">
+            <span><small>Nächster TOP</small><b>{{ nach.item.number }} {{ nach.item.title }}</b></span><i data-lucide="chevron-right" aria-hidden="true"></i>
+        </a>
+        {% endif %}
+    </nav>
+</div>
+{% if oob_zeile %}{% with zeile=aktuelle_zeile %}{% if zeile %}{% include "work/faction/sitzung/_tagesordnung_zeile.html" %}{% endif %}{% endwith %}{% endif %}

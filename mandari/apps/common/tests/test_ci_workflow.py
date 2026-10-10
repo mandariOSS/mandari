@@ -316,6 +316,23 @@ def test_ci_ergebnis_verlangt_noetige_test_jobs(tmp_path: Path) -> None:
     assert _ci_ergebnis_ausfuehren(tmp_path, {"migrationstests": "failure"}, "false", "false") == 1
 
 
+@pytest.mark.parametrize(
+    ("ergebnis", "erwartet"),
+    [
+        ("success", 0),
+        ("skipped", 0),
+        # Issue #879: Job ohne Runner meldet GitHub als "abandoned", nicht als "cancelled"
+        ("abandoned", 1),
+        ("cancelled", 1),
+        ("failure", 1),
+        # Positivliste: auch ein künftiger, unbekannter Wert lässt das Sammel-Ergebnis scheitern
+        ("etwas-neues", 1),
+    ],
+)
+def test_ci_ergebnis_laesst_nur_success_und_skipped_durch(tmp_path: Path, ergebnis: str, erwartet: int) -> None:
+    assert _ci_ergebnis_ausfuehren(tmp_path, {"docker-build": ergebnis}, "false", "false") == erwartet
+
+
 def test_filter_nennen_nur_vorhandene_dateien() -> None:
     # Eine umbenannte Datei fiele still aus dem Filter (Sicherheitsnetz, Views der E2E-Seiten …)
     assert ".github/**" in _filter()["sicherheitsnetz"]
@@ -428,7 +445,7 @@ def test_reuse_workflow_prueft_blockierend() -> None:
         ),
         ("scripts/check_event_contracts.py", {"qualitaet", "vertrag", "test", "codeql_python"}),
         ("scripts/smoke_tombstones.py", {"qualitaet", "test", "smoke", "codeql_python"}),
-        ("mandari/Dockerfile", {"qualitaet", "docker"}),
+        ("mandari/Dockerfile", {"qualitaet", "docker", "kubernetes"}),
         # Migrationen und die Werkzeuge der Migrationstests lösen den Job "Migrationstests" aus (Issue #935)
         (
             "mandari/apps/tenants/migrations/0001_initial.py",

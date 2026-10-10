@@ -22,6 +22,7 @@ from django.db import models
 from django.utils.text import slugify
 
 from apps.common.encryption import exclude_key_fields_from_save
+from apps.common.ki_anbieter import ANBIETER_AUSWAHL, ANBIETER_VORLAGEN
 from apps.common.permissions import DEFAULT_ROLES, PERMISSIONS
 from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 
@@ -264,14 +265,10 @@ class Organization(models.Model):
     smtp_from_name = models.CharField(max_length=200, blank=True)
 
     # === AI Provider Settings (Work DMS) ===
-    AI_PROVIDER_NEBIUS = "nebius"
-    AI_PROVIDER_OVH = "ovh"
-    AI_PROVIDER_IONOS = "ionos"
-    AI_PROVIDER_CHOICES = [
-        (AI_PROVIDER_NEBIUS, "Nebius TokenFactory (Standard)"),
-        (AI_PROVIDER_OVH, "OVHcloud AI Endpoints"),
-        (AI_PROVIDER_IONOS, "IONOS AI Model Hub"),
-    ]
+    # Eigene KI-Konfiguration der Organisation (Issue #950): wirkt nur mit eigenem Schlüssel und nur, wenn der
+    # Host in KI_ERLAUBTE_HOSTS steht (apps.common.ki_anbieter.endpunkt_fuer_work); sonst gilt die Plattform.
+    AI_PROVIDER_PLATFORM = ""
+    AI_PROVIDER_CHOICES = [(AI_PROVIDER_PLATFORM, "Plattform-Einstellung"), *ANBIETER_AUSWAHL]
 
     ai_enabled = models.BooleanField(
         default=True,
@@ -281,22 +278,42 @@ class Organization(models.Model):
     ai_provider = models.CharField(
         max_length=20,
         choices=AI_PROVIDER_CHOICES,
-        default=AI_PROVIDER_NEBIUS,
+        default=AI_PROVIDER_PLATFORM,
+        blank=True,
         verbose_name="KI-Anbieter",
+        help_text=(
+            "Nur mit eigenem KI API Key: Vorlage oder eigener Endpunkt. Ohne eigenen Key gelten die "
+            "KI-Einstellungen der Plattform."
+        ),
     )
     ai_base_url = models.URLField(
         blank=True,
         verbose_name="KI API Base URL",
         help_text=(
-            "Optional fuer OpenAI-kompatible Endpunkte. "
-            "Bei Nebius wird standardmaessig https://api.tokenfactory.nebius.com/v1/ genutzt."
+            "Leer: Basis-URL der Vorlage. Beim eigenen Endpunkt Pflicht. Nur https, nur Hosts aus KI_ERLAUBTE_HOSTS."
         ),
+    )
+    ai_anzeigename = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="KI-Anzeigename",
+        help_text="Name des Anbieters in Hinweisen. Leer: Name der Vorlage; beim eigenen Endpunkt Pflicht.",
+    )
+    ai_verarbeitungsort = models.CharField(
+        max_length=200,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="KI-Verarbeitungsort",
+        help_text="Etwa: Rechenzentren in Deutschland (EU). Leer: Angabe der Vorlage; beim eigenen Endpunkt Pflicht.",
     )
     ai_model = models.CharField(
         max_length=100,
         default="openai/gpt-oss-120b",
         verbose_name="KI-Modell",
-        help_text="Standard fuer Work: openai/gpt-oss-120b (Nebius).",
+        help_text="Modellname beim gewählten Anbieter (nur mit eigenem KI API Key).",
     )
     ai_api_key_encrypted = models.BinaryField(
         blank=True,
@@ -614,15 +631,11 @@ class Organization(models.Model):
         return encryption.decrypt(self.ai_api_key_encrypted)
 
     def get_effective_ai_base_url(self) -> str:
-        """Resolve provider endpoint with sensible defaults."""
+        """Eingetragene Basis-URL, sonst die der Vorlage, sonst leer (geprüft wird in ``ki_anbieter``)."""
         if self.ai_base_url:
             return self.ai_base_url
-
-        if self.ai_provider == self.AI_PROVIDER_NEBIUS:
-            return "https://api.tokenfactory.nebius.com/v1/"
-
-        # For other providers, admins should set a concrete endpoint.
-        return ""
+        vorlage = ANBIETER_VORLAGEN.get(self.ai_provider or "")
+        return vorlage.basis_url if vorlage else ""
 
 
 class Permission(models.Model):

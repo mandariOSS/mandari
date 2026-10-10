@@ -283,7 +283,8 @@ def extract_text(data: bytes, mime_type: str, file_name: str) -> str:
     try:
         from insight_core.services.document_extraction import extract_text_from_file
 
-        text, _ocr_used, _pages, _method = extract_text_from_file(data, mime_type, file_name)
+        # Anlagen in Session (auch nichtöffentliche): nur Erkennung im eigenen Betrieb (Issue #950)
+        text, _ocr_used, _pages, _method = extract_text_from_file(data, mime_type, file_name, allow_external=False)
         return text or ""
     except Exception:
         logger.exception("Text-Extraktion für '%s' fehlgeschlagen.", file_name)

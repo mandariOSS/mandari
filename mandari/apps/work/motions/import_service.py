@@ -150,6 +150,8 @@ class MotionImportService:
                     mime_type="application/pdf",
                     file_name=pdf_file.name or "",
                     ocr_max_pages=limit,
+                    # Eigene Unterlagen der Organisation: nur Erkennung im eigenen Betrieb (Issue #950)
+                    allow_external=False,
                 )
                 page_count = page_count or ocr_page_count
                 # Weder Text noch Seiten: keine lesbare PDF (beschädigt oder nur dem Namen nach PDF).

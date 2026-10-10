@@ -1,0 +1,21 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Filter der Suche als Auswahlliste (Work, Issue #853): für lange Listen wie Gremien, die als Ausklappliste mit
+Kästchen zu lang würden. Gehört per form="suche-form" zum Suchformular; mit HTMX wirkt eine Änderung sofort.
+  <c-suche.auswahl id="suche-gremium" name="gremium" titel="Gremium" leer="Alle Gremien" :optionen="gremium_options" adresse="…" />
+Parameter: id, name (Parameter wie in SearchQuery), titel (Beschriftung), leer (Text der Option ohne Filter),
+optionen (Liste von {value, label, checked}), adresse (Ziel der Anfrage), dicht (32 px hoch, Schrift 14 px wie die
+übrigen Felder einer Arbeitsplattform; ohne dicht 44 px).
+{% endcomment %}
+<c-vars id="" name="" titel="" leer="" optionen="" adresse="" dicht="" />
+<div class="flex items-center gap-2 min-w-0 2xl:block 2xl:mb-3">
+    <label for="{{ id }}" class="text-sm text-gray-700 dark:text-gray-300">{{ titel }}</label>
+    <select id="{{ id }}" name="{{ name }}" form="suche-form"
+            hx-get="{{ adresse }}" hx-trigger="change" hx-target="#suchergebnis"
+            hx-swap="innerHTML show:#suche-anfang:top" hx-push-url="true"
+            hx-include="#suche-form, [form='suche-form']"
+            class="{% if dicht %}min-h-8 text-sm{% else %}min-h-11{% endif %} min-w-0 max-w-[16rem] 2xl:mt-1 2xl:w-full 2xl:max-w-none {% if dicht %}pl-2 pr-7 rounded-md{% else %}pl-3 pr-8 rounded-lg{% endif %} border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white truncate">
+        <option value="">{{ leer }}</option>
+        {% for o in optionen %}<option value="{{ o.value }}" {% if o.checked %}selected{% endif %}>{{ o.label }}</option>{% endfor %}
+    </select>
+</div>

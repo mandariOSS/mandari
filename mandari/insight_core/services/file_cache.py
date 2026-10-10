@@ -22,6 +22,9 @@ Nur gelistete Kommunen werden zwischengespeichert. Ausgeblendete Quellen (Pilote
 luden sonst ihr ganzes Archiv nach – im September 2026 rund 46 GB, knapp die Hälfte des
 Caches, für Kommunen, die niemand im Portal sieht. Wird eine Kommune gelistet, füllt sich ihr
 Cache von selbst; ``prune_file_cache --unlisted`` räumt den Bestand ausgeblendeter Kommunen ab.
+
+Die Gesamtgröße lässt sich begrenzen (``FILE_CACHE_MAX_TOTAL_GB``, Issue #961): Darüber verdrängt das stündliche
+Aufräumen die am wenigsten gebrauchten Dokumente (``services/file_cache_limit.py``).
 """
 
 import hashlib
@@ -55,6 +58,7 @@ STATUS_CHOICES = [
     ("missing", "Quelle liefert 404"),
     ("error", "Fehler beim Abruf"),
     ("too_large", "Zu groß für den Cache"),
+    ("evicted", "Verdrängt (bei Bedarf neu abrufbar)"),
 ]
 _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue"})
 
@@ -416,10 +420,12 @@ def fetch_and_cache(file_obj, client=None) -> str:
             client.close()
 
 
-def pending_queryset(body=None, retry_errors: bool = False):
+def pending_queryset(body=None, retry_errors: bool = False, retry_evicted: bool = False):
     from ..models import OParlFile
 
-    statuses = ["none"] + (["error"] if retry_errors else [])
+    # Verdrängte Dokumente (Obergrenze, #961) holt nur die Vorschau bei Bedarf; von selbst lädt sie niemand nach,
+    # sonst lüde der nächste Lauf wieder, was die Grenze eben verdrängt hat
+    statuses = ["none"] + (["error"] if retry_errors else []) + (["evicted"] if retry_evicted else [])
     # text_content/raw_json sind riesig (extrahierter Volltext) — nie mitladen,
     # sonst frisst ein Lauf über zehntausende Dateien den gesamten RAM.
     # Quellen in Schonung (mehrfach nicht erreichbar) werden ausgelassen — Nachladen
@@ -445,21 +451,39 @@ def pending_queryset(body=None, retry_errors: bool = False):
     return qs.order_by("-file_date", "-oparl_created", "-created_at")
 
 
-def cache_pending(body=None, *, limit: int = 500, retry_errors: bool = False, sleep: float = 0.05) -> Counter:
-    """Fehlende Kopien nachladen — neueste Dokumente zuerst, mit Festplatten-Schutz."""
+def cache_pending(
+    body=None, *, limit: int = 500, retry_errors: bool = False, retry_evicted: bool = False, sleep: float = 0.05
+) -> Counter:
+    """
+    Fehlende Kopien nachladen — neueste Dokumente zuerst, mit Festplatten-Schutz.
+
+    Mit Obergrenze (``FILE_CACHE_MAX_TOTAL_GB``, #961) lädt ein Lauf nur bis zur Grenze nach (``limit`` im
+    Ergebnis); Platz schafft die Verdrängung im stündlichen Aufräumen (``dokumentablage --aufraeumen``).
+    """
+    from . import file_cache_limit
     from .safe_fetch import guarded_client
 
     results: Counter = Counter()
     if not has_room_for(0):
         results["disk_full"] += 1
         return results
+    room = file_cache_limit.room_bytes()
+    if room is not None and room <= 0:
+        results["limit"] += 1
+        return results
 
     with guarded_client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True) as client:
-        for file_obj in pending_queryset(body, retry_errors)[:limit].iterator(chunk_size=200):
+        pending = pending_queryset(body, retry_errors, retry_evicted)[:limit]
+        for file_obj in pending.iterator(chunk_size=200):
             status = fetch_and_cache(file_obj, client)
             results[status] += 1
             if status == "disk_full":
                 break
+            if status == "ok" and room is not None:
+                room -= int(file_obj.local_size or 0)
+                if room <= 0:
+                    results["limit"] += 1
+                    break
             if sleep:
                 time.sleep(sleep)
     return results
@@ -519,8 +543,18 @@ def stored_bytes() -> int:
     return int(blobs) + int(legacy)
 
 
+def remote_bytes() -> int:
+    """Inhalte im Objektspeicher (``remote_at``), auf die Dokumente verweisen; jeder Inhalt einmal."""
+    from ..models import OParlFileBlob
+
+    return int(
+        OParlFileBlob.objects.filter(remote_at__isnull=False, ref_count__gt=0).aggregate(s=Sum("size"))["s"] or 0
+    )
+
+
 def cache_stats() -> dict:
     from ..models import OParlFile
+    from . import file_cache_limit
 
     qs = OParlFile.objects.filter(deleted=False)
     total = qs.count()
@@ -536,6 +570,10 @@ def cache_stats() -> dict:
         | Q(body__source_id__in=sources_without_downloads()),
         local_status="none",
     ).count()
+    # Mit Objektspeicher liegt nur ein Teil lokal: tatsächliche Belegung aus dem Durchlauf über die Platte (wie die
+    # Obergrenze, #961), getrennt von dem, was im Objektspeicher liegt. Ohne ist die Summe aus der Datenbank genau.
+    with_remote = file_cache_limit.mode() == file_cache_limit.MODE_REMOTE
+    stored_total = stored_bytes()
     per_body = []
     for row in (
         qs.values("body__name").annotate(n=Sum(1), cached=Sum(stored, filter=Q(local_status="ok"))).order_by("-n")
@@ -551,15 +589,25 @@ def cache_stats() -> dict:
         "missing": by_status.get("missing", 0),
         "error": by_status.get("error", 0),
         "too_large": by_status.get("too_large", 0),
+        # Von der Obergrenze verdrängt (#961, ohne Objektspeicher): holt die Vorschau bei Bedarf neu
+        "evicted": by_status.get("evicted", 0),
         "paused": paused,
         "coverage": round(ok / total * 100, 1) if total else 0.0,
         "cached_bytes": cached_bytes,
         "cached_gb": round(cached_bytes / 1024**3, 2),
-        # Tatsächlich belegt: jeder Inhalt einmal (Ablage nach SHA-256) plus Kopien im alten Layout
-        "stored_bytes": stored_bytes(),
+        # Abgelegt: jeder Inhalt einmal (Ablage nach SHA-256) plus Kopien im alten Layout, lokal oder im Objektspeicher
+        "stored_bytes": stored_total,
+        "object_storage": with_remote,
+        # Lokal auf der Platte (mit Objektspeicher gemessen, sonst gleich stored_bytes)
+        "local_bytes": file_cache_limit.usage_bytes() if with_remote else stored_total,
+        # Im Objektspeicher (nur mit eingeschaltetem Objektspeicher)
+        "remote_bytes": remote_bytes() if with_remote else 0,
         # Kopien ohne gemessene Größe: mit ``cache_files --sizes`` nachtragen
         "without_size": without_size,
         "disk_free_bytes": disk_free_bytes(),
         "min_free_gb": min_free_bytes() // 1024**3,
+        # Obergrenze der Gesamtgröße (0 = unbegrenzt) und ihr Zielwert in Prozent
+        "max_total_bytes": file_cache_limit.limit_bytes(),
+        "evict_target_percent": file_cache_limit.target_percent(),
         "per_body": per_body,
     }
