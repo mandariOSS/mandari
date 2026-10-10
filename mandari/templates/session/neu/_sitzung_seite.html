@@ -1,0 +1,63 @@
+{% comment %}
+Rechte Spalte der Sitzung im neuen Rahmen (Issue #944): Angaben, Unterlagen (Tagesordnung als PDF, Termin als ICS,
+Beschlussauszüge, Beschlussnummern vergeben), Niederschrift, Sitzungsmappe (lädt per HTMX nach) und Anlagen. Eine
+Ebene: Abschnitte mit Überschrift (c-rahmen.abschnitt), keine Kästen. Kontext wie MeetingDetailView.
+{% endcomment %}
+<aside class="min-w-0 space-y-8" aria-label="Angaben und Unterlagen">
+    <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
+        <c-ui.angaben class="mt-2" data-testid="sitzung-angaben">
+            <dt>Status</dt>
+            <dd>{% if meeting.cancelled %}Abgesagt{% else %}{{ meeting.get_meeting_state_display }}{% endif %}</dd>
+            <dt>{% if meeting.is_joint %}Gremien{% else %}Gremium{% endif %}</dt>
+            <dd>
+                {% for org in meeting.participating_organizations %}
+                <c-ui.textlink href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=org.id %}" class="block">{{ org.name }}{% if meeting.is_joint and forloop.first %} <span class="font-normal text-gray-600 dark:text-gray-400">(federführend)</span>{% endif %}</c-ui.textlink>
+                {% endfor %}
+            </dd>
+            <dt>Termin</dt>
+            <dd class="tabular-nums">{{ meeting.start|date:"D, d.m.Y" }}, {{ meeting.start|date:"H:i" }}{% if meeting.end %}–{{ meeting.end|date:"H:i" }}{% endif %} Uhr</dd>
+            {% if meeting.location %}
+            <dt>Ort</dt>
+            <dd>{{ meeting.location }}{% if meeting.room %}<br>Raum: {{ meeting.room }}{% endif %}{% if meeting.street_address %}<br>{{ meeting.street_address }}{% endif %}{% if meeting.postal_code or meeting.locality %}<br>{{ meeting.postal_code }} {{ meeting.locality }}{% endif %}</dd>
+            {% endif %}
+            <dt>Sichtbarkeit</dt>
+            <dd>{% if meeting.is_public %}Öffentlich{% else %}Nichtöffentlich{% endif %}</dd>
+            {% if meeting.invitation_sent_at %}
+            <dt>Ladung</dt>
+            <dd class="tabular-nums">versandt am {{ meeting.invitation_sent_at|date:"d.m.Y, H:i" }} Uhr</dd>
+            {% elif not meeting.cancelled %}
+            <dt>Ladungsfrist</dt>
+            <dd class="tabular-nums {% if meeting.invitation_overdue %}font-medium !text-red-700 dark:!text-red-400{% endif %}">bis {{ meeting.invitation_deadline|date:"d.m.Y" }}{% if meeting.invitation_overdue %}, verstrichen{% endif %}</dd>
+            {% endif %}
+        </c-ui.angaben>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Unterlagen" titel_id="unterlagen-titel">
+        <ul class="mt-2 space-y-1.5 text-sm">
+            <li><c-ui.textlink href="{% url 'session:meeting_agenda_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="inline-flex items-center gap-2 min-h-6"><i data-lucide="file-down" class="w-4 h-4" aria-hidden="true"></i>Tagesordnung als PDF</c-ui.textlink></li>
+            <li><c-ui.textlink href="{% url 'session:meeting_ics' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="inline-flex items-center gap-2 min-h-6"><i data-lucide="calendar-plus" class="w-4 h-4" aria-hidden="true"></i>Termin als ICS</c-ui.textlink></li>
+            <li><c-ui.textlink href="{% url 'session:resolutions_meeting_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="inline-flex items-center gap-2 min-h-6"><i data-lucide="gavel" class="w-4 h-4" aria-hidden="true"></i>Beschlussauszüge (PDF)</c-ui.textlink></li>
+            {% if "edit_meetings" in permission_checker.permissions %}
+            <li>
+                <form method="post" action="{% url 'session:resolutions_generate' tenant_slug=tenant_slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+                    <button type="submit" class="inline-flex items-center gap-2 min-h-6 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"><i data-lucide="stamp" class="w-4 h-4" aria-hidden="true"></i>Beschlussnummern vergeben</button>
+                </form>
+            </li>
+            {% endif %}
+        </ul>
+    </c-rahmen.abschnitt>
+
+    {% if "view_protocols" in permission_checker.permissions %}
+    <c-rahmen.abschnitt titel="Niederschrift" titel_id="niederschrift-titel">
+        <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">{% if protocol %}Status: {{ protocol.get_status_display }}{% else %}Noch nicht angelegt.{% endif %}</p>
+        <p class="mt-1.5 text-sm"><c-ui.textlink href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}">Zur Niederschrift</c-ui.textlink></p>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if package_variants %}
+    <div id="meeting-package" hx-get="{% url 'session:meeting_package_status' tenant_slug=tenant_slug meeting_id=meeting.id %}" hx-trigger="load" hx-swap="outerHTML"></div>
+    {% endif %}
+
+    {% include "session/partials/file_section.html" with file_target_type="meeting" file_target_id=meeting.id %}
+</aside>

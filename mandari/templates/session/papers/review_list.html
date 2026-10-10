@@ -5,6 +5,8 @@
 {% block breadcrumb %}
 <h1 class="text-lg font-semibold text-gray-900 dark:text-white">Meine zu prüfenden Vorlagen</h1>
 {% endblock %}
+{# Im neuen Rahmen (Issue #944) steht die Überschrift im Kopfband, der Reiter „Zu prüfen“ darunter #}
+{% block session_header %}<header class="work-page-header"><h1 class="work-page-title">Meine zu prüfenden Vorlagen</h1></header>{% endblock %}
 
 {% block page_content %}
 {% include "session/partials/my_delegations.html" %}

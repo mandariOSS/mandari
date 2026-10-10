@@ -19,7 +19,7 @@ Erwarteter Kontext: meeting, tenant_slug, entries (VariantOverview), polling, po
 <div id="meeting-package"
      data-testid="sitzungsmappe"
      {% if polling %}hx-get="{% url 'session:meeting_package_status' tenant_slug=tenant_slug meeting_id=meeting.id %}" hx-trigger="every {{ poll_seconds }}s" hx-swap="outerHTML"{% endif %}>
-    <c-ui.card title="Sitzungsmappe" subtitle="Gesamt-PDF mit Inhaltsverzeichnis und ZIP-Paket aller Unterlagen" padding="sm">
+    {% partialdef fassungen %}
         <div class="space-y-4">
             {% for entry in entries %}
             <section class="space-y-1.5" data-variant="{{ entry.variant }}">
@@ -95,5 +95,16 @@ Erwarteter Kontext: meeting, tenant_slug, entries (VariantOverview), polling, po
             </section>
             {% endfor %}
         </div>
+    {% endpartialdef %}
+    {% if session_neues_design %}
+    {# Neues Erscheinungsbild (Issue #944): Abschnitt ohne Kasten in der rechten Spalte der Sitzung #}
+    <c-rahmen.abschnitt titel="Sitzungsmappe" titel_id="sitzungsmappe-titel">
+        <p class="mt-0.5 mb-3 text-sm text-gray-600 dark:text-gray-400">Gesamt-PDF mit Inhaltsverzeichnis und ZIP-Paket aller Unterlagen</p>
+        {% partial fassungen %}
+    </c-rahmen.abschnitt>
+    {% else %}
+    <c-ui.card title="Sitzungsmappe" subtitle="Gesamt-PDF mit Inhaltsverzeichnis und ZIP-Paket aller Unterlagen" padding="sm">
+        {% partial fassungen %}
     </c-ui.card>
+    {% endif %}
 </div>

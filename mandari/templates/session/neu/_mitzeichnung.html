@@ -1,0 +1,56 @@
+{% comment %}
+Mitzeichnung und finanzielle Auswirkungen einer Vorlage im neuen Rahmen (Issues #81, #944): Angaben als Begriff und
+Wert, darunter die Stationen des Mitzeichnungslaufs mit Mitzeichnen und Zurückweisen (Grund Pflicht, klappt auf).
+Formulare und Felder wie session/papers/detail.html. Kontext: paper, cosignatures (mit actionable), tenant_slug.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Mitzeichnung und finanzielle Auswirkungen" titel_id="mitzeichnung-titel" data-testid="mitzeichnung">
+    <dl class="mt-2 grid grid-cols-[minmax(0,12rem)_minmax(0,1fr)] gap-x-4 gap-y-2 text-sm">
+        <dt class="text-gray-600 dark:text-gray-400">Finanzielle Auswirkungen</dt>
+        <dd class="break-words">
+            {% if paper.has_financial_impact %}<span class="font-medium text-gray-900 dark:text-white">Ja</span>{% if paper.financial_impact_note %}: {{ paper.financial_impact_note }}{% endif %}
+            {% elif paper.has_financial_impact is False %}Nein
+            {% else %}<span class="font-medium text-red-700 dark:text-red-400">Noch nicht erfasst (Pflichtangabe vor der Freigabe)</span>{% endif %}
+        </dd>
+        {% if paper.lead_department %}
+        <dt class="text-gray-600 dark:text-gray-400">Federführendes Amt</dt>
+        <dd class="break-words text-gray-900 dark:text-gray-100">{{ paper.lead_department.name }}</dd>
+        {% endif %}
+    </dl>
+
+    {% if cosignatures %}
+    <ol class="mt-3 border-t border-gray-200 dark:border-gray-800">
+        {% for cosign in cosignatures %}
+        <li class="grid sm:grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-2 py-3 border-b border-gray-200 dark:border-gray-800">
+            <div class="min-w-0">
+                <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ forloop.counter }}. {{ cosign.department.name }}</p>
+                <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">
+                    {% if cosign.status == "signed" %}{% include "session/neu/_status.html" with wert="approved" text=cosign.get_status_display %}{% elif cosign.status == "rejected" %}{% include "session/neu/_status.html" with wert="rejected" text=cosign.get_status_display %}{% else %}{% include "session/neu/_status.html" with wert="review" text=cosign.get_status_display %}{% endif %}{% if cosign.decided_at %} · {{ cosign.decided_at|date:"d.m.Y H:i" }}{% if cosign.decided_by %} · {{ cosign.decided_by.user.email }}{% endif %}{% endif %}
+                </p>
+                {% if cosign.comment %}<p class="mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300 break-words">„{{ cosign.comment }}“</p>{% endif %}
+            </div>
+            {% if cosign.actionable %}
+            <div x-data="{ rejectOpen: false }" class="flex flex-col sm:items-end gap-2">
+                <div class="flex flex-wrap items-center gap-2">
+                    <form method="post" action="{% url 'session:cosignature_action' tenant_slug=tenant_slug cosign_id=cosign.id action='sign' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                        <c-ui.button type="submit" size="sm">Mitzeichnen</c-ui.button>
+                    </form>
+                    <c-ui.button variant="secondary" size="sm" @click="rejectOpen = !rejectOpen" ::aria-expanded="rejectOpen.toString()" aria-controls="mitzeichnung-ablehnen-{{ cosign.id }}">Zurückweisen</c-ui.button>
+                </div>
+                <form id="mitzeichnung-ablehnen-{{ cosign.id }}" method="post" action="{% url 'session:cosignature_action' tenant_slug=tenant_slug cosign_id=cosign.id action='reject' %}"
+                      x-show="rejectOpen" x-cloak class="flex flex-wrap items-center gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <label for="mitzeichnung-grund-{{ cosign.id }}" class="sr-only">Grund der Zurückweisung</label>
+                    <input id="mitzeichnung-grund-{{ cosign.id }}" type="text" name="comment" required placeholder="Grund der Zurückweisung"
+                           class="h-9 w-full sm:w-56 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                    <c-ui.button type="submit" variant="danger" size="sm">Zurückweisen</c-ui.button>
+                </form>
+            </div>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ol>
+    {% endif %}
+</c-rahmen.abschnitt>

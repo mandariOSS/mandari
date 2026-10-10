@@ -5,6 +5,8 @@
 {% block breadcrumb %}
 <h1 class="text-lg font-semibold text-gray-900 dark:text-white">Beschlussregister</h1>
 {% endblock %}
+{# Im neuen Rahmen (Issue #944) steht die Überschrift im Kopfband, die Reiter darunter #}
+{% block session_header %}<header class="work-page-header"><h1 class="work-page-title">Beschlussregister</h1></header>{% endblock %}
 
 {% block page_content %}
 <!-- Beschlusskontrolle: Ampel-Übersicht (Issue #37) -->

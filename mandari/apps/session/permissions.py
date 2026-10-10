@@ -341,6 +341,11 @@ class SessionMixin(LoginRequiredMixin):
                 self.session_user, checker.permissions
             ).count()
 
+        # Neues Erscheinungsbild je Mandant (Issue #944): Schalter und, wenn an, die Navigation des neuen Rahmens –
+        # aus dem Kontext oben, ohne weitere Abfrage
+        from apps.session.rahmen import rahmen_kontext
+
+        context.update(rahmen_kontext(self, context))
         return context
 
     def get_queryset(self):

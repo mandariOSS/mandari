@@ -1,0 +1,26 @@
+{% comment %}
+Ein Eintrag der Seitenleiste (Issue #944) mit dem gemeinsamen Baustein c-rahmen.nav-link; mit Unterpunkten (Verwaltung)
+aufklappbar wie die Recherche in Work: offen auf ihren Seiten, sonst per Knopf (Komponente workGruppe,
+frontend/alpine/work-rahmen.ts). ``b.zahl``: offene Arbeit (zu prüfende Vorlagen und Mitzeichnungen).
+{% endcomment %}
+{% if b.unterpunkte %}
+<li x-data="workGruppe" data-gruppe="session-{{ b.key }}" data-offen="{{ b.offen|yesno:'true,false' }}" class="relative">
+    <c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}" dicht>{{ b.label }}</c-rahmen.nav-link>
+    <button type="button" @click="umschalten()" aria-controls="leiste-{{ b.key }}" :aria-expanded="offen.toString()" aria-expanded="{{ b.offen|yesno:'true,false' }}"
+            aria-label="Unterpunkte von {{ b.label }}"
+            class="rahmen-aufklapper absolute right-1 top-1.5 inline-flex items-center justify-center w-6 h-6 rounded text-gray-500 hover:text-gray-900 hover:bg-band-hell dark:text-gray-400 dark:hover:text-white">
+        <i x-show="offen" data-lucide="chevron-down" class="w-4 h-4" aria-hidden="true" {% if not b.offen %}x-cloak{% endif %}></i>
+        <i x-show="!offen" data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true" {% if b.offen %}x-cloak{% endif %}></i>
+    </button>
+    <ul id="leiste-{{ b.key }}" x-show="offen" {% if not b.offen %}x-cloak{% endif %} class="rahmen-unterpunkte mt-0.5 mb-1 space-y-px" aria-label="{{ b.label }}">
+        {% for u in b.unterpunkte %}
+        <li>
+            <a href="{{ u.url }}" {% if u.current %}aria-current="{{ u.current }}"{% endif %}
+               class="flex items-center h-8 pl-[2.375rem] pr-2.5 rounded-md text-[0.8125rem] truncate {% if u.aktiv %}font-semibold text-primary-700 dark:text-primary-300{% else %}text-gray-700 dark:text-gray-300 hover:bg-band-hell/70 hover:text-gray-900 dark:hover:text-white{% endif %}">{{ u.label }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+</li>
+{% else %}
+<li><c-rahmen.nav-link href="{{ b.url }}" icon="{{ b.icon }}" :aktiv="b.aktiv" current="{{ b.current }}" zahl="{{ b.zahl|default:'' }}" dicht>{{ b.label }}</c-rahmen.nav-link></li>
+{% endif %}

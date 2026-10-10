@@ -1,0 +1,22 @@
+{% comment %}
+Person unten in der Leiste (Issue #944, wie Work): Name und Rollen im Mandanten, Menü mit E-Mail-Adresse und Abmelden
+(wie das bisherige Benutzermenü). Escape und Klick daneben schließen das Menü (Komponente workPerson).
+{% endcomment %}
+<div x-data="workPerson" class="relative" @keydown.escape="schliessen()" @click.outside="schliessen(false)">
+    <button type="button" x-ref="knopf" @click="umschalten()" aria-haspopup="menu" aria-controls="person-menue" :aria-expanded="offen.toString()" aria-expanded="false"
+            class="rahmen-eintrag w-full flex items-center gap-2.5 px-2 py-1.5 rounded-md text-left hover:bg-band-hell/70">
+        <span class="w-7 h-7 shrink-0 inline-flex items-center justify-center rounded-full bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200 text-xs font-semibold" aria-hidden="true">{% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}</span>
+        <span class="rahmen-label flex-1 min-w-0">
+            <span class="block text-sm font-semibold text-gray-900 dark:text-white truncate">{% if request.user.display_name %}{{ request.user.display_name }}{% else %}{{ request.user.email }}{% endif %}</span>
+            <span class="block text-xs text-gray-600 dark:text-gray-400 truncate">{% for role in session_user.roles.all|slice:":2" %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% empty %}Mitarbeiter:in{% endfor %}</span>
+        </span>
+        <i data-lucide="chevrons-up-down" class="rahmen-label w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
+        <span class="sr-only">– Konto</span>
+    </button>
+    <div id="person-menue" x-show="offen" x-cloak role="menu" aria-label="Konto"
+         class="person-menue [&_svg]:text-gray-500 fixed left-2.5 bottom-[calc(3.75rem+env(safe-area-inset-bottom))] w-64 rounded-lg bg-band-hell py-1.5 shadow-xl ring-1 ring-gray-900/10 dark:ring-white/10 z-50">
+        <p class="px-3.5 pt-1 pb-0.5 text-xs text-gray-600 dark:text-gray-400 truncate">{{ request.user.email }}</p>
+        <p class="px-3.5 pb-2 text-xs text-gray-600 dark:text-gray-400">{% for role in session_user.roles.all %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+        <a role="menuitem" href="{% url 'accounts:logout' %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="log-out" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Abmelden</a>
+    </div>
+</div>

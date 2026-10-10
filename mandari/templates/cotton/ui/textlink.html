@@ -1,0 +1,10 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Textlink in der Kennfarbe für zweite Wege neben der einen Hauptaktion (Issue #853): unterstrichen erst beim Zeigen,
+``extern`` öffnet in neuem Fenster und sagt das Bildschirmlesern.
+  <c-ui.textlink href="…">Vorbereitung öffnen</c-ui.textlink>
+  <c-ui.textlink href="{{ quelle }}" extern class="text-sm">Im Ratsinformationssystem</c-ui.textlink>
+Weitere Attribute (data-*, aria-*) werden durchgereicht.
+{% endcomment %}
+<c-vars href="" extern="" class="" />
+<a href="{{ href }}"{% if extern %} target="_blank" rel="noopener noreferrer"{% endif %} class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 {{ class }}" {{ attrs }}>{{ slot }}{% if extern %}<span class="sr-only"> (öffnet in neuem Fenster)</span>{% endif %}</a>
