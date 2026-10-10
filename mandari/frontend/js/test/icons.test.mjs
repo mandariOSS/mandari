@@ -23,7 +23,8 @@ const pascal = (name) =>
     .map((teil) => teil.charAt(0).toUpperCase() + teil.slice(1))
     .join('')
 
-const MUSTER = [/data-lucide="([a-z0-9-]+)"/g, /<c-ui\.icon\b[^>]*?\sname="([a-z0-9-]+)"/g]
+// Gebundene Attribute (`:data-lucide=`, `x-bind:data-lucide=`) enthalten Ausdrücke, keine Namen
+const MUSTER = [/(?<![:.\w-])data-lucide="([a-z0-9-]+)"/g, /<c-ui\.icon\b[^>]*?\sname="([a-z0-9-]+)"/g]
 
 function htmlDateien(verzeichnis, ergebnis = []) {
   for (const eintrag of readdirSync(verzeichnis, { withFileTypes: true })) {
