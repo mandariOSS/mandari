@@ -25,6 +25,7 @@ from django.utils import timezone
 from mandari_dokumente import ExtractionResult, OcrMemoryLimitError
 
 from apps.events.models import Event, Task, TaskStatus
+from hub.ris import abruf
 from insight_core.background_tasks import file_extract_text
 from insight_core.models import OParlBody, OParlFile, OParlSource
 from insight_core.services import document_extraction, file_cache, text_extraction_job
@@ -151,7 +152,7 @@ def test_auftrag_erkennt_text_und_speichert(body: OParlBody, tmp_path: Path) -> 
     ergebnis = ExtractionResult("Beschluss zum Radweg", "tesseract", 3)
 
     with (
-        mock.patch.object(document_extraction, "download_to_file", return_value=geladen) as laden,
+        mock.patch.object(abruf, "download_to_file", return_value=geladen) as laden,
         mock.patch.object(text_extraction_job, "extract_text", return_value=ergebnis) as erkennen,
     ):
         assert text_extraction_job.extract_file(str(datei.pk)) == text_extraction_job.ERLEDIGT
@@ -183,7 +184,7 @@ def test_auftrag_meldet_erkannten_text_intern(body: OParlBody, tmp_path: Path, s
     ergebnisse = [ExtractionResult("Beschluss zum Radweg", "tesseract", 3), ExtractionResult("", "none", 1)]
 
     with (
-        mock.patch.object(document_extraction, "download_to_file", side_effect=lambda *a, **k: _geladen(tmp_path)),
+        mock.patch.object(abruf, "download_to_file", side_effect=lambda *a, **k: _geladen(tmp_path)),
         mock.patch.object(text_extraction_job, "extract_text", side_effect=ergebnisse),
     ):
         assert text_extraction_job.extract_file(str(mit_text.pk)) == text_extraction_job.ERLEDIGT
@@ -211,7 +212,7 @@ def test_suchindex_folgt_dem_ergebnis_erst_nach_dem_commit(
     ergebnis = ExtractionResult("Beschluss zum Radweg", "pypdf", 1)
 
     with (
-        mock.patch.object(document_extraction, "download_to_file", side_effect=lambda *a, **k: _geladen(tmp_path)),
+        mock.patch.object(abruf, "download_to_file", side_effect=lambda *a, **k: _geladen(tmp_path)),
         mock.patch.object(text_extraction_job, "extract_text", return_value=ergebnis),
         django_capture_on_commit_callbacks(execute=False) as nach_dem_commit,
     ):
@@ -230,7 +231,7 @@ def test_ohne_schalter_oder_bei_fehler_bleibt_das_ergebnis_ohne_ereignis(
     datei = _datei(body, text_extraction_status="processing")
     ergebnis = ExtractionResult("Beschluss zum Radweg", "pypdf", 1)
     with (
-        mock.patch.object(document_extraction, "download_to_file", side_effect=lambda *a, **k: _geladen(tmp_path)),
+        mock.patch.object(abruf, "download_to_file", side_effect=lambda *a, **k: _geladen(tmp_path)),
         mock.patch.object(text_extraction_job, "extract_text", return_value=ergebnis),
     ):
         assert text_extraction_job.extract_file(str(datei.pk)) == text_extraction_job.ERLEDIGT
@@ -253,7 +254,7 @@ def test_vorhandene_kopie_statt_download(body: OParlBody, tmp_path: Path) -> Non
     datei = _datei(body, local_path=str(kopie), sha256_hash="a" * 64)
 
     with (
-        mock.patch.object(document_extraction, "download_to_file", side_effect=AssertionError("kein Download")),
+        mock.patch.object(abruf, "download_to_file", side_effect=AssertionError("kein Download")),
         mock.patch.object(text_extraction_job, "extract_text", return_value=ExtractionResult("Text", "pypdf", 1)),
     ):
         assert text_extraction_job.extract_file(str(datei.pk)) == text_extraction_job.ERLEDIGT
@@ -264,7 +265,7 @@ def test_vorhandene_kopie_statt_download(body: OParlBody, tmp_path: Path) -> Non
 def test_speichergrenze_und_abruffehler(body: OParlBody, tmp_path: Path) -> None:
     grenze = _datei(body)
     with (
-        mock.patch.object(document_extraction, "download_to_file", return_value=_geladen(tmp_path)),
+        mock.patch.object(abruf, "download_to_file", return_value=_geladen(tmp_path)),
         mock.patch.object(
             text_extraction_job, "extract_text", side_effect=OcrMemoryLimitError("Speichergrenze: 3 von 3 Seiten")
         ),
@@ -274,15 +275,13 @@ def test_speichergrenze_und_abruffehler(body: OParlBody, tmp_path: Path) -> None
     assert (grenze.text_extraction_status, grenze.text_extraction_error) == ("failed", "Speichergrenze: 3 von 3 Seiten")
 
     gesperrt = _datei(body)
-    with mock.patch.object(
-        document_extraction, "download_to_file", side_effect=RobotsBlockedError("robots.txt sperrt")
-    ):
+    with mock.patch.object(abruf, "download_to_file", side_effect=RobotsBlockedError("robots.txt sperrt")):
         assert text_extraction_job.extract_file(str(gesperrt.pk)) == text_extraction_job.UEBERSPRUNGEN
     gesperrt.refresh_from_db()
     assert gesperrt.text_extraction_status == "skipped"
 
     stoerung = _datei(body)
-    with mock.patch.object(document_extraction, "download_to_file", side_effect=RobotsUnreachableError("HTTP 503")):
+    with mock.patch.object(abruf, "download_to_file", side_effect=RobotsUnreachableError("HTTP 503")):
         assert text_extraction_job.extract_file(str(stoerung.pk)) == text_extraction_job.ZURUECKGESTELLT
     stoerung.refresh_from_db()
     assert (stoerung.text_extraction_status, stoerung.text_extraction_attempts) == ("pending", 0)
@@ -328,7 +327,7 @@ def test_zurueckgestellte_aeltere_dateien_blockieren_die_warteschlange_nicht(tmp
         return _geladen(tmp_path)
 
     with (
-        mock.patch.object(document_extraction, "download_to_file", side_effect=laden),
+        mock.patch.object(abruf, "download_to_file", side_effect=laden),
         mock.patch.object(text_extraction_job, "extract_text", return_value=ExtractionResult("Text", "pypdf", 1)),
     ):
         for _ in range(3):
@@ -390,7 +389,7 @@ def test_eingereihte_dateien_gelten_nicht_als_abgebrochen(body: OParlBody) -> No
 def test_zurueckstellen_behaelt_fruehere_abbrueche(body: OParlBody) -> None:
     datei = _datei(body, text_extraction_status="processing", text_extraction_attempts=1)
 
-    with mock.patch.object(document_extraction, "download_to_file", side_effect=RobotsUnreachableError("HTTP 503")):
+    with mock.patch.object(abruf, "download_to_file", side_effect=RobotsUnreachableError("HTTP 503")):
         assert text_extraction_job.extract_file(str(datei.pk)) == text_extraction_job.ZURUECKGESTELLT
 
     datei.refresh_from_db()

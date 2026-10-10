@@ -421,6 +421,11 @@ class OParlFile(Base):
     local_cached_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     local_error: Mapped[str] = mapped_column(String(500), server_default="")
     local_size: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    # Abruf (Django, Issue #919, hub/ris/abruf.py): Fehlschläge in Folge, nächster Versuch, Fehlercode. Nur
+    # Standard der Datenbank; der Ingestor setzt sie nur beim Ablegen zurück (attach_file_blob), nie im Upsert.
+    fetch_attempts: Mapped[int] = mapped_column(Integer, server_default="0")
+    fetch_next_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    fetch_error: Mapped[str] = mapped_column(String(40), server_default="")
     blob_id: Mapped[str | None] = mapped_column(
         String(64), ForeignKey("oparl_file_blobs.sha256"), nullable=True, index=True
     )
@@ -437,6 +442,10 @@ class OParlFile(Base):
     # Nur Standard der Datenbank: Upserts und ältere Ingestor-Images schreiben die Spalten nie.
     text_extraction_attempts: Mapped[int] = mapped_column(Integer, server_default="0")
     text_extraction_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Herkunft des Texts (Django, Issue #919, Migration insight_core 0059): Inhalt (SHA-256) und Version der
+    # Texterkennung. Schreibt nur der Auftrag file.extract_text der Anwendung.
+    text_source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    text_extraction_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)

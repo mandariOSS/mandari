@@ -11,6 +11,7 @@ Protocol: JSON messages with base64-encoded binary Yjs data.
 import base64
 import binascii
 import logging
+import time
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -23,6 +24,14 @@ logger = logging.getLogger(__name__)
 # Serverseitige Revisionen im Kollaborationsmodus: höchstens alle 10 Minuten
 # (zusätzlich beim Disconnect des letzten Teilnehmers).
 REVISION_MIN_INTERVAL_SECONDS = 600
+
+# Jede Verbindung prüft ihren Zugriff spätestens nach dieser Zeit neu, sobald sie etwas sendet oder eine Änderung
+# weitergeleitet bekommt – falls die Nachricht über einen Entzug sie nicht erreicht hat (Änderung ohne Signal,
+# Kanal-Layer gestört; Issue #582, apps/work/motions/freigaben.py).
+ACCESS_RECHECK_INTERVAL_SECONDS = 30
+
+# Rangfolge der Stufen im Editor: niedriger = herabgestuft
+ACCESS_RANK = {"view": 0, "comment": 1, "edit": 2}
 
 # Colors for collaborator cursors (deterministic from user ID)
 CURSOR_COLORS = [
@@ -93,7 +102,16 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
     - yjs_state: {"type": "yjs_state", "data": "<base64>"} — Server → Client (initial state)
     - presence:  {"type": "presence", "users": [...]}       — Server → Client
     - reload:    {"type": "reload"}                         — Server → Client (z.B. nach Revision-Restore, POST-Speichern)
+    - reload mit Grund: {"type": "reload", "reason": "access_changed" | "access_revoked"} — Zugriff herabgestuft
+                 bzw. entzogen (Issue #582); bei „access_revoked“ schließt der Server die Verbindung danach (4403)
     - yjs_save_rejected: {"type": "yjs_save_rejected", "reason": "reload_pending"} — Server → Client, yjs_save nach reload verworfen
+
+    Entzug wirkt sofort (Issue #582): Jede Verbindung ist zusätzlich in der Gruppe ihrer Person
+    (``collab_user_<id>``). Ändert sich etwas, das Zugriff nehmen kann (Freigabe, Mitgliedschaft, Rechte,
+    Sichtbarkeit …), schicken Signale ``access.recheck`` an die Gruppe des Dokuments bzw. der Person
+    (apps/work/motions/freigaben.py). Die Verbindung bestimmt ihre Stufe dann neu: ohne Zugriff wird sie
+    getrennt, mit niedrigerer Stufe herabgestuft. Erreicht sie keine Nachricht, prüft sie ihren Zugriff
+    spätestens nach ``ACCESS_RECHECK_INTERVAL_SECONDS`` selbst nach, sobald sie etwas sendet oder empfängt.
     """
 
     # Teilnehmer pro Dokument (prozesslokal). Bei mehreren Workern ist die
@@ -106,6 +124,11 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         super().__init__(*args, **kwargs)
         self.document_id = None
         self.group_name = None
+        # Gruppe aller offenen Bearbeitungen derselben Person (Entzug, Issue #582)
+        self.user_group = None
+        # Zugriff entzogen: Die Verbindung wird geschlossen und nimmt nichts mehr an (Issue #582)
+        self.entzogen = False
+        self._zugriff_geprueft_um = 0.0
         self.user = None
         self.user_info = None
         self.membership_id = None
@@ -145,6 +168,11 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
 
         # Join the document group
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        from .freigaben import user_group
+
+        self.user_group = user_group(self.user.id)
+        await self.channel_layer.group_add(self.user_group, self.channel_name)
+        self._zugriff_geprueft_um = time.monotonic()
         await self.accept()
 
         # Track participants (for last-disconnect revision snapshot)
@@ -173,6 +201,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
     async def disconnect(self, close_code):
         if self.group_name:
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        if self.user_group:
+            await self.channel_layer.group_discard(self.user_group, self.channel_name)
 
         remaining = None
         if self._counted and self.document_id in self._participants:
@@ -194,6 +224,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         )
 
     async def receive_json(self, content, **kwargs):
+        if self.entzogen or not await self._zugriff_gedrosselt_pruefen():
+            return
         msg_type = content.get("type")
 
         if msg_type == "yjs_sync":
@@ -235,16 +267,67 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                 # geht der Client aus, wenn er später ohne Verbindung speichert (#184).
                 await self.send_json({"type": "yjs_saved", "content_hash": content_hash})
 
+    def _schreibt(self) -> bool:
+        return bool(self.user_info and self.user_info.get("access_level") == "edit")
+
     def _darf_weiterleiten(self, data_b64: str) -> bool:
         """Schreibende leiten alles weiter, alle anderen nur lesende Protokollnachrichten."""
-        if self.user_info and self.user_info.get("access_level") == "edit":
+        if self._schreibt():
             return True
         return ist_lesende_sync_nachricht(data_b64)
 
+    async def _zugriff_gedrosselt_pruefen(self) -> bool:
+        """
+        Zugriff spätestens nach ``ACCESS_RECHECK_INTERVAL_SECONDS`` nachprüfen (Issue #582), für Schreibende wie
+        Lesende. Fängt Entzüge auf, deren Nachricht die Verbindung nicht erreicht hat. ``False``: Zugriff entzogen.
+        """
+        if time.monotonic() - self._zugriff_geprueft_um >= ACCESS_RECHECK_INTERVAL_SECONDS:
+            await self._zugriff_neu_pruefen()
+        return not self.entzogen
+
+    async def _zugriff_neu_pruefen(self) -> None:
+        """
+        Zugriff nach einer Änderung neu bestimmen (Issue #582): ohne Zugriff trennen, bei niedrigerer Stufe
+        herabstufen und den Client neu laden lassen. Eine höhere Stufe gilt sofort, ohne Neuladen.
+        """
+        if self.entzogen or not self.user_info:
+            return
+        self._zugriff_geprueft_um = time.monotonic()
+        level, _membership_id = await self._check_access()
+        if level is None:
+            await self._zugriff_entziehen()
+            return
+        bisher = self.user_info.get("access_level")
+        if level == bisher:
+            return
+        self.user_info["access_level"] = level
+        if ACCESS_RANK.get(level, 0) < ACCESS_RANK.get(bisher, 0):
+            await self.send_json({"type": "reload", "reason": "access_changed"})
+
+    async def _zugriff_entziehen(self) -> None:
+        """Verbindung ohne Zugriff sofort aus den Gruppen nehmen, den Client informieren und schließen."""
+        self.entzogen = True
+        if self.user_info:
+            self.user_info["access_level"] = None
+        # Keine Sicherung mehr im Namen der Person, deren Zugriff entzogen ist
+        self.membership_id = None
+        if self.group_name:
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        if self.user_group:
+            await self.channel_layer.group_discard(self.user_group, self.channel_name)
+        await self.send_json({"type": "reload", "reason": "access_revoked"})
+        await self.close(code=4403)
+
     # --- Group message handlers ---
+
+    async def access_recheck(self, event):
+        """Zugriff neu prüfen – nach Entzug oder Änderung einer Freigabe, Mitgliedschaft oder Sichtbarkeit."""
+        await self._zugriff_neu_pruefen()
 
     async def yjs_sync(self, event):
         """Forward Yjs sync to client (skip sender)."""
+        if self.entzogen or not await self._zugriff_gedrosselt_pruefen():
+            return
         if event.get("sender_channel") != self.channel_name:
             await self.send_json(
                 {
@@ -255,6 +338,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
 
     async def awareness_update(self, event):
         """Forward awareness update to client (skip sender)."""
+        if self.entzogen or not await self._zugriff_gedrosselt_pruefen():
+            return
         if event.get("sender_channel") != self.channel_name:
             await self.send_json(
                 {
@@ -289,10 +374,12 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             return None, None
 
         try:
+            # Auch ein deaktiviertes Konto beendet den Zugriff (Stand aus der Datenbank, nicht aus der Sitzung)
             membership = Membership.objects.get(
                 user=self.user,
                 organization=motion.organization,
                 is_active=True,
+                user__is_active=True,
             )
         except Membership.DoesNotExist:
             return None, None

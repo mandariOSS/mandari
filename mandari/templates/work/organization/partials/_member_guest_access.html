@@ -47,10 +47,20 @@
                     <p class="text-xs text-gray-500 dark:text-gray-400">
                         Ordner-Freigabe &middot; Stufe {{ share.get_level_display }} &middot; inkl. {{ share.subfolder_count }} Unterordner, aktuell {{ share.document_count }} Dokument{{ share.document_count|pluralize:"e" }}
                         &middot; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}
+                        &middot; Herunterladen (PDF, Word, Anhänge): {{ share.allow_download|yesno:"erlaubt,aus" }}
                     </p>
                 </div>
             </div>
             {% if can_manage_guest_shares %}
+            <div class="flex items-center gap-1 flex-shrink-0">
+            <form method="post" action="{% url 'work:document_folder_share_download' org_slug=organization.slug share_id=share.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="allow_download" value="{{ share.allow_download|yesno:'0,1' }}">
+                <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
+                <button type="submit" class="px-3 py-1.5 text-xs font-medium rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                    {{ share.allow_download|yesno:"Herunterladen abschalten,Herunterladen erlauben" }}
+                </button>
+            </form>
             <form method="post" action="{% url 'work:document_folder_share_remove' org_slug=organization.slug share_id=share.id %}"
                   x-data @submit.prevent="confirmAction({title: 'Ordner-Freigabe entziehen', message: 'Ordner-Freigabe „{{ share.folder.name|escapejs }}“ entziehen?', confirmText: 'Entziehen', variant: 'danger'}).then(ok => ok && $el.submit())">
                 {% csrf_token %}
@@ -59,6 +69,7 @@
                     <i data-lucide="x" class="w-3.5 h-3.5"></i> Entziehen
                 </button>
             </form>
+            </div>
             {% endif %}
         </div>
         {% endfor %}
@@ -70,10 +81,20 @@
                     <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=share.motion.id %}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ share.motion.title }}</a>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
                         Dokument-Freigabe &middot; Stufe {{ share.get_level_display }} &middot; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}
+                        &middot; Herunterladen (PDF, Word, Anhänge): {{ share.allow_download|yesno:"erlaubt,aus" }}
                     </p>
                 </div>
             </div>
             {% if can_manage_guest_shares %}
+            <div class="flex items-center gap-1 flex-shrink-0">
+            <form method="post" action="{% url 'work:document_share_download' org_slug=organization.slug share_id=share.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="allow_download" value="{{ share.allow_download|yesno:'0,1' }}">
+                <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
+                <button type="submit" class="px-3 py-1.5 text-xs font-medium rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
+                    {{ share.allow_download|yesno:"Herunterladen abschalten,Herunterladen erlauben" }}
+                </button>
+            </form>
             <form method="post" action="{% url 'work:document_share_remove' org_slug=organization.slug share_id=share.id %}"
                   x-data @submit.prevent="confirmAction({title: 'Freigabe entziehen', message: 'Freigabe für „{{ share.motion.title|escapejs }}“ entziehen?', confirmText: 'Entziehen', variant: 'danger'}).then(ok => ok && $el.submit())">
                 {% csrf_token %}
@@ -82,6 +103,7 @@
                     <i data-lucide="x" class="w-3.5 h-3.5"></i> Entziehen
                 </button>
             </form>
+            </div>
             {% endif %}
         </div>
         {% endfor %}

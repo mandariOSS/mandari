@@ -1,25 +1,33 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-RIS views for the Work module.
+Karte der Recherche in Work (Issue #853).
 
-Provides wrapped versions of insight_core views with organization context,
-giving users access to their municipality's council information system.
+Die Seite zeichnet verortete Vorgänge der Kommunen der Organisation. Kacheln kommen über den Kachel-Proxy von
+mandari (keine Anfrage an fremde Kartendienste), die Punkte lädt die Karte je Ausschnitt und Zeitraum nach
+(``RISMapDataView``). Im neuen Erscheinungsbild (Schalter je Organisation, Issue #852) mit eigener Vorlage.
 """
 
 from django.http import JsonResponse
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import neues_design
 
 from .. import services
 from ._mixins import RISBodiesMixin
 
 
 class RISMapView(RISBodiesMixin, WorkViewMixin, TemplateView):
-    """RIS map view showing geolocalized papers."""
+    """Karte mit den verorteten Vorgängen, Zeitraum wählbar (Standard 12 Monate)."""
 
     template_name = "work/ris/map.html"
     permission_required = "ris.view"
+
+    def get_template_names(self) -> list[str]:
+        """Im neuen Erscheinungsbild die neue Seite; die bisherige bleibt für Organisationen ohne Schalter."""
+        if neues_design(self.organization):
+            return ["work/ris/neu/karte.html"]
+        return [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -30,18 +38,15 @@ class RISMapView(RISBodiesMixin, WorkViewMixin, TemplateView):
         if bodies is None:
             return context
 
-        # Kartenzentrum: primäre Kommune
-        context["map_config"] = services.map_config(context["body"])
+        # Kartenzentrum der primären Kommune, Zeiträume und der gewählte (Standard 12 Monate)
+        context.update(services.karte_seite(context["body"], self.request.GET))
         return context
 
 
 class RISMapDataView(RISBodiesMixin, WorkViewMixin, View):
-    """API endpoint for map data (GeoJSON)."""
+    """Punkte der Karte als GeoJSON, je Kartenausschnitt (``bbox``) und Zeitraum (``zeitraum``)."""
 
     permission_required = "ris.view"
 
     def get(self, request, *args, **kwargs):
-        bodies = self.get_bodies()
-        if not bodies.exists():
-            return JsonResponse({"type": "FeatureCollection", "features": []})
-        return JsonResponse(services.geojson_features(bodies))
+        return JsonResponse(services.karte_daten(self.get_bodies(), request.GET))

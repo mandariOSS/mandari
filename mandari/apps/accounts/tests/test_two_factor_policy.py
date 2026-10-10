@@ -19,11 +19,19 @@ from django.urls import reverse
 
 from apps.accounts.models import TwoFactorDevice, User
 from apps.accounts.services import TwoFactorService
-from apps.accounts.two_factor_policy import _parse_networks, ip_in_networks, two_factor_reasons, two_factor_required
+from apps.accounts.two_factor_policy import (
+    WORK_VERWALTUNGSRECHTE,
+    _parse_networks,
+    ip_in_networks,
+    two_factor_reasons,
+    two_factor_recommended,
+    two_factor_required,
+)
 from apps.accounts.views import ENROLL_SETUP_SESSION_KEY, PENDING_2FA_SESSION_KEY
-from apps.common.tests.factories import MembershipFactory, OrganizationFactory, RoleFactory
+from apps.common.permissions import DEFAULT_ROLES
+from apps.common.tests.factories import MembershipFactory, OrganizationFactory, PermissionFactory, RoleFactory
 from apps.session.models import SessionRole, SessionTenant, SessionUser
-from apps.tenants.models import Membership, Organization
+from apps.tenants.models import Membership, Organization, Permission
 
 pytestmark = pytest.mark.django_db
 
@@ -57,6 +65,30 @@ def work_member(
         membership.is_active = False
         membership.save(update_fields=["is_active"])
     return organization
+
+
+def _recht(code: str) -> Permission:
+    return cast(Permission, PermissionFactory(codename=code))  # type: ignore[no-untyped-call]
+
+
+def work_member_mit_rechten(
+    user: User,
+    *,
+    rollenrechte: tuple[str, ...] | list[str] = (),
+    einzelrechte: tuple[str, ...] = (),
+    verweigert: tuple[str, ...] = (),
+    is_admin: bool = False,
+) -> Membership:
+    """Mitgliedschaft mit einer Rolle (``rollenrechte``) sowie Einzel- und verweigerten Rechten der Mitgliedschaft."""
+    organization = cast(Organization, OrganizationFactory())  # type: ignore[no-untyped-call]
+    role = RoleFactory(organization=organization, permissions=list(rollenrechte), is_admin=is_admin)  # type: ignore[no-untyped-call]
+    membership = cast(
+        Membership,
+        MembershipFactory(user=user, organization=organization, roles=[role]),  # type: ignore[no-untyped-call]
+    )
+    membership.individual_permissions.add(*[_recht(code) for code in einzelrechte])
+    membership.denied_permissions.add(*[_recht(code) for code in verweigert])
+    return membership
 
 
 def session_member(user: User, *, tenant_2fa: bool = False, **role_flags: bool) -> SessionTenant:
@@ -146,6 +178,105 @@ class TestPolicy:
         settings.TWO_FACTOR_ENFORCEMENT = False
         user = make_user(is_superuser=True, is_staff=True)
         assert not two_factor_required(user)
+
+
+class TestWorkVerwaltungsrechte:
+    """Pflicht nach wirksamen Rechten: Rollen und Einzelrechte, abzüglich verweigerter Rechte."""
+
+    @pytest.mark.parametrize("recht", WORK_VERWALTUNGSRECHTE)
+    def test_recht_ueber_die_rolle(self, recht: str) -> None:
+        user = make_user()
+        membership = work_member_mit_rechten(user, rollenrechte=("dashboard.view", recht))
+        assert two_factor_reasons(user) == [f"Organisation {membership.organization.name}"]
+
+    @pytest.mark.parametrize("recht", WORK_VERWALTUNGSRECHTE)
+    def test_recht_als_einzelrecht(self, recht: str) -> None:
+        user = make_user()
+        work_member_mit_rechten(user, rollenrechte=("dashboard.view",), einzelrechte=(recht,))
+        assert two_factor_required(user)
+
+    @pytest.mark.parametrize("recht", WORK_VERWALTUNGSRECHTE)
+    def test_verweigertes_recht_zaehlt_nicht(self, recht: str) -> None:
+        user = make_user()
+        work_member_mit_rechten(
+            user, rollenrechte=("dashboard.view", recht), einzelrechte=(recht,), verweigert=(recht,)
+        )
+        assert not two_factor_required(user)
+
+    def test_administration_bleibt_trotz_verweigerter_rechte_verpflichtet(self) -> None:
+        user = make_user()
+        work_member_mit_rechten(user, is_admin=True, verweigert=WORK_VERWALTUNGSRECHTE)
+        assert two_factor_required(user)
+
+    @pytest.mark.parametrize(
+        "rechte",
+        [
+            ("members.view", "members.view_details"),
+            ("guests.invite", "guests.manage"),
+            ("organization.view", "organization.audit_log"),
+            ("faction.manage", "agenda.approve", "motions.approve"),
+        ],
+    )
+    def test_andere_rechte_bleiben_freiwillig(self, rechte: tuple[str, ...]) -> None:
+        user = make_user()
+        work_member_mit_rechten(user, rollenrechte=rechte, einzelrechte=rechte)
+        assert not two_factor_required(user)
+
+    @pytest.mark.parametrize(
+        ("rolle", "pflicht"),
+        [
+            ("faction_chair", True),
+            ("faction_vice_chair", True),
+            ("managing_director", True),
+            ("faction_member", False),
+            ("faction_staff", False),
+            ("expert_citizen", False),
+            ("party_member", False),
+            ("workgroup_speaker", False),
+        ],
+    )
+    def test_vorgaberollen(self, rolle: str, pflicht: bool) -> None:
+        user = make_user()
+        rechte = cast(list[str], DEFAULT_ROLES[rolle]["permissions"])
+        work_member_mit_rechten(user, rollenrechte=rechte)
+        assert two_factor_required(user) is pflicht
+
+    def test_inaktive_mitgliedschaft_mit_einzelrecht_zaehlt_nicht(self) -> None:
+        user = make_user()
+        membership = work_member_mit_rechten(user, einzelrechte=("members.manage_roles",))
+        membership.is_active = False
+        membership.save(update_fields=["is_active"])
+        assert not two_factor_required(user)
+
+    def test_nur_die_organisation_mit_verwaltungsrecht_wird_genannt(self) -> None:
+        user = make_user()
+        verwaltet = work_member_mit_rechten(user, einzelrechte=("organization.api_tokens",))
+        work_member_mit_rechten(user, rollenrechte=("dashboard.view", "members.view"))
+        assert two_factor_reasons(user) == [f"Organisation {verwaltet.organization.name}"]
+
+    def test_demo_zugang_mit_einzelrecht_bleibt_ausgenommen(self) -> None:
+        user = make_user("demo-vorsitz@demo.mandari.de")
+        work_member_mit_rechten(user, einzelrechte=("members.manage_roles",))
+        assert not two_factor_required(user)
+
+
+class TestEmpfehlung:
+    def test_ohne_zweiten_faktor_empfohlen(self) -> None:
+        user = make_user()
+        work_member(user)
+        assert two_factor_recommended(user)
+
+    def test_mit_zweitem_faktor_nicht(self) -> None:
+        user = make_user()
+        enable_2fa(user)
+        assert not two_factor_recommended(user)
+
+    def test_demo_zugaenge_nicht(self) -> None:
+        assert not two_factor_recommended(make_user("demo-mitglied@demo.mandari.de"))
+
+    def test_ohne_durchsetzung_nicht(self, settings: Any) -> None:
+        settings.TWO_FACTOR_ENFORCEMENT = False
+        assert not two_factor_recommended(make_user())
 
 
 class TestLoginEnrollment:
@@ -286,6 +417,68 @@ class TestMiddleware:
 
         response = client.get("/work/")
         assert reverse("accounts:two_factor_enroll") not in response.get("Location", "")
+
+
+class TestEinzelrechtFuehrtZurEinrichtung:
+    """Konto mit Einzelrecht „Rollen zuweisen“: Einrichtung vor dem Weiterarbeiten, niemand wird ausgesperrt."""
+
+    def test_anmeldung_fuehrt_zur_einrichtung_und_danach_hinein(self, client: Client) -> None:
+        user = make_user()
+        work_member_mit_rechten(user, rollenrechte=("dashboard.view",), einzelrechte=("members.manage_roles",))
+
+        response = password_step(client, user)
+        assert response.status_code == 302
+        assert response["Location"] == reverse("accounts:two_factor_enroll")
+        assert not is_logged_in(client)
+
+        client.get(reverse("accounts:two_factor_enroll"))
+        secret = client.session[ENROLL_SETUP_SESSION_KEY]["secret"]
+        client.post(reverse("accounts:two_factor_enroll"), {"code": current_code(secret)})
+        response = client.post(reverse("accounts:two_factor_enroll"), {"action": "finish"})
+        assert response.status_code == 302
+        assert is_logged_in(client)
+
+    def test_angemeldete_sitzung_wird_umgeleitet(self, client: Client) -> None:
+        user = make_user()
+        membership = work_member_mit_rechten(
+            user, rollenrechte=("dashboard.view",), einzelrechte=("members.manage_roles",)
+        )
+        client.force_login(user)
+        response = client.get(reverse("work:dashboard", kwargs={"org_slug": membership.organization.slug}))
+        assert response.status_code == 302
+        assert response["Location"].startswith(reverse("accounts:two_factor_enroll"))
+
+    def test_speichern_per_fetch_erhaelt_json_403(self, client: Client) -> None:
+        """Speichern per fetch (Vorbereitung) bekommt keine Weiterleitung, sondern 403 mit dem Ziel der Einrichtung.
+
+        Darauf hält frontend/js/speichern.ts die Eingabe fest und bietet die Einrichtung an.
+        """
+        user = make_user()
+        membership = work_member_mit_rechten(
+            user, rollenrechte=("dashboard.view",), einzelrechte=("members.manage_roles",)
+        )
+        client.force_login(user)
+        response = client.post(
+            reverse("work:dashboard", kwargs={"org_slug": membership.organization.slug}),
+            data="{}",
+            content_type="application/json",
+            HTTP_ACCEPT="application/json",
+            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+        )
+        assert response.status_code == 403
+        assert response.json() == {
+            "error": "two_factor_setup_required",
+            "redirect": reverse("accounts:two_factor_enroll"),
+        }
+
+    def test_mitglied_ohne_verwaltungsrecht_arbeitet_ohne_einrichtung(self, client: Client) -> None:
+        user = make_user()
+        membership = work_member_mit_rechten(user, rollenrechte=("dashboard.view", "members.view_details"))
+        response = password_step(client, user)
+        assert is_logged_in(client)
+        assert response["Location"] != reverse("accounts:two_factor_enroll")
+        start = client.get(reverse("work:dashboard", kwargs={"org_slug": membership.organization.slug}))
+        assert start.status_code == 200
 
 
 class TestAdminNetworks:

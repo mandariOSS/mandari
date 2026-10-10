@@ -57,6 +57,11 @@ urlpatterns = [
         dashboard_views.DashboardView.as_view(),
         name="dashboard_explicit",
     ),
+    path(
+        "<slug:org_slug>/start/hinweis/zwei-faktor-spaeter/",
+        dashboard_views.ZweiFaktorHinweisSpaeterView.as_view(),
+        name="two_factor_hint_later",
+    ),
     # Meetings (OParl meeting preparation)
     path("<slug:org_slug>/meetings/", meetings_views.MeetingListView.as_view(), name="meetings"),
     path(
@@ -239,6 +244,11 @@ urlpatterns = [
         name="document_folder_share_remove",
     ),
     path(
+        "<slug:org_slug>/documents/folders/shares/<uuid:share_id>/download/",
+        motions_views.FolderGuestShareDownloadView.as_view(),
+        name="document_folder_share_download",
+    ),
+    path(
         "<slug:org_slug>/documents/move-to-folder/",
         motions_views.MotionFolderMoveView.as_view(),
         name="document_move_to_folder",
@@ -262,6 +272,11 @@ urlpatterns = [
         "<slug:org_slug>/documents/share/<uuid:share_id>/remove/",
         motions_views.MotionShareRemoveView.as_view(),
         name="document_share_remove",
+    ),
+    path(
+        "<slug:org_slug>/documents/share/<uuid:share_id>/download/",
+        motions_views.MotionShareDownloadView.as_view(),
+        name="document_share_download",
     ),
     path(
         "<slug:org_slug>/documents/<uuid:motion_id>/status/",

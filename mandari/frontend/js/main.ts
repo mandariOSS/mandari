@@ -10,6 +10,7 @@ import collapse from '@alpinejs/collapse'
 import focus from '@alpinejs/focus'
 import Alpine from 'alpinejs'
 import { documentText, merklisteController, neighborhoodSubscription, questionForm } from '../alpine/insight'
+import { insightKarte } from '../alpine/insight-karte'
 import { insightShell } from '../alpine/insight-shell'
 import { kommunenWahl } from '../alpine/kommunen-wahl'
 import { meetingCockpit } from '../alpine/meeting-cockpit'
@@ -68,6 +69,8 @@ if (document.documentElement.dataset.portal === 'insight') {
   Alpine.data('neighborhoodSubscription', neighborhoodSubscription)
   Alpine.data('documentText', documentText)
   Alpine.data('neighborhoodApp', neighborhoodApp)
+  // Karte (gemeinsames Kartenmodul mit Work, frontend/js/vorgangskarte.ts, Issue #853)
+  Alpine.data('insightKarte', insightKarte)
   registerBookmarksStore(Alpine)
   // Vorgangsseite: Orte und amtliche Umringe; Sitzungsseite: Sitzungsort (Leaflet als Vendor-Skript, läuft vor diesem Modul)
   initPaperMap()

@@ -177,6 +177,7 @@
             </div>
 
             <div class="flex items-center gap-3 text-gray-400">
+                {% if show_two_factor %}{% include "work/organization/partials/_zweiter_faktor.html" %}{% endif %}
                 <span class="text-sm">Beigetreten {{ member.joined_at|date:"d.m.Y" }}</span>
                 <i data-lucide="chevron-right" class="w-5 h-5"></i>
             </div>

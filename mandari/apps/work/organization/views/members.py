@@ -35,6 +35,10 @@ class MemberListView(WorkViewMixin, TemplateView):
         context["guest_limit"] = self.organization.guest_limit
 
         context["members"] = selectors.active_members(self.organization)
+        # Spalte „Zweiter Faktor“ nur für Administration und Organisationseinstellungen
+        context["show_two_factor"] = selectors.may_see_two_factor_status(self.membership)
+        if context["show_two_factor"]:
+            context["two_factor_user_ids"] = selectors.two_factor_user_ids(self.organization)
         context["inactive_members"] = selectors.inactive_members(self.organization)
         context["pending_invitations"] = selectors.pending_invitations(self.organization)
         context["pending_registrations"] = selectors.pending_registrations(self.organization)

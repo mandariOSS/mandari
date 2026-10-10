@@ -175,6 +175,8 @@ from django.conf import settings
 from django.utils.html import escape
 from django.views.decorators.clickjacking import xframe_options_exempt
 
+from hub.ris import abruf
+
 from .. import throttle
 from ..services import host_pacing, robots, safe_fetch
 
@@ -229,10 +231,11 @@ def file_proxy(request, file_id):
     """
     Datei-Auslieferung für OParl-Dokumente (PDFs) — iframe-fähig und DSGVO-konform.
 
-    Reihenfolge (Issues #87/#86):
-    1. Lokale Kopie aus dem Dokument-Cache (FileResponse, kein RIS-Zugriff)
-    2. Live-Abruf mit kurzen Timeouts; erfolgreiche Antworten werden
-       direkt in den Cache geschrieben (Write-Through)
+    Reihenfolge (Issues #87/#86, #919):
+    1. Lokale Kopie aus dem Dokument-Cache bzw. dem Objektspeicher (kein RIS-Zugriff). Ist die Ablage gestört,
+       wird nicht bei der Quelle abgerufen; läuft gerade ein Abruf, heißt es „wird geladen“.
+    2. Live-Abruf über ``hub.ris.abruf`` mit kurzen Timeouts; erfolgreiche Antworten werden
+       direkt abgelegt (Write-Through), Fehlschläge setzen dieselben Zustände wie der Abruf.
     3. Freundliche Fehlerseite, wenn die Quelle nicht erreichbar ist
 
     Jeder Abruf zählt im Zugriffsprotokoll (Treffer, Abruf bei der Quelle, Fehler, Sperre; #786),
@@ -281,7 +284,8 @@ def _deliver_file(request, file_obj):
     filename = file_obj.file_name or file_obj.name or "dokument.pdf"
 
     # Lokale Kopie; mit Objektspeicher wird ein lokal verdrängter Inhalt von dort geholt (#788)
-    local = file_store.local_copy(file_obj)
+    kopie = file_store.local_copy(file_obj)
+    local = kopie.path if kopie.present else None
     if local is not None:
         content_type = file_cache.content_type_for(file_obj, "application/pdf")
         # Bytes liefert der Webserver (Range, ETag), Django setzt nur Typ und Schutzkopfzeilen (#785)
@@ -298,6 +302,31 @@ def _deliver_file(request, file_obj):
     url = file_obj.download_url or file_obj.access_url
     if not url:
         raise Http404("Keine Download-URL verfügbar")
+
+    if kopie.disturbed:
+        # Ablage bzw. Objektspeicher gestört: nie bei der Quelle abrufen, eine Störung darf keine Abrufwelle
+        # bei den Kommunen auslösen (Issue #919)
+        response = _file_proxy_error(
+            "Dokument vorübergehend nicht verfügbar",
+            "Unser Dokumentspeicher antwortet gerade nicht. Bitte versuche es in einigen Minuten erneut. "
+            + _original_link(url),
+            status=503,
+        )
+        response["Retry-After"] = "300"
+        return response
+    if kopie.missing and file_obj.local_status == "ok":
+        # Bestätigt weder lokal noch im Objektspeicher: wieder abrufen (hier live, sonst über cache_files)
+        abruf.mark_content_missing(file_obj)
+    if abruf.is_being_fetched(file_obj):
+        # Ein Abruf läuft gerade: nicht parallel bei der Quelle abrufen
+        response = _file_proxy_error(
+            "Dokument wird geladen",
+            "Wir holen dieses Dokument gerade beim Ratsinformationssystem ab. Bitte versuche es gleich noch einmal. "
+            + _original_link(url),
+            status=503,
+        )
+        response["Retry-After"] = "15"
+        return response
 
     # Dokumente nur hinter einer Zugangsprüfung für Menschen (sync_config["file_downloads"] = false):
     # nicht selbst abrufen, sondern auf das Original verweisen – dort löst der Browser die Prüfung.
@@ -399,6 +428,8 @@ def _robots_or_pacing_blocked(file_obj, url):
             return _source_busy_response(url)
         return None
     if decision.unreachable:
+        # Dieselben Zustände wie der Abruf (Issue #919): Wiederholung, keine Sperre
+        abruf.record_live_failure(file_obj, abruf.CODE_ROBOTS_UNREACHABLE, decision.reason)
         response = _file_proxy_error(
             "Dokument beim Ratsinformationssystem öffnen",
             "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar. Wir rufen das "
@@ -407,6 +438,7 @@ def _robots_or_pacing_blocked(file_obj, url):
         )
         response["Retry-After"] = "900"
         return response
+    abruf.record_live_failure(file_obj, abruf.CODE_ROBOTS, decision.reason)
     return _file_proxy_error(
         "Dokument beim Ratsinformationssystem öffnen",
         "Diese Kommune untersagt automatische Abrufe ihrer Dokumente (robots.txt). Wir rufen das Dokument "
@@ -415,7 +447,10 @@ def _robots_or_pacing_blocked(file_obj, url):
 
 
 def _fetch_live(file_obj, url, filename, force_download):
-    """Datei beim Quell-RIS abrufen (Größe, Dauer und Ziel begrenzt) und ausliefern (Write-Through)."""
+    """
+    Datei beim Quell-RIS abrufen (``hub.ris.abruf``: Größe, Dauer und Ziel begrenzt) und ausliefern
+    (Write-Through). Fehlschläge setzen dieselben Zustände wie der Abruf im Dokument-Cache (Issue #919).
+    """
     from django.http import FileResponse
 
     from apps.common.db_connections import release_idle_thread_connections
@@ -423,26 +458,23 @@ def _fetch_live(file_obj, url, filename, force_download):
     from ..services import file_cache
 
     read_timeout = float(getattr(settings, "FILE_PROXY_TIMEOUT_SECONDS", 15))
-    headers = file_cache.download_headers(file_obj.body)
     spool = tempfile.SpooledTemporaryFile(max_size=_SPOOL_BYTES)  # noqa: SIM115 – FileResponse schließt sie
     # Während des Abrufs keine Datenbankverbindung festhalten (Pool)
     release_idle_thread_connections()
     try:
-        download = safe_fetch.download_to(
-            spool,
+        download = abruf.download_live(
+            file_obj,
             url,
-            max_bytes=file_cache.max_bytes(),
+            spool,
             total_seconds=throttle.setting("FILE_PROXY_TOTAL_SECONDS"),
-            timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=5.0, pool=5.0),
-            headers=headers,
-            user_agent=robots.user_agent_for(file_obj),
+            read_timeout=read_timeout,
         )
     except httpx.HTTPStatusError as e:
         spool.close()
-        if e.response.status_code == 404 and file_obj.local_status in ("none", file_cache_limit.EVICTED):
-            file_obj.local_status = "missing"
-            file_obj.local_error = "HTTP 404"
-            file_obj.save(update_fields=["local_status", "local_error"])
+        status = e.response.status_code
+        # Zustände wie der Abruf (ADR Abschnitt 4), auch für verdrängte Dokumente (#961) wie für ``none``: 404/410
+        # kurz nach der Erfassung wird wiederholt, später ``missing``
+        abruf.record_live_failure(file_obj, abruf.code_for_status(status), f"HTTP {status}")
         if e.response.status_code != 404:
             # Abgelehnt oder gestört (etwa eine Sperre gegen unsere Server): im Browser oft trotzdem abrufbar
             return _file_proxy_error(
@@ -459,13 +491,15 @@ def _fetch_live(file_obj, url, filename, force_download):
         )
     except safe_fetch.TooLargeError:
         spool.close()
+        abruf.record_live_failure(file_obj, abruf.CODE_TOO_LARGE, f"> {file_cache.max_bytes() // 1024 // 1024} MB")
         return _file_proxy_error(
             "Datei zu groß für die Vorschau",
             "Dieses Dokument ist größer, als die Vorschau direkt abrufen kann. " + _original_link(url),
             status=413,
         )
-    except safe_fetch.DeadlineExceededError:
+    except safe_fetch.DeadlineExceededError as exc:
         spool.close()
+        abruf.record_live_failure(file_obj, abruf.code_for_exception(exc), type(exc).__name__)
         return _file_proxy_error(
             "Abruf dauert zu lange",
             "Das Ratsinformationssystem liefert das Dokument gerade sehr langsam. Bitte versuche es später erneut. "
@@ -474,6 +508,7 @@ def _fetch_live(file_obj, url, filename, force_download):
         )
     except httpx.RequestError as exc:
         spool.close()
+        abruf.record_live_failure(file_obj, abruf.code_for_exception(exc), type(exc).__name__)
         blocked = isinstance(exc, safe_fetch.BlockedDestinationError)
         if blocked:
             logger.warning("Dokument %s: Download-Adresse nicht öffentlich erreichbar, Abruf gesperrt", file_obj.id)
@@ -492,18 +527,20 @@ def _fetch_live(file_obj, url, filename, force_download):
     )
     if looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
         spool.close()
+        abruf.record_live_failure(file_obj, abruf.CODE_HTML, abruf.HTML_TEXT)
         return _file_proxy_error(
             "Quelle liefert derzeit keine Datei",
             "Das Ratsinformationssystem antwortet mit einer Hinweisseite statt mit dem Dokument "
             "(z. B. Wartung). Bitte versuche es später erneut. " + _original_link(url),
         )
 
-    # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte (nur gelistete Kommunen)
+    # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte (Regel der Ablage samt Stichtag). In den
+    # Objektspeicher lädt sie der Zeitplan; der Besucher wartet nicht auf den Upload.
     try:
-        if file_cache.caches_body(file_obj.body) and file_cache.has_room_for(download.size):
-            file_cache.store_stream(file_obj, spool, content_type=content_type)
-    except Exception as exc:  # Cache-Fehler dürfen die Auslieferung nie verhindern
-        logger.warning("Dokument %s konnte nicht zwischengespeichert werden: %s", file_obj.id, exc)
+        if abruf.stores_file(file_obj) and file_cache.has_room_for(download.size):
+            abruf.ablegen(file_obj, spool, content_type=content_type, upload=False)
+    except Exception:  # Cache-Fehler dürfen die Auslieferung nie verhindern
+        logger.warning("Dokument %s konnte nicht zwischengespeichert werden", file_obj.id, exc_info=True)
 
     spool.seek(0)
     response = FileResponse(spool)

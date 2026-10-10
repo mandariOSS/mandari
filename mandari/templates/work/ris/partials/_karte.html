@@ -1,0 +1,26 @@
+{% comment %}
+Karte der Recherche (Issue #853) für beide Erscheinungsbilder: Zeitraum, Status und Kartenfläche. Kacheln über den
+Kachel-Proxy von mandari (keine Anfrage an fremde Kartendienste), Punkte je Ausschnitt und Zeitraum aus
+work:ris_map_data. Verhalten: Alpine-Komponente risKarte (frontend/alpine/ris-karte.ts); Leaflet lädt die Seite im
+Block work_extra_head. Kontext: map_config, karte_zeitraeume, karte_zeitraum (apps/work/ris/services.karte_seite).
+{% endcomment %}
+{{ map_config|json_script:"ris-karte-config" }}
+<div x-data="risKarte"
+     data-kacheln="{% url 'insight_core:insight:tile_proxy' z=0 x=0 y=0 %}"
+     data-daten="{% url 'work:ris_map_data' org_slug=organization.slug %}"
+     data-vorgang="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id='00000000-0000-0000-0000-000000000000' %}"
+     data-zeitraum="{{ karte_zeitraum }}">
+    <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+        <div role="group" aria-label="Zeitraum der Vorgänge" class="inline-flex rounded-md bg-band-grau p-0.5 text-sm">
+            {% for wert, name in karte_zeitraeume %}
+            <button type="button" data-zeitraum-wert="{{ wert }}" @click="zeitraumWaehlen($el.dataset.zeitraumWert)"
+                    :aria-pressed="(zeitraum === $el.dataset.zeitraumWert).toString()" aria-pressed="{% if wert == karte_zeitraum %}true{% else %}false{% endif %}"
+                    class="h-8 px-3 rounded font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white aria-pressed:bg-band-hell aria-pressed:text-gray-900 dark:aria-pressed:text-white aria-pressed:shadow-sm">{{ name }}</button>
+            {% endfor %}
+        </div>
+        <p role="status" aria-live="polite" class="text-sm text-gray-600 dark:text-gray-400" x-text="status">Die Karte wird geladen …</p>
+    </div>
+    <div data-karte data-testid="ris-karte" role="region" aria-label="Karte der verorteten Vorgänge"
+         class="ris-karte-flaeche mt-3 border border-gray-200 dark:border-gray-700 overflow-hidden"></div>
+    <p class="mt-2 text-[0.8125rem] text-gray-600 dark:text-gray-400">Punkte zeigen Orte, die in Vorgängen genannt sind; ein Klick öffnet den Vorgang. Die Kartenbilder lädt mandari selbst, Ihr Browser fragt keinen fremden Kartendienst an.</p>
+</div>

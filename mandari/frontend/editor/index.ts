@@ -34,7 +34,7 @@ import {
 import { preparationApp } from '../alpine/prepare-meeting'
 import { type NotizenFormat, sitzungsNotizen } from '../alpine/session-notes'
 import { vorbereitung } from '../alpine/vorbereitung'
-import type { CollabOptions, CollabResult, CollabUser } from './collaboration'
+import type { CollabOptions, CollabResult, CollabUser, ReloadReason } from './collaboration'
 import { initCollaboration } from './collaboration'
 import { renderDiff } from './diff'
 import { CommentMark } from './extensions/comment-mark'
@@ -71,7 +71,7 @@ export interface CollaborativeEditorOptions extends EditorOptions {
   /** Called when server sends initial state (hasState=true means server had saved Yjs state) */
   onInitialState?: (hasState: boolean) => void
   /** Called when the server requests a document reload (e.g. after revision restore) */
-  onReloadRequired?: () => void
+  onReloadRequired?: (reason?: ReloadReason) => void
   /** Server persisted a yjs_save; fingerprint of the stored HTML for conflict detection (#184). */
   onPersisted?: (contentHash: string) => void
 }

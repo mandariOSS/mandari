@@ -393,7 +393,7 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Dokumente, Karte
+# Dokumente
 # ---------------------------------------------------------------------------
 
 
@@ -412,11 +412,6 @@ def annotate_files_with_context(files: Any) -> None:
     from insight_core.views import _annotate_files_with_context
 
     cast(Any, _annotate_files_with_context)(files)
-
-
-def papers_with_locations(bodies: Bodies, *, limit: int = 500) -> QuerySet[OParlPaper]:
-    """Vorgänge mit georeferenzierten Orten (Kartenansicht)."""
-    return papers_in_bodies(bodies).filter(locations__isnull=False).exclude(locations=[])[:limit]
 
 
 # ---------------------------------------------------------------------------

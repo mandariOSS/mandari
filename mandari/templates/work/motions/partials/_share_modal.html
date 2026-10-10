@@ -126,6 +126,20 @@
                             <i data-lucide="plus" class="w-4 h-4"></i>
                         </button>
                     </div>
+                    {# Herunterladen (Issue #582): Das Feld geht nur mit, wenn jemand den Schalter bedient hat. So bleibt eine abgeschaltete Freigabe aus, wenn hier nur die Stufe geändert wird. #}
+                    <div x-data="{ herunterladen: true, herunterladenGeaendert: false }"
+                         x-init="$watch('showShareModal', offen => { if (offen) { herunterladen = true; herunterladenGeaendert = false } })">
+                        <input type="hidden" name="allow_download" value="1" disabled
+                               :disabled="!herunterladenGeaendert" :value="herunterladen ? '1' : '0'">
+                        <label class="flex items-center gap-2 mt-3 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+                            <input type="checkbox" checked x-model="herunterladen" @change="herunterladenGeaendert = true"
+                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                            Gäste dürfen herunterladen (PDF, Word, Anhänge)
+                        </label>
+                        <p class="text-xs text-gray-500 mt-1 ml-6">
+                            Gilt nur für Gäste. Bei einer bestehenden Freigabe bleibt die bisherige Einstellung, solange Sie den Schalter nicht ändern.
+                        </p>
+                    </div>
                     <p class="text-xs text-gray-500 mt-2">
                         <i data-lucide="info" class="w-3 h-3 inline-block mr-1"></i>
                         Nur Mitglieder und Gäste dieser Organisation. Gäste sind als "Gast" markiert

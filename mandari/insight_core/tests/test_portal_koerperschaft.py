@@ -76,6 +76,15 @@ class TestEinstieg:
         assert antwort.context["available_bodies"] == [kommunen["nord"]]
         assert antwort.context["active_body"] == kommunen["nord"]
 
+    def test_foto_der_kommune_mit_beschreibung(self, kommunen: dict[str, OParlBody]) -> None:
+        # Bing meldet Bilder mit leerem alt als fehlend (Issue #939); das Foto ist Inhalt, das Logo neben dem Namen Schmuck
+        kommunen["nord"].hero_image.name = "bodies/hero/nord.jpg"
+        kommunen["nord"].save(update_fields=["hero_image"])
+
+        seite = Client().get("/insight/k/nord/").content.decode()
+
+        assert '<img src="/media/bodies/hero/nord.jpg" alt="Ansicht von Musterstadt-Nord"' in seite
+
     def test_zwei_koerperschaften_getrennte_einstiege(self, kommunen: dict[str, OParlBody]) -> None:
         nord = Client().get("/insight/k/nord/").content.decode()
         sued = Client().get("/insight/k/sued/").content.decode()

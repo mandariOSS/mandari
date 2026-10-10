@@ -3,7 +3,8 @@
 Management Command: OParl-Dokumente lokal zwischenspeichern.
 
 Stündlich als Zeitplan ``befehl:cache_files`` im Worker (``apps/common/schedules.py``, Issue #516;
-neueste Dokumente zuerst, stoppt bei knappem Speicher):
+fällige Wiederholungen und neueste Dokumente zuerst, stoppt bei knappem Speicher). Jeder Lauf gibt zuerst
+liegen gebliebene Beanspruchungen frei; abgerufen wird über ``hub.ris.abruf`` (Issue #919):
     python manage.py cache_files --limit 400
 Eine Kommune komplett nachladen (von Hand; läuft auch, während der Worker den Zeitplan bedient):
     python manage.py cache_files --body <slug> --limit 100000 --trotz-zeitplan
@@ -32,7 +33,9 @@ class Command(EinmaligMixin, BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument("--body", help="Kommune (Slug oder Name-Teil); Standard: alle")
         parser.add_argument("--limit", type=int, default=400, help="Max. Dateien je Lauf")
-        parser.add_argument("--retry-errors", action="store_true", help="Auch fehlgeschlagene Abrufe erneut versuchen")
+        parser.add_argument(
+            "--retry-errors", action="store_true", help="Auch nicht fällige Fehler (error) erneut versuchen"
+        )
         parser.add_argument(
             "--verdraengte", action="store_true", help="Auch von der Obergrenze verdrängte Dokumente nachladen"
         )
@@ -104,9 +107,12 @@ class Command(EinmaligMixin, BaseCommand):
         self.stdout.write(
             f"Cache {stats['root']}: {belegung}, "
             f"{stats['disk_free_bytes'] / 1024**3:.1f} GB frei "
-            f"(Schutzgrenze {stats['min_free_gb']} GB); offen={stats['pending']}, 404={stats['missing']}, "
-            f"Fehler={stats['error']}, zu groß={stats['too_large']}, verdrängt={stats['evicted']}, "
-            f"wartend auf Quellen in Schonung={stats['paused']}, ausgeblendet (nicht gecacht)={stats['unlisted']}"
+            f"(Schutzgrenze {stats['min_free_gb']} GB); offen={stats['pending']}, "
+            f"Wiederholung={stats['retry']} (fällig {stats['retry_due']}), läuft={stats['fetching']}, "
+            f"404={stats['missing']}, verweigert={stats['refused']}, Fehler={stats['error']}, "
+            f"zu groß={stats['too_large']}, verdrängt={stats['evicted']}, "
+            f"wartend auf Quellen in Schonung={stats['paused']}, "
+            f"nicht abgelegt (ausgeblendet, vor dem Stichtag, Abruf aus)={stats['not_stored']}"
         )
         if stats["max_total_bytes"]:
             self.stdout.write(

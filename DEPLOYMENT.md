@@ -210,6 +210,13 @@ sh deploy/scripts/deploy.sh rollback v0.11.0  # bestimmte Version
 ./backup.sh --restore <Sicherungsdatei>       # Daten aus einer Sicherung zurückspielen
 ```
 
+Zurück auf ein Image vor der Dokumentkette (Migration `insight_core.0059`, Issue #919): **vorher** mit dem
+laufenden Image `docker exec mandari python manage.py dokumentkette zuruecksetzen` ausführen (idempotent, nur
+Zustandsspalten). Ein älteres Image kennt die Zustände `retry`, `fetching` und `refused` nicht; danach stehen sie
+wieder als `none` bzw. `error` da (`docs/FILE_CACHE.md`, „Zustände des Abrufs“). Verdrängte Dokumente (`evicted`,
+Obergrenze #961, Migration `insight_core.0056`) bleiben verdrängt; ein Image mit `0056`, aber ohne `0059` kennt den
+Zustand.
+
 ### Datenbank-Migration
 
 Migrationen laufen beim Update, nicht im Entrypoint: verträgliche vor dem Umschalten
@@ -967,7 +974,9 @@ weiteren Versuch; gelingt er, beginnt der Zähler von vorn.
 **Umstellen auf Aufträge:** Ein Worker bedient `ocr` (`docker compose ps worker-heavy`), dann
 `TEXT_EXTRACTION_RUNNER=worker` in der `.env` setzen (Compose reicht die Variable an Anwendung, Worker und
 Ingestor weiter; eigene Override-Dateien für einen OCR-Worker brauchen sie ebenfalls) und Anwendung, Worker
-und Ingestor-Dienste neu starten.
+und Ingestor-Dienste neu starten. Ab dann legt der Dokument-Cache alle Quellen mit erlaubtem Abruf ab, je Quelle
+ab ihrem Stichtag (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“); den Stichtag trägt der nächste Lauf von
+`cache_files` nach (vorher setzen bzw. ansehen: `python manage.py dokumentkette umschalten [--probelauf]`).
 Dateien, die der OCR-Worker gerade bearbeitet, löst die Zeitgrenze auf. **Rückweg:** Variable entfernen
 (bzw. `ingestor`) und dieselben Dienste neu starten; eingereihte Aufträge erledigen sich noch oder finden
 ihre Datei bereits bearbeitet.
@@ -991,7 +1000,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:fetch_person_photos` | montags 03:00 | Personenfotos |
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
-| `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, neueste fehlende Dateien zuerst (`docs/FILE_CACHE.md`) |
+| `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, liegen gebliebene Abrufe freigeben, fällige Wiederholungen und neueste fehlende Dateien zuerst, je Quelle höchstens `DOCUMENT_FETCH_MAX_QUEUED` (`docs/FILE_CACHE.md`) |
 | `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
 | `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788); hält mit `FILE_CACHE_MAX_TOTAL_GB` auch die Obergrenze des Dokument-Caches ein (Issue #961) |
 | `befehl:generate_alerts` | täglich 07:45 | Benachrichtigungen der Abos zu Themen und Orten; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
@@ -1092,13 +1101,15 @@ kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container der A
 docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
 # mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte dort liegen (fehlen welche: erst --hochladen)
 docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10
 # danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
 # FILE_CACHE_MAX_TOTAL_GB=10
 ```
 
-Mit Objektspeicher löscht der Abbau nur lokale Kopien, mit `--pruefe-objektspeicher` erst nach erfolgreicher Prüfung
-per `HEAD`; ohne holt die Vorschau verdrängte Dokumente bei Bedarf von der Quelle. Liegen Inhalte laut Datenbank im
+Mit Objektspeicher löscht der Abbau (wie das stündliche Aufräumen) nur lokale Kopien, und nur nach erfolgreicher
+Prüfung per `HEAD` (Dokumentkette #919: fehlt der Inhalt, bleibt die Kopie; ist der Objektspeicher gestört, endet der
+Lauf); ohne Objektspeicher holt die Vorschau verdrängte Dokumente bei Bedarf über den Abrufweg von der Quelle,
+`cache_files` lädt sie nur mit `--verdraengte`. Liegen Inhalte laut Datenbank im
 Objektspeicher, ist er im Container aber nicht konfiguriert, bricht der Abbau ab und das stündliche Aufräumen setzt
 die Grenze aus („Obergrenze ausgesetzt“ im Protokoll des Workers): dann `OBJ_*` prüfen. Eigene Compose-Dateien
 brauchen `FILE_CACHE_MAX_TOTAL_GB` in der `environment` von Anwendung und Worker. Zurück: Variable entfernen bzw.

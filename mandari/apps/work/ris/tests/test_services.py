@@ -4,7 +4,7 @@ Unit-Tests für Selectors und Services der RIS-Datenansicht (Issue #160, Service
 
 Prüft die Bindung an die Kommunen der Organisation (Mandanten-Isolation),
 Listenfilter, Detail-Anreicherungen (Dateien aus raw_json, Beratungsfolge),
-Karte/GeoJSON sowie die Suche mit ORM-Fallback.
+Karte (Ausschnitt, Zeitraum, Grenze) sowie die Suche mit ORM-Fallback.
 """
 
 from __future__ import annotations
@@ -313,23 +313,69 @@ def test_enriched_consultations_resolves_meeting_and_agenda_item(body: OParlBody
 
 
 @pytest.mark.django_db
-def test_geojson_features_and_map_config(bodies: Any, body: OParlBody) -> None:
-    make_paper(
-        body,
-        "geo",
-        name="Spielplatz",
-        reference="V/9",
-        locations=[{"lat": 51.96, "lon": 7.62, "name": "Prinzipalmarkt"}, {"name": "ohne Koordinaten"}, "kaputt"],
-    )
-    make_paper(body, "nogeo", name="Ohne Ort")
+def test_karte_daten_ausschnitt_zeitraum_und_grenze(bodies: Any, body: OParlBody, foreign_body: OParlBody) -> None:
+    from datetime import date
 
-    collection = services.geojson_features(bodies)
+    from insight_core.models import PaperLocation
 
-    assert collection["type"] == "FeatureCollection" and len(collection["features"]) == 1
-    feature = collection["features"][0]
+    def ort(vorgang: OParlPaper, lat: float, lon: float, name: str = "") -> None:
+        PaperLocation.objects.create(paper=vorgang, body=vorgang.body, latitude=lat, longitude=lon, name=name)
+
+    heute = date(2026, 10, 6)
+    neu = make_paper(body, "neu", name="Spielplatz", reference="V/9", date=date(2026, 9, 1))
+    alt = make_paper(body, "alt", name="Radweg", reference="V/1", date=date(2024, 1, 1))
+    weg = make_paper(body, "weg", name="Gelöscht", date=date(2026, 9, 2), deleted=True)
+    fremd = make_paper(foreign_body, "fremd-geo", name="Fremd", date=date(2026, 9, 3))
+    ort(neu, 51.96, 7.62, "Prinzipalmarkt")
+    ort(alt, 51.95, 7.61)
+    ort(weg, 51.96, 7.62)
+    ort(fremd, 51.96, 7.62)
+
+    standard = services.karte_daten(bodies, {}, heute=heute)
+    assert standard["type"] == "FeatureCollection" and standard["zeitraum"] == "12"
+    assert standard["truncated"] is False
+    [feature] = standard["features"]
     assert feature["geometry"]["coordinates"] == [7.62, 51.96]
-    assert feature["properties"]["title"] == "Spielplatz" and feature["properties"]["location_name"] == "Prinzipalmarkt"
+    assert feature["properties"] == {
+        "id": str(neu.pk),
+        "title": "Spielplatz",
+        "reference": "V/9",
+        "date": "2026-09-01",
+        "location_name": "Prinzipalmarkt",
+    }
 
+    alle = services.karte_daten(bodies, {"zeitraum": "alle"}, heute=heute)
+    assert [f["properties"]["title"] for f in alle["features"]] == ["Spielplatz", "Radweg"]
+    drei_jahre = services.karte_daten(bodies, {"zeitraum": "36"}, heute=heute)
+    assert len(drei_jahre["features"]) == 2
+    ausschnitt = services.karte_daten(bodies, {"zeitraum": "alle", "bbox": "7.615,51.955,7.7,52.0"}, heute=heute)
+    assert [f["properties"]["title"] for f in ausschnitt["features"]] == ["Spielplatz"]
+    # Unbekannter Zeitraum und kaputter Ausschnitt: Standard bzw. ohne Ausschnitt
+    kaputt = services.karte_daten(bodies, {"zeitraum": "999", "bbox": "a,b,c,d"}, heute=heute)
+    assert kaputt["zeitraum"] == "12" and len(kaputt["features"]) == 1
+
+
+@pytest.mark.django_db
+def test_karte_daten_meldet_mehr_punkte_als_die_grenze(
+    bodies: Any, body: OParlBody, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import date
+
+    from insight_core.models import PaperLocation
+
+    for nummer in range(4):
+        vorgang = make_paper(body, f"viele-{nummer}", name=f"Vorgang {nummer}", date=date(2026, 9, nummer + 1))
+        PaperLocation.objects.create(paper=vorgang, body=body, latitude=51.9, longitude=7.6)
+    monkeypatch.setattr(services, "KARTE_HOECHSTENS", 3)
+
+    daten = services.karte_daten(bodies, {"zeitraum": "alle"}, heute=date(2026, 10, 6))
+
+    assert daten["truncated"] is True
+    assert [f["properties"]["title"] for f in daten["features"]] == ["Vorgang 3", "Vorgang 2", "Vorgang 1"]
+
+
+@pytest.mark.django_db
+def test_map_config(body: OParlBody) -> None:
     config = services.map_config(body)
     assert config == {"center_lat": 51.5, "center_lng": 7.5, "zoom": 13, "bbox": None}
 

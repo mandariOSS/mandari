@@ -868,6 +868,9 @@ class OParlFileAdmin(ModelAdmin):
         "local_status",
         "local_cached_at",
         "local_error",
+        "fetch_attempts",
+        "fetch_next_at",
+        "fetch_error",
         "sha256_hash",
         "created_at",
         "updated_at",
@@ -879,8 +882,9 @@ class OParlFileAdmin(ModelAdmin):
         from .services.file_cache import fetch_and_cache
 
         results = {}
-        for file_obj in queryset.select_related("body")[:50]:
-            status = fetch_and_cache(file_obj)
+        for file_obj in queryset.select_related("body", "body__source")[:50]:
+            # Von Hand wie bisher jede Datei ohne Kopie, auch nicht fällige oder verweigerte Abrufe (Issue #919)
+            status = fetch_and_cache(file_obj, force=True)
             results[status] = results.get(status, 0) + 1
         summary = ", ".join(f"{k}: {v}" for k, v in sorted(results.items()))
         messages.success(request, f"Dokument-Cache: {summary}.")
@@ -1466,7 +1470,17 @@ class PublicQuestionAdmin(ModelAdmin):
 
 @admin.register(ChatUsage)
 class ChatUsageAdmin(ReadOnlyAdminMixin, ModelAdmin):
-    list_display = ["created_at", "ip_address", "filter_result", "tokens_used", "user", "short_message"]
+    list_display = [
+        "created_at",
+        "ip_address",
+        "filter_result",
+        "tokens_used",
+        "prompt_tokens",
+        "completion_tokens",
+        "rounds",
+        "user",
+        "short_message",
+    ]
     list_filter = ["filter_result", "created_at"]
     search_fields = ["ip_address", "session_key", "message"]
     readonly_fields = [
@@ -1477,6 +1491,9 @@ class ChatUsageAdmin(ReadOnlyAdminMixin, ModelAdmin):
         "message",
         "filter_result",
         "tokens_used",
+        "prompt_tokens",
+        "completion_tokens",
+        "rounds",
         "created_at",
     ]
     ordering = ["-created_at"]

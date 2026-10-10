@@ -10,6 +10,10 @@ Update-/Delete-Endpunkte.
 NÖ-Abschottung (Issue #64): Einträge zu nicht-öffentlichen TOPs werden
 Nicht-Vereidigten ausschließlich als "Gesperrte Information" angezeigt —
 ohne Objekt-Beschreibung und ohne Änderungs-Diff.
+
+Gast-Downloads (Issue #582): Der Eintrag selbst enthält weder Titel noch
+Dateinamen; beides steht nur bei Personen, die das Dokument sehen
+(Motion.visible_to). Für alle anderen ist der Eintrag gesperrt.
 """
 
 from django.core.paginator import Paginator
@@ -17,6 +21,7 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.common.params import uuid_param
+from apps.work.motions.freigaben import guest_download_rows
 
 from ..models import FactionAuditLog
 from ..visibility import LOCKED_PLACEHOLDER, can_view_internal
@@ -63,19 +68,31 @@ class FactionAuditLogView(WorkViewMixin, TemplateView):
 
         paginator = Paginator(qs, 50)
         page = paginator.get_page(self.request.GET.get("page", 1))
+        page_entries = list(page)
 
         # NÖ-Abschottung (Issue #64): Einträge zu nicht-öffentlichen TOPs
         # für Nicht-Vereidigte vollständig maskieren
         sworn = can_view_internal(self.membership)
+        # Gast-Downloads (Issue #582): Titel und Dateiname nur, wer das Dokument sieht, sonst gesperrt
+        downloads = guest_download_rows(page_entries, self.membership)
         entries = []
-        for entry in page:
+        for entry in page_entries:
             locked = entry.is_internal and not sworn
+            object_repr = entry.object_repr
+            changes = entry.changes
+            details: list[tuple[str, str]] = []
+            download = downloads.get(entry.pk)
+            if download is not None:
+                locked = locked or download["locked"]
+                if not locked:
+                    object_repr, changes, details = download["object_repr"], {}, download["details"]
             entries.append(
                 {
                     "entry": entry,
                     "locked": locked,
-                    "object_repr": LOCKED_PLACEHOLDER if locked else entry.object_repr,
-                    "changes": {} if locked else entry.changes,
+                    "object_repr": LOCKED_PLACEHOLDER if locked else object_repr,
+                    "changes": {} if locked else changes,
+                    "details": [] if locked else details,
                 }
             )
 

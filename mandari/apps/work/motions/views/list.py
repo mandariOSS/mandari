@@ -22,6 +22,7 @@ logger = logging.getLogger("apps.work.motions")
 from apps.common.mixins import WorkViewMixin
 from apps.work.stats_text import documents_sentence
 
+from .. import freigaben
 from ..administration_feedback import with_administration_reference
 from ..models import (
     DocumentFolder,
@@ -29,7 +30,7 @@ from ..models import (
     Motion,
     MotionType,
 )
-from ._helpers import _can_manage_folder, _flatten_folder_tree, _get_org_folder_or_404
+from ._helpers import _can_manage_folder, _flatten_folder_tree, _get_org_folder_or_404, _share_download_response
 
 # Platzhalter-UUID in Ordner-URLs, die das Frontend clientseitig durch die echte ID ersetzt
 FOLDER_URL_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
@@ -345,8 +346,10 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
     """
     Ordner für einen Nutzer (insbesondere Gast) freigeben.
 
-    Die Freigabe gilt rekursiv für alle Unterordner und enthaltenen
-    Dokumente — auch künftig hinzukommende (FolderGuestShare).
+    Die Freigabe gilt rekursiv für alle Unterordner — auch künftig
+    hinzukommende — und erfasst dort die organisationsweiten und geteilten
+    Dokumente der freigebenden Person, nie private (FolderGuestShare,
+    Motion._folder_share_applies, Issue #582).
     """
 
     permission_required = ["guests.manage", "motions.share"]
@@ -389,7 +392,8 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
         FolderGuestShare.objects.update_or_create(
             folder=folder,
             user=user,
-            defaults={"level": level, "created_by": request.user},
+            # Herunterladen (Issue #582): nur eine ausdrückliche Angabe ändert den Schalter, neu ohne Angabe erlaubt
+            defaults={"level": level, "created_by": request.user, **freigaben.download_update(request.POST)},
         )
         if previous is None or previous.level != level:
             from apps.work.notifications.services import NotificationHub
@@ -431,6 +435,25 @@ class FolderGuestShareRemoveView(WorkViewMixin, View):
             return redirect(next_url)
         list_url = reverse("work:documents", kwargs={"org_slug": self.organization.slug})
         return redirect(f"{list_url}?ordner={folder.id}")
+
+
+class FolderGuestShareDownloadView(WorkViewMixin, View):
+    """„Herunterladen erlauben“ einer Ordner-Freigabe an- oder abschalten (Issue #582); Rechte wie beim Entziehen."""
+
+    permission_required = ["guests.manage", "motions.share"]
+    permission_require_all = False
+
+    def post(self, request, *args, **kwargs):
+        share = get_object_or_404(
+            FolderGuestShare,
+            id=kwargs.get("share_id"),
+            folder__organization=self.organization,
+        )
+        if not _can_manage_folder(self.membership, share.folder):
+            return JsonResponse({"error": "Keine Berechtigung für diesen Ordner."}, status=403)
+
+        freigaben.set_allow_download(share, freigaben.download_choice(request.POST, default=False))
+        return _share_download_response(request, self.organization, share.allow_download)
 
 
 class MotionFolderMoveView(WorkViewMixin, View):

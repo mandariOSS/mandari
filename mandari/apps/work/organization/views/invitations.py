@@ -99,6 +99,7 @@ class GuestInviteView(WorkViewMixin, TemplateView):
                 share_level=request.POST.get("share_level", "view"),
                 document_ids=request.POST.getlist("documents"),
                 folder_ids=request.POST.getlist("folders"),
+                allow_download=request.POST.get("allow_download", "1") != "0",
             )
         except ServiceError as exc:
             flash_error(request, exc)

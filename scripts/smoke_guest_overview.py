@@ -111,10 +111,12 @@ subfolder = DocumentFolder.objects.create(organization=org, name="2027", parent=
 doc = Motion.objects.create(
     organization=org, author=m_admin, title="Haushaltsentwurf", visibility="private", status="internal_review"
 )
+# Ordner-Freigaben erfassen geteilte Dokumente der freigebenden Person, private nie (Issue #582)
 doc_in_folder = Motion.objects.create(
-    organization=org, author=m_admin, title="Projektplan", visibility="private", folder=subfolder
+    organization=org, author=m_admin, title="Projektplan", visibility="shared", folder=subfolder
 )
-Motion.objects.create(organization=org, author=m_admin, title="Ordnerdoku", visibility="private", folder=folder)
+Motion.objects.create(organization=org, author=m_admin, title="Ordnerdoku", visibility="shared", folder=folder)
+Motion.objects.create(organization=org, author=m_admin, title="Privatnotiz", visibility="private", folder=folder)
 attachment = MotionDocument.objects.create(
     motion=doc,
     file=SimpleUploadedFile("anlage.pdf", b"%PDF-1.4 anlage", content_type="application/pdf"),
@@ -299,6 +301,7 @@ check(
 )
 page_folder = html(c_guest.get(f"{BASE}/freigaben/?ordner={folder.id}&sort=name"))
 check("Ordneransicht mit Suche/Sortierung", 'x-model="q"' in page_folder and "Ordnerdoku" in page_folder)
+check("Ordneransicht ohne private Dokumente (#582)", "Privatnotiz" not in page_folder)
 user_guest.last_login = None
 user_guest.save(update_fields=["last_login"])
 page_first = html(c_guest.get(f"{BASE}/freigaben/"))

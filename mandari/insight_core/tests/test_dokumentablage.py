@@ -263,7 +263,8 @@ class TestCacheHoltNichtNach:
         alt = timezone.now() - timedelta(days=200)
         datei = _datei(body, "alt.pdf", text_extraction_status="skipped", content_purged_at=alt)
         OParlFile.objects.filter(pk=datei.pk).update(created_at=alt, updated_at=alt)
-        assert datei.pk in set(file_cache.pending_queryset().values_list("pk", flat=True))
+        # Ein nach #787 geleerter Inhalt wird nie über den Abruf zurückgeholt (Issue #919)
+        assert datei.pk not in set(file_cache.pending_queryset().values_list("pk", flat=True))
 
         assert file_reconcile.restore_reappeared() == 1
         datei.refresh_from_db()
@@ -339,9 +340,10 @@ class TestObjektspeicher:
         sha = _sha(PDF)
         assert objektspeicher.list_objects_v2(Bucket=BUCKET, Prefix=f"sha256/{sha[:2]}/").get("KeyCount") == 0
 
-    def test_objektspeicher_gestoert_rueckfall_auf_die_quelle(
+    def test_objektspeicher_gestoert_kein_abruf_bei_der_quelle(
         self, body: OParlBody, objektspeicher: Any, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        """Eine Störung des Objektspeichers darf nie Abrufe bei den Kommunen auslösen (Issue #919)."""
         datei = _datei(body)
         pfad = file_cache.store_bytes(datei, PDF)
         file_store.upload_pending()
@@ -351,17 +353,52 @@ class TestObjektspeicher:
             raise ConnectionError("Objektspeicher antwortet nicht")
 
         monkeypatch.setattr(object_storage, "download", kaputt)
+        abrufe: list[str] = []
 
         def quelle(self: Any, request: httpx.Request) -> httpx.Response:
+            abrufe.append(str(request.url))
             return httpx.Response(200, content=PDF, headers={"content-type": "application/pdf"})
 
         monkeypatch.setattr(httpx.HTTPTransport, "handle_request", quelle)
         monkeypatch.setattr("insight_core.services.safe_fetch._resolve", lambda host: ["93.184.215.14"])
         datei.refresh_from_db()
+        assert file_store.local_copy(datei).disturbed
         response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
-        assert response.status_code == 200
-        assert response["X-Mandari-Cache"] == "miss"
-        assert b"".join(cast(Any, response).streaming_content) == PDF
+        assert response.status_code == 503
+        assert response["Retry-After"] == "300"
+        assert file_cache.fetch_and_cache(datei) == "storage_error"
+        assert abrufe == []
+        datei.refresh_from_db()
+        assert datei.local_status == "ok", "gestört ist nicht fehlend"
+
+    def test_inhalt_fehlt_auch_im_objektspeicher_wird_neu_abgerufen(
+        self, body: OParlBody, objektspeicher: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Bestätigt fehlend (404 im Objektspeicher): zurück auf „none“, der Abruf holt die Datei wieder."""
+        datei = _datei(body)
+        pfad = file_cache.store_bytes(datei, PDF)
+        file_store.upload_pending()
+        pfad.unlink()
+        sha = _sha(PDF)
+        objektspeicher.delete_object(Bucket=BUCKET, Key=f"sha256/{sha[:2]}/{sha}")
+        assert object_storage.exists(sha) == object_storage.MISSING
+        datei.refresh_from_db()
+        assert file_store.local_copy(datei).missing
+        assert _blob(PDF).remote_at is None, "neu hochladen, sobald der Inhalt wieder lokal liegt"
+
+    def test_abruf_laedt_sofort_in_den_objektspeicher(self, body: OParlBody, objektspeicher: Any) -> None:
+        """Ein neuer Inhalt geht im selben Abruf in den Objektspeicher (Issue #919), nicht erst stündlich."""
+        datei = _datei(body)
+
+        def quelle(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, content=PDF, headers={"content-type": "application/pdf"})
+
+        client = httpx.Client(transport=httpx.MockTransport(quelle))
+        assert file_cache.fetch_and_cache(datei, client=client) == "ok"
+        assert _blob(PDF).remote_at is not None
+        sha = _sha(PDF)
+        assert objektspeicher.get_object(Bucket=BUCKET, Key=f"sha256/{sha[:2]}/{sha}")["Body"].read() == PDF
+        assert object_storage.exists(sha) == object_storage.PRESENT
 
     def test_zugriff_aendert_die_aenderungszeit_nicht(self, body: OParlBody, objektspeicher: Any) -> None:
         """Aus der Änderungszeit bildet der Webserver ETag und Last-Modified: sie muss stabil bleiben."""
@@ -371,7 +408,7 @@ class TestObjektspeicher:
         os.utime(pfad, ns=(vorher, vorher))
         datei.refresh_from_db()
         for _ in range(2):
-            assert file_store.local_copy(datei) == pfad
+            assert file_store.local_copy(datei).path == pfad
             assert pfad.stat().st_mtime_ns == vorher
         assert pfad.stat().st_atime_ns > vorher, "der letzte Zugriff steht in der Zugriffszeit"
 
@@ -400,7 +437,7 @@ class TestObjektspeicher:
         with pytest.raises(object_storage.DeadlineExceededError):
             object_storage.download(_sha(PDF), BytesIO(), deadline=time.monotonic() - 1)
         settings.OBJ_FETCH_TOTAL_SECONDS = -1
-        assert file_store.fetch_remote(_sha(PDF)) is None
+        assert file_store.fetch_remote(_sha(PDF)).disturbed, "zu langsam ist gestört, nicht fehlend"
         assert not pfad.exists()
 
     def test_falscher_inhalt_aus_dem_objektspeicher_wird_verworfen(self, body: OParlBody, objektspeicher: Any) -> None:
@@ -410,8 +447,9 @@ class TestObjektspeicher:
         pfad.unlink()
         sha = _sha(PDF)
         objektspeicher.put_object(Bucket=BUCKET, Key=f"sha256/{sha[:2]}/{sha}", Body=b"manipuliert")
-        assert file_store.fetch_remote(sha) is None
+        assert file_store.fetch_remote(sha).missing
         assert not pfad.exists()
+        assert _blob(PDF).remote_at is None, "der richtige Inhalt wird neu hochgeladen"
 
 
 # =============================================================================

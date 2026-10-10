@@ -168,6 +168,7 @@
                 {% endif %}
                 {% endif %}
 
+                {% if not download_blocked %}
                 <!-- Export Dropdown -->
                 <div x-data="{ open: false }" class="relative">
                     <button type="button" @click="open = !open" class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Exportieren" title="Exportieren" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false">
@@ -187,6 +188,7 @@
                         </a>
                     </div>
                 </div>
+                {% endif %}
 
                 {% if is_sworn_in_only %}
                 <span class="p-2 text-amber-600 dark:text-amber-400" title="Nichtöffentlich: nur vereidigte Mitglieder, keine Freigaben">

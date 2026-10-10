@@ -124,6 +124,7 @@ WATCHED_APPS = frozenset({"accounts", "common", "insight_core", "session", "tena
 SELBSTBEDIENUNG: dict[str, str] = {
     "profile": "eigenes Profil (Name, Telefon, Profilbild, Kalender-Feed)",
     "security": "eigene Kontosicherheit (Passwort, 2FA, Sitzungen)",
+    "two_factor_hint_later": "Empfehlung zum zweiten Faktor auf Start zurückstellen (eigenes Konto)",
     "profile_notifications": "eigene Benachrichtigungseinstellungen",
     "notification_preferences": "Weiterleitung zu den eigenen Benachrichtigungseinstellungen",
     "notifications_mark_all_read": "eigene Benachrichtigungen als gelesen markieren",
@@ -404,6 +405,7 @@ CASES: list[Case] = [
     Case("document_folder_delete", path={"folder_id": "folder2"}),
     Case("document_folder_share", path={"folder_id": "folder"}, data={"email": "{guest_email}", "level": "comment"}),
     Case("document_folder_share_remove", path={"share_id": "folder_share"}),
+    Case("document_folder_share_download", path={"share_id": "folder_share"}, data={"allow_download": "0"}),
     Case(
         "document_move_to_folder",
         data={"folder": "{folder2}", "motion_ids": ["{motion}"]},
@@ -424,6 +426,7 @@ CASES: list[Case] = [
         data={"visibility": "shared", "add_user_email": "{member_email}", "level": "comment"},
     ),
     Case("document_share_remove", path={"share_id": "share"}),
+    Case("document_share_download", path={"share_id": "share"}, data={"allow_download": "0"}),
     Case("document_status", path=MOTION, data={"status": "internal_review"}),
     Case(
         "document_meta",
@@ -919,6 +922,7 @@ CASES: list[Case] = [
     Case("notification_preferences"),
     Case("notifications_mark_all_read"),
     Case("notification_mark_read", path={"notification_id": "notification"}, same_org=True),
+    Case("two_factor_hint_later"),
     Case("profile", "update_profile", data={"action": "update_profile", "first_name": "Erika", "last_name": "Muster"}),
     Case("profile", "remove_avatar", data={"action": "remove_avatar"}),
     Case("profile", "regenerate_calendar_feed", data={"action": "regenerate_calendar_feed"}),

@@ -2,7 +2,8 @@
 Anhänge eines Dokuments (Details-Seitenleiste, Issue #584): Liste mit Download, Umbenennen
 und Entfernen, darunter das Hochladen. HTMX ersetzt das ganze Fragment.
 Kontext: organization, motion, documents, can_edit_attachments, attachment_accept,
-         attachment_max_mb, attachment_errors, attachment_notice
+         attachment_max_mb, attachment_errors, attachment_notice, download_blocked (Gäste ohne
+         Herunterladen, Issue #582)
 {% endcomment %}
 <div id="motion-attachments">
     <h4 class="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
@@ -25,8 +26,12 @@ Kontext: organization, motion, documents, can_edit_attachments, attachment_accep
         <li class="group rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors">
             <div class="flex items-center gap-2 px-2 py-1.5">
                 <i data-lucide="{{ attachment.icon_name }}" class="w-4 h-4 text-gray-400 flex-shrink-0"></i>
+                {% if download_blocked %}
+                <span class="truncate flex-1 text-sm text-gray-700 dark:text-gray-200" title="Herunterladen ist für diese Freigabe nicht erlaubt">{{ attachment.filename }}</span>
+                {% else %}
                 <a href="{% url 'work:document_file_download' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}"
                    class="truncate flex-1 text-sm text-gray-700 dark:text-gray-200 hover:text-primary-600 dark:hover:text-primary-400">{{ attachment.filename }}</a>
+                {% endif %}
                 <span class="text-[11px] text-gray-400 flex-shrink-0">{{ attachment.file_size|filesizeformat }}</span>
                 {% if can_edit_attachments %}
                 <form hx-post="{% url 'work:document_file_delete' org_slug=organization.slug motion_id=motion.id document_id=attachment.id %}"

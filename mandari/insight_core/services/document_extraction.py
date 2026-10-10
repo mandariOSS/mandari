@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Dokument-Extraktion in der Anwendung: Abruf und Texterkennung.
+Dokument-Extraktion in der Anwendung: Texterkennung und die Regeln vor jedem Abruf.
 
-Der Abruf (robots.txt, Drossel je Host, nur öffentliche Ziele) gehört der Anwendung. Die Texterkennung selbst
+robots.txt und Drossel je Host vor einem Abruf (``prepare_fetch``) und die Fehlerklassen stehen hier; RIS-Dateien
+lädt nur ``hub.ris.abruf`` (Issue #919, ein Weg zur Quelle). Die Texterkennung selbst
 ist die gemeinsame Bibliothek ``mandari_dokumente`` (shared/, Issue #530) – dieselbe Implementierung wie im
 OCR-Worker des Ingestors: pypdf, optional Mistral, sonst Tesseract Seite für Seite mit Speicher- und
 Zeitgrenzen (Issue #817). Die frühere eigene Umsetzung (alle Seiten auf einmal, eigene Mistral-Anbindung) ist
@@ -83,7 +84,7 @@ def purge_leftover_temp_files(
     return removed
 
 
-def _purge_now_and_then() -> None:
+def purge_now_and_then() -> None:
     """``purge_leftover_temp_files`` höchstens einmal je ``TEMP_PURGE_EVERY_SECONDS`` und Prozess."""
     jetzt = time.monotonic()
     zuletzt = _purge_state.get("at")
@@ -192,7 +193,7 @@ def _ocr_limits(max_pages: int) -> OcrLimits:
     )
 
 
-def _prepare_fetch(
+def prepare_fetch(
     url: str,
     extra_headers: dict[str, str] | None,
     sync_config: Any,
@@ -236,10 +237,10 @@ def _http_get(
     """
     HTTP-GET nach robots.txt und Drossel je Host (``extra_headers``: Download-Header je Quelle, Issue #116).
 
-    Nur für Abrufe, deren Antwort ohnehin in den Speicher gehört (Web-Anfragen, KI); die Texterkennung der
-    RIS-Dateien lädt gestreamt (``download_to_file``).
+    Nur für Abrufe, deren Antwort ohnehin in den Speicher gehört (Web-Anfragen, KI); RIS-Dateien lädt der eine Weg
+    zur Quelle gestreamt (``hub.ris.abruf``, Issue #919).
     """
-    agent, headers = _prepare_fetch(url, extra_headers, sync_config, max_wait)
+    agent, headers = prepare_fetch(url, extra_headers, sync_config, max_wait)
     from .safe_fetch import guarded_client
 
     try:
@@ -250,53 +251,6 @@ def _http_get(
     except httpx.HTTPError as exc:
         raise DocumentDownloadError(f"Download fehlgeschlagen: {url}") from exc
     return response
-
-
-def download_to_file(
-    url: str,
-    *,
-    max_bytes: int,
-    timeout: float = 120.0,
-    extra_headers: dict[str, str] | None = None,
-    sync_config: Any = None,
-) -> DownloadedFile:
-    """
-    Datei nach robots.txt und Drossel je Host gestreamt in eine temporäre Datei laden und dabei hashen.
-
-    Nie liegt die ganze Datei im Speicher; die Größengrenze greift während des Downloads
-    (``DocumentTooLargeError``). Fehler der Quelle: ``DocumentDownloadError``.
-    """
-    from .safe_fetch import DeadlineExceededError, TooLargeError, download_to
-
-    agent, headers = _prepare_fetch(url, extra_headers, sync_config, None)
-    _purge_now_and_then()
-    handle, name = tempfile.mkstemp(suffix=".part", prefix=TEMP_FILE_PREFIX)
-    path = Path(name)
-    try:
-        with os.fdopen(handle, "wb") as target:
-            result = download_to(
-                target,
-                url,
-                max_bytes=max_bytes,
-                total_seconds=timeout,
-                timeout=httpx.Timeout(timeout),
-                headers=headers,
-                user_agent=agent,
-            )
-    except TooLargeError as exc:
-        path.unlink(missing_ok=True)
-        raise DocumentTooLargeError(f"Datei größer als {max_bytes // 1024 // 1024} MB") from exc
-    except (httpx.HTTPError, DeadlineExceededError) as exc:
-        path.unlink(missing_ok=True)
-        raise DocumentDownloadError(f"Download fehlgeschlagen ({type(exc).__name__})") from exc
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
-    digest = hashlib.sha256()
-    with open(path, "rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return DownloadedFile(path=path, size=result.size, sha256=digest.hexdigest(), content_type=result.content_type)
 
 
 def extract_text_from_file(
@@ -320,7 +274,7 @@ def extract_text_from_file(
     Returns:
         Tuple mit (text, ocr_performed, page_count, extraction_method)
     """
-    _purge_now_and_then()
+    purge_now_and_then()
     handle, name = tempfile.mkstemp(suffix=".bin", prefix=TEMP_FILE_PREFIX)
     path = Path(name)
     try:

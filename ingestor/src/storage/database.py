@@ -107,6 +107,12 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "local_error",
         "local_size",
         "blob_id",
+        # OParlFile: Abruf und Herkunft des Texts (Django-managed, Issue #919, hub/ris/abruf.py)
+        "fetch_attempts",
+        "fetch_next_at",
+        "fetch_error",
+        "text_source_sha256",
+        "text_extraction_version",
         # OParlPaper: AI enrichment + georeferencing (Django-managed)
         "summary",
         "locations",
@@ -2351,6 +2357,10 @@ class DatabaseStorage:
                     local_status="ok",
                     local_error="",
                     local_cached_at=func.now(),
+                    # Inhalt liegt vor: Zähler des Abrufs zurück (Django, Issue #919)
+                    fetch_attempts=0,
+                    fetch_next_at=None,
+                    fetch_error="",
                 )
             )
             await session.commit()

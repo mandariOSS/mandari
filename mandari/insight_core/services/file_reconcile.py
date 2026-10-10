@@ -30,11 +30,16 @@ zuerst öffentlich gesperrt, nach einer Frist gelöscht.
 
 Abgefragt werden nur Quellen, die nicht in Schonung sind und Dateiabrufe zulassen; die robots.txt der
 Quelle ist verbindlich (``services/file_robots.py``, Ausnahme nur mit Vermerk).
+
+Abgerufen wird über den einen Weg zur Quelle (``hub.ris.abruf``, Issue #919), für gesperrte Dokumente
+ausdrücklich (sonst gäbe es kein Entsperren). Der Abgleich lädt bewusst erneut, um Änderungen zu erkennen; einen
+dabei geholten Inhalt legt er ab, wenn die Datei abgelegt wird und noch keine Kopie hat. Dokumente, die gerade
+abgerufen werden (``fetching``), überspringt ein Lauf. Die Stichproben prüfen auch Dateien, deren Abruf mit
+``404``/``410`` endete (``local_status = missing``), damit auch nie abgelegte Dateien gesperrt werden können.
 """
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import tempfile
 import time
@@ -50,6 +55,8 @@ from django.conf import settings
 from django.db.models import F, Q, QuerySet
 from django.utils import timezone
 from mandari_oparl.abgleich import GONE_STATUS, THROTTLE_STATUS, brake_engaged, looks_like_html
+
+from hub.ris import abruf
 
 from . import file_cache, file_robots
 
@@ -176,19 +183,21 @@ def _reset_text(file_obj: Any) -> list[str]:
 
 
 def replace_content(file_obj: Any, source: IO[bytes], sha256: str, content_type: str, now: datetime) -> None:
-    """Die Quelle liefert einen anderen Inhalt: Kopie ersetzen, Text verwerfen (wird neu erkannt)."""
+    """
+    Die Quelle liefert einen anderen Inhalt: Kopie ersetzen (bzw. erstmals ablegen, wenn die Datei abgelegt wird;
+    ein Quellabruf je Inhalt, Issue #919), Text verwerfen (wird neu erkannt).
+    """
     from . import file_store
 
     old_path = file_obj.local_path if file_obj.local_status == "ok" else None
-    if old_path:
-        if file_cache.caches_body(file_obj.body) and file_cache.has_room_for(0):
-            # Ablage nach SHA-256 gibt den alten Inhalt frei; im alten Layout überschreibt die neue Fassung
-            new_path = file_cache.store_stream(file_obj, source, content_type=content_type)
-            if Path(old_path) != new_path and not file_store.uses_blobs():
-                Path(old_path).unlink(missing_ok=True)
-        else:
-            # Neue Fassung lässt sich nicht ablegen: die alte darf trotzdem nicht bleiben
-            file_store.release(file_obj)
+    if abruf.stores_file(file_obj) and file_cache.has_room_for(0) and not abruf.is_being_fetched(file_obj):
+        # Ablage nach SHA-256 gibt den alten Inhalt frei; im alten Layout überschreibt die neue Fassung
+        new_path = abruf.ablegen(file_obj, source, content_type=content_type)
+        if old_path and Path(old_path) != new_path and not file_store.uses_blobs():
+            Path(old_path).unlink(missing_ok=True)
+    elif old_path:
+        # Neue Fassung lässt sich nicht ablegen: die alte darf trotzdem nicht bleiben
+        file_store.release(file_obj)
     file_obj.sha256_hash = sha256
     file_obj.source_checked_at = now
     file_obj.source_missing_since = None
@@ -311,29 +320,24 @@ def _robots_allows(file_obj: Any, url: str, client: httpx.Client) -> bool:
     return file_robots.file_fetch_status(source, url, client) == file_robots.ALLOWED
 
 
-class _TooLargeError(Exception):
-    """Datei größer als ``FILE_CACHE_MAX_MB``."""
-
-
-def _download(
-    client: httpx.Client, url: str, target: IO[bytes], headers: dict[str, str]
-) -> tuple[int, int, str, str, bytes]:
-    """GET nach ``target``: (Status, Größe, SHA-256, Content-Type, Anfang der Datei)."""
-    with client.stream("GET", url, headers=headers) as response:
-        if response.status_code != 200:
-            return response.status_code, 0, "", "", b""
-        digest = hashlib.sha256()
-        size = 0
-        head = b""
-        for chunk in response.iter_bytes(1024 * 1024):
-            size += len(chunk)
-            if size > file_cache.max_bytes():
-                raise _TooLargeError
-            digest.update(chunk)
-            target.write(chunk)
-            if len(head) < 512:
-                head += chunk[: 512 - len(head)]
-        return 200, size, digest.hexdigest(), response.headers.get("content-type", ""), head
+def _store_found(file_obj: Any, source: IO[bytes], content_type: str) -> None:
+    """
+    Der Abgleich hat den unveränderten Inhalt geladen: ablegen, wenn die Datei abgelegt wird und noch keine Kopie
+    hat (kein zweiter Abruf, Issue #919); eine als ``missing`` vermerkte Datei sonst wieder für den Abruf öffnen.
+    Ein verdrängtes Dokument (``evicted``, Obergrenze #961) bleibt verdrängt: Sein Text gilt weiter, und der Abgleich
+    holte sonst zurück, was die Grenze eben verdrängt hat. Ein geänderter Inhalt wird dagegen abgelegt
+    (``replace_content``), weil sein Text neu erkannt werden muss und die Erkennung nur aus der Ablage liest.
+    """
+    if file_obj.local_status in ("ok", abruf.EVICTED) or abruf.is_being_fetched(file_obj):
+        return
+    if abruf.stores_file(file_obj) and file_cache.has_room_for(0):
+        source.seek(0)
+        try:
+            abruf.ablegen(file_obj, source, content_type=content_type or None)
+            return
+        except OSError:
+            logger.warning("Abgleich %s: Inhalt ließ sich nicht ablegen", file_obj.pk, exc_info=True)
+    abruf.reopen_missing(file_obj)
 
 
 def verify(file_obj: Any, client: httpx.Client, *, now: datetime | None = None, run: Run | None = None) -> str:
@@ -351,14 +355,14 @@ def verify(file_obj: Any, client: httpx.Client, *, now: datetime | None = None, 
         return ROBOTS
     with tempfile.TemporaryFile() as tmp:
         try:
-            status, size, sha256, content_type, head = _download(
-                client, url, tmp, file_cache.download_headers(file_obj.body)
-            )
-        except _TooLargeError:
+            antwort = abruf.stream(client, url, tmp, headers=file_cache.download_headers(file_obj.body))
+        except abruf.TooLargeError:
             return ERROR
         except httpx.HTTPError as exc:
             logger.info("Abgleich %s: %s", file_obj.pk, type(exc).__name__)
             return ERROR
+        status, size, sha256, head = antwort.status, antwort.size, antwort.sha256, antwort.head
+        content_type = antwort.content_type
         if status in GONE_STATUS:
             if run is not None and not file_obj.source_missing_since:
                 run.defer_missing(file_obj, now)
@@ -374,16 +378,18 @@ def verify(file_obj: Any, client: httpx.Client, *, now: datetime | None = None, 
             return ERROR
         if file_obj.sha256_hash == sha256:
             mark_present(file_obj, now)
+            _store_found(file_obj, tmp, content_type.split(";")[0].strip())
             return UNCHANGED
         if (
             not file_obj.sha256_hash
             and file_obj.local_status != "ok"
             and file_obj.text_extraction_status != "completed"
         ):
-            # Nichts von uns, das veraltet sein könnte: nur den Fingerabdruck merken
+            # Nichts von uns, das veraltet sein könnte: den Fingerabdruck merken, den Inhalt ablegen
             file_obj.sha256_hash = sha256
             file_obj.save(update_fields=["sha256_hash"])
             mark_present(file_obj, now)
+            _store_found(file_obj, tmp, content_type.split(";")[0].strip())
             return UNCHANGED
         tmp.seek(0)
         replace_content(file_obj, tmp, sha256, content_type.split(";")[0].strip(), now)
@@ -400,7 +406,7 @@ def head_check(file_obj: Any, client: httpx.Client, *, now: datetime | None = No
         return ROBOTS
     headers = file_cache.download_headers(file_obj.body)
     try:
-        response = client.head(url, headers=headers)
+        response = abruf.head(client, url, headers=headers)
     except httpx.HTTPError as exc:
         logger.info("Stichprobe %s: %s", file_obj.pk, type(exc).__name__)
         return ERROR
@@ -465,7 +471,10 @@ def sample_queryset(body: Any) -> QuerySet[Any]:
     """Stichprobe einer Kommune: am längsten nicht geprüfte zuerst."""
     from ..models import OParlFile
 
-    hosted = Q(content_purged_at__isnull=True) & (Q(local_status="ok") | Q(text_extraction_status="completed"))
+    # Auch Dateien, deren Abruf mit 404/410 endete (nie abgelegt): bestätigt der Abgleich das, wird gesperrt
+    hosted = Q(content_purged_at__isnull=True) & (
+        Q(local_status="ok") | Q(text_extraction_status="completed") | Q(local_status="missing")
+    )
     # Auch wegen 404 gesperrte Dokumente prüfen: liefert die Quelle sie wieder, wird entsperrt
     missing = Q(source_missing_since__isnull=False)
     return (
@@ -511,10 +520,8 @@ def recheck_queryset(body: Any, now: datetime | None = None) -> QuerySet[Any]:
 
 
 def fetch_client() -> httpx.Client:
-    from .safe_fetch import guarded_client
-
-    timeout = httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
-    return guarded_client(headers={"User-Agent": file_cache.USER_AGENT}, timeout=timeout, follow_redirects=True)
+    """Client des Abgleichs: derselbe wie für jeden Abruf bei der Quelle (``hub.ris.abruf``)."""
+    return abruf.fetch_client()
 
 
 def _check_each(
@@ -529,7 +536,8 @@ def _check_each(
             continue
         seen.add(file_obj.pk)
         url = _url(file_obj)
-        if url and not run.may_fetch(file_obj, url):
+        if (url and not run.may_fetch(file_obj, url)) or abruf.is_being_fetched(file_obj):
+            # Ruhe je Host, Bremse – oder ein Abruf läuft gerade: in diesem Lauf nicht anfragen
             results[SKIPPED] += 1
             continue
         if url:
@@ -679,7 +687,7 @@ def purge_expired(
     try:
         for file_obj in missing:
             url = _url(file_obj)
-            if url and run.may_fetch(file_obj, url):
+            if url and run.may_fetch(file_obj, url) and not abruf.is_being_fetched(file_obj):
                 run.pacer.wait(url)
                 result = verify(file_obj, client, now=now)
                 run.record(url, result)
