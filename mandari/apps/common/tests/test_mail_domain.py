@@ -393,7 +393,14 @@ def test_compose_reicht_die_einstellungen_durch() -> None:
     assert umgebung["EMAIL_MESSAGE_ID_DOMAIN"] == "${EMAIL_MESSAGE_ID_DOMAIN:-}"
     assert umgebung["DEFAULT_FROM_EMAIL"] == "${DEFAULT_FROM_EMAIL:-}"
     for dienst in ("mandari", "worker", "worker-heavy"):
-        assert compose["services"][dienst]["environment"] == umgebung, dienst
+        eigene = compose["services"][dienst]["environment"]
+        # worker-heavy hat eine eigene Seitengrenze der Texterkennung (Dokumentkette #919, WORKER_HEAVY_OCR_MEMORY_LIMIT_MB);
+        # sonst dieselbe Liste
+        abweichend = {"OCR_MEMORY_LIMIT_MB"} if dienst == "worker-heavy" else set()
+        assert set(eigene) == set(umgebung), dienst
+        assert {k: v for k, v in eigene.items() if k not in abweichend} == {
+            k: v for k, v in umgebung.items() if k not in abweichend
+        }, dienst
 
 
 def test_helm_chart_reicht_die_einstellungen_durch() -> None:

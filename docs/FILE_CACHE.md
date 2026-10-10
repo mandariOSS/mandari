@@ -306,9 +306,10 @@ Gleiche Dateien (dieselbe Anlage an mehreren Vorgängen) liegen nur einmal in de
   `cache_files` Dateien in der Texterkennung nicht ein zweites Mal (hängt die Erkennung länger als einen Tag,
   doch). Maßgeblich ist die letzte Änderung des Datensatzes: Auch ältere Dateien, die wieder auf „pending“ gehen
   (neue Fassung, Wiederfreigabe nach dem Löschabgleich), holt nur der Ingestor. Ausnahme vom Streaming: Ist
-  `MISTRAL_API_KEY` gesetzt und reicht pypdf nicht, liest der Ingestor die Datei für die Mistral-OCR ganz ein
-  (die Schnittstelle erwartet sie base64-kodiert in der Anfrage, bis `TEXT_EXTRACTION_MAX_SIZE_MB`); ohne
-  Mistral rendert Tesseract seitenweise. Mit `TEXT_EXTRACTION_RUNNER=worker` ruht der Ingestor dabei,
+  die externe Texterkennung eingerichtet (`MISTRAL_API_KEY` und `MISTRAL_BASE_URL` mit Host aus
+  `KI_ERLAUBTE_HOSTS`, DEPLOYMENT.md „KI-Anbieter“) und reicht pypdf nicht, liest der Ingestor die Datei für die
+  Mistral-OCR ganz ein (die Schnittstelle erwartet sie base64-kodiert in der Anfrage, bis
+  `TEXT_EXTRACTION_MAX_SIZE_MB`); ohne Mistral rendert Tesseract seitenweise. Mit `TEXT_EXTRACTION_RUNNER=worker` ruht der Ingestor dabei,
   `INGESTOR_STORES_FILES` hat keine Wirkung mehr, und der Dokument-Cache holt alle Dateien selbst.
 - **Rechte:** Abgelegte Inhalte sind für alle lesbar (`0644`), auch wenn der Download als temporäre Datei mit
   `0600` entstand. Anwendung und Ingestor legen mit derselben Kennung ab (Compose: uid 1000), der Webserver liest

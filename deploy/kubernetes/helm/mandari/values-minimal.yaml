@@ -42,7 +42,8 @@ worker:
       # Die Verwaltungsbefehle der Zeitpläne laufen als eigene Prozesse im Worker und brauchen bis 1 GB
       memory: 1Gi
   # Ein Worker für alle Warteschlangen spart zwei Pods. Nachteil: Ein Neustart des Runners
-  # wartet auf laufende Texterkennung (bis 30 min), Mails und Live-Lesungen solange auch.
+  # wartet auf laufende Texterkennung (bis 30 min), Mails und Live-Lesungen solange auch. Erkennt
+  # der Worker den Text (files.textExtractionRunner: worker), reicht 1Gi nicht: dann worker.heavy einschalten.
   heavy:
     enabled: false
   live:

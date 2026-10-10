@@ -237,11 +237,22 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
 Umgebung der Anwendung und der Worker: gemeinsame Umgebung, Texterkennung, app.extraEnv.
 */}}
 {{- define "mandari.appEnv" -}}
-{{ include "mandari.commonEnv" . }}
+{{ include "mandari.appEnvMit" (dict "root" . "ocrMemoryLimitMb" .Values.files.ocrMemoryLimitMb) }}
+{{- end -}}
+
+{{/*
+Wie "mandari.appEnv", aber mit eigener Seitengrenze der Texterkennung (OCR_MEMORY_LIMIT_MB), etwa
+für worker-heavy (worker.heavy.ocrMemoryLimitMb). Jeder Name steht so nur einmal in der Umgebung:
+Bei doppelten Namen gilt in Kubernetes der letzte Eintrag, Server-Side Apply lehnt sie ab.
+Parameter: root (Kontext des Charts), ocrMemoryLimitMb.
+*/}}
+{{- define "mandari.appEnvMit" -}}
+{{- $root := .root -}}
+{{ include "mandari.commonEnv" $root }}
 # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
 - name: OCR_MEMORY_LIMIT_MB
-  value: {{ .Values.files.ocrMemoryLimitMb | toString | quote }}
-{{- range $key, $value := .Values.app.extraEnv }}
+  value: {{ .ocrMemoryLimitMb | toString | quote }}
+{{- range $key, $value := $root.Values.app.extraEnv }}
 - name: {{ $key }}
   value: {{ $value | quote }}
 {{- end }}

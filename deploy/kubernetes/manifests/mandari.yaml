@@ -1400,7 +1400,7 @@ spec:
               value: "false"
             # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
             - name: OCR_MEMORY_LIMIT_MB
-              value: "512"
+              value: "2048"
             # Der Runner startet oberhalb dieser Grenze neu, bevor das Speicherlimit greift
             - name: TASKS_MAX_MEMORY_MB
               value: "800"
@@ -1433,7 +1433,7 @@ spec:
             failureThreshold: 3
           resources:
             limits:
-              memory: 1Gi
+              memory: 3Gi
             requests:
               cpu: 100m
               memory: 256Mi

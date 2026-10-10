@@ -499,13 +499,13 @@ bleiben für Fehlersuche und Handbetrieb (`--once`, `--list`, geparkte Ereigniss
 
 ### Betrieb als Dienste `worker` und `worker-heavy`
 
-Jede Installationsart bringt zwei Worker als eigene Dienste aus dem Anwendungs-Image mit, mit
-derselben Umgebung wie die Anwendung:
+Jede Installationsart bringt die Worker als eigene Dienste aus dem Anwendungs-Image mit, mit
+derselben Umgebung und denselben Volumes wie die Anwendung (auch Dokumentablage und `OBJ_*`):
 
 | Dienst | Rollen und Warteschlangen | Speicherlimit |
 |---|---|---|
 | `worker` | alle Rollen; Aufträge und Abonnements aus `default`, `mail`, `index`, `adapter` | 1 GB (Runner-Neustart ab 400 MB; der Rest für die Verwaltungsbefehle der Zeitpläne, die als eigene Prozesse laufen) |
-| `worker-heavy` | nur `tasks`; Aufträge aus `ocr` und `ai` (Texterkennung, KI) | 1 GB (Runner-Neustart ab 800 MB) |
+| `worker-heavy` | nur `tasks`; Aufträge aus `ocr` (Parallelität 1) und `ai` (Texterkennung, KI) | 3 GB, `WORKER_HEAVY_MEM_LIMIT` (Runner-Neustart ab 800 MB, dazu ein Tesseract-Unterprozess bis `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, Standard 2048) |
 | `worker-live` | nur `tasks`; Aufträge aus `live` (Live-Übertragungen, [LIVE_UEBERTRAGUNG.md](docs/LIVE_UEBERTRAGUNG.md)); wartet nur, solange `LIVE_UEBERTRAGUNG_AKTIV` aus ist | 512 MB (Runner-Neustart ab 400 MB) |
 
 Getrennt sind sie, weil jeder Neustart eines Runners (Zahl der Aufträge, Speichergrenze) auf seinen
@@ -961,13 +961,16 @@ gleich setzen**, sonst arbeiten beide oder keiner:
 
 - `ingestor` (Standard): der OCR-Worker des Ingestors (`python -m src.main extract-daemon`, Ingestor-Image).
 - `worker`: Aufträge `file.extract_text` in der Warteschlange `ocr` (Dienst `worker-heavy` bzw. jeder Worker,
-  der `ocr` bedient). Der Zeitplan `texterkennung_einplanen` reiht alle zwei Minuten höchstens
-  `TEXT_EXTRACTION_QUEUE_DEPTH` (Standard 20) Aufträge ein; der OCR-Worker des Ingestors ruht dann. Die
-  Speichergrenze des Containers (1 GB) muss `OCR_MEMORY_LIMIT_MB` und den Worker selbst tragen; in den
-  Compose-Diensten der Anwendung (auch `worker-heavy`) ist `512` vorgegeben. Solange ein Auftrag wartet, gilt seine Datei weder als
-  abgebrochen noch als hängend (steht die Warteschlange, meldet das die Prüfung `rueckstau`). Quellen in
-  Schonung beansprucht der Zeitplan nicht; ist eine Quelle gerade nicht abrufbar (robots.txt), geht die Datei
-  ohne Abbruch zurück, und aus dieser Kommune wird 15 Minuten lang nichts eingereiht.
+  der `ocr` bedient); der OCR-Worker des Ingestors ruht dann. Der Zeitplan `texterkennung_einplanen` reiht alle
+  zwei Minuten Dateien mit abgelegtem Inhalt ein, für die noch kein Auftrag wartet, bis höchstens
+  `TEXT_EXTRACTION_QUEUE_DEPTH` (Standard 20) Aufträge warten oder laufen. Beansprucht wird erst beim Start des
+  Auftrags; bis dahin bleibt die Datei `pending` (steht die Warteschlange, melden das die Prüfungen `rueckstau`
+  und `dokumenttext`). Die Aufträge lesen nur aus Ablage und Objektspeicher und rufen nie bei der Quelle ab
+  (Dokumentkette, Issue #919, `docs/FILE_CACHE.md`, „Texterkennung aus der Ablage“; Einschalten im nächsten
+  Abschnitt). Schonung und robots.txt einer Quelle betreffen deshalb nur den Abruf, nicht die Erkennung. Die
+  Speichergrenze des Containers muss `OCR_MEMORY_LIMIT_MB` und den Worker selbst tragen: `worker-heavy` hat
+  3 GB und eine eigene Seitengrenze (`WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, Standard 2048), Anwendung und `worker`
+  (1 GB) haben `512`.
 
 Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 
@@ -975,7 +978,7 @@ Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 |---|---|---|
 | `OCR_MAX_MEGAPIXELS` | `8` | Bildpunkte je Seite (Mio.); große Seiten (Pläne) werden mit kleinerer Auflösung gerendert, A4 bleibt bei `OCR_DPI` |
 | `OCR_DPI` | `200` | Grundauflösung |
-| `OCR_MEMORY_LIMIT_MB` | `1024` | Adressraum je Unterprozess (`pdftoppm`, `tesseract`); darüber ein zweiter Versuch mit halber Auflösung, danach wird die Seite übersprungen. Unter dem Speicherlimit des Containers halten; im Compose-Dienst `ingestor` (512 MB, erkennt den Text im Sync selbst) ist `384` vorgegeben |
+| `OCR_MEMORY_LIMIT_MB` | `1024` | Adressraum je Unterprozess (`pdftoppm`, `tesseract`); darüber ein zweiter Versuch mit halber Auflösung, danach wird die Seite übersprungen. Unter dem Speicherlimit des Containers halten; im Compose-Dienst `ingestor` (512 MB, erkennt den Text im Sync selbst) ist `384` vorgegeben, in `worker-heavy` (3 GB) gilt `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB` (2048) |
 | `OCR_PAGE_TIMEOUT` | `120` | Sekunden je Seite und Schritt |
 | `OCR_FILE_BUDGET_SECONDS` | `1200` | Zeitbudget je Datei; danach gilt der bis dahin erkannte Text |
 | `OCR_MAX_PAGES` | `100` | höchstens so viele Seiten je Datei |
@@ -996,15 +999,156 @@ Prüfung `texterkennung` in `/health/worker/` (`docs/MONITORING.md`) und der Bet
 „Handlungsbedarf“. Wird eine aufgegebene Datei wieder auf `pending` gesetzt, bekommt sie genau einen
 weiteren Versuch; gelingt er, beginnt der Zähler von vorn.
 
-**Umstellen auf Aufträge:** Ein Worker bedient `ocr` (`docker compose ps worker-heavy`), dann
-`TEXT_EXTRACTION_RUNNER=worker` in der `.env` setzen (Compose reicht die Variable an Anwendung, Worker und
-Ingestor weiter; eigene Override-Dateien für einen OCR-Worker brauchen sie ebenfalls) und Anwendung, Worker
-und Ingestor-Dienste neu starten. Ab dann legt der Dokument-Cache alle Quellen mit erlaubtem Abruf ab, je Quelle
-ab ihrem Stichtag (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“); den Stichtag trägt der nächste Lauf von
-`cache_files` nach (vorher setzen bzw. ansehen: `python manage.py dokumentkette umschalten [--probelauf]`).
-Dateien, die der OCR-Worker gerade bearbeitet, löst die Zeitgrenze auf. **Rückweg:** Variable entfernen
-(bzw. `ingestor`) und dieselben Dienste neu starten; eingereihte Aufträge erledigen sich noch oder finden
-ihre Datei bereits bearbeitet.
+**Umstellen auf Aufträge:** als Teil der Dokumentkette, Ablauf im folgenden Abschnitt (Schritte 2 und 3).
+
+### Dokumentkette einschalten (Issue #919)
+
+Grundlage: `docs/adr/20261007-dokumentkette.md`. Abruf, Ablage und Texterkennung sind
+getrennte Schritte. Den Text erkennen nur noch Aufträge `file.extract_text` im Dienst `worker-heavy`; sie lesen
+ausschließlich aus der Dokumentablage bzw. dem Objektspeicher und rufen nie bei der Quelle ab. Ein Abruffehler
+ändert den Zustand der Texterkennung nicht mehr, Wiederholungen des Abrufs sind geregelt. Etappe 1 (ein Abrufweg,
+eigene Zustände, Befehle `dokumentkette …`) wirkt mit dem Update ohne weiteres Zutun. Etappe 2, die Erkennung im
+Worker, wird in den folgenden Schritten eingeschaltet; jeder Schritt ist ohne Deploy umkehrbar.
+
+**Voraussetzungen**
+
+- `worker` und `worker-heavy` laufen (`docker compose ps worker worker-heavy` zeigt `healthy`), bei
+  Live-Übertragungen auch `worker-live`. Kein anderer Worker bedient `ocr`: Ein Worker ohne `--queues` bedient
+  alle Warteschlangen und trüge die Texterkennung dann mit 1 GB.
+- Die Dokumentablage (`mandari_files` unter `OPARL_FILES_ROOT`) ist in Anwendung, `worker` und `worker-heavy`
+  eingehängt, mit Objektspeicher haben alle drei dieselben `OBJ_*`-Werte. Compose erledigt beides über die
+  gemeinsame Umgebung; eigene Compose-Dateien oder Umgebungsdateien müssen sie auch `worker-heavy` geben. Laufen
+  die Worker auf einem eigenen Server (`deploy/roles/worker.yml`, `docs/MEHR_SERVER_BETRIEB.md`), sehen sie die
+  Ablage des Anwendungsservers nur über eine gemeinsame Ablage oder den Objektspeicher (`OBJ_ENABLED=true`);
+  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück.
+- Speicher: `worker-heavy` bis 3 GB (`WORKER_HEAVY_MEM_LIMIT`), davon ein Tesseract-Unterprozess bis
+  `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB` (2048). Ein OCR-Worker aus dem Ingestor-Image wird mit Schritt 3
+  überflüssig und gibt seinen Speicher frei. Auf kleinen Servern (4 GB) z. B. `2g` und `1024`; große Seiten
+  werden dann mit kleinerer Auflösung erkannt oder übersprungen (Issue #817). Mit Helm: `worker.heavy` (3Gi,
+  `worker.heavy.ocrMemoryLimitMb`), `TASKS_BACKEND` über `app.extraEnv`, `TEXT_EXTRACTION_RUNNER` über
+  `files.textExtractionRunner` (erreicht auch den Ingestor).
+- Platz: Mit Schritt 3 legt die Ablage die neuen Dokumente aller Quellen mit erlaubtem Abruf ab und wächst
+  entsprechend. Mit Objektspeicher ist die Platte nur Zwischenspeicher (`OBJ_CACHE_MAX_GB`); ohne begrenzt
+  `FILE_CACHE_MAX_TOTAL_GB` die Gesamtgröße (Abschnitt „Obergrenze des Dokument-Caches“ unten,
+  `docs/FILE_CACHE.md`): `cache_files` lädt dann nur bis zur Grenze, das stündliche Aufräumen verdrängt die am
+  wenigsten gebrauchten Dokumente; Dokumente, deren Text erkannt wird oder darauf wartet, und laufende Abrufe
+  bleiben. Die Grenze so wählen, dass die neuen Dokumente eines Tages samt Rückstand der Erkennung darunter passen.
+- Externe Texterkennung: Mit Schritt 3 erkennt `worker-heavy` den Text statt des Ingestors. Eine externe
+  Erkennung (`MISTRAL_*`) gilt dort wie bisher nur für öffentliche RIS-Dateien und nur mit Basis-URL, deren Host in
+  `KI_ERLAUBTE_HOSTS` steht (Abschnitt „KI-Anbieter“); ohne Freigabe bleibt es bei pypdf und Tesseract.
+  `worker-heavy` braucht dafür dieselben Werte wie Anwendung und Ingestor (Compose: gemeinsame Umgebung; Helm:
+  `app.extraEnv` bzw. `app.extraEnvFromSecret`, die auch die Worker erreichen).
+- Eine Sicherung unmittelbar vorher (Abschnitt „Sicherung“).
+
+**Schritt 1: Aufträge im Worker.** Steht `TASKS_BACKEND` noch auf `immediate`, in der `.env`
+`TASKS_BACKEND=journal` setzen und erst die Worker, dann die Anwendung neu starten:
+
+```bash
+docker compose up -d worker worker-heavy worker-live
+docker compose up -d mandari
+```
+
+Prüfen: `/health/worker/?pruefung=lebenszeichen` antwortet 200, der Admin zeigt keinen Hinweis „kein Worker für
+tasks“, `mandari_tasks_oldest_queued_seconds` bleibt klein, `mandari_tasks_dead` bei 0. Erst weiter, wenn das
+einige Stunden ohne Befund läuft.
+
+**Schritt 2: Stichtag setzen.** `docker compose exec mandari python manage.py dokumentkette umschalten
+--probelauf` zeigt, was geschähe; ohne `--probelauf` setzt der Befehl je Quelle den Stichtag
+`sync_config["document_since"]`: Quellen ohne gelistete Kommune und ohne Stichtag bekommen den Zeitpunkt jetzt
+(vor dem Ende ihres ersten vollständigen Syncs `ausstehend`), Quellen mit gelisteter Kommune (bisher schon
+abgelegt) behalten einen leeren Stichtag, also ihren ganzen Bestand. Dateien vor dem Stichtag sind Altbestand und
+werden nur mit Freigabe je Quelle abgerufen (unten). Der Befehl ist wiederholbar. Immer **vor** Schritt 3: Ohne
+ihn trägt erst der nächste Lauf von `cache_files` (stündlich) die Stichtage nach, und Dokumente aus der Zeit
+dazwischen gälten als Altbestand; sie bekämen ohne Freigabe weder Ablage noch Text.
+
+**Schritt 3: Erkennung im Worker.** In der `.env` `TEXT_EXTRACTION_RUNNER=worker` setzen. Compose reicht den
+Wert an Anwendung, Worker und Ingestor weiter; ein eigener OCR-Worker aus dem Ingestor-Image braucht ihn ebenso
+oder wird angehalten. Dann neu starten, zuerst den Dienst, der die Aufträge ausführt:
+
+```bash
+docker compose up -d worker-heavy
+docker compose up -d worker worker-live
+docker compose up -d mandari ingestor
+```
+
+Ohne `TASKS_BACKEND=journal` startet die Anwendung mit `worker` nicht. Ab jetzt reiht der Zeitplan
+`texterkennung_einplanen` alle zwei Minuten Aufträge in `ocr` ein (höchstens `TEXT_EXTRACTION_QUEUE_DEPTH`
+wartende und laufende), Sync und OCR-Worker des Ingestors laden keine Dateien mehr, und abgelegt werden die neuen
+Dokumente aller Quellen mit erlaubtem Abruf (`sync_config["file_downloads"]` nicht `false`, keine Schonung,
+robots.txt).
+Dateien, die ein angehaltener OCR-Worker gerade bearbeitet hat, gibt die Zeitgrenze
+(`TEXT_EXTRACTION_STALE_MINUTES`) wieder frei.
+
+**Schritt 4: Nacharbeit, nur nach Freigabe.** Dateien, die früher an einem Abruffehler gescheitert sind
+(Fehlertext beginnt mit „Download“), haben keinen Text, obwohl der Inhalt oft schon in der Ablage liegt.
+`docker compose exec mandari python manage.py dokumentkette nacharbeiten` zeigt im Probelauf (Standard) je
+Quelle, was geschähe: Liegt der Inhalt in der Ablage (`local_status = ok`), geht die Datei zurück in die
+Erkennung, sonst zusätzlich in den Abruf; nicht freigegebener Altbestand ohne Inhalt und von der Obergrenze
+verdrängte Dokumente (`evicted`, eigene Zeile im Probelauf) bleiben unverändert. Verdrängte holt nur ein
+ausdrücklicher Abruf (`cache_files --verdraengte` bzw. die Vorschau); danach erfasst sie ein erneuter Lauf der
+Nacharbeit.
+Ausführen mit `--ausfuehren` erst, wenn Schritt 3 läuft (ohne `TEXT_EXTRACTION_RUNNER=worker` verweigert der
+Befehl, sonst lüde der Ingestor erneut bei der Quelle). Es ändern sich nur Zustandsspalten; der Befehl ist
+wiederholbar.
+
+**Altbestand je Quelle.** Dateien vor dem Stichtag einer Quelle werden nur abgerufen, wenn an der Quelle
+`sync_config["document_backfill"] = true` steht (Admin, Quelle, Feld „Sync config“). Das belastet das
+Ratsinformationssystem der Quelle: je Quelle einzeln und nach Freigabe, nicht zu Sitzungszeiten und erst, wenn
+neue Dateien ohne Rückstau durchlaufen. Ohne Freigabe behalten diese Dateien ihren vorhandenen Text; wer keinen
+hat, bekommt ohne Freigabe weder Ablage noch Text, denn mit `worker` erkennt der Ingestor nicht mehr. Eine neue
+Quelle bekommt den Stichtag nach dem Ende ihres ersten vollständigen Syncs; bis dahin ruft die Kette für sie
+nichts ab. Ihr erster Bestand ist damit Altbestand: Neue Quellen brauchen `document_backfill`, damit ihre
+Dokumente Text bekommen (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“).
+
+**Prüfen** nach einer Stunde und nach 24 Stunden (Kennzahlen in `docs/MONITORING.md`, „Dokumentkette“):
+
+| Was | Erwartung |
+|---|---|
+| `worker-heavy` | `healthy`; Speicher laut `docker stats --no-stream` dauerhaft unter 80 % des Limits; `docker inspect -f '{{.State.OOMKilled}} {{.RestartCount}}' mandari-worker-heavy` ohne Speicherabbruch |
+| Erkennung | `mandari_tasks_running{queue="ocr"}` 1, solange Arbeit ansteht; `mandari_files_stored_without_text` sinkt bzw. bleibt klein; `/health/worker/?pruefung=texterkennung` und (nach 24 Stunden) `?pruefung=dokumenttext` 200; `mandari_tasks_dead{queue="ocr"}` 0 |
+| Abruf | `mandari_files_fetch_errors_total` je Quelle nicht häufiger als vor dem Umschalten; `mandari_files_fetch_retry_due` wird abgearbeitet; `/health/worker/?pruefung=dokumentabruf` 200 |
+| Ingestor | lädt keine Dateien mehr (Protokoll: „TEXT_EXTRACTION_RUNNER=worker“, Erkennung ruht) |
+| Ablage | mit `FILE_CACHE_MAX_TOTAL_GB`: `cache_files` meldet nicht dauerhaft `limit` (Protokoll des Workers, „Obergrenze erreicht“), sonst warten neue Dokumente auf Platz und bekommen so lange keinen Text; dann die Grenze anheben. `cache_files --stats` zeigt Belegung und verdrängte Dokumente |
+| Stichprobe | Vorgänge mit neuen Dokumenten zeigen Text, Vorschau liefert |
+
+Die Prüfung `rueckstau` misst den ältesten fälligen Auftrag über alle Warteschlangen (höchstens 15 Minuten).
+In `ocr` wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu `TEXT_EXTRACTION_QUEUE_DEPTH`
+Aufträge, bis 30 Minuten je Datei); bei vielen gescannten Dateien, etwa nach der Nacharbeit, kann die Prüfung
+deshalb rot werden, obwohl die Erkennung arbeitet (`mandari_tasks_running{queue="ocr"}` 1, Texte entstehen).
+Dann `TEXT_EXTRACTION_QUEUE_DEPTH` senken, etwa auf `5`, und Worker und Anwendung neu starten; dieselbe Grenze
+gilt für `extract_texts` ohne `--limit`, ein ausdrückliches `--limit` darüber lässt die Prüfung bewusst
+anschlagen. Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml` messen `ocr` gesondert
+(`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit „Auftragsrückstand“.
+
+**Abbruchkriterien** (ADR, Abschnitt 10; Vorgehen wie in `docs/DREHSCHEIBE_UMSTELLUNG.md`, Abschnitt 3). Eines
+genügt, dann den Rückweg gehen:
+
+- Der Abruf scheitert je Quelle häufiger als vor dem Umschalten, oder eine Quelle bremst uns (429, Schonung).
+- Eine Datei wird mehr als einmal bei der Quelle abgerufen (außer im Löschabgleich), etwa weil der Ingestor
+  noch lädt.
+- Der Rückstau wächst über Stunden: `mandari_files_stored_without_text` oder `mandari_files_fetch_retry_due`
+  steigen (außer direkt nach der Nacharbeit), oder in `ocr` läuft nichts, obwohl Aufträge warten.
+- `worker-heavy` wird vom Speicherlimit beendet oder liegt dauerhaft über 80 % davon.
+- Nutzer sehen Fehler: Dokumente ohne Text, die vorher einen hatten, oder eine Vorschau, die nicht liefert.
+
+**Rückweg**
+
+- Erkennung zurück zum Ingestor: `TEXT_EXTRACTION_RUNNER=ingestor` (bzw. Zeile entfernen), dieselben Dienste
+  wie in Schritt 3 neu starten, einen angehaltenen OCR-Worker wieder starten. Eingereihte Aufträge erledigen
+  sich noch oder finden ihre Datei bereits bearbeitet. Stichtage bleiben stehen und stören den Ingestor nicht.
+- Aufträge zurück: erst danach `TASKS_BACKEND=immediate` (bzw. Zeile entfernen), Anwendung und Worker neu
+  starten.
+- **Vor einem Rückfall auf ein Image ohne Dokumentkette** (`update.sh --tag`, `deploy/scripts/deploy.sh
+  rollback`): erst die Erkennung zurückschalten, warten, bis `mandari_tasks_queued{queue="ocr"}` 0 ist, dann
+  mit dem noch laufenden Image `docker compose exec mandari python manage.py dokumentkette zuruecksetzen`. Der
+  Befehl ist wiederholbar; er setzt die neuen Zustände des Abrufs zurück (`retry` und `fetching` auf `none`,
+  `refused` auf `error` mit dem früheren Fehlertext), damit das ältere Image die Dateien wiederfindet. Texte,
+  Inhalte und Stichtage bleiben, von der Obergrenze verdrängte Dokumente (`evicted`, ab Migration
+  `insight_core.0056`) bleiben verdrängt. Das gilt auch, wenn die Schritte oben nie ausgeführt wurden, denn schon das
+  Update auf Etappe 1 stellt Fehlerzustände auf `refused` um.
+
+Etappe 3 (Abruf als Auftrag über Ereignisse, Schalter `DOCUMENT_FETCH_SUBSCRIPTION`, Warteschlange `fetch`)
+folgt mit eigener Anleitung.
 
 ## ⏰ Geplante Aufgaben (Zeitpläne im Worker)
 
