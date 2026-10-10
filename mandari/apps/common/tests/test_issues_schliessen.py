@@ -141,3 +141,110 @@ def test_workflow_rechte_und_ausloeser() -> None:
     job = workflow["jobs"]["schliessen"]
     assert job["permissions"] == {"contents": "read", "pull-requests": "read", "issues": "write"}
     assert "scripts/issues_schliessen.py" in job["steps"][-1]["run"]
+
+
+class _Fehler(_GitHub):
+    """Issue 12 gelöscht (410), 16 nach intern verschoben, 17 offen, bei 18 scheitert nur der Hinweis."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.issues[16] = {
+            "state": "open",
+            "number": 3,
+            "repository_url": "https://api.github.com/repos/mandariOSS/intern",
+        }
+        self.issues[17] = {"state": "open", "number": 17, "repository_url": f"https://api.github.com/repos/{NAME}"}
+        self.issues[18] = {"state": "open"}
+
+    def __call__(self, *argumente: str) -> Any:
+        pfad = argumente[0].removeprefix(f"repos/{NAME}/")
+        if pfad == f"commits/{'a' * 40}/pulls":
+            self.aufrufe.append(argumente)
+            return [
+                {"number": 100, "merged_at": "2026-10-10", "body": "Closes #12, closes #16, closes #17, closes #18"}
+            ]
+        if pfad == "issues/12" and len(argumente) == 1:
+            self.aufrufe.append(argumente)
+            raise RuntimeError("gh api repos/mandariOSS/mandari/issues/12: HTTP 410: This issue was deleted")
+        if pfad == "issues/18/comments":
+            self.aufrufe.append(argumente)
+            raise RuntimeError("HTTP 502")
+        return super().__call__(*argumente)
+
+
+def test_fehler_je_issue_brechen_den_lauf_nicht_ab(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    skript = _skript()
+    github = _Fehler()
+    monkeypatch.setattr(skript, "_gh", github)
+    monkeypatch.setenv("GITHUB_REPOSITORY", NAME)
+    zusammenfassung = tmp_path / "summary.md"
+    monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(zusammenfassung))
+
+    assert skript.main(["--vorher", "c" * 40, "--nachher", "b" * 40]) == 0
+
+    # 12 gelöscht, 16 verschoben: Warnung, kein Schließen; 17 und 18 geschlossen
+    assert github.geschlossen() == [17, 18]
+    ausgabe = capsys.readouterr().out
+    assert "::warning::#12" in ausgabe
+    assert "::warning::#16" in ausgabe
+    assert "::warning::#18 geschlossen, Hinweis nicht geschrieben" in ausgabe
+    assert "Warnungen" in zusammenfassung.read_text(encoding="utf-8")
+
+
+def test_erst_schliessen_dann_kommentieren(monkeypatch: pytest.MonkeyPatch) -> None:
+    skript = _skript()
+    github = _GitHub()
+    monkeypatch.setattr(skript, "_gh", github)
+    monkeypatch.setenv("GITHUB_REPOSITORY", NAME)
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+    skript.main(["--vorher", "c" * 40, "--nachher", "b" * 40])
+
+    zu_12 = [i for i, a in enumerate(github.aufrufe) if a[0].endswith("/issues/12") and "PATCH" in a]
+    hinweis_12 = [i for i, a in enumerate(github.aufrufe) if a[0].endswith("/issues/12/comments")]
+    assert zu_12 and hinweis_12 and zu_12[0] < hinweis_12[0]
+
+    # Zweiter Lauf: Issue ist zu, also weder erneut schließen noch ein zweiter Hinweis
+    github.issues[12] = {"state": "closed"}
+    github.aufrufe.clear()
+    skript.main(["--vorher", "c" * 40, "--nachher", "b" * 40])
+    assert github.geschlossen() == []
+    assert not [a for a in github.aufrufe if a[0].endswith("/comments")]
+
+
+def _vergleich(gesamt: int, seiten: dict[int, int]) -> tuple[Any, list[str]]:
+    """Nachbau von compare mit ``seiten`` = {Seite: Anzahl Commits}."""
+    aufrufe: list[str] = []
+
+    def gh(*argumente: str) -> Any:
+        aufrufe.append(argumente[0])
+        seite = int(argumente[0].rsplit("page=", 1)[1])
+        anzahl = seiten.get(seite, 0)
+        return {
+            "total_commits": gesamt,
+            "commits": [{"sha": f"{seite}-{i}", "commit": {"message": "x"}} for i in range(anzahl)],
+        }
+
+    return gh, aufrufe
+
+
+def test_vergleich_liest_alle_seiten(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    skript = _skript()
+    gh, aufrufe = _vergleich(150, {1: 100, 2: 50})
+    monkeypatch.setattr(skript, "_gh", gh)
+    commits = skript._commits(NAME, "c" * 40, "b" * 40)
+    assert len(commits) == 150
+    assert len(aufrufe) == 2 and all("per_page=100" in a for a in aufrufe)
+    assert "::warning::" not in capsys.readouterr().out
+
+
+def test_vergleich_warnt_bei_fehlenden_commits(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    skript = _skript()
+    # Die API meldet 300 Commits, liefert aber nur 250 (Obergrenze von compare)
+    gh, _ = _vergleich(300, {1: 100, 2: 100, 3: 50})
+    monkeypatch.setattr(skript, "_gh", gh)
+    assert len(skript._commits(NAME, "c" * 40, "b" * 40)) == 250
+    assert "meldet 300 Commits, geliefert wurden 250" in capsys.readouterr().out

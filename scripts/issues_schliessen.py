@@ -20,6 +20,9 @@ Regeln:
   noch ein Beispiel in einer Beschreibung etwas.
 - Was schon im Commit selbst steht (etwa „(Closes #935)“ im Titel), schließt GitHub selbst und bleibt hier außen vor.
 - Bereits geschlossene Issues und Pull Requests werden übersprungen.
+- Erst schließen, dann kommentieren: Ein wiederholter Lauf findet das Issue geschlossen und schreibt keinen
+  zweiten Hinweis.
+- Fehler bei einem Issue (gelöscht, verschoben, keine Rechte) werden als Warnung gemeldet; der Lauf geht weiter.
 
 Benötigt ``gh`` mit ``GH_TOKEN`` (Rechte: issues write, pull-requests read, contents read) und
 ``GITHUB_REPOSITORY`` (``owner/repo``).
@@ -36,6 +39,7 @@ import sys
 from typing import Any
 
 NULL_SHA = "0" * 40
+SEITENGROESSE = 100
 
 _SCHLUESSELWORT = r"(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)"
 _KOMMENTAR = re.compile(r"<!--.*?-->", re.S)
@@ -79,13 +83,42 @@ def _commits(repo: str, vorher: str, nachher: str) -> list[dict[str, Any]]:
     """Die neuen Commits des push (älteste zuerst); ohne Vorgänger nur das letzte."""
     if vorher and vorher != NULL_SHA:
         try:
-            vergleich = _gh(f"repos/{repo}/compare/{vorher}...{nachher}")
-            return [{"sha": c["sha"], "nachricht": c["commit"]["message"]} for c in vergleich["commits"]]
+            return _verglichene_commits(repo, vorher, nachher)
         except RuntimeError as fehler:
             # Etwa nach einem force-push, wenn ``vorher`` nicht mehr existiert
             print(f"::warning::Vergleich {vorher[:7]}...{nachher[:7]} nicht möglich, nur letztes Commit: {fehler}")
     commit = _gh(f"repos/{repo}/commits/{nachher}")
     return [{"sha": commit["sha"], "nachricht": commit["commit"]["message"]}]
+
+
+def _verglichene_commits(repo: str, vorher: str, nachher: str) -> list[dict[str, Any]]:
+    """Alle Commits zwischen ``vorher`` und ``nachher``, seitenweise (die API liefert je Seite höchstens 100)."""
+    commits: list[dict[str, Any]] = []
+    gesamt: int | None = None
+    seite = 1
+    while True:
+        vergleich = _gh(f"repos/{repo}/compare/{vorher}...{nachher}?per_page={SEITENGROESSE}&page={seite}")
+        if gesamt is None:
+            gesamt = vergleich.get("total_commits")
+        neu = vergleich.get("commits") or []
+        commits.extend({"sha": c["sha"], "nachricht": c["commit"]["message"]} for c in neu)
+        if gesamt is None or len(neu) < SEITENGROESSE or len(commits) >= gesamt:
+            break
+        seite += 1
+    if gesamt is not None and len(commits) < gesamt:
+        print(
+            f"::warning::Vergleich {vorher[:7]}...{nachher[:7]} meldet {gesamt} Commits, geliefert wurden "
+            f"{len(commits)}; ältere Commits bitte per workflow_dispatch nachholen."
+        )
+    return commits
+
+
+def _issue_im_repo(issue: dict[str, Any], repo: str, nummer: int) -> bool:
+    """Ein verschobenes Issue leitet ``gh api`` in ein anderes Repository weiter; das gehört nicht uns."""
+    repository_url = issue.get("repository_url")
+    if repository_url and not repository_url.lower().endswith(f"/repos/{repo}".lower()):
+        return False
+    return issue.get("number", nummer) == nummer
 
 
 def _pull_requests(repo: str, commit: dict[str, Any]) -> list[dict[str, Any]]:
@@ -115,33 +148,60 @@ def main(argv: list[str] | None = None) -> int:
 
     repo = os.environ["GITHUB_REPOSITORY"]
     geschlossen: list[str] = []
+    warnungen: list[str] = []
     commits = _commits(repo, args.vorher, args.nachher)
     print(f"{len(commits)} Commit(s) geprüft")
     for commit in commits:
         im_commit = schliessende_verweise(commit["nachricht"], repo)
         for pr in _pull_requests(repo, commit):
             for nummer in sorted(schliessende_verweise(pr.get("body"), repo) - im_commit):
-                issue = _gh(f"repos/{repo}/issues/{nummer}")
+                kurz = commit["sha"][:7]
+                try:
+                    issue = _gh(f"repos/{repo}/issues/{nummer}")
+                except RuntimeError as fehler:
+                    # Gelöscht (410), unbekannt (404) oder nicht lesbar: melden und weitermachen
+                    warnungen.append(f"#{nummer} (PR #{pr['number']}): nicht lesbar")
+                    print(f"::warning::#{nummer} (aus PR #{pr['number']}) nicht lesbar, übersprungen: {fehler}")
+                    continue
+                if not isinstance(issue, dict) or not _issue_im_repo(issue, repo, nummer):
+                    warnungen.append(f"#{nummer} (PR #{pr['number']}): verschoben")
+                    print(f"::warning::#{nummer} (aus PR #{pr['number']}) liegt nicht mehr in {repo}, übersprungen")
+                    continue
                 if "pull_request" in issue:
                     print(f"#{nummer} (aus PR #{pr['number']}) ist ein Pull Request, übersprungen")
                     continue
                 if issue["state"] != "open":
                     print(f"#{nummer} (aus PR #{pr['number']}) ist schon geschlossen")
                     continue
-                kurz = commit["sha"][:7]
                 if args.trockenlauf:
                     print(f"Trockenlauf: würde #{nummer} schließen (PR #{pr['number']}, {kurz})")
                     continue
-                _gh(
-                    f"repos/{repo}/issues/{nummer}/comments",
-                    "-f",
-                    f"body=Erledigt mit PR #{pr['number']} ({commit['sha']}), jetzt auf `main`.",
-                )
-                _gh(
-                    f"repos/{repo}/issues/{nummer}", "-X", "PATCH", "-f", "state=closed", "-f", "state_reason=completed"
-                )
+                # Erst schließen: Scheitert danach der Hinweis, schreibt ein neuer Lauf keinen doppelten
+                try:
+                    _gh(
+                        f"repos/{repo}/issues/{nummer}",
+                        "-X",
+                        "PATCH",
+                        "-f",
+                        "state=closed",
+                        "-f",
+                        "state_reason=completed",
+                    )
+                except RuntimeError as fehler:
+                    warnungen.append(f"#{nummer} (PR #{pr['number']}): Schließen fehlgeschlagen")
+                    print(f"::warning::#{nummer} (aus PR #{pr['number']}) ließ sich nicht schließen: {fehler}")
+                    continue
                 geschlossen.append(f"#{nummer} (PR #{pr['number']}, {kurz})")
                 print(f"#{nummer} geschlossen (PR #{pr['number']}, {kurz})")
+                try:
+                    _gh(
+                        f"repos/{repo}/issues/{nummer}/comments",
+                        "-f",
+                        f"body=Erledigt mit PR #{pr['number']} ({commit['sha']}), jetzt auf `main`.",
+                    )
+                except RuntimeError as fehler:
+                    warnungen.append(f"#{nummer} (PR #{pr['number']}): Hinweis fehlt")
+                    print(f"::warning::#{nummer} geschlossen, Hinweis nicht geschrieben: {fehler}")
 
     zusammenfassung = os.environ.get("GITHUB_STEP_SUMMARY")
     if zusammenfassung:
@@ -149,6 +209,8 @@ def main(argv: list[str] | None = None) -> int:
             datei.write("### Issues aus PR-Texten\n\n")
             datei.write("\n".join(f"- {eintrag}" for eintrag in geschlossen) or "Keine zu schließen.")
             datei.write("\n")
+            if warnungen:
+                datei.write("\n**Warnungen**\n\n" + "\n".join(f"- {eintrag}" for eintrag in warnungen) + "\n")
     return 0
 
 
