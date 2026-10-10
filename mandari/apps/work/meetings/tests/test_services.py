@@ -184,6 +184,40 @@ def test_save_position_rejects_invalid_values_without_side_effects(
     assert not AgendaItemPosition.objects.filter(agenda_item=item).exists()
 
 
+@pytest.mark.django_db
+def test_save_position_concurrent_first_save_lands_on_existing_row(
+    org: Any, meeting: OParlMeeting, item: OParlAgendaItem, member: Any, other_member: Any, monkeypatch: Any
+) -> None:
+    """Gleichzeitige Erstanlage (#926): Zwischen Lesen und Anlegen legt ein anderes Mitglied die Zeile an."""
+    from django.db.models.query import QuerySet
+
+    original_get = QuerySet.get
+    zuvorgekommen: list[AgendaItemPosition] = []
+
+    def get_mit_wettlauf(self: QuerySet[Any], *args: Any, **kwargs: Any) -> Any:
+        if self.model is AgendaItemPosition and not zuvorgekommen:
+            # Der Lesezugriff von save_position findet noch nichts, dann speichert die Kollegin zuerst
+            zuvorgekommen.append(
+                AgendaItemPosition.objects.create(
+                    organization=org, agenda_item=item, position="against", set_by=other_member
+                )
+            )
+            raise AgendaItemPosition.DoesNotExist
+        return original_get(self, *args, **kwargs)
+
+    monkeypatch.setattr(QuerySet, "get", get_mit_wettlauf)
+    payload = services.save_position(org, meeting, item, member, {"reasoning": "Zu teuer."})
+
+    assert zuvorgekommen
+    position = AgendaItemPosition.objects.get(organization=org, agenda_item=item)
+    assert position.pk == zuvorgekommen[0].pk
+    # Beide Saves sind erhalten: Position der Kollegin, Begründung aus dem zweiten Save
+    assert position.position == "against"
+    assert decrypted(position, "reasoning") == "Zu teuer."
+    assert payload["position"] == "against"
+    assert payload["reasoning"] == "Zu teuer."
+
+
 # ---------------------------------------------------------------------------
 # Private Notiz und Redebeitrag
 # ---------------------------------------------------------------------------
