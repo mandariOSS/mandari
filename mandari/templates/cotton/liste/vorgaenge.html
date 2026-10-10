@@ -7,8 +7,10 @@ einen einzigen Wert entfallen.
   <c-liste.vorgaenge :vorgaenge="papers" :links="ris_links" dicht ohne_merken
                      zusatz="work/ris/neu/_vorgang_zeile_fraktion.html" zusatz_titel="Für die Fraktion" />
 Parameter wie c-liste.sitzungen; ``dicht`` zeigt den Stand unterhalb von 2xl unter dem Titel (Arbeitsfläche).
+``zusatz_ab="2xl"`` setzt auch die Zusatzspalte erst ab 2xl als Spalte und darunter unter den Titel, damit lange Titel
+bei 1.280 px nicht umbrechen (Work: „Für die Fraktion“ der Vorgänge); ohne Angabe ab md wie bisher.
 {% endcomment %}
-<c-vars vorgaenge="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" />
+<c-vars vorgaenge="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" zusatz_ab="" />
 {% load insight_listen %}
 {% with sp_nr=vorgaenge|hat_wert:"reference" sp_typ=vorgaenge|hat_wert:"paper_type" sp_datum=vorgaenge|hat_wert:"date" sp_stand=vorgaenge|hat_wert:"stand.text" %}
 <div class="-mx-3">
@@ -21,7 +23,7 @@ Parameter wie c-liste.sitzungen; ``dicht`` zeigt den Stand unterhalb von 2xl unt
                 {% if sp_typ %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Typ</th>{% endif %}
                 {% if sp_datum %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Datum</th>{% endif %}
                 {% if sp_stand %}<th class="text-left px-3 {% if dicht %}py-2{% else %}py-2.5{% endif %} text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-2xl:hidden">Stand</th>{% endif %}
-                {% if zusatz %}<th class="text-left px-3 py-2 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-md:hidden">{{ zusatz_titel }}</th>{% endif %}
+                {% if zusatz %}<th class="text-left px-3 py-2 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 {% if zusatz_ab == '2xl' %}max-2xl:hidden{% else %}max-md:hidden{% endif %}">{{ zusatz_titel }}</th>{% endif %}
                 <th class="w-10 px-2 {% if dicht %}py-2{% else %}py-3{% endif %}"><span class="sr-only">{% if ohne_merken %}Öffnen{% else %}Merken{% endif %}</span></th>
             </tr>
         </thead>
@@ -41,7 +43,7 @@ Parameter wie c-liste.sitzungen; ``dicht`` zeigt den Stand unterhalb von 2xl unt
                         {% if paper.paper_type %}{{ paper.paper_type }}{% endif %}
                     </div>
                     {% if dicht and paper.stand %}<p class="2xl:hidden mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ paper.stand.text }}</p>{% endif %}
-                    {% if zusatz %}<div class="md:hidden mt-1 text-sm">{% include zusatz with eintrag=paper %}</div>{% endif %}
+                    {% if zusatz %}<div class="{% if zusatz_ab == '2xl' %}2xl:hidden{% else %}md:hidden{% endif %} mt-1 text-sm">{% include zusatz with eintrag=paper %}</div>{% endif %}
                 </td>
                 {% if sp_nr %}
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm max-sm:hidden whitespace-nowrap">
@@ -66,7 +68,7 @@ Parameter wie c-liste.sitzungen; ``dicht`` zeigt den Stand unterhalb von 2xl unt
                     {% endif %}
                 </td>
                 {% endif %}
-                {% if zusatz %}<td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-200 max-md:hidden w-60">{% include zusatz with eintrag=paper %}</td>{% endif %}
+                {% if zusatz %}<td class="px-3 py-2 text-sm text-gray-800 dark:text-gray-200 {% if zusatz_ab == '2xl' %}max-2xl:hidden{% else %}max-md:hidden{% endif %} w-60">{% include zusatz with eintrag=paper %}</td>{% endif %}
                 <td class="px-2 {% if dicht %}py-2{% else %}py-3{% endif %}">
                     <div class="flex items-center gap-1">
                         {% if not ohne_merken %}{% include "components/bookmark_star.html" with entity_type="paper" entity_id=paper.id size="sm" %}{% endif %}

@@ -451,7 +451,7 @@ def test_listen_sind_die_listen_von_insight_mit_zielen_in_work(welt: Welt, clien
 
 def test_vorgangsliste_ohne_werte_fuer_die_fraktion_ohne_spalte(welt: Welt, client_for: Any) -> None:
     def kopf() -> str:
-        html = _seite(client_for, welt.vorsitz, "work:ris_papers").content.decode()
+        html: str = _seite(client_for, welt.vorsitz, "work:ris_papers").content.decode()
         liste = html[html.index('data-testid="vorgangsliste"') :]
         return liste[: liste.index("</thead>")]
 
@@ -460,7 +460,8 @@ def test_vorgangsliste_ohne_werte_fuer_die_fraktion_ohne_spalte(welt: Welt, clie
     Motion.objects.create(
         organization=welt.org, author=welt.vorsitz, title="Antrag Radwege", status="draft", related_paper=welt.zweite
     )
-    assert "Für die Fraktion</th>" in kopf()
+    # Mit Wert erst ab 2xl als Spalte, darunter wie der Stand unter dem Titel (lange Titel brechen bei 1.280 px nicht um)
+    assert 'max-2xl:hidden">Für die Fraktion</th>' in kopf()
 
 
 def test_seitenwahl_von_insight_behaelt_die_filter(welt: Welt, client_for: Any) -> None:
