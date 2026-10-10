@@ -9,26 +9,32 @@ einen fremden Link), verliert nichts.
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from django.test import Client
 from django.urls import reverse
 
-from apps.common.tests.factories import UserFactory
+from apps.accounts.models import User
 
 pytestmark = pytest.mark.django_db
 
 MARKIERUNG = "data-eingaben-loeschen"
 
 
+def _konto() -> User:
+    return cast(User, User.objects.create_user(email="abmelden@example.org", password="Sicheres-Passwort-2026!"))  # type: ignore[no-untyped-call]
+
+
 def test_nach_dem_abmelden_wird_die_sicherung_geloescht(client: Client) -> None:
-    client.force_login(UserFactory())
+    client.force_login(_konto())
     antwort = client.post(reverse("accounts:logout"), follow=True)
     assert antwort.redirect_chain[-1][0] == reverse("accounts:logged_out")
     assert MARKIERUNG in antwort.content.decode()
 
 
 def test_angemeldet_loescht_die_seite_nichts(client: Client) -> None:
-    client.force_login(UserFactory())
+    client.force_login(_konto())
     antwort = client.get(reverse("accounts:logged_out"))
     assert antwort.status_code == 200
     assert MARKIERUNG not in antwort.content.decode()
