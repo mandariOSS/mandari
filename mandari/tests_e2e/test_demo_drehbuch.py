@@ -119,7 +119,9 @@ def test_drehbuch(live_server: Any, praesentation: None, neue_seite: Any) -> Non
     antrag = Motion.objects.get(organization__slug=DEMO_ORG_SLUG, title=drehbuch.ANTRAG_TITEL)
     vorsitz.goto(f"{basis}/work/{DEMO_ORG_SLUG}/documents/{antrag.id}/")
     wait_for_bundle(vorsitz)
-    vorsitz.locator("a[title='Bei Verwaltung einreichen']").first.click()
+    # Die Demo zeigt Work im neuen Erscheinungsbild (#852): Einreichen steht im Menü „Ablauf“ des Editors (#856)
+    vorsitz.get_by_role("menubar", name="Menü").get_by_role("menuitem", name="Ablauf").click()
+    vorsitz.get_by_role("menu", name="Ablauf").get_by_role("menuitem", name="Bei der Verwaltung einreichen").click()
     vorsitz.wait_for_url(re.compile(r"/submit-ris/$"))
     wait_for_bundle(vorsitz)
     # Beschlussvorschlag und Begründung sind aus dem Dokument vorbelegt

@@ -60,7 +60,9 @@
 
     {# Seitliche Safe-Area (Querformat mit Aussparung); unten Platz für die Leiste am Handy; im Druck nur der Inhalt #}
     <div class="work-main min-h-screen flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-60 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 print:!p-0 print:min-h-0">
-        {# Kopfzeile: Brotkrumen, Suche (Strg+K), Glocke, Dunkelmodus; am Handy Raum, Suche und Glocke #}
+        {% comment %}Kopfzeile: Brotkrumen, Suche (Strg+K), Glocke, Dunkelmodus; am Handy Raum, Suche und Glocke. Seiten mit
+        eigener Kopfzeile (Antragseditor, #856) ersetzen den Block und bringen Glocke, Suche und Dunkelmodus selbst mit.{% endcomment %}
+        {% block rahmen_kopf %}
         <header class="sticky top-0 z-30 shrink-0 print:hidden pt-[env(safe-area-inset-top)] bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
             <div class="rahmen-zeile h-12 flex items-center gap-2 sm:gap-4">
                 <button type="button" @click="leisteUmschalten()"
@@ -105,6 +107,7 @@
                 </button>
             </div>
         </header>
+        {% endblock %}
 
         {# data-gestaltung: „neu“ setzen Seiten, deren Inhalt schon im neuen Erscheinungsbild steht (Block gestaltung); das Prüfskript zählt die übrigen (Issue #884) #}
         <main id="inhalt" tabindex="-1" data-gestaltung="{% block gestaltung %}bisher{% endblock %}" class="flex-1 flex flex-col min-h-0 focus:outline-none">

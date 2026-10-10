@@ -342,3 +342,727 @@
     bottom: 0.75rem;
   }
 }
+
+
+/* ---- Antragseditor, neue Ansicht (Teil von #856, templates/work/motions/editor_neu.html) ----------------------
+   Svens Wahl E1+E2 (05.10.2026): eine Kopfzeile (Titel, Stand, Menü, Ablaufleiste), eine Werkzeugleiste, darunter
+   Gliederung | Text | Kommentare am Rand. Der Text nutzt die Breite (Lesespalte 46rem, ab 1.800 px 40em bei 17 px),
+   der Rand wächst mit, damit auf breiten Bildschirmen keine großen Leerflächen bleiben (#841). Alles unter .ke-editor;
+   die Grundstile des Editors (Marken, Tabellen, Popups) kommen weiter aus _editor_styles.html. */
+@layer components {
+  .ke-editor {
+    --ke-dok: 16px;
+    --ke-linie: #e4e7ec;
+    --ke-linie-stark: #cdd2da;
+    --ke-gruen: #15803d;
+    --ke-vorschlag: #e3f4e8;
+    @apply bg-white text-gray-900 dark:bg-gray-900 dark:text-gray-100;
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .dark .ke-editor {
+    --ke-linie: #273244;
+    --ke-linie-stark: #3b4659;
+    --ke-gruen: #4ade80;
+    --ke-vorschlag: rgba(74, 222, 128, 0.18);
+  }
+
+  /* Kopf: Titelblock links, Ablaufleiste in der Mitte, Personen und „Weitere“ rechts */
+  .ke-kopf {
+    @apply relative z-30 flex-none bg-white dark:bg-gray-900;
+    border-bottom: 1px solid var(--ke-linie);
+    container: ke-kopf / inline-size;
+    /* Ersetzt die Kopfzeile des Rahmens (editor_neu.html): Aussparung oben am Handy wie dort */
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .ke-kopfzeile {
+    @apply flex items-center gap-3 px-3 pt-1.5 min-w-0 lg:px-4;
+  }
+  .ke-symbol {
+    @apply w-8 h-8 flex-none items-center justify-center rounded-md text-primary-600 hover:bg-gray-100 dark:text-primary-400 dark:hover:bg-gray-800;
+  }
+  .ke-titelblock {
+    @apply min-w-0 flex-1;
+  }
+  .ke-titelzeile {
+    @apply flex items-center gap-2.5 min-w-0;
+  }
+  .ke-titel {
+    @apply h-7 min-w-0 rounded border border-transparent bg-transparent px-1 -ml-1 text-[15px] text-gray-900 dark:text-gray-100;
+    flex: 0 1 auto;
+    text-overflow: ellipsis;
+    max-width: 40rem;
+  }
+  @supports (field-sizing: content) {
+    .ke-titel {
+      field-sizing: content;
+      min-width: 8rem;
+    }
+  }
+  input.ke-titel:hover {
+    border-color: var(--ke-linie-stark);
+  }
+  input.ke-titel:focus {
+    @apply outline-none ring-2 ring-primary-600 border-transparent;
+  }
+  .ke-titel-text {
+    @apply truncate font-normal leading-7;
+  }
+  .ke-stand {
+    @apply inline-flex items-center gap-1.5 h-6 px-2 rounded-full text-[12.5px] font-medium whitespace-nowrap bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800;
+    border: 1px solid var(--ke-linie-stark);
+  }
+  .ke-punkt {
+    @apply inline-block w-2 h-2 rounded-full bg-primary-600;
+  }
+  .ke-punkt[data-stand="draft"],
+  .ke-punkt[data-stand="review"] {
+    @apply bg-transparent;
+    box-shadow: inset 0 0 0 1.5px #6b7280;
+  }
+  .ke-punkt[data-stand="internal_review"],
+  .ke-punkt[data-stand="external_review"] {
+    @apply bg-amber-600;
+  }
+  .ke-punkt[data-stand="approved"],
+  .ke-punkt[data-stand="adopted"],
+  .ke-punkt[data-stand="completed"] {
+    background: var(--ke-gruen);
+  }
+  .ke-punkt[data-stand="rejected"],
+  .ke-punkt[data-stand="withdrawn"] {
+    @apply bg-red-600;
+  }
+  .ke-punkt[data-stand="archived"] {
+    @apply bg-gray-400;
+  }
+  .ke-gespeichert {
+    @apply items-center gap-1 h-6 px-1 rounded text-xs text-gray-500 whitespace-nowrap hover:text-gray-900 dark:text-gray-400 dark:hover:text-white;
+  }
+  .ke-gespeichert span {
+    @apply inline-flex items-center gap-1;
+  }
+  .ke-menueleiste {
+    @apply items-center h-[26px] -ml-1.5;
+  }
+  .ke-leistenpunkt {
+    @apply h-6 px-1.5 rounded text-[13px] text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800;
+  }
+  .ke-leistenpunkt[aria-expanded="true"] {
+    @apply bg-gray-100 dark:bg-gray-800;
+  }
+
+  /* Ablaufleiste: jede Stufe ein Knopf; erledigt grün mit Haken, aktuell Indigo */
+  .ke-stufen {
+    @apply flex-none items-center gap-1 list-none p-0 m-0;
+  }
+  .ke-stufe {
+    @apply flex items-center gap-1 min-w-0;
+  }
+  .ke-stufe-linie {
+    @apply block w-7 flex-none;
+    height: 1.5px;
+    background: var(--ke-linie-stark);
+  }
+  .ke-stufe[data-zustand="erledigt"] + .ke-stufe .ke-stufe-linie,
+  .ke-stufe[data-zustand="erledigt"] .ke-stufe-linie {
+    background: var(--ke-gruen);
+  }
+  .ke-stufe-knopf {
+    @apply flex items-center gap-2 min-h-[36px] px-1 py-0.5 rounded-md text-left hover:bg-gray-50 dark:hover:bg-gray-800;
+  }
+  .ke-kreis {
+    @apply grid place-items-center w-[22px] h-[22px] flex-none rounded-full text-xs font-semibold bg-white text-gray-600 dark:bg-gray-900 dark:text-gray-300;
+    border: 1.5px solid #c3c8d1;
+  }
+  .ke-stufe-name {
+    @apply block text-[13.5px] font-semibold whitespace-nowrap text-gray-600 dark:text-gray-400;
+  }
+  .ke-stufe-unter {
+    @apply block text-xs font-normal whitespace-nowrap text-gray-500 dark:text-gray-400;
+  }
+  [data-zustand="aktuell"] > .ke-stufe-knopf .ke-kreis,
+  [data-zustand="aktuell"] > .ke-kreis {
+    @apply bg-primary-600 border-primary-600 text-white;
+  }
+  [data-zustand="aktuell"] .ke-stufe-name {
+    @apply text-gray-900 dark:text-white;
+  }
+  [data-zustand="erledigt"] .ke-kreis {
+    border-color: var(--ke-gruen);
+    color: var(--ke-gruen);
+  }
+  [data-zustand="erledigt"] .ke-stufe-name {
+    @apply font-medium text-gray-900 dark:text-gray-100;
+  }
+  /* Je nach Breite der Kopfzeile (nicht des Fensters, die Leiste des Rahmens ist verschieden breit): erst die
+     Untertitel der übrigen Stufen weg, dann deren Namen (bleiben für Bildschirmleser), zuletzt alle Untertitel.
+     Vorrang hat der Titel. */
+  @container ke-kopf (max-width: 1499px) {
+    .ke-stufe:not([data-jetzt]) .ke-stufe-unter {
+      display: none;
+    }
+    .ke-stufe-linie {
+      width: 1rem;
+    }
+  }
+  @container ke-kopf (max-width: 1199px) {
+    .ke-stufe:not([data-jetzt]) .ke-stufe-name {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+    }
+    .ke-gespeichert span {
+      font-size: 0;
+      gap: 0;
+    }
+  }
+  @container ke-kopf (max-width: 999px) {
+    .ke-stufe-unter {
+      display: none;
+    }
+    .ke-stufe-linie {
+      width: 0.5rem;
+    }
+  }
+  .ke-personen {
+    @apply items-center gap-1 flex-none;
+  }
+  .ke-av {
+    @apply inline-grid place-items-center w-6 h-6 flex-none rounded-full text-[10.5px] font-semibold bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200;
+  }
+  .ke-av-ich {
+    @apply bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-200;
+  }
+  .ke-offline {
+    @apply ml-1 text-xs text-red-600 dark:text-red-400;
+  }
+
+  /* Ablauf am Handy: Fortschritt, Stufe, Stand */
+  .ke-ablauf-mobil {
+    @apply px-3 pb-1.5;
+  }
+  .ke-ablauf-mobil-knopf {
+    @apply flex items-center gap-3 w-full min-h-[44px] text-left;
+  }
+  .ke-ablauf-mobil-knopf small {
+    @apply text-xs text-gray-600 dark:text-gray-400;
+  }
+  .ke-fortschritt {
+    @apply flex gap-1 flex-none;
+  }
+  .ke-fortschritt span {
+    @apply block w-4 h-1 rounded-full bg-gray-300 dark:bg-gray-700;
+  }
+  .ke-fortschritt span[data-zustand="erledigt"] {
+    background: var(--ke-gruen);
+  }
+  .ke-fortschritt span[data-zustand="aktuell"] {
+    @apply bg-primary-600;
+  }
+
+  /* Menüs */
+  .ke-menue {
+    @apply absolute left-0 top-full z-50 mt-1 py-1 min-w-[15rem] max-h-[70vh] overflow-y-auto rounded-md bg-white shadow-lg text-[13.5px] dark:bg-gray-800;
+    border: 1px solid var(--ke-linie);
+  }
+  .ke-menue-breit {
+    @apply min-w-[19rem];
+  }
+  .ke-menue-rechts {
+    @apply left-auto right-0;
+  }
+  .ke-mp {
+    @apply flex w-full items-center gap-2.5 min-h-[32px] px-3 py-1 text-left text-gray-800 hover:bg-gray-100 focus:bg-gray-100 focus:outline-none dark:text-gray-200 dark:hover:bg-gray-700 dark:focus:bg-gray-700;
+  }
+  .ke-mp > i,
+  .ke-mp > svg {
+    @apply w-4 h-4 flex-none text-gray-500 dark:text-gray-400;
+  }
+  .ke-mp[disabled] {
+    @apply cursor-default text-gray-400 hover:bg-transparent dark:text-gray-500;
+  }
+  .ke-mp[aria-checked="true"] {
+    @apply font-medium text-primary-700 dark:text-primary-300;
+  }
+  .ke-mp[aria-checked="true"] > i,
+  .ke-mp[aria-checked="true"] > svg {
+    @apply text-primary-600 dark:text-primary-400;
+  }
+  .ke-mp small {
+    @apply block text-xs font-normal text-gray-500 dark:text-gray-400;
+  }
+  .ke-mp kbd,
+  .ke-hinweis {
+    @apply ml-auto pl-4 font-sans text-xs font-normal text-gray-500 dark:text-gray-400;
+  }
+  .ke-mp-jetzt {
+    @apply font-medium text-primary-700 dark:text-primary-300;
+  }
+  .ke-mp-gefahr {
+    @apply text-red-700 dark:text-red-400;
+  }
+  .ke-trenn {
+    @apply my-1;
+    border-top: 1px solid var(--ke-linie);
+  }
+  .ke-menue-gruppe {
+    @apply px-3 pt-2 pb-1 text-xs font-medium text-gray-500 dark:text-gray-400;
+  }
+  .ke-menue-hinweis {
+    @apply flex items-center gap-1.5 px-3 py-1.5 text-xs text-gray-500 dark:text-gray-400;
+  }
+  .ke-ablaufliste {
+    @apply m-0 px-3 pb-2 list-none;
+  }
+  .ke-ablaufliste li {
+    @apply flex items-start gap-2.5 py-1;
+  }
+  .ke-ablaufliste b {
+    @apply block font-semibold;
+  }
+  .ke-ablaufliste small {
+    @apply block text-xs text-gray-600 dark:text-gray-400;
+  }
+  .ke-farben {
+    @apply grid grid-cols-6 gap-1.5 px-3 pb-2;
+  }
+  .ke-farbe {
+    @apply w-6 h-6 rounded-full border-2 border-transparent;
+    background: #374151;
+  }
+  .ke-farbe[aria-pressed="true"] {
+    @apply ring-2 ring-offset-1 ring-primary-600 dark:ring-offset-gray-800;
+  }
+
+  /* Werkzeugleiste: eine Leiste, 40 px */
+  .ke-werkzeug {
+    @apply flex items-center gap-0.5 h-10 px-3 overflow-x-auto lg:px-4;
+    border-top: 1px solid var(--ke-linie);
+    scrollbar-width: none;
+  }
+  .ke-wz-gruppe {
+    @apply flex flex-none items-center gap-0.5 mr-3;
+  }
+  .ke-wz {
+    @apply grid place-items-center w-8 h-8 flex-none rounded text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-800 disabled:cursor-default disabled:text-gray-400 disabled:hover:bg-transparent;
+  }
+  .ke-wz > i,
+  .ke-wz > svg {
+    @apply w-[18px] h-[18px];
+  }
+  .ke-wz[aria-pressed="true"] {
+    @apply bg-primary-50 text-primary-700 dark:bg-primary-900/50 dark:text-primary-200;
+  }
+  .ke-wz-klein {
+    @apply w-7 h-7;
+  }
+  .ke-wz-klein > i,
+  .ke-wz-klein > svg {
+    @apply w-4 h-4;
+  }
+  .ke-absatz {
+    @apply h-7 py-0 pl-2 pr-7 rounded border-transparent bg-transparent text-[13px] hover:border-gray-300 dark:hover:border-gray-600;
+  }
+  .ke-modus {
+    @apply inline-flex flex-none items-center gap-1.5 h-7 px-2.5 rounded-md text-[13px] bg-white hover:bg-gray-50 dark:bg-gray-900 dark:hover:bg-gray-800;
+    border: 1px solid var(--ke-linie-stark);
+  }
+  /* Vorschlagen: in der Farbe der Vorschläge im Text, damit der Modus beim Schreiben auffällt */
+  .ke-modus[data-modus="vorschlagen"] {
+    @apply bg-green-50 text-green-800 hover:bg-green-100 dark:bg-green-950/60 dark:text-green-200;
+    border-color: var(--ke-gruen);
+  }
+
+  /* Infozeile des Ablaufs (so hoch wie eine Werkzeugleiste) */
+  .ke-infoleiste {
+    @apply flex flex-wrap items-center gap-x-3 gap-y-1.5 min-h-[40px] px-4 py-1.5 bg-primary-50 text-sm dark:bg-primary-950/60 lg:px-6;
+  }
+  .ke-info-text b {
+    @apply font-semibold;
+  }
+  .ke-info-aktionen {
+    @apply ml-auto flex flex-wrap items-center gap-2;
+  }
+  .ke-knopf {
+    @apply inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-[13px] font-medium bg-white text-gray-800 hover:bg-gray-50 disabled:opacity-50 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700;
+    border: 1px solid var(--ke-linie-stark);
+  }
+  .ke-knopf-haupt {
+    @apply border-primary-600 bg-primary-600 text-white hover:bg-primary-700 dark:border-primary-500 dark:bg-primary-600 dark:hover:bg-primary-500;
+  }
+
+  /* Fläche: Scrollbereich mit Raster Gliederung | Text | Rand; rechts bei Bedarf ein Bereich (Details, Verlauf …) */
+  .ke-flaeche {
+    @apply relative flex flex-1 min-h-0;
+  }
+  .ke-scroll {
+    @apply relative flex-1 min-w-0 overflow-y-auto;
+  }
+  .ke-raster {
+    @apply grid items-start justify-center px-6 pt-8 pb-32;
+    grid-template-columns: minmax(0, 46rem) minmax(18rem, 20rem);
+    grid-template-areas: "blatt rand";
+    column-gap: 2.5rem;
+  }
+  .ke-gliederung {
+    grid-area: gliederung;
+    @apply hidden sticky top-6 self-start text-[13.5px];
+  }
+  .ke-gliederung-titel {
+    @apply mb-1.5 text-xs font-medium text-gray-500 dark:text-gray-400;
+  }
+  .ke-gliederung a {
+    @apply block py-1 text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white;
+  }
+  .ke-gliederung li[data-ebene="3"] a {
+    @apply pl-3 text-[13px];
+  }
+  .ke-blatt {
+    grid-area: blatt;
+    @apply min-w-0;
+  }
+  .ke-rand-spalte {
+    grid-area: rand;
+    @apply relative self-stretch;
+  }
+  @media (min-width: 1600px) {
+    .ke-editor:not(.ke-ohne-gliederung) .ke-raster {
+      grid-template-columns: 12rem minmax(0, 46rem) minmax(18rem, 20rem);
+      grid-template-areas: "gliederung blatt rand";
+    }
+    .ke-editor:not(.ke-ohne-gliederung) .ke-gliederung {
+      display: block;
+    }
+  }
+  /* Breitbild: Schrift 17 px (18 px ab 2.200 px), Gliederung, Abstände und Rand wachsen mit (höchstens 25 % frei) */
+  @media (min-width: 1800px) {
+    .ke-editor {
+      --ke-dok: 17px;
+    }
+    .ke-editor .ke-raster,
+    .ke-editor:not(.ke-ohne-gliederung) .ke-raster {
+      grid-template-columns: clamp(13rem, 11vw, 18rem) min(calc(40 * var(--ke-dok)), 100%) clamp(22rem, 28vw, 48rem);
+      grid-template-areas: "gliederung blatt rand";
+      column-gap: clamp(48px, 4vw, 112px);
+    }
+    .ke-editor.ke-ohne-gliederung .ke-raster {
+      grid-template-columns: min(calc(40 * var(--ke-dok)), 100%) clamp(22rem, 28vw, 48rem);
+      grid-template-areas: "blatt rand";
+    }
+  }
+  @media (min-width: 2200px) {
+    .ke-editor {
+      --ke-dok: 18px;
+    }
+  }
+  /* Mit offenem Bereich rechts (Details, Verlauf …): kein Rand im Raster */
+  .ke-editor.ke-mit-panel .ke-raster {
+    grid-template-columns: minmax(0, 46rem);
+    grid-template-areas: "blatt";
+  }
+  @media (min-width: 1600px) {
+    .ke-editor.ke-mit-panel:not(.ke-ohne-gliederung) .ke-raster {
+      grid-template-columns: 12rem minmax(0, 46rem);
+      grid-template-areas: "gliederung blatt";
+    }
+  }
+
+  /* Zeile über dem Text */
+  .ke-blattkopf {
+    @apply flex flex-wrap items-center gap-x-4 gap-y-1 mb-6 text-[13px] text-gray-600 dark:text-gray-400;
+  }
+  .ke-blattkopf-knopf {
+    @apply inline-flex items-center gap-1 h-7 -ml-1 px-1 rounded hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white;
+  }
+  .ke-bezug {
+    @apply inline-flex items-center gap-1 min-w-0;
+  }
+
+  /* Text: Schreibansicht ohne Blatt, die Seitenansicht zeigt Blatt und Briefpapier wie bisher */
+  .ke-editor #editor-container {
+    @apply block overflow-visible bg-transparent;
+  }
+  .ke-editor:not(.ke-seiten) .editor-page {
+    @apply bg-transparent shadow-none max-w-none min-h-0 rounded-none;
+  }
+  .ke-editor:not(.ke-seiten) #editor-container .tiptap {
+    padding: 0 !important;
+    font-family: inherit !important;
+    font-size: var(--ke-dok) !important;
+    max-width: none;
+    min-height: 60vh;
+    line-height: 1.6;
+  }
+  .ke-editor:not(.ke-seiten) #editor-container .tiptap h1 {
+    @apply text-[22px] leading-tight font-bold mt-0 mb-5;
+  }
+  .ke-editor:not(.ke-seiten) #editor-container .tiptap h2 {
+    @apply text-[17px] font-semibold mt-6 mb-1.5;
+  }
+  .ke-editor:not(.ke-seiten) #editor-container .tiptap h3 {
+    @apply text-base font-semibold mt-5 mb-1;
+  }
+  .ke-editor:not(.ke-seiten) .letterhead-canvas,
+  .ke-editor:not(.ke-seiten) .letterhead-html-preview,
+  .ke-editor:not(.ke-seiten) #editor-container .tiptap .page-gap {
+    display: none;
+  }
+  /* Seitenansicht: das Blatt mit feinem Rand auf derselben Fläche, keine graue Fläche drumherum */
+  .ke-editor.ke-seiten #editor-container .editor-page {
+    @apply bg-white dark:bg-gray-900;
+    box-shadow: 0 0 0 1px var(--ke-linie-stark);
+  }
+  .ke-editor .content-readonly {
+    @apply overflow-visible p-0 max-w-none;
+    font-size: var(--ke-dok);
+    line-height: 1.6;
+  }
+  .ke-editor .content-readonly p {
+    margin: 0 0 0.75em;
+  }
+  .ke-editor .content-readonly h1 {
+    @apply text-[22px] leading-tight font-bold mt-0 mb-5;
+  }
+  .ke-editor .content-readonly h2 {
+    @apply text-[17px] font-semibold mt-6 mb-1.5;
+  }
+  .ke-editor .content-readonly h3 {
+    @apply text-base font-semibold mt-5 mb-1;
+  }
+  /* Listen im gesperrten Text wie beim Schreiben (die Grundstile setzen list-style zurück) */
+  .ke-editor .content-readonly ol {
+    list-style: decimal;
+  }
+  .ke-editor .content-readonly ul {
+    list-style: disc;
+  }
+  .ke-editor .content-readonly ul[data-type="taskList"] {
+    list-style: none;
+  }
+  .ke-editor .content-readonly li > p {
+    margin-bottom: 0.25em;
+  }
+  /* Kommentarstellen ruhig gelb ohne Unterstrich. Die Grundstile (_editor_styles.html) setzen sie über
+     #editor-container mit !important; deshalb hier mit derselben ID und einer Klasse mehr. */
+  .ke-editor [data-ke-text] span[data-comment-id],
+  .ke-editor #editor-container .tiptap span[data-comment-id] {
+    background-color: #fbefc5 !important;
+    border-bottom: 0 !important;
+  }
+  .ke-editor [data-ke-text] span[data-comment-id].comment-mark--active,
+  .ke-editor #editor-container .tiptap span[data-comment-id].comment-mark--active {
+    background-color: #f6d978 !important;
+    box-shadow: none;
+  }
+  .dark .ke-editor [data-ke-text] span[data-comment-id],
+  .dark .ke-editor #editor-container .tiptap span[data-comment-id] {
+    background-color: rgba(251, 191, 36, 0.25) !important;
+  }
+
+  /* Kommentare am Rand */
+  .ke-rand {
+    @apply relative min-h-full;
+  }
+  .ke-karte {
+    @apply absolute inset-x-0 cursor-pointer rounded-md bg-white px-3 py-2.5 text-[13.5px] leading-snug dark:bg-gray-800;
+    border: 1px solid var(--ke-linie);
+    transition: top 0.15s ease;
+  }
+  .ke-karte:hover {
+    border-color: var(--ke-linie-stark);
+  }
+  .ke-karte-aktiv {
+    @apply cursor-default border-primary-600 shadow-md dark:border-primary-500;
+  }
+  .ke-karte-kopf {
+    @apply flex items-center gap-2;
+  }
+  .ke-karte-kopf b {
+    @apply block truncate text-[13px] font-semibold;
+  }
+  .ke-karte-kopf small {
+    @apply block text-xs text-gray-500 dark:text-gray-400;
+  }
+  .ke-karte p {
+    @apply mt-1.5 whitespace-pre-line break-words;
+  }
+  .ke-karte p.ke-karte-art {
+    @apply text-xs text-gray-500 dark:text-gray-400;
+  }
+  .ke-karte p.ke-karte-vorschlag {
+    @apply mt-0.5;
+  }
+
+  /* Änderung vorschlagen: kleines Formular neben der markierten Stelle */
+  .ke-vorschlag {
+    @apply rounded-lg bg-white p-3 text-[13.5px] shadow-lg dark:bg-gray-800;
+    width: min(22rem, calc(100vw - 2rem));
+    border: 1px solid var(--ke-linie);
+  }
+  .ke-vorschlag h2 {
+    @apply mb-1 text-sm font-semibold;
+  }
+  .ke-vorschlag textarea {
+    @apply mt-1.5 w-full rounded-md px-2 py-1.5 text-[13.5px] dark:bg-gray-900;
+    border: 1px solid var(--ke-linie-stark);
+  }
+  .ke-antwort {
+    @apply mt-2 pt-2;
+    border-top: 1px solid var(--ke-linie);
+  }
+  .ke-karte-antwort textarea {
+    @apply mt-2 w-full rounded-md px-2 py-1.5 text-[13.5px] dark:bg-gray-900;
+    border: 1px solid var(--ke-linie-stark);
+  }
+  .ke-rand-leer {
+    @apply text-[13px] text-gray-500 dark:text-gray-400;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .ke-karte {
+      transition: none;
+    }
+  }
+
+  /* Bereich rechts (bisherige Seitenleisten auf Abruf) */
+  .ke-panel {
+    @apply flex flex-col w-[24rem] flex-none min-h-0 overflow-hidden bg-white dark:bg-gray-900;
+    border-left: 1px solid var(--ke-linie);
+  }
+  @media (min-width: 1800px) {
+    .ke-panel {
+      width: clamp(24rem, 24vw, 34rem);
+    }
+  }
+  .ke-panel-kopf {
+    @apply flex flex-none items-center gap-2 h-11 pl-4 pr-2;
+    border-bottom: 1px solid var(--ke-linie);
+  }
+  .ke-panel-kopf h2 {
+    @apply text-sm font-semibold focus:outline-none;
+  }
+  .ke-panel-inhalt {
+    @apply flex flex-1 flex-col min-h-0 overflow-y-auto;
+  }
+
+  /* Dialoge des Ablaufs */
+  .ke-dialog {
+    @apply w-[min(32rem,calc(100vw-2rem))] p-0 rounded-lg bg-white text-gray-900 shadow-xl dark:bg-gray-800 dark:text-gray-100;
+    border: 1px solid var(--ke-linie);
+  }
+  .ke-dialog::backdrop {
+    background: rgb(17 24 39 / 0.45);
+  }
+  .ke-dialog-kopf {
+    @apply flex items-center justify-between gap-3 py-3 pl-4 pr-2;
+    border-bottom: 1px solid var(--ke-linie);
+  }
+  .ke-dialog-kopf h2 {
+    @apply text-base font-semibold;
+  }
+  .ke-dialog-inhalt {
+    @apply space-y-3 px-4 py-4 text-sm;
+  }
+  .ke-dialog-fuss {
+    @apply flex items-center justify-end gap-2 px-4 py-3;
+    border-top: 1px solid var(--ke-linie);
+  }
+  .ke-angaben {
+    @apply grid gap-x-4 gap-y-3;
+    grid-template-columns: 8.5rem minmax(0, 1fr);
+  }
+  .ke-angaben dt {
+    @apply pt-1 text-gray-600 dark:text-gray-400;
+  }
+  .ke-auswahl {
+    @apply mt-1.5 max-h-48 overflow-y-auto rounded-md p-1;
+    border: 1px solid var(--ke-linie);
+  }
+  .ke-auswahl label {
+    @apply flex items-center gap-2 min-h-[32px] px-2 rounded hover:bg-gray-50 dark:hover:bg-gray-700;
+  }
+  .ke-auswahl input {
+    @apply rounded text-primary-600;
+  }
+  .ke-feld {
+    @apply w-full h-8 rounded-md py-0 text-sm dark:bg-gray-900;
+    border: 1px solid var(--ke-linie-stark);
+  }
+  .ke-meta {
+    @apply text-xs text-gray-600 dark:text-gray-400;
+  }
+  .ke-fehler {
+    @apply text-sm text-red-700 dark:text-red-400;
+  }
+  .ke-wege {
+    @apply m-0 list-none p-0;
+  }
+  .ke-weg {
+    @apply flex w-full items-start gap-3 rounded-md px-2 py-2.5 text-left hover:bg-gray-50 disabled:opacity-50 dark:hover:bg-gray-700;
+  }
+  .ke-weg > i,
+  .ke-weg > svg {
+    @apply mt-0.5 w-4 h-4 flex-none text-primary-600 dark:text-primary-400;
+  }
+  .ke-weg b {
+    @apply block font-medium;
+  }
+  .ke-weg small {
+    @apply block text-xs text-gray-600 dark:text-gray-400;
+  }
+
+  /* Handy: Text über die ganze Breite, Kommentare als Blatt über die Leiste unten */
+  .ke-mobil-leiste {
+    @apply flex-none p-2 bg-white dark:bg-gray-900;
+    border-top: 1px solid var(--ke-linie);
+  }
+  @media (max-width: 1023px) {
+    .ke-raster,
+    .ke-editor.ke-mit-panel .ke-raster {
+      @apply px-4 pt-4 pb-16;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "blatt";
+    }
+    .ke-rand-spalte,
+    .ke-gliederung {
+      display: none !important;
+    }
+    .ke-panel {
+      @apply fixed inset-0 z-50 w-auto border-l-0;
+    }
+    .ke-kopfzeile {
+      @apply pb-1;
+    }
+  }
+}
+
+/* Neuer Rahmen (Spur Rahmen, #852): Im Editor schrumpft die Leiste auf Symbole (Arbeitsmodus wie im Prototyp) */
+@media (min-width: 1024px) {
+  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste {
+    width: 4rem;
+  }
+  [data-rahmen="neu"]:has(.ke-editor) .work-main {
+    padding-left: 4rem;
+  }
+  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-eintrag {
+    justify-content: center;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  /* Wie in der schmalen Leiste (#908): Unterpunkte der Recherche und ihr Aufklapper entfallen */
+  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-unterpunkte,
+  [data-rahmen="neu"]:has(.ke-editor) .rahmen-leiste .rahmen-aufklapper {
+    display: none !important;
+  }
+}

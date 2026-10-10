@@ -1,0 +1,98 @@
+{% comment %}
+Werkzeugleiste des neuen Antragseditors (eine Leiste, 40 px) mit Modus rechts; darunter bei Bedarf Tabellenleiste,
+Suchen und Ersetzen und die Infozeile des Ablaufs (nur in Abstimmung, nach der Freigabe und nach der Einreichung).
+Kontext: motion, ablauf, can_edit, is_guest, my_pending_approval, can_submit_ris, ris_application, ris_feedback,
+organization, absatzformate.
+{% endcomment %}
+{% if can_edit %}
+<div id="editor-toolbar" class="ke-werkzeug" role="toolbar" aria-label="Format" x-show="!historyMode">
+    <span class="ke-wz-gruppe hidden sm:flex">
+        <button type="button" class="ke-wz" aria-label="Rückgängig" title="Rückgängig (Strg+Z)" @mousedown.prevent @click="befehl('undo')" :disabled="modus === 'ansehen'"><i data-lucide="undo-2" aria-hidden="true"></i></button>
+        <button type="button" class="ke-wz" aria-label="Wiederholen" title="Wiederholen (Strg+Y)" @mousedown.prevent @click="befehl('redo')" :disabled="modus === 'ansehen'"><i data-lucide="redo-2" aria-hidden="true"></i></button>
+    </span>
+    <span class="ke-wz-gruppe hidden sm:flex">
+        <label for="ke-absatz" class="sr-only">Absatzformat</label>
+        <select id="ke-absatz" class="ke-absatz" :value="absatzformatWert" @change="absatzformat($event.target.value)" :disabled="modus === 'ansehen'">
+            {% for wert, label in absatzformate %}<option value="{{ wert }}">{{ label }}</option>{% endfor %}
+        </select>
+    </span>
+    <span class="ke-wz-gruppe">
+        {% for cmd, label, icon, kurz in zeichenformate|slice:":3" %}
+        <button type="button" class="ke-wz" aria-label="{{ label }}" title="{{ label }} ({{ kurz }})" :aria-pressed="(!!formats.{{ cmd }}).toString()" aria-pressed="false"
+                @mousedown.prevent @click="befehl('{{ cmd }}')" :disabled="modus === 'ansehen'"><i data-lucide="{{ icon }}" aria-hidden="true"></i></button>
+        {% endfor %}
+    </span>
+    <span class="ke-wz-gruppe">
+        <button type="button" class="ke-wz" aria-label="Aufzählung" title="Aufzählung (Strg+Umschalt+8)" :aria-pressed="(formats.list === 'bullet').toString()" aria-pressed="false"
+                @mousedown.prevent @click="befehl('bulletList')" :disabled="modus === 'ansehen'"><i data-lucide="list" aria-hidden="true"></i></button>
+        <button type="button" class="ke-wz" aria-label="Nummerierung" title="Nummerierung (Strg+Umschalt+7)" :aria-pressed="(formats.list === 'ordered').toString()" aria-pressed="false"
+                @mousedown.prevent @click="befehl('orderedList')" :disabled="modus === 'ansehen'"><i data-lucide="list-ordered" aria-hidden="true"></i></button>
+    </span>
+    <span class="ke-wz-gruppe">
+        <button type="button" class="ke-wz hidden sm:grid" aria-label="Link einfügen" title="Link einfügen (Strg+K)" :aria-pressed="(!!formats.link).toString()" aria-pressed="false"
+                @mousedown.prevent @click="openLinkDialog()" :disabled="modus === 'ansehen'"><i data-lucide="link" aria-hidden="true"></i></button>
+        <button type="button" class="ke-wz" aria-label="Kommentar zur markierten Stelle" title="Kommentar (Strg+Alt+M)"
+                @mousedown.prevent @click="kommentarStarten()"><i data-lucide="message-square-plus" aria-hidden="true"></i></button>
+        <button type="button" class="ke-wz" x-show="modus === 'vorschlagen'" x-cloak aria-label="Änderung zur markierten Stelle vorschlagen" title="Änderung vorschlagen"
+                @mousedown.prevent @click="vorschlagStarten()"><i data-lucide="pencil-line" aria-hidden="true"></i></button>
+        <button type="button" class="ke-wz hidden sm:grid" aria-label="Anlage hinzufügen" title="Anlage hinzufügen" @click="panelOeffnen('details')"><i data-lucide="paperclip" aria-hidden="true"></i></button>
+    </span>
+    <span class="flex-1" aria-hidden="true"></span>
+    <div class="relative">
+        <button type="button" class="ke-modus" data-menue-knopf="modus" @click="menueUmschalten('modus')" aria-haspopup="menu"
+                :aria-expanded="(menue === 'modus').toString()" aria-expanded="false" :data-modus="modus"
+                :aria-label="'Modus: ' + ({ bearbeiten: 'Bearbeiten', vorschlagen: 'Vorschlagen', ansehen: 'Ansehen' })[modus]">
+            <i x-show="modus === 'bearbeiten'" data-lucide="pencil" class="w-4 h-4" aria-hidden="true"></i>
+            <i x-show="modus === 'vorschlagen'" x-cloak data-lucide="pencil-line" class="w-4 h-4" aria-hidden="true"></i>
+            <i x-show="modus === 'ansehen'" x-cloak data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>
+            <span class="hidden sm:inline" x-text="({ bearbeiten: 'Bearbeiten', vorschlagen: 'Vorschlagen', ansehen: 'Ansehen' })[modus]">Bearbeiten</span>
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5" aria-hidden="true"></i>
+        </button>
+        <div x-show="menue === 'modus'" x-cloak class="ke-menue ke-menue-rechts" role="menu" aria-label="Modus">
+            <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'bearbeiten').toString()" @click="modusSetzen('bearbeiten')"><i data-lucide="pencil" aria-hidden="true"></i><span>Bearbeiten<small>Text direkt ändern</small></span></button>
+            <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'vorschlagen').toString()" @click="modusSetzen('vorschlagen')"><i data-lucide="pencil-line" aria-hidden="true"></i><span>Vorschlagen<small>Änderungen am Rand vorschlagen, annehmen oder ablehnen</small></span></button>
+            <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'ansehen').toString()" @click="modusSetzen('ansehen')"><i data-lucide="eye" aria-hidden="true"></i><span>Ansehen<small>Lesen, ohne zu ändern</small></span></button>
+        </div>
+    </div>
+</div>
+<div x-show="!historyMode">
+    {% include "work/motions/partials/_editor_tabelle_leiste.html" %}
+    {% include "work/motions/partials/_editor_suche.html" %}
+</div>
+{% endif %}
+
+{% if ablauf.info_titel or ris_application and not is_guest %}
+<div class="ke-infoleiste" data-testid="ablauf-info" data-stufe="{{ ablauf.aktuell }}">
+    <p class="ke-info-text"><b>{{ ablauf.info_titel }}</b> {{ ablauf.info_text }}{% if not can_edit and ablauf.aktuell == 4 %} Der Text ist nur noch lesbar.{% endif %}</p>
+    <div class="ke-info-aktionen">
+        {% if my_pending_approval and ablauf.aktuell == 1 %}
+        <span id="ke-stimme" class="text-gray-600 dark:text-gray-400">Ihre Stimme</span>
+        <span role="group" aria-labelledby="ke-stimme" class="flex gap-1.5">
+            <button type="button" class="ke-knopf" data-approval-decide="{% url 'work:document_approval_decide' org_slug=organization.slug motion_id=motion.id approval_id=my_pending_approval.id %}" data-decision="approve">Zustimmen</button>
+            <button type="button" class="ke-knopf" data-approval-decide="{% url 'work:document_approval_decide' org_slug=organization.slug motion_id=motion.id approval_id=my_pending_approval.id %}" data-decision="reject">Ablehnen</button>
+        </span>
+        {% endif %}
+        {% if ablauf.aktion == 'freigeben' or ablauf.aktion == 'einreichen' %}
+        <button type="button" class="ke-knopf ke-knopf-haupt" @click="ablaufDialog('{{ ablauf.aktion }}')" aria-haspopup="dialog">{{ ablauf.aktion_label }}</button>
+        {% endif %}
+        {% if ris_application and not is_guest %}
+        {# Eingangs- bzw. Drucksachennummer und Ergebnis wie im bisherigen Kopf (Issue #316) #}
+        {% if can_submit_ris %}
+        {% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id as ris_status_url %}
+        <c-suche.textlink href="{{ ris_status_url }}" klasse="inline-flex items-center gap-1" title="Status bei der Verwaltung">
+            <i data-lucide="landmark" class="w-4 h-4" aria-hidden="true"></i>{% include "work/motions/partials/_ris_reference.html" %}
+        </c-suche.textlink>
+        {% else %}
+        <span class="inline-flex items-center gap-1" title="Stand bei der Verwaltung">
+            <i data-lucide="landmark" class="w-4 h-4" aria-hidden="true"></i>{% include "work/motions/partials/_ris_reference.html" %}
+        </span>
+        {% endif %}
+        {% endif %}
+        {% if ablauf.aktuell == 4 and motion.related_paper_id %}
+        {# Textlink-Baustein der Suche (cotton/suche/textlink), statt eines eigenen Link-Stils #}
+        {% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=motion.related_paper_id as ris_vorgang_url %}
+        <c-suche.textlink href="{{ ris_vorgang_url }}">Im Ratsinformationssystem ansehen</c-suche.textlink>
+        {% endif %}
+    </div>
+</div>
+{% endif %}

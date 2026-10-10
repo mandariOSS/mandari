@@ -7,11 +7,19 @@
 
         <!-- Collapsed: comment button -->
         <template x-if="!commentPopupExpanded">
-            <button type="button" @click.stop="expandCommentPopup()"
-                    class="comment-popup-btn">
-                <i data-lucide="message-square-plus" class="w-4 h-4 text-amber-500"></i>
-                Kommentieren
-            </button>
+            <div class="flex gap-1">
+                <button type="button" @click.stop="expandCommentPopup()"
+                        class="comment-popup-btn">
+                    <i data-lucide="message-square-plus" class="w-4 h-4 text-amber-500"></i>
+                    Kommentieren
+                </button>
+                {# Neuer Editor, Modus „Vorschlagen“ (#856); im bisherigen Editor ist der Modus immer „Bearbeiten“ #}
+                <button type="button" x-show="modus === 'vorschlagen'" @click.stop="vorschlagStarten()"
+                        class="comment-popup-btn">
+                    <i data-lucide="pencil-line" class="w-4 h-4 text-primary-600"></i>
+                    Änderung vorschlagen
+                </button>
+            </div>
         </template>
 
         <!-- Expanded: comment form -->

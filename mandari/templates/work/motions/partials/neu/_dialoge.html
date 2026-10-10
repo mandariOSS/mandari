@@ -1,0 +1,114 @@
+{% comment %}
+Dialoge des Ablaufs im neuen Antragseditor (Teil von #856). Jeder Schritt nutzt, was es gibt:
+- „Zur Abstimmung geben“: Status „Interne Absprache“ und je Mitglied eine Zustimmungsanfrage (Freigabe-Weg).
+- „Fassung freigeben“: Status „Freigegeben“; danach ist der Text gesperrt.
+- „Antrag einreichen“: Einreichung bei der Verwaltung (Seite mit mandari Session und E-Mail) oder Status „Eingereicht“.
+Native <dialog>: Fokusfalle und Escape vom Browser. Kontext: motion, ablauf, abstimmung_mitglieder, abstimmung_ohne_zugang,
+stimmberechtigte_ids, approval_type_choices, offen_text, offene_vorschlaege, can_submit_ris, organization.
+{% endcomment %}
+{% load member_tags %}
+{% if ablauf.aktion == 'abstimmung' %}
+<dialog class="ke-dialog" aria-labelledby="ke-dlg-abstimmung" data-testid="dialog-abstimmung"
+        x-effect="dialog === 'abstimmung' ? ($el.open || $el.showModal()) : ($el.open && $el.close())"
+        @close="dialog === 'abstimmung' && ablaufDialogSchliessen()" @cancel.prevent="ablaufDialogSchliessen()">
+    <form @submit.prevent="abstimmungStarten()">
+        <div class="ke-dialog-kopf">
+            <h2 id="ke-dlg-abstimmung">Zur Abstimmung geben</h2>
+            <button type="button" class="ke-wz" @click="ablaufDialogSchliessen()" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+        </div>
+        <div class="ke-dialog-inhalt">
+            <p>Die Fraktion stimmt über diese Fassung ab. Während der Abstimmung öffnet der Text im Modus „Vorschlagen“: Änderungen erscheinen am Rand und werden dort angenommen oder abgelehnt.</p>
+            <dl class="ke-angaben">
+                <dt id="ke-dlg-wer">Wer stimmt ab</dt>
+                <dd>
+                    <span x-text="abstimmungWer"></span>
+                    <c-suche.textlink knopf klasse="ml-2" @click="abstimmungAuswahlOffen = !abstimmungAuswahlOffen"
+                            ::aria-expanded="abstimmungAuswahlOffen.toString()" aria-controls="ke-dlg-auswahl">Auswahl ändern</c-suche.textlink>
+                    <div id="ke-dlg-auswahl" x-show="abstimmungAuswahlOffen" x-cloak>
+                        <div class="ke-auswahl" role="group" aria-labelledby="ke-dlg-wer">
+                            {% for member in abstimmung_mitglieder %}
+                            <label><input type="checkbox" value="{{ member.id }}" x-model="abstimmungAuswahl">{{ member.user.get_display_name }}{% if member.id in stimmberechtigte_ids %}<span class="ke-hinweis">stimmberechtigt</span>{% endif %}</label>
+                            {% empty %}
+                            <p class="ke-meta">Niemand sonst darf das Dokument sehen, und Sie dürfen es nicht freigeben.</p>
+                            {% endfor %}
+                        </div>
+                        <label for="ke-dlg-art" class="ke-meta block mt-2">Angefragt als</label>
+                        <select id="ke-dlg-art" class="ke-feld" x-model="abstimmungArt">
+                            {% for value, label in approval_type_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                        </select>
+                    </div>
+                </dd>
+                <dt>Hinweis an</dt>
+                <dd>die Ausgewählten, in Work und je nach Einstellung per E-Mail</dd>
+            </dl>
+            {% if abstimmung_ohne_zugang %}
+            <p class="ke-meta" x-show="abstimmungFreigabeHinweis" x-cloak data-testid="abstimmung-freigabe-hinweis"><span x-text="abstimmungFreigabeHinweis"></span>{% if motion.visibility == "private" %} Das Dokument ist danach nicht mehr privat, sondern für sie freigegeben.{% endif %}</p>
+            {% endif %}
+            {% if offen_text %}
+            <p class="ke-meta">Noch offen: {{ offen_text }}. Sie können trotzdem abstimmen lassen.</p>
+            {% endif %}
+            <p class="ke-fehler" role="alert" x-show="ablaufFehler" x-text="ablaufFehler"></p>
+        </div>
+        <div class="ke-dialog-fuss">
+            <button type="button" class="ke-knopf" @click="ablaufDialogSchliessen()">Abbrechen</button>
+            <button type="submit" class="ke-knopf ke-knopf-haupt" :disabled="ablaufLaeuft">Abstimmung starten</button>
+        </div>
+    </form>
+</dialog>
+{% endif %}
+
+{% if ablauf.aktion == 'freigeben' %}
+<dialog class="ke-dialog" aria-labelledby="ke-dlg-freigeben" data-testid="dialog-freigeben"
+        x-effect="dialog === 'freigeben' ? ($el.open || $el.showModal()) : ($el.open && $el.close())"
+        @close="dialog === 'freigeben' && ablaufDialogSchliessen()" @cancel.prevent="ablaufDialogSchliessen()">
+    <div class="ke-dialog-kopf">
+        <h2 id="ke-dlg-freigeben">Fassung freigeben</h2>
+        <button type="button" class="ke-wz" @click="ablaufDialogSchliessen()" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+    </div>
+    <div class="ke-dialog-inhalt">
+        <p>Nach der Freigabe ist der Text gesperrt und kann eingereicht werden.</p>
+        <p>Zustimmung: {{ ablauf.zustimmung.satz }}.</p>
+        {% if offen_text %}
+        <p class="ke-meta">Noch offen: {{ offen_text }}. Alles bleibt am Rand erhalten{% if offene_vorschlaege %}, offene Vorschläge kommen aber nicht in die Fassung. Was übernommen werden soll, nehmen Sie vorher am Rand an{% endif %}.</p>
+        {% endif %}
+    </div>
+    <div class="ke-dialog-fuss">
+        <button type="button" class="ke-knopf" @click="ablaufDialogSchliessen()">Abbrechen</button>
+        <button type="button" class="ke-knopf ke-knopf-haupt" @click="ablaufStatus('approved')" :disabled="ablaufLaeuft">Freigeben</button>
+    </div>
+</dialog>
+{% endif %}
+
+{% if ablauf.aktion == 'einreichen' %}
+<dialog class="ke-dialog" aria-labelledby="ke-dlg-einreichen" data-testid="dialog-einreichen"
+        x-effect="dialog === 'einreichen' ? ($el.open || $el.showModal()) : ($el.open && $el.close())"
+        @close="dialog === 'einreichen' && ablaufDialogSchliessen()" @cancel.prevent="ablaufDialogSchliessen()">
+    <div class="ke-dialog-kopf">
+        <h2 id="ke-dlg-einreichen">Antrag einreichen</h2>
+        <button type="button" class="ke-wz" @click="ablaufDialogSchliessen()" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+    </div>
+    <div class="ke-dialog-inhalt">
+        {% if motion.due_date %}<p>Frist: {{ motion.due_date|date:"d.m.Y" }}</p>{% endif %}
+        <ul class="ke-wege">
+            {% if can_submit_ris and motion.is_submittable %}
+            <li>
+                <a class="ke-weg" href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}">
+                    <i data-lucide="landmark" aria-hidden="true"></i>
+                    <span><b>Bei der Verwaltung einreichen</b><small>digital über mandari Session oder per E-Mail an die Verwaltungskontakte</small></span>
+                </a>
+            </li>
+            {% endif %}
+            <li>
+                <button type="button" class="ke-weg" @click="ablaufStatus('submitted')" :disabled="ablaufLaeuft">
+                    <i data-lucide="check" aria-hidden="true"></i>
+                    <span><b>Als eingereicht markieren</b><small>wenn Sie auf anderem Weg eingereicht haben, zum Beispiel auf Papier</small></span>
+                </button>
+            </li>
+        </ul>
+    </div>
+    <div class="ke-dialog-fuss">
+        <a class="ke-knopf mr-auto" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf" target="_blank" rel="noopener"><i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>Vorschau (PDF)</a>
+        <button type="button" class="ke-knopf" @click="ablaufDialogSchliessen()">Abbrechen</button>
+    </div>
+</dialog>
+{% endif %}

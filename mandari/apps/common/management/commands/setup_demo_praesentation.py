@@ -1245,8 +1245,8 @@ class Command(BaseCommand):
         nummer = "Drucksache 22-…" if profil_name == "stadtstaat" else "Vorlagen-Nr. AN/…/<Jahr>"
         sitzung = link("session:meeting_detail", tenant_slug=a.slug, meeting_id=welt.sitzung_kommend.id)
         spickzettel = [
-            f"1. Work – als {DEMO_USERS['vorsitz']['email']}: Work-Antrag öffnen → Symbol „Bei Verwaltung "
-            "einreichen“ → bestätigen → „Jetzt einreichen“. Zeigt die Eingangsnummer A/<Jahr>/… im Editor.",
+            f"1. Work – als {DEMO_USERS['vorsitz']['email']}: Work-Antrag öffnen → Menü „Ablauf“ → „Bei der "
+            "Verwaltung einreichen“ → bestätigen → „Jetzt einreichen“. Zeigt die Eingangsnummer A/<Jahr>/… im Editor.",
             f"2. Session – als {DEMO_USERS['verwaltung']['email']}: Anträge → „{ANTRAG_TITEL}“ → „In Vorlage "
             f"umwandeln“ → Gremium prüfen → „In Vorlage umwandeln“. Zeigt die Vorlage mit {nummer}.",
             f"3. Session: {sitzung} → Beratungsfolge am TOP „{TOP_JUGENDZENTRUM}“ (Bauausschuss → "

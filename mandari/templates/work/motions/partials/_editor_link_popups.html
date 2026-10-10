@@ -1,0 +1,51 @@
+{% comment %}
+Link-Popover (Klick auf einen Link im Text) und Dialog zum Einfügen/Bearbeiten eines Links.
+Alpine-Komponente documentEditor; nur für Bearbeitende eingebunden.
+{% endcomment %}
+<!-- Link-Popover (bei Klick auf einen Link im Text) -->
+<div x-show="linkPopupVisible" x-cloak
+     class="comment-popup"
+     :style="'top:' + linkPopupTop + 'px; left:' + linkPopupLeft + 'px;'"
+     @click.away="linkPopupVisible = false">
+    <div class="flex items-center gap-1 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg text-sm">
+        <i data-lucide="link" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>
+        <a :href="linkPopupHref" target="_blank" rel="noopener"
+           class="text-primary-600 dark:text-primary-400 underline truncate max-w-[240px]"
+           x-text="linkPopupHref"></a>
+        <span class="border-l border-gray-200 dark:border-gray-600 h-4 mx-1"></span>
+        <button type="button" @click="editLinkFromPopup()"
+                class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700" title="Link bearbeiten">
+            <i data-lucide="pencil" class="w-3.5 h-3.5"></i>
+        </button>
+        <button type="button" @click="removeLinkFromPopup()"
+                class="p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-red-500" title="Link entfernen">
+            <i data-lucide="unlink" class="w-3.5 h-3.5"></i>
+        </button>
+    </div>
+</div>
+
+<!-- Link-Dialog (Einfügen/Bearbeiten) -->
+<div x-show="showLinkModal" x-cloak class="image-modal-backdrop" @click.self="showLinkModal = false">
+    <div class="image-modal" @keydown.escape.stop="showLinkModal = false">
+        <h3 class="text-base font-semibold text-gray-900 dark:text-white mb-4">Link einfügen</h3>
+        <label class="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">URL</label>
+        <input type="url" x-model="linkUrl" x-ref="linkUrlInput"
+               @keydown.enter.prevent="insertLink()"
+               placeholder="https://beispiel.de"
+               class="w-full px-3 py-2 text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 focus:ring-2 focus:ring-primary-500 mb-4">
+        <div class="flex justify-end gap-2">
+            <button type="button" @click="showLinkModal = false"
+                    class="px-3 py-1.5 text-sm rounded-lg border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700">
+                Abbrechen
+            </button>
+            <button type="button" x-show="formats.link" @click="removeLink()"
+                    class="px-3 py-1.5 text-sm rounded-lg text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20">
+                Entfernen
+            </button>
+            <button type="button" @click="insertLink()" :disabled="!linkUrl.trim()"
+                    class="px-3 py-1.5 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 disabled:opacity-50">
+                Übernehmen
+            </button>
+        </div>
+    </div>
+</div>
