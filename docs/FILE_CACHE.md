@@ -178,7 +178,10 @@ Issue #919), aber nur Dateien ab dem Stichtag der Quelle:
   sonst ein Zeitpunkt (ISO 8601) oder `ausstehend` (erster vollständiger Sync noch nicht beendet: nichts abrufen).
   Ein leerer Stichtag gilt nur für Quellen mit gelisteter Kommune.
 - `sync_config["document_backfill"] = true` gibt den Altbestand (Dateien vor dem Stichtag) einer Quelle frei; das
-  geschieht je Quelle nach Freigabe (Last bei der Quelle). Ohne Freigabe behalten diese Dateien ihren Text.
+  geschieht je Quelle nach Freigabe (Last bei der Quelle). Ohne Freigabe behalten diese Dateien ihren bisherigen
+  Text; wer keinen hat, bekommt ohne Freigabe weder Ablage noch Text, denn mit `worker` erkennt der Ingestor nicht
+  mehr. Das betrifft den ganzen ersten Bestand einer **neu angelegten Quelle** (Stichtag = Ende ihres ersten
+  vollständigen Syncs): Neue Quellen brauchen `document_backfill`, damit ihre Dokumente Text bekommen.
 - Die Stichtage setzt die Anwendung, nie der Ingestor: Mit `TEXT_EXTRACTION_RUNNER=worker` trägt jeder Lauf von
   `cache_files` sie nach. Quellen ohne gelistete Kommune und ohne Stichtag bekommen den Zeitpunkt des Laufs (beim
   Umschalten also den Umschaltzeitpunkt), solange ihr erster vollständiger Sync fehlt `ausstehend`; aus
@@ -187,6 +190,55 @@ Issue #919), aber nur Dateien ab dem Stichtag der Quelle:
 - `prune_file_cache --unlisted` lässt ausgeblendete Kommunen stehen, die ablegen.
 - Die lokale Platte ist mit Objektspeicher Zwischenspeicher (`OBJ_CACHE_MAX_GB`); ohne Objektspeicher begrenzt
   `FILE_CACHE_MIN_FREE_GB`, und Abrufe warten, statt Text zu verlieren.
+
+### Texterkennung aus der Ablage
+
+Mit `TEXT_EXTRACTION_RUNNER=worker` erkennt nur der Auftrag `file.extract_text` (Warteschlange `ocr`, Dienst
+`worker-heavy`) den Text, und er liest ausschließlich aus der Ablage bzw. dem Objektspeicher (`file_store.local_copy`);
+er ruft nie bei der Quelle ab (`hub/ris/erkennung.py`, Issue #919, ADR Abschnitte 1, 2 und 4). Den Inhalt holt
+vorher der Abruf (oben).
+
+- **Einplanen ohne Beanspruchung:** Der Zeitplan `texterkennung_einplanen` (alle zwei Minuten) gibt liegen
+  gebliebene Beanspruchungen frei (`TEXT_EXTRACTION_STALE_MINUTES`, nach `TEXT_EXTRACTION_MAX_ATTEMPTS` Abbrüchen
+  „Speichergrenze“) und reiht Dateien mit abgelegtem Inhalt (`local_status = ok`) ein, deren Erkennung wartet
+  oder deren Text aus einer älteren Erkennungsversion stammt, solange für sie noch kein Auftrag wartet –
+  höchstens `TEXT_EXTRACTION_QUEUE_DEPTH` zugleich, wartende vor der Neuerkennung, neueste zuerst. Gelöschte,
+  gesperrte und geleerte Dateien nie. `python manage.py extract_texts` plant auf demselben Weg ein (`--dry-run`,
+  `--limit`, `--body`, `--pdf-only`, `--reprocess`), lädt und erkennt aber nicht selbst. Ohne `--limit` reiht er
+  höchstens so viele Aufträge ein, wie in `ocr` frei sind (dieselbe Grenze), den Rest übernimmt der Zeitplan; ein
+  ausdrückliches `--limit` gilt auch darüber hinaus (Vorrang, etwa mit `--body`).
+- **Beanspruchen** erst beim Start des Auftrags (`processing`, `SELECT … FOR UPDATE SKIP LOCKED`), nur aus
+  `pending` oder aus `completed` mit älterer Version. Von zwei Aufträgen derselben Datei erkennt einer.
+- **Lesen:** Fehlt der Inhalt bestätigt (weder lokal noch im Objektspeicher), geht die Datei zurück an den Abruf
+  (`local_status = none`) und die Erkennung auf den Stand davor. Ist die Ablage gestört (Objektspeicher antwortet
+  nicht, Ablage nicht eingehängt, Platte voll) oder die Umgebung (Datenbank beim Speichern, kein Platz für
+  Zwischendateien der Erkennung), bleibt alles, wie es war, und derselbe Auftrag läuft 15 Minuten später erneut –
+  kein Abruf bei der Quelle, kein Versuch gezählt. Fehlt bei Altbestand der SHA-256, berechnet ihn
+  der Auftrag und trägt ihn nach.
+- **Zustände der Erkennung:** `failed` heißt nur noch „Inhalt nicht lesbar“ oder „Speichergrenze“; ein Abruffehler
+  ändert die Erkennung nie. Endet der Abruf an der Größengrenze (`too_large`), wird die Erkennung `skipped`.
+- **Bedingt speichern:** Der Text wird nur geschrieben, wenn der Inhalt noch derselbe ist (`sha256_hash`), die Datei
+  noch beansprucht und weder gelöscht, gesperrt noch geleert ist. Sonst wird das Ergebnis verworfen und ein neuer
+  Inhalt eigens erkannt. `text_source_sha256` und `text_extraction_version` halten fest, aus welchem Inhalt und mit
+  welcher Version der Text stammt; `ris.file.text_extracted` nennt den SHA-256 (optionales Feld `sha256`).
+- **Neue Erkennungsversion** (`mandari_dokumente.EXTRACTION_VERSION`, Texte ohne Version gelten als Version 1): Der
+  Zeitplan plant betroffene Dateien schrittweise neu ein. Der alte Text bleibt stehen, bis der neue gespeichert
+  ist; liefert die Neuerkennung keinen Text oder scheitert sie, bleibt er erledigt. `extract_texts --reprocess`
+  fordert die Neuerkennung für erledigte Dateien an (Version `0`) und setzt übersprungene und gescheiterte zurück;
+  eingeplant werden sie schrittweise wie oben.
+- **Kennzahlen:** `mandari_files_stored_without_text` (abgelegt, Erkennung wartet oder läuft) und
+  `mandari_files_text_outdated` (abgelegt, Text aus älterer Version), Prüfung `dokumenttext` in `/health/worker/`
+  (nur mit `TEXT_EXTRACTION_RUNNER=worker`): rot, sobald ein abgelegtes Dokument länger als
+  `TEXT_EXTRACTION_BACKLOG_ALERT_HOURS` (Standard 24) seit dem Ablegen auf seinen Text wartet (`docs/MONITORING.md`).
+  Nach `dokumentkette nacharbeiten` erwartet, bis der Rückstand abgearbeitet ist.
+- **Nacharbeit** (`python manage.py dokumentkette nacharbeiten`, Standard Probelauf mit Zahlen je Quelle): Dateien,
+  deren Erkennung früher an einem Abruffehler scheiterte (`failed`, Fehlertext beginnt mit „Download“), kommen
+  zurück in die Kette – mit abgelegtem Inhalt in die Erkennung, ohne Inhalt zusätzlich in den Abruf (aus `none` und
+  `error`; `retry`, `refused`, `missing` und `too_large` behalten ihren Abrufzustand). Nicht abzulegende Dateien
+  (nicht freigegebener Altbestand) bleiben ohne Inhalt unverändert. `--ausfuehren` nur mit
+  `TEXT_EXTRACTION_RUNNER=worker` (sonst lüde der Ingestor erneut bei der Quelle) und nach Freigabe; wiederholbar.
+- **Start nur mit Journal:** `TEXT_EXTRACTION_RUNNER=worker` ohne `TASKS_BACKEND=journal` lässt die Anwendung nicht
+  starten (`ImproperlyConfigured`).
 
 ### Auslieferung über den Webserver
 
@@ -306,6 +358,11 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   antwortet mit 503 und `Retry-After`, der Abruf versucht es später. Eine Störung des Objektspeichers löst so nie
   eine Abrufwelle bei den Kommunen aus. Nur ein bestätigtes Fehlen (404 im Objektspeicher, falscher Hash) setzt
   die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files` neu, und der Inhalt wird neu hochgeladen.
+  **Betriebsrisiko:** Zeigen `OBJ_BUCKET` oder das Schlüsselschema auf einen Bestand, in dem die Inhalte (noch)
+  nicht liegen – etwa bei einem Umzug des Objektspeichers –, gilt jeder lokal verdrängte Inhalt als bestätigt
+  fehlend und wird bei der Quelle neu geholt. Eine Bremse für gehäufte Fehlbestände gibt es noch nicht (Hinweis
+  für Etappe 3). Deshalb vor jedem Wechsel den Bestand im neuen Ziel vollständig bereitstellen und mit Stichproben
+  prüfen, dann erst umstellen.
 - **Prüfsummen:** boto3 sendet seit 1.36 standardmäßig Prüfsummen im `aws-chunked`-Verfahren, was manche
   S3-kompatiblen Anbieter ablehnen. `OBJ_CHECKSUMS=when_required` (Standard) verhält sich wie frühere Versionen.
   Beim ersten Test mit dem echten Bucket Hochladen, Holen und Löschen prüfen; nur wenn der Anbieter es verlangt,

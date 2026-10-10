@@ -13,6 +13,7 @@ from .ki_hosts import STANDARD_ERLAUBTE_HOSTS, erlaubte_hosts_aus_umgebung, ist_
 from .mistral import MistralConfig, MistralError, MistralRateLimitError
 from .ocr import MEMORY_LIMIT_REASON, OcrLimits, OcrMemoryLimitError, OcrResult, ocr_pdf, page_dpi
 from .texterkennung import (
+    EXTRACTION_VERSION,
     METHOD_MISTRAL,
     METHOD_NONE,
     METHOD_PYPDF,
@@ -25,6 +26,7 @@ from .texterkennung import (
 )
 
 __all__ = [
+    "EXTRACTION_VERSION",
     "MEMORY_LIMIT_REASON",
     "METHOD_MISTRAL",
     "METHOD_NONE",

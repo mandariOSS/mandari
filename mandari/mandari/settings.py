@@ -753,8 +753,9 @@ MISTRAL_OCR_MODEL = os.environ.get("MISTRAL_OCR_MODEL", "pixtral-12b-2409")
 
 # Texterkennung (Issues #817, #530): eine Implementierung in shared/mandari_dokumente, gleiche Variablen wie
 # im Ingestor. TEXT_EXTRACTION_RUNNER wählt, wer den Text der RIS-Dateien erkennt: "ingestor" (Standard,
-# OCR-Worker des Ingestors) oder "worker" (Aufträge file.extract_text in der Warteschlange ocr, braucht
-# TASKS_BACKEND=journal). In Anwendung und Ingestor gleich setzen, sonst arbeiten beide oder keiner.
+# OCR-Worker des Ingestors) oder "worker" (Aufträge file.extract_text in der Warteschlange ocr, lesen nur aus
+# Ablage und Objektspeicher; braucht TASKS_BACKEND=journal, sonst startet die Anwendung nicht, siehe unten bei
+# TASKS). In Anwendung und Ingestor gleich setzen, sonst arbeiten beide oder keiner.
 TEXT_EXTRACTION_RUNNER = os.environ.get("TEXT_EXTRACTION_RUNNER", "ingestor").strip().lower() or "ingestor"
 if TEXT_EXTRACTION_RUNNER not in ("ingestor", "worker"):
     from django.core.exceptions import ImproperlyConfigured
@@ -768,8 +769,12 @@ TEXT_EXTRACTION_STALE_MINUTES = int(os.environ.get("TEXT_EXTRACTION_STALE_MINUTE
 TEXT_EXTRACTION_GIVE_UP_ALERT = int(os.environ.get("TEXT_EXTRACTION_GIVE_UP_ALERT", "5"))
 TEXT_EXTRACTION_MAX_ATTEMPTS = int(os.environ.get("TEXT_EXTRACTION_MAX_ATTEMPTS", "3"))
 TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", "50"))
-# Je Lauf des Zeitplans höchstens so viele Aufträge einreihen bzw. wartend halten (nur mit Runner "worker")
+# Je Lauf des Zeitplans höchstens so viele Aufträge einreihen bzw. wartend halten (nur mit Runner "worker");
+# dieselbe Grenze für extract_texts ohne --limit
 TEXT_EXTRACTION_QUEUE_DEPTH = int(os.environ.get("TEXT_EXTRACTION_QUEUE_DEPTH", "20"))
+# Prüfung „dokumenttext“ (/health/worker/, Issue #919, nur mit Runner "worker"): rot, sobald ein abgelegtes Dokument
+# länger als so viele Stunden auf seinen Text wartet
+TEXT_EXTRACTION_BACKLOG_ALERT_HOURS = float(os.environ.get("TEXT_EXTRACTION_BACKLOG_ALERT_HOURS", "24"))
 # Grenzen je Seite und Datei (DEPLOYMENT.md, „OCR-Worker des Ingestors“)
 OCR_DPI = int(os.environ.get("OCR_DPI", "200"))
 OCR_MAX_MEGAPIXELS = float(os.environ.get("OCR_MAX_MEGAPIXELS", "8"))
@@ -953,6 +958,15 @@ if WORK_NOTIFICATION_SUBSCRIPTION != "aus" and TASKS["default"]["BACKEND"] != _T
     from django.core.exceptions import ImproperlyConfigured
 
     raise ImproperlyConfigured("WORK_NOTIFICATION_SUBSCRIPTION schatten/aktiv braucht TASKS_BACKEND=journal.")
+
+# Texterkennung im Worker (Issue #919, docs/adr/20261007-dokumentkette.md, Abschnitt 11): Voraussetzung sind
+# Aufträge im Journal mit einem Runner für ocr. Mit dem sofort ausführenden Backend liefe jede direkt eingereihte
+# Erkennung (file_extract_text.enqueue) in der Webanfrage oder im Zeitplan. Wie WORK_NOTIFICATION_SUBSCRIPTION:
+# lieber nicht starten.
+if TEXT_EXTRACTION_RUNNER == "worker" and TASKS["default"]["BACKEND"] != _TASK_BACKENDS["journal"]:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("TEXT_EXTRACTION_RUNNER=worker braucht TASKS_BACKEND=journal.")
 
 # =============================================================================
 # Email Configuration

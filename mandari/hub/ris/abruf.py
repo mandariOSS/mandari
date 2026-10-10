@@ -58,7 +58,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import tempfile
 import time
 from collections import Counter
@@ -78,14 +77,6 @@ from prometheus_client import Counter as PromCounter
 
 from insight_core.models import OParlBody, OParlFile, OParlSource
 from insight_core.services import file_cache, file_cache_limit, file_store, host_pacing, robots, safe_fetch
-from insight_core.services.document_extraction import (
-    TEMP_FILE_PREFIX,
-    DocumentDownloadError,
-    DocumentTooLargeError,
-    DownloadedFile,
-    prepare_fetch,
-    purge_now_and_then,
-)
 from insight_core.services.text_extraction_job import runner_is_worker
 
 logger = logging.getLogger(__name__)
@@ -654,53 +645,6 @@ def download_live(
         headers=file_cache.download_headers(file_obj.body),
         user_agent=robots.user_agent_for(file_obj),
     )
-
-
-def download_to_file(
-    url: str,
-    *,
-    max_bytes: int,
-    timeout: float = 120.0,
-    extra_headers: dict[str, str] | None = None,
-    sync_config: Any = None,
-) -> DownloadedFile:
-    """
-    Datei nach robots.txt und Drossel je Host gestreamt in eine temporäre Datei laden und dabei hashen (bisher
-    ``document_extraction.download_to_file``).
-
-    Nie liegt die ganze Datei im Speicher; die Größengrenze greift während des Downloads
-    (``DocumentTooLargeError``). Fehler der Quelle: ``DocumentDownloadError``; robots.txt und Drossel wie
-    ``document_extraction.prepare_fetch``.
-    """
-    agent, headers = prepare_fetch(url, extra_headers, sync_config, None)
-    purge_now_and_then()
-    handle, name = tempfile.mkstemp(suffix=".part", prefix=TEMP_FILE_PREFIX)
-    path = Path(name)
-    try:
-        with os.fdopen(handle, "wb") as target:
-            result = safe_fetch.download_to(
-                target,
-                url,
-                max_bytes=max_bytes,
-                total_seconds=timeout,
-                timeout=httpx.Timeout(timeout),
-                headers=headers,
-                user_agent=agent,
-            )
-    except safe_fetch.TooLargeError as exc:
-        path.unlink(missing_ok=True)
-        raise DocumentTooLargeError(f"Datei größer als {max_bytes // 1024 // 1024} MB") from exc
-    except (httpx.HTTPError, safe_fetch.DeadlineExceededError) as exc:
-        path.unlink(missing_ok=True)
-        raise DocumentDownloadError(f"Download fehlgeschlagen ({type(exc).__name__})") from exc
-    except BaseException:
-        path.unlink(missing_ok=True)
-        raise
-    digest = hashlib.sha256()
-    with open(path, "rb") as source:
-        for chunk in iter(lambda: source.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return DownloadedFile(path=path, size=result.size, sha256=digest.hexdigest(), content_type=result.content_type)
 
 
 def code_for_status(status: int) -> str:

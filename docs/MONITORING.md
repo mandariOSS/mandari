@@ -375,6 +375,7 @@ Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Das Ergebni
 | `fehlerquote` | höchstens 20 % der in der letzten Stunde beendeten Aufträge gescheitert (erst ab 5 beendeten) |
 | `gescheitert` | kein Auftrag in den letzten 24 h endgültig gescheitert und kein totes Ereignis |
 | `dokumentabruf` | Abruf der RIS-Dateien (Issue #919): keine fällige Wiederholung (`local_status = retry`) liegt länger als `DOCUMENT_FETCH_RETRY_ALERT_HOURS` (Standard 6) unbearbeitet; Quellen in Schonung, nicht abzulegende und von der Obergrenze verdrängte Dateien (`evicted`, Issue #961) zählen nicht. Mit abgeschaltetem Zeitplan `befehl:cache_files` immer in Ordnung |
+| `dokumenttext` | Texterkennung aus der Ablage (Issue #919): kein abgelegtes Dokument (`local_status = ok`, nicht gelöscht, gesperrt oder geleert) wartet länger als `TEXT_EXTRACTION_BACKLOG_ALERT_HOURS` (Standard 24) seit dem Ablegen auf seinen Text (Erkennung `pending` bzw. `processing`). Rot heißt: Die Erkennung steht oder kommt nicht nach. Nach `dokumentkette nacharbeiten` erwartet, bis der Rückstand abgearbeitet ist (`mandari_files_stored_without_text`). Von der Obergrenze verdrängte Dokumente (`evicted`, Issue #961) gelten nicht als abgelegt und zählen nicht. Scharf nur mit `TEXT_EXTRACTION_RUNNER=worker`; mit `ingestor` immer grün |
 | `texterkennung` | Texterkennung (OCR-Worker des Ingestors bzw. Aufträge `file.extract_text`, je nach `TEXT_EXTRACTION_RUNNER`): keine Datei länger als `TEXT_EXTRACTION_STALE_MINUTES` (Standard 60) plus 15 min in `processing` (Dateien, deren Auftrag noch wartet, zählen nicht; das meldet `rueckstau`) und weniger als `TEXT_EXTRACTION_GIVE_UP_ALERT` (Standard 5) Dateien in den letzten 24 h nach wiederholtem Abbruch aufgegeben (Speichergrenze, Issue #817; einzelne übergroße Scans lösen keinen Alarm aus, #842). Der Text nennt zusätzlich, wie viele Dateien nach einem Abbruch erneut eingeplant sind |
 
 Dazu meldet sich der Worker mit dem Scheduler selbst („Worker lebt“, `apps/events/push.py`), wenn
@@ -444,6 +445,17 @@ endpoints:
     group: betrieb
     url: https://mandari.example.org/health/worker/?pruefung=dokumentabruf
     interval: 15m
+    conditions:
+      - "[STATUS] == 200"
+    alerts:
+      - type: email
+        failure-threshold: 2
+        send-on-resolved: true
+  # Texterkennung aus der Ablage: abgelegte Dokumente warten länger als 24 h auf ihren Text (Warnung)
+  - name: worker-dokumenttext
+    group: betrieb
+    url: https://mandari.example.org/health/worker/?pruefung=dokumenttext
+    interval: 30m
     conditions:
       - "[STATUS] == 200"
     alerts:

@@ -958,6 +958,7 @@ Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 | `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
 | `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
 | `TEXT_EXTRACTION_MAX_SIZE_MB` | `50` | größere Dateien werden übersprungen |
+| `TEXT_EXTRACTION_BACKLOG_ALERT_HOURS` | `24` | nur Anwendung, nur mit `worker`: Prüfung `dokumenttext` in `/health/worker/` wird rot, sobald ein abgelegtes Dokument länger auf seinen Text wartet (Issue #919, `docs/FILE_CACHE.md`, „Texterkennung aus der Ablage“) |
 | `MISTRAL_API_KEY`, `MISTRAL_BASE_URL`, `MISTRAL_OCR_MODEL`, `MISTRAL_OCR_RATE_LIMIT` | leer, leer, `pixtral-12b-2409`, `60` | Externe Texterkennung vor Tesseract, nur für öffentliche RIS-Dateien und nur mit Basis-URL, deren Host in `KI_ERLAUBTE_HOSTS` steht (siehe „KI-Anbieter“); Anfragen je Minute und Prozess |
 
 Beansprucht wird in kleinen Portionen direkt vor der Bearbeitung (höchstens zwei Dateien je Platz von

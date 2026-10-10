@@ -191,7 +191,6 @@ insight_core.management.commands.backfill_oparl_locations
 insight_core.management.commands.cache_files
 insight_core.management.commands.check_source_health
 insight_core.management.commands.extract_locations
-insight_core.management.commands.extract_texts
 insight_core.management.commands.fetch_osm_geodata
 insight_core.management.commands.fetch_person_photos
 insight_core.management.commands.generate_alerts

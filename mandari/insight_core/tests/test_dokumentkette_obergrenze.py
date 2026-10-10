@@ -459,3 +459,96 @@ def test_nachladen_haelt_die_grenze(settings: Any, quelle: dict[str, Any], runne
     # Über der Grenze lädt der nächste Lauf nichts; verdrängt wird nur im stündlichen Aufräumen
     assert file_cache.cache_pending(limit=10, sleep=0) == {"limit": 1}
     assert len(quelle["abrufe"]) == 3
+
+
+# =============================================================================
+# Texterkennung aus der Ablage (#942): verdrängt heißt nicht abgelegt
+# =============================================================================
+
+
+class TestErkennungUndVerdraengt:
+    def test_erkennung_beansprucht_verdraengte_nicht(self, body: OParlBody, quelle: dict[str, Any]) -> None:
+        from hub.ris import erkennung
+
+        datei = _verdraengt(body, "a")
+        OParlFile.objects.filter(pk=datei.pk).update(text_extraction_status="pending")
+        assert erkennung.beanspruchen(datei.pk) is None
+        assert erkennung.erkennen(str(datei.pk)) == erkennung.NICHT_ZU_TUN
+        assert datei.pk not in erkennung.candidates(10)
+        assert _status(datei) == ["evicted"], "kein automatischer Abruf, nie none"
+        assert quelle["abrufe"] == []
+
+    def test_kennzahl_zaehlt_verdraengte_nicht_als_abgelegt(self, body: OParlBody) -> None:
+        from hub.ris import erkennung
+
+        datei = _verdraengt(body, "a")
+        OParlFile.objects.filter(pk=datei.pk).update(
+            text_extraction_status="pending", created_at=timezone.now() - timedelta(days=3)
+        )
+        assert erkennung.counts()["stored_without_text"] == 0
+        assert erkennung.overdue_without_text() == 0
+
+    def test_nacharbeiten_laesst_verdraengte(self, body: OParlBody, settings: Any) -> None:
+        from hub.ris import erkennung
+
+        settings.TEXT_EXTRACTION_RUNNER = "worker"
+        datei = _verdraengt(body, "a")
+        OParlFile.objects.filter(pk=datei.pk).update(
+            text_extraction_status="failed", text_extraction_error="Download failed: ReadTimeout"
+        )
+        stand = erkennung.nacharbeiten(ausfuehren=True)
+        assert stand.gesamt() == {erkennung.NACH_VERDRAENGT: 1}
+        datei.refresh_from_db()
+        assert (datei.local_status, datei.text_extraction_status) == ("evicted", "failed")
+        out = StringIO()
+        call_command("dokumentkette", "nacharbeiten", stdout=out)
+        assert "unverändert (von der Obergrenze verdrängt) 1" in out.getvalue()
+
+    def test_extract_texts_zaehlt_verdraengte_getrennt(self, body: OParlBody) -> None:
+        from hub.ris import erkennung
+
+        datei = _verdraengt(body, "a")
+        OParlFile.objects.filter(pk=datei.pk).update(text_extraction_status="pending")
+        _datei(body, "offen", alter_tage=1, local_status="none", text_extraction_status="pending")
+        stand = erkennung.befehl_einplanen(ausfuehren=False)
+        assert (stand.verdraengt, stand.ohne_inhalt, stand.auftraege) == (1, 1, 0)
+
+    def test_eben_beanspruchte_neuerkennung_haelt_die_kopie(
+        self, body: OParlBody, objektspeicher: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from hub.ris import erkennung
+
+        # Erledigter Text aus einer älteren Version: die Neuerkennung darf beanspruchen
+        datei = _hochgeladen(body, "a")
+        OParlFile.objects.filter(pk=datei.pk).update(text_extraction_version=erkennung.VERSION_REQUESTED)
+        pruefen = file_cache_limit._remote_state
+        beansprucht: list[Any] = []
+
+        def erkennung_beginnt(sha256: str, expected: int | None) -> str:
+            beansprucht.append(erkennung.beanspruchen(datei.pk))
+            return pruefen(sha256, expected)
+
+        monkeypatch.setattr(file_cache_limit, "_remote_state", erkennung_beginnt)
+        ergebnis = file_cache_limit.enforce(max_bytes=1)
+        assert beansprucht and beansprucht[0] is not None
+        assert ergebnis.units == 0 and ergebnis.skipped == {"texterkennung": 1}
+        assert Path(datei.local_path or "").exists()
+
+    def test_erkennung_liest_lokal_verdraengtes_aus_dem_objektspeicher(
+        self, body: OParlBody, objektspeicher: Any, quelle: dict[str, Any]
+    ) -> None:
+        from mandari_dokumente import ExtractionResult
+
+        from hub.ris import erkennung
+
+        datei = _hochgeladen(body, "a")
+        assert file_cache_limit.enforce(max_bytes=1).units == 1
+        assert not Path(datei.local_path or "").exists()
+        OParlFile.objects.filter(pk=datei.pk).update(text_extraction_status="pending")
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(erkennung, "extract_text", lambda *a, **k: ExtractionResult("Neuer Text", "pypdf", 1))
+            assert erkennung.erkennen(str(datei.pk)) == erkennung.ERLEDIGT
+        datei.refresh_from_db()
+        assert (datei.local_status, datei.text_content) == ("ok", "Neuer Text")
+        assert quelle["abrufe"] == [], "nie ein Abruf bei der Quelle"

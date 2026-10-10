@@ -1,243 +1,121 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Management Command: Text aus OParl-Dateien extrahieren.
+Befehl ``extract_texts``: Texterkennung von RIS-Dateien einplanen (Issue #919, ``docs/adr/20261007-dokumentkette.md``,
+Abschnitt 1).
 
-Extrahiert Text aus PDFs und anderen Dokumenten und speichert
-ihn im text_content Feld der OParlFile-Objekte.
+Der Befehl lädt nichts und erkennt nicht selbst: Er reiht je Datei einen Auftrag ``file.extract_text`` in die
+Warteschlange ``ocr`` ein (Dienst ``worker-heavy``). Der Auftrag liest den Inhalt aus der Ablage bzw. dem
+Objektspeicher, nie bei der Quelle (``hub/ris/erkennung.py``). Eingeplant werden Dateien mit abgelegtem Inhalt
+(``local_status = ok``), deren Erkennung wartet oder deren Text aus einer älteren Erkennungsversion stammt und für die
+noch kein Auftrag wartet. Dateien ohne abgelegten Inhalt holt zuerst der Abruf (``cache_files``).
 
 Verwendung:
-    python manage.py extract_texts                    # Alle ohne text_content
-    python manage.py extract_texts --limit 100       # Max 100 Dateien
-    python manage.py extract_texts --batch-size 10   # 10 pro Batch
-    python manage.py extract_texts --body <uuid>     # Nur für eine Kommune
-    python manage.py extract_texts --verbose         # Detaillierte Ausgabe
-    python manage.py extract_texts --reprocess       # Auch bereits verarbeitete
+    python manage.py extract_texts                    # einplanen, so viele wie in ocr frei sind
+    python manage.py extract_texts --dry-run          # nur zählen
+    python manage.py extract_texts --limit 100       # 100 Aufträge, auch über die freien Plätze hinaus
+    python manage.py extract_texts --body <uuid>     # nur für eine Kommune
+    python manage.py extract_texts --pdf-only        # nur PDF-Dateien
+    python manage.py extract_texts --reprocess       # auch erledigte, übersprungene und gescheiterte Dateien
+
+Ohne ``--limit`` reiht der Befehl höchstens so viele Aufträge ein, wie in der Warteschlange ``ocr`` frei sind
+(``TEXT_EXTRACTION_QUEUE_DEPTH`` minus wartende und laufende); den Rest plant der Zeitplan ``texterkennung_einplanen``
+schrittweise ein (ADR Abschnitte 2 und 8). Ein ausdrückliches ``--limit`` gilt auch darüber hinaus (Vorrang, etwa
+mit ``--body``); dann kann die Prüfung des Rückstaus anschlagen, bis die Aufträge abgearbeitet sind.
+
+``--reprocess`` markiert erledigte Dateien als „Neuerkennung angefordert“ (der bisherige Text bleibt, bis der neue
+gespeichert ist) und setzt übersprungene und gescheiterte zurück auf „wartend“; eingeplant wird wie oben schrittweise.
+Braucht
+``TEXT_EXTRACTION_RUNNER=worker``; mit ``ingestor`` erkennt der OCR-Worker des Ingestors wartende Dateien selbst.
+``--batch-size``, ``--workers`` und ``--verbose`` haben keine Wirkung mehr (die Parallelität bestimmt die
+Warteschlange ``ocr``).
 """
 
-import logging
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any
 
-from django.core.management.base import BaseCommand, CommandError
-from django.db.models import Q
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from apps.common.db_connections import releases_db_connections
+from hub.ris import erkennung
 from insight_core.management.arguments import add_extraction_arguments
-from insight_core.models import OParlBody, OParlFile
-from insight_core.services import robots
-from insight_core.services.document_extraction import (
-    DocumentDownloadError,
-    RobotsBlockedError,
-    RobotsUnreachableError,
-    download_and_extract,
-)
-from insight_core.services.file_cache import download_headers, sources_without_downloads
-
-logger = logging.getLogger(__name__)
+from insight_core.models import OParlBody
+from insight_core.services.text_extraction_job import runner_is_worker
 
 
 class Command(BaseCommand):
-    help = "Extrahiert Text aus OParl-Dateien (PDFs) mittels pypdf und OCR."
+    help = "Plant die Texterkennung von RIS-Dateien ein (Aufträge file.extract_text); lädt und erkennt nicht selbst."
 
-    def add_arguments(self, parser):
-        add_extraction_arguments(parser, noun="Dateien", batch_size=50, workers=4)
+    def add_arguments(self, parser: CommandParser) -> None:
+        add_extraction_arguments(
+            parser,
+            noun="Dateien",
+            batch_size=50,
+            workers=4,
+            workers_note="; ohne Wirkung",
+            limit_help=(
+                "Höchstens so viele Aufträge einreihen, auch über die freien Plätze der Warteschlange ocr hinaus "
+                "(0 = nur die freien Plätze, TEXT_EXTRACTION_QUEUE_DEPTH; den Rest plant der Zeitplan ein)"
+            ),
+        )
         parser.add_argument(
             "--pdf-only",
             action="store_true",
-            help="Nur PDF-Dateien verarbeiten",
+            help="Nur PDF-Dateien einplanen",
         )
 
-    def handle(self, *args, **options):
-        limit = options["limit"]
-        batch_size = options["batch_size"]
-        workers = options["workers"]
-        body_id = options["body"]
-        verbose = options["verbose"]
-        reprocess = options["reprocess"]
-        dry_run = options["dry_run"]
-        pdf_only = options["pdf_only"]
+    def handle(self, *args: Any, **options: Any) -> None:
+        dry_run = bool(options["dry_run"])
+        if not dry_run and not runner_is_worker():
+            raise CommandError(
+                "extract_texts plant Aufträge file.extract_text ein und braucht TEXT_EXTRACTION_RUNNER=worker. "
+                "Mit ingestor erkennt der OCR-Worker des Ingestors wartende Dateien selbst (--dry-run zählt nur)."
+            )
+        body_id = None
+        if options["body"]:
+            body = OParlBody.objects.filter(pk=options["body"]).first()
+            if body is None:
+                raise CommandError(f"Kommune mit ID {options['body']} nicht gefunden.")
+            body_id = body.pk
+            self.stdout.write(f"Nur Dateien der Kommune: {body.name}")
 
-        # Query aufbauen (Tombstones: keine Extraktion für gelöschte Dateien)
-        queryset = OParlFile.objects.filter(deleted=False).select_related("paper", "paper__body")
+        stand = erkennung.befehl_einplanen(
+            body_id=body_id,
+            pdf_only=bool(options["pdf_only"]),
+            reprocess=bool(options["reprocess"]),
+            limit=max(0, int(options["limit"] or 0)),
+            ausfuehren=not dry_run,
+        )
 
-        # Filter: Nur Dateien mit Download-URL
-        queryset = queryset.filter(Q(download_url__isnull=False) | Q(access_url__isnull=False))
-        # Quellen mit abgeschaltetem Dateiabruf (Zugangsprüfung vor den Dokumenten) auslassen
-        queryset = queryset.exclude(body__source_id__in=sources_without_downloads())
-
-        # Filter: Nur pending/unverarbeitete Dateien (außer bei --reprocess)
-        if not reprocess:
-            queryset = queryset.filter(Q(text_extraction_status="pending") | Q(text_extraction_status__isnull=True))
-
-        # Filter: Nur bestimmte Kommune
-        if body_id:
-            try:
-                body = OParlBody.objects.get(id=body_id)
-                queryset = queryset.filter(paper__body=body)
-                self.stdout.write(f"Verarbeite nur Dateien für: {body.name}")
-            except OParlBody.DoesNotExist:
-                raise CommandError(f"Kommune mit ID {body_id} nicht gefunden.") from None
-
-        # Filter: Nur PDFs
-        if pdf_only:
-            queryset = queryset.filter(Q(mime_type__icontains="pdf") | Q(file_name__iendswith=".pdf"))
-
-        # Limit anwenden
-        if limit > 0:
-            queryset = queryset[:limit]
-
-        total = queryset.count()
-
-        if total == 0:
-            self.stdout.write(self.style.SUCCESS("Keine Dateien zu verarbeiten."))
-            return
-
-        self.stdout.write(f"Gefunden: {total} Dateien zur Verarbeitung")
-
+        if options["reprocess"]:
+            verb = "würden" if dry_run else "wurden"
+            self.stdout.write(
+                f"Neuerkennung: {stand.neu_angefordert} erledigte Dateien {verb} markiert, "
+                f"{stand.zurueckgesetzt} übersprungene oder gescheiterte {verb} zurückgesetzt"
+            )
+        if stand.schon_eingereiht:
+            self.stdout.write(f"Schon eingereiht: {stand.schon_eingereiht}")
+        if stand.verdraengt:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"Von der Obergrenze verdrängt (kein Abruf von selbst, ausdrücklich: cache_files --verdraengte): "
+                    f"{stand.verdraengt}"
+                )
+            )
+        if stand.ohne_inhalt:
+            self.stdout.write(
+                self.style.WARNING(f"Ohne abgelegten Inhalt (holt zuerst der Abruf): {stand.ohne_inhalt}")
+            )
         if dry_run:
-            self.stdout.write(self.style.WARNING("Dry-Run: Keine Extraktion durchgeführt."))
-            return
-
-        # Statistiken
-        stats = {
-            "success": 0,
-            "failed": 0,
-            "ocr": 0,
-            "skipped": 0,
-            "deferred": 0,
-            "total_chars": 0,
-        }
-
-        # Batch-Verarbeitung: vorab nur die IDs, die Dateien je Stapel (Speicher, siehe extract_locations)
-        file_ids = list(queryset.values_list("id", flat=True))
-        for batch_start in range(0, len(file_ids), batch_size):
-            batch = list(
-                OParlFile.objects.select_related("paper", "paper__body").filter(
-                    id__in=file_ids[batch_start : batch_start + batch_size]
+            self.stdout.write(self.style.WARNING(f"Probelauf: {stand.auftraege} Aufträge würden eingereiht"))
+        else:
+            self.stdout.write(self.style.SUCCESS(f"Eingereiht: {stand.auftraege} Aufträge file.extract_text"))
+        if stand.dem_zeitplan:
+            self.stdout.write(
+                f"Übrige {stand.dem_zeitplan} Dateien plant der Zeitplan texterkennung_einplanen schrittweise ein "
+                f"(freie Plätze in ocr: {stand.frei}; mehr nur mit --limit)"
+            )
+        if stand.auftraege > stand.frei:
+            self.stdout.write(
+                self.style.WARNING(
+                    f"--limit über den freien Plätzen in ocr ({stand.frei}): "
+                    "die Prüfung des Rückstaus kann anschlagen, bis die Aufträge abgearbeitet sind"
                 )
             )
-            batch_num = (batch_start // batch_size) + 1
-            total_batches = (len(file_ids) + batch_size - 1) // batch_size
-
-            self.stdout.write(f"\nBatch {batch_num}/{total_batches} ({len(batch)} Dateien)...")
-
-            # Parallele Verarbeitung
-            with ThreadPoolExecutor(max_workers=workers) as executor:
-                futures = {executor.submit(self._process_file, f, verbose): f for f in batch}
-
-                for future in as_completed(futures):
-                    file = futures[future]
-                    try:
-                        result = future.result()
-                        if result["success"]:
-                            stats["success"] += 1
-                            stats["total_chars"] += result.get("chars", 0)
-                            if result.get("ocr"):
-                                stats["ocr"] += 1
-                        elif result.get("skipped"):
-                            stats["skipped"] += 1
-                        elif result.get("deferred"):
-                            stats["deferred"] += 1
-                        else:
-                            stats["failed"] += 1
-                    except Exception as exc:
-                        stats["failed"] += 1
-                        if verbose:
-                            self.stdout.write(self.style.ERROR(f"Fehler bei {file.id}: {exc}"))
-
-        # Zusammenfassung
-        self.stdout.write("\n" + "=" * 50)
-        self.stdout.write(self.style.SUCCESS(f"Erfolgreich: {stats['success']}"))
-        self.stdout.write(f"  davon OCR: {stats['ocr']}")
-        self.stdout.write(f"  Zeichen gesamt: {stats['total_chars']:,}")
-        if stats["skipped"]:
-            self.stdout.write(self.style.WARNING(f"Übersprungen: {stats['skipped']}"))
-        if stats["deferred"]:
-            self.stdout.write(self.style.WARNING(f"Zurückgestellt (robots.txt nicht erreichbar): {stats['deferred']}"))
-        if stats["failed"]:
-            self.stdout.write(self.style.ERROR(f"Fehlgeschlagen: {stats['failed']}"))
-
-    # Läuft in Worker-Threads, die je Stapel neu entstehen – ohne Rückgabe leert sich der Pool
-    # nach wenigen Stapeln (siehe extract_locations, Issue #54).
-    @releases_db_connections
-    def _process_file(self, file: OParlFile, verbose: bool) -> dict:
-        """
-        Verarbeitet eine einzelne Datei.
-
-        Returns:
-            Dict mit Ergebnis-Informationen
-        """
-        url = file.download_url or file.access_url
-        if not url:
-            return {"success": False, "skipped": True, "reason": "Keine URL"}
-
-        try:
-            result = download_and_extract(
-                url=url,
-                mime_type=file.mime_type,
-                original_name=file.file_name or file.name or "",
-                timeout=120.0,
-                extra_headers=download_headers(file.body),
-                sync_config=robots.sync_config_of(file.body),
-                # Öffentliche RIS-Datei: externe Texterkennung zulässig (nur mit Endpunkt aus KI_ERLAUBTE_HOSTS)
-                allow_external=True,
-            )
-
-            # Text speichern
-            if result.text:
-                file.text_content = result.text
-                file.text_extraction_status = "completed"
-                file.text_extraction_method = "ocr" if result.ocr_performed else "pypdf"
-                file.save(
-                    update_fields=["text_content", "text_extraction_status", "text_extraction_method", "updated_at"]
-                )
-
-                if verbose:
-                    self.stdout.write(
-                        self.style.SUCCESS(
-                            f"  {file.id}: {len(result.text)} Zeichen{' (OCR)' if result.ocr_performed else ''}"
-                        )
-                    )
-
-                return {
-                    "success": True,
-                    "chars": len(result.text),
-                    "ocr": result.ocr_performed,
-                    "pages": result.page_count,
-                }
-            file.text_extraction_status = "ocr_needed"
-            file.text_extraction_error = "Download ok, aber kein Text extrahierbar (KI-OCR benötigt)"
-            file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
-            if verbose:
-                self.stdout.write(self.style.WARNING(f"  {file.id}: KI-OCR benötigt (kein Text via pypdf/Tesseract)"))
-            return {"success": False, "reason": "ocr_needed"}
-
-        except RobotsUnreachableError as exc:
-            # Störung, keine Sperre: Datei bleibt "pending" und kommt beim nächsten Lauf wieder dran
-            if verbose:
-                self.stdout.write(self.style.WARNING(f"  {file.id}: {exc.reason}"))
-            return {"success": False, "deferred": True, "reason": "robots.txt nicht erreichbar"}
-
-        except RobotsBlockedError as exc:
-            # Kein Fehler der Quelle: übersprungen, bis eine Freigabe vorliegt (robots_override reiht neu ein)
-            file.text_extraction_status = "skipped"
-            file.text_extraction_error = exc.reason[:500]
-            file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
-            if verbose:
-                self.stdout.write(self.style.WARNING(f"  {file.id}: {exc.reason}"))
-            return {"success": False, "skipped": True, "reason": "robots.txt"}
-
-        except DocumentDownloadError as exc:
-            file.text_extraction_status = "failed"
-            file.text_extraction_error = str(exc)[:500]
-            file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
-            if verbose:
-                self.stdout.write(self.style.ERROR(f"  {file.id}: Download-Fehler - {exc}"))
-            return {"success": False, "reason": str(exc)}
-
-        except Exception as exc:
-            file.text_extraction_status = "failed"
-            file.text_extraction_error = str(exc)[:500]
-            file.save(update_fields=["text_extraction_status", "text_extraction_error", "updated_at"])
-            if verbose:
-                self.stdout.write(self.style.ERROR(f"  {file.id}: Fehler - {exc}"))
-            return {"success": False, "reason": str(exc)}

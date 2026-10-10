@@ -168,14 +168,6 @@ class TestNichtErreichbar:
             document_extraction.download_and_extract(url="https://rat.example.de/dokumente/a.pdf")
         assert not isinstance(fehler.value, document_extraction.RobotsBlockedError)
 
-        from insight_core.management.commands.extract_texts import Command as ExtractTexts
-
-        datei = _datei(_quelle())
-        ergebnis = ExtractTexts()._process_file(datei, False)
-        assert ergebnis["deferred"] is True and not ergebnis.get("skipped")
-        datei.refresh_from_db()
-        assert datei.text_extraction_status == "pending" and not datei.text_extraction_error
-
     def test_personenfoto_vermerkt_nichts(self) -> None:
         person = OParlPerson.objects.create(
             body=_quelle(),

@@ -105,11 +105,13 @@ def test_session_anlage_bleibt_lokal() -> None:
 
 
 def test_oeffentliche_ris_dateien_duerfen_extern() -> None:
-    """Die Aufrufer für öffentliche RIS-Dateien geben die Erlaubnis ausdrücklich (Quelltext statt Netz)."""
-    from insight_ai.services import summarizer
-    from insight_core.management.commands import extract_texts
-    from insight_core.services import text_extraction_job
+    """Die Aufrufer für öffentliche RIS-Dateien geben die Erlaubnis ausdrücklich (Quelltext statt Netz).
 
-    assert "extraction_config(allow_external=True)" in inspect.getsource(text_extraction_job)
-    for modul in (summarizer, extract_texts):
-        assert "allow_external=True" in inspect.getsource(modul), modul.__name__
+    Seit der Dokumentkette (Issue #919) erkennt nur noch der Auftrag ``file.extract_text`` (``hub/ris/erkennung.py``)
+    den Text; ``extract_texts`` plant ihn nur ein. Das Verhalten prüft ``hub/ris/tests/test_erkennung.py``.
+    """
+    from hub.ris import erkennung
+    from insight_ai.services import summarizer
+
+    assert "extraction_config(allow_external=True)" in inspect.getsource(erkennung)
+    assert "allow_external=True" in inspect.getsource(summarizer)

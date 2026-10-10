@@ -25,7 +25,7 @@ from django.utils import timezone
 
 from hub.ris import abruf
 from insight_core.models import OParlBody, OParlFile, OParlSource
-from insight_core.services import file_cache, file_reconcile, file_store, safe_fetch, text_extraction_job
+from insight_core.services import file_cache, file_reconcile, file_store, safe_fetch
 
 PDF = b"%PDF-1.4 Vorlage " + b"y" * 64
 WORKER = override_settings(TEXT_EXTRACTION_RUNNER="worker")
@@ -247,26 +247,6 @@ def test_abgleich_ruft_gesperrte_dateien_ausdruecklich_ab(quelle: dict[str, Any]
         file_reconcile.verify(datei, client)
     datei.refresh_from_db()
     assert datei.source_missing_since is None, "liefert die Quelle wieder, wird entsperrt"
-
-
-# =============================================================================
-# Auftrag file.extract_text (Übergang bis Teil B)
-# =============================================================================
-
-
-@pytest.mark.django_db
-def test_auftrag_ruft_bei_gestoerter_ablage_nicht_bei_der_quelle_ab(monkeypatch: pytest.MonkeyPatch) -> None:
-    datei = _datei(_body(), text_extraction_status="pending")
-    monkeypatch.setattr(file_cache, "fetch_and_cache", lambda *a, **k: "storage_error")
-
-    def kein_download(*_a: Any, **_k: Any) -> Any:
-        raise AssertionError("kein Abruf bei der Quelle")
-
-    monkeypatch.setattr(abruf, "download_to_file", kein_download)
-    with WORKER:
-        assert text_extraction_job.extract_file(str(datei.pk)) == text_extraction_job.ZURUECKGESTELLT
-    datei.refresh_from_db()
-    assert datei.text_extraction_status == "pending"
 
 
 # =============================================================================
