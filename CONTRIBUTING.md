@@ -241,7 +241,10 @@ Für einen Pull Request:
 2. Änderungen mit Tests versehen
 3. Alle Prüfungen lokal laufen lassen
 4. Pull Request gegen `dev` öffnen und beschreiben, **was** sich ändert und **warum**
-5. Bezug zum Issue herstellen (`Fixes #123`)
+5. Bezug zum Issue herstellen: `Fixes #123` (bzw. `Closes`/`Resolves`), wenn der Pull Request das
+   Issue erledigt, sonst `Teil von #123`. Das Issue schließt sich, sobald der Stand auf `main` ankommt
+   (Workflow „Issues schließen“, `scripts/issues_schliessen.py`): Der Squash-Commit der Merge-Queue
+   trägt nur den Titel, deshalb liest der Workflow die Schlüsselwörter aus dem PR-Text.
 
 Gemergt wird über die **Merge-Queue** von `dev`, nicht direkt. Wer mergen darf, reiht einen
 Pull Request mit
