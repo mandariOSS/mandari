@@ -16,7 +16,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.work.rahmen import neues_design
 from insight_core.services.search_filters import SearchQuery
 
-from .. import selectors, services, suche
+from .. import fragen, selectors, services, suche
 from ._mixins import RISBodiesMixin
 
 
@@ -128,6 +128,10 @@ class RISSearchView(RISBodiesMixin, WorkViewMixin, TemplateView):
         """Neue Suche (Issue #853): gruppierte Treffer, Filterleiste, Gewichtung nach dem Bezug der Fraktion."""
         params = SearchQuery.from_get(self.request.GET)
         context |= {"params": params, "query": params.query, "page": params.page}
+        if suche.ganze_seite(self.request.headers):
+            # Das Fragefeld steht nur auf der ganzen Seite; Ausschnitte (Live-Suche je Tastendruck) brauchen weder
+            # Schlüssel noch Kontingent
+            context["fragen_verfuegbar"] = fragen.verfuegbar(self.organization)
         if suche.zu_kurz(params):
             context["suche_leer"] = True
             return context

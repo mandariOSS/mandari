@@ -16,6 +16,7 @@ die Seite mit der Suche des Bürgerportals, in den Maßen einer Arbeitsplattform
     <div class="mt-3">
         {% if query %}<c-suche.feld adresse="{{ suche_adresse }}" :wert="query" platzhalter="Thema, Straße oder Aktenzeichen" dicht />{% else %}<c-suche.feld adresse="{{ suche_adresse }}" :wert="query" platzhalter="Thema, Straße oder Aktenzeichen" dicht fokus />{% endif %}
     </div>
+    {% if fragen_verfuegbar %}{% include "work/ris/partials/frage_feld.html" %}{% endif %}
 </header>
 {% endblock %}
 
@@ -25,6 +26,7 @@ die Seite mit der Suche des Bürgerportals, in den Maßen einer Arbeitsplattform
 {% else %}
 {# Sprungziel nach Filtern in der klebenden Spalte; nur ab 2xl mit Box, darunter springt nichts (wie im Bürgerportal) #}
 <div id="suche-anfang" class="hidden 2xl:block scroll-mt-28" aria-hidden="true"></div>
+{% if fragen_verfuegbar %}<div id="ki-antwort" class="scroll-mt-16" aria-live="polite"></div>{% endif %}
 <div id="suchergebnis">
     {% if not suche_leer %}{% include "partials/search_page.html" %}{% endif %}
 </div>

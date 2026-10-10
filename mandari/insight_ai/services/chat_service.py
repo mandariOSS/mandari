@@ -37,7 +37,7 @@ from django.utils import timezone
 
 from insight_ai.providers import OpenAIKompatiblerProvider, get_insight_provider
 from insight_ai.providers.base import ToolChatProvider, ToolChatResponse
-from insight_ai.services.chat_tools import TOOLS, context_for, run_tool, select_sources
+from insight_ai.services.chat_tools import TOOLS, ToolContext, context_for, run_tool, select_sources
 from insight_ai.services.prompts import build_chat_system_prompt
 
 if TYPE_CHECKING:
@@ -134,6 +134,8 @@ def process_chat_message(
     *,
     now: datetime | None = None,
     endpunkt: KiEndpunkt | None = None,
+    tool_context: ToolContext | None = None,
+    system_prompt: str | None = None,
 ) -> dict[str, Any]:
     """
     Eine Frage beantworten: Werkzeugrunden über die Ratsdaten der Kommune, dann die Antwort.
@@ -143,8 +145,12 @@ def process_chat_message(
         history: Verlauf ``[{role, content}, …]`` aus dem Browser
         body_id: Kennung der gewählten Kommune (oder ``None``)
         now: Zeitpunkt der Frage (Standard: jetzt; Tests setzen ihn fest)
-        endpunkt: Der Endpunkt, für den die Einwilligung geprüft wurde (View); die Anfrage geht genau dorthin.
-            Ohne Angabe wird die KI-Konfiguration neu aufgelöst.
+        endpunkt: Der Endpunkt, für den die Einwilligung geprüft wurde (View) bzw. der Endpunkt der Organisation aus
+            ``endpunkt_fuer_work`` (Work); die Anfrage geht genau dorthin. Ohne Angabe wird der Endpunkt des
+            Bürgerportals aus der KI-Konfiguration aufgelöst.
+        tool_context: eigener Werkzeugkontext statt dem der Kommune ``body_id`` (Work: Links auf Work-Seiten,
+            Issue #853); wird so verwendet, wie er ist
+        system_prompt: eigener Systemprompt statt dem des Bürgerportals (Work)
 
     Returns:
         ``{"response", "sources", "tokens_used", "prompt_tokens", "completion_tokens", "rounds", "tool_calls"}``
@@ -162,11 +168,11 @@ def process_chat_message(
     time_limit = float(_setting_int("INSIGHT_CHAT_TIME_LIMIT_SECONDS", 90, MIN_TIME_LIMIT_SECONDS))
     deadline = started + time_limit
 
-    ctx = context_for(body_id, now=now) if body_id else None
+    ctx = tool_context if tool_context is not None else (context_for(body_id, now=now) if body_id else None)
     tools = TOOLS if ctx is not None else None
 
     messages: list[dict[str, Any]] = [
-        {"role": "system", "content": build_chat_system_prompt(now, ctx.body_name if ctx else None)}
+        {"role": "system", "content": system_prompt or build_chat_system_prompt(now, ctx.body_name if ctx else None)}
     ]
     messages.extend(_build_history_messages(history, MAX_HISTORY_TOKENS))
     messages.append({"role": "user", "content": message})

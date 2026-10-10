@@ -168,6 +168,32 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
         if self.organization and total_tokens > 0:
             OrganizationAITokenUsage.increment_usage(self.organization, total_tokens)
 
+    # --- Kontingente für KI-Aufrufe außerhalb des Editors (Fragen an die Ratsdaten, Issue #853) ----------------
+
+    def ki_abgeschaltet(self) -> bool:
+        """KI für die Organisation ausgeschaltet: Schalter ``ai_enabled`` aus oder Monatskontingent 0."""
+        if not self.organization:
+            return False
+        return not self.organization.ai_enabled or self._effective_monthly_limit() == 0
+
+    def kontingent_pruefen(self, geschaetzte_token: int) -> tuple[bool, str]:
+        """
+        Vor einem Aufruf: Grenze je Person (``AIRateLimiter``) und Token-Kontingent der Organisation (Tag, Woche,
+        Monat) für ``geschaetzte_token``. ``(False, Meldung)``, wenn eine Grenze erreicht ist.
+        """
+        for erlaubt, meldung in (self._check_rate_limit(), self._check_org_token_limits(geschaetzte_token)):
+            if not erlaubt:
+                return False, meldung
+        return True, ""
+
+    def verbrauch_buchen(self, total_tokens: int) -> None:
+        """
+        Nach einem Aufruf, auch einem gescheiterten: Er zählt für die Grenze je Person, seine Token zählen für das
+        Kontingent der Organisation.
+        """
+        self._increment_rate_limit()
+        self._record_token_usage(total_tokens)
+
     def _call_api(
         self,
         messages: list[dict],
@@ -452,10 +478,8 @@ Text:
         return self._call_api(messages, max_tokens=1400, temperature=0.4)
 
     def is_available(self) -> bool:
-        if self.organization and not self.organization.ai_enabled:
-            return False
-        # Effektives Monatslimit 0 = KI für diese Organisation deaktiviert.
-        if self.organization and self._effective_monthly_limit() == 0:
+        # Schalter aus oder effektives Monatslimit 0 = KI für diese Organisation deaktiviert.
+        if self.ki_abgeschaltet():
             return False
         return self._resolve_provider_config() is not None
 
