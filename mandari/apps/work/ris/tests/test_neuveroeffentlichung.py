@@ -21,7 +21,7 @@ from typing import Any, cast
 
 import pytest
 from django.core.management import call_command
-from django.db import IntegrityError, models
+from django.db import IntegrityError, models, transaction
 from django.utils import timezone
 
 from apps.common.tests.factories import OrganizationFactory
@@ -375,6 +375,69 @@ def test_tausch_mit_konflikt_bewegt_beim_naechsten_lauf_nichts(
         assert bericht.umgehaengt == 0 and bericht.konflikte == 0
         _tausch_pruefen(d)
     assert RisNeuzuordnung.objects.count() == protokolle
+
+
+def test_tausch_von_positionen_trotz_bedingung_und_rueckweg(org: Any, ris: Ris, mitglied: Any, uhr: Uhr) -> None:
+    """
+    Positionen sind je Organisation und TOP eindeutig, als Bedingung in der Datenbank (#926). Beim Tausch würde jeder
+    Zwischenstand sie verletzen; die Positionen ziehen über einen Zwischenplatz um, hin und auf dem Rückweg.
+    """
+    d = _tausch(org, ris, mitglied, uhr)
+    with pytest.raises(IntegrityError), transaction.atomic():
+        AgendaItemPosition.objects.create(organization=org, agenda_item=d["top_1"])
+
+    _tausch_pruefen(d)
+    assert d["bericht"].fehler == 0
+    assert RisNeuzuordnung.objects.get(von=d["top_1"].id).verschoben["work.AgendaItemPosition.agenda_item"] == [
+        str(d["pos_1"].pk)
+    ]
+    # Inhalte und Organisation bleiben, nur der TOP wechselt
+    pos_1 = AgendaItemPosition.objects.get(pk=d["pos_1"].pk)
+    assert (pos_1.organization_id, pos_1.position) == (org.id, "for")
+
+    rueck = verknuepfungen.zurueckdrehen(RisNeuzuordnung.objects.all())
+
+    assert rueck.nicht_moeglich == [] and rueck.datensaetze == 3
+    assert AgendaItemPosition.objects.get(pk=d["pos_1"].pk).agenda_item_id == d["top_1"].id
+    assert AgendaItemPosition.objects.get(pk=d["pos_2"].pk).agenda_item_id == d["top_2"].id
+    assert AgendaItemNote.objects.get(pk=d["notiz_1"].pk).agenda_item_id == d["top_1"].id
+    assert not AgendaItemPosition.objects.filter(organization__isnull=True).exists(), "nichts bleibt geparkt"
+
+
+def test_ring_mit_bleibender_position_haengt_nichts_doppelt(org: Any, ris: Ris, mitglied: Any, uhr: Uhr) -> None:
+    """
+    Drei Punkte rotieren; am Ziel der ersten Position steht eine jüngere, die bleibt. Die erste Position bleibt
+    deshalb am alten Punkt und belegt ihn – die Position, die dorthin ziehen wollte, bleibt auch. Nie zwei
+    Positionen einer Organisation am selben Punkt (#926).
+    """
+    sitzung = ris.sitzung()
+    a, b, c = ris.vorlage("paper/a", "V/A"), ris.vorlage("paper/b", "V/B"), ris.vorlage("paper/c", "V/C")
+    top_1 = ris.top(sitzung, "top/1", "1", "A", vorlage=a)
+    top_2 = ris.top(sitzung, "top/2", "2", "B", vorlage=b)
+    top_3 = ris.top(sitzung, "top/3", "3", "C", vorlage=c)
+    pos_1 = AgendaItemPosition.objects.create(organization=org, agenda_item=top_1, position="for")
+    notiz_2 = _verschluesselt(AgendaItemNote, organization=org, agenda_item=top_2, author=mitglied)
+    pos_3 = AgendaItemPosition.objects.create(organization=org, agenda_item=top_3, position="against")
+    uhr.lauf()
+
+    # Rotation: /1 trägt jetzt C, /2 trägt A, /3 trägt B
+    for top, name, vorlage in ((top_1, "C", c), (top_2, "A", a), (top_3, "B", b)):
+        OParlAgendaItem.objects.filter(pk=top.pk).update(name=name)
+        ris.beraten(vorlage, top)
+    uhr.abruf(sitzung)
+    # Vor dem Abgleich legt jemand am neuen Inhalt von /2 eine Position an
+    jung = AgendaItemPosition.objects.create(organization=org, agenda_item=top_2, position="abstain")
+    AgendaItemPosition.objects.filter(pk=jung.pk).update(created_at=uhr.danach())
+
+    bericht = uhr.lauf()
+
+    assert bericht.fehler == 0
+    assert AgendaItemNote.objects.get(pk=notiz_2.pk).agenda_item_id == top_3.id
+    assert AgendaItemPosition.objects.get(pk=jung.pk).agenda_item_id == top_2.id
+    assert AgendaItemPosition.objects.get(pk=pos_1.pk).agenda_item_id == top_1.id
+    assert AgendaItemPosition.objects.get(pk=pos_3.pk).agenda_item_id == top_3.id
+    assert bericht.konflikte == 2 and bericht.juenger == 1
+    assert _ruhig(uhr, sitzung, alle=True).umgehaengt == 0
 
 
 def test_anderer_punkt_unter_alter_kennung_wird_nicht_zugeordnet(
@@ -934,6 +997,25 @@ def test_alle_verknuepfungen_erfasst() -> None:
                 gefunden.add((ziele[ziel], model._meta.label, feld.name))
     erfasst = {(art, v.modell, v.feld) for art, liste in verknuepfungen.VERKNUEPFUNGEN.items() for v in liste}
     assert gefunden == erfasst
+
+
+def test_bedingung_in_der_datenbank_ist_beim_umhaengen_bekannt() -> None:
+    """Steht die Eindeutigkeit als Bedingung in der Datenbank, muss das Umhängen sie kennen (sonst IntegrityError)."""
+    for liste in verknuepfungen.VERKNUEPFUNGEN.values():
+        for v in liste:
+            if v.m2m:
+                continue
+            model = v.tabelle()[0]
+            feld = model._meta.get_field(v.feld).name
+            bedingungen = [
+                set(c.fields)
+                for c in model._meta.constraints
+                if isinstance(c, models.UniqueConstraint) and c.fields and c.condition is None
+            ] + [set(felder) for felder in model._meta.unique_together]
+            if any(feld in felder for felder in bedingungen):
+                assert v.db_eindeutig or v.parken, v.name
+            if v.parken:
+                assert v.parken in v.eindeutig and model._meta.get_field(v.parken.removesuffix("_id")).null, v.name
 
 
 def test_zeitplan_ist_registriert() -> None:

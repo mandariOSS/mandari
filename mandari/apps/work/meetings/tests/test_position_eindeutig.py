@@ -36,7 +36,7 @@ def _tops(org: Any, anzahl: int) -> list[OParlAgendaItem]:
 
 
 def _stand(model: Any, pk: Any) -> dict[str, Any]:
-    zeile = model.objects.filter(pk=pk).values(*FELDER, "updated_at").get()
+    zeile: dict[str, Any] = model.objects.filter(pk=pk).values(*FELDER, "updated_at").get()
     if zeile["reasoning_encrypted"] is not None:
         zeile["reasoning_encrypted"] = bytes(zeile["reasoning_encrypted"])
     return zeile
