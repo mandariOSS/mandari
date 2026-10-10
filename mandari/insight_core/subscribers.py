@@ -14,10 +14,14 @@ Suchmaschinen über die Sitemaps.
 
 from __future__ import annotations
 
+import logging
+
 from django.conf import settings
 
 from apps.events import subscriber
 from insight_core.services import fraktionen_live, indexnow
+
+logger = logging.getLogger(__name__)
 
 
 def register() -> bool:
@@ -37,6 +41,8 @@ def register() -> bool:
 def register_indexnow() -> bool:
     """Registriert ``insight.indexnow``, wenn ein gültiger Schlüssel gesetzt ist; ``True``, wenn registriert."""
     if not indexnow.schluessel():
+        if getattr(settings, "INDEXNOW_KEY", ""):
+            logger.warning("IndexNow aus: INDEXNOW_KEY genügt nicht dem Protokoll (8–128 Zeichen A–Z, a–z, 0–9, -)")
         return False
     subscriber(
         indexnow.NAME,

@@ -16,9 +16,12 @@ unter ``/insight/<schlüssel>.txt`` nach (``views.sitemap.indexnow_schluessel``)
 damit die Anwendung ohne die Website auskommt; sie berechtigt damit genau die Adressen unter ``/insight/``. Ohne
 Schlüssel ist alles aus: keine Datei, kein Abonnement.
 
-**Fehler:** Ist die Suchmaschine nicht erreichbar, überlastet (429) oder gestört (5xx), wartet die Zustellung und
-stellt denselben Batch erneut zu (``TargetUnavailableError``). Lehnt sie die Meldung ab (400, 403, 422), steht das im
-Log, und es geht weiter: Die Sitemaps bleiben der Weg dorthin.
+**Fehler:** Die Meldung ist ein Hinweis, kein Auftrag; der Weg zu den Suchmaschinen bleiben die Sitemaps. Ist die
+Suchmaschine nicht erreichbar, überlastet (429), gestört (5xx) oder lehnt sie ab (400, 403, 422), steht das im Log, und
+das Abonnement geht weiter. Es wartet bewusst nicht (``TargetUnavailableError``): Ein Rückstand über fünf Minuten
+meldet der Worker als Störung, und ein dauerhaftes 429 hielte das Abonnement sonst ohne Ende an.
+
+**Doppelte Zustellung** (mindestens einmal) meldet dieselben Adressen noch einmal; das schadet nicht.
 """
 
 from __future__ import annotations
@@ -70,10 +73,6 @@ BEZUEGE: Final = (("paper", "Paper"), ("meeting", "Meeting"), ("previous_meeting
 _OEFFENTLICH: Final = "oeffentlich"
 
 
-class SuchmaschineNichtErreichbarError(Exception):
-    """Die Suchmaschine ist nicht erreichbar, überlastet oder gestört; später erneut versuchen."""
-
-
 def schluessel() -> str:
     """Der Schlüssel aus ``INDEXNOW_KEY``, wenn er dem Protokoll genügt, sonst ``""`` (IndexNow aus)."""
     wert = (getattr(settings, "INDEXNOW_KEY", "") or "").strip()
@@ -94,7 +93,7 @@ def melden(adressen: Iterable[str]) -> int:
     Meldet ``adressen`` (absolute Adressen unter ``SITE_URL/insight/``) an ``INDEXNOW_ENDPOINT``; gibt zurück, wie
     viele die Suchmaschine angenommen hat (Antwort 200 oder 202).
 
-    Wirft ``SuchmaschineNichtErreichbarError`` bei Netzfehlern, 429 und 5xx; Ablehnungen (400, 403, 422) stehen im Log.
+    Wirft nicht: Netzfehler und jede andere Antwort stehen im Log (siehe Moduldokumentation, „Fehler“).
     """
     aktuell = schluessel()
     bereich = f"{_basis()}/insight/"
@@ -114,15 +113,15 @@ def melden(adressen: Iterable[str]) -> int:
             try:
                 antwort = client.post(settings.INDEXNOW_ENDPOINT, json=daten)
             except httpx.HTTPError as fehler:
-                raise SuchmaschineNichtErreichbarError(type(fehler).__name__) from fehler
-            if antwort.status_code == 429 or antwort.status_code >= 500:
-                raise SuchmaschineNichtErreichbarError(f"Antwort {antwort.status_code}")
+                logger.warning("IndexNow: %d Adressen nicht gemeldet (%s)", len(teil), type(fehler).__name__)
+                continue
             if antwort.status_code in (200, 202):
                 angenommen += len(teil)
                 logger.info("IndexNow: %d Adressen gemeldet (Antwort %d)", len(teil), antwort.status_code)
             else:
-                # 400 Format, 403 Schlüsseldatei nicht gefunden oder falsch, 422 fremde Adressen
-                logger.warning("IndexNow: %d Adressen abgelehnt (Antwort %d)", len(teil), antwort.status_code)
+                # 400 Format, 403 Schlüsseldatei nicht gefunden oder falsch, 422 fremde Adressen, 429 zu viele
+                # Meldungen, 5xx Störung der Suchmaschine
+                logger.warning("IndexNow: %d Adressen nicht angenommen (Antwort %d)", len(teil), antwort.status_code)
     return angenommen
 
 
@@ -187,13 +186,7 @@ def _personen_ohne_index(kennungen: list[uuid.UUID]) -> set[uuid.UUID]:
 
 
 def indexnow(events: list[Any], delivery: Any) -> None:
-    """Handler des Abonnements ``insight.indexnow``: geänderte Seiten melden (idempotent, Meldung wiederholbar)."""
-    from apps.events import TargetUnavailableError
-
+    """Handler des Abonnements ``insight.indexnow``: geänderte Seiten melden (wiederholbar, wirft nicht)."""
     adressen = seiten(events)
-    if not adressen:
-        return
-    try:
+    if adressen:
         melden(adressen)
-    except SuchmaschineNichtErreichbarError as fehler:
-        raise TargetUnavailableError(f"IndexNow: {fehler}") from fehler

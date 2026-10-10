@@ -842,7 +842,7 @@ if OPARL_CHANGES_RETENTION_DAYS < 30:
 # Bürgerportals an Bing, Yandex & Co. (Abonnement insight.indexnow, Warteschlange adapter). Ohne Schlüssel aus.
 # Schlüssel: 8–128 Zeichen aus A–Z, a–z, 0–9 und -; die Anwendung liefert ihn unter /insight/<schlüssel>.txt aus.
 INDEXNOW_KEY = os.environ.get("INDEXNOW_KEY", "").strip()
-INDEXNOW_ENDPOINT = os.environ.get("INDEXNOW_ENDPOINT", "https://api.indexnow.org/indexnow").strip()
+INDEXNOW_ENDPOINT = os.environ.get("INDEXNOW_ENDPOINT", "").strip() or "https://api.indexnow.org/indexnow"
 
 # Katalog der offenen Ratsinformationen nach DCAT-AP.de 3.0 (Issue #104, docs/DCAT_KATALOG.md): alle gelisteten
 # Kommunen unter /data/dcat/catalog, je Kommune unter /data/dcat/body/<uuid>/catalog (.ttl, .rdf, .jsonld).

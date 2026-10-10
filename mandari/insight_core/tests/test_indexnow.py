@@ -12,10 +12,14 @@ from typing import Any
 
 import httpx
 import pytest
+from django.db import transaction
+from django.db.models import Max
 from django.test import Client
 
-from apps.events import TargetUnavailableError, registry
-from apps.events.models import Event
+from apps.events import registry
+from apps.events.dispatch import deliver_batch, ensure_subscription, rewind
+from apps.events.models import Event, ParkedEvent
+from apps.events.publishing import publish
 from apps.events.registry import Subscriber, get
 from insight_core import publication, subscribers
 from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson, OParlSource
@@ -253,24 +257,20 @@ class TestMelden:
         assert indexnow.melden([f"https://mandari.de/insight/vorgaenge/{n}/" for n in range(5)]) == 5
         assert [len(daten["urlList"]) for daten in gemeldet] == [2, 2, 1]
 
-    @pytest.mark.parametrize("status", [429, 500, 503])
-    def test_ueberlastet_oder_gestoert_spaeter_erneut(self, monkeypatch: pytest.MonkeyPatch, status: int) -> None:
-        _mock_client(monkeypatch, lambda anfrage: httpx.Response(status))
-
-        with pytest.raises(indexnow.SuchmaschineNichtErreichbarError):
-            indexnow.melden(["https://mandari.de/insight/vorgaenge/1/"])
-
-    def test_nicht_erreichbar_spaeter_erneut(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_nicht_erreichbar_steht_im_log(
+        self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
         def verbindung_scheitert(anfrage: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("keine Verbindung", request=anfrage)
 
         _mock_client(monkeypatch, verbindung_scheitert)
 
-        with pytest.raises(indexnow.SuchmaschineNichtErreichbarError):
-            indexnow.melden(["https://mandari.de/insight/vorgaenge/1/"])
+        with caplog.at_level(logging.WARNING, logger="insight_core.services.indexnow"):
+            assert indexnow.melden(["https://mandari.de/insight/vorgaenge/1/"]) == 0
+        assert "ConnectError" in caplog.text
 
-    @pytest.mark.parametrize("status", [400, 403, 422])
-    def test_abgelehnt_steht_im_log(
+    @pytest.mark.parametrize("status", [400, 403, 422, 429, 500, 503])
+    def test_nicht_angenommen_steht_im_log(
         self, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, status: int
     ) -> None:
         _mock_client(monkeypatch, lambda anfrage: httpx.Response(status))
@@ -320,12 +320,22 @@ class TestAbonnement:
         assert gemeldet[0]["urlList"] == [f"https://mandari.de/insight/vorgaenge/{vorgang}/"]
 
     @pytest.mark.usefixtures("mit_schluessel")
-    def test_handler_wartet_wenn_die_suchmaschine_nicht_erreichbar_ist(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_ausfall_der_suchmaschine_haelt_das_abonnement_nicht_an(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Kein TargetUnavailableError: Ein Rückstand über fünf Minuten wäre eine Störung des Workers, und ein
+        # dauerhaftes 429 hielte das Abonnement ohne Ende an. Die Sitemaps bleiben der Weg zur Suchmaschine.
         body = _kommune(1)
         _mock_client(monkeypatch, lambda anfrage: httpx.Response(503))
 
-        with pytest.raises(TargetUnavailableError):
-            indexnow.indexnow([_ereignis(body, "Paper", uuid.uuid4())], delivery=None)
+        indexnow.indexnow([_ereignis(body, "Paper", uuid.uuid4())], delivery=None)
+
+    def test_ungueltiger_schluessel_steht_im_log(
+        self, leeres_register: dict[str, Subscriber], settings: Any, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        settings.INDEXNOW_KEY = "zu_kurz"
+
+        with caplog.at_level(logging.WARNING, logger="insight_core.subscribers"):
+            assert subscribers.register_indexnow() is False
+        assert "INDEXNOW_KEY" in caplog.text
 
     @pytest.mark.usefixtures("mit_schluessel")
     def test_handler_ohne_betroffene_seite_meldet_nichts(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -334,3 +344,45 @@ class TestAbonnement:
         indexnow.indexnow([_ereignis(_kommune(1, is_listed=False), "Paper", uuid.uuid4())], delivery=None)
 
         assert gemeldet == []
+
+
+def _nummerieren() -> None:
+    """Folgenummern wie der Sequenzierer vergeben (in der Reihenfolge der Erfassung)."""
+    hoechste = Event.objects.aggregate(hoechste=Max("seq"))["hoechste"] or 0
+    for event in Event.objects.filter(seq__isnull=True).order_by("id"):
+        hoechste += 1
+        Event.objects.filter(pk=event.pk).update(seq=hoechste)
+
+
+@pytest.mark.usefixtures("mit_schluessel")
+def test_doppelte_zustellung_meldet_dieselben_adressen(
+    leeres_register: dict[str, Subscriber], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Zustellung mindestens einmal: Nachspielen meldet dieselben Adressen noch einmal und ändert sonst nichts."""
+    body = _kommune(1)
+    vorgang = uuid.uuid4()
+    gemeldet = _mock_client(monkeypatch, lambda anfrage: httpx.Response(200))
+    assert subscribers.register_indexnow()
+    spec = get(indexnow.NAME)
+    ensure_subscription(spec)
+    with transaction.atomic():
+        publish(
+            "ris.paper.changed",
+            version=1,
+            aggregate=("Paper", vorgang),
+            tenant=f"source:{body.source_id}",
+            visibility="oeffentlich",
+            payload={"paper": str(vorgang), "changed": ["name"]},
+            body_id=body.id,
+        )
+    _nummerieren()
+    assert deliver_batch(spec).delivered == 1
+
+    erstes = Event.objects.order_by("seq").first()
+    assert erstes is not None and erstes.seq is not None
+    rewind(indexnow.NAME, erstes.seq)
+    assert deliver_batch(spec).delivered == 1
+
+    adresse = f"https://mandari.de/insight/vorgaenge/{vorgang}/"
+    assert [daten["urlList"] for daten in gemeldet] == [[adresse], [adresse]]
+    assert not ParkedEvent.objects.exists()

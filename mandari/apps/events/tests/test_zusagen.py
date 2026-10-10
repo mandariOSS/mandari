@@ -32,6 +32,7 @@ DOPPELZUSTELLUNG = {
         "apps/work/notifications/tests/test_benachrichtigung_abonnement.py::test_doppelte_zustellung_benachrichtigt_einmal"
     ),
     "insight.fraktionen_live": "insight_core/tests/test_fraktionen_live.py::test_doppelte_zustellung_verbucht_einmal",
+    "insight.indexnow": "insight_core/tests/test_indexnow.py::test_doppelte_zustellung_meldet_dieselben_adressen",
     "ris.session_projektor": (
         "apps/session/tests/test_ris_projektor.py::test_doppelte_zustellung_aendert_die_schatten_quelle_nicht"
     ),
@@ -43,6 +44,7 @@ SCHALTER = {
     "WORK_NOTIFICATION_SUBSCRIPTION": "aktiv",
     "RIS_SESSION_PROJECTOR": "schatten",
     "LIVE_UEBERTRAGUNG_AKTIV": True,
+    "INDEXNOW_KEY": "3f8a1c2e9b7d4a6f8e0c1b2a3d4e5f60",
 }
 
 
