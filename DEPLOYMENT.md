@@ -1027,6 +1027,12 @@ Worker, wird in den folgenden Schritten eingeschaltet; jeder Schritt ist ohne De
   werden dann mit kleinerer Auflösung erkannt oder übersprungen (Issue #817). Mit Helm: `worker.heavy` (3Gi,
   `worker.heavy.extraEnv`), `TASKS_BACKEND` über `app.extraEnv`, `TEXT_EXTRACTION_RUNNER` über
   `textExtraction.runner` (erreicht auch den Ingestor).
+- Platz: Mit Schritt 3 legt die Ablage die neuen Dokumente aller Quellen mit erlaubtem Abruf ab und wächst
+  entsprechend. Mit Objektspeicher ist die Platte nur Zwischenspeicher (`OBJ_CACHE_MAX_GB`); ohne begrenzt
+  `FILE_CACHE_MAX_TOTAL_GB` die Gesamtgröße (Abschnitt „Obergrenze des Dokument-Caches“ unten,
+  `docs/FILE_CACHE.md`): `cache_files` lädt dann nur bis zur Grenze, das stündliche Aufräumen verdrängt die am
+  wenigsten gebrauchten Dokumente; Dokumente, deren Text erkannt wird oder darauf wartet, und laufende Abrufe
+  bleiben. Die Grenze so wählen, dass die neuen Dokumente eines Tages samt Rückstand der Erkennung darunter passen.
 - Eine Sicherung unmittelbar vorher (Abschnitt „Sicherung“).
 
 **Schritt 1: Aufträge im Worker.** Steht `TASKS_BACKEND` noch auf `immediate`, in der `.env`
@@ -1072,7 +1078,10 @@ Dateien, die ein angehaltener OCR-Worker gerade bearbeitet hat, gibt die Zeitgre
 (Fehlertext beginnt mit „Download“), haben keinen Text, obwohl der Inhalt oft schon in der Ablage liegt.
 `docker compose exec mandari python manage.py dokumentkette nacharbeiten` zeigt im Probelauf (Standard) je
 Quelle, was geschähe: Liegt der Inhalt in der Ablage (`local_status = ok`), geht die Datei zurück in die
-Erkennung, sonst zusätzlich in den Abruf; nicht freigegebener Altbestand ohne Inhalt bleibt unverändert.
+Erkennung, sonst zusätzlich in den Abruf; nicht freigegebener Altbestand ohne Inhalt und von der Obergrenze
+verdrängte Dokumente (`evicted`, eigene Zeile im Probelauf) bleiben unverändert. Verdrängte holt nur ein
+ausdrücklicher Abruf (`cache_files --verdraengte` bzw. die Vorschau); danach erfasst sie ein erneuter Lauf der
+Nacharbeit.
 Ausführen mit `--ausfuehren` erst, wenn Schritt 3 läuft (ohne `TEXT_EXTRACTION_RUNNER=worker` verweigert der
 Befehl, sonst lüde der Ingestor erneut bei der Quelle). Es ändern sich nur Zustandsspalten; der Befehl ist
 wiederholbar.
@@ -1094,6 +1103,7 @@ Dokumente Text bekommen (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“).
 | Erkennung | `mandari_tasks_running{queue="ocr"}` 1, solange Arbeit ansteht; `mandari_files_stored_without_text` sinkt bzw. bleibt klein; `/health/worker/?pruefung=texterkennung` und (nach 24 Stunden) `?pruefung=dokumenttext` 200; `mandari_tasks_dead{queue="ocr"}` 0 |
 | Abruf | `mandari_files_fetch_errors_total` je Quelle nicht häufiger als vor dem Umschalten; `mandari_files_fetch_retry_due` wird abgearbeitet; `/health/worker/?pruefung=dokumentabruf` 200 |
 | Ingestor | lädt keine Dateien mehr (Protokoll: „TEXT_EXTRACTION_RUNNER=worker“, Erkennung ruht) |
+| Ablage | mit `FILE_CACHE_MAX_TOTAL_GB`: `cache_files` meldet nicht dauerhaft `limit` (Protokoll des Workers, „Obergrenze erreicht“), sonst warten neue Dokumente auf Platz und bekommen so lange keinen Text; dann die Grenze anheben. `cache_files --stats` zeigt Belegung und verdrängte Dokumente |
 | Stichprobe | Vorgänge mit neuen Dokumenten zeigen Text, Vorschau liefert |
 
 Die Prüfung `rueckstau` misst den ältesten fälligen Auftrag über alle Warteschlangen (höchstens 15 Minuten).
@@ -1128,7 +1138,8 @@ genügt, dann den Rückweg gehen:
   mit dem noch laufenden Image `docker compose exec mandari python manage.py dokumentkette zuruecksetzen`. Der
   Befehl ist wiederholbar; er setzt die neuen Zustände des Abrufs zurück (`retry` und `fetching` auf `none`,
   `refused` auf `error` mit dem früheren Fehlertext), damit das ältere Image die Dateien wiederfindet. Texte,
-  Inhalte und Stichtage bleiben. Das gilt auch, wenn die Schritte oben nie ausgeführt wurden, denn schon das
+  Inhalte und Stichtage bleiben, von der Obergrenze verdrängte Dokumente (`evicted`, ab Migration
+  `insight_core.0056`) bleiben verdrängt. Das gilt auch, wenn die Schritte oben nie ausgeführt wurden, denn schon das
   Update auf Etappe 1 stellt Fehlerzustände auf `refused` um.
 
 Etappe 3 (Abruf als Auftrag über Ereignisse, Schalter `DOCUMENT_FETCH_SUBSCRIPTION`, Warteschlange `fetch`)

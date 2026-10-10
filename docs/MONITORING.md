@@ -492,10 +492,10 @@ Einschalten, Prüfen und Abbruchkriterien beim Umschalten: `DEPLOYMENT.md`, „D
 
 | Metrik | Labels | Bedeutung |
 |---|---|---|
-| `mandari_files_fetch_queued` | – | Dateien, die abgelegt werden und deren Abruf jetzt ansteht (`none`, fällige `retry` bzw. `error`, verfallene Beanspruchung) |
+| `mandari_files_fetch_queued` | – | Dateien, die abgelegt werden und deren Abruf jetzt ansteht (`none`, fällige `retry` bzw. `error`, verfallene Beanspruchung). Von der Obergrenze des Dokument-Caches verdrängte (`evicted`, Issue #961) zählen nicht: Sie holt kein Lauf von selbst |
 | `mandari_files_fetch_retry_due` | – | davon fällige Wiederholungen (Abrufzustand `retry`). Wiederholt wird nach 15 min, 1 h, 6 h, 24 h und 72 h, danach gilt `error` (wöchentlich ein neuer Versuch) |
 | `mandari_files_fetch_errors_total` | `source`, `code` | gescheiterte Abrufe je Quelle (Kennung der Quelle) und Fehlercode (`fetch_error`): `timeout`, `verbindung`, `http_429`, `http_5xx`, `http_4xx`, `leer`, `robots_unerreichbar`, `nicht_gefunden` (404/410), `html` (HTML statt Datei), `robots`, `zu_gross`, `ziel_gesperrt`, `keine_adresse`; zählt im Prozess, der abruft, Alarme deshalb mit `sum` |
-| `mandari_files_stored_without_text` | – | abgelegte Inhalte (`local_status = ok`), deren Erkennung wartet oder läuft: der Rückstand der Erkennung. Gelöschte, gesperrte und geleerte Dateien zählen nicht |
+| `mandari_files_stored_without_text` | – | abgelegte Inhalte (`local_status = ok`), deren Erkennung wartet oder läuft: der Rückstand der Erkennung. Gelöschte, gesperrte und geleerte Dateien zählen nicht, ebenso wenig verdrängte (`evicted`): Sie gelten nicht als abgelegt, und die Erkennung beansprucht sie nicht |
 | `mandari_files_text_outdated` | – | abgelegte Inhalte mit Text aus einer älteren Version der Erkennung (`text_extraction_version`) bzw. mit angeforderter Neuerkennung (`extract_texts --reprocess`). Das Sicherheitsnetz plant sie nach den wartenden schrittweise neu ein; der alte Text bleibt bis dahin stehen. Kein Alarm |
 
 Die Zustandszahlen (`…_queued`, `…_retry_due`, `…_stored_without_text`, `…_text_outdated`) misst jeder Prozess
@@ -508,7 +508,7 @@ gleichermaßen; Alarme fassen sie mit `max` zusammen. Dazu gehören die Größen
 
 | Schwelle | Wo | Bedeutung, erster Schritt |
 |---|---|---|
-| fällige Wiederholungen des Abrufs liegen länger als 6 h | `/health/worker/?pruefung=dokumentabruf` (`DOCUMENT_FETCH_RETRY_ALERT_HOURS`; Gatus `worker-dokumentabruf`) | Der Abruf kommt nicht nach oder steht: läuft `cache_files`, ist die Platte voll, ist der Takt je Host belegt? Quellen in Schonung zählen nicht |
+| fällige Wiederholungen des Abrufs liegen länger als 6 h | `/health/worker/?pruefung=dokumentabruf` (`DOCUMENT_FETCH_RETRY_ALERT_HOURS`; Gatus `worker-dokumentabruf`) | Der Abruf kommt nicht nach oder steht: läuft `cache_files`, ist die Platte voll, ist die Obergrenze des Dokument-Caches erreicht (`cache_files` meldet `limit`), ist der Takt je Host belegt? Quellen in Schonung zählen nicht |
 | abgelegte Inhalte warten länger als 24 h auf ihren Text | `/health/worker/?pruefung=dokumenttext` (`TEXT_EXTRACTION_BACKLOG_ALERT_HOURS`, nur mit `TEXT_EXTRACTION_RUNNER=worker`; Gatus `worker-dokumenttext`) | Die Erkennung steht: `worker-heavy` gesund, `mandari_tasks_running{queue="ocr"}`, Prüfung `texterkennung` |
 | Aufträge in `ocr` warten, keiner läuft | Prometheus `MandariTexterkennungSteht` | wie die Zeile davor |
 | Abruffehler einer Quelle mehr als dreimal so häufig wie am Vortag (und über 20 in 6 h) | Prometheus `MandariAbrufFehlerJeQuelle` | Quelle gestört oder sperrt uns; Fehlercodes ansehen, Betriebsmonitor |
