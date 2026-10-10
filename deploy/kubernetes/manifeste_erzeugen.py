@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import difflib
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -100,6 +101,9 @@ def aufteilen(ausgabe: str) -> tuple[list[str], list[str]]:
         if not rumpf.strip():
             continue
         rumpf = rumpf.replace(f"encryption-key: {SCHLUESSEL_RENDER_DATA}", f"encryption-key: {SCHLUESSEL_DATEI_DATA}")
+        # Die Prüfsumme hängt an den Zeilenenden der Vorlage (Windows-Checkout: CRLF) und hat ohne Helm
+        # keine Wirkung; ein fester Wert hält die Datei auf jedem System gleich.
+        rumpf = re.sub(r"(checksum/secret: )[0-9a-f]{64}", r"\g<1>ohne-helm", rumpf)
         (job if quelle.endswith("/job-migrate.yaml") else haupt).append(rumpf)
     if not job:
         raise SystemExit("Kein Migrations-Job im gerenderten Chart gefunden.")

@@ -237,7 +237,7 @@ spec:
         app.kubernetes.io/component: app
       annotations:
         # Neustart, wenn sich Zugangsdaten ändern
-        checksum/secret: 95dd273c675d0ea8295013ede845a481a6ea3e7a104261d4525174853183a211
+        checksum/secret: ohne-helm
     spec:
       serviceAccountName: mandari
       securityContext:
@@ -541,7 +541,7 @@ spec:
         app.kubernetes.io/instance: mandari
         app.kubernetes.io/component: ingestor
       annotations:
-        checksum/secret: 95dd273c675d0ea8295013ede845a481a6ea3e7a104261d4525174853183a211
+        checksum/secret: ohne-helm
         prometheus.io/scrape: "true"
         prometheus.io/port: "9090"
         prometheus.io/path: /metrics
@@ -840,7 +840,7 @@ spec:
         app.kubernetes.io/instance: mandari
         app.kubernetes.io/component: worker
       annotations:
-        checksum/secret: 95dd273c675d0ea8295013ede845a481a6ea3e7a104261d4525174853183a211
+        checksum/secret: ohne-helm
         prometheus.io/scrape: "true"
         prometheus.io/port: "9091"
         prometheus.io/path: /metrics
@@ -1148,7 +1148,7 @@ spec:
         app.kubernetes.io/instance: mandari
         app.kubernetes.io/component: worker-heavy
       annotations:
-        checksum/secret: 95dd273c675d0ea8295013ede845a481a6ea3e7a104261d4525174853183a211
+        checksum/secret: ohne-helm
         prometheus.io/scrape: "true"
         prometheus.io/port: "9091"
         prometheus.io/path: /metrics
@@ -1458,7 +1458,7 @@ spec:
         app.kubernetes.io/instance: mandari
         app.kubernetes.io/component: worker-live
       annotations:
-        checksum/secret: 95dd273c675d0ea8295013ede845a481a6ea3e7a104261d4525174853183a211
+        checksum/secret: ohne-helm
         prometheus.io/scrape: "true"
         prometheus.io/port: "9091"
         prometheus.io/path: /metrics
