@@ -135,18 +135,44 @@ def delete(sha256: str) -> None:
     client().delete_object(Bucket=settings.OBJ_BUCKET, Key=key_for(sha256))
 
 
-def exists(sha256: str) -> bool:
-    return remote_size(sha256) is not None
+#: Ergebnisse von ``exists`` (und ``file_store.local_copy``): nicht vorhanden ist nicht gestört (Issue #919)
+PRESENT = "vorhanden"
+MISSING = "fehlt"
+DISTURBED = "gestoert"
+_NOT_FOUND_CODES = ("404", "NoSuchKey", "NotFound")
+
+
+def is_not_found(exc: BaseException) -> bool:
+    """Sagt der Objektspeicher ausdrücklich, dass es den Schlüssel nicht gibt (404/NoSuchKey)?"""
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    return str(response.get("Error", {}).get("Code", "")) in _NOT_FOUND_CODES
+
+
+def exists(sha256: str) -> str:
+    """
+    Liegt der Inhalt im Objektspeicher? ``PRESENT``, ``MISSING`` (vom Objektspeicher bestätigt) oder ``DISTURBED``
+    (jeder andere Fehler: Zeitüberschreitung, Zugang, Netz). Eine Störung darf nie als „fehlt“ gelten, sonst
+    löste sie Abrufe bei den Quellen aus.
+    """
+    try:
+        size = remote_size(sha256)
+    except Exception:  # noqa: BLE001 - jede Störung ist ein Ergebnis
+        return DISTURBED
+    return MISSING if size is None else PRESENT
 
 
 def remote_size(sha256: str) -> int | None:
-    """Größe des Inhalts im Objektspeicher (``HEAD``), ``None``, wenn er dort fehlt; andere Fehler gehen durch."""
-    from botocore.exceptions import ClientError
-
+    """
+    Größe des Inhalts im Objektspeicher (``HEAD``): ``None`` nur, wenn der Objektspeicher das Fehlen bestätigt
+    (404/NoSuchKey); jede Störung geht als Ausnahme durch (Obergrenze des Dokument-Caches, #961: bei einer Störung
+    wird nichts verdrängt).
+    """
     try:
         response = client().head_object(Bucket=settings.OBJ_BUCKET, Key=key_for(sha256))
-    except ClientError as exc:
-        if exc.response.get("Error", {}).get("Code") in ("404", "NoSuchKey", "NotFound"):
+    except Exception as exc:
+        if is_not_found(exc):
             return None
         raise
     return int(response.get("ContentLength") or 0)

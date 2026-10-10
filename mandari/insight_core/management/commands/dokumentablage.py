@@ -110,4 +110,13 @@ class Command(EinmaligMixin, BaseCommand):
         if result.before > result.limit and not result.reached:
             geschuetzt = ", ".join(f"{key} {value / gb:.2f} GB" for key, value in sorted(result.protected.items()))
             line += f"; Ziel nicht erreicht (geschützt: {geschuetzt or '-'})"
+        verified = result.verified
+        if verified.get("fehlt") or verified.get("groesse_abweichend"):
+            # Mit Objektspeicher prüft jeder Lauf per HEAD (#919): solche Kopien bleiben und werden neu hochgeladen
+            line += (
+                f"; im Objektspeicher fehlen {verified.get('fehlt', 0)}, Größe abweichend "
+                f"{verified.get('groesse_abweichend', 0)} (Kopien bleiben, --hochladen überträgt sie erneut)"
+            )
+        if verified.get("fehler"):
+            line += "; Objektspeicher gestört, Verdrängen abgebrochen"
         self.stdout.write(line)

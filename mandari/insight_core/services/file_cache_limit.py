@@ -15,20 +15,25 @@ legte die neuesten Dokumente zuerst ab, sie wären sonst zuerst verdrängt worde
 **Zwei Arten der Verdrängung:**
 
 * Mit Objektspeicher (``OBJ_ENABLED``, Ablage nach SHA-256) wird nur die lokale Kopie gelöscht, und nur für Inhalte,
-  die sicher im Objektspeicher liegen. Die Datenbank bleibt unverändert, die Dokumente bleiben „Lokal vorhanden“;
-  die Vorschau holt den Inhalt bei Bedarf aus dem Objektspeicher (``file_store.local_copy``).
+  die sicher im Objektspeicher liegen: Jeder echte Lauf fragt vorher per ``HEAD`` nach (``object_storage.remote_size``,
+  vorhanden mit derselben Größe). Fehlt der Inhalt dort, bleibt die Kopie; ist der Objektspeicher gestört, bricht der
+  Lauf ab (nicht vorhanden ist nicht gestört, Dokumentkette #919). Die Datenbank bleibt unverändert, die Dokumente
+  bleiben „Lokal vorhanden“; Vorschau und Texterkennung holen den Inhalt bei Bedarf aus dem Objektspeicher
+  (``file_store.local_copy``), nie von der Quelle.
 * Ohne Objektspeicher geben alle Dateien eines Inhalts ihre Referenz gemeinsam frei und gehen auf ``evicted``
-  („Verdrängt“); danach verweist kein Dokument mehr auf den Inhalt, und er wird gelöscht. Die Vorschau holt ein
-  verdrängtes Dokument bei Bedarf von der Quelle und legt es wieder ab; ``cache_files`` lädt verdrängte Dokumente
-  nicht von selbst nach. Extrahierter Text, Status der Texterkennung und Fingerabdruck (``sha256_hash``) bleiben
-  unberührt, es wird also nichts neu erkannt.
+  („Verdrängt“); danach verweist kein Dokument mehr auf den Inhalt, und er wird gelöscht. ``evicted`` ist kein
+  Zustand, aus dem der Abruf (``hub.ris.abruf``) von selbst beansprucht: Die Vorschau holt ein verdrängtes Dokument
+  bei Bedarf über den Abrufweg von der Quelle und legt es wieder ab; ``cache_files`` lädt verdrängte Dokumente nur mit
+  ``--verdraengte``. Extrahierter Text, Status der Texterkennung und Fingerabdruck (``sha256_hash``) bleiben
+  unberührt, es wird also nichts neu erkannt; die Texterkennung beansprucht nur abgelegte Dokumente (``ok``).
 
-**Nie verdrängt** werden Inhalte, deren Text gerade erkannt wird (``pending``/``processing``: die Erkennung liest die
-lokale Kopie), Kopien aus der letzten Stunde und – ohne Objektspeicher – Dokumente, die sich nicht neu abrufen
-ließen: Quelle in Schonung, Dateiabruf abgeschaltet, synthetische Quelle (Domäne ``.invalid``, etwa die Demo), keine
-Download-Adresse oder eine Quelle, die Dateiabrufe verweigert (robots.txt sperrt Dateien, Dokumente mit
-HTTP 401/403, siehe ``refusing_sources``). Gesperrte Dokumente (Löschabgleich, #787) behandelt die Grenze wie alle
-anderen; ihre Sperre, Frist und Löschung bleiben, wie sie sind.
+**Nie verdrängt** werden Inhalte, deren Text gerade erkannt wird oder darauf wartet (``pending``/``processing`` oder ein
+wartender Auftrag ``file.extract_text``, etwa eine Neuerkennung: die Erkennung liest die lokale Kopie), Dokumente, die
+gerade abgerufen werden (``fetching``), Kopien aus der letzten Stunde und – ohne Objektspeicher – Dokumente, die sich
+nicht neu abrufen ließen: Quelle in Schonung oder nicht aktiv, Dateiabruf abgeschaltet, synthetische Quelle (Domäne
+``.invalid``, etwa die Demo), keine Download-Adresse oder eine Quelle, die Dateiabrufe verweigert (``refused``,
+robots.txt sperrt Dateien, Dokumente mit HTTP 401/403, siehe ``refusing_sources``). Gesperrte Dokumente
+(Löschabgleich, #787) behandelt die Grenze wie alle anderen; ihre Sperre, Frist und Löschung bleiben, wie sie sind.
 
 **Moduswechsel:** Liegen Inhalte laut Datenbank im Objektspeicher (``remote_at``), ist er hier aber nicht
 konfiguriert (``OBJ_ENABLED=false`` im Worker, ein Container ohne ``OBJ_*``), setzt die Grenze aus und meldet das
@@ -36,10 +41,11 @@ konfiguriert (``OBJ_ENABLED=false`` im Worker, ein Container ohne ``OBJ_*``), se
 dort. Ein Handlauf kann ausdrücklich ohne Objektspeicher weitermachen (``without_object_storage``); Inhalte mit
 ``remote_at`` bleiben auch dann unangetastet (Grund ``im_objektspeicher``), sie verwaisen nie.
 
-**Prüfung im Objektspeicher** (``verify_remote``, ``prune_file_cache --pruefe-objektspeicher``): Vor dem Löschen einer
-lokalen Kopie fragt ``HEAD`` nach, ob der Inhalt mit seiner Größe im Objektspeicher liegt. Fehlt er, bleibt die Kopie,
-und ``remote_at`` wird zurückgesetzt, damit ``dokumentablage --hochladen`` ihn erneut überträgt. Im Probelauf werden
-alle oder eine Stichprobe der Inhalte geprüft, die gingen; geändert wird dabei nichts.
+**Prüfung im Objektspeicher:** Vor dem Löschen einer lokalen Kopie fragt jeder echte Lauf per ``HEAD`` nach, ob der
+Inhalt mit seiner Größe im Objektspeicher liegt. Fehlt er oder weicht die Größe ab, bleibt die Kopie, und ``remote_at``
+wird zurückgesetzt, damit ``dokumentablage --hochladen`` ihn erneut überträgt; eine Störung bricht den Lauf ab. Im
+Probelauf prüft nur ``verify_remote`` (``prune_file_cache --pruefe-objektspeicher``) alle oder eine Stichprobe der
+Inhalte, die gingen; geändert wird dabei nichts.
 
 **Belegung:** Inhalte unter ``<OPARL_FILES_ROOT>/sha256/<ab>/`` auf der Platte (ohne Teil-Downloads) plus Kopien im
 alten Layout je Kommune (Größe aus der Datenbank). Gelöscht wird nur unterhalb von ``OPARL_FILES_ROOT`` und nie über
@@ -47,7 +53,9 @@ symbolische Verweise.
 
 **Ablauf in Stapeln:** Der Durchgang über die Platte summiert nur Größen. Danach liefert die Datenbank die Inhalte in
 Rangfolge über einen Cursor (nie alle zugleich im Speicher); verdrängt wird je Stapel in einer kurzen Transaktion,
-gerade gesperrte Zeilen (eine Datei wird eben abgelegt) werden übersprungen statt erwartet. Ein Lauf hält eine
+gerade gesperrte Zeilen (eine Datei wird eben abgelegt, ein Abruf oder die Texterkennung beansprucht sie) werden
+übersprungen statt erwartet. Unter der Sperre wird in beiden Arten nachgeprüft (``_still_evictable``), damit eine eben
+beanspruchte Texterkennung oder ein laufender Abruf ihre Kopie behält. Ein Lauf hält eine
 Sperre im gemeinsamen Cache, damit Zeitplan und Handlauf nicht doppelt verdrängen.
 """
 
@@ -83,6 +91,8 @@ logger = logging.getLogger(__name__)
 EVICTED = "evicted"
 #: Die Texterkennung liest die lokale Kopie: solche Inhalte bleiben
 BUSY_TEXT = ("pending", "processing")
+#: Ein Abruf beansprucht die Datei gerade (``hub.ris.abruf``): ihre Kopie bleibt
+FETCHING = "fetching"
 #: So junge Kopien bleiben (gerade abgelegt, womöglich noch in Gebrauch)
 FRESH = timedelta(hours=1)
 #: Die Nutzung eines Dokuments höchstens so oft vermerken
@@ -98,7 +108,9 @@ MODE_RELEASE = "freigeben"
 
 #: Grund, aus dem ein Inhalt ohne konfigurierten Objektspeicher bleibt: Er liegt dort (``remote_at``) und verwaist nie
 PROTECT_REMOTE = "im_objektspeicher"
-#: Fehler, mit denen eine Quelle Dokumentabrufe verweigert (``local_error`` aus ``file_cache.fetch_and_cache``)
+#: Zustand eines verweigerten Abrufs (robots.txt, HTML-Seite statt der Datei; ``hub.ris.abruf``)
+REFUSED = "refused"
+#: Fehler, mit denen eine Quelle Dokumentabrufe verweigert (``local_error`` eines Abrufs mit Zustand ``error``)
 REFUSED_ERRORS = ("HTTP 401", "HTTP 403")
 #: Kennungen von Crawlern und Abrufprogrammen im User-Agent: Ihre Abrufe zählen nicht als Nutzung
 _CRAWLER = re.compile(
@@ -120,6 +132,7 @@ _FILE_FIELDS = (
     "blob_id",
     "body_id",
     "local_path",
+    "local_status",
     "text_extraction_status",
     "local_cached_at",
     "local_accessed_at",
@@ -310,10 +323,14 @@ def _synthetic(url: str | None) -> bool:
 
 
 def paused_sources() -> set[Any]:
-    """Quellen, die gerade nicht angefragt werden (Schonung, Dateiabruf abgeschaltet) oder synthetisch sind."""
+    """
+    Quellen, die gerade nicht angefragt werden (Schonung, Dateiabruf abgeschaltet, nicht aktiv: kein „Abruf
+    erlaubt“ im Sinn von ``hub.ris.abruf``) oder synthetisch sind.
+    """
     from ..models import OParlSource
 
     sources = set(file_cache.sources_without_downloads())
+    sources.update(OParlSource.objects.filter(is_active=False).values_list("pk", flat=True))
     sources.update(
         OParlSource.objects.filter(consecutive_failures__gte=file_cache.backoff_failures()).values_list("pk", flat=True)
     )
@@ -325,8 +342,9 @@ def refusing_sources() -> set[Any]:
     """
     Quellen, die Dateiabrufe verweigern, ohne in Schonung zu sein (die Schnittstelle antwortet, die Dokumente nicht):
 
-    * Dokumente mit Vermerk der robots.txt (Cache: ``local_error``, Texterkennung: ``skipped``); eine Freigabe
-      (``robots_override``) reiht sie neu ein und hebt damit auch den Schutz auf,
+    * verweigerte Abrufe (``refused``: robots.txt oder HTML-Seite statt der Datei, ``hub.ris.abruf``) und ältere
+      Vermerke der robots.txt (Cache: ``error`` mit ``local_error``, Texterkennung: ``skipped``); eine Freigabe
+      (``robots_override``, ``dokumentkette freigeben``) reiht sie neu ein und hebt damit auch den Schutz auf,
     * die robots.txt im gemeinsamen Cache sperrt eine Beispieladresse der Quelle (eine abgelegte Datei); ohne
       Eintrag im Cache gibt es keine Entscheidung, angefragt wird hier nie,
     * Dokumente, deren Abruf mit HTTP 401 oder 403 endete (etwa PDFs hinter einer Sperre).
@@ -337,8 +355,9 @@ def refusing_sources() -> set[Any]:
     from ..models import OParlFile, OParlSource
     from . import robots
 
-    refused = Q(local_status="error") & (
-        Q(local_error__startswith=robots.SKIP_ERROR_PREFIX) | Q(local_error__in=REFUSED_ERRORS)
+    refused = Q(local_status=REFUSED) | (
+        Q(local_status="error")
+        & (Q(local_error__startswith=robots.SKIP_ERROR_PREFIX) | Q(local_error__in=REFUSED_ERRORS))
     )
     refused |= Q(text_extraction_status="skipped", text_extraction_error__startswith=robots.SKIP_ERROR_PREFIX)
     sources: set[Any] = set(
@@ -405,6 +424,7 @@ def _blob_rows(unrefetchable: list[Any]) -> Iterator[dict[str, Any]]:
         .annotate(
             score=Max(_score_expression()),
             busy=Max(_flag(Q(text_extraction_status__in=BUSY_TEXT))),
+            fetching=Max(_flag(Q(local_status=FETCHING))),
             blocked=Max(_flag(_blocked_q(unrefetchable))),
             cached=Max("local_cached_at"),
             remote=Max("blob__remote_at"),
@@ -417,6 +437,7 @@ def _blob_rows(unrefetchable: list[Any]) -> Iterator[dict[str, Any]]:
             "key": str(row["blob_id"]),
             "score": row["score"],
             "busy": bool(row["busy"]),
+            "fetching": bool(row["fetching"]),
             "blocked": bool(row["blocked"]),
             "cached": row["cached"],
             "remote": row["remote"],
@@ -442,6 +463,8 @@ def _legacy_rows(unrefetchable: list[Any]) -> Iterator[dict[str, Any]]:
             "key": str(row["pk"]),
             "score": row["score"],
             "busy": bool(row["busy"]),
+            # Kopien im alten Layout stehen auf ``ok`` (``_legacy_files``): kein laufender Abruf
+            "fetching": False,
             "blocked": bool(row["blocked"]),
             "cached": row["local_cached_at"],
             "remote": None,
@@ -457,10 +480,15 @@ def _ranking(unrefetchable: list[Any]) -> Iterable[dict[str, Any]]:
     )
 
 
-def _protection(row: dict[str, Any], run_mode: str, now: datetime) -> str | None:
-    """Grund, aus dem ein Inhalt bleibt, sonst ``None``."""
-    if row["busy"]:
+def _protection(row: dict[str, Any], run_mode: str, now: datetime, queued: frozenset[str] = frozenset()) -> str | None:
+    """
+    Grund, aus dem ein Inhalt bleibt, sonst ``None``. ``queued``: Dateien mit wartendem Auftrag ``file.extract_text``
+    (für Kopien im alten Layout schon hier; Inhalte prüft ``_still_evictable`` je Datei unter der Sperre).
+    """
+    if row["busy"] or (row["kind"] == _KIND_LEGACY and row["key"] in queued):
         return "texterkennung"
+    if row.get("fetching"):
+        return "abruf"
     cached = row["cached"]
     if cached is not None and cached > now - FRESH:
         return "frisch"
@@ -568,6 +596,8 @@ class _Run:
     verify: bool = False
     #: Probelauf mit Prüfung: Inhalte, die gingen (Schlüssel, Größe)
     candidates: list[tuple[str, int]] = field(default_factory=list)
+    #: Dateien mit wartendem Auftrag ``file.extract_text`` (je Lauf einmal gelesen): ihre Kopie bleibt
+    queued: frozenset[str] = frozenset()
 
 
 def enforce(
@@ -587,8 +617,10 @@ def enforce(
     nur berechnet, was ginge.
 
     ``without_object_storage``: weitermachen, obwohl Inhalte im Objektspeicher liegen, der hier nicht konfiguriert
-    ist (sonst setzt der Lauf aus); diese Inhalte bleiben trotzdem. ``verify_remote``: mit Objektspeicher vor dem
-    Löschen jeder lokalen Kopie per ``HEAD`` nachfragen; im Probelauf alle bzw. ``sample`` zufällig gewählte Inhalte.
+    ist (sonst setzt der Lauf aus); diese Inhalte bleiben trotzdem. Mit Objektspeicher fragt jeder echte Lauf vor dem
+    Löschen einer lokalen Kopie per ``HEAD`` nach (Dokumentkette #919: nur sicher vorhandene Inhalte verlassen die
+    Platte, bei einer Störung wird nichts verdrängt). ``verify_remote`` prüft auch im Probelauf, alle bzw. ``sample``
+    zufällig gewählte Inhalte.
     """
     limit = limit_bytes() if max_bytes is None else max(int(max_bytes), 0)
     result = Result(mode=mode(), limit=limit, target=target_bytes(limit), dry_run=dry_run)
@@ -615,7 +647,8 @@ def enforce(
             now or timezone.now(),
             max(1, batch),
             lock,
-            verify=verify_remote and result.mode == MODE_REMOTE,
+            # Im echten Lauf immer; im Probelauf nur auf Wunsch (je Inhalt eine Anfrage)
+            verify=result.mode == MODE_REMOTE and (verify_remote or not dry_run),
             sample=max(int(sample), 0),
         )
     finally:
@@ -642,6 +675,7 @@ def _enforce(result: Result, now: datetime, batch: int, lock: Sperre | None, *, 
         lock=lock,
         refusing=refusing,
         verify=verify,
+        queued=_queued_files(),
     )
     to_free = result.before - result.target
     pending: list[tuple[dict[str, Any], Path, int]] = []
@@ -653,7 +687,7 @@ def _enforce(result: Result, now: datetime, batch: int, lock: Sperre | None, *, 
         if found is None:
             continue  # nicht (mehr) lokal oder nicht sicher löschbar
         path, size = found
-        reason = _protection(row, result.mode, now)
+        reason = _protection(row, result.mode, now, run.queued)
         if reason:
             result.protected[reason] += size
             continue
@@ -668,6 +702,17 @@ def _enforce(result: Result, now: datetime, batch: int, lock: Sperre | None, *, 
     result.after = result.before - result.freed
     if run.verify and result.dry_run:
         _verify_candidates(run, sample)
+
+
+def _queued_files() -> frozenset[str]:
+    """Dateien, für die ein Auftrag ``file.extract_text`` wartet (Texterkennung bzw. Neuerkennung eingereiht)."""
+    from .text_extraction_job import queued_file_ids
+
+    try:
+        return frozenset(queued_file_ids())
+    except Exception:  # Ohne Journal (Tests, Rückfall) gibt es keine wartenden Aufträge
+        logger.warning("Wartende Aufträge der Texterkennung nicht lesbar", exc_info=True)
+        return frozenset()
 
 
 def _apply(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> bool:
@@ -772,39 +817,120 @@ def _verify_candidates(run: _Run, sample: int) -> None:
 
 
 def _evict_local(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> bool:
-    """Mit Objektspeicher: nur die lokale Kopie löschen, die Dokumente behalten ihre Referenz."""
+    """
+    Mit Objektspeicher: nur die lokale Kopie löschen, die Dokumente behalten ihre Referenz.
+
+    Erst per ``HEAD`` prüfen, ob der Inhalt sicher im Objektspeicher liegt (vor der Sperre, je Inhalt eine Anfrage),
+    dann unter Zeilensperre nachprüfen (``_still_evictable``: eben beanspruchte Texterkennung, laufender Abruf, …) und
+    löschen. Eine Störung des Objektspeichers bricht den Lauf ab; was bis dahin geprüft ist, darf noch gehen.
+    """
     from ..models import OParlFileBlob
 
-    bodies = _blob_bodies([row["key"] for row, _, _ in items])
+    planned = {row["key"]: (row, path, size) for row, path, size in items}
     sizes: dict[str, int] = {}
     if run.verify:
-        sizes = dict(OParlFileBlob.objects.filter(pk__in=list(bodies)).values_list("pk", "size"))
-    for row, path, size in items:
+        sizes = {
+            str(pk): size for pk, size in OParlFileBlob.objects.filter(pk__in=list(planned)).values_list("pk", "size")
+        }
+    present: list[str] = []
+    ok = True
+    for key, (_row, _path, size) in planned.items():
         if run.verify:
             try:
-                state = _remote_state(row["key"], sizes.get(row["key"], size))
+                state = _remote_state(key, sizes.get(key, size))
             except Exception:
                 logger.warning("Objektspeicher nicht erreichbar: Verdrängen abgebrochen", exc_info=True)
                 run.result.verified["fehler"] += 1
                 run.result.skipped["fehler"] += 1
-                return False
+                ok = False
+                break
             run.result.verified[state] += 1
             if state != "vorhanden":
                 # Die lokale Kopie ist womöglich die einzige: sie bleibt. Fehlt der Inhalt oder weicht seine Größe ab,
-                # lädt --hochladen ihn neu; bis dahin schützt „nicht hochgeladen“ die Kopie auch vor Läufen ohne Prüfung.
-                OParlFileBlob.objects.filter(pk=row["key"]).update(remote_at=None)
+                # lädt --hochladen ihn neu; bis dahin schützt „nicht hochgeladen“ die Kopie auch vor weiteren Läufen.
+                OParlFileBlob.objects.filter(pk=key).update(remote_at=None)
                 _skip(run, "nicht_im_objektspeicher")
                 continue
-        try:
-            path.unlink()
-        except FileNotFoundError:
+        present.append(key)
+    if not present:
+        return ok
+    files: dict[str, list[dict[str, Any]]] = {}
+    evicted: list[str] = []
+    try:
+        with transaction.atomic():
+            files = _locked_files(run, present, remote=True)
+            for key, rows in files.items():
+                reason = _still_evictable(run, rows, planned[key][0]["score"], refetch=False)
+                if reason:
+                    _skip(run, reason)
+                    continue
+                # Löschen, solange die Sperre gilt: Wer die Datei gleich beansprucht, liest dann aus dem Objektspeicher
+                try:
+                    planned[key][1].unlink()
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    raise _UnlinkError(str(planned[key][1])) from exc
+                evicted.append(key)
+    except _UnlinkError:
+        logger.warning("Verdrängen abgebrochen: eine lokale Kopie ließ sich nicht löschen", exc_info=True)
+        run.result.skipped["fehler"] += 1
+        ok = False
+    for key in evicted:
+        _count(run, [row["body_id"] for row in files[key]], planned[key][2])
+    return ok
+
+
+def _locked_files(run: _Run, keys: list[str], *, remote: bool) -> dict[str, list[dict[str, Any]]]:
+    """
+    Inhalte und ihre Dateien sperren (``SKIP LOCKED``, Inhalt vor Dateien wie ``file_store.attach``): Inhalt → Zeilen
+    seiner Dateien, nur für Inhalte, deren Dateien alle gesperrt werden konnten. ``remote``: nur Inhalte, die (noch)
+    im Objektspeicher liegen, sonst nur solche, die dort nicht liegen (Grund ``im_objektspeicher``).
+    """
+    from ..models import OParlFile, OParlFileBlob
+
+    locked = {
+        str(pk): remote_at
+        for pk, remote_at in OParlFileBlob.objects.select_for_update(skip_locked=True)
+        .filter(pk__in=keys)
+        .values_list("pk", "remote_at")
+    }
+    _skip(run, "gesperrt", len(keys) - len(locked))
+    files: dict[str, list[dict[str, Any]]] = {key: [] for key in locked}
+    for row in (
+        OParlFile.objects.select_for_update(skip_locked=True).filter(blob_id__in=list(locked)).values(*_FILE_FIELDS)
+    ):
+        files[str(row["blob_id"])].append(row)
+    actual = {
+        str(blob_id): count
+        for blob_id, count in OParlFile.objects.filter(blob_id__in=list(locked))
+        .values("blob_id")
+        .annotate(n=Count("pk"))
+        .values_list("blob_id", "n")
+    }
+    result: dict[str, list[dict[str, Any]]] = {}
+    for key, remote_at in locked.items():
+        if remote and remote_at is None:
+            # Inzwischen als nicht (mehr) hochgeladen vermerkt: die lokale Kopie bleibt
+            _skip(run, "nicht_hochgeladen")
             continue
-        except OSError:
-            logger.warning("Lokale Kopie %s nicht gelöscht", row["key"][:12], exc_info=True)
-            run.result.skipped["fehler"] += 1
-            return False
-        _count(run, bodies[row["key"]], size)
-    return True
+        if not remote and remote_at is not None:
+            # Inzwischen (oder aus früherem Betrieb) im Objektspeicher: nie verwaisen lassen, sonst löschte ihn das
+            # nächste Aufräumen mit eingeschaltetem Objektspeicher dort
+            _skip(run, PROTECT_REMOTE)
+            continue
+        rows = files[key]
+        count = actual.get(key, 0)
+        if not count:
+            # Kein Verweis mehr: das Aufräumen verwaister Inhalte löscht ihn
+            _skip(run, "ohne_verweis")
+            continue
+        if len(rows) != count:
+            # Eine Datei des Inhalts wird gerade geändert (gesperrte Zeile): beim nächsten Lauf
+            _skip(run, "gesperrt")
+            continue
+        result[key] = rows
+    return result
 
 
 class _UnlinkError(Exception):
@@ -825,15 +951,21 @@ def _skip(run: _Run, reason: str, count: int = 1) -> None:
         run.result.skipped[reason] += count
 
 
-def _still_evictable(run: _Run, rows: list[dict[str, Any]], score: datetime) -> str | None:
-    """Prüfung unter Sperre: Hat sich seit der Planung etwas geändert? Grund, sonst ``None``."""
+def _still_evictable(run: _Run, rows: list[dict[str, Any]], score: datetime, *, refetch: bool = True) -> str | None:
+    """
+    Prüfung unter Sperre: Hat sich seit der Planung etwas geändert? Grund, sonst ``None``. ``refetch``: Das Dokument
+    müsste sich danach von der Quelle neu abrufen lassen (ohne Objektspeicher).
+    """
     for row in rows:
-        if row["text_extraction_status"] in BUSY_TEXT:
+        # Eben beansprucht (processing), wartend oder eingereiht: Die Texterkennung liest die lokale Kopie
+        if row["text_extraction_status"] in BUSY_TEXT or str(row["pk"]) in run.queued:
             return "texterkennung"
+        if row["local_status"] == FETCHING:
+            return "abruf"
         cached = row["local_cached_at"]
         if cached is not None and cached > run.now - FRESH:
             return "frisch"
-        if row["body_id"] in run.unrefetchable or not (row["download_url"] or row["access_url"]):
+        if refetch and (row["body_id"] in run.unrefetchable or not (row["download_url"] or row["access_url"])):
             return "nicht_abrufbar"
         if score_of(row) > score:
             return "genutzt"
@@ -845,44 +977,12 @@ def _release_blobs(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> 
     from ..models import OParlFile, OParlFileBlob
 
     planned = {row["key"]: (row, path, size) for row, path, size in items}
+    files: dict[str, list[dict[str, Any]]] = {}
+    evict: list[str] = []
     try:
         with transaction.atomic():
-            locked = dict(
-                OParlFileBlob.objects.select_for_update(skip_locked=True)
-                .filter(pk__in=list(planned))
-                .values_list("pk", "remote_at")
-            )
-            files: dict[str, list[dict[str, Any]]] = {key: [] for key in locked}
-            for row in (
-                OParlFile.objects.select_for_update(skip_locked=True)
-                .filter(blob_id__in=list(locked))
-                .values(*_FILE_FIELDS)
-            ):
-                files[str(row["blob_id"])].append(row)
-            actual = dict(
-                OParlFile.objects.filter(blob_id__in=list(locked))
-                .values("blob_id")
-                .annotate(n=Count("pk"))
-                .values_list("blob_id", "n")
-            )
-            _skip(run, "gesperrt", len(planned) - len(locked))
-            evict: list[str] = []
-            for key in locked:
-                if locked[key] is not None:
-                    # Inzwischen (oder aus früherem Betrieb) im Objektspeicher: nie verwaisen lassen, sonst löschte
-                    # ihn das nächste Aufräumen mit eingeschaltetem Objektspeicher dort
-                    _skip(run, PROTECT_REMOTE)
-                    continue
-                rows = files[key]
-                count = actual.get(key, 0)
-                if not count:
-                    # Kein Verweis mehr: das Aufräumen verwaister Inhalte löscht ihn
-                    _skip(run, "ohne_verweis")
-                    continue
-                if len(rows) != count:
-                    # Eine Datei des Inhalts wird gerade geändert (gesperrte Zeile): beim nächsten Lauf
-                    _skip(run, "gesperrt")
-                    continue
+            files = _locked_files(run, list(planned), remote=False)
+            for key, rows in files.items():
                 reason = _still_evictable(run, rows, planned[key][0]["score"])
                 if reason:
                     _skip(run, reason)

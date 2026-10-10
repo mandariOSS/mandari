@@ -508,6 +508,20 @@ def collect_action_items() -> list[dict]:
         reverse("admin:insight_core_oparlfile_changelist") + "?local_status__exact=error",
         level="ok",
     )
+    # Zustände des Abrufs (Issue #919, hub/ris/abruf.py): Wiederholungen laufen von selbst; verweigerte Abrufe
+    # (robots.txt, Bot-Schutz) kommen erst nach einer Freigabe wieder dran
+    add(
+        "Dokumente, deren Abruf wiederholt wird (Cache-Fehler, vorübergehend)",
+        OParlFile.objects.filter(deleted=False, local_status="retry").count(),
+        reverse("admin:insight_core_oparlfile_changelist") + "?local_status__exact=retry",
+        level="ok",
+    )
+    add(
+        "Dokumente, deren Abruf die Quelle verweigert (robots.txt, Bot-Schutz)",
+        OParlFile.objects.filter(deleted=False, local_status="refused").count(),
+        reverse("admin:insight_core_oparlfile_changelist") + "?local_status__exact=refused",
+        level="ok",
+    )
     add(
         "Personenfotos mit Abruf-Fehler",
         OParlPerson.objects.filter(photo_status="error").count(),

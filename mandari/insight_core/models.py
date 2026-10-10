@@ -1168,11 +1168,15 @@ class OParlFile(SourceDeletionModel):
     text_content = models.TextField(blank=True, null=True)
     sha256_hash = models.CharField(max_length=64, blank=True, null=True)
 
-    # Lokaler Dokument-Cache (Django-managed, siehe services/file_cache.py)
+    # Lokaler Dokument-Cache (Django-managed, siehe services/file_cache.py). Zustände des Abrufs laut
+    # docs/adr/20261007-dokumentkette.md, Abschnitt 4 (hub/ris/abruf.py)
     LOCAL_STATUS_CHOICES = [
         ("none", "Nicht zwischengespeichert"),
+        ("fetching", "Wird abgerufen"),
         ("ok", "Lokal vorhanden"),
-        ("missing", "Quelle liefert 404"),
+        ("retry", "Abruf wird wiederholt"),
+        ("missing", "Quelle liefert 404/410"),
+        ("refused", "Quelle verweigert den Abruf"),
         ("error", "Fehler beim Abruf"),
         ("too_large", "Zu groß für den Cache"),
         # Obergrenze des Caches (Issue #961): Kopie verdrängt, bei Bedarf holt die Vorschau sie neu
@@ -1197,6 +1201,21 @@ class OParlFile(SourceDeletionModel):
     # wenn der Cache seine Obergrenze (FILE_CACHE_MAX_TOTAL_GB) erreicht; kein Personenbezug, nur ein Zeitpunkt je
     # Dokument. Nullable ohne Default: Der Ingestor kennt die Spalte nicht.
     local_accessed_at = models.DateTimeField(blank=True, null=True, verbose_name="Zuletzt ausgeliefert am")
+    # Abruf (Issue #919, hub/ris/abruf.py): Fehlschläge in Folge, frühester nächster Versuch (bei ``fetching``: Ende
+    # der Beanspruchung) und Fehlercode des letzten Fehlschlags. db_default: Ingestor-INSERTs und ältere Images
+    # kennen die Spalten nicht.
+    fetch_attempts = models.IntegerField(
+        default=0, db_default=0, verbose_name="Fehlgeschlagene Abrufe in Folge", help_text="Bei Erfolg wieder 0"
+    )
+    fetch_next_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Nächster Abruf frühestens",
+        help_text="Wiederholung des Abrufs; während eines Abrufs das Ende der Beanspruchung",
+    )
+    fetch_error = models.CharField(
+        max_length=40, blank=True, default="", db_default="", verbose_name="Fehlercode des Abrufs"
+    )
 
     # Löschabgleich mit der Quelle (Issue #787, services/file_reconcile.py). Gesperrt ist ein Dokument,
     # wenn es in der Quelle gelöscht ist (``deleted``) oder seine Download-Adresse 404/410 liefert.
@@ -1266,6 +1285,14 @@ class OParlFile(SourceDeletionModel):
         null=True,
         verbose_name="Bearbeitung seit",
         help_text="Beginn der laufenden Bearbeitung der Texterkennung",
+    )
+    # Herkunft des Texts (Issue #919): SHA-256 des Inhalts, aus dem der Text erkannt wurde, und Version der
+    # Bibliothek mandari_dokumente. Geschrieben vom Auftrag file.extract_text; leer bei Altbestand.
+    text_source_sha256 = models.CharField(
+        max_length=64, blank=True, null=True, verbose_name="Text erkannt aus Inhalt (SHA-256)"
+    )
+    text_extraction_version = models.CharField(
+        max_length=40, blank=True, null=True, verbose_name="Version der Texterkennung"
     )
 
     # OParl-Zeitstempel

@@ -868,6 +868,9 @@ class OParlFileAdmin(ModelAdmin):
         "local_status",
         "local_cached_at",
         "local_error",
+        "fetch_attempts",
+        "fetch_next_at",
+        "fetch_error",
         "sha256_hash",
         "created_at",
         "updated_at",
@@ -879,8 +882,9 @@ class OParlFileAdmin(ModelAdmin):
         from .services.file_cache import fetch_and_cache
 
         results = {}
-        for file_obj in queryset.select_related("body")[:50]:
-            status = fetch_and_cache(file_obj)
+        for file_obj in queryset.select_related("body", "body__source")[:50]:
+            # Von Hand wie bisher jede Datei ohne Kopie, auch nicht fällige oder verweigerte Abrufe (Issue #919)
+            status = fetch_and_cache(file_obj, force=True)
             results[status] = results.get(status, 0) + 1
         summary = ", ".join(f"{k}: {v}" for k, v in sorted(results.items()))
         messages.success(request, f"Dokument-Cache: {summary}.")

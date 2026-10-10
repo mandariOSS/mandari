@@ -22,6 +22,7 @@ from django.test import Client
 from django.utils import timezone
 
 from apps.common.einmalig import Sperre
+from hub.ris import abruf
 from insight_core.models import OParlBody, OParlFile, OParlFileBlob, OParlSource
 from insight_core.services import file_cache, file_cache_limit, file_store, object_storage
 
@@ -290,12 +291,13 @@ class TestNachladen:
         offen = [_datei(body, f"offen{i}", alter_tage=i) for i in range(5)]
         geholt: list[Any] = []
 
-        def holen(file_obj: Any, client: Any = None) -> str:
+        def holen(file_obj: Any, **kwargs: Any) -> str:
             file_cache.store_bytes(file_obj, _inhalt(str(file_obj.name)))
             geholt.append(file_obj.pk)
             return "ok"
 
-        monkeypatch.setattr(file_cache, "fetch_and_cache", holen)
+        # Der eine Abrufweg (hub.ris.abruf, Dokumentkette #919): cache_pending lädt über abruf.nachladen
+        monkeypatch.setattr(abruf, "abrufen", holen)
         settings.FILE_CACHE_MAX_TOTAL_GB = 2500 / 1024**3
         ergebnis = file_cache.cache_pending(limit=10, sleep=0)
         assert ergebnis == {"ok": 3, "limit": 1}
@@ -308,11 +310,11 @@ class TestNachladen:
         for i in range(3):
             _datei(body, f"offen{i}", alter_tage=i)
 
-        def holen(file_obj: Any, client: Any = None) -> str:
+        def holen(file_obj: Any, **kwargs: Any) -> str:
             file_cache.store_bytes(file_obj, _inhalt(str(file_obj.name)))
             return "ok"
 
-        monkeypatch.setattr(file_cache, "fetch_and_cache", holen)
+        monkeypatch.setattr(abruf, "abrufen", holen)
         assert file_cache.cache_pending(limit=10, sleep=0) == {"ok": 3}
 
 
@@ -373,6 +375,8 @@ class TestVorschau:
         self, ablage: Path, body: OParlBody, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         datei = _abgelegt(body, "a", alter_tage=3000)
+        # Länger als sieben Tage erfasst: 404 heißt „fehlt“ (Tabelle der Dokumentkette, #919)
+        OParlFile.objects.filter(pk=datei.pk).update(created_at=timezone.now() - timedelta(days=30))
         file_cache_limit.enforce(max_bytes=1)
         _quelle_liefert(monkeypatch, b"", status=404)
         Client().get(f"/insight/dokumente/{datei.id}/preview/")
@@ -549,7 +553,7 @@ class TestModuswechsel:
         # Objektspeicher wieder an: das Aufräumen verwaister Inhalte lässt ihn dort
         settings.OBJ_ENABLED = True
         file_store.cleanup_orphans(min_age=timedelta(0))
-        assert object_storage.exists(sha_oben)
+        assert object_storage.exists(sha_oben) == object_storage.PRESENT
         assert OParlFileBlob.objects.filter(pk=sha_oben).exists()
 
     def test_unter_der_sperre_hochgeladen_verwaist_nicht(
@@ -954,14 +958,19 @@ class TestPruefungImObjektspeicher:
         assert ohne_pruefung.units == 0
         assert Path(fehlt.local_path or "").exists() and Path(falsch.local_path or "").exists()
         assert file_store.upload_pending() == {"uploaded": 2}
-        assert object_storage.exists(str(fehlt.blob_id))
+        assert object_storage.exists(str(fehlt.blob_id)) == object_storage.PRESENT
         assert object_storage.remote_size(str(falsch.blob_id)) == GROESSE
 
-    def test_ohne_pruefung_wie_bisher(self, body: OParlBody, objektspeicher: Any, ablage: Path) -> None:
-        fehlt, _da = self._hochgeladen(body, "fehlt", "da")
+    def test_echter_lauf_prueft_auch_ohne_option(self, body: OParlBody, objektspeicher: Any, ablage: Path) -> None:
+        # Dokumentkette (#919): Nur sicher vorhandene Inhalte verlassen die Platte, auch ohne --pruefe-objektspeicher
+        # (bisher verdrängte ein Lauf ohne Prüfung beide Kopien, auch die des fehlenden Inhalts)
+        fehlt, da = self._hochgeladen(body, "fehlt", "da")
         objektspeicher.delete_object(Bucket=BUCKET, Key=object_storage.key_for(str(fehlt.blob_id)))
         ergebnis = file_cache_limit.enforce(max_bytes=1)
-        assert ergebnis.units == 2 and not ergebnis.verified
+        assert ergebnis.units == 1 and ergebnis.verified == {"vorhanden": 1, "fehlt": 1}
+        assert Path(fehlt.local_path or "").exists() and not Path(da.local_path or "").exists()
+        # Im Probelauf prüft nur die Option (je Inhalt eine Anfrage)
+        assert not file_cache_limit.enforce(max_bytes=1, dry_run=True).verified
 
     def test_stichprobe(self, body: OParlBody, objektspeicher: Any, ablage: Path) -> None:
         self._hochgeladen(body, "a", "b", "c")

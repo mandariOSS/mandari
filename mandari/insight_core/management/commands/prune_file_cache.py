@@ -4,9 +4,9 @@ Management Command: Dokument-Cache ausgeblendeter Kommunen leeren bzw. auf eine 
 
 **Ausgeblendete Kommunen** (``--unlisted``):
 
-Zwischengespeichert werden nur gelistete Kommunen (siehe ``services/file_cache.py``). Dieser
-Befehl räumt den Bestand ab, der vorher für ausgeblendete Kommunen (Piloten, Tests) entstanden
-ist: Er löscht deren Verzeichnisse im Cache und setzt die Dateien in der Datenbank auf „nicht
+Zwischengespeichert werden gelistete Kommunen, mit ``TEXT_EXTRACTION_RUNNER=worker`` auch ausgeblendete ab
+ihrem Stichtag (``hub.ris.abruf.stores_file``); deren Kopien bleiben. Dieser Befehl räumt den Bestand ab, der
+vorher für ausgeblendete Kommunen (Piloten, Tests) entstanden ist: Er löscht deren Verzeichnisse im Cache und setzt die Dateien in der Datenbank auf „nicht
 zwischengespeichert“ zurück. Extrahierte Texte bleiben erhalten – Suche und Verortung sind nicht
 betroffen. Wird eine Kommune später gelistet, lädt ``cache_files`` ihre Dokumente neu. Kommunen synthetischer
 Quellen (Domäne ``.invalid``, etwa die Demo) bleiben unangetastet – ihre Dateien lassen sich nie neu abrufen.
@@ -33,9 +33,10 @@ in diesem Container aber nicht konfiguriert (fehlende ``OBJ_*``, ``OBJ_ENABLED=f
 Meist läuft er dann im falschen Container. ``--ohne-objektspeicher`` macht ausdrücklich ohne ihn weiter; Inhalte im
 Objektspeicher bleiben auch dann unangetastet.
 
-Mit Objektspeicher prüft ``--pruefe-objektspeicher`` vor dem Löschen jeder lokalen Kopie per ``HEAD``, ob der Inhalt
-mit seiner Größe dort liegt; fehlt er, bleibt die Kopie und wird erneut hochgeladen. Im Probelauf prüft die Option alle
-Inhalte, die gingen, oder mit ``--stichprobe N`` eine zufällige Auswahl:
+Mit Objektspeicher prüft jeder echte Lauf vor dem Löschen einer lokalen Kopie per ``HEAD``, ob der Inhalt mit seiner
+Größe dort liegt (Dokumentkette #919: nur sicher vorhandene Inhalte verlassen die Platte); fehlt er, bleibt die Kopie und
+wird erneut hochgeladen, eine Störung bricht ab. Im Probelauf prüft ``--pruefe-objektspeicher`` alle Inhalte, die
+gingen, oder mit ``--stichprobe N`` eine zufällige Auswahl:
 
     python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
     python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
@@ -106,7 +107,10 @@ class Command(BaseCommand):
         parser.add_argument(
             "--pruefe-objektspeicher",
             action="store_true",
-            help="Vor dem Löschen jeder lokalen Kopie per HEAD prüfen, ob der Inhalt im Objektspeicher liegt",
+            help=(
+                "Per HEAD prüfen, ob die Inhalte im Objektspeicher liegen; im Probelauf nur mit dieser Option, "
+                "der echte Lauf prüft mit Objektspeicher immer"
+            ),
         )
         parser.add_argument(
             "--stichprobe",
@@ -230,7 +234,7 @@ class Command(BaseCommand):
 
     def _unlisted(self, dry_run: bool) -> None:
         from insight_core.models import OParlBody, OParlFile
-        from insight_core.services.file_cache import body_dir_name, cache_root
+        from insight_core.services.file_cache import body_dir_name, cache_root, caches_body
         from insight_core.services.file_store import release_queryset
 
         # Ein Verzeichnis, das auch eine gelistete Kommune nutzt, bleibt unangetastet.
@@ -240,8 +244,14 @@ class Command(BaseCommand):
             if _nicht_abrufbar(body):
                 self.stdout.write(f"{body.name[:45]:<45} übersprungen – Quelle nicht abrufbar, Kopie wäre verloren")
                 continue
+            if caches_body(body):
+                # Ablage für alle Quellen mit erlaubtem Abruf (TEXT_EXTRACTION_RUNNER=worker, Issue #919)
+                self.stdout.write(f"{body.name[:45]:<45} übersprungen – legt Dokumente ab (Stichtag gesetzt)")
+                continue
             verzeichnis = cache_root() / body_dir_name(body)
-            dateien = OParlFile.objects.filter(body=body).exclude(local_status="none")
+            # Verdrängte Dokumente (Obergrenze, #961) haben keine Kopie und bleiben verdrängt: als „none“ lüde sie
+            # cache_files nach, sobald die Kommune wieder ablegt
+            dateien = OParlFile.objects.filter(body=body).exclude(local_status__in=["none", "evicted"])
             anzahl = dateien.count()
             belegt = _groesse(verzeichnis) if verzeichnis.is_dir() else 0
             if not anzahl and not belegt:
