@@ -90,7 +90,8 @@ def test_kartendaten_ohne_kommune_liefern_leere_sammlung(org: Any, mitglied: Any
     response = client_for(mitglied.user).get(url)
 
     assert response.status_code == 200
-    assert response.json() == {"type": "FeatureCollection", "features": []}
+    daten = response.json()
+    assert daten["type"] == "FeatureCollection" and daten["features"] == [] and daten["truncated"] is False
 
 
 @pytest.mark.django_db

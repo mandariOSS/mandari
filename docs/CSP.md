@@ -113,11 +113,17 @@ Inline-Skripte (13, alle mit Nonce):
 |---|---|---|
 | `admin/index.html` | Diagramme (Chart.js) im Admin | eigenes Modul; Admin braucht ohnehin eine eigene Policy (Abschnitt 5) |
 | `components/chatbot_popup.html`, `pages/chat.html` | Chat mit Markdown-Ausgabe (`x-html`) | zusammen mit dem Alpine-CSP-Build (x-html ersetzen) |
-| `pages/map.html`, `pages/neighborhood.html`, `pages/portal/home.html`, `pages/meetings/detail.html`, `work/ris/map.html` | Leaflet-Karten | gemeinsames Kartenmodul in `frontend/js/`, Leaflet als Vendor-Skript vorher geladen |
 | `pages/meetings/calendar.html`, `work/meetings/calendar.html` | FullCalendar | gemeinsames Kalendermodul |
 | `work/meetings/teleprompter.html` | Teleprompter | Alpine-Komponente |
 | `session/meetings/detail.html` | Drag-and-drop der Tagesordnung | Verhalten `data-reorder-url` in `form-behaviors.ts` |
 | `work/support/detail.html` | Nachrichten-Polling (Zähler im `hx-get`) | Zähler per `htmx:configRequest` statt Attribut-Umschreiben |
+
+Die Leaflet-Karten haben kein Inline-Skript mehr (#853): Die Karte des Bürgerportals (`pages/map.html`, Alpine
+`insightKarte`) und die Karte der Recherche in Work (`work/ris/partials/_karte.html`, `risKarte`) nutzen das
+gemeinsame Kartenmodul `frontend/js/vorgangskarte.ts` (Karte mit Kachel-Proxy, Punktgruppe, Abfrage je
+Ausschnitt, Popups aus DOM-Knoten) und dieselbe Abfrage der Punkte (`insight_core/services/karten_punkte.py`).
+Vorgangs-, Sitzungs- und Nachbarschaftskarte sind eigene Module in `frontend/`. Leaflet kommt weiter als
+Vendor-Skript vor dem Modul.
 
 Inline-Styles (16): Layout-nahe Blöcke (`accounts/base_auth.html`, `errors/base_error.html`,
 `admin/_monitor_styles.html`), Karten- und Kalenderseiten, Sitzungsvorbereitung und Teleprompter,

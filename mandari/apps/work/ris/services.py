@@ -4,19 +4,24 @@ Anwendungsfälle der RIS-Datenansicht im Work-Portal (Issue #160, Service-Layer)
 
 Die RIS-Ansicht ist rein lesend; hier liegen die Fälle, die mehr als einen
 Selector kombinieren oder externe Dienste ansprechen: die Suche über
-Elasticsearch mit ORM-Fallback sowie Kartenkonfiguration und GeoJSON.
+Elasticsearch mit ORM-Fallback sowie Kartenkonfiguration und die Punkte der
+Karte (Ausschnitt und Zeitraum, Issue #853).
 """
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from datetime import date, timedelta
 from typing import Any, cast
 
+from django.utils import timezone
 from django.utils.html import escape
 from django.utils.safestring import SafeString, mark_safe
 
 from insight_core.models import OParlBody
+from insight_core.services import karten_punkte
 
 # ``SearchQuery`` und ``RESULT_TYPES`` liegen seit 10/2026 in ``search_filters`` (Issue #853); die Namen bleiben hier
 from insight_core.services.search_filters import RESULT_TYPES as RESULT_TYPES
@@ -163,30 +168,41 @@ def map_config(body: OParlBody) -> dict[str, Any]:
     }
 
 
-def geojson_features(bodies: Bodies) -> dict[str, Any]:
-    """GeoJSON-FeatureCollection aller georeferenzierten Vorgänge (ein Punkt je Ort)."""
-    features: list[dict[str, Any]] = []
-    for paper in selectors.papers_with_locations(bodies):
-        if not paper.locations:
-            continue
-        for location in paper.locations:
-            if not isinstance(location, dict):
-                continue
-            lat = location.get("lat") or location.get("latitude")
-            lng = location.get("lng") or location.get("lon") or location.get("longitude")
-            if not (lat and lng):
-                continue
-            features.append(
-                {
-                    "type": "Feature",
-                    "geometry": {"type": "Point", "coordinates": [float(lng), float(lat)]},
-                    "properties": {
-                        "id": str(paper.id),
-                        "title": paper.name or "Vorgang",
-                        "reference": paper.reference,
-                        "date": paper.date.isoformat() if paper.date else None,
-                        "location_name": location.get("name", ""),
-                    },
-                }
-            )
-    return {"type": "FeatureCollection", "features": features}
+#: Zeiträume der Karte (Issue #853): Schlüssel aus der Adresse → Monate, ``None`` = ohne Grenze
+KARTE_ZEITRAEUME: dict[str, int | None] = {"3": 3, "12": 12, "36": 36, "alle": None}
+KARTE_ZEITRAUM_STANDARD = "12"
+KARTE_ZEITRAUM_NAMEN = {"3": "3 Monate", "12": "12 Monate", "36": "3 Jahre", "alle": "Alle"}
+#: Höchstens so viele Punkte je Antwort; mehr im Ausschnitt meldet die Antwort mit ``truncated``
+KARTE_HOECHSTENS = 2000
+
+
+def karte_zeitraum(raw: str | None) -> str:
+    """Gewählter Zeitraum der Karte; Unbekanntes ergibt den Standard (12 Monate)."""
+    return raw if raw in KARTE_ZEITRAEUME else KARTE_ZEITRAUM_STANDARD
+
+
+def karte_seite(body: OParlBody, params: Mapping[str, str]) -> dict[str, Any]:
+    """Kontext der Kartenseite: Zentrum und Rahmen der primären Kommune, die Zeiträume und der gewählte."""
+    return {
+        "map_config": map_config(body),
+        "karte_zeitraeume": list(KARTE_ZEITRAUM_NAMEN.items()),
+        "karte_zeitraum": karte_zeitraum(params.get("zeitraum")),
+    }
+
+
+def karte_daten(bodies: Bodies, params: Mapping[str, str], *, heute: date | None = None) -> dict[str, Any]:
+    """
+    Punkte der Karte als GeoJSON: Vorgänge der Kommunen im Ausschnitt (``bbox``) und Zeitraum (``zeitraum``),
+    neueste zuerst, ohne gelöschte. Sind es mehr als ``KARTE_HOECHSTENS``, steht ``truncated`` in der Antwort und
+    die Karte bittet ums Hineinzoomen – kein stilles Abschneiden wie früher bei den 500 neuesten. Abfrage und
+    Ausschnitt teilt sich Work mit der Karte in Insight (``insight_core.services.karten_punkte``).
+    """
+    zeitraum = karte_zeitraum(params.get("zeitraum"))
+    monate = KARTE_ZEITRAEUME[zeitraum]
+    seit = None
+    if monate is not None:
+        seit = (heute or timezone.localdate()) - timedelta(days=monate * 365 // 12)
+    daten = karten_punkte.geojson(
+        bodies, area=karten_punkte.ausschnitt(params.get("bbox")), since=seit, hoechstens=KARTE_HOECHSTENS
+    )
+    return {**daten, "zeitraum": zeitraum}

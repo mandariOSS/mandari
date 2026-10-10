@@ -70,3 +70,8 @@ Alpine.data('workRahmen', workRahmen)
 Alpine.data('workGruppe', workGruppe)
 Alpine.data('workGlocke', workGlocke)
 Alpine.data('workPerson', workPerson)
+
+// ---- Recherche: Karte mit Kachel-Proxy, Zeitraum und Ausschnitt (#853) ------------------------------------
+import { risKarte } from '../alpine/ris-karte'
+
+Alpine.data('risKarte', risKarte)

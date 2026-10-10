@@ -1,22 +1,11 @@
 {% extends "work/base_work.html" %}
 {% load static %}
 {% comment %}
-Karte im bisherigen Erscheinungsbild; das neue nutzt work/ris/neu/karte.html. Beide binden dieselbe Karte ein
-(work/ris/partials/_karte.html, Issue #853): Kacheln über den Kachel-Proxy, Zeitraum, Punkte je Ausschnitt.
+Karte der Recherche im neuen Erscheinungsbild (Issues #852, #853): Kopf mit einem Satz, darunter Zeitraum und Karte
+in voller Breite (work/ris/partials/_karte.html). Die bisherige Seite bleibt work/ris/map.html.
 {% endcomment %}
 
 {% block page_title %}Karte{% endblock %}
-
-{% block header_title %}Karte{% endblock %}
-{% block header_subtitle %}
-{% if body %}
-<p class="work-page-subtitle">{{ body.get_display_name }} · Geolokalisierte Vorgänge</p>
-{% endif %}
-{% endblock %}
-
-{% block header_actions %}
-{% include "work/ris/partials/_back_to_overview.html" %}
-{% endblock %}
 
 {% block work_extra_head %}
 <link rel="stylesheet" href="{% static 'vendor/leaflet/leaflet.css' %}" />
@@ -26,12 +15,15 @@ Karte im bisherigen Erscheinungsbild; das neue nutzt work/ris/neu/karte.html. Be
 <script src="{% static 'vendor/leaflet/leaflet.markercluster.js' %}"></script>
 {% endblock %}
 
+{% block header_title %}Karte{% endblock %}
+{% block header_subtitle %}
+<p class="work-page-subtitle">{% if body %}Vorgänge aus {{ body.get_display_name }} mit Ortsbezug. {% endif %}Beim Verschieben und Zoomen lädt die Karte die Vorgänge des Ausschnitts nach.</p>
+{% endblock %}
+
 {% block work_content %}
 {% if no_body_linked %}
 {% include "work/ris/partials/_no_body_notice.html" %}
 {% else %}
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-4">
-    {% include "work/ris/partials/_karte.html" %}
-</div>
+{% include "work/ris/partials/_karte.html" %}
 {% endif %}
 {% endblock %}
