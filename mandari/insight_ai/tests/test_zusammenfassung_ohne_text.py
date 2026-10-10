@@ -134,6 +134,20 @@ def test_ohne_ausstehende_erkennung_bleibt_es_bei_kein_text(body: OParlBody, anb
     assert not _vorrang()
 
 
+def test_verdraengte_anlage_gibt_keinen_dauerhinweis(
+    body: OParlBody, anbieter: _Anbieter, journal: JournalBackend
+) -> None:
+    """Von der Obergrenze verdrängt (#961): Niemand holt die Anlage von selbst, also kein „steht noch aus“."""
+    from insight_core.services import file_cache_limit
+
+    assert summarizer.EVICTED == file_cache_limit.EVICTED
+    paper = _vorgang(body)
+    _anlage(paper, "pending", local_status="evicted")
+    with pytest.raises(NoTextContentError):
+        SummaryService().generate_summary(paper)
+    assert not _vorrang(), "die Erkennung beanspruchte eine verdrängte Anlage ohnehin nicht"
+
+
 def test_quelle_ohne_dateiabruf_gibt_kein_text(body: OParlBody, anbieter: _Anbieter, journal: JournalBackend) -> None:
     """Dokumente nur hinter einer Prüfung für Menschen: Die Erkennung kommt nie, also kein Dauerhinweis."""
     from insight_core.services import file_cache

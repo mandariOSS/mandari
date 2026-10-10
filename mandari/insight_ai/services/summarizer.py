@@ -43,6 +43,9 @@ EXTRACTION_PRIORITY: Final = 80
 TEXT_PENDING_STATUSES: Final = ("pending", "processing")
 #: Schalter der Quelle für den Dateiabruf (gleich ``file_cache.FILE_DOWNLOADS_KEY``): ``false`` = nie abrufen
 FILE_DOWNLOADS_KEY: Final = "file_downloads"
+#: Von der Obergrenze des Dokument-Caches verdrängt (#961, gleich ``file_cache_limit.EVICTED``): niemand holt die
+#: Anlage von selbst, ihr Text kommt erst nach einem ausdrücklichen Abruf (Vorschau, ``cache_files --verdraengte``)
+EVICTED: Final = "evicted"
 
 
 class SummaryError(Exception):
@@ -253,7 +256,9 @@ class SummaryService:
         Hinweis. Der Auftrag liest nur aus der Ablage (``hub/ris/erkennung.py``); Anlagen ohne abgelegten Inhalt holt
         zuerst der Abruf, danach plant sie der Zeitplan ein. Ein Fehler beim Einplanen ändert den Hinweis nicht.
         Anlagen in Bearbeitung (``processing``) sind schon beansprucht. Hat die Quelle den Dateiabruf abgeschaltet
-        (Dokumente nur hinter einer Prüfung für Menschen), kommt kein Text: dann ``False``.
+        (Dokumente nur hinter einer Prüfung für Menschen), kommt kein Text: dann ``False``. Ebenso zählen von der
+        Obergrenze verdrängte Anlagen (``evicted``, #961) nicht: Ihr Text kommt nicht von selbst, ein Dauerhinweis
+        „Texterkennung steht aus“ wäre falsch.
         """
         if self._downloads_disabled(paper):
             return False
@@ -261,6 +266,7 @@ class SummaryService:
             file
             for file in self._current_files(paper)
             .filter(text_extraction_status__in=TEXT_PENDING_STATUSES)
+            .exclude(local_status=EVICTED)
             .only("id", "download_url", "access_url", "text_extraction_status", "local_status")
             .order_by("created_at", "id")
             if file.download_url or file.access_url
