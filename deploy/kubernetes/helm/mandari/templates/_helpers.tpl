@@ -134,6 +134,8 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
   value: {{ printf "https://%s" .Values.domain | quote }}
 - name: SITE_URL
   value: {{ printf "https://%s" .Values.domain | quote }}
+- name: INDEXNOW_KEY
+  value: {{ .Values.indexnow.key | default "" | quote }}
 - name: TZ
   value: {{ .Values.timezone | quote }}
 - name: LOG_FORMAT
@@ -324,6 +326,8 @@ Umgebung der Marketing-Website (Image ghcr.io/mandarioss/website), auch für ihr
   value: {{ printf "https://%s" $host | quote }}
 - name: SITE_URL
   value: {{ printf "https://%s" $host | quote }}
+- name: INDEXNOW_KEY
+  value: {{ .Values.indexnow.key | default "" | quote }}
 - name: TZ
   value: {{ .Values.timezone | quote }}
 # Das Image legt keinen Benutzer an; als UID ohne Eintrag in /etc/passwd fehlt sonst ein Heimatverzeichnis

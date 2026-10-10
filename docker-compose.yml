@@ -54,6 +54,8 @@ x-app-environment: &app-environment
   ALLOWED_HOSTS: ${DOMAIN:-localhost}
   CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
   SITE_URL: https://${DOMAIN:-localhost}
+  # IndexNow (siehe .env.example), leer = aus
+  INDEXNOW_KEY: ${INDEXNOW_KEY:-}
   # Dokument-Cache (siehe docs/FILE_CACHE.md)
   OPARL_FILES_ROOT: /app/files
   # Lokale Kopien liefert Caddy aus (Range, ETag); Caddy liest dafür das Volume mandari_files
@@ -500,6 +502,8 @@ services:
       ALLOWED_HOSTS: ${DOMAIN:-localhost}
       CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
       SITE_URL: https://${DOMAIN:-localhost}
+      # IndexNow: Schlüsseldatei /<schlüssel>.txt und Meldungen der Website (gleicher Wert wie die Anwendung)
+      INDEXNOW_KEY: ${INDEXNOW_KEY:-}
       TZ: ${TZ:-Europe/Berlin}
     depends_on:
       postgres:

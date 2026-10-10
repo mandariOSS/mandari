@@ -32,7 +32,8 @@ die Nachbarschaft. Keine Karten, keine Zählerleiste.
         </div>
         {% if active_body.hero_image %}
         <figure class="hidden lg:block relative">
-            <img src="{{ active_body.hero_image.url }}" alt="" class="w-full aspect-[4/3] object-cover rounded-2xl">
+            {# Foto der Kommune: Inhalt, nicht Schmuck – mit Beschreibung (Bing meldete alt="" als fehlend, Issue #939) #}
+            <img src="{{ active_body.hero_image.url }}" alt="Ansicht von {{ active_body.get_display_name }}" class="w-full aspect-[4/3] object-cover rounded-2xl">
             {% if active_body.hero_image_credit %}<figcaption class="mt-2 text-[0.75rem] text-gray-700 dark:text-gray-300">Bild: {{ active_body.hero_image_credit }}</figcaption>{% endif %}
         </figure>
         {% endif %}

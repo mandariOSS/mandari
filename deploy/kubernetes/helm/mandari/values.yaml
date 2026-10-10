@@ -355,6 +355,11 @@ tracing:
 
 timezone: Europe/Berlin
 
+# IndexNow (Issue #939): geänderte Seiten an Bing, Yandex & Co. melden; leer = aus. Schlüssel aus 8–128 Zeichen
+# A–Z, a–z, 0–9 und -, z. B. `openssl rand -hex 16`. Anwendung und Website nutzen denselben Wert.
+indexnow:
+  key: ""
+
 serviceAccount:
   create: true
   name: ""

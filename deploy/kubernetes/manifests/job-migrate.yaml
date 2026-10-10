@@ -96,6 +96,8 @@ spec:
               value: "https://mandari.example.com"
             - name: SITE_URL
               value: "https://mandari.example.com"
+            - name: INDEXNOW_KEY
+              value: ""
             - name: TZ
               value: "Europe/Berlin"
             - name: LOG_FORMAT
