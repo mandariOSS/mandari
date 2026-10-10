@@ -944,8 +944,16 @@ SMTP_FALLBACK = {
     "timeout": int(os.environ.get("EMAIL_TIMEOUT", "30")),
 }
 
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@mandari.de")
+# Absender, wenn weder die Systemeinstellungen noch DEFAULT_FROM_EMAIL einen nennen. Leer gilt als nicht
+# gesetzt (docker-compose.yml reicht die Variable auch leer durch). Message-ID und EHLO richten sich nur nach
+# einem ausdrücklich gesetzten Absender, nie nach diesem Rückfall (apps.common.mail_domain, Issue #957).
+DEFAULT_FROM_EMAIL_FALLBACK = "noreply@mandari.de"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "").strip() or DEFAULT_FROM_EMAIL_FALLBACK
 SERVER_EMAIL = os.environ.get("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+# Domain hinter dem @ der Message-ID und Name im EHLO gegenüber dem Mailserver (Issue #957). Django nähme
+# socket.getfqdn(), im Container die Container-ID. Leer = Domain von DEFAULT_FROM_EMAIL, wenn ausdrücklich
+# gesetzt, sonst Host aus SITE_URL. Gesetzt beim Start in apps.common.mail_domain (gilt für alle Versandwege).
+EMAIL_MESSAGE_ID_DOMAIN = os.environ.get("EMAIL_MESSAGE_ID_DOMAIN", "").strip()
 
 # Mail-Dienst (apps.common.mail, Issue #528): Mailarten, die als Auftrag (Warteschlange "mail") statt in
 # der Anfrage versendet werden – kommagetrennte Muster wie "work.*,konto.passwort" oder "*" für alle.

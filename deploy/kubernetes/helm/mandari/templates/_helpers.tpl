@@ -157,6 +157,17 @@ Umgebung, die Anwendung, Ingestor und Migrations-Job gemeinsam brauchen.
 # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
 - name: EVENTS_REDACT_NEUTRALIZE
   value: {{ .Values.events.redactNeutralize | default false | toString | quote }}
+# Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
+{{- with .Values.mail }}
+{{- if .fromEmail }}
+- name: DEFAULT_FROM_EMAIL
+  value: {{ .fromEmail | quote }}
+{{- end }}
+{{- if .messageIdDomain }}
+- name: EMAIL_MESSAGE_ID_DOMAIN
+  value: {{ .messageIdDomain | quote }}
+{{- end }}
+{{- end }}
 {{- if .Values.tracing.otlpEndpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ .Values.tracing.otlpEndpoint | quote }}

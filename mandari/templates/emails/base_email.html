@@ -20,6 +20,9 @@ Geprüfte Clients und Grundsätze:
   reines Schwarz/Weiß-Kontrastspiel, Wortmarke als Text statt Bild.
 - Text-Alternative: Bereiche zwischen den HTML-Kommentaren "text:skip" und "/text:skip" (Preheader,
   Wortmarke) fallen in der Textfassung weg; alles andere wird per html2text übernommen.
+- Versteckt ist nur der Preheader (Issue #957): Spamfilter zählen versteckte Teile (rspamd
+  MANY_INVISIBLE_PARTS). Bleibt der Block leer, entfernt render_email den Preheader samt Markern; er ist
+  nur per display:none/mso-hide versteckt, nicht per Textfarbe gleich Hintergrund.
 {% endcomment %}<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -34,7 +37,7 @@ Geprüfte Clients und Grundsätze:
         table { border-collapse: collapse; mso-table-lspace: 0; mso-table-rspace: 0; }
         img { border: 0; line-height: 100%; outline: none; text-decoration: none; }
         a { color: #4f46e5; }
-        .preheader { display: none; font-size: 1px; line-height: 1px; max-height: 0; max-width: 0; opacity: 0; overflow: hidden; color: #f3f4f6; mso-hide: all; }
+        .preheader { display: none; font-size: 1px; line-height: 1px; max-height: 0; max-width: 0; opacity: 0; overflow: hidden; mso-hide: all; }
         .wrapper { width: 100%; background-color: #f3f4f6; }
         .wrapper-cell { padding: 24px 12px; }
         .container { width: 600px; max-width: 600px; background-color: #ffffff; border: 1px solid #e5e7eb; border-radius: 12px; }

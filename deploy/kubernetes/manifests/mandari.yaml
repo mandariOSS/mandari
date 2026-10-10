@@ -7,6 +7,10 @@
 #      (z. B. openssl rand -base64 32)
 #   2. mandari.example.com durch die eigene Domain ersetzen
 #   3. Bei Bedarf Speicherklassen und Größen anpassen
+#   4. Mailversand: Message-ID und EHLO tragen den Host aus SITE_URL. Anderer Absender
+#      oder andere Absenderdomain: DEFAULT_FROM_EMAIL bzw. EMAIL_MESSAGE_ID_DOMAIN
+#      (vollständiger Domainname) im env von mandari, mandari-worker und
+#      mandari-worker-heavy ergänzen (DEPLOYMENT.md, „Mailversand: Message-ID und EHLO“)
 #
 # Einspielen:
 #   kubectl create namespace mandari
