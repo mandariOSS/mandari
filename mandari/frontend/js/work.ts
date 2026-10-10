@@ -64,8 +64,9 @@ Alpine.data('ticketForm', ticketForm)
 Alpine.data('assignmentHandler', assignmentHandler)
 
 // ---- Neuer Rahmen (#852): Leiste, Raum-Dialog, Blatt „Mehr“, Glocke, Personenmenü -----------------
-import { workGlocke, workPerson, workRahmen } from '../alpine/work-rahmen'
+import { workGlocke, workGruppe, workPerson, workRahmen } from '../alpine/work-rahmen'
 
 Alpine.data('workRahmen', workRahmen)
+Alpine.data('workGruppe', workGruppe)
 Alpine.data('workGlocke', workGlocke)
 Alpine.data('workPerson', workPerson)

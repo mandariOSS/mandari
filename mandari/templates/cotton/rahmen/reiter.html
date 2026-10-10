@@ -1,0 +1,18 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Link-Reiter: waagerechte Leiste aus Links zu eigenen Seiten (Issue #852), gemeinsam für Insight und Work – für die
+Reiter eines Bereichs im Rahmen, später für Einstellungen und Profil. Anders als c-ui.tabs (Reiter mit Feldern auf
+derselben Seite, role="tab") ist jeder Reiter ein Link; der aktive trägt aria-current. Am Handy waagerecht
+verschiebbar, nicht im Druck.
+  <c-rahmen.reiter label="Sitzungen" class="rahmen-zeile bg-band-hell">
+      <c-rahmen.reiter-link href="…" aktiv>Für mich</c-rahmen.reiter-link>
+      <c-rahmen.reiter-link href="…">Alle Gremien</c-rahmen.reiter-link>
+  </c-rahmen.reiter>
+``label`` benennt die Navigation für Bildschirmleser, ``class`` ergänzt Rand und Fläche.
+{% endcomment %}
+<c-vars label="" class="" />
+<nav aria-label="{{ label }}" class="shrink-0 print:hidden border-b border-gray-200 dark:border-gray-800 {{ class }}">
+    <ul class="flex gap-5 overflow-x-auto -mb-px">
+        {{ slot }}
+    </ul>
+</nav>

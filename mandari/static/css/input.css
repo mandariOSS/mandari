@@ -327,6 +327,11 @@
     [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-eintrag {
       @apply justify-center px-0;
     }
+    /* Unterpunkte (Recherche) haben kein Symbol: in der schmalen Leiste führen Bereich und Reiter dorthin */
+    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-unterpunkte,
+    [data-rahmen="neu"][data-leiste="schmal"] .rahmen-leiste .rahmen-aufklapper {
+      display: none !important;
+    }
   }
 }
 
