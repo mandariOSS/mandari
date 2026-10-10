@@ -66,7 +66,7 @@ class _Anbieter:
 @pytest.fixture
 def anbieter(monkeypatch: pytest.MonkeyPatch) -> _Anbieter:
     neu = _Anbieter()
-    monkeypatch.setattr("insight_ai.services.summarizer.NebiusProvider", lambda: neu)
+    monkeypatch.setattr("insight_ai.services.summarizer.get_insight_provider", lambda: neu)
     return neu
 
 

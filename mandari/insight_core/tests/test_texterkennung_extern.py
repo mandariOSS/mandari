@@ -108,10 +108,9 @@ def test_oeffentliche_ris_dateien_duerfen_extern() -> None:
     """Die Aufrufer für öffentliche RIS-Dateien geben die Erlaubnis ausdrücklich (Quelltext statt Netz).
 
     Seit der Dokumentkette (Issue #919) erkennt nur noch der Auftrag ``file.extract_text`` (``hub/ris/erkennung.py``)
-    den Text; ``extract_texts`` plant ihn nur ein. Das Verhalten prüft ``hub/ris/tests/test_erkennung.py``.
+    den Text; ``extract_texts`` plant ihn nur ein, die Zusammenfassung liest nur gespeicherten Text und lädt nichts
+    (``insight_ai/tests/test_keine_dateien.py``). Das Verhalten prüft ``hub/ris/tests/test_erkennung.py``.
     """
     from hub.ris import erkennung
-    from insight_ai.services import summarizer
 
     assert "extraction_config(allow_external=True)" in inspect.getsource(erkennung)
-    assert "allow_external=True" in inspect.getsource(summarizer)
