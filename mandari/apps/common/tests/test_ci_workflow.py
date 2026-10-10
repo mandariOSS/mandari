@@ -428,7 +428,7 @@ def test_reuse_workflow_prueft_blockierend() -> None:
         ),
         ("scripts/check_event_contracts.py", {"qualitaet", "vertrag", "test", "codeql_python"}),
         ("scripts/smoke_tombstones.py", {"qualitaet", "test", "smoke", "codeql_python"}),
-        ("mandari/Dockerfile", {"qualitaet", "docker"}),
+        ("mandari/Dockerfile", {"qualitaet", "docker", "kubernetes"}),
         # Migrationen und die Werkzeuge der Migrationstests lösen den Job "Migrationstests" aus (Issue #935)
         (
             "mandari/apps/tenants/migrations/0001_initial.py",

@@ -137,7 +137,7 @@ verschlüsseln. Das Chart prüft das und bricht mit einem Hinweis ab, sowohl fü
 > Schlüssel aus 32 Buchstaben und Ziffern und damit ungültig. Die Feldverschlüsselung war
 > dort nicht nutzbar, ein `helm upgrade` bricht jetzt mit obigem Hinweis ab. Abhilfe: einen
 > gültigen Schlüssel erzeugen, sicher hinterlegen und setzen, zum Beispiel
-> `helm upgrade … --reuse-values --set secrets.encryptionKey="$(openssl rand -base64 32)"`.
+> `helm upgrade … --reset-then-reuse-values --set secrets.encryptionKey="$(openssl rand -base64 32)"`.
 > Bereits eingerichtete zweite Faktoren sind danach nicht mehr lesbar; die betroffenen Konten
 > richten sie neu ein (`python manage.py reset_two_factor <E-Mail> --reason "…"`).
 
@@ -165,7 +165,8 @@ helm upgrade --install mandari deploy/kubernetes/helm/mandari -n mandari \
 
 ```bash
 helm upgrade mandari deploy/kubernetes/helm/mandari -n mandari \
-  --reuse-values --set image.tag=v0.11.0 --wait --wait-for-jobs
+  --reset-then-reuse-values --set image.tag=v0.11.0 --wait --wait-for-jobs
+# --reset-then-reuse-values (Helm ≥ 3.14) übernimmt neue Standardwerte des Charts und behält eigene Werte.
 ```
 
 **Datenbank sichern.**
