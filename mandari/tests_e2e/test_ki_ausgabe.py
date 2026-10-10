@@ -120,7 +120,7 @@ class TestKiAssistent:
         page.get_by_role("checkbox", name=re.compile("Datenschutzerklärung gelesen")).check()
         page.get_by_role("button", name="Zustimmen").click()
         page.locator("textarea").fill("Was beschließt der Rat?")
-        page.locator("form button[type=submit]").click()
+        page.locator("form:has(textarea) button[type=submit]").click()
 
         antwort = page.locator(".prose").last
         expect(antwort.locator("strong")).to_have_text("fett")
