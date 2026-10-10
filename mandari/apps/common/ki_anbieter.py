@@ -75,7 +75,7 @@ class AnbieterVorlage:
 #: Vorlagen für die Auswahl im Admin. Nutzbar ist eine Vorlage nur, wenn ihr Host ausdrücklich in der
 #: Positivliste ``KI_ERLAUBTE_HOSTS`` steht; eine Vorlage allein gibt keinen Host frei.
 ANBIETER_VORLAGEN: dict[str, AnbieterVorlage] = {
-    # Von Sven am 09.10.2026 abgelehnt, nur nach ausdrücklicher Freigabe des Hosts
+    # Nicht als Standard vorgesehen; wirkt nur nach ausdrücklicher Freigabe des Hosts
     "stackit": AnbieterVorlage(
         anzeigename="STACKIT AI Model Serving",
         vertragspartner="STACKIT GmbH & Co. KG",
@@ -94,7 +94,7 @@ ANBIETER_VORLAGEN: dict[str, AnbieterVorlage] = {
         anzeigename="Scaleway Generative APIs",
         vertragspartner="Scaleway SAS",
         # https://www.scaleway.com/en/docs/generative-apis/reference-content/data-privacy/
-        verarbeitungsort="Rechenzentren in Paris, Frankreich (EU)",
+        verarbeitungsort="Speicherung in Paris, Frankreich, Verarbeitung in Europa (EU) – laut Anbieter",
         basis_url="https://api.scaleway.ai/v1",
     ),
     # Vorbereitet, nicht freigegeben: Die schriftliche Zusage zum Verarbeitungsort steht aus. Der Ort ist bisher

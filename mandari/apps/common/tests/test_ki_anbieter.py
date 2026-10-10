@@ -163,7 +163,7 @@ class TestVorlagen:
         assert orte == {
             "stackit": "Rechenzentren in Deutschland und Österreich (EU)",
             "ionos": "Rechenzentren in Deutschland (EU)",
-            "scaleway": "Rechenzentren in Paris, Frankreich (EU)",
+            "scaleway": "Speicherung in Paris, Frankreich, Verarbeitung in Europa (EU) – laut Anbieter",
             "ovh": "Rechenzentrum Gravelines, Frankreich (EU) – Angabe des Anbieters",
             "deutschlandgpt": "Speicherung in Deutschland, Verarbeitung in der EU/im EWR – laut AVV des Anbieters",
             "eigener": "",
