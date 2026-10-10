@@ -1025,14 +1025,19 @@ Worker, wird in den folgenden Schritten eingeschaltet; jeder Schritt ist ohne De
   `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB` (2048). Ein OCR-Worker aus dem Ingestor-Image wird mit Schritt 3
   überflüssig und gibt seinen Speicher frei. Auf kleinen Servern (4 GB) z. B. `2g` und `1024`; große Seiten
   werden dann mit kleinerer Auflösung erkannt oder übersprungen (Issue #817). Mit Helm: `worker.heavy` (3Gi,
-  `worker.heavy.extraEnv`), `TASKS_BACKEND` über `app.extraEnv`, `TEXT_EXTRACTION_RUNNER` über
-  `textExtraction.runner` (erreicht auch den Ingestor).
+  `worker.heavy.ocrMemoryLimitMb`), `TASKS_BACKEND` über `app.extraEnv`, `TEXT_EXTRACTION_RUNNER` über
+  `files.textExtractionRunner` (erreicht auch den Ingestor).
 - Platz: Mit Schritt 3 legt die Ablage die neuen Dokumente aller Quellen mit erlaubtem Abruf ab und wächst
   entsprechend. Mit Objektspeicher ist die Platte nur Zwischenspeicher (`OBJ_CACHE_MAX_GB`); ohne begrenzt
   `FILE_CACHE_MAX_TOTAL_GB` die Gesamtgröße (Abschnitt „Obergrenze des Dokument-Caches“ unten,
   `docs/FILE_CACHE.md`): `cache_files` lädt dann nur bis zur Grenze, das stündliche Aufräumen verdrängt die am
   wenigsten gebrauchten Dokumente; Dokumente, deren Text erkannt wird oder darauf wartet, und laufende Abrufe
   bleiben. Die Grenze so wählen, dass die neuen Dokumente eines Tages samt Rückstand der Erkennung darunter passen.
+- Externe Texterkennung: Mit Schritt 3 erkennt `worker-heavy` den Text statt des Ingestors. Eine externe
+  Erkennung (`MISTRAL_*`) gilt dort wie bisher nur für öffentliche RIS-Dateien und nur mit Basis-URL, deren Host in
+  `KI_ERLAUBTE_HOSTS` steht (Abschnitt „KI-Anbieter“); ohne Freigabe bleibt es bei pypdf und Tesseract.
+  `worker-heavy` braucht dafür dieselben Werte wie Anwendung und Ingestor (Compose: gemeinsame Umgebung; Helm:
+  `app.extraEnv` bzw. `app.extraEnvFromSecret`, die auch die Worker erreichen).
 - Eine Sicherung unmittelbar vorher (Abschnitt „Sicherung“).
 
 **Schritt 1: Aufträge im Worker.** Steht `TASKS_BACKEND` noch auf `immediate`, in der `.env`

@@ -65,13 +65,6 @@ events:
   # `manage.py events_neutralize --person <uuid> --dry-run` prüfen.
   redactNeutralize: false
 
-# Texterkennung der RIS-Dateien (TEXT_EXTRACTION_RUNNER, DEPLOYMENT.md „Dokumentkette einschalten“):
-# ingestor (Standard, der Ingestor lädt und erkennt selbst) oder worker (Aufträge im worker-heavy, lesen nur
-# aus Ablage und Objektspeicher; braucht TASKS_BACKEND=journal über app.extraEnv). Gilt für Anwendung,
-# Worker und Ingestor zugleich, deshalb hier und nicht in app.extraEnv setzen.
-textExtraction:
-  runner: ingestor
-
 # -----------------------------------------------------------------------------
 # Mailversand (DEPLOYMENT.md, „Mailversand: Message-ID und EHLO“); gilt für Anwendung und Worker
 # -----------------------------------------------------------------------------
@@ -189,19 +182,18 @@ worker:
   # Texterkennung und KI (Warteschlangen ocr, ai) in einem eigenen Worker: Jeder Neustart eines
   # Runners wartet auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails
   # und Suche nicht darauf, und der Speicherbedarf bekommt ein eigenes Limit. Mit
-  # TEXT_EXTRACTION_RUNNER=worker (textExtraction.runner) erkennt er den Text aus Ablage und Objektspeicher
+  # TEXT_EXTRACTION_RUNNER=worker (files.textExtractionRunner) erkennt er den Text aus Ablage und Objektspeicher
   # (docs/adr/20261007-dokumentkette.md); ocr läuft mit Parallelität 1.
   heavy:
     enabled: true
     replicas: 1
     queues: "ocr,ai"
-    # Runner bis 800 MB plus ein Tesseract-Unterprozess bis OCR_MEMORY_LIMIT_MB unter dem Limit (3Gi)
+    # Runner bis 800 MB plus ein Tesseract-Unterprozess bis ocrMemoryLimitMb unter dem Limit (3Gi)
     maxMemoryMb: 800
     extraArgs: []
-    # Nur für worker-heavy (nach app.extraEnv und worker.extraEnv, gewinnt also)
-    extraEnv:
-      # Adressraum je Tesseract-Unterprozess; höchstens Limit minus 1 GB
-      OCR_MEMORY_LIMIT_MB: "2048"
+    # Adressraum je Tesseract-Unterprozess nur in worker-heavy (OCR_MEMORY_LIMIT_MB statt
+    # files.ocrMemoryLimitMb); höchstens Limit minus 1 GB
+    ocrMemoryLimitMb: 2048
     resources:
       requests:
         cpu: 100m
@@ -238,7 +230,11 @@ files:
   ingestorStoresFiles: true
   # Mindestens so viel Platz frei lassen (FILE_CACHE_MIN_FREE_GB)
   minFreeGb: 15
-  # Wer den Text der RIS-Dateien erkennt: ingestor oder worker (TEXT_EXTRACTION_RUNNER)
+  # Wer den Text der RIS-Dateien erkennt (TEXT_EXTRACTION_RUNNER, DEPLOYMENT.md „Dokumentkette
+  # einschalten“): ingestor (Standard, der Ingestor lädt und erkennt selbst) oder worker (Aufträge im
+  # worker-heavy, lesen nur aus Ablage und Objektspeicher; braucht TASKS_BACKEND=journal über
+  # app.extraEnv). Gilt für Anwendung, Worker und Ingestor zugleich, deshalb hier und nicht in
+  # app.extraEnv setzen.
   textExtractionRunner: ingestor
   # Adressraum je Tesseract-Unterprozess in Anwendung und Workern (OCR_MEMORY_LIMIT_MB)
   ocrMemoryLimitMb: 512

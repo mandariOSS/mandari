@@ -187,30 +187,134 @@ def test_env_beispiel_nennt_die_grenzen_des_worker_heavy() -> None:
 
 
 def test_helm_worker_heavy_mit_eigener_grenze() -> None:
-    """Helm wie Compose: 3Gi, eigene Seitengrenze nur im worker-heavy (worker.heavy.extraEnv)."""
-    import yaml
-
-    chart = SKRIPT.parents[1] / "deploy" / "kubernetes" / "helm" / "mandari"
-    heavy = yaml.safe_load((chart / "values.yaml").read_text(encoding="utf-8"))["worker"]["heavy"]
-    assert heavy["resources"]["limits"]["memory"] == "3Gi"
-    assert heavy["maxMemoryMb"] + int(heavy["extraEnv"]["OCR_MEMORY_LIMIT_MB"]) < 3 * 1024
-    produktion = yaml.safe_load((chart / "values-production.yaml").read_text(encoding="utf-8"))["worker"]["heavy"]
-    assert produktion["resources"]["limits"]["memory"] == "3Gi"
-    vorlage = (chart / "templates" / "worker.yaml").read_text(encoding="utf-8")
-    assert '"extraEnv" $heavy.extraEnv' in vorlage, "worker.heavy.extraEnv erreicht nur worker-heavy"
-
-
-def test_helm_schalter_der_texterkennung_erreicht_auch_den_ingestor() -> None:
-    """TEXT_EXTRACTION_RUNNER in der gemeinsamen Umgebung: der Ingestor kennt kein app.extraEnv."""
+    """Helm wie Compose: 3Gi, eigene Seitengrenze nur im worker-heavy (worker.heavy.ocrMemoryLimitMb)."""
     import yaml
 
     chart = SKRIPT.parents[1] / "deploy" / "kubernetes" / "helm" / "mandari"
     werte = yaml.safe_load((chart / "values.yaml").read_text(encoding="utf-8"))
-    assert werte["textExtraction"]["runner"] == "ingestor", "Standard bleibt der Ingestor"
+    heavy = werte["worker"]["heavy"]
+    assert heavy["resources"]["limits"]["memory"] == "3Gi"
+    assert heavy["maxMemoryMb"] + int(heavy["ocrMemoryLimitMb"]) < 3 * 1024
+    assert "extraEnv" not in heavy, "die Seitengrenze kommt nur über ocrMemoryLimitMb (ein Eintrag je Name)"
+    assert int(werte["files"]["ocrMemoryLimitMb"]) < int(heavy["ocrMemoryLimitMb"]), "die übrigen bleiben enger"
+    produktion = yaml.safe_load((chart / "values-production.yaml").read_text(encoding="utf-8"))["worker"]["heavy"]
+    assert produktion["resources"]["limits"]["memory"] == "3Gi"
+    vorlage = (chart / "templates" / "worker.yaml").read_text(encoding="utf-8")
+    assert '"ocrMemoryLimitMb" $heavy.ocrMemoryLimitMb' in vorlage, "die Grenze erreicht nur worker-heavy"
+    # Im Roh-Manifest (aus dem Chart erzeugt): worker-heavy mit 2048, die anderen Worker mit files.ocrMemoryLimitMb
+    manifest = (chart.parents[1] / "manifests" / "mandari.yaml").read_text(encoding="utf-8")
+    grenzen = {
+        dok["metadata"]["name"]: [
+            eintrag["value"]
+            for eintrag in dok["spec"]["template"]["spec"]["containers"][0]["env"]
+            if eintrag["name"] == "OCR_MEMORY_LIMIT_MB"
+        ]
+        for dok in yaml.safe_load_all(manifest)
+        if dok and dok["kind"] == "Deployment" and dok["metadata"]["name"].startswith("mandari-worker")
+    }
+    assert grenzen == {
+        "mandari-worker": [str(werte["files"]["ocrMemoryLimitMb"])],
+        "mandari-worker-heavy": ["2048"],
+        "mandari-worker-live": [str(werte["files"]["ocrMemoryLimitMb"])],
+    }
+
+
+def test_helm_schalter_der_texterkennung_erreicht_auch_den_ingestor() -> None:
+    """TEXT_EXTRACTION_RUNNER in der gemeinsamen Umgebung: der Ingestor kennt kein app.extraEnv.
+
+    Genau ein Schlüssel (files.textExtractionRunner): Zwei Schlüssel ergäben zwei Einträge, und der spätere
+    gewänne in Kubernetes unabhängig davon, welcher Schlüssel umgeschaltet wurde.
+    """
+    import yaml
+
+    chart = SKRIPT.parents[1] / "deploy" / "kubernetes" / "helm" / "mandari"
+    werte = yaml.safe_load((chart / "values.yaml").read_text(encoding="utf-8"))
+    assert werte["files"]["textExtractionRunner"] == "ingestor", "Standard bleibt der Ingestor"
+    assert "textExtraction" not in werte, "kein zweiter Schalter neben files.textExtractionRunner"
     hilfen = (chart / "templates" / "_helpers.tpl").read_text(encoding="utf-8")
     gemeinsam = hilfen[hilfen.index('define "mandari.commonEnv"') :]
-    assert "- name: TEXT_EXTRACTION_RUNNER" in gemeinsam[: gemeinsam.index("{{- end -}}")]
+    gemeinsam = gemeinsam[: gemeinsam.index("{{- end -}}")]
+    assert gemeinsam.count("- name: TEXT_EXTRACTION_RUNNER") == 1
+    assert "{{ .Values.files.textExtractionRunner | quote }}" in gemeinsam
     assert "mandari.commonEnv" in (chart / "templates" / "ingestor.yaml").read_text(encoding="utf-8")
+
+
+def _lade_umgebungspruefung() -> Any:
+    pfad = SKRIPT.parents[1] / "deploy" / "kubernetes" / "umgebung_pruefen.py"
+    spec = importlib.util.spec_from_file_location("umgebung_pruefen", pfad)
+    assert spec and spec.loader
+    modul = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(modul)
+    return modul
+
+
+def test_helm_keine_doppelten_umgebungsvariablen_in_den_manifesten() -> None:
+    """Je Container jeder Name nur einmal (Roh-Manifeste = Chart mit Standardwerten, CI vergleicht beides).
+
+    Die CI prüft dasselbe für alle Werte-Dateien direkt an der Ausgabe von helm template.
+    """
+    modul = _lade_umgebungspruefung()
+    manifeste = SKRIPT.parents[1] / "deploy" / "kubernetes" / "manifests"
+    for name in ("mandari.yaml", "job-migrate.yaml"):
+        text = (manifeste / name).read_text(encoding="utf-8")
+        assert "- name: TEXT_EXTRACTION_RUNNER" in text, "Prüfung sieht die Umgebung"
+        assert modul.doppelte(text, name) == []
+
+
+def test_umgebungspruefung_findet_doppelte_namen_je_container() -> None:
+    modul = _lade_umgebungspruefung()
+    manifest = """apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beispiel
+spec:
+  template:
+    spec:
+      initContainers:
+        - name: vorab
+          image: "bild"
+          env:
+            - name: A
+              value: "1"
+      containers:
+        - name: haupt
+          image: "bild"
+          env:
+            # Kommentar im Block
+            - name: A
+              value: "1"
+            - name: GEHEIM
+              valueFrom:
+                secretKeyRef:
+                  name: secret
+                  key: geheim
+            - name: B
+              value: "2"
+            - name: A
+              value: "3"
+          ports:
+            - name: A
+              containerPort: 80
+---
+kind: Job
+metadata:
+  name: anders
+spec:
+  template:
+    spec:
+      containers:
+        - name: einzeln
+          image: "bild"
+          env:
+          - name: A
+            value: "1"
+          - name: A
+            value: "2"
+"""
+    assert modul.doppelte(manifest, "probe") == [
+        "probe: Deployment/beispiel, Container haupt: A doppelt",
+        "probe: Job/anders, Container einzeln: A doppelt",
+    ]
 
 
 def test_live_uebertragungen_in_eigenem_worker() -> None:

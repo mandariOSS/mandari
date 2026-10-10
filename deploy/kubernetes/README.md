@@ -100,8 +100,8 @@ PR-Prüfung vergleicht sie mit dem Chart). Für Updates ist Helm deutlich bequem
 | `worker.maxMemoryMb` | `400` | Speichergrenze des Runners (`TASKS_MAX_MEMORY_MB`), unter `worker.resources.limits.memory` (1Gi; den Rest brauchen die Verwaltungsbefehle der Zeitpläne als eigene Prozesse) halten |
 | `worker.queues` | `default,mail,index,adapter` | Warteschlangen des Hauptworkers, solange `worker.heavy.enabled`; sonst bedient er alle |
 | `worker.heavy.enabled` | `true` | Eigenes Deployment `mandari-worker-heavy` für Texterkennung und KI (`worker.heavy.queues`: `ocr,ai`, 3Gi, Runner-Neustart ab `worker.heavy.maxMemoryMb` 800). Ein Neustart des Runners wartet auf den längsten Auftrag (`ocr` bis 30 min); getrennt warten Mails und Suche nicht darauf. Mit `TEXT_EXTRACTION_RUNNER=worker` erkennt er den Text aus Ablage und Objektspeicher (`DEPLOYMENT.md`, „Dokumentkette einschalten“) |
-| `worker.heavy.extraEnv` | `OCR_MEMORY_LIMIT_MB: "2048"` | Nur für `worker-heavy`: Adressraum je Tesseract-Unterprozess, höchstens Limit minus 1 GB |
-| `textExtraction.runner` | `ingestor` | Wer den Text der RIS-Dateien erkennt (`TEXT_EXTRACTION_RUNNER` für Anwendung, Worker und Ingestor): `worker` = Aufträge im `worker-heavy`, braucht `TASKS_BACKEND=journal` (`app.extraEnv`); Ablauf in `DEPLOYMENT.md`, „Dokumentkette einschalten“ |
+| `worker.heavy.ocrMemoryLimitMb` | `2048` | Nur für `worker-heavy`: Adressraum je Tesseract-Unterprozess (`OCR_MEMORY_LIMIT_MB` statt `files.ocrMemoryLimitMb`), höchstens Limit minus 1 GB |
+| `files.textExtractionRunner` | `ingestor` | Wer den Text der RIS-Dateien erkennt (`TEXT_EXTRACTION_RUNNER` für Anwendung, Worker und Ingestor): `worker` = Aufträge im `worker-heavy`, braucht `TASKS_BACKEND=journal` (`app.extraEnv`); Ablauf in `DEPLOYMENT.md`, „Dokumentkette einschalten“ |
 | `worker.extraArgs`, `worker.extraEnv` | – | z. B. `["--stale-after", "600"]` bzw. `EVENTS_DB_DIRECT_URL` hinter PgBouncer |
 | `worker.affinity` | `{}` | Für beide Worker, z. B. `podAffinity` zur Anwendung bei `ReadWriteOnce` (siehe „Skalieren“) |
 | `persistence.files.size` | `50Gi` | Heruntergeladene RIS-Dokumente – wächst mit der Zahl der Kommunen |

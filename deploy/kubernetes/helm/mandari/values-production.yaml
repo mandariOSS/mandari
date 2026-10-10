@@ -90,7 +90,7 @@ worker:
       requests:
         cpu: 250m
         memory: 512Mi
-      # Runner (800 MB) plus ein Tesseract-Unterprozess (worker.heavy.extraEnv, 2048 MB)
+      # Runner (800 MB) plus ein Tesseract-Unterprozess (worker.heavy.ocrMemoryLimitMb, 2048 MB)
       limits:
         memory: 3Gi
 

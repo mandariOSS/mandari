@@ -1509,9 +1509,13 @@ jobs:
           set -euo pipefail
           chart=deploy/kubernetes/helm/mandari
           extern=(--set externalDatabase.url=postgresql://u:p@db:5432/mandari --set externalRedis.url=redis://:p@redis:6379/0)
+          gerendert="$RUNNER_TEMP/gerendert.yaml"
           pruefen() {
             echo "== $1"
-            kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -
+            cat > "$gerendert"
+            kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" "$gerendert"
+            # Je Container jeder Name nur einmal in env: sonst gilt der letzte Eintrag, Server-Side Apply lehnt ab
+            python3 deploy/kubernetes/umgebung_pruefen.py "$gerendert"
           }
           for werte in values.yaml values-minimal.yaml values-production.yaml; do
             for modus in "" --is-upgrade; do
@@ -1527,6 +1531,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 deploy/kubernetes/manifeste_erzeugen.py --pruefen
+          python3 deploy/kubernetes/umgebung_pruefen.py deploy/kubernetes/manifests/mandari.yaml deploy/kubernetes/manifests/job-migrate.yaml
           kubectl kustomize deploy/kubernetes/manifests \
             | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -
           kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" deploy/kubernetes/manifests/job-migrate.yaml

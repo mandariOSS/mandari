@@ -11,8 +11,9 @@ längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails, Suche und L
 nicht auf die Texterkennung. Alle warten per initContainer auf das Datenbankschema.
 
 Parameter von "mandari.workerDeployment": root (Kontext des Charts), name (Namensteil und
-Komponente), replicas, maxMemoryMb, resources, args (zusätzliche Argumente), extraEnv (nur für
-dieses Deployment, nach app.extraEnv und worker.extraEnv).
+Komponente), replicas, maxMemoryMb, resources, args (zusätzliche Argumente), ocrMemoryLimitMb
+(Seitengrenze der Texterkennung OCR_MEMORY_LIMIT_MB nur für dieses Deployment, sonst
+files.ocrMemoryLimitMb).
 */ -}}
 {{- define "mandari.workerDeployment" -}}
 {{- $root := .root -}}
@@ -72,7 +73,7 @@ spec:
           securityContext:
             {{- toYaml $root.Values.securityContext | nindent 12 }}
           env:
-            {{- include "mandari.appEnv" $root | nindent 12 }}
+            {{- include "mandari.appEnvMit" (dict "root" $root "ocrMemoryLimitMb" (.ocrMemoryLimitMb | default $root.Values.files.ocrMemoryLimitMb)) | nindent 12 }}
             {{- if $root.Values.tracing.otlpEndpoint }}
             - name: OTEL_SERVICE_NAME
               value: mandari-{{ .name }}
@@ -85,10 +86,6 @@ spec:
             - name: METRICS_URL
               value: {{ printf "http://%s:%v/metrics/" (include "mandari.fullname" $root) $root.Values.service.port | quote }}
             {{- range $key, $value := $w.extraEnv }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
-            {{- range $key, $value := .extraEnv }}
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
@@ -162,7 +159,7 @@ spec:
 {{ include "mandari.workerDeployment" (dict "root" . "name" "worker" "replicas" .Values.worker.replicas "maxMemoryMb" .Values.worker.maxMemoryMb "resources" .Values.worker.resources "args" $args) }}
 {{- if $heavy.enabled }}
 ---
-{{ include "mandari.workerDeployment" (dict "root" . "name" "worker-heavy" "replicas" $heavy.replicas "maxMemoryMb" $heavy.maxMemoryMb "resources" $heavy.resources "args" (concat (list "--roles" "tasks" "--queues" $heavy.queues) $heavy.extraArgs) "extraEnv" $heavy.extraEnv) }}
+{{ include "mandari.workerDeployment" (dict "root" . "name" "worker-heavy" "replicas" $heavy.replicas "maxMemoryMb" $heavy.maxMemoryMb "resources" $heavy.resources "args" (concat (list "--roles" "tasks" "--queues" $heavy.queues) $heavy.extraArgs) "ocrMemoryLimitMb" $heavy.ocrMemoryLimitMb) }}
 {{- end }}
 {{- if $live.enabled }}
 ---
