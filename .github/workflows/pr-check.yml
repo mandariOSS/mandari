@@ -1477,8 +1477,9 @@ jobs:
   # ===========================================================================
   # Sammel-Ergebnis: läuft immer, geeignet als einziger Pflicht-Check
   # ===========================================================================
-  # Übersprungene Jobs (Bereich nicht betroffen) gelten als bestanden; ein fehlgeschlagener oder
-  # abgebrochener Job lässt das Ergebnis scheitern. Neue Jobs hier unter needs eintragen.
+  # Positivliste (Issue #879): Als bestanden gelten nur "success" und "skipped" (Bereich nicht betroffen).
+  # Jedes andere Ergebnis lässt das Ergebnis scheitern: "failure", "cancelled", "abandoned" (Job hat nie
+  # einen Runner bekommen) und künftige Werte, die GitHub einführt. Neue Jobs hier unter needs eintragen.
   # Ausnahme (Issue #935): War "Test" bzw. "Migrationstests" nötig, müssen er und "Test-Ergebnis"
   # (Coverage-Grenze, Vollständigkeit) bestanden haben; übersprungen zählt dann nicht.
   ci-ergebnis:
@@ -1520,8 +1521,9 @@ jobs:
             echo "::error::Die Zuordnung der geänderten Dateien ist fehlgeschlagen."
             exit 1
           fi
-          if jq -e 'any(.[]; .result == "failure" or .result == "cancelled")' <<<"$ERGEBNISSE" >/dev/null; then
-            echo "::error::Mindestens ein Job ist fehlgeschlagen oder wurde abgebrochen."
+          nicht_bestanden=$(jq -r '[to_entries[] | select(.value.result != "success" and .value.result != "skipped") | "\(.key): \(.value.result)"] | join(", ")' <<<"$ERGEBNISSE")
+          if [ -n "$nicht_bestanden" ]; then
+            echo "::error::Nicht bestanden (weder success noch skipped): $nicht_bestanden"
             exit 1
           fi
           # Nötige Jobs, die nur über andere Jobs übersprungen werden könnten, müssen bestanden haben
