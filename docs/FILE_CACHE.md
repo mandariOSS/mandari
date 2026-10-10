@@ -150,6 +150,11 @@ Vorschau „wird geladen“ (HTTP 503, `Retry-After: 15`), der Löschabgleich ü
   erlaubt. Bei abgeschaltetem Dateiabruf entsteht kein Zustand je Datei.
 - **Fehler** ohne Termin (`error` aus der Zeit vor Issue #919) versucht nur `cache_files --retry-errors` erneut;
   die Admin-Aktion „Lokal zwischenspeichern“ versucht wie bisher jede Datei ohne Kopie.
+- **Verdrängt** (`evicted`, [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße), nur ohne Objektspeicher) ist
+  kein Zustand, aus dem ein Abruf von selbst beansprucht; weder Zeitplan noch Kennzahlen zählen ihn als wartend.
+  Ausdrücklich holen ihn die Vorschau (Live-Abruf, Fehlschläge nach der Tabelle oben wie bei `none`),
+  `cache_files --verdraengte` und die Admin-Aktion. Ein bestätigtes Fehlen der Kopie setzt ihn nie auf `none`, und
+  `dokumentkette zuruecksetzen` lässt ihn stehen.
 - **Kennzahlen:** `mandari_files_fetch_queued`, `mandari_files_fetch_retry_due` und
   `mandari_files_fetch_errors_total` je Quelle bzw. Fehlercode, Prüfung `dokumentabruf` in `/health/worker/`
   (`docs/MONITORING.md`).

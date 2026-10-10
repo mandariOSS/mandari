@@ -213,7 +213,9 @@ sh deploy/scripts/deploy.sh rollback v0.11.0  # bestimmte Version
 Zurück auf ein Image vor der Dokumentkette (Migration `insight_core.0057`, Issue #919): **vorher** mit dem
 laufenden Image `docker exec mandari python manage.py dokumentkette zuruecksetzen` ausführen (idempotent, nur
 Zustandsspalten). Ein älteres Image kennt die Zustände `retry`, `fetching` und `refused` nicht; danach stehen sie
-wieder als `none` bzw. `error` da (`docs/FILE_CACHE.md`, „Zustände des Abrufs“).
+wieder als `none` bzw. `error` da (`docs/FILE_CACHE.md`, „Zustände des Abrufs“). Verdrängte Dokumente (`evicted`,
+Obergrenze #961, Migration `insight_core.0056`) bleiben verdrängt; ein Image mit `0056`, aber ohne `0057` kennt den
+Zustand.
 
 ### Datenbank-Migration
 
@@ -1099,13 +1101,15 @@ kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container der A
 docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
 # mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte dort liegen (fehlen welche: erst --hochladen)
 docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10
 # danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
 # FILE_CACHE_MAX_TOTAL_GB=10
 ```
 
-Mit Objektspeicher löscht der Abbau nur lokale Kopien, mit `--pruefe-objektspeicher` erst nach erfolgreicher Prüfung
-per `HEAD`; ohne holt die Vorschau verdrängte Dokumente bei Bedarf von der Quelle. Liegen Inhalte laut Datenbank im
+Mit Objektspeicher löscht der Abbau (wie das stündliche Aufräumen) nur lokale Kopien, und nur nach erfolgreicher
+Prüfung per `HEAD` (Dokumentkette #919: fehlt der Inhalt, bleibt die Kopie; ist der Objektspeicher gestört, endet der
+Lauf); ohne Objektspeicher holt die Vorschau verdrängte Dokumente bei Bedarf über den Abrufweg von der Quelle,
+`cache_files` lädt sie nur mit `--verdraengte`. Liegen Inhalte laut Datenbank im
 Objektspeicher, ist er im Container aber nicht konfiguriert, bricht der Abbau ab und das stündliche Aufräumen setzt
 die Grenze aus („Obergrenze ausgesetzt“ im Protokoll des Workers): dann `OBJ_*` prüfen. Eigene Compose-Dateien
 brauchen `FILE_CACHE_MAX_TOTAL_GB` in der `environment` von Anwendung und Worker. Zurück: Variable entfernen bzw.
