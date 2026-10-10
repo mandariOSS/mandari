@@ -11,7 +11,7 @@
         <button type="button" role="menuitem" @click="oeffne('dokument')"><i data-lucide="file-text" aria-hidden="true"></i>Eigenes Dokument …</button>
     </div>
 
-    <c-ui.alpine-modal show="dialogOffen" size="md" aria-labelledby="fs-anh-titel">
+    <c-ui.alpine-modal show="dialogOffen" size="md" labelledby="fs-anh-titel">
         <div class="wf-dialog">
             <h2 id="fs-anh-titel" x-text="titel()">Unterlage hinzufügen</h2>
             <form x-show="dialog === 'datei'" hx-post="{{ sitzung_urls.aktion }}" hx-encoding="multipart/form-data"

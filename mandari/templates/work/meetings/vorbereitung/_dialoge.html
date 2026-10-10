@@ -2,7 +2,7 @@
 Dialoge der Vorbereitung: Sitzungsnotizen der Organisation, Zusammenfassung, Legende, Anlage hinzufügen, Dokument
 als Redebeitrag verknüpfen; dazu das Blatt „Position“ am Handy. Fokusfalle und Escape über <c-ui.alpine-modal>.
 {% endcomment %}
-<c-ui.alpine-modal show="sitzungsnotizenOffen" size="md" aria-labelledby="sitzungsnotizen-titel">
+<c-ui.alpine-modal show="sitzungsnotizenOffen" size="md" labelledby="sitzungsnotizen-titel">
     <div class="wf-dialog">
         <h2 id="sitzungsnotizen-titel">Sitzungsnotizen</h2>
         <p class="leise">Allgemeines zur ganzen Sitzung, für die gesamte Organisation sichtbar. Wird automatisch gespeichert.</p>
@@ -16,7 +16,7 @@ als Redebeitrag verknüpfen; dazu das Blatt „Position“ am Handy. Fokusfalle 
     </div>
 </c-ui.alpine-modal>
 
-<c-ui.alpine-modal show="showSummary" size="lg" panel_class="max-h-[85vh] overflow-y-auto" aria-labelledby="zusammenfassung-titel">
+<c-ui.alpine-modal show="showSummary" size="lg" panel_class="max-h-[85vh] overflow-y-auto" labelledby="zusammenfassung-titel">
     <div class="wf-dialog">
         <div class="wf-dialog-kopf">
             <h2 id="zusammenfassung-titel">Zusammenfassung der Vorbereitung</h2>
@@ -27,7 +27,7 @@ als Redebeitrag verknüpfen; dazu das Blatt „Position“ am Handy. Fokusfalle 
     </div>
 </c-ui.alpine-modal>
 
-<c-ui.alpine-modal show="showLegend" size="sm" aria-labelledby="legende-titel">
+<c-ui.alpine-modal show="showLegend" size="sm" labelledby="legende-titel">
     <div class="wf-dialog">
         <div class="wf-dialog-kopf">
             <h2 id="legende-titel">Legende</h2>
@@ -49,7 +49,7 @@ als Redebeitrag verknüpfen; dazu das Blatt „Position“ am Handy. Fokusfalle 
     </div>
 </c-ui.alpine-modal>
 
-<c-ui.alpine-modal show="anlageOffen" size="md" aria-labelledby="anlage-titel">
+<c-ui.alpine-modal show="anlageOffen" size="md" labelledby="anlage-titel">
     <div class="wf-dialog">
         <div class="wf-dialog-kopf">
             <h2 id="anlage-titel">Anlage hinzufügen</h2>
@@ -70,7 +70,7 @@ als Redebeitrag verknüpfen; dazu das Blatt „Position“ am Handy. Fokusfalle 
     </div>
 </c-ui.alpine-modal>
 
-<c-ui.alpine-modal show="docModalOpen" size="md" aria-labelledby="verknuepfen-titel">
+<c-ui.alpine-modal show="docModalOpen" size="md" labelledby="verknuepfen-titel">
     <div class="wf-dialog">
         <div class="wf-dialog-kopf">
             <h2 id="verknuepfen-titel">Dokument als Redebeitrag verknüpfen</h2>

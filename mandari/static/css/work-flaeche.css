@@ -76,6 +76,8 @@
   .wf-textlink {
     color: var(--wf-work-text); font-weight: 500; text-decoration: underline; text-underline-offset: 4px;
     background: none; border: 0; padding: 0; cursor: pointer; font-size: inherit;
+    /* Zielgröße mindestens 24 px (WCAG 2.5.8) */
+    display: inline-flex; align-items: center; min-height: 24px;
   }
   .wf-textlink.gefahr { color: var(--wf-abl); }
   .wf-textlink.klein { font-size: 12.5px; }
