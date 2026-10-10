@@ -106,7 +106,8 @@
             </div>
         </header>
 
-        <main id="inhalt" tabindex="-1" class="flex-1 flex flex-col min-h-0 focus:outline-none">
+        {# data-gestaltung: „neu“ setzen Seiten, deren Inhalt schon im neuen Erscheinungsbild steht (Block gestaltung); das Prüfskript zählt die übrigen (Issue #884) #}
+        <main id="inhalt" tabindex="-1" data-gestaltung="{% block gestaltung %}bisher{% endblock %}" class="flex-1 flex flex-col min-h-0 focus:outline-none">
             {% block work_header %}
             <header class="work-page-header">
                 <div class="flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
