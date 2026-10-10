@@ -26,7 +26,6 @@ from ..models import (
 logger = logging.getLogger(__name__)
 
 from ..visibility import can_view_item, can_view_item_with_parents
-from ._helpers import _apply_approval_item_decision
 
 
 def _visible_children(item, membership) -> list:
@@ -187,7 +186,8 @@ class FactionAttachmentDownloadView(WorkViewMixin, View):
         if not can_view_item_with_parents(item, self.membership):
             raise PermissionDenied("Gesperrte Information")
         attachment = get_object_or_404(FactionAgendaItemAttachment, id=kwargs["attachment_id"], agenda_item=item)
-        return attachment_response(attachment.file, attachment.filename)
+        # PDF eingebettet nur für die Vorschau in der Sitzungsansicht (Issue #874), sonst wie bisher als Download
+        return attachment_response(attachment.file, attachment.filename, allow_pdf_inline="vorschau" in request.GET)
 
 
 class FactionItemPanelActionView(WorkViewMixin, View):
@@ -402,31 +402,19 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         except ValueError:
             return HttpResponse("Ungültige Stimmzahlen.", status=400)
 
-        result = request.POST.get("result", "accepted")
-        decision_text = request.POST.get("decision_text", "").strip()
-        notes = request.POST.get("notes", "").strip()
+        from .. import services as faction_services
 
-        decision, _created = FactionDecision.objects.update_or_create(
-            agenda_item=item,
-            defaults={
-                "votes_yes": votes_yes,
-                "votes_no": votes_no,
-                "votes_abstain": votes_abstain,
-                "result": result,
-                "decision_text": decision_text,
-                "notes": notes,
-                "recorded_by": self.membership,
-            },
+        # Erfassen, Kopie am TOP und Genehmigungs-TOP (angenommene Abstimmung genehmigt das Vorprotokoll)
+        faction_services.record_decision(
+            item,
+            self.membership,
+            votes_yes=votes_yes,
+            votes_no=votes_no,
+            votes_abstain=votes_abstain,
+            result=request.POST.get("result", "accepted"),
+            decision_text=request.POST.get("decision_text", "").strip(),
+            notes=request.POST.get("notes", "").strip(),
         )
-
-        item.has_decision = True
-        item.votes_for = votes_yes
-        item.votes_against = votes_no
-        item.votes_abstain = votes_abstain
-        item.save()
-
-        # Genehmigungs-TOP: angenommene Abstimmung genehmigt das Vorprotokoll
-        _apply_approval_item_decision(item, decision, meeting, self.membership)
 
         return self._panel_response(request, meeting, item, "Abstimmung erfasst")
 

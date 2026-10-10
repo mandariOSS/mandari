@@ -334,6 +334,12 @@ class TestPanelComponents:
         html = render('<c-ui.alpine-modal show="open">x</c-ui.alpine-modal>')
         assert "max-w-md" in html
         assert "x-cloak" in html
+        assert "aria-labelledby" not in html
+
+    def test_alpine_modal_labelledby_am_dialog(self) -> None:
+        html = render('<c-ui.alpine-modal show="open" labelledby="t">x</c-ui.alpine-modal>')
+        assert 'role="dialog" aria-modal="true" aria-labelledby="t"' in html
+        assert html.count("aria-labelledby") == 1
 
     def test_panel_section_renders_count_and_action_slot(self) -> None:
         html = render(

@@ -8,18 +8,39 @@ Dokumentzeile im Bürgerportal (Vorgang, Sitzung): Name, Art und Größe, dazu d
 Parameter: file (OParlFile), meta (Zeile unter dem Titel der Dokumentansicht).
 Steht „nicht barrierefrei“ im Namen, kommt „Text“ zuerst: Der ausgelesene Text ist dann die zugängliche Fassung.
 Zustand des Aufklappens: Alpine-Komponente documentText (frontend/alpine/insight.ts).
+
+Gemeinsam mit Work (Issue #874): Ohne weitere Parameter führen Ansehen und Herunterladen über den Dateiabruf von
+Insight (Markup wie bisher). Andere Dateien (etwa Anlagen eines Fraktions-TOPs) übergeben Namen und Adressen:
+  <ul><c-insight.document-row :file="anlage" titel="{{ anlage.filename }}" herunterladen="{{ url }}" dicht /></ul>
+titel: Name der Datei (sonst aus file.name/file_name). ansehen/herunterladen: eigene Adressen; dann gibt es nur die
+übergebenen Aktionen. Größe auch aus file_size. dicht: Arbeitsfläche (Zeile und Aktionen 32 px statt 44 px).
 {% endcomment %}
-<c-vars file="" meta="" />
-{% with name=file.name|default:file.file_name|default:"Dokument" is_pdf=file.mime_type|default:""|lower %}
-<li class="py-4 border-t border-gray-200 dark:border-gray-700 first:border-t-0" x-data="documentText">
-    {% partialdef text-button %}
-    <button type="button" @click="toggle()" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false"
-            aria-controls="text-{{ file.id }}"
-            class="group inline-flex items-center gap-1.5 min-h-11 px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
-        <i data-lucide="text" class="w-4 h-4" aria-hidden="true"></i>Text<span class="sr-only">: {{ name }}</span>
-        <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-aria-expanded:rotate-180" aria-hidden="true"></i>
-    </button>
-    {% endpartialdef %}
+<c-vars file="" meta="" titel="" ansehen="" herunterladen="" dicht="" />
+{% url 'insight_core:insight:file_proxy' file.id as abruf %}
+{% partialdef text-button %}
+<button type="button" @click="toggle()" :aria-expanded="open ? 'true' : 'false'" aria-expanded="false"
+        aria-controls="text-{{ file.id }}"
+        class="group inline-flex items-center gap-1.5 {% if dicht %}min-h-8{% else %}min-h-11{% endif %} px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+    <i data-lucide="text" class="w-4 h-4" aria-hidden="true"></i>Text<span class="sr-only">: {{ name }}</span>
+    <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-aria-expanded:rotate-180" aria-hidden="true"></i>
+</button>
+{% endpartialdef %}
+{% partialdef ansehen-button %}
+<button type="button"
+        data-doc-url="{{ ansehen_url }}" data-doc-name="{{ name }}" data-doc-meta="{{ meta }}"
+        @click="openDoc($el.dataset.docUrl, $el.dataset.docName, $el.dataset.docMeta)"
+        class="inline-flex items-center gap-1.5 {% if dicht %}min-h-8{% else %}min-h-11{% endif %} px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+    <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>Ansehen<span class="sr-only">: {{ name }}</span>
+</button>
+{% endpartialdef %}
+{% partialdef herunterladen-link %}
+<a href="{{ herunterladen_url }}"
+   class="inline-flex items-center gap-1.5 {% if dicht %}min-h-8{% else %}min-h-11{% endif %} px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+    <i data-lucide="download" class="w-4 h-4" aria-hidden="true"></i>Herunterladen<span class="sr-only">: {{ name }}</span>
+</a>
+{% endpartialdef %}
+{% partialdef zeile %}
+<li class="{% if dicht %}py-2{% else %}py-4{% endif %} border-t border-gray-200 dark:border-gray-700 first:border-t-0" x-data="documentText">
     <div class="flex flex-wrap items-center gap-x-6 gap-y-1">
         <div class="flex items-start gap-3 flex-1 basis-full sm:basis-0 min-w-0 sm:min-w-[15rem]">
             <i data-lucide="file-text" class="hidden sm:block mt-0.5 w-5 h-5 shrink-0 text-gray-500 dark:text-gray-400" aria-hidden="true"></i>
@@ -27,27 +48,17 @@ Zustand des Aufklappens: Alpine-Komponente documentText (frontend/alpine/insight
                 <p class="font-semibold leading-snug text-gray-900 dark:text-white break-words">{{ name }}</p>
                 <p class="mt-0.5 flex flex-wrap gap-x-3 text-sm text-gray-600 dark:text-gray-400">
                     <span>{% if "pdf" in is_pdf %}PDF{% else %}Dokument{% endif %}</span>
-                    {% if file.size %}<span class="tabular-nums">{{ file.size_human }}</span>{% endif %}
+                    {% if file.size or file.file_size %}<span class="tabular-nums">{{ file.size_human }}</span>{% endif %}
                 </p>
             </div>
         </div>
         <div class="flex flex-wrap items-center gap-x-1 -ml-2 sm:ml-0 text-sm font-medium">
             {% if file.text_content.strip and "nicht barrierefrei" in name|lower %}{% partial text-button %}{% endif %}
-            {% if file.download_url or file.access_url %}
-            <button type="button"
-                    data-doc-url="{% url 'insight_core:insight:file_proxy' file.id %}" data-doc-name="{{ name }}" data-doc-meta="{{ meta }}"
-                    @click="openDoc($el.dataset.docUrl, $el.dataset.docName, $el.dataset.docMeta)"
-                    class="inline-flex items-center gap-1.5 min-h-11 px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
-                <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>Ansehen<span class="sr-only">: {{ name }}</span>
-            </button>
-            {% endif %}
+            {% if ansehen %}{% with ansehen_url=ansehen %}{% partial ansehen-button %}{% endwith %}
+            {% elif not herunterladen and file.download_url or not herunterladen and file.access_url %}{% with ansehen_url=abruf %}{% partial ansehen-button %}{% endwith %}{% endif %}
             {% if file.text_content.strip and "nicht barrierefrei" not in name|lower %}{% partial text-button %}{% endif %}
-            {% if file.download_url or file.access_url %}
-            <a href="{% url 'insight_core:insight:file_proxy' file.id %}?download=1"
-               class="inline-flex items-center gap-1.5 min-h-11 px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
-                <i data-lucide="download" class="w-4 h-4" aria-hidden="true"></i>Herunterladen<span class="sr-only">: {{ name }}</span>
-            </a>
-            {% endif %}
+            {% if herunterladen %}{% with herunterladen_url=herunterladen %}{% partial herunterladen-link %}{% endwith %}
+            {% elif not ansehen and file.download_url or not ansehen and file.access_url %}{% with herunterladen_url=abruf|add:"?download=1" %}{% partial herunterladen-link %}{% endwith %}{% endif %}
         </div>
     </div>
     {% if file.text_content.strip %}
@@ -58,4 +69,9 @@ Zustand des Aufklappens: Alpine-Komponente documentText (frontend/alpine/insight
     </div>
     {% endif %}
 </li>
-{% endwith %}
+{% endpartialdef %}
+{% if titel %}
+{% with name=titel is_pdf=file.mime_type|default:""|lower %}{% partial zeile %}{% endwith %}
+{% else %}
+{% with name=file.name|default:file.file_name|default:"Dokument" is_pdf=file.mime_type|default:""|lower %}{% partial zeile %}{% endwith %}
+{% endif %}

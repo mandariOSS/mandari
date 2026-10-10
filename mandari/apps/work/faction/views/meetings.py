@@ -220,6 +220,16 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
 
         meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
 
+        # Neue Sitzungsansicht der laufenden Sitzung (Issue #874) hinter dem Schalter der Organisation;
+        # ``?ansicht=bisher`` öffnet weiterhin die bisherige Seite mit allen Funktionen
+        from .. import sitzung
+        from . import session
+
+        if sitzung.zeigt_sitzungsansicht(meeting, self.request.GET.get("ansicht")):
+            self.template_name = session.SEITE
+            context.update(session.seiten_kontext(self, meeting, self.request.GET.get("top")))
+            return context
+
         context.update(_get_meeting_context(self, meeting))
         # Konfiguration der Alpine-Komponente `factionDetail` (frontend/alpine/faction-detail.ts):
         # Panel-URL mit Platzhalter-UUID, die clientseitig durch die TOP-ID ersetzt wird; Aktions-URL für die

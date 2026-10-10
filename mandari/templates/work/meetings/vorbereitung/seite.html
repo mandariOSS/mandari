@@ -19,17 +19,17 @@ Zustand, Speichern und Echtzeit: Alpine-Komponente `vorbereitung` (frontend/alpi
 
 {% block work_content %}
 {% if no_body_linked %}
-<div class="vb-rand">{% include "work/ris/partials/_no_body_notice.html" %}</div>
+<div class="vb-rand wf">{% include "work/ris/partials/_no_body_notice.html" %}</div>
 {% elif meeting and not prepared_items %}
-<div class="vb-rand">
+<div class="vb-rand wf">
     <h1 class="vb-seitentitel">{{ meeting.committee_name|default:meeting.name|default:"Sitzung" }} vorbereiten</h1>
     <p class="vb-leer-text">Zu dieser Sitzung gibt es noch keine Tagesordnung. Sobald das Ratsinformationssystem sie veröffentlicht, erscheint sie hier.</p>
-    <a class="vb-textlink" href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}">Zur Sitzung</a>
+    <a class="wf-textlink" href="{% url 'work:meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}">Zur Sitzung</a>
 </div>
 {% elif meeting %}
 {{ prepare_config|json_script:"prepare-config" }}
 {{ aufgaben_config|json_script:"vorbereitung-aufgaben" }}
-<div class="vb" x-data="vorbereitung" @keydown.window="handleKeydown($event)">
+<div class="vb wf" x-data="vorbereitung" @keydown.window="handleKeydown($event)">
     {% include "work/meetings/vorbereitung/_kopf.html" %}
     <div class="vb-flaeche">
         {% include "work/meetings/vorbereitung/_tagesordnung.html" %}
@@ -46,9 +46,9 @@ Zustand, Speichern und Echtzeit: Alpine-Komponente `vorbereitung` (frontend/alpi
     {% include "work/meetings/vorbereitung/_dialoge.html" %}
 </div>
 {% else %}
-<div class="vb-rand">
+<div class="vb-rand wf">
     <p class="vb-leer-text">Die Sitzung wurde nicht gefunden.</p>
-    <a class="vb-textlink" href="{% url 'work:meetings' org_slug=organization.slug %}">Zur Übersicht der Sitzungen</a>
+    <a class="wf-textlink" href="{% url 'work:meetings' org_slug=organization.slug %}">Zur Übersicht der Sitzungen</a>
 </div>
 {% endif %}
 {% endblock %}

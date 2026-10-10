@@ -1,0 +1,18 @@
+{# Tagesordnung der laufenden Sitzung: öffentlicher und nichtöffentlicher Teil, besprochene TOPs mit Haken (Issue #874) #}
+{# Kontext: ordnung (sitzung.Tagesordnung), meeting, org_slug; Nicht-Vereidigte bekommen keine NÖ-TOPs, nur deren Anzahl #}
+<div class="fs-mobil-nur wf-tl-gruppe">
+    <button type="button" class="wf-knopf wf-klein" @click="tagesordnungOffen = false"><i data-lucide="x" aria-hidden="true"></i>Tagesordnung schließen</button>
+</div>
+<div class="wf-tl-gruppe">Öffentlicher Teil</div>
+<ul class="wf-tl">
+    {% for zeile in ordnung.oeffentlich %}{% include "work/faction/sitzung/_tagesordnung_zeile.html" %}{% endfor %}
+</ul>
+{% if ordnung.intern or ordnung.gesperrt %}
+<div class="wf-tl-gruppe">Nichtöffentlicher Teil</div>
+<ul class="wf-tl">
+    {% for zeile in ordnung.intern %}{% include "work/faction/sitzung/_tagesordnung_zeile.html" %}{% endfor %}
+    {% if ordnung.gesperrt %}
+    <li class="fs-tl-gesperrt"><i data-lucide="lock" aria-hidden="true"></i><span>{% if ordnung.gesperrt == 1 %}Ein TOP{% else %}{{ ordnung.gesperrt }} TOPs{% endif %}, nur für vereidigte Mitglieder</span></li>
+    {% endif %}
+</ul>
+{% endif %}

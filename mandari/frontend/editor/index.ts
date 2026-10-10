@@ -4,7 +4,8 @@
  * Vite-Einstieg der Editor-Seiten: setzt `window.MandariEditor` (Fabriken, Diff,
  * Briefkopf) und registriert die Alpine-Komponenten `documentEditor`
  * (frontend/alpine/document-editor.ts), `preparationApp`
- * (frontend/alpine/prepare-meeting.ts) und `vorbereitung` (frontend/alpine/vorbereitung.ts).
+ * (frontend/alpine/prepare-meeting.ts), `vorbereitung` (frontend/alpine/vorbereitung.ts) und die der
+ * Sitzungsansicht (frontend/alpine/faction-session.ts, frontend/alpine/session-notes.ts).
  */
 
 import { Editor } from '@tiptap/core'
@@ -20,7 +21,18 @@ import { CharacterCount, Placeholder } from '@tiptap/extensions'
 import StarterKit from '@tiptap/starter-kit'
 import Alpine from 'alpinejs'
 import { documentEditor } from '../alpine/document-editor'
+import {
+  anwesenheitsListe,
+  beschlussLeiste,
+  fraktionssitzung,
+  sitzungsMenue,
+  sitzungsUnterlagen,
+  topKopf,
+  unterlageAnhaengen,
+  zustaendigAuswahl,
+} from '../alpine/faction-session'
 import { preparationApp } from '../alpine/prepare-meeting'
+import { type NotizenFormat, sitzungsNotizen } from '../alpine/session-notes'
 import { vorbereitung } from '../alpine/vorbereitung'
 import type { CollabOptions, CollabResult, CollabUser } from './collaboration'
 import { initCollaboration } from './collaboration'
@@ -220,6 +232,60 @@ export function createEditor(options: EditorOptions): Editor {
   return editor
 }
 
+export interface NotesEditorOptions {
+  element: HTMLElement
+  content: string
+  placeholder?: string
+  onUpdate?: () => void
+  onFormat?: (format: NotizenFormat) => void
+}
+
+/**
+ * Schlanker Editor für die Notizen eines TOPs in der Fraktionssitzung (Issue #874): Absätze,
+ * Zwischenüberschriften, Fett, Kursiv, Unterstrichen, Listen und Links – ohne Seitenumbrüche, Tabellen,
+ * Bilder und Briefkopf. Gespeichert wird serverseitig nur die Positivliste (apps/work/sanitize.py).
+ */
+export function createNotesEditor(options: NotesEditorOptions): Editor {
+  return new Editor({
+    element: options.element,
+    editable: true,
+    content: options.content,
+    editorProps: {
+      ...getEditorProps(),
+      attributes: { 'aria-label': 'Notizen', 'aria-multiline': 'true', role: 'textbox' },
+    },
+    extensions: [
+      StarterKit.configure({
+        heading: { levels: [2, 3] },
+        link: false,
+        underline: false,
+        trailingNode: false,
+        codeBlock: false,
+        horizontalRule: false,
+      }),
+      Underline,
+      Link.configure({ openOnClick: false, autolink: true, protocols: ['http', 'https', 'mailto'] }),
+      Placeholder.configure({ placeholder: options.placeholder || '' }),
+    ],
+    onUpdate() {
+      options.onUpdate?.()
+    },
+    onTransaction({ editor }) {
+      if (!options.onFormat) return
+      const state = getFormatState(editor)
+      options.onFormat({
+        bold: state.bold,
+        italic: state.italic,
+        underline: state.underline,
+        heading: state.header !== false,
+        bulletList: state.list === 'bullet',
+        orderedList: state.list === 'ordered',
+        link: state.link,
+      })
+    },
+  })
+}
+
 /**
  * Create a collaborative TipTap editor with real-time sync via Yjs + WebSocket.
  *
@@ -315,6 +381,7 @@ export {
 const MandariEditor = {
   createEditor,
   createCollaborativeEditor,
+  createNotesEditor,
   Editor,
   getFormatState,
   CommentMark,
@@ -339,3 +406,13 @@ Alpine.data('documentEditor', documentEditor)
 Alpine.data('preparationApp', preparationApp)
 // Sitzungsvorbereitung im neuen Design (#856), baut auf preparationApp auf
 Alpine.data('vorbereitung', vorbereitung)
+// Sitzungsansicht der laufenden Fraktionssitzung (Issue #874)
+Alpine.data('fraktionssitzung', fraktionssitzung)
+Alpine.data('sitzungsMenue', sitzungsMenue)
+Alpine.data('topKopf', topKopf)
+Alpine.data('sitzungsUnterlagen', sitzungsUnterlagen)
+Alpine.data('unterlageAnhaengen', unterlageAnhaengen)
+Alpine.data('beschlussLeiste', beschlussLeiste)
+Alpine.data('anwesenheitsListe', anwesenheitsListe)
+Alpine.data('zustaendigAuswahl', zustaendigAuswahl)
+Alpine.data('sitzungsNotizen', sitzungsNotizen)

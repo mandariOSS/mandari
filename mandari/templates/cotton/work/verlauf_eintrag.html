@@ -1,0 +1,10 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Ein Eintrag „Im Beratungsverlauf“ (c-work.beratungsverlauf), vom Server gerendert: Ort (mit Link zur dortigen
+Vorbereitung), Punkt in der Farbe der Position, Position fett, danach Zusatz (Ergebnis, endgültig, Begründung) als Inhalt.
+Die Sitzungsvorbereitung baut dieselbe Zeile per Alpine (templates/work/meetings/vorbereitung/_top_kopf.html).
+  <c-work.verlauf-eintrag wo="Rat, 17.10.2026" href="…" punkt="zustimmung" position="Zustimmung" titel="…">, endgültig</c-work.verlauf-eintrag>
+Parameter: wo, href (optional), punkt (zustimmung, ablehnung, enthaltung, offen, andere), position, titel (Tooltip mit allem).
+{% endcomment %}
+<c-vars wo="" href="" punkt="andere" position="" titel="" />
+<li{% if titel %} title="{{ titel }}"{% endif %}>{% if href %}<a class="wo" href="{{ href }}">{{ wo }}</a>{% else %}<span class="wo">{{ wo }}</span>{% endif %}: <span class="wf-punkt {{ punkt }}" aria-hidden="true"></span><b>{{ position }}</b>{{ slot }}</li>
