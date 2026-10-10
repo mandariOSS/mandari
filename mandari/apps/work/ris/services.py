@@ -18,13 +18,16 @@ from django.utils.safestring import SafeString, mark_safe
 
 from insight_core.models import OParlBody
 
+# ``SearchQuery`` und ``RESULT_TYPES`` liegen seit 10/2026 in ``search_filters`` (Issue #853); die Namen bleiben hier
+from insight_core.services.search_filters import RESULT_TYPES as RESULT_TYPES
+from insight_core.services.search_filters import SearchQuery as SearchQuery
+
 from . import selectors
 from .selectors import Bodies
 
 logger = logging.getLogger(__name__)
 
 SEARCH_PAGE_SIZE = 25
-RESULT_TYPES = ("papers", "meetings", "persons", "organizations", "files")
 DEFAULT_MAP_CENTER = (51.5, 7.5)
 DEFAULT_MAP_ZOOM = 13
 
@@ -32,37 +35,6 @@ DEFAULT_MAP_ZOOM = 13
 # ---------------------------------------------------------------------------
 # Suche
 # ---------------------------------------------------------------------------
-
-
-@dataclass
-class SearchQuery:
-    """Vom Nutzer gesetzte Suchparameter (bereits bereinigt)."""
-
-    query: str = ""
-    date_from: str = ""
-    date_to: str = ""
-    committee: str = ""
-    paper_type: str = ""
-    result_type: str = ""
-    body_filter: str = ""
-    page: int = 1
-
-    @property
-    def has_filters(self) -> bool:
-        return any([self.date_from, self.date_to, self.committee, self.paper_type, self.body_filter])
-
-    @property
-    def is_empty(self) -> bool:
-        return not self.query and not self.has_filters
-
-    def index_names(self) -> list[str] | None:
-        """Elasticsearch-Indexe, auf die die Filter wirken (``None`` = alle)."""
-        if self.result_type in RESULT_TYPES:
-            return [self.result_type]
-        if self.committee or self.paper_type:
-            # Diese Filter wirken nur auf Dokument-/Sitzungs-Indexe
-            return ["papers"] if self.paper_type else ["papers", "meetings", "files"]
-        return None
 
 
 @dataclass

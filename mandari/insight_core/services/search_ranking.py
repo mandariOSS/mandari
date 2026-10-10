@@ -368,3 +368,81 @@ def with_recency(query: dict[str, Any], index_name: str, weight: float) -> dict[
             "boost_mode": "multiply",
         }
     }
+
+
+# --- Bezug (Work, Issue #853) ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RelationBoost:
+    """Gewichtung nach Bezug einer Organisation: Faktor für Vorgänge, Sitzungen und Gremien mit eigenem Bezug.
+
+    ``papers`` und ``meetings`` sind Paare aus Kennungen und Faktor (etwa eigene Anträge 1,5, bearbeitete Vorgänge
+    1,3); trifft ein Dokument mehrere, multiplizieren sich die Faktoren. Dateien erben den Faktor ihres Vorgangs bzw.
+    ihrer Sitzung. ``committees`` sind Namen von Gremien (wie ``organization_names`` im Index). Der Bezug ändert nur
+    die Reihenfolge, nie die Treffermenge: Es sind Faktoren in einem ``function_score``, keine Filter.
+    """
+
+    papers: tuple[tuple[frozenset[str], float], ...] = ()
+    meetings: tuple[tuple[frozenset[str], float], ...] = ()
+    committees: tuple[str, ...] = ()
+    committee_factor: float = 1.0
+
+    def __bool__(self) -> bool:
+        return any(ids for ids, _f in self.papers + self.meetings) or bool(self.committees)
+
+
+def _relation_functions(index_name: str, boost: RelationBoost) -> list[dict[str, Any]]:
+    """Faktoren je Index: Vorgänge und Sitzungen über ihre Kennung, Dateien über Vorgang bzw. Sitzung."""
+
+    def clause(own_index: str, file_field: str, ids: frozenset[str]) -> dict[str, Any] | None:
+        if index_name == own_index:
+            return {"ids": {"values": sorted(ids)}}
+        if index_name == "files":
+            return {"terms": {file_field: sorted(ids)}}
+        return None
+
+    functions: list[dict[str, Any]] = []
+    for own_index, file_field, groups in (
+        ("papers", "paper_id", boost.papers),
+        ("meetings", "meeting_id", boost.meetings),
+    ):
+        for ids, factor in groups:
+            match = clause(own_index, file_field, ids) if ids and factor != 1.0 else None
+            if match is not None:
+                functions.append({"filter": match, "weight": factor})
+    if boost.committees and boost.committee_factor != 1.0 and index_name in ("papers", "meetings", "files"):
+        phrases = [{"match_phrase": {"organization_names": name}} for name in boost.committees if name]
+        if phrases:
+            functions.append(
+                {"filter": {"bool": {"should": phrases, "minimum_should_match": 1}}, "weight": boost.committee_factor}
+            )
+    return functions
+
+
+def has_relation(index_name: str, boost: RelationBoost | None) -> bool:
+    """Wirkt der Bezug auf diesen Index? (Personen und Gremien haben keinen.)"""
+    return boost is not None and bool(boost) and bool(_relation_functions(index_name, boost))
+
+
+def with_relation(
+    query: dict[str, Any], index_name: str, boost: RelationBoost | None, *, min_score: float = 0.0
+) -> dict[str, Any]:
+    """Bezug als Faktor: Dokumente mit eigenem Bezug zählen mehr, alle anderen unverändert (Faktor 1).
+
+    Ohne passende Funktion liefert ``function_score`` den Faktor 1; so bleibt die Abfrage für Dokumente ohne Bezug
+    gleich und Organisationen ohne eigene Daten bekommen dieselbe Reihenfolge wie das Bürgerportal.
+
+    ``min_score`` ist die Mindestrelevanz (v2) und gilt für die Relevanz **ohne** Bezug: Sie filtert die innere
+    Abfrage, erst danach wirken die Faktoren. Eine Schwelle auf die gewichtete Relevanz stiege mit dem besten
+    gewichteten Treffer und nähme schwache Treffer ohne Bezug heraus, die das Bürgerportal zeigt.
+    """
+    if not boost:
+        return query
+    functions = _relation_functions(index_name, boost)
+    if not functions:
+        return query
+    inner = {"function_score": {"query": query, "min_score": min_score}} if min_score > 0 else query
+    return {
+        "function_score": {"query": inner, "functions": functions, "score_mode": "multiply", "boost_mode": "multiply"}
+    }
