@@ -14,14 +14,17 @@ Entzug wirkt sofort
     - je Dokument (Gruppe ``doc_<id>``): persönliche Freigabe geändert oder entfernt, Sichtbarkeit, Ordner,
       Autor:in, Federführung, Status oder Mitarbeit geändert, Dokument gelöscht;
     - je Person (Gruppe ``collab_user_<id>``): Ordner-Freigabe geändert oder entfernt, Mitgliedschaft
-      deaktiviert, geändert oder entfernt, Rollen oder Einzelrechte geändert, Rechte einer Rolle geändert;
-      Ordner verschoben (alle Personen mit Ordner-Freigaben der Organisation).
+      deaktiviert, geändert oder entfernt, Konto deaktiviert, Rollen oder Einzelrechte geändert, Rechte einer
+      Rolle geändert, Rolle gelöscht; Ordner verschoben (alle Personen mit Ordner-Freigaben der Organisation).
 
     Jede betroffene Verbindung bestimmt ihre Stufe neu (``DocumentCollaborationConsumer.access_recheck``): ohne
     Zugriff wird sie getrennt, mit niedrigerer Stufe herabgestuft; der Client lädt in beiden Fällen neu. Die
     Nachricht geht erst nach dem Commit hinaus, damit die Neuprüfung den neuen Stand sieht. Fehler beim Senden
-    brechen die auslösende Änderung nie ab; zusätzlich prüft der Consumer schreibende Verbindungen beim
-    Speichern regelmäßig nach.
+    brechen die auslösende Änderung nie ab.
+
+    Änderungen ohne Signal (``queryset.update()``, SQL) oder eine verlorene Nachricht (Kanal-Layer gestört)
+    fängt die Nachprüfung im Consumer auf: Jede Verbindung, auch lesende, prüft ihren Zugriff spätestens nach
+    ``ACCESS_RECHECK_INTERVAL_SECONDS``, sobald sie etwas sendet oder eine Änderung weitergeleitet bekommt.
 """
 
 from __future__ import annotations
@@ -31,7 +34,7 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Any, cast
 
 from django.db import transaction
-from django.db.models.signals import m2m_changed, post_delete, post_save
+from django.db.models.signals import m2m_changed, post_delete, post_save, pre_delete
 
 if TYPE_CHECKING:
     from apps.tenants.models import Membership
@@ -51,6 +54,9 @@ DOWNLOAD_PDF = "PDF-Export"
 DOWNLOAD_DOCX = "DOCX-Export"
 DOWNLOAD_ATTACHMENT = "Anhang"
 
+#: Objekt-Beschreibung eines Gast-Downloads in der Änderungshistorie: ohne Titel (Issue #582)
+DOWNLOAD_OBJECT_REPR = "Dokument"
+
 
 # =============================================================================
 # Herunterladen durch Gäste
@@ -61,6 +67,20 @@ def download_choice(data: Any, *, default: bool = True) -> bool:
     """„Herunterladen erlauben“ aus Formulardaten: „0“ schaltet ab, jeder andere Wert an, ohne Angabe ``default``."""
     value = data.get("allow_download")
     return default if value is None else value != "0"
+
+
+def download_update(data: Any) -> dict[str, bool]:
+    """
+    „Herunterladen erlauben“ für ``update_or_create(defaults=…)`` einer Dokument- oder Ordner-Freigabe.
+
+    Nur eine ausdrückliche Angabe ändert den Schalter. Ohne ``allow_download`` behält eine bestehende Freigabe ihren
+    Wert, eine neue erhält die Vorgabe des Modells (erlaubt). So stellt etwa eine Stufenänderung im Teilen-Dialog
+    oder ein Aufruf ohne das Feld eine abgeschaltete Freigabe nicht unbemerkt wieder auf „erlaubt“. Der Dialog
+    sendet das Feld nur, wenn jemand den Schalter bedient hat (``_share_modal.html``).
+    """
+    if data.get("allow_download") is None:
+        return {}
+    return {"allow_download": download_choice(data)}
 
 
 def may_manage_document_share(membership: Membership, share: Any) -> bool:
@@ -90,14 +110,20 @@ def set_allow_download(share: Any, allowed: bool) -> None:
 def log_guest_download(
     motion: Motion, membership: Membership, request: Any, kind: str, *, document: MotionDocument | None = None
 ) -> None:
-    """Export oder Anhang-Download eines Gastes in die Änderungshistorie der Organisation schreiben."""
+    """
+    Export oder Anhang-Download eines Gastes in die Änderungshistorie der Organisation schreiben.
+
+    Der Eintrag enthält weder Titel noch Dateinamen (``DOWNLOAD_OBJECT_REPR``, Kennungen von Dokument und
+    Anhang): Die Hash-Kette lässt sich nicht bereinigen, und nicht jede Person mit Einsicht in die Historie sieht
+    das Dokument. Titel und Dateiname ergänzt die Einsichts-View nur für Berechtigte (``guest_download_rows``).
+    """
     if not getattr(membership, "is_guest", False):
         return
     from apps.work.faction.audit import log_event
 
     changes: dict[str, Any] = {"art": kind}
     if document is not None:
-        changes["anhang"] = document.filename
+        changes["anhang_id"] = str(document.pk)
     cast(Any, log_event)(
         "guest_download",
         motion,
@@ -106,7 +132,60 @@ def log_guest_download(
         request=request,
         changes=changes,
         is_internal=False,
+        object_repr=DOWNLOAD_OBJECT_REPR,
     )
+
+
+def guest_download_rows(entries: Iterable[Any], membership: Membership) -> dict[Any, dict[str, Any]]:
+    """
+    Anzeige der Gast-Downloads (``guest_download``) in der Änderungshistorie für ``membership``.
+
+    Je Eintrag (Schlüssel ``entry.pk``): Sieht ``membership`` das Dokument (``Motion.visible_to``), stehen dort
+    sein aktueller Titel und die Angaben (Art, Dateiname des Anhangs). Sonst ist der Eintrag gesperrt wie ein
+    nichtöffentlicher: ohne Beschreibung und Angaben. Das gilt auch für gelöschte Dokumente.
+    """
+    from apps.common.params import uuid_param
+
+    from .models import Motion, MotionDocument
+
+    downloads = [entry for entry in entries if entry.action == "guest_download"]
+    if not downloads:
+        return {}
+    motion_ids = {entry.object_id for entry in downloads if entry.object_id}
+    visible = {
+        motion.pk: motion
+        for motion in cast(Any, Motion)
+        .visible_to(membership, include_deleted=True)
+        .filter(pk__in=motion_ids)
+        .select_related("document_type")
+        .only("id", "title", "motion_type", "document_type")
+    }
+    # Kennung des Anhangs je Eintrag (nur bei sichtbaren Dokumenten nachschlagen)
+    attachments: dict[Any, str | None] = {
+        entry.pk: uuid_param(entry.changes.get("anhang_id"))
+        for entry in downloads
+        if entry.object_id in visible and isinstance(entry.changes, dict) and "anhang_id" in entry.changes
+    }
+    filenames = {
+        str(pk): filename
+        for pk, filename in MotionDocument.objects.filter(
+            pk__in=[attachment_id for attachment_id in attachments.values() if attachment_id],
+            motion_id__in=list(visible),
+        ).values_list("pk", "filename")
+    }
+
+    rows: dict[Any, dict[str, Any]] = {}
+    for entry in downloads:
+        motion = visible.get(entry.object_id)
+        if motion is None:
+            rows[entry.pk] = {"locked": True}
+            continue
+        changes = entry.changes if isinstance(entry.changes, dict) else {}
+        details = [("Art", str(changes.get("art", "")))]
+        if entry.pk in attachments:
+            details.append(("Anhang", filenames.get(attachments[entry.pk] or "", "gelöscht")))
+        rows[entry.pk] = {"locked": False, "object_repr": str(motion), "details": details}
+    return rows
 
 
 # =============================================================================
@@ -238,6 +317,27 @@ def _role_saved(sender: Any, instance: Any, created: bool, raw: bool = False, **
     recheck_open_editors(user_ids=_role_users(instance))
 
 
+def _role_deleting(sender: Any, instance: Any, **kwargs: Any) -> None:
+    """
+    Rolle wird gelöscht: Ihre Zuordnungen verschwinden per Kaskade ohne ``m2m_changed``.
+
+    Die Personen jetzt sammeln (nach dem Löschen sind sie nicht mehr zu ermitteln); die Nachricht geht wie immer
+    erst nach dem Commit hinaus.
+    """
+    recheck_open_editors(user_ids=list(_role_users(instance)))
+
+
+def _user_saved(
+    sender: Any, instance: Any, created: bool, raw: bool = False, update_fields: Any = None, **kwargs: Any
+) -> None:
+    """Konto deaktiviert (``User.is_active``): Die Mitgliedschaften bleiben aktiv, der Zugriff endet trotzdem."""
+    if created or raw or instance.is_active:
+        return
+    if update_fields is not None and "is_active" not in update_fields:
+        return
+    recheck_open_editors(user_ids=[instance.pk])
+
+
 def _role_permissions_changed(sender: Any, instance: Any, action: str, reverse: bool, **kwargs: Any) -> None:
     if action not in ("post_add", "post_remove", "post_clear") or reverse:
         return
@@ -245,6 +345,7 @@ def _role_permissions_changed(sender: Any, instance: Any, action: str, reverse: 
 
 
 def register() -> None:
+    from apps.accounts.models import User
     from apps.tenants.models import Membership, Role
 
     from .models import DocumentFolder, FolderGuestShare, Motion, MotionShare
@@ -269,6 +370,8 @@ def register() -> None:
             dispatch_uid=f"{uid}_membership_{field}",
         )
     post_save.connect(_role_saved, sender=Role, dispatch_uid=f"{uid}_role_save")
+    pre_delete.connect(_role_deleting, sender=Role, dispatch_uid=f"{uid}_role_delete")
+    post_save.connect(_user_saved, sender=User, dispatch_uid=f"{uid}_user_save")
     m2m_changed.connect(
         _role_permissions_changed, sender=Role.permissions.through, dispatch_uid=f"{uid}_role_permissions"
     )

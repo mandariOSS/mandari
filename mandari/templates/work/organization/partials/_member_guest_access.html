@@ -47,7 +47,7 @@
                     <p class="text-xs text-gray-500 dark:text-gray-400">
                         Ordner-Freigabe &middot; Stufe {{ share.get_level_display }} &middot; inkl. {{ share.subfolder_count }} Unterordner, aktuell {{ share.document_count }} Dokument{{ share.document_count|pluralize:"e" }}
                         &middot; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}
-                        &middot; Herunterladen {{ share.allow_download|yesno:"erlaubt,aus" }}
+                        &middot; Herunterladen (PDF, Word, Anhänge): {{ share.allow_download|yesno:"erlaubt,aus" }}
                     </p>
                 </div>
             </div>
@@ -81,7 +81,7 @@
                     <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=share.motion.id %}" class="font-medium text-gray-900 dark:text-white hover:text-primary-600">{{ share.motion.title }}</a>
                     <p class="text-xs text-gray-500 dark:text-gray-400">
                         Dokument-Freigabe &middot; Stufe {{ share.get_level_display }} &middot; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}
-                        &middot; Herunterladen {{ share.allow_download|yesno:"erlaubt,aus" }}
+                        &middot; Herunterladen (PDF, Word, Anhänge): {{ share.allow_download|yesno:"erlaubt,aus" }}
                     </p>
                 </div>
             </div>

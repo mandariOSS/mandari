@@ -25,8 +25,9 @@ logger = logging.getLogger(__name__)
 # (zusätzlich beim Disconnect des letzten Teilnehmers).
 REVISION_MIN_INTERVAL_SECONDS = 600
 
-# Schreibende Verbindungen prüfen ihren Zugriff beim Speichern spätestens nach dieser Zeit neu – falls die
-# Nachricht über einen Entzug sie nicht erreicht hat (Issue #582, apps/work/motions/freigaben.py).
+# Jede Verbindung prüft ihren Zugriff spätestens nach dieser Zeit neu, sobald sie etwas sendet oder eine Änderung
+# weitergeleitet bekommt – falls die Nachricht über einen Entzug sie nicht erreicht hat (Änderung ohne Signal,
+# Kanal-Layer gestört; Issue #582, apps/work/motions/freigaben.py).
 ACCESS_RECHECK_INTERVAL_SECONDS = 30
 
 # Rangfolge der Stufen im Editor: niedriger = herabgestuft
@@ -109,7 +110,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
     (``collab_user_<id>``). Ändert sich etwas, das Zugriff nehmen kann (Freigabe, Mitgliedschaft, Rechte,
     Sichtbarkeit …), schicken Signale ``access.recheck`` an die Gruppe des Dokuments bzw. der Person
     (apps/work/motions/freigaben.py). Die Verbindung bestimmt ihre Stufe dann neu: ohne Zugriff wird sie
-    getrennt, mit niedrigerer Stufe herabgestuft.
+    getrennt, mit niedrigerer Stufe herabgestuft. Erreicht sie keine Nachricht, prüft sie ihren Zugriff
+    spätestens nach ``ACCESS_RECHECK_INTERVAL_SECONDS`` selbst nach, sobald sie etwas sendet oder empfängt.
     """
 
     # Teilnehmer pro Dokument (prozesslokal). Bei mehreren Workern ist die
@@ -222,7 +224,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         )
 
     async def receive_json(self, content, **kwargs):
-        if self.entzogen:
+        if self.entzogen or not await self._zugriff_gedrosselt_pruefen():
             return
         msg_type = content.get("type")
 
@@ -258,11 +260,6 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
                 # der gespeicherte Inhalt. Verwerfen statt persistieren.
                 await self.send_json({"type": "yjs_save_rejected", "reason": "reload_pending"})
                 return
-            # Schreibende: Zugriff regelmäßig nachprüfen, falls ein Entzug die Verbindung nicht erreicht hat
-            if self._schreibt() and time.monotonic() - self._zugriff_geprueft_um >= ACCESS_RECHECK_INTERVAL_SECONDS:
-                await self._zugriff_neu_pruefen()
-                if self.entzogen:
-                    return
             # Client sends full state (plus aktuelles HTML) for persistence
             content_hash = await self._persist_yjs_state(content.get("data", ""), content.get("html"))
             if content_hash:
@@ -278,6 +275,15 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         if self._schreibt():
             return True
         return ist_lesende_sync_nachricht(data_b64)
+
+    async def _zugriff_gedrosselt_pruefen(self) -> bool:
+        """
+        Zugriff spätestens nach ``ACCESS_RECHECK_INTERVAL_SECONDS`` nachprüfen (Issue #582), für Schreibende wie
+        Lesende. Fängt Entzüge auf, deren Nachricht die Verbindung nicht erreicht hat. ``False``: Zugriff entzogen.
+        """
+        if time.monotonic() - self._zugriff_geprueft_um >= ACCESS_RECHECK_INTERVAL_SECONDS:
+            await self._zugriff_neu_pruefen()
+        return not self.entzogen
 
     async def _zugriff_neu_pruefen(self) -> None:
         """
@@ -320,7 +326,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
 
     async def yjs_sync(self, event):
         """Forward Yjs sync to client (skip sender)."""
-        if self.entzogen:
+        if self.entzogen or not await self._zugriff_gedrosselt_pruefen():
             return
         if event.get("sender_channel") != self.channel_name:
             await self.send_json(
@@ -332,7 +338,7 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
 
     async def awareness_update(self, event):
         """Forward awareness update to client (skip sender)."""
-        if self.entzogen:
+        if self.entzogen or not await self._zugriff_gedrosselt_pruefen():
             return
         if event.get("sender_channel") != self.channel_name:
             await self.send_json(
@@ -368,10 +374,12 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
             return None, None
 
         try:
+            # Auch ein deaktiviertes Konto beendet den Zugriff (Stand aus der Datenbank, nicht aus der Sitzung)
             membership = Membership.objects.get(
                 user=self.user,
                 organization=motion.organization,
                 is_active=True,
+                user__is_active=True,
             )
         except Membership.DoesNotExist:
             return None, None

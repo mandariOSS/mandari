@@ -346,8 +346,10 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
     """
     Ordner für einen Nutzer (insbesondere Gast) freigeben.
 
-    Die Freigabe gilt rekursiv für alle Unterordner und enthaltenen
-    Dokumente — auch künftig hinzukommende (FolderGuestShare).
+    Die Freigabe gilt rekursiv für alle Unterordner — auch künftig
+    hinzukommende — und erfasst dort die organisationsweiten und geteilten
+    Dokumente der freigebenden Person, nie private (FolderGuestShare,
+    Motion._folder_share_applies, Issue #582).
     """
 
     permission_required = ["guests.manage", "motions.share"]
@@ -386,13 +388,12 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
                 status=400,
             )
 
-        # Herunterladen (Issue #582); ohne Angabe wie bisher erlaubt
-        allow_download = freigaben.download_choice(request.POST)
         previous = FolderGuestShare.objects.filter(folder=folder, user=user).first()
         FolderGuestShare.objects.update_or_create(
             folder=folder,
             user=user,
-            defaults={"level": level, "created_by": request.user, "allow_download": allow_download},
+            # Herunterladen (Issue #582): nur eine ausdrückliche Angabe ändert den Schalter, neu ohne Angabe erlaubt
+            defaults={"level": level, "created_by": request.user, **freigaben.download_update(request.POST)},
         )
         if previous is None or previous.level != level:
             from apps.work.notifications.services import NotificationHub

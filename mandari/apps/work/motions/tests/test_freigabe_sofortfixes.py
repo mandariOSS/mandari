@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import re
 from typing import Any, cast
 
 import pytest
@@ -25,6 +26,7 @@ from django.test import override_settings
 from django.urls import reverse
 
 from apps.common.tests.factories import MembershipFactory, UserFactory
+from apps.tenants.models import Membership
 from apps.work.faction.models import FactionAuditLog
 from apps.work.motions import consumers, export_service
 from apps.work.motions.consumers import DocumentCollaborationConsumer
@@ -192,7 +194,7 @@ def test_herunterladen_aus_sperrt_export_und_anhaenge(
         assert antwort.status_code == 200
         # Vollständig gelesen schließt der Test-Client die Datei selbst (kein close(): das beendete die Verbindung)
         assert b"".join(antwort.streaming_content) == PDF_BYTES
-        assert _gast_downloads(org) == [{"art": "Anhang", "anhang": "anlage.pdf"}]
+        assert _gast_downloads(org) == [{"art": "Anhang", "anhang_id": str(anhang.id)}]
 
         freigabe.allow_download = False
         cast(Any, freigabe).save()
@@ -305,7 +307,7 @@ def test_schalter_je_freigabe_umschalten(org: Any, freigebende: Any, kollegin: A
     # „Was sieht dieser Gast?“ zeigt den Stand und schaltet zurück
     seite = client.get(_url("member_detail", org, member_id=gast.id)).content.decode()
     assert dokument_url in seite and ordner_url in seite
-    assert "Herunterladen aus" in seite
+    assert "Herunterladen (PDF, Word, Anhänge): aus" in seite
     client.post(dokument_url, {"allow_download": "1"})
     dokument_freigabe.refresh_from_db()
     assert dokument_freigabe.allow_download
@@ -347,6 +349,103 @@ def test_teilen_dialog_und_einladung_setzen_den_schalter(org: Any, freigebende: 
     )
     assert MotionShare.objects.get(motion=eigenes, user__email="neu@example.org").allow_download is False
     assert FolderGuestShare.objects.get(folder=ordner, user__email="neu@example.org").allow_download is False
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("export_ohne_renderer")
+def test_aenderungshistorie_zeigt_titel_und_anhang_nur_wer_das_dokument_sieht(
+    org: Any, make_member: Any, client_for: Any, tmp_path: Any
+) -> None:
+    """
+    Gast lädt ein privates, einzeln freigegebenes Dokument herunter: Titel und Dateiname stehen nie in der
+    Hash-Kette, und in der Änderungshistorie sieht sie nur, wer das Dokument selbst sieht.
+    """
+    titel = "Entwurf Kandidatenliste"
+    dateiname = "kandidaten-intern.pdf"
+    autorin = make_member(
+        org, [*RECHTE, "motions.share", "faction.view_public", "faction.view_audit"], email="autorin@example.org"
+    )
+    vorsitz = make_member(
+        org,
+        ["faction.view_public", "faction.view_audit", "motions.view", "motions.view_drafts"],
+        email="vorsitz@example.org",
+    )
+    with override_settings(MEDIA_ROOT=str(tmp_path)):
+        dokument = Motion.objects.create(organization=org, author=autorin, title=titel, visibility="private")
+        anhang = MotionDocument.objects.create(
+            motion=dokument,
+            file=SimpleUploadedFile(dateiname, PDF_BYTES, content_type="application/pdf"),
+            filename=dateiname,
+            mime_type="application/pdf",
+            file_size=len(PDF_BYTES),
+            uploaded_by=autorin,
+        )
+        gast = _gast(org)
+        MotionShare.objects.create(motion=dokument, scope="user", user=gast.user, level="view", created_by=autorin.user)
+        client = client_for(gast.user)
+        export_url = _url("document_export", org, motion_id=dokument.id)
+        assert client.get(export_url, {"format": "pdf"}).status_code == 200
+        antwort = client.get(_url("document_file_download", org, motion_id=dokument.id, document_id=anhang.id))
+        assert b"".join(antwort.streaming_content) == PDF_BYTES
+
+    eintraege = list(FactionAuditLog.objects.filter(organization=org, action="guest_download"))
+    assert len(eintraege) == 2
+    for eintrag in eintraege:
+        gespeichert = f"{eintrag.object_repr} {eintrag.changes}"
+        assert titel not in gespeichert and dateiname not in gespeichert
+        assert eintrag.object_id == dokument.id
+
+    historie_url = _url("faction_audit", org)
+    antwort = client_for(vorsitz.user).get(historie_url)
+    assert antwort.status_code == 200
+    seite = antwort.content.decode()
+    assert titel not in seite and dateiname not in seite
+    assert seite.count("Gesperrte Information") == 2
+
+    seite = client_for(autorin.user).get(historie_url).content.decode()
+    assert titel in seite and dateiname in seite
+    assert "PDF-Export" in seite and "Gesperrte Information" not in seite
+
+
+@pytest.mark.django_db
+def test_stufenaenderung_laesst_abgeschaltetes_herunterladen_aus(org: Any, freigebende: Any, client_for: Any) -> None:
+    """Schalter aus, danach Stufe ändern (Teilen-Dialog, Ordner-Freigabe ohne Feld): Der Schalter bleibt aus."""
+    dokument = Motion.objects.create(organization=org, author=freigebende, title="Antrag", visibility="shared")
+    ordner = DocumentFolder.objects.create(organization=org, name="Extern", created_by=freigebende)
+    gast = _gast(org)
+    freigabe = MotionShare.objects.create(
+        motion=dokument, scope="user", user=gast.user, level="view", created_by=freigebende.user, allow_download=False
+    )
+    ordner_freigabe = FolderGuestShare.objects.create(
+        folder=ordner, user=gast.user, level="view", created_by=freigebende.user, allow_download=False
+    )
+    update_url = _url("document_share_update", org, motion_id=dokument.id)
+    ordner_url = _url("document_folder_share", org, folder_id=ordner.id)
+    client = client_for(freigebende.user)
+
+    client.post(update_url, {"visibility": "shared", "add_user_email": gast.user.email, "level": "comment"})
+    client.post(ordner_url, {"email": gast.user.email, "level": "edit"})
+    freigabe.refresh_from_db()
+    ordner_freigabe.refresh_from_db()
+    assert (freigabe.level, freigabe.allow_download) == ("comment", False)
+    assert (ordner_freigabe.level, ordner_freigabe.allow_download) == ("edit", False)
+
+    # Ausdrücklich gewählt: Der Schalter folgt der Angabe
+    client.post(
+        update_url,
+        {"visibility": "shared", "add_user_email": gast.user.email, "level": "comment", "allow_download": "1"},
+    )
+    client.post(ordner_url, {"email": gast.user.email, "level": "edit", "allow_download": "1"})
+    freigabe.refresh_from_db()
+    ordner_freigabe.refresh_from_db()
+    assert freigabe.allow_download and ordner_freigabe.allow_download
+
+    # Der Dialog sendet das Feld nur, wenn jemand den Schalter bedient hat (vorher gesperrt, Kästchen ohne Namen)
+    seite = client.get(_url("documents", org)).content.decode()
+    feld = re.search(r'<input type="hidden" name="allow_download"[^>]*>', seite)
+    assert feld is not None and re.search(r"\sdisabled[\s>]", feld.group(0))
+    assert not re.search(r'<input type="checkbox"[^>]*name="allow_download"', seite)
+    assert "Gilt nur für Gäste" in seite
 
 
 # =============================================================================
@@ -530,3 +629,57 @@ def test_nachpruefung_beim_speichern_greift_ohne_benachrichtigung(
     asyncio.run(lauf())
     assert _inhalt(dokument) == "<p>Stand</p>"
     assert dokument.get_yjs_state() is None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_geloeschte_rolle_trennt_sofort(org: Any, freigebende: Any, kollegin: Any) -> None:
+    """Beim Löschen einer Rolle verschwinden die Zuordnungen per Kaskade ohne m2m_changed."""
+    dokument = _dokument(org, freigebende, "organization")
+    rolle = kollegin.roles.get()
+
+    async def lauf() -> None:
+        verbindung = await _verbinden(kollegin.user, dokument, "comment")
+        await database_sync_to_async(rolle.delete)()
+        await _wird_getrennt(verbindung)
+        await verbindung.disconnect()
+
+    asyncio.run(lauf())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_deaktiviertes_konto_trennt_sofort(org: Any, freigebende: Any, kollegin: Any) -> None:
+    """Das Konto wird deaktiviert, die Mitgliedschaft bleibt aktiv."""
+    dokument = _dokument(org, freigebende, "organization")
+    konto = kollegin.user
+
+    async def lauf() -> None:
+        verbindung = await _verbinden(konto, dokument, "comment")
+        konto.is_active = False
+        await database_sync_to_async(konto.save)()
+        await _wird_getrennt(verbindung)
+        await verbindung.disconnect()
+
+    asyncio.run(lauf())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_nachpruefung_greift_auch_bei_lesenden_ohne_benachrichtigung(
+    org: Any, freigebende: Any, kollegin: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lesende erhalten nach einem Entzug ohne Benachrichtigung keine Live-Änderungen mehr."""
+    monkeypatch.setattr(consumers, "ACCESS_RECHECK_INTERVAL_SECONDS", 0)
+    dokument = _dokument(org, freigebende, "organization")
+    aenderung = {"type": "yjs_sync", "data": base64.b64encode(b"\x00\x02aenderung").decode("ascii")}
+
+    async def lauf() -> None:
+        autorin = await _verbinden(freigebende.user, dokument, "edit")
+        lesende = await _verbinden(kollegin.user, dokument, "comment")
+        await database_sync_to_async(Membership.objects.filter(pk=kollegin.pk).update)(is_active=False)
+        assert await lesende.receive_nothing(timeout=0.3)
+
+        await autorin.send_json_to(aenderung)
+        await _wird_getrennt(lesende)
+        await lesende.disconnect()
+        await autorin.disconnect()
+
+    asyncio.run(lauf())

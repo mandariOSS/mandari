@@ -864,8 +864,6 @@ class MotionShareUpdateView(WorkViewMixin, View):
                 level = request.POST.get("level", "view")
                 if level not in SHARE_DIALOG_LEVELS:
                     level = "view"
-                # Herunterladen für Gäste (Issue #582); ohne Angabe wie bisher erlaubt
-                allow_download = freigaben.download_choice(request.POST)
 
                 user = User.objects.filter(email=add_user_email).first()
                 # Nur Nutzer mit aktivem Zugang zu DIESER Organisation – sonst
@@ -884,7 +882,9 @@ class MotionShareUpdateView(WorkViewMixin, View):
                     motion=motion,
                     scope="user",
                     user=user,
-                    defaults={"level": level, "created_by": request.user, "allow_download": allow_download},
+                    # Herunterladen für Gäste (Issue #582): nur eine ausdrückliche Angabe ändert den Schalter,
+                    # neue Freigaben erlauben es ohne Angabe
+                    defaults={"level": level, "created_by": request.user, **freigaben.download_update(request.POST)},
                 )
                 # Benachrichtigung bei neuer Freigabe oder geänderter Stufe (Issue #75)
                 if previous is None or previous.level != level:

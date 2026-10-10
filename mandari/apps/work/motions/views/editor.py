@@ -745,8 +745,9 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
         if current_folder is not None:
             # Innerhalb eines Ordners: Unterordner + enthaltene Dokumente
             subfolders = current_folder.children.all()
-            # Nur, was die Freigabe umfasst (Motion.visible_to: organisationsweite und eigene
-            # Dokumente der freigebenden Person, persönliche Freigaben)
+            # Nur, was die Freigabe umfasst (Motion.visible_to wie Motion._folder_share_applies:
+            # organisationsweite und geteilte Dokumente der freigebenden Person, nie private; dazu
+            # persönliche Freigaben)
             folder_documents = list(
                 Motion.visible_to(self.membership)
                 .filter(folder=current_folder)

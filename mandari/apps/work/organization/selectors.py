@@ -597,8 +597,9 @@ def shareable_folders(organization: Organization, membership: Membership) -> lis
     """
     Ordner, die der Einladende freigeben darf, als [(folder, depth)].
 
-    Eine Ordner-Freigabe öffnet ALLE enthaltenen Dokumente (rekursiv, auch künftige) —
-    daher nur Ordner, die der Einladende auch verwalten darf.
+    Eine Ordner-Freigabe öffnet rekursiv (auch künftig hinzukommende) die organisationsweiten und die geteilten
+    Dokumente der freigebenden Person, nie private (Motion._folder_share_applies, Issue #582) — daher nur Ordner,
+    die der Einladende auch verwalten darf.
     """
     from apps.work.motions.views import _can_manage_folder, _flatten_folder_tree
 
