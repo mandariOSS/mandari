@@ -518,6 +518,26 @@ def public_body(body_id: object) -> OParlBody | None:
     return OParlBody.objects.filter(pk=pk, deleted=False).first() if pk else None
 
 
+def listed_bodies(text: str = "") -> QuerySet[OParlBody]:
+    """Gelistete Kommunen (Kommunenauswahl), wahlweise mit ``text`` im Namen oder Kurznamen, nach Namen sortiert."""
+    found = OParlBody.objects.listed()
+    if text:
+        found = found.filter(
+            Q(name__icontains=text) | Q(display_name__icontains=text) | Q(short_name__icontains=text) | Q(slug=text)
+        )
+    return found.order_by("name")
+
+
+def listed_body(reference: str) -> OParlBody | None:
+    """Eine gelistete Kommune zu Kurzname (``slug``) oder Kennung; ``None``, wenn es sie so nicht gibt."""
+    reference = reference.strip()
+    if not reference:
+        return None
+    pk = _uuid(reference)
+    found = OParlBody.objects.listed()
+    return (found.filter(pk=pk) if pk else found.filter(slug=reference.lower())).first()
+
+
 def public_meetings_between(
     bodies: Bodies, start: datetime, end: datetime, *, organizations: Organizations | None = None
 ) -> QuerySet[OParlMeeting]:
