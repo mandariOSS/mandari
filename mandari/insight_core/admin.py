@@ -1466,7 +1466,17 @@ class PublicQuestionAdmin(ModelAdmin):
 
 @admin.register(ChatUsage)
 class ChatUsageAdmin(ReadOnlyAdminMixin, ModelAdmin):
-    list_display = ["created_at", "ip_address", "filter_result", "tokens_used", "user", "short_message"]
+    list_display = [
+        "created_at",
+        "ip_address",
+        "filter_result",
+        "tokens_used",
+        "prompt_tokens",
+        "completion_tokens",
+        "rounds",
+        "user",
+        "short_message",
+    ]
     list_filter = ["filter_result", "created_at"]
     search_fields = ["ip_address", "session_key", "message"]
     readonly_fields = [
@@ -1477,6 +1487,9 @@ class ChatUsageAdmin(ReadOnlyAdminMixin, ModelAdmin):
         "message",
         "filter_result",
         "tokens_used",
+        "prompt_tokens",
+        "completion_tokens",
+        "rounds",
         "created_at",
     ]
     ordering = ["-created_at"]

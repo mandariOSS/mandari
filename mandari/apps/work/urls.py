@@ -57,6 +57,11 @@ urlpatterns = [
         dashboard_views.DashboardView.as_view(),
         name="dashboard_explicit",
     ),
+    path(
+        "<slug:org_slug>/start/hinweis/zwei-faktor-spaeter/",
+        dashboard_views.ZweiFaktorHinweisSpaeterView.as_view(),
+        name="two_factor_hint_later",
+    ),
     # Meetings (OParl meeting preparation)
     path("<slug:org_slug>/meetings/", meetings_views.MeetingListView.as_view(), name="meetings"),
     path(

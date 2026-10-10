@@ -151,6 +151,12 @@ x-app-environment: &app-environment
   # Streaming-Anbieter, kein Zeitplan; an = Dienst worker-live bedient die Warteschlange live
   LIVE_UEBERTRAGUNG_AKTIV: ${LIVE_UEBERTRAGUNG_AKTIV:-false}
   LIVE_PROTOKOLL_TAGE: ${LIVE_PROTOKOLL_TAGE:-90}
+  # KI-Assistent im Bürgerportal (docs/INSIGHT_KI_ASSISTENT.md): Werkzeugrunden und Zeitlimit je Antwort,
+  # Tagesobergrenze aller Antworten zusammen (Kostenbremse)
+  INSIGHT_CHAT_MAX_TOOL_ROUNDS: ${INSIGHT_CHAT_MAX_TOOL_ROUNDS:-4}
+  INSIGHT_CHAT_TIME_LIMIT_SECONDS: ${INSIGHT_CHAT_TIME_LIMIT_SECONDS:-90}
+  INSIGHT_CHAT_DAILY_MAX_CALLS: ${INSIGHT_CHAT_DAILY_MAX_CALLS:-500}
+  INSIGHT_CHAT_DAILY_MAX_TOKENS: ${INSIGHT_CHAT_DAILY_MAX_TOKENS:-1000000}
   # „Worker lebt“ an die Statusseite (docs/MONITORING.md, „Worker“); leer = keine Meldung
   WORKER_PUSH_URL: ${WORKER_PUSH_URL:-}
   WORKER_PUSH_TOKEN: ${WORKER_PUSH_TOKEN:-}

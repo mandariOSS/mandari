@@ -726,6 +726,15 @@ from mandari_dokumente.ki_hosts import erlaubte_hosts_aus_umgebung
 
 KI_ERLAUBTE_HOSTS = list(erlaubte_hosts_aus_umgebung())
 
+# KI-Assistent in Insight (Issue #899): höchstens so viele Runden mit Werkzeugen je Antwort und so viele Sekunden
+# je Antwort. Anbieter und Modell kommen aus den KI-Einstellungen (Bürgerportal-Modell, Ausweichmodell).
+INSIGHT_CHAT_MAX_TOOL_ROUNDS = int(os.environ.get("INSIGHT_CHAT_MAX_TOOL_ROUNDS", "4"))
+INSIGHT_CHAT_TIME_LIMIT_SECONDS = int(os.environ.get("INSIGHT_CHAT_TIME_LIMIT_SECONDS", "90"))
+# Kostenbremse: Tagesobergrenze aller Antworten des KI-Assistenten zusammen (Modellaufrufe und Token aus den
+# Chat-Nutzungen seit Mitternacht). Ist eine erreicht, fragt der Assistent den Anbieter bis zum nächsten Tag nicht.
+INSIGHT_CHAT_DAILY_MAX_CALLS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_CALLS", "500"))
+INSIGHT_CHAT_DAILY_MAX_TOKENS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_TOKENS", "1000000"))
+
 # Mistral-kompatible Texterkennung (optional): nur mit Schlüssel UND Basis-URL, deren Host in KI_ERLAUBTE_HOSTS
 # steht; sonst bleibt die Texterkennung lokal (pypdf, Tesseract). Nur für öffentliche RIS-Dateien.
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")

@@ -124,6 +124,7 @@ WATCHED_APPS = frozenset({"accounts", "common", "insight_core", "session", "tena
 SELBSTBEDIENUNG: dict[str, str] = {
     "profile": "eigenes Profil (Name, Telefon, Profilbild, Kalender-Feed)",
     "security": "eigene Kontosicherheit (Passwort, 2FA, Sitzungen)",
+    "two_factor_hint_later": "Empfehlung zum zweiten Faktor auf Start zurückstellen (eigenes Konto)",
     "profile_notifications": "eigene Benachrichtigungseinstellungen",
     "notification_preferences": "Weiterleitung zu den eigenen Benachrichtigungseinstellungen",
     "notifications_mark_all_read": "eigene Benachrichtigungen als gelesen markieren",
@@ -921,6 +922,7 @@ CASES: list[Case] = [
     Case("notification_preferences"),
     Case("notifications_mark_all_read"),
     Case("notification_mark_read", path={"notification_id": "notification"}, same_org=True),
+    Case("two_factor_hint_later"),
     Case("profile", "update_profile", data={"action": "update_profile", "first_name": "Erika", "last_name": "Muster"}),
     Case("profile", "remove_avatar", data={"action": "remove_avatar"}),
     Case("profile", "regenerate_calendar_feed", data={"action": "regenerate_calendar_feed"}),

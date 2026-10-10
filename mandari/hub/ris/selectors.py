@@ -21,13 +21,14 @@ und ``insight_core``; die Zahl darf nur sinken.
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import Exists, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 
 from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
@@ -446,3 +447,299 @@ def locations(bodies: Bodies) -> QuerySet[OParlLocation]:
 def files(bodies: Bodies) -> QuerySet[OParlFile]:
     """Dateien der Kommunen."""
     return OParlFile.objects.filter(body__in=bodies)
+
+
+# =============================================================================
+# Öffentlicher Bestand für den KI-Assistenten und offene Schnittstellen (Issue #899)
+# =============================================================================
+#
+# Diese Abfragen liefern nur, was das Bürgerportal öffentlich zeigt, und eher weniger: keine gelöschten oder
+# zurückgenommenen Einträge, keine Dateien, die die Kommune entfernt hat. Nichtöffentliche Tagesordnungspunkte
+# erscheinen nur als Nummer mit Kennzeichen; Name, Ergebnis und Beschlusstext bleiben leer.
+
+
+def public_body(body_id: object) -> OParlBody | None:
+    """Eine nicht gelöschte Kommune; ``None`` bei ungültiger oder unbekannter Kennung."""
+    pk = _uuid(body_id)
+    return OParlBody.objects.filter(pk=pk, deleted=False).first() if pk else None
+
+
+def public_meetings_between(
+    bodies: Bodies, start: datetime, end: datetime, *, organizations: Organizations | None = None
+) -> QuerySet[OParlMeeting]:
+    """
+    Nicht gelöschte Sitzungen der Kommunen mit Beginn zwischen ``start`` und ``end`` (beide einschließlich), nach
+    Beginn sortiert, mit vorgeladenen Gremien. Abgesagte Sitzungen bleiben drin (der Aufrufer kennzeichnet sie);
+    mit ``organizations`` nur Sitzungen, an denen eines der Gremien beteiligt ist.
+    """
+    found = meetings(bodies).filter(deleted=False, start__gte=start, start__lte=end)
+    if organizations is not None:
+        found = found.filter(organizations__in=list(organizations)).distinct()
+    return found.prefetch_related("organizations").order_by("start")
+
+
+def public_meeting(bodies: Bodies, meeting_id: object) -> OParlMeeting | None:
+    """Eine nicht gelöschte Sitzung der Kommunen mit vorgeladenen Gremien; sonst ``None``."""
+    pk = _uuid(meeting_id)
+    if pk is None:
+        return None
+    return meetings(bodies).filter(pk=pk, deleted=False).prefetch_related("organizations").first()
+
+
+def _natural_key(number: str | None) -> list[tuple[int, int | str]]:
+    """Sortierschlüssel für TOP-Nummern: 1, 2, 10 statt 1, 10, 2."""
+    return [
+        (0, int(part)) if part.isdigit() else (1, part.lower()) for part in re.split(r"(\d+)", number or "999") if part
+    ]
+
+
+@dataclass(frozen=True)
+class AgendaEntry:
+    """Tagesordnungspunkt mit den darunter beratenen öffentlichen Vorlagen."""
+
+    item: OParlAgendaItem
+    papers: list[OParlPaper]
+
+
+def public_agenda(meeting: OParlMeeting) -> list[AgendaEntry]:
+    """
+    Tagesordnung einer Sitzung ohne gelöschte Punkte, in natürlicher Reihenfolge der Nummern; je Punkt die
+    Vorlagen ohne zurückgenommene Beratungen und ohne gelöschte Vorlagen. Zwei Abfragen.
+    """
+    items = list(OParlAgendaItem.objects.filter(meeting=meeting, deleted=False))
+    items.sort(key=lambda item: (item.order is None, item.order or 0, _natural_key(item.number)))
+    by_item: dict[str, list[OParlPaper]] = {}
+    if items:
+        consultations = (
+            OParlConsultation.objects.filter(
+                agenda_item_external_id__in=[item.external_id for item in items],
+                paper__isnull=False,
+                paper__deleted=False,
+            )
+            .exclude(withdrawn_q())
+            .select_related("paper")
+        )
+        for consultation in consultations:
+            if consultation.paper is not None and consultation.agenda_item_external_id:
+                found = by_item.setdefault(consultation.agenda_item_external_id, [])
+                if consultation.paper not in found:
+                    found.append(consultation.paper)
+    return [AgendaEntry(item=item, papers=by_item.get(item.external_id, [])) for item in items]
+
+
+def public_papers(bodies: Bodies) -> QuerySet[OParlPaper]:
+    """Nicht gelöschte Vorlagen der Kommunen."""
+    return papers(bodies).filter(deleted=False)
+
+
+def public_paper(bodies: Bodies, paper_id: object) -> OParlPaper | None:
+    """Eine nicht gelöschte Vorlage der Kommunen; sonst ``None``."""
+    pk = _uuid(paper_id)
+    return public_papers(bodies).filter(pk=pk).first() if pk else None
+
+
+def public_papers_by_ids(bodies: Bodies, paper_ids: Iterable[object]) -> dict[uuid.UUID, OParlPaper]:
+    """Nicht gelöschte Vorlagen der Kommunen zu Kennungen (etwa Treffer der Suche); unbekannte fehlen."""
+    ids = [pk for pk in (_uuid(value) for value in paper_ids) if pk is not None]
+    if not ids:
+        return {}
+    return {paper.pk: paper for paper in public_papers(bodies).filter(pk__in=ids)}
+
+
+def public_papers_by_reference(bodies: Bodies, reference: str) -> QuerySet[OParlPaper]:
+    """Nicht gelöschte Vorlagen mit genau dieser Drucksachennummer (ohne Groß-/Kleinschreibung), neueste zuerst."""
+    reference = reference.strip()
+    if not reference:
+        return public_papers(bodies).none()
+    return public_papers(bodies).filter(reference__iexact=reference).order_by("-date", "-oparl_created")
+
+
+def search_public_papers(
+    bodies: Bodies,
+    text: str,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    organizations: Organizations | None = None,
+) -> QuerySet[OParlPaper]:
+    """
+    Nicht gelöschte Vorlagen, deren Name oder Drucksachennummer jedes Wort aus ``text`` enthält, neueste zuerst.
+
+    Datenbank-Rückfall, wenn die Volltextsuche nicht antwortet. Wahlweise mit Datum der Vorlage im Zeitraum und
+    beraten in einer Sitzung eines der Gremien (ohne zurückgenommene Beratungen).
+    """
+    found = public_papers(bodies)
+    for word in text.split()[:8]:
+        found = found.filter(Q(name__icontains=word) | Q(reference__icontains=word))
+    if date_from is not None:
+        found = found.filter(date__gte=date_from)
+    if date_to is not None:
+        found = found.filter(date__lte=date_to)
+    if organizations is not None:
+        sitzungen = OParlMeeting.objects.filter(organizations__in=list(organizations)).values("external_id")
+        beraten = OParlConsultation.objects.filter(paper=OuterRef("pk"), meeting_external_id__in=sitzungen).exclude(
+            withdrawn_q()
+        )
+        found = found.filter(Exists(beraten))
+    return found.order_by("-date", "-oparl_created")
+
+
+@dataclass(frozen=True)
+class ConsultationStep:
+    """
+    Eine Beratung im Verlauf einer Vorlage, nur mit öffentlichen Angaben: Bei einem nichtöffentlichen
+    Tagesordnungspunkt bleiben Ergebnis und Beschlusstext leer.
+    """
+
+    meeting_id: uuid.UUID | None
+    date: datetime | None
+    cancelled: bool
+    organization_name: str | None
+    agenda_number: str | None
+    public: bool
+    result: str | None
+    resolution_text: str | None
+    role: str | None
+    authoritative: bool
+
+
+def public_consultation_history(paper_ids: Iterable[object]) -> dict[uuid.UUID, list[ConsultationStep]]:
+    """
+    Beratungsverlauf je Vorlage (ohne zurückgenommene Beratungen, ohne gelöschte Sitzungen und Punkte),
+    chronologisch, Beratungen ohne Termin zuletzt. Eine Abfrage für alle Vorlagen.
+    """
+    ids = [pk for pk in (_uuid(value) for value in paper_ids) if pk is not None]
+    if not ids:
+        return {}
+    sitzungen = OParlMeeting.objects.filter(external_id=OuterRef("meeting_external_id"), deleted=False)
+    punkte = OParlAgendaItem.objects.filter(
+        external_id=OuterRef("agenda_item_external_id"), deleted=False, meeting__deleted=False
+    )
+    rows = (
+        OParlConsultation.objects.filter(paper_id__in=ids)
+        .exclude(withdrawn_q())
+        .annotate(
+            sitzung_id=Subquery(sitzungen.values("id")[:1]),
+            sitzung_beginn=Subquery(sitzungen.values("start")[:1]),
+            sitzung_abgesagt=Subquery(sitzungen.values("cancelled")[:1]),
+            sitzung_name=Subquery(sitzungen.values("name")[:1]),
+            gremium=Subquery(sitzungen.filter(organizations__name__gt="").values("organizations__name")[:1]),
+            top_nummer=Subquery(punkte.values("number")[:1]),
+            top_oeffentlich=Subquery(punkte.values("public")[:1]),
+            top_ergebnis=Subquery(punkte.values("result")[:1]),
+            top_beschluss=Subquery(punkte.values("resolution_text")[:1]),
+        )
+        .values(
+            "paper_id",
+            "role",
+            "authoritative",
+            "sitzung_id",
+            "sitzung_beginn",
+            "sitzung_abgesagt",
+            "sitzung_name",
+            "gremium",
+            "top_nummer",
+            "top_oeffentlich",
+            "top_ergebnis",
+            "top_beschluss",
+        )
+    )
+    history: dict[uuid.UUID, list[ConsultationStep]] = {}
+    for row in rows:
+        public = row["top_oeffentlich"] is not False
+        sitzung_name = row["sitzung_name"] or ""
+        history.setdefault(row["paper_id"], []).append(
+            ConsultationStep(
+                meeting_id=row["sitzung_id"],
+                date=row["sitzung_beginn"],
+                cancelled=bool(row["sitzung_abgesagt"]),
+                organization_name=row["gremium"] or (sitzung_name if sitzung_name.lower() != "sitzung" else None),
+                agenda_number=row["top_nummer"],
+                public=public,
+                result=row["top_ergebnis"] if public else None,
+                resolution_text=row["top_beschluss"] if public else None,
+                role=row["role"],
+                authoritative=bool(row["authoritative"]),
+            )
+        )
+    for steps in history.values():
+        steps.sort(key=lambda step: (step.date is None, step.date.timestamp() if step.date else 0.0))
+    return history
+
+
+def _public_files(bodies: Bodies) -> QuerySet[OParlFile]:
+    """Dateien der Kommunen, die das Bürgerportal zeigt: nicht gelöscht, in der Quelle abrufbar, Vorgang/Sitzung da."""
+    return (
+        files(bodies)
+        .filter(deleted=False, source_missing_since__isnull=True)
+        .filter(Q(paper__isnull=True) | Q(paper__deleted=False))
+        .filter(Q(meeting__isnull=True) | Q(meeting__deleted=False))
+    )
+
+
+def public_files_of_paper(paper: OParlPaper) -> QuerySet[OParlFile]:
+    """Öffentliche Dateien einer Vorlage, ohne Volltext geladen."""
+    return _public_files([paper.body_id]).filter(paper=paper).defer("text_content", "raw_json").order_by("name")
+
+
+def public_files_by_ids(bodies: Bodies, file_ids: Iterable[object]) -> dict[uuid.UUID, OParlFile]:
+    """Öffentliche Dateien der Kommunen zu Kennungen (etwa Treffer der Suche), ohne Volltext; unbekannte fehlen."""
+    ids = [pk for pk in (_uuid(value) for value in file_ids) if pk is not None]
+    if not ids:
+        return {}
+    found = _public_files(bodies).filter(pk__in=ids).defer("text_content", "raw_json").select_related("paper")
+    return {datei.pk: datei for datei in found}
+
+
+def public_file_with_text(bodies: Bodies, file_id: object) -> OParlFile | None:
+    """Eine öffentliche Datei der Kommunen samt erkanntem Text; sonst ``None``."""
+    pk = _uuid(file_id)
+    return _public_files(bodies).filter(pk=pk).defer("raw_json").select_related("paper").first() if pk else None
+
+
+def public_organizations(bodies: Bodies, text: str = "", *, on: date | None = None) -> QuerySet[OParlOrganization]:
+    """Nicht gelöschte, am Stichtag (Standard heute) bestehende Gremien der Kommunen, wahlweise mit ``text`` im Namen."""
+    found = active_organizations(bodies, on=on).filter(deleted=False)
+    if text:
+        found = found.filter(Q(name__icontains=text) | Q(short_name__icontains=text))
+    return found.order_by("name")
+
+
+def public_organizations_named(bodies: Bodies, name: str) -> list[OParlOrganization]:
+    """
+    Gremien zu einem Namen aus einer Frage: genau gleich (auch Kurzname, ohne Groß-/Kleinschreibung), sonst
+    höchstens zehn, deren Name ihn enthält. Bestehende Gremien zuerst, aufgelöste nur ohne Treffer.
+    """
+    name = name.strip()
+    if not name:
+        return []
+    alle = organizations(bodies).filter(deleted=False)
+    for found in (active_organizations(bodies).filter(deleted=False), alle):
+        exact = list(found.filter(Q(name__iexact=name) | Q(short_name__iexact=name))[:10])
+        if exact:
+            return exact
+        partial = list(found.filter(Q(name__icontains=name) | Q(short_name__icontains=name)).order_by("name")[:10])
+        if partial:
+            return partial
+    return []
+
+
+def search_public_persons(bodies: Bodies, name: str) -> QuerySet[OParlPerson]:
+    """Nicht gelöschte Personen der Kommunen, deren Name jedes Wort aus ``name`` enthält."""
+    found = persons(bodies).filter(deleted=False)
+    for word in name.split()[:4]:
+        found = found.filter(Q(name__icontains=word) | Q(given_name__icontains=word) | Q(family_name__icontains=word))
+    return found.order_by("family_name", "name")
+
+
+def public_current_memberships(person: OParlPerson, *, on: date | None = None) -> QuerySet[OParlMembership]:
+    """Laufende Mitgliedschaften einer Person in nicht gelöschten Gremien ihrer Kommune (Stichtag Standard heute)."""
+    on = on or timezone.localdate()
+    return (
+        OParlMembership.objects.filter(person=person, deleted=False, organization__deleted=False)
+        .filter(organization__body_id=person.body_id)
+        .filter(Q(start_date__isnull=True) | Q(start_date__lte=on))
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=on))
+        .select_related("organization")
+        .order_by("organization__name")
+    )

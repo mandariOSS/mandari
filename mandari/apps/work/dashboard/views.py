@@ -5,12 +5,15 @@ Dashboard views for the Work module.
 
 from typing import Any
 
+from django.http import HttpResponse
+from django.shortcuts import redirect
 from django.utils import timezone
+from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.work.dashboard import selectors
-from apps.work.dashboard.hinweise import hinweis_fuer_start
+from apps.work.dashboard.hinweise import hinweis_fuer_start, zwei_faktor_spaeter
 from apps.work.organization.selectors import my_committees
 from apps.work.rahmen import neues_design
 
@@ -239,3 +242,17 @@ class DashboardView(WorkViewMixin, TemplateView):
             ).distinct()
 
         return queryset.select_related("author__user").order_by("-updated_at")[:5]
+
+
+class ZweiFaktorHinweisSpaeterView(WorkViewMixin, View):
+    """„Später“ im Hinweisband: Empfehlung zum zweiten Faktor zurückstellen (nur das eigene Konto)."""
+
+    permission_required = None
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        zwei_faktor_spaeter(request.user)
+        if self.is_htmx:
+            # Leere Antwort: das Band entfernt sich selbst (hx-swap="delete")
+            return HttpResponse("")
+        return redirect("work:dashboard", org_slug=self.organization.slug)

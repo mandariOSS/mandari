@@ -4,11 +4,15 @@ Richtlinie für den zweiten Faktor und Netzbeschränkung des Django-Admins.
 
 Ein zweiter Faktor ist Pflicht für
 - Superuser und Staff (Plattform-Administration),
-- Work: Mitglieder mit Administrator-Rolle oder einer Rolle mit „2FA erforderlich"
-  sowie alle Mitglieder einer Organisation mit „2FA für alle Mitglieder",
+- Work: die Administration und alle Mitglieder, die Mitglieder, Rollen, Einstellungen oder API-Zugänge
+  verwalten dürfen (``WORK_VERWALTUNGSRECHTE``, wirksam aus Rollen und Einzelrechten abzüglich verweigerter
+  Rechte), Mitglieder mit einer Rolle mit „2FA erforderlich" sowie alle Mitglieder einer Organisation mit
+  „2FA für alle Mitglieder",
 - Session: Nutzer mit Administrator-, Benutzer-, Einstellungs- oder Protokollrechten, Mitglieder einer
   Leitstelle (Mandantengruppe, Issue #317) sowie alle
   Nutzer eines Mandanten mit „2FA für alle Nutzer".
+
+Allen übrigen Konten ohne zweiten Faktor empfiehlt Work ihn auf Start (``two_factor_recommended``).
 
 Durchgesetzt wird nur bei ``TWO_FACTOR_ENFORCEMENT`` (Produktion); gemeinsam
 genutzte Demo-Zugänge (``TWO_FACTOR_EXEMPT_EMAIL_DOMAINS``) sind ausgenommen.
@@ -18,7 +22,7 @@ from __future__ import annotations
 
 import ipaddress
 from functools import lru_cache
-from typing import Any
+from typing import Any, cast
 
 from django.conf import settings
 from django.db.models import Q
@@ -28,6 +32,19 @@ from django.http import HttpRequest
 POLICY_CACHE_SESSION_KEY = "auth_2fa_policy"
 
 IPNetwork = ipaddress.IPv4Network | ipaddress.IPv6Network
+
+#: Work: Rechte, mit denen jemand Mitglieder, Rollen, Einstellungen oder API-Zugänge der Organisation verwaltet.
+#: Wer eines davon wirksam hat, braucht einen zweiten Faktor. Gastzugänge (``guests.*``) zählen nicht dazu.
+WORK_VERWALTUNGSRECHTE: tuple[str, ...] = (
+    "members.invite",
+    "members.edit",
+    "members.remove",
+    "members.manage_roles",
+    "organization.edit",
+    "organization.manage_roles",
+    "organization.admin",
+    "organization.api_tokens",
+)
 
 
 def _enforcement_enabled() -> bool:
@@ -56,11 +73,12 @@ def two_factor_reasons(user: Any) -> list[str]:
 
     memberships = (
         Membership.objects.filter(user=user, is_active=True, organization__is_active=True)
-        .filter(Q(roles__is_admin=True) | Q(roles__require_2fa=True) | Q(organization__require_2fa=True))
         .select_related("organization")
-        .distinct()
+        .prefetch_related("roles__permissions", "individual_permissions", "denied_permissions")
     )
-    reasons.extend(f"Organisation {membership.organization.name}" for membership in memberships)
+    reasons.extend(
+        f"Organisation {membership.organization.name}" for membership in memberships if _work_pflicht(membership)
+    )
 
     from apps.session.models import SessionUser
 
@@ -91,9 +109,41 @@ def two_factor_reasons(user: Any) -> list[str]:
     return list(dict.fromkeys(reasons))
 
 
+def verwaltet_organisation(membership: Any) -> bool:
+    """True, wenn die Mitgliedschaft zur Administration gehört oder eines der ``WORK_VERWALTUNGSRECHTE`` hat.
+
+    Maßgeblich sind die wirksamen Rechte wie bei jeder Berechtigungsprüfung in Work: Rechte der Rollen und
+    Einzelrechte, abzüglich verweigerter Rechte (``PermissionChecker``). Eine Administrator-Rolle zählt immer.
+    """
+    from apps.common.permissions import PermissionChecker
+
+    checker = cast(Any, PermissionChecker)(membership)
+    return bool(checker.is_admin() or checker.has_any_permission(list(WORK_VERWALTUNGSRECHTE)))
+
+
+def _work_pflicht(membership: Any) -> bool:
+    if membership.organization.require_2fa:
+        return True
+    if any(role.require_2fa for role in membership.roles.all()):
+        return True
+    return verwaltet_organisation(membership)
+
+
 def two_factor_required(user: Any) -> bool:
     """True, wenn das Konto einen zweiten Faktor verwenden muss."""
     return bool(two_factor_reasons(user))
+
+
+def two_factor_recommended(user: Any) -> bool:
+    """True, wenn Work dem Konto einen zweiten Faktor empfiehlt: angemeldet, nicht ausgenommen, noch keiner da.
+
+    Gilt für alle Konten ohne zweiten Faktor, auch für Pflichtkonten (die Pflicht setzt die Middleware durch).
+    """
+    if not getattr(user, "is_authenticated", False) or not _enforcement_enabled() or _is_exempt(user):
+        return False
+    from .services import TwoFactorService
+
+    return not TwoFactorService().is_2fa_enabled(user)
 
 
 def security_key_required(user: Any) -> bool:

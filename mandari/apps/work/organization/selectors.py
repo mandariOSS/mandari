@@ -17,7 +17,7 @@ from django.db.models import Count, Q, QuerySet
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
-from apps.accounts.models import EmailVerificationToken, User, UserSession
+from apps.accounts.models import EmailVerificationToken, TwoFactorDevice, User, UserSession
 from apps.tenants.models import (
     AdministrationContact,
     CouncilParty,
@@ -176,6 +176,29 @@ def active_members(organization: Organization) -> QuerySet[Membership]:
         .select_related("user")
         .prefetch_related("roles")
         .order_by("user__first_name", "user__last_name")
+    )
+
+
+def may_see_two_factor_status(membership: Membership | None) -> bool:
+    """Darf das Mitglied in der Mitgliederliste sehen, wer einen zweiten Faktor hat?
+
+    Nur die Administration und wer die Organisationseinstellungen bearbeitet (``organization.edit``), nicht schon
+    ``members.view_details``: Eine Liste der Konten ohne zweiten Faktor taugt sonst als Zielliste.
+    """
+    checker = permission_checker(membership)
+    return bool(checker.is_admin() or checker.has_permission("organization.edit"))
+
+
+def two_factor_user_ids(organization: Organization) -> set[Any]:
+    """Konten der aktiven Mitglieder (ohne Gäste), die einen bestätigten, aktiven zweiten Faktor haben."""
+    return set(
+        TwoFactorDevice.objects.filter(
+            is_confirmed=True,
+            is_active=True,
+            user__memberships__organization=organization,
+            user__memberships__is_active=True,
+            user__memberships__is_guest=False,
+        ).values_list("user_id", flat=True)
     )
 
 
