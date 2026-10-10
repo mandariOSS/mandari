@@ -1543,7 +1543,7 @@ export const documentEditor = defineComponent(() => {
     sendMessage(): void {
       if (!this.userMessage.trim() || this.aiLoading) return
       const msg = this.userMessage.trim()
-      this.chatMessages.push({ role: 'user', content: msg })
+      this.chatMessages.push({ role: 'user', content: escapeHtml(msg) })
       this.userMessage = ''
       void this.aiAction('chat', msg)
     },
