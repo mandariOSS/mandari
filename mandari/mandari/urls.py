@@ -21,6 +21,7 @@ from apps.session.api.v1.api import api as session_api_v1
 from apps.session.views.invitation_responses import InvitationResponseView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
+from insight_ai.mcp import endpoint as mcp_endpoint
 from insight_core.admin_monitoring import monitoring_view
 from mandari import pwa
 from mandari.media import serve_media
@@ -114,6 +115,10 @@ urlpatterns = [
         PersonalCalendarFeedView.as_view(),
         name="personal_calendar_feed",
     ),
+    # Öffentlicher, nur lesender MCP-Server für KI-Werkzeuge (Issue #899); Standard aus (INSIGHT_MCP_ENABLED).
+    # Unter /insight/, damit der Reverse-Proxy ihn ohne eigene Regel an die Anwendung gibt.
+    path("insight/mcp", mcp_endpoint, name="insight_mcp"),
+    path("insight/mcp/", mcp_endpoint),
     # Insight Core (RIS Portal, public protocols, body sitemaps)
     path("", include("insight_core.urls")),
 ]

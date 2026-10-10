@@ -742,6 +742,17 @@ INSIGHT_CHAT_TIME_LIMIT_SECONDS = int(os.environ.get("INSIGHT_CHAT_TIME_LIMIT_SE
 # Chat-Nutzungen seit Mitternacht). Ist eine erreicht, fragt der Assistent den Anbieter bis zum nächsten Tag nicht.
 INSIGHT_CHAT_DAILY_MAX_CALLS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_CALLS", "500"))
 INSIGHT_CHAT_DAILY_MAX_TOKENS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_TOKENS", "1000000"))
+# Öffentlicher, nur lesender MCP-Server unter /insight/mcp (Issue #899, docs/INSIGHT_MCP.md). Standard aus; die
+# Freischaltung entscheidet der Betrieb. Grenzen je Adresse und Minute (alle Anfragen), je Adresse und Tag
+# (Werkzeugaufrufe) und insgesamt je Minute; 0 schaltet eine Grenze ab. INSIGHT_MCP_ALLOWED_ORIGINS: weitere Hosts,
+# deren Browser-Clients (Kopfzeile Origin) zugreifen dürfen, kommagetrennt; ALLOWED_HOSTS gelten immer.
+INSIGHT_MCP_ENABLED = os.environ.get("INSIGHT_MCP_ENABLED", "false").lower() in ("true", "1", "yes")
+INSIGHT_MCP_PER_IP_MINUTE = int(os.environ.get("INSIGHT_MCP_PER_IP_MINUTE", "30"))
+INSIGHT_MCP_PER_IP_DAY = int(os.environ.get("INSIGHT_MCP_PER_IP_DAY", "500"))
+INSIGHT_MCP_PER_MINUTE = int(os.environ.get("INSIGHT_MCP_PER_MINUTE", "300"))
+INSIGHT_MCP_ALLOWED_ORIGINS = [
+    host.strip() for host in os.environ.get("INSIGHT_MCP_ALLOWED_ORIGINS", "").split(",") if host.strip()
+]
 
 # Mistral-kompatible Texterkennung (optional): nur mit Schlüssel UND Basis-URL, deren Host in KI_ERLAUBTE_HOSTS
 # steht; sonst bleibt die Texterkennung lokal (pypdf, Tesseract). Nur für öffentliche RIS-Dateien.

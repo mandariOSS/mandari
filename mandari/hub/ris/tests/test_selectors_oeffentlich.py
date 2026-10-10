@@ -9,7 +9,7 @@ import pytest
 
 from hub.ris import selectors as ris
 from insight_ai.tests.musterstadt import JETZT, Musterstadt, baue_musterstadt, kennung, zeit
-from insight_core.models import OParlAgendaItem, OParlMeeting, OParlOrganization
+from insight_core.models import OParlAgendaItem, OParlBody, OParlMeeting, OParlOrganization
 
 pytestmark = pytest.mark.django_db
 
@@ -126,3 +126,15 @@ def test_kommune(stadt: Musterstadt) -> None:
     assert ris.public_body("keine-kennung") is None
     stadt.fremd.mark_deleted()
     assert ris.public_body(stadt.fremd.pk) is None
+
+
+def test_gelistete_kommunen(stadt: Musterstadt) -> None:
+    OParlBody.objects.filter(pk=stadt.body.pk).update(slug="musterstadt")
+    OParlBody.objects.filter(pk=stadt.fremd.pk).update(slug="nachbarort", is_listed=False)
+    assert [b.slug for b in ris.listed_bodies()] == ["musterstadt"]
+    assert [b.slug for b in ris.listed_bodies("muster")] == ["musterstadt"]
+    assert ris.listed_body("Musterstadt") == stadt.body
+    assert ris.listed_body(str(stadt.body.pk)) == stadt.body
+    assert ris.listed_body("nachbarort") is None
+    assert ris.listed_body(str(stadt.fremd.pk)) is None
+    assert ris.listed_body("  ") is None
