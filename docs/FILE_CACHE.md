@@ -161,10 +161,10 @@ Vorschau „wird geladen“ (HTTP 503, `Retry-After: 15`), der Löschabgleich ü
 - **Befehl `dokumentkette`:** `freigeben <quelle> [--code html|robots]` reiht verweigerte Abrufe einer Quelle neu
   ein; `zuruecksetzen` bereitet einen Rückfall auf ein älteres Image vor (siehe unten); `umschalten` setzt die
   Stichtage der Ablage ([Ablage für alle Quellen](#ablage-für-alle-quellen-stichtag)).
-- **Rückfall auf ein älteres Image** (ohne Rückbau der Migration `insight_core.0057`): vorher
+- **Rückfall auf ein älteres Image** (ohne Rückbau der Migration `insight_core.0059`): vorher
   `python manage.py dokumentkette zuruecksetzen` ausführen. Es setzt `retry` und `fetching` auf `none` und `refused`
   zurück auf `error` mit dem Fehlertext, an dem ein älteres Image die Sperre erkennt (robots.txt-Präfix bzw. „HTML
-  statt Datei“); idempotent, es ändern sich nur Zustandsspalten. Die Migration `insight_core.0057` hat denselben
+  statt Datei“); idempotent, es ändern sich nur Zustandsspalten. Die Migration `insight_core.0059` hat denselben
   Rückweg.
 
 ### Ablage für alle Quellen (Stichtag)

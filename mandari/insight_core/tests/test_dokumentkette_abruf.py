@@ -29,9 +29,9 @@ from insight_core.services import file_cache, file_reconcile, file_store, safe_f
 
 PDF = b"%PDF-1.4 Vorlage " + b"y" * 64
 WORKER = override_settings(TEXT_EXTRACTION_RUNNER="worker")
-MIGRATION = importlib.import_module("insight_core.migrations.0057_dokumentkette_abruf")
-VORHER = ("insight_core", "0056_dokumentcache_grenze")
-NACHHER = ("insight_core", "0057_dokumentkette_abruf")
+MIGRATION = importlib.import_module("insight_core.migrations.0059_dokumentkette_abruf")
+VORHER = ("insight_core", "0058_chatnutzung_verbrauch")
+NACHHER = ("insight_core", "0059_dokumentkette_abruf")
 
 
 @pytest.fixture(autouse=True)
@@ -303,7 +303,7 @@ def test_aufraeumen_laesst_ablegende_ausgeblendete_kommunen_stehen() -> None:
 
 
 # =============================================================================
-# Datenmigration (insight_core 0057)
+# Datenmigration (insight_core 0059)
 # =============================================================================
 
 

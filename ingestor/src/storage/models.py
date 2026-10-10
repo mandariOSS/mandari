@@ -442,7 +442,7 @@ class OParlFile(Base):
     # Nur Standard der Datenbank: Upserts und ältere Ingestor-Images schreiben die Spalten nie.
     text_extraction_attempts: Mapped[int] = mapped_column(Integer, server_default="0")
     text_extraction_started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    # Herkunft des Texts (Django, Issue #919, Migration insight_core 0057): Inhalt (SHA-256) und Version der
+    # Herkunft des Texts (Django, Issue #919, Migration insight_core 0059): Inhalt (SHA-256) und Version der
     # Texterkennung. Schreibt nur der Auftrag file.extract_text der Anwendung.
     text_source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     text_extraction_version: Mapped[str | None] = mapped_column(String(40), nullable=True)

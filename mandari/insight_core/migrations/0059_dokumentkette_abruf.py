@@ -11,7 +11,7 @@ Spalten (alle Spalten der Welle in einer Migration):
 - ``local_status`` bekommt die Zustände ``fetching``, ``retry`` und ``refused`` (nur Auswahlliste, keine Änderung
   in der Datenbank); ``evicted`` aus ``0056_dokumentcache_grenze`` (Obergrenze des Dokument-Caches, #961) bleibt.
 
-Nummer 0057: hängt an ``0056_dokumentcache_grenze`` (#971, geht zuerst nach ``dev``).
+Nummer 0059: hängt an ``0058_chatnutzung_verbrauch`` (#904); ``0056_dokumentcache_grenze`` (#971) und ``0058`` kamen zuerst nach ``dev``.
 
 Abwärtskompatibel: Ingestor-INSERTs und ein älteres Image kennen die Spalten nicht und schreiben sie nie; in
 PostgreSQL ohne Umschreiben der Tabelle (konstante Standardwerte).
@@ -48,7 +48,7 @@ def zuruecksetzen(apps, schema_editor):
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("insight_core", "0056_dokumentcache_grenze"),
+        ("insight_core", "0058_chatnutzung_verbrauch"),
     ]
 
     operations = [

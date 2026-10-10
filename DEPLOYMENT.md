@@ -210,11 +210,11 @@ sh deploy/scripts/deploy.sh rollback v0.11.0  # bestimmte Version
 ./backup.sh --restore <Sicherungsdatei>       # Daten aus einer Sicherung zurückspielen
 ```
 
-Zurück auf ein Image vor der Dokumentkette (Migration `insight_core.0057`, Issue #919): **vorher** mit dem
+Zurück auf ein Image vor der Dokumentkette (Migration `insight_core.0059`, Issue #919): **vorher** mit dem
 laufenden Image `docker exec mandari python manage.py dokumentkette zuruecksetzen` ausführen (idempotent, nur
 Zustandsspalten). Ein älteres Image kennt die Zustände `retry`, `fetching` und `refused` nicht; danach stehen sie
 wieder als `none` bzw. `error` da (`docs/FILE_CACHE.md`, „Zustände des Abrufs“). Verdrängte Dokumente (`evicted`,
-Obergrenze #961, Migration `insight_core.0056`) bleiben verdrängt; ein Image mit `0056`, aber ohne `0057` kennt den
+Obergrenze #961, Migration `insight_core.0056`) bleiben verdrängt; ein Image mit `0056`, aber ohne `0059` kennt den
 Zustand.
 
 ### Datenbank-Migration
