@@ -1,19 +1,29 @@
-# Migrations-Job: einmalig nach dem ersten Apply und nach jedem Update ausführen.
-# Vorher ggf. löschen: kubectl -n mandari delete job mandari-migrate
+# =============================================================================
+# mandari – Migrations-Job (ohne Helm)
+# =============================================================================
+# ERZEUGT aus dem Helm-Chart, nicht von Hand ändern: python deploy/kubernetes/manifeste_erzeugen.py
+#
+# Nach dem ersten Apply und nach jedem Update ausführen; vorher den alten Job entfernen
+# (fertige Jobs löscht Kubernetes nach einem Tag selbst):
+#   kubectl -n mandari delete job mandari-migrate --ignore-not-found
+#   kubectl -n mandari apply -f deploy/kubernetes/manifests/job-migrate.yaml
+# Ohne Helm gibt es nur diesen einen Schritt (migrate). Das Chart migriert bei Upgrades in zwei
+# Schritten (safemigrate vor, migrate nach dem Ausrollen) wie update.sh.
+# =============================================================================
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: mandari-migrate
   labels:
-    helm.sh/chart: mandari-1.0.0
+    helm.sh/chart: mandari-1.1.0
     app.kubernetes.io/name: mandari
     app.kubernetes.io/instance: mandari
     app.kubernetes.io/version: "latest"
     app.kubernetes.io/managed-by: Helm
     app.kubernetes.io/component: migrate
-  annotations:
 spec:
   backoffLimit: 2
+  ttlSecondsAfterFinished: 86400
   template:
     metadata:
       labels:
@@ -30,19 +40,24 @@ spec:
       initContainers:
         - name: wait-for-database
           image: "postgres:16-alpine"
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+              - ALL
           command:
             - sh
             - -c
             - |
               echo "Warte auf die Datenbank..."
-              for i in $(seq 1 60); do
+              for i in $(seq 1 100); do
                 if pg_isready -d "$DATABASE_URL" >/dev/null 2>&1; then
                   echo "Datenbank erreichbar."
                   exit 0
                 fi
                 sleep 3
               done
-              echo "Datenbank nach 180 Sekunden nicht erreichbar." >&2
+              echo "Datenbank nach 300 Sekunden nicht erreichbar." >&2
               exit 1
           env:
             - name: DATABASE_URL
@@ -87,6 +102,20 @@ spec:
               value: "json"
             - name: LOG_LEVEL
               value: "INFO"
+            # Schalter der Ereignistechnik je Erzeuger (Ingestor, Anwendung, Worker lesen denselben Wert)
+            - name: INGESTOR_EVENTS_ENABLED
+              value: "false"
+            - name: OPARL_CHANGES_ENABLED
+              value: "false"
+            # Aufbewahrung des Journals (manage.py events_purge, Zeitplan im Worker nur wenn eingeschaltet)
+            - name: EVENTS_JOURNAL_PURGE_ENABLED
+              value: "false"
+            - name: EVENTS_JOURNAL_RETENTION_DAYS
+              value: "90"
+            # DSGVO: nach einem redact personenbezogene Nutzlasten im Journal leeren (Auftrag im Worker)
+            - name: EVENTS_REDACT_NEUTRALIZE
+              value: "false"
+            # Mailversand: Absender und Domain für Message-ID und EHLO (leer = Domain des Absenders, sonst die von domain)
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -120,21 +149,24 @@ spec:
               value: "True"
             - name: OPARL_FILES_ROOT
               value: /app/files
-          volumeMounts:
-            - name: media
-              mountPath: /app/media
-            - name: files
-              mountPath: /app/files
+            # Dokumentablage und Texterkennung (docs/FILE_CACHE.md), für Anwendung, Worker und Ingestor gleich
+            - name: FILE_STORE_LAYOUT
+              value: "sha256"
+            - name: INGESTOR_STORES_FILES
+              value: "true"
+            - name: FILE_CACHE_MIN_FREE_GB
+              value: "15"
+            - name: TEXT_EXTRACTION_RUNNER
+              value: "ingestor"
+            # Live-Übertragungen (docs/LIVE_UEBERTRAGUNG.md); aus = keine Anfragen an Streaming-Anbieter
+            - name: LIVE_UEBERTRAGUNG_AKTIV
+              value: "false"
+            # Adressraum je Tesseract-Unterprozess (Import, Aufträge in ocr)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: "512"
           resources:
             limits:
               memory: 2Gi
             requests:
               cpu: 250m
               memory: 512Mi
-      volumes:
-        - name: media
-          persistentVolumeClaim:
-            claimName: mandari-media
-        - name: files
-          persistentVolumeClaim:
-            claimName: mandari-files

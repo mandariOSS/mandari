@@ -50,18 +50,18 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- with (include "mandari.waitForSchema" . | trim) }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
         - name: mandari
-          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/mandari:{{ .Values.image.tag }}"
+          image: {{ include "mandari.appImage" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
-            {{- include "mandari.commonEnv" . | nindent 12 }}
-            {{- range $key, $value := .Values.app.extraEnv }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
+            {{- include "mandari.appEnv" . | nindent 12 }}
           {{- if .Values.app.extraEnvFromSecret }}
           envFrom:
             - secretRef:
@@ -81,6 +81,10 @@ spec:
             httpGet:
               path: /health/live/
               port: http
+              # Der Kubelet fragt sonst mit der Pod-IP als Host an, die nicht in ALLOWED_HOSTS steht
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: 5
             failureThreshold: 60
           # Readiness prüft Datenbank, Redis, Elasticsearch und Speicher (Issue #231);
@@ -89,12 +93,19 @@ spec:
             httpGet:
               path: /health/ready/
               port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: 10
             timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /health/live/
               port: http
+              # Der Kubelet fragt sonst mit der Pod-IP als Host an, die nicht in ALLOWED_HOSTS steht
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: 20
             timeoutSeconds: 5
             failureThreshold: 3
@@ -138,6 +149,25 @@ spec:
     {{- include "mandari.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: website
 ---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mandari.fullname" . }}-website-media
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+    app.kubernetes.io/component: website
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.persistence.accessMode }}
+  {{- if .Values.website.media.className }}
+  storageClassName: {{ .Values.website.media.className | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.website.media.size }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -156,57 +186,104 @@ spec:
       labels:
         {{- include "mandari.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: website
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
     spec:
       serviceAccountName: {{ include "mandari.serviceAccountName" . }}
       {{- with .Values.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
+      # Das Image legt keinen Benutzer an: podSecurityContext (UID 1000, fsGroup 1000) macht die
+      # beiden beschreibbaren Verzeichnisse /app/staticfiles und /app/media für diese UID schreibbar.
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.migrationJob.enabled }}
+      # Das Startskript des Images migriert selbst; mit mehreren Repliken gleichzeitig. Deshalb
+      # migriert der Migrations-Job vorher, und die Pods warten, bis nichts mehr aussteht.
+      initContainers:
+        - name: wait-for-schema
+          image: {{ include "mandari.websiteImage" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - |
+              frist={{ .Values.migrationJob.waitTimeoutSeconds | int }}
+              start=$(date +%s)
+              until python manage.py migrate --check >/dev/null 2>&1; do
+                if [ $(( $(date +%s) - start )) -gt "$frist" ]; then
+                  echo "Website-Schema nach $frist s nicht bereit. Migrations-Job prüfen." >&2
+                  exit 1
+                fi
+                echo "Warte auf die Website-Migrationen ..."
+                sleep 5
+              done
+              echo "Website-Schema bereit."
+          env:
+            {{- include "mandari.websiteEnv" . | nindent 12 }}
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 512Mi
+      {{- end }}
       containers:
         - name: website
-          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/website:{{ .Values.image.tag }}"
+          image: {{ include "mandari.websiteImage" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           env:
-            - name: DEBUG
-              value: "false"
-            - name: ALLOWED_HOSTS
-              value: {{ default .Values.domain .Values.website.host | quote }}
-            - name: CSRF_TRUSTED_ORIGINS
-              value: {{ printf "https://%s" (default .Values.domain .Values.website.host) | quote }}
-            - name: SITE_URL
-              value: {{ printf "https://%s" (default .Values.domain .Values.website.host) | quote }}
-            - name: TZ
-              value: {{ .Values.timezone | quote }}
-            - name: MANDARI_API_URL
-              value: {{ printf "http://%s/api" (include "mandari.fullname" .) | quote }}
-            - name: WEBSITE_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "mandari.secretName" . }}
-                  key: website-database-url
-            - name: WEBSITE_SECRET_KEY
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "mandari.secretName" . }}
-                  key: website-secret-key
+            {{- include "mandari.websiteEnv" . | nindent 12 }}
           ports:
+            # Das Image startet gunicorn auf 8001 (docker-entrypoint.sh)
             - name: http
-              containerPort: 8000
+              containerPort: 8001
+              protocol: TCP
+          volumeMounts:
+            - name: staticfiles
+              mountPath: /app/staticfiles
+            - name: media
+              mountPath: /app/media
+          # Start: Seitenstruktur anlegen und collectstatic laufen lassen, dann gunicorn
           startupProbe:
             httpGet:
               path: /health/
               port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: 5
             failureThreshold: 60
           readinessProbe:
             httpGet:
               path: /health/
               port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
             periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/
+              port: http
+              httpHeaders:
+                - name: Host
+                  value: localhost
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.website.resources | nindent 12 }}
+      volumes:
+        - name: staticfiles
+          emptyDir: {}
+        - name: media
+          persistentVolumeClaim:
+            claimName: {{ include "mandari.fullname" . }}-website-media
 {{- end }}

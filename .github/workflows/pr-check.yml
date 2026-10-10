@@ -93,6 +93,7 @@ jobs:
       ingestor: ${{ steps.ergebnis.outputs.ingestor }}
       audit: ${{ steps.ergebnis.outputs.audit }}
       docker: ${{ steps.ergebnis.outputs.docker }}
+      kubernetes: ${{ steps.ergebnis.outputs.kubernetes }}
       codeql: ${{ steps.ergebnis.outputs.codeql }}
     steps:
       # Pull Request und Merge-Queue: Die Queue vergleicht per git mit ihrem Basisstand (merge_group.base_sha),
@@ -283,6 +284,13 @@ jobs:
               - 'mandari/vite.config.ts'
               - 'mandari/tsconfig.json'
               - 'mandari/tailwind.config.js'
+            # Helm-Chart, Roh-Manifeste und Installer (Issue #963); Compose und Dockerfiles, weil das Chart
+            # deren Dienste, Befehle und Ports nachbildet
+            kubernetes:
+              - 'deploy/kubernetes/**'
+              - 'install-k8s.sh'
+              - 'docker-compose.yml'
+              - '**/Dockerfile'
             codeql_python:
               - '**/*.py'
             codeql_js:
@@ -374,7 +382,7 @@ jobs:
               wert "$1"
             fi
           }
-          for bereich in qualitaet verweise python vertrag templates frontend test migrationen journal ereignisse smoke oparl e2e ingestor audit docker; do
+          for bereich in qualitaet verweise python vertrag templates frontend test migrationen journal ereignisse smoke oparl e2e ingestor audit docker kubernetes; do
             e=$(ergebnis "$bereich")
             echo "$bereich=$e" >> "$GITHUB_OUTPUT"
             echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
@@ -1437,6 +1445,85 @@ jobs:
           cache-to: type=gha,scope=ingestor,mode=max
 
   # ===========================================================================
+  # Kubernetes: Helm-Chart, Roh-Manifeste und Installer statisch prüfen (Issue #963)
+  # ===========================================================================
+  # helm lint, helm template für alle drei Werte-Dateien (Installation und Upgrade mit den
+  # Migrations-Hooks), kubeconform gegen die Schemas von Kubernetes 1.31, Gleichstand der
+  # Roh-Manifeste mit dem Chart, Syntax des Installers. Kein Cluster: der Rauchtest mit k3d ist
+  # ein eigener Schritt (Issue #963, Teil 3).
+  kubernetes:
+    name: Kubernetes-Chart
+    needs: changes
+    if: needs.changes.outputs.kubernetes == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HELM_VERSION: v4.2.4
+      HELM_SHA256: c306b46f719b0a4da32d0f78ee21bf90ce8d602f15b22ab753f0674d1670a7f3
+      KUBECONFORM_VERSION: v0.7.0
+      KUBECONFORM_SHA256: c31518ddd122663b3f3aa874cfe8178cb0988de944f29c74a0b9260920d115d3
+      KUBERNETES_VERSION: 1.31.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Helm und kubeconform installieren (feste Versionen, Prüfsummen)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/bin"
+          cd "$RUNNER_TEMP"
+          curl -fsSLo helm.tgz "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz"
+          echo "${HELM_SHA256}  helm.tgz" | sha256sum -c -
+          tar -xzf helm.tgz linux-amd64/helm && mv linux-amd64/helm bin/helm
+          curl -fsSLo kubeconform.tgz "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz"
+          echo "${KUBECONFORM_SHA256}  kubeconform.tgz" | sha256sum -c -
+          tar -xzf kubeconform.tgz kubeconform && mv kubeconform bin/kubeconform
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: helm lint
+        run: |
+          set -euo pipefail
+          chart=deploy/kubernetes/helm/mandari
+          helm lint "$chart"
+          helm lint "$chart" -f "$chart/values-minimal.yaml"
+          helm lint "$chart" -f "$chart/values-production.yaml" \
+            --set externalDatabase.url=postgresql://u:p@db:5432/mandari --set externalRedis.url=redis://:p@redis:6379/0
+
+      - name: helm template und kubeconform (drei Werte-Dateien, Installation und Upgrade)
+        run: |
+          set -euo pipefail
+          chart=deploy/kubernetes/helm/mandari
+          extern=(--set externalDatabase.url=postgresql://u:p@db:5432/mandari --set externalRedis.url=redis://:p@redis:6379/0)
+          pruefen() {
+            echo "== $1"
+            kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -
+          }
+          for werte in values.yaml values-minimal.yaml values-production.yaml; do
+            for modus in "" --is-upgrade; do
+              helm template mandari "$chart" -n mandari -f "$chart/$werte" "${extern[@]}" $modus \
+                | pruefen "$werte ${modus:-(Installation)}"
+            done
+          done
+          # Website und Admin-Konto: zusätzliche Container im Migrations-Job
+          helm template mandari "$chart" -n mandari --set website.enabled=true --set website.host=www.example.org \
+            --set adminUser.email=admin@example.org --set adminUser.password=x --is-upgrade | pruefen "Website, Upgrade"
+
+      - name: Roh-Manifeste entsprechen dem Chart
+        run: |
+          set -euo pipefail
+          python3 deploy/kubernetes/manifeste_erzeugen.py --pruefen
+          kubectl kustomize deploy/kubernetes/manifests \
+            | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" -
+          kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" deploy/kubernetes/manifests/job-migrate.yaml
+
+      - name: Installer (Syntax, ShellCheck-Fehler)
+        run: |
+          bash -n install-k8s.sh
+          shellcheck -S error install-k8s.sh
+
+  # ===========================================================================
   # CodeQL (erweitertes Setup, nur für die betroffenen Sprachen)
   # ===========================================================================
   # Ersetzt das Default-Setup von GitHub, das jede Sprache in jedem Pull Request analysiert.
@@ -1498,6 +1585,7 @@ jobs:
       - ingestor-tests
       - dependency-audit
       - docker-build
+      - kubernetes
       - codeql
     runs-on: ubuntu-latest
     timeout-minutes: 5
