@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ("tenants", "0025_recht_dokumente_ehemaliger_mitglieder"),
-        ("work", "0074_sitzungsreihe_automatik"),
+        ("work", "0076_kommentar_vorschlag"),
     ]
 
     operations = [
