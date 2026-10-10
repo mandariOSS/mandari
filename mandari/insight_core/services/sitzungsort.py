@@ -55,6 +55,40 @@ def _text(wert: Any) -> str:
     return " ".join(wert.split())[:_MAX] if isinstance(wert, str) else ""
 
 
+#: Angaben der Quellen, die keinen Ort nennen, sondern sagen, dass er noch fehlt (z. B. „Noch offen“ in Darmstadt)
+PLATZHALTER = frozenset(
+    {
+        "noch offen",
+        "offen",
+        "n.n.",
+        "n. n.",
+        "nn",
+        "tbd",
+        "unbekannt",
+        "ort folgt",
+        "wird noch bekannt gegeben",
+        "wird bekannt gegeben",
+        "-",
+        "--",
+        "?",
+    }
+)
+
+
+def ist_platzhalter(text: Any) -> bool:
+    """``True`` für leere Angaben und Platzhalter wie „Noch offen“ – sie nennen keinen Ort."""
+    wert = _text(text).casefold()
+    return not wert or wert in PLATZHALTER or wert.rstrip(".!") in PLATZHALTER
+
+
+def raumname(*kandidaten: Any) -> str:
+    """Erste echte Raum- oder Gebäudeangabe; Platzhalter werden übergangen."""
+    for kandidat in kandidaten:
+        if not ist_platzhalter(kandidat):
+            return _text(kandidat)
+    return ""
+
+
 def anschrift_aus_text(text: Any, *, nur_mit_plz: bool = False) -> tuple[str, str, str]:
     """Straße, Postleitzahl und Ort aus einem Anschriftstext.
 
@@ -122,7 +156,7 @@ def ort_der_kommune(body: Any) -> str:
 def sitzungsort(meeting: Any, body: Any) -> Sitzungsort | None:
     """Ort einer Sitzung der Kommune ``body`` mit Postanschrift, ``None`` ohne Straße und ohne Ort."""
     quelle = _ort_der_quelle(meeting)
-    name = _text(meeting.location_name) or _text(quelle.get("room")) or _text(quelle.get("description"))
+    name = raumname(meeting.location_name, quelle.get("room"), quelle.get("description"))
     strasse, plz, ort = (
         _text(quelle.get("streetAddress")),
         _text(quelle.get("postalCode")),
