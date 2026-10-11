@@ -32,6 +32,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import agenda_service, agenda_template_service, participation_service, protocol_lock
 from ..visibility import meeting_q
 from .attendance import SessionAttendanceForm
@@ -398,6 +399,12 @@ class AttendanceUpdateView(SessionViewMixin, UpdateView):
     pk_url_kwarg = "attendance_id"
     permission_required = "manage_attendance"
     http_method_names = ["post"]
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944): die Zeile der Liste statt der Tabellenzeile
+        if neues_design(self.session_tenant):
+            return ["session/neu/_anwesenheit_zeile.html"]
+        return [self.template_name]
 
     def get_queryset(self):
         # Anwesenheit nichtöffentlicher Sitzungen nur mit NÖ-Sichtrecht (wie das Anlegen)

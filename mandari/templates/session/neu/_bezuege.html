@@ -1,0 +1,43 @@
+{% comment %}
+Bezüge einer Vorlage im neuen Rahmen (Issues #150, #944): Bezugsvorlage, Unternummern (Ergänzung, Neufassung, Antwort …)
+als Liste und das Anlegen einer neuen Unternummer in einer Zeile mit einem Knopf ohne Füllfarbe. Formular und Felder wie
+session/papers/_relations.html. Kontext: paper, parent_paper (nur wenn sichtbar), child_papers, relation_choices,
+can_create_papers.
+{% endcomment %}
+{% if parent_paper or child_papers or can_create_papers %}
+<c-rahmen.abschnitt titel="Bezüge" titel_id="bezuege-titel" data-testid="bezuege">
+    {% if parent_paper %}
+    <p class="mt-1 text-sm text-gray-700 dark:text-gray-300 break-words">
+        {{ paper.get_relation_type_display|default:"Bezug" }} zu
+        <c-ui.textlink href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=parent_paper.id %}" class="tabular-nums">{{ parent_paper.display_reference }}</c-ui.textlink>
+        {{ parent_paper.name|truncatechars:60 }}
+    </p>
+    {% endif %}
+    {% if child_papers %}
+    <c-rahmen.liste class="mt-2">
+        {% for child in child_papers %}
+        <li class="py-2 text-sm">
+            <c-ui.textlink href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=child.id %}" class="tabular-nums">{{ child.display_reference }}</c-ui.textlink>
+            <span class="text-gray-600 dark:text-gray-400">{{ child.get_relation_type_display }}</span>
+            <span class="block text-gray-800 dark:text-gray-200 break-words">{{ child.name|truncatechars:60 }}</span>
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+    {% elif not parent_paper %}
+    <c-rahmen.satz eng>Noch keine Unternummern.</c-rahmen.satz>
+    {% endif %}
+    {% if can_create_papers %}
+    <form method="post" action="{% url 'session:paper_child_create' tenant_slug=tenant_slug paper_id=paper.id %}" class="mt-3 flex flex-wrap items-end gap-2">
+        {% csrf_token %}
+        <c-form.select name="relation_type" id="relation_type" label="Neue Unternummer" required dicht class="min-w-0 flex-1 basis-40">
+            {% for value, label in relation_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </c-form.select>
+        {% if paper.reference %}
+        <c-ui.button type="submit" variant="secondary" size="sm">Anlegen</c-ui.button>
+        {% else %}
+        <c-ui.button type="submit" variant="secondary" size="sm" disabled title="Erst nach Vergabe der Nummer möglich">Anlegen</c-ui.button>
+        {% endif %}
+    </form>
+    {% endif %}
+</c-rahmen.abschnitt>
+{% endif %}

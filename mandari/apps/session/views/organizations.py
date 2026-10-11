@@ -32,6 +32,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import body_service, membership_service, state_law_service
 from .bodies import BodyFilterMixin
 
@@ -99,6 +100,10 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
     context_object_name = "organization"
     pk_url_kwarg = "organization_id"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/gremium.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

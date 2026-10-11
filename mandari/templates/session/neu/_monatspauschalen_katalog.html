@@ -1,0 +1,86 @@
+{% comment %}
+Katalog und Zuordnungen der monatlichen Pauschalen im neuen Rahmen (Issues #38, #944): je Pauschale eine Zeile mit
+Betrag und Rechtsgrundlage, „Bearbeiten“ klappt das Formular auf (Betrag anpassen, deaktivieren), Löschen als Knopf mit
+32 px; darunter das Anlegen. Die Erläuterung zur EntschVO NRW steht aufklappbar. Zuordnungen Person → Pauschale als
+Liste mit Entfernen und einer Zeile zum Zuordnen. Formulare und Felder wie session/allowances/monthly.html.
+{% endcomment %}
+<div class="grid gap-x-12 gap-y-10 xl:grid-cols-2">
+    <c-rahmen.abschnitt titel="Katalog" titel_id="katalog-titel" zusatz="{{ rates|length }}" data-testid="pauschalen-katalog">
+        <details class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300">
+            <summary class="cursor-pointer font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Sätze nach EntschVO NRW (Stand 2025)</summary>
+            <p class="mt-2">Die Aufwandsentschädigung wird als Vollpauschale oder als Teilpauschale und Sitzungsgeld (26,00 € je Sitzung, höchstens zwei am Tag) gezahlt, die Beträge richten sich nach der Gemeindegröße (§ 2). Funktionszulagen sind Vielfache der Vollpauschale (§ 5), etwa Fraktionsvorsitz zweifach (ab acht Mitgliedern dreifach), Ausschussvorsitz einfach, stellvertretende Bürgermeisterin oder stellvertretender Bürgermeister dreifach bzw. 1,5-fach. Die Sätze steigen seit 2025 jährlich um 2 %; bitte jeweils zum Jahreswechsel im Katalog anpassen.</p>
+        </details>
+        {% if rates %}
+        <c-rahmen.liste class="mt-2">
+            {% for rate in rates %}
+            <li class="py-2" x-data="{ bearbeiten: false }">
+                <div class="flex items-start gap-2">
+                    <div class="min-w-0 flex-1 {% if not rate.is_active %}text-gray-500 dark:text-gray-500{% endif %}">
+                        <p class="text-sm font-medium {% if rate.is_active %}text-gray-900 dark:text-white{% endif %} break-words">{{ rate.name }}<span class="font-normal tabular-nums"> · {{ rate.amount }} € im Monat</span>{% if not rate.is_active %} <span class="font-normal">(inaktiv)</span>{% endif %}</p>
+                        {% if rate.legal_basis %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ rate.legal_basis }}</p>{% endif %}
+                    </div>
+                    <span class="flex shrink-0 items-center text-gray-600 dark:text-gray-400">
+                        <c-ui.symbolknopf icon="pencil" type="button" @click="bearbeiten = !bearbeiten" ::aria-expanded="bearbeiten.toString()" aria-expanded="false" aria-controls="pauschale-{{ rate.id }}" titel="Bearbeiten (Betrag anpassen, deaktivieren)" label="{{ rate.name }} bearbeiten" />
+                        <form method="post" action="{% url 'session:monthly_rate_delete' tenant_slug=tenant_slug %}" data-confirm="Pauschale wirklich löschen?">
+                            {% csrf_token %}
+                            <input type="hidden" name="rate_id" value="{{ rate.id }}">
+                            <c-ui.symbolknopf icon="trash-2" type="submit" titel="Löschen" label="{{ rate.name }} löschen" ton="gefahr" />
+                        </form>
+                    </span>
+                </div>
+                <form id="pauschale-{{ rate.id }}" method="post" action="{% url 'session:monthly_rate_save' tenant_slug=tenant_slug %}" x-show="bearbeiten" x-cloak class="mt-2 flex flex-wrap items-end gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="rate_id" value="{{ rate.id }}">
+                    <c-form.field name="name" id="pauschale-name-{{ rate.id }}" label="Bezeichnung" value="{{ rate.name }}" maxlength="200" required dicht class="min-w-0 flex-1 basis-52" />
+                    <c-form.field name="amount" id="pauschale-betrag-{{ rate.id }}" label="€ im Monat" value="{{ rate.amount }}" required dicht class="w-28" />
+                    <c-form.field name="legal_basis" id="pauschale-grundlage-{{ rate.id }}" label="Rechtsgrundlage" value="{{ rate.legal_basis }}" maxlength="200" dicht class="min-w-0 flex-1 basis-44" />
+                    <c-form.checkbox name="is_active" id="pauschale-aktiv-{{ rate.id }}" value="1" label="Aktiv" checked="{% if rate.is_active %}1{% endif %}" class="h-9" />
+                    <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+                </form>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        {% else %}
+        <c-rahmen.satz>Noch keine Pauschalen. Legen Sie zum Beispiel „Aufwandsentschädigung (Teilpauschale)“ und „Zulage Fraktionsvorsitz“ mit den Sätzen Ihrer Hauptsatzung an.</c-rahmen.satz>
+        {% endif %}
+        <form method="post" action="{% url 'session:monthly_rate_save' tenant_slug=tenant_slug %}" class="mt-3 flex flex-wrap items-end gap-2" data-testid="pauschale-anlegen">
+            {% csrf_token %}
+            <c-form.field name="name" id="pauschale-neu-name" label="Neue Pauschale" placeholder="z. B. Aufwandsentschädigung (Teilpauschale)" required dicht class="min-w-0 flex-1 basis-56" />
+            <c-form.field name="amount" id="pauschale-neu-betrag" label="€ im Monat" placeholder="322,50" required dicht class="w-28" />
+            <c-form.field name="legal_basis" id="pauschale-neu-grundlage" label="Rechtsgrundlage" placeholder="§ 2 Abs. 1 EntschVO NRW" dicht class="min-w-0 flex-1 basis-44" />
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Hinzufügen</c-ui.button>
+        </form>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Zuordnungen" titel_id="zuordnungen-titel" zusatz="{{ assignments|length }}" data-testid="pauschalen-zuordnungen">
+        <c-rahmen.satz eng>Welche Person welche Pauschale erhält, auf Wunsch mit Zeitraum.</c-rahmen.satz>
+        {% if assignments %}
+        <c-rahmen.liste class="mt-2 max-h-96 overflow-y-auto">
+            {% for assignment in assignments %}
+            <li class="flex items-center gap-3 py-1.5 text-sm">
+                <span class="min-w-0 flex-1 break-words"><span class="font-medium text-gray-900 dark:text-white">{{ assignment.person.display_name }}</span> <span class="text-gray-600 dark:text-gray-400">· {{ assignment.rate.name }}{% if assignment.start_date or assignment.end_date %} · <span class="tabular-nums">{{ assignment.start_date|date:"d.m.Y"|default:"…" }} bis {{ assignment.end_date|date:"d.m.Y"|default:"…" }}</span>{% endif %}</span></span>
+                <form method="post" action="{% url 'session:monthly_assignment_delete' tenant_slug=tenant_slug %}" class="shrink-0 text-gray-600 dark:text-gray-400">
+                    {% csrf_token %}
+                    <input type="hidden" name="assignment_id" value="{{ assignment.id }}">
+                    <c-ui.symbolknopf icon="x" type="submit" titel="Zuordnung entfernen" label="Zuordnung {{ assignment.person.display_name }}, {{ assignment.rate.name }} entfernen" ton="gefahr" />
+                </form>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        {% else %}
+        <c-rahmen.satz>Noch keine Zuordnungen.</c-rahmen.satz>
+        {% endif %}
+        <form method="post" action="{% url 'session:monthly_assignment_save' tenant_slug=tenant_slug %}" class="mt-3 flex flex-wrap items-end gap-2" data-testid="pauschale-zuordnen">
+            {% csrf_token %}
+            <c-form.select name="person" id="zuordnung-person" label="Person" placeholder="Bitte wählen" required dicht class="min-w-0 flex-1 basis-48">
+                {% for person in persons %}<option value="{{ person.id }}">{{ person.display_name }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="rate" id="zuordnung-pauschale" label="Pauschale" placeholder="Bitte wählen" required dicht class="min-w-0 flex-1 basis-48">
+                {% for rate in rates %}{% if rate.is_active %}<option value="{{ rate.id }}">{{ rate.name }} ({{ rate.amount }} €)</option>{% endif %}{% endfor %}
+            </c-form.select>
+            <c-form.field name="start_date" id="zuordnung-von" type="date" label="Von" dicht class="w-40" />
+            <c-form.field name="end_date" id="zuordnung-bis" type="date" label="Bis" dicht class="w-40" />
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Zuordnen</c-ui.button>
+        </form>
+    </c-rahmen.abschnitt>
+</div>

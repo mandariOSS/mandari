@@ -1,0 +1,90 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Monatliche Pauschalen im neuen Rahmen (Issues #38, #944): Kopfband mit einem Satz, Weg zurück zu den Sitzungsgeldern.
+Zuerst die Abrechnung des gewählten Monats (Monat wählen, Monatslauf erzeugen, genehmigen, CSV, SEPA; Knöpfe ohne
+Füllfarbe) mit den Posten als Liste, darunter Katalog und Zuordnungen (session/neu/_monatspauschalen_katalog.html). Die
+Erläuterung zur EntschVO NRW steht aufklappbar beim Katalog statt als Hinweiskasten. Alle Aktionen der bisherigen Seite
+bleiben erreichbar; Rechte und Kontext wie MonthlyAllowanceView. Die bisherige Seite bleibt
+session/allowances/monthly.html.
+{% endcomment %}
+
+{% block page_title %}Monatliche Pauschalen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Monatliche Pauschalen" text="Aufwandsentschädigung und Funktionszulagen nach EntschVO NRW: Katalog pflegen, Personen zuordnen, Monatslauf erzeugen, genehmigen und exportieren." dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'session:allowances' tenant_slug=tenant_slug %}">Sitzungsgelder</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="space-y-10">
+    <c-rahmen.abschnitt titel="Abrechnung {{ period|date:'F Y' }}" titel_id="abrechnung-titel" data-testid="monatsabrechnung">
+        <form method="get" class="mt-2 flex flex-wrap items-end gap-2" aria-label="Monat wählen">
+            <c-form.select name="month" id="monat" label="Monat" dicht class="w-28">
+                {% for m in months %}<option value="{{ m }}" {% if period.month == m %}selected{% endif %}>{{ m }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="year" id="jahr" label="Jahr" dicht class="w-28">
+                {% for y in years %}<option value="{{ y }}" {% if period.year == y %}selected{% endif %}>{{ y }}</option>{% endfor %}
+            </c-form.select>
+            <c-ui.button type="submit" variant="secondary" size="sm">Anzeigen</c-ui.button>
+        </form>
+
+        <p class="mt-4 text-sm text-gray-700 dark:text-gray-300 tabular-nums" data-testid="monatssummen">Ausstehend {{ sum_pending }} €, genehmigt {{ sum_approved }} €, ausgezahlt {{ sum_paid }} €.</p>
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+            <form method="post" action="{% url 'session:monthly_generate' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="year" value="{{ period.year }}"><input type="hidden" name="month" value="{{ period.month }}">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="play">Monatslauf erzeugen</c-ui.button>
+            </form>
+            <form method="post" action="{% url 'session:monthly_approve' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="year" value="{{ period.year }}"><input type="hidden" name="month" value="{{ period.month }}">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="check">Ausstehende genehmigen</c-ui.button>
+            </form>
+            <form method="post" action="{% url 'session:monthly_export_csv' tenant_slug=tenant_slug %}">
+                {% csrf_token %}
+                <input type="hidden" name="year" value="{{ period.year }}"><input type="hidden" name="month" value="{{ period.month }}">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="download">CSV</c-ui.button>
+            </form>
+            <form method="post" action="{% url 'session:monthly_export_sepa' tenant_slug=tenant_slug %}" data-confirm="SEPA-Datei erzeugen und genehmigte Posten als ausgezahlt markieren?">
+                {% csrf_token %}
+                <input type="hidden" name="year" value="{{ period.year }}"><input type="hidden" name="month" value="{{ period.month }}">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="landmark">SEPA (genehmigte)</c-ui.button>
+            </form>
+        </div>
+
+        {% if allowances %}
+        <c-rahmen.liste class="mt-4" data-testid="monatsposten">
+            {% for allowance in allowances %}
+            <li class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 py-2.5">
+                <div class="min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white break-words">{{ allowance.person.display_name }}</p>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ allowance.rate.name }}</p>
+                    <p class="mt-0.5 flex flex-wrap gap-x-3 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                        <span>{% include "session/neu/_status.html" with wert=allowance.status text=allowance.get_status_display %}</span>
+                        {% if allowance.export_reference %}<span class="tabular-nums">Export {{ allowance.export_reference }}</span>{% endif %}
+                    </p>
+                </div>
+                <div class="flex flex-col items-end gap-1">
+                    <span class="font-medium tabular-nums text-gray-900 dark:text-white">{{ allowance.amount }} €</span>
+                    {% if allowance.status in open_statuses and not allowance.export_reference %}
+                    <form method="post" action="{% url 'session:monthly_cancel' tenant_slug=tenant_slug %}" data-confirm="Posten stornieren? Er wird nicht ausgezahlt.">
+                        {% csrf_token %}
+                        <input type="hidden" name="allowance_id" value="{{ allowance.id }}">
+                        <input type="hidden" name="year" value="{{ period.year }}"><input type="hidden" name="month" value="{{ period.month }}">
+                        <button type="submit" class="inline-flex items-center min-h-8 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-red-700 dark:hover:text-red-400 hover:underline underline-offset-4">Stornieren<span class="sr-only">: {{ allowance.person.display_name }}, {{ allowance.rate.name }}</span></button>
+                    </form>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        {% else %}
+        <c-rahmen.satz>Noch keine Posten für {{ period|date:"F Y" }}. Erzeugen Sie den Monatslauf.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    {% include "session/neu/_monatspauschalen_katalog.html" %}
+</div>
+{% endblock %}

@@ -23,6 +23,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services.application_service import (
     ConversionError,
     conversion_blocker,
@@ -85,6 +86,10 @@ class ApplicationDetailView(SessionViewMixin, DetailView):
     context_object_name = "application"
     pk_url_kwarg = "application_id"
     permission_required = "view_applications"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/antrag.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()

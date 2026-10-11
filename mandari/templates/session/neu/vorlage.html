@@ -50,7 +50,7 @@ PaperDetailView. Die bisherige Seite bleibt session/papers/detail.html.
         {% include "session/neu/_mitzeichnung.html" %}
         {% endif %}
 
-        {% include "session/papers/consultation_section.html" %}
+        {% include "session/neu/_beratungsfolge.html" %}
 
         {% if agenda_items %}
         <c-rahmen.abschnitt titel="Beratungshistorie" titel_id="historie-titel" data-testid="beratungshistorie">
@@ -65,7 +65,7 @@ PaperDetailView. Die bisherige Seite bleibt session/papers/detail.html.
         </c-rahmen.abschnitt>
         {% endif %}
 
-        {% include "session/partials/file_section.html" with file_target_type="paper" file_target_id=paper.id %}
+        {% include "session/neu/_anlagen.html" with file_target_type="paper" file_target_id=paper.id %}
     </div>
 
     {% include "session/neu/_vorlage_seite.html" %}

@@ -1,0 +1,75 @@
+{% comment %}
+Anwesenheit der Sitzung im neuen Rahmen (Issues #30, #139, #944): eine Liste statt Tabelle, eine Zeile je Person
+(session/neu/_anwesenheit_zeile.html). Die Beschlussfähigkeit steht als Satz mit Punkt unter der Überschrift, „Liste aus
+Besetzung erzeugen“ bzw. „Besetzung nachziehen“ als Textknopf daneben. Hinweise zur Teilnahmeart nur, wenn etwas zu tun
+ist; Störungsvermerke Zugeschalteter (session/neu/_stoerungen.html) und „Gast oder Verwaltung ergänzen“ darunter.
+Formulare, Felder und htmx-Aufrufe wie session/meetings/_attendance.html; Kontext aus
+attendance_service.attendance_panel und MeetingDetailView.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Anwesenheit" titel_id="anwesenheit-titel" zusatz="{% if attendances %}{{ attendances|length }} Person{{ attendances|length|pluralize:'en' }}{% endif %}" id="anwesenheit" data-testid="anwesenheit">
+    {% if attendance_can_manage %}
+    <c-slot name="link">
+        <button type="submit" form="anwesenheit-erzeugen" class="inline-flex items-center gap-1 min-h-8 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+            <i data-lucide="user-plus" class="w-4 h-4" aria-hidden="true"></i>{% if attendances %}Besetzung nachziehen{% else %}Liste aus Besetzung erzeugen{% endif %}
+        </button>
+    </c-slot>
+    {% endif %}
+    {% if attendance_can_manage %}
+    <form id="anwesenheit-erzeugen" method="post" action="{% url 'session:attendance_generate' tenant_slug=tenant_slug meeting_id=meeting.id %}">{% csrf_token %}</form>
+    {% endif %}
+
+    {% if quorum.has_list %}
+    <p class="mt-1 flex flex-wrap gap-x-3 text-sm text-gray-700 dark:text-gray-300" data-testid="beschlussfaehigkeit">
+        <span class="font-medium text-gray-900 dark:text-white">{% if quorum.met %}{% include "session/neu/_status.html" with wert="approved" text="Beschlussfähig" %}{% else %}{% include "session/neu/_status.html" with wert="rejected" text="Nicht beschlussfähig" %}{% endif %}</span>
+        <span>{{ quorum.voting_present }} von {{ quorum.voting_total }} Stimmberechtigten anwesend{% if quorum.remote_present %}, davon {{ quorum.remote_present }} zugeschaltet{% endif %}, nötig sind {{ quorum.required }}.</span>
+    </p>
+    {% endif %}
+
+    {% if quorum.disrupted or chair_hint or remote_in_presence %}
+    <div class="mt-3 max-w-3xl space-y-2">
+        {% if quorum.disrupted %}
+        <c-ui.alert variant="warning" icon="wifi-off" data-testid="stoerung-hinweis">Wegen einer Störung nicht mitgezählt: {{ quorum.disrupted|join:", " }}.</c-ui.alert>
+        {% endif %}
+        {% if chair_hint %}<c-ui.alert variant="warning" icon="gavel">{{ chair_hint }}</c-ui.alert>{% endif %}
+        {% if remote_in_presence %}
+        <c-ui.alert variant="warning" icon="video-off">In dieser Präsenzsitzung sind Personen als zugeschaltet erfasst; sie zählen zur Beschlussfähigkeit. Bitte Sitzungsformat oder Teilnahmeart prüfen.</c-ui.alert>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% if attendances %}
+    <c-rahmen.liste class="mt-3" data-testid="anwesenheitsliste">
+        {% for attendance in attendances %}
+        {% if attendance_can_manage %}
+        {% include "session/neu/_anwesenheit_zeile.html" %}
+        {% else %}
+        <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1 py-2.5">
+            <div class="min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white break-words">{{ attendance.person.display_name }}</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ attendance.get_role_display }}{% if attendance.notes %} · {{ attendance.notes }}{% endif %}</p>
+                {% if attendance.participation_note %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="teilnahme-vermerk">{{ attendance.participation_note }}</p>{% endif %}
+            </div>
+            <p class="text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=attendance.status text=attendance.get_status_display %}</p>
+        </li>
+        {% endif %}
+        {% endfor %}
+    </c-rahmen.liste>
+    {% if attendance_can_manage and remote_attendances %}{% include "session/neu/_stoerungen.html" %}{% endif %}
+    {% else %}
+    <c-rahmen.satz>Noch keine Anwesenheitsliste.{% if attendance_can_manage %} Mit „Liste aus Besetzung erzeugen“ wird sie aus der aktuellen Gremienbesetzung vorbefüllt.{% endif %}</c-rahmen.satz>
+    {% endif %}
+
+    {% if attendance_can_manage and addable_persons %}
+    <form method="post" action="{% url 'session:attendance_add' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+          class="mt-4 flex flex-wrap items-end gap-2" data-testid="anwesenheit-ergaenzen">
+        {% csrf_token %}
+        <c-form.select name="person" id="anwesenheit-person" label="Gast oder Verwaltung ergänzen" dicht class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-72">
+            {% for person in addable_persons %}<option value="{{ person.id }}">{{ person.display_name }}</option>{% endfor %}
+        </c-form.select>
+        <c-form.select name="role" id="anwesenheit-rolle" label="Rolle" dicht class="min-w-0 w-44">
+            {% for value, label in attendance_roles %}<option value="{{ value }}" {% if value == "guest" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </c-form.select>
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Hinzufügen</c-ui.button>
+    </form>
+    {% endif %}
+</c-rahmen.abschnitt>

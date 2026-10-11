@@ -1,0 +1,152 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Gremium im neuen Rahmen (Issue #944): Kopfband mit Art, Kurzname und gesetzlicher Bezeichnung, daneben Bearbeiten und
+Deaktivieren bzw. Reaktivieren. Im Mittelpunkt die Besetzung als Liste (je Mitglied Funktion, Stimmrecht, Zeitraum und
+Vertretung; „Verwalten“ klappt Ändern, Beenden und Nachrücken unter der Zeile auf, session/neu/_gremium_mitglied.html),
+darunter „Mitglied aufnehmen“, künftige und ausgeschiedene Mitglieder, letzte Sitzungen und Vorlagen. Rechts die
+Angaben. Alle Aktionen der bisherigen Seite bleiben erreichbar; Rechte und Kontext wie OrganizationDetailView. Die
+bisherige Seite bleibt session/organizations/detail.html.
+{% endcomment %}
+
+{% block page_title %}{{ organization.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{{ organization.name }}" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:organizations' tenant_slug=tenant_slug %}">Gremien</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400">{{ organization.get_organization_type_display }}{% if organization.short_name %} · {{ organization.short_name }}{% endif %}</p>
+    </c-slot>
+    {% if can_manage %}
+    <c-slot name="aktionen">
+        <c-ui.button href="{% url 'session:organization_edit' tenant_slug=tenant_slug organization_id=organization.id %}" variant="secondary" size="sm" icon="pencil">Bearbeiten</c-ui.button>
+        <form method="post" action="{% url 'session:organization_deactivate' tenant_slug=tenant_slug organization_id=organization.id %}"
+              data-confirm="Gremium wirklich {% if organization.is_active %}deaktivieren{% else %}reaktivieren{% endif %}?">
+            {% csrf_token %}
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="{% if organization.is_active %}archive{% else %}archive-restore{% endif %}">{% if organization.is_active %}Deaktivieren{% else %}Reaktivieren{% endif %}</c-ui.button>
+        </form>
+    </c-slot>
+    {% endif %}
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+        <span>{% if organization.is_active %}{% include "session/neu/_status.html" with wert="approved" text="Aktiv" %}{% else %}{% include "session/neu/_status.html" with wert="" text="Inaktiv" %}{% endif %}</span>
+        <span>{{ memberships|length }} Mitglied{{ memberships|length|pluralize:"er" }}{% if selected_term %} in {{ selected_term.name }}{% endif %}</span>
+    </p>
+    {% if legal_designation %}<p class="mt-1 text-sm text-gray-700 dark:text-gray-300" data-testid="gesetzliche-bezeichnung">Gesetzliche Bezeichnung: {{ legal_designation }}</p>{% endif %}
+    {% if main_committee_hint %}<p class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="hauptausschuss-hinweis">{{ main_committee_hint }}</p>{% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="{% if selected_term %}Besetzung {{ selected_term.name }}{% else %}Aktive Mitglieder{% endif %}" titel_id="besetzung-titel" zusatz="{{ memberships|length }}" data-testid="besetzung">
+            {% if legislative_terms %}
+            {# Besetzung je Wahlperiode (Issue #39) #}
+            <form method="get" class="mt-2 flex items-center gap-2">
+                <label for="besetzung-periode" class="text-sm text-gray-700 dark:text-gray-300">Wahlperiode</label>
+                <select id="besetzung-periode" name="term" data-autosubmit
+                        class="h-8 min-w-0 max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                    <option value="">Aktuelle Besetzung</option>
+                    {% for term in legislative_terms %}<option value="{{ term.id }}" {% if selected_term and selected_term.id == term.id %}selected{% endif %}>{{ term.name }}</option>{% endfor %}
+                </select>
+            </form>
+            {% endif %}
+            {% if memberships %}
+            <c-rahmen.liste class="mt-2" data-testid="mitgliederliste">
+                {% for membership in memberships %}{% include "session/neu/_gremium_mitglied.html" %}{% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Keine aktiven Mitglieder.</c-rahmen.satz>
+            {% endif %}
+
+            {% if can_manage %}
+            <h3 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Mitglied aufnehmen</h3>
+            <form method="post" action="{% url 'session:membership_create' tenant_slug=tenant_slug organization_id=organization.id %}"
+                  class="mt-2 flex flex-wrap items-end gap-2" data-testid="mitglied-aufnehmen">
+                {% csrf_token %}
+                <c-form.select name="person" id="membership-person" label="Person" placeholder="Bitte wählen" required dicht class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-64">
+                    {% for p in available_persons %}<option value="{{ p.id }}">{{ p.display_name }}</option>{% endfor %}
+                </c-form.select>
+                <c-form.select name="role" id="membership-role" label="Funktion" dicht class="min-w-0 w-48">
+                    {% for value, label in membership_roles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </c-form.select>
+                <c-form.field name="start_date" id="membership-start" type="date" label="Beginn (leer: heute)" dicht class="w-44" />
+                <c-form.checkbox name="has_voting_rights" id="membership-stimmrecht" label="Stimmrecht" checked class="h-9" />
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="user-plus">Aufnehmen</c-ui.button>
+            </form>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        {% if upcoming_memberships %}
+        <c-rahmen.abschnitt titel="Künftige Besetzung" titel_id="kuenftig-titel">
+            <c-rahmen.liste class="mt-2">
+                {% for membership in upcoming_memberships %}
+                <li class="flex flex-wrap items-baseline justify-between gap-x-4 py-2 text-sm">
+                    <span class="text-gray-900 dark:text-white">{{ membership.person.display_name }} <span class="text-gray-600 dark:text-gray-400">· {{ membership.get_role_display }}</span></span>
+                    <span class="tabular-nums text-gray-600 dark:text-gray-400">ab {{ membership.start_date|date:"d.m.Y" }}</span>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if ended_memberships %}
+        <c-rahmen.abschnitt titel="Ausgeschiedene Mitglieder" titel_id="ausgeschieden-titel">
+            <c-rahmen.liste class="mt-2">
+                {% for membership in ended_memberships %}
+                <li class="flex flex-wrap items-baseline justify-between gap-x-4 py-2 text-sm">
+                    <span class="text-gray-900 dark:text-white">{{ membership.person.display_name }} <span class="text-gray-600 dark:text-gray-400">· {{ membership.get_role_display }}</span></span>
+                    <span class="tabular-nums text-gray-600 dark:text-gray-400">{% if membership.end_date %}bis {{ membership.end_date|date:"d.m.Y" }}{% else %}Person deaktiviert{% endif %}</span>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if recent_meetings %}
+        <c-rahmen.abschnitt titel="Letzte Sitzungen" titel_id="sitzungen-titel">
+            <c-rahmen.liste class="mt-2">
+                {% for meeting in recent_meetings %}
+                <li class="relative grid grid-cols-[5.5rem_minmax(0,1fr)] sm:grid-cols-[5.5rem_minmax(0,1fr)_9rem] items-baseline gap-x-4 gap-y-0.5 py-2.5 hover:bg-band-grau/60">
+                    <span class="pl-1 text-sm font-semibold tabular-nums text-gray-900 dark:text-white">{{ meeting.start|date:"d.m.Y" }}</span>
+                    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="min-w-0 font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ meeting.name }}</a>
+                    <span class="col-start-2 sm:col-start-3 text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=meeting.meeting_state text=meeting.get_meeting_state_display %}</span>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if recent_papers %}
+        <c-rahmen.abschnitt titel="Letzte Vorlagen" titel_id="vorlagen-titel">
+            <c-rahmen.liste class="mt-2">
+                {% for paper in recent_papers %}
+                <li class="relative grid grid-cols-[minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_9rem] items-baseline gap-x-4 gap-y-0.5 py-2.5 hover:bg-band-grau/60">
+                    <div class="min-w-0">
+                        <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ paper.name }}</a>
+                        <p class="text-[0.8125rem] tabular-nums text-gray-600 dark:text-gray-400">{{ paper.reference }}{% if paper.date %} · {{ paper.date|date:"d.m.Y" }}{% endif %}</p>
+                    </div>
+                    <span class="text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=paper.status text=paper.get_status_display %}</span>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </div>
+
+    <aside class="min-w-0" aria-label="Angaben zum Gremium">
+        <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
+            <c-ui.angaben class="mt-2" data-testid="gremium-angaben">
+                <dt>Art</dt><dd>{{ organization.get_organization_type_display }}</dd>
+                <dt>Status</dt><dd>{% if organization.is_active %}Aktiv{% else %}Inaktiv{% endif %}</dd>
+                <dt>Mitglieder</dt><dd class="tabular-nums">{{ memberships|length }}{% if organization.target_member_count %} von {{ organization.target_member_count }} (Soll){% endif %}</dd>
+                {% if organization.start_date %}<dt>Beginn</dt><dd class="tabular-nums">{{ organization.start_date|date:"d.m.Y" }}</dd>{% endif %}
+                {% if organization.end_date %}<dt>Ende</dt><dd class="tabular-nums">{{ organization.end_date|date:"d.m.Y" }}</dd>{% endif %}
+                {% if organization.default_meeting_location %}<dt>Sitzungsort</dt><dd>{{ organization.default_meeting_location }}</dd>{% endif %}
+                {% if organization.meeting_frequency %}<dt>Sitzungsturnus</dt><dd>{{ organization.meeting_frequency }}</dd>{% endif %}
+                <dt>Ladungsfrist</dt><dd>{{ organization.invitation_period_days }} Tage</dd>
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% endblock %}

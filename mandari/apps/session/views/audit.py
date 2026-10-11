@@ -30,6 +30,7 @@ from apps.common import audit_chain
 from .. import audit
 from ..models import SessionAuditLog, SessionUser
 from ..permissions import SessionPermissionChecker, SessionViewMixin
+from ..rahmen import neues_design
 from ..services import audit_log_service
 
 #: Größere Ketten prüft die Oberfläche nicht (Laufzeit im Request), sondern verify_audit_chain
@@ -79,6 +80,10 @@ class AuditLogListView(SessionViewMixin, ListView):
     permission_required = "view_audit_log"
 
     FILTER_KEYS = ("model", "action", "user", "object", "from", "to")
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/audit.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()

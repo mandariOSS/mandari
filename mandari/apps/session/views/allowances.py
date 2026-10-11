@@ -30,6 +30,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import allowance_service, four_eyes_service
 
 logger = logging.getLogger(__name__)
@@ -158,6 +159,10 @@ class AllowanceListView(SessionViewMixin, TemplateView):
 
     template_name = "session/allowances/index.html"
     permission_required = "manage_allowances"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzungsgelder.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

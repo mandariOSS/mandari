@@ -324,6 +324,37 @@ class TestGemeinsameBausteine:
         assert leer.endswith("Noch keine Vorlagen.</p>")
         assert render("<c-rahmen.satz eng>Erläuterung</c-rahmen.satz>").strip().startswith('<p class="mt-1 text-sm')
 
+    def test_liste_mit_linien(self) -> None:
+        """c-rahmen.liste (Issue #944): Linie über der Liste und unter jedem Eintrag, ``geordnet`` als <ol>."""
+        liste = render('<c-rahmen.liste class="mt-2" data-testid="l"><li class="py-2">A</li></c-rahmen.liste>').strip()
+        assert liste.startswith("<ul ") and liste.endswith("</ul>") and 'data-testid="l"' in liste
+        assert (
+            "border-t" in liste
+            and "[&>li]:border-b" in liste
+            and " mt-2" in liste
+            and '<li class="py-2">A</li>' in liste
+        )
+        geordnet = render("<c-rahmen.liste geordnet><li>1</li></c-rahmen.liste>").strip()
+        assert geordnet.startswith("<ol ") and geordnet.endswith("</ol>")
+
+    def test_symbolknopf(self) -> None:
+        """c-ui.symbolknopf (Issue #944): 32 px, Tooltip und Name für Bildschirmleser, Link oder Knopf, Ton beim Zeigen."""
+        knopf = render(
+            '<c-ui.symbolknopf type="submit" icon="trash-2" titel="Löschen" label="Anlage löschen" ton="gefahr" />'
+        )
+        assert (
+            '<button type="submit"' in knopf and 'title="Löschen"' in knopf and 'aria-label="Anlage löschen"' in knopf
+        )
+        assert "w-8 h-8" in knopf and "hover:text-red-700" in knopf and 'data-lucide="trash-2"' in knopf
+        assert 'aria-hidden="true"' in knopf
+        link = render('<c-ui.symbolknopf href="/pdf/" icon="file-down" titel="PDF" data-testid="p" />')
+        assert '<a href="/pdf/"' in link and 'aria-label="PDF"' in link and 'data-testid="p"' in link
+        assert "hover:text-gray-900" in link and "<button" not in link
+        alpine = render(
+            '<c-ui.symbolknopf icon="pencil" titel="Bearbeiten" @click="a = !a" ::aria-expanded="a.toString()" />'
+        )
+        assert '@click="a = !a"' in alpine and ':aria-expanded="a.toString()"' in alpine
+
 
 class TestUiKitPreview:
     def test_preview_template_renders_all_components(self) -> None:

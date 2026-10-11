@@ -1,0 +1,48 @@
+{% comment %}
+Einstellungen der Sitzungsgelder im neuen Rahmen (Issues #38, #944): Entschädigungssätze je Gremium und Funktion als
+Liste mit Entfernen und einer Zeile zum Anlegen, daneben das Auftraggeberkonto für die SEPA-Datei. Formulare und Felder
+wie session/allowances/_settings.html. Eingebunden aus session/neu/sitzungsgelder.html.
+{% endcomment %}
+<div class="grid gap-x-12 gap-y-10 xl:grid-cols-2">
+    <c-rahmen.abschnitt titel="Entschädigungssätze" titel_id="saetze-titel" data-testid="entschaedigungssaetze">
+        <c-rahmen.satz eng>Satz je Gremium und Funktion. Ohne Satz für die Funktion gilt das Sitzungsgeld des Gremiums aus den Stammdaten.</c-rahmen.satz>
+        {% if rates %}
+        <c-rahmen.liste class="mt-2">
+            {% for rate in rates %}
+            <li class="flex items-center gap-3 py-1.5 text-sm">
+                <span class="min-w-0 flex-1 text-gray-900 dark:text-white break-words">{{ rate.organization.name }} <span class="text-gray-600 dark:text-gray-400">· {{ rate.get_role_display }}</span></span>
+                <span class="shrink-0 font-medium tabular-nums text-gray-900 dark:text-white">{{ rate.amount }} €</span>
+                <form method="post" action="{% url 'session:allowance_rate_delete' tenant_slug=tenant_slug rate_id=rate.id %}" class="shrink-0 text-gray-600 dark:text-gray-400">
+                    {% csrf_token %}
+                    <c-ui.symbolknopf icon="x" type="submit" titel="Satz entfernen" label="Satz {{ rate.organization.name }}, {{ rate.get_role_display }} entfernen" ton="gefahr" />
+                </form>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        {% endif %}
+        <form method="post" action="{% url 'session:allowance_rate_save' tenant_slug=tenant_slug %}" class="mt-3 flex flex-wrap items-end gap-2">
+            {% csrf_token %}
+            <c-form.select name="organization" id="satz-gremium" label="Gremium" required dicht class="min-w-0 flex-1 basis-44">
+                {% for org in organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="role" id="satz-funktion" label="Funktion" dicht class="min-w-0 w-40">
+                {% for value, label in rate_roles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.field name="amount" id="satz-betrag" label="Betrag (€)" placeholder="30,00" required dicht class="w-28" />
+            <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+        </form>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Auftraggeberkonto (SEPA)" titel_id="konto-titel" data-testid="auftraggeberkonto">
+        <c-rahmen.satz eng>Konto der Kommune, von dem die Sitzungsgelder überwiesen werden. Die Bankdaten der Empfänger stehen verschlüsselt bei den Personen.</c-rahmen.satz>
+        <form method="post" action="{% url 'session:allowance_debtor_save' tenant_slug=tenant_slug %}" class="mt-3 max-w-xl space-y-3">
+            {% csrf_token %}
+            <c-form.field name="debtor_name" id="konto-inhaber" label="Kontoinhaber" value="{{ debtor.debtor_name|default:session_tenant.name }}" dicht />
+            <div class="grid grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-2">
+                <c-form.field name="debtor_iban" id="konto-iban" label="IBAN" value="{{ debtor.debtor_iban|default:'' }}" placeholder="DE00 0000 0000 0000 0000 00" dicht />
+                <c-form.field name="debtor_bic" id="konto-bic" label="BIC (optional)" value="{{ debtor.debtor_bic|default:'' }}" dicht />
+            </div>
+            <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+        </form>
+    </c-rahmen.abschnitt>
+</div>

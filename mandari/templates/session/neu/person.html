@@ -1,0 +1,111 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Person im neuen Rahmen (Issue #944): Kopfband mit Titel, Name und Anrede, daneben Bearbeiten, Auskunft (Art. 15 DSGVO,
+nur mit Einstellungsrecht) und Deaktivieren bzw. Reaktivieren. Darunter die Mitgliedschaften und die letzten
+Anwesenheiten als Listen, rechts Kontaktdaten und, nur mit dem Recht zu Sitzungsgeldern, die Bankdaten. Alle Aktionen
+der bisherigen Seite bleiben erreichbar; Rechte und Kontext wie PersonDetailView. Die bisherige Seite bleibt
+session/persons/detail.html.
+{% endcomment %}
+
+{% block page_title %}{{ person.display_name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }}" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:persons' tenant_slug=tenant_slug %}">Personen</c-insight.zurueck>
+        {% if person.form_of_address %}<p class="mb-1 text-sm text-gray-600 dark:text-gray-400">{{ person.form_of_address }}</p>{% endif %}
+    </c-slot>
+    {% if can_manage_persons %}
+    <c-slot name="aktionen">
+        {% if "manage_settings" in permission_checker.permissions %}
+        <c-ui.button href="{% url 'session:person_data_export' tenant_slug=tenant_slug person_id=person.id %}" variant="secondary" size="sm" icon="file-search" title="Betroffenenauskunft (Art. 15 DSGVO) als JSON exportieren">Auskunft</c-ui.button>
+        {% endif %}
+        <c-ui.button href="{% url 'session:person_edit' tenant_slug=tenant_slug person_id=person.id %}" variant="secondary" size="sm" icon="pencil">Bearbeiten</c-ui.button>
+        <form method="post" action="{% url 'session:person_deactivate' tenant_slug=tenant_slug person_id=person.id %}"
+              data-confirm="Person wirklich {% if person.is_active %}deaktivieren{% else %}reaktivieren{% endif %}?">
+            {% csrf_token %}
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="{% if person.is_active %}archive{% else %}archive-restore{% endif %}">{% if person.is_active %}Deaktivieren{% else %}Reaktivieren{% endif %}</c-ui.button>
+        </form>
+    </c-slot>
+    {% endif %}
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+        <span>{% if person.is_active %}{% include "session/neu/_status.html" with wert="approved" text="Aktiv" %}{% else %}{% include "session/neu/_status.html" with wert="" text="Inaktiv" %}{% endif %}</span>
+        <span>{{ memberships|length }} Mitgliedschaft{{ memberships|length|pluralize:"en" }}</span>
+    </p>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="Mitgliedschaften" titel_id="mitgliedschaften-titel" zusatz="{{ memberships|length }}" data-testid="mitgliedschaften">
+            {% if memberships %}
+            <c-rahmen.liste class="mt-2">
+                {% for membership in memberships %}
+                <li class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 py-2.5">
+                    <div class="min-w-0">
+                        <c-ui.textlink href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=membership.organization.id %}" class="break-words">{{ membership.organization.name }}</c-ui.textlink>
+                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ membership.get_role_display }} · {% if membership.has_voting_rights %}stimmberechtigt{% else %}ohne Stimmrecht{% endif %}</p>
+                    </div>
+                    <span class="text-sm tabular-nums text-gray-600 dark:text-gray-400">{% if membership.start_date %}{{ membership.start_date|date:"d.m.Y" }}{% else %}offen{% endif %}{% if membership.end_date %} bis {{ membership.end_date|date:"d.m.Y" }}{% endif %}</span>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Keine Mitgliedschaften.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        {% if recent_attendances %}
+        <c-rahmen.abschnitt titel="Letzte Anwesenheiten" titel_id="anwesenheiten-titel">
+            <c-rahmen.liste class="mt-2">
+                {% for attendance in recent_attendances %}
+                <li class="relative grid grid-cols-[5.5rem_minmax(0,1fr)] sm:grid-cols-[5.5rem_minmax(0,1fr)_9rem] items-baseline gap-x-4 gap-y-0.5 py-2.5 hover:bg-band-grau/60">
+                    <span class="pl-1 text-sm font-semibold tabular-nums text-gray-900 dark:text-white">{{ attendance.meeting.start|date:"d.m.Y" }}</span>
+                    <div class="min-w-0">
+                        <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=attendance.meeting.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ attendance.meeting.name }}</a>
+                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ attendance.meeting.organization.name }}</p>
+                    </div>
+                    <span class="col-start-2 sm:col-start-3 text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=attendance.status text=attendance.get_status_display %}</span>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </div>
+
+    <aside class="min-w-0 space-y-8" aria-label="Kontaktdaten">
+        <c-rahmen.abschnitt titel="Kontakt" titel_id="kontakt-titel">
+            <c-ui.angaben class="mt-2" data-testid="person-angaben">
+                <dt>Name</dt>
+                <dd>{% if person.title %}{{ person.title }} {% endif %}{{ person.given_name }} {{ person.family_name }}</dd>
+                {% if person.email %}
+                <dt>E-Mail</dt>
+                <dd>
+                    <c-ui.textlink href="mailto:{{ person.email }}" class="break-all">{{ person.email }}</c-ui.textlink>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="kontakt-veroeffentlichung">{% if person.contact_publish %}Veröffentlicht, Einwilligung vom {{ person.contact_consent_date|date:"d.m.Y"|default:"–" }}{% if person.contact_consent_evidence %}, Nachweis: {{ person.contact_consent_evidence }}{% endif %}{% else %}Nicht veröffentlicht (keine Einwilligung hinterlegt){% endif %}</p>
+                </dd>
+                {% endif %}
+                {% with person_phone=person.get_phone_decrypted %}{% if person_phone %}<dt>Telefon</dt><dd>{{ person_phone }}</dd>{% endif %}{% endwith %}
+                {% with person_address=person.get_address_decrypted %}{% if person_address %}<dt>Adresse</dt><dd>{{ person_address }}</dd>{% endif %}{% endwith %}
+                <dt>Ladungen</dt><dd>{{ person.get_delivery_channel_display }}</dd>
+                <dt>Status</dt><dd>{% if person.is_active %}Aktiv{% else %}Inaktiv{% endif %}</dd>
+                {% if person.start_date %}<dt>Aktiv seit</dt><dd class="tabular-nums">{{ person.start_date|date:"d.m.Y" }}</dd>{% endif %}
+                {% if person.end_date %}<dt>Aktiv bis</dt><dd class="tabular-nums">{{ person.end_date|date:"d.m.Y" }}</dd>{% endif %}
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+
+        {% if can_view_bank_data %}
+        <c-rahmen.abschnitt titel="Bankdaten für Sitzungsgelder" titel_id="bank-titel" data-testid="bankdaten">
+            <c-rahmen.satz eng>Verschlüsselt gespeichert, nur für Berechtigte sichtbar.</c-rahmen.satz>
+            <c-ui.angaben class="mt-2">
+                <dt>Kontoinhaber</dt><dd>{{ bank_account_holder|default:"–" }}</dd>
+                <dt>IBAN</dt><dd class="font-mono">{{ bank_iban|default:"–" }}</dd>
+                <dt>BIC</dt><dd class="font-mono">{{ bank_bic|default:"–" }}</dd>
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}

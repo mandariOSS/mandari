@@ -1,0 +1,62 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Vertretungen im neuen Rahmen (Issues #222, #944): Kopfband mit der Regel in einem Satz und dem Weg zurück zu den
+Benutzern. Links die aktiven, geplanten und beendeten Vertretungen als Listen (session/neu/_vertretungen_liste.html,
+„Aufheben“ ohne Füllfarbe), rechts das Eintragen als die eine Hauptaktion der Seite. Formular und Felder wie
+session/settings/delegations.html; Rechte und Kontext wie DelegationListView. Die bisherige Seite bleibt
+session/settings/delegations.html.
+{% endcomment %}
+
+{% block page_title %}Vertretungen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zu den Benutzern (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:users' tenant_slug=tenant_slug %}">Benutzer</c-rahmen.brotkrume><c-rahmen.brotkrume>Vertretungen</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Vertretungen" text="Eine Vertretung wirkt nur im eingetragenen Zeitraum, nie mit mehr Rechten als die vertretene Person und wird nicht an weitere Vertretungen weitergereicht. Handlungen in Vertretung stehen im Audit-Log." dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'session:users' tenant_slug=tenant_slug %}">Benutzer</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]">
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="Aktiv" titel_id="aktiv-titel" zusatz="{{ overview.active|length }}" data-testid="vertretungen-aktiv">
+            <c-rahmen.satz eng>Heute wirksame Vertretungen.</c-rahmen.satz>
+            {% include "session/neu/_vertretungen_liste.html" with rows=overview.active revocable=True empty_text="Derzeit wirkt keine Vertretung." %}
+        </c-rahmen.abschnitt>
+        <c-rahmen.abschnitt titel="Geplant" titel_id="geplant-titel" zusatz="{{ overview.planned|length }}" data-testid="vertretungen-geplant">
+            {% include "session/neu/_vertretungen_liste.html" with rows=overview.planned revocable=True empty_text="Keine geplanten Vertretungen." %}
+        </c-rahmen.abschnitt>
+        <c-rahmen.abschnitt titel="Beendet und aufgehoben" titel_id="beendet-titel" data-testid="vertretungen-beendet">
+            <c-rahmen.satz eng>Die letzten Einträge; sie bleiben als Nachweis erhalten.</c-rahmen.satz>
+            {% include "session/neu/_vertretungen_liste.html" with rows=overview.past revocable=False empty_text="Noch keine beendeten Vertretungen." %}
+        </c-rahmen.abschnitt>
+    </div>
+
+    <c-rahmen.abschnitt titel="Vertretung eintragen" titel_id="eintragen-titel">
+        <form method="post" action="{% url 'session:settings_delegation_create' tenant_slug=tenant_slug %}" class="mt-3 space-y-3" data-testid="vertretung-eintragen">
+            {% csrf_token %}
+            <c-form.select name="principal" label="Vertretene Person" placeholder="Bitte wählen" required dicht>
+                {% for tenant_user in tenant_users %}<option value="{{ tenant_user.id }}">{{ tenant_user.user.email }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="deputy" label="Vertretung" placeholder="Bitte wählen" required dicht>
+                {% for tenant_user in tenant_users %}<option value="{{ tenant_user.id }}">{{ tenant_user.user.email }}</option>{% endfor %}
+            </c-form.select>
+            <div class="grid grid-cols-2 gap-2">
+                <c-form.field name="start_date" label="Von" type="date" required dicht />
+                <c-form.field name="end_date" label="Bis einschließlich" type="date" required help="Höchstens ein Jahr." dicht />
+            </div>
+            <fieldset>
+                <legend class="mb-1 text-sm font-medium text-gray-800 dark:text-gray-200">Umfang</legend>
+                <div class="space-y-2">
+                    {% for key, scope in scopes %}
+                    <c-form.checkbox name="scopes" id="scope-{{ key }}" value="{{ key }}" checked dicht>{{ scope.0 }}<span class="mt-0.5 block text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ scope.1 }}</span></c-form.checkbox>
+                    {% endfor %}
+                </div>
+            </fieldset>
+            <c-ui.button type="submit" size="sm" icon="user-check">Vertretung eintragen</c-ui.button>
+        </form>
+    </c-rahmen.abschnitt>
+</div>
+{% endblock %}

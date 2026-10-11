@@ -23,6 +23,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import allowance_service
 from ..visibility import meeting_q
 
@@ -191,6 +192,10 @@ class PersonDetailView(SessionViewMixin, DetailView):
     context_object_name = "person"
     pk_url_kwarg = "person_id"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/person.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
