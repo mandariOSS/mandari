@@ -39,6 +39,11 @@ def _vorbereitungsstand(organization: Any, sitzungen: Sequence[Any]) -> dict[uui
     return vorbereitungsstand(organization, _ids(sitzungen))
 
 
+def bisher_angefragt(request: Any) -> bool:
+    """``?ansicht=bisher``: die bisherige Vorlage trotz Schalter (Rückweg wie ``apps.work.rahmen.NeueVorlageMixin``)."""
+    return request is not None and request.GET.get("ansicht") == "bisher"
+
+
 def rechte(membership: Any) -> dict[str, bool]:
     """Was „Für die Fraktion“ zeigen darf (siehe ``apps.work.ris.fraktion``)."""
     return {
@@ -362,3 +367,33 @@ def person(organization: Any, membership: Any, person_obj: Any) -> dict[str, Any
     if erlaubt["darf_mitglieder"]:
         konto = fraktion.mitglieder_je_person(organization, [person_obj.pk]).get(person_obj.pk, "")
     return {**erlaubt, "konto": konto, "angaben": _angaben([person_obj]).get(person_obj.pk)}
+
+
+# ---------------------------------------------------------------------------
+# Beschlüsse (Issue #951, Teilpaket 2)
+# ---------------------------------------------------------------------------
+
+#: Die bisherigen Ampel-Kacheln als Filter im Satz: Schlüssel der Kennzahl, Wort, Parameter des Filters
+_BESCHLUSS_STAND = (
+    ("open", "offen", "status", "open"),
+    ("in_progress", "in Umsetzung", "status", "in_progress"),
+    ("overdue", "überfällig", "overdue", "1"),
+    ("done", "erledigt", "status", "done"),
+)
+
+
+def beschluesse(context: dict[str, Any]) -> dict[str, Any]:
+    """
+    Beschlüsse: die vier Zählerkacheln der bisherigen Seite (offen, in Umsetzung, überfällig, erledigt) als Filter im
+    Satz des Kopfbands, mit denselben Zielen (``?status=…``, ``?overdue=1``); der gewählte trägt ``aktiv``.
+    """
+    stats = context.get("tracking_stats") or {}
+    aktiv_status = context.get("filter_status", "")
+    nur_ueberfaellig = bool(context.get("filter_overdue"))
+    filter_im_satz = []
+    for schluessel, wort, parameter, wert in _BESCHLUSS_STAND:
+        aktiv = nur_ueberfaellig if parameter == "overdue" else aktiv_status == wert
+        filter_im_satz.append(
+            {"zahl": _zahl(stats.get(schluessel, 0)), "wort": wort, "href": f"?{parameter}={wert}", "aktiv": aktiv}
+        )
+    return {"beschluss_filter": filter_im_satz}

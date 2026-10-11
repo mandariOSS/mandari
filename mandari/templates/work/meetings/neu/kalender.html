@@ -1,0 +1,32 @@
+{% extends "work/base_work.html" %}
+{% load static %}
+{% comment %}
+Sitzungskalender im neuen Erscheinungsbild (Issue #951, Teilpaket 2): Kopfband mit einem Satz und dem Weg zur Liste als
+Textlink, darunter der Kalender direkt auf der Fläche (kein Kasten). FullCalendar wie bisher lokal; Einstellungen und
+Klick auf einen Termin in frontend/alpine/sitzungs-kalender.ts, Farben als Tokens in static/css/sitzungs-kalender.css
+(kein Inline-Skript, kein Inline-CSS). Termine aus derselben Adresse (work:meetings_calendar_events). Die bisherige
+Seite bleibt work/meetings/calendar.html.
+{% endcomment %}
+
+{% block page_title %}Sitzungskalender{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Sitzungskalender" dicht text="Alle Sitzungen der Gremien nach Monat, Woche oder als Liste. Ein Klick auf einen Termin öffnet die Sitzung.">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings' org_slug=organization.slug %}">Meine Sitzungen</c-insight.zurueck></c-slot>
+    <c-slot name="aktionen"><c-ui.textlink href="{% url 'work:meetings' org_slug=organization.slug %}" class="text-sm">Als Liste anzeigen</c-ui.textlink></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<div x-data="sitzungsKalender" data-ereignisse="{% url 'work:meetings_calendar_events' org_slug=organization.slug %}" class="wf sitzungs-kalender" data-testid="sitzungskalender">
+    <div data-kalender></div>
+    <noscript><p class="text-sm text-gray-600 dark:text-gray-400">Der Kalender braucht JavaScript. <c-ui.textlink href="{% url 'work:meetings' org_slug=organization.slug %}">Sitzungen als Liste</c-ui.textlink></p></noscript>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{# FullCalendar lokal (DSGVO-konform), vor dem Start von Alpine geladen #}
+<script src="{% static 'vendor/fullcalendar/fullcalendar.min.js' %}"></script>
+<script src="{% static 'vendor/fullcalendar/de.min.js' %}"></script>
+{% endblock %}

@@ -236,8 +236,8 @@ def test_druck_zeigt_nur_den_inhalt(neu: Organization, admin: Any, client_for: A
     assert "print:hidden" in _oeffnendes_tag(html, 'aria-label="Sitzungen"')
     assert "print:!hidden" in _oeffnendes_tag(html, 'aria-label="Hauptbereiche"')
     assert "print:!p-0" in _oeffnendes_tag(html, 'class="work-main')
-    # Der Seitentitel bleibt
-    assert 'class="work-page-header"' in html
+    # Der Seitentitel bleibt (im Kopfband c-rahmen.kopfband, seit Issue #951 auch auf „Meine Sitzungen“)
+    assert re.search(r"<h1[^>]*>\s*Meine Sitzungen\s*</h1>", html)
 
 
 # ---- Kein Eintrag der bisherigen Navigation geht verloren ----------------------------------------------------

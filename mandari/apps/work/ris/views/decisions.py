@@ -5,16 +5,21 @@ Beschlusskontrolle für Mandatsträger (Issue #37, Sichtbarkeit in Work).
 Zeigt den Umsetzungsstand der öffentlichen Beschlüsse aller Verwaltungen
 (Session-Mandanten), die mit den Kommunen der Organisation verknüpft sind.
 Nicht-öffentliche TOPs und Sitzungen erscheinen hier nie.
+
+Im neuen Erscheinungsbild (Issue #951) zeigt die Liste ``work/ris/neu/beschluesse.html``; jeder Beschluss hat dort eine
+eigene Seite (``RISDecisionDetailView``) mit vollem Beschlusstext und Umsetzungsstand – dieselben Angaben wie in der
+Liste, aus derselben Auswahl (öffentlich, entschieden, Verwaltungen der eigenen Kommunen).
 """
 
 from django.core.paginator import Paginator
+from django.http import Http404
 from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.session.models import SessionAgendaItem
 
-from .. import selectors
+from .. import neu, selectors
 from ._mixins import RISBodiesMixin
 
 PAGE_SIZE = 50
@@ -24,6 +29,7 @@ class RISDecisionsView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """Öffentliche Beschlüsse mit Umsetzungsstand, Ampel und Filtern."""
 
     template_name = "work/ris/decisions.html"
+    neue_vorlage = "work/ris/neu/beschluesse.html"
     permission_required = "ris.view"
 
     def get_context_data(self, **kwargs):
@@ -75,4 +81,32 @@ class RISDecisionsView(RISBodiesMixin, WorkViewMixin, TemplateView):
                 "today": today,
             }
         )
+        if self.neu:
+            context |= neu.beschluesse(context)
+        return context
+
+
+class RISDecisionDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
+    """Ein Beschluss mit vollem Text und Umsetzungsstand (neue Seite, Issue #951); Rechte wie die Liste."""
+
+    template_name = "work/ris/neu/beschluss.html"
+    permission_required = "ris.view"
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context["active_nav"] = "ris"
+        context["active_subnav"] = "ris_decisions"
+
+        bodies = self.setup_body_context(context)
+        if bodies is None:
+            return context
+
+        tenants, item = selectors.decision_detail(bodies, kwargs["item_id"])
+        context["tenants"] = tenants
+        if tenants is None:
+            context["no_session_tenant"] = True
+            return context
+        if item is None:
+            raise Http404("Beschluss nicht gefunden")
+        context["item"] = item
         return context

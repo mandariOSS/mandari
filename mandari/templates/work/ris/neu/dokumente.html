@@ -1,0 +1,75 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Dokumente der Recherche im neuen Erscheinungsbild (Issue #951, Teilpaket 2; Recherche › Dokumente): Kopfband mit der
+Zahl im Satz, Suche wie bisher (GET q, page), Liste mit Linien statt Karte und PDF-Kachel. Jede Zeile nennt Dokument,
+Vorgang, Datum, Größe und den Ort in der Sitzung (Gremium, Sitzung, TOP); „Ansehen“ ist jetzt ein Knopf (vorher eine
+nicht per Tastatur erreichbare Klickzeile) und öffnet wie bisher die Dokumentansicht (openDoc über den Dateiabruf),
+„Original“ die Quelle im neuen Fenster. Seitenwahl c-liste.seiten. Die bisherige Seite bleibt work/ris/files.html.
+{% endcomment %}
+
+{% block page_title %}Dokumente{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Dokumente" dicht
+    text="{% if body %}{{ total_count }} Dokument{{ total_count|pluralize:'e' }} aus {{ body.get_display_name }}{% if search_query %} zu „{{ search_query }}“{% endif %}, neueste zuerst. {% endif %}Volltext über alle Dokumente bietet die Suche." />
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice_neu.html" %}
+{% else %}
+<form method="get" role="search" class="flex flex-wrap items-center gap-2">
+    <label for="dokumente-suche" class="sr-only">Dokument suchen</label>
+    <input id="dokumente-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Name des Dokuments oder Vorgangs"
+           class="h-9 w-full sm:w-80 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <c-ui.button type="submit" size="sm">Suchen</c-ui.button>
+    {% if search_query %}<c-ui.textlink href="{% url 'work:ris_files' org_slug=organization.slug %}" class="text-sm">Zurücksetzen</c-ui.textlink>{% endif %}
+    <c-ui.textlink href="{% url 'work:ris_search' org_slug=organization.slug %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}" class="text-sm sm:ml-auto">Volltextsuche</c-ui.textlink>
+</form>
+
+{% if files %}
+<ul class="mt-4 divide-y divide-gray-200 dark:divide-gray-800 border-t border-gray-300 dark:border-gray-700" data-testid="dokumente">
+    {% for file in files %}
+    {% with name=file.name|default:file.file_name|default:"Unbenanntes Dokument" %}
+    <li class="py-3 grid gap-x-6 gap-y-1 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div class="min-w-0">
+            <p class="font-medium text-gray-900 dark:text-white break-words">{{ name }}</p>
+            <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-gray-600 dark:text-gray-400">
+                {% if file.paper %}<c-ui.textlink href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=file.paper.id %}" class="break-words">{{ file.paper.name|default:file.paper.reference }}</c-ui.textlink>{% endif %}
+                {% if file.file_date %}<span><time datetime="{{ file.file_date|date:'Y-m-d' }}">{{ file.file_date|date:"d.m.Y" }}</time></span>{% endif %}
+                {% if file.size %}<span class="tabular-nums">{{ file.size|filesizeformat }}</span>{% endif %}
+                {% if file.text_extraction_status == 'completed' %}<span>Text erkannt</span>{% endif %}
+            </p>
+            {% if file.context_info %}
+            <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+                {% if file.context_info.organization_name %}<span>{{ file.context_info.organization_name }}</span>{% endif %}
+                {% if file.context_info.meeting_date %}{% if file.context_info.meeting %}<c-ui.textlink href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=file.context_info.meeting.id %}">Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}</c-ui.textlink>{% else %}<span>Sitzung {{ file.context_info.meeting_date|date:"d.m.Y" }}</span>{% endif %}{% endif %}
+                {% if file.context_info.agenda_number %}<span>TOP {{ file.context_info.agenda_number }}</span>{% endif %}
+            </p>
+            {% endif %}
+        </div>
+        {% if file.access_url or file.download_url %}
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm sm:justify-end sm:self-start">
+            <button type="button"
+                    data-doc-url="{% url 'insight_core:insight:file_proxy' file.id %}" data-doc-name="{{ name }}"
+                    data-doc-meta="{% if file.context_info.organization_name %}{{ file.context_info.organization_name }}{% endif %}{% if file.paper.reference %}{% if file.context_info.organization_name %} · {% endif %}{{ file.paper.reference }}{% endif %}{% if file.context_info.meeting_date %} · Sitzung {{ file.context_info.meeting_date|date:'d.m.Y' }}{% endif %}{% if file.size %} · {{ file.size|filesizeformat }}{% endif %}"
+                    @click="openDoc($el.dataset.docUrl, $el.dataset.docName, $el.dataset.docMeta)"
+                    class="inline-flex items-center gap-1.5 min-h-8 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+                <i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>Ansehen<span class="sr-only">: {{ name }}</span>
+            </button>
+            <c-ui.textlink href="{{ file.download_url|default:file.access_url }}" extern class="inline-flex items-center gap-1.5 min-h-8">
+                <i data-lucide="external-link" class="w-4 h-4" aria-hidden="true"></i>Original<span class="sr-only">: {{ name }}</span>
+            </c-ui.textlink>
+        </div>
+        {% endif %}
+    </li>
+    {% endwith %}
+    {% endfor %}
+</ul>
+<c-liste.seiten :seite="files" dicht />
+{% else %}
+<c-rahmen.satz>{% if search_query %}Zu „{{ search_query }}“ gibt es kein Dokument. Versuchen Sie einen anderen Suchbegriff oder die Volltextsuche.{% else %}Es gibt noch keine Dokumente.{% endif %}</c-rahmen.satz>
+{% endif %}
+{% endif %}
+{% endblock %}

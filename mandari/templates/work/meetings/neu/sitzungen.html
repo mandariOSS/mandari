@@ -1,0 +1,68 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Meine Sitzungen im neuen Erscheinungsbild (Issue #951, Teilpaket 2; Bereich Sitzungen, Reiter „Für mich“): Kopfband mit
+einem Satz (Zahl, Zeitraum und die eigenen Gremien statt Untertitel, Hinweiskasten und Gremien-Chips), weitere Wege als
+Textlinks; die Reiter „Für mich · Alle Gremien“ trägt der Rahmen, die eigenen Reiter „Meine Gremien · Alle Sitzungen“
+mit Zählerpille entfallen – die Ansicht aller Gremien bleibt als Textlink (Parameter view). Filter wie bisher (GET
+view, q, committee, time; data-autosubmit), die Liste ist der gemeinsame Baustein von Insight (c-liste.sitzungen) mit
+Zielen im Sitzungsdetail und der Spalte „Für die Fraktion“ (Vorbereitungsstand, „Vorbereiten“ mit meetings.prepare).
+Kontext: apps/work/meetings/neu.sitzungen; die bisherige Seite bleibt work/meetings/list.html.
+{% endcomment %}
+
+{% block page_title %}Meine Sitzungen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Meine Sitzungen" dicht text="{% if has_body %}{{ sitzungen_satz }}{% else %}Ihre Organisation ist noch mit keiner Kommune verknüpft.{% endif %}">
+    <c-slot name="aktionen">
+        <c-ui.textlink href="{% url 'work:meetings_calendar' org_slug=organization.slug %}" class="text-sm">Kalender</c-ui.textlink>
+        {% if has_session_connection %}<c-ui.textlink href="{% url 'work:session_invitations' org_slug=organization.slug %}" class="text-sm">Ladungen der Verwaltung</c-ui.textlink>{% endif %}
+        <c-ui.help-link topic="sitzungen" />
+    </c-slot>
+    {% if has_body %}
+    <p class="flex flex-wrap gap-x-4 gap-y-1 text-sm">
+        <c-ui.textlink href="{% url 'work:profile_committees' org_slug=organization.slug %}">Gremien wählen</c-ui.textlink>
+        {% if view_mode == 'my' %}<c-ui.textlink href="?view=all&time={{ time_filter }}">Alle Gremien einbeziehen</c-ui.textlink>
+        {% else %}<c-ui.textlink href="?view=my&time={{ time_filter }}">Nur meine Gremien</c-ui.textlink>{% endif %}
+    </p>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if not has_body %}
+<div class="max-w-2xl" data-testid="ohne-kommune">
+    <p class="text-sm text-gray-700 dark:text-gray-300">Um Sitzungen anzuzeigen, muss Ihre Organisation mit einer Kommune im Ratsinformationssystem verknüpft werden. <c-ui.textlink href="{% url 'work:organization' org_slug=organization.slug %}">Organisation einrichten</c-ui.textlink></p>
+</div>
+{% else %}
+<form method="get" class="flex flex-wrap items-center gap-x-4 gap-y-2" role="search" aria-label="Sitzungen filtern">
+    <input type="hidden" name="view" value="{{ view_mode }}">
+    <label for="sitzungen-suche" class="sr-only">Sitzungen durchsuchen</label>
+    <input id="sitzungen-suche" type="search" name="q" value="{{ search_query }}" placeholder="Sitzungen durchsuchen"
+           class="h-9 w-full sm:w-72 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <c-form.select name="time" id="sitzungen-zeitraum" label="Zeitraum" dicht zeile data-autosubmit>
+        {% for wert, name in zeitraeume %}<option value="{{ wert }}" {% if time_filter == wert %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </c-form.select>
+    {% if view_mode == 'all' %}
+    <c-form.select name="committee" id="sitzungen-gremium" label="Gremium" dicht zeile data-autosubmit>
+        <option value="">Alle Gremien</option>
+        {% for committee in all_committees %}<option value="{{ committee.id }}" {% if committee_filter == committee.id|stringformat:'s' %}selected{% endif %}>{{ committee.name|truncatechars:40 }}</option>{% endfor %}
+    </c-form.select>
+    {% endif %}
+    <noscript><c-ui.button type="submit" size="sm" variant="secondary">Anwenden</c-ui.button></noscript>
+</form>
+
+{% if meetings %}
+<div class="mt-4" data-testid="sitzungsliste">
+    <c-liste.sitzungen :sitzungen="meetings" :links="sitzung_links" dicht ohne_merken
+                       zusatz="work/ris/neu/_sitzung_fraktion.html" zusatz_titel="Für die Fraktion" />
+</div>
+{% else %}
+<div class="mt-6 text-sm text-gray-700 dark:text-gray-300" data-testid="keine-sitzungen">
+    <p>{% if view_mode == 'my' and not has_my_committees %}Sie haben noch keine Gremien ausgewählt.{% elif time_filter == 'upcoming' %}Keine anstehenden Sitzungen vorhanden.{% elif time_filter == 'past' %}Keine vergangenen Sitzungen gefunden.{% else %}Keine Sitzungen gefunden, die Ihren Filterkriterien entsprechen.{% endif %}
+    {% if view_mode == 'my' %}<c-ui.textlink href="?view=all&time={{ time_filter }}">Alle Sitzungen anzeigen</c-ui.textlink>{% endif %}</p>
+    <p class="mt-2"><c-ui.help-link topic="sitzung_fehlt">Warum sehe ich keine Sitzungen?</c-ui.help-link></p>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}

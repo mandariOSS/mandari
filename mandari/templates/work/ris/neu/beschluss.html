@@ -1,0 +1,68 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Ein Beschluss (Issue #951, Teilpaket 2; neue Seite zur Liste work/ris/neu/beschluesse.html): Kopfband mit Betreff,
+Nummer, Gremium und Datum; der volle Beschlusstext, daneben der Umsetzungsstand (Stand, Zuständigkeit, Frist, Vermerk)
+und die Angaben zur Sitzung. Dieselben Angaben wie in der Liste, nur ungekürzt; nichtöffentliche Inhalte gibt es hier
+nie (Auswahl apps/work/ris/selectors.decided_items). Kontext: apps/work/ris/views/decisions.RISDecisionDetailView.
+{% endcomment %}
+
+{% block page_title %}{% if item %}TOP {{ item.number }} · {{ item.name|truncatechars:50 }}{% else %}Beschluss{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if item %}{{ item.name }}{% else %}Beschluss{% endif %}" dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:ris_decisions' org_slug=organization.slug %}">Beschlüsse</c-insight.zurueck></c-slot>
+    {% if item %}
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+        <span>TOP {{ item.number }}</span>
+        {% if item.resolution_number %}<span class="tabular-nums">Beschluss {{ item.resolution_number }}</span>{% endif %}
+        <span>{{ item.meeting.organization.name|default:"Gremium" }}, {{ item.meeting.start|date:"j. F Y" }}</span>
+        <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 shrink-0 rounded-full {% if item.vote_result == 'approved' %}bg-green-600{% elif item.vote_result == 'rejected' %}bg-red-600{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>{{ item.get_vote_result_display }}</span>
+    </p>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice_neu.html" %}
+{% elif no_session_tenant %}
+<c-rahmen.satz>Die Verwaltung Ihrer Kommune führt ihr Ratsinformationssystem noch nicht mit mandari Session.</c-rahmen.satz>
+{% else %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <c-rahmen.abschnitt titel="Beschlusstext" titel_id="beschlusstext-titel" class="min-w-0">
+        {% if item.resolution_text %}
+        <div class="mt-2 max-w-[46rem] text-[0.95rem] leading-relaxed text-gray-900 dark:text-gray-100 whitespace-pre-line break-words" data-testid="beschlusstext">{{ item.resolution_text }}</div>
+        {% else %}
+        <c-rahmen.satz>Zu diesem Beschluss ist kein Text veröffentlicht.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    <aside class="min-w-0 space-y-8" aria-label="Umsetzung und Sitzung">
+        <c-rahmen.band ton="grau" dicht titel="Umsetzung" titel_id="umsetzung-titel" data-testid="umsetzung">
+            {% if item.vote_result == 'approved' %}
+            <p class="mt-2 text-sm">{% include "work/ris/neu/_umsetzung.html" %}</p>
+            <c-ui.angaben class="mt-3">
+                <dt>Zuständig</dt><dd>{{ item.implementation_recipient|default:"–" }}</dd>
+                {% if item.implementation_deadline %}<dt>Frist</dt><dd class="{% if item.implementation_overdue %}font-semibold text-red-700 dark:text-red-400{% endif %}">{{ item.implementation_deadline|date:"d.m.Y" }}</dd>{% endif %}
+                {% if item.implementation_updated_at %}<dt>Stand</dt><dd>{{ item.implementation_updated_at|date:"d.m.Y" }}</dd>{% endif %}
+            </c-ui.angaben>
+            {% if item.implementation_note %}<p class="mt-3 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ item.implementation_note }}</p>{% endif %}
+            {% else %}
+            <c-rahmen.satz>{{ item.get_vote_result_display }}: keine Umsetzung.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.band>
+
+        <c-rahmen.abschnitt titel="Sitzung" titel_id="sitzung-titel">
+            <c-ui.angaben class="mt-3">
+                <dt>Gremium</dt><dd>{{ item.meeting.organization.name|default:"–" }}</dd>
+                <dt>Datum</dt><dd>{{ item.meeting.start|date:"d.m.Y" }}</dd>
+                {% if tenants|length > 1 %}<dt>Verwaltung</dt><dd>{{ item.meeting.tenant.name }}</dd>{% endif %}
+                <dt>Punkt</dt><dd>TOP {{ item.number }}</dd>
+            </c-ui.angaben>
+            {% if item.meeting.oparl_meeting_id %}<p class="mt-4 text-sm"><c-ui.textlink href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=item.meeting.oparl_meeting_id %}">Sitzung in der Recherche</c-ui.textlink></p>{% endif %}
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% endif %}
+{% endblock %}

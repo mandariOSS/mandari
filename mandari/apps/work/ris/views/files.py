@@ -19,6 +19,7 @@ class RISFilesView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS files/documents list."""
 
     template_name = "work/ris/files.html"
+    neue_vorlage = "work/ris/neu/dokumente.html"
     permission_required = "ris.view"
 
     def get_context_data(self, **kwargs):

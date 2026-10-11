@@ -1,0 +1,81 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Sitzungsdetail der Vorbereitung im neuen Erscheinungsbild (Issue #951, Teilpaket 2): Kopfband mit Termin, Ort und der
+einen Hauptaktion „Vorbereiten“ (vorher doppelt), daneben der Weg zurück; Tagesordnung als Liste mit Linien und allen
+Vorlagen je Punkt (Kontext apps/work/meetings/neu.sitzung), rechts Vorbereitungsstand, Angaben (c-ui.angaben) und die
+der Weg in die Recherche als Textlink. Keine Karten, keine grüne Statuskachel. Die bisherige Seite bleibt
+work/meetings/detail.html; ihre Felder „invitation“ und „location_street“ gibt es an der Sitzung nicht (toter Code).
+{% endcomment %}
+
+{% block page_title %}{% if meeting %}{{ meeting.committee_name|default:meeting.get_display_name|default:"Sitzung" }}{% else %}Sitzung{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{% block brotkrumen_aktuell %}{% if meeting %}<c-rahmen.brotkrume>{{ meeting.committee_name|default:meeting.get_display_name|truncatechars:60 }}{% if meeting.start %}, {{ meeting.start|date:"d.m.Y" }}{% endif %}</c-rahmen.brotkrume>{% endif %}{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if meeting %}{{ meeting.committee_name|default:meeting.get_display_name|default:'Sitzung' }}{% else %}Sitzung{% endif %}" dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings' org_slug=organization.slug %}">Meine Sitzungen</c-insight.zurueck></c-slot>
+    {% if meeting %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=meeting.id %}" size="sm">Vorbereiten</c-ui.button></c-slot>
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300" data-testid="sitzung-termin">
+        {% if meeting.name and meeting.name != meeting.committee_name %}<span>{{ meeting.name }}</span>{% endif %}
+        {% if meeting.start %}<span>{{ meeting.start|date:"l, j. F Y" }}, {{ meeting.start|date:"H:i" }}{% if meeting.end %}–{{ meeting.end|date:"H:i" }}{% endif %} Uhr</span>{% endif %}
+        {% if meeting.location_name %}<span>{{ meeting.location_name }}</span>{% endif %}
+    </p>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice_neu.html" %}
+{% elif meeting %}
+{% include "work/meetings/partials/_withdrawn_notice.html" %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <c-rahmen.abschnitt titel="Tagesordnung" titel_id="tagesordnung-titel" zusatz="{% if tagesordnung %}{{ tagesordnung|length }} Punkt{{ tagesordnung|length|pluralize:'e' }}{% endif %}" class="min-w-0">
+        {% if tagesordnung %}
+        <ol class="mt-2 divide-y divide-gray-200 dark:divide-gray-800" data-testid="tagesordnung">
+            {% for e in tagesordnung %}
+            <li class="py-3 grid grid-cols-[3rem_minmax(0,1fr)] gap-x-3">
+                <span class="tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ e.item.number|default:forloop.counter }}</span>
+                <div class="min-w-0">
+                    <p class="font-medium text-gray-900 dark:text-white break-words">{{ e.item.name|default:"Ohne Titel" }}</p>
+                    {% if e.item.public == False %}<p class="text-sm text-gray-600 dark:text-gray-400">Nichtöffentlich</p>{% endif %}
+                    {% for paper in e.papers %}
+                    <p class="mt-1 text-sm"><c-ui.textlink href="{% url 'work:ris_paper_detail' org_slug=organization.slug paper_id=paper.id %}" class="break-words">{{ paper.name|default:"Vorgang" }}</c-ui.textlink>{% if paper.reference %}<span class="text-gray-600 dark:text-gray-400"> · {{ paper.reference }}</span>{% endif %}</p>
+                    {% endfor %}
+                    {% if e.item.result %}<p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">Ergebnis: {{ e.item.result }}</p>{% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ol>
+        {% else %}
+        <c-rahmen.satz>Keine Tagesordnungspunkte vorhanden.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    <aside class="min-w-0 space-y-8" aria-label="Vorbereitung und Angaben">
+        <c-rahmen.band ton="grau" dicht titel="Vorbereitung" titel_id="vorbereitung-titel" data-testid="vorbereitungsstand">
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200">
+                {% if preparation.is_prepared %}Abgeschlossen{% if preparation.prepared_at %} am {{ preparation.prepared_at|date:"d.m.Y, H:i" }} Uhr{% endif %}.
+                {% elif preparation %}Begonnen, zuletzt bearbeitet am {{ preparation.updated_at|date:"d.m.Y, H:i" }} Uhr.
+                {% else %}Noch nicht begonnen.{% endif %}
+            </p>
+        </c-rahmen.band>
+
+        <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
+            <c-ui.angaben class="mt-3">
+                <dt>Datum</dt>
+                <dd>{% if meeting.start %}{{ meeting.start|date:"d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% if meeting.end %} bis {{ meeting.end|date:"H:i" }} Uhr{% endif %}{% else %}offen{% endif %}</dd>
+                {% if meeting.location_name %}<dt>Ort</dt><dd>{{ meeting.location_name }}{% if meeting.location_address %}<br><span class="text-gray-600 dark:text-gray-400">{{ meeting.location_address }}</span>{% endif %}</dd>{% endif %}
+                {% if meeting.committee_name %}<dt>Gremium</dt><dd>{{ meeting.committee_name }}</dd>{% endif %}
+                <dt>Status</dt>
+                <dd>{% if is_upcoming %}Anstehend{% else %}Abgeschlossen{% endif %}</dd>
+            </c-ui.angaben>
+            <p class="mt-4 text-sm"><c-ui.textlink href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=meeting.id %}">In der Recherche öffnen</c-ui.textlink></p>
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% else %}
+<p class="text-sm text-gray-700 dark:text-gray-300">Die Sitzung wurde nicht gefunden, oder Sie haben keinen Zugriff darauf. <c-ui.textlink href="{% url 'work:meetings' org_slug=organization.slug %}">Zurück zu Meine Sitzungen</c-ui.textlink></p>
+{% endif %}
+{% endblock %}

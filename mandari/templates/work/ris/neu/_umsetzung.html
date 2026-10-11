@@ -1,0 +1,6 @@
+{% comment %}
+Umsetzungsstand eines Beschlusses als Punkt mit Text (Issue #951, statt Farbchip): überfällig rot, erledigt grün, in
+Umsetzung in der Kennfarbe, zurückgestellt grau, offen gelb; die Farbe steht nie allein. Erwartet: item
+(SessionAgendaItem, angenommen).
+{% endcomment %}
+<span class="inline-flex items-center gap-1.5 font-medium text-gray-900 dark:text-white"><span class="w-2 h-2 shrink-0 rounded-full {% if item.implementation_overdue %}bg-red-600{% elif item.implementation_status == 'done' %}bg-green-600{% elif item.implementation_status == 'in_progress' %}bg-primary-600{% elif item.implementation_status == 'deferred' %}bg-gray-400{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% if item.implementation_overdue %}Überfällig{% else %}{{ item.get_implementation_status_display }}{% endif %}</span>
