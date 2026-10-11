@@ -75,6 +75,20 @@
         </form>
     </c-ui.card>
 
+    <c-ui.card title="Formularfelder für Arbeitsflächen" subtitle="dicht (Work, 36 px, 14 px), modell, maxlength, zeile; c-form.datei – Dateifeld mit Ablagefläche; c-rahmen.reiter-link mit zahl">
+        <form class="space-y-5" novalidate>
+            <c-form.field name="titel_dicht" label="Titel" maxlength="500" dicht help="Höchstens 500 Zeichen" />
+            <c-form.select name="status_dicht" label="Status" dicht zeile><option>Alle</option><option>Entwurf</option></c-form.select>
+            <c-form.textarea name="text_dicht" id="text-dicht" label="Begründung" rows="3" dicht />
+            <c-form.checkbox name="bestaetigung" value="ja" dicht>Ich bestätige die Angaben.</c-form.checkbox>
+            <c-form.datei name="unterlagen" label="Unterlagen (PDF)" accept=".pdf" hinweis="Bis 20 MB" />
+        </form>
+        <c-rahmen.reiter label="Beispielreiter mit Zahl" class="mt-6">
+            <c-rahmen.reiter-link href="#" :aktiv="True">Alle</c-rahmen.reiter-link>
+            <c-rahmen.reiter-link href="#" zahl="3" zahl_text="offen">Zu prüfen</c-rahmen.reiter-link>
+        </c-rahmen.reiter>
+    </c-ui.card>
+
     <c-ui.card title="Karte mit Aktionen und Fußzeile" subtitle="c-ui.card – title, subtitle, actions-Slot, footer-Slot, padding">
         <c-slot name="actions"><c-ui.button size="sm" variant="secondary" icon="plus">Aktion</c-ui.button></c-slot>
         <p class="text-sm text-gray-600 dark:text-gray-300">Inhalt der Karte.</p>

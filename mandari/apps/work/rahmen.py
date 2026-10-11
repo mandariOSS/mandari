@@ -44,6 +44,31 @@ def neues_design(organization: Any) -> bool:
     return bool(organization is not None and getattr(organization, "work_new_design", False))
 
 
+class NeueVorlageMixin:
+    """
+    Seite mit eigener Vorlage im neuen Erscheinungsbild (Issue #951): Ist der Schalter der Organisation an, rendert die
+    View ``neue_vorlage``, sonst ihre bisherige Vorlage. Die bisherige Vorlage bleibt unverändert, Kontext und Rechte
+    sind in beiden Fällen dieselben. ``?ansicht=bisher`` öffnet die bisherige Vorlage auch bei eingeschaltetem Schalter
+    (Rückweg wie beim Antragseditor, falls auf der neuen Seite etwas fehlt). Vor ``WorkViewMixin`` in die Basisklassen
+    setzen.
+    """
+
+    #: Vorlage im neuen Erscheinungsbild; leer = dieselbe Vorlage wie bisher
+    neue_vorlage = ""
+
+    def neue_ansicht(self) -> bool:
+        """True, wenn die Seite in ihrer neuen Vorlage erscheint."""
+        request = getattr(self, "request", None)
+        bisher = request is not None and request.GET.get("ansicht") == "bisher"
+        return bool(self.neue_vorlage) and not bisher and neues_design(getattr(self, "organization", None))
+
+    def get_template_names(self) -> list[str]:
+        if self.neue_ansicht():
+            return [self.neue_vorlage]
+        namen: list[str] = super().get_template_names()  # type: ignore[misc]
+        return namen
+
+
 @dataclass(frozen=True)
 class Ziel:
     """Eintrag der Navigation: Schlüssel, Beschriftung, Adressname (``work:…``), Symbol (Lucide), Kurzform."""

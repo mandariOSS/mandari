@@ -2,6 +2,7 @@
 {% comment %}
 Tabellenkopfzelle.  <c-ui.th align="left|right|center" class="w-32">Spalte</c-ui.th>
 `plain` setzt die Spaltenüberschrift in normaler Schreibung statt in Versalien (Work, Issue #851): <c-ui.th plain>Titel</c-ui.th>
+`dicht` (Work, Issue #951): normale Schreibung, 13 px, Rand 12/8 px wie die Listen aus c-liste.*: <c-ui.th dicht>Status</c-ui.th>
 {% endcomment %}
-<c-vars align="left" class="" plain="" />
-<th scope="col" class="px-4 py-3 text-xs font-semibold {% if not plain %}uppercase tracking-wider {% endif %}text-gray-500 dark:text-gray-400 {% if align == 'right' %}text-right{% elif align == 'center' %}text-center{% else %}text-left{% endif %} {{ class }}" {{ attrs }}>{{ slot }}</th>
+<c-vars align="left" class="" plain="" dicht="" />
+<th scope="col" class="{% if dicht %}px-3 py-2 text-[0.8125rem] font-medium text-gray-600{% else %}px-4 py-3 text-xs font-semibold {% if not plain %}uppercase tracking-wider {% endif %}text-gray-500{% endif %} dark:text-gray-400 {% if align == 'right' %}text-right{% elif align == 'center' %}text-center{% else %}text-left{% endif %} {{ class }}" {{ attrs }}>{{ slot }}</th>

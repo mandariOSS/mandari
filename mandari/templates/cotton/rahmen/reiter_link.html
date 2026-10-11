@@ -4,9 +4,12 @@ Ein Reiter in c-rahmen.reiter (Issue #852): Link mit Unterstrich in der Kennfarb
 Wert von aria-current an (Standard ``page``; ``true``, wenn die geöffnete Seite nur in diesem Reiter liegt). Weitere
 Attribute (z. B. hx-get) gehen an den Link.
   <c-rahmen.reiter-link href="…" :aktiv="r.aktiv" current="{{ r.current }}">Vorgänge</c-rahmen.reiter-link>
+``zahl`` (Issue #951) setzt eine gedimmte Zahl hinter die Beschriftung (offene Arbeit, ungelesene Einträge), keine
+Pille; 0 und leer zeigen nichts. ``zahl_text`` ergänzt sie für Bildschirmleser („3 offen“).
+  <c-rahmen.reiter-link href="…" :aktiv="r.aktiv" :zahl="r.zahl" zahl_text="offen">Zu prüfen</c-rahmen.reiter-link>
 {% endcomment %}
-<c-vars href="" aktiv="" current="" />
+<c-vars href="" aktiv="" current="" zahl="" zahl_text="" />
 <li class="shrink-0">
     <a href="{{ href }}" {% if aktiv %}aria-current="{{ current|default:'page' }}"{% endif %} {{ attrs }}
-       class="inline-flex items-center h-10 border-b-2 text-sm whitespace-nowrap {% if aktiv %}border-primary-600 font-semibold text-gray-900 dark:border-primary-400 dark:text-white{% else %}border-transparent font-medium text-gray-600 hover:text-gray-900 hover:border-gray-300 dark:text-gray-400 dark:hover:text-white{% endif %}">{{ slot }}</a>
+       class="inline-flex items-center h-10 border-b-2 text-sm whitespace-nowrap {% if aktiv %}border-primary-600 font-semibold text-gray-900 dark:border-primary-400 dark:text-white{% else %}border-transparent font-medium text-gray-600 hover:text-gray-900 hover:border-gray-300 dark:text-gray-400 dark:hover:text-white{% endif %}">{{ slot }}{% if zahl and zahl|stringformat:"s" != "0" %}<span class="ml-1.5 tabular-nums font-normal text-gray-600 dark:text-gray-400"><span class="sr-only">, </span>{{ zahl }}{% if zahl_text %}<span class="sr-only"> {{ zahl_text }}</span>{% endif %}</span>{% endif %}</a>
 </li>
