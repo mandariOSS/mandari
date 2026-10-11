@@ -100,7 +100,7 @@ def _welt_2a(tenant: SessionTenant) -> dict[str, Any]:
     _person(tenant, "Gerd", "Gast")  # ohne Besetzung: unter „Gast oder Verwaltung ergänzen“
     for person in personen:
         SessionOrganizationMembership.objects.create(organization=rat, person=person, start_date=date(2025, 1, 1))
-    personen[0].set_bank_iban_encrypted("DE02120300000000202051")
+    cast(Any, personen[0]).set_bank_iban_encrypted("DE02120300000000202051")  # Accessor zur Laufzeit
     personen[0].save()
 
     ausschuss = SessionOrganization.objects.create(tenant=tenant, name="Bauausschuss", organization_type="committee")
@@ -216,7 +216,7 @@ def _welt_2a(tenant: SessionTenant) -> dict[str, Any]:
     def adresse(name: str, **kw: Any) -> str:
         return reverse(f"session:{name}", kwargs={"tenant_slug": slug, **kw})
 
-    start = timezone.localtime(sitzung.start)
+    termin = timezone.localtime(sitzung.start)
     von = (heute - timedelta(days=6)).isoformat()
     welt.update(
         {
@@ -226,7 +226,7 @@ def _welt_2a(tenant: SessionTenant) -> dict[str, Any]:
             "sitzungsgelder": adresse("allowances") + f"?from={von}&to={heute.isoformat()}",
             "monatspauschalen": adresse("allowances_monthly"),
             "vertretungen": adresse("settings_delegations"),
-            "kalender": adresse("meeting_calendar") + f"?year={start.year}&month={start.month}",
+            "kalender": adresse("meeting_calendar") + f"?year={termin.year}&month={termin.month}",
             "audit": adresse("audit_log"),
             "ausschuss_obj": ausschuss,
             "anwesend": anwesend,
