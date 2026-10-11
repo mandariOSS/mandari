@@ -19,6 +19,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import DOCUMENTS, MB, validate_upload
 from apps.work.files import attachment_response
 from apps.work.notifications.services import NotificationHub
+from apps.work.rahmen import NeueVorlageMixin, fragment_neu
 
 from .models import (
     SupportTicket,
@@ -27,10 +28,11 @@ from .models import (
 )
 
 
-class SupportListView(WorkViewMixin, TemplateView):
+class SupportListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Eigene Support-Tickets und Themenübersicht der Anwenderdokumentation."""
 
     template_name = "work/support/list.html"
+    neue_vorlage = "work/support/neu/liste.html"
     permission_required = "support.view"
 
     def get_context_data(self, **kwargs):
@@ -68,10 +70,11 @@ class SupportListView(WorkViewMixin, TemplateView):
         return context
 
 
-class SupportCreateView(WorkViewMixin, TemplateView):
+class SupportCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Create a new support ticket."""
 
     template_name = "work/support/create.html"
+    neue_vorlage = "work/support/neu/neu.html"
     permission_required = "support.create"
 
     def get_context_data(self, **kwargs):
@@ -126,10 +129,11 @@ class SupportCreateView(WorkViewMixin, TemplateView):
         return redirect("work:support_detail", org_slug=self.organization.slug, ticket_id=ticket.id)
 
 
-class SupportDetailView(WorkViewMixin, TemplateView):
+class SupportDetailView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Detail view of a support ticket with message thread."""
 
     template_name = "work/support/detail.html"
+    neue_vorlage = "work/support/neu/ticket.html"
     permission_required = "support.view"
 
     def get(self, request, *args, **kwargs):
@@ -159,7 +163,11 @@ class SupportDetailView(WorkViewMixin, TemplateView):
         if not self.request.user.is_staff:
             messages_qs = messages_qs.filter(is_internal=False)
 
-        context["messages"] = messages_qs
+        context["ticket_messages"] = messages_qs
+        # Die bisherige Vorlage liest die Nachrichten als ``messages`` – derselbe Name wie die Hinweise des Rahmens,
+        # die deshalb dort die Nachrichten als Hinweise zeigen. Die neue Vorlage nutzt ``ticket_messages`` (Issue #951).
+        if not self.neue_ansicht():
+            context["messages"] = messages_qs
 
         # Get attachments
         context["attachments"] = ticket.attachments.filter(message__isnull=True)
@@ -310,10 +318,17 @@ class SupportTicketMessagesPartialView(WorkViewMixin, View):
             # Return 204 No Content - no update needed
             return HttpResponse(status=204)
 
+        # Die Seite im neuen Erscheinungsbild fordert ihre Fassung des Fragments an (hx-headers, Issue #951)
+        vorlage = (
+            "work/support/neu/_nachrichten.html"
+            if fragment_neu(request)
+            else "work/support/partials/message_thread.html"
+        )
         html = render_to_string(
-            "work/support/partials/message_thread.html",
+            vorlage,
             {
                 "messages": messages_qs,
+                "ticket_messages": messages_qs,
                 "ticket": ticket,
                 "organization": self.organization,
             },

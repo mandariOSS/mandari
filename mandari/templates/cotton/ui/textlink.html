@@ -4,7 +4,10 @@ Textlink in der Kennfarbe für zweite Wege neben der einen Hauptaktion (Issue #8
 ``extern`` öffnet in neuem Fenster und sagt das Bildschirmlesern.
   <c-ui.textlink href="…">Vorbereitung öffnen</c-ui.textlink>
   <c-ui.textlink href="{{ quelle }}" extern class="text-sm">Im Ratsinformationssystem</c-ui.textlink>
-Weitere Attribute (data-*, aria-*) werden durchgereicht.
+``knopf`` macht daraus einen Knopf im selben Aussehen, für zweite Wege, die auf der Seite bleiben, etwa einen Dialog
+öffnen (Issue #951); ``knopf="submit"`` sendet das umgebende Formular ab. Ohne ``knopf`` bleibt das Markup wie bisher.
+  <c-ui.textlink knopf @click="$refs.importDialog.showModal()">Aus einer Datei</c-ui.textlink>
+Weitere Attribute (data-*, aria-*, @click) werden durchgereicht.
 {% endcomment %}
-<c-vars href="" extern="" class="" />
-<a href="{{ href }}"{% if extern %} target="_blank" rel="noopener noreferrer"{% endif %} class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 {{ class }}" {{ attrs }}>{{ slot }}{% if extern %}<span class="sr-only"> (öffnet in neuem Fenster)</span>{% endif %}</a>
+<c-vars href="" extern="" class="" knopf="" />
+{% if knopf %}<button type="{% if knopf == 'submit' %}submit{% else %}button{% endif %}" class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 {{ class }}" {{ attrs }}>{{ slot }}</button>{% else %}<a href="{{ href }}"{% if extern %} target="_blank" rel="noopener noreferrer"{% endif %} class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 {{ class }}" {{ attrs }}>{{ slot }}{% if extern %}<span class="sr-only"> (öffnet in neuem Fenster)</span>{% endif %}</a>{% endif %}

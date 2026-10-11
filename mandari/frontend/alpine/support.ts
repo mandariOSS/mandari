@@ -3,7 +3,12 @@
  *
  * - `ticketForm`: Dateiauswahl (höchstens MAX_FILES, je Datei höchstens MAX_FILE_BYTES).
  *   Markup: `templates/work/support/create.html`. Die frühere Artikelsuche der Wissensdatenbank
- *   entfällt; die Seite verweist auf die Anwenderdokumentation (#589).
+ *   entfällt; die Seite verweist auf die Anwenderdokumentation (#589). Im neuen Erscheinungsbild
+ *   (`templates/work/support/neu/neu.html`, #951) steuert `ziehen` die Ablagefläche von c-form.datei.
+ * - `ticketVerlauf`: Nachrichten eines Tickets, alle fünf Sekunden nachgeladen (hx-trigger am Element). Nach einer
+ *   Antwort mit `X-Message-Count` setzt die Komponente `count` in `hx-get` neu, damit der Server bei unverändertem
+ *   Stand 204 antwortet. Vorher Inline-Skript in `templates/work/support/detail.html`; Markup:
+ *   `templates/work/support/neu/ticket.html` (#951).
  */
 
 import { defineComponent } from '../js/alpine/component'
@@ -34,6 +39,8 @@ export const ticketForm = defineComponent(() => {
   return {
     subject: '',
     files: [] as File[],
+    /** Datei wird über die Ablagefläche gezogen (c-form.datei mit ``ziehen``) */
+    ziehen: false,
 
     init() {
       root = this.$el
@@ -63,3 +70,25 @@ export const ticketForm = defineComponent(() => {
     },
   }
 })
+
+/** Adresse des Nachladens mit neuem Stand: `count` ersetzen, andere Parameter bleiben. */
+export function mitZaehler(adresse: string, anzahl: string, basis: string): string {
+  const url = new URL(adresse, basis)
+  url.searchParams.set('count', anzahl)
+  return url.pathname + url.search
+}
+
+export const ticketVerlauf = defineComponent(() => ({
+  init() {
+    const el = this.$el
+    el.addEventListener('htmx:afterRequest', (event) => {
+      const xhr = (event as CustomEvent<{ xhr?: XMLHttpRequest }>).detail?.xhr
+      const anzahl = xhr?.status === 200 ? xhr.getResponseHeader('X-Message-Count') : null
+      const adresse = el.getAttribute('hx-get')
+      if (!anzahl || !adresse) return
+      el.setAttribute('hx-get', mitZaehler(adresse, anzahl, window.location.origin))
+      // htmx liest hx-get beim Einrichten; neu einrichten, damit das nächste Nachladen den neuen Stand sendet
+      window.htmx.process(el)
+    })
+  },
+}))
