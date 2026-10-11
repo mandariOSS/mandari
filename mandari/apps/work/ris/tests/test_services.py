@@ -517,6 +517,7 @@ def test_decisions_are_bound_to_linked_session_tenants(bodies: Any, body: OParlB
         "Radweg bauen",
         "Verschoben",
     ]
+    assert list(selectors.filter_decisions(items, organization_id="keine-uuid")) == []
     assert [i.name for i in selectors.filter_implementation(items, status="done", today=now.date())] == ["Verschoben"]
     assert [o.name for o in selectors.decision_organizations(tenants)] == ["Rat"]
     assert selectors.decision_years(tenants) == [now.year]

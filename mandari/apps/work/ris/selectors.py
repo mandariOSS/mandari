@@ -519,6 +519,11 @@ def filter_decisions(
 ) -> QuerySet[SessionAgendaItem]:
     """Filter nach Gremium, Jahr und Volltext (Titel, Beschlusstext, Nummer, Adressat)."""
     if organization_id:
+        # Unbekannte Kennung aus der Adresse (etwa ?organization=abc) ergibt eine leere Liste statt eines Serverfehlers
+        try:
+            UUID(organization_id)
+        except ValueError:
+            return items.none()
         items = items.filter(Q(meeting__organization_id=organization_id))
     if year.isdigit():
         items = items.filter(meeting__start__year=int(year))
