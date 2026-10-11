@@ -16,6 +16,8 @@
     <span class="text-gray-900 dark:text-white font-medium">Ortsrecht</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zu den Sitzungsformaten #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}">Sitzungsformate</c-rahmen.brotkrume><c-rahmen.brotkrume>Ortsrecht</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="max-w-4xl mx-auto space-y-6">

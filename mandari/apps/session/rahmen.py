@@ -18,7 +18,9 @@ Einstellungen. Jeder Eintrag erscheint nur mit dem Recht, das auch die Seite ver
 Beschlussregister, Umlaufbeschlüsse). Welcher Bereich aktiv ist, folgt aus dem Namen der aufgerufenen Adresse.
 
 Brotkrumen: Mandant › Bereich › Reiter › Seite. Kennt der Rahmen die Seite nicht selbst (Detail- und Formularseiten),
-ergänzt ``session/base_session_neu.html`` ihren Titel als letzte Krume.
+ergänzt ``session/base_session_neu.html`` ihren Titel als letzte Krume. Unterseiten mit einer Elternseite dazwischen
+(Ladung, Niederschrift oder Abstimmung einer Sitzung, Fassungen einer Vorlage, Verlauf einer Anlage) setzen den Weg
+zurück selbst im Block ``brotkrumen_aktuell`` (z. B. ``session/rahmen/_krume_sitzung.html``).
 """
 
 from __future__ import annotations
@@ -127,7 +129,13 @@ REITER: dict[str, tuple[Ziel, ...]] = {
     ),
 }
 #: Zahl am Reiter bzw. am Bereich: Name der Kontextvariable aus ``SessionMixin.get_context_data``
-ZAEHLER: dict[str, str] = {"pruefen": "papers_review_count", "mitzeichnungen": "cosign_count"}
+ZAEHLER: dict[str, str] = {
+    "pruefen": "papers_review_count",
+    "mitzeichnungen": "cosign_count",
+    "antraege": "pending_applications_count",
+}
+#: Offene Anträge (Zahl an „Anträge“, wie auf dem Start gezählt)
+OFFENE_ANTRAEGE: tuple[str, ...] = ("submitted", "received", "in_review")
 
 #: Seiten mit fester Einordnung: Adressname → (Bereich, Reiter, eigene Brotkrume)
 SEITEN: dict[str, tuple[str, str | None, str | None]] = {
@@ -143,6 +151,9 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "my_cosignatures": ("vorlagen", "mitzeichnungen", None),
     "resolutions": ("beschluesse", "register", None),
     "circulars": ("beschluesse", "umlauf", None),
+    # Ein Umlaufbeschluss steht unter seinem Reiter: Beschlüsse › Umlaufbeschlüsse › Seite
+    "circular_detail": ("beschluesse", "umlauf", None),
+    "circular_create": ("beschluesse", "umlauf", None),
     "voting_capture": ("sitzungen", None, None),
     "allowances": ("sitzungsgelder", None, None),
     "allowances_monthly": ("sitzungsgelder", None, None),
@@ -242,7 +253,7 @@ def _eintrag(ziel: Ziel, slug: str, aktiv: bool, url_name: str, zahl: int = 0) -
 
 
 def _zahlen(zaehler: dict[str, Any] | None) -> dict[str, int]:
-    """Zahlen der Arbeitsvorräte (zu prüfende Vorlagen, offene Mitzeichnungen) aus dem Seitenkontext."""
+    """Zahlen der Arbeitsvorräte (zu prüfende Vorlagen, offene Mitzeichnungen, offene Anträge) aus dem Seitenkontext."""
     werte = zaehler or {}
     return {key: int(werte.get(variable) or 0) for key, variable in ZAEHLER.items()}
 
@@ -264,7 +275,8 @@ def navigation(
     slug = tenant.slug
     bereich, reiter_key, seite = einordnen(url_name)
     zahlen = _zahlen(zaehler)
-    arbeit = zahlen["pruefen"] + zahlen["mitzeichnungen"]
+    # Zahl am Bereich: an „Vorlagen“ die offene Arbeit beider Reiter, an „Anträge“ die offenen Anträge
+    am_bereich = {"vorlagen": zahlen["pruefen"] + zahlen["mitzeichnungen"], "antraege": zahlen["antraege"]}
 
     bereiche: list[dict[str, Any]] = []
     for ziel in BEREICHE:
@@ -272,7 +284,7 @@ def navigation(
             ziel = VORLAGEN_PRUEFEN
         if not _erlaubt(ziel, rechte):
             continue
-        bereiche.append(_eintrag(ziel, slug, ziel.key == bereich, url_name, arbeit if ziel.key == "vorlagen" else 0))
+        bereiche.append(_eintrag(ziel, slug, ziel.key == bereich, url_name, am_bereich.get(ziel.key, 0)))
 
     # Verwaltung: aufklappbar, offen auf ihren Seiten; nur, wenn mindestens eine Seite erlaubt ist
     unten: list[dict[str, Any]] = []

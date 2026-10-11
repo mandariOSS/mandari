@@ -11,6 +11,8 @@
     <span class="text-gray-900 dark:text-white font-medium">Ladung</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zur Sitzung #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume>Ladung</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="grid lg:grid-cols-3 gap-6">

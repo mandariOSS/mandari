@@ -11,6 +11,8 @@
     <span class="text-gray-900 dark:text-white font-medium">{% if object %}Bearbeiten{% else %}Anlegen{% endif %}</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zu den Körperschaften #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:settings_bodies' tenant_slug=tenant_slug %}">Körperschaften</c-rahmen.brotkrume><c-rahmen.brotkrume>{% if object %}{{ object.name|truncatechars:60 }}{% else %}Anlegen{% endif %}</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="max-w-2xl mx-auto">

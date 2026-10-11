@@ -11,6 +11,8 @@
     <span class="text-gray-900 dark:text-white font-medium">Vertretungen</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zu den Benutzern #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:users' tenant_slug=tenant_slug %}">Benutzer</c-rahmen.brotkrume><c-rahmen.brotkrume>Vertretungen</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="max-w-5xl space-y-6">

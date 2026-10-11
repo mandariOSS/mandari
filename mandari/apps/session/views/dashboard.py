@@ -22,7 +22,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
-from ..rahmen import neues_design
+from ..rahmen import OFFENE_ANTRAEGE, neues_design
 from ..services import audit_log_service, joint_meeting_service
 
 # =============================================================================
@@ -184,7 +184,7 @@ class DashboardView(SessionViewMixin, TemplateView):
         # Pending applications
         open_applications = SessionApplication.objects.filter(
             tenant=tenant,
-            status__in=["submitted", "received", "in_review"],
+            status__in=OFFENE_ANTRAEGE,
         )
         if can_applications:
             context["pending_applications"] = open_applications.order_by("-submitted_at")[:5]

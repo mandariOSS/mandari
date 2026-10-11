@@ -16,6 +16,8 @@ jedem Hinweis über den WebSocket bzw. im Polling-Rückfall alle zwei Sekunden n
     <span class="text-gray-900 dark:text-white font-medium">Cockpit</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zur Sitzung #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume>Cockpit</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div x-data="meetingCockpit"

@@ -9,6 +9,8 @@
     <span class="text-gray-900 dark:text-white font-medium">Berichtigung</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zur Sitzung und zur Niederschrift #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}">Niederschrift</c-rahmen.brotkrume><c-rahmen.brotkrume>Berichtigung</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="max-w-3xl space-y-6">
