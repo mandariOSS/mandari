@@ -15,6 +15,11 @@ Alle Angaben kommen aus dem, was die Views ohnehin laden; hier entstehen keine A
 schon genutzten Beziehungen (``body``, vorgeladene Gremien). Ausnahme ist der Ort einer Sitzung
 (``services.sitzungsort``): höchstens je eine kleine Abfrage, wenn die Sitzung ihn nur verweist bzw. keinen nennt.
 
+Der Seitentitel (``<title>``) hat höchstens ``TITEL_MAX`` Zeichen (Issue #939, Bing: „Title too long“) und auf
+Detailseiten und Stadtseiten keinen Zusatz „| mandari Insight“; die Marke steht in ``og:site_name``. Wird es eng,
+fallen zuerst Zusätze weg (die Art vor der Drucksachennummer), dann wird das Thema gekürzt – ohne Füllwort vor dem
+„…“; die Kommune bleibt (``seitentitel``). ``og:title`` und die Namen in den strukturierten Daten bleiben ausführlich.
+
 Die Brotkrumen der strukturierten Daten führen nur über Adressen, die Suchmaschinen direkt erreichen
 (Bürgerportal → Kommune → Objekt, Issue #939).
 """
@@ -52,8 +57,14 @@ _SCRIPT_JSON_ESCAPES = {
     0x2029: "\\u2029",
 }
 
-#: Längster Betreff bzw. Name im Seitentitel (Zeichen, an einer Wortgrenze gekürzt)
+#: Längster Seitentitel (Zeichen, HTML-entschlüsselt); Bing meldet längere als „Title too long“ (Issue #939)
+TITEL_MAX = 70
+#: Längster Betreff bzw. Name in ``og:title`` und Brotkrumen (Zeichen, an einer Wortgrenze gekürzt)
 TITEL_BETREFF_MAX = 70
+#: Ein gekürzter Zusatz im Seitentitel (die Rolle einer Person) erscheint nur ab so viel Platz, sonst fällt er weg
+_ZUSATZ_MIN = 15
+#: So viel Platz behält das Thema im Seitentitel mindestens, auch neben einem sehr langen Namen der Kommune
+_THEMA_MIN = 20
 #: Längste Description (Zeichen); mehr zeigen Suchmaschinen nicht
 DESCRIPTION_MAX = 160
 #: Ein Teil der Description, der nicht mehr ganz passt, erscheint gekürzt nur ab so viel Platz
@@ -67,6 +78,18 @@ _GREMIEN_MAX = 4
 _MITGLIEDSCHAFTEN_LD_MAX = 10
 #: „Fraktion “ vor dem Namen einer Fraktion (in der Description steht schon „Fraktion:“)
 _FRAKTION_VORAN = re.compile(r"^Fraktion\s+", re.IGNORECASE)
+#: Ein Wort endet am Schnitt, wenn danach höchstens Satzzeichen und dann ein Leerzeichen oder das Ende folgen
+_WORTENDE = re.compile(r"[,;:!?]*(?: |$)")
+#: Steht nach dem Kürzen nicht vor dem „…“: Satzzeichen …
+_SCHNITT_REST = " ,;:-–/&"
+#: … und Füllwörter (Artikel, Präpositionen, Konjunktionen; nur klein geschrieben – „DIE LINKE“ bleibt)
+_FUELLWOERTER = frozenset(
+    {
+        *("der", "die", "das", "des", "dem", "den", "ein", "eine", "einer", "eines", "einem"),
+        *("in", "im", "ins", "zur", "zum", "zu", "für", "von", "vom", "an", "am", "auf", "aus", "mit", "bei", "über"),
+        *("nach", "gegen", "durch", "und", "oder", "sowie"),
+    }
+)
 _WOCHENTAGE = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
 
 
@@ -85,8 +108,9 @@ class SEOContext:
     Container für SEO-Metadaten einer Seite.
 
     Wird in Templates für Meta-Tags verwendet. ``title`` ist der Seitentitel ohne den Zusatz des
-    Rahmens („| mandari Insight“) und zugleich ``og:title``. ``breadcrumbs`` (Name, absolute URL)
-    erscheinen als zweites JSON-LD-Element (``BreadcrumbList``).
+    Rahmens („| mandari Insight“), ``og_title`` der ausführlichere Titel für ``og:title`` und
+    ``twitter:title`` (leer: wie ``title``). ``breadcrumbs`` (Name, absolute URL) erscheinen als zweites
+    JSON-LD-Element (``BreadcrumbList``).
     """
 
     title: str
@@ -101,11 +125,13 @@ class SEOContext:
     robots: str = "index, follow"
     author: str = "mandari"
     breadcrumbs: list[tuple[str, str]] = field(default_factory=list)
+    og_title: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Konvertiert zu Dictionary für Template-Rendering."""
         return {
             "title": self.title,
+            "og_title": self.og_title or self.title,
             "description": self.description,
             "canonical_url": self.canonical_url,
             "og_type": self.og_type,
@@ -152,10 +178,21 @@ def kuerzen(wert: Any, limit: int) -> str:
     if len(text) <= limit:
         return text
     cut = text[: limit - 1]
-    # Endet der Schnitt mitten im Wort, fällt das angeschnittene Wort weg; ein ganzes Wort davor bleibt
-    if text[limit - 1] != " " and " " in cut:
+    # Endet der Schnitt mitten im Wort, fällt das angeschnittene Wort weg; ein ganzes Wort davor bleibt, auch wenn
+    # ihm nur ein Satzzeichen folgt („Umwelt, Klimaschutz,“ → „Umwelt, Klimaschutz…“)
+    if not _WORTENDE.match(text, limit - 1) and " " in cut:
         cut = cut[: cut.rindex(" ")]
-    return cut.rstrip(" ,;:-–") + "…"
+    # Keine offene Klammer vor dem „…“ („Mitglied (sachk.…“ → „Mitglied…“) – aber nur, wenn davor noch mindestens die
+    # Hälfte bleibt; sonst bliebe von „Antrag (CDU-Fraktion, SPD-Fraktion, …) zur Sache“ nur „Antrag…“
+    if cut.count("(") > cut.count(")"):
+        davor = cut[: cut.rindex("(")].rstrip(_SCHNITT_REST)
+        if 2 * len(davor) >= limit:
+            cut = davor
+    # Kein Füllwort und kein übrig gebliebenes Satzzeichen vor dem „…“: „Haushaltsmittel der…“ → „Haushaltsmittel…“
+    woerter = cut.rstrip(_SCHNITT_REST).split(" ")
+    while len(woerter) > 1 and woerter[-1] in _FUELLWOERTER:
+        woerter = " ".join(woerter[:-1]).rstrip(_SCHNITT_REST).split(" ")
+    return " ".join(woerter).rstrip(_SCHNITT_REST) + "…"
 
 
 def beschreibung(*teile: str, limit: int = DESCRIPTION_MAX) -> str:
@@ -199,6 +236,29 @@ def mit_kommune(haupt: str, kommune: str, trenner: str = ", ") -> str:
     if not kommune or _nennt(haupt, kommune):
         return haupt
     return f"{haupt}{trenner}{kommune}" if haupt else kommune
+
+
+def seitentitel(
+    varianten: Iterable[str], thema: str, kommune: str = "", *, nach_thema: str = "", trenner: str = ", "
+) -> str:
+    """Seitentitel mit höchstens ``TITEL_MAX`` Zeichen (Issue #939): Thema, dann Kommune, dann Zusätze.
+
+    ``varianten`` sind Titel ohne Kommune in Rangfolge, die ausführlichste zuerst („Betreff – Vorlage V/1/2030“,
+    „Betreff“); es gilt die erste, die mit der Kommune passt. Passt keine, wird ``thema`` an einer Wortgrenze
+    gekürzt; ``nach_thema`` (das Datum einer Sitzung) und die Kommune bleiben dahinter stehen. Die Kommune
+    erscheint nur einmal (``mit_kommune``) und fällt nie weg, nur ein absurd langer Name wird selbst gekürzt.
+    """
+    for haupt in varianten:
+        titel = mit_kommune(haupt, kommune, trenner)
+        if len(titel) <= TITEL_MAX:
+            return titel
+    gekuerzt = kuerzen(thema, TITEL_MAX - len(nach_thema)) + nach_thema
+    if not kommune or _nennt(gekuerzt, kommune):
+        return kuerzen(gekuerzt, TITEL_MAX)
+    # Die Kommune stand im weggekürzten Teil oder gar nicht im Thema: Platz für sie lassen
+    anhang = f"{trenner}{kommune}"
+    platz = max(TITEL_MAX - len(nach_thema) - len(anhang), _THEMA_MIN)
+    return kuerzen(f"{kuerzen(thema, platz)}{nach_thema}{anhang}", TITEL_MAX)
 
 
 def _ohne_leere(wert: Any) -> Any:
@@ -296,18 +356,45 @@ def betreff(paper: Any) -> str:
     return name
 
 
+def _nummer(paper: Any) -> str:
+    return " ".join(str(paper.reference or "").split())
+
+
 def _kennung(paper: Any) -> str:
-    """Art und Drucksachennummer: „Vorlage V/0881/2011“."""
+    """Art und Drucksachennummer: „Vorlage V/0881/2011“.
+
+    Beginnt die Nummer schon mit dem letzten Wort der Art, steht es nur einmal da: „Sitzungsvorlage RR“ und
+    „RR 50/2021“ ergeben „Sitzungsvorlage RR 50/2021“, „Antrag“ und „Antrag 12/2026“ nur „Antrag 12/2026“.
+    """
     art = art_kurz(paper.paper_type, paper.body.slug or "")
-    return " ".join(t for t in (art, (paper.reference or "").strip()) if t)
+    nummer = _nummer(paper)
+    woerter = art.split()
+    if woerter and nummer and re.match(rf"{re.escape(woerter[-1])}(?!\w)", nummer, re.IGNORECASE):
+        art = " ".join(woerter[:-1])
+    return " ".join(t for t in (art, nummer) if t)
 
 
 def paper_title(paper: Any) -> str:
-    """„{Betreff} – {Art} {Nr.}, {Kommune}“, ohne Betreff „{Art} {Nr.}, {Kommune}“."""
+    """``og:title``: „{Betreff} – {Art} {Nr.}, {Kommune}“, ohne Betreff „{Art} {Nr.}, {Kommune}“."""
     kennung = _kennung(paper)
     text = betreff(paper)
     haupt = f"{kuerzen(text, TITEL_BETREFF_MAX)} – {kennung}" if text else kennung
     return mit_kommune(haupt, _kommune(paper.body))
+
+
+def paper_seitentitel(paper: Any) -> str:
+    """Seitentitel wie ``paper_title``; zu lang: erst ohne Art, dann ohne Drucksachennummer, dann gekürzter Betreff.
+
+    Nach der Nummer wird gesucht („v0810 antrag“), sie bleibt deshalb, solange sie mit Betreff und Kommune passt.
+    """
+    kennung = _kennung(paper)
+    nummer = _nummer(paper)
+    text = betreff(paper)
+    kommune = _kommune(paper.body)
+    if not text:
+        return seitentitel([v for v in (kennung, nummer) if v], kennung, kommune)
+    mit_nummer = [f"{text} – {nummer}"] if nummer else []
+    return seitentitel([f"{text} – {kennung}", *mit_nummer, text], text, kommune)
 
 
 def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = None) -> SEOContext:
@@ -320,7 +407,6 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
     """
     body = paper.body
     kommune = _kommune(body)
-    title = paper_title(paper)
     datum = _datum(paper.date)
     kopf = f"{_kennung(paper)} vom {datum}" if datum else _kennung(paper)
     stand_satz = stand.text if stand is not None and stand.kind != STAND_UNBEKANNT else ""
@@ -347,7 +433,8 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
     )
 
     return SEOContext(
-        title=title,
+        title=paper_seitentitel(paper),
+        og_title=paper_title(paper),
         description=description,
         canonical_url=canonical,
         og_type="article",
@@ -450,9 +537,10 @@ def get_meeting_seo(
     gremium = meeting.get_display_name()
     body = meeting.body
     kommune = _kommune(body)
-    datum = _datum(meeting.start)
-    haupt = f"{kuerzen(gremium, TITEL_BETREFF_MAX)} am {datum}" if datum else kuerzen(gremium, TITEL_BETREFF_MAX)
-    title = mit_kommune(haupt, kommune, " – ")
+    am = f" am {_datum(meeting.start)}" if meeting.start else ""
+    haupt = f"{kuerzen(gremium, TITEL_BETREFF_MAX)}{am}"
+    # Das Datum bleibt im Seitentitel: Es unterscheidet die Sitzungen desselben Gremiums
+    title = seitentitel([f"{gremium}{am}"], gremium, kommune, nach_thema=am, trenner=" – ")
 
     # Zahl der Gremien aus den vorgeladenen Gremien (Namen mit Komma sind sonst mehrere)
     anzahl = len([org for org in meeting.organizations.all() if org.name]) or None
@@ -511,6 +599,7 @@ def get_meeting_seo(
 
     return SEOContext(
         title=title,
+        og_title=mit_kommune(haupt, kommune, " – "),
         description=description,
         canonical_url=canonical,
         og_type="event",
@@ -538,7 +627,6 @@ def get_organization_seo(
     """
     name = organization.name or organization.short_name or "Gremium"
     kommune = _kommune(organization.body)
-    title = mit_kommune(kuerzen(name, TITEL_BETREFF_MAX), kommune, " – ")
     art = _art_des_gremiums(organization)
 
     kopf = name if not art or art.lower() in name.lower() else f"{name} ({art})"
@@ -567,7 +655,8 @@ def get_organization_seo(
     )
 
     return SEOContext(
-        title=title,
+        title=seitentitel([name], name, kommune, trenner=" – "),
+        og_title=mit_kommune(kuerzen(name, TITEL_BETREFF_MAX), kommune, " – "),
         description=description,
         canonical_url=canonical,
         og_type="website",
@@ -590,6 +679,16 @@ def _gremien_der_person(mitgliedschaften: Iterable[Any]) -> list[str]:
     return sorted(namen, key=lambda n: not namen[n])
 
 
+def person_seitentitel(name: str, funktion: str, kommune: str) -> str:
+    """Seitentitel einer Person: Name und Kommune zuerst; die Rolle ganz, an einer Wortgrenze gekürzt oder gar nicht."""
+    if not funktion:
+        return seitentitel([name], name, kommune)
+    anhang = 0 if not kommune or _nennt(name, kommune) else len(f", {kommune}")
+    platz = TITEL_MAX - len(f"{name} – ") - anhang
+    gekuerzt = [f"{name} – {kuerzen(funktion, platz)}"] if platz >= _ZUSATZ_MIN else []
+    return seitentitel([f"{name} – {funktion}", *gekuerzt, name], name, kommune)
+
+
 def get_person_seo(
     person: Any,
     request: HttpRequest,
@@ -608,7 +707,6 @@ def get_person_seo(
     kommune = _kommune(person.body)
     funktion = " ".join(str(funktion or "").split())
     haupt = f"{name} – {kuerzen(funktion, TITEL_BETREFF_MAX)}" if funktion else name
-    title = mit_kommune(haupt, kommune)
 
     gremien = _gremien_der_person(mitgliedschaften)
     fraktion_name = " ".join(str(fraktion.short_name or fraktion.name or "").split()) if fraktion is not None else ""
@@ -646,7 +744,8 @@ def get_person_seo(
     )
 
     return SEOContext(
-        title=title,
+        title=person_seitentitel(name, funktion, kommune),
+        og_title=mit_kommune(haupt, kommune),
         description=description,
         canonical_url=canonical,
         og_type="profile",
@@ -663,7 +762,8 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
     """
     kommune = _kommune(body)
     titel = kuerzen(item.name, TITEL_BETREFF_MAX) or "Beschluss"
-    title = mit_kommune(f"{titel} – Umsetzungsstand", kommune)
+    name = " ".join(str(item.name or "").split()) or "Beschluss"
+    title = seitentitel([f"{name} – Umsetzungsstand", name], name, kommune)
     meeting = item.meeting
     gremium = getattr(getattr(meeting, "organization", None), "name", "") or ""
     datum = _datum(meeting.start) if meeting.start else ""
@@ -693,6 +793,7 @@ def get_decision_seo(item: Any, body: Any, status_label: str, request: HttpReque
 
     return SEOContext(
         title=title,
+        og_title=mit_kommune(f"{titel} – Umsetzungsstand", kommune),
         description=description,
         canonical_url=canonical,
         og_type="article",
@@ -706,7 +807,10 @@ def get_question_seo(question: Any, request: HttpRequest) -> SEOContext:
     """SEO-Kontext einer öffentlichen Ratsfrage (schema.org QAPage): „{Betreff} – Frage an {Name}, {Kommune}“."""
     person = question.recipient
     body_name = _kommune(question.body)
-    title = mit_kommune(f"{kuerzen(question.subject, TITEL_BETREFF_MAX)} – Frage an {person.display_name}", body_name)
+    betreff_der_frage = " ".join(str(question.subject or "").split())
+    frage_an = f" – Frage an {person.display_name}"
+    title = seitentitel([f"{betreff_der_frage}{frage_an}", betreff_der_frage], betreff_der_frage, body_name)
+    og_title = mit_kommune(f"{kuerzen(question.subject, TITEL_BETREFF_MAX)}{frage_an}", body_name)
     description = question.question_text[:157].rstrip() + ("…" if len(question.question_text) > 157 else "")
 
     question_ld = {
@@ -728,6 +832,7 @@ def get_question_seo(question: Any, request: HttpRequest) -> SEOContext:
 
     return SEOContext(
         title=title,
+        og_title=og_title,
         description=description[:160],
         canonical_url=build_canonical_url(request),
         og_type="article",
@@ -764,9 +869,12 @@ def get_page_seo(
 
 def get_portal_home_seo(request: HttpRequest, body: Any = None) -> SEOContext:
     """SEO für die Portal-Startseite: Übersicht einer Kommune (``/insight/k/<slug>/``) bzw. Kommunenauswahl."""
+    og_title = ""
     if body:
         name = _kommune(body)
-        title = f"Ratsinformationen {name} – Sitzungen, Vorlagen, Beschlüsse"
+        og_title = f"Ratsinformationen {name} – Sitzungen, Vorlagen, Beschlüsse"
+        # Ohne Zusatz „| mandari Insight“; bei einem langen Namen fällt erst die Aufzählung weg
+        title = seitentitel([og_title, f"Ratsinformationen {name}"], f"Ratsinformationen {name}")
         description = beschreibung(
             f"Ratsinformationen {name}: Sitzungen mit Tagesordnung, Vorlagen, Anträge und Beschlüsse aus Rat und "
             "Ausschüssen – verständlich aufbereitet und durchsuchbar."
@@ -780,6 +888,7 @@ def get_portal_home_seo(request: HttpRequest, body: Any = None) -> SEOContext:
 
     return SEOContext(
         title=title,
+        og_title=og_title,
         description=description[:160],
         canonical_url=build_canonical_url(request),
         og_type="website",

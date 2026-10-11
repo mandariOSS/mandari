@@ -2,7 +2,8 @@
 {% load static tz %}
 
 {% block title %}{% firstof seo.title organization.name %}{% endblock %}
-{% block title_suffix %}mandari Insight{% endblock %}
+{# Ohne Zusatz: Der Titel nennt die Kommune schon, die Marke steht in og:site_name (Issue #939) #}
+{% block title_suffix %}{% endblock %}
 
 {% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ organization.name }}</c-insight.brotkrume>{% endblock %}
 
