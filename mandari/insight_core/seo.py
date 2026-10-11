@@ -17,8 +17,8 @@ schon genutzten Beziehungen (``body``, vorgeladene Gremien). Ausnahme ist der Or
 
 Der Seitentitel (``<title>``) hat höchstens ``TITEL_MAX`` Zeichen (Issue #939, Bing: „Title too long“) und auf
 Detailseiten und Stadtseiten keinen Zusatz „| mandari Insight“; die Marke steht in ``og:site_name``. Wird es eng,
-fallen zuerst Zusätze wie Art und Drucksachennummer weg, dann wird das Thema gekürzt – die Kommune bleibt
-(``seitentitel``). ``og:title`` und die Namen in den strukturierten Daten bleiben ausführlich.
+fallen zuerst Zusätze weg (die Art vor der Drucksachennummer), dann wird das Thema gekürzt – ohne Füllwort vor dem
+„…“; die Kommune bleibt (``seitentitel``). ``og:title`` und die Namen in den strukturierten Daten bleiben ausführlich.
 
 Die Brotkrumen der strukturierten Daten führen nur über Adressen, die Suchmaschinen direkt erreichen
 (Bürgerportal → Kommune → Objekt, Issue #939).
@@ -78,6 +78,16 @@ _GREMIEN_MAX = 4
 _MITGLIEDSCHAFTEN_LD_MAX = 10
 #: „Fraktion “ vor dem Namen einer Fraktion (in der Description steht schon „Fraktion:“)
 _FRAKTION_VORAN = re.compile(r"^Fraktion\s+", re.IGNORECASE)
+#: Steht nach dem Kürzen nicht vor dem „…“: Satzzeichen …
+_SCHNITT_REST = " ,;:-–/&"
+#: … und Füllwörter (Artikel, Präpositionen, Konjunktionen; nur klein geschrieben – „DIE LINKE“ bleibt)
+_FUELLWOERTER = frozenset(
+    {
+        *("der", "die", "das", "des", "dem", "den", "ein", "eine", "einer", "eines", "einem"),
+        *("in", "im", "ins", "zur", "zum", "zu", "für", "von", "vom", "an", "am", "auf", "aus", "mit", "bei", "über"),
+        *("nach", "gegen", "durch", "und", "oder", "sowie"),
+    }
+)
 _WOCHENTAGE = ("Montag", "Dienstag", "Mittwoch", "Donnerstag", "Freitag", "Samstag", "Sonntag")
 
 
@@ -172,7 +182,11 @@ def kuerzen(wert: Any, limit: int) -> str:
     # Keine offene Klammer vor dem „…“: „Mitglied (sachk.…“ → „Mitglied…“
     if cut.count("(") > cut.count(")") and cut.rindex("(") > 0:
         cut = cut[: cut.rindex("(")]
-    return cut.rstrip(" ,;:-–/&") + "…"
+    # Kein Füllwort und kein übrig gebliebenes Satzzeichen vor dem „…“: „Haushaltsmittel der…“ → „Haushaltsmittel…“
+    woerter = cut.rstrip(_SCHNITT_REST).split(" ")
+    while len(woerter) > 1 and woerter[-1] in _FUELLWOERTER:
+        woerter = " ".join(woerter[:-1]).rstrip(_SCHNITT_REST).split(" ")
+    return " ".join(woerter).rstrip(_SCHNITT_REST) + "…"
 
 
 def beschreibung(*teile: str, limit: int = DESCRIPTION_MAX) -> str:
@@ -336,10 +350,22 @@ def betreff(paper: Any) -> str:
     return name
 
 
+def _nummer(paper: Any) -> str:
+    return " ".join(str(paper.reference or "").split())
+
+
 def _kennung(paper: Any) -> str:
-    """Art und Drucksachennummer: „Vorlage V/0881/2011“."""
+    """Art und Drucksachennummer: „Vorlage V/0881/2011“.
+
+    Beginnt die Nummer schon mit dem letzten Wort der Art, steht es nur einmal da: „Sitzungsvorlage RR“ und
+    „RR 50/2021“ ergeben „Sitzungsvorlage RR 50/2021“, „Antrag“ und „Antrag 12/2026“ nur „Antrag 12/2026“.
+    """
     art = art_kurz(paper.paper_type, paper.body.slug or "")
-    return " ".join(t for t in (art, (paper.reference or "").strip()) if t)
+    nummer = _nummer(paper)
+    woerter = art.split()
+    if woerter and nummer and re.match(rf"{re.escape(woerter[-1])}(?!\w)", nummer, re.IGNORECASE):
+        art = " ".join(woerter[:-1])
+    return " ".join(t for t in (art, nummer) if t)
 
 
 def paper_title(paper: Any) -> str:
@@ -351,12 +377,18 @@ def paper_title(paper: Any) -> str:
 
 
 def paper_seitentitel(paper: Any) -> str:
-    """Seitentitel: wie ``paper_title``, wird es zu lang, erst ohne Art und Nummer, dann mit gekürztem Betreff."""
+    """Seitentitel wie ``paper_title``; zu lang: erst ohne Art, dann ohne Drucksachennummer, dann gekürzter Betreff.
+
+    Nach der Nummer wird gesucht („v0810 antrag“), sie bleibt deshalb, solange sie mit Betreff und Kommune passt.
+    """
     kennung = _kennung(paper)
+    nummer = _nummer(paper)
     text = betreff(paper)
+    kommune = _kommune(paper.body)
     if not text:
-        return seitentitel([kennung], kennung, _kommune(paper.body))
-    return seitentitel([f"{text} – {kennung}", text], text, _kommune(paper.body))
+        return seitentitel([v for v in (kennung, nummer) if v], kennung, kommune)
+    mit_nummer = [f"{text} – {nummer}"] if nummer else []
+    return seitentitel([f"{text} – {kennung}", *mit_nummer, text], text, kommune)
 
 
 def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = None) -> SEOContext:

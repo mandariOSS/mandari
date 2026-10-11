@@ -182,14 +182,48 @@ class TestVorgang:
         assert description == "Münster: Antrag A/12/2026 vom 15.11.2011. Kurz und klar."
         assert "Noch keine Beratung" not in description
 
-    def test_passt_es_nicht_fallen_art_und_nummer_zuerst_weg(self, muenster: OParlBody) -> None:
-        betreff = "Neubau der Feuerwache Süd an der Musterstraße mit Übungshof"
+    @pytest.mark.parametrize(
+        ("betreff", "erwartet"),
+        [
+            # Erst fällt die Art weg; die Drucksachennummer bleibt, nach ihr wird gesucht
+            (
+                "Neubau der Feuerwache Süd an der Musterstraße",
+                "Neubau der Feuerwache Süd an der Musterstraße – V/0881/2011, Münster",
+            ),
+            # Dann die Nummer; der Betreff bleibt ganz
+            (
+                "Neubau der Feuerwache Süd an der Musterstraße mit Übungshof",
+                "Neubau der Feuerwache Süd an der Musterstraße mit Übungshof, Münster",
+            ),
+        ],
+    )
+    def test_passt_es_nicht_faellt_erst_die_art_dann_die_nummer_weg(
+        self, muenster: OParlBody, betreff: str, erwartet: str
+    ) -> None:
         paper = _vorgang(muenster, name=betreff)
         seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
 
-        assert _titel(seite) == f"{betreff}, Münster"
+        assert _titel(seite) == erwartet and len(erwartet) <= 70
         # og:title bleibt ausführlich
         assert _meta(seite, "property", "og:title") == f"{betreff} – Vorlage V/0881/2011, Münster"
+
+    @pytest.mark.parametrize(
+        ("art", "nummer", "kennung"),
+        [
+            ("Sitzungsvorlage RR", "RR 50/2021", "Sitzungsvorlage RR 50/2021"),
+            ("Antrag", "Antrag 12/2026", "Antrag 12/2026"),
+            ("Vorlage", "V/0881/2011", "Vorlage V/0881/2011"),
+            # Nur ein ganzes Wort zählt: „RRX 5/2021“ beginnt nicht mit dem Kürzel „RR“
+            ("Sitzungsvorlage RR", "RRX 5/2021", "Sitzungsvorlage RR RRX 5/2021"),
+        ],
+    )
+    def test_kuerzel_der_art_nicht_doppelt(self, muenster: OParlBody, art: str, nummer: str, kennung: str) -> None:
+        paper = _vorgang(muenster, name="Nachbesetzungen", paper_type=art, reference=nummer)
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
+
+        assert _titel(seite) == f"Nachbesetzungen – {kennung}, Münster"
+        assert _meta(seite, "property", "og:title") == f"Nachbesetzungen – {kennung}, Münster"
+        assert _meta(seite, "name", "description").startswith(f"Münster: {kennung} vom 15.11.2011.")
 
     def test_langer_betreff_an_einer_wortgrenze_gekuerzt(self, muenster: OParlBody) -> None:
         betreff = (
@@ -531,7 +565,19 @@ def test_ratsfrage_mit_kommune(muenster: OParlBody) -> None:
         # Der Schnitt fällt genau auf das Ende eines Worts: Das ganze Wort bleibt
         ("Radweg an der Hafenstraße wird gebaut", 26, "Radweg an der Hafenstraße…"),
         # Der Schnitt fällt mitten in ein Wort: Es fällt weg
-        ("Radweg an der Hafenstraße wird gebaut", 24, "Radweg an der…"),
+        ("Radweg an der Hafenstraße wird gebaut", 29, "Radweg an der Hafenstraße…"),
+        # Füllwörter vor dem „…“ fallen weg …
+        ("Radweg an der Hafenstraße wird gebaut", 24, "Radweg…"),
+        (
+            "Aufteilung der frei verfügbaren Haushaltsmittel der Bezirksvertretung",
+            53,
+            "Aufteilung der frei verfügbaren Haushaltsmittel…",
+        ),
+        # … und ein Satzzeichen, das danach am Ende steht
+        ("Neubau Feuerwache – an der Musterstraße", 23, "Neubau Feuerwache…"),
+        ("Ausschuss Umwelt, und Klima, Verkehr", 24, "Ausschuss Umwelt…"),
+        # Nur klein geschriebene Füllwörter: „DIE LINKE“ ist ein Name
+        ("Anfrage der Fraktion DIE LINKE zum Haushalt", 26, "Anfrage der Fraktion DIE…"),
         ("Radweg an der Hafenstraße", 25, "Radweg an der Hafenstraße"),
         ("Bebauungsplan,  Südviertel", 15, "Bebauungsplan…"),
         # Keine offene Klammer vor dem „…“
@@ -597,6 +643,10 @@ LANGE_ROLLE = "Stellvertretende Bürgermeisterin und Vorsitzende des Ältestenra
 LANGER_NAME = "Maximiliane Musterfrau-Beispiel"
 #: Kein Rest eines weggefallenen Teils: doppelte Trenner, Trenner am Ende
 TRENNER_REST = re.compile(r"[–|,]\s*[–|,]|[–|,:]\s*$")
+#: Kein Füllwort und kein Satzzeichen direkt vor dem „…“
+SCHNITT_REST = re.compile(
+    r"(?:[ ,;:–/&-]|(?<!\w)(?:der|die|das|des|dem|den|in|im|zu|zur|zum|und|oder|für|von|an|am|mit))…"
+)
 
 
 def _roher_titel(seite: str) -> str:
@@ -611,6 +661,7 @@ def _pruefe_titel(seite: str, url: str, *, kommune: str | None = LANGE_KOMMUNE) 
     assert len(titel) <= 70, (url, len(titel), titel)
     assert titel == " ".join(titel.split()), (url, titel)  # keine doppelten oder Randleerzeichen
     assert not TRENNER_REST.search(titel), (url, titel)
+    assert not SCHNITT_REST.search(titel), (url, titel)
     if kommune:
         assert titel.count(kommune) == 1, (url, titel)
     return titel
@@ -670,9 +721,10 @@ class TestHoechstens70Zeichen:
         seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
 
         titel = _pruefe_titel(seite, "vorgang", kommune="Münster")
-        assert titel == 'Überleitung der Maßnahme "Zuhause im Quartier" & Co. in das…, Münster'
+        # Ohne „in das“ vor dem „…“
+        assert titel == 'Überleitung der Maßnahme "Zuhause im Quartier" & Co.…, Münster'
         # Maskiert ausgeliefert, gezählt wird entschlüsselt
-        assert "&quot;Zuhause im Quartier&quot; &amp; Co. in das…, Münster</title>" in seite
+        assert "&quot;Zuhause im Quartier&quot; &amp; Co.…, Münster</title>" in seite
 
     @pytest.mark.parametrize(
         "url",
