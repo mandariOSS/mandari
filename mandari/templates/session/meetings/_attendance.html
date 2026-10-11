@@ -1,12 +1,12 @@
 {% comment %}
 Anwesenheit der Sitzung (Issues #30, #139): Beschlussfähigkeit, Schnellerfassung mit Teilnahmeart (vor Ort oder
 zugeschaltet), Störungsvermerke Zugeschalteter und Ergänzung von Gästen. Kontext aus
-attendance_service.attendance_panel.
+attendance_service.attendance_panel. Im neuen Erscheinungsbild (session_neues_design, Issue #944) ohne Kasten.
 {% endcomment %}
-<div id="anwesenheit" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden" data-testid="anwesenheit">
-    <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-4 flex-wrap">
-        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-            <i data-lucide="users" class="w-5 h-5 text-green-500"></i>
+<div id="anwesenheit" class="{% if session_neues_design %}[&_.px-6]:px-0 [&_.py-6]:py-3 [&_.py-8]:py-3 [&_.text-center]:text-left [&_.bg-gray-50]:bg-transparent dark:[&_.bg-gray-50]:bg-transparent{% else %}bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden{% endif %}" data-testid="anwesenheit">
+    <div class="{% if session_neues_design %}pb-2{% else %}px-6 py-4 border-b border-gray-200 dark:border-gray-700{% endif %} flex items-center justify-between gap-4 flex-wrap">
+        <h2 class="{% if session_neues_design %}text-base {% endif %}font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            {% if not session_neues_design %}<i data-lucide="users" class="w-5 h-5 text-green-500"></i>{% endif %}
             Anwesenheit
         </h2>
         {% if quorum.has_list %}

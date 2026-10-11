@@ -1,0 +1,24 @@
+{% comment %}
+Seitenwahl der Listen im neuen Erscheinungsbild (Issue #944): behält Suche und Filter ({% querystring %}), Ziele
+32 px (Arbeitsfläche, mindestens 24 px nach WCAG 2.5.8), Pfeile mit Namen. Sobald c-liste.seiten (Issue #853) in dev
+ist, kann diese Liste den gemeinsamen Baustein nutzen.
+{% endcomment %}
+{% if page_obj.has_other_pages %}
+<nav aria-label="Seiten" class="mt-4 flex justify-center">
+    <ul class="flex flex-wrap items-center justify-center gap-1 text-sm">
+        {% if page_obj.has_previous %}
+        <li><a href="{% querystring page=page_obj.previous_page_number %}" aria-label="Vorherige Seite" class="inline-flex items-center justify-center min-w-8 h-8 px-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-band-grau"><i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i></a></li>
+        {% endif %}
+        {% for num in page_obj.paginator.page_range %}
+        {% if page_obj.number == num %}
+        <li><span aria-current="page" class="inline-flex items-center justify-center min-w-8 h-8 px-2 rounded-md bg-primary-600 font-medium text-white">{{ num }}</span></li>
+        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+        <li><a href="{% querystring page=num %}" class="inline-flex items-center justify-center min-w-8 h-8 px-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-band-grau">{{ num }}</a></li>
+        {% endif %}
+        {% endfor %}
+        {% if page_obj.has_next %}
+        <li><a href="{% querystring page=page_obj.next_page_number %}" aria-label="Nächste Seite" class="inline-flex items-center justify-center min-w-8 h-8 px-2 rounded-md text-gray-700 dark:text-gray-300 hover:bg-band-grau"><i data-lucide="chevron-right" class="w-4 h-4" aria-hidden="true"></i></a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}

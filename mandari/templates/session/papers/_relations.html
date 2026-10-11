@@ -4,11 +4,16 @@ und das Anlegen einer neuen Unternummer. Kontext: paper, parent_paper (nur wenn 
 relation_choices, can_create_papers.
 {% endcomment %}
 {% if parent_paper or child_papers or can_create_papers %}
-<div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6" data-testid="bezuege">
+<div class="{% if not session_neues_design %}bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6{% endif %}" data-testid="bezuege">
+    {% if session_neues_design %}
+    {# Neues Erscheinungsbild (Issue #944): Abschnitt ohne Kasten #}
+    <h2 class="mb-2 text-base font-semibold text-gray-900 dark:text-white">Bezüge</h2>
+    {% else %}
     <h3 class="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
         <i data-lucide="git-branch" class="w-5 h-5 text-indigo-500"></i>
         Bezüge
     </h3>
+    {% endif %}
     {% if parent_paper %}
     <p class="text-sm text-gray-600 dark:text-gray-300 mb-3">
         {{ paper.get_relation_type_display|default:"Bezug" }} zu

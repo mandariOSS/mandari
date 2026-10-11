@@ -11,6 +11,8 @@
     <span class="text-gray-900 dark:text-white font-medium">Abstimmung TOP {{ item.number }}</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zur Sitzung #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume>Abstimmung TOP {{ item.number }}</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="max-w-3xl" x-data="{ method: '{{ item.voting_method }}' }">

@@ -18,6 +18,8 @@ und Serienbrief. Absagegründe sind nur hier (Sitzungsdienst) sichtbar.
     <span class="text-gray-900 dark:text-white font-medium">Rückmeldungen</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zur Sitzung und zur Ladung #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}">Ladung</c-rahmen.brotkrume><c-rahmen.brotkrume>Rückmeldungen</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="space-y-6">

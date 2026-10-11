@@ -318,6 +318,12 @@ class TestGemeinsameBausteine:
         assert "text-sm" in extern
         assert "<dl" in render("<c-ui.angaben><dt>Datum</dt><dd>1.1.</dd></c-ui.angaben>")
 
+    def test_satz_im_abschnitt(self) -> None:
+        leer = render('<c-rahmen.satz data-testid="leer">Noch keine Vorlagen.</c-rahmen.satz>').strip()
+        assert leer.startswith('<p class="mt-3 text-sm') and 'data-testid="leer"' in leer
+        assert leer.endswith("Noch keine Vorlagen.</p>")
+        assert render("<c-rahmen.satz eng>Erläuterung</c-rahmen.satz>").strip().startswith('<p class="mt-1 text-sm')
+
 
 class TestUiKitPreview:
     def test_preview_template_renders_all_components(self) -> None:

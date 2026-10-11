@@ -266,6 +266,8 @@ jobs:
               - 'mandari/apps/work/meetings/views/{_helpers,prepare}.py'
               - 'mandari/apps/work/meetings/serializers.py'
               - 'mandari/apps/session/permissions.py'
+              # Schalter und Navigation des neuen Rahmens im Sitzungsdienst (Issue #944, test_session_rahmen.py)
+              - 'mandari/apps/session/rahmen.py'
               - 'mandari/apps/session/views/{dashboard,meetings,papers,leitstelle,applications,resolutions,protocols,allowances,cockpit}.py'
               - 'mandari/apps/session/services/cockpit_service.py'
               - 'mandari/apps/session/api/oparl.py'

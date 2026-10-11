@@ -505,6 +505,19 @@ class SessionTenant(models.Model):
         help_text="Alle Session-Nutzer dieses Mandanten müssen einen zweiten Faktor einrichten",
     )
 
+    # Neues Erscheinungsbild des Sitzungsdienstes (Issue #944): Rahmen wie Work und Insight, Leiste unten am Handy.
+    # Standard aus, der bisherige Rahmen bleibt bis zur Freigabe; je Mandant einschaltbar. DB-Default für den
+    # Rückfall per Image.
+    session_new_design = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Neues Erscheinungsbild im Sitzungsdienst",
+        help_text=(
+            "Schaltet für diesen Mandanten den neuen Rahmen des Sitzungsdienstes ein (Seitenleiste wie Work, Suche "
+            "in der Kopfzeile, Leiste unten am Handy). Aus: bisheriger Rahmen. Daten ändern sich nicht."
+        ),
+    )
+
     # Vier-Augen-Prinzip je Vorgangsart (Issue #222): Wer einen Vorgang erstellt oder zuletzt
     # inhaltlich bearbeitet hat, gibt ihn nicht selbst frei. Standard: an für Vorgänge mit
     # finanziellen Auswirkungen (Sitzungsgeld, Pauschalen), aus für die übrigen.

@@ -1,0 +1,11 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Ein Satz in einem Abschnitt der Arbeitsflächen (Issue #944): der Leerzustand einer Liste („Noch keine Vorlagen.“) oder
+eine kurze Erläuterung, 14 px gedimmt, ohne Kasten und ohne Symbol. 12 px Abstand nach oben; ``eng`` setzt ihn als
+Erläuterung direkt unter die Überschrift von c-rahmen.abschnitt (4 px).
+  <c-rahmen.satz>Noch keine Tagesordnungspunkte.</c-rahmen.satz>
+  <c-rahmen.satz eng>Revisionssicheres Protokoll dieses Mandanten.</c-rahmen.satz>
+Weitere Attribute (data-testid) gehen an den Absatz.
+{% endcomment %}
+<c-vars eng="" />
+<p class="{% if eng %}mt-1{% else %}mt-3{% endif %} text-sm text-gray-600 dark:text-gray-400" {{ attrs }}>{{ slot }}</p>

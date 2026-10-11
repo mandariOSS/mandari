@@ -19,6 +19,8 @@
     <span class="text-gray-900 dark:text-white font-medium">In Vorlage umwandeln</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zum Antrag #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=application.id %}">{{ application.reference }}</c-rahmen.brotkrume><c-rahmen.brotkrume>In Vorlage umwandeln</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <!-- Hinweis -->

@@ -1,0 +1,30 @@
+{% comment %}
+Freigabelauf einer Vorlage im Kopfband (Issues #33, #222, #944): der nächste Schritt als Hauptaktion – im Entwurf
+„Zur Freigabe vorlegen“, in Prüfung „Freigeben“ (sofern das Vier-Augen-Prinzip es erlaubt) und daneben „Zurückweisen“
+mit Anmerkung. Formulare und Felder wie session/papers/detail.html.
+{% endcomment %}
+{% if paper.status == "draft" and "edit_papers" in permission_checker.permissions %}
+<form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='submit' %}" class="mt-4" data-testid="freigabe">
+    {% csrf_token %}
+    <c-ui.button type="submit" size="sm" icon="send">Zur Freigabe vorlegen</c-ui.button>
+</form>
+{% elif paper.status == "review" and "approve_papers" in permission_checker.permissions %}
+<div class="mt-4 max-w-3xl space-y-3" data-testid="freigabe">
+    {% include "session/partials/four_eyes_hint.html" with decision=freigabe %}
+    <div class="flex flex-wrap items-center gap-2">
+        {% if freigabe.allowed %}
+        <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='approve' %}">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" icon="check">Freigeben</c-ui.button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='reject' %}" class="flex items-center gap-2 min-w-0 basis-full sm:basis-auto">
+            {% csrf_token %}
+            <label for="zurueckweisen-anmerkung" class="sr-only">Anmerkung zur Zurückweisung</label>
+            <input id="zurueckweisen-anmerkung" type="text" name="comment" placeholder="Anmerkung zur Zurückweisung"
+                   class="h-9 flex-1 sm:flex-none sm:w-72 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="undo-2">Zurückweisen</c-ui.button>
+        </form>
+    </div>
+</div>
+{% endif %}
