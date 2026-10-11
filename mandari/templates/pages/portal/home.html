@@ -2,7 +2,8 @@
 {% load l10n %}
 
 {% block title %}{% if active_body %}{{ seo.title }}{% else %}mandari Insight{% endif %}{% endblock %}
-{% block title_suffix %}{% if active_body %}mandari Insight{% else %}{{ block.super }}{% endif %}{% endblock %}
+{# Stadtseite ohne Zusatz (Issue #939); ohne Kommune heißt der Titel schon „mandari Insight“ #}
+{% block title_suffix %}{% endblock %}
 
 {% block meta_description %}{% if active_body %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz: Ratsinformationen durchsuchen und verstehen.{% endif %}{% endblock %}
 

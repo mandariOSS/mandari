@@ -8,6 +8,10 @@ ebenfalls die Kommune ist. Sitzungen desselben Gremiums unterscheiden sich am Da
 „Ratsmitglied“, und die Übersicht einer Kommune heißt „Ratsinformationen <Kommune> – Sitzungen, Vorlagen,
 Beschlüsse“. Zu jedem Objekt kommt als zweites JSON-LD-Element die Brotkrumenliste. Die Fußzeile verweist auf die
 Seite über mandari als Ratsinformationssystem.
+
+Seitentitel haben höchstens 70 Zeichen (Issue #939, Bing: „Title too long“); Detail- und Stadtseiten tragen keinen
+Zusatz „| mandari Insight“. Wird es eng, fallen erst Art und Nummer bzw. die Rolle weg, dann wird das Thema gekürzt –
+die Kommune bleibt. ``og:title`` bleibt ausführlich.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import re
 import uuid
 from datetime import date, datetime
 from typing import Any
+from urllib.parse import urlencode
 
 import pytest
 from django.test import Client
@@ -154,7 +159,7 @@ class TestVorgang:
         paper = _vorgang(muenster)
         seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
 
-        assert _titel(seite) == "Neubau der Feuerwache Süd – Vorlage V/0881/2011, Münster | mandari Insight"
+        assert _titel(seite) == "Neubau der Feuerwache Süd – Vorlage V/0881/2011, Münster"
         assert _meta(seite, "property", "og:title") == "Neubau der Feuerwache Süd – Vorlage V/0881/2011, Münster"
         assert _meta(seite, "name", "twitter:title") == _meta(seite, "property", "og:title")
 
@@ -177,27 +182,36 @@ class TestVorgang:
         assert description == "Münster: Antrag A/12/2026 vom 15.11.2011. Kurz und klar."
         assert "Noch keine Beratung" not in description
 
+    def test_passt_es_nicht_fallen_art_und_nummer_zuerst_weg(self, muenster: OParlBody) -> None:
+        betreff = "Neubau der Feuerwache Süd an der Musterstraße mit Übungshof"
+        paper = _vorgang(muenster, name=betreff)
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
+
+        assert _titel(seite) == f"{betreff}, Münster"
+        # og:title bleibt ausführlich
+        assert _meta(seite, "property", "og:title") == f"{betreff} – Vorlage V/0881/2011, Münster"
+
     def test_langer_betreff_an_einer_wortgrenze_gekuerzt(self, muenster: OParlBody) -> None:
         betreff = (
             "Bebauungsplan Nr. 612: Südviertel – Erweiterung des Gewerbegebiets an der Weseler Straße "
             "und Anpassung der Erschließung"
         )
         paper = _vorgang(muenster, name=betreff)
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
 
-        titel = _titel(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"))
-
-        gekuerzt, rest = titel.split(" – Vorlage ", 1)
-        assert len(gekuerzt) <= 70 and gekuerzt.endswith("…")
+        titel = _titel(seite)
+        gekuerzt = titel.removesuffix(", Münster")
+        assert len(titel) <= 70 and gekuerzt.endswith("…") and "V/0881/2011" not in titel
         assert betreff.startswith(gekuerzt.removesuffix("…")) and betreff[len(gekuerzt) - 1] == " "
-        assert rest == "V/0881/2011, Münster | mandari Insight"
+        # og:title wie bisher: Betreff bis 70 Zeichen, Art, Nummer und Kommune
+        og, rest = _meta(seite, "property", "og:title").split(" – Vorlage ", 1)
+        assert len(og) <= 70 and og.endswith("…") and len(og) > len(gekuerzt)
+        assert rest == "V/0881/2011, Münster"
 
     def test_ohne_betreff_art_nummer_und_kommune(self, muenster: OParlBody) -> None:
         paper = _vorgang(muenster, name="V/0881/2011")
 
-        assert (
-            _titel(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"))
-            == "Vorlage V/0881/2011, Münster | mandari Insight"
-        )
+        assert _titel(_seite(Client(), f"/insight/vorgaenge/{paper.id}/")) == "Vorlage V/0881/2011, Münster"
 
     @pytest.mark.parametrize(
         ("art", "kurz"),
@@ -253,10 +267,17 @@ class TestSitzung:
 
         titel = [_titel(_seite(Client(), f"/insight/termine/{s.id}/")) for s in (erste, zweite)]
 
-        assert titel == [
-            "Rat am 05.11.2030 – Münster | mandari Insight",
-            "Rat am 03.12.2030 – Münster | mandari Insight",
-        ]
+        assert titel == ["Rat am 05.11.2030 – Münster", "Rat am 03.12.2030 – Münster"]
+
+    def test_langes_gremium_gekuerzt_datum_und_kommune_bleiben(self, muenster: OParlBody) -> None:
+        name = "Ausschuss für Stadtplanung, Stadtentwicklung, Verkehr und Wohnen der Bezirksvertretung"
+        sitzung = _sitzung(muenster, _gremium(muenster, name), _zeit(2016, 3, 3, 17))
+        seite = _seite(Client(), f"/insight/termine/{sitzung.id}/")
+
+        titel = _titel(seite)
+        assert titel == "Ausschuss für Stadtplanung, Stadtentwicklung… am 03.03.2016 – Münster"
+        assert len(titel) <= 70
+        assert _meta(seite, "property", "og:title") == f"{kuerzen(name, 70)} am 03.03.2016 – Münster"
 
     def test_datum_in_ortszeit(self, muenster: OParlBody) -> None:
         # 23:30 Uhr in Münster ist in UTC schon der nächste Tag
@@ -312,7 +333,7 @@ class TestGremium:
         _sitzung(muenster, fraktion, _zeit(2030, 11, 5, 18))
         seite = _seite(Client(), f"/insight/gremien/{fraktion.id}/")
 
-        assert _titel(seite) == "GRÜNE – Münster | mandari Insight"
+        assert _titel(seite) == "GRÜNE – Münster"
         assert _meta(seite, "name", "description") == (
             "GRÜNE (Fraktion), Münster. 2 aktuelle Mitglieder, Sitzungstermine und Tagesordnungen. "
             "Nächste Sitzung am 05.11.2030."
@@ -334,7 +355,7 @@ class TestGremium:
 
         seite = _seite(Client(), f"/insight/gremien/{rat.id}/")
 
-        assert _titel(seite) == "Rat der Stadt Münster | mandari Insight"
+        assert _titel(seite) == "Rat der Stadt Münster"
         assert _meta(seite, "name", "description").startswith("Rat der Stadt Münster. ")
 
 
@@ -351,7 +372,7 @@ class TestPerson:
         person = _person(muenster, "Erika Muster", (rat, "Mitglied"), (fraktion, "Mitglied"), (bv, "Mitglied"))
         seite = _seite(Client(), f"/insight/personen/{person.id}/")
 
-        assert _titel(seite) == "Erika Muster – Ratsmitglied, Münster | mandari Insight"
+        assert _titel(seite) == "Erika Muster – Ratsmitglied, Münster"
         assert _meta(seite, "name", "description") == (
             "Erika Muster, Ratsmitglied, Münster. Fraktion: GRÜNE. Mitglied in: Rat, Bezirksvertretung Mitte."
         )
@@ -366,7 +387,7 @@ class TestPerson:
         person = _person(muenster, "Max Beispiel", (ausschuss, "Mitglied"))
         seite = _seite(Client(), f"/insight/personen/{person.id}/")
 
-        assert _titel(seite) == "Max Beispiel, Münster | mandari Insight"
+        assert _titel(seite) == "Max Beispiel, Münster"
         kopf = seite[: seite.index("</head>")]
         assert "Ratsmitglied" not in kopf
         assert "jobTitle" not in _json_ld(seite)[0]
@@ -379,7 +400,7 @@ class TestPerson:
 
         seite = _seite(Client(), f"/insight/personen/{person.id}/")
 
-        assert _titel(seite) == "Dr. Erika Muster – Oberbürgermeisterin, Münster | mandari Insight"
+        assert _titel(seite) == "Dr. Erika Muster – Oberbürgermeisterin, Münster"
         assert _meta(seite, "name", "description").startswith(
             "Dr. Erika Muster, Oberbürgermeisterin, Münster. Fraktion: Bunte Liste. Mitglied in: Rat."
         )
@@ -390,8 +411,24 @@ class TestPerson:
 
         seite = _seite(Client(), f"/insight/personen/{person.id}/")
 
-        assert _titel(seite) == "Hans Früher, Münster | mandari Insight"
+        assert _titel(seite) == "Hans Früher, Münster"
         assert "Ratsmitglied" not in seite[: seite.index("</head>")]
+
+    def test_lange_rolle_gekuerzt(self, muenster: OParlBody) -> None:
+        rolle = "Stellv. stimmberechtigtes Mitglied (sachk. Bürger/in)"
+        ausschuss = _gremium(muenster, "Ausschuss für Umwelt", classification="Ausschuss")
+        person = _person(muenster, "Sebastian Adam", (ausschuss, rolle))
+        seite = _seite(Client(), f"/insight/personen/{person.id}/")
+
+        # Ohne offene Klammer vor dem „…“
+        assert _titel(seite) == "Sebastian Adam – Stellv. stimmberechtigtes Mitglied…, Münster"
+        assert _meta(seite, "property", "og:title") == f"Sebastian Adam – {rolle}, Münster"
+
+    def test_ohne_platz_fuer_die_rolle_nur_name_und_kommune(self, muenster: OParlBody) -> None:
+        name = "Prof. Dr. Maximiliane Musterfrau-Beispielhausen"
+        person = _person(muenster, name, (_gremium(muenster, "Rat"), "Oberbürgermeisterin"))
+
+        assert _titel(_seite(Client(), f"/insight/personen/{person.id}/")) == f"{name}, Münster"
 
 
 # =============================================================================
@@ -412,9 +449,12 @@ class TestKommuneNurEinmal:
         _seite(client, "/insight/k/muenster/")
 
         for url in seiten:
-            titel = _titel(_seite(client, url))
+            seite = _seite(client, url)
+            titel = _titel(seite)
             assert titel.count("Münster") == 1, titel
-            assert titel.endswith(" | mandari Insight"), titel
+            # Ohne Zusatz; der Name des Portals steht in og:site_name
+            assert "|" not in titel and "mandari Insight" not in titel, titel
+            assert _meta(seite, "property", "og:site_name") == "Münster"
 
     def test_listen_im_buergerportal_behalten_den_namen_des_portals(self, muenster: OParlBody) -> None:
         client = Client()
@@ -432,7 +472,7 @@ class TestUebersichtDerKommune:
     def test_titel_und_description(self, muenster: OParlBody) -> None:
         seite = _seite(Client(), "/insight/k/muenster/")
 
-        assert _titel(seite) == "Ratsinformationen Münster – Sitzungen, Vorlagen, Beschlüsse | mandari Insight"
+        assert _titel(seite) == "Ratsinformationen Münster – Sitzungen, Vorlagen, Beschlüsse"
         assert _meta(seite, "property", "og:title") == "Ratsinformationen Münster – Sitzungen, Vorlagen, Beschlüsse"
         description = _meta(seite, "name", "description")
         assert description.startswith("Ratsinformationen Münster: Sitzungen mit Tagesordnung, Vorlagen, Anträge")
@@ -446,6 +486,15 @@ class TestUebersichtDerKommune:
         description = _meta(_seite(Client(), "/insight/k/muenster/"), "name", "description")
 
         assert len(description) <= 160 and description.endswith("…")
+
+    def test_langer_kommunenname_ohne_aufzaehlung_im_titel(self, muenster: OParlBody) -> None:
+        OParlBody.objects.filter(pk=muenster.pk).update(display_name="Bezirksregierung Musterland-Südwest Nord")
+        seite = _seite(Client(), "/insight/k/muenster/")
+
+        assert _titel(seite) == "Ratsinformationen Bezirksregierung Musterland-Südwest Nord"
+        assert _meta(seite, "property", "og:title") == (
+            "Ratsinformationen Bezirksregierung Musterland-Südwest Nord – Sitzungen, Vorlagen, Beschlüsse"
+        )
 
 
 # =============================================================================
@@ -467,7 +516,7 @@ def test_ratsfrage_mit_kommune(muenster: OParlBody) -> None:
     )
     seite = _seite(Client(), f"/insight/fragen/{frage.id}/")
 
-    assert _titel(seite) == "Sanierung der Grundschule am Hafen – Frage an Erika Muster, Münster | mandari Insight"
+    assert _titel(seite) == "Sanierung der Grundschule am Hafen – Frage an Erika Muster, Münster"
     assert _meta(seite, "property", "og:title") == "Sanierung der Grundschule am Hafen – Frage an Erika Muster, Münster"
 
 
@@ -485,6 +534,8 @@ def test_ratsfrage_mit_kommune(muenster: OParlBody) -> None:
         ("Radweg an der Hafenstraße wird gebaut", 24, "Radweg an der…"),
         ("Radweg an der Hafenstraße", 25, "Radweg an der Hafenstraße"),
         ("Bebauungsplan,  Südviertel", 15, "Bebauungsplan…"),
+        # Keine offene Klammer vor dem „…“
+        ("Stellv. Mitglied (sachk. Bürger/in)", 30, "Stellv. Mitglied…"),
     ],
 )
 def test_kuerzen_an_der_wortgrenze(text: str, limit: int, gekuerzt: str) -> None:
@@ -497,7 +548,8 @@ def test_kuerzen_an_der_wortgrenze(text: str, limit: int, gekuerzt: str) -> None
 # =============================================================================
 
 
-def test_beschluss_mit_gremium_kommune_und_stand(muenster: OParlBody) -> None:
+def _beschluss(body: OParlBody, name: str) -> Any:
+    """Öffentlicher Beschluss mit Umsetzungsstand im Sitzungsdienst der Kommune."""
     from apps.session.models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionTenant
 
     tenant = SessionTenant.objects.create(
@@ -506,27 +558,186 @@ def test_beschluss_mit_gremium_kommune_und_stand(muenster: OParlBody) -> None:
         insight_publish=True,
         implementation_publish=True,
         oparl_public_since=timezone.now(),
-        oparl_body=muenster,
+        oparl_body=body,
     )
     gremium = SessionOrganization.objects.create(tenant=tenant, name="Hauptausschuss")
     sitzung = SessionMeeting.objects.create(
         tenant=tenant, name="Hauptausschuss", organization=gremium, start=_zeit(2026, 9, 1, 17), is_public=True
     )
-    beschluss = SessionAgendaItem.objects.create(
-        meeting=sitzung,
-        number="1",
-        order=1,
-        name="Radweg an der Hafenstraße",
-        vote_result="approved",
-        implementation_public=True,
+    return SessionAgendaItem.objects.create(
+        meeting=sitzung, number="1", order=1, name=name, vote_result="approved", implementation_public=True
     )
+
+
+def test_beschluss_mit_gremium_kommune_und_stand(muenster: OParlBody) -> None:
+    beschluss = _beschluss(muenster, "Radweg an der Hafenstraße")
     seite = _seite(Client(), f"/insight/beschluesse/{beschluss.pk}/")
 
-    assert _titel(seite) == "Radweg an der Hafenstraße – Umsetzungsstand, Münster | mandari Insight"
+    assert _titel(seite) == "Radweg an der Hafenstraße – Umsetzungsstand, Münster"
     assert _meta(seite, "name", "description").startswith("Münster: Beschluss im Hauptausschuss vom 01.09.2026.")
     daten, krumen = _json_ld(seite)
     assert daten["name"] == "Radweg an der Hafenstraße" and daten["spatialCoverage"]["name"] == "Münster"
     assert [e["name"] for e in krumen["itemListElement"]][1:] == ["Münster", "Radweg an der Hafenstraße"]
+
+
+# =============================================================================
+# Höchstens 70 Zeichen (Issue #939)
+# =============================================================================
+
+#: Lang, aber nicht unüblich (Namen wie „Mülheim an der Ruhr“, „Regionalrat Köln“)
+LANGE_KOMMUNE = "Musterstadt an der Langen Wiese"
+LANGER_BETREFF = (
+    'Überleitung der Maßnahme "Zuhause im Quartier" & Co. in das Förderprogramm „Soziale Stadt“ und Anpassung '
+    "der Richtlinien für die Jahre 2026 bis 2030"
+)
+LANGES_GREMIUM = (
+    "Gemeinsame Sitzung des Ausschusses für Stadtplanung, Stadtentwicklung, Verkehr, Wohnen und Digitalisierung"
+)
+LANGE_ROLLE = "Stellvertretende Bürgermeisterin und Vorsitzende des Ältestenrats der Stadtverordnetenversammlung"
+LANGER_NAME = "Maximiliane Musterfrau-Beispiel"
+#: Kein Rest eines weggefallenen Teils: doppelte Trenner, Trenner am Ende
+TRENNER_REST = re.compile(r"[–|,]\s*[–|,]|[–|,:]\s*$")
+
+
+def _roher_titel(seite: str) -> str:
+    """Titeltext HTML-entschlüsselt, aber ohne Leerzeichen zusammenzufassen."""
+    treffer = re.search(r"<title>(.*?)</title>", seite, re.S)
+    assert treffer
+    return html_lib.unescape(treffer.group(1))
+
+
+def _pruefe_titel(seite: str, url: str, *, kommune: str | None = LANGE_KOMMUNE) -> str:
+    titel = _roher_titel(seite)
+    assert len(titel) <= 70, (url, len(titel), titel)
+    assert titel == " ".join(titel.split()), (url, titel)  # keine doppelten oder Randleerzeichen
+    assert not TRENNER_REST.search(titel), (url, titel)
+    if kommune:
+        assert titel.count(kommune) == 1, (url, titel)
+    return titel
+
+
+class TestHoechstens70Zeichen:
+    @pytest.fixture
+    def lange_namen(self, muenster: OParlBody) -> dict[str, str]:
+        OParlBody.objects.filter(pk=muenster.pk).update(display_name=LANGE_KOMMUNE)
+        muenster.refresh_from_db()
+        ausschuss = _gremium(muenster, LANGES_GREMIUM, classification="Ausschuss")
+        rat = _gremium(muenster, "Rat", classification="Rat")
+        paper = _vorgang(
+            muenster, name=LANGER_BETREFF, paper_type="Sitzungsvorlage Regionalrat", reference="RR 50/2021"
+        )
+        sitzung = _sitzung(muenster, ausschuss, _zeit(2030, 11, 5, 17))
+        person = _person(muenster, LANGER_NAME, (rat, LANGE_ROLLE), (ausschuss, "Mitglied"))
+        frage = PublicQuestion.objects.create(
+            body=muenster,
+            recipient=person,
+            questioner_name="Bert",
+            questioner_email="bert@example.org",
+            subject=LANGER_BETREFF,
+            question_text="Wann geht es los?",
+            status="published",
+            published_at=timezone.now(),
+        )
+        beschluss = _beschluss(muenster, LANGER_BETREFF)
+        return {
+            "vorgang": f"/insight/vorgaenge/{paper.id}/",
+            "sitzung": f"/insight/termine/{sitzung.id}/",
+            "gremium": f"/insight/gremien/{ausschuss.id}/",
+            "person": f"/insight/personen/{person.id}/",
+            "ratsfrage": f"/insight/fragen/{frage.id}/",
+            "beschluss": f"/insight/beschluesse/{beschluss.pk}/",
+            "stadtseite": "/insight/k/muenster/",
+        }
+
+    @pytest.mark.parametrize("art", ["vorgang", "sitzung", "gremium", "person", "ratsfrage", "beschluss", "stadtseite"])
+    @pytest.mark.parametrize("im_portal", [False, True], ids=["gemeinsam", "buergerportal"])
+    def test_detail_und_stadtseiten(self, lange_namen: dict[str, str], art: str, im_portal: bool) -> None:
+        client = Client()
+        if im_portal:
+            _seite(client, "/insight/k/muenster/")
+        url = lange_namen[art]
+        seite = _seite(client, url)
+
+        titel = _pruefe_titel(seite, url)
+        assert "|" not in titel and "mandari Insight" not in titel, titel
+        # og:title wird nicht mitgekürzt
+        assert len(_meta(seite, "property", "og:title")) > len(titel), url
+
+    def test_erst_faellt_die_kennung_weg_dann_wird_der_betreff_gekuerzt(self, muenster: OParlBody) -> None:
+        paper = _vorgang(
+            muenster, name=LANGER_BETREFF, paper_type="Sitzungsvorlage Regionalrat", reference="RR 50/2021"
+        )
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
+
+        titel = _pruefe_titel(seite, "vorgang", kommune="Münster")
+        assert titel == 'Überleitung der Maßnahme "Zuhause im Quartier" & Co. in das…, Münster'
+        # Maskiert ausgeliefert, gezählt wird entschlüsselt
+        assert "&quot;Zuhause im Quartier&quot; &amp; Co. in das…, Münster</title>" in seite
+
+    @pytest.mark.parametrize(
+        "url",
+        [
+            "/insight/",
+            "/insight/termine/",
+            "/insight/termine/kalender/",
+            "/insight/termine/jahresplan/",
+            "/insight/vorgaenge/",
+            "/insight/gremien/",
+            "/insight/personen/",
+            "/insight/beschluesse/",
+            "/insight/fragen/",
+            "/insight/karte/",
+            "/insight/nachbarschaft/",
+        ],
+    )
+    def test_uebersichten_im_buergerportal(self, lange_namen: dict[str, str], url: str) -> None:
+        client = Client()
+        _seite(client, "/insight/k/muenster/")
+
+        _pruefe_titel(_seite(client, url), url)
+
+    def test_suche_mit_langer_anfrage(self, lange_namen: dict[str, str]) -> None:
+        client = Client()
+        _seite(client, "/insight/k/muenster/")
+
+        titel = _pruefe_titel(
+            _seite(client, f"/insight/suche/?{urlencode({'q': LANGER_BETREFF})}"), "suche", kommune=None
+        )
+        # Passt der Zusatz nicht mehr, fällt er zuerst weg
+        assert titel.startswith("„Überleitung der Maßnahme") and "|" not in titel
+
+    def test_uebersichten_ohne_kommune(self, muenster: OParlBody) -> None:
+        # Zweite Kommune: Mit nur einer wählt /insight/ sie selbst aus
+        OParlBody.objects.create(
+            external_id=BASIS + "body/2", source=muenster.source, name="Stadt Bonn", display_name="Bonn", slug="bonn"
+        )
+        for url in ("/insight/", "/insight/kommunen/"):
+            titel = _pruefe_titel(_seite(Client(), url), url, kommune=None)
+            # Übersichten ohne Kommune behalten den Zusatz, solange er passt
+            assert titel == "Kommune wählen | mandari Insight", url
+
+
+@pytest.mark.parametrize(
+    ("gerendert", "erwartet"),
+    [
+        ("Sitzungen | mandari Insight", "Sitzungen | mandari Insight"),
+        # Zu lang: erst fällt der Zusatz weg …
+        ("Sitzungsplan 2030 | Verbandsgemeinde Musterstadt-Langenfeld an der Wiese", "Sitzungsplan 2030"),
+        # … dann wird an einer Wortgrenze gekürzt
+        (
+            "„" + "Radweg " * 12 + "“ – Suche | mandari Insight",
+            "„" + "Radweg " * 8 + "Radweg…",
+        ),
+        # Gemessen wird entschlüsselt, ausgegeben maskiert
+        ("Tom &amp; Jerry &lt;3 | mandari Insight", "Tom &amp; Jerry &lt;3 | mandari Insight"),
+        ("  Sitzungen\n  | Münster ", "Sitzungen | Münster"),
+    ],
+)
+def test_filter_seitentitel(gerendert: str, erwartet: str) -> None:
+    from insight_core.templatetags.insight_titel import seitentitel
+
+    assert seitentitel(gerendert) == erwartet
+    assert len(html_lib.unescape(seitentitel(gerendert))) <= 70
 
 
 # =============================================================================

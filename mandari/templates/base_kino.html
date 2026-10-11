@@ -1,4 +1,4 @@
-{% load static django_vite %}
+{% load static django_vite insight_titel %}
 {% comment %}
 Schlanke Basisvorlage für den Kinomodus der Live-Seite (Issue #915): immer dunkel, ohne Kopf, Fuß und Navigation von
 Insight, dieselben CSS-/JS-Bündel. Blöcke: title, content.
@@ -10,7 +10,7 @@ Insight, dieselben CSS-/JS-Bündel. Blöcke: title, content.
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <meta name="theme-color" content="#000000">
     {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
-    <title>{% block title %}mandari{% endblock %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}</title>
+    <title>{% filter seitentitel %}{% block title %}mandari{% endblock %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}{% endfilter %}</title>
 
     <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
     <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">

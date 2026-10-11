@@ -67,11 +67,9 @@ class TestEinstieg:
         assert kontext.name == "Musterstadt-Nord" and kontext.accent_color == "#0f766e"
         assert "/media/bodies/logos/nord.svg" in seite
         assert "--portal-accent: #0f766e" in seite
-        # Die Übersicht nennt die Kommune im Titel genau einmal (Issue #914), das Portal bleibt Name der Website
-        assert (
-            "<title>Ratsinformationen Musterstadt-Nord – Sitzungen, Vorlagen, Beschlüsse | mandari Insight</title>"
-            in seite
-        )
+        # Die Übersicht nennt die Kommune im Titel genau einmal (Issue #914), ohne Zusatz „| mandari Insight“
+        # (Issue #939: höchstens 70 Zeichen); das Portal bleibt Name der Website
+        assert "<title>Ratsinformationen Musterstadt-Nord – Sitzungen, Vorlagen, Beschlüsse</title>" in seite
         assert '<meta property="og:site_name" content="Musterstadt-Nord">' in seite
         assert antwort.context["available_bodies"] == [kommunen["nord"]]
         assert antwort.context["active_body"] == kommunen["nord"]
