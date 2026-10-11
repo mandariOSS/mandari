@@ -9,7 +9,7 @@ bleibt work/faction/internal_import_confirm.html.
 
 {% block page_title %}Tagesordnungspunkte übernehmen{% endblock %}
 {% block gestaltung %}neu{% endblock %}
-{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}">{{ meeting.title|truncatechars:28 }}</c-rahmen.brotkrume><c-rahmen.brotkrume>Tagesordnungspunkte übernehmen</c-rahmen.brotkrume>{% endblock %}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}">Sitzung vom {{ meeting.start|date:"d.m.Y" }}</c-rahmen.brotkrume><c-rahmen.brotkrume>Tagesordnungspunkte übernehmen</c-rahmen.brotkrume>{% endblock %}
 
 {% block work_header %}
 <c-rahmen.kopfband titel="Tagesordnungspunkte übernehmen" dicht text="{{ meeting.title }}, {{ meeting.start|date:'d.m.Y' }}">
