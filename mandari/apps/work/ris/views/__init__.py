@@ -12,6 +12,7 @@ from ._mixins import (
     RISBodiesMixin,
 )
 from .decisions import (
+    RISDecisionDetailView,
     RISDecisionsView,
 )
 from .files import (
@@ -49,6 +50,7 @@ from .search import (
 
 __all__ = [
     "RISBodiesMixin",
+    "RISDecisionDetailView",
     "RISDecisionsView",
     "RISFilesView",
     "RISFrageView",

@@ -8,7 +8,7 @@ giving users access to their municipality's council information system.
 
 from apps.work.rahmen import neues_design
 
-from .. import selectors
+from .. import neu, selectors
 
 
 class RISBodiesMixin:
@@ -20,6 +20,7 @@ class RISBodiesMixin:
 
     Im neuen Erscheinungsbild (Schalter je Organisation, Issues #852/#853) nimmt eine View mit ``neue_vorlage``
     diese Vorlage aus ``work/ris/neu/``; ``neu`` sagt der View, ob sie den Kontext dafür ergänzen soll.
+    ``?ansicht=bisher`` öffnet die bisherige Vorlage (Rückweg wie ``apps.work.rahmen.NeueVorlageMixin``, Issue #951).
     """
 
     #: Vorlage im neuen Erscheinungsbild; leer = dieselbe Vorlage wie bisher
@@ -27,7 +28,7 @@ class RISBodiesMixin:
 
     @property
     def neu(self):
-        return bool(self.neue_vorlage) and neues_design(self.organization)
+        return bool(self.neue_vorlage) and not neu.bisher_angefragt(self.request) and neues_design(self.organization)
 
     def get_template_names(self):
         if self.neu:

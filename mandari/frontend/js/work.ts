@@ -85,3 +85,8 @@ Alpine.data('autosaveAnzeige', autosaveAnzeige)
 import { risKarte } from '../alpine/ris-karte'
 
 Alpine.data('risKarte', risKarte)
+
+// ---- Sitzungskalender im neuen Erscheinungsbild (#951): FullCalendar ohne Inline-Skript und Inline-CSS ------------
+import { sitzungsKalender } from '../alpine/sitzungs-kalender'
+
+Alpine.data('sitzungsKalender', sitzungsKalender)

@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Sitzungsliste, Kalender und Sitzungsdetail der Vorbereitung.
+
+Im neuen Erscheinungsbild (Schalter je Organisation, ``apps.work.rahmen.NeueVorlageMixin``, Issue #951) zeigen die
+drei Seiten eine Vorlage aus ``work/meetings/neu/``; Filter, Daten und Rechte bleiben gleich.
 """
 
 from datetime import datetime
@@ -12,15 +15,17 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.session.services import portal_link_service
+from apps.work.rahmen import NeueVorlageMixin
 
-from .. import selectors
+from .. import neu, selectors
 from ..serializers import serialize_calendar_event
 
 
-class MeetingListView(WorkViewMixin, TemplateView):
+class MeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List of OParl meetings for preparation."""
 
     template_name = "work/meetings/list.html"
+    neue_vorlage = "work/meetings/neu/sitzungen.html"
     permission_required = "meetings.view"
 
     def get_context_data(self, **kwargs):
@@ -69,13 +74,16 @@ class MeetingListView(WorkViewMixin, TemplateView):
                 "now": now,
             }
         )
+        if self.neue_ansicht():
+            context |= neu.sitzungen(self.organization, self.membership, meetings, context)
         return context
 
 
-class MeetingCalendarView(WorkViewMixin, TemplateView):
+class MeetingCalendarView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Calendar view for meetings."""
 
     template_name = "work/meetings/calendar.html"
+    neue_vorlage = "work/meetings/neu/kalender.html"
     permission_required = "meetings.view"
 
     def get_context_data(self, **kwargs):
@@ -104,10 +112,11 @@ class MeetingCalendarEventsView(WorkViewMixin, View):
         return JsonResponse([serialize_calendar_event(m, self.organization.slug) for m in meetings], safe=False)
 
 
-class MeetingDetailView(WorkViewMixin, TemplateView):
+class MeetingDetailView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Meeting detail view with agenda items."""
 
     template_name = "work/meetings/detail.html"
+    neue_vorlage = "work/meetings/neu/sitzung.html"
     permission_required = "meetings.view"
 
     def get_context_data(self, **kwargs):
@@ -126,4 +135,6 @@ class MeetingDetailView(WorkViewMixin, TemplateView):
         context["agenda_items"] = selectors.sorted_agenda_items(meeting)
         context["preparation"] = selectors.get_preparation(self.organization, meeting)
         context["is_upcoming"] = meeting.start and meeting.start > timezone.now()
+        if self.neue_ansicht():
+            context |= neu.sitzung(context["agenda_items"])
         return context

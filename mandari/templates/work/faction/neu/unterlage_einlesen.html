@@ -1,0 +1,29 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Nichtöffentliche Unterlage (PDF) einlesen im neuen Erscheinungsbild (Issue #951, Teilpaket 2; Ablauf Issue #873):
+Kopfband mit Sitzung und Weg zurück, ein Absatz, das Dateifeld mit Ablagefläche (c-form.datei) und die eine
+Hauptaktion. Formular wie bisher (POST multipart, Feld „datei“). Kontext: meeting, max_mb, error. Die bisherige Seite
+bleibt work/faction/internal_import.html.
+{% endcomment %}
+
+{% block page_title %}Nichtöffentliche Unterlage einlesen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}">{{ meeting.title|truncatechars:28 }}</c-rahmen.brotkrume><c-rahmen.brotkrume>Unterlage einlesen</c-rahmen.brotkrume>{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Nichtöffentliche Unterlage einlesen" dicht text="{{ meeting.title }}, {{ meeting.start|date:'d.m.Y' }}">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=meeting.id %}">Zur Sitzung</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-2xl">
+    <p class="text-sm text-gray-700 dark:text-gray-300">Work liest die Tagesordnungspunkte aus der PDF-Datei und schlägt sie als nichtöffentliche TOPs vor. Die Datei liegt danach im Dokumentenspeicher im Ordner „Nichtöffentliche Vorgänge“, den nur vereidigte Mitglieder öffnen können.</p>
+    <form method="post" enctype="multipart/form-data" class="mt-5 space-y-4" data-submit-once>
+        {% csrf_token %}
+        <c-form.datei name="datei" id="datei" label="PDF-Datei, höchstens {{ max_mb }} MB" accept=".pdf,application/pdf" required
+                      hinweis="Gescannte Unterlagen erkennt Work selbst, ohne externen Dienst. Das kann bis zu einer Minute dauern." fehler="{{ error }}" />
+        <c-ui.button type="submit" size="sm">Einlesen</c-ui.button>
+    </form>
+</div>
+{% endblock %}

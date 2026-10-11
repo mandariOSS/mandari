@@ -1,0 +1,109 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Beschlüsse der Recherche im neuen Erscheinungsbild (Issue #951, Teilpaket 2; Recherche › Beschlüsse, Issue #37):
+Kopfband mit dem Umsetzungsstand als Satz – die vier Zählerkacheln der bisherigen Seite sind Filter-Textlinks mit
+Zahl im Satz (dieselben Ziele ?status=…, ?overdue=1; Kontext apps/work/ris/neu.beschluesse). Filter wie bisher (GET q,
+organization, year, status, overdue), Tabelle mit Linien statt Karte; Abstimmungsergebnis und Umsetzungsstand als
+Punkt mit Text statt Farbchip. Jeder Beschluss öffnet seine eigene Seite (work/ris/neu/beschluss.html). Seitenwahl
+c-liste.seiten (behält die Filter; die bisherige Seite hängte page mehrfach an). Die bisherige Seite bleibt
+work/ris/decisions.html.
+{% endcomment %}
+
+{% block page_title %}Beschlüsse{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Beschlüsse" dicht
+    text="{% if body %}Umsetzungsstand der öffentlichen Beschlüsse aus {{ body.get_display_name }}.{% else %}Umsetzungsstand der Beschlüsse Ihrer Kommune.{% endif %}">
+    {% if beschluss_filter %}
+    <p class="text-sm text-gray-800 dark:text-gray-200" data-testid="beschluss-stand">
+        {{ tracking_stats.total }} Beschl{{ tracking_stats.total|pluralize:"uss,üsse" }}{% if has_filter %} für Ihre Auswahl{% endif %}:
+        {% for f in beschluss_filter %}<a href="{{ f.href }}" {% if f.aktiv %}aria-current="true" {% endif %}class="{% if f.aktiv %}font-semibold text-gray-900 dark:text-white underline{% else %}font-medium text-primary-700 dark:text-primary-300 hover:underline{% endif %} underline-offset-4">{{ f.zahl }} {{ f.wort }}</a>{% if not forloop.last %}{% if forloop.revcounter == 2 %} und {% else %}, {% endif %}{% endif %}{% endfor %}.
+    </p>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if no_body_linked %}
+{% include "work/ris/partials/_no_body_notice_neu.html" %}
+{% elif no_session_tenant %}
+<c-rahmen.abschnitt titel="Noch keine Beschlusskontrolle verfügbar" class="max-w-2xl" data-testid="ohne-verwaltung">
+    <c-rahmen.satz eng>Die Verwaltung Ihrer Kommune führt ihr Ratsinformationssystem noch nicht mit mandari Session. Sobald sie Beschlüsse dort dokumentiert, sehen Sie hier Umsetzungsstand, Zuständigkeit und Fristen.</c-rahmen.satz>
+</c-rahmen.abschnitt>
+{% else %}
+<form method="get" role="search" class="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Beschlüsse filtern">
+    <label for="beschluesse-suche" class="sr-only">Beschlüsse durchsuchen</label>
+    <input id="beschluesse-suche" type="search" name="q" value="{{ search_query }}" placeholder="Betreff, Beschlusstext, Nummer, Amt"
+           class="h-9 w-full sm:w-72 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    <c-form.select name="organization" id="beschluesse-gremium" label="Gremium" dicht zeile>
+        <option value="">Alle Gremien</option>
+        {% for org in organizations %}<option value="{{ org.id }}" {% if filter_organization == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
+    </c-form.select>
+    <c-form.select name="year" id="beschluesse-jahr" label="Jahr" dicht zeile>
+        <option value="">Alle Jahre</option>
+        {% for y in years %}<option value="{{ y }}" {% if filter_year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </c-form.select>
+    <c-form.select name="status" id="beschluesse-umsetzung" label="Umsetzung" dicht zeile>
+        <option value="">Jeder Stand</option>
+        {% for value, label in implementation_choices %}<option value="{{ value }}" {% if filter_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </c-form.select>
+    <c-form.checkbox name="overdue" id="beschluesse-ueberfaellig" value="1" label="nur überfällige" :checked="filter_overdue" dicht />
+    <c-ui.button type="submit" size="sm">Filtern</c-ui.button>
+    {% if has_filter %}<c-ui.textlink href="{% url 'work:ris_decisions' org_slug=organization.slug %}" class="text-sm">Zurücksetzen</c-ui.textlink>{% endif %}
+</form>
+
+{% if items %}
+<div class="mt-4 -mx-3 overflow-x-auto" data-testid="beschluesse">
+    <table class="w-full">
+        <thead>
+            <tr class="border-b border-gray-300 dark:border-gray-700">
+                <c-ui.th dicht>Beschluss</c-ui.th>
+                <c-ui.th dicht class="whitespace-nowrap max-md:hidden">Gremium, Sitzung</c-ui.th>
+                <c-ui.th dicht>Umsetzung</c-ui.th>
+                <c-ui.th dicht class="whitespace-nowrap max-lg:hidden">Zuständig, Frist</c-ui.th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
+            {% for item in items %}
+            <tr class="align-top">
+                <td class="px-3 py-2.5 text-sm">
+                    <p class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                        {% if item.resolution_number %}<span class="tabular-nums">{{ item.resolution_number }}</span>{% endif %}
+                        <span class="inline-flex items-center gap-1.5 text-gray-800 dark:text-gray-200"><span class="w-2 h-2 shrink-0 rounded-full {% if item.vote_result == 'approved' %}bg-green-600{% elif item.vote_result == 'rejected' %}bg-red-600{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>{{ item.get_vote_result_display }}</span>
+                    </p>
+                    <a href="{% url 'work:ris_decision_detail' org_slug=organization.slug item_id=item.pk %}" class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:text-primary-700 dark:hover:text-primary-300 hover:underline underline-offset-4 break-words">TOP {{ item.number }} · {{ item.name }}</a>
+                    {% if item.resolution_text %}<p class="mt-0.5 text-gray-600 dark:text-gray-400 line-clamp-2">{{ item.resolution_text }}</p>{% endif %}
+                    <p class="md:hidden mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ item.meeting.organization.name }} · {{ item.meeting.start|date:"d.m.Y" }}</p>
+                    {% if item.meeting.oparl_meeting_id %}<p class="mt-0.5 text-[0.8125rem]"><c-ui.textlink href="{% url 'work:ris_meeting_detail' org_slug=organization.slug meeting_id=item.meeting.oparl_meeting_id %}">Sitzung in der Recherche</c-ui.textlink></p>{% endif %}
+                </td>
+                <td class="px-3 py-2.5 text-sm text-gray-800 dark:text-gray-200 max-md:hidden">
+                    <p>{{ item.meeting.organization.name|default:"–" }}</p>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ item.meeting.start|date:"d.m.Y" }}{% if tenants|length > 1 %} · {{ item.meeting.tenant.name }}{% endif %}</p>
+                </td>
+                <td class="px-3 py-2.5 text-sm">
+                    {% if item.vote_result == 'approved' %}
+                    {% include "work/ris/neu/_umsetzung.html" %}
+                    {% if item.implementation_note %}<p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 line-clamp-2">{{ item.implementation_note }}</p>{% endif %}
+                    {% if item.implementation_updated_at %}<p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Stand {{ item.implementation_updated_at|date:"d.m.Y" }}</p>{% endif %}
+                    {% else %}
+                    <span class="text-gray-600 dark:text-gray-400">keine Umsetzung</span>
+                    {% endif %}
+                </td>
+                <td class="px-3 py-2.5 text-sm text-gray-800 dark:text-gray-200 max-lg:hidden">
+                    {% if item.vote_result == 'approved' %}
+                    <p>{{ item.implementation_recipient|default:"–" }}</p>
+                    {% if item.implementation_deadline %}<p class="text-[0.8125rem] {% if item.implementation_overdue %}font-semibold text-red-700 dark:text-red-400{% else %}text-gray-600 dark:text-gray-400{% endif %}">Frist {{ item.implementation_deadline|date:"d.m.Y" }}</p>{% endif %}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+<c-liste.seiten :seite="page_obj" dicht />
+{% else %}
+<c-rahmen.satz>Für diese Auswahl gibt es keine Beschlüsse.{% if has_filter %} <c-ui.textlink href="{% url 'work:ris_decisions' org_slug=organization.slug %}">Filter zurücksetzen</c-ui.textlink>{% endif %}</c-rahmen.satz>
+{% endif %}
+{% endif %}
+{% endblock %}

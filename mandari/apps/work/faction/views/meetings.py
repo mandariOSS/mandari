@@ -14,6 +14,7 @@ from django.utils import timezone
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 from apps.work.stats_text import faction_meetings_sentence
 
 from ..models import (
@@ -38,10 +39,11 @@ def _wants_standard_agenda(form) -> bool:
     return not form.get("standard_agenda_offered") or form.get("standard_agenda") == "on"
 
 
-class FactionMeetingListView(WorkViewMixin, TemplateView):
-    """List of faction meetings. POST creates a new meeting (from modal)."""
+class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
+    """List of faction meetings. POST creates a new meeting (from modal). Neues Erscheinungsbild: Issue #951."""
 
     template_name = "work/faction/list.html"
+    neue_vorlage = "work/faction/neu/sitzungen.html"
     permission_required = "faction.view_public"
 
     def get_context_data(self, **kwargs):
@@ -101,6 +103,11 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
         context["stats_sentence"] = faction_meetings_sentence(context["stats"])
 
         context["status_choices"] = FactionMeeting.STATUS_CHOICES
+        if self.neue_ansicht():
+            from apps.work.meetings.neu import ZEITRAEUME
+
+            # Zeitraum als drei Textlinks (Issue #951), dieselben Werte wie bisher
+            context["zeitraeume"] = ZEITRAEUME
 
         # Teilnahmenachweis (Issue #68): Standard-Zeitraum + Sammel-Export-Recht
         from datetime import date as _date

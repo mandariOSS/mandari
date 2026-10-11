@@ -143,6 +143,7 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "ris_papers": ("recherche", "vorgaenge", None),
     "ris_paper_detail": ("recherche", "vorgaenge", None),
     "ris_decisions": ("recherche", "beschluesse", None),
+    "ris_decision_detail": ("recherche", "beschluesse", None),
     "ris_organizations": ("recherche", "gremien", None),
     "ris_organization_detail": ("recherche", "gremien", None),
     "ris_persons": ("recherche", "personen", None),

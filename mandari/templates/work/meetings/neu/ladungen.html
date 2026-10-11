@@ -1,0 +1,86 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Ladungen der Verwaltung im neuen Erscheinungsbild (Issue #951, Teilpaket 2; Ablauf Issue #225): Kopfband mit der
+verbundenen Verwaltung, je Sitzung ein Eintrag in einer Liste mit Linien statt einer Karte: Termin und Ort, die
+Versände mit Empfangsstand (Punkt mit Text statt Farb-Badge) und Tagesordnung als PDF, die eigene Rückmeldung und die
+Formulare wie bisher (POST action=confirm|acknowledge, decline mit reason und substitute). Ohne Verbindung oder
+Zuordnung ein Satz statt Karte. Die bisherige Seite bleibt work/meetings/session_invitations.html.
+{% endcomment %}
+
+{% block page_title %}Ladungen der Verwaltung{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Ladungen der Verwaltung" dicht text="{% if connected_tenant %}{{ connected_tenant.name }}: {% endif %}Empfang bestätigen und Teilnahme melden.">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:meetings' org_slug=organization.slug %}">Meine Sitzungen</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if not connected_tenant %}
+<c-rahmen.abschnitt titel="Keine Verbindung zur Verwaltung" class="max-w-2xl" data-testid="keine-verbindung">
+    <c-rahmen.satz eng>Ihre Organisation ist nicht mit dem Sitzungsdienst einer Verwaltung verbunden. Ladungen erreichen Sie weiterhin per E-Mail mit persönlichem Rückmeldelink.</c-rahmen.satz>
+</c-rahmen.abschnitt>
+{% elif not person %}
+<c-rahmen.abschnitt titel="Keine Zuordnung zum Sitzungsdienst" class="max-w-2xl" data-testid="keine-zuordnung">
+    <c-rahmen.satz eng>Ihr Konto ist keiner Person im Sitzungsdienst von {{ connected_tenant.name }} zugeordnet. Voraussetzung ist eine bestätigte E-Mail-Adresse, die genau der beim Sitzungsdienst hinterlegten Adresse entspricht. Ladungen erreichen Sie weiterhin per E-Mail mit persönlichem Rückmeldelink.</c-rahmen.satz>
+</c-rahmen.abschnitt>
+{% else %}
+{% if invitations %}
+<ul class="max-w-4xl divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="ladungen">
+    {% for invitation in invitations %}
+    <li class="py-5" aria-labelledby="ladung-{{ invitation.latest.id }}">
+        <h2 id="ladung-{{ invitation.latest.id }}" class="text-base font-semibold text-gray-900 dark:text-white break-words">{{ invitation.meeting.name }}</h2>
+        <p class="mt-0.5 flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+            <span>{{ invitation.meeting.organization.name }}</span>
+            <span>{{ invitation.meeting.start|date:"l, d.m.Y, H:i" }} Uhr</span>
+            {% if invitation.meeting.location %}<span>{{ invitation.meeting.location }}{% if invitation.meeting.room %}, {{ invitation.meeting.room }}{% endif %}</span>{% endif %}
+        </p>
+        {% if invitation.meeting.cancelled %}<p class="mt-2 text-sm font-semibold text-red-700 dark:text-red-400">Diese Sitzung wurde abgesagt.</p>{% endif %}
+        {% if invitation.substitute_for %}<p class="mt-2 text-sm text-gray-800 dark:text-gray-200">Vertretungsanfrage: {{ invitation.substitute_for.display_name }} bittet Sie um Vertretung.</p>{% endif %}
+
+        <ul class="mt-3 space-y-1 text-sm text-gray-700 dark:text-gray-300">
+            {% for row in invitation.rows %}
+            <li class="flex flex-wrap items-center gap-x-4 gap-y-0.5">
+                <span>{{ row.dispatch.get_dispatch_type_display }} vom {{ row.dispatch.sent_at|date:"d.m.Y" }}</span>
+                <span class="inline-flex items-center gap-1.5"><span class="w-2 h-2 shrink-0 rounded-full {% if row.acknowledged_at %}bg-green-600{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% if row.acknowledged_at %}Empfang bestätigt am {{ row.acknowledged_at|date:"d.m.Y, H:i" }} Uhr{% else %}Empfang nicht bestätigt{% endif %}</span>
+                <c-ui.textlink href="{% url 'work:session_invitation_agenda' org_slug=organization.slug recipient_id=row.id %}">Tagesordnung (PDF)</c-ui.textlink>
+            </li>
+            {% endfor %}
+        </ul>
+
+        <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">
+            Ihre Rückmeldung:
+            <span class="inline-flex items-center gap-1.5 font-medium"><span class="w-2 h-2 shrink-0 rounded-full {% if invitation.attendance.status == 'confirmed' %}bg-green-600{% elif invitation.attendance.status == 'declined' %}bg-red-600{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>{% if invitation.attendance.status == "confirmed" %}Zugesagt{% elif invitation.attendance.status == "declined" %}Abgesagt{% if invitation.attendance.substitute_requested %}, Vertretung erbeten{% endif %}{% else %}offen{% endif %}</span>
+            {% if invitation.attendance.responded_at %}<span class="text-gray-600 dark:text-gray-400">am {{ invitation.attendance.responded_at|date:"d.m.Y, H:i" }} Uhr</span>{% endif %}
+        </p>
+
+        {% if invitation.can_respond %}
+        <form method="post" action="{% url 'work:session_invitation_respond' org_slug=organization.slug recipient_id=invitation.latest.id %}" class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            {% csrf_token %}
+            <c-ui.button type="submit" name="action" value="confirm" variant="secondary" size="sm">Ich nehme teil</c-ui.button>
+            {% if invitation.open_rows %}<button type="submit" name="action" value="acknowledge" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Nur Erhalt bestätigen</button>{% endif %}
+        </form>
+        <details class="mt-3">
+            <summary class="cursor-pointer text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Ich kann nicht teilnehmen</summary>
+            <form method="post" action="{% url 'work:session_invitation_respond' org_slug=organization.slug recipient_id=invitation.latest.id %}" class="mt-3 max-w-xl space-y-3">
+                {% csrf_token %}
+                <c-form.textarea name="reason" id="reason-{{ invitation.latest.id }}" label="Grund (optional)" rows="2" dicht
+                                 help="Nur für den Sitzungsdienst sichtbar und verschlüsselt gespeichert, nicht für Ihre Fraktion und nicht öffentlich." />
+                {% if not invitation.substitute_for %}
+                <c-form.checkbox name="substitute" id="substitute-{{ invitation.latest.id }}" value="1" label="Meine Stellvertretung um Vertretung bitten" dicht />
+                {% endif %}
+                <c-ui.button type="submit" name="action" value="decline" variant="danger" size="sm">Absagen</c-ui.button>
+            </form>
+        </details>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<c-rahmen.abschnitt titel="Keine anstehenden Ladungen" class="max-w-2xl" data-testid="keine-ladungen">
+    <c-rahmen.satz eng>Sobald der Sitzungsdienst von {{ connected_tenant.name }} Sie zu einer Sitzung lädt, erscheint die Ladung hier.</c-rahmen.satz>
+</c-rahmen.abschnitt>
+{% endif %}
+{% endif %}
+{% endblock %}

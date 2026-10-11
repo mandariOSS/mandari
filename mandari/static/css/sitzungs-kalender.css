@@ -1,0 +1,142 @@
+/* Sitzungskalender in Work (Issue #951, templates/work/meetings/neu/kalender.html, frontend/alpine/sitzungs-kalender.ts).
+   FullCalendar liest seine Farben aus Variablen (--fc-*); hier kommen sie aus den Tokens der Arbeitsflächen (.wf in
+   work-flaeche.css), damit Kennfarbe und Dunkelmodus ohne Inline-CSS, feste Farbe und Beobachter folgen. Ruhig wie
+   die übrigen Arbeitsflächen: Knöpfe 32 px mit Linie statt Farbfläche, Titel 18 px, Termine 12 px in der Kennfarbe.
+   Bewusst ohne @layer: Die Klassen von FullCalendar stehen in keiner Vorlage, Tailwind würde die Regeln sonst
+   verwerfen. */
+.sitzungs-kalender {
+  --fc-border-color: var(--wf-linie);
+  --fc-page-bg-color: var(--wf-flaeche);
+  --fc-neutral-bg-color: var(--wf-grau-hell);
+  --fc-neutral-text-color: var(--wf-text2);
+  --fc-list-event-hover-bg-color: var(--wf-grau-hell);
+  --fc-today-bg-color: rgb(var(--primary-600) / 0.06);
+  --fc-now-indicator-color: rgb(var(--primary-600));
+  --fc-event-bg-color: rgb(var(--primary-600));
+  --fc-event-border-color: rgb(var(--primary-600));
+  --fc-event-text-color: #fff;
+  --fc-more-link-bg-color: transparent;
+  --fc-more-link-text-color: var(--wf-work-text);
+  --fc-button-text-color: var(--wf-tinte);
+  --fc-button-bg-color: var(--wf-flaeche);
+  --fc-button-border-color: var(--wf-linie-stark);
+  --fc-button-hover-bg-color: var(--wf-grau);
+  --fc-button-hover-border-color: var(--wf-linie-stark);
+  --fc-button-active-bg-color: var(--wf-grau);
+  --fc-button-active-border-color: var(--wf-linie-stark);
+  --fc-list-event-dot-width: 8px;
+  font-size: 0.875rem;
+}
+.dark .sitzungs-kalender {
+  --fc-today-bg-color: rgb(var(--primary-400) / 0.1);
+  --fc-event-bg-color: rgb(var(--primary-500));
+  --fc-event-border-color: rgb(var(--primary-500));
+  --fc-more-link-text-color: rgb(var(--primary-300));
+}
+
+/* Werkzeugleiste: Titel 18 px, Knöpfe 32 px; schmal bricht sie um statt überzulaufen */
+.sitzungs-kalender .fc .fc-header-toolbar {
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1rem;
+}
+.sitzungs-kalender .fc .fc-toolbar-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.sitzungs-kalender .fc .fc-button {
+  height: 2rem;
+  padding: 0 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1;
+  border-radius: 0.375rem;
+}
+.sitzungs-kalender .fc .fc-button .fc-icon {
+  font-size: 1.125rem;
+  vertical-align: middle;
+}
+.sitzungs-kalender .fc .fc-button-primary:not(:disabled).fc-button-active {
+  font-weight: 600;
+}
+.sitzungs-kalender .fc .fc-button-primary:disabled {
+  opacity: 0.5;
+}
+.sitzungs-kalender .fc .fc-button-primary:focus,
+.sitzungs-kalender .fc .fc-button-primary:not(:disabled).fc-button-active:focus,
+.sitzungs-kalender .fc .fc-button-primary:not(:disabled):active:focus {
+  box-shadow: 0 0 0 2px var(--wf-flaeche), 0 0 0 4px rgb(var(--primary-600));
+}
+
+/* Raster: Kopf der Wochentage 13 px gedimmt, Tageszahlen 13 px, gleich hohe Zellen */
+.sitzungs-kalender .fc .fc-col-header-cell-cushion,
+.sitzungs-kalender .fc .fc-daygrid-day-number {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--wf-text2);
+}
+.sitzungs-kalender .fc .fc-daygrid-day.fc-day-today .fc-daygrid-day-number {
+  color: var(--wf-work-text);
+  font-weight: 700;
+}
+.sitzungs-kalender .fc .fc-daygrid-day-frame {
+  min-height: 6rem;
+}
+
+/* Termine: eine Zeile, 12 px, abgeschnitten mit Auslassung; der volle Titel steht im Tooltip */
+.sitzungs-kalender .fc .fc-daygrid-event,
+.sitzungs-kalender .fc .fc-timegrid-event {
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  line-height: 1.25;
+}
+.sitzungs-kalender .fc .fc-daygrid-event {
+  margin-top: 1px;
+  padding: 1px 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sitzungs-kalender .fc .fc-daygrid-event-dot {
+  display: none;
+}
+.sitzungs-kalender .fc .fc-daygrid-dot-event {
+  background: var(--fc-event-bg-color);
+  color: var(--fc-event-text-color);
+}
+.sitzungs-kalender .fc .fc-daygrid-dot-event:hover {
+  background: rgb(var(--primary-700));
+}
+.sitzungs-kalender .fc .fc-daygrid-dot-event .fc-event-time {
+  flex: none;
+  font-weight: 500;
+}
+.sitzungs-kalender .fc .fc-daygrid-dot-event .fc-event-title {
+  min-width: 0;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sitzungs-kalender .fc .fc-daygrid-more-link {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Liste (am Handy Standard): Tageskopf als ruhige Zeile, Termine 14 px */
+.sitzungs-kalender .fc .fc-list {
+  border-radius: 0.375rem;
+}
+.sitzungs-kalender .fc .fc-list-day-cushion {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.sitzungs-kalender .fc .fc-list-event-title a,
+.sitzungs-kalender .fc .fc-list-event-time {
+  font-size: 0.875rem;
+}
+
+@media (max-width: 639px) {
+  .sitzungs-kalender .fc .fc-toolbar-title {
+    font-size: 1rem;
+  }
+}

@@ -514,6 +514,18 @@ def decided_items(tenants: QuerySet[SessionTenant]) -> QuerySet[SessionAgendaIte
     )
 
 
+def decision_detail(bodies: Bodies, item_id: Any) -> tuple[QuerySet[SessionTenant] | None, SessionAgendaItem | None]:
+    """
+    Ein Beschluss für die Detailseite (Issue #951) aus derselben Auswahl wie die Liste (öffentlich, entschieden,
+    Verwaltungen der eigenen Kommunen): (Verwaltungen, Beschluss). Ohne verknüpfte Verwaltung (None, None), ohne
+    passenden Beschluss (Verwaltungen, None).
+    """
+    tenants = session_tenants(bodies)
+    if not tenants.exists():
+        return None, None
+    return tenants, decided_items(tenants).filter(pk=item_id).first()
+
+
 def filter_decisions(
     items: QuerySet[SessionAgendaItem], *, organization_id: str = "", year: str = "", query: str = ""
 ) -> QuerySet[SessionAgendaItem]:

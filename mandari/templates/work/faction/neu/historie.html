@@ -1,0 +1,73 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Änderungshistorie der Fraktionssitzungen im neuen Erscheinungsbild (Issue #951, Teilpaket 2): Kopfband mit einem Satz,
+Filter (GET model, action; object und meeting bleiben verborgen erhalten) direkt auf der Fläche, Einträge als Liste mit
+Linien: Aktion als Punkt mit Text statt Farbchip, Objekt, Änderungen (alt → neu), rechts wer und wann. Gesperrte
+Einträge (nichtöffentlich, Issue #64; Gastzugriffe, Issue #582) zeigen nur den Platzhalter mit Schloss. Seitenwahl
+c-liste.seiten (behält alle Filter). Die bisherige Seite bleibt work/faction/audit_list.html.
+{% endcomment %}
+
+{% block page_title %}Änderungshistorie{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Änderungshistorie" dicht text="Wer hat wann was an den Fraktionssitzungen geändert{% if page_obj.paginator.count %}: {{ page_obj.paginator.count }} Eintr{{ page_obj.paginator.count|pluralize:'ag,äge' }}{% if selected_model or selected_action or selected_object or selected_meeting %} für Ihre Auswahl{% endif %}, neueste zuerst{% endif %}. Einträge lassen sich nicht ändern oder löschen.">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:faction' org_slug=organization.slug %}">Fraktionssitzungen</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<form method="get" class="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Änderungshistorie filtern">
+    <c-form.select name="model" id="historie-objekt" label="Objekt" dicht zeile data-autosubmit>
+        <option value="">Alle</option>
+        {% for name in model_names %}<option value="{{ name }}" {% if selected_model == name %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </c-form.select>
+    <c-form.select name="action" id="historie-aktion" label="Aktion" dicht zeile data-autosubmit>
+        <option value="">Alle</option>
+        {% for value, label in actions %}<option value="{{ value }}" {% if selected_action == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </c-form.select>
+    {% if selected_object %}<input type="hidden" name="object" value="{{ selected_object }}">{% endif %}
+    {% if selected_meeting %}<input type="hidden" name="meeting" value="{{ selected_meeting }}">{% endif %}
+    <noscript><c-ui.button type="submit" size="sm" variant="secondary">Anwenden</c-ui.button></noscript>
+    {% if selected_model or selected_action or selected_object or selected_meeting %}<c-ui.textlink href="{% url 'work:faction_audit' org_slug=organization.slug %}" class="text-sm">Filter zurücksetzen</c-ui.textlink>{% endif %}
+</form>
+
+{% if entries %}
+<ul class="mt-4 divide-y divide-gray-200 dark:divide-gray-800 border-t border-gray-300 dark:border-gray-700" data-testid="historie">
+    {% for row in entries %}
+    <li class="py-3 grid gap-x-6 gap-y-1 sm:grid-cols-[minmax(0,1fr)_auto]">
+        <div class="min-w-0">
+            <p class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-sm">
+                <span class="inline-flex items-center gap-1.5 font-medium text-gray-900 dark:text-white">
+                    <span class="w-2 h-2 shrink-0 rounded-full {% if row.entry.action == 'delete' %}bg-red-600{% elif row.entry.action == 'create' or row.entry.action == 'generated' %}bg-green-600{% elif row.entry.action == 'auto_cancelled' %}bg-amber-500{% else %}bg-primary-600{% endif %}" aria-hidden="true"></span>{{ row.entry.get_action_display }}
+                </span>
+                <span class="text-gray-600 dark:text-gray-400">{{ row.entry.model_name }}</span>
+            </p>
+            <p class="mt-0.5 text-sm break-words {% if row.locked %}italic text-gray-600 dark:text-gray-400{% else %}text-gray-900 dark:text-white{% endif %}">
+                {% if row.locked %}<i data-lucide="lock" class="inline w-3.5 h-3.5 -mt-0.5 mr-1" aria-hidden="true"></i>{% endif %}{{ row.object_repr }}
+            </p>
+            {% if row.changes %}
+            <dl class="mt-1 space-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                {% for field, diff in row.changes.items %}
+                <div><dt class="inline font-medium">{{ field }}:</dt> <dd class="inline"><del class="text-gray-600 dark:text-gray-400">{{ diff.alt|default:"–" }}</del> <span aria-hidden="true">→</span><span class="sr-only">neu:</span> <ins class="no-underline">{{ diff.neu|default:"–" }}</ins></dd></div>
+                {% endfor %}
+            </dl>
+            {% endif %}
+            {% if row.details %}
+            <dl class="mt-1 space-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                {% for label, value in row.details %}<div><dt class="inline font-medium">{{ label }}:</dt> <dd class="inline">{{ value }}</dd></div>{% endfor %}
+            </dl>
+            {% endif %}
+        </div>
+        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 sm:text-right whitespace-nowrap">
+            <span class="font-medium text-gray-800 dark:text-gray-200">{{ row.entry.actor_label|default:"System" }}</span>
+            <span class="sm:block"><time datetime="{{ row.entry.created_at|date:'c' }}">{{ row.entry.created_at|date:"d.m.Y H:i:s" }}</time></span>
+        </p>
+    </li>
+    {% endfor %}
+</ul>
+<c-liste.seiten :seite="page_obj" dicht />
+{% else %}
+<c-rahmen.satz>{% if selected_model or selected_action or selected_object or selected_meeting %}Für diese Auswahl gibt es keine Einträge.{% else %}Noch keine Einträge in der Änderungshistorie.{% endif %}</c-rahmen.satz>
+{% endif %}
+{% endblock %}

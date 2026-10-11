@@ -22,15 +22,17 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.common.params import uuid_param
 from apps.work.motions.freigaben import guest_download_rows
+from apps.work.rahmen import NeueVorlageMixin
 
 from ..models import FactionAuditLog
 from ..visibility import LOCKED_PLACEHOLDER, can_view_internal
 
 
-class FactionAuditLogView(WorkViewMixin, TemplateView):
-    """Read-only Liste der Fraktions-Audit-Einträge der eigenen Organisation."""
+class FactionAuditLogView(NeueVorlageMixin, WorkViewMixin, TemplateView):
+    """Read-only Liste der Fraktions-Audit-Einträge der eigenen Organisation (neues Erscheinungsbild: Issue #951)."""
 
     template_name = "work/faction/audit_list.html"
+    neue_vorlage = "work/faction/neu/historie.html"
     permission_required = "faction.view_audit"
 
     def get_context_data(self, **kwargs):
