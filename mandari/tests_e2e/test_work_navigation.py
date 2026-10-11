@@ -128,7 +128,8 @@ class TestNavigation:
             "nav[aria-label=Sitzungen]",
         ):
             expect(page.locator(auswahl)).to_be_hidden()
-        expect(page.locator("h1.work-page-title")).to_be_visible()
+        # Der Seitentitel bleibt (Kopfband c-rahmen.kopfband, seit Issue #951 auch auf „Meine Sitzungen“)
+        expect(page.locator("#inhalt h1")).to_be_visible()
         links = page.evaluate("() => document.getElementById('inhalt').getBoundingClientRect().left")
         assert links < 1, links
         page.emulate_media(media="screen")
