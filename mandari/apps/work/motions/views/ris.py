@@ -14,6 +14,7 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.session.services.application_service import ApplicationService
+from apps.work.rahmen import NeueVorlageMixin
 from apps.work.sanitize import safe_editor_html
 
 from .. import administration_feedback, email_submission, ris_submission
@@ -29,10 +30,11 @@ APPLICATION_TYPE_CHOICES = [
 ]
 
 
-class MotionSubmitToAdministrationView(WorkViewMixin, TemplateView):
+class MotionSubmitToAdministrationView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """GET: Vorschau + Formular (oder Statusseite), POST: einreichen."""
 
     template_name = "work/motions/submit_ris.html"
+    neue_vorlage = "work/motions/neu/einreichen.html"
     permission_required = "motions.submit_to_ris"
 
     def _get_motion(self):

@@ -1,0 +1,66 @@
+{% comment %}
+Einreichung per E-Mail an die Verwaltungskontakte (Issues #580, #951), wenn keine nutzbare Verbindung zu mandari
+Session besteht: Empfänger, Betreff, Anschreiben, Anhänge der Mail und verbindliche Bestätigung; rechts die Vorschau.
+Feldnamen wie bisher (channel=email, contacts, subject, message, confirm). Kontext: email_contacts, email_form,
+email_can_submit, email_block_reason, email_attachments, email_pdf_name, email_max_mb, connection_reason,
+can_manage_contacts, motion_content
+{% endcomment %}
+<div class="mb-6 max-w-3xl text-sm text-gray-800 dark:text-gray-200" data-testid="einreichen-email-hinweis">
+    <p>Ohne Verbindung zu mandari Session geht der Antrag als PDF mit seinen Anhängen an die Verwaltungskontakte der Organisation. Jede Empfängerin und jeder Empfänger kann den Eingang über einen Link in der Mail bestätigen.</p>
+    {% if connection_reason %}<p class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ connection_reason }}</p>{% endif %}
+</div>
+{% if not email_can_submit and email_block_reason %}
+<c-ui.alert variant="info" class="mb-6 max-w-3xl">{{ email_block_reason }}</c-ui.alert>
+{% endif %}
+
+<form method="post" data-submit-once class="grid gap-x-12 gap-y-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+    {% csrf_token %}
+    <input type="hidden" name="channel" value="email">
+    <div class="min-w-0 space-y-8">
+        <c-rahmen.abschnitt titel="Einreichung per E-Mail" titel_id="email-titel">
+            <div class="mt-3 space-y-4">
+                <fieldset>
+                    <legend class="text-sm font-medium text-gray-800 dark:text-gray-200">Empfänger</legend>
+                    <div class="mt-1.5 space-y-1.5">
+                        {% for contact in email_contacts %}
+                        <c-form.checkbox name="contacts" id="kontakt-{{ contact.id }}" value="{{ contact.id }}" checked="{% if contact.id|stringformat:'s' in email_form.contact_ids %}1{% endif %}" dicht>
+                            <span class="font-medium">{{ contact.label }}</span> <span class="text-gray-600 dark:text-gray-400">{{ contact.email }}</span>
+                        </c-form.checkbox>
+                        {% endfor %}
+                    </div>
+                    {% if can_manage_contacts %}<p class="mt-2"><c-ui.textlink href="{% url 'work:council_parties' org_slug=organization.slug %}" class="text-[0.8125rem]">Verwaltungskontakte verwalten</c-ui.textlink></p>{% endif %}
+                </fieldset>
+                <c-form.field name="subject" id="subject" label="Betreff" :value="email_form.subject" maxlength="300" dicht required />
+                <c-form.textarea name="message" id="message" label="Anschreiben (optional)" rows="5" maxlength="5000" :value="email_form.message" dicht
+                                 placeholder="Ohne eigenen Text: „Im Namen von {{ organization.name }} reichen wir den folgenden Antrag ein und bitten um Aufnahme in die Beratung.“" />
+                <div>
+                    <p class="text-sm font-medium text-gray-800 dark:text-gray-200">Anhänge der Mail <span class="font-normal text-gray-600 dark:text-gray-400">(zusammen höchstens {{ email_max_mb }} MB)</span></p>
+                    <ul class="mt-1 divide-y divide-gray-200 dark:divide-gray-800 text-sm text-gray-800 dark:text-gray-200">
+                        <li class="flex items-center gap-2 py-1.5"><i data-lucide="file-text" class="w-4 h-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden="true"></i><span class="flex-1 min-w-0 truncate">{{ email_pdf_name }}</span><span class="shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400">Antragstext</span></li>
+                        {% for attachment in email_attachments %}
+                        <li class="flex items-center gap-2 py-1.5"><i data-lucide="paperclip" class="w-4 h-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden="true"></i><span class="flex-1 min-w-0 truncate">{{ attachment.filename }}</span><span class="shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ attachment.size|filesizeformat }}</span></li>
+                        {% endfor %}
+                    </ul>
+                </div>
+            </div>
+        </c-rahmen.abschnitt>
+
+        <div class="border-t border-gray-200 dark:border-gray-800 pt-5">
+            <c-form.checkbox name="confirm" id="email-bestaetigen" disabled="{% if not email_can_submit %}1{% endif %}" dicht>
+                Ich reiche diesen Antrag im Namen von <strong>{{ organization.name }}</strong> verbindlich per E-Mail bei den gewählten
+                Empfängern ein. Übermittelt werden der Antragstext als PDF, die aufgeführten Anhänge, das Anschreiben sowie mein Name
+                und meine E-Mail-Adresse als Ansprechperson (Antworten gehen an mich). Das Dokument wechselt in den Status „Eingereicht“.
+            </c-form.checkbox>
+            <div class="mt-4 flex flex-wrap items-center gap-4">
+                {% if email_can_submit %}
+                <c-ui.button type="submit" size="sm" icon="send">Per E-Mail einreichen</c-ui.button>
+                {% else %}
+                <c-ui.button type="submit" size="sm" icon="send" disabled>Per E-Mail einreichen</c-ui.button>
+                {% endif %}
+                <c-ui.textlink href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}" class="text-sm">Abbrechen</c-ui.textlink>
+            </div>
+        </div>
+    </div>
+
+    {% include "work/motions/neu/_einreichen_vorschau.html" %}
+</form>

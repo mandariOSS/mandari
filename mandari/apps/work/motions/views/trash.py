@@ -16,6 +16,7 @@ from django.views.generic import TemplateView, View
 logger = logging.getLogger("apps.work.motions")
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from ..models import (
     Motion,
@@ -45,10 +46,11 @@ def _can_purge(membership, motion):
 # =============================================================================
 
 
-class MotionTrashView(WorkViewMixin, TemplateView):
+class MotionTrashView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """View deleted documents (Papierkorb)."""
 
     template_name = "work/motions/trash.html"
+    neue_vorlage = "work/motions/neu/papierkorb.html"
     permission_required = "motions.view"
 
     def get_context_data(self, **kwargs):

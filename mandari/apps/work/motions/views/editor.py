@@ -19,7 +19,7 @@ import contextlib
 
 from apps.common.formatting import member_initials, member_name
 from apps.common.mixins import WorkViewMixin
-from apps.work.rahmen import neues_design
+from apps.work.rahmen import NeueVorlageMixin, neues_design
 from apps.work.sanitize import safe_editor_html, sanitize_editor_html
 
 from .. import editor_neu, references, vorschlaege
@@ -88,10 +88,11 @@ def _template_option(template) -> dict:
     }
 
 
-class MotionCreateView(WorkViewMixin, TemplateView):
+class MotionCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Create a new document (Step 1: Basic data)."""
 
     template_name = "work/motions/create.html"
+    neue_vorlage = "work/motions/neu/neu.html"
     permission_required = "motions.create"
 
     def get_context_data(self, **kwargs):
@@ -682,7 +683,7 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
         return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
 
 
-class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
+class GuestSharedDocumentsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """
     Gast-Übersicht: "Freigegebene Dokumente".
 
@@ -693,6 +694,7 @@ class GuestSharedDocumentsView(WorkViewMixin, TemplateView):
     """
 
     template_name = "work/motions/guest_documents.html"
+    neue_vorlage = "work/motions/neu/freigaben.html"
     permission_required = None  # Gäste haben keine Berechtigungen
     guest_allowed = True
 

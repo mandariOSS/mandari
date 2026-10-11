@@ -1,0 +1,54 @@
+{% comment %}
+Ordner anlegen, bearbeiten oder löschen (Issue #951) im gemeinsamen Dialog c-ui.alpine-modal statt eigener Überlagerung.
+Felder und Ziele wie bisher (documentManager.folderModal): name, color, parent; Löschen mit Rückfrage, Inhalte wandern
+in den übergeordneten Ordner. Kontext: folder_color_choices, folder_entries.
+{% endcomment %}
+<c-ui.alpine-modal show="folderModal.open" size="sm" labelledby="ordner-dialog-titel">
+    <div class="p-5">
+        <h2 id="ordner-dialog-titel" class="text-base font-semibold text-gray-900 dark:text-white"
+            x-text="folderModal.mode === 'create' ? 'Neuer Ordner' : 'Ordner bearbeiten'">Neuer Ordner</h2>
+        <form method="post" :action="folderModal.action" class="mt-4 space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="parent" :value="folderModal.parent">
+            <input type="hidden" name="color" :value="folderModal.color">
+            <c-form.field name="name" id="ordner-name" label="Name" modell="folderModal.name" maxlength="100" dicht required />
+            <fieldset>
+                <legend class="text-sm font-medium text-gray-800 dark:text-gray-200">Farbe</legend>
+                <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                    <button type="button" @click="folderModal.color = ''" :aria-pressed="(folderModal.color === '').toString()" aria-label="Keine Farbe"
+                            :class="folderModal.color === '' ? 'ring-2 ring-offset-2 ring-primary-600 dark:ring-offset-gray-800' : ''"
+                            class="w-6 h-6 rounded-full border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700"></button>
+                    {% for value, label in folder_color_choices %}
+                    <button type="button" @click="folderModal.color = '{{ value }}'" :aria-pressed="(folderModal.color === '{{ value }}').toString()" aria-label="{{ label }}"
+                            :class="folderModal.color === '{{ value }}' ? 'ring-2 ring-offset-2 ring-primary-600 dark:ring-offset-gray-800' : ''"
+                            class="w-6 h-6 rounded-full bg-{{ value }}-500"></button>
+                    {% endfor %}
+                </div>
+            </fieldset>
+            <div>
+                <label for="ordner-ziel" class="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1"
+                       x-text="folderModal.mode === 'create' ? 'Anlegen in' : 'Verschieben nach'">Anlegen in</label>
+                <select id="ordner-ziel" x-model="folderModal.parent" aria-describedby="ordner-ziel-hilfe"
+                        class="w-full min-h-9 pl-3 pr-8 py-1.5 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                    <option value="">Alle Dokumente (oberste Ebene)</option>
+                    {% for entry in folder_entries %}
+                    <option value="{{ entry.folder.id }}" x-show="folderModal.id !== '{{ entry.folder.id }}'">{% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }}</option>
+                    {% endfor %}
+                </select>
+                <p id="ordner-ziel-hilfe" class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Höchstens vier Ebenen. Namen sind je Ebene eindeutig.</p>
+            </div>
+            <div class="flex items-center gap-2 pt-1">
+                <c-ui.button type="submit" size="sm" x-text="folderModal.mode === 'create' ? 'Ordner anlegen' : 'Speichern'">Speichern</c-ui.button>
+                <c-ui.button variant="ghost" size="sm" @click="folderModal.open = false">Abbrechen</c-ui.button>
+            </div>
+        </form>
+        <template x-if="folderModal.mode === 'edit'">
+            <form method="post" :action="folderModal.deleteAction" class="mt-5 pt-4 border-t border-gray-200 dark:border-gray-700"
+                  @submit="if (!confirm('Ordner wirklich löschen?')) $event.preventDefault()">
+                {% csrf_token %}
+                <p class="text-[0.8125rem] text-gray-700 dark:text-gray-300">Beim Löschen wandern alle Dokumente und Unterordner nach „<span x-text="folderModal.parentName"></span>“.</p>
+                <c-ui.button type="submit" variant="danger" size="sm" icon="trash-2" class="mt-2">Ordner löschen</c-ui.button>
+            </form>
+        </template>
+    </div>
+</c-ui.alpine-modal>

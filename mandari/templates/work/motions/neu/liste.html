@@ -1,0 +1,78 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Dokumente im neuen Erscheinungsbild (Issue #951, Teilpaket 1): Kopfband mit dem Stand als Satz und einer Hauptaktion,
+links die Ordner, rechts Filter und Liste. Funktionen wie die bisherige Liste (work/motions/list.html): Ordnerbaum mit
+Anlegen, Bearbeiten, Verschieben und Löschen, Ein- und Ausklappen, sieben Filter, die den Ordner behalten, Tabelle oder
+Kacheln, Mehrfachauswahl zum Verschieben, Änderungsanträge eingerückt, Drucksachennummer der Verwaltung, Seitenwahl.
+Alpine: documentManager (frontend/alpine/document-manager.ts) mit derselben Konfiguration wie bisher. Der Teilen-Dialog
+der bisherigen Liste hatte keinen Auslöser und fehlt hier; geteilt wird im Editor. Kontext: MotionListView.
+{% endcomment %}
+
+{% block page_title %}Dokumente{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Dokumente" text="{{ stats_sentence }}" dicht data-testid="dokumente-kopf">
+    <c-slot name="aktionen">
+        <c-ui.help-link topic="dokumente" />
+        <c-ui.textlink href="{% url 'work:document_import' org_slug=organization.slug %}" class="text-sm">PDF importieren</c-ui.textlink>
+        <c-ui.textlink href="{% url 'work:document_trash' org_slug=organization.slug %}" class="text-sm">Papierkorb</c-ui.textlink>
+        <c-ui.button href="{% url 'work:document_create' org_slug=organization.slug %}{% if current_folder %}?ordner={{ current_folder.id }}{% endif %}" icon="plus" size="sm">Neues Dokument</c-ui.button>
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{{ document_manager_config|json_script:"document-manager-config" }}
+<div x-data="documentManager" class="lg:flex lg:items-start lg:gap-8">
+    {% include "work/motions/neu/_liste_ordner.html" %}
+
+    <div class="flex-1 min-w-0">
+        {% include "work/motions/neu/_liste_filter.html" %}
+
+        {% if current_folder %}
+        <nav aria-label="Ordnerpfad" class="mt-4 text-sm">
+            <ol class="flex flex-wrap items-center gap-1.5 text-gray-600 dark:text-gray-400">
+                <li><a href="{% url 'work:documents' org_slug=organization.slug %}{% if filter_query %}?{{ filter_query }}{% endif %}" class="hover:text-primary-700 hover:underline underline-offset-4">Alle Dokumente</a></li>
+                {% for crumb in folder_breadcrumbs %}
+                <li class="flex items-center gap-1.5"><i data-lucide="chevron-right" class="w-3.5 h-3.5" aria-hidden="true"></i><a href="?ordner={{ crumb.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" class="hover:text-primary-700 hover:underline underline-offset-4">{{ crumb.name }}</a></li>
+                {% endfor %}
+                <li class="flex items-center gap-1.5"><i data-lucide="chevron-right" class="w-3.5 h-3.5" aria-hidden="true"></i><span aria-current="page" class="font-medium text-gray-900 dark:text-white">{{ current_folder.name }}</span></li>
+            </ol>
+        </nav>
+        {% endif %}
+
+        {# Mehrfachauswahl: ausgewählte Dokumente in einen Ordner verschieben #}
+        <div x-show="selectedIds.length > 0" x-cloak role="region" aria-label="Auswahl verschieben"
+             class="mt-4 flex flex-wrap items-center gap-3 rounded-md bg-band-grau px-3 py-2 text-sm">
+            <span class="font-medium text-gray-900 dark:text-white" x-text="selectedIds.length + ' ausgewählt'"></span>
+            <label for="auswahl-ziel" class="text-gray-700 dark:text-gray-300">Verschieben nach</label>
+            <select id="auswahl-ziel" x-model="bulkTargetFolder"
+                    class="min-h-8 max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 pl-2 pr-7 text-sm text-gray-900 dark:text-white">
+                <option value="">Alle Dokumente (oberste Ebene)</option>
+                {% for entry in folder_entries %}{% if not entry.folder.sworn_in_only %}
+                <option value="{{ entry.folder.id }}">{% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }}</option>
+                {% endif %}{% endfor %}
+            </select>
+            <c-ui.button size="sm" @click="moveDocuments(selectedIds, bulkTargetFolder)">Verschieben</c-ui.button>
+            <button type="button" @click="selectedIds = []" class="sm:ml-auto text-gray-700 dark:text-gray-300 hover:underline underline-offset-4">Auswahl aufheben</button>
+        </div>
+
+        {% if motion_rows %}
+        {% include "work/motions/neu/_liste_tabelle.html" %}
+        {% include "work/motions/neu/_liste_kacheln.html" %}
+        <c-liste.seiten :seite="motions" dicht />
+        {% else %}
+        <p class="mt-6 text-sm text-gray-700 dark:text-gray-300" data-testid="dokumente-leer">
+            {% if search_query or selected_status or selected_type or filter_mine or selected_topic or selected_responsible or current_folder %}
+            Keine Dokumente für diese Auswahl. <c-ui.textlink href="{% url 'work:documents' org_slug=organization.slug %}">Filter zurücksetzen</c-ui.textlink>
+            {% else %}
+            Noch keine Dokumente. Legen Sie ein <c-ui.textlink href="{% url 'work:document_create' org_slug=organization.slug %}">neues Dokument</c-ui.textlink> an oder <c-ui.textlink href="{% url 'work:document_import' org_slug=organization.slug %}">importieren Sie ein PDF</c-ui.textlink>.
+            {% endif %}
+        </p>
+        {% endif %}
+    </div>
+
+    {% include "work/motions/neu/_ordner_dialog.html" %}
+</div>
+{% endblock %}

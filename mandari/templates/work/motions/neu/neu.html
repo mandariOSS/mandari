@@ -1,0 +1,117 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Neues Dokument, Schritt 1 im neuen Erscheinungsbild (Issues #951, #894): Grunddaten links, Vorlage und Briefkopf
+rechts (ab xl nebeneinander, damit breite Bildschirme keine leere Hälfte zeigen). Felder, Namen und IDs wie bisher
+(work/motions/create.html), Alpine createMotion (frontend/alpine/motion-create.ts) über das Feldmodell der Bausteine.
+Änderungsantrag (?bezug=, #735) mit vorgeschlagener Sichtbarkeit; Ablage im gewählten Ordner (?ordner=).
+Kontext: MotionCreateView.
+{% endcomment %}
+
+{% block page_title %}Neues Dokument{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Neues Dokument" dicht
+    text="Schritt 1 von 2: Grunddaten festlegen. Den Text schreiben Sie danach im Editor." />
+{% endblock %}
+
+{% block work_content %}
+{{ template_options|json_script:"motion-template-options" }}
+<form method="post" x-data="createMotion" data-default-type="{{ default_document_type }}" class="max-w-[92rem]">
+    {% csrf_token %}
+    {% if current_folder %}
+    <input type="hidden" name="folder" value="{{ current_folder.id }}">
+    <p class="mb-6 flex items-center gap-1.5 text-sm text-gray-700 dark:text-gray-300">
+        <i data-lucide="folder" class="w-4 h-4 {% if current_folder.color %}text-{{ current_folder.color }}-700 dark:text-{{ current_folder.color }}-300{% else %}text-gray-500{% endif %}" aria-hidden="true"></i>
+        Wird abgelegt in <span class="font-medium text-gray-900 dark:text-white">{{ current_folder.name }}</span>
+    </p>
+    {% endif %}
+
+    {% if bezug_parent %}
+    <input type="hidden" name="parent_motion" value="{{ bezug_parent.id }}">
+    <c-rahmen.abschnitt titel="Änderungsantrag" titel_id="bezug-titel" class="mb-8 max-w-3xl" data-testid="aenderungsantrag-bezug">
+        <p class="mt-1 text-sm text-gray-800 dark:text-gray-200">Zu „{{ bezug_parent.title }}“</p>
+        {% if can_choose_visibility %}
+        <fieldset class="mt-3">
+            <legend class="text-sm font-medium text-gray-800 dark:text-gray-200">Sichtbarkeit</legend>
+            <div class="mt-1.5 space-y-1.5">
+                {% for value, label in visibility_choices %}
+                <label class="flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200 cursor-pointer">
+                    <input type="radio" name="visibility" value="{{ value }}" {% if value == suggested_visibility %}checked{% endif %} class="text-primary-600 focus:ring-primary-500">
+                    {{ label }}{% if value == suggested_visibility %} <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">(wie der Bezugsantrag)</span>{% endif %}
+                </label>
+                {% endfor %}
+            </div>
+            <p class="mt-2 text-[0.8125rem] text-gray-600 dark:text-gray-400">Vorgeschlagen ist die Sichtbarkeit des Bezugsantrags; Sie können sie ändern. Änderungsanträge haben eigene Rechte: Freigaben, Federführung und Mitarbeit des Bezugsantrags werden nicht übernommen.</p>
+        </fieldset>
+        {% else %}
+        <p class="mt-2 text-[0.8125rem] text-gray-600 dark:text-gray-400">Das Dokument wird privat angelegt. Änderungsanträge haben eigene Rechte: Freigaben, Federführung und Mitarbeit des Bezugsantrags werden nicht übernommen.</p>
+        {% endif %}
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    <div class="grid gap-x-12 gap-y-8 xl:grid-cols-2">
+        <c-rahmen.abschnitt titel="Grunddaten" titel_id="grunddaten-titel">
+            <div class="mt-3 space-y-4">
+                {% if document_types %}
+                <c-form.select name="document_type" id="document_type" label="Art des Dokuments" modell="documentType" dicht required
+                               help="Bestimmt Kategorie und Formatierung des Dokuments." @change="filterTemplates()">
+                    {% for type in document_types %}
+                    <option value="{{ type.id }}" {% if type.is_default %}selected{% endif %} data-color="{{ type.color }}" data-icon="{{ type.icon }}">{{ type.name }}{% if type.description %} – {{ type.description|truncatewords:8 }}{% endif %}</option>
+                    {% endfor %}
+                </c-form.select>
+                {% else %}
+                <c-form.select name="motion_type" id="motion_type" label="Art des Dokuments" modell="legacyType" dicht required
+                               help="Bestimmt Kategorie und Formatierung des Dokuments.">
+                    <option value="motion">Antrag</option>
+                    <option value="inquiry">Anfrage</option>
+                    <option value="statement">Stellungnahme</option>
+                    <option value="amendment">Änderungsantrag</option>
+                </c-form.select>
+                {% endif %}
+                <c-form.field name="title" id="title" label="Titel" modell="title" placeholder="Aussagekräftiger Titel für Ihr Dokument" dicht required autofocus />
+                <c-form.textarea name="summary" id="summary" label="Kurzbeschreibung (optional)" rows="2" placeholder="Kurze öffentliche Zusammenfassung"
+                                 help="Diese Zusammenfassung kann öffentlich sichtbar sein." dicht />
+            </div>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Vorlage und Briefkopf" titel_id="vorlage-titel">
+            <div class="mt-3 space-y-4">
+                <div>
+                    <c-form.select name="template" id="template" label="Vorlage" modell="selectedTemplate" dicht
+                                   help="Vorlagen enthalten vorgefertigte Inhalte und Strukturhinweise.">
+                        <option value="">Keine Vorlage (leer beginnen)</option>
+                        <template x-for="tpl in filteredTemplates" :key="tpl.id">
+                            <option :value="tpl.id" :selected="tpl.is_default" x-text="tpl.name"></option>
+                        </template>
+                    </c-form.select>
+                    <div x-show="selectedTemplateInfo" x-cloak class="mt-2 text-[0.8125rem] text-gray-700 dark:text-gray-300" data-testid="vorlage-angaben">
+                        <p x-show="selectedTemplateInfo && selectedTemplateInfo.description" x-text="selectedTemplateInfo && selectedTemplateInfo.description"></p>
+                        <p class="mt-0.5 text-gray-600 dark:text-gray-400">
+                            Art: <span x-text="(selectedTemplateInfo && selectedTemplateInfo.type_name) || 'alle Arten'"></span>
+                            · Briefkopf: <span x-text="(selectedTemplateInfo && selectedTemplateInfo.letterhead_name) || 'keiner'"></span>
+                        </p>
+                    </div>
+                </div>
+                {% if letterheads %}
+                <c-form.select name="letterhead" id="letterhead" label="Briefkopf für den Export" dicht
+                               help="Wird beim PDF-Export als Hintergrund verwendet.">
+                    <option value="">Kein Briefkopf</option>
+                    {% for letterhead in letterheads %}
+                    <option value="{{ letterhead.id }}" {% if letterhead.is_default %}selected{% endif %}>{{ letterhead.name }}</option>
+                    {% endfor %}
+                </c-form.select>
+                {% endif %}
+            </div>
+        </c-rahmen.abschnitt>
+    </div>
+
+    <div class="mt-8 flex flex-wrap items-center gap-4">
+        <c-ui.button type="submit" size="sm" x-bind:disabled="!title.trim()">Weiter zum Editor</c-ui.button>
+        <c-ui.textlink href="{% url 'work:documents' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+    </div>
+    {% if ai_available %}
+    <p class="mt-3 text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="ki-hinweis">Im Editor hilft Ihnen der KI-Assistent beim Formulieren, Verbessern und formalen Prüfen der Texte.</p>
+    {% endif %}
+</form>
+{% endblock %}

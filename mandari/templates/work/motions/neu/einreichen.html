@@ -1,0 +1,44 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Bei der Verwaltung einreichen im neuen Erscheinungsbild (Issue #951). Vier Zustände wie bisher
+(work/motions/submit_ris.html): Stand eines über mandari Session eingereichten Antrags, Stand einer Einreichung per
+E-Mail, Formular für die E-Mail (ohne nutzbare Session-Verbindung, mit Verwaltungskontakten) und das Formular für
+mandari Session. Felder, verbindliche Bestätigung, gesperrter Knopf und data-submit-once bleiben gleich.
+Kontext: MotionSubmitToAdministrationView.
+{% endcomment %}
+
+{% block page_title %}Bei Verwaltung einreichen — {{ motion.title }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Bei der Verwaltung einreichen" text="{{ motion.title }}" dicht>
+    <c-slot name="aktionen">
+        <c-ui.textlink href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}" class="text-sm">Zurück zum Dokument</c-ui.textlink>
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{% if application %}
+{% include "work/motions/neu/_einreichen_stand.html" %}
+{% elif email_submission %}
+{% include "work/motions/neu/_einreichen_email_stand.html" %}
+{% elif email_mode %}
+{% include "work/motions/neu/_einreichen_email.html" %}
+{% else %}
+{% if not connection_usable %}
+<c-ui.alert variant="warning" title="Keine nutzbare Verbindung zur Verwaltung" class="mb-6 max-w-3xl" data-testid="einreichen-ohne-verbindung">
+    <p>{{ connection_reason }}</p>
+    <p class="mt-1">Ohne Verbindung lässt sich per E-Mail einreichen, sobald Verwaltungskontakte hinterlegt sind{% if can_manage_contacts %} (<a class="underline underline-offset-2" href="{% url 'work:council_parties' org_slug=organization.slug %}">Verwaltungskontakte</a>){% endif %}.</p>
+    {% if can_manage_connection %}
+    <p class="mt-2"><a href="{% url 'work:organization_ris_settings' org_slug=organization.slug %}" class="font-medium underline underline-offset-2">Verbindung einrichten</a></p>
+    {% else %}
+    <p class="mt-1">Bitten Sie die Fraktionsleitung, in den Organisationseinstellungen den Einreichungs-Token der Verwaltung zu hinterlegen.</p>
+    {% endif %}
+</c-ui.alert>
+{% elif block_reason %}
+<c-ui.alert variant="info" class="mb-6 max-w-3xl">{{ block_reason }}</c-ui.alert>
+{% endif %}
+{% include "work/motions/neu/_einreichen_formular.html" %}
+{% endif %}
+{% endblock %}
