@@ -9,6 +9,9 @@ verschiebbar, nicht im Druck.
       <c-rahmen.reiter-link href="…">Alle Gremien</c-rahmen.reiter-link>
   </c-rahmen.reiter>
 ``label`` benennt die Navigation für Bildschirmleser, ``class`` ergänzt Rand und Fläche.
+Einstellungen und Profil (Issue #951) setzen die Leiste unter das Kopfband, höchstens sechs Reiter; eine Zahl je Reiter
+gibt c-rahmen.reiter-link (``zahl``). Auch Session nutzt die Leiste (session/rahmen/_reiter.html).
+  <c-rahmen.reiter label="Einstellungen" class="rahmen-zeile bg-band-hell">…</c-rahmen.reiter>
 {% endcomment %}
 <c-vars label="" class="" />
 <nav aria-label="{{ label }}" class="shrink-0 print:hidden border-b border-gray-200 dark:border-gray-800 {{ class }}">
