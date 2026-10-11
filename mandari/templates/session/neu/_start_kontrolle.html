@@ -4,7 +4,7 @@ Rolle, als Abschnitte ohne Kacheln. Inhalt und Rechte wie session/partials/dashb
 {% endcomment %}
 {% if audit_summary %}
 <c-rahmen.abschnitt titel="Protokollkontrolle" titel_id="start-protokoll" data-testid="dashboard-protokollkontrolle">
-    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">Revisionssicheres Protokoll dieses Mandanten. Jede Einsicht wird selbst protokolliert.</p>
+    <c-rahmen.satz eng>Revisionssicheres Protokoll dieses Mandanten. Jede Einsicht wird selbst protokolliert.</c-rahmen.satz>
     <c-ui.angaben class="mt-3">
         <dt>Einträge seit {{ audit_summary.since|date:"d.m.Y" }}</dt>
         <dd class="tabular-nums">{{ audit_summary.recent }}</dd>
@@ -35,7 +35,7 @@ Rolle, als Abschnitte ohne Kacheln. Inhalt und Rechte wie session/partials/dashb
         {% endfor %}
     </ul>
     {% else %}
-    <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">{% if audit_summary %}Ihre Rolle umfasst keine Sitzungen, Vorlagen oder Anträge (Funktionstrennung). Deshalb steht hier nur das Protokoll.{% else %}Ihrer Rolle sind keine Sitzungen, Vorlagen, Anträge oder Verwaltungsbereiche zugeordnet. Bitte wenden Sie sich an die Benutzerverwaltung Ihrer Kommune.{% endif %}</p>
+    <c-rahmen.satz eng>{% if audit_summary %}Ihre Rolle umfasst keine Sitzungen, Vorlagen oder Anträge (Funktionstrennung). Deshalb steht hier nur das Protokoll.{% else %}Ihrer Rolle sind keine Sitzungen, Vorlagen, Anträge oder Verwaltungsbereiche zugeordnet. Bitte wenden Sie sich an die Benutzerverwaltung Ihrer Kommune.{% endif %}</c-rahmen.satz>
     {% endif %}
 </c-rahmen.abschnitt>
 {% endif %}

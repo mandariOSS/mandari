@@ -10,6 +10,7 @@ wie bisher. Die Navigation zeigt jeden Bereich nur mit dem Recht seiner Seite; d
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 from io import StringIO
 from typing import Any, cast
@@ -136,6 +137,46 @@ def test_verwaltungsbefehl() -> None:
         call_command("session_neues_design", "an", "--mandant", "gibt-es-nicht", stdout=StringIO())
 
 
+def test_verwaltungsbefehl_probelauf_rueckweg_und_fehler() -> None:
+    _mandant("nord", neu=False)
+    _mandant("sued", neu=True)
+    _mandant("west", neu=False)
+
+    # Probelauf zeigt nur, was sich ändern würde
+    ausgabe = StringIO()
+    call_command("session_neues_design", "an", "--mandant", "nord", "--mandant", "sued", "--probelauf", stdout=ausgabe)
+    text = ausgabe.getvalue()
+    assert "nord: würde auf an schalten" in text and "sued: bereits an – nichts zu tun" in text
+    assert "1 von 2 Mandant(en) würden umgeschaltet." in text
+    assert not SessionTenant.objects.get(slug="nord").session_new_design
+
+    # Mehrere Mandanten auf einmal, doppelte Angabe zählt einmal; die übrigen bleiben unberührt
+    ausgabe = StringIO()
+    call_command("session_neues_design", "an", "--mandant", "nord", "--mandant", "nord", stdout=ausgabe)
+    assert "1 von 1 Mandant(en) umgeschaltet." in ausgabe.getvalue()
+    stand = dict(SessionTenant.objects.values_list("slug", "session_new_design"))
+    assert stand == {"nord": True, "sued": True, "west": False}
+
+    # Rückweg für einen Mandanten
+    call_command("session_neues_design", "aus", "--mandant", "sued", stdout=StringIO())
+    stand = dict(SessionTenant.objects.values_list("slug", "session_new_design"))
+    assert stand == {"nord": True, "sued": False, "west": False}
+    ausgabe = StringIO()
+    call_command("session_neues_design", "status", stdout=ausgabe)
+    assert "Neues Design an: 1 von 3" in ausgabe.getvalue()
+
+    # Ohne Mandant, mit beidem oder einem unbekannten Mandanten ändert der Befehl nichts
+    for argumente in (
+        ("an",),
+        ("aus",),
+        ("aus", "--alle", "--mandant", "nord"),
+        ("aus", "--mandant", "nord", "--mandant", "gibt-es-nicht"),
+    ):
+        with pytest.raises(CommandError):
+            call_command("session_neues_design", *argumente, stdout=StringIO())
+    assert SessionTenant.objects.get(slug="nord").session_new_design is True
+
+
 # =============================================================================
 # Rahmen und Seiten
 # =============================================================================
@@ -195,6 +236,35 @@ def test_alle_aktionen_der_sitzung_bleiben_erreichbar() -> None:
     for name in ("agenda_item_move", "agenda_item_edit", "agenda_item_withdraw", "agenda_item_delete"):
         assert reverse(f"session:{name}", kwargs={"tenant_slug": tenant.slug, "item_id": top.pk}) in html, name
     assert 'data-tagesordnung-reihenfolge="' in html and html.count('data-testid="top"') == 2
+
+
+#: Ziele auf einer Seite: Links, Formulare, htmx-Aufrufe und Adressen für Skripte (Umsortieren, Hochladen)
+_ZIEL = re.compile(r'(?:href|action|hx-(?:get|post|put|patch|delete)|data-[a-z-]+)="(/session/[^"]+)"')
+
+
+def test_keine_funktion_der_bisherigen_seiten_entfaellt() -> None:
+    """
+    Jedes Ziel der bisherigen Kernseiten (Aktionen, Formulare, htmx, Navigation) steht auch auf der neuen Seite. Einzige
+    Ausnahme: Seiten, die die bisherige Seitenleiste direkt anbot und die jetzt als Reiter über ihrer Liste stehen
+    (Kalender, Zu prüfen, Meine Mitzeichnungen, Umlaufbeschlüsse) – erreichbar mit einem Schritt mehr.
+    """
+    tenant = _mandant("vergleich", neu=False)
+    welt = _welt(tenant)
+    client = _client(tenant, "Administrator")
+    reiter = {
+        reverse(ziel.url_name, kwargs={"tenant_slug": tenant.slug})
+        for ziele in rahmen.REITER.values()
+        for ziel in ziele
+    }
+    for status in ("draft", "review"):
+        SessionPaper.objects.filter(pk=welt["vorlage_obj"].pk).update(status=status)
+        for name in KERNSEITEN:
+            SessionTenant.objects.filter(pk=tenant.pk).update(session_new_design=False)
+            bisher = set(_ZIEL.findall(client.get(welt[name]).content.decode()))
+            SessionTenant.objects.filter(pk=tenant.pk).update(session_new_design=True)
+            neu = set(_ZIEL.findall(client.get(welt[name]).content.decode()))
+            assert bisher, name
+            assert not (bisher - neu - reiter), f"{status}/{name}: {sorted(bisher - neu - reiter)}"
 
 
 def test_lesezugriff_sieht_keine_bearbeitung() -> None:
