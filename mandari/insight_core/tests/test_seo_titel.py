@@ -242,6 +242,19 @@ class TestVorgang:
         assert len(og) <= 70 and og.endswith("…") and len(og) > len(gekuerzt)
         assert rest == "V/0881/2011, Münster"
 
+    def test_klammer_am_anfang_des_betreffs_bleibt(self, muenster: OParlBody) -> None:
+        betreff = (
+            "Antrag (CDU-Fraktion, SPD-Fraktion, Fraktion Bündnis 90/Die Grünen, FDP-Fraktion, Fraktion Die Linke) "
+            "zur Neuordnung der Parkgebühren in der Innenstadt"
+        )
+        paper = _vorgang(muenster, name=betreff, paper_type="Antrag", reference="A/12/2026")
+
+        # Nicht nur „Antrag…, Münster“
+        assert (
+            _titel(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"))
+            == "Antrag (CDU-Fraktion, SPD-Fraktion, Fraktion Bündnis 90/Die…, Münster"
+        )
+
     def test_ohne_betreff_art_nummer_und_kommune(self, muenster: OParlBody) -> None:
         paper = _vorgang(muenster, name="V/0881/2011")
 
@@ -345,6 +358,19 @@ class TestSitzung:
             "Münster",
             "Bezirksvertretung Mitte am 05.11.2030",
         ]
+
+    def test_langer_ort_mit_klammer_bleibt_lesbar(self, muenster: OParlBody) -> None:
+        sitzung = _sitzung(
+            muenster,
+            _gremium(muenster, "Rat"),
+            _zeit(2030, 11, 5, 17),
+            location_name="Ratssaal (Rathaus, Prinzipalmarkt 10, 48143 Münster, Eingang über den Innenhof)",
+        )
+
+        description = _meta(_seite(Client(), f"/insight/termine/{sitzung.id}/"), "name", "description")
+
+        # Nicht nur „Ratssaal…“
+        assert "17:00 Uhr, Ratssaal (Rathaus, Prinzipalmarkt 10, 48143 Münster…." in description
 
     def test_abgesagte_sitzung(self, muenster: OParlBody) -> None:
         sitzung = _sitzung(muenster, _gremium(muenster, "Rat"), _zeit(2030, 11, 5, 17), cancelled=True)
@@ -580,8 +606,26 @@ def test_ratsfrage_mit_kommune(muenster: OParlBody) -> None:
         ("Anfrage der Fraktion DIE LINKE zum Haushalt", 26, "Anfrage der Fraktion DIE…"),
         ("Radweg an der Hafenstraße", 25, "Radweg an der Hafenstraße"),
         ("Bebauungsplan,  Südviertel", 15, "Bebauungsplan…"),
-        # Keine offene Klammer vor dem „…“
+        # Ein ganzes Wort, dem am Schnitt nur ein Satzzeichen folgt, bleibt
+        ("Umwelt, Klimaschutz, Verkehr und Mobilität", 20, "Umwelt, Klimaschutz…"),
+        # Keine offene Klammer vor dem „…“ …
         ("Stellv. Mitglied (sachk. Bürger/in)", 30, "Stellv. Mitglied…"),
+        # … aber nur, wenn davor mindestens die Hälfte bleibt
+        (
+            "Sitzung des Ausschusses (Umwelt, Klimaschutz, Verkehr, Mobilität, Digitales und Ordnung) am Dienstag",
+            60,
+            "Sitzung des Ausschusses (Umwelt, Klimaschutz, Verkehr…",
+        ),
+        (
+            "Sitzung des Ausschusses (Umwelt, Klimaschutz, Verkehr, Mobilität, Digitales und Ordnung) am Dienstag",
+            54,
+            "Sitzung des Ausschusses (Umwelt, Klimaschutz, Verkehr…",
+        ),
+        (
+            "Ratssaal (Rathaus, Prinzipalmarkt 10, 48143 Münster, Eingang über den Innenhof)",
+            60,
+            "Ratssaal (Rathaus, Prinzipalmarkt 10, 48143 Münster…",
+        ),
     ],
 )
 def test_kuerzen_an_der_wortgrenze(text: str, limit: int, gekuerzt: str) -> None:

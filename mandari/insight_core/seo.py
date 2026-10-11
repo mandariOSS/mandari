@@ -78,6 +78,8 @@ _GREMIEN_MAX = 4
 _MITGLIEDSCHAFTEN_LD_MAX = 10
 #: „Fraktion “ vor dem Namen einer Fraktion (in der Description steht schon „Fraktion:“)
 _FRAKTION_VORAN = re.compile(r"^Fraktion\s+", re.IGNORECASE)
+#: Ein Wort endet am Schnitt, wenn danach höchstens Satzzeichen und dann ein Leerzeichen oder das Ende folgen
+_WORTENDE = re.compile(r"[,;:!?]*(?: |$)")
 #: Steht nach dem Kürzen nicht vor dem „…“: Satzzeichen …
 _SCHNITT_REST = " ,;:-–/&"
 #: … und Füllwörter (Artikel, Präpositionen, Konjunktionen; nur klein geschrieben – „DIE LINKE“ bleibt)
@@ -176,12 +178,16 @@ def kuerzen(wert: Any, limit: int) -> str:
     if len(text) <= limit:
         return text
     cut = text[: limit - 1]
-    # Endet der Schnitt mitten im Wort, fällt das angeschnittene Wort weg; ein ganzes Wort davor bleibt
-    if text[limit - 1] != " " and " " in cut:
+    # Endet der Schnitt mitten im Wort, fällt das angeschnittene Wort weg; ein ganzes Wort davor bleibt, auch wenn
+    # ihm nur ein Satzzeichen folgt („Umwelt, Klimaschutz,“ → „Umwelt, Klimaschutz…“)
+    if not _WORTENDE.match(text, limit - 1) and " " in cut:
         cut = cut[: cut.rindex(" ")]
-    # Keine offene Klammer vor dem „…“: „Mitglied (sachk.…“ → „Mitglied…“
-    if cut.count("(") > cut.count(")") and cut.rindex("(") > 0:
-        cut = cut[: cut.rindex("(")]
+    # Keine offene Klammer vor dem „…“ („Mitglied (sachk.…“ → „Mitglied…“) – aber nur, wenn davor noch mindestens die
+    # Hälfte bleibt; sonst bliebe von „Antrag (CDU-Fraktion, SPD-Fraktion, …) zur Sache“ nur „Antrag…“
+    if cut.count("(") > cut.count(")"):
+        davor = cut[: cut.rindex("(")].rstrip(_SCHNITT_REST)
+        if 2 * len(davor) >= limit:
+            cut = davor
     # Kein Füllwort und kein übrig gebliebenes Satzzeichen vor dem „…“: „Haushaltsmittel der…“ → „Haushaltsmittel…“
     woerter = cut.rstrip(_SCHNITT_REST).split(" ")
     while len(woerter) > 1 and woerter[-1] in _FUELLWOERTER:
