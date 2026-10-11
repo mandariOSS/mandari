@@ -9,15 +9,17 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ._helpers import flash_error
 
 
-class RegistrationSettingsView(WorkViewMixin, TemplateView):
+class RegistrationSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Selbstregistrierungs-Einstellungen für die Organisation."""
 
     template_name = "work/organization/registration_settings.html"
+    neue_vorlage = "work/organization/neu/registrierung.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):

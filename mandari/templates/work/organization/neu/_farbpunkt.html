@@ -1,0 +1,6 @@
+{% comment %}
+Kennfarbe als Punkt (Issue #951): Rollen, Ratsfraktionen und die Primärfarbe tragen frei gewählte Farben. Ein SVG mit
+fill statt Inline-Stil mit Hintergrundfarbe (CSP-tauglich); ohne Farbe grau.
+  {% include "work/organization/neu/_farbpunkt.html" with farbe=role.color %}
+{% endcomment %}
+<svg class="w-2.5 h-2.5 shrink-0" viewBox="0 0 10 10" aria-hidden="true" focusable="false"><circle cx="5" cy="5" r="5" fill="{{ farbe|default:'#6b7280' }}"/></svg>

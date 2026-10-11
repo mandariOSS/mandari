@@ -1,0 +1,57 @@
+{% comment %}
+Einstellungen › Organisation: Name, Beschreibung, Logo und Primärfarbe (Formular update_general, Issue #951). Logo über
+das gemeinsame Dateifeld mit Vorschau (logoPreview: handleFile, removeLogo, Ref logoInput), Farbe mit colorPicker
+(Farbfeld nativePicker, Hex-Eingabe). Ohne organization.edit nur die Angaben. Kontext: organization, can_edit.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Organisation und Erscheinungsbild" titel_id="organisation-titel">
+    {% if can_edit %}
+    <form method="post" enctype="multipart/form-data" x-data="logoPreview" class="mt-3 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_general">
+        <c-form.field name="name" id="org-name" label="Name" value="{{ organization.name }}" dicht required />
+        <c-form.textarea name="description" id="org-beschreibung" label="Beschreibung" rows="3" value="{{ organization.description }}" dicht />
+
+        <div>
+            <p id="logo-titel" class="text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">Logo</p>
+            <div class="flex flex-wrap items-start gap-4">
+                <div class="w-16 h-16 shrink-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-grau overflow-hidden flex items-center justify-center" aria-live="polite">
+                    <img :src="previewUrl" alt="Vorschau des neuen Logos" class="w-full h-full object-cover" x-show="previewUrl" x-cloak>
+                    {% if organization.logo %}
+                    <img src="{{ organization.logo.url }}" alt="Logo von {{ organization.name }}" class="w-full h-full object-cover" x-show="!previewUrl && !removeLogo">
+                    {% endif %}
+                    <i data-lucide="image" class="w-5 h-5 text-gray-500" aria-hidden="true" x-show="!previewUrl && {% if organization.logo %}removeLogo{% else %}true{% endif %}"></i>
+                </div>
+                <c-form.datei name="logo" id="org-logo" accept="image/jpeg,image/png,image/webp" ref="logoInput" ziehen="false"
+                              labelledby="logo-titel" waehlen="Logo wählen" hinweis="JPG, PNG oder WebP, höchstens 5 MB."
+                              class="flex-1 min-w-[14rem]" @change="handleFile($event)" />
+            </div>
+            <input type="hidden" name="remove_logo" :value="removeLogo ? '1' : ''">
+            {% if organization.logo %}
+            <button type="button" class="mt-2 text-sm font-medium hover:underline underline-offset-4"
+                    :class="removeLogo ? 'text-primary-700 dark:text-primary-300' : 'text-red-700 dark:text-red-400'"
+                    @click="removeLogo = !removeLogo; if (removeLogo) { previewUrl = ''; $refs.logoInput.value = ''; }"
+                    x-text="removeLogo ? 'Entfernen rückgängig machen' : 'Logo entfernen'">Logo entfernen</button>
+            <c-form.hinweis x-show="removeLogo" x-cloak>Das Logo wird beim Speichern entfernt.</c-form.hinweis>
+            {% endif %}
+        </div>
+
+        {% include "work/organization/neu/_farbwahl.html" with name="primary_color" id="org-farbe" label="Primärfarbe" farbe=organization.primary_color vorgabe="#6366f1" hilfe="Kennfarbe der Organisation in der Seitenleiste." %}
+
+        <c-ui.button type="submit" size="sm" variant="secondary">Speichern</c-ui.button>
+    </form>
+    {% else %}
+    <div class="mt-3 flex flex-wrap items-start gap-5">
+        {% if organization.logo %}
+        <img src="{{ organization.logo.url }}" alt="Logo von {{ organization.name }}" class="w-16 h-16 rounded-md object-cover border border-gray-200 dark:border-gray-700">
+        {% endif %}
+        <c-ui.angaben class="flex-1 min-w-[16rem]">
+            <dt>Name</dt>
+            <dd>{{ organization.name }}</dd>
+            <dt>Beschreibung</dt>
+            <dd class="whitespace-pre-line">{{ organization.description|default:"Keine" }}</dd>
+            <dt>Primärfarbe</dt>
+            <dd class="flex items-center gap-2">{% include "work/organization/neu/_farbpunkt.html" with farbe=organization.primary_color %}<span class="font-mono">{{ organization.primary_color }}</span></dd>
+        </c-ui.angaben>
+    </div>
+    {% endif %}
+</c-rahmen.abschnitt>

@@ -1,0 +1,38 @@
+{% comment %}
+Einstellungen › Organisation: Partei-Vernetzung (Formular update_parties, Issue #951). Die Partei der Organisation ist
+gesperrt und wird über ein verstecktes Feld mitgeschickt (bisher hielt ein Inline-onclick das Häkchen fest).
+Kontext: organization, can_edit, available_parties, org_parties, org_party_ids.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Partei-Vernetzung" titel_id="parteien-titel">
+    <c-rahmen.satz eng>Weitere Parteizugehörigkeiten. Darüber tauscht {{ organization.name }} Dokumente mit Organisationen derselben Partei in anderen Kommunen oder anderer Parteien in derselben Kommune aus.</c-rahmen.satz>
+    {% if can_edit %}
+    <form method="post" class="mt-4 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_parties">
+        {% if available_parties %}
+        <fieldset>
+            <legend class="sr-only">Parteien</legend>
+            <div class="grid gap-x-6 gap-y-2 sm:grid-cols-2 max-h-64 overflow-y-auto">
+                {% for party in available_parties %}
+                {% with gewaehlt=party.id|stringformat:"s" %}
+                {% if party.id == organization.party_group_id %}
+                {% if gewaehlt in org_party_ids %}<input type="hidden" name="parties" value="{{ party.id }}">{% endif %}
+                <c-form.checkbox name="partei_der_organisation" id="partei-{{ party.id }}" value="{{ party.id }}" checked="{% if gewaehlt in org_party_ids %}1{% endif %}" disabled dicht>{{ party.name }}{% if party.abbreviation %} ({{ party.abbreviation }}){% endif %} <span class="text-gray-600 dark:text-gray-400">· Partei der Organisation, im Admin verwaltet</span></c-form.checkbox>
+                {% else %}
+                <c-form.checkbox name="parties" id="partei-{{ party.id }}" value="{{ party.id }}" checked="{% if gewaehlt in org_party_ids %}1{% endif %}" dicht>{{ party.name }}{% if party.abbreviation %} <span class="text-gray-600 dark:text-gray-400">({{ party.abbreviation }})</span>{% endif %}</c-form.checkbox>
+                {% endif %}
+                {% endwith %}
+                {% endfor %}
+            </div>
+        </fieldset>
+        {% else %}
+        <c-rahmen.satz>Noch keine Parteien angelegt.</c-rahmen.satz>
+        {% endif %}
+        <c-form.field name="new_party" id="neue-partei" label="Partei per Name hinzufügen" placeholder="Name der Partei" dicht class="max-w-md"
+                      help="Nur bestehende Parteien. Fehlt eine Partei, legt der mandari-Support sie an." />
+        <c-ui.button type="submit" size="sm" variant="secondary">Parteien speichern</c-ui.button>
+    </form>
+    {% else %}
+    <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">{% for party in org_parties %}{{ party.name }}{% if not forloop.last %}, {% endif %}{% empty %}Keine Parteizugehörigkeit hinterlegt.{% endfor %}</p>
+    {% endif %}
+</c-rahmen.abschnitt>

@@ -14,8 +14,9 @@ from apps.common.mixins import WorkViewMixin
 from apps.work.faction import deletion
 from apps.work.faction.models import FactionMeetingSchedule
 from apps.work.faction.visibility import can_view_internal
+from apps.work.rahmen import NeueVorlageMixin
 
-from .. import selectors, services
+from .. import einstellungen, selectors, services
 from ..services import ServiceError
 from ._helpers import flash_error
 
@@ -68,10 +69,11 @@ class TeamMemberProfileView(WorkViewMixin, TemplateView):
         return context
 
 
-class OrganizationSettingsView(WorkViewMixin, TemplateView):
+class OrganizationSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Organization settings page."""
 
     template_name = "work/organization/settings.html"
+    neue_vorlage = "work/organization/neu/allgemein.html"
     permission_required = "organization.view"
 
     def get_context_data(self, **kwargs):
@@ -111,7 +113,8 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
                 handler(request)
             except ServiceError as exc:
                 flash_error(request, exc)
-        return redirect("work:organization", org_slug=self.organization.slug)
+        # Reiter „Sicherheit“ im neuen Erscheinungsbild bleibt nach dem Speichern offen (Issue #951)
+        return redirect(einstellungen.ziel_nach_speichern(request, self.organization))
 
     def _update_general(self, request):
         services.update_general_settings(

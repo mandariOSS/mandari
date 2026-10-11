@@ -13,16 +13,18 @@ from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..services import ServiceError
 from ._helpers import flash_error
 
 
-class OrganizationEmailSettingsView(WorkViewMixin, TemplateView):
+class OrganizationEmailSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Absender-/SMTP-Einstellungen der Organisation (Issue #65)."""
 
     template_name = "work/organization/email_settings.html"
+    neue_vorlage = "work/organization/neu/email.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
