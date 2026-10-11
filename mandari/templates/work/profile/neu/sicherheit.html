@@ -1,0 +1,51 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Mein Profil › Sicherheit im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Stand im Satz des Kopfbands statt einer
+Übersichtskarte, Abschnitte Passwort, Zwei-Faktor-Anmeldung, aktive Sitzungen und Sicherheitshinweise statt Karten. Die
+drei Dialoge (Einrichtung, Backup-Codes, Abschalten) über c-ui.alpine-modal statt eigener Überlagerungen; Zustand und
+Ablauf bleiben in securitySettings (frontend/alpine/security-settings.ts). Kontext: SecurityView; die bisherige Seite
+bleibt work/profile/security.html.
+{% endcomment %}
+
+{% block page_title %}Sicherheit{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Mein Profil" dicht data-testid="profil-kopf"
+    text="Zwei-Faktor-Anmeldung {% if is_2fa_enabled %}aktiv{% else %}nicht aktiv{% endif %}, E-Mail-Adresse {% if request.user.email_verified %}bestätigt{% else %}nicht bestätigt{% endif %}, {{ sessions|length }} aktive Sitzung{{ sessions|length|pluralize:'en' }}.">
+    <c-slot name="aktionen"><c-ui.help-link topic="konto" /></c-slot>
+</c-rahmen.kopfband>
+{% include "work/profile/neu/_reiter.html" with reiter="sicherheit" seite="sicherheit" %}
+{% endblock %}
+
+{% block work_content %}
+{{ password_requirements|json_script:"password-requirements" }}
+<div x-data="securitySettings">
+    <div class="grid gap-x-16 gap-y-10 xl:grid-cols-2">
+        <div class="space-y-10 min-w-0">
+            {% include "work/profile/neu/_sicherheit_passwort.html" %}
+            {% include "work/profile/neu/_sicherheit_zwei_faktor.html" %}
+        </div>
+        <div class="space-y-10 min-w-0">
+            {% include "work/profile/neu/_sicherheit_sitzungen.html" %}
+            <c-rahmen.abschnitt titel="Sicherheitshinweise" titel_id="sicherheit-hinweise">
+                <c-rahmen.satz eng>Letzte Änderungen an Passwort, zweitem Faktor, Sicherheitsschlüsseln und Sitzungen.</c-rahmen.satz>
+                {% if security_notifications %}
+                <c-rahmen.liste class="mt-3">
+                    {% for hinweis in security_notifications %}
+                    <li class="py-2.5">
+                        <p class="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">{% if not hinweis.is_read %}<span class="w-2 h-2 rounded-full bg-primary-600" aria-hidden="true"></span>{% endif %}{{ hinweis.title }}{% if not hinweis.is_read %}<span class="font-normal text-gray-600 dark:text-gray-400">neu</span>{% endif %}</p>
+                        <p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ hinweis.message }}</p>
+                        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ hinweis.created_at|date:"d.m.Y, H:i" }} Uhr{% if hinweis.device_info %} · {{ hinweis.device_info }}{% endif %}{% if hinweis.ip_address %} · {{ hinweis.ip_address }}{% endif %}{% if hinweis.email_sent %} · per E-Mail gemeldet{% endif %}</p>
+                    </li>
+                    {% endfor %}
+                </c-rahmen.liste>
+                {% else %}
+                <c-rahmen.satz>Noch keine Hinweise.</c-rahmen.satz>
+                {% endif %}
+            </c-rahmen.abschnitt>
+        </div>
+    </div>
+    {% include "work/profile/neu/_sicherheit_dialoge.html" %}
+</div>
+{% endblock %}

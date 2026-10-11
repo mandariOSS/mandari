@@ -1,0 +1,14 @@
+{% comment %}
+Reiter des Profils im neuen Erscheinungsbild (Issue #951, Teilpaket 4): sechs statt neun Reiter, alle Adressen bleiben.
+Profil (mit Sichtbarkeit und Kontakt) · Gremien · Benachrichtigungen und Abwesenheit · Sicherheit · Anträge · Daten und
+Aktivität. Reiter mit zwei Seiten zeigen die zweite über _unterseiten.html. Baustein c-rahmen.reiter wie die
+Einstellungen. Aufruf: {% include "work/profile/neu/_reiter.html" with reiter="profil" seite="profil" %}
+{% endcomment %}
+<c-rahmen.reiter label="Mein Profil" class="rahmen-zeile bg-band-hell">
+    <c-rahmen.reiter-link href="{% url 'work:profile' org_slug=organization.slug %}" aktiv="{% if reiter == 'profil' %}1{% endif %}" current="{% if seite == 'profil' %}page{% else %}true{% endif %}">Profil</c-rahmen.reiter-link>
+    <c-rahmen.reiter-link href="{% url 'work:profile_committees' org_slug=organization.slug %}" aktiv="{% if reiter == 'gremien' %}1{% endif %}">Gremien</c-rahmen.reiter-link>
+    <c-rahmen.reiter-link href="{% url 'work:profile_notifications' org_slug=organization.slug %}" aktiv="{% if reiter == 'benachrichtigungen' %}1{% endif %}" current="{% if seite == 'benachrichtigungen' %}page{% else %}true{% endif %}">Benachrichtigungen und Abwesenheit</c-rahmen.reiter-link>
+    <c-rahmen.reiter-link href="{% url 'work:security' org_slug=organization.slug %}" aktiv="{% if reiter == 'sicherheit' %}1{% endif %}">Sicherheit</c-rahmen.reiter-link>
+    <c-rahmen.reiter-link href="{% url 'work:profile_requests' org_slug=organization.slug %}" aktiv="{% if reiter == 'antraege' %}1{% endif %}">Anträge</c-rahmen.reiter-link>
+    <c-rahmen.reiter-link href="{% url 'work:profile_data' org_slug=organization.slug %}" aktiv="{% if reiter == 'daten' %}1{% endif %}" current="{% if seite == 'daten' %}page{% else %}true{% endif %}">Daten und Aktivität</c-rahmen.reiter-link>
+</c-rahmen.reiter>

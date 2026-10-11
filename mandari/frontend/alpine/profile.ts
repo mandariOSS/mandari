@@ -7,6 +7,8 @@
  *   `data-status-url` und `data-delete-url` mit der Platzhalter-UUID; `data-active="true"`, wenn
  *   gerade ein Export entsteht (dann wird alle drei Sekunden der Status abgefragt).
  *   Markup: `templates/work/profile/data_privacy.html`.
+ * - `profilBild`: Vorschau des gewählten Profilbilds, danach sendet das Formular ab (Issue #951; vorher Inline-Ausdruck
+ *   in `templates/work/profile/index.html`). Markup: `templates/work/profile/neu/profil.html`.
  */
 
 import { defineComponent } from '../js/alpine/component'
@@ -125,5 +127,21 @@ export const dataExport = defineComponent(() => ({
 
   formatDate(iso: string | null): string {
     return formatExportDate(iso)
+  },
+}))
+
+export const profilBild = defineComponent(() => ({
+  vorschau: '',
+
+  gewaehlt(event: Event) {
+    const feld = event.target as HTMLInputElement
+    const datei = feld.files?.[0]
+    if (!datei) return
+    const leser = new FileReader()
+    leser.onload = () => {
+      this.vorschau = typeof leser.result === 'string' ? leser.result : ''
+    }
+    leser.readAsDataURL(datei)
+    this.$nextTick(() => feld.form?.submit())
   },
 }))

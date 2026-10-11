@@ -1,0 +1,69 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Mein Profil › Daten und Privatsphäre im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Datenexport nach DSGVO
+(dataExport wie bisher: Format, Start, Liste mit Stand, Herunterladen, Löschen, Nachfragen während der Erstellung),
+letzte Anmeldungen und die gespeicherten Daten als Begriff und Wert, „Mitgliedschaft beenden“ ohne roten Kasten.
+Kontext: ProfileDataPrivacyView; die bisherige Seite bleibt work/profile/data_privacy.html.
+{% endcomment %}
+
+{% block page_title %}Daten und Privatsphäre{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Mein Profil" dicht data-testid="profil-kopf"
+    text="Ihre gespeicherten Daten als Export nach DSGVO Art. 15 und 20, Ihre letzten Anmeldungen und das Ende der Mitgliedschaft." />
+{% include "work/profile/neu/_reiter.html" with reiter="daten" seite="daten" %}
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/neu/_unterseiten.html" with reiter="daten" seite="daten" %}
+{{ exports_data|json_script:"data-exports" }}
+<div class="grid gap-x-16 gap-y-10 xl:grid-cols-2">
+    <div class="space-y-10 min-w-0">
+        {% include "work/profile/neu/_datenexport.html" %}
+
+        <c-rahmen.abschnitt titel="Gespeicherte Daten" titel_id="daten-gespeichert">
+            <c-ui.angaben class="mt-3">
+                <dt>E-Mail-Adresse</dt><dd>{{ request.user.email }}</dd>
+                <dt>Name</dt><dd>{{ request.user.get_full_name|default:"–" }}</dd>
+                <dt>Telefon</dt><dd>{{ request.user.phone|default:"–" }}</dd>
+                <dt>Profilbild</dt><dd>{% if request.user.avatar %}vorhanden{% else %}keines{% endif %}</dd>
+                <dt>Registriert seit</dt><dd>{{ request.user.date_joined|date:"d.m.Y" }}</dd>
+                <dt>Mitglied seit</dt><dd>{{ membership.joined_at|date:"d.m.Y" }}</dd>
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+    </div>
+
+    <div class="space-y-10 min-w-0">
+        <c-rahmen.abschnitt titel="Letzte Anmeldungen" titel_id="daten-anmeldungen">
+            {% if recent_sessions %}
+            <c-rahmen.liste class="mt-3">
+                {% for session in recent_sessions %}
+                <li class="flex flex-wrap items-baseline justify-between gap-x-4 py-2.5 text-sm">
+                    <span class="min-w-0"><span class="text-gray-900 dark:text-white">{{ session.device_info|default:"Unbekanntes Gerät" }}</span><span class="text-[0.8125rem] text-gray-600 dark:text-gray-400"> · {{ session.ip_address|default:"—" }}{% if session.location %} · {{ session.location }}{% endif %}</span></span>
+                    <time class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ session.created_at|date:"d.m.Y H:i" }}</time>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Keine Sitzungsdaten vorhanden.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Mitgliedschaft beenden" titel_id="daten-beenden" x-data="{ showDelete: false }">
+            <c-rahmen.satz eng>Sie deaktivieren Ihre Mitgliedschaft in {{ organization.name }}.{% if is_owner %} Als Eigentümer übertragen Sie zuerst die Eigentümerschaft.{% endif %}</c-rahmen.satz>
+            {% if not is_owner %}
+            <div class="mt-3">
+                <c-ui.button variant="ghost" size="sm" class="text-red-700 dark:text-red-400" icon="alert-triangle" @click="showDelete = !showDelete" ::aria-expanded="showDelete.toString()">Mitgliedschaft deaktivieren …</c-ui.button>
+            </div>
+            <form method="post" x-show="showDelete" x-cloak x-transition class="mt-3 flex flex-wrap items-end gap-3 max-w-md">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="request_deletion">
+                <c-form.password name="password" id="daten-passwort" label="Mit Passwort bestätigen" autocomplete="current-password" class="flex-1 min-w-[14rem]" dicht required />
+                <c-ui.button type="submit" variant="danger" size="sm">Deaktivieren</c-ui.button>
+            </form>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

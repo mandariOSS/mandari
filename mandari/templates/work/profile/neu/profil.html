@@ -1,0 +1,103 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Mein Profil › Angaben im neuen Erscheinungsbild (Issue #951, Teilpaket 4): sechs Reiter statt neun, Abschnitte statt
+Kästen. Profilbild (profilBild: Vorschau, dann absenden; Felder wie bisher im Formular #avatar-form), persönliche Daten,
+Mitgliedschaft und Konto als Begriff und Wert, der Sicherheitsstand als Punkt mit Text und der Kalender-Feed. Rollen
+als Text statt farbiger Pillen. Kontext: ProfileView; die bisherige Seite bleibt work/profile/index.html.
+{% endcomment %}
+
+{% block page_title %}Profil{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Mein Profil" dicht data-testid="profil-kopf"
+    text="Ihre Angaben in {{ organization.name }}. Was andere Mitglieder davon im Team sehen, legen Sie unter Sichtbarkeit und Kontakt fest." />
+{% include "work/profile/neu/_reiter.html" with reiter="profil" seite="profil" %}
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/neu/_unterseiten.html" with reiter="profil" seite="profil" %}
+<div class="grid gap-x-16 gap-y-10 xl:grid-cols-2">
+    <div class="space-y-10 min-w-0">
+        <c-rahmen.abschnitt titel="Profilbild" titel_id="profil-bild" x-data="profilBild">
+            <div class="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
+                {% if request.user.avatar %}
+                <img src="{{ request.user.avatar.url }}" alt="Profilbild" class="w-16 h-16 rounded-full object-cover" x-show="!vorschau">
+                {% else %}
+                <span class="w-16 h-16 rounded-full bg-band-grau inline-flex items-center justify-center text-xl font-semibold text-gray-700 dark:text-gray-300" x-show="!vorschau" aria-hidden="true">{% if request.user.get_initials %}{{ request.user.get_initials }}{% else %}{{ request.user.email|slice:":2"|upper }}{% endif %}</span>
+                {% endif %}
+                <img :src="vorschau" alt="Vorschau des neuen Profilbilds" class="w-16 h-16 rounded-full object-cover" x-show="vorschau" x-cloak>
+                <div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <form method="post" enctype="multipart/form-data" id="avatar-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="update_profile">
+                            <input type="hidden" name="first_name" value="{{ request.user.first_name }}">
+                            <input type="hidden" name="last_name" value="{{ request.user.last_name }}">
+                            <input type="hidden" name="phone" value="{{ request.user.phone }}">
+                            <input type="file" name="avatar" accept="image/jpeg,image/png,image/webp" class="hidden" id="avatar-input" @change="gewaehlt($event)">
+                            <c-ui.button variant="secondary" size="sm" icon="camera" data-action="click-target" data-target="#avatar-input">Bild ändern</c-ui.button>
+                        </form>
+                        {% if request.user.avatar %}
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="remove_avatar">
+                            <c-ui.button type="submit" variant="ghost" size="sm" class="text-red-700 dark:text-red-400">Entfernen</c-ui.button>
+                        </form>
+                        {% endif %}
+                    </div>
+                    <p class="mt-1.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">JPG, PNG oder WebP, höchstens 5 MB.</p>
+                </div>
+            </div>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Persönliche Daten" titel_id="profil-daten">
+            <form method="post" class="mt-3 space-y-4 max-w-xl" data-testid="profil-formular">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update_profile">
+                <c-ui.angaben>
+                    <dt>E-Mail-Adresse</dt>
+                    <dd>{{ request.user.email }}{% if request.user.email_verified %}<span class="text-gray-600 dark:text-gray-400"> · bestätigt</span>{% endif %}</dd>
+                </c-ui.angaben>
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <c-form.field name="first_name" id="profil-vorname" label="Vorname" value="{{ request.user.first_name }}" placeholder="Vorname" autocomplete="given-name" dicht />
+                    <c-form.field name="last_name" id="profil-nachname" label="Nachname" value="{{ request.user.last_name }}" placeholder="Nachname" autocomplete="family-name" dicht />
+                </div>
+                <c-form.field name="phone" id="profil-telefon" type="tel" label="Telefon" value="{{ request.user.phone }}" placeholder="+49 …" autocomplete="tel" dicht
+                              help="Optional. Sichtbar im Team nur, wenn Sie es unter Sichtbarkeit freigeben." />
+                <c-ui.button type="submit" size="sm">Speichern</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+    </div>
+
+    <div class="space-y-10 min-w-0">
+        <c-rahmen.abschnitt titel="Mitgliedschaft" titel_id="profil-mitgliedschaft">
+            <c-ui.angaben class="mt-3">
+                <dt>Organisation</dt>
+                <dd class="flex items-center gap-2">{% if organization.effective_logo %}<img src="{{ organization.effective_logo.url }}" alt="" class="w-5 h-5 rounded object-contain">{% endif %}{{ organization.name }}</dd>
+                <dt>Rollen</dt>
+                <dd>{% for role in membership.roles.all %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% empty %}Keine Rollen zugewiesen{% endfor %}</dd>
+                <dt>Mitglied seit</dt>
+                <dd>{% if membership.joined_at %}{{ membership.joined_at|date:"j. F Y" }}{% else %}–{% endif %}</dd>
+                <dt>Letzte Anmeldung</dt>
+                <dd>{% if request.user.last_login %}{{ request.user.last_login|date:"d.m.Y H:i" }}{% else %}–{% endif %}</dd>
+                <dt>Registriert seit</dt>
+                <dd>{{ request.user.date_joined|date:"d.m.Y" }}</dd>
+                <dt>Konto-ID</dt>
+                <dd class="font-mono text-[0.8125rem]">{{ request.user.id|truncatechars:13 }}</dd>
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Sicherheit" titel_id="profil-sicherheit">
+            <c-slot name="link"><c-ui.textlink href="{% url 'work:security' org_slug=organization.slug %}">Sicherheitseinstellungen</c-ui.textlink></c-slot>
+            <ul class="mt-3 space-y-1.5 text-sm text-gray-800 dark:text-gray-200">
+                <li class="flex items-center gap-2"><span class="w-2 h-2 rounded-full {% if is_2fa_enabled %}bg-green-600{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% if is_2fa_enabled %}Zwei-Faktor-Anmeldung aktiv{% else %}Zwei-Faktor-Anmeldung nicht aktiv{% endif %}</li>
+                <li class="flex items-center gap-2"><span class="w-2 h-2 rounded-full {% if request.user.email_verified %}bg-green-600{% else %}bg-amber-500{% endif %}" aria-hidden="true"></span>{% if request.user.email_verified %}E-Mail-Adresse bestätigt{% else %}E-Mail-Adresse nicht bestätigt{% endif %}</li>
+                <li class="flex items-center gap-2"><span class="w-2 h-2 rounded-full bg-gray-400" aria-hidden="true"></span>{{ sessions_count }} aktive Sitzung{{ sessions_count|pluralize:"en" }}</li>
+            </ul>
+        </c-rahmen.abschnitt>
+
+        {% include "work/profile/neu/_kalender_feed.html" %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,2 @@
+{# Status eines Änderungsantrags als Punkt mit Text (Issue #951); Kontext: req #}
+<span class="inline-flex items-center gap-2 text-gray-800 dark:text-gray-200"><span class="w-2 h-2 rounded-full {% if req.status == 'pending' %}bg-amber-500{% elif req.status == 'approved' %}bg-green-600{% elif req.status == 'rejected' %}bg-red-600{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>{{ req.get_status_display }}</span>

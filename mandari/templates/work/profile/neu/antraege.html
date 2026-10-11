@@ -1,0 +1,99 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Mein Profil › Anträge im neuen Erscheinungsbild (Issue #951, Teilpaket 4): „Neuer Antrag“ (action=submit_request,
+Alpine changeRequestForm wie bisher) mit ruhiger Auswahl der Art statt Karten, Rollen als Text statt farbiger Pillen.
+„Meine Anträge“ und „Zu prüfen“ (nur mit can_review) als Listen mit Linien, Status als Punkt mit Text; Zurückziehen,
+Genehmigen und Ablehnen mit Begründung wie bisher. Kontext: ProfileChangeRequestsView; die bisherige Seite bleibt
+work/profile/change_requests.html.
+{% endcomment %}
+
+{% block page_title %}Änderungsanträge{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Mein Profil" dicht data-testid="profil-kopf"
+    text="Andere Rollen, Gremien oder zusätzliche Berechtigungen beantragen. Die Fraktionsleitung entscheidet.{% if can_review and pending_requests %} {{ pending_requests|length }} Antr{{ pending_requests|length|pluralize:'ag wartet,äge warten' }} auf Ihre Prüfung.{% endif %}" />
+{% include "work/profile/neu/_reiter.html" with reiter="antraege" seite="antraege" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="grid gap-x-16 gap-y-10 xl:grid-cols-2">
+    <c-rahmen.abschnitt titel="Neuer Antrag" titel_id="antraege-neu" class="min-w-0" x-data="changeRequestForm">
+        <form method="post" class="mt-3 space-y-4 max-w-xl" data-testid="antraege-formular">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="submit_request">
+            <c-form.gruppe legende="Art des Antrags">
+                <div class="mt-2 space-y-2">
+                    <c-form.radio name="request_type" value="role_change" id="antrag-art-rollen" label="Rollenänderung" hinweis="Andere Rollen beantragen" modell="requestType" />
+                    <c-form.radio name="request_type" value="committee_change" id="antrag-art-gremien" label="Gremienänderung" hinweis="Zuordnung zu Gremien ändern" modell="requestType" />
+                    <c-form.radio name="request_type" value="permission_request" id="antrag-art-rechte" label="Berechtigung" hinweis="Zusätzliche Berechtigungen anfragen" modell="requestType" />
+                </div>
+            </c-form.gruppe>
+
+            <c-form.gruppe legende="Gewünschte Rollen" x-show="requestType === 'role_change'" x-cloak>
+                <div class="mt-2 space-y-1.5 max-h-56 overflow-y-auto">
+                    {% for role in available_roles %}
+                    <c-form.checkbox name="requested_roles" id="antrag-rolle-{{ role.id }}" value="{{ role.id }}" checked="{% if role.id in current_role_ids %}1{% endif %}" disabled="{% if role.id in current_role_ids %}1{% endif %}" dicht>{{ role.name }}{% if role.id in current_role_ids %}<span class="text-gray-600 dark:text-gray-400"> (aktuell)</span>{% endif %}</c-form.checkbox>
+                    {% endfor %}
+                </div>
+            </c-form.gruppe>
+
+            <c-form.gruppe legende="Gremien" x-show="requestType === 'committee_change'" x-cloak>
+                <div class="mt-2 space-y-1.5 max-h-56 overflow-y-auto">
+                    {% for committee in available_committees %}
+                    <c-form.checkbox name="requested_committees" id="antrag-gremium-{{ committee.id }}" value="{{ committee.id }}" checked="{% if committee.id in current_committee_ids %}1{% endif %}" dicht>{{ committee.name }}{% if committee.id in current_committee_ids %}<span class="text-gray-600 dark:text-gray-400"> (aktuell)</span>{% endif %}</c-form.checkbox>
+                    {% empty %}
+                    <p class="text-sm text-gray-600 dark:text-gray-400">Keine Gremien verfügbar (keine Kommune verknüpft).</p>
+                    {% endfor %}
+                </div>
+            </c-form.gruppe>
+
+            <c-form.gruppe legende="Gewünschte Berechtigungen" x-show="requestType === 'permission_request'" x-cloak>
+                <div class="mt-2 space-y-1.5 max-h-56 overflow-y-auto">
+                    {% for perm in available_permissions %}
+                    <c-form.checkbox name="requested_permissions" id="antrag-recht-{{ forloop.counter }}" value="{{ perm.codename }}" dicht>{{ perm.name }}</c-form.checkbox>
+                    {% endfor %}
+                </div>
+            </c-form.gruppe>
+
+            <div x-show="requestType" x-cloak class="space-y-4">
+                <c-form.textarea name="reason" id="antrag-begruendung" label="Begründung" rows="3" placeholder="Warum brauchen Sie die Änderung?" dicht required />
+                <c-ui.button type="submit" size="sm" icon="send">Antrag einreichen</c-ui.button>
+            </div>
+        </form>
+    </c-rahmen.abschnitt>
+
+    <div class="space-y-10 min-w-0">
+        <c-rahmen.abschnitt titel="Meine Anträge" titel_id="antraege-meine">
+            {% if my_requests %}
+            <c-rahmen.liste class="mt-3">
+                {% for req in my_requests %}
+                <li class="flex items-start gap-x-4 py-2.5">
+                    <div class="flex-1 min-w-0">
+                        <p class="flex flex-wrap items-center gap-x-3 text-sm"><span class="font-medium text-gray-900 dark:text-white">{{ req.get_request_type_display }}</span>{% include "work/profile/neu/_antrag_status.html" %}</p>
+                        <p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300 break-words">{{ req.reason|truncatechars:80 }}</p>
+                        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ req.created_at|date:"d.m.Y H:i" }}</p>
+                        {% if req.decision_comment %}<p class="mt-1 text-sm text-gray-800 dark:text-gray-200 break-words">Antwort: {{ req.decision_comment }}</p>{% endif %}
+                    </div>
+                    {% if req.status == 'pending' %}
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="withdraw_request">
+                        <input type="hidden" name="request_id" value="{{ req.id }}">
+                        <c-ui.button type="submit" variant="ghost" size="sm">Zurückziehen</c-ui.button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Noch keine Anträge gestellt.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        {% if can_review and pending_requests %}
+        {% include "work/profile/neu/_antraege_pruefen.html" %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,74 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Mein Profil › Benachrichtigungen im neuen Erscheinungsbild (Issue #951, Teilpaket 4): ein Formular mit Abschnitten statt
+drei Kästen; E-Mail und Ruhezeiten als Kontrollkästchen statt handgebauter Schalter, die Arten je Bereich als Tabelle mit
+den Spalten „In Work“ und „E-Mail“ (Felder type_<art>_in_app und type_<art>_email wie bisher). Kontext:
+ProfileNotificationsView; die bisherige Seite bleibt work/profile/notifications.html.
+{% endcomment %}
+
+{% block page_title %}Benachrichtigungen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Mein Profil" dicht data-testid="profil-kopf"
+    text="Worüber Work Sie benachrichtigt und ob zusätzlich per E-Mail. Registrierungsanfragen erscheinen immer." />
+{% include "work/profile/neu/_reiter.html" with reiter="benachrichtigungen" seite="benachrichtigungen" %}
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/neu/_unterseiten.html" with reiter="benachrichtigungen" seite="benachrichtigungen" %}
+<form method="post" class="max-w-3xl space-y-10" data-testid="benachrichtigungen-formular">
+    {% csrf_token %}
+    <c-rahmen.abschnitt titel="E-Mail" titel_id="benachrichtigungen-email">
+        <div class="mt-3 space-y-4">
+            <c-form.checkbox name="email_enabled" id="benachrichtigungen-email-an" :checked="preferences.email_enabled" dicht>
+                Benachrichtigungen auch per E-Mail erhalten
+            </c-form.checkbox>
+            <c-form.select name="email_digest" id="benachrichtigungen-haeufigkeit" label="Häufigkeit" class="max-w-xs" dicht>
+                <option value="instant" {% if preferences.email_digest == 'instant' %}selected{% endif %}>Sofort</option>
+                <option value="daily" {% if preferences.email_digest == 'daily' %}selected{% endif %}>Tägliche Zusammenfassung</option>
+                <option value="weekly" {% if preferences.email_digest == 'weekly' %}selected{% endif %}>Wöchentliche Zusammenfassung</option>
+                <option value="never" {% if preferences.email_digest == 'never' %}selected{% endif %}>Nie</option>
+            </c-form.select>
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Ruhezeiten" titel_id="benachrichtigungen-ruhe" x-data="{ quietEnabled: {{ preferences.quiet_hours_enabled|yesno:'true,false' }} }">
+        <c-rahmen.satz eng>In den Ruhezeiten verschickt Work keine E-Mails.</c-rahmen.satz>
+        <div class="mt-3 space-y-4">
+            <c-form.checkbox name="quiet_hours_enabled" id="benachrichtigungen-ruhe-an" :checked="preferences.quiet_hours_enabled" dicht @change="quietEnabled = $event.target.checked">
+                Ruhezeiten einschalten
+            </c-form.checkbox>
+            <div class="flex flex-wrap gap-4" x-show="quietEnabled" x-cloak>
+                <c-form.field name="quiet_hours_start" id="benachrichtigungen-von" type="time" label="Von" value="{{ preferences.quiet_hours_start|date:'H:i'|default:'22:00' }}" class="w-36" dicht />
+                <c-form.field name="quiet_hours_end" id="benachrichtigungen-bis" type="time" label="Bis" value="{{ preferences.quiet_hours_end|date:'H:i'|default:'07:00' }}" class="w-36" dicht />
+            </div>
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Arten" titel_id="benachrichtigungen-arten">
+        <c-rahmen.satz eng>Für jede Art: in Work (Glocke und Benachrichtigungen) und per E-Mail.</c-rahmen.satz>
+        <table class="mt-3 w-full text-sm" data-testid="benachrichtigungen-arten">
+            {% regroup notification_types by category as categories %}
+            {% for category in categories %}
+            <tbody class="border-b border-gray-200 dark:border-gray-800">
+                <tr>
+                    <th scope="colgroup" class="pt-5 pb-1 text-left text-sm font-semibold text-gray-900 dark:text-white">{% if category.grouper == 'meetings' %}Sitzungen{% elif category.grouper == 'tasks' %}Aufgaben{% elif category.grouper == 'motions' %}Dokumente{% elif category.grouper == 'faction' %}Fraktion{% elif category.grouper == 'organization' %}Organisation{% elif category.grouper == 'support' %}Support{% elif category.grouper == 'system' %}System{% else %}{{ category.grouper }}{% endif %}</th>
+                    <th scope="col" class="w-20 pt-5 pb-1 text-center text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">In Work</th>
+                    <th scope="col" class="w-20 pt-5 pb-1 text-center text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">E-Mail</th>
+                </tr>
+                {% for ntype in category.list %}
+                <tr class="border-t border-gray-100 dark:border-gray-800">
+                    <td class="py-2 pr-3 text-gray-800 dark:text-gray-200">{{ ntype.label }}{% if ntype.hint %}<span class="block text-[0.8125rem] leading-snug text-gray-600 dark:text-gray-400">{{ ntype.hint }}</span>{% endif %}</td>
+                    <td class="py-2 text-center"><input type="checkbox" name="type_{{ ntype.value }}_in_app" aria-label="{{ ntype.label }} in Work" {% if ntype.in_app_enabled %}checked{% endif %} class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"></td>
+                    <td class="py-2 text-center"><input type="checkbox" name="type_{{ ntype.value }}_email" aria-label="{{ ntype.label }} per E-Mail" {% if ntype.email_enabled %}checked{% endif %} class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            {% endfor %}
+        </table>
+    </c-rahmen.abschnitt>
+
+    <c-ui.button type="submit" size="sm">Speichern</c-ui.button>
+</form>
+{% endblock %}

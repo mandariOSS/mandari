@@ -13,6 +13,7 @@ from apps.accounts import security_notifications
 from apps.accounts.services import PasswordService, SessionService, TwoFactorService
 from apps.accounts.two_factor_policy import two_factor_required
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..services import ServiceError
@@ -22,10 +23,11 @@ from ._helpers import flash_error
 SESSION_KEY_NEW_FEED_URL = "calendar_feed_url_once"
 
 
-class ProfileView(WorkViewMixin, TemplateView):
+class ProfileView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """User profile within organization context."""
 
     template_name = "work/profile/index.html"
+    neue_vorlage = "work/profile/neu/profil.html"
     permission_required = "dashboard.view"
     guest_allowed = True  # Konto-Verwaltung auch für Gäste
 
@@ -83,10 +85,11 @@ class ProfileView(WorkViewMixin, TemplateView):
         return redirect("work:profile", org_slug=self.organization.slug)
 
 
-class SecurityView(WorkViewMixin, TemplateView):
+class SecurityView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Security settings within organization context."""
 
     template_name = "work/profile/security.html"
+    neue_vorlage = "work/profile/neu/sicherheit.html"
     permission_required = "dashboard.view"
     guest_allowed = True  # Konto-Sicherheit auch für Gäste
 

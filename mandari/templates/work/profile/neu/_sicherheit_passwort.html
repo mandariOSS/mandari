@@ -1,0 +1,38 @@
+{% comment %}
+Sicherheit › Passwort ändern (Issue #951): Felder c-form.* dicht, Stärkeanzeige aus securitySettings (newPassword,
+passwordStrength) als schmaler Balken mit Text. Kontext: password_requirements.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Passwort ändern" titel_id="sicherheit-passwort">
+    <form method="post" class="mt-3 space-y-4 max-w-md" data-testid="sicherheit-passwort-formular">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="change_password">
+        <c-form.password name="old_password" label="Aktuelles Passwort" autocomplete="current-password" dicht required />
+        <div>
+            <c-form.password name="new_password" label="Neues Passwort" autocomplete="new-password" dicht required
+                             help="Mindestens {{ password_requirements.min_length }} Zeichen{% if password_requirements.require_uppercase %}, Großbuchstaben{% endif %}{% if password_requirements.require_lowercase %}, Kleinbuchstaben{% endif %}{% if password_requirements.require_digit %}, Zahlen{% endif %}{% if password_requirements.require_special %}, Sonderzeichen{% endif %}."
+                             @input="newPassword = $event.target.value; checkPasswordStrength()" />
+            <div class="mt-2" x-show="newPassword.length > 0" x-cloak aria-live="polite">
+                <div class="flex items-center gap-3">
+                    <div class="flex-1 h-1 rounded-full bg-gray-200 dark:bg-gray-700 overflow-hidden">
+                        <div class="h-full rounded-full"
+                             :class="{
+                                 'bg-red-600 w-1/5': passwordStrength.score === 0,
+                                 'bg-orange-500 w-2/5': passwordStrength.score === 1,
+                                 'bg-amber-500 w-3/5': passwordStrength.score === 2,
+                                 'bg-lime-600 w-4/5': passwordStrength.score === 3,
+                                 'bg-green-600 w-full': passwordStrength.score === 4
+                             }"></div>
+                    </div>
+                    <span class="min-w-[5.5rem] text-right text-[0.8125rem] font-medium text-gray-800 dark:text-gray-200" x-text="passwordStrength.strength_label || ''"></span>
+                </div>
+                <ul class="mt-1.5 space-y-0.5" x-show="passwordStrength.issues && passwordStrength.issues.length > 0">
+                    <template x-for="issue in passwordStrength.issues" :key="issue">
+                        <li class="text-[0.8125rem] text-red-700 dark:text-red-400" x-text="issue"></li>
+                    </template>
+                </ul>
+            </div>
+        </div>
+        <c-form.password name="confirm_password" label="Neues Passwort wiederholen" autocomplete="new-password" dicht required />
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="lock">Passwort ändern</c-ui.button>
+    </form>
+</c-rahmen.abschnitt>

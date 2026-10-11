@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Bausteine aus Teilpaket 4 von Issue #951: c-form.suche und c-rahmen.liste (neu). Zweite Wege, die etwas tun statt zu
-einer Seite zu führen, sind c-ui.text-button mit ``dicht``; der Textlink bleibt Zeichen für Zeichen wie bisher.
+Bausteine aus Teilpaket 4 von Issue #951: c-form.suche, c-form.radio, c-form.gruppe und c-rahmen.liste (neu),
+``dicht``/``id`` an c-form.password. Zweite Wege, die etwas tun statt zu einer Seite zu führen, sind c-ui.text-button
+mit ``dicht``. Ohne die neuen Angaben bleiben Passwortfeld und Textlink Zeichen für Zeichen wie bisher (Anmeldung,
+Registrierung, alle Textlinks).
 """
 
 from __future__ import annotations
@@ -10,6 +12,18 @@ import re
 
 from django.template import engines
 from django_cotton.compiler_regex import CottonCompiler
+
+#: Klassen des bisherigen Passwortfelds (vor #951) – ohne neue Angaben müssen sie unverändert bleiben
+BISHER_PASSWORT = (
+    "w-full min-w-0 px-4 py-3 rounded-l-lg border border-r-0 bg-white dark:bg-gray-700 text-gray-900 dark:text-white "
+    "placeholder-gray-400 transition-colors focus:ring-2 focus:ring-primary-500 focus:border-primary-500 focus:z-10 "
+    "border-gray-300 dark:border-gray-600"
+)
+BISHER_KNOPF = (
+    "flex-none w-12 flex items-center justify-center rounded-r-lg border bg-gray-50 dark:bg-gray-700 text-gray-500 "
+    "hover:text-gray-700 dark:text-gray-300 dark:hover:text-white focus:outline-none focus-visible:ring-2 "
+    "focus-visible:ring-primary-500 focus:z-10 border-gray-300 dark:border-gray-600"
+)
 
 
 def render(source: str, **context: object) -> str:
@@ -20,6 +34,22 @@ def _klasse(html: str, tag: str) -> str:
     treffer = re.search(rf'<{tag}\b[^>]*class="([^"]*)"', html, re.S)
     assert treffer, html
     return " ".join(treffer.group(1).split())
+
+
+def test_passwort_ohne_neue_angaben_wie_bisher() -> None:
+    html = render('<c-form.password name="password" label="Passwort" required />')
+    assert _klasse(html, "input") == BISHER_PASSWORT
+    assert _klasse(html, "button") == BISHER_KNOPF
+    assert 'id="id_password"' in html and 'for="id_password"' in html
+
+
+def test_passwort_dicht_mit_eigener_kennung() -> None:
+    html = render('<c-form.password name="password" id="dialog-passwort" label="Passwort" help="Hinweis" dicht />')
+    klasse = _klasse(html, "input")
+    assert "h-9" in klasse and "text-sm" in klasse and "py-3" not in klasse
+    assert "w-9 h-9" in _klasse(html, "button")
+    assert 'id="dialog-passwort"' in html and 'for="dialog-passwort"' in html
+    assert 'aria-describedby="dialog-passwort-help"' in html and "text-[0.8125rem]" in html
 
 
 def test_suchfeld() -> None:
@@ -46,6 +76,24 @@ def test_textknopf_dicht() -> None:
     assert {"text-sm", "min-h-8", "text-primary-700", "hover:underline"} <= set(_klasse(knopf, "button").split())
     absenden = render('<c-ui.text-button dicht type="submit">Wieder öffnen</c-ui.text-button>')
     assert absenden.strip().startswith('<button type="submit"')
+
+
+def test_radio_mit_hinweis_und_modell() -> None:
+    html = render(
+        '<c-form.radio name="visibility" value="shared" label="Geteilt" hinweis="Bestimmte Personen" modell="sicht" />'
+    )
+    assert 'type="radio" name="visibility" id="id_visibility_shared" value="shared" x-model="sicht"' in html
+    assert '<label for="id_visibility_shared"' in html and "checked" not in html
+    assert "Geteilt</span>" in html and "Bestimmte Personen</span>" in html
+    ohne = render('<c-form.radio name="k" value="email" id="k-mail" checked="1" disabled="1">E-Mail</c-form.radio>')
+    assert 'id="k-mail"' in ohne and " checked" in ohne and " disabled" in ohne and "x-model" not in ohne
+    assert "E-Mail</span></span>" in ohne
+
+
+def test_gruppe() -> None:
+    gruppe = render('<c-form.gruppe legende="Tags" class="mt-3" x-show="offen"><p>Inhalt</p></c-form.gruppe>')
+    assert gruppe.strip().startswith('<fieldset class="mt-3" x-show="offen"><legend')
+    assert ">Tags</legend><p>Inhalt</p></fieldset>" in gruppe
 
 
 def test_liste() -> None:
