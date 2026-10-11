@@ -157,6 +157,25 @@ def _aktionen(html: str) -> _Aktionen:
     return leser
 
 
+class _Skripte(HTMLParser):
+    """Zählt Skripte ohne ``src`` (Inline-Skripte) in einer Vorlage."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.inline = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "script" and not dict(attrs).get("src"):
+            self.inline += 1
+
+
+def _inline_skripte(vorlage: str) -> int:
+    leser = _Skripte()
+    leser.feed(vorlage)
+    leser.close()
+    return leser.inline
+
+
 def _fehlt(alt: str, neu: str, ausnahmen: set[Aktion]) -> list[str]:
     """Was die bisherige Seite anbietet und die neue nicht: Links und Formulare (die neue darf Felder ergänzen)."""
     bisher, jetzt = _aktionen(alt), _aktionen(neu)
@@ -619,7 +638,7 @@ def test_kalender_ohne_inline_skript_und_feste_farbe(welt: Welt, client_for: Any
     assert f'x-data="sitzungsKalender" data-ereignisse="{ereignisse}"' in html
     vorlage = (VORLAGEN / "work/meetings/neu/kalender.html").read_text(encoding="utf-8")
     assert "<style" not in vorlage and "#6366f1" not in vorlage
-    assert all("src=" in skript for skript in re.findall(r"<script[^>]*>", vorlage))
+    assert _inline_skripte(vorlage) == 0
 
 
 def test_sitzungsdetail_eine_hauptaktion_und_vorlagen_je_punkt(welt: Welt, client_for: Any) -> None:
@@ -769,4 +788,4 @@ def test_neue_vorlagen_mit_bausteinen_statt_handarbeit(name: str) -> None:
     assert "<c-rahmen.kopfband" in text
     for handarbeit in ("rounded-xl border", "rounded-full text-[10px]", "<style", "c-ui.card", "c-ui.badge"):
         assert handarbeit not in text, f"{name}: {handarbeit}"
-    assert all("src=" in skript for skript in re.findall(r"<script[^>]*>", text)), name
+    assert _inline_skripte(text) == 0, name
