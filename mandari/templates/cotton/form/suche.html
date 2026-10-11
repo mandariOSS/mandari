@@ -1,0 +1,18 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Suchfeld einer Filterzeile in Work (Issue #951): Lupe, Beschriftung nur für Bildschirmleser, Maße wie c-form.field dicht
+(36 px, 14 px). Gehört in ein GET-Formular der Seite; Enter sendet ab. Für die Live-Suche der Suchseiten gibt es
+c-suche.feld.
+  <c-form.suche id="team-suche" wert="{{ search_query }}" label="Name oder E-Mail suchen" platzhalter="Name oder E-Mail" />
+Parameter: name (Standard q), id, wert, label (für Bildschirmleser), platzhalter. ``class`` und weitere Attribute gehen
+an die umgebende Fläche (etwa die Breite).
+{% endcomment %}
+<c-vars name="q" id="" wert="" label="Suchen" platzhalter="" class="" />
+{% with auto_id="suche-"|add:name %}{% firstof id auto_id as fid %}
+<div class="relative {{ class }}" {{ attrs }}>
+    <label for="{{ fid }}" class="sr-only">{{ label }}</label>
+    <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+    <input id="{{ fid }}" type="search" name="{{ name }}" value="{{ wert }}"{% if platzhalter %} placeholder="{{ platzhalter }}"{% endif %} enterkeyhint="search"
+           class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+</div>
+{% endwith %}

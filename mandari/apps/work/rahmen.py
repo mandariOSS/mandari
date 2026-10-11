@@ -69,6 +69,19 @@ class NeueVorlageMixin:
         return namen
 
 
+#: Kopfzeile, mit der eine Seite im neuen Erscheinungsbild ihre HTMX-Fragmente anfordert (``hx-headers``, Issue #951)
+KOPF_GESTALTUNG = "X-Work-Gestaltung"
+
+
+def fragment_neu(request: HttpRequest) -> bool:
+    """
+    True, wenn die anfragende Seite im neuen Erscheinungsbild steht: Sie setzt ``hx-headers`` mit
+    ``X-Work-Gestaltung: neu`` an ihren Fragmenten (Aufgabenkarten, Nachrichten eines Tickets). Ohne die Kopfzeile
+    bekommt die bisherige Seite ihre bisherigen Fragmente – auch bei eingeschaltetem Schalter (``?ansicht=bisher``).
+    """
+    return request.headers.get(KOPF_GESTALTUNG) == "neu"
+
+
 @dataclass(frozen=True)
 class Ziel:
     """Eintrag der Navigation: Schlüssel, Beschriftung, Adressname (``work:…``), Symbol (Lucide), Kurzform."""

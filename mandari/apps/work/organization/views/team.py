@@ -21,10 +21,11 @@ from ..services import ServiceError
 from ._helpers import flash_error
 
 
-class TeamDirectoryView(WorkViewMixin, TemplateView):
+class TeamDirectoryView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Internal team directory — visible to all active members."""
 
     template_name = "work/team/directory.html"
+    neue_vorlage = "work/team/neu/verzeichnis.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):
@@ -46,10 +47,11 @@ class TeamDirectoryView(WorkViewMixin, TemplateView):
         return context
 
 
-class TeamMemberProfileView(WorkViewMixin, TemplateView):
+class TeamMemberProfileView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Read-only member profile in team directory."""
 
     template_name = "work/team/profile.html"
+    neue_vorlage = "work/team/neu/profil.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):

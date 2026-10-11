@@ -1,0 +1,79 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Mitgliedsprofil im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit Namen, Rollen und „Mitglied seit“ im
+Satz, „Profil bearbeiten“ nur auf dem eigenen Profil. Darunter die Angaben als Begriff und Wert (c-ui.angaben) statt
+sechs Kästen: Kontakt nach den Sichtbarkeitseinstellungen der Person, Rollen und Gremien als Text, Verfügbarkeit als
+Punkt mit Text samt Stellvertretung. Kontext: TeamMemberProfileView; die bisherige Seite bleibt work/team/profile.html.
+{% endcomment %}
+
+{% block page_title %}{{ member.user.get_full_name|default:member.user.email }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{{ member.user.get_full_name|default:member.user.email }}" dicht data-testid="team-profil-kopf"
+    text="{% for role in roles %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if roles %}. {% endif %}Mitglied seit {{ joined_at|date:'j. F Y' }}.">
+    <c-slot name="oben">
+        <nav aria-label="Zurück" class="lg:hidden mb-2">
+            <a href="{% url 'work:team' org_slug=organization.slug %}" class="inline-flex items-center gap-1 -ml-1 min-h-9 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"><i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i>Team</a>
+        </nav>
+    </c-slot>
+    {% if is_self %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'work:profile' org_slug=organization.slug %}" variant="secondary" size="sm" icon="pencil">Profil bearbeiten</c-ui.button></c-slot>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<div class="max-w-3xl">
+    <div class="flex items-start gap-4">
+        {% if member.user.avatar %}
+        <img src="{{ member.user.avatar.url }}" alt="" class="w-14 h-14 rounded-full object-cover shrink-0">
+        {% else %}
+        <span class="w-14 h-14 shrink-0 rounded-full bg-band-grau inline-flex items-center justify-center text-lg font-semibold text-gray-700 dark:text-gray-300" aria-hidden="true">{{ member.user.first_name|slice:":1"|upper|default:member.user.email|slice:":1"|upper }}</span>
+        {% endif %}
+        <div class="min-w-0 pt-1">
+            {% if bio %}
+            <h2 class="sr-only">Über mich</h2>
+            <p class="text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-line" data-testid="team-profil-bio">{{ bio }}</p>
+            {% else %}
+            <p class="text-sm text-gray-600 dark:text-gray-400">Noch keine Beschreibung.</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <c-rahmen.abschnitt titel="Angaben" titel_id="profil-angaben" class="mt-8">
+        <c-ui.angaben class="mt-3" data-testid="team-profil-angaben">
+            {% if show_email %}<dt>E-Mail</dt><dd><a href="mailto:{{ member.user.email }}" class="text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ member.user.email }}</a></dd>{% endif %}
+            {% if show_phone and member.user.phone %}<dt>Telefon</dt><dd><a href="tel:{{ member.user.phone }}" class="text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ member.user.phone }}</a></dd>{% endif %}
+            {% if preferred_contact == "signal" and contact_signal %}<dt>Kontaktweg</dt><dd>Signal: {{ contact_signal }}</dd>
+            {% elif preferred_contact == "phone" and member.user.phone %}<dt>Kontaktweg</dt><dd>Bevorzugt: Telefon</dd>{% endif %}
+            <dt>Rollen</dt>
+            <dd>{% for role in roles %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% empty %}Keine Rollen zugewiesen{% endfor %}</dd>
+            <dt>Gremien</dt>
+            <dd>{% for committee in committees %}{{ committee.name }}{% if not forloop.last %}, {% endif %}{% empty %}Keine Gremien zugewiesen{% endfor %}</dd>
+            {% if is_owner or member.is_sworn_in %}
+            <dt>Status</dt>
+            <dd>{% if is_owner %}Eigentümer{% if member.is_sworn_in %}, {% endif %}{% endif %}{% if member.is_sworn_in %}vereidigt{% endif %}</dd>
+            {% endif %}
+            <dt>Mitglied seit</dt>
+            <dd>{{ joined_at|date:"j. F Y" }}</dd>
+        </c-ui.angaben>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Verfügbarkeit" titel_id="profil-verfuegbarkeit" class="mt-8">
+        {% if current_absence %}
+        <p class="mt-2 inline-flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white"><span class="w-2 h-2 rounded-full bg-amber-500" aria-hidden="true"></span>Abwesend vom {{ current_absence.start_date|date:"d.m.Y" }} bis {{ current_absence.end_date|date:"d.m.Y" }}</p>
+        {% if current_absence.reason %}<c-rahmen.satz eng>{{ current_absence.reason }}</c-rahmen.satz>{% endif %}
+        {% if current_absence.deputy %}
+        <c-rahmen.satz eng>Stellvertretung: <c-ui.textlink href="{% url 'work:team_profile' org_slug=organization.slug member_id=current_absence.deputy.id %}">{{ current_absence.deputy.user.get_full_name|default:current_absence.deputy.user.email }}</c-ui.textlink></c-rahmen.satz>
+        {% endif %}
+        {% else %}
+        <p class="mt-2 inline-flex items-center gap-2 text-sm text-gray-900 dark:text-white"><span class="w-2 h-2 rounded-full bg-green-600" aria-hidden="true"></span>Verfügbar</p>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    {% if is_self %}
+    <div class="mt-8"><c-rahmen.satz data-testid="team-profil-selbst">Das ist Ihr Profil. Namen, Bild und weitere Angaben ändern Sie in den <c-ui.textlink href="{% url 'work:profile' org_slug=organization.slug %}">Profileinstellungen</c-ui.textlink>, Abwesenheiten unter <c-ui.textlink href="{% url 'work:profile_absence' org_slug=organization.slug %}">Abwesenheit</c-ui.textlink>.</c-rahmen.satz></div>
+    {% endif %}
+</div>
+{% endblock %}
