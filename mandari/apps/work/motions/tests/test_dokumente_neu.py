@@ -7,8 +7,8 @@ Freigaben und Einreichen eigene Vorlagen aus work/motions/neu/; ausgeschaltet bl
 ``?ansicht=bisher`` öffnet die bisherige Vorlage auch bei eingeschaltetem Schalter. Geprüft wird hier:
 
 - Gleichstand der Funktionen: Jedes Formular (Methode, Ziel, Feldnamen), jeder Work-Link (Pfad und Parameter),
-  jede Aktion (data-post, data-href) und jeder Aufruf der Alpine-Komponenten der bisherigen Vorlage steht auch in der
-  neuen. Ausnahmen stehen begründet in AUSNAHMEN.
+  jede Aktion (data-post, data-href), jeder Aufruf, jedes Modell (x-model) und jeder Ref der Alpine-Komponenten und
+  jedes Pflichtfeld der bisherigen Vorlage steht auch in der neuen. Ausnahmen stehen begründet in AUSNAHMEN.
 - Rechte: dieselben Antwortcodes je Rolle in beiden Vorlagen.
 - Bausteine statt Hand-Markup: keine Kartenrahmen, keine eigene Überlagerung, Felder über c-form.
 
@@ -153,6 +153,9 @@ class _Funktionen(HTMLParser):
         self.aufrufe: set[str] = set()
         self.komponenten: set[str] = set()
         self.json_skripte: set[str] = set()
+        self.modelle: set[str] = set()
+        self.refs: set[str] = set()
+        self.pflicht: set[str] = set()
 
     def _ziel(self, href: str) -> str | None:
         if not href or href.startswith(("#", "javascript:", "mailto:", "http")):
@@ -174,6 +177,10 @@ class _Funktionen(HTMLParser):
             self.komponenten.add(a["x-data"].strip())
         if tag == "script" and a.get("type") == "application/json" and a.get("id"):
             self.json_skripte.add(a["id"])
+        # Alpine-Komponenten hängen an Modellen und Refs (documentManager, createMotion, documentImport)
+        self.modelle |= {wert.strip() for name, wert in a.items() if name.split(".")[0] == "x-model" and wert.strip()}
+        if a.get("x-ref"):
+            self.refs.add(a["x-ref"])
         for daten in ("data-post", "data-href"):
             if a.get(daten):
                 self.aktionen.add(f"{daten}:{self._ziel(a[daten]) or a[daten]}")
@@ -187,6 +194,8 @@ class _Funktionen(HTMLParser):
             if a.get("type") == "hidden" and name in ("channel", "action", "section"):
                 name = f"{name}={a.get('value', '')}"
             self._offen[-1][2].add(name)
+            if "required" in a:
+                self.pflicht.add(f"{self._offen[-1][0]}:{self._offen[-1][1]}:{name}")
         elif tag == "a" and a.get("href"):
             ziel = self._ziel(a["href"])
             if ziel:
@@ -206,8 +215,15 @@ def _funktionen(html: str, pfad: str) -> _Funktionen:
 #: Was die neue Vorlage bewusst nicht übernimmt (Begründung im Kommentar)
 AUSNAHMEN: dict[str, set[str]] = {
     # Der Teilen-Dialog der bisherigen Liste hatte keinen Auslöser (openShareModal ruft keine Vorlage auf); geteilt
-    # wird im Editor, die Endpunkte bleiben.
-    "documents": {"closeShareModal", "form:post:alpine:`/work/fraktion-test/documents/${shareMotionId}/share/update/`"},
+    # wird im Editor, die Endpunkte bleiben. $watch und die Modelle gehören zu diesem Dialog.
+    "documents": {
+        "closeShareModal",
+        "$watch",
+        "modell:addUserEmail",
+        "modell:herunterladen",
+        "modell:shareVisibility",
+        "form:post:alpine:`/work/fraktion-test/documents/${shareMotionId}/share/update/`",
+    },
 }
 
 
@@ -236,6 +252,9 @@ def _gleichstand(client: Any, url: str, schluessel: str) -> tuple[_Funktionen, _
     fehlt += [f"Aufruf {aufruf}()" for aufruf in sorted(alt.aufrufe - jetzt.aufrufe) if aufruf not in ausnahmen]
     fehlt += [f"Komponente {k}" for k in sorted(alt.komponenten - jetzt.komponenten)]
     fehlt += [f"JSON {j}" for j in sorted(alt.json_skripte - jetzt.json_skripte)]
+    fehlt += [f"Modell {m}" for m in sorted(alt.modelle - jetzt.modelle) if f"modell:{m}" not in ausnahmen]
+    fehlt += [f"Ref {r}" for r in sorted(alt.refs - jetzt.refs)]
+    fehlt += [f"Pflichtfeld {p}" for p in sorted(alt.pflicht - jetzt.pflicht) if f"pflicht:{p}" not in ausnahmen]
     assert not fehlt, f"{url}: in der neuen Vorlage fehlt\n" + "\n".join(fehlt)
     return alt, jetzt
 
@@ -418,6 +437,8 @@ def test_seiten_nutzen_die_gemeinsamen_bausteine() -> None:
         assert "{% block gestaltung %}neu{% endblock %}" in text, seite
     assert "<c-ui.alpine-modal" in _quelle("_ordner_dialog.html")
     assert "<c-liste.seiten" in _quelle("liste.html") and "<c-liste.seiten" in _quelle("papierkorb.html")
+    # Ablagefläche über den gemeinsamen Baustein, gesteuert von documentImport (Ziehen, Ref, Dateiliste)
+    assert '<c-form.datei name="import_files"' in _quelle("import.html") and 'type="file"' not in _quelle("import.html")
     for formular in ("neu.html", "_einreichen_formular.html", "_einreichen_email.html"):
         text = _quelle(formular)
         assert "<c-form.field" in text and '<input type="text"' not in text, formular

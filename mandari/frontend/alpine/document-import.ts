@@ -7,7 +7,7 @@
  * Texterkennung gescannter PDFs dauert einige Sekunden je Seite, ein zweiter Klick legte
  * das Dokument doppelt an (#620).
  *
- * Markup: `templates/work/motions/import.html`, Konfiguration per
+ * Markup: `templates/work/motions/import.html` und `work/motions/neu/import.html` (#951), Konfiguration per
  * `{{ import_config|json_script:"document-import-config" }}`.
  */
 

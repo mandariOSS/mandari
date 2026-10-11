@@ -5,7 +5,7 @@ in den übergeordneten Ordner. Kontext: folder_color_choices, folder_entries.
 {% endcomment %}
 <c-ui.alpine-modal show="folderModal.open" size="sm" labelledby="ordner-dialog-titel">
     <div class="p-5">
-        <h2 id="ordner-dialog-titel" class="text-base font-semibold text-gray-900 dark:text-white"
+        <h2 id="ordner-dialog-titel" class="text-base leading-6 font-semibold text-gray-900 dark:text-white"
             x-text="folderModal.mode === 'create' ? 'Neuer Ordner' : 'Ordner bearbeiten'">Neuer Ordner</h2>
         <form method="post" :action="folderModal.action" class="mt-4 space-y-4">
             {% csrf_token %}

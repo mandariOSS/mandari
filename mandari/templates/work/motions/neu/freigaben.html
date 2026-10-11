@@ -54,7 +54,6 @@ Stufe der Freigabe als Text. Alles wie bisher (work/motions/guest_documents.html
                     <i data-lucide="folder" class="w-4 h-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden="true"></i>
                     <span class="flex-1 min-w-0 truncate font-medium text-gray-900 dark:text-white">{{ entry.folder.name }}</span>
                     {% if entry.level_label %}<span class="shrink-0 text-[0.8125rem] text-gray-700 dark:text-gray-300">{{ entry.level_label }}</span>{% endif %}
-                    <i data-lucide="chevron-right" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
                 </a>
             </li>
             {% endfor %}
@@ -65,9 +64,8 @@ Stufe der Freigabe als Text. Alles wie bisher (work/motions/guest_documents.html
                     <i data-lucide="file-text" class="w-4 h-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden="true"></i>
                     <span class="flex-1 min-w-0">
                         <span class="block truncate font-medium text-gray-900 dark:text-white">{{ doc.title }}{% if doc.is_new %} <span class="font-normal text-green-800 dark:text-green-300">· neu</span>{% elif doc.is_updated %} <span class="font-normal text-amber-800 dark:text-amber-300">· geändert</span>{% endif %}</span>
-                        <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">Zuletzt geändert {{ doc.updated_at|date:"d.m.Y" }}</span>
+                        <span class="mt-0.5 block text-[0.8125rem] text-gray-600 dark:text-gray-400">Zuletzt geändert {{ doc.updated_at|date:"d.m.Y" }}</span>
                     </span>
-                    <i data-lucide="chevron-right" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
                 </a>
             </li>
             {% endfor %}
@@ -88,10 +86,9 @@ Stufe der Freigabe als Text. Alles wie bisher (work/motions/guest_documents.html
                     <i data-lucide="file-text" class="w-4 h-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden="true"></i>
                     <span class="flex-1 min-w-0">
                         <span class="block truncate font-medium text-gray-900 dark:text-white">{{ entry.motion.title }}{% if entry.is_new %} <span class="font-normal text-green-800 dark:text-green-300">· neu</span>{% elif entry.is_updated %} <span class="font-normal text-amber-800 dark:text-amber-300">· geändert</span>{% endif %}</span>
-                        <span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400">Freigegeben am {{ entry.shared_at|date:"d.m.Y" }}{% if entry.shared_by %} von {{ entry.shared_by.get_full_name|default:entry.shared_by.email }}{% endif %}</span>
+                        <span class="mt-0.5 block text-[0.8125rem] text-gray-600 dark:text-gray-400">Freigegeben am {{ entry.shared_at|date:"d.m.Y" }}{% if entry.shared_by %} von {{ entry.shared_by.get_full_name|default:entry.shared_by.email }}{% endif %}</span>
                     </span>
                     <span class="shrink-0 text-[0.8125rem] text-gray-700 dark:text-gray-300">{{ entry.level_label }}</span>
-                    <i data-lucide="chevron-right" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
                 </a>
             </li>
             {% endfor %}
