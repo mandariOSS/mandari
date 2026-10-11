@@ -89,7 +89,10 @@ WORKDIR /app
 # tesseract-ocr: OCR
 # shared-mime-info: MIME-Type-Erkennung
 # curl: Health-Checks
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Vorher die Sicherheitsupdates von Debian einspielen: Das Basisimage wird nur gelegentlich neu gebaut,
+# Korrekturen (etwa für perl-base) kämen sonst erst mit dem nächsten Basisimage ins Laufzeitimage.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     libpq5 \
     libcairo2 \
     libpango-1.0-0 \
