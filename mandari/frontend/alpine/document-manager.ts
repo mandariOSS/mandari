@@ -6,7 +6,8 @@
  * werden über ein Modal angelegt/bearbeitet. Die URLs kommen aus dem View
  * (`document_manager_config`) per `{{ document_manager_config|json_script:"document-manager-config" }}`.
  *
- * Markup: `templates/work/motions/list.html` und die Partials unter `work/motions/partials/`.
+ * Markup: `templates/work/motions/list.html` und die Partials unter `work/motions/partials/`; im neuen
+ * Erscheinungsbild `work/motions/neu/liste.html` mit `neu/_liste_*.html` und `neu/_ordner_*.html` (#951).
  */
 
 import { defineComponent } from '../js/alpine/component'

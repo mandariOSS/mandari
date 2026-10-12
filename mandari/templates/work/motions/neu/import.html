@@ -1,0 +1,91 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Dokumente importieren im neuen Erscheinungsbild (Issue #951): links die Dateien (Auswahl oder Ziehen, Liste, abgelehnte
+Dateien mit Grund), rechts Art und Sichtbarkeit; darunter, wie der Import arbeitet. Felder und Ablauf wie bisher
+(work/motions/import.html): import_files (mehrere, PDF/DOCX), document_type, visibility; Alpine documentImport
+(frontend/alpine/document-import.ts) sperrt den Knopf während des Hochladens. Kontext: MotionImportView.
+{% endcomment %}
+
+{% block page_title %}Dokumente importieren{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Dokumente importieren" dicht
+    text="PDF- und Word-Dateien (DOCX) werden zu Dokumenten, die Sie im Editor weiter bearbeiten." />
+{% endblock %}
+
+{% block work_content %}
+{{ import_config|json_script:"document-import-config" }}
+<form method="post" enctype="multipart/form-data" x-data="documentImport" @submit="onSubmit($event)" class="max-w-[92rem]">
+    {% csrf_token %}
+    <div class="grid gap-x-12 gap-y-8 xl:grid-cols-2">
+        <c-rahmen.abschnitt titel="Dateien" titel_id="dateien-titel">
+            <c-form.datei name="import_files" id="import_files" accept=".pdf,.docx" multiple ref="fileInput" ziehen="isDragging"
+                          labelledby="dateien-titel" hinweis="PDF und DOCX, je Datei bis {{ import_max_mb }} MB" class="mt-3"
+                          @dragover.prevent="isDragging = true" @dragleave.prevent="isDragging = false"
+                          @drop.prevent="handleDrop($event)" @change="handleFileSelect($event)" />
+            <ul x-show="selectedFiles.length > 0" x-cloak class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 text-sm" aria-label="Ausgewählte Dateien">
+                <template x-for="(file, index) in selectedFiles" :key="index">
+                    <li class="flex items-center gap-3 py-2">
+                        <i data-lucide="file-text" class="w-4 h-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden="true"></i>
+                        <span class="flex-1 min-w-0 truncate text-gray-900 dark:text-white" x-text="file.name"></span>
+                        <span class="shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400" x-text="(isDocx(file) ? 'DOCX' : 'PDF') + ', ' + formatFileSize(file.size)"></span>
+                        <button type="button" @click="removeFile(index)" :aria-label="'Datei ' + file.name + ' entfernen'"
+                                class="inline-flex items-center justify-center w-8 h-8 shrink-0 rounded-md text-gray-600 dark:text-gray-400 hover:bg-band-grau hover:text-gray-900 dark:hover:text-white">
+                            <i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i>
+                        </button>
+                    </li>
+                </template>
+            </ul>
+            <div x-show="rejectedFiles.length > 0" x-cloak class="mt-3">
+                <c-ui.alert variant="warning" title="Nicht übernommen">
+                    <ul class="space-y-1">
+                        <template x-for="item in rejectedFiles" :key="item.name">
+                            <li><span class="font-medium" x-text="item.name"></span>: <span x-text="item.reason"></span></li>
+                        </template>
+                    </ul>
+                </c-ui.alert>
+            </div>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Art und Sichtbarkeit" titel_id="art-titel">
+            <div class="mt-3 space-y-5">
+                <c-form.select name="document_type" id="document_type" label="Art des Dokuments (optional)" dicht>
+                    <option value="">Keine Art</option>
+                    {% for type in document_types %}<option value="{{ type.id }}">{{ type.name }}</option>{% endfor %}
+                </c-form.select>
+                <fieldset>
+                    <legend class="text-sm font-medium text-gray-800 dark:text-gray-200">Sichtbarkeit</legend>
+                    <div class="mt-1.5 space-y-2">
+                        <label class="flex items-start gap-2 text-sm cursor-pointer">
+                            <input type="radio" name="visibility" value="private" x-model="visibility" checked class="mt-0.5 text-primary-600 focus:ring-primary-500">
+                            <span><span class="font-medium text-gray-900 dark:text-white">Privat</span> <span class="text-gray-700 dark:text-gray-300">– nur Sie sehen das Dokument</span></span>
+                        </label>
+                        <label class="flex items-start gap-2 text-sm cursor-pointer">
+                            <input type="radio" name="visibility" value="shared" x-model="visibility" class="mt-0.5 text-primary-600 focus:ring-primary-500">
+                            <span><span class="font-medium text-gray-900 dark:text-white">Mit bestimmten Personen</span> <span class="text-gray-700 dark:text-gray-300">– Sie wählen die Personen nach dem Import</span></span>
+                        </label>
+                        <label class="flex items-start gap-2 text-sm cursor-pointer">
+                            <input type="radio" name="visibility" value="organization" x-model="visibility" class="mt-0.5 text-primary-600 focus:ring-primary-500">
+                            <span><span class="font-medium text-gray-900 dark:text-white">Gesamte Organisation</span> <span class="text-gray-700 dark:text-gray-300">– alle Mitglieder</span></span>
+                        </label>
+                    </div>
+                </fieldset>
+                <p class="text-[0.8125rem] leading-relaxed text-gray-700 dark:text-gray-300" data-testid="import-ablauf">
+                    Work übernimmt Text und Formatierung; DOCX-Dateien behalten Überschriften und Listen. Die Originaldatei
+                    hängt danach am Dokument. Gescannte PDFs laufen durch die Texterkennung (die ersten {{ import_ocr_max_pages }}
+                    Seiten) und brauchen etwas länger.
+                </p>
+            </div>
+        </c-rahmen.abschnitt>
+    </div>
+
+    <div class="mt-8 flex flex-wrap items-center gap-4">
+        <c-ui.button type="submit" size="sm" x-bind:disabled="selectedFiles.length === 0 || submitting" x-bind:aria-busy="submitting">
+            <i data-lucide="loader-circle" class="w-4 h-4 animate-spin" x-show="submitting" x-cloak aria-hidden="true"></i>
+            <span x-text="submitLabel()">Importieren</span>
+        </c-ui.button>
+        <c-ui.textlink href="{% url 'work:documents' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+    </div>
+</form>
+{% endblock %}

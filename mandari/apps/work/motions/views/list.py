@@ -20,6 +20,7 @@ from django.views.generic import TemplateView, View
 logger = logging.getLogger("apps.work.motions")
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 from apps.work.stats_text import documents_sentence
 
 from .. import freigaben
@@ -36,10 +37,21 @@ from ._helpers import _can_manage_folder, _flatten_folder_tree, _get_org_folder_
 FOLDER_URL_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
 
 
-class MotionListView(WorkViewMixin, TemplateView):
+def _spalten_mit_wert(motions: list[Motion]) -> dict[str, bool]:
+    """Welche Zusatzspalten der neuen Dokumentenliste auf dieser Seite mindestens einen Wert haben (Issue #951)."""
+    return {
+        "federfuehrung": any(m.responsible_id for m in motions),
+        "frist": any(m.due_date for m in motions),
+        "themen": any(m.topics.all() for m in motions),
+        "checkliste": any(m.checklist_progress["total"] for m in motions),
+    }
+
+
+class MotionListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List of documents (formerly motions)."""
 
     template_name = "work/motions/list.html"
+    neue_vorlage = "work/motions/neu/liste.html"
     permission_required = "motions.view"
 
     def get_context_data(self, **kwargs):
@@ -147,6 +159,9 @@ class MotionListView(WorkViewMixin, TemplateView):
             for amendment in amendments_by_parent.get(motion.id, []):
                 motion_rows.append({"motion": amendment, "is_amendment": True})
         context["motion_rows"] = motion_rows
+        if self.neue_ansicht():
+            # Neue Liste (#951): Spalten ohne einen einzigen Wert auf der Seite entfallen (nutzt die Prefetches)
+            context["spalten"] = _spalten_mit_wert([row["motion"] for row in motion_rows])
 
         # Statistik über dieselbe sichtbare Menge wie Liste und Ordner-Zähler
         today = timezone.localdate()

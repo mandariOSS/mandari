@@ -1,0 +1,11 @@
+{% comment %}
+Vorschau des Dokuments neben dem Einreichungsformular (Issue #951): graue Fläche ohne Kasten im Kasten, ab lg neben
+dem Formular und beim Scrollen sichtbar. Kontext: motion_content (bereinigtes HTML aus dem Editor)
+{% endcomment %}
+<aside class="min-w-0 lg:sticky lg:top-16 lg:self-start">
+    <c-rahmen.band ton="grau" dicht titel="Vorschau des Dokuments" titel_id="vorschau-titel">
+        <div class="mt-3 prose prose-sm dark:prose-invert max-w-none max-h-[70vh] overflow-y-auto pr-2" tabindex="0" aria-labelledby="vorschau-titel">
+            {{ motion_content }}
+        </div>
+    </c-rahmen.band>
+</aside>

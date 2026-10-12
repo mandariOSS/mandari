@@ -1,0 +1,84 @@
+{% comment %}
+Formular „Bei der Verwaltung einreichen“ über mandari Session (Issues #40, #584, #951): links die Angaben, die
+übermittelt werden, die Anhänge und die verbindliche Bestätigung, rechts die Vorschau des Dokuments. Feldnamen,
+Pflichtfelder, Höchstlängen und die Sperre ohne nutzbare Verbindung wie bisher. Kontext: form, connection,
+application_type_choices, target_organizations, attachments_accepted, attachments_rejected, can_submit_now,
+motion_content.
+{% endcomment %}
+<form method="post" data-submit-once x-data="{ urgent: {{ form.is_urgent|yesno:'true,false' }} }"
+      class="grid gap-x-12 gap-y-8 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+    {% csrf_token %}
+    <div class="min-w-0 space-y-8">
+        <c-rahmen.abschnitt titel="Antrag an {{ connection.tenant.name|default:'die Verwaltung' }}" titel_id="antrag-titel">
+            <p class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="abschnitte-hinweis">{% if form.structured %}Beschlussvorschlag und Begründung stammen aus den Abschnitten des Dokuments.{% else %}Bitte prüfen Sie Beschlussvorschlag und Begründung; das Dokument hat keine passenden Abschnitte.{% endif %}</p>
+            <div class="mt-4 space-y-4">
+                <c-form.field name="title" id="title" label="Titel" :value="form.title" maxlength="500" dicht required />
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <c-form.select name="application_type" id="application_type" label="Antragsart" dicht>
+                        {% for value, label in application_type_choices %}<option value="{{ value }}" {% if form.application_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </c-form.select>
+                    <c-form.select name="target_organization" id="target_organization" label="Zielgremium (optional)" dicht>
+                        <option value="">Verwaltung entscheidet</option>
+                        {% for org in target_organizations %}<option value="{{ org.id }}" {% if form.target_organization_id == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
+                    </c-form.select>
+                </div>
+                <c-form.textarea name="resolution_proposal" id="resolution_proposal" label="Beschlussvorschlag" rows="7" :value="form.resolution_proposal" dicht required />
+                <c-form.textarea name="justification" id="justification" label="Begründung" rows="7" :value="form.justification" dicht required />
+                <c-form.textarea name="financial_impact" id="financial_impact" label="Finanzielle Auswirkungen (optional)" rows="3" :value="form.financial_impact" dicht />
+                <div class="grid gap-4 sm:grid-cols-2">
+                    <c-form.textarea name="co_signers" id="co_signers" label="Mitunterzeichnende (eine Person je Zeile)" rows="3" :value="form.co_signers" dicht />
+                    <div>
+                        <c-form.field name="deadline" id="deadline" type="date" label="Gewünschter Beratungstermin (optional)" :value="form.deadline_raw" dicht />
+                        <c-form.checkbox name="is_urgent" id="is_urgent" label="Dringlichkeitsantrag" modell="urgent" dicht class="mt-3" />
+                        <div x-show="urgent" x-cloak class="mt-2">
+                            <c-form.textarea name="urgency_reason" id="urgency_reason" label="Begründung der Dringlichkeit" rows="2" placeholder="Warum ist der Antrag dringend?" :value="form.urgency_reason" dicht />
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Anhänge" titel_id="anhaenge-titel">
+            {% if attachments_accepted or attachments_rejected %}
+            <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800 text-sm">
+                {% for attachment in attachments_accepted %}
+                <li class="flex items-center gap-2 py-1.5 text-gray-800 dark:text-gray-200">
+                    <i data-lucide="check" class="w-4 h-4 shrink-0 text-green-700 dark:text-green-400" aria-hidden="true"></i>
+                    <span class="flex-1 min-w-0 truncate">{{ attachment.filename }}</span>
+                    <span class="shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ attachment.file_size|filesizeformat }}</span>
+                </li>
+                {% endfor %}
+                {% for attachment, reason in attachments_rejected %}
+                <li class="flex flex-wrap items-center gap-x-2 py-1.5 text-amber-800 dark:text-amber-300">
+                    <i data-lucide="alert-triangle" class="w-4 h-4 shrink-0" aria-hidden="true"></i>
+                    <span class="min-w-0 truncate">{{ attachment.filename }}</span>
+                    <span class="text-[0.8125rem]">– wird nicht übermittelt: {{ reason }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <p class="mt-1 text-sm text-gray-700 dark:text-gray-300">Keine Anhänge. Anhänge fügen Sie im Editor unter „Details“ hinzu.</p>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <div class="border-t border-gray-200 dark:border-gray-800 pt-5">
+            <c-form.checkbox name="confirm" id="einreichen-bestaetigen" disabled="{% if not can_submit_now %}1{% endif %}" dicht>
+                Ich reiche diesen Antrag im Namen von <strong>{{ organization.name }}</strong> verbindlich bei
+                <strong>{{ connection.tenant.name|default:"der Verwaltung" }}</strong> ein. Übermittelt werden Titel, Antragsart,
+                Beschlussvorschlag, Begründung, finanzielle Auswirkungen, Mitunterzeichnende, die aufgeführten Anhänge sowie mein
+                Name und meine E-Mail-Adresse als Ansprechperson. Das Dokument wechselt in den Status „Eingereicht“, und Sie
+                erhalten eine Eingangsbestätigung per E-Mail.
+            </c-form.checkbox>
+            <div class="mt-4 flex flex-wrap items-center gap-4">
+                {% if can_submit_now %}
+                <c-ui.button type="submit" size="sm" icon="send">Jetzt einreichen</c-ui.button>
+                {% else %}
+                <c-ui.button type="submit" size="sm" icon="send" disabled>Jetzt einreichen</c-ui.button>
+                {% endif %}
+                <c-ui.textlink href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}" class="text-sm">Abbrechen</c-ui.textlink>
+            </div>
+        </div>
+    </div>
+
+    {% include "work/motions/neu/_einreichen_vorschau.html" %}
+</form>

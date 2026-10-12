@@ -1,0 +1,8 @@
+{% comment %}
+Status eines Dokuments als Punkt mit Text (Issue #951, statt Punktreihe und Farbchip): grau offen, gelb in Abstimmung,
+Kennfarbe bei der Verwaltung oder erledigt, rot abgelehnt oder zurückgezogen. Kontext: motion
+{% endcomment %}
+<span class="inline-flex items-baseline gap-1.5 text-gray-800 dark:text-gray-200">
+    <span class="shrink-0 w-2 h-2 rounded-full translate-y-[-1px] {% if motion.status == 'rejected' or motion.status == 'withdrawn' %}bg-red-600{% elif motion.status in 'submitted at_admin on_agenda completed adopted' %}bg-primary-600 dark:bg-primary-400{% elif motion.status in 'review internal_review external_review approved' %}bg-amber-500{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>
+    <span>{{ motion.get_status_display }}</span>
+</span>

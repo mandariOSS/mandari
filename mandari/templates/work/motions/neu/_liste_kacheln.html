@@ -1,0 +1,35 @@
+{% comment %}
+Kachelansicht der Dokumente (Issue #951, documentManager.viewMode === 'grid'): dieselben Angaben wie die Tabelle in
+Spalten nebeneinander, ruhig ohne Kasten und Schatten – eine Linie über jedem Eintrag. Kontext wie _liste_tabelle.
+{% endcomment %}
+<ul x-show="viewMode === 'grid'" x-cloak class="mt-4 grid gap-x-8 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4" data-testid="dokumente-kacheln">
+    {% for row in motion_rows %}
+    {% with motion=row.motion %}
+    <li class="group relative border-t border-gray-200 dark:border-gray-800 py-3 cursor-pointer" data-href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}">
+        <div class="flex items-start gap-2">
+            <c-form.checkbox name="auswahl" id="auswahl-k-{{ motion.id }}" value="{{ motion.id }}" modell="selectedIds" class="mt-0.5"><span class="sr-only">„{{ motion.title|truncatechars:60 }}“ zum Verschieben auswählen</span></c-form.checkbox>
+            <div class="flex-1 min-w-0">
+                {% if row.is_amendment %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Änderungsantrag zu „{{ motion.parent_motion.title|truncatechars:40 }}“</p>{% endif %}
+                <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}"
+                   class="text-sm font-medium text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 break-words">{{ motion.title }}</a>
+                <i data-lucide="{{ motion.get_visibility_icon }}" class="inline-block ml-1 w-3.5 h-3.5 align-[-2px] text-gray-500 dark:text-gray-400" aria-hidden="true"></i><span class="sr-only">, Sichtbarkeit: {{ motion.get_visibility_display }}</span>
+                <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ motion.get_type_display }}{% if motion.folder %} · {{ motion.folder.name }}{% endif %}</p>
+                <p class="mt-1.5 flex flex-wrap items-baseline gap-x-2 text-[0.8125rem]">
+                    {% include "work/motions/neu/_status.html" %}
+                    {% if motion.administration_reference %}<span class="text-gray-700 dark:text-gray-300">{{ motion.administration_reference }}</span>{% endif %}
+                </p>
+                <p class="mt-1 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                    {% if motion.responsible %}{{ motion.responsible.user.get_display_name }}{% else %}Keine Federführung{% endif %}{% if motion.due_date %} · <span class="{% if motion.is_overdue %}font-medium text-red-700 dark:text-red-400{% endif %}">Frist {{ motion.due_date|date:"d.m.Y" }}{% if motion.is_overdue %}, überfällig{% endif %}</span>{% endif %}{% with progress=motion.checklist_progress %}{% if progress.total %} · Checkliste {{ progress.done }} von {{ progress.total }}{% endif %}{% endwith %}
+                </p>
+                {% if motion.topics.all %}
+                <p class="mt-1 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                    {% for topic in motion.topics.all %}<span class="inline-flex items-baseline gap-1.5 mr-2"><span class="shrink-0 w-2 h-2 rounded-full bg-{{ topic.color }}-500" aria-hidden="true"></span>{{ topic.name }}</span>{% endfor %}
+                </p>
+                {% endif %}
+            </div>
+            {% include "work/motions/neu/_ordner_menue.html" %}
+        </div>
+    </li>
+    {% endwith %}
+    {% endfor %}
+</ul>

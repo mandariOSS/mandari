@@ -21,6 +21,7 @@ import contextlib
 from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import IMPORTABLE_DOCUMENTS, MB, validate_upload
 from apps.work.notifications.services import NotificationHub
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import freigaben, references, vorschlaege
 from ..forms import (
@@ -736,10 +737,11 @@ class MotionExportView(WorkViewMixin, View):
             return JsonResponse({"error": f"Unbekanntes Export-Format: {export_format}"}, status=400)
 
 
-class MotionImportView(WorkViewMixin, TemplateView):
+class MotionImportView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Import PDF/DOCX files as documents."""
 
     template_name = "work/motions/import.html"
+    neue_vorlage = "work/motions/neu/import.html"
     permission_required = "motions.create"
 
     ALLOWED_TYPES = {

@@ -1,0 +1,70 @@
+{% comment %}
+Ordner der Dokumentenliste (Issue #951): am Handy eine Auswahl über der Liste, ab lg eine Spalte links, die sich
+einklappen lässt (Zustand in localStorage, documentManager). Ordnerfarben bleiben am Symbol, Zähler je Ordner wie
+bisher. Kontext: folder_entries, current_folder, root_document_count, filter_query, can_create_folder.
+{% endcomment %}
+<div class="lg:hidden mb-4 flex items-end gap-2">
+    <c-form.select name="ordner_auswahl" id="ordner-auswahl" label="Ordner" dicht class="flex-1 min-w-0"
+                   @change="window.location.search = $event.target.value">
+        <option value="?{{ filter_query }}" {% if not current_folder %}selected{% endif %}>Alle Dokumente ({{ root_document_count }})</option>
+        {% for entry in folder_entries %}
+        <option value="?ordner={{ entry.folder.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" {% if current_folder and current_folder.id == entry.folder.id %}selected{% endif %}>{% for _ in ''|center:entry.depth %}{% if not forloop.first %}—&nbsp;{% endif %}{% endfor %}{{ entry.folder.name }} ({{ entry.count }})</option>
+        {% endfor %}
+    </c-form.select>
+    {% if can_create_folder %}
+    <c-ui.button variant="secondary" size="sm" icon="folder-plus" @click="openFolderCreate()">Ordner</c-ui.button>
+    {% endif %}
+</div>
+
+<aside aria-labelledby="ordner-titel" class="hidden lg:block shrink-0 lg:border-r lg:border-gray-200 dark:lg:border-gray-800 lg:pr-4" :class="folderPanelOpen ? 'w-52 2xl:w-60' : 'w-auto'">
+    <button x-show="!folderPanelOpen" x-cloak type="button" @click="toggleFolderPanel()" aria-label="Ordner einblenden"
+            class="inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 dark:text-gray-400 hover:bg-band-grau">
+        <i data-lucide="folder-tree" class="w-4 h-4" aria-hidden="true"></i>
+    </button>
+    <div x-show="folderPanelOpen">
+        <div class="flex items-center justify-between gap-2 mb-1">
+            <h2 id="ordner-titel" class="text-sm font-semibold text-gray-900 dark:text-white">Ordner</h2>
+            <button type="button" @click="toggleFolderPanel()" aria-label="Ordner ausblenden"
+                    class="inline-flex items-center justify-center w-7 h-7 rounded-md text-gray-600 dark:text-gray-400 hover:bg-band-grau">
+                <i data-lucide="panel-left-close" class="w-4 h-4" aria-hidden="true"></i>
+            </button>
+        </div>
+        <ul class="space-y-0.5 text-sm">
+            <li>
+                <a href="{% url 'work:documents' org_slug=organization.slug %}{% if filter_query %}?{{ filter_query }}{% endif %}"
+                   {% if not current_folder %}aria-current="page"{% endif %}
+                   class="flex items-center gap-2 min-h-8 px-2 rounded-md {% if not current_folder %}bg-primary-50 dark:bg-primary-900/30 text-primary-800 dark:text-primary-200 font-medium{% else %}text-gray-800 dark:text-gray-200 hover:bg-band-grau{% endif %}">
+                    <i data-lucide="inbox" class="w-4 h-4 shrink-0" aria-hidden="true"></i>
+                    <span class="flex-1 truncate">Alle Dokumente</span>
+                    <span class="text-[0.8125rem] tabular-nums text-gray-600 dark:text-gray-400">{{ root_document_count }}</span>
+                </a>
+            </li>
+            {% for entry in folder_entries %}
+            <li class="group/ordner flex items-center rounded-md {% include 'work/motions/neu/_einrueckung.html' with tiefe=entry.depth %} {% if current_folder.id == entry.folder.id %}bg-primary-50 dark:bg-primary-900/30{% else %}hover:bg-band-grau{% endif %}">
+                <a href="?ordner={{ entry.folder.id }}{% if filter_query %}&amp;{{ filter_query }}{% endif %}" {% if current_folder.id == entry.folder.id %}aria-current="page"{% endif %}
+                   class="flex-1 min-w-0 flex items-start gap-2 py-1.5 px-2 {% if current_folder.id == entry.folder.id %}text-primary-800 dark:text-primary-200 font-medium{% else %}text-gray-800 dark:text-gray-200{% endif %}">
+                    <i data-lucide="{% if entry.folder.sworn_in_only %}folder-lock{% else %}folder{% endif %}" class="mt-0.5 w-4 h-4 shrink-0 {% if entry.folder.color %}text-{{ entry.folder.color }}-700 dark:text-{{ entry.folder.color }}-300{% else %}text-gray-500 dark:text-gray-400{% endif %}" aria-hidden="true"></i>
+                    <span class="flex-1 min-w-0 break-words">{{ entry.folder.name }}</span>
+                    {% if entry.folder.sworn_in_only %}<span class="sr-only">(nur für Vereidigte)</span>{% endif %}
+                    <span class="text-[0.8125rem] tabular-nums text-gray-600 dark:text-gray-400">{{ entry.count }}</span>
+                </a>
+                {% if entry.can_manage %}
+                <button type="button" aria-label="Ordner „{{ entry.folder.name }}“ bearbeiten"
+                        @click.stop="openFolderEdit('{{ entry.folder.id }}', '{{ entry.folder.name|escapejs }}', '{{ entry.folder.color }}', '{{ entry.folder.parent_id|default_if_none:'' }}', '{% if entry.folder.parent %}{{ entry.folder.parent.name|escapejs }}{% else %}Alle Dokumente{% endif %}')"
+                        class="mr-1 inline-flex items-center justify-center w-7 h-7 shrink-0 rounded-md text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-800 opacity-0 group-hover/ordner:opacity-100 focus:opacity-100">
+                    <i data-lucide="more-horizontal" class="w-4 h-4" aria-hidden="true"></i>
+                </button>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% if not folder_entries %}<p class="mt-1 px-2 text-[0.8125rem] text-gray-600 dark:text-gray-400">Noch keine Ordner.</p>{% endif %}
+        {% if can_create_folder %}
+        <button type="button" @click="openFolderCreate()"
+                class="mt-2 inline-flex items-center gap-1.5 min-h-8 px-2 text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+            <i data-lucide="folder-plus" class="w-4 h-4" aria-hidden="true"></i>
+            Ordner anlegen{% if current_folder %}<span class="sr-only"> in „{{ current_folder.name }}“</span>{% endif %}
+        </button>
+        {% endif %}
+    </div>
+</aside>

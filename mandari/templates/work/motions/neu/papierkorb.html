@@ -1,0 +1,67 @@
+{% extends "work/base_work.html" %}
+{% load member_tags %}
+{% comment %}
+Papierkorb im neuen Erscheinungsbild (Issue #951): gelöschte Dokumente als Liste mit Linien, je Eintrag
+„Wiederherstellen“ und, wo erlaubt, „Endgültig löschen“; „Papierkorb leeren“ als Hauptaktion. Aktionen, Rückfragen
+und Rechte wie bisher (work/motions/trash.html, data-post mit data-confirm-*). Kontext: MotionTrashView.
+{% endcomment %}
+
+{% block page_title %}Papierkorb{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Papierkorb" dicht
+    text="{{ trash_count }} gelöschte{% if trash_count == 1 %}s Dokument{% else %} Dokumente{% endif %}. Wiederhergestellte Dokumente kehren als Entwurf zurück.">
+    <c-slot name="aktionen">
+        <c-ui.textlink href="{% url 'work:documents' org_slug=organization.slug %}" class="text-sm">Zurück zu den Dokumenten</c-ui.textlink>
+        {% if trash_count > 0 %}
+        <c-ui.button variant="danger" size="sm" icon="trash-2"
+                     data-post="{% url 'work:document_empty_trash' org_slug=organization.slug %}"
+                     data-confirm-title="Papierkorb leeren" data-confirm-message="Alle {{ trash_count }} Dokumente werden unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+                     data-confirm-text="Papierkorb leeren" data-confirm-variant="danger">Papierkorb leeren</c-ui.button>
+        {% endif %}
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<form method="get" role="search" aria-label="Papierkorb durchsuchen" class="flex flex-wrap items-center gap-2 max-w-xl">
+    <div class="relative flex-1 min-w-[14rem]">
+        <label for="papierkorb-suche" class="sr-only">Im Papierkorb suchen</label>
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+        <input id="papierkorb-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Titel oder Kurzbeschreibung"
+               class="w-full min-h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+    </div>
+    <c-ui.button type="submit" variant="secondary" size="sm">Suchen</c-ui.button>
+</form>
+
+{% if motions %}
+<ul class="mt-4 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="papierkorb-liste">
+    {% for motion in motions %}
+    <li class="flex flex-wrap items-center gap-x-6 gap-y-2 py-3">
+        <div class="flex-1 min-w-[16rem]">
+            <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ motion.title }}</p>
+            <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ motion.get_motion_type_display }} · {{ motion.author|member_name }} · gelöscht vor {{ motion.deleted_at|timesince }}</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <c-ui.button variant="secondary" size="sm" icon="rotate-ccw"
+                         data-post="{% url 'work:document_restore' org_slug=organization.slug motion_id=motion.id %}"
+                         data-confirm-title="Dokument wiederherstellen" data-confirm-message="Das Dokument wird als Entwurf wiederhergestellt."
+                         data-confirm-text="Wiederherstellen" data-confirm-variant="info">Wiederherstellen<span class="sr-only">: {{ motion.title }}</span></c-ui.button>
+            {% if motion.id in purgeable_ids %}
+            <c-ui.button variant="ghost" size="sm" icon="x" class="text-red-700 dark:text-red-400"
+                         data-post="{% url 'work:document_permanent_delete' org_slug=organization.slug motion_id=motion.id %}"
+                         data-confirm-title="Endgültig löschen" data-confirm-message="„{{ motion.title }}“ wird unwiderruflich gelöscht. Diese Aktion kann nicht rückgängig gemacht werden."
+                         data-confirm-text="Löschen" data-confirm-variant="danger">Endgültig löschen<span class="sr-only">: {{ motion.title }}</span></c-ui.button>
+            {% endif %}
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+<c-liste.seiten :seite="motions" dicht />
+{% else %}
+<p class="mt-6 text-sm text-gray-700 dark:text-gray-300" data-testid="papierkorb-leer">
+    {% if search_query %}Keine gelöschten Dokumente zu „{{ search_query }}“. <c-ui.textlink href="{% url 'work:document_trash' org_slug=organization.slug %}">Suche zurücksetzen</c-ui.textlink>{% else %}Der Papierkorb ist leer.{% endif %}
+</p>
+{% endif %}
+{% endblock %}
