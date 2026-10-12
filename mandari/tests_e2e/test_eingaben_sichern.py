@@ -269,6 +269,18 @@ class TestSitzungsvorbereitung:
         assert page.evaluate("() => localStorage.getItem('darkMode')") == "false"
 
 
+def _kopf_formular_bereit(page: Any) -> None:
+    """Das TOP-Panel kommt per htmx nach: erst bedienen, wenn htmx die Trigger des Kopf-Formulars gebunden hat.
+
+    Sonst löst eine Eingabe direkt nach dem Öffnen keine Anfrage aus (Test wackelte in der Merge-Queue, Board #217).
+    """
+    page.wait_for_function(
+        "() => { const f = document.querySelector('#agenda-item-update-form');"
+        " const d = f && f['htmx-internal-data']; return !!(d && d.listenerInfos && d.listenerInfos.length); }",
+        timeout=15000,
+    )
+
+
 def _panel_antwort(page: Any, muster: str, antwort: dict[str, Any] | None) -> None:
     """
     Automatisches Speichern (action=update) mit der vorgegebenen Antwort beantworten (``None``: keine Verbindung),
@@ -308,6 +320,7 @@ class TestHtmxAutosave:
             "(id) => window.dispatchEvent(new CustomEvent('open-item-panel', { detail: { id } }))", str(item.id)
         )
         wait_for_component(page, "agendaItemPanel")
+        _kopf_formular_bereit(page)
         seite = page.url
         muster = f"**/item/{item.id}/panel/action/"
         panel = page.locator('[x-data="agendaItemPanel"]')
@@ -383,7 +396,11 @@ class TestHtmxAutosave:
                 route.continue_()
 
         page.route(f"**/item/{item.id}/panel/action/", kopf_ablehnen)
-        panel.locator("#agenda-item-update-form select[name=visibility]").select_option("internal")
+        _kopf_formular_bereit(page)
+        with page.expect_response(
+            lambda r: f"/item/{item.id}/panel/action/" in r.url and r.request.method == "POST" and r.status == 403
+        ):
+            panel.locator("#agenda-item-update-form select[name=visibility]").select_option("internal")
         expect(hinweis).to_contain_text("Nicht gespeichert: Keine Berechtigung")
 
         beschreibung = panel.locator("textarea[name=description]")
