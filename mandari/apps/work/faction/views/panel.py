@@ -290,8 +290,10 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         if title:
             item.title = title
 
-        description = request.POST.get("description", "")
-        if description is not None:
+        # Kopf (Titel, Sichtbarkeit) und Beschreibung speichern getrennt (zwei Formulare im Panel): Fehlt das Feld,
+        # bleibt die Beschreibung, sonst löschte jedes Speichern des Titels sie (#854)
+        if "description" in request.POST:
+            description = request.POST["description"]
             if description.strip():
                 item.set_description_encrypted(description.strip())
             else:
