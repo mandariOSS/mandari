@@ -13,6 +13,7 @@ from django.shortcuts import get_object_or_404, redirect
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..forms import TaskForm
@@ -21,10 +22,11 @@ from ..models import Task
 logger = logging.getLogger(__name__)
 
 
-class TaskCreateView(WorkViewMixin, TemplateView):
+class TaskCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Create a new task."""
 
     template_name = "work/tasks/create.html"
+    neue_vorlage = "work/tasks/neu/neu.html"
     permission_required = "tasks.create"
 
     def get_context_data(self, **kwargs):

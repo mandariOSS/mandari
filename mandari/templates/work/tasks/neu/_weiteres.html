@@ -1,0 +1,22 @@
+{% comment %}
+Aufgaben › Weiteres im neuen Erscheinungsbild (Issue #951): Export als CSV, JSON oder XML und – mit Erstellrecht
+(can_import) – Import aus einer Datei oder aus Protokollen. Ersetzt das eigene Menü „Import / Export“ im Kopf; die
+Dialoge bleiben work/tasks/partials/_import_modal.html und _file_import_modal.html. Kontext: organization, can_import.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Weiteres" titel_id="aufgaben-weiteres" class="mt-10" data-testid="aufgaben-weiteres">
+    <dl class="mt-3 grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm">
+        <dt class="text-gray-600 dark:text-gray-400">Exportieren</dt>
+        <dd class="flex flex-wrap gap-x-4 gap-y-1">
+            <c-ui.textlink href="{% url 'work:tasks_export' org_slug=organization.slug %}?format=csv">Als CSV</c-ui.textlink>
+            <c-ui.textlink href="{% url 'work:tasks_export' org_slug=organization.slug %}?format=json">Als JSON</c-ui.textlink>
+            <c-ui.textlink href="{% url 'work:tasks_export' org_slug=organization.slug %}?format=xml">Als XML</c-ui.textlink>
+        </dd>
+        {% if can_import %}
+        <dt class="text-gray-600 dark:text-gray-400">Importieren</dt>
+        <dd class="flex flex-wrap gap-x-4 gap-y-1">
+            <c-ui.textlink knopf @click="document.getElementById('file-import-modal').showModal()">Aus einer Datei (CSV, JSON, XML)</c-ui.textlink>
+            <c-ui.textlink knopf @click="document.getElementById('import-modal').showModal()">Aus Protokollen</c-ui.textlink>
+        </dd>
+        {% endif %}
+    </dl>
+</c-rahmen.abschnitt>

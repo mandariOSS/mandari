@@ -1,0 +1,24 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Seitenblatt (Slide-over) für Arbeitsflächen (Issue #951): Blatt am rechten Rand über einer gedimmten Fläche, gesteuert
+vom Zustand der Seite (Alpine). Inhalt kommt meist per HTMX in einen Behälter im Slot. Klick auf die Fläche und Escape
+schließen; ``schliessen`` ist der Alpine-Ausdruck dafür (Standard: ``<show> = false``).
+  <c-ui.seitenblatt show="panelOpen" schliessen="closePanel()" label="Aufgabe">
+      <div id="task-panel-container" class="flex-1 flex flex-col overflow-hidden">…</div>
+  </c-ui.seitenblatt>
+Parameter: show (boolesche Variable im umgebenden x-data), schliessen, label (Name des Dialogs für Bildschirmleser),
+breite (Tailwind-Klasse, Standard max-w-2xl). Ohne Fokusfalle, damit Rückfragen (confirmAction) aus dem Blatt bedienbar
+bleiben; für Dialoge mit Fokusfalle gibt es c-ui.alpine-modal und c-ui.modal.
+{% endcomment %}
+<c-vars show="open" schliessen="" label="" breite="max-w-2xl" />
+<div x-show="{{ show }}" x-cloak class="fixed inset-0 z-[55]" @keydown.escape.window="{% if schliessen %}{{ schliessen }}{% else %}{{ show }} = false{% endif %}" {{ attrs }}>
+    <div class="absolute inset-0 bg-gray-900/30" aria-hidden="true" @click="{% if schliessen %}{{ schliessen }}{% else %}{{ show }} = false{% endif %}"
+         x-show="{{ show }}" x-transition:enter="transition-opacity ease-out duration-200" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100"
+         x-transition:leave="transition-opacity ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0"></div>
+    <div role="dialog"{% if label %} aria-label="{{ label }}"{% endif %}
+         class="absolute inset-y-0 right-0 flex w-full {{ breite }} flex-col overflow-hidden border-l border-gray-200 dark:border-gray-800 bg-band-hell shadow-xl"
+         x-show="{{ show }}" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="translate-x-full" x-transition:enter-end="translate-x-0"
+         x-transition:leave="transition ease-in duration-150" x-transition:leave-start="translate-x-0" x-transition:leave-end="translate-x-full">
+        {{ slot }}
+    </div>
+</div>

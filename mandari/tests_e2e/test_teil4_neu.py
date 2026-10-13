@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Benachrichtigungen, Hilfe, Team und Profil im neuen Erscheinungsbild im Browser (Issue #951, Teilpaket 4).
+Benachrichtigungen, Hilfe, Team, Profil und Aufgaben im neuen Erscheinungsbild im Browser (Issue #951, Teilpaket 4).
 
 - Benachrichtigungen: „Gelesen“ nimmt Punkt und Knopf weg (data-parent statt Abstandsklasse), der Reiter „Ungelesen“
   filtert, „Alle als gelesen markieren“ lädt neu, „Anzeigen“ folgt nach dem Markieren dem Link.
 - Ticket: neue Nachrichten erscheinen beim Nachladen (ticketVerlauf), Neues Ticket nimmt Anhänge über das Dateifeld.
 - Profil: Reiter führen zu allen Seiten, „2FA einrichten“ öffnet den Dialog, Escape schließt ihn.
+- Aufgaben: Karte öffnet das Panel im Seitenblatt (Klick und Enter), Escape schließt; Schnellanlage setzt eine Karte
+  der neuen Fassung in die Spalte und zählt neu; Ziehen in eine andere Spalte speichert den Status (SortableJS);
+  Speichern und Label entfernen im Panel tauschen die Karte (OOB) in der neuen Fassung, ohne doppelte Kennung.
+- Neue Aufgabe: Zuweisen mit Rückfrage; Escape im Dialog stellt die vorige Auswahl wieder her.
 - Alle Seiten: keine Alpine-Fehler, axe ohne kritische/schwere Befunde, kein waagerechtes Überlaufen bei 390 px.
 """
 
@@ -17,6 +21,7 @@ import pytest
 
 from apps.work.notifications.models import Notification
 from apps.work.support.models import SupportTicket, SupportTicketMessage
+from apps.work.tasks.models import Task, TaskLabel
 from tests_e2e.conftest import ADMIN_PASSWORD, BrowserProblems, wait_for_bundle, wait_for_component
 
 playwright_sync = pytest.importorskip("playwright.sync_api")
@@ -182,3 +187,106 @@ def test_profil_reiter_und_sicherheit(
         _oeffnen(page, f"{basis}/{pfad}")
         _ohne_ueberlauf(page, pfad)
     problems.assert_clean("Profil")
+
+
+def test_aufgaben_board(page: Any, live_server: Any, vorsitz: Any, axe: Any, problems: BrowserProblems) -> None:
+    org = vorsitz.organization
+    label = TaskLabel.objects.create(organization=org, name="Presse", color="blue")
+    aufgabe = Task.objects.create(
+        organization=org, title="Rede vorbereiten", created_by=vorsitz, assigned_to=vorsitz, visibility="organization"
+    )
+    aufgabe.labels.add(label)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    basis = _anmelden(page, live_server, vorsitz)
+    _oeffnen(page, f"{basis}/tasks/")
+    wait_for_component(page, "kanbanBoard")
+    karte = page.locator(f"#task-card-{aufgabe.id}")
+    expect(karte).to_contain_text("Presse")
+
+    # Panel im Seitenblatt: Klick öffnet (das Blatt zeigt erst „Lädt …“, dann das Panel aus der Antwort)
+    blatt = page.get_by_role("dialog", name="Aufgabe")
+    with page.expect_response(lambda r: r.url.endswith("/panel/")):
+        karte.click()
+    expect(blatt).to_be_visible()
+    titel = blatt.get_by_role("textbox", name="Aufgabentitel")
+    expect(titel).to_have_value("Rede vorbereiten")
+
+    # Speichern im Panel tauscht die Karte in der neuen Fassung (OOB über X-Work-Gestaltung)
+    titel.fill("Rede für den Rat vorbereiten")
+    with page.expect_response(lambda r: "/panel/action/" in r.url and r.request.method == "POST") as antwort:
+        titel.press("Tab")
+    assert antwort.value.ok, antwort.value.status
+    expect(karte).to_contain_text("Rede für den Rat vorbereiten")
+    assert "border-l-4" not in (karte.get_attribute("class") or "")
+    expect(karte).to_have_count(1)  # die Karte selbst wird getauscht, keine Hülle mit derselben Kennung
+
+    # Label im Panel entfernen: die Karte verliert es (OOB), der Label-Bereich lädt neu
+    with page.expect_response(lambda r: "/panel/action/" in r.url and r.request.method == "POST"):
+        blatt.locator('#panel-labels button[hx-vals*="toggle_label"]').first.click()
+    expect(karte.locator("[data-card-label]")).to_have_count(0)
+
+    # Escape schließt, Enter auf der Karte öffnet per Tastatur wieder
+    page.keyboard.press("Escape")
+    expect(blatt).to_be_hidden()
+    karte.focus()
+    with page.expect_response(lambda r: r.url.endswith("/panel/")):
+        page.keyboard.press("Enter")
+    expect(blatt).to_be_visible()
+    expect(titel).to_have_value("Rede für den Rat vorbereiten")
+    page.keyboard.press("Escape")
+    expect(blatt).to_be_hidden()
+
+    # Schnellanlage: Karte der neuen Fassung in der Spalte, Zahl neu
+    spalte = page.locator("#column-in_progress")
+    page.get_by_label("Neue Aufgabe in „In Bearbeitung“").fill("Presse anfragen")
+    with page.expect_response(lambda r: r.url.endswith("/tasks/api/")):
+        page.get_by_role("button", name="Aufgabe in „In Bearbeitung“ hinzufügen").click()
+    neue = spalte.locator(".task-card", has_text="Presse anfragen")
+    expect(neue).to_have_count(1)
+    assert "rounded-md" in (neue.get_attribute("class") or "")
+    expect(page.locator("#count-in_progress")).to_contain_text("1 Aufgaben")
+    expect(page.get_by_label("Neue Aufgabe in „In Bearbeitung“")).to_have_value("")
+
+    # Ziehen in „Erledigt“ speichert den Status
+    with page.expect_response(lambda r: r.url.endswith("/tasks/api/") and r.request.method == "POST") as zug:
+        karte.drag_to(page.locator("#column-done"))
+    assert zug.value.ok, zug.value.status
+    aufgabe.refresh_from_db()
+    assert aufgabe.status == "done"
+
+    befunde = axe().failing
+    assert not befunde, axe().describe()
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.reload()
+    wait_for_bundle(page)
+    _ohne_ueberlauf(page, "Aufgaben")
+    problems.assert_clean("Aufgaben")
+
+
+def test_neue_aufgabe_zuweisen(
+    page: Any, live_server: Any, vorsitz: Any, make_member: Any, problems: BrowserProblems
+) -> None:
+    kollegin = make_member(vorsitz.organization, ["tasks.view"], email="kollegin@example.org")
+    kollegin.user.first_name, kollegin.user.last_name = "Karla", "Kollegin"
+    kollegin.user.save(update_fields=["first_name", "last_name"])
+    basis = _anmelden(page, live_server, vorsitz)
+    _oeffnen(page, f"{basis}/tasks/create/")
+    wait_for_component(page, "assignmentHandler")
+    auswahl = page.locator('select[name="assigned_to"]')
+    dialog = page.get_by_role("dialog", name="Aufgabe zuweisen")
+
+    auswahl.select_option(str(kollegin.id))
+    expect(dialog).to_contain_text("Karla Kollegin")
+    page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
+    expect(auswahl).to_have_value("")
+
+    auswahl.select_option(str(kollegin.id))
+    dialog.get_by_role("button", name="Zuweisen").click()
+    expect(dialog).to_be_hidden()
+    expect(auswahl).to_have_value(str(kollegin.id))
+    page.get_by_label("Titel").fill("Haushaltsrede")
+    page.get_by_role("button", name="Aufgabe erstellen").click()
+    page.wait_for_load_state("networkidle")
+    assert Task.objects.get(title="Haushaltsrede").assigned_to_id == kollegin.id
+    problems.assert_clean("Neue Aufgabe")

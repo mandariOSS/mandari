@@ -1,0 +1,92 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Neue Aufgabe im neuen Erscheinungsbild (Issue #951, Teilpaket 4): ein Formular ohne Kästen (Felder c-form.* dicht),
+Herkunft (Protokoll, Dokument) als Satz im Kopfband statt Farbkästen. Zuweisung mit Rückfrage wie bisher
+(assignmentHandler), der Dialog über c-ui.alpine-modal. Sichtbarkeit als ruhige Auswahl, Tags als Liste zum Entfernen.
+Felder wie bisher: title, description, due_date, priority, status, assigned_to, visibility, tags, related_motion.
+Kontext: TaskCreateView; die bisherige Seite bleibt work/tasks/create.html.
+{% endcomment %}
+
+{% block page_title %}Neue Aufgabe{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Neue Aufgabe" dicht data-testid="aufgabe-neu-kopf"
+    text="{% if from_protocol_entry %}Aus einem Protokolleintrag der Sitzung „{{ from_protocol_entry.meeting.title }}“.{% elif related_motion %}Wird mit dem Dokument „{{ related_motion.title }}“ verknüpft.{% else %}Was ist zu tun, bis wann und von wem?{% endif %}">
+    <c-slot name="aktionen"><c-ui.textlink href="{% url 'work:tasks' org_slug=organization.slug %}" class="text-sm">Zurück zu den Aufgaben</c-ui.textlink></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<form method="post" class="max-w-2xl space-y-5" data-testid="aufgabe-formular">
+    {% csrf_token %}
+    {% if related_motion %}<input type="hidden" name="related_motion" value="{{ related_motion.id }}">{% endif %}
+
+    <c-form.field :field="form.title" id="aufgabe-titel" label="Titel" placeholder="Was ist zu tun?" dicht required />
+    <c-form.textarea :field="form.description" id="aufgabe-beschreibung" label="Beschreibung" rows="4" placeholder="Optionale Details zur Aufgabe …" dicht />
+
+    <div class="grid gap-5 sm:grid-cols-2">
+        <c-form.field name="due_date" id="aufgabe-faellig" type="date" label="Fällig am" value="{{ form.due_date.value|date:'Y-m-d'|default:'' }}" dicht />
+        <c-form.select name="priority" id="aufgabe-prioritaet" label="Priorität" dicht>
+            <option value="low" {% if form.priority.value == 'low' %}selected{% endif %}>Niedrig</option>
+            <option value="medium" {% if form.priority.value == 'medium' or not form.priority.value %}selected{% endif %}>Mittel</option>
+            <option value="high" {% if form.priority.value == 'high' %}selected{% endif %}>Hoch</option>
+            <option value="urgent" {% if form.priority.value == 'urgent' %}selected{% endif %}>Dringend</option>
+        </c-form.select>
+        <c-form.select name="status" id="aufgabe-status" label="Status" dicht>
+            <option value="todo" {% if form.status.value == 'todo' or not form.status.value %}selected{% endif %}>Zu erledigen</option>
+            <option value="in_progress" {% if form.status.value == 'in_progress' %}selected{% endif %}>In Bearbeitung</option>
+            <option value="done" {% if form.status.value == 'done' %}selected{% endif %}>Erledigt</option>
+        </c-form.select>
+        <div x-data="assignmentHandler" data-current-member="{{ membership.id }}">
+            <c-form.select name="assigned_to" id="aufgabe-zuweisung" label="Zugewiesen an" modell="selectedAssignee" dicht @change="checkAssignment">
+                <option value="">Mir selbst</option>
+                {% for member in form.assigned_to.field.queryset %}
+                <option value="{{ member.id }}" data-name="{{ member.user.get_display_name }}" {% if form.assigned_to.value == member.id|stringformat:'s' %}selected{% endif %}>{{ member.user.get_display_name }}</option>
+                {% endfor %}
+            </c-form.select>
+            <c-ui.alpine-modal show="showConfirmModal" labelledby="aufgabe-zuweisen-titel">
+                <c-rahmen.abschnitt titel="Aufgabe zuweisen" titel_id="aufgabe-zuweisen-titel" class="px-6 pt-5 pb-6">
+                    <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Die Aufgabe geht an <span class="font-medium text-gray-900 dark:text-white" x-text="assigneeName"></span>. Die Person erhält eine Benachrichtigung.</p>
+                    <div class="mt-5 flex justify-end gap-2">
+                        <c-ui.button variant="ghost" size="sm" @click="cancelAssignment">Abbrechen</c-ui.button>
+                        <c-ui.button size="sm" @click="confirmAssignment">Zuweisen</c-ui.button>
+                    </div>
+                </c-rahmen.abschnitt>
+            </c-ui.alpine-modal>
+        </div>
+    </div>
+
+    <c-form.gruppe legende="Sichtbarkeit" x-data="{ visibility: '{{ form.visibility.value|default:'private' }}' }">
+        <div class="mt-2 space-y-2">
+            <c-form.radio name="visibility" value="private" id="aufgabe-privat" label="Privat" hinweis="Nur Sie sehen die Aufgabe." modell="visibility" />
+            <c-form.radio name="visibility" value="shared" id="aufgabe-geteilt" label="Geteilt" hinweis="Bestimmte Personen sehen die Aufgabe; wen, legen Sie nach dem Anlegen fest." modell="visibility" />
+            <c-form.radio name="visibility" value="organization" id="aufgabe-organisation" label="Organisation" hinweis="Alle in {{ organization.name }} sehen die Aufgabe." modell="visibility" />
+        </div>
+    </c-form.gruppe>
+
+    {{ form.tags_list|json_script:"task-tags" }}
+    <c-form.gruppe legende="Tags" x-data="{ tags: JSON.parse(document.getElementById('task-tags').textContent), newTag: '' }">
+        <ul class="mt-2 flex flex-wrap gap-2" x-show="tags.length" x-cloak>
+            <template x-for="(tag, index) in tags" :key="index">
+                <li class="inline-flex items-center gap-1 h-7 pl-2 pr-1 rounded-md border border-gray-300 dark:border-gray-700 text-sm text-gray-800 dark:text-gray-200">
+                    <span x-text="tag"></span>
+                    <button type="button" @click="tags.splice(index, 1)" class="inline-flex items-center justify-center w-6 h-6 rounded text-gray-600 hover:text-red-700 dark:text-gray-400 dark:hover:text-red-400" :aria-label="'Tag entfernen: ' + tag" aria-label="Tag entfernen"><i data-lucide="x" class="w-3.5 h-3.5" aria-hidden="true"></i></button>
+                </li>
+            </template>
+        </ul>
+        <div class="mt-2 flex gap-2 max-w-sm">
+            <label for="aufgabe-tag" class="sr-only">Neuer Tag</label>
+            <input id="aufgabe-tag" type="text" x-model="newTag" @keydown.enter.prevent="if(newTag.trim()) { tags.push(newTag.trim()); newTag=''; }" placeholder="Neuer Tag"
+                   class="flex-1 min-w-0 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+            <c-ui.button variant="secondary" size="sm" @click="if(newTag.trim()) { tags.push(newTag.trim()); newTag=''; }">Hinzufügen</c-ui.button>
+        </div>
+        <input type="hidden" name="tags" :value="JSON.stringify(tags)">
+    </c-form.gruppe>
+
+    <div class="flex flex-wrap items-center gap-4 pt-2">
+        <c-ui.button type="submit" icon="check">Aufgabe erstellen</c-ui.button>
+        <c-ui.textlink href="{% url 'work:tasks' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+    </div>
+</form>
+{% endblock %}

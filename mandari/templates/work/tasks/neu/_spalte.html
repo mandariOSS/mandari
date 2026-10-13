@@ -1,0 +1,32 @@
+{% comment %}
+Spalte des Aufgabenboards im neuen Erscheinungsbild (Issue #951): Überschrift mit Zahl (count-<status>, die Antworten
+der Board-API setzen sie per OOB neu), Karten auf einer ruhigen Fläche ohne Farbrahmen (column-<status> mit data-status
+für SortableJS und kanbanBoard, Platzhalter .empty-placeholder) und die Schnellanlage (data-quick-add, HTMX wie
+bisher). Aufruf: {% include "work/tasks/neu/_spalte.html" with status="todo" title="Zu erledigen" tasks=todo_tasks empty_text="Keine Aufgaben" quick_add=True %}
+Kontext: organization, show_completed.
+{% endcomment %}
+<section class="kanban-column min-w-0" aria-labelledby="spalte-{{ status }}">
+    <div class="flex items-baseline gap-2 px-1 pb-2">
+        <h2 id="spalte-{{ status }}" class="text-sm font-semibold text-gray-900 dark:text-white">{{ title }}</h2>
+        <span id="count-{{ status }}" class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ tasks|length }}{% if status == 'done' and not show_completed %}+{% endif %} Aufgaben</span>
+    </div>
+    <div id="column-{{ status }}" data-status="{{ status }}" class="space-y-2 min-h-[12rem] rounded-md bg-band-grau p-2">
+        {% for task in tasks %}
+        {% include "work/tasks/neu/_karte.html" %}
+        {% endfor %}
+        <p class="empty-placeholder px-2 py-6 text-center text-sm text-gray-600 dark:text-gray-400 {% if tasks %}hidden{% endif %}">{{ empty_text }}</p>
+    </div>
+    {% if quick_add %}
+    <form class="mt-2 flex gap-2" data-quick-add
+          hx-post="{% url 'work:tasks_api' org_slug=organization.slug %}"
+          hx-target="#column-{{ status }} .empty-placeholder"
+          hx-swap="beforebegin">
+        <input type="hidden" name="action" value="quick_add">
+        <input type="hidden" name="status" value="{{ status }}">
+        <label for="schnell-{{ status }}" class="sr-only">Neue Aufgabe in „{{ title }}“</label>
+        <input id="schnell-{{ status }}" type="text" name="title" placeholder="Neue Aufgabe …" required
+               class="flex-1 min-w-0 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="plus" aria-label="Aufgabe in „{{ title }}“ hinzufügen"></c-ui.button>
+    </form>
+    {% endif %}
+</section>
