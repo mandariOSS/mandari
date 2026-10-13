@@ -353,6 +353,8 @@ export const documentEditor = defineComponent(() => {
     collabUserName: config.collabUserName,
     collabUserColor: config.collabUserColor,
     collabDestroy: null as (() => void) | null,
+    /** Kollaborationsstand sofort speichern und auf die Bestätigung des Servers warten (false: keine Bestätigung) */
+    collabFlush: null as ((timeoutMs?: number) => Promise<boolean>) | null,
     _everConnected: false,
     // Versionsverlauf
     historyMode: false,
@@ -676,6 +678,14 @@ export const documentEditor = defineComponent(() => {
               this._switchToSoloMode('Echtzeit-Kollaboration nicht verfügbar — Solo-Modus aktiv.')
             }
           },
+          onInitialState: () => {
+            // Der Anfangsstand kommt vom Server (bzw. aus dem gespeicherten Text): Er ist gespeichert und darf beim
+            // Verlassen keine Rückfrage auslösen. Ohne gespeicherten Yjs-Stand füllt der Editor nach 400 ms aus dem
+            // gespeicherten Text auf (createCollaborativeEditor) – erst danach gleichziehen.
+            window.setTimeout(() => {
+              this._savedSeq = this._changeSeq
+            }, 600)
+          },
           onPersisted: (contentHash) => {
             // Der Server hat unseren Kollaborationsstand gespeichert: Das ist ab jetzt
             // der Stand, von dem ein späteres Speichern ohne Verbindung ausgeht (#184).
@@ -700,6 +710,7 @@ export const documentEditor = defineComponent(() => {
         })
         editor = result.editor
         this.collabDestroy = result.collab.destroy
+        this.collabFlush = result.collab.flush
         this._modusAnwenden()
       } catch (e) {
         console.error('Kollaborations-Editor konnte nicht gestartet werden, Solo-Fallback:', e)
@@ -1446,6 +1457,11 @@ export const documentEditor = defineComponent(() => {
         wiederholTimer = null
       }
       this.saving = true
+      // Mit Kollaborationsverbindung zuerst den gemeinsamen Stand sichern: Dann kommt der Text unverändert an, und der
+      // Server fordert die verbundenen Fenster nicht zum Neuladen auf – sonst lud Strg+S auch dieses Fenster neu.
+      if (this.collabEnabled && this.collabStatus === 'connected' && this.collabFlush) {
+        await this.collabFlush()
+      }
       // Stand, den diese Anfrage sichert; spätere Eingaben bleiben „ungespeichert“
       const seq = this._changeSeq
 
@@ -1557,6 +1573,23 @@ export const documentEditor = defineComponent(() => {
     /** Vor gewollter Navigation aufrufen: Die Rückfrage gilt nur für unbeabsichtigtes Verlassen. */
     leaveIntentionally(): void {
       this._leavingIntentionally = true
+    },
+
+    /**
+     * Den Editor über einen Menüpunkt verlassen, dessen Zielseite den gespeicherten Text liest (z. B. „Bei der
+     * Verwaltung einreichen“ mit vorbelegten Feldern): erst sichern, dann ohne Rückfrage gehen. Mit
+     * Kollaborationsverbindung speichert der Server sonst nur alle zehn Sekunden; das Formular hätte den letzten Satz
+     * nicht, und der Browser fragte „Website verlassen?“.
+     */
+    async sichernUndGehen(ziel: string): Promise<void> {
+      const verbunden = this.collabEnabled && this.collabStatus === 'connected'
+      const gesichert = verbunden && this.collabFlush ? await this.collabFlush() : await this._vorNeuladenSichern()
+      if (!gesichert) {
+        if (verbunden) showToast('Der Text ließ sich gerade nicht speichern. Bitte noch einmal versuchen.', 'error')
+        return
+      }
+      this.leaveIntentionally()
+      window.location.href = ziel
     },
 
     /** Konflikt (#184): den eigenen Stand bewusst über den neueren schreiben. */
