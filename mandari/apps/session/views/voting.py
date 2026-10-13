@@ -75,6 +75,10 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
     template_name = "session/voting/capture.html"
     permission_required = "edit_protocols"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/abstimmung.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         item = _get_item(self, self.kwargs["item_id"])

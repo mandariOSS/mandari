@@ -1,0 +1,36 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Sitzungscockpit im neuen Rahmen (Issues #140, #944): Steuerung für Sitzungsleitung und Protokollführung, sonst
+Mitlese-Ansicht. Nur der Rahmen ist neu: Kopfband mit Sitzung, Zeit und Ort und dem Weg zurück zur Sitzung statt des
+Seitenkopfs, darunter Verbindung und Mitlese-Hinweis als Satz. Der Stand bleibt der bisherige (#cockpit-stand,
+session/cockpit/_stand.html) und kommt wie bisher als Fragment nach: Die Alpine-Komponente meetingCockpit
+(frontend/alpine/meeting-cockpit.ts) lädt ihn nach jedem Hinweis über den WebSocket bzw. im Polling-Rückfall alle zwei
+Sekunden neu. Die bisherige Seite bleibt session/cockpit/page.html.
+{% endcomment %}
+
+{% block page_title %}Cockpit: {{ meeting.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume>Cockpit</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{{ meeting.name }}" dicht
+    text="{{ meeting.organizations_label }} · {{ meeting.start|date:'l, d.m.Y' }}, {{ meeting.start|date:'H:i' }} Uhr{% if meeting.location %} · {{ meeting.location }}{% if meeting.room %}, {{ meeting.room }}{% endif %}{% endif %}">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}">Sitzung</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div x-data="meetingCockpit" data-ws-path="/ws/session/{{ tenant_slug }}/cockpit/{{ meeting.id }}/" data-testid="cockpit">
+    <div class="mb-6 flex flex-wrap items-baseline gap-x-6 gap-y-1 text-sm text-gray-700 dark:text-gray-300">
+        <p class="inline-flex items-center gap-1.5" role="status" data-testid="verbindung">
+            <span class="w-2 h-2 rounded-full" :class="live === 'ws' ? 'bg-green-600 dark:bg-green-400' : 'bg-amber-500'" aria-hidden="true"></span>
+            <span x-text="live === 'ws' ? 'Live verbunden' : 'Aktualisierung alle 2 Sekunden'">Aktualisierung alle 2 Sekunden</span>
+        </p>
+        {% if not state.can_control %}
+        <p class="text-gray-600 dark:text-gray-400" data-testid="mitlesen">Mitlese-Ansicht: Sie sehen den Stand der Sitzung live. Steuern dürfen nur Sitzungsleitung und Protokollführung.</p>
+        {% endif %}
+    </div>
+
+    {% include "session/cockpit/_stand.html" %}
+</div>
+{% endblock %}

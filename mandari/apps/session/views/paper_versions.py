@@ -27,6 +27,7 @@ from django.views.generic.base import ContextMixin
 from .. import audit
 from ..models import SessionPaper, SessionPaperVersion, SessionPaperVersionFile, SessionTenant, SessionUser
 from ..permissions import SessionPermissionChecker, SessionViewMixin
+from ..rahmen import neues_design
 from ..services import file_service, file_version_service, paper_version_diff, paper_version_service
 
 _log_event = cast(Any, audit).log_event
@@ -63,6 +64,10 @@ class _PaperVersionView(SessionViewMixin, ContextMixin, View):
         if version is None or not paper_version_service.version_visible(self.permissions(), paper, version):
             raise Http404("Fassung nicht gefunden")
         return version
+
+    def vorlage(self, bisher: str, neu: str) -> str:
+        """Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert."""
+        return neu if neues_design(self.tenant) else bisher
 
     def base_context(self, paper: SessionPaper, **extra: Any) -> dict[str, Any]:
         """Seitenkontext inkl. Navigation (SessionMixin) plus die Rechte für die Aktionen."""
@@ -102,7 +107,7 @@ class PaperVersionListView(_PaperVersionView):
             default_a=versions[1].number if len(versions) > 1 else None,
             default_b=versions[0].number if versions else None,
         )
-        return render(request, "session/papers/versions/list.html", context)
+        return render(request, self.vorlage("session/papers/versions/list.html", "session/neu/fassungen.html"), context)
 
 
 class PaperVersionDetailView(_PaperVersionView):
@@ -139,7 +144,7 @@ class PaperVersionDetailView(_PaperVersionView):
             ),
             previous_number=older.order_by("-number").values_list("number", flat=True).first(),
         )
-        return render(request, "session/papers/versions/detail.html", context)
+        return render(request, self.vorlage("session/papers/versions/detail.html", "session/neu/fassung.html"), context)
 
 
 class PaperVersionCompareView(_PaperVersionView):
@@ -179,7 +184,8 @@ class PaperVersionCompareView(_PaperVersionView):
                 },
                 dedup_suffix=f"vergleich-{older.number}-{newer.number}",
             )
-        return render(request, "session/papers/versions/compare.html", self.base_context(paper, comparison=comparison))
+        template = self.vorlage("session/papers/versions/compare.html", "session/neu/fassungen_vergleich.html")
+        return render(request, template, self.base_context(paper, comparison=comparison))
 
 
 class PaperVersionCreateView(_PaperVersionView):

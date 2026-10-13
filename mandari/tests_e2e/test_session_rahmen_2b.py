@@ -1,11 +1,19 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Teil 2b des neuen Erscheinungsbilds im Sitzungsdienst im Browser (Issue #944): Abläufe.
+Teil 2b des neuen Erscheinungsbilds im Sitzungsdienst im Browser (Issue #944).
 
 Mit den Demo-Daten (setup_demo_environment), eingeschaltetem Schalter und einem Bestand für Seiten, die die Demo nicht
-füllt (Niederschrift im Entwurf, Umlauf), stehen Niederschrift (Ansicht, Bearbeiten, Berichtigen), Beschlussregister,
-Umlaufbeschlüsse, Anträge (Eingang, Bearbeiten, Umwandeln), Ladung und Rückmeldungen im neuen Erscheinungsbild und laufen
-am Handy (390 px) und am Tablet (768 px) nicht seitlich über, ohne Fehler im Browser.
+füllt (Niederschrift im Entwurf, Umlauf, Fassungen und Dateiversionen, Endgeräte, Leitstelle), stehen die übrigen
+Seiten des Sitzungsdienstes im neuen Erscheinungsbild und laufen am Handy (390 px) und am Tablet (768 px) nicht
+seitlich über, ohne Fehler im Browser:
+
+- Abläufe: Niederschrift (Ansicht, Bearbeiten, Berichtigen), Beschlussregister, Umlaufbeschlüsse, Anträge (Eingang,
+  Bearbeiten, Umwandeln), Ladung und Rückmeldungen
+- Werkzeuge: Cockpit (neuer Rahmen, Stand wie bisher) und Abstimmung erfassen, Fassungen, Dateiversionen, Endgeräte und
+  die Leitstelle einer Mandantengruppe
+
+Die Live-Funktion des Cockpits (TOP aufrufen, Abstimmung, Polling) prüft tests_e2e/test_sitzungscockpit.py in beiden
+Erscheinungsbildern.
 """
 
 from __future__ import annotations
@@ -14,6 +22,7 @@ from datetime import timedelta
 from typing import Any
 
 import pytest
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 from playwright.sync_api import expect
@@ -106,3 +115,71 @@ def test_ablaeufe_am_handy_und_tablet(
     login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
     _durchlaufen(page, live_server, ablaeufe, screenshot)
     problems.assert_clean("Abläufe aus Teil 2b im neuen Rahmen")
+
+
+@pytest.fixture
+def werkzeuge(bestand: dict[str, Any]) -> dict[str, str]:
+    """Zwei Fassungen der Vorlage, eine Anlage mit zwei Dateiversionen, zwei Endgeräte und eine Leitstelle."""
+    from apps.session.models import (
+        SessionAgendaItem,
+        SessionDevice,
+        SessionFile,
+        SessionPaper,
+        SessionPaperVersion,
+        SessionPerson,
+        SessionTenantGroup,
+        SessionTenantGroupMembership,
+        SessionTenantGroupTenant,
+    )
+    from apps.session.services import file_version_service, paper_version_service
+
+    tenant, konto, kommend = bestand["tenant"], bestand["konto"], bestand["kommend"]
+    top = SessionAgendaItem.objects.filter(meeting=kommend).order_by("order").first()
+    vorlage = SessionPaper.objects.filter(tenant=tenant).order_by("-created_at").first()
+    person = SessionPerson.objects.filter(tenant=tenant).first()
+    assert top is not None and vorlage is not None and person is not None
+    paper_version_service.snapshot(vorlage, trigger=SessionPaperVersion.TRIGGER_MANUAL, user=konto, note="Erster Stand")
+    vorlage.main_text = f"{vorlage.main_text or ''}\n\nErgänzt um die Kosten der Beleuchtung."
+    vorlage.save()
+    paper_version_service.snapshot(vorlage, trigger=SessionPaperVersion.TRIGGER_MANUAL, user=konto)
+    anlage = SessionFile(
+        tenant=tenant, name="Kostenaufstellung.txt", mime_type="text/plain", is_public=True, paper=vorlage
+    )
+    file_version_service.attach_upload(anlage, SimpleUploadedFile(anlage.name, b"Kosten A", "text/plain"), user=None)
+    neu = SimpleUploadedFile(anlage.name, b"Kosten B", "text/plain")
+    file_version_service.replace_content(anlage, neu, user=None, mime_type="text/plain", text_content="")
+    SessionDevice.objects.create(tenant=tenant, label="iPad 1", inventory_number="INV-1", status="in_stock")
+    SessionDevice.objects.create(
+        tenant=tenant,
+        label="iPad 2",
+        inventory_number="INV-2",
+        status="issued",
+        issued_to=person,
+        issued_at=timezone.now(),
+    )
+    # Leitstelle einer Gruppe nur mit dem Demo-Mandanten: Sie folgt dessen Schalter
+    gruppe = SessionTenantGroup.objects.create(name="Demo-Kreis", slug="demo-kreis")
+    SessionTenantGroupTenant.objects.create(group=gruppe, tenant=tenant)
+    SessionTenantGroupMembership.objects.create(
+        group=gruppe, user=bestand["nutzer"], role=SessionTenantGroupMembership.ROLE_LEITSTELLE
+    )
+    leitstelle = {"group_slug": gruppe.slug}
+    return {
+        "cockpit": _adresse("meeting_cockpit", meeting_id=kommend.pk),
+        "abstimmung": _adresse("voting_capture", item_id=top.pk),
+        "fassungen": _adresse("paper_versions", paper_id=vorlage.pk),
+        "fassung": _adresse("paper_version_detail", paper_id=vorlage.pk, number=1),
+        "fassungen-vergleich": _adresse("paper_version_compare", paper_id=vorlage.pk) + "?a=1&b=2",
+        "dateiversionen": _adresse("file_versions", file_id=anlage.pk),
+        "endgeraete": _adresse("devices"),
+        "leitstelle": reverse("session:leitstelle", kwargs=leitstelle),
+        "leitstelle-suche": reverse("session:leitstelle_search", kwargs=leitstelle) + "?q=Demo",
+    }
+
+
+def test_werkzeuge_am_handy_und_tablet(
+    page: Any, live_server: Any, werkzeuge: dict[str, str], problems: BrowserProblems, screenshot: Any
+) -> None:
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    _durchlaufen(page, live_server, werkzeuge, screenshot)
+    problems.assert_clean("Cockpit, Fassungen, Endgeräte und Leitstelle aus Teil 2b im neuen Rahmen")
