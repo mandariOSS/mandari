@@ -1,0 +1,92 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Umlaufbeschluss im neuen Rahmen (Issues #41, #944): Kopfband mit Nummer, Gremium, Betreff, Stand als Punkt mit Text,
+Rückmeldefrist und Bezugsvorlage, die Auszählung als ein Satz statt fünf Zählerkacheln. Links der Beschlussvorschlag
+und die stimmberechtigte Besetzung als Liste je Person mit ihrer Stimme; im offenen Umlauf mit dem Recht zum
+Bearbeiten von Sitzungen je Zeile „Erfassen“ (Ziel circular_vote, Knopf ohne Füllfarbe). Rechts „Ergebnis feststellen“
+(Ziel circular_close; angenommen, abgelehnt, abbrechen mit Rückfrage wie bisher). Kontext wie CircularDetailView; die
+bisherige Seite bleibt session/voting/circular_detail.html.
+{% endcomment %}
+
+{% block page_title %}{{ circular.reference|default:"Umlaufbeschluss" }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{{ circular.title }}" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:circulars' tenant_slug=tenant_slug %}">Umlaufbeschlüsse</c-insight.zurueck>
+        <p class="mb-1 text-sm tabular-nums text-gray-600 dark:text-gray-400">{% if circular.reference %}{{ circular.reference }} · {% endif %}{{ circular.organization.name }}</p>
+    </c-slot>
+    <p class="kopf-angaben">
+        <span>{% include "session/neu/_umlauf_stand.html" %}</span>
+        <span class="tabular-nums">Rückmeldefrist {{ circular.deadline|date:"d.m.Y" }}</span>
+        {% if not circular.is_public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+        {% if circular.paper and paper_visible %}<span>Vorlage <c-ui.textlink href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=circular.paper.id %}">{{ circular.paper.reference }}</c-ui.textlink></span>{% endif %}
+        {% if circular.decided_at %}<span class="tabular-nums">Ergebnis festgestellt am {{ circular.decided_at|date:"d.m.Y H:i" }}</span>{% endif %}
+    </p>
+    <p class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="umlauf-auszaehlung">
+        Ja {{ tally.yes }}, Nein {{ tally.no }}, Enthaltung {{ tally.abstain }}. {{ tally.responded }} von {{ tally.total_members }} Stimmberechtigten {{ tally.responded|pluralize:"hat,haben" }} geantwortet{% if tally.quorum_met %}, damit ist die Mehrheit beteiligt{% elif tally.total_members %}, das ist nicht die Mehrheit{% endif %}.
+    </p>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 {% if can_manage and circular.status == 'open' %}lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]{% endif %}">
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="Beschlussvorschlag" titel_id="vorschlag-titel">
+            <p class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ circular.resolution_text }}</p>
+            {% if circular.result_note %}<p class="mt-3 max-w-[48rem] text-sm text-gray-700 dark:text-gray-300 break-words"><span class="font-medium">Ergebnisvermerk:</span> {{ circular.result_note }}</p>{% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Stimmberechtigte Besetzung" titel_id="besetzung-titel" zusatz="{{ tally.total_members }}" data-testid="umlauf-besetzung">
+            {% if members %}
+            <c-rahmen.liste class="mt-2">
+                {% for membership in members %}
+                <li class="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-2 py-2.5">
+                    <div class="min-w-0">
+                        <p class="text-sm liste-name">{{ membership.person.display_name }}</p>
+                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                            {% if membership.vote %}{% if membership.vote.vote == "yes" %}{% include "session/neu/_status.html" with wert="approved" text=membership.vote.get_vote_display %}{% elif membership.vote.vote == "no" %}{% include "session/neu/_status.html" with wert="rejected" text=membership.vote.get_vote_display %}{% else %}{% include "session/neu/_status.html" with wert="" text=membership.vote.get_vote_display %}{% endif %}<span class="tabular-nums">, eingegangen am {{ membership.vote.received_at|date:"d.m.Y" }}</span>
+                            {% else %}ausstehend{% endif %}
+                        </p>
+                    </div>
+                    {% if can_manage and circular.status == 'open' %}
+                    <form method="post" action="{% url 'session:circular_vote' tenant_slug=tenant_slug circular_id=circular.id %}" class="flex flex-wrap items-center gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="person" value="{{ membership.person_id }}">
+                        <label for="stimme-{{ membership.person_id }}" class="sr-only">Stimme von {{ membership.person.display_name }}</label>
+                        <select id="stimme-{{ membership.person_id }}" name="vote"
+                                class="h-9 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                            {% for value, label in vote_choices %}<option value="{{ value }}"{% if membership.vote.vote == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                        </select>
+                        <label for="eingang-{{ membership.person_id }}" class="sr-only">Eingegangen am</label>
+                        <input type="date" id="eingang-{{ membership.person_id }}" name="received_at" value="{{ today|date:'Y-m-d' }}"
+                               class="h-9 w-40 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                        <c-ui.button type="submit" variant="secondary" size="sm">Erfassen</c-ui.button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Keine stimmberechtigte Besetzung hinterlegt.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
+
+    {% if can_manage and circular.status == 'open' %}
+    <c-rahmen.abschnitt titel="Ergebnis feststellen" titel_id="ergebnis-titel" data-testid="umlauf-ergebnis">
+        <c-rahmen.satz eng>Nach der Auszählung {% if tally.suggestion == 'adopted' %}angenommen{% else %}abgelehnt{% endif %}.{% if not tally.quorum_met %} <span class="text-amber-800 dark:text-amber-300">Achtung: Weniger als die Hälfte der Stimmberechtigten hat geantwortet.</span>{% endif %}</c-rahmen.satz>
+        <form method="post" action="{% url 'session:circular_close' tenant_slug=tenant_slug circular_id=circular.id %}" class="mt-3 space-y-3">
+            {% csrf_token %}
+            <c-form.field name="result_note" label="Ergebnisvermerk (optional)" dicht />
+            <div class="flex flex-wrap gap-2">
+                <c-ui.button type="submit" name="result" value="adopted" variant="secondary" size="sm" icon="check">Als angenommen feststellen</c-ui.button>
+                <c-ui.button type="submit" name="result" value="rejected" variant="secondary" size="sm" icon="x">Als abgelehnt feststellen</c-ui.button>
+                <c-ui.button type="submit" name="result" value="cancelled" variant="secondary" size="sm" data-confirm="Umlauf wirklich abbrechen?">Umlauf abbrechen</c-ui.button>
+            </div>
+        </form>
+    </c-rahmen.abschnitt>
+    {% endif %}
+</div>
+{% endblock %}

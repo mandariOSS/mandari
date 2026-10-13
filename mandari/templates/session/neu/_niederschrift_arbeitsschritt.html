@@ -1,0 +1,64 @@
+{% comment %}
+Arbeitsschritt der Niederschrift im Kopfband (Issues #31, #222, #318, #944): Stand als Punkt mit Text, schreibgeschützt
+und Genehmigungsvermerk in einer Zeile. In Prüfung mit dem Genehmigungsrecht darunter der Schritt selbst: Genehmigen mit
+TOP der Folgesitzung oder Sitzung (bzw. ohne Genehmigungsschritt „Freigeben und veröffentlichen“) als Hauptaktion, sofern
+das Vier-Augen-Prinzip es erlaubt, daneben Zurückweisen mit Anmerkung. Nach der Genehmigung ein Satz zum Schreibschutz.
+Formulare und Felder wie session/protocols/_workflow.html. Kontext: protocol, meeting, can_approve, locked, direct_mode,
+freigabe, approval_items, approval_meetings.
+{% endcomment %}
+<p class="kopf-angaben" data-testid="niederschrift-stand">
+    <span>{% if protocol.status == "published" %}{% include "session/neu/_status.html" with wert="approved" text=protocol.get_status_display %}{% else %}{% include "session/neu/_status.html" with wert=protocol.status text=protocol.get_status_display %}{% endif %}</span>
+    {% if locked %}<span class="inline-flex items-center gap-1" data-testid="niederschrift-gesperrt"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Schreibgeschützt</span>{% endif %}
+    {% if protocol.approval_note %}<span class="break-words">{{ protocol.approval_note }}</span>{% endif %}
+</p>
+
+{% if can_approve and protocol.status == 'review' %}
+<div class="mt-4 max-w-4xl space-y-3" data-testid="genehmigung">
+    {% include "session/partials/four_eyes_hint.html" with decision=freigabe %}
+    <div class="flex flex-wrap items-end gap-x-6 gap-y-3">
+        {% if freigabe.allowed and direct_mode %}
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='publish' %}">
+                {% csrf_token %}
+                <c-ui.button type="submit" size="sm" icon="globe">Freigeben und veröffentlichen</c-ui.button>
+            </form>
+            <p class="text-sm text-gray-600 dark:text-gray-400">Dieser Mandant veröffentlicht Niederschriften ohne Genehmigungsschritt.</p>
+        </div>
+        {% elif freigabe.allowed %}
+        <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='approve' %}"
+              class="flex flex-wrap items-end gap-2 min-w-0" data-testid="genehmigen-formular">
+            {% csrf_token %}
+            <c-form.select name="approval_item" id="genehmigung-top" label="Genehmigt unter TOP der Folgesitzung" dicht class="min-w-0 flex-1 basis-64 sm:flex-none sm:w-80">
+                <option value="">Ohne Verknüpfung</option>
+                {% for top in approval_items %}
+                <option value="{{ top.id }}">{{ top.meeting.start|date:"d.m.Y" }}, TOP {{ top.number }}: {{ top.name|truncatechars:60 }}</option>
+                {% endfor %}
+            </c-form.select>
+            <c-form.select name="approval_meeting" id="genehmigung-sitzung" label="oder: Genehmigt in Sitzung" dicht class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-64">
+                <option value="">Keine Angabe</option>
+                {% for am in approval_meetings %}
+                <option value="{{ am.id }}">{{ am.name }} ({{ am.start|date:"d.m.Y" }})</option>
+                {% endfor %}
+            </c-form.select>
+            <c-ui.button type="submit" size="sm" icon="check">Genehmigen</c-ui.button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='reject' %}"
+              class="flex items-center gap-2 min-w-0 basis-full sm:basis-auto">
+            {% csrf_token %}
+            <label for="zurueckweisen-anmerkung" class="sr-only">Anmerkung zur Zurückweisung</label>
+            <input id="zurueckweisen-anmerkung" type="text" name="comment" placeholder="Anmerkung zur Zurückweisung"
+                   class="h-9 flex-1 sm:flex-none sm:w-72 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="undo-2">Zurückweisen</c-ui.button>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+{% if locked %}
+<p class="mt-2 max-w-3xl text-sm text-gray-700 dark:text-gray-300">
+    Ergebnis, Stimmen und Texte sind seit der {% if protocol.status == 'published' and direct_mode %}Veröffentlichung{% else %}Genehmigung{% endif %} schreibgeschützt.
+    {% if protocol.approval_agenda_item %}Genehmigt unter TOP {{ protocol.approval_agenda_item.number }} der Sitzung vom {{ protocol.approval_agenda_item.meeting.start|date:"d.m.Y" }}.{% endif %}
+    {% if protocol.status == 'published' %}{% if meeting.is_public %}Die öffentliche Fassung steht über OParl und im Bürgerportal bereit.{% else %}Nichtöffentliche Sitzung: keine öffentliche Fassung.{% endif %}{% endif %}
+</p>
+{% endif %}

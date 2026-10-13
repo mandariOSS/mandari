@@ -16,6 +16,7 @@ from django.views.generic import TemplateView
 
 from ..models import SessionMeeting
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import invitation_service, meeting_format_service
 
 
@@ -37,6 +38,10 @@ class MeetingInvitationView(SessionViewMixin, TemplateView):
 
     template_name = "session/meetings/invitation.html"
     permission_required = "edit_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/ladung.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_meeting(self):
         return _get_meeting(self, self.kwargs["meeting_id"])

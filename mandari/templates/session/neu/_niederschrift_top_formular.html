@@ -1,0 +1,65 @@
+{% comment %}
+Ein Tagesordnungspunkt im Formular der Niederschrift, neuer Rahmen (Issues #31, #41, #140, #944): Nummer und Titel,
+Abstimmungsart als Text, „Abstimmung erfassen“ als Textlink; Ergebnis und Stimmen (bei Einzelstimmen nur die Summen),
+Beschlusstext, Protokolltext und der nichtöffentliche Protokolltext (nur mit dem NÖ-Recht). Felder 36 px, Unterpunkte
+folgen eingerückt. Feldnamen und versteckte Felder wie session/protocols/partial_top_form.html.
+Kontext: item, vote_choices, can_view_np, is_sub (optional).
+{% endcomment %}
+<li class="py-4 space-y-3 {% if is_sub %}pl-8 sm:pl-10{% endif %}" data-testid="niederschrift-top-formular">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <p class="min-w-0 break-words text-gray-900 dark:text-white">
+            <span class="tabular-nums font-semibold text-gray-700 dark:text-gray-300 mr-1">{{ item.number }}</span>
+            <span class="font-medium {% if item.is_withdrawn %}line-through text-gray-500 dark:text-gray-400{% endif %}">{{ item.name }}</span>
+            {% if item.is_withdrawn %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">(abgesetzt)</span>{% endif %}
+            {% if item.voting_method != 'summary' %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">· {{ item.get_voting_method_display }}</span>{% endif %}
+        </p>
+        {# Einzelabstimmung erfassen (Issue #41) #}
+        <c-ui.textlink href="{% url 'session:voting_capture' tenant_slug=tenant_slug item_id=item.pk %}?next={{ request.get_full_path|urlencode }}" class="inline-flex items-center gap-1 text-sm"><i data-lucide="vote" class="w-4 h-4" aria-hidden="true"></i>Abstimmung erfassen<span class="sr-only"> zu TOP {{ item.number }}</span></c-ui.textlink>
+    </div>
+    {# Stand beim Laden: Unverändertes überschreibt nicht, was das Sitzungscockpit inzwischen festgestellt hat #}
+    <input type="hidden" name="geladen_vote_result_{{ item.pk }}" value="{{ item.vote_result }}">
+    <input type="hidden" name="geladen_votes_yes_{{ item.pk }}" value="{{ item.votes_yes }}">
+    <input type="hidden" name="geladen_votes_no_{{ item.pk }}" value="{{ item.votes_no }}">
+    <input type="hidden" name="geladen_votes_abstain_{{ item.pk }}" value="{{ item.votes_abstain }}">
+    <div class="grid grid-cols-3 sm:grid-cols-[minmax(0,12rem)_repeat(3,minmax(0,6rem))] gap-x-3 gap-y-3">
+        <c-form.select name="vote_result_{{ item.pk }}" id="ergebnis-{{ item.pk }}" label="Ergebnis" dicht class="col-span-3 sm:col-span-1 min-w-0">
+            {% for value, label in vote_choices %}
+            <option value="{{ value }}" {% if item.vote_result == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </c-form.select>
+        {% if item.voting_method == "open" or item.voting_method == "roll_call" %}
+        {# Einzelstimmen: Summen nur über „Abstimmung erfassen“ #}
+        <div class="col-span-3 text-sm text-gray-800 dark:text-gray-200" data-testid="summen-aus-einzelstimmen">
+            <p class="mb-1 text-sm font-medium text-gray-800 dark:text-gray-200">Summen aus den Einzelstimmen</p>
+            <p class="tabular-nums leading-9">Ja {{ item.votes_yes }}, Nein {{ item.votes_no }}, Enthaltung {{ item.votes_abstain }}</p>
+        </div>
+        {% else %}
+        <div class="min-w-0">
+            <c-form.beschriftung feld="ja-{{ item.pk }}">Ja</c-form.beschriftung>
+            <input type="number" min="0" id="ja-{{ item.pk }}" name="votes_yes_{{ item.pk }}" value="{{ item.votes_yes }}"
+                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+        </div>
+        <div class="min-w-0">
+            <c-form.beschriftung feld="nein-{{ item.pk }}">Nein</c-form.beschriftung>
+            <input type="number" min="0" id="nein-{{ item.pk }}" name="votes_no_{{ item.pk }}" value="{{ item.votes_no }}"
+                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+        </div>
+        <div class="min-w-0">
+            <c-form.beschriftung feld="enthaltungen-{{ item.pk }}">Enthaltungen</c-form.beschriftung>
+            <input type="number" min="0" id="enthaltungen-{{ item.pk }}" name="votes_abstain_{{ item.pk }}" value="{{ item.votes_abstain }}"
+                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+        </div>
+        {% endif %}
+    </div>
+    <c-form.textarea name="resolution_text_{{ item.pk }}" id="beschluss-{{ item.pk }}" label="Beschlusstext" rows="2" :value="item.resolution_text" dicht />
+    <c-form.textarea name="protocol_note_{{ item.pk }}" id="protokolltext-{{ item.pk }}" label="Protokolltext (Wortbeiträge, öffentlich)" rows="3" :value="item.protocol_note" dicht />
+    {% if can_view_np %}
+    <div>
+        <label for="protokolltext-noe-{{ item.pk }}" class="mb-1 inline-flex items-center gap-1 text-sm font-medium text-gray-800 dark:text-gray-200"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlicher Protokolltext (verschlüsselt)</label>
+        <c-form.textarea name="protocol_note_np_{{ item.pk }}" id="protokolltext-noe-{{ item.pk }}" rows="2" :value="item.protocol_note_np" dicht />
+    </div>
+    {% endif %}
+</li>
+{% for sub in item.children_list %}
+{% include "session/neu/_niederschrift_top_formular.html" with item=sub is_sub=True %}
+{% endfor %}
