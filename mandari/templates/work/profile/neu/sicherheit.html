@@ -36,7 +36,7 @@ bleibt work/profile/security.html.
                     <li class="py-2.5">
                         <p class="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">{% if not hinweis.is_read %}<span class="w-2 h-2 rounded-full bg-primary-600" aria-hidden="true"></span>{% endif %}{{ hinweis.title }}{% if not hinweis.is_read %}<span class="font-normal text-gray-600 dark:text-gray-400">neu</span>{% endif %}</p>
                         <p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ hinweis.message }}</p>
-                        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ hinweis.created_at|date:"d.m.Y, H:i" }} Uhr{% if hinweis.device_info %} · {{ hinweis.device_info }}{% endif %}{% if hinweis.ip_address %} · {{ hinweis.ip_address }}{% endif %}{% if hinweis.email_sent %} · per E-Mail gemeldet{% endif %}</p>
+                        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ hinweis.created_at|date:"d.m.Y, H:i" }} Uhr{% if hinweis.device_info %} · {{ hinweis.device_info }}{% endif %}{% if hinweis.ip_address %} · {{ hinweis.ip_address }}{% endif %}{% if hinweis.email_sent %} · per E-Mail gemeldet{% endif %}</p>
                     </li>
                     {% endfor %}
                 </c-rahmen.liste>

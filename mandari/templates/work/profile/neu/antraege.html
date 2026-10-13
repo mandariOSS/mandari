@@ -76,7 +76,7 @@ work/profile/change_requests.html.
                     <div class="flex-1 min-w-0">
                         <p class="flex flex-wrap items-center gap-x-3 text-sm"><span class="font-medium text-gray-900 dark:text-white">{{ req.get_request_type_display }}</span>{% include "work/profile/neu/_antrag_status.html" %}</p>
                         <p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300 break-words">{{ req.reason|truncatechars:80 }}</p>
-                        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ req.created_at|date:"d.m.Y H:i" }}</p>
+                        <time datetime="{{ req.created_at|date:'c' }}" class="block mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ req.created_at|date:"d.m.Y H:i" }}</time>
                         {% if req.decision_comment %}<p class="mt-1 text-sm text-gray-800 dark:text-gray-200 break-words">Antwort: {{ req.decision_comment }}</p>{% endif %}
                     </div>
                     {% if req.status == 'pending' %}
