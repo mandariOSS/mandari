@@ -28,6 +28,7 @@ from apps.common.params import uuid_param
 from .. import audit, hub_events
 from ..models import SessionAgendaItem, SessionMeeting, SessionOrganization, SessionResolutionForwarding
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import four_eyes_service, resolution_service
 from .nexturl import safe_next_url
 
@@ -108,6 +109,10 @@ class ResolutionRegisterView(SessionViewMixin, TemplateView):
 
     template_name = "session/resolutions/register.html"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/beschlussregister.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

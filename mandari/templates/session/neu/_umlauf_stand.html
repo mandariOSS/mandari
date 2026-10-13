@@ -1,0 +1,6 @@
+{% comment %}
+Stand eines Umlaufbeschlusses als Punkt mit Text im neuen Erscheinungsbild (Issue #944): im Umlauf Bernstein,
+angenommen Grün, abgelehnt und abgebrochen Rot; dahinter „Frist verstrichen“, solange der Umlauf nach seiner
+Rückmeldefrist noch offen ist. Kontext: circular.
+{% endcomment %}
+<span class="inline-flex flex-wrap items-center gap-x-3 gap-y-0.5">{% if circular.status == "adopted" %}{% include "session/neu/_status.html" with wert="approved" text=circular.get_status_display %}{% elif circular.status == "open" %}{% include "session/neu/_status.html" with wert="in_progress" text=circular.get_status_display %}{% else %}{% include "session/neu/_status.html" with wert=circular.status text=circular.get_status_display %}{% endif %}{% if circular.is_overdue %}{% include "session/neu/_status.html" with wert="ueberfaellig" text="Frist verstrichen" %}{% endif %}</span>

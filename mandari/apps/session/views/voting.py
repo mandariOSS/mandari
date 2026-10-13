@@ -35,6 +35,7 @@ from ..models import (
     SessionVote,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import attendance_service, cockpit_service, participation_service, protocol_lock, voting_service
 from ..visibility import meeting_q, paper_visible
 from .nexturl import safe_next_url
@@ -283,6 +284,10 @@ class CircularListView(SessionViewMixin, TemplateView):
     template_name = "session/voting/circular_list.html"
     permission_required = "view_meetings"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/umlaufbeschluesse.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         qs = _circulars(self).select_related("organization")
@@ -383,6 +388,10 @@ class CircularDetailView(SessionViewMixin, TemplateView):
 
     template_name = "session/voting/circular_detail.html"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/umlaufbeschluss.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def _get_circular(self):
         qs = _circulars(self).select_related("organization", "paper", "created_by__user")

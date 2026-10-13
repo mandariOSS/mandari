@@ -1,0 +1,74 @@
+{% comment %}
+Rechte Spalte der Niederschrift im neuen Rahmen (Issues #31, #221, #944): Ablauf als Angaben (erstellt, zur Prüfung
+gegeben, genehmigt mit Vertretung und Sitzung, veröffentlicht, Unterschriften), die Fassungen als PDF (interne Fassung nur
+mit dem NÖ-Recht) und das Teilnehmerverzeichnis. Eine Ebene: Abschnitte mit Überschrift, keine Kästen.
+Kontext wie ProtocolDetailView.
+{% endcomment %}
+<aside class="min-w-0 space-y-8" aria-label="Ablauf, Fassungen und Teilnehmer">
+    <c-rahmen.abschnitt titel="Ablauf" titel_id="ablauf-titel">
+        <c-ui.angaben class="mt-2" data-testid="niederschrift-ablauf">
+            <dt>Stand</dt>
+            <dd>{{ protocol.get_status_display }}</dd>
+            <dt>Erstellt von</dt>
+            <dd>{{ protocol.created_by.user.email|default:"unbekannt" }}</dd>
+            {% if protocol.review_requested_at %}
+            <dt>Zur Prüfung</dt>
+            <dd><span class="tabular-nums">{{ protocol.review_requested_at|date:"d.m.Y H:i" }}</span><br><span class="text-gray-600 dark:text-gray-400">{{ protocol.review_requested_by.user.email|default:"unbekannt" }}</span></dd>
+            {% endif %}
+            {% if protocol.approved_at %}
+            <dt>Genehmigt</dt>
+            <dd>
+                <span class="tabular-nums">{{ protocol.approved_at|date:"d.m.Y H:i" }}</span><br>
+                <span class="text-gray-600 dark:text-gray-400">{{ protocol.approved_by.user.email|default:"unbekannt" }}{% if protocol.approved_on_behalf_of %}, in Vertretung für {{ protocol.approved_on_behalf_of.user.email }}{% endif %}</span>
+                {% if protocol.approval_meeting %}<br><span class="text-gray-600 dark:text-gray-400">in: {{ protocol.approval_meeting.name }} (<span class="tabular-nums">{{ protocol.approval_meeting.start|date:"d.m.Y" }}</span>)</span>{% endif %}
+            </dd>
+            {% endif %}
+            {% if protocol.published_at %}
+            <dt>Veröffentlicht</dt>
+            <dd class="tabular-nums">{{ protocol.published_at|date:"d.m.Y H:i" }}</dd>
+            {% endif %}
+            {% if protocol.chair_name %}
+            <dt>Vorsitz</dt>
+            <dd>{{ protocol.chair_name }}</dd>
+            {% endif %}
+            {% if protocol.recorder_name %}
+            <dt>Protokollführung</dt>
+            <dd>{{ protocol.recorder_name }}</dd>
+            {% endif %}
+        </c-ui.angaben>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Fassungen" titel_id="fassungen-titel">
+        <ul class="mt-2 space-y-1.5 text-sm">
+            <li><c-ui.textlink href="{% url 'session:meeting_protocol_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="inline-flex items-center gap-2 min-h-6"><i data-lucide="file-down" class="w-4 h-4" aria-hidden="true"></i>Öffentliche Fassung (PDF)</c-ui.textlink></li>
+            {% if can_view_np %}
+            <li><c-ui.textlink href="{% url 'session:meeting_protocol_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}?fassung=intern" class="inline-flex items-center gap-2 min-h-6"><i data-lucide="file-lock" class="w-4 h-4" aria-hidden="true"></i>Interne Fassung mit NÖ-Teil (PDF)</c-ui.textlink></li>
+            {% endif %}
+        </ul>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Teilnehmerverzeichnis" titel_id="teilnehmer-titel" data-testid="teilnehmerverzeichnis">
+        {% if participants.all %}
+        {% if participants.present %}
+        <h3 class="mt-3 text-sm font-semibold text-gray-800 dark:text-gray-200">Anwesend <span class="font-normal text-gray-600 dark:text-gray-400">· {{ participants.present|length }}</span></h3>
+        <ul class="mt-1 space-y-0.5 text-sm text-gray-800 dark:text-gray-200">
+            {% for a in participants.present %}<li class="break-words">{{ a.person.display_name }} <span class="text-gray-600 dark:text-gray-400">({{ a.get_role_display }}{% if a.presence_note %}, {{ a.presence_note }}{% endif %})</span></li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% if participants.excused %}
+        <h3 class="mt-4 text-sm font-semibold text-gray-800 dark:text-gray-200">Entschuldigt <span class="font-normal text-gray-600 dark:text-gray-400">· {{ participants.excused|length }}</span></h3>
+        <ul class="mt-1 space-y-0.5 text-sm text-gray-800 dark:text-gray-200">
+            {% for a in participants.excused %}<li class="break-words">{{ a.person.display_name }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% if participants.absent %}
+        <h3 class="mt-4 text-sm font-semibold text-gray-800 dark:text-gray-200">Unentschuldigt abwesend <span class="font-normal text-gray-600 dark:text-gray-400">· {{ participants.absent|length }}</span></h3>
+        <ul class="mt-1 space-y-0.5 text-sm text-gray-800 dark:text-gray-200">
+            {% for a in participants.absent %}<li class="break-words">{{ a.person.display_name }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% else %}
+        <c-rahmen.satz>Keine Anwesenheitsliste erfasst.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+</aside>

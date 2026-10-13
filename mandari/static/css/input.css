@@ -371,6 +371,27 @@
   }
 }
 
+/* ---- Textrollen der Arbeitsflächen im neuen Rahmen (Issue #944) ---------------------------------------------------
+   Wiederkehrende Klassenketten der Vorlagen unter templates/session/neu/ an einer Stelle statt in jeder Vorlage
+   (Frontend-Ratchet): Name eines Eintrags in c-rahmen.liste und die Angaben darunter (13 px), Angaben unter dem Titel
+   im Kopfband und eine Zeile aus Feldern und Knopf, unten bündig. Größe und Abstand ergänzt die Vorlage (etwa
+   „text-sm liste-name“, „mt-0.5 liste-angaben“). Beschriftung und Hinweis von Hand gebauter Felder kommen aus den
+   Bausteinen c-form.beschriftung und c-form.hinweis. */
+@layer components {
+  .liste-name {
+    @apply font-medium text-gray-900 dark:text-white break-words;
+  }
+  .liste-angaben {
+    @apply text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words;
+  }
+  .kopf-angaben {
+    @apply flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300;
+  }
+  .feldzeile {
+    @apply flex flex-wrap items-end gap-2;
+  }
+}
+
 /* Personenmenü (templates/work/rahmen/_person.html) steht fest über der Person; bei schmaler Leiste rechts neben ihr */
 @media (min-width: 1024px) {
   [data-rahmen="neu"][data-leiste="schmal"] .person-menue {

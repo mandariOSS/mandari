@@ -1,0 +1,108 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Niederschrift einer Sitzung im neuen Rahmen (Issues #31, #318, #944). Kopfband mit der Sitzung, dem Stand als Punkt mit
+Text und dem jeweils nächsten Arbeitsschritt als einziger Hauptaktion (session/neu/_niederschrift_arbeitsschritt.html).
+Darunter die Niederschrift als ruhiges Dokument: allgemeiner Teil (nichtöffentlich nur mit dem NÖ-Recht),
+Berichtigungen (session/neu/_niederschrift_berichtigungen.html) und die Tagesordnungspunkte als Liste mit Linien
+(session/neu/_niederschrift_top.html); rechts Ablauf, Fassungen als PDF und Teilnehmerverzeichnis
+(session/neu/_niederschrift_seite.html). Ohne Niederschrift nur „Protokoll anlegen“. Rechte und Kontext wie
+ProtocolDetailView; die bisherige Seite bleibt session/protocols/detail.html.
+{% endcomment %}
+
+{% block page_title %}Niederschrift: {{ meeting.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zur Sitzung (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume>Niederschrift</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Niederschrift" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}">Sitzung</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{{ meeting.name }}, {{ meeting.organization.name }}, <span class="tabular-nums">{{ meeting.start|date:"d.m.Y" }}</span></p>
+    </c-slot>
+    {% if protocol %}
+    {% if can_edit and protocol.status == 'draft' or can_edit and protocol.status == 'review' or can_approve and protocol.status == 'approved' or can_approve and protocol.status == 'published' %}
+    <c-slot name="aktionen">
+        {% if can_edit and protocol.status == 'draft' or can_edit and protocol.status == 'review' %}
+        <c-ui.button variant="secondary" size="sm" icon="pencil" href="{% url 'session:meeting_protocol_edit' tenant_slug=tenant_slug meeting_id=meeting.id %}">Bearbeiten</c-ui.button>
+        {% endif %}
+        {% if can_edit and protocol.status == 'draft' %}
+        <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='submit' %}">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" icon="send">Zur Prüfung geben</c-ui.button>
+        </form>
+        {% endif %}
+        {% if can_approve and protocol.status == 'approved' %}
+        <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='publish' %}">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" icon="globe">Ö-Fassung veröffentlichen</c-ui.button>
+        </form>
+        {% endif %}
+        {% if can_approve and protocol.status == 'published' %}
+        <form method="post" action="{% url 'session:meeting_protocol_action' tenant_slug=tenant_slug meeting_id=meeting.id action='unpublish' %}">
+            {% csrf_token %}
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="eye-off">Veröffentlichung zurücknehmen</c-ui.button>
+        </form>
+        {% endif %}
+    </c-slot>
+    {% endif %}
+    {% include "session/neu/_niederschrift_arbeitsschritt.html" %}
+    {% else %}
+    {% if can_create %}
+    <c-slot name="aktionen">
+        <form method="post" action="{% url 'session:meeting_protocol_create' tenant_slug=tenant_slug meeting_id=meeting.id %}">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" icon="plus">Protokoll anlegen</c-ui.button>
+        </form>
+    </c-slot>
+    {% endif %}
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+{% if not protocol %}
+<c-rahmen.satz data-testid="niederschrift-leer">Für diese Sitzung existiert noch kein Protokoll.</c-rahmen.satz>
+{% else %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]">
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="Allgemeiner Teil" titel_id="allgemein-titel" data-testid="niederschrift-allgemein">
+            {% if protocol.content %}
+            <div class="mt-2 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ protocol.content }}</div>
+            {% else %}
+            <c-rahmen.satz>Der öffentliche Teil enthält noch keinen Text.</c-rahmen.satz>
+            {% endif %}
+            {% if can_view_np and content_np %}
+            <h3 class="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlicher Teil</h3>
+            <div class="mt-1 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ content_np }}</div>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        {% include "session/neu/_niederschrift_berichtigungen.html" %}
+
+        {% with a=agenda_public|length b=agenda_non_public|length %}{% with anzahl=a|add:b %}
+        <c-rahmen.abschnitt titel="Tagesordnungspunkte" titel_id="tops-titel" zusatz="{% if anzahl %}{{ anzahl }} Punkt{{ anzahl|pluralize:'e' }}{% endif %}" data-testid="niederschrift-tops">
+            {% if agenda_public or agenda_non_public %}
+            {% if agenda_public %}
+            <h3 class="mt-4 text-sm font-semibold text-gray-700 dark:text-gray-300">Öffentlicher Teil</h3>
+            <c-rahmen.liste geordnet class="mt-1">
+                {% for item in agenda_public %}{% include "session/neu/_niederschrift_top.html" %}{% endfor %}
+            </c-rahmen.liste>
+            {% endif %}
+            {% if agenda_non_public %}
+            <h3 class="mt-6 inline-flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlicher Teil</h3>
+            <c-rahmen.liste geordnet class="mt-1">
+                {% for item in agenda_non_public %}{% include "session/neu/_niederschrift_top.html" %}{% endfor %}
+            </c-rahmen.liste>
+            {% endif %}
+            {% else %}
+            <c-rahmen.satz>Keine Tagesordnungspunkte.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+        {% endwith %}{% endwith %}
+    </div>
+
+    {% include "session/neu/_niederschrift_seite.html" %}
+</div>
+{% endif %}
+{% endblock %}
