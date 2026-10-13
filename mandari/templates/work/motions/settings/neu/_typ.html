@@ -1,0 +1,22 @@
+{% comment %}
+Dokumenttyp als Zeile einer Liste mit Linien (Issue #951): Symbol in der Farbe des Typs, Name, Beschreibung, Standard,
+Inaktiv, Freigabe und Einreichbarkeit als Text, Bearbeiten und Löschen mit Rückfrage (confirmAction danger, wie
+bisher). Für die Übersicht der Dokumente und die Liste der Dokumenttypen. Kontext: type, organization.
+{% endcomment %}
+<li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-2.5">
+    <div class="min-w-[14rem] flex-1 flex items-start gap-3">
+        <i data-lucide="{{ type.icon }}" class="mt-0.5 w-4 h-4 shrink-0 text-{{ type.color }}-700 dark:text-{{ type.color }}-300" aria-hidden="true"></i>
+        <div class="min-w-0">
+            <a href="{% url 'work:document_type_edit' org_slug=organization.slug type_id=type.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4">{{ type.name }}</a>
+            {% if type.is_default or not type.is_active %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if type.is_default %} · Standard{% endif %}{% if not type.is_active %} · inaktiv{% endif %}</span>{% endif %}
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ type.description|default:"Keine Beschreibung"|truncatewords:16 }}{% if type.requires_approval %} · Freigabe erforderlich{% endif %}{% if type.is_submittable %} · einreichbar{% endif %}</p>
+        </div>
+    </div>
+    <div class="flex items-center gap-1">
+        <form method="post" action="{% url 'work:document_type_delete' org_slug=organization.slug type_id=type.id %}"
+              x-data @submit.prevent="confirmAction({title: 'Dokumenttyp löschen', message: 'Möchten Sie diesen Dokumenttyp wirklich löschen?', confirmText: 'Löschen', variant: 'danger'}).then(ok => ok && $el.submit())">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" variant="ghost" icon="trash-2" class="text-red-700 dark:text-red-400">Löschen<span class="sr-only">: {{ type.name }}</span></c-ui.button>
+        </form>
+    </div>
+</li>

@@ -1,0 +1,40 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Fraktionssitzungen im neuen Erscheinungsbild (Issue #951): Ablauf, Einladungen, Erinnerung und
+Protokollversand, öffentliche Protokolle und erster TOP in einem Formular (ohne section, wie bisher), darunter die
+Standard-Tagesordnung und die Sitzungsreihen mit je eigenen Formularen (section=…, 12 Wege). Felder, Sperren
+(publish_protocols nur mit protocols.publish), Löschdialog mit Eingabe (deleteConfirmation) und die Live-Vorschau des
+ersten TOPs (factionTitlePreview) wie bisher (work/organization/faction_settings.html mit Partials). Der Hinweis
+„API umgezogen“ entfällt: Die API steht als Unterpunkt unter „Allgemein“. Kontext: OrganizationFactionSettingsView.
+{% endcomment %}
+
+{% block page_title %}Fraktionssitzungen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Fraktionssitzungen" dicht
+    text="Wie Work Fraktionssitzungen anlegt, einlädt und protokolliert, dazu die Standard-Tagesordnung und die Sitzungsreihen.">
+    <c-slot name="aktionen"><c-ui.textlink href="{% url 'work:faction' org_slug=organization.slug %}" class="text-sm">Zu den Fraktionssitzungen</c-ui.textlink></c-slot>
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="fraktion" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="space-y-12">
+    <form method="post">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 gap-x-12 gap-y-10 xl:grid-cols-2">
+            {% include "work/organization/neu/_fraktion_ablauf.html" %}
+            {% include "work/organization/neu/_fraktion_erster_top.html" %}
+        </div>
+        <div class="mt-8">
+            <c-ui.button type="submit" size="sm" icon="save">Einstellungen speichern</c-ui.button>
+        </div>
+    </form>
+
+    <div class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-2">
+        {% include "work/organization/neu/_fraktion_tagesordnung.html" %}
+        {% include "work/organization/neu/_fraktion_reihen.html" %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,11 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Knopf im Aussehen von c-ui.textlink (Issue #951): für zweite Wege, die etwas tun statt zu einer Seite zu führen
+(aufklappen, Vorschau aktualisieren, kopieren, ein kleines Formular absenden). 14 px in der Kennfarbe, unterstrichen erst
+beim Zeigen; ``gefahr`` färbt ihn rot (Token erneuern), ``type="submit"`` sendet das umgebende Formular ab.
+  <c-ui.textknopf @click="open = !open" ::aria-expanded="open.toString()">Berechtigungen anzeigen</c-ui.textknopf>
+  <c-ui.textknopf type="submit" gefahr>API-Token erneuern</c-ui.textknopf>
+Weitere Attribute (Alpine, aria-*, data-*) werden durchgereicht.
+{% endcomment %}
+<c-vars type="button" gefahr="" class="" />
+<button type="{{ type }}" class="text-sm font-medium {% if gefahr %}text-red-700 dark:text-red-400{% else %}text-primary-700 dark:text-primary-300{% endif %} hover:underline underline-offset-4 {{ class }}" {{ attrs }}>{{ slot }}</button>

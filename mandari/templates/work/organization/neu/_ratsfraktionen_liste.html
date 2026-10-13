@@ -1,0 +1,79 @@
+{% comment %}
+Ratsfraktionen: Liste mit Hinzufügen und Bearbeiten je Fraktion (Issue #951), Alpine partyManager (showAdd, editing).
+Kennfarbe als Punkt (SVG) statt Inline-Stil, Koalition und Inaktiv als Text statt Pillen. Kontext: parties.
+{% endcomment %}
+<div x-data="partyManager" class="min-w-0">
+    <c-rahmen.abschnitt titel="Ratsfraktionen" titel_id="fraktionen-titel" zusatz="{{ parties|length }}">
+        <c-slot name="link">
+            <c-ui.textknopf @click="showAdd = !showAdd" ::aria-expanded="showAdd.toString()" aria-expanded="false">Fraktion hinzufügen</c-ui.textknopf>
+        </c-slot>
+
+        <template x-if="showAdd">
+            <form method="post" action="" class="mt-3 pb-4 border-b border-gray-200 dark:border-gray-800 space-y-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="add_party">
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <c-form.field name="name" id="fraktion-neu-name" label="Name" placeholder="Name der Fraktion" dicht required />
+                    <c-form.field name="short_name" id="fraktion-neu-kurz" label="Kurzname" placeholder="Kürzel" maxlength="20" dicht required />
+                    <c-form.field name="email" id="fraktion-neu-email" type="email" label="E-Mail" placeholder="fraktion@example.de" dicht />
+                    <div class="flex items-end gap-6">
+                        {% include "work/organization/neu/_farbe.html" with id="fraktion-neu-farbe" farbe="#6b7280" %}
+                        <c-form.checkbox name="is_coalition_member" id="fraktion-neu-koalition" label="Koalition" dicht class="pb-2" />
+                    </div>
+                </div>
+                <div class="flex items-center gap-4">
+                    <c-ui.button type="submit" size="sm">Hinzufügen</c-ui.button>
+                    <button type="button" @click="showAdd = false" class="text-sm font-medium text-gray-700 dark:text-gray-300 hover:underline underline-offset-4">Abbrechen</button>
+                </div>
+            </form>
+        </template>
+
+        {% if parties %}
+        <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm" data-testid="ratsfraktionen-liste">
+            {% for party in parties %}
+            <li class="py-2">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1" x-show="editing !== '{{ party.id }}'">
+                    {% include "work/organization/neu/_farbpunkt.html" with farbe=party.color %}
+                    <span class="font-medium {% if party.is_active %}text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400{% endif %}">{{ party.name }}</span>
+                    <span class="text-gray-600 dark:text-gray-400">{{ party.short_name }}{% if party.is_coalition_member %} · Koalition{% endif %}{% if not party.is_active %} · inaktiv{% endif %}</span>
+                    {% if party.email %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-all">{{ party.email }}</span>{% endif %}
+                    <c-ui.textknopf @click="editing = '{{ party.id }}'" class="ml-auto">Bearbeiten<span class="sr-only">: {{ party.name }}</span></c-ui.textknopf>
+                </div>
+
+                <div x-show="editing === '{{ party.id }}'" x-cloak>
+                    <form method="post" action="" class="space-y-3">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="update_party">
+                        <input type="hidden" name="party_id" value="{{ party.id }}">
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <c-form.field name="name" id="fraktion-{{ party.id }}-name" label="Name" value="{{ party.name }}" dicht required />
+                            <c-form.field name="short_name" id="fraktion-{{ party.id }}-kurz" label="Kurzname" value="{{ party.short_name }}" maxlength="20" dicht required />
+                            <c-form.field name="email" id="fraktion-{{ party.id }}-email" type="email" label="E-Mail" value="{{ party.email }}" dicht />
+                            {% with pid=party.id|stringformat:"s" %}{% include "work/organization/neu/_farbe.html" with id="fraktion-"|add:pid|add:"-farbe" farbe=party.color %}{% endwith %}
+                            <c-form.field name="contact_name" id="fraktion-{{ party.id }}-kontakt" label="Ansprechperson" value="{{ party.contact_name }}" dicht />
+                            <c-form.field name="contact_phone" id="fraktion-{{ party.id }}-telefon" label="Telefon" value="{{ party.contact_phone }}" dicht />
+                            <c-form.checkbox name="is_coalition_member" id="fraktion-{{ party.id }}-koalition" :checked="party.is_coalition_member" label="Koalitionspartner" dicht />
+                            <c-form.checkbox name="is_active" id="fraktion-{{ party.id }}-aktiv" :checked="party.is_active" label="Aktiv" dicht />
+                        </div>
+                        <div class="flex flex-wrap items-center gap-4">
+                            <c-ui.button type="submit" size="sm">Speichern</c-ui.button>
+                            <button type="button" @click="editing = null" class="text-sm font-medium text-gray-700 dark:text-gray-300 hover:underline underline-offset-4">Abbrechen</button>
+                            <button type="button"
+                                    @click="confirmAction({ title: 'Fraktion löschen?', message: 'Fraktion \'{{ party.name|escapejs }}\' wirklich löschen?', confirmText: 'Löschen', variant: 'danger' }).then(ok => { if (ok) $refs.deleteForm{{ forloop.counter }}.submit() })"
+                                    class="ml-auto text-sm font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Löschen</button>
+                        </div>
+                    </form>
+                    <form method="post" action="" x-ref="deleteForm{{ forloop.counter }}" class="hidden">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="delete_party">
+                        <input type="hidden" name="party_id" value="{{ party.id }}">
+                    </form>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <c-rahmen.satz>Noch keine Fraktionen. Mit „Fraktion hinzufügen“ legen Sie die erste an.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+</div>

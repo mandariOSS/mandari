@@ -1,0 +1,8 @@
+{% comment %}
+Kennfarbe einer Ratsfraktion (Issue #951): natives Farbfeld mit Beschriftung, Feldname ``color`` wie bisher.
+  {% include "work/organization/neu/_farbe.html" with id="fraktion-neu-farbe" farbe="#6b7280" %}
+{% endcomment %}
+<div>
+    <c-form.beschriftung feld="{{ id }}">Farbe</c-form.beschriftung>
+    <input type="color" id="{{ id }}" name="color" value="{{ farbe }}" class="h-9 w-12 p-0.5 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell cursor-pointer">
+</div>

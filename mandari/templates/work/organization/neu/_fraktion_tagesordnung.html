@@ -1,0 +1,67 @@
+{% comment %}
+Fraktionssitzungen: Standard-Tagesordnung jeder neuen Sitzung (Issue #872), eigene Formulare je Aktion wie bisher
+(partials/_faction_standard_agenda.html): move_standard_item (direction up/down), delete_standard_item,
+add_standard_item (nicht-öffentlich nur für Vereidigte), add_standard_suggestion. Kontext: faction_settings,
+standard_agenda_approval_title, standard_agenda_rows, standard_agenda_empty, standard_agenda_locked,
+standard_agenda_may_internal, standard_agenda_suggestion.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Standard-Tagesordnung" titel_id="standard-titel" class="min-w-0">
+    <c-rahmen.satz eng>Diese Punkte erhält jede neu angelegte Fraktionssitzung, auch aus Sitzungsreihen. Bereits angelegte Sitzungen, auch vorausgeplante Termine einer Sitzungsreihe, bleiben unverändert; dort ergänzen Sie Punkte in der Sitzung selbst.</c-rahmen.satz>
+    {% if faction_settings.auto_create_approval_item or standard_agenda_rows or standard_agenda_locked %}
+    <ol class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm">
+        {% if faction_settings.auto_create_approval_item %}
+        <li class="flex items-center gap-3 py-2">
+            <span class="w-12 shrink-0 whitespace-nowrap tabular-nums text-gray-600 dark:text-gray-400">1</span>
+            <span class="flex-1 min-w-0 text-gray-900 dark:text-white">{{ standard_agenda_approval_title }}</span>
+            <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">automatisch</span>
+        </li>
+        {% endif %}
+        {% for number, item in standard_agenda_rows %}
+        <li class="flex items-center gap-3 py-1">
+            <span class="w-12 shrink-0 whitespace-nowrap tabular-nums text-gray-600 dark:text-gray-400">{{ number }}</span>
+            <span class="flex-1 min-w-0 text-gray-900 dark:text-white break-words">{{ item.title }}</span>
+            <form method="post" class="flex items-center">
+                {% csrf_token %}
+                <input type="hidden" name="section" value="move_standard_item">
+                <input type="hidden" name="item_id" value="{{ item.id }}">
+                <c-ui.button type="submit" size="sm" variant="ghost" icon="chevron-up" name="direction" value="up" aria-label="„{{ item.title }}“ nach oben" class="!px-2"></c-ui.button>
+                <c-ui.button type="submit" size="sm" variant="ghost" icon="chevron-down" name="direction" value="down" aria-label="„{{ item.title }}“ nach unten" class="!px-2"></c-ui.button>
+            </form>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="section" value="delete_standard_item">
+                <input type="hidden" name="item_id" value="{{ item.id }}">
+                <c-ui.button type="submit" size="sm" variant="ghost" icon="trash-2" aria-label="„{{ item.title }}“ entfernen" class="!px-2"></c-ui.button>
+            </form>
+        </li>
+        {% endfor %}
+        {% if standard_agenda_locked %}
+        <li class="py-2 text-gray-600 dark:text-gray-400">und {{ standard_agenda_locked }} nicht-öffentliche{{ standard_agenda_locked|pluralize:"r Punkt, Punkte" }}, nur für Vereidigte sichtbar</li>
+        {% endif %}
+    </ol>
+    {% else %}
+    <c-rahmen.satz>Noch keine Standardpunkte.</c-rahmen.satz>
+    {% endif %}
+
+    <form method="post" class="mt-4 flex flex-wrap items-end gap-3">
+        {% csrf_token %}
+        <input type="hidden" name="section" value="add_standard_item">
+        <c-form.field name="title" id="standard-agenda-title" label="Neuer Standardpunkt" placeholder="z. B. Termine" maxlength="500" dicht required class="flex-1 min-w-[14rem]" />
+        {% if standard_agenda_may_internal %}
+        <c-form.select name="visibility" id="standard-agenda-visibility" label="Teil" dicht class="w-44">
+            <option value="public">Öffentlich</option>
+            <option value="internal">Nicht-öffentlich</option>
+        </c-form.select>
+        {% endif %}
+        <c-ui.button type="submit" size="sm" variant="secondary" icon="plus">Hinzufügen</c-ui.button>
+    </form>
+
+    {% if standard_agenda_empty %}
+    <form method="post" class="mt-3">
+        {% csrf_token %}
+        <input type="hidden" name="section" value="add_standard_suggestion">
+        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Übliche Grundstruktur: {{ standard_agenda_suggestion|join:", " }}.</p>
+        <c-ui.button type="submit" size="sm" variant="secondary" class="mt-2">Grundstruktur übernehmen</c-ui.button>
+    </form>
+    {% endif %}
+</c-rahmen.abschnitt>

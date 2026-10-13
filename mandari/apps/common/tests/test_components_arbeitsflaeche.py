@@ -252,3 +252,33 @@ def test_hinweis_unter_einem_feld() -> None:
     assert _klasse(eingerueckt) == "ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-all"
     assert 'x-show="offen"' in eingerueckt
     assert _klasse(_tag(render("<c-form.hinweis neben>Satz</c-form.hinweis>"), "p")).startswith("text-[0.8125rem]")
+
+
+def test_textknopf_sieht_aus_wie_ein_textlink() -> None:
+    """c-ui.textknopf: Knopf (Standard type=button) in der Kennfarbe, rot mit ``gefahr``, Alpine-Attribute am Knopf."""
+    tag = _tag(
+        render('<c-ui.textknopf @click="offen = !offen" ::aria-expanded="offen.toString()">Mehr</c-ui.textknopf>'),
+        "button",
+    )
+    assert 'type="button"' in tag
+    assert (
+        _klasse(tag) == "text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"
+    )
+    assert '@click="offen = !offen"' in tag
+    assert ':aria-expanded="offen.toString()"' in tag
+    rot = _tag(render('<c-ui.textknopf type="submit" gefahr>Erneuern</c-ui.textknopf>'), "button")
+    assert 'type="submit"' in rot
+    assert "text-red-700" in _klasse(rot)
+
+
+def test_beschriftung_eines_felds() -> None:
+    """c-form.beschriftung: Label in den Maßen von c-form.field dicht, Stern bei ``pflicht``, als p oder legend ohne for."""
+    html = render('<c-form.beschriftung feld="slug" pflicht>Kurzname</c-form.beschriftung>')
+    tag = _tag(html, "label")
+    assert 'for="slug"' in tag
+    assert _klasse(tag) == "block mb-1 text-sm font-medium text-gray-800 dark:text-gray-200"
+    assert '<span class="text-red-500" aria-hidden="true">*</span></label>' in html
+    assert _klasse(_tag(render('<c-form.beschriftung als="legend">Art</c-form.beschriftung>'), "legend")) == (
+        "text-sm font-medium text-gray-800 dark:text-gray-200"
+    )
+    assert "<label" not in render('<c-form.beschriftung als="p">Vorschau</c-form.beschriftung>')

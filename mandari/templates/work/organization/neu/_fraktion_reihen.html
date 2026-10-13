@@ -1,0 +1,37 @@
+{% comment %}
+Fraktionssitzungen: Sitzungsreihen mit Automatik, Ausnahmen und RIS-Ausfallregeln (Issues #61, #871, #897), eigene
+Formulare je Aktion wie bisher (partials/_faction_schedules.html): toggle_schedule, update_schedule_automation,
+add_exception, delete_exception, add_rule, delete_rule, add_schedule; Löschen über den bisherigen Dialog
+(partials/_faction_schedule_delete.html) nur mit faction.delete. Jede Reihe ist ein Abschnitt mit Linien statt Karte.
+Kontext: schedules, schedule_horizon_days, ris_organizations, recurrence_choices, weekday_choices, can_delete_schedules.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Sitzungsreihen" titel_id="reihen-titel" class="min-w-0">
+    <c-rahmen.satz eng>Aktive Reihen erzeugen Termine rollierend {{ schedule_horizon_days|default:"90" }} Tage im Voraus. Ausfallregeln streichen Termine ersatzlos, sie bleiben als „Entfällt“ sichtbar. Gelöschte Termine legt die Reihe nicht neu an.</c-rahmen.satz>
+    {% for schedule in schedules %}
+    {% include "work/organization/neu/_fraktion_reihe.html" %}
+    {% empty %}
+    <c-rahmen.satz>Noch keine Sitzungsreihe angelegt.</c-rahmen.satz>
+    {% endfor %}
+
+    <form method="post" class="mt-6 pt-4 border-t border-gray-200 dark:border-gray-800">
+        {% csrf_token %}
+        <input type="hidden" name="section" value="add_schedule">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Neue Sitzungsreihe</h3>
+        <div class="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <c-form.field name="name" id="reihe-neu-name" label="Name" placeholder="z. B. Wöchentliche Fraktionssitzung" dicht required class="sm:col-span-2 lg:col-span-3" />
+            <c-form.select name="recurrence" id="reihe-neu-wiederholung" label="Wiederholung" dicht>
+                {% for value, label in recurrence_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="weekday" id="reihe-neu-wochentag" label="Wochentag" dicht>
+                {% for value, label in weekday_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.field name="time" id="reihe-neu-uhrzeit" type="time" label="Uhrzeit" value="18:00" dicht required />
+            {% include "work/organization/neu/_zahl.html" with name="duration_minutes" id="reihe-neu-dauer" label="Dauer (Minuten)" value=120 min=15 step=15 %}
+            <c-form.field name="default_location" id="reihe-neu-ort" label="Ort (optional)" placeholder="z. B. Fraktionsbüro" dicht class="sm:col-span-2" />
+        </div>
+        <div class="mt-4">
+            {% include "work/organization/neu/_fraktion_automatik.html" with schedule=None %}
+        </div>
+        <c-ui.button type="submit" size="sm" variant="secondary" icon="calendar-plus" class="mt-4">Sitzungsreihe anlegen</c-ui.button>
+    </form>
+</c-rahmen.abschnitt>
