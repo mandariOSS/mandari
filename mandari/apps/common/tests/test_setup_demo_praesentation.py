@@ -242,7 +242,7 @@ class TestDrehbuchDaten:
         assert kommend.meeting_state == "invitation_sent" and kommend.invitation_sent_at is not None
         assert kommend.invitation_sent_at.date() <= kommend.invitation_deadline
         tops = {t.name: t for t in kommend.agenda_items.all()}
-        assert [tops[n].number for n in ("Eröffnung", drehbuch.TOP_JUGENDZENTRUM, drehbuch.TOP_SPIELPLATZ)] == [
+        assert [tops[n].number for n in ("Eröffnung", drehbuch.TOP_JUGENDZENTRUM, drehbuch.TOP_SPORTHALLE)] == [
             "1",
             "2",
             "3",
