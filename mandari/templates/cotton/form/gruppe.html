@@ -1,9 +1,0 @@
-{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
-{% comment %}
-Gruppe zusammengehöriger Felder mit Legende (fieldset) für Arbeitsflächen (Issue #951): ohne Rahmen, die Legende wie die
-Beschriftung eines Felds mit ``dicht`` (14 px, halbfett). Weitere Attribute (class, x-data, x-show, data-testid) gehen
-an das fieldset.
-  <c-form.gruppe legende="Sichtbarkeit" x-data="{ sichtbarkeit: 'private' }"><div class="mt-2 space-y-2">…</div></c-form.gruppe>
-{% endcomment %}
-<c-vars legende="" />
-<fieldset {{ attrs }}><legend class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ legende }}</legend>{{ slot }}</fieldset>

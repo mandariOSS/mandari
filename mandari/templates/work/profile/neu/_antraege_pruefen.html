@@ -14,7 +14,7 @@ Kontext: pending_requests.
                     {% csrf_token %}
                     <input type="hidden" name="action" value="approve_request">
                     <input type="hidden" name="request_id" value="{{ req.id }}">
-                    <c-ui.button type="submit" size="sm" icon="check">Genehmigen</c-ui.button>
+                    <c-ui.button type="submit" variant="secondary" size="sm" icon="check">Genehmigen</c-ui.button>
                 </form>
                 <c-ui.button variant="ghost" size="sm" class="text-red-700 dark:text-red-400" @click="showReject = !showReject" ::aria-expanded="showReject.toString()">Ablehnen …</c-ui.button>
             </div>

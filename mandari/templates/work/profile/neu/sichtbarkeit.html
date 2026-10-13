@@ -37,13 +37,14 @@ Seite bleibt work/profile/visibility.html.
     </c-rahmen.abschnitt>
 
     <c-rahmen.abschnitt titel="Kontakt" titel_id="sichtbarkeit-kontakt">
-        <c-form.gruppe legende="Bevorzugter Kontaktweg" class="mt-3">
+        <fieldset class="mt-3">
+            <c-form.beschriftung als="legend">Bevorzugter Kontaktweg</c-form.beschriftung>
             <div class="mt-2 flex flex-wrap gap-x-6 gap-y-2">
                 <c-form.radio name="preferred_contact" value="email" id="sichtbarkeit-kontakt-email" checked="{% if preferred_contact == 'email' %}1{% endif %}">E-Mail</c-form.radio>
                 <c-form.radio name="preferred_contact" value="phone" id="sichtbarkeit-kontakt-telefon" checked="{% if preferred_contact == 'phone' %}1{% endif %}">Telefon</c-form.radio>
                 <c-form.radio name="preferred_contact" value="signal" id="sichtbarkeit-kontakt-signal" checked="{% if preferred_contact == 'signal' %}1{% endif %}">Signal</c-form.radio>
             </div>
-        </c-form.gruppe>
+        </fieldset>
         <c-form.field name="contact_signal" id="sichtbarkeit-signal" label="Signal-Benutzername" value="{{ contact_signal }}" maxlength="100"
                       placeholder="z. B. @benutzername.01" class="mt-4 max-w-sm" dicht help="Optional. Erscheint nur, wenn Signal der bevorzugte Kontaktweg ist." />
     </c-rahmen.abschnitt>

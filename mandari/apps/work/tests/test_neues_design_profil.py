@@ -2,7 +2,7 @@
 """
 Mein Profil im neuen Erscheinungsbild (Issue #951, Teilpaket 4): neun Seiten unter sechs Reitern.
 
-Reiter: Profil (mit Sichtbarkeit und Kontakt) · Gremien · Benachrichtigungen und Abwesenheit · Sicherheit · Anträge ·
+Reiter: Profil (mit Sichtbarkeit und Kontakt) · Gremien · Benachrichtigungen (mit Abwesenheit) · Sicherheit · Anträge ·
 Daten und Aktivität. Alle Adressen bleiben; die zweite Seite eines Reiters erreicht man über die Textlinks unter den
 Reitern. Geprüft werden Gleichstand je Seite (apps.work.tests.gleichstand), die Erreichbarkeit aller neun Seiten, Schalter
 und Rückweg, Rechte (auch Gäste, die Profil und Sicherheit sehen dürfen) und die Bausteine.

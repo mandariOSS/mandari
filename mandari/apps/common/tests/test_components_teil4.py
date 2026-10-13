@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Bausteine aus Teilpaket 4 von Issue #951: c-form.suche, c-form.radio, c-form.gruppe und c-rahmen.liste (neu),
-``dicht``/``id`` an c-form.password. Zweite Wege, die etwas tun statt zu einer Seite zu führen, sind c-ui.text-button
-mit ``dicht``. Ohne die neuen Angaben bleiben Passwortfeld und Textlink Zeichen für Zeichen wie bisher (Anmeldung,
-Registrierung, alle Textlinks).
+Bausteine aus Teilpaket 4 von Issue #951: c-form.suche, c-form.radio und c-rahmen.liste (neu), ``dicht``/``id`` an
+c-form.password. Zweite Wege, die etwas tun statt zu einer Seite zu führen, sind c-ui.text-button mit ``dicht``; Gruppen
+von Feldern sind ein fieldset mit c-form.beschriftung als="legend" (beides gemeinsam mit den anderen Spuren). Ohne die
+neuen Angaben bleiben Passwortfeld und Textlink Zeichen für Zeichen wie bisher (Anmeldung, Registrierung, alle
+Textlinks).
 """
 
 from __future__ import annotations
@@ -90,10 +91,12 @@ def test_radio_mit_hinweis_und_modell() -> None:
     assert "E-Mail</span></span>" in ohne
 
 
-def test_gruppe() -> None:
-    gruppe = render('<c-form.gruppe legende="Tags" class="mt-3" x-show="offen"><p>Inhalt</p></c-form.gruppe>')
-    assert gruppe.strip().startswith('<fieldset class="mt-3" x-show="offen"><legend')
-    assert ">Tags</legend><p>Inhalt</p></fieldset>" in gruppe
+def test_legende_einer_gruppe() -> None:
+    legende = " ".join(
+        render('<fieldset><c-form.beschriftung als="legend">Tags</c-form.beschriftung></fieldset>').split()
+    )
+    assert legende.startswith("<fieldset> <legend") and ">Tags</legend> </fieldset>" in legende
+    assert {"text-sm", "font-medium"} <= set(_klasse(legende, "legend").split())
 
 
 def test_liste() -> None:
