@@ -27,7 +27,6 @@ from .. import freigaben, references, vorschlaege
 from ..forms import (
     AIAssistantForm,
     MotionCommentForm,
-    MotionShareForm,
 )
 from ..import_service import import_ocr_max_pages, motion_import_service
 from ..models import (
@@ -42,56 +41,6 @@ from ..models import (
 )
 from ..services import MotionAIService
 from ._helpers import _broadcast_doc_reload, _get_org_folder_or_404, _share_download_response
-
-
-class MotionShareView(WorkViewMixin, TemplateView):
-    """Share settings for a motion (legacy - redirects to editor)."""
-
-    template_name = "work/motions/share.html"
-    permission_required = "motions.share"
-
-    def get(self, request, *args, **kwargs):
-        # Redirect to editor page - sharing is now a modal in the editor
-        return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=kwargs.get("motion_id"))
-
-    def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
-
-        # Per-Objekt-Recht: einheitliche Freigaberegel (Motion.can_share)
-        if not motion.can_share(self.membership):
-            messages.error(request, "Keine Berechtigung für dieses Dokument.")
-            return redirect("work:documents", org_slug=self.organization.slug)
-
-        form = MotionShareForm(request.POST)
-        if form.is_valid():
-            share = form.save(commit=False)
-            share.motion = motion
-            share.created_by = request.user
-
-            # Handle user sharing by email
-            if share.scope == "user":
-                from apps.accounts.models import User
-                from apps.tenants.models import Membership
-
-                email = (form.cleaned_data.get("email") or "").strip().lower()
-                user = User.objects.filter(email=email).first()
-                target = (
-                    Membership.objects.filter(user=user, organization=self.organization, is_active=True).first()
-                    if user is not None
-                    else None
-                )
-                if target is None:
-                    messages.error(request, f"'{email}' ist kein Mitglied bzw. Gast dieser Organisation.")
-                    return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
-                share.user = user
-                # Gäste erhalten nie Verwaltungsrechte
-                if share.level == "admin" and target.is_guest:
-                    share.level = "edit"
-
-            share.save()
-            messages.success(request, "Freigabe erstellt.")
-
-        return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
 
 class MotionAIAssistantView(WorkViewMixin, View):

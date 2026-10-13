@@ -27,7 +27,6 @@ from .actions import (
     MotionShareDownloadView,
     MotionShareRemoveView,
     MotionShareUpdateView,
-    MotionShareView,
     MotionStatusView,
 )
 from .attachments import (
@@ -141,7 +140,6 @@ __all__ = [
     "MotionShareDownloadView",
     "MotionShareRemoveView",
     "MotionShareUpdateView",
-    "MotionShareView",
     "MotionStatusView",
     "MotionTemplateCreateView",
     "MotionTemplateDeleteView",
