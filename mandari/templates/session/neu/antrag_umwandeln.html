@@ -34,7 +34,7 @@ session/applications/convert.html (bleibt die bisherige Seite); Kontext wie Appl
                 {% for org in organizations %}<option value="{{ org.id }}" {% if application.target_organization and application.target_organization.id == org.id %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
             </c-form.select>
             <p class="text-sm text-gray-600 dark:text-gray-400" data-testid="uebernommen">
-                {% if application.justification or application.resolution_proposal %}Die Vorlage übernimmt {% if application.justification %}die Begründung als Sachverhalt{% if application.resolution_proposal %} und {% endif %}{% endif %}{% if application.resolution_proposal %}den Beschlussvorschlag{% endif %}. {% endif %}Sie trägt das Datum von heute und wird als öffentlich markiert.
+                {% if application.justification or application.resolution_proposal %}Die Vorlage übernimmt {% if application.justification %}die Begründung als Sachverhalt{% if application.resolution_proposal %} und {% endif %}{% endif %}{% if application.resolution_proposal %}den Beschlussvorschlag{% endif %}. {% endif %}Sie trägt das Datum von heute und wird als öffentlich markiert. Die Antragsfassung (PDF) wird mit der Freigabe der Vorlage veröffentlicht, weitere Anhänge bleiben nichtöffentlich.
             </p>
             <div class="flex flex-wrap items-center gap-4">
                 <c-ui.button type="submit" size="sm" icon="file-output">In Vorlage umwandeln</c-ui.button>

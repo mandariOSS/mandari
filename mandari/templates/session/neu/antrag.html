@@ -62,7 +62,7 @@ bleibt session/applications/detail.html.
 
         {% if application_files %}
         <c-rahmen.abschnitt titel="Anhänge" titel_id="anhaenge-titel" zusatz="{{ application_files|length }}">
-            <c-rahmen.satz eng>Aus mandari Work übermittelt, nichtöffentlich.</c-rahmen.satz>
+            <c-rahmen.satz eng>Aus mandari Work übermittelt. Anhänge bleiben nichtöffentlich, die Antragsfassung (PDF) wird mit der Vorlage öffentlich.</c-rahmen.satz>
             <c-rahmen.liste class="mt-2">
                 {% for file in application_files %}
                 <li class="flex items-baseline justify-between gap-4 py-2 text-sm">

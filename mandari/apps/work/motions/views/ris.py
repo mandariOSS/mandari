@@ -181,7 +181,8 @@ class MotionSubmitToAdministrationView(NeueVorlageMixin, WorkViewMixin, Template
             except ris_submission.SubmissionError as exc:
                 errors.append(str(exc))
             else:
-                anhaenge = application.files.count()
+                # Die automatisch erzeugte Antragsfassung (PDF) zählt nicht als Anhang
+                anhaenge = application.files.exclude(is_application_pdf=True).count()
                 hinweis = (
                     f" Mit {anhaenge} Anhang." if anhaenge == 1 else (f" Mit {anhaenge} Anhängen." if anhaenge else "")
                 )

@@ -7,6 +7,7 @@ enabling political organizations to submit applications (Anträge) directly.
 """
 
 import logging
+import re
 from pathlib import PurePosixPath
 from typing import Any
 from uuid import UUID
@@ -17,6 +18,7 @@ from django.utils import timezone
 
 from apps.session.models import (
     SessionApplication,
+    SessionFile,
     SessionOrganization,
     SessionPaper,
     SessionTenant,
@@ -149,9 +151,95 @@ def convert_to_paper(
         application.status = "converted"
         application.save(update_fields=["status", "updated_at"])
         # Anhänge des Antrags hängen jetzt auch an der Vorlage – nichtöffentlich, bis die
-        # Verwaltung sie freigibt (#584)
-        application.files.filter(paper__isnull=True).update(paper=paper, is_public=False)
+        # Verwaltung sie freigibt (#584). Die automatisch erzeugte Antragsfassung ist der Antrag selbst und
+        # wird mit der Vorlage öffentlich; im Bürgerportal erscheint sie erst mit deren Freigabe.
+        files = application.files.filter(paper__isnull=True)
+        files.filter(is_application_pdf=True).update(paper=paper, is_public=True)
+        files.exclude(is_application_pdf=True).update(paper=paper, is_public=False)
     return paper, True
+
+
+# =============================================================================
+# Antragsfassung als PDF (Teil von #584)
+# =============================================================================
+
+
+def application_pdf_name(application: SessionApplication) -> str:
+    """Dateiname der Antragsfassung, z. B. „Antrag A-2026-0003.pdf“ (ohne Schrägstriche)."""
+    reference = re.sub(r"[\\/]+", "-", (application.reference or "").strip()).strip("-")
+    return f"Antrag {reference}.pdf" if reference else "Antrag.pdf"
+
+
+def _application_pdf_text(application: SessionApplication) -> str:
+    """Suchtext der Antragsfassung – derselbe Inhalt wie im PDF, ohne Umweg über die Texterkennung."""
+    parts = [
+        f"{application.get_application_type_display()}: {application.title}",
+        application.reference,
+        application.resolution_proposal,
+        application.justification,
+        application.financial_impact,
+        application.urgency_reason if application.is_urgent else "",
+        application.co_signers,
+    ]
+    return "\n\n".join(part.strip() for part in parts if part and part.strip())
+
+
+def build_application_pdf(application: SessionApplication) -> bytes:
+    """
+    Antragsfassung als schlichtes A4-PDF: genau die eingereichten Angaben (Teil von #584).
+
+    Die Texte sind Klartext aus dem Einreichungsformular und werden im Template escaped – es wird kein HTML
+    übernommen. Keine E-Mail-Adresse und keine Telefonnummer: Die Datei wird mit der Vorlage öffentlich.
+    """
+    from django.template.loader import render_to_string
+
+    from apps.common.pdf import html_to_pdf
+
+    organization = application.submitting_organization
+    # Ohne hinterlegten Namen steht beim Einreichen die E-Mail-Adresse im Namensfeld – die bleibt draußen
+    submitter = (application.submitter_name or "").strip()
+    if "@" in submitter:
+        submitter = ""
+    context = {
+        "tenant": application.tenant,
+        "application": application,
+        "organization_name": organization.name if organization is not None else "",
+        "submitter": submitter,
+        "generated_at": timezone.localtime(),
+    }
+    return html_to_pdf(render_to_string("session/pdf/application.html", context))
+
+
+def attach_application_pdf(application: SessionApplication) -> SessionFile:
+    """
+    Antragsfassung erzeugen und als Anlage an den eingegangenen Antrag hängen (nichtöffentlich wie jeder Anhang,
+    bis die Umwandlung in eine Vorlage sie öffentlich macht).
+
+    Kein Virenscan: Das PDF entsteht auf dem Server aus escaptem Klartext, es enthält keine hochgeladenen Inhalte.
+    Ein eingerichteter, aber gerade nicht erreichbarer Scanner würde sonst die eigene Antragsfassung verwerfen.
+
+    Raises:
+        Exception: Erzeugung oder Ablage gescheitert – der Aufrufer entscheidet, ob ohne PDF eingereicht wird.
+    """
+    from django.core.files.base import ContentFile
+
+    from . import file_version_service
+
+    data = build_application_pdf(application)
+    if not data.startswith(b"%PDF"):
+        raise ValueError("Antragsfassung: Ergebnis ist kein PDF")
+    name = application_pdf_name(application)
+    session_file = SessionFile(
+        tenant=application.tenant,
+        application=application,
+        name=name,
+        mime_type="application/pdf",
+        is_public=False,
+        is_application_pdf=True,
+        text_content=_application_pdf_text(application),
+    )
+    file_version_service.attach_upload(session_file, ContentFile(data, name=name), user=None)
+    return session_file
 
 
 def attachment_accepted(name: str, size: int) -> str | None:
