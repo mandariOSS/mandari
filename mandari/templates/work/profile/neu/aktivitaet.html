@@ -28,9 +28,9 @@ Linien ohne farbige Symbolkreise. Kontext: ProfileActivityView; die bisherige Se
             </c-ui.angaben>
         </c-rahmen.abschnitt>
 
-        <c-rahmen.abschnitt titel="Sitzungsteilnahme" titel_id="aktivitaet-sitzungen">
+        <c-rahmen.abschnitt titel="Sitzungsteilnahme" titel_id="aktivitaet-sitzungen" class="text-gray-800 dark:text-gray-200">
             {% if meetings_total > 0 %}
-            <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">Von {{ meetings_total }} abgeschlossenen Fraktionssitzung{{ meetings_total|pluralize:"en" }}: {{ meetings_present }} anwesend, {{ meetings_excused }} entschuldigt, {{ meetings_absent }} abwesend.</p>
+            <p class="mt-3 text-sm">Von {{ meetings_total }} abgeschlossenen Fraktionssitzung{{ meetings_total|pluralize:"en" }}: {{ meetings_present }} anwesend, {{ meetings_excused }} entschuldigt, {{ meetings_absent }} abwesend.</p>
             {% else %}
             <c-rahmen.satz>Noch keine Sitzungsdaten.</c-rahmen.satz>
             {% endif %}

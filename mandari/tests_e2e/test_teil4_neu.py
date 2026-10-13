@@ -174,6 +174,9 @@ def test_profil_reiter_und_sicherheit(
     page.keyboard.press("Escape")
     expect(dialog).to_be_hidden()
     assert not axe().failing, axe().describe()
+    _oeffnen(page, f"{basis}/profile/notifications/")
+    expect(page.get_by_role("checkbox", name="per E-Mail").first).to_be_visible()
+    assert not axe().failing, axe().describe()
     page.set_viewport_size({"width": 390, "height": 844})
     for pfad in ("profile/", "profile/notifications/", "profile/security/", "profile/requests/", "profile/data/"):
         _oeffnen(page, f"{basis}/{pfad}")
