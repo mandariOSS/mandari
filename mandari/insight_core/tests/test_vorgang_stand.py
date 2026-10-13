@@ -338,7 +338,7 @@ class TestKomponenten:
         datei = self._datei()
         html = render('<ul><c-insight.document-row :file="datei" meta="Rat" /></ul>', datei=datei)
         assert html.index(">Ansehen<") < html.index(">Text<") < html.index(">Herunterladen<")
-        assert f'href="/insight/dokumente/{datei.id}/preview/?download=1"' in html
+        assert f'href="/insight/dokumente/{datei.id}/preview/?download=1" rel="nofollow"' in html
         assert f'data-doc-url="/insight/dokumente/{datei.id}/preview/"' in html
         assert f'aria-controls="text-{datei.id}"' in html and f'id="text-{datei.id}"' in html
         assert 'aria-expanded="false"' in html

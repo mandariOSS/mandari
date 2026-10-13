@@ -34,7 +34,8 @@ titel: Name der Datei (sonst aus file.name/file_name). ansehen/herunterladen: ei
 </button>
 {% endpartialdef %}
 {% partialdef herunterladen-link %}
-<a href="{{ herunterladen_url }}"
+{# nofollow: Dateien tragen noindex (#914); Suchmaschinen sollen nicht jede Datei doppelt abrufen (#939) #}
+<a href="{{ herunterladen_url }}" rel="nofollow"
    class="inline-flex items-center gap-1.5 {% if dicht %}min-h-8{% else %}min-h-11{% endif %} px-2 rounded-md text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
     <i data-lucide="download" class="w-4 h-4" aria-hidden="true"></i>Herunterladen<span class="sr-only">: {{ name }}</span>
 </a>
