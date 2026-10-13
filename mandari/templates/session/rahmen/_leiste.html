@@ -19,8 +19,8 @@ Blatt „Mehr“ (_leiste_unten.html). Einklappbar wie in Work (data-leiste="sch
                 class="rahmen-eintrag w-full flex items-center gap-2.5 rounded-lg bg-band-hell px-2 py-2 text-left ring-1 ring-transparent hover:ring-gray-300 dark:hover:ring-gray-600">
             {% include "session/rahmen/_raumzeichen.html" %}
             <span class="rahmen-label flex-1 min-w-0">
-                <span class="block text-sm font-semibold leading-tight text-gray-900 dark:text-white line-clamp-2">{{ session_tenant.name }}</span>
-                <span class="block mt-0.5 text-xs text-gray-600 dark:text-gray-400 truncate">Sitzungsdienst</span>
+                <span class="block text-sm font-semibold leading-tight text-gray-900 dark:text-white line-clamp-2">{% firstof session_rahmen.raum_name session_tenant.name %}</span>
+                <span class="block mt-0.5 text-xs text-gray-600 dark:text-gray-400 truncate">{{ session_rahmen.raum_art|default:"Sitzungsdienst" }}</span>
             </span>
             <i data-lucide="chevrons-up-down" class="rahmen-label w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
             <span class="sr-only">– Mandant wechseln</span>

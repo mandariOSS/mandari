@@ -10,7 +10,7 @@
     <meta name="robots" content="noindex, nofollow">
 
     {# Den Seitentitel merkt sich der Rahmen für die letzte Brotkrume (apps/work/templatetags/work_rahmen.py) #}
-    <title>{% merken "seitentitel" %}{% block page_title %}Session{% endblock %}{% endmerken %} | {{ session_tenant.name }}</title>
+    <title>{% merken "seitentitel" %}{% block page_title %}Session{% endblock %}{% endmerken %} | {% firstof session_rahmen.raum_name session_tenant.name %}</title>
 
     <link rel="icon" href="{% static 'brand/favicon.svg' %}" type="image/svg+xml">
     <link rel="icon" type="image/png" sizes="32x32" href="{% static 'brand/favicon-32.png' %}">
@@ -69,7 +69,7 @@
                 <button type="button" @click="raumOeffnen($el)" aria-haspopup="dialog" aria-controls="raum-dialog"
                         class="lg:hidden flex-1 min-w-0 inline-flex items-center gap-2 h-11 text-left font-semibold text-gray-900 dark:text-white">
                     {% include "session/rahmen/_raumzeichen.html" with klein=True %}
-                    <span class="truncate">{{ session_tenant.name }}</span><span class="sr-only">– Mandant wechseln</span>
+                    <span class="truncate">{% firstof session_rahmen.raum_name session_tenant.name %}</span><span class="sr-only">– Mandant wechseln</span>
                     <i data-lucide="chevron-down" class="w-4 h-4 shrink-0 text-gray-500" aria-hidden="true"></i>
                 </button>
                 <nav aria-label="Brotkrumen" class="hidden lg:block flex-1 min-w-0 text-sm">
@@ -79,11 +79,13 @@
                         {% block brotkrumen_aktuell %}{% with letzte=session_rahmen.brotkrumen|last %}{% if seitentitel and seitentitel != "Session" and not letzte.aktuell %}<c-rahmen.brotkrume>{{ seitentitel }}</c-rahmen.brotkrume>{% endif %}{% endwith %}{% endblock %}
                     </ol>
                 </nav>
+                {# Leitstelle (Teil 2b): Suche in allen Mandanten der Gruppe, nur mit Suchrecht – ohne Adresse keine Suche #}
+                {% if session_rahmen.suche_url %}
                 <form action="{{ session_rahmen.suche_url }}" method="get" role="search" class="hidden lg:block w-[22rem] max-w-[40%]">
                     <label for="kopf-suche" class="sr-only">Sitzungsdienst durchsuchen</label>
                     <span class="relative block">
                         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
-                        <input id="kopf-suche" type="search" name="q" minlength="2" placeholder="Sitzungen, Vorlagen, Personen …" autocomplete="off" aria-keyshortcuts="Control+K"
+                        <input id="kopf-suche" type="search" name="q" minlength="2" placeholder="{{ session_rahmen.suche_platzhalter|default:'Sitzungen, Vorlagen, Personen …' }}" autocomplete="off" aria-keyshortcuts="Control+K"
                                class="w-full h-9 pl-9 pr-16 rounded-md bg-band-grau border border-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:bg-band-hell focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
                         <kbd class="absolute right-3 top-1/2 -translate-y-1/2 font-sans text-xs text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true">Strg K</kbd>
                     </span>
@@ -91,6 +93,7 @@
                 <a href="{{ session_rahmen.suche_url }}" class="lg:hidden inline-flex items-center justify-center w-11 h-11 rounded-md text-gray-700 dark:text-gray-300 hover:bg-band-grau" aria-label="Suche">
                     <i data-lucide="search" class="w-5 h-5" aria-hidden="true"></i>
                 </a>
+                {% endif %}
                 <button type="button" @click="darkMode = !darkMode"
                         class="hidden lg:inline-flex items-center justify-center w-9 h-9 rounded-md text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-band-grau"
                         :aria-label="darkMode ? 'Zum hellen Modus wechseln' : 'Zum dunklen Modus wechseln'" aria-label="Zum dunklen Modus wechseln" :aria-pressed="darkMode.toString()">

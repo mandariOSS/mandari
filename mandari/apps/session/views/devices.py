@@ -32,6 +32,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,10 @@ class DeviceListView(SessionViewMixin, TemplateView):
 
     template_name = "session/devices/index.html"
     permission_required = "manage_devices"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/endgeraete.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

@@ -41,6 +41,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionMixin, SessionPermissionChecker, SessionViewMixin
+from ..rahmen import neues_design
 from ..services import file_service, file_version_service, paper_version_service
 from .nexturl import safe_next_url
 from .paper_versions import protected_download
@@ -383,7 +384,9 @@ class FileVersionListView(_FileVersionMixin):
                 else set()
             ),
         )
-        return render(request, "session/files/versions.html", context)
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        neu = neues_design(self.session_tenant)
+        return render(request, "session/neu/dateiversionen.html" if neu else "session/files/versions.html", context)
 
 
 class FileVersionDownloadView(_FileVersionMixin):

@@ -19,7 +19,8 @@ from django.views.generic import TemplateView
 from apps.common.params import text_param
 
 from ..models import SessionTenantGroupMembership
-from ..permissions import user_leitstellen
+from ..permissions import user_leitstellen, user_tenants
+from ..rahmen import leitstelle_navigation, neues_design_gruppe
 from ..services import leitstelle_service
 
 
@@ -28,6 +29,7 @@ class LeitstelleMixin(LoginRequiredMixin):
 
     membership: SessionTenantGroupMembership
     request: HttpRequest
+    _neues_design: bool
 
     def dispatch(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
         if not request.user.is_authenticated:
@@ -39,20 +41,45 @@ class LeitstelleMixin(LoginRequiredMixin):
         self.membership = membership
         return super().dispatch(request, *args, **kwargs)
 
+    def neues_design(self) -> bool:
+        """Neuer Rahmen, wenn alle aktiven Mandanten der Gruppe ihn eingeschaltet haben (Issue #944, Teil 2b)."""
+        if not hasattr(self, "_neues_design"):
+            self._neues_design = neues_design_gruppe(self.membership.group)
+        return self._neues_design
+
+    def vorlage(self, bisher: str, neu: str) -> list[str]:
+        return [neu] if self.neues_design() else [bisher]
+
     def leitstelle_context(self) -> dict[str, Any]:
-        return {
+        kontext: dict[str, Any] = {
             "group": self.membership.group,
             "membership": self.membership,
             "user_leitstellen": user_leitstellen(self.request),
             "search_limit": leitstelle_service.SEARCH_LIMIT,
             "list_limit": leitstelle_service.LIST_LIMIT,
         }
+        if self.neues_design():
+            # Navigation des neuen Rahmens: Übersicht, Suche (nur Gruppenrolle Leitstelle), übrige Leitstellen
+            match = self.request.resolver_match
+            kontext["session_neues_design"] = True
+            kontext["session_rahmen"] = leitstelle_navigation(
+                self.membership.group,
+                self.membership.sees_worklists,
+                (match.url_name or "") if match is not None else "",
+                raeume=user_tenants(self.request),
+                leitstellen=kontext["user_leitstellen"],
+            )
+        return kontext
 
 
 class LeitstelleOverviewView(LeitstelleMixin, TemplateView):
     """Arbeitsvorräte, Fristen, Sitzungen und Kennzahlen aller Mandanten der Gruppe auf einer Seite."""
 
     template_name = "session/leitstelle/overview.html"
+
+    def get_template_names(self) -> list[str]:
+        # Neuer Rahmen wie die Mandanten der Gruppe (Issue #944); die bisherige Seite bleibt unverändert
+        return self.vorlage(self.template_name, "session/neu/leitstelle.html")
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context = super().get_context_data(**kwargs)
@@ -81,6 +108,10 @@ class LeitstelleSearchView(LeitstelleMixin, TemplateView):
     """Suche über Titel und Nummern aller Mandanten der Gruppe (nur Gruppenrolle Leitstelle)."""
 
     template_name = "session/leitstelle/search.html"
+
+    def get_template_names(self) -> list[str]:
+        # Neuer Rahmen wie die Mandanten der Gruppe (Issue #944); die bisherige Seite bleibt unverändert
+        return self.vorlage(self.template_name, "session/neu/leitstelle_suche.html")
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         if not self.membership.sees_worklists:
