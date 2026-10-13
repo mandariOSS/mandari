@@ -15,7 +15,7 @@ bleibt work/team/directory.html.
 {% endblock %}
 
 {% block work_content %}
-<form method="get" role="search" aria-label="Team durchsuchen" class="flex flex-wrap items-center gap-x-4 gap-y-2">
+<form method="get" role="search" aria-label="Team durchsuchen" class="flex flex-wrap items-center gap-x-3 gap-y-2">
     <c-form.suche id="team-suche" wert="{{ search_query }}" label="Name oder E-Mail suchen" platzhalter="Name oder E-Mail" class="w-full sm:w-80" />
     <c-ui.button type="submit" variant="secondary" size="sm">Suchen</c-ui.button>
     {% if search_query %}<c-ui.textlink href="{% url 'work:team' org_slug=organization.slug %}" class="text-sm">Suche zurücksetzen</c-ui.textlink>{% endif %}
