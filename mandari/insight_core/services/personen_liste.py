@@ -61,7 +61,7 @@ class PersonAngaben:
 
     @property
     def fraktion_hinweis(self) -> str:
-        """Quelle einer Fraktion, die nicht aus OParl kommt („laut Einblendung der Live-Übertragung“), sonst leer."""
+        """Öffentlicher Quellenhinweis einer Fraktion, die nicht aus OParl kommt („redaktionell gepflegt“), sonst leer."""
         return self.fraktion_lokal.hinweis if self.fraktion is None and self.fraktion_lokal is not None else ""
 
     @property

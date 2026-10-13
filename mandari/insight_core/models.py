@@ -2785,7 +2785,8 @@ class PersonFraktion(models.Model):
     ]
     #: Öffentlicher Hinweis auf die Quelle (Personenliste und Personenseite)
     HINWEISE = {
-        QUELLE_EINBLENDUNG: "laut Einblendung der Live-Übertragung",
+        # Die Live-Übertragung wird öffentlich nie als Quelle genannt (Sven, 13.10.2026): nur die Fraktion selbst
+        QUELLE_EINBLENDUNG: "",
         QUELLE_HAND: "redaktionell gepflegt",
         QUELLE_OPARL: "laut Ratsinformationssystem",
     }
@@ -2869,7 +2870,7 @@ class PersonFraktion(models.Model):
 
     @property
     def hinweis(self) -> str:
-        """Öffentlicher Hinweis auf die Quelle, z. B. „laut Einblendung der Live-Übertragung“."""
+        """Öffentlicher Hinweis auf die Quelle, z. B. „redaktionell gepflegt“; leer, wenn die Quelle nicht genannt wird."""
         return self.HINWEISE.get(self.quelle, "")
 
 
