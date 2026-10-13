@@ -32,7 +32,8 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: end-of-file-fixer
-        exclude: \.(min\.js|min\.css|svg)$
+        # Der Textlink steht mitten im Satz: ohne Zeilenumbruch am Ende kein Leerzeichen vor Satzzeichen
+        exclude: (\.(min\.js|min\.css|svg)$|^mandari/templates/cotton/ui/textlink\.html$)
       - id: trailing-whitespace
         exclude: \.(min\.js|min\.css|md)$
       - id: check-merge-conflict
