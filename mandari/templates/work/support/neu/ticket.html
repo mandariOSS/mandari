@@ -1,0 +1,112 @@
+{% extends "work/base_work.html" %}
+{% load hilfe_tags member_tags %}
+{% comment %}
+Ticket im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit Betreff, Stand im Satz und „Ticket schließen“
+bzw. „Wieder öffnen“. Links Beschreibung, Nachrichten (alle fünf Sekunden nachgeladen, ticketVerlauf statt
+Inline-Skript; das Fragment fordert die neue Fassung über hx-headers an) und die Antwort mit dem gemeinsamen Dateifeld,
+rechts die übrigen Angaben (c-ui.angaben; Status, Kategorie und Priorität stehen nur im Kopfband) und die Wege zur
+Hilfe. Kontext: SupportDetailView; die bisherige Seite bleibt work/support/detail.html.
+{% endcomment %}
+
+{% block page_title %}Ticket #{{ ticket.id.hex|slice:":8" }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{{ ticket.subject }}" dicht data-testid="ticket-kopf"
+    text="Ticket #{{ ticket.id.hex|slice:':8' }} vom {{ ticket.created_at|date:'d.m.Y' }}, {{ ticket.get_category_display }}.">
+    <c-slot name="oben">
+        <nav aria-label="Zurück" class="lg:hidden mb-2">
+            <a href="{% url 'work:support' org_slug=organization.slug %}" class="inline-flex items-center gap-1 -ml-1 min-h-9 text-sm font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"><i data-lucide="chevron-left" class="w-4 h-4" aria-hidden="true"></i>Hilfe und Support</a>
+        </nav>
+    </c-slot>
+    <c-slot name="aktionen">
+        {% if ticket.status in 'open,in_progress,waiting' %}
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="close">
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="check-circle">Ticket schließen</c-ui.button>
+        </form>
+        {% elif ticket.status in 'resolved,closed' %}
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reopen">
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="rotate-ccw">Wieder öffnen</c-ui.button>
+        </form>
+        {% endif %}
+    </c-slot>
+    <p class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">{% include "work/support/neu/_status.html" %}{% include "work/support/neu/_prioritaet.html" %}</p>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<div class="grid gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,48rem)_minmax(16rem,22rem)]">
+    <div class="min-w-0">
+        <section aria-labelledby="ticket-beschreibung">
+            <h2 id="ticket-beschreibung" class="sr-only">Beschreibung</h2>
+            <p class="flex flex-wrap items-baseline gap-x-2 text-sm">
+                <span class="font-semibold text-gray-900 dark:text-white">{% if ticket.created_by %}{{ ticket.created_by.user.get_full_name|default:ticket.created_by.user.email }}{% else %}{{ ticket.created_by|member_name }}{% endif %}</span>
+                <time class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ ticket.created_at|date:"d.m.Y H:i" }}</time>
+            </p>
+            <p class="mt-1.5 text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ ticket.description }}</p>
+            {% if attachments %}
+            <ul class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm" aria-label="Anhänge">
+                {% for attachment in attachments %}
+                <li><a href="{% url 'work:support_attachment_download' org_slug=organization.slug ticket_id=ticket.id attachment_id=attachment.id %}" target="_blank" rel="noopener"
+                       class="inline-flex items-center gap-1.5 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"><i data-lucide="paperclip" class="w-4 h-4" aria-hidden="true"></i>{{ attachment.filename }}</a></li>
+                {% endfor %}
+            </ul>
+            {% endif %}
+        </section>
+
+        <c-rahmen.abschnitt titel="Nachrichten" titel_id="ticket-nachrichten-titel" zusatz="aktualisiert sich alle fünf Sekunden" class="mt-8">
+            <div id="message-thread" x-data="ticketVerlauf"
+                 hx-get="{% url 'work:support_messages_partial' org_slug=organization.slug ticket_id=ticket.id %}?count={{ ticket_messages|length }}"
+                 hx-trigger="every 5s" hx-swap="innerHTML" hx-target="#message-thread-content"
+                 hx-headers='{"X-Work-Gestaltung": "neu"}' class="mt-3">
+                <div id="message-thread-content" aria-live="polite">
+                    {% include "work/support/neu/_nachrichten.html" %}
+                </div>
+            </div>
+        </c-rahmen.abschnitt>
+
+        {% if ticket.status not in 'closed' %}
+        <c-rahmen.abschnitt titel="Antworten" titel_id="ticket-antworten" class="mt-8">
+            <form method="post" enctype="multipart/form-data" class="mt-3 space-y-4" data-testid="ticket-antwort">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reply">
+                <c-form.textarea name="content" id="ticket-antwort-text" label="Ihre Nachricht" rows="4" placeholder="Ihre Nachricht …" dicht required />
+                <c-form.datei name="attachments" id="ticket-antwort-dateien" label="Anhänge (optional)" multiple accept="image/*,.pdf,.doc,.docx,.txt" hinweis="Bis zu drei Dateien, je bis 10 MB" />
+                <c-ui.button type="submit" icon="send">Senden</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+        {% else %}
+        <div class="mt-8 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-gray-700 dark:text-gray-300" data-testid="ticket-geschlossen">
+            <p>Dieses Ticket ist geschlossen.</p>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reopen">
+                <c-ui.text-button dicht type="submit">Wieder öffnen, um zu antworten</c-ui.text-button>
+            </form>
+        </div>
+        {% endif %}
+    </div>
+
+    <aside aria-label="Angaben zum Ticket" class="space-y-8">
+        <c-rahmen.abschnitt titel="Angaben" titel_id="ticket-angaben">
+            <c-ui.angaben class="mt-3">
+                <dt>Erstellt am</dt><dd>{{ ticket.created_at|date:"d.m.Y H:i" }}</dd>
+                <dt>Aktualisiert</dt><dd>{{ ticket.updated_at|date:"d.m.Y H:i" }}</dd>
+                {% if ticket.resolved_at %}<dt>Gelöst am</dt><dd>{{ ticket.resolved_at|date:"d.m.Y H:i" }}</dd>{% endif %}
+                {% if ticket.assigned_to %}<dt>Zugewiesen an</dt><dd>{{ ticket.assigned_to.get_full_name|default:"Support-Team" }}</dd>{% endif %}
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+        <c-rahmen.abschnitt titel="Hilfe" titel_id="ticket-hilfe">
+            <ul class="mt-2 space-y-1.5 text-sm">
+                <li><c-ui.textlink href="{% hilfe_url 'start' %}" extern>Dokumentation</c-ui.textlink></li>
+                <li><c-ui.textlink href="{% url 'work:support' org_slug=organization.slug %}">Alle Tickets</c-ui.textlink></li>
+                <li><c-ui.textlink href="{% url 'work:support_create' org_slug=organization.slug %}">Neues Ticket erstellen</c-ui.textlink></li>
+            </ul>
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% endblock %}

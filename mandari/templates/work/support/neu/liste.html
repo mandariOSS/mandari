@@ -1,0 +1,67 @@
+{% extends "work/base_work.html" %}
+{% load hilfe_tags %}
+{% comment %}
+Hilfe und Support im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit „Neues Ticket“ als Hauptaktion und
+der Dokumentation als Textlink. Darunter „Meine Tickets“ (Stand als Zahl im Satz, Statusfilter, Liste mit Linien, Status
+als Punkt mit Text) und die Hilfethemen als Liste von Links – keine Kacheln. Der Statusfilter ist ein GET-Formular mit
+demselben Parameter ``status`` wie bisher (dort data-filter-param). Kontext: SupportListView; die bisherige Seite bleibt
+work/support/list.html.
+{% endcomment %}
+
+{% block page_title %}Support{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Hilfe und Support" dicht data-testid="hilfe-kopf"
+    text="Anleitungen und Antworten auf häufige Fragen stehen in der Dokumentation. Für Fehler, Wünsche und alles andere schreiben Sie uns ein Ticket.">
+    <c-slot name="aktionen">
+        <c-ui.textlink href="{% hilfe_url 'start' %}" extern class="text-sm">Dokumentation</c-ui.textlink>
+        <c-ui.button href="{% url 'work:support_create' org_slug=organization.slug %}" icon="plus">Neues Ticket</c-ui.button>
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<c-rahmen.abschnitt titel="Meine Tickets" titel_id="hilfe-tickets"
+    zusatz="{{ ticket_stats.open }} offen, {{ ticket_stats.in_progress }} in Bearbeitung, {{ ticket_stats.resolved }} gelöst">
+    <c-slot name="link">
+        <form method="get" aria-label="Tickets filtern">
+            <c-form.select name="status" id="hilfe-status" label="Status" dicht zeile @change="$event.target.form.submit()">
+                <option value="" {% if not status_filter %}selected{% endif %}>Alle</option>
+                {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if status_filter == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </c-form.select>
+            <noscript><c-ui.button type="submit" variant="secondary" size="sm">Anwenden</c-ui.button></noscript>
+        </form>
+    </c-slot>
+    {% if tickets %}
+    <c-rahmen.liste class="mt-3" data-testid="hilfe-tickets-liste">
+        {% for ticket in tickets %}
+        <li class="flex flex-wrap items-baseline gap-x-6 gap-y-1 py-3">
+            <div class="flex-1 min-w-[14rem]">
+                <a href="{% url 'work:support_detail' org_slug=organization.slug ticket_id=ticket.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ ticket.subject }}</a>
+                <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">#{{ ticket.id.hex|slice:":8" }} · {{ ticket.get_category_display }} · {{ ticket.created_at|date:"d.m.Y H:i" }}</p>
+            </div>
+            <p class="flex items-center gap-x-4 text-sm">{% include "work/support/neu/_prioritaet.html" %}{% include "work/support/neu/_status.html" %}</p>
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+    {% else %}
+    <c-rahmen.satz data-testid="hilfe-tickets-leer">{% if status_filter %}Keine Tickets mit diesem Status.{% else %}Sie haben noch keine Support-Anfragen gestellt.{% endif %} <c-ui.textlink href="{% url 'work:support_create' org_slug=organization.slug %}">Neues Ticket erstellen</c-ui.textlink></c-rahmen.satz>
+    {% endif %}
+    <c-rahmen.satz>Per E-Mail erreichen Sie uns unter <c-ui.textlink href="mailto:support@mandari.de">support@mandari.de</c-ui.textlink></c-rahmen.satz>
+</c-rahmen.abschnitt>
+
+<c-rahmen.abschnitt titel="Hilfethemen" titel_id="hilfe-themen" class="mt-10">
+    <c-slot name="link"><c-ui.help-link topic="faq">Häufige Fragen</c-ui.help-link></c-slot>
+    <ul class="mt-3 grid gap-x-10 gap-y-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="hilfe-themen-liste">
+        {% for thema in hilfethemen %}
+        <li>
+            <c-ui.textlink href="{{ thema.url }}" extern class="text-sm">{{ thema.titel }}</c-ui.textlink>
+            <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ thema.beschreibung }}</p>
+        </li>
+        {% endfor %}
+    </ul>
+</c-rahmen.abschnitt>
+{% endblock %}

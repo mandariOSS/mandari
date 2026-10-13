@@ -1,0 +1,30 @@
+{% load member_tags %}
+{% comment %}
+Nachrichten eines Tickets im neuen Erscheinungsbild (Issue #951): Liste mit Linien statt einer Karte je Nachricht,
+Antworten des Support-Teams mit dem Zusatz „Support“. Seite und Nachladen (SupportTicketMessagesPartialView mit der
+Kopfzeile X-Work-Gestaltung) zeichnen dasselbe Fragment. Kontext: ticket_messages, ticket, organization.
+{% endcomment %}
+{% if ticket_messages %}
+<c-rahmen.liste geordnet data-testid="ticket-nachrichten">
+    {% for message in ticket_messages %}
+    <li id="message-{{ message.id }}" class="py-4">
+        <p class="flex flex-wrap items-baseline gap-x-2 text-sm">
+            <span class="font-semibold text-gray-900 dark:text-white">{% if message.is_from_support %}{{ message.author_staff.get_full_name|default:"Support-Team" }}{% elif message.author_membership %}{{ message.author_membership.user.get_full_name|default:message.author_membership.user.email }}{% else %}{{ message.author_membership|member_name }}{% endif %}</span>
+            {% if message.is_from_support %}<span class="text-primary-700 dark:text-primary-300">Support</span>{% endif %}
+            <time class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ message.created_at|date:"d.m.Y H:i" }}</time>
+        </p>
+        <p class="mt-1.5 text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ message.content }}</p>
+        {% if message.attachments.exists %}
+        <ul class="mt-2 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+            {% for attachment in message.attachments.all %}
+            <li><a href="{% url 'work:support_attachment_download' org_slug=organization.slug ticket_id=ticket.id attachment_id=attachment.id %}" target="_blank" rel="noopener"
+                   class="inline-flex items-center gap-1.5 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"><i data-lucide="paperclip" class="w-4 h-4" aria-hidden="true"></i>{{ attachment.filename }}</a></li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </li>
+    {% endfor %}
+</c-rahmen.liste>
+{% else %}
+<c-rahmen.satz>Noch keine Nachrichten.</c-rahmen.satz>
+{% endif %}

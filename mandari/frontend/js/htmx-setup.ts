@@ -15,7 +15,8 @@
  * - `data-after-request="reload|reset|follow-href|notification-read|close-dialog"` nach erfolgreicher Anfrage:
  *   Seite neu laden; Formular zurücksetzen (optional `data-blur="<Selektor>"`); dem eigenen
  *   `href` folgen, sonst `notification:marked-read` auslösen; Benachrichtigung als gelesen
- *   darstellen (Hervorhebung und Punkt im Elternelement `data-parent` entfernen, Button entfernen);
+ *   darstellen (Hervorhebung und Punkt im Elternelement `data-parent` entfernen – im neuen Erscheinungsbild
+ *   `data-ungelesen` und `[data-ungelesen-punkt]` –, Button entfernen);
  *   das umgebende `<dialog>` schließen.
  */
 
@@ -147,6 +148,9 @@ function afterRequest(el: HTMLElement): void {
       const parent = el.closest<HTMLElement>(el.dataset.parent ?? '.p-4')
       parent?.classList.remove('bg-primary-50/50', 'dark:bg-primary-900/10')
       parent?.querySelector('.inline-block.w-2.h-2')?.remove()
+      // Neues Erscheinungsbild (Issue #951): Markierung über Datenattribute statt Klassen
+      parent?.removeAttribute('data-ungelesen')
+      for (const punkt of parent?.querySelectorAll('[data-ungelesen-punkt]') ?? []) punkt.remove()
       el.remove()
       break
     }

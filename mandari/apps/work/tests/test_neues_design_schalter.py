@@ -229,14 +229,15 @@ def test_neue_seiten_tragen_die_kennzeichnung(org: Organization, make_member: An
     vorsitz = make_member(org, [], email="vorsitz@example.org", is_admin=True)
     client = client_for(vorsitz.user)
 
-    def html(name: str) -> str:
-        antwort = client.get(reverse(f"work:{name}", kwargs={"org_slug": org.slug}))
+    def html(name: str, abfrage: str = "") -> str:
+        antwort = client.get(reverse(f"work:{name}", kwargs={"org_slug": org.slug}) + abfrage)
         assert antwort.status_code == 200, (name, antwort.status_code)
         return str(antwort.content.decode())
 
     design_schalter.setzen(org, True)
     assert 'data-gestaltung="neu"' in html("dashboard")
-    assert 'data-gestaltung="bisher"' in html("team")
+    # Bisheriger Inhalt im neuen Rahmen: Team hat seit #951 eine neue Vorlage, ?ansicht=bisher zeigt die bisherige
+    assert 'data-gestaltung="bisher"' in html("team", "?ansicht=bisher")
     design_schalter.setzen(org, False)
     assert "data-gestaltung" not in html("dashboard")
     assert "data-gestaltung" not in html("team")

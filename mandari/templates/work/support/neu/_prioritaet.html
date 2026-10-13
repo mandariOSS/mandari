@@ -1,0 +1,2 @@
+{# Hohe und dringende Priorität als Text (Issue #951, keine Farbchips); Kontext: ticket #}
+{% if ticket.priority == 'urgent' %}<span class="font-medium text-red-700 dark:text-red-400">Dringend</span>{% elif ticket.priority == 'high' %}<span class="font-medium text-gray-800 dark:text-gray-200">Hoch</span>{% endif %}
