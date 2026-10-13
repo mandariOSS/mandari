@@ -241,6 +241,38 @@ class TestDateifeld:
         assert "Bitte eine PDF-Datei wählen." in html
 
 
+BISHER_TEXTKNOPF = "text-xs font-medium flex items-center gap-1 text-primary-600 hover:text-primary-700"
+
+
+class TestTextknopf:
+    def test_ohne_dicht_wie_bisher(self) -> None:
+        html = render('<c-ui.text-button icon="plus" title="Neu">Eintrag</c-ui.text-button>')
+        knopf = _tag(html, "button")
+        assert _klasse(knopf) == BISHER_TEXTKNOPF
+        assert _attribute(knopf) == {"type", "class", "title"}
+        assert 'class="w-3 h-3"' in html
+
+    def test_dicht_im_aussehen_eines_textlinks(self) -> None:
+        """``dicht`` (Issue #944): 14 px, Kennfarbe 700 bzw. Rot 700, 32 px Zielfläche, inline im Fließtext."""
+        for variante, farbe in (
+            ("", "text-primary-700"),
+            (' variant="danger"', "text-red-700"),
+            (' variant="muted"', "text-gray-700"),
+        ):
+            klasse = _klasse(
+                _tag(render(f'<c-ui.text-button dicht type="submit"{variante}>Ok</c-ui.text-button>'), "button")
+            )
+            assert {"inline-flex", "min-h-8", "text-sm", "hover:underline", farbe} <= set(klasse.split()), klasse
+            assert "text-xs" not in klasse and "flex" not in klasse.split()
+        html = render(
+            '<c-ui.text-button dicht icon="plus" @click="offen = !offen" ::aria-expanded="offen.toString()">'
+            "Bearbeiten</c-ui.text-button>"
+        )
+        knopf = _tag(html, "button")
+        assert '@click="offen = !offen"' in knopf and ':aria-expanded="offen.toString()"' in knopf
+        assert 'type="button"' in knopf and 'class="w-4 h-4"' in html
+
+
 def test_hinweis_unter_einem_feld() -> None:
     """c-form.hinweis: 13 px gedimmt wie die Hilfe von c-form.field dicht; Einzug unter Checkboxen, Attribute am Absatz."""
     html = render('<c-form.hinweis id="tage-hilfe">Wie weit zurück</c-form.hinweis>')
@@ -252,3 +284,46 @@ def test_hinweis_unter_einem_feld() -> None:
     assert _klasse(eingerueckt) == "ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-all"
     assert 'x-show="offen"' in eingerueckt
     assert _klasse(_tag(render("<c-form.hinweis neben>Satz</c-form.hinweis>"), "p")).startswith("text-[0.8125rem]")
+
+
+#: Ausgabe von c-ui.text-button ohne ``dicht``, Zeichen für Zeichen wie vor #944/#951
+BISHER_TEXT_BUTTON = {
+    '<c-ui.text-button @click="offen = !offen">Mehr</c-ui.text-button>': (
+        '\n\n\n<button type="button"\n    class="text-xs font-medium flex items-center gap-1 text-primary-600 '
+        'hover:text-primary-700 "\n    @click="offen = !offen">\n    \n    Mehr\n</button>\n'
+    ),
+    '<c-ui.text-button type="submit" variant="danger" icon="trash-2">Entfernen</c-ui.text-button>': (
+        '\n\n\n<button type="submit"\n    class="text-xs font-medium flex items-center gap-1 text-red-500 '
+        'hover:text-red-700 "\n    >\n    <i data-lucide="trash-2" class="w-3 h-3" aria-hidden="true"></i>\n'
+        "    Entfernen\n</button>\n"
+    ),
+    '<c-ui.text-button variant="muted" icon="x" class="mt-1" title="Weg" data-x="1">Entfernen</c-ui.text-button>': (
+        '\n\n\n<button type="button"\n    class="text-xs font-medium flex items-center gap-1 text-gray-500 '
+        'hover:text-primary-600 mt-1"\n    title="Weg" data-x="1">\n    <i data-lucide="x" class="w-3 h-3" '
+        'aria-hidden="true"></i>\n    Entfernen\n</button>\n'
+    ),
+    '<c-ui.text-button variant="primary" icon="plus">Eintrag</c-ui.text-button>': (
+        '\n\n\n<button type="button"\n    class="text-xs font-medium flex items-center gap-1 text-primary-600 '
+        'hover:text-primary-700 "\n    >\n    <i data-lucide="plus" class="w-3 h-3" aria-hidden="true"></i>\n'
+        "    Eintrag\n</button>\n"
+    ),
+}
+
+
+def test_text_button_ohne_neue_angaben_unveraendert() -> None:
+    """c-ui.text-button ohne ``dicht`` rendert Zeichen für Zeichen wie bisher (Panels in Work und Session)."""
+    for quelle, bisher in BISHER_TEXT_BUTTON.items():
+        assert render(quelle) == bisher, quelle
+
+
+def test_beschriftung_eines_felds() -> None:
+    """c-form.beschriftung: Label in den Maßen von c-form.field dicht, Stern bei ``pflicht``, als p oder legend ohne for."""
+    html = render('<c-form.beschriftung feld="slug" pflicht>Kurzname</c-form.beschriftung>')
+    tag = _tag(html, "label")
+    assert 'for="slug"' in tag
+    assert _klasse(tag) == "block mb-1 text-sm font-medium text-gray-800 dark:text-gray-200"
+    assert '<span class="text-red-500" aria-hidden="true">*</span></label>' in html
+    assert _klasse(_tag(render('<c-form.beschriftung als="legend">Art</c-form.beschriftung>'), "legend")) == (
+        "text-sm font-medium text-gray-800 dark:text-gray-200"
+    )
+    assert "<label" not in render('<c-form.beschriftung als="p">Vorschau</c-form.beschriftung>')

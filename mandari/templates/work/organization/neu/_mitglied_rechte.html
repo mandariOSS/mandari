@@ -8,10 +8,9 @@ effective_permission_codes, can_edit.
 {% endcomment %}
 <c-rahmen.abschnitt titel="Berechtigungen" titel_id="rechte-titel" zusatz="{{ effective_permission_codes|length }} wirksam" x-data="{ open: false }">
     <c-slot name="link">
-        <button type="button" @click="open = !open" :aria-expanded="open.toString()" aria-expanded="false" aria-controls="rechte-formular"
-                class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+        <c-ui.text-button dicht @click="open = !open" ::aria-expanded="open.toString()" aria-expanded="false" aria-controls="rechte-formular">
             <span x-show="!open">Berechtigungen anzeigen</span><span x-show="open" x-cloak>Berechtigungen ausblenden</span>
-        </button>
+        </c-ui.text-button>
     </c-slot>
     <c-rahmen.satz eng>Aus den Rollen, einzeln zusätzlich gewährt oder ausdrücklich verweigert. Verweigert überschreibt die Rollen. Rechte der Rollen ändern Sie an den Rollen selbst.</c-rahmen.satz>
     <form method="post" id="rechte-formular" x-show="open" x-cloak class="mt-4">
@@ -34,7 +33,7 @@ effective_permission_codes, can_edit.
                     <tr>
                         <td class="py-1.5 px-3">
                             <span class="text-gray-900 dark:text-white">{% if perm.code in denied_permission_codes %}{% include "work/organization/neu/_status.html" with gestoert=True %}{% elif perm.code in effective_permission_codes %}{% include "work/organization/neu/_status.html" with an=True %}{% else %}{% include "work/organization/neu/_status.html" %}{% endif %}{{ perm.name }}</span>
-                            <span class="block ml-3.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if perm.code in denied_permission_codes %}verweigert{% elif sources %}aus Rolle: {{ sources|join:", " }}{% elif perm.code in individual_permission_codes %}individuell gewährt{% else %}nicht gewährt{% endif %}</span>
+                            <span class="block ml-3.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if perm.code in denied_permission_codes %}verweigert{% if sources %}, aus Rolle: {{ sources|join:", " }}{% endif %}{% elif sources %}aus Rolle: {{ sources|join:", " }}{% elif perm.code in individual_permission_codes %}individuell gewährt{% else %}nicht gewährt{% endif %}</span>
                         </td>
                         <td class="py-1.5 text-center">
                             <label class="sr-only" for="ind-{{ perm.code }}">{{ perm.name }}: individuell gewähren</label>

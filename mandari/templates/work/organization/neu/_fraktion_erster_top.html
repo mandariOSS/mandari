@@ -1,0 +1,53 @@
+{% comment %}
+Fraktionssitzungen: öffentliche Protokolle und Titel des ersten TOPs mit Platzhaltern und Live-Vorschau (Issue #951),
+Teil des Hauptformulars. publish_protocols nur mit protocols.publish (sonst gesperrt, wie bisher). Die Vorschau
+treibt factionTitlePreview (frontend/alpine/faction-title-preview.ts): Feld mit x-ref="titleInput" und @input, Ausgabe
+mit x-text="preview" an #preview-title. Kontext: organization, can_publish_protocols, faction_settings, placeholders.
+{% endcomment %}
+<div class="space-y-10 min-w-0">
+    <c-rahmen.abschnitt titel="Öffentliche Protokolle" titel_id="oeffentlich-titel">
+        <div class="mt-3">
+            {% if can_publish_protocols %}
+            <c-form.checkbox name="publish_protocols" id="publish_protocols" :checked="organization.publish_protocols" dicht label="Genehmigte Protokolle im Bürgerportal veröffentlichen" />
+            {% else %}
+            <c-form.checkbox name="publish_protocols" id="publish_protocols" :checked="organization.publish_protocols" disabled dicht label="Genehmigte Protokolle im Bürgerportal veröffentlichen" />
+            {% endif %}
+            <c-form.hinweis einzug>Es erscheinen nur öffentliche TOPs und ihre Protokolleinträge. Standardmäßig aus; dann bleiben Protokolle intern.{% if not can_publish_protocols %} Ändern dürfen nur Personen mit dem Recht „Protokolle veröffentlichen“.{% endif %}</c-form.hinweis>
+        </div>
+    </c-rahmen.abschnitt>
+
+    <div x-data="factionTitlePreview">
+        <c-rahmen.abschnitt titel="Erster TOP" titel_id="erster-top-titel">
+            <c-rahmen.satz eng>Wie der automatisch angelegte erste Tagesordnungspunkt heißt.</c-rahmen.satz>
+            <div class="mt-3 space-y-4">
+                <div>
+                    <c-form.beschriftung feld="id_first_agenda_title_with_previous">Titel mit vorheriger Sitzung</c-form.beschriftung>
+                    <input type="text" name="first_agenda_title_with_previous" id="id_first_agenda_title_with_previous" value="{{ faction_settings.first_agenda_title_with_previous }}"
+                           x-ref="titleInput" @input="title = $event.target.value" placeholder="Tagesordnung festlegen und letztes Protokoll genehmigen" aria-describedby="erster-top-hilfe"
+                           class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                    <c-form.hinweis id="erster-top-hilfe">Gilt, wenn es eine vorherige Sitzung gibt.</c-form.hinweis>
+                </div>
+                <c-form.field name="first_agenda_title_no_previous" id="id_first_agenda_title_no_previous" label="Titel ohne vorherige Sitzung" value="{{ faction_settings.first_agenda_title_no_previous }}"
+                              placeholder="Tagesordnung festlegen" dicht help="Gilt für die erste Sitzung oder wenn es keine vorherige gibt." />
+                <c-form.textarea name="first_agenda_description" id="id_first_agenda_description" label="Beschreibung (optional)" rows="2" value="{{ faction_settings.first_agenda_description }}"
+                                 placeholder="Beschreibung des ersten TOPs" dicht />
+            </div>
+
+            <table class="mt-5 w-full text-[0.8125rem]">
+                <caption class="text-left text-sm font-medium text-gray-800 dark:text-gray-200 pb-1">Platzhalter für Titel und Beschreibung</caption>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800">
+                    {% for placeholder, description in placeholders %}
+                    <tr><td class="py-1 pr-4 font-mono text-gray-900 dark:text-gray-100 whitespace-nowrap">{{ placeholder }}</td><td class="py-1 text-gray-700 dark:text-gray-300">{{ description }}</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div class="mt-5">
+                <c-form.beschriftung als="p">Vorschau</c-form.beschriftung>
+                <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Sitzung am 15.02.2026, vorherige Sitzung am 01.02.2026:</p>
+                <p class="mt-2 text-sm text-gray-900 dark:text-white"><span class="tabular-nums text-gray-600 dark:text-gray-400 mr-2">1</span><span id="preview-title" x-text="preview">{{ faction_settings.first_agenda_title_with_previous|default:"Tagesordnung festlegen und letztes Protokoll genehmigen" }}</span></p>
+                {% if faction_settings.first_agenda_description %}<p class="ml-5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ faction_settings.first_agenda_description }}</p>{% endif %}
+            </div>
+        </c-rahmen.abschnitt>
+    </div>
+</div>

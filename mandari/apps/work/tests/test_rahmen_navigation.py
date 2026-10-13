@@ -329,7 +329,9 @@ def _krumen(html: str) -> list[tuple[str, str]]:
         # Formularseiten der Einstellungen: Bereich als Weg zurück, der Seitentitel als aktuelle Seite
         ("members", [("Einstellungen", "link"), ("Mitglieder", "aktuell")]),
         ("organization_api_settings", [("Einstellungen", "link"), ("API", "aktuell")]),
-        ("organization_documents", [("Einstellungen", "link"), ("Anträge & Vorgänge", "aktuell")]),
+        ("organization_documents", [("Einstellungen", "link"), ("Dokumente", "aktuell")]),
+        # Dokument-Einstellungen gehören zu den Einstellungen, nicht zu den Dokumenten (Issue #951)
+        ("document_type_list", [("Einstellungen", "link"), ("Dokumenttypen", "aktuell")]),
         ("security", [("Profil", "link"), ("Sicherheit", "aktuell")]),
         ("document_create", [("Dokumente", "link"), ("Neues Dokument", "aktuell")]),
         # Seiten, die der Rahmen selbst kennt: keine zweite Krume

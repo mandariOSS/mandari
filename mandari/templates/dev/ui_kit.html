@@ -75,7 +75,7 @@
         </form>
     </c-ui.card>
 
-    <c-ui.card title="Formularfelder für Arbeitsflächen" subtitle="dicht (Work, 36 px, 14 px), modell, maxlength, zeile; c-form.hinweis; c-form.datei – Dateifeld mit Ablagefläche; c-rahmen.reiter-link mit zahl">
+    <c-ui.card title="Formularfelder für Arbeitsflächen" subtitle="dicht (Work, 36 px, 14 px), modell, maxlength, zeile; c-form.hinweis, c-form.beschriftung, c-ui.text-button dicht; c-form.datei – Dateifeld mit Ablagefläche; c-rahmen.reiter-link mit zahl">
         <form class="space-y-5" novalidate>
             <c-form.field name="titel_dicht" label="Titel" maxlength="500" dicht help="Höchstens 500 Zeichen" />
             <c-form.select name="status_dicht" label="Status" dicht zeile><option>Alle</option><option>Entwurf</option></c-form.select>
@@ -83,6 +83,11 @@
             <div>
                 <c-form.checkbox name="bestaetigung" value="ja" dicht>Ich bestätige die Angaben.</c-form.checkbox>
                 <c-form.hinweis einzug>c-form.hinweis: Erläuterung unter einem Feld, 13 px</c-form.hinweis>
+            </div>
+            <div>
+                <c-form.beschriftung feld="farbe-beispiel" pflicht>c-form.beschriftung für eigene Felder</c-form.beschriftung>
+                <input type="color" id="farbe-beispiel" value="#4f46e5">
+                <c-ui.text-button dicht>c-ui.text-button dicht: Knopf im Aussehen eines Textlinks</c-ui.text-button>
             </div>
             <c-form.datei name="unterlagen" label="Unterlagen (PDF)" accept=".pdf" hinweis="Bis 20 MB" />
         </form>

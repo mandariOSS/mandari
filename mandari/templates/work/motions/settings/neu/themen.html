@@ -1,0 +1,63 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Dokumente › Themen im neuen Erscheinungsbild (Issue #951): neues Thema anlegen, je Thema Name, Farbe und
+Sortierung speichern oder mit Rückfrage löschen. Formulare, Ziele und Rückfrage (data-confirm) wie bisher
+(work/motions/settings/topics.html). Kontext: TopicListView.
+{% endcomment %}
+
+{% block page_title %}Themen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Themen" dicht text="Themenkatalog von {{ organization.name }}: ordnet Dokumente und die Fachgebiete der Mitglieder." />
+{% include "work/organization/neu/_reiter.html" with seite="themen" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="themen" %}
+    <div class="min-w-0 flex-1">
+        <form method="post" class="flex flex-wrap items-end gap-3">
+            {% csrf_token %}
+            <c-form.field name="name" id="thema-neu" label="Neues Thema" placeholder="z. B. Verkehr, Klima, Bildung" maxlength="100" dicht required class="flex-1 min-w-[14rem]" />
+            <c-form.select name="color" id="thema-neu-farbe" label="Farbe" dicht class="w-40">
+                {% for value, label in color_choices %}<option value="{{ value }}" {% if value == "blue" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <c-ui.button type="submit" size="sm" icon="plus">Anlegen</c-ui.button>
+        </form>
+
+        {% if topics %}
+        <c-rahmen.satz>Je Thema Name, Farbe und Reihenfolge; Themen mit kleinerer Zahl stehen weiter oben.</c-rahmen.satz>
+        <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="themen-liste">
+            {% for topic in topics %}
+            <li class="flex flex-wrap items-center gap-x-3 gap-y-2 py-2">
+                <form method="post" action="{% url 'work:document_topic_update' org_slug=organization.slug topic_id=topic.id %}" class="flex flex-1 flex-wrap items-center gap-3 min-w-[16rem]">
+                    {% csrf_token %}
+                    <span class="w-2.5 h-2.5 shrink-0 rounded-full bg-{{ topic.color }}-500" aria-hidden="true"></span>
+                    <label for="thema-{{ topic.id }}" class="sr-only">Name</label>
+                    <input type="text" id="thema-{{ topic.id }}" name="name" value="{{ topic.name }}" required maxlength="100"
+                           class="flex-1 min-w-[10rem] h-8 px-2.5 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                    <label for="thema-farbe-{{ topic.id }}" class="sr-only">Farbe von {{ topic.name }}</label>
+                    <select id="thema-farbe-{{ topic.id }}" name="color" class="h-8 pl-2.5 pr-8 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600">
+                        {% for value, label in color_choices %}<option value="{{ value }}" {% if topic.color == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                    <label for="thema-sortierung-{{ topic.id }}" class="sr-only">Sortierung von {{ topic.name }}</label>
+                    <input type="number" id="thema-sortierung-{{ topic.id }}" name="sort_order" value="{{ topic.sort_order }}" title="Sortierung"
+                           class="w-16 h-8 px-2 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600">
+                    <c-ui.button type="submit" size="sm" variant="ghost" icon="save">Speichern<span class="sr-only">: {{ topic.name }}</span></c-ui.button>
+                </form>
+                <form method="post" action="{% url 'work:document_topic_delete' org_slug=organization.slug topic_id=topic.id %}"
+                      data-confirm="Thema „{{ topic.name }}“ wirklich löschen? Zuordnungen zu Dokumenten und Fachgebieten werden entfernt.">
+                    {% csrf_token %}
+                    <c-ui.button type="submit" size="sm" variant="ghost" icon="trash-2" class="text-red-700 dark:text-red-400">Löschen<span class="sr-only">: {{ topic.name }}</span></c-ui.button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="mt-6 text-sm text-gray-700 dark:text-gray-300">Noch keine Themen angelegt.</p>
+        {% endif %}
+        <p class="mt-6 text-sm"><c-ui.textlink href="{% url 'work:document_settings' org_slug=organization.slug %}">Zu den Dokumenteinstellungen</c-ui.textlink></p>
+    </div>
+</div>
+{% endblock %}

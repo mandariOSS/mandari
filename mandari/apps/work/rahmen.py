@@ -158,6 +158,12 @@ PRAEFIXE: tuple[tuple[str, str, str | None], ...] = (
     ("meeting", "sitzungen", "fuer_mich"),
     ("faction", "fraktionssitzungen", None),
     ("session_invitation", "sitzungen", None),
+    # Dokument-Einstellungen liegen unter /organization/documents/ und gehören zu den Einstellungen (Issue #951)
+    ("document_settings", "einstellungen", None),
+    ("document_type", "einstellungen", None),
+    ("document_topic", "einstellungen", None),
+    ("document_template", "einstellungen", None),
+    ("document_letterhead", "einstellungen", None),
     ("document", "dokumente", None),
     ("motion", "dokumente", None),
     ("task", "aufgaben", None),

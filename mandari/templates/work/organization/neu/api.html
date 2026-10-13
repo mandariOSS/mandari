@@ -65,10 +65,10 @@ Kontext: OrganizationApiSettingsView.
                 <div x-data="{ copied: false }">
                     <div class="flex items-center justify-between gap-2 mb-1">
                         <p id="snippet-titel" class="text-sm font-medium text-gray-800 dark:text-gray-200">Einbindungs-Snippet für Ihre Webseite</p>
-                        <button type="button" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"
+                        <c-ui.text-button dicht
                                 @click="navigator.clipboard.writeText($refs.snippet.textContent).then(() => { copied = true; setTimeout(() => copied = false, 2000); })">
                             <span x-show="!copied">Kopieren</span><span x-show="copied" x-cloak aria-live="polite">Kopiert</span>
-                        </button>
+                        </c-ui.text-button>
                     </div>
                     <pre x-ref="snippet" aria-labelledby="snippet-titel" class="text-xs leading-relaxed bg-band-grau rounded-md p-3 overflow-x-auto text-gray-800 dark:text-gray-200"><code>&lt;div id="fraktions-termine"&gt;Termine werden geladen…&lt;/div&gt;
 &lt;script&gt;
@@ -90,7 +90,7 @@ fetch("{{ api_meetings_url }}")
                 <form method="post" data-confirm="API-Token wirklich erneuern? Bestehende Einbindungen auf Ihrer Webseite funktionieren dann nicht mehr, bis die neue URL eingetragen ist.">
                     {% csrf_token %}
                     <input type="hidden" name="section" value="api_regenerate">
-                    <button type="submit" class="text-sm font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">API-Token erneuern</button>
+                    <c-ui.text-button type="submit" variant="danger" dicht>API-Token erneuern</c-ui.text-button>
                     <c-form.hinweis>Die bisherige Basis-URL gilt danach nicht mehr.</c-form.hinweis>
                 </form>
             </div>

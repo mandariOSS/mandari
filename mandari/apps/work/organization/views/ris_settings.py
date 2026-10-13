@@ -7,14 +7,16 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.work.motions import ris_submission
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 
 
-class OrganizationRisSettingsView(WorkViewMixin, TemplateView):
+class OrganizationRisSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Reiter „Verwaltung“: Token hinterlegen, Status sehen, Verbindung trennen."""
 
     template_name = "work/organization/ris_settings.html"
+    neue_vorlage = "work/organization/neu/einreichung.html"
     permission_required = "faction.manage"
 
     def get_context_data(self, **kwargs):

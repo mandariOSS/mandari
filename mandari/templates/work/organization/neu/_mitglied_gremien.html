@@ -22,7 +22,7 @@ suggested_committee_ids, active_committees, inactive_committees, member_committe
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="unlink_oparl_person">
-                <button type="submit" class="text-sm font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Verknüpfung trennen</button>
+                <c-ui.text-button type="submit" variant="danger" dicht>Verknüpfung trennen</c-ui.text-button>
             </form>
             {% endif %}
         </div>
@@ -36,7 +36,7 @@ suggested_committee_ids, active_committees, inactive_committees, member_committe
                     <input type="hidden" name="action" value="link_oparl_person">
                     <input type="hidden" name="oparl_person_id" value="{{ person.id }}">
                     <span>{{ person.display_name }}</span>
-                    <button type="submit" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Verknüpfen<span class="sr-only">: {{ person.display_name }}</span></button>
+                    <c-ui.text-button type="submit" dicht>Verknüpfen<span class="sr-only">: {{ person.display_name }}</span></c-ui.text-button>
                 </form>
             </li>
             {% endfor %}
@@ -55,15 +55,14 @@ suggested_committee_ids, active_committees, inactive_committees, member_committe
             <legend class="text-sm font-medium text-gray-800 dark:text-gray-200">Aktive Gremien <span class="font-normal text-gray-600 dark:text-gray-400">· {{ active_committees|length }}</span></legend>
             <div class="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2 max-h-64 overflow-y-auto">
                 {% for committee in active_committees %}
-                <c-form.checkbox name="committees" id="gremium-{{ committee.id }}" value="{{ committee.id }}" checked="{% if committee.id in member_committees %}1{% endif %}" dicht>{{ committee.name }}{% if committee.classification %} <span class="text-gray-600 dark:text-gray-400">· {{ committee.classification }}</span>{% endif %}{% if committee.id in suggested_committee_ids %} <span class="text-primary-700 dark:text-primary-300">· vorgeschlagen</span>{% endif %}</c-form.checkbox>
+                <c-form.checkbox name="committees" id="gremium-{{ committee.id }}" value="{{ committee.id }}" checked="{% if committee.id in member_committees %}1{% endif %}" dicht>{{ committee.name }}{% if committee.classification %} <span class="text-gray-600 dark:text-gray-400">· {{ committee.classification }}</span>{% endif %}{% if committee.id in suggested_committee_ids %} <span class="text-gray-600 dark:text-gray-400">· vorgeschlagen</span>{% endif %}</c-form.checkbox>
                 {% endfor %}
             </div>
         </fieldset>
         {% endif %}
         {% if inactive_committees %}
         <div x-data="{ open: false }">
-            <button type="button" @click="open = !open" :aria-expanded="open.toString()" aria-expanded="false" aria-controls="vergangene-gremien"
-                    class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Vergangene Gremien ({{ inactive_committees|length }})</button>
+            <c-ui.text-button dicht @click="open = !open" ::aria-expanded="open.toString()" aria-expanded="false" aria-controls="vergangene-gremien">Vergangene Gremien ({{ inactive_committees|length }})</c-ui.text-button>
             <div id="vergangene-gremien" x-show="open" x-collapse class="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2 max-h-48 overflow-y-auto">
                 {% for committee in inactive_committees %}
                 <c-form.checkbox name="committees" id="gremium-{{ committee.id }}" value="{{ committee.id }}" checked="{% if committee.id in member_committees %}1{% endif %}" dicht>{{ committee.name }}{% if committee.end_date %} <span class="text-gray-600 dark:text-gray-400">· bis {{ committee.end_date|date:"d.m.Y" }}</span>{% endif %}</c-form.checkbox>

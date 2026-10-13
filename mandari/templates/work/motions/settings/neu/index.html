@@ -1,0 +1,59 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Dokumente › Dokumenteinstellungen im neuen Erscheinungsbild (Issue #951): Erscheinungsbild (Logo,
+Farben, Briefkopf) und die vier Bereiche als Liste mit Linien statt Kacheln mit Zählern. Links wie bisher
+(work/motions/settings/index.html). Kontext: MotionSettingsView.
+{% endcomment %}
+
+{% block page_title %}Dokumenteinstellungen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Dokumenteinstellungen" dicht text="Erscheinungsbild und Bausteine neuer Dokumente: Typen, Vorlagen, Briefköpfe und Themen." />
+{% include "work/organization/neu/_reiter.html" with seite="uebersicht" aktuell="true" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="uebersicht" aktuell="true" %}
+    <div class="min-w-0 flex-1 grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+        <c-rahmen.abschnitt titel="Erscheinungsbild" titel_id="erscheinung-titel">
+            <div class="mt-3 flex flex-wrap items-start gap-5">
+                {% if organization.effective_logo %}
+                <img src="{{ organization.effective_logo.url }}" alt="Logo von {{ organization.name }}" class="h-12 w-auto max-w-[120px] object-contain">
+                {% endif %}
+                <c-ui.angaben class="flex-1 min-w-[16rem]">
+                    <dt>Primärfarbe</dt>
+                    <dd class="flex items-center gap-2">{% include "work/organization/neu/_farbpunkt.html" with farbe=organization.effective_primary_color %}<span class="font-mono">{{ organization.effective_primary_color }}</span></dd>
+                    <dt>Sekundärfarbe</dt>
+                    <dd class="flex items-center gap-2">{% include "work/organization/neu/_farbpunkt.html" with farbe=organization.secondary_color %}<span class="font-mono">{{ organization.secondary_color|default:"keine" }}</span></dd>
+                    <dt>Briefkopf</dt>
+                    <dd>{{ letterhead_status }}{% if primary_letterhead %} ({{ primary_letterhead.name }}){% endif %}</dd>
+                </c-ui.angaben>
+            </div>
+            <c-rahmen.satz>Logo und Farben pflegen Sie in den Einstellungen der Organisation. <c-ui.textlink href="{% url 'work:organization' org_slug=organization.slug %}">Logo und Farben pflegen</c-ui.textlink></c-rahmen.satz>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Bausteine" titel_id="bausteine-titel">
+            <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm">
+                <li class="py-2.5">
+                    <c-ui.textlink href="{% url 'work:document_type_list' org_slug=organization.slug %}">Dokumenttypen</c-ui.textlink> <span class="text-gray-600 dark:text-gray-400">· {{ type_count }}</span>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Eigene Typen wie Anträge, Anfragen, Stellungnahmen oder Pressemitteilungen.</p>
+                </li>
+                <li class="py-2.5">
+                    <c-ui.textlink href="{% url 'work:document_template_list' org_slug=organization.slug %}">Vorlagen</c-ui.textlink> <span class="text-gray-600 dark:text-gray-400">· {{ template_count }}</span>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Vordefinierte Inhalte und Formatierungen für neue Dokumente.</p>
+                </li>
+                <li class="py-2.5">
+                    <c-ui.textlink href="{% url 'work:document_letterhead_list' org_slug=organization.slug %}">Briefköpfe</c-ui.textlink> <span class="text-gray-600 dark:text-gray-400">· {{ letterhead_count }}</span>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Generiert aus dem Erscheinungsbild oder als PDF-Hintergrund für den Export.</p>
+                </li>
+                <li class="py-2.5">
+                    <c-ui.textlink href="{% url 'work:document_topic_list' org_slug=organization.slug %}">Themen</c-ui.textlink> <span class="text-gray-600 dark:text-gray-400">· {{ topic_count }}</span>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Themenkatalog für Dokumente und die Fachgebiete der Mitglieder.</p>
+                </li>
+            </ul>
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

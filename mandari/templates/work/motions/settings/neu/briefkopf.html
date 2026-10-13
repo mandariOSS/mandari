@@ -1,0 +1,139 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Dokumente › Briefkopf anlegen oder bearbeiten im neuen Erscheinungsbild (Issue #951): Art (generiert
+oder PDF), PDF über das gemeinsame Dateifeld, Angaben des generierten Briefkopfs mit Live-Vorschau, Ränder, Schrift und
+Standard. letterheadForm (frontend/alpine/letterhead-form.ts) wie bisher: Startwerte aus letterhead-form-data, Modelle
+kind, headerLogoEnabled, accentColorEnabled, senderLine, addressBlock, footerText, Vorschau in #letterhead-preview.
+Felder und Ziel wie bisher (work/motions/settings/letterhead_form.html). Kontext: LetterheadCreateView, LetterheadEditView.
+{% endcomment %}
+
+{% block page_title %}{% if is_new %}Neuer Briefkopf{% else %}{{ letterhead.name }} bearbeiten{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if is_new %}Neuer Briefkopf{% else %}{{ letterhead.name }}{% endif %}" dicht
+    text="{% if is_new %}Einen Briefkopf aus dem Erscheinungsbild erzeugen oder ein PDF als Hintergrund hinterlegen.{% else %}Briefkopf bearbeiten.{% endif %}">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:document_letterhead_list' org_slug=organization.slug %}">Briefköpfe</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="briefkoepfe" aktuell="true" %}
+{% endblock %}
+
+{% block work_content %}
+{{ letterhead_form|json_script:"letterhead-form-data" }}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="briefkoepfe" aktuell="true" %}
+    <div class="min-w-0 flex-1" x-data="letterheadForm" data-preview-url="{% url 'work:document_letterhead_preview' org_slug=organization.slug %}">
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+                <div class="space-y-10 min-w-0">
+                    <c-rahmen.abschnitt titel="Briefkopf" titel_id="briefkopf-titel">
+                        <div class="mt-3 space-y-4">
+                            <c-form.field name="name" id="name" label="Name" value="{% if letterhead %}{{ letterhead.name }}{% endif %}" placeholder="z. B. Offizieller Briefkopf" dicht required />
+                            <c-form.textarea name="description" id="description" label="Beschreibung" rows="2" value="{% if letterhead %}{{ letterhead.description }}{% endif %}" placeholder="Kurze Beschreibung des Briefkopfs" dicht />
+                            <fieldset>
+                                <c-form.beschriftung als="legend">Art des Briefkopfs</c-form.beschriftung>
+                                <div class="mt-1.5 space-y-1.5">
+                                    <label class="flex items-start gap-2 text-sm cursor-pointer">
+                                        <input type="radio" name="kind" value="generated" x-model="kind" @change="refreshPreview()" class="mt-0.5 text-primary-600 focus:ring-primary-500">
+                                        <span class="text-gray-800 dark:text-gray-200">Generiert <span class="text-gray-600 dark:text-gray-400">· aus dem Erscheinungsbild der Organisation (Logo, Farben)</span></span>
+                                    </label>
+                                    <label class="flex items-start gap-2 text-sm cursor-pointer">
+                                        <input type="radio" name="kind" value="pdf" x-model="kind" class="mt-0.5 text-primary-600 focus:ring-primary-500">
+                                        <span class="text-gray-800 dark:text-gray-200">PDF-Datei <span class="text-gray-600 dark:text-gray-400">· eigenes PDF als Hintergrund für den Export</span></span>
+                                    </label>
+                                </div>
+                            </fieldset>
+                            <div x-show="kind === 'pdf'" x-cloak>
+                                {% if letterhead and letterhead.pdf_file %}
+                                <p class="mb-2 text-sm text-gray-800 dark:text-gray-200">Aktuelle PDF-Datei: <c-ui.textlink href="{% url 'work:document_letterhead_file' org_slug=organization.slug letterhead_id=letterhead.id %}" extern>anzeigen</c-ui.textlink></p>
+                                {% endif %}
+                                <c-form.datei name="pdf_file" id="pdf_file" label="{% if letterhead and letterhead.pdf_file %}Neue PDF-Datei (ersetzt die bisherige){% else %}PDF-Datei{% endif %}" accept=".pdf"
+                                              hinweis="Nur PDF, höchstens 10 MB. Das PDF liegt beim Export hinter dem Text." />
+                            </div>
+                        </div>
+                    </c-rahmen.abschnitt>
+
+                    <c-rahmen.abschnitt titel="Textbereich und Schrift" titel_id="satz-titel">
+                        <c-rahmen.satz eng>Ränder in mm: Der Text beginnt nach dem oberen und endet vor dem unteren Rand.</c-rahmen.satz>
+                        {# Gespeicherte Werte unverändert (auch 0), sonst die Vorgaben wie bisher #}
+                        {% if letterhead %}
+                        <div class="mt-3 grid gap-4 grid-cols-2 sm:grid-cols-4">
+                            {% include "work/organization/neu/_zahl.html" with name="content_margin_top" id="content_margin_top" label="Oben" value=letterhead.content_margin_top min=0 max=200 %}
+                            {% include "work/organization/neu/_zahl.html" with name="content_margin_left" id="content_margin_left" label="Links" value=letterhead.content_margin_left min=0 max=100 %}
+                            {% include "work/organization/neu/_zahl.html" with name="content_margin_right" id="content_margin_right" label="Rechts" value=letterhead.content_margin_right min=0 max=100 %}
+                            {% include "work/organization/neu/_zahl.html" with name="content_margin_bottom" id="content_margin_bottom" label="Unten" value=letterhead.content_margin_bottom min=0 max=100 %}
+                        </div>
+                        <div class="mt-4 grid gap-4 grid-cols-2">
+                            <c-form.select name="font_family" id="font_family" label="Schriftart" dicht>
+                                {% with current_font=letterhead.font_family|default:"Arial" %}
+                                <option value="Arial" {% if current_font == "Arial" %}selected{% endif %}>Arial</option>
+                                <option value="Helvetica" {% if current_font == "Helvetica" %}selected{% endif %}>Helvetica</option>
+                                <option value="Times New Roman" {% if current_font == "Times New Roman" %}selected{% endif %}>Times New Roman</option>
+                                <option value="Georgia" {% if current_font == "Georgia" %}selected{% endif %}>Georgia</option>
+                                <option value="Calibri" {% if current_font == "Calibri" %}selected{% endif %}>Calibri</option>
+                                {% endwith %}
+                            </c-form.select>
+                            {% include "work/organization/neu/_zahl.html" with name="font_size" id="font_size" label="Schriftgröße (pt)" value=letterhead.font_size min=8 max=24 %}
+                        </div>
+                        {% else %}
+                        <div class="mt-3 grid gap-4 grid-cols-2 sm:grid-cols-4">
+                            {% include "work/organization/neu/_zahl.html" with name="content_margin_top" id="content_margin_top" label="Oben" value=60 min=0 max=200 %}
+                            {% include "work/organization/neu/_zahl.html" with name="content_margin_left" id="content_margin_left" label="Links" value=25 min=0 max=100 %}
+                            {% include "work/organization/neu/_zahl.html" with name="content_margin_right" id="content_margin_right" label="Rechts" value=20 min=0 max=100 %}
+                            {% include "work/organization/neu/_zahl.html" with name="content_margin_bottom" id="content_margin_bottom" label="Unten" value=30 min=0 max=100 %}
+                        </div>
+                        <div class="mt-4 grid gap-4 grid-cols-2">
+                            <c-form.select name="font_family" id="font_family" label="Schriftart" dicht>
+                                {% with current_font=letterhead.font_family|default:"Arial" %}
+                                <option value="Arial" {% if current_font == "Arial" %}selected{% endif %}>Arial</option>
+                                <option value="Helvetica" {% if current_font == "Helvetica" %}selected{% endif %}>Helvetica</option>
+                                <option value="Times New Roman" {% if current_font == "Times New Roman" %}selected{% endif %}>Times New Roman</option>
+                                <option value="Georgia" {% if current_font == "Georgia" %}selected{% endif %}>Georgia</option>
+                                <option value="Calibri" {% if current_font == "Calibri" %}selected{% endif %}>Calibri</option>
+                                {% endwith %}
+                            </c-form.select>
+                            {% include "work/organization/neu/_zahl.html" with name="font_size" id="font_size" label="Schriftgröße (pt)" value=11 min=8 max=24 %}
+                        </div>
+                        {% endif %}
+                        <div class="mt-4">
+                            <c-form.checkbox name="is_default" id="is_default" :checked="letterhead.is_default" dicht label="Standard-Briefkopf" />
+                            <c-form.hinweis einzug>Vorauswahl für neue Dokumente.</c-form.hinweis>
+                        </div>
+                    </c-rahmen.abschnitt>
+                </div>
+
+                <div x-show="kind === 'generated'" x-cloak class="min-w-0">
+                    <c-rahmen.abschnitt titel="Generierter Briefkopf" titel_id="generiert-titel">
+                        <div class="mt-3 space-y-4">
+                            <div class="flex flex-wrap gap-x-8 gap-y-2">
+                                <c-form.checkbox name="header_logo_enabled" id="header_logo_enabled" modell="headerLogoEnabled" dicht label="Logo im Kopf" @change="refreshPreview()" />
+                                <c-form.checkbox name="accent_color_enabled" id="accent_color_enabled" modell="accentColorEnabled" dicht label="Linie in der Primärfarbe" @change="refreshPreview()" />
+                            </div>
+                            <c-form.field name="sender_line" id="sender_line" label="Absenderzeile" modell="senderLine" placeholder="Fraktion XYZ · Rathausplatz 1 · 12345 Stadt" dicht
+                                          help="Eine Zeile über dem Adressfeld." @input.debounce.400ms="refreshPreview()" />
+                            <c-form.textarea name="address_block" id="address_block" label="Absenderblock" rows="4" modell="addressBlock" placeholder="Fraktion XYZ, Rathausplatz 1, 12345 Stadt" dicht
+                                             help="Rechts oben im Briefkopf, eine Angabe je Zeile." @input.debounce.400ms="refreshPreview()" />
+                            <c-form.textarea name="footer_text" id="footer_text" label="Fußzeile" rows="3" modell="footerText" placeholder="fraktion@beispielstadt.de · Tel. 0123 456789 · www.beispiel.de" dicht
+                                             help="Auf jeder Seite unten, etwa Kontakt, Bank und Web." @input.debounce.400ms="refreshPreview()" />
+                            <div>
+                                <div class="flex items-center justify-between mb-1">
+                                    <c-form.beschriftung als="p">Vorschau</c-form.beschriftung>
+                                    <c-ui.text-button dicht @click="refreshPreview()">Aktualisieren</c-ui.text-button>
+                                </div>
+                                <div id="letterhead-preview" aria-live="polite" class="rounded-md border border-gray-300 dark:border-gray-700 bg-white p-6 overflow-auto">
+                                    <p class="text-sm text-gray-600">Vorschau wird geladen …</p>
+                                </div>
+                            </div>
+                        </div>
+                    </c-rahmen.abschnitt>
+                </div>
+            </div>
+            <div class="mt-8 flex flex-wrap items-center gap-4">
+                <c-ui.button type="submit" size="sm" icon="check">{% if is_new %}Briefkopf erstellen{% else %}Speichern{% endif %}</c-ui.button>
+                <c-ui.textlink href="{% url 'work:document_letterhead_list' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

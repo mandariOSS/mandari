@@ -40,7 +40,7 @@ RoleEditView.
                             {% endif %}
                             <div class="sm:pt-6">
                                 <c-form.checkbox name="require_2fa" id="require_2fa" :checked="role.require_2fa" label="Zweiten Faktor verlangen" dicht />
-                                <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Wer Mitglieder, Rollen, Einstellungen oder API-Zugänge verwaltet, braucht ihn immer.</p>
+                                <c-form.hinweis einzug>Wer Mitglieder, Rollen, Einstellungen oder API-Zugänge verwaltet, braucht ihn immer.</c-form.hinweis>
                             </div>
                         </div>
                     </div>
@@ -62,10 +62,9 @@ RoleEditView.
                 <c-ui.button type="submit" size="sm" icon="save">{% if is_edit %}Speichern{% else %}Erstellen{% endif %}</c-ui.button>
                 <c-ui.textlink href="{% url 'work:roles' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
                 {% if is_edit and not role.is_system_role %}
-                <button type="button" id="role-delete-btn" data-action="confirm-submit" data-target="#role-delete-form"
+                <c-ui.text-button variant="danger" dicht class="ml-auto" id="role-delete-btn" data-action="confirm-submit" data-target="#role-delete-form"
                         data-confirm-title="Rolle löschen" data-confirm-message="Möchten Sie die Rolle «{{ role.name }}» wirklich löschen?"
-                        data-confirm-text="Löschen" data-confirm-variant="danger"
-                        class="ml-auto text-sm font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Rolle löschen</button>
+                        data-confirm-text="Löschen" data-confirm-variant="danger">Rolle löschen</c-ui.text-button>
                 {% endif %}
             </div>
         </form>

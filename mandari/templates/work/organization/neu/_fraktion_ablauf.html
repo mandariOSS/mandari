@@ -1,0 +1,54 @@
+{% comment %}
+Fraktionssitzungen: Ablauf, Einladungen, Erinnerung und Protokollversand (Issues #62, #871), Teil des Hauptformulars.
+Feldnamen und Werte wie bisher (partials/_faction_workflow_settings.html, _faction_automation_settings.html).
+Kontext: faction_settings.
+{% endcomment %}
+<div class="space-y-10 min-w-0">
+    <c-rahmen.abschnitt titel="Ablauf" titel_id="ablauf-titel">
+        <div class="mt-3 space-y-3">
+            {% include "work/organization/neu/_haken.html" with name="auto_create_approval_item" id="auto_create_approval_item" label="Ersten TOP automatisch anlegen" an=faction_settings.auto_create_approval_item hilfe="Jede neue Sitzung beginnt mit einem TOP zur Genehmigung der Tagesordnung und des letzten Protokolls." %}
+            {% include "work/organization/neu/_haken.html" with name="link_previous_meeting" id="link_previous_meeting" label="Sitzungen automatisch verketten" an=faction_settings.link_previous_meeting hilfe="Neue Sitzungen werden mit der vorherigen verknüpft." %}
+            {% include "work/organization/neu/_haken.html" with name="protocol_revision_safe" id="protocol_revision_safe" label="Protokolle revisionssicher speichern" an=faction_settings.protocol_revision_safe hilfe="Genehmigte Protokolle lassen sich nicht mehr bearbeiten." %}
+            {% include "work/organization/neu/_haken.html" with name="auto_lock_protocol_on_complete" id="auto_lock_protocol_on_complete" label="Protokoll bei Abschluss sperren" an=faction_settings.auto_lock_protocol_on_complete hilfe="Sperrt das Protokoll, sobald die Sitzung als abgeschlossen markiert wird." %}
+            {% include "work/organization/neu/_haken.html" with name="require_protocol_approval" id="require_protocol_approval" label="Protokollgenehmigung verlangen" an=faction_settings.require_protocol_approval hilfe="Protokolle gelten erst als fertig, wenn eine Folgesitzung sie genehmigt." %}
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Einladungen" titel_id="einladungen-titel">
+        <c-rahmen.satz eng>Wie Einladungen versendet werden und ob sich Mitglieder anmelden (Opt-in) oder abmelden (Opt-out).</c-rahmen.satz>
+        <div class="mt-3 grid gap-4 sm:grid-cols-2">
+            <c-form.select name="invitation_mode" id="id_invitation_mode" label="Teilnahme" dicht class="sm:col-span-2"
+                           help="Gilt für Sitzungen mit Zu- und Absagen (je Sitzung oder Sitzungsreihe einschaltbar, standardmäßig aus). Bei Opt-out stehen nach dem Versand alle auf „Zugesagt“ und können absagen.">
+                <option value="opt_in" {% if faction_settings.invitation_mode == "opt_in" %}selected{% endif %}>Opt-in: Teilnehmende sagen zu</option>
+                <option value="opt_out" {% if faction_settings.invitation_mode == "opt_out" %}selected{% endif %}>Opt-out: Teilnehmende gelten als angemeldet und sagen ab</option>
+            </c-form.select>
+            {% include "work/organization/neu/_zahl.html" with name="invitation_lead_hours" id="id_invitation_lead_hours" label="Einladungsvorlauf (Stunden)" value=faction_settings.invitation_lead_hours min=1 max=1440 hilfe="Z. B. 48 oder 72. Zu diesem Zeitpunkt gehen die Einladungen raus bzw. ist der Versand nach Freigabe geplant." %}
+            <c-form.select name="invitation_dispatch" id="id_invitation_dispatch" label="Versand" dicht
+                           help="Bei Freigabe erinnert Work Vorstand und Vorsitz 24 und 3 Stunden vor dem Versand (in Work und per E-Mail). Der stellvertretende Vorsitz darf freigeben; dokumentiert wird, wer freigegeben hat. Sitzungsreihen können stattdessen selbst einladen.">
+                <option value="automatic" {% if faction_settings.invitation_dispatch == "automatic" %}selected{% endif %}>Automatisch zum Vorlauf</option>
+                <option value="approval" {% if faction_settings.invitation_dispatch == "approval" %}selected{% endif %}>Erst nach Freigabe durch Vorstand oder Vorsitz</option>
+            </c-form.select>
+            <c-form.select name="quorum_rule" id="id_quorum_rule" label="Beschlussfähigkeit" dicht class="sm:col-span-2"
+                           help="Weitere Regeln folgen; derzeit gilt die Standardregel.">
+                <option value="majority" selected>Mehr als die Hälfte der Stimmberechtigten anwesend</option>
+            </c-form.select>
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Erinnerung und Protokollversand" titel_id="versand-titel">
+        <c-rahmen.satz eng>Beides ist standardmäßig aus. Die Mails gehen über den E-Mail-Versand der Organisation, je Sitzung höchstens einmal.</c-rahmen.satz>
+        <div class="mt-3 grid gap-4 sm:grid-cols-2">
+            <c-form.checkbox name="agenda_reminder_enabled" id="id_agenda_reminder_enabled" :checked="faction_settings.agenda_reminder_enabled" dicht label="An das Eintragen von TOPs erinnern" class="sm:col-span-2" />
+            <c-form.field name="agenda_reminder_hours" id="id_agenda_reminder_hours" type="number" label="Stunden vor dem Einladungsversand" value="{{ faction_settings.agenda_reminder_hours }}" dicht
+                          help="1 bis 336. Geht an alle Eingeladenen, die TOPs eintragen oder vorschlagen dürfen, mit der bisherigen Tagesordnung." />
+            <c-form.select name="protocol_dispatch" id="id_protocol_dispatch" label="Protokoll automatisch versenden" dicht class="sm:col-start-1"
+                           help="An alle mit Leserecht für Protokolle; Vereidigte mit vollem Leserecht erhalten die interne Fassung, alle anderen den öffentlichen Teil. Ältere Protokolle gehen nicht nachträglich raus.">
+                <option value="off" {% if faction_settings.protocol_dispatch == "off" %}selected{% endif %}>Aus</option>
+                <option value="after_completion" {% if faction_settings.protocol_dispatch == "after_completion" %}selected{% endif %}>Nach Ende der Sitzung</option>
+                <option value="after_approval" {% if faction_settings.protocol_dispatch == "after_approval" %}selected{% endif %}>Nach Genehmigung des Protokolls</option>
+            </c-form.select>
+            <c-form.field name="protocol_dispatch_delay_hours" id="id_protocol_dispatch_delay_hours" type="number" label="Stunden danach" value="{{ faction_settings.protocol_dispatch_delay_hours }}" dicht
+                          help="0 bis 720, z. B. 24: einen Tag nach Sitzungsende bzw. Genehmigung." />
+        </div>
+    </c-rahmen.abschnitt>
+</div>

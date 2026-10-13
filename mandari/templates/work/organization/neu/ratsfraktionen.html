@@ -1,0 +1,79 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Verwaltung › Ratsfraktionen im neuen Erscheinungsbild (Issue #951): Ratsfraktionen mit Kennfarbe als
+Punkt, Koalition und Verwaltungskontakte. partyManager (frontend/alpine/organization-settings.ts) wie bisher: showAdd
+für das Formular „Fraktion hinzufügen“, editing für die Bearbeitung je Fraktion (jetzt über einen Knopf statt Klick auf
+die Zeile), Löschen mit Rückfrage über das versteckte Formular (x-ref deleteForm…). Alle sechs Aktionen
+(update_coalition, add_admin_contact, delete_admin_contact, add_party, update_party, delete_party) wie bisher
+(work/organization/parties.html). Kontext: CouncilPartyListView.
+{% endcomment %}
+
+{% block page_title %}Ratsfraktionen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Ratsfraktionen" dicht
+    text="Die Fraktionen im Rat, die Koalition und die Kontakte der Verwaltung, an die Anträge ohne Verbindung zu mandari Session per E-Mail gehen." />
+{% include "work/organization/neu/_reiter.html" with seite="ratsfraktionen" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="ratsfraktionen" %}
+    <div class="min-w-0 flex-1 grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+        {% include "work/organization/neu/_ratsfraktionen_liste.html" %}
+
+        <div class="space-y-10 min-w-0">
+            <c-rahmen.abschnitt titel="Koalition" titel_id="koalition-titel">
+                <c-rahmen.satz eng>Koalitionspartner erhalten Anträge zur Abstimmung.</c-rahmen.satz>
+                <form method="post" action="" class="mt-3 flex flex-wrap items-end gap-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_coalition">
+                    <c-form.field name="coalition_name" id="koalitionsname" label="Name der Koalition" value="{{ coalition_name }}" placeholder="z. B. Ampel, Rot-Grün" dicht class="flex-1 min-w-[14rem]" />
+                    <c-ui.button type="submit" size="sm" variant="secondary">Speichern</c-ui.button>
+                </form>
+                {% if coalition_parties %}
+                <ul class="mt-4 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm">
+                    {% for party in coalition_parties %}
+                    <li class="flex flex-wrap items-center gap-x-3 gap-y-1 py-2">
+                        {% include "work/organization/neu/_farbpunkt.html" with farbe=party.color %}
+                        <span class="font-medium text-gray-900 dark:text-white">{{ party.name }}</span>
+                        <span class="text-gray-600 dark:text-gray-400">{{ party.short_name }}</span>
+                        {% if party.email %}<span class="ml-auto text-[0.8125rem] text-gray-600 dark:text-gray-400 break-all">{{ party.email }}</span>{% endif %}
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <c-rahmen.satz>Noch keine Koalitionspartner. Markieren Sie Fraktionen in der Liste als Koalitionspartner.</c-rahmen.satz>
+                {% endif %}
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="Verwaltungskontakte" titel_id="kontakte-titel">
+                <c-rahmen.satz eng>Empfänger, wenn Anträge ohne Verbindung zu mandari Session per E-Mail eingereicht werden. Bei der Einreichung wählen Sie, wer den Antrag erhält.</c-rahmen.satz>
+                {% if admin_contacts %}
+                <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm">
+                    {% for contact in admin_contacts %}
+                    <li class="flex items-center justify-between gap-3 py-1.5">
+                        <span class="min-w-0"><span class="font-medium text-gray-900 dark:text-white">{{ contact.label }}</span> <span class="text-gray-600 dark:text-gray-400 break-all">{{ contact.email }}</span></span>
+                        <form method="post" action="">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete_admin_contact">
+                            <input type="hidden" name="contact_id" value="{{ contact.id }}">
+                            <c-ui.button type="submit" size="sm" variant="ghost" icon="x" class="text-red-700 dark:text-red-400">Entfernen<span class="sr-only">: {{ contact.label }}</span></c-ui.button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% endif %}
+                <form method="post" action="" class="mt-4 flex flex-wrap items-end gap-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add_admin_contact">
+                    <c-form.field name="contact_label" id="kontakt-bezeichnung" label="Bezeichnung" placeholder="z. B. Ratsbüro" dicht required class="flex-1 min-w-[10rem]" />
+                    <c-form.field name="contact_email" id="kontakt-email" type="email" label="E-Mail" placeholder="ratsbuero@stadt.de" dicht required class="flex-1 min-w-[12rem]" />
+                    <c-ui.button type="submit" size="sm" variant="secondary" icon="plus">Hinzufügen</c-ui.button>
+                </form>
+            </c-rahmen.abschnitt>
+        </div>
+    </div>
+</div>
+{% endblock %}

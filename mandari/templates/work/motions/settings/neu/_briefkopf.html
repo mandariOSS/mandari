@@ -1,0 +1,22 @@
+{% comment %}
+Briefkopf als Zeile einer Liste mit Linien (Issue #951): Name, Art (generiert oder PDF), Standard, Inaktiv, Schrift
+und Ränder als Text; PDF anzeigen (neues Fenster), Bearbeiten, Löschen mit Rückfrage wie bisher. Für die Übersicht der
+Dokumente und die Liste der Briefköpfe. Kontext: letterhead, organization.
+{% endcomment %}
+<li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-2.5">
+    <div class="min-w-[14rem] flex-1">
+        <a href="{% url 'work:document_letterhead_edit' org_slug=organization.slug letterhead_id=letterhead.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4">{{ letterhead.name }}</a>
+        <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400"> · {% if letterhead.is_generated %}generiert{% else %}PDF{% endif %}{% if letterhead.is_default %} · Standard{% endif %}{% if not letterhead.is_active %} · inaktiv{% endif %}</span>
+        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if letterhead.description %}{{ letterhead.description|truncatewords:12 }} · {% endif %}{{ letterhead.font_family }}, {{ letterhead.font_size }} pt · Ränder {{ letterhead.content_margin_top }}/{{ letterhead.content_margin_left }}/{{ letterhead.content_margin_right }}/{{ letterhead.content_margin_bottom }} mm</p>
+    </div>
+    <div class="flex items-center gap-1">
+        {% if letterhead.pdf_file %}
+        <c-ui.button href="{% url 'work:document_letterhead_file' org_slug=organization.slug letterhead_id=letterhead.id %}" target="_blank" rel="noopener" size="sm" variant="ghost" icon="external-link">PDF<span class="sr-only"> von {{ letterhead.name }} anzeigen (öffnet in neuem Fenster)</span></c-ui.button>
+        {% endif %}
+        <form method="post" action="{% url 'work:document_letterhead_delete' org_slug=organization.slug letterhead_id=letterhead.id %}"
+              x-data @submit.prevent="confirmAction({title: 'Briefkopf löschen', message: 'Möchten Sie diesen Briefkopf wirklich löschen?', confirmText: 'Löschen', variant: 'danger'}).then(ok => ok && $el.submit())">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" variant="ghost" icon="trash-2" class="text-red-700 dark:text-red-400">Löschen<span class="sr-only">: {{ letterhead.name }}</span></c-ui.button>
+        </form>
+    </div>
+</li>

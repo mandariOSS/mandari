@@ -1,0 +1,20 @@
+{% comment %}
+Dokumentvorlage als Zeile einer Liste mit Linien (Issue #951): Name, Standard, Inaktiv, Typ, Briefkopf, Partei-weit
+geteilt als Text; Vorschau (neues Fenster), Bearbeiten, Löschen mit Rückfrage wie bisher. Für die Übersicht der
+Dokumente und die Liste der Vorlagen. Kontext: template, organization.
+{% endcomment %}
+<li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-2.5">
+    <div class="min-w-[14rem] flex-1">
+        <a href="{% url 'work:document_template_edit' org_slug=organization.slug template_id=template.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4">{{ template.name }}</a>
+        {% if template.is_default or not template.is_active %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if template.is_default %} · Standard{% endif %}{% if not template.is_active %} · inaktiv{% endif %}</span>{% endif %}
+        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if template.motion_type %}{{ template.motion_type.name }}{% else %}Alle Typen{% endif %}{% if template.letterhead %} · Briefkopf {{ template.letterhead.name }}{% endif %}{% if template.is_shared_party %} · Partei-weit geteilt{% endif %}{% if template.description %} · {{ template.description|truncatewords:12 }}{% endif %}</p>
+    </div>
+    <div class="flex items-center gap-1">
+        <c-ui.button href="{% url 'work:document_template_preview' org_slug=organization.slug template_id=template.id %}" target="_blank" size="sm" variant="ghost" icon="eye">Vorschau<span class="sr-only">: {{ template.name }} (öffnet in neuem Fenster)</span></c-ui.button>
+        <form method="post" action="{% url 'work:document_template_delete' org_slug=organization.slug template_id=template.id %}"
+              x-data @submit.prevent="confirmAction({title: 'Vorlage löschen', message: 'Möchten Sie diese Vorlage wirklich löschen?', confirmText: 'Löschen', variant: 'danger'}).then(ok => ok && $el.submit())">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" variant="ghost" icon="trash-2" class="text-red-700 dark:text-red-400">Löschen<span class="sr-only">: {{ template.name }}</span></c-ui.button>
+        </form>
+    </div>
+</li>

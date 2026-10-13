@@ -1,0 +1,31 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Dokumente › Dokumenttypen im neuen Erscheinungsbild (Issue #951): Liste mit Linien, Hauptaktion
+„Neuer Typ“. Links und Löschen mit Rückfrage wie bisher (work/motions/settings/types.html). Kontext: MotionTypeListView.
+{% endcomment %}
+
+{% block page_title %}Dokumenttypen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Dokumenttypen" dicht text="Eigene Dokumenttypen von {{ organization.name }}, etwa Antrag, Anfrage oder Pressemitteilung, mit Freigabe und Standard-Checkliste.">
+    <c-slot name="aktionen"><c-ui.button href="{% url 'work:document_type_create' org_slug=organization.slug %}" size="sm" icon="plus">Neuer Typ</c-ui.button></c-slot>
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="typen" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="typen" %}
+    <div class="min-w-0 flex-1">
+        {% if types %}
+        <ul class="divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="typen-liste">
+            {% for type in types %}{% include "work/motions/settings/neu/_typ.html" %}{% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-gray-700 dark:text-gray-300">Noch keine Dokumenttypen. <c-ui.textlink href="{% url 'work:document_type_create' org_slug=organization.slug %}">Ersten Typ erstellen</c-ui.textlink></p>
+        {% endif %}
+        <p class="mt-6 text-sm"><c-ui.textlink href="{% url 'work:document_settings' org_slug=organization.slug %}">Zu den Dokumenteinstellungen</c-ui.textlink></p>
+    </div>
+</div>
+{% endblock %}

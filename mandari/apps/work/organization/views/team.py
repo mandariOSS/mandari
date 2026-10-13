@@ -156,10 +156,11 @@ _STANDARD_AGENDA_SCOPE = (
 )
 
 
-class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
+class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Faction meeting settings tab in organization settings."""
 
     template_name = "work/organization/faction_settings.html"
+    neue_vorlage = "work/organization/neu/fraktion.html"
     permission_required = "faction.manage"
 
     def get_context_data(self, **kwargs):
@@ -326,10 +327,11 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         messages.success(request, f"„{title}“ entfernt. Bereits angelegte Sitzungen behalten ihre TOPs.")
 
 
-class OrganizationDocumentsView(WorkViewMixin, TemplateView):
+class OrganizationDocumentsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Document settings tab for organization (Anträge & Vorgänge)."""
 
     template_name = "work/organization/documents.html"
+    neue_vorlage = "work/organization/neu/dokumente.html"
     permission_required = "organization.view"
 
     def get_context_data(self, **kwargs):
