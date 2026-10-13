@@ -1,0 +1,51 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen im neuen Erscheinungsbild (Issue #951): Reiter „Allgemein › Organisation“ und unter ?bereich=sicherheit
+der Reiter „Sicherheit“ (Anmeldesicherheit). Formulare, Felder und Rechte wie bisher (work/organization/settings.html):
+update_general mit Logo und Farbe, update_contact, update_parties, update_security; ohne organization.edit nur lesend.
+Kontext: OrganizationSettingsView.
+{% endcomment %}
+
+{% block page_title %}{% if request.GET.bereich == "sicherheit" %}Sicherheit{% else %}Einstellungen{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+{% if request.GET.bereich == "sicherheit" %}
+<c-rahmen.kopfband titel="Sicherheit" dicht
+    text="Wie sich die Mitglieder von {{ organization.name }} anmelden. Wer Mitglieder, Rollen, Einstellungen oder API-Zugänge verwaltet, nutzt immer einen zweiten Faktor." />
+{% include "work/organization/neu/_reiter.html" with seite="sicherheit" %}
+{% else %}
+<c-rahmen.kopfband titel="Einstellungen" dicht
+    text="Name, Erscheinungsbild und Kontaktdaten von {{ organization.name }}{% if not can_edit %}. Ändern darf, wer die Organisation bearbeiten darf{% endif %}." />
+{% include "work/organization/neu/_reiter.html" with seite="organisation" %}
+{% endif %}
+{% endblock %}
+
+{% block work_content %}
+{% if request.GET.bereich == "sicherheit" %}
+{% include "work/organization/neu/_sicherheit.html" %}
+{% else %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="organisation" %}
+    <div class="min-w-0 flex-1 grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+        {% include "work/organization/neu/_organisation.html" %}
+        {% include "work/organization/neu/_kontakt.html" %}
+        <c-rahmen.abschnitt titel="Kommune und Partei" titel_id="kommune-titel">
+            <c-rahmen.satz eng>Jede Organisation gehört genau einer Kommune und einer Partei an. Die Kommune bestimmt das Ratsinformationssystem.</c-rahmen.satz>
+            <c-ui.angaben class="mt-4">
+                <dt>Kommune</dt>
+                <dd>{% if home_body %}{{ home_body.get_display_name }}{% else %}Nicht zugeordnet{% endif %}</dd>
+                <dt>Partei</dt>
+                <dd>{% if primary_party %}{{ primary_party.name }}{% else %}Nicht zugeordnet{% endif %}</dd>
+                {% if linked_bodies %}
+                <dt>Weitere Kommunen</dt>
+                <dd>{% for linked_body in linked_bodies %}{{ linked_body.get_display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</dd>
+                {% endif %}
+            </c-ui.angaben>
+            <c-rahmen.satz>Kommune und Partei sowie den Zugang zu weiteren Ratsinformationssystemen ändert der Support. <c-ui.textlink href="{% url 'work:support' org_slug=organization.slug %}">Anfrage an den Support</c-ui.textlink></c-rahmen.satz>
+        </c-rahmen.abschnitt>
+        {% include "work/organization/neu/_parteien.html" %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

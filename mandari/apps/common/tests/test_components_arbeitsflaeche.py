@@ -239,3 +239,16 @@ class TestDateifeld:
         assert 'aria-invalid="true"' in feld
         assert 'aria-describedby="id_datei-fehler id_datei-hinweis"' in feld
         assert "Bitte eine PDF-Datei wählen." in html
+
+
+def test_hinweis_unter_einem_feld() -> None:
+    """c-form.hinweis: 13 px gedimmt wie die Hilfe von c-form.field dicht; Einzug unter Checkboxen, Attribute am Absatz."""
+    html = render('<c-form.hinweis id="tage-hilfe">Wie weit zurück</c-form.hinweis>')
+    tag = _tag(html, "p")
+    assert _klasse(tag) == "mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400"
+    assert 'id="tage-hilfe"' in tag
+    assert "Wie weit zurück</p>" in html
+    eingerueckt = _tag(render('<c-form.hinweis einzug class="break-all" x-show="offen">Link</c-form.hinweis>'), "p")
+    assert _klasse(eingerueckt) == "ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-all"
+    assert 'x-show="offen"' in eingerueckt
+    assert _klasse(_tag(render("<c-form.hinweis neben>Satz</c-form.hinweis>"), "p")).startswith("text-[0.8125rem]")

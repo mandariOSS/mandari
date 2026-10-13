@@ -1,0 +1,17 @@
+{% comment %}
+Einstellungen › Sicherheit: Zwei-Faktor-Pflicht für alle Mitglieder (Formular update_security, Issue #951); ohne
+organization.edit nur der Stand. Kontext: organization, can_edit.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Anmeldesicherheit" titel_id="anmeldesicherheit-titel" class="max-w-3xl">
+    <c-rahmen.satz eng>Die Administration und alle, die Mitglieder, Rollen, Einstellungen oder API-Zugänge verwalten dürfen (über ihre Rolle oder als Einzelrecht), verwenden immer einen zweiten Faktor, ebenso Rollen mit „2FA erforderlich“. Allen anderen empfiehlt Work ihn auf der Startseite.</c-rahmen.satz>
+    {% if can_edit %}
+    <form method="post" class="mt-4 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_security">
+        {% include "work/organization/neu/_haken.html" with name="require_2fa" id="require_2fa" label="Zweiten Faktor für alle Mitglieder verlangen" an=organization.require_2fa hilfe="Wer noch keinen zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein." %}
+        <c-ui.button type="submit" size="sm">Speichern</c-ui.button>
+    </form>
+    {% else %}
+    <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">{% include "work/organization/neu/_status.html" with an=organization.require_2fa %}{% if organization.require_2fa %}Für alle Mitglieder verpflichtend.{% else %}Für Mitglieder ohne Verwaltungsrechte empfohlen, aber freiwillig.{% endif %}</p>
+    {% endif %}
+</c-rahmen.abschnitt>

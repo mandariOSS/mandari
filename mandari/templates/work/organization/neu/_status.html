@@ -1,0 +1,7 @@
+{% comment %}
+Zustand als Punkt vor dem Text (Issue #951, statt Farbchips): grün für an oder verbunden, Bernstein für gestört, grau
+für aus.
+  {% include "work/organization/neu/_status.html" with an=api_access.is_enabled %}Aktiv
+  {% include "work/organization/neu/_status.html" with gestoert=True %}Gestört
+{% endcomment %}
+<span class="inline-block w-2 h-2 mr-1.5 rounded-full align-middle {% if gestoert %}bg-amber-500{% elif an %}bg-green-600{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>

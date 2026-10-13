@@ -1,0 +1,14 @@
+{% load work_einstellungen %}
+{% comment %}
+Reiter der Einstellungen im neuen Erscheinungsbild (Issue #951): sechs Reiter unter dem Kopfband statt der bisherigen
+Leiste work/organization/_tabs.html, Baustein c-rahmen.reiter. Aufruf im Block work_header nach dem Kopfband:
+  {% include "work/organization/neu/_reiter.html" with seite="email" %}
+``seite`` ist der Schlüssel der geöffneten Seite, ``aktuell="true"`` für Detail- und Formularseiten darunter.
+Sichtbarkeit und Adressen: apps/work/organization/einstellungen.py.
+{% endcomment %}
+{% einstellungen_navigation seite aktuell|default:"page" as navi %}
+<c-rahmen.reiter label="Einstellungen" class="rahmen-zeile bg-band-hell">
+    {% for r in navi.reiter %}
+    <c-rahmen.reiter-link href="{{ r.url }}" :aktiv="r.aktiv" current="{{ r.current }}">{{ r.label }}</c-rahmen.reiter-link>
+    {% endfor %}
+</c-rahmen.reiter>

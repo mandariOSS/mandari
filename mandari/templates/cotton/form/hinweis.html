@@ -1,0 +1,10 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Hinweis unter einem Feld der Arbeitsflächen (Issue #951), Maße wie die Hilfe von c-form.field dicht: 13 px, gedimmt,
+4 px Abstand. ``einzug`` rückt ihn unter die Beschriftung einer Checkbox (c-form.checkbox dicht), ``neben`` lässt den
+Abstand weg (Hinweis neben einem Feld). Weitere Attribute (id für aria-describedby, x-show) gehen an den Absatz.
+  <c-form.hinweis id="api-tage-hilfe">Wie weit zurück Sitzungen erscheinen.</c-form.hinweis>
+  <c-form.hinweis einzug>Wer noch keinen zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein.</c-form.hinweis>
+{% endcomment %}
+<c-vars einzug="" neben="" class="" />
+<p class="{% if einzug %}ml-6 mt-0.5{% elif not neben %}mt-1{% endif %} text-[0.8125rem] text-gray-600 dark:text-gray-400 {{ class }}" {{ attrs }}>{{ slot }}</p>

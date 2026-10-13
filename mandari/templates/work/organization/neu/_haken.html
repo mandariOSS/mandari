@@ -1,0 +1,10 @@
+{% comment %}
+Checkbox mit Erläuterung darunter (Issue #951), für die Einstellungen im neuen Erscheinungsbild: c-form.checkbox dicht
+und ein Satz in 13 px, eingerückt unter die Beschriftung.
+  {% include "work/organization/neu/_haken.html" with name="require_2fa" id="require_2fa" label="…" an=organization.require_2fa hilfe="…" %}
+``wert`` setzt den Wert (sonst „on“), ``gesperrt`` sperrt die Checkbox (Recht fehlt).
+{% endcomment %}
+<div>
+    <c-form.checkbox name="{{ name }}" id="{{ id|default:name }}" label="{{ label }}" checked="{% if an %}1{% endif %}" value="{{ wert|default:'' }}" disabled="{% if gesperrt %}1{% endif %}" dicht />
+    {% if hilfe %}<c-form.hinweis einzug>{{ hilfe }}</c-form.hinweis>{% endif %}
+</div>
