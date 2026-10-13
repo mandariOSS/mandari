@@ -105,21 +105,25 @@ LEITSTELLE = {
 }
 TOKEN_NAME = "Demo-Drehbuch: Einreichung der Musterfraktion"
 
-ANTRAG_TITEL = "Antrag: Tempo 30 vor der Grundschule am Musterweg (Demo)"
+ANTRAG_TITEL = "Antrag: Inklusiver Spielplatz im Musterviertel (Demo)"
+#: Titel des Drehbuch-Antrags bis Oktober 2026 – ``--reset`` räumt ihn in älteren Demo-Datenbanken mit ab
+ANTRAG_TITEL_FRUEHER = ("Antrag: Tempo 30 vor der Grundschule am Musterweg (Demo)",)
 ANTRAG_INHALT = (
-    "<h2>Antrag: Tempo 30 vor der Grundschule am Musterweg</h2>"
+    "<h2>Antrag: Inklusiver Spielplatz im Musterviertel</h2>"
     "<h3>Beschlussvorschlag</h3>"
-    "<p>Die Verwaltung wird beauftragt, auf dem Musterweg im Abschnitt vor der Grundschule eine "
-    "Geschwindigkeitsbegrenzung auf 30 km/h anzuordnen und den Schulweg mit einer zusätzlichen "
-    "Querungshilfe zu sichern.</p>"
+    "<p>Die Verwaltung wird beauftragt, auf der städtischen Brachfläche an der Ecke Musterweg/Lindenstraße einen "
+    "inklusiven Spielplatz für Kinder von zwei bis zwölf Jahren zu planen und dem Ausschuss für Bauen und Verkehr "
+    "einen Entwurf mit Kostenschätzung vorzulegen. Kinder und Eltern aus dem Viertel werden an der Planung "
+    "beteiligt.</p>"
     "<h3>Begründung</h3>"
-    "<p>Der Musterweg ist der Hauptzugang zur Grundschule. Zu Schulbeginn und Schulschluss queren dort "
-    "täglich rund 250 Kinder die Fahrbahn. Eine Zählung der Elternvertretung zeigt, dass die zulässige "
-    "Geschwindigkeit von 50 km/h regelmäßig überschritten wird. Tempo 30 verkürzt den Anhalteweg und "
-    "mindert die Unfallschwere deutlich.</p>"
+    "<p>Im Musterviertel leben rund 900 Kinder unter zwölf Jahren. Der nächste Spielplatz liegt mehr als einen "
+    "Kilometer entfernt am Stadtpark, auf dem Weg dorthin liegen zwei Hauptstraßen. Die Fläche an der "
+    "Lindenstraße gehört der Stadt und liegt seit Jahren brach. Ein inklusiver Spielplatz mit barrierefreien "
+    "Wegen, Sand- und Wasserspiel und Schattenplätzen gibt allen Kindern einen Ort zum Spielen, auch Kindern im "
+    "Rollstuhl.</p>"
     "<h3>Finanzielle Auswirkungen</h3>"
-    "<p>Beschilderung und Markierung ca. 4.500 Euro brutto, Querungshilfe ca. 18.000 Euro brutto aus dem "
-    "Budget für Verkehrssicherheit.</p>"
+    "<p>Planung ca. 25.000 Euro brutto aus dem Budget für Spiel- und Freiflächen; die Baukosten ermittelt die "
+    "Verwaltung mit dem Entwurf.</p>"
 )
 
 SITZUNG_KOMMEND = "Hauptausschuss (Demo-Drehbuch)"
@@ -657,7 +661,7 @@ class Command(BaseCommand):
                 "visibility": "organization",
                 "author": vorsitz,
                 "responsible": vorsitz,
-                "summary": "Entwurf: Tempo 30 und eine Querungshilfe vor der Grundschule am Musterweg.",
+                "summary": "Entwurf: inklusiver Spielplatz auf der Brachfläche an der Lindenstraße im Musterviertel.",
                 "folder": None,
                 "session_application": None,
                 "administration_status": "",
@@ -1137,7 +1141,9 @@ class Command(BaseCommand):
         fraktion = Organization.objects.filter(slug=DEMO_ORG_SLUG).first()
 
         if fraktion is not None:
-            antraege = list(Motion.objects.filter(organization=fraktion, title=ANTRAG_TITEL))
+            antraege = list(
+                Motion.objects.filter(organization=fraktion, title__in=(ANTRAG_TITEL, *ANTRAG_TITEL_FRUEHER))
+            )
             for antrag in antraege:
                 self._einreichung_zuruecknehmen(antrag)
                 antrag.delete()
