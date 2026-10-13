@@ -45,8 +45,8 @@ Kontext: TaskCreateView; die bisherige Seite bleibt work/tasks/create.html.
                 {% endfor %}
             </c-form.select>
             <c-ui.alpine-modal show="showConfirmModal" labelledby="aufgabe-zuweisen-titel">
-                <c-rahmen.abschnitt titel="Aufgabe zuweisen" titel_id="aufgabe-zuweisen-titel" class="px-6 pt-5 pb-6">
-                    <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">Die Aufgabe geht an <span class="font-medium text-gray-900 dark:text-white" x-text="assigneeName"></span>. Die Person erhält eine Benachrichtigung.</p>
+                <c-rahmen.abschnitt titel="Aufgabe zuweisen" titel_id="aufgabe-zuweisen-titel" class="px-6 pt-5 pb-6 text-gray-700 dark:text-gray-300">
+                    <p class="mt-2 text-sm">Die Aufgabe geht an <span class="font-medium text-gray-900 dark:text-white" x-text="assigneeName"></span>. Die Person erhält eine Benachrichtigung.</p>
                     <div class="mt-5 flex justify-end gap-2">
                         <c-ui.button variant="ghost" size="sm" @click="cancelAssignment">Abbrechen</c-ui.button>
                         <c-ui.button size="sm" @click="confirmAssignment">Zuweisen</c-ui.button>
