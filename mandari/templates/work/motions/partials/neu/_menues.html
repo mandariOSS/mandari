@@ -154,7 +154,7 @@ download_blocked (Gäste ohne Herunterladen, #582), organization; Alpine-Kompone
 {% endif %}
 <button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('details')"><i data-lucide="file-check" aria-hidden="true"></i>Freigaben und Verwaltung</button>
 {% if can_submit_ris and motion.is_submittable or ris_application and can_submit_ris %}
-<a role="menuitem" class="ke-mp" href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"><i data-lucide="landmark" aria-hidden="true"></i>{% if ris_application %}Stand bei der Verwaltung{% else %}Bei der Verwaltung einreichen{% endif %}</a>
+<a role="menuitem" class="ke-mp" href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}" @click.prevent="sichernUndGehen($el.href)"><i data-lucide="landmark" aria-hidden="true"></i>{% if ris_application %}Stand bei der Verwaltung{% else %}Bei der Verwaltung einreichen{% endif %}</a>
 {% endif %}
 <button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('verlauf')"><i data-lucide="history" aria-hidden="true"></i>Fassungen und Verlauf</button>
 {% endpartialdef %}

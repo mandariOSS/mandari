@@ -3,8 +3,11 @@ Werkzeugleiste des neuen Antragseditors (eine Leiste, 40 px) mit Modus rechts; d
 Suchen und Ersetzen und die Infozeile des Ablaufs (nur in Abstimmung, nach der Freigabe und nach der Einreichung).
 Kontext: motion, ablauf, can_edit, is_guest, my_pending_approval, can_submit_ris, ris_application, ris_feedback,
 organization, absatzformate.
+Die Leiste scrollt am Handy seitlich (overflow-x) und schneidet damit alles ab, was über sie hinausragt. Das Modus-Menü
+richtet sich deshalb am Rahmen außerhalb der Leiste aus (relative), nicht an seinem Knopf.
 {% endcomment %}
 {% if can_edit %}
+<div class="relative">
 <div id="editor-toolbar" class="ke-werkzeug" role="toolbar" aria-label="Format" x-show="!historyMode">
     <span class="ke-wz-gruppe hidden sm:flex">
         <button type="button" class="ke-wz" aria-label="Rückgängig" title="Rückgängig (Strg+Z)" @mousedown.prevent @click="befehl('undo')" :disabled="modus === 'ansehen'"><i data-lucide="undo-2" aria-hidden="true"></i></button>
@@ -38,7 +41,7 @@ organization, absatzformate.
         <button type="button" class="ke-wz hidden sm:grid" aria-label="Anlage hinzufügen" title="Anlage hinzufügen" @click="panelOeffnen('details')"><i data-lucide="paperclip" aria-hidden="true"></i></button>
     </span>
     <span class="flex-1" aria-hidden="true"></span>
-    <div class="relative">
+    <div>
         <button type="button" class="ke-modus" data-menue-knopf="modus" @click="menueUmschalten('modus')" aria-haspopup="menu"
                 :aria-expanded="(menue === 'modus').toString()" aria-expanded="false" :data-modus="modus"
                 :aria-label="'Modus: ' + ({ bearbeiten: 'Bearbeiten', vorschlagen: 'Vorschlagen', ansehen: 'Ansehen' })[modus]">
@@ -48,12 +51,13 @@ organization, absatzformate.
             <span class="hidden sm:inline" x-text="({ bearbeiten: 'Bearbeiten', vorschlagen: 'Vorschlagen', ansehen: 'Ansehen' })[modus]">Bearbeiten</span>
             <i data-lucide="chevron-down" class="w-3.5 h-3.5" aria-hidden="true"></i>
         </button>
-        <div x-show="menue === 'modus'" x-cloak class="ke-menue ke-menue-rechts" role="menu" aria-label="Modus">
+        <div x-show="menue === 'modus'" x-cloak class="ke-menue ke-menue-rechts right-3 lg:right-4" role="menu" aria-label="Modus">
             <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'bearbeiten').toString()" @click="modusSetzen('bearbeiten')"><i data-lucide="pencil" aria-hidden="true"></i><span>Bearbeiten<small>Text direkt ändern</small></span></button>
             <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'vorschlagen').toString()" @click="modusSetzen('vorschlagen')"><i data-lucide="pencil-line" aria-hidden="true"></i><span>Vorschlagen<small>Änderungen am Rand vorschlagen, annehmen oder ablehnen</small></span></button>
             <button type="button" role="menuitemradio" class="ke-mp" :aria-checked="(modus === 'ansehen').toString()" @click="modusSetzen('ansehen')"><i data-lucide="eye" aria-hidden="true"></i><span>Ansehen<small>Lesen, ohne zu ändern</small></span></button>
         </div>
     </div>
+</div>
 </div>
 <div x-show="!historyMode">
     {% include "work/motions/partials/_editor_tabelle_leiste.html" %}

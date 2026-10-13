@@ -74,6 +74,11 @@ export interface CollabResult {
   undoManager: Y.UndoManager
   /** Destroy collaboration (call on editor destroy) */
   destroy: () => void
+  /**
+   * Stand sofort speichern und auf die Bestätigung des Servers warten (yjs_saved). false ohne Verbindung oder
+   * nach Zeitablauf. Für Schritte, die danach den gespeicherten Text lesen (z. B. Einreichen bei der Verwaltung).
+   */
+  flush: (timeoutMs?: number) => Promise<boolean>
 }
 
 // Message types matching the Django consumer protocol
@@ -108,6 +113,8 @@ class DjangoYjsProvider {
   private onReloadRequired?: (reason?: ReloadReason) => void
   private onPersisted?: (contentHash: string) => void
   private _beforeUnloadHandler: (() => void) | null = null
+  /** Wartende auf die nächste Bestätigung yjs_saved (flush) */
+  private persistWaiters: Array<(ok: boolean) => void> = []
   private _visibilityHandler: (() => void) | null = null
 
   constructor(
@@ -236,6 +243,9 @@ class DjangoYjsProvider {
     } else if (msg.type === 'yjs_saved' && typeof msg.content_hash === 'string') {
       // Server persisted our yjs_save; remember the fingerprint of the stored HTML (#184).
       this.onPersisted?.(msg.content_hash)
+      const wartende = this.persistWaiters
+      this.persistWaiters = []
+      for (const fertig of wartende) fertig(true)
     } else if (msg.type === 'reload') {
       // Server requests a full document reload (e.g. after revision restore or a POST
       // save by someone without connection). Our Yjs state is now stale: a late yjs_save
@@ -307,6 +317,25 @@ class DjangoYjsProvider {
         }),
       )
     }
+  }
+
+  /** Stand sofort speichern und auf die Bestätigung warten (siehe CollabResult.flush). */
+  flush(timeoutMs = 4000): Promise<boolean> {
+    if (this.reloadRequested || !this.ws || !this.connected || this.ws.readyState !== WebSocket.OPEN) {
+      return Promise.resolve(false)
+    }
+    return new Promise((resolve) => {
+      const fertig = (ok: boolean) => {
+        clearTimeout(timer)
+        resolve(ok)
+      }
+      const timer = setTimeout(() => {
+        this.persistWaiters = this.persistWaiters.filter((w) => w !== fertig)
+        resolve(false)
+      }, timeoutMs)
+      this.persistWaiters.push(fertig)
+      this._saveFullState()
+    })
   }
 
   /** Send full Yjs state to server for persistence (via yjs_save message). */
@@ -462,5 +491,7 @@ export function initCollaboration(options: CollabOptions): CollabResult {
     ydoc.destroy()
   }
 
-  return { ydoc, extensions, awareness, undoManager, destroy }
+  const flush = (timeoutMs?: number) => provider.flush(timeoutMs)
+
+  return { ydoc, extensions, awareness, undoManager, destroy, flush }
 }

@@ -92,7 +92,7 @@ stimmberechtigte_ids, approval_type_choices, offen_text, offene_vorschlaege, can
         <ul class="ke-wege">
             {% if can_submit_ris and motion.is_submittable %}
             <li>
-                <a class="ke-weg" href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}">
+                <a class="ke-weg" href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}" @click.prevent="sichernUndGehen($el.href)">
                     <i data-lucide="landmark" aria-hidden="true"></i>
                     <span><b>Bei der Verwaltung einreichen</b><small>digital über mandari Session oder per E-Mail an die Verwaltungskontakte</small></span>
                 </a>
