@@ -1,0 +1,42 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Mitglieder › Mitglied im neuen Erscheinungsbild (Issue #951): Rollen, Berechtigungen, Vereidigung,
+Gremien und RIS-Person, Fachgebiete, Gast-Freigaben und die Aktionen zur Mitgliedschaft (deaktivieren, reaktivieren,
+entfernen, Eigentum übertragen). Alle 12 Formularaktionen, Rückfragen und Rechte wie bisher
+(work/organization/member_detail.html mit Partials): Rollen nur mit members.manage_roles, Entfernen und Deaktivieren
+nur mit members.remove, Eigentum übertragen nur für den Eigentümer. Kontext: MemberDetailView.
+{% endcomment %}
+
+{% block page_title %}{{ member.user.get_full_name|default:member.user.email }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{{ member.user.get_full_name|default:member.user.email }}" dicht
+    text="{{ member.user.email }}{% if member.is_guest %} · Gast{% endif %}{% if is_owner %} · Eigentümer{% endif %}{% if not member.is_active %} · deaktiviert{% endif %}. Mitglied seit {{ member.joined_at|date:'d.m.Y' }}{% if member.invited_by %}, eingeladen von {{ member.invited_by.get_full_name|default:member.invited_by.email }}{% endif %}.">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:members' org_slug=organization.slug %}">Mitglieder</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="mitglieder" aktuell="true" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="mitglieder" aktuell="true" %}
+    <div class="min-w-0 flex-1 grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+        <div class="space-y-10 min-w-0">
+            {# Gast: keine Rollen und keine Berechtigungen, nur Freigaben #}
+            {% if member.is_guest %}{% include "work/organization/neu/_mitglied_gast.html" %}{% else %}{% include "work/organization/neu/_mitglied_rollen.html" %}{% endif %}
+            {% include "work/organization/neu/_mitglied_vereidigung.html" %}
+            {% include "work/organization/neu/_mitglied_fachgebiete.html" %}
+        </div>
+        <div class="space-y-10 min-w-0">
+            {% include "work/organization/neu/_mitglied_gremien.html" %}
+            {% if can_edit %}{% include "work/organization/neu/_mitglied_aktionen.html" %}{% endif %}
+        </div>
+        {% if not member.is_guest %}
+        <div class="2xl:col-span-2 min-w-0">
+            {% include "work/organization/neu/_mitglied_rechte.html" %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

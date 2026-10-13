@@ -8,16 +8,18 @@ from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..services import ServiceError, display_name
 from ._helpers import flash_error
 
 
-class MemberListView(WorkViewMixin, TemplateView):
+class MemberListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List of organization members."""
 
     template_name = "work/organization/members.html"
+    neue_vorlage = "work/organization/neu/mitglieder.html"
     permission_required = "members.view"
 
     def get_context_data(self, **kwargs):
@@ -46,10 +48,11 @@ class MemberListView(WorkViewMixin, TemplateView):
         return context
 
 
-class MemberDetailView(WorkViewMixin, TemplateView):
+class MemberDetailView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """View and edit a member's details."""
 
     template_name = "work/organization/member_detail.html"
+    neue_vorlage = "work/organization/neu/mitglied.html"
     permission_required = "members.view"
 
     def get_context_data(self, **kwargs):

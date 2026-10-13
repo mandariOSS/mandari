@@ -1,0 +1,70 @@
+{% comment %}
+Mitglied ist Gast (Issue #951, #77): Zugang erneut senden und „Was sieht dieser Gast?“ mit allen wirksamen Freigaben,
+Herunterladen umschalten und Freigabe entziehen. Formulare, Ziele, versteckte Felder (next mit #guest-shares) und
+Rückfragen wie bisher (partials/_member_guest_access.html). Kontext: member, organization, can_invite_guests,
+guest_has_password, guest_document_shares, guest_folder_shares, can_manage_guest_shares.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Gast-Zugang" titel_id="gast-titel">
+    <c-rahmen.satz eng>Gäste haben keine Rollen und keine Berechtigungen. Sie sehen nur Dokumente, die für sie freigegeben sind (Teilen-Dialog am Dokument), und zählen gegen das Gast-Limit.</c-rahmen.satz>
+    {% if can_invite_guests %}
+    <form method="post" action="{% url 'work:guest_access_resend' org_slug=organization.slug member_id=member.id %}" class="mt-3">
+        {% csrf_token %}
+        <c-ui.button type="submit" size="sm" variant="secondary" icon="mail">Zugang erneut senden</c-ui.button>
+        <c-rahmen.satz eng>{% if guest_has_password %}Schickt den Link zu den freigegebenen Dokumenten.{% else %}Der Gast hat noch kein Passwort gesetzt. Schickt einen neuen Passwort-Link; der alte läuft nach kurzer Zeit ab.{% endif %}</c-rahmen.satz>
+    </form>
+    {% endif %}
+</c-rahmen.abschnitt>
+
+<c-rahmen.abschnitt titel="Was sieht dieser Gast?" titel_id="gast-freigaben-titel" id="guest-shares"
+                    zusatz="{{ guest_document_shares|length }} Dokument{{ guest_document_shares|length|pluralize:'e' }}, {{ guest_folder_shares|length }} Ordner">
+    {% if guest_document_shares or guest_folder_shares %}
+    <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm">
+        {% for share in guest_folder_shares %}
+        <li class="py-2.5">
+            <a href="{% url 'work:documents' org_slug=organization.slug %}?ordner={{ share.folder.id }}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">Ordner {{ share.folder.name }}</a>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Stufe {{ share.get_level_display }}, mit {{ share.subfolder_count }} Unterordnern und derzeit {{ share.document_count }} Dokument{{ share.document_count|pluralize:"en" }}; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}. Herunterladen (PDF, Word, Anhänge): {{ share.allow_download|yesno:"erlaubt,aus" }}.</p>
+            {% if can_manage_guest_shares %}
+            <div class="mt-1.5 flex flex-wrap items-center gap-1">
+                <form method="post" action="{% url 'work:document_folder_share_download' org_slug=organization.slug share_id=share.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="allow_download" value="{{ share.allow_download|yesno:'0,1' }}">
+                    <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
+                    <c-ui.button type="submit" size="sm" variant="ghost">{{ share.allow_download|yesno:"Herunterladen abschalten,Herunterladen erlauben" }}</c-ui.button>
+                </form>
+                <form method="post" action="{% url 'work:document_folder_share_remove' org_slug=organization.slug share_id=share.id %}"
+                      x-data @submit.prevent="confirmAction({title: 'Ordner-Freigabe entziehen', message: 'Ordner-Freigabe „{{ share.folder.name|escapejs }}“ entziehen?', confirmText: 'Entziehen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
+                    <c-ui.button type="submit" size="sm" variant="ghost" icon="x" class="text-red-700 dark:text-red-400">Entziehen<span class="sr-only">: Ordner {{ share.folder.name }}</span></c-ui.button>
+                </form>
+            </div>
+            {% endif %}
+        </li>
+        {% endfor %}
+        {% for share in guest_document_shares %}
+        <li class="py-2.5">
+            <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=share.motion.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ share.motion.title }}</a>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Dokument, Stufe {{ share.get_level_display }}; seit {{ share.created_at|date:"d.m.Y" }}{% if share.created_by %} von {{ share.created_by.get_full_name|default:share.created_by.email }}{% endif %}. Herunterladen (PDF, Word, Anhänge): {{ share.allow_download|yesno:"erlaubt,aus" }}.</p>
+            {% if can_manage_guest_shares %}
+            <div class="mt-1.5 flex flex-wrap items-center gap-1">
+                <form method="post" action="{% url 'work:document_share_download' org_slug=organization.slug share_id=share.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="allow_download" value="{{ share.allow_download|yesno:'0,1' }}">
+                    <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
+                    <c-ui.button type="submit" size="sm" variant="ghost">{{ share.allow_download|yesno:"Herunterladen abschalten,Herunterladen erlauben" }}</c-ui.button>
+                </form>
+                <form method="post" action="{% url 'work:document_share_remove' org_slug=organization.slug share_id=share.id %}"
+                      x-data @submit.prevent="confirmAction({title: 'Freigabe entziehen', message: 'Freigabe für „{{ share.motion.title|escapejs }}“ entziehen?', confirmText: 'Entziehen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}#guest-shares">
+                    <c-ui.button type="submit" size="sm" variant="ghost" icon="x" class="text-red-700 dark:text-red-400">Entziehen<span class="sr-only">: {{ share.motion.title }}</span></c-ui.button>
+                </form>
+            </div>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <c-rahmen.satz>Dieser Gast hat aktuell keine Freigaben und sieht keine Dokumente.</c-rahmen.satz>
+    {% endif %}
+</c-rahmen.abschnitt>

@@ -1,0 +1,28 @@
+{% comment %}
+Mitglied: Fachgebiete aus dem Themenkatalog (Issue #951), Formular update_expertise mit Bearbeitungsrecht, sonst die
+Themen als Text mit Farbpunkt. Kontext: member, org_topics, member_expertise_ids, can_edit.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Fachgebiete" titel_id="fachgebiete-titel">
+    <c-rahmen.satz eng>Themen, in denen dieses Mitglied Fachwissen hat („Kompetenz im Thema“).</c-rahmen.satz>
+    {% if can_edit and org_topics %}
+    <form method="post" class="mt-3 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_expertise">
+        <fieldset>
+            <legend class="sr-only">Fachgebiete</legend>
+            <div class="grid gap-x-6 gap-y-2 sm:grid-cols-2 max-h-64 overflow-y-auto">
+                {% for topic in org_topics %}
+                <c-form.checkbox name="expertise_topics" id="fachgebiet-{{ topic.id }}" value="{{ topic.id }}" checked="{% if topic.id in member_expertise_ids %}1{% endif %}" dicht><span class="inline-block w-2 h-2 mr-1.5 rounded-full align-middle bg-{{ topic.color }}-500" aria-hidden="true"></span>{{ topic.name }}</c-form.checkbox>
+                {% endfor %}
+            </div>
+        </fieldset>
+        <c-ui.button type="submit" size="sm" variant="secondary">Fachgebiete speichern</c-ui.button>
+    </form>
+    {% elif member.expertise_topics.all %}
+    <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">{% for topic in member.expertise_topics.all %}<span class="inline-flex items-center gap-1.5 mr-3"><span class="w-2 h-2 rounded-full bg-{{ topic.color }}-500" aria-hidden="true"></span>{{ topic.name }}</span>{% endfor %}</p>
+    {% elif org_topics %}
+    <c-rahmen.satz>Keine Fachgebiete zugewiesen.</c-rahmen.satz>
+    {% else %}
+    <c-rahmen.satz>Es sind noch keine Themen im Katalog angelegt.</c-rahmen.satz>
+    {% endif %}
+</c-rahmen.abschnitt>

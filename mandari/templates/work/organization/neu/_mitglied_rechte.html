@@ -1,0 +1,60 @@
+{% load permission_tags %}
+{% comment %}
+Mitglied: wirksame Berechtigungen mit Herkunft (Issue #951), aufklappbar wie bisher. Je Recht „Individuell“ (zusätzlich
+gewährt) und „Verweigert“ (überschreibt Rollen); ohne Bearbeitungsrecht gesperrt. Formular update_permissions mit
+individual_permissions und denied_permissions wie bisher (partials/_member_permissions.html).
+Kontext: permission_categories, role_permission_sources, individual_permission_codes, denied_permission_codes,
+effective_permission_codes, can_edit.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Berechtigungen" titel_id="rechte-titel" zusatz="{{ effective_permission_codes|length }} wirksam" x-data="{ open: false }">
+    <c-slot name="link">
+        <button type="button" @click="open = !open" :aria-expanded="open.toString()" aria-expanded="false" aria-controls="rechte-formular"
+                class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+            <span x-show="!open">Berechtigungen anzeigen</span><span x-show="open" x-cloak>Berechtigungen ausblenden</span>
+        </button>
+    </c-slot>
+    <c-rahmen.satz eng>Aus den Rollen, einzeln zusätzlich gewährt oder ausdrücklich verweigert. Verweigert überschreibt die Rollen. Rechte der Rollen ändern Sie an den Rollen selbst.</c-rahmen.satz>
+    <form method="post" id="rechte-formular" x-show="open" x-cloak class="mt-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_permissions">
+        <div class="grid gap-x-12 gap-y-6 xl:grid-cols-2">
+            {% for cat_code, cat in permission_categories.items %}
+            <table class="w-full text-sm">
+                <caption class="text-left text-sm font-semibold text-gray-900 dark:text-white pb-1">{{ cat.name }}</caption>
+                <thead class="sr-only sm:not-sr-only">
+                    <tr class="border-b border-gray-200 dark:border-gray-800">
+                        <c-ui.th dicht>Recht</c-ui.th>
+                        <c-ui.th dicht align="center" class="w-24">Individuell</c-ui.th>
+                        <c-ui.th dicht align="center" class="w-24">Verweigert</c-ui.th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
+                    {% for perm in cat.permissions %}
+                    {% with sources=role_permission_sources|dict_get:perm.code %}
+                    <tr>
+                        <td class="py-1.5 px-3">
+                            <span class="text-gray-900 dark:text-white">{% if perm.code in denied_permission_codes %}{% include "work/organization/neu/_status.html" with gestoert=True %}{% elif perm.code in effective_permission_codes %}{% include "work/organization/neu/_status.html" with an=True %}{% else %}{% include "work/organization/neu/_status.html" %}{% endif %}{{ perm.name }}</span>
+                            <span class="block ml-3.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if perm.code in denied_permission_codes %}verweigert{% elif sources %}aus Rolle: {{ sources|join:", " }}{% elif perm.code in individual_permission_codes %}individuell gewährt{% else %}nicht gewährt{% endif %}</span>
+                        </td>
+                        <td class="py-1.5 text-center">
+                            <label class="sr-only" for="ind-{{ perm.code }}">{{ perm.name }}: individuell gewähren</label>
+                            <input type="checkbox" id="ind-{{ perm.code }}" name="individual_permissions" value="{{ perm.code }}" {% if perm.code in individual_permission_codes %}checked{% endif %} {% if not can_edit %}disabled{% endif %}
+                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500">
+                        </td>
+                        <td class="py-1.5 text-center">
+                            <label class="sr-only" for="ver-{{ perm.code }}">{{ perm.name }}: verweigern</label>
+                            <input type="checkbox" id="ver-{{ perm.code }}" name="denied_permissions" value="{{ perm.code }}" {% if perm.code in denied_permission_codes %}checked{% endif %} {% if not can_edit %}disabled{% endif %}
+                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-red-600 focus:ring-red-500">
+                        </td>
+                    </tr>
+                    {% endwith %}
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endfor %}
+        </div>
+        {% if can_edit %}
+        <c-ui.button type="submit" size="sm" variant="secondary" class="mt-6">Berechtigungen speichern</c-ui.button>
+        {% endif %}
+    </form>
+</c-rahmen.abschnitt>

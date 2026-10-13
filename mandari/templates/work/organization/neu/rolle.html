@@ -1,0 +1,80 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Mitglieder › Rolle anlegen oder bearbeiten im neuen Erscheinungsbild (Issue #951): Grundeinstellungen
+mit Farbe (colorPicker), Administrator-Rolle und Rechte je Kategorie mit „Alle“ (permissionsManager über data-category
+und isAdmin). Felder, Sperren bei Systemrollen (Priorität nur lesbar, Administrator gesperrt) und Löschen mit Rückfrage
+(confirm-submit auf das versteckte Formular) wie bisher (work/organization/role_form.html). Kontext: RoleCreateView,
+RoleEditView.
+{% endcomment %}
+
+{% block page_title %}{% if is_edit %}{{ role.name }} bearbeiten{% else %}Neue Rolle{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if is_edit %}{{ role.name }}{% else %}Neue Rolle{% endif %}" dicht
+    text="{% if is_edit %}Rolle bearbeiten: Name, Farbe, Priorität und Berechtigungen.{% else %}Neue Rolle mit Berechtigungen anlegen.{% endif %}">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:roles' org_slug=organization.slug %}">Rollen</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="rollen" aktuell="true" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="rollen" aktuell="true" %}
+    <div class="min-w-0 flex-1" x-data="permissionsManager" data-is-admin="{{ role.is_admin|yesno:'true,false' }}">
+        <form method="post" action="">
+            {% csrf_token %}
+            <div class="grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+                <c-rahmen.abschnitt titel="Grundeinstellungen" titel_id="grund-titel">
+                    <div class="mt-3 space-y-4">
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            <c-form.field name="name" id="rolle-name" label="Name" value="{{ role.name|default:'' }}" placeholder="z. B. Fraktionsmitglied" dicht required />
+                            {% with farbe=role.color|default:"#6b7280" %}{% include "work/organization/neu/_farbwahl.html" with name="color" id="rolle-farbe" label="Farbe" vorgabe="#6b7280" %}{% endwith %}
+                        </div>
+                        <c-form.textarea name="description" id="rolle-beschreibung" label="Beschreibung (optional)" rows="2" value="{{ role.description|default:'' }}" placeholder="Wofür die Rolle gedacht ist" dicht />
+                        <div class="grid gap-4 sm:grid-cols-2">
+                            {% if is_edit and role.is_system_role %}
+                            {% include "work/organization/neu/_zahl.html" with name="priority" id="rolle-prioritaet" label="Priorität" value=role.priority|default:50 min=0 max=100 readonly=True hilfe="Systemrollen behalten ihre Priorität." %}
+                            {% else %}
+                            {% include "work/organization/neu/_zahl.html" with name="priority" id="rolle-prioritaet" label="Priorität" value=role.priority|default:50 min=0 max=100 hilfe="Höhere Priorität gewinnt bei Konflikten (0 bis 100)." %}
+                            {% endif %}
+                            <div class="sm:pt-6">
+                                <c-form.checkbox name="require_2fa" id="require_2fa" :checked="role.require_2fa" label="Zweiten Faktor verlangen" dicht />
+                                <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Wer Mitglieder, Rollen, Einstellungen oder API-Zugänge verwaltet, braucht ihn immer.</p>
+                            </div>
+                        </div>
+                    </div>
+                </c-rahmen.abschnitt>
+
+                <c-rahmen.abschnitt titel="Administrator" titel_id="admin-titel">
+                    <div class="mt-3">
+                        <c-form.checkbox name="is_admin" id="is_admin" label="Administrator-Rolle" modell="isAdmin" checked="{% if role.is_admin %}1{% endif %}" disabled="{% if is_edit and role.is_system_role %}1{% endif %}" dicht />
+                        <c-form.hinweis einzug>Administratoren haben automatisch alle Berechtigungen; die Auswahl darunter gilt dann nicht.{% if is_edit and role.is_system_role %} Bei Systemrollen fest.{% endif %}</c-form.hinweis>
+                    </div>
+                </c-rahmen.abschnitt>
+
+                <div class="2xl:col-span-2 min-w-0" x-show="!isAdmin">
+                    {% include "work/organization/neu/_rolle_rechte.html" %}
+                </div>
+            </div>
+
+            <div class="mt-8 flex flex-wrap items-center gap-4">
+                <c-ui.button type="submit" size="sm" icon="save">{% if is_edit %}Speichern{% else %}Erstellen{% endif %}</c-ui.button>
+                <c-ui.textlink href="{% url 'work:roles' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+                {% if is_edit and not role.is_system_role %}
+                <button type="button" id="role-delete-btn" data-action="confirm-submit" data-target="#role-delete-form"
+                        data-confirm-title="Rolle löschen" data-confirm-message="Möchten Sie die Rolle «{{ role.name }}» wirklich löschen?"
+                        data-confirm-text="Löschen" data-confirm-variant="danger"
+                        class="ml-auto text-sm font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Rolle löschen</button>
+                {% endif %}
+            </div>
+        </form>
+
+        {% if is_edit and not role.is_system_role %}
+        <form id="role-delete-form" method="post" action="{% url 'work:role_delete' org_slug=organization.slug role_id=role.id %}" class="hidden">
+            {% csrf_token %}
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

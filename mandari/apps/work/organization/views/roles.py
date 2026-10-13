@@ -10,6 +10,7 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.common.permissions import get_permissions_by_category
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..services import ServiceError
@@ -29,10 +30,11 @@ def _role_input(request, color_default: str = "#6b7280", priority_default: str =
     )
 
 
-class RoleListView(WorkViewMixin, TemplateView):
+class RoleListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List and manage roles."""
 
     template_name = "work/organization/roles.html"
+    neue_vorlage = "work/organization/neu/rollen.html"
     permission_required = "organization.manage_roles"
 
     def get_context_data(self, **kwargs):
@@ -44,10 +46,11 @@ class RoleListView(WorkViewMixin, TemplateView):
         return context
 
 
-class RoleCreateView(WorkViewMixin, TemplateView):
+class RoleCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Create a new role."""
 
     template_name = "work/organization/role_form.html"
+    neue_vorlage = "work/organization/neu/rolle.html"
     permission_required = "organization.manage_roles"
 
     def get_context_data(self, **kwargs):
@@ -69,10 +72,11 @@ class RoleCreateView(WorkViewMixin, TemplateView):
         return redirect("work:roles", org_slug=self.organization.slug)
 
 
-class RoleEditView(WorkViewMixin, TemplateView):
+class RoleEditView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Edit an existing role."""
 
     template_name = "work/organization/role_form.html"
+    neue_vorlage = "work/organization/neu/rolle.html"
     permission_required = "organization.manage_roles"
 
     def get_context_data(self, **kwargs):

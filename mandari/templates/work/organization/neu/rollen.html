@@ -1,0 +1,58 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Mitglieder › Rollen im neuen Erscheinungsbild (Issue #951): Rollen als Liste mit Linien, je Rolle
+Rechte und Mitglieder als Text, „Auf Standard zurücksetzen“ mit Rückfrage. Hauptaktion „Neue Rolle“, „Standard-Rollen
+wiederherstellen“ als zweiter Weg. Formulare und Rückfragen wie bisher (work/organization/roles.html).
+Kontext: RoleListView.
+{% endcomment %}
+
+{% block page_title %}Rollen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Rollen" dicht
+    text="Rollen bündeln Berechtigungen. Die Standard-Rollen sind Ausgangspunkte: Sie können jede Rolle anpassen, eigene anlegen und einzelnen Mitgliedern Rechte zusätzlich geben oder verweigern.">
+    <c-slot name="aktionen">
+        <form method="post" action="{% url 'work:roles_restore_defaults' org_slug=organization.slug %}">
+            {% csrf_token %}
+            <button type="submit" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"
+                    title="Legt fehlende Standard-Rollen an. Bestehende Rollen bleiben unverändert.">Standard-Rollen wiederherstellen</button>
+        </form>
+        <c-ui.button href="{% url 'work:role_create' org_slug=organization.slug %}" size="sm" icon="plus">Neue Rolle</c-ui.button>
+    </c-slot>
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="rollen" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="rollen" %}
+    <div class="min-w-0 flex-1">
+        {% if roles %}
+        <ul class="divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="rollen-liste">
+            {% for role in roles %}
+            <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-2.5">
+                <div class="min-w-[14rem] flex-1">
+                    <p class="flex items-center gap-2 text-sm">
+                        {% include "work/organization/neu/_farbpunkt.html" with farbe=role.color %}
+                        <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=role.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ role.name }}</a>
+                        {% if role.is_system_role or role.is_admin %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_system_role %}Systemrolle{% endif %}{% if role.is_system_role and role.is_admin %} · {% endif %}{% if role.is_admin %}Administrator{% endif %}</span>{% endif %}
+                    </p>
+                    <p class="ml-[1.125rem] text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_admin %}Alle Berechtigungen{% else %}{{ role.permissions.count }} Berechtigungen{% endif %}, {{ role.member_count }} Mitglied{{ role.member_count|pluralize:"er" }}</p>
+                </div>
+                {% if role.has_default_definition %}
+                <form method="post" action="{% url 'work:role_reset' org_slug=organization.slug role_id=role.id %}"
+                      x-data @submit.prevent="confirmAction({title: 'Auf Standard zurücksetzen', message: 'Die Berechtigungen der Rolle \'{{ role.name|escapejs }}\' werden auf die Standard-Definition zurückgesetzt. Eigene Anpassungen gehen verloren.', confirmText: 'Zurücksetzen', variant: 'warning'}).then(ok => ok && $el.submit())">
+                    {% csrf_token %}
+                    <c-ui.button type="submit" size="sm" variant="ghost" icon="rotate-ccw">Zurücksetzen<span class="sr-only"> auf den Standard: {{ role.name }}</span></c-ui.button>
+                </form>
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-gray-700 dark:text-gray-300">Noch keine Rollen. Legen Sie Rollen an, um Mitgliedern Berechtigungen zu geben.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

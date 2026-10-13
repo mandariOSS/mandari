@@ -1,0 +1,23 @@
+{% comment %}
+Mitglied: Vereidigung (Issue #951). Mit Bearbeitungsrecht das Formular update_sworn_in, das sich beim Umschalten selbst
+absendet (wie bisher), sonst nur der Stand, wenn vereidigt. Kontext: member, can_edit.
+{% endcomment %}
+{% if can_edit %}
+<c-rahmen.abschnitt titel="Vereidigung" titel_id="vereidigung-titel">
+    <c-rahmen.satz eng>Vereidigte dürfen nach der Verpflichtungserklärung nicht-öffentliche Inhalte sehen.</c-rahmen.satz>
+    <form method="post" x-data class="mt-3">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_sworn_in">
+        <label class="inline-flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" name="is_sworn_in" value="1" {% if member.is_sworn_in %}checked{% endif %} @change="$el.form.submit()"
+                   class="mt-0.5 w-4 h-4 shrink-0 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+            <span class="text-sm text-gray-800 dark:text-gray-200">Vereidigt</span>
+        </label>
+        <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if member.is_sworn_in %}Sieht nicht-öffentliche TOPs und Protokolle der Fraktionssitzungen.{% else %}Sieht nur öffentliche TOPs, keine nicht-öffentlichen Inhalte.{% endif %} Speichert beim Umschalten.</p>
+    </form>
+</c-rahmen.abschnitt>
+{% elif member.is_sworn_in %}
+<c-rahmen.abschnitt titel="Vereidigung" titel_id="vereidigung-titel">
+    <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">{% include "work/organization/neu/_status.html" with an=True %}Dieses Mitglied ist vereidigt.</p>
+</c-rahmen.abschnitt>
+{% endif %}

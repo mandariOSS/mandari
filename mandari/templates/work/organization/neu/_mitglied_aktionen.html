@@ -1,0 +1,73 @@
+{% comment %}
+Mitglied: Aktionen zur Mitgliedschaft (Issue #951) – deaktivieren und entfernen nur mit members.remove, reaktivieren,
+Eigentum übertragen nur durch den Eigentümer; nie für sich selbst, Eigentümer nie deaktivieren oder entfernen.
+Formulare und Rückfragen (confirmAction mit Variante) wie bisher (partials/_member_actions.html), als Zeilen mit
+Linien statt farbiger Kästen. Kontext: member, organization, is_self, is_owner, can_remove, request.
+{% endcomment %}
+{% if is_self or is_owner or can_remove or not member.is_active or request.user == organization.owner %}
+<c-rahmen.abschnitt titel="Mitgliedschaft" titel_id="mitgliedschaft-titel">
+    <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm">
+        {% if not is_self and not is_owner %}
+        {% if member.is_active and can_remove %}
+        <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
+            <div class="min-w-[14rem] flex-1">
+                <p class="font-medium text-gray-900 dark:text-white">Deaktivieren</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Kann sich nicht mehr anmelden, bleibt aber in der Liste.</p>
+            </div>
+            <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied deaktivieren', message: 'Das Mitglied kann sich danach nicht mehr anmelden.', confirmText: 'Deaktivieren', variant: 'warning'}).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="deactivate">
+                <c-ui.button type="submit" size="sm" variant="secondary" icon="user-x">Deaktivieren</c-ui.button>
+            </form>
+        </li>
+        {% elif not member.is_active %}
+        <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
+            <div class="min-w-[14rem] flex-1">
+                <p class="font-medium text-gray-900 dark:text-white">Reaktivieren</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Kann sich wieder anmelden und erhält eine E-Mail.</p>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reactivate">
+                <c-ui.button type="submit" size="sm" variant="secondary" icon="user-check">Reaktivieren</c-ui.button>
+            </form>
+        </li>
+        {% endif %}
+        {% if can_remove %}
+        <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
+            <div class="min-w-[14rem] flex-1">
+                <p class="font-medium text-gray-900 dark:text-white">Entfernen</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Entfernt die Person ganz aus der Organisation. Ihre privaten Dokumente bleiben erhalten; lesen können sie danach Rollen mit dem Recht „Dokumente ehemaliger Mitglieder einsehen“ (Standard: Administrator und Fraktionsvorsitz).</p>
+            </div>
+            <form method="post" x-data @submit.prevent="confirmAction({title: 'Mitglied entfernen', message: 'Das Mitglied wird komplett aus der Organisation entfernt. Dokumente, Aufgaben, Sitzungen und Tickets bleiben erhalten und zeigen danach „Ehemaliges Mitglied“, Protokolle und Anwesenheitslisten weiter den Namen; persönliche Notizen und Einstellungen werden gelöscht. Diese Aktion kann nicht rückgängig gemacht werden.', confirmText: 'Entfernen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="remove">
+                <c-ui.button type="submit" size="sm" variant="ghost" icon="trash-2" class="text-red-700 dark:text-red-400">Entfernen</c-ui.button>
+            </form>
+        </li>
+        {% endif %}
+        {% endif %}
+
+        {% if request.user == organization.owner and not is_self %}
+        <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
+            <div class="min-w-[14rem] flex-1">
+                <p class="font-medium text-gray-900 dark:text-white">Eigentum übertragen</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Macht diese Person zur neuen Eigentümerin bzw. zum neuen Eigentümer der Organisation. Rückgängig machen kann das nur die neue Eigentümerschaft.</p>
+            </div>
+            <form method="post" x-data @submit.prevent="confirmAction({title: 'Eigentümerschaft übertragen', message: 'Sind Sie sicher? Sie können diese Aktion nicht selbst rückgängig machen.', confirmText: 'Übertragen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="transfer_ownership">
+                <c-ui.button type="submit" size="sm" variant="ghost" icon="crown" class="text-red-700 dark:text-red-400">Übertragen</c-ui.button>
+            </form>
+        </li>
+        {% endif %}
+
+        {% if is_self %}
+        <li class="py-3 text-gray-600 dark:text-gray-400">Ihr eigenes Konto können Sie nicht deaktivieren oder entfernen.</li>
+        {% endif %}
+        {% if is_owner and not is_self %}
+        <li class="py-3 text-gray-600 dark:text-gray-400">Den Eigentümer der Organisation können Sie nicht deaktivieren oder entfernen. Übertragen Sie zuerst die Eigentümerschaft.</li>
+        {% endif %}
+    </ul>
+</c-rahmen.abschnitt>
+{% endif %}
