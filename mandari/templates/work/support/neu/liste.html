@@ -23,7 +23,7 @@ work/support/list.html.
 
 {% block work_content %}
 <c-rahmen.abschnitt titel="Meine Tickets" titel_id="hilfe-tickets"
-    zusatz="{% if ticket_stats.open %}{{ ticket_stats.open }} offen{% else %}keine offenen{% endif %}, {{ ticket_stats.in_progress }} in Bearbeitung, {{ ticket_stats.resolved }} gelöst">
+    zusatz="{{ ticket_stats.open }} offen, {{ ticket_stats.in_progress }} in Bearbeitung, {{ ticket_stats.resolved }} gelöst">
     <c-slot name="link">
         <form method="get" aria-label="Tickets filtern">
             <c-form.select name="status" id="hilfe-status" label="Status" dicht zeile @change="$event.target.form.submit()">

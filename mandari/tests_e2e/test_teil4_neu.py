@@ -3,7 +3,7 @@
 Benachrichtigungen, Hilfe und Team im neuen Erscheinungsbild im Browser (Issue #951, Teilpaket 4).
 
 - Benachrichtigungen: „Gelesen“ nimmt Punkt und Knopf weg (data-parent statt Abstandsklasse), der Reiter „Ungelesen“
-  filtert, „Alle als gelesen markieren“ lädt neu.
+  filtert, „Alle als gelesen markieren“ lädt neu, „Anzeigen“ folgt nach dem Markieren dem Link.
 - Ticket: neue Nachrichten erscheinen beim Nachladen (ticketVerlauf), Neues Ticket nimmt Anhänge über das Dateifeld.
 - Alle Seiten: keine Alpine-Fehler, axe ohne kritische/schwere Befunde, kein waagerechtes Überlaufen bei 390 px.
 """
@@ -87,6 +87,24 @@ def test_benachrichtigung_als_gelesen(
     zweiter.refresh_from_db()
     assert zweiter.is_read
     problems.assert_clean("Benachrichtigungen")
+
+
+def test_benachrichtigung_anzeigen_folgt_dem_link(
+    page: Any, live_server: Any, vorsitz: Any, problems: BrowserProblems
+) -> None:
+    # „Anzeigen“ markiert per hx-post als gelesen und folgt danach dem Link (data-after-request="follow-href")
+    ziel = f"/work/{vorsitz.organization.slug}/team/"
+    hinweis = Notification.objects.create(
+        recipient=vorsitz, notification_type="task_assigned", title="Neues Mitglied", message="", link=ziel
+    )
+    basis = _anmelden(page, live_server, vorsitz)
+    _oeffnen(page, f"{basis}/notifications/")
+    eintrag = page.locator("[data-benachrichtigung]", has_text="Neues Mitglied")
+    with page.expect_navigation(url=f"**{ziel}"):
+        eintrag.get_by_role("link", name="Anzeigen").click()
+    hinweis.refresh_from_db()
+    assert hinweis.is_read
+    problems.assert_clean("Benachrichtigung anzeigen")
 
 
 def test_ticket_laedt_nachrichten_nach_und_neues_ticket(

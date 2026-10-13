@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Bausteine aus Teilpaket 4 von Issue #951: c-form.suche und c-rahmen.liste (neu), ``knopf`` an c-ui.textlink. Ohne
-``knopf`` bleibt der Textlink Zeichen für Zeichen wie bisher.
+Bausteine aus Teilpaket 4 von Issue #951: c-form.suche und c-rahmen.liste (neu). Zweite Wege, die etwas tun statt zu
+einer Seite zu führen, sind c-ui.text-button mit ``dicht``; der Textlink bleibt Zeichen für Zeichen wie bisher.
 """
 
 from __future__ import annotations
@@ -32,7 +32,7 @@ def test_suchfeld() -> None:
     assert 'id="suche-such"' in ohne and 'name="such"' in ohne and "placeholder=" not in ohne
 
 
-def test_textlink_ohne_knopf_wie_bisher() -> None:
+def test_textlink_wie_bisher() -> None:
     html = render('<c-ui.textlink href="/ziel/" class="text-sm" data-x="1">Weiter</c-ui.textlink>')
     assert html.strip() == (
         '<a href="/ziel/" class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 '
@@ -40,11 +40,11 @@ def test_textlink_ohne_knopf_wie_bisher() -> None:
     )
 
 
-def test_textlink_als_knopf() -> None:
-    knopf = render('<c-ui.textlink knopf @click="offen = true">Aus Protokollen</c-ui.textlink>')
-    assert knopf.strip().startswith('<button type="button" class="font-medium text-primary-700')
-    assert '@click="offen = true"' in knopf and "href" not in knopf
-    absenden = render('<c-ui.textlink knopf="submit">Wieder öffnen</c-ui.textlink>')
+def test_textknopf_dicht() -> None:
+    knopf = render('<c-ui.text-button dicht @click="offen = true">Aus Protokollen</c-ui.text-button>')
+    assert knopf.strip().startswith('<button type="button"') and '@click="offen = true"' in knopf
+    assert {"text-sm", "min-h-8", "text-primary-700", "hover:underline"} <= set(_klasse(knopf, "button").split())
+    absenden = render('<c-ui.text-button dicht type="submit">Wieder öffnen</c-ui.text-button>')
     assert absenden.strip().startswith('<button type="submit"')
 
 

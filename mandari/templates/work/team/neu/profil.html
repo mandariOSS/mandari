@@ -2,7 +2,7 @@
 {% comment %}
 Mitgliedsprofil im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit Namen, Rollen und „Mitglied seit“ im
 Satz, „Profil bearbeiten“ nur auf dem eigenen Profil. Darunter die Angaben als Begriff und Wert (c-ui.angaben) statt
-sechs Kästen: Kontakt nach den Sichtbarkeitseinstellungen der Person, Rollen und Gremien als Text, Verfügbarkeit als
+sechs Kästen: Kontakt nach den Sichtbarkeitseinstellungen der Person, Gremien und Status als Text, Verfügbarkeit als
 Punkt mit Text samt Stellvertretung. Kontext: TeamMemberProfileView; die bisherige Seite bleibt work/team/profile.html.
 {% endcomment %}
 
@@ -47,16 +47,12 @@ Punkt mit Text samt Stellvertretung. Kontext: TeamMemberProfileView; die bisheri
             {% if show_phone and member.user.phone %}<dt>Telefon</dt><dd><a href="tel:{{ member.user.phone }}" class="text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ member.user.phone }}</a></dd>{% endif %}
             {% if preferred_contact == "signal" and contact_signal %}<dt>Kontaktweg</dt><dd>Signal: {{ contact_signal }}</dd>
             {% elif preferred_contact == "phone" and member.user.phone %}<dt>Kontaktweg</dt><dd>Bevorzugt: Telefon</dd>{% endif %}
-            <dt>Rollen</dt>
-            <dd>{% for role in roles %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% empty %}Keine Rollen zugewiesen{% endfor %}</dd>
             <dt>Gremien</dt>
             <dd>{% for committee in committees %}{{ committee.name }}{% if not forloop.last %}, {% endif %}{% empty %}Keine Gremien zugewiesen{% endfor %}</dd>
             {% if is_owner or member.is_sworn_in %}
             <dt>Status</dt>
             <dd>{% if is_owner %}Eigentümer{% if member.is_sworn_in %}, {% endif %}{% endif %}{% if member.is_sworn_in %}vereidigt{% endif %}</dd>
             {% endif %}
-            <dt>Mitglied seit</dt>
-            <dd>{{ joined_at|date:"j. F Y" }}</dd>
         </c-ui.angaben>
     </c-rahmen.abschnitt>
 

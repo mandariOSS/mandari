@@ -4,8 +4,8 @@
 Ticket im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit Betreff, Stand im Satz und „Ticket schließen“
 bzw. „Wieder öffnen“. Links Beschreibung, Nachrichten (alle fünf Sekunden nachgeladen, ticketVerlauf statt
 Inline-Skript; das Fragment fordert die neue Fassung über hx-headers an) und die Antwort mit dem gemeinsamen Dateifeld,
-rechts die Angaben (c-ui.angaben) und die Wege zur Hilfe. Kontext: SupportDetailView; die bisherige Seite bleibt
-work/support/detail.html.
+rechts die übrigen Angaben (c-ui.angaben; Status, Kategorie und Priorität stehen nur im Kopfband) und die Wege zur
+Hilfe. Kontext: SupportDetailView; die bisherige Seite bleibt work/support/detail.html.
 {% endcomment %}
 
 {% block page_title %}Ticket #{{ ticket.id.hex|slice:":8" }}{% endblock %}
@@ -85,7 +85,7 @@ work/support/detail.html.
             <form method="post">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="reopen">
-                <c-ui.textlink knopf="submit">Wieder öffnen, um zu antworten</c-ui.textlink>
+                <c-ui.text-button dicht type="submit">Wieder öffnen, um zu antworten</c-ui.text-button>
             </form>
         </div>
         {% endif %}
@@ -94,9 +94,6 @@ work/support/detail.html.
     <aside aria-label="Angaben zum Ticket" class="space-y-8">
         <c-rahmen.abschnitt titel="Angaben" titel_id="ticket-angaben">
             <c-ui.angaben class="mt-3">
-                <dt>Status</dt><dd>{% include "work/support/neu/_status.html" %}</dd>
-                <dt>Kategorie</dt><dd>{{ ticket.get_category_display }}</dd>
-                <dt>Priorität</dt><dd>{{ ticket.get_priority_display }}</dd>
                 <dt>Erstellt am</dt><dd>{{ ticket.created_at|date:"d.m.Y H:i" }}</dd>
                 <dt>Aktualisiert</dt><dd>{{ ticket.updated_at|date:"d.m.Y H:i" }}</dd>
                 {% if ticket.resolved_at %}<dt>Gelöst am</dt><dd>{{ ticket.resolved_at|date:"d.m.Y H:i" }}</dd>{% endif %}

@@ -9,6 +9,7 @@ Rückweg, Rechte und die Kopplung von „Als gelesen markieren“ über Datenatt
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -91,6 +92,28 @@ def test_reiter_ungelesen_zeigt_nur_ungelesene(
         assert titel == {"Neue Aufgabe & mehr", "Freigabe angefragt"}
     html = client.get(_url(org), {"filter": "unread"}).content.decode()
     assert 'aria-current="page"' in html and "Sitzung morgen" not in html
+
+
+class _Links(HTMLParser):
+    """Links mit hx-post (Als gelesen markieren) und ihr data-after-request."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.links: dict[str, str] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        a = dict(attrs)
+        if tag == "a" and a.get("hx-post") and a.get("href"):
+            self.links[a["href"] or ""] = a.get("data-after-request") or ""
+
+
+def test_anzeigen_folgt_dem_link(org: Any, person: Any, bestand: list[Notification], client_for: Any) -> None:
+    # htmx 2 unterdrückt bei hx-post an einem Link das Folgen; data-after-request="follow-href" holt es nach
+    client = client_for(person.user)
+    for ansicht in ({}, {"ansicht": "bisher"}):
+        sammler = _Links()
+        sammler.feed(client.get(_url(org), ansicht).content.decode())
+        assert sammler.links == {f"/work/{org.slug}/tasks/": "follow-href", "/work/x/": "follow-href"}
 
 
 def test_seitenwahl_und_leerzustand(org: Any, person: Any, client_for: Any) -> None:
