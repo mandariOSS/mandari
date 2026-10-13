@@ -9,6 +9,9 @@ Leserecht (Mitlese-Ansicht):
 - Ruft A einen TOP auf, sieht B den Wechsel binnen zwei Sekunden (Hinweis über Channels, Stand per HTMX).
 - Ohne WebSocket-Verbindung holt B den Stand im Polling-Rückfall (alle zwei Sekunden).
 - Die Mitlese-Ansicht hat keine Bedienelemente; beide Ansichten sind ohne schwere axe-Befunde.
+
+Alles läuft im bisherigen und im neuen Erscheinungsbild (Issue #944): Das neue Cockpit hat dieselben Ids, data-testid
+und Formularschlüssel, an denen meetingCockpit hängt.
 """
 
 from __future__ import annotations
@@ -71,9 +74,10 @@ def _konto(tenant: SessionTenant, email: str, **rechte: bool) -> SessionUser:
     return konto
 
 
-@pytest.fixture
-def cockpit() -> Cockpit:
-    tenant = SessionTenant.objects.create(name="E2E-Gemeinde", slug="e2e-gemeinde")
+@pytest.fixture(params=[False, True], ids=["bisher", "neu"])
+def cockpit(request: pytest.FixtureRequest) -> Cockpit:
+    """Cockpit im bisherigen und im neuen Erscheinungsbild (Schalter session_new_design, Issue #944)."""
+    tenant = SessionTenant.objects.create(name="E2E-Gemeinde", slug="e2e-gemeinde", session_new_design=request.param)
     rat = SessionOrganization.objects.create(tenant=tenant, name="Rat")
     meeting = SessionMeeting.objects.create(
         tenant=tenant, name="Ratssitzung", organization=rat, start=timezone.now(), is_public=True

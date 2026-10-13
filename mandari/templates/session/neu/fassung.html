@@ -1,0 +1,139 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Eine Fassung einer Vorlage im neuen Rahmen (Issues #226, #944): Kopfband mit Nummer, Betreff und Anlass der Fassung,
+beschlossene und nichtöffentliche Fassung als Text; daneben „Mit Fassung n vergleichen“ und „Wiederherstellen“ (mit
+Rückfrage, die eine Hauptaktion der Seite) bzw. der Grund, warum Wiederherstellen gerade nicht geht. Darunter Sachverhalt
+und Beschlussvorschlag als ruhiges Dokument (15 px, Zeilenhöhe 1,5) und die Anlagen dieser Fassung als Liste (Name zum
+Herunterladen, Datenschutz-Löschung über session/neu/_fassung_inhalt_loeschen.html); rechts die Angaben der Fassung.
+Formulare und Links wie session/papers/versions/detail.html; Rechte und Kontext wie PaperVersionDetailView. Die
+bisherige Seite bleibt session/papers/versions/detail.html.
+{% endcomment %}
+
+{% block page_title %}Fassung {{ version.number }} – {{ paper.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zur Vorlage und zu ihren Fassungen (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}">{{ paper.display_reference|default:paper.name|truncatechars:60 }}</c-rahmen.brotkrume><c-rahmen.brotkrume href="{% url 'session:paper_versions' tenant_slug=tenant_slug paper_id=paper.id %}">Fassungen</c-rahmen.brotkrume><c-rahmen.brotkrume>Fassung {{ version.number }}</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{{ version.name }}" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:paper_versions' tenant_slug=tenant_slug paper_id=paper.id %}">Fassungen</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 tabular-nums" data-testid="fassung-nummer">{{ session_tenant.reference_label }} {{ version.reference|default:"ohne Nummer" }} · Fassung {{ version.number }}</p>
+    </c-slot>
+    {% if previous_number or can_edit and not restore_blocker %}
+    <c-slot name="aktionen">
+        {% if previous_number %}
+        <c-ui.button variant="secondary" size="sm" icon="git-compare"
+                     href="{% url 'session:paper_version_compare' tenant_slug=tenant_slug paper_id=paper.id %}?a={{ previous_number }}&amp;b={{ version.number }}">Mit Fassung {{ previous_number }} vergleichen</c-ui.button>
+        {% endif %}
+        {% if can_edit and not restore_blocker %}
+        <form method="post"
+              action="{% url 'session:paper_version_restore' tenant_slug=tenant_slug paper_id=paper.id number=version.number %}"
+              data-confirm="Fassung {{ version.number }} wiederherstellen? Der aktuelle Stand wird vorher als eigene Fassung gesichert.">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" icon="rotate-ccw">Wiederherstellen</c-ui.button>
+        </form>
+        {% endif %}
+    </c-slot>
+    {% endif %}
+    <p class="kopf-angaben">
+        <span class="break-words">{{ version.get_trigger_display }}{% if version.note %}: {{ version.note }}{% endif %}</span>
+        {% if version.is_resolved %}<span>{% include "session/neu/_status.html" with wert="approved" text="Beschlossene Fassung" %}</span>{% endif %}
+        {% if not version.is_public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+    </p>
+    {% if version.is_resolved %}<p class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300">Stand, den die entscheidende Beratung angenommen hat. Diese Fassung ist unveränderlich.</p>{% endif %}
+    {% if can_edit and restore_blocker %}<p class="mt-1 max-w-3xl text-sm text-gray-600 dark:text-gray-400" data-testid="wiederherstellen-gesperrt">{{ restore_blocker }}</p>{% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]" data-testid="fassung">
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="Sachverhalt" titel_id="sachverhalt-titel">
+            {% if version.main_text %}
+            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ version.main_text }}</div>
+            {% else %}
+            <c-rahmen.satz>Kein Sachverhalt erfasst.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Beschlussvorschlag" titel_id="beschlussvorschlag-titel">
+            {% if version.resolution_text %}
+            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ version.resolution_text }}</div>
+            {% else %}
+            <c-rahmen.satz>Kein Beschlussvorschlag erfasst.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Anlagen in dieser Fassung" titel_id="anlagen-titel" zusatz="{% if entries %}{{ entries|length }}{% endif %}" data-testid="fassung-anlagen">
+            {% if entries %}
+            <c-rahmen.liste class="mt-2">
+                {% for entry in entries %}
+                <li class="py-2.5" data-anlage="{{ entry.name }}">
+                    {% if entry.blob and not entry.blob.purged_at %}
+                    <a href="{% url 'session:paper_version_file' tenant_slug=tenant_slug paper_id=paper.id number=version.number entry_id=entry.id %}"
+                       class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words"
+                       title="Anlage in dieser Fassung herunterladen">{{ entry.name }}</a>
+                    {% else %}
+                    <p class="text-sm liste-name">{{ entry.name }}</p>
+                    {% endif %}
+                    <p class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                        <span class="whitespace-nowrap">{{ entry.size_human }}</span>
+                        <span class="whitespace-nowrap">Version {{ entry.file_version_number }}</span>
+                        {% if entry.sha256 %}<span class="font-mono" title="SHA-256 {{ entry.sha256 }}">{{ entry.sha256|slice:":12" }}</span>{% endif %}
+                        {% if not entry.is_public %}<span class="inline-flex items-center gap-1 text-gray-800 dark:text-gray-200"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+                    </p>
+                    {% if entry.blob.purged_at %}
+                    <p class="mt-1 text-[0.8125rem] text-red-700 dark:text-red-400">Inhalt am {{ entry.blob.purged_at|date:"d.m.Y" }} aus Datenschutzgründen gelöscht.</p>
+                    {% elif not entry.blob %}
+                    <p class="mt-1 text-[0.8125rem] text-amber-800 dark:text-amber-300">Inhalt war beim Sichern nicht lesbar.</p>
+                    {% elif entry.blob_id in purgeable %}
+                    {% include "session/neu/_fassung_inhalt_loeschen.html" with blob=entry.blob purge_key=entry.id %}
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Keine Anlagen in dieser Fassung.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
+
+    <aside class="min-w-0" aria-label="Angaben der Fassung">
+        <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
+            <c-slot name="link"><c-ui.textlink href="{% url 'session:paper_versions' tenant_slug=tenant_slug paper_id=paper.id %}">Alle Fassungen</c-ui.textlink></c-slot>
+            <c-ui.angaben class="mt-2" data-testid="fassung-angaben">
+                <dt>Gesichert</dt>
+                <dd><span class="tabular-nums">{{ version.created_at|date:"d.m.Y, H:i" }} Uhr</span><br><span class="text-gray-600 dark:text-gray-400">{{ version.created_by.user.email|default:"automatisch" }}</span></dd>
+                <dt>Status der Vorlage</dt>
+                <dd>{{ version.status_display }}</dd>
+                {% if version.restored_from %}
+                <dt>Wiederhergestellt aus</dt>
+                <dd><c-ui.textlink href="{% url 'session:paper_version_detail' tenant_slug=tenant_slug paper_id=paper.id number=version.restored_from.number %}">Fassung {{ version.restored_from.number }}</c-ui.textlink></dd>
+                {% endif %}
+                {% if version.agenda_item %}
+                <dt>Beratung</dt>
+                <dd><c-ui.textlink href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=version.agenda_item.meeting_id %}" class="tabular-nums">TOP {{ version.agenda_item.number }} · {{ version.agenda_item.meeting.start|date:"d.m.Y" }}</c-ui.textlink></dd>
+                {% endif %}
+                <dt>Vorlagenart</dt>
+                <dd>{{ version.paper_type_display }}</dd>
+                <dt>Datum</dt>
+                <dd class="tabular-nums">{{ version.date|date:"d.m.Y"|default:"–" }}</dd>
+                <dt>Frist</dt>
+                <dd class="tabular-nums">{{ version.deadline|date:"d.m.Y"|default:"–" }}</dd>
+                <dt>Finanzielle Auswirkungen</dt>
+                <dd>
+                    {% if version.has_financial_impact %}Ja{% elif version.has_financial_impact is False %}Nein{% else %}nicht erfasst{% endif %}
+                    {% if version.financial_impact_note %}<span class="block text-gray-700 dark:text-gray-300 whitespace-pre-wrap">{{ version.financial_impact_note }}</span>{% endif %}
+                </dd>
+                {% if version.details.main_organization %}<dt>Federführend</dt><dd>{{ version.details.main_organization.name }}</dd>{% endif %}
+                {% if version.details.lead_department %}<dt>Federführendes Amt</dt><dd>{{ version.details.lead_department.name }}</dd>{% endif %}
+                {% if version.details.originator_organization or version.details.originator_person %}
+                <dt>Urheber</dt>
+                <dd>{{ version.details.originator_organization.name }}{% if version.details.originator_organization and version.details.originator_person %}, {% endif %}{{ version.details.originator_person.name }}</dd>
+                {% endif %}
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% endblock %}

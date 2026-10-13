@@ -1,0 +1,98 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Verlauf einer Anlage im neuen Rahmen (Issues #226, #944): Kopfband mit dem Namen der Anlage, dem Weg zurück zu Vorlage,
+Sitzung, TOP oder Antrag, aktueller Version, Größe und Sichtbarkeit; daneben „Aktuelle Version herunterladen“. Darunter
+die früheren Fassungen als Liste mit Linien: Version, Name zum Herunterladen, Größe, Prüfsumme, Zeitpunkt, Person und
+Bemerkung; gelöschte Inhalte als Satz, die Datenschutz-Löschung klappt unter der Zeile auf
+(session/neu/_fassung_inhalt_loeschen.html). Links und Formulare wie session/files/versions.html; Rechte und Kontext
+wie FileVersionListView. Die bisherige Seite bleibt session/files/versions.html.
+{% endcomment %}
+
+{% block page_title %}Verlauf – {{ session_file.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Die Adresse der Anlage gehört zu keinem Bereich, darum Bereich und Elternseite hier (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}
+{% if session_file.paper_id %}
+<c-rahmen.brotkrume href="{% url 'session:papers' tenant_slug=tenant_slug %}">Vorlagen</c-rahmen.brotkrume>
+<c-rahmen.brotkrume href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=session_file.paper_id %}">{{ parent.display_reference|default:parent.name|truncatechars:60 }}</c-rahmen.brotkrume>
+{% elif session_file.agenda_item_id %}
+<c-rahmen.brotkrume href="{% url 'session:meetings' tenant_slug=tenant_slug %}">Sitzungen</c-rahmen.brotkrume>
+{% include "session/rahmen/_krume_sitzung.html" with meeting=parent.meeting %}
+<c-rahmen.brotkrume nur_text="1">TOP {{ parent.number }}</c-rahmen.brotkrume>
+{% elif session_file.meeting_id %}
+<c-rahmen.brotkrume href="{% url 'session:meetings' tenant_slug=tenant_slug %}">Sitzungen</c-rahmen.brotkrume>
+{% include "session/rahmen/_krume_sitzung.html" with meeting=parent %}
+{% elif session_file.application_id %}
+<c-rahmen.brotkrume href="{% url 'session:applications' tenant_slug=tenant_slug %}">Anträge</c-rahmen.brotkrume>
+<c-rahmen.brotkrume href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=session_file.application_id %}">{{ parent.reference|default:"Antrag" }}</c-rahmen.brotkrume>
+{% endif %}
+<c-rahmen.brotkrume>Verlauf der Anlage</c-rahmen.brotkrume>
+{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{{ session_file.name }}" dicht>
+    <c-slot name="oben">
+        {% if session_file.paper_id %}
+        <c-insight.zurueck href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=session_file.paper_id %}">Vorlage {{ parent.display_reference }}</c-insight.zurueck>
+        {% elif session_file.agenda_item_id %}
+        <c-insight.zurueck href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=parent.meeting_id %}">{{ parent.meeting.name|truncatechars:40 }}</c-insight.zurueck>
+        {% elif session_file.meeting_id %}
+        <c-insight.zurueck href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=session_file.meeting_id %}">{{ parent.name|truncatechars:40 }}</c-insight.zurueck>
+        {% elif session_file.application_id %}
+        <c-insight.zurueck href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=session_file.application_id %}">{{ parent.reference|default:"Antrag" }}</c-insight.zurueck>
+        {% endif %}
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400">Verlauf der Anlage{% if session_file.agenda_item_id %} zu TOP {{ parent.number }}{% endif %}</p>
+    </c-slot>
+    <c-slot name="aktionen">
+        <c-ui.button variant="secondary" size="sm" icon="download" href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=session_file.id %}">Aktuelle Version herunterladen</c-ui.button>
+    </c-slot>
+    <p class="kopf-angaben" data-testid="aktuelle-version">
+        <span class="tabular-nums">Aktuell Version {{ session_file.version }} vom {{ session_file.updated_at|date:"d.m.Y, H:i" }} Uhr</span>
+        <span class="tabular-nums">{{ session_file.size_human }}</span>
+        {% if not session_file.is_public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+    </p>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-3xl" data-testid="anlagen-verlauf">
+    <c-rahmen.abschnitt titel="Frühere Fassungen" titel_id="fruehere-titel" zusatz="{% if older_versions %}{{ older_versions|length }}{% endif %}">
+        <c-rahmen.satz eng>Beim Ersetzen bleibt die bisherige Datei hier abrufbar, mit derselben Sichtbarkeit wie die Anlage.</c-rahmen.satz>
+        {% if older_versions %}
+        <c-rahmen.liste class="mt-3">
+            {% for version in older_versions %}
+            <li class="grid grid-cols-[5.5rem_minmax(0,1fr)] items-baseline gap-x-4 py-2.5" data-fassung="{{ version.number }}">
+                <span class="text-sm font-semibold tabular-nums text-gray-900 dark:text-white">Version {{ version.number }}</span>
+                <div class="min-w-0">
+                    {% if not version.blob.purged_at %}
+                    <a href="{% url 'session:file_version_download' tenant_slug=tenant_slug file_id=session_file.id number=version.number %}"
+                       class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words"
+                       title="Version {{ version.number }} herunterladen">{{ version.name }}</a>
+                    {% else %}
+                    <p class="text-sm liste-name">{{ version.name }}</p>
+                    {% endif %}
+                    <p class="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                        <span class="whitespace-nowrap">{{ version.size_human }}</span>
+                        <span class="font-mono" title="SHA-256 {{ version.blob.sha256 }}">{{ version.blob.sha256|slice:":12" }}</span>
+                        <span class="tabular-nums whitespace-nowrap">{{ version.created_at|date:"d.m.Y, H:i" }} Uhr</span>
+                        {% if version.created_by %}<span class="break-all">{{ version.created_by.user.email }}</span>{% endif %}
+                    </p>
+                    {% if version.note %}<p class="text-[0.8125rem] text-gray-700 dark:text-gray-300 break-words">{{ version.note }}</p>{% endif %}
+                    {% if version.blob.purged_at %}
+                    <p class="mt-1 text-[0.8125rem] text-red-700 dark:text-red-400">Inhalt am {{ version.blob.purged_at|date:"d.m.Y" }} aus Datenschutzgründen gelöscht.</p>
+                    {% elif version.blob_id in purgeable %}
+                    {% include "session/neu/_fassung_inhalt_loeschen.html" with blob=version.blob purge_key=version.id %}
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        {% else %}
+        <c-rahmen.satz>Keine früheren Fassungen gespeichert.</c-rahmen.satz>
+        {% endif %}
+        {% if history_incomplete %}
+        <c-rahmen.satz>Stände aus der Zeit vor der Versionierung von Anlagen sind nicht gespeichert; ihre Ersetzungen stehen im Audit-Log.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+</div>
+{% endblock %}

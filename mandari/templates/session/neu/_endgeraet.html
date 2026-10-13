@@ -1,0 +1,79 @@
+{% comment %}
+Ein Gerät im Bestand im neuen Rahmen (Issue #944): Bezeichnung, Stand als Punkt mit Text, bei wem es ist und seit wann,
+Inventar- und Seriennummer und Zubehör. „Verwalten“ (bei ausgemusterten Geräten „Verlauf“) klappt unter der Zeile auf:
+Ausgeben an eine Person, Übergabeprotokoll, Zurücknehmen, Wieder einsatzbereit, Defekt melden und Ausmustern (Knöpfe
+ohne Füllfarbe, Ausmustern mit derselben Rückfrage), darunter der Verlauf. Formulare wie session/devices/index.html.
+Kontext: device, persons, tenant_slug.
+{% endcomment %}
+<li class="py-2.5" x-data="{ verwalten: false }" data-testid="endgeraet">
+    <div class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4">
+        <div class="min-w-0">
+            <p class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                <span class="liste-name">{{ device.label }}</span>
+                <span class="text-sm text-gray-700 dark:text-gray-300">{% if device.status == "in_stock" %}{% include "session/neu/_status.html" with wert="approved" text=device.get_status_display %}{% elif device.status == "issued" %}{% include "session/neu/_status.html" with wert="scheduled" text=device.get_status_display %}{% elif device.status == "defect" %}{% include "session/neu/_status.html" with wert="rejected" text=device.get_status_display %}{% else %}{% include "session/neu/_status.html" with wert="" text=device.get_status_display %}{% endif %}</span>
+            </p>
+            {% if device.issued_to %}<p class="text-sm text-gray-800 dark:text-gray-200 break-words">bei <span class="font-medium">{{ device.issued_to.display_name }}</span> seit <span class="tabular-nums">{{ device.issued_at|date:"d.m.Y" }}</span></p>{% endif %}
+            {% if device.inventory_number or device.serial_number or device.accessories %}
+            <p class="flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                {% if device.inventory_number %}<span class="tabular-nums">Inv. {{ device.inventory_number }}</span>{% endif %}
+                {% if device.serial_number %}<span class="tabular-nums break-all">SN {{ device.serial_number }}</span>{% endif %}
+                {% if device.accessories %}<span class="break-words">{{ device.accessories }}</span>{% endif %}
+            </p>
+            {% endif %}
+        </div>
+        <c-ui.text-button dicht @click="verwalten = !verwalten" ::aria-expanded="verwalten.toString()" aria-expanded="false" aria-controls="geraet-{{ device.id }}">
+            {% if device.status == "retired" %}Verlauf{% else %}Verwalten{% endif %}<span class="sr-only">: {{ device.label }}</span>
+        </c-ui.text-button>
+    </div>
+    <div id="geraet-{{ device.id }}" x-show="verwalten" x-cloak class="mt-3 mb-1 space-y-4">
+        {% if device.status != "retired" %}
+        <div class="feldzeile">
+            {% if device.status == "in_stock" %}
+            <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='issue' %}" class="feldzeile">
+                {% csrf_token %}
+                <c-form.select name="person" id="geraet-person-{{ device.id }}" label="Ausgeben an" placeholder="Person wählen…" required dicht class="min-w-0 w-60 max-w-full">
+                    {% for person in persons %}<option value="{{ person.id }}">{{ person.display_name }}</option>{% endfor %}
+                </c-form.select>
+                <c-ui.button type="submit" variant="secondary" size="sm">Ausgeben</c-ui.button>
+            </form>
+            {% elif device.status == "issued" %}
+            <c-ui.button href="{% url 'session:device_handover_pdf' tenant_slug=tenant_slug device_id=device.id %}" variant="secondary" size="sm" icon="file-down">Übergabeprotokoll</c-ui.button>
+            <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='return' %}">
+                {% csrf_token %}
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="undo-2">Zurücknehmen</c-ui.button>
+            </form>
+            {% elif device.status == "defect" %}
+            <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='repair' %}">
+                {% csrf_token %}
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="wrench">Wieder einsatzbereit</c-ui.button>
+            </form>
+            {% endif %}
+            {% if device.status == "in_stock" or device.status == "issued" %}
+            <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='defect' %}">
+                {% csrf_token %}
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="triangle-alert">Defekt melden</c-ui.button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'session:device_action' tenant_slug=tenant_slug device_id=device.id action='retire' %}"
+                  data-confirm="Gerät wirklich ausmustern?">
+                {% csrf_token %}
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="archive">Ausmustern</c-ui.button>
+            </form>
+        </div>
+        {% endif %}
+        <div>
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Verlauf</h3>
+            {% with logs=device.logs.all %}
+            {% if logs %}
+            <ul class="mt-1 space-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                {% for log in logs %}
+                <li class="break-words"><span class="tabular-nums text-gray-600 dark:text-gray-400">{{ log.created_at|date:"d.m.Y H:i" }}</span> {{ log.get_action_display }}{% if log.person %} ({{ log.person.display_name }}){% endif %}{% if log.note %}: {{ log.note }}{% endif %}{% if log.created_by %} <span class="text-gray-600 dark:text-gray-400">· {{ log.created_by.user.email }}</span>{% endif %}</li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <c-form.hinweis>Noch keine Einträge.</c-form.hinweis>
+            {% endif %}
+            {% endwith %}
+        </div>
+    </div>
+</li>

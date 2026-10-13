@@ -1,0 +1,92 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Fassungen einer Vorlage im neuen Rahmen (Issues #226, #944): Kopfband mit Nummer und Betreff der Vorlage, dem Weg
+zurück und in einem Satz, wann mandari Fassungen sichert. Darunter der Vergleich als eine Zeile mit zwei Auswahlfeldern
+und die Fassungen als nummerierte Liste mit Linien (Nummer, Anlass, Zeitpunkt, Person, Stand der Vorlage; beschlossene
+und nichtöffentliche Fassungen als Text, „Mit Fassung n vergleichen“ als Textlink). Rechts „Fassung sichern“ als ruhiges
+Formular und ein Satz zum Bürgerportal. Formulare, Felder und Links wie session/papers/versions/list.html (die
+Optionsfelder a und b sind jetzt Auswahlfelder mit denselben Werten); Rechte und Kontext wie PaperVersionListView. Die
+bisherige Seite bleibt session/papers/versions/list.html.
+{% endcomment %}
+
+{% block page_title %}Fassungen – {{ paper.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zur Vorlage (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}">{{ paper.display_reference|default:paper.name|truncatechars:60 }}</c-rahmen.brotkrume><c-rahmen.brotkrume>Fassungen</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Fassungen" text="mandari sichert bei jedem Workflow-Schritt und jedem Beratungsergebnis automatisch eine Fassung. Fassungen lassen sich nicht ändern; Wiederherstellen legt eine neue an." dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}">{{ paper.display_reference|default:"Vorlage" }}</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words" data-testid="vorlagennummer"><span class="tabular-nums">{{ session_tenant.reference_label }} {{ paper.display_reference }}</span> · {{ paper.name }}</p>
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]" data-testid="fassungen-liste">
+    <c-rahmen.abschnitt titel="Verlauf" titel_id="verlauf-titel" zusatz="{% if rows %}{{ rows|length }}{% endif %}" class="min-w-0">
+        {% if rows %}
+        <form method="get" action="{% url 'session:paper_version_compare' tenant_slug=tenant_slug paper_id=paper.id %}"
+              class="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-700 dark:text-gray-300" data-testid="fassungen-vergleichen">
+            <label for="vergleich-a" class="sr-only">Ältere Fassung</label>
+            <select id="vergleich-a" name="a"
+                    class="h-9 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                {% for row in rows %}<option value="{{ row.version.number }}" {% if row.version.number == default_a %}selected{% endif %}>Fassung {{ row.version.number }}</option>{% endfor %}
+            </select>
+            <span aria-hidden="true">mit</span>
+            <label for="vergleich-b" class="sr-only">Neuere Fassung</label>
+            <select id="vergleich-b" name="b"
+                    class="h-9 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                {% for row in rows %}<option value="{{ row.version.number }}" {% if row.version.number == default_b %}selected{% endif %}>Fassung {{ row.version.number }}</option>{% endfor %}
+            </select>
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="git-compare">Vergleichen</c-ui.button>
+        </form>
+
+        <c-rahmen.liste geordnet class="mt-4" data-testid="fassungen">
+            {% for row in rows %}
+            {% with version=row.version %}
+            <li class="grid grid-cols-[5.5rem_minmax(0,1fr)] sm:grid-cols-[5.5rem_minmax(0,1fr)_auto] items-baseline gap-x-4 gap-y-1 py-2.5" data-fassung="{{ version.number }}">
+                <a href="{% url 'session:paper_version_detail' tenant_slug=tenant_slug paper_id=paper.id number=version.number %}"
+                   class="font-medium tabular-nums text-gray-900 dark:text-white hover:underline underline-offset-4">Fassung {{ version.number }}</a>
+                <div class="min-w-0">
+                    <p class="text-sm text-gray-900 dark:text-white break-words">{{ version.get_trigger_display }}{% if version.note %}: {{ version.note }}{% endif %}</p>
+                    <p class="liste-angaben"><span class="tabular-nums">{{ version.created_at|date:"d.m.Y, H:i" }} Uhr</span> · {{ version.created_by.user.email|default:"automatisch" }} · {{ version.status_display }}</p>
+                    {% if version.is_resolved or not version.is_public or row.unchanged %}
+                    <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                        {% if version.is_resolved %}<span>{% include "session/neu/_status.html" with wert="approved" text="Beschlossene Fassung" %}</span>{% endif %}
+                        {% if not version.is_public %}<span class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+                        {% if row.unchanged %}<span class="text-gray-600 dark:text-gray-400">Inhalt wie Fassung {{ row.previous.number }}</span>{% endif %}
+                    </p>
+                    {% endif %}
+                </div>
+                {% if row.previous %}
+                <c-ui.textlink href="{% url 'session:paper_version_compare' tenant_slug=tenant_slug paper_id=paper.id %}?a={{ row.previous.number }}&amp;b={{ version.number }}"
+                               class="col-start-2 sm:col-start-3 text-sm sm:whitespace-nowrap">Mit Fassung {{ row.previous.number }} vergleichen</c-ui.textlink>
+                {% endif %}
+            </li>
+            {% endwith %}
+            {% endfor %}
+        </c-rahmen.liste>
+        {% else %}
+        <c-rahmen.satz>Noch keine Fassung gesichert. Die erste Fassung entsteht, sobald die Vorlage zur Freigabe vorgelegt wird{% if can_edit %}, oder jetzt über „Fassung sichern“{% endif %}.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    <aside class="min-w-0 space-y-10" aria-label="Fassung sichern und Bürgerportal">
+        {% if can_edit %}
+        <c-rahmen.abschnitt titel="Fassung sichern" titel_id="sichern-titel">
+            <c-rahmen.satz eng>Hält den aktuellen Stand der Vorlage als neue Fassung fest.</c-rahmen.satz>
+            <form method="post" action="{% url 'session:paper_version_create' tenant_slug=tenant_slug paper_id=paper.id %}" class="mt-3 space-y-3" data-testid="fassung-sichern">
+                {% csrf_token %}
+                <c-form.field name="note" id="version_note" label="Bemerkung (optional)" maxlength="300" placeholder="z. B. Stand nach Rücksprache mit dem Amt" dicht />
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="save">Fassung sichern</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+        {% endif %}
+        <c-rahmen.abschnitt titel="Im Bürgerportal" titel_id="portal-titel">
+            <c-rahmen.satz eng>Dort steht nie eine ältere Fassung, sondern nur die freigegebene Vorlage im aktuellen Stand, mit Betreff und öffentlichen Anlagen. Sachverhalt und Beschlussvorschlag werden nicht veröffentlicht.</c-rahmen.satz>
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% endblock %}

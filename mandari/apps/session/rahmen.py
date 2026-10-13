@@ -357,6 +357,102 @@ def navigation(
     }
 
 
+def neues_design_gruppe(group: Any) -> bool:
+    """
+    True, wenn die Leitstelle einer Mandantengruppe im neuen Rahmen steht (Teil 2b): Sie hat keinen eigenen Schalter
+    und folgt ihren Mandanten – erst wenn alle aktiven Mandanten der Gruppe das neue Erscheinungsbild eingeschaltet
+    haben (mindestens einer), sonst bleibt sie im bisherigen Rahmen.
+    """
+    if group is None:
+        return False
+    schalter = list(group.tenants.filter(is_active=True).values_list(FELD, flat=True))
+    return bool(schalter) and all(schalter)
+
+
+def leitstelle_navigation(
+    group: Any,
+    sieht_vorraete: bool,
+    url_name: str,
+    *,
+    raeume: Iterable[dict[str, str]] = (),
+    leitstellen: Iterable[dict[str, str]] = (),
+) -> dict[str, Any]:
+    """
+    Navigation des neuen Rahmens für die Leitstelle einer Mandantengruppe (Issue #317, Teil 2b): Bereiche „Übersicht“
+    und – nur für die Gruppenrolle „Leitstelle“ (``sieht_vorraete``) – „Suche“, unten die übrigen Leitstellen. Die
+    Kopfsuche sucht in allen Mandanten der Gruppe (nur mit Suchrecht), der Raum-Dialog wechselt in einen Mandanten des
+    Kontos. Gleiche Form wie :func:`navigation`, damit derselbe Rahmen sie zeichnet; ``raum_name`` und ``raum_art``
+    ersetzen dort Name und Art des Mandanten.
+    """
+    uebersicht_url = reverse("session:leitstelle", kwargs={"group_slug": group.slug})
+    suche_url = reverse("session:leitstelle_search", kwargs={"group_slug": group.slug}) if sieht_vorraete else ""
+
+    def eintrag(key: str, label: str, url: str, icon: str, aktiv: bool, kurz: str = "") -> dict[str, Any]:
+        return {
+            "key": key,
+            "label": label,
+            "kurz": kurz or label,
+            "icon": icon,
+            "url": url,
+            "aktiv": aktiv,
+            "current": "page" if aktiv else "",
+            "zahl": 0,
+            "unterpunkte": [],
+            "offen": False,
+        }
+
+    bereiche = [eintrag("uebersicht", "Übersicht", uebersicht_url, "radar", url_name == "leitstelle")]
+    if sieht_vorraete:
+        bereiche.append(
+            eintrag("suche", "Suche in allen Mandanten", suche_url, "search", url_name == "leitstelle_search", "Suche")
+        )
+    unten = [
+        eintrag(
+            f"leitstelle-{andere['slug']}",
+            f"Leitstelle {andere['name']}",
+            reverse("session:leitstelle", kwargs={"group_slug": andere["slug"]}),
+            "radar",
+            False,
+            "Leitstelle",
+        )
+        for andere in leitstellen
+        if andere["slug"] != group.slug
+    ]
+    krumen: list[dict[str, Any]] = [
+        {"label": f"Leitstelle {group.name}", "url": uebersicht_url, "aktuell": url_name == "leitstelle"}
+    ]
+    if url_name == "leitstelle_search":
+        krumen.append({"label": "Suche", "url": suche_url, "aktuell": True})
+    return {
+        "bereich": "leitstelle",
+        "bereiche": bereiche,
+        "unten": unten,
+        "leiste_unten": bereiche,
+        "mehr": list(unten),
+        "mehr_aktiv": False,
+        "reiter": [],
+        "reiter_label": "",
+        "brotkrumen": krumen,
+        "start_url": uebersicht_url,
+        "suche_url": suche_url,
+        "suche_platzhalter": "Alle Mandanten der Gruppe …",
+        "raum_name": f"Leitstelle {group.name}",
+        "raum_art": "Leitstelle" if sieht_vorraete else "Leitstelle · Kennzahlen",
+        "raum_kuerzel": raum_kuerzel(group.name),
+        "raum_farbe": STANDARD_FARBE,
+        "raeume": [
+            {
+                "name": raum["name"],
+                "url": reverse("session:dashboard", kwargs={"tenant_slug": raum["slug"]}),
+                "kuerzel": raum_kuerzel(raum["name"]),
+                "aktuell": False,
+            }
+            for raum in raeume
+        ],
+        "leitstellen": unten,
+    }
+
+
 def brotkrumen(
     tenant: Any,
     bereiche: list[dict[str, Any]],
