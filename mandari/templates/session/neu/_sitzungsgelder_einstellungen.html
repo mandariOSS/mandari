@@ -28,7 +28,7 @@ wie session/allowances/_settings.html. Eingebunden aus session/neu/sitzungsgelde
             <c-form.select name="role" id="satz-funktion" label="Funktion" dicht class="min-w-0 w-40">
                 {% for value, label in rate_roles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
             </c-form.select>
-            <c-form.field name="amount" id="satz-betrag" label="Betrag (€)" placeholder="30,00" required dicht class="w-28" />
+            <c-form.field name="amount" id="satz-betrag" label="Betrag (€)" placeholder="30,00" inputmode="decimal" required dicht class="w-28" />
             <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
         </form>
     </c-rahmen.abschnitt>

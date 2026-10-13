@@ -174,6 +174,28 @@ def test_seiten_teil2a_am_handy_und_tablet(
     problems.assert_clean("Seiten aus Teil 2a im neuen Rahmen")
 
 
+def test_gremium_verwalten_zeigt_datumsfelder_ganz(
+    page: Any, live_server: Any, seiten_2a: dict[str, str], problems: BrowserProblems
+) -> None:
+    """
+    „Verwalten“ am Gremium (Issue #944): Von und Bis stehen nur nebeneinander, wenn das Formular breit genug ist – bei
+    keiner Fensterbreite wird ein Datumsfeld so schmal, dass das Jahr abgeschnitten ist (vorher 85 px bei 1280 px).
+    """
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    for breite in (390, 1024, 1280, 1440, 1500, 1920):
+        page.set_viewport_size({"width": breite, "height": 900})
+        page.goto(f"{live_server.url}{seiten_2a['gremium']}")
+        wait_for_bundle(page)
+        page.get_by_role("button", name="Verwalten").first.click()
+        zeitraum = page.locator("[data-testid='mitglied-zeitraum']").first.locator("input")
+        expect(zeitraum.first).to_be_visible()
+        breiten = [round(zeitraum.nth(i).bounding_box()["width"]) for i in range(zeitraum.count())]
+        assert len(breiten) == 2 and min(breiten) >= 160, f"Von/Bis bei {breite} px: {breiten}"
+        masse = page.evaluate(UEBERLAUF)
+        assert masse["scroll"] <= masse["breite"] + 1, f"Gremium bei {breite} px läuft seitlich über: {masse}"
+    problems.assert_clean("Gremium verwalten")
+
+
 def test_anwesenheit_als_liste_speichert_per_htmx(
     page: Any, live_server: Any, seiten_2a: dict[str, str], problems: BrowserProblems
 ) -> None:

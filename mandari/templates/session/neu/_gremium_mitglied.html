@@ -2,7 +2,9 @@
 Ein Mitglied der Besetzung im neuen Rahmen (Issues #39, #944): Name als Link zur Person, darunter Funktion, Stimmrecht,
 Zeitraum und Vertretung. Mit dem Recht zur Besetzung klappt „Verwalten“ unter der Zeile drei Formulare auf: Angaben
 ändern (Funktion, Vertretung, Zeitraum, Stimmrecht, Sperrvermerk beim Ausschussvorsitz), Mitgliedschaft beenden und
-Ausscheiden mit Nachrücker oder Nachrückerin. Felder wie session/organizations/detail.html. Kontext: membership,
+Ausscheiden mit Nachrücker oder Nachrückerin. Felder wie session/organizations/detail.html. Spalten und „Von/Bis“
+nebeneinander folgen der Breite der Liste, nicht des Fensters (Container-Abfragen): drei Spalten erst ab 56rem, Von/Bis
+erst ab 20rem je Formular, sonst untereinander – so schneidet kein Datumsfeld das Jahr ab. Kontext: membership,
 organization, can_manage, membership_roles, available_persons, current_member_ids, tenant_slug.
 {% endcomment %}
 <li class="py-2.5" {% if can_manage %}x-data="{ verwalten: false }"{% endif %}>
@@ -23,49 +25,51 @@ organization, can_manage, membership_roles, available_persons, current_member_id
         {% endif %}
     </div>
     {% if can_manage %}
-    <div id="mitglied-{{ membership.id }}" x-show="verwalten" x-cloak class="mt-3 mb-1 grid gap-x-8 gap-y-5 lg:grid-cols-2 xl:grid-cols-3">
-        <form method="post" action="{% url 'session:membership_update' tenant_slug=tenant_slug membership_id=membership.id %}" class="space-y-2">
-            {% csrf_token %}
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Angaben ändern</h3>
-            <c-form.select name="role" id="mitglied-rolle-{{ membership.id }}" label="Funktion" dicht>
-                {% for value, label in membership_roles %}<option value="{{ value }}" {% if membership.role == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
-            </c-form.select>
-            <c-form.select name="substitute_for" id="mitglied-vertritt-{{ membership.id }}" label="Vertretung" dicht>
-                <option value="">Keine Vertretung</option>
-                {% if membership.substitute_for and not membership.substitute_for.is_active %}<option value="{{ membership.substitute_for_id }}" selected>Vertritt {{ membership.substitute_for.display_name }} (inaktiv)</option>{% endif %}
-                {% for p in available_persons %}{% if p.id != membership.person_id %}<option value="{{ p.id }}" {% if membership.substitute_for_id == p.id %}selected{% endif %}>Vertritt {{ p.display_name }}</option>{% endif %}{% endfor %}
-            </c-form.select>
-            <div class="grid grid-cols-2 gap-2">
-                <c-form.field name="start_date" id="mitglied-von-{{ membership.id }}" type="date" label="Von" value="{{ membership.start_date|date:'Y-m-d' }}" dicht />
-                <c-form.field name="end_date" id="mitglied-bis-{{ membership.id }}" type="date" label="Bis" value="{{ membership.end_date|date:'Y-m-d' }}" dicht />
-            </div>
-            <c-form.checkbox name="has_voting_rights" id="mitglied-stimmrecht-{{ membership.id }}" label="Stimmberechtigt" checked="{% if membership.has_voting_rights %}1{% endif %}" dicht />
-            {% if membership.role == "chair" and organization.organization_type == "committee" %}
-            <input type="hidden" name="end_reason_shown" value="1">
-            <c-form.checkbox name="end_reason" id="mitglied-abberufen-{{ membership.id }}" value="recalled" label="Abberufen (Sperrvermerk)" checked="{% if membership.end_reason == 'recalled' %}1{% endif %}" dicht data-testid="sperrvermerk" />
-            {% endif %}
-            <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
-        </form>
+    <div id="mitglied-{{ membership.id }}" x-show="verwalten" x-cloak class="mt-3 mb-1 [container-type:inline-size]">
+        <div class="grid gap-x-8 gap-y-5 [@container(min-width:36rem)]:grid-cols-2 [@container(min-width:56rem)]:grid-cols-3">
+            <form method="post" action="{% url 'session:membership_update' tenant_slug=tenant_slug membership_id=membership.id %}" class="space-y-2 [container-type:inline-size]">
+                {% csrf_token %}
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Angaben ändern</h3>
+                <c-form.select name="role" id="mitglied-rolle-{{ membership.id }}" label="Funktion" dicht>
+                    {% for value, label in membership_roles %}<option value="{{ value }}" {% if membership.role == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </c-form.select>
+                <c-form.select name="substitute_for" id="mitglied-vertritt-{{ membership.id }}" label="Vertretung" dicht>
+                    <option value="">Keine Vertretung</option>
+                    {% if membership.substitute_for and not membership.substitute_for.is_active %}<option value="{{ membership.substitute_for_id }}" selected>Vertritt {{ membership.substitute_for.display_name }} (inaktiv)</option>{% endif %}
+                    {% for p in available_persons %}{% if p.id != membership.person_id %}<option value="{{ p.id }}" {% if membership.substitute_for_id == p.id %}selected{% endif %}>Vertritt {{ p.display_name }}</option>{% endif %}{% endfor %}
+                </c-form.select>
+                <div class="grid gap-2 [@container(min-width:20rem)]:grid-cols-2" data-testid="mitglied-zeitraum">
+                    <c-form.field name="start_date" id="mitglied-von-{{ membership.id }}" type="date" label="Von" value="{{ membership.start_date|date:'Y-m-d' }}" dicht />
+                    <c-form.field name="end_date" id="mitglied-bis-{{ membership.id }}" type="date" label="Bis" value="{{ membership.end_date|date:'Y-m-d' }}" dicht />
+                </div>
+                <c-form.checkbox name="has_voting_rights" id="mitglied-stimmrecht-{{ membership.id }}" label="Stimmberechtigt" checked="{% if membership.has_voting_rights %}1{% endif %}" dicht />
+                {% if membership.role == "chair" and organization.organization_type == "committee" %}
+                <input type="hidden" name="end_reason_shown" value="1">
+                <c-form.checkbox name="end_reason" id="mitglied-abberufen-{{ membership.id }}" value="recalled" label="Abberufen (Sperrvermerk)" checked="{% if membership.end_reason == 'recalled' %}1{% endif %}" dicht data-testid="sperrvermerk" />
+                {% endif %}
+                <div><c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button></div>
+            </form>
 
-        <form method="post" action="{% url 'session:membership_end' tenant_slug=tenant_slug membership_id=membership.id %}" class="space-y-2">
-            {% csrf_token %}
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Mitgliedschaft beenden</h3>
-            <c-form.field name="end_date" id="mitglied-ende-{{ membership.id }}" type="date" label="Letzter Tag (leer: heute)" dicht />
-            {% if membership.role == "chair" and organization.organization_type == "committee" %}
-            <c-form.checkbox name="end_reason" id="mitglied-ende-abberufen-{{ membership.id }}" value="recalled" label="Abberufen (Sperrvermerk)" dicht />
-            {% endif %}
-            <c-ui.button type="submit" variant="secondary" size="sm">Beenden</c-ui.button>
-        </form>
+            <form method="post" action="{% url 'session:membership_end' tenant_slug=tenant_slug membership_id=membership.id %}" class="space-y-2">
+                {% csrf_token %}
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Mitgliedschaft beenden</h3>
+                <c-form.field name="end_date" id="mitglied-ende-{{ membership.id }}" type="date" label="Letzter Tag (leer: heute)" dicht />
+                {% if membership.role == "chair" and organization.organization_type == "committee" %}
+                <c-form.checkbox name="end_reason" id="mitglied-ende-abberufen-{{ membership.id }}" value="recalled" label="Abberufen (Sperrvermerk)" dicht />
+                {% endif %}
+                <div><c-ui.button type="submit" variant="secondary" size="sm">Beenden</c-ui.button></div>
+            </form>
 
-        <form method="post" action="{% url 'session:membership_succession' tenant_slug=tenant_slug membership_id=membership.id %}" class="space-y-2">
-            {% csrf_token %}
-            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Ausscheiden mit Nachrücker</h3>
-            <c-form.select name="successor" id="mitglied-nachruecker-{{ membership.id }}" label="Nachrücker oder Nachrückerin" placeholder="Bitte wählen" required dicht>
-                {% for p in available_persons %}{% if p.id != membership.person_id and p.id not in current_member_ids %}<option value="{{ p.id }}">{{ p.display_name }}</option>{% endif %}{% endfor %}
-            </c-form.select>
-            <c-form.field name="change_date" id="mitglied-wechsel-{{ membership.id }}" type="date" label="Wechsel zum (leer: heute)" dicht />
-            <c-ui.button type="submit" variant="secondary" size="sm">Nachrücken lassen</c-ui.button>
-        </form>
+            <form method="post" action="{% url 'session:membership_succession' tenant_slug=tenant_slug membership_id=membership.id %}" class="space-y-2">
+                {% csrf_token %}
+                <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Ausscheiden mit Nachrücker</h3>
+                <c-form.select name="successor" id="mitglied-nachruecker-{{ membership.id }}" label="Nachrücker oder Nachrückerin" placeholder="Bitte wählen" required dicht>
+                    {% for p in available_persons %}{% if p.id != membership.person_id and p.id not in current_member_ids %}<option value="{{ p.id }}">{{ p.display_name }}</option>{% endif %}{% endfor %}
+                </c-form.select>
+                <c-form.field name="change_date" id="mitglied-wechsel-{{ membership.id }}" type="date" label="Wechsel zum (leer: heute)" dicht />
+                <div><c-ui.button type="submit" variant="secondary" size="sm">Nachrücken lassen</c-ui.button></div>
+            </form>
+        </div>
     </div>
     {% endif %}
 </li>

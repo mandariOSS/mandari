@@ -3,8 +3,9 @@
 Sitzungsgelder im neuen Rahmen (Issues #38, #944): Kopfband mit einem Satz zum Zeitraum (Summe und Stand der
 Positionen statt Zählerkacheln), daneben Monatliche Pauschalen und Jahresübersicht als Textlinks. Darunter der Zeitraum
 als Filter, der Abrechnungslauf als nummerierte Schritte (Erzeugen, Genehmigen nach dem Vier-Augen-Prinzip, SEPA-Datei;
-Knöpfe ohne Füllfarbe), die Positionen als Liste und die Einstellungen (Entschädigungssätze, Auftraggeberkonto;
-session/neu/_sitzungsgelder_einstellungen.html). Alle Aktionen der bisherigen Seite bleiben erreichbar; Rechte und
+Knöpfe ohne Füllfarbe direkt neben ihrer Erläuterung, nicht am rechten Rand), die Positionen als Liste und die
+Einstellungen (Entschädigungssätze, Auftraggeberkonto; session/neu/_sitzungsgelder_einstellungen.html). Zeitraum und
+Zahl der Positionen stehen nur im Satz des Kopfbands. Alle Aktionen der bisherigen Seite bleiben erreichbar; Rechte und
 Kontext wie AllowanceListView. Die bisherige Seite bleibt session/allowances/index.html.
 {% endcomment %}
 
@@ -39,10 +40,10 @@ Kontext wie AllowanceListView. Die bisherige Seite bleibt session/allowances/ind
 </form>
 
 <div class="mt-8 space-y-10">
-    <c-rahmen.abschnitt titel="Abrechnungslauf" titel_id="lauf-titel" zusatz="{{ period_start|date:'d.m.Y' }} bis {{ period_end|date:'d.m.Y' }}" data-testid="abrechnungslauf">
+    <c-rahmen.abschnitt titel="Abrechnungslauf" titel_id="lauf-titel" data-testid="abrechnungslauf">
         <c-rahmen.liste geordnet class="mt-2">
-            <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
-                <div class="min-w-0 max-w-2xl">
+            <li class="grid gap-x-6 gap-y-2 py-3 sm:grid-cols-[minmax(0,42rem)_auto] sm:items-center">
+                <div class="min-w-0">
                     <p class="font-medium text-gray-900 dark:text-white">1. Positionen erzeugen</p>
                     <p class="text-sm text-gray-600 dark:text-gray-400">Aus dokumentierten Anwesenheiten: anwesend, verspätet oder vorzeitig gegangen, keine Gäste.</p>
                 </div>
@@ -54,8 +55,8 @@ Kontext wie AllowanceListView. Die bisherige Seite bleibt session/allowances/ind
                     <c-ui.button type="submit" variant="secondary" size="sm" icon="calculator">Positionen erzeugen</c-ui.button>
                 </form>
             </li>
-            <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
-                <div class="min-w-0 max-w-2xl">
+            <li class="grid gap-x-6 gap-y-2 py-3 sm:grid-cols-[minmax(0,42rem)_auto] sm:items-center">
+                <div class="min-w-0">
                     <p class="font-medium text-gray-900 dark:text-white">2. Genehmigen</p>
                     <p class="text-sm text-gray-600 dark:text-gray-400">Vier-Augen-Prinzip: Wer den Lauf erzeugt hat, kann die Positionen nicht selbst genehmigen.</p>
                 </div>
@@ -67,8 +68,8 @@ Kontext wie AllowanceListView. Die bisherige Seite bleibt session/allowances/ind
                     <c-ui.button type="submit" variant="secondary" size="sm" icon="check-check">Genehmigen</c-ui.button>
                 </form>
             </li>
-            <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-3">
-                <div class="min-w-0 max-w-2xl">
+            <li class="grid gap-x-6 gap-y-2 py-3 sm:grid-cols-[minmax(0,42rem)_auto] sm:items-center">
+                <div class="min-w-0">
                     <p class="font-medium text-gray-900 dark:text-white">3. Auszahlen</p>
                     <p class="text-sm text-gray-600 dark:text-gray-400">Die SEPA-Datei (pain.001) umfasst die genehmigten Positionen und markiert sie als ausgezahlt.</p>
                 </div>
@@ -84,7 +85,7 @@ Kontext wie AllowanceListView. Die bisherige Seite bleibt session/allowances/ind
         <p class="mt-3 text-sm text-gray-700 dark:text-gray-300">Für das Finanzverfahren: <c-ui.textlink href="{% url 'session:allowance_export_csv' tenant_slug=tenant_slug %}?from={{ period_start|date:'Y-m-d' }}&to={{ period_end|date:'Y-m-d' }}&organization={{ selected_organization }}&status={{ selected_status }}">Positionen als CSV</c-ui.textlink></p>
     </c-rahmen.abschnitt>
 
-    <c-rahmen.abschnitt titel="Positionen" titel_id="positionen-titel" zusatz="{{ allowances|length }}" data-testid="positionen">
+    <c-rahmen.abschnitt titel="Positionen" titel_id="positionen-titel" data-testid="positionen">
         {% if allowances %}
         <c-rahmen.liste class="mt-2">
             {% for allowance in allowances %}

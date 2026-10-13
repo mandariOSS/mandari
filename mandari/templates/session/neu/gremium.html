@@ -1,10 +1,11 @@
 {% extends "session/base_session.html" %}
 {% comment %}
-Gremium im neuen Rahmen (Issue #944): Kopfband mit Art, Kurzname und gesetzlicher Bezeichnung, daneben Bearbeiten und
-Deaktivieren bzw. Reaktivieren. Im Mittelpunkt die Besetzung als Liste (je Mitglied Funktion, Stimmrecht, Zeitraum und
-Vertretung; „Verwalten“ klappt Ändern, Beenden und Nachrücken unter der Zeile auf, session/neu/_gremium_mitglied.html),
-darunter „Mitglied aufnehmen“, künftige und ausgeschiedene Mitglieder, letzte Sitzungen und Vorlagen. Rechts die
-Angaben. Alle Aktionen der bisherigen Seite bleiben erreichbar; Rechte und Kontext wie OrganizationDetailView. Die
+Gremium im neuen Rahmen (Issue #944): Kopfband mit Art, Kurzname, Stand und gesetzlicher Bezeichnung, daneben
+Bearbeiten und Deaktivieren bzw. Reaktivieren. Im Mittelpunkt die Besetzung als Liste (je Mitglied Funktion,
+Stimmrecht, Zeitraum und Vertretung; „Verwalten“ klappt Ändern, Beenden und Nachrücken unter der Zeile auf,
+session/neu/_gremium_mitglied.html), darunter „Mitglied aufnehmen“, künftige und ausgeschiedene Mitglieder, letzte
+Sitzungen und Vorlagen. Rechts die Angaben (Mitgliederzahl mit Soll, Termine, Ort); jede Angabe steht nur einmal auf
+der Seite. Alle Aktionen der bisherigen Seite bleiben erreichbar; Rechte und Kontext wie OrganizationDetailView. Die
 bisherige Seite bleibt session/organizations/detail.html.
 {% endcomment %}
 
@@ -27,19 +28,18 @@ bisherige Seite bleibt session/organizations/detail.html.
         </form>
     </c-slot>
     {% endif %}
-    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
-        <span>{% if organization.is_active %}{% include "session/neu/_status.html" with wert="approved" text="Aktiv" %}{% else %}{% include "session/neu/_status.html" with wert="" text="Inaktiv" %}{% endif %}</span>
-        <span>{{ memberships|length }} Mitglied{{ memberships|length|pluralize:"er" }}{% if selected_term %} in {{ selected_term.name }}{% endif %}</span>
-    </p>
-    {% if legal_designation %}<p class="mt-1 text-sm text-gray-700 dark:text-gray-300" data-testid="gesetzliche-bezeichnung">Gesetzliche Bezeichnung: {{ legal_designation }}</p>{% endif %}
-    {% if main_committee_hint %}<p class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="hauptausschuss-hinweis">{{ main_committee_hint }}</p>{% endif %}
+    <div class="space-y-1 text-sm text-gray-700 dark:text-gray-300">
+        <p>{% if organization.is_active %}{% include "session/neu/_status.html" with wert="approved" text="Aktiv" %}{% else %}{% include "session/neu/_status.html" with wert="" text="Inaktiv" %}{% endif %}</p>
+        {% if legal_designation %}<p data-testid="gesetzliche-bezeichnung">Gesetzliche Bezeichnung: {{ legal_designation }}</p>{% endif %}
+        {% if main_committee_hint %}<p class="max-w-3xl" data-testid="hauptausschuss-hinweis">{{ main_committee_hint }}</p>{% endif %}
+    </div>
 </c-rahmen.kopfband>
 {% endblock %}
 
 {% block page_content %}
 <div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
     <div class="min-w-0 space-y-10">
-        <c-rahmen.abschnitt titel="{% if selected_term %}Besetzung {{ selected_term.name }}{% else %}Aktive Mitglieder{% endif %}" titel_id="besetzung-titel" zusatz="{{ memberships|length }}" data-testid="besetzung">
+        <c-rahmen.abschnitt titel="{% if selected_term %}Besetzung {{ selected_term.name }}{% else %}Aktive Mitglieder{% endif %}" titel_id="besetzung-titel" data-testid="besetzung">
             {% if legislative_terms %}
             {# Besetzung je Wahlperiode (Issue #39) #}
             <form method="get" class="mt-2 flex items-center gap-2">
@@ -137,8 +137,6 @@ bisherige Seite bleibt session/organizations/detail.html.
     <aside class="min-w-0" aria-label="Angaben zum Gremium">
         <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
             <c-ui.angaben class="mt-2" data-testid="gremium-angaben">
-                <dt>Art</dt><dd>{{ organization.get_organization_type_display }}</dd>
-                <dt>Status</dt><dd>{% if organization.is_active %}Aktiv{% else %}Inaktiv{% endif %}</dd>
                 <dt>Mitglieder</dt><dd class="tabular-nums">{{ memberships|length }}{% if organization.target_member_count %} von {{ organization.target_member_count }} (Soll){% endif %}</dd>
                 {% if organization.start_date %}<dt>Beginn</dt><dd class="tabular-nums">{{ organization.start_date|date:"d.m.Y" }}</dd>{% endif %}
                 {% if organization.end_date %}<dt>Ende</dt><dd class="tabular-nums">{{ organization.end_date|date:"d.m.Y" }}</dd>{% endif %}

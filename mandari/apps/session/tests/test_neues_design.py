@@ -594,7 +594,8 @@ def test_navigation_nach_rechten() -> None:
         "start", "sitzungen", "vorlagen", "antraege", "beschluesse", "gremien", "personen",
     ]  # fmt: skip
     assert [b["key"] for b in voll["leiste_unten"]] == ["start", "sitzungen", "vorlagen", "beschluesse"]
-    assert [r["key"] for r in voll["reiter"]] == ["liste", "kalender", "jahresplanung", "archiv"]
+    # Ohne „Sitzungen bearbeiten“ kein Reiter „Jahresplanung“ (die Seite verlangt das Recht, Teil 2a von #944)
+    assert [r["key"] for r in voll["reiter"]] == ["liste", "kalender", "archiv"]
     assert [k["label"] for k in voll["brotkrumen"]] == ["Stadt Nav", "Sitzungen"]
     assert voll["brotkrumen"][-1]["aktuell"] is True
 

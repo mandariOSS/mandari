@@ -115,7 +115,8 @@ REITER: dict[str, tuple[Ziel, ...]] = {
     "sitzungen": (
         Ziel("liste", "Alle Sitzungen", "session:meetings", rechte=MEETINGS),
         Ziel("kalender", "Kalender", "session:meeting_calendar", rechte=MEETINGS),
-        Ziel("jahresplanung", "Jahresplanung", "session:meeting_plan", rechte=MEETINGS),
+        # Die Jahresplanung (MeetingPlanView) verlangt das Recht, Sitzungen zu bearbeiten – nur dann der Reiter
+        Ziel("jahresplanung", "Jahresplanung", "session:meeting_plan", rechte=("edit_meetings",)),
         Ziel("archiv", "Archiv", "session:archive", rechte=MEETINGS),
     ),
     "vorlagen": (

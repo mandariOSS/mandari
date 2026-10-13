@@ -1,17 +1,17 @@
 {% extends "session/base_session.html" %}
 {% comment %}
-Person im neuen Rahmen (Issue #944): Kopfband mit Titel, Name und Anrede, daneben Bearbeiten, Auskunft (Art. 15 DSGVO,
-nur mit Einstellungsrecht) und Deaktivieren bzw. Reaktivieren. Darunter die Mitgliedschaften und die letzten
-Anwesenheiten als Listen, rechts Kontaktdaten und, nur mit dem Recht zu Sitzungsgeldern, die Bankdaten. Alle Aktionen
-der bisherigen Seite bleiben erreichbar; Rechte und Kontext wie PersonDetailView. Die bisherige Seite bleibt
-session/persons/detail.html.
+Person im neuen Rahmen (Issue #944): Kopfband mit Namen (``display_name`` enthält den Titel schon), Anrede und Stand,
+daneben Bearbeiten, Auskunft (Art. 15 DSGVO, nur mit Einstellungsrecht) und Deaktivieren bzw. Reaktivieren.
+Darunter die Mitgliedschaften (ihre Zahl nur an der Überschrift) und die letzten Anwesenheiten als Listen, rechts
+Kontaktdaten und, nur mit dem Recht zu Sitzungsgeldern, die Bankdaten. Alle Aktionen der bisherigen Seite bleiben
+erreichbar; Rechte und Kontext wie PersonDetailView. Die bisherige Seite bleibt session/persons/detail.html.
 {% endcomment %}
 
 {% block page_title %}{{ person.display_name }}{% endblock %}
 {% block gestaltung %}neu{% endblock %}
 
 {% block session_header %}
-<c-rahmen.kopfband titel="{% if person.title %}{{ person.title }} {% endif %}{{ person.display_name }}" dicht>
+<c-rahmen.kopfband titel="{{ person.display_name }}" dicht>
     <c-slot name="oben">
         <c-insight.zurueck href="{% url 'session:persons' tenant_slug=tenant_slug %}">Personen</c-insight.zurueck>
         {% if person.form_of_address %}<p class="mb-1 text-sm text-gray-600 dark:text-gray-400">{{ person.form_of_address }}</p>{% endif %}
@@ -29,10 +29,7 @@ session/persons/detail.html.
         </form>
     </c-slot>
     {% endif %}
-    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
-        <span>{% if person.is_active %}{% include "session/neu/_status.html" with wert="approved" text="Aktiv" %}{% else %}{% include "session/neu/_status.html" with wert="" text="Inaktiv" %}{% endif %}</span>
-        <span>{{ memberships|length }} Mitgliedschaft{{ memberships|length|pluralize:"en" }}</span>
-    </p>
+    <p class="text-sm text-gray-700 dark:text-gray-300">{% if person.is_active %}{% include "session/neu/_status.html" with wert="approved" text="Aktiv" %}{% else %}{% include "session/neu/_status.html" with wert="" text="Inaktiv" %}{% endif %}</p>
 </c-rahmen.kopfband>
 {% endblock %}
 
@@ -78,8 +75,6 @@ session/persons/detail.html.
     <aside class="min-w-0 space-y-8" aria-label="Kontaktdaten">
         <c-rahmen.abschnitt titel="Kontakt" titel_id="kontakt-titel">
             <c-ui.angaben class="mt-2" data-testid="person-angaben">
-                <dt>Name</dt>
-                <dd>{% if person.title %}{{ person.title }} {% endif %}{{ person.given_name }} {{ person.family_name }}</dd>
                 {% if person.email %}
                 <dt>E-Mail</dt>
                 <dd>
@@ -90,7 +85,6 @@ session/persons/detail.html.
                 {% with person_phone=person.get_phone_decrypted %}{% if person_phone %}<dt>Telefon</dt><dd>{{ person_phone }}</dd>{% endif %}{% endwith %}
                 {% with person_address=person.get_address_decrypted %}{% if person_address %}<dt>Adresse</dt><dd>{{ person_address }}</dd>{% endif %}{% endwith %}
                 <dt>Ladungen</dt><dd>{{ person.get_delivery_channel_display }}</dd>
-                <dt>Status</dt><dd>{% if person.is_active %}Aktiv{% else %}Inaktiv{% endif %}</dd>
                 {% if person.start_date %}<dt>Aktiv seit</dt><dd class="tabular-nums">{{ person.start_date|date:"d.m.Y" }}</dd>{% endif %}
                 {% if person.end_date %}<dt>Aktiv bis</dt><dd class="tabular-nums">{{ person.end_date|date:"d.m.Y" }}</dd>{% endif %}
             </c-ui.angaben>

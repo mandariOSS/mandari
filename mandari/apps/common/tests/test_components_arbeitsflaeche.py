@@ -85,6 +85,15 @@ class TestFeld:
         html = render('<c-form.field name="t" :value="v" dicht />', v='A & B "<x>"')
         assert 'value="A &amp; B &quot;&lt;x&gt;&quot;"' in html
 
+    def test_inputmode_am_feld(self) -> None:
+        """``inputmode`` (Issue #944) steht am Eingabefeld selbst; ohne Angabe bleibt das Markup Zeichen für Zeichen."""
+        for dicht in ("", " dicht"):
+            mit = render(f'<c-form.field name="amount" label="Betrag" value="3,50" inputmode="decimal"{dicht} />')
+            ohne = render(f'<c-form.field name="amount" label="Betrag" value="3,50"{dicht} />')
+            assert 'inputmode="decimal"' in _tag(mit, "input") and "inputmode" not in _tag(mit, "div")
+            assert "inputmode" not in ohne
+            assert mit.replace(' inputmode="decimal"', "") == ohne
+
 
 class TestAuswahl:
     def test_ohne_ergaenzung_wie_bisher(self) -> None:

@@ -3,8 +3,9 @@
 Antrag im neuen Rahmen (Issue #944): Kopfband mit Eingangsnummer, Art, Titel, Stand und Dringlichkeit; die eine
 Hauptaktion ist „In Vorlage umwandeln“ (nur wenn möglich und mit den Rechten dazu), daneben „Bearbeiten“. Darunter
 Begründung, Beschlussvorschlag, finanzielle Auswirkungen, Dringlichkeitsbegründung, Anhänge aus mandari Work und die
-erstellten Vorlagen; rechts Angaben, Mitzeichner und Bearbeitungsnotizen. Alle Aktionen der bisherigen Seite bleiben
-erreichbar; Rechte und Kontext wie ApplicationDetailView. Die bisherige Seite bleibt session/applications/detail.html.
+erstellten Vorlagen; rechts Angaben (ohne das, was schon im Kopfband steht), Mitzeichner und Bearbeitungsnotizen. Alle
+Aktionen der bisherigen Seite bleiben erreichbar; Rechte und Kontext wie ApplicationDetailView. Die bisherige Seite
+bleibt session/applications/detail.html.
 {% endcomment %}
 
 {% block page_title %}{{ application.title }}{% endblock %}
@@ -28,8 +29,6 @@ erreichbar; Rechte und Kontext wie ApplicationDetailView. Die bisherige Seite bl
     <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
         <span>{% include "session/neu/_status.html" with wert=application.status text=application.get_status_display %}</span>
         {% if application.is_urgent %}<span class="inline-flex items-center gap-1 font-medium text-red-700 dark:text-red-400"><i data-lucide="zap" class="w-3.5 h-3.5" aria-hidden="true"></i>Dringend</span>{% endif %}
-        {% if application.submitted_at %}<span class="tabular-nums">eingereicht am {{ application.submitted_at|date:"d.m.Y" }}</span>{% endif %}
-        {% if application.submitting_organization %}<span>{{ application.submitting_organization.name }}</span>{% endif %}
     </p>
 </c-rahmen.kopfband>
 {% endblock %}
@@ -95,9 +94,6 @@ erreichbar; Rechte und Kontext wie ApplicationDetailView. Die bisherige Seite bl
     <aside class="min-w-0 space-y-8" aria-label="Angaben zum Antrag">
         <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
             <c-ui.angaben class="mt-2" data-testid="antrag-angaben">
-                <dt>Status</dt><dd>{{ application.get_status_display }}</dd>
-                <dt>Art</dt><dd>{{ application.get_application_type_display }}</dd>
-                <dt>Eingangsnummer</dt><dd class="tabular-nums">{{ application.reference }}</dd>
                 <dt>Eingereicht am</dt><dd class="tabular-nums">{{ application.submitted_at|date:"d.m.Y H:i" }}</dd>
                 <dt>Einreicher</dt>
                 <dd>{{ application.submitter_name }}{% if application.submitter_email %}<br><span class="text-gray-600 dark:text-gray-400 break-all">{{ application.submitter_email }}</span>{% endif %}</dd>

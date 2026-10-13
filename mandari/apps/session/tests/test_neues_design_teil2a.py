@@ -5,7 +5,9 @@ Neues Erscheinungsbild des Sitzungsdienstes, Teil 2a (Issue #944).
 Geprüft: Gremium, Person, Antrag, Sitzungsgelder, Monatliche Pauschalen, Vertretungen, Kalender und Audit-Log haben mit
 eingeschaltetem Schalter eine eigene neue Vorlage, ohne Schalter bleiben die bisherigen. Keine Funktion entfällt: Jede
 Aktion der bisherigen Seite (Links, Formulare mit Methode und Feldern, htmx-Aufrufe, Adressen für Skripte) steht auch
-auf der neuen – für jede Standardrolle und mit einem Bestand, der die Aktionen wirklich zeigt. Dasselbe gilt für die
+auf der neuen – für jede Standardrolle und mit einem Bestand, der die Aktionen wirklich zeigt – und ist dort genauso
+abgesichert: Rückfragen vor dem Absenden (``data-confirm``, ``hx-confirm``) und bei htmx die mitgesendeten Felder und das
+Ziel der Antwort (``hx-include``, ``hx-target``, ``hx-swap``). Dasselbe gilt für die
 ruhigen Fassungen der eingebetteten Teilvorlagen auf Sitzung und Vorlage: Anwesenheit (mit Zugeschalteten und
 Störungen), Anlagen, Beratungsfolge und Bezüge. Die Anwesenheitszeile antwortet per htmx im Erscheinungsbild des
 Mandanten.
@@ -13,17 +15,20 @@ Mandanten.
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
+from html.parser import HTMLParser
 from typing import Any, cast
 from urllib.parse import parse_qsl, urlsplit
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.urls import reverse
+from django.urls import Resolver404, resolve, reverse
 from django.utils import timezone
 
 from apps.common.tests.factories import UserFactory
+from apps.session import rahmen
 from apps.session.models import (
     SessionAgendaItem,
     SessionAllowance,
@@ -49,7 +54,17 @@ from apps.session.models import (
     SessionUser,
 )
 from apps.session.services import file_version_service
-from apps.session.tests.test_neues_design import Aktion, _aktionen, _client, _mandant, _volle_welt, _vorlagen
+from apps.session.tests.test_neues_design import (
+    _HX,
+    Aktion,
+    _aktionen,
+    _client,
+    _hx_werte,
+    _intern,
+    _mandant,
+    _volle_welt,
+    _vorlagen,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -274,6 +289,116 @@ def _normiert(antwort: Any) -> set[Aktion]:
     return {_gleich(a) for a in _aktionen(antwort)}
 
 
+#: Absicherung einer Stelle, die eine Aktion auslöst: die Aktion und ihre Schutz- und Bezugsangaben
+Absicherung = tuple[Aktion, frozenset[tuple[str, str]]]
+RUECKFRAGE = ("Rückfrage", "")
+#: Elemente ohne Endtag: sie sind keine Vorfahren und bleiben nicht auf dem Stapel
+_OHNE_ENDE = frozenset({"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "source", "wbr"})
+#: Die Anwesenheit ist im neuen Rahmen eine Liste statt einer Tabelle: „die eigene Zeile“ bleibt derselbe Bezug
+_EIGENE_ZEILE = {"closest tr": "closest Zeile", "closest li": "closest Zeile"}
+
+
+class _Absicherungen(HTMLParser):
+    """
+    Je Stelle, die eine Aktion auslöst (Link, Formular mit Feldern, htmx-Aufruf – Schlüssel wie bei ``_aktionen``),
+    ihre Absicherung: eine Rückfrage vor dem Absenden (``data-confirm`` an Formular, Knopf oder Link,
+    ``data-confirm-message``, ``data-prompt``, ``hx-confirm``) und bei htmx die mitgesendeten Felder (``hx-include``), das
+    Ziel (``hx-target``) und die Art des Einsetzens (``hx-swap``). ``hx-*`` gilt wie bei htmx auch von Vorfahren.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stellen: list[Absicherung] = []
+        self._vorfahren: list[tuple[str, dict[str, str]]] = []
+        self._formular: tuple[str, str] | None = None
+        self._felder: set[str] = set()
+        self._schutz: set[tuple[str, str]] = set()
+
+    @staticmethod
+    def _rueckfrage(a: dict[str, str]) -> set[tuple[str, str]]:
+        return {RUECKFRAGE} if {"data-confirm", "data-confirm-message", "data-prompt"} & a.keys() else set()
+
+    def _geerbt(self, a: dict[str, str], name: str) -> str:
+        if name in a:
+            return a[name]
+        return next((attribute[name] for _, attribute in reversed(self._vorfahren) if name in attribute), "")
+
+    def _htmx(self, a: dict[str, str]) -> set[tuple[str, str]]:
+        schutz = {RUECKFRAGE} if self._geerbt(a, "hx-confirm") else set()
+        for name in ("hx-include", "hx-target", "hx-swap"):
+            if wert := self._geerbt(a, name):
+                schutz.add((name, _EIGENE_ZEILE.get(wert, wert)))
+        return schutz
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        a = {name: wert or "" for name, wert in attrs}
+        hx = next(((verb.upper(), a[f"hx-{verb}"]) for verb in _HX if a.get(f"hx-{verb}")), None)
+        if tag == "form":
+            self._formular = hx or (a.get("method", "get").upper(), a.get("action", ""))
+            self._felder = set()
+            self._schutz = self._rueckfrage(a) | (self._htmx(a) if hx else set())
+        elif self._formular and tag in ("input", "select", "textarea", "button"):
+            if a.get("name") and a["name"] != "csrfmiddlewaretoken":
+                typ = a.get("type", "submit" if tag == "button" else "text").lower()
+                fest = tag in ("input", "button") and typ in ("hidden", "submit", "button")
+                self._felder.add(f"{a['name']}={a.get('value', '')}" if fest else a["name"])
+            self._schutz |= self._rueckfrage(a)  # Rückfrage am Absendeknopf
+        if tag == "a" and _intern(a.get("href", "")):
+            self.stellen.append((("GET", a["href"], ()), frozenset(self._rueckfrage(a))))
+        if hx and tag != "form" and _intern(hx[1]):
+            aktion = (hx[0], hx[1], _hx_werte(a.get("hx-vals", "")))
+            self.stellen.append((aktion, frozenset(self._htmx(a) | self._rueckfrage(a))))
+        if tag not in _OHNE_ENDE:
+            self._vorfahren.append((tag, a))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "form" and self._formular:
+            self.stellen.append(((*self._formular, tuple(sorted(self._felder))), frozenset(self._schutz)))
+            self._formular = None
+        for stelle in range(len(self._vorfahren) - 1, -1, -1):
+            if self._vorfahren[stelle][0] == tag:
+                del self._vorfahren[stelle:]
+                break
+
+
+def _absicherungen(antwort: Any) -> list[Absicherung]:
+    leser = _Absicherungen()
+    leser.feed(antwort.content.decode())
+    leser.close()
+    return [(_gleich(aktion), schutz) for aktion, schutz in leser.stellen]
+
+
+def _schwaecher(alt: list[Absicherung], neu: list[Absicherung]) -> list[str]:
+    """
+    Was die neue Seite schwächer absichert als die bisherige: Jede Absicherung einer bisherigen Stelle gibt es für
+    dieselbe Aktion auch neu, und keine neue Stelle einer Aktion hat weniger als das, was bisher jede Stelle hatte (eine
+    zweite Stelle ohne Rückfrage zählt also). Fehlt die Aktion ganz, meldet das schon der Vergleich der Aktionen.
+    """
+    bisher: dict[Aktion, list[frozenset[tuple[str, str]]]] = defaultdict(list)
+    jetzt: dict[Aktion, list[frozenset[tuple[str, str]]]] = defaultdict(list)
+    for aktion, schutz in alt:
+        bisher[aktion].append(schutz)
+    for aktion, schutz in neu:
+        jetzt[aktion].append(schutz)
+    fehlt: list[str] = []
+    for aktion, varianten in bisher.items():
+        if aktion not in jetzt:
+            continue
+        fehlt.extend(
+            f"{aktion}: {sorted(schutz)} fehlt" for schutz in varianten if not any(schutz <= s for s in jetzt[aktion])
+        )
+        jede = frozenset.intersection(*varianten)
+        fehlt.extend(f"{aktion}: Stelle ohne {sorted(jede - s)}" for s in jetzt[aktion] if not jede <= s)
+    return fehlt
+
+
+def _adressname(aktion: Aktion) -> str:
+    try:
+        return resolve(urlsplit(aktion[1]).path).url_name or ""
+    except Resolver404:
+        return ""
+
+
 # =============================================================================
 # Vorlagen
 # =============================================================================
@@ -322,13 +447,39 @@ def test_eingebettete_teilvorlagen_im_neuen_rahmen() -> None:
 # =============================================================================
 
 
+#: Rückfragen und htmx-Bezüge, die die bisherigen Seiten mit dem Bestand zeigen (Adressname, Art)
+ERWARTETE_ABSICHERUNGEN = {
+    *(
+        (name, "Rückfrage")
+        for name in (
+            "organization_deactivate",
+            "person_deactivate",
+            "allowance_cancel",
+            "monthly_rate_delete",
+            "monthly_export_sepa",
+            "monthly_cancel",
+            "settings_delegation_revoke",
+            "file_delete",
+            "consultation_delete",
+            "attendance_disruption_add",
+            "attendance_delete",
+        )
+    ),
+    ("attendance_update", "hx-include"),
+    ("attendance_update", "hx-target"),
+    ("agenda_item_create", "hx-target"),
+}
+
+
 def test_keine_funktion_der_bisherigen_seiten_entfaellt_teil2a() -> None:
     """
     Jede Aktion der bisherigen acht Seiten und der eingebetteten Teilvorlagen auf Sitzung und Vorlage steht auch auf der
     neuen Seite – für jede Standardrolle, die Vorlage in jedem Schritt des Freigabelaufs (Terminieren erst nach der
     Freigabe). Anfrageparameter zählen ohne ihre Reihenfolge. Ausnahme wie in Teil 1 nur die vier Seiten, die die
     bisherige Seitenleiste direkt anbot und die jetzt als Reiter über ihrer Liste stehen (Kalender, Zu prüfen, Meine
-    Mitzeichnungen, Umlaufbeschlüsse) – das betrifft den Rahmen, nicht die Seiten.
+    Mitzeichnungen, Umlaufbeschlüsse) – das betrifft den Rahmen, nicht die Seiten. Jede Aktion ist neu genauso
+    abgesichert wie bisher (``_schwaecher``): dieselben Rückfragen, bei htmx dieselben mitgesendeten Felder, dasselbe
+    Ziel und Einsetzen; „die eigene Tabellenzeile“ der Anwesenheit ist jetzt „die eigene Listenzeile“.
     """
     tenant = _mandant("vergleich2a", neu=False)
     welt = _welt_2a(tenant)
@@ -337,7 +488,9 @@ def test_keine_funktion_der_bisherigen_seiten_entfaellt_teil2a() -> None:
         for name in ("meeting_calendar", "papers_review", "my_cosignatures", "circulars")
     }
     fehlt: list[str] = []
+    schwaecher: list[str] = []
     gesehen: set[Aktion] = set()
+    abgesichert: set[tuple[str, str]] = set()
     for rolle in [definition["name"] for definition in SessionRole.default_role_definitions().values()]:
         client = _client(tenant, rolle)
         for status in ("draft", "review", "approved"):
@@ -353,16 +506,85 @@ def test_keine_funktion_der_bisherigen_seiten_entfaellt_teil2a() -> None:
                 bisher = _normiert(alt)
                 gesehen |= bisher
                 fehlt.extend(f"{rolle}/{status}/{name}: {a}" for a in sorted(bisher - _normiert(neu) - reiter))
+                stellen = _absicherungen(alt)
+                abgesichert |= {(_adressname(aktion), art) for aktion, schutz in stellen for art, _ in schutz}
+                schwaecher.extend(f"{rolle}/{status}/{name}: {s}" for s in _schwaecher(stellen, _absicherungen(neu)))
     assert not fehlt, "\n".join(fehlt)
+    assert not schwaecher, "\n".join(schwaecher)
     # Der Bestand zeigt wirklich, was er prüfen soll (sonst wäre der Vergleich leer)
     gezeigt = {(methode, adresse) for methode, adresse, _ in gesehen}
     assert welt["erwartet_2a"] <= gezeigt, sorted(welt["erwartet_2a"] - gezeigt)
+    assert abgesichert >= ERWARTETE_ABSICHERUNGEN, sorted(ERWARTETE_ABSICHERUNGEN - abgesichert)
+
+
+class _Antwort:
+    def __init__(self, html: str) -> None:
+        self.content = html.encode()
+
+
+def test_absicherungen_werden_erkannt() -> None:
+    """Der Vergleich erkennt eine fehlende Rückfrage, ein anderes Ziel und eine zweite Stelle ohne Rückfrage."""
+    bisher = _absicherungen(
+        _Antwort(
+            '<form method="post" action="/x/" data-confirm="Sicher?"><button name="a" value="1">A</button></form>'
+            '<div hx-target="closest tr"><button hx-post="/y/" hx-include="closest tr">S</button></div>'
+            '<a href="/z/" data-confirm="Weg?">Z</a>'
+        )
+    )
+    assert (("POST", "/x/", ("a=1",)), frozenset({RUECKFRAGE})) in bisher
+    assert (("POST", "/y/", ()), frozenset({("hx-target", "closest Zeile"), ("hx-include", "closest Zeile")})) in bisher
+    gleich = _absicherungen(
+        _Antwort(
+            '<form method="post" action="/x/"><button name="a" value="1" data-confirm="Sicher?">A</button></form>'
+            '<button hx-post="/y/" hx-include="closest li" hx-target="closest li">S</button>'
+            '<a href="/z/" data-confirm="Wirklich?">Z</a>'
+        )
+    )
+    assert _schwaecher(bisher, gleich) == []
+    schwach = _absicherungen(
+        _Antwort(
+            '<form method="post" action="/x/"><button name="a" value="1">A</button></form>'
+            '<button hx-post="/y/" hx-include="closest li" hx-target="#anderswo">S</button>'
+            '<a href="/z/" data-confirm="Weg?">Z</a><a href="/z/">Z ohne Rückfrage</a>'
+        )
+    )
+    meldungen = _schwaecher(bisher, schwach)
+    assert len(meldungen) == 5, meldungen  # /x/ und /y/ je fehlt und schwächere Stelle, /z/ zweite Stelle
 
 
 def test_anfrageparameter_ohne_reihenfolge() -> None:
     assert _gleich(("GET", "?page=2&model=x", ())) == _gleich(("GET", "?model=x&page=2", ()))
     assert _gleich(("GET", "/session/x/a/?to=2&from=1", ())) == ("GET", "/session/x/a/?from=1&to=2", ())
     assert _gleich(("GET", "/session/x/", ())) == ("GET", "/session/x/", ())
+
+
+# =============================================================================
+# Reiter nur mit dem Recht der Seite
+# =============================================================================
+
+
+def test_reiter_jahresplanung_nur_mit_dem_recht_der_seite() -> None:
+    """„Jahresplanung“ verlangt ``edit_meetings`` (MeetingPlanView): ohne das Recht kein Reiter, der in einen 403 führt."""
+    tenant = _mandant("reiter2a", neu=True)
+    lesen = rahmen.navigation(tenant, {"view_meetings"}, "meeting_calendar")
+    assert [r["key"] for r in lesen["reiter"]] == ["liste", "kalender", "archiv"]
+    planen = rahmen.navigation(tenant, {"view_meetings", "edit_meetings"}, "meeting_calendar")
+    assert [r["key"] for r in planen["reiter"]] == ["liste", "kalender", "jahresplanung", "archiv"]
+    # Auf dem Kalender: der Lesezugriff sieht keinen Weg zur Jahresplanung, wer planen darf, nur den Reiter
+    welt = _welt_2a(tenant)
+    plan = f'href="{reverse("session:meeting_plan", kwargs={"tenant_slug": tenant.slug})}"'
+    assert plan not in _client(tenant, "Lesezugriff").get(welt["kalender"]).content.decode()
+    assert _client(tenant, "Administrator").get(welt["kalender"]).content.decode().count(plan) == 1
+
+
+def test_reiter_verlangen_das_recht_ihrer_seite() -> None:
+    """Jeder Reiter erscheint genau mit dem Recht, das seine Seite verlangt (sonst führte er in einen 403)."""
+    for ziele in rahmen.REITER.values():
+        for ziel in ziele:
+            ansicht = getattr(resolve(reverse(ziel.url_name, kwargs={"tenant_slug": "x"})).func, "view_class", None)
+            verlangt = getattr(ansicht, "permission_required", None)
+            verlangt = (verlangt,) if isinstance(verlangt, str) else tuple(verlangt or ())
+            assert set(ziel.rechte) == set(verlangt), (ziel.key, verlangt)
 
 
 # =============================================================================

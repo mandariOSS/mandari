@@ -1,12 +1,13 @@
 {% extends "session/base_session.html" %}
 {% comment %}
 Sitzungskalender im neuen Rahmen (Issues #82, #756, #944; Bereich Sitzungen, Reiter „Kalender“): Kopfband mit einem
-Satz zum Monat, Sitzungsplan als PDF und der Jahresplanung als Hauptaktion. Darunter die Monatsnavigation (voriger und
-nächster Monat, „Heute“, Körperschaft) und der Monat: ab 768 px als Raster mit sieben Spalten, am Handy als Liste der
-Tage mit Sitzungen (sonst sieben Spalten zu je 50 px). Sitzungen als Text mit Uhrzeit und Gremium, nichtöffentliche mit
-Schloss, abgesagte durchgestrichen; ohne farbige Flächen. Darunter die Kalender zum Abonnieren je Gremium und der
-öffentliche Sitzungsplan im Bürgerportal. Alle Ziele der bisherigen Seite bleiben; Kontext wie MeetingCalendarView. Die
-bisherige Seite bleibt session/calendar/month.html.
+Satz zum Monat und dem Sitzungsplan als PDF; die Jahresplanung ist der Reiter daneben (nur mit dem Recht, Sitzungen zu
+bearbeiten), nicht noch einmal eine Hauptaktion. Darunter die Monatsnavigation (voriger und nächster Monat, „Heute“,
+Körperschaft) und der Monat: ab 768 px als Raster mit sieben Spalten, am Handy als Liste der Tage mit Sitzungen (sonst
+sieben Spalten zu je 50 px). Sitzungen als Text mit Uhrzeit und Gremium, nichtöffentliche mit Schloss, abgesagte
+durchgestrichen; ohne farbige Flächen. Darunter die Kalender zum Abonnieren je Gremium und der öffentliche
+Sitzungsplan im Bürgerportal. Alle Ziele der bisherigen Seite bleiben; Kontext wie MeetingCalendarView. Die bisherige
+Seite bleibt session/calendar/month.html.
 {% endcomment %}
 
 {% block page_title %}Sitzungskalender{% endblock %}
@@ -16,7 +17,6 @@ bisherige Seite bleibt session/calendar/month.html.
 <c-rahmen.kopfband titel="Sitzungskalender" text="{{ month_name }} {{ year }}: {% if meetings_count %}{{ meetings_count }} Sitzung{{ meetings_count|pluralize:'en' }}{% else %}keine Sitzungen{% endif %}{% if body_choice.selected %} in {{ body_choice.selected.name }}{% endif %}." dicht>
     <c-slot name="aktionen">
         <c-ui.button href="{% url 'session:year_plan_pdf' tenant_slug=tenant_slug %}?year={{ year }}" variant="secondary" size="sm" icon="file-down">Sitzungsplan {{ year }} (PDF)</c-ui.button>
-        {% if can_plan %}<c-ui.button href="{% url 'session:meeting_plan' tenant_slug=tenant_slug %}" size="sm" icon="calendar-plus">Jahresplanung</c-ui.button>{% endif %}
     </c-slot>
 </c-rahmen.kopfband>
 {% endblock %}
