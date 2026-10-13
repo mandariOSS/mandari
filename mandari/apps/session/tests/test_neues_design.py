@@ -230,11 +230,10 @@ def test_mit_schalter_neuer_rahmen_und_neue_kernseiten() -> None:
         assert {"session/base_session_neu.html", vorlage} <= _vorlagen(antwort), name
         assert 'data-rahmen="neu"' in html and 'data-gestaltung="neu"' in html, name
         assert "session-sidebar" not in html, name
-    # Seiten ohne neue Gestaltung stehen im neuen Rahmen, ihr Inhalt wie bisher (seit Teil 2b haben die
-    # Einstellungen eine eigene; die Gremienliste noch nicht)
+    # Seit Teil 3 haben alle Seiten im Rahmen eine eigene neue Gestaltung, zuletzt auch die Gremienliste
     gremien = client.get(reverse("session:organizations", kwargs={"tenant_slug": tenant.slug}))
     assert gremien.status_code == 200
-    assert 'data-gestaltung="bisher"' in gremien.content.decode()
+    assert 'data-gestaltung="neu"' in gremien.content.decode()
 
 
 def test_alle_aktionen_der_sitzung_bleiben_erreichbar() -> None:

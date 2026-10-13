@@ -1,0 +1,81 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Meine Mitzeichnungen im neuen Rahmen (Issues #81, #222, #756, #944; Bereich Vorlagen, Reiter „Meine Mitzeichnungen“):
+Kopfband mit der Zahl und den eigenen Ämtern im Satz, darunter die offenen Stationen als Liste mit Linien statt Karte.
+Je Station, die dran ist, „Mitzeichnen“ ohne Füllfarbe und „Zurückweisen“ als Textknopf, der das Feld für den Grund
+aufklappt (Pflicht, wie bisher); wartende Stationen tragen ihren Stand als Punkt mit Text. Vertretungen stehen als Satz
+statt Hinweiskasten, der Filter „Körperschaft“ erst ab der zweiten Körperschaft. Formulare und Felder wie
+session/papers/cosign_list.html, die bisherige Seite bleibt. session/neu/_mitzeichnung.html (Stationen einer Vorlage)
+passt hier nicht: Sie zeigt den Lauf einer Vorlage, diese Seite die offenen Stationen über alle Vorlagen.
+Kontext: MyCosignaturesView (cosignatures mit actionable und on_behalf_of, my_departments, my_delegations, body_choice).
+{% endcomment %}
+
+{% block page_title %}Meine Mitzeichnungen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Meine Mitzeichnungen" text="{% if cosignatures %}{{ cosignatures|length }} offene Mitzeichnungsstation{{ cosignatures|length|pluralize:'en' }}{% else %}Offene Mitzeichnungsstationen{% endif %}{% if my_departments %} Ihrer Ämter: {% for dep in my_departments %}{{ dep.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}." dicht />
+{% endblock %}
+
+{% block page_content %}
+{% if my_delegations %}
+{# Vertretungen (Issue #222): als Satz statt Hinweiskasten, Testkennung wie session/partials/my_delegations.html #}
+<p class="mb-6 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="meine-vertretungen">
+    Sie vertreten derzeit {% for delegation in my_delegations %}{{ delegation.principal.user.email }} bis {{ delegation.end_date|date:"d.m.Y" }} ({{ delegation.scope_labels|join:", " }}){% if not forloop.last %}; {% endif %}{% endfor %}. Was Sie in Vertretung erledigen, vermerkt das Audit-Log.
+</p>
+{% endif %}
+
+{% if body_choice.active %}
+{# Körperschaft (Issue #756): Gesamtansicht oder eine Körperschaft #}
+<form method="get" role="search" aria-label="Mitzeichnungen filtern" class="mb-4 flex flex-wrap items-center gap-2" data-testid="mitzeichnungen-filter">
+    {% include "session/partials/body_filter.html" %}
+    <c-ui.button type="submit" variant="secondary" size="sm">Filtern</c-ui.button>
+</form>
+{% endif %}
+
+{% if cosignatures %}
+<c-rahmen.liste data-testid="mitzeichnungen-liste">
+    {% for cosign in cosignatures %}
+    <li class="grid gap-x-6 gap-y-2 py-3 pl-1 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div class="min-w-0">
+            <p class="liste-angaben tabular-nums">
+                {{ cosign.paper.display_reference }} · Station {{ cosign.order }}: {{ cosign.department.name }}{% if body_choice.active and cosign.paper.body %} · {{ cosign.paper.body.label }}{% endif %}
+            </p>
+            <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=cosign.paper.id %}"
+               class="mt-0.5 block liste-name hover:underline underline-offset-4">{{ cosign.paper.name }}</a>
+            {% if not cosign.actionable or cosign.paper.has_financial_impact or cosign.on_behalf_of %}
+            <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                {% if not cosign.actionable %}{% include "session/neu/_status.html" with wert="pending" text="Wartet auf die vorherige Station" %}{% endif %}
+                {% if cosign.paper.has_financial_impact %}<span>Mit finanziellen Auswirkungen</span>{% endif %}
+                {% if cosign.on_behalf_of %}<span class="inline-flex items-center gap-1 break-all"><i data-lucide="user-check" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></i>In Vertretung für {{ cosign.on_behalf_of.user.email }}</span>{% endif %}
+            </p>
+            {% endif %}
+        </div>
+        {% if cosign.actionable %}
+        <div x-data="{ rejectOpen: false }" class="flex flex-col gap-2 lg:items-end">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <form method="post" action="{% url 'session:cosignature_action' tenant_slug=tenant_slug cosign_id=cosign.id action='sign' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <c-ui.button type="submit" variant="secondary" size="sm" icon="check">Mitzeichnen</c-ui.button>
+                </form>
+                <c-ui.text-button dicht variant="muted" @click="rejectOpen = !rejectOpen" ::aria-expanded="rejectOpen.toString()" aria-controls="mitzeichnungen-ablehnen-{{ cosign.id }}">Zurückweisen</c-ui.text-button>
+            </div>
+            <form id="mitzeichnungen-ablehnen-{{ cosign.id }}" method="post" action="{% url 'session:cosignature_action' tenant_slug=tenant_slug cosign_id=cosign.id action='reject' %}"
+                  x-show="rejectOpen" x-cloak class="flex flex-wrap items-center gap-2">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <label for="mitzeichnungen-grund-{{ cosign.id }}" class="sr-only">Grund der Zurückweisung</label>
+                <input id="mitzeichnungen-grund-{{ cosign.id }}" type="text" name="comment" required placeholder="Grund der Zurückweisung"
+                       class="h-9 w-full sm:w-60 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="undo-2">Zurückweisen</c-ui.button>
+            </form>
+        </div>
+        {% endif %}
+    </li>
+    {% endfor %}
+</c-rahmen.liste>
+{% else %}
+<c-rahmen.satz data-testid="mitzeichnungen-leer">Keine offenen Mitzeichnungen.{% if not my_departments %} Sie sind bisher keinem Amt/Fachbereich zugeordnet.{% endif %}</c-rahmen.satz>
+{% endif %}
+{% endblock %}

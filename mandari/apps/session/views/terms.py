@@ -287,6 +287,10 @@ class ArchiveView(SessionViewMixin, TemplateView):
     template_name = "session/archive.html"
     permission_required = "view_meetings"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/archiv.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         can_np_meetings = self.has_permission("view_non_public_meetings")

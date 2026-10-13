@@ -1,0 +1,137 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Berichte im neuen Rahmen (Issues #84, #944; Verwaltung › Berichte): Kopfband mit einem Satz, darunter Jahr und Gremium
+als Filter in einer Zeile (das Gremium gilt wie bisher nur für die Anwesenheit). Links die Anwesenheit je Person und,
+nur mit dem Recht für Sitzungsgelder, das Sitzungsgeld je Person als ruhige Tabellen mit Linien (Zahlen in Spalten,
+Summen im Fuß, am Handy waagerecht verschiebbar) mit dem CSV-Export am Abschnitt. Rechts die Sitzungen je Gremium als
+Liste mit je einem Satz und die Durchlaufzeit der Vorlagen als Satz statt Zählerkacheln; am Handy stehen diese beiden
+Übersichten zuerst. Alle Ziele der bisherigen Seite bleiben; Kontext wie ReportsView. Die bisherige Seite bleibt
+session/reports/index.html.
+{% endcomment %}
+
+{% block page_title %}Berichte{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Berichte {{ year }}" text="Sitzungen, Anwesenheit{% if can_view_allowances %}, Sitzungsgelder{% endif %} und Durchlaufzeiten der Vorlagen im gewählten Jahr." dicht />
+{% endblock %}
+
+{% block page_content %}
+<form method="get" class="flex flex-wrap items-end gap-x-2 gap-y-3" aria-label="Jahr und Gremium wählen" data-testid="berichte-filter">
+    <c-form.select name="year" id="bericht-jahr" label="Jahr" dicht class="w-28">
+        {% for y in years %}<option value="{{ y }}" {% if y == year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </c-form.select>
+    <c-form.select name="organization" id="bericht-gremium" label="Gremium (Anwesenheit)" dicht class="min-w-0 flex-1 basis-48 sm:flex-none sm:w-64">
+        <option value="">Alle</option>
+        {% for org in organizations %}<option value="{{ org.id }}" {% if organization and organization.id == org.id %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
+    </c-form.select>
+    <c-ui.button type="submit" variant="secondary" size="sm">Anzeigen</c-ui.button>
+</form>
+
+<div class="mt-8 grid gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]">
+    {# Übersichten: am Handy zuerst, ab 1280 px rechts #}
+    <div class="min-w-0 space-y-10 xl:order-last">
+        <c-rahmen.abschnitt titel="Sitzungen je Gremium" titel_id="gremien-titel" data-testid="berichte-gremien">
+            {% if meeting_stats %}
+            <c-rahmen.liste class="mt-2">
+                {% for row in meeting_stats %}
+                <li class="py-2.5">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ row.organization.name }}</p>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ row.meetings }} Sitzung{{ row.meetings|pluralize:"en" }}, {{ row.tops }} TOP{{ row.tops|pluralize:"s" }}, {{ row.resolutions }} Beschl{{ row.resolutions|pluralize:"uss,üsse" }}{% if row.avg_duration %}, im Schnitt {{ row.avg_duration }} min{% endif %}</p>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Keine Sitzungen in {{ year }}.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Durchlaufzeit der Vorlagen" titel_id="durchlauf-titel" data-testid="berichte-durchlauf">
+            {% if paper_throughput.count %}
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300 tabular-nums">{{ paper_throughput.count }} Vorlage{{ paper_throughput.count|pluralize:"n" }} {{ paper_throughput.count|pluralize:"wurde,wurden" }} {{ year }} freigegeben. Vom Entwurf bis zur Freigabe vergingen im Median {{ paper_throughput.median_days }} Tag{{ paper_throughput.median_days|pluralize:"e" }}, höchstens {{ paper_throughput.max_days }} Tag{{ paper_throughput.max_days|pluralize:"e" }}.</p>
+            {% else %}
+            <c-rahmen.satz>Im Jahr {{ year }} wurde keine Vorlage freigegeben.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
+
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="Anwesenheit" titel_id="anwesenheit-titel" zusatz="{% if organization %}{{ organization.name }}{% endif %}" data-testid="berichte-anwesenheit">
+            <c-slot name="link"><c-ui.textlink href="{% url 'session:reports_export_csv' tenant_slug=tenant_slug %}?type=attendance&year={{ year }}{% if organization %}&organization={{ organization.id }}{% endif %}">CSV herunterladen<span class="sr-only">: Anwesenheit</span></c-ui.textlink></c-slot>
+            {% if attendance %}
+            <div class="mt-2 overflow-x-auto">
+                <table class="min-w-full text-sm [&_th]:py-2 [&_td]:py-2 [&_td]:pl-5 [&_td]:text-right [&_td]:whitespace-nowrap">
+                    <caption class="sr-only">Anwesenheit je Person {{ year }}{% if organization %}, {{ organization.name }}{% endif %}</caption>
+                    <thead class="border-y border-gray-200 dark:border-gray-800 text-left text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                        <tr>
+                            <th scope="col" class="pr-4 font-medium">Person</th>
+                            <th scope="col" class="pl-5 text-right font-medium">Eingeladen</th>
+                            <th scope="col" class="pl-5 text-right font-medium">Anwesend</th>
+                            <th scope="col" class="pl-5 text-right font-medium">Entschuldigt</th>
+                            <th scope="col" class="pl-5 text-right font-medium">Quote</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-800 tabular-nums text-gray-800 dark:text-gray-200">
+                        {% for row in attendance %}
+                        <tr>
+                            <th scope="row" class="pr-4 text-left font-medium text-gray-900 dark:text-white break-words">{{ row.name }}</th>
+                            <td>{{ row.invited }}</td>
+                            <td>{{ row.present }}</td>
+                            <td>{{ row.excused }}</td>
+                            <td class="font-medium {% if row.rate >= 75 %}text-green-700 dark:text-green-400{% elif row.rate >= 50 %}text-amber-800 dark:text-amber-300{% else %}text-red-700 dark:text-red-400{% endif %}">{{ row.rate }} %</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <c-rahmen.satz>Keine Anwesenheitsdaten in {{ year }}.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        {% if can_view_allowances %}
+        <c-rahmen.abschnitt titel="Sitzungsgeld und Pauschalen" titel_id="sitzungsgeld-titel" data-testid="berichte-sitzungsgeld">
+            <c-slot name="link"><c-ui.textlink href="{% url 'session:reports_export_csv' tenant_slug=tenant_slug %}?type=allowances&year={{ year }}">CSV herunterladen<span class="sr-only">: Sitzungsgeld</span></c-ui.textlink></c-slot>
+            {% if allowances %}
+            <div class="mt-2 overflow-x-auto">
+                <table class="min-w-full text-sm [&_th]:py-2 [&_td]:py-2 [&_td]:pl-5 [&_td]:text-right [&_td]:whitespace-nowrap">
+                    <caption class="sr-only">Sitzungsgeld und Pauschalen je Person {{ year }}</caption>
+                    <thead class="border-y border-gray-200 dark:border-gray-800 text-left text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                        <tr>
+                            <th scope="col" class="pr-4 font-medium">Person</th>
+                            <th scope="col" class="pl-5 text-right font-medium">Sitzungen</th>
+                            <th scope="col" class="pl-5 text-right font-medium">Pauschalen</th>
+                            <th scope="col" class="pl-5 text-right font-medium">Summe</th>
+                            <th scope="col" class="pl-5 text-right font-medium">Ausgezahlt</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-200 dark:divide-gray-800 tabular-nums text-gray-800 dark:text-gray-200">
+                        {% for row in allowances %}
+                        <tr>
+                            <th scope="row" class="pr-4 text-left font-medium text-gray-900 dark:text-white break-words">{{ row.name }}</th>
+                            <td>{{ row.count }}</td>
+                            <td>{{ row.monthly }} €</td>
+                            <td>{{ row.amount }} €</td>
+                            <td>{{ row.paid }} €</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="border-y border-gray-200 dark:border-gray-800 font-semibold tabular-nums text-gray-900 dark:text-white">
+                        <tr>
+                            <th scope="row" class="pr-4 text-left">Gesamt</th>
+                            <td>{{ allowance_totals.count }}</td>
+                            <td>{{ allowance_totals.monthly }} €</td>
+                            <td>{{ allowance_totals.amount }} €</td>
+                            <td>{{ allowance_totals.paid }} €</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            {% else %}
+            <c-rahmen.satz>Keine Sitzungsgelder in {{ year }}.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -168,6 +168,10 @@ class PersonListView(SessionViewMixin, ListView):
     paginate_by = 50
     permission_required = "view_meetings"  # Basic access
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/personen.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_queryset(self):
         qs = super().get_queryset()
         qs = qs.order_by("family_name", "given_name")
