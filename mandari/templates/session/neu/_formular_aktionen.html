@@ -1,0 +1,9 @@
+{% comment %}
+Abschluss einer Formularseite im neuen Rahmen (Issue #944): Speichern als die eine Hauptaktion der Seite (gefüllt, das
+Kopfband trägt dann keinen gefüllten Knopf), „Abbrechen“ als Textlink zurück. Kontext: knopf (Beschriftung),
+abbrechen (Adresse).
+{% endcomment %}
+<div class="flex flex-wrap items-center gap-x-6 gap-y-3 pt-2">
+    <c-ui.button type="submit" size="sm">{{ knopf }}</c-ui.button>
+    <c-ui.textlink href="{{ abbrechen }}" class="text-sm">Abbrechen</c-ui.textlink>
+</div>

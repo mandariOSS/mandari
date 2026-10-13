@@ -1,0 +1,47 @@
+{% comment %}
+Sitzungsformat im Sitzungsformular des neuen Rahmens (Issues #138, #944): Landesprofil als Satz, Format, Begründung,
+Zugangsweg und Hinweis für die Öffentlichkeit. Felder und Texte wie session/meetings/_format_fields.html, Felder dicht;
+ohne Landesprofil ein Satz mit dem Weg in die Einstellungen statt des Hinweiskastens. Eingebunden aus
+session/neu/sitzung_formular.html.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Sitzungsformat" titel_id="format-titel" data-testid="sitzungsformat">
+    {% if state_profile %}
+    <c-rahmen.satz eng>
+        Landesprofil {{ state_profile.name }}: hybrid im Rat {{ state_profile.get_hybrid_council_display }},
+        in Ausschüssen {{ state_profile.get_hybrid_committees_display }}; digital im Rat {{ state_profile.get_digital_council_display }}.
+        {% if session_tenant.hybrid_basis_documented %}Örtliche Rechtsgrundlage: {{ session_tenant.hybrid_basis_label }}.{% endif %}
+    </c-rahmen.satz>
+    {% if state_profile.excluded_committee_kinds %}
+    <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">
+        Für {{ state_profile.excluded_committee_kind_labels|join:", " }} gilt: {{ state_profile.get_excluded_committee_rule_display }}.
+        mandari erkennt sie an der gesetzlichen Ausschussart des Gremiums; bitte vor einer hybriden oder digitalen Sitzung prüfen, ob sie hinterlegt ist.
+    </p>
+    {% endif %}
+    {% else %}
+    <c-rahmen.satz eng>
+        Hybride und digitale Sitzungen sind erst möglich, wenn der Mandant ein Landesprofil gewählt hat{% if can_manage_settings %}:
+        <c-ui.textlink href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}">Einstellungen „Sitzungsformate“</c-ui.textlink>{% endif %}.
+    </c-rahmen.satz>
+    {% endif %}
+
+    <div class="mt-4 space-y-4">
+        <c-form.select :field="form.format" label="Format" dicht
+                       help="Hybrid: einzelne Mitglieder per Bild-Ton-Übertragung zugeschaltet. Digital: alle zugeschaltet." />
+        {% for error in form.format.errors|slice:"1:" %}
+        <p class="-mt-3 text-sm text-red-700 dark:text-red-400">{{ error }}</p>
+        {% endfor %}
+
+        <c-form.textarea :field="form.format_reason" label="Begründung" rows="2" dicht
+                         help="Pflicht bei digitalen Sitzungen und bei hybriden Sitzungen, die das Landesrecht nur in Notlagen zulässt: Notlage und zugrunde liegender Beschluss." />
+
+        <c-form.textarea :field="form.remote_access" label="Zugangsweg für zugeschaltete Mitglieder" rows="2" dicht
+                         help="Erscheint nur in der Ladung an die Mitglieder, nie in öffentlichen Dokumenten; wird verschlüsselt gespeichert." />
+
+        <div class="grid gap-4 sm:grid-cols-2">
+            <c-form.field :field="form.public_access_url" label="Übertragung für die Öffentlichkeit" type="url" dicht
+                          placeholder="https://" help="Livestream oder Anmeldeseite für den geschützten Zugang (optional)" />
+            <c-form.field :field="form.public_access_note" label="Hinweis für die Öffentlichkeit" dicht
+                          help="z. B. Anmeldefrist für den geschützten Zugang" />
+        </div>
+    </div>
+</c-rahmen.abschnitt>

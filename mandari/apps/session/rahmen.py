@@ -165,6 +165,8 @@ SEITEN: dict[str, tuple[str, str | None, str | None]] = {
     "users": ("einstellungen", None, None),
     "terms": ("einstellungen", None, None),
     "privacy_notice": ("einstellungen", None, None),
+    # Veröffentlichung im Bürgerportal beenden: Unterseite der Einstellungen (Teil 2b)
+    "portal_publication_end": ("einstellungen", None, None),
 }
 
 #: Übrige Seiten nach dem Anfang ihres Adressnamens (Reihenfolge zählt: längere Anfänge zuerst)
@@ -522,4 +524,9 @@ def rahmen_kontext(view: Any, kontext: dict[str, Any]) -> dict[str, Any]:
         leitstellen=kontext.get("user_leitstellen") or (),
         zaehler=kontext,
     )
+    if ergebnis["session_rahmen"]["bereich"] == "einstellungen":
+        # Reiter und Unterpunkte der Einstellungen (Teil 2b): session/neu/einstellungen/_reiter.html
+        from .einstellungen import navigation as einstellungen_navigation
+
+        ergebnis["session_rahmen"]["einstellungen"] = einstellungen_navigation(tenant, rechte, url_name or "")
     return ergebnis

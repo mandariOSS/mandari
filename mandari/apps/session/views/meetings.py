@@ -465,6 +465,10 @@ class MeetingCreateView(MeetingFormMixin, SessionViewMixin, CreateView):
     form_class = MeetingForm
     permission_required = "create_meetings"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzung_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_initial(self):
         """Aus einem Gremium heraus angelegt (``?organization=``): Gremium und dessen Öffentlichkeit vorbelegen."""
         initial = super().get_initial()
@@ -526,6 +530,10 @@ class MeetingUpdateView(MeetingFormMixin, SessionViewMixin, UpdateView):
     form_class = MeetingUpdateForm
     pk_url_kwarg = "meeting_id"
     permission_required = "edit_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzung_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()

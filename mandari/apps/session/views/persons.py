@@ -230,6 +230,10 @@ class PersonFormMixin:
     template_name = "session/persons/form.html"
     permission_required = "manage_organizations"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/person_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs["show_bank_fields"] = self.has_permission("manage_allowances")

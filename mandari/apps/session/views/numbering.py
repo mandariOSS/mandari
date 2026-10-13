@@ -25,6 +25,7 @@ from apps.common.params import uuid_param
 from .. import audit
 from ..models import SessionNumberRange, SessionPaper, SessionTenant
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import body_service, numbering_service
 from ..services.numbering_service import NumberingError
 
@@ -38,6 +39,14 @@ def _paper_types() -> dict[str, str]:
 class NumberingSettingsView(SessionViewMixin, TemplateView):
     template_name = "session/settings/numbering.html"
     permission_required = "manage_settings"
+
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/nummernkreise.html"]
+            if neues_design(self.session_tenant)
+            else [self.template_name]
+        )
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context: dict[str, Any] = cast(Any, super()).get_context_data(**kwargs)

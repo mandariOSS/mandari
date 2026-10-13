@@ -164,6 +164,12 @@ class AgendaItemCreateView(SessionViewMixin, CreateView):
     fields = ["name", "is_public", "paper", "parent", "requires_secrecy", "kind"]
     permission_required = "edit_meetings"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944): ruhige Zeile unter der Tagesordnung statt der blauen Fläche
+        if neues_design(self.session_tenant):
+            return ["session/neu/_formular_top_anlegen.html"]
+        return [self.template_name]
+
     def get_form(self, form_class=None):
         # Sitzung des Mandanten mit Sichtrecht – schon für das Formular, nicht erst beim Speichern
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
@@ -215,6 +221,10 @@ class AgendaItemUpdateView(SessionViewMixin, UpdateView):
     fields = ["name", "is_public", "paper", "parent", "requires_secrecy", "kind"]
     pk_url_kwarg = "item_id"
     permission_required = "edit_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/top_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         return _items(self)

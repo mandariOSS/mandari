@@ -32,6 +32,7 @@ from ..permissions import (
     is_admin_user,
     role_within_scope,
 )
+from ..rahmen import neues_design
 
 # Gruppierung der Rechte für die Matrix; unbekannte can_*-Felder landen
 # automatisch unter „Sonstiges" (zukunftssicher bei neuen Rechten).
@@ -153,6 +154,10 @@ class RoleListView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/roles.html"
     permission_required = "manage_users"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return ["session/neu/einstellungen/rollen.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

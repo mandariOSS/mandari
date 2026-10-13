@@ -1,0 +1,11 @@
+{% comment %}
+Einstellungen › Allgemein: Weg zur API-Dokumentation (Issue #944, Teil 2b). Wie bisher nur, wenn die OParl-Schnittstelle
+freigeschaltet ist oder die Person das Recht „API-Zugriff“ hat; ohne Link entfällt der Abschnitt (die bisherige Karte
+zeigte dann nur ihre Überschrift).
+{% endcomment %}
+{% if session_tenant.oparl_public or "access_api" in permission_checker.permissions %}
+<c-rahmen.abschnitt titel="API" titel_id="api-titel" data-testid="api">
+    <c-rahmen.satz eng>OParl- und Session-API des Sitzungsdienstes.</c-rahmen.satz>
+    <p class="mt-2 text-sm"><c-ui.textlink href="{% url 'session:api_root' tenant_slug=tenant_slug %}" extern>API-Dokumentation</c-ui.textlink></p>
+</c-rahmen.abschnitt>
+{% endif %}

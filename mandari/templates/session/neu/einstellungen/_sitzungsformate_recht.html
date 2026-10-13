@@ -1,0 +1,58 @@
+{% comment %}
+Rechtslage und Sitzungsrecht des Landes auf der Seite Sitzungsformate im neuen Rahmen (Issues #138, #757, #944):
+Angaben des Landesprofils als Begriff und Wert, die Quellen als Links, „Keine Rechtsberatung“ als ein Satz; darunter das
+Sitzungsrecht in der Fassung zum Stichtag mit den Fassungen als Links (?stichtag=) und je Eintrag Norm, Quelle und
+Stand. Inhalte wie session/settings/meeting_formats.html und _state_law.html. Kontext: profile, law, law_versions,
+tenant_slug.
+{% endcomment %}
+{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug as formats_url %}
+{% if profile %}
+<c-rahmen.abschnitt titel="Rechtslage {{ profile.name }}" titel_id="rechtslage-titel" zusatz="{{ profile.law }}, Stand {{ profile.as_of|date:'d.m.Y' }}" data-testid="rechtslage">
+    <dl class="mt-3 grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[minmax(0,15rem)_minmax(0,1fr)] [&_dt]:text-gray-600 dark:[&_dt]:text-gray-400 [&_dd]:text-gray-900 dark:[&_dd]:text-gray-100 [&_dd]:break-words [&_dd]:mb-1 sm:[&_dd]:mb-0">
+        <dt>Hybrid: Rat/Vertretung</dt><dd>{{ profile.get_hybrid_council_display }}</dd>
+        <dt>Hybrid: Ausschüsse</dt><dd>{{ profile.get_hybrid_committees_display }}</dd>
+        <dt>Digital: Rat/Vertretung</dt><dd>{{ profile.get_digital_council_display }}</dd>
+        <dt>Digital: Ausschüsse</dt><dd>{{ profile.get_digital_committees_display }}</dd>
+        <dt>Voraussetzung im Regelbetrieb</dt><dd>{{ profile.get_legal_basis_display }}{% if profile.norm_regular %} ({{ profile.norm_regular }}){% endif %}</dd>
+        <dt>Vorsitz</dt><dd>{{ profile.get_chair_present_display }}</dd>
+        <dt>{% if profile.remote_elections_scope == "secret_only" %}Geheime Wahlen{% else %}Wahlen{% endif %} mit Zugeschalteten</dt><dd>{{ profile.get_remote_elections_display }}</dd>
+        <dt>Geheime Abstimmungen mit Zugeschalteten</dt><dd>{{ profile.get_remote_secret_votes_display }}</dd>
+        <dt>Geheimhaltungspflichtige Angelegenheiten</dt><dd>{{ profile.get_remote_secrecy_matters_display }}</dd>
+        {% if profile.remote_vote_norm %}<dt>Norm zu Wahlen und geheimen Abstimmungen</dt><dd>{{ profile.remote_vote_norm }}</dd>{% endif %}
+        {% if profile.excluded_committee_kinds %}<dt>Ausgenommene Ausschüsse</dt><dd>{{ profile.excluded_committee_kind_labels|join:", " }}: {{ profile.get_excluded_committee_rule_display }}</dd>{% endif %}
+        {% if profile.norm_emergency %}<dt>Notlage ({{ profile.norm_emergency }})</dt><dd>{{ profile.emergency_requirements }}</dd>{% endif %}
+        <dt>Ausschlüsse</dt><dd>{{ profile.excluded_matters|default:"Keine Angabe" }}</dd>
+        <dt>Öffentlichkeit</dt><dd>{{ profile.public_rule|default:"Keine Angabe" }}</dd>
+        {% if profile.notes %}<dt>Hinweise</dt><dd>{{ profile.notes }}</dd>{% endif %}
+        <dt>Quellen ({{ profile.get_verification_display }})</dt>
+        <dd>{% for source in profile.sources %}<c-ui.textlink href="{{ source.url }}" extern>{{ source.title }}</c-ui.textlink>{% if not forloop.last %}<span aria-hidden="true">, </span>{% endif %}{% endfor %}</dd>
+    </dl>
+    <c-rahmen.satz>Keine Rechtsberatung: Die Landesprofile geben den recherchierten Stand wieder, „ungeklärt“ heißt, dass die Recherche keine gesicherte Aussage ergeben hat. Maßgeblich sind der amtliche Gesetzestext, Ihre Hauptsatzung und Geschäftsordnung.</c-rahmen.satz>
+</c-rahmen.abschnitt>
+{% endif %}
+
+{% if law %}
+<c-rahmen.abschnitt titel="Sitzungsrecht {{ profile.name }}" titel_id="sitzungsrecht-titel" zusatz="{{ law.version_label }}{% if law.version %}: {{ law.version.title }}{% endif %}, Stichtag {{ law.day|date:'d.m.Y' }}" data-testid="sitzungsrecht">
+    {% if law_versions %}
+    <p class="mt-1 text-sm">
+        Fassungen:
+        {% for version in law_versions %}<c-ui.textlink href="{{ formats_url }}?stichtag={{ version.valid_from|date:'Y-m-d' }}" class="tabular-nums">ab {{ version.valid_from|date:'d.m.Y' }}</c-ui.textlink>{% if version.amendment %} ({{ version.amendment }}){% endif %}{% if not forloop.last %}<span aria-hidden="true">, </span>{% endif %}{% endfor %}
+    </p>
+    {% endif %}
+    {% for group_label, entries in law.groups %}
+    <h3 class="mt-5 text-sm font-semibold text-gray-900 dark:text-white">{{ group_label }}</h3>
+    <dl class="mt-1 space-y-2 text-sm">
+        {% for entry in entries %}
+        <div>
+            <dt class="font-medium text-gray-900 dark:text-white">{{ entry.label }}{% if entry.value_label %}: {{ entry.value_label }}{% endif %}</dt>
+            <dd class="text-gray-700 dark:text-gray-300 break-words">
+                {% if entry.text %}{{ entry.text }} {% endif %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">({% if entry.unclear %}ungeklärt{% if entry.norm %}; {% endif %}{% endif %}{{ entry.norm }}{% if entry.source_url %}; <a href="{{ entry.source_url }}" class="underline-offset-4 hover:underline" target="_blank" rel="noopener noreferrer">{{ entry.source_title|default:"Quelle" }}</a>{% endif %}{% if entry.as_of %}; Stand {{ entry.as_of|date:'d.m.Y' }}{% endif %})</span>
+            </dd>
+        </div>
+        {% endfor %}
+    </dl>
+    {% empty %}
+    <c-rahmen.satz>Für diesen Stichtag ist im Landesprofil kein Sitzungsrecht erfasst.</c-rahmen.satz>
+    {% endfor %}
+</c-rahmen.abschnitt>
+{% endif %}

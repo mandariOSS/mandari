@@ -303,6 +303,10 @@ class OrganizationFormMixin:
     template_name = "session/organizations/form.html"
     permission_required = "manage_organizations"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/gremium_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
         parent_qs = SessionOrganization.objects.filter(tenant=self.session_tenant, is_active=True)

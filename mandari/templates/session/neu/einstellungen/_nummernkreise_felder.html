@@ -1,0 +1,33 @@
+{% comment %}
+Formularfelder eines Nummernkreises im neuen Rahmen (Issues #150, #756, #944), Felder dicht in zwei Spalten. Kontext:
+rng (oder None für neu), paper_types, reset_choices, assign_choices, body_choice (Körperschaft erst ab der zweiten).
+Feld-IDs je Kreis eindeutig. Namen, Optionen und Vorgaben wie session/settings/_numbering_fields.html.
+{% endcomment %}
+{% with fid=rng.id|default:"neu" %}
+{% if body_choice.active %}
+<c-form.select name="body" id="body-{{ fid }}" label="Körperschaft" dicht class="sm:col-span-2">
+    <option value="">Alle Körperschaften ohne eigenen Kreis</option>
+    {% for body in body_choice.bodies %}<option value="{{ body.id }}" {% if rng.body_id == body.id %}selected{% endif %}>{{ body.name }}</option>{% endfor %}
+    {% if rng.body and not rng.body.is_active %}<option value="{{ rng.body.id }}" selected>{{ rng.body.name }} (inaktiv)</option>{% endif %}
+</c-form.select>
+{% endif %}
+<c-form.field name="name" id="name-{{ fid }}" label="Bezeichnung" value="{{ rng.name|default:'' }}" maxlength="100" required dicht />
+<c-form.field name="pattern" id="pattern-{{ fid }}" label="Muster" value="{{ rng.pattern|default:'V/{jahr}/{lfd:4}' }}" maxlength="100" required dicht />
+<c-form.select name="reset" id="reset-{{ fid }}" label="Zähler zurücksetzen" dicht>
+    {% for value, label in reset_choices %}<option value="{{ value }}" {% if rng.reset == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+</c-form.select>
+<c-form.select name="assign_on" id="assign-{{ fid }}" label="Nummer vergeben" dicht>
+    {% for value, label in assign_choices %}<option value="{{ value }}" {% if rng.assign_on == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+</c-form.select>
+<c-form.field name="prefix" id="prefix-{{ fid }}" label="Präfix ({prefix})" value="{{ rng.prefix|default:'' }}" maxlength="20" dicht />
+<c-form.field name="sub_pattern" id="sub-{{ fid }}" label="Unternummern" value="{{ rng.sub_pattern|default:'{parent}.{sub}' }}" maxlength="60" required dicht />
+<fieldset class="sm:col-span-2">
+    <legend class="mb-1 text-sm font-medium text-gray-800 dark:text-gray-200">Vorlagenarten <span class="font-normal text-gray-600 dark:text-gray-400">(keine Auswahl: alle ohne eigenen Kreis)</span></legend>
+    <div class="flex flex-wrap gap-x-5 gap-y-1">
+        {% for value, label in paper_types %}
+        <c-form.checkbox name="paper_types" id="typ-{{ fid }}-{{ value }}" value="{{ value }}" label="{{ label }}" checked="{% if value in rng.paper_types %}1{% endif %}" dicht />
+        {% endfor %}
+    </div>
+</fieldset>
+<c-form.checkbox name="is_active" id="aktiv-{{ fid }}" label="Aktiv" checked="{% if not rng or rng.is_active %}1{% endif %}" dicht />
+{% endwith %}

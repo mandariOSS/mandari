@@ -1,0 +1,26 @@
+{% comment %}
+Einstellungen › Allgemein: Mandant und Kontakt (Issue #944, Teil 2b). Name, Kurzname und Beschreibung mit dem
+Raumzeichen (Logo, sonst Kürzel in der Farbe des Mandanten) statt der farbigen Kachel, Kontaktdaten und die beiden
+Farben als Angaben. Nur lesend wie bisher (session/settings/index.html, Karten Mandant, Kontakt und Branding).
+{% endcomment %}
+<c-rahmen.abschnitt titel="Mandant und Kontakt" titel_id="mandant-titel" data-testid="mandant">
+    <div class="mt-3 flex items-start gap-3">
+        {% include "session/rahmen/_raumzeichen.html" %}
+        <div class="min-w-0">
+            <p class="text-sm liste-name">{{ session_tenant.name }}</p>
+            {% if session_tenant.short_name %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ session_tenant.short_name }}</p>{% endif %}
+        </div>
+    </div>
+    {% if session_tenant.description %}<p class="mt-3 text-sm text-gray-700 dark:text-gray-300 break-words">{{ session_tenant.description }}</p>{% endif %}
+    <c-ui.angaben class="mt-4">
+        {% if session_tenant.contact_email %}<dt>E-Mail</dt><dd>{{ session_tenant.contact_email }}</dd>{% endif %}
+        {% if session_tenant.contact_phone %}<dt>Telefon</dt><dd>{{ session_tenant.contact_phone }}</dd>{% endif %}
+        {% if session_tenant.website %}<dt>Website</dt><dd>{{ session_tenant.website }}</dd>{% endif %}
+        {% if not session_tenant.contact_email and not session_tenant.contact_phone and not session_tenant.website %}<dt>Kontakt</dt><dd>Keine Kontaktdaten hinterlegt</dd>{% endif %}
+        <dt>Farben</dt>
+        <dd class="flex flex-wrap items-center gap-x-4 gap-y-1">
+            <span class="inline-flex items-center gap-1.5"><svg class="w-2.5 h-2.5 shrink-0" viewBox="0 0 10 10" aria-hidden="true" focusable="false"><circle cx="5" cy="5" r="4.5" fill="{{ session_tenant.primary_color|default:'#6b7280' }}" stroke="#d1d5db"/></svg><span class="sr-only">Hauptfarbe </span><span class="font-mono text-[0.8125rem]">{{ session_tenant.primary_color }}</span></span>
+            <span class="inline-flex items-center gap-1.5"><svg class="w-2.5 h-2.5 shrink-0" viewBox="0 0 10 10" aria-hidden="true" focusable="false"><circle cx="5" cy="5" r="4.5" fill="{{ session_tenant.secondary_color|default:'#6b7280' }}" stroke="#d1d5db"/></svg><span class="sr-only">Zweitfarbe </span><span class="font-mono text-[0.8125rem]">{{ session_tenant.secondary_color }}</span></span>
+        </dd>
+    </c-ui.angaben>
+</c-rahmen.abschnitt>

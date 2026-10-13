@@ -1,0 +1,42 @@
+{% comment %}
+Einordnung der Ausschüsse auf der Seite Sitzungsformate im neuen Rahmen (Issues #138, #944), wenn das Landesprofil
+Ausschussarten von hybriden Sitzungen ausnimmt: die Regel in einem Satz, die Warnung nur, solange kein Gremium
+eingeordnet ist (dann muss jemand handeln), die nicht eingeordneten Gremien als Liste mit „Ausschussart festlegen“
+(Recht Gremien verwalten) und die eingeordneten. Inhalte wie session/settings/_committee_kinds.html. Kontext:
+committee_kinds, can_manage_organizations, tenant_slug.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Ausschüsse mit besonderen Regeln" titel_id="ausschuesse-titel" data-testid="ausschussarten">
+    <p class="mt-1 text-sm text-gray-900 dark:text-white">{{ committee_kinds.kind_labels|join:", " }}: {{ committee_kinds.rule_label }}</p>
+    <c-rahmen.satz eng>mandari erkennt diese Ausschüsse nur an der gesetzlichen Ausschussart, die beim Gremium hinterlegt ist. Ein nicht eingeordneter Ausschuss wird wie ein gewöhnlicher Fachausschuss geprüft; deutet sein Name auf eine besondere Art hin, sind hybride und digitale Sitzungen bis zur Einordnung gesperrt.</c-rahmen.satz>
+    {% if committee_kinds.missing %}
+    <c-ui.alert variant="warning" icon="alert-triangle" title="Noch kein Ausschuss eingeordnet" class="mt-3">
+        Keinem aktiven Gremium ist eine dieser Arten zugeordnet. Bitte bei den betroffenen Ausschüssen
+        ({{ committee_kinds.kind_labels|join:", " }}) die gesetzliche Ausschussart festlegen, bevor Sitzungen hybrid oder
+        digital geladen werden.
+    </c-ui.alert>
+    {% endif %}
+    {% if committee_kinds.unclassified %}
+    <h3 class="mt-5 text-sm font-semibold text-gray-900 dark:text-white">Nicht eingeordnet</h3>
+    <c-rahmen.liste class="mt-1">
+        {% for organization, suspected in committee_kinds.unclassified %}
+        <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2">
+            <p class="min-w-0 flex-1 basis-56 text-sm text-gray-900 dark:text-white break-words">
+                {{ organization.name }}
+                {% if suspected %}<span class="block text-[0.8125rem] text-amber-800 dark:text-amber-300">Name deutet auf {{ suspected|join:" oder " }} hin</span>{% endif %}
+            </p>
+            {% if can_manage_organizations %}
+            <c-ui.textlink href="{% url 'session:organization_edit' tenant_slug=tenant_slug organization_id=organization.id %}" class="text-sm whitespace-nowrap">Ausschussart festlegen</c-ui.textlink>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+    {% endif %}
+    {% if committee_kinds.classified %}
+    <h3 class="mt-5 text-sm font-semibold text-gray-900 dark:text-white">Eingeordnet</h3>
+    <c-rahmen.liste class="mt-1">
+        {% for organization in committee_kinds.classified %}
+        <li class="py-2 text-sm text-gray-900 dark:text-white break-words">{{ organization.name }} <span class="text-gray-600 dark:text-gray-400">· {{ organization.get_committee_kind_display }}</span></li>
+        {% endfor %}
+    </c-rahmen.liste>
+    {% endif %}
+</c-rahmen.abschnitt>

@@ -1,0 +1,8 @@
+{% comment %}
+Fehler unter einem Feld der Formularseiten im neuen Rahmen (Issue #944), wie c-form.* dicht: der erste Fehler in Rot.
+Für Auswahlfelder mit eigenen Optionen (Gremien, Personen, Vorlagen), die c-form.select nicht aus dem Django-Feld
+zeichnet; die Auswahl verweist per aria-describedby auf ``<id>-error``. Ein Hinweis darunter kommt aus c-form.hinweis
+mit der ID ``<id>-help``.
+  {% include "session/neu/_formular_feldfehler.html" with feld=form.main_organization %}
+{% endcomment %}
+{% if feld.errors %}<p id="{{ feld.id_for_label }}-error" class="mt-1 text-sm text-red-700 dark:text-red-400">{{ feld.errors.0 }}</p>{% endif %}

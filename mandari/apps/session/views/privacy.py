@@ -25,6 +25,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionPerson, SessionTenant
 from ..permissions import SessionPermissionChecker, SessionViewMixin
+from ..rahmen import neues_design
 from ..services import privacy_service
 
 logger = logging.getLogger(__name__)
@@ -35,6 +36,14 @@ class PrivacySettingsView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/privacy.html"
     permission_required = "manage_settings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/datenschutz.html"]
+            if neues_design(self.session_tenant)
+            else [self.template_name]
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

@@ -1,0 +1,45 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Allgemein › Übersicht im neuen Rahmen (Issue #944, Teil 2b), ersetzt session/settings/index.html mit
+_buergerportal.html, _oparl_schnittstelle.html und _erinnerungen.html. Statt elf Kacheln stehen die Einstellungsseiten
+unter den Reitern (session/neu/einstellungen/_reiter.html, apps/session/einstellungen.py); die Übersicht selbst zeigt
+in Abschnitten links Bürgerportal und OParl-Schnittstelle sowie die Fristen-Erinnerungen, rechts Mandant und Kontakt,
+Anmeldesicherheit und den Weg zur API-Dokumentation. Mit „Benutzer verwalten“ allein (ohne „Einstellungen verwalten“)
+nur Mandant, Kontakt und API wie bisher. Kontext: SettingsView.
+{% endcomment %}
+
+{% block page_title %}Einstellungen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Einstellungen" dicht
+    text="{% if 'manage_settings' in permission_checker.permissions %}Anmeldung, Erinnerungen und Veröffentlichung für {{ session_tenant.name }}. Die übrigen Einstellungen stehen unter den Reitern.{% else %}Angaben und Kontakt von {{ session_tenant.name }}.{% endif %}" />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 space-y-10">
+        {% if "manage_settings" in permission_checker.permissions %}
+        <div class="grid gap-x-12 gap-y-10 xl:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]">
+            {# Mandant und Anmeldesicherheit zuerst (am Handy oben), ab xl in der rechten Spalte #}
+            <div class="min-w-0 space-y-10 xl:order-last">
+                {% include "session/neu/einstellungen/_allgemein_mandant.html" %}
+                {% include "session/neu/einstellungen/_allgemein_sicherheit.html" %}
+                {% include "session/neu/einstellungen/_allgemein_api.html" %}
+            </div>
+            <div class="min-w-0 space-y-10">
+                {% include "session/neu/einstellungen/_allgemein_buergerportal.html" %}
+                {% include "session/neu/einstellungen/_allgemein_erinnerungen.html" %}
+            </div>
+        </div>
+        {% else %}
+        <div class="max-w-3xl space-y-10">
+            {% include "session/neu/einstellungen/_allgemein_mandant.html" %}
+            {% include "session/neu/einstellungen/_allgemein_api.html" %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,103 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Person anlegen und bearbeiten im neuen Rahmen (Issue #944): eine ruhige Formularspalte mit Abschnitten statt Kasten
+(Stammdaten, Kontakt, Veröffentlichung der Kontaktdaten, Bild- und Tonaufnahmen, Bankdaten nur mit dem Recht für
+Sitzungsgelder, Mandat und Status), Felder dicht. Speichern ist die eine Hauptaktion am Formularende, „Abbrechen“ ein
+Textlink. Felder, entschlüsselte Vorbelegung von Telefon, Adresse und Bankdaten und Fehler wie
+session/persons/form.html, die bisherige Seite bleibt. Kontext wie PersonCreateView/PersonUpdateView.
+{% endcomment %}
+
+{% block page_title %}{% if object %}Person bearbeiten{% else %}Neue Person{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Beim Bearbeiten: Weg zurück zur Person #}
+{% block brotkrumen_aktuell %}{% if object %}<c-rahmen.brotkrume href="{% url 'session:person_detail' tenant_slug=tenant_slug person_id=object.id %}">{{ object.display_name|truncatechars:60 }}</c-rahmen.brotkrume><c-rahmen.brotkrume>Bearbeiten</c-rahmen.brotkrume>{% else %}<c-rahmen.brotkrume>Neue Person</c-rahmen.brotkrume>{% endif %}{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{% if object %}Person bearbeiten{% else %}Neue Person{% endif %}" text="Kontakt- und Bankdaten werden verschlüsselt gespeichert (AES-256-GCM, Mandanten-Schlüssel)." dicht>
+    <c-slot name="oben">
+        {% if object %}
+        <c-insight.zurueck href="{% url 'session:person_detail' tenant_slug=tenant_slug person_id=object.id %}">{{ object.display_name|truncatechars:60 }}</c-insight.zurueck>
+        {% else %}
+        <c-insight.zurueck href="{% url 'session:persons' tenant_slug=tenant_slug %}">Personen</c-insight.zurueck>
+        {% endif %}
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+{% if object %}{% url 'session:person_detail' tenant_slug=tenant_slug person_id=object.id as abbrechen %}{% else %}{% url 'session:persons' tenant_slug=tenant_slug as abbrechen %}{% endif %}
+<form method="post" class="max-w-3xl space-y-8" data-testid="person-formular">
+    {% include "session/neu/_formular_fehler.html" %}
+
+    <c-rahmen.abschnitt titel="Stammdaten" titel_id="stammdaten-titel">
+        <div class="mt-3 grid gap-4 grid-cols-2 sm:grid-cols-[8rem_8rem_minmax(0,1fr)_minmax(0,1fr)]">
+            <c-form.field :field="form.form_of_address" label="Anrede" placeholder="Frau/Herr" dicht />
+            <c-form.field :field="form.title" label="Titel" placeholder="Dr." dicht />
+            <c-form.field :field="form.given_name" label="Vorname" required dicht class="col-span-2 sm:col-span-1" />
+            <c-form.field :field="form.family_name" label="Nachname" required dicht class="col-span-2 sm:col-span-1" />
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Kontakt" titel_id="kontakt-titel">
+        <div class="mt-3 space-y-4">
+            <div class="grid gap-4 sm:grid-cols-2">
+                <c-form.field :field="form.email" label="E-Mail" type="email" dicht />
+                {% include "session/neu/_formular_feld.html" with feld=form.phone label="Telefon (verschlüsselt)" wert=form.phone.value|default:form.phone.initial|default:'' %}
+            </div>
+            {% include "session/neu/_formular_feld.html" with feld=form.address label="Adresse (verschlüsselt)" zeilen=2 wert=form.address.value|default:form.address.initial|default:'' %}
+            <c-form.select :field="form.delivery_channel" label="Zustellweg für Ladungen" dicht
+                           help="E-Mail: Ladung mit Unterlagen. Portal: Hinweis-Mail, Unterlagen und Rückmeldung in mandari Work (sonst per E-Mail). Brief: keine Mail, Serienbrief für den Postversand." />
+        </div>
+    </c-rahmen.abschnitt>
+
+    {# Veröffentlichung nur mit Einwilligung (Issue #319) #}
+    <c-rahmen.abschnitt titel="Veröffentlichung der Kontaktdaten" titel_id="veroeffentlichung-titel" data-testid="kontakt-veroeffentlichung">
+        <c-rahmen.satz eng>Die E-Mail-Adresse erscheint in der OParl-Schnittstelle und im Bürgerportal nur mit Einwilligung der Person. Telefon und Adresse werden nie veröffentlicht.</c-rahmen.satz>
+        <div class="mt-3 space-y-4">
+            <c-form.checkbox :field="form.contact_publish" label="Kontaktdaten veröffentlichen" dicht />
+            <div class="grid gap-4 sm:grid-cols-3">
+                <c-form.field :field="form.contact_consent_date" label="Einwilligung vom" type="date" dicht />
+                <c-form.field :field="form.contact_consent_evidence" label="Nachweis der Einwilligung" class="sm:col-span-2" dicht
+                              placeholder="z. B. Schriftliche Erklärung, abgelegt in der Mandatsakte" />
+            </div>
+        </div>
+    </c-rahmen.abschnitt>
+
+    {# Bild- und Tonaufnahmen (Issue #757) #}
+    <c-rahmen.abschnitt titel="Bild- und Tonaufnahmen" titel_id="aufnahmen-titel" data-testid="aufnahme-widerspruch">
+        <c-rahmen.satz eng>Lässt die Hauptsatzung Aufnahmen oder die Übertragung von Sitzungen zu, kann jedes Mitglied widersprechen. Die Sitzung weist dann intern darauf hin.</c-rahmen.satz>
+        <div class="mt-3 space-y-4">
+            <c-form.checkbox :field="form.recording_objection" label="Widerspricht Bild- und Tonaufnahmen der eigenen Person" dicht />
+            <c-form.field :field="form.recording_objection_date" label="Widerspruch vom" type="date" dicht class="sm:w-1/3" />
+        </div>
+    </c-rahmen.abschnitt>
+
+    {% if form.show_bank_fields %}
+    {# Bankdaten nur mit dem Recht für Sitzungsgelder #}
+    <c-rahmen.abschnitt titel="Bankdaten für Sitzungsgelder" titel_id="bankdaten-titel" zusatz="verschlüsselt" data-testid="bankdaten">
+        <div class="mt-3 grid gap-4 sm:grid-cols-3">
+            {% include "session/neu/_formular_feld.html" with feld=form.bank_account_holder label="Kontoinhaber/in" wert=form.bank_account_holder.value|default:form.bank_account_holder.initial|default:'' %}
+            {% include "session/neu/_formular_feld.html" with feld=form.bank_iban label="IBAN" mono=True wert=form.bank_iban.value|default:form.bank_iban.initial|default:'' %}
+            {% include "session/neu/_formular_feld.html" with feld=form.bank_bic label="BIC" mono=True wert=form.bank_bic.value|default:form.bank_bic.initial|default:'' %}
+        </div>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {# Datum als ISO-Text: Datum beim Bearbeiten, Eingabe nach einem Fehler #}
+    <c-rahmen.abschnitt titel="Mandat und Status" titel_id="mandat-titel">
+        <div class="mt-3 space-y-4">
+            <div class="grid gap-4 sm:grid-cols-3 sm:items-end">
+                {% include "session/neu/_formular_feld.html" with feld=form.start_date label="Mandatsbeginn" typ="date" wert=form.start_date.value|default:''|stringformat:'s' %}
+                {% include "session/neu/_formular_feld.html" with feld=form.end_date label="Mandatsende" typ="date" wert=form.end_date.value|default:''|stringformat:'s' %}
+                <c-form.checkbox name="is_active" label="Aktiv" checked="{% if form.is_active.value|default_if_none:True %}1{% endif %}" dicht class="sm:h-9 sm:items-center" />
+            </div>
+            <c-form.field :field="form.adult_from" label="Volljährig ab" type="date" dicht class="sm:w-1/3"
+                          help="Nur bei minderjährigen Mitgliedern: Einzelne Ämter lässt das Landesrecht erst ab 18 zu." />
+        </div>
+    </c-rahmen.abschnitt>
+
+    {% if object %}{% include "session/neu/_formular_aktionen.html" with knopf="Speichern" %}{% else %}{% include "session/neu/_formular_aktionen.html" with knopf="Person anlegen" %}{% endif %}
+    {# Am Ende: als erstes Kind gäbe das versteckte Feld dem ersten Abschnitt den Abstand von space-y #}
+    {% csrf_token %}
+</form>
+{% endblock %}

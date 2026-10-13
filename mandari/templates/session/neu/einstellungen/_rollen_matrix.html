@@ -1,0 +1,17 @@
+{% comment %}
+Rechte-Matrix einer Rolle (Issue #944, Teil 2b): je Kategorie eine Liste von Ankreuzfeldern statt farbiger Kästen.
+Feldnamen, Werte (1) und die serverseitige Vorbelegung (edit_role_permissions, #172) wie session/settings/roles.html;
+data-perm benennt das Recht für Tests. Kontext: permission_groups, edit_role_permissions.
+{% endcomment %}
+<div class="space-y-6">
+    {% for group_name, entries in permission_groups %}
+    <fieldset>
+        <legend class="text-sm font-semibold text-gray-900 dark:text-white">{{ group_name }}</legend>
+        <div class="mt-2 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 2xl:grid-cols-3">
+            {% for field_name, label in entries %}
+            <c-form.checkbox name="{{ field_name }}" id="recht-{{ field_name }}" value="1" label="{{ label }}" checked="{% if field_name in edit_role_permissions %}1{% endif %}" dicht data-perm="{{ field_name }}" />
+            {% endfor %}
+        </div>
+    </fieldset>
+    {% endfor %}
+</div>

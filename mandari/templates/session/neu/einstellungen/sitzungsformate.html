@@ -1,0 +1,66 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Sitzungen › Sitzungsformate im neuen Rahmen (Issues #138, #757, #944): Kopfband mit einem Satz zur
+Prüfung der Formate, darunter die Reiter der Einstellungen und links die Unterpunkte. Links das Landesprofil mit dem
+Nachweis der örtlichen Rechtsgrundlage (Formular wie bisher, Fehler am Feld), das Ortsrecht je Körperschaft als Liste
+und die Einordnung der Ausschüsse; rechts Rechtslage und Sitzungsrecht des Landes zum Stichtag
+(session/neu/einstellungen/_sitzungsformate_recht.html). „Keine Rechtsberatung“ steht als ein Satz unter der
+Rechtslage statt als Kasten. Ersetzt session/settings/meeting_formats.html mit _state_law.html und _committee_kinds.html;
+Kontext MeetingFormatSettingsView.
+{% endcomment %}
+
+{% block page_title %}Sitzungsformate{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Sitzungsformate und Landesprofil" text="Hybride und digitale Sitzungen richten sich nach dem Kommunalverfassungsrecht des Landes und der örtlichen Hauptsatzung oder Geschäftsordnung; mandari prüft beim Anlegen einer Sitzung, ob das gewählte Format zulässig ist." dicht />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 grid gap-x-12 gap-y-10 2xl:grid-cols-2">
+        <div class="min-w-0 max-w-4xl space-y-10">
+            <c-rahmen.abschnitt titel="Landesprofil und örtliche Rechtsgrundlage" titel_id="landesprofil-titel" data-testid="landesprofil">
+                <form method="post" class="mt-3 space-y-4">
+                    {% csrf_token %}
+                    <c-form.errors :form="form" />
+                    <c-form.select :field="form.state_profile" label="Landesprofil" help="Ohne Landesprofil sind nur Präsenzsitzungen möglich." dicht />
+                    <div class="grid gap-4 sm:grid-cols-3">
+                        <c-form.select :field="form.hybrid_basis_kind" label="Rechtsgrundlage" dicht />
+                        <c-form.field :field="form.hybrid_basis_date" label="Datum" type="date" help="Beschluss oder Inkrafttreten" dicht />
+                        <c-form.field :field="form.hybrid_basis_reference" label="Fundstelle" placeholder="z. B. § 7 Hauptsatzung, Amtsblatt 2024 Nr. 5" dicht />
+                    </div>
+                    {% if basis_hint %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="nachweis-hinweis">{{ basis_hint.text }}{% if basis_hint.norm %} ({{ basis_hint.norm }}){% endif %}</p>{% endif %}
+                    <c-form.field :field="form.digital_public_registration_days" label="Anmeldefrist für die digitale Öffentlichkeit (Tage vor der Sitzung)" type="number" class="max-w-md"
+                                  help="Nur wenn die Geschäftsordnung einen geschützten Zugang mit Anmeldung vorsieht (z. B. NRW, § 3 DigiSiVO)." dicht />
+                    <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+                </form>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="Ortsrecht der Körperschaften" titel_id="ortsrecht-titel">
+                <c-rahmen.satz eng>Hauptsatzung und Geschäftsordnung je Körperschaft.</c-rahmen.satz>
+                <c-rahmen.liste class="mt-2" data-testid="ortsrecht-liste">
+                    {% for body, rules, warning in local_rules %}
+                    <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2.5">
+                        <div class="min-w-0 flex-1 basis-56">
+                            <p class="text-sm liste-name">{{ body.name }}</p>
+                            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ rules.rules_label|default:"Geschäftsordnung nicht hinterlegt" }}</p>
+                            {% if warning %}<p class="text-[0.8125rem] text-amber-800 dark:text-amber-300" data-testid="notlage-ablauf">{{ warning }}</p>{% endif %}
+                        </div>
+                        <c-ui.textlink href="{% url 'session:settings_local_rules' tenant_slug=tenant_slug body_id=body.pk %}" class="text-sm whitespace-nowrap">Ortsrecht bearbeiten</c-ui.textlink>
+                    </li>
+                    {% endfor %}
+                </c-rahmen.liste>
+            </c-rahmen.abschnitt>
+
+            {% if committee_kinds %}{% include "session/neu/einstellungen/_sitzungsformate_ausschuesse.html" %}{% endif %}
+        </div>
+
+        <div class="min-w-0 max-w-4xl space-y-10">
+            {% include "session/neu/einstellungen/_sitzungsformate_recht.html" %}
+        </div>
+    </div>
+</div>
+{% endblock %}

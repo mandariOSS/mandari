@@ -1,0 +1,22 @@
+{% comment %}
+Einstellungen › Allgemein: Anmeldesicherheit (Issue #944, Teil 2b). Stand der Zwei-Faktor-Pflicht als Punkt mit Text,
+darunter das Umschalten (settings_two_factor mit require_2fa=0 bzw. 1) als Knopf ohne Füllfarbe. Formular und Texte wie
+bisher (session/settings/index.html, Karte Anmeldesicherheit); nur mit „Einstellungen verwalten“ eingebunden.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Anmeldesicherheit" titel_id="anmeldesicherheit-titel" data-testid="anmeldesicherheit">
+    <c-rahmen.satz eng>Administratoren sowie Nutzer mit Rechten für Benutzer- oder Einstellungsverwaltung verwenden immer einen zweiten Faktor.</c-rahmen.satz>
+    <p class="mt-3 text-sm text-gray-900 dark:text-white">
+        {% if session_tenant.require_2fa %}{% include "session/neu/_status.html" with wert="approved" text="Pflicht für alle Nutzer aktiv." %}{% else %}{% include "session/neu/_status.html" with wert="" text="Für die übrigen Nutzer freiwillig." %}{% endif %}
+    </p>
+    <c-rahmen.satz eng>Wer noch keinen zweiten Faktor hat, richtet ihn bei der nächsten Anmeldung ein.</c-rahmen.satz>
+    <form method="post" action="{% url 'session:settings_two_factor' tenant_slug=tenant_slug %}" class="mt-3">
+        {% csrf_token %}
+        {% if session_tenant.require_2fa %}
+        <input type="hidden" name="require_2fa" value="0">
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="shield-off">Pflicht für alle aufheben</c-ui.button>
+        {% else %}
+        <input type="hidden" name="require_2fa" value="1">
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="shield-check">Für alle Nutzer verpflichtend machen</c-ui.button>
+        {% endif %}
+    </form>
+</c-rahmen.abschnitt>

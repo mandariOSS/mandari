@@ -1,0 +1,22 @@
+{% comment %}
+Vorlagennummer im Vorlagenformular des neuen Rahmens (Issues #150, #944), wie session/papers/_reference_field.html:
+Das Feld erscheint nur, solange noch keine Nummer vergeben ist und der Nutzer Einstellungsrechte hat (Altbestand von
+Hand); sonst die vergebene Nummer bzw. der Hinweis auf den Nummernkreis als Text. Kontext: form, object,
+reference_label, numbering_hint. Das Feld behält die ID id_reference (Platzhalter {vorlage} der Textbausteine).
+{% endcomment %}
+<div data-testid="vorlagennummer">
+    {% if form.reference %}
+    {% with beschriftung=reference_label|add:" (optional)" hinweis=numbering_hint|add:" Nur für Altbestände von Hand ausfüllen." %}
+    {% include "session/neu/_formular_feld.html" with feld=form.reference label=beschriftung wert=form.reference.value|default:'' platzhalter="automatisch" hilfe=hinweis %}
+    {% endwith %}
+    {% else %}
+    <p class="mb-1 text-sm font-medium text-gray-800 dark:text-gray-200">{{ reference_label }}</p>
+    {% if object.reference %}
+    <p class="flex h-9 items-center font-mono text-sm text-gray-900 dark:text-white">{{ object.reference }}</p>
+    <c-form.hinweis>Vergeben am {{ object.reference_assigned_at|date:"d.m.Y"|default:"–" }}; eine vergebene Nummer bleibt unverändert.</c-form.hinweis>
+    {% else %}
+    <p class="flex h-9 items-center text-sm text-gray-700 dark:text-gray-300">wird automatisch vergeben</p>
+    <c-form.hinweis>{{ numbering_hint }}</c-form.hinweis>
+    {% endif %}
+    {% endif %}
+</div>

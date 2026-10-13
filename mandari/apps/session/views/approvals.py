@@ -51,6 +51,12 @@ class FourEyesSettingsView(SessionViewMixin, TemplateView):
     template_name = "session/settings/four_eyes.html"
     permission_required = "manage_settings"
 
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/vier_augen.html"] if neues_design(self.session_tenant) else [self.template_name]
+        )
+
     @property
     def tenant(self) -> SessionTenant:
         return cast(SessionTenant, self.session_tenant)

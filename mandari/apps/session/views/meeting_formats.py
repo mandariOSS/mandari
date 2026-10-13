@@ -27,6 +27,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionBody, SessionStateProfile, SessionTenant
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import body_service, meeting_format_service, state_law_service
 from ..services.state_law_service import LocalRules
 
@@ -86,6 +87,14 @@ class MeetingFormatSettingsView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/meeting_formats.html"
     permission_required = "manage_settings"
+
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/sitzungsformate.html"]
+            if neues_design(self.session_tenant)
+            else [self.template_name]
+        )
 
     @property
     def tenant(self) -> SessionTenant:
@@ -237,6 +246,12 @@ class BodyLocalRulesView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/local_rules.html"
     permission_required = "manage_settings"
+
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/ortsrecht.html"] if neues_design(self.session_tenant) else [self.template_name]
+        )
 
     @cached_property
     def body(self) -> SessionBody:
