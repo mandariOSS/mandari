@@ -1,0 +1,70 @@
+{% comment %}
+Störungsprotokoll im Cockpit, neues Erscheinungsbild (Issues #139, #140, #944): Störung Zugeschalteter ab jetzt
+vermerken – mit Ursache und internem Vermerk, z. B. „telefonisch gemeldet“ – und jetzt beenden. Ohne Kasten, Felder in
+Work-Maßen, Liste mit Linien, „dauert an“ als Punkt mit Text. Der Vermerk bleibt intern und erscheint nur Steuernden.
+Wie session/cockpit/_disruptions.html (ids, data-testid und data-cockpit-form bleiben).
+{% endcomment %}
+{% url 'session:meeting_cockpit_action' tenant_slug=tenant_slug meeting_id=meeting.id as action_url %}
+<c-rahmen.abschnitt titel="Störungsprotokoll" titel_id="cockpit-stoerungen-titel" data-testid="cockpit-stoerungen">
+    {% if state.interruption_hint %}
+    <c-ui.alert variant="warning" icon="pause" class="mt-3" data-testid="cockpit-unterbrechen">{{ state.interruption_hint }}</c-ui.alert>
+    {% endif %}
+    {% if state.can_control and not state.locked and not meeting.cancelled %}
+    <form method="post" action="{{ action_url }}" hx-post="{{ action_url }}" hx-target="#cockpit-stand" hx-swap="outerHTML" class="mt-3 space-y-3"
+          data-cockpit-form="stoerung">
+        {% csrf_token %}
+        <input type="hidden" name="aktion" value="stoerung_beginn">
+        <label class="block text-sm font-medium text-gray-800 dark:text-gray-200">Zugeschaltete Person
+            <select name="attendance" id="stoerung-person" required class="mt-1 block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm font-normal text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                <option value="">Bitte wählen</option>
+                {% for person_row in state.attendances %}
+                {% if person_row.is_remote and not person_row.disrupted %}
+                <option value="{{ person_row.id }}">{{ person_row.person.display_name }}</option>
+                {% endif %}
+                {% endfor %}
+            </select>
+        </label>
+        <label class="block text-sm font-medium text-gray-800 dark:text-gray-200">Ursache
+            <select name="cause" id="stoerung-ursache" class="mt-1 block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm font-normal text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                {% for value, label in state.disruption_causes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="block text-sm font-medium text-gray-800 dark:text-gray-200">Verantwortungsbereich
+            <select name="responsibility" id="stoerung-bereich" class="mt-1 block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm font-normal text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                {% for value, label in state.disruption_responsibilities %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </select>
+        </label>
+        <label class="block text-sm font-medium text-gray-800 dark:text-gray-200">Vermerk (intern)
+            <input type="text" name="note" id="stoerung-vermerk" maxlength="255" placeholder="z. B. telefonisch gemeldet"
+                   class="mt-1 block h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm font-normal text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+        </label>
+        <c-ui.button type="submit" size="sm" variant="secondary" icon="wifi-off" data-testid="stoerung_beginn">Störung ab jetzt vermerken</c-ui.button>
+    </form>
+    {% endif %}
+
+    {% if state.disruptions %}
+    <c-rahmen.liste class="mt-4">
+        {% for person_row, disruption in state.disruptions %}
+        <li class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-2.5 text-sm" data-testid="cockpit-stoerung">
+            <div class="min-w-0">
+                <p class="liste-name">{{ person_row.person.display_name }}</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                    {{ disruption.get_cause_display }}{% if disruption.responsibility %} · {{ disruption.get_responsibility_display }}{% endif %} ·
+                    {% if disruption.ongoing %}seit {{ disruption.started_at|time:"H:i" }} Uhr{% else %}{{ disruption.started_at|time:"H:i" }}–{{ disruption.ended_at|time:"H:i" }} Uhr ({{ disruption.duration_minutes }} Min.){% endif %}
+                    {% if state.can_control and disruption.note %}<br>Vermerk: {{ disruption.note }}{% endif %}
+                </p>
+            </div>
+            {% if disruption.ongoing %}
+            {% if state.can_control and not state.locked and not meeting.cancelled %}
+            {% include "session/neu/_cockpit_aktion.html" with aktion="stoerung_ende" ziel_stoerung=disruption.id label="Beenden" aria="Störung bei "|add:person_row.person.display_name|add:" beenden" icon="wifi" %}
+            {% else %}
+            <span class="text-[0.8125rem] text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert="pending" text="dauert an" %}</span>
+            {% endif %}
+            {% endif %}
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+    {% else %}
+    <c-rahmen.satz>Keine Störungen vermerkt.</c-rahmen.satz>
+    {% endif %}
+</c-rahmen.abschnitt>

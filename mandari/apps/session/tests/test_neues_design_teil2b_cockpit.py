@@ -4,10 +4,9 @@ Neues Erscheinungsbild des Sitzungsdienstes, Teil 2b: Cockpit, Abstimmung erfass
 
 Geprüft:
 
-- Cockpit und Abstimmung haben mit eingeschaltetem Schalter eigene neue Vorlagen, ohne Schalter die bisherigen. Beim
-  Cockpit ist nur der Rahmen neu: Der Stand (Polling, WebSocket-Hinweis, Aktionen) bleibt in beiden Erscheinungsbildern
-  das bisherige Fragment mit den Ids, data-testid und Formularschlüsseln (data-cockpit-form), an denen meetingCockpit
-  hängt. Die Live-Funktion prüft tests_e2e/test_sitzungscockpit.py in beiden Erscheinungsbildern.
+- Cockpit und Abstimmung haben mit eingeschaltetem Schalter eigene neue Vorlagen, ohne Schalter die bisherigen. Der
+  Stand des Cockpits (Polling, WebSocket-Hinweis, Aktionen) kommt im Erscheinungsbild des Mandanten zurück, mit
+  denselben Ids, data-testid und Formularschlüsseln (data-cockpit-form), an denen meetingCockpit hängt.
 - Keine Funktion entfällt, keine kommt hinzu: Jede Aktion der bisherigen Seiten (Links, Formulare mit Feldern, festen
   Werten und Optionen, htmx mit Ziel und Rückfrage) steht für jede Standardrolle auch auf der neuen – das Cockpit in
   jedem Stand (vor Beginn, laufend mit offener Abstimmung als Summe bzw. mit Einzelstimmen, mit Ergebnis, geschlossen,
@@ -214,25 +213,29 @@ def test_cockpit_und_abstimmung_waehlen_ihre_vorlage(monkeypatch: pytest.MonkeyP
         assert neu.status_code == 200 and {vorlage, "session/base_session_neu.html"} <= _vorlagen(neu), name
         assert 'data-gestaltung="neu"' in neu.content.decode(), name
     html = client.get(welt["seiten"]["cockpit-summe"]).content.decode()
-    assert "session/cockpit/_stand.html" in _vorlagen(client.get(welt["seiten"]["cockpit-summe"]))
+    assert "session/neu/_cockpit_stand.html" in _vorlagen(client.get(welt["seiten"]["cockpit-summe"]))
     for kennung in ('x-data="meetingCockpit"', 'id="cockpit-stand"', 'hx-trigger="cockpit:refresh"',
                     'data-cockpit-form="abstimmung-', 'data-testid="verbindung"', 'data-testid="aktueller-top"'):  # fmt: skip
         assert kennung in html, kennung
 
 
-def test_stand_bleibt_im_neuen_rahmen_der_bisherige(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Polling bzw. Hinweis über den WebSocket und jede Aktion liefern im neuen Rahmen den bisherigen Stand."""
+def test_stand_und_aktionen_antworten_im_erscheinungsbild_des_mandanten(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Polling bzw. Hinweis über den WebSocket und jede Aktion liefern den Stand in der Gestaltung des Mandanten."""
     tenant = _mandant("stand2b", neu=True)
     welt = _welt_cockpit(tenant, monkeypatch)
     meeting = welt["sitzungen"]["vorher"]
     client = _client(tenant, "Administrator")
     stand_url = reverse("session:meeting_cockpit_state", kwargs={"tenant_slug": tenant.slug, "meeting_id": meeting.pk})
     neu = client.get(stand_url, HTTP_HX_REQUEST="true")
-    assert neu.status_code == 200 and _vorlagen(neu) >= {"session/cockpit/_stand.html"}
+    assert neu.status_code == 200 and "session/neu/_cockpit_stand.html" in _vorlagen(neu)
     assert neu.content.decode().lstrip().startswith('<div id="cockpit-stand"')
     antwort = client.post(welt["aktion"]["vorher"], {"aktion": "sitzung_eroeffnen"}, HTTP_HX_REQUEST="true")
-    assert antwort.status_code == 200 and "session/cockpit/_stand.html" in _vorlagen(antwort)
+    assert antwort.status_code == 200 and "session/neu/_cockpit_stand.html" in _vorlagen(antwort)
     assert "showToast" in antwort["HX-Trigger"] and "Sitzung läuft" in antwort.content.decode()
+
+    SessionTenant.objects.filter(pk=tenant.pk).update(session_new_design=False)
+    alt = client.get(stand_url, HTTP_HX_REQUEST="true")
+    assert "session/cockpit/_stand.html" in _vorlagen(alt) and "session/neu/_cockpit_stand.html" not in _vorlagen(alt)
 
 
 # =============================================================================
@@ -261,14 +264,12 @@ def test_keine_funktion_des_cockpits_und_der_abstimmung_entfaellt(monkeypatch: p
     assert "hx-target=#cockpit-stand" in merkmale
 
 
-def test_abstimmung_hat_hoechstens_einen_gefuellten_knopf(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Abstimmung erfassen: Füllfarbe trägt höchstens „Abstimmung speichern“ (das Cockpit behält seinen Stand)."""
+def test_nur_der_naechste_schritt_ist_gefuellt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Im Stand trägt höchstens eine Aktion die Füllfarbe: der nächste Schritt der Sitzung."""
     tenant = _mandant("knoepfe2b-cockpit", neu=True)
     welt = _welt_cockpit(tenant, monkeypatch)
     client = _client(tenant, "Administrator")
     for name, adresse in welt["seiten"].items():
-        if not name.startswith("erfassen-"):
-            continue
         html = client.get(adresse).content.decode()
         inhalt = html[html.index('class="work-page-content"') : html.index("</main>")]
         assert inhalt.count("bg-primary-600 hover:bg-primary-700") <= 1, name
@@ -410,13 +411,10 @@ def test_neue_vorlagen_ohne_12_px() -> None:
     from pathlib import Path
 
     neu = Path(__file__).resolve().parents[3] / "templates" / "session" / "neu"
-    for datei in (
-        "cockpit.html",
-        "abstimmung.html",
-        "leitstelle.html",
-        "leitstelle_suche.html",
-        "_leitstelle_zeilen.html",
-    ):
+    for datei in ("cockpit.html", "_cockpit_stand.html", "_cockpit_top.html", "_cockpit_abstimmung.html",
+                  "_cockpit_tagesordnung.html", "_cockpit_sitzung.html", "_cockpit_anwesenheit.html",
+                  "_cockpit_stoerungen.html", "_cockpit_aktion.html", "abstimmung.html", "leitstelle.html",
+                  "leitstelle_suche.html", "_leitstelle_zeilen.html"):  # fmt: skip
         text = (neu / datei).read_text(encoding="utf-8")
         for klein in ("text-xs", "text-[11px]", "text-[10px]", "text-[0.75rem]"):
             assert klein not in text, f"{datei}: {klein}"

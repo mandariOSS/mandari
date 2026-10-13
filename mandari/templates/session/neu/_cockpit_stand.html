@@ -1,0 +1,21 @@
+{% comment %}
+Stand des Sitzungscockpits im neuen Erscheinungsbild (Issues #140, #944) – HTMX-Fragment, nachgeladen über
+„cockpit:refresh“ (meetingCockpit). Erwartet: meeting, state, tenant_slug. ?v= trägt das Merkmal des Stands:
+Unverändert antwortet der Server mit 204. Links der aufgerufene TOP mit Abstimmung und die Tagesordnung, rechts
+Sitzung und Beschlussfähigkeit, Anwesenheit und Störungen. Wie session/cockpit/_stand.html, nur ohne Kästen.
+{% endcomment %}
+<div id="cockpit-stand"
+     hx-get="{% url 'session:meeting_cockpit_state' tenant_slug=tenant_slug meeting_id=meeting.id %}?v={{ state.version }}"
+     hx-trigger="cockpit:refresh" hx-swap="outerHTML"
+     data-version="{{ state.version }}" data-testid="cockpit-stand"
+     class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]">
+    <div class="min-w-0 space-y-10">
+        {% include "session/neu/_cockpit_top.html" %}
+        {% include "session/neu/_cockpit_tagesordnung.html" %}
+    </div>
+    <div class="min-w-0 space-y-10">
+        {% include "session/neu/_cockpit_sitzung.html" %}
+        {% include "session/neu/_cockpit_anwesenheit.html" %}
+        {% if state.remote_allowed %}{% include "session/neu/_cockpit_stoerungen.html" %}{% endif %}
+    </div>
+</div>

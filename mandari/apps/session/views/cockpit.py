@@ -31,6 +31,8 @@ from ..rahmen import neues_design
 from ..services import cockpit_service
 
 STATE_TEMPLATE = "session/cockpit/_stand.html"
+#: Stand im neuen Erscheinungsbild (Issue #944), gleiche Ids und Formularschlüssel
+STATE_TEMPLATE_NEU = "session/neu/_cockpit_stand.html"
 _MESSAGE_LEVELS = {"success": messages.SUCCESS, "info": messages.INFO, "warning": messages.WARNING}
 
 
@@ -57,10 +59,14 @@ class _CockpitMixin(SessionViewMixin):
             "tenant_slug": self.tenant.slug,
         }
 
+    def state_template(self) -> str:
+        """Fragment des Stands im Erscheinungsbild des Mandanten (Issue #944)."""
+        return STATE_TEMPLATE_NEU if neues_design(self.tenant) else STATE_TEMPLATE
+
     def render_state(
         self, meeting: SessionMeeting, *, toast: dict[str, str] | None = None, version: str | None = None
     ) -> HttpResponse:
-        response = TemplateResponse(self.request, STATE_TEMPLATE, self.state_context(meeting, version=version))
+        response = TemplateResponse(self.request, self.state_template(), self.state_context(meeting, version=version))
         if toast:
             response["HX-Trigger"] = json.dumps({"showToast": toast})
         return response
@@ -73,7 +79,7 @@ class MeetingCockpitView(_CockpitMixin, TemplateView):
     permission_required = "view_meetings"
 
     def get_template_names(self) -> list[str]:
-        # Neuer Rahmen je Mandant (Issue #944): Kopfband statt Seitenkopf, der Stand bleibt der bisherige
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
         return ["session/neu/cockpit.html"] if neues_design(self.tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:

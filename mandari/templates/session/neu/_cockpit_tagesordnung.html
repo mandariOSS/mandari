@@ -1,0 +1,36 @@
+{% comment %}
+Tagesordnung im Cockpit, neues Erscheinungsbild (Issues #140, #944): Liste mit Linien, Stand und Ergebnis als Punkt
+mit Text statt Pillen, der laufende TOP hervorgehoben, „Aufrufen“ ohne Füllfarbe. Wie session/cockpit/_agenda.html
+(data-testid, data-top, data-status bleiben).
+{% endcomment %}
+<c-rahmen.abschnitt titel="Tagesordnung" titel_id="cockpit-tagesordnung-titel" zusatz="{{ state.done_count }} von {{ state.items|length }} behandelt" data-testid="cockpit-tagesordnung">
+    {% if state.items %}
+    <c-rahmen.liste geordnet class="mt-2">
+        {% for entry in state.items %}
+        <li class="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5 {% if entry.cockpit_status == 'running' %}-mx-2 px-2 rounded-md bg-primary-50 dark:bg-primary-950{% endif %}"
+            data-testid="cockpit-top" data-top="{{ entry.number }}" data-status="{{ entry.cockpit_status }}">
+            <span class="w-12 shrink-0 text-sm tabular-nums text-gray-600 dark:text-gray-400 {% if entry.parent_id %}pl-3{% endif %}">{{ entry.number }}</span>
+            <span class="min-w-0 flex-1 text-sm break-words {% if entry.is_withdrawn %}line-through text-gray-500 dark:text-gray-400{% else %}text-gray-900 dark:text-white{% endif %}">
+                {{ entry.name }}{% if not entry.is_public %} <i data-lucide="lock" class="inline w-3.5 h-3.5 -mt-0.5 text-gray-500" aria-hidden="true"></i><span class="sr-only">nichtöffentlich</span>{% endif %}
+            </span>
+            <span class="flex flex-wrap items-center gap-x-3 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                <span class="tabular-nums text-gray-600 dark:text-gray-400" data-testid="top-zeiten">{% if entry.start_time %}{{ entry.start_time|time:"H:i" }}–{% if entry.end_time %}{{ entry.end_time|time:"H:i" }}{% endif %}{% endif %}</span>
+                {% if entry.cockpit_status == "running" %}{% include "session/neu/_status.html" with wert="approved" text="läuft" %}
+                {% elif entry.cockpit_status == "done" %}{% include "session/neu/_status.html" with wert="" text="behandelt" %}
+                {% elif entry.cockpit_status == "withdrawn" %}{% include "session/neu/_status.html" with wert="deferred" text="abgesetzt" %}{% endif %}
+                {% if entry.vote_result == "approved" %}{% include "session/neu/_status.html" with wert="approved" text=entry.get_vote_result_display %}
+                {% elif entry.vote_result == "rejected" %}{% include "session/neu/_status.html" with wert="rejected" text=entry.get_vote_result_display %}
+                {% elif entry.vote_result != "pending" %}{% include "session/neu/_status.html" with wert="scheduled" text=entry.get_vote_result_display %}{% endif %}
+            </span>
+            {% if state.can_control and not state.locked and not meeting.cancelled and not state.completed %}
+            {% if entry.cockpit_status == "open" or entry.cockpit_status == "done" %}
+            {% include "session/neu/_cockpit_aktion.html" with aktion="top_aufrufen" ziel_top=entry.id label="Aufrufen" aria="TOP "|add:entry.number|add:" aufrufen" icon="play" testid="aufrufen-"|add:entry.number %}
+            {% endif %}
+            {% endif %}
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+    {% else %}
+    <c-rahmen.satz>Keine Tagesordnungspunkte. Die Tagesordnung wird auf der Sitzungsseite angelegt.</c-rahmen.satz>
+    {% endif %}
+</c-rahmen.abschnitt>

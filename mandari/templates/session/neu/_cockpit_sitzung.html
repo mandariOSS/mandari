@@ -1,0 +1,43 @@
+{% comment %}
+Sitzung und Beschlussfähigkeit im Cockpit, neues Erscheinungsbild (Issues #140, #944): Stand als Punkt mit Text,
+Eröffnet/Geschlossen als Angaben, Beschlussfähigkeit als Satz mit Punkt statt farbiger Fläche, Eröffnen bzw.
+Schließen. Gefüllt ist „Sitzung eröffnen“ vor Beginn, „Sitzung schließen“ fragt nach (hx-confirm wie bisher). Wie
+session/cockpit/_meeting.html (data-testid bleiben).
+{% endcomment %}
+<c-rahmen.abschnitt titel="Sitzung" titel_id="cockpit-sitzung-titel" data-testid="cockpit-sitzung">
+    <p class="mt-2 text-sm font-medium text-gray-900 dark:text-white" data-testid="sitzungsstatus">
+        {% if state.running %}{% include "session/neu/_status.html" with wert="approved" text="Sitzung läuft" %}
+        {% elif state.completed %}{% include "session/neu/_status.html" with wert="" text="Sitzung geschlossen" %}
+        {% else %}{% include "session/neu/_status.html" with wert="scheduled" text="Noch nicht eröffnet" %}{% endif %}
+    </p>
+    <c-ui.angaben class="mt-3">
+        <dt>Eröffnet</dt><dd class="tabular-nums">{% if meeting.actual_start %}{{ meeting.actual_start|date:"H:i" }} Uhr{% else %}–{% endif %}</dd>
+        <dt>Geschlossen</dt><dd class="tabular-nums">{% if meeting.actual_end %}{{ meeting.actual_end|date:"H:i" }} Uhr{% else %}–{% endif %}</dd>
+    </c-ui.angaben>
+
+    {% if state.quorum.has_list %}
+    <div class="mt-4 text-sm text-gray-800 dark:text-gray-200" data-testid="cockpit-quorum">
+        <p class="font-semibold">{% if state.quorum.met %}{% include "session/neu/_status.html" with wert="approved" text="Beschlussfähig" %}{% else %}{% include "session/neu/_status.html" with wert="rejected" text="Nicht beschlussfähig" %}{% endif %}</p>
+        <p class="mt-1">{{ state.quorum.voting_present }} von {{ state.quorum.voting_total }} Stimmberechtigten anwesend{% if state.quorum.remote_present %}, davon {{ state.quorum.remote_present }} zugeschaltet{% endif %} – nötig: {{ state.quorum.required }}</p>
+        {% if state.quorum.disrupted %}<p class="mt-1">Wegen einer Störung nicht mitgezählt: {{ state.quorum.disrupted|join:", " }}</p>{% endif %}
+    </div>
+    {% else %}
+    <c-rahmen.satz>Noch keine Anwesenheitsliste. Bitte auf der Sitzungsseite aus der Besetzung erzeugen.</c-rahmen.satz>
+    {% endif %}
+
+    {% if state.locked %}
+    <c-rahmen.satz>Die Niederschrift ist genehmigt. Das Cockpit zeigt den Stand nur noch an.</c-rahmen.satz>
+    {% elif meeting.cancelled %}
+    <c-rahmen.satz>Die Sitzung ist abgesagt.</c-rahmen.satz>
+    {% elif state.can_control %}
+    <div class="mt-4 flex flex-wrap gap-2">
+        {% if state.running %}
+        {% include "session/neu/_cockpit_aktion.html" with aktion="sitzung_schliessen" label="Sitzung schließen" icon="flag" confirm="Sitzung jetzt schließen? Der laufende TOP und andauernde Störungen enden mit der aktuellen Uhrzeit." %}
+        {% elif state.completed %}
+        {% include "session/neu/_cockpit_aktion.html" with aktion="sitzung_eroeffnen" label="Sitzung fortsetzen" icon="play" %}
+        {% else %}
+        {% include "session/neu/_cockpit_aktion.html" with aktion="sitzung_eroeffnen" label="Sitzung eröffnen" icon="play" haupt=True %}
+        {% endif %}
+    </div>
+    {% endif %}
+</c-rahmen.abschnitt>
