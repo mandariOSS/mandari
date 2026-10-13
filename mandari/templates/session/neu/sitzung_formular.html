@@ -49,7 +49,7 @@ session/meetings/form.html, die bisherige Seite bleibt. Kontext wie MeetingCreat
             {# Weitere beteiligte Gremien: gemeinsame Sitzung (Issue #317) #}
             {% if form.joint_organizations.field.queryset %}
             <fieldset data-testid="gemeinsame-sitzung">
-                <legend class="text-sm font-medium text-gray-800 dark:text-gray-200">Weitere beteiligte Gremien (gemeinsame Sitzung)</legend>
+                <c-form.beschriftung als="legend">Weitere beteiligte Gremien (gemeinsame Sitzung)</c-form.beschriftung>
                 <c-form.hinweis>Optional. Geladen werden die Mitglieder aller beteiligten Gremien. Wer mehreren angehört, erhält eine Ladung und hat eine Stimme.</c-form.hinweis>
                 <div class="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2">
                     {% for org in form.joint_organizations.field.queryset %}
