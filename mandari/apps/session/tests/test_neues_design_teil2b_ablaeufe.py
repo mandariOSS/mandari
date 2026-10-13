@@ -405,13 +405,18 @@ def test_zaehler_werden_saetze_und_listen_ersetzen_tabellen() -> None:
 
     umlauf = client.get(welt["umlauf_offen"]).content.decode()
     assert "Ja 1, Nein 1, Enthaltung 0. 2 von 5 Stimmberechtigten haben geantwortet" in umlauf
+    # Das Auszählungsergebnis ist nur ein Vorschlag; festgestellt wird es erst mit einem der Knöpfe
+    assert "Vorschlag nach der Auszählung:" in umlauf
+    assert 'Ja</span><span class="tabular-nums">, eingegangen am' in umlauf
 
     SessionTenant.objects.filter(pk=tenant.pk).update(reminder_settings={"rsvp_enabled": False})
     assert 'data-testid="erinnerung-aus"' in client.get(welt["rueckmeldungen_versandt"]).content.decode()
 
     gesperrt = client.get(welt["ladung_abgesagt"]).content.decode()
     assert 'data-testid="ladung-gesperrt"' in gesperrt and 'name="dispatch_type"' not in gesperrt
-    assert "Ladungsfrist verstrichen" in client.get(welt["ladung_ueberfaellig"]).content.decode()
+    # Der Stand steht direkt vor dem Doppelpunkt, ohne Leerzeichen aus dem Zeilenende der Teilvorlage
+    assert "Ladungsfrist verstrichen</span></span>:" in client.get(welt["ladung_ueberfaellig"]).content.decode()
+    assert "Noch nicht versandt</span>:" in client.get(welt["ladung_vorher"]).content.decode()
 
 
 def test_nichtoeffentlicher_umlauf_nur_mit_recht() -> None:

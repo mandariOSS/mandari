@@ -21,7 +21,7 @@ session/resolutions/register.html. Kontext: item, can_manage, implementation_cho
             {% if item.vote_result == 'approved' %}
             {# Beschlusskontrolle (Issue #37) #}
             <p class="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300" data-testid="umsetzung">
-                <span>Umsetzung: {% if item.implementation_overdue %}{% include "session/neu/_status.html" with wert="ueberfaellig" text=item.get_implementation_status_display %}<span class="font-medium text-red-700 dark:text-red-400">, überfällig</span>{% else %}{% include "session/neu/_status.html" with wert=item.implementation_status text=item.get_implementation_status_display %}{% endif %}</span>
+                <span>Umsetzung: {% if item.implementation_overdue %}{% spaceless %}{% include "session/neu/_status.html" with wert="ueberfaellig" text=item.get_implementation_status_display %}{% endspaceless %}<span class="font-medium text-red-700 dark:text-red-400">, überfällig</span>{% else %}{% include "session/neu/_status.html" with wert=item.implementation_status text=item.get_implementation_status_display %}{% endif %}</span>
                 {% if item.implementation_recipient %}<span class="break-words">Zuständig: <span class="font-medium text-gray-800 dark:text-gray-200">{{ item.implementation_recipient }}</span></span>{% endif %}
                 {% if item.implementation_deadline %}<span class="tabular-nums {% if item.implementation_overdue %}font-medium text-red-700 dark:text-red-400{% endif %}">Frist: {{ item.implementation_deadline|date:"d.m.Y" }}</span>{% endif %}
             </p>

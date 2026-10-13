@@ -46,7 +46,7 @@ bisherige Seite bleibt session/voting/circular_detail.html.
                     <div class="min-w-0">
                         <p class="text-sm liste-name">{{ membership.person.display_name }}</p>
                         <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">
-                            {% if membership.vote %}{% if membership.vote.vote == "yes" %}{% include "session/neu/_status.html" with wert="approved" text=membership.vote.get_vote_display %}{% elif membership.vote.vote == "no" %}{% include "session/neu/_status.html" with wert="rejected" text=membership.vote.get_vote_display %}{% else %}{% include "session/neu/_status.html" with wert="" text=membership.vote.get_vote_display %}{% endif %}<span class="tabular-nums">, eingegangen am {{ membership.vote.received_at|date:"d.m.Y" }}</span>
+                            {% if membership.vote %}{% spaceless %}{% if membership.vote.vote == "yes" %}{% include "session/neu/_status.html" with wert="approved" text=membership.vote.get_vote_display %}{% elif membership.vote.vote == "no" %}{% include "session/neu/_status.html" with wert="rejected" text=membership.vote.get_vote_display %}{% else %}{% include "session/neu/_status.html" with wert="" text=membership.vote.get_vote_display %}{% endif %}{% endspaceless %}<span class="tabular-nums">, eingegangen am {{ membership.vote.received_at|date:"d.m.Y" }}</span>
                             {% else %}ausstehend{% endif %}
                         </p>
                     </div>
@@ -76,7 +76,7 @@ bisherige Seite bleibt session/voting/circular_detail.html.
 
     {% if can_manage and circular.status == 'open' %}
     <c-rahmen.abschnitt titel="Ergebnis feststellen" titel_id="ergebnis-titel" data-testid="umlauf-ergebnis">
-        <c-rahmen.satz eng>Nach der Auszählung {% if tally.suggestion == 'adopted' %}angenommen{% else %}abgelehnt{% endif %}.{% if not tally.quorum_met %} <span class="text-amber-800 dark:text-amber-300">Achtung: Weniger als die Hälfte der Stimmberechtigten hat geantwortet.</span>{% endif %}</c-rahmen.satz>
+        <c-rahmen.satz eng>Vorschlag nach der Auszählung: {% if tally.suggestion == 'adopted' %}angenommen{% else %}abgelehnt{% endif %}.{% if not tally.quorum_met %} <span class="text-amber-800 dark:text-amber-300">Achtung: Weniger als die Hälfte der Stimmberechtigten hat geantwortet.</span>{% endif %}</c-rahmen.satz>
         <form method="post" action="{% url 'session:circular_close' tenant_slug=tenant_slug circular_id=circular.id %}" class="mt-3 space-y-3">
             {% csrf_token %}
             <c-form.field name="result_note" label="Ergebnisvermerk (optional)" dicht />

@@ -24,8 +24,8 @@ wie session/meetings/invitation.html (bleibt die bisherige Seite); Kontext wie M
     {% endif %}
     <p class="max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="ladungsfrist">
         {% if meeting.invitation_sent_at %}{% include "session/neu/_status.html" with wert="invitation_sent" text="Versandt" %} am <span class="tabular-nums">{{ meeting.invitation_sent_at|date:"d.m.Y H:i" }}</span> Uhr. Ladungsfrist {{ invitation_period_days }} Tage, bis <span class="tabular-nums">{{ invitation_deadline|date:"d.m.Y" }}</span>.
-        {% elif invitation_overdue %}<span class="font-medium text-red-700 dark:text-red-400">{% include "session/neu/_status.html" with wert="ueberfaellig" text="Ladungsfrist verstrichen" %}</span>: Die Ladung musste bis <span class="tabular-nums">{{ invitation_deadline|date:"d.m.Y" }}</span> raus, die Frist des Gremiums beträgt {{ invitation_period_days }} Tage vor der Sitzung.
-        {% else %}{% include "session/neu/_status.html" with wert="pending" text="Noch nicht versandt" %}: Die Ladung muss bis <span class="tabular-nums">{{ invitation_deadline|date:"d.m.Y" }}</span> raus, die Frist des Gremiums beträgt {{ invitation_period_days }} Tage vor der Sitzung am <span class="tabular-nums">{{ meeting.start|date:"d.m.Y" }}</span>.{% endif %}
+        {% elif invitation_overdue %}<span class="font-medium text-red-700 dark:text-red-400">{% spaceless %}{% include "session/neu/_status.html" with wert="ueberfaellig" text="Ladungsfrist verstrichen" %}{% endspaceless %}</span>: Die Ladung musste bis <span class="tabular-nums">{{ invitation_deadline|date:"d.m.Y" }}</span> raus, die Frist des Gremiums beträgt {{ invitation_period_days }} Tage vor der Sitzung.
+        {% else %}{% spaceless %}{% include "session/neu/_status.html" with wert="pending" text="Noch nicht versandt" %}{% endspaceless %}: Die Ladung muss bis <span class="tabular-nums">{{ invitation_deadline|date:"d.m.Y" }}</span> raus, die Frist des Gremiums beträgt {{ invitation_period_days }} Tage vor der Sitzung am <span class="tabular-nums">{{ meeting.start|date:"d.m.Y" }}</span>.{% endif %}
     </p>
 </c-rahmen.kopfband>
 {% endblock %}
