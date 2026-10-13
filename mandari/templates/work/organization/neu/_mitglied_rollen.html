@@ -1,0 +1,25 @@
+{% comment %}
+Mitglied: Rollen (Issue #951). Mit members.manage_roles das Formular update_roles, sonst die Rollen als Text mit
+Farbpunkt. Kontext: member, available_roles, can_manage_roles.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Rollen" titel_id="rollen-titel">
+    {% if can_manage_roles %}
+    <form method="post" class="mt-3 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_roles">
+        <fieldset>
+            <legend class="sr-only">Rollen von {{ member.user.get_full_name|default:member.user.email }}</legend>
+            <div class="grid gap-x-6 gap-y-2 sm:grid-cols-2">
+                {% for role in available_roles %}
+                <c-form.checkbox name="roles" id="rolle-{{ role.id }}" value="{{ role.id }}" checked="{% if role in member.roles.all %}1{% endif %}" dicht>{{ role.name }}{% if role.is_admin and role.name != "Administrator" %} <span class="text-gray-600 dark:text-gray-400">· Administrator</span>{% endif %}</c-form.checkbox>
+                {% endfor %}
+            </div>
+        </fieldset>
+        <c-ui.button type="submit" size="sm" variant="secondary">Rollen speichern</c-ui.button>
+    </form>
+    {% else %}
+    <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">
+        {% for role in member.roles.all %}<span class="inline-flex items-center gap-1.5 mr-3">{% include "work/organization/neu/_farbpunkt.html" with farbe=role.color %}{{ role.name }}</span>{% empty %}<span class="text-gray-600 dark:text-gray-400">Keine Rollen zugewiesen</span>{% endfor %}
+    </p>
+    {% endif %}
+</c-rahmen.abschnitt>

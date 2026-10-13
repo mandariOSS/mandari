@@ -7,10 +7,12 @@ import logging
 
 from django.contrib import messages
 from django.shortcuts import redirect
+from django.utils.functional import cached_property
 from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..services import ServiceError
@@ -19,10 +21,11 @@ from ._helpers import flash_error
 logger = logging.getLogger(__name__)
 
 
-class MemberInviteView(WorkViewMixin, TemplateView):
+class MemberInviteView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Invite a new member."""
 
     template_name = "work/organization/invite.html"
+    neue_vorlage = "work/organization/neu/einladen.html"
     permission_required = "members.invite"
 
     def get_context_data(self, **kwargs):
@@ -56,7 +59,7 @@ class MemberInviteView(WorkViewMixin, TemplateView):
         return redirect("work:members", org_slug=self.organization.slug)
 
 
-class GuestInviteView(WorkViewMixin, TemplateView):
+class GuestInviteView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """
     Gast einladen.
 
@@ -69,6 +72,7 @@ class GuestInviteView(WorkViewMixin, TemplateView):
     """
 
     template_name = "work/organization/guest_invite.html"
+    neue_vorlage = "work/organization/neu/gast_einladen.html"
     permission_required = "guests.invite"
 
     GUEST_SHARE_LEVELS = services.GUEST_SHARE_LEVELS
@@ -150,10 +154,17 @@ class InvitationCancelView(WorkViewMixin, View):
         return redirect("work:members", org_slug=self.organization.slug)
 
 
-class AcceptInvitationView(TemplateView):
+class AcceptInvitationView(NeueVorlageMixin, TemplateView):
     """Accept an invitation (public view - no login required initially)."""
 
     template_name = "work/organization/accept_invitation.html"
+    neue_vorlage = "work/organization/neu/einladung_annehmen.html"
+
+    @cached_property
+    def organization(self):
+        """Organisation der Einladung: Ihr Schalter wählt die Vorlage im neuen Erscheinungsbild (Issue #951)."""
+        invitation = selectors.find_invitation_by_token(self.kwargs["token"])
+        return invitation.organization if invitation else None
 
     def get(self, request, *args, **kwargs):
         token = kwargs.get("token")

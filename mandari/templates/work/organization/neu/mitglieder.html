@@ -1,0 +1,99 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Mitglieder im neuen Erscheinungsbild (Issue #951): offene Einladungen und Registrierungen, aktive
+Mitglieder, Gäste und deaktivierte Mitglieder als Listen mit Linien. Aktionen, Rückfragen und Rechte wie bisher
+(work/organization/members.html): Einladung erneut senden oder zurückziehen, Registrierung freischalten oder mit
+Begründung ablehnen; „Gast einladen“ nur mit guests.invite. Rollen stehen als Text mit Farbpunkt statt als Pillen.
+Kontext: MemberListView.
+{% endcomment %}
+
+{% block page_title %}Mitglieder{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Mitglieder" dicht
+    text="{{ members.count }} aktive Mitglieder{% if guests %} und {{ guest_count }} {% if guest_count == 1 %}Gast{% else %}Gäste{% endif %}{% endif %} in {{ organization.name }}.">
+    <c-slot name="aktionen">
+        {% if can_invite_guests %}<c-ui.textlink href="{% url 'work:guest_invite' org_slug=organization.slug %}" class="text-sm">Gast einladen</c-ui.textlink>{% endif %}
+        <c-ui.button href="{% url 'work:member_invite' org_slug=organization.slug %}" size="sm" icon="user-plus">Mitglied einladen</c-ui.button>
+    </c-slot>
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="mitglieder" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="mitglieder" %}
+    <div class="min-w-0 flex-1 space-y-10">
+        {% if pending_invitations or pending_registrations %}
+        {% include "work/organization/neu/_mitglieder_offen.html" %}
+        {% endif %}
+
+        <c-rahmen.abschnitt titel="Aktive Mitglieder" titel_id="aktive-titel" zusatz="{{ members.count }}">
+            {% if members %}
+            <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="mitglieder-liste">
+                {% for member in members %}
+                <li class="flex flex-wrap items-center gap-x-6 gap-y-1 py-2.5">
+                    {% include "work/organization/neu/_person.html" with person=member.user %}
+                    <div class="min-w-[14rem] flex-1 sm:w-80 sm:flex-none">
+                        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ member.user.get_full_name|default:member.user.email }}</a>
+                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{{ member.user.email }}{% if organization.owner == member.user %} · Eigentümer{% endif %}{% if member.is_sworn_in %} · vereidigt{% endif %}</p>
+                    </div>
+                    <p class="min-w-[12rem] flex-1 text-[0.8125rem] text-gray-800 dark:text-gray-200">
+                        {% for role in member.roles.all %}<span class="inline-flex items-center gap-1.5 mr-3">{% include "work/organization/neu/_farbpunkt.html" with farbe=role.color %}{{ role.name }}</span>{% empty %}<span class="text-gray-600 dark:text-gray-400">Keine Rollen zugewiesen</span>{% endfor %}
+                    </p>
+                    <div class="flex items-center gap-4 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                        {% if show_two_factor %}{% include "work/organization/partials/_zweiter_faktor.html" %}{% endif %}
+                        <span class="whitespace-nowrap">Beigetreten {{ member.joined_at|date:"d.m.Y" }}</span>
+                    </div>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <c-rahmen.satz>Noch keine Mitglieder. <c-ui.textlink href="{% url 'work:member_invite' org_slug=organization.slug %}">Erstes Mitglied einladen</c-ui.textlink></c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        {% if guests or can_invite_guests %}
+        <c-rahmen.abschnitt titel="Gäste" titel_id="gaeste-titel" zusatz="{{ guest_count }} von {{ guest_limit }} Gastplätzen belegt">
+            {% if guests %}
+            <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800">
+                {% for guest in guests %}
+                <li class="flex flex-wrap items-center gap-x-6 gap-y-1 py-2.5">
+                    {% include "work/organization/neu/_person.html" with person=guest.user %}
+                    <div class="min-w-[14rem] flex-1 sm:w-80 sm:flex-none">
+                        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=guest.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ guest.user.get_full_name|default:guest.user.email }}</a>
+                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{{ guest.user.email }} · Gast</p>
+                    </div>
+                    <p class="min-w-[12rem] flex-1 text-[0.8125rem] text-gray-800 dark:text-gray-200">
+                        {% if guest.shared_document_count or guest.shared_folder_count %}{{ guest.shared_document_count }} Dokument{{ guest.shared_document_count|pluralize:"e" }} und {{ guest.shared_folder_count }} Ordner freigegeben{% else %}Noch keine Freigaben{% endif %}
+                    </p>
+                    <span class="whitespace-nowrap text-[0.8125rem] text-gray-600 dark:text-gray-400">Eingeladen {{ guest.joined_at|date:"d.m.Y" }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <c-rahmen.satz>Noch keine Gäste. Gäste sind externe Personen, die nur einzeln freigegebene Dokumente sehen.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if inactive_members %}
+        <c-rahmen.abschnitt titel="Deaktivierte Mitglieder" titel_id="deaktiviert-titel" zusatz="{{ inactive_members.count }}">
+            <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800">
+                {% for member in inactive_members %}
+                <li class="flex flex-wrap items-center gap-x-6 gap-y-1 py-2.5">
+                    {% include "work/organization/neu/_person.html" with person=member.user %}
+                    <div class="min-w-[14rem] flex-1 sm:w-80 sm:flex-none">
+                        <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ member.user.get_full_name|default:member.user.email }}</a>
+                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{{ member.user.email }}</p>
+                    </div>
+                    <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% include "work/organization/neu/_status.html" %}Deaktiviert</span>
+                </li>
+                {% endfor %}
+            </ul>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
