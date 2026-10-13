@@ -39,7 +39,8 @@
             </div>
             <div class="flex items-center gap-2 flex-shrink-0 ml-4">
                 {# Download #}
-                <a href="" :href="docViewerUrl + (docViewerUrl.includes('?') ? '&' : '?') + 'download=1'"
+                {# Ohne geöffnetes Dokument bleibt href leer: sonst zeigte jede Seite auf sich selbst mit ?download=1 (#939) #}
+                <a href="" rel="nofollow" :href="docViewerUrl ? docViewerUrl + (docViewerUrl.includes('?') ? '&' : '?') + 'download=1' : ''"
                    class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
                    title="Herunterladen">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
