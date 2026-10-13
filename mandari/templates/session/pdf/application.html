@@ -24,12 +24,14 @@ Keine E-Mail-Adresse, keine Telefonnummer: Die Datei wird mit der Vorlage öffen
 {% endblock %}
 
 {% block content %}
-<h1>{{ application.get_application_type_display }}: {{ application.title }}</h1>
+{# Titel aus Work tragen die Art meist schon („Antrag: …“); die Art steht deshalb als eigene Zeile #}
+<h1>{{ application.title }}</h1>
 
 <table class="meta-table">
     {% if application.reference %}<tr><td class="label">Eingangsnummer:</td><td>{{ application.reference }}</td></tr>{% endif %}
+    <tr><td class="label">Art:</td><td>{{ application.get_application_type_display }}</td></tr>
     <tr><td class="label">Eingereicht am:</td><td>{{ application.submitted_at|date:"d.m.Y, H:i" }} Uhr</td></tr>
-    {% if submitter or organization_name %}<tr><td class="label">Eingereicht von:</td><td>{% if submitter %}{{ submitter }}{% if organization_name %} ({{ organization_name }}){% endif %}{% else %}{{ organization_name }}{% endif %}</td></tr>{% endif %}
+    {% if submitter or organization_name %}<tr><td class="label">Eingereicht von:</td><td>{% if submitter %}{{ submitter }}{% if organization_name %}, {{ organization_name }}{% endif %}{% else %}{{ organization_name }}{% endif %}</td></tr>{% endif %}
     {% if application.target_organization %}<tr><td class="label">Gremium:</td><td>{{ application.target_organization.name }}</td></tr>{% endif %}
     {% if application.deadline %}<tr><td class="label">Gewünschter Beratungstermin:</td><td>{{ application.deadline|date:"d.m.Y" }}</td></tr>{% endif %}
     {% if application.is_urgent %}<tr><td class="label">Dringlichkeit:</td><td>dringlich</td></tr>{% endif %}
