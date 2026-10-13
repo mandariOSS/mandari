@@ -123,3 +123,98 @@ def test_ohne_schalter_bisheriger_rahmen(page: Any, live_server: Any, demo: dict
     wait_for_bundle(page)
     assert page.locator("html").get_attribute("data-rahmen") is None
     expect(page.locator("aside.session-sidebar")).to_have_count(1)
+
+
+@pytest.fixture
+def seiten_2a(demo: dict[str, str]) -> dict[str, str]:
+    """
+    Die acht Seiten aus Teil 2a (Issue #944) mit den Demo-Daten, dazu Sitzung und Vorlage mit den ruhigen Teilvorlagen;
+    die kommende Ratssitzung bekommt ihre Anwesenheitsliste aus der Besetzung.
+    """
+    from apps.session.models import SessionApplication, SessionMeeting, SessionOrganization, SessionPerson
+    from apps.session.services import attendance_service
+
+    sitzung = SessionMeeting.objects.filter(tenant__slug=MANDANT).order_by("-start").first()
+    assert sitzung is not None
+    attendance_service.generate_attendance(sitzung)
+    gremium = SessionOrganization.objects.filter(tenant__slug=MANDANT, memberships__isnull=False).distinct().first()
+    person = SessionPerson.objects.filter(tenant__slug=MANDANT, memberships__isnull=False).distinct().first()
+    antrag = SessionApplication.objects.filter(tenant__slug=MANDANT).order_by("status").first()
+    assert gremium is not None and person is not None and antrag is not None
+    basis = f"/session/{MANDANT}/"
+    return {
+        "gremium": f"{basis}organizations/{gremium.pk}/",
+        "person": f"{basis}persons/{person.pk}/",
+        "antrag": f"{basis}applications/{antrag.pk}/",
+        "sitzungsgelder": f"{basis}allowances/",
+        "monatspauschalen": f"{basis}allowances/monthly/",
+        "vertretungen": f"{basis}settings/delegations/",
+        "kalender": f"{basis}meetings/calendar/",
+        "audit": f"{basis}audit/",
+        "sitzung": demo["sitzung"],
+        "vorlage": demo["vorlage"],
+    }
+
+
+def test_seiten_teil2a_am_handy_und_tablet(
+    page: Any, live_server: Any, seiten_2a: dict[str, str], problems: BrowserProblems, screenshot: Any
+) -> None:
+    """Teil 2a (Issue #944): neue Gestaltung, kein seitlicher Überlauf bei 390 und 768 px, keine Fehler im Browser."""
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    for breite in BREITEN:
+        page.set_viewport_size({"width": breite, "height": 900})
+        for name, pfad in seiten_2a.items():
+            page.goto(f"{live_server.url}{pfad}")
+            wait_for_bundle(page)
+            expect(page.locator("main#inhalt")).to_have_attribute("data-gestaltung", "neu")
+            masse = page.evaluate(UEBERLAUF)
+            assert masse["scroll"] <= masse["breite"] + 1, f"{name} bei {breite} px läuft seitlich über: {masse}"
+            if breite == 390:
+                screenshot(f"session-neu-2a-{name}-390")
+    problems.assert_clean("Seiten aus Teil 2a im neuen Rahmen")
+
+
+def test_gremium_verwalten_zeigt_datumsfelder_ganz(
+    page: Any, live_server: Any, seiten_2a: dict[str, str], problems: BrowserProblems
+) -> None:
+    """
+    „Verwalten“ am Gremium (Issue #944): Von und Bis stehen nur nebeneinander, wenn das Formular breit genug ist – bei
+    keiner Fensterbreite wird ein Datumsfeld so schmal, dass das Jahr abgeschnitten ist (vorher 85 px bei 1280 px).
+    """
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    for breite in (390, 1024, 1280, 1440, 1500, 1920):
+        page.set_viewport_size({"width": breite, "height": 900})
+        page.goto(f"{live_server.url}{seiten_2a['gremium']}")
+        wait_for_bundle(page)
+        page.get_by_role("button", name="Verwalten").first.click()
+        zeitraum = page.locator("[data-testid='mitglied-zeitraum']").first.locator("input")
+        expect(zeitraum.first).to_be_visible()
+        breiten = [round(zeitraum.nth(i).bounding_box()["width"]) for i in range(zeitraum.count())]
+        assert len(breiten) == 2 and min(breiten) >= 160, f"Von/Bis bei {breite} px: {breiten}"
+        masse = page.evaluate(UEBERLAUF)
+        assert masse["scroll"] <= masse["breite"] + 1, f"Gremium bei {breite} px läuft seitlich über: {masse}"
+    problems.assert_clean("Gremium verwalten")
+
+
+def test_anwesenheit_als_liste_speichert_per_htmx(
+    page: Any, live_server: Any, seiten_2a: dict[str, str], problems: BrowserProblems
+) -> None:
+    """Am Handy: Zeiten und Notiz einer Person aufklappen, speichern; die Zeile kommt per htmx als Listenzeile zurück."""
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"{live_server.url}{seiten_2a['sitzung']}")
+    wait_for_bundle(page)
+    zeile = page.locator("[data-testid='anwesenheit-zeile']").first
+    notiz = zeile.locator("input[name='notes']")
+    expect(notiz).to_be_hidden()
+    zeile.get_by_role("button", name="Ankunft, Abgang und Notiz").click()
+    expect(notiz).to_be_visible()
+    notiz.fill("kommt später")
+    zeile.locator("select[name='status']").select_option("joined_late")
+    with page.expect_response(lambda antwort: "/attendance/" in antwort.url and antwort.request.method == "POST"):
+        zeile.get_by_role("button", name="Speichern").click()
+    zeile = page.locator("[data-testid='anwesenheit-zeile']").first
+    expect(zeile).to_contain_text("kommt später")
+    expect(zeile.locator("select[name='status']")).to_have_value("joined_late")
+    assert page.locator("[data-testid='anwesenheit'] table").count() == 0
+    problems.assert_clean("Anwesenheit speichern")

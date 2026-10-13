@@ -1,0 +1,62 @@
+{% comment %}
+Störungsvermerke Zugeschalteter im neuen Rahmen (Issues #139, #944): je Vermerk eine Zeile mit Beginn, Ende, Ursache
+und internem Vermerk, dazu „Jetzt beenden“, solange die Störung andauert, sowie Speichern und Entfernen; darunter das
+Vermerken bzw. Nacherfassen. Formulare und Felder wie session/meetings/_disruptions.html. Eingebunden aus
+session/neu/_anwesenheit.html.
+{% endcomment %}
+<div class="mt-6" data-testid="stoerungen">
+    <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Störungen Zugeschalteter</h3>
+    <p class="mt-1 max-w-3xl text-sm text-gray-600 dark:text-gray-400">Solange eine Störung andauert, zählt die Person nicht zur Beschlussfähigkeit und stimmt nicht ab. Niederschrift und öffentliche Fassung nennen Zeiten und Ursache, der Vermerk bleibt intern.</p>
+    <c-rahmen.liste class="mt-2">
+        {% for attendance in remote_attendances %}
+        {% for disruption in attendance.disruptions.all %}
+        <li class="py-2.5">
+            <form method="post" action="{% url 'session:attendance_disruption_update' tenant_slug=tenant_slug disruption_id=disruption.id %}"
+                  class="flex flex-wrap items-center gap-2 text-sm" data-testid="stoerung">
+                {% csrf_token %}
+                <span class="min-w-0 basis-full sm:basis-40 font-medium text-gray-900 dark:text-white break-words">{{ attendance.person.display_name }}</span>
+                <input type="time" name="started_at" value="{{ disruption.started_at|time:'H:i' }}" aria-label="Beginn der Störung"
+                       class="h-8 w-[6.5rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                <span class="text-gray-500" aria-hidden="true">–</span>
+                <input type="time" name="ended_at" value="{{ disruption.ended_at|time:'H:i'|default:'' }}" aria-label="Ende der Störung"
+                       class="h-8 w-[6.5rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                <select name="cause" aria-label="Ursache"
+                        class="h-8 max-w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                    {% for value, label in disruption_causes %}<option value="{{ value }}" {% if disruption.cause == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+                <input type="text" name="note" value="{{ disruption.note }}" maxlength="255" placeholder="Vermerk (intern)" aria-label="Vermerk"
+                       class="h-8 min-w-0 flex-1 basis-48 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                {% if disruption.ongoing %}
+                <span class="text-[0.8125rem] font-medium text-amber-800 dark:text-amber-300">dauert an</span>
+                <c-ui.button type="submit" variant="secondary" size="sm" name="action" value="end" icon="wifi">Jetzt beenden</c-ui.button>
+                {% else %}
+                <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ disruption.duration_minutes }} Min.</span>
+                {% endif %}
+                <c-ui.button type="submit" variant="secondary" size="sm" name="action" value="save">Speichern</c-ui.button>
+                <c-ui.button type="submit" variant="ghost" size="sm" name="action" value="delete" icon="trash-2">Entfernen</c-ui.button>
+            </form>
+        </li>
+        {% endfor %}
+        {% endfor %}
+    </c-rahmen.liste>
+
+    <form method="post" action="{% url 'session:attendance_disruption_add' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+          class="mt-3 flex flex-wrap items-center gap-2 text-sm">
+        {% csrf_token %}
+        <select name="attendance" aria-label="Person"
+                class="h-8 max-w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+            {% for attendance in remote_attendances %}<option value="{{ attendance.id }}">{{ attendance.person.display_name }}</option>{% endfor %}
+        </select>
+        <input type="time" name="started_at" aria-label="Beginn der Störung (leer: jetzt)"
+               class="h-8 w-[6.5rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <span class="text-gray-500" aria-hidden="true">–</span>
+        <input type="time" name="ended_at" aria-label="Ende der Störung (leer: dauert an)"
+               class="h-8 w-[6.5rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <select name="cause" aria-label="Ursache"
+                class="h-8 max-w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+            {% for value, label in disruption_causes %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </select>
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Störung vermerken</c-ui.button>
+        <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Ohne Beginn ab jetzt, ohne Ende dauert sie an.</span>
+    </form>
+</div>

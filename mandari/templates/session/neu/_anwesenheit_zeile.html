@@ -1,0 +1,71 @@
+{% comment %}
+Eine Person der Anwesenheitsliste zum Erfassen, im neuen Rahmen (Issues #30, #139, #944): eine Zeile mit Name und
+Funktion, Stand (und Teilnahmeart, wenn die Spalte „Teilnahme“ gilt), „Speichern“, „Zeiten und Notiz“, Störung
+vermerken (nur Zugeschaltete) und Entfernen. Ankunft, Abgang und Notiz klappen unter der Zeile auf; eingetragene Werte
+stehen auch zugeklappt als Text unter dem Namen und gehen beim Speichern mit. Am Handy brechen die Knöpfe unter den
+Namen um. Gespeichert wird per htmx wie bisher (session/partials/attendance_row.html: dieselben Felder, hx-post,
+Bestätigungen); die Antwort ist wieder diese Zeile (AttendanceUpdateView wählt sie im neuen Erscheinungsbild).
+Kontext: attendance, mode_column, form (Fehler), tenant_slug.
+{% endcomment %}
+<li class="py-2" x-data="{ zeiten: {% if form.errors %}true{% else %}false{% endif %} }" data-testid="anwesenheit-zeile">
+    <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <div class="min-w-0 flex-1 basis-40">
+            <p class="font-medium text-gray-900 dark:text-white break-words">{{ attendance.person.display_name }}</p>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ attendance.get_role_display }}{% if attendance.arrival_time %} · Ankunft {{ attendance.arrival_time|time:"H:i" }}{% endif %}{% if attendance.departure_time %} · Abgang {{ attendance.departure_time|time:"H:i" }}{% endif %}{% if attendance.notes %} · {{ attendance.notes }}{% endif %}</p>
+            {% if attendance.participation_note %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="teilnahme-vermerk">{{ attendance.participation_note }}</p>{% endif %}
+            {% if form.errors %}<p class="text-[0.8125rem] text-red-700 dark:text-red-400" role="alert">{% for field, errors in form.errors.items %}{{ errors.0 }} {% endfor %}</p>{% endif %}
+        </div>
+        <div class="flex flex-wrap items-center gap-1 text-gray-600 dark:text-gray-400">
+            <select name="status" aria-label="Stand von {{ attendance.person.display_name }}"
+                    class="h-8 w-36 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                <option value="invited" {% if attendance.status == 'invited' %}selected{% endif %}>Eingeladen</option>
+                <option value="confirmed" {% if attendance.status == 'confirmed' %}selected{% endif %}>Zugesagt</option>
+                <option value="declined" {% if attendance.status == 'declined' %}selected{% endif %}>Abgesagt</option>
+                <option value="present" {% if attendance.status == 'present' %}selected{% endif %}>Anwesend</option>
+                <option value="absent" {% if attendance.status == 'absent' %}selected{% endif %}>Abwesend</option>
+                <option value="excused" {% if attendance.status == 'excused' %}selected{% endif %}>Entschuldigt</option>
+                <option value="left_early" {% if attendance.status == 'left_early' %}selected{% endif %}>Vorzeitig gegangen</option>
+                <option value="joined_late" {% if attendance.status == 'joined_late' %}selected{% endif %}>Verspätet</option>
+            </select>
+            {% if mode_column %}
+            <input type="hidden" name="mode_column" value="1">
+            <select name="participation_mode" aria-label="Teilnahmeart von {{ attendance.person.display_name }}"
+                    class="h-8 w-32 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                <option value="in_person" {% if not attendance.is_remote %}selected{% endif %}>Vor Ort</option>
+                <option value="remote" {% if attendance.is_remote %}selected{% endif %}>Zugeschaltet</option>
+            </select>
+            {% endif %}
+            <button type="button"
+                    hx-post="{% url 'session:attendance_update' tenant_slug=tenant_slug attendance_id=attendance.id %}"
+                    hx-include="closest li" hx-target="closest li" hx-swap="outerHTML"
+                    class="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-md border border-gray-300 dark:border-gray-700 text-sm font-medium text-gray-800 dark:text-gray-200 hover:bg-band-grau">
+                <i data-lucide="save" class="w-4 h-4" aria-hidden="true"></i>Speichern<span class="sr-only"> ({{ attendance.person.display_name }})</span>
+            </button>
+            <c-ui.symbolknopf icon="clock" type="button" @click="zeiten = !zeiten" ::aria-expanded="zeiten.toString()" aria-expanded="false" aria-controls="zeiten-{{ attendance.id }}" titel="Ankunft, Abgang und Notiz" label="Ankunft, Abgang und Notiz von {{ attendance.person.display_name }}" />
+            {% if attendance.is_remote %}
+            {# Störung ab jetzt vermerken (Issue #139); Ende und Nacherfassung unter „Störungen Zugeschalteter“ #}
+            <button type="button"
+                    hx-post="{% url 'session:attendance_disruption_add' tenant_slug=tenant_slug meeting_id=attendance.meeting_id %}"
+                    hx-vals='{"attendance": "{{ attendance.id }}"}'
+                    hx-confirm="Störung bei {{ attendance.person.display_name }} ab jetzt vermerken?"
+                    title="Störung ab jetzt vermerken" aria-label="Störung bei {{ attendance.person.display_name }} ab jetzt vermerken" data-testid="stoerung-jetzt"
+                    class="inline-flex items-center justify-center w-8 h-8 shrink-0 rounded-md hover:bg-band-grau hover:text-amber-800 dark:hover:text-amber-300">
+                <i data-lucide="wifi-off" class="w-4 h-4" aria-hidden="true"></i>
+            </button>
+            {% endif %}
+            <c-ui.symbolknopf icon="trash-2" type="button" hx-post="{% url 'session:attendance_delete' tenant_slug=tenant_slug attendance_id=attendance.id %}" hx-confirm="{{ attendance.person.display_name }} von der Anwesenheitsliste entfernen?" titel="Von der Liste entfernen" label="{{ attendance.person.display_name }} von der Liste entfernen" ton="gefahr" />
+        </div>
+    </div>
+    <div id="zeiten-{{ attendance.id }}" x-show="zeiten" x-cloak class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+        <label class="inline-flex items-center gap-1.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">{% if mode_column %}Ankunft bzw. Zuschaltung{% else %}Ankunft{% endif %}
+            <input type="time" name="arrival_time" value="{{ attendance.arrival_time|time:'H:i'|default:'' }}"
+                   class="h-8 w-[6.5rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        </label>
+        <label class="inline-flex items-center gap-1.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">{% if mode_column %}Abgang bzw. Trennung{% else %}Abgang{% endif %}
+            <input type="time" name="departure_time" value="{{ attendance.departure_time|time:'H:i'|default:'' }}"
+                   class="h-8 w-[6.5rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        </label>
+        <input type="text" name="notes" value="{{ attendance.notes|default:'' }}" placeholder="Notiz" aria-label="Notiz zu {{ attendance.person.display_name }}"
+               class="h-8 min-w-0 flex-1 basis-48 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-2 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    </div>
+</li>

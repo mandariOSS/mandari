@@ -1,0 +1,75 @@
+{% comment %}
+Anlagen von Vorlage und Sitzung im neuen Rahmen (Issues #25, #944): Abschnitt ohne Kasten, je Anlage eine Zeile mit dem
+Namen als Link zum Herunterladen, Größe, Fassung und Sichtbarkeit als Text, rechts Sichtbarkeit umstellen, Ersetzen
+(klappt unter der Zeile auf) und Löschen als Knöpfe mit 32 px. Hochladen kompakt in einer Zeile: Dateifeld (mehrere
+Dateien, auch per Ziehen auf das Feld), „Öffentlich“ und ein Knopf ohne Füllfarbe. Formulare und Felder wie
+session/partials/file_section.html; Kontext ebenso (files, file_target_type, file_target_id, file_can_edit,
+file_content_locked, file_content_locked_message, tenant_slug).
+{% endcomment %}
+<c-rahmen.abschnitt titel="Anlagen" titel_id="anlagen-titel" zusatz="{% if files %}{{ files|length }}{% endif %}" data-testid="anlagen">
+    {% if files %}
+    <c-rahmen.liste class="mt-2">
+        {% for file in files %}
+        <li class="py-2" x-data="{ ersetzen: false }">
+            <div class="flex items-start gap-2">
+                <div class="min-w-0 flex-1">
+                    <a href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ file.name }}</a>
+                    <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                        <span class="whitespace-nowrap">{{ file.size_human }}</span>
+                        {% if file.version > 1 %}<a href="{% url 'session:file_versions' tenant_slug=tenant_slug file_id=file.id %}" class="whitespace-nowrap hover:underline underline-offset-4" title="Frühere Fassungen dieser Anlage">Version {{ file.version }} (Verlauf)</a>{% endif %}
+                        {% if file.is_public %}<span>Öffentlich</span>{% else %}<span class="inline-flex items-center gap-1 text-gray-800 dark:text-gray-200"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+                    </p>
+                </div>
+                {% if file_can_edit %}
+                <div class="flex shrink-0 items-center text-gray-600 dark:text-gray-400">
+                    <form method="post" action="{% url 'session:file_update' tenant_slug=tenant_slug file_id=file.id %}">
+                        {% csrf_token %}
+                        {% if not file.is_public %}<input type="hidden" name="is_public" value="on">{% endif %}
+                        <c-ui.symbolknopf icon="{% if file.is_public %}eye-off{% else %}eye{% endif %}" type="submit" titel="{% if file.is_public %}Auf nichtöffentlich setzen{% else %}Auf öffentlich setzen{% endif %}" label="{{ file.name }} {% if file.is_public %}auf nichtöffentlich setzen{% else %}auf öffentlich setzen{% endif %}" />
+                    </form>
+                    {% if not file_content_locked %}
+                    <c-ui.symbolknopf icon="refresh-cw" type="button" @click="ersetzen = !ersetzen" ::aria-expanded="ersetzen.toString()" aria-expanded="false" aria-controls="anlage-ersetzen-{{ file.id }}" titel="Ersetzen" label="{{ file.name }} ersetzen" />
+                    <form method="post" action="{% url 'session:file_delete' tenant_slug=tenant_slug file_id=file.id %}"
+                          data-confirm="Anlage {{ file.name }} wirklich löschen?{% if file_target_type == 'paper' %} Stände in gesicherten Fassungen der Vorlage bleiben dort erhalten.{% endif %}">
+                        {% csrf_token %}
+                        <c-ui.symbolknopf icon="trash-2" type="submit" titel="Löschen" label="{{ file.name }} löschen" ton="gefahr" />
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% if file_can_edit and not file_content_locked %}
+            <form id="anlage-ersetzen-{{ file.id }}" method="post" action="{% url 'session:file_replace' tenant_slug=tenant_slug file_id=file.id %}" enctype="multipart/form-data"
+                  x-show="ersetzen" x-cloak class="mt-2 flex flex-wrap items-center gap-2">
+                {% csrf_token %}
+                <label for="anlage-datei-{{ file.id }}" class="sr-only">Neue Fassung von {{ file.name }}</label>
+                <input type="file" name="file" id="anlage-datei-{{ file.id }}" required
+                       class="min-w-0 max-w-full text-sm text-gray-700 dark:text-gray-300 file:mr-3 file:h-8 file:px-3 file:rounded-md file:border file:border-solid file:border-gray-300 dark:file:border-gray-700 file:bg-band-hell file:text-sm file:font-medium file:text-gray-800 dark:file:text-gray-200">
+                <c-ui.button type="submit" variant="secondary" size="sm">Ersetzen</c-ui.button>
+            </form>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+    {% else %}
+    <c-rahmen.satz>Noch keine Anlagen vorhanden.</c-rahmen.satz>
+    {% endif %}
+
+    {% if file_can_edit and file_content_locked %}
+    <p class="mt-3 text-[0.8125rem] text-amber-800 dark:text-amber-300" data-testid="anlagen-gesperrt">{{ file_content_locked_message }}</p>
+    {% elif file_can_edit %}
+    <form method="post" action="{% url 'session:file_upload' tenant_slug=tenant_slug %}" enctype="multipart/form-data" class="mt-3" data-testid="anlagen-hochladen">
+        {% csrf_token %}
+        <input type="hidden" name="target_type" value="{{ file_target_type }}">
+        <input type="hidden" name="target_id" value="{{ file_target_id }}">
+        <label for="file_upload_input_{{ file_target_id }}" class="block text-sm font-medium text-gray-800 dark:text-gray-200">Anlagen hinzufügen</label>
+        <div class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-2">
+            <input type="file" name="files" id="file_upload_input_{{ file_target_id }}" multiple aria-describedby="anlagen-hinweis-{{ file_target_id }}"
+                   class="min-w-0 max-w-full text-sm text-gray-700 dark:text-gray-300 file:mr-3 file:h-8 file:px-3 file:rounded-md file:border file:border-solid file:border-gray-300 dark:file:border-gray-700 file:bg-band-hell file:text-sm file:font-medium file:text-gray-800 dark:file:text-gray-200 hover:file:bg-band-grau">
+            <c-form.checkbox name="is_public" id="anlagen-oeffentlich-{{ file_target_id }}" label="Öffentlich" checked />
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="upload">Hochladen</c-ui.button>
+        </div>
+        <p id="anlagen-hinweis-{{ file_target_id }}" class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Mehrere Dateien möglich, auch per Ziehen auf das Feld. Nichtöffentliche Anlagen sehen nur Berechtigte, sie erscheinen nie im Bürgerportal.</p>
+    </form>
+    {% endif %}
+</c-rahmen.abschnitt>

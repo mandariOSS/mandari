@@ -24,6 +24,7 @@ from apps.common.params import int_param
 from .. import audit, hub_events
 from ..models import SessionMeeting, SessionOrganization
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import body_service, calendar_service
 from .bodies import BodyFilterMixin
 
@@ -33,6 +34,10 @@ class MeetingCalendarView(BodyFilterMixin, SessionViewMixin, TemplateView):
 
     template_name = "session/calendar/month.html"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/kalender.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

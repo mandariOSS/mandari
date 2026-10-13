@@ -76,8 +76,8 @@ Rechte und Kontext wie MeetingDetailView. Die bisherige Seite bleibt session/mee
         </c-rahmen.abschnitt>
         {% endwith %}{% endwith %}
 
-        {# Anwesenheit (Issues #30, #139), im neuen Rahmen ohne Kasten #}
-        {% include "session/meetings/_attendance.html" %}
+        {# Anwesenheit (Issues #30, #139) als Liste, session/neu/_anwesenheit.html #}
+        {% include "session/neu/_anwesenheit.html" %}
     </div>
 
     {% include "session/neu/_sitzung_seite.html" %}

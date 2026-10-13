@@ -1,0 +1,112 @@
+{% comment %}
+Beratungsfolge einer Vorlage im neuen Rahmen (Issues #34, #721, #944): eine nummerierte Liste der Stationen (der Weg ist
+eine echte Reihenfolge) mit Gremium, Rolle, „entscheidend“ und Ergebnis als Text mit Punkt statt Pillen, darunter
+Tagesordnungspunkt bzw. Zielsitzung. „TOP anlegen“ und „Weiterleiten“ als Knöpfe ohne Füllfarbe, Verschieben und
+Entfernen als Knöpfe mit 32 px; „Bearbeiten“ klappt das Formular der Station auf. „Station hinzufügen“ steht als
+Textknopf neben der Überschrift und klappt sein Formular auf (ohne Stationen offen). Formulare, Felder und Bestätigungen
+wie session/papers/consultation_section.html; Kontext ebenso (paper, consultations, consultation_can_edit,
+consultation_can_schedule, consultation_schedule_blocker, consultation_roles, consultation_results,
+consultation_organizations, consultation_meetings, tenant_slug).
+{% endcomment %}
+<c-rahmen.abschnitt titel="Beratungsfolge" titel_id="beratungsfolge-titel" x-data="{ neu: {{ consultations|yesno:'false,true' }} }" data-testid="beratungsfolge">
+    {% if consultation_can_edit %}
+    <c-slot name="link">
+        <button type="button" @click="neu = !neu" :aria-expanded="neu.toString()" aria-expanded="false" aria-controls="station-neu"
+                class="inline-flex items-center gap-1 min-h-8 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">
+            <i data-lucide="plus" class="w-4 h-4" aria-hidden="true"></i>Station hinzufügen
+        </button>
+    </c-slot>
+    {% endif %}
+    <c-rahmen.satz eng>Weg der Vorlage durch die Gremien, von der Vorberatung bis zur Entscheidung.</c-rahmen.satz>
+    {% if consultation_can_schedule and consultation_schedule_blocker and consultations %}
+    <p class="mt-1 text-sm text-amber-800 dark:text-amber-300" data-testid="terminieren-nach-freigabe">Tagesordnungspunkte lassen sich erst nach der Freigabe der Vorlage anlegen.</p>
+    {% endif %}
+
+    {% if consultation_can_edit %}
+    <form id="station-neu" method="post" action="{% url 'session:consultation_add' tenant_slug=tenant_slug paper_id=paper.id %}"
+          x-show="neu" x-cloak class="mt-3 flex flex-wrap items-end gap-2" data-testid="station-hinzufuegen">
+        {% csrf_token %}
+        <span class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-60">
+            <label for="consultation-add-org" class="block mb-1 text-sm font-medium text-gray-800 dark:text-gray-200">Gremium</label>
+            <select name="organization" required id="consultation-add-org" data-filter-options="#consultation-add-meeting" data-filter-attr="org"
+                    class="h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                <option value="">Bitte wählen</option>
+                {% for org in consultation_organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}
+            </select>
+        </span>
+        <c-form.select name="role" id="consultation-add-role" label="Rolle" dicht class="min-w-0 w-40">
+            {% for value, label in consultation_roles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </c-form.select>
+        <c-form.select name="meeting" id="consultation-add-meeting" label="Zielsitzung (optional)" dicht class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-72">
+            <option value="">Noch offen</option>
+            {% for meeting in consultation_meetings %}<option value="{{ meeting.id }}" data-org="{{ meeting.participating_organization_ids|join:' ' }}">{{ meeting.start|date:"d.m.Y" }}, {{ meeting.name|truncatechars:40 }}</option>{% endfor %}
+        </c-form.select>
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Hinzufügen</c-ui.button>
+    </form>
+    {% endif %}
+
+    {% if consultations %}
+    <c-rahmen.liste geordnet class="mt-3">
+        {% for station in consultations %}
+        <li class="grid grid-cols-[2rem_minmax(0,1fr)] sm:grid-cols-[2rem_minmax(0,1fr)_auto] gap-x-3 gap-y-2 py-3" x-data="{ bearbeiten: false }">
+            <span class="pt-px tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ station.order }}</span>
+            <div class="min-w-0">
+                <p class="font-medium text-gray-900 dark:text-white break-words">{{ station.organization.name }}</p>
+                <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                    <span>{{ station.get_role_display }}</span>
+                    {% if station.authoritative %}<span title="Entscheidende Beratung (OParl: authoritative)">entscheidend</span>{% endif %}
+                    {% if station.result != "pending" %}<span>{% include "session/neu/_status.html" with wert=station.result text=station.get_result_display %}</span>{% endif %}
+                </p>
+                <p class="mt-0.5 text-sm text-gray-600 dark:text-gray-400 break-words">
+                    {% if station.noe_hidden %}Nichtöffentliche Sitzung
+                    {% elif station.agenda_item %}<c-ui.textlink href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=station.agenda_item.meeting_id %}">TOP {{ station.agenda_item.number }}, {{ station.agenda_item.meeting.name }} ({{ station.agenda_item.meeting.start|date:"d.m.Y" }})</c-ui.textlink>
+                    {% elif station.meeting %}Noch kein TOP in der Zielsitzung <c-ui.textlink href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=station.meeting.id %}">{{ station.meeting.name }} ({{ station.meeting.start|date:"d.m.Y" }})</c-ui.textlink>
+                    {% else %}Noch nicht terminiert{% endif %}
+                </p>
+                {% if consultation_can_schedule and not consultation_schedule_blocker %}{% if station.meeting and not station.agenda_item and not station.noe_hidden or station.is_done and not forloop.last %}
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    {% if consultation_can_schedule and not consultation_schedule_blocker and not station.agenda_item and station.meeting and not station.noe_hidden %}
+                    <form method="post" action="{% url 'session:consultation_schedule' tenant_slug=tenant_slug consultation_id=station.id %}">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="secondary" size="sm" title="TOP auf der Zielsitzung anlegen">TOP anlegen</c-ui.button>
+                    </form>
+                    {% endif %}
+                    {% if consultation_can_schedule and not consultation_schedule_blocker and station.is_done and not forloop.last %}
+                    <form method="post" action="{% url 'session:consultation_forward' tenant_slug=tenant_slug consultation_id=station.id %}">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="secondary" size="sm" title="An die nächste Station weiterleiten (TOP anlegen)">Weiterleiten</c-ui.button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}{% endif %}
+            </div>
+            <div class="col-start-2 sm:col-start-3 sm:row-start-1 flex flex-wrap items-center gap-1 -ml-2 sm:ml-0 text-gray-600 dark:text-gray-400">
+                {% if consultation_can_edit %}
+                {% if not station.noe_hidden %}
+                <c-ui.symbolknopf icon="pencil" type="button" @click="bearbeiten = !bearbeiten" ::aria-expanded="bearbeiten.toString()" aria-expanded="false" aria-controls="station-{{ station.id }}" titel="Bearbeiten" label="Station {{ station.order }} bearbeiten" />
+                {% endif %}
+                <form method="post" action="{% url 'session:consultation_move' tenant_slug=tenant_slug consultation_id=station.id %}">
+                    {% csrf_token %}<input type="hidden" name="direction" value="up">
+                    <c-ui.symbolknopf icon="chevron-up" type="submit" titel="Nach oben" label="Station {{ station.order }} nach oben" />
+                </form>
+                <form method="post" action="{% url 'session:consultation_move' tenant_slug=tenant_slug consultation_id=station.id %}">
+                    {% csrf_token %}<input type="hidden" name="direction" value="down">
+                    <c-ui.symbolknopf icon="chevron-down" type="submit" titel="Nach unten" label="Station {{ station.order }} nach unten" />
+                </form>
+                <form method="post" action="{% url 'session:consultation_delete' tenant_slug=tenant_slug consultation_id=station.id %}"
+                      data-confirm="Station wirklich aus der Beratungsfolge entfernen? Ein bereits angelegter TOP bleibt bestehen.">
+                    {% csrf_token %}
+                    <c-ui.symbolknopf icon="trash-2" type="submit" titel="Station entfernen" label="Station {{ station.order }} entfernen" ton="gefahr" />
+                </form>
+                {% endif %}
+            </div>
+            {% if consultation_can_edit and not station.noe_hidden %}
+            {% include "session/neu/_station_bearbeiten.html" %}
+            {% endif %}
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+    {% else %}
+    <c-rahmen.satz>Noch keine Beratungsfolge geplant.</c-rahmen.satz>
+    {% endif %}
+</c-rahmen.abschnitt>

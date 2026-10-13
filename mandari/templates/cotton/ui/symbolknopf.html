@@ -1,0 +1,13 @@
+{# djlint:off H026 H025 – leere Vorgabewerte in <c-vars> sind Komponentenparameter, öffnendes/schließendes Tag ist bedingt #}
+{% comment %}
+Knopf nur mit Symbol für Arbeitsflächen (Issue #944): 32 × 32 px, Symbol 16 px, ohne Rahmen, Fläche erst beim Zeigen –
+für Aktionen in Listenzeilen (Bearbeiten, Verschieben, Löschen). ``titel`` erscheint als Tooltip, ``label`` benennt den
+Knopf für Bildschirmleser genauer (ohne Angabe gilt ``titel``). ``ton="gefahr"`` (Löschen, Entfernen) bzw.
+``ton="warnung"`` färbt nur beim Zeigen. Mit ``href`` ein Link, sonst ein Knopf (``type``, Standard button).
+  <c-ui.symbolknopf type="submit" icon="trash-2" titel="Löschen" label="Anlage {{ file.name }} löschen" ton="gefahr" />
+  <c-ui.symbolknopf icon="pencil" titel="Bearbeiten" @click="offen = !offen" ::aria-expanded="offen.toString()" aria-controls="…" />
+Weitere Attribute (hx-*, @click, aria-*, data-*, name, value) gehen an den Knopf; Alpine-Bindungen mit ``::``.
+{% endcomment %}
+<c-vars href="" type="button" icon="" titel="" label="" ton="" class="" />
+{% if href %}<a href="{{ href }}"{% else %}<button type="{{ type }}"{% endif %} title="{{ titel }}" aria-label="{{ label|default:titel }}"
+    class="inline-flex items-center justify-center w-8 h-8 shrink-0 rounded-md hover:bg-band-grau focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600 {% if ton == 'gefahr' %}hover:text-red-700 dark:hover:text-red-400{% elif ton == 'warnung' %}hover:text-amber-800 dark:hover:text-amber-300{% else %}hover:text-gray-900 dark:hover:text-white{% endif %} {{ class }}" {{ attrs }}><i data-lucide="{{ icon }}" class="w-4 h-4" aria-hidden="true"></i>{% if href %}</a>{% else %}</button>{% endif %}
