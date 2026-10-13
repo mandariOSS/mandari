@@ -179,7 +179,7 @@
 </head>
 
 <body class="min-h-screen bg-band-hell text-gray-900 dark:text-gray-100">
-    {% if demo_instance %}{% include "partials/demo_hinweis.html" %}{% endif %}
+    {% if demo_instance %}{% include "partials/demo_hinweis.html" with ueber_leiste=True %}{% endif %}
     <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
 
     {# Kommune wechseln (im Portal einer Körperschaft ist die Kommune fest) #}
