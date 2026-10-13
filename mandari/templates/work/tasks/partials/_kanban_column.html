@@ -12,7 +12,7 @@ Kontext: organization, show_completed (für das „+“ bei gekürzter Erledigt-
             </div>
             <div>
                 <h3 class="text-[15px] font-bold text-gray-900 dark:text-white">{{ title }}</h3>
-                <span id="count-{{ status }}" class="text-xs text-gray-500 dark:text-gray-400">{{ tasks|length }}{% if status == 'done' and not show_completed %}+{% endif %} Aufgaben</span>
+                <span id="count-{{ status }}" class="text-xs text-gray-500 dark:text-gray-400">{{ tasks|length }}{% if status == 'done' and not show_completed %}+ Aufgaben{% else %} Aufgabe{{ tasks|length|pluralize:"n" }}{% endif %}</span>
             </div>
         </div>
     </div>

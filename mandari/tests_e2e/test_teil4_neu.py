@@ -244,7 +244,7 @@ def test_aufgaben_board(page: Any, live_server: Any, vorsitz: Any, axe: Any, pro
     neue = spalte.locator(".task-card", has_text="Presse anfragen")
     expect(neue).to_have_count(1)
     assert "rounded-md" in (neue.get_attribute("class") or "")
-    expect(page.locator("#count-in_progress")).to_contain_text("1 Aufgaben")
+    expect(page.locator("#count-in_progress")).to_have_text("1 Aufgabe")
     expect(page.get_by_label("Neue Aufgabe in „In Bearbeitung“")).to_have_value("")
 
     # Ziehen in „Erledigt“ speichert den Status
@@ -289,4 +289,15 @@ def test_neue_aufgabe_zuweisen(
     page.get_by_role("button", name="Aufgabe erstellen").click()
     page.wait_for_load_state("networkidle")
     assert Task.objects.get(title="Haushaltsrede").assigned_to_id == kollegin.id
+
+    # Sichtbarkeit: Vorauswahl vom Server, in der bisherigen Seite färbt Alpine die Wahl und zeigt den Hinweis
+    _oeffnen(page, f"{basis}/tasks/create/")
+    expect(page.locator('input[name="visibility"][value="private"]')).to_be_checked()
+    page.goto(f"{basis}/tasks/create/?ansicht=bisher")
+    wait_for_bundle(page)
+    expect(page.locator('input[name="visibility"][value="private"]')).to_be_checked()
+    hinweis = page.get_by_text("Nach dem Erstellen können Sie Personen zum Teilen hinzufügen.")
+    expect(hinweis).to_be_hidden()
+    page.locator('input[name="visibility"][value="shared"]').check()
+    expect(hinweis).to_be_visible()
     problems.assert_clean("Neue Aufgabe")

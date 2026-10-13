@@ -154,13 +154,13 @@
 
         <!-- Visibility / Sharing -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6"
-             x-data="{ visibility: '{{ form.visibility.value|default:'private' }}' }">
+             x-data="{ visibility: 'private' }" x-init="visibility = $el.querySelector('input[name=visibility]:checked')?.value || 'private'">
             <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-4">Sichtbarkeit</h3>
 
             <div class="space-y-3">
                 <label class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
                        :class="visibility === 'private' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'">
-                    <input type="radio" name="visibility" value="private" x-model="visibility" class="mt-1">
+                    <input type="radio" name="visibility" value="private" x-model="visibility" class="mt-1"{% if form.visibility.value != 'shared' and form.visibility.value != 'organization' %} checked{% endif %}>
                     <div class="flex-1">
                         <div class="flex items-center gap-2">
                             <i data-lucide="lock" class="w-4 h-4 text-gray-500"></i>
@@ -172,7 +172,7 @@
 
                 <label class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
                        :class="visibility === 'shared' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'">
-                    <input type="radio" name="visibility" value="shared" x-model="visibility" class="mt-1">
+                    <input type="radio" name="visibility" value="shared" x-model="visibility" class="mt-1"{% if form.visibility.value == 'shared' %} checked{% endif %}>
                     <div class="flex-1">
                         <div class="flex items-center gap-2">
                             <i data-lucide="users" class="w-4 h-4 text-gray-500"></i>
@@ -184,7 +184,7 @@
 
                 <label class="flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors"
                        :class="visibility === 'organization' ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20' : 'border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'">
-                    <input type="radio" name="visibility" value="organization" x-model="visibility" class="mt-1">
+                    <input type="radio" name="visibility" value="organization" x-model="visibility" class="mt-1"{% if form.visibility.value == 'organization' %} checked{% endif %}>
                     <div class="flex-1">
                         <div class="flex items-center gap-2">
                             <i data-lucide="building" class="w-4 h-4 text-gray-500"></i>

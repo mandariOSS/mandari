@@ -8,7 +8,7 @@ Kontext: organization, show_completed.
 <section class="kanban-column min-w-0" aria-labelledby="spalte-{{ status }}">
     <div class="flex items-baseline gap-2 px-1 pb-2">
         <h2 id="spalte-{{ status }}" class="text-sm font-semibold text-gray-900 dark:text-white">{{ title }}</h2>
-        <span id="count-{{ status }}" class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ tasks|length }}{% if status == 'done' and not show_completed %}+{% endif %} Aufgaben</span>
+        <span id="count-{{ status }}" class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ tasks|length }}{% if status == 'done' and not show_completed %}+ Aufgaben{% else %} Aufgabe{{ tasks|length|pluralize:"n" }}{% endif %}</span>
     </div>
     <div id="column-{{ status }}" data-status="{{ status }}" class="space-y-2 min-h-[12rem] rounded-md bg-band-grau p-2">
         {% for task in tasks %}

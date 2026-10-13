@@ -8,52 +8,10 @@ from django import forms
 from .models import (
     Motion,
     MotionComment,
-    MotionShare,
     MotionTemplate,
     MotionType,
     OrganizationLetterhead,
 )
-
-
-class MotionShareForm(forms.ModelForm):
-    """Form for sharing a motion."""
-
-    email = forms.EmailField(
-        required=False,
-        widget=forms.EmailInput(
-            attrs={
-                "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
-                "placeholder": "E-Mail-Adresse eingeben",
-            }
-        ),
-    )
-
-    class Meta:
-        model = MotionShare
-        fields = ["scope", "level", "message"]
-        widgets = {
-            "scope": forms.Select(
-                attrs={
-                    "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
-                }
-            ),
-            "level": forms.Select(
-                attrs={
-                    "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500"
-                }
-            ),
-            "message": forms.Textarea(
-                attrs={
-                    "class": "block w-full rounded-lg border-gray-300 dark:border-gray-600 "
-                    "bg-white dark:bg-gray-800 shadow-sm focus:ring-primary-500",
-                    "rows": 3,
-                    "placeholder": "Optionale Nachricht an den Empfänger",
-                }
-            ),
-        }
 
 
 class MotionCommentForm(forms.ModelForm):

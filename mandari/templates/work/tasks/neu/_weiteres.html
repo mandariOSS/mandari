@@ -14,8 +14,8 @@ Dialoge bleiben work/tasks/partials/_import_modal.html und _file_import_modal.ht
         {% if can_import %}
         <dt class="text-gray-600 dark:text-gray-400">Importieren</dt>
         <dd class="flex flex-wrap gap-x-4 gap-y-1">
-            <c-ui.textlink knopf @click="document.getElementById('file-import-modal').showModal()">Aus einer Datei (CSV, JSON, XML)</c-ui.textlink>
-            <c-ui.textlink knopf @click="document.getElementById('import-modal').showModal()">Aus Protokollen</c-ui.textlink>
+            <c-ui.text-button dicht @click="document.getElementById('file-import-modal').showModal()">Aus einer Datei (CSV, JSON, XML)</c-ui.text-button>
+            <c-ui.text-button dicht @click="document.getElementById('import-modal').showModal()">Aus Protokollen</c-ui.text-button>
         </dd>
         {% endif %}
     </dl>

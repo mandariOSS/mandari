@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import re
 from datetime import timedelta
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
@@ -133,15 +134,47 @@ def test_board_konfiguration_komponenten_und_kein_inline_skript(
 
 def test_gleichstand_neue_aufgabe(org: Any, person: Any, bestand: dict[str, Any], client_for: Any) -> None:
     client = client_for(person.user)
-    neu, antwort = vergleiche(client, _url("task_create", org))
+    # Die Sichtbarkeit braucht in der neuen Vorlage keinen Alpine-Zustand: die bisherige färbt damit die gewählte Karte
+    # und zeigt einen Hinweis, die neue nennt den Hinweis fest bei „Geteilt“; die Vorauswahl setzt der Server
+    ausnahmen = {"Modell visibility"}
+    neu, antwort = vergleiche(client, _url("task_create", org), ausnahmen)
     assert {"assignmentHandler"} <= neu.komponenten and "task-tags" in neu.json
     motion = Motion.objects.create(organization=org, author=person, title="Antrag Radweg", visibility="organization")
-    neu, antwort = vergleiche(client, _url("task_create", org) + f"?related_motion={motion.id}")
+    neu, antwort = vergleiche(client, _url("task_create", org) + f"?related_motion={motion.id}", ausnahmen)
     assert "Antrag Radweg" in antwort.content.decode()
     assert any("related_motion=" + str(motion.id) in f for _, f in neu.formulare)
     # Ungültig abgeschickt: dieselbe neue Vorlage mit Fehler am Titel
     fehler = client.post(_url("task_create", org), {"title": "", "priority": "medium", "status": "todo"})
     assert fehler.status_code == 200 and 'data-gestaltung="neu"' in fehler.content.decode()
+
+
+class _Sichtbarkeit(HTMLParser):
+    """Gewählte Option der Sichtbarkeit und Alpine-Ausdrücke, in denen ein Wert der Sichtbarkeit steht."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.gewaehlt: list[str] = []
+        self.ausdruecke: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        a = dict(attrs)
+        if tag == "input" and a.get("name") == "visibility" and "checked" in a:
+            self.gewaehlt.append(a.get("value") or "")
+        self.ausdruecke += [w or "" for k, w in attrs if k.startswith(("x-", "@", ":")) and "visibility:" in (w or "")]
+
+
+def test_sichtbarkeit_vom_server_vorbelegt(org: Any, person: Any, client_for: Any) -> None:
+    client = client_for(person.user)
+    for ansicht in ("", "?ansicht=bisher"):
+        leer = _Sichtbarkeit()
+        leer.feed(client.get(_url("task_create", org) + ansicht).content.decode())
+        assert leer.gewaehlt == ["private"], ansicht
+        for wert, erwartet in (("organization", ["organization"]), ("unbekannt", ["private"])):
+            sammler = _Sichtbarkeit()
+            antwort = client.post(_url("task_create", org) + ansicht, {"title": "", "visibility": wert, "tags": "[]"})
+            sammler.feed(antwort.content.decode())
+            assert sammler.gewaehlt == erwartet, (ansicht, wert)
+            assert all(wert not in ausdruck for ausdruck in sammler.ausdruecke), (ansicht, sammler.ausdruecke)
 
 
 def test_anlegen_wie_bisher(org: Any, person: Any, client_for: Any) -> None:

@@ -2,7 +2,8 @@
 {% comment %}
 Neue Aufgabe im neuen Erscheinungsbild (Issue #951, Teilpaket 4): ein Formular ohne Kästen (Felder c-form.* dicht),
 Herkunft (Protokoll, Dokument) als Satz im Kopfband statt Farbkästen. Zuweisung mit Rückfrage wie bisher
-(assignmentHandler), der Dialog über c-ui.alpine-modal. Sichtbarkeit als ruhige Auswahl, Tags als Liste zum Entfernen.
+(assignmentHandler), der Dialog über c-ui.alpine-modal. Sichtbarkeit als ruhige Auswahl (Vorauswahl vom Server), Tags
+als Liste zum Entfernen. Der Rückweg ist „Abbrechen“ am Formular.
 Felder wie bisher: title, description, due_date, priority, status, assigned_to, visibility, tags, related_motion.
 Kontext: TaskCreateView; die bisherige Seite bleibt work/tasks/create.html.
 {% endcomment %}
@@ -12,9 +13,7 @@ Kontext: TaskCreateView; die bisherige Seite bleibt work/tasks/create.html.
 
 {% block work_header %}
 <c-rahmen.kopfband titel="Neue Aufgabe" dicht data-testid="aufgabe-neu-kopf"
-    text="{% if from_protocol_entry %}Aus einem Protokolleintrag der Sitzung „{{ from_protocol_entry.meeting.title }}“.{% elif related_motion %}Wird mit dem Dokument „{{ related_motion.title }}“ verknüpft.{% else %}Was ist zu tun, bis wann und von wem?{% endif %}">
-    <c-slot name="aktionen"><c-ui.textlink href="{% url 'work:tasks' org_slug=organization.slug %}" class="text-sm">Zurück zu den Aufgaben</c-ui.textlink></c-slot>
-</c-rahmen.kopfband>
+    text="{% if from_protocol_entry %}Aus einem Protokolleintrag der Sitzung „{{ from_protocol_entry.meeting.title }}“.{% elif related_motion %}Wird mit dem Dokument „{{ related_motion.title }}“ verknüpft.{% else %}Was ist zu tun, bis wann und von wem?{% endif %}" />
 {% endblock %}
 
 {% block work_content %}
@@ -57,16 +56,20 @@ Kontext: TaskCreateView; die bisherige Seite bleibt work/tasks/create.html.
         </div>
     </div>
 
-    <c-form.gruppe legende="Sichtbarkeit" x-data="{ visibility: '{{ form.visibility.value|default:'private' }}' }">
+    <fieldset>
+        <c-form.beschriftung als="legend">Sichtbarkeit</c-form.beschriftung>
+        {% with sicht=form.visibility.value %}
         <div class="mt-2 space-y-2">
-            <c-form.radio name="visibility" value="private" id="aufgabe-privat" label="Privat" hinweis="Nur Sie sehen die Aufgabe." modell="visibility" />
-            <c-form.radio name="visibility" value="shared" id="aufgabe-geteilt" label="Geteilt" hinweis="Bestimmte Personen sehen die Aufgabe; wen, legen Sie nach dem Anlegen fest." modell="visibility" />
-            <c-form.radio name="visibility" value="organization" id="aufgabe-organisation" label="Organisation" hinweis="Alle in {{ organization.name }} sehen die Aufgabe." modell="visibility" />
+            <c-form.radio name="visibility" value="private" id="aufgabe-privat" label="Privat" hinweis="Nur Sie sehen die Aufgabe." checked="{% if sicht != 'shared' and sicht != 'organization' %}1{% endif %}" />
+            <c-form.radio name="visibility" value="shared" id="aufgabe-geteilt" label="Geteilt" hinweis="Bestimmte Personen sehen die Aufgabe; wen, legen Sie nach dem Anlegen fest." checked="{% if sicht == 'shared' %}1{% endif %}" />
+            <c-form.radio name="visibility" value="organization" id="aufgabe-organisation" label="Organisation" hinweis="Alle in {{ organization.name }} sehen die Aufgabe." checked="{% if sicht == 'organization' %}1{% endif %}" />
         </div>
-    </c-form.gruppe>
+        {% endwith %}
+    </fieldset>
 
     {{ form.tags_list|json_script:"task-tags" }}
-    <c-form.gruppe legende="Tags" x-data="{ tags: JSON.parse(document.getElementById('task-tags').textContent), newTag: '' }">
+    <fieldset x-data="{ tags: JSON.parse(document.getElementById('task-tags').textContent), newTag: '' }">
+        <c-form.beschriftung als="legend">Tags</c-form.beschriftung>
         <ul class="mt-2 flex flex-wrap gap-2" x-show="tags.length" x-cloak>
             <template x-for="(tag, index) in tags" :key="index">
                 <li class="inline-flex items-center gap-1 h-7 pl-2 pr-1 rounded-md border border-gray-300 dark:border-gray-700 text-sm text-gray-800 dark:text-gray-200">
@@ -82,7 +85,7 @@ Kontext: TaskCreateView; die bisherige Seite bleibt work/tasks/create.html.
             <c-ui.button variant="secondary" size="sm" @click="if(newTag.trim()) { tags.push(newTag.trim()); newTag=''; }">Hinzufügen</c-ui.button>
         </div>
         <input type="hidden" name="tags" :value="JSON.stringify(tags)">
-    </c-form.gruppe>
+    </fieldset>
 
     <div class="flex flex-wrap items-center gap-4 pt-2">
         <c-ui.button type="submit" icon="check">Aufgabe erstellen</c-ui.button>
