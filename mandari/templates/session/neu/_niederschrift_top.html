@@ -1,0 +1,41 @@
+{% comment %}
+Ein Tagesordnungspunkt in der Niederschrift im neuen Rahmen (Issues #31, #318, #944): Nummer, Titel, behandelte Zeit,
+Ergebnis als Punkt mit Text und Stimmen, Beschluss, Protokolltext als Lesetext und der nichtöffentliche Protokolltext
+mit Schloss (nur mit dem NÖ-Recht). „Berichtigen“ als Textlink nach der Genehmigung. Unterpunkte folgen eingerückt.
+Kontext wie session/protocols/partial_top.html: item, protocol, can_view_np, can_correct, is_sub (optional).
+{% endcomment %}
+<li class="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-3 py-3 {% if is_sub %}pl-8 sm:pl-10{% endif %}" data-testid="niederschrift-top">
+    <span class="pt-px tabular-nums font-semibold text-gray-700 dark:text-gray-300">{{ item.number }}</span>
+    <div class="min-w-0">
+        <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <p class="min-w-0 font-medium break-words {% if item.is_withdrawn %}line-through text-gray-500 dark:text-gray-400{% else %}text-gray-900 dark:text-white{% endif %}">{{ item.name }}{% if item.is_supplementary %} <span class="font-normal text-[0.8125rem] text-gray-600 dark:text-gray-400">(Nachtrag)</span>{% endif %}</p>
+            {% if can_correct %}
+            <c-ui.textlink href="{% url 'session:meeting_protocol_correction' tenant_slug=tenant_slug meeting_id=item.meeting_id %}?top={{ item.pk }}" class="text-sm" data-testid="top-berichtigen">Berichtigen<span class="sr-only"> TOP {{ item.number }}</span></c-ui.textlink>
+            {% endif %}
+        </div>
+        {% if protocol.show_timings and item.start_time or item.vote_result != "pending" %}
+        <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+            {% if protocol.show_timings and item.start_time %}<span class="tabular-nums" data-testid="top-behandelt">Behandelt {{ item.start_time|time:"H:i" }}{% if item.end_time %}–{{ item.end_time|time:"H:i" }}{% endif %} Uhr</span>{% endif %}
+            {% if item.vote_result != "pending" %}
+            <span>{% include "session/neu/_status.html" with wert=item.vote_result text=item.get_vote_result_display %}</span>
+            <span class="tabular-nums text-gray-600 dark:text-gray-400">Ja {{ item.votes_yes }}, Nein {{ item.votes_no }}, Enthaltungen {{ item.votes_abstain }}</span>
+            {% endif %}
+        </p>
+        {% endif %}
+        {% if item.resolution_text %}
+        <p class="mt-2 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 break-words"><span class="font-semibold">Beschluss:</span> {{ item.resolution_text|truncatechars:300 }}</p>
+        {% endif %}
+        {% if item.protocol_note %}
+        <p class="mt-2 max-w-[75ch] text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ item.protocol_note }}</p>
+        {% endif %}
+        {% if can_view_np and item.protocol_note_np %}
+        <div class="mt-2 max-w-[75ch]">
+            <p class="inline-flex items-center gap-1 text-[0.8125rem] font-medium text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlicher Protokolltext</p>
+            <p class="text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-line break-words">{{ item.protocol_note_np }}</p>
+        </div>
+        {% endif %}
+    </div>
+</li>
+{% for sub in item.children_list %}
+{% include "session/neu/_niederschrift_top.html" with item=sub is_sub=True %}
+{% endfor %}

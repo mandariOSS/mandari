@@ -239,3 +239,35 @@ class TestDateifeld:
         assert 'aria-invalid="true"' in feld
         assert 'aria-describedby="id_datei-fehler id_datei-hinweis"' in feld
         assert "Bitte eine PDF-Datei wählen." in html
+
+
+BISHER_TEXTKNOPF = "text-xs font-medium flex items-center gap-1 text-primary-600 hover:text-primary-700"
+
+
+class TestTextknopf:
+    def test_ohne_dicht_wie_bisher(self) -> None:
+        html = render('<c-ui.text-button icon="plus" title="Neu">Eintrag</c-ui.text-button>')
+        knopf = _tag(html, "button")
+        assert _klasse(knopf) == BISHER_TEXTKNOPF
+        assert _attribute(knopf) == {"type", "class", "title"}
+        assert 'class="w-3 h-3"' in html
+
+    def test_dicht_im_aussehen_eines_textlinks(self) -> None:
+        """``dicht`` (Issue #944): 14 px, Kennfarbe 700 bzw. Rot 700, 32 px Zielfläche, inline im Fließtext."""
+        for variante, farbe in (
+            ("", "text-primary-700"),
+            (' variant="danger"', "text-red-700"),
+            (' variant="muted"', "text-gray-700"),
+        ):
+            klasse = _klasse(
+                _tag(render(f'<c-ui.text-button dicht type="submit"{variante}>Ok</c-ui.text-button>'), "button")
+            )
+            assert {"inline-flex", "min-h-8", "text-sm", "hover:underline", farbe} <= set(klasse.split()), klasse
+            assert "text-xs" not in klasse and "flex" not in klasse.split()
+        html = render(
+            '<c-ui.text-button dicht icon="plus" @click="offen = !offen" ::aria-expanded="offen.toString()">'
+            "Bearbeiten</c-ui.text-button>"
+        )
+        knopf = _tag(html, "button")
+        assert '@click="offen = !offen"' in knopf and ':aria-expanded="offen.toString()"' in knopf
+        assert 'type="button"' in knopf and 'class="w-4 h-4"' in html

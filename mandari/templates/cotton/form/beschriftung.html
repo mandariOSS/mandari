@@ -1,0 +1,11 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Beschriftung eines Felds, das nicht aus c-form.* stammt (Farbwahl, Zahlenfeld mit Grenzen, nur lesbares Feld), in den
+Maßen von c-form.field dicht (Issue #951): 14 px halbfett, 4 px Abstand. ``feld`` ist die ID des Felds, ``pflicht``
+setzt den Stern. ``als="p"`` bzw. ``als="legend"`` für Überschriften von Gruppen ohne eigenes Feld (ohne Abstand).
+  <c-form.beschriftung feld="slug" pflicht>Kurzname</c-form.beschriftung>
+  <c-form.beschriftung als="legend">Art des Briefkopfs</c-form.beschriftung>
+Weitere Attribute (id, Alpine) gehen an das Element.
+{% endcomment %}
+<c-vars feld="" pflicht="" als="label" class="" />
+{% if als == "p" %}<p class="text-sm font-medium text-gray-800 dark:text-gray-200 {{ class }}" {{ attrs }}>{{ slot }}</p>{% elif als == "legend" %}<legend class="text-sm font-medium text-gray-800 dark:text-gray-200 {{ class }}" {{ attrs }}>{{ slot }}</legend>{% else %}<label{% if feld %} for="{{ feld }}"{% endif %} class="block mb-1 text-sm font-medium text-gray-800 dark:text-gray-200 {{ class }}" {{ attrs }}>{{ slot }}{% if pflicht %} <span class="text-red-500" aria-hidden="true">*</span>{% endif %}</label>{% endif %}

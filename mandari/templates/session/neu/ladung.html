@@ -1,0 +1,129 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Ladung einer Sitzung im neuen Rahmen (Issues #29, #225, #944): Kopfband mit der Ladungsfrist als Punkt mit Text in einem
+Satz statt farbigem Kasten, daneben „Rückmeldungen“, sobald etwas versandt ist. Links der Versand (Versandart, Betreff,
+Anschreiben; „An … Empfänger senden“ als die eine Hauptaktion, gesperrt ohne zustellbare Empfänger, bei abgesagter
+Sitzung nur der Grund) und das Versandprotokoll als Liste je Versand mit den Empfängern zum Aufklappen. Rechts der
+Empfängerkreis aus der Besetzung und die Vorschau (Einladungs-PDF, Nachtrags-PDF, ICS). Formular, Optionen und Links
+wie session/meetings/invitation.html (bleibt die bisherige Seite); Kontext wie MeetingInvitationView.
+{% endcomment %}
+
+{% block page_title %}Ladung: {{ meeting.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zur Sitzung (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume>Ladung</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Ladung" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}">{{ meeting.name }}</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{{ meeting.name }} · <span class="tabular-nums">{{ meeting.start|date:"d.m.Y, H:i" }} Uhr</span></p>
+    </c-slot>
+    {% if dispatches %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'session:meeting_invitation_status' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="list-checks">Rückmeldungen</c-ui.button></c-slot>
+    {% endif %}
+    <p class="max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="ladungsfrist">
+        {% if meeting.invitation_sent_at %}{% include "session/neu/_status.html" with wert="invitation_sent" text="Versandt" %} am <span class="tabular-nums">{{ meeting.invitation_sent_at|date:"d.m.Y H:i" }}</span> Uhr. Ladungsfrist {{ invitation_period_days }} Tage, bis <span class="tabular-nums">{{ invitation_deadline|date:"d.m.Y" }}</span>.
+        {% elif invitation_overdue %}<span class="font-medium text-red-700 dark:text-red-400">{% include "session/neu/_status.html" with wert="ueberfaellig" text="Ladungsfrist verstrichen" %}</span>: Die Ladung musste bis <span class="tabular-nums">{{ invitation_deadline|date:"d.m.Y" }}</span> raus, die Frist des Gremiums beträgt {{ invitation_period_days }} Tage vor der Sitzung.
+        {% else %}{% include "session/neu/_status.html" with wert="pending" text="Noch nicht versandt" %}: Die Ladung muss bis <span class="tabular-nums">{{ invitation_deadline|date:"d.m.Y" }}</span> raus, die Frist des Gremiums beträgt {{ invitation_period_days }} Tage vor der Sitzung am <span class="tabular-nums">{{ meeting.start|date:"d.m.Y" }}</span>.{% endif %}
+    </p>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]">
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="{% if meeting.invitation_sent_at %}Nachladung oder erneuter Versand{% else %}Ladung versenden{% endif %}" titel_id="versand-titel">
+            {% if dispatch_blocker %}
+            <c-rahmen.satz data-testid="ladung-gesperrt">{{ dispatch_blocker }}</c-rahmen.satz>
+            {% else %}
+            <form method="post" class="mt-3 max-w-3xl space-y-4" data-testid="ladung-versand">
+                {% csrf_token %}
+                <c-form.select name="dispatch_type" label="Versandart" dicht>
+                    <option value="invitation">Ladung (Einladung mit Tagesordnung)</option>
+                    {% if meeting.invitation_sent_at and supplementary_count %}
+                    <option value="supplementary">Nachladung (Nachtrags-Tagesordnung, {{ supplementary_count }} Nachtrags-TOP{{ supplementary_count|pluralize:"s" }})</option>
+                    {% endif %}
+                </c-form.select>
+                <c-form.field name="subject" label="Betreff" value="{{ default_subject }}" dicht />
+                <c-form.textarea name="message" label="Anschreiben (optional)" rows="4" placeholder="Zusätzlicher Text für die Einladungs-E-Mail …" value="{{ meeting.invitation_text }}" dicht />
+                <p class="text-sm text-gray-600 dark:text-gray-400">
+                    Jede E-Mail enthält die Tagesordnung als PDF (Ö- und NÖ-Teil je Empfängerberechtigung), den Termin als ICS-Kalenderanhang und einen persönlichen Link zur Empfangsbestätigung und Rückmeldung.{% if letter_recipients %} {{ letter_recipients|length }} Empfänger erhalten die Ladung per Brief (Serienbrief unter „Rückmeldungen“).{% endif %}
+                </p>
+                <div>
+                    {% if recipients_with_email %}
+                    <c-ui.button type="submit" size="sm" icon="send">An {{ recipients_with_email|length }} Empfänger senden</c-ui.button>
+                    {% else %}
+                    <c-ui.button type="submit" size="sm" icon="send" disabled>An {{ recipients_with_email|length }} Empfänger senden</c-ui.button>
+                    {% endif %}
+                </div>
+            </form>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Versandprotokoll" titel_id="protokoll-titel" zusatz="{% if dispatches %}{{ dispatches|length }}{% endif %}" data-testid="versandprotokoll">
+            {% if dispatches %}
+            <c-rahmen.liste class="mt-2">
+                {% for dispatch in dispatches %}
+                {% with empfaenger=dispatch.recipients.all %}
+                <li class="py-2.5">
+                    <details {% if forloop.first %}open{% endif %}>
+                        <summary class="cursor-pointer">
+                            <span class="text-sm font-medium text-gray-900 dark:text-white">{{ dispatch.get_dispatch_type_display }}, <span class="tabular-nums">{{ dispatch.sent_at|date:"d.m.Y H:i" }}</span> Uhr</span>
+                            <span class="block pl-4 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ empfaenger|length }} Empfänger · von {{ dispatch.sent_by.user.email|default:"–" }}</span>
+                        </summary>
+                        <ul class="mt-2 space-y-1 pl-4 text-[0.8125rem]">
+                            {% for recipient in empfaenger %}
+                            <li class="flex flex-wrap items-baseline gap-x-2">
+                                <span class="text-gray-700 dark:text-gray-300">{% if recipient.status == "failed" %}{% include "session/neu/_status.html" with wert="ueberfaellig" text="Fehlgeschlagen" %}{% elif recipient.status == "letter_pending" %}{% include "session/neu/_status.html" with wert="pending" text="Brief vorzubereiten" %}{% else %}{% include "session/neu/_status.html" with wert="invitation_sent" text=recipient.get_status_display %}{% endif %}</span>
+                                <span class="min-w-0 text-gray-900 dark:text-white break-words">{{ recipient.name }}{% if recipient.email %} &lt;{{ recipient.email }}&gt;{% endif %}</span>
+                                <span class="text-gray-600 dark:text-gray-400">{{ recipient.membership_role }}, {{ recipient.get_channel_display }}, {% if recipient.includes_non_public %}inkl. NÖ-Teil{% else %}nur Ö-Teil{% endif %}{% if recipient.acknowledged_at %}, Empfang bestätigt{% endif %}</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                </li>
+                {% endwith %}
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Noch kein Versand erfolgt.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
+
+    <aside class="min-w-0 space-y-8" aria-label="Empfänger und Vorschau">
+        <c-rahmen.abschnitt titel="Empfängerkreis" titel_id="empfaenger-titel" zusatz="{{ recipients|length }}" data-testid="empfaengerkreis">
+            <c-rahmen.satz eng>Automatisch aus der Besetzung von {{ meeting.organizations_label }}{% if meeting.is_joint %}; jede Person einmal, auch bei Mitgliedschaft in mehreren Gremien{% endif %}.</c-rahmen.satz>
+            {% if recipients %}
+            <c-rahmen.liste class="mt-2">
+                {% for recipient in recipients %}
+                <li class="py-2 text-sm">
+                    <p class="liste-name">{{ recipient.name }}</p>
+                    <p class="liste-angaben">
+                        {{ recipient.role }}{% if meeting.is_joint %} ({{ recipient.organizations|join:", " }}){% endif %} ·
+                        {% if recipient.missing_email %}<span class="font-medium text-red-700 dark:text-red-400">keine E-Mail hinterlegt</span>
+                        {% elif recipient.channel == "letter" %}per Brief{% if recipient.missing_address %} · <span class="font-medium text-red-700 dark:text-red-400">Anschrift fehlt</span>{% endif %} · {% if recipient.include_non_public %}inkl. NÖ-Teil{% else %}nur Ö-Teil{% endif %}
+                        {% else %}{{ recipient.email }}{% if recipient.channel == "portal" %} · Portal{% endif %} · {% if recipient.include_non_public %}inkl. NÖ-Teil{% else %}nur Ö-Teil{% endif %}{% endif %}
+                    </p>
+                    {% if recipient.portal_fallback %}<p class="text-[0.8125rem] text-amber-800 dark:text-amber-300">Portal ohne Zugang zu mandari Work, Zustellung per E-Mail</p>{% endif %}
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Keine Besetzung hinterlegt.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Vorschau" titel_id="vorschau-titel">
+            <ul class="mt-2 space-y-1.5 text-sm">
+                <li><c-ui.textlink href="{% url 'session:meeting_agenda_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="inline-flex items-center gap-1.5"><i data-lucide="file-down" class="w-4 h-4" aria-hidden="true"></i>Einladungs-PDF herunterladen</c-ui.textlink></li>
+                {% if supplementary_count %}
+                <li><c-ui.textlink href="{% url 'session:meeting_agenda_pdf' tenant_slug=tenant_slug meeting_id=meeting.id %}?variante=nachtrag" class="inline-flex items-center gap-1.5"><i data-lucide="file-plus" class="w-4 h-4" aria-hidden="true"></i>Nachtrags-PDF herunterladen</c-ui.textlink></li>
+                {% endif %}
+                <li><c-ui.textlink href="{% url 'session:meeting_ics' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="inline-flex items-center gap-1.5"><i data-lucide="calendar-plus" class="w-4 h-4" aria-hidden="true"></i>ICS-Kalenderdatei</c-ui.textlink></li>
+            </ul>
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% endblock %}

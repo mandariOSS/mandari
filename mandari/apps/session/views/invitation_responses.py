@@ -23,6 +23,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionInvitationDispatch, SessionMeeting, SessionPerson, SessionTenant
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import invitation_export_service, invitation_response_service, invitation_token, rsvp_reminders
 
 _log_event = cast(Any, audit).log_event
@@ -144,6 +145,10 @@ class MeetingInvitationStatusView(SessionViewMixin, TemplateView):
 
     template_name = "session/meetings/invitation_status.html"
     permission_required = "edit_meetings"
+
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/rueckmeldungen.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context: dict[str, Any] = cast(Any, super()).get_context_data(**kwargs)

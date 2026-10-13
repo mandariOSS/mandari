@@ -1,0 +1,64 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Beschlussregister im neuen Rahmen (Issues #32, #37, #944; Reiter „Beschlussregister“ unter „Beschlüsse“ aus
+session/rahmen/_reiter.html): Kopfband mit einem Satz und dem CSV-Export, darunter die Filter in einer Zeile (Gremium,
+Jahr, Ergebnis, Umsetzung, nur überfällige) und die Beschlusskontrolle als Satz mit Zahlen statt Ampelkacheln; jede Zahl
+filtert wie bisher. Die Beschlüsse stehen als Liste mit Linien (session/neu/_beschluss_eintrag.html): Nummer, TOP, Sitzung,
+Ergebnis und Umsetzung als Punkt mit Text, Übergaben, Auszug als PDF; Erledigungsvermerk und Übergabe klappen je Beschluss
+auf. Parameter und Formulare wie session/resolutions/register.html; Rechte und Kontext wie ResolutionRegisterView.
+{% endcomment %}
+
+{% block page_title %}Beschlussregister{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Beschlussregister" text="Gefasste Beschlüsse aller Gremien mit Nummer, Ergebnis und Stand der Umsetzung, die neuesten zuerst." dicht>
+    <c-slot name="aktionen">
+        <c-ui.button href="{% url 'session:resolutions_export_csv' tenant_slug=tenant_slug %}{% if export_query %}?{{ export_query }}{% endif %}" variant="secondary" size="sm" icon="download">CSV-Export</c-ui.button>
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<form method="get" class="feldzeile" aria-label="Beschlüsse filtern" data-testid="beschluss-filter">
+    <c-form.select name="organization" id="filter_organization" label="Gremium" dicht class="min-w-0 flex-1 basis-48 sm:flex-none sm:w-56">
+        <option value="">Alle</option>
+        {% for org in organizations %}<option value="{{ org.id }}" {% if filter_organization == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
+    </c-form.select>
+    <c-form.select name="year" id="filter_year" label="Jahr" dicht class="min-w-0 flex-1 basis-24 sm:flex-none sm:w-28">
+        <option value="">Alle</option>
+        {% for y in years %}<option value="{{ y }}" {% if filter_year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>{% endfor %}
+    </c-form.select>
+    <c-form.select name="result" id="filter_result" label="Ergebnis" dicht class="min-w-0 flex-1 basis-40 sm:flex-none sm:w-48">
+        <option value="">Alle</option>
+        {% for value, label in result_choices %}<option value="{{ value }}" {% if filter_result == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </c-form.select>
+    <c-form.select name="status" id="filter_status" label="Umsetzung" dicht class="min-w-0 flex-1 basis-40 sm:flex-none sm:w-44">
+        <option value="">Alle</option>
+        {% for value, label in implementation_choices %}<option value="{{ value }}" {% if filter_status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </c-form.select>
+    <c-form.checkbox name="overdue" id="filter_overdue" value="1" label="Nur überfällige" checked="{% if filter_overdue %}1{% endif %}" class="h-9" />
+    <c-ui.button type="submit" variant="secondary" size="sm">Filtern</c-ui.button>
+</form>
+
+{# Beschlusskontrolle (Issue #37): die Zahlen über Gremium und Jahr, jede filtert die Liste #}
+<p class="mt-4 text-sm text-gray-700 dark:text-gray-300" data-testid="beschlusskontrolle">
+    Beschlusskontrolle:
+    <a href="?status=open{% if filter_organization %}&organization={{ filter_organization }}{% endif %}{% if filter_year %}&year={{ filter_year }}{% endif %}"
+       class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 {% if filter_status == 'open' %}underline{% endif %}" aria-current="{% if filter_status == 'open' %}true{% else %}false{% endif %}"><span class="tabular-nums">{{ tracking_stats.open }}</span> offen</a>,
+    <a href="?status=in_progress{% if filter_organization %}&organization={{ filter_organization }}{% endif %}{% if filter_year %}&year={{ filter_year }}{% endif %}"
+       class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 {% if filter_status == 'in_progress' %}underline{% endif %}" aria-current="{% if filter_status == 'in_progress' %}true{% else %}false{% endif %}"><span class="tabular-nums">{{ tracking_stats.in_progress }}</span> in Umsetzung</a>,
+    <a href="?overdue=1{% if filter_organization %}&organization={{ filter_organization }}{% endif %}{% if filter_year %}&year={{ filter_year }}{% endif %}"
+       class="font-medium hover:underline underline-offset-4 {% if tracking_stats.overdue %}text-red-700 dark:text-red-400{% else %}text-primary-700 dark:text-primary-300{% endif %} {% if filter_overdue %}underline{% endif %}" aria-current="{% if filter_overdue %}true{% else %}false{% endif %}"><span class="tabular-nums">{{ tracking_stats.overdue }}</span> überfällig</a>,
+    <a href="?status=done{% if filter_organization %}&organization={{ filter_organization }}{% endif %}{% if filter_year %}&year={{ filter_year }}{% endif %}"
+       class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 {% if filter_status == 'done' %}underline{% endif %}" aria-current="{% if filter_status == 'done' %}true{% else %}false{% endif %}"><span class="tabular-nums">{{ tracking_stats.done }}</span> erledigt</a>.
+</p>
+
+{% if items %}
+<c-rahmen.liste class="mt-3" data-testid="beschluesse">
+    {% for item in items %}{% include "session/neu/_beschluss_eintrag.html" %}{% endfor %}
+</c-rahmen.liste>
+{% else %}
+<c-rahmen.satz>Keine gefassten Beschlüsse gefunden.</c-rahmen.satz>
+{% endif %}
+{% endblock %}

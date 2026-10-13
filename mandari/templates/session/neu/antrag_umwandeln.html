@@ -1,0 +1,67 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Antrag in Vorlage umwandeln im neuen Rahmen (Issue #944): Kopfband mit der Wirkung der Umwandlung in einem Satz statt
+Hinweiskasten. Links das Formular „Neue Vorlage“ in einer ruhigen Spalte (Titel, Vorlagentyp mit Nummernkreis,
+federführendes Gremium; was übernommen wird, als ein Satz), „In Vorlage umwandeln“ als die eine Hauptaktion, Abbrechen
+als Textlink. Rechts die Antragsdaten mit Begründung und Beschlussvorschlag. Felder, Optionen und Ziel wie
+session/applications/convert.html (bleibt die bisherige Seite); Kontext wie ApplicationConvertView.
+{% endcomment %}
+
+{% block page_title %}Antrag in Vorlage umwandeln{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zum Antrag (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=application.id %}">{{ application.reference }}</c-rahmen.brotkrume><c-rahmen.brotkrume>In Vorlage umwandeln</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="In Vorlage umwandeln" text="Aus dem Antrag entsteht eine Vorlage im Entwurf; sie durchläuft Mitzeichnung und Freigabe wie jede Vorlage. Der Antrag steht danach automatisch auf „In Vorlage umgewandelt“." dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=application.id %}">{{ application.reference|default:"Antrag" }}</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{% if application.reference %}<span class="tabular-nums">{{ application.reference }}</span> · {% endif %}{{ application.title }}</p>
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]">
+    <c-rahmen.abschnitt titel="Neue Vorlage" titel_id="vorlage-titel" class="min-w-0 max-w-3xl">
+        <form method="post" class="mt-3 space-y-4" data-testid="antrag-umwandeln">
+            {% csrf_token %}
+            <c-form.field name="name" label="Titel der Vorlage" value="{{ application.title }}" required dicht />
+            <c-form.select name="paper_type" label="Vorlagentyp" help="Die Vorlagenart bestimmt den Nummernkreis ({{ session_tenant.reference_label }})." dicht>
+                {% for value, label in paper_types %}<option value="{{ value }}" {% if value == paper_type %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="main_organization" label="Federführendes Gremium" placeholder="Bitte wählen …" required dicht>
+                {% for org in organizations %}<option value="{{ org.id }}" {% if application.target_organization and application.target_organization.id == org.id %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
+            </c-form.select>
+            <p class="text-sm text-gray-600 dark:text-gray-400" data-testid="uebernommen">
+                {% if application.justification or application.resolution_proposal %}Die Vorlage übernimmt {% if application.justification %}die Begründung als Sachverhalt{% if application.resolution_proposal %} und {% endif %}{% endif %}{% if application.resolution_proposal %}den Beschlussvorschlag{% endif %}. {% endif %}Sie trägt das Datum von heute und wird als öffentlich markiert.
+            </p>
+            <div class="flex flex-wrap items-center gap-4">
+                <c-ui.button type="submit" size="sm" icon="file-output">In Vorlage umwandeln</c-ui.button>
+                <c-ui.textlink href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=application.id %}" class="text-sm">Abbrechen</c-ui.textlink>
+            </div>
+        </form>
+    </c-rahmen.abschnitt>
+
+    <aside class="min-w-0 space-y-8" aria-label="Antragsdaten">
+        <c-rahmen.abschnitt titel="Antrag" titel_id="antrag-titel">
+            <c-ui.angaben class="mt-2">
+                <dt>Eingangsnummer</dt><dd class="tabular-nums">{{ application.reference }}</dd>
+                <dt>Titel</dt><dd>{{ application.title }}</dd>
+                <dt>Art</dt><dd>{{ application.get_application_type_display }}</dd>
+                <dt>Einreicher</dt><dd>{{ application.submitter_name }}{% if application.submitting_organization %} ({{ application.submitting_organization.name }}){% endif %}</dd>
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+        {% if application.justification %}
+        <c-rahmen.abschnitt titel="Begründung" titel_id="begruendung-titel">
+            <p class="mt-2 max-h-48 overflow-y-auto text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.justification }}</p>
+        </c-rahmen.abschnitt>
+        {% endif %}
+        {% if application.resolution_proposal %}
+        <c-rahmen.abschnitt titel="Beschlussvorschlag" titel_id="beschlussvorschlag-titel">
+            <p class="mt-2 max-h-48 overflow-y-auto text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.resolution_proposal }}</p>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}
