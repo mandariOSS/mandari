@@ -8,6 +8,7 @@ Gremium und Ergebnis, dazu die Fälle „vertagt“, „ohne Ergebnis“ und „
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 from types import SimpleNamespace
@@ -333,6 +334,16 @@ class TestKomponenten:
         }
         werte.update(felder)
         return SimpleNamespace(**werte)
+
+    @pytest.mark.parametrize("dicht", [False, True])
+    def test_niederschrift_herunterladen_mit_nofollow(self, dicht: bool) -> None:
+        # Dateien tragen noindex; Suchmaschinen sollen sie nicht doppelt abrufen (Issue #939)
+        datei = self._datei(file_date=None)
+        html = render('{% include "pages/meetings/_protocol_card.html" %}', protocol_file=datei, dicht=dicht)
+        # Ganzer Link bis </a>: Klassen wie [&>svg] enthalten selbst ein „>“
+        links = [link for link in re.findall(r"<a\b.*?</a>", html, re.S) if "download=1" in link]
+        assert len(links) == 1 and 'rel="nofollow"' in links[0], links
+        assert html.count("rel=") == 2, "je Link genau ein rel (Ansehen: noopener bzw. extern, Herunterladen: nofollow)"
 
     def test_dokumentzeile_mit_allen_aktionen(self) -> None:
         datei = self._datei()
