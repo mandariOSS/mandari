@@ -268,6 +268,10 @@ def test_bestaetigung_beim_beenden_im_neuen_rahmen_und_unveraendert() -> None:
             html = neu.content.decode()
             assert 'data-testid="bestaetigung"' in html and 'data-gestaltung="neu"' in html
             assert "1 Sitzungen, 1 Vorlagen" in html and option.undo[:25] in html
+            # „Dauerhaft zurücknehmen“ bleibt wie bisher eine Gefahrenaktion, die anderen Möglichkeiten ohne Füllfarbe
+            bestaetigung = html[html.index('data-testid="bestaetigung"') :]
+            gefahr = "bg-red-600 hover:bg-red-700" in bestaetigung[: bestaetigung.index("</form>")]
+            assert gefahr == (option.key == SessionTenant.PORTAL_END_WITHDRAWN), option.key
             bisher, jetzt = aktionen(alt), aktionen(neu)
             assert ("POST", "", ("confirm=1", f"mode={option.key}")) in bisher
             assert not fehlende(bisher, jetzt, reiter), (rolle, option.key, fehlende(bisher, jetzt, reiter))

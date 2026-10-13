@@ -4,7 +4,8 @@ Veröffentlichung im Bürgerportal beenden im neuen Rahmen (Issues #618, #944 Te
 Allgemein. Schritt 1 (GET): die drei Möglichkeiten als Liste mit Linien (Optionsfeld, wann sie passt, ihre Folgen),
 Schritt 2 (POST ohne confirm): Bestand und Folgen der gewählten Möglichkeit, dann die Bestätigung. Formulare, Felder und
 Texte der Möglichkeiten wie session/settings/portal_publication.html (apps/session/services/portal_publication.py);
-Knöpfe ohne Füllfarbe. Kontext: PortalPublicationEndView.
+Knöpfe ohne Füllfarbe, nur „Dauerhaft zurücknehmen“ bleibt wie bisher eine Gefahrenaktion (rot). Kontext:
+PortalPublicationEndView.
 {% endcomment %}
 
 {% block page_title %}Veröffentlichung im Bürgerportal beenden{% endblock %}
@@ -38,7 +39,7 @@ Knöpfe ohne Füllfarbe. Kontext: PortalPublicationEndView.
                 {% csrf_token %}
                 <input type="hidden" name="mode" value="{{ chosen.key }}">
                 <input type="hidden" name="confirm" value="1">
-                <c-ui.button type="submit" variant="secondary" size="sm" icon="{{ chosen.icon }}">{{ chosen.title }}</c-ui.button>
+                <c-ui.button type="submit" variant="{% if chosen.key == 'withdrawn' %}danger{% else %}secondary{% endif %}" size="sm" icon="{{ chosen.icon }}">{{ chosen.title }}</c-ui.button>
                 <c-ui.textlink href="{% url 'session:portal_publication_end' tenant_slug=tenant_slug %}" class="text-sm">Andere Möglichkeit wählen</c-ui.textlink>
             </form>
         </c-rahmen.abschnitt>

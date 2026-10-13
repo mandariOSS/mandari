@@ -1,9 +1,9 @@
 {% comment %}
 Rechtslage und Sitzungsrecht des Landes auf der Seite Sitzungsformate im neuen Rahmen (Issues #138, #757, #944):
-Angaben des Landesprofils als Begriff und Wert, die Quellen als Links, „Keine Rechtsberatung“ als ein Satz; darunter das
-Sitzungsrecht in der Fassung zum Stichtag mit den Fassungen als Links (?stichtag=) und je Eintrag Norm, Quelle und
-Stand. Inhalte wie session/settings/meeting_formats.html und _state_law.html. Kontext: profile, law, law_versions,
-tenant_slug.
+Angaben des Landesprofils als Begriff und Wert, die Quellen als Links, „Keine Rechtsberatung“ als ein Satz
+(wie bisher immer, ohne Landesprofil allein); darunter das Sitzungsrecht in der Fassung zum Stichtag mit den Fassungen
+als Links (?stichtag=) und je Eintrag Norm, Quelle und Stand. Inhalte wie session/settings/meeting_formats.html und
+_state_law.html. Kontext: profile, law, law_versions, tenant_slug.
 {% endcomment %}
 {% url 'session:settings_meeting_formats' tenant_slug=tenant_slug as formats_url %}
 {% if profile %}
@@ -27,8 +27,11 @@ tenant_slug.
         <dt>Quellen ({{ profile.get_verification_display }})</dt>
         <dd>{% for source in profile.sources %}<c-ui.textlink href="{{ source.url }}" extern>{{ source.title }}</c-ui.textlink>{% if not forloop.last %}<span aria-hidden="true">, </span>{% endif %}{% endfor %}</dd>
     </dl>
-    <c-rahmen.satz>Keine Rechtsberatung: Die Landesprofile geben den recherchierten Stand wieder, „ungeklärt“ heißt, dass die Recherche keine gesicherte Aussage ergeben hat. Maßgeblich sind der amtliche Gesetzestext, Ihre Hauptsatzung und Geschäftsordnung.</c-rahmen.satz>
+    <c-rahmen.satz data-testid="keine-rechtsberatung">Keine Rechtsberatung: Die Landesprofile geben den recherchierten Stand wieder, „ungeklärt“ heißt, dass die Recherche keine gesicherte Aussage ergeben hat. Maßgeblich sind der amtliche Gesetzestext, Ihre Hauptsatzung und Geschäftsordnung.</c-rahmen.satz>
 </c-rahmen.abschnitt>
+{% else %}
+{# Ohne Landesprofil steht der Hinweis allein, wie auf der bisherigen Seite immer sichtbar #}
+<c-rahmen.satz data-testid="keine-rechtsberatung">Keine Rechtsberatung: Die Landesprofile geben den recherchierten Stand wieder, „ungeklärt“ heißt, dass die Recherche keine gesicherte Aussage ergeben hat. Maßgeblich sind der amtliche Gesetzestext, Ihre Hauptsatzung und Geschäftsordnung.</c-rahmen.satz>
 {% endif %}
 
 {% if law %}

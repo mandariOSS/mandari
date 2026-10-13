@@ -393,6 +393,21 @@ def test_koerperschaften_im_reiter_erst_ab_der_zweiten() -> None:
     assert "Körperschaften" in labels
 
 
+def test_keine_rechtsberatung_steht_immer_da() -> None:
+    """Wie auf der bisherigen Seite steht der Hinweis auch ohne Landesprofil, dann allein statt unter der Rechtslage."""
+    tenant = _mandant("rechtsrat2", neu=True)
+    client = _client(tenant, "Administrator")
+    formate = _adresse(tenant, "settings_meeting_formats")
+    ohne = client.get(formate).content.decode()
+    assert 'data-testid="rechtslage"' not in ohne
+    assert ohne.count('data-testid="keine-rechtsberatung"') == 1
+    meeting_format_service.sync_profiles()
+    _profil(tenant, "NI")
+    mit = client.get(formate).content.decode()
+    assert 'data-testid="rechtslage"' in mit
+    assert mit.count('data-testid="keine-rechtsberatung"') == 1
+
+
 def test_brotkrumen_der_unterseiten_fuehren_zur_elternseite() -> None:
     tenant = _mandant("krumen2", neu=True)
     welt = _welt(tenant)
