@@ -72,6 +72,16 @@ def oparl_id_base(tenant) -> str:
     return f"{identifier_base()}{path}"
 
 
+#: Ausnahme von der robots.txt für die Dateien der eigenen Session-Quelle (Format: insight_core/services/file_robots.py).
+#: Die robots.txt dieser Installation sperrt /session/ für fremde Crawler; das Bürgerportal derselben Installation ist
+#: keiner. Ohne Ausnahme zeigte es für veröffentlichte Anlagen nur „Diese Kommune untersagt automatische Abrufe“.
+ROBOTS_KEY = "robots_override"
+EIGENE_DATEIEN = {
+    "scope": "files",
+    "note": "Eigener Sitzungsdienst dieser Installation (robots.txt gilt fremden Crawlern)",
+}
+
+
 def register_source(tenant, base_url: str | None = None):
     """
     OParl-Quelle für den Mandanten anlegen/aktivieren (idempotent).
@@ -90,6 +100,7 @@ def register_source(tenant, base_url: str | None = None):
                 "source_type": OParlSource.SOURCE_TYPE_OPARL,
                 "session_tenant": tenant.slug,
                 SOURCE_ID_BASE_KEY: oparl_id_base(tenant),
+                ROBOTS_KEY: EIGENE_DATEIEN,
             },
         },
     )
@@ -107,6 +118,11 @@ def register_source(tenant, base_url: str | None = None):
         # Basis der Kennungen für Ingestor und Spiegel (Issue #733), bei älteren Quellen nachgetragen. Einmal
         # gesetzt, bleibt sie: Die Kennungen des Bestands dieser Quelle sind daraus gebildet.
         sync_config[SOURCE_ID_BASE_KEY] = oparl_id_base(tenant)
+        source.sync_config = sync_config
+        changed = True
+    if ROBOTS_KEY not in sync_config:
+        # Ältere Quellen: die Ausnahme für die eigenen Dateien nachtragen (siehe EIGENE_DATEIEN)
+        sync_config[ROBOTS_KEY] = EIGENE_DATEIEN
         source.sync_config = sync_config
         changed = True
     if changed and not created:
