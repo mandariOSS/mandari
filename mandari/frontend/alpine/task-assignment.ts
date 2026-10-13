@@ -6,7 +6,7 @@
  * Komponente aus dem serverseitig vorbelegten Select, die eigene Mitgliedschaft aus
  * `data-current-member`.
  *
- * Markup: `templates/work/tasks/create.html`.
+ * Markup: `templates/work/tasks/create.html` und `templates/work/tasks/neu/neu.html` (#951).
  */
 
 import { defineComponent } from '../js/alpine/component'
@@ -28,6 +28,11 @@ export const assignmentHandler = defineComponent(() => {
       this.currentMemberId = this.$el.dataset.currentMember ?? ''
       this.selectedAssignee = select?.value ?? ''
       this.previousAssignee = this.selectedAssignee
+      // Schließt der Dialog ohne Bestätigung (Escape, Klick daneben – c-ui.alpine-modal im neuen Erscheinungsbild,
+      // #951), gilt das wie Abbrechen: die vorige Auswahl kommt zurück
+      this.$watch('showConfirmModal', (offen: boolean) => {
+        if (!offen && this.selectedAssignee !== this.previousAssignee) this.selectedAssignee = this.previousAssignee
+      })
     },
 
     checkAssignment() {

@@ -1,0 +1,48 @@
+{% extends "work/base_work.html" %}
+{% load static %}
+{% comment %}
+Aufgaben im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit dem Stand im Satz und „Neue Aufgabe“ als
+Hauptaktion; Filterzeile mit Meine/Alle als Textlinks und Feldern c-form.* dicht (Parameter wie bisher: view, q,
+priority, label, assignee, overdue, completed). Drei Spalten ohne Farbrahmen, Karten mit Labels als Punkt mit Text,
+das Panel als gemeinsames Seitenblatt (c-ui.seitenblatt). Import und Export stehen unter „Weiteres“ statt in einem
+eigenen Menü. Die Kopplung an kanbanBoard, SortableJS und die Board-API bleibt (frontend/alpine/task-board.ts): IDs
+column-*, count-*, task-card-*, #task-panel-container, data-quick-add. hx-headers fordert die Karten der Antworten in
+der neuen Fassung an (apps.work.rahmen.fragment_neu). Kontext: TaskListView; die bisherige Seite bleibt
+work/tasks/list.html.
+{% endcomment %}
+
+{% block page_title %}Aufgaben{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Aufgaben" dicht data-testid="aufgaben-kopf"
+    text="{{ stats.total }} Aufgabe{{ stats.total|pluralize:'n' }}: {{ stats.todo }} offen, {{ stats.in_progress }} in Arbeit{% if stats.overdue > 0 %}, {{ stats.overdue }} überfällig{% endif %}.">
+    <c-slot name="aktionen"><c-ui.button href="{% url 'work:task_create' org_slug=organization.slug %}" icon="plus">Neue Aufgabe</c-ui.button></c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+{{ board_config|json_script:"task-board-config" }}
+<div x-data="kanbanBoard" hx-headers='{"X-Work-Gestaltung": "neu"}'>
+    {% include "work/tasks/neu/_filter.html" %}
+
+    <div class="kanban-board relative mt-5 grid grid-cols-1 md:grid-cols-3 gap-5" data-testid="aufgaben-board">
+        {% include "work/tasks/neu/_spalte.html" with status="todo" title="Zu erledigen" tasks=todo_tasks empty_text="Keine Aufgaben" quick_add=True %}
+        {% include "work/tasks/neu/_spalte.html" with status="in_progress" title="In Bearbeitung" tasks=in_progress_tasks empty_text="Keine aktiven Aufgaben" quick_add=True %}
+        {% include "work/tasks/neu/_spalte.html" with status="done" title="Erledigt" tasks=done_tasks empty_text="Noch nichts erledigt" quick_add=False %}
+    </div>
+
+    {% include "work/tasks/neu/_weiteres.html" %}
+    {% include "work/tasks/partials/_import_modal.html" %}
+    {% include "work/tasks/partials/_file_import_modal.html" %}
+
+    <c-ui.seitenblatt show="panelOpen" schliessen="closePanel()" label="Aufgabe">
+        <div id="task-panel-container" class="flex-1 flex flex-col overflow-hidden">
+            <p class="flex-1 flex items-center justify-center gap-2 text-sm text-gray-600 dark:text-gray-400"><i data-lucide="loader-2" class="w-4 h-4 animate-spin" aria-hidden="true"></i>Lädt …</p>
+        </div>
+    </c-ui.seitenblatt>
+</div>
+
+{# SortableJS (Drag & Drop) als Vendor-Skript; die Board-Logik liegt in frontend/alpine/task-board.ts #}
+<script src="{% static 'vendor/sortablejs/Sortable.min.js' %}"></script>
+{% endblock %}

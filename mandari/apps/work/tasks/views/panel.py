@@ -17,6 +17,7 @@ from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
 from apps.work.files import attachment_response
+from apps.work.rahmen import fragment_neu
 
 from .. import selectors, services
 from ..forms import TaskAttachmentForm, TaskChecklistItemForm, TaskPanelForm
@@ -110,7 +111,9 @@ class TaskPanelActionView(WorkViewMixin, View):
 
     def _render_oob_card(self, task):
         task = selectors.reload_for_card(task)
-        return self._render("work/tasks/_card_oob.html", {"task": task, "organization": self.organization})
+        # Das Board im neuen Erscheinungsbild fordert seine Karten an (hx-headers, Issue #951)
+        vorlage = "work/tasks/neu/_karte_oob.html" if fragment_neu(self.request) else "work/tasks/_card_oob.html"
+        return self._render(vorlage, {"task": task, "organization": self.organization})
 
     def _render_oob_counts(self):
         return self._render("work/tasks/_column_counts_oob.html", selectors.column_counts(self.organization))

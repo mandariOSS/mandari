@@ -163,7 +163,7 @@ def apply_board_filters(
     if assignee_id:
         tasks = tasks.filter(assigned_to__id=assignee_id)
     if overdue_only:
-        tasks = tasks.filter(due_date__lt=timezone.now().date(), status__in=OPEN_STATUSES)
+        tasks = tasks.filter(due_date__lt=timezone.localdate(), status__in=OPEN_STATUSES)
     return tasks
 
 
@@ -186,7 +186,7 @@ def board_stats(tasks: QuerySet[Task]) -> dict[str, int]:
         "todo": tasks.filter(status="todo").count(),
         "in_progress": tasks.filter(status="in_progress").count(),
         "done": tasks.filter(status="done").count(),
-        "overdue": tasks.filter(due_date__lt=timezone.now().date(), status__in=OPEN_STATUSES).count(),
+        "overdue": tasks.filter(due_date__lt=timezone.localdate(), status__in=OPEN_STATUSES).count(),
     }
 
 
