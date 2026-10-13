@@ -62,6 +62,8 @@ class Cockpit:
     meeting: SessionMeeting
     leitung: SessionUser
     leser: SessionUser
+    #: „bisher“ oder „neu“, trennt die Bilder je Erscheinungsbild
+    gestaltung: str
 
     def url(self, server: Any) -> str:
         return f"{server.url}/session/{self.tenant.slug}/meetings/{self.meeting.pk}/cockpit/"
@@ -92,6 +94,7 @@ def cockpit(request: pytest.FixtureRequest) -> Cockpit:
         meeting=meeting,
         leitung=_konto(tenant, "leitung@example.org", can_conduct_meetings=True, can_edit_protocols=True),
         leser=_konto(tenant, "leser@example.org"),
+        gestaltung="neu" if request.param else "bisher",
     )
 
 
@@ -158,8 +161,8 @@ def test_top_wechsel_erscheint_im_zweiten_browser(
         befunde = _axe(page)
         assert not befunde.failing, f"{name}: {befunde.describe()}"
     SCREENSHOT_DIR.mkdir(exist_ok=True)
-    leitung.screenshot(path=str(SCREENSHOT_DIR / "session-cockpit.png"), full_page=True)
-    leser.screenshot(path=str(SCREENSHOT_DIR / "session-cockpit-mitlesen.png"), full_page=True)
+    leitung.screenshot(path=str(SCREENSHOT_DIR / f"session-cockpit-{cockpit.gestaltung}.png"), full_page=True)
+    leser.screenshot(path=str(SCREENSHOT_DIR / f"session-cockpit-mitlesen-{cockpit.gestaltung}.png"), full_page=True)
     assert not fehler, "\n".join(fehler)
 
 

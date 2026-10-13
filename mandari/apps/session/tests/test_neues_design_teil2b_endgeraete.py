@@ -155,7 +155,10 @@ def test_bestand_als_satz_und_stand_als_punkt() -> None:
     tenant = _mandant("geraetesatz2b", neu=True)
     welt = _welt_endgeraete(tenant)
     html = _client(tenant, "Administrator").get(welt["seite"]).content.decode()
-    assert "1 Gerät im Bestand, 1 ausgegeben; Zuschüsse gesamt 1200.00 €." in html.replace("1200,00", "1200.00")
+    # Eine Zählung: alle erfassten Geräte im Satz und an der Liste, „im Bestand“ nur als Teilmenge wie der Stand je Gerät
+    satz = "4 Geräte erfasst, davon 1 im Bestand und 1 ausgegeben; Zuschüsse gesamt 1200.00 €."
+    assert satz in html.replace("1200,00", "1200.00")
+    assert "Gerätebestand" not in html
     assert "kpi" not in html and "text-[10px]" not in html
     inhalt = html[html.index('class="work-page-content"') : html.index("</main>")]
     for text in (
