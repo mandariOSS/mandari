@@ -442,7 +442,7 @@ def test_listen_sind_die_listen_von_insight_mit_zielen_in_work(welt: Welt, clien
 
     # Fraktion an Personen wie in Insight: auch aus der bestätigten Zuordnung, mit Quelle
     personen = _seite(client_for, welt.vorsitz, "work:ris_persons").content.decode()
-    assert "Fraktion Mitte" in personen and "laut Einblendung der Live-Übertragung" in personen
+    assert "Fraktion Mitte" in personen and "Live-Übertragung" not in personen
     person = _seite(client_for, welt.vorsitz, "work:ris_person_detail", person_id=welt.person.pk).content.decode()
     assert "Fraktion Mitte" in person and "Vorsitz, Hauptausschuss" in person
     gremium = _seite(client_for, welt.vorsitz, "work:ris_organization_detail", org_id=welt.ausschuss.pk)
