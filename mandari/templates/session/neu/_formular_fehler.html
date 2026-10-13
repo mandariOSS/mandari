@@ -1,0 +1,10 @@
+{% comment %}
+Fehler über einem Formular im neuen Rahmen (Issue #944): Meldungen ohne Feld (etwa aus dem Nummernkreis) als Satz,
+sonst ein Satz, der auf die markierten Felder verweist; die Meldungen selbst stehen am Feld. Kontext: form.
+{% endcomment %}
+{% if form.errors %}
+<div role="alert" class="space-y-1 text-sm font-medium text-red-700 dark:text-red-400" data-testid="formular-fehler">
+    {% for fehler in form.non_field_errors %}<p>{{ fehler }}</p>{% endfor %}
+    {% if not form.non_field_errors or form.errors|length > 1 %}<p>Bitte prüfen Sie die markierten Angaben.</p>{% endif %}
+</div>
+{% endif %}

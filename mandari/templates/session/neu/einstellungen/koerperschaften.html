@@ -1,0 +1,56 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Sitzungen › Körperschaften im neuen Rahmen (Issues #756, #944): Kopfband mit der Regel in einem Satz
+und „Körperschaft anlegen“ als einziger Hauptaktion. Die Körperschaften als Liste mit Linien statt Tabelle: Name und
+Kurzname, darunter Stand als Punkt mit Text (Standard, aktiv, inaktiv), Art, Zugehörigkeit und AGS; je Zeile
+„Bearbeiten“ und, außer bei der Standardkörperschaft, „Als Standard festlegen“. Ersetzt
+session/settings/bodies.html; Kontext BodyListView.
+{% endcomment %}
+
+{% block page_title %}Körperschaften{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Körperschaften" text="Die Verwaltung führt den Sitzungsdienst für jede dieser Körperschaften. Gremien, Vorlagen und Nummernkreise gehören zu einer Körperschaft, Personen, Benutzer und Rollen gelten in allen; die Standardkörperschaft ist die Vorgabe beim Anlegen." dicht>
+    <c-slot name="aktionen">
+        <c-ui.button href="{% url 'session:settings_body_create' tenant_slug=tenant_slug %}" size="sm" icon="plus">Körperschaft anlegen</c-ui.button>
+    </c-slot>
+</c-rahmen.kopfband>
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 max-w-4xl space-y-10">
+        <c-rahmen.abschnitt titel="Körperschaften des Mandanten" titel_id="koerperschaften-titel" zusatz="{{ bodies|length }}">
+            {% if bodies %}
+            <c-rahmen.liste class="mt-2" data-testid="koerperschaften">
+                {% for body in bodies %}
+                <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2.5">
+                    <div class="min-w-0 flex-1 basis-64">
+                        <p class="text-sm break-words {% if body.is_active %}text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400{% endif %}"><span class="font-medium">{{ body.name }}</span>{% if body.short_name %} <span class="text-gray-600 dark:text-gray-400">({{ body.short_name }})</span>{% endif %}</p>
+                        <p class="liste-angaben">
+                            {% if body.is_default %}{% include "session/neu/_status.html" with wert="scheduled" text="Standard" %}{% elif not body.is_active %}{% include "session/neu/_status.html" with wert="" text="inaktiv" %}{% else %}{% include "session/neu/_status.html" with wert="approved" text="aktiv" %}{% endif %}
+                            · {{ body.get_body_type_display|default:"Art nicht angegeben" }}{% if body.parent %} · gehört zu {{ body.parent.name }}{% endif %}{% if body.ags %} · AGS <span class="tabular-nums">{{ body.ags }}</span>{% endif %}
+                        </p>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                        <c-ui.textlink href="{% url 'session:settings_body_edit' tenant_slug=tenant_slug body_id=body.id %}">Bearbeiten<span class="sr-only">: {{ body.name }}</span></c-ui.textlink>
+                        {% if not body.is_default %}
+                        <form method="post" action="{% url 'session:settings_body_default' tenant_slug=tenant_slug body_id=body.id %}">
+                            {% csrf_token %}
+                            <c-ui.text-button dicht type="submit" variant="muted">Als Standard festlegen<span class="sr-only">: {{ body.name }}</span></c-ui.text-button>
+                        </form>
+                        {% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Noch keine Körperschaft angelegt.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

@@ -4,7 +4,7 @@ Vertretungen im neuen Rahmen (Issues #222, #944): Kopfband mit der Regel in eine
 Benutzern. Links die aktiven, geplanten und beendeten Vertretungen als Listen (session/neu/_vertretungen_liste.html,
 „Aufheben“ ohne Füllfarbe), rechts das Eintragen als die eine Hauptaktion der Seite. Formular und Felder wie
 session/settings/delegations.html; Rechte und Kontext wie DelegationListView. Die bisherige Seite bleibt
-session/settings/delegations.html.
+session/settings/delegations.html. Teil 2b: Reiter und Unterpunkte der Einstellungen (Benutzer und Rechte › Vertretungen).
 {% endcomment %}
 
 {% block page_title %}Vertretungen{% endblock %}
@@ -16,10 +16,13 @@ session/settings/delegations.html.
 <c-rahmen.kopfband titel="Vertretungen" text="Eine Vertretung wirkt nur im eingetragenen Zeitraum, nie mit mehr Rechten als die vertretene Person und wird nicht an weitere Vertretungen weitergereicht. Handlungen in Vertretung stehen im Audit-Log." dicht>
     <c-slot name="oben"><c-insight.zurueck href="{% url 'session:users' tenant_slug=tenant_slug %}">Benutzer</c-insight.zurueck></c-slot>
 </c-rahmen.kopfband>
+{% include "session/neu/einstellungen/_reiter.html" %}
 {% endblock %}
 
 {% block page_content %}
-<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]">
+<div class="lg:flex lg:gap-10">
+{% include "session/neu/einstellungen/_unterpunkte.html" %}
+<div class="min-w-0 flex-1 grid gap-x-12 gap-y-10 2xl:grid-cols-[minmax(0,1fr)_22rem] min-[1800px]:grid-cols-[minmax(0,1fr)_26rem]">
     <div class="min-w-0 space-y-10">
         <c-rahmen.abschnitt titel="Aktiv" titel_id="aktiv-titel" zusatz="{{ overview.active|length }}" data-testid="vertretungen-aktiv">
             <c-rahmen.satz eng>Heute wirksame Vertretungen.</c-rahmen.satz>
@@ -58,5 +61,6 @@ session/settings/delegations.html.
             <c-ui.button type="submit" size="sm" icon="user-check">Vertretung eintragen</c-ui.button>
         </form>
     </c-rahmen.abschnitt>
+</div>
 </div>
 {% endblock %}

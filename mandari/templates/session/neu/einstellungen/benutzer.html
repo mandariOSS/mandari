@@ -1,0 +1,42 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Benutzer und Rechte › Benutzer im neuen Rahmen (Issues #27, #944 Teil 2b), ersetzt
+session/settings/users.html. Hauptaktion „Benutzer einladen“ im Kopfband; offene Einladungen und die Benutzer als Listen
+mit Linien statt Tabelle (session/neu/einstellungen/_benutzer_einladungen.html, _benutzer_zeile.html). Den bisherigen
+Knopf „Vertretungen“ trägt jetzt der Unterpunkt. Seitenwahl wie die übrigen Listen (session/neu/_seiten.html).
+Kontext: UserListView.
+{% endcomment %}
+
+{% block page_title %}Benutzer{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Benutzer" text="Wer im Sitzungsdienst von {{ session_tenant.name }} arbeitet und mit welchen Rollen. Was eine Rolle darf, steht unter „Rollen und Rechte“." dicht>
+    <c-slot name="aktionen"><c-ui.button href="{% url 'session:user_invite' tenant_slug=tenant_slug %}" size="sm" icon="user-plus">Benutzer einladen</c-ui.button></c-slot>
+</c-rahmen.kopfband>
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 space-y-10">
+        {% if pending_invitations %}
+        {% include "session/neu/einstellungen/_benutzer_einladungen.html" %}
+        {% endif %}
+
+        <c-rahmen.abschnitt titel="Alle Benutzer" titel_id="benutzer-titel" zusatz="{{ paginator.count }}" data-testid="benutzer-liste">
+            {% if session_users %}
+            <c-rahmen.liste class="mt-2">
+                {% for su in session_users %}
+                {% include "session/neu/einstellungen/_benutzer_zeile.html" %}
+                {% endfor %}
+            </c-rahmen.liste>
+            {% include "session/neu/_seiten.html" %}
+            {% else %}
+            <c-rahmen.satz>Es sind noch keine Benutzer vorhanden.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

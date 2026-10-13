@@ -1,0 +1,110 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Sitzungen › Wahlperioden im neuen Rahmen (Issues #39, #150, #944): Kopfband mit einem Satz und dem
+Archiv als Nebenweg. Links die Perioden als Liste mit Linien statt einer Karte je Periode: Name und Nummer, darunter
+die aktuelle Periode als Punkt mit Text, Zeitraum und Zahl der Sitzungen und Besetzungen. Das Ändern klappt unter der
+Zeile auf (Stift), Löschen nur ohne Sitzungen und Besetzungen; „Periode anlegen“ als ruhiges Formular am Ende der
+Liste. Rechts der Periodenwechsel nach der Kommunalwahl mit Rückfrage wie bisher. Formulare und Felder wie
+session/settings/terms.html (term_save, term_delete, term_change); Kontext TermListView.
+{% endcomment %}
+
+{% block page_title %}Wahlperioden{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Wahlperioden" text="Neue Sitzungen und Besetzungen ordnet mandari automatisch der passenden Periode zu; vergangene Perioden bleiben im Archiv auffindbar." dicht>
+    <c-slot name="aktionen">
+        <c-ui.button href="{% url 'session:archive' tenant_slug=tenant_slug %}" variant="secondary" size="sm" icon="archive">Archiv-Ansicht</c-ui.button>
+    </c-slot>
+</c-rahmen.kopfband>
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 grid gap-x-12 gap-y-10 2xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <c-rahmen.abschnitt titel="Perioden" titel_id="perioden-titel" zusatz="{{ terms|length }}" class="min-w-0 max-w-4xl" data-testid="perioden">
+            {% if terms %}
+            <c-rahmen.liste class="mt-2">
+                {% for term in terms %}
+                {% with tid=term.id|stringformat:"s" %}
+                <li class="py-2.5" x-data="{ offen: false }">
+                    <div class="flex items-start gap-2">
+                        <div class="min-w-0 flex-1">
+                            <p class="text-sm liste-name">{{ term.name }}{% if term.number %} <span class="font-normal text-gray-600 dark:text-gray-400 tabular-nums">· Nr. {{ term.number }}</span>{% endif %}</p>
+                            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                                {% if current_term and current_term.id == term.id %}{% include "session/neu/_status.html" with wert="approved" text="Aktuelle Periode" %} · {% endif %}<span class="tabular-nums">{% if term.start_date %}{{ term.start_date|date:"d.m.Y" }}{% else %}ohne Beginn{% endif %} bis {% if term.end_date %}{{ term.end_date|date:"d.m.Y" }}{% else %}offen{% endif %}</span>
+                                · <span class="tabular-nums">{{ term.meeting_count }}</span> Sitzung{{ term.meeting_count|pluralize:"en" }} · <span class="tabular-nums">{{ term.membership_count }}</span> Besetzung{{ term.membership_count|pluralize:"en" }}
+                            </p>
+                        </div>
+                        <span class="flex shrink-0 items-center text-gray-600 dark:text-gray-400">
+                            <c-ui.symbolknopf icon="pencil" @click="offen = !offen" ::aria-expanded="offen.toString()" aria-expanded="false" aria-controls="periode-{{ tid }}" titel="Bearbeiten" label="{{ term.name }} bearbeiten" />
+                            {% if not term.meeting_count and not term.membership_count %}
+                            <form method="post" action="{% url 'session:term_delete' tenant_slug=tenant_slug term_id=term.id %}" data-confirm="Wahlperiode wirklich löschen?">
+                                {% csrf_token %}
+                                <c-ui.symbolknopf type="submit" icon="trash-2" titel="Löschen" label="{{ term.name }} löschen" ton="gefahr" />
+                            </form>
+                            {% endif %}
+                        </span>
+                    </div>
+                    <form id="periode-{{ tid }}" method="post" action="{% url 'session:term_save' tenant_slug=tenant_slug %}" x-show="offen" x-cloak class="mt-2 mb-1 flex flex-wrap items-end gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="term_id" value="{{ term.id }}">
+                        <c-form.field name="name" id="periode-name-{{ tid }}" label="Name" value="{{ term.name }}" required dicht class="min-w-0 flex-1 basis-52" />
+                        {% include "session/neu/einstellungen/_zahlfeld.html" with name="number" id="periode-nr-"|add:tid label="Nr." titel="Für Drucksachennummern wie 22-0593 (Platzhalter {wp})" value=term.number min=1 max=99 class="w-20" only %}
+                        <c-form.field name="start_date" id="periode-beginn-{{ tid }}" type="date" label="Beginn" value="{{ term.start_date|date:'Y-m-d' }}" dicht class="w-40" />
+                        <c-form.field name="end_date" id="periode-ende-{{ tid }}" type="date" label="Ende" value="{{ term.end_date|date:'Y-m-d' }}" dicht class="w-40" />
+                        <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+                    </form>
+                </li>
+                {% endwith %}
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Noch keine Wahlperioden angelegt. Neue Sitzungen und Besetzungen werden automatisch der passenden Periode zugeordnet, sobald Perioden gepflegt sind.</c-rahmen.satz>
+            {% endif %}
+
+            <h3 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Periode anlegen</h3>
+            <form method="post" action="{% url 'session:term_save' tenant_slug=tenant_slug %}" class="mt-2 flex flex-wrap items-end gap-2" data-testid="periode-anlegen">
+                {% csrf_token %}
+                <c-form.field name="name" id="periode-neu-name" label="Name" placeholder="z. B. Wahlperiode 2020–2025" required dicht class="min-w-0 flex-1 basis-52" />
+                {% include "session/neu/einstellungen/_zahlfeld.html" with name="number" id="periode-neu-nr" label="Nr." titel="Für Drucksachennummern wie 22-0593 (Platzhalter {wp})" platzhalter="22" min=1 max=99 class="w-20" only %}
+                <c-form.field name="start_date" id="periode-neu-beginn" type="date" label="Beginn" dicht class="w-40" />
+                <c-form.field name="end_date" id="periode-neu-ende" type="date" label="Ende" dicht class="w-40" />
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Anlegen</c-ui.button>
+            </form>
+            <c-rahmen.satz>Legt nur die Periode an, bestehende Besetzungen bleiben unverändert. Für den Wechsel nach einer Kommunalwahl gibt es den Periodenwechsel.</c-rahmen.satz>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Periodenwechsel" titel_id="wechsel-titel" class="min-w-0" data-testid="periodenwechsel">
+            <c-rahmen.satz eng>Nach der Kommunalwahl: neue Periode anlegen und die <span class="tabular-nums">{{ active_membership_count }}</span> laufende{{ active_membership_count|pluralize:"n" }} Gremienbesetzung{{ active_membership_count|pluralize:"en" }} zum Stichtag behandeln. Alte Daten bleiben unter der bisherigen Periode im Archiv auffindbar.</c-rahmen.satz>
+            <form method="post" action="{% url 'session:term_change' tenant_slug=tenant_slug %}"
+                  data-confirm="Periodenwechsel wirklich durchführen? Laufende Besetzungen werden zum Stichtag beendet."
+                  class="mt-3 space-y-3">
+                {% csrf_token %}
+                <c-form.field name="name" id="wechsel-name" label="Name der neuen Periode" placeholder="z. B. Wahlperiode 2025–2030" required dicht />
+                <div class="grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] gap-2">
+                    {% include "session/neu/einstellungen/_zahlfeld.html" with name="number" id="wechsel-nr" label="Nr." titel="Für Drucksachennummern wie 22-0593 (Platzhalter {wp})" platzhalter="22" min=1 max=99 only %}
+                    <c-form.field name="start_date" id="wechsel-beginn" type="date" label="Beginn (Stichtag)" required dicht />
+                    <c-form.field name="end_date" id="wechsel-ende" type="date" label="Ende (optional)" dicht />
+                </div>
+                <fieldset>
+                    <legend class="mb-1 text-sm font-medium text-gray-800 dark:text-gray-200">Laufende Besetzungen</legend>
+                    <div class="space-y-2 text-sm text-gray-800 dark:text-gray-200">
+                        <label class="flex items-start gap-2 cursor-pointer">
+                            <input type="radio" name="mode" value="carry" checked class="mt-0.5 w-4 h-4 shrink-0 border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                            <span><span class="font-medium">Übernehmen:</span> laufende Besetzungen werden beendet und mit gleicher Funktion in der neuen Periode fortgeführt.</span>
+                        </label>
+                        <label class="flex items-start gap-2 cursor-pointer">
+                            <input type="radio" name="mode" value="fresh" class="mt-0.5 w-4 h-4 shrink-0 border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                            <span><span class="font-medium">Neu besetzen:</span> laufende Besetzungen werden nur beendet; die Gremien werden anschließend von Hand neu besetzt.</span>
+                        </label>
+                    </div>
+                </fieldset>
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="refresh-ccw">Periodenwechsel durchführen</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

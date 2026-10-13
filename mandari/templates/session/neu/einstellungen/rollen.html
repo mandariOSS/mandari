@@ -1,0 +1,78 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Benutzer und Rechte › Rollen und Rechte im neuen Rahmen (Issues #172, #944 Teil 2b), ersetzt
+session/settings/roles.html. Oben die Rollen als Liste mit Linien (Administrator und Standardrolle als Text statt
+Etiketten, Zahl der Benutzer, „Bearbeiten“ und Löschen mit Rückfrage wie bisher), darunter das Formular „Neue Rolle“
+bzw. „Rolle bearbeiten“ (?edit=…) mit der Rechte-Matrix je Kategorie (session/neu/einstellungen/_rollen_matrix.html).
+Felder, Ziele (role_save, role_delete) und Rückfragen wie bisher; Knöpfe ohne Füllfarbe. Kontext: RoleListView.
+{% endcomment %}
+
+{% block page_title %}Rollen und Rechte{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Rollen und Rechte" text="Eigene Rollen anlegen und Rechte frei kombinieren, etwa „Kämmerei“ nur mit Sitzungsgeldern oder „Geräteverwaltung“ nur mit Endgeräten. Zugewiesen werden Rollen unter „Benutzer“." dicht />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 space-y-10">
+        <c-rahmen.abschnitt titel="Rollen" titel_id="rollen-titel" zusatz="{{ roles|length }}">
+            <c-rahmen.liste class="mt-2" data-testid="rollen-liste">
+                {% for role in roles %}
+                <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1 py-2">
+                    <div class="min-w-0 flex-1">
+                        <p class="flex flex-wrap items-center gap-x-2 text-sm">
+                            <svg class="w-2.5 h-2.5 shrink-0" viewBox="0 0 10 10" aria-hidden="true" focusable="false"><circle cx="5" cy="5" r="5" fill="{{ role.color|default:'#6b7280' }}"/></svg>
+                            <span class="liste-name">{{ role.name }}</span>
+                            <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_admin %}Administrator · {% endif %}{% if role.is_system_role %}Standardrolle · {% endif %}{{ role.member_count }} Benutzer</span>
+                        </p>
+                        {% if role.description %}<p class="ml-[1.125rem] text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ role.description|truncatechars:120 }}</p>{% endif %}
+                    </div>
+                    <div class="flex items-center gap-1 text-gray-600 dark:text-gray-400">
+                        <c-ui.symbolknopf href="?edit={{ role.id }}#rollen-formular" icon="pencil" titel="Bearbeiten" label="Rolle {{ role.name }} bearbeiten" />
+                        {% if not role.is_system_role %}
+                        <form method="post" action="{% url 'session:role_delete' tenant_slug=tenant_slug %}"
+                              data-confirm="Rolle „{{ role.name }}“ wirklich löschen?">
+                            {% csrf_token %}
+                            <input type="hidden" name="role_id" value="{{ role.id }}">
+                            <c-ui.symbolknopf type="submit" icon="trash-2" titel="Löschen" label="Rolle {{ role.name }} löschen" ton="gefahr" />
+                        </form>
+                        {% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="{% if edit_role %}Rolle „{{ edit_role.name }}“ bearbeiten{% else %}Neue Rolle anlegen{% endif %}" titel_id="rollen-formular-titel" id="rollen-formular" class="scroll-mt-20" data-testid="rollen-formular">
+            {% if edit_role %}<c-slot name="link"><c-ui.textlink href="{% url 'session:settings_roles' tenant_slug=tenant_slug %}">Abbrechen</c-ui.textlink></c-slot>{% endif %}
+            <form method="post" action="{% url 'session:role_save' tenant_slug=tenant_slug %}" class="mt-3 space-y-6">
+                <div class="grid max-w-3xl gap-4 sm:grid-cols-2">
+                    <c-form.field name="name" id="rolle-name" label="Rollenname" value="{{ edit_role.name|default:'' }}" placeholder="z. B. Kämmerei" required dicht />
+                    <c-form.field name="description" id="rolle-beschreibung" label="Beschreibung" value="{{ edit_role.description|default:'' }}" dicht />
+                </div>
+
+                <div class="max-w-3xl">
+                    <c-form.checkbox name="is_admin" id="rolle-administrator" value="1" checked="{% if edit_role.is_admin %}1{% endif %}" dicht>
+                        <span class="font-medium">Administrator</span>
+                        <span class="block mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Volle Fachrechte, unabhängig von der Matrix unten. Ausgenommen sind die Kontrollrechte (Protokoll einsehen, exportieren und prüfen): Sie gelten nur, wenn sie unten angehakt sind. Die letzte Admin-Rolle des Mandanten ist gegen Entmachtung und Löschung geschützt.</span>
+                    </c-form.checkbox>
+                    {% if not grants_everything %}
+                    <c-rahmen.satz>Sie vergeben und entziehen nur Rechte, die Sie selbst haben. Die Administrator-Rolle und die Kontrollrechte ändern Administratoren.</c-rahmen.satz>
+                    {% endif %}
+                </div>
+
+                {% include "session/neu/einstellungen/_rollen_matrix.html" %}
+
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="save">Rolle speichern</c-ui.button>
+                {# Versteckte Felder am Ende: als erste Kinder gäben sie dem ersten Abschnitt den Abstand von space-y #}
+                {% if edit_role %}<input type="hidden" name="role_id" value="{{ edit_role.id }}">{% endif %}
+                {% csrf_token %}
+            </form>
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

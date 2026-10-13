@@ -1,0 +1,13 @@
+{% comment %}
+Reiter der Einstellungen im neuen Rahmen (Issue #944, Teil 2b): höchstens sechs Reiter unter dem Kopfband statt der
+Kacheln der bisherigen Übersicht, Baustein c-rahmen.reiter. Aufruf im Block session_header nach dem Kopfband:
+  {% include "session/neu/einstellungen/_reiter.html" %}
+Reiter, Sichtbarkeit nach Recht und Adressen: apps/session/einstellungen.py (session_rahmen.einstellungen).
+{% endcomment %}
+{% with navi=session_rahmen.einstellungen %}{% if navi.reiter %}
+<c-rahmen.reiter label="Einstellungen" class="rahmen-zeile bg-band-hell">
+    {% for r in navi.reiter %}
+    <c-rahmen.reiter-link href="{{ r.url }}" :aktiv="r.aktiv" current="{{ r.current }}">{{ r.label }}</c-rahmen.reiter-link>
+    {% endfor %}
+</c-rahmen.reiter>
+{% endif %}{% endwith %}

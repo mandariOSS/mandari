@@ -1,0 +1,82 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Veröffentlichung im Bürgerportal beenden im neuen Rahmen (Issues #618, #944 Teil 2b), Unterseite von Einstellungen ›
+Allgemein. Schritt 1 (GET): die drei Möglichkeiten als Liste mit Linien (Optionsfeld, wann sie passt, ihre Folgen),
+Schritt 2 (POST ohne confirm): Bestand und Folgen der gewählten Möglichkeit, dann die Bestätigung. Formulare, Felder und
+Texte der Möglichkeiten wie session/settings/portal_publication.html (apps/session/services/portal_publication.py);
+Knöpfe ohne Füllfarbe, nur „Dauerhaft zurücknehmen“ bleibt wie bisher eine Gefahrenaktion (rot). Kontext:
+PortalPublicationEndView.
+{% endcomment %}
+
+{% block page_title %}Veröffentlichung im Bürgerportal beenden{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Daten nicht mehr im Bürgerportal veröffentlichen" text="Derzeit: {{ state_label }}." dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'session:settings' tenant_slug=tenant_slug %}">Einstellungen</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 space-y-10">
+        {% if step == "confirm" %}
+        <c-rahmen.abschnitt titel="{{ chosen.title }}: Bitte bestätigen" titel_id="bestaetigung-titel" class="max-w-3xl" data-testid="bestaetigung">
+            <p class="mt-2 text-sm text-gray-700 dark:text-gray-300">
+                Im Bürgerportal stehen derzeit {{ inventory.sitzungen }} Sitzungen, {{ inventory.vorlagen }} Vorlagen,
+                {{ inventory.dokumente }} Dokumente, {{ inventory.gremien }} Gremien und {{ inventory.personen }} Personen
+                Ihrer Kommune.
+            </p>
+            <p class="mt-4 text-sm font-medium text-gray-900 dark:text-white">Das bewirkt „{{ chosen.title }}“:</p>
+            <ul class="mt-1 list-disc pl-5 space-y-1 text-sm text-gray-700 dark:text-gray-300">
+                {% for effect in chosen.effects %}<li>{{ effect }}</li>{% endfor %}
+                {% if implementation_publish %}<li>Die Seiten zum Umsetzungsstand Ihrer Beschlüsse folgen derselben Regel.</li>{% endif %}
+            </ul>
+            <p class="mt-4 text-sm text-gray-700 dark:text-gray-300"><span class="font-medium text-gray-900 dark:text-white">Rückgängig machen:</span> {{ chosen.undo }}</p>
+            <form method="post" class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+                {% csrf_token %}
+                <input type="hidden" name="mode" value="{{ chosen.key }}">
+                <input type="hidden" name="confirm" value="1">
+                <c-ui.button type="submit" variant="{% if chosen.key == 'withdrawn' %}danger{% else %}secondary{% endif %}" size="sm" icon="{{ chosen.icon }}">{{ chosen.title }}</c-ui.button>
+                <c-ui.textlink href="{% url 'session:portal_publication_end' tenant_slug=tenant_slug %}" class="text-sm">Andere Möglichkeit wählen</c-ui.textlink>
+            </form>
+        </c-rahmen.abschnitt>
+        {% else %}
+        <c-rahmen.abschnitt titel="Was geschieht mit den bereits veröffentlichten Daten?" titel_id="auswahl-titel" class="max-w-3xl">
+            <c-rahmen.satz eng>
+                Beenden Sie die Veröffentlichung, bleibt der Abgleich aus. Wählen Sie, wie das Bürgerportal den bisherigen
+                Bestand zeigt. Die Daten in mandari Session ändern sich dadurch nicht, und jede Möglichkeit lässt sich später
+                wechseln oder mit „Wieder veröffentlichen“ aufheben.
+            </c-rahmen.satz>
+            <form method="post" class="mt-4" data-testid="auswahl">
+                {% csrf_token %}
+                <fieldset>
+                    <legend class="sr-only">Möglichkeit wählen</legend>
+                    <c-rahmen.liste>
+                        {% for option in options %}
+                        <li>
+                            <label for="moeglichkeit-{{ option.key }}" class="flex items-start gap-3 py-3 cursor-pointer">
+                                <input type="radio" name="mode" value="{{ option.key }}" id="moeglichkeit-{{ option.key }}" required
+                                       class="mt-0.5 w-4 h-4 shrink-0 border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700"{% if current and current.key == option.key %} checked{% endif %}>
+                                <span class="min-w-0">
+                                    <span class="block text-sm font-medium text-gray-900 dark:text-white">{{ option.title }}{% if current and current.key == option.key %} <span class="font-normal text-gray-600 dark:text-gray-400">· derzeit eingestellt</span>{% endif %}</span>
+                                    <span class="block mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ option.when }}</span>
+                                    <span class="block mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ option.effects|join:" " }}</span>
+                                </span>
+                            </label>
+                        </li>
+                        {% endfor %}
+                    </c-rahmen.liste>
+                </fieldset>
+                <div class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <c-ui.button type="submit" variant="secondary" size="sm" icon="arrow-right">Weiter zur Bestätigung</c-ui.button>
+                    <c-ui.textlink href="{% url 'session:settings' tenant_slug=tenant_slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+                </div>
+            </form>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

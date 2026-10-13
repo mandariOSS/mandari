@@ -1,0 +1,53 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Körperschaft anlegen oder bearbeiten im neuen Rahmen (Issues #756, #757, #944): Unterseite der Körperschaften
+(Unterpunkt mit aria-current="true", Weg zurück in Kopfband und Brotkrumen). Das Formular steht ohne Karte in einer
+schmalen Spalte, Felder dicht, Fehler am Feld; die Vorlage je Körperschaftstyp nur beim Anlegen. Felder wie
+session/settings/body_form.html; Kontext BodyCreateView und BodyUpdateView.
+{% endcomment %}
+
+{% block page_title %}{% if object %}{{ object.name }}{% else %}Körperschaft anlegen{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zu den Körperschaften (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:settings_bodies' tenant_slug=tenant_slug %}">Körperschaften</c-rahmen.brotkrume><c-rahmen.brotkrume>{% if object %}{{ object.name|truncatechars:60 }}{% else %}Anlegen{% endif %}</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{% if object %}{{ object.name }}{% else %}Körperschaft anlegen{% endif %}" text="{% if object %}Name, Kennungen, Art und Zugehörigkeit der Körperschaft.{% else %}Gremien, Vorlagen und Nummernkreise gehören zu einer Körperschaft; eine Vorlage legt auf Wunsch Gremien, Geschäftsordnung und Standard-TOPs gleich mit an.{% endif %}" dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'session:settings_bodies' tenant_slug=tenant_slug %}">Körperschaften</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 max-w-3xl">
+        <form method="post" class="space-y-4" novalidate data-testid="koerperschaft-formular">
+            {% csrf_token %}
+            <c-form.errors :form="form" />
+            <c-form.field :field="form.name" label="Name" placeholder="z. B. Gemeinde Musterdorf" required dicht />
+            <div class="grid gap-4 sm:grid-cols-2">
+                <c-form.field :field="form.short_name" label="Kurzname" help="Wert des Platzhalters {koerperschaft} in Nummernkreisen" dicht />
+                <c-form.field :field="form.slug" label="Kurzkennung" help="Für Filteradressen. {{ form.slug.help_text }}" dicht />
+            </div>
+            <c-form.select :field="form.body_type" label="Art der Körperschaft" dicht />
+            <div class="grid gap-4 sm:grid-cols-2">
+                <c-form.field :field="form.ags" label="Amtlicher Gemeindeschlüssel" help="8 Stellen für Gemeinden, 5 für Kreise" dicht />
+                <c-form.field :field="form.rgs" label="Regionalschlüssel" help="12 Stellen" dicht />
+            </div>
+            <c-form.select :field="form.parent" label="Gehört zu" help="z. B. die Samtgemeinde einer Mitgliedsgemeinde" dicht />
+            {% if form.template %}
+            <c-form.select :field="form.template" label="Vorlage" help="Legt Gremien mit gesetzlicher Ausschussart an, belegt die Geschäftsordnung vor und ergänzt Standard-TOPs" dicht />
+            {% endif %}
+            {% if form.is_active.errors %}
+            <c-ui.alert variant="error">{{ form.is_active.errors.0 }}</c-ui.alert>
+            {% endif %}
+            <c-form.checkbox :field="form.is_active" label="Aktiv: erscheint in Auswahl und Filtern" dicht />
+            <div class="flex flex-wrap items-center gap-4 pt-2">
+                <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+                <c-ui.textlink href="{% url 'session:settings_bodies' tenant_slug=tenant_slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -579,6 +579,10 @@ class PaperCreateView(PaperBodyFormMixin, PaperNumberingFormMixin, SessionViewMi
     ]
     permission_required = "create_papers"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/vorlage_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["text_blocks"] = _active_text_blocks(self.session_tenant)
@@ -888,6 +892,10 @@ class PaperUpdateView(PaperBodyFormMixin, PaperNumberingFormMixin, SessionViewMi
         "financial_impact_note",
     )
     content_locked = False
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/vorlage_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

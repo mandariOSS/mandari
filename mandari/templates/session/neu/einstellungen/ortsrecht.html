@@ -1,0 +1,78 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Ortsrecht einer Körperschaft im neuen Rahmen (Issues #757, #944): Unterseite der Sitzungsformate (Unterpunkt mit
+aria-current="true", Weg zurück in Kopfband und Brotkrumen). Ein Formular in zwei Abschnitten ohne Karten:
+Hauptsatzung (Zuschaltung, Aufnahmen und Übertragung, Notlage) und Geschäftsordnung (Fristen, Niederschrift,
+Abstimmungen, Öffentlichkeit); Erläuterungen in 13 px unter dem Feld, Fehler am Feld. Die Warnung vor dem Ablauf eines
+Notlagenbeschlusses bleibt ein Hinweis zum Handeln. Felder wie session/settings/local_rules.html; Kontext
+BodyLocalRulesView.
+{% endcomment %}
+
+{% block page_title %}Ortsrecht: {{ body.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zu den Sitzungsformaten (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}">Sitzungsformate</c-rahmen.brotkrume><c-rahmen.brotkrume>Ortsrecht</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Ortsrecht: {{ body.name }}" text="Hauptsatzung und Geschäftsordnung gelten je Körperschaft. mandari prüft damit hybride Sitzungen, setzt Vermerke in die Ladung und weist auf fehlende Nachweise hin." dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}">Sitzungsformate</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 max-w-4xl space-y-6">
+        {% if emergency_warning %}<c-ui.alert variant="warning" icon="calendar-clock">{{ emergency_warning }}</c-ui.alert>{% endif %}
+
+        <form method="post" class="space-y-10" data-testid="ortsrecht">
+            <c-form.errors :form="form" />
+            <c-rahmen.abschnitt titel="Hauptsatzung" titel_id="hauptsatzung-titel" zusatz="Zuschaltung, Aufnahmen und Übertragung, Notlage">
+                <div class="mt-3 space-y-4">
+                    <div>
+                        <c-form.checkbox :field="form.remote_per_invitation" label="Zuschaltung je Ladung zulassen" dicht />
+                        <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Die Hauptsatzung sieht vor, dass die Zuschaltung in der Ladung zugelassen wird. Die Ladung hybrider Sitzungen erhält dann einen Vermerk.</p>
+                    </div>
+                    <div>
+                        <c-form.checkbox :field="form.remote_public_only" label="Zuschaltung nur in öffentlichen Sitzungen" dicht />
+                        <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Nichtöffentliche Sitzungen lassen sich dann nicht hybrid oder digital laden.</p>
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-3">
+                        <c-form.field :field="form.recording_date" label="Bild- und Tonaufnahmen: Hauptsatzung vom" type="date" dicht />
+                        <c-form.field :field="form.recording_reference" label="Fundstelle" class="sm:col-span-2" placeholder="z. B. § 8 Hauptsatzung" dicht />
+                        <c-form.field :field="form.video_public_date" label="Öffentlichkeit per Video: Hauptsatzung vom" type="date" dicht />
+                        <c-form.field :field="form.video_public_reference" label="Fundstelle" class="sm:col-span-2" placeholder="z. B. § 8a Hauptsatzung" dicht />
+                        <c-form.field :field="form.emergency_date" label="Notlagenbeschluss vom" type="date" dicht />
+                        <c-form.field :field="form.emergency_until" label="gilt bis" type="date" dicht />
+                        <c-form.field :field="form.emergency_reference" label="Fundstelle" placeholder="z. B. Rat, TOP 4" dicht />
+                    </div>
+                    {% if law and law.entries.remote_basis_hint %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ law.entries.remote_basis_hint.text }}</p>{% endif %}
+                </div>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="Geschäftsordnung" titel_id="geschaeftsordnung-titel" zusatz="Fristen, Niederschrift, Abstimmungen, Öffentlichkeit">
+                <div class="mt-3 grid gap-4 sm:grid-cols-3">
+                    <c-form.field :field="form.rules_date" label="Geschäftsordnung vom" type="date" dicht />
+                    <c-form.field :field="form.rules_reference" label="Fundstelle" class="sm:col-span-2" dicht />
+                    <c-form.field :field="form.invitation_days" label="Ladungsfrist (Tage)" type="number" dicht />
+                    <c-form.select :field="form.invitation_day_kind" label="Zählweise" dicht />
+                    <c-form.select :field="form.deadline_start" label="Fristbeginn" dicht />
+                    <c-form.field :field="form.urgent_days" label="Ladungsfrist im Eilfall (Tage)" type="number" dicht />
+                    <c-form.field :field="form.urgent_notice" label="Pflichthinweis in der Ladung im Eilfall" class="sm:col-span-2" dicht />
+                    <c-form.field :field="form.motion_days" label="Antragsfrist (Tage vor der Sitzung)" type="number" dicht />
+                    <c-form.field :field="form.question_days" label="Frist für Anfragen (Tage vor der Sitzung)" type="number" dicht />
+                    <c-form.field :field="form.residents_questions_minutes" label="Einwohnerfragestunde (Minuten)" type="number" dicht />
+                    <c-form.field :field="form.minutes_signers" label="Unterzeichnende der Niederschrift" class="sm:col-span-2" placeholder="z. B. Vorsitz, Bürgermeister/in, Protokollführung" dicht />
+                    <c-form.select :field="form.committees_public" label="Ausschüsse tagen" dicht />
+                    <c-form.field :field="form.voting_methods" label="Abstimmungsarten" class="sm:col-span-3" placeholder="z. B. offen; namentlich auf Verlangen eines Fünftels; geheim auf Mehrheitsbeschluss" dicht />
+                </div>
+            </c-rahmen.abschnitt>
+
+            <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+            {# Am Ende: als erstes Kind gäbe das versteckte Feld dem ersten Abschnitt den Abstand von space-y #}
+            {% csrf_token %}
+        </form>
+    </div>
+</div>
+{% endblock %}

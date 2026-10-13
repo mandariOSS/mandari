@@ -1,0 +1,81 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Tagesordnungspunkt bearbeiten im neuen Rahmen (Issue #944): eine ruhige Formularspalte (Betreff, Vorlage, Unterpunkt,
+Art; darunter Öffentlichkeit und Geheimhaltung), Felder dicht. Nachtrag und genehmigte Niederschrift stehen als Satz im
+Kopfband statt als Hinweiskasten. Speichern ist die eine Hauptaktion am Formularende, „Abbrechen“ ein Textlink zurück
+zur Sitzung. Felder, Optionen (nur freigegebene Vorlagen, Haupt-TOPs der Sitzung) und Fehler wie
+session/meetings/agenda_form.html, die bisherige Seite bleibt. Kontext wie AgendaItemUpdateView.
+{% endcomment %}
+
+{% block page_title %}TOP bearbeiten{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zur Sitzung #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" with meeting=object.meeting %}<c-rahmen.brotkrume>TOP {{ object.number }}</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="TOP {{ object.number }} bearbeiten" dicht>
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=object.meeting_id %}">{{ object.meeting.name|truncatechars:60 }}</c-insight.zurueck></c-slot>
+    {% if object.is_supplementary %}<p class="text-sm text-gray-700 dark:text-gray-300">Nachtrags-TOP (nach Ladungsversand hinzugefügt)</p>{% endif %}
+    {% if protocol_locked %}<p class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="top-gesperrt">Die Niederschrift dieser Sitzung ist genehmigt. Sie können den TOP nur noch auf nichtöffentlich setzen; Betreff, Vorlage und Zuordnung bleiben unverändert.</p>{% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=object.meeting_id as abbrechen %}
+<form method="post" class="max-w-3xl space-y-8" data-testid="top-formular">
+    {% include "session/neu/_formular_fehler.html" %}
+
+    <c-rahmen.abschnitt titel="Tagesordnungspunkt" titel_id="top-titel">
+        <div class="mt-3 space-y-4">
+            <c-form.field :field="form.name" label="Betreff" required dicht />
+            <div class="grid gap-4 sm:grid-cols-2">
+                <div>
+                    <c-form.beschriftung feld="{{ form.paper.id_for_label }}">Vorlage</c-form.beschriftung>
+                    <select name="paper" id="id_paper"{% if form.paper.errors %} aria-invalid="true" aria-describedby="id_paper-error"{% endif %}
+                            class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.paper.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                        <option value="">Keine Vorlage</option>
+                        {% for paper in form.paper.field.queryset %}
+                        <option value="{{ paper.id }}" {% if form.paper.value|stringformat:"s" == paper.id|stringformat:"s" %}selected{% endif %}>{{ paper.display_reference }}: {{ paper.name|truncatechars:40 }}{% if not paper.is_public %} (nichtöffentlich){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    {% include "session/neu/_formular_feldfehler.html" with feld=form.paper %}
+                </div>
+                <div>
+                    <c-form.beschriftung feld="{{ form.parent.id_for_label }}">Unterpunkt von</c-form.beschriftung>
+                    <select name="parent" id="id_parent"{% if form.parent.errors %} aria-invalid="true" aria-describedby="id_parent-error"{% endif %}
+                            class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.parent.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                        <option value="">Kein Unterpunkt (Haupt-TOP)</option>
+                        {% for parent in form.parent.field.queryset %}
+                        <option value="{{ parent.id }}" {% if form.parent.value|stringformat:"s" == parent.id|stringformat:"s" %}selected{% endif %}>TOP {{ parent.number }}: {{ parent.name|truncatechars:40 }}</option>
+                        {% endfor %}
+                    </select>
+                    {% include "session/neu/_formular_feldfehler.html" with feld=form.parent %}
+                </div>
+            </div>
+            {# Art des TOP (Issue #757) #}
+            <c-form.select :field="form.kind" label="Art des Tagesordnungspunkts" dicht
+                           help="Einwohnerfragestunde: im öffentlichen Teil, Zeitrahmen laut Geschäftsordnung" />
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Öffentlichkeit und Geheimhaltung" titel_id="oeffentlichkeit-titel">
+        <div class="mt-3 space-y-4">
+            <div>
+                <c-form.checkbox :field="form.is_public" label="Öffentlicher Tagesordnungspunkt" dicht />
+                <p class="ml-6 mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Beim Wechsel in den nichtöffentlichen Teil wird die Tagesordnung automatisch neu nummeriert (Ö 1..n, NÖ getrennt).</p>
+                {% if form.is_public.errors %}<p class="ml-6 mt-1 text-sm text-red-700 dark:text-red-400" role="alert">{{ form.is_public.errors.0 }}</p>{% endif %}
+            </div>
+            {# Geheimhaltungspflicht (Issue #754) #}
+            <div>
+                <c-form.checkbox :field="form.requires_secrecy" label="Geheimhaltungspflichtige Angelegenheit" dicht />
+                <p class="ml-6 mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Geheimhaltung gesetzlich vorgeschrieben oder behördlich angeordnet (z. B. § 6 Abs. 3 Satz 1 NKomVG); nur im nichtöffentlichen Teil. Nach dem Landesprofil kann die Beratung mit Zugeschalteten unzulässig sein.</p>
+                {% if form.requires_secrecy.errors %}<p class="ml-6 mt-1 text-sm text-red-700 dark:text-red-400" role="alert">{{ form.requires_secrecy.errors.0 }}</p>{% endif %}
+            </div>
+        </div>
+    </c-rahmen.abschnitt>
+
+    {% include "session/neu/_formular_aktionen.html" with knopf="Speichern" %}
+    {# Am Ende: als erstes Kind gäbe das versteckte Feld dem ersten Abschnitt den Abstand von space-y #}
+    {% csrf_token %}
+</form>
+{% endblock %}

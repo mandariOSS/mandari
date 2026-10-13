@@ -28,6 +28,7 @@ from django.views.generic import CreateView, TemplateView, UpdateView
 
 from ..models import SessionBody, SessionTenant
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import body_service, tenant_provisioning
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,14 @@ class BodyListView(SessionViewMixin, TemplateView):
     template_name = "session/settings/bodies.html"
     permission_required = "manage_settings"
 
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/koerperschaften.html"]
+            if neues_design(self.session_tenant)
+            else [self.template_name]
+        )
+
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context: dict[str, Any] = cast(Any, super()).get_context_data(**kwargs)
         tenant = cast(SessionTenant, self.session_tenant)
@@ -152,6 +161,14 @@ class BodyCreateView(SessionViewMixin, CreateView):  # type: ignore[type-arg]
     form_class = SessionBodyForm
     template_name = "session/settings/body_form.html"
     permission_required = "manage_settings"
+
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/koerperschaft.html"]
+            if neues_design(self.session_tenant)
+            else [self.template_name]
+        )
 
     def get_form_kwargs(self) -> dict[str, Any]:
         return _form_kwargs(self, super().get_form_kwargs())
@@ -180,6 +197,14 @@ class BodyUpdateView(SessionViewMixin, UpdateView):  # type: ignore[type-arg]
     template_name = "session/settings/body_form.html"
     permission_required = "manage_settings"
     pk_url_kwarg = "body_id"
+
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/koerperschaft.html"]
+            if neues_design(self.session_tenant)
+            else [self.template_name]
+        )
 
     def get_queryset(self) -> QuerySet[SessionBody]:
         return SessionBody.objects.filter(tenant=self.session_tenant)

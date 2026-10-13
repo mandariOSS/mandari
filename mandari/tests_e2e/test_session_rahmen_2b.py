@@ -11,6 +11,7 @@ seitlich über, ohne Fehler im Browser:
   Bearbeiten, Umwandeln), Ladung und Rückmeldungen
 - Werkzeuge: Cockpit (neuer Rahmen, Stand wie bisher) und Abstimmung erfassen, Fassungen, Dateiversionen, Endgeräte und
   die Leitstelle einer Mandantengruppe
+- Formulare zum Anlegen und Bearbeiten und alle Einstellungen; deren Reiter führen am Handy zu ihren Seiten
 
 Die Live-Funktion des Cockpits (TOP aufrufen, Abstimmung, Polling) prüft tests_e2e/test_sitzungscockpit.py in beiden
 Erscheinungsbildern.
@@ -183,3 +184,84 @@ def test_werkzeuge_am_handy_und_tablet(
     login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
     _durchlaufen(page, live_server, werkzeuge, screenshot)
     problems.assert_clean("Cockpit, Fassungen, Endgeräte und Leitstelle aus Teil 2b im neuen Rahmen")
+
+
+@pytest.fixture
+def formulare_und_einstellungen(bestand: dict[str, Any]) -> dict[str, str]:
+    """Formulare zum Anlegen und Bearbeiten und alle Einstellungen; die Daten kommen aus der Demo."""
+    from apps.session.models import SessionAgendaItem, SessionBody, SessionOrganization, SessionPaper, SessionPerson
+
+    tenant, kommend = bestand["tenant"], bestand["kommend"]
+    top = SessionAgendaItem.objects.filter(meeting=kommend).order_by("order").first()
+    gremium = SessionOrganization.objects.filter(tenant=tenant).first()
+    person = SessionPerson.objects.filter(tenant=tenant).first()
+    vorlage = SessionPaper.objects.filter(tenant=tenant).order_by("-created_at").first()
+    koerperschaft = SessionBody.objects.filter(tenant=tenant).first()
+    assert top is not None and gremium is not None and person is not None and vorlage is not None
+    assert koerperschaft is not None
+    return {
+        "sitzung-neu": _adresse("meeting_create"),
+        "sitzung-bearbeiten": _adresse("meeting_edit", meeting_id=kommend.pk),
+        "vorlage-neu": _adresse("paper_create"),
+        "vorlage-bearbeiten": _adresse("paper_edit", paper_id=vorlage.pk),
+        "gremium-neu": _adresse("organization_create"),
+        "gremium-bearbeiten": _adresse("organization_edit", organization_id=gremium.pk),
+        "person-neu": _adresse("person_create"),
+        "person-bearbeiten": _adresse("person_edit", person_id=person.pk),
+        "top-bearbeiten": _adresse("agenda_item_edit", item_id=top.pk),
+        "einstellungen": _adresse("settings"),
+        "veroeffentlichung-beenden": _adresse("portal_publication_end"),
+        "benutzer": _adresse("users"),
+        "benutzer-einladen": _adresse("user_invite"),
+        "rollen": _adresse("settings_roles"),
+        "vier-augen": _adresse("settings_four_eyes"),
+        "sitzungsformate": _adresse("settings_meeting_formats"),
+        "ortsrecht": _adresse("settings_local_rules", body_id=koerperschaft.pk),
+        "koerperschaften": _adresse("settings_bodies"),
+        "koerperschaft-neu": _adresse("settings_body_create"),
+        "koerperschaft-bearbeiten": _adresse("settings_body_edit", body_id=koerperschaft.pk),
+        "wahlperioden": _adresse("terms"),
+        "textbausteine": _adresse("settings_textblocks"),
+        "nummernkreise": _adresse("settings_numbering"),
+        "mitzeichnung": _adresse("settings_cosign"),
+        "datenschutz": _adresse("privacy_settings"),
+        "zugaenge": _adresse("settings_api_tokens"),
+    }
+
+
+def test_formulare_und_einstellungen_am_handy_und_tablet(
+    page: Any,
+    live_server: Any,
+    formulare_und_einstellungen: dict[str, str],
+    problems: BrowserProblems,
+    screenshot: Any,
+) -> None:
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    _durchlaufen(page, live_server, formulare_und_einstellungen, screenshot)
+    problems.assert_clean("Formulare und Einstellungen aus Teil 2b im neuen Rahmen")
+
+
+def test_reiter_der_einstellungen_am_handy(
+    page: Any, live_server: Any, formulare_und_einstellungen: dict[str, str], problems: BrowserProblems
+) -> None:
+    """Am Handy: Ein Reiter führt zu seiner ersten Seite, die Unterpunkte zu den übrigen, ohne seitlichen Überlauf."""
+    seiten = formulare_und_einstellungen
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"{live_server.url}{seiten['einstellungen']}")
+    wait_for_bundle(page)
+    reiter = page.get_by_role("navigation", name="Einstellungen")
+    expect(reiter.get_by_role("link", name="Allgemein")).to_have_attribute("aria-current", "page")
+    reiter.get_by_role("link", name="Sitzungen").click()
+    wait_for_bundle(page)
+    assert page.url.endswith(seiten["sitzungsformate"])
+    reiter = page.get_by_role("navigation", name="Einstellungen")
+    expect(reiter.get_by_role("link", name="Sitzungen")).to_have_attribute("aria-current", "page")
+    unterpunkte = page.get_by_test_id("einstellungen-unterpunkte")
+    expect(unterpunkte.get_by_role("link", name="Sitzungsformate")).to_have_attribute("aria-current", "page")
+    unterpunkte.get_by_role("link", name="Wahlperioden").click()
+    wait_for_bundle(page)
+    assert page.url.endswith(seiten["wahlperioden"])
+    masse = page.evaluate(UEBERLAUF)
+    assert masse["scroll"] <= masse["breite"] + 1, masse
+    problems.assert_clean("Reiter der Einstellungen")

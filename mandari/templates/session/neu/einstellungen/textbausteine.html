@@ -1,0 +1,101 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Sitzungen › Textbausteine und Standard-TOPs im neuen Rahmen (Issues #85, #944): zwei Abschnitte
+nebeneinander (schmal untereinander), je eine Liste mit Linien statt Karte, inaktive Einträge gedimmt, Kategorie als
+Text statt Etikett, „nichtöffentlich“ ausgeschrieben; Löschen als Symbolknopf mit Rückfrage wie bisher. „Hinzufügen“
+steht als ruhiges Formular am Ende des Abschnitts. Formulare und Felder wie session/settings/textblocks.html
+(standard_item_manage, textblock_manage); Kontext TextblockSettingsView.
+{% endcomment %}
+
+{% block page_title %}Textbausteine und Standard-TOPs{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Textbausteine und Standard-TOPs" text="Standard-Tagesordnungspunkte übernimmt mandari beim Anlegen einer Sitzung automatisch; Textbausteine lassen sich in Vorlagen und Niederschriften per Klick einfügen." dicht />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 grid gap-x-12 gap-y-10 2xl:grid-cols-2">
+        <c-rahmen.abschnitt titel="Standard-Tagesordnungspunkte" titel_id="standard-tops-titel" zusatz="{{ standard_items|length }}" class="min-w-0" data-testid="standard-tops">
+            {% if standard_items %}
+            <c-rahmen.liste class="mt-2">
+                {% for item in standard_items %}
+                <li class="flex items-start gap-2 py-2">
+                    <div class="min-w-0 flex-1 {% if not item.is_active %}text-gray-500 dark:text-gray-500{% endif %}">
+                        <p class="text-sm font-medium {% if item.is_active %}text-gray-900 dark:text-white{% endif %} break-words">{{ item.name }}</p>
+                        <p class="text-[0.8125rem] {% if item.is_active %}text-gray-600 dark:text-gray-400{% endif %}">
+                            {{ item.get_placement_display }} · Reihenfolge <span class="tabular-nums">{{ item.order }}</span>
+                            · {% if item.organization %}{{ item.organization.name }}{% else %}Alle Gremien{% endif %}{% if not item.is_public %} · nichtöffentlich{% endif %}{% if not item.is_active %} · inaktiv{% endif %}
+                        </p>
+                    </div>
+                    <form method="post" action="{% url 'session:standard_item_manage' tenant_slug=tenant_slug %}" data-confirm="Standard-TOP wirklich löschen?" class="shrink-0 text-gray-600 dark:text-gray-400">
+                        {% csrf_token %}
+                        <input type="hidden" name="item_id" value="{{ item.id }}">
+                        <input type="hidden" name="action" value="delete">
+                        <c-ui.symbolknopf type="submit" icon="trash-2" titel="Löschen" label="Standard-TOP {{ item.name }} löschen" ton="gefahr" />
+                    </form>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Noch keine Standard-TOPs hinterlegt.</c-rahmen.satz>
+            {% endif %}
+            <h3 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Standard-TOP hinzufügen</h3>
+            <form method="post" action="{% url 'session:standard_item_manage' tenant_slug=tenant_slug %}" class="mt-2 flex flex-wrap items-end gap-2" data-testid="standard-top-anlegen">
+                {% csrf_token %}
+                <c-form.field name="name" id="top-betreff" label="Betreff" placeholder="z. B. Genehmigung der Niederschrift" required dicht class="min-w-0 flex-1 basis-full sm:basis-64" />
+                <c-form.select name="organization" id="top-gremium" label="Gremium" dicht class="min-w-0 w-48">
+                    <option value="">Alle Gremien</option>
+                    {% for org in organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}
+                </c-form.select>
+                <c-form.select name="placement" id="top-position" label="Position" dicht class="min-w-0 w-40">
+                    {% for value, label in placement_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </c-form.select>
+                {% include "session/neu/einstellungen/_zahlfeld.html" with name="order" id="top-reihenfolge" label="Reihenfolge" value=0 min=0 max=9999 class="w-28" only %}
+                <c-form.checkbox name="is_public" id="top-oeffentlich" value="1" label="Öffentlich" checked class="h-9" />
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Hinzufügen</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Textbausteine" titel_id="textbausteine-titel" zusatz="{{ text_blocks|length }}" class="min-w-0" data-testid="textbausteine">
+            <c-rahmen.satz eng>Die Platzhalter <code class="font-mono text-[0.8125rem]">{gremium}</code>, <code class="font-mono text-[0.8125rem]">{datum}</code>, <code class="font-mono text-[0.8125rem]">{sitzung}</code> und <code class="font-mono text-[0.8125rem]">{vorlage}</code> werden beim Einfügen ersetzt.</c-rahmen.satz>
+            {% if text_blocks %}
+            <c-rahmen.liste class="mt-2">
+                {% for block in text_blocks %}
+                <li class="flex items-start gap-2 py-2">
+                    <div class="min-w-0 flex-1 {% if not block.is_active %}text-gray-500 dark:text-gray-500{% endif %}">
+                        <p class="text-sm break-words"><span class="font-medium {% if block.is_active %}text-gray-900 dark:text-white{% endif %}">{{ block.title }}</span> <span class="{% if block.is_active %}text-gray-600 dark:text-gray-400{% endif %}">· {{ block.get_category_display }}{% if not block.is_active %} · inaktiv{% endif %}</span></p>
+                        <p class="mt-0.5 text-[0.8125rem] {% if block.is_active %}text-gray-600 dark:text-gray-400{% endif %} whitespace-pre-line break-words">{{ block.content|truncatechars:160 }}</p>
+                    </div>
+                    <form method="post" action="{% url 'session:textblock_manage' tenant_slug=tenant_slug %}" data-confirm="Textbaustein wirklich löschen?" class="shrink-0 text-gray-600 dark:text-gray-400">
+                        {% csrf_token %}
+                        <input type="hidden" name="block_id" value="{{ block.id }}">
+                        <input type="hidden" name="action" value="delete">
+                        <c-ui.symbolknopf type="submit" icon="trash-2" titel="Löschen" label="Textbaustein {{ block.title }} löschen" ton="gefahr" />
+                    </form>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Noch keine Textbausteine hinterlegt.</c-rahmen.satz>
+            {% endif %}
+            <h3 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Textbaustein hinzufügen</h3>
+            <form method="post" action="{% url 'session:textblock_manage' tenant_slug=tenant_slug %}" class="mt-2 space-y-3" data-testid="textbaustein-anlegen">
+                {% csrf_token %}
+                <div class="feldzeile">
+                    <c-form.field name="title" id="baustein-titel" label="Titel" placeholder="z. B. Einstimmig beschlossen" required dicht class="min-w-0 flex-1 basis-full sm:basis-56" />
+                    <c-form.select name="category" id="baustein-kategorie" label="Kategorie" dicht class="min-w-0 w-48">
+                        {% for value, label in category_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                    </c-form.select>
+                    {% include "session/neu/einstellungen/_zahlfeld.html" with name="order" id="baustein-reihenfolge" label="Reihenfolge" value=0 min=0 max=9999 class="w-28" only %}
+                </div>
+                <c-form.textarea name="content" id="baustein-text" label="Text" rows="3" placeholder="z. B. Der {gremium} beschließt einstimmig: …" required dicht />
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Hinzufügen</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

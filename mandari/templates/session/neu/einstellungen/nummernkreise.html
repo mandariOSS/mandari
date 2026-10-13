@@ -1,0 +1,116 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Vorlagen › Nummernkreise im neuen Rahmen (Issues #150, #756, #944): Kopfband mit der Regel in einem
+Satz. Links die Kreise als Liste mit Linien statt Karten: Bezeichnung, Vorlagenarten, Körperschaft, Zählerbereich und
+Vergabe, rechts die nächste Nummer (gleich breite Ziffern). Der Stift klappt unter der Zeile das Formular des Kreises
+und das Setzen der nächsten laufenden Nummer auf; „Weiteren Nummernkreis anlegen“ klappt am Ende der Liste auf.
+Rechts die Bezeichnung der Nummer und die Vorlagen für verbreitete Praxis mit Rückfrage wie bisher. Formulare
+(settings_numbering_save mit action=label, range, next, preset) und Felder wie session/settings/numbering.html mit
+_numbering_fields.html (hier _nummernkreise_felder.html); Kontext NumberingSettingsView.
+{% endcomment %}
+
+{% block page_title %}Nummernkreise{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Nummernkreise" text="Jede Vorlage erhält ihre {{ session_tenant.reference_label }} automatisch aus einem Nummernkreis. Eine vergebene Nummer bleibt unverändert und wird nie ein zweites Mal vergeben." dicht />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+{% url 'session:settings_numbering_save' tenant_slug=tenant_slug as save_url %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 grid gap-x-12 gap-y-10 2xl:grid-cols-[minmax(0,1fr)_26rem]">
+        <c-rahmen.abschnitt titel="Kreise" titel_id="kreise-titel" zusatz="{{ ranges|length }}" class="min-w-0 max-w-5xl" data-testid="nummernkreise">
+            <c-rahmen.satz eng>Platzhalter: <code class="font-mono text-[0.8125rem]">{lfd}</code> oder <code class="font-mono text-[0.8125rem]">{lfd:4}</code> laufende Nummer, <code class="font-mono text-[0.8125rem]">{jahr}</code>, <code class="font-mono text-[0.8125rem]">{jj}</code>, <code class="font-mono text-[0.8125rem]">{wp}</code> (Wahlperiode), <code class="font-mono text-[0.8125rem]">{prefix}</code>, <code class="font-mono text-[0.8125rem]">{gremium}</code>; Unternummern mit <code class="font-mono text-[0.8125rem]">{parent}</code> und <code class="font-mono text-[0.8125rem]">{sub}</code>.</c-rahmen.satz>
+            {% if ranges %}
+            <c-rahmen.liste class="mt-3">
+                {% for rng in ranges %}
+                <li class="py-2.5" x-data="{ offen: false }">
+                    <div class="flex flex-wrap items-start justify-between gap-x-6 gap-y-1">
+                        <div class="min-w-0 flex-1 basis-64 {% if not rng.is_active %}text-gray-500 dark:text-gray-500{% endif %}">
+                            <p class="text-sm font-medium {% if rng.is_active %}text-gray-900 dark:text-white{% endif %} break-words">{{ rng.name }}{% if not rng.is_active %} <span class="font-normal">(inaktiv)</span>{% endif %}</p>
+                            <p class="text-[0.8125rem] {% if rng.is_active %}text-gray-600 dark:text-gray-400{% endif %} break-words">
+                                {% if rng.typ_namen %}{{ rng.typ_namen|join:", " }}{% else %}alle Vorlagenarten ohne eigenen Kreis{% endif %}{% if body_choice.active %} · {% if rng.body %}{{ rng.body.name }}{% else %}alle Körperschaften{% endif %}{% endif %}
+                                · {{ rng.get_reset_display }} · Vergabe: {{ rng.get_assign_on_display }}
+                            </p>
+                        </div>
+                        <div class="flex shrink-0 items-start gap-2">
+                            <p class="text-right"><span class="block liste-angaben">Nächste Nummer</span><span class="font-mono text-sm font-semibold tabular-nums text-gray-900 dark:text-white" data-testid="naechste-nummer">{{ rng.vorschau }}</span></p>
+                            <span class="text-gray-600 dark:text-gray-400"><c-ui.symbolknopf icon="pencil" @click="offen = !offen" ::aria-expanded="offen.toString()" aria-expanded="false" aria-controls="kreis-{{ rng.id }}" titel="Bearbeiten" label="Nummernkreis {{ rng.name }} bearbeiten" /></span>
+                        </div>
+                    </div>
+                    <div id="kreis-{{ rng.id }}" x-show="offen" x-cloak class="mt-3 mb-2 space-y-5">
+                        <form method="post" action="{{ save_url }}" class="grid gap-3 sm:grid-cols-2">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="range">
+                            <input type="hidden" name="range_id" value="{{ rng.id }}">
+                            {% include "session/neu/einstellungen/_nummernkreise_felder.html" %}
+                            <div class="sm:col-span-2"><c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button></div>
+                        </form>
+                        {% if rng.is_active %}
+                        <form method="post" action="{{ save_url }}" class="feldzeile">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="next">
+                            <input type="hidden" name="range_id" value="{{ rng.id }}">
+                            {% with nid=rng.id|stringformat:"s" %}{% include "session/neu/einstellungen/_zahlfeld.html" with name="next_number" id="next-"|add:nid label="Nächste laufende Nummer setzen" min=1 pflicht=True class="w-56" only %}{% endwith %}
+                            <c-ui.button type="submit" variant="secondary" size="sm">Übernehmen</c-ui.button>
+                            <p class="basis-full text-[0.8125rem] text-gray-600 dark:text-gray-400">Beim Umstieg aus einem Altsystem: die dort zuletzt vergebene Nummer plus eins. Nur aufwärts möglich.</p>
+                        </form>
+                        {% endif %}
+                    </div>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Noch kein Nummernkreis. Übernehmen Sie eine Vorlage für verbreitete Praxis oder legen Sie einen Kreis an.</c-rahmen.satz>
+            {% endif %}
+
+            <div x-data="{ offen: false }" class="mt-4">
+                <c-ui.text-button dicht icon="plus" @click="offen = !offen" ::aria-expanded="offen.toString()" aria-expanded="false" aria-controls="kreis-neu">
+                    Weiteren Nummernkreis anlegen
+                </c-ui.text-button>
+                <form id="kreis-neu" method="post" action="{{ save_url }}" x-show="offen" x-cloak class="mt-3 grid gap-3 sm:grid-cols-2" data-testid="kreis-anlegen">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="range">
+                    {% include "session/neu/einstellungen/_nummernkreise_felder.html" with rng=None %}
+                    <div class="sm:col-span-2"><c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Anlegen</c-ui.button></div>
+                </form>
+            </div>
+        </c-rahmen.abschnitt>
+
+        <div class="min-w-0 space-y-10">
+            <c-rahmen.abschnitt titel="Bezeichnung der Nummer" titel_id="bezeichnung-titel">
+                <form method="post" action="{{ save_url }}" class="mt-3 flex flex-wrap items-start gap-2">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="label">
+                    <c-form.field name="reference_label" id="reference_label" label="Bezeichnung" value="{{ session_tenant.reference_label }}" maxlength="40" required
+                                  help="z. B. „Drucksache“ (Bezirksversammlungen) oder „Vorlagen-Nr.“" dicht class="min-w-0 flex-1 basis-56" />
+                    <c-ui.button type="submit" variant="secondary" size="sm" class="mt-6">Speichern</c-ui.button>
+                </form>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="Vorlagen für verbreitete Praxis" titel_id="praxis-titel" data-testid="nummernkreis-vorlagen">
+                <c-rahmen.satz eng>Übernehmen ersetzt die aktiven Kreise. Bestehende Kreise mit gleichem Muster behalten ihren Zählerstand, andere werden deaktiviert, nicht gelöscht.</c-rahmen.satz>
+                <c-rahmen.liste class="mt-2">
+                    {% for key, preset in presets.items %}
+                    <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-1 py-2.5">
+                        <div class="min-w-0 flex-1 basis-48">
+                            <p class="text-sm liste-name">{{ preset.label }}</p>
+                            <p class="liste-angaben">{{ preset.beschreibung }}</p>
+                        </div>
+                        <form method="post" action="{{ save_url }}" data-confirm="Preset „{{ preset.label }}“ übernehmen?">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="preset">
+                            <input type="hidden" name="preset" value="{{ key }}">
+                            <c-ui.button type="submit" variant="secondary" size="sm">Übernehmen</c-ui.button>
+                        </form>
+                    </li>
+                    {% endfor %}
+                </c-rahmen.liste>
+            </c-rahmen.abschnitt>
+        </div>
+    </div>
+</div>
+{% endblock %}

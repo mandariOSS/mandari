@@ -1,0 +1,13 @@
+{% comment %}
+Zahlenfeld der Einstellungen im neuen Erscheinungsbild (Issue #944, Teil 2b) mit den Grenzen der bisherigen Seiten:
+c-form.field kennt min und max nicht (weitere Attribute landen dort am Rahmen). Maße wie c-form.field dicht (36 px,
+14 px), Ziffern gleich breit; wie work/organization/neu/_zahl.html (Issue #951). Immer mit ``only`` einbinden:
+  {% include "session/neu/einstellungen/_zahlfeld.html" with name="order" id="top-reihenfolge" label="Reihenfolge" value=0 min=0 max=9999 class="w-28" only %}
+Optional: ``platzhalter``, ``hilfe`` (Satz darunter), ``titel`` (Tooltip an der Beschriftung), ``pflicht``.
+{% endcomment %}
+<div class="{{ class }}">
+    {% if titel %}<c-form.beschriftung feld="{{ id|default:name }}" title="{{ titel }}" pflicht="{% if pflicht %}1{% endif %}">{{ label }}</c-form.beschriftung>{% else %}<c-form.beschriftung feld="{{ id|default:name }}" pflicht="{% if pflicht %}1{% endif %}">{{ label }}</c-form.beschriftung>{% endif %}
+    <input type="number" name="{{ name }}" id="{{ id|default:name }}" value="{{ value|default_if_none:'' }}"{% if min != None and min != "" %} min="{{ min }}"{% endif %}{% if max %} max="{{ max }}"{% endif %}{% if platzhalter %} placeholder="{{ platzhalter }}"{% endif %}{% if pflicht %} required{% endif %}{% if hilfe %} aria-describedby="{{ id|default:name }}-hilfe"{% endif %}
+           class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+    {% if hilfe %}<c-form.hinweis id="{{ id|default:name }}-hilfe">{{ hilfe }}</c-form.hinweis>{% endif %}
+</div>

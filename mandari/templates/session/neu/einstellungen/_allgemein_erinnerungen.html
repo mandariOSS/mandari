@@ -1,0 +1,44 @@
+{% comment %}
+Einstellungen › Allgemein: Fristen-Erinnerungen (Issues #83, #619, #944). Die drei Fristen als Liste mit Linien
+(Ankreuzfeld und Tage vorher je Zeile), darunter die Erinnerung zur Ladung mit Anlass, Empfängerkreis und Zeitpunkten.
+Ein Formular wie bisher (session/settings/_erinnerungen.html, settings_reminders), „Speichern“ ohne Füllfarbe. Nur mit
+„Einstellungen verwalten“ eingebunden; Kontext reminder_config, rsvp_reason_choices, rsvp_audience_choices.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Fristen-Erinnerungen" titel_id="erinnerungen-titel" data-testid="karte-erinnerungen">
+    <c-rahmen.satz eng>Automatische E-Mails vor Fristablauf, verschickt vom täglichen Lauf.</c-rahmen.satz>
+    <form method="post" action="{% url 'session:settings_reminders' tenant_slug=tenant_slug %}" class="mt-3 max-w-3xl">
+        {% csrf_token %}
+        {% with cfg=reminder_config %}
+        <c-rahmen.liste>
+            {% include "session/neu/einstellungen/_allgemein_frist.html" with name="invitation_enabled" an=cfg.invitation_enabled tage_name="invitation_days_before" tage=cfg.invitation_days_before id="frist-ladung" label="Ladungsfrist (an Sitzungsdienst)" %}
+            {% include "session/neu/einstellungen/_allgemein_frist.html" with name="paper_enabled" an=cfg.paper_enabled tage_name="paper_days_before" tage=cfg.paper_days_before id="frist-vorlage" label="Vorlagenfrist (an Sachbearbeitung)" %}
+            {% include "session/neu/einstellungen/_allgemein_frist.html" with name="resolution_enabled" an=cfg.resolution_enabled tage_name="resolution_days_before" tage=cfg.resolution_days_before id="frist-beschluss" label="Wiedervorlage Beschlusskontrolle" %}
+        </c-rahmen.liste>
+
+        <fieldset class="mt-6" data-testid="erinnerung-ladung">
+            <legend class="text-sm font-semibold text-gray-900 dark:text-white">Erinnerung zur Ladung (an die Geladenen)</legend>
+            <c-rahmen.satz eng>Pflicht ist nur die Ladung. Ob und wie an Rückmeldungen erinnert wird, entscheiden Sie hier, für den täglichen Lauf und den Knopf „Jetzt erinnern“ in der Übersicht der Rückmeldungen gleichermaßen.</c-rahmen.satz>
+            <c-form.checkbox name="rsvp_enabled" id="erinnerung-rueckmeldung" label="An Rückmeldungen erinnern" checked="{% if cfg.rsvp_enabled %}1{% endif %}" dicht class="mt-3" />
+            <div class="mt-3 grid gap-3 sm:grid-cols-3">
+                <c-form.select name="rsvp_reason" id="erinnerung-anlass" label="Anlass" dicht>
+                    {% for key, label in rsvp_reason_choices %}<option value="{{ key }}"{% if cfg.rsvp_reason == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                </c-form.select>
+                <c-form.select name="rsvp_audience" id="erinnerung-kreis" label="Empfängerkreis" dicht>
+                    {% for key, label in rsvp_audience_choices %}<option value="{{ key }}"{% if cfg.rsvp_audience == key %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                </c-form.select>
+                <div>
+                    <c-form.beschriftung feld="erinnerung-tage">Tage vor der Sitzung</c-form.beschriftung>
+                    <input type="text" name="rsvp_days" id="erinnerung-tage" value="{{ cfg.rsvp_days|join:', ' }}" inputmode="numeric" placeholder="z. B. 7, 2" aria-describedby="erinnerung-tage-hilfe"
+                           class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                    <c-form.hinweis id="erinnerung-tage-hilfe">Bis zu drei Zeitpunkte, durch Komma getrennt</c-form.hinweis>
+                </div>
+            </div>
+        </fieldset>
+        {% endwith %}
+
+        <div class="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Voraussetzung: Der tägliche Erinnerungslauf (<code>send_session_reminders</code>) ist im Betrieb eingerichtet.</p>
+        </div>
+    </form>
+</c-rahmen.abschnitt>

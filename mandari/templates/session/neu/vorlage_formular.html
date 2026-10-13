@@ -1,0 +1,90 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Vorlage anlegen und bearbeiten im neuen Rahmen (Issue #944): eine ruhige Formularspalte mit Abschnitten statt Kasten
+(Grunddaten mit Vorlagennummer, Inhalt mit Textbausteinen, Zuordnung, Veröffentlichung, beim Bearbeiten der Stand),
+Felder dicht. Speichern ist die eine Hauptaktion am Formularende, „Abbrechen“ ein Textlink. Felder, Optionen
+(Körperschaft, Gremien nach Körperschaft gruppiert, Ämter, Urheber), schreibgeschützter Inhalt ab der Vorlage zur
+Freigabe und Fehler wie session/papers/form.html, die bisherige Seite bleibt. Kontext wie
+PaperCreateView/PaperUpdateView.
+{% endcomment %}
+
+{% block page_title %}{% if object %}Vorlage bearbeiten{% else %}Neue Vorlage{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Beim Bearbeiten: Weg zurück zur Vorlage #}
+{% block brotkrumen_aktuell %}{% if object %}<c-rahmen.brotkrume href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=object.id %}">{{ object.display_reference|default:object.name|truncatechars:60 }}</c-rahmen.brotkrume><c-rahmen.brotkrume>Bearbeiten</c-rahmen.brotkrume>{% else %}<c-rahmen.brotkrume>Neue Vorlage</c-rahmen.brotkrume>{% endif %}{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{% if object %}Vorlage bearbeiten{% else %}Neue Vorlage{% endif %}" dicht>
+    <c-slot name="oben">
+        {% if object %}
+        <c-insight.zurueck href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=object.id %}">{{ object.display_reference|default:object.name|truncatechars:60 }}</c-insight.zurueck>
+        {% else %}
+        <c-insight.zurueck href="{% url 'session:papers' tenant_slug=tenant_slug %}">Vorlagen</c-insight.zurueck>
+        {% endif %}
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+{% if object %}{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=object.id as abbrechen %}{% else %}{% url 'session:papers' tenant_slug=tenant_slug as abbrechen %}{% endif %}
+<form method="post" class="max-w-3xl space-y-8" data-testid="vorlage-formular">
+    {% include "session/neu/_formular_fehler.html" %}
+    {% if content_locked and not form.non_field_errors %}
+    <p class="text-sm text-amber-800 dark:text-amber-300" data-testid="inhalt-gesperrt">{{ content_locked_message }}</p>
+    {% endif %}
+
+    <c-rahmen.abschnitt titel="Grunddaten" titel_id="grunddaten-titel">
+        <div class="mt-3 space-y-4">
+            <div class="grid gap-4 sm:grid-cols-2">
+                {% include "session/neu/_formular_vorlagennummer.html" %}
+                <div>
+                    <c-form.beschriftung feld="{{ form.paper_type.id_for_label }}" pflicht>Typ</c-form.beschriftung>
+                    <select name="paper_type" id="id_paper_type" required{% if form.paper_type.errors %} aria-invalid="true" aria-describedby="id_paper_type-error"{% endif %}
+                            class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.paper_type.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                        <option value="">Bitte wählen</option>
+                        {% for value, label in form.paper_type.field.choices %}{% if value %}
+                        <option value="{{ value }}" {% if form.paper_type.value == value %}selected{% endif %}>{{ label }}</option>
+                        {% endif %}{% endfor %}
+                    </select>
+                    {% include "session/neu/_formular_feldfehler.html" with feld=form.paper_type %}
+                </div>
+            </div>
+            {% include "session/neu/_formular_feld.html" with feld=form.name label="Titel" wert=form.name.value|default:'' platzhalter="Bezeichnung der Vorlage" pflicht=True nur_lesen=content_locked %}
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Inhalt" titel_id="inhalt-titel">
+        {% if text_blocks %}<c-slot name="link">{% include "session/neu/_formular_textbaustein.html" %}</c-slot>{% endif %}
+        <div class="mt-3 space-y-4">
+            {% include "session/neu/_formular_feld.html" with feld=form.main_text label="Sachverhalt" zeilen=6 wert=form.main_text.value|default:'' platzhalter="Darstellung des Sachverhalts" nur_lesen=content_locked %}
+            {% include "session/neu/_formular_feld.html" with feld=form.resolution_text label="Beschlussvorschlag" zeilen=4 wert=form.resolution_text.value|default:'' platzhalter="Der Rat/Ausschuss beschließt …" nur_lesen=content_locked %}
+        </div>
+    </c-rahmen.abschnitt>
+
+    {% include "session/neu/_formular_vorlage_zuordnung.html" %}
+
+    <c-rahmen.abschnitt titel="Veröffentlichung" titel_id="veroeffentlichung-titel">
+        <div class="mt-3 space-y-4">
+            <div class="grid gap-4 sm:grid-cols-2">
+                {% include "session/neu/_formular_feld.html" with feld=form.date label="Datum" typ="date" wert=form.date.value|default:''|stringformat:'s' %}
+                {% include "session/neu/_formular_feld.html" with feld=form.deadline label="Frist" typ="date" wert=form.deadline.value|default:''|stringformat:'s' %}
+            </div>
+            <div>
+                <c-form.checkbox :field="form.is_public" label="Öffentliche Vorlage" dicht />
+                <p class="ml-6 mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Öffentliche Vorlagen werden über die OParl-API veröffentlicht.</p>
+                {% if form.is_public.errors %}<p class="ml-6 mt-1 text-sm text-red-700 dark:text-red-400" role="alert">{{ form.is_public.errors.0 }}</p>{% endif %}
+            </div>
+        </div>
+    </c-rahmen.abschnitt>
+
+    {% if object %}
+    <c-rahmen.abschnitt titel="Stand" titel_id="stand-titel">
+        <c-form.select :field="form.status" label="Bearbeitungsstatus" dicht class="mt-3 sm:w-1/2" />
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if object %}{% include "session/neu/_formular_aktionen.html" with knopf="Speichern" %}{% else %}{% include "session/neu/_formular_aktionen.html" with knopf="Vorlage erstellen" %}{% endif %}
+    {# Am Ende: als erstes Kind gäbe das versteckte Feld dem ersten Abschnitt den Abstand von space-y #}
+    {% csrf_token %}
+</form>
+{% endblock %}

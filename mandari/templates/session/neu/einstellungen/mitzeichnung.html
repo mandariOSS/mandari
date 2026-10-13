@@ -1,0 +1,110 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Vorlagen › Mitzeichnung und Ämter im neuen Rahmen (Issues #43, #944): links die Mitzeichnungsregeln als
+geordnete Liste (Reihenfolge, Amt, Vorlagenart), Löschen als Symbolknopf mit Rückfrage, „Hinzufügen“ am Ende; ohne Ämter
+statt des Formulars ein Satz mit dem Weg zu „Gremien → Neu“. Rechts die Amts-Zuordnungen der Benutzer als Liste: Ämter
+als Text mit Entfernen (statt farbiger Etiketten), daneben „Zuordnen“; ohne das Recht, Benutzer zu verwalten, nur
+lesend wie bisher. Formulare und Felder wie session/settings/cosign.html (cosign_rule_manage,
+department_assignment); Kontext CosignSettingsView.
+{% endcomment %}
+
+{% block page_title %}Mitzeichnung und Ämter{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Mitzeichnung und Ämter" text="Mitzeichnungsregeln legen fest, welche Ämter eine Vorlage vor der Freigabe der Reihe nach mitzeichnen müssen, und die Zuordnungen, wer für welches Amt mitzeichnen darf." dicht />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 grid gap-x-12 gap-y-10 2xl:grid-cols-2">
+        <c-rahmen.abschnitt titel="Mitzeichnungsregeln" titel_id="regeln-titel" zusatz="{{ rules|length }}" class="min-w-0" data-testid="mitzeichnungsregeln">
+            <c-rahmen.satz eng>Ämter und Fachbereiche werden unter <c-ui.textlink href="{% url 'session:organizations' tenant_slug=tenant_slug %}">Gremien</c-ui.textlink> mit dem Typ „Amt/Fachbereich“ angelegt.</c-rahmen.satz>
+            {% if rules %}
+            <c-rahmen.liste geordnet class="mt-2">
+                {% for rule in rules %}
+                <li class="flex items-start gap-3 py-2">
+                    <span class="w-6 shrink-0 text-right text-sm tabular-nums text-gray-600 dark:text-gray-400">{{ rule.order }}.</span>
+                    <div class="min-w-0 flex-1">
+                        <p class="text-sm liste-name">{{ rule.department.name }}</p>
+                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ rule.get_paper_type_label }}{% if rule.only_financial %} · nur bei finanziellen Auswirkungen{% endif %}</p>
+                    </div>
+                    <form method="post" action="{% url 'session:cosign_rule_manage' tenant_slug=tenant_slug %}" data-confirm="Mitzeichnungsregel wirklich löschen?" class="shrink-0 text-gray-600 dark:text-gray-400">
+                        {% csrf_token %}
+                        <input type="hidden" name="rule_id" value="{{ rule.id }}">
+                        <input type="hidden" name="action" value="delete">
+                        <c-ui.symbolknopf type="submit" icon="trash-2" titel="Löschen" label="Regel {{ rule.department.name }} löschen" ton="gefahr" />
+                    </form>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Keine Regeln hinterlegt. Vorlagen benötigen dann keine Mitzeichnung.</c-rahmen.satz>
+            {% endif %}
+            {% if departments %}
+            <h3 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Regel hinzufügen</h3>
+            <form method="post" action="{% url 'session:cosign_rule_manage' tenant_slug=tenant_slug %}" class="mt-2 flex flex-wrap items-end gap-2" data-testid="regel-anlegen">
+                {% csrf_token %}
+                <c-form.select name="department" id="regel-amt" label="Amt/Fachbereich" placeholder="Bitte wählen…" required dicht class="min-w-0 flex-1 basis-48">
+                    {% for dep in departments %}<option value="{{ dep.id }}">{{ dep.name }}</option>{% endfor %}
+                </c-form.select>
+                <c-form.select name="paper_type" id="regel-art" label="Vorlagenart" dicht class="min-w-0 w-48">
+                    <option value="">Alle Vorlagenarten</option>
+                    {% for value, label in paper_type_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </c-form.select>
+                {% include "session/neu/einstellungen/_zahlfeld.html" with name="order" id="regel-reihenfolge" label="Reihenfolge" value=0 min=0 max=999 class="w-28" only %}
+                <c-form.checkbox name="only_financial" id="regel-finanziell" value="1" label="Nur bei finanziellen Auswirkungen" class="h-9" />
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Hinzufügen</c-ui.button>
+            </form>
+            {% else %}
+            <c-rahmen.satz data-testid="keine-aemter">Es sind noch keine Ämter oder Fachbereiche angelegt. Legen Sie zuerst unter <c-ui.textlink href="{% url 'session:organization_create' tenant_slug=tenant_slug %}">Gremien → Neu</c-ui.textlink> eine Organisation vom Typ „Amt/Fachbereich“ an, zum Beispiel Kämmerei, Bauamt oder Rechtsamt.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Amts-Zuordnungen der Benutzer" titel_id="zuordnungen-titel" class="min-w-0" data-testid="amts-zuordnungen">
+            <c-rahmen.satz eng>Nur zugeordnete Benutzer (oder Administratoren) können für ein Amt mitzeichnen.{% if not can_assign_departments %} Zuordnungen ändern Personen mit dem Recht, Benutzer zu verwalten.{% endif %}</c-rahmen.satz>
+            <c-rahmen.liste class="mt-2">
+                {% for su in session_users %}
+                <li class="flex flex-wrap items-start justify-between gap-x-4 gap-y-2 py-2">
+                    <div class="min-w-0 flex-1 basis-56">
+                        <p class="text-sm liste-name">{{ su.user.email }}</p>
+                        <div class="flex flex-wrap items-center gap-x-3 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                            {% for dep in su.departments.all %}
+                            {% if can_assign_departments %}
+                            <form method="post" action="{% url 'session:department_assignment' tenant_slug=tenant_slug %}" class="inline-flex items-center">
+                                {% csrf_token %}
+                                <input type="hidden" name="session_user" value="{{ su.id }}">
+                                <input type="hidden" name="department" value="{{ dep.id }}">
+                                <input type="hidden" name="action" value="remove">
+                                <span>{{ dep.name }}</span>
+                                <c-ui.symbolknopf type="submit" icon="x" titel="Zuordnung entfernen" label="Zuordnung von {{ su.user.email }} zu {{ dep.name }} entfernen" ton="gefahr" class="-my-1 text-gray-600 dark:text-gray-400" />
+                            </form>
+                            {% else %}
+                            <span class="py-0.5">{{ dep.name }}</span>
+                            {% endif %}
+                            {% empty %}
+                            <span class="py-0.5 text-gray-600 dark:text-gray-400">Keinem Amt zugeordnet</span>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% if departments and can_assign_departments %}
+                    <form method="post" action="{% url 'session:department_assignment' tenant_slug=tenant_slug %}" class="flex items-center gap-2">
+                        {% csrf_token %}
+                        <input type="hidden" name="session_user" value="{{ su.id }}">
+                        <label for="zuordnung-{{ su.id }}" class="sr-only">Amt für {{ su.user.email }}</label>
+                        <select id="zuordnung-{{ su.id }}" name="department"
+                                class="h-9 min-w-0 max-w-[14rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                            {% for dep in departments %}<option value="{{ dep.id }}">{{ dep.name }}</option>{% endfor %}
+                        </select>
+                        <c-ui.button type="submit" variant="secondary" size="sm">Zuordnen</c-ui.button>
+                    </form>
+                    {% endif %}
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

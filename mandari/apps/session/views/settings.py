@@ -27,6 +27,7 @@ from ..models import (
     SessionUser,
 )
 from ..permissions import SessionViewMixin, grantable_permissions, is_admin_user, role_within_scope
+from ..rahmen import neues_design
 from ..services.user_invitations import resend_user_invitation, send_user_invitation
 
 logger = logging.getLogger(__name__)
@@ -101,6 +102,12 @@ class SettingsView(SessionViewMixin, TemplateView):
     template_name = "session/settings/index.html"
     permission_required = ["manage_settings", "manage_users"]
     permission_require_all = False
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/allgemein.html"] if neues_design(self.session_tenant) else [self.template_name]
+        )
 
     def get_context_data(self, **kwargs):
         from hub.adapters.dcat.http import enabled as dcat_enabled
@@ -384,6 +391,11 @@ class PortalPublicationEndView(SessionViewMixin, TemplateView):
     permission_required = "manage_settings"
     http_method_names = ["get", "post"]
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b), auch für Schritt 2 (render_to_response im POST)
+        neu = "session/neu/einstellungen/veroeffentlichung_beenden.html"
+        return [neu] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_context_data(self, **kwargs):
         from ..services import portal_publication
 
@@ -438,6 +450,12 @@ class UserListView(SessionViewMixin, ListView):
     paginate_by = 50
     permission_required = "manage_users"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/benutzer.html"] if neues_design(self.session_tenant) else [self.template_name]
+        )
+
     def get_queryset(self):
         qs = super().get_queryset()
         return qs.select_related("user").prefetch_related("roles").order_by("user__email")
@@ -458,6 +476,12 @@ class UserInviteView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/invite.html"
     permission_required = "manage_users"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/einladen.html"] if neues_design(self.session_tenant) else [self.template_name]
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

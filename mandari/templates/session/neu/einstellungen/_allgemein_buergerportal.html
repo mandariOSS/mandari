@@ -1,0 +1,123 @@
+{% comment %}
+Einstellungen › Allgemein: Bürgerportal und OParl-Schnittstelle (Issues #36, #48, #104, #319, #618, #944) als Liste mit
+Linien statt zweier Karten. Je Zeile der Stand als Punkt mit Text, ein Satz und die Aktion ohne Füllfarbe:
+OParl-Schnittstelle mit Freischaltung (oparl_access) und Lizenz (oparl_license), Bürgerportal mit Veröffentlichen
+(insight_publish) und dem Weg zum Beenden (portal_publication_end), Beschluss-Tracking (implementation_publish) nur bei
+laufender Veröffentlichung. Formulare, Bedingungen und data-testid wie session/settings/_buergerportal.html und
+_oparl_schnittstelle.html; nur mit „Einstellungen verwalten“ eingebunden.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Bürgerportal und OParl-Schnittstelle" titel_id="veroeffentlichung-titel" data-testid="veroeffentlichung">
+    <c-rahmen.satz eng>Offene Ratsdaten für Bürgerportal, Presse und Forschung. Das Bürgerportal liest die OParl-Schnittstelle und veröffentlicht erst, wenn sie freigeschaltet ist.</c-rahmen.satz>
+    <c-rahmen.liste class="mt-3 max-w-3xl">
+        <li class="py-4" data-testid="karte-oparl">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">OParl-Schnittstelle</h3>
+            {% if session_tenant.oparl_public %}
+            <p class="mt-1 text-sm" data-testid="oparl-oeffentlich">{% include "session/neu/_status.html" with wert="approved" text="Öffentlich" %} <span class="text-gray-700 dark:text-gray-300">seit {{ session_tenant.oparl_public_since|date:"d.m.Y, H:i" }} Uhr.</span></p>
+            <c-form.hinweis>
+                Abrufbar unter <c-ui.textlink href="{% url 'session:oparl_system' tenant_slug=tenant_slug %}" extern class="break-all">/session/{{ tenant_slug }}/api/oparl/</c-ui.textlink>.
+                Ausgeliefert werden nur öffentliche Inhalte, E-Mail-Adressen nur von Personen mit Einwilligung.
+            </c-form.hinweis>
+            {% if dcat_enabled %}
+            <c-form.hinweis data-testid="oparl-datenkatalog">
+                {% if session_tenant.oparl_license %}
+                Datenkatalog für Datenportale wie GovData (DCAT-AP.de):
+                <c-ui.textlink href="{% url 'session:dcat_catalog_format' tenant_slug=tenant_slug endung='ttl' %}" extern class="break-all">/session/{{ tenant_slug }}/api/dcat/catalog.ttl</c-ui.textlink>.
+                {% else %}
+                Ohne Lizenz gibt es keinen Datenkatalog für Datenportale wie GovData. Wählen Sie unten eine Lizenz.
+                {% endif %}
+            </c-form.hinweis>
+            {% endif %}
+            {% if session_tenant.insight_publish %}
+            <c-form.hinweis>Solange das Bürgerportal veröffentlicht, bleibt die Schnittstelle freigeschaltet.</c-form.hinweis>
+            {% else %}
+            <form method="post" action="{% url 'session:oparl_access' tenant_slug=tenant_slug %}" class="mt-3">
+                {% csrf_token %}
+                <input type="hidden" name="public" value="0">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="lock">Freischaltung zurücknehmen</c-ui.button>
+            </form>
+            {% endif %}
+            {% else %}
+            <p class="mt-1 text-sm" data-testid="oparl-gesperrt">{% include "session/neu/_status.html" with wert="pending" text="Nicht freigeschaltet." %} <span class="text-gray-700 dark:text-gray-300">Die Schnittstelle antwortet mit „nicht gefunden“.</span></p>
+            <c-form.hinweis>
+                Schalten Sie frei, sobald Test- und Schulungsdaten bereinigt sind. Danach sind alle als öffentlich markierten
+                Sitzungen, Vorlagen und Anlagen sowie Gremien und Personen abrufbar; E-Mail-Adressen nur von Personen mit
+                Einwilligung. Erst danach lässt sich im Bürgerportal veröffentlichen.
+            </c-form.hinweis>
+            <form method="post" action="{% url 'session:oparl_access' tenant_slug=tenant_slug %}" class="mt-3">
+                {% csrf_token %}
+                <input type="hidden" name="public" value="1">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="radio-tower">OParl-Schnittstelle freischalten</c-ui.button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'session:oparl_license' tenant_slug=tenant_slug %}" class="mt-4 space-y-2" data-testid="oparl-lizenz">
+                {% csrf_token %}
+                <c-form.select name="license" id="oparl-lizenz-auswahl" label="Lizenz der offenen Daten" dicht
+                               help="Unter dieser Lizenz dürfen andere die öffentlichen Daten weiterverwenden. Ohne Auswahl nennt die Schnittstelle keine Lizenz.">
+                    <option value="">Keine Angabe</option>
+                    {% for url, label in oparl_licenses %}
+                    <option value="{{ url }}"{% if url == session_tenant.oparl_license %} selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </c-form.select>
+                <c-ui.button type="submit" variant="secondary" size="sm">Lizenz speichern</c-ui.button>
+            </form>
+        </li>
+
+        <li class="py-4" data-testid="karte-buergerportal">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Bürgerportal</h3>
+            <p class="mt-1 text-sm">
+                {% if session_tenant.insight_publish %}
+                {% include "session/neu/_status.html" with wert="approved" text="Veröffentlichung aktiv." %} <span class="text-gray-700 dark:text-gray-300">Öffentliche Daten fließen ins Bürgerportal.</span>
+                {% elif session_tenant.insight_end_mode %}
+                {% include "session/neu/_status.html" with wert="pending" text="Veröffentlichung beendet:" %} <span class="text-gray-700 dark:text-gray-300">{{ session_tenant.get_insight_end_mode_display }}.</span>
+                {% else %}
+                {% include "session/neu/_status.html" with wert="" text="Veröffentlichung inaktiv." %} <span class="text-gray-700 dark:text-gray-300">Es fließen keine Daten ins Bürgerportal.</span>
+                {% endif %}
+            </p>
+            {% if not session_tenant.insight_publish and not session_tenant.insight_end_mode and portal_legacy_stock %}
+            <p class="mt-1 text-sm text-amber-800 dark:text-amber-300" data-testid="altbestand-hinweis">
+                Bisher veröffentlichte Daten stehen weiter ohne Hinweis im Bürgerportal. Legen Sie fest, wie das
+                Bürgerportal mit diesem Bestand umgeht.
+            </p>
+            {% endif %}
+            <c-form.hinweis>
+                Übertragen werden ausschließlich als öffentlich markierte Inhalte (Ö-Sitzungen, Ö-Vorlagen, Ö-Anlagen) über
+                die OParl-Schnittstelle.
+            </c-form.hinweis>
+            <div class="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+                {% if not session_tenant.insight_publish and not session_tenant.oparl_public %}
+                <p class="text-sm text-amber-800 dark:text-amber-300" data-testid="buergerportal-voraussetzung">Voraussetzung: die freigeschaltete OParl-Schnittstelle.</p>
+                {% elif not session_tenant.insight_publish %}
+                <form method="post" action="{% url 'session:insight_publish' tenant_slug=tenant_slug %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="publish" value="1">
+                    <c-ui.button type="submit" variant="secondary" size="sm" icon="megaphone">{% if session_tenant.insight_end_mode %}Wieder veröffentlichen{% else %}Im Bürgerportal veröffentlichen{% endif %}</c-ui.button>
+                </form>
+                {% endif %}
+                {% if session_tenant.insight_publish or session_tenant.insight_end_mode or portal_legacy_stock %}
+                <c-ui.textlink href="{% url 'session:portal_publication_end' tenant_slug=tenant_slug %}" class="text-sm">{% if session_tenant.insight_publish %}Veröffentlichung beenden …{% elif session_tenant.insight_end_mode %}Möglichkeit ändern …{% else %}Umgang mit dem bisherigen Bestand festlegen …{% endif %}</c-ui.textlink>
+                {% endif %}
+            </div>
+        </li>
+
+        {% if session_tenant.insight_publish %}
+        <li class="py-4" data-testid="beschluss-tracking">
+            <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Beschluss-Tracking „Was wurde aus …?“</h3>
+            {% if session_tenant.implementation_publish %}
+            <p class="mt-1 text-sm">{% include "session/neu/_status.html" with wert="approved" text="Veröffentlicht." %} <span class="text-gray-700 dark:text-gray-300">Der Umsetzungsstand angenommener öffentlicher Beschlüsse ist im Bürgerportal sichtbar.</span></p>
+            {% else %}
+            <c-form.hinweis>Zeigt Bürgerinnen und Bürgern, was aus einem Beschluss geworden ist, mit Status-Zeitleiste und Ihrer öffentlichen Statusmeldung. Interne Erledigungsvermerke bleiben intern.</c-form.hinweis>
+            {% endif %}
+            <form method="post" action="{% url 'session:implementation_publish' tenant_slug=tenant_slug %}" class="mt-3">
+                {% csrf_token %}
+                {% if session_tenant.implementation_publish %}
+                <input type="hidden" name="publish" value="0">
+                <c-ui.button type="submit" variant="secondary" size="sm">Beschluss-Tracking beenden</c-ui.button>
+                {% else %}
+                <input type="hidden" name="publish" value="1">
+                <c-ui.button type="submit" variant="secondary" size="sm">Umsetzungsstand veröffentlichen</c-ui.button>
+                {% endif %}
+            </form>
+        </li>
+        {% endif %}
+    </c-rahmen.liste>
+</c-rahmen.abschnitt>
