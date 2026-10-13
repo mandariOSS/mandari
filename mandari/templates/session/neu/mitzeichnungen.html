@@ -18,12 +18,7 @@ Kontext: MyCosignaturesView (cosignatures mit actionable und on_behalf_of, my_de
 {% endblock %}
 
 {% block page_content %}
-{% if my_delegations %}
-{# Vertretungen (Issue #222): als Satz statt Hinweiskasten, Testkennung wie session/partials/my_delegations.html #}
-<p class="mb-6 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="meine-vertretungen">
-    Sie vertreten derzeit {% for delegation in my_delegations %}{{ delegation.principal.user.email }} bis {{ delegation.end_date|date:"d.m.Y" }} ({{ delegation.scope_labels|join:", " }}){% if not forloop.last %}; {% endif %}{% endfor %}. Was Sie in Vertretung erledigen, vermerkt das Audit-Log.
-</p>
-{% endif %}
+{% include "session/neu/_meine_vertretungen.html" %}
 
 {% if body_choice.active %}
 {# Körperschaft (Issue #756): Gesamtansicht oder eine Körperschaft #}
