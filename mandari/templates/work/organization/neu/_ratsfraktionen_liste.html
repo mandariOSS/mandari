@@ -5,7 +5,7 @@ Kennfarbe als Punkt (SVG) statt Inline-Stil, Koalition und Inaktiv als Text stat
 <div x-data="partyManager" class="min-w-0">
     <c-rahmen.abschnitt titel="Ratsfraktionen" titel_id="fraktionen-titel" zusatz="{{ parties|length }}">
         <c-slot name="link">
-            <c-ui.textknopf @click="showAdd = !showAdd" ::aria-expanded="showAdd.toString()" aria-expanded="false">Fraktion hinzufügen</c-ui.textknopf>
+            <c-ui.text-button dicht @click="showAdd = !showAdd" ::aria-expanded="showAdd.toString()" aria-expanded="false">Fraktion hinzufügen</c-ui.text-button>
         </c-slot>
 
         <template x-if="showAdd">
@@ -23,7 +23,7 @@ Kennfarbe als Punkt (SVG) statt Inline-Stil, Koalition und Inaktiv als Text stat
                 </div>
                 <div class="flex items-center gap-4">
                     <c-ui.button type="submit" size="sm">Hinzufügen</c-ui.button>
-                    <button type="button" @click="showAdd = false" class="text-sm font-medium text-gray-700 dark:text-gray-300 hover:underline underline-offset-4">Abbrechen</button>
+                    <c-ui.text-button variant="muted" dicht @click="showAdd = false">Abbrechen</c-ui.text-button>
                 </div>
             </form>
         </template>
@@ -37,7 +37,7 @@ Kennfarbe als Punkt (SVG) statt Inline-Stil, Koalition und Inaktiv als Text stat
                     <span class="font-medium {% if party.is_active %}text-gray-900 dark:text-white{% else %}text-gray-600 dark:text-gray-400{% endif %}">{{ party.name }}</span>
                     <span class="text-gray-600 dark:text-gray-400">{{ party.short_name }}{% if party.is_coalition_member %} · Koalition{% endif %}{% if not party.is_active %} · inaktiv{% endif %}</span>
                     {% if party.email %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-all">{{ party.email }}</span>{% endif %}
-                    <c-ui.textknopf @click="editing = '{{ party.id }}'" class="ml-auto">Bearbeiten<span class="sr-only">: {{ party.name }}</span></c-ui.textknopf>
+                    <c-ui.text-button dicht @click="editing = '{{ party.id }}'" class="ml-auto">Bearbeiten<span class="sr-only">: {{ party.name }}</span></c-ui.text-button>
                 </div>
 
                 <div x-show="editing === '{{ party.id }}'" x-cloak>
@@ -57,10 +57,9 @@ Kennfarbe als Punkt (SVG) statt Inline-Stil, Koalition und Inaktiv als Text stat
                         </div>
                         <div class="flex flex-wrap items-center gap-4">
                             <c-ui.button type="submit" size="sm">Speichern</c-ui.button>
-                            <button type="button" @click="editing = null" class="text-sm font-medium text-gray-700 dark:text-gray-300 hover:underline underline-offset-4">Abbrechen</button>
-                            <button type="button"
-                                    @click="confirmAction({ title: 'Fraktion löschen?', message: 'Fraktion \'{{ party.name|escapejs }}\' wirklich löschen?', confirmText: 'Löschen', variant: 'danger' }).then(ok => { if (ok) $refs.deleteForm{{ forloop.counter }}.submit() })"
-                                    class="ml-auto text-sm font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Löschen</button>
+                            <c-ui.text-button variant="muted" dicht @click="editing = null">Abbrechen</c-ui.text-button>
+                            <c-ui.text-button variant="danger" dicht class="ml-auto"
+                                    @click="confirmAction({ title: 'Fraktion löschen?', message: 'Fraktion \'{{ party.name|escapejs }}\' wirklich löschen?', confirmText: 'Löschen', variant: 'danger' }).then(ok => { if (ok) $refs.deleteForm{{ forloop.counter }}.submit() })">Löschen</c-ui.text-button>
                         </div>
                     </form>
                     <form method="post" action="" x-ref="deleteForm{{ forloop.counter }}" class="hidden">

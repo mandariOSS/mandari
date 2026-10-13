@@ -17,6 +17,6 @@ eigenes <form>. Kontext: schedule (leer bei neuer Reihe), weekday_choices.
         </c-form.select>
         <c-form.field name="auto_invite_time" id="auto_invite_time_{{ key }}" type="time" label="Einladung um" value="{{ schedule.auto_invite_time|time:'H:i' }}" dicht />
     </div>
-    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Beides standardmäßig aus. Die automatische Einladung geht am letzten gewählten Wochentag vor der Sitzung zur Uhrzeit raus, ohne Freigabe und mit der Tagesordnung von diesem Zeitpunkt.</p>
+    <c-form.hinweis neben>Beides standardmäßig aus. Die automatische Einladung geht am letzten gewählten Wochentag vor der Sitzung zur Uhrzeit raus, ohne Freigabe und mit der Tagesordnung von diesem Zeitpunkt.</c-form.hinweis>
 </div>
 {% endwith %}

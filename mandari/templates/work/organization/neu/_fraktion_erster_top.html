@@ -12,7 +12,7 @@ mit x-text="preview" an #preview-title. Kontext: organization, can_publish_proto
             {% else %}
             <c-form.checkbox name="publish_protocols" id="publish_protocols" :checked="organization.publish_protocols" disabled dicht label="Genehmigte Protokolle im Bürgerportal veröffentlichen" />
             {% endif %}
-            <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Es erscheinen nur öffentliche TOPs und ihre Protokolleinträge. Standardmäßig aus; dann bleiben Protokolle intern.{% if not can_publish_protocols %} Ändern dürfen nur Personen mit dem Recht „Protokolle veröffentlichen“.{% endif %}</p>
+            <c-form.hinweis einzug>Es erscheinen nur öffentliche TOPs und ihre Protokolleinträge. Standardmäßig aus; dann bleiben Protokolle intern.{% if not can_publish_protocols %} Ändern dürfen nur Personen mit dem Recht „Protokolle veröffentlichen“.{% endif %}</c-form.hinweis>
         </div>
     </c-rahmen.abschnitt>
 
@@ -25,7 +25,7 @@ mit x-text="preview" an #preview-title. Kontext: organization, can_publish_proto
                     <input type="text" name="first_agenda_title_with_previous" id="id_first_agenda_title_with_previous" value="{{ faction_settings.first_agenda_title_with_previous }}"
                            x-ref="titleInput" @input="title = $event.target.value" placeholder="Tagesordnung festlegen und letztes Protokoll genehmigen" aria-describedby="erster-top-hilfe"
                            class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
-                    <p id="erster-top-hilfe" class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Gilt, wenn es eine vorherige Sitzung gibt.</p>
+                    <c-form.hinweis id="erster-top-hilfe">Gilt, wenn es eine vorherige Sitzung gibt.</c-form.hinweis>
                 </div>
                 <c-form.field name="first_agenda_title_no_previous" id="id_first_agenda_title_no_previous" label="Titel ohne vorherige Sitzung" value="{{ faction_settings.first_agenda_title_no_previous }}"
                               placeholder="Tagesordnung festlegen" dicht help="Gilt für die erste Sitzung oder wenn es keine vorherige gibt." />

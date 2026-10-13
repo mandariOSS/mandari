@@ -3,11 +3,20 @@
 Textbutton ohne Rahmen für kleine Inline-Aktionen in Panels und Listen.
   <c-ui.text-button variant="primary|danger|muted" icon="plus" type="button|submit" @click="…">Eintrag</c-ui.text-button>
 Alle weiteren Attribute (@click, title, hx-*) werden durchgereicht.
+``dicht`` (Issue #944) für Arbeitsflächen im neuen Rahmen: im Aussehen von c-ui.textlink (14 px, Kennfarbe 700,
+unterstrichen erst beim Zeigen), 32 px hoch als Zielfläche, im Fließtext inline. Ohne ``dicht`` bleibt das Markup gleich.
+  <c-ui.text-button dicht type="submit" variant="danger">Zurückziehen</c-ui.text-button>
+  <c-ui.text-button dicht @click="offen = !offen" ::aria-expanded="offen.toString()">Bearbeiten</c-ui.text-button>
 {% endcomment %}
-<c-vars variant="primary" icon="" type="button" class="" />
-<button type="{{ type }}"
+<c-vars variant="primary" icon="" type="button" class="" dicht="" />
+{% if dicht %}<button type="{{ type }}"
+    class="inline-flex items-center gap-1 min-h-8 text-sm font-medium hover:underline underline-offset-4 {% if variant == 'danger' %}text-red-700 dark:text-red-400{% elif variant == 'muted' %}text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white{% else %}text-primary-700 dark:text-primary-300{% endif %} {{ class }}"
+    {{ attrs }}>
+    {% if icon %}<i data-lucide="{{ icon }}" class="w-4 h-4" aria-hidden="true"></i>{% endif %}
+    {{ slot }}
+</button>{% else %}<button type="{{ type }}"
     class="text-xs font-medium flex items-center gap-1 {% if variant == 'danger' %}text-red-500 hover:text-red-700{% elif variant == 'muted' %}text-gray-500 hover:text-primary-600{% else %}text-primary-600 hover:text-primary-700{% endif %} {{ class }}"
     {{ attrs }}>
     {% if icon %}<i data-lucide="{{ icon }}" class="w-3 h-3" aria-hidden="true"></i>{% endif %}
     {{ slot }}
-</button>
+</button>{% endif %}

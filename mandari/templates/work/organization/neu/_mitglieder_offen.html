@@ -38,7 +38,7 @@ member_reject mit Begründung und Rückfrage). Kontext: pending_invitations, pen
             {% for membership in pending_registrations %}
             <li class="py-2.5">
                 <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ membership.user.get_full_name|default:membership.user.email }}</p>
-                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-all">{{ membership.user.email }}, angefragt am {{ membership.registration_requested_at|date:"d.m.Y H:i" }}</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400"><span class="break-all">{{ membership.user.email }}</span>, angefragt am {{ membership.registration_requested_at|date:"d.m.Y H:i" }}</p>
                 <div class="mt-2 flex flex-wrap items-center gap-2">
                     <form method="post" action="{% url 'work:member_approve' org_slug=organization.slug membership_id=membership.id %}">
                         {% csrf_token %}

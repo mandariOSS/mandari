@@ -13,7 +13,7 @@ absendet (wie bisher), sonst nur der Stand, wenn vereidigt. Kontext: member, can
                    class="mt-0.5 w-4 h-4 shrink-0 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
             <span class="text-sm text-gray-800 dark:text-gray-200">Vereidigt</span>
         </label>
-        <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if member.is_sworn_in %}Sieht nicht-öffentliche TOPs und Protokolle der Fraktionssitzungen.{% else %}Sieht nur öffentliche TOPs, keine nicht-öffentlichen Inhalte.{% endif %} Speichert beim Umschalten.</p>
+        <c-form.hinweis einzug>{% if member.is_sworn_in %}Sieht nicht-öffentliche TOPs und Protokolle der Fraktionssitzungen.{% else %}Sieht nur öffentliche TOPs, keine nicht-öffentlichen Inhalte.{% endif %} Speichert beim Umschalten.</c-form.hinweis>
     </form>
 </c-rahmen.abschnitt>
 {% elif member.is_sworn_in %}

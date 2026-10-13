@@ -29,7 +29,7 @@ action=send_test. Das Passwort wird nie ausgegeben, nur ob eines hinterlegt ist.
                         <option value="smtp" {% if mail_sender_mode == "smtp" %}selected{% endif %}>Eigenes SMTP der Organisation</option>
                     </c-form.select>
                     {% include "work/organization/neu/_haken.html" with name="smtp_fallback_to_mandari" id="smtp_fallback_to_mandari" label="Bei SMTP-Fehlern über mandari versenden" an=smtp_fallback_to_mandari hilfe="Ohne Häkchen schlägt der Versand bei SMTP-Fehlern sichtbar fehl, und mandari verschickt nichts." %}
-                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Beim eigenen SMTP ist {{ organization.name }} für SPF und DKIM (am besten auch DMARC) der Absender-Domain verantwortlich. Ohne diese DNS-Einträge landen Mails oft im Spam oder werden abgewiesen.</p>
+                    <c-form.hinweis neben>Beim eigenen SMTP ist {{ organization.name }} für SPF und DKIM (am besten auch DMARC) der Absender-Domain verantwortlich. Ohne diese DNS-Einträge landen Mails oft im Spam oder werden abgewiesen.</c-form.hinweis>
                 </div>
             </c-rahmen.abschnitt>
 

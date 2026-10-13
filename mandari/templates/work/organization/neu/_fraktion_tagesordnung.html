@@ -60,7 +60,7 @@ standard_agenda_may_internal, standard_agenda_suggestion.
     <form method="post" class="mt-3">
         {% csrf_token %}
         <input type="hidden" name="section" value="add_standard_suggestion">
-        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Übliche Grundstruktur: {{ standard_agenda_suggestion|join:", " }}.</p>
+        <c-form.hinweis neben>Übliche Grundstruktur: {{ standard_agenda_suggestion|join:", " }}.</c-form.hinweis>
         <c-ui.button type="submit" size="sm" variant="secondary" class="mt-2">Grundstruktur übernehmen</c-ui.button>
     </form>
     {% endif %}

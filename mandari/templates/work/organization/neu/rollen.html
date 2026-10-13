@@ -15,8 +15,8 @@ Kontext: RoleListView.
     <c-slot name="aktionen">
         <form method="post" action="{% url 'work:roles_restore_defaults' org_slug=organization.slug %}">
             {% csrf_token %}
-            <button type="submit" class="text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"
-                    title="Legt fehlende Standard-Rollen an. Bestehende Rollen bleiben unverändert.">Standard-Rollen wiederherstellen</button>
+            <c-ui.text-button type="submit" dicht
+                    title="Legt fehlende Standard-Rollen an. Bestehende Rollen bleiben unverändert.">Standard-Rollen wiederherstellen</c-ui.text-button>
         </form>
         <c-ui.button href="{% url 'work:role_create' org_slug=organization.slug %}" size="sm" icon="plus">Neue Rolle</c-ui.button>
     </c-slot>

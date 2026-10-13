@@ -34,7 +34,7 @@ form-behaviors.ts), Symbol und Farbe ohne Emojis. Kontext: MotionTypeCreateView,
                             <c-form.beschriftung feld="slug" pflicht>Kurzname</c-form.beschriftung>
                             <input type="text" id="slug" name="slug" required data-slug-field value="{% if motion_type %}{{ motion_type.slug }}{% endif %}" placeholder="z. B. antrag" aria-describedby="slug-hilfe"
                                    class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm font-mono text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
-                            <p id="slug-hilfe" class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Nur Kleinbuchstaben und Bindestriche.</p>
+                            <c-form.hinweis id="slug-hilfe">Nur Kleinbuchstaben und Bindestriche.</c-form.hinweis>
                         </div>
                     </div>
                     <c-form.textarea name="description" id="description" label="Beschreibung" rows="2" value="{% if motion_type %}{{ motion_type.description }}{% endif %}" placeholder="Kurze Beschreibung des Dokumenttyps" dicht />
@@ -71,15 +71,15 @@ form-behaviors.ts), Symbol und Farbe ohne Emojis. Kontext: MotionTypeCreateView,
                 <div class="mt-3 space-y-3">
                     <div>
                         <c-form.checkbox name="requires_approval" id="requires_approval" checked="{% if motion_type.requires_approval or is_new %}1{% endif %}" dicht label="Freigabe erforderlich" />
-                        <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Vor der Einreichung muss das Dokument freigegeben werden.</p>
+                        <c-form.hinweis einzug>Vor der Einreichung muss das Dokument freigegeben werden.</c-form.hinweis>
                     </div>
                     <div>
                         <c-form.checkbox name="is_submittable" id="is_submittable" checked="{% if motion_type.is_submittable or is_new %}1{% endif %}" dicht label="Einreichbar" />
-                        <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Lässt sich offiziell bei Gremien einreichen.</p>
+                        <c-form.hinweis einzug>Lässt sich offiziell bei Gremien einreichen.</c-form.hinweis>
                     </div>
                     <div>
                         <c-form.checkbox name="is_default" id="is_default" :checked="motion_type.is_default" dicht label="Standard-Typ" />
-                        <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Vorauswahl bei neuen Dokumenten.</p>
+                        <c-form.hinweis einzug>Vorauswahl bei neuen Dokumenten.</c-form.hinweis>
                     </div>
                     <c-form.textarea name="default_checklist" id="default_checklist" label="Standard-Checkliste" rows="5" value="{{ default_checklist_text|default:'' }}" placeholder="Ein Punkt je Zeile" dicht
                                      help="Ein Punkt je Zeile. Neue Dokumente dieses Typs erhalten die Punkte als Checkliste." />

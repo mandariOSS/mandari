@@ -41,7 +41,7 @@ Felder und Grenzen wie bisher (work/organization/ris_settings.html). Kontext: Or
                 <form method="post" class="mt-4" data-confirm="Verbindung zur Verwaltung wirklich trennen? Bereits eingereichte Anträge bleiben erhalten.">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="disconnect">
-                    <button type="submit" class="text-sm font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Verbindung trennen</button>
+                    <c-ui.text-button type="submit" variant="danger" dicht>Verbindung trennen</c-ui.text-button>
                 </form>
                 {% endif %}
             </c-rahmen.abschnitt>

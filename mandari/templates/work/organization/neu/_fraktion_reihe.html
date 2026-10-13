@@ -44,7 +44,7 @@ weekday_choices, can_delete_schedules.
                     {% csrf_token %}
                     <input type="hidden" name="section" value="delete_exception">
                     <input type="hidden" name="exception_id" value="{{ exception.id }}">
-                    <button type="submit" class="text-[0.8125rem] font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Entfernen</button>
+                    <c-ui.text-button type="submit" variant="danger" dicht>Entfernen</c-ui.text-button>
                 </form>
             </li>
             {% endfor %}
@@ -74,7 +74,7 @@ weekday_choices, can_delete_schedules.
                     {% csrf_token %}
                     <input type="hidden" name="section" value="delete_rule">
                     <input type="hidden" name="rule_id" value="{{ rule.id }}">
-                    <button type="submit" class="text-[0.8125rem] font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Entfernen</button>
+                    <c-ui.text-button type="submit" variant="danger" dicht>Entfernen</c-ui.text-button>
                 </form>
             </li>
             {% endfor %}
@@ -94,7 +94,7 @@ weekday_choices, can_delete_schedules.
             <c-ui.button type="submit" size="sm" variant="secondary">Regel hinzufügen</c-ui.button>
         </form>
         {% else %}
-        <p class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">RIS-Regeln brauchen eine verknüpfte Kommune mit Gremien.</p>
+        <c-form.hinweis>RIS-Regeln brauchen eine verknüpfte Kommune mit Gremien.</c-form.hinweis>
         {% endif %}
     </div>
 </section>

@@ -241,6 +241,38 @@ class TestDateifeld:
         assert "Bitte eine PDF-Datei wählen." in html
 
 
+BISHER_TEXTKNOPF = "text-xs font-medium flex items-center gap-1 text-primary-600 hover:text-primary-700"
+
+
+class TestTextknopf:
+    def test_ohne_dicht_wie_bisher(self) -> None:
+        html = render('<c-ui.text-button icon="plus" title="Neu">Eintrag</c-ui.text-button>')
+        knopf = _tag(html, "button")
+        assert _klasse(knopf) == BISHER_TEXTKNOPF
+        assert _attribute(knopf) == {"type", "class", "title"}
+        assert 'class="w-3 h-3"' in html
+
+    def test_dicht_im_aussehen_eines_textlinks(self) -> None:
+        """``dicht`` (Issue #944): 14 px, Kennfarbe 700 bzw. Rot 700, 32 px Zielfläche, inline im Fließtext."""
+        for variante, farbe in (
+            ("", "text-primary-700"),
+            (' variant="danger"', "text-red-700"),
+            (' variant="muted"', "text-gray-700"),
+        ):
+            klasse = _klasse(
+                _tag(render(f'<c-ui.text-button dicht type="submit"{variante}>Ok</c-ui.text-button>'), "button")
+            )
+            assert {"inline-flex", "min-h-8", "text-sm", "hover:underline", farbe} <= set(klasse.split()), klasse
+            assert "text-xs" not in klasse and "flex" not in klasse.split()
+        html = render(
+            '<c-ui.text-button dicht icon="plus" @click="offen = !offen" ::aria-expanded="offen.toString()">'
+            "Bearbeiten</c-ui.text-button>"
+        )
+        knopf = _tag(html, "button")
+        assert '@click="offen = !offen"' in knopf and ':aria-expanded="offen.toString()"' in knopf
+        assert 'type="button"' in knopf and 'class="w-4 h-4"' in html
+
+
 def test_hinweis_unter_einem_feld() -> None:
     """c-form.hinweis: 13 px gedimmt wie die Hilfe von c-form.field dicht; Einzug unter Checkboxen, Attribute am Absatz."""
     html = render('<c-form.hinweis id="tage-hilfe">Wie weit zurück</c-form.hinweis>')
@@ -254,21 +286,34 @@ def test_hinweis_unter_einem_feld() -> None:
     assert _klasse(_tag(render("<c-form.hinweis neben>Satz</c-form.hinweis>"), "p")).startswith("text-[0.8125rem]")
 
 
-def test_textknopf_sieht_aus_wie_ein_textlink() -> None:
-    """c-ui.textknopf: Knopf (Standard type=button) in der Kennfarbe, rot mit ``gefahr``, Alpine-Attribute am Knopf."""
-    tag = _tag(
-        render('<c-ui.textknopf @click="offen = !offen" ::aria-expanded="offen.toString()">Mehr</c-ui.textknopf>'),
-        "button",
-    )
-    assert 'type="button"' in tag
-    assert (
-        _klasse(tag) == "text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"
-    )
-    assert '@click="offen = !offen"' in tag
-    assert ':aria-expanded="offen.toString()"' in tag
-    rot = _tag(render('<c-ui.textknopf type="submit" gefahr>Erneuern</c-ui.textknopf>'), "button")
-    assert 'type="submit"' in rot
-    assert "text-red-700" in _klasse(rot)
+#: Ausgabe von c-ui.text-button ohne ``dicht``, Zeichen für Zeichen wie vor #944/#951
+BISHER_TEXT_BUTTON = {
+    '<c-ui.text-button @click="offen = !offen">Mehr</c-ui.text-button>': (
+        '\n\n\n<button type="button"\n    class="text-xs font-medium flex items-center gap-1 text-primary-600 '
+        'hover:text-primary-700 "\n    @click="offen = !offen">\n    \n    Mehr\n</button>\n'
+    ),
+    '<c-ui.text-button type="submit" variant="danger" icon="trash-2">Entfernen</c-ui.text-button>': (
+        '\n\n\n<button type="submit"\n    class="text-xs font-medium flex items-center gap-1 text-red-500 '
+        'hover:text-red-700 "\n    >\n    <i data-lucide="trash-2" class="w-3 h-3" aria-hidden="true"></i>\n'
+        "    Entfernen\n</button>\n"
+    ),
+    '<c-ui.text-button variant="muted" icon="x" class="mt-1" title="Weg" data-x="1">Entfernen</c-ui.text-button>': (
+        '\n\n\n<button type="button"\n    class="text-xs font-medium flex items-center gap-1 text-gray-500 '
+        'hover:text-primary-600 mt-1"\n    title="Weg" data-x="1">\n    <i data-lucide="x" class="w-3 h-3" '
+        'aria-hidden="true"></i>\n    Entfernen\n</button>\n'
+    ),
+    '<c-ui.text-button variant="primary" icon="plus">Eintrag</c-ui.text-button>': (
+        '\n\n\n<button type="button"\n    class="text-xs font-medium flex items-center gap-1 text-primary-600 '
+        'hover:text-primary-700 "\n    >\n    <i data-lucide="plus" class="w-3 h-3" aria-hidden="true"></i>\n'
+        "    Eintrag\n</button>\n"
+    ),
+}
+
+
+def test_text_button_ohne_neue_angaben_unveraendert() -> None:
+    """c-ui.text-button ohne ``dicht`` rendert Zeichen für Zeichen wie bisher (Panels in Work und Session)."""
+    for quelle, bisher in BISHER_TEXT_BUTTON.items():
+        assert render(quelle) == bisher, quelle
 
 
 def test_beschriftung_eines_felds() -> None:

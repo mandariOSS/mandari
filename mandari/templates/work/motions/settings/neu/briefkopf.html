@@ -98,7 +98,7 @@ Felder und Ziel wie bisher (work/motions/settings/letterhead_form.html). Kontext
                         {% endif %}
                         <div class="mt-4">
                             <c-form.checkbox name="is_default" id="is_default" :checked="letterhead.is_default" dicht label="Standard-Briefkopf" />
-                            <p class="ml-6 mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">Vorauswahl für neue Dokumente.</p>
+                            <c-form.hinweis einzug>Vorauswahl für neue Dokumente.</c-form.hinweis>
                         </div>
                     </c-rahmen.abschnitt>
                 </div>
@@ -119,7 +119,7 @@ Felder und Ziel wie bisher (work/motions/settings/letterhead_form.html). Kontext
                             <div>
                                 <div class="flex items-center justify-between mb-1">
                                     <c-form.beschriftung als="p">Vorschau</c-form.beschriftung>
-                                    <c-ui.textknopf @click="refreshPreview()">Aktualisieren</c-ui.textknopf>
+                                    <c-ui.text-button dicht @click="refreshPreview()">Aktualisieren</c-ui.text-button>
                                 </div>
                                 <div id="letterhead-preview" aria-live="polite" class="rounded-md border border-gray-300 dark:border-gray-700 bg-white p-6 overflow-auto">
                                     <p class="text-sm text-gray-600">Vorschau wird geladen …</p>
