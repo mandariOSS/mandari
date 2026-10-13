@@ -1,0 +1,64 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Mein Profil › Gremien im neuen Erscheinungsbild (Issue #951, Teilpaket 4): „Meine Gremien“ (Auswahl für Start und
+Sitzungen, Feld committees) und „Meine Fachgebiete“ (action=save_expertise, Feld expertise_topics) als zwei Formulare
+ohne Kästen; zugewiesene Gremien als Text statt Chips, Themen ohne Farbpunkt. Kontext: ProfileCommitteesView; die
+bisherige Seite bleibt work/profile/committees.html.
+{% endcomment %}
+
+{% block page_title %}Meine Gremien{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Mein Profil" dicht data-testid="profil-kopf"
+    text="Ihre Gremien bestimmen, welche Sitzungen und Vorlagen Start und Sitzungen zuerst zeigen. Ihre Fachgebiete machen Sie bei passenden Dokumenten als Ansprechperson sichtbar." />
+{% include "work/profile/neu/_reiter.html" with reiter="gremien" seite="gremien" %}
+{% endblock %}
+
+{% block work_content %}
+<form method="post" class="max-w-4xl" data-testid="gremien-formular">
+    {% csrf_token %}
+    <c-rahmen.abschnitt titel="Meine Gremien" titel_id="gremien-auswahl">
+        <c-rahmen.satz eng>Ohne Auswahl gelten Ihre zugewiesenen Gremien bzw. alle Gremien der Organisation.</c-rahmen.satz>
+        {% if available_committees %}
+        <ul class="mt-3 grid gap-x-8 gap-y-2 md:grid-cols-2">
+            {% for committee in available_committees %}
+            <li>
+                <c-form.checkbox name="committees" id="gremium-{{ committee.id }}" value="{{ committee.id }}" checked="{% if committee.id in followed_ids %}1{% endif %}" dicht>
+                    {{ committee.name|default:committee.short_name }}{% if committee.organization_type or show_body_names and committee.body %}<span class="block text-[0.8125rem] leading-snug text-gray-600 dark:text-gray-400">{% if committee.organization_type %}{{ committee.organization_type }}{% endif %}{% if show_body_names and committee.body %}{% if committee.organization_type %} · {% endif %}{{ committee.body.display_name|default:committee.body.name }}{% endif %}</span>{% endif %}
+                </c-form.checkbox>
+            </li>
+            {% endfor %}
+        </ul>
+        <div class="mt-4"><c-ui.button type="submit" size="sm">Speichern</c-ui.button></div>
+        {% else %}
+        <c-rahmen.satz>Für diese Organisation sind keine Gremien verknüpft.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+</form>
+
+{% if assigned_committees %}
+<c-rahmen.abschnitt titel="Zugewiesene Gremien" titel_id="gremien-zugewiesen" class="mt-10 max-w-4xl">
+    <p class="mt-2 text-sm text-gray-800 dark:text-gray-200">{% for committee in assigned_committees %}{{ committee.name|default:committee.short_name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+    <c-rahmen.satz>Die Organisation hat Ihnen diese Gremien zugewiesen. Änderungen beantragen Sie unter <c-ui.textlink href="{% url 'work:profile_requests' org_slug=organization.slug %}">Anträge</c-ui.textlink>.</c-rahmen.satz>
+</c-rahmen.abschnitt>
+{% endif %}
+
+<form method="post" class="mt-10 max-w-4xl" data-testid="fachgebiete-formular">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="save_expertise">
+    <c-rahmen.abschnitt titel="Meine Fachgebiete" titel_id="gremien-fachgebiete">
+        <c-rahmen.satz eng>Bei Dokumenten mit diesen Themen erscheinen Sie unter „Kompetenz im Thema“ als Ansprechperson.</c-rahmen.satz>
+        {% if org_topics %}
+        <ul class="mt-3 grid gap-x-8 gap-y-2 md:grid-cols-2">
+            {% for topic in org_topics %}
+            <li><c-form.checkbox name="expertise_topics" id="fachgebiet-{{ topic.id }}" value="{{ topic.id }}" checked="{% if topic.id in expertise_ids %}1{% endif %}" dicht>{{ topic.name }}</c-form.checkbox></li>
+            {% endfor %}
+        </ul>
+        <div class="mt-4"><c-ui.button type="submit" size="sm">Fachgebiete speichern</c-ui.button></div>
+        {% else %}
+        <c-rahmen.satz>Es sind noch keine Themen im Katalog der Organisation angelegt.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+</form>
+{% endblock %}

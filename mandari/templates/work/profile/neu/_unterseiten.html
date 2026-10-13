@@ -1,0 +1,16 @@
+{% comment %}
+Zweite Seite eines Profil-Reiters (Issue #951): zwei Textlinks über dem Inhalt, die geöffnete Seite fett mit
+aria-current. Aufruf: {% include "work/profile/neu/_unterseiten.html" with reiter="profil" seite="sichtbarkeit" %}
+{% endcomment %}
+<nav aria-label="Seiten dieses Reiters" class="mb-6 flex flex-wrap gap-x-5 gap-y-1 text-sm">
+    {% if reiter == "profil" %}
+    {% if seite == "profil" %}<span aria-current="page" class="font-semibold text-gray-900 dark:text-white">Angaben</span>{% else %}<c-ui.textlink href="{% url 'work:profile' org_slug=organization.slug %}">Angaben</c-ui.textlink>{% endif %}
+    {% if seite == "sichtbarkeit" %}<span aria-current="page" class="font-semibold text-gray-900 dark:text-white">Sichtbarkeit und Kontakt</span>{% else %}<c-ui.textlink href="{% url 'work:profile_visibility' org_slug=organization.slug %}">Sichtbarkeit und Kontakt</c-ui.textlink>{% endif %}
+    {% elif reiter == "benachrichtigungen" %}
+    {% if seite == "benachrichtigungen" %}<span aria-current="page" class="font-semibold text-gray-900 dark:text-white">Benachrichtigungen</span>{% else %}<c-ui.textlink href="{% url 'work:profile_notifications' org_slug=organization.slug %}">Benachrichtigungen</c-ui.textlink>{% endif %}
+    {% if seite == "abwesenheit" %}<span aria-current="page" class="font-semibold text-gray-900 dark:text-white">Abwesenheit und Stellvertretung</span>{% else %}<c-ui.textlink href="{% url 'work:profile_absence' org_slug=organization.slug %}">Abwesenheit und Stellvertretung</c-ui.textlink>{% endif %}
+    {% elif reiter == "daten" %}
+    {% if seite == "daten" %}<span aria-current="page" class="font-semibold text-gray-900 dark:text-white">Daten und Privatsphäre</span>{% else %}<c-ui.textlink href="{% url 'work:profile_data' org_slug=organization.slug %}">Daten und Privatsphäre</c-ui.textlink>{% endif %}
+    {% if seite == "aktivitaet" %}<span aria-current="page" class="font-semibold text-gray-900 dark:text-white">Aktivität</span>{% else %}<c-ui.textlink href="{% url 'work:profile_activity' org_slug=organization.slug %}">Aktivität</c-ui.textlink>{% endif %}
+    {% endif %}
+</nav>

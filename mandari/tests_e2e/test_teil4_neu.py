@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Benachrichtigungen, Hilfe und Team im neuen Erscheinungsbild im Browser (Issue #951, Teilpaket 4).
+Benachrichtigungen, Hilfe, Team und Profil im neuen Erscheinungsbild im Browser (Issue #951, Teilpaket 4).
 
 - Benachrichtigungen: „Gelesen“ nimmt Punkt und Knopf weg (data-parent statt Abstandsklasse), der Reiter „Ungelesen“
   filtert, „Alle als gelesen markieren“ lädt neu, „Anzeigen“ folgt nach dem Markieren dem Link.
 - Ticket: neue Nachrichten erscheinen beim Nachladen (ticketVerlauf), Neues Ticket nimmt Anhänge über das Dateifeld.
+- Profil: Reiter führen zu allen Seiten, „2FA einrichten“ öffnet den Dialog, Escape schließt ihn.
 - Alle Seiten: keine Alpine-Fehler, axe ohne kritische/schwere Befunde, kein waagerechtes Überlaufen bei 390 px.
 """
 
@@ -145,3 +146,39 @@ def test_team_und_hilfe_ohne_ueberlauf(page: Any, live_server: Any, vorsitz: Any
         _oeffnen(page, f"{basis}/{pfad}")
         _ohne_ueberlauf(page, pfad)
     problems.assert_clean("Team und Hilfe")
+
+
+def test_profil_reiter_und_sicherheit(
+    page: Any, live_server: Any, vorsitz: Any, axe: Any, problems: BrowserProblems
+) -> None:
+    basis = _anmelden(page, live_server, vorsitz)
+    _oeffnen(page, f"{basis}/profile/")
+    reiter = page.get_by_role("navigation", name="Mein Profil")
+    expect(reiter.get_by_role("link")).to_have_count(6)
+    page.get_by_role("link", name="Sichtbarkeit und Kontakt").click()
+    page.wait_for_load_state("networkidle")
+    expect(
+        page.get_by_role("main").locator('[aria-current="page"]', has_text="Sichtbarkeit und Kontakt")
+    ).to_have_count(1)
+    reiter.get_by_role("link", name="Daten und Aktivität").click()
+    page.wait_for_load_state("networkidle")
+    page.get_by_role("link", name="Aktivität", exact=True).click()
+    page.wait_for_load_state("networkidle")
+    assert page.url.endswith("/profile/activity/")
+
+    _oeffnen(page, f"{basis}/profile/security/")
+    wait_for_component(page, "securitySettings")
+    page.get_by_role("button", name="2FA einrichten").click()
+    dialog = page.get_by_role("dialog", name="2FA einrichten")
+    expect(dialog).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
+    assert not axe().failing, axe().describe()
+    _oeffnen(page, f"{basis}/profile/notifications/")
+    expect(page.get_by_role("checkbox", name="per E-Mail").first).to_be_visible()
+    assert not axe().failing, axe().describe()
+    page.set_viewport_size({"width": 390, "height": 844})
+    for pfad in ("profile/", "profile/notifications/", "profile/security/", "profile/requests/", "profile/data/"):
+        _oeffnen(page, f"{basis}/{pfad}")
+        _ohne_ueberlauf(page, pfad)
+    problems.assert_clean("Profil")

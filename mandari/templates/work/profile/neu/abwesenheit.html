@@ -1,0 +1,89 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Mein Profil › Abwesenheit und Stellvertretung im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Stand als Punkt mit
+Text, Formular „Abwesenheit eintragen“ (action=create_absence) ohne Kasten, geplante und vergangene Abwesenheiten sowie
+eigene Stellvertretungen als Listen mit Linien – keine Farbkästen und Pillen. Stornieren wie bisher
+(action=cancel_absence, absence_id). Kontext: ProfileAbsenceView; die bisherige Seite bleibt work/profile/absence.html.
+{% endcomment %}
+
+{% block page_title %}Abwesenheit{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Mein Profil" dicht data-testid="profil-kopf"
+    text="{% if current_absence %}Sie sind abwesend vom {{ current_absence.start_date|date:'d.m.Y' }} bis {{ current_absence.end_date|date:'d.m.Y' }}{% if current_absence.deputy %}, Stellvertretung: {{ current_absence.deputy.user.get_full_name|default:current_absence.deputy.user.email }}{% endif %}.{% else %}Sie sind verfügbar. Tragen Sie Abwesenheiten ein, damit Ihre Stellvertretung Bescheid weiß.{% endif %}" />
+{% include "work/profile/neu/_reiter.html" with reiter="benachrichtigungen" seite="abwesenheit" %}
+{% endblock %}
+
+{% block work_content %}
+{% include "work/profile/neu/_unterseiten.html" with reiter="benachrichtigungen" seite="abwesenheit" %}
+<div class="grid gap-x-16 gap-y-10 xl:grid-cols-2">
+    <c-rahmen.abschnitt titel="Abwesenheit eintragen" titel_id="abwesenheit-neu" class="min-w-0">
+        <form method="post" class="mt-3 space-y-4 max-w-xl" data-testid="abwesenheit-formular">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_absence">
+            <div class="grid gap-4 sm:grid-cols-2">
+                <c-form.field name="start_date" id="abwesenheit-von" type="date" label="Von" dicht required />
+                <c-form.field name="end_date" id="abwesenheit-bis" type="date" label="Bis" dicht required />
+            </div>
+            <c-form.field name="reason" id="abwesenheit-grund" label="Grund (optional)" maxlength="500" placeholder="z. B. Urlaub, Dienstreise" dicht />
+            <c-form.select name="deputy_id" id="abwesenheit-vertretung" label="Stellvertretung (optional)" dicht>
+                <option value="">Keine Stellvertretung</option>
+                {% for deputy in available_deputies %}<option value="{{ deputy.id }}">{{ deputy.user.get_full_name|default:deputy.user.email }}</option>{% endfor %}
+            </c-form.select>
+            <div class="flex flex-col gap-2">
+                <c-form.checkbox name="auto_decline_meetings" id="abwesenheit-absagen" checked dicht>Sitzungen in dieser Zeit automatisch absagen</c-form.checkbox>
+                <c-form.checkbox name="notify_deputy" id="abwesenheit-benachrichtigen" checked dicht>Stellvertretung benachrichtigen</c-form.checkbox>
+            </div>
+            <c-ui.button type="submit" size="sm" icon="plus">Abwesenheit eintragen</c-ui.button>
+        </form>
+    </c-rahmen.abschnitt>
+
+    <div class="space-y-10 min-w-0">
+        <c-rahmen.abschnitt titel="Geplant und aktuell" titel_id="abwesenheit-geplant">
+            {% if active_absences %}
+            <c-rahmen.liste class="mt-3">
+                {% for absence in active_absences %}
+                <li class="flex flex-wrap items-center gap-x-4 gap-y-1 py-2.5">
+                    <div class="flex-1 min-w-[12rem]">
+                        <p class="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white"><span class="w-2 h-2 rounded-full {% if absence.is_current %}bg-amber-500{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>{{ absence.start_date|date:"d.m.Y" }} bis {{ absence.end_date|date:"d.m.Y" }}<span class="font-normal text-gray-600 dark:text-gray-400">{% if absence.is_current %}läuft{% else %}geplant{% endif %}</span></p>
+                        {% if absence.reason or absence.deputy %}<p class="mt-0.5 pl-4 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ absence.reason }}{% if absence.reason and absence.deputy %} · {% endif %}{% if absence.deputy %}Stellvertretung: {{ absence.deputy.user.get_full_name|default:absence.deputy.user.email }}{% endif %}</p>{% endif %}
+                    </div>
+                    <form method="post">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="cancel_absence">
+                        <input type="hidden" name="absence_id" value="{{ absence.id }}">
+                        <c-ui.button type="submit" variant="ghost" size="sm" class="text-red-700 dark:text-red-400">Stornieren<span class="sr-only">: {{ absence.start_date|date:"d.m.Y" }} bis {{ absence.end_date|date:"d.m.Y" }}</span></c-ui.button>
+                    </form>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Keine Abwesenheiten geplant.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Meine Stellvertretungen" titel_id="abwesenheit-vertretungen">
+            {% if deputy_for %}
+            <c-rahmen.liste class="mt-3">
+                {% for dep in deputy_for %}
+                <li class="py-2.5 text-sm"><span class="font-medium text-gray-900 dark:text-white">{{ dep.membership.user.get_full_name|default:dep.membership.user.email }}</span><span class="text-gray-600 dark:text-gray-400"> · {{ dep.start_date|date:"d.m." }} bis {{ dep.end_date|date:"d.m.Y" }}</span></li>
+                {% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Sie vertreten gerade niemanden.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        {% if past_absences %}
+        <c-rahmen.abschnitt titel="Vergangen" titel_id="abwesenheit-vergangen">
+            <c-rahmen.liste class="mt-3">
+                {% for absence in past_absences %}
+                <li class="py-2.5 text-sm text-gray-800 dark:text-gray-200">{{ absence.start_date|date:"d.m.Y" }} bis {{ absence.end_date|date:"d.m.Y" }}{% if absence.reason or absence.deputy %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400"> · {{ absence.reason }}{% if absence.reason and absence.deputy %} · {% endif %}{% if absence.deputy %}Stellvertretung: {{ absence.deputy.user.get_full_name|default:absence.deputy.user.email }}{% endif %}</span>{% endif %}</li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

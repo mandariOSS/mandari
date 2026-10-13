@@ -1,0 +1,81 @@
+{% comment %}
+Sicherheit › Dialoge (Issue #951): 2FA einrichten in drei Schritten (QR-Code, Code bestätigen, Backup-Codes),
+Backup-Codes neu erzeugen und 2FA abschalten – je c-ui.alpine-modal statt eigener Überlagerung. Zustand aus
+securitySettings (showSetupModal, setupStep, setupData, showBackupCodesModal, showDisable2faModal).
+{% endcomment %}
+<c-ui.alpine-modal show="showSetupModal" labelledby="dialog-2fa-titel" panel_class="max-h-[90vh] overflow-y-auto">
+    <c-rahmen.abschnitt titel="2FA einrichten" titel_id="dialog-2fa-titel" class="px-6 pt-5 pb-6">
+        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Schritt <span x-text="setupStep"></span> von 3</p>
+
+        <div x-show="setupStep === 1" class="mt-4">
+            <p class="text-sm text-gray-700 dark:text-gray-300">Scannen Sie den QR-Code mit Ihrer Authenticator-App.</p>
+            <div class="mt-3 flex justify-center" x-show="setupData.qr_code">
+                <img :src="'data:image/png;base64,' + setupData.qr_code" alt="QR-Code für die Authenticator-App" class="w-44 h-44 bg-white p-2 rounded-md">
+            </div>
+            <div class="mt-3" x-show="setupData.secret">
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Oder den Schlüssel von Hand eingeben:</p>
+                <code class="mt-1 block px-3 py-2 rounded-md bg-band-grau text-sm font-mono text-center select-all" x-text="setupData.secret"></code>
+            </div>
+            <div class="mt-4 flex justify-end gap-2">
+                <c-ui.button variant="ghost" size="sm" @click="showSetupModal = false">Abbrechen</c-ui.button>
+                <c-ui.button size="sm" @click="setupStep = 2">Weiter</c-ui.button>
+            </div>
+        </div>
+
+        <div x-show="setupStep === 2" class="mt-4">
+            <form method="post" class="space-y-4">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="confirm_2fa">
+                <div>
+                    <label for="dialog-2fa-code" class="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">Sechsstelliger Code aus Ihrer App</label>
+                    <input id="dialog-2fa-code" type="text" name="code" required pattern="[0-9]{6}" maxlength="6" placeholder="000000" inputmode="numeric" autocomplete="one-time-code"
+                           class="w-full h-11 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-center text-xl font-mono tracking-[0.4em] text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                </div>
+                <div class="flex justify-end gap-2">
+                    <c-ui.button variant="ghost" size="sm" @click="setupStep = 1">Zurück</c-ui.button>
+                    <c-ui.button type="submit" size="sm">Aktivieren</c-ui.button>
+                </div>
+            </form>
+        </div>
+
+        <div x-show="setupStep === 3" class="mt-4">
+            <p class="text-sm text-gray-800 dark:text-gray-200">Bewahren Sie die Backup-Codes sicher auf. Jeder Code ist einmal verwendbar.</p>
+            <div class="mt-3 grid grid-cols-2 gap-2">
+                <template x-for="code in setupData.backup_codes" :key="code">
+                    <code class="px-3 py-1.5 rounded-md bg-band-grau text-sm font-mono text-center select-all" x-text="code"></code>
+                </template>
+            </div>
+            <div class="mt-4 flex justify-end"><c-ui.button size="sm" @click="showSetupModal = false">Fertig</c-ui.button></div>
+        </div>
+    </c-rahmen.abschnitt>
+</c-ui.alpine-modal>
+
+<c-ui.alpine-modal show="showBackupCodesModal" labelledby="dialog-backup-titel">
+    <form method="post" class="px-6 pt-5 pb-6 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="regenerate_backup_codes">
+        <c-rahmen.abschnitt titel="Backup-Codes neu erzeugen" titel_id="dialog-backup-titel">
+            <c-rahmen.satz eng>Jeder Code ist einmal verwendbar. Erzeugen Sie neue, wenn die meisten verbraucht sind; die bisherigen werden ungültig.</c-rahmen.satz>
+        </c-rahmen.abschnitt>
+        <c-form.password name="password" id="dialog-backup-passwort" label="Passwort bestätigen" autocomplete="current-password" dicht required />
+        <div class="flex justify-end gap-2">
+            <c-ui.button variant="ghost" size="sm" @click="showBackupCodesModal = false">Abbrechen</c-ui.button>
+            <c-ui.button type="submit" size="sm" icon="refresh-cw">Neue Codes erzeugen</c-ui.button>
+        </div>
+    </form>
+</c-ui.alpine-modal>
+
+<c-ui.alpine-modal show="showDisable2faModal" labelledby="dialog-abschalten-titel">
+    <form method="post" class="px-6 pt-5 pb-6 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="disable_2fa">
+        <c-rahmen.abschnitt titel="2FA abschalten" titel_id="dialog-abschalten-titel">
+            <c-rahmen.satz eng>Ihr Konto ist danach nur noch durch Ihr Passwort geschützt.</c-rahmen.satz>
+        </c-rahmen.abschnitt>
+        <c-form.password name="password" id="dialog-abschalten-passwort" label="Passwort bestätigen" autocomplete="current-password" dicht required />
+        <div class="flex justify-end gap-2">
+            <c-ui.button variant="ghost" size="sm" @click="showDisable2faModal = false">Abbrechen</c-ui.button>
+            <c-ui.button type="submit" variant="danger" size="sm" icon="shield-off">2FA abschalten</c-ui.button>
+        </div>
+    </form>
+</c-ui.alpine-modal>

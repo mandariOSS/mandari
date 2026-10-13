@@ -11,6 +11,7 @@ from django.views import View
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..services import ServiceError
@@ -39,10 +40,11 @@ def _export_payload(export, organization) -> dict:
     }
 
 
-class ProfileDataPrivacyView(WorkViewMixin, TemplateView):
+class ProfileDataPrivacyView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """DSGVO data export, activity log, and account deletion."""
 
     template_name = "work/profile/data_privacy.html"
+    neue_vorlage = "work/profile/neu/daten.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):

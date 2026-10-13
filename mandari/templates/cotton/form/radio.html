@@ -1,0 +1,17 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Auswahlknopf (Radio) mit Beschriftung und optionalem Hinweis darunter, für Arbeitsflächen (Issue #951): ruhige Optionen
+statt Karten. Mit ``hinweis`` steht die Beschriftung halbfett, der Hinweis gedimmt in 13 px darunter.
+  <c-form.radio name="visibility" value="private" label="Privat" hinweis="Nur Sie sehen die Aufgabe." modell="visibility" />
+  <c-form.radio name="preferred_contact" value="email" checked="{% if kontakt == 'email' %}1{% endif %}">E-Mail</c-form.radio>
+Parameter: name, value, id (Standard id_<name>_<value>), label (oder Slot), hinweis, checked, modell (Alpine x-model am
+Feld), disabled, class (am Rahmen). Weitere Attribute (data-*, aria-*) gehen an den Rahmen.
+{% endcomment %}
+<c-vars name="" value="" id="" label="" hinweis="" checked="" modell="" disabled="" class="" />
+{% with auto_id="id_"|add:name|add:"_"|add:value %}{% firstof id auto_id as fid %}
+<label for="{{ fid }}" class="flex items-start gap-2 text-sm cursor-pointer min-h-[24px] {{ class }}" {{ attrs }}>
+    <input type="radio" name="{{ name }}" id="{{ fid }}" value="{{ value }}"{% if modell %} x-model="{{ modell }}"{% endif %}{% if checked %} checked{% endif %}{% if disabled %} disabled{% endif %}
+        class="mt-0.5 shrink-0 w-4 h-4 border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+    <span><span class="{% if hinweis %}font-medium text-gray-900 dark:text-white{% else %}text-gray-800 dark:text-gray-200{% endif %}">{{ label }}{{ slot }}</span>{% if hinweis %}<span class="block text-[0.8125rem] leading-snug text-gray-600 dark:text-gray-400">{{ hinweis }}</span>{% endif %}</span>
+</label>
+{% endwith %}
