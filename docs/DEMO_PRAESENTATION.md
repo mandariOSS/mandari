@@ -69,9 +69,11 @@ Vorlagen entstehen ohne Nummer – die vergibt der Nummernkreis):
 
 ### Work – Musterfraktion (Demo)
 
-Antrag „Antrag: Tempo 30 vor der Grundschule am Musterweg (Demo)“ im Entwurf, mit
+Antrag „Antrag: Inklusiver Spielplatz im Musterviertel (Demo)“ im Entwurf, mit
 Beschlussvorschlag, Begründung und finanziellen Auswirkungen als Überschriften-Abschnitte –
-das Formular „Bei Verwaltung einreichen“ ist damit vollständig vorbelegt.
+das Formular „Bei Verwaltung einreichen“ ist damit vollständig vorbelegt. Weil der Antrag Kosten
+nennt, verlangt die Vorlage daraus vor der Freigabe die Mitzeichnung der Kämmerei (Regel der
+Basisdemo); der Verwaltungsnutzer gehört der Kämmerei an und kann selbst mitzeichnen.
 
 ### Mandant B – „Bezirksamt Musterstadt-Süd (Demo)“
 
@@ -107,7 +109,7 @@ Link `/insight/kommune/<uuid>/` erreichbar.
 | Schritt | Wer | Klickpfad | Zeigt |
 |---|---|---|---|
 | 1 | Fraktionsvorsitz (`demo-vorsitz@…`) | Work-Antrag öffnen → Menü „Ablauf“ → „Bei der Verwaltung einreichen“ (bisherige Ansicht: Symbol „Bei Verwaltung einreichen“) → Zielgremium wählen, Bestätigung anhaken → „Jetzt einreichen“ | Eingangsnummer `A/<Jahr>/…` im Editor (Infozeile unter der Werkzeugleiste), Status „Eingereicht“ |
-| 2 | Verwaltung (`demo-verwaltung@…`) | Session A → Anträge → Tempo-30-Antrag → „In Vorlage umwandeln“ → Gremium prüfen → „In Vorlage umwandeln“ | Vorlage mit Nummer aus dem Kreis (`22-…` bzw. `AN/…/<Jahr>`) |
+| 2 | Verwaltung (`demo-verwaltung@…`) | Session A → Anträge → Spielplatz-Antrag → „In Vorlage umwandeln“ → Gremium prüfen → „In Vorlage umwandeln“; für das Bürgerportal danach „Zur Freigabe vorlegen“ → mitzeichnen → „Freigeben“ | Vorlage mit Nummer aus dem Kreis (`22-…` bzw. `AN/…/<Jahr>`), zunächst als Entwurf |
 | 3 | Verwaltung | Sitzungen → „Hauptausschuss (Demo-Drehbuch)“ → Beratungsfolge am Jugendzentrum-TOP → Stift → „Öffentlicher Tagesordnungspunkt“ abwählen → Speichern | TOP wandert in den nichtöffentlichen Teil; im zweiten Fenster (abgemeldet, Bürgerportal-Sitzung) ist er nach dem Neuladen verschwunden |
 | 4 | – | OParl-System-URL im Browser; `…/api/oparl/agendaitem/<id>/` | JSON; der TOP ist nur noch als gelöschtes Objekt (`deleted: true`) abrufbar |
 | 5 | Verwaltung | Beschlüsse → „Überfällig“; vergangene Sitzung → Niederschrift | Frist überschritten, Umsetzungsstand; Protokoll mit Ö- und NÖ-Teil |
@@ -122,9 +124,12 @@ Hinweise für die Vorführung:
 - Jede Rolle in einem eigenen Browserfenster bzw. Profil anmelden; das Bürgerportal in einem
   privaten Fenster ohne Anmeldung öffnen.
 - Die Rücknahme im Bürgerportal (Schritt 3) wirkt sofort, ebenso die neue Nummerierung der
-  übrigen TOPs. Die in Schritt 2 umgewandelte Vorlage steht sofort in der OParl-Schnittstelle
-  (Schritt 4); im Bürgerportal erscheint sie mit dem nächsten Abgleich des Spiegels (Ingestor
-  alle 10 Minuten bzw. erneuter Befehlslauf).
+  übrigen TOPs. Die in Schritt 2 umgewandelte Vorlage ist ein Entwurf (Issue #721): Erst nach
+  der Freigabe steht sie in der OParl-Schnittstelle und erscheint mit dem nächsten Abgleich des
+  Spiegels im Bürgerportal. Den Abgleich übernimmt sonst der Ingestor (alle 10 Minuten); ohne
+  Ingestor und Worker (öffentliche Demo) gleicht `python manage.py sync_session_insight --tenant
+  <slug>` inkrementell in wenigen Sekunden ab. Ein erneuter Lauf dieses Befehls ist dafür nicht
+  geeignet: Er setzt das Drehbuch zurück und löscht die umgewandelte Vorlage.
 - Der Umsetzungsstand im Bürgerportal hängt an der mit dem Mandanten verknüpften Kommune der
   Basisdemo („Musterstadt (Demo)“), nicht an der gespiegelten. Der ausgegebene Beschluss-Link
   führt direkt dorthin.
