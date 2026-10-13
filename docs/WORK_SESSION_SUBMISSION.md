@@ -77,6 +77,23 @@ sehen ohne Rückfrage Eingangsnummer, Bearbeitungsstatus und Beratungstermine (I
 - Dokument im Status „Freigegeben“ – oder die einreichende Person besitzt `motions.approve`
 - Noch keine Einreichung für dieses Dokument
 
+## Antragsfassung als PDF
+
+Beim Einreichen aus Work entsteht aus den übermittelten Angaben automatisch ein schlichtes A4-PDF des Antrags
+und hängt am Eingang, z. B. `Antrag A-2026-0003.pdf` (`application_service.attach_application_pdf`, Template
+`session/pdf/application.html`, gekennzeichnet über `SessionFile.is_application_pdf`). Es enthält Titel, Antragsart,
+Fraktion, einreichende Person, Datum, Eingangsnummer, Zielgremium, Wunschtermin, Dringlichkeit, Beschlussvorschlag,
+Begründung, finanzielle Auswirkungen und Mitunterzeichnende – keine E-Mail-Adresse und keine Telefonnummer. Die Texte
+sind Klartext aus dem Formular und werden escaped, HTML wird nicht übernommen. Einen Virenscan gibt es dafür nicht:
+Das PDF entsteht auf dem Server und enthält keine hochgeladenen Inhalte. Scheitert die Erzeugung, wird das geloggt
+und ohne PDF eingereicht; die Erfolgsmeldung zählt die Antragsfassung nicht als Anhang.
+
+Bis zur Umwandlung ist die Antragsfassung intern wie die Anhänge (nur mit `view_applications`). `convert_to_paper`
+hängt sie **öffentlich** an die Vorlage, alle anderen Anhänge bleiben nichtöffentlich (#584). Über OParl und damit im
+Bürgerportal erscheint sie erst, wenn die Vorlage freigegeben ist (`oparl_publication.visible_files`: nicht Entwurf
+oder Prüfung); als älteste öffentliche Anlage ist sie dort die Hauptdatei (`mainFile`). Die Verwaltung kann sie vorher
+an der Vorlage auf nichtöffentlich stellen. Einreichungen über die API v1 erhalten kein PDF.
+
 ## Dateien
 
 - Service: `apps/work/motions/ris_submission.py` (Einreichen), `apps/work/motions/administration_feedback.py`
@@ -87,7 +104,8 @@ sehen ohne Rückfrage Eingangsnummer, Bearbeitungsstatus und Beratungstermine (I
   `session/settings/api_tokens.html`
 - Tests: `scripts/smoke_ris_submission.py` (Fraktion → Verwaltung → Rückmeldung, Rechte, Sperren),
   `apps/work/motions/tests/test_verwaltung_rueckmeldung.py` (Ende-zu-Ende, Ö/NÖ, Idempotenz, Admin,
-  Organisationstrennung), `apps/session/tests/test_antrag_rueckmeldung.py` (Aufbereitung, API)
+  Organisationstrennung), `apps/session/tests/test_antrag_rueckmeldung.py` (Aufbereitung, API),
+  `apps/work/motions/tests/test_dokument_anhaenge.py` (Anhänge und Antragsfassung als PDF)
 
 ## Externe Work-Installationen
 
