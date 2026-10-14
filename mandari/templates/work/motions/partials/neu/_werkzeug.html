@@ -31,6 +31,13 @@ richtet sich deshalb am Rahmen außerhalb der Leiste aus (relative), nicht an se
         <button type="button" class="ke-wz" aria-label="Nummerierung" title="Nummerierung (Strg+Umschalt+7)" :aria-pressed="(formats.list === 'ordered').toString()" aria-pressed="false"
                 @mousedown.prevent @click="befehl('orderedList')" :disabled="modus === 'ansehen'"><i data-lucide="list-ordered" aria-hidden="true"></i></button>
     </span>
+    {# Ausrichtung direkt in der Leiste (wie im Menü „Format“), ab sm sichtbar #}
+    <span class="ke-wz-gruppe hidden sm:flex">
+        {% for wert, label, icon in ausrichtungen %}
+        <button type="button" class="ke-wz" aria-label="{{ label }}" title="{{ label }}" :aria-pressed="(formats.textAlign === '{{ wert }}').toString()" aria-pressed="false"
+                @mousedown.prevent @click="befehl('align', 0, '{{ wert }}')" :disabled="modus === 'ansehen'"><i data-lucide="{{ icon }}" aria-hidden="true"></i></button>
+        {% endfor %}
+    </span>
     <span class="ke-wz-gruppe">
         <button type="button" class="ke-wz hidden sm:grid" aria-label="Link einfügen" title="Link einfügen (Strg+K)" :aria-pressed="(!!formats.link).toString()" aria-pressed="false"
                 @mousedown.prevent @click="openLinkDialog()" :disabled="modus === 'ansehen'"><i data-lucide="link" aria-hidden="true"></i></button>
@@ -41,6 +48,12 @@ richtet sich deshalb am Rahmen außerhalb der Leiste aus (relative), nicht an se
         <button type="button" class="ke-wz hidden sm:grid" aria-label="Anlage hinzufügen" title="Anlage hinzufügen" @click="panelOeffnen('details')"><i data-lucide="paperclip" aria-hidden="true"></i></button>
     </span>
     <span class="flex-1" aria-hidden="true"></span>
+    {% if not is_guest and not is_sworn_in_only %}
+    {# KI-Assistent mit einem Klick (sonst nur über „Ansicht“ bzw. das Menü rechts) #}
+    <button type="button" class="ke-modus mr-2" @click="panelOeffnen('ki')" aria-label="KI-Assistent öffnen" title="KI-Assistent">
+        <i data-lucide="sparkles" class="w-4 h-4" aria-hidden="true"></i><span class="hidden sm:inline">KI-Assistent</span>
+    </button>
+    {% endif %}
     <div>
         <button type="button" class="ke-modus" data-menue-knopf="modus" @click="menueUmschalten('modus')" aria-haspopup="menu"
                 :aria-expanded="(menue === 'modus').toString()" aria-expanded="false" :data-modus="modus"
