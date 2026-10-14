@@ -1,0 +1,75 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Zu prüfende Vorlagen im neuen Rahmen (Issues #33, #222, #756, #944; Bereich Vorlagen, Reiter „Zu prüfen“): Kopfband mit
+der Zahl im Satz, darunter die Vorlagen in Prüfung als Liste mit Linien statt Karte, die ältesten zuerst. Je Vorlage
+„Freigeben“ (nur, wenn das Vier-Augen-Prinzip es erlaubt, sonst der Grund als Satz) und „Zurückweisen“ mit Anmerkung,
+beide ohne Füllfarbe wie auf der Vorlage (session/neu/_freigabe.html). Vertretungen stehen als Satz statt Hinweiskasten,
+der Filter „Körperschaft“ erst ab der zweiten Körperschaft. Formulare und Felder wie session/papers/review_list.html, die
+bisherige Seite bleibt. Kontext: PaperReviewListView (papers mit freigabe, paginator, my_delegations, body_choice).
+{% endcomment %}
+
+{% block page_title %}Zu prüfende Vorlagen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Zu prüfende Vorlagen" text="{% if paginator.count %}{{ paginator.count }} Vorlage{{ paginator.count|pluralize:'n' }} in Prüfung{% if body_choice.selected %} für die gewählte Körperschaft{% endif %}, die ältesten zuerst.{% if paginator.num_pages > 1 %} Angezeigt werden die Vorlagen {{ page_obj.start_index }} bis {{ page_obj.end_index }}.{% endif %}{% else %}Vorlagen, die zur Freigabe vorgelegt wurden, prüfen Sie hier.{% endif %}" dicht />
+{% endblock %}
+
+{% block page_content %}
+{% include "session/neu/_meine_vertretungen.html" %}
+
+{% if body_choice.active %}
+{# Körperschaft (Issue #756): Gesamtansicht oder eine Körperschaft #}
+<form method="get" role="search" aria-label="Zu prüfende Vorlagen filtern" class="mb-4 flex flex-wrap items-center gap-2" data-testid="zu-pruefen-filter">
+    {% include "session/partials/body_filter.html" %}
+    <c-ui.button type="submit" variant="secondary" size="sm">Filtern</c-ui.button>
+</form>
+{% endif %}
+
+{% if papers %}
+<c-rahmen.liste data-testid="zu-pruefen-liste">
+    {% for paper in papers %}
+    <li class="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-2 py-3 pl-1 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+        <div class="min-w-0">
+            <p class="liste-angaben tabular-nums">
+                {{ paper.display_reference }} · {{ paper.get_paper_type_display }}{% if paper.main_organization %} · {{ paper.main_organization.name }}{% endif %}{% if body_choice.active and paper.body %} · {{ paper.body.label }}{% endif %} · {{ paper.created_at|date:"d.m.Y" }}
+            </p>
+            <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
+               class="mt-0.5 block liste-name hover:underline underline-offset-4">{{ paper.name }}</a>
+            {% if paper.created_by or not paper.is_public %}
+            <p class="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                {% if paper.created_by %}<span class="break-all">Eingereicht von {{ paper.created_by.user.email }}</span>{% endif %}
+                {% if not paper.is_public %}<span class="inline-flex items-center gap-1 text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</span>{% endif %}
+            </p>
+            {% endif %}
+            {% if paper.freigabe.on_behalf_of %}
+            <p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300 break-all"><i data-lucide="user-check" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></i>Freigabe in Vertretung für {{ paper.freigabe.on_behalf_of.user.email }}</p>
+            {% elif not paper.freigabe.allowed %}
+            <p class="mt-0.5 text-[0.8125rem] text-amber-800 dark:text-amber-300 break-words">{{ paper.freigabe.reason }}</p>
+            {% endif %}
+        </div>
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
+            {% if paper.freigabe.allowed %}
+            <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='approve' %}">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="check">Freigeben</c-ui.button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='reject' %}"
+                  class="flex min-w-0 basis-full items-center gap-2 sm:basis-auto">
+                {% csrf_token %}
+                <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                <label for="anmerkung-{{ paper.id }}" class="sr-only">Anmerkung zur Zurückweisung von {{ paper.display_reference }}</label>
+                <input id="anmerkung-{{ paper.id }}" type="text" name="comment" placeholder="Anmerkung zur Zurückweisung"
+                       class="h-9 w-0 min-w-0 flex-1 sm:w-60 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="undo-2">Zurückweisen</c-ui.button>
+            </form>
+        </div>
+    </li>
+    {% endfor %}
+</c-rahmen.liste>
+{% else %}
+<c-rahmen.satz data-testid="zu-pruefen-leer">Keine Vorlagen zur Prüfung. Der Arbeitsvorrat ist leer.</c-rahmen.satz>
+{% endif %}
+{% endblock %}

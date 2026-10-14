@@ -630,6 +630,10 @@ class PaperReviewListView(BodyFilterMixin, SessionViewMixin, ListView):
     paginate_by = 50
     permission_required = "approve_papers"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 3); die bisherige Seite bleibt unverändert
+        return ["session/neu/zu_pruefen.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_queryset(self):
         qs = super().get_queryset().filter(status="review")
         if not self.has_permission("view_non_public_papers"):

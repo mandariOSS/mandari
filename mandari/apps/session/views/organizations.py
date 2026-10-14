@@ -50,6 +50,10 @@ class OrganizationListView(BodyFilterMixin, SessionViewMixin, ListView):
     paginate_by = 20
     permission_required = "view_meetings"  # Anyone who can view meetings can see orgs
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/gremien.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_queryset(self):
         qs = super().get_queryset()
         # Aktive Mitglieder nach derselben Regel wie Ladung und Anwesenheit (laufend heute, Person aktiv)

@@ -1388,7 +1388,8 @@ jobs:
     needs: changes
     if: needs.changes.outputs.e2e == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    # Die Suite braucht inzwischen um 25 Minuten (Work- und Session-Seiten im neuen Erscheinungsbild)
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7

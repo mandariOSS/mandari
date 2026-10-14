@@ -1,0 +1,161 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Suche des Sitzungsdienstes im neuen Rahmen (Issues #45, #944): Kopfband mit Titel, einem Satz und dem Suchformular
+(Suchbegriff mit „Suchen“ als einziger Hauptaktion, darunter Trefferart, Gremium, Jahr und Wahlperiode mit sichtbarer
+Beschriftung in einer Zeile). Die Treffer stehen je Art als Abschnitt mit Liste und Linien statt als Karten mit farbigen
+Symbolen: Nummer und Zusammenhang über dem Titel, der Stand als Punkt mit Text rechts bzw. am Handy darunter.
+Formular, Felder und Optionen wie session/search/results.html, die bisherige Seite bleibt.
+Kontext: SessionSearchView (query, results, total, result_limit, filters, organizations, terms, kind_choices).
+{% endcomment %}
+
+{% block page_title %}Suche{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Suche" text="Vorlagen, Tagesordnungspunkte und Beschlüsse, Sitzungen, Protokolle, Anlagen und Anträge durchsuchen, soweit Sie sie sehen dürfen." dicht>
+    <form method="get" role="search" aria-label="Sitzungsdienst durchsuchen" class="max-w-3xl space-y-3" data-testid="suche-formular">
+        <div class="flex flex-col gap-2 sm:flex-row">
+            <label for="suche-begriff" class="sr-only">Suchbegriff</label>
+            <span class="relative block min-w-0 flex-1">
+                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+                <input type="search" id="suche-begriff" name="q" value="{{ query }}" minlength="2" required autofocus enterkeyhint="search"
+                       placeholder="Vorlagen, Beschlüsse, Sitzungen, Anlagen durchsuchen …"
+                       class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+            </span>
+            <c-ui.button type="submit" size="sm" icon="search">Suchen</c-ui.button>
+        </div>
+        <div class="flex flex-wrap items-center gap-x-5 gap-y-2">
+            <c-form.select name="kind" id="suche-art" label="Trefferart" zeile>
+                {% for value, label in kind_choices %}<option value="{{ value }}" {% if filters.kind == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="organization" id="suche-gremium" label="Gremium" zeile>
+                <option value="">Alle</option>
+                {% for org in organizations %}<option value="{{ org.id }}" {% if filters.organization and filters.organization.id == org.id %}selected{% endif %}>{{ org.name }}</option>{% endfor %}
+            </c-form.select>
+            <div class="flex items-center gap-2">
+                <label for="suche-jahr" class="shrink-0 text-sm text-gray-700 dark:text-gray-300">Jahr</label>
+                <input type="number" id="suche-jahr" name="year" value="{{ filters.year|default:'' }}" min="2000" max="2100" placeholder="Alle"
+                       class="h-9 w-24 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+            </div>
+            {% if terms %}
+            <c-form.select name="term" id="suche-periode" label="Wahlperiode" zeile>
+                <option value="">Alle</option>
+                {% for term in terms %}<option value="{{ term.id }}" {% if filters.term and filters.term.id == term.id %}selected{% endif %}>{{ term.name }}</option>{% endfor %}
+            </c-form.select>
+            {% endif %}
+        </div>
+    </form>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+{% if query|length >= 2 %}
+{% if total %}
+<p class="text-sm text-gray-700 dark:text-gray-300" data-testid="suche-treffer">
+    {{ total }} Treffer für „{{ query }}“.{% if total >= result_limit %} Je Art höchstens {{ result_limit }} Treffer.{% endif %}
+</p>
+<div class="mt-8 max-w-4xl space-y-10">
+    {% if results.papers %}
+    <c-rahmen.abschnitt titel="Vorlagen" titel_id="treffer-vorlagen-titel" zusatz="{{ results.papers|length }} Treffer">
+        <c-rahmen.liste class="mt-2">
+            {% for paper in results.papers %}
+            <li class="relative grid gap-x-4 gap-y-1 py-2.5 pl-1 sm:grid-cols-[minmax(0,1fr)_10rem] hover:bg-band-grau/60">
+                <div class="min-w-0">
+                    <p class="liste-angaben tabular-nums">{{ paper.reference }}{% if paper.main_organization %} · {{ paper.main_organization.name }}{% endif %}</p>
+                    <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}"
+                       class="mt-0.5 block text-sm liste-name hover:underline underline-offset-4 after:absolute after:inset-0">{{ paper.name }}</a>
+                    {% if not paper.is_public %}<p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</p>{% endif %}
+                </div>
+                <p class="sm:pt-5 text-[0.8125rem] text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=paper.status text=paper.get_status_display %}</p>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if results.resolutions %}
+    <c-rahmen.abschnitt titel="Tagesordnungspunkte und Beschlüsse" titel_id="treffer-tops-titel" zusatz="{{ results.resolutions|length }} Treffer">
+        <c-rahmen.liste class="mt-2">
+            {% for item in results.resolutions %}
+            <li class="relative grid gap-x-4 gap-y-1 py-2.5 pl-1 sm:grid-cols-[minmax(0,1fr)_10rem] hover:bg-band-grau/60">
+                <div class="min-w-0">
+                    <p class="liste-angaben tabular-nums">{{ item.meeting.name }} · {{ item.meeting.organization.name }} · {{ item.meeting.start|date:"d.m.Y" }}</p>
+                    <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=item.meeting_id %}"
+                       class="mt-0.5 block text-sm liste-name hover:underline underline-offset-4 after:absolute after:inset-0">{% if item.resolution_number %}{{ item.resolution_number }} · {% endif %}TOP {{ item.number }}: {{ item.name }}</a>
+                </div>
+                {% if item.vote_result != 'pending' %}<p class="sm:pt-5 text-[0.8125rem] text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=item.vote_result text=item.get_vote_result_display %}</p>{% endif %}
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if results.meetings %}
+    <c-rahmen.abschnitt titel="Sitzungen" titel_id="treffer-sitzungen-titel" zusatz="{{ results.meetings|length }} Treffer">
+        <c-rahmen.liste class="mt-2">
+            {% for meeting in results.meetings %}
+            <li class="relative py-2.5 pl-1 hover:bg-band-grau/60">
+                <p class="liste-angaben tabular-nums">{{ meeting.organization.name }} · {{ meeting.start|date:"d.m.Y H:i" }}{% if meeting.location %} · {{ meeting.location }}{% endif %}</p>
+                <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}"
+                   class="mt-0.5 block text-sm liste-name hover:underline underline-offset-4 after:absolute after:inset-0">{{ meeting.name }}</a>
+                {% if not meeting.is_public %}<p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</p>{% endif %}
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if results.protocols %}
+    <c-rahmen.abschnitt titel="Protokolle" titel_id="treffer-protokolle-titel" zusatz="{{ results.protocols|length }} Treffer">
+        <c-rahmen.liste class="mt-2">
+            {% for protocol in results.protocols %}
+            <li class="relative grid gap-x-4 gap-y-1 py-2.5 pl-1 sm:grid-cols-[minmax(0,1fr)_10rem] hover:bg-band-grau/60">
+                <div class="min-w-0">
+                    <p class="liste-angaben tabular-nums">{{ protocol.meeting.organization.name }} · {{ protocol.meeting.start|date:"d.m.Y" }}</p>
+                    <a href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=protocol.meeting_id %}"
+                       class="mt-0.5 block text-sm liste-name hover:underline underline-offset-4 after:absolute after:inset-0">Niederschrift: {{ protocol.meeting.name }}</a>
+                </div>
+                <p class="sm:pt-5 text-[0.8125rem] text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=protocol.status text=protocol.get_status_display %}</p>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if results.files %}
+    <c-rahmen.abschnitt titel="Anlagen" titel_id="treffer-anlagen-titel" zusatz="{{ results.files|length }} Treffer">
+        <c-rahmen.liste class="mt-2">
+            {% for file in results.files %}
+            <li class="relative py-2.5 pl-1 hover:bg-band-grau/60">
+                <p class="liste-angaben">{% if file.paper %}Vorlage {{ file.paper.reference }}{% elif file.meeting %}Sitzung {{ file.meeting.name }}{% elif file.agenda_item %}TOP {{ file.agenda_item.number }} · {{ file.agenda_item.meeting.name }}{% elif file.application %}Antrag {{ file.application.reference }}{% endif %}</p>
+                <a href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}"
+                   class="mt-0.5 block text-sm liste-name hover:underline underline-offset-4 after:absolute after:inset-0">{{ file.name }}</a>
+                {% if not file.is_public %}<p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</p>{% endif %}
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if results.applications %}
+    <c-rahmen.abschnitt titel="Anträge" titel_id="treffer-antraege-titel" zusatz="{{ results.applications|length }} Treffer">
+        <c-rahmen.liste class="mt-2">
+            {% for app in results.applications %}
+            <li class="relative grid gap-x-4 gap-y-1 py-2.5 pl-1 sm:grid-cols-[minmax(0,1fr)_10rem] hover:bg-band-grau/60">
+                <div class="min-w-0">
+                    <p class="liste-angaben tabular-nums">{{ app.reference }} · {{ app.submitter_name }}</p>
+                    <a href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=app.id %}"
+                       class="mt-0.5 block text-sm liste-name hover:underline underline-offset-4 after:absolute after:inset-0">{{ app.title }}</a>
+                </div>
+                <p class="sm:pt-5 text-[0.8125rem] text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=app.status text=app.get_status_display %}</p>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+    </c-rahmen.abschnitt>
+    {% endif %}
+</div>
+{% else %}
+<c-rahmen.satz data-testid="suche-keine-treffer">Keine Treffer für „{{ query }}“. Verschlüsselte nichtöffentliche Inhalte sind nicht durchsuchbar.</c-rahmen.satz>
+{% endif %}
+{% endif %}
+{% endblock %}

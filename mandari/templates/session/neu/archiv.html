@@ -1,0 +1,46 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Archiv nach Wahlperioden im neuen Rahmen (Issues #39, #944; Bereich Sitzungen, Reiter „Archiv“): Kopfband mit einem Satz
+und „Perioden verwalten“ als Nebenaktion (nur mit manage_settings). Darunter je Wahlperiode eine Zeile mit Name,
+Zeitraum und, für die laufende, „Aktuell“ als Punkt mit Text; die Zahlen stehen in einem Satz statt in Zählerkacheln,
+Sitzungen, Vorlagen (nur mit view_papers) und Gremien führen wie bisher in die nach Periode gefilterten Listen.
+Die Links im Satz sind schlichte Links statt c-ui.textlink: Der Baustein hängt einen Zeilenumbruch an (Leerzeichen vor
+Komma und Punkt). Kontext: ArchiveView; die bisherige Seite bleibt session/archive.html.
+{% endcomment %}
+
+{% block page_title %}Archiv{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Archiv" text="Sitzungen{% if can_view_papers %}, Vorlagen{% endif %} und Gremienbesetzungen je Wahlperiode, die neueste zuerst." dicht>
+    {% if can_manage_terms %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'session:terms' tenant_slug=tenant_slug %}" variant="secondary" size="sm" icon="settings">Perioden verwalten</c-ui.button></c-slot>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+{% if rows %}
+<c-rahmen.liste class="max-w-4xl" data-testid="wahlperioden">
+    {% for row in rows %}
+    <li class="grid md:grid-cols-[16rem_minmax(0,1fr)] gap-x-6 gap-y-1 py-3 pl-1">
+        <div class="min-w-0">
+            <h2 id="periode-{{ forloop.counter }}" class="text-sm font-semibold text-gray-900 dark:text-white break-words">{{ row.term.name }}</h2>
+            <p class="mt-0.5 flex flex-wrap items-center gap-x-3 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                {% if row.term.start_date or row.term.end_date %}<span class="tabular-nums">{% if row.term.start_date and row.term.end_date %}{{ row.term.start_date|date:"d.m.Y" }} bis {{ row.term.end_date|date:"d.m.Y" }}{% elif row.term.start_date %}ab {{ row.term.start_date|date:"d.m.Y" }}, Ende offen{% else %}bis {{ row.term.end_date|date:"d.m.Y" }}{% endif %}</span>{% endif %}
+                {% if row.is_current %}<span class="text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert="approved" text="Aktuell" %}</span>{% endif %}
+            </p>
+        </div>
+        <p class="text-sm text-gray-700 dark:text-gray-300 md:pt-0.5" data-testid="periode-zahlen">
+            <a href="{% url 'session:meetings' tenant_slug=tenant_slug %}?term={{ row.term.id }}" aria-describedby="periode-{{ forloop.counter }}" class="whitespace-nowrap tabular-nums font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ row.meeting_count }} Sitzung{{ row.meeting_count|pluralize:"en" }}</a>{% if can_view_papers %},
+            <a href="{% url 'session:papers' tenant_slug=tenant_slug %}?term={{ row.term.id }}" aria-describedby="periode-{{ forloop.counter }}" class="whitespace-nowrap tabular-nums font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ row.paper_count }} Vorlage{{ row.paper_count|pluralize:"n" }}</a>{% endif %}
+            und <span class="tabular-nums">{{ row.membership_count }}</span> Besetzung{{ row.membership_count|pluralize:"en" }} in
+            <a href="{% url 'session:organizations' tenant_slug=tenant_slug %}?term={{ row.term.id }}" aria-describedby="periode-{{ forloop.counter }}" class="whitespace-nowrap tabular-nums font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ row.organization_count }} Gremi{{ row.organization_count|pluralize:"um,en" }}</a>.
+        </p>
+    </li>
+    {% endfor %}
+</c-rahmen.liste>
+{% else %}
+<c-rahmen.satz data-testid="archiv-leer">Noch keine Wahlperioden. Sobald Wahlperioden gepflegt sind, erscheinen hier die Zahlen je Periode.</c-rahmen.satz>
+{% endif %}
+{% endblock %}

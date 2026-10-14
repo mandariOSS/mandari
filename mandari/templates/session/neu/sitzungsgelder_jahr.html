@@ -1,0 +1,84 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Jahresübersicht Sitzungsgeld und Pauschalen im neuen Rahmen (Issues #38, #944; Verwaltung › Sitzungsgelder): Kopfband
+mit einem Satz zum Zweck (Grundlage der Jahressteuerbescheinigung) und dem CSV-Export ohne Füllfarbe, am Handy der Weg
+zurück zu den Sitzungsgeldern. Darunter das Jahr und die Übersicht je Person als ruhige Tabelle mit Linien statt Kasten:
+Sitzungsgeld und Monatspauschalen mit Zahl der Positionen, Stand der Auszahlung und Gesamt, Summen im Fuß. Die Tabelle
+bleibt eine Tabelle (Beträge im Spaltenvergleich), am Handy waagerecht verschiebbar mit stehender Namensspalte; die Seite
+selbst läuft nicht über. Die Erläuterung zur Zuordnung der Jahre steht als Satz darunter. Alle Ziele der bisherigen
+Seite bleiben; Kontext wie AllowanceYearView. Die bisherige Seite bleibt session/allowances/year.html.
+{% endcomment %}
+
+{% block page_title %}Jahresübersicht Sitzungsgeld und Pauschalen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume>Jahresübersicht</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Jahresübersicht {{ year }}" text="Sitzungsgeld und Monatspauschalen je Person als Grundlage für die Jahressteuerbescheinigung, ohne stornierte Positionen." dicht><c-slot name="oben"><c-insight.zurueck href="{% url 'session:allowances' tenant_slug=tenant_slug %}">Sitzungsgelder</c-insight.zurueck></c-slot><c-slot name="aktionen"><c-ui.button href="?year={{ year }}&format=csv" variant="secondary" size="sm" icon="file-spreadsheet">CSV {{ year }}</c-ui.button></c-slot></c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<form method="get" class="flex flex-wrap items-end gap-x-2 gap-y-3" aria-label="Jahr wählen" data-testid="jahresuebersicht-filter">
+    <div>
+        <c-form.beschriftung feld="jahresuebersicht-jahr">Jahr</c-form.beschriftung>
+        <input type="number" name="year" id="jahresuebersicht-jahr" value="{{ year }}" min="{{ year_min }}" max="{{ year_max }}"
+               class="w-28 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+    </div>
+    <c-ui.button type="submit" variant="secondary" size="sm">Anzeigen</c-ui.button>
+</form>
+
+<section class="mt-8" aria-labelledby="uebersicht-titel" data-testid="jahresuebersicht">
+    <h2 id="uebersicht-titel" class="sr-only">Übersicht je Person</h2>
+    {% if rows %}
+    <div class="overflow-x-auto">
+        <table class="min-w-full text-sm [&_th]:py-2 [&_td]:py-2 [&_td]:pl-5 [&_td]:text-right [&_td]:whitespace-nowrap">
+            <caption class="sr-only">Sitzungsgeld und Monatspauschalen je Person im Jahr {{ year }}</caption>
+            <thead class="border-y border-gray-200 dark:border-gray-800 text-left text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                <tr>
+                    <th scope="col" class="sticky left-0 bg-band-hell pr-4 font-medium">Person</th>
+                    <th scope="col" class="pl-5 text-right font-medium">Sitzungsgeld</th>
+                    <th scope="col" class="pl-5 text-right font-medium">Monatspauschalen</th>
+                    <th scope="col" class="pl-5 text-right font-medium">Ausgezahlt</th>
+                    <th scope="col" class="pl-5 text-right font-medium">Genehmigt</th>
+                    <th scope="col" class="pl-5 text-right font-medium">Ausstehend</th>
+                    <th scope="col" class="pl-5 text-right font-medium">Gesamt</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-800 tabular-nums text-gray-800 dark:text-gray-200">
+                {% for row in rows %}
+                <tr>
+                    <th scope="row" class="sticky left-0 bg-band-hell pr-4 text-left font-medium text-gray-900 dark:text-white break-words">
+                        {% if can_view_persons %}
+                        <a href="{% url 'session:person_detail' tenant_slug=tenant_slug person_id=row.person.id %}" class="hover:underline underline-offset-4">{{ row.person.display_name }}</a>
+                        {% else %}
+                        {{ row.person.display_name }}
+                        {% endif %}
+                    </th>
+                    <td>{{ row.session.total }} €<br><span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ row.session.count }} Position{{ row.session.count|pluralize:"en" }}</span></td>
+                    <td>{{ row.monthly.total }} €<br><span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ row.monthly.count }} Position{{ row.monthly.count|pluralize:"en" }}</span></td>
+                    <td>{{ row.paid }} €</td>
+                    <td>{{ row.approved }} €</td>
+                    <td>{{ row.pending }} €</td>
+                    <td class="font-medium text-gray-900 dark:text-white">{{ row.total }} €</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+            <tfoot class="border-y border-gray-200 dark:border-gray-800 font-semibold tabular-nums text-gray-900 dark:text-white">
+                <tr>
+                    <th scope="row" class="sticky left-0 bg-band-hell pr-4 text-left">Gesamt</th>
+                    <td>{{ totals.session.total }} €</td>
+                    <td>{{ totals.monthly.total }} €</td>
+                    <td>{{ totals.paid }} €</td>
+                    <td>{{ totals.approved }} €</td>
+                    <td>{{ totals.pending }} €</td>
+                    <td>{{ totals.total }} €</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+    {% else %}
+    <c-rahmen.satz>Keine Sitzungsgeld- oder Pauschalen-Positionen im Jahr {{ year }}.</c-rahmen.satz>
+    {% endif %}
+    <c-rahmen.satz>Sitzungsgeld zählt im Jahr der Sitzung, Pauschalen im Jahr des Abrechnungsmonats. Zuschüsse, etwa für Endgeräte, sind nicht enthalten.</c-rahmen.satz>
+</section>
+{% endblock %}

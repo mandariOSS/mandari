@@ -1,0 +1,6 @@
+{# Vertretungen (Issue #222) im neuen Erscheinungsbild: Satz statt Hinweiskasten, Testkennung wie session/partials/my_delegations.html #}
+{% if my_delegations %}
+<p class="mb-6 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="meine-vertretungen">
+    Sie vertreten derzeit {% for delegation in my_delegations %}{{ delegation.principal.user.email }} bis {{ delegation.end_date|date:"d.m.Y" }} ({{ delegation.scope_labels|join:", " }}){% if not forloop.last %}; {% endif %}{% endfor %}. Was Sie in Vertretung erledigen, vermerkt das Audit-Log.
+</p>
+{% endif %}

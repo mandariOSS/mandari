@@ -629,6 +629,10 @@ class AllowanceYearView(SessionViewMixin, TemplateView):
     template_name = "session/allowances/year.html"
     permission_required = "manage_allowances"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzungsgelder_jahr.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get(self, request, *args, **kwargs):
         current_year = timezone.localdate().year
         raw_year = request.GET.get("year")

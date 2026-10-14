@@ -1,0 +1,51 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Personen im neuen Rahmen (Issue #944, Bereich Personen): Kopfband mit der Zahl im Satz und der einen Hauptaktion
+„Neue Person“ (nur mit manage_organizations), Suche und „Inaktive anzeigen“ in einer Zeile wie bisher (Parameter q,
+active=0, page), darunter die Personen als Liste mit Linien ohne Farbverlauf-Kreise und Pfeile: Name (mit Titel), ab
+768 px E-Mail in einer eigenen Spalte, inaktive mit Punkt und Text. Kontext: PersonListView; die bisherige Seite bleibt
+session/persons/list.html.
+{% endcomment %}
+
+{% block page_title %}Personen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Personen" text="{{ paginator.count }} {% if request.GET.active != '0' %}aktive {% endif %}Person{{ paginator.count|pluralize:'en' }}{% if request.GET.q %} für die Suche{% endif %}, nach Nachnamen sortiert." dicht>
+    {% if "manage_organizations" in permission_checker.permissions %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'session:person_create' tenant_slug=tenant_slug %}" size="sm" icon="user-plus">Neue Person</c-ui.button></c-slot>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<form method="get" role="search" aria-label="Personen filtern" class="flex flex-wrap items-center gap-2" data-testid="personen-filter">
+    <label for="filter-suche" class="sr-only">Person suchen</label>
+    <span class="relative block basis-full sm:basis-64 sm:flex-1 min-w-0 max-w-md">
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden="true"></i>
+        <input id="filter-suche" type="search" name="q" value="{{ request.GET.q }}" placeholder="Name oder E-Mail"
+               class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    </span>
+    <c-form.checkbox name="active" id="show_inactive" value="0" label="Inaktive anzeigen" checked="{% if request.GET.active == '0' %}1{% endif %}" class="h-9" />
+    <c-ui.button type="submit" variant="secondary" size="sm">Filtern</c-ui.button>
+    {% if request.GET.q or request.GET.active %}
+    <c-ui.textlink href="{% url 'session:persons' tenant_slug=tenant_slug %}" class="text-sm">Filter zurücksetzen</c-ui.textlink>
+    {% endif %}
+</form>
+
+{% if persons %}
+<c-rahmen.liste class="mt-4" data-testid="personenliste">
+    {% for person in persons %}
+    <li class="relative grid md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_7rem] items-baseline gap-x-4 gap-y-0.5 py-2.5 pl-1 hover:bg-band-grau/60">
+        <a href="{% url 'session:person_detail' tenant_slug=tenant_slug person_id=person.id %}"
+           class="min-w-0 font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ person.display_name }}</a>
+        {% if person.email %}<span class="min-w-0 md:col-start-2 text-[0.8125rem] md:text-sm text-gray-600 dark:text-gray-400 break-words">{{ person.email }}</span>{% endif %}
+        {% if not person.is_active %}<span class="md:col-start-3 text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert="" text="Inaktiv" %}</span>{% endif %}
+    </li>
+    {% endfor %}
+</c-rahmen.liste>
+{% include "session/neu/_seiten.html" %}
+{% else %}
+<c-rahmen.satz data-testid="personen-leer">{% if request.GET.q %}Für diese Suche gibt es keine Person. <c-ui.textlink href="{% url 'session:persons' tenant_slug=tenant_slug %}">Filter zurücksetzen</c-ui.textlink>{% else %}Es sind noch keine Personen vorhanden.{% endif %}</c-rahmen.satz>
+{% endif %}
+{% endblock %}

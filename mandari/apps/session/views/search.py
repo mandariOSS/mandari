@@ -27,6 +27,7 @@ from ..models import (
     SessionProtocol,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import joint_meeting_service
 from .terms import meeting_term_filter, term_date_filter
 
@@ -38,6 +39,10 @@ class SessionSearchView(SessionViewMixin, TemplateView):
 
     template_name = "session/search/results.html"
     permission_required = "view_dashboard"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 3); die bisherige Seite bleibt unverändert
+        return ["session/neu/suche.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def _filters(self):
         request = self.request
