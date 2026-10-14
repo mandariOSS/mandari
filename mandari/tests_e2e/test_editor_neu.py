@@ -334,9 +334,9 @@ class TestVorschlagen:
         oeffnen(page, f"{live_server.url}/work/{org.slug}/documents/{antrag.id}/")
 
         # Modus „Vorschlagen“: Der Text ist nicht direkt änderbar
-        page.locator(".ke-modus").click()
+        page.locator("[data-menue-knopf=modus]").click()
         page.get_by_role("menuitemradio", name=re.compile("^Vorschlagen")).click()
-        expect(page.locator(".ke-modus")).to_contain_text("Vorschlagen")
+        expect(page.locator("[data-menue-knopf=modus]")).to_contain_text("Vorschlagen")
         expect(page.locator(PROSEMIRROR)).to_have_attribute("contenteditable", "false")
 
         text_markieren(page, "am Musterweg")
@@ -547,7 +547,7 @@ class TestAbnahmebilder:
         page.wait_for_function(f"() => {ALPINE_EDITOR}.collabEnabled === false", timeout=15000)
         expect(page.locator(".ke-karte[data-vorschlag]")).to_be_visible()
         assert page.evaluate(f"() => {ALPINE_EDITOR}.hasUnsavedChanges()") is False
-        expect(page.locator(".ke-modus")).to_contain_text("Vorschlagen")
+        expect(page.locator("[data-menue-knopf=modus]")).to_contain_text("Vorschlagen")
         page.add_style_tag(content="[x-data='toastManager']{display:none!important}")
         screenshot("editor-neu-abstimmung-1280")
         page.set_viewport_size({"width": 1920, "height": 1080})
