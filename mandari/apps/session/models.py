@@ -4624,6 +4624,14 @@ class SessionFile(models.Model):
         related_name="files",
         verbose_name="Antrag",
     )
+    # PDF des eingereichten Antrags, beim Einreichen aus mandari Work erzeugt (Teil von #584): Anders als
+    # die Anhänge wird es mit der Umwandlung in eine Vorlage öffentlich
+    is_application_pdf = models.BooleanField(
+        default=False,
+        db_default=False,
+        verbose_name="Antragsfassung (automatisch erzeugt)",
+        help_text="PDF des eingereichten Antrags; wird mit der Vorlage öffentlich.",
+    )
 
     # OParl link
     oparl_file = models.OneToOneField(

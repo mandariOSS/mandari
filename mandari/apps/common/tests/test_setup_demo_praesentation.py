@@ -34,6 +34,7 @@ from apps.session.models import (
     SessionApplication,
     SessionAttendance,
     SessionConsultation,
+    SessionFile,
     SessionLegislativeTerm,
     SessionMeeting,
     SessionPaper,
@@ -223,6 +224,9 @@ class TestLeitstelleUndVerbindung:
         eingang = ris_submission.submit_motion(antrag, vorsitz(), daten)
         assert eingang.tenant.slug == DEMO_SESSION_SLUG
         assert re.fullmatch(r"A/\d{4}/\d{4}", eingang.reference)
+        # Die Antragsfassung hängt als PDF am Eingang
+        (pdf,) = eingang.files.filter(is_application_pdf=True)
+        assert pdf.name == f"Antrag {eingang.reference.replace('/', '-')}.pdf"
 
 
 class TestDrehbuchDaten:
@@ -369,6 +373,8 @@ class TestSpiegel:
         antrag.refresh_from_db()
         assert antrag.status == "draft" and antrag.session_application_id is None
         assert not SessionApplication.objects.filter(pk=eingang.pk).exists()
+        # Keine verwaiste Antragsfassung aus der Probe
+        assert not SessionFile.objects.filter(is_application_pdf=True).exists()
         top.refresh_from_db()
         assert top.is_public and top.number == "2"
         assert gespiegelt(top).deleted is False

@@ -689,6 +689,8 @@ class Command(BaseCommand):
             return
         for vorlage in eingang.created_papers.all():
             vorlage.delete()
+        # Anlagen des Eingangs (Antragsfassung, Anhänge) blieben sonst ohne Antrag zurück
+        eingang.files.all().delete()
         eingang.delete()
 
     # ------------------------------------------------------------------

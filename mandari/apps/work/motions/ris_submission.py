@@ -292,6 +292,22 @@ def _transfer_attachments(motion, application) -> list[str]:
             handle.close()
 
 
+def _attach_application_pdf(motion, application) -> None:
+    """
+    Antrag als PDF an den Eingang hängen (Teil von #584) – mit der Umwandlung in eine Vorlage wird es öffentlich.
+
+    Best effort: Scheitert die Erzeugung oder Ablage, wird ohne PDF eingereicht. Der Sicherungspunkt hält die
+    Einreichungs-Transaktion dabei intakt.
+    """
+    from apps.session.services.application_service import attach_application_pdf
+
+    try:
+        with transaction.atomic():
+            attach_application_pdf(application)
+    except Exception:
+        logger.exception("Einreichung von Dokument %s: Antragsfassung (PDF) nicht erzeugt", motion.pk)
+
+
 #: Meldung, wenn die Ablage der Anhänge in Session scheitert (fester Text, keine Ausnahme-Details)
 ATTACHMENTS_FAILED = (
     "Die Anhänge konnten nicht an die Verwaltung übergeben werden. Der Antrag wurde nicht eingereicht – "
@@ -341,6 +357,8 @@ def submit_motion(motion, membership, data: dict, *, skipped: list[str] | None =
         )
     except ValueError as exc:
         raise SubmissionError(str(exc)) from exc
+
+    _attach_application_pdf(motion, application)
 
     # Anhänge gehen mit (#584); nicht angenommene stehen vorher in der Vorschau. Scheitert die Ablage,
     # scheitert die Einreichung als Ganzes (Transaktion) – mit fester Meldung statt einer Fehlerseite.
