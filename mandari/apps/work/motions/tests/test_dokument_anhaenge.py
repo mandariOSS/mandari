@@ -547,10 +547,10 @@ def test_umwandlung_macht_nur_die_antragsfassung_oeffentlich(
 
     # OParl (und damit der Spiegel ins Bürgerportal) zeigt die Antragsfassung erst mit der Freigabe der Vorlage
     assert paper.status == "draft"
-    assert not oparl_publication.visible_files(tenant).filter(pk=pdf.pk).exists()
+    assert not cast(Any, oparl_publication).visible_files(tenant).filter(pk=pdf.pk).exists()
     paper.status = "approved"
     paper.save(update_fields=["status"])
-    sichtbar = set(oparl_publication.visible_files(tenant).values_list("pk", flat=True))
+    sichtbar = set(cast(Any, oparl_publication).visible_files(tenant).values_list("pk", flat=True))
     assert pdf.pk in sichtbar and anhang.pk not in sichtbar
 
 
