@@ -126,7 +126,7 @@ def test_drehbuch(live_server: Any, praesentation: None, neue_seite: Any) -> Non
     wait_for_bundle(vorsitz)
     # Beschlussvorschlag und Begründung sind aus dem Dokument vorbelegt
     expect(vorsitz.locator("#resolution_proposal")).to_have_value(re.compile(r"^Die Verwaltung wird beauftragt"))
-    expect(vorsitz.locator("#justification")).to_have_value(re.compile(r"^Der Musterweg ist der Hauptzugang"))
+    expect(vorsitz.locator("#justification")).to_have_value(re.compile(r"^Im Musterviertel leben rund 900 Kinder"))
     vorsitz.select_option("#target_organization", label=drehbuch.GREMIUM_HA)
     vorsitz.check("input[name=confirm]")
     vorsitz.click("button:has-text('Jetzt einreichen')")
@@ -175,7 +175,7 @@ def test_drehbuch(live_server: Any, praesentation: None, neue_seite: Any) -> Non
     buerger.goto(f"{basis}/insight/termine/{portal_sitzung.id}/")
     buerger.wait_for_load_state("networkidle")
     expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_JUGENDZENTRUM)
-    expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_SPIELPLATZ)
+    expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_SPORTHALLE)
     expect(buerger.locator("main")).not_to_contain_text(drehbuch.TOP_GRUNDSTUECK)
     bildschirmfoto(buerger, "3-buergerportal-vorher")
 
@@ -199,7 +199,7 @@ def test_drehbuch(live_server: Any, praesentation: None, neue_seite: Any) -> Non
     buerger.reload()
     buerger.wait_for_load_state("networkidle")
     expect(buerger.locator("main")).not_to_contain_text(drehbuch.TOP_JUGENDZENTRUM)
-    expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_SPIELPLATZ)
+    expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_SPORTHALLE)
     bildschirmfoto(buerger, "3-buergerportal-nachher")
 
     # --- 4. OParl: JSON, der TOP nur noch als gelöschtes Objekt ------------------------------

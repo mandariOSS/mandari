@@ -218,8 +218,8 @@ class TestLeitstelleUndVerbindung:
         # Abschnitte aus dem Dokument: Das Formular „Bei Verwaltung einreichen“ ist vollständig vorbelegt
         assert daten["structured"]
         assert daten["resolution_proposal"].startswith("Die Verwaltung wird beauftragt")
-        assert daten["justification"].startswith("Der Musterweg ist der Hauptzugang")
-        assert "4.500 Euro" in daten["financial_impact"]
+        assert daten["justification"].startswith("Im Musterviertel leben rund 900 Kinder")
+        assert "25.000 Euro" in daten["financial_impact"]
         eingang = ris_submission.submit_motion(antrag, vorsitz(), daten)
         assert eingang.tenant.slug == DEMO_SESSION_SLUG
         assert re.fullmatch(r"A/\d{4}/\d{4}", eingang.reference)
@@ -242,7 +242,7 @@ class TestDrehbuchDaten:
         assert kommend.meeting_state == "invitation_sent" and kommend.invitation_sent_at is not None
         assert kommend.invitation_sent_at.date() <= kommend.invitation_deadline
         tops = {t.name: t for t in kommend.agenda_items.all()}
-        assert [tops[n].number for n in ("Eröffnung", drehbuch.TOP_JUGENDZENTRUM, drehbuch.TOP_SPIELPLATZ)] == [
+        assert [tops[n].number for n in ("Eröffnung", drehbuch.TOP_JUGENDZENTRUM, drehbuch.TOP_SPORTHALLE)] == [
             "1",
             "2",
             "3",
