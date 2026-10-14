@@ -54,7 +54,7 @@ def test_letzte_seiten_am_handy_und_tablet(
             antwort = page.goto(f"{live_server.url}{pfad}")
             assert antwort is not None and antwort.ok, f"{name}: {antwort.status if antwort else 'keine Antwort'}"
             wait_for_bundle(page)
-            expect(page.locator("main#inhalt")).to_have_attribute("data-gestaltung", "neu")
+            expect(page.locator("main#inhalt"), f"{name} bei {breite} px").to_have_attribute("data-gestaltung", "neu")
             masse = page.evaluate(UEBERLAUF)
             assert masse["scroll"] <= masse["breite"] + 1, f"{name} bei {breite} px läuft seitlich über: {masse}"
             if breite == 390:
