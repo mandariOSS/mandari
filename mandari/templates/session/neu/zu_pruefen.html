@@ -29,7 +29,7 @@ bisherige Seite bleibt. Kontext: PaperReviewListView (papers mit freigabe, pagin
 {% if papers %}
 <c-rahmen.liste data-testid="zu-pruefen-liste">
     {% for paper in papers %}
-    <li class="grid gap-x-6 gap-y-2 py-3 pl-1 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+    <li class="grid grid-cols-[minmax(0,1fr)] gap-x-6 gap-y-2 py-3 pl-1 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
         <div class="min-w-0">
             <p class="liste-angaben tabular-nums">
                 {{ paper.display_reference }} · {{ paper.get_paper_type_display }}{% if paper.main_organization %} · {{ paper.main_organization.name }}{% endif %}{% if body_choice.active and paper.body %} · {{ paper.body.label }}{% endif %} · {{ paper.created_at|date:"d.m.Y" }}
@@ -48,7 +48,7 @@ bisherige Seite bleibt. Kontext: PaperReviewListView (papers mit freigabe, pagin
             <p class="mt-0.5 text-[0.8125rem] text-amber-800 dark:text-amber-300 break-words">{{ paper.freigabe.reason }}</p>
             {% endif %}
         </div>
-        <div class="flex flex-wrap items-center gap-2">
+        <div class="flex min-w-0 flex-wrap items-center gap-2">
             {% if paper.freigabe.allowed %}
             <form method="post" action="{% url 'session:paper_workflow' tenant_slug=tenant_slug paper_id=paper.id action='approve' %}">
                 {% csrf_token %}
@@ -62,7 +62,7 @@ bisherige Seite bleibt. Kontext: PaperReviewListView (papers mit freigabe, pagin
                 <input type="hidden" name="next" value="{{ request.get_full_path }}">
                 <label for="anmerkung-{{ paper.id }}" class="sr-only">Anmerkung zur Zurückweisung von {{ paper.display_reference }}</label>
                 <input id="anmerkung-{{ paper.id }}" type="text" name="comment" placeholder="Anmerkung zur Zurückweisung"
-                       class="h-9 min-w-0 flex-1 sm:w-60 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                       class="h-9 w-0 min-w-0 flex-1 sm:w-60 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
                 <c-ui.button type="submit" variant="secondary" size="sm" icon="undo-2">Zurückweisen</c-ui.button>
             </form>
         </div>
