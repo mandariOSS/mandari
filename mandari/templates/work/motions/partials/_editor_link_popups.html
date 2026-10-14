@@ -5,7 +5,7 @@ Alpine-Komponente documentEditor; nur für Bearbeitende eingebunden.
 <!-- Link-Popover (bei Klick auf einen Link im Text) -->
 <div x-show="linkPopupVisible" x-cloak
      class="comment-popup"
-     :style="'top:' + linkPopupTop + 'px; left:' + linkPopupLeft + 'px;'"
+     :style="{ top: linkPopupTop + 'px', left: linkPopupLeft + 'px' }"
      @click.away="linkPopupVisible = false">
     <div class="flex items-center gap-1 px-2 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg text-sm">
         <i data-lucide="link" class="w-3.5 h-3.5 text-gray-400 flex-shrink-0"></i>

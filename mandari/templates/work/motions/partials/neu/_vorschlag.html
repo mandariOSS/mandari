@@ -3,10 +3,12 @@
 neue Text und eine Notiz. Gespeichert wird ein Kommentar mit Vorschlag (apps/work/motions/vorschlaege.py); der Text
 bleibt unverändert, bis jemand mit Schreibrecht den Vorschlag am Rand annimmt.
 Kontext: can_edit; Alpine-Komponente documentEditor (vorschlagOffen, vorschlagText, vorschlagSenden …).
+Die Lage als Objekt binden, nicht als Text: Ein Text ersetzt das ganze style-Attribut und damit auch das display:none
+von x-show – das Formular kam nach „Abbrechen“ bei jeder Positionsänderung wieder.
 {% endcomment %}
 {% if can_edit %}
 <div x-show="vorschlagOffen" x-cloak class="comment-popup ke-vorschlag" role="dialog" aria-labelledby="ke-vorschlag-titel"
-     :style="'top: ' + commentPopupTop + 'px; left: ' + commentPopupLeft + 'px'"
+     :style="{ top: commentPopupTop + 'px', left: commentPopupLeft + 'px' }"
      @keydown.escape.stop="vorschlagAbbrechen()" @click.stop data-testid="vorschlag-formular">
     <form @submit.prevent="vorschlagSenden()">
         <h2 id="ke-vorschlag-titel">Änderung vorschlagen</h2>
