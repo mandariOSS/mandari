@@ -2,7 +2,7 @@
     {% if can_edit or access_level == 'comment' %}
     <div x-show="commentPopupVisible" x-cloak
          class="comment-popup"
-         :style="'top: ' + commentPopupTop + 'px; left: ' + commentPopupLeft + 'px'"
+         :style="{ top: commentPopupTop + 'px', left: commentPopupLeft + 'px' }"
          @keydown.escape.window="hideCommentPopup()">
 
         <!-- Collapsed: comment button -->
@@ -66,7 +66,7 @@
     <!-- Mark Comment Popup (appears on clicking highlighted inline comment) -->
     <div x-show="markCommentPopup" x-cloak
          class="comment-popup"
-         :style="'top:' + markCommentTop + 'px; left:' + markCommentLeft + 'px'"
+         :style="{ top: markCommentTop + 'px', left: markCommentLeft + 'px' }"
          @keydown.escape.window="hideMarkPopup()">
         <div class="comment-popup-card" @click.stop x-show="markCommentData">
             <!-- Selected text quote -->
