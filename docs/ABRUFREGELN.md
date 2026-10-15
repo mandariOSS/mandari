@@ -479,18 +479,21 @@ Server, an den wegen seiner robots.txt keine einzige Anfrage ging, weil sie sper
 Zeitüberschreitungen: Der Lauf fragt die übrigen Listen weiter im Takt an, nur der Schutzschalter pausiert nach
 fünf Fehlversuchen an einem Server 60 Sekunden. Einen `Retry-After`-Header werten wir nicht aus.
 
-Jeder Lauf, der Adresse und Kommunenliste erreicht, setzt den Zähler der Fehlversuche zurück
-(`update_source_sync_time`). Ein Befund in einem solchen Lauf zählt danach wieder als erster Fehlversuch. Im
-Abgleich greifen die Pausen wegen User-Agent-Sperre, 5xx-Serie und robots.txt deshalb schon beim ersten Befund; die
-längeren Pausen ab dem 5. bzw. 6. Fehlversuch treten nur ein, wenn Adresse oder Kommunenliste mehrmals in Folge
-nicht abrufbar sind. Eine Sperre unseres User-Agents umgehen wir nicht; wir versuchen es nur in den genannten
-Abständen wieder.
+Bei OParl-Quellen setzt jeder Lauf, der Adresse und Kommunenliste erreicht und nicht abbricht, den Zähler der
+Fehlversuche zurück (`update_source_sync_time`). Ein Befund in einem solchen Lauf zählt danach wieder als erster
+Fehlversuch. Im Abgleich greifen die Pausen wegen User-Agent-Sperre, 5xx-Serie und robots.txt deshalb schon beim
+ersten Befund; die längeren Pausen ab dem 5. bzw. 6. Fehlversuch treten nur ein, wenn Adresse oder Kommunenliste
+mehrmals in Folge nicht abrufbar sind oder der Lauf mehrmals in Folge abbricht. Bei Quellen ohne OParl (Scraper)
+setzt nur ein vollständiger Crawl den Zähler zurück (`ingestor/src/scrapers/runner.py`). Sperrt die robots.txt, ist
+sie nicht erreichbar oder schlägt der Crawl aus einem anderen Grund fehl, bricht er ab und der Zähler steigt weiter;
+dort werden die Pausen länger, und die Anwendung ruht nach drei solchen Läufen in Folge. Eine Sperre unseres
+User-Agents umgehen wir nicht; wir versuchen es nur in den genannten Abständen wieder.
 
 Die Pausen der Tabelle gelten für den Abgleich samt Texterkennung und für die Scraper. Die Abrufe der Anwendung
 (Dokument-Cache, Vorschau, Löschabgleich, Personenfotos) ruhen erst bei drei fehlgeschlagenen Läufen in Folge im
-obigen Sinn (`INSIGHT_SOURCE_BACKOFF_FAILURES`) und bis ein Lauf Adresse und Kommunenliste wieder erreicht. Bei
-einer User-Agent-Sperre oder 5xx-Serie ruhen sie also nur, wenn auch Adresse oder Kommunenliste betroffen sind.
-Eine Sperre per robots.txt beachten sie unabhängig davon bei jedem Abruf. Der getrennt betriebene OCR-Worker
+obigen Sinn (`INSIGHT_SOURCE_BACKOFF_FAILURES`) und bis ein Lauf den Zähler wieder zurücksetzt. Bei OParl-Quellen
+ruhen sie wegen einer User-Agent-Sperre oder 5xx-Serie also nur, wenn auch Adresse oder Kommunenliste betroffen sind
+oder der Lauf abbricht. Eine Sperre per robots.txt beachten sie unabhängig davon bei jedem Abruf. Der getrennt betriebene OCR-Worker
 `extract-daemon` richtet sich nur nach `file_downloads` und der robots.txt, nicht nach der Schonung und nicht danach,
 ob die Quelle abgeschaltet ist.
 
