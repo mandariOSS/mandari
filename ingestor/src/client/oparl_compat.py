@@ -26,6 +26,10 @@ Dazu kommen Eigenheiten der OParl-Schnittstelle von ALLRIS unter ``/oparl/``
 - ``modified_since`` filtert, fehlt aber in ``links.next``; die Quelle
   bekommt dafür ``sync_config["carry_modified_since"]``
   (``src/client/source_options.py``)
+
+SD.NET RIM (Sternberg; Stadt Hamm, Bezirksregierung Köln, Oktober 2026)
+beantwortet eine gefilterte Liste ohne Treffer mit HTTP 404 und einem
+Fehlerobjekt statt einer leeren Liste (:func:`sdnet_empty_list`, Issue #1034).
 """
 
 from __future__ import annotations
@@ -125,6 +129,27 @@ def oparl_error_message(data: Any) -> str:
         if isinstance(value, str) and value:
             return value
     return "unbekannter Fehler"
+
+
+def sdnet_empty_list(data: Any) -> bool:
+    """
+    Fehlerobjekt, mit dem SD.NET RIM eine gefilterte Liste ohne Treffer beantwortet (HTTP 404, Issue #1034).
+
+    Beobachtet in Hamm: ``body/1/organization?modified_since=2026-10-08T00:00:00`` liefert ``{"error": "Die
+    angeforderte Ressource wurde nicht gefunden.", "code": 802, "type": "SD.NET RIM Webservice"}``, mit einem
+    früheren Zeitpunkt dieselbe Liste mit 315 Einträgen. Erkannt an Code 802, Herkunft „SD.NET“ und dem Text „nicht
+    gefunden“. Ob die Anfrage gefiltert war, prüft der Aufrufer: Ohne Filter heißt dieselbe Antwort „gibt es nicht“.
+    """
+    if not isinstance(data, dict):
+        return False
+    origin, message = data.get("type"), data.get("error")
+    return (
+        data.get("code") in (802, "802")
+        and isinstance(origin, str)
+        and "sd.net" in origin.lower()
+        and isinstance(message, str)
+        and "nicht gefunden" in message.lower()
+    )
 
 
 def oparl_10_fallback_urls(url: str) -> list[str]:
