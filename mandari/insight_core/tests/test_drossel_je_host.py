@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from io import StringIO
 from typing import Any
 
 import httpx
 import pytest
+from django.core.management import call_command
 from django.test import Client
 
 from insight_core.models import OParlBody, OParlFile, OParlSource
@@ -298,3 +300,52 @@ def test_zusammenfassung_wartet_nicht_auf_den_takt(uhr: _Uhr, settings: Any, mon
     # Die Erkennung steht aus: Hinweis, nicht „kein Text“ (das würde sich die Ansicht merken)
     assert not isinstance(fehler.value, NoTextContentError)
     anbieter.chat_completion.assert_not_called()
+
+
+@pytest.mark.parametrize("registriert", [False, True])
+def test_quelle_anlegen_haelt_den_takt(monkeypatch: pytest.MonkeyPatch, registriert: bool) -> None:
+    """
+    add_oparl_source (Issue #1027): Vor jeder Anfrage, auch vor einer Weiterleitung, ein reservierter Zeitpunkt;
+    bei einer schon registrierten Quelle mit deren Takt.
+    """
+    system_url = f"https://rat.example.de/oparl/{uuid.uuid4().hex[:6]}/system"
+    liste_url = "https://rat.example.de/oparl/bodies"
+    sync_config = {"request_interval": 3} if registriert else None
+    if registriert:
+        OParlSource.objects.create(name="Rat", url=system_url, sync_config=sync_config)
+    ablauf: list[tuple[str, str, Any]] = []
+
+    def wait(url: str, **kw: Any) -> bool:
+        ablauf.append(("warten", url, kw.get("sync_config")))
+        return True
+
+    monkeypatch.setattr(host_pacing, "wait", wait)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        ablauf.append(("abruf", str(request.url), None))
+        if str(request.url) == system_url:
+            return httpx.Response(
+                200,
+                json={
+                    "id": system_url,
+                    "type": "https://schema.oparl.org/1.1/System",
+                    "name": "Rat",
+                    "body": liste_url,
+                },
+            )
+        if str(request.url) == liste_url:
+            return httpx.Response(301, headers={"Location": liste_url + "/"})
+        body = {"id": f"https://rat.example.de/oparl/body/{uuid.uuid4().hex[:6]}", "name": "Beispielstadt"}
+        return httpx.Response(200, json={"data": [body], "links": {}})
+
+    echter_client = httpx.Client
+    monkeypatch.setattr(
+        "insight_core.management.commands.add_oparl_source.httpx.Client",
+        lambda **kw: echter_client(transport=httpx.MockTransport(handler), **kw),
+    )
+
+    call_command("add_oparl_source", system_url, stdout=StringIO())
+
+    erwartet = [system_url, liste_url, liste_url + "/"]
+    assert ablauf == [eintrag for url in erwartet for eintrag in (("warten", url, sync_config), ("abruf", url, None))]
+    assert OParlBody.objects.filter(source__url=system_url, name="Beispielstadt").exists()

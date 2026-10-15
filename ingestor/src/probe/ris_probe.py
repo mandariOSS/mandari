@@ -8,6 +8,14 @@ je Kommune **höchstens fünf Anfragen** (robots.txt, Startseite, bei 403 eine
 Vergleichsanfrage mit neutralem Client, danach OParl-Kandidaten) und umgeht nichts:
 Gates werden erkannt und gemeldet, nicht überwunden.
 
+Der Takt je Host gilt auch hier (Issue #1027): Vor jeder Anfrage, auch vor jeder
+Weiterleitung, reserviert die Prüfung einen Zeitpunkt in der Drossel des Ingestors
+(``src/client/host_pacing.py``, Redis über alle Prozesse), also höchstens eine Anfrage je
+``settings.request_interval`` (Standard eine Sekunde) an denselben Host. Die Vergleichsanfrage
+trägt wie im Abgleich die Standardkennung der HTTP-Bibliothek
+(``oparl_client.NEUTRAL_USER_AGENT``, ``python-httpx/<Version>``) und entfällt, wenn
+``settings.oparl_ua_probe_enabled`` aus ist.
+
 Die robots.txt gilt auch hier (RFC 9309, ``mandari_oparl.robots``): Gesperrte Pfade fragen
 wir nicht an. Ist die Startseite gesperrt, entfallen Startseite und Vergleichsanfrage; ist
 die robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler), endet die Prüfung nach dieser
@@ -31,10 +39,15 @@ from mandari_oparl.abgleich import detect_gate
 from mandari_oparl.crawler import product_token
 from mandari_oparl.robots import STATE_UNREACHABLE, RobotsTxt
 
+from src.client.host_pacing import host_pacer
+from src.client.oparl_client import NEUTRAL_USER_AGENT
 from src.client.oparl_compat import detect_oparl_version, is_oparl_error
+from src.config import settings
 
 MAX_REQUESTS = 5
-NEUTRAL_USER_AGENT = "Mozilla/5.0 (compatible; Vergleichsanfrage)"
+#: Weiterleitungen je Anfrage; wir folgen ihnen selbst, damit auch jede Weiterleitung den Takt einhält
+MAX_REDIRECTS = 5
+TIMEOUT_SECONDS = 15.0
 
 VENDOR_LABELS = {
     "sessionnet": "Somacos SessionNet",
@@ -226,9 +239,12 @@ def classify_batch(
 
 
 class _Budget:
-    def __init__(self, limit: int) -> None:
+    """Höchstzahl der Anfragen je Kommune und Abstand je Host (Sekunden, 0 = keine Drossel)."""
+
+    def __init__(self, limit: int, interval: float = 0.0) -> None:
         self.limit = limit
         self.used = 0
+        self.interval = interval
 
     def take(self) -> bool:
         if self.used >= self.limit:
@@ -237,11 +253,28 @@ class _Budget:
         return True
 
 
-async def _get(client: httpx.AsyncClient, url: str, budget: _Budget, **kw: Any) -> httpx.Response | None:
+async def _paced_get(client: httpx.AsyncClient, url: str, budget: _Budget, headers: dict[str, str]) -> httpx.Response:
+    """
+    GET im Takt je Host (``src/client/host_pacing.py``): vor der Anfrage und vor jeder Weiterleitung einen
+    Zeitpunkt reservieren. Deshalb folgen wir Weiterleitungen selbst (höchstens ``MAX_REDIRECTS``).
+    """
+    request = client.build_request("GET", url, headers=headers, timeout=TIMEOUT_SECONDS)
+    for _ in range(MAX_REDIRECTS + 1):
+        await host_pacer.wait(str(request.url), budget.interval)
+        response = await client.send(request, follow_redirects=False)
+        if response.next_request is None:
+            return response
+        request = response.next_request
+    raise httpx.TooManyRedirects(f"mehr als {MAX_REDIRECTS} Weiterleitungen", request=request)
+
+
+async def _get(
+    client: httpx.AsyncClient, url: str, budget: _Budget, *, headers: dict[str, str]
+) -> httpx.Response | None:
     if not budget.take():
         return None
     try:
-        return await client.get(url, follow_redirects=True, timeout=15.0, **kw)
+        return await _paced_get(client, url, budget, headers)
     except httpx.HTTPError:
         return None
 
@@ -253,12 +286,7 @@ async def _load_robots(
     if not budget.take():
         return RobotsTxt.from_response(None), None
     try:
-        antwort = await client.get(
-            robots_url,
-            follow_redirects=True,
-            timeout=15.0,
-            headers={"User-Agent": user_agent, "Accept": "text/plain"},
-        )
+        antwort = await _paced_get(client, robots_url, budget, {"User-Agent": user_agent, "Accept": "text/plain"})
     except httpx.HTTPError:
         return RobotsTxt.from_response(None), None
     robots = RobotsTxt.from_response(antwort.status_code, antwort.content)
@@ -272,13 +300,18 @@ async def probe_url(
     *,
     user_agent: str,
     max_requests: int = MAX_REQUESTS,
+    interval: float | None = None,
 ) -> ProbeResult:
-    """Eine Kommune prüfen; stellt höchstens ``max_requests`` Anfragen."""
+    """
+    Eine Kommune prüfen; stellt höchstens ``max_requests`` Anfragen, jede im Takt je Host.
+
+    ``interval``: Abstand je Host in Sekunden, sonst ``settings.request_interval`` wie im Abgleich.
+    """
     if not url.startswith(("http://", "https://")):
         url = "https://" + url
     parsed = urlparse(url)
     result = ProbeResult(url=url, host=parsed.netloc.lower())
-    budget = _Budget(max_requests)
+    budget = _Budget(max_requests, settings.request_interval if interval is None else interval)
     kopf = {"User-Agent": user_agent}
     tokens = (product_token(user_agent),)
 
@@ -311,8 +344,9 @@ async def probe_url(
     result.vendor_label = VENDOR_LABELS[result.vendor]
     result.gate = detect_gate(result.landing_status, html, header)
 
-    # 3) 403 auf unseren User-Agent? Eine Vergleichsanfrage, nur zur Diagnose.
-    if result.landing_status == 403:
+    # 3) 403 auf unseren User-Agent? Eine Vergleichsanfrage, nur zur Diagnose, mit derselben Kennung wie im
+    #    Abgleich (python-httpx/<Version>) und nur, wenn die Vergleichsanfrage eingeschaltet ist
+    if result.landing_status == 403 and settings.oparl_ua_probe_enabled:
         vergleich = await _get(client, url, budget, headers={"User-Agent": NEUTRAL_USER_AGENT})
         if vergleich is not None and vergleich.status_code == 200:
             result.ua_blocked = True

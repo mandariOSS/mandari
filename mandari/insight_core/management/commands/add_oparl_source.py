@@ -4,12 +4,17 @@ Management Command: OParl-Quelle hinzufügen.
 
 Registriert eine neue OParl-Datenquelle und legt die zugehörigen Bodies an.
 
+Jede Anfrage hält den Takt je Host ein wie alle anderen Abrufe (``insight_core.services.host_pacing``, Issue
+#1027): höchstens eine Anfrage je ``RIS_REQUEST_INTERVAL`` (Standard eine Sekunde) an denselben Host, über alle
+Prozesse. Ist die Quelle schon registriert, gelten ihr ``request_interval`` und ihre robots-Ausnahme.
+
 Usage:
     python manage.py add_oparl_source "https://example.com/oparl/v1.1/system"
     python manage.py add_oparl_source "https://example.com/oparl/v1.1/system" --osm-id 12345
 """
 
 import re
+from typing import Any
 
 import httpx
 from django.core.management.base import BaseCommand, CommandError
@@ -48,6 +53,9 @@ def detect_oparl_version(data) -> str | None:
 class Command(BaseCommand):
     help = "Add a new OParl source and its bodies"
 
+    #: sync_config der bereits registrierten Quelle (Takt, robots-Ausnahme); bei einer neuen Quelle leer
+    sync_config: dict[str, Any] | None = None
+
     def add_arguments(self, parser):
         parser.add_argument(
             "url",
@@ -69,10 +77,24 @@ class Command(BaseCommand):
         """robots.txt (RFC 9309) gilt auch beim Anlegen einer Quelle: gesperrte Adressen nicht abrufen."""
         from insight_core.services import robots
 
-        decision = robots.check(url, robots.KIND_API)
+        decision = robots.check(url, robots.KIND_API, sync_config=self.sync_config)
         if not decision.allowed:
             self.stdout.write(self.style.ERROR(f"{url}: {decision.reason} – kein Abruf"))
         return decision.allowed
+
+    def _wait_for_slot(self, request: httpx.Request) -> None:
+        """
+        Drossel je Host (Redis über alle Prozesse): erst zum reservierten Zeitpunkt anfragen. Als Ereignis-Hook des
+        Clients läuft das vor jeder Anfrage, auch vor jeder Weiterleitung.
+        """
+        from insight_core.services import host_pacing
+
+        host_pacing.wait(str(request.url), sync_config=self.sync_config)
+
+    def _client(self, headers: dict[str, str]) -> httpx.Client:
+        return httpx.Client(
+            timeout=30.0, headers=headers, follow_redirects=True, event_hooks={"request": [self._wait_for_slot]}
+        )
 
     def fetch_oparl_system(self, url):
         """Fetch OParl system data."""
@@ -84,7 +106,7 @@ class Command(BaseCommand):
         headers = {"User-Agent": robots.USER_AGENT, "Accept": "application/json"}
 
         try:
-            with httpx.Client(timeout=30.0, headers=headers, follow_redirects=True) as client:
+            with self._client(headers) as client:
                 response = client.get(url)
 
                 if response.status_code == 200:
@@ -104,7 +126,7 @@ class Command(BaseCommand):
         headers = {"User-Agent": robots.USER_AGENT, "Accept": "application/json"}
 
         try:
-            with httpx.Client(timeout=30.0, headers=headers, follow_redirects=True) as client:
+            with self._client(headers) as client:
                 response = client.get(url)
 
                 if response.status_code == 200:
@@ -150,6 +172,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         url = options["url"]
+        # Bereits registrierte Quelle: ihr Takt (request_interval) und ihre robots-Ausnahme gelten auch hier
+        self.sync_config = OParlSource.objects.filter(url=url).values_list("sync_config", flat=True).first()
 
         self.stdout.write(f"Fetching OParl system from: {url}")
 

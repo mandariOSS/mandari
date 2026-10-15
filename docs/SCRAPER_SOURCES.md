@@ -41,6 +41,13 @@ Die robots.txt gilt schon beim Zensus: Gesperrte Pfade (Startseite, OParl-Kandid
 nicht an. Ist die robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler), endet die Prüfung
 nach dieser einen Anfrage mit dem Befund `nicht_erreichbar`.
 
+Auch der Takt gilt wie im Abgleich (#1027): Vor jeder Anfrage, auch vor jeder Weiterleitung, reserviert
+der Zensus einen Zeitpunkt in der Drossel je Host (`src/client/host_pacing.py`, Redis über alle Prozesse),
+also höchstens eine Anfrage je `INGESTOR_REQUEST_INTERVAL` (Standard eine Sekunde) an denselben Host. Die
+Vergleichsanfrage trägt dieselbe Kennung wie im Abgleich (`python-httpx/<Version>`, siehe
+`docs/MONITORING.md`) und entfällt mit `OPARL_UA_PROBE_ENABLED=false`. `manage.py add_oparl_source` hält den
+Takt ebenso ein, bei einer schon registrierten Quelle mit deren `request_interval`.
+
 ```bash
 mandari-ingestor probe-ris https://buergerinfo.example.org/bi/            # eine Kommune, JSON
 mandari-ingestor probe-ris --batch kommunen.txt --format csv --out zensus.csv

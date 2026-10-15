@@ -630,7 +630,8 @@ def probe_ris(
     """
     Zensus: Hersteller, robots-Status, Bot-Gate und OParl-Endpunkt je Kommune (Issue #114).
 
-    Höchstens fünf Anfragen je Kommune, Politeness-Regeln gelten, keine Umgehung von Gates.
+    Höchstens fünf Anfragen je Kommune im Takt je Host wie der Abgleich (Drossel über Redis, Standard eine
+    Anfrage je Sekunde), robots.txt gilt, keine Umgehung von Gates.
     Der Batch-Lauf liefert zusätzlich zwei Listen: „ohne OParl, robots-frei“ und
     „OParl vorhanden, nicht registriert“ (Abgleich mit den registrierten Quellen).
     """

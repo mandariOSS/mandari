@@ -54,6 +54,9 @@ class SyncScheduler:
 
         self.scheduler = AsyncIOScheduler()
         self._is_syncing = False
+        # Vollabgleich, der kam, während noch ein Änderungsabgleich lief: Er folgt direkt danach, statt für den
+        # Tag zu entfallen (der 10-Minuten-Takt hat über die ganze Laufzeit dieselbe Phase, Issue #1025)
+        self._full_sync_pending = False
         self._last_sync: datetime | None = None
         self._sync_stats: dict[str, Any] = {}
         self._redis_listener_task: asyncio.Task | None = None
@@ -158,12 +161,19 @@ class SyncScheduler:
         finally:
             self._is_syncing = False
 
+        # Ein Vollabgleich, der während dieses Laufs fällig wurde, folgt jetzt (Zeitfenster je Quelle gelten weiter)
+        if self._full_sync_pending:
+            await self._run_full_sync()
+
     async def _run_full_sync(self) -> None:
         """Run a full sync for all sources."""
         if self._is_syncing:
-            logger.warning("Sync already in progress, skipping full sync...")
+            # Nicht verwerfen: Läuft um 1 Uhr noch ein Änderungsabgleich, entfiele der Vollabgleich sonst jede Nacht
+            self._full_sync_pending = True
+            logger.warning("Sync already in progress, full sync follows when it ends")
             return
 
+        self._full_sync_pending = False
         self._is_syncing = True
         start_time = datetime.now()
 
@@ -207,6 +217,8 @@ class SyncScheduler:
             console.print(f"[red]Full sync error: {e}[/red]")
         finally:
             self._is_syncing = False
+            # Ein Vollabgleich, der während dieses Vollabgleichs angefordert wurde, ist damit erledigt
+            self._full_sync_pending = False
 
     async def _write_cycle_log(self, orchestrator, results, start_time, sync_type):
         """Write a single sync log entry via orchestrator's shared method."""

@@ -1,13 +1,16 @@
 """
 Zensus-Werkzeug probe_ris (Issue #114): Fingerprint je Hersteller aus eingefrorenen
 Fixtures, robots-Verdict (erlaubt/gesperrt/nicht vorhanden), Gate-Erkennung, 403 auf
-unseren User-Agent, OParl-Autodiscovery und das Anfragebudget – alles ohne Netz.
+unseren User-Agent, OParl-Autodiscovery, das Anfragebudget und der Takt je Host (#1027) –
+alles ohne Netz.
 """
 
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
@@ -135,7 +138,19 @@ async def test_probe_meldet_ua_sperre_ohne_umgehung() -> None:
     assert r.sync_config is None and any("Sperre" in n for n in r.notes)
     neutrale = [ua for _, ua in fake.requests if "mandari" not in ua]
     assert len(neutrale) == 1, "genau eine Vergleichsanfrage mit neutralem Client"
+    # Dieselbe Kennung wie die Vergleichsanfrage im Abgleich: die der HTTP-Bibliothek, keine Browserkennung (#1027)
+    assert neutrale == [f"python-httpx/{httpx.__version__}"]
     assert r.requests <= rp.MAX_REQUESTS
+
+
+@pytest.mark.asyncio
+async def test_probe_ohne_vergleichsanfrage_wenn_abgeschaltet(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(rp.settings, "oparl_ua_probe_enabled", False)
+    fake = FakeRis(html=(FIXTURES / "sessionnet.html").read_text(encoding="utf-8"), block_ua=True)
+    r = await _probe(fake)
+
+    assert r.landing_status == 403 and r.ua_blocked is False
+    assert all("mandari" in ua for _, ua in fake.requests), "nur unsere Kennung"
 
 
 @pytest.mark.asyncio
@@ -232,6 +247,105 @@ async def test_probe_ignoriert_oparl_fehlerobjekt() -> None:
     )
     r = await _probe(fake)
     assert r.oparl_endpoint is None
+
+
+# ---------------------------------------------------------------------------
+# Takt je Host (Issue #1027): höchstens eine Anfrage je Abstand, wie im Abgleich
+# ---------------------------------------------------------------------------
+
+
+def _reservierungen(monkeypatch: pytest.MonkeyPatch, ablauf: list[tuple[str, str, float | None]]) -> None:
+    """``host_pacer.wait`` ersetzen: Reservierungen in ``ablauf`` festhalten, ohne zu warten."""
+
+    async def wait(url: str, interval: float, **_kwargs: Any) -> bool:
+        ablauf.append(("warten", httpx.URL(url).path, interval))
+        return True
+
+    monkeypatch.setattr(rp.host_pacer, "wait", wait)
+
+
+@pytest.mark.asyncio
+async def test_probe_reserviert_vor_jeder_anfrage_einen_zeitpunkt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """robots.txt, Startseite, Vergleichsanfrage und Kandidaten: jede Anfrage erst nach ihrer Reservierung."""
+    ablauf: list[tuple[str, str, float | None]] = []
+    _reservierungen(monkeypatch, ablauf)
+    monkeypatch.setattr(rp.settings, "request_interval", 1.0)
+    fake = FakeRis(html=(FIXTURES / "sessionnet.html").read_text(encoding="utf-8"), block_ua=True)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        ablauf.append(("abruf", request.url.path, None))
+        return fake.handler(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
+
+    assert r.requests == rp.MAX_REQUESTS
+    assert len(ablauf) == 2 * r.requests
+    for reservierung, abruf in zip(ablauf[::2], ablauf[1::2], strict=True):
+        assert reservierung[0] == "warten" and reservierung[2] == 1.0, "Abstand aus den Einstellungen"
+        assert abruf == ("abruf", reservierung[1], None)
+
+
+@pytest.mark.asyncio
+async def test_probe_wartet_zwischen_anfragen_an_denselben_host(
+    echte_drossel: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(rp.settings, "request_interval", 0.05)
+    zeiten: list[float] = []
+    fake = FakeRis(html="<html>x</html>")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        zeiten.append(time.monotonic())
+        return fake.handler(request)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
+
+    assert len(zeiten) == r.requests == rp.MAX_REQUESTS
+    abstaende = [b - a for a, b in zip(zeiten, zeiten[1:], strict=False)]
+    assert min(abstaende) >= 0.04, "keine zwei Anfragen an denselben Host ohne Abstand"
+
+
+@pytest.mark.asyncio
+async def test_probe_folgt_weiterleitungen_im_takt(monkeypatch: pytest.MonkeyPatch) -> None:
+    ablauf: list[tuple[str, str, float | None]] = []
+    _reservierungen(monkeypatch, ablauf)
+    gesehen: list[str] = []
+    html = (FIXTURES / "sessionnet.html").read_text(encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gesehen.append(request.url.path)
+        if request.url.path == "/robots.txt":
+            return httpx.Response(404)
+        if request.url.path == "/":
+            return httpx.Response(301, headers={"Location": "/bi/"})
+        if request.url.path == "/bi/":
+            return httpx.Response(200, text=html)
+        return httpx.Response(404)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
+
+    assert gesehen[:3] == ["/robots.txt", "/", "/bi/"]
+    assert [pfad for _, pfad, _ in ablauf] == gesehen, "auch die Weiterleitung mit eigener Reservierung"
+    assert r.landing_status == 200 and r.vendor == "sessionnet"
+
+
+@pytest.mark.asyncio
+async def test_probe_begrenzt_weiterleitungen(monkeypatch: pytest.MonkeyPatch) -> None:
+    ablauf: list[tuple[str, str, float | None]] = []
+    _reservierungen(monkeypatch, ablauf)
+    gesehen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        gesehen.append(request.url.path)
+        return httpx.Response(302, headers={"Location": f"/robots.txt?n={len(gesehen)}"})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+        r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
+
+    assert len(gesehen) == len(ablauf) == rp.MAX_REDIRECTS + 1
+    assert r.robots == "nicht_erreichbar" and r.requests == 1
 
 
 def test_batch_klassifikation() -> None:
