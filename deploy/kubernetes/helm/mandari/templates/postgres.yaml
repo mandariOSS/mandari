@@ -46,6 +46,10 @@ spec:
         - name: postgres
           image: {{ .Values.postgres.image | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.postgres.sharedPreloadLibraries }}
+          # Der Einstiegspunkt des Images stellt "postgres" voran, wenn das erste Argument mit "-" beginnt
+          args: ["-c", {{ printf "shared_preload_libraries=%s" . | quote }}]
+          {{- end }}
           ports:
             - name: postgres
               containerPort: 5432

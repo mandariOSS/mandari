@@ -351,6 +351,7 @@ Alles leitet sich vom Arbeitsspeicher des **Datenbankdienstes** ab
 | `POSTGRES_MAX_CONNECTIONS` | muss zur Summe aller Dienste passen | `100` |
 | `POSTGRES_MAX_WAL_SIZE` | mehr bedeutet seltenere Checkpoints | `2GB` |
 | `POSTGRES_TEMP_FILE_LIMIT` | Obergrenze für temporäre Dateien **je Sitzung**; deutlich unter dem freien Plattenplatz | `5GB` |
+| `POSTGRES_SHARED_PRELOAD_LIBRARIES` | beim Start geladene Bibliotheken; leer = keine (siehe „Teuerste Abfragen“) | `pg_stat_statements` |
 
 **Die Falle bei `work_mem`:** Der Wert gilt je Sortiervorgang, und eine einzelne
 Abfrage kann mehrere davon haben. Im Extremfall belegt die Datenbank
@@ -407,6 +408,58 @@ aus #256:
 
 Listen- und Detailseiten lagen vorher wie nachher bei 10–50 ms; sie sind durch
 die Umstellung nicht langsamer geworden.
+
+### Teuerste Abfragen (pg_stat_statements)
+
+Welche SQL-Abfragen insgesamt die meiste Zeit kosten, zeigt die Erweiterung
+`pg_stat_statements` (Issue #1024). Sie fasst gleichartige Abfragen zusammen (Werte
+durch `$1`, `$2` ersetzt) und zählt je Abfrage Aufrufe, Gesamt- und Durchschnittszeit
+und gelesene Blöcke, über alle Datenbanken des Servers.
+
+- **Laden:** Die mitgelieferte `docker-compose.yml` startet PostgreSQL mit
+  `shared_preload_libraries=pg_stat_statements` (Helm-Chart: `postgres.sharedPreloadLibraries`).
+  Die Einstellung wirkt **erst nach einem Neustart des Datenbankdienstes**
+  (`docker compose up -d postgres` legt den Container neu an, die Anwendung ist dabei
+  einige Sekunden ohne Datenbank). Abschalten mit `POSTGRES_SHARED_PRELOAD_LIBRARIES=`
+  (leer) in der `.env`, ebenfalls mit Neustart. Weitere Bibliotheken kommagetrennt, etwa
+  `POSTGRES_SHARED_PRELOAD_LIBRARIES=pg_stat_statements,auto_explain`.
+- **Anlegen:** Die Erweiterung legt `migrate` an (Migration `common.0012`), in der
+  Datenbank von mandari. Fehlen der Datenbankrolle die Rechte (die Erweiterung braucht
+  einen Superuser bzw. die Admin-Rolle eines verwalteten Dienstes) oder die Erweiterung
+  selbst, steht eine Warnung im Protokoll, und die Migration läuft trotzdem durch. Dann
+  von Hand: `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;`
+- **Verwaltete Datenbanken** (RDS, Azure, Google Cloud SQL usw.): `pg_stat_statements` in
+  den Parametern des Dienstes einschalten (meist schon vorgeladen) und die Erweiterung mit
+  der Admin-Rolle anlegen.
+- **Ohne die Bibliothek** läuft mandari unverändert. Nur die Abfrage der Statistik meldet
+  dann `pg_stat_statements must be loaded via "shared_preload_libraries"`.
+
+Auswerten (die zehn Abfragen mit der meisten Gesamtzeit in der eigenen Datenbank):
+
+```bash
+docker compose exec postgres psql -U mandari -d mandari -c "
+SELECT round(total_exec_time::numeric / 1000, 1) AS gesamt_s,
+       calls AS aufrufe,
+       round(mean_exec_time::numeric, 2) AS mittel_ms,
+       round(100 * total_exec_time / sum(total_exec_time) OVER (), 1) AS anteil_prozent,
+       left(regexp_replace(query, '\s+', ' ', 'g'), 120) AS abfrage
+FROM pg_stat_statements
+WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+ORDER BY total_exec_time DESC
+LIMIT 10;"
+```
+
+- `gesamt_s` und `anteil_prozent` zeigen, wo die Datenbank ihre Zeit verbringt. Eine
+  billige Abfrage, die sehr oft läuft, kann mehr kosten als eine langsame seltene.
+- `mittel_ms` zeigt einzelne langsame Abfragen; für die nächste Stufe `EXPLAIN (ANALYZE,
+  BUFFERS)` mit echten Werten statt `$1` ausführen.
+- `ORDER BY calls DESC` findet Abfragen, die zu oft laufen (etwa eine je Listeneintrag).
+- Die Werte zählen seit dem Start des Servers bzw. dem letzten Zurücksetzen. Vor einer
+  Messung (etwa vor und nach einem Deploy) zurücksetzen: `SELECT pg_stat_statements_reset();`
+- Den Text fremder Abfragen sieht nur, wer Superuser ist oder die Rolle
+  `pg_read_all_stats` hat; andere Rollen sehen dort `<insufficient privilege>`.
+- Kosten: gering, ein Eintrag je Abfrageform im gemeinsamen Speicher (höchstens 5.000,
+  `pg_stat_statements.max`; seltene fallen zuerst heraus).
 
 ## ✉️ Mailversand: Message-ID und EHLO
 

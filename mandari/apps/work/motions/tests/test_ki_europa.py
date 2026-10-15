@@ -19,6 +19,7 @@ import pytest
 from django.core.cache import cache
 
 from apps.common.models import AISettings
+from apps.common.tests.verbindungsprobe import Verbindungsprobe
 from apps.tenants.models import Organization
 from apps.work.motions import services
 from apps.work.motions.services import MotionAIService
@@ -239,3 +240,23 @@ def test_zu_lange_eingabe_mit_eigenem_hinweis(
     assert not antwort.success and antwort.error == "Die Anfrage ist für das KI-Modell zu lang."
     assert "Kontextfenster" in caplog.text and "Max. Output-Tokens" not in caplog.text
     assert "Bitte kürzen" not in caplog.text and SCHLUESSEL not in caplog.text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_keine_pool_verbindung_waehrend_des_ki_aufrufs(org: Organization, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Schreibhilfe und Co-Editor warten bis zu 90 s auf den Anbieter, ohne eine Verbindung zu halten (Issue #1024)."""
+    _plattform()
+    probe = Verbindungsprobe()
+
+    def antwort(request: httpx.Request) -> httpx.Response:
+        probe.aufruf()
+        return httpx.Response(
+            200, json={"choices": [{"message": {"content": "Gekürzter Text"}}], "usage": {"total_tokens": 42}}
+        )
+
+    dienst = MotionAIService(organization=org, transport=httpx.MockTransport(antwort))
+    with probe.mitschreiben(monkeypatch):
+        ergebnis = dienst._call_api(NACHRICHTEN)
+
+    assert ergebnis.success and ergebnis.content == "Gekürzter Text"
+    probe.pruefen(aufrufe=1)

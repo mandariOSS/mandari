@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from apps.common.ki_anbieter import KiEndpunkt, endpunkt_fuer_insight
 from apps.common.models import AISettings
+from apps.common.tests.verbindungsprobe import Verbindungsprobe
 from insight_ai.providers import OpenAIKompatiblerProvider
 from insight_ai.services import chat_service
 from insight_core.models import ChatUsage
@@ -310,6 +311,36 @@ def test_endpunkt_protokolliert_verbrauch_und_zaehlt_eine_anfrage(
     assert nutzung.rounds == 2
     assert nutzung.prompt_tokens > 0 and nutzung.completion_tokens > 0
     assert nutzung.tokens_used == nutzung.prompt_tokens + nutzung.completion_tokens
+
+
+@pytest.mark.django_db(transaction=True)
+def test_keine_pool_verbindung_waehrend_der_modellaufrufe(monkeypatch: pytest.MonkeyPatch, stadt: Musterstadt) -> None:
+    """
+    Ohne Testtransaktion wie im Betrieb (Issue #1024): Während jedes der beiden Modellaufrufe hält die Anfrage keine
+    Verbindung; das Werkzeug dazwischen holt sich eine neue, und danach wird der Verbrauch gebucht.
+    """
+    probe = Verbindungsprobe()
+    fake = anbieter(
+        monkeypatch, werkzeuge(("sitzungen_im_zeitraum", {"von": "2026-10-05", "bis": "2026-10-11"})), antwort_sitzungen
+    )
+    echt = fake.chat_with_tools
+
+    def beobachtet(*args: Any, **kwargs: Any) -> Any:
+        probe.aufruf()
+        return echt(*args, **kwargs)
+
+    monkeypatch.setattr(fake, "chat_with_tools", beobachtet)
+    client, _ = _besucher_mit_einwilligung(stadt)
+
+    with probe.mitschreiben(monkeypatch):
+        antwort = _fragen(client, "Welche Sitzungen finden diese Woche statt?")
+
+    assert antwort.status_code == 200
+    assert f"/insight/termine/{stadt.rat_sitzung.pk}/" in antwort.json()["response"]
+    probe.pruefen(aufrufe=2)
+    erster, zweiter = [i for i, ereignis in enumerate(probe.ereignisse) if ereignis == "aufruf"]
+    assert "sql" in probe.ereignisse[erster:zweiter], "das Werkzeug fragt zwischen den Aufrufen die Ratsdaten ab"
+    assert ChatUsage.objects.get().rounds == 2
 
 
 # --- Kostenbremse: Tagesobergrenze aller Antworten zusammen -------------------------------------------------

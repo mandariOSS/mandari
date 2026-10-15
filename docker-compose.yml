@@ -259,6 +259,11 @@ services:
       # statt die Platte zu fuellen (Vorfall 24.09.2026, Issue #54).
       - -c
       - temp_file_limit=${POSTGRES_TEMP_FILE_LIMIT:-5GB}
+      # Statistik je SQL-Abfrage (pg_stat_statements, Issue #1024): Welche Abfragen kosten die meiste Zeit?
+      # Die Erweiterung legt die Migration common.0012 an. Abschalten mit POSTGRES_SHARED_PRELOAD_LIBRARIES=
+      # (leer, deshalb "-" statt ":-"); wirkt erst nach einem Neustart des Datenbankdienstes (DEPLOYMENT.md).
+      - -c
+      - shared_preload_libraries=${POSTGRES_SHARED_PRELOAD_LIBRARIES-pg_stat_statements}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}

@@ -1874,6 +1874,8 @@ spec:
         - name: postgres
           image: "postgres:16-alpine"
           imagePullPolicy: IfNotPresent
+          # Der Einstiegspunkt des Images stellt "postgres" voran, wenn das erste Argument mit "-" beginnt
+          args: ["-c", "shared_preload_libraries=pg_stat_statements"]
           ports:
             - name: postgres
               containerPort: 5432
