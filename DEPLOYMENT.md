@@ -539,8 +539,9 @@ Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die
 
 - Setzen Sie `INGESTOR_USER_AGENT` auf eine Kennung mit Ihrer eigenen Kontaktadresse; ohne Angabe nennt der
   User-Agent unsere Infoseite und `support@mandari.de` ([Für Selbstbetreiber](docs/ABRUFREGELN.md#für-selbstbetreiber)).
-  Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`); ein
-  Eintrag nur in der `.env` wirkt nicht.
+  Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`) und,
+  weil die Sync-Aktionen an einer Quelle im Admin im Worker der Anwendung laufen, auch in `x-app-environment`
+  (Helm: `app.extraEnv`); ein Eintrag nur in der `.env` wirkt nicht.
 - `docker-compose.yml` reicht dem Dienst `ingestor` nur die dort genannten Variablen durch (Abruf-Rhythmus über
   `INGESTOR_INTERVAL`, `INGESTOR_FULL_SYNC_HOUR`, `INGESTOR_CONCURRENT`); weitere, etwa
   `INGESTOR_REQUEST_INTERVAL`, ergänzen Sie in seinem Abschnitt `environment`, im Helm-Chart über
