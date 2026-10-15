@@ -139,11 +139,29 @@ class TestNachVollabgleich:
 
     async def test_ohne_aussage_bleibt_der_befund(self, monkeypatch):
         monkeypatch.setattr("src.client.oparl_client.settings.oparl_max_retries", 1)
+        monkeypatch.setattr(SyncOrchestrator, "MODIFIED_SINCE_RETRY_SECONDS", 0)
         OParlClient.add_modified_since_unsupported({HOST})
-        verdict, speicher = await _recheck(lambda r: httpx.Response(502))
+        anfragen: list[httpx.Request] = []
+        verdict, speicher = await _recheck(lambda r: anfragen.append(r) or httpx.Response(502))
         assert verdict == MODIFIED_SINCE_INCONCLUSIVE
+        assert len(anfragen) == 2  # einmal wiederholt
         assert HOST in OParlClient.get_modified_since_unsupported()
         assert speicher.calls == []
+
+    async def test_einzelne_stoerung_haelt_veralteten_befund_nicht_fest(self, monkeypatch):
+        """Münster, 15.10.2026: eine Nacht „keine Aussage“ ließ den falschen Vermerk wochenlang stehen."""
+        monkeypatch.setattr("src.client.oparl_client.settings.oparl_max_retries", 1)
+        monkeypatch.setattr(SyncOrchestrator, "MODIFIED_SINCE_RETRY_SECONDS", 0)
+        OParlClient.add_modified_since_unsupported({HOST})
+        antworten = iter([httpx.Response(502)])
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return next(antworten, None) or _seite(request, [datetime.now(UTC)])
+
+        verdict, speicher = await _recheck(handler)
+        assert verdict == MODIFIED_SINCE_SUPPORTED
+        assert HOST not in OParlClient.get_modified_since_unsupported()
+        assert speicher.calls[0][2:] == (MODIFIED_SINCE_SUPPORTED, True)
 
     async def test_fehler_gefaehrden_den_abgleich_nicht(self):
         def kaputt(_request: httpx.Request) -> httpx.Response:

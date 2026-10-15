@@ -447,6 +447,8 @@ class SyncOrchestrator:
         # "modified_since nicht unterstützt" überlebt so Daemon-Neustarts.
         await self._seed_modified_since_cache()
         capability_snapshot = OParlClient.get_modified_since_unsupported()
+        options = SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None))
+        full, fetch_deadline = self._full_sync_plan(url, options, full, source_row)
 
         client: OParlClient | None = None
         try:
@@ -455,7 +457,8 @@ class SyncOrchestrator:
                 max_concurrent=concurrent,
                 source_name=url.split("/")[2] if "/" in url else "unknown",
                 user_agent=getattr(source_row, "user_agent", None),
-                **SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None)).client_kwargs(),
+                fetch_deadline=fetch_deadline,
+                **options.client_kwargs(),
             ) as client:
                 # Auto-detect URL type
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
@@ -622,6 +625,8 @@ class SyncOrchestrator:
 
     #: Zeitfenster der modified_since-Prüfung: die Quelle soll nur Objekte liefern, die seitdem geändert wurden
     MODIFIED_SINCE_PROBE_DAYS = 7
+    #: Pause vor der Wiederholung einer Prüfung ohne Aussage
+    MODIFIED_SINCE_RETRY_SECONDS = 60
 
     async def _recheck_modified_since(
         self, client: OParlClient, source_url: str, bodies_data: list[dict[str, Any]]
@@ -654,6 +659,11 @@ class SyncOrchestrator:
             since = datetime.now(UTC) - timedelta(days=self.MODIFIED_SINCE_PROBE_DAYS)
             verdict = await client.probe_modified_since(list_url, since)
             if verdict == MODIFIED_SINCE_INCONCLUSIVE:
+                # Einzelne Störung (langsame Antwort, 5xx) soll einen veralteten Befund nicht bis zum nächsten
+                # Vollabgleich festschreiben: einmal nach kurzer Pause wiederholen
+                await asyncio.sleep(self.MODIFIED_SINCE_RETRY_SECONDS)
+                verdict = await client.probe_modified_since(list_url, since)
+            if verdict == MODIFIED_SINCE_INCONCLUSIVE:
                 console.print(f"[dim]  modified_since-Prüfung für {host}: keine Aussage[/dim]")
                 return verdict
             supported = verdict == MODIFIED_SINCE_SUPPORTED
@@ -667,6 +677,22 @@ class SyncOrchestrator:
         except Exception as e:  # noqa: BLE001 - Prüfung ist eine Zugabe, der Abgleich ist durch
             console.print(f"[yellow]modified_since-Prüfung für {host} fehlgeschlagen: {e}[/yellow]")
             return None
+
+    @staticmethod
+    def _full_sync_plan(
+        url: str, options: SourceFetchOptions, full: bool, source_row: Any = None
+    ) -> tuple[bool, datetime | None]:
+        """Vollabgleich nur im Abstand und Zeitfenster der Quelle (``full_sync_every_days``, ``full_sync_window``)."""
+        planned_full, deadline = options.full_sync_plan(
+            full, last_full_sync=getattr(source_row, "last_successful_full_sync", None)
+        )
+        if full and not planned_full:
+            console.print(
+                f"[yellow]{url}: Vollabgleich nicht fällig (Abstand/Zeitfenster der Quelle), nur inkrementell[/yellow]"
+            )
+        elif deadline is not None:
+            console.print(f"[dim]{url}: Vollabgleich bis {deadline:%H:%M} UTC (Zeitfenster der Quelle)[/dim]")
+        return planned_full, deadline
 
     async def _record_source_failure(self, url: str, error: str, error_kind: str | None = None) -> None:
         """Fehlerstatus für den Betriebsmonitor speichern — darf den Sync nie gefährden."""
@@ -700,6 +726,8 @@ class SyncOrchestrator:
         capability_snapshot = OParlClient.get_modified_since_unsupported()
         source_row = await self.storage.get_source_by_url(url)
         self._register_id_base(url, source_row)
+        options = SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None))
+        full, fetch_deadline = self._full_sync_plan(url, options, full, source_row)
 
         client: OParlClient | None = None
         try:
@@ -707,7 +735,8 @@ class SyncOrchestrator:
                 max_concurrent=self.max_concurrent,
                 source_name=url.split("/")[2] if "/" in url else "unknown",
                 user_agent=getattr(source_row, "user_agent", None),
-                **SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None)).client_kwargs(),
+                fetch_deadline=fetch_deadline,
+                **options.client_kwargs(),
             ) as client:
                 # Fetch system
                 console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
