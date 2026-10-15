@@ -211,13 +211,15 @@ Dokumentation und Konformitätsbewertung. Vorhanden sind die Stückliste je Rele
 
 ## 8. Befristete Ausnahmen in der Abhängigkeitsprüfung
 
-Die CI blockiert jeden Merge, sobald `pip-audit` oder `npm audit` eine bekannte Schwachstelle in
-unseren Abhängigkeiten meldet. Gibt es für eine Meldung noch keine korrigierte Version und läuft der
-betroffene Teil bei uns nachweislich nicht, tragen wir eine befristete Ausnahme mit Begründung ein:
+Die CI blockiert jeden Merge, sobald `pip-audit` oder `npm audit` (ab „high“) eine bekannte
+Schwachstelle in unseren Abhängigkeiten meldet. Gibt es für eine Meldung noch keine korrigierte Version
+und läuft der betroffene Teil bei uns nachweislich nicht, tragen wir eine befristete Ausnahme mit
+Begründung ein:
 
 - Python: `mandari/pip-audit-ausnahmen.json`, geprüft von `scripts/pip_audit_pruefen.py`
 - npm (nur Entwicklungswerkzeuge): `mandari/npm-audit-ausnahmen.json`, geprüft von `scripts/npm_audit_pruefen.py`
 
-Eine Ausnahme braucht Kennung (GHSA und Aliase), Paket, Grund und Ablaufdatum (höchstens wenige
-Wochen). Die Prüfung scheitert, wenn eine Ausnahme abläuft oder es für die Meldung eine korrigierte
-Version gibt; dann aktualisieren wir die Abhängigkeit und entfernen die Ausnahme.
+Eine Ausnahme braucht Kennung (bei Python mit Aliasen), Paket, Grund und Ablaufdatum (höchstens
+wenige Wochen). Die Prüfung scheitert, wenn eine Ausnahme abläuft, bei Python auch, sobald es für die
+Meldung eine korrigierte Version gibt; dann aktualisieren wir die Abhängigkeit und entfernen die
+Ausnahme.

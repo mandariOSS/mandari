@@ -45,14 +45,18 @@ def pruefen(requirements: str, gueltig: dict[str, dict]) -> tuple[list[str], set
         text=True,
     )
     try:
-        bericht = json.loads(lauf.stdout)
-    except json.JSONDecodeError:
+        pakete = json.loads(lauf.stdout)["dependencies"]
+    except (json.JSONDecodeError, TypeError, KeyError):
         sys.stderr.write(lauf.stderr)
         return [f"pip-audit lieferte für {requirements} keinen auswertbaren Bericht (Exit {lauf.returncode})"], set()
+    # pip-audit endet nur mit gefundenen Meldungen ungleich 0; jeder andere Fehler bleibt ein Fehler
+    if lauf.returncode != 0 and not any(paket.get("vulns") for paket in pakete):
+        sys.stderr.write(lauf.stderr)
+        return [f"pip-audit endete für {requirements} mit Exit {lauf.returncode} ohne Meldung im Bericht"], set()
 
     fehler: list[str] = []
     genutzt: set[str] = set()
-    for paket in bericht.get("dependencies", []):
+    for paket in pakete:
         for meldung in paket.get("vulns", []):
             kennungen = [meldung["id"], *meldung.get("aliases", [])]
             eintrag = next((gueltig[k] for k in kennungen if k in gueltig), None)
