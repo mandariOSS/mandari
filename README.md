@@ -196,6 +196,10 @@ Vollständige Dokumentation: **<https://docs.mandari.de>**
 | [Datenschutz](https://docs.mandari.de/datenschutz/) | Technische Maßnahmen, Löschkonzept, Muster-AVV, Crawler |
 | [Entwicklung](https://docs.mandari.de/entwicklung/) | Qualitätsgates, Abhängigkeiten, Mitarbeit |
 
+Wann und wie mandari Ratsinformationssysteme abruft (Kennung, robots.txt, Takt je Server, Zeitfenster, Abruf-Adresse,
+Kontakt), beschreibt [`docs/ABRUFREGELN.md`](docs/ABRUFREGELN.md) für Betreiber von Ratsinformationssystemen und für
+Selbstbetreiber.
+
 ## Mitwirken
 
 Beiträge sind willkommen — von Fehlermeldungen über Dokumentation bis zu Code.

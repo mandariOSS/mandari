@@ -7,7 +7,9 @@ Referrer-Regeln) und erzeugen bei jedem Seitenaufruf 404-Requests im Browser.
 Der Abruf läuft serverseitig mit unserer Kennung (``mandari-ingestor``, wie alle
 automatischen Abrufe, siehe ``mandari_oparl.crawler``) und beachtet die robots.txt.
 Braucht ein RIS einen anderen User-Agent, gilt der aus ``sync_config["download_headers"]``
-der Quelle (nur nach Absprache mit dem Betreiber). Das Bild wird normalisiert
+der Quelle (nur nach Absprache mit dem Betreiber). Wie Dokument-Cache und Vorschau ruhen Fotoabrufe, wenn die
+Quelle abgeschaltet ist (``is_active``), keine Dateien liefern soll (``sync_config["file_downloads"] = false``)
+oder geschont wird (``file_cache.source_paused``, Issue #1027). Das Bild wird normalisiert
 (max. 400 px, JPEG); „kein Foto vorhanden“ wird vermerkt, damit die
 Avatar-Komponente sauber auf Initialen zurückfällt.
 """
@@ -23,7 +25,7 @@ from django.core.files.base import ContentFile
 from django.db.models import Q
 from django.utils import timezone
 
-from . import host_pacing, redirects, robots
+from . import file_cache, host_pacing, redirects, robots
 
 logger = logging.getLogger(__name__)
 
@@ -95,19 +97,39 @@ def _client() -> httpx.Client:
     return httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=False)
 
 
+def _source_blocked(body) -> str | None:
+    """
+    Darf die Quelle der Kommune gerade abgerufen werden? ``"disabled"``: Quelle abgeschaltet oder Dateiabruf aus
+    (``sync_config["file_downloads"] = false``); ``"paused"``: Schonung nach Fehlversuchen; sonst ``None``.
+    Dieselben Regeln wie für Dokument-Cache und Vorschau (``hub.ris.abruf.fetch_allowed``, ``file_cache``).
+    """
+    source = getattr(body, "source", None) if body is not None else None
+    if source is not None and not getattr(source, "is_active", True):
+        return "disabled"
+    if file_cache.downloads_disabled(body):
+        return "disabled"
+    if file_cache.source_paused(body):
+        return "paused"
+    return None
+
+
 def fetch_person_photo(person, client=None) -> str:
     """
     Foto einer Person abrufen und lokal speichern.
 
-    Rückgabe: "ok", "missing", "error", "skipped" (keine URL/manuell) oder "deferred" (robots.txt nicht
-    erreichbar; nichts vermerkt, der nächste Lauf versucht es erneut). Einer Weiterleitung folgen wir nur, wenn die
-    robots.txt ihres Ziels sie erlaubt (sonst wie bei einem gesperrten Foto), und nur im Takt je Host.
+    Rückgabe: "ok", "missing", "error", "skipped" (keine URL/manuell), "deferred" (robots.txt nicht
+    erreichbar), "disabled" (Quelle abgeschaltet oder Dateiabruf aus) oder "paused" (Quelle in Schonung). Bei
+    den letzten drei wird nichts vermerkt; der nächste Lauf versucht es erneut. Einer Weiterleitung folgen wir nur,
+    wenn die robots.txt ihres Ziels sie erlaubt (sonst wie bei einem gesperrten Foto), und nur im Takt je Host.
     """
     if person.photo_status == "manual":
         return "skipped"
     url = person.photo_url
     if not url:
         return "skipped"
+    blocked = _source_blocked(getattr(person, "body", None))
+    if blocked:
+        return blocked
     # robots.txt gilt für jeden automatischen Abruf (RFC 9309), auch für Fotos – geprüft mit dem User-Agent,
     # mit dem das Foto geladen wird
     agent = robots.user_agent_for(person)
@@ -172,6 +194,11 @@ def fetch_photos_for_body(
     results: Counter = Counter()
     if not (body.person_photo_url_template and body.person_photo_id_pattern):
         results["no_config"] += 1
+        return results
+    blocked = _source_blocked(body)
+    if blocked:
+        # Quelle abgeschaltet, ohne Dateiabruf oder in Schonung: keine Anfrage, nichts vermerkt
+        results[blocked] += 1
         return results
 
     persons = OParlPerson.objects.filter(body=body, deleted=False).exclude(photo_status="manual")
