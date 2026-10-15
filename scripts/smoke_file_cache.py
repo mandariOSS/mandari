@@ -15,6 +15,7 @@ import sys
 import tempfile
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent / "mandari"
 sys.path.insert(0, str(PROJECT_DIR))
@@ -120,10 +121,16 @@ f_old = make_file(7, when=now - timedelta(days=800))
 
 
 class FakeResponse:
+    # Keine Weiterleitung: Abrufe folgen ihnen selbst (insight_core/services/redirects.py, Issue #1027)
+    next_request = None
+
     def __init__(self, status, content=b"", ctype="application/pdf"):
         self.status_code = status
         self.content = content
         self.headers = {"content-type": ctype, "content-length": str(len(content))}
+
+    def close(self):
+        pass
 
     def iter_bytes(self, chunk_size=4096):
         for i in range(0, len(self.content), chunk_size):
@@ -183,6 +190,14 @@ class FakeClient:
 
     def get(self, url, **kwargs):
         return self.respond(url)
+
+    @staticmethod
+    def build_request(method, url, headers=None, **kwargs):
+        return SimpleNamespace(method=method, url=url, headers=headers or {})
+
+    def send(self, request, **kwargs):
+        # Abrufe folgen Weiterleitungen selbst und senden dafür einzeln (insight_core/services/redirects.py)
+        return self.respond(str(request.url))
 
 
 # =============================================================================
