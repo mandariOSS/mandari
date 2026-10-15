@@ -376,12 +376,19 @@ def _deliver_file(request, file_obj):
         response["Retry-After"] = "30"
         return response
     try:
-        blocked = _robots_or_pacing_blocked(file_obj, url)
+        # Eine Frist für alle Wartezeiten auf robots.txt und Takt, auch für die Ziele von Weiterleitungen (#1027)
+        deadline = redirects.deadline_after(_pace_max_wait())
+        blocked = _robots_or_pacing_blocked(file_obj, url, deadline=deadline)
         if blocked is not None:
             return blocked
-        return _fetch_live(file_obj, url, filename, force_download)
+        return _fetch_live(file_obj, url, filename, force_download, deadline=deadline)
     finally:
         _LIVE_FETCH_SLOTS.release()
+
+
+def _pace_max_wait():
+    """Höchstwartezeit der Vorschau auf robots.txt und Takt (Sekunden), für den ganzen Abruf zusammen."""
+    return float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
 
 
 def _source_busy_response(url):
@@ -396,35 +403,36 @@ def _source_busy_response(url):
     return response
 
 
-def _robots_or_pacing_blocked(file_obj, url):
+def _robots_or_pacing_blocked(file_obj, url, *, deadline=None):
     """
     robots.txt und Drossel je Host vor dem Live-Abruf; ``None``: Abruf erlaubt und Zeitpunkt reserviert.
 
     Läuft erst nach Schonung, Drossel je IP und mit belegtem Abrufplatz: So wird eine geschonte Quelle nicht
     über ihre robots.txt angefragt, und es warten höchstens ``FILE_PROXY_MAX_CONCURRENT`` Threads je Prozess.
     Vor jedem Warten geht die Datenbankverbindung an den Pool zurück; robots.txt und Takt zusammen warten
-    höchstens ``FILE_PROXY_PACE_MAX_WAIT_SECONDS`` (sonst 503 mit ``Retry-After``).
+    höchstens bis ``deadline`` (``time.monotonic()``; ohne Angabe ``FILE_PROXY_PACE_MAX_WAIT_SECONDS`` ab jetzt),
+    sonst 503 mit ``Retry-After``. Dieselbe Frist gilt danach für die Weiterleitungen des Abrufs.
 
     robots.txt (RFC 9309) gilt auch für die Vorschau: gesperrte Dokumente rufen wir nicht selbst ab, sondern
     verweisen auf das Original.
     """
-    import time
-
     from apps.common.db_connections import release_idle_thread_connections
 
+    if deadline is None:
+        deadline = redirects.deadline_after(_pace_max_wait())
     # Einstellungen der Quelle lesen, solange die Verbindung noch da ist (die Quelle hängt danach am Body)
     sync_config = robots.sync_config_of(file_obj)
     agent = robots.user_agent_for(file_obj)
-    max_wait = float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
-    deadline = time.monotonic() + max_wait
     release_idle_thread_connections()
     try:
-        decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=max_wait)
+        decision = robots.check(
+            url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=redirects.remaining(deadline)
+        )
     except host_pacing.PacingBusyError:
         return _source_busy_response(url)
     if decision.allowed:
         # Drossel je Host über alle Prozesse: höchstens die verbleibende Zeit warten
-        if not host_pacing.wait(url, sync_config=sync_config, max_wait=max(0.0, deadline - time.monotonic())):
+        if not host_pacing.wait(url, sync_config=sync_config, max_wait=redirects.remaining(deadline)):
             return _source_busy_response(url)
         return None
     if decision.unreachable:
@@ -454,10 +462,11 @@ def _robots_refused_response(url):
     )
 
 
-def _fetch_live(file_obj, url, filename, force_download):
+def _fetch_live(file_obj, url, filename, force_download, *, deadline=None):
     """
     Datei beim Quell-RIS abrufen (``hub.ris.abruf``: Größe, Dauer und Ziel begrenzt) und ausliefern
     (Write-Through). Fehlschläge setzen dieselben Zustände wie der Abruf im Dokument-Cache (Issue #919).
+    Weiterleitungen warten höchstens bis ``deadline``, der Frist der Prüfung vorher (sonst 503 mit ``Retry-After``).
     """
     from django.http import FileResponse
 
@@ -476,7 +485,8 @@ def _fetch_live(file_obj, url, filename, force_download):
             spool,
             total_seconds=throttle.setting("FILE_PROXY_TOTAL_SECONDS"),
             read_timeout=read_timeout,
-            max_wait=float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5)),
+            max_wait=_pace_max_wait(),
+            deadline=deadline,
         )
     except redirects.RedirectBusyError:
         # Für das Ziel einer Weiterleitung war kein Zeitpunkt frei: später erneut, kein Fehlschlag

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import uuid
 from io import StringIO
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -29,6 +30,7 @@ from insight_core.services import (
     file_reconcile,
     host_pacing,
     person_photos,
+    redirects,
     robots,
     safe_fetch,
 )
@@ -176,6 +178,60 @@ class TestVorschau:
         assert "robots.txt" in body and "%PDF" not in body
         datei.refresh_from_db()
         assert datei.fetch_error == "robots"
+
+    def test_weiterleitung_wartet_nur_die_restzeit(
+        self, robots_txt: dict[str, Any], monkeypatch: pytest.MonkeyPatch, settings: Any
+    ) -> None:
+        """
+        Eine Frist für die ganze Vorschau (``FILE_PROXY_PACE_MAX_WAIT_SECONDS``): Die Weiterleitung wartet nur die
+        Restzeit nach der Prüfung der ersten Anfrage, nicht erneut die volle Höchstwartezeit je Schritt.
+        """
+        settings.FILE_PROXY_PACE_MAX_WAIT_SECONDS = 5
+        uhr = SimpleNamespace(jetzt=100.0)
+        monkeypatch.setattr(redirects, "time", SimpleNamespace(monotonic=lambda: uhr.jetzt))
+        wartezeiten: list[tuple[str, float | None]] = []
+
+        def wait(url: str, **kw: Any) -> bool:
+            """Jede Reservierung kostet drei Sekunden; mit weniger Restzeit gibt es keinen Zeitpunkt."""
+            max_wait = kw.get("max_wait")
+            wartezeiten.append((url, max_wait))
+            if max_wait is not None and max_wait < 3.0:
+                return False
+            uhr.jetzt += 3.0
+            return True
+
+        monkeypatch.setattr(host_pacing, "wait", wait)
+        abrufe: list[str] = []
+        transport = _server(abrufe)
+        monkeypatch.setattr(
+            httpx.HTTPTransport, "handle_request", lambda self, request: transport.handle_request(request)
+        )
+        datei = _datei(_quelle())
+
+        response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
+
+        assert wartezeiten == [(START, 5.0), (ZIEL, 2.0)]
+        assert abrufe == [f"GET {START}"], "binnen der Restzeit kein Zeitpunkt: dem Ziel nicht gefolgt"
+        assert response.status_code == 503 and response["Retry-After"] == "30"
+
+
+def test_frist_gilt_fuer_alle_weiterleitungen(robots_txt: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    """``guard(max_wait=…)``: eine Frist ab dem Aufruf für alle Weiterleitungen eines Abrufs, nicht je Schritt."""
+    uhr = SimpleNamespace(jetzt=100.0)
+    monkeypatch.setattr(redirects, "time", SimpleNamespace(monotonic=lambda: uhr.jetzt))
+    wartezeiten: list[float | None] = []
+
+    def wait(url: str, **kw: Any) -> bool:
+        wartezeiten.append(kw.get("max_wait"))
+        uhr.jetzt += 2.0
+        return True
+
+    monkeypatch.setattr(host_pacing, "wait", wait)
+    vor_weiterleitung = redirects.guard(max_wait=5)
+    for ziel in ("https://a.example.org/1", "https://b.example.org/2", "https://c.example.org/3"):
+        vor_weiterleitung(httpx.Request("GET", ziel))
+
+    assert wartezeiten == [5.0, 3.0, 1.0]
 
 
 class TestLoeschabgleich:

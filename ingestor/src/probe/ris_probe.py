@@ -17,7 +17,8 @@ eine Quelle mit größerem ``request_interval`` registriert, gilt deren Abstand
 Vergleichsanfrage trägt wie im Abgleich die Standardkennung der HTTP-Bibliothek
 (``oparl_client.NEUTRAL_USER_AGENT``, ``python-httpx/<Version>``), geht an die Adresse,
 die 403 geliefert hat, folgt keiner Weiterleitung und entfällt, wenn
-``settings.oparl_ua_probe_enabled`` aus ist.
+``settings.oparl_ua_probe_enabled`` aus ist. Nur eine erfolgreiche Antwort (2xx) darauf ergibt
+den Befund „User-Agent gesperrt“; eine Weiterleitung bleibt unklar (Hinweis mit Status und Ziel).
 
 Die robots.txt gilt auch hier (RFC 9309, ``mandari_oparl.robots``): Gesperrte Pfade fragen
 wir nicht an, auch nicht als Ziel einer Weiterleitung (geprüft gegen die robots.txt des
@@ -47,7 +48,7 @@ from mandari_oparl.robots import STATE_UNREACHABLE, RobotsTxt, host_key
 from mandari_oparl.robots import robots_url as robots_txt_url
 
 from src.client.host_pacing import host_pacer
-from src.client.oparl_client import NEUTRAL_USER_AGENT
+from src.client.oparl_client import NEUTRAL_USER_AGENT, neutral_redirect_note
 from src.client.oparl_compat import detect_oparl_version, is_oparl_error
 from src.config import settings
 
@@ -405,17 +406,20 @@ async def probe_url(
 
     # 3) 403 auf unseren User-Agent? Eine Vergleichsanfrage, nur zur Diagnose, mit derselben Kennung wie im
     #    Abgleich (python-httpx/<Version>) und nur, wenn die Vergleichsanfrage eingeschaltet ist. Sie geht an die
-    #    Adresse, die 403 geliefert hat, und folgt keiner Weiterleitung: genau eine Anfrage mit dieser Kennung
+    #    Adresse, die 403 geliefert hat, und folgt keiner Weiterleitung: genau eine Anfrage mit dieser Kennung.
+    #    Nur eine erfolgreiche Antwort (2xx) belegt die Sperre; eine Weiterleitung lässt offen, was am Ziel käme
     if landing is not None and result.landing_status == 403 and settings.oparl_ua_probe_enabled:
         vergleich = await _get(
             client, str(landing.url), budget, headers={"User-Agent": NEUTRAL_USER_AGENT}, follow=_never
         )
-        if vergleich is not None and vergleich.status_code < 400:
+        if vergleich is not None and vergleich.is_success:
             result.ua_blocked = True
             result.notes.append(f"403 nur für unseren User-Agent (neutraler Client: {vergleich.status_code})")
             if result.vendor == "unbekannt":
                 result.vendor = fingerprint(vergleich.text, url, dict(vergleich.headers))
                 result.vendor_label = VENDOR_LABELS[result.vendor]
+        elif vergleich is not None and 300 <= vergleich.status_code < 400:
+            result.notes.append(f"Vergleichsanfrage: {neutral_redirect_note(vergleich)}")
 
     # 4) OParl-Autodiscovery mit dem Restbudget; gesperrte Kandidaten fragen wir nicht an
     kandidaten = oparl_candidates(url, result.vendor)

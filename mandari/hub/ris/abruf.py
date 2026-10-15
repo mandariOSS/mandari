@@ -658,14 +658,17 @@ def download_live(
     total_seconds: float,
     read_timeout: float,
     max_wait: float | None = None,
+    deadline: float | None = None,
 ) -> safe_fetch.Download:
     """
     Live-Abruf der Vorschau: kurze Zeitgrenzen, Größengrenze, Download-Header und User-Agent der Quelle.
 
     Wirft wie ``safe_fetch.download_to`` (``httpx.HTTPStatusError``, ``httpx.RequestError``, ``TooLargeError``,
     ``DeadlineExceededError``). robots.txt und Drossel prüft die Vorschau vorher selbst (mit Höchstwartezeit); vor
-    jeder Weiterleitung prüfen wir die robots.txt des Ziels und warten höchstens ``max_wait`` auf den Takt
-    (``redirects.RedirectBlockedError`` bzw. ``RedirectBusyError``, Issue #1027).
+    jeder Weiterleitung prüfen wir die robots.txt des Ziels und reservieren einen Zeitpunkt
+    (``redirects.RedirectBlockedError`` bzw. ``RedirectBusyError``, Issue #1027). Gewartet wird bis ``deadline``
+    (``time.monotonic()``, dieselbe Frist wie bei der Prüfung vorher), ohne Angabe ``max_wait`` für alle
+    Weiterleitungen zusammen.
     """
     return safe_fetch.download_to(
         target,
@@ -675,7 +678,9 @@ def download_live(
         timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=5.0, pool=5.0),
         headers=file_cache.download_headers(file_obj.body),
         user_agent=robots.user_agent_for(file_obj),
-        before_redirect=redirects.guard(sync_config=robots.sync_config_of(file_obj), max_wait=max_wait),
+        before_redirect=redirects.guard(
+            sync_config=robots.sync_config_of(file_obj), max_wait=max_wait, deadline=deadline
+        ),
     )
 
 
@@ -746,8 +751,8 @@ def abrufen(
 
     ``include_errors``: auch nicht fällige ``error`` (``cache_files --retry-errors``); ``include_evicted``: auch
     verdrängte (``cache_files --verdraengte``, #961); ``force``: jeder Zustand außer ``ok`` (Admin-Aktion von Hand).
-    ``max_wait``: so lange höchstens auf die Drossel je Host warten (sonst ``busy``,
-    Zustand wiederhergestellt).
+    ``max_wait``: so lange höchstens auf robots.txt und Drossel je Host warten, alle Weiterleitungen eingeschlossen
+    (sonst ``busy``, Zustand wiederhergestellt).
     """
     now = now or timezone.now()
     if is_excluded(file_obj):
@@ -787,6 +792,8 @@ def _abrufen_beansprucht(
         mark_present(file_obj)
         return SKIPPED
     sync_config = robots.sync_config_of(file_obj)
+    # Mit Höchstwartezeit eine Frist für robots.txt, Takt und alle Weiterleitungen zusammen
+    deadline = redirects.deadline_after(max_wait)
     try:
         decision = robots.check(
             url, robots.KIND_FILES, sync_config=sync_config, agent=robots.user_agent_for(file_obj), max_wait=max_wait
@@ -804,7 +811,7 @@ def _abrufen_beansprucht(
         restore(beanspruchung)
         return DISK_FULL
     # Drossel je Host über alle Prozesse (Ingestor, Vorschau, andere Quellen auf dem Host)
-    if not host_pacing.wait(url, sync_config=sync_config, max_wait=max_wait):
+    if not host_pacing.wait(url, sync_config=sync_config, max_wait=redirects.remaining(deadline)):
         restore(beanspruchung)
         return BUSY
 
@@ -819,7 +826,7 @@ def _abrufen_beansprucht(
                 url,
                 buffer,
                 headers=file_cache.download_headers(file_obj.body),
-                before_redirect=redirects.guard(sync_config=sync_config, max_wait=max_wait),
+                before_redirect=redirects.guard(sync_config=sync_config, deadline=deadline),
             )
         except TooLargeError:
             return fail(file_obj, beanspruchung, CODE_TOO_LARGE, f"> {file_cache.max_bytes() // 1024 // 1024} MB", now)

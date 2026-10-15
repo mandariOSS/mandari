@@ -22,7 +22,7 @@ from uuid import uuid4
 import httpx
 import pytest
 from mandari_oparl.pacing import host_intervals, host_of, interval_for_host, key
-from mandari_oparl.robots import KIND_API, RobotsTxt
+from mandari_oparl.robots import KIND_API, RobotsTxt, host_key
 from src.client import redirects
 from src.client.host_pacing import HostPacer, host_pacer
 from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED, OParlClient
@@ -85,6 +85,24 @@ class TestHostSchluessel:
     def test_gleicher_server_gleicher_schluessel(self, adresse: str) -> None:
         assert host_of(adresse) == "rat.example.de"
         assert key(adresse) == key("https://rat.example.de/")
+
+    @pytest.mark.parametrize(
+        ("adresse", "schluessel"),
+        [
+            ("https://RIS.example.de:443/oparl", "https://ris.example.de"),
+            ("https://ris.example.de./a.pdf", "https://ris.example.de"),
+            ("https://nutzer:geheim@ris.example.de/x", "https://ris.example.de"),
+            ("http://ris.example.de:80/", "http://ris.example.de"),
+            ("http://ris.example.de/", "http://ris.example.de"),
+            ("https://ris.example.de:8443/", "https://ris.example.de:8443"),
+            ("http://ris.example.de:443/", "http://ris.example.de:443"),
+            ("https://[2001:db8::1]:443/", "https://[2001:db8::1]"),
+            ("https://bürgerinfo.example.de/bi/", "https://xn--brgerinfo-q9a.example.de"),
+        ],
+    )
+    def test_robots_schluessel_ohne_standardport(self, adresse: str, schluessel: str) -> None:
+        """Eine robots.txt je Schema, Host und Port (RFC 9309): Standardport und Schreibweise laden sie nicht neu."""
+        assert host_key(adresse) == schluessel
 
     def test_internationaler_name_wie_in_weiterleitungen(self) -> None:
         assert host_of("https://bürgerinfo.example.de/bi/") == host_of(str(httpx.URL("https://bürgerinfo.example.de/")))
@@ -228,17 +246,23 @@ class TestOParlClient:
                 return httpx.Response(301, headers={"Location": ziel})
             if "mandari" in agent:
                 return httpx.Response(403)
-            return httpx.Response(302, headers={"Location": "https://rat.example.de/login"})
+            return httpx.Response(302, headers={"Location": "https://rat.example.de/login?sid=geheim"})
 
         async with OParlClient(max_concurrent=1, wait_time=0) as client:
             assert client._client is not None
             await client._client.aclose()
             client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), headers={"User-Agent": UA})
             result = await client.fetch(start)
+            zweiter = await client.fetch(ziel, use_cache=False)
 
         neutrale = [(url, agent) for url, agent in gesehen if "mandari" not in agent]
         assert neutrale == [(ziel, f"python-httpx/{httpx.__version__}")], "genau eine, an die Adresse mit 403"
         assert result.status_code == 403
+        # Die Weiterleitung belegt keine Sperre (am Ziel könnte ebenfalls 403 stehen): unklar, kein Befund
+        assert result.error_kind is None and client.error_kind is None
+        assert "weitergeleitet (HTTP 302 nach https://rat.example.de/login)" in (result.error or "")
+        assert "geheim" not in (result.error or ""), "ohne Query-String"
+        assert zweiter.error_kind is None and "unklar" in (zweiter.error or "")
 
 
 class TestRobotsTxtSelbst:
@@ -456,4 +480,24 @@ class TestSondierung:
 
         neutrale = [pfad for pfad, agent in gesehen if "mandari" not in agent]
         assert neutrale == ["/bi/"], "eine Vergleichsanfrage an die Adresse mit 403, ohne Weiterleitung"
-        assert r.ua_blocked is True
+        # Eine Weiterleitung belegt keine Sperre: Am Ziel könnte ebenfalls 403 stehen (unklar, kein Befund)
+        assert r.ua_blocked is False
+        assert any("weitergeleitet (HTTP 302 nach /bi/start.asp)" in n and "unklar" in n for n in r.notes)
+
+    @pytest.mark.parametrize(("status", "gesperrt"), [(200, True), (204, True), (404, False), (403, False)])
+    async def test_vergleichsanfrage_nur_2xx_ist_ua_sperre(
+        self, monkeypatch: pytest.MonkeyPatch, status: int, gesperrt: bool
+    ) -> None:
+        monkeypatch.setattr(rp.settings, "oparl_ua_probe_enabled", True)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/robots.txt":
+                return httpx.Response(404)
+            if "mandari" in request.headers.get("User-Agent", ""):
+                return httpx.Response(403)
+            return httpx.Response(status)
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
+
+        assert r.ua_blocked is gesperrt

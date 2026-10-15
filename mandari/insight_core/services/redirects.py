@@ -10,7 +10,8 @@ und der Abruf der robots.txt senden deshalb ohne automatische Weiterleitung und 
   trägt, und der Ausnahme der Quelle) und reserviert danach einen Zeitpunkt in der Drossel je Host
   (``host_pacing``, Abstand der Quelle). Die robots.txt eines neuen Hosts wird dabei im selben Takt geladen.
 - Sperrt die robots.txt das Ziel oder ist sie nicht erreichbar, folgen wir nicht (:class:`RedirectBlockedError`);
-  findet die Drossel innerhalb von ``max_wait`` keinen Zeitpunkt, ebenfalls nicht (:class:`RedirectBusyError`).
+  findet die Drossel innerhalb der Frist keinen Zeitpunkt, ebenfalls nicht (:class:`RedirectBusyError`). Die Frist
+  (``deadline`` bzw. ``max_wait``) gilt für alle Weiterleitungen eines Abrufs zusammen, nicht je Schritt.
   Beide sind ``httpx.RequestError``: Wer sie nicht eigens behandelt, wertet sie wie einen Netzfehler (später
   erneut), nie als Abruf.
 - Höchstens :data:`MAX_REDIRECTS` Weiterleitungen je Abruf, danach ``httpx.TooManyRedirects``.
@@ -22,6 +23,7 @@ Ereignis-Hook des Clients. Die erste Anfrage prüfen und takten die Aufrufer sel
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import Any
@@ -96,20 +98,35 @@ def stream(
         response.close()
 
 
+def remaining(deadline: float | None) -> float | None:
+    """Restzeit bis ``deadline`` (``time.monotonic()``), nie negativ; ``None`` ohne Frist."""
+    return None if deadline is None else max(0.0, deadline - time.monotonic())
+
+
+def deadline_after(max_wait: float | None) -> float | None:
+    """Frist ``max_wait`` Sekunden ab jetzt (``time.monotonic()``); ``None`` ohne Höchstwartezeit."""
+    return None if max_wait is None else time.monotonic() + max_wait
+
+
 def guard(
     *,
     sync_config: Any = None,
     kind: str = KIND_FILES,
     max_wait: float | None = None,
+    deadline: float | None = None,
     check_robots: bool = True,
 ) -> BeforeRedirect:
     """
     ``before_redirect`` für :func:`send`: robots.txt des Ziels prüfen (Art ``kind``, Kennung der Anfrage, Ausnahme
     aus ``sync_config``), dann einen Zeitpunkt für den Ziel-Host reservieren (Abstand aus ``sync_config``).
 
-    ``max_wait``: höchstens so lange auf robots.txt und Drossel warten (Web-Anfragen), sonst
-    :class:`RedirectBusyError`. ``check_robots=False`` nur für den Abruf der robots.txt selbst (immer erlaubt).
+    Wartezeiten auf robots.txt und Drossel (Web-Anfragen) teilen sich eine Frist über alle Weiterleitungen: ``deadline``
+    (``time.monotonic()``, etwa gemeinsam mit der Prüfung vor der ersten Anfrage), sonst ``max_wait`` Sekunden ab
+    dem Aufruf von ``guard``. Jeder Schritt wartet höchstens die Restzeit, sonst :class:`RedirectBusyError`. Ohne
+    beides wird ohne Grenze gewartet. ``check_robots=False`` nur für den Abruf der robots.txt selbst (immer erlaubt).
     """
+    if deadline is None:
+        deadline = deadline_after(max_wait)
 
     def before_redirect(request: httpx.Request) -> None:
         from . import robots, safe_fetch
@@ -123,12 +140,12 @@ def guard(
         if check_robots:
             agent = request.headers.get("User-Agent") or robots.USER_AGENT
             try:
-                decision = robots.check(url, kind, sync_config=sync_config, agent=agent, max_wait=max_wait)
+                decision = robots.check(url, kind, sync_config=sync_config, agent=agent, max_wait=remaining(deadline))
             except host_pacing.PacingBusyError:
                 raise RedirectBusyError("Drossel je Host: kein freier Zeitpunkt", request=request) from None
             if not decision.allowed:
                 raise RedirectBlockedError(decision, request=request)
-        if not host_pacing.wait(url, sync_config=sync_config, max_wait=max_wait):
+        if not host_pacing.wait(url, sync_config=sync_config, max_wait=remaining(deadline)):
             raise RedirectBusyError("Drossel je Host: kein freier Zeitpunkt", request=request)
 
     return before_redirect

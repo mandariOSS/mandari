@@ -274,12 +274,100 @@ async def test_horizont_je_host_bleibt_kurz(echte_drossel, monkeypatch):
     assert max(gewartet) <= 2 * 0.05 + 0.03
 
 
+async def _belegt(url: str) -> bool:
+    """Ist die Grenze für den Host von ``url`` ausgeschöpft? (kein Platz binnen 50 ms)"""
+
+    async def platz() -> None:
+        async with host_pacer.limit(url, 1.0):
+            pass
+
+    try:
+        await asyncio.wait_for(platz(), timeout=0.05)
+    except TimeoutError:
+        return True
+    return False
+
+
 async def test_andere_hosts_teilen_die_grenze_nicht(echte_drossel, monkeypatch):
     monkeypatch.setattr(settings, "host_max_concurrent", 1)
-    a = host_pacer.limit("https://a.example/x", 1.0)
-    b = host_pacer.limit("https://b.example/x", 1.0)
-    async with a, b:
-        assert host_pacer.limit("https://A.example/y", 1.0) is a
+    async with host_pacer.limit("https://a.example/x", 1.0), host_pacer.limit("https://b.example/x", 1.0):
+        assert await _belegt("https://A.example:443/y"), "derselbe Server in anderer Schreibweise teilt die Grenze"
+        assert not await _belegt("https://c.example/y")
+    assert not await _belegt("https://a.example/x")
     # Ohne Drossel keine Grenze
     async with host_pacer.limit("https://a.example/x", 0), host_pacer.limit("https://a.example/x", 0):
         pass
+
+
+async def test_platz_zieht_bei_weiterleitung_zum_ziel_host(echte_drossel, monkeypatch):
+    """
+    Die Grenze gilt auch für das Ziel einer Weiterleitung (Issue #1027): Leiten mehrere Hosts auf denselben
+    Datei-Host weiter, sind dort trotzdem höchstens ``host_max_concurrent`` Anfragen offen. Der Platz beim
+    Ausgangshost wird dabei frei.
+    """
+    monkeypatch.setattr(settings, "host_max_concurrent", 1)
+    async with host_pacer.limit("https://rat.example.de/a.pdf", 1.0) as platz:
+        await platz.move_to("https://rat.example.de/b.pdf")  # derselbe Host: Platz bleibt
+        assert await _belegt("https://rat.example.de/x")
+        await platz.move_to("https://dateien.example.org/a.pdf")
+        assert await _belegt("https://dateien.example.org/x"), "der Ziel-Host ist belegt"
+        assert not await _belegt("https://rat.example.de/x"), "der Ausgangshost ist wieder frei"
+    assert not await _belegt("https://dateien.example.org/x")
+
+
+async def test_weiterleitungen_in_gegenrichtung_blockieren_nicht(echte_drossel, monkeypatch):
+    """Ein Abruf hält nie Plätze bei zwei Hosts zugleich: a → b und b → a gleichzeitig laufen beide durch."""
+    monkeypatch.setattr(settings, "host_max_concurrent", 1)
+    monkeypatch.setattr(settings, "request_interval", 0.01)
+    beide_gestartet = asyncio.Barrier(2)
+
+    async def abruf(start: str, ziel: str) -> None:
+        async with host_pacer.limit(start, 1.0) as platz:
+            await beide_gestartet.wait()
+            await platz.move_to(ziel)
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(
+        asyncio.gather(
+            abruf("https://a.example/x", "https://b.example/x"), abruf("https://b.example/y", "https://a.example/y")
+        ),
+        timeout=1,
+    )
+
+
+async def test_oparl_abruf_haelt_grenze_beim_ziel_host(echte_drossel, monkeypatch):
+    """Zwei Quellen leiten auf denselben Host weiter: Dort ist mit Grenze 1 nie mehr als eine Anfrage offen."""
+    monkeypatch.setattr(settings, "request_interval", 0.01)
+    monkeypatch.setattr(settings, "host_max_concurrent", 1)
+    monkeypatch.setattr(host_pacer, "_sleep", lambda _s: asyncio.sleep(0))
+    offen: dict[str, int] = {}
+    hoechstens: dict[str, int] = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        host = request.url.host
+        if host != "ziel.example.org":
+            return httpx.Response(302, headers={"Location": f"https://ziel.example.org/{host}{request.url.path}"})
+        offen[host] = offen.get(host, 0) + 1
+        hoechstens[host] = max(hoechstens.get(host, 0), offen[host])
+        await asyncio.sleep(0.01)
+        offen[host] -= 1
+        return httpx.Response(200, json={"id": str(request.url)})
+
+    client = OParlClient(max_concurrent=10)
+    client._semaphore = asyncio.Semaphore(10)
+    client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+    try:
+        await asyncio.wait_for(
+            asyncio.gather(
+                *(
+                    client.fetch(f"https://{quelle}.example.de/oparl/p/{i}", use_cache=False)
+                    for quelle in ("eins", "zwei", "drei")
+                    for i in range(3)
+                )
+            ),
+            timeout=10,
+        )
+    finally:
+        await client._client.aclose()
+
+    assert hoechstens == {"ziel.example.org": 1}

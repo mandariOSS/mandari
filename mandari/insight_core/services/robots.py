@@ -88,16 +88,18 @@ def _fetch(
 ) -> tuple[int | None, bytes]:
     """
     robots.txt abrufen. Der Abruf zählt wie jede Anfrage an den Host (Drossel je Host), auch jede Weiterleitung
-    (höchstens fünf, :mod:`~insight_core.services.redirects`); mit ``max_wait`` wird höchstens so lange gewartet,
-    sonst folgt :class:`~insight_core.services.host_pacing.PacingBusyError`.
+    (höchstens fünf, :mod:`~insight_core.services.redirects`); mit ``max_wait`` wird insgesamt höchstens so lange
+    gewartet, sonst folgt :class:`~insight_core.services.host_pacing.PacingBusyError`.
     """
     from . import host_pacing, redirects
     from .safe_fetch import guarded_client
 
     target = robots_url(url)
+    # Eine Frist für die robots.txt und alle ihre Weiterleitungen
+    deadline = redirects.deadline_after(max_wait)
     if not host_pacing.wait(target, sync_config=sync_config, max_wait=max_wait):
         raise host_pacing.PacingBusyError(target)
-    before_redirect = redirects.guard(sync_config=sync_config, max_wait=max_wait, check_robots=False)
+    before_redirect = redirects.guard(sync_config=sync_config, deadline=deadline, check_robots=False)
     try:
         with guarded_client(timeout=_TIMEOUT) as client:
             request = client.build_request("GET", target, headers={"User-Agent": agent, "Accept": "text/plain"})

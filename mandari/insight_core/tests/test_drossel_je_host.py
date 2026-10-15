@@ -12,6 +12,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Iterator
 from io import StringIO
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
@@ -20,7 +21,7 @@ from django.core.management import call_command
 from django.test import Client
 
 from insight_core.models import OParlBody, OParlFile, OParlSource
-from insight_core.services import file_cache, file_robots, host_pacing
+from insight_core.services import file_cache, file_robots, host_pacing, redirects
 
 pytestmark = pytest.mark.django_db
 
@@ -271,12 +272,20 @@ def test_vorschau_laedt_robots_txt_nur_mit_hoechstwartezeit(
     for _ in range(2):
         host_pacing.wait("https://rat.example.de/oparl/papers")
     vorher = len(uhr.geschlafen)
+
+    # Ab hier läuft die Uhr beim Warten weiter; die Frist der Vorschau (redirects) liest dieselbe Uhr
+    def schlafen(sekunden: float) -> None:
+        uhr.sleep(sekunden)
+        uhr.jetzt += sekunden
+
+    monkeypatch.setattr("insight_core.services.host_pacing.time.sleep", schlafen)
+    monkeypatch.setattr(redirects, "time", SimpleNamespace(monotonic=uhr))
     response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
     assert response.status_code == 503
     assert response["Retry-After"] == "30"
     assert robots_abrufe == ["/robots.txt"]
     # robots.txt und Dokument zusammen höchstens FILE_PROXY_PACE_MAX_WAIT_SECONDS
-    assert all(sekunden <= 2 for sekunden in uhr.geschlafen[vorher:])
+    assert sum(uhr.geschlafen[vorher:]) <= 2
 
 
 def test_zusammenfassung_wartet_nicht_auf_den_takt(uhr: _Uhr, settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -325,13 +325,19 @@ class TextExtractor:
         if not await self._mark_started(file_id):
             return False
 
-        # Weiterleitungen: Ziel erst nach seiner robots.txt (gleiche Kennung und Ausnahme) und im Takt abrufen (#1027)
-        before_redirect = redirects.check_and_pace(
-            None, user_agent=_user_agent_of(headers), kind=KIND_FILES, override=options.robots_override, pace=pace
-        )
         try:
             # Drossel je Host: Dateien zählen wie jede andere Anfrage an die Quelle (mit Grenze je Host)
-            async with host_pacer.limit(download_url, interval):
+            async with host_pacer.limit(download_url, interval) as slot:
+                # Weiterleitungen: Ziel erst nach seiner robots.txt (gleiche Kennung und Ausnahme) und im Takt
+                # abrufen; der Platz in der Grenze je Host zieht mit zum Ziel-Host (#1027)
+                before_redirect = redirects.check_and_pace(
+                    None,
+                    user_agent=_user_agent_of(headers),
+                    kind=KIND_FILES,
+                    override=options.robots_override,
+                    pace=pace,
+                    slot=slot,
+                )
                 await pace(download_url)
                 downloaded = await self._download_to_file(download_url, headers, before_redirect)
         except redirects.RedirectRefusedError as refused:

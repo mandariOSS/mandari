@@ -36,6 +36,7 @@ from typing import Any
 from urllib.parse import quote, urlsplit
 
 from .crawler import LEGACY_TOKENS, PRODUCT_TOKEN
+from .pacing import host_of
 
 #: Höchstens so viele Bytes einer robots.txt werden ausgewertet (RFC 9309 verlangt mindestens 500 KiB)
 MAX_BYTES = 500 * 1024
@@ -273,10 +274,34 @@ def robots_url(url: str) -> str:
     return f"{parts.scheme or 'https'}://{parts.netloc}/robots.txt"
 
 
+#: Standardports je Schema: ``https://host:443/`` und ``https://host/`` haben dieselbe robots.txt
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
 def host_key(url: str) -> str:
-    """Schlüssel für Zwischenspeicher: Schema und Host (mit Port), kleingeschrieben."""
+    """
+    Schlüssel für Zwischenspeicher der robots.txt: Schema, Host und Port, vereinheitlicht.
+
+    Eine robots.txt gilt je Schema, Host und Port (RFC 9309). Der Hostname wird wie in
+    :func:`mandari_oparl.pacing.host_of` vereinheitlicht (Kleinschreibung, ohne Punkt am Ende, ohne Zugangsdaten,
+    IDNA), Standardports (http 80, https 443) entfallen. ``https://RIS.example.de.:443/`` und
+    ``https://ris.example.de/`` laden ihre robots.txt also nur einmal; ein anderer Port bleibt ein eigener Eintrag.
+    """
     parts = urlsplit(url)
-    return f"{(parts.scheme or 'https').lower()}://{parts.netloc.lower()}"
+    scheme = (parts.scheme or "https").lower()
+    as_written = f"{scheme}://{parts.netloc.lower()}"
+    try:
+        hostname, port = parts.hostname, parts.port
+    except ValueError:  # ungültiger Port: wie geschrieben
+        return as_written
+    if not hostname:
+        return as_written
+    host = host_of(url)
+    if ":" in host:  # IPv6-Adresse
+        host = f"[{host}]"
+    if port is not None and port != _DEFAULT_PORTS.get(scheme):
+        host = f"{host}:{port}"
+    return f"{scheme}://{host}"
 
 
 @dataclass(frozen=True)

@@ -11,6 +11,8 @@ ohne automatische Weiterleitung und folgen ihr hier:
   die robots.txt des Ziel-Hosts (wie vor der ersten Anfrage, mit derselben Kennung und Ausnahme der Quelle) und
   reserviert danach einen Zeitpunkt in der Drossel je Host. Sperrt die robots.txt das Ziel oder ist sie nicht
   erreichbar, folgen wir nicht (:class:`RedirectRefusedError`).
+- Mit ``slot`` (``host_pacer.limit``) zieht der Platz des Abrufs in der Grenze gleichzeitiger Anfragen je Host
+  vorher zum Ziel-Host um: Die Grenze gilt auch dort, nicht nur beim Host der ersten Anfrage.
 - Höchstens :data:`MAX_REDIRECTS` Weiterleitungen je Abruf, danach ``httpx.TooManyRedirects``.
 
 Die erste Anfrage prüft und taktet der Aufrufer selbst, wie bisher.
@@ -19,9 +21,13 @@ Die erste Anfrage prüft und taktet der Aufrufer selbst, wie bisher.
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
 
 import httpx
 from mandari_oparl.robots import Decision, RobotsOverride
+
+if TYPE_CHECKING:
+    from src.client.host_pacing import HostSlot
 
 #: Höchstens so viele Weiterleitungen je Abruf (RFC 9309 verlangt für die robots.txt mindestens fünf)
 MAX_REDIRECTS = 5
@@ -71,16 +77,22 @@ def check_and_pace(
     kind: str,
     override: RobotsOverride | None,
     pace: Callable[[str], Awaitable[None]],
+    slot: HostSlot | None = None,
 ) -> Callable[[str], Awaitable[None]]:
     """
     ``before_redirect`` für :func:`send`: robots.txt des Ziels prüfen (Art ``kind``, Kennung ``user_agent``,
     Ausnahme der Quelle), dann mit ``pace`` einen Zeitpunkt für den Ziel-Host reservieren. Die robots.txt eines
     neuen Hosts wird dabei im selben Takt geladen (``pace``) wie jede andere Anfrage.
+
+    ``slot``: Platz des Abrufs in der Grenze gleichzeitiger Anfragen je Host (``host_pacer.limit``). Er zieht vor
+    allem anderen zum Ziel-Host um, sodass die Grenze auch dort gilt, schon für den Abruf seiner robots.txt.
     """
 
     async def before_redirect(url: str) -> None:
         from src.client.robots import robots_gate  # robots lädt die robots.txt selbst über send()
 
+        if slot is not None:
+            await slot.move_to(url)
         decision = await robots_gate.decide(client, url, user_agent=user_agent, kind=kind, override=override, pace=pace)
         if not decision.allowed:
             raise RedirectRefusedError(url, decision)
