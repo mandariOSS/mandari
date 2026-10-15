@@ -1935,7 +1935,8 @@ class SyncOrchestrator:
         optional führt (``OPTIONAL_LIST_TYPES``), als „nicht vorhanden“, nicht als Lücke: Die Liste landet in
         ``list_check`` und wird am Ende des Laufs in ``sync_config["missing_lists"]`` vermerkt
         (``_settle_missing_lists``); inkrementell fragt sie erst die tägliche Prüfung wieder an, der Vollabgleich
-        jedes Mal. Wird eine vermerkte Liste ganz gelesen, wird der Vermerk gelöscht.
+        jedes Mal. Wird eine vermerkte Liste ganz gelesen, wird der Vermerk gelöscht; meldet SD.NET RIM auf den
+        Filter nur „keine Treffer“, bleibt er (Issue #1034).
 
         Pflichtlisten werden nie vermerkt. HTTP 404 ist dort eine Lücke (``RequiredListMissingError``). Ein
         Fehlerobjekt gilt wie bisher als leere Liste, solange eine andere Liste der Kommune lesbar war; sonst als
@@ -1962,6 +1963,11 @@ class SyncOrchestrator:
             return
         if not readable:
             list_check.readable += 1  # lesbar, nur leer
+        if list_url in list_check.lists.known and list_url in client.filtered_empty_lists:
+            # SD.NET RIM: „keine Treffer“ auf den Filter sagt nicht, ob es die vermerkte Liste gibt (Issue #1034). Der
+            # Vermerk bleibt und gilt ab jetzt wieder einen Tag; Änderungen fände die nächste Prüfung (sieben Tage)
+            await self._remember_missing_list(list_check.lists, list_url, missing=True)
+            return
         await self._remember_missing_list(list_check.lists, list_url, missing=False)
 
     async def _settle_missing_lists(self, list_check: BodyListCheck, stats: dict[str, Any]) -> None:
