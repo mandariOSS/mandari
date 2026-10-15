@@ -91,6 +91,17 @@ class ListFetchError(Exception):
         super().__init__(f"Liste {list_url}{page} nicht abrufbar: {result.error}")
 
 
+class FetchWindowClosedError(ListFetchError):
+    """Das Zeitfenster des Vollabgleichs ist abgelaufen (``sync_config["full_sync_window"]``): keine weitere Seite."""
+
+    def __init__(self, list_url: str, page_url: str) -> None:
+        super().__init__(
+            list_url,
+            page_url,
+            FetchResult(url=page_url, data=None, status_code=0, error="Zeitfenster für den Vollabgleich abgelaufen"),
+        )
+
+
 @dataclass
 class HostHealth:
     """
@@ -290,8 +301,11 @@ class OParlClient:
         carry_modified_since: bool = False,
         request_interval: float | None = None,
         robots_override: RobotsOverride | None = None,
+        fetch_deadline: datetime | None = None,
     ) -> None:
         self.max_concurrent = max_concurrent
+        # Ende des Zeitfensters eines Vollabgleichs (UTC): danach holt fetch_list keine Seite mehr
+        self.fetch_deadline = fetch_deadline
         self.timeout = timeout or settings.oparl_request_timeout
         # Wartezeit je Abrufplatz vor jeder Anfrage (OPARL_WAIT_TIME); bei max_concurrent Plätzen bis zu
         # max_concurrent / wait_time Anfragen je Sekunde
@@ -745,6 +759,9 @@ class OParlClient:
             tried_modified_since = True
 
         while current_url:
+            if self.fetch_deadline is not None and datetime.now(UTC) >= self.fetch_deadline:
+                console.print(f"[yellow]{url}: Zeitfenster des Vollabgleichs abgelaufen, Liste bleibt offen[/yellow]")
+                raise FetchWindowClosedError(url, current_url)
             result = await self.fetch(current_url, use_cache=False)
 
             # Fallback: manche RIS (z. B. Stadt Münster) beantworten
