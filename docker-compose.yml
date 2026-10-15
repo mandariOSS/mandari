@@ -262,6 +262,7 @@ services:
       # Statistik je SQL-Abfrage (pg_stat_statements, Issue #1024): Welche Abfragen kosten die meiste Zeit?
       # Die Erweiterung legt die Migration common.0012 an. Abschalten mit POSTGRES_SHARED_PRELOAD_LIBRARIES=
       # (leer, deshalb "-" statt ":-"); wirkt erst nach einem Neustart des Datenbankdienstes (DEPLOYMENT.md).
+      # Der Wert ersetzt postgresql.conf und ALTER SYSTEM: dort schon geladene Bibliotheken mit aufführen.
       - -c
       - shared_preload_libraries=${POSTGRES_SHARED_PRELOAD_LIBRARIES-pg_stat_statements}
     environment:

@@ -210,7 +210,12 @@ def test_je_pruefung_ein_status_damit_kein_befund_einen_anderen_verdeckt(client:
 
 @pytest.mark.django_db
 def test_wiederholte_pruefung_im_fenster_ohne_datenbank(client: Client, mit_bedarf: Any) -> None:
-    """Issue #1024: Innerhalb des Cache-Fensters kostet ein Abruf keine Abfrage, auch nicht im Middleware-Stapel."""
+    """
+    Issue #1024: Innerhalb des Cache-Fensters kostet ein wiederholter Abruf keine Abfrage, auch nicht im
+    Middleware-Stapel. Der Test schützt nur gegen Rückschritte: Mit dem früheren Gesamt-Cache bestand er genauso. Dass
+    eine andere Prüfung im selben Fenster wirklich gerechnet wird, prüft
+    ``test_andere_pruefung_im_fenster_wird_gerechnet``.
+    """
     from django.db import connection
     from django.test.utils import CaptureQueriesContext
 
@@ -221,6 +226,30 @@ def test_wiederholte_pruefung_im_fenster_ohne_datenbank(client: Client, mit_beda
             zweite = client.get(pfad)
         assert erfasst.captured_queries == [], pfad
         assert (zweite.status_code, zweite.json()) == (erste.status_code, erste.json())
+
+
+@pytest.mark.django_db
+def test_andere_pruefung_im_fenster_wird_gerechnet(client: Client, mit_bedarf: Any) -> None:
+    """
+    Issue #1024: Wird im selben Cache-Fenster eine andere Prüfung abgerufen, rechnet der Abruf sie, statt sie aus dem
+    Ergebnis des vorigen zu nehmen. Mit dem früheren Gesamt-Cache scheiterte dieser Test: Der Abruf für
+    ``lebenszeichen`` rechnete alle Prüfungen mit, der für ``rueckstau`` kam danach ohne Abfrage aus dem Cache und zeigte
+    den neuen Rückstau erst nach dem Fenster.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    _alle_worker()
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 200
+    alt = _auftrag(TaskStatus.WARTEND)
+    Task.objects.filter(pk=alt.pk).update(run_after=timezone.now() - timedelta(seconds=status.MAX_TASK_WAIT + 60))
+
+    with CaptureQueriesContext(connection) as erfasst:
+        antwort = client.get("/health/worker/?pruefung=rueckstau")
+
+    assert erfasst.captured_queries, "rueckstau wird gerechnet"
+    assert antwort.status_code == 503, antwort.json()
+    assert antwort.json()["checks"]["rueckstau"]["ok"] is False
 
 
 @pytest.mark.django_db

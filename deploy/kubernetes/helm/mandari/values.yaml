@@ -252,7 +252,9 @@ postgres:
   password: ""          # leer = wird erzeugt
   # Beim Start geladene Bibliotheken (shared_preload_libraries). pg_stat_statements zählt Zeit und Aufrufe je
   # SQL-Abfrage (DEPLOYMENT.md, „Teuerste Abfragen“, Issue #1024); die Erweiterung legt die Migration an.
-  # Leer = keine. Eine Änderung startet die Datenbank neu. Verwaltete Datenbank: beim Anbieter einschalten.
+  # Der Wert ersetzt shared_preload_libraries aus postgresql.conf und ALTER SYSTEM: dort geladene Bibliotheken mit
+  # aufführen (kommagetrennt). Leer = kein Argument, dann gilt die Konfiguration des Servers. Eine Änderung, auch das
+  # erste Upgrade auf diese Vorgabe, startet die Datenbank sofort neu. Verwaltete Datenbank: beim Anbieter einschalten.
   sharedPreloadLibraries: pg_stat_statements
   storage:
     size: 20Gi

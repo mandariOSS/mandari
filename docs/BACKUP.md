@@ -182,6 +182,12 @@ docker exec mandari-backup sh -c \
 docker exec mandari-backup rm -rf /work/restore
 ```
 
+Der Dump enthält die Erweiterung `pg_stat_statements` (Issue #1024), und die darf nur ein
+Superuser anlegen. Mit der Rolle aus der mitgelieferten `docker-compose.yml` ist das kein
+Problem. Spielt eine Rolle ohne Superuser-Rechte ein (etwa eine verwaltete Datenbank), die
+Erweiterung über eine Inhaltsliste auslassen (`pg_restore -l … | grep -v pg_stat_statements`,
+dann `pg_restore -L …`); Einzelheiten in `DEPLOYMENT.md`, Abschnitt „Teuerste Abfragen“.
+
 Danach, **bevor** der Worker wieder startet, die Folgenummer anheben (Abschnitt „Journal und
 Aufträge“), dann Worker, Anwendung und Ingestor starten und den Suchindex neu aufbauen:
 

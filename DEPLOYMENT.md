@@ -351,7 +351,7 @@ Alles leitet sich vom Arbeitsspeicher des **Datenbankdienstes** ab
 | `POSTGRES_MAX_CONNECTIONS` | muss zur Summe aller Dienste passen | `100` |
 | `POSTGRES_MAX_WAL_SIZE` | mehr bedeutet seltenere Checkpoints | `2GB` |
 | `POSTGRES_TEMP_FILE_LIMIT` | Obergrenze für temporäre Dateien **je Sitzung**; deutlich unter dem freien Plattenplatz | `5GB` |
-| `POSTGRES_SHARED_PRELOAD_LIBRARIES` | beim Start geladene Bibliotheken; leer = keine (siehe „Teuerste Abfragen“) | `pg_stat_statements` |
+| `POSTGRES_SHARED_PRELOAD_LIBRARIES` | beim Start geladene Bibliotheken; ersetzt `postgresql.conf` und `ALTER SYSTEM`, leer = keine (siehe „Teuerste Abfragen“) | `pg_stat_statements` |
 
 **Die Falle bei `work_mem`:** Der Wert gilt je Sortiervorgang, und eine einzelne
 Abfrage kann mehrere davon haben. Im Extremfall belegt die Datenbank
@@ -417,12 +417,30 @@ durch `$1`, `$2` ersetzt) und zählt je Abfrage Aufrufe, Gesamt- und Durchschnit
 und gelesene Blöcke, über alle Datenbanken des Servers.
 
 - **Laden:** Die mitgelieferte `docker-compose.yml` startet PostgreSQL mit
-  `shared_preload_libraries=pg_stat_statements` (Helm-Chart: `postgres.sharedPreloadLibraries`).
+  `-c shared_preload_libraries=pg_stat_statements` (Helm-Chart: `postgres.sharedPreloadLibraries`).
   Die Einstellung wirkt **erst nach einem Neustart des Datenbankdienstes**
   (`docker compose up -d postgres` legt den Container neu an, die Anwendung ist dabei
-  einige Sekunden ohne Datenbank). Abschalten mit `POSTGRES_SHARED_PRELOAD_LIBRARIES=`
-  (leer) in der `.env`, ebenfalls mit Neustart. Weitere Bibliotheken kommagetrennt, etwa
-  `POSTGRES_SHARED_PRELOAD_LIBRARIES=pg_stat_statements,auto_explain`.
+  einige Sekunden ohne Datenbank). `update.sh` startet die Datenbank nicht neu; ein
+  `docker compose up -d` ohne Dienstnamen dagegen schon. Im Helm-Chart ändert schon das
+  Upgrade die Pod-Vorlage, PostgreSQL startet dabei sofort neu; wer das zu diesem Zeitpunkt
+  nicht will, setzt vorher `postgres.sharedPreloadLibraries: ""`.
+- **Vorrang vor der Konfiguration:** Ein Wert auf der Kommandozeile (`-c`) hat Vorrang vor
+  `postgresql.conf` und `ALTER SYSTEM`. Lädt der Server dort schon Bibliotheken (etwa
+  `auto_explain` oder `pg_cron`), gehören sie mit in die Variable, kommagetrennt:
+  `POSTGRES_SHARED_PRELOAD_LIBRARIES=pg_stat_statements,auto_explain`. Sonst fehlen sie nach
+  dem Neustart. Das gilt ebenso für `postgres.sharedPreloadLibraries` im Helm-Chart. Deshalb
+  **vor dem Neustart** nachsehen, was heute geladen ist (im Cluster entsprechend mit
+  `kubectl exec`):
+
+  ```bash
+  docker compose exec postgres psql -U mandari -d mandari -c "SHOW shared_preload_libraries;"
+  ```
+
+- **Abschalten:** `POSTGRES_SHARED_PRELOAD_LIBRARIES=` (leer) in der `.env`, ebenfalls mit
+  Neustart. Leer heißt hier wirklich keine Bibliothek: Auch was in `postgresql.conf` oder per
+  `ALTER SYSTEM` eingetragen ist, wird nicht geladen. Im Helm-Chart entfällt bei
+  `postgres.sharedPreloadLibraries: ""` das Argument ganz, dort gilt dann wieder die
+  Konfiguration des Servers.
 - **Anlegen:** Die Erweiterung legt `migrate` an (Migration `common.0012`), in der
   Datenbank von mandari. Fehlen der Datenbankrolle die Rechte (die Erweiterung braucht
   einen Superuser bzw. die Admin-Rolle eines verwalteten Dienstes) oder die Erweiterung
@@ -431,6 +449,25 @@ und gelesene Blöcke, über alle Datenbanken des Servers.
 - **Verwaltete Datenbanken** (RDS, Azure, Google Cloud SQL usw.): `pg_stat_statements` in
   den Parametern des Dienstes einschalten (meist schon vorgeladen) und die Erweiterung mit
   der Admin-Rolle anlegen.
+- **Sicherung ohne Superuser einspielen:** Ist die Erweiterung angelegt, enthält jeder
+  `pg_dump` der Datenbank `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` und
+  `COMMENT ON EXTENSION pg_stat_statements`. Die Erweiterung ist nicht „trusted“: Spielt eine
+  Rolle ohne Superuser-Rechte den Dump ein (etwa beim Umzug auf eine verwaltete Datenbank),
+  scheitern beide Befehle. `psql -v ON_ERROR_STOP=1` bricht dort ab, `pg_restore` spielt den
+  Rest ein und endet trotzdem mit einem Fehler. Dann die Erweiterung bei Bedarf vorher mit der
+  Admin-Rolle anlegen und beide Befehle auslassen:
+
+  ```bash
+  # SQL-Dump (backup.sh: postgres.sql)
+  grep -vE '^(CREATE EXTENSION IF NOT EXISTS|COMMENT ON EXTENSION) pg_stat_statements' postgres.sql \
+    | psql -v ON_ERROR_STOP=1 -h <host> -U <rolle> -d mandari
+  # Custom-Format (Backup-Stack: mandari.dump): Inhaltsliste ohne die Erweiterung
+  pg_restore -l mandari.dump | grep -v pg_stat_statements > ohne-pgss.list
+  pg_restore -L ohne-pgss.list -h <host> -U <rolle> -d mandari mandari.dump
+  ```
+
+  Mit Superuser (mitgelieferte `docker-compose.yml`, `./backup.sh --restore`,
+  Wiederherstellungstest des Backup-Stacks) ist nichts zu tun.
 - **Ohne die Bibliothek** läuft mandari unverändert. Nur die Abfrage der Statistik meldet
   dann `pg_stat_statements must be loaded via "shared_preload_libraries"`.
 

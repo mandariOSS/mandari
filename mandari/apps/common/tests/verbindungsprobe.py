@@ -15,6 +15,8 @@ Der zweite Teil braucht einen Test ohne umschließende Transaktion (``django_db(
 die Verbindung bewusst bestehen. Und er gilt nur, wo Django die Verbindung wirklich schließt: SQLite im Arbeitsspeicher
 (lokale Testläufe) schließt Django nie, dort prüft die Probe nur die Reihenfolge. In der CI (PostgreSQL mit Pool)
 prüft sie beides.
+
+``pool_erschoepft()`` baut die Ausnahme nach, mit der eine Abfrage nach dem Aufruf an einem erschöpften Pool scheitert.
 """
 
 from __future__ import annotations
@@ -24,9 +26,18 @@ from contextlib import contextmanager
 from typing import Any, cast
 
 import pytest
-from django.db import connection, connections
+from django.db import OperationalError, connection, connections
 
 from apps.common import db_connections
+
+
+def pool_erschoepft() -> OperationalError:
+    """So meldet Django einen erschöpften psycopg-Pool: ``OperationalError`` mit ``PoolTimeout`` als Ursache."""
+    from psycopg_pool import PoolTimeout
+
+    fehler = OperationalError("couldn't get a connection after 30.00 sec")
+    fehler.__cause__ = PoolTimeout("couldn't get a connection after 30.00 sec")
+    return fehler
 
 
 def _pool() -> Any:

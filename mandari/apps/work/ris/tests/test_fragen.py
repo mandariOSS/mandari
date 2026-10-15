@@ -11,6 +11,7 @@ geht kein Aufruf ins Netz. Der Endpunkt kommt nur aus ``endpunkt_fuer_work`` (Is
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -21,6 +22,7 @@ from django.urls import reverse
 
 from apps.common.ki_anbieter import KiEndpunkt
 from apps.common.models import AISettings
+from apps.common.tests.verbindungsprobe import pool_erschoepft
 from apps.tenants.models import Organization
 from apps.work.motions.ai_security import AIRateLimiter
 from apps.work.motions.models import Motion, OrganizationAITokenUsage
@@ -212,6 +214,43 @@ def test_fehlschlag_mit_verbrauch_aus_dem_chat_dienst(
     monkeypatch.setattr(chat_service, "process_chat_message", abbruch)
     fragen.beantworten(org, mitglied, "Welche Gremien gibt es in der Stadt?", stadt.body)
     assert OrganizationAITokenUsage.get_tokens_used(org, OrganizationAITokenUsage.PERIOD_MONTH) == 750
+
+
+def test_antwort_auch_wenn_das_buchen_am_erschoepften_pool_scheitert(
+    org: Any, stadt: Musterstadt, mitglied: Any, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """
+    Issue #1024: Scheitert das Buchen nach dem KI-Aufruf am erschöpften Pool, kommt die Antwort trotzdem; die Warnung
+    nennt den Grund ohne Frage, Person oder Organisation. Andere Fehler beim Buchen gehen weiter nach oben.
+    """
+    from apps.work.motions.services import MotionAIService
+
+    def erschoepft(self: Any, total_tokens: int) -> None:
+        raise pool_erschoepft()
+
+    monkeypatch.setattr(MotionAIService, "verbrauch_buchen", erschoepft)
+    anbieter(monkeypatch, *_sitzungen_dieser_woche())
+    with caplog.at_level(logging.WARNING, logger="apps.work.ris.fragen"):
+        antwort = fragen.beantworten(org, mitglied, "Welche Sitzungen finden diese Woche statt?", stadt.body)
+
+    assert antwort.html and not antwort.hinweis
+    assert f"/work/{org.slug}/ris/meetings/{stadt.rat_sitzung.pk}/" in antwort.html
+    warnungen = [r.getMessage() for r in caplog.records if r.name == "apps.work.ris.fragen"]
+    assert len(warnungen) == 1 and "Verbrauch nicht gebucht (Pool erschöpft" in warnungen[0], warnungen
+    assert not any(teil in warnungen[0] for teil in ("Sitzungen", org.slug, org.name, "fragen@example.org"))
+
+    # Auch nach einem Fehlschlag bleibt es beim festen Hinweis
+    anbieter(monkeypatch, werkzeuge(("gremien", {})), ValueError("keine Antwort"), ValueError("keine Antwort"))
+    fehler = fragen.beantworten(org, mitglied, "Welche Gremien gibt es in der Stadt?", stadt.body)
+    assert fehler.hinweis == fragen.NICHT_ERREICHBAR
+
+    def kaputt(self: Any, total_tokens: int) -> None:
+        raise RuntimeError("kein Datenbankfehler")
+
+    monkeypatch.setattr(MotionAIService, "verbrauch_buchen", kaputt)
+    anbieter(monkeypatch, *_sitzungen_dieser_woche())
+    with pytest.raises(RuntimeError):
+        fragen.beantworten(org, mitglied, "Welche Sitzungen finden diese Woche statt?", stadt.body)
 
 
 def test_ohne_javascript_eigene_seite_get_fuehrt_zur_suche(
