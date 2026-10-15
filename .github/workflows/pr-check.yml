@@ -1324,16 +1324,17 @@ jobs:
         run: |
           (cd mandari && uv lock --check)
           (cd ingestor && uv lock --check)
-      - name: pip-audit Django-Anwendung (blockierend bei bekannten Schwachstellen)
+      # Blockierend bei bekannten Schwachstellen; befristete Ausnahmen nur ohne korrigierte Version
+      # (mandari/pip-audit-ausnahmen.json, scripts/pip_audit_pruefen.py)
+      - name: pip-audit Django-Anwendung (blockierend, befristete Ausnahmen)
         run: |
           pip install pip-audit
           sh scripts/export_requirements.sh /tmp/mandari-requirements.txt
-          pip-audit -r /tmp/mandari-requirements.txt --no-deps --progress-spinner off
-      - name: pip-audit Ingestor (blockierend bei bekannten Schwachstellen)
+          python scripts/pip_audit_pruefen.py /tmp/mandari-requirements.txt
+      - name: pip-audit Ingestor (blockierend, befristete Ausnahmen)
         run: |
-          cd ingestor
-          uv export --frozen --no-emit-project --no-emit-package mandari-oparl --no-hashes --all-extras -o /tmp/ingestor-requirements.txt
-          pip-audit -r /tmp/ingestor-requirements.txt --no-deps --progress-spinner off
+          (cd ingestor && uv export --frozen --no-emit-project --no-emit-package mandari-oparl --no-hashes --all-extras -o /tmp/ingestor-requirements.txt)
+          python scripts/pip_audit_pruefen.py /tmp/ingestor-requirements.txt
       - name: npm audit (blockierend ab "high", Entwicklungswerkzeuge mit befristeten Ausnahmen)
         run: |
           (cd mandari && npm audit || true)
