@@ -673,9 +673,11 @@ def probe_ris(
                                 None,
                             )
                             if treffer is not None:
-                                cfg = dict(quelle.sync_config or {})
-                                cfg["probe"] = treffer.to_dict()
-                                await orchestrator.storage.update_source_sync_config(quelle.id, cfg)
+                                # Nur den eigenen Schlüssel setzen: Der Zensus läuft lange, ein ganzes sync_config
+                                # aus dem Stand vom Start überschriebe, was der Ingestor inzwischen gepflegt hat
+                                await orchestrator.storage.set_source_sync_config_value(
+                                    quelle.id, "probe", treffer.to_dict()
+                                )
             except Exception as e:  # ohne Datenbank bleibt der Zensus trotzdem nutzbar
                 console.print(f"[yellow]Registrierte Quellen nicht lesbar: {e}[/yellow]")
         return results, registriert

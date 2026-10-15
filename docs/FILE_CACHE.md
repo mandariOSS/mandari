@@ -65,7 +65,7 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_CACHE_MAX_MB` | 80 | Größere Dateien werden nicht gecacht, aber weiter durchgereicht |
 | `FILE_CACHE_MIN_FREE_GB` | 15 | Unter dieser Grenze wird nichts mehr geschrieben (Schutz des Systemlaufwerks) |
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
-| `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, 0 = aus) |
+| `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, nur langsamer: Werte unter 1 s gelten als 1 s; `0` hier = Drossel aus, nur Tests und Notfälle) |
 | `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange warten Vorschau und KI-Zusammenfassung höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After` bzw. die Bitte um einen neuen Versuch. Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
 | `FILE_STORE_LAYOUT` | `sha256` | Ablage nach SHA-256 mit Referenzzählung; `kommune` = bisheriges Layout je Kommune |

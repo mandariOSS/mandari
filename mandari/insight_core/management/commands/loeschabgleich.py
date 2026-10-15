@@ -120,9 +120,9 @@ class Command(EinmaligMixin, BaseCommand):
                 if not url:
                     continue
                 note = file_robots.exception_note(source)
-                status = file_robots.ALLOWED if note else file_robots.file_fetch_status(None, url, client)
+                status = file_robots.ALLOWED if note else file_robots.file_fetch_status(source, url, client)
                 if note:
-                    rules = file_robots.rules_for(url, client)
+                    rules = file_robots.rules_for(url, client, source.sync_config)
                     locked = rules.unreachable or not file_robots.is_allowed(rules, url)
                     line = f"{source.name}: Ausnahme ({note})" + (" – robots.txt sperrt" if locked else "")
                 else:

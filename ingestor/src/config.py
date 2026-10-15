@@ -70,8 +70,9 @@ class Settings(BaseSettings):
     # Wartezeit je Abrufplatz; gilt nur noch mit abgeschalteter Drossel (INGESTOR_REQUEST_INTERVAL=0)
     oparl_wait_time: float = 0.05
     # Drossel je Host über alle Quellen und Prozesse (src/client/host_pacing.py): Mindestabstand in Sekunden
-    # zwischen zwei Anfragen an denselben Host. Standard eine Anfrage je Sekunde; je Quelle abweichend über
-    # sync_config["request_interval"]. 0 schaltet die Drossel ab (nur für Tests und Notfälle).
+    # zwischen zwei Anfragen an denselben Host. Standard eine Anfrage je Sekunde; je Quelle über
+    # sync_config["request_interval"] nur langsamer (Werte unter einer Sekunde werden angehoben, Issue #1025).
+    # 0 schaltet die Drossel ab (nur für Tests und Notfälle).
     request_interval: float = Field(
         default=DEFAULT_INTERVAL,
         validation_alias=AliasChoices("INGESTOR_REQUEST_INTERVAL", "request_interval"),
@@ -83,6 +84,14 @@ class Settings(BaseSettings):
     host_max_concurrent: int = Field(
         default=2,
         validation_alias=AliasChoices("INGESTOR_HOST_MAX_CONCURRENT", "host_max_concurrent"),
+    )
+    # Änderungsfenster inkrementeller Läufe (Issue #1025): modified_since ist der Beginn des letzten vollständig
+    # erfolgreichen Abgleichs der Kommune abzüglich dieses Sicherheitsabstands in Minuten. Er fängt abweichende
+    # Uhren und Zeitzonenfehler der Quelle sowie spät sichtbare Änderungen ab. Je Quelle abweichend über
+    # sync_config["modified_since_margin_minutes"]. Ohne vollständigen Abgleich gilt das Fenster von sieben Tagen.
+    modified_since_margin_minutes: int = Field(
+        default=120,
+        validation_alias=AliasChoices("INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES", "modified_since_margin_minutes"),
     )
     oparl_etag_cache_enabled: bool = True
     oparl_modified_since_enabled: bool = True

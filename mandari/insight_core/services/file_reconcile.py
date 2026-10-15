@@ -51,7 +51,7 @@ from django.db.models import F, Q, QuerySet
 from django.utils import timezone
 from mandari_oparl.abgleich import GONE_STATUS, THROTTLE_STATUS, brake_engaged, looks_like_html
 
-from . import file_cache, file_robots
+from . import file_cache, file_robots, host_pacing, robots
 
 logger = logging.getLogger(__name__)
 
@@ -216,7 +216,12 @@ def _source_key(file_obj: Any) -> Any:
 
 
 class _Pacer:
-    """Mindestabstand zwischen zwei Anfragen an denselben Host."""
+    """
+    Mindestabstand zwischen zwei Anfragen an denselben Host in diesem Lauf (``--interval``). Zusätzlich reserviert
+    jede Anfrage ihren Zeitpunkt in der gemeinsamen Drossel je Host (``host_pacing`` in ``verify``/``head_check``,
+    Issue #1025): Der Abgleich zählt so zum Takt von höchstens einer Anfrage je Sekunde und Server, den auch Ingestor
+    und Dokument-Cache einhalten.
+    """
 
     def __init__(self, interval: float) -> None:
         self.interval = interval
@@ -351,6 +356,7 @@ def verify(file_obj: Any, client: httpx.Client, *, now: datetime | None = None, 
         return ROBOTS
     with tempfile.TemporaryFile() as tmp:
         try:
+            host_pacing.wait(url, sync_config=robots.sync_config_of(file_obj))  # gemeinsamer Takt je Host (#1025)
             status, size, sha256, content_type, head = _download(
                 client, url, tmp, file_cache.download_headers(file_obj.body)
             )
@@ -400,6 +406,7 @@ def head_check(file_obj: Any, client: httpx.Client, *, now: datetime | None = No
         return ROBOTS
     headers = file_cache.download_headers(file_obj.body)
     try:
+        host_pacing.wait(url, sync_config=robots.sync_config_of(file_obj))  # gemeinsamer Takt je Host (#1025)
         response = client.head(url, headers=headers)
     except httpx.HTTPError as exc:
         logger.info("Stichprobe %s: %s", file_obj.pk, type(exc).__name__)

@@ -135,13 +135,13 @@ class TestSourceFetchOptions:
     def test_gueltige_werte(self):
         options = SourceFetchOptions.from_sync_config(
             {
-                "request_interval": 0.5,
+                "request_interval": 2.5,
                 "list_params": {"size": 100},
                 "carry_modified_since": True,
                 "file_downloads": False,
             }
         )
-        assert options.request_interval == 0.5
+        assert options.request_interval == 2.5
         assert options.list_params == {"size": "100"}
         assert options.carry_modified_since is True
         assert options.file_downloads is False
@@ -149,7 +149,7 @@ class TestSourceFetchOptions:
             "list_params": {"size": "100"},
             "carry_modified_since": True,
             "robots_override": None,
-            "request_interval": 0.5,
+            "request_interval": 2.5,
         }
 
     def test_ungueltige_werte_gelten_als_nicht_gesetzt(self):
@@ -164,7 +164,7 @@ class TestSourceFetchOptions:
         assert options == SourceFetchOptions()
         assert SourceFetchOptions.from_sync_config({"request_interval": True}).request_interval is None
         assert SourceFetchOptions.from_sync_config({"request_interval": -1}).request_interval is None
-        assert SourceFetchOptions.from_sync_config({"request_interval": 0}).request_interval == 0.0
+        # Werte unter einer Sekunde, auch 0, hebt die Untergrenze an (tests/test_takt_untergrenze.py)
 
 
 # ---------------------------------------------------------------------------
