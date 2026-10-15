@@ -530,6 +530,22 @@ Verwaltungsbefehle) für alle Versandwege: Systemeinstellungen, `EMAIL_*`, eigen
   legitime Absender, auf `p=quarantine` und später `p=reject` umstellen.
 - HTML-Mails verstecken nur den Vorschautext (Preheader) im Posteingang, und nur, wenn er Inhalt hat.
 
+## Abrufe bei Ratsinformationssystemen
+
+Ingestor und Anwendung rufen die Ratsinformationssysteme Ihrer Quellen von der Adresse Ihres Servers ab: mit der
+Kennung `mandari-ingestor`, höchstens einer Anfrage je Sekunde und Server und nach den Regeln der robots.txt.
+Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die Einstellungen je Quelle
+(`sync_config`) und die Umgebungsvariablen dazu stehen in [`docs/ABRUFREGELN.md`](docs/ABRUFREGELN.md).
+
+- Setzen Sie `INGESTOR_USER_AGENT` auf eine Kennung mit Ihrer eigenen Kontaktadresse; ohne Angabe nennt der
+  User-Agent unsere Infoseite und `support@mandari.de` ([Für Selbstbetreiber](docs/ABRUFREGELN.md#für-selbstbetreiber)).
+  Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`); ein
+  Eintrag nur in der `.env` wirkt nicht.
+- `docker-compose.yml` reicht dem Dienst `ingestor` nur die dort genannten Variablen durch (Abruf-Rhythmus über
+  `INGESTOR_INTERVAL`, `INGESTOR_FULL_SYNC_HOUR`, `INGESTOR_CONCURRENT`); weitere, etwa
+  `INGESTOR_REQUEST_INTERVAL`, ergänzen Sie in seinem Abschnitt `environment`, im Helm-Chart über
+  `ingestor.extraEnv`.
+
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 
 Ein Server ist der Standard. Für getrennte Daten-, Web- und Worker-Server gibt es
