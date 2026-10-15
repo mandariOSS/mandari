@@ -18,6 +18,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import urlparse
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from mandari_oparl import (
     ProcessedAgendaItem,
@@ -63,7 +64,7 @@ from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers.base import CONTENT_HASH_FIELD
-from src.storage.database import DatabaseStorage, day_stamp_lists_of, missing_lists_of
+from src.storage.database import DatabaseStorage, missing_lists_of, timed_lists_of
 from src.storage.events import start_correlation
 from src.storage.ris_events import content_fingerprint
 from src.sync.processor import OParlProcessor, session_location_id
@@ -141,16 +142,42 @@ def modified_since_for(sync_started: datetime | None, margin: timedelta, now: da
     return window
 
 
+#: Ortszeit der Quellen: Tagesbeginn für Tagesstempel und für Listen ohne nachgewiesene Uhrzeit (Issue #1025)
+SOURCE_TZ = ZoneInfo("Europe/Berlin")
+
+
+def day_start_window(modified_since: datetime, now: datetime | None = None) -> datetime:
+    """
+    Fensteranfang für Listen ohne nachgewiesene Uhrzeit (``TimedLists``, Issue #1025): ``modified_since`` auf den
+    Tagesbeginn abgerundet, und zwar auf den früheren von 00:00 Uhr Ortszeit und 00:00 Uhr UTC.
+
+    Trägt ``modified`` nur das Datum, ob als Ortszeit oder als UTC gezählt, liegt der Stempel jeder Änderung ab
+    ``modified_since`` damit im Fenster; das kurze Fenster fände ab etwa 02:00 Uhr nichts mehr vom selben Tag.
+    Nie weiter zurück als das bisherige Fenster (sieben Tage). Das bisherige Fenster (naiv) bleibt, wie es ist.
+    """
+    if modified_since.tzinfo is None:
+        return modified_since
+    utc = modified_since.astimezone(UTC)
+    utc_midnight = utc.replace(hour=0, minute=0, second=0, microsecond=0)
+    local_midnight = utc.astimezone(SOURCE_TZ).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    window = min(utc_midnight, local_midnight)
+    fallback = fallback_modified_since(now)
+    if window <= fallback.replace(tzinfo=UTC):
+        return fallback
+    return window
+
+
 #: Listen am Body, die OParl 1.1 als optional führt (Typnamen wie in ``_sync_entity_type``). Nur sie werden bei
-#: HTTP 404 oder Fehlerobjekt als „gibt es nicht“ vermerkt. Fehlt eine Pflichtliste (organization, person, meeting,
-#: paper), ist das eine Lücke, etwa ein Endpunkt, der während eines Updates der Quelle kurz 404 liefert (Issue #1025).
+#: HTTP 404 oder Fehlerobjekt als „gibt es nicht“ vermerkt. Antwortet eine Pflichtliste (organization, person,
+#: meeting, paper) mit 404, ist das eine Lücke, etwa ein Endpunkt, der während eines Updates der Quelle kurz 404
+#: liefert; ein Fehlerobjekt gilt dort wie bisher als leere Liste (``BodyListCheck``, Issue #1025).
 OPTIONAL_LIST_TYPES = frozenset({"membership", "agendaitem", "consultation", "file", "location", "legislativeterm"})
 #: Vermerkte Listen fragt auch der inkrementelle Lauf wieder an, wenn ihre letzte Prüfung so lange zurückliegt
 MISSING_LIST_RECHECK = timedelta(days=1)
 
 
 class RequiredListMissingError(Exception):
-    """Pflichtliste antwortet schon auf der ersten Seite mit HTTP 404 oder einem Fehlerobjekt: Lücke, kein Vermerk."""
+    """Pflichtliste antwortet schon auf der ersten Seite mit HTTP 404: Lücke, kein Vermerk."""
 
     def __init__(self, list_url: str, reason: str) -> None:
         self.list_url = list_url
@@ -198,32 +225,59 @@ class BodyListCheck:
     lists: MissingLists
     #: Listen dieses Laufs, die es nicht gibt (Adresse -> Grund)
     missing: dict[str, str] = field(default_factory=dict)
+    #: Pflichtlisten dieses Laufs, deren erste Seite ein OParl-Fehlerobjekt ist (Adresse -> Grund). Sie gelten wie
+    #: bisher als leer, solange eine andere Liste der Kommune lesbar war (OParl 1.0, more! rubin: „Requested class
+    #: doesn't exist.“); sonst als Lücke. HTTP 404 auf einer Pflichtliste bleibt immer eine Lücke.
+    required_errors: dict[str, str] = field(default_factory=dict)
     #: Listen dieses Laufs, deren erste Seite lesbar war
     readable: int = 0
 
 
 @dataclass
-class DayStampLists:
+class TimedLists:
     """
-    Listen einer Quelle, deren ``modified`` nur das Datum trägt (``sync_config["day_stamp_lists"]``, Issue #1025).
+    Listen einer Quelle, deren ``modified`` nachweislich die Uhrzeit trägt (``sync_config["timed_lists"]``,
+    Issue #1025). Nur sie fragt der inkrementelle Lauf mit dem kurzen Fenster ab „Beginn minus Abstand“ an.
 
-    Filtert die Quelle gegen solche Tagesstempel, fände ein Fenster ab „Beginn minus zwei Stunden“ ab etwa 02:00 Uhr
-    nichts mehr, was am selben Tag geändert wurde. Diese Listen fragt der inkrementelle Lauf deshalb weiter mit dem
-    Fenster von sieben Tagen an, die übrigen Listen der Kommune mit dem kurzen. Vermerkt wird eine Liste, sobald ein
-    Lauf dort nur Tagesstempel sieht, gelöscht, sobald er dort Uhrzeiten sieht. Sieht ein Lauf nichts (etwa nach
-    einer ruhigen Woche), bleibt der Vermerk.
+    Alle übrigen Listen bekommen dasselbe Fenster auf den Tagesbeginn abgerundet (``day_start_window``): Listen mit
+    reinen Tagesstempeln, Listen mit gemischten Stempeln und Listen, in denen noch kein Lauf eine Änderung gesehen
+    hat (etwa nach einer ruhigen Woche). Filtert die Quelle gegen Tagesstempel, fände das kurze Fenster ab etwa
+    02:00 Uhr nichts mehr vom selben Tag. Vermerkt wird eine Liste, sobald ein Lauf dort Änderungen der letzten
+    sieben Tage sieht und alle eine Uhrzeit tragen, gelöscht, sobald er dort eine solche Änderung nur mit Datum
+    sieht (auch 00:00 Uhr Ortszeit in UTC, etwa ``22:00:00Z``). Sieht ein Lauf dort nichts, bleibt es, wie es ist.
     """
 
     source_url: str
     known: set[str] = field(default_factory=set)
 
 
-def _day_stamp(value: Any) -> bool | None:
-    """Ist ``modified`` nur auf den Tag genau (00:00:00 oder ohne Uhrzeit)? ``None``: kein lesbarer Zeitpunkt."""
-    stamp = parse_datetime(value) if isinstance(value, str) else None
-    if stamp is None:
-        return None
+def _stamp(value: Any) -> datetime | None:
+    """Zeitpunkt aus ``modified``, sonst ``None``."""
+    return parse_datetime(value) if isinstance(value, str) else None
+
+
+def _as_utc(stamp: datetime) -> datetime:
+    """Zeitpunkt in UTC; ohne Zone als UTC gezählt (so sendet der Client naive Zeitpunkte)."""
+    return (stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)).astimezone(UTC)
+
+
+def _midnight(stamp: datetime) -> bool:
     return stamp.hour == 0 and stamp.minute == 0 and stamp.second == 0 and stamp.microsecond == 0
+
+
+def _day_stamp(stamp: datetime) -> bool:
+    """
+    Trägt ``modified`` nur das Datum? 00:00:00 Uhr in der angegebenen Zone, ohne Uhrzeit, oder 00:00 Uhr Ortszeit
+    in UTC angegeben (``2026-10-14T22:00:00Z``).
+    """
+    return _midnight(stamp) or (stamp.tzinfo is not None and _midnight(stamp.astimezone(SOURCE_TZ)))
+
+
+#: Nicht gespeicherte Objekte: so viele Kennungen je Typ nennt das Log
+UNSTORED_IDS_LOGGED = 5
+#: Ein nicht gespeichertes Objekt, dessen ``modified`` so weit vor dem Fenster der Liste liegt, liefert die Quelle
+#: ohne Filter. Der Abstand fängt falsch angegebene Zeitzonen ab (höchstens 14 Stunden).
+UNSTORED_BEFORE_WINDOW = timedelta(days=1)
 
 
 @dataclass
@@ -238,12 +292,24 @@ class BodyItemCheck:
     Quelle (``sync_complete``) zählen sie nicht: Sonst wiederholte eine dauerhaft fehlerhafte Mitgliedschaft den
     Vollabgleich jede Nacht statt im Abstand der Quelle (``full_sync_every_days``).
 
-    Dazu je Liste, wie genau ``modified`` ist (nur Datum oder mit Uhrzeit, ``DayStampLists``).
+    Ausgenommen sind Objekte, die die Quelle trotz Filter liefert, deren ``modified`` also mehr als einen Tag vor dem
+    Fenster der Liste liegt (Filter nicht unterstützt, Liste ohne Filter wie die Mitgliedschaften der
+    Bezirksregierung Köln). Sie kommen in jedem Lauf wieder; dauerhaft nicht speicherbare unter ihnen (Mitgliedschaft
+    mit Person einer anderen Quelle) hielten das Fenster sonst für immer bei sieben Tagen.
+
+    Dazu je Liste, wie genau ``modified`` der Änderungen der letzten sieben Tage ist (``TimedLists``).
     """
 
+    #: Nur ``modified`` ab hier zählt für die Genauigkeit (UTC); ältere Stempel, etwa übernommene Altdaten mit
+    #: 00:00 Uhr, sagen über heutige Änderungen nichts. ``None``: alle.
+    recent_since: datetime | None = None
     #: Nicht gespeicherte Objekte je Typ
     unstored: Counter[str] = field(default_factory=Counter)
-    #: Ältestes ``modified`` der nicht gespeicherten Objekte (UTC)
+    #: Kennungen nicht gespeicherter Objekte je Typ, höchstens ``UNSTORED_IDS_LOGGED``
+    unstored_ids: dict[str, list[str]] = field(default_factory=dict)
+    #: Davon trotz Filter geliefert (``modified`` vor dem Fenster der Liste); sie halten das Fenster nicht
+    unstored_before_window: int = 0
+    #: Ältestes ``modified`` der nicht gespeicherten Objekte, die das Fenster halten (UTC)
     oldest_unstored: datetime | None = None
     #: Ein nicht gespeichertes Objekt hatte kein lesbares ``modified``
     unstored_without_stamp: bool = False
@@ -251,40 +317,53 @@ class BodyItemCheck:
     stamps: dict[str, list[int]] = field(default_factory=dict)
 
     def note_stamp(self, list_url: str, item: dict[str, Any]) -> None:
-        day = _day_stamp(item.get("modified"))
-        if day is None:
+        stamp = _stamp(item.get("modified"))
+        if stamp is None:
+            return
+        if self.recent_since is not None and _as_utc(stamp) < self.recent_since:
             return
         counts = self.stamps.setdefault(list_url, [0, 0])
-        counts[0 if day else 1] += 1
+        counts[0 if _day_stamp(stamp) else 1] += 1
 
-    def note_unstored(self, entity_type: str, item: dict[str, Any]) -> None:
+    def note_unstored(self, entity_type: str, item: Any, window: datetime | None = None) -> None:
+        """
+        Nicht gespeichertes Objekt festhalten. ``window``: Fensteranfang, mit dem der Lauf die Liste angefragt hat
+        (``None`` im Vollabgleich). Ein Element, das kein Objekt ist, zählt wie eines ohne ``modified``.
+        """
         self.unstored[entity_type] += 1
-        modified = item.get("modified")
-        stamp = parse_datetime(modified) if isinstance(modified, str) else None
+        record = item if isinstance(item, dict) else {}
+        ids = self.unstored_ids.setdefault(entity_type, [])
+        if len(ids) < UNSTORED_IDS_LOGGED:
+            external_id = record.get("id")
+            ids.append(external_id if isinstance(external_id, str) and external_id else "ohne Kennung")
+        stamp = _stamp(record.get("modified"))
         if stamp is None:
             self.unstored_without_stamp = True
             return
-        stamp = (stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)).astimezone(UTC)
+        stamp = _as_utc(stamp)
+        if window is not None and stamp < _as_utc(window) - UNSTORED_BEFORE_WINDOW:
+            self.unstored_before_window += 1
+            return
         if self.oldest_unstored is None or stamp < self.oldest_unstored:
             self.oldest_unstored = stamp
 
     def day_stamped_lists(self) -> list[str]:
-        """Listen, deren gelesene ``modified`` alle nur das Datum tragen."""
-        return sorted(url for url, (day, timed) in self.stamps.items() if day and not timed)
+        """Listen mit mindestens einer gelesenen Änderung, deren ``modified`` nur das Datum trägt."""
+        return sorted(url for url, (day, _timed) in self.stamps.items() if day)
 
     def timed_lists(self) -> list[str]:
-        """Listen, in denen mindestens ein gelesenes ``modified`` eine Uhrzeit trägt."""
-        return sorted(url for url, (_day, timed) in self.stamps.items() if timed)
+        """Listen, deren gelesene Änderungen alle eine Uhrzeit tragen."""
+        return sorted(url for url, (day, timed) in self.stamps.items() if timed and not day)
 
     def window_start(self, started: datetime) -> datetime | None:
         """
         Neuer Anfang des Änderungsfensters nach einem Lauf, dessen Listen ganz gelesen wurden: Beginn des Laufs,
         bei nicht gespeicherten Objekten höchstens ihr ältestes ``modified``; ``None`` = stehen lassen.
         """
-        if not self.unstored:
-            return started
-        if self.unstored_without_stamp or self.oldest_unstored is None:
+        if self.unstored_without_stamp:
             return None
+        if self.oldest_unstored is None:
+            return started
         return min(started, self.oldest_unstored)
 
 
@@ -355,6 +434,8 @@ class SyncResult:
     # Sperr-/Störungsbefund des Laufs (Issue #123): Fehlerklasse und Statistik je Host
     error_kind: str | None = None
     host_findings: list[dict[str, Any]] = field(default_factory=list)
+    # Gelesen, aber nicht gespeichert, je Typ über alle Kommunen (Issue #1025), im Sync-Log unter ``unstored``
+    unstored: Counter[str] = field(default_factory=Counter)
 
 
 def sync_complete(body_results: list[dict[str, Any]], missed_bodies: list[str], client: OParlClient) -> bool:
@@ -684,7 +765,7 @@ class SyncOrchestrator:
                 body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
                 source_config = getattr(source_row, "sync_config", None)
                 missing_lists = MissingLists(url, missing_lists_of(source_config))
-                day_stamps = DayStampLists(url, day_stamp_lists_of(source_config))
+                timed_lists = TimedLists(url, timed_lists_of(source_config))
 
                 async def sync_body_wrapper(body_data):
                     async with body_semaphore:
@@ -696,7 +777,7 @@ class SyncOrchestrator:
                                 full=full,
                                 options=options,
                                 missing_lists=missing_lists,
-                                day_stamps=day_stamps,
+                                timed_lists=timed_lists,
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
@@ -720,6 +801,7 @@ class SyncOrchestrator:
                     result.agenda_items_synced += body_result.get("agenda_items", 0)
                     result.consultations_synced += body_result.get("consultations", 0)
                     result.errors.extend(body_result.get("errors", []))
+                    result.unstored.update(body_result.get("unstored") or {})
 
                 # Update sync timestamp; vollständig nur ohne Lücke (Issue #556)
                 complete = sync_complete(body_results, missed_bodies, client)
@@ -1000,7 +1082,7 @@ class SyncOrchestrator:
                 body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
                 source_config = getattr(source_row, "sync_config", None)
                 missing_lists = MissingLists(url, missing_lists_of(source_config))
-                day_stamps = DayStampLists(url, day_stamp_lists_of(source_config))
+                timed_lists = TimedLists(url, timed_lists_of(source_config))
 
                 async def sync_body_wrapper(body_data):
                     """Wrapper to catch exceptions per body."""
@@ -1013,7 +1095,7 @@ class SyncOrchestrator:
                                 full=full,
                                 options=options,
                                 missing_lists=missing_lists,
-                                day_stamps=day_stamps,
+                                timed_lists=timed_lists,
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
@@ -1038,6 +1120,7 @@ class SyncOrchestrator:
                     result.agenda_items_synced += body_result.get("agenda_items", 0)
                     result.consultations_synced += body_result.get("consultations", 0)
                     result.errors.extend(body_result.get("errors", []))
+                    result.unstored.update(body_result.get("unstored") or {})
 
                 # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556)
                 complete = not body_filter and sync_complete(body_results, missed_bodies, client)
@@ -1116,7 +1199,7 @@ class SyncOrchestrator:
         full: bool,
         options: SourceFetchOptions | None = None,
         missing_lists: MissingLists | None = None,
-        day_stamps: DayStampLists | None = None,
+        timed_lists: TimedLists | None = None,
     ) -> dict[str, Any]:
         """
         Sync a single body and all its entities.
@@ -1125,8 +1208,8 @@ class SyncOrchestrator:
         Abgleichs der Kommune abzüglich Sicherheitsabstand (``modified_since_for``), höchstens sieben Tage zurück.
         Ist dieser Lauf vollständig (jede Liste ganz gelesen oder als fehlend vermerkt), wird sein Beginn der neue
         Zeitpunkt, bei nicht gespeicherten Objekten höchstens deren ältestes ``modified`` (``BodyItemCheck``); ein
-        Lauf mit Lücke lässt ihn stehen. Listen mit reinen Tagesstempeln laufen weiter mit sieben Tagen
-        (``DayStampLists``, Issue #1025).
+        Lauf mit Lücke lässt ihn stehen. Listen ohne nachgewiesene Uhrzeit in ``modified`` fragt er ab dem
+        Tagesbeginn an (``TimedLists``, Issue #1025).
 
         Returns statistics about synced entities.
         """
@@ -1192,8 +1275,9 @@ class SyncOrchestrator:
 
         # Fehlende Listen dieser Kommune (Issue #1025), vermerkt am Ende des Laufs
         list_check = BodyListCheck(missing_lists) if missing_lists is not None else None
-        # Nicht gespeicherte Objekte und Tagesstempel (Issue #1025), bestimmen den nächsten Fensteranfang
-        item_check = BodyItemCheck()
+        # Nicht gespeicherte Objekte bestimmen den nächsten Fensteranfang, Stempel der Änderungen der letzten sieben
+        # Tage, welche Listen das kurze Fenster bekommen (Issue #1025)
+        item_check = BodyItemCheck(recent_since=fallback_modified_since().replace(tzinfo=UTC))
 
         # Collects ES documents of entities that were tombstoned during this
         # body sync (index name -> doc ids). Flushed in Phase 3 so the search
@@ -1214,7 +1298,7 @@ class SyncOrchestrator:
                 "es_deletions": es_deletions,
                 "list_check": list_check,
                 "item_check": item_check,
-                "day_stamps": day_stamps,
+                "timed_lists": timed_lists,
             }
 
         # Phase 2 (parallel): Start text extraction as background task
@@ -1377,8 +1461,8 @@ class SyncOrchestrator:
 
         # Update body sync time
         await self.storage.update_body_sync_time(body_id)
-        if day_stamps is not None:
-            await self._settle_day_stamps(day_stamps, item_check, stats)
+        if timed_lists is not None:
+            await self._settle_timed_lists(timed_lists, item_check, stats)
         if body_external_id:
             await self._advance_window(source_id, body_external_id, body_started, stats, item_check)
 
@@ -1614,15 +1698,16 @@ class SyncOrchestrator:
         es_deletions: dict[str, list[str]] | None = None,
         list_check: BodyListCheck | None = None,
         item_check: BodyItemCheck | None = None,
-        day_stamps: DayStampLists | None = None,
+        timed_lists: TimedLists | None = None,
     ) -> int:
         """
         Sync all entities of a specific type.
 
         Optionale Listen, die es bei der Quelle nicht gibt (``list_check``, Issue #1025), fragt der inkrementelle
         Lauf einmal am Tag an, der Vollabgleich jedes Mal. Nicht gespeicherte Objekte und die Genauigkeit von
-        ``modified`` hält ``item_check`` fest; Listen mit reinen Tagesstempeln (``day_stamps``) fragt der
-        inkrementelle Lauf mit dem Fenster von sieben Tagen an.
+        ``modified`` hält ``item_check`` fest. Das kurze Fenster gilt nur für Listen, deren ``modified``
+        nachweislich die Uhrzeit trägt (``timed_lists``); die übrigen fragt der inkrementelle Lauf ab dem
+        Tagesbeginn an (``day_start_window``).
 
         For full sync:
         - Fetches all pages and upserts everything
@@ -1652,9 +1737,9 @@ class SyncOrchestrator:
             # Vermerks mit, so weit wie bisher (sieben Tage), nicht nur die seit dem letzten Lauf
             if modified_since is not None:
                 modified_since = fallback_modified_since()
-        # Liste mit reinen Tagesstempeln: weiter mit dem bisherigen Fenster (``DayStampLists``)
-        if modified_since is not None and day_stamps is not None and list_url in day_stamps.known:
-            modified_since = fallback_modified_since()
+        # Liste ohne nachgewiesene Uhrzeit (Tagesstempel, gemischt, noch nichts gesehen): ab Tagesbeginn
+        if modified_since is not None and timed_lists is not None and list_url not in timed_lists.known:
+            modified_since = day_start_window(modified_since)
 
         count = 0
         updated_count = 0
@@ -1710,11 +1795,11 @@ class SyncOrchestrator:
                             if stored:
                                 count += 1
                             elif item_check is not None:
-                                item_check.note_unstored(entity_type, item)
+                                item_check.note_unstored(entity_type, item, server_modified_since)
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
                         if item_check is not None:
-                            item_check.note_unstored(entity_type, item)
+                            item_check.note_unstored(entity_type, item, server_modified_since)
 
             else:
                 # Incremental hybrid: server pre-filtered + client-side comparison
@@ -1766,7 +1851,7 @@ class SyncOrchestrator:
                                     updated_on_page += 1
                                     updated_count += 1
                                 elif item_check is not None:
-                                    item_check.note_unstored(entity_type, item)
+                                    item_check.note_unstored(entity_type, item, server_modified_since)
                             continue
 
                         item_modified = self.processor.parse_datetime(item.get("modified"))
@@ -1780,7 +1865,7 @@ class SyncOrchestrator:
                                     new_on_page += 1
                                     count += 1
                                 elif item_check is not None:
-                                    item_check.note_unstored(entity_type, item)
+                                    item_check.note_unstored(entity_type, item, server_modified_since)
                         elif item_modified and db_modified and item_modified > db_modified:
                             # Modified item: update (upsert handles ON CONFLICT)
                             processed = self.processor.process(item, body_external_id)
@@ -1790,7 +1875,7 @@ class SyncOrchestrator:
                                     updated_on_page += 1
                                     updated_count += 1
                                 elif item_check is not None:
-                                    item_check.note_unstored(entity_type, item)
+                                    item_check.note_unstored(entity_type, item, server_modified_since)
                         else:
                             # Unchanged: skip
                             unchanged_on_page += 1
@@ -1799,7 +1884,7 @@ class SyncOrchestrator:
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
                         if item_check is not None:
-                            item_check.note_unstored(entity_type, item)
+                            item_check.note_unstored(entity_type, item, server_modified_since)
 
             # Log page results (skip for full sync to reduce noise)
             if not full:
@@ -1850,9 +1935,11 @@ class SyncOrchestrator:
         optional führt (``OPTIONAL_LIST_TYPES``), als „nicht vorhanden“, nicht als Lücke: Die Liste landet in
         ``list_check`` und wird am Ende des Laufs in ``sync_config["missing_lists"]`` vermerkt
         (``_settle_missing_lists``); inkrementell fragt sie erst die tägliche Prüfung wieder an, der Vollabgleich
-        jedes Mal. Wird eine vermerkte Liste ganz gelesen, wird der Vermerk gelöscht. Bei Pflichtlisten bleibt es
-        eine Lücke (``RequiredListMissingError``), auch beim Fehlerobjekt, das früher als leere Liste durchging.
-        Ohne ``list_check`` wie bisher.
+        jedes Mal. Wird eine vermerkte Liste ganz gelesen, wird der Vermerk gelöscht.
+
+        Pflichtlisten werden nie vermerkt. HTTP 404 ist dort eine Lücke (``RequiredListMissingError``). Ein
+        Fehlerobjekt gilt wie bisher als leere Liste, solange eine andere Liste der Kommune lesbar war; sonst als
+        Lücke (``_settle_missing_lists``). Ohne ``list_check`` wie bisher.
         """
         if list_check is None:
             async for page in client.fetch_list(list_url, modified_since=modified_since):
@@ -1866,9 +1953,12 @@ class SyncOrchestrator:
                     list_check.readable += 1
                 yield page
         except ListMissingError as missing:
-            if not optional:
+            if optional:
+                list_check.missing[list_url] = missing.reason
+            elif missing.not_found:
                 raise RequiredListMissingError(list_url, missing.reason) from missing
-            list_check.missing[list_url] = missing.reason
+            else:
+                list_check.required_errors[list_url] = missing.reason
             return
         if not readable:
             list_check.readable += 1  # lesbar, nur leer
@@ -1877,14 +1967,24 @@ class SyncOrchestrator:
     async def _settle_missing_lists(self, list_check: BodyListCheck, stats: dict[str, Any]) -> None:
         """
         Fehlende Listen eines Laufs vermerken (Issue #1025), wenn mindestens eine andere Liste der Kommune lesbar
-        war. Sonst gilt der Befund als Störung der Schnittstelle: Lücke im Abgleich, kein Vermerk.
+        war; Pflichtlisten mit Fehlerobjekt gelten dann als leer (Warnung). Sonst gilt der Befund als Störung der
+        Schnittstelle: Lücke im Abgleich, kein Vermerk.
         """
-        if not list_check.missing:
+        if not list_check.missing and not list_check.required_errors:
             return
         if list_check.readable == 0:
-            for list_url, reason in sorted(list_check.missing.items()):
+            for list_url, reason in sorted({**list_check.missing, **list_check.required_errors}.items()):
                 stats["errors"].append(f"Liste {list_url} nicht abrufbar ({reason}), keine Liste der Kommune lesbar")
             stats["incomplete"].append("lists")
+            return
+        if list_check.required_errors:
+            stats["empty_required_lists"] = sorted(list_check.required_errors)
+        for list_url, reason in sorted(list_check.required_errors.items()):
+            console.print(
+                f"[yellow]  Pflichtliste {list_url} antwortet mit Fehlerobjekt ({reason}): wie bisher als leer "
+                f"gewertet[/yellow]"
+            )
+        if not list_check.missing:
             return
         stats["missing_lists"] = sorted(list_check.missing)
         for list_url, reason in sorted(list_check.missing.items()):
@@ -1926,15 +2026,25 @@ class SyncOrchestrator:
 
         - Lücke in einer Liste: stehen lassen.
         - Nicht gespeicherte Objekte: höchstens bis zu ihrem ältesten ``modified``, ohne lesbares ``modified`` gar
-          nicht; der nächste Lauf fragt sie so wieder ab.
+          nicht; der nächste Lauf fragt sie so wieder ab. Ausgenommen sind Objekte, die die Quelle trotz Filter
+          liefert (``BodyItemCheck``).
         - Sonst: Beginn dieses Laufs.
+
+        Nicht gespeicherte Objekte nennt das Log je Typ mit Anzahl und bis zu fünf Kennungen; je Quelle stehen sie
+        im Sync-Log unter ``unstored``. So fallen dauerhaft nicht speicherbare Objekte auf, die das Fenster halten.
         """
         if item_check.unstored:
             stats["unstored"] = dict(sorted(item_check.unstored.items()))
             summary = ", ".join(f"{name}: {count}" for name, count in sorted(item_check.unstored.items()))
+            unfiltered = item_check.unstored_before_window
+            note = f"; {unfiltered} davon liefert die Quelle trotz Filter, sie halten es nicht" if unfiltered else ""
             console.print(
-                f"[yellow]  Nicht gespeichert ({summary}): Der nächste Lauf fragt diese Objekte wieder ab[/yellow]"
+                f"[yellow]  Nicht gespeichert ({summary}): Das Fenster bleibt bei diesen Objekten{note}[/yellow]"
             )
+            for name, ids in sorted(item_check.unstored_ids.items()):
+                rest = item_check.unstored[name] - len(ids)
+                more = f" und {rest} weitere" if rest > 0 else ""
+                console.print(f"[yellow]    {name}: {', '.join(ids)}{more}[/yellow]")
         if stats["incomplete"]:
             return
         start = item_check.window_start(body_started)
@@ -1945,30 +2055,31 @@ class SyncOrchestrator:
         except Exception as e:  # noqa: BLE001 - dann gilt beim nächsten Mal der bisherige Zeitpunkt
             console.print(f"[yellow]  Anfang des Änderungsfensters nicht gespeichert: {e}[/yellow]")
 
-    async def _settle_day_stamps(
-        self, day_stamps: DayStampLists, item_check: BodyItemCheck, stats: dict[str, Any]
+    async def _settle_timed_lists(
+        self, timed_lists: TimedLists, item_check: BodyItemCheck, stats: dict[str, Any]
     ) -> None:
         """
-        Listen mit reinen Tagesstempeln vermerken, Listen mit Uhrzeiten austragen (``DayStampLists``, Issue #1025).
-        Fehler gefährden den Abgleich nie; ohne Vermerk erkennt ihn der nächste Lauf erneut.
+        Listen vermerken, deren Änderungen der letzten sieben Tage alle eine Uhrzeit tragen, und Listen austragen,
+        in denen eine solche Änderung nur das Datum trägt (``TimedLists``, Issue #1025). Fehler gefährden den
+        Abgleich nie; ohne Vermerk gilt für die Liste das Fenster ab Tagesbeginn.
         """
         day_stamped = item_check.day_stamped_lists()
         if day_stamped:
             stats["day_stamped_lists"] = day_stamped
-        changes = [(url, True) for url in day_stamped if url not in day_stamps.known]
-        changes += [(url, False) for url in item_check.timed_lists() if url in day_stamps.known]
-        for list_url, day_stamped_now in changes:
-            if day_stamped_now:
-                day_stamps.known.add(list_url)
-                console.print(
-                    f"[yellow]  Liste {list_url}: modified nur mit Datum, inkrementell weiter mit sieben Tagen[/yellow]"
-                )
+        changes = [(url, True) for url in item_check.timed_lists() if url not in timed_lists.known]
+        changes += [(url, False) for url in day_stamped if url in timed_lists.known]
+        for list_url, timed in changes:
+            if timed:
+                timed_lists.known.add(list_url)
+                console.print(f"[dim]  Liste {list_url}: modified mit Uhrzeit, inkrementell mit kurzem Fenster[/dim]")
             else:
-                day_stamps.known.discard(list_url)
-                console.print(f"[green]  Liste {list_url}: modified mit Uhrzeit, Vermerk gelöscht[/green]")
+                timed_lists.known.discard(list_url)
+                console.print(
+                    f"[yellow]  Liste {list_url}: modified nur mit Datum, inkrementell ab Tagesbeginn[/yellow]"
+                )
             try:
-                await self.storage.set_list_day_stamped(day_stamps.source_url, list_url, day_stamped_now)
-            except Exception as e:  # noqa: BLE001 - ohne Vermerk erkennt der nächste Lauf die Liste erneut
+                await self.storage.set_list_timed(timed_lists.source_url, list_url, timed)
+            except Exception as e:  # noqa: BLE001 - ohne Vermerk gilt das Fenster ab Tagesbeginn
                 console.print(f"[yellow]  Vermerk zur Liste {list_url} nicht gespeichert: {e}[/yellow]")
 
     async def _store_entity(
@@ -2247,6 +2358,7 @@ class SyncOrchestrator:
                 "papers": result.papers_synced,
                 "files": result.files_synced,
                 **self._finding_details(result),
+                **({"unstored": dict(sorted(result.unstored.items()))} if result.unstored else {}),
             }
 
         status = "success" if not all_errors or total_entities > 0 else "failed"

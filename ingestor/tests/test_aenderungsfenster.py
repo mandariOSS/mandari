@@ -5,11 +5,13 @@ bei der Quelle nicht gibt.
 
 - Inkrementelle Läufe fragen je Kommune nach Änderungen seit dem Beginn ihres letzten vollständig erfolgreichen
   Abgleichs abzüglich Sicherheitsabstand (Standard 2 Stunden), nicht mehr nach allem aus sieben Tagen. Ein Lauf
-  mit Lücke schreibt den Zeitpunkt nicht fort, nicht gespeicherte Objekte halten ihn bei ihrem ``modified``.
-  Ohne Zeitpunkt, mit einem älteren oder bei Listen mit reinen Tagesstempeln bleibt es bei sieben Tagen.
+  mit Lücke schreibt den Zeitpunkt nicht fort, nicht gespeicherte Objekte halten ihn bei ihrem ``modified``, außer
+  die Quelle liefert sie trotz Filter. Ohne Zeitpunkt oder mit einem älteren bleibt es bei sieben Tagen. Das kurze
+  Fenster gilt nur für Listen mit nachgewiesener Uhrzeit in ``modified``, die übrigen beginnen um 00:00 Uhr.
 - Antwortet eine optionale Liste schon auf der ersten Seite mit HTTP 404 oder einem OParl-Fehlerobjekt, wird sie
   vermerkt und bis zum Vollabgleich, höchstens einen Tag, nicht mehr angefragt. Das zählt als „nicht vorhanden“,
-  nicht als Lücke. Bei Pflichtlisten bleibt es eine Lücke.
+  nicht als Lücke. Bei Pflichtlisten ist HTTP 404 eine Lücke; ein Fehlerobjekt gilt dort wie bisher als leer,
+  solange eine andere Liste lesbar ist.
 
 Antworten aus ``httpx.MockTransport`` (aufgezeichnetes Verhalten der Quellen nachgebildet), keine Abrufe.
 """
@@ -31,12 +33,15 @@ from mandari_oparl.utils import parse_datetime
 from src.client.oparl_client import ListFetchError, ListMissingError, OParlClient
 from src.client.source_options import SourceFetchOptions
 from src.config import settings
-from src.storage.database import body_sync_started_of, missing_lists_of
+from src.storage.database import body_sync_started_of, missing_lists_of, timed_lists_of
 from src.sync.orchestrator import (
+    SOURCE_TZ,
     BodyItemCheck,
-    DayStampLists,
     MissingLists,
     SyncOrchestrator,
+    SyncResult,
+    TimedLists,
+    day_start_window,
     fallback_modified_since,
     modified_since_for,
     sync_complete,
@@ -129,8 +134,11 @@ class Speicher:
         self.fehler: set[str] = set()
         #: Kennungen, deren Bezüge sich nicht auflösen lassen (Mitgliedschaft ohne Person, TOP ohne Sitzung)
         self.unaufloesbar: set[str] = set()
-        #: Listen mit reinen Tagesstempeln (``day_stamp_lists``)
-        self.tagesstempel: set[str] = set()
+        #: Listen mit nachgewiesener Uhrzeit (``timed_lists``): die vier Pflichtlisten, wie bei einer Quelle nach den
+        #: ersten Läufen, damit die Tests das kurze Fenster sehen
+        self.uhrzeit: set[str] = {f"{BODY}/{name}" for name in LISTEN}
+        #: Einträge im Sync-Log
+        self.protokoll: list[dict[str, Any]] = []
 
     async def upsert_body(self, body: Any, source_id: UUID) -> UUID:
         return UUID(int=1)
@@ -150,11 +158,14 @@ class Speicher:
         else:
             self.begonnen[body_external_id] = started_at
 
-    async def set_list_day_stamped(self, source_url: str, list_url: str, day_stamped: bool) -> None:
-        if day_stamped:
-            self.tagesstempel.add(list_url)
+    async def set_list_timed(self, source_url: str, list_url: str, timed: bool) -> None:
+        if timed:
+            self.uhrzeit.add(list_url)
         else:
-            self.tagesstempel.discard(list_url)
+            self.uhrzeit.discard(list_url)
+
+    async def write_sync_log(self, **felder: Any) -> None:
+        self.protokoll.append(felder)
 
     async def set_list_missing(
         self, source_url: str, list_url: str, missing: bool, checked_at: datetime | None = None
@@ -232,7 +243,7 @@ async def _lauf(
             full=full,
             options=options,
             missing_lists=listen,
-            day_stamps=DayStampLists(SOURCE, set(speicher.tagesstempel)),
+            timed_lists=TimedLists(SOURCE, set(speicher.uhrzeit)),
         )
 
 
@@ -314,6 +325,9 @@ def test_zeitpunkt_und_vermerke_aus_sync_config():
     }
     assert missing_lists_of({"missing_lists": "x"}) == {}
     assert missing_lists_of({"missing_lists": [f"{BODY}/membership"]}) == {}
+    assert timed_lists_of({"timed_lists": {f"{BODY}/paper": "2026-10-15T10:00:00+00:00", "": "x"}}) == {f"{BODY}/paper"}
+    assert timed_lists_of({"timed_lists": [f"{BODY}/paper"]}) == set()
+    assert timed_lists_of(None) == set()
 
 
 async def test_lauf_ohne_aenderungen_fragt_je_liste_genau_eine_seite_ab():
@@ -450,6 +464,40 @@ async def test_fehler_ohne_modified_schreibt_den_zeitpunkt_nicht_fort():
     assert speicher.begonnen[BODY] == beginn
 
 
+async def test_fehler_beim_speichern_im_vollabgleich_halten_das_fenster():
+    """Wie inkrementell: Der nächste Lauf fragt das Objekt wieder ab, statt erst der nächste Vollabgleich."""
+    geaendert = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=30)
+    quelle = Quelle(geaendert=geaendert)
+    speicher = Speicher()
+    speicher.fehler.add(f"{BASE}/paper/1")
+
+    stats = await _lauf(quelle, speicher, full=True)
+    assert stats["incomplete"] == [] and stats["unstored"] == {"paper": 1}
+    assert stats["papers"] == 2
+    assert speicher.begonnen[BODY] == geaendert
+
+
+async def test_element_ohne_objekt_bricht_den_vollabgleich_nicht_ab():
+    """Ein Listenelement, das kein Objekt ist, wird übersprungen wie bisher; es hält das Fenster wie eines ohne
+    ``modified``, statt im Fehlerzweig die ganze Liste abzubrechen."""
+    quelle = Quelle(geaendert=datetime.now(UTC) - timedelta(minutes=30))
+    quelle.listen["/oparl/body/1/paper"].insert(1, "kaputt")  # type: ignore[arg-type]
+    speicher = Speicher()
+    beginn = datetime.now(UTC) - timedelta(hours=1)
+    speicher.begonnen[BODY] = beginn
+
+    stats = await _lauf(quelle, speicher, full=True)
+    assert stats["incomplete"] == [] and stats["errors"] == []
+    assert stats["papers"] == 3 and stats["unstored"] == {"paper": 1}
+    assert speicher.begonnen[BODY] == beginn
+
+    befund = BodyItemCheck()
+    befund.note_unstored("paper", None)
+    befund.note_unstored("paper", ["x"])
+    assert befund.unstored == {"paper": 2} and befund.unstored_ids == {"paper": ["ohne Kennung", "ohne Kennung"]}
+    assert befund.window_start(datetime.now(UTC)) is None
+
+
 async def test_mitgliedschaft_ohne_person_haelt_das_fenster():
     geaendert = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=20)
     quelle = Quelle(geaendert=datetime.now(UTC) - timedelta(minutes=40))
@@ -468,6 +516,91 @@ async def test_mitgliedschaft_ohne_person_haelt_das_fenster():
     stats = await _lauf(quelle, speicher, kommune=_kommune(membership=f"{BODY}/membership"))
     assert stats["incomplete"] == [] and stats["unstored"] == {"membership": 1}
     assert speicher.begonnen[BODY] == geaendert
+
+
+def _mitgliedschaft(nummer: int, geaendert: str) -> dict[str, Any]:
+    return {
+        "id": f"{BASE}/membership/{nummer}",
+        "type": "https://schema.oparl.org/1.1/Membership",
+        "person": f"{BASE}/person/fremd",
+        "organization": f"{BASE}/organization/0",
+        "modified": geaendert,
+    }
+
+
+async def test_waisen_vor_dem_fenster_halten_es_nicht():
+    """
+    Bezirksregierung Köln: membership läuft ohne Filter und liefert jedes Mal alle Mitgliedschaften, darunter solche
+    mit einer Person aus einer anderen Quelle. Sie lassen sich nie speichern; hielten sie das Fenster bei ihrem alten
+    ``modified``, bliebe die Kommune für immer bei sieben Tagen. Eine nicht speicherbare Mitgliedschaft aus dem
+    Fenster hält es weiter.
+    """
+    quelle = Quelle(geaendert=datetime.now(UTC) - timedelta(days=3))
+    quelle.mit_filter["/oparl/body/1/membership"] = 404
+    quelle.listen["/oparl/body/1/membership"] = [
+        _mitgliedschaft(1, "2025-01-01T10:00:00+01:00"),
+        _mitgliedschaft(2, "2026-01-01T10:00:00+01:00"),
+    ]
+    kommune = _kommune(membership=f"{BODY}/membership")
+    speicher = Speicher()
+    speicher.unaufloesbar.update({f"{BASE}/membership/1", f"{BASE}/membership/2", f"{BASE}/membership/3"})
+    speicher.begonnen[BODY] = datetime.now(UTC) - timedelta(hours=1)
+
+    vorher = datetime.now(UTC)
+    stats = await _lauf(quelle, speicher, kommune=kommune)
+    assert quelle.filter_der_anfragen("membership")[1:] == [None]  # ohne Filter
+    assert stats["incomplete"] == [] and stats["unstored"] == {"membership": 2}
+    assert speicher.begonnen[BODY] >= vorher
+
+    # Eine neue Waise aus dem Fenster hält es bei ihrem modified
+    geaendert = datetime.now(UTC).replace(microsecond=0) - timedelta(minutes=20)
+    quelle.listen["/oparl/body/1/membership"].append(_mitgliedschaft(3, geaendert.isoformat()))
+    stats = await _lauf(quelle, speicher, kommune=kommune)
+    assert stats["unstored"] == {"membership": 3}
+    assert speicher.begonnen[BODY] == geaendert
+
+
+def test_nicht_gespeichert_vor_dem_fenster():
+    fenster = datetime(2026, 10, 15, 8, 0, tzinfo=UTC)
+    befund = BodyItemCheck()
+    # Zwölf Stunden vor dem Fenster: kann eine falsch angegebene Zeitzone sein, hält das Fenster
+    befund.note_unstored("paper", {"id": "a", "modified": "2026-10-14T20:00:00+00:00"}, fenster)
+    assert befund.oldest_unstored == datetime(2026, 10, 14, 20, 0, tzinfo=UTC)
+    # Mehr als einen Tag davor: Die Quelle liefert es ohne Filter, es hält das Fenster nicht
+    befund.note_unstored("paper", {"id": "b", "modified": "2026-10-10T20:00:00+00:00"}, fenster)
+    assert befund.unstored_before_window == 1
+    assert befund.oldest_unstored == datetime(2026, 10, 14, 20, 0, tzinfo=UTC)
+    # Das bisherige Fenster (naiv) gilt als UTC, wie es der Client sendet
+    befund.note_unstored("paper", {"id": "c", "modified": "2026-10-01T00:00:00+00:00"}, datetime(2026, 10, 8))
+    assert befund.unstored_before_window == 2
+    # Im Vollabgleich (ohne Fenster) hält jedes Objekt mit modified
+    befund.note_unstored("paper", {"id": "d", "modified": "2026-01-01T00:00:00+00:00"})
+    assert befund.oldest_unstored == datetime(2026, 1, 1, tzinfo=UTC)
+    # Kennungen fürs Log, höchstens fünf je Typ
+    for nummer in range(5):
+        befund.note_unstored("paper", {"id": f"x{nummer}"}, fenster)
+    assert befund.unstored == {"paper": 9}
+    assert befund.unstored_ids == {"paper": ["a", "b", "c", "d", "x0"]}
+
+
+async def test_nicht_gespeicherte_im_log_und_sync_log(capsys):
+    quelle = Quelle(geaendert=datetime.now(UTC) - timedelta(minutes=30))
+    speicher = Speicher()
+    speicher.begonnen[BODY] = datetime.now(UTC) - timedelta(hours=1)
+    speicher.unaufloesbar.update({f"{BASE}/paper/0", f"{BASE}/paper/2"})
+    stats = await _lauf(quelle, speicher)
+    assert stats["unstored"] == {"paper": 2}
+    ausgabe = " ".join(capsys.readouterr().out.split())
+    assert f"paper: {BASE}/paper/0, {BASE}/paper/2" in ausgabe
+
+    orchestrator = _orchestrator(speicher)
+    ergebnis = SyncResult(source_url=SOURCE, source_name="Musterstadt", success=True)
+    ergebnis.unstored.update(stats["unstored"])
+    ruhig = SyncResult(source_url=f"{SOURCE}/2", source_name="Ruhig", success=True)
+    await orchestrator.write_results_to_synclog([ergebnis, ruhig], datetime.now(UTC))
+    details = speicher.protokoll[0]["details"]
+    assert details["Musterstadt"]["unstored"] == {"paper": 2}
+    assert "unstored" not in details["Ruhig"]
 
 
 async def test_tagesordnungspunkt_ohne_sitzung_gilt_als_nicht_gespeichert():
@@ -490,56 +623,103 @@ async def test_tagesordnungspunkt_ohne_sitzung_gilt_als_nicht_gespeichert():
     assert await orchestrator._store_entity(punkt, UUID(int=1), "agendaitem") is False
 
 
-async def test_listen_mit_tagesstempeln_bleiben_bei_sieben_tagen():
+def _gesendet(zeitpunkt: datetime) -> str:
+    """``modified_since``, wie der Client es sendet (naive Zeitpunkte mit ``+00:00``)."""
+    return (zeitpunkt if zeitpunkt.tzinfo is not None else zeitpunkt.replace(tzinfo=UTC)).isoformat(timespec="seconds")
+
+
+def test_fenster_ab_tagesbeginn():
+    jetzt = datetime(2026, 10, 15, 14, 30, tzinfo=UTC)
+    # Tagsüber: 00:00 Uhr Ortszeit (22:00 UTC am Vortag) liegt vor 00:00 UTC
+    tagsueber = day_start_window(datetime(2026, 10, 15, 8, 0, tzinfo=UTC), now=jetzt)
+    assert tagsueber == datetime(2026, 10, 14, 22, 0, tzinfo=UTC)
+    # Nach Mitternacht Ortszeit, vor Mitternacht UTC: 00:00 UTC liegt früher
+    nachts = day_start_window(datetime(2026, 10, 14, 23, 30, tzinfo=UTC), now=jetzt)
+    assert nachts == datetime(2026, 10, 14, 0, 0, tzinfo=UTC)
+    # Winterzeit
+    winter = day_start_window(datetime(2026, 12, 1, 8, 0, tzinfo=UTC), now=datetime(2026, 12, 1, 9, 0, tzinfo=UTC))
+    assert winter == datetime(2026, 11, 30, 23, 0, tzinfo=UTC)
+    # Das bisherige Fenster bleibt, wie es ist; weiter zurück als sieben Tage geht es nie
+    bisher = fallback_modified_since(jetzt)
+    assert day_start_window(bisher, now=jetzt) == bisher
+    assert day_start_window(bisher.replace(tzinfo=UTC) + timedelta(hours=1), now=jetzt) == bisher
+
+
+async def test_listen_ohne_uhrzeit_ab_tagesbeginn():
     """
     Trägt eine Liste nur das Datum (00:00 Uhr), fände ein Fenster ab „Beginn minus zwei Stunden“ ab etwa 02:00 Uhr
-    nichts mehr vom selben Tag. Diese Liste läuft weiter mit sieben Tagen, die übrigen mit dem kurzen Fenster.
+    nichts mehr vom selben Tag. Das kurze Fenster bekommen nur Listen, deren Änderungen nachweislich eine Uhrzeit
+    tragen; die übrigen fragt der Lauf ab 00:00 Uhr an, auch nach einer ruhigen Woche ohne Änderungen.
     """
     heute = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     quelle = Quelle(geaendert=datetime.now(UTC).replace(microsecond=0) - timedelta(hours=3))
-    for objekt in quelle.listen["/oparl/body/1/meeting"]:
+    sitzungen = quelle.listen["/oparl/body/1/meeting"]
+    for objekt in sitzungen:
         objekt["modified"] = heute.isoformat()
     speicher = Speicher()
+    speicher.uhrzeit.clear()
 
     stats = await _lauf(quelle, speicher, full=True)
     assert stats["incomplete"] == []
     assert stats["day_stamped_lists"] == [f"{BODY}/meeting"]
-    assert speicher.tagesstempel == {f"{BODY}/meeting"}
+    assert speicher.uhrzeit == {f"{BODY}/organization", f"{BODY}/person", f"{BODY}/paper"}
     beginn = speicher.begonnen[BODY]  # die Kommune rückt trotzdem vor
 
-    # Inkrementell: Sitzungen mit sieben Tagen, Vorgänge mit dem kurzen Fenster
+    # Inkrementell: Sitzungen ab Tagesbeginn, Vorlagen mit dem kurzen Fenster
     await _lauf(quelle, speicher)
-    assert set(quelle.filter_der_anfragen("meeting")) == {_bisheriges_fenster()}
-    assert set(quelle.filter_der_anfragen("paper")) == {(beginn - timedelta(hours=2)).isoformat(timespec="seconds")}
+    kurz = beginn - timedelta(hours=2)
+    assert set(quelle.filter_der_anfragen("meeting")) == {_gesendet(day_start_window(kurz))}
+    assert set(quelle.filter_der_anfragen("paper")) == {_gesendet(kurz)}
 
-    # Eine ruhige Woche: Kein Lauf sieht Sitzungen, der Vermerk bleibt trotzdem und mit ihm die sieben Tage
-    for objekt in quelle.listen["/oparl/body/1/meeting"]:
+    # Eine ruhige Woche: Kein Lauf sieht Sitzungen, die Liste bleibt beim Fenster ab Tagesbeginn
+    for objekt in sitzungen:
         objekt["modified"] = (heute - timedelta(days=10)).isoformat()
     for _ in range(2):
+        kurz = speicher.begonnen[BODY] - timedelta(hours=2)
         stats = await _lauf(quelle, speicher)
         assert "day_stamped_lists" not in stats
-        assert set(quelle.filter_der_anfragen("meeting")) == {_bisheriges_fenster()}
-    assert speicher.tagesstempel == {f"{BODY}/meeting"}
+        assert set(quelle.filter_der_anfragen("meeting")) == {_gesendet(day_start_window(kurz))}
+    assert f"{BODY}/meeting" not in speicher.uhrzeit
 
-    # Sieht ein Lauf dort Uhrzeiten, wird der Vermerk gelöscht; danach gilt auch dort das kurze Fenster
-    for objekt in quelle.listen["/oparl/body/1/meeting"]:
-        objekt["modified"] = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    # Eine Sitzung von heute mit Tagesstempel (00:00 Uhr Ortszeit) findet der nächste Lauf
+    ortszeit = datetime.now(SOURCE_TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+    neu = {"id": f"{BASE}/meeting/9", "type": "https://schema.oparl.org/1.1/Meeting", "modified": ortszeit.isoformat()}
+    sitzungen.append(neu)
+    stats = await _lauf(quelle, speicher)
+    assert stats["meetings"] == 1 and stats["day_stamped_lists"] == [f"{BODY}/meeting"]
+
+    # Tragen die Änderungen dort Uhrzeiten, bekommt die Liste das kurze Fenster
+    neu["modified"] = (datetime.now(UTC) - timedelta(minutes=10)).isoformat()
     await _lauf(quelle, speicher)
-    assert speicher.tagesstempel == set()
-    beginn = speicher.begonnen[BODY]
+    assert f"{BODY}/meeting" in speicher.uhrzeit
+    kurz = speicher.begonnen[BODY] - timedelta(hours=2)
     await _lauf(quelle, speicher)
-    assert set(quelle.filter_der_anfragen("meeting")) == {(beginn - timedelta(hours=2)).isoformat(timespec="seconds")}
+    assert set(quelle.filter_der_anfragen("meeting")) == {_gesendet(kurz)}
+
+    # Gemischte Stempel: Sieht der Vollabgleich dort eine Änderung nur mit Datum, verliert sie es wieder
+    sitzungen.append({**neu, "id": f"{BASE}/meeting/8", "modified": ortszeit.isoformat()})
+    stats = await _lauf(quelle, speicher, full=True)
+    assert f"{BODY}/meeting" in stats["day_stamped_lists"]
+    assert f"{BODY}/meeting" not in speicher.uhrzeit
 
 
 def test_tagesstempel_je_liste():
-    befund = BodyItemCheck()
+    befund = BodyItemCheck(recent_since=datetime(2026, 10, 8, tzinfo=UTC))
     for stempel in ("2026-10-15T00:00:00+02:00", "2026-10-14", None, "kaputt"):
         befund.note_stamp("tage", {"modified": stempel})
+    # 00:00 Uhr Ortszeit, in UTC angegeben (Sommer- und Winterzeit)
+    befund.note_stamp("utc", {"modified": "2026-10-14T22:00:00Z"})
+    befund.note_stamp("utc", {"modified": "2026-12-01T23:00:00+00:00"})
     befund.note_stamp("gemischt", {"modified": "2026-10-15T00:00:00+02:00"})
     befund.note_stamp("gemischt", {"modified": "2026-10-15T09:12:00+02:00"})
+    befund.note_stamp("uhrzeit", {"modified": "2026-10-15T09:12:00+02:00"})
+    befund.note_stamp("uhrzeit", {"modified": "2026-10-14T23:00:00Z"})  # 01:00 Uhr Ortszeit
+    # Altdaten vor den letzten sieben Tagen zählen nicht
+    befund.note_stamp("uhrzeit", {"modified": "2020-01-01T00:00:00+01:00"})
+    befund.note_stamp("alt", {"modified": "2020-01-01T00:00:00+01:00"})
     befund.note_stamp("leer", {})
-    assert befund.day_stamped_lists() == ["tage"]
-    assert befund.timed_lists() == ["gemischt"]
+    assert befund.day_stamped_lists() == ["gemischt", "tage", "utc"]
+    assert befund.timed_lists() == ["uhrzeit"]
 
 
 # ---------------------------------------------------------------------------
@@ -668,8 +848,11 @@ async def test_404_loest_den_schutzschalter_nicht_aus(monkeypatch):
         assert ergebnis.status_code == 200 and ergebnis.error is None
 
 
-async def test_pflichtliste_mit_404_oder_fehlerobjekt_bleibt_eine_luecke():
-    """Sitzungen und Vorlagen fehlten sonst nach einem kurzen 404 bis zum nächsten Vollabgleich (bis zu 28 Tage)."""
+async def test_pflichtliste_mit_404_bleibt_eine_luecke():
+    """
+    Sitzungen und Vorlagen fehlten sonst nach einem kurzen 404 bis zum nächsten Vollabgleich (bis zu 28 Tage). Ein
+    Fehlerobjekt auf einer Pflichtliste gilt wie bisher als leere Liste (Warnung), solange andere Listen lesbar sind.
+    """
     quelle = Quelle(geaendert=datetime.now(UTC) - timedelta(minutes=30))
     quelle.fest["/oparl/body/1/meeting"] = 404
     quelle.fest["/oparl/body/1/paper"] = FEHLEROBJEKT
@@ -678,8 +861,9 @@ async def test_pflichtliste_mit_404_oder_fehlerobjekt_bleibt_eine_luecke():
     speicher.begonnen[BODY] = beginn
 
     stats = await _lauf(quelle, speicher)
-    assert sorted(stats["incomplete"]) == ["meeting", "paper"]
-    assert sum("Pflichtliste" in fehler for fehler in stats["errors"]) == 2
+    assert stats["incomplete"] == ["meeting"]
+    assert sum("Pflichtliste" in fehler for fehler in stats["errors"]) == 1
+    assert stats["empty_required_lists"] == [f"{BODY}/paper"]
     assert speicher.fehlend == {}
     assert speicher.begonnen[BODY] == beginn
 
@@ -689,6 +873,42 @@ async def test_pflichtliste_mit_404_oder_fehlerobjekt_bleibt_eine_luecke():
     assert stats["incomplete"] == [] and stats["meetings"] == 3 and stats["papers"] == 3
     erwartet = (beginn - timedelta(hours=2)).isoformat(timespec="seconds")
     assert set(quelle.filter_der_anfragen("meeting")) == {erwartet}
+
+
+async def test_pflichtliste_mit_fehlerobjekt_gilt_als_leer():
+    """
+    OParl 1.0 (more! rubin) antwortet auf Klassen, die es nicht gibt, mit „Requested class doesn't exist.“. Auf dev
+    galt das als leere Liste; eine Lücke daraus hielte das Fenster und wiederholte den Vollabgleich jede Nacht.
+    """
+    quelle = Quelle(geaendert=datetime.now(UTC) - timedelta(minutes=30))
+    quelle.fest["/oparl/body/1/organization"] = FEHLEROBJEKT
+    speicher = Speicher()
+    speicher.begonnen[BODY] = datetime.now(UTC) - timedelta(hours=1)
+
+    for lauf in range(2):
+        vorher = datetime.now(UTC)
+        stats = await _lauf(quelle, speicher)
+        assert stats["incomplete"] == [] and stats["errors"] == []
+        assert stats["empty_required_lists"] == [f"{BODY}/organization"]
+        assert stats["organizations"] == 0 and stats["papers"] == (3 if lauf == 0 else 0)
+        assert speicher.fehlend == {}  # nie vermerkt, jeder Lauf fragt sie an
+        assert quelle.anfragen_je_liste()["organization"] == 2  # mit Filter, dann ohne
+        assert sync_complete([stats], [], _OhneBefund()) is True
+        assert speicher.begonnen[BODY] >= vorher
+
+
+async def test_nur_fehlerobjekte_ist_eine_luecke():
+    quelle = Quelle(geaendert=datetime.now(UTC))
+    for name in LISTEN:
+        quelle.fest[f"/oparl/body/1/{name}"] = FEHLEROBJEKT
+    speicher = Speicher()
+    beginn = datetime.now(UTC) - timedelta(hours=1)
+    speicher.begonnen[BODY] = beginn
+    stats = await _lauf(quelle, speicher)
+    assert stats["incomplete"] == ["lists"]
+    assert len(stats["errors"]) == len(LISTEN)
+    assert "empty_required_lists" not in stats
+    assert speicher.begonnen[BODY] == beginn
 
 
 async def test_vermerkte_liste_wird_einmal_am_tag_geprueft():

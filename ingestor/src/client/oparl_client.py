@@ -96,12 +96,15 @@ class ListMissingError(Exception):
     Die Quelle bietet die Liste nicht an (Issue #1025): Schon die erste Seite antwortet ohne Filter mit HTTP 404
     oder einem OParl-Fehlerobjekt. Bei Listen, die in OParl 1.1 optional sind, ist das „gibt es hier nicht“: Der
     Orchestrator vermerkt sie und fragt sie bis zum nächsten Vollabgleich, höchstens aber einen Tag lang, nicht mehr
-    an. Bei Pflichtlisten bleibt es eine Lücke im Abgleich.
+    an. Bei Pflichtlisten ist HTTP 404 (``not_found``) eine Lücke im Abgleich; ein Fehlerobjekt gilt dort wie bisher
+    als leere Liste, solange andere Listen der Kommune lesbar sind.
     """
 
-    def __init__(self, list_url: str, reason: str) -> None:
+    def __init__(self, list_url: str, reason: str, *, not_found: bool = False) -> None:
         self.list_url = list_url
         self.reason = reason
+        #: HTTP 404 (sonst ein OParl-Fehlerobjekt)
+        self.not_found = not_found
         super().__init__(f"Liste {list_url} gibt es bei der Quelle nicht ({reason})")
 
 
@@ -839,7 +842,7 @@ class OParlClient:
             if first_page_missing and report_missing:
                 reason = "HTTP 404" if result.status_code == 404 else oparl_error_message(result.data)
                 console.print(f"[dim]{url}: Liste gibt es bei der Quelle nicht ({reason})[/dim]")
-                raise ListMissingError(url, reason)
+                raise ListMissingError(url, reason, not_found=result.status_code == 404)
 
             if result.error:
                 # Keine stille Lücke (Issue #123): der Aufrufer erfährt, welche

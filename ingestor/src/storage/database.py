@@ -172,9 +172,10 @@ class _Origin:
 #: Schlüssel in ``OParlSource.sync_config``: Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune
 #: (Kennung der Kommune -> Zeitpunkt in UTC, ISO 8601), Anfang des Änderungsfensters (Issue #1025)
 SYNC_CONFIG_BODY_SYNC_STARTED_KEY: Final = "body_sync_started"
-#: Schlüssel in ``OParlSource.sync_config``: Listen, deren ``modified`` nur das Datum trägt (Adresse -> Zeitpunkt
-#: der Erkennung). Sie laufen weiter mit dem Fenster von sieben Tagen, bis ein Lauf dort Uhrzeiten sieht (Issue #1025).
-SYNC_CONFIG_DAY_STAMP_LISTS_KEY: Final = "day_stamp_lists"
+#: Schlüssel in ``OParlSource.sync_config``: Listen, deren ``modified`` nachweislich die Uhrzeit trägt (Adresse ->
+#: Zeitpunkt des Nachweises). Nur sie bekommen das kurze Änderungsfenster, alle übrigen eines ab Tagesbeginn
+#: (Issue #1025).
+SYNC_CONFIG_TIMED_LISTS_KEY: Final = "timed_lists"
 #: Schlüssel in ``OParlSource.sync_config``: Listen, die es bei der Quelle nicht gibt, mit dem Zeitpunkt ihrer
 #: letzten Prüfung (Adresse -> Zeitpunkt in UTC, ISO 8601, Issue #1025)
 SYNC_CONFIG_MISSING_LISTS_KEY: Final = "missing_lists"
@@ -205,11 +206,11 @@ def missing_lists_of(sync_config: Any) -> dict[str, datetime | None]:
     return {url: _utc_stamp(checked) for url, checked in stored.items() if isinstance(url, str) and url}
 
 
-def day_stamp_lists_of(sync_config: Any) -> set[str]:
-    """Listen einer Quelle, deren ``modified`` nur das Datum trägt (``sync_config["day_stamp_lists"]``)."""
+def timed_lists_of(sync_config: Any) -> set[str]:
+    """Listen einer Quelle, deren ``modified`` nachweislich die Uhrzeit trägt (``sync_config["timed_lists"]``)."""
     if not isinstance(sync_config, dict):
         return set()
-    stored = sync_config.get(SYNC_CONFIG_DAY_STAMP_LISTS_KEY)
+    stored = sync_config.get(SYNC_CONFIG_TIMED_LISTS_KEY)
     if not isinstance(stored, dict):
         return set()
     return {url for url in stored if isinstance(url, str) and url}
@@ -755,15 +756,15 @@ class DatabaseStorage:
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 
-    async def set_list_day_stamped(self, source_url: str, list_url: str, day_stamped: bool) -> None:
-        """Liste der Quelle als „``modified`` nur mit Datum“ vermerken oder den Vermerk löschen (Issue #1025)."""
+    async def set_list_timed(self, source_url: str, list_url: str, timed: bool) -> None:
+        """Liste der Quelle als „``modified`` mit Uhrzeit“ vermerken oder den Vermerk löschen (Issue #1025)."""
         detected = datetime.now(UTC).isoformat(timespec="seconds")
 
         def change(sync_config: dict[str, Any]) -> bool:
-            stored = sync_config.get(SYNC_CONFIG_DAY_STAMP_LISTS_KEY)
-            if day_stamped and isinstance(stored, dict) and list_url in stored:
-                return False  # bleibt beim Zeitpunkt der ersten Erkennung
-            return _put_entry(sync_config, SYNC_CONFIG_DAY_STAMP_LISTS_KEY, list_url, detected if day_stamped else None)
+            stored = sync_config.get(SYNC_CONFIG_TIMED_LISTS_KEY)
+            if timed and isinstance(stored, dict) and list_url in stored:
+                return False  # bleibt beim Zeitpunkt des ersten Nachweises
+            return _put_entry(sync_config, SYNC_CONFIG_TIMED_LISTS_KEY, list_url, detected if timed else None)
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 

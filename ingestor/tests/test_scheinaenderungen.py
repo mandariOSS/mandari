@@ -38,7 +38,7 @@ from src.client.oparl_client import OParlClient
 from src.config import settings
 from src.scrapers.base import CONTENT_HASH_FIELD
 from src.storage import ris_events
-from src.storage.database import DatabaseStorage, day_stamp_lists_of, missing_lists_of
+from src.storage.database import DatabaseStorage, missing_lists_of, timed_lists_of
 from src.storage.models import Base
 from src.sync.orchestrator import MissingLists, SyncOrchestrator
 from src.sync.processor import OParlProcessor, unique_nested
@@ -505,15 +505,15 @@ async def test_zeitpunkt_und_vermerke_in_sync_config(speicher: DatabaseStorage) 
     assert quelle is not None
     assert "missing_lists" not in quelle.sync_config and "body_sync_started" not in quelle.sync_config
 
-    # Listen mit Tagesstempeln: Der Zeitpunkt der ersten Erkennung bleibt, bis der Vermerk gelöscht wird
-    await speicher.set_list_day_stamped(SOURCE, f"{BASE}/meeting", True)
+    # Listen mit Uhrzeit: Der Zeitpunkt des ersten Nachweises bleibt, bis der Vermerk gelöscht wird
+    await speicher.set_list_timed(SOURCE, f"{BASE}/meeting", True)
     quelle = await speicher.get_source_by_url(SOURCE)
     assert quelle is not None
-    erkannt = quelle.sync_config["day_stamp_lists"][f"{BASE}/meeting"]
-    await speicher.set_list_day_stamped(SOURCE, f"{BASE}/meeting", True)
+    erkannt = quelle.sync_config["timed_lists"][f"{BASE}/meeting"]
+    await speicher.set_list_timed(SOURCE, f"{BASE}/meeting", True)
     quelle = await speicher.get_source_by_url(SOURCE)
-    assert quelle is not None and quelle.sync_config["day_stamp_lists"] == {f"{BASE}/meeting": erkannt}
-    assert day_stamp_lists_of(quelle.sync_config) == {f"{BASE}/meeting"}
-    await speicher.set_list_day_stamped(SOURCE, f"{BASE}/meeting", False)
+    assert quelle is not None and quelle.sync_config["timed_lists"] == {f"{BASE}/meeting": erkannt}
+    assert timed_lists_of(quelle.sync_config) == {f"{BASE}/meeting"}
+    await speicher.set_list_timed(SOURCE, f"{BASE}/meeting", False)
     quelle = await speicher.get_source_by_url(SOURCE)
-    assert quelle is not None and "day_stamp_lists" not in quelle.sync_config
+    assert quelle is not None and "timed_lists" not in quelle.sync_config
