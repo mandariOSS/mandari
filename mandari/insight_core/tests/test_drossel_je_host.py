@@ -18,7 +18,7 @@ import pytest
 from django.test import Client
 
 from insight_core.models import OParlBody, OParlFile, OParlSource
-from insight_core.services import file_cache, host_pacing
+from insight_core.services import file_cache, file_robots, host_pacing
 
 pytestmark = pytest.mark.django_db
 
@@ -140,6 +140,22 @@ def test_dokument_cache_nutzt_den_abstand_der_quelle(monkeypatch: pytest.MonkeyP
     )
     assert file_cache.fetch_and_cache(datei, client=client) == "ok"
     assert gesehen == [("https://rat.example.de/getfile?id=1", {"request_interval": 3})]
+
+
+def test_robots_txt_im_abstand_der_quelle(monkeypatch: pytest.MonkeyPatch, uhr: _Uhr) -> None:
+    """Die robots.txt des Löschabgleichs hält den langsameren Takt der Quelle ein, nicht nur 1 s (Issue #1025)."""
+    gesehen: list[tuple[str, Any]] = []
+
+    def wait(url: str, **kw: Any) -> bool:
+        gesehen.append((url, kw.get("sync_config")))
+        return True
+
+    monkeypatch.setattr(host_pacing, "wait", wait)
+    quelle = _quelle({"request_interval": 2.5}).source
+    host = f"ris-{uuid.uuid4().hex[:8]}.example.de"  # eigener Host: keine zwischengespeicherte robots.txt
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text="User-agent: *\n")))
+    assert file_robots.file_fetch_status(quelle, f"https://{host}/files/a.pdf", client) == file_robots.ALLOWED
+    assert gesehen == [(f"https://{host}/robots.txt", {"request_interval": 2.5})]
 
 
 def test_vorschau_wartet_nicht_endlos(uhr: _Uhr, settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:

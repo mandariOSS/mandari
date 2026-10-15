@@ -38,7 +38,7 @@ from src.client.oparl_client import OParlClient
 from src.config import settings
 from src.scrapers.base import CONTENT_HASH_FIELD
 from src.storage import ris_events
-from src.storage.database import DatabaseStorage
+from src.storage.database import DatabaseStorage, day_stamp_lists_of, missing_lists_of
 from src.storage.models import Base
 from src.sync.orchestrator import MissingLists, SyncOrchestrator
 from src.sync.processor import OParlProcessor, unique_nested
@@ -474,21 +474,46 @@ async def test_zeitpunkt_und_vermerke_in_sync_config(speicher: DatabaseStorage) 
             text("UPDATE oparl_sources SET sync_config = CAST(:c AS jsonb)"), {"c": '{"request_interval": 2.0}'}
         )
     beginn = datetime(2026, 10, 15, 12, 30, 15, 987654, tzinfo=UTC)
+    geprueft = datetime(2026, 10, 15, 13, 0, tzinfo=UTC)
+    # Alle Schreiber gleichzeitig: Jeder liest unter Zeilensperre, keiner überschreibt den anderen (Issue #1025)
     await asyncio.gather(
         speicher.set_body_sync_started(source_id, BASE, beginn),
         speicher.set_body_sync_started(source_id, f"{BASE}-2", beginn),
-        speicher.set_list_missing(SOURCE, f"{BASE}/membership", True),
+        speicher.set_list_missing(SOURCE, f"{BASE}/membership", True, checked_at=geprueft),
+        speicher.add_modified_since_unsupported_hosts(SOURCE, {"ris.example.org"}),
+        speicher.update_scraper_state(SOURCE, {"runs": 1}),
+        speicher.set_source_sync_config_value(source_id, "probe", {"system": "oparl"}),
     )
     assert await speicher.get_body_sync_started(source_id, BASE) == beginn.replace(microsecond=0)
     assert await speicher.get_body_sync_started(source_id, f"{BASE}-2") == beginn.replace(microsecond=0)
     assert await speicher.get_body_sync_started(source_id, "unbekannt") is None
-    await speicher.set_list_missing(SOURCE, f"{BASE}/agendaitem", True)
+    await speicher.set_list_missing(SOURCE, f"{BASE}/agendaitem", True, checked_at=geprueft)
     await speicher.set_list_missing(SOURCE, f"{BASE}/membership", False)
+    await speicher.set_body_sync_started(source_id, f"{BASE}-2", None)
     quelle = await speicher.get_source_by_url(SOURCE)
     assert quelle is not None
-    assert quelle.sync_config["missing_lists"] == [f"{BASE}/agendaitem"]
+    assert quelle.sync_config["missing_lists"] == {f"{BASE}/agendaitem": "2026-10-15T13:00:00+00:00"}
+    assert missing_lists_of(quelle.sync_config) == {f"{BASE}/agendaitem": geprueft}
     assert quelle.sync_config["request_interval"] == 2.0  # andere Einstellungen bleiben
-    assert set(quelle.sync_config["body_sync_started"]) == {BASE, f"{BASE}-2"}
+    assert quelle.sync_config["modified_since_unsupported_hosts"] == ["ris.example.org"]
+    assert quelle.sync_config["scraper_state"] == {"runs": 1}
+    assert quelle.sync_config["probe"] == {"system": "oparl"}
+    assert set(quelle.sync_config["body_sync_started"]) == {BASE}
     await speicher.set_list_missing(SOURCE, f"{BASE}/agendaitem", False)
+    await speicher.set_body_sync_started(source_id, BASE, None)
     quelle = await speicher.get_source_by_url(SOURCE)
-    assert quelle is not None and "missing_lists" not in quelle.sync_config
+    assert quelle is not None
+    assert "missing_lists" not in quelle.sync_config and "body_sync_started" not in quelle.sync_config
+
+    # Listen mit Tagesstempeln: Der Zeitpunkt der ersten Erkennung bleibt, bis der Vermerk gelöscht wird
+    await speicher.set_list_day_stamped(SOURCE, f"{BASE}/meeting", True)
+    quelle = await speicher.get_source_by_url(SOURCE)
+    assert quelle is not None
+    erkannt = quelle.sync_config["day_stamp_lists"][f"{BASE}/meeting"]
+    await speicher.set_list_day_stamped(SOURCE, f"{BASE}/meeting", True)
+    quelle = await speicher.get_source_by_url(SOURCE)
+    assert quelle is not None and quelle.sync_config["day_stamp_lists"] == {f"{BASE}/meeting": erkannt}
+    assert day_stamp_lists_of(quelle.sync_config) == {f"{BASE}/meeting"}
+    await speicher.set_list_day_stamped(SOURCE, f"{BASE}/meeting", False)
+    quelle = await speicher.get_source_by_url(SOURCE)
+    assert quelle is not None and "day_stamp_lists" not in quelle.sync_config

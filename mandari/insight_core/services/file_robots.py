@@ -29,6 +29,7 @@ import logging
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -131,9 +132,10 @@ def _robots_url(url: str) -> str | None:
     return f"{parts.scheme}://{parts.netloc}/robots.txt"
 
 
-def _fetch(robots_url: str, client: httpx.Client) -> tuple[Rules, int]:
+def _fetch(robots_url: str, client: httpx.Client, sync_config: Any = None) -> tuple[Rules, int]:
     try:
-        host_pacing.wait(robots_url)  # auch die robots.txt zählt zum gemeinsamen Takt je Host (Issue #1025)
+        # Auch die robots.txt zählt zum gemeinsamen Takt je Host, im Abstand der Quelle (Issue #1025)
+        host_pacing.wait(robots_url, sync_config=sync_config)
         with client.stream("GET", robots_url) as response:
             if 400 <= response.status_code < 500 and response.status_code not in (408, 429):
                 return Rules(), CACHE_SECONDS
@@ -150,8 +152,11 @@ def _fetch(robots_url: str, client: httpx.Client) -> tuple[Rules, int]:
     return parse(data[:MAX_BYTES].decode("utf-8", errors="replace")), CACHE_SECONDS
 
 
-def rules_for(url: str, client: httpx.Client) -> Rules:
-    """Regeln für den Host von ``url`` (je Host einen Tag zwischengespeichert)."""
+def rules_for(url: str, client: httpx.Client, sync_config: Any = None) -> Rules:
+    """
+    Regeln für den Host von ``url`` (je Host einen Tag zwischengespeichert). ``sync_config`` der Quelle bestimmt den
+    Abstand zur vorigen Anfrage an den Host (``request_interval``), sonst gilt der Standard.
+    """
     robots_url = _robots_url(url)
     if robots_url is None:
         return Rules(unreachable=True)
@@ -159,7 +164,7 @@ def rules_for(url: str, client: httpx.Client) -> Rules:
     cached = cache.get(key)
     if isinstance(cached, Rules):
         return cached
-    rules, seconds = _fetch(robots_url, client)
+    rules, seconds = _fetch(robots_url, client, sync_config)
     cache.set(key, rules, seconds)
     return rules
 
@@ -179,7 +184,7 @@ def file_fetch_status(source: object, url: str, client: httpx.Client) -> str:
     """``erlaubt``, ``gesperrt`` oder ``nicht_lesbar`` für einen automatischen Abruf von ``url``."""
     if exception_note(source):
         return ALLOWED
-    rules = rules_for(url, client)
+    rules = rules_for(url, client, getattr(source, "sync_config", None))
     if rules.unreachable:
         return UNREACHABLE
     return ALLOWED if is_allowed(rules, url) else DISALLOWED

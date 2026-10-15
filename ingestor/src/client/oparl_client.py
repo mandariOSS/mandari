@@ -94,8 +94,9 @@ class ListFetchError(Exception):
 class ListMissingError(Exception):
     """
     Die Quelle bietet die Liste nicht an (Issue #1025): Schon die erste Seite antwortet ohne Filter mit HTTP 404
-    oder einem OParl-Fehlerobjekt. Das ist keine Lücke im Abgleich, sondern „gibt es hier nicht“; der Orchestrator
-    vermerkt die Liste und fragt sie bis zum nächsten Vollabgleich nicht mehr an.
+    oder einem OParl-Fehlerobjekt. Bei Listen, die in OParl 1.1 optional sind, ist das „gibt es hier nicht“: Der
+    Orchestrator vermerkt sie und fragt sie bis zum nächsten Vollabgleich, höchstens aber einen Tag lang, nicht mehr
+    an. Bei Pflichtlisten bleibt es eine Lücke im Abgleich.
     """
 
     def __init__(self, list_url: str, reason: str) -> None:
@@ -770,6 +771,8 @@ class OParlClient:
         current_url: str | None = url
         pages_fetched = 0
         tried_modified_since = False
+        # Erste Seite nach „gibt es nicht“ auf die gefilterte Anfrage noch einmal ohne Filter angefragt
+        retried_unfiltered = False
 
         # Append modified_since as OParl query parameter if provided.
         # Capability-Cache: Hosts, die den Filter bereits abgelehnt haben
@@ -825,9 +828,14 @@ class OParlClient:
                     f"({'HTTP 404' if result.status_code == 404 else 'Fehlerobjekt'}) — Liste ohne Filter[/yellow]"
                 )
                 self._list_modified_since_unsupported.add(url)
+                retried_unfiltered = True
                 tried_modified_since = False
                 current_url = url
                 continue
+            if first_page_missing and retried_unfiltered:
+                # Auch ohne Filter nicht da: Über den Filter sagte die erste Antwort nichts. Kommt die Liste
+                # wieder, läuft sie wie die übrigen mit Filter statt in diesem Prozess dauerhaft ohne
+                self._list_modified_since_unsupported.discard(url)
             if first_page_missing and report_missing:
                 reason = "HTTP 404" if result.status_code == 404 else oparl_error_message(result.data)
                 console.print(f"[dim]{url}: Liste gibt es bei der Quelle nicht ({reason})[/dim]")

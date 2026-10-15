@@ -11,6 +11,7 @@ Coordinates the complete OParl synchronization process with:
 """
 
 import asyncio
+from collections import Counter
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -30,6 +31,7 @@ from mandari_oparl import (
     ProcessedPaper,
     ProcessedPerson,
 )
+from mandari_oparl.utils import parse_datetime
 from rich.progress import (
     BarColumn,
     Progress,
@@ -61,7 +63,7 @@ from src.config import settings
 from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers.base import CONTENT_HASH_FIELD
-from src.storage.database import DatabaseStorage, missing_lists_of
+from src.storage.database import DatabaseStorage, day_stamp_lists_of, missing_lists_of
 from src.storage.events import start_correlation
 from src.storage.ris_events import content_fingerprint
 from src.sync.processor import OParlProcessor, session_location_id
@@ -105,6 +107,15 @@ def index_since(full: bool, previous_sync: datetime | None) -> datetime | None:
 MODIFIED_SINCE_FALLBACK_DAYS = 7
 
 
+def fallback_modified_since(now: datetime | None = None) -> datetime:
+    """
+    Bisheriges Änderungsfenster: sieben Tage zurück ab 00:00 Uhr, als naive Ortszeit. Der Client sendet naive
+    Zeitpunkte mit ``+00:00`` (``OParlClient._append_modified_since``), auf der Leitung beginnt es also um 00:00 UTC.
+    """
+    local_now = (now.astimezone() if now is not None else datetime.now()).replace(tzinfo=None)
+    return (local_now - timedelta(days=MODIFIED_SINCE_FALLBACK_DAYS)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
 def modified_since_for(sync_started: datetime | None, margin: timedelta, now: datetime | None = None) -> datetime:
     """
     ``modified_since`` eines inkrementellen Laufs (Issue #1025).
@@ -112,29 +123,66 @@ def modified_since_for(sync_started: datetime | None, margin: timedelta, now: da
     Mit Zeitpunkt: Beginn des letzten vollständig erfolgreichen Abgleichs der Kommune abzüglich ``margin``, als
     UTC-Zeitpunkt (der Client sendet ihn wie bisher mit ``+00:00``). Ein Zeitpunkt in der Zukunft (falsche Uhr)
     zählt als jetzt. Ohne Zeitpunkt wie bisher sieben Tage zurück ab 00:00 Uhr, als naive Ortszeit.
+
+    Nie weiter zurück als dieses bisherige Fenster: Bleibt eine Kommune lange unvollständig (Folgeseite bricht ab,
+    Liste dauerhaft gestört, ein Objekt lässt sich nicht speichern), fragte sonst jeder Lauf bis zum letzten
+    vollständigen Abgleich zurück, etwa vier Wochen, und damit mehr als vorher. Verglichen wird auf der Zeitbasis,
+    mit der der Client das bisherige Fenster sendet (UTC).
     """
+    fallback = fallback_modified_since(now)
     if sync_started is None:
-        local_now = (now.astimezone() if now is not None else datetime.now()).replace(tzinfo=None)
-        return (local_now - timedelta(days=MODIFIED_SINCE_FALLBACK_DAYS)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
+        return fallback
     if sync_started.tzinfo is None:
         sync_started = sync_started.replace(tzinfo=UTC)
-    now = now or datetime.now(UTC)
-    return min(sync_started.astimezone(UTC), now.astimezone(UTC)) - margin
+    now_utc = (now or datetime.now(UTC)).astimezone(UTC)
+    window = min(sync_started.astimezone(UTC), now_utc) - margin
+    if window <= fallback.replace(tzinfo=UTC):
+        return fallback
+    return window
+
+
+#: Listen am Body, die OParl 1.1 als optional führt (Typnamen wie in ``_sync_entity_type``). Nur sie werden bei
+#: HTTP 404 oder Fehlerobjekt als „gibt es nicht“ vermerkt. Fehlt eine Pflichtliste (organization, person, meeting,
+#: paper), ist das eine Lücke, etwa ein Endpunkt, der während eines Updates der Quelle kurz 404 liefert (Issue #1025).
+OPTIONAL_LIST_TYPES = frozenset({"membership", "agendaitem", "consultation", "file", "location", "legislativeterm"})
+#: Vermerkte Listen fragt auch der inkrementelle Lauf wieder an, wenn ihre letzte Prüfung so lange zurückliegt
+MISSING_LIST_RECHECK = timedelta(days=1)
+
+
+class RequiredListMissingError(Exception):
+    """Pflichtliste antwortet schon auf der ersten Seite mit HTTP 404 oder einem Fehlerobjekt: Lücke, kein Vermerk."""
+
+    def __init__(self, list_url: str, reason: str) -> None:
+        self.list_url = list_url
+        self.reason = reason
+        super().__init__(f"Liste {list_url} nicht abrufbar ({reason}); Pflichtliste, bleibt eine Lücke")
 
 
 @dataclass
 class MissingLists:
     """
-    Listen einer Quelle, die es bei ihr nicht gibt (HTTP 404 oder Fehlerobjekt auf der ersten Seite, Issue #1025).
+    Optionale Listen einer Quelle, die es bei ihr nicht gibt (HTTP 404 oder Fehlerobjekt auf der ersten Seite,
+    Issue #1025), mit dem Zeitpunkt ihrer letzten Prüfung.
 
     Gelesen aus ``sync_config["missing_lists"]`` beim Start des Abgleichs einer Quelle. Inkrementelle Läufe fragen
-    diese Listen nicht an; der Vollabgleich prüft sie und trägt sie aus, sobald es sie gibt.
+    eine vermerkte Liste erst wieder an, wenn ihre letzte Prüfung einen Tag zurückliegt (``MISSING_LIST_RECHECK``),
+    der Vollabgleich jedes Mal. Gibt es die Liste wieder, wird der Vermerk gelöscht. So bleibt eine Liste nach einer
+    kurzen Störung höchstens einen Tag ausgeblendet, auch wenn der nächste Vollabgleich Wochen entfernt ist oder sein
+    Zeitfenster endet, bevor er die Liste erreicht.
     """
 
     source_url: str
-    known: set[str] = field(default_factory=set)
+    known: dict[str, datetime | None] = field(default_factory=dict)
+
+    def skip(self, list_url: str, now: datetime | None = None) -> bool:
+        """Vermerkt und vor weniger als einem Tag geprüft: im inkrementellen Lauf nicht anfragen."""
+        if list_url not in self.known:
+            return False
+        checked = self.known[list_url]
+        if checked is None:
+            return False
+        age = (now or datetime.now(UTC)) - checked
+        return timedelta(0) <= age < MISSING_LIST_RECHECK
 
 
 @dataclass
@@ -152,6 +200,92 @@ class BodyListCheck:
     missing: dict[str, str] = field(default_factory=dict)
     #: Listen dieses Laufs, deren erste Seite lesbar war
     readable: int = 0
+
+
+@dataclass
+class DayStampLists:
+    """
+    Listen einer Quelle, deren ``modified`` nur das Datum trägt (``sync_config["day_stamp_lists"]``, Issue #1025).
+
+    Filtert die Quelle gegen solche Tagesstempel, fände ein Fenster ab „Beginn minus zwei Stunden“ ab etwa 02:00 Uhr
+    nichts mehr, was am selben Tag geändert wurde. Diese Listen fragt der inkrementelle Lauf deshalb weiter mit dem
+    Fenster von sieben Tagen an, die übrigen Listen der Kommune mit dem kurzen. Vermerkt wird eine Liste, sobald ein
+    Lauf dort nur Tagesstempel sieht, gelöscht, sobald er dort Uhrzeiten sieht. Sieht ein Lauf nichts (etwa nach
+    einer ruhigen Woche), bleibt der Vermerk.
+    """
+
+    source_url: str
+    known: set[str] = field(default_factory=set)
+
+
+def _day_stamp(value: Any) -> bool | None:
+    """Ist ``modified`` nur auf den Tag genau (00:00:00 oder ohne Uhrzeit)? ``None``: kein lesbarer Zeitpunkt."""
+    stamp = parse_datetime(value) if isinstance(value, str) else None
+    if stamp is None:
+        return None
+    return stamp.hour == 0 and stamp.minute == 0 and stamp.second == 0 and stamp.microsecond == 0
+
+
+@dataclass
+class BodyItemCheck:
+    """
+    Befund zu den Objekten einer Kommune in einem Lauf (Issue #1025).
+
+    Nicht gespeicherte Objekte: Fehler beim Verarbeiten oder Speichern (etwa Deadlock oder Constraint), eine
+    Mitgliedschaft, deren Person oder Gremium sich nicht auflösen lässt, ein Tagesordnungspunkt ohne Sitzung. Früher
+    holte jeder Lauf sie sieben Tage lang erneut. Jetzt rückt das Änderungsfenster höchstens bis zu ihrem ältesten
+    ``modified`` vor (ohne lesbares ``modified`` gar nicht), der nächste Lauf fragt sie also wieder ab. Als Lücke der
+    Quelle (``sync_complete``) zählen sie nicht: Sonst wiederholte eine dauerhaft fehlerhafte Mitgliedschaft den
+    Vollabgleich jede Nacht statt im Abstand der Quelle (``full_sync_every_days``).
+
+    Dazu je Liste, wie genau ``modified`` ist (nur Datum oder mit Uhrzeit, ``DayStampLists``).
+    """
+
+    #: Nicht gespeicherte Objekte je Typ
+    unstored: Counter[str] = field(default_factory=Counter)
+    #: Ältestes ``modified`` der nicht gespeicherten Objekte (UTC)
+    oldest_unstored: datetime | None = None
+    #: Ein nicht gespeichertes Objekt hatte kein lesbares ``modified``
+    unstored_without_stamp: bool = False
+    #: ``modified`` je Liste (Adresse): [nur Datum, mit Uhrzeit]
+    stamps: dict[str, list[int]] = field(default_factory=dict)
+
+    def note_stamp(self, list_url: str, item: dict[str, Any]) -> None:
+        day = _day_stamp(item.get("modified"))
+        if day is None:
+            return
+        counts = self.stamps.setdefault(list_url, [0, 0])
+        counts[0 if day else 1] += 1
+
+    def note_unstored(self, entity_type: str, item: dict[str, Any]) -> None:
+        self.unstored[entity_type] += 1
+        modified = item.get("modified")
+        stamp = parse_datetime(modified) if isinstance(modified, str) else None
+        if stamp is None:
+            self.unstored_without_stamp = True
+            return
+        stamp = (stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)).astimezone(UTC)
+        if self.oldest_unstored is None or stamp < self.oldest_unstored:
+            self.oldest_unstored = stamp
+
+    def day_stamped_lists(self) -> list[str]:
+        """Listen, deren gelesene ``modified`` alle nur das Datum tragen."""
+        return sorted(url for url, (day, timed) in self.stamps.items() if day and not timed)
+
+    def timed_lists(self) -> list[str]:
+        """Listen, in denen mindestens ein gelesenes ``modified`` eine Uhrzeit trägt."""
+        return sorted(url for url, (_day, timed) in self.stamps.items() if timed)
+
+    def window_start(self, started: datetime) -> datetime | None:
+        """
+        Neuer Anfang des Änderungsfensters nach einem Lauf, dessen Listen ganz gelesen wurden: Beginn des Laufs,
+        bei nicht gespeicherten Objekten höchstens ihr ältestes ``modified``; ``None`` = stehen lassen.
+        """
+        if not self.unstored:
+            return started
+        if self.unstored_without_stamp or self.oldest_unstored is None:
+            return None
+        return min(started, self.oldest_unstored)
 
 
 # Anzeigetexte der Fehlerklassen (Schonungsmeldung in sync_all, Status in list-sources)
@@ -548,7 +682,9 @@ class SyncOrchestrator:
                 # Bound per-body concurrency so multi-body sources don't
                 # multiply peak memory (each body sync holds pages + caches).
                 body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
-                missing_lists = MissingLists(url, missing_lists_of(getattr(source_row, "sync_config", None)))
+                source_config = getattr(source_row, "sync_config", None)
+                missing_lists = MissingLists(url, missing_lists_of(source_config))
+                day_stamps = DayStampLists(url, day_stamp_lists_of(source_config))
 
                 async def sync_body_wrapper(body_data):
                     async with body_semaphore:
@@ -560,6 +696,7 @@ class SyncOrchestrator:
                                 full=full,
                                 options=options,
                                 missing_lists=missing_lists,
+                                day_stamps=day_stamps,
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
@@ -861,7 +998,9 @@ class SyncOrchestrator:
                 # Bound per-body concurrency so multi-body sources don't
                 # multiply peak memory (each body sync holds pages + caches).
                 body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
-                missing_lists = MissingLists(url, missing_lists_of(getattr(source_row, "sync_config", None)))
+                source_config = getattr(source_row, "sync_config", None)
+                missing_lists = MissingLists(url, missing_lists_of(source_config))
+                day_stamps = DayStampLists(url, day_stamp_lists_of(source_config))
 
                 async def sync_body_wrapper(body_data):
                     """Wrapper to catch exceptions per body."""
@@ -874,6 +1013,7 @@ class SyncOrchestrator:
                                 full=full,
                                 options=options,
                                 missing_lists=missing_lists,
+                                day_stamps=day_stamps,
                             )
                         except Exception as e:
                             console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
@@ -976,14 +1116,17 @@ class SyncOrchestrator:
         full: bool,
         options: SourceFetchOptions | None = None,
         missing_lists: MissingLists | None = None,
+        day_stamps: DayStampLists | None = None,
     ) -> dict[str, Any]:
         """
         Sync a single body and all its entities.
 
         Inkrementell fragt der Lauf nur nach Änderungen seit dem Beginn des letzten vollständig erfolgreichen
-        Abgleichs der Kommune abzüglich Sicherheitsabstand (``modified_since_for``). Ist dieser Lauf vollständig
-        (jede Liste ganz gelesen oder als fehlend vermerkt), wird sein Beginn der neue Zeitpunkt; ein Lauf mit
-        Lücke lässt ihn stehen (Issue #1025).
+        Abgleichs der Kommune abzüglich Sicherheitsabstand (``modified_since_for``), höchstens sieben Tage zurück.
+        Ist dieser Lauf vollständig (jede Liste ganz gelesen oder als fehlend vermerkt), wird sein Beginn der neue
+        Zeitpunkt, bei nicht gespeicherten Objekten höchstens deren ältestes ``modified`` (``BodyItemCheck``); ein
+        Lauf mit Lücke lässt ihn stehen. Listen mit reinen Tagesstempeln laufen weiter mit sieben Tagen
+        (``DayStampLists``, Issue #1025).
 
         Returns statistics about synced entities.
         """
@@ -1025,8 +1168,9 @@ class SyncOrchestrator:
             previous_sync = None
 
         # Änderungsfenster des inkrementellen Laufs (Issue #1025): seit dem Beginn des letzten vollständig
-        # erfolgreichen Abgleichs dieser Kommune abzüglich Sicherheitsabstand; ohne ihn wie bisher sieben Tage.
-        # Die Quelle filtert vor, der Abgleich mit dem Bestand (batch_check, Content-Hash) prüft genau.
+        # erfolgreichen Abgleichs dieser Kommune abzüglich Sicherheitsabstand; ohne ihn, oder liegt er weiter
+        # zurück, wie bisher sieben Tage. Die Quelle filtert vor, der Abgleich mit dem Bestand (batch_check,
+        # Content-Hash) prüft genau.
         modified_since: datetime | None = None
         if not full:
             margin = (options or SourceFetchOptions()).modified_since_margin()
@@ -1036,13 +1180,20 @@ class SyncOrchestrator:
                 console.print(f"[yellow]  Letzter vollständiger Abgleich nicht lesbar ({e}), Fenster 7 Tage[/yellow]")
                 sync_started = None
             modified_since = modified_since_for(sync_started, margin)
-            basis = "7 Tage" if sync_started is None else f"letzter vollständiger Abgleich {sync_started.isoformat()}"
+            if sync_started is None:
+                basis = "7 Tage"
+            elif modified_since.tzinfo is None:
+                basis = f"7 Tage, letzter vollständiger Abgleich {sync_started.isoformat()} liegt weiter zurück"
+            else:
+                basis = f"letzter vollständiger Abgleich {sync_started.isoformat()}"
             console.print(f"[dim]Incremental sync: modified_since={modified_since.isoformat()} ({basis})[/dim]")
         else:
             console.print("[dim]Full sync: fetching ALL pages[/dim]")
 
         # Fehlende Listen dieser Kommune (Issue #1025), vermerkt am Ende des Laufs
         list_check = BodyListCheck(missing_lists) if missing_lists is not None else None
+        # Nicht gespeicherte Objekte und Tagesstempel (Issue #1025), bestimmen den nächsten Fensteranfang
+        item_check = BodyItemCheck()
 
         # Collects ES documents of entities that were tombstoned during this
         # body sync (index name -> doc ids). Flushed in Phase 3 so the search
@@ -1062,6 +1213,8 @@ class SyncOrchestrator:
                 "full": full,
                 "es_deletions": es_deletions,
                 "list_check": list_check,
+                "item_check": item_check,
+                "day_stamps": day_stamps,
             }
 
         # Phase 2 (parallel): Start text extraction as background task
@@ -1224,12 +1377,10 @@ class SyncOrchestrator:
 
         # Update body sync time
         await self.storage.update_body_sync_time(body_id)
-        # Vollständig gelesen: Beginn dieses Laufs ist der neue Zeitpunkt des Änderungsfensters (Issue #1025)
-        if not stats["incomplete"] and body_external_id:
-            try:
-                await self.storage.set_body_sync_started(source_id, body_external_id, body_started)
-            except Exception as e:  # noqa: BLE001 - dann gilt beim nächsten Mal der bisherige Zeitpunkt
-                console.print(f"[yellow]  Zeitpunkt des vollständigen Abgleichs nicht gespeichert: {e}[/yellow]")
+        if day_stamps is not None:
+            await self._settle_day_stamps(day_stamps, item_check, stats)
+        if body_external_id:
+            await self._advance_window(source_id, body_external_id, body_started, stats, item_check)
 
         # Await background text extraction (started before entity sync)
         if extraction_task is not None:
@@ -1462,11 +1613,16 @@ class SyncOrchestrator:
         full: bool = False,
         es_deletions: dict[str, list[str]] | None = None,
         list_check: BodyListCheck | None = None,
+        item_check: BodyItemCheck | None = None,
+        day_stamps: DayStampLists | None = None,
     ) -> int:
         """
         Sync all entities of a specific type.
 
-        Listen, die es bei der Quelle nicht gibt (``list_check``, Issue #1025), fragt nur der Vollabgleich an.
+        Optionale Listen, die es bei der Quelle nicht gibt (``list_check``, Issue #1025), fragt der inkrementelle
+        Lauf einmal am Tag an, der Vollabgleich jedes Mal. Nicht gespeicherte Objekte und die Genauigkeit von
+        ``modified`` hält ``item_check`` fest; Listen mit reinen Tagesstempeln (``day_stamps``) fragt der
+        inkrementelle Lauf mit dem Fenster von sieben Tagen an.
 
         For full sync:
         - Fetches all pages and upserts everything
@@ -1487,9 +1643,18 @@ class SyncOrchestrator:
         """
         if not list_url:
             return 0
-        if not full and list_check is not None and list_url in list_check.lists.known:
-            console.print(f"[dim]  {entity_type}: Liste fehlt bei der Quelle (vermerkt), nicht angefragt[/dim]")
-            return 0
+        optional = entity_type in OPTIONAL_LIST_TYPES
+        if not full and optional and list_check is not None and list_url in list_check.lists.known:
+            if list_check.lists.skip(list_url):
+                console.print(f"[dim]  {entity_type}: Liste fehlt bei der Quelle (vermerkt), nicht angefragt[/dim]")
+                return 0
+            # Tägliche Prüfung der vermerkten Liste: Gibt es sie wieder, kommen die Änderungen aus der Zeit des
+            # Vermerks mit, so weit wie bisher (sieben Tage), nicht nur die seit dem letzten Lauf
+            if modified_since is not None:
+                modified_since = fallback_modified_since()
+        # Liste mit reinen Tagesstempeln: weiter mit dem bisherigen Fenster (``DayStampLists``)
+        if modified_since is not None and day_stamps is not None and list_url in day_stamps.known:
+            modified_since = fallback_modified_since()
 
         count = 0
         updated_count = 0
@@ -1502,7 +1667,7 @@ class SyncOrchestrator:
         # For incremental: send modified_since to server as pre-filter
         server_modified_since = modified_since if not full else None
 
-        async for page in self._list_pages(client, list_url, server_modified_since, list_check):
+        async for page in self._list_pages(client, list_url, server_modified_since, list_check, optional=optional):
             pages_checked += 1
 
             # Memberships reference persons/organizations by external_id.
@@ -1533,6 +1698,8 @@ class SyncOrchestrator:
                             if await self._mark_deleted(item, entity_type, es_deletions):
                                 deleted_count += 1
                             continue
+                        if item_check is not None:
+                            item_check.note_stamp(list_url, item)
                         # Content-Hash mitschreiben, damit der nächste inkrementelle
                         # Lauf unveränderte Objekte ohne Zeitstempel erkennt (#122)
                         if timestamps_unreliable(item):
@@ -1542,8 +1709,12 @@ class SyncOrchestrator:
                             stored = await self._store_entity(processed, body_id, entity_type, body_name)
                             if stored:
                                 count += 1
+                            elif item_check is not None:
+                                item_check.note_unstored(entity_type, item)
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
+                        if item_check is not None:
+                            item_check.note_unstored(entity_type, item)
 
             else:
                 # Incremental hybrid: server pre-filtered + client-side comparison
@@ -1572,6 +1743,8 @@ class SyncOrchestrator:
                                 deleted_on_page += 1
                                 deleted_count += 1
                             continue
+                        if item_check is not None:
+                            item_check.note_stamp(list_url, item)
 
                         db_modified = existing_ids.get(external_id)
 
@@ -1592,6 +1765,8 @@ class SyncOrchestrator:
                                 elif stored:
                                     updated_on_page += 1
                                     updated_count += 1
+                                elif item_check is not None:
+                                    item_check.note_unstored(entity_type, item)
                             continue
 
                         item_modified = self.processor.parse_datetime(item.get("modified"))
@@ -1604,6 +1779,8 @@ class SyncOrchestrator:
                                 if stored:
                                     new_on_page += 1
                                     count += 1
+                                elif item_check is not None:
+                                    item_check.note_unstored(entity_type, item)
                         elif item_modified and db_modified and item_modified > db_modified:
                             # Modified item: update (upsert handles ON CONFLICT)
                             processed = self.processor.process(item, body_external_id)
@@ -1612,6 +1789,8 @@ class SyncOrchestrator:
                                 if stored:
                                     updated_on_page += 1
                                     updated_count += 1
+                                elif item_check is not None:
+                                    item_check.note_unstored(entity_type, item)
                         else:
                             # Unchanged: skip
                             unchanged_on_page += 1
@@ -1619,6 +1798,8 @@ class SyncOrchestrator:
 
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
+                        if item_check is not None:
+                            item_check.note_unstored(entity_type, item)
 
             # Log page results (skip for full sync to reduce noise)
             if not full:
@@ -1659,14 +1840,19 @@ class SyncOrchestrator:
         list_url: str,
         modified_since: datetime | None,
         list_check: BodyListCheck | None,
+        *,
+        optional: bool = True,
     ) -> AsyncIterator[list[dict[str, Any]]]:
         """
-        Seiten einer Liste; gibt es die Liste bei der Quelle nicht, keine Seite (Issue #1025).
+        Seiten einer Liste; gibt es eine optionale Liste bei der Quelle nicht, keine Seite (Issue #1025).
 
-        HTTP 404 oder ein Fehlerobjekt auf der ersten Seite (ohne Filter) zählt als „nicht vorhanden“, nicht als
-        Lücke: Die Liste landet in ``list_check`` und wird am Ende des Laufs in ``sync_config["missing_lists"]``
-        vermerkt (``_settle_missing_lists``); erst der nächste Vollabgleich fragt sie wieder an. Liest der
-        Vollabgleich eine vermerkte Liste ganz, wird der Vermerk gelöscht. Ohne ``list_check`` wie bisher.
+        HTTP 404 oder ein Fehlerobjekt auf der ersten Seite (ohne Filter) zählt bei Listen, die OParl 1.1 als
+        optional führt (``OPTIONAL_LIST_TYPES``), als „nicht vorhanden“, nicht als Lücke: Die Liste landet in
+        ``list_check`` und wird am Ende des Laufs in ``sync_config["missing_lists"]`` vermerkt
+        (``_settle_missing_lists``); inkrementell fragt sie erst die tägliche Prüfung wieder an, der Vollabgleich
+        jedes Mal. Wird eine vermerkte Liste ganz gelesen, wird der Vermerk gelöscht. Bei Pflichtlisten bleibt es
+        eine Lücke (``RequiredListMissingError``), auch beim Fehlerobjekt, das früher als leere Liste durchging.
+        Ohne ``list_check`` wie bisher.
         """
         if list_check is None:
             async for page in client.fetch_list(list_url, modified_since=modified_since):
@@ -1680,6 +1866,8 @@ class SyncOrchestrator:
                     list_check.readable += 1
                 yield page
         except ListMissingError as missing:
+            if not optional:
+                raise RequiredListMissingError(list_url, missing.reason) from missing
             list_check.missing[list_url] = missing.reason
             return
         if not readable:
@@ -1703,23 +1891,85 @@ class SyncOrchestrator:
             if list_url not in list_check.lists.known:
                 console.print(
                     f"[dim]  Liste {list_url} gibt es bei der Quelle nicht ({reason}): vermerkt, "
-                    f"bis zum nächsten Vollabgleich nicht mehr angefragt[/dim]"
+                    f"bis zur nächsten Prüfung (Vollabgleich, spätestens nach einem Tag) nicht mehr angefragt[/dim]"
                 )
             await self._remember_missing_list(list_check.lists, list_url, missing=True)
 
     async def _remember_missing_list(self, missing_lists: MissingLists | None, list_url: str, missing: bool) -> None:
-        """Vermerk „Liste gibt es nicht“ setzen oder löschen, nur bei Änderung; Fehler gefährden den Abgleich nie."""
-        if missing_lists is None or (list_url in missing_lists.known) == missing:
+        """
+        Vermerk „Liste gibt es nicht“ setzen (mit dem Zeitpunkt dieser Prüfung) oder löschen; Fehler gefährden den
+        Abgleich nie. Angefragt wird eine vermerkte Liste nur bei der Prüfung, deshalb schreibt jede Prüfung.
+        """
+        if missing_lists is None or (not missing and list_url not in missing_lists.known):
             return
+        checked_at = datetime.now(UTC)
         if missing:
-            missing_lists.known.add(list_url)
+            missing_lists.known[list_url] = checked_at
         else:
-            missing_lists.known.discard(list_url)
+            del missing_lists.known[list_url]
             console.print(f"[green]  Liste {list_url} gibt es wieder, Vermerk gelöscht[/green]")
         try:
-            await self.storage.set_list_missing(missing_lists.source_url, list_url, missing)
+            await self.storage.set_list_missing(missing_lists.source_url, list_url, missing, checked_at=checked_at)
         except Exception as e:  # noqa: BLE001 - ohne Vermerk wird die Liste im nächsten Lauf erneut geprüft
             console.print(f"[yellow]  Vermerk zur Liste {list_url} nicht gespeichert: {e}[/yellow]")
+
+    async def _advance_window(
+        self,
+        source_id: UUID,
+        body_external_id: str,
+        body_started: datetime,
+        stats: dict[str, Any],
+        item_check: BodyItemCheck,
+    ) -> None:
+        """
+        Anfang des Änderungsfensters der Kommune nach dem Lauf festhalten (Issue #1025).
+
+        - Lücke in einer Liste: stehen lassen.
+        - Nicht gespeicherte Objekte: höchstens bis zu ihrem ältesten ``modified``, ohne lesbares ``modified`` gar
+          nicht; der nächste Lauf fragt sie so wieder ab.
+        - Sonst: Beginn dieses Laufs.
+        """
+        if item_check.unstored:
+            stats["unstored"] = dict(sorted(item_check.unstored.items()))
+            summary = ", ".join(f"{name}: {count}" for name, count in sorted(item_check.unstored.items()))
+            console.print(
+                f"[yellow]  Nicht gespeichert ({summary}): Der nächste Lauf fragt diese Objekte wieder ab[/yellow]"
+            )
+        if stats["incomplete"]:
+            return
+        start = item_check.window_start(body_started)
+        if start is None:
+            return
+        try:
+            await self.storage.set_body_sync_started(source_id, body_external_id, start)
+        except Exception as e:  # noqa: BLE001 - dann gilt beim nächsten Mal der bisherige Zeitpunkt
+            console.print(f"[yellow]  Anfang des Änderungsfensters nicht gespeichert: {e}[/yellow]")
+
+    async def _settle_day_stamps(
+        self, day_stamps: DayStampLists, item_check: BodyItemCheck, stats: dict[str, Any]
+    ) -> None:
+        """
+        Listen mit reinen Tagesstempeln vermerken, Listen mit Uhrzeiten austragen (``DayStampLists``, Issue #1025).
+        Fehler gefährden den Abgleich nie; ohne Vermerk erkennt ihn der nächste Lauf erneut.
+        """
+        day_stamped = item_check.day_stamped_lists()
+        if day_stamped:
+            stats["day_stamped_lists"] = day_stamped
+        changes = [(url, True) for url in day_stamped if url not in day_stamps.known]
+        changes += [(url, False) for url in item_check.timed_lists() if url in day_stamps.known]
+        for list_url, day_stamped_now in changes:
+            if day_stamped_now:
+                day_stamps.known.add(list_url)
+                console.print(
+                    f"[yellow]  Liste {list_url}: modified nur mit Datum, inkrementell weiter mit sieben Tagen[/yellow]"
+                )
+            else:
+                day_stamps.known.discard(list_url)
+                console.print(f"[green]  Liste {list_url}: modified mit Uhrzeit, Vermerk gelöscht[/green]")
+            try:
+                await self.storage.set_list_day_stamped(day_stamps.source_url, list_url, day_stamped_now)
+            except Exception as e:  # noqa: BLE001 - ohne Vermerk erkennt der nächste Lauf die Liste erneut
+                console.print(f"[yellow]  Vermerk zur Liste {list_url} nicht gespeichert: {e}[/yellow]")
 
     async def _store_entity(
         self,
@@ -1774,10 +2024,11 @@ class SyncOrchestrator:
             meeting_id = None
             if entity.meeting_external_id:
                 meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_id)
-            if meeting_id:
-                await self.storage.upsert_agenda_item(entity, meeting_id)
-                metrics.record_entity_synced("agendaitem", body_name or "unknown")
-            # If no meeting_id found, skip (item likely from nested sync already)
+            if not meeting_id:
+                # Sitzung nicht im Bestand: nicht gespeichert, der Lauf hält es fest (Issue #1025)
+                return False
+            await self.storage.upsert_agenda_item(entity, meeting_id)
+            metrics.record_entity_synced("agendaitem", body_name or "unknown")
         elif isinstance(entity, ProcessedFile):
             # Files can belong to papers or meetings
             # Try to resolve paper_id from back-references (OParl spec: standalone files have these)

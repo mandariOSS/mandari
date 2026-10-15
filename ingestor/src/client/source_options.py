@@ -15,8 +15,10 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
 ``modified_since_margin_minutes``
     Sicherheitsabstand des Änderungsfensters in Minuten (0 bis 10080). Inkrementelle Läufe fragen je Kommune
     nach allem, was seit dem Beginn ihres letzten vollständig erfolgreichen Abgleichs abzüglich dieses Abstands
-    geändert wurde. Ohne Wert gilt der Standard des Ingestors (``INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES``,
-    120 Minuten).
+    geändert wurde, nie weiter zurück als sieben Tage. Ohne Wert gilt der Standard des Ingestors
+    (``INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES``, 120 Minuten). Trägt ``modified`` nur das Datum oder werden
+    Objekte erst Stunden nach ihrem ``modified`` sichtbar, braucht die Quelle mehr, z. B. 1500 für Tagesstempel;
+    Listen mit reinen Tagesstempeln erkennt der Ingestor selbst und fragt sie mit sieben Tagen an.
 ``list_params``
     Zusätzliche Parameter für die erste Seite jeder Liste, z. B. ``{"size": 100}`` bei ALLRIS: weniger,
     dafür größere Seiten. Die Folgeseiten kommen aus ``links.next`` der Quelle.
