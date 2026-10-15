@@ -100,6 +100,17 @@ def test_redis_stoerung_faellt_auf_den_prozess_zurueck(uhr: _Uhr, settings: Any)
     assert host_pacing._state["down_until"] == pytest.approx(uhr.jetzt + host_pacing.REDIS_RETRY_SECONDS)
 
 
+def test_quelle_darf_nur_verlangsamen(uhr: _Uhr, settings: Any) -> None:
+    """Ein request_interval unter einer Sekunde, auch 0, gilt als eine Sekunde (Issue #1025)."""
+    assert host_pacing.interval({"request_interval": 0.25}) == 1.0
+    assert host_pacing.interval({"request_interval": 0}) == 1.0
+    assert host_pacing.interval({"request_interval": 1.0}) == 1.0
+    assert host_pacing.interval({"request_interval": 3}) == 3.0
+    settings.RIS_REQUEST_INTERVAL = 0.0
+    assert host_pacing.interval({}) == 0.0  # Betriebsvariable 0 schaltet weiter ab
+    assert host_pacing.interval({"request_interval": 0.5}) == 1.0
+
+
 def test_abstand_null_drosselt_nicht(uhr: _Uhr, settings: Any) -> None:
     settings.RIS_REQUEST_INTERVAL = 0.0
     for _ in range(3):

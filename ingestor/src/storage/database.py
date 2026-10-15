@@ -169,6 +169,38 @@ class _Origin:
     events: bool
 
 
+#: Schlüssel in ``OParlSource.sync_config``: Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune
+#: (Kennung der Kommune -> Zeitpunkt in UTC, ISO 8601), Anfang des Änderungsfensters (Issue #1025)
+SYNC_CONFIG_BODY_SYNC_STARTED_KEY: Final = "body_sync_started"
+#: Schlüssel in ``OParlSource.sync_config``: Listen, die es bei der Quelle nicht gibt (Issue #1025)
+SYNC_CONFIG_MISSING_LISTS_KEY: Final = "missing_lists"
+
+
+def missing_lists_of(sync_config: Any) -> set[str]:
+    """Vermerkte fehlende Listen einer Quelle (``sync_config["missing_lists"]``); Ungültiges zählt nicht."""
+    if not isinstance(sync_config, dict):
+        return set()
+    stored = sync_config.get(SYNC_CONFIG_MISSING_LISTS_KEY)
+    if not isinstance(stored, list):
+        return set()
+    return {url for url in stored if isinstance(url, str) and url}
+
+
+def body_sync_started_of(sync_config: Any, body_external_id: str) -> datetime | None:
+    """Beginn des letzten vollständigen Abgleichs der Kommune aus ``sync_config``; Ungültiges zählt nicht."""
+    if not isinstance(sync_config, dict):
+        return None
+    stored = sync_config.get(SYNC_CONFIG_BODY_SYNC_STARTED_KEY)
+    value = stored.get(body_external_id) if isinstance(stored, dict) else None
+    if not isinstance(value, str):
+        return None
+    try:
+        started = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return started if started.tzinfo is not None else started.replace(tzinfo=UTC)
+
+
 def _normalized_urls(value: Any) -> list[str]:
     """Verweise als Liste von URLs: eine URL, eine Liste von URLs oder eingebettete Objekte mit ``id``."""
     items = value if isinstance(value, list) else [value]
@@ -602,6 +634,54 @@ class DatabaseStorage:
                 else:
                     sync_config.pop(self.SYNC_CONFIG_MODIFIED_SINCE_KEY, None)
                 source.sync_config = sync_config
+            await session.commit()
+
+    async def get_body_sync_started(self, source_id: UUID, body_external_id: str) -> datetime | None:
+        """Beginn des letzten vollständig erfolgreichen Abgleichs der Kommune (Issue #1025), sonst ``None``."""
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource.sync_config).where(OParlSource.id == source_id))
+            return body_sync_started_of(result.scalar_one_or_none(), body_external_id)
+
+    async def set_body_sync_started(self, source_id: UUID, body_external_id: str, started_at: datetime) -> None:
+        """
+        Beginn eines vollständig erfolgreichen Abgleichs der Kommune festhalten (Issue #1025).
+
+        Unter Zeilensperre gelesen und geschrieben: Die Kommunen einer Quelle laufen parallel und schreiben in
+        dieselbe ``sync_config``. Gespeichert auf die Sekunde abgerundet (nie später als der echte Beginn).
+        """
+        if started_at.tzinfo is None:
+            started_at = started_at.replace(tzinfo=UTC)
+        value = started_at.astimezone(UTC).isoformat(timespec="seconds")
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource).where(OParlSource.id == source_id).with_for_update())
+            source = result.scalar_one_or_none()
+            if source is None:
+                return
+            sync_config = dict(source.sync_config or {})
+            stored = sync_config.get(SYNC_CONFIG_BODY_SYNC_STARTED_KEY)
+            started = dict(stored) if isinstance(stored, dict) else {}
+            started[body_external_id] = value
+            sync_config[SYNC_CONFIG_BODY_SYNC_STARTED_KEY] = started
+            source.sync_config = sync_config
+            await session.commit()
+
+    async def set_list_missing(self, source_url: str, list_url: str, missing: bool) -> None:
+        """Liste der Quelle als „gibt es nicht“ vermerken oder den Vermerk löschen (Issue #1025), unter Zeilensperre."""
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource).where(OParlSource.url == source_url).with_for_update())
+            source = result.scalar_one_or_none()
+            if source is None:
+                return
+            sync_config = dict(source.sync_config or {})
+            stored = missing_lists_of(sync_config)
+            changed = stored | {list_url} if missing else stored - {list_url}
+            if changed == stored:
+                return
+            if changed:
+                sync_config[SYNC_CONFIG_MISSING_LISTS_KEY] = sorted(changed)
+            else:
+                sync_config.pop(SYNC_CONFIG_MISSING_LISTS_KEY, None)
+            source.sync_config = sync_config
             await session.commit()
 
     # Schlüssel in OParlSource.sync_config für den persistierten

@@ -122,9 +122,10 @@ class TestReservierung:
         assert redis.aufrufe == [key("rat.example.de")]
 
 
-def test_abstand_aus_der_quellenkonfiguration():
+def test_abstand_aus_der_quellenkonfiguration(echte_drossel: None):
     assert interval_for({}) == DEFAULT_INTERVAL == 1.0
-    assert interval_for({"request_interval": 0.25}) == 0.25
+    assert interval_for({"request_interval": 0.25}) == 1.0  # nie schneller als eine Anfrage je Sekunde
+    assert interval_for({"request_interval": 2.5}) == 2.5
     assert interval_for({"request_interval": 600}) == DEFAULT_INTERVAL  # Tippfehler gilt als nicht gesetzt
     assert SourceFetchOptions.from_sync_config({"request_interval": 2}).request_interval == 2.0
     assert type(settings).model_fields["request_interval"].default == 1.0

@@ -34,6 +34,8 @@ from urllib.parse import urlsplit
 import httpx
 from django.core.cache import cache
 
+from insight_core.services import host_pacing
+
 logger = logging.getLogger(__name__)
 
 #: Schlüssel in ``OParlSource.sync_config``: Ausnahme mit Bereich und Vermerk
@@ -131,6 +133,7 @@ def _robots_url(url: str) -> str | None:
 
 def _fetch(robots_url: str, client: httpx.Client) -> tuple[Rules, int]:
     try:
+        host_pacing.wait(robots_url)  # auch die robots.txt zählt zum gemeinsamen Takt je Host (Issue #1025)
         with client.stream("GET", robots_url) as response:
             if 400 <= response.status_code < 500 and response.status_code not in (408, 429):
                 return Rules(), CACHE_SECONDS

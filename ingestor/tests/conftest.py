@@ -62,9 +62,12 @@ def _robots_zwischenspeicher(request: pytest.FixtureRequest, monkeypatch: pytest
 def _drossel_je_host(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """Drossel je Host ohne Redis und Zustand je Test; ohne Fixture ``echte_drossel`` ist sie abgeschaltet.
 
-    Standard im Betrieb ist eine Anfrage je Sekunde und Host (src/client/host_pacing.py). Tests, die nur den
-    Abruf prüfen, sollen nicht sekundenweise warten; die Drossel-Tests fordern ``echte_drossel`` an.
+    Standard im Betrieb ist eine Anfrage je Sekunde und Host (src/client/host_pacing.py), und eine Quelle darf
+    nicht schneller eingestellt werden (Untergrenze ``mandari_oparl.pacing.MIN_REQUEST_INTERVAL``). Tests, die nur
+    den Abruf prüfen, sollen nicht sekundenweise warten; die Drossel-Tests fordern ``echte_drossel`` an.
     """
+    from mandari_oparl import pacing
+
     from src.client.host_pacing import host_pacer
     from src.config import settings
 
@@ -72,13 +75,24 @@ def _drossel_je_host(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(host_pacer, "redis_enabled", False)
     if "echte_drossel" not in request.fixturenames:
         monkeypatch.setattr(settings, "request_interval", 0.0)
+        monkeypatch.setattr(pacing, "MIN_REQUEST_INTERVAL", 0.0)
     yield
     host_pacer.reset()
 
 
+@pytest.fixture(autouse=True)
+def _listen_ohne_filter() -> Iterator[None]:
+    """Prozessweiter Befund „Liste ohne modified_since“ (``OParlClient``, Issue #1025) je Test leer."""
+    from src.client.oparl_client import OParlClient
+
+    OParlClient._list_modified_since_unsupported.clear()
+    yield
+    OParlClient._list_modified_since_unsupported.clear()
+
+
 @pytest.fixture
 def echte_drossel() -> None:
-    """Drossel je Host im Test mit dem Standardabstand (siehe ``_drossel_je_host``)."""
+    """Drossel je Host im Test mit Standardabstand und Untergrenze wie im Betrieb (siehe ``_drossel_je_host``)."""
 
 
 @pytest.fixture

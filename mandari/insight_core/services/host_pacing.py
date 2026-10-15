@@ -6,7 +6,8 @@ Dokument-Cache, Textextraktion, Vorschau, Personenfotos und der Abruf der robots
 Anfrage an ein Ratsinformationssystem einen Zeitpunkt für dessen Host – im selben Takt wie der Ingestor.
 So bleibt es bei höchstens einer Anfrage je Abstand an einen Host, gleich welcher Prozess sie stellt.
 
-Abstand: ``sync_config["request_interval"]`` der Quelle, sonst ``RIS_REQUEST_INTERVAL`` (Standard eine Sekunde).
+Abstand: ``sync_config["request_interval"]`` der Quelle, nie unter einer Sekunde (``mandari_oparl.pacing``, Issue
+#1025), sonst ``RIS_REQUEST_INTERVAL`` (Standard eine Sekunde, 0 = Drossel aus, nur Tests und Notfälle).
 Ohne erreichbares Redis drosselt der Prozess für sich und versucht es nach einer Minute erneut.
 
 In einer Web-Anfrage (Vorschau, Zusammenfassung) wird nur mit Höchstwartezeit gewartet (``max_wait``) und ohne
