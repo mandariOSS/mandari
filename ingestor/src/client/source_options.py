@@ -29,6 +29,11 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
     Fensters, ob geplant, aus dem Admin oder per ``sync --full``, läuft als inkrementeller Abgleich. Ein
     laufender Vollabgleich holt nach dem Ende des Fensters keine weitere Seite mehr; die offenen Listen gelten
     als unvollständig und kommen beim nächsten Vollabgleich wieder dran.
+``full_sync_every_days``
+    Mindestabstand in Tagen (1 bis 365) zwischen zwei vollständig erfolgreichen Vollabgleichen
+    (``last_successful_full_sync``). Für Quellen, die zuverlässig mit ``modified_since`` filtern: Der
+    nächtliche Vollabgleich läuft dann nur alle paar Wochen, sonst inkrementell. Ein abgebrochener
+    Vollabgleich zählt nicht, er wird in der nächsten Nacht wiederholt.
 ``robots_override``
     Ausnahme von der robots.txt, nur mit Freigabe der Stelle und Pflicht-Vermerk, z. B.
     ``{"scope": "files", "note": "Freigabe per E-Mail vom …, offizielle Anfrage läuft"}``. ``scope``: ``api``,
@@ -55,6 +60,8 @@ LIST_PARAMS_KEY = "list_params"
 CARRY_MODIFIED_SINCE_KEY = "carry_modified_since"
 FILE_DOWNLOADS_KEY = "file_downloads"
 FULL_SYNC_WINDOW_KEY = "full_sync_window"
+FULL_SYNC_EVERY_DAYS_KEY = "full_sync_every_days"
+MAX_FULL_SYNC_EVERY_DAYS = 365
 DEFAULT_WINDOW_TZ = "Europe/Berlin"
 
 
@@ -82,6 +89,12 @@ _CLOCK = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
 def _clock(value: Any) -> time | None:
     match = _CLOCK.match(value.strip()) if isinstance(value, str) else None
     return time(int(match.group(1)), int(match.group(2))) if match else None
+
+
+def _every_days(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 1 <= value <= MAX_FULL_SYNC_EVERY_DAYS else None
 
 
 @dataclass(frozen=True)
@@ -130,6 +143,7 @@ class SourceFetchOptions:
     file_downloads: bool = True
     robots_override: RobotsOverride | None = None
     full_sync_window: FullSyncWindow | None = None
+    full_sync_every_days: int | None = None
 
     @classmethod
     def from_sync_config(cls, sync_config: Any) -> SourceFetchOptions:
@@ -143,15 +157,31 @@ class SourceFetchOptions:
             file_downloads=sync_config.get(FILE_DOWNLOADS_KEY) is not False,
             robots_override=robots_override(sync_config),
             full_sync_window=FullSyncWindow.parse(sync_config.get(FULL_SYNC_WINDOW_KEY)),
+            full_sync_every_days=_every_days(sync_config.get(FULL_SYNC_EVERY_DAYS_KEY)),
         )
 
-    def full_sync_plan(self, full: bool, now: datetime | None = None) -> tuple[bool, datetime | None]:
+    def full_sync_plan(
+        self,
+        full: bool,
+        now: datetime | None = None,
+        last_full_sync: datetime | None = None,
+    ) -> tuple[bool, datetime | None]:
         """
-        Vollabgleich erlaubt? Liefert ``(full, Abrufende)``: außerhalb des Fensters ``(False, None)``, im
-        Fenster ``(True, Fensterende)``. Ohne Fenster oder für inkrementelle Läufe bleibt alles, wie es ist.
+        Vollabgleich jetzt? Liefert ``(full, Abrufende)``. Inkrementell (``(False, None)``), wenn der letzte
+        vollständige Vollabgleich jünger als ``full_sync_every_days`` ist oder ``now`` außerhalb des Fensters
+        liegt; im Fenster ``(True, Fensterende)``. Ohne Optionen oder für inkrementelle Läufe bleibt es dabei.
         """
-        if not full or self.full_sync_window is None:
-            return full, None
+        if not full:
+            return False, None
+        now = now or datetime.now(UTC)
+        if self.full_sync_every_days is not None and last_full_sync is not None:
+            if last_full_sync.tzinfo is None:
+                last_full_sync = last_full_sync.replace(tzinfo=UTC)
+            # Eine Stunde Spielraum, damit ein nächtlicher Lauf nicht an Minuten Laufzeitunterschied scheitert
+            if now - last_full_sync < timedelta(days=self.full_sync_every_days) - timedelta(hours=1):
+                return False, None
+        if self.full_sync_window is None:
+            return True, None
         closes_at = self.full_sync_window.closes_at(now)
         return (closes_at is not None), closes_at
 

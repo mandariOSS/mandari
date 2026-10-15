@@ -8,7 +8,7 @@ Vollabgleich inkrementell, und ein laufender Vollabgleich holt nach dem Fenstere
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 
 import pytest
 
@@ -99,3 +99,42 @@ async def test_liste_bricht_nach_fensterende_ohne_anfrage_ab(monkeypatch):
             pass
     # Als Listenfehler zählt die Liste als unvollständig (kein Löschabgleich, kein „aktuell“)
     assert isinstance(fehler.value, ListFetchError)
+
+
+# ---------------------------------------------------------------------------
+# Abstand zwischen Vollabgleichen (full_sync_every_days)
+# ---------------------------------------------------------------------------
+
+ALLE_28_TAGE_NACHTS = {"full_sync_every_days": 28, **NACHTS}
+
+
+@pytest.mark.parametrize("wert", [0, -1, 366, 2.5, "28", True, None])
+def test_ungueltiger_abstand_gilt_als_nicht_gesetzt(wert):
+    assert SourceFetchOptions.from_sync_config({"full_sync_every_days": wert}).full_sync_every_days is None
+
+
+def test_vollabgleich_erst_nach_ablauf_des_abstands():
+    options = SourceFetchOptions.from_sync_config(ALLE_28_TAGE_NACHTS)
+    jetzt = berlin(4)
+    assert options.full_sync_plan(True, now=jetzt, last_full_sync=jetzt - timedelta(days=3)) == (False, None)
+    full, deadline = options.full_sync_plan(True, now=jetzt, last_full_sync=jetzt - timedelta(days=28))
+    assert full is True and deadline is not None
+    # Nächtlicher Lauf: wenige Minuten Laufzeitunterschied verschieben ihn nicht um einen Tag
+    assert options.full_sync_plan(True, now=jetzt, last_full_sync=jetzt - timedelta(days=28) + timedelta(minutes=30))[0]
+
+
+def test_ohne_erfolgreichen_vollabgleich_ist_er_faellig():
+    options = SourceFetchOptions.from_sync_config(ALLE_28_TAGE_NACHTS)
+    assert options.full_sync_plan(True, now=berlin(4), last_full_sync=None)[0] is True
+
+
+def test_faelliger_vollabgleich_wartet_auf_das_fenster():
+    options = SourceFetchOptions.from_sync_config(ALLE_28_TAGE_NACHTS)
+    assert options.full_sync_plan(True, now=berlin(14), last_full_sync=None) == (False, None)
+
+
+def test_abstand_ohne_fenster():
+    options = SourceFetchOptions.from_sync_config({"full_sync_every_days": 7})
+    jetzt = berlin(14)
+    assert options.full_sync_plan(True, now=jetzt, last_full_sync=jetzt - timedelta(days=8)) == (True, None)
+    assert options.full_sync_plan(True, now=jetzt, last_full_sync=jetzt - timedelta(days=1)) == (False, None)
