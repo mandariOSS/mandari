@@ -144,7 +144,16 @@ def test_dokument_cache_nutzt_den_abstand_der_quelle(monkeypatch: pytest.MonkeyP
     assert gesehen == [("https://rat.example.de/getfile?id=1", {"request_interval": 3})]
 
 
-def test_robots_txt_im_abstand_der_quelle(monkeypatch: pytest.MonkeyPatch, uhr: _Uhr) -> None:
+def _robots_transport(monkeypatch: pytest.MonkeyPatch, handler: Any) -> None:
+    """Abruf der robots.txt (``robots._fetch``) über einen nachgebildeten Server statt ins Netz."""
+    from insight_core.services import safe_fetch
+
+    monkeypatch.setattr(
+        safe_fetch, "guarded_client", lambda **kw: httpx.Client(transport=httpx.MockTransport(handler), **kw)
+    )
+
+
+def test_robots_txt_im_abstand_der_quelle(echte_robots: None, monkeypatch: pytest.MonkeyPatch, uhr: _Uhr) -> None:
     """Die robots.txt des Löschabgleichs hält den langsameren Takt der Quelle ein, nicht nur 1 s (Issue #1025)."""
     gesehen: list[tuple[str, Any]] = []
 
@@ -153,10 +162,10 @@ def test_robots_txt_im_abstand_der_quelle(monkeypatch: pytest.MonkeyPatch, uhr: 
         return True
 
     monkeypatch.setattr(host_pacing, "wait", wait)
+    _robots_transport(monkeypatch, lambda r: httpx.Response(200, text="User-agent: *\n"))
     quelle = _quelle({"request_interval": 2.5}).source
     host = f"ris-{uuid.uuid4().hex[:8]}.example.de"  # eigener Host: keine zwischengespeicherte robots.txt
-    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, text="User-agent: *\n")))
-    assert file_robots.file_fetch_status(quelle, f"https://{host}/files/a.pdf", client) == file_robots.ALLOWED
+    assert file_robots.file_fetch_status(quelle, f"https://{host}/files/a.pdf") == file_robots.ALLOWED
     assert gesehen == [(f"https://{host}/robots.txt", {"request_interval": 2.5})]
 
 

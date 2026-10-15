@@ -76,7 +76,15 @@ from mandari_oparl.abgleich import GONE_STATUS, looks_like_html
 from prometheus_client import Counter as PromCounter
 
 from insight_core.models import OParlBody, OParlFile, OParlSource
-from insight_core.services import file_cache, file_cache_limit, file_store, host_pacing, robots, safe_fetch
+from insight_core.services import (
+    file_cache,
+    file_cache_limit,
+    file_store,
+    host_pacing,
+    redirects,
+    robots,
+    safe_fetch,
+)
 from insight_core.services.text_extraction_job import runner_is_worker
 
 logger = logging.getLogger(__name__)
@@ -582,9 +590,12 @@ def http_timeout() -> httpx.Timeout:
 
 
 def fetch_client() -> httpx.Client:
-    """Client für Abrufe bei Quellen: nur öffentliche Ziele, auch nach Weiterleitungen."""
+    """
+    Client für Abrufe bei Quellen: nur öffentliche Ziele, auch nach Weiterleitungen. Weiterleitungen folgen
+    :func:`stream` und :func:`head` selbst, nach der robots.txt des Ziels und im Takt (Issue #1027).
+    """
     return safe_fetch.guarded_client(
-        headers={"User-Agent": file_cache.USER_AGENT}, timeout=http_timeout(), follow_redirects=True
+        headers={"User-Agent": file_cache.USER_AGENT}, timeout=http_timeout(), follow_redirects=False
     )
 
 
@@ -595,15 +606,20 @@ def stream(
     *,
     headers: dict[str, str] | None = None,
     max_bytes: int | None = None,
+    before_redirect: redirects.BeforeRedirect | None = None,
 ) -> Antwort:
     """
     GET ``url`` gestreamt nach ``target`` (nie die ganze Datei im Speicher), dabei hashen.
 
     Bei einem Status außer 200 wird nichts geschrieben. ``TooLargeError`` über ``max_bytes`` (Standard
-    ``FILE_CACHE_MAX_MB``), Netzfehler als ``httpx.HTTPError``.
+    ``FILE_CACHE_MAX_MB``), Netzfehler als ``httpx.HTTPError``. Weiterleitungen: vorher ``before_redirect``
+    (robots.txt des Ziels und Takt der Quelle, :func:`insight_core.services.redirects.guard`; ohne Angabe ohne
+    Ausnahme und im Standardtakt). Folgen wir nicht, ``redirects.RedirectBlockedError`` bzw. ``RedirectBusyError``.
     """
     grenze = file_cache.max_bytes() if max_bytes is None else max_bytes
-    with client.stream("GET", url, headers=headers or {}) as response:
+    with redirects.stream(
+        client, "GET", url, headers=headers, before_redirect=before_redirect or redirects.guard()
+    ) as response:
         if response.status_code != 200:
             return Antwort(response.status_code)
         if int(response.headers.get("content-length") or 0) > grenze:
@@ -622,19 +638,34 @@ def stream(
         return Antwort(200, size, digest.hexdigest(), response.headers.get("content-type", ""), head)
 
 
-def head(client: httpx.Client, url: str, *, headers: dict[str, str] | None = None) -> httpx.Response:
-    """HEAD-Anfrage (Stichprobe des Löschabgleichs)."""
-    return client.head(url, headers=headers or {})
+def head(
+    client: httpx.Client,
+    url: str,
+    *,
+    headers: dict[str, str] | None = None,
+    before_redirect: redirects.BeforeRedirect | None = None,
+) -> httpx.Response:
+    """HEAD-Anfrage (Stichprobe des Löschabgleichs); Weiterleitungen wie bei :func:`stream`."""
+    request = client.build_request("HEAD", url, headers=headers or {})
+    return redirects.send(client, request, before_redirect=before_redirect or redirects.guard())
 
 
 def download_live(
-    file_obj: Any, url: str, target: IO[bytes], *, total_seconds: float, read_timeout: float
+    file_obj: Any,
+    url: str,
+    target: IO[bytes],
+    *,
+    total_seconds: float,
+    read_timeout: float,
+    max_wait: float | None = None,
 ) -> safe_fetch.Download:
     """
     Live-Abruf der Vorschau: kurze Zeitgrenzen, Größengrenze, Download-Header und User-Agent der Quelle.
 
     Wirft wie ``safe_fetch.download_to`` (``httpx.HTTPStatusError``, ``httpx.RequestError``, ``TooLargeError``,
-    ``DeadlineExceededError``). robots.txt und Drossel prüft die Vorschau vorher selbst (mit Höchstwartezeit).
+    ``DeadlineExceededError``). robots.txt und Drossel prüft die Vorschau vorher selbst (mit Höchstwartezeit); vor
+    jeder Weiterleitung prüfen wir die robots.txt des Ziels und warten höchstens ``max_wait`` auf den Takt
+    (``redirects.RedirectBlockedError`` bzw. ``RedirectBusyError``, Issue #1027).
     """
     return safe_fetch.download_to(
         target,
@@ -644,7 +675,13 @@ def download_live(
         timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=5.0, pool=5.0),
         headers=file_cache.download_headers(file_obj.body),
         user_agent=robots.user_agent_for(file_obj),
+        before_redirect=redirects.guard(sync_config=robots.sync_config_of(file_obj), max_wait=max_wait),
     )
+
+
+def code_for_redirect(exc: redirects.RedirectBlockedError) -> str:
+    """Fehlercode, wenn wir einer Weiterleitung nicht folgen: wie bei der robots.txt der Datei selbst."""
+    return CODE_ROBOTS_UNREACHABLE if exc.decision.unreachable else CODE_ROBOTS
 
 
 def code_for_status(status: int) -> str:
@@ -660,6 +697,8 @@ def code_for_status(status: int) -> str:
 
 def code_for_exception(exc: BaseException) -> str:
     """Fehlercode eines Netzfehlers."""
+    if isinstance(exc, redirects.RedirectBlockedError):
+        return code_for_redirect(exc)
     if isinstance(exc, safe_fetch.BlockedDestinationError):
         return CODE_BLOCKED_DESTINATION
     if isinstance(exc, httpx.TimeoutException | safe_fetch.DeadlineExceededError):
@@ -775,9 +814,22 @@ def _abrufen_beansprucht(
     buffer = tempfile.SpooledTemporaryFile(max_size=2 * 1024 * 1024)  # noqa: SIM115 - unten geschlossen
     try:
         try:
-            antwort = stream(aktiv, url, buffer, headers=file_cache.download_headers(file_obj.body))
+            antwort = stream(
+                aktiv,
+                url,
+                buffer,
+                headers=file_cache.download_headers(file_obj.body),
+                before_redirect=redirects.guard(sync_config=sync_config, max_wait=max_wait),
+            )
         except TooLargeError:
             return fail(file_obj, beanspruchung, CODE_TOO_LARGE, f"> {file_cache.max_bytes() // 1024 // 1024} MB", now)
+        except redirects.RedirectBusyError:
+            restore(beanspruchung)
+            return BUSY
+        except redirects.RedirectBlockedError as exc:
+            # Das Ziel einer Weiterleitung ist per robots.txt gesperrt (bzw. seine robots.txt nicht erreichbar)
+            reason = f"{exc.decision.reason} (Ziel einer Weiterleitung)"
+            return fail(file_obj, beanspruchung, code_for_redirect(exc), reason, now)
         except httpx.HTTPError as exc:
             return fail(file_obj, beanspruchung, code_for_exception(exc), type(exc).__name__, now)
         if antwort.status != 200:

@@ -524,7 +524,10 @@ Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (I
   Adressen nach einer Umstellung, Wartung, Sperre unserer Abrufe); bei einer echten Massenlöschung den Lauf mit
   höherem `--max-fehlend` für diese Kommune wiederholen.
 - **robots.txt ist verbindlich:** Vor jedem Abruf einer Datei prüft der Abgleich die robots.txt des Hosts
-  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf). Eine
+  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf), mit
+  derselben Auswertung wie alle Abrufe: Gruppe `mandari-ingestor` vor `*`, frühere Kennungen nur zusätzlich
+  (`docs/MONITORING.md`). Einer Weiterleitung folgt er nur, wenn die robots.txt ihres Ziel-Hosts sie erlaubt
+  (sonst Ergebnis `robots`), und jede Weiterleitung läuft im Takt je Host. Eine
   Ausnahme trägt nur eine Quelle mit Vermerk in `sync_config["robots_override"]`, z. B.
   `{"scope": "files", "note": "Zustimmung liegt vor, Anfrage läuft"}` (Bereich `files` oder `all`, Vermerk
   mindestens zehn Zeichen; dasselbe Format wie für die übrigen Abrufe der Quelle).

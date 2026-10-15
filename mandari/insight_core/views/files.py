@@ -178,7 +178,7 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from hub.ris import abruf
 
 from .. import throttle
-from ..services import host_pacing, robots, safe_fetch
+from ..services import host_pacing, redirects, robots, safe_fetch
 
 logger = logging.getLogger(__name__)
 
@@ -430,15 +430,23 @@ def _robots_or_pacing_blocked(file_obj, url):
     if decision.unreachable:
         # Dieselben Zustände wie der Abruf (Issue #919): Wiederholung, keine Sperre
         abruf.record_live_failure(file_obj, abruf.CODE_ROBOTS_UNREACHABLE, decision.reason)
-        response = _file_proxy_error(
-            "Dokument beim Ratsinformationssystem öffnen",
-            "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar. Wir rufen das "
-            "Dokument deshalb jetzt nicht selbst ab. " + _original_link(url),
-            status=503,
-        )
-        response["Retry-After"] = "900"
-        return response
+        return _robots_unreachable_response(url)
     abruf.record_live_failure(file_obj, abruf.CODE_ROBOTS, decision.reason)
+    return _robots_refused_response(url)
+
+
+def _robots_unreachable_response(url):
+    response = _file_proxy_error(
+        "Dokument beim Ratsinformationssystem öffnen",
+        "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar. Wir rufen das "
+        "Dokument deshalb jetzt nicht selbst ab. " + _original_link(url),
+        status=503,
+    )
+    response["Retry-After"] = "900"
+    return response
+
+
+def _robots_refused_response(url):
     return _file_proxy_error(
         "Dokument beim Ratsinformationssystem öffnen",
         "Diese Kommune untersagt automatische Abrufe ihrer Dokumente (robots.txt). Wir rufen das Dokument "
@@ -468,7 +476,20 @@ def _fetch_live(file_obj, url, filename, force_download):
             spool,
             total_seconds=throttle.setting("FILE_PROXY_TOTAL_SECONDS"),
             read_timeout=read_timeout,
+            max_wait=float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5)),
         )
+    except redirects.RedirectBusyError:
+        # Für das Ziel einer Weiterleitung war kein Zeitpunkt frei: später erneut, kein Fehlschlag
+        spool.close()
+        return _source_busy_response(url)
+    except redirects.RedirectBlockedError as exc:
+        # Das Ziel einer Weiterleitung sperrt die robots.txt seines Hosts (Issue #1027): wie bei der Datei selbst
+        spool.close()
+        reason = f"{exc.decision.reason} (Ziel einer Weiterleitung)"
+        abruf.record_live_failure(file_obj, abruf.code_for_redirect(exc), reason)
+        if exc.decision.unreachable:
+            return _robots_unreachable_response(url)
+        return _robots_refused_response(url)
     except httpx.HTTPStatusError as e:
         spool.close()
         status = e.response.status_code

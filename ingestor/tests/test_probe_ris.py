@@ -379,7 +379,7 @@ def test_cli_probe_ris_nutzt_vorhandenes_user_agent_setting(monkeypatch: pytest.
 
     gesehen: list[str] = []
 
-    async def fake_probe(url: str, client: object, *, user_agent: str, max_requests: int = 5) -> rp.ProbeResult:
+    async def fake_probe(url: str, client: object, *, user_agent: str, **_kwargs: Any) -> rp.ProbeResult:
         gesehen.append(user_agent)
         return rp.ProbeResult(url=url, vendor="sessionnet", robots="erlaubt")
 

@@ -18,11 +18,12 @@ import time
 from collections import Counter
 from datetime import timedelta
 
+import httpx
 from django.core.files.base import ContentFile
 from django.db.models import Q
 from django.utils import timezone
 
-from . import host_pacing, robots
+from . import host_pacing, redirects, robots
 
 logger = logging.getLogger(__name__)
 
@@ -89,15 +90,19 @@ def _mark(person, status: str, error: str = "") -> str:
     return status
 
 
+def _client() -> httpx.Client:
+    """Client für Fotoabrufe: Weiterleitungen folgt ``fetch_person_photo`` selbst (``redirects``)."""
+    return httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=False)
+
+
 def fetch_person_photo(person, client=None) -> str:
     """
     Foto einer Person abrufen und lokal speichern.
 
     Rückgabe: "ok", "missing", "error", "skipped" (keine URL/manuell) oder "deferred" (robots.txt nicht
-    erreichbar; nichts vermerkt, der nächste Lauf versucht es erneut).
+    erreichbar; nichts vermerkt, der nächste Lauf versucht es erneut). Einer Weiterleitung folgen wir nur, wenn die
+    robots.txt ihres Ziels sie erlaubt (sonst wie bei einem gesperrten Foto), und nur im Takt je Host.
     """
-    import httpx
-
     if person.photo_status == "manual":
         return "skipped"
     url = person.photo_url
@@ -106,19 +111,26 @@ def fetch_person_photo(person, client=None) -> str:
     # robots.txt gilt für jeden automatischen Abruf (RFC 9309), auch für Fotos – geprüft mit dem User-Agent,
     # mit dem das Foto geladen wird
     agent = robots.user_agent_for(person)
-    decision = robots.check(url, robots.KIND_FILES, sync_config=robots.sync_config_of(person), agent=agent)
+    sync_config = robots.sync_config_of(person)
+    decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent)
     if decision.unreachable:
         return "deferred"
     if not decision.allowed:
         return _mark(person, "error", decision.reason)
-    host_pacing.wait(url, sync_config=robots.sync_config_of(person))  # Drossel je Host über alle Prozesse
+    host_pacing.wait(url, sync_config=sync_config)  # Drossel je Host über alle Prozesse
 
     own_client = client is None
     if own_client:
-        client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=True)
+        client = _client()
     try:
         try:
-            response = client.get(url, headers={"User-Agent": agent})
+            # Weiterleitungen nur nach der robots.txt ihres Ziels und im Takt (Issue #1027)
+            request = client.build_request("GET", url, headers={"User-Agent": agent})
+            response = redirects.send(client, request, before_redirect=redirects.guard(sync_config=sync_config))
+        except redirects.RedirectBlockedError as exc:
+            if exc.decision.unreachable:
+                return "deferred"
+            return _mark(person, "error", exc.decision.reason)
         except httpx.HTTPError as exc:
             return _mark(person, "error", f"{type(exc).__name__}: {exc}")
 
@@ -154,8 +166,6 @@ def fetch_photos_for_body(
     Fotos aller Personen einer Kommune (mit Foto-Konfiguration) aktualisieren.
     Ohne ``force`` werden nur ungeprüfte oder ältere Einträge angefasst.
     """
-    import httpx
-
     from ..models import OParlPerson
 
     apply_photo_presets(body)
@@ -170,7 +180,7 @@ def fetch_photos_for_body(
         persons = persons.filter(Q(photo_fetched_at__isnull=True) | Q(photo_fetched_at__lt=cutoff))
     persons = persons.order_by("photo_fetched_at", "family_name")[:limit]
 
-    with httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=15.0, follow_redirects=True) as client:
+    with _client() as client:
         for person in persons:
             results[fetch_person_photo(person, client)] += 1
             if sleep:

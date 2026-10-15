@@ -21,10 +21,11 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
-from mandari_oparl.robots import KIND_API, RETRY_UNREACHABLE_SECONDS, RobotsOverride
+from mandari_oparl.robots import KIND_API, RETRY_UNREACHABLE_SECONDS, Decision, RobotsOverride
 from mandari_oparl.utils import parse_datetime
 
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
+from src.client import redirects
 from src.client.host_pacing import host_pacer
 from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message
 from src.client.robots import robots_gate
@@ -390,7 +391,8 @@ class OParlClient:
                 "Accept": "application/json",
                 "User-Agent": self.user_agent,
             },
-            follow_redirects=True,  # Follow HTTP 301/302 redirects
+            # Weiterleitungen folgen wir selbst, im Takt und nach der robots.txt des Ziels (src/client/redirects.py)
+            follow_redirects=False,
         )
         self.stats = SyncStats()
         self._circuit_breakers = {}
@@ -467,9 +469,12 @@ class OParlClient:
         """
         Einmalige Vergleichsanfrage nach HTTP 403 (je Host und Client-Instanz).
 
-        Nur Diagnose: Bekommt ein neutraler Client-Header eine 2xx-Antwort, filtert
+        Nur Diagnose: Bekommt ein neutraler Client-Header eine Antwort unter 400, filtert
         der Server gezielt auf unseren User-Agent (Fehlerklasse ua_blocked). Der
         Regelbetrieb läuft weiter mit unserem User-Agent — keine Umgehung.
+
+        ``url`` ist die Adresse, die mit 403 geantwortet hat (nach Weiterleitungen). Die Vergleichsanfrage folgt
+        keiner Weiterleitung: Es bleibt bei genau einer Anfrage mit der neutralen Kennung (Issue #1027).
         """
         assert self._client is not None
         health = self._health(url)
@@ -486,7 +491,9 @@ class OParlClient:
             await self._throttle(url)
             start = time.time()
             response = await self._client.get(
-                url, headers={"User-Agent": NEUTRAL_USER_AGENT, "Accept": "application/json"}
+                url,
+                headers={"User-Agent": NEUTRAL_USER_AGENT, "Accept": "application/json"},
+                follow_redirects=False,
             )
         except httpx.HTTPError as exc:
             return None, f"Zugriff verweigert; Vergleichsanfrage fehlgeschlagen: {exc}"
@@ -521,25 +528,37 @@ class OParlClient:
         )
         if decision.allowed:
             return None
-        health = self._health(url)
+        return self._robots_refusal(url, url, decision)
+
+    def _robots_refusal(self, url: str, target: str, decision: Decision) -> FetchResult:
+        """
+        Befund und Ergebnis, wenn die robots.txt einen Abruf verhindert: ``target`` ist die gesperrte Adresse (Befund
+        für ihren Host), ``url`` die angefragte; sie unterscheiden sich, wenn ``target`` Ziel einer Weiterleitung ist.
+        """
+        health = self._health(target)
+        redirect = "" if target == url else f" (Ziel einer Weiterleitung: {target})"
         if decision.unreachable:
             health.robots_unreachable_count += 1
             health.robots_unreachable_status = decision.status_code
             self.stats.errors += 1
             metrics.record_http_error(self.source_name, "robots_unreachable")
             if health.robots_unreachable_count == 1:
-                console.print(f"[yellow]{health.host}: {decision.reason}[/yellow]")
+                console.print(f"[yellow]{health.host}: {decision.reason}{redirect}[/yellow]")
             return FetchResult(
-                url=url, data=None, status_code=0, error=decision.reason, error_kind=ERROR_KIND_SERVER_ERROR_SERIES
+                url=url,
+                data=None,
+                status_code=0,
+                error=decision.reason + redirect,
+                error_kind=ERROR_KIND_SERVER_ERROR_SERIES,
             )
         health.robots_blocked_count += 1
         health.robots_reason = decision.reason
         self.stats.errors += 1
         metrics.record_http_error(self.source_name, ERROR_KIND_ROBOTS_BLOCKED)
         if health.robots_blocked_count == 1:
-            console.print(f"[red]{health.host}: {decision.reason} — kein Abruf[/red]")
+            console.print(f"[red]{health.host}: {decision.reason} — kein Abruf{redirect}[/red]")
         return FetchResult(
-            url=url, data=None, status_code=0, error=decision.reason, error_kind=ERROR_KIND_ROBOTS_BLOCKED
+            url=url, data=None, status_code=0, error=decision.reason + redirect, error_kind=ERROR_KIND_ROBOTS_BLOCKED
         )
 
     async def _pace_robots(self, url: str) -> None:
@@ -632,7 +651,8 @@ class OParlClient:
                         metrics.record_http_error(self.source_name, f"http_{status_code}")
                         self._note_server_error(url, status_code)
                     elif status_code == 403:
-                        kind, detail = await self._diagnose_forbidden(url)
+                        # Die Adresse, die 403 geliefert hat (nach Weiterleitungen), nicht die angefragte
+                        kind, detail = await self._diagnose_forbidden(str(e.response.request.url))
                         self.stats.errors += 1
                         return FetchResult(
                             url=url, data=None, status_code=403, error=f"HTTP 403 ({detail})", error_kind=kind
@@ -694,7 +714,21 @@ class OParlClient:
             await self._throttle(url, skip_wait)
 
             start = time.time()
-            response = await self._client.get(url, headers=headers)
+            # Weiterleitungen: vor jeder die robots.txt des Ziels prüfen und einen Zeitpunkt reservieren (#1027)
+            try:
+                response = await redirects.send(
+                    self._client,
+                    self._client.build_request("GET", url, headers=headers),
+                    before_redirect=redirects.check_and_pace(
+                        self._client,
+                        user_agent=self.user_agent,
+                        kind=KIND_API,
+                        override=self.robots_override,
+                        pace=self._pace_robots,
+                    ),
+                )
+            except redirects.RedirectRefusedError as refused:
+                return self._robots_refusal(url, refused.url, refused.decision)
             fetch_time = time.time() - start
 
         self.stats.http_requests += 1

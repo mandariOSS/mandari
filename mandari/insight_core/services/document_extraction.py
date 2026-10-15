@@ -241,13 +241,23 @@ def _http_get(
     zur Quelle gestreamt (``hub.ris.abruf``, Issue #919).
     """
     agent, headers = prepare_fetch(url, extra_headers, sync_config, max_wait)
+    from . import redirects
     from .safe_fetch import guarded_client
 
     try:
-        # Nur öffentliche Ziele, auch nach Weiterleitungen (Adressen stammen aus der Quelle)
+        # Nur öffentliche Ziele, auch nach Weiterleitungen (Adressen stammen aus der Quelle); Weiterleitungen nur
+        # nach der robots.txt ihres Ziels und im Takt (Issue #1027)
         with guarded_client(timeout=timeout) as client:
-            response = client.get(url, headers={**headers, "User-Agent": agent}, follow_redirects=True)
+            request = client.build_request("GET", url, headers={**headers, "User-Agent": agent})
+            before_redirect = redirects.guard(sync_config=sync_config, max_wait=max_wait)
+            response = redirects.send(client, request, before_redirect=before_redirect)
             response.raise_for_status()
+    except redirects.RedirectBusyError as exc:
+        raise SourceBusyError(f"Drossel je Host: kein freier Zeitpunkt für {url}") from exc
+    except redirects.RedirectBlockedError as exc:
+        if exc.decision.unreachable:
+            raise RobotsUnreachableError(exc.decision.reason) from exc
+        raise RobotsBlockedError(exc.decision.reason) from exc
     except httpx.HTTPError as exc:
         raise DocumentDownloadError(f"Download fehlgeschlagen: {url}") from exc
     return response

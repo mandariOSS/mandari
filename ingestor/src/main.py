@@ -631,7 +631,8 @@ def probe_ris(
     Zensus: Hersteller, robots-Status, Bot-Gate und OParl-Endpunkt je Kommune (Issue #114).
 
     Höchstens fünf Anfragen je Kommune im Takt je Host wie der Abgleich (Drossel über Redis, Standard eine
-    Anfrage je Sekunde), robots.txt gilt, keine Umgehung von Gates.
+    Anfrage je Sekunde, bei einer registrierten Quelle auf dem Host mit größerem Abstand dieser), robots.txt gilt
+    auch für Ziele von Weiterleitungen, keine Umgehung von Gates.
     Der Batch-Lauf liefert zusätzlich zwei Listen: „ohne OParl, robots-frei“ und
     „OParl vorhanden, nicht registriert“ (Abgleich mit den registrierten Quellen).
     """
@@ -639,6 +640,7 @@ def probe_ris(
     import io
 
     import httpx
+    from mandari_oparl.pacing import host_intervals
 
     from src.probe import ris_probe
 
@@ -652,35 +654,47 @@ def probe_ris(
         console.print("[red]Keine URL angegeben (Argument oder --batch).[/red]")
         raise typer.Exit(1)
 
+    async def quellen_lesen() -> list[tuple[Any, str, Any, bool]]:
+        """Registrierte Quellen (auch inaktive) als (id, url, sync_config, aktiv); ohne Datenbank leer."""
+        try:
+            async with SyncOrchestrator() as orchestrator:
+                quellen = await orchestrator.storage.get_all_sources(active_only=False)
+                return [(q.id, str(q.url), q.sync_config, bool(q.is_active)) for q in quellen]
+        except Exception as e:  # ohne Datenbank bleibt der Zensus nutzbar, im Standardtakt
+            console.print(
+                f"[yellow]Registrierte Quellen nicht lesbar ({type(e).__name__}), es gilt der Standardtakt[/yellow]"
+            )
+            return []
+
     async def run_probe() -> tuple[list[ris_probe.ProbeResult], set[str]]:
+        quellen = await quellen_lesen()
+        # Hat eine registrierte Quelle auf dem Host einen größeren Abstand, gilt er auch hier (Issue #1027)
+        takte = host_intervals((quell_url, sync_config) for _, quell_url, sync_config, _ in quellen)
         results: list[ris_probe.ProbeResult] = []
         async with httpx.AsyncClient(headers={"User-Agent": settings.user_agent}) as client:
             for ziel in ziele:
-                results.append(await ris_probe.probe_url(ziel, client, user_agent=settings.user_agent))
+                results.append(
+                    await ris_probe.probe_url(ziel, client, user_agent=settings.user_agent, host_intervals=takte)
+                )
                 await asyncio.sleep(2)  # Politeness: eine Kommune nach der anderen, nicht gleichzeitig
-        registriert: set[str] = set()
-        if batch or store:
+        aktive = [(quell_id, quell_url.rstrip("/")) for quell_id, quell_url, _, aktiv in quellen if aktiv]
+        registriert = {quell_url for _, quell_url in aktive}
+        if store and aktive:
             try:
                 async with SyncOrchestrator() as orchestrator:
-                    for quelle in await orchestrator.storage.get_all_sources():
-                        registriert.add(str(quelle.url).rstrip("/"))
-                        if store:
-                            treffer = next(
-                                (
-                                    r
-                                    for r in results
-                                    if r.oparl_endpoint and r.oparl_endpoint.rstrip("/") == str(quelle.url).rstrip("/")
-                                ),
-                                None,
+                    for quell_id, quell_url in aktive:
+                        treffer = next(
+                            (r for r in results if r.oparl_endpoint and r.oparl_endpoint.rstrip("/") == quell_url),
+                            None,
+                        )
+                        if treffer is not None:
+                            # Nur den eigenen Schlüssel setzen: Der Zensus läuft lange, ein ganzes sync_config
+                            # aus dem Stand vom Start überschriebe, was der Ingestor inzwischen gepflegt hat
+                            await orchestrator.storage.set_source_sync_config_value(
+                                quell_id, "probe", treffer.to_dict()
                             )
-                            if treffer is not None:
-                                # Nur den eigenen Schlüssel setzen: Der Zensus läuft lange, ein ganzes sync_config
-                                # aus dem Stand vom Start überschriebe, was der Ingestor inzwischen gepflegt hat
-                                await orchestrator.storage.set_source_sync_config_value(
-                                    quelle.id, "probe", treffer.to_dict()
-                                )
             except Exception as e:  # ohne Datenbank bleibt der Zensus trotzdem nutzbar
-                console.print(f"[yellow]Registrierte Quellen nicht lesbar: {e}[/yellow]")
+                console.print(f"[yellow]Ergebnis nicht gespeichert: {type(e).__name__}[/yellow]")
         return results, registriert
 
     try:
