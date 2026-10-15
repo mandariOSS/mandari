@@ -541,8 +541,9 @@ FILE_PROXY_TIMEOUT_SECONDS = int(os.environ.get("FILE_PROXY_TIMEOUT_SECONDS", "1
 # und den Block aus dem Caddyfile hat – sonst kommen leere Antworten an.
 FILE_ACCEL_REDIRECT = os.environ.get("FILE_ACCEL_REDIRECT", "false").lower() in ("1", "true", "yes")
 # Drossel je Host über alle Prozesse (insight_core/services/host_pacing.py, gemeinsam mit dem Ingestor):
-# Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe Ratsinformationssystem. Je Quelle
-# abweichend über sync_config["request_interval"]; 0 schaltet die Drossel ab. Die Vorschau wartet höchstens
+# Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe Ratsinformationssystem; 0 schaltet die Drossel ab
+# (nur Tests und Notfälle). Je Quelle über sync_config["request_interval"] nur langsamer: Werte unter einer
+# Sekunde hebt mandari_oparl.pacing auf eine Sekunde an (Issue #1025). Die Vorschau wartet höchstens
 # FILE_PROXY_PACE_MAX_WAIT_SECONDS auf ihren Zeitpunkt und bittet sonst um einen neuen Versuch.
 RIS_REQUEST_INTERVAL = float(os.environ.get("RIS_REQUEST_INTERVAL", "1.0"))
 FILE_PROXY_PACE_MAX_WAIT_SECONDS = float(os.environ.get("FILE_PROXY_PACE_MAX_WAIT_SECONDS", "5"))

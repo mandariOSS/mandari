@@ -9,8 +9,16 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
     Mindestabstand in Sekunden zwischen dem Beginn zweier Anfragen an den Host dieser Quelle. Ohne Wert gilt
     der Standard des Ingestors (``INGESTOR_REQUEST_INTERVAL``, eine Anfrage je Sekunde). Der Abstand gilt über
     alle Abrufplätze, Quellen auf demselben Host und Prozesse hinweg (Daemon, Einzelabgleich, Django), weil
-    alle denselben Zeitstempel in Redis nutzen (``src/client/host_pacing.py``). ``0`` schaltet die Drossel
-    für die Quelle ab.
+    alle denselben Zeitstempel in Redis nutzen (``src/client/host_pacing.py``). Er darf nur verlangsamen:
+    Werte unter einer Sekunde, auch ``0``, gelten als eine Sekunde (Warnung im Log,
+    ``mandari_oparl.pacing.MIN_REQUEST_INTERVAL``, Issue #1025).
+``modified_since_margin_minutes``
+    Sicherheitsabstand des Änderungsfensters in Minuten (0 bis 10080). Inkrementelle Läufe fragen je Kommune
+    nach allem, was seit dem Beginn ihres letzten vollständig erfolgreichen Abgleichs abzüglich dieses Abstands
+    geändert wurde, nie weiter zurück als sieben Tage. Ohne Wert gilt der Standard des Ingestors
+    (``INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES``, 120 Minuten). Werden Objekte erst Stunden nach ihrem
+    ``modified`` sichtbar, braucht die Quelle mehr. Listen, deren ``modified`` keine Uhrzeit trägt, erkennt der
+    Ingestor selbst und fragt sie ab 00:00 Uhr an (``sync_config["timed_lists"]``).
 ``list_params``
     Zusätzliche Parameter für die erste Seite jeder Liste, z. B. ``{"size": 100}`` bei ALLRIS: weniger,
     dafür größere Seiten. Die Folgeseiten kommen aus ``links.next`` der Quelle.
@@ -56,12 +64,16 @@ from mandari_oparl.pacing import REQUEST_INTERVAL_KEY
 from mandari_oparl.pacing import request_interval as _request_interval
 from mandari_oparl.robots import RobotsOverride, robots_override
 
+from src.config import settings
+
 LIST_PARAMS_KEY = "list_params"
 CARRY_MODIFIED_SINCE_KEY = "carry_modified_since"
 FILE_DOWNLOADS_KEY = "file_downloads"
 FULL_SYNC_WINDOW_KEY = "full_sync_window"
 FULL_SYNC_EVERY_DAYS_KEY = "full_sync_every_days"
 MAX_FULL_SYNC_EVERY_DAYS = 365
+MODIFIED_SINCE_MARGIN_KEY = "modified_since_margin_minutes"
+MAX_MODIFIED_SINCE_MARGIN_MINUTES = 7 * 24 * 60
 DEFAULT_WINDOW_TZ = "Europe/Berlin"
 
 
@@ -95,6 +107,12 @@ def _every_days(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value if 1 <= value <= MAX_FULL_SYNC_EVERY_DAYS else None
+
+
+def _margin_minutes(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value if 0 <= value <= MAX_MODIFIED_SINCE_MARGIN_MINUTES else None
 
 
 @dataclass(frozen=True)
@@ -144,6 +162,7 @@ class SourceFetchOptions:
     robots_override: RobotsOverride | None = None
     full_sync_window: FullSyncWindow | None = None
     full_sync_every_days: int | None = None
+    modified_since_margin_minutes: int | None = None
 
     @classmethod
     def from_sync_config(cls, sync_config: Any) -> SourceFetchOptions:
@@ -158,7 +177,15 @@ class SourceFetchOptions:
             robots_override=robots_override(sync_config),
             full_sync_window=FullSyncWindow.parse(sync_config.get(FULL_SYNC_WINDOW_KEY)),
             full_sync_every_days=_every_days(sync_config.get(FULL_SYNC_EVERY_DAYS_KEY)),
+            modified_since_margin_minutes=_margin_minutes(sync_config.get(MODIFIED_SINCE_MARGIN_KEY)),
         )
+
+    def modified_since_margin(self) -> timedelta:
+        """Sicherheitsabstand des Änderungsfensters: Wert der Quelle, sonst der Standard des Ingestors."""
+        minutes = self.modified_since_margin_minutes
+        if minutes is None:
+            minutes = max(0, settings.modified_since_margin_minutes)
+        return timedelta(minutes=minutes)
 
     def full_sync_plan(
         self,

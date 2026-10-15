@@ -7,7 +7,7 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 
 import logging
 import os
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
@@ -167,6 +167,87 @@ class _Origin:
     label: str
     #: ``False``: Die Quelle ist über ``sync_config`` von den Ereignissen ausgenommen.
     events: bool
+
+
+#: Schlüssel in ``OParlSource.sync_config``: Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune
+#: (Kennung der Kommune -> Zeitpunkt in UTC, ISO 8601), Anfang des Änderungsfensters (Issue #1025)
+SYNC_CONFIG_BODY_SYNC_STARTED_KEY: Final = "body_sync_started"
+#: Schlüssel in ``OParlSource.sync_config``: Listen, deren ``modified`` nachweislich die Uhrzeit trägt (Adresse ->
+#: Zeitpunkt des Nachweises). Nur sie bekommen das kurze Änderungsfenster, alle übrigen eines ab Tagesbeginn
+#: (Issue #1025).
+SYNC_CONFIG_TIMED_LISTS_KEY: Final = "timed_lists"
+#: Schlüssel in ``OParlSource.sync_config``: Listen, die es bei der Quelle nicht gibt, mit dem Zeitpunkt ihrer
+#: letzten Prüfung (Adresse -> Zeitpunkt in UTC, ISO 8601, Issue #1025)
+SYNC_CONFIG_MISSING_LISTS_KEY: Final = "missing_lists"
+
+
+def _utc_stamp(value: Any) -> datetime | None:
+    """Zeitpunkt aus ISO 8601 (ohne Zone als UTC), sonst ``None``."""
+    if not isinstance(value, str):
+        return None
+    try:
+        stamp = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
+
+
+def missing_lists_of(sync_config: Any) -> dict[str, datetime | None]:
+    """
+    Vermerkte fehlende Listen einer Quelle (``sync_config["missing_lists"]``): Adresse -> letzte Prüfung.
+
+    Ungültige Adressen zählen nicht; ein ungültiger Zeitpunkt wird ``None`` (die Liste ist neu zu prüfen).
+    """
+    if not isinstance(sync_config, dict):
+        return {}
+    stored = sync_config.get(SYNC_CONFIG_MISSING_LISTS_KEY)
+    if not isinstance(stored, dict):
+        return {}
+    return {url: _utc_stamp(checked) for url, checked in stored.items() if isinstance(url, str) and url}
+
+
+def timed_lists_of(sync_config: Any) -> set[str]:
+    """Listen einer Quelle, deren ``modified`` nachweislich die Uhrzeit trägt (``sync_config["timed_lists"]``)."""
+    if not isinstance(sync_config, dict):
+        return set()
+    stored = sync_config.get(SYNC_CONFIG_TIMED_LISTS_KEY)
+    if not isinstance(stored, dict):
+        return set()
+    return {url for url in stored if isinstance(url, str) and url}
+
+
+def body_sync_started_of(sync_config: Any, body_external_id: str) -> datetime | None:
+    """Beginn des letzten vollständigen Abgleichs der Kommune aus ``sync_config``; Ungültiges zählt nicht."""
+    if not isinstance(sync_config, dict):
+        return None
+    stored = sync_config.get(SYNC_CONFIG_BODY_SYNC_STARTED_KEY)
+    return _utc_stamp(stored.get(body_external_id) if isinstance(stored, dict) else None)
+
+
+def _put_entry(sync_config: dict[str, Any], key: str, entry: str, value: str | None) -> bool:
+    """
+    Eintrag ``entry`` im Wörterbuch ``sync_config[key]`` setzen (``None`` löscht ihn; ein leeres Wörterbuch fällt
+    weg). ``True``, wenn sich etwas geändert hat.
+    """
+    stored = sync_config.get(key)
+    entries = (
+        {name: item for name, item in stored.items() if isinstance(name, str) and name}
+        if isinstance(stored, dict)
+        else {}
+    )
+    if value is None:
+        if entry not in entries:
+            return False
+        del entries[entry]
+    elif entries.get(entry) == value:
+        return False
+    else:
+        entries[entry] = value
+    if entries:
+        sync_config[key] = dict(sorted(entries.items()))
+    else:
+        sync_config.pop(key, None)
+    return True
 
 
 def _normalized_urls(value: Any) -> list[str]:
@@ -501,12 +582,47 @@ class DatabaseStorage:
                 await session.commit()
 
     async def update_source_sync_config(self, source_id: UUID, sync_config: dict[str, Any]) -> None:
-        """sync_config einer Quelle ersetzen (z. B. Zensus-Ergebnis unter ``probe``, Issue #114)."""
+        """
+        sync_config einer Quelle ganz ersetzen (Tests, Werkzeuge). Für einzelne Schlüssel
+        ``set_source_sync_config_value``: Das Ersetzen aus einem älteren Stand stellte gerade geänderte Schlüssel
+        des Ingestors wieder her.
+        """
         async with self.get_session() as session:
             source = await session.get(OParlSource, source_id)
             if source:
                 source.sync_config = sync_config
                 await session.commit()
+
+    async def _change_sync_config(self, where: Any, change: Callable[[dict[str, Any]], bool]) -> None:
+        """
+        ``sync_config`` einer Quelle unter Zeilensperre lesen, ändern und schreiben (Issue #1025).
+
+        Mehrere Schreiber teilen sich ``sync_config``: parallel laufende Kommunen einer Quelle, Capability-Cache,
+        Scraper-Zustand, Zensus. Ohne Sperre stellte ein Schreiber mit älterem Stand einen gerade geänderten
+        Schlüssel wieder her, etwa einen eben gelöschten Vermerk in ``missing_lists``. ``change`` ändert die Kopie
+        und meldet, ob sich etwas geändert hat; nur dann wird geschrieben.
+        """
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource).where(where).with_for_update())
+            source = result.scalar_one_or_none()
+            if source is None:
+                return
+            sync_config = dict(source.sync_config or {})
+            if not change(sync_config):
+                return
+            source.sync_config = sync_config
+            await session.commit()
+
+    async def set_source_sync_config_value(self, source_id: UUID, key: str, value: Any) -> None:
+        """Einen Schlüssel in ``sync_config`` setzen (z. B. Zensus-Ergebnis unter ``probe``), die übrigen bleiben."""
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            if sync_config.get(key) == value:
+                return False
+            sync_config[key] = value
+            return True
+
+        await self._change_sync_config(OParlSource.id == source_id, change)
 
     async def record_source_failure(self, url: str, error: str, error_kind: str | None = None) -> None:
         """
@@ -553,19 +669,16 @@ class DatabaseStorage:
         """
         if not hosts:
             return
-        async with self.get_session() as session:
-            result = await session.execute(select(OParlSource).where(OParlSource.url == source_url))
-            source = result.scalar_one_or_none()
-            if source is None:
-                return
-            sync_config = dict(source.sync_config or {})
+
+        def change(sync_config: dict[str, Any]) -> bool:
             stored = set(sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or [])
             merged = stored | {h for h in hosts if h}
             if merged == stored:
-                return
+                return False
             sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(merged)
-            source.sync_config = sync_config
-            await session.commit()
+            return True
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
 
     # Ergebnis der letzten Prüfung von modified_since (nach jedem Vollabgleich)
     SYNC_CONFIG_MODIFIED_SINCE_CHECK_KEY = "modified_since_check"
@@ -604,6 +717,57 @@ class DatabaseStorage:
                 source.sync_config = sync_config
             await session.commit()
 
+    async def get_body_sync_started(self, source_id: UUID, body_external_id: str) -> datetime | None:
+        """Beginn des letzten vollständig erfolgreichen Abgleichs der Kommune (Issue #1025), sonst ``None``."""
+        async with self.get_session() as session:
+            result = await session.execute(select(OParlSource.sync_config).where(OParlSource.id == source_id))
+            return body_sync_started_of(result.scalar_one_or_none(), body_external_id)
+
+    async def set_body_sync_started(self, source_id: UUID, body_external_id: str, started_at: datetime | None) -> None:
+        """
+        Anfang des Änderungsfensters der Kommune festhalten (Issue #1025); ``None`` löscht ihn, dann gilt das
+        Fenster von sieben Tagen.
+
+        Unter Zeilensperre gelesen und geschrieben: Die Kommunen einer Quelle laufen parallel und schreiben in
+        dieselbe ``sync_config``. Gespeichert auf die Sekunde abgerundet (nie später als der echte Zeitpunkt).
+        """
+        value: str | None = None
+        if started_at is not None:
+            if started_at.tzinfo is None:
+                started_at = started_at.replace(tzinfo=UTC)
+            value = started_at.astimezone(UTC).isoformat(timespec="seconds")
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_BODY_SYNC_STARTED_KEY, body_external_id, value)
+
+        await self._change_sync_config(OParlSource.id == source_id, change)
+
+    async def set_list_missing(
+        self, source_url: str, list_url: str, missing: bool, checked_at: datetime | None = None
+    ) -> None:
+        """
+        Liste der Quelle als „gibt es nicht“ vermerken, mit dem Zeitpunkt der Prüfung (Standard: jetzt), oder den
+        Vermerk löschen (Issue #1025). Unter Zeilensperre.
+        """
+        checked = (checked_at or datetime.now(UTC)).astimezone(UTC).isoformat(timespec="seconds")
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_MISSING_LISTS_KEY, list_url, checked if missing else None)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
+    async def set_list_timed(self, source_url: str, list_url: str, timed: bool) -> None:
+        """Liste der Quelle als „``modified`` mit Uhrzeit“ vermerken oder den Vermerk löschen (Issue #1025)."""
+        detected = datetime.now(UTC).isoformat(timespec="seconds")
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            stored = sync_config.get(SYNC_CONFIG_TIMED_LISTS_KEY)
+            if timed and isinstance(stored, dict) and list_url in stored:
+                return False  # bleibt beim Zeitpunkt des ersten Nachweises
+            return _put_entry(sync_config, SYNC_CONFIG_TIMED_LISTS_KEY, list_url, detected if timed else None)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
     # Schlüssel in OParlSource.sync_config für den persistierten
     # Scraper-Zustand (Listen-Snapshots, Missing-Counter, letzte Läufe).
     SYNC_CONFIG_SCRAPER_STATE_KEY = "scraper_state"
@@ -611,17 +775,14 @@ class DatabaseStorage:
     async def update_scraper_state(self, source_url: str, state: dict[str, Any]) -> None:
         """
         Persistiert den Scraper-Zustand einer Quelle additiv in sync_config
-        (Schlüssel "scraper_state"); andere Schlüssel bleiben unberührt.
+        (Schlüssel "scraper_state"); andere Schlüssel bleiben unberührt (unter Zeilensperre).
         """
-        async with self.get_session() as session:
-            result = await session.execute(select(OParlSource).where(OParlSource.url == source_url))
-            source = result.scalar_one_or_none()
-            if source is None:
-                return
-            sync_config = dict(source.sync_config or {})
+
+        def change(sync_config: dict[str, Any]) -> bool:
             sync_config[self.SYNC_CONFIG_SCRAPER_STATE_KEY] = state
-            source.sync_config = sync_config
-            await session.commit()
+            return True
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
 
     async def get_entity_content_hashes(
         self,

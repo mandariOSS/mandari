@@ -91,6 +91,23 @@ class ListFetchError(Exception):
         super().__init__(f"Liste {list_url}{page} nicht abrufbar: {result.error}")
 
 
+class ListMissingError(Exception):
+    """
+    Die Quelle bietet die Liste nicht an (Issue #1025): Schon die erste Seite antwortet ohne Filter mit HTTP 404
+    oder einem OParl-Fehlerobjekt. Bei Listen, die in OParl 1.1 optional sind, ist das „gibt es hier nicht“: Der
+    Orchestrator vermerkt sie und fragt sie bis zum nächsten Vollabgleich, höchstens aber einen Tag lang, nicht mehr
+    an. Bei Pflichtlisten ist HTTP 404 (``not_found``) eine Lücke im Abgleich; ein Fehlerobjekt gilt dort wie bisher
+    als leere Liste, solange andere Listen der Kommune lesbar sind.
+    """
+
+    def __init__(self, list_url: str, reason: str, *, not_found: bool = False) -> None:
+        self.list_url = list_url
+        self.reason = reason
+        #: HTTP 404 (sonst ein OParl-Fehlerobjekt)
+        self.not_found = not_found
+        super().__init__(f"Liste {list_url} gibt es bei der Quelle nicht ({reason})")
+
+
 class FetchWindowClosedError(ListFetchError):
     """Das Zeitfenster des Vollabgleichs ist abgelaufen (``sync_config["full_sync_window"]``): keine weitere Seite."""
 
@@ -274,6 +291,10 @@ class OParlClient:
     # Der Orchestrator persistiert den Befund zusätzlich je Quelle in
     # OParlSource.sync_config, damit er Daemon-Neustarts überlebt (Issue #22).
     _modified_since_unsupported: set[str] = set()
+    # Listen (Adresse der ersten Seite), die auf modified_since mit HTTP 404 oder einem Fehlerobjekt antworten,
+    # ohne den Filter aber lesbar sind (Bezirksregierung Köln: membership). Sie laufen in diesem Prozess ohne
+    # Filter, statt jeden Lauf erst die gefilterte Anfrage zu stellen (Issue #1025). Ebenfalls prozessweit.
+    _list_modified_since_unsupported: set[str] = set()
 
     @classmethod
     def get_modified_since_unsupported(cls) -> set[str]:
@@ -691,6 +712,12 @@ class OParlClient:
         if response.status_code < 500:
             self._note_success(url)
 
+        # „Gibt es nicht“ ist die Antwort eines erreichbaren Servers, kein Fehlversuch: ohne Ausnahme, damit der
+        # Schutzschalter je Host fehlende Listen nicht als Störung zählt und nach fünf davon alle Anfragen
+        # abweist (Issue #1025)
+        if response.status_code == 404:
+            return FetchResult(url=url, data=None, status_code=404, error="Not found", fetch_time=fetch_time)
+
         # Not modified - cache hit
         if response.status_code == 304:
             self.stats.cache_hits += 1
@@ -722,6 +749,8 @@ class OParlClient:
         url: str,
         modified_since: datetime | None = None,
         max_pages: int | None = None,
+        *,
+        report_missing: bool = False,
     ) -> AsyncIterator[list[dict[str, Any]]]:
         """
         Fetch a paginated OParl list.
@@ -734,6 +763,9 @@ class OParlClient:
                            Most servers (5/6 tested) support this correctly.
                            The orchestrator handles capability detection and fallback.
             max_pages: Maximum number of pages to fetch
+            report_missing: Antwortet die erste Seite ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt,
+                ``ListMissingError`` werfen (Liste gibt es nicht) statt ``ListFetchError`` bzw. einer leeren
+                Liste (Issue #1025).
 
         Yields:
             Lists of items from each page
@@ -742,6 +774,8 @@ class OParlClient:
         current_url: str | None = url
         pages_fetched = 0
         tried_modified_since = False
+        # Erste Seite nach „gibt es nicht“ auf die gefilterte Anfrage noch einmal ohne Filter angefragt
+        retried_unfiltered = False
 
         # Append modified_since as OParl query parameter if provided.
         # Capability-Cache: Hosts, die den Filter bereits abgelehnt haben
@@ -754,6 +788,7 @@ class OParlClient:
             modified_since
             and current_url
             and (self.carry_modified_since or host not in self._modified_since_unsupported)
+            and url not in self._list_modified_since_unsupported
         ):
             current_url = self._append_modified_since(current_url, modified_since)
             tried_modified_since = True
@@ -783,6 +818,31 @@ class OParlClient:
                 tried_modified_since = False
                 current_url = url
                 continue
+
+            # „Liste gibt es nicht“ (HTTP 404 oder Fehlerobjekt auf der ersten Seite, Issue #1025). Auf die
+            # gefilterte Anfrage beweist das nichts: Die Bezirksregierung Köln beantwortet membership mit
+            # modified_since mit 404 und liefert die Liste ohne Filter. Dann einmal ohne Filter nachfragen.
+            first_page_missing = pages_fetched == 0 and (
+                result.status_code == 404 or (not result.error and is_oparl_error(result.data))
+            )
+            if first_page_missing and tried_modified_since:
+                console.print(
+                    f"[yellow]{url}: Antwort auf modified_since "
+                    f"({'HTTP 404' if result.status_code == 404 else 'Fehlerobjekt'}) — Liste ohne Filter[/yellow]"
+                )
+                self._list_modified_since_unsupported.add(url)
+                retried_unfiltered = True
+                tried_modified_since = False
+                current_url = url
+                continue
+            if first_page_missing and retried_unfiltered:
+                # Auch ohne Filter nicht da: Über den Filter sagte die erste Antwort nichts. Kommt die Liste
+                # wieder, läuft sie wie die übrigen mit Filter statt in diesem Prozess dauerhaft ohne
+                self._list_modified_since_unsupported.discard(url)
+            if first_page_missing and report_missing:
+                reason = "HTTP 404" if result.status_code == 404 else oparl_error_message(result.data)
+                console.print(f"[dim]{url}: Liste gibt es bei der Quelle nicht ({reason})[/dim]")
+                raise ListMissingError(url, reason, not_found=result.status_code == 404)
 
             if result.error:
                 # Keine stille Lücke (Issue #123): der Aufrufer erfährt, welche
