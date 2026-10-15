@@ -26,7 +26,7 @@ from mandari_oparl.utils import parse_datetime
 
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
 from src.client.host_pacing import host_pacer
-from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message
+from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message, sdnet_empty_list
 from src.client.robots import robots_gate
 from src.config import settings
 from src.metrics import metrics
@@ -66,6 +66,31 @@ class FetchResult:
     fetch_time: float = 0.0
     # Fehlerklasse (ERROR_KIND_*), wenn der Fehler einer Sperre oder Störung zuzuordnen ist
     error_kind: str | None = None
+    # Inhalt einer Antwort mit HTTP 404, wenn er JSON ist, etwa das Fehlerobjekt von SD.NET RIM (Issue #1034);
+    # ``data`` bleibt bei 404 leer
+    error_data: Any = None
+
+
+#: Fehlerantworten (HTTP 404) bis zu dieser Größe liest der Client als JSON, größere (HTML-Seiten) nicht
+_ERROR_BODY_MAX_BYTES = 16 * 1024
+#: Filter einer OParl-Liste (OParl 1.1, Abschnitt 2.5.5)
+_LIST_FILTERS = frozenset({"created_since", "created_until", "modified_since", "modified_until"})
+
+
+def _error_body(response: httpx.Response) -> Any:
+    """JSON einer Fehlerantwort, sonst ``None``."""
+    content = response.content
+    if not content or len(content) > _ERROR_BODY_MAX_BYTES:
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        return None
+
+
+def _has_list_filter(url: str) -> bool:
+    """Trägt die Adresse einen Filter der Liste (``modified_since`` und Verwandte)?"""
+    return not _LIST_FILTERS.isdisjoint(parse_qs(urlparse(url).query))
 
 
 def _is_list_page(data: Any) -> bool:
@@ -349,6 +374,9 @@ class OParlClient:
 
         # Sperr- und Störungsbefund je Host (Issue #123), lebt so lange wie der Client
         self.host_health: dict[str, HostHealth] = {}
+        # Listen (Adresse wie an fetch_list übergeben), deren gefilterte erste Seite SD.NET RIM mit „keine Treffer“
+        # beantwortet hat (HTTP 404, Code 802, Issue #1034); ob es die Liste gibt, sagt das nicht
+        self.filtered_empty_lists: set[str] = set()
 
         # Caching
         self.etag_cache: dict[str, str] = {}
@@ -716,7 +744,14 @@ class OParlClient:
         # Schutzschalter je Host fehlende Listen nicht als Störung zählt und nach fünf davon alle Anfragen
         # abweist (Issue #1025)
         if response.status_code == 404:
-            return FetchResult(url=url, data=None, status_code=404, error="Not found", fetch_time=fetch_time)
+            return FetchResult(
+                url=url,
+                data=None,
+                status_code=404,
+                error="Not found",
+                fetch_time=fetch_time,
+                error_data=_error_body(response),
+            )
 
         # Not modified - cache hit
         if response.status_code == 304:
@@ -767,9 +802,14 @@ class OParlClient:
                 ``ListMissingError`` werfen (Liste gibt es nicht) statt ``ListFetchError`` bzw. einer leeren
                 Liste (Issue #1025).
 
+        Beantwortet SD.NET RIM die gefilterte erste Seite mit HTTP 404 und Code 802, ist die Liste leer und
+        vollständig (Issue #1034, ``filtered_empty_lists``).
+
         Yields:
             Lists of items from each page
         """
+        requested_url = url
+        self.filtered_empty_lists.discard(requested_url)
         url = self._with_list_params(url, self.list_params)
         current_url: str | None = url
         pages_fetched = 0
@@ -819,9 +859,24 @@ class OParlClient:
                 current_url = url
                 continue
 
+            # SD.NET RIM beantwortet eine gefilterte Liste ohne Treffer mit HTTP 404 und Fehlerobjekt (Code 802)
+            # statt einer leeren Liste (Hamm, Bezirksregierung Köln; Issue #1034). Das ist eine leere, vollständige
+            # Liste: kein Fehler, keine fehlende Liste, keine Nachfrage ohne Filter. Nur auf der ersten Seite und
+            # nur mit Filter in der Adresse; ohne Filter und auf Folgeseiten bleibt 404, was es war.
+            if (
+                pages_fetched == 0
+                and result.status_code == 404
+                and _has_list_filter(current_url)
+                and sdnet_empty_list(result.error_data)
+            ):
+                console.print(f"[dim]{url}: keine Treffer für den Filter (SD.NET RIM: HTTP 404, Code 802)[/dim]")
+                self.filtered_empty_lists.add(requested_url)
+                self.stats.pages_fetched += 1
+                break
+
             # „Liste gibt es nicht“ (HTTP 404 oder Fehlerobjekt auf der ersten Seite, Issue #1025). Auf die
-            # gefilterte Anfrage beweist das nichts: Die Bezirksregierung Köln beantwortet membership mit
-            # modified_since mit 404 und liefert die Liste ohne Filter. Dann einmal ohne Filter nachfragen.
+            # gefilterte Anfrage beweist das nichts: Eine Quelle kann die Liste nur mit modified_since ablehnen und
+            # ohne Filter liefern. Dann einmal ohne Filter nachfragen.
             first_page_missing = pages_fetched == 0 and (
                 result.status_code == 404 or (not result.error and is_oparl_error(result.data))
             )
@@ -930,13 +985,16 @@ class OParlClient:
         Prüft mit einer Anfrage, ob die Quelle eine Liste mit ``modified_since`` filtert.
 
         Unabhängig vom bisherigen Befund des Hosts (der Parameter wird immer gesendet). Ergebnis:
-        ``supported``, ``unsupported`` (HTTP 400/401/403), ``ignored`` (Filter fehlt in den Listen-Links oder
-        die erste Seite enthält Objekte, die vor ``since`` zuletzt geändert wurden) oder ``inconclusive``.
+        ``supported`` (auch, wenn SD.NET RIM „keine Treffer“ meldet, Issue #1034), ``unsupported`` (HTTP
+        400/401/403), ``ignored`` (Filter fehlt in den Listen-Links oder die erste Seite enthält Objekte, die vor
+        ``since`` zuletzt geändert wurden) oder ``inconclusive``.
         """
         url = self._append_modified_since(self._with_list_params(list_url, self.list_params), since)
         result = await self.fetch(url, use_cache=False)
         if result.error_kind is not None:
             return MODIFIED_SINCE_INCONCLUSIVE  # Sperre oder Störung, kein Befund zum Filter
+        if result.status_code == 404 and sdnet_empty_list(result.error_data):
+            return MODIFIED_SINCE_SUPPORTED  # leere Liste nach dem Filter: Die Quelle wertet ihn aus
         if result.status_code in (400, 401, 403):
             return MODIFIED_SINCE_UNSUPPORTED
         data = result.data
