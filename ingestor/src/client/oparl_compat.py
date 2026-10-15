@@ -137,8 +137,9 @@ def sdnet_empty_list(data: Any) -> bool:
 
     Beobachtet in Hamm: ``body/1/organization?modified_since=2026-10-08T00:00:00`` liefert ``{"error": "Die
     angeforderte Ressource wurde nicht gefunden.", "code": 802, "type": "SD.NET RIM Webservice"}``, mit einem
-    früheren Zeitpunkt dieselbe Liste mit 315 Einträgen. Erkannt an Code 802, Herkunft „SD.NET“ und dem Text „nicht
-    gefunden“. Ob die Anfrage gefiltert war, prüft der Aufrufer: Ohne Filter heißt dieselbe Antwort „gibt es nicht“.
+    früheren Zeitpunkt dieselbe Liste mit 315 Einträgen. Erkannt an Code 802, Herkunft „SD.NET …“ und dem Text
+    „nicht gefunden“. Ob die Anfrage gefiltert war, prüft der Aufrufer: Ohne Filter heißt dieselbe Antwort „gibt es
+    nicht“.
     """
     if not isinstance(data, dict):
         return False
@@ -146,7 +147,7 @@ def sdnet_empty_list(data: Any) -> bool:
     return (
         data.get("code") in (802, "802")
         and isinstance(origin, str)
-        and "sd.net" in origin.lower()
+        and origin.upper().split()[:1] == ["SD.NET"]  # erstes Wort von „SD.NET RIM Webservice“
         and isinstance(message, str)
         and "nicht gefunden" in message.lower()
     )
