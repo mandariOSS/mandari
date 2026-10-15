@@ -43,10 +43,11 @@ nach dieser einen Anfrage mit dem Befund `nicht_erreichbar`.
 
 Auch der Takt gilt wie im Abgleich (#1027): Vor jeder Anfrage, auch vor jeder Weiterleitung, reserviert
 der Zensus einen Zeitpunkt in der Drossel je Host (`src/client/host_pacing.py`, Redis über alle Prozesse),
-also höchstens eine Anfrage je `INGESTOR_REQUEST_INTERVAL` (Standard eine Sekunde) an denselben Host. Die
-Vergleichsanfrage trägt dieselbe Kennung wie im Abgleich (`python-httpx/<Version>`, siehe
-`docs/MONITORING.md`) und entfällt mit `OPARL_UA_PROBE_ENABLED=false`. `manage.py add_oparl_source` hält den
-Takt ebenso ein, bei einer schon registrierten Quelle mit deren `request_interval`.
+also höchstens eine Anfrage je `INGESTOR_REQUEST_INTERVAL` (Standard eine Sekunde) an denselben Host. Jede
+Weiterleitung zählt als eigene Anfrage gegen die fünf. Die Vergleichsanfrage trägt dieselbe Kennung wie im
+Abgleich (`python-httpx/<Version>`, siehe `docs/MONITORING.md`) und entfällt mit
+`OPARL_UA_PROBE_ENABLED=false`. `manage.py add_oparl_source` hält den Takt ebenso ein, bei einer schon
+registrierten Quelle mit deren `request_interval`.
 
 ```bash
 mandari-ingestor probe-ris https://buergerinfo.example.org/bi/            # eine Kommune, JSON

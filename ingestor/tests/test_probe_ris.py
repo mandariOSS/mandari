@@ -329,10 +329,12 @@ async def test_probe_folgt_weiterleitungen_im_takt(monkeypatch: pytest.MonkeyPat
     assert gesehen[:3] == ["/robots.txt", "/", "/bi/"]
     assert [pfad for _, pfad, _ in ablauf] == gesehen, "auch die Weiterleitung mit eigener Reservierung"
     assert r.landing_status == 200 and r.vendor == "sessionnet"
+    assert len(gesehen) == r.requests == rp.MAX_REQUESTS, "die Weiterleitung zählt als Anfrage"
 
 
 @pytest.mark.asyncio
-async def test_probe_begrenzt_weiterleitungen(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_probe_weiterleitungen_im_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Endlose Weiterleitungen: nach fünf Anfragen ist Schluss, auch ohne Antwort am Ende der Kette."""
     ablauf: list[tuple[str, str, float | None]] = []
     _reservierungen(monkeypatch, ablauf)
     gesehen: list[str] = []
@@ -344,8 +346,8 @@ async def test_probe_begrenzt_weiterleitungen(monkeypatch: pytest.MonkeyPatch) -
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
         r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
 
-    assert len(gesehen) == len(ablauf) == rp.MAX_REDIRECTS + 1
-    assert r.robots == "nicht_erreichbar" and r.requests == 1
+    assert len(gesehen) == len(ablauf) == r.requests == rp.MAX_REQUESTS
+    assert r.landing_status is None and r.oparl_checked == []
 
 
 def test_batch_klassifikation() -> None:

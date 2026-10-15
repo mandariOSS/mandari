@@ -11,7 +11,8 @@ Gates werden erkannt und gemeldet, nicht überwunden.
 Der Takt je Host gilt auch hier (Issue #1027): Vor jeder Anfrage, auch vor jeder
 Weiterleitung, reserviert die Prüfung einen Zeitpunkt in der Drossel des Ingestors
 (``src/client/host_pacing.py``, Redis über alle Prozesse), also höchstens eine Anfrage je
-``settings.request_interval`` (Standard eine Sekunde) an denselben Host. Die Vergleichsanfrage
+``settings.request_interval`` (Standard eine Sekunde) an denselben Host. Jede Weiterleitung
+zählt als eigene Anfrage gegen die fünf. Die Vergleichsanfrage
 trägt wie im Abgleich die Standardkennung der HTTP-Bibliothek
 (``oparl_client.NEUTRAL_USER_AGENT``, ``python-httpx/<Version>``) und entfällt, wenn
 ``settings.oparl_ua_probe_enabled`` aus ist.
@@ -45,8 +46,6 @@ from src.client.oparl_compat import detect_oparl_version, is_oparl_error
 from src.config import settings
 
 MAX_REQUESTS = 5
-#: Weiterleitungen je Anfrage; wir folgen ihnen selbst, damit auch jede Weiterleitung den Takt einhält
-MAX_REDIRECTS = 5
 TIMEOUT_SECONDS = 15.0
 
 VENDOR_LABELS = {
@@ -256,16 +255,16 @@ class _Budget:
 async def _paced_get(client: httpx.AsyncClient, url: str, budget: _Budget, headers: dict[str, str]) -> httpx.Response:
     """
     GET im Takt je Host (``src/client/host_pacing.py``): vor der Anfrage und vor jeder Weiterleitung einen
-    Zeitpunkt reservieren. Deshalb folgen wir Weiterleitungen selbst (höchstens ``MAX_REDIRECTS``).
+    Zeitpunkt reservieren. Deshalb folgen wir Weiterleitungen selbst; jede zählt als eigene Anfrage gegen das
+    Budget (die erste hat der Aufrufer genommen). Ist es aufgebraucht, ist die Weiterleitung die Antwort.
     """
     request = client.build_request("GET", url, headers=headers, timeout=TIMEOUT_SECONDS)
-    for _ in range(MAX_REDIRECTS + 1):
+    while True:
         await host_pacer.wait(str(request.url), budget.interval)
         response = await client.send(request, follow_redirects=False)
-        if response.next_request is None:
+        if response.next_request is None or not budget.take():
             return response
         request = response.next_request
-    raise httpx.TooManyRedirects(f"mehr als {MAX_REDIRECTS} Weiterleitungen", request=request)
 
 
 async def _get(
