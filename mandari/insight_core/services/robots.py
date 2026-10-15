@@ -3,8 +3,11 @@
 robots.txt-Prüfung für Abrufe aus Django (RFC 9309, Auswertung in :mod:`mandari_oparl.robots`).
 
 Gilt für jeden automatischen Abruf bei einer Quelle: Dokument-Cache, Textextraktion, Dateivorschau,
-Personenfotos und das Anlegen einer Quelle. Der Ingestor prüft seine Abrufe selbst
-(``ingestor/src/client/robots.py``) mit denselben Regeln.
+Personenfotos, Löschabgleich und das Anlegen einer Quelle, auch für das Ziel jeder Weiterleitung
+(:mod:`~insight_core.services.redirects`). Der Ingestor prüft seine Abrufe selbst
+(``ingestor/src/client/robots.py``) mit denselben Regeln. Maßgeblich ist das Produkt-Token ``mandari-ingestor``
+(dazu das Token einer abweichenden Kennung der Quelle); Gruppen für frühere Kennungen (``mandari-file-cache``,
+``mandari``) gelten zusätzlich, wenn es sie gibt (:data:`mandari_oparl.crawler.LEGACY_TOKENS`).
 
 Die robots.txt eines Hosts liegt 24 Stunden im gemeinsamen Django-Cache (alle Prozesse), je Host und
 User-Agent: Manche Server filtern Wörter im User-Agent und antworten dann auch auf ``/robots.txt`` mit 403.
@@ -84,19 +87,26 @@ def _fetch(
     url: str, agent: str = USER_AGENT, *, sync_config: Any = None, max_wait: float | None = None
 ) -> tuple[int | None, bytes]:
     """
-    robots.txt abrufen. Der Abruf zählt wie jede Anfrage an den Host (Drossel je Host); mit ``max_wait`` wird
-    höchstens so lange gewartet, sonst folgt :class:`~insight_core.services.host_pacing.PacingBusyError`.
+    robots.txt abrufen. Der Abruf zählt wie jede Anfrage an den Host (Drossel je Host), auch jede Weiterleitung
+    (höchstens fünf, :mod:`~insight_core.services.redirects`); mit ``max_wait`` wird insgesamt höchstens so lange
+    gewartet, sonst folgt :class:`~insight_core.services.host_pacing.PacingBusyError`.
     """
-    from . import host_pacing
+    from . import host_pacing, redirects
     from .safe_fetch import guarded_client
 
     target = robots_url(url)
+    # Eine Frist für die robots.txt und alle ihre Weiterleitungen
+    deadline = redirects.deadline_after(max_wait)
     if not host_pacing.wait(target, sync_config=sync_config, max_wait=max_wait):
         raise host_pacing.PacingBusyError(target)
+    before_redirect = redirects.guard(sync_config=sync_config, deadline=deadline, check_robots=False)
     try:
-        with guarded_client(timeout=_TIMEOUT, follow_redirects=True, max_redirects=5) as client:
-            response = client.get(target, headers={"User-Agent": agent, "Accept": "text/plain"})
+        with guarded_client(timeout=_TIMEOUT) as client:
+            request = client.build_request("GET", target, headers={"User-Agent": agent, "Accept": "text/plain"})
+            response = redirects.send(client, request, before_redirect=before_redirect)
             return response.status_code, response.content[:MAX_BYTES]
+    except redirects.RedirectBusyError as exc:
+        raise host_pacing.PacingBusyError(target) from exc
     except httpx.HTTPError as exc:
         logger.warning("robots.txt %s nicht abrufbar (%s), Abrufe werden zurückgestellt", target, type(exc).__name__)
         return None, b""

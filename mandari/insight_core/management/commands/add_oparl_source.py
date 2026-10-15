@@ -4,15 +4,25 @@ Management Command: OParl-Quelle hinzufügen.
 
 Registriert eine neue OParl-Datenquelle und legt die zugehörigen Bodies an.
 
+Jede Anfrage hält den Takt je Host ein wie alle anderen Abrufe (``insight_core.services.host_pacing``, Issue
+#1027): höchstens eine Anfrage je ``RIS_REQUEST_INTERVAL`` (Standard eine Sekunde) an denselben Host, über alle
+Prozesse, auch jede Weiterleitung. Ist die Quelle schon registriert, gelten ihr ``request_interval`` und ihre
+robots-Ausnahme; hat eine registrierte Quelle auf dem Host einen größeren ``request_interval``, gilt dieser. Ziele
+von Weiterleitungen rufen wir nur ab, wenn die robots.txt ihres Hosts es erlaubt.
+
 Usage:
     python manage.py add_oparl_source "https://example.com/oparl/v1.1/system"
     python manage.py add_oparl_source "https://example.com/oparl/v1.1/system" --osm-id 12345
 """
 
 import re
+from collections.abc import Mapping
+from types import MappingProxyType
+from typing import Any
 
 import httpx
 from django.core.management.base import BaseCommand, CommandError
+from mandari_oparl.pacing import REQUEST_INTERVAL_KEY, host_intervals, host_of
 
 from insight_core.models import OParlBody, OParlSource
 
@@ -48,6 +58,12 @@ def detect_oparl_version(data) -> str | None:
 class Command(BaseCommand):
     help = "Add a new OParl source and its bodies"
 
+    #: sync_config der bereits registrierten Quelle (Takt, robots-Ausnahme); bei einer neuen Quelle leer
+    sync_config: dict[str, Any] | None = None
+    #: Größter ``request_interval`` registrierter Quellen je Host (``mandari_oparl.pacing.host_intervals``); in
+    #: ``handle()`` je Lauf neu gesetzt
+    host_intervals: Mapping[str, float] = MappingProxyType({})
+
     def add_arguments(self, parser):
         parser.add_argument(
             "url",
@@ -65,18 +81,56 @@ class Command(BaseCommand):
             help="Custom display name for the body",
         )
 
+    def _config_for(self, url: str) -> dict[str, Any] | None:
+        """
+        ``sync_config`` für Anfragen an den Host von ``url``: die der registrierten Quelle (robots-Ausnahme, Takt).
+        Hat eine registrierte Quelle auf diesem Host einen größeren ``request_interval``, gilt dieser (Issue #1027).
+        """
+        from insight_core.services import host_pacing
+
+        known = self.host_intervals.get(host_of(url))
+        if known is None:
+            return self.sync_config
+        return {**(self.sync_config or {}), REQUEST_INTERVAL_KEY: max(known, host_pacing.interval(self.sync_config))}
+
     def _robots_allows(self, url) -> bool:
         """robots.txt (RFC 9309) gilt auch beim Anlegen einer Quelle: gesperrte Adressen nicht abrufen."""
         from insight_core.services import robots
 
-        decision = robots.check(url, robots.KIND_API)
+        decision = robots.check(url, robots.KIND_API, sync_config=self._config_for(url))
         if not decision.allowed:
             self.stdout.write(self.style.ERROR(f"{url}: {decision.reason} – kein Abruf"))
         return decision.allowed
 
+    def _wait_for_slot(self, url: str) -> None:
+        """Drossel je Host (Redis über alle Prozesse): erst zum reservierten Zeitpunkt anfragen."""
+        from insight_core.services import host_pacing
+
+        host_pacing.wait(url, sync_config=self._config_for(url))
+
+    def _before_redirect(self, request: httpx.Request) -> None:
+        """Vor jeder Weiterleitung: robots.txt des Ziels (Art ``api``), dann im Takt seines Hosts (Issue #1027)."""
+        from insight_core.services import redirects, robots
+
+        url = str(request.url)
+        decision = robots.check(url, robots.KIND_API, sync_config=self._config_for(url))
+        if not decision.allowed:
+            raise redirects.RedirectBlockedError(decision, request=request)
+        self._wait_for_slot(url)
+
+    def _get(self, url: str, headers: dict[str, str]) -> httpx.Response:
+        """GET im Takt; Weiterleitungen folgen wir selbst, nach der robots.txt ihres Ziels und im Takt."""
+        from insight_core.services import redirects
+
+        with httpx.Client(timeout=30.0, headers=headers, follow_redirects=False) as client:
+            self._wait_for_slot(url)
+            response = redirects.send(client, client.build_request("GET", url), before_redirect=self._before_redirect)
+            response.read()
+            return response
+
     def fetch_oparl_system(self, url):
         """Fetch OParl system data."""
-        from insight_core.services import robots
+        from insight_core.services import redirects, robots
 
         if not self._robots_allows(url):
             return None
@@ -84,32 +138,36 @@ class Command(BaseCommand):
         headers = {"User-Agent": robots.USER_AGENT, "Accept": "application/json"}
 
         try:
-            with httpx.Client(timeout=30.0, headers=headers, follow_redirects=True) as client:
-                response = client.get(url)
-
-                if response.status_code == 200:
-                    return response.json()
-                self.stdout.write(self.style.ERROR(f"HTTP {response.status_code} from OParl API"))
-                return None
+            response = self._get(url, headers)
+            if response.status_code == 200:
+                return response.json()
+            self.stdout.write(self.style.ERROR(f"HTTP {response.status_code} from OParl API"))
+            return None
+        except redirects.RedirectBlockedError as e:
+            self.stdout.write(self.style.ERROR(f"{e.url}: {e.decision.reason} (Ziel einer Weiterleitung) – kein Abruf"))
+            return None
         except Exception as e:
             self.stdout.write(self.style.ERROR(f"Error fetching OParl data: {e}"))
             return None
 
     def fetch_oparl_body(self, url):
         """Fetch OParl body data."""
-        from insight_core.services import robots
+        from insight_core.services import redirects, robots
 
         if not self._robots_allows(url):
             return None
         headers = {"User-Agent": robots.USER_AGENT, "Accept": "application/json"}
 
         try:
-            with httpx.Client(timeout=30.0, headers=headers, follow_redirects=True) as client:
-                response = client.get(url)
-
-                if response.status_code == 200:
-                    return response.json()
-                return None
+            response = self._get(url, headers)
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except redirects.RedirectBlockedError as e:
+            self.stdout.write(
+                self.style.WARNING(f"{e.url}: {e.decision.reason} (Ziel einer Weiterleitung) – kein Abruf")
+            )
+            return None
         except Exception as e:
             self.stdout.write(self.style.WARNING(f"Error fetching body: {e}"))
             return None
@@ -150,6 +208,10 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         url = options["url"]
+        # Bereits registrierte Quelle: ihr Takt (request_interval) und ihre robots-Ausnahme gelten auch hier
+        self.sync_config = OParlSource.objects.filter(url=url).values_list("sync_config", flat=True).first()
+        # Größter Abstand registrierter Quellen je Host (auch inaktiver): Er gilt für Anfragen an diesen Host
+        self.host_intervals = host_intervals(OParlSource.objects.values_list("url", "sync_config"))
 
         self.stdout.write(f"Fetching OParl system from: {url}")
 

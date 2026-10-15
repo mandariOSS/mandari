@@ -21,10 +21,12 @@ from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse, urlunparse
 
 import httpx
-from mandari_oparl.robots import KIND_API, RETRY_UNREACHABLE_SECONDS, RobotsOverride
+from mandari_oparl.robots import KIND_API, RETRY_UNREACHABLE_SECONDS, Decision, RobotsOverride
 from mandari_oparl.utils import parse_datetime
+from rich.markup import escape
 
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
+from src.client import redirects
 from src.client.host_pacing import host_pacer
 from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message, sdnet_empty_list
 from src.client.robots import robots_gate
@@ -50,8 +52,21 @@ MODIFIED_SINCE_INCONCLUSIVE = "inconclusive"  # keine Aussage (Fehler, Sperre): 
 
 # Neutraler Client-Header für die einmalige Vergleichsanfrage nach einem 403.
 # Absichtlich der nackte Bibliotheks-Default: Antwortet der Server darauf mit
-# 200, filtert er gezielt auf unseren User-Agent — das ist der Befund, mehr nicht.
+# 2xx, filtert er gezielt auf unseren User-Agent — das ist der Befund, mehr nicht.
 NEUTRAL_USER_AGENT = f"python-httpx/{httpx.__version__}"
+
+
+def neutral_redirect_note(response: httpx.Response) -> str:
+    """
+    Hinweis, wenn die Vergleichsanfrage nur eine Weiterleitung (3xx) bekommt. Ihr folgen wir nicht, also bleibt
+    offen, ob der neutrale Client am Ziel durchkäme: kein Befund ``ua_blocked``, nur Status und Ziel (ohne
+    Query-String, darin stehen oft Sitzungskennungen).
+    """
+    location = response.headers.get("Location", "").strip().split("?", 1)[0][:200]
+    return (
+        f"neutraler Client wird weitergeleitet (HTTP {response.status_code} nach {location or 'unbekanntem Ziel'}), "
+        "Sperre unklar"
+    )
 
 
 @dataclass
@@ -418,7 +433,8 @@ class OParlClient:
                 "Accept": "application/json",
                 "User-Agent": self.user_agent,
             },
-            follow_redirects=True,  # Follow HTTP 301/302 redirects
+            # Weiterleitungen folgen wir selbst, im Takt und nach der robots.txt des Ziels (src/client/redirects.py)
+            follow_redirects=False,
         )
         self.stats = SyncStats()
         self._circuit_breakers = {}
@@ -495,9 +511,13 @@ class OParlClient:
         """
         Einmalige Vergleichsanfrage nach HTTP 403 (je Host und Client-Instanz).
 
-        Nur Diagnose: Bekommt ein neutraler Client-Header eine 2xx-Antwort, filtert
+        Nur Diagnose: Bekommt ein neutraler Client-Header eine erfolgreiche Antwort (2xx), filtert
         der Server gezielt auf unseren User-Agent (Fehlerklasse ua_blocked). Der
         Regelbetrieb läuft weiter mit unserem User-Agent — keine Umgehung.
+
+        ``url`` ist die Adresse, die mit 403 geantwortet hat (nach Weiterleitungen). Die Vergleichsanfrage folgt
+        keiner Weiterleitung: Es bleibt bei genau einer Anfrage mit der neutralen Kennung (Issue #1027). Eine
+        Weiterleitung (3xx) ist deshalb kein Befund, sondern unklar (:func:`neutral_redirect_note`).
         """
         assert self._client is not None
         health = self._health(url)
@@ -505,6 +525,8 @@ class OParlClient:
         if health.ua_blocked_at is not None:
             return ERROR_KIND_UA_BLOCKED, "User-Agent gesperrt"
         if health.ua_probe_status is not None:
+            if 300 <= health.ua_probe_status < 400:
+                return None, "Zugriff verweigert; neutraler Client wurde weitergeleitet, Sperre unklar"
             return None, "Zugriff verweigert, auch für neutralen Client"
         if not settings.oparl_ua_probe_enabled:
             return None, "Zugriff verweigert"
@@ -514,7 +536,9 @@ class OParlClient:
             await self._throttle(url)
             start = time.time()
             response = await self._client.get(
-                url, headers={"User-Agent": NEUTRAL_USER_AGENT, "Accept": "application/json"}
+                url,
+                headers={"User-Agent": NEUTRAL_USER_AGENT, "Accept": "application/json"},
+                follow_redirects=False,
             )
         except httpx.HTTPError as exc:
             return None, f"Zugriff verweigert; Vergleichsanfrage fehlgeschlagen: {exc}"
@@ -522,7 +546,7 @@ class OParlClient:
         metrics.record_http_request(self.source_name, response.status_code, time.time() - start)
         health.ua_probe_status = response.status_code
 
-        if response.status_code < 400:
+        if response.is_success:
             health.ua_blocked_at = datetime.now(UTC)
             metrics.record_http_error(self.source_name, ERROR_KIND_UA_BLOCKED)
             console.print(
@@ -530,6 +554,10 @@ class OParlClient:
                 f"HTTP {response.status_code} — User-Agent gesperrt[/red]"
             )
             return ERROR_KIND_UA_BLOCKED, f"User-Agent gesperrt: neutraler Client erhält HTTP {response.status_code}"
+        if 300 <= response.status_code < 400:
+            note = neutral_redirect_note(response)
+            console.print(f"[yellow]{health.host}: HTTP 403 für unseren User-Agent, {escape(note)}[/yellow]")
+            return None, f"Zugriff verweigert; {note}"
         return None, f"Zugriff verweigert, auch für neutralen Client (HTTP {response.status_code})"
 
     async def _robots_blocked(self, url: str) -> FetchResult | None:
@@ -549,25 +577,37 @@ class OParlClient:
         )
         if decision.allowed:
             return None
-        health = self._health(url)
+        return self._robots_refusal(url, url, decision)
+
+    def _robots_refusal(self, url: str, target: str, decision: Decision) -> FetchResult:
+        """
+        Befund und Ergebnis, wenn die robots.txt einen Abruf verhindert: ``target`` ist die gesperrte Adresse (Befund
+        für ihren Host), ``url`` die angefragte; sie unterscheiden sich, wenn ``target`` Ziel einer Weiterleitung ist.
+        """
+        health = self._health(target)
+        redirect = "" if target == url else f" (Ziel einer Weiterleitung: {target})"
         if decision.unreachable:
             health.robots_unreachable_count += 1
             health.robots_unreachable_status = decision.status_code
             self.stats.errors += 1
             metrics.record_http_error(self.source_name, "robots_unreachable")
             if health.robots_unreachable_count == 1:
-                console.print(f"[yellow]{health.host}: {decision.reason}[/yellow]")
+                console.print(f"[yellow]{health.host}: {decision.reason}{redirect}[/yellow]")
             return FetchResult(
-                url=url, data=None, status_code=0, error=decision.reason, error_kind=ERROR_KIND_SERVER_ERROR_SERIES
+                url=url,
+                data=None,
+                status_code=0,
+                error=decision.reason + redirect,
+                error_kind=ERROR_KIND_SERVER_ERROR_SERIES,
             )
         health.robots_blocked_count += 1
         health.robots_reason = decision.reason
         self.stats.errors += 1
         metrics.record_http_error(self.source_name, ERROR_KIND_ROBOTS_BLOCKED)
         if health.robots_blocked_count == 1:
-            console.print(f"[red]{health.host}: {decision.reason} — kein Abruf[/red]")
+            console.print(f"[red]{health.host}: {decision.reason} — kein Abruf{redirect}[/red]")
         return FetchResult(
-            url=url, data=None, status_code=0, error=decision.reason, error_kind=ERROR_KIND_ROBOTS_BLOCKED
+            url=url, data=None, status_code=0, error=decision.reason + redirect, error_kind=ERROR_KIND_ROBOTS_BLOCKED
         )
 
     async def _pace_robots(self, url: str) -> None:
@@ -660,7 +700,8 @@ class OParlClient:
                         metrics.record_http_error(self.source_name, f"http_{status_code}")
                         self._note_server_error(url, status_code)
                     elif status_code == 403:
-                        kind, detail = await self._diagnose_forbidden(url)
+                        # Die Adresse, die 403 geliefert hat (nach Weiterleitungen), nicht die angefragte
+                        kind, detail = await self._diagnose_forbidden(str(e.response.request.url))
                         self.stats.errors += 1
                         return FetchResult(
                             url=url, data=None, status_code=403, error=f"HTTP 403 ({detail})", error_kind=kind
@@ -718,11 +759,27 @@ class OParlClient:
 
         # Drossel je Host (request_interval der Quelle bzw. Standard), über alle Prozesse; je Host laufen in
         # diesem Prozess höchstens host_max_concurrent Anfragen, damit der reservierte Takt kurz bleibt
-        async with host_pacer.limit(url, self.effective_interval):
+        async with host_pacer.limit(url, self.effective_interval) as slot:
             await self._throttle(url, skip_wait)
 
             start = time.time()
-            response = await self._client.get(url, headers=headers)
+            # Weiterleitungen: vor jeder die robots.txt des Ziels prüfen und einen Zeitpunkt reservieren, der Platz
+            # in der Grenze je Host zieht mit zum Ziel-Host (#1027)
+            try:
+                response = await redirects.send(
+                    self._client,
+                    self._client.build_request("GET", url, headers=headers),
+                    before_redirect=redirects.check_and_pace(
+                        self._client,
+                        user_agent=self.user_agent,
+                        kind=KIND_API,
+                        override=self.robots_override,
+                        pace=self._pace_robots,
+                        slot=slot,
+                    ),
+                )
+            except redirects.RedirectRefusedError as refused:
+                return self._robots_refusal(url, refused.url, refused.decision)
             fetch_time = time.time() - start
 
         self.stats.http_requests += 1

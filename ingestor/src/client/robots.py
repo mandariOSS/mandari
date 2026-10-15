@@ -13,7 +13,8 @@ lautet die Entscheidung „nicht erreichbar“ (:attr:`mandari_oparl.robots.Deci
 stellen den Abruf zurück, statt ihn als gesperrt zu werten. Neuer Versuch nach 15 Minuten.
 
 Abruf mit unserem User-Agent und ``Accept: text/plain``: Mit dem JSON-Standard des OParl-Clients
-antworten manche Server mit 406, was als „nicht vorhanden“ (alles erlaubt) gälte.
+antworten manche Server mit 406, was als „nicht vorhanden“ (alles erlaubt) gälte. Der Abruf zählt zum Takt je
+Host (``pace``), auch jede Weiterleitung (:mod:`src.client.redirects`, höchstens fünf).
 
 Ausnahmen je Quelle stehen in ``sync_config["robots_override"]`` und brauchen einen Vermerk
 (:func:`mandari_oparl.robots.robots_override`).
@@ -106,7 +107,7 @@ class RobotsGate:
             try:
                 if pace is not None:
                     await pace(target)
-                response = await self._get(client, target, user_agent)
+                response = await self._get(client, target, user_agent, pace)
                 status = response.status_code
                 body = response.content
             except httpx.HTTPError as exc:
@@ -124,12 +125,26 @@ class RobotsGate:
             return new_entry.effective
 
     @staticmethod
-    async def _get(client: httpx.AsyncClient | None, target: str, user_agent: str) -> httpx.Response:
+    async def _get(
+        client: httpx.AsyncClient | None,
+        target: str,
+        user_agent: str,
+        pace: Callable[[str], Awaitable[None]] | None = None,
+    ) -> httpx.Response:
+        """
+        robots.txt abrufen; Weiterleitungen (RFC 9309: mindestens fünf, auch auf andere Hosts) folgen wir selbst,
+        jede mit eigenem Zeitpunkt in der Drossel je Host (``pace``). Mehr als fünf: ``httpx.TooManyRedirects``,
+        also „nicht erreichbar“.
+        """
+        from src.client.redirects import pace_only, send
+
         headers = {"User-Agent": user_agent, "Accept": "text/plain"}
+        before_redirect = pace_only(pace if pace is not None else _no_pace)
         if client is not None:
-            return await client.get(target, headers=headers, timeout=ROBOTS_TIMEOUT, follow_redirects=True)
-        async with httpx.AsyncClient(timeout=ROBOTS_TIMEOUT, follow_redirects=True) as own:
-            return await own.get(target, headers=headers)
+            request = client.build_request("GET", target, headers=headers, timeout=ROBOTS_TIMEOUT)
+            return await send(client, request, before_redirect=before_redirect)
+        async with httpx.AsyncClient(timeout=ROBOTS_TIMEOUT) as own:
+            return await send(own, own.build_request("GET", target, headers=headers), before_redirect=before_redirect)
 
     def seed(self, url: str, robots: RobotsTxt, *, user_agent: str | None = None) -> None:
         """Ergebnis für den Host einer URL vorgeben (Tests, Werkzeuge); ohne ``user_agent`` für alle."""
@@ -160,6 +175,10 @@ class RobotsGate:
             return override.decision()
         robots = await self._load(client, url, user_agent, pace)
         return robots.decide(url, tokens=(product_token(user_agent), PRODUCT_TOKEN))
+
+
+async def _no_pace(_url: str) -> None:
+    """Ohne Drossel (nur Werkzeuge und Tests, die selbst keinen Takt angeben)."""
 
 
 #: Gemeinsamer Zwischenspeicher aller Clients eines Prozesses

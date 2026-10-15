@@ -73,7 +73,7 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_CACHE_EVICT_TARGET_PERCENT` | 90 | Über der Obergrenze wird bis zu diesem Anteil der Grenze verdrängt (50 bis 100) |
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
 | `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, nur langsamer: Werte unter 1 s gelten als 1 s; `0` hier = Drossel aus, nur Tests und Notfälle) |
-| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange wartet die Vorschau höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After`. Die KI-Zusammenfassung lädt keine Dokumente (Issue #919). Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
+| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange wartet die Vorschau höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After`. Die Frist gilt für den ganzen Abruf: Weiterleitungen (robots.txt des Ziels, Takt) warten nur noch die Restzeit. Die KI-Zusammenfassung lädt keine Dokumente (Issue #919). Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
 | `FILE_STORE_LAYOUT` | `sha256` | Ablage nach SHA-256 mit Referenzzählung; `kommune` = bisheriges Layout je Kommune |
 | `INGESTOR_STORES_FILES` | `false` (Compose: `true`) | Der Ingestor legt Dateien selbst ab; `cache_files` holt Dateien in der Texterkennung nicht nach. Mit `TEXT_EXTRACTION_RUNNER=worker` ohne Wirkung |
@@ -524,7 +524,10 @@ Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (I
   Adressen nach einer Umstellung, Wartung, Sperre unserer Abrufe); bei einer echten Massenlöschung den Lauf mit
   höherem `--max-fehlend` für diese Kommune wiederholen.
 - **robots.txt ist verbindlich:** Vor jedem Abruf einer Datei prüft der Abgleich die robots.txt des Hosts
-  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf). Eine
+  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf), mit
+  derselben Auswertung wie alle Abrufe: Gruppe `mandari-ingestor` vor `*`, frühere Kennungen nur zusätzlich
+  (`docs/MONITORING.md`). Einer Weiterleitung folgt er nur, wenn die robots.txt ihres Ziel-Hosts sie erlaubt
+  (sonst Ergebnis `robots`), und jede Weiterleitung läuft im Takt je Host. Eine
   Ausnahme trägt nur eine Quelle mit Vermerk in `sync_config["robots_override"]`, z. B.
   `{"scope": "files", "note": "Zustimmung liegt vor, Anfrage läuft"}` (Bereich `files` oder `all`, Vermerk
   mindestens zehn Zeichen; dasselbe Format wie für die übrigen Abrufe der Quelle).

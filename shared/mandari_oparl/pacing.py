@@ -2,10 +2,12 @@
 """
 Drossel je Host über alle Quellen und Prozesse: gemeinsamer Zeitstempel in Redis.
 
-Ingestor (OParl-Abruf, Textextraktion, Scraper) und Django (Dokument-Cache, Textextraktion, Vorschau,
-Personenfotos, robots.txt) reservieren vor jeder Anfrage an einen Host einen Zeitpunkt. Der Schlüssel je Host
-hält den frühesten Beginn der nächsten Anfrage; jede Reservierung schiebt ihn um den Abstand weiter. So stellen
-alle Prozesse zusammen höchstens eine Anfrage je Abstand an denselben Host, gleich wie viele Quellen dort liegen.
+Ingestor (OParl-Abruf, Textextraktion, Scraper, Sondierung) und Django (Dokument-Cache, Textextraktion,
+Vorschau, Personenfotos, Löschabgleich, Quellenanlage, robots.txt) reservieren vor jeder Anfrage an einen Host
+einen Zeitpunkt, auch vor jeder Weiterleitung. Der Schlüssel je Host (:func:`host_of`: Hostname ohne Port,
+kleingeschrieben) hält den frühesten Beginn der nächsten Anfrage; jede Reservierung schiebt ihn um den Abstand
+weiter. So stellen alle Prozesse zusammen höchstens eine Anfrage je Abstand an denselben Host, gleich wie viele
+Quellen dort liegen.
 
 Die Reservierung läuft atomar als Lua-Skript mit der Uhr des Redis-Servers (gleiche Zeit für alle Prozesse).
 Ist Redis nicht erreichbar, drosselt jeder Prozess für sich (Rückfall in :mod:`ingestor` und Django).
@@ -19,8 +21,10 @@ Darunter gehen nur die Betriebsvariablen ``INGESTOR_REQUEST_INTERVAL`` bzw. ``RI
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import math
+from collections.abc import Iterable, Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -62,10 +66,26 @@ return wait
 
 
 def host_of(url_or_host: str) -> str:
-    """Host (mit Port) einer URL, kleingeschrieben; ein bloßer Hostname bleibt, wie er ist."""
+    """
+    Schlüssel des Servers für die Drossel: der Hostname einer URL (oder ein bloßer Hostname), vereinheitlicht.
+
+    Ein Server bekommt genau einen Takt (Issue #1027): Groß-/Kleinschreibung, ein Punkt am Ende, Zugangsdaten vor
+    ``@`` und der Port spielen keine Rolle. ``https://RIS.example.de:443/`` und ``http://ris.example.de/`` teilen
+    sich also den Takt, auch ein anderer Port desselben Hostnamens (gleicher Server, nur langsamer). Internationale
+    Namen werden in ihre ASCII-Form (IDNA) gebracht, wie sie in Weiterleitungen und in ``httpx`` erscheinen.
+    """
     value = (url_or_host or "").strip()
-    netloc = urlsplit(value).netloc if "://" in value else value
-    return netloc.lower()
+    if not value:
+        return ""
+    try:
+        host = urlsplit(value if "://" in value else f"//{value}").hostname
+    except ValueError:
+        host = None
+    host = (host or value).rstrip(".").lower()
+    if host and not host.isascii():
+        with contextlib.suppress(UnicodeError):  # nicht kodierbar: der Name bleibt, wie er ist
+            host = host.encode("idna").decode("ascii")
+    return host
 
 
 def key(url_or_host: str) -> str:
@@ -119,6 +139,29 @@ def interval_for(sync_config: Any, default: float = DEFAULT_INTERVAL) -> float:
         if configured is not None:
             return configured
     return default
+
+
+def host_intervals(sources: Iterable[tuple[str | None, Any]]) -> dict[str, float]:
+    """
+    Größter eingestellter Abstand je Host aus Paaren (Adresse der Quelle, ``sync_config``); Quellen ohne gültigen
+    ``request_interval`` fehlen. Für Werkzeuge ohne eigene Quelle (Sondierung, Quellenanlage, Issue #1027): Hat eine
+    bekannte Quelle auf dem Host einen größeren Abstand, gilt dieser auch für sie (:func:`interval_for_host`).
+    """
+    result: dict[str, float] = {}
+    for url, sync_config in sources:
+        host = host_of(url or "")
+        if not host or not isinstance(sync_config, dict):
+            continue
+        configured = request_interval(sync_config.get(REQUEST_INTERVAL_KEY))
+        if configured is not None and configured > result.get(host, 0.0):
+            result[host] = configured
+    return result
+
+
+def interval_for_host(url_or_host: str, intervals: Mapping[str, float] | None, default: float) -> float:
+    """Abstand für eine Anfrage an den Host von ``url_or_host``: ``default`` oder der größere Wert aus ``intervals``."""
+    known = (intervals or {}).get(host_of(url_or_host))
+    return default if known is None else max(default, known)
 
 
 class LocalSchedule:

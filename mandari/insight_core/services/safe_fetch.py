@@ -16,6 +16,8 @@ from __future__ import annotations
 import ipaddress
 import socket
 import time
+from collections.abc import Callable
+from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from typing import IO, Any
 from urllib.parse import urlsplit
@@ -107,17 +109,29 @@ def download_to(
     timeout: httpx.Timeout,
     headers: dict[str, str] | None = None,
     user_agent: str | None = None,
+    before_redirect: Callable[[httpx.Request], None] | None = None,
 ) -> Download:
     """
     ``url`` gestreamt nach ``target`` laden – mit Größen- und Gesamtzeitgrenze.
 
     Wirft ``httpx.HTTPStatusError`` (Antwort ≠ 2xx), ``httpx.RequestError`` (auch
     ``BlockedDestinationError``), ``TooLargeError`` und ``DeadlineExceededError``.
+
+    ``before_redirect``: Abrufe bei Ratsinformationssystemen folgen Weiterleitungen selbst und prüfen vorher
+    robots.txt und Takt des Ziels (:func:`insight_core.services.redirects.guard`, Issue #1027). Ohne Angabe (andere
+    Dienste, etwa Geodaten) folgt ``httpx`` wie bisher höchstens fünf Weiterleitungen.
     """
     deadline = _now() + total_seconds
     client_headers = {"User-Agent": user_agent} if user_agent else {}
     client = guarded_client(timeout=timeout, follow_redirects=True, max_redirects=5, headers=client_headers)
-    with client, client.stream("GET", url, headers=headers or {}) as response:
+    response_cm: AbstractContextManager[httpx.Response]
+    if before_redirect is None:
+        response_cm = client.stream("GET", url, headers=headers or {})
+    else:
+        from .redirects import stream
+
+        response_cm = stream(client, "GET", url, headers=headers, before_redirect=before_redirect)
+    with client, response_cm as response:
         response.raise_for_status()
         declared = int(response.headers.get("content-length") or 0)
         if declared > max_bytes:

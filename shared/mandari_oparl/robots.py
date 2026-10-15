@@ -10,6 +10,8 @@ Regeln (RFC 9309):
 
 - Gruppen: Alle Gruppen, deren ``User-agent`` unserem Produkt-Token entspricht (ohne Groß-/Kleinschreibung),
   gelten gemeinsam; gibt es keine, gelten alle ``*``-Gruppen; gibt es auch die nicht, ist alles erlaubt.
+  Unser Token ist ``mandari-ingestor`` für alle Abrufe aus Ingestor und Django. Gruppen für frühere Kennungen
+  (``mandari-file-cache``, ``mandari``) gelten zusätzlich, aber nur, wenn es sie gibt, und können nur sperren.
 - Übereinstimmung: Die längste passende Regel entscheidet; sind ``Allow`` und ``Disallow`` gleich lang,
   gewinnt ``Allow``. ``*`` steht für beliebig viele Zeichen, ``$`` am Ende verankert das Pfadende.
   Pfad und Abfrage (``?…``) werden verglichen, Groß-/Kleinschreibung zählt.
@@ -33,7 +35,8 @@ from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote, urlsplit
 
-from .crawler import PRODUCT_TOKEN
+from .crawler import LEGACY_TOKENS, PRODUCT_TOKEN
+from .pacing import host_of
 
 #: Höchstens so viele Bytes einer robots.txt werden ausgewertet (RFC 9309 verlangt mindestens 500 KiB)
 MAX_BYTES = 500 * 1024
@@ -220,15 +223,25 @@ class RobotsTxt:
         # 3xx (zu viele Weiterleitungen) und 4xx: gilt als nicht vorhanden
         return cls(state=STATE_UNAVAILABLE, status_code=status_code)
 
-    def _rules_for(self, token: str) -> list[Rule]:
+    def _rules_for(self, token: str, *, fallback: bool = True) -> list[Rule]:
         token = token.lower()
         named = [rule for agents, rules in self.groups if token in agents for rule in rules]
-        if named or any(token in agents for agents, _ in self.groups):
+        if named or any(token in agents for agents, _ in self.groups) or not fallback:
             return named
         return [rule for agents, rules in self.groups if "*" in agents for rule in rules]
 
-    def decide(self, url_or_path: str, tokens: Iterable[str] = (PRODUCT_TOKEN,)) -> Decision:
-        """Darf die Adresse abgerufen werden? Bei mehreren Tokens müssen alle erlaubt sein."""
+    def decide(
+        self,
+        url_or_path: str,
+        tokens: Iterable[str] = (PRODUCT_TOKEN,),
+        legacy_tokens: Iterable[str] = LEGACY_TOKENS,
+    ) -> Decision:
+        """
+        Darf die Adresse abgerufen werden? Bei mehreren Tokens müssen alle erlaubt sein.
+
+        ``legacy_tokens`` (frühere Kennungen, :data:`mandari_oparl.crawler.LEGACY_TOKENS`) zählen nur, wenn eine
+        Gruppe sie ausdrücklich nennt; sonst gilt für sie nichts (auch nicht ``*``).
+        """
         if self.state == STATE_UNREACHABLE:
             return Decision(allowed=False, state=self.state, status_code=self.status_code)
         if self.state == STATE_UNAVAILABLE:
@@ -236,9 +249,12 @@ class RobotsTxt:
         target = _target(url_or_path)
         if target == "/robots.txt":
             return Decision(allowed=True, state=self.state)
-        for token in dict.fromkeys(t for t in tokens if t):
+        current = [t.lower() for t in tokens if t]
+        checks = [(token, True) for token in current]
+        checks += [(token.lower(), False) for token in legacy_tokens if token and token.lower() not in current]
+        for token, fallback in dict.fromkeys(checks):
             best: Rule | None = None
-            for rule in self._rules_for(token):
+            for rule in self._rules_for(token, fallback=fallback):
                 if not rule.matches(target):
                     continue
                 if (
@@ -258,10 +274,34 @@ def robots_url(url: str) -> str:
     return f"{parts.scheme or 'https'}://{parts.netloc}/robots.txt"
 
 
+#: Standardports je Schema: ``https://host:443/`` und ``https://host/`` haben dieselbe robots.txt
+_DEFAULT_PORTS = {"http": 80, "https": 443}
+
+
 def host_key(url: str) -> str:
-    """Schlüssel für Zwischenspeicher: Schema und Host (mit Port), kleingeschrieben."""
+    """
+    Schlüssel für Zwischenspeicher der robots.txt: Schema, Host und Port, vereinheitlicht.
+
+    Eine robots.txt gilt je Schema, Host und Port (RFC 9309). Der Hostname wird wie in
+    :func:`mandari_oparl.pacing.host_of` vereinheitlicht (Kleinschreibung, ohne Punkt am Ende, ohne Zugangsdaten,
+    IDNA), Standardports (http 80, https 443) entfallen. ``https://RIS.example.de.:443/`` und
+    ``https://ris.example.de/`` laden ihre robots.txt also nur einmal; ein anderer Port bleibt ein eigener Eintrag.
+    """
     parts = urlsplit(url)
-    return f"{(parts.scheme or 'https').lower()}://{parts.netloc.lower()}"
+    scheme = (parts.scheme or "https").lower()
+    as_written = f"{scheme}://{parts.netloc.lower()}"
+    try:
+        hostname, port = parts.hostname, parts.port
+    except ValueError:  # ungültiger Port: wie geschrieben
+        return as_written
+    if not hostname:
+        return as_written
+    host = host_of(url)
+    if ":" in host:  # IPv6-Adresse
+        host = f"[{host}]"
+    if port is not None and port != _DEFAULT_PORTS.get(scheme):
+        host = f"{host}:{port}"
+    return f"{scheme}://{host}"
 
 
 @dataclass(frozen=True)

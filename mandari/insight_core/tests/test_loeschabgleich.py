@@ -109,63 +109,87 @@ def _liefert(inhalt: bytes, *, head_status: int = 200, get_status: int = 200) ->
 # =============================================================================
 
 
+@pytest.fixture
+def robots_txt(echte_robots: None, monkeypatch: pytest.MonkeyPatch) -> dict[str, tuple[int | None, bytes]]:
+    """robots.txt je Host nachbilden (``robots._fetch``); ohne Eintrag gibt es keine (404, alles erlaubt)."""
+    from insight_core.services import robots
+
+    antworten: dict[str, tuple[int | None, bytes]] = {}
+    monkeypatch.setattr(robots, "_fetch", lambda url, *a, **kw: antworten.get(httpx.URL(url).host, (404, b"")))
+    return antworten
+
+
 class TestRobots:
-    def test_pdf_sperre_mit_platzhaltern(self) -> None:
-        regeln = file_robots.parse("User-agent: *\nDisallow: /*.pdf$\n")
-        assert not file_robots.is_allowed(regeln, "https://ris.example/files/a.pdf")
-        assert file_robots.is_allowed(regeln, "https://ris.example/oparl/body/1")
+    """
+    Seit Issue #1027 prüft der Löschabgleich mit derselben Auswertung wie alle Abrufe (``services/robots.py``):
+    Eine Regel für ``mandari-ingestor`` gilt auch hier, Gruppen für frühere Kennungen nur zusätzlich.
+    """
+
+    URL = "https://ris.fremd.example/files/a.pdf"
+
+    def _status(self, robots_txt: dict[str, Any], text: str, url: str = URL) -> str:
+        robots_txt[httpx.URL(url).host] = (200, text.encode())
+        cache.clear()
+        return file_robots.file_fetch_status(None, url)
+
+    def test_pdf_sperre_mit_platzhaltern(self, robots_txt: dict[str, Any]) -> None:
+        text = "User-agent: *\nDisallow: /*.pdf$\n"
+        assert self._status(robots_txt, text) == file_robots.DISALLOWED
+        assert self._status(robots_txt, text, "https://ris.fremd.example/oparl/body/1") == file_robots.ALLOWED
         # "$" verankert am Ende: eine Adresse mit Parametern dahinter passt nicht
-        assert file_robots.is_allowed(regeln, "https://ris.example/files/a.pdf?x=1")
+        assert self._status(robots_txt, text, self.URL + "?x=1") == file_robots.ALLOWED
 
-    def test_laengste_regel_gewinnt_allow_bei_gleichstand(self) -> None:
-        regeln = file_robots.parse("User-agent: *\nDisallow: /files/\nAllow: /files/oeffentlich/\n")
-        assert file_robots.is_allowed(regeln, "https://ris.example/files/oeffentlich/a.pdf")
-        assert not file_robots.is_allowed(regeln, "https://ris.example/files/intern/a.pdf")
-        assert file_robots.is_allowed(
-            file_robots.parse("User-agent: *\nDisallow: /a\nAllow: /a\n"), "https://ris.example/a"
-        )
+    def test_laengste_regel_gewinnt_allow_bei_gleichstand(self, robots_txt: dict[str, Any]) -> None:
+        text = "User-agent: *\nDisallow: /files/\nAllow: /files/oeffentlich/\n"
+        offen = "https://ris.fremd.example/files/oeffentlich/a.pdf"
+        assert self._status(robots_txt, text, offen) == file_robots.ALLOWED
+        assert self._status(robots_txt, text, "https://ris.fremd.example/files/intern/a.pdf") == file_robots.DISALLOWED
+        gleich = "User-agent: *\nDisallow: /a\nAllow: /a\n"
+        assert self._status(robots_txt, gleich, "https://ris.fremd.example/a") == file_robots.ALLOWED
 
-    def test_gruppe_fuer_unseren_namen_vor_stern(self) -> None:
-        text = "User-agent: *\nDisallow: /\n\nUser-agent: Mandari\nAllow: /\n"
-        assert file_robots.is_allowed(file_robots.parse(text), "https://ris.example/files/a.pdf")
-        assert not file_robots.is_allowed(file_robots.parse("User-agent: *\nDisallow: /\n"), "https://ris.example/x")
-        assert file_robots.is_allowed(file_robots.parse("User-agent: *\nDisallow:\n"), "https://ris.example/x")
+    def test_gruppe_mandari_ingestor_vor_stern(self, robots_txt: dict[str, Any]) -> None:
+        """Bisher galt hier nur eine Gruppe ``mandari-file-cache`` oder ``mandari``, jetzt die gemeinsame Kennung."""
+        frei = "User-agent: *\nDisallow: /\n\nUser-agent: mandari-ingestor\nAllow: /\n"
+        assert self._status(robots_txt, frei) == file_robots.ALLOWED
+        gesperrt = "User-agent: *\nAllow: /\n\nUser-agent: Mandari-Ingestor\nDisallow: /files/\n"
+        assert self._status(robots_txt, gesperrt) == file_robots.DISALLOWED
+        assert self._status(robots_txt, "User-agent: *\nDisallow: /\n") == file_robots.DISALLOWED
+        assert self._status(robots_txt, "User-agent: *\nDisallow:\n") == file_robots.ALLOWED
 
-    def test_mehrere_agenten_teilen_eine_gruppe(self) -> None:
+    def test_fruehere_kennungen_sperren_nur_zusaetzlich(self, robots_txt: dict[str, Any]) -> None:
+        # Eine Sperre für eine frühere Kennung gilt weiter
+        alt = "User-agent: mandari-file-cache\nDisallow: /files/\n"
+        assert self._status(robots_txt, alt) == file_robots.DISALLOWED
+        assert self._status(robots_txt, "User-agent: Mandari\nDisallow: /\n") == file_robots.DISALLOWED
+        # Eine Freigabe nur für eine frühere Kennung hebt die Sperre unter „*“ nicht auf
+        text = "User-agent: *\nDisallow: /\n\nUser-agent: mandari-file-cache\nAllow: /\n"
+        assert self._status(robots_txt, text) == file_robots.DISALLOWED
+
+    def test_mehrere_agenten_teilen_eine_gruppe(self, robots_txt: dict[str, Any]) -> None:
         text = "User-agent: googlebot\nUser-agent: *\nDisallow: /files/\n"
-        assert not file_robots.is_allowed(file_robots.parse(text), "https://ris.example/files/a.pdf")
+        assert self._status(robots_txt, text) == file_robots.DISALLOWED
 
-    def test_ausnahme_mit_vermerk(self, source: OParlSource) -> None:
-        def handler(request: httpx.Request) -> httpx.Response:
-            return httpx.Response(200, text="User-agent: *\nDisallow: /*.pdf$\n")
-
-        client = httpx.Client(transport=httpx.MockTransport(handler))
-        url = "https://ris.fremd.example/files/a.pdf"
-        assert file_robots.file_fetch_status(source, url, client) == file_robots.DISALLOWED
+    def test_ausnahme_mit_vermerk(self, robots_txt: dict[str, Any], source: OParlSource) -> None:
+        robots_txt["ris.fremd.example"] = (200, b"User-agent: *\nDisallow: /*.pdf$\n")
+        url = self.URL
+        assert file_robots.file_fetch_status(source, url) == file_robots.DISALLOWED
         vermerk = "Zustimmung liegt vor, Freigabe angefragt"
         for bereich in ("files", "all"):
             source.sync_config = {"robots_override": {"scope": bereich, "note": vermerk}}
-            assert file_robots.file_fetch_status(source, url, client) == file_robots.ALLOWED
+            assert file_robots.file_fetch_status(source, url) == file_robots.ALLOWED
+            assert file_robots.exception_note(source) == vermerk
         # Ohne Vermerk, mit zu kurzem Vermerk oder nur für die Schnittstelle: keine Ausnahme für Dateien
         for ausnahme in ({"scope": "files", "note": "  "}, {"note": "ja"}, {"scope": "api", "note": vermerk}, "ja"):
             source.sync_config = {"robots_override": ausnahme}
-            assert file_robots.file_fetch_status(source, url, client) == file_robots.DISALLOWED
+            assert file_robots.file_fetch_status(source, url) == file_robots.DISALLOWED
 
-    def test_user_agent_nach_anderer_zeile_beginnt_neue_gruppe(self) -> None:
-        # Crawl-delay schließt die Gruppe von "*"; die Sperre gilt nur für den folgenden Agenten
-        text = "User-agent: *\nCrawl-delay: 5\nUser-agent: badbot\nDisallow: /\n"
-        assert file_robots.is_allowed(file_robots.parse(text), "https://ris.example/files/a.pdf")
-        text = "User-agent: *\nRequest-rate: 1/5\nUser-agent: mandari\nDisallow: /files/\n"
-        assert not file_robots.is_allowed(file_robots.parse(text), "https://ris.example/files/a.pdf")
-        anderer = file_robots.parse(text.replace("mandari", "anderer"))
-        assert file_robots.is_allowed(anderer, "https://ris.example/files/a.pdf")
-        # Sitemap gehört zu keiner Gruppe und trennt nichts
+    def test_sitemap_trennt_keine_gruppe(self, robots_txt: dict[str, Any]) -> None:
         text = "User-agent: anderer\nSitemap: https://ris.example/sitemap.xml\nUser-agent: *\nDisallow: /files/\n"
-        assert not file_robots.is_allowed(file_robots.parse(text), "https://ris.example/files/a.pdf")
+        assert self._status(robots_txt, text) == file_robots.DISALLOWED
 
-    def test_nicht_lesbare_robots_sperrt(self) -> None:
-        client = httpx.Client(transport=httpx.MockTransport(lambda request: httpx.Response(503)))
-        assert file_robots.file_fetch_status(None, "https://ris.example/a.pdf", client) == file_robots.UNREACHABLE
+    def test_nicht_lesbare_robots_sperrt(self, robots_txt: dict[str, Any]) -> None:
+        robots_txt["ris.example"] = (503, b"")
+        assert file_robots.file_fetch_status(None, "https://ris.example/a.pdf") == file_robots.UNREACHABLE
 
 
 # =============================================================================
@@ -233,7 +257,8 @@ class TestAbgleichPerHash:
         aufrufe: list[str] = []
         ergebnis = file_reconcile.check_changed(interval=0, client=_client(_liefert(PDF_ALT), aufrufe))
         assert ergebnis == {file_reconcile.UNCHANGED: 1}
-        assert aufrufe == ["GET /robots.txt", "GET /files/neu.pdf"]
+        # Die robots.txt kommt aus der gemeinsamen Prüfung (services/robots.py), nicht über diesen Client
+        assert aufrufe == ["GET /files/neu.pdf"]
         assert not file_reconcile.changed_queryset().exists()
 
 
@@ -247,7 +272,7 @@ class TestStichproben:
         datei = _datei(body, tmp_path)
         aufrufe: list[str] = []
         assert file_reconcile.head_check(datei, _client(_liefert(PDF_ALT), aufrufe)) == file_reconcile.PRESENT
-        assert aufrufe == ["GET /robots.txt", "HEAD /files/anlage.pdf"]
+        assert aufrufe == ["HEAD /files/anlage.pdf"]
 
     def test_404_nur_bei_head_sperrt_nicht(self, body: OParlBody, tmp_path: Path) -> None:
         datei = _datei(body, tmp_path)
@@ -265,19 +290,18 @@ class TestStichproben:
         datei = _datei(body, tmp_path)
         assert file_reconcile.head_check(datei, _client(_liefert(PDF_NEU + b"x"))) == file_reconcile.CHANGED
 
-    def test_robots_sperrt_ohne_dateiabruf(self, body: OParlBody, tmp_path: Path) -> None:
+    def test_robots_sperrt_ohne_dateiabruf(self, body: OParlBody, tmp_path: Path, robots_txt: dict[str, Any]) -> None:
         datei = _datei(body, tmp_path)
+        robots_txt["ris.fremd.example"] = (200, b"User-agent: *\nDisallow: /*.pdf$\n")
         aufrufe: list[str] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             aufrufe.append(f"{request.method} {request.url.path}")
-            if request.url.path == "/robots.txt":
-                return httpx.Response(200, text="User-agent: *\nDisallow: /*.pdf$\n")
             return httpx.Response(404)
 
         client = httpx.Client(transport=httpx.MockTransport(handler))
         assert file_reconcile.head_check(datei, client) == file_reconcile.ROBOTS
-        assert aufrufe == ["GET /robots.txt"]
+        assert aufrufe == []
         datei.refresh_from_db()
         assert datei.source_missing_since is None
 
@@ -370,7 +394,7 @@ class TestLoeschenNachFrist:
         quelle = _client(_liefert(b"", get_status=404), aufrufe)
         assert file_reconcile.purge_expired(now=jetzt, client=quelle, interval=0) == {"purged": 2, "copies": 2}
         # Vor dem Löschen fragt der Abgleich nur das nicht mehr abrufbare Dokument noch einmal ab
-        assert aufrufe == ["GET /robots.txt", "GET /files/fehlt.pdf"]
+        assert aufrufe == ["GET /files/fehlt.pdf"]
         for datei in (alt, fehlt):
             kopie = Path(datei.local_path or "")
             datei.refresh_from_db()
@@ -477,7 +501,7 @@ class TestErneutPruefen:
             body, per_source=1, interval=0, client=_client(_liefert(PDF_ALT), aufrufe)
         )
         assert ergebnis == {file_reconcile.PRESENT: 1}
-        assert aufrufe == ["GET /robots.txt", "HEAD /files/gesperrt.pdf"]
+        assert aufrufe == ["HEAD /files/gesperrt.pdf"]
         gesperrt.refresh_from_db()
         assert gesperrt.source_missing_since is None
 
@@ -618,8 +642,7 @@ class TestRuheJeHost:
         )
         assert ergebnis == {file_reconcile.THROTTLED: 1, file_reconcile.SKIPPED: 1}
         # Eine HEAD-Anfrage, danach weder ein GET hinterher noch die zweite Datei
-        assert aufrufe[0] == "GET /robots.txt"
-        assert len(aufrufe) == 2 and aufrufe[1].startswith("HEAD /files/")
+        assert len(aufrufe) == 1 and aufrufe[0].startswith("HEAD /files/")
 
     def test_fehler_zaehlen_je_host(self, body: OParlBody, tmp_path: Path) -> None:
         for nummer in range(6):
