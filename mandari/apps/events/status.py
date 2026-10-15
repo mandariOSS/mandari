@@ -28,7 +28,7 @@ stehen im Admin (Ereignisse, Aufträge) und in ``/metrics/``.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Final
@@ -148,10 +148,14 @@ def register_check(name: str, check: Callable[[], Check]) -> None:
     CHECKS[name] = check
 
 
-def run_checks() -> dict[str, Check]:
-    """Alle Prüfungen; eine, die selbst scheitert (Datenbank weg, Migration ausstehend), gilt als nicht in Ordnung."""
+def run_checks(names: Iterable[str] | None = None) -> dict[str, Check]:
+    """
+    Die genannten Prüfungen (ohne Angabe alle); eine, die selbst scheitert (Datenbank weg, Migration ausstehend), gilt
+    als nicht in Ordnung. Unbekannte Namen werden übergangen.
+    """
+    auswahl = CHECKS if names is None else {name: CHECKS[name] for name in names if name in CHECKS}
     ergebnisse: dict[str, Check] = {}
-    for name, pruefung in CHECKS.items():
+    for name, pruefung in auswahl.items():
         try:
             ergebnisse[name] = pruefung()
         except Exception as exc:  # noqa: BLE001 – jede Ausnahme ist hier ein Prüfergebnis

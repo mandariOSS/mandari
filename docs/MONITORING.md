@@ -363,8 +363,9 @@ oder `EVENTS_SCHEDULES_DISABLED=befehl:events_purge`; Gelöschtes kommt nur aus 
 
 `GET /health/worker/` fasst den Zustand von Worker, Ereignissen und Aufträgen in vier Prüfungen
 zusammen und antwortet mit **200**, wenn alle bestehen, sonst mit **503**. Gemessen wird in der
-Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Das Ergebnis gilt 15 s
-(Cache).
+Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Gerechnet werden nur die
+gewählten Prüfungen, das Ergebnis gilt je Prüfung 15 s (Cache); ein neuer Befund zeigt sich also
+spätestens 15 s später.
 
 - `?pruefung=<name>` (kommagetrennt) lässt nur die genannten Prüfungen über den Status
   entscheiden; ein unbekannter Name ergibt 400. **Für Alarme je Prüfung einen eigenen Endpunkt

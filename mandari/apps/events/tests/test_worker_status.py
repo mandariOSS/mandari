@@ -209,6 +209,100 @@ def test_je_pruefung_ein_status_damit_kein_befund_einen_anderen_verdeckt(client:
 
 
 @pytest.mark.django_db
+def test_wiederholte_pruefung_im_fenster_ohne_datenbank(client: Client, mit_bedarf: Any) -> None:
+    """
+    Issue #1024: Innerhalb des Cache-Fensters kostet ein wiederholter Abruf keine Abfrage, auch nicht im
+    Middleware-Stapel. Der Test schützt nur gegen Rückschritte: Mit dem früheren Gesamt-Cache bestand er genauso. Dass
+    eine andere Prüfung im selben Fenster wirklich gerechnet wird, prüft
+    ``test_andere_pruefung_im_fenster_wird_gerechnet``.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    _alle_worker()
+    for pfad in ("/health/worker/?pruefung=lebenszeichen", "/health/worker/?pruefung=rueckstau", "/health/worker/"):
+        erste = client.get(pfad)
+        with CaptureQueriesContext(connection) as erfasst:
+            zweite = client.get(pfad)
+        assert erfasst.captured_queries == [], pfad
+        assert (zweite.status_code, zweite.json()) == (erste.status_code, erste.json())
+
+
+@pytest.mark.django_db
+def test_andere_pruefung_im_fenster_wird_gerechnet(client: Client, mit_bedarf: Any) -> None:
+    """
+    Issue #1024: Wird im selben Cache-Fenster eine andere Prüfung abgerufen, rechnet der Abruf sie, statt sie aus dem
+    Ergebnis des vorigen zu nehmen. Mit dem früheren Gesamt-Cache scheiterte dieser Test: Der Abruf für
+    ``lebenszeichen`` rechnete alle Prüfungen mit, der für ``rueckstau`` kam danach ohne Abfrage aus dem Cache und zeigte
+    den neuen Rückstau erst nach dem Fenster.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    _alle_worker()
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 200
+    alt = _auftrag(TaskStatus.WARTEND)
+    Task.objects.filter(pk=alt.pk).update(run_after=timezone.now() - timedelta(seconds=status.MAX_TASK_WAIT + 60))
+
+    with CaptureQueriesContext(connection) as erfasst:
+        antwort = client.get("/health/worker/?pruefung=rueckstau")
+
+    assert erfasst.captured_queries, "rueckstau wird gerechnet"
+    assert antwort.status_code == 503, antwort.json()
+    assert antwort.json()["checks"]["rueckstau"]["ok"] is False
+
+
+@pytest.mark.django_db
+def test_nur_die_gewaehlten_pruefungen_werden_gerechnet(
+    client: Client, mit_bedarf: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Issue #1024: Vorher rechnete jeder Abruf ohne Cache-Treffer alle Prüfungen, auch die teuren über die
+    Dateitabelle für ``?pruefung=lebenszeichen`` im Minutentakt. Jetzt nur die gewählten, je Prüfung zwischengespeichert.
+    """
+    gerechnet: list[str] = []
+
+    def zaehlend(name: str, pruefung: Any) -> Any:
+        def ausfuehren() -> status.Check:
+            gerechnet.append(name)
+            return cast(status.Check, pruefung())
+
+        return ausfuehren
+
+    monkeypatch.setattr(status, "CHECKS", {name: zaehlend(name, p) for name, p in status.CHECKS.items()})
+    _alle_worker()
+
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 200
+    assert gerechnet == ["lebenszeichen"]
+    assert client.get("/health/worker/?pruefung=rueckstau,lebenszeichen").status_code == 200
+    assert gerechnet == ["lebenszeichen", "rueckstau"], "lebenszeichen aus dem Cache"
+    assert client.get("/health/worker/").status_code == 200
+    assert sorted(gerechnet[2:]) == sorted(set(status.CHECKS) - {"lebenszeichen", "rueckstau"})
+
+
+@pytest.mark.django_db
+def test_befund_nach_dem_fenster_sichtbar(client: Client, mit_bedarf: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ein Fehler (und seine Behebung) wird höchstens WORKER_STATUS_CACHE_SECONDS verdeckt."""
+    from apps.common import health
+
+    gespeichert: list[float | None] = []
+    echt = cache.set_many
+
+    def merken(daten: dict[str, Any], timeout: float | None = None, **kwargs: Any) -> list[str]:
+        gespeichert.append(timeout)
+        return cast(list[str], echt(daten, timeout, **kwargs))
+
+    monkeypatch.setattr(cache, "set_many", merken)
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 503
+    assert gespeichert == [health.WORKER_STATUS_CACHE_SECONDS] and health.WORKER_STATUS_CACHE_SECONDS <= 15
+
+    _alle_worker()
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 503, "im Fenster noch der alte Befund"
+    cache.delete(health._WORKER_STATUS_KEY.format("lebenszeichen"))  # Fenster abgelaufen
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 200
+
+
+@pytest.mark.django_db
 def test_unbekannte_pruefung_400_ohne_echo(client: Client) -> None:
     antwort = client.get("/health/worker/?pruefung=rueckstau,<b>gibt-es-nicht</b>")
 

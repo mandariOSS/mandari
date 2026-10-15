@@ -19,8 +19,8 @@ Getrennte Gesundheitsprüfungen (Issue #231, Teil 1).
   die genannten Prüfungen über den Status entscheiden: je Prüfung ein Alarm, damit ein lang
   anhaltender Befund (ein gescheiterter Auftrag bleibt 24 h stehen) keinen späteren anderen
   verdeckt. Die Texte der Prüfungen nur intern (``METRICS_ALLOWED_NETWORKS`` bzw.
-  ``METRICS_TOKEN`` wie ``/metrics/``), sonst nur ``ok`` je Prüfung. Das Ergebnis gilt
-  ``WORKER_STATUS_CACHE_SECONDS``.
+  ``METRICS_TOKEN`` wie ``/metrics/``), sonst nur ``ok`` je Prüfung. Gerechnet werden nur die
+  gewählten Prüfungen, ihr Ergebnis gilt je Prüfung ``WORKER_STATUS_CACHE_SECONDS`` (Issue #1024).
 
 Über ``HEALTH_READY_OPTIONAL`` (kommagetrennt, z. B. ``elasticsearch``) lassen sich
 Prüfungen als optional erklären: Sie werden weiter gemeldet, machen die Antwort aber nicht
@@ -194,40 +194,47 @@ def run_readiness_checks() -> list[CheckResult]:
         executor.shutdown(wait=False, cancel_futures=True)
 
 
-#: So lange gilt ein Ergebnis von ``/health/worker/`` (die Statusseite fragt etwa minütlich; jeder
-#: Abruf kostet einige Abfragen, ohne Anmeldung)
+#: So lange gilt das Ergebnis einer Prüfung von ``/health/worker/``; ein neuer Befund (rot oder wieder grün) zeigt
+#: sich also spätestens nach dieser Zeit. Die Statusseite fragt je Prüfung in eigenem Takt (1 bis 30 Minuten).
 WORKER_STATUS_CACHE_SECONDS = 15
-_WORKER_STATUS_KEY = "health:worker"
+#: Je Prüfung ein Eintrag (Issue #1024): Ein Abruf rechnet nur die gewählten Prüfungen. Vorher rechnete jeder
+#: Abruf, dessen Ergebnis nicht mehr im Cache lag, alle Prüfungen, auch die teuren über die Dateitabelle für
+#: ``?pruefung=lebenszeichen`` im Minutentakt.
+_WORKER_STATUS_KEY = "health:worker:{}"
 
 
 #: Abfrageparameter: Namen der Prüfungen, die über den Status entscheiden (kommagetrennt)
 WORKER_SELECTION_PARAM = "pruefung"
 
 
-def worker_status_payload() -> dict[str, Any]:
-    """Ergebnis aller Worker-Prüfungen als JSON-fähiges Wörterbuch (``status`` ``ok`` oder ``error``)."""
+def _worker_checks_cached(names: list[str]) -> dict[str, dict[str, Any]]:
+    """
+    Ergebnisse der genannten Worker-Prüfungen (``{"ok", "detail"}`` je Name), höchstens
+    ``WORKER_STATUS_CACHE_SECONDS`` alt. Was nicht im Cache liegt, wird gerechnet und abgelegt; ohne Cache wird
+    jedes Mal gerechnet.
+    """
     from apps.events.status import run_checks
 
-    ergebnisse = run_checks()
-    return {
-        "status": "ok" if all(c.ok for c in ergebnisse.values()) else "error",
-        "checks": {name: {"ok": c.ok, "detail": c.detail} for name, c in ergebnisse.items()},
-    }
-
-
-def _worker_status_cached() -> dict[str, Any]:
+    schluessel = {name: _WORKER_STATUS_KEY.format(name) for name in names}
     try:
-        daten = cache.get(_WORKER_STATUS_KEY)
+        vorhanden: dict[str, Any] = cache.get_many(list(schluessel.values()))
     except Exception:  # noqa: BLE001 – ohne Cache wird eben jedes Mal geprüft
-        daten = None
-    if isinstance(daten, dict):
-        return daten
-    neu = worker_status_payload()
-    try:
-        cache.set(_WORKER_STATUS_KEY, neu, WORKER_STATUS_CACHE_SECONDS)
-    except Exception:  # noqa: BLE001
-        logger.debug("Worker-Status nicht im Cache abgelegt", exc_info=True)
-    return neu
+        logger.debug("Worker-Status nicht aus dem Cache lesbar", exc_info=True)
+        vorhanden = {}
+    ergebnisse: dict[str, dict[str, Any]] = {}
+    for name, key in schluessel.items():
+        eintrag = vorhanden.get(key)
+        if isinstance(eintrag, dict):
+            ergebnisse[name] = eintrag
+    fehlend = [name for name in names if name not in ergebnisse]
+    if fehlend:
+        neu = {name: {"ok": c.ok, "detail": c.detail} for name, c in run_checks(fehlend).items()}
+        ergebnisse.update(neu)
+        try:
+            cache.set_many({schluessel[name]: wert for name, wert in neu.items()}, WORKER_STATUS_CACHE_SECONDS)
+        except Exception:  # noqa: BLE001
+            logger.debug("Worker-Status nicht im Cache abgelegt", exc_info=True)
+    return {name: ergebnisse[name] for name in names if name in ergebnisse}
 
 
 @never_cache
@@ -244,9 +251,10 @@ def worker(request: HttpRequest) -> JsonResponse:
             {"status": "error", "fehler": "unbekannte Prüfung", "pruefungen": list(CHECKS)},
             status=400,
         )
-    alle: dict[str, dict[str, Any]] = _worker_status_cached()["checks"]
+    namen = list(dict.fromkeys(auswahl)) or list(CHECKS)
+    ergebnisse = _worker_checks_cached(namen)
     unbekannt = {"ok": False, "detail": "nicht prüfbar"}
-    gewaehlt = {name: alle.get(name, unbekannt) for name in (auswahl or list(alle))}
+    gewaehlt = {name: ergebnisse.get(name, unbekannt) for name in namen}
     ok = all(c["ok"] for c in gewaehlt.values())
     if not ok:
         logger.warning("Worker-Prüfung: %s", ", ".join(n for n, c in gewaehlt.items() if not c["ok"]))
