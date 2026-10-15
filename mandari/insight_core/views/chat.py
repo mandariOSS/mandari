@@ -10,12 +10,14 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
+from django.db import DatabaseError
 from django.db.models import Sum
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.views.generic import TemplateView
 
+from apps.common.db_connections import is_pool_exhausted
 from apps.common.ki_anbieter import KiEndpunkt, KiHinweis, endpunkt_fuer_insight
 
 from ..models import (
@@ -310,17 +312,29 @@ def chat_message(request):
         )
 
     def verbrauch_buchen(tokens: int, prompt_tokens: int, completion_tokens: int, rounds: int) -> None:
-        ChatUsage.objects.create(
-            session_key=session_key,
-            ip_address=ip_address,
-            user=user,
-            message=message[:500],
-            filter_result="passed",
-            tokens_used=tokens,
-            prompt_tokens=prompt_tokens,
-            completion_tokens=completion_tokens,
-            rounds=min(rounds, 32767),
-        )
+        # Bewusster Tausch (Issue #1024): Während des KI-Aufrufs liegt die Verbindung beim Pool. Bekommt das Buchen
+        # danach keine (Pool erschöpft) oder scheitert es an der Datenbank, geht die Antwort trotzdem hinaus; dieser
+        # eine Verbrauch fehlt dann in Nutzungsgrenze und Tagesobergrenze. Die Antwort ist schon bezahlt; eine
+        # Fehlerseite danach würde sie verwerfen, und die Frage käme gleich noch einmal.
+        try:
+            ChatUsage.objects.create(
+                session_key=session_key,
+                ip_address=ip_address,
+                user=user,
+                message=message[:500],
+                filter_result="passed",
+                tokens_used=tokens,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                rounds=min(rounds, 32767),
+            )
+        except DatabaseError as exc:
+            # Ohne Nutzerdaten: weder Frage noch Sitzung, Adresse oder Konto
+            logger.warning(
+                "KI-Assistent: Verbrauch nicht gebucht (%s, %d Token), Antwort wird trotzdem ausgeliefert",
+                "Pool erschöpft" if is_pool_exhausted(exc) else type(exc).__name__,
+                tokens,
+            )
 
     # 6-7. Werkzeugrunden über die Ratsdaten der Kommune und Antwort
     # Außerhalb des try: Eine abgeschaltete Kommune endet mit dem Hinweis statt als interner Fehler

@@ -203,6 +203,11 @@ def tile_proxy(request, z, x, y):
     subdomain = ["a", "b", "c"][x % 3]
     tile_url = f"https://{subdomain}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 
+    # Eine Karte lädt Dutzende Kacheln zugleich; jeder Abruf bei OSM darf bis zu 10 s dauern. Solange die
+    # Datenbankverbindung an den Pool zurückgeben (Issue #1024), das Speichern holt sich danach eine neue
+    from apps.common.db_connections import release_idle_thread_connections
+
+    release_idle_thread_connections()
     try:
         with httpx.Client(
             timeout=10.0,

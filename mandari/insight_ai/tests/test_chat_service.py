@@ -9,6 +9,7 @@ zentralen KI-Konfiguration (``get_insight_provider``, Issue #950).
 from __future__ import annotations
 
 import json
+import logging
 from datetime import timedelta
 from typing import Any
 
@@ -21,6 +22,7 @@ from django.utils import timezone
 
 from apps.common.ki_anbieter import KiEndpunkt, endpunkt_fuer_insight
 from apps.common.models import AISettings
+from apps.common.tests.verbindungsprobe import Verbindungsprobe, pool_erschoepft
 from insight_ai.providers import OpenAIKompatiblerProvider
 from insight_ai.services import chat_service
 from insight_core.models import ChatUsage
@@ -310,6 +312,68 @@ def test_endpunkt_protokolliert_verbrauch_und_zaehlt_eine_anfrage(
     assert nutzung.rounds == 2
     assert nutzung.prompt_tokens > 0 and nutzung.completion_tokens > 0
     assert nutzung.tokens_used == nutzung.prompt_tokens + nutzung.completion_tokens
+
+
+@pytest.mark.django_db(transaction=True)
+def test_keine_pool_verbindung_waehrend_der_modellaufrufe(monkeypatch: pytest.MonkeyPatch, stadt: Musterstadt) -> None:
+    """
+    Ohne Testtransaktion wie im Betrieb (Issue #1024): Während jedes der beiden Modellaufrufe hält die Anfrage keine
+    Verbindung; das Werkzeug dazwischen holt sich eine neue, und danach wird der Verbrauch gebucht.
+    """
+    probe = Verbindungsprobe()
+    fake = anbieter(
+        monkeypatch, werkzeuge(("sitzungen_im_zeitraum", {"von": "2026-10-05", "bis": "2026-10-11"})), antwort_sitzungen
+    )
+    echt = fake.chat_with_tools
+
+    def beobachtet(*args: Any, **kwargs: Any) -> Any:
+        probe.aufruf()
+        return echt(*args, **kwargs)
+
+    monkeypatch.setattr(fake, "chat_with_tools", beobachtet)
+    client, _ = _besucher_mit_einwilligung(stadt)
+
+    with probe.mitschreiben(monkeypatch):
+        antwort = _fragen(client, "Welche Sitzungen finden diese Woche statt?")
+
+    assert antwort.status_code == 200
+    assert f"/insight/termine/{stadt.rat_sitzung.pk}/" in antwort.json()["response"]
+    probe.pruefen(aufrufe=2)
+    erster, zweiter = [i for i, ereignis in enumerate(probe.ereignisse) if ereignis == "aufruf"]
+    assert "sql" in probe.ereignisse[erster:zweiter], "das Werkzeug fragt zwischen den Aufrufen die Ratsdaten ab"
+    assert ChatUsage.objects.get().rounds == 2
+
+
+def test_antwort_auch_wenn_das_buchen_am_erschoepften_pool_scheitert(
+    monkeypatch: pytest.MonkeyPatch, stadt: Musterstadt, caplog: pytest.LogCaptureFixture
+) -> None:
+    """
+    Issue #1024: Bekommt das Buchen nach dem KI-Aufruf keine Verbindung mehr (Pool erschöpft), geht die Antwort
+    trotzdem hinaus, statt nach dem bezahlten Aufruf mit einer Fehlerseite zu enden. Die Warnung nennt den Grund, keine
+    Nutzerdaten. Auch der Fehlschlag nach einer Werkzeugrunde bleibt dabei der feste Hinweis.
+    """
+    anbieter(
+        monkeypatch, werkzeuge(("sitzungen_im_zeitraum", {"von": "2026-10-05", "bis": "2026-10-11"})), antwort_sitzungen
+    )
+    client, _ = _besucher_mit_einwilligung(stadt)
+
+    def erschoepft(**kwargs: Any) -> Any:
+        raise pool_erschoepft()
+
+    monkeypatch.setattr(ChatUsage.objects, "create", erschoepft)
+    with caplog.at_level(logging.WARNING, logger="insight_core.views.chat"):
+        antwort = _fragen(client, "Welche Sitzungen finden diese Woche statt?")
+
+    assert antwort.status_code == 200
+    assert f"/insight/termine/{stadt.rat_sitzung.pk}/" in antwort.json()["response"]
+    assert not ChatUsage.objects.exists()
+    warnungen = [r.getMessage() for r in caplog.records if r.name == "insight_core.views.chat"]
+    assert len(warnungen) == 1 and "Verbrauch nicht gebucht (Pool erschöpft" in warnungen[0], warnungen
+    assert "Sitzungen" not in warnungen[0] and "198.51.100.7" not in warnungen[0]
+
+    anbieter(monkeypatch, werkzeuge(("gremien", {})), ValueError("keine Antwort"), ValueError("keine Antwort"))
+    fehlschlag = _fragen(client, "Welche Gremien gibt es in der Stadt?")
+    assert (fehlschlag.status_code, fehlschlag.json()["error"]) == (503, "ai_unavailable")
 
 
 # --- Kostenbremse: Tagesobergrenze aller Antworten zusammen -------------------------------------------------
