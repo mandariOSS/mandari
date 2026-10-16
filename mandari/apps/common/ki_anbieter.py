@@ -11,7 +11,9 @@ Liste, ist die KI aus (``None``). Jede Adresse wird bei jedem Aufruf neu geprüf
 Datenbank steht. Eine Vorlage gibt keinen Host frei; sie füllt nur Anzeigename, Verarbeitungsort und Basis-URL.
 
 Ein Anbieterwechsel ist damit reine Konfiguration: Host in ``KI_ERLAUBTE_HOSTS`` aufnehmen, dann Vorlage oder
-eigener Endpunkt, Modell und Schlüssel im Admin.
+eigener Endpunkt, Modell und Schlüssel im Admin oder mit ``manage.py ki_anbieter einrichten`` (Issue #1046).
+``pruefe_ki_einstellungen()`` stellt je Modell einen Testaufruf mit höchstens einem Token Antwort an den
+eingerichteten Endpunkt (Befehl ``ki_anbieter pruefen``, Admin „Speichern und Verbindung prüfen“).
 """
 
 from __future__ import annotations
@@ -19,15 +21,20 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import ssl
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
+import httpx
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from mandari_dokumente.ki_hosts import gepruefter_host, ist_erlaubter_host, normalisiere_host
 
+from .db_connections import release_idle_thread_connections
+
 if TYPE_CHECKING:
+    from apps.common.models import AISettings
     from apps.tenants.models import Organization
 
 logger = logging.getLogger(__name__)
@@ -115,6 +122,22 @@ ANBIETER_VORLAGEN: dict[str, AnbieterVorlage] = {
         basis_url="https://api.deutschlandgpt.de/v2",
         auch_max_completion_tokens=True,
     ),
+    # Weiter nutzbar nach Entscheidung des Betreibers (Issue #1046), kein Anbieter mit Verarbeitung nur in der EU.
+    # Unterauftragsverarbeiter laut docs.nebius.com/legal/sub-processors_tofa (Stand 23.09.2026), Verarbeitung für
+    # die Modelle: Nebius Inc. in den USA, Nebius B.V. in Frankreich, Island, Finnland und im Vereinigten Königreich,
+    # Nebius Israel Ltd. in Israel, Dienstleister (RunPod, BoostRun, Shadeform, Axe Compute) in Island, den USA und
+    # Kanada; Betrieb und Support zusätzlich in weiteren Ländern innerhalb und außerhalb der EU (etwa Serbien). Den
+    # Ort je öffentlichem Modell zeigt die Oberfläche des Anbieters.
+    # Zeigt sie für das gewählte Modell einen festen Ort, kann ihn das Feld „Verarbeitungsort“ genauer nennen.
+    "nebius": AnbieterVorlage(
+        anzeigename="Nebius Token Factory",
+        vertragspartner="Gesellschaft der Nebius Group laut Vertrag",
+        verarbeitungsort=(
+            "je nach Modell innerhalb und außerhalb der EU, auch in den USA – laut Unterauftragsverarbeiterliste "
+            "des Anbieters"
+        ),
+        basis_url="https://api.tokenfactory.nebius.com/v1",
+    ),
     # Basis-URL, Anzeigename und Verarbeitungsort sind hier Pflicht (Admin-Formular, Auflösung)
     EIGENER: AnbieterVorlage(
         anzeigename="Eigener OpenAI-kompatibler Endpunkt",
@@ -126,6 +149,21 @@ ANBIETER_VORLAGEN: dict[str, AnbieterVorlage] = {
 
 #: Auswahl für Modellfelder (Schlüssel, Anzeigename)
 ANBIETER_AUSWAHL: list[tuple[str, str]] = [(key, vorlage.anzeigename) for key, vorlage in ANBIETER_VORLAGEN.items()]
+
+
+def auswahl_ki_einstellungen() -> list[tuple[str, str]]:
+    """
+    Auswahl des Anbieters in den KI-Einstellungen: „nicht eingerichtet“ und alle Vorlagen.
+
+    Als Aufruf an das Modellfeld übergeben: Die Migration verweist auf die Funktion statt die Liste festzuschreiben,
+    eine neue Vorlage braucht so keine Migration.
+    """
+    return [("", "Nicht eingerichtet (KI aus)"), *ANBIETER_AUSWAHL]
+
+
+def auswahl_organisation() -> list[tuple[str, str]]:
+    """Auswahl des Anbieters einer Organisation: „Plattform-Einstellung“ und alle Vorlagen (wie oben als Aufruf)."""
+    return [("", "Plattform-Einstellung"), *ANBIETER_AUSWAHL]
 
 
 def erlaubte_hosts() -> tuple[str, ...]:
@@ -317,9 +355,8 @@ class KiEndpunkt:
         return felder
 
 
-def _baue_endpunkt(
+def _endpunkt_oder_grund(
     *,
-    quelle: str,
     anbieter: str,
     base_url: str,
     anzeigename: str,
@@ -328,38 +365,24 @@ def _baue_endpunkt(
     modell: str,
     ausweichmodell: str = "",
     max_output_tokens: int = 0,
-) -> KiEndpunkt | None:
-    """Endpunkt aus Einstellungen; unvollständig oder nicht freigegeben ergibt ``None`` mit Warnung (ohne Schlüssel)."""
+) -> KiEndpunkt | str:
+    """Endpunkt aus Einstellungen oder der Grund, warum die KI aus ist (ohne Schlüssel, nur Hostnamen)."""
     vorlage = ANBIETER_VORLAGEN.get(anbieter or "")
     if vorlage is None:
-        logger.warning("KI aus (%s): kein freigegebener Anbieter gewählt", quelle)
-        return None
+        return "kein freigegebener Anbieter gewählt"
     if fremder_host_fuer_vorlage(anbieter, base_url):
-        logger.warning(
-            "KI aus (%s): Basis-URL mit Host %s passt nicht zur Vorlage %s. %s",
-            quelle,
-            _host_fuer_protokoll(base_url),
-            anbieter,
-            FREMDER_HOST,
-        )
-        return None
+        return f"Basis-URL mit Host {_host_fuer_protokoll(base_url)} passt nicht zur Vorlage {anbieter}. {FREMDER_HOST}"
     try:
         geprueft = pruefe_basis_url(base_url or vorlage.basis_url)
     except ValidationError:
-        logger.warning(
-            "KI aus (%s): Endpunkt gesperrt, Host %s steht nicht in KI_ERLAUBTE_HOSTS",
-            quelle,
-            _host_fuer_protokoll(base_url or vorlage.basis_url),
-        )
-        return None
+        host = _host_fuer_protokoll(base_url or vorlage.basis_url)
+        return f"Endpunkt gesperrt, Host {host} steht nicht in KI_ERLAUBTE_HOSTS"
     anzeigename = (anzeigename or "").strip() or (vorlage.anzeigename if anbieter != EIGENER else "")
     verarbeitungsort = (verarbeitungsort or "").strip() or vorlage.verarbeitungsort
     if not anzeigename or not verarbeitungsort:
-        logger.warning("KI aus (%s): Anzeigename und Verarbeitungsort des Endpunkts fehlen", quelle)
-        return None
+        return "Anzeigename und Verarbeitungsort des Endpunkts fehlen"
     if not (modell or "").strip():
-        logger.warning("KI aus (%s): kein Modell eingetragen", quelle)
-        return None
+        return "kein Modell eingetragen"
     return KiEndpunkt(
         anbieter=anbieter,
         anzeigename=anzeigename,
@@ -370,6 +393,45 @@ def _baue_endpunkt(
         ausweichmodell=(ausweichmodell or "").strip(),
         max_output_tokens=max(0, int(max_output_tokens or 0)),
         auch_max_completion_tokens=auch_max_completion_tokens(gepruefter_host(geprueft) or ""),
+    )
+
+
+def _baue_endpunkt(*, quelle: str, **angaben: Any) -> KiEndpunkt | None:
+    """Endpunkt aus Einstellungen; unvollständig oder nicht freigegeben ergibt ``None`` mit Warnung (ohne Schlüssel)."""
+    ergebnis = _endpunkt_oder_grund(**angaben)
+    if isinstance(ergebnis, str):
+        logger.warning("KI aus (%s): %s", quelle, ergebnis)
+        return None
+    return ergebnis
+
+
+def endpunkt_der_einstellungen(ki: AISettings | None = None) -> KiEndpunkt | str:
+    """
+    Endpunkt der KI-Einstellungen unabhängig von den Schaltern für Work und Bürgerportal, sonst der Grund.
+
+    Für Übersicht und Verbindungsprüfung (``ki_anbieter``): Es gelten dieselben Prüfungen wie bei jedem Aufruf
+    (Positivliste, Vorlage nur für ihren Host, Pflichtangaben), nur die Schalter nicht. Modell ist das für Work.
+    """
+    if getattr(settings, "DEMO_INSTANCE", False):
+        return "öffentliche Demo: KI immer aus"
+    if ki is None:
+        from .models import AISettings
+
+        ki = AISettings.get_settings()
+    if not ki.api_key_encrypted:
+        return "kein Schlüssel gespeichert"
+    key = ki.get_api_key()
+    if not key:
+        return "Schlüssel nicht lesbar (ENCRYPTION_MASTER_KEY prüfen)"
+    return _endpunkt_oder_grund(
+        anbieter=ki.provider or "",
+        base_url=ki.base_url or "",
+        anzeigename=ki.anzeigename or "",
+        verarbeitungsort=ki.verarbeitungsort or "",
+        api_key=key,
+        modell=ki.model_name or "",
+        ausweichmodell=ki.fallback_model or "",
+        max_output_tokens=ki.max_output_tokens,
     )
 
 
@@ -451,3 +513,161 @@ def endpunkt_fuer_insight() -> KiEndpunkt | None:
         ausweichmodell=ki.fallback_model or "",
         max_output_tokens=ki.insight_max_output_tokens,
     )
+
+
+# =============================================================================
+# Verbindungsprüfung (Issue #1046)
+# =============================================================================
+
+#: Zeitgrenze eines Testaufrufs in Sekunden (Verbindungsaufbau höchstens 5 s)
+PRUEF_ZEITGRENZE = 15.0
+
+#: Inhalt des Testaufrufs: fest, ohne Bezug zu Personen oder Dokumenten
+_PRUEF_NACHRICHT = "Antworte nur mit OK."
+
+
+@dataclass(frozen=True)
+class Pruefergebnis:
+    """
+    Ergebnis einer Verbindungsprüfung. Enthält nur Art, Host und Modell, nie Schlüssel, Anfrage oder Antworttext.
+
+    ``art``: ``ok``, ``nicht_eingerichtet``, ``schluessel``, ``nicht_gefunden``, ``abgelehnt``, ``limit``,
+    ``umleitung``, ``anbieter``, ``unerwartet``, ``format``, ``zeit``, ``tls``, ``verbindung`` oder ``zeichen``.
+    """
+
+    ok: bool
+    art: str
+    meldung: str
+    host: str = ""
+    modell: str = ""
+    zweck: str = ""
+
+    @property
+    def text(self) -> str:
+        if not self.modell:
+            return f"KI-Einstellungen: {self.meldung}"
+        return f"{self.zweck}: Modell {self.modell} an {self.host}: {self.meldung}"
+
+
+def _ist_tls_fehler(fehler: BaseException) -> bool:
+    """Liegt einem Verbindungsfehler ein TLS-Fehler zugrunde (Zertifikat, Protokoll)? Durchsucht die Ursachenkette."""
+    aktuell: BaseException | None = fehler
+    for _ in range(10):
+        if aktuell is None:
+            return False
+        if isinstance(aktuell, ssl.SSLError):
+            return True
+        aktuell = aktuell.__cause__ or aktuell.__context__
+    return False
+
+
+def _bewerte_antwort(antwort: httpx.Response) -> tuple[str, str]:
+    """Art und Meldung zu einer HTTP-Antwort; der Antworttext wird nur auf das Format geprüft, nie ausgegeben."""
+    status = antwort.status_code
+    if status == 200:
+        try:
+            daten = antwort.json()
+        except ValueError:
+            daten = None
+        if isinstance(daten, dict) and isinstance(daten.get("choices"), list):
+            return "ok", "Verbindung in Ordnung"
+        return "format", "Antwort ohne OpenAI-kompatibles Format (HTTP 200): Basis-URL prüfen"
+    if status in (401, 403):
+        return "schluessel", f"Schlüssel abgelehnt (HTTP {status})"
+    if status == 404:
+        return "nicht_gefunden", "Modell oder Schnittstelle nicht gefunden (HTTP 404): Modellname und Basis-URL prüfen"
+    if status in (400, 422):
+        return "abgelehnt", f"Anfrage abgelehnt (HTTP {status}), etwa wegen eines unbekannten Modells"
+    if status in (402, 429):
+        return "limit", f"Ratenlimit oder Guthaben beim Anbieter erschöpft (HTTP {status})"
+    if 300 <= status < 400:
+        return "umleitung", f"Umleitung (HTTP {status}) nicht gefolgt: Basis-URL prüfen"
+    if status >= 500:
+        return "anbieter", f"Fehler beim Anbieter (HTTP {status})"
+    return "unerwartet", f"Unerwartete Antwort (HTTP {status})"
+
+
+def pruefe_verbindung(
+    endpunkt: KiEndpunkt,
+    *,
+    modell: str | None = None,
+    zweck: str = "",
+    zeitgrenze: float = PRUEF_ZEITGRENZE,
+    transport: httpx.BaseTransport | None = None,
+) -> Pruefergebnis:
+    """
+    Ein Testaufruf an die Chat-Schnittstelle des geprüften Endpunkts mit höchstens einem Token Antwort.
+
+    Prüft Erreichbarkeit, TLS, Schlüssel und Modell auf demselben Weg wie die echten Aufrufe. Weiterleitungen werden
+    nicht verfolgt (der Host stünde sonst nicht mehr fest). Während des Aufrufs liegt die Datenbankverbindung beim
+    Pool wie bei den echten Aufrufen (Issue #1024); in einer offenen Transaktion bleibt sie. Ins Protokoll gehen nur
+    Host, Modell und Art des Ergebnisses. ``transport`` nur für Tests (``httpx.MockTransport``).
+    """
+    modell = (modell or endpunkt.modell).strip()
+    nutzlast = {
+        "model": modell,
+        "messages": [{"role": "user", "content": _PRUEF_NACHRICHT}],
+        "stream": False,
+        **endpunkt.laengengrenze(1),
+    }
+    kopf = {"Authorization": f"Bearer {endpunkt.api_key}", "Content-Type": "application/json"}
+    zeit = httpx.Timeout(zeitgrenze, connect=min(5.0, zeitgrenze))
+    release_idle_thread_connections()
+    try:
+        with httpx.Client(timeout=zeit, transport=transport, follow_redirects=False) as client:
+            art, meldung = _bewerte_antwort(client.post(endpunkt.chat_url, json=nutzlast, headers=kopf))
+    except httpx.TimeoutException:
+        art, meldung = "zeit", f"Keine Antwort innerhalb von {zeitgrenze:g} s"
+    except httpx.HTTPError as fehler:
+        # Die Fehlermeldung selbst bleibt draußen: Sie kann die Adresse samt Pfad enthalten
+        if _ist_tls_fehler(fehler) or "SSL" in str(fehler):
+            art, meldung = "tls", "TLS-Verbindung fehlgeschlagen (Zertifikat oder Protokoll)"
+        elif isinstance(fehler, httpx.ConnectError):
+            art, meldung = "verbindung", "Keine Verbindung zum Host (DNS, Netz oder Firewall)"
+        else:
+            art, meldung = "verbindung", f"Netzwerkfehler ({type(fehler).__name__})"
+    except (ValueError, httpx.InvalidURL):
+        # Etwa ein mitkopiertes unsichtbares Zeichen im Schlüssel (Kopfzeilen nur ASCII): Der Text der Ausnahme
+        # nennt Zeichen und Stelle und bleibt draußen
+        art, meldung = "zeichen", "Schlüssel oder Adresse enthält unzulässige Zeichen (etwa ein unsichtbares Zeichen)"
+    logger.info("KI-Verbindungsprüfung: Host %s, Modell %s: %s", endpunkt.host, modell, art)
+    return Pruefergebnis(ok=art == "ok", art=art, meldung=meldung, host=endpunkt.host, modell=modell, zweck=zweck)
+
+
+def _zu_pruefende_modelle(ki: AISettings) -> list[tuple[str, str]]:
+    """Jedes eingetragene Modell einmal, mit seinen Zwecken (Work, Bürgerportal, Ausweichmodell)."""
+    zwecke: dict[str, list[str]] = {}
+    for zweck, modell in (
+        ("Work", ki.model_name),
+        ("Bürgerportal", (ki.insight_model or "").strip() or ki.model_name),
+        ("Ausweichmodell", ki.fallback_model),
+    ):
+        if (modell or "").strip():
+            zwecke.setdefault(modell.strip(), []).append(zweck)
+    return [(modell, ", ".join(namen)) for modell, namen in zwecke.items()]
+
+
+def pruefe_ki_einstellungen(
+    ki: AISettings | None = None,
+    *,
+    zeitgrenze: float = PRUEF_ZEITGRENZE,
+    transport: httpx.BaseTransport | None = None,
+) -> list[Pruefergebnis]:
+    """
+    Verbindungsprüfung der KI-Einstellungen: je eingetragenem Modell ein Testaufruf (Befehl und Admin).
+
+    Unabhängig von den Schaltern für Work und Bürgerportal, damit sich ein Anbieter vor dem Einschalten prüfen
+    lässt; Positivliste und Pflichtangaben gelten wie bei jedem Aufruf. Ohne gültigen Endpunkt kein Aufruf,
+    sondern der Grund.
+    """
+    if ki is None:
+        from .models import AISettings
+
+        ki = AISettings.get_settings()
+    endpunkt = endpunkt_der_einstellungen(ki)
+    if isinstance(endpunkt, str):
+        return [Pruefergebnis(ok=False, art="nicht_eingerichtet", meldung=endpunkt)]
+    return [
+        pruefe_verbindung(endpunkt, modell=modell, zweck=zweck, zeitgrenze=zeitgrenze, transport=transport)
+        for modell, zweck in _zu_pruefende_modelle(ki)
+    ]

@@ -22,7 +22,7 @@ from django.db import models
 from django.utils.text import slugify
 
 from apps.common.encryption import exclude_key_fields_from_save
-from apps.common.ki_anbieter import ANBIETER_AUSWAHL, ANBIETER_VORLAGEN
+from apps.common.ki_anbieter import ANBIETER_VORLAGEN, auswahl_organisation
 from apps.common.permissions import DEFAULT_ROLES, PERMISSIONS
 from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 
@@ -268,7 +268,6 @@ class Organization(models.Model):
     # Eigene KI-Konfiguration der Organisation (Issue #950): wirkt nur mit eigenem Schlüssel und nur, wenn der
     # Host in KI_ERLAUBTE_HOSTS steht (apps.common.ki_anbieter.endpunkt_fuer_work); sonst gilt die Plattform.
     AI_PROVIDER_PLATFORM = ""
-    AI_PROVIDER_CHOICES = [(AI_PROVIDER_PLATFORM, "Plattform-Einstellung"), *ANBIETER_AUSWAHL]
 
     ai_enabled = models.BooleanField(
         default=True,
@@ -277,7 +276,8 @@ class Organization(models.Model):
     )
     ai_provider = models.CharField(
         max_length=20,
-        choices=AI_PROVIDER_CHOICES,
+        # Als Aufruf: Eine neue Vorlage braucht keine Migration (Issue #1046)
+        choices=auswahl_organisation,
         default=AI_PROVIDER_PLATFORM,
         blank=True,
         verbose_name="KI-Anbieter",

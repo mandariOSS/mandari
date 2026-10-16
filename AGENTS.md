@@ -648,7 +648,8 @@ TEXT_EXTRACTION_MAX_SIZE_MB=50
 
 # KI (Issue #950): Anbieter, Basis-URL, Modell und Schlüssel im Admin (KI-Einstellungen), kein fester Anbieter
 # im Code. Jeder KI-Aufruf nur an Hosts dieser Positivliste; leer ist nichts erlaubt (KI aus, kein Standard).
-# Erst nach Freigabe eines Anbieters dessen Host eintragen, etwa KI_ERLAUBTE_HOSTS=<host-des-anbieters>
+# Erst nach Freigabe eines Anbieters dessen Host eintragen, etwa KI_ERLAUBTE_HOSTS=<host-des-anbieters>;
+# dann `manage.py ki_anbieter einrichten …` und `ki_anbieter pruefen` (Issue #1046, DEPLOYMENT.md „KI-Anbieter“)
 KI_ERLAUBTE_HOSTS=
 
 # Externe Texterkennung (optional, nur öffentliche RIS-Dateien): nur mit Basis-URL aus KI_ERLAUBTE_HOSTS

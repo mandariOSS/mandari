@@ -5,7 +5,8 @@ Wächter (Issue #950): kein fest eingebauter KI-Endpunkt außerhalb der freigege
 Durchsucht den Code der Anwendung (ohne Migrationen und Tests), die gemeinsame Bibliothek, den Ingestor, die
 Templates, Skripte, Betriebsdateien unter ``deploy/``, die Dokumentation unter ``docs/``, ``docker-compose.yml`` und
 ``.env.example`` nach Adressen und Variablen früherer Anbieter. Erwartet werden null Treffer: KI-Anbieter kommen
-nur aus Admin und ``KI_ERLAUBTE_HOSTS``.
+nur aus Admin und ``KI_ERLAUBTE_HOSTS``. Einzige Ausnahme ist der Host der Vorlage „Nebius Token Factory“ in den
+Vorlagen selbst (Issue #1046); eine Vorlage gibt keinen Host frei.
 
 Strukturtest: Die Adresse einer Chat-Schnittstelle (``/chat/completions``) bilden nur die zentrale
 KI-Konfiguration, der OpenAI-kompatible Anbieter des Bürgerportals und die Texterkennung. Ein neuer KI-Aufruf an
@@ -25,6 +26,10 @@ REPO = Path(__file__).resolve().parents[4]
 
 #: Verbotene Zeichenketten (Groß-/Kleinschreibung wie angegeben)
 VERBOTEN = ("tokenfactory.nebius", "NEBIUS_API_KEY", "api.anthropic.com", "api.openai.com", "api.mistral.ai")
+
+#: Einzige Fundstellen, an denen eine verbotene Zeichenkette stehen darf: der Host der Nebius-Vorlage nur in den
+#: Vorlagen (Issue #1046), die keinen Host freigeben
+AUSNAHMEN = {"tokenfactory.nebius": {"mandari/apps/common/ki_anbieter.py"}}
 
 #: Durchsuchte Bereiche (Verzeichnisse rekursiv, Dateien einzeln)
 BEREICHE = ("mandari", "shared", "ingestor/src", "scripts", "deploy", "docs", "docker-compose.yml", ".env.example")
@@ -113,10 +118,21 @@ def test_keine_nicht_eu_endpunkte() -> None:
     treffer = []
     for datei in _dateien():
         inhalt = datei.read_text(encoding="utf-8", errors="replace")
+        name = datei.relative_to(REPO).as_posix()
         for zeichenkette in VERBOTEN:
-            if zeichenkette in inhalt:
-                treffer.append(f"{datei.relative_to(REPO).as_posix()}: {zeichenkette}")
+            if zeichenkette in inhalt and name not in AUSNAHMEN.get(zeichenkette, set()):
+                treffer.append(f"{name}: {zeichenkette}")
     assert treffer == [], "Fest eingebaute KI-Endpunkte außerhalb der Konfiguration:\n" + "\n".join(treffer)
+
+
+def test_nebius_nur_als_vorlage() -> None:
+    """Der Nebius-Host steht nur in der Vorlage, die ihn nicht freigibt; der Standard der Positivliste bleibt leer."""
+    from mandari_dokumente import ki_hosts
+
+    from apps.common.ki_anbieter import ANBIETER_VORLAGEN
+
+    assert ANBIETER_VORLAGEN["nebius"].basis_url == "https://api.tokenfactory.nebius.com/v1"
+    assert ki_hosts.STANDARD_ERLAUBTE_HOSTS == ()
 
 
 def test_chat_schnittstelle_nur_an_den_freigegebenen_stellen() -> None:
