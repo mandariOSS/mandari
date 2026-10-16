@@ -615,6 +615,9 @@ REPORTS_ROOT = Path(os.environ.get("REPORTS_ROOT", str(MEDIA_ROOT / "berichte"))
 AUDIT_EXPORT_MAX_ROWS = int(os.environ.get("AUDIT_EXPORT_MAX_ROWS", "100000"))
 # Aufbewahrung des mandantenübergreifenden Sicherheitsprotokolls in Tagen (purge_security_audit_log)
 SECURITY_AUDIT_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_RETENTION_DAYS", "365"))
+# Aufbewahrung der Anmeldeversuche (LoginAttempt, Drosselung) in Tagen, 0 = keine Löschung (purge_login_attempts,
+# Issue #366); Standard wie die Anwendungslogs (docs/PROTOKOLLE.md)
+LOGIN_ATTEMPT_RETENTION_DAYS = int(os.environ.get("LOGIN_ATTEMPT_RETENTION_DAYS", "90"))
 
 
 # Default primary key field type

@@ -167,6 +167,16 @@ class SessionAPIMixin(OParlMixin):
             return False
         return SessionPermissionChecker(session_user).has_permission(permission)
 
+    def log_non_public_reads(self, request, tenant: SessionTenant, session_user, instances, umfang: str) -> None:
+        """Nichtöffentliches der Antwort als Lesezugriff protokollieren (Issue #366); nur Personen erhalten es."""
+        if session_user is None or not instances:
+            return
+        from apps.session import audit
+
+        audit.log_api_reads(
+            request, instances, tenant=tenant, user=session_user, umfang=umfang, zugriff=audit.API_READ_LEGACY
+        )
+
 
 class SessionMeetingListAPIView(SessionAPIMixin, View):
     """Session Meeting API - includes non-public meetings for authorized users."""
@@ -184,7 +194,7 @@ class SessionMeetingListAPIView(SessionAPIMixin, View):
         else:
             meetings = SessionMeeting.objects.filter(tenant=tenant, is_public=True)
 
-        meetings = meetings.select_related("organization").order_by("-start")[:100]
+        meetings = list(meetings.select_related("organization").order_by("-start")[:100])
 
         data = []
         for meeting in meetings:
@@ -215,6 +225,10 @@ class SessionMeetingListAPIView(SessionAPIMixin, View):
 
             data.append(item)
 
+        # Lesezugriffe auf Nichtöffentliches wie in der Session-API v1 (Issue #366)
+        self.log_non_public_reads(
+            request, tenant, session_user, [m for m in meetings if not m.is_public], "nichtöffentliche Sitzung"
+        )
         return self.json_response(
             {
                 "data": data,
@@ -243,9 +257,9 @@ class SessionPaperListAPIView(SessionAPIMixin, View):
         else:
             papers = visible_papers(tenant)
 
-        papers = papers.select_related("main_organization", "originator_organization").order_by("-date", "-created_at")[
-            :100
-        ]
+        papers = list(
+            papers.select_related("main_organization", "originator_organization").order_by("-date", "-created_at")[:100]
+        )
 
         data = []
         for paper in papers:
@@ -272,6 +286,10 @@ class SessionPaperListAPIView(SessionAPIMixin, View):
 
             data.append(item)
 
+        # Lesezugriffe auf Nichtöffentliches wie in der Session-API v1 (Issue #366)
+        self.log_non_public_reads(
+            request, tenant, session_user, [p for p in papers if not p.is_public], "nichtöffentliche Vorlage"
+        )
         return self.json_response(
             {
                 "data": data,

@@ -17,6 +17,7 @@ from apps.common.tests.factories import UserFactory
 from apps.session.models import (
     SessionAPIToken,
     SessionApplication,
+    SessionAuditLog,
     SessionMeeting,
     SessionOrganization,
     SessionPaper,
@@ -309,3 +310,61 @@ class TestDeprecatedPaths:
         abgekuendigt = datetime.fromtimestamp(int(SESSION_API_DEPRECATION[1:]), tz=UTC)
         assert abgekuendigt == datetime(2026, 9, 27, tzinfo=UTC)
         assert abgekuendigt < parsedate_to_datetime(SESSION_API_SUNSET)
+
+
+class TestLesezugriffe:
+    """Lesezugriffe auf Nichtöffentliches über die Session-API stehen im Protokoll des Mandanten (Issue #366)."""
+
+    @staticmethod
+    def reads(tenant: SessionTenant) -> list[SessionAuditLog]:
+        return list(SessionAuditLog.objects.filter(tenant=tenant, action="view").order_by("seq"))
+
+    def test_abruf_einer_nichtoeffentlichen_vorlage_wird_protokolliert(self, tenant: SessionTenant) -> None:
+        client = make_session_client(
+            tenant, can_view_non_public_meetings=True, can_view_non_public_papers=True, can_access_api=True
+        )
+        assert client.get(f"{BASE}/{tenant.slug}/papers/").status_code == 200
+        geheim = SessionPaper.objects.get(tenant=tenant, reference="V/2")
+        (eintrag,) = self.reads(tenant)
+        assert (eintrag.model_name, eintrag.object_id) == ("SessionPaper", geheim.id)
+        # Nur die Referenz, nie Betreff oder Text
+        assert eintrag.object_repr == "Vorlage V/2"
+        assert eintrag.changes == {"umfang": "nichtöffentliche Vorlage", "zugriff": "Session-API v1"}
+        assert eintrag.user is not None and eintrag.user.tenant_id == tenant.pk
+
+        # Zusammengefasst wie in der Oberfläche: derselbe Abruf kurz darauf schreibt nichts Neues
+        client.get(f"{BASE}/{tenant.slug}/papers/")
+        assert len(self.reads(tenant)) == 1
+
+        client.get(f"{BASE}/{tenant.slug}/meetings/")
+        meeting = SessionMeeting.objects.get(tenant=tenant, name="GEHEIM")
+        assert [(e.model_name, e.object_id) for e in self.reads(tenant)] == [
+            ("SessionPaper", geheim.id),
+            ("SessionMeeting", meeting.id),
+        ]
+
+    def test_ohne_nichtoeffentliches_kein_eintrag(self, client: Client, tenant: SessionTenant) -> None:
+        # Anonym, ohne NÖ-Recht und mit Token gibt es nichts Nichtöffentliches und damit keinen Lesezugriff
+        client.get(f"{BASE}/{tenant.slug}/papers/")
+        make_session_client(tenant, can_access_api=True).get(f"{BASE}/{tenant.slug}/papers/")
+        auth = bearer(make_token(tenant, can_read_meetings=True, can_read_papers=True))
+        client.get(f"{BASE}/{tenant.slug}/meetings/", headers=auth)
+        assert self.reads(tenant) == []
+
+    def test_schalter_des_mandanten_gilt_auch_fuer_die_schnittstelle(self, tenant: SessionTenant) -> None:
+        tenant.settings = {"privacy": {"read_logging": False}}
+        tenant.save()
+        client = make_session_client(tenant, can_view_non_public_papers=True, can_access_api=True)
+        assert client.get(f"{BASE}/{tenant.slug}/papers/").status_code == 200
+        assert self.reads(tenant) == []
+
+    def test_abgekuendigter_pfad_protokolliert_ebenso(self, tenant: SessionTenant) -> None:
+        client = make_session_client(
+            tenant, can_view_non_public_meetings=True, can_view_non_public_papers=True, can_access_api=True
+        )
+        assert client.get(f"/session/{tenant.slug}/api/session/papers/").status_code == 200
+        assert client.get(f"/session/{tenant.slug}/api/session/meetings/").status_code == 200
+        assert [(e.model_name, e.changes["zugriff"]) for e in self.reads(tenant)] == [
+            ("SessionPaper", "Session-API (abgekündigter Pfad)"),
+            ("SessionMeeting", "Session-API (abgekündigter Pfad)"),
+        ]

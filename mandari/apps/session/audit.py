@@ -354,6 +354,33 @@ def log_read(
     return entry
 
 
+#: Vermerk in Lesezugriffen über die Session-API (Issue #366)
+API_READ_V1 = "Session-API v1"
+API_READ_LEGACY = "Session-API (abgekündigter Pfad)"
+
+
+def log_api_reads(request: Any, instances: Any, *, tenant: Any, user: Any, umfang: str, zugriff: str) -> int:
+    """
+    Lesezugriffe über die Session-API protokollieren (Issue #366): je nichtöffentlichem Objekt der Antwort
+    ein Eintrag wie in der Oberfläche – nur die Referenz, nie Inhalte, zusammengefasst je Person und Objekt
+    für ``READ_DEDUP_SECONDS``. Abrufe über die Schnittstelle werden getrennt von denen der Oberfläche
+    zusammengefasst, damit der Weg erkennbar bleibt. Liefert die Zahl der neuen Einträge.
+    """
+    written = 0
+    for instance in instances:
+        entry = log_read(
+            request,
+            instance,
+            tenant=tenant,
+            user=user,
+            changes={"umfang": umfang, "zugriff": zugriff},
+            dedup_suffix="api",
+        )
+        if entry is not None:
+            written += 1
+    return written
+
+
 # =============================================================================
 # Signal-Receiver (in signals.py registriert)
 # =============================================================================
