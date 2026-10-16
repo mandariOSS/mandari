@@ -389,3 +389,139 @@ async def test_samstag_mit_fester_uhr_zwoelf_laeufe(uhr: Uhr) -> None:
         uhr.weiter(seconds=30)
     assert len(orchestrator.laeufe) == 12
     assert all(not full for _, full in orchestrator.laeufe)
+
+
+async def test_sitzungstag_bleibt_ohne_aenderung_im_kurzen_takt(uhr: Uhr) -> None:
+    """Vortag einer Sitzung, keine Änderung: bis 22 Uhr höchstens 10 Minuten zwischen zwei Läufen."""
+    rat = quelle("Rat")
+    scheduler, orchestrator, speicher = daemon(uhr, [rat])
+    speicher.sitzungen[rat.id] = [berlin(MITTWOCH, 17)]
+
+    while uhr.jetzt < berlin(DIENSTAG, 22):
+        await durchlauf(scheduler)
+        due = naechster(rat)
+        assert due is not None
+        uhr.jetzt = due
+    beginne = [e["started_at"] for e in speicher.protokoll]
+    abstaende = {b - a for a, b in zip(beginne, beginne[1:], strict=False)}
+    assert max(abstaende) == timedelta(minutes=10)
+    assert len(orchestrator.laeufe) == 2 + 71, "10:00 und 10:05 Uhr, dann alle 10 Minuten von 10:10 bis 21:50 Uhr"
+
+
+async def test_vollabgleiche_gerecht_ueber_zwei_naechte(uhr: Uhr) -> None:
+    """Belegen lange Vollabgleiche alle Plätze bis zum Fensterende, kommen in der nächsten Nacht die übrigen zuerst."""
+    uhr.jetzt = berlin(DIENSTAG, 1, 0)
+    quellen = [quelle(name) for name in "ABCDE"]
+    scheduler, orchestrator, _ = daemon(uhr, quellen, pool=4)
+    lang = [orchestrator.festhalten(name) for name in "ABC"]
+
+    while uhr.jetzt < berlin(DIENSTAG, 6, 30):
+        await durchlauf(scheduler)
+        uhr.weiter(minutes=5)
+    assert [name for name, full in orchestrator.laeufe if full] == ["A", "B", "C"]
+    assert {name for name, _ in orchestrator.laeufe} == set("ABCDE"), "D und E gleichen inzwischen Änderungen ab"
+    orchestrator.sperren.clear()
+    for sperre in lang:
+        sperre.set()
+    await durchlauf(scheduler)
+    assert scheduler.get_status()["running"] == []
+
+    uhr.jetzt = berlin(MITTWOCH, 1, 0)
+    orchestrator.laeufe.clear()
+    for name in "ABCDE":
+        orchestrator.festhalten(name)
+    await durchlauf(scheduler)
+    # Drei Plätze für Vollabgleiche: D und E (noch keiner) und der früheste fällige der übrigen; B gleicht auf dem
+    # letzten Platz Änderungen ab
+    assert sorted(orchestrator.laeufe) == [("A", True), ("B", False), ("D", True), ("E", True)]
+
+
+async def test_angeforderter_vollabgleich_vor_geplanten(uhr: Uhr) -> None:
+    uhr.jetzt = berlin(DIENSTAG, 1, 0)
+    a, b, c = quelle("A"), quelle("B"), quelle("C")
+    scheduler, orchestrator, _ = daemon(uhr, [a, b, c], pool=2)
+    for q in (a, b, c):
+        orchestrator.festhalten(q.name)
+    scheduler.request_sync(full=True, source_id=str(c.id))
+    await durchlauf(scheduler)
+    assert orchestrator.laeufe == [("C", True), ("A", False)]
+
+
+async def test_takt_bleibt_wenn_der_zustand_nicht_gespeichert_wird(uhr: Uhr) -> None:
+    """Scheitert das Speichern, beginnt die Quelle nicht sofort wieder, sondern nach ihrem Abstand."""
+    a = quelle("A")
+    scheduler, orchestrator, speicher = daemon(uhr, [a])
+    original = speicher.set_source_sync_config_value
+
+    async def kaputt(*_args: Any) -> None:
+        raise TimeoutError("Zeilensperre")
+
+    speicher.set_source_sync_config_value = kaputt  # type: ignore[method-assign]
+    await durchlauf(scheduler)
+    assert orchestrator.laeufe == [("A", False)]
+    assert naechster(a) is None, "nichts gespeichert"
+    for _ in range(3):
+        await durchlauf(scheduler)
+    assert len(orchestrator.laeufe) == 1, "kein Lauf ohne Pause"
+
+    uhr.weiter(minutes=10)
+    await durchlauf(scheduler)
+    assert len(orchestrator.laeufe) == 2
+    assert SyncState.from_sync_config(a.sync_config) == SyncState()
+
+    speicher.set_source_sync_config_value = original  # type: ignore[method-assign]
+    uhr.weiter(minutes=10)
+    await durchlauf(scheduler)
+    assert len(orchestrator.laeufe) == 3
+    gespeichert = SyncState.from_sync_config(a.sync_config)
+    assert gespeichert.idle_runs == 3, "der Zähler lief im Speicher weiter"
+    assert gespeichert.next_due == uhr.jetzt + timedelta(minutes=20)
+    assert scheduler._unsaved == {}
+
+
+class _PubSub:
+    def __init__(self, protokoll: list[str]) -> None:
+        self.protokoll = protokoll
+
+    async def subscribe(self, _kanal: str) -> None:
+        raise ConnectionError("Redis nicht erreichbar")
+
+    async def aclose(self) -> None:
+        self.protokoll.append("pubsub zu")
+
+
+class _Client:
+    def __init__(self, protokoll: list[str]) -> None:
+        self.protokoll = protokoll
+        protokoll.append("client auf")
+
+    def pubsub(self) -> _PubSub:
+        return _PubSub(self.protokoll)
+
+    async def aclose(self) -> None:
+        self.protokoll.append("client zu")
+
+
+async def test_ausloeser_empfang_schliesst_verbindungen_vor_neuem_versuch(
+    uhr: Uhr, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import redis.asyncio as aioredis
+
+    import src.scheduler as scheduler_modul
+
+    protokoll: list[str] = []
+    monkeypatch.setattr(aioredis, "from_url", lambda *_args, **_kw: _Client(protokoll))
+    monkeypatch.setattr(scheduler_modul, "TRIGGER_RETRY_SECONDS", 0)
+    scheduler, _, _ = daemon(uhr, [])
+
+    empfang = asyncio.create_task(scheduler._listen_for_triggers())
+    for _ in range(30):
+        await asyncio.sleep(0)
+    empfang.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await empfang
+
+    versuche = protokoll.count("client auf")
+    assert versuche >= 3
+    assert protokoll.count("client zu") == versuche
+    assert protokoll.count("pubsub zu") == versuche

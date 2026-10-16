@@ -9,7 +9,8 @@ Plätzen bis auf einen. Ein langer Vollabgleich hält so keine andere Quelle auf
 (``src/client/host_pacing.py``) gilt unverändert für jeden Lauf.
 
 Vollabgleiche plant der Daemon je Quelle, sobald sie fällig sind: im Fenster der Quelle (``full_sync_window``), sonst
-im Standardfenster ab ``--full-sync-hour``, einmal je Fenster und im Abstand ``full_sync_every_days``.
+im Standardfenster ab ``--full-sync-hour``, einmal je Fenster und im Abstand ``full_sync_every_days``. Einen freien
+Platz für einen Vollabgleich bekommt die Quelle, deren letzter begonnener Vollabgleich am längsten zurückliegt.
 
 Der Admin-Auslöser „Jetzt synchronisieren“ (Redis-Kanal ``mandari:sync:trigger``) macht alle Quellen oder eine
 einzelne (``source_id`` bzw. ``source_url``) sofort fällig. Die Schonung bei Fehlern geht immer vor.
@@ -57,6 +58,9 @@ HEARTBEAT_TTL_SECONDS = 180
 CACHE_CLEAR_SECONDS = 30 * 60
 #: Auslöser für alle aktiven Quellen
 ALL_SOURCES = "*"
+#: Wartezeit vor einem neuen Versuch, wenn der Empfang der Auslöser (Redis) scheitert
+TRIGGER_RETRY_SECONDS = 60
+_EARLIEST = datetime.min.replace(tzinfo=UTC)
 
 
 @dataclass
@@ -70,6 +74,33 @@ class _Trigger:
 
     def merge(self, other: _Trigger) -> _Trigger:
         return replace(self, full=self.full or other.full)
+
+
+@dataclass
+class _Candidate:
+    """Eine in diesem Durchlauf fällige Quelle."""
+
+    source: Any
+    state: SyncState
+    want_full: bool
+    incremental_due: bool
+    trigger: _Trigger | None
+
+    @property
+    def key(self) -> str:
+        return str(self.source.id)
+
+    @property
+    def triggered_full(self) -> bool:
+        return self.trigger is not None and self.trigger.full
+
+    def due_rank(self) -> tuple[int, datetime]:
+        """Admin-Auslöser zuerst, dann nach Fälligkeit."""
+        return (0 if self.trigger is not None else 1, self.state.next_due or _EARLIEST)
+
+    def full_rank(self) -> tuple[int, datetime, tuple[int, datetime]]:
+        """Angeforderte Vollabgleiche zuerst, dann der am längsten zurückliegende (ohne zuerst)."""
+        return (0 if self.triggered_full else 1, self.state.full_attempted or _EARLIEST, self.due_rank())
 
 
 def entities_of(result: SyncResult) -> int:
@@ -135,6 +166,8 @@ class SyncScheduler:
         self._last_cache_clear = self._clock()
         self._overview: dict[str, tuple[str, datetime | None]] = {}
         self._last_runs: dict[str, dict[str, Any]] = {}
+        #: Zustände, die sich nicht speichern ließen; sie gelten, bis die Datenbank einen neueren Stand hat
+        self._unsaved: dict[str, SyncState] = {}
         self._redis: Any = None
         self._redis_warned = False
 
@@ -263,9 +296,12 @@ class SyncScheduler:
             return
 
         while True:
+            client: Any = None
+            pubsub: Any = None
+            pause = 1.0
             try:
-                r = aioredis.from_url(settings.redis_url)
-                pubsub = r.pubsub()
+                client = aioredis.from_url(settings.redis_url)
+                pubsub = client.pubsub()
                 await pubsub.subscribe(TRIGGER_CHANNEL)
                 console.print(f"[dim]Redis trigger listener aktiv ({TRIGGER_CHANNEL})[/dim]")
                 async for message in pubsub.listen():
@@ -275,8 +311,17 @@ class SyncScheduler:
             except asyncio.CancelledError:
                 raise
             except Exception as e:
-                logger.warning(f"Redis trigger listener Fehler: {type(e).__name__}, neuer Versuch in 60 s")
-                await asyncio.sleep(60)
+                logger.warning(
+                    "Redis trigger listener Fehler: %s, neuer Versuch in %s s", type(e).__name__, TRIGGER_RETRY_SECONDS
+                )
+                pause = TRIGGER_RETRY_SECONDS
+            finally:
+                # Vor dem nächsten Versuch schließen: Bei langem Redis-Ausfall sammelten sich sonst offene Clients an
+                for closable in (pubsub, client):
+                    if closable is not None:
+                        with contextlib.suppress(Exception):
+                            await closable.aclose()
+            await asyncio.sleep(pause)
 
     def _handle_trigger(self, raw: Any) -> None:
         """Eine Nachricht des Kanals ``mandari:sync:trigger`` verarbeiten."""
@@ -315,8 +360,11 @@ class SyncScheduler:
         """
         Ein Durchlauf: fällige Quellen in den Pool geben. Liefert die gestarteten Läufe (Tests warten darauf).
 
-        Reihenfolge: Admin-Auslöser zuerst, dann nach Fälligkeit. Eine Quelle in Schonung startet nie, auch nicht auf
-        einen Auslöser hin (der Auslöser entfällt dann).
+        Reihenfolge: Admin-Auslöser zuerst, dann nach Fälligkeit. Freie Plätze für Vollabgleiche bekommen die Quellen,
+        deren letzter begonnener Vollabgleich am längsten zurückliegt (ohne zuerst, angeforderte vorweg); sie starten
+        vor den übrigen ohne Auslöser. So verdrängen lange Vollabgleiche nicht Nacht für Nacht dieselben Quellen aus
+        dem Fenster. Eine Quelle in Schonung startet nie, auch nicht auf einen Auslöser hin (der Auslöser entfällt
+        dann).
         """
         now = now or self._clock()
         sources = list(await self.orchestrator.storage.get_all_sources())
@@ -324,11 +372,13 @@ class SyncScheduler:
         active = {str(source.id) for source in sources}
         for gone in [key for key in self._overview if key not in active]:
             self._overview.pop(gone, None)
+        for gone in [key for key in self._unsaved if key not in active]:
+            self._unsaved.pop(gone, None)
 
-        candidates: list[tuple[tuple[int, datetime], Any, bool, bool, _Trigger | None]] = []
+        candidates: list[_Candidate] = []
         for source in sources:
             key = str(source.id)
-            state = SyncState.from_sync_config(source.sync_config)
+            state = self._state_of(source)
             until = source_backoff_until(source, now)
             self._publish_schedule(source, state, until)
             if until is not None:
@@ -354,22 +404,24 @@ class SyncScheduler:
             if trigger is None and not full_due and not incremental_due:
                 continue
             want_full = full_due or (trigger is not None and trigger.full)
-            rank = (0 if trigger is not None else 1, state.next_due or datetime.min.replace(tzinfo=UTC))
-            candidates.append((rank, source, want_full, incremental_due, trigger))
+            candidates.append(_Candidate(source, state, want_full, incremental_due, trigger))
 
-        candidates.sort(key=lambda candidate: candidate[0])
+        free_full = max(0, self.full_slots - len(self._full_running))
+        granted = {c.key for c in sorted((c for c in candidates if c.want_full), key=_Candidate.full_rank)[:free_full]}
+        # Auslöser zuerst, dann die Vollabgleiche mit Platz, dann nach Fälligkeit
+        candidates.sort(key=lambda c: (c.trigger is None, c.key not in granted, c.due_rank()))
         started: list[asyncio.Task[None]] = []
-        for _, source, want_full, incremental_due, trigger in candidates:
+        for candidate in candidates:
             if len(self._tasks) >= self.pool_size:
                 break
-            full = want_full
-            if full and len(self._full_running) >= self.full_slots:
+            source, trigger, key = candidate.source, candidate.trigger, candidate.key
+            full = candidate.want_full
+            if full and key not in granted:
                 # Kein Platz für einen weiteren Vollabgleich: Ein ausdrücklich angeforderter wartet; sonst läuft der
                 # fällige Änderungsabgleich, und der Vollabgleich folgt, sobald ein Platz frei ist
-                if (trigger is not None and trigger.full) or (trigger is None and not incremental_due):
+                if candidate.triggered_full or (trigger is None and not candidate.incremental_due):
                     continue
                 full = False
-            key = str(source.id)
             self._triggers.pop(key, None)
             task = asyncio.create_task(self._run_source(source, full, trigger), name=f"sync:{source.name}")
             self._tasks[key] = task
@@ -431,7 +483,7 @@ class SyncScheduler:
 
     async def _sync_one(self, source: Any, full: bool, triggered_by: str) -> None:
         started = self._clock()
-        state = SyncState.from_sync_config(source.sync_config)
+        state = self._state_of(source)
         if full:
             # Einmal je Fenster: Ein abgebrochener Vollabgleich wird im nächsten Fenster wiederholt
             state = replace(state, full_attempted=started)
@@ -508,12 +560,31 @@ class SyncScheduler:
             return frozenset()
         return schedule.meeting_days(starts)
 
+    def _state_of(self, source: Any) -> SyncState:
+        """
+        Zustand des Takts: aus der Datenbank, solange dort der neueste Stand steht. Ließ sich der zuletzt berechnete
+        nicht speichern, gilt er, bis die Datenbank einen neueren Lauf kennt (sonst begänne die Quelle sofort wieder).
+        """
+        state = SyncState.from_sync_config(source.sync_config)
+        key = str(source.id)
+        unsaved = self._unsaved.get(key)
+        if unsaved is None:
+            return state
+        if state.last_run is not None and (unsaved.last_run is None or state.last_run > unsaved.last_run):
+            self._unsaved.pop(key, None)
+            return state
+        return unsaved
+
     async def _save_state(self, source: Any, state: SyncState) -> None:
         """Zustand des Takts an der Quelle speichern (nur der eigene Schlüssel, unter Zeilensperre)."""
+        key = str(source.id)
         try:
             await self.orchestrator.storage.set_source_sync_config_value(source.id, STATE_KEY, state.to_dict())
-        except Exception as e:  # noqa: BLE001 - der Takt läuft im Speicher weiter bis zum nächsten Versuch
+        except Exception as e:  # noqa: BLE001 - bis zum nächsten Speichern gilt der Zustand im Speicher
+            self._unsaved[key] = state
             logger.warning("Takt der Quelle %s nicht gespeichert: %s", source.name, type(e).__name__)
+        else:
+            self._unsaved.pop(key, None)
 
     async def _write_log(
         self,

@@ -25,7 +25,7 @@ läuft dort noch ein älterer Stand.
 | Takt | höchstens eine Anfrage je Sekunde und Server, über alle Abrufe von mandari zusammen; je Quelle nur langsamer |
 | Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
 | Weiterleitungen | höchstens fünf je Abruf, jede erst nach der robots.txt ihres Ziels und mit eigenem Zeitpunkt im Takt |
-| Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
+| Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
 | Vollabgleich | je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
 | Abruf-Adresse | derzeit `144.76.153.200`, nur IPv4 (die von uns betriebene Instanz mandari.de); sie kann sich ändern, erkennen Sie uns am User-Agent |
@@ -277,7 +277,7 @@ Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quell
 
 | Wann | Abstand zwischen zwei Läufen einer Quelle | Schlüssel in `sync_config["sync_schedule"]` |
 |---|---|---|
-| Sitzungstag und Vortag, 07:00–22:00 Uhr | 5 Minuten | `meeting_minutes`, `meeting_hours`, `meeting_days_before` |
+| Sitzungstag und Vortag, 07:00–22:00 Uhr | 5 Minuten, ohne Änderung höchstens 10 | `meeting_minutes`, `meeting_hours`, `meeting_days_before`, `meeting_idle_max_minutes` |
 | werktags (Montag bis Freitag) 07:00–19:00 Uhr | 10 Minuten (`daemon --interval`) | `workday_minutes`, `workday_hours` |
 | werktags außerhalb dieser Zeit | 60 Minuten | `off_hours_minutes` |
 | Samstag und Sonntag | 120 Minuten | `weekend_minutes` |
@@ -293,6 +293,9 @@ Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quell
 - **Ruhe:** Nach je drei Läufen in Folge ohne Änderung verdoppelt sich der Abstand, höchstens bis 120 Minuten
   (`idle_runs`, `idle_max_minutes`; `IDLE_RUNS`, `IDLE_MAX_MINUTES`). In der Arbeitszeit also 10 Minuten, nach drei
   Läufen ohne Änderung 20, nach sechs 40, nach neun 80, ab zwölf 120. Ein längerer Grundtakt bleibt, wie er ist.
+  An Sitzungstagen und am Vortag gilt in der Sitzungszeit eine eigene Grenze von 10 Minuten
+  (`meeting_idle_max_minutes`, `MEETING_IDLE_MAX_MINUTES`): 5 Minuten, nach drei Läufen ohne Änderung 10. Der kurze
+  Takt hält so den ganzen Tag, auch bei einer Sitzung am Abend nach einem ruhigen Tag.
   Ein Lauf mit Änderung (mindestens ein neues oder geändertes Objekt) setzt den Abstand auf den Grundtakt der Stunde
   zurück, ebenso der Wechsel in einen anderen Grundtakt, etwa um 07:00 Uhr. Vollabgleiche und gescheiterte Läufe
   zählen nicht (`SyncState.after_run`).
@@ -309,7 +312,9 @@ Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quell
 - **Gleichzeitig:** Eine Schleife prüft alle 30 Sekunden (`TICK_SECONDS`), sofort nach einem Auslöser und nach dem
   Ende jedes Laufs, welche Quellen fällig sind. Höchstens 4 Quellen laufen zugleich (`INGESTOR_SYNC_POOL_SIZE`,
   `daemon --pool`), je Quelle höchstens ein Lauf. Vollabgleiche belegen höchstens alle Plätze bis auf einen (bei 4
-  also 3), damit Änderungsabgleiche anderer Quellen nie auf einen Vollabgleich warten. Je Quelle laufen 2 Kommunen
+  also 3), damit Änderungsabgleiche anderer Quellen nie auf einen Vollabgleich warten. Einen freien Platz für einen
+  Vollabgleich bekommt die Quelle, deren letzter begonnener Vollabgleich am längsten zurückliegt (siehe
+  [Vollabgleich](#vollabgleich)). Je Quelle laufen 2 Kommunen
   und je Kommune 2 Listen gleichzeitig (`SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY`). Der Takt je Server gilt
   unabhängig davon; Quellen auf demselben Server teilen ihn. Je Datenbank arbeitet genau ein Daemon
   (PostgreSQL-Sperre, `ingestor/src/scheduler/singleton.py`).
@@ -445,6 +450,14 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   direkt danach. Sind alle Plätze für Vollabgleiche belegt, wartet er auf einen freien Platz, solange das Fenster
   offen ist; die Quelle gleicht derweil Änderungen in ihrem Takt ab. Während der Vollabgleich einer Quelle läuft,
   entfallen nur ihre eigenen Änderungsabgleiche; die anderen Quellen laufen in ihrem Takt weiter.
+- **Reihenfolge:** Einen freien Platz bekommt zuerst ein im Admin angeforderter Vollabgleich, dann die Quelle, deren
+  letzter begonnener Vollabgleich (`full_attempted`) am längsten zurückliegt, eine ohne zuerst. Belegen lange
+  Vollabgleiche die Plätze bis zum Fensterende, kommen in der nächsten Nacht die Quellen zuerst dran, die leer
+  ausgingen, nicht wieder dieselben (`SyncScheduler.tick`).
+- **Zeitumstellung:** Fenster und Takt gelten in Ortszeit, Abstände in echter Zeit. Bei der Umstellung auf die
+  Winterzeit beginnt in der doppelten Stunde kein zweiter Vollabgleich; ein Fenster ab 02:00 Uhr öffnet beim ersten
+  02:00 Uhr. Bei der Umstellung auf die Sommerzeit gibt es 02:00 Uhr nicht; ein Fenster ab 02:00 Uhr öffnet dann um
+  03:00 Uhr Sommerzeit (`ingestor/tests/test_takt.py`).
 - **Ende:** Das Standardfenster begrenzt nur den Beginn; ein begonnener Vollabgleich läuft zu Ende.
 - **Je Quelle seltener:** `full_sync_every_days` (ganze Zahl von 1 bis 365) verlangt so viele Tage Abstand zum
   letzten vollständig erfolgreichen Vollabgleich (`last_successful_full_sync`), mit einer Stunde Spielraum. Ist er
@@ -594,7 +607,7 @@ es zu Beginn jedes Laufs der Quelle, die Texterkennung spätestens nach 5 Minute
 | Schlüssel | Bedeutung | Beispiel |
 |---|---|---|
 | `request_interval` | Abstand der Abrufe dieser Quelle in Sekunden, 1 bis 30; nur langsamer als der Standard, kleinere Werte gelten als 1 | `2.0` |
-| `sync_schedule` | Takt der Quelle (siehe [Rhythmus](#rhythmus)): `workday_minutes`, `off_hours_minutes`, `weekend_minutes`, `meeting_minutes`, `idle_max_minutes` (ganze Minuten von 5 bis 1440, kleinere gelten als 5), `workday_hours`, `meeting_hours` (`{"start": "07:00", "end": "19:00"}`, Beginn vor Ende am selben Tag), `meeting_days_before` (0 bis 7), `idle_runs` (0 bis 100, 0 = nie verlängern), `tz` | `{"weekend_minutes": 240}` |
+| `sync_schedule` | Takt der Quelle (siehe [Rhythmus](#rhythmus)): `workday_minutes`, `off_hours_minutes`, `weekend_minutes`, `meeting_minutes`, `idle_max_minutes`, `meeting_idle_max_minutes` (ganze Minuten von 5 bis 1440, kleinere gelten als 5), `workday_hours`, `meeting_hours` (`{"start": "07:00", "end": "19:00"}`, Beginn vor Ende am selben Tag), `meeting_days_before` (0 bis 7), `idle_runs` (0 bis 100, 0 = nie verlängern), `tz` | `{"weekend_minutes": 240}` |
 | `full_sync_window` | Zeitfenster des Vollabgleichs (Ortszeit, optional `tz`) | `{"start": "00:00", "end": "06:00"}` |
 | `full_sync_every_days` | Mindestabstand zwischen vollständigen Vollabgleichen in Tagen, ganze Zahl von 1 bis 365 | `7` |
 | `modified_since_margin_minutes` | Sicherheitsabstand des Änderungsfensters in Minuten, ganze Zahl von 0 bis 10080 | `60` |

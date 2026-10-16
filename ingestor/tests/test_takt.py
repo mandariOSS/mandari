@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 
 from src.client.source_options import FullSyncWindow, SourceFetchOptions
 from src.scheduler.takt import (
+    MEETING_IDLE_MAX_MINUTES,
     PERIOD_MEETING,
     PERIOD_OFF_HOURS,
     PERIOD_WEEKEND,
@@ -110,6 +111,32 @@ def test_ruhe_verdoppelt_den_abstand_bis_zur_obergrenze() -> None:
     assert aus.interval(zehn_uhr, idle_runs=50) == 10
 
 
+def test_ruhe_an_sitzungstagen_hoechstens_zehn_minuten() -> None:
+    tage = TAKT.meeting_days([berlin(DONNERSTAG, 17)])
+    mittag = berlin(DONNERSTAG, 12)
+    assert MEETING_IDLE_MAX_MINUTES == 10
+    assert [TAKT.interval(mittag, tage, idle_runs=n) for n in (0, 2, 3, 6, 12, 50)] == [5, 5, 10, 10, 10, 10]
+    # Nach der Sitzungszeit gilt wieder die übliche Obergrenze
+    assert TAKT.interval(berlin(DONNERSTAG, 23), tage, idle_runs=12) == 120
+    eigen = SyncSchedule.from_sync_config({"sync_schedule": {"meeting_idle_max_minutes": 20}})
+    assert [eigen.interval(mittag, tage, idle_runs=n) for n in (3, 6, 12)] == [10, 20, 20]
+    # Ein längerer Sitzungstakt als die Obergrenze bleibt
+    lang = SyncSchedule.from_sync_config({"sync_schedule": {"meeting_minutes": 15}})
+    assert lang.interval(mittag, tage, idle_runs=12) == 15
+
+
+def test_sitzungstag_ohne_aenderung_bleibt_im_kurzen_takt() -> None:
+    """Eine ruhige Quelle mit Ratssitzung um 17 Uhr: den ganzen Tag höchstens 10 Minuten Abstand, auch abends."""
+    tage = TAKT.meeting_days([berlin(DONNERSTAG, 17)])
+    laeufe = _laeufe(berlin(DONNERSTAG, 7), berlin(DONNERSTAG, 22), tage=tage)
+    abstaende = [int((b - a).total_seconds() // 60) for a, b in zip(laeufe, laeufe[1:], strict=False)]
+    assert abstaende[:3] == [5, 5, 10], "nach drei Läufen ohne Änderung 10 Minuten"
+    assert max(abstaende) == 10
+    assert any(berlin(DONNERSTAG, 16, 50) <= lauf <= berlin(DONNERSTAG, 17) for lauf in laeufe)
+    assert any(berlin(DONNERSTAG, 18, 50) <= lauf <= berlin(DONNERSTAG, 19) for lauf in laeufe)
+    assert len(laeufe) == 2 + 89, "07:00 und 07:05, dann alle 10 Minuten von 07:10 bis 21:50 Uhr"
+
+
 def test_zustand_nach_dem_lauf() -> None:
     zustand = SyncState()
     for _ in range(3):
@@ -170,18 +197,24 @@ def test_einstellungen_je_quelle() -> None:
     assert SyncSchedule.from_sync_config({"sync_schedule": "alle 5 Minuten"}) == SyncSchedule()
 
 
-def _woche_ohne_aenderung(dauer: timedelta) -> list[datetime]:
-    """Alle Läufe einer Woche (Freitag 19 Uhr bis Freitag 19 Uhr) einer Quelle ohne jede Änderung."""
+def _laeufe(
+    von: datetime, bis: datetime, *, dauer: timedelta = timedelta(0), tage: frozenset[date] = frozenset()
+) -> list[datetime]:
+    """Alle Läufe einer Quelle ohne jede Änderung von ``von`` bis vor ``bis``, jeder Lauf dauert ``dauer``."""
     zustand = SyncState()
-    jetzt = berlin(FREITAG, 19)
-    ende = jetzt + timedelta(days=7)
+    jetzt = von
     laeufe: list[datetime] = []
-    while jetzt < ende:
+    while jetzt < bis:
         laeufe.append(jetzt)
-        zustand = zustand.after_run(TAKT, jetzt + dauer, success=True, changes=0, full=False)
+        zustand = zustand.after_run(TAKT, jetzt + dauer, success=True, changes=0, full=False, meeting_days=tage)
         assert zustand.next_due is not None
         jetzt = zustand.next_due
     return laeufe
+
+
+def _woche_ohne_aenderung(dauer: timedelta) -> list[datetime]:
+    """Alle Läufe einer Woche (Freitag 19 Uhr bis Freitag 19 Uhr) einer Quelle ohne jede Änderung."""
+    return _laeufe(berlin(FREITAG, 19), berlin(FREITAG, 19) + timedelta(days=7), dauer=dauer)
 
 
 def test_ohne_aenderung_weniger_laeufe_ausserhalb_der_arbeitszeit() -> None:
@@ -271,3 +304,110 @@ def test_fensterbeginn_ueber_mitternacht() -> None:
     assert fenster.opened_at(berlin(MITTWOCH, 2)) == berlin(DIENSTAG, 22)
     assert fenster.opened_at(berlin(DIENSTAG, 23)) == berlin(DIENSTAG, 22)
     assert fenster.opened_at(berlin(DIENSTAG, 12)) is None
+
+
+# Zeitumstellung: Der Takt rechnet in echter Zeit (UTC), Grundtakt und Grenzen in Ortszeit
+HERBST_SAMSTAG = date(2026, 10, 24)
+HERBST_SONNTAG = date(2026, 10, 25)  # 03:00 Uhr Sommerzeit wird 02:00 Uhr Winterzeit (01:00 UTC)
+HERBST_MONTAG = date(2026, 10, 26)
+FRUEHLING_SAMSTAG = date(2027, 3, 27)
+FRUEHLING_SONNTAG = date(2027, 3, 28)  # 02:00 Uhr Winterzeit wird 03:00 Uhr Sommerzeit (01:00 UTC)
+FRUEHLING_MONTAG = date(2027, 3, 29)
+
+
+def _ortszeiten(laeufe: list[datetime], von: datetime, bis: datetime) -> list[str]:
+    return [lauf.astimezone(BERLIN).strftime("%H:%M %Z") for lauf in laeufe if von <= lauf < bis]
+
+
+def test_zeitumstellung_herbst_takt() -> None:
+    laeufe = _laeufe(berlin(HERBST_SAMSTAG, 0), berlin(HERBST_MONTAG, 8))
+    abstaende = {b - a for a, b in zip(laeufe, laeufe[1:], strict=False) if b < berlin(HERBST_MONTAG, 0)}
+    assert abstaende == {timedelta(minutes=120)}, "am Wochenende 120 Minuten in echter Zeit, auch über die Umstellung"
+    # Der Sonntag hat 25 Stunden: 13 Läufe
+    sonntag = _ortszeiten(laeufe, berlin(HERBST_SONNTAG, 0), berlin(HERBST_MONTAG, 0))
+    assert sonntag[:4] == ["00:00 CEST", "02:00 CEST", "03:00 CET", "05:00 CET"]
+    assert sonntag[-1] == "23:00 CET" and len(sonntag) == 13
+    # Montag 00:00 Uhr beginnt der Werktag, 07:00 Uhr die Arbeitszeit
+    assert _ortszeiten(laeufe, berlin(HERBST_MONTAG, 0), berlin(HERBST_MONTAG, 8)) == [
+        "00:00 CET",
+        "01:00 CET",
+        "02:00 CET",
+        "04:00 CET",
+        "06:00 CET",
+        "07:00 CET",
+        "07:10 CET",
+        "07:20 CET",
+        "07:40 CET",
+    ]
+
+
+def test_zeitumstellung_fruehling_takt() -> None:
+    laeufe = _laeufe(berlin(FRUEHLING_SAMSTAG, 0), berlin(FRUEHLING_MONTAG, 8))
+    abstaende = {b - a for a, b in zip(laeufe, laeufe[1:], strict=False) if b < berlin(FRUEHLING_MONTAG, 0)}
+    assert abstaende == {timedelta(minutes=120)}
+    # Der Sonntag hat 23 Stunden: 12 Läufe
+    sonntag = _ortszeiten(laeufe, berlin(FRUEHLING_SONNTAG, 0), berlin(FRUEHLING_MONTAG, 0))
+    assert sonntag[:3] == ["00:00 CET", "03:00 CEST", "05:00 CEST"]
+    assert sonntag[-1] == "23:00 CEST" and len(sonntag) == 12
+    assert _ortszeiten(laeufe, berlin(FRUEHLING_MONTAG, 0), berlin(FRUEHLING_MONTAG, 7, 30)) == [
+        "00:00 CEST",
+        "01:00 CEST",
+        "02:00 CEST",
+        "04:00 CEST",
+        "06:00 CEST",
+        "07:00 CEST",
+        "07:10 CEST",
+        "07:20 CEST",
+    ]
+
+
+def test_zeitumstellung_sitzung_am_montag_sonntag_ist_vortag() -> None:
+    tage = TAKT.meeting_days([berlin(HERBST_MONTAG, 17)])
+    assert tage == frozenset({HERBST_SONNTAG, HERBST_MONTAG})
+    assert TAKT.base(berlin(HERBST_SONNTAG, 6, 59), tage) == (120, PERIOD_WEEKEND)
+    assert TAKT.base(berlin(HERBST_SONNTAG, 7), tage) == (5, PERIOD_MEETING)
+    # Sonntag 05:00 Uhr + 120 Minuten: um 07:00 Uhr Winterzeit beginnt die Sitzungszeit
+    assert TAKT.next_due(berlin(HERBST_SONNTAG, 5), tage) == (berlin(HERBST_SONNTAG, 7), 120)
+    assert berlin(HERBST_SONNTAG, 7) == datetime(2026, 10, 25, 6, 0, tzinfo=UTC)
+
+
+def test_zeitumstellung_vollabgleich_einmal_je_fenster() -> None:
+    optionen = SourceFetchOptions()
+    ab_eins = default_full_sync_window(1)
+    ab_zwei = default_full_sync_window(2)
+    assert ab_eins is not None and ab_zwei is not None
+
+    # Herbst, Fenster 01:00–06:00 Uhr: öffnet 01:00 Uhr Sommerzeit (23:00 UTC), schließt 06:00 Uhr Winterzeit
+    beginn = datetime(2026, 10, 24, 23, 0, tzinfo=UTC)
+    assert ab_eins.opened_at(beginn) == beginn
+    assert full_sync_due(optionen, ab_eins, beginn, None, None)
+    assert not full_sync_due(optionen, ab_eins, beginn - timedelta(minutes=1), None, None)
+    doppelt = datetime(2026, 10, 25, 1, 30, tzinfo=UTC)  # 02:30 Uhr Winterzeit, die Stunde gibt es zweimal
+    assert ab_eins.opened_at(doppelt) == beginn
+    assert not full_sync_due(optionen, ab_eins, doppelt, beginn, None), "kein zweiter in der doppelten Stunde"
+    assert full_sync_due(optionen, ab_eins, datetime(2026, 10, 25, 4, 59, tzinfo=UTC), None, None)
+    assert not full_sync_due(optionen, ab_eins, datetime(2026, 10, 25, 5, 0, tzinfo=UTC), None, None)
+
+    # Herbst, Fenster ab 02:00 Uhr: beginnt beim ersten 02:00 Uhr (Sommerzeit, 00:00 UTC)
+    zwei_sommer = datetime(2026, 10, 25, 0, 0, tzinfo=UTC)
+    zwei_winter = datetime(2026, 10, 25, 1, 0, tzinfo=UTC)
+    assert not full_sync_due(optionen, ab_zwei, zwei_sommer - timedelta(minutes=1), None, None)
+    assert full_sync_due(optionen, ab_zwei, zwei_sommer, None, None)
+    assert ab_zwei.opened_at(zwei_winter) == zwei_sommer
+    assert not full_sync_due(optionen, ab_zwei, zwei_winter + timedelta(minutes=30), zwei_sommer, None)
+
+    # Frühling, Fenster 01:00–06:00 Uhr: öffnet 01:00 Uhr Winterzeit (00:00 UTC), schließt 06:00 Uhr Sommerzeit
+    beginn = datetime(2027, 3, 28, 0, 0, tzinfo=UTC)
+    assert full_sync_due(optionen, ab_eins, beginn, None, None)
+    assert not full_sync_due(optionen, ab_eins, datetime(2027, 3, 28, 2, 0, tzinfo=UTC), beginn, None)
+    assert not full_sync_due(optionen, ab_eins, datetime(2027, 3, 28, 4, 0, tzinfo=UTC), None, None)
+
+    # Frühling, Fenster ab 02:00 Uhr: die Stunde fehlt, es öffnet um 03:00 Uhr Sommerzeit (01:00 UTC)
+    drei_sommer = datetime(2027, 3, 28, 1, 0, tzinfo=UTC)
+    assert not full_sync_due(optionen, ab_zwei, drei_sommer - timedelta(minutes=1), None, None)
+    assert full_sync_due(optionen, ab_zwei, drei_sommer, None, None)
+    assert ab_zwei.opened_at(drei_sommer + timedelta(hours=2)) == drei_sommer
+    assert not full_sync_due(optionen, ab_zwei, drei_sommer + timedelta(hours=2), drei_sommer, None)
+    assert full_sync_due(optionen, ab_zwei, datetime(2027, 3, 29, 0, 0, tzinfo=UTC), drei_sommer, None), (
+        "in der nächsten Nacht wieder (02:00 Uhr Sommerzeit)"
+    )

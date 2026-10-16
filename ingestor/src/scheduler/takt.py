@@ -17,11 +17,11 @@ danach, ob die letzten Läufe etwas geändert haben. Die Werte gelten für alle 
     An Tagen, an denen eine Sitzung der Quelle beginnt (``oparl_meetings``, nicht abgesagt, nicht gelöscht), und an
     so vielen Tagen davor, jeweils nur innerhalb von ``meeting_hours``. Gilt vor den übrigen Regeln, auch am
     Wochenende.
-``idle_runs`` (3), ``idle_max_minutes`` (120)
+``idle_runs`` (3), ``idle_max_minutes`` (120), ``meeting_idle_max_minutes`` (10)
     Nach je ``idle_runs`` Läufen in Folge ohne Änderung verdoppelt sich der Abstand, höchstens bis
-    ``idle_max_minutes`` (ein längerer Grundtakt bleibt, wie er ist). Ein Lauf mit Änderung setzt den Zähler zurück,
-    ebenso der Wechsel in einen anderen Grundtakt (etwa um 07:00 Uhr in die Arbeitszeit). ``0`` schaltet das
-    Verlängern ab.
+    ``idle_max_minutes``, im Sitzungstakt höchstens bis ``meeting_idle_max_minutes`` (ein längerer Grundtakt bleibt,
+    wie er ist). Ein Lauf mit Änderung setzt den Zähler zurück, ebenso der Wechsel in einen anderen Grundtakt (etwa um
+    07:00 Uhr in die Arbeitszeit). ``0`` schaltet das Verlängern ab.
 ``tz`` (``Europe/Berlin``)
     Zeitzone für Arbeitszeit, Wochenende und Sitzungstage.
 
@@ -56,6 +56,8 @@ MAX_MEETING_DAYS_BEFORE = 7
 IDLE_RUNS = 3
 MAX_IDLE_RUNS = 100
 IDLE_MAX_MINUTES = 120
+#: An Sitzungstagen verlängert die Ruhe den Abstand nur bis hierher: Der kurze Takt gilt den ganzen Tag
+MEETING_IDLE_MAX_MINUTES = 10
 #: Kürzester und längster Abstand je Quelle in Minuten
 MIN_INTERVAL_MINUTES = 5
 MAX_INTERVAL_MINUTES = 24 * 60
@@ -134,6 +136,7 @@ class SyncSchedule:
     meeting_days_before: int = MEETING_DAYS_BEFORE
     idle_runs: int = IDLE_RUNS
     idle_max_minutes: int = IDLE_MAX_MINUTES
+    meeting_idle_max_minutes: int = MEETING_IDLE_MAX_MINUTES
     tz: ZoneInfo = field(default_factory=lambda: ZoneInfo(DEFAULT_TZ))
 
     @classmethod
@@ -159,6 +162,7 @@ class SyncSchedule:
             meeting_days_before=_nonneg(value.get("meeting_days_before"), MAX_MEETING_DAYS_BEFORE, MEETING_DAYS_BEFORE),
             idle_runs=_nonneg(value.get("idle_runs"), MAX_IDLE_RUNS, IDLE_RUNS),
             idle_max_minutes=_minutes(value.get("idle_max_minutes")) or base.idle_max_minutes,
+            meeting_idle_max_minutes=_minutes(value.get("meeting_idle_max_minutes")) or base.meeting_idle_max_minutes,
             tz=tz,
         )
 
@@ -184,12 +188,16 @@ class SyncSchedule:
         return self.off_hours_minutes, PERIOD_OFF_HOURS
 
     def interval(self, at: datetime, meeting_days: frozenset[date] = frozenset(), idle_runs: int = 0) -> int:
-        """Abstand in Minuten: Grundtakt, nach je ``idle_runs`` Läufen ohne Änderung verdoppelt bis zur Obergrenze."""
-        minutes, _ = self.base(at, meeting_days)
+        """
+        Abstand in Minuten: Grundtakt, nach je ``idle_runs`` Läufen ohne Änderung verdoppelt bis zur Obergrenze, im
+        Sitzungstakt bis ``meeting_idle_max_minutes``.
+        """
+        minutes, period = self.base(at, meeting_days)
         if self.idle_runs <= 0 or idle_runs < self.idle_runs:
             return minutes
+        cap = self.meeting_idle_max_minutes if period == PERIOD_MEETING else self.idle_max_minutes
         steps = min(idle_runs // self.idle_runs, 16)
-        return min(minutes * (1 << steps), max(minutes, self.idle_max_minutes))
+        return min(minutes * (1 << steps), max(minutes, cap))
 
     def _boundaries(self, after: datetime, before: datetime) -> list[datetime]:
         """Wechsel des Grundtakts (Tagesbeginn, Arbeitszeit, Sitzungszeit) zwischen ``after`` und ``before`` (UTC)."""
