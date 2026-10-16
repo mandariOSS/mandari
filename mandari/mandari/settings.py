@@ -582,6 +582,8 @@ OBJ_REGION = os.environ.get("OBJ_REGION", "")
 OBJ_ADDRESSING_STYLE = os.environ.get("OBJ_ADDRESSING_STYLE", "auto")
 OBJ_TIMEOUT_SECONDS = float(os.environ.get("OBJ_TIMEOUT_SECONDS", "30"))
 OBJ_CACHE_MAX_GB = int(os.environ.get("OBJ_CACHE_MAX_GB", "60"))
+# Verdrängen bricht ab, wenn so viele Inhalte in Folge im Objektspeicher fehlen (falscher Bucket, #990; 0 = ohne Grenze)
+OBJ_EVICT_MAX_MISSING = int(os.environ.get("OBJ_EVICT_MAX_MISSING", "20"))
 # Gesamtdauer eines Abrufs aus dem Objektspeicher (danach gilt er als gestört; kein Abruf bei der Quelle, #919)
 OBJ_FETCH_TOTAL_SECONDS = float(os.environ.get("OBJ_FETCH_TOTAL_SECONDS", "60"))
 # Prüfsummen beim Upload: "when_required" (verträglich mit S3-kompatiblen Anbietern) oder "when_supported"

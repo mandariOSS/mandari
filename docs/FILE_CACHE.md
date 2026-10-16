@@ -82,6 +82,7 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `DOCUMENT_FETCH_RETRY_ALERT_HOURS` | 6 | Prüfung `dokumentabruf` in `/health/worker/`: rot, wenn fällige Wiederholungen länger liegen |
 | `OBJ_ENABLED` | `false` | S3-kompatibler Objektspeicher (siehe [Objektspeicher](#objektspeicher)) |
 | `OBJ_CACHE_MAX_GB` | 60 | Größe des lokalen Zwischenspeichers bei eingeschaltetem Objektspeicher |
+| `OBJ_EVICT_MAX_MISSING` | 20 | Verdrängen bricht ab, wenn so viele Inhalte in Folge im Objektspeicher fehlen (falscher Bucket; `0` = ohne Grenze) |
 | `FILE_PURGE_AFTER_DAYS` | 30 | Kopie und Text gesperrter Dokumente nach so vielen Tagen löschen (Löschabgleich) |
 | `FILE_PURGE_CONFIRM_GRACE_DAYS` | 7 | Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich |
 | `FILE_RECONCILE_MAX_MISSING` | 10 | Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu `404`/`410`, wird keines gesperrt |
@@ -346,7 +347,10 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   liegen. Geprüft wird wie bei der [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) (Issue #990): Vor dem
   Löschen fragt der Lauf per `HEAD` nach, ob der Inhalt mit seiner Größe im Objektspeicher liegt; fehlt er oder weicht
   die Größe ab, bleibt die Kopie, und `remote_at` wird zurückgesetzt (das nächste `--hochladen` überträgt ihn erneut),
-  eine Störung bricht den Lauf ab. Es bleiben außerdem Inhalte, deren Text erkannt wird oder darauf wartet (auch ein
+  eine Störung bricht den Lauf ab. Fehlen `OBJ_EVICT_MAX_MISSING` (Standard 20) Inhalte in Folge, bricht der Lauf
+  ebenfalls ab (Ausgabe `viele_fehlend`, Protokoll „OBJ_BUCKET prüfen“): Ein falscher Bucket beantwortet `HEAD` für
+  alles mit 404, und ohne diese Grenze fragte ein Lauf jeden lokalen Inhalt ab und setzte überall `remote_at` zurück.
+  Dasselbe gilt für die Obergrenze. Es bleiben außerdem Inhalte, deren Text erkannt wird oder darauf wartet (auch ein
   eingereihter Auftrag `file.extract_text`), Dokumente, die gerade abgerufen werden, und Kopien aus der letzten Stunde;
   unter der Zeilensperre wird das nachgeprüft. Zeitplan, Obergrenze und `prune_file_cache` teilen eine Sperre und
   verdrängen nie gleichzeitig. Die Ausgabe nennt je Grund, wie viele Inhalte blieben (etwa `texterkennung`,
@@ -392,21 +396,35 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   Inhalte gestört (Moduswechsel, oben): Die Vorschau antwortet mit 503, die Texterkennung wartet, niemand ruft bei
   der Quelle ab. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
   (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie. Eine
-  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus (siehe dort, „Moduswechsel“). Wer den
-  Objektspeicher **aufgibt**, setzt `OBJ_ENABLED=false` in Anwendung und Worker, startet neu und führt dann aus:
+  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus (siehe dort, „Moduswechsel“).
+
+  Wer den Objektspeicher **aufgibt**, holt zuerst bei eingeschaltetem Objektspeicher alles zurück, was lokal fehlt.
+  Sonst gingen Inhalte verloren, die sich nicht neu abrufen lassen (Quelle in Schonung, Dateiabruf abgeschaltet
+  oder verweigert, etwa hinter ALTCHA oder per robots.txt bzw. HTTP 401/403, synthetische Quelle, keine Adresse):
+  Genau solche verdrängt `OBJ_CACHE_MAX_GB` lokal. Die übrigen lädt die Vorschau bzw. `cache_files` sonst bei den
+  Kommunen neu. Vorher `OBJ_CACHE_MAX_GB` (und eine Obergrenze `FILE_CACHE_MAX_TOTAL_GB`) über den Bestand heben,
+  sonst verdrängt das stündliche Aufräumen das Zurückgeholte wieder; `cache_files --stats` nennt die Größe im
+  Objektspeicher, Platz für `FILE_CACHE_MIN_FREE_GB` muss bleiben.
 
   ```bash
-  # Probelauf: Inhalte mit remote_at und davon lokal nicht vorhanden (gehen danach an die Quelle)
+  # 1. Mit eingeschaltetem Objektspeicher zurückholen, wiederholen, bis „offen=0“
+  python manage.py dokumentablage --zurueckholen --limit 5000 --trotz-zeitplan
+  # 2. OBJ_ENABLED=false in Anwendung und Worker, Neustart; dann Probelauf:
+  #    Inhalte mit remote_at, davon lokal nicht vorhanden, davon nicht neu abrufbar, frisch hochgeladen
   python manage.py dokumentablage --objektspeicher-aufgeben
-  # Vermerke remote_at löschen
+  # 3. Vermerke remote_at löschen
   python manage.py dokumentablage --objektspeicher-aufgeben --ausfuehren --trotz-zeitplan
   ```
 
-  Der Befehl verweigert sich, solange der Objektspeicher im Container konfiguriert ist. Danach gelten lokal
-  verdrängte Inhalte als fehlend; die Vorschau holt sie von der Quelle, `cache_files` lädt sie nach (so viele Abrufe
-  bei den Kommunen, wie der Probelauf als lokal nicht vorhanden nennt). Das Aufräumen löscht verwaiste Inhalte nur
-  noch lokal, die Obergrenze arbeitet ohne Objektspeicher. Was im Objektspeicher liegt, bleibt dort und gehört beim
-  Anbieter gelöscht; wird er später wieder eingeschaltet, lädt `--hochladen` den Bestand erneut hoch.
+  `--ausfuehren` verweigert sich, solange der Objektspeicher im Container konfiguriert ist, solange lokal fehlende
+  Inhalte nicht neu abrufbar wären und solange in den letzten zwei Stunden hochgeladen wurde (ein anderer Container
+  hat den Objektspeicher dann womöglich noch eingeschaltet; die Prüfung von `OBJ_*` sieht nur den eigenen). Danach
+  gelten lokal fehlende Inhalte als fehlend; die Vorschau holt sie von der Quelle, `cache_files` lädt sie nach (so
+  viele Abrufe bei den Kommunen, wie der Probelauf als lokal nicht vorhanden nennt). Das Aufräumen löscht verwaiste
+  Inhalte nur noch lokal, die Obergrenze arbeitet ohne Objektspeicher. Was im Objektspeicher liegt, bleibt dort.
+  **Den Bucket erst löschen, wenn geprüft ist,** dass Vorschau und Texterkennung ohne ihn arbeiten (Stichprobe,
+  `cache_files --stats`, Prüfungen in `/health/worker/`); wird er später wieder eingeschaltet, lädt `--hochladen`
+  den Bestand erneut hoch.
 
 ### Obergrenze der Gesamtgröße
 

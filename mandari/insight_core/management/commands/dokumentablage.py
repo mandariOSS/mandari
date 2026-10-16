@@ -12,6 +12,7 @@ Schritte von Hand, während der Worker den Zeitplan bedient, mit ``--trotz-zeitp
                                                        # Obergrenze (FILE_CACHE_MAX_TOTAL_GB, #961) einhalten
     python manage.py dokumentablage --hochladen        # Inhalte in den Objektspeicher (nur mit OBJ_ENABLED)
     python manage.py dokumentablage --referenzen       # Referenzzähler aus den Verweisen neu berechnen
+    python manage.py dokumentablage --zurueckholen     # lokal verdrängte Inhalte aus dem Objektspeicher holen (#990)
     python manage.py dokumentablage --objektspeicher-aufgeben [--ausfuehren]
                                                        # Objektspeicher bewusst aufgeben (#990, nur ohne OBJ_*)
 """
@@ -26,7 +27,7 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from apps.common.einmalig import EinmaligMixin
 
 #: Optionen, die die Ablage ändern; ohne sie zeigt der Befehl nur Kennzahlen
-SCHRITTE = ("umstellen", "aufraeumen", "hochladen", "referenzen")
+SCHRITTE = ("umstellen", "aufraeumen", "hochladen", "referenzen", "zurueckholen")
 
 
 class Command(EinmaligMixin, BaseCommand):
@@ -53,6 +54,11 @@ class Command(EinmaligMixin, BaseCommand):
         )
         parser.add_argument("--hochladen", action="store_true", help="Inhalte in den Objektspeicher hochladen")
         parser.add_argument("--referenzen", action="store_true", help="Referenzzähler neu berechnen")
+        parser.add_argument(
+            "--zurueckholen",
+            action="store_true",
+            help="Lokal verdrängte Inhalte aus dem Objektspeicher zurückholen (vor --objektspeicher-aufgeben)",
+        )
         parser.add_argument("--limit", type=int, default=1000, help="Höchstens so viele Dateien je Schritt")
         parser.add_argument(
             "--objektspeicher-aufgeben",
@@ -68,7 +74,7 @@ class Command(EinmaligMixin, BaseCommand):
 
         if (options["umstellen"] or options["hochladen"]) and not file_store.uses_blobs():
             raise CommandError("FILE_STORE_LAYOUT=kommune: keine Ablage nach SHA-256")
-        if options["hochladen"] and not object_storage.enabled():
+        if (options["hochladen"] or options["zurueckholen"]) and not object_storage.enabled():
             raise CommandError("Objektspeicher ist nicht eingeschaltet (OBJ_ENABLED und Zugangsdaten)")
         if options["objektspeicher_aufgeben"]:
             if any(options.get(name) for name in SCHRITTE):
@@ -84,6 +90,8 @@ class Command(EinmaligMixin, BaseCommand):
             self._report("Referenzen", file_store.repair_refcounts())
         if options["hochladen"]:
             self._report("Hochgeladen", file_store.upload_pending(limit=options["limit"]))
+        if options["zurueckholen"]:
+            self._report("Zurückgeholt", file_store.fetch_back_remote(limit=options["limit"]))
         if options["aufraeumen"]:
             self._report("Verwaiste Inhalte", file_store.cleanup_orphans())
             if object_storage.enabled():
@@ -106,7 +114,8 @@ class Command(EinmaligMixin, BaseCommand):
     def _objektspeicher_aufgeben(self, *, ausfuehren: bool) -> None:
         """
         Ausdrücklicher Schritt zum Ausschalten (Issue #990): Ohne ihn gelten Inhalte, die laut Datenbank im
-        Objektspeicher liegen, ohne konfigurierten Objektspeicher als gestört, nie als fehlend.
+        Objektspeicher liegen, ohne konfigurierten Objektspeicher als gestört, nie als fehlend. Verweigert, solange
+        dabei Inhalte verloren gingen (nicht neu abrufbar) oder in den letzten zwei Stunden hochgeladen wurde.
         """
         from insight_core.services import file_store, object_storage
 
@@ -115,16 +124,40 @@ class Command(EinmaligMixin, BaseCommand):
                 "Objektspeicher ist hier konfiguriert (OBJ_ENABLED, OBJ_*): erst in Anwendung und Worker ausschalten "
                 "und neu starten"
             )
-        remote, missing = file_store.object_storage_dependence()
+        stand = file_store.object_storage_dependence()
         self.stdout.write(
-            f"Laut Datenbank im Objektspeicher: {remote} Inhalte, davon lokal nicht vorhanden: {missing}. Diese gelten "
-            "danach als fehlend und werden bei der Quelle neu abgerufen (Vorschau, cache_files). Was im Objektspeicher "
-            "liegt, bleibt dort und wird nicht mehr gelöscht."
+            f"Laut Datenbank im Objektspeicher: {stand.remote} Inhalte, davon lokal nicht vorhanden: {stand.missing}, "
+            f"davon nicht neu abrufbar: {stand.unrefetchable}; in den letzten zwei Stunden hochgeladen: {stand.recent}."
         )
+        self.stdout.write(
+            "Lokal fehlende Inhalte gelten danach als fehlend; die neu abrufbaren werden bei der Quelle neu abgerufen "
+            "(Vorschau, cache_files). Was im Objektspeicher liegt, bleibt dort und wird nicht mehr gelöscht."
+        )
+        if stand.unrefetchable:
+            self.stderr.write(
+                self.style.ERROR(
+                    f"{stand.unrefetchable} lokal fehlende Inhalte ließen sich nicht neu abrufen (Schonung, Dateiabruf "
+                    "abgeschaltet oder verweigert, synthetische Quelle, keine Adresse) und gingen verloren: vorher mit "
+                    "eingeschaltetem Objektspeicher dokumentablage --zurueckholen (docs/FILE_CACHE.md, „Ausschalten“)."
+                )
+            )
+        if stand.recent:
+            self.stderr.write(
+                self.style.ERROR(
+                    "In den letzten zwei Stunden wurde hochgeladen: Ein anderer Dienst hat den Objektspeicher womöglich "
+                    "noch eingeschaltet (OBJ_* in Anwendung und Worker prüfen)."
+                )
+            )
         if not ausfuehren:
             self.stdout.write("Probelauf: nichts geändert. Übernehmen mit --ausfuehren.")
             return
-        self.stdout.write(f"Vermerke gelöscht: {file_store.release_object_storage()}")
+        if not stand.releasable:
+            raise CommandError("Objektspeicher nicht aufgegeben (Gründe oben)")
+        try:
+            geloescht = file_store.release_object_storage(stand)
+        except ValueError as exc:
+            raise CommandError(f"Objektspeicher nicht aufgegeben: {exc}") from exc
+        self.stdout.write(f"Vermerke gelöscht: {geloescht}")
 
     def _report(self, title: str, results: Counter[str]) -> None:
         summary = ", ".join(f"{key}={value}" for key, value in sorted(results.items())) or "nichts zu tun"
@@ -164,4 +197,6 @@ class Command(EinmaligMixin, BaseCommand):
             )
         if verified.get("fehler"):
             line += "; Objektspeicher gestört, Verdrängen abgebrochen"
+        if result.skipped.get("viele_fehlend"):
+            line += "; abgebrochen, zu viele Inhalte in Folge fehlen im Objektspeicher (OBJ_BUCKET prüfen)"
         self.stdout.write(line)

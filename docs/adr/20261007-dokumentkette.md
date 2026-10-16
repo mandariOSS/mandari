@@ -184,13 +184,15 @@ Ingestor (Eingangsadapter, nur Metadaten)
   Dienst aber nicht konfiguriert (`OBJ_ENABLED=false`, fehlende `OBJ_*`), liefert `local_copy` „gestört“, nicht
   „fehlt“ (#990): Ein falsch konfigurierter Dienst darf keine Abrufwelle auslösen. Den Objektspeicher aufzugeben ist
   ein ausdrücklicher Schritt (`dokumentablage --objektspeicher-aufgeben`, löscht die Vermerke `remote_at`); erst
-  danach gilt ein lokal verdrängter Inhalt als fehlend.
+  danach gilt ein lokal verdrängter Inhalt als fehlend. Der Schritt verweigert sich, solange lokal fehlende Inhalte
+  sich nicht neu abrufen ließen (vorher `dokumentablage --zurueckholen`) oder in den letzten zwei Stunden
+  hochgeladen wurde.
 - **Verdrängen und Obergrenze** (#961, #990): Zwei Grenzen verdrängen im stündlichen Aufräumen, `OBJ_CACHE_MAX_GB`
   (nur mit Objektspeicher, nach der Zugriffszeit der Datei) und `FILE_CACHE_MAX_TOTAL_GB` (Standard `0` =
   unbegrenzt, nach der letzten Auslieferung bzw. dem Datum des Dokuments); `cache_files` lädt nur bis zur Obergrenze
   nach. Beide prüfen gleich: **Mit Objektspeicher** wird nur die lokale Kopie gelöscht, und nur nach `HEAD` im
   Objektspeicher (fehlt der Inhalt oder weicht die Größe ab, bleibt die Kopie und `remote_at` wird zurückgesetzt;
-  eine Störung bricht ab). Die Datenbank bleibt unverändert (`ok`), gelesen wird danach über `local_copy` aus dem
+  eine Störung und `OBJ_EVICT_MAX_MISSING` fehlende Inhalte in Folge brechen ab). Die Datenbank bleibt unverändert (`ok`), gelesen wird danach über `local_copy` aus dem
   Objektspeicher. Nie verdrängt werden Inhalte, deren Text erkannt wird oder darauf wartet (auch eingereiht),
   laufende Abrufe und Kopien aus der letzten Stunde; unter der Zeilensperre wird nachgeprüft. **Ohne
   Objektspeicher** (nur die Obergrenze) geben alle Dateien eines Inhalts ihre Referenz frei und gehen auf

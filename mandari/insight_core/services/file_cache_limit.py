@@ -175,6 +175,18 @@ def target_bytes(limit: int) -> int:
     return limit * target_percent() // 100
 
 
+def max_missing_in_row() -> int:
+    """
+    ``OBJ_EVICT_MAX_MISSING`` (Standard 20, 0 = ohne Grenze): So viele Inhalte in Folge dürfen beim Verdrängen im
+    Objektspeicher fehlen, dann bricht der Lauf ab (Issue #990). Ein falscher Bucket antwortet auf ``HEAD`` für alles mit
+    404; ohne Grenze fragte ein Lauf jeden lokalen Inhalt ab und setzte überall ``remote_at`` zurück.
+    """
+    try:
+        return max(int(getattr(settings, "OBJ_EVICT_MAX_MISSING", 20)), 0)
+    except (TypeError, ValueError):
+        return 20
+
+
 def mode() -> str:
     """Mit Objektspeicher nur lokal verdrängen, sonst Referenzen freigeben."""
     return MODE_REMOTE if object_storage.enabled() and file_store.uses_blobs() else MODE_RELEASE
@@ -424,6 +436,14 @@ def _blocked_q(unrefetchable: list[Any]) -> Q:
     return blocked
 
 
+def not_refetchable_q(unrefetchable: list[Any]) -> Q:
+    """
+    Dateien, die sich nicht neu abrufen ließen: ohne Download-Adresse oder aus einer der Kommunen ``unrefetchable``
+    (``unrefetchable_bodies``). Auch für ``file_store.object_storage_dependence`` (Issue #990).
+    """
+    return _blocked_q(unrefetchable)
+
+
 def _flag(condition: Q) -> Case:
     return Case(When(condition, then=Value(1)), default=Value(0), output_field=IntegerField())
 
@@ -617,6 +637,8 @@ class _Run:
     candidates: list[tuple[str, int]] = field(default_factory=list)
     #: Dateien mit wartendem Auftrag ``file.extract_text`` (je Lauf einmal gelesen): ihre Kopie bleibt
     queued: frozenset[str] = frozenset()
+    #: Inhalte in Folge, die im Objektspeicher fehlten (``OBJ_EVICT_MAX_MISSING``)
+    missing_in_row: int = 0
 
 
 def enforce(
@@ -853,6 +875,7 @@ def _evict_local(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> bo
         }
     present: list[str] = []
     ok = True
+    limit = max_missing_in_row()
     for key, (_row, _path, size) in planned.items():
         if run.verify:
             try:
@@ -864,11 +887,24 @@ def _evict_local(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) -> bo
                 ok = False
                 break
             run.result.verified[state] += 1
-            if state != "vorhanden":
+            if state == "vorhanden":
+                run.missing_in_row = 0
+            else:
                 # Die lokale Kopie ist womöglich die einzige: sie bleibt. Fehlt der Inhalt oder weicht seine Größe ab,
                 # lädt --hochladen ihn neu; bis dahin schützt „nicht hochgeladen“ die Kopie auch vor weiteren Läufen.
                 OParlFileBlob.objects.filter(pk=key).update(remote_at=None)
                 _skip(run, "nicht_im_objektspeicher")
+                if state == "fehlt":
+                    run.missing_in_row += 1
+                if limit and run.missing_in_row >= limit:
+                    # Falscher Bucket oder Schlüsselschema: HEAD meldet für alles 404 (auch ohne Bucket)
+                    logger.error(
+                        "Verdrängen abgebrochen: %s Inhalte in Folge fehlen im Objektspeicher (OBJ_BUCKET prüfen)",
+                        run.missing_in_row,
+                    )
+                    run.result.skipped["viele_fehlend"] += 1
+                    ok = False
+                    break
                 continue
         present.append(key)
     if not present:

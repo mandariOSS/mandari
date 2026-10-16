@@ -44,7 +44,7 @@ import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import IO, Any, Final
 
@@ -361,6 +361,25 @@ def store_reachable() -> bool:
     return not uses_blobs() or blob_root().is_dir()
 
 
+#: Die Warnung zum Moduswechsel höchstens so oft je Prozess (Sekunden): Sonst schriebe jede Vorschau eine Zeile
+_MODE_WARNING_INTERVAL: Final = 60.0
+#: Zeitpunkt der letzten Warnung (``time.monotonic``) als veränderbare Zelle
+_mode_warned_at: list[float] = []
+
+
+def _warn_mode_change(sha256: str) -> None:
+    """Inhalt mit ``remote_at``, Objektspeicher hier nicht konfiguriert: höchstens einmal je Minute melden."""
+    now = time.monotonic()
+    if _mode_warned_at and now - _mode_warned_at[0] < _MODE_WARNING_INTERVAL:
+        return
+    _mode_warned_at[:] = [now]
+    logger.warning(
+        "Inhalt %s liegt laut Datenbank im Objektspeicher, der hier nicht konfiguriert ist (OBJ_ENABLED, OBJ_*): "
+        "gestört, kein Abruf bei der Quelle (weitere Fälle höchstens einmal je Minute)",
+        sha256[:12],
+    )
+
+
 def local_copy(file_obj: Any) -> Copy:
     """
     Kopie der Datei lesen: lokal, sonst aus dem Objektspeicher (gestreamt in die Ablage, Zeitgrenze, Hashprüfung).
@@ -385,11 +404,7 @@ def local_copy(file_obj: Any) -> Copy:
         blob = OParlFileBlob.objects.filter(pk=sha256, remote_at__isnull=False).values("size").first()
         if blob is not None:
             if not object_storage.enabled():
-                logger.warning(
-                    "Inhalt %s liegt laut Datenbank im Objektspeicher, der hier nicht konfiguriert ist "
-                    "(OBJ_ENABLED, OBJ_*): gestört, kein Abruf bei der Quelle",
-                    sha256[:12],
-                )
+                _warn_mode_change(sha256)
                 return Copy(DISTURBED)
             return fetch_remote(sha256, size=blob["size"])
     if (getattr(file_obj, "local_path", None) or sha256) and not store_reachable():
@@ -574,36 +589,122 @@ def evict_local(*, max_bytes: int | None = None) -> Counter[str]:
     return file_cache_limit.evict_by_access(max_bytes=limit)
 
 
-def object_storage_dependence() -> tuple[int, int]:
-    """
-    Inhalte, die laut Datenbank im Objektspeicher liegen (``remote_at``), und davon die, auf die Dokumente verweisen und
-    die lokal fehlen: Sie gingen nach ``release_object_storage`` an die Quelle. Prüft je Inhalt die Platte.
-    """
+#: So lange nach dem letzten Upload verweigert ``release_object_storage``: Ein anderer Dienst mit ``OBJ_*`` lädt
+#: womöglich noch hoch (die Prüfung des eigenen Containers sieht ihn nicht)
+RECENT_UPLOAD: Final = timedelta(hours=2)
+
+
+@dataclass(frozen=True)
+class RemoteDependence:
+    """Wie sehr die Ablage am Objektspeicher hängt (``object_storage_dependence``)."""
+
+    #: Inhalte, die laut Datenbank im Objektspeicher liegen (``remote_at``)
+    remote: int = 0
+    #: davon solche, auf die Dokumente verweisen und die lokal fehlen
+    missing: int = 0
+    #: davon solche, die sich nicht neu abrufen ließen (Schonung, kein Dateiabruf, verweigert, synthetisch, ohne Adresse)
+    unrefetchable: int = 0
+    #: Inhalte, die in den letzten ``RECENT_UPLOAD`` hochgeladen wurden
+    recent: int = 0
+
+    @property
+    def releasable(self) -> bool:
+        """Ginge beim Aufgeben nichts verloren, und lädt gerade niemand hoch?"""
+        return not self.unrefetchable and not self.recent
+
+
+def _missing_remote_keys() -> list[str]:
+    """Inhalte mit ``remote_at``, auf die Dokumente verweisen und die lokal fehlen (prüft je Inhalt die Platte)."""
     from ..models import OParlFileBlob
 
-    remote = missing = 0
-    rows = OParlFileBlob.objects.filter(remote_at__isnull=False).values_list("pk", "ref_count")
-    for sha256, refs in rows.iterator(chunk_size=2000):
-        remote += 1
-        if refs > 0 and not blob_path(sha256).is_file():
-            missing += 1
-    return remote, missing
+    rows = OParlFileBlob.objects.filter(remote_at__isnull=False, ref_count__gt=0).values_list("pk", flat=True)
+    return [sha256 for sha256 in rows.iterator(chunk_size=2000) if not blob_path(sha256).is_file()]
 
 
-def release_object_storage() -> int:
+def object_storage_dependence(*, now: datetime | None = None) -> RemoteDependence:
+    """
+    Zahlen für ``release_object_storage`` (Probelauf von ``dokumentablage --objektspeicher-aufgeben``, Issue #990).
+
+    Ein lokal fehlender Inhalt gilt als nicht neu abrufbar, sobald eine Datei, die auf ihn verweist, sich nicht neu
+    abrufen ließe (wie bei der Obergrenze, ``file_cache_limit.not_refetchable_q``): Er ginge mit dem Aufgeben verloren.
+    """
+    from ..models import OParlFile, OParlFileBlob
+    from . import file_cache_limit
+
+    now = now or timezone.now()
+    missing = _missing_remote_keys()
+    unrefetchable = 0
+    if missing:
+        blocked = file_cache_limit.not_refetchable_q(file_cache_limit.unrefetchable_bodies())
+        for start in range(0, len(missing), 1000):
+            unrefetchable += (
+                OParlFile.objects.filter(blocked, blob_id__in=missing[start : start + 1000])
+                .values("blob_id")
+                .distinct()
+                .count()
+            )
+    return RemoteDependence(
+        remote=OParlFileBlob.objects.filter(remote_at__isnull=False).count(),
+        missing=len(missing),
+        unrefetchable=unrefetchable,
+        recent=OParlFileBlob.objects.filter(remote_at__gt=now - RECENT_UPLOAD).count(),
+    )
+
+
+def release_object_storage(checked: RemoteDependence | None = None, *, now: datetime | None = None) -> int:
     """
     Den Objektspeicher bewusst aufgeben (Issue #990): alle Vermerke ``remote_at`` löschen. Rückgabe: Anzahl.
 
     Danach gilt ein lokal verdrängter Inhalt wieder als fehlend, Vorschau und Abruf holen ihn bei der Quelle; das
-    Aufräumen löscht verwaiste Inhalte nur noch lokal. Nur ohne konfigurierten Objektspeicher (``ValueError``), denn
-    mit ihm lüde der nächste Upload alles erneut hoch. Ohne diesen Schritt bleiben solche Inhalte gestört
+    Aufräumen löscht verwaiste Inhalte nur noch lokal. Ohne diesen Schritt bleiben solche Inhalte gestört
     (``local_copy``), damit ein falsch konfigurierter Dienst keine Abrufwelle bei den Quellen auslöst.
+
+    ``ValueError`` statt Löschen, wenn der Objektspeicher hier konfiguriert ist (der nächste Upload lüde alles erneut
+    hoch), wenn lokal fehlende Inhalte sich nicht neu abrufen ließen (sie gingen verloren: vorher ``fetch_back_remote``)
+    oder wenn in den letzten ``RECENT_UPLOAD`` hochgeladen wurde (ein anderer Dienst lädt womöglich noch hoch).
+    ``checked``: eben ermittelte Zahlen (``object_storage_dependence``); hochgeladen wird trotzdem neu geprüft.
     """
     from ..models import OParlFileBlob
 
+    now = now or timezone.now()
     if object_storage.enabled():
         raise ValueError("Objektspeicher ist hier konfiguriert (OBJ_ENABLED, OBJ_*)")
-    return OParlFileBlob.objects.filter(remote_at__isnull=False).update(remote_at=None)
+    stand = checked or object_storage_dependence(now=now)
+    if stand.unrefetchable:
+        raise ValueError(f"{stand.unrefetchable} lokal fehlende Inhalte ließen sich nicht neu abrufen")
+    with transaction.atomic():
+        if stand.recent or OParlFileBlob.objects.filter(remote_at__gt=now - RECENT_UPLOAD).exists():
+            raise ValueError("In den letzten zwei Stunden wurde hochgeladen: ein anderer Dienst nutzt ihn noch")
+        return OParlFileBlob.objects.filter(remote_at__isnull=False).update(remote_at=None)
+
+
+def fetch_back_remote(*, limit: int = 1000) -> Counter[str]:
+    """
+    Lokal verdrängte Inhalte aus dem Objektspeicher zurück in die lokale Ablage holen (vor dem Aufgeben, Issue #990).
+
+    Nur mit eingeschaltetem Objektspeicher. Höchstens ``limit`` Inhalte je Lauf; eine Störung (auch zu wenig Platz,
+    ``FILE_CACHE_MIN_FREE_GB``) beendet den Lauf. Verdrängt ``OBJ_CACHE_MAX_GB`` sie danach wieder, war die Grenze zu
+    klein (``docs/FILE_CACHE.md``, „Ausschalten“).
+    """
+    from ..models import OParlFileBlob
+
+    results: Counter[str] = Counter()
+    if not object_storage.enabled():
+        return results
+    keys = _missing_remote_keys()
+    results["offen"] = len(keys)
+    sizes = dict(OParlFileBlob.objects.filter(pk__in=keys[:limit]).values_list("pk", "size"))
+    for sha256 in keys[:limit]:
+        copy = fetch_remote(sha256, size=sizes.get(sha256))
+        if copy.present:
+            results["geholt"] += 1
+        elif copy.missing:
+            results["fehlt"] += 1
+        else:
+            results["gestoert"] += 1
+            break
+    results["offen"] -= results["geholt"] + results["fehlt"]
+    return results
 
 
 def repair_refcounts() -> Counter[str]:
