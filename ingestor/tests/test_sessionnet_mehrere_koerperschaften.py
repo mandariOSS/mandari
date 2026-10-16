@@ -402,8 +402,12 @@ class FakeStorage:
     async def get_agenda_items_of_meeting(self, meeting_external_id) -> list[dict[str, Any]]:
         return []
 
-    async def rename_agenda_items(self, meeting_external_id, renames) -> int:
+    async def rename_agenda_items(self, meeting_external_id, renames, keep_previous=True) -> int:
         raise AssertionError(f"unerwartete Umstellung: {renames}")
+
+    async def get_active_agenda_item_ids(self, meeting_external_ids) -> set[str]:
+        sitzungen = set(meeting_external_ids)
+        return {punkt for punkt in getattr(self, "agenda_items", set()) if punkt.partition("#")[0] in sitzungen}
 
 
 class FakeOrchestrator:

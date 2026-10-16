@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Umstellung der Kennungen von Tagesordnungspunkten aus SessionNet-Sitzungsseiten im Bestand (Issue #863), gegen
-PostgreSQL.
+Kennungen der Tagesordnungspunkte aus SessionNet-Sitzungsseiten im Bestand (Issue #863), gegen PostgreSQL.
 
-Der Bestand trägt die Punkte einer Sitzung unter der bisherigen Kennung (Nummer). Der nächste Abruf schreibt sie
-in place auf die neue um (``external_id`` neu, ``id`` bleibt), samt Verweis der Beratung; danach behält ein Punkt
-mit Vorlage seine Zeile, auch wenn die Verwaltung davor einen Punkt einfügt.
+- Umstellung: Der Bestand trägt die Punkte einer Sitzung unter der bisherigen Kennung (Nummer). Der nächste Abruf
+  schreibt sie in place auf die neue um (``external_id`` neu, ``id`` bleibt), samt Verweisen der Beratungen und der
+  Tagesordnung der Sitzung, ohne Scheinänderungen im Änderungsfeed.
+- Löschabgleich: Einen Punkt, den die vollständig gelesene Tagesordnung nicht mehr liefert, markiert der Abruf nach
+  vollständigen Vollabgleichen in Folge (``ris.object.depublished``).
+- Rückweg: ``revert_agenda_item_ids`` schreibt die Kennungen zurück; ein Abruf von vor #863 läuft danach durch.
 
 Braucht ``INGESTOR_TEST_DATABASE_URL`` (in der CI gesetzt; lokal ohne Datenbank übersprungen). Die Tests legen ein
 eigenes Schema aus der Tabellenbeschreibung des Ingestors an und entfernen es wieder.
@@ -19,18 +21,32 @@ import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
-from uuid import UUID
 
 import pytest
 from mandari_oparl.ids import canonical_id
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from src.scrapers.sessionnet import AgendaItemKey, plan_agenda_item_renames
+from src.config import settings
+from src.scrapers import runner as runner_module
+from src.scrapers import sessionnet
+from src.scrapers.runner import ScraperSyncRunner
+from src.scrapers.sessionnet import AgendaItemKey, legacy_agenda_item_keys, plan_agenda_item_renames
+from src.scrapers.top_kennungen import revert_agenda_item_ids
 from src.storage.database import DatabaseStorage
-from src.storage.models import Base, OParlAgendaItem, OParlConsultation
+from src.storage.models import Base, OParlAgendaItem, OParlConsultation, OParlMeeting
+from src.sync.orchestrator import SyncOrchestrator
 from src.sync.processor import OParlProcessor
-from tests.test_sessionnet_top_kennung import lesen, mit_neuem_ersten_punkt, sitzung
+from tests.test_sessionnet_mehrere_koerperschaften import BASE_URL, SEPTEMBER
+from tests.test_sessionnet_top_kennung import (
+    FIXTURES,
+    SITZUNG_1001,
+    Tagesordnung,
+    lesen,
+    mit_neuem_ersten_punkt,
+    sitzung,
+    vorlage_folgt,
+)
 
 DATABASE_URL = os.environ.get("INGESTOR_TEST_DATABASE_URL", "")
 SCHEMA = f"ingestor_top_{uuid.uuid4().hex[:12]}"
@@ -51,6 +67,15 @@ async def _schema(anlegen: bool) -> None:
         if anlegen:
             await conn.execute(text(f'CREATE SCHEMA "{SCHEMA}"'))
             await conn.run_sync(Base.metadata.create_all)
+            # Was in der Installation die Django-Migration der Ereignistechnik anlegt (test_events_journal.py)
+            await conn.execute(
+                text(
+                    "ALTER TABLE events_event"
+                    " ADD COLUMN seq bigint NULL UNIQUE,"
+                    " ADD COLUMN recorded_at timestamptz NOT NULL DEFAULT now(),"
+                    " ADD COLUMN xid xid8 NOT NULL DEFAULT pg_current_xact_id()"
+                )
+            )
             # Zwischentabelle, die nur Django beschreibt (Gremien einer Sitzung); der Ingestor schreibt sie mit SQL
             await conn.execute(
                 text(
@@ -79,7 +104,7 @@ def schema() -> Iterator[None]:
 
 @pytest.fixture
 async def storage(schema: None) -> AsyncIterator[DatabaseStorage]:
-    speicher = DatabaseStorage(DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1), events_enabled=False)
+    speicher = DatabaseStorage(DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1), events_enabled=True)
     await speicher._engine.dispose()
     speicher._engine = _engine()
     speicher._session_factory = async_sessionmaker(speicher._engine, class_=AsyncSession, expire_on_commit=False)
@@ -90,13 +115,52 @@ async def storage(schema: None) -> AsyncIterator[DatabaseStorage]:
     await speicher.close()
 
 
+async def ereignisse(storage: DatabaseStorage, *, leeren: bool = False) -> list[tuple[str, dict[str, Any]]]:
+    async with storage._engine.begin() as conn:
+        rows = (await conn.execute(text("SELECT type, payload FROM events_event ORDER BY id"))).all()
+        if leeren:
+            await conn.execute(text("DELETE FROM events_event"))
+    return [(row.type, row.payload) for row in rows]
+
+
+async def punkte(storage: DatabaseStorage, meeting: str | None = None) -> dict[str, OParlAgendaItem]:
+    async with storage.get_session() as session:
+        stmt = select(OParlAgendaItem)
+        if meeting is not None:
+            stmt = stmt.join(OParlMeeting).where(OParlMeeting.external_id == meeting)
+        rows = (await session.execute(stmt)).scalars().all()
+    return {row.external_id: row for row in rows}
+
+
+async def beratungen(storage: DatabaseStorage) -> dict[str, OParlConsultation]:
+    async with storage.get_session() as session:
+        rows = (await session.execute(select(OParlConsultation))).scalars().all()
+    return {row.external_id: row for row in rows}
+
+
+# ---------------------------------------------------------------------------
+# Speicher: Umstellung einer Sitzung (Eschweiler, Golden File)
+# ---------------------------------------------------------------------------
+
+
+class Plan:
+    """Adapter-Ersatz für ``ScraperSyncRunner._keep_agenda_item_rows``: die Kennungen eines Abrufstands."""
+
+    def __init__(self, keys: list[AgendaItemKey]) -> None:
+        self.keys = keys
+
+    def agenda_item_renames(self, meeting_id: str, stored: Any) -> dict[str, str]:
+        return plan_agenda_item_renames(self.keys, stored)
+
+
 class Abruf:
     """Speichert Sitzungen wie der Runner: erst die Umstellung, dann Sitzung samt Punkten, dann die Beratungen."""
 
     def __init__(self, storage: DatabaseStorage) -> None:
         self.storage = storage
         self.processor = OParlProcessor()
-        self.body_id: UUID
+        self.runner = ScraperSyncRunner.__new__(ScraperSyncRunner)
+        self.runner.storage = storage
 
     async def anlegen(self) -> Abruf:
         source_id = await self.storage.upsert_source(f"{KOERPERSCHAFT}si0040.php", "Eschweiler")
@@ -106,32 +170,18 @@ class Abruf:
         self.body_id = await self.storage.upsert_body(body, source_id)
         return self
 
-    async def speichern(self, meeting: dict[str, Any], keys: list[AgendaItemKey] | None) -> int:
-        """Sitzung speichern; mit ``keys`` vorher umstellen wie ``ScraperSyncRunner``. Rückgabe: umgestellte Punkte."""
-        meeting = dict(meeting)
+    async def speichern(self, meeting: dict[str, Any], keys: list[AgendaItemKey] | None) -> None:
+        """Sitzung speichern; mit ``keys`` vorher umstellen wie ``ScraperSyncRunner`` (der echte Ablauf)."""
+        meeting = copy.deepcopy(meeting)
         consultations = meeting.pop("mandari:consultations", [])
-        renamed = 0
         if keys is not None:
-            stored = await self.storage.get_agenda_items_of_meeting(meeting["id"])
-            renames = plan_agenda_item_renames(keys, stored)
-            renamed = await self.storage.rename_agenda_items(meeting["id"], renames)
+            await self.runner._keep_agenda_item_rows(Plan(keys), meeting)
         await self.storage.upsert_meeting(self.processor.process_meeting(meeting, KOERPERSCHAFT), self.body_id)
         for consultation in consultations:
             daten = {k: v for k, v in consultation.items() if k != "mandari:kvonr"}
             await self.storage.upsert_consultation(
                 self.processor.process_consultation(daten, KOERPERSCHAFT), self.body_id
             )
-        return renamed
-
-    async def punkte(self) -> dict[str, OParlAgendaItem]:
-        async with self.storage.get_session() as session:
-            rows = (await session.execute(select(OParlAgendaItem))).scalars().all()
-        return {row.external_id: row for row in rows}
-
-    async def beratungen(self) -> dict[str, str | None]:
-        async with self.storage.get_session() as session:
-            rows = (await session.execute(select(OParlConsultation))).scalars().all()
-        return {row.external_id: row.agenda_item_external_id for row in rows}
 
 
 def bisherig(meeting: dict[str, Any], keys: list[AgendaItemKey]) -> dict[str, Any]:
@@ -145,45 +195,84 @@ def bisherig(meeting: dict[str, Any], keys: list[AgendaItemKey]) -> dict[str, An
     return result
 
 
-async def test_umstellung_behaelt_zeilen_und_einfuegung_aendert_nichts(storage: DatabaseStorage) -> None:
+async def test_umstellung_ohne_scheinaenderungen(storage: DatabaseStorage) -> None:
     abruf = await Abruf(storage).anlegen()
     html = lesen(INSTANZ, "si0057.html")
     meeting, keys = await sitzung(INSTANZ, html)
 
     # Bestand von vor Issue #863
     await abruf.speichern(bisherig(meeting, keys), keys=None)
-    vorher = await abruf.punkte()
+    vorher = await punkte(storage)
     assert set(vorher) == {key.legacy_id for key in keys}
     zeile_von = {key.item_id: vorher[key.legacy_id].id for key in keys}
+    await ereignisse(storage, leeren=True)
 
-    # Erster Abruf mit der neuen Kennung: jede Zeile umgeschrieben, keine neue
-    assert await abruf.speichern(meeting, keys) == len(keys)
-    umgestellt = await abruf.punkte()
+    # Erster Abruf mit der neuen Kennung: jede Zeile umgeschrieben, keine neue, nichts gemeldet
+    await abruf.speichern(meeting, keys)
+    assert await ereignisse(storage) == []
+    umgestellt = await punkte(storage)
     assert set(umgestellt) == {key.item_id for key in keys}
     for key in keys:
         punkt = umgestellt[key.item_id]
         assert punkt.id == zeile_von[key.item_id] == canonical_id(key.legacy_id)
         assert punkt.raw_json["id"] == key.item_id
-    beratungen = await abruf.beratungen()
-    assert beratungen
-    assert set(beratungen.values()) == {key.item_id for key in keys if key.consultation}
+        assert punkt.raw_json["mandari:previousId"] == key.legacy_id
+    alle = await beratungen(storage)
+    assert alle
+    for beratung in alle.values():
+        assert beratung.agenda_item_external_id in umgestellt
+        assert beratung.raw_json["agendaItem"] == beratung.agenda_item_external_id
 
-    # Zweiter Abruf: nichts mehr umzustellen
-    assert await abruf.speichern(meeting, keys) == 0
+    # Zweiter Abruf: nichts umzustellen, nichts gemeldet
+    await abruf.speichern(meeting, keys)
+    assert await ereignisse(storage) == []
 
-    # Die Verwaltung fügt einen Punkt ein: Punkte mit Vorlage behalten Zeile und Kennung
+    # Die Verwaltung fügt einen Punkt ein: Punkte mit Vorlage behalten Zeile und Kennung. Gemeldet werden nur echte
+    # Änderungen, und jeder Verweis zeigt auf eine Zeile im Bestand.
     neu, keys_neu = await sitzung(INSTANZ, mit_neuem_ersten_punkt(html))
-    assert await abruf.speichern(neu, keys_neu) == 0
-    danach = await abruf.punkte()
+    await abruf.speichern(neu, keys_neu)
+    danach = await punkte(storage)
     for key in keys_neu:
         if key.consultation:
             assert danach[key.item_id].id == zeile_von[key.item_id]
-    nummern = {i["id"]: i["number"] for i in neu["agendaItem"]}
-    for key in keys:
+    zeilen = {punkt.id for punkt in danach.values()}
+    for typ, nutzlast in await ereignisse(storage):
+        if typ == "ris.consultation.changed":
+            assert "agendaItem" not in nutzlast.get("changed", [])
+            assert uuid.UUID(nutzlast["agenda_item"]) in zeilen
+        if typ == "ris.agendaitem.changed":
+            assert uuid.UUID(nutzlast["agenda_item"]) in zeilen
+
+
+async def test_umstellung_nach_umnummerierung_ohne_doppelte_punkte(storage: DatabaseStorage) -> None:
+    """
+    Seit dem letzten Abruf umnummeriert: Jeder Punkt der Seite hat genau eine Zeile, keine Zeile bleibt übrig, nur der
+    eingefügte Punkt ist neu. Punkte ohne Vorlage finden ihre Zeile über den Namen, nicht über die alte Nummer.
+    """
+    abruf = await Abruf(storage).anlegen()
+    html = lesen(INSTANZ, "si0057.html")
+    meeting, keys = await sitzung(INSTANZ, html)
+    await abruf.speichern(bisherig(meeting, keys), keys=None)
+    vorher = await punkte(storage)
+
+    neu, keys_neu = await sitzung(INSTANZ, mit_neuem_ersten_punkt(html))
+    await abruf.speichern(neu, keys_neu)
+    danach = await punkte(storage)
+
+    auf_der_seite = {item["id"] for item in neu["agendaItem"]}
+    assert set(danach) == auf_der_seite
+    assert len(danach) == len(vorher) + 1
+    # Keine Zeile ging verloren, jede behielt ihre id
+    assert {punkt.id for punkt in vorher.values()} <= {punkt.id for punkt in danach.values()}
+    bisher = {key.consultation: key.legacy_id for key in keys if key.consultation}
+    for key in keys_neu:
         if key.consultation:
-            assert danach[key.item_id].number == nummern[key.item_id]
-    assert danach[keys_neu[0].item_id].name == "Einwohnerfragestunde"
-    assert danach[keys_neu[0].item_id].id == canonical_id(keys_neu[0].item_id)
+            assert danach[key.item_id].id == vorher[bisher[key.consultation]].id
+    # Ohne Vorlage: die Zeile mit demselben Namen, auch unter neuer Nummer
+    nach_name = {punkt.name: punkt.id for punkt in vorher.values() if not punkt.raw_json.get("consultation")}
+    for key in keys_neu:
+        if not key.consultation and key.name in nach_name:
+            assert danach[key.item_id].id == nach_name[key.name]
 
 
 async def test_umschreiben_nur_eindeutig_und_nur_in_der_sitzung(storage: DatabaseStorage) -> None:
@@ -192,7 +281,6 @@ async def test_umschreiben_nur_eindeutig_und_nur_in_der_sitzung(storage: Databas
     await abruf.speichern(bisherig(meeting, keys), keys=None)
     erster, zweiter, dritter, vierter, fuenfter = keys[:5]
     assert erster.consultation  # Ö 1 berät eine Vorlage
-
     renames = {
         erster.legacy_id: erster.item_id,
         # Ziel schon vergeben (von einem anderen Punkt der Sitzung)
@@ -205,36 +293,140 @@ async def test_umschreiben_nur_eindeutig_und_nur_in_der_sitzung(storage: Databas
     # Andere Sitzung: nichts
     assert await storage.rename_agenda_items(f"{meeting['id']}0", {zweiter.legacy_id: zweiter.item_id}) == 0
 
-    punkte = await abruf.punkte()
-    assert erster.legacy_id not in punkte
-    assert punkte[erster.item_id].id == canonical_id(erster.legacy_id)
-    # Ohne folgenden Upsert: Kennung in raw_json und Verweis der Beratung schon umgestellt
-    assert punkte[erster.item_id].raw_json["id"] == erster.item_id
-    assert punkte[erster.item_id].raw_json["name"] == erster.name
-    assert erster.item_id in (await abruf.beratungen()).values()
-    assert {key.legacy_id for key in (zweiter, dritter, vierter, fuenfter)} <= set(punkte)
+    alle = await punkte(storage)
+    assert erster.legacy_id not in alle
+    assert alle[erster.item_id].id == canonical_id(erster.legacy_id)
+    raw = alle[erster.item_id].raw_json
+    assert (raw["id"], raw["mandari:previousId"], raw["number"]) == (erster.item_id, erster.legacy_id, "1")
+    beratung = next(b for b in (await beratungen(storage)).values() if b.external_id == erster.consultation)
+    assert beratung.agenda_item_external_id == erster.item_id
+    assert beratung.raw_json["agendaItem"] == erster.item_id
+    async with storage.get_session() as session:
+        tagesordnung = (
+            await session.execute(select(OParlMeeting.raw_json).where(OParlMeeting.external_id == meeting["id"]))
+        ).scalar_one()["agendaItem"]
+    assert tagesordnung[0]["id"] == erster.item_id
+    assert tagesordnung[0]["mandari:previousId"] == erster.legacy_id
+    assert {key.legacy_id for key in (zweiter, dritter, vierter, fuenfter)} <= set(alle)
 
 
-async def test_umstellung_nach_umnummerierung(storage: DatabaseStorage) -> None:
-    """
-    Seit dem letzten Abruf umnummeriert: Punkte mit Vorlage finden ihre Zeile. Die Zeilen der Punkte ohne Vorlage
-    bleiben unverändert stehen (unter ihren Nummern stehen jetzt andere Punkte), diese bekommen neue Zeilen.
-    """
-    abruf = await Abruf(storage).anlegen()
-    html = lesen(INSTANZ, "si0057.html")
-    meeting, keys = await sitzung(INSTANZ, html)
-    await abruf.speichern(bisherig(meeting, keys), keys=None)
-    vorher = await abruf.punkte()
+# ---------------------------------------------------------------------------
+# Runner gegen den Bestand: Umstellung, Löschabgleich, Rückweg (Samtgemeinde)
+# ---------------------------------------------------------------------------
 
-    neu, keys_neu = await sitzung(INSTANZ, mit_neuem_ersten_punkt(html))
-    mit_vorlage = [key for key in keys_neu if key.consultation]
-    assert await abruf.speichern(neu, keys_neu) == len(mit_vorlage)
 
-    danach = await abruf.punkte()
-    bisher = {key.consultation: key.legacy_id for key in keys if key.consultation}
-    for key in mit_vorlage:
-        assert danach[key.item_id].id == vorher[bisher[key.consultation]].id
-    for key in keys:
-        if not key.consultation:
-            assert danach[key.legacy_id].name == vorher[key.legacy_id].name
-    assert all(danach[key.item_id].id == canonical_id(key.item_id) for key in keys_neu if not key.consultation)
+@pytest.fixture
+def quelle_abrufen(storage: DatabaseStorage, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Abruf der Samtgemeinde-Quelle (Körperschaft 1) mit dem echten Runner gegen den Bestand; ``altes_image``."""
+    fetcher = Tagesordnung()
+
+    class FixtureAbruf:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> Tagesordnung:
+            return fetcher
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+    class September(runner_module.CrawlWindow):
+        @classmethod
+        def from_days(cls, days_back: int, days_ahead: int, today: Any = None) -> runner_module.CrawlWindow:
+            return SEPTEMBER
+
+    monkeypatch.setattr(runner_module, "PoliteFetcher", FixtureAbruf)
+    monkeypatch.setattr(runner_module, "CrawlWindow", September)
+    monkeypatch.setattr(settings, "text_extraction_enabled", False)
+    monkeypatch.setattr(settings, "elasticsearch_indexing_enabled", False)
+    monkeypatch.setattr(settings, "scraper_tombstone_full_crawls", 1)
+
+    orchestrator = SyncOrchestrator.__new__(SyncOrchestrator)
+    orchestrator.storage = storage
+    orchestrator.processor = OParlProcessor(storage.id_bases)
+    orchestrator.max_concurrent = 1
+    orchestrator._parallel_mode = True
+
+    async def lauf(*, altes_image: bool = False) -> Any:
+        source = await storage.get_source_by_url(BASE_URL)
+        if source is None:
+            source_id = await storage.upsert_source(BASE_URL, "Samtgemeinde (Fixture)")
+            await storage.set_source_sync_config_value(source_id, "source_type", "scraper:sessionnet")
+            await storage.set_source_sync_config_value(
+                source_id, "scraper", {"base_url": BASE_URL, "variant": "asp", "bodies": [{"cpanr": 1}]}
+            )
+            source = await storage.get_source_by_url(BASE_URL)
+        assert source is not None
+        with pytest.MonkeyPatch.context() as image:
+            if altes_image:
+                # Ingestor von vor #863: Kennung = Nummer, keine Umstellung, kein Löschabgleich der Tagesordnung
+                image.setattr(sessionnet, "agenda_item_keys", legacy_agenda_item_keys)
+                image.setattr(sessionnet.SessionNetAdapter, "agenda_item_renames", None)
+                image.setattr(sessionnet.SessionNetAdapter, "is_removable_agenda_item_id", None)
+            result = await ScraperSyncRunner(orchestrator, source).run(full=True)
+        storage.clear_uuid_caches()
+        return source, result
+
+    lauf.fetcher = fetcher  # type: ignore[attr-defined]
+    return lauf
+
+
+async def test_runner_umstellung_loeschabgleich_und_rueckweg(storage: DatabaseStorage, quelle_abrufen: Any) -> None:
+    _, result = await quelle_abrufen(altes_image=True)
+    assert result.success, result.errors
+    vorher = await punkte(storage, SITZUNG_1001)
+    assert set(vorher) == {f"{SITZUNG_1001}#agendaitem/{teil}" for teil in ("1", "2", "N1")}
+    await ereignisse(storage, leeren=True)
+
+    # Erster Abruf mit der neuen Kennung: umgestellt, keine Scheinänderung
+    source, result = await quelle_abrufen()
+    assert result.success, result.errors
+    umgestellt = await punkte(storage, SITZUNG_1001)
+    assert set(umgestellt) == {f"{SITZUNG_1001}#agendaitem/{teil}" for teil in ("nr-1", "kvonr-5001", "nr-N1")}
+    assert {p.id for p in umgestellt.values()} == {p.id for p in vorher.values()}
+    gemeldet = [typ for typ, _ in await ereignisse(storage, leeren=True)]
+    assert [typ for typ in gemeldet if typ.startswith(("ris.consultation", "ris.meeting", "ris.agendaitem"))] == []
+
+    # „Vorlage folgt“: TOP 1 bekommt eine Vorlage. Die Zeile unter nr-1 liefert die Seite nicht mehr: markiert
+    seite = (FIXTURES / "samtgemeinde" / "si0057_1001.html").read_text(encoding="utf-8")
+    quelle_abrufen.fetcher.seite_1001 = vorlage_folgt(seite)
+    _, result = await quelle_abrufen()
+    assert result.success, result.errors
+    danach = await punkte(storage, SITZUNG_1001)
+    sichtbar = {kennung for kennung, punkt in danach.items() if not punkt.deleted}
+    assert sichtbar == {f"{SITZUNG_1001}#agendaitem/{teil}" for teil in ("kvonr-5002", "kvonr-5001", "nr-N1")}
+    weg = danach[f"{SITZUNG_1001}#agendaitem/nr-1"]
+    assert weg.deleted
+    assert weg.deletion_reason == "quelle_geloescht"
+    gemeldet_ = await ereignisse(storage, leeren=True)
+    rueckgenommen = [n for typ, n in gemeldet_ if typ == "ris.object.depublished"]
+    assert [(n["object_type"], n["object"], n["reason"]) for n in rueckgenommen] == [
+        ("AgendaItem", str(weg.id), "quelle_geloescht")
+    ]
+    zeilen = {punkt.id for punkt in danach.values()}
+    for typ, nutzlast in gemeldet_:
+        if typ == "ris.consultation.changed" and "agenda_item" in nutzlast:
+            assert uuid.UUID(nutzlast["agenda_item"]) in zeilen
+
+    # Ohne Rückweg scheitert ein Ingestor von vor #863: Er will mit der id einer umgeschriebenen Zeile neu anlegen
+    _, result = await quelle_abrufen(altes_image=True)
+    assert not result.success
+    assert any("oparl_agenda_items_pkey" in fehler for fehler in result.errors), result.errors
+
+    # Rückweg: Probelauf zählt nur, dann zurückschreiben; danach läuft der Ingestor von vor #863 durch
+    probe = await revert_agenda_item_ids(storage, source, apply=False)
+    assert probe.unresolved == []
+    assert probe.written == 0
+    assert probe.restore >= 3
+    bericht = await revert_agenda_item_ids(storage, source, apply=True)
+    assert bericht.unresolved == []
+    assert bericht.written == bericht.restore + bericht.translate
+    zurueck = await punkte(storage, SITZUNG_1001)
+    for kennung in ("1", "2", "N1"):
+        assert zurueck[f"{SITZUNG_1001}#agendaitem/{kennung}"].id == canonical_id(
+            f"{SITZUNG_1001}#agendaitem/{kennung}"
+        )
+    _, result = await quelle_abrufen(altes_image=True)
+    assert result.success, result.errors
+    nochmal = await revert_agenda_item_ids(storage, source, apply=False)
+    assert (nochmal.restore, nochmal.translate, nochmal.unresolved) == (0, 0, [])

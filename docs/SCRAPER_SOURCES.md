@@ -246,19 +246,49 @@ Die Sitzungsseite (`si0057`) nennt je Punkt weder eine eigene Kennung noch einen
   Seite), ohne Nummer nach seiner Position (`pos-7`). Nach einer Einfügung davor trägt die Kennung einen anderen
   Punkt; Work hängt seine Daten über den fachlichen Anker um (#547). Bekommt ein Punkt nachträglich eine Vorlage,
   erhält er eine neue Kennung.
-- Punkte, die von der Tagesordnung verschwinden, bleiben wie bisher im Bestand stehen (keine Löschmarkierung für
-  Tagesordnungspunkte).
+- **Punkte, die die Tagesordnung nicht mehr liefert** (abgesetzt, nachträglich mit Vorlage, umnummeriert ohne
+  Vorlage), markiert der Abruf nach derselben Regel wie Sitzungen und Gremien als gelöscht (`quelle_geloescht`,
+  Ereignis `ris.object.depublished`, nichtöffentliche Punkte nur nichtöffentlich): nur in Vollabgleichen ohne
+  Fehler, nur für Sitzungen, deren Tagesordnung der Lauf vollständig gelesen hat (Seite lesbar, Tabelle der
+  Tagesordnung vorhanden, mindestens ein Punkt), erst nach `SCRAPER_TOMBSTONE_FULL_CRAWLS` solchen Läufen in Folge
+  und mit der Bremse `SCRAPER_TOMBSTONE_MAX_MISSING`. Liest ein Lauf die Sitzung nicht vollständig, beginnt die
+  Zählung ihrer Punkte von vorn. Nur Punkte in der Form seit #863; Zähler in `scraper_state.missing.agendaitem`.
+  Taucht ein Punkt wieder auf, hebt der Upsert die Markierung auf.
 
 **Umstellung des Bestands.** Bis Issue #863 war die Nummer die Kennung (`…#agendaitem/3.2`, `N1`). Der erste Abruf
 einer Sitzung mit der neuen Form schreibt ihre Punkte in place um: `external_id` neu, `id` bleibt (wie beim Umzug
-einer Quelle, ADR `docs/adr/20260929-kanonisches-modell.md`), samt Verweis der Beratungen. Notizen, Positionen,
-Suchindex und Ereignisse hängen an der Zeile und bleiben gültig; `check_ris_ids` zählt die Punkte danach als
-„Kennung abweichend“, das ist gewollt. Umgeschrieben wird nur eindeutig: ein Punkt mit Vorlage auf die Zeile mit
-derselben Beratung (auch wenn die Nummer sich seit dem letzten Abruf geändert hat), ein Punkt ohne Vorlage auf die
-Zeile unter seiner bisherigen Nummer, wenn sie gleich heißt, gleich öffentlich ist und keine Vorlage hatte. Sonst
-bleibt die alte Zeile unverändert stehen, und der Punkt bekommt eine neue. Sitzungen, die kein Abruf mehr liest
-(außerhalb des Kalenderfensters), behalten ihre Kennungen. Eine Kennung der alten Form vergibt der Adapter nie
-wieder; die behaltene `id` stößt deshalb mit keiner neuen Zeile zusammen.
+einer Quelle, ADR `docs/adr/20260929-kanonisches-modell.md`). Mit um ziehen die Kennung in `raw_json` des Punkts, die
+Verweise der Beratungen (Spalte `agenda_item_external_id` und `raw_json.agendaItem`) und die Tagesordnung in
+`raw_json` der Sitzung; der Änderungsfeed meldet dabei nichts, und Ereignisse verweisen auf die Zeile im Bestand.
+Notizen, Positionen und Suchindex hängen an der Zeile und bleiben gültig; `check_ris_ids` zählt die Punkte danach
+als „Kennung abweichend“, das ist gewollt. Zuordnung:
+
+1. Punkt mit Vorlage: die Zeile mit derselben Beratung, auch wenn die Nummer sich seit dem letzten Abruf geändert hat.
+2. Punkt ohne Vorlage: die Zeile ohne Vorlage mit demselben Namen und gleich öffentlich, wenn der Name auf beiden
+   Seiten nur einmal vorkommt; sonst die Zeile unter seiner bisherigen Nummer (ohne Vorlage, gleich öffentlich),
+   die der Abruf bisher überschrieben hätte.
+3. Übrige Zeilen (der Punkt steht nicht mehr auf der Tagesordnung) bekommen die Kennung nach ihren eigenen Angaben
+   (`kvonr-…`, `nr-…`, bei Bedarf mit Zählung) und fallen dann unter den Löschabgleich.
+
+Die abgelöste Kennung bleibt als `mandari:previousId` an Punkt und Tagesordnung stehen; der Abruf schreibt sie bei
+jedem Speichern wieder dazu. Sitzungen, die kein Abruf mehr liest (außerhalb des Kalenderfensters), behalten ihre
+Kennungen. Eine Kennung der alten Form vergibt der Adapter nie wieder; die behaltene `id` stößt deshalb mit keiner
+neuen Zeile zusammen.
+
+**Nicht ohne Rückweg zurückfallen.** Ein Ingestor von vor #863 vergibt wieder die Nummer als Kennung und will mit der
+`id` einer umgeschriebenen Zeile eine neue anlegen: Der Primärschlüssel ist vergeben, und der ganze Abruf der Quelle
+bricht ab. Vor einem Rückfall je SessionNet-Quelle den Daemon für die Quelle anhalten (`is_active = false`) und
+
+```bash
+docker compose exec ingestor python -m src.main top-kennungen-zurueck --source <URL der Quelle>              # zählt
+docker compose exec ingestor python -m src.main top-kennungen-zurueck --source <URL der Quelle> --ausfuehren # schreibt
+```
+
+ausführen. Der Befehl gibt umgeschriebenen Zeilen ihre abgelöste Kennung zurück (`mandari:previousId`, `id` passt
+wieder) und neu angelegten Punkten der Tagesordnung die Kennung, die der ältere Abruf vergäbe, sofern frei. Er endet
+mit Fehler, wenn Zeilen ohne Rückweg bleiben; dann nicht zurückfallen. Punkte, die seit der Umstellung neu angelegt
+wurden und keine freie Kennung bekommen, kann der ältere Abruf ein zweites Mal anlegen. Läuft danach wieder der neue
+Abruf, stellt er erneut um.
 
 ### Änderungserkennung & Löschungen
 

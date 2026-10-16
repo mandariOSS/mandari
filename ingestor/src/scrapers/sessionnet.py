@@ -248,6 +248,8 @@ class AgendaRow:
 class MeetingAgenda:
     title: str | None = None
     rows: list[AgendaRow] = field(default_factory=list)
+    #: Die Seite trägt die Tabelle der Tagesordnung (sonst ist sie nicht lesbar, auch wenn sie leer wirkt)
+    table_found: bool = False
 
 
 def parse_meeting_agenda(html: str) -> MeetingAgenda:
@@ -263,6 +265,7 @@ def parse_meeting_agenda(html: str) -> MeetingAgenda:
     )
     if table is None:
         return agenda
+    agenda.table_found = True
 
     public = True
     for row in table.find_all("tr"):
@@ -607,22 +610,41 @@ class AgendaItemKey:
     consultation: str | None
 
 
+def _stored_order(row: Mapping[str, Any]) -> tuple[bool, int, str]:
+    """Reihenfolge der Zeilen im Bestand: nach ``order``, Zeilen ohne Angabe zuletzt."""
+    return (row.get("order") is None, int(row.get("order") or 0), str(row["external_id"]))
+
+
+def _own_key(row: Mapping[str, Any]) -> str:
+    """Kennungsteil, den eine Zeile im Bestand nach ihren eigenen Angaben in der neuen Form trüge."""
+    consultation = row.get("consultation")
+    kvonr = _query_int(str(consultation), "__kvonr") if consultation else None
+    number = str(row.get("number") or "").strip() or None
+    agenda_row = AgendaRow(number=number, title="", public=row.get("public") is not False, paper_kvonr=kvonr)
+    return agenda_item_key(agenda_row, int(row.get("order") or 0))
+
+
 def plan_agenda_item_renames(keys: Sequence[AgendaItemKey], stored: Iterable[Mapping[str, Any]]) -> dict[str, str]:
     """
-    Welche Zeilen im Bestand tragen einen Punkt dieser Sitzung noch unter der Kennung von vor Issue #863?
+    Neue Kennungen für die Zeilen einer Sitzung, die noch die Form von vor Issue #863 tragen.
 
     ``keys``: die Punkte der Sitzung im laufenden Abruf. ``stored``: ihre Punkte im Bestand mit ``external_id``,
-    ``name``, ``public``, ``consultation`` (aus ``raw_json``) und ``order``. Ergebnis: bisherige Kennung -> neue.
-    Der Bestand schreibt sie in place um, ``id`` bleibt; Notizen, Positionen und Verweise bleiben damit an ihrem Punkt.
+    ``number``, ``name``, ``public``, ``order`` und ``consultation`` (aus ``raw_json``). Ergebnis: bisherige Kennung
+    -> neue. Der Bestand schreibt sie in place um, ``id`` bleibt; Notizen, Positionen und Verweise bleiben an ihrer
+    Zeile.
 
-    Zugeordnet wird nur eindeutig, im Zweifel nicht (dann entsteht eine neue Zeile, die alte bleibt unverändert):
-
-    - Punkt mit Vorlage: die bisherige Zeile mit derselben Beratung, auch wenn die Nummer sich inzwischen geändert
-      hat. Berät die Sitzung die Vorlage an mehreren Punkten, paarweise in der Reihenfolge, wenn es gleich viele
-      sind; sonst nur die Zeile unter der bisherigen Kennung, sofern sie dieselbe Beratung trägt.
-    - Punkt ohne Vorlage: die Zeile unter der bisherigen Kennung, wenn auch sie keine Vorlage hatte, gleich heißt
-      und gleich öffentlich ist. Hat die Verwaltung seit dem letzten Abruf umnummeriert, steht dort ein anderer
-      Punkt; dessen Notizen sollen nicht mitwandern.
+    1. Punkt mit Vorlage: die bisherige Zeile mit derselben Beratung, auch wenn die Nummer sich inzwischen geändert
+       hat. Berät die Sitzung die Vorlage an mehreren Punkten, paarweise in der Reihenfolge, wenn es gleich viele
+       sind; sonst nur die Zeile unter der bisherigen Kennung, sofern sie dieselbe Beratung trägt.
+    2. Punkt ohne Vorlage: die Zeile ohne Vorlage mit demselben Namen und gleich öffentlich, wenn der Name auf
+       beiden Seiten nur einmal vorkommt (so findet ein umnummerierter Punkt seine Zeile); sonst die Zeile unter der
+       bisherigen Kennung (Nummer), wenn auch sie keine Vorlage hatte und gleich öffentlich ist – dieselbe Zeile, die
+       der Abruf bisher überschrieben hätte. Wechselt dabei der Inhalt, fängt Work das über den fachlichen Anker ab
+       (#547).
+    3. Übrige Zeilen in der bisherigen Form (der Punkt steht nicht mehr auf der Tagesordnung): die Kennung, die sie
+       nach ihren eigenen Angaben trügen (``_own_key``), sofern frei, sonst mit Zählung (``-2``). So bleibt in
+       einer abgerufenen Sitzung keine Zeile in der bisherigen Form; der Löschabgleich der Tagesordnung behandelt
+       sie wie jeden Punkt, der nicht mehr geliefert wird.
 
     Zeilen in der neuen Form fasst die Umstellung nie an. Eine Kennung in der bisherigen Form vergibt der Adapter nie
     mehr; die behaltene ``id`` einer umgeschriebenen Zeile (``uuid5`` der bisherigen Kennung) stößt deshalb mit keiner
@@ -640,10 +662,7 @@ def plan_agenda_item_renames(keys: Sequence[AgendaItemKey], stored: Iterable[Map
     consultations = list(dict.fromkeys(key.consultation for key in pending if key.consultation))
     for consultation in consultations:
         items = [key for key in pending if key.consultation == consultation]
-        candidates = sorted(
-            (row for row in rows if row.get("consultation") == consultation),
-            key=lambda row: (row.get("order") is None, row.get("order") or 0, str(row["external_id"])),
-        )
+        candidates = sorted((row for row in rows if row.get("consultation") == consultation), key=_stored_order)
         if len(candidates) == len(items):
             pairs = [(str(row["external_id"]), key) for row, key in zip(candidates, items, strict=True)]
         else:
@@ -655,18 +674,123 @@ def plan_agenda_item_renames(keys: Sequence[AgendaItemKey], stored: Iterable[Map
         for legacy_id, key in pairs:
             renames[legacy_id] = key.item_id
 
-    for key in pending:
-        if key.consultation or key.legacy_id in renames:
+    # Ohne Vorlage: zuerst über den Namen, wenn er auf beiden Seiten nur einmal vorkommt, dann über die Nummer
+    def name_key(name: Any, public: bool) -> tuple[str, bool]:
+        return (_clean(str(name or "")).casefold(), public)
+
+    ohne = [key for key in pending if not key.consultation]
+    frei = [row for row in rows if not row.get("consultation") and str(row["external_id"]) not in renames]
+    nach_name: dict[tuple[str, bool], list[AgendaItemKey]] = {}
+    for key in ohne:
+        if key.name:
+            nach_name.setdefault(name_key(key.name, key.public), []).append(key)
+    zeilen_nach_name: dict[tuple[str, bool], list[Mapping[str, Any]]] = {}
+    for row in frei:
+        if row.get("name"):
+            zeilen_nach_name.setdefault(name_key(row["name"], row.get("public") is not False), []).append(row)
+    for name, items in nach_name.items():
+        kandidaten = zeilen_nach_name.get(name, [])
+        if len(items) == 1 and len(kandidaten) == 1:
+            renames[str(kandidaten[0]["external_id"])] = items[0].item_id
+    angekommen = set(renames.values())
+    for key in ohne:
+        if key.item_id in angekommen or key.legacy_id in renames:
             continue
-        row = by_id.get(key.legacy_id)
-        if (
-            row is not None
-            and not row.get("consultation")
-            and row.get("name") == key.name
-            and (row.get("public") is not False) == key.public
-        ):
+        bisher = by_id.get(key.legacy_id)
+        if bisher is not None and not bisher.get("consultation") and (bisher.get("public") is not False) == key.public:
             renames[key.legacy_id] = key.item_id
+
+    taken = existing | {key.item_id for key in keys} | set(renames.values())
+    for row in sorted(rows, key=_stored_order):
+        legacy_id = str(row["external_id"])
+        if legacy_id in renames:
+            continue
+        base = f"{legacy_id.partition(_AGENDA_ITEM_FRAGMENT)[0]}{_AGENDA_ITEM_FRAGMENT}{_own_key(row)}"
+        target, count = base, 1
+        while target in taken:
+            count += 1
+            target = f"{base}-{count}"
+        renames[legacy_id] = target
+        taken.add(target)
     return renames
+
+
+@dataclass
+class AgendaItemRevert:
+    """Rückweg der Kennungen einer Sitzung zur Form von vor Issue #863 (``plan_agenda_item_revert``)."""
+
+    #: umgeschriebene Zeilen: neue Kennung -> genau die abgelöste (``id`` passt wieder zur Kennung)
+    restore: dict[str, str] = field(default_factory=dict)
+    #: seit der Umstellung neu angelegte Punkte der Tagesordnung: neue Kennung -> die, die der Abruf vor #863 vergäbe
+    translate: dict[str, str] = field(default_factory=dict)
+    #: umgeschriebene Zeilen ohne Rückweg (abgelöste Kennung unbekannt oder vergeben): Ein Abruf vor #863 könnte an
+    #: ihrer ``id`` scheitern
+    unresolved: list[str] = field(default_factory=list)
+
+    @property
+    def renames(self) -> dict[str, str]:
+        return {**self.translate, **self.restore}
+
+
+def plan_agenda_item_revert(
+    agenda: Sequence[Any], stored: Iterable[Mapping[str, Any]], canonical: Callable[[str], Any]
+) -> AgendaItemRevert:
+    """
+    Rückweg einer Sitzung vor einem Rückfall auf einen Abruf von vor Issue #863.
+
+    ``agenda``: die Tagesordnung in ``raw_json`` der Sitzung (Punkte in der Reihenfolge der Seite). ``stored``: ihre
+    Punkte im Bestand (``id``, ``external_id``, ``previous_id``). ``canonical``: Kennung (``id``) zu einer Adresse.
+
+    1. Umgeschriebene Zeilen bekommen genau ihre abgelöste Kennung zurück (``previous_id``), wenn ``id`` dazu passt
+       und keine andere Zeile sie trägt. Der bisherige Abruf findet sie dann unter ihrer Kennung, statt mit ihrer
+       ``id`` eine neue Zeile anlegen zu wollen (Verletzung des Primärschlüssels, Abbruch des ganzen Abrufs).
+    2. Seit der Umstellung neu angelegte Punkte, die auf der Tagesordnung stehen, bekommen die Kennung, die der
+       bisherige Abruf für sie vergäbe (``legacy_agenda_item_keys``), sofern frei: Er schreibt sie dann fort, statt
+       eine zweite Zeile anzulegen. Ihre ``id`` vergibt der bisherige Abruf nie.
+    """
+    rows = [row for row in stored if row.get("external_id")]
+    plan = AgendaItemRevert()
+    for row in rows:
+        external_id, previous = str(row["external_id"]), row.get("previous_id")
+        if is_legacy_agenda_item_id(external_id):
+            continue
+        if previous and previous != external_id and canonical(str(previous)) == row.get("id"):
+            plan.restore[external_id] = str(previous)
+        elif canonical(external_id) != row.get("id"):
+            plan.unresolved.append(external_id)
+    restored = set(plan.restore.values())
+    duplicates = {target for target in restored if list(plan.restore.values()).count(target) > 1}
+    existing = {str(row["external_id"]) for row in rows}
+    for external_id in [e for e, target in plan.restore.items() if target in duplicates or target in existing]:
+        plan.unresolved.append(external_id)
+        del plan.restore[external_id]
+
+    occupied = (existing - set(plan.restore)) | set(plan.restore.values())
+    by_id = {str(row["external_id"]): row for row in rows}
+    entries = [entry for entry in agenda if isinstance(entry, dict) and isinstance(entry.get("id"), str)]
+    legacy = legacy_agenda_item_keys(
+        [
+            AgendaRow(number=entry.get("number") or None, title="", public=entry.get("public") is not False)
+            for entry in entries
+        ]
+    )
+    for entry, key in zip(entries, legacy, strict=True):
+        external_id = entry["id"]
+        zeile = by_id.get(external_id)
+        if (
+            zeile is None
+            or external_id in plan.restore
+            or zeile.get("previous_id")
+            or is_legacy_agenda_item_id(external_id)
+        ):
+            continue
+        target = f"{external_id.partition(_AGENDA_ITEM_FRAGMENT)[0]}{_AGENDA_ITEM_FRAGMENT}{key}"
+        if target in occupied:
+            continue
+        plan.translate[external_id] = target
+        occupied.add(target)
+        occupied.discard(external_id)
+    return plan
 
 
 # ---------------------------------------------------------------------------
@@ -936,6 +1060,15 @@ class SessionNetAdapter:
         for plan in self.plans:
             async for entity_type, page in self._crawl_body(plan, window, full, fetched_papers):
                 yield plan.body_id, entity_type, page
+
+    @staticmethod
+    def is_removable_agenda_item_id(external_id: str) -> bool:
+        """
+        Darf der Löschabgleich der Tagesordnung diesen Punkt markieren? Nur Punkte in der Form seit Issue #863;
+        Zeilen in der bisherigen Form schreibt erst die Umstellung um (``agenda_item_renames``).
+        """
+        _, fragment, key = external_id.partition(_AGENDA_ITEM_FRAGMENT)
+        return bool(fragment) and key.startswith(AGENDA_ITEM_KEY_PREFIXES)
 
     def agenda_item_renames(self, meeting_id: str, stored: Iterable[Mapping[str, Any]]) -> dict[str, str]:
         """
@@ -1263,6 +1396,9 @@ class SessionNetAdapter:
             )
         if agenda_items:
             meeting["agendaItem"] = agenda_items
+            if agenda.table_found:
+                # Vollständig gelesene Tagesordnung: Grundlage des Löschabgleichs ihrer Punkte (Runner)
+                self.stats.agendas[external_id] = {item["id"] for item in agenda_items}
         self._agenda_keys[external_id] = keys
         # Interner Transport zum Aufrufer (wird vor dem Upsert entfernt)
         meeting["mandari:consultations"] = consultations

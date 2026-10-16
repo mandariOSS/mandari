@@ -758,5 +758,49 @@ def probe_ris(
         console.print(text)
 
 
+@app.command("top-kennungen-zurueck")
+def top_kennungen_zurueck(
+    source_url: str = typer.Option(..., "--source", "-s", help="URL der SessionNet-Quelle (wie in list-sources)"),
+    ausfuehren: bool = typer.Option(False, "--ausfuehren", help="Umschreiben; ohne den Schalter nur zählen"),
+) -> None:
+    """
+    Rückweg vor einem Rückfall auf einen Ingestor von vor Issue #863 (Kennungen der Tagesordnungspunkte).
+
+    Schreibt die Kennungen der Punkte einer SessionNet-Quelle auf die bisherige Form (Nummer) zurück, ``id`` bleibt.
+    Ohne diesen Schritt bricht ein älterer Ingestor den Abruf der Quelle ab (Primärschlüssel vergeben). Vorher den
+    Daemon für die Quelle anhalten (``is_active = false``), danach das ältere Image starten. Endet mit Fehler, wenn
+    umgeschriebene Punkte ohne Rückweg bleiben: dann nicht zurückfallen.
+    """
+    from src.scrapers.top_kennungen import revert_agenda_item_ids
+
+    async def run_revert() -> int:
+        async with SyncOrchestrator() as orchestrator:
+            source = await orchestrator.storage.get_source_by_url(source_url)
+            if source is None:
+                console.print(f"[red]Quelle nicht gefunden: {source_url}[/red]")
+                return 1
+            if str((source.sync_config or {}).get("source_type") or "") != "scraper:sessionnet":
+                console.print("[red]Keine SessionNet-Quelle (source_type scraper:sessionnet): nichts zu tun.[/red]")
+                return 1
+            report = await revert_agenda_item_ids(orchestrator.storage, source, apply=ausfuehren)
+        verb = "zurückgeschrieben" if ausfuehren else "zurückzuschreiben (Probelauf, --ausfuehren schreibt)"
+        console.print(
+            f"Sitzungen: {report.meetings}, Punkte mit abgelöster Kennung: {report.restore}, "
+            f"seit der Umstellung angelegt: {report.translate} – {verb}"
+            + (f", geschrieben: {report.written}" if ausfuehren else "")
+        )
+        if report.unresolved:
+            console.print(
+                f"[red]{len(report.unresolved)} umgeschriebene Punkte ohne Rückweg, nicht zurückfallen:[/red] "
+                + ", ".join(report.unresolved[:10])
+            )
+            return 1
+        return 0
+
+    code = asyncio.run(run_revert())
+    if code:
+        raise typer.Exit(code)
+
+
 if __name__ == "__main__":
     app()

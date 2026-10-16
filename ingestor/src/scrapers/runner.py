@@ -25,6 +25,7 @@ Seite des Adapters trägt die Kennung ihres Bodies.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID
@@ -39,6 +40,7 @@ from src.redaction import MaskingConsole
 from src.scrapers import get_adapter
 from src.scrapers.base import CrawlWindow, ScraperConfig, ScrapeStats
 from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError, RobotsUnreachableError
+from src.storage.database import PREVIOUS_ID_FIELD
 from src.storage.events import start_correlation
 
 if TYPE_CHECKING:
@@ -51,6 +53,8 @@ console = MaskingConsole()
 # Bewusst konservativ: nur Typen, deren Kandidatenmenge vollständig im
 # Crawl-Fenster liegt (Sitzungen im Fenster, Gremienliste ist komplett).
 TOMBSTONE_ENTITY_TYPES = ("meeting", "organization")
+#: Tagesordnungspunkte zählen je vollständig gelesener Sitzung (``ScrapeStats.agendas``, Issue #863)
+AGENDA_ITEM_TYPE = "agendaitem"
 
 _RESULT_FIELD_BY_TYPE = {
     "meeting": "meetings_synced",
@@ -153,11 +157,11 @@ class ScraperSyncRunner:
                         if item_hash and stored_hashes.get(item.get("id", "")) == item_hash:
                             skipped_unchanged += 1
                             continue
+                        if entity_type == "meeting":
+                            await self._keep_agenda_item_rows(adapter, item)
                         processed = self.processor.process(item, body_external_id)
                         if processed is None:
                             continue
-                        if entity_type == "meeting":
-                            await self._keep_agenda_item_rows(adapter, item)
                         stored = await self.orchestrator._store_entity(
                             processed, body_id, entity_type, self.source.name
                         )
@@ -210,7 +214,14 @@ class ScraperSyncRunner:
             braked: dict[str, int] = {}
             if full and crawl_completed and not result.errors:
                 deleted_count = await self._handle_missing(
-                    list(body_ids.values()), window, seen, state, es_deletions, adapter.stats, braked
+                    list(body_ids.values()),
+                    window,
+                    seen,
+                    state,
+                    es_deletions,
+                    adapter.stats,
+                    braked,
+                    removable_agenda_item=getattr(adapter, "is_removable_agenda_item_id", None),
                 )
 
             # Zustand persistieren
@@ -288,21 +299,30 @@ class ScraperSyncRunner:
 
     async def _keep_agenda_item_rows(self, adapter: Any, meeting: dict[str, Any]) -> None:
         """
-        Vor dem Speichern einer Sitzung: Zeilen ihrer Tagesordnungspunkte, die noch eine vom Adapter abgelöste
+        Vor dem Verarbeiten einer Sitzung: Zeilen ihrer Tagesordnungspunkte, die noch eine vom Adapter abgelöste
         Kennung tragen, auf die neue umschreiben (``external_id`` neu, ``id`` bleibt, Issue #863). Sonst entstünde je
         Punkt eine zweite Zeile, und Notizen und Verweise blieben an der alten. Welche Zeile zu welchem Punkt gehört,
         entscheidet der Adapter (``agenda_item_renames``); Adapter ohne die Methode lassen alles, wie es ist.
+
+        Die abgelöste Kennung bleibt an jedem gelieferten Punkt als ``mandari:previousId`` stehen (auch in den
+        folgenden Abrufen): Daran findet der Rückweg (``revert_agenda_item_ids``) die Zeile wieder.
         """
         plan = getattr(adapter, "agenda_item_renames", None)
-        if plan is None or not meeting.get("agendaItem"):
+        items = meeting.get("agendaItem")
+        if plan is None or not items:
             return
         stored = await self.storage.get_agenda_items_of_meeting(meeting["id"])
         renames = plan(meeting["id"], stored)
-        if not renames:
-            return
-        renamed = await self.storage.rename_agenda_items(meeting["id"], renames)
-        if renamed:
-            console.print(f"[dim]  Sitzung {meeting['id']}: {renamed} TOP-Kennung(en) umgestellt (#863)[/dim]")
+        if renames:
+            renamed = await self.storage.rename_agenda_items(meeting["id"], renames)
+            if renamed:
+                console.print(f"[dim]  Sitzung {meeting['id']}: {renamed} TOP-Kennung(en) umgestellt (#863)[/dim]")
+        # Neue Kennung -> abgelöste: aus dem Bestand (frühere Umstellung) und aus dieser
+        previous = {str(row["external_id"]): str(row["previous_id"]) for row in stored if row.get("previous_id")}
+        previous.update({new: old for old, new in renames.items()})
+        for item in items:
+            if isinstance(item, dict) and item.get("id") in previous:
+                item[PREVIOUS_ID_FIELD] = previous[item["id"]]
 
     async def _sperre_festhalten(self, result: Any, message: str) -> None:
         """
@@ -322,6 +342,8 @@ class ScraperSyncRunner:
         es_deletions: dict[str, list[str]],
         stats: ScrapeStats,
         braked: dict[str, int],
+        *,
+        removable_agenda_item: Callable[[str], bool] | None = None,
     ) -> int:
         """
         Zählt nicht mehr gesichtete Objekte hoch und tombstonet nach
@@ -333,24 +355,39 @@ class ScraperSyncRunner:
         Nicht vollständig gelesene Typen (``stats.incomplete``) und Typen, bei denen mehr Objekte fehlen,
         als die Bremse erlaubt (``braked``), lassen ihre Zähler stehen: Aus einer Lücke folgt nichts.
         Objekte, die eine Liste nennt, deren Detailseite aber nicht lesbar war, gelten als gesehen.
+
+        Tagesordnungspunkte (Issue #863): Liste ist die Tagesordnung einer Sitzung. Kandidaten sind nur die Punkte
+        der Sitzungen, deren Tagesordnung dieser Lauf vollständig gelesen hat (``stats.agendas``), und nur solche,
+        die der Adapter dafür freigibt (``removable_agenda_item``); liest ein Lauf die Sitzung nicht vollständig,
+        beginnt die Zählung ihrer Punkte von vorn.
         """
         threshold = max(1, settings.scraper_tombstone_full_crawls)
         missing_state: dict[str, dict[str, int]] = {k: dict(v) for k, v in (state.get("missing") or {}).items()}
         deleted_count = 0
 
-        for entity_type in TOMBSTONE_ENTITY_TYPES:
+        entity_types = [*TOMBSTONE_ENTITY_TYPES]
+        if removable_agenda_item is not None and stats.agendas:
+            entity_types.append(AGENDA_ITEM_TYPE)
+        for entity_type in entity_types:
             if entity_type in stats.incomplete:
                 console.print(
                     f"[yellow]  Löschabgleich {entity_type} ausgesetzt: {stats.incomplete[entity_type]}[/yellow]"
                 )
                 continue
             candidates: set[str] = set()
-            for body_id in body_ids:
-                if entity_type == "meeting":
-                    candidates |= await self.storage.get_active_meeting_ids_in_window(body_id, window.start, window.end)
-                else:
-                    candidates |= await self.storage.get_active_external_ids_for_body(entity_type, body_id)
-            seen_ids = seen.get(entity_type, set()) | stats.listed.get(entity_type, set())
+            if entity_type == AGENDA_ITEM_TYPE and removable_agenda_item is not None:
+                stored = await self.storage.get_active_agenda_item_ids(sorted(stats.agendas))
+                candidates = {external_id for external_id in stored if removable_agenda_item(external_id)}
+                seen_ids = set().union(*stats.agendas.values())
+            else:
+                for body_id in body_ids:
+                    if entity_type == "meeting":
+                        candidates |= await self.storage.get_active_meeting_ids_in_window(
+                            body_id, window.start, window.end
+                        )
+                    else:
+                        candidates |= await self.storage.get_active_external_ids_for_body(entity_type, body_id)
+                seen_ids = seen.get(entity_type, set()) | stats.listed.get(entity_type, set())
             unseen = candidates - seen_ids
             if brake_engaged(len(unseen), settings.scraper_tombstone_max_missing):
                 braked[entity_type] = len(unseen)
