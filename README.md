@@ -127,7 +127,7 @@ mandari/
 │   ├── insight_core/ OParl-Datenmodelle, Suche, SEO
 │   ├── frontend/     TypeScript (Vite), Alpine-Komponenten
 │   └── templates/    Django-Templates und Komponentenbibliothek
-├── ingestor/         OParl-Synchronisation (httpx, SQLAlchemy, APScheduler)
+├── ingestor/         OParl-Synchronisation (httpx, SQLAlchemy, asyncio)
 ├── deploy/kubernetes/ Helm-Chart und Manifeste
 ├── docs/             Technische Notizen, Standards, Architekturentscheidungen
 └── scripts/          Qualitätsprüfungen und Werkzeuge
@@ -167,7 +167,7 @@ selbst betriebenen Installationen entsteht also keine zusätzliche Angriffsfläc
 |---------|-------------|
 | Backend | Django 6.1, Python 3.14 (Image; 3.12+ unterstützt) |
 | Frontend | Django-Templates, HTMX, Alpine.js, Tailwind CSS, Vite |
-| Ingestor | Python 3.14 (httpx, SQLAlchemy, APScheduler) |
+| Ingestor | Python 3.14 (httpx, SQLAlchemy, asyncio) |
 | Datenbank | PostgreSQL 16 |
 | Suche | Elasticsearch 8 (abschaltbar) |
 | Cache und Kanäle | Redis 7 |
