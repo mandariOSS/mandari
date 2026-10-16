@@ -44,8 +44,8 @@ class OParlSource(Base):
     contact_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     website: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
-    # Sync configuration
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Sync configuration; neue Quellen sind inaktiv, bis sie im Admin aktiviert sind (Issue #555, upsert_source)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_full_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # Aktualität (Issue #556): letzter vollständig erfolgreicher Abgleich bzw. Vollabgleich, ohne Lücke
@@ -106,6 +106,10 @@ class OParlBody(Base):
 
     # Sync tracking
     last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Sichtbarkeit im Portal (Django-Spalte, im Admin gepflegt). Der Ingestor setzt sie nur beim Anlegen einer
+    # Kommune, und zwar auf false (Issue #555/#869, upsert_body); der DB-Default true stammt aus Django.
+    is_listed: Mapped[bool] = mapped_column(Boolean, server_default="true")
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)

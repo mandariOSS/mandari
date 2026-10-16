@@ -843,6 +843,7 @@ class OParlClient:
         max_pages: int | None = None,
         *,
         report_missing: bool = False,
+        next_page: str | None = None,
     ) -> AsyncIterator[list[dict[str, Any]]]:
         """
         Fetch a paginated OParl list.
@@ -858,6 +859,10 @@ class OParlClient:
             report_missing: Antwortet die erste Seite ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt,
                 ``ListMissingError`` werfen (Liste gibt es nicht) statt ``ListFetchError`` bzw. einer leeren
                 Liste (Issue #1025).
+            next_page: Die erste Seite liegt dem Aufrufer schon vor (Erkennung einer Kommunenliste, Issue #869):
+                Abruf ab dieser Folgeseite (``links.next`` der ersten Seite), ohne die erste Seite noch einmal
+                anzufragen. Es gelten die Regeln für Folgeseiten (Fehler und Teilantwort brechen mit
+                ``ListFetchError`` ab); ``url`` bleibt die Adresse der Liste, ``modified_since`` gilt nicht.
 
         Beantwortet SD.NET RIM die gefilterte erste Seite mit HTTP 404 und Code 802, ist die Liste leer und
         vollständig (Issue #1034, ``filtered_empty_lists``).
@@ -879,9 +884,13 @@ class OParlClient:
         # (z. B. Stadt Münster mit 401), gar nicht erst erneut damit anfragen —
         # spart pro Liste einen toten Request samt Timeout/Retry.
         host = urlparse(url).netloc
+        if next_page is not None:
+            # Erste Seite liegt schon vor (Issue #869): weiter mit ihrer Folgeseite, wie die Quelle sie nennt
+            current_url = next_page
+            pages_fetched = 1
         # Mit carry_modified_since gilt die Quelle als filterfähig, auch wenn ein früherer Lauf den Host
         # (vor dem Schalter) als „ohne Filter“ vermerkt hat
-        if (
+        elif (
             modified_since
             and current_url
             and (self.carry_modified_since or host not in self._modified_since_unsupported)

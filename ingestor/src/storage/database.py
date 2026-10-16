@@ -117,6 +117,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "summary",
         "locations",
         "georef_status",
+        # OParlBody: Sichtbarkeit im Portal (Django-managed); der Ingestor setzt sie nur beim Anlegen (Issue #555)
+        "is_listed",
         # OParlBody: Django-managed presentation + geo fields
         "display_name",
         "logo",
@@ -454,6 +456,10 @@ class DatabaseStorage:
         ``oparl_version`` ("1.0"/"1.1") stammt aus der Autodiscovery und wird
         nur überschrieben, wenn ein Wert erkannt wurde (Issue #122).
 
+        Eine neue Quelle ist inaktiv (Issue #555): Der Daemon gleicht sie erst ab, wenn sie im Admin bewusst
+        aktiviert ist. Bei einer vorhandenen Quelle bleibt ``is_active``, wie es ist; eine abgeschaltete Quelle
+        wird hier nie wieder aktiv.
+
         Returns the source UUID.
         """
         async with self.get_session() as session:
@@ -462,7 +468,7 @@ class DatabaseStorage:
                 name=name,
                 raw_json=raw_json or {},
                 oparl_version=oparl_version,
-                is_active=True,
+                is_active=False,
                 created_at=func.now(),
                 updated_at=func.now(),
             )
@@ -1028,6 +1034,10 @@ class DatabaseStorage:
         Returns the body UUID. Zeile und Ereignis (``ris.body.changed``) entstehen in einer Transaktion.
         Die Herkunft der Ereignisse ergibt sich erst nach dem Upsert (eine neue Kommune hat vorher keine
         Zeile); ob die Quelle ausgenommen ist, steht vorher an der Quelle selbst.
+
+        Eine neu entdeckte Kommune ist nicht gelistet (``is_listed = false``, Issue #555/#869): Sie erscheint
+        weder in Kommunenauswahl, Übersichten und Sitemaps noch legt der Ingestor ihre Dokumente ab, bis sie im
+        Admin bewusst gelistet ist. Bei einer vorhandenen Kommune bleibt ``is_listed`` unverändert.
         """
         async with self.get_session() as session:
             emit = await self._source_emits(session, source_id)
@@ -1051,6 +1061,8 @@ class DatabaseStorage:
                 oparl_created=body.oparl_created,
                 oparl_modified=body.oparl_modified,
                 raw_json=body.raw_json,
+                # Nur beim Anlegen; update_set lässt die Spalte aus (ENRICHMENT_FIELDS)
+                is_listed=False,
                 created_at=func.now(),
                 updated_at=func.now(),
             )

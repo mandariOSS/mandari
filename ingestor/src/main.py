@@ -199,7 +199,9 @@ def add_source(
     """
     Register a new OParl source.
 
-    Fetches the system endpoint to auto-detect the source name.
+    Fetches the system endpoint to auto-detect the source name. Eine neue Quelle ist inaktiv (Issue #555):
+    Der Daemon gleicht sie erst ab, wenn sie im Admin aktiviert ist. Eine schon registrierte Quelle behält
+    ihren Status; eine abgeschaltete wird hier nie wieder aktiv.
 
     Examples:
 
@@ -220,7 +222,11 @@ def add_source(
             console.print("[green]Source registered successfully![/green]")
             console.print(f"Source ID: {source_id}")
             console.print()
-            console.print("[dim]Run sync to fetch data:[/dim]")
+            console.print(
+                "[yellow]Neue Quellen sind inaktiv; eine vorhandene Quelle behält ihren Status. Der Daemon "
+                "gleicht sie erst ab, wenn sie im Admin aktiviert ist.[/yellow]"
+            )
+            console.print("[dim]Einmal von Hand abgleichen (neue Kommunen bleiben ungelistet):[/dim]")
             console.print(f"  mandari-ingestor sync --source {url}")
 
     try:
@@ -604,11 +610,10 @@ def init_sources(
                 console.print(f"[yellow]Failed to add {failed} sources[/yellow]")
 
             console.print()
-            console.print("[dim]Start syncing with:[/dim]")
-            console.print("  mandari-ingestor sync --all")
-            console.print()
-            console.print("[dim]Or start the daemon:[/dim]")
-            console.print("  mandari-ingestor daemon")
+            console.print(
+                "[yellow]Neue Quellen sind inaktiv (Issue #555): Abgleich durch sync --all und den Daemon erst, "
+                "wenn sie im Admin aktiviert sind.[/yellow]"
+            )
 
     try:
         asyncio.run(run_init())
