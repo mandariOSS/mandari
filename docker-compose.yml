@@ -78,6 +78,8 @@ x-app-environment: &app-environment
   OBJ_SECRET: ${OBJ_SECRET:-}
   OBJ_REGION: ${OBJ_REGION:-}
   OBJ_CACHE_MAX_GB: ${OBJ_CACHE_MAX_GB:-60}
+  # Verdrängen und Zurückholen brechen nach so vielen fehlenden Inhalten in Folge ab (falscher Bucket), 0 = ohne Grenze
+  OBJ_EVICT_MAX_MISSING: ${OBJ_EVICT_MAX_MISSING:-20}
   OBJ_CHECKSUMS: ${OBJ_CHECKSUMS:-when_required}
   # Obergrenze der Gesamtgröße des Dokument-Caches in GB (docs/FILE_CACHE.md, „Obergrenze“), 0 = unbegrenzt
   FILE_CACHE_MAX_TOTAL_GB: ${FILE_CACHE_MAX_TOTAL_GB:-0}
