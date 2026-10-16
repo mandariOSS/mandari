@@ -22,6 +22,15 @@ zweier Körperschaften), ist das ein Fehler statt einer beliebigen Zuordnung. Le
 vorhandenen Datensätzen nichts. Die Spalte ``kennung`` der Personen (z. B. die Personennummer des Altsystems)
 verknüpft nur die Dateien untereinander.
 
+**Körperschaften** (Issue #756): Führt der Mandant mehrere Körperschaften (``SessionBody``, etwa eine
+Samtgemeinde und ihre Mitgliedsgemeinden), nennt die Spalte ``koerperschaft`` in Gremien, Fraktionen und
+Besetzungen die Körperschaft (Name, Kurzname oder Kurzkennung). Dann gilt der Name nur in dieser
+Körperschaft: Gleichnamige Gremien zweier Körperschaften lassen sich getrennt anlegen und besetzen,
+übergeordnete Gremien werden in derselben Körperschaft gesucht. Eine unbekannte oder mehrdeutige Angabe ist
+ein Fehler, nie eine stille Zuordnung. Ohne die Spalte (oder mit leerer Zelle) gilt der Abgleich im ganzen
+Mandanten wie zuvor, neue Gremien gehören zur Standardkörperschaft. Der Import verschiebt keine Gremien
+zwischen Körperschaften; Ämter gehören zur Standardkörperschaft (ADR Körperschaften im Mandanten).
+
 **Stimmrecht** ohne Angabe nach Funktion und Landesprofil (:func:`default_vote`): Hinzugewählte ohne
 Stimmrecht (§ 71 Abs. 7 NKomVG), beratende Mitglieder und Gäste ebenso.
 
@@ -34,14 +43,12 @@ im RIS-Bestand, z. B. aus dem SessionNet-Adapter. Abweichungen sind Hinweise, ke
 **Vorlagen** (:func:`write_templates`): leer oder vorbefüllt mit dem öffentlichen Bestand eines Bodys im
 RIS-Bestand (Gremien, Personen, Besetzungen, Wahlperioden), z. B. aus dem SessionNet-Adapter. Die Verwaltung
 ergänzt Kontakt- und Bankdaten und prüft Namen und Funktionen; danach Prüflauf und Import wie oben.
-
-Noch nicht enthalten: Zuordnung zu Körperschaften (folgt mit #756).
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
@@ -54,6 +61,7 @@ from django.db import models, transaction
 from apps.common import csv_safety
 from apps.session.models import (
     DELIVERY_CHANNEL_CHOICES,
+    SessionBody,
     SessionLegislativeTerm,
     SessionOrganization,
     SessionOrganizationMembership,
@@ -92,6 +100,10 @@ LABELS = {
 
 _DATE_HINT = "TT.MM.JJJJ"
 _BOOL_HINT = "ja/nein"
+_BODY_HINT = (
+    "Name, Kurzname oder Kurzkennung der Körperschaft, wenn der Mandant mehrere führt (leer: Abgleich im ganzen "
+    "Mandanten, neu in der Standardkörperschaft)"
+)
 
 COLUMNS: dict[str, tuple[Column, ...]] = {
     "wahlperioden": (
@@ -103,6 +115,7 @@ COLUMNS: dict[str, tuple[Column, ...]] = {
     "gremien": (
         Column("name", "Name des Gremiums", required=True),
         Column("kurzname", "Kurzname"),
+        Column("koerperschaft", _BODY_HINT),
         Column("art", "Rat, Ausschuss, Beirat, Kommission oder Sonstiges", required=True),
         Column(
             "ausschussart",
@@ -119,6 +132,7 @@ COLUMNS: dict[str, tuple[Column, ...]] = {
     "fraktionen": (
         Column("name", "Name der Fraktion oder Gruppe", required=True),
         Column("kurzname", "Kurzname"),
+        Column("koerperschaft", _BODY_HINT),
         Column("beginn", f"Beginn ({_DATE_HINT})"),
         Column("ende", f"Ende ({_DATE_HINT})"),
         Column("aktiv", _BOOL_HINT),
@@ -149,6 +163,7 @@ COLUMNS: dict[str, tuple[Column, ...]] = {
     "besetzungen": (
         Column("person", "Kennung der Person aus der Personendatei", required=True),
         Column("gremium", "Name des Gremiums, der Fraktion oder des Amts", required=True),
+        Column("koerperschaft", "Körperschaft des Gremiums (wie in der Gremiendatei; leer: im ganzen Mandanten)"),
         Column(
             "funktion",
             "Mitglied, Vorsitz, stellv. Vorsitz, hinzugewählt, sachkundige/r Bürger/in, beratend "
@@ -380,33 +395,143 @@ def _name_key(value: str | None) -> str:
     return re.sub(r"\s+", " ", value or "").strip().casefold()
 
 
-def _by_name[N: (SessionLegislativeTerm, SessionOrganization)](objects: Iterable[N]) -> tuple[dict[str, N], set[str]]:
-    """
-    Bestand nach Namensschlüssel -> (eindeutige Namen, mehrfach vorhandene Namen).
-
-    Mehrfach vorhandene Namen lassen sich nicht zuordnen (z. B. „Verwaltungsausschuss“ zweier Körperschaften
-    im selben Mandanten, bis zur Spalte ``koerperschaft`` mit #756); der Plan meldet sie als Fehler, statt
-    einen beliebigen Datensatz zu nehmen.
-    """
-    unique: dict[str, N] = {}
-    ambiguous: set[str] = set()
+def _unique_by[K, N](objects: Iterable[N], key: Callable[[N], K]) -> tuple[dict[K, N], set[K]]:
+    """Objekte nach Schlüssel -> (eindeutige Schlüssel, mehrfach vorhandene Schlüssel)."""
+    unique: dict[K, N] = {}
+    ambiguous: set[K] = set()
     for obj in objects:
-        key = _name_key(obj.name)
-        if key in ambiguous:
+        value = key(obj)
+        if value in ambiguous:
             continue
-        if key in unique:
-            del unique[key]
-            ambiguous.add(key)
+        if value in unique:
+            del unique[value]
+            ambiguous.add(value)
         else:
-            unique[key] = obj
+            unique[value] = obj
     return unique, ambiguous
 
 
+def _by_name(
+    objects: Iterable[SessionLegislativeTerm],
+) -> tuple[dict[str, SessionLegislativeTerm], set[str]]:
+    """
+    Wahlperioden nach Namensschlüssel -> (eindeutige Namen, mehrfach vorhandene Namen).
+
+    Wahlperioden gehören dem Mandanten, nicht einer Körperschaft. Mehrfach vorhandene Namen lassen sich nicht
+    zuordnen; der Plan meldet sie als Fehler, statt einen beliebigen Datensatz zu nehmen. Gremien: :class:`_Orgs`.
+    """
+    return _unique_by(objects, lambda term: _name_key(term.name))
+
+
 def _ambiguous(name: str) -> str:
-    return (
-        f"„{name}“ ist im Mandanten mehrfach vorhanden und damit nicht eindeutig "
-        "(Abgleich je Körperschaft folgt mit der Spalte koerperschaft)."
-    )
+    return f"„{name}“ ist im Mandanten mehrfach vorhanden und damit nicht eindeutig."
+
+
+def _ambiguous_org(name: str, body: SessionBody | None = None, *, column: bool = True) -> str:
+    """Gremienname mehrfach: im ganzen Mandanten (dann hilft die Spalte koerperschaft) oder in einer Körperschaft."""
+    if body is not None:
+        return f"„{name}“ ist in der Körperschaft „{body.name}“ mehrfach vorhanden und damit nicht eindeutig."
+    hint = "; die Körperschaft in der Spalte koerperschaft angeben" if column else ""
+    return f"„{name}“ ist im Mandanten mehrfach vorhanden und damit nicht eindeutig{hint}."
+
+
+# Gremium (auch Fraktion, Amt) im Plan: (Körperschaft, Namensschlüssel). Ohne Angabe der Körperschaft die des
+# vorhandenen Gremiums bzw. bei neuen die Standardkörperschaft; Gremien ohne Körperschaft (älteres Image) zählen
+# zur Standardkörperschaft wie in body_service.body_q.
+OrgKey = tuple[Any, str]
+
+
+@dataclass
+class _Bodies:
+    """Körperschaften des Mandanten, auffindbar über Name, Kurzname oder Kurzkennung (auch inaktive)."""
+
+    by_key: dict[str, SessionBody]
+    ambiguous: set[str]
+    default_id: Any
+
+    @classmethod
+    def load(cls, tenant: SessionTenant) -> _Bodies:
+        bodies = list(SessionBody.objects.filter(tenant=tenant))
+        keys: dict[str, set[Any]] = {}
+        by_pk = {body.pk: body for body in bodies}
+        for body in bodies:
+            for value in {_name_key(body.name), _name_key(body.short_name), body.slug.casefold()}:
+                if value:
+                    keys.setdefault(value, set()).add(body.pk)
+        return cls(
+            by_key={key: by_pk[next(iter(pks))] for key, pks in keys.items() if len(pks) == 1},
+            ambiguous={key for key, pks in keys.items() if len(pks) > 1},
+            default_id=next((body.pk for body in bodies if body.is_default), None),
+        )
+
+    def find(self, value: str) -> SessionBody:
+        """Körperschaft zur Zelle; unbekannt oder mehrdeutig ist ein Fehler (keine stille Zuordnung)."""
+        key = _name_key(value)
+        if key in self.ambiguous:
+            raise CellValueError(
+                f"Spalte koerperschaft: „{value}“ passt zu mehreren Körperschaften – den Namen oder die Kurzkennung "
+                "angeben."
+            )
+        body = self.by_key.get(key)
+        if body is None:
+            raise CellValueError(
+                f"Spalte koerperschaft: Körperschaft „{value}“ unbekannt (erwartet Name, Kurzname oder Kurzkennung "
+                "einer Körperschaft des Mandanten)."
+            )
+        return body
+
+
+@dataclass
+class _Orgs:
+    """Gremienbestand des Mandanten: je Körperschaft und im ganzen Mandanten nach Namen."""
+
+    stock: list[SessionOrganization]
+    by_body: dict[OrgKey, SessionOrganization]
+    ambiguous_in_body: set[OrgKey]
+    keys_by_name: dict[str, set[OrgKey]]
+    default_id: Any
+
+    @classmethod
+    def load(cls, tenant: SessionTenant, default_id: Any) -> _Orgs:
+        stock = list(SessionOrganization.objects.filter(tenant=tenant).select_related("parent"))
+        by_body, ambiguous = _unique_by(stock, lambda org: (_body_id(org, default_id), _name_key(org.name)))
+        keys_by_name: dict[str, set[OrgKey]] = {}
+        for org in stock:
+            keys_by_name.setdefault(_name_key(org.name), set()).add((_body_id(org, default_id), _name_key(org.name)))
+        return cls(stock, by_body, ambiguous, keys_by_name, default_id)
+
+    def key(self, org: SessionOrganization) -> OrgKey:
+        return _body_id(org, self.default_id), _name_key(org.name)
+
+
+def _body_id(org: SessionOrganization, default_id: Any) -> Any:
+    return org.body_id if org.body_id is not None else default_id
+
+
+AMBIGUOUS = "mehrdeutig"
+UNKNOWN = "unbekannt"
+
+
+def _find_org(plan: ImportPlan, orgs: _Orgs, name_key: str, body: SessionBody | None) -> OrgKey | str:
+    """
+    Gremium zu einem Verweis (Besetzung, übergeordnetes Gremium) -> Schlüssel oder ``AMBIGUOUS``/``UNKNOWN``.
+
+    Mit Körperschaft nur in ihr (Datei vor Bestand); ohne im ganzen Mandanten: Der Name muss über Datei und
+    Bestand genau ein Gremium bezeichnen.
+    """
+    if body is not None:
+        key: OrgKey = (body.pk, name_key)
+        if key in plan.organizations:
+            return key
+        if key in orgs.ambiguous_in_body:
+            return AMBIGUOUS
+        return key if key in orgs.by_body else UNKNOWN
+    keys = {k for k in plan.organizations if k[1] == name_key} | orgs.keys_by_name.get(name_key, set())
+    if not keys:
+        return UNKNOWN
+    if len(keys) > 1 or next(iter(keys)) in orgs.ambiguous_in_body:
+        return AMBIGUOUS
+    return next(iter(keys))
 
 
 # ---------------------------------------------------------------------------
@@ -479,11 +604,27 @@ class ImportPlan:
     findings: list[Finding] = field(default_factory=list)
     tallies: dict[str, Tally] = field(default_factory=dict)
     terms: dict[str, Item] = field(default_factory=dict)  # Namensschlüssel -> Zeile
-    organizations: dict[str, Item] = field(default_factory=dict)  # Namensschlüssel -> Zeile
+    organizations: dict[OrgKey, Item] = field(default_factory=dict)  # (Körperschaft, Namensschlüssel) -> Zeile
     persons: dict[str, Item] = field(default_factory=dict)  # Kennung -> Zeile
     memberships: list[Item] = field(default_factory=list)
     cross_check: list[dict[str, Any]] = field(default_factory=list)
     applied: bool = False
+    _bodies: _Bodies | None = field(default=None, repr=False)
+    _orgs: _Orgs | None = field(default=None, repr=False)
+
+    @property
+    def bodies(self) -> _Bodies:
+        """Körperschaften des Mandanten (einmal je Plan gelesen)."""
+        if self._bodies is None:
+            self._bodies = _Bodies.load(self.tenant)
+        return self._bodies
+
+    @property
+    def orgs(self) -> _Orgs:
+        """Gremienbestand des Mandanten zu Beginn des Plans."""
+        if self._orgs is None:
+            self._orgs = _Orgs.load(self.tenant, self.bodies.default_id)
+        return self._orgs
 
     @property
     def errors(self) -> list[Finding]:
@@ -820,9 +961,19 @@ _ORG_LABELS = {
 }
 
 
-def _plan_organization_row(
-    plan: ImportPlan, kind: str, row: _Row, existing: dict[str, SessionOrganization], ambiguous: set[str]
-) -> None:
+def _row_body(plan: ImportPlan, row: _Row) -> SessionBody | None:
+    """Körperschaft aus der Spalte ``koerperschaft``; leer -> None (Abgleich im ganzen Mandanten)."""
+    value = row.get("koerperschaft")
+    return plan.bodies.find(value) if _fold(value) else None
+
+
+def _org_label(name: str, body: SessionBody | None) -> str:
+    """Name im Bericht; mit genannter Körperschaft deren Kurzname dahinter, damit gleiche Namen unterscheidbar sind."""
+    return f"{name} ({body.label})" if body is not None else name
+
+
+def _plan_organization_row(plan: ImportPlan, kind: str, row: _Row, elsewhere: dict[str, list[int]]) -> None:
+    orgs = plan.orgs
     try:
         name = row.text("name", max_length=500)
         short_name = row.text("kurzname", max_length=100)
@@ -840,11 +991,23 @@ def _plan_organization_row(
             org_type = _ORG_TYPE_BY_KIND[kind]
         start, end = row.date("beginn"), row.date("ende")
         active = row.boolean("aktiv")
+        # Ämter gehören zur Standardkörperschaft (ADR Körperschaften im Mandanten); ihre Datei hat keine Spalte
+        body = _row_body(plan, row) if kind != "aemter" else None
     except CellValueError as exc:
         plan.error(row.file, row.line, str(exc))
         return
-    key = _name_key(name)
-    instance = existing.get(key)
+    name_key = _name_key(name)
+    instance: SessionOrganization | None
+    if body is not None:
+        instance = orgs.by_body.get((body.pk, name_key))
+        ambiguous = (body.pk, name_key) in orgs.ambiguous_in_body
+    else:
+        # Ohne Körperschaft im ganzen Mandanten wie bisher: Der Name muss genau ein Gremium bezeichnen
+        keys = orgs.keys_by_name.get(name_key, set())
+        ambiguous = len(keys) > 1 or bool(keys & orgs.ambiguous_in_body)
+        instance = orgs.by_body.get(next(iter(keys))) if len(keys) == 1 else None
+    body_id = body.pk if body is not None else (orgs.key(instance)[0] if instance is not None else orgs.default_id)
+    key: OrgKey = (body_id, name_key)
     if not name:
         plan.error(row.file, row.line, "Name fehlt.")
     elif org_type is None:
@@ -852,8 +1015,8 @@ def _plan_organization_row(
     elif key in plan.organizations:
         first = plan.organizations[key]
         plan.error(row.file, row.line, f"„{name}“ doppelt (zuerst {first.file}, Zeile {first.line}).")
-    elif key in ambiguous:
-        plan.error(row.file, row.line, _ambiguous(name))
+    elif ambiguous:
+        plan.error(row.file, row.line, _ambiguous_org(name, body, column=kind != "aemter"))
     elif start is not None and end is not None and end < start:
         plan.error(row.file, row.line, "Das Ende liegt vor dem Beginn.")
     elif instance is not None and instance.organization_type != org_type:
@@ -863,15 +1026,22 @@ def _plan_organization_row(
             f"„{name}“ gibt es schon als {_ORG_TYPE_LABELS.get(instance.organization_type, '?')}, "
             f"die Datei nennt {_ORG_TYPE_LABELS.get(org_type, org_type)}.",
         )
+    elif instance is None and body is not None and not body.is_active:
+        plan.error(row.file, row.line, f"Die Körperschaft „{body.name}“ ist deaktiviert; dort nichts neu anlegen.")
     else:
+        if instance is None and body is not None and name_key in orgs.keys_by_name:
+            # Gleicher Name in einer anderen Körperschaft: bei einer Samtgemeinde üblich, nach älteren Daten
+            # (alles in der Standardkörperschaft) aber vielleicht dasselbe Gremium – Sammelhinweis je Datei
+            elsewhere.setdefault(row.file, []).append(row.line)
+        display = instance.name if instance is not None else name
         item = Item(
             kind=kind,
             file=row.file,
             line=row.line,
-            label=instance.name if instance is not None else name,
+            label=_org_label(display, body),
             instance=instance,
             values={
-                "name": instance.name if instance is not None else name,
+                "name": display,
                 "short_name": short_name,
                 "organization_type": org_type,
                 "committee_kind": committee_kind if org_type == "committee" else None,
@@ -881,62 +1051,84 @@ def _plan_organization_row(
                 "end_date": end,
                 "is_active": active,
             },
-            refs={"parent": _name_key(row.get("uebergeordnet")) or None, "parent_label": row.get("uebergeordnet")},
+            refs={
+                "body": body,
+                "parent": _name_key(row.get("uebergeordnet")) or None,
+                "parent_label": row.get("uebergeordnet"),
+                "parent_ref": None,
+            },
         )
         _compare(item, _ORG_LABELS)
         plan.organizations[key] = item
 
 
 def _plan_organizations(plan: ImportPlan, rows_by_kind: dict[str, list[_Row]]) -> None:
-    stock = list(SessionOrganization.objects.filter(tenant=plan.tenant).select_related("parent"))
-    existing, ambiguous = _by_name(stock)
+    orgs = plan.orgs
+    elsewhere: dict[str, list[int]] = {}
     for kind in ORGANIZATION_KINDS:
         if kind not in rows_by_kind:
             continue
         tally = plan.tallies.setdefault(kind, Tally())
-        tally.before = sum(1 for o in stock if _org_kind(o.organization_type) == kind)
+        tally.before = sum(1 for o in orgs.stock if _org_kind(o.organization_type) == kind)
         for row in rows_by_kind[kind]:
             tally.rows += 1
-            _plan_organization_row(plan, kind, row, existing, ambiguous)
+            _plan_organization_row(plan, kind, row, elsewhere)
+    for file, lines in elsewhere.items():
+        plan.hint(
+            file,
+            None,
+            "Neu in der genannten Körperschaft, obwohl es den Namen in einer anderen Körperschaft schon gibt "
+            f"({_lines_text(lines)}). Der Import verschiebt keine Gremien zwischen Körperschaften – prüfen, ob "
+            "dasselbe Gremium gemeint ist.",
+        )
 
-    # Übergeordnetes Gremium: aus den Dateien oder dem Bestand
+    # Übergeordnetes Gremium: aus den Dateien oder dem Bestand, bei genannter Körperschaft in derselben
     for key, item in plan.organizations.items():
-        parent_key = item.refs["parent"]
-        if parent_key is None:
+        parent_name = item.refs["parent"]
+        if parent_name is None:
             continue
-        parent_item = plan.organizations.get(parent_key)
-        if parent_key == key:
+        body = item.refs["body"]
+        found = _find_org(plan, orgs, parent_name, body)
+        if found == key:
             plan.fail(item, "Ein Gremium kann sich nicht selbst übergeordnet sein.")
-        elif parent_item is None and parent_key in ambiguous:
-            plan.fail(item, f"Übergeordnetes Gremium {_ambiguous(item.refs['parent_label'])}")
-        elif parent_item is None and parent_key not in existing:
-            plan.fail(item, "Übergeordnetes Gremium unbekannt (weder in den Dateien noch angelegt).")
-        elif item.instance is not None and _name_key(getattr(item.instance.parent, "name", "")) != parent_key:
-            item.changes.append("Übergeordnetes Gremium")
-    _fail_parent_rings(plan, existing)
+        elif found == AMBIGUOUS:
+            plan.fail(
+                item,
+                f"Übergeordnetes Gremium {_ambiguous_org(item.refs['parent_label'], body, column=item.kind != 'aemter')}",
+            )
+        elif found == UNKNOWN:
+            where = f"in der Körperschaft „{body.name}“ angelegt" if body is not None else "angelegt"
+            plan.fail(item, f"Übergeordnetes Gremium unbekannt (weder in den Dateien noch {where}).")
+        else:
+            item.refs["parent_ref"] = found
+            parent = item.instance.parent if item.instance is not None else None
+            if item.instance is not None and (parent is None or orgs.key(parent) != found):
+                item.changes.append("Übergeordnetes Gremium")
+    _fail_parent_rings(plan, orgs)
     # Fehlerhafte übergeordnete Gremien ziehen ihre Untergremien mit (auch über mehrere Stufen)
     changed = True
     while changed:
         changed = False
         for item in plan.organizations.values():
-            parent_item = plan.organizations.get(item.refs["parent"] or "")
+            parent_ref = item.refs["parent_ref"]
+            parent_item = plan.organizations.get(parent_ref) if parent_ref is not None else None
             if not item.failed and parent_item is not None and parent_item.failed:
                 plan.fail(item, f"Übergeordnetes Gremium „{parent_item.label}“ hat Fehler.")
                 changed = True
 
 
-def _fail_parent_rings(plan: ImportPlan, existing: dict[str, SessionOrganization]) -> None:
+def _fail_parent_rings(plan: ImportPlan, orgs: _Orgs) -> None:
     """Übergeordnete Gremien und Ämter dürfen keinen Ring bilden (A → B → A), aus Dateien und Bestand zusammen."""
-    parents: dict[str, str] = {}
-    names: dict[str, str] = {}
-    for key, org in existing.items():
+    parents: dict[OrgKey, OrgKey] = {}
+    names: dict[OrgKey, str] = {}
+    for key, org in orgs.by_body.items():
         names[key] = org.name
         if org.parent is not None:
-            parents[key] = _name_key(org.parent.name)
+            parents[key] = orgs.key(org.parent)
     for key, item in plan.organizations.items():
         names[key] = item.label
-        if item.refs["parent"] is not None:
-            parents[key] = item.refs["parent"]  # die Datei ersetzt das übergeordnete Gremium, leer lässt es
+        if item.refs["parent_ref"] is not None:
+            parents[key] = item.refs["parent_ref"]  # die Datei ersetzt das übergeordnete Gremium, leer lässt es
     for key, item in plan.organizations.items():
         if item.failed or parents.get(key, key) == key:
             continue
@@ -946,7 +1138,7 @@ def _fail_parent_rings(plan: ImportPlan, existing: dict[str, SessionOrganization
             path.append(current)
             current = parents[current]
         if current == key:
-            ring = " → ".join(names.get(k, k) for k in [*path, key])
+            ring = " → ".join(names.get(k, k[1]) for k in [*path, key])
             plan.fail(item, f"Übergeordnete Gremien bilden einen Ring: {ring}.")
 
 
@@ -1130,7 +1322,7 @@ _MEMBERSHIP_LABELS = {"role": "Funktion", "has_voting_rights": "Stimmrecht", "en
 
 def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
     tally = plan.tallies.setdefault("besetzungen", Tally())
-    tenant_orgs, ambiguous_orgs = _by_name(SessionOrganization.objects.filter(tenant=plan.tenant))
+    orgs = plan.orgs
     term_stock = list(SessionLegislativeTerm.objects.filter(tenant=plan.tenant))
     terms, ambiguous_terms = _by_name(term_stock)
     term_names = {_name_key(t.name): t.name for t in term_stock}
@@ -1141,7 +1333,7 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
     ):
         by_pair.setdefault((membership.organization_id, membership.person_id), []).append(membership)
     tally.before = sum(len(group) for group in by_pair.values())
-    planned: dict[tuple[str, str], list[Item]] = {}
+    planned: dict[tuple[OrgKey, str], list[Item]] = {}
 
     for row in rows:
         tally.rows += 1
@@ -1152,12 +1344,18 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
         except CellValueError as exc:
             plan.error(row.file, row.line, str(exc))
             continue
+        body_problem: str | None = None
+        try:
+            body = _row_body(plan, row)
+        except CellValueError as exc:
+            body, body_problem = None, str(exc)
         person_key, substitute_key = row.get("person"), row.get("vertretung_fuer")
         org_name, term_name = row.get("gremium"), row.get("wahlperiode")
-        org_key, term_key = _name_key(org_name), _name_key(term_name) or None
+        term_key = _name_key(term_name) or None
         person = plan.persons.get(person_key)
         substitute = plan.persons.get(substitute_key) if substitute_key else None
-        org_item = plan.organizations.get(org_key)
+        found = _find_org(plan, orgs, _name_key(org_name), body) if body_problem is None else UNKNOWN
+        org_item = plan.organizations.get(found) if isinstance(found, tuple) else None
         term_item = plan.terms.get(term_key or "")
 
         problems: list[str] = []
@@ -1165,10 +1363,13 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
             problems.append(f"Person „{person_key}“ fehlt in der Personendatei.")
         elif person.failed:
             problems.append(f"Person „{person_key}“ hat Fehler (siehe {person.file}, Zeile {person.line}).")
-        if org_item is None and org_key in ambiguous_orgs:
-            problems.append(f"Gremium {_ambiguous(org_name)}")
-        elif org_item is None and org_key not in tenant_orgs:
-            problems.append(f"Gremium „{org_name}“ unbekannt (weder in den Dateien noch angelegt).")
+        if body_problem is not None:
+            problems.append(body_problem)
+        elif found == AMBIGUOUS:
+            problems.append(f"Gremium {_ambiguous_org(org_name, body)}")
+        elif found == UNKNOWN:
+            where = f" in der Körperschaft „{body.name}“" if body is not None else ""
+            problems.append(f"Gremium „{org_name}“{where} unbekannt (weder in den Dateien noch angelegt).")
         elif org_item is not None and org_item.failed:
             problems.append(f"Gremium „{org_name}“ hat Fehler (siehe {org_item.file}, Zeile {org_item.line}).")
         if substitute_key and substitute is None:
@@ -1190,9 +1391,10 @@ def _plan_memberships(plan: ImportPlan, rows: list[_Row]) -> None:
                 plan.error(row.file, row.line, message)
             continue
         assert person is not None
+        org_key = cast(OrgKey, found)
 
-        org_instance = org_item.instance if org_item is not None else tenant_orgs[org_key]
-        org_label = org_item.label if org_item is not None else tenant_orgs[org_key].name
+        org_instance = org_item.instance if org_item is not None else orgs.by_body[org_key]
+        org_label = org_item.label if org_item is not None else _org_label(orgs.by_body[org_key].name, body)
         label = f"{person.label} – {org_label}"
         pair_existing: list[SessionOrganizationMembership] = []
         if org_instance is not None and person.instance is not None:
@@ -1356,18 +1558,21 @@ def apply_plan(plan: ImportPlan) -> None:
                 term.save()
                 terms[key] = term
 
-        orgs, _ = _by_name(SessionOrganization.objects.filter(tenant=tenant))
-        for key, item in plan.organizations.items():
+        # Je Körperschaft eindeutige Namen; Verweise des Plans tragen immer die Körperschaft
+        orgs = dict(_Orgs.load(tenant, plan.bodies.default_id).by_body)
+        for org_key, item in plan.organizations.items():
             if item.action != UNCHANGED:
                 org = item.instance or SessionOrganization(tenant=tenant)
                 _assign(org, item.values)
+                if item.instance is None and item.refs["body"] is not None:
+                    org.body = item.refs["body"]  # ohne Angabe setzt save() die Standardkörperschaft
                 org.save()
-                orgs[key] = org
-        for key, item in plan.organizations.items():
-            parent_key = item.refs["parent"]
-            if parent_key and orgs[key].parent_id != orgs[parent_key].pk:
-                orgs[key].parent = orgs[parent_key]
-                orgs[key].save()
+                orgs[org_key] = org
+        for org_key, item in plan.organizations.items():
+            parent_ref = item.refs["parent_ref"]
+            if parent_ref is not None and orgs[org_key].parent_id != orgs[parent_ref].pk:
+                orgs[org_key].parent = orgs[parent_ref]
+                orgs[org_key].save()
 
         persons: dict[str, SessionPerson] = {}
         for kennung, item in plan.persons.items():
@@ -1447,8 +1652,8 @@ def cross_check(plan: ImportPlan, public: dict[str, list[str]], day: date) -> No
     (:func:`insight_core.services.public_members.current_members`). Abweichungen werden Hinweise.
     """
     public_by_key = {_name_key(name): (name, members) for name, members in public.items()}
-    imported: dict[str, dict[str, str]] = {}
-    labels: dict[str, str] = {}
+    imported: dict[OrgKey, dict[str, str]] = {}
+    labels: dict[OrgKey, str] = {}
     for item in plan.memberships:
         start = item.values["start_date"]
         end = item.values["end_date"] or (item.instance.end_date if item.instance is not None else None)
@@ -1460,10 +1665,10 @@ def cross_check(plan: ImportPlan, public: dict[str, list[str]], day: date) -> No
         imported.setdefault(org_key, {})[person_key(name)] = name
     for org_key in sorted(imported, key=lambda key: labels[key].casefold()):
         mine = imported[org_key]
-        if org_key not in public_by_key:
+        if org_key[1] not in public_by_key:
             plan.cross_check.append({"gremium": labels[org_key], "oeffentlich": None})
             continue
-        public_name, members = public_by_key[org_key]
+        public_name, members = public_by_key[org_key[1]]
         theirs = {person_key(name): name for name in members}
         entry = {
             "gremium": labels[org_key],

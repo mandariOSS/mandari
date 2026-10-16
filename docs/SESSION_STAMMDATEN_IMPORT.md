@@ -71,11 +71,11 @@ Pflichtspalten sind **fett**.
 | Datei | Spalten |
 |---|---|
 | `wahlperioden` | **name**, nummer, beginn, ende |
-| `gremien` | **name**, kurzname, **art** (Rat, Ausschuss, Beirat, Kommission, Sonstiges; auch Kreistag, Ortsrat, Verwaltungsausschuss …), ausschussart (Hauptausschuss – auch Verwaltungs-, Kreis-, Regions- oder Samtgemeindeausschuss –, Finanzausschuss, Rechnungsprüfungsausschuss, anderer), uebergeordnet, ladungsfrist_tage, sollstaerke, beginn, ende, aktiv |
-| `fraktionen` | **name**, kurzname, beginn, ende, aktiv |
+| `gremien` | **name**, kurzname, koerperschaft, **art** (Rat, Ausschuss, Beirat, Kommission, Sonstiges; auch Kreistag, Ortsrat, Verwaltungsausschuss …), ausschussart (Hauptausschuss – auch Verwaltungs-, Kreis-, Regions- oder Samtgemeindeausschuss –, Finanzausschuss, Rechnungsprüfungsausschuss, anderer), uebergeordnet, ladungsfrist_tage, sollstaerke, beginn, ende, aktiv |
+| `fraktionen` | **name**, kurzname, koerperschaft, beginn, ende, aktiv |
 | `aemter` | **name**, kurzname, uebergeordnet, aktiv |
 | `personen` | **kennung**, anrede, titel, **vorname**, **nachname**, email, telefon, adresse, kontoinhaber, iban, bic, zustellweg (E-Mail, Portal, Brief), mandat_beginn, mandat_ende, aktiv |
-| `besetzungen` | **person** (Kennung aus `personen`), **gremium** (Name eines Gremiums, einer Fraktion oder eines Amts), funktion (Mitglied, stellvertretendes Mitglied, Vorsitz, stellv. Vorsitz, hinzugewählt, sachkundige/r Bürger/in, beratend bzw. Grundmandat, Gast), stimmrecht, beginn, ende, wahlperiode, vertretung_fuer (Kennung) |
+| `besetzungen` | **person** (Kennung aus `personen`), **gremium** (Name eines Gremiums, einer Fraktion oder eines Amts), koerperschaft (des Gremiums), funktion (Mitglied, stellvertretendes Mitglied, Vorsitz, stellv. Vorsitz, hinzugewählt, sachkundige/r Bürger/in, beratend bzw. Grundmandat, Gast), stimmrecht, beginn, ende, wahlperiode, vertretung_fuer (Kennung) |
 
 - `kennung` verknüpft nur die Dateien untereinander (z. B. die Personennummer des Altsystems) und wird nicht
   gespeichert.
@@ -84,6 +84,8 @@ Pflichtspalten sind **fett**.
   mit `vertretung_fuer` rücken für die vertretene Person nach. Maßgeblich ist das Landesprofil des Mandanten.
 - Ohne `wahlperiode` bekommt eine neue Besetzung die Wahlperiode, in die ihr Beginn fällt.
 - Gremien und Fraktionen dürfen in den Besetzungen auch vorkommen, wenn sie schon im Mandanten angelegt sind.
+- `koerperschaft` braucht nur, wer mehrere Körperschaften in einem Mandanten führt (Abschnitt
+  „Körperschaften“).
 
 | Funktion | Stimmrecht ohne Angabe |
 |---|---|
@@ -99,12 +101,38 @@ Der Import erkennt vorhandene Datensätze an fachlichen Schlüsseln; eine eigene
 
 | Objekt | Schlüssel |
 |---|---|
-| Wahlperiode, Gremium, Fraktion, Amt | Name (Groß-/Kleinschreibung und Leerraum egal); gibt es den Namen im Mandanten mehrfach, ist das ein Fehler |
+| Wahlperiode, Amt | Name (Groß-/Kleinschreibung und Leerraum egal); gibt es den Namen im Mandanten mehrfach, ist das ein Fehler |
+| Gremium, Fraktion | Name; mit `koerperschaft` nur in dieser Körperschaft, sonst im ganzen Mandanten. Gibt es den Namen dort mehrfach, ist das ein Fehler |
 | Person | Vor- und Nachname; gibt es den Namen im Mandanten mehrfach, zusätzlich die E-Mail |
 | Besetzung | Gremium, Person und Beginn |
 
 Vorhandene Datensätze werden aktualisiert, wenn die Datei abweichende Werte nennt. **Leere Zellen ändern
 nichts.** Der Import löscht nichts; was im Altsystem fehlt, bleibt in Session.
+
+## Körperschaften
+
+Führt ein Mandant mehrere Körperschaften, etwa eine Samtgemeinde und ihre Mitgliedsgemeinden
+([ADR Körperschaften im Mandanten](adr/20261002-koerperschaften-im-mandanten.md)), nennt die Spalte
+`koerperschaft` in `gremien`, `fraktionen` und `besetzungen`, wohin eine Zeile gehört: Name, Kurzname oder
+Kurzkennung der Körperschaft, wie sie unter Einstellungen → Körperschaften steht. Die Körperschaften selbst
+legt der Import nicht an; sie müssen vorher im Mandanten bestehen.
+
+- Mit Angabe gilt der Name nur in dieser Körperschaft. Gleichnamige Gremien zweier Körperschaften (zweimal
+  „Rat“, zweimal „Verwaltungsausschuss“) lassen sich so getrennt anlegen, aktualisieren und besetzen.
+- Das übergeordnete Gremium (`uebergeordnet`) sucht der Import in derselben Körperschaft.
+- In `besetzungen` bestimmt `koerperschaft`, welches Gremium gemeint ist; sie muss zur Gremiendatei passen.
+- Ohne Spalte oder mit leerer Zelle bleibt alles wie zuvor: Abgleich am Namen im ganzen Mandanten, neue
+  Gremien gehören zur Standardkörperschaft. Ist ein Name dann mehrdeutig, meldet der Prüflauf einen Fehler
+  und verweist auf die Spalte.
+- Eine unbekannte Körperschaft oder eine Angabe, die zu mehreren passt (etwa zwei Körperschaften mit
+  demselben Kurznamen), ist ein Fehler; der Import ordnet nie still zu. In eine deaktivierte Körperschaft legt
+  er nichts neu an.
+- Der Import verschiebt keine Gremien zwischen Körperschaften. Nennt eine Zeile eine Körperschaft, in der es
+  den Namen noch nicht gibt, wohl aber in einer anderen, legt er das Gremium dort neu an und gibt einen
+  Sammelhinweis mit den Zeilen aus. Das ist bei Samtgemeinden üblich, kann nach älteren Daten (alles in der
+  Standardkörperschaft) aber auch dasselbe Gremium sein; dann vor dem Import von Hand umhängen.
+- Ämter gehören zur Standardkörperschaft (die Verwaltung); `aemter` hat deshalb keine Spalte
+  `koerperschaft`. Wahlperioden und Personen gehören dem Mandanten.
 
 Gibt es genau eine Person gleichen Namens, nennt die Datei aber eine andere E-Mail-Adresse als der Bestand,
 meldet der Bericht „möglicherweise eine andere Person“ und ob sich dabei Bankdaten ändern; die Werte selbst
@@ -120,15 +148,19 @@ Fehler stehen mit Datei und Zeile im Bericht; mit Fehlern schreibt auch der Impo
 - Ende vor Beginn; Wahlperioden, die sich überschneiden; Besetzungen derselben Person im selben Gremium,
   die sich überschneiden (auch mit vorhandenen Besetzungen)
 - Verweise auf unbekannte oder fehlerhafte Personen, Gremien, Wahlperioden und übergeordnete Gremien
-- Namen von Wahlperioden, Gremien, Fraktionen und Ämtern, die es im Mandanten mehrfach gibt (auch als
-  übergeordnetes Gremium und als Wahlperiode, in die der Beginn einer Besetzung fällt)
+- Namen von Wahlperioden, Gremien, Fraktionen und Ämtern, die es im Mandanten (bzw. mit `koerperschaft` in
+  der Körperschaft) mehrfach gibt, auch als übergeordnetes Gremium und als Wahlperiode, in die der Beginn
+  einer Besetzung fällt
+- unbekannte oder mehrdeutige Angaben in `koerperschaft`, neue Gremien in einer deaktivierten Körperschaft,
+  ein übergeordnetes Gremium, das es in der genannten Körperschaft nicht gibt
 - übergeordnete Gremien oder Ämter, die einen Ring bilden (A unter B, B unter A), aus Dateien und Bestand
   zusammen
 - E-Mail-Adresse, IBAN (Prüfziffer) und BIC
 - ein Name, den es im Mandanten schon mit anderer Art gibt (z. B. als Fraktion statt als Gremium)
 
 Hinweise (z. B. Beginn außerhalb der genannten Wahlperiode, angenommenes Stimmrecht, andere E-Mail bei
-gleichem Namen, Abweichung in der Gegenprobe) halten den Import nicht auf.
+gleichem Namen, Gremium neu in einer Körperschaft, obwohl es den Namen in einer anderen schon gibt, Abweichung
+in der Gegenprobe) halten den Import nicht auf.
 
 ## Bericht und Zählabgleich
 
@@ -146,6 +178,9 @@ Jede Anlage und Änderung steht außerdem im Prüfprotokoll des Mandanten (Proto
 laufenden Besetzungen mit den öffentlichen Mitgliedern gleichnamiger Gremien: übereinstimmend, nur öffentlich,
 nur im Import. Anrede, akademische Titel und die Schreibweise „Nachname, Vorname“ stören den Vergleich nicht.
 Abweichungen sind Hinweise: Öffentliche Listen zeigen oft nicht alle Mitglieder (etwa ohne Stellvertretungen).
+Die Gegenprobe vergleicht über den Gremiennamen. Bei mehreren Körperschaften (in SessionNet je `__cpanr` ein
+Body) daher je Körperschaft prüfen; gleichnamige Gremien anderer Körperschaften erscheinen sonst als
+Abweichung.
 
 ## Datenschutz
 
@@ -157,10 +192,8 @@ Abweichungen sind Hinweise: Öffentliche Listen zeigen oft nicht alle Mitglieder
 
 ## Grenzen
 
-- Die Zuordnung zu Körperschaften (Samtgemeinde und Mitgliedsgemeinden in einem Mandanten) folgt mit #756
-  (Spalte `koerperschaft`). Bis dahin erkennt der Import Gremien am Namen im ganzen Mandanten: Gleichnamige
-  Gremien zweier Körperschaften (etwa zweimal „Verwaltungsausschuss“) meldet er als Fehler, statt einen
-  beliebigen Datensatz zu nehmen; übernehmen lassen sie sich erst mit der Spalte.
+- Körperschaften legt der Import nicht an und verschiebt keine Gremien zwischen ihnen (Abschnitt
+  „Körperschaften“).
 - Sitzungen, Vorlagen und Niederschriften übernimmt der Befehl nicht (#762, Soll-Teil).
 - Zeilen je Datei höchstens 20.000, Dateigröße höchstens 10 MB; XLSX entpackt höchstens 50 MB, Spalten bis
   XFD wie in Excel und höchstens 2 Millionen Zellen.
