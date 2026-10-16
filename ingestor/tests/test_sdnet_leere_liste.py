@@ -87,7 +87,7 @@ async def _lauf(
 ) -> tuple[dict[str, Any], OParlClient]:
     """Abgleich einer Kommune wie ``test_aenderungsfenster._lauf``, mit dem Client für den Befund je Host."""
     quelle.anfragen.clear()
-    async with _client(quelle) as client:
+    async with _client(quelle, speicher.filtervermerke) as client:
         stats = await _orchestrator(speicher)._sync_body(
             client=client,
             body_data=kommune or _kommune(),
@@ -157,7 +157,7 @@ async def test_inkrementeller_lauf_ohne_aenderungen_eine_anfrage_je_liste():
         # Eine Anfrage je Liste, jede mit Filter; keine Liste läuft danach ohne Filter
         assert quelle.anfragen_je_liste() == dict.fromkeys([*LISTEN, "membership"], 1)
         assert all(f is not None for name in [*LISTEN, "membership"] for f in quelle.filter_der_anfragen(name))
-        assert OParlClient._list_modified_since_unsupported == set()
+        assert client.filter_notes.lists == {} and client.filter_notes.hosts == {}
 
         # Keine Zählung als Fehler am Host, der Lauf ist vollständig und das Fenster rückt vor
         gesundheit = client.host_health[HOST]
@@ -244,7 +244,7 @@ async def test_404_mit_filter_ohne_sdnet_fehlerobjekt_wie_bisher(antwort):
         ]
     assert seiten == [[objekt]]
     assert len(anfragen) == 2 and "modified_since" not in anfragen[1].params
-    assert MITGLIEDSCHAFTEN in OParlClient._list_modified_since_unsupported
+    assert set(client.filter_notes.lists) == {MITGLIEDSCHAFTEN}
     assert client.filtered_empty_lists == set()
 
 

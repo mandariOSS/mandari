@@ -106,7 +106,6 @@ def _ohne_pause(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
     monkeypatch.setattr(settings, "circuit_breaker_enabled", False)
-    OParlClient._modified_since_unsupported.clear()
 
 
 def _client(quelle: Callable[[httpx.Request], httpx.Response]) -> OParlClient:
@@ -469,10 +468,7 @@ class Speicher:
     async def get_source_by_url(self, url: str) -> Any:
         return SimpleNamespace(url=url, sync_config={}, user_agent=None, last_successful_full_sync=None)
 
-    async def get_modified_since_unsupported_hosts(self) -> set[str]:
-        return set()
-
-    async def add_modified_since_unsupported_hosts(self, source_url: str, hosts: set[str]) -> None:
+    async def save_filter_notes(self, source_url: str, lists: Any, hosts: Any, *, drop_legacy: bool = False) -> None:
         return None
 
     async def upsert_source(self, **kwargs: Any) -> UUID:

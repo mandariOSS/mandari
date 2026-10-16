@@ -26,7 +26,10 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
     Die Quelle filtert mit ``modified_since``, lässt den Parameter aber in ``links.next`` weg (ALLRIS). Der
     Client hängt ihn dann an jede Folgeseite an, statt die Quelle als „ohne Filter“ zu behandeln. Ohne den
     Schalter liefe der inkrementelle Abgleich über die ungefilterte, aufsteigend sortierte Liste und bräche
-    nach fünf unveränderten Seiten ab, bevor er neue Einträge erreicht.
+    nach fünf unveränderten Seiten ab, bevor er neue Einträge erreicht. Der Schalter hebt einen Vermerk
+    „filtert nicht“ für den Server auf (``sync_config["unfiltered_hosts"]``), nicht den für einzelne Listen:
+    Lehnt eine Liste den Filter ab (Münster: HTTP 401 bei ``organization``), läuft nur sie ohne Filter
+    (``sync_config["unfiltered_lists"]``, ``src/client/filter_notes.py``, Issue #1041).
 ``file_downloads``
     ``false``: Dateien dieser Quelle nicht automatisch abrufen (Textextraktion im Ingestor, Dateicache und
     Vorschau in Django). Für Quellen, die Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefern;
