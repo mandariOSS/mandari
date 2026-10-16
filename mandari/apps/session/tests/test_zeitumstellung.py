@@ -18,7 +18,6 @@ from typing import Any, cast
 import pytest
 from django.contrib.messages import get_messages
 from django.test import Client
-from django.utils import timezone
 
 from apps.common import local_time
 from apps.common.tests.factories import UserFactory
@@ -96,14 +95,19 @@ class TestSitzungsformular:
             meldung.startswith("Ende: 02:15 Uhr gibt es am 25.10.2026 zweimal") for meldung in _meldungen(antwort)
         )
 
-    def test_gespeicherte_zweite_uhrzeit_bleibt_beim_bearbeiten(self, welt: Welt) -> None:
+    @pytest.mark.parametrize("neu", [False, True], ids=["bisher", "neues-design"])
+    def test_gespeicherte_zweite_uhrzeit_bleibt_beim_bearbeiten(self, welt: Welt, neu: bool) -> None:
+        SessionTenant.objects.filter(pk=welt.tenant.pk).update(session_new_design=neu)
         sitzung = SessionMeeting.objects.create(
             tenant=welt.tenant, name="Nachtsitzung", organization=welt.rat, start=ZWEITE, is_public=True
         )
+        # Das Formular zeigt die gespeicherte Ortszeit; abgeschickt wird, was dort steht
+        seite = welt.client.get(welt.url(f"/meetings/{sitzung.pk}/edit/")).content.decode()
+        assert 'value="2026-10-25T02:30"' in seite
         daten = {
             "name": sitzung.name,
             "organization": str(welt.rat.pk),
-            "start": timezone.localtime(sitzung.start).strftime("%Y-%m-%dT%H:%M"),
+            "start": "2026-10-25T02:30",
             "is_public": "on",
             "location": "Feuerwache",
             "format": sitzung.format,

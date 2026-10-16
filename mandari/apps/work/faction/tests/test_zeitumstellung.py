@@ -77,3 +77,27 @@ def test_bearbeiten_behaelt_die_gespeicherte_zweite_uhrzeit(org: Any, make_membe
     meeting.refresh_from_db()
     assert (meeting.start, meeting.location) == (ZWEITE, "Büro")
     assert not any("zweimal" in meldung for meldung in _meldungen(antwort))
+
+
+def test_bearbeiten_per_htmx_laedt_die_seite_neu_ohne_erfolgsmeldung(
+    org: Any, make_member: Any, client_for: Any
+) -> None:
+    # Das Bearbeiten-Fenster sendet per hx-post: Die Umleitung wird zu HX-Redirect (Issue #895), damit htmx nicht die
+    # ganze Detailseite ins Formular setzt; die Meldung steht nach dem Neuladen oben, eine Erfolgsmeldung gibt es nicht
+    member = make_member(org, RECHTE)
+    meeting = FactionMeeting.objects.create(organization=org, title="Sitzung", start=ERSTE, created_by=member)
+    url = reverse("work:faction_action", kwargs={"org_slug": org.slug, "meeting_id": meeting.id})
+
+    antwort = client_for(member.user).post(
+        url,
+        {"action": "update", "title": meeting.title, "start_date": "2027-03-28", "start_time": "02:30"},
+        HTTP_HX_REQUEST="true",
+    )
+
+    assert antwort.status_code == 200
+    assert antwort["HX-Redirect"] == reverse(
+        "work:faction_detail", kwargs={"org_slug": org.slug, "meeting_id": meeting.id}
+    )
+    assert _meldungen(antwort) == [local_time.nonexistent_message(datetime(2027, 3, 28, 2, 30))]
+    meeting.refresh_from_db()
+    assert meeting.start == ERSTE
