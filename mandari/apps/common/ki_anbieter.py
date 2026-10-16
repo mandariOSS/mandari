@@ -31,6 +31,8 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from mandari_dokumente.ki_hosts import gepruefter_host, ist_erlaubter_host, normalisiere_host
 
+from .db_connections import release_idle_thread_connections
+
 if TYPE_CHECKING:
     from apps.common.models import AISettings
     from apps.tenants.models import Organization
@@ -121,9 +123,11 @@ ANBIETER_VORLAGEN: dict[str, AnbieterVorlage] = {
         auch_max_completion_tokens=True,
     ),
     # Weiter nutzbar nach Entscheidung des Betreibers (Issue #1046), kein Anbieter mit Verarbeitung nur in der EU.
-    # Unterauftragsverarbeiter laut docs.nebius.com/legal/sub-processors_tofa (Stand 23.09.2026): u. a. Nebius Inc.
-    # mit Verarbeitung in den USA, Nebius B.V. in Frankreich, Island, Finnland und im Vereinigten Königreich,
-    # Dienstleister in den USA, Island und Kanada; den Ort je öffentlichem Modell zeigt die Oberfläche des Anbieters.
+    # Unterauftragsverarbeiter laut docs.nebius.com/legal/sub-processors_tofa (Stand 23.09.2026), Verarbeitung für
+    # die Modelle: Nebius Inc. in den USA, Nebius B.V. in Frankreich, Island, Finnland und im Vereinigten Königreich,
+    # Nebius Israel Ltd. in Israel, Dienstleister (RunPod, BoostRun, Shadeform, Axe Compute) in Island, den USA und
+    # Kanada; Betrieb und Support zusätzlich in weiteren Ländern innerhalb und außerhalb der EU (etwa Serbien). Den
+    # Ort je öffentlichem Modell zeigt die Oberfläche des Anbieters.
     # Zeigt sie für das gewählte Modell einen festen Ort, kann ihn das Feld „Verarbeitungsort“ genauer nennen.
     "nebius": AnbieterVorlage(
         anzeigename="Nebius Token Factory",
@@ -528,7 +532,7 @@ class Pruefergebnis:
     Ergebnis einer Verbindungsprüfung. Enthält nur Art, Host und Modell, nie Schlüssel, Anfrage oder Antworttext.
 
     ``art``: ``ok``, ``nicht_eingerichtet``, ``schluessel``, ``nicht_gefunden``, ``abgelehnt``, ``limit``,
-    ``umleitung``, ``anbieter``, ``unerwartet``, ``format``, ``zeit``, ``tls`` oder ``verbindung``.
+    ``umleitung``, ``anbieter``, ``unerwartet``, ``format``, ``zeit``, ``tls``, ``verbindung`` oder ``zeichen``.
     """
 
     ok: bool
@@ -595,8 +599,9 @@ def pruefe_verbindung(
     Ein Testaufruf an die Chat-Schnittstelle des geprüften Endpunkts mit höchstens einem Token Antwort.
 
     Prüft Erreichbarkeit, TLS, Schlüssel und Modell auf demselben Weg wie die echten Aufrufe. Weiterleitungen werden
-    nicht verfolgt (der Host stünde sonst nicht mehr fest). Ins Protokoll gehen nur Host, Modell und Art des
-    Ergebnisses. ``transport`` nur für Tests (``httpx.MockTransport``).
+    nicht verfolgt (der Host stünde sonst nicht mehr fest). Während des Aufrufs liegt die Datenbankverbindung beim
+    Pool wie bei den echten Aufrufen (Issue #1024); in einer offenen Transaktion bleibt sie. Ins Protokoll gehen nur
+    Host, Modell und Art des Ergebnisses. ``transport`` nur für Tests (``httpx.MockTransport``).
     """
     modell = (modell or endpunkt.modell).strip()
     nutzlast = {
@@ -607,6 +612,7 @@ def pruefe_verbindung(
     }
     kopf = {"Authorization": f"Bearer {endpunkt.api_key}", "Content-Type": "application/json"}
     zeit = httpx.Timeout(zeitgrenze, connect=min(5.0, zeitgrenze))
+    release_idle_thread_connections()
     try:
         with httpx.Client(timeout=zeit, transport=transport, follow_redirects=False) as client:
             art, meldung = _bewerte_antwort(client.post(endpunkt.chat_url, json=nutzlast, headers=kopf))
@@ -620,6 +626,10 @@ def pruefe_verbindung(
             art, meldung = "verbindung", "Keine Verbindung zum Host (DNS, Netz oder Firewall)"
         else:
             art, meldung = "verbindung", f"Netzwerkfehler ({type(fehler).__name__})"
+    except (ValueError, httpx.InvalidURL):
+        # Etwa ein mitkopiertes unsichtbares Zeichen im Schlüssel (Kopfzeilen nur ASCII): Der Text der Ausnahme
+        # nennt Zeichen und Stelle und bleibt draußen
+        art, meldung = "zeichen", "Schlüssel oder Adresse enthält unzulässige Zeichen (etwa ein unsichtbares Zeichen)"
     logger.info("KI-Verbindungsprüfung: Host %s, Modell %s: %s", endpunkt.host, modell, art)
     return Pruefergebnis(ok=art == "ok", art=art, meldung=meldung, host=endpunkt.host, modell=modell, zweck=zweck)
 

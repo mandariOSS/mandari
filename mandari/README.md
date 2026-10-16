@@ -10,7 +10,7 @@ Mandari Insight ist eine Open-Source-Plattform für die Darstellung und Analyse 
 - **PostgreSQL 15+** - Datenbank
 - **Elasticsearch** - Volltextsuche
 - **Redis** - Caching und Sessions
-- **OpenAI-kompatibler KI-Anbieter mit Verarbeitung in Europa** - KI-Features (Zusammenfassungen, Chatbot),
+- **OpenAI-kompatibler KI-Anbieter (Vorlage oder eigener Endpunkt)** - KI-Features (Zusammenfassungen, Chatbot),
   eingerichtet im Admin unter „KI-Einstellungen“, nur Hosts aus `KI_ERLAUBTE_HOSTS`
 - **HTMX** - Interaktivität ohne JavaScript-Framework
 - **Alpine.js** - Leichtgewichtiges JavaScript

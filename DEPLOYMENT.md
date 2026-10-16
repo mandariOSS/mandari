@@ -1041,6 +1041,9 @@ mit Host und Freigabe und die Einrichtung ohne Schlüssel, nur „Schlüssel ges
 
 1. Host freigeben: den Host des Anbieters in der `.env` unter `KI_ERLAUBTE_HOSTS` eintragen und Anwendung,
    Worker und Ingestor neu anlegen (`docker compose up -d`). Der Befehl und der Admin geben keinen Host frei.
+   Den Host des bisherigen Anbieters danach ebenso entfernen, sobald ihn nichts mehr nutzt (Organisationen mit
+   eigenem Anbieter, `MISTRAL_BASE_URL`; `ki_anbieter` nennt die Zahl der Organisationen mit eigenem Schlüssel).
+   Solange er in der Liste steht, bleibt er freigegeben.
 2. Einrichten in einem Schritt. Der Schlüssel kommt nur aus einer benannten Umgebungsvariable, nie von der
    Kommandozeile, und erscheint in keiner Ausgabe:
 
@@ -1059,20 +1062,22 @@ mit Host und Freigabe und die Einrichtung ohne Schlüssel, nur „Schlüssel ges
 3. Prüfen: `docker exec mandari python manage.py ki_anbieter pruefen` stellt je eingetragenem Modell einen
    Testaufruf mit höchstens einem Token Antwort (Zeitgrenze 15 s, auch wenn die Schalter aus sind) und meldet nur
    Erfolg oder die Fehlerart, etwa „Schlüssel abgelehnt“, „Modell oder Schnittstelle nicht gefunden“, „Keine
-   Antwort“ oder einen TLS-Fehler. Im Admin tut „Speichern und Verbindung prüfen“ in den KI-Einstellungen
-   dasselbe.
+   Antwort“, einen TLS-Fehler oder unzulässige Zeichen im Schlüssel. Im Admin tut „Speichern und Verbindung
+   prüfen“ in den KI-Einstellungen dasselbe, nach dem Speichern.
 
 **Nebius nach `common/0011` weiter nutzen:** Die Migration setzt den Anbieter auf „nicht eingerichtet“. Der
 Schlüssel stand bisher in `NEBIUS_API_KEY`; die Anwendung liest ihn nicht mehr (Compose reicht ihn nicht weiter).
 
 1. Vor `./update.sh` in der `.env` ergänzen: `KI_ERLAUBTE_HOSTS=api.tokenfactory.nebius.com`.
    `NEBIUS_API_KEY` bleibt bis zur Übertragung stehen.
-2. Nach dem Update im Installationsverzeichnis den Schlüssel aus der `.env` übertragen und prüfen (steht der
-   Wert in Anführungszeichen, gehören sie nicht dazu). Nur die Bereiche einschalten, die bisher KI nutzten; ein bisheriges
-   `NEBIUS_FALLBACK_MODEL` mit `--ausweichmodell` übernehmen:
+2. Nach dem Update im Installationsverzeichnis den Schlüssel aus der `.env` übertragen und prüfen. Die erste
+   Zeile nimmt den letzten Eintrag und entfernt Anführungszeichen und einen Kommentar hinter dem
+   Wert. Nur die Bereiche einschalten, die bisher KI nutzten; ein bisheriges `NEBIUS_FALLBACK_MODEL` mit
+   `--ausweichmodell` übernehmen:
 
    ```bash
-   export NEBIUS_API_KEY="$(sed -n 's/^NEBIUS_API_KEY=//p' .env)"
+   export NEBIUS_API_KEY="$(grep '^NEBIUS_API_KEY=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r' \
+     | sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
    docker exec -e NEBIUS_API_KEY mandari python manage.py ki_anbieter einrichten --vorlage nebius \
      --modell moonshotai/Kimi-K2.6 --schluessel-aus-umgebung NEBIUS_API_KEY --work --buergerportal --pruefen
    unset NEBIUS_API_KEY

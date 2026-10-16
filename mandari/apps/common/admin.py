@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 
 from django import forms
 from django.contrib import admin, messages
+from django.db import transaction
+from django.http import HttpRequest
 from django.utils.http import url_has_allowed_host_and_scheme
 from unfold.admin import ModelAdmin
 from unfold.decorators import action
@@ -405,13 +407,26 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
     )
 
     @action(description="Speichern und Verbindung prüfen", permissions=["change"])
-    def speichern_und_pruefen(self, request, obj):
+    def speichern_und_pruefen(self, request: HttpRequest, obj: AISettings) -> None:
         """
         Testaufruf je Modell an den gerade gespeicherten Endpunkt (wie ``manage.py ki_anbieter pruefen``).
 
-        Kurze Zeitgrenze; die Meldungen nennen nur Host, Modell und Art des Ergebnisses, nie Schlüssel oder Inhalte.
+        Unfold ruft die Aktion beim Speichern auf, noch in der Transaktion des Admins. Geprüft wird erst nach dem
+        Commit: Die Testaufrufe (je bis zu 15 s) halten weder die Zeilensperre noch eine Datenbankverbindung, und ein
+        Fehler dabei kann das Gespeicherte nicht zurückrollen. Die Meldungen nennen nur Host, Modell und Art des
+        Ergebnisses, nie Schlüssel oder Inhalte.
         """
-        for ergebnis in pruefe_ki_einstellungen(obj):
+        transaction.on_commit(lambda: self._melde_verbindungspruefung(request, obj), robust=True)
+
+    @staticmethod
+    def _melde_verbindungspruefung(request: HttpRequest, obj: AISettings) -> None:
+        try:
+            ergebnisse = pruefe_ki_einstellungen(obj)
+        except Exception as fehler:  # noqa: BLE001 – nur der Typ, der Text könnte Adresse oder Zeichen nennen
+            logging.getLogger(__name__).warning("KI-Verbindungsprüfung abgebrochen: %s", type(fehler).__name__)
+            messages.error(request, f"Verbindungsprüfung abgebrochen ({type(fehler).__name__}).")
+            return
+        for ergebnis in ergebnisse:
             (messages.success if ergebnis.ok else messages.error)(request, f"Verbindungsprüfung – {ergebnis.text}")
 
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):

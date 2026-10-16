@@ -19,6 +19,7 @@ keiner Ausgabe. Mit denselben Angaben wiederholt, ändert der Befehl nichts.
 from __future__ import annotations
 
 import hmac
+import math
 import os
 import re
 from typing import Any, cast
@@ -42,7 +43,14 @@ from apps.common.ki_anbieter import (
 from apps.common.models import AISettings
 
 #: Name einer Umgebungsvariable; anderes (etwa ein versehentlich übergebener Schlüssel) wird nie ausgegeben
-_VARIABLENNAME = re.compile(r"^[A-Z_][A-Z0-9_]{0,99}$")
+_VARIABLENNAME = re.compile(r"^[A-Z_][A-Z0-9_]{0,63}$")
+
+#: Längere Namen erscheinen nicht in Meldungen: Ein Schlüssel nur aus Großbuchstaben, Ziffern und Unterstrichen
+#: ginge sonst als Name durch und stünde in der Meldung „ist leer“
+_NAME_IN_MELDUNG = 40
+
+#: Anzeige einer Basis-URL, die so nie durch das Formular gekommen wäre (Altbestand, direkt in der Datenbank)
+_UNZULAESSIG = "unzulässig, nicht angezeigt"
 
 #: Felder des Schlüssels im Formular; alle übrigen Formularfelder kommen aus der gespeicherten Einrichtung
 _SCHLUESSELFELDER = ("api_key", "api_key_loeschen")
@@ -53,6 +61,19 @@ _MODELLE = (("model_name", "modell"), ("insight_model", "modell_buergerportal"),
 
 def _ja(wert: bool) -> str:
     return "ja" if wert else "nein"
+
+
+def _anzeigbare_basis_url(url: str) -> str:
+    """
+    Gespeicherte Basis-URL für die Ausgabe; leer bleibt leer.
+
+    Nicht angezeigt wird eine Adresse, die das Formular so nicht annähme und die Zugangsdaten enthalten kann: mit
+    Zugangsdaten, unzulässigem Schema oder Port (``gepruefter_host``) oder mit Abfrage oder Fragment (etwa
+    ``?api-key=…``).
+    """
+    if not url:
+        return ""
+    return url if gepruefter_host(url) and not any(zeichen in url for zeichen in "?#") else _UNZULAESSIG
 
 
 class Command(BaseCommand):
@@ -122,6 +143,10 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         aktion = options.get("aktion") or "liste"
+        zeitgrenze = options.get("zeitgrenze", PRUEF_ZEITGRENZE)
+        if not (math.isfinite(zeitgrenze) and zeitgrenze > 0):
+            # Vor jedem Speichern prüfen, nicht erst bei der Verbindungsprüfung danach
+            raise CommandError("--zeitgrenze muss eine Zahl größer als 0 sein.")
         if aktion == "einrichten":
             self._einrichten(options)
         elif aktion == "pruefen":
@@ -154,10 +179,7 @@ class Command(BaseCommand):
         host = wirksamer_host(ki.provider or "", ki.base_url or "")
         aus_vorlage = " (Vorlage)" if vorlage is not None else ""
         zustand = endpunkt_der_einstellungen(ki)
-        # Eine unzulässige Adresse (etwa mit Zugangsdaten, direkt in der Datenbank) wird nicht ausgegeben
-        basis_url = (
-            (ki.base_url if gepruefter_host(ki.base_url) else "unzulässig, nicht angezeigt") if ki.base_url else ""
-        )
+        basis_url = _anzeigbare_basis_url(ki.base_url or "")
         zeilen = [
             ("Anbieter", f"{ki.provider} ({vorlage.anzeigename})" if vorlage else "nicht eingerichtet"),
             (
@@ -202,9 +224,10 @@ class Command(BaseCommand):
             )
         wert = os.environ.get(name, "").strip()
         if not wert:
+            genannt = name if len(name) <= _NAME_IN_MELDUNG else "<VARIABLE>"
             raise CommandError(
-                f"Umgebungsvariable {name} ist leer oder nicht gesetzt. Im Container: Variable in der Shell setzen "
-                f"und mit „docker exec -e {name} …“ übergeben."
+                f"Umgebungsvariable {genannt} ist leer oder nicht gesetzt. Im Container: Variable in der Shell "
+                f"setzen und mit „docker exec -e {genannt} …“ übergeben."
             )
         return wert
 
@@ -298,8 +321,6 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------ Prüfen
 
     def _pruefen(self, zeitgrenze: float) -> None:
-        if zeitgrenze <= 0:
-            raise CommandError("--zeitgrenze muss größer als 0 sein.")
         ergebnisse = pruefe_ki_einstellungen(AISettings.objects.get_or_create(pk=1)[0], zeitgrenze=zeitgrenze)
         for ergebnis in ergebnisse:
             stil = self.style.SUCCESS if ergebnis.ok else self.style.ERROR

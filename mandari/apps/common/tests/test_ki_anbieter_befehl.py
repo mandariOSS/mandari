@@ -8,7 +8,8 @@ Anbieterwechsel ohne Umweg über den Admin (Issue #1046): Befehl ``ki_anbieter``
 - ``ki_anbieter einrichten`` geht durch das Formular des Admins: Abbruch bei nicht freigegebenem Host, leerer
   Variable und unvollständigem eigenen Endpunkt, kein Schlüssel in Ausgabe oder Protokoll, wiederholbar ohne
   Änderung.
-- ``ki_anbieter pruefen`` und „Speichern und Verbindung prüfen“ im Admin nutzen dieselbe Prüfung.
+- ``ki_anbieter pruefen`` und „Speichern und Verbindung prüfen“ im Admin nutzen dieselbe Prüfung, der Admin erst
+  nach dem Commit; während der Testaufrufe liegt die Datenbankverbindung beim Pool.
 - Die Befehle in DEPLOYMENT.md („KI-Anbieter“) gibt es so wirklich.
 
 Netzwerk gibt es in keinem Test: Die Prüfung läuft gegen eine Attrappe (``httpx.MockTransport``).
@@ -33,12 +34,14 @@ from django.contrib.messages import get_messages
 from django.core.cache import cache
 from django.core.management import call_command
 from django.core.management.base import CommandError
+from django.db import connection
 from django.test import Client, override_settings
 
 from apps.common import admin as admin_modul
 from apps.common import ki_anbieter
 from apps.common.ki_anbieter import FREMDER_HOST, KiEndpunkt, pruefe_ki_einstellungen, pruefe_verbindung
 from apps.common.models import AISettings
+from apps.common.tests.verbindungsprobe import Verbindungsprobe
 
 befehl_modul = importlib.import_module("apps.common.management.commands.ki_anbieter")
 
@@ -225,6 +228,35 @@ class TestVerbindungspruefung:
         assert NEBIUS_HOST in caplog.text and "schluessel" in caplog.text
         assert SCHLUESSEL not in caplog.text and ANTWORTTEXT not in caplog.text and "OK." not in caplog.text
 
+    def test_unzulaessige_zeichen_im_schluessel(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Ein mitkopiertes unsichtbares Zeichen: eigene Fehlerart statt Ausnahme, ohne Schlüssel und Ausnahmetext."""
+        attrappe = Attrappe()
+        with caplog.at_level(logging.DEBUG):
+            ergebnis = pruefe_verbindung(_endpunkt(api_key=SCHLUESSEL + "​"), transport=attrappe.transport())
+        assert (ergebnis.ok, ergebnis.art) == (False, "zeichen")
+        assert "unzulässige Zeichen" in ergebnis.meldung and attrappe.anfragen == []
+        for text in (ergebnis.text, repr(ergebnis), caplog.text):
+            assert SCHLUESSEL not in text and "ascii" not in text and "u200b" not in text
+
+
+@pytest.mark.django_db(transaction=True)
+def test_keine_pool_verbindung_waehrend_der_pruefung(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Je Testaufruf bis zu 15 s: Die Datenbankverbindung liegt solange beim Pool (wie bei den echten Aufrufen)."""
+    ki = _ki(model_name="modell-a", insight_model="modell-b")
+    probe = Verbindungsprobe()
+    attrappe = Attrappe()
+    erfolg = attrappe.antwort
+
+    def antwort(anfrage: httpx.Request) -> httpx.Response:
+        probe.aufruf()
+        return erfolg(anfrage)
+
+    attrappe.antwort = antwort
+    with probe.mitschreiben(monkeypatch):
+        ergebnisse = pruefe_ki_einstellungen(ki, transport=attrappe.transport())
+    assert [e.ok for e in ergebnisse] == [True, True]
+    probe.pruefen(aufrufe=2)
+
 
 @pytest.mark.django_db
 class TestPruefeKiEinstellungen:
@@ -307,6 +339,14 @@ class TestBefehlListe:
         assert "passwort-GEHEIM" not in ausgabe and "unzulässig, nicht angezeigt" in ausgabe
         assert re.search(r"Zustand:\s+aus: Endpunkt gesperrt", ausgabe)
 
+    @pytest.mark.parametrize("anhang", ["?api-key=abfrage-GEHEIM", "#abfrage-GEHEIM", "/?x=abfrage-GEHEIM"])
+    def test_adresse_mit_abfrage_wird_nicht_ausgegeben(self, anhang: str) -> None:
+        """Altbestand nach common/0011 (Basis-URL bleibt stehen): Abfrage oder Fragment erscheint nicht."""
+        _ki(provider="eigener", base_url=STACKIT + anhang, anzeigename="Eigen", verarbeitungsort="Ort")
+        ausgabe = _befehl()
+        assert "abfrage-GEHEIM" not in ausgabe
+        assert re.search(r"Basis-URL:\s+unzulässig, nicht angezeigt", ausgabe)
+
     @override_settings(KI_ERLAUBTE_HOSTS=[STACKIT_HOST])
     def test_nennt_den_grund(self) -> None:
         _ki()
@@ -373,6 +413,20 @@ class TestBefehlEinrichten:
             _befehl(*self.NEBIUS_ARGS, "--schluessel-aus-umgebung", versehentlich)
         assert "nicht den Schlüssel selbst" in str(fehler.value)
         assert versehentlich not in str(fehler.value) and SCHLUESSEL.lower() not in str(fehler.value)
+
+    @pytest.mark.parametrize("laenge", [41, 64, 65])
+    def test_langer_name_nicht_in_meldung(self, monkeypatch: pytest.MonkeyPatch, laenge: int) -> None:
+        """Ein Schlüssel nur aus Großbuchstaben, Ziffern und Unterstrichen ginge als Name durch: nie wiedergeben."""
+        versehentlich = ("SK_LIVE_" + "0123456789ABCDEF" * 5)[:laenge]
+        monkeypatch.delenv(versehentlich, raising=False)
+        with pytest.raises(CommandError) as fehler:
+            _befehl(*self.NEBIUS_ARGS, "--schluessel-aus-umgebung", versehentlich)
+        assert versehentlich not in str(fehler.value)
+        if laenge > 64:
+            assert "nicht den Schlüssel selbst" in str(fehler.value)
+        else:
+            assert "Umgebungsvariable <VARIABLE> ist leer" in str(fehler.value)
+        assert _gespeichert().provider == ""
 
     def test_wiederholt_ohne_aenderung(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv(VARIABLE, SCHLUESSEL)
@@ -458,6 +512,15 @@ class TestBefehlEinrichten:
         assert "OK – Work, Bürgerportal: Modell moonshotai/Kimi-K2.6 an api.tokenfactory.nebius.com" in ausgabe
         assert len(anbieter.anfragen) == 1 and SCHLUESSEL not in ausgabe
 
+    @pytest.mark.parametrize("zeitgrenze", ["0", "-1", "nan", "inf"])
+    def test_zeitgrenze_vor_dem_speichern(
+        self, monkeypatch: pytest.MonkeyPatch, anbieter: Attrappe, zeitgrenze: str
+    ) -> None:
+        monkeypatch.setenv(VARIABLE, SCHLUESSEL)
+        with pytest.raises(CommandError, match="--zeitgrenze"):
+            _befehl(*self.NEBIUS_ARGS, "--schluessel-aus-umgebung", VARIABLE, "--pruefen", "--zeitgrenze", zeitgrenze)
+        assert _gespeichert().provider == "" and anbieter.anfragen == []
+
 
 # =============================================================================
 # Befehl: Prüfen
@@ -527,6 +590,8 @@ class TestAdmin:
         inhalt = admin_client.get(f"/admin/common/aisettings/{ki.pk}/change/").content.decode()
         assert f'name="{self.KNOPF}"' in inhalt and "Speichern und Verbindung prüfen" in inhalt
 
+    # Geprüft wird erst nach dem Commit (transaction.on_commit): Diese Tests brauchen echte Transaktionen
+    @pytest.mark.django_db(transaction=True)
     def test_speichern_und_pruefen(self, admin_client: Client, anbieter: Attrappe) -> None:
         ki = _ki()
         antwort = admin_client.post(
@@ -542,6 +607,7 @@ class TestAdmin:
         ), meldungen
         assert [json.loads(a.content)["model"] for a in anbieter.anfragen] == ["neues-modell"]
 
+    @pytest.mark.django_db(transaction=True)
     def test_fehler_als_meldung_ohne_schluessel(self, admin_client: Client, anbieter: Attrappe) -> None:
         ki = _ki()
         anbieter.antwort = lambda _anfrage: httpx.Response(401, text=f"{ANTWORTTEXT} {SCHLUESSEL}")
@@ -551,6 +617,56 @@ class TestAdmin:
         inhalt = antwort.content.decode()
         assert "Schlüssel abgelehnt (HTTP 401)" in inhalt
         assert SCHLUESSEL not in inhalt and ANTWORTTEXT not in inhalt
+
+    @pytest.mark.django_db(transaction=True)
+    def test_pruefung_erst_nach_dem_commit(
+        self, admin_client: Client, anbieter: Attrappe, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Die Testaufrufe halten weder Transaktion und Zeilensperre noch eine Verbindung aus dem Pool."""
+        ki = _ki()
+        probe = Verbindungsprobe()
+        in_transaktion: list[bool] = []
+        erfolg = anbieter.antwort
+
+        def antwort(anfrage: httpx.Request) -> httpx.Response:
+            probe.aufruf()
+            in_transaktion.append(connection.in_atomic_block)
+            return erfolg(anfrage)
+
+        anbieter.antwort = antwort
+        with probe.mitschreiben(monkeypatch):
+            seite = admin_client.post(
+                f"/admin/common/aisettings/{ki.pk}/change/",
+                {**_admin_daten(ki, model_name="neues-modell"), self.KNOPF: ""},
+                follow=True,
+            )
+        assert in_transaktion == [False]
+        probe.pruefen(aufrufe=1)
+        assert "Verbindung in Ordnung" in seite.content.decode()
+        assert _gespeichert().model_name == "neues-modell"
+
+    @pytest.mark.django_db(transaction=True)
+    def test_ausnahme_in_der_pruefung_rollt_nicht_zurueck(
+        self, admin_client: Client, anbieter: Attrappe, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Ein unerwarteter Fehler beim Prüfen: Das Gespeicherte bleibt, Meldung nur mit dem Typ der Ausnahme."""
+        ki = _ki()
+
+        def kaputt(_anfrage: httpx.Request) -> httpx.Response:
+            raise RuntimeError(f"{ANTWORTTEXT} {SCHLUESSEL}")
+
+        anbieter.antwort = kaputt
+        with caplog.at_level(logging.DEBUG):
+            seite = admin_client.post(
+                f"/admin/common/aisettings/{ki.pk}/change/",
+                {**_admin_daten(ki, model_name="neues-modell"), self.KNOPF: ""},
+                follow=True,
+            )
+        inhalt = seite.content.decode()
+        assert seite.status_code == 200 and _gespeichert().model_name == "neues-modell"
+        assert "Verbindungsprüfung abgebrochen (RuntimeError)" in inhalt
+        for text in (inhalt, caplog.text):
+            assert SCHLUESSEL not in text and ANTWORTTEXT not in text
 
     def test_ungueltig_ohne_aufruf(self, admin_client: Client, anbieter: Attrappe) -> None:
         ki = _ki()
