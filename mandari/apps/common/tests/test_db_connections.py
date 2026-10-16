@@ -15,7 +15,7 @@ import asyncio
 import contextlib
 import threading
 import time
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Any, cast
 from unittest import mock
 
@@ -39,7 +39,7 @@ from apps.common.middleware import DatabaseErrorMiddleware, database_unavailable
 # --- Hilfen ---------------------------------------------------------------------------
 
 _view_haelt_verbindung = threading.Event()
-_view_fertig = threading.Event()
+_anfrage_zu_ende = threading.Event()
 #: Rohe psycopg-Verbindungen der View, damit die Gegenprobe ihre verlorene wieder schließen kann.
 _gehaltene_verbindungen: list[Any] = []
 
@@ -51,8 +51,31 @@ def _haltende_view(request: Any) -> HttpResponse:
     _gehaltene_verbindungen.append(connection.connection)
     _view_haelt_verbindung.set()
     time.sleep(0.3)
-    _view_fertig.set()
     return HttpResponse("ok")
+
+
+class _MeldetEndeDerAnfrage:
+    """Äußerste Middleware im Test: meldet, wenn die Anfrage im Thread der View ganz durch ist.
+
+    Ihr ``finally`` läuft nach dem aller inneren Middlewares. Danach hat auch
+    ``ReleaseDatabaseConnectionsMiddleware`` aufgeräumt, ohne dass der Test eine feste Zeit
+    abwarten muss.
+    """
+
+    sync_capable = True
+    async_capable = False
+
+    def __init__(self, get_response: Any) -> None:
+        self.get_response = get_response
+
+    def __call__(self, request: Any) -> HttpResponse:
+        try:
+            return cast(HttpResponse, self.get_response(request))
+        finally:
+            _anfrage_zu_ende.set()
+
+
+_ENDE_MELDEN = f"{__name__}._MeldetEndeDerAnfrage"
 
 
 def _pool_voll(request: Any) -> HttpResponse:
@@ -74,9 +97,51 @@ def _pool_oder_skip() -> Any:
     return cast(Any, connections["default"]).pool  # Stubs kennen den Pool nicht
 
 
-def _ausgeliehen(pool: Any) -> int:
-    stats = pool.get_stats()
-    return int(stats.get("pool_size", 0)) - int(stats.get("pool_available", 0))
+class _Ausleihen:
+    """Was während eines Blocks aus dem Pool geholt und nicht zurückgegeben wurde (Issue #810).
+
+    Früher verglichen die Tests den Füllstand des Pools vorher und nachher. Der hängt aber auch
+    davon ab, was gerade außerhalb der Anfrage passiert: ``pool_size`` ist in psycopg_pool
+    ``_nconns`` und zählt Verbindungen mit, die erst noch aufgebaut werden. Hatte ein früherer
+    Test den Pool geschlossen (etwa über ``override_settings(TIME_ZONE=…)``), erschienen vorher
+    ``min_size`` Verbindungen als verliehen, nachher keine mehr, und der Test meldete „-2“.
+    Gezählt wird deshalb nur, was im Block selbst über ``getconn`` und ``putconn`` läuft:
+    Aufbau und Rückgabe anderer Verbindungen ändern nichts, jede im Block geholte und nicht
+    zurückgegebene Verbindung bleibt ein Leck.
+    """
+
+    def __init__(self) -> None:
+        self.geholt = 0
+        self.sperre = threading.Lock()
+        #: noch nicht zurückgegeben, nach ``id``; die Referenz hält die Kennung eindeutig
+        self.verliehen: dict[int, Any] = {}
+
+    @property
+    def offen(self) -> int:
+        with self.sperre:
+            return len(self.verliehen)
+
+
+@contextlib.contextmanager
+def _ausleihen_beobachten(pool: Any) -> Iterator[_Ausleihen]:
+    """Zählt die Ausleihen am Pool selbst; Django holt und gibt jede Verbindung über ihn."""
+    beobachtung = _Ausleihen()
+    getconn, putconn = pool.getconn, pool.putconn
+
+    def geholt(*args: Any, **kwargs: Any) -> Any:
+        roh = getconn(*args, **kwargs)
+        with beobachtung.sperre:
+            beobachtung.geholt += 1
+            beobachtung.verliehen[id(roh)] = roh
+        return roh
+
+    def zurueck(roh: Any) -> None:
+        putconn(roh)
+        with beobachtung.sperre:
+            beobachtung.verliehen.pop(id(roh), None)
+
+    with mock.patch.object(pool, "getconn", geholt), mock.patch.object(pool, "putconn", zurueck):
+        yield beobachtung
 
 
 def _anfrage_abbrechen_waehrend_view_verbindung_haelt() -> None:
@@ -84,7 +149,7 @@ def _anfrage_abbrechen_waehrend_view_verbindung_haelt() -> None:
     from django.core.handlers.asgi import ASGIHandler
 
     _view_haelt_verbindung.clear()
-    _view_fertig.clear()
+    _anfrage_zu_ende.clear()
 
     async def ablauf() -> None:
         handler = ASGIHandler()
@@ -121,8 +186,8 @@ def _anfrage_abbrechen_waehrend_view_verbindung_haelt() -> None:
             await aufgabe
 
     asyncio.run(ablauf())
-    assert _view_fertig.wait(5), "Die View ist nicht zu Ende gelaufen"
-    time.sleep(0.2)  # Aufräumen im View-Thread abwarten
+    # Statt einer festen Wartezeit: Die äußerste Middleware meldet, wenn auch das Aufräumen durch ist
+    assert _anfrage_zu_ende.wait(5), "Die Anfrage ist im Thread der View nicht zu Ende gelaufen"
 
 
 # --- Regressionstest gegen einen echten Pool ------------------------------------------
@@ -132,18 +197,38 @@ def _anfrage_abbrechen_waehrend_view_verbindung_haelt() -> None:
 class TestAbgebrocheneAnfrageGibtVerbindungZurueck:
     def test_mit_middleware_kommt_die_verbindung_zurueck(self) -> None:
         pool = _pool_oder_skip()
-        with override_settings(
-            ROOT_URLCONF=__name__,
-            MIDDLEWARE=["apps.common.db_connections.ReleaseDatabaseConnectionsMiddleware"],
+        _gehaltene_verbindungen.clear()
+        with (
+            override_settings(
+                ROOT_URLCONF=__name__,
+                MIDDLEWARE=[_ENDE_MELDEN, "apps.common.db_connections.ReleaseDatabaseConnectionsMiddleware"],
+            ),
+            _ausleihen_beobachten(pool) as ausleihen,
         ):
-            vorher = _ausgeliehen(pool)
             _anfrage_abbrechen_waehrend_view_verbindung_haelt()
-            nachher = _ausgeliehen(pool)
 
-        assert nachher == vorher, (
-            f"Nach der abgebrochenen Anfrage sind {nachher - vorher} Verbindung(en) mehr verliehen — "
+        assert ausleihen.geholt >= 1, (
+            "Die View muss eine Verbindung aus dem Pool geholt haben, sonst beweist der Test nichts"
+        )
+        assert ausleihen.offen == 0, (
+            f"Nach der abgebrochenen Anfrage sind {ausleihen.offen} Verbindung(en) noch verliehen — "
             "genau so lief der Pool am 22.09.2026 leer"
         )
+
+    def test_messung_haelt_einem_neu_aufgebauten_pool_stand(self) -> None:
+        """Issue #810: Hat ein früherer Test den Pool geschlossen, füllt sich der neue erst während der Anfrage.
+
+        So kam es zum „-2“: Djangos Signal zu ``TIME_ZONE`` schließt den Pool (``ensure_timezone``),
+        der nächste Zugriff legt einen neuen an, und der meldet ``min_size`` Verbindungen, bevor
+        es sie gibt. Der Vergleich der Füllstände hielt deren Ankunft für Rückgaben.
+        """
+        _pool_oder_skip()
+        with override_settings(TIME_ZONE="Europe/Berlin"):
+            pass
+        pools = cast(Any, type(connections["default"]))._connection_pools
+        assert "default" not in pools, "Vorbedingung: Django baut den Pool neu auf, sonst prüft der Test nichts"
+
+        self.test_mit_middleware_kommt_die_verbindung_zurueck()
 
     def test_gegenprobe_ohne_middleware_geht_die_verbindung_verloren(self) -> None:
         """Beweist, dass der Test den Fehlerfall wirklich trifft.
@@ -152,12 +237,14 @@ class TestAbgebrocheneAnfrageGibtVerbindungZurueck:
         selbst zurück — dann ist die Middleware ein Sicherheitsnetz, keine Notwendigkeit mehr.
         """
         pool = _pool_oder_skip()
+        _gehaltene_verbindungen.clear()
         try:
-            with override_settings(ROOT_URLCONF=__name__, MIDDLEWARE=[]):
-                vorher = _ausgeliehen(pool)
+            with (
+                override_settings(ROOT_URLCONF=__name__, MIDDLEWARE=[_ENDE_MELDEN]),
+                _ausleihen_beobachten(pool) as ausleihen,
+            ):
                 _anfrage_abbrechen_waehrend_view_verbindung_haelt()
-                nachher = _ausgeliehen(pool)
-            assert nachher == vorher + 1, "Ohne Middleware sollte die Verbindung der View ausgeliehen bleiben"
+            assert ausleihen.offen == 1, "Ohne Middleware sollte die Verbindung der View ausgeliehen bleiben"
         finally:
             # Von allein kommt der Platz nie zurück — die Verbindung von Hand an denselben Pool
             # zurückgeben. Den Pool neu aufzubauen (close_pool) wäre gefährlicher: Den neuen
@@ -166,6 +253,43 @@ class TestAbgebrocheneAnfrageGibtVerbindungZurueck:
                 if not roh.closed and roh._pool is pool:
                     pool.putconn(roh)
             _gehaltene_verbindungen.clear()
+
+
+class _PoolMitAusleihe:
+    """Gerade genug Pool für ``_ausleihen_beobachten``, mit Füllstand wie ``get_stats``."""
+
+    def __init__(self) -> None:
+        self.verliehen = 0
+
+    def getconn(self, timeout: float | None = None) -> object:
+        self.verliehen += 1
+        return object()
+
+    def putconn(self, roh: object) -> None:
+        self.verliehen -= 1
+
+
+def test_beobachtung_zaehlt_nur_was_waehrend_der_anfrage_geliehen_wird() -> None:
+    """Rückgaben anderer ändern das Ergebnis nicht, ein Leck bleibt eins (Issue #810).
+
+    Läuft auch ohne PostgreSQL und belegt die Messung, auf die sich die Pool-Tests oben stützen.
+    """
+    pool = _PoolMitAusleihe()
+    fremde = pool.getconn()  # vor der Messung von einem anderen Thread geliehen
+
+    with _ausleihen_beobachten(pool) as sauber:
+        eigene = pool.getconn()
+        pool.putconn(fremde)  # der andere Thread gibt mitten in der Messung zurück
+        pool.putconn(eigene)
+    assert (sauber.geholt, sauber.offen) == (1, 0)
+    # Der Füllstand sank dabei um eins: Der frühere Vergleich vorher/nachher hätte „-1“ gemeldet.
+    assert pool.verliehen == 0
+
+    with _ausleihen_beobachten(pool) as leck:
+        pool.putconn(pool.getconn())
+        pool.getconn()  # nie zurückgegeben
+    assert (leck.geholt, leck.offen) == (2, 1)
+    assert "getconn" not in vars(pool) and "putconn" not in vars(pool), "Danach gilt wieder der echte Pool"
 
 
 # --- Middleware und Konfiguration -----------------------------------------------------
@@ -571,27 +695,29 @@ class TestFehlerseitenGebenVerbindungZurueck:
     def test_mit_dekorator_kommt_die_verbindung_zurueck(self) -> None:
         pool = _pool_oder_skip()
         _gehaltene_verbindungen.clear()
-        with override_settings(
-            ROOT_URLCONF=_urlconf_mit(releases_db_connections(_fehlerseite_mit_datenbank)), MIDDLEWARE=[]
+        with (
+            override_settings(
+                ROOT_URLCONF=_urlconf_mit(releases_db_connections(_fehlerseite_mit_datenbank)), MIDDLEWARE=[]
+            ),
+            _ausleihen_beobachten(pool) as ausleihen,
         ):
-            vorher = _ausgeliehen(pool)
             _404_ueber_asgi()
-            nachher = _ausgeliehen(pool)
-        assert _gehaltene_verbindungen, (
-            "Die Fehlerseite muss die Datenbank benutzt haben, sonst beweist der Test nichts"
+        assert _gehaltene_verbindungen and ausleihen.geholt >= 1, (
+            "Die Fehlerseite muss eine Verbindung aus dem Pool benutzt haben, sonst beweist der Test nichts"
         )
-        assert nachher == vorher, f"Nach der 404 sind {nachher - vorher} Verbindung(en) mehr verliehen"
+        assert ausleihen.offen == 0, f"Nach der 404 sind {ausleihen.offen} Verbindung(en) noch verliehen"
 
     def test_gegenprobe_ohne_dekorator_bleibt_die_verbindung_im_executor_thread(self) -> None:
         """Beweist, dass der Test den Executor-Pfad wirklich trifft."""
         pool = _pool_oder_skip()
         _gehaltene_verbindungen.clear()
         try:
-            with override_settings(ROOT_URLCONF=_urlconf_mit(_fehlerseite_mit_datenbank), MIDDLEWARE=[]):
-                vorher = _ausgeliehen(pool)
+            with (
+                override_settings(ROOT_URLCONF=_urlconf_mit(_fehlerseite_mit_datenbank), MIDDLEWARE=[]),
+                _ausleihen_beobachten(pool) as ausleihen,
+            ):
                 _404_ueber_asgi()
-                nachher = _ausgeliehen(pool)
-            assert nachher == vorher + 1, "Ohne Dekorator sollte der Executor-Thread seine Verbindung behalten"
+            assert ausleihen.offen == 1, "Ohne Dekorator sollte der Executor-Thread seine Verbindung behalten"
         finally:
             for roh in _gehaltene_verbindungen:
                 if not roh.closed and roh._pool is pool:
