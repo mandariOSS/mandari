@@ -22,6 +22,7 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
 """
 
 from dataclasses import dataclass, field
+from datetime import time
 from typing import Any
 
 from django.db import transaction
@@ -144,6 +145,7 @@ def eligibility(
     *,
     voting_method: str | None = None,
     is_election: bool | None = None,
+    at: time | None = None,
 ) -> Eligibility:
     """
     Stimmberechtigte Anwesende, beratende Anwesende und Vollständigkeit der Anwesenheit.
@@ -160,6 +162,11 @@ def eligibility(
     Teilnahmeart (Issue #139): Zugeschaltete mit andauernder Störung stimmen nicht ab
     (``unreachable``). Mit TOP (``item``, Abstimmungsart und Wahl ggf. aus dem Formular) gilt die Regel
     des Landesprofils für Wahlen und geheime Abstimmungen (``remote_excluded``).
+
+    ``at``: Zeitpunkt der Abstimmung (Ortszeit). Dann zählt die Störung zu diesem Zeitpunkt, auch wenn sie
+    inzwischen beendet ist – für Erfassen, Nacherfassen und Berichtigen nach der Abstimmung
+    (``participation_service.vote_time``, Issue #1045). Ohne ``at`` zählt wie bisher die andauernde Störung
+    (Live-Anzeige, Abstimmung ohne bekannten Zeitpunkt).
     """
     from . import attendance_service
 
@@ -192,7 +199,7 @@ def eligibility(
                 result.advisory.append(attendance)
             else:
                 result.others.append(attendance)
-        elif can_vote(attendance) and participation_service.is_disrupted(attendance):
+        elif can_vote(attendance) and participation_service.is_disrupted(attendance, at=at):
             result.unreachable.append(attendance)
         elif can_vote(attendance) and rule is not None and rule.excluded and attendance.is_remote:
             result.remote_excluded.append(attendance)
@@ -238,7 +245,9 @@ def check_counts(
     Harter Fehler bei vollständig erfasster Anwesenheit; sonst Warnung – die Zahl der erfassten
     Stimmberechtigten ist dann keine verlässliche Obergrenze. Ohne Anwesenheitsliste keine Prüfung.
     """
-    assessed = assessed or eligibility(agenda_item.meeting, agenda_item)
+    assessed = assessed or eligibility(
+        agenda_item.meeting, agenda_item, at=participation_service.vote_time(agenda_item)
+    )
     if not assessed.has_list:
         return CountCheck()
     # Vom Landesprofil ausgeschlossene Zugeschaltete zählen nicht (auch bei einer Prüfung ohne TOP-Bezug)
@@ -346,7 +355,10 @@ def capture_votes(
         else:
             protocol_lock.ensure_unlocked(agenda_item.meeting_id)
         if schreibende:
-            beurteilt = assessed or eligibility(agenda_item.meeting, agenda_item)
+            # Störungen zum Zeitpunkt der Abstimmung, sofern bekannt (Issue #1045)
+            beurteilt = assessed or eligibility(
+                agenda_item.meeting, agenda_item, at=participation_service.vote_time(agenda_item)
+            )
             sperre = beurteilt.remote_rule
             if sperre is not None and sperre.barred:
                 # In dieser Sitzung unzulässig (Issue #754): keine Stimmen, auch keine Vermerke

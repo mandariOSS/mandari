@@ -302,8 +302,15 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
                     counts[field] = min(int(raw), 9999)
             # Keine Stimmenzahlen für einen gesperrten Vorgang
             if not gesperrt and any(counts[field] != getattr(item, field) for field in _COUNT_FIELDS):
+                # Abgeschlossene Abstimmung im Sitzungscockpit: Störungen zu ihrem Zeitpunkt (Issue #1045); nur dann
+                # eine eigene Prüfung je TOP, sonst gilt die gemeinsame
+                moment = participation_service.vote_time(item)
                 check = voting_service.check_counts(
-                    item, counts["votes_yes"], counts["votes_no"], counts["votes_abstain"], assessed=assessed
+                    item,
+                    counts["votes_yes"],
+                    counts["votes_no"],
+                    counts["votes_abstain"],
+                    assessed=assessed if moment is None else voting_service.eligibility(meeting, at=moment),
                 )
                 if check.exceeded:
                     (messages.error if check.hard else messages.warning)(request, check.message)
@@ -455,7 +462,9 @@ class ProtocolCorrectionView(SessionViewMixin, TemplateView):
         voters = []
         if item is not None and item.voting_method in protocol_correction_service.INDIVIDUAL_METHODS:
             votes = protocol_correction_service.current_votes(item)
-            for attendance in voting_service.eligibility(meeting, item).voting:
+            # Wie die Prüfung beim Berichtigen: Störungen zum Zeitpunkt der Abstimmung (Issue #1045)
+            moment = participation_service.vote_time(item)
+            for attendance in voting_service.eligibility(meeting, item, at=moment).voting:
                 attendance.current_vote = votes.get(str(attendance.person_id), "")
                 voters.append(attendance)
         public_scope = (

@@ -84,8 +84,9 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         item = _get_item(self, self.kwargs["item_id"])
         # Stimmrecht (Issue #318): Stimmberechtigte Anwesende stimmen ab, Beratende und Gäste werden
         # nur ausgewiesen; eine frühere Stimme ohne Stimmrecht entfernt das nächste Speichern.
-        # Teilnahmeart (Issue #139): gestörte Zugeschaltete und vom Landesprofil Ausgeschlossene stimmen nicht ab
-        assessed = voting_service.eligibility(item.meeting, item)
+        # Teilnahmeart (Issue #139): gestörte Zugeschaltete und vom Landesprofil Ausgeschlossene stimmen nicht ab –
+        # bei einer abgeschlossenen Abstimmung gestört zu ihrem Zeitpunkt, sonst andauernd (Issue #1045)
+        assessed = voting_service.eligibility(item.meeting, item, at=participation_service.vote_time(item))
         loaded = list(item.votes.select_related("person"))
         votes = {v.person_id: v.vote for v in loaded}
         protocol = getattr(item.meeting, "protocol", None)
@@ -160,7 +161,7 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         if result in {value for value, _ in item._meta.get_field("vote_result").choices}:
             item.vote_result = result
 
-        assessed = voting_service.eligibility(item.meeting, item)
+        assessed = voting_service.eligibility(item.meeting, item, at=participation_service.vote_time(item))
         sperre = assessed.remote_rule
         if sperre is not None and sperre.barred:
             # In dieser Sitzung unzulässig (Issue #754): weder Summen noch Stimmen, nur die Vertagung
