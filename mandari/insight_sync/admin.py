@@ -124,14 +124,9 @@ def trigger_sync_view(request):
     source = None
     source_id = (request.POST.get("source_id") or "").strip()
     if source_id:
-        from django.core.exceptions import ValidationError
+        from hub.ris import selectors
 
-        from insight_core.models import OParlSource
-
-        try:
-            source = OParlSource.objects.filter(pk=source_id, is_active=True).first()
-        except (ValidationError, ValueError):
-            source = None
+        source = selectors.active_source(source_id)
         if source is None:
             messages.error(request, "Quelle nicht gefunden oder nicht aktiv.")
             return HttpResponseRedirect(reverse("admin:index"))
