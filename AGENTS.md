@@ -748,6 +748,23 @@ plain = obj.get_secret_decrypted()        # Entschlüsseln und zurückgeben
 5. **HTMX-First** - Minimales JavaScript, maximale Interaktivität
 6. **Audit-Trail** - Vollständige Nachverfolgbarkeit aller Aktionen
 
+### Datendrehscheibe: Regeln für Beiträge
+
+Schichten, Abhängigkeiten und Prüfungen stehen in `docs/ENGINEERING_STANDARDS.md`, Abschnitt 1, und in
+der [ADR Schichtenmodell](docs/adr/20260929-schichtenmodell.md). Kurz:
+
+- **Keine fremden Tabellen:** Jeder Datenbestand hat genau einen Eigentümer, nur er schreibt. Session,
+  Work und Minutes kennen sich nicht (`lint-imports`). Auch lesend gibt es keinen Zugriff auf fremde
+  Tabellen, weder über deren Modelle noch per SQL: RIS-Daten lesen Fachmodule nur über
+  `hub.ris.selectors`, nicht über `OParl*.objects`.
+- **Ereignisse veröffentlicht nur der Eigentümer:** `publish()` steht nur im Paket, das der Vertrag als
+  `x-owner` nennt. `ris.*` gehört der Drehscheibe (`hub.ris`, Übertragungen `ris.broadcast.*` in
+  `hub.live`); der Ingestor schreibt `ris.*` als Eingangsadapter direkt ins Journal.
+- **Befehle statt Direktaufruf:** Daten eines anderen Moduls ändert ein Befehl an den Eigentümer
+  (`hub.commands`, Quittung oder Problem nach RFC 9457), kein Aufruf seiner Services.
+- **Jedes Ereignis und jeder Befehl hat ein Schema** unter `hub/contracts/schemas/<typ>/v<n>.json`, im
+  selben PR, nur additiv geändert; `scripts/check_event_contracts.py` prüft das in der CI.
+
 ---
 
 ## Best Practices für KI-Assistenten
