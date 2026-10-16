@@ -37,14 +37,22 @@ def _redis():
     )
 
 
-def is_ingestor_active() -> bool:
+#: Ohne Lebenszeichen gilt der Daemon als aktiv, wenn er in dieser Zeit ein Sync-Protokoll begonnen hat
+ACTIVE_LOG_WINDOW = timedelta(minutes=30)
+#: Woran der Daemon als aktiv erkannt wurde (``ingestor_activity``)
+ACTIVE_BY_HEARTBEAT = "heartbeat"
+ACTIVE_BY_SYNCLOG = "synclog"
+
+
+def ingestor_activity() -> str | None:
     """
-    Lebt der Ingestor-Daemon? Ja, wenn sein Lebenszeichen in Redis steht, sonst wenn er in den letzten 30 Minuten
-    ein Sync-Protokoll begonnen hat (ältere Ingestoren ohne Lebenszeichen, Redis nicht erreichbar).
+    Woran ist der Ingestor-Daemon als aktiv erkennbar? ``ACTIVE_BY_HEARTBEAT``, wenn sein Lebenszeichen in Redis
+    steht, sonst ``ACTIVE_BY_SYNCLOG``, wenn er in den letzten 30 Minuten ein Sync-Protokoll begonnen hat (ältere
+    Ingestoren ohne Lebenszeichen, Redis nicht erreichbar), sonst ``None``.
     """
     try:
         if _redis().exists(HEARTBEAT_KEY):
-            return True
+            return ACTIVE_BY_HEARTBEAT
     except Exception as e:  # noqa: BLE001 - ohne Redis entscheidet das Sync-Protokoll
         logger.debug("Lebenszeichen des Ingestors nicht lesbar: %s", type(e).__name__)
     try:
@@ -52,10 +60,15 @@ def is_ingestor_active() -> bool:
 
         from .models import SyncLog
 
-        cutoff = timezone.now() - timedelta(minutes=30)
-        return SyncLog.objects.filter(started_at__gte=cutoff).exists()
+        cutoff = timezone.now() - ACTIVE_LOG_WINDOW
+        return ACTIVE_BY_SYNCLOG if SyncLog.objects.filter(started_at__gte=cutoff).exists() else None
     except Exception:
-        return False
+        return None
+
+
+def is_ingestor_active() -> bool:
+    """Lebt der Ingestor-Daemon? Lebenszeichen in Redis, sonst ein Sync-Protokoll der letzten 30 Minuten."""
+    return ingestor_activity() is not None
 
 
 def trigger_sync(full: bool = False, source=None) -> bool:

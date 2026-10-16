@@ -166,6 +166,25 @@ die Datenbank nicht (DEPLOYMENT.md, „Worker“).
 Das Helm-Chart nutzt `live` für Startup- und Liveness-Probe und `ready` für die
 Readiness-Probe. Die Statusseite (Gatus) kann `/health/ready/` als Bedingung nehmen.
 
+## Ingestor-Daemon und Sync-Läufe
+
+Zwei Systemchecks des Betriebsmonitors betreffen den Ingestor (`insight_core/services/source_health.py`,
+`_ingestor_checks`):
+
+| Prüfung | Status | Bedingung |
+|---|---|---|
+| Ingestor-Daemon | OK | Lebenszeichen in Redis (`mandari:ingestor:heartbeat`): „Daemon aktiv (Lebenszeichen), letzter Lauf vor …“; ohne Redis ein Sync-Protokoll der letzten 30 Minuten: „Daemon aktiv (Sync-Protokoll)“ |
+| | Warnung | kein Lebenszeichen, letzter Lauf höchstens 6 Stunden alt, oder noch kein Lauf |
+| | Kritisch | kein Lebenszeichen, letzter Lauf älter als 6 Stunden (Alarm, siehe unten) |
+| Sync-Läufe (24 h) | OK | mindestens ein Lauf erfolgreich; Quellen, deren Läufe alle scheiterten, nennt der Text („ohne Erfolg: …“) |
+| | Warnung | keine Läufe in den letzten 24 Stunden |
+| | Kritisch | kein Lauf erfolgreich |
+
+Seit Issue #1026 hat jede Quelle ihren eigenen Takt und schreibt je Lauf ein eigenes Protokoll; nachts und am
+Wochenende liegt der letzte Lauf bis zu 2 Stunden zurück. Die Sync-Läufe bewertet der Monitor deshalb für den
+Ingestor als Ganzes. Eine einzelne dauerhaft gestörte Quelle bewertet die Quellentabelle (siehe
+[Bewertung einer Quelle](#bewertung-einer-quelle), mit Alarm-Mail); sie hält den Systemstatus nicht auf Warnung.
+
 ## Alarmierung
 
 Zeitplan im Worker `befehl:check_source_health`, stündlich um :15 (`DEPLOYMENT.md`, „Geplante

@@ -10,6 +10,7 @@ Quelle. Redis ist hier nachgebildet.
 from __future__ import annotations
 
 import json
+from datetime import timedelta
 from typing import Any
 
 import pytest
@@ -120,3 +121,61 @@ def test_jetzt_synchronisieren_unbekannte_quelle(redis: _Redis, db: Any, admin_c
         antwort = admin_client.post("/admin/insight_sync/trigger-sync/", {"source_id": kennung})
         assert antwort.status_code == 302
     assert redis.nachrichten == []
+
+
+def _protokoll(quelle: OParlSource | None, status: str, vor_minuten: int) -> SyncLog:
+    eintrag = SyncLog.objects.create(source=quelle, sync_type="incremental", triggered_by="daemon", status=status)
+    # started_at setzt Django beim Anlegen selbst
+    SyncLog.objects.filter(pk=eintrag.pk).update(started_at=timezone.now() - timedelta(minutes=vor_minuten))
+    return eintrag
+
+
+def _pruefung(name: str) -> dict[str, Any]:
+    from insight_core.services.source_health import _ingestor_checks
+
+    return next(c for c in _ingestor_checks() if c["name"] == name)
+
+
+def test_monitor_daemon_aktiv_mit_lebenszeichen_und_letztem_lauf(redis: _Redis, quelle: OParlSource) -> None:
+    redis.lebenszeichen = True
+    _protokoll(quelle, "success", 90)
+
+    pruefung = _pruefung("Ingestor-Daemon")
+    assert pruefung["status"] == "ok"
+    assert pruefung["detail"] == "Daemon aktiv (Lebenszeichen), letzter Lauf vor 90 Minuten"
+
+    _protokoll(quelle, "success", 5 * 60)
+    SyncLog.objects.filter(started_at__gte=timezone.now() - timedelta(hours=2)).delete()
+    assert _pruefung("Ingestor-Daemon")["detail"].endswith("letzter Lauf vor 5 Stunden")
+
+
+def test_monitor_daemon_ohne_lebenszeichen(redis: _Redis, quelle: OParlSource) -> None:
+    _protokoll(quelle, "success", 10)
+    assert _pruefung("Ingestor-Daemon")["detail"] == "Daemon aktiv (Sync-Protokoll), letzter Lauf vor 10 Minuten"
+
+    SyncLog.objects.all().delete()
+    _protokoll(quelle, "success", 7 * 60)
+    pruefung = _pruefung("Ingestor-Daemon")
+    assert pruefung["status"] == "critical"
+    assert pruefung["detail"] == "Kein Lebenszeichen, letzter Lauf vor 7 Stunden"
+
+
+def test_monitor_laeufe_je_quelle_eine_gestoerte_quelle_haelt_nicht_auf_warnung(
+    redis: _Redis, quelle: OParlSource
+) -> None:
+    hamm = OParlSource.objects.create(name="Hamm", url="https://hamm.example.org/oparl/system")
+    for minuten in (10, 70, 130):
+        _protokoll(quelle, "success", minuten)
+        _protokoll(hamm, "failed", minuten)
+
+    pruefung = _pruefung("Sync-Läufe (24 h)")
+    assert pruefung["status"] == "ok"
+    assert pruefung["detail"] == "3 von 6 Läufen fehlgeschlagen; ohne Erfolg: Hamm (Bewertung je Quelle)"
+
+    SyncLog.objects.filter(source=quelle).update(status="failed")
+    pruefung = _pruefung("Sync-Läufe (24 h)")
+    assert pruefung["status"] == "critical"
+    assert pruefung["detail"] == "Alle 6 Läufe fehlgeschlagen"
+
+    SyncLog.objects.all().delete()
+    assert _pruefung("Sync-Läufe (24 h)")["status"] == "warning"
