@@ -973,7 +973,7 @@ Diese Seite beschreibt den Code auf `dev` nach den Änderungen für
 - [#1033](https://github.com/mandariOSS/mandari/issues/1033): Vollabgleich in Zeitscheiben, langsame Listen aussetzen
   ([#1040](https://github.com/mandariOSS/mandari/pull/1040));
 - [#1041](https://github.com/mandariOSS/mandari/issues/1041): Vermerk „filtert nicht“ je Liste und nur für die eigene
-  Quelle, mit täglicher Prüfung.
+  Quelle, mit täglicher Prüfung ([#1044](https://github.com/mandariOSS/mandari/pull/1044)).
 
 Die von uns betriebene Instanz (mandari.de) folgt diesen Regeln ab dem ersten Deploy, der diese Änderungen enthält;
 bis dahin läuft dort noch ein älterer Stand.
