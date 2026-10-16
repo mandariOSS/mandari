@@ -455,6 +455,10 @@ def sync_complete(body_results: list[dict[str, Any]], missed_bodies: list[str], 
 #: Höchstens so viele nicht lesbare Adressen nennt der Eintrag im Sync-Log (``missed_bodies_note``)
 MISSED_BODIES_SHOWN = 5
 
+#: Höchstens so viele Seiten einer Kommunenliste liest die Erkennung, mit der ersten (Issue #869); derselbe Wert wie
+#: ``MAX_BODY_PAGES`` in ``mandari/insight_core/management/commands/add_oparl_source.py``
+MAX_BODY_PAGES = 20
+
 
 def missed_bodies_note(missed_bodies: list[str]) -> str:
     """
@@ -715,6 +719,10 @@ class SyncOrchestrator:
         lesbar, bleiben sie im Abgleich; die Seite, an der das Lesen abbrach, steht in ``missed`` und der
         Abgleich gilt als nicht vollständig (Issue #556). Ohne eine einzige lesbare Kommune (oder ohne
         ``missed``) geht der Fehler an den Aufrufer.
+
+        Gelesen werden höchstens ``MAX_BODY_PAGES`` Seiten, und eine Folgeseite, die auf eine schon gelesene Seite
+        verweist, bricht ab (``ListFetchError``): Eine fehlerhafte Liste darf den Zyklus nicht endlos aufhalten.
+        Nennt die letzte erlaubte Seite noch eine Folgeseite, steht diese in ``missed`` (unvollständig statt endlos).
         """
         bodies: list[dict[str, Any]] = []
         next_page: str | None = None
@@ -725,7 +733,7 @@ class SyncOrchestrator:
             if next_page is None:
                 return bodies
         try:
-            async for page in client.fetch_list(list_url, next_page=next_page):
+            async for page in client.fetch_list(list_url, max_pages=MAX_BODY_PAGES, next_page=next_page):
                 bodies.extend(page)
         except ListFetchError as e:
             if missed is None or not bodies:
@@ -735,6 +743,15 @@ class SyncOrchestrator:
                 f"{len(bodies)} Kommunen gelesen, Abgleich unvollständig: {e.page_url}[/red]"
             )
             missed.append(e.page_url)
+            return bodies
+        unread = client.page_limit_lists.get(list_url)
+        if unread is not None:
+            console.print(
+                f"[yellow]Kommunenliste {list_url} nach {MAX_BODY_PAGES} Seiten nicht weiter gelesen, "
+                f"{len(bodies)} Kommunen gelesen, Abgleich unvollständig: {unread}[/yellow]"
+            )
+            if missed is not None:
+                missed.append(unread)
         return bodies
 
     async def sync_body_url(

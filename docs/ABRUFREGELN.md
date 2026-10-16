@@ -267,10 +267,16 @@ Kommune.
 - Die Kommunenliste liest der Ingestor wie jede Liste über alle Seiten (`links.next`), Seite für Seite im Takt; ist
   die eingetragene Adresse selbst die Kommunenliste, fragt er ihre erste Seite nur einmal an (Issue #869,
   `ingestor/src/sync/orchestrator.py`, `_fetch_body_list`). Bricht eine Folgeseite ab (Fehler, Teilantwort), gleicht
-  der Lauf die bis dahin gelesenen Kommunen ab, nennt die Seite im Sync-Log und gilt als nicht vollständig.
+  der Lauf die bis dahin gelesenen Kommunen ab, nennt die Seite im Sync-Log und gilt als nicht vollständig. Ebenso
+  nach höchstens 20 Seiten (`MAX_BODY_PAGES`, wie beim Werkzeug „Quelle anlegen“) und wenn `links.next` auf eine schon
+  gelesene Seite zeigt: Eine fehlerhafte Liste hält den Zyklus aller Quellen nicht auf. Eine Liste, die im Kreis
+  läuft, bricht bei jeder Liste ab, nicht nur bei der Kommunenliste (`OParlClient.fetch_list`).
 - Neu entdeckte Kommunen sind nicht gelistet (`is_listed`, `ingestor/src/storage/database.py`, `upsert_body`): Bis
   wir sie im Admin listen, erscheinen sie nicht in Kommunenauswahl, Übersichten, Sitemaps und öffentlichen Listen.
-  Was das für die Ablage ihrer Dokumente heißt, steht in [`FILE_CACHE.md`](FILE_CACHE.md).
+  Was das für die Ablage ihrer Dokumente heißt, steht in [`FILE_CACHE.md`](FILE_CACHE.md). Ausnahme ist die eigene
+  OParl-Schnittstelle eines Session-Mandanten (`sync_config.session_tenant`, `lists_new_bodies`): Der Mandant hat die
+  Veröffentlichung im Bürgerportal selbst eingeschaltet, seine Kommune ist gleich gelistet
+  ([`SESSION_OPARL_API.md`](SESSION_OPARL_API.md)).
 - Ein Lauf über alle Quellen lässt sich außerdem im Admin („Jetzt synchronisieren“, über Redis an den Daemon) oder
   von Hand (`python -m src.main sync --all`) auslösen. robots.txt, Takt, Zeitfenster und Schonung gelten auch dann.
 - Die Aktionen „Inkrementeller Sync“ und „Vollständiger Sync“ an einer Quelle im Admin laufen nicht im Daemon,

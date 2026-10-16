@@ -108,7 +108,8 @@ class OParlBody(Base):
     last_sync: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Sichtbarkeit im Portal (Django-Spalte, im Admin gepflegt). Der Ingestor setzt sie nur beim Anlegen einer
-    # Kommune, und zwar auf false (Issue #555/#869, upsert_body); der DB-Default true stammt aus Django.
+    # Kommune, und zwar auf false, bei der eigenen Session-Schnittstelle eines Mandanten auf true (Issue #555/#869,
+    # upsert_body, lists_new_bodies); der DB-Default true stammt aus Django.
     is_listed: Mapped[bool] = mapped_column(Boolean, server_default="true")
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
