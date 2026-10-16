@@ -89,9 +89,9 @@ PR-Prüfung vergleicht sie mit dem Chart). Für Updates ist Helm deutlich bequem
 | `website.enabled` | `false` | Marketing-Website (Wagtail) mitinstallieren |
 | `website.host` | `""` | Eigener Hostname der Website; leer = nur clusterintern erreichbar |
 | `ingress.className` | `""` | Leer = Standard-Ingress-Klasse des Clusters (k3s: `traefik`) |
-| `ingestor.syncInterval` | `15` | Minuten zwischen zwei OParl-Synchronisationen (`daemon --interval`) |
-| `ingestor.fullSyncHour`, `ingestor.concurrent` | `3`, `10` | Stunde der Vollsynchronisation, gleichzeitige Anfragen |
-| `ingestor.extraEnv`, `ingestor.extraArgs` | – | Nur für den Ingestor |
+| `ingestor.syncInterval` | `15` | Grundtakt werktags 07–19 Uhr in Minuten (`daemon --interval`); sonst stündlich, am Wochenende alle 2 Stunden ([`ABRUFREGELN.md`](../../docs/ABRUFREGELN.md#rhythmus)) |
+| `ingestor.fullSyncHour`, `ingestor.concurrent` | `3`, `10` | Beginn des Standardfensters für Vollabgleiche (5 Stunden), gleichzeitige Anfragen je Lauf |
+| `ingestor.extraEnv`, `ingestor.extraArgs` | – | Nur für den Ingestor, etwa `INGESTOR_SYNC_POOL_SIZE` (Quellen gleichzeitig, Standard 4) |
 | `files.*` | – | Dokumentablage und Texterkennung (`FILE_STORE_LAYOUT`, `INGESTOR_STORES_FILES`, `FILE_CACHE_MIN_FREE_GB`, `TEXT_EXTRACTION_RUNNER`, `OCR_MEMORY_LIMIT_MB`) wie in `docker-compose.yml` |
 | `worker.live.enabled` | `true` | Eigenes Deployment `mandari-worker-live` für die Warteschlange `live`; aus = der Hauptworker bedient sie mit |
 | `liveStreams.enabled` | `false` | Live-Übertragungen (`LIVE_UEBERTRAGUNG_AKTIV`) |

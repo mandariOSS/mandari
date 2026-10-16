@@ -177,6 +177,42 @@ class MetricsCollector:
             registry=self.registry,
         )
 
+        # Takt je Quelle (Issue #1026): Abrufe, nächster Lauf und Abstand je Quelle (Name der Quelle)
+        self.sync_requests_total = Counter(
+            "mandari_ingestor_sync_requests_total",
+            "HTTP requests of daemon sync runs per source",
+            ["source", "sync_type"],
+            registry=self.registry,
+        )
+
+        self.sync_next_run = Gauge(
+            "mandari_ingestor_sync_next_run_timestamp_seconds",
+            "Unix time when the next daemon sync run of the source is due (after backoff)",
+            ["source"],
+            registry=self.registry,
+        )
+
+        self.sync_last_run = Gauge(
+            "mandari_ingestor_sync_last_run_timestamp_seconds",
+            "Unix time when the last daemon sync run of the source ended",
+            ["source"],
+            registry=self.registry,
+        )
+
+        self.sync_interval = Gauge(
+            "mandari_ingestor_sync_interval_seconds",
+            "Current interval between daemon sync runs of the source",
+            ["source"],
+            registry=self.registry,
+        )
+
+        self.sync_idle_runs = Gauge(
+            "mandari_ingestor_sync_idle_runs",
+            "Consecutive incremental runs of the source without changes",
+            ["source"],
+            registry=self.registry,
+        )
+
         # Circuit breaker metrics
         self.circuit_breaker_state = Gauge(
             "mandari_ingestor_circuit_breaker_state",
@@ -372,6 +408,43 @@ class MetricsCollector:
                 self.active_syncs.dec()
                 self.sync_duration.labels(source=source, sync_type=sync_type).observe(duration)
                 self.sync_runs_total.labels(source=source, sync_type=sync_type, status=status).inc()
+
+    def record_source_run(
+        self,
+        source: str,
+        sync_type: str,
+        status: str,
+        duration: float,
+        requests: int,
+        finished_at: float,
+    ) -> None:
+        """Ein Lauf des Daemons für eine Quelle (Takt je Quelle, Issue #1026)."""
+        if not self.enabled:
+            return
+        self.simple.sync_runs += 1
+        if status != "success":
+            self.simple.sync_errors += 1
+        if self._prometheus_enabled:
+            self.sync_duration.labels(source=source, sync_type=sync_type).observe(duration)
+            self.sync_runs_total.labels(source=source, sync_type=sync_type, status=status).inc()
+            self.sync_requests_total.labels(source=source, sync_type=sync_type).inc(max(0, requests))
+            self.sync_last_run.labels(source=source).set(finished_at)
+
+    def record_source_schedule(self, source: str, next_run_at: float, interval_seconds: float, idle_runs: int) -> None:
+        """Nächster fälliger Lauf, Abstand und Läufe ohne Änderung einer Quelle (Issue #1026)."""
+        if not self.enabled or not self._prometheus_enabled:
+            return
+        self.sync_next_run.labels(source=source).set(next_run_at)
+        self.sync_interval.labels(source=source).set(interval_seconds)
+        self.sync_idle_runs.labels(source=source).set(idle_runs)
+
+    def set_active_syncs(self, count: int) -> None:
+        """Zahl der laufenden Abgleiche im Daemon."""
+        if not self.enabled:
+            return
+        self.simple.active_syncs = count
+        if self._prometheus_enabled:
+            self.active_syncs.set(count)
 
     # ========== Circuit Breaker Metrics ==========
 

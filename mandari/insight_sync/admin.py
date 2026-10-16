@@ -101,7 +101,12 @@ class SyncConfigAdmin(SingletonAdminMixin, ModelAdmin):
 
 
 def trigger_sync_view(request):
-    """POST-Endpoint: Triggert einen Sync via Redis an den Ingestor-Container."""
+    """
+    POST-Endpoint: Triggert einen Sync via Redis an den Ingestor-Container.
+
+    Ohne ``source_id`` für alle aktiven Quellen, mit ``source_id`` für eine (Takt je Quelle, Issue #1026). Der Daemon
+    startet sie, sobald ein Platz frei ist; Quellen in Schonung startet er nicht.
+    """
     if request.method != "POST":
         return HttpResponseNotAllowed(["POST"])
 
@@ -116,13 +121,28 @@ def trigger_sync_view(request):
         return HttpResponseRedirect(reverse("admin:index"))
 
     full = request.POST.get("full") == "1"
+    source = None
+    source_id = (request.POST.get("source_id") or "").strip()
+    if source_id:
+        from hub.ris import selectors
+
+        source = selectors.active_source(source_id)
+        if source is None:
+            messages.error(request, "Quelle nicht gefunden oder nicht aktiv.")
+            return HttpResponseRedirect(reverse("admin:index"))
 
     from . import daemon
 
-    if daemon.trigger_sync(full=full):
-        sync_label = "Vollständiger" if full else "Inkrementeller"
-        messages.success(request, f"{sync_label} Sync an Ingestor gesendet.")
+    sync_label = "Vollständiger" if full else "Inkrementeller"
+    ziel = f" für „{source.name}“" if source is not None else ""
+    if daemon.trigger_sync(full=full, source=source):
+        messages.success(request, f"{sync_label} Sync{ziel} an Ingestor gesendet.")
     else:
-        messages.error(request, "Sync-Trigger konnte nicht gesendet werden (Redis nicht erreichbar?).")
+        messages.error(
+            request,
+            "Sync-Trigger konnte nicht zugestellt werden (Redis nicht erreichbar oder kein Ingestor-Daemon aktiv).",
+        )
 
+    if source is not None:
+        return HttpResponseRedirect(reverse("admin:insight_core_oparlsource_change", args=[source.pk]))
     return HttpResponseRedirect(reverse("admin:index"))

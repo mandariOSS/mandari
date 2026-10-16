@@ -20,7 +20,8 @@ dependencies = [
     "redis>=5.2.0",
     "typer>=0.15.0",
     "rich>=13.9.0",
-    "apscheduler>=3.10.0",
+    # Zeitzonendaten für den Takt je Quelle (Europe/Berlin), unabhängig vom Betriebssystem des Images
+    "tzdata>=2026.1",
     # Scraper-Adapter (SessionNet-HTML-Parsing, src/scrapers/)
     "beautifulsoup4>=4.12.0",
     # Monitoring & Resilience

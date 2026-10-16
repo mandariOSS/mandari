@@ -540,12 +540,17 @@ Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die
 - Setzen Sie `INGESTOR_USER_AGENT` auf eine Kennung mit Ihrer eigenen Kontaktadresse; ohne Angabe nennt der
   User-Agent unsere Infoseite und `support@mandari.de` ([Für Selbstbetreiber](docs/ABRUFREGELN.md#für-selbstbetreiber)).
   Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`) und,
-  weil die Sync-Aktionen an einer Quelle im Admin im Worker der Anwendung laufen, auch in `x-app-environment`
-  (Helm: `app.extraEnv`); ein Eintrag nur in der `.env` wirkt nicht.
+  weil die Sync-Aktionen an einer Quelle im Admin ohne laufenden Daemon im Worker der Anwendung laufen, auch in
+  `x-app-environment` (Helm: `app.extraEnv`); ein Eintrag nur in der `.env` wirkt nicht.
+- Jede Quelle hat ihren eigenen Takt: werktags 07–19 Uhr im Grundtakt `INGESTOR_INTERVAL`, sonst stündlich, am
+  Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag alle 5 Minuten, nach Läufen ohne Änderung seltener.
+  Vollabgleiche laufen je Quelle in ihrem Zeitfenster, sonst ab `INGESTOR_FULL_SYNC_HOUR` (5 Stunden lang).
+  Höchstens `INGESTOR_SYNC_POOL_SIZE` Quellen (Standard 4) laufen gleichzeitig; Einzelheiten in
+  [`docs/ABRUFREGELN.md`](docs/ABRUFREGELN.md#rhythmus).
 - `docker-compose.yml` reicht dem Dienst `ingestor` nur die dort genannten Variablen durch (Abruf-Rhythmus über
-  `INGESTOR_INTERVAL`, `INGESTOR_FULL_SYNC_HOUR`, `INGESTOR_CONCURRENT`); weitere, etwa
-  `INGESTOR_REQUEST_INTERVAL`, ergänzen Sie in seinem Abschnitt `environment`, im Helm-Chart über
-  `ingestor.extraEnv`.
+  `INGESTOR_INTERVAL`, `INGESTOR_FULL_SYNC_HOUR`, `INGESTOR_CONCURRENT`, `INGESTOR_SYNC_POOL_SIZE`, Speichergrenze
+  `INGESTOR_MEM_LIMIT`); weitere, etwa `INGESTOR_REQUEST_INTERVAL`, ergänzen Sie in seinem Abschnitt
+  `environment`, im Helm-Chart über `ingestor.extraEnv`.
 
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 

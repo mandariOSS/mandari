@@ -126,7 +126,7 @@ Hinweise für die Vorführung:
 - Die Rücknahme im Bürgerportal (Schritt 3) wirkt sofort, ebenso die neue Nummerierung der
   übrigen TOPs. Die in Schritt 2 umgewandelte Vorlage ist ein Entwurf (Issue #721): Erst nach
   der Freigabe steht sie in der OParl-Schnittstelle und erscheint mit dem nächsten Abgleich des
-  Spiegels im Bürgerportal. Den Abgleich übernimmt sonst der Ingestor (alle 10 Minuten); ohne
+  Spiegels im Bürgerportal. Den Abgleich übernimmt sonst der Ingestor (werktags alle 10 Minuten); ohne
   Ingestor und Worker (öffentliche Demo) gleicht `python manage.py sync_session_insight --tenant
   <slug>` inkrementell in wenigen Sekunden ab. Ein erneuter Lauf dieses Befehls ist dafür nicht
   geeignet: Er setzt das Drehbuch zurück und löscht die umgewandelte Vorlage.

@@ -75,6 +75,31 @@ def run_sync_in_thread(source, full: bool = False):
     journal_backend().enqueue(quelle_synchronisieren, [str(source.pk)], {"full": bool(full)})
 
 
+def request_source_sync(source, full: bool = False) -> str:
+    """Sync einer Quelle anstoßen: über den Ingestor-Daemon, wenn er läuft, sonst als Auftrag im Worker.
+
+    Über den Daemon gilt der Takt je Quelle (Issue #1026): höchstens ein Lauf je Quelle zugleich, die Schonung bei
+    Fehlern geht vor. Abgeschaltete Quellen gleicht der Daemon nicht ab; sie laufen wie bisher im Worker. Liefert
+    ``"daemon"`` oder ``"worker"``.
+    """
+    from insight_sync import daemon
+
+    if source.is_active and daemon.is_ingestor_active() and daemon.trigger_sync(full=full, source=source):
+        return "daemon"
+    run_sync_in_thread(source, full=full)
+    return "worker"
+
+
+def _sync_message(name: str, full: bool, weg: str) -> str:
+    art = "Vollständiger" if full else "Inkrementeller"
+    if weg == "daemon":
+        return (
+            f"{art} Sync für '{name}' an den Ingestor gesendet. Er beginnt, sobald ein Platz frei ist; "
+            "eine Quelle in Schonung bleibt in Ruhe."
+        )
+    return f"{art} Sync für '{name}' gestartet. Läuft im Hintergrund."
+
+
 class SourceTypeListFilter(admin.SimpleListFilter):
     """Filter nach Quellen-Art (sync_config["source_type"], JSONB-Lookup)."""
 
@@ -257,7 +282,8 @@ class OParlSourceAdmin(ModelAdmin):
 
         if hours < 0.5:
             return mark_safe('<span style="color: #16a34a;">Aktuell</span>')
-        if hours < 2:
+        # Nachts und am Wochenende gleicht der Ingestor bis zu alle 2 Stunden ab (Takt je Quelle, Issue #1026)
+        if hours < 3:
             return mark_safe('<span style="color: #65a30d;">OK</span>')
         if hours < 24:
             return mark_safe('<span style="color: #ca8a04;">Veraltet</span>')
@@ -300,28 +326,34 @@ class OParlSourceAdmin(ModelAdmin):
     @action(description="Inkrementeller Sync", url_path="sync-incremental")
     def sync_incremental_action(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
-        run_sync_in_thread(obj, full=False)
-        messages.success(request, f"Inkrementeller Sync für '{obj.name}' gestartet. Läuft im Hintergrund.")
+        messages.success(request, _sync_message(obj.name, False, request_source_sync(obj, full=False)))
         return redirect(f"../../{object_id}/change/")
 
     @action(description="Vollständiger Sync", url_path="sync-full")
     def sync_full_action(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
-        run_sync_in_thread(obj, full=True)
-        messages.success(request, f"Vollständiger Sync für '{obj.name}' gestartet. Läuft im Hintergrund.")
+        messages.success(request, _sync_message(obj.name, True, request_source_sync(obj, full=True)))
         return redirect(f"../../{object_id}/change/")
 
     @admin.action(description="Inkrementeller Sync (ausgewählte)")
     def sync_all_incremental(self, request, queryset):
-        for source in queryset:
-            run_sync_in_thread(source, full=False)
-        messages.success(request, f"Inkrementeller Sync für {queryset.count()} Quellen gestartet.")
+        wege = [request_source_sync(source, full=False) for source in queryset]
+        messages.success(request, _sync_count_message(len(wege), False, wege))
 
     @admin.action(description="Vollständiger Sync (ausgewählte)")
     def sync_all_full(self, request, queryset):
-        for source in queryset:
-            run_sync_in_thread(source, full=True)
-        messages.success(request, f"Vollständiger Sync für {queryset.count()} Quellen gestartet.")
+        wege = [request_source_sync(source, full=True) for source in queryset]
+        messages.success(request, _sync_count_message(len(wege), True, wege))
+
+
+def _sync_count_message(count: int, full: bool, wege: list[str]) -> str:
+    art = "Vollständiger" if full else "Inkrementeller"
+    daemon = wege.count("daemon")
+    if daemon == count:
+        return f"{art} Sync für {count} Quellen an den Ingestor gesendet."
+    if daemon == 0:
+        return f"{art} Sync für {count} Quellen gestartet."
+    return f"{art} Sync für {count} Quellen angestoßen ({daemon} über den Ingestor, {count - daemon} im Worker)."
 
 
 class GeoCoverageListFilter(admin.SimpleListFilter):

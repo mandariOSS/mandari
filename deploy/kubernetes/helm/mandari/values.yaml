@@ -120,9 +120,11 @@ website:
 # OParl-Synchronisation: python -m src.main daemon (wie im Dienst ingestor in docker-compose.yml)
 ingestor:
   enabled: true
-  # Minuten zwischen zwei inkrementellen Synchronisationen (daemon --interval)
+  # Grundtakt in Minuten werktags 07–19 Uhr (daemon --interval); sonst stündlich, am Wochenende alle 2 Stunden,
+  # an Sitzungstagen und am Vortag alle 5 Minuten, je Quelle über sync_config["sync_schedule"] (docs/ABRUFREGELN.md)
   syncInterval: 15
-  # Stunde der täglichen Vollsynchronisation (daemon --full-sync-hour)
+  # Beginn des nächtlichen Standardfensters für Vollabgleiche, 5 Stunden lang (daemon --full-sync-hour); Quellen mit
+  # eigenem full_sync_window gleichen in ihrem Fenster ab. Quellen gleichzeitig: INGESTOR_SYNC_POOL_SIZE in extraEnv
   fullSyncHour: 3
   # Gleichzeitige HTTP-Anfragen (daemon --concurrent)
   concurrent: 10
