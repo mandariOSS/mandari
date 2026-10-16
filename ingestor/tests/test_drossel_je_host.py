@@ -384,11 +384,11 @@ async def test_scraper_halten_grenze_beim_ziel_host(echte_drossel, monkeypatch):
     monkeypatch.setattr(host_pacer, "_sleep", lambda _s: asyncio.sleep(0))
     offen = 0
     hoechstens = 0
-    gesehen: list[str] = []
+    hosts: list[str] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
         nonlocal offen, hoechstens
-        gesehen.append(str(request.url))
+        hosts.append(request.url.host)
         if request.url.host != "ziel.example.org":
             return httpx.Response(302, headers={"Location": f"https://ziel.example.org/{request.url.host}/"})
         offen += 1
@@ -407,5 +407,5 @@ async def test_scraper_halten_grenze_beim_ziel_host(echte_drossel, monkeypatch):
 
     await asyncio.wait_for(asyncio.gather(*(quelle(name) for name in ("eins", "zwei", "drei"))), timeout=10)
 
-    assert len([adresse for adresse in gesehen if "ziel.example.org" in adresse]) == 9
+    assert hosts.count("ziel.example.org") == 9, "jede Seite über die Weiterleitung abgerufen"
     assert hoechstens == 1
