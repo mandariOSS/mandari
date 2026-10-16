@@ -2341,7 +2341,10 @@ class SyncOrchestrator:
         Quelle ignoriert den Filter. Im Vollabgleich bricht die Liste dann ab (``SliceFilterIgnoredError``), jede
         andere Liste dieses Laufs vor ihrer nächsten Scheibe, und der Befund wird gespeichert. Bricht eine optionale
         Liste nach einer Zeitüberschreitung ab, wird sie ausgesetzt (``_suspend_slow_list``), ihr Fortschritt bleibt.
-        Die erste Scheibe meldet eine fehlende Liste wie ``_list_pages``.
+        Die erste Scheibe meldet eine fehlende Liste wie ``_list_pages``, im Vollabgleich nur die erste Scheibe des
+        Durchgangs: Setzt eine Liste an ihrem gespeicherten Fortschritt fort, haben frühere Scheiben sie nachgewiesen.
+        HTTP 404 (ohne Code 802) oder ein Fehlerobjekt sind dann eine Lücke (``ListFetchError``), kein Vermerk „fehlt“
+        und keine leere Pflichtliste; sonst zählte der Durchgang als fertig, obwohl die Liste nicht fertig ist.
 
         Beim inkrementellen Nachholen einer langsamen Liste gibt es keinen Befund an der Quelle: Ignoriert sie den
         Filter, lehnt sie ihn ab (HTTP 400, 401, 403, 404) oder findet sie die Liste mit Filter nicht, liest der Lauf
@@ -2351,6 +2354,8 @@ class SyncOrchestrator:
         readable = False
         # Eine Scheibe hat die Liste nachgewiesen: Daten oder eine leere Liste, nicht nur „keine Treffer“ von SD.NET RIM
         exists = False
+        # Fortgesetzter Durchgang im Vollabgleich: Die Liste gibt es, frühere Scheiben haben sie gelesen
+        resumed = full and run.progress.get(list_url) is not None
         for index, window in enumerate(windows):
             if full and run.filter_ignored is not None:
                 raise SliceFilterIgnoredError(list_url, run.filter_ignored)
@@ -2361,7 +2366,7 @@ class SyncOrchestrator:
                     modified_since=window.since,
                     modified_until=window.until,
                     strict_filter=True,
-                    report_missing=list_check is not None and index == 0,
+                    report_missing=list_check is not None and index == 0 and not resumed,
                 ):
                     if list_check is not None and not readable:
                         readable = True

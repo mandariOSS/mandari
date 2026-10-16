@@ -562,6 +562,9 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   Änderungsabgleich. Für Hamm empfiehlt sich ein eigenes Fenster, etwa `{"start": "00:00", "end": "06:00"}`.
 - **Fehlende Listen:** Listen mit Vermerk in `missing_lists` fragt der Vollabgleich in Zeitscheiben nicht an; SD.NET
   RIM beantwortet jede leere Scheibe wie eine fehlende Liste. Sie prüft weiter der inkrementelle Lauf einmal am Tag.
+  Als fehlend gilt eine Liste im Vollabgleich nur nach der ersten Scheibe eines Durchgangs (HTTP 404 ohne Code 802
+  oder Fehlerobjekt). Setzt eine Liste an ihrem Fortschritt fort, haben frühere Scheiben sie nachgewiesen; dieselbe
+  Antwort ist dann eine Lücke, der Durchgang bleibt offen.
 - **Fehlerobjekt:** Antwortet der Server auf eine Scheibe mit einem OParl-Fehlerobjekt statt einer Liste, ist das keine
   leere Scheibe, sondern eine Lücke; der Fortschritt bleibt vor ihr (SD.NET RIM: HTTP 404 mit Code 802 gilt als leer).
 - **Filter ignoriert:** Liefert eine Scheibe ein Objekt, dessen `modified` mehr als einen Tag vor ihrem Beginn oder

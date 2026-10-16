@@ -896,6 +896,42 @@ async def test_fehlerobjekt_in_einer_scheibe_ist_keine_leere_scheibe():
     assert stats["full_sync_slices"]["lists"][f"{BODY}/paper"]["finished"] is False
 
 
+@pytest.mark.parametrize("liste", ["consultation", "paper"])
+@pytest.mark.parametrize("antwort", ["fehlerobjekt", "404"])
+async def test_fortgesetzte_liste_mit_fehler_auf_der_ersten_scheibe_des_laufs_bleibt_eine_luecke(liste, antwort):
+    """Eine Liste mit gespeichertem Fortschritt haben frühere Scheiben nachgewiesen: Antwortet ihre erste Scheibe in
+    diesem Lauf mit einem Fehlerobjekt oder HTTP 404 (ohne Code 802), fehlt sie nicht und ist auch nicht leer. Der
+    Lauf hat eine Lücke, der Durchgang ist nicht fertig, und jeder Fortschritt bleibt."""
+    quelle = HammQuelle()
+    speicher = ScheibenSpeicher()
+    scheiben = full_windows(FullSyncSlices.parse(SCHEIBEN), None, datetime.now(UTC))  # type: ignore[arg-type]
+    fortschritt = scheiben[2].since
+    assert fortschritt is not None
+    speicher.config[SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY] = {f"{BODY}/{liste}": fortschritt.isoformat(timespec="seconds")}
+    if antwort == "404":
+        quelle.fehler_ab[liste] = (fortschritt, 404)
+    else:
+        quelle.fehlerobjekt_ab[liste] = fortschritt
+    andere = "paper" if liste == "consultation" else "meeting"
+
+    stats = await _lauf(quelle, speicher, kommune=_kommune(andere, liste))
+    assert stats["incomplete"] == [liste]
+    assert sync_complete([stats], [], _OhneBefund()) is False
+    # Weder als fehlend vermerkt noch als leere Pflichtliste gewertet
+    assert f"{BODY}/{liste}" not in stats.get("missing_lists", [])
+    assert f"{BODY}/{liste}" not in speicher.fehlend
+    assert "empty_required_lists" not in stats
+    # Nur eine Anfrage an die Liste: ihre Scheibe ab dem Fortschritt, keine weitere
+    anfragen = [_grenzen(url) for url in quelle.anfragen_an(liste)]
+    assert [seit for seit, _bis in anfragen] == [fortschritt]
+    # Fortschritt der Liste bleibt, die fertige andere Liste behält ihre letzte Grenze
+    assert full_sync_progress_of(speicher.config) == {
+        f"{BODY}/{liste}": fortschritt,
+        f"{BODY}/{andere}": scheiben[-1].since,
+    }
+    assert stats["full_sync_slices"]["lists"][f"{BODY}/{liste}"]["finished"] is False
+
+
 async def test_client_fehlerobjekt_auf_der_ersten_seite_einer_scheibe():
     def antwort(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json=FEHLEROBJEKT)
