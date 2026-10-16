@@ -6,17 +6,27 @@ Betreiber von Ratsinformationssystemen und an alle, die mandari selbst betreiben
 IT-Verantwortliche der Kommunen steht unter <https://mandari.de/crawler/>.
 
 Jede Aussage auf dieser Seite stammt aus dem Code oder der Konfiguration; die Fundstelle steht jeweils dabei.
-Stand: Code auf `dev` mit den Änderungen aus [#1025](https://github.com/mandariOSS/mandari/issues/1025)
-(Änderungsfenster, fehlende Listen, höchstens eine Anfrage je Sekunde), aus
-[#1031](https://github.com/mandariOSS/mandari/pull/1031) (eine robots.txt-Regel für alle Abrufe, Weiterleitungen und
-Werkzeuge im Takt je Server), aus [#1036](https://github.com/mandariOSS/mandari/issues/1036) (eine robots.txt je
-Hostname, Grenze gleichzeitiger Anfragen auch für Scraper und Vergleichsanfrage, eine Frist für die ganze Vorschau,
-Kennung und Takt je Server auch für Live-Übertragung und Geodienste), aus
-[#1026](https://github.com/mandariOSS/mandari/issues/1026) (eigener Takt je Quelle, Abruf nach Bedarf) und aus
-[#1033](https://github.com/mandariOSS/mandari/issues/1033) (Vollabgleich in Zeitscheiben, langsame Listen
-aussetzen). Die von uns
-betriebene Instanz (mandari.de) folgt diesen Regeln ab dem ersten Deploy, der diese Änderungen enthält; bis dahin
-läuft dort noch ein älterer Stand.
+Stand: Code auf `dev` nach den Änderungen für [#1027](https://github.com/mandariOSS/mandari/issues/1027):
+
+- [#1025](https://github.com/mandariOSS/mandari/issues/1025): Änderungsfenster, fehlende Listen, höchstens eine
+  Anfrage je Sekunde ([#1029](https://github.com/mandariOSS/mandari/pull/1029));
+- [#1034](https://github.com/mandariOSS/mandari/issues/1034): leere gefilterte Listen von SD.NET RIM
+  ([#1035](https://github.com/mandariOSS/mandari/pull/1035));
+- [#1031](https://github.com/mandariOSS/mandari/pull/1031): eine robots.txt-Regel für alle Abrufe, Weiterleitungen
+  und Werkzeuge im Takt je Server;
+- [#869](https://github.com/mandariOSS/mandari/issues/869) und [#555](https://github.com/mandariOSS/mandari/issues/555):
+  Kommunenliste über alle Seiten, neue Quellen inaktiv, neue Kommunen nicht gelistet
+  ([#1037](https://github.com/mandariOSS/mandari/pull/1037));
+- [#1036](https://github.com/mandariOSS/mandari/issues/1036): eine robots.txt je Hostname, Grenze gleichzeitiger
+  Anfragen auch für Scraper und Vergleichsanfrage, eine Frist für die ganze Vorschau, Kennung und Takt je Server auch
+  für Live-Übertragung und Geodienste ([#1038](https://github.com/mandariOSS/mandari/pull/1038));
+- [#1026](https://github.com/mandariOSS/mandari/issues/1026): eigener Takt je Quelle, Abruf nach Bedarf
+  ([#1039](https://github.com/mandariOSS/mandari/pull/1039));
+- [#1033](https://github.com/mandariOSS/mandari/issues/1033): Vollabgleich in Zeitscheiben, langsame Listen aussetzen
+  ([#1040](https://github.com/mandariOSS/mandari/pull/1040)).
+
+Die von uns betriebene Instanz (mandari.de) folgt diesen Regeln ab dem ersten Deploy, der diese Änderungen enthält;
+bis dahin läuft dort noch ein älterer Stand.
 
 ## Auf einen Blick
 
@@ -30,6 +40,7 @@ läuft dort noch ein älterer Stand.
 | Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
 | Vollabgleich | je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`) |
 | Langsame Listen | eine optionale Liste, die in eine Zeitüberschreitung läuft, ruht 1 Stunde, danach jeweils doppelt so lange, höchstens 24 Stunden |
+| Neue Quellen | werden inaktiv angelegt: Regelmäßig abgefragt wird eine Quelle erst, wenn wir sie im Admin aktivieren; neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
 | Abruf-Adresse | derzeit `144.76.153.200`, nur IPv4 (die von uns betriebene Instanz mandari.de); sie kann sich ändern, erkennen Sie uns am User-Agent |
 | Andere Dienste | Live-Übertragung und Geodienste mit derselben Kennung und eigenem Takt je Server (siehe [Andere Abrufe](#andere-abrufe)) |
@@ -88,9 +99,7 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
   Abstand (`request_interval`) und ihre Ausnahme von der robots.txt (`robots_override`), auch für den Abruf der
   robots.txt selbst. Hat eine registrierte Quelle auf demselben Server einen größeren Abstand, gilt dieser
   (`mandari/insight_core/management/commands/add_oparl_source.py`, `_config_for`). Eine neue Quelle legt das
-  Werkzeug inaktiv an, neue Kommunen nicht gelistet: Regelmäßig abgefragt wird eine Quelle erst, wenn wir sie im
-  Admin aktivieren. Eine schon angelegte Quelle behält ihren Status, eine abgeschaltete bleibt abgeschaltet. Dasselbe
-  gilt für `python -m src.main add-source` und für Quellen, die ein Abgleich von Hand neu anlegt (Issue #555).
+  Werkzeug inaktiv an, neue Kommunen nicht gelistet (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)).
 - **Sondierung** (`python -m src.main probe-ris`): erkennt vor dem Anbinden einer Kommune ihr System mit höchstens
   fünf Anfragen je Kommune (`ingestor/src/probe/ris_probe.py`, `MAX_REQUESTS`): robots.txt, Startseite, bei HTTP 403
   eine Vergleichsanfrage (siehe [Kennung](#kennung)), danach mögliche OParl-Adressen. Weiterleitungen und die
@@ -98,6 +107,37 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
   nicht erreichbar, endet die Prüfung nach dieser einen Anfrage. Abstand je Server wie im Abgleich
   (`INGESTOR_REQUEST_INTERVAL`); hat eine registrierte Quelle auf dem Server einen größeren Abstand, gilt dieser.
   Zwischen zwei Kommunen liegen zusätzlich 2 Sekunden Pause (`ingestor/src/main.py`, `probe_ris`).
+
+### Neue Quellen und Kommunen
+
+Eine neue Quelle fragen wir regelmäßig erst ab, wenn wir sie bewusst aktivieren (Issue
+[#555](https://github.com/mandariOSS/mandari/issues/555)):
+
+- **Neue Quellen sind inaktiv** (`is_active = false`), auf jedem Weg, auf dem eine Quelle entsteht: mit dem Werkzeug
+  „Quelle anlegen“ (`add_oparl_source`, Ausgabe „Quelle inaktiv angelegt …“), mit `python -m src.main add-source`
+  oder `init-sources` und bei einem Abgleich von Hand (`sync --source`, `sync --body`) mit einer noch unbekannten
+  Adresse (`ingestor/src/storage/database.py`, `upsert_source`).
+- **Angelegte Quellen behalten ihren Status:** Keiner dieser Wege ändert `is_active` einer vorhandenen Quelle; eine
+  abgeschaltete bleibt abgeschaltet. `add_oparl_source` übernimmt dann nur Name, Kontakt, Website, OParl-Version und
+  Rohdaten aus dem System-Objekt („Status unverändert: …“).
+- **Regelmäßig** gleichen der Daemon und `sync --all` nur aktive Quellen ab (`get_all_sources`); aktiviert wird im
+  Admin. Von Hand angestoßene Abgleiche laufen auch bei inaktiven Quellen: die Aktionen an einer Quelle im Admin (dann
+  im Worker der Anwendung, siehe [Rhythmus](#rhythmus)), `sync --source` und `sync --body`.
+- **Neue Kommunen sind nicht gelistet** (`is_listed = false`), ob der Abgleich sie findet (`upsert_body`, auch bei
+  Scraper-Quellen) oder `add_oparl_source` sie anlegt (Ausgabe „Nicht gelistet: …“). Vorhandene Kommunen behalten ihre
+  Sichtbarkeit; der Abgleich überschreibt `is_listed` nie (`ENRICHMENT_FIELDS`). Bis wir eine Kommune im Admin
+  listen, erscheint sie nicht in Kommunenauswahl, Übersichten, Sitemaps und öffentlichen Listen; über ihre direkte
+  Adresse bleibt sie erreichbar (`mandari/insight_core/models.py`, `OParlBody.is_listed`).
+- **Dokumente ungelisteter Kommunen** legt der Ingestor nicht ab (`body_stores_files`). Für die Texterkennung lädt er
+  ihre Dateien wie bei jeder Kommune, nach robots.txt und `file_downloads` (`ingestor/src/extraction/extractor.py`).
+  Was die Anwendung ablegt, steht in [`FILE_CACHE.md`](FILE_CACHE.md).
+- **Ausnahme:** die eigene OParl-Schnittstelle eines Session-Mandanten (`sync_config["session_tenant"]`,
+  `lists_new_bodies`). Der Mandant hat die Veröffentlichung im Bürgerportal selbst eingeschaltet, seine Kommune ist
+  gleich gelistet ([`SESSION_OPARL_API.md`](SESSION_OPARL_API.md)).
+- **Kommunenliste beim Anlegen:** `add_oparl_source` liest höchstens 20 Seiten (`MAX_BODY_PAGES`). Das Werkzeug
+  meldet „Kommunenliste unvollständig ab Seite …“, wenn eine Folgeseite nicht lesbar ist, und „Kommunenliste nach
+  20 Seiten nicht weiter gelesen“, wenn danach noch eine folgt. Die fehlenden Kommunen legt später der Abgleich an,
+  ebenfalls ungelistet.
 
 ## Kennung
 
@@ -292,8 +332,9 @@ Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quell
   (`WORKDAY_MINUTES`, `OFF_HOURS_MINUTES`, `WEEKEND_MINUTES`, `MEETING_MINUTES`) und je Quelle einstellbar.
   Feiertage behandelt der Takt wie Werktage.
 - **Sitzungstage:** Tage, an denen laut eigenem Bestand eine Sitzung einer Kommune der Quelle beginnt
-  (`oparl_meetings`, ohne abgesagte und ohne von der Quelle gelöschte; `get_meeting_starts`), und der Tag davor. Diese
-  Regel geht den übrigen vor, auch am Wochenende. Die Sitzungstage liest der Daemon am Ende jedes Laufs der Quelle neu.
+  (`oparl_meetings`, ohne abgesagte und ohne von der Quelle gelöschte; `get_meeting_starts`), und der Tag davor; der
+  Tag zählt in Ortszeit (`SyncSchedule.meeting_days`). Diese Regel geht den übrigen vor, auch am Wochenende. Die
+  Sitzungstage liest der Daemon am Ende jedes Laufs der Quelle neu.
 - **Ruhe:** Nach je drei Läufen in Folge ohne Änderung verdoppelt sich der Abstand, höchstens bis 120 Minuten
   (`idle_runs`, `idle_max_minutes`; `IDLE_RUNS`, `IDLE_MAX_MINUTES`). In der Arbeitszeit also 10 Minuten, nach drei
   Läufen ohne Änderung 20, nach sechs 40, nach neun 80, ab zwölf 120. Ein längerer Grundtakt bleibt, wie er ist.
@@ -318,10 +359,10 @@ Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quell
   `daemon --pool`), je Quelle höchstens ein Lauf. Vollabgleiche belegen höchstens alle Plätze bis auf einen (bei 4
   also 3), damit Änderungsabgleiche anderer Quellen nie auf einen Vollabgleich warten. Einen freien Platz für einen
   Vollabgleich bekommt die Quelle, deren letzter begonnener Vollabgleich am längsten zurückliegt (siehe
-  [Vollabgleich](#vollabgleich)). Je Quelle laufen 2 Kommunen
-  und je Kommune 2 Listen gleichzeitig (`SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY`). Der Takt je Server gilt
-  unabhängig davon; Quellen auf demselben Server teilen ihn. Je Datenbank arbeitet genau ein Daemon
-  (PostgreSQL-Sperre, `ingestor/src/scheduler/singleton.py`).
+  [Vollabgleich](#vollabgleich)). Je Quelle laufen 2 Kommunen und je Kommune 2 Listen gleichzeitig
+  (`SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY`). Der Takt je Server gilt unabhängig davon; Quellen auf
+  demselben Server teilen ihn. Je Datenbank arbeitet genau ein Daemon (PostgreSQL-Sperre,
+  `ingestor/src/scheduler/singleton.py`).
 - Je Lauf und Quelle fragt der Ingestor die eingetragene Adresse (System, Kommunenliste oder Kommune) und
   gegebenenfalls die Kommunenliste ab, danach je Kommune die Listen in fester Reihenfolge: Gremien und Personen,
   Mitgliedschaften, Sitzungen und Vorlagen, dann Orte, Tagesordnungspunkte, Dateien und Beratungen.
@@ -330,29 +371,33 @@ Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quell
   `ingestor/src/sync/orchestrator.py`, `_fetch_body_list`). Bricht eine Folgeseite ab (Fehler, Teilantwort), gleicht
   der Lauf die bis dahin gelesenen Kommunen ab, nennt die Seite im Sync-Log und gilt als nicht vollständig. Ebenso
   nach höchstens 20 Seiten (`MAX_BODY_PAGES`, wie beim Werkzeug „Quelle anlegen“) und wenn `links.next` auf eine schon
-  gelesene Seite zeigt: Eine fehlerhafte Liste hält die übrigen Quellen nicht auf. Eine Liste, die im Kreis
-  läuft, bricht bei jeder Liste ab, nicht nur bei der Kommunenliste (`OParlClient.fetch_list`).
-- Neu entdeckte Kommunen sind nicht gelistet (`is_listed`, `ingestor/src/storage/database.py`, `upsert_body`): Bis
-  wir sie im Admin listen, erscheinen sie nicht in Kommunenauswahl, Übersichten, Sitemaps und öffentlichen Listen.
-  Was das für die Ablage ihrer Dokumente heißt, steht in [`FILE_CACHE.md`](FILE_CACHE.md). Ausnahme ist die eigene
-  OParl-Schnittstelle eines Session-Mandanten (`sync_config.session_tenant`, `lists_new_bodies`): Der Mandant hat die
-  Veröffentlichung im Bürgerportal selbst eingeschaltet, seine Kommune ist gleich gelistet
-  ([`SESSION_OPARL_API.md`](SESSION_OPARL_API.md)).
-- **Auslöser:** „Jetzt synchronisieren“ auf der Startseite des Admins (alle Quellen) und die Aktionen
+  gelesene Seite zeigt: Eine fehlerhafte Liste läuft so nicht endlos. Ist schon die erste Seite nicht lesbar, findet
+  der Lauf keine Kommune und gilt als fehlgeschlagen (siehe [Fehler und Schonung](#fehler-und-schonung)). Eine Liste,
+  die im Kreis läuft, bricht bei jeder Liste ab, nicht nur bei der Kommunenliste (`OParlClient.fetch_list`).
+- Neu entdeckte Kommunen sind nicht gelistet (`upsert_body`, siehe
+  [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)).
+- **Auslöser:** „Jetzt synchronisieren“ auf der Startseite des Admins (alle aktiven Quellen) und die Aktionen
   „Inkrementeller Sync“ und „Vollständiger Sync“ an einer Quelle gehen über Redis (Kanal `mandari:sync:trigger`, mit
   `source_id` für eine Quelle) an den Daemon. Die Quelle ist sofort fällig und beginnt, sobald ein Platz frei ist;
-  läuft sie gerade, direkt danach. robots.txt, Takt je Server, Zeitfenster und Schonung gelten auch dann
-  (`mandari/insight_sync/daemon.py`, `trigger_sync`; `mandari/insight_core/admin.py`, `request_source_sync`).
-- Ohne laufenden Daemon (kein Lebenszeichen in Redis, siehe unten) und für abgeschaltete Quellen laufen die
-  Aktionen an einer Quelle als Auftrag im Worker der Anwendung, mit dem Code des Ingestors aus dem Image der Anwendung
-  (`run_sync_in_thread`; `mandari/insight_sync/tasks.py`, `run_sync_with_logging`). Sie beachten robots.txt, Takt
-  je Server und Zeitfenster, aber nicht die [Schonung](#fehler-und-schonung), ebenso wie
-  `python -m src.main sync --source` bzw. `--body`. Dabei gilt die Umgebung des Workers, nicht die des Ingestors
-  (siehe [Für Selbstbetreiber](#für-selbstbetreiber)). `python -m src.main sync --all` gleicht alle Quellen einmal ab,
-  höchstens 2 zugleich (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne Takt.
+  läuft sie gerade, direkt danach. Ein angeforderter Vollabgleich wartet auf einen freien Platz für Vollabgleiche.
+  robots.txt, Takt je Server, Zeitfenster, `full_sync_every_days` und Schonung gelten auch dann; Auslöser für
+  unbekannte oder inaktive Quellen verwirft der Daemon (`mandari/insight_sync/daemon.py`, `trigger_sync`;
+  `mandari/insight_core/admin.py`, `request_source_sync`; `SyncScheduler._expand_triggers`). Findet „Jetzt
+  synchronisieren“ keinen Daemon, meldet der Admin einen Fehler (`mandari/insight_sync/admin.py`, `trigger_sync_view`).
+- Die Aktionen an einer Quelle laufen stattdessen als Auftrag im Worker der Anwendung, wenn die Quelle abgeschaltet
+  ist, kein Daemon als laufend gilt (weder sein Lebenszeichen in Redis, siehe unten, noch ein Sync-Protokoll der
+  letzten 30 Minuten; `is_ingestor_active`) oder die Nachricht keinen Empfänger fand. Der Auftrag nutzt den Code des
+  Ingestors aus dem Image der Anwendung (`run_sync_in_thread`; `mandari/insight_sync/tasks.py`,
+  `run_sync_with_logging`). Er beachtet robots.txt, Takt je Server und Zeitfenster, aber nicht die
+  [Schonung](#fehler-und-schonung), ebenso wie `python -m src.main sync --source` bzw. `--body`. Dabei gilt die
+  Umgebung des Workers, nicht die des Ingestors (siehe [Für Selbstbetreiber](#für-selbstbetreiber)).
+  `python -m src.main sync --all` gleicht alle aktiven Quellen einmal ab, höchstens 2 zugleich
+  (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne den Takt je Quelle; der Takt je Server gilt.
 - **Protokoll und Metriken:** Jeder Lauf schreibt ein Sync-Protokoll für seine Quelle (`insight_sync_synclog` mit
-  `source_id`, `triggered_by` `daemon` oder `admin`) mit den Zählern, der Zahl der Abrufe (`details.requests`) und dem
-  Takt (`details.takt`: Art, Abstand, Läufe ohne Änderung, nächster Lauf). Metriken je Quelle stehen in
+  `source_id`, `triggered_by` `daemon` oder `admin` und `sync_type` so, wie der Lauf tatsächlich lief) mit den
+  Zählern, höchstens 20 Fehlern, der Zahl der Abrufe (`details.requests`) und dem Takt (`details.takt`: Art, Abstand,
+  Läufe ohne Änderung, nächster Lauf), dazu gegebenenfalls ausgesetzte Listen (`details.suspended_lists`) und den
+  Stand der Zeitscheiben (`details.full_sync_slices`; `SyncScheduler._write_log`). Metriken je Quelle stehen in
   [`MONITORING.md`](MONITORING.md#metriken).
 - **Lebenszeichen:** Der Daemon schreibt bei jeder Prüfung `mandari:ingestor:heartbeat` in Redis (läuft nach
   180 Sekunden ab, `HEARTBEAT_TTL_SECONDS`). Daran erkennt die Anwendung, dass er läuft, auch wenn nachts eine Stunde
@@ -426,16 +471,19 @@ Wertet Ihre Schnittstelle `modified_since` aus, bleibt unsere Last am kleinsten.
   der nächste Lauf fragt die Liste wieder an. Ein Fehlerobjekt gilt dort als leere Liste, solange eine andere Liste
   der Kommune lesbar war, sonst ebenfalls als Lücke.
 - Vermerkte Listen fragt der inkrementelle Lauf einmal am Tag an (`MISSING_LIST_RECHECK`), dann mit dem Fenster von
-  sieben Tagen; der Vollabgleich fragt sie jedes Mal an, der Vollabgleich in Zeitscheiben nicht. Gibt es die Liste wieder, löscht der Ingestor den Vermerk.
+  sieben Tagen; der Vollabgleich fragt sie jedes Mal an, der Vollabgleich in Zeitscheiben nicht. Gibt es die Liste
+  wieder, löscht der Ingestor den Vermerk. Antwortet SD.NET RIM auf die Prüfung nur mit „keine Treffer“ (HTTP 404,
+  Code 802), sagt das nichts über die Liste: Der Vermerk bleibt, die nächste Prüfung folgt nach einem Tag
+  (`_list_pages`, Issue [#1034](https://github.com/mandariOSS/mandari/issues/1034)).
 - HTTP 404 zählt nie als Fehlversuch für den Schutzschalter je Server.
 
 ### Langsame Listen
 
 Manche Server brauchen für einzelne Listen länger als die Zeitgrenze von 60 Sekunden (`OPARL_REQUEST_TIMEOUT`), etwa
 für die Beratungen der Stadt Hamm (`body/1/consultation?modified_since=…`, gemessen am 15.10.2026). Für optionale
-Listen (Mitgliedschaften, Tagesordnungspunkte, Beratungen, Dateien, Orte; `OPTIONAL_LIST_TYPES`) gilt deshalb
-(`ingestor/src/sync/slices.py`; `ingestor/src/sync/orchestrator.py`, `_suspend_slow_list`; Issue
-[#1033](https://github.com/mandariOSS/mandari/issues/1033)):
+Listen (Mitgliedschaften, Tagesordnungspunkte, Beratungen, Dateien, Orte; `OPTIONAL_LIST_TYPES`) gilt deshalb,
+mit Eintrag in `sync_config["slow_lists"]` (`ingestor/src/sync/slices.py`; `ingestor/src/sync/orchestrator.py`,
+`_suspend_slow_list`; Issue [#1033](https://github.com/mandariOSS/mandari/issues/1033)):
 
 - **Zeitüberschreitung:** Bricht die Liste ab, weil die letzte Anfrage in eine Zeitüberschreitung lief oder mit
   HTTP 504 endete, setzt der Ingestor sie aus, statt sie im nächsten Lauf wieder dreimal 60 Sekunden lang anzufragen.
@@ -485,7 +533,7 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   `Europe/Berlin`: Standard 03:00 bis 08:00 Uhr (`ingestor/src/main.py`; `docker-compose.yml`:
   `INGESTOR_FULL_SYNC_HOUR`; `.env.example` und Helm `ingestor.fullSyncHour` ebenfalls 3). Die von uns betriebene
   Instanz beginnt um 01:00 Uhr, ihr Standardfenster reicht also bis 06:00 Uhr. Werte außerhalb von 0 bis 23 schalten
-  geplante Vollabgleiche ab.
+  geplante Vollabgleiche ab, auch in eigenen Fenstern der Quellen; im Admin angeforderte bleiben möglich.
 - **Einmal je Fenster:** Den Beginn hält der Daemon in `sync_config["sync_state"]["full_attempted"]` fest. Ein
   abgebrochener oder unvollständiger Vollabgleich wird im nächsten Fenster wiederholt, nicht in derselben Nacht;
   auch ein Neustart des Ingestors startet ihn nicht ein zweites Mal.
@@ -531,14 +579,15 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
 
 - **Nie ohne Filter:** Der Vollabgleich fragt jede Liste nur mit `modified_since` und `modified_until` an (OParl 1.1,
   Abschnitt 2.5.5), auf jeder Seite. Verliert `links.next` einen Filter, hängt der Ingestor ihn wieder an. Lehnt der
-  Server den Filter ab (HTTP 400, 401, 403), fällt er nicht auf die ungefilterte Liste zurück; die Liste bleibt eine
-  Lücke (`OParlClient.fetch_list`, `strict_filter`).
+  Server den Filter ab (HTTP 400, 401, 403), fällt er nicht auf die ungefilterte Liste zurück und vermerkt den Server
+  auch nicht als „filtert nicht“; die Liste bleibt eine Lücke (`OParlClient.fetch_list`, `strict_filter`).
 - **Scheiben von alt nach neu:** zuerst alles, was bis `since` geändert wurde (nur `modified_until`), dann Scheiben zu
   `days` Tagen ab `since` (je `modified_since` und `modified_until`), zuletzt alles ab der letzten Grenze (nur
-  `modified_since`). Jede Scheibe vor der letzten endet spätestens zum Beginn des Laufs (`full_windows`). Beispiel:
-  `{"days": 30, "since": "2010-01-01"}` ergibt am 16.10.2026 je Liste 206 Scheiben: die erste, 204 zu 30 Tagen und
-  die letzte (`ingestor/tests/test_zeitscheiben.py`). Jede Scheibe kostet mindestens eine Anfrage, auch wenn sie
-  leer ist; SD.NET RIM meldet eine leere Scheibe mit HTTP 404 und Code 802, das gilt als leer.
+  `modified_since`). Jede Scheibe vor der letzten endet spätestens zu dem Zeitpunkt, an dem der Lauf die Liste
+  beginnt (`full_windows`). Beispiel: `{"days": 30, "since": "2010-01-01"}` ergibt am 16.10.2026 je Liste
+  206 Scheiben: die erste, 204 zu 30 Tagen und die letzte (`ingestor/tests/test_zeitscheiben.py`). Jede Scheibe kostet
+  mindestens eine Anfrage, auch wenn sie leer ist; SD.NET RIM meldet eine leere Scheibe mit HTTP 404 und Code 802, das
+  gilt als leer.
 - **Einstellung:** `since` ist ein Datum (00:00 Uhr UTC) oder ein Zeitpunkt in ISO 8601 und muss in der Vergangenheit
   liegen; `days` eine ganze Zahl von 1 bis 366, ohne Angabe 30. `lists` beschränkt die Scheiben auf einzelne Listen
   (`organization`, `person`, `membership`, `meeting`, `paper`, `location`, `agendaitem`, `file`, `consultation`); die
@@ -555,18 +604,22 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   [langsame Liste](#langsame-listen) ausgesetzt, ist der Durchgang nicht fertig: Alle Listen behalten ihren
   Fortschritt, fertige fragen im nächsten Vollabgleich nur ihre letzte Scheibe noch einmal an, und die ausgesetzte setzt
   nach ihrer Aussetzung an ihrer letzten vollständigen Scheibe fort.
-- **Zeitfenster:** Ein Vollabgleich in Zeitscheiben dauert Stunden bis Nächte und endet immer mit dem Zeitfenster der
-  Quelle: dem eigenen `full_sync_window`, sonst dem Standardfenster des Daemons (ab `--full-sync-hour` für 5 Stunden,
-  `SourceFetchOptions.sync_window`). Der Fortschritt bleibt dazwischen erhalten. Außerhalb des Fensters, und wenn kein
-  Fenster bekannt ist (Aufruf über die Kommandozeile, geplanter Vollabgleich abgeschaltet), läuft statt seiner ein
-  Änderungsabgleich. Für Hamm empfiehlt sich ein eigenes Fenster, etwa `{"start": "00:00", "end": "06:00"}`.
+- **Zeitfenster:** Ein Vollabgleich in Zeitscheiben endet immer mit dem Zeitfenster der Quelle: dem eigenen
+  `full_sync_window`, sonst dem Standardfenster des Daemons (ab `--full-sync-hour` für 5 Stunden,
+  `SourceFetchOptions.sync_window`). Weil jede Scheibe mindestens eine Anfrage kostet, kann ein Durchgang mehrere
+  Fenster brauchen; der Fortschritt bleibt dazwischen erhalten. Außerhalb des Fensters, und wenn kein Fenster bekannt
+  ist (Aufruf über die Kommandozeile oder als Auftrag im Worker der Anwendung ohne eigenes `full_sync_window`,
+  geplanter Vollabgleich abgeschaltet), läuft statt seiner ein Änderungsabgleich (`SourceFetchOptions.full_sync_plan`).
+  Für Hamm empfiehlt sich ein eigenes Fenster, etwa `{"start": "00:00", "end": "06:00"}`.
 - **Fehlende Listen:** Listen mit Vermerk in `missing_lists` fragt der Vollabgleich in Zeitscheiben nicht an; SD.NET
   RIM beantwortet jede leere Scheibe wie eine fehlende Liste. Sie prüft weiter der inkrementelle Lauf einmal am Tag.
-  Als fehlend gilt eine Liste im Vollabgleich nur nach der ersten Scheibe eines Durchgangs (HTTP 404 ohne Code 802
-  oder Fehlerobjekt). Setzt eine Liste an ihrem Fortschritt fort, haben frühere Scheiben sie nachgewiesen; dieselbe
-  Antwort ist dann eine Lücke, der Durchgang bleibt offen.
-- **Fehlerobjekt:** Antwortet der Server auf eine Scheibe mit einem OParl-Fehlerobjekt statt einer Liste, ist das keine
-  leere Scheibe, sondern eine Lücke; der Fortschritt bleibt vor ihr (SD.NET RIM: HTTP 404 mit Code 802 gilt als leer).
+  Auf die erste Scheibe eines neuen Durchgangs gelten HTTP 404 (ohne Code 802) und ein OParl-Fehlerobjekt wie unter
+  [Fehlende Listen](#fehlende-listen): Eine optionale Liste gilt dann als fehlend, eine Pflichtliste mit HTTP 404 als
+  Lücke, mit Fehlerobjekt als leer, wenn eine andere Liste der Kommune lesbar war.
+- **Lücke statt leerer Scheibe:** Auf jede spätere Scheibe, und wenn eine Liste an ihrem Fortschritt fortsetzt, sind
+  dieselben Antworten eine Lücke: Frühere Scheiben haben die Liste nachgewiesen. Der Fortschritt bleibt vor der
+  Scheibe, der Durchgang bleibt offen. Leer ist eine Scheibe dort nur, wenn der Server eine leere Liste liefert oder,
+  bei SD.NET RIM, HTTP 404 mit Code 802 (`_slice_pages`).
 - **Filter ignoriert:** Liefert eine Scheibe ein Objekt, dessen `modified` mehr als einen Tag vor ihrem Beginn oder
   nach ihrem Ende liegt (`SLICE_TOLERANCE`, fängt falsch angegebene Zeitzonen und Tagesstempel ab), beachtet der
   Server den Filter nicht. Der Vollabgleich übernimmt nichts aus dieser Seite und bricht ab: diese Liste sofort, jede
@@ -576,9 +629,9 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   Zeitscheiben erneut.
 - **Objekte ohne `modified`** erfasst ein Abgleich in Zeitscheiben nicht, wenn der Server sie in keiner Scheibe
   liefert. Das Sync-Protokoll nennt das bei jedem Vollabgleich in Zeitscheiben (`details.full_sync_slices.note`) und
-  zählt Objekte ohne `modified`, die der Server trotzdem liefert, je Liste (`details.full_sync_slices.without_modified`).
-  Unter `details.full_sync_slices.lists` steht je Liste, wie viele Scheiben der Lauf gelesen hat, ob sie fertig ist und
-  wo die nächste beginnt.
+  zählt Objekte ohne `modified`, die der Server trotzdem liefert, je Listentyp
+  (`details.full_sync_slices.without_modified`). Unter `details.full_sync_slices.lists` steht je Liste, wie viele
+  Scheiben der Lauf gelesen hat, ob sie fertig ist und wo die nächste beginnt (`BodySlices.summary`).
 - Abstand (`full_sync_every_days`) und Takt je Server gelten unverändert.
 
 ## Dokumente
@@ -832,10 +885,10 @@ Diese Abrufe gehen nicht an Ratsinformationssysteme. Sie melden sich mit derselb
 `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)`, und halten einen eigenen Takt je Server ein
 (`mandari/insight_core/services/dienste.py`, `ABSTAND`), vor jeder Anfrage und vor jeder Weiterleitung. Der Takt
 nutzt denselben Zeitstempel in Redis wie die Abrufe bei Ratsinformationssystemen: Liegt ein Dienst auf dem Server
-eines RIS, etwa das Geoportal einer Kommune, teilen sich beide den Takt. Hat eine registrierte Quelle auf demselben
-Hostnamen einen größeren Abstand (`request_interval`), gilt dieser für Live-Übertragung und Geoportale ebenfalls,
-in beide Richtungen (`dienste.NEBEN_RIS`, `quellen_takte`; die Abstände der Quellen liegen fünf Minuten im Cache).
-Ohne Redis drosselt jeder Prozess für sich.
+eines RIS, etwa das Geoportal einer Kommune, teilen sich beide den Takt. Hat eine registrierte Quelle (auch eine
+inaktive) auf demselben Hostnamen einen größeren Abstand (`request_interval`), halten Live-Übertragung und Geoportale
+diesen ebenfalls ein (`dienste.NEBEN_RIS`, `quellen_takte`); ein neuer Abstand wirkt dort spätestens nach fünf
+Minuten (`QUELLEN_TAKTE_SEKUNDEN`). Ohne Redis drosselt jeder Prozess für sich.
 
 Eine robots.txt werten diese Abrufe nicht aus, auch nicht bei Geoportalen von Kommunen: Sie durchsuchen keine
 Seiten, sondern fragen Schnittstellen ab; es gelten die Nutzungsregeln des jeweiligen Dienstes. Eine Gruppe für
@@ -845,7 +898,7 @@ nicht möchte, schreibt uns; wir schalten die Quelle dann ab (Umring-Quelle im A
 
 | Abruf | Ziel | Abstand je Server | Wann | Fundstelle |
 |---|---|---|---|---|
-| Live-Übertragung | Streaming-Anbieter (3Q, HLS-Server) | 1 s; ein größerer Abstand einer registrierten Quelle auf dem Server gilt | nur mit `LIVE_UEBERTRAGUNG_AKTIV`: Status einmal je Minute rund um Sitzungen; während einer Übertragung ein Einzelbild im Takt der Quelle (Standard 10 Sekunden, 5 bis 60), je Einzelbild 2 bis 4 Anfragen | `mandari/hub/live/anbieter/http.py`, `dienste.LIVE` |
+| Live-Übertragung | Streaming-Anbieter (3Q, HLS-Server) | 1 s; ein größerer Abstand einer registrierten Quelle auf dem Server gilt | nur mit `LIVE_UEBERTRAGUNG_AKTIV`: Status einmal je Minute rund um Sitzungen (ab 45 Minuten vor bis 10 Stunden nach ihrem Beginn, `hub/live/services.py`, `VORLAUF`, `FENSTER`); während einer Übertragung ein Einzelbild im Takt der Quelle (Standard 10 Sekunden, 5 bis 60), je Einzelbild 2 bis 4 Anfragen | `mandari/hub/live/anbieter/http.py`, `dienste.LIVE` |
 | Umringe von Bebauungsplänen | Geoportale von Kommunen und Land (WFS, OGC API – Features) | 1 s; ein größerer Abstand einer registrierten Quelle auf dem Server gilt; dazu 1 s Pause zwischen zwei Seiten | täglich um 04:50 (`sync_plan_boundaries`) | `mandari/insight_core/services/plan_boundaries.py`, `dienste.GEOPORTAL` |
 | Nominatim (OpenStreetMap) | `nominatim.openstreetmap.org` | 1 s (Nutzungsregeln: höchstens eine Anfrage je Sekunde) | Geodaten einer Kommune von Hand (`fetch_osm_geodata`, `resolve_body_geodata`); Ersatz in der Georeferenzierung von Vorgängen, wenn Photon nichts findet | `fetch_osm_geodata.py`, `georeferencing.py`, `dienste.NOMINATIM` |
 | Overpass (OpenStreetMap) | `overpass-api.de`, Ersatz `overpass.kumi.systems` | 1 s | Straßen, Adressen und Grenzen von Hand (`import_streets`, `resolve_body_geodata`) | `mandari/insight_core/services/overpass.py`, `dienste.OVERPASS` |
