@@ -1290,7 +1290,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:check_service_levels` | täglich 06:30 | Service-Level |
 | `befehl:availability_report` | am 1. um 00:15 | Verfügbarkeitsbericht des Vormonats nach `REPORTS_ROOT`; nur mit `GATUS_URL` |
 | `befehl:verify_audit_chain` | täglich 04:20 | Hash-Ketten prüfen (Issue #221; ein Befund lässt den Lauf scheitern) |
-| `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (Standard 90 Tage, Issue #366) |
+| `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026, Issue #366) |
 | `befehl:purge_security_audit_log` | täglich 04:40 | Sicherheitsprotokoll nach Frist |
 | `befehl:session_privacy_purge` | am 1. um 05:00 | DSGVO-Löschlauf mit Archivpaket |
 | `befehl:build_meeting_packages` | jede Minute | Sitzungsmappen (Issue #218): `--limit 5 --max-seconds 240` |
@@ -1403,8 +1403,8 @@ Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vo
 URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE_STORAGE` nennt.
 `AUDIT_EXPORT_MAX_ROWS` (Vorgabe 100000) begrenzt Exporte aus der Oberfläche, größere Zeiträume
 exportiert `export_audit_log`; `SECURITY_AUDIT_RETENTION_DAYS` (Vorgabe 365) ist die Frist des
-Sicherheitsprotokolls, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 90, 0 = keine Löschung) die der
-Anmeldeversuche für die Drosselung.
+Sicherheitsprotokolls, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30, festgelegt durch den Betreiber am 16.10.2026; 0 = keine Löschung)
+die der Anmeldeversuche für die Drosselung.
 
 Die Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218) erzeugt der Zeitplan
 `befehl:build_meeting_packages`; die Oberfläche legt nur Anforderungen an, ohne Worker bleibt eine

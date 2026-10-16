@@ -38,24 +38,31 @@ def run(*args: str) -> str:
     return out.getvalue()
 
 
-def test_alte_anmeldeversuche_werden_nach_der_frist_geloescht() -> None:
-    alt = [attempt(91), attempt(400, success=True)]
-    jung = [attempt(89), attempt(0)]
+def test_standardfrist_30_tage() -> None:
+    """30 Tage, festgelegt durch den Betreiber am 16.10.2026."""
+    from django.conf import settings
 
-    assert "[DRY-RUN] Anmeldeversuche: 2 älter als 90 Tage." in run("--dry-run")
+    assert settings.LOGIN_ATTEMPT_RETENTION_DAYS == 30
+
+
+def test_alte_anmeldeversuche_werden_nach_der_frist_geloescht() -> None:
+    alt = [attempt(31), attempt(400, success=True)]
+    jung = [attempt(29), attempt(0)]
+
+    assert "[DRY-RUN] Anmeldeversuche: 2 älter als 30 Tage." in run("--dry-run")
     assert LoginAttempt.objects.count() == 4
 
-    assert "Anmeldeversuche: 2 älter als 90 Tage gelöscht." in run()
+    assert "Anmeldeversuche: 2 älter als 30 Tage gelöscht." in run()
     assert set(LoginAttempt.objects.values_list("pk", flat=True)) == {a.pk for a in jung}
     assert not LoginAttempt.objects.filter(pk__in=[a.pk for a in alt]).exists()
     # Wiederholbar: ein zweiter Lauf findet nichts mehr
-    assert "Anmeldeversuche: 0 älter als 90 Tage gelöscht." in run()
+    assert "Anmeldeversuche: 0 älter als 30 Tage gelöscht." in run()
 
 
-@override_settings(LOGIN_ATTEMPT_RETENTION_DAYS=30)
+@override_settings(LOGIN_ATTEMPT_RETENTION_DAYS=60)
 def test_frist_aus_den_einstellungen_und_abweichend() -> None:
-    attempt(31)
-    attempt(10)
+    attempt(61)
+    attempt(40)
     run()
     assert LoginAttempt.objects.count() == 1
     run("--days", "5")
@@ -73,7 +80,7 @@ def test_loeschen_in_schritten() -> None:
     for _ in range(5):
         attempt(100)
     attempt(1)
-    assert purge_login_attempts.purge(timezone.now() - timedelta(days=90), batch_size=2) == 5
+    assert purge_login_attempts.purge(timezone.now() - timedelta(days=30), batch_size=2) == 5
     assert LoginAttempt.objects.count() == 1
 
 

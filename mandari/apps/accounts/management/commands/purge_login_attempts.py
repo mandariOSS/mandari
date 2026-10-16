@@ -5,8 +5,8 @@ Anmeldeversuche (``LoginAttempt``) nach Frist löschen (Issue #366).
 ``LoginAttempt`` dient der Drosselung von Anmeldung und zweitem Faktor (Fenster 15 Minuten) und hält
 E-Mail-Adresse, IP-Adresse und Browserkennung fest. Länger als die Frist braucht es die Zeilen nicht:
 Anmeldungen und Fehlversuche stehen zusätzlich im Sicherheits- bzw. Mandantenprotokoll mit eigener Frist
-(docs/PROTOKOLLIERUNG.md). Frist ``LOGIN_ATTEMPT_RETENTION_DAYS`` (Standard 90 Tage wie die Anwendungslogs,
-docs/PROTOKOLLE.md; 0 = keine Löschung). Die Ausgabe nennt nur Zahlen.
+(docs/PROTOKOLLIERUNG.md). Frist ``LOGIN_ATTEMPT_RETENTION_DAYS``: 30 Tage, festgelegt durch den Betreiber am 16.10.2026
+(docs/PROTOKOLLE.md; 0 = keine Löschung). Die Ausgabe nennt nur Zahlen.
 
     python manage.py purge_login_attempts             # löschen
     python manage.py purge_login_attempts --dry-run   # nur zählen
@@ -54,7 +54,7 @@ class Command(EinmaligMixin, BaseCommand):
     def handle(self, *args: Any, **options: Any) -> None:
         days = options.get("days")
         if days is None:
-            days = int(getattr(settings, "LOGIN_ATTEMPT_RETENTION_DAYS", 90))
+            days = int(getattr(settings, "LOGIN_ATTEMPT_RETENTION_DAYS", 30))
         if days <= 0:
             self.stdout.write("Frist deaktiviert – nichts gelöscht.")
             return

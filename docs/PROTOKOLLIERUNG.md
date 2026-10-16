@@ -97,8 +97,8 @@ nutzen dieselbe Anmeldung.
 - Fehler beim Protokollieren verhindern keine Anmeldung; sie werden im Betriebslog vermerkt.
 - **Anmeldeversuche für die Drosselung** (`LoginAttempt`: E-Mail-Adresse, IP-Adresse, Browserkennung,
   Ergebnis) braucht die Anwendung nur für die Zählung der letzten 15 Minuten. Der Zeitplan
-  `befehl:purge_login_attempts` löscht sie täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (Standard 90 Tage
-  wie die Anwendungslogs, [PROTOKOLLE.md](PROTOKOLLE.md); 0 = keine Löschung, Issue #366). Die Einträge im
+  `befehl:purge_login_attempts` löscht sie täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage,
+  festgelegt durch den Betreiber am 16.10.2026, [PROTOKOLLE.md](PROTOKOLLE.md); 0 = keine Löschung, Issue #366). Die Einträge im
   Sicherheits- und Mandantenprotokoll folgen ihren eigenen Fristen (Abschnitt 10).
 
 ## 5. Rechtsgrundlage (allgemeiner Hinweis)
