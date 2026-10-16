@@ -155,6 +155,33 @@ def test_rueckstau_ocr_rot_wenn_keiner_laeuft(mit_bedarf: Any, runner_tot: bool)
 
 
 @pytest.mark.django_db
+def test_rueckstau_ocr_versuch_ueber_der_zeitgrenze_laeuft_nicht(mit_bedarf: Any) -> None:
+    """Über der Zeitgrenze bleibt ein Versuch bis zum Neustart des Runners gesperrt, arbeitet aber nicht mehr."""
+    from apps.events.task_runner import CODE_TIMEOUT
+
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="ocr"), status.MAX_TASK_WAIT + 60)
+    haengt = _laeuft("ocr")
+    Task.objects.filter(pk=haengt.pk).update(result_code=CODE_TIMEOUT)
+
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "(0 laufend)" in ergebnis.detail
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("andere", ["default", "ai"])
+def test_rueckstau_ocr_laufender_auftrag_anderswo_hilft_nicht(mit_bedarf: Any, andere: str) -> None:
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="ocr"), status.MAX_TASK_WAIT + 60)
+    _laeuft(andere)
+
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "(0 laufend)" in ergebnis.detail and "Aufträge 0 s" in ergebnis.detail
+
+
+@pytest.mark.django_db
 def test_rueckstau_anderer_warteschlangen_unveraendert(mit_bedarf: Any) -> None:
     """Für alle übrigen Warteschlangen bleibt es bei 15 Minuten, auch wenn dort oder in ocr ein Auftrag läuft."""
     _laeuft("default")

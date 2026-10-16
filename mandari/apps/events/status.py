@@ -11,7 +11,7 @@ Anwendung sie beantworten kann, auch wenn der Worker selbst steht:
   Zustellung (ältestes nicht zugestelltes Ereignis je nicht pausiertem Abonnement) jeweils höchstens
   ``MAX_EVENT_LAG`` (5 min), ältester fälliger Auftrag höchstens ``MAX_TASK_WAIT`` (15 min). Warteschlangen in
   ``SEPARATE_QUEUES`` (``ocr``) zählen gesondert: Sie scheitern nur, wenn ihr ältester fälliger Auftrag länger
-  als ``MAX_TASK_WAIT`` wartet und keiner läuft (Issue #953).
+  als ``MAX_TASK_WAIT`` wartet und keiner läuft (Issue #953); ein Versuch über seiner Zeitgrenze läuft nicht mehr.
 - ``fehlerquote``: In der letzten Stunde beendete Aufträge, davon gescheitert (fehlgeschlagen oder
   tot) höchstens ``MAX_ERROR_RATE`` (20 %), sobald mindestens ``MIN_FINISHED`` beendet sind.
 - ``gescheitert``: endgültig gescheiterte Aufträge der letzten 24 Stunden und tote Ereignisse (nach
@@ -85,6 +85,7 @@ def check_heartbeat() -> Check:
 def check_backlog() -> Check:
     from .metrics import sequencer_backlog, subscription_lags
     from .models import SubscriptionState, Task, TaskStatus
+    from .task_runner import CODE_TIMEOUT
 
     teile: list[str] = []
     ok = True
@@ -120,8 +121,13 @@ def check_backlog() -> Check:
         if queue not in wartezeiten:
             continue
         # Läuft = Status „läuft“ mit gültiger Sperre: Der Runner verlängert sie, solange er lebt (stirbt er, zählt
-        # sein Auftrag nicht mehr)
-        laufend = Task.objects.filter(queue=queue, status=TaskStatus.LAEUFT, locked_until__gt=Now()).count()
+        # sein Auftrag nicht mehr). Ein Versuch über der Zeitgrenze bleibt bis zum Neustart des Runners gesperrt,
+        # arbeitet aber nicht mehr (Ergebniscode „zeitgrenze“): Er zählt nicht.
+        laufend = (
+            Task.objects.filter(queue=queue, status=TaskStatus.LAEUFT, locked_until__gt=Now())
+            .exclude(result_code=CODE_TIMEOUT)
+            .count()
+        )
         ok &= wartezeiten[queue] <= MAX_TASK_WAIT or laufend > 0
         teile.append(f"{queue} {_sekunden(wartezeiten[queue])} ({laufend} laufend)")
     return Check(ok, ", ".join(teile))
