@@ -34,6 +34,20 @@ def _get_sync_orchestrator():
     return SyncOrchestrator
 
 
+#: Warum der Worker eine Scraper-Quelle nicht abgleicht (steht im Sync-Protokoll)
+SCRAPER_NUR_IM_INGESTOR = (
+    "Scraper-Quellen gleicht nur der Ingestor ab: im Admin bei aktiver Quelle und laufendem Ingestor, von Hand im "
+    "Container ingestor mit python -m src.main sync --source <Basis-URL>. Dem Worker der Anwendung fehlen die "
+    "Abhängigkeiten der Scraper; ein Abruf als OParl-Schnittstelle schlüge fehl."
+)
+
+
+def is_scraper_source(source) -> bool:
+    """Scraper-Quelle (``sync_config["source_type"] = "scraper:<vendor>"``, z. B. SessionNet)?"""
+    config = getattr(source, "sync_config", None)
+    return isinstance(config, dict) and str(config.get("source_type") or "").startswith("scraper:")
+
+
 def count_synced_entities(result) -> int:
     """Zählt alle synchronisierten Entitäten eines SyncResult."""
     return (
@@ -90,6 +104,16 @@ def run_sync_with_logging(
         sync_type=sync_type,
         triggered_by=triggered_by,
     )
+    if source is not None and is_scraper_source(source):
+        # Nicht über den Ingestor-Code im Image der Anwendung: Ihm fehlen die Scraper-Abhängigkeiten, und früher
+        # rief er die Basis-URL als OParl-System ab ("Failed to fetch system"), gezählt als Fehler der Quelle.
+        log.status = SyncLog.Status.FAILED
+        log.finished_at = timezone.now()
+        log.duration_seconds = 0
+        log.errors = [SCRAPER_NUR_IM_INGESTOR]
+        log.save()
+        logger.warning("Sync von %s im Worker übersprungen: Scraper-Quelle", source.name)
+        return
 
     SyncOrchestrator = _get_sync_orchestrator()
     start = timezone.now()
