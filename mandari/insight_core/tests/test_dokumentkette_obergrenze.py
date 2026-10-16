@@ -12,8 +12,8 @@ Zusammenführung der Dokumentkette (#919) mit der Obergrenze des Dokument-Caches
   verweigernde und nicht aktive Quellen.
 - ``cache_files`` lädt über den einen Abrufweg nur bis zur Grenze, auch bei der Ablage für alle.
 - Restpunkte aus der Prüfung (#990): Ein Dienst ohne Objektspeicher-Konfiguration ruft Inhalte mit ``remote_at`` nie bei
-  der Quelle ab (gestört statt fehlend), das Aufgeben des Objektspeichers ist ein ausdrücklicher Schritt, und der
-  Zwischenspeicher (``OBJ_CACHE_MAX_GB``) prüft wie die Obergrenze.
+  der Quelle ab (gestört statt fehlend), das Zurückholen lädt nur herunter, und der Zwischenspeicher
+  (``OBJ_CACHE_MAX_GB``) prüft wie die Obergrenze.
 """
 
 from __future__ import annotations
@@ -443,32 +443,34 @@ class TestMitObjektspeicher:
 
 
 # =============================================================================
-# Moduswechsel ohne Objektspeicher (#990): gestört statt fehlend, Aufgeben nur ausdrücklich
+# Moduswechsel ohne Objektspeicher (#990): gestört statt fehlend
 # =============================================================================
-
-
-#: Hochgeladen vor dem Fenster, in dem das Aufgeben verweigert wird (``file_store.RECENT_UPLOAD``)
-VOR_LANGEM = timedelta(hours=3)
 
 
 def _nur_im_objektspeicher(body: OParlBody, name: str) -> OParlFile:
     """Abgelegt, laut Datenbank im Objektspeicher (``remote_at``) und lokal verdrängt; der Dienst hat keine ``OBJ_*``."""
     datei = _abgelegt(body, name, alter_tage=3000)
-    OParlFileBlob.objects.filter(pk=datei.blob_id).update(remote_at=timezone.now() - VOR_LANGEM)
+    OParlFileBlob.objects.filter(pk=datei.blob_id).update(remote_at=timezone.now())
     Path(datei.local_path or "").unlink()
     return datei
 
 
-def _aufgeben(*optionen: str) -> tuple[str, str]:
-    # --trotz-zeitplan: Die Frage nach dem Zeitplan lädt die Zeitpläne einmal je Prozess, mit OBJ_ENABLED des Tests
-    out, err = StringIO(), StringIO()
-    call_command("dokumentablage", "--objektspeicher-aufgeben", *optionen, "--trotz-zeitplan", stdout=out, stderr=err)
-    return out.getvalue(), err.getvalue()
-
-
 class TestModuswechselOhneObjektspeicher:
-    def test_kein_quellabruf(self, body: OParlBody, quelle: dict[str, Any]) -> None:
+    @pytest.mark.parametrize("unvollstaendig", [False, True])
+    def test_kein_quellabruf(
+        self, body: OParlBody, quelle: dict[str, Any], settings: Any, unvollstaendig: bool
+    ) -> None:
         datei = _nur_im_objektspeicher(body, "a")
+        if unvollstaendig:
+            # OBJ_ENABLED=true, aber eine Zugangsangabe fehlt: hier nicht konfiguriert
+            settings.OBJ_ENABLED = True
+            settings.OBJ_ENDPOINT, settings.OBJ_BUCKET, settings.OBJ_KEY, settings.OBJ_SECRET = (
+                ENDPUNKT,
+                BUCKET,
+                "k",
+                "",
+            )
+            assert not object_storage.enabled()
 
         assert file_store.local_copy(datei).disturbed
         assert abruf.abrufen(datei) == abruf.STORAGE_ERROR
@@ -476,6 +478,7 @@ class TestModuswechselOhneObjektspeicher:
         assert response.status_code == 503 and response["Retry-After"] == "300"
         assert quelle["abrufe"] == [], "ein falsch konfigurierter Dienst löst keine Abrufwelle aus"
         assert _status(datei) == ["ok"]
+        assert OParlFileBlob.objects.get(pk=datei.blob_id).remote_at is not None
 
     def test_warnung_hoechstens_einmal_je_minute(
         self, body: OParlBody, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
@@ -487,129 +490,65 @@ class TestModuswechselOhneObjektspeicher:
                 assert file_store.local_copy(datei).disturbed
         assert len([r for r in caplog.records if "nicht konfiguriert" in r.getMessage()]) == 1
 
-    def test_aufgeben_ist_ein_ausdruecklicher_schritt(self, body: OParlBody, quelle: dict[str, Any]) -> None:
-        datei = _nur_im_objektspeicher(body, "a")
-        liegt = _abgelegt(body, "b", alter_tage=3000)
-        OParlFileBlob.objects.filter(pk=liegt.blob_id).update(remote_at=timezone.now() - VOR_LANGEM)
 
-        out, err = _aufgeben()
-        assert "2 Inhalte, davon lokal nicht vorhanden: 1, davon nicht neu abrufbar: 0" in out
-        assert "Probelauf" in out and "1 Inhalte liegen nicht lokal" in err
-        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 2, "der Probelauf ändert nichts"
+# =============================================================================
+# Zurückholen aus dem Objektspeicher (#990): nur herunterladen, nichts vergessen
+# =============================================================================
 
-        # Im Zweifel verweigern: Ob die Quelle den Inhalt noch liefert (404/410, Sperren), weiß niemand vorher
-        with pytest.raises(CommandError, match="1 Inhalte liegen nicht lokal"):
-            _aufgeben("--ausfuehren")
-        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 2
 
-        out, _ = _aufgeben("--ausfuehren", "--trotz-fehlender")
-        assert "Vermerke gelöscht: 2" in out
-        assert not OParlFileBlob.objects.filter(remote_at__isnull=False).exists()
-        # Jetzt fehlt der Inhalt bestätigt, und der Abruf holt ihn bei der Quelle
-        assert file_store.local_copy(datei).missing
-        assert abruf.abrufen(OParlFile.objects.get(pk=datei.pk)) == abruf.OK
-        assert len(quelle["abrufe"]) == 1 and _status(datei, liegt) == ["ok", "ok"]
+def _zurueckholen() -> str:
+    # --trotz-zeitplan: Die Frage nach dem Zeitplan lädt die Zeitpläne einmal je Prozess, mit OBJ_ENABLED des Tests
+    out = StringIO()
+    call_command("dokumentablage", "--zurueckholen", "--trotz-zeitplan", stdout=out)
+    return out.getvalue()
 
-    def test_aufgeben_nur_ohne_konfigurierten_objektspeicher(self, body: OParlBody, settings: Any) -> None:
-        _nur_im_objektspeicher(body, "a")
-        settings.OBJ_ENABLED = True
-        settings.OBJ_ENDPOINT = ENDPUNKT
-        settings.OBJ_BUCKET = BUCKET
-        settings.OBJ_KEY = "test"
-        settings.OBJ_SECRET = "test"
-        with pytest.raises(CommandError, match="ist hier eingeschaltet"):
-            _aufgeben("--ausfuehren")
-        # Auch mit unvollständigen Zugangsdaten (dann ist object_storage.enabled() falsch): wer einschaltet, nutzt ihn
-        settings.OBJ_ENDPOINT = ""
-        assert not object_storage.enabled()
-        with pytest.raises(CommandError, match="ist hier eingeschaltet"):
-            _aufgeben("--ausfuehren", "--trotz-fehlender")
-        with pytest.raises(CommandError, match="nur mit --objektspeicher-aufgeben"):
-            call_command("dokumentablage", "--ausfuehren", stdout=StringIO())
-        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 1
 
-    def test_aufgeben_verweigert_nach_frischem_upload(self, body: OParlBody) -> None:
-        """Ein anderer Dienst (etwa Worker oder Web mit ``OBJ_*``) lädt womöglich noch hoch."""
-        datei = _nur_im_objektspeicher(body, "a")
-        OParlFileBlob.objects.filter(pk=datei.blob_id).update(remote_at=timezone.now() - timedelta(minutes=30))
+def _demo_body() -> OParlBody:
+    """Synthetische Quelle (wie die Demo): Die Kopie im Objektspeicher ist die einzige."""
+    source = OParlSource.objects.create(name="Demo", url="https://demo.invalid/oparl/system")
+    return OParlBody.objects.create(source=source, external_id="https://demo.invalid/oparl/body", name="Demo")
 
-        out, err = _aufgeben()
-        assert "in den letzten zwei Stunden hochgeladen: 1" in out and "anderer Dienst" in err
-        with pytest.raises(CommandError, match="nicht aufgegeben"):
-            _aufgeben("--ausfuehren", "--trotz-fehlender")
-        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 1
 
-    def test_falscher_zaehler_versteckt_keinen_inhalt(self, body: OParlBody) -> None:
-        """Lokal fehlend zählt über die Verweise, nicht über ref_count (nach Abstürzen, altem Code)."""
-        datei = _nur_im_objektspeicher(body, "a")
+class TestZurueckholen:
+    def test_holt_lokal_verdraengte_zurueck(self, objektspeicher: Any, quelle: dict[str, Any]) -> None:
+        datei = _hochgeladen(_demo_body(), "demo")
+        # Falscher Zähler (alter Code, Absturz): gezählt wird über die Verweise, nicht über ref_count
         OParlFileBlob.objects.filter(pk=datei.blob_id).update(ref_count=0)
-
-        out, _ = _aufgeben()
-        assert "davon lokal nicht vorhanden: 1" in out
-        with pytest.raises(CommandError, match="nicht lokal"):
-            _aufgeben("--ausfuehren")
-
-    def test_nicht_neu_abrufbare_erst_zurueckholen(
-        self, objektspeicher: Any, settings: Any, quelle: dict[str, Any]
-    ) -> None:
-        """Synthetische Quelle (wie die Demo): Die Kopie im Objektspeicher ist die einzige, sie ginge verloren."""
-        source = OParlSource.objects.create(name="Demo", url="https://demo.invalid/oparl/system")
-        demo = OParlBody.objects.create(source=source, external_id="https://demo.invalid/oparl/body", name="Demo")
-        datei = _hochgeladen(demo, "demo")
-        OParlFileBlob.objects.filter(pk=datei.blob_id).update(remote_at=timezone.now() - VOR_LANGEM)
+        vermerk = OParlFileBlob.objects.get(pk=datei.blob_id).remote_at
         pfad = Path(datei.local_path or "")
         pfad.unlink()
 
-        settings.OBJ_ENABLED = False
-        out, err = _aufgeben()
-        assert "davon nicht neu abrufbar: 1" in out and "--zurueckholen" in err
-        for optionen in (("--ausfuehren",), ("--ausfuehren", "--trotz-fehlender")):
-            with pytest.raises(CommandError, match="nicht neu abrufen"):
-                _aufgeben(*optionen)
-        assert OParlFileBlob.objects.get(pk=datei.blob_id).remote_at is not None
-
-        # Mit eingeschaltetem Objektspeicher zurückholen, dann geht nichts verloren
-        settings.OBJ_ENABLED = True
-        out_holen = StringIO()
-        call_command("dokumentablage", "--zurueckholen", "--trotz-zeitplan", stdout=out_holen)
-        assert "Zurückgeholt: geholt=1, offen=0" in out_holen.getvalue()
+        assert "Zurückgeholt: geholt=1, offen=0" in _zurueckholen()
         assert pfad.read_bytes() == _inhalt("demo")
-        settings.OBJ_ENABLED = False
-        out, _ = _aufgeben("--ausfuehren")
-        assert "Vermerke gelöscht: 1" in out
-        assert file_store.local_copy(OParlFile.objects.get(pk=datei.pk)).present
-        assert quelle["abrufe"] == []
+        assert OParlFileBlob.objects.get(pk=datei.blob_id).remote_at == vermerk, "nichts vermerkt"
+        assert _status(datei) == ["ok"] and quelle["abrufe"] == []
 
-    def test_falscher_bucket_beim_zurueckholen_haelt_die_sperre(
-        self, objektspeicher: Any, settings: Any, quelle: dict[str, Any]
-    ) -> None:
+    def test_nur_mit_objektspeicher(self, body: OParlBody) -> None:
+        with pytest.raises(CommandError, match="nicht eingeschaltet"):
+            _zurueckholen()
+
+    def test_falscher_bucket_vergisst_nichts(self, objektspeicher: Any, settings: Any) -> None:
         """
-        Leerer bzw. falscher Bucket: Alles fehlt dort. Das Zurückholen bricht ab und lässt ``remote_at`` stehen, sonst
-        ließe sich der Objektspeicher danach aufgeben, und die PDFs lägen nur noch verweislos im Bucket.
+        Leerer bzw. falscher Bucket: Alles fehlt dort. Das Zurückholen bricht ab und lässt ``remote_at`` stehen; mit
+        ``OBJ_EVICT_MAX_MISSING=0`` läuft es über alle fehlenden hinweg, ebenfalls ohne Vermerke zu löschen.
         """
         settings.OBJ_EVICT_MAX_MISSING = 3
-        source = OParlSource.objects.create(name="Demo", url="https://demo.invalid/oparl/system")
-        demo = OParlBody.objects.create(source=source, external_id="https://demo.invalid/oparl/body", name="Demo")
-        dateien = [_hochgeladen(demo, f"demo{i}") for i in range(5)]
-        OParlFileBlob.objects.update(remote_at=timezone.now() - VOR_LANGEM)
+        dateien = [_hochgeladen(_demo_body() if i == 0 else _body(), f"d{i}") for i in range(5)]
         for datei in dateien:
             Path(datei.local_path or "").unlink()
         objektspeicher.create_bucket(Bucket="leer")
         settings.OBJ_BUCKET = "leer"
 
-        out = StringIO()
-        call_command("dokumentablage", "--zurueckholen", "--trotz-zeitplan", stdout=out)
-        assert "fehlt=3" in out.getvalue() and "viele_fehlend=1" in out.getvalue() and "offen=5" in out.getvalue()
+        out = _zurueckholen()
+        assert "fehlt=3" in out and "viele_fehlend=1" in out and "offen=5" in out
         assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 5, "der Vermerk bleibt"
 
-        settings.OBJ_ENABLED = False
-        out_probe, _ = _aufgeben()
-        assert "davon lokal nicht vorhanden: 5, davon nicht neu abrufbar: 5" in out_probe
-        for optionen in (("--ausfuehren",), ("--ausfuehren", "--trotz-fehlender")):
-            with pytest.raises(CommandError, match="nicht aufgegeben"):
-                _aufgeben(*optionen)
+        settings.OBJ_EVICT_MAX_MISSING = 0
+        out = _zurueckholen()
+        assert "fehlt=5" in out and "offen=5" in out and "viele_fehlend" not in out
         assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 5
-        assert quelle["abrufe"] == []
+        assert not any(Path(datei.local_path or "").exists() for datei in dateien)
+        assert _status(*dateien) == ["ok"] * 5
 
 
 # =============================================================================

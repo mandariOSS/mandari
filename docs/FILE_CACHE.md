@@ -372,9 +372,9 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   (`remote_at`), während der Container ihn nicht konfiguriert hat (`OBJ_ENABLED=false`, fehlende `OBJ_*`;
   **Moduswechsel**, Issue #990): Vorschau, Abruf und Texterkennung warten dann, statt bei der Quelle abzurufen, und
   das Protokoll warnt höchstens einmal je Minute und Prozess. Ein falsch konfigurierter Dienst löst so keine
-  Abrufwelle aus; das bewusste Ausschalten ist ein eigener Schritt (unten). Nur ein bestätigtes Fehlen (404 im
-  Objektspeicher, falscher Hash) setzt die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files` neu, und
-  der Inhalt wird neu hochgeladen.
+  Abrufwelle aus; ein Ausschalten des Objektspeichers ist derzeit nicht vorgesehen (unten). Nur ein bestätigtes Fehlen
+  (404 im Objektspeicher, falscher Hash) setzt die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files`
+  neu, und der Inhalt wird neu hochgeladen.
   **Betriebsrisiko:** Zeigen `OBJ_BUCKET` oder das Schlüsselschema auf einen Bestand, in dem die Inhalte (noch)
   nicht liegen – etwa bei einem Umzug des Objektspeichers –, gilt jeder lokal verdrängte Inhalt als bestätigt
   fehlend und wird bei der Quelle neu geholt. Das Verdrängen selbst löscht dann keine lokale Kopie mehr (Prüfung per
@@ -392,49 +392,34 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
 - Reihenfolge beim Einschalten: Bestand umstellen (`--umstellen`), Zugangsdaten setzen, `OBJ_ENABLED=true`,
   Neustart, `dokumentablage --hochladen --trotz-zeitplan` bis nichts mehr offen ist. Danach lädt der Zeitplan
   `befehl:dokumentablage` vor jedem Aufräumen selbst hoch (`--hochladen --aufraeumen`, solange `OBJ_ENABLED` gesetzt ist).
-- **Ausschalten ist ein ausdrücklicher Schritt** (Issue #990). `OBJ_ENABLED=false` allein lässt lokal verdrängte
-  Inhalte gestört (Moduswechsel, oben): Die Vorschau antwortet mit 503, die Texterkennung wartet, niemand ruft bei
-  der Quelle ab. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
-  (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie. Eine
-  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus (siehe dort, „Moduswechsel“).
-
-  Wer den Objektspeicher **aufgibt**, holt zuerst bei eingeschaltetem Objektspeicher alles zurück, was lokal fehlt.
-  Sonst gingen Inhalte verloren, die sich nicht neu abrufen lassen (Quelle in Schonung, Dateiabruf abgeschaltet
-  oder verweigert, etwa hinter ALTCHA oder per robots.txt bzw. HTTP 401/403, synthetische Quelle, keine Adresse):
-  Genau solche verdrängt `OBJ_CACHE_MAX_GB` lokal. Auch was die Quelle laut Faustregel liefern könnte, kann dort
-  inzwischen fehlen (404/410) oder gesperrt sein; deshalb gilt **im Zweifel verweigern**. Vorher `OBJ_CACHE_MAX_GB` (und eine Obergrenze `FILE_CACHE_MAX_TOTAL_GB`) über den Bestand heben,
-  sonst verdrängt das stündliche Aufräumen das Zurückgeholte wieder; `cache_files --stats` nennt die Größe im
-  Objektspeicher, Platz für `FILE_CACHE_MIN_FREE_GB` muss bleiben.
+- **Ausschalten ist derzeit nicht vorgesehen** (Issue #990). Inhalte mit `remote_at` bleiben in einem Container
+  ohne Objektspeicher-Konfiguration (`OBJ_ENABLED=false` oder unvollständige `OBJ_*`) „gestört“ (Moduswechsel, oben):
+  Die Vorschau antwortet mit 503, die Texterkennung wartet, niemand ruft bei der Quelle ab, bis der Objektspeicher
+  wieder konfiguriert ist. Es gibt also keine Abrufwelle, aber auch keinen Rückweg ohne ihn. Verwaiste Inhalte, die
+  schon im Objektspeicher liegen, bleiben dort, solange er aus ist (`remote_kept` beim Aufräumen); eine
+  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus (siehe dort, „Moduswechsel“). Einen geprüften
+  Weg, den Objektspeicher aufzugeben, gibt es erst mit einem eigenen Schritt (Folgepunkt in Issue #919).
+  **Den Bucket nicht löschen, solange Vermerke `remote_at` bestehen** (`dokumentablage` nennt „im Objektspeicher
+  N“): Für lokal verdrängte Inhalte ist er die einzige Kopie. Wechseln nur, wenn der Bestand im neuen Ziel
+  vollständig bereitsteht („Betriebsrisiko“, oben). Im Mehr-Server-Betrieb
+  (`docs/MEHR_SERVER_BETRIEB.md`) brauchen alle Dienste, die Dokumente lesen, dieselben `OBJ_*`; ohne Objektspeicher
+  geht Mehr-Server-Betrieb nur mit gemeinsamer Ablage.
+- **Zurückholen** (`dokumentablage --zurueckholen --limit 5000 --trotz-zeitplan`, nur mit eingeschaltetem
+  Objektspeicher): holt lokal verdrängte Inhalte aus dem Objektspeicher in die lokale Ablage, etwa um sie vor einer
+  Wartung des Objektspeichers lokal vorzuhalten. Es lädt nur herunter (mit Hashprüfung, über
+  `FILE_CACHE_MIN_FREE_GB`) und ändert nichts in der Datenbank: Ein Inhalt, der im Objektspeicher fehlt, behält seinen
+  Vermerk `remote_at` und bleibt „offen“. Die Ausgabe nennt `geholt`, `fehlt`, `offen` und `gestoert`; `--limit`
+  zählt geholte Inhalte. Nach `OBJ_EVICT_MAX_MISSING` fehlenden Inhalten in Folge bricht der Lauf ab
+  (`viele_fehlend`, meist ein falscher `OBJ_BUCKET`). Fehlen dagegen wirklich einzelne Inhalte, bräche jeder Lauf an
+  denselben ab; dann für diesen Lauf `OBJ_EVICT_MAX_MISSING=0` setzen:
 
   ```bash
-  # 0. Optional: Referenzzähler berichtigen (gezählt wird ohnehin über die Verweise)
-  python manage.py dokumentablage --referenzen --trotz-zeitplan
-  # 1. Mit eingeschaltetem Objektspeicher zurückholen, wiederholen, bis „offen=0“ und „fehlt“ nicht mehr erscheint
-  python manage.py dokumentablage --zurueckholen --limit 5000 --trotz-zeitplan
-  # 2. OBJ_ENABLED=false in Anwendung und Worker, Neustart; dann Probelauf:
-  #    Inhalte mit remote_at, davon lokal nicht vorhanden, davon nicht neu abrufbar, frisch hochgeladen
-  python manage.py dokumentablage --objektspeicher-aufgeben
-  # 3. Vermerke remote_at löschen
-  python manage.py dokumentablage --objektspeicher-aufgeben --ausfuehren --trotz-zeitplan
+  docker compose exec -e OBJ_EVICT_MAX_MISSING=0 mandari python manage.py dokumentablage --zurueckholen --trotz-zeitplan
   ```
 
-  **Zurückholen:** Fehlt ein Inhalt im Objektspeicher (`fehlt`), behält er seinen Vermerk `remote_at`, bleibt
-  „offen“ und hält das Aufgeben auf; nach `OBJ_EVICT_MAX_MISSING` fehlenden Inhalten in Folge bricht der Lauf ab
-  (`viele_fehlend`, meist ein falscher `OBJ_BUCKET`). Fertig ist das Zurückholen erst bei `offen=0` ohne `fehlt`.
-  Ein Inhalt, der wirklich weder lokal noch im Objektspeicher liegt, ist schon verloren; das gehört von Hand
-  geklärt, bevor man den Objektspeicher aufgibt.
-
-  `--ausfuehren` verweigert sich, solange `OBJ_ENABLED` im Container gesetzt ist (auch mit unvollständigen `OBJ_*`),
-  solange Inhalte nicht lokal liegen („lokal nicht vorhanden“ größer als 0) und solange in den letzten zwei Stunden
-  hochgeladen wurde (ein anderer Container hat den Objektspeicher dann womöglich noch eingeschaltet; die Prüfung von
-  `OBJ_ENABLED` sieht nur den eigenen). `--trotz-fehlender` ist für den bewussten Ausnahmefall: Es lässt lokal fehlende
-  Inhalte durch, die die Quelle laut Faustregel neu liefern könnte; die Vorschau holt sie danach von der Quelle,
-  `cache_files` lädt sie nach (so viele Abrufe bei den Kommunen, wie der Probelauf als lokal nicht vorhanden nennt).
-  Nicht neu abrufbare halten immer auf. Danach löscht das Aufräumen verwaiste Inhalte nur noch lokal, die Obergrenze
-  arbeitet ohne Objektspeicher. Was im Objektspeicher liegt, bleibt dort. **Den Bucket erst löschen, wenn der
-  Probelauf vor dem Ausführen „lokal nicht vorhanden: 0“ meldete** und geprüft ist, dass Vorschau und Texterkennung
-  ohne ihn arbeiten (Stichprobe, `cache_files --stats`, Prüfungen in `/health/worker/`); wird er später wieder
-  eingeschaltet, lädt `--hochladen` den Bestand erneut hoch.
+  Vorher `OBJ_CACHE_MAX_GB` (und eine Obergrenze `FILE_CACHE_MAX_TOTAL_GB`) über den Bestand
+  heben, sonst verdrängt das stündliche Aufräumen das Zurückgeholte wieder; `cache_files --stats` nennt die Größe im
+  Objektspeicher.
 
 ### Obergrenze der Gesamtgröße
 
@@ -501,8 +486,8 @@ Ohne weitere Einstellung wächst die Ablage, bis `FILE_CACHE_MIN_FREE_GB` greift
   bleiben auch dann unangetastet (geschützt als `im_objektspeicher`), auch wenn sie erst während des Laufs
   hochgeladen werden. Die erste Zeile von `prune_file_cache` nennt den Modus. Vorschau, Abruf und Texterkennung
   behandeln lokal fehlende Inhalte mit `remote_at` in einem solchen Container als gestört, nie als fehlend (Issue
-  #990); den Objektspeicher bewusst aufgeben: `dokumentablage --objektspeicher-aufgeben`
-  ([Objektspeicher](#objektspeicher), „Ausschalten“).
+  #990); ein Ausschalten des Objektspeichers ist derzeit nicht vorgesehen ([Objektspeicher](#objektspeicher),
+  „Ausschalten“).
 - **Nachprüfung unter der Sperre:** Zwischen Planung und Verdrängen prüft jeder Stapel in beiden Modi unter
   Zeilensperre erneut: Texterkennung (auch eben beansprucht oder eingereiht), laufender Abruf, frisch abgelegt,
   inzwischen ausgeliefert oder neu verwiesen (Rang jünger), Zahl der Verweise (eine gesperrte Datei des Inhalts hält

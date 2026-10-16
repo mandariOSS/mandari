@@ -44,7 +44,7 @@ import tempfile
 import time
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import IO, Any, Final
 
@@ -390,8 +390,8 @@ def local_copy(file_obj: Any) -> Copy:
 
     Liegt der Inhalt laut Datenbank im Objektspeicher (``remote_at``), ist der hier aber nicht konfiguriert
     (``OBJ_ENABLED=false``, fehlende ``OBJ_*``), ist das ebenfalls gestört (Moduswechsel, Issue #990): Ein falsch
-    konfigurierter Dienst löst so keine Abrufwelle bei den Quellen aus. Wer den Objektspeicher bewusst aufgibt, tut
-    das ausdrücklich (``release_object_storage``, ``dokumentablage --objektspeicher-aufgeben``).
+    konfigurierter Dienst löst so keine Abrufwelle bei den Quellen aus. Den Objektspeicher aufzugeben ist derzeit
+    nicht vorgesehen (``docs/FILE_CACHE.md``, „Ausschalten“).
     """
     from ..models import OParlFileBlob
 
@@ -419,8 +419,8 @@ def fetch_remote(sha256: str, *, size: int | None = None, forget_missing: bool =
 
     Fehlt er dort (404, falscher Hash), wird ``remote_at`` zurückgesetzt, damit er neu hochgeladen wird, sobald er
     lokal liegt. ``forget_missing=False`` lässt den Vermerk stehen (``fetch_back_remote``): Bei einem falschen Bucket
-    meldet der Objektspeicher alles als fehlend, und ohne Vermerk ließe sich der Objektspeicher aufgeben, obwohl die
-    Inhalte nur dort liegen (Issue #990).
+    meldet der Objektspeicher alles als fehlend; der Vermerk ist dann der einzige Hinweis, dass die Inhalte dort
+    liegen (Issue #990).
     """
     from apps.common.db_connections import release_idle_thread_connections
 
@@ -598,128 +598,26 @@ def evict_local(*, max_bytes: int | None = None) -> Counter[str]:
     return file_cache_limit.evict_by_access(max_bytes=limit)
 
 
-#: So lange nach dem letzten Upload verweigert ``release_object_storage``: Ein anderer Dienst mit ``OBJ_*`` lädt
-#: womöglich noch hoch (die Prüfung des eigenen Containers sieht ihn nicht)
-RECENT_UPLOAD: Final = timedelta(hours=2)
-
-
-@dataclass(frozen=True)
-class RemoteDependence:
-    """Wie sehr die Ablage am Objektspeicher hängt (``object_storage_dependence``)."""
-
-    #: Inhalte, die laut Datenbank im Objektspeicher liegen (``remote_at``)
-    remote: int = 0
-    #: davon solche, auf die Dokumente verweisen und die lokal fehlen
-    missing: int = 0
-    #: davon solche, die sich nicht neu abrufen ließen (Schonung, kein Dateiabruf, verweigert, synthetisch, ohne Adresse)
-    unrefetchable: int = 0
-    #: Inhalte, die in den letzten ``RECENT_UPLOAD`` hochgeladen wurden
-    recent: int = 0
-
-    def refusal(self, *, allow_missing: bool = False) -> str | None:
-        """
-        Grund, aus dem ``release_object_storage`` verweigert, sonst ``None``. Im Zweifel verweigern: Lokal fehlende
-        Inhalte halten auf, auch wenn die Quelle sie laut Faustregel liefern könnte (404/410 bei der Quelle, noch nicht
-        vermerkte Sperren); ``allow_missing`` lässt nur diese durch, nie nicht neu abrufbare.
-        """
-        if self.unrefetchable:
-            return f"{self.unrefetchable} lokal fehlende Inhalte ließen sich nicht neu abrufen"
-        if self.recent:
-            return (
-                "in den letzten zwei Stunden wurde hochgeladen: ein anderer Dienst nutzt den Objektspeicher womöglich"
-            )
-        if self.missing and not allow_missing:
-            return f"{self.missing} Inhalte liegen nicht lokal"
-        return None
-
-
 def _missing_remote_keys() -> list[str]:
     """Inhalte mit ``remote_at``, auf die Dokumente verweisen und die lokal fehlen (prüft je Inhalt die Platte)."""
     from ..models import OParlFile, OParlFileBlob
 
     # Über die Verweise, nicht über ref_count: Ein falscher Zähler darf keinen Inhalt verstecken
     referenced = Exists(OParlFile.objects.filter(blob_id=OuterRef("pk")))
-    rows = OParlFileBlob.objects.filter(referenced, remote_at__isnull=False).values_list("pk", flat=True)
+    rows = OParlFileBlob.objects.filter(referenced, remote_at__isnull=False).order_by("pk").values_list("pk", flat=True)
     return [sha256 for sha256 in rows.iterator(chunk_size=2000) if not blob_path(sha256).is_file()]
-
-
-def object_storage_dependence(*, now: datetime | None = None) -> RemoteDependence:
-    """
-    Zahlen für ``release_object_storage`` (Probelauf von ``dokumentablage --objektspeicher-aufgeben``, Issue #990).
-
-    Ein lokal fehlender Inhalt gilt als nicht neu abrufbar, sobald eine Datei, die auf ihn verweist, sich nicht neu
-    abrufen ließe (wie bei der Obergrenze, ``file_cache_limit.not_refetchable_q``): Er ginge mit dem Aufgeben verloren.
-    """
-    from ..models import OParlFile, OParlFileBlob
-    from . import file_cache_limit
-
-    now = now or timezone.now()
-    missing = _missing_remote_keys()
-    unrefetchable = 0
-    if missing:
-        blocked = file_cache_limit.not_refetchable_q(file_cache_limit.unrefetchable_bodies())
-        for start in range(0, len(missing), 1000):
-            unrefetchable += (
-                OParlFile.objects.filter(blocked, blob_id__in=missing[start : start + 1000])
-                .values("blob_id")
-                .distinct()
-                .count()
-            )
-    return RemoteDependence(
-        remote=OParlFileBlob.objects.filter(remote_at__isnull=False).count(),
-        missing=len(missing),
-        unrefetchable=unrefetchable,
-        recent=OParlFileBlob.objects.filter(remote_at__gt=now - RECENT_UPLOAD).count(),
-    )
-
-
-def object_storage_configured() -> bool:
-    """
-    Ist der Objektspeicher hier eingeschaltet, auch unvollständig (``OBJ_ENABLED`` ohne alle ``OBJ_*``)? Dann darf er nicht
-    aufgegeben werden: Wer ihn einschaltet, will ihn nutzen; unvollständige Zugangsdaten sind ein Konfigurationsfehler.
-    """
-    return bool(getattr(settings, "OBJ_ENABLED", False)) or object_storage.enabled()
-
-
-def release_object_storage(
-    checked: RemoteDependence | None = None, *, allow_missing: bool = False, now: datetime | None = None
-) -> int:
-    """
-    Den Objektspeicher bewusst aufgeben (Issue #990): alle Vermerke ``remote_at`` löschen. Rückgabe: Anzahl.
-
-    Danach gilt ein lokal verdrängter Inhalt wieder als fehlend, Vorschau und Abruf holen ihn bei der Quelle; das
-    Aufräumen löscht verwaiste Inhalte nur noch lokal. Ohne diesen Schritt bleiben solche Inhalte gestört
-    (``local_copy``), damit ein falsch konfigurierter Dienst keine Abrufwelle bei den Quellen auslöst.
-
-    Im Zweifel verweigern (``ValueError``): wenn der Objektspeicher hier eingeschaltet ist (auch unvollständig), wenn
-    Inhalte nicht lokal liegen (vorher ``fetch_back_remote``; ``allow_missing`` lässt neu abrufbare durch, nie nicht neu
-    abrufbare) oder wenn in den letzten ``RECENT_UPLOAD`` hochgeladen wurde (ein anderer Dienst lädt womöglich noch
-    hoch). ``checked``: eben ermittelte Zahlen (``object_storage_dependence``); hochgeladen wird trotzdem neu geprüft.
-    """
-    from ..models import OParlFileBlob
-
-    now = now or timezone.now()
-    if object_storage_configured():
-        raise ValueError("Objektspeicher ist hier eingeschaltet (OBJ_ENABLED)")
-    stand = checked or object_storage_dependence(now=now)
-    grund = stand.refusal(allow_missing=allow_missing)
-    if grund:
-        raise ValueError(grund)
-    with transaction.atomic():
-        if OParlFileBlob.objects.filter(remote_at__gt=now - RECENT_UPLOAD).exists():
-            raise ValueError("in den letzten zwei Stunden wurde hochgeladen: ein anderer Dienst nutzt ihn womöglich")
-        return OParlFileBlob.objects.filter(remote_at__isnull=False).update(remote_at=None)
 
 
 def fetch_back_remote(*, limit: int = 1000) -> Counter[str]:
     """
-    Lokal verdrängte Inhalte aus dem Objektspeicher zurück in die lokale Ablage holen (vor dem Aufgeben, Issue #990).
+    Lokal verdrängte Inhalte aus dem Objektspeicher zurück in die lokale Ablage holen (Issue #990).
 
-    Nur mit eingeschaltetem Objektspeicher. Höchstens ``limit`` Inhalte je Lauf. Eine Störung (auch zu wenig Platz,
+    Nur herunterladen, nichts löschen und nichts vermerken: Ein Inhalt, der im Objektspeicher fehlt, behält seinen
+    Vermerk ``remote_at`` (``fetch_remote(forget_missing=False)``) und bleibt „offen“. Nur mit eingeschaltetem
+    Objektspeicher; höchstens ``limit`` geholte Inhalte je Lauf. Eine Störung (auch zu wenig Platz,
     ``FILE_CACHE_MIN_FREE_GB``) beendet den Lauf, ebenso ``file_cache_limit.max_missing_in_row`` fehlende Inhalte in
-    Folge (falscher Bucket). Ein fehlender Inhalt behält seinen Vermerk ``remote_at``: Er bleibt „offen“ und hält das
-    Aufgeben auf. Verdrängt ``OBJ_CACHE_MAX_GB`` das Zurückgeholte wieder, war die Grenze zu klein
-    (``docs/FILE_CACHE.md``, „Ausschalten“).
+    Folge (falscher Bucket); mit ``OBJ_EVICT_MAX_MISSING=0`` läuft er über fehlende hinweg. Verdrängt
+    ``OBJ_CACHE_MAX_GB`` das Zurückgeholte wieder, war die Grenze zu klein.
     """
     from ..models import OParlFileBlob
     from . import file_cache_limit
@@ -730,23 +628,34 @@ def fetch_back_remote(*, limit: int = 1000) -> Counter[str]:
     keys = _missing_remote_keys()
     grenze = file_cache_limit.max_missing_in_row()
     in_folge = 0
-    sizes = dict(OParlFileBlob.objects.filter(pk__in=keys[:limit]).values_list("pk", "size"))
-    for sha256 in keys[:limit]:
-        copy = fetch_remote(sha256, size=sizes.get(sha256), forget_missing=False)
-        if copy.present:
-            results["geholt"] += 1
-            in_folge = 0
-            continue
-        if copy.disturbed:
-            results["gestoert"] += 1
-            break
-        results["fehlt"] += 1
-        in_folge += 1
-        if grenze and in_folge >= grenze:
-            logger.error(
-                "Zurückholen abgebrochen: %s Inhalte in Folge fehlen im Objektspeicher (OBJ_BUCKET prüfen)", in_folge
-            )
-            results["viele_fehlend"] += 1
+    stop = False
+    for start in range(0, len(keys), 500):
+        part = keys[start : start + 500]
+        sizes = dict(OParlFileBlob.objects.filter(pk__in=part).values_list("pk", "size"))
+        for sha256 in part:
+            if results["geholt"] >= limit:
+                stop = True
+                break
+            copy = fetch_remote(sha256, size=sizes.get(sha256), forget_missing=False)
+            if copy.present:
+                results["geholt"] += 1
+                in_folge = 0
+                continue
+            if copy.disturbed:
+                results["gestoert"] += 1
+                stop = True
+                break
+            results["fehlt"] += 1
+            in_folge += 1
+            if grenze and in_folge >= grenze:
+                logger.error(
+                    "Zurückholen abgebrochen: %s Inhalte in Folge fehlen im Objektspeicher (OBJ_BUCKET prüfen)",
+                    in_folge,
+                )
+                results["viele_fehlend"] += 1
+                stop = True
+                break
+        if stop:
             break
     results["offen"] = len(keys) - results["geholt"]
     return results

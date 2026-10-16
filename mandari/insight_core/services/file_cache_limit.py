@@ -436,14 +436,6 @@ def _blocked_q(unrefetchable: list[Any]) -> Q:
     return blocked
 
 
-def not_refetchable_q(unrefetchable: list[Any]) -> Q:
-    """
-    Dateien, die sich nicht neu abrufen ließen: ohne Download-Adresse oder aus einer der Kommunen ``unrefetchable``
-    (``unrefetchable_bodies``). Auch für ``file_store.object_storage_dependence`` (Issue #990).
-    """
-    return _blocked_q(unrefetchable)
-
-
 def _flag(condition: Q) -> Case:
     return Case(When(condition, then=Value(1)), default=Value(0), output_field=IntegerField())
 

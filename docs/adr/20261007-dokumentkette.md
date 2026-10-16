@@ -182,12 +182,11 @@ Ingestor (Eingangsadapter, nur Metadaten)
   Dateien ihren vorhandenen Text. **Neue Dateien** (ab Stichtag) aller erlaubten Quellen werden abgerufen.
 - **Moduswechsel:** Liegt ein Inhalt laut Datenbank im Objektspeicher (`remote_at`), ist der Objektspeicher im
   Dienst aber nicht konfiguriert (`OBJ_ENABLED=false`, fehlende `OBJ_*`), liefert `local_copy` „gestört“, nicht
-  „fehlt“ (#990): Ein falsch konfigurierter Dienst darf keine Abrufwelle auslösen. Den Objektspeicher aufzugeben ist
-  ein ausdrücklicher Schritt (`dokumentablage --objektspeicher-aufgeben`, löscht die Vermerke `remote_at`); erst
-  danach gilt ein lokal verdrängter Inhalt als fehlend. Im Zweifel verweigert er sich: solange Inhalte nicht lokal
-  liegen (vorher `dokumentablage --zurueckholen`; `--trotz-fehlender` lässt nur neu abrufbare durch, nie nicht neu
-  abrufbare), solange `OBJ_ENABLED` gesetzt ist oder in den letzten zwei Stunden hochgeladen wurde. Das Zurückholen
-  lässt `remote_at` bei fehlenden Inhalten stehen und bricht nach `OBJ_EVICT_MAX_MISSING` in Folge ab.
+  „fehlt“ (#990): Ein falsch konfigurierter Dienst darf keine Abrufwelle auslösen. Solche Inhalte bleiben gestört,
+  bis der Objektspeicher wieder konfiguriert ist. Den Objektspeicher aufzugeben ist derzeit nicht vorgesehen; ein
+  geprüfter Weg folgt als eigener Schritt (Folgepunkt zu #919). `dokumentablage --zurueckholen` lädt lokal
+  verdrängte Inhalte nur herunter, lässt `remote_at` auch bei fehlenden stehen und bricht nach
+  `OBJ_EVICT_MAX_MISSING` fehlenden in Folge ab.
 - **Verdrängen und Obergrenze** (#961, #990): Zwei Grenzen verdrängen im stündlichen Aufräumen, `OBJ_CACHE_MAX_GB`
   (nur mit Objektspeicher, nach der Zugriffszeit der Datei) und `FILE_CACHE_MAX_TOTAL_GB` (Standard `0` =
   unbegrenzt, nach der letzten Auslieferung bzw. dem Datum des Dokuments); `cache_files` lädt nur bis zur Obergrenze

@@ -12,9 +12,8 @@ Schritte von Hand, während der Worker den Zeitplan bedient, mit ``--trotz-zeitp
                                                        # Obergrenze (FILE_CACHE_MAX_TOTAL_GB, #961) einhalten
     python manage.py dokumentablage --hochladen        # Inhalte in den Objektspeicher (nur mit OBJ_ENABLED)
     python manage.py dokumentablage --referenzen       # Referenzzähler aus den Verweisen neu berechnen
-    python manage.py dokumentablage --zurueckholen     # lokal verdrängte Inhalte aus dem Objektspeicher holen (#990)
-    python manage.py dokumentablage --objektspeicher-aufgeben [--ausfuehren [--trotz-fehlender]]
-                                                       # Objektspeicher bewusst aufgeben (#990, nur ohne OBJ_ENABLED)
+    python manage.py dokumentablage --zurueckholen     # lokal verdrängte Inhalte aus dem Objektspeicher holen
+                                                       # (#990, nur herunterladen, nur mit OBJ_ENABLED)
 """
 
 from __future__ import annotations
@@ -39,12 +38,7 @@ class Command(EinmaligMixin, BaseCommand):
     sperre_ttl = 3000
 
     def liest_nur(self, options: dict[str, Any]) -> bool:
-        """
-        Nur Kennzahlen (kein Schritt gewählt) oder Probelauf von ``--objektspeicher-aufgeben``: läuft auch, während der
-        Worker den Zeitplan bedient.
-        """
-        if options.get("objektspeicher_aufgeben") and options.get("ausfuehren"):
-            return False
+        """Nur Kennzahlen (kein Schritt gewählt): läuft auch, während der Worker den Zeitplan bedient."""
         return not any(options.get(name) for name in SCHRITTE)
 
     def add_arguments(self, parser: CommandParser) -> None:
@@ -57,22 +51,9 @@ class Command(EinmaligMixin, BaseCommand):
         parser.add_argument(
             "--zurueckholen",
             action="store_true",
-            help="Lokal verdrängte Inhalte aus dem Objektspeicher zurückholen (vor --objektspeicher-aufgeben)",
+            help="Lokal verdrängte Inhalte aus dem Objektspeicher zurückholen (nur herunterladen)",
         )
         parser.add_argument("--limit", type=int, default=1000, help="Höchstens so viele Dateien je Schritt")
-        parser.add_argument(
-            "--objektspeicher-aufgeben",
-            action="store_true",
-            help="Objektspeicher bewusst aufgeben: Vermerke remote_at löschen (nur ohne OBJ_ENABLED; ohne --ausfuehren Probelauf)",
-        )
-        parser.add_argument(
-            "--ausfuehren", action="store_true", help="Mit --objektspeicher-aufgeben: Vermerke wirklich löschen"
-        )
-        parser.add_argument(
-            "--trotz-fehlender",
-            action="store_true",
-            help="Mit --objektspeicher-aufgeben --ausfuehren: auch wenn neu abrufbare Inhalte nicht lokal liegen",
-        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         from insight_core.services import file_cache_limit, file_store, object_storage
@@ -81,13 +62,6 @@ class Command(EinmaligMixin, BaseCommand):
             raise CommandError("FILE_STORE_LAYOUT=kommune: keine Ablage nach SHA-256")
         if (options["hochladen"] or options["zurueckholen"]) and not object_storage.enabled():
             raise CommandError("Objektspeicher ist nicht eingeschaltet (OBJ_ENABLED und Zugangsdaten)")
-        if options["objektspeicher_aufgeben"]:
-            if any(options.get(name) for name in SCHRITTE):
-                raise CommandError("--objektspeicher-aufgeben nur allein")
-            self._objektspeicher_aufgeben(ausfuehren=options["ausfuehren"], trotz_fehlender=options["trotz_fehlender"])
-            return
-        if options["ausfuehren"] or options["trotz_fehlender"]:
-            raise CommandError("--ausfuehren und --trotz-fehlender nur mit --objektspeicher-aufgeben")
 
         if options["umstellen"]:
             self._report("Umgestellt", file_store.migrate_legacy(limit=options["limit"]))
@@ -115,58 +89,6 @@ class Command(EinmaligMixin, BaseCommand):
             + ("" if stats["object_storage"] else " (aus)")
             + f"; noch im alten Layout {stats['legacy_files']}"
         )
-
-    def _objektspeicher_aufgeben(self, *, ausfuehren: bool, trotz_fehlender: bool) -> None:
-        """
-        Ausdrücklicher Schritt zum Ausschalten (Issue #990): Ohne ihn gelten Inhalte, die laut Datenbank im
-        Objektspeicher liegen, ohne konfigurierten Objektspeicher als gestört, nie als fehlend. Im Zweifel verweigert:
-        solange Inhalte nicht lokal liegen (``--trotz-fehlender`` lässt nur neu abrufbare durch), nicht neu abrufbare
-        fehlen oder in den letzten zwei Stunden hochgeladen wurde.
-        """
-        from insight_core.services import file_store
-
-        if file_store.object_storage_configured():
-            raise CommandError(
-                "Objektspeicher ist hier eingeschaltet (OBJ_ENABLED, auch mit unvollständigen OBJ_*): erst in Anwendung "
-                "und Worker ausschalten und neu starten"
-            )
-        stand = file_store.object_storage_dependence()
-        self.stdout.write(
-            f"Laut Datenbank im Objektspeicher: {stand.remote} Inhalte, davon lokal nicht vorhanden: {stand.missing}, "
-            f"davon nicht neu abrufbar: {stand.unrefetchable}; in den letzten zwei Stunden hochgeladen: {stand.recent}."
-        )
-        self.stdout.write(
-            "Was im Objektspeicher liegt, bleibt dort und wird nicht mehr gelöscht. Den Bucket erst löschen, wenn hier "
-            "„lokal nicht vorhanden: 0“ stand und Vorschau und Texterkennung ohne ihn arbeiten."
-        )
-        if stand.missing:
-            self.stderr.write(
-                self.style.ERROR(
-                    f"{stand.missing} Inhalte liegen nicht lokal. Vorher mit eingeschaltetem Objektspeicher "
-                    "dokumentablage --zurueckholen, bis „offen=0“ (docs/FILE_CACHE.md, „Ausschalten“). Nicht neu "
-                    f"abrufbar davon: {stand.unrefetchable} (Schonung, Dateiabruf abgeschaltet oder verweigert, "
-                    "synthetische Quelle, keine Adresse); sie gingen verloren und halten das Aufgeben immer auf. Die "
-                    "übrigen holte die Quelle neu, wenn sie sie noch liefert (nur mit --trotz-fehlender)."
-                )
-            )
-        if stand.recent:
-            self.stderr.write(
-                self.style.ERROR(
-                    "In den letzten zwei Stunden wurde hochgeladen: Ein anderer Dienst hat den Objektspeicher womöglich "
-                    "noch eingeschaltet (OBJ_* in Anwendung und Worker prüfen)."
-                )
-            )
-        if not ausfuehren:
-            self.stdout.write("Probelauf: nichts geändert. Übernehmen mit --ausfuehren.")
-            return
-        grund = stand.refusal(allow_missing=trotz_fehlender)
-        if grund:
-            raise CommandError(f"Objektspeicher nicht aufgegeben: {grund}")
-        try:
-            geloescht = file_store.release_object_storage(stand, allow_missing=trotz_fehlender)
-        except ValueError as exc:
-            raise CommandError(f"Objektspeicher nicht aufgegeben: {exc}") from exc
-        self.stdout.write(f"Vermerke gelöscht: {geloescht}")
 
     def _report(self, title: str, results: Counter[str]) -> None:
         summary = ", ".join(f"{key}={value}" for key, value in sorted(results.items())) or "nichts zu tun"
