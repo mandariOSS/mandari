@@ -12,6 +12,8 @@ Schritte von Hand, während der Worker den Zeitplan bedient, mit ``--trotz-zeitp
                                                        # Obergrenze (FILE_CACHE_MAX_TOTAL_GB, #961) einhalten
     python manage.py dokumentablage --hochladen        # Inhalte in den Objektspeicher (nur mit OBJ_ENABLED)
     python manage.py dokumentablage --referenzen       # Referenzzähler aus den Verweisen neu berechnen
+    python manage.py dokumentablage --zurueckholen     # lokal verdrängte Inhalte aus dem Objektspeicher holen
+                                                       # (#990, nur herunterladen, nur mit OBJ_ENABLED)
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from apps.common.einmalig import EinmaligMixin
 
 #: Optionen, die die Ablage ändern; ohne sie zeigt der Befehl nur Kennzahlen
-SCHRITTE = ("umstellen", "aufraeumen", "hochladen", "referenzen")
+SCHRITTE = ("umstellen", "aufraeumen", "hochladen", "referenzen", "zurueckholen")
 
 
 class Command(EinmaligMixin, BaseCommand):
@@ -46,6 +48,11 @@ class Command(EinmaligMixin, BaseCommand):
         )
         parser.add_argument("--hochladen", action="store_true", help="Inhalte in den Objektspeicher hochladen")
         parser.add_argument("--referenzen", action="store_true", help="Referenzzähler neu berechnen")
+        parser.add_argument(
+            "--zurueckholen",
+            action="store_true",
+            help="Lokal verdrängte Inhalte aus dem Objektspeicher zurückholen (nur herunterladen)",
+        )
         parser.add_argument("--limit", type=int, default=1000, help="Höchstens so viele Dateien je Schritt")
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -53,7 +60,7 @@ class Command(EinmaligMixin, BaseCommand):
 
         if (options["umstellen"] or options["hochladen"]) and not file_store.uses_blobs():
             raise CommandError("FILE_STORE_LAYOUT=kommune: keine Ablage nach SHA-256")
-        if options["hochladen"] and not object_storage.enabled():
+        if (options["hochladen"] or options["zurueckholen"]) and not object_storage.enabled():
             raise CommandError("Objektspeicher ist nicht eingeschaltet (OBJ_ENABLED und Zugangsdaten)")
 
         if options["umstellen"]:
@@ -62,6 +69,8 @@ class Command(EinmaligMixin, BaseCommand):
             self._report("Referenzen", file_store.repair_refcounts())
         if options["hochladen"]:
             self._report("Hochgeladen", file_store.upload_pending(limit=options["limit"]))
+        if options["zurueckholen"]:
+            self._report("Zurückgeholt", file_store.fetch_back_remote(limit=options["limit"]))
         if options["aufraeumen"]:
             self._report("Verwaiste Inhalte", file_store.cleanup_orphans())
             if object_storage.enabled():
@@ -119,4 +128,6 @@ class Command(EinmaligMixin, BaseCommand):
             )
         if verified.get("fehler"):
             line += "; Objektspeicher gestört, Verdrängen abgebrochen"
+        if result.skipped.get("viele_fehlend"):
+            line += "; abgebrochen, zu viele Inhalte in Folge fehlen im Objektspeicher (OBJ_BUCKET prüfen)"
         self.stdout.write(line)

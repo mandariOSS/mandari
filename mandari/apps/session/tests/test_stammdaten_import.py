@@ -729,6 +729,10 @@ def test_hinzugewaehlte_haben_ohne_angabe_kein_stimmrecht(tenant: SessionTenant,
 def test_stimmrecht_sachkundiger_buerger_nach_landesprofil(
     tenant: SessionTenant, tmp_path: Path, code: str, sachkundig: bool
 ) -> None:
+    # Landesprofile aus der Datei: Tests mit transaction=True im selben Worker leeren die Tabelle der Datenmigration
+    from apps.session.services import meeting_format_service
+
+    meeting_format_service.sync_profiles()
     tenant.state_profile = SessionStateProfile.objects.get(code=code)
     tenant.save()
     _co_opted_files(tmp_path)
