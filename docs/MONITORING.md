@@ -173,7 +173,9 @@ Aufgaben“).
 
 - Kritische Quelle → E-Mail-Alarm, Wiederholung frühestens nach 7 Tagen (`health_alert_sent_at`)
 - Quelle wieder OK → Entwarnung, Zeitstempel wird gelöscht
-- Ingestor-Daemon > 6 h ohne Lauf → Alarm, max. einmal je 24 h
+- Ingestor-Daemon > 6 h ohne Lauf → Alarm, max. einmal je 24 h. Als Lauf zählt das Lebenszeichen des Daemons
+  in Redis (`mandari:ingestor:heartbeat`, alle 30 Sekunden erneuert), sonst ein Sync-Protokoll; nachts und am
+  Wochenende gleicht jede Quelle nur alle 1 bis 2 Stunden ab (Issue #1026)
 - Empfänger: `INSIGHT_ALERT_EMAILS` (kommagetrennt), sonst `INSIGHT_MODERATION_EMAILS`, sonst Superuser
 
 Bericht ohne Versand: `python manage.py check_source_health --report`
@@ -258,7 +260,23 @@ gleichermaßen; Alarme fassen sie deshalb mit `max by (…)` zusammen, wie die R
 Beispiel-Scrape-Konfiguration: `deploy/monitoring/prometheus-scrape.example.yml`;
 Grafana-Vorlage (p95-Latenz je View, Fehlerquote, Pool-Belegung, Cache-Trefferquote):
 `deploy/monitoring/grafana-mandari.json`. Der Ingestor liefert seine eigenen Metriken
-(`mandari_ingestor_*`) weiterhin über seinen Port, darunter
+(`mandari_ingestor_*`) weiterhin über seinen Port. Je Quelle (Label `source` = Name der Quelle, Takt je Quelle,
+Issue #1026, `docs/ABRUFREGELN.md`, „Rhythmus“):
+
+| Metrik | Labels | Bedeutung |
+|---|---|---|
+| `mandari_ingestor_sync_runs_total` | `source`, `sync_type`, `status` | Läufe des Daemons (`incremental`/`full`, `success`/`failed`) |
+| `mandari_ingestor_sync_duration_seconds` (Histogramm) | `source`, `sync_type` | Dauer der Läufe |
+| `mandari_ingestor_sync_requests_total` | `source`, `sync_type` | HTTP-Abrufe der Läufe |
+| `mandari_ingestor_sync_next_run_timestamp_seconds` | `source` | Unix-Zeit des nächsten fälligen Laufs, nach der Schonung |
+| `mandari_ingestor_sync_last_run_timestamp_seconds` | `source` | Unix-Zeit, zu der der letzte Lauf endete |
+| `mandari_ingestor_sync_interval_seconds` | `source` | aktueller Abstand zwischen zwei Läufen (Grundtakt, nach Ruhe verlängert) |
+| `mandari_ingestor_sync_idle_runs` | `source` | Läufe ohne Änderung in Folge |
+| `mandari_ingestor_active_syncs` | – | laufende Abgleiche im Daemon |
+
+Ein Lauf, dessen nächster Termin deutlich überschritten ist
+(`time() - mandari_ingestor_sync_next_run_timestamp_seconds > 900`), deutet auf einen vollen Pool oder einen
+hängenden Daemon. Außerdem
 `mandari_ingestor_events_published_total{type, source}`: ins Journal geschriebene Ereignisse je Typ
 und Kommune (`source` wie bei `mandari_ingestor_entities_synced_total`), sobald
 `INGESTOR_EVENTS_ENABLED` eingeschaltet ist (gezählt beim Schreiben, vor dem Commit). Bleibt der

@@ -874,6 +874,28 @@ class DatabaseStorage:
             result = await session.execute(stmt)
             return {row[0] for row in result.all()}
 
+    async def get_meeting_starts(self, source_id: UUID, start: datetime, end: datetime) -> list[datetime]:
+        """
+        Beginn der Sitzungen aller Kommunen einer Quelle mit Beginn in ``[start, end)``, ohne abgesagte und ohne
+        von der Quelle gelöschte (Sitzungstage für den Takt je Quelle, Issue #1026). Höchstens 500 Einträge.
+        """
+        async with self.get_session() as session:
+            stmt = (
+                select(OParlMeeting.start)
+                .join(OParlBody, OParlMeeting.body_id == OParlBody.id)
+                .where(
+                    OParlBody.source_id == source_id,
+                    OParlMeeting.start >= start,
+                    OParlMeeting.start < end,
+                    OParlMeeting.cancelled.isnot(True),
+                    OParlMeeting.deleted.isnot(True),
+                )
+                .order_by(OParlMeeting.start)
+                .limit(500)
+            )
+            result = await session.execute(stmt)
+            return [row[0] for row in result.all() if row[0] is not None]
+
     def clear_uuid_caches(self) -> None:
         """
         Leert die FK-UUID-Caches (external_id -> UUID).

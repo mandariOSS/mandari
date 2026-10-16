@@ -46,6 +46,9 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
     Ausnahme von der robots.txt, nur mit Freigabe der Stelle und Pflicht-Vermerk, z. B.
     ``{"scope": "files", "note": "Freigabe per E-Mail vom …, offizielle Anfrage läuft"}``. ``scope``: ``api``,
     ``files`` oder ``all``. Ohne Vermerk gilt die robots.txt (``mandari_oparl.robots.robots_override``).
+``sync_schedule``
+    Takt der Quelle im Daemon (Arbeitszeit, Sitzungstage, Ruhephasen; Issue #1026). Bedeutung und Standardwerte
+    stehen in ``src/scheduler/takt.py``; den Zustand pflegt der Daemon unter ``sync_state``.
 
 Ungültige Werte gelten als nicht gesetzt.
 """
@@ -149,6 +152,16 @@ class FullSyncWindow:
         if not inside:
             return None
         return datetime.combine(end_day, self.end, tzinfo=self.tz).astimezone(UTC)
+
+    def opened_at(self, now: datetime | None = None) -> datetime | None:
+        """Beginn des Fensters (UTC), in dem ``now`` liegt, sonst ``None`` (Takt je Quelle, Issue #1026)."""
+        now = (now or datetime.now(UTC)).astimezone(self.tz)
+        if self.closes_at(now) is None:
+            return None
+        clock = now.time().replace(tzinfo=None)
+        # Über Mitternacht und nach Mitternacht: Das Fenster hat am Vortag begonnen
+        start_day = now.date() - timedelta(days=1) if self.start > self.end and clock < self.end else now.date()
+        return datetime.combine(start_day, self.start, tzinfo=self.tz).astimezone(UTC)
 
 
 @dataclass(frozen=True)

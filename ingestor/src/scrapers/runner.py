@@ -83,6 +83,7 @@ class ScraperSyncRunner:
             source_url=self.source.url,
             source_name=self.source.name,
             success=False,
+            full=full,
         )
         state: dict[str, Any] = dict((self.source.sync_config or {}).get("scraper_state") or {})
 

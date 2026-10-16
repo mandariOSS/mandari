@@ -393,40 +393,51 @@ def status() -> None:
 
 @app.command()
 def daemon(
-    interval: int = typer.Option(10, "--interval", "-i", help="Minutes between incremental syncs"),
-    full_sync_hour: int = typer.Option(3, "--full-sync-hour", help="Hour of day for full sync (24h format)"),
-    max_concurrent: int = typer.Option(10, "--concurrent", "-c", help="Maximum concurrent HTTP requests"),
+    interval: int = typer.Option(
+        10, "--interval", "-i", help="Grundtakt in Minuten werktags 07–19 Uhr (je Quelle über sync_schedule)"
+    ),
+    full_sync_hour: int = typer.Option(
+        3,
+        "--full-sync-hour",
+        help="Beginn des Standardfensters für Vollabgleiche (Ortszeit, 5 Stunden lang); außerhalb 0–23 aus",
+    ),
+    max_concurrent: int = typer.Option(10, "--concurrent", "-c", help="Maximum concurrent HTTP requests je Lauf"),
     metrics_port: int = typer.Option(9090, "--metrics-port", help="Port for Prometheus metrics server"),
+    pool: int | None = typer.Option(
+        None, "--pool", help="Quellen gleichzeitig (Standard INGESTOR_SYNC_POOL_SIZE, sonst 4)"
+    ),
 ) -> None:
     """
-    Start the sync scheduler daemon.
+    Start the sync scheduler daemon (Takt je Quelle, Issue #1026).
 
-    Runs continuously, performing:
-    - Incremental syncs at regular intervals (default: every 15 minutes)
-    - Full syncs once daily (default: 3 AM)
-    - Exposes Prometheus metrics on /metrics endpoint
+    Jede Quelle hat ihren eigenen Takt: werktags 07–19 Uhr im Grundtakt (--interval), sonst stündlich, am
+    Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag alle 5 Minuten; nach Läufen ohne Änderung länger.
+    Bis zu --pool Quellen laufen gleichzeitig, je Quelle höchstens ein Lauf. Vollabgleiche je Quelle in ihrem
+    Zeitfenster, sonst im Standardfenster ab --full-sync-hour. Exposes Prometheus metrics on /metrics.
 
     Use Ctrl+C to stop the daemon gracefully.
 
     Examples:
 
-        # Start with default settings (15 min incremental, 3 AM full sync)
+        # Start with default settings
         mandari-ingestor daemon
 
-        # Sync every 5 minutes
-        mandari-ingestor daemon --interval 5
+        # Grundtakt 15 Minuten, Vollabgleiche ab 01:00 Uhr
+        mandari-ingestor daemon --interval 15 --full-sync-hour 1
 
-        # Full sync at midnight
-        mandari-ingestor daemon --full-sync-hour 0
-
-        # Custom metrics port
-        mandari-ingestor daemon --metrics-port 8080
+        # Höchstens zwei Quellen gleichzeitig
+        mandari-ingestor daemon --pool 2
     """
     print_banner()
 
+    pool_size = pool if pool is not None else settings.sync_pool_size
     console.print("[bold]Starting Sync Daemon[/bold]")
-    console.print(f"  Incremental sync: every {interval} minutes")
-    console.print(f"  Full sync: daily at {full_sync_hour:02d}:00")
+    console.print(f"  Grundtakt werktags 07–19 Uhr: {interval} min (je Quelle sync_schedule)")
+    if 0 <= full_sync_hour <= 23:
+        console.print(f"  Vollabgleich: Standardfenster ab {full_sync_hour:02d}:00 (5 h), je Quelle full_sync_window")
+    else:
+        console.print("  Vollabgleich: geplanter Vollabgleich aus")
+    console.print(f"  Quellen gleichzeitig: {pool_size}")
     console.print(f"  Concurrent requests: {max_concurrent}")
     console.print(f"  Metrics server: http://0.0.0.0:{metrics_port}/metrics")
     console.print()
@@ -440,6 +451,7 @@ def daemon(
                 full_sync_hour=full_sync_hour,
                 max_concurrent=max_concurrent,
                 metrics_port=metrics_port,
+                pool_size=pool_size,
             )
         )
     except KeyboardInterrupt:
@@ -481,7 +493,9 @@ def extract_daemon(
     )
     if (settings.text_extraction_runner or "").strip().lower() == "worker":
         # Issue #530: Die Aufträge file.extract_text der Anwendung erkennen den Text; dieser Worker ruht
-        console.print("[yellow]  TEXT_EXTRACTION_RUNNER=worker: text recognition runs in the app worker, idle here[/yellow]")
+        console.print(
+            "[yellow]  TEXT_EXTRACTION_RUNNER=worker: text recognition runs in the app worker, idle here[/yellow]"
+        )
     console.print()
 
     async def run_worker() -> None:

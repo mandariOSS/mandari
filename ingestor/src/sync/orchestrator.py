@@ -437,6 +437,9 @@ class SyncResult:
     host_findings: list[dict[str, Any]] = field(default_factory=list)
     # Gelesen, aber nicht gespeichert, je Typ über alle Kommunen (Issue #1025), im Sync-Log unter ``unstored``
     unstored: Counter[str] = field(default_factory=Counter)
+    # Lief der Abgleich als Vollabgleich? Außerhalb des Zeitfensters der Quelle wird aus einem angeforderten
+    # Vollabgleich ein inkrementeller (``_full_sync_plan``); der Daemon protokolliert, was tatsächlich lief
+    full: bool = False
 
 
 def sync_complete(body_results: list[dict[str, Any]], missed_bodies: list[str], client: OParlClient) -> bool:
@@ -816,6 +819,7 @@ class SyncOrchestrator:
         capability_snapshot = OParlClient.get_modified_since_unsupported()
         options = SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None))
         full, fetch_deadline = self._full_sync_plan(url, options, full, source_row)
+        result.full = full
 
         client: OParlClient | None = None
         try:
@@ -1104,6 +1108,7 @@ class SyncOrchestrator:
         self._register_id_base(url, source_row)
         options = SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None))
         full, fetch_deadline = self._full_sync_plan(url, options, full, source_row)
+        result.full = full
 
         client: OParlClient | None = None
         try:

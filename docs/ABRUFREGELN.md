@@ -9,10 +9,12 @@ Jede Aussage auf dieser Seite stammt aus dem Code oder der Konfiguration; die Fu
 Stand: Code auf `dev` mit den Änderungen aus [#1025](https://github.com/mandariOSS/mandari/issues/1025)
 (Änderungsfenster, fehlende Listen, höchstens eine Anfrage je Sekunde), aus
 [#1031](https://github.com/mandariOSS/mandari/pull/1031) (eine robots.txt-Regel für alle Abrufe, Weiterleitungen und
-Werkzeuge im Takt je Server) und aus [#1036](https://github.com/mandariOSS/mandari/issues/1036) (eine robots.txt je
+Werkzeuge im Takt je Server), aus [#1036](https://github.com/mandariOSS/mandari/issues/1036) (eine robots.txt je
 Hostname, Grenze gleichzeitiger Anfragen auch für Scraper und Vergleichsanfrage, eine Frist für die ganze Vorschau,
-Kennung und Takt je Server auch für Live-Übertragung und Geodienste). Die von uns betriebene Instanz (mandari.de)
-folgt diesen Regeln ab dem ersten Deploy, der #1031 und #1036 enthält; bis dahin läuft dort noch ein älterer Stand.
+Kennung und Takt je Server auch für Live-Übertragung und Geodienste) und aus
+[#1026](https://github.com/mandariOSS/mandari/issues/1026) (eigener Takt je Quelle, Abruf nach Bedarf). Die von uns
+betriebene Instanz (mandari.de) folgt diesen Regeln ab dem ersten Deploy, der diese Änderungen enthält; bis dahin
+läuft dort noch ein älterer Stand.
 
 ## Auf einen Blick
 
@@ -23,8 +25,8 @@ folgt diesen Regeln ab dem ersten Deploy, der #1031 und #1036 enthält; bis dahi
 | Takt | höchstens eine Anfrage je Sekunde und Server, über alle Abrufe von mandari zusammen; je Quelle nur langsamer |
 | Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
 | Weiterleitungen | höchstens fünf je Abruf, jede erst nach der robots.txt ihres Ziels und mit eigenem Zeitpunkt im Takt |
-| Abgleich | alle 10 Minuten; gefragt wird nur nach Änderungen (`modified_since`) |
-| Vollabgleich | einmal täglich zu einer festen Stunde, je Quelle auch seltener oder nur in einem Zeitfenster |
+| Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
+| Vollabgleich | je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
 | Abruf-Adresse | derzeit `144.76.153.200`, nur IPv4 (die von uns betriebene Instanz mandari.de); sie kann sich ändern, erkennen Sie uns am User-Agent |
 | Andere Dienste | Live-Übertragung und Geodienste mit derselben Kennung und eigenem Takt je Server (siehe [Andere Abrufe](#andere-abrufe)) |
@@ -35,9 +37,9 @@ folgt diesen Regeln ab dem ersten Deploy, der #1031 und #1036 enthält; bis dahi
 - **Ausschließen:** per robots.txt, ganz oder nur für Dokumente (Beispiele im Abschnitt [robots.txt](#robotstxt)).
   Änderungen wirken spätestens nach 24 Stunden.
 - **Langsamer oder zu anderen Zeiten:** Schreiben Sie uns. Wir können für Ihre Quelle den Abstand je Anfrage
-  erhöhen (`request_interval`, bis 30 Sekunden), den Vollabgleich in ein Zeitfenster legen (`full_sync_window`),
-  seltener ausführen (`full_sync_every_days`) oder den Dateiabruf abschalten (`file_downloads`). Liegen mehrere
-  Quellen auf Ihrem Server, setzen wir den Abstand bei allen.
+  erhöhen (`request_interval`, bis 30 Sekunden), seltener abgleichen (`sync_schedule`), den Vollabgleich in ein
+  Zeitfenster legen (`full_sync_window`), seltener ausführen (`full_sync_every_days`) oder den Dateiabruf abschalten
+  (`file_downloads`). Liegen mehrere Quellen auf Ihrem Server, setzen wir den Abstand bei allen.
 - **Kontakt:** support@mandari.de. Infoseite: <https://mandari.de/crawler/>.
 
 ## Abruf-Adresse
@@ -57,7 +59,7 @@ Django-Anwendung.
 
 | Programmteil | Was | Wann |
 |---|---|---|
-| Ingestor: Abgleich | OParl-Schnittstelle: System, Kommunen und je Kommune bis zu neun Listen (Gremien, Personen, Mitgliedschaften, Sitzungen, Vorlagen, Orte, Tagesordnungspunkte, Dateien, Beratungen) | alle 10 Minuten, Vollabgleich täglich |
+| Ingestor: Abgleich | OParl-Schnittstelle: System, Kommunen und je Kommune bis zu neun Listen (Gremien, Personen, Mitgliedschaften, Sitzungen, Vorlagen, Orte, Tagesordnungspunkte, Dateien, Beratungen) | im Takt der Quelle (5 Minuten bis 2 Stunden, siehe [Rhythmus](#rhythmus)), Vollabgleich nachts |
 | Ingestor: Scraper | HTML-Seiten von RIS ohne OParl-Schnittstelle ([`SCRAPER_SOURCES.md`](SCRAPER_SOURCES.md)) | mit dem Abgleich |
 | Ingestor: Texterkennung | Dateien (meist PDF), deren Text noch fehlt | mit dem Abgleich je Kommune bzw. im OCR-Worker `extract-daemon` |
 | Anwendung: Dokument-Cache | Dateien, die noch nicht in der Ablage liegen | stündlich um :40 |
@@ -269,17 +271,48 @@ Kommune.
 
 ### Rhythmus
 
-- Der Ingestor-Daemon startet alle 10 Minuten einen inkrementellen Lauf über alle aktiven Quellen und einen sofort
-  beim Start (`ingestor/src/main.py`, `daemon --interval`, Standard 10; `docker-compose.yml`: `INGESTOR_INTERVAL`,
-  ohne Wert 10). Die Vorlage `.env.example`, `install.sh` und das Helm-Chart (`ingestor.syncInterval`) setzen
-  15 Minuten. Der Abgleich läuft rund um die Uhr in diesem Rhythmus.
-- Es läuft nie mehr als ein Lauf zur Zeit (`ingestor/src/scheduler/__init__.py`, `max_instances=1` und eigene
-  Sperre). Ist ein Lauf beim nächsten Termin nicht fertig, entfällt dieser Termin; nur der Vollabgleich wird
-  nachgeholt (siehe [Vollabgleich](#vollabgleich)). Je Datenbank arbeitet genau ein Daemon (PostgreSQL-Sperre,
-  `ingestor/src/scheduler/singleton.py`).
-- Gleichzeitig laufen höchstens 2 Quellen, je Quelle 2 Kommunen und je Kommune 2 Listen
-  (`SYNC_SOURCE_CONCURRENCY`, `SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY`). Der Takt je Server gilt
-  unabhängig davon.
+Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quellen gibt es nicht mehr
+(`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.py`, Issue
+[#1026](https://github.com/mandariOSS/mandari/issues/1026)). Die Uhrzeiten gelten in Ortszeit `Europe/Berlin`.
+
+| Wann | Abstand zwischen zwei Läufen einer Quelle | Schlüssel in `sync_config["sync_schedule"]` |
+|---|---|---|
+| Sitzungstag und Vortag, 07:00–22:00 Uhr | 5 Minuten | `meeting_minutes`, `meeting_hours`, `meeting_days_before` |
+| werktags (Montag bis Freitag) 07:00–19:00 Uhr | 10 Minuten (`daemon --interval`) | `workday_minutes`, `workday_hours` |
+| werktags außerhalb dieser Zeit | 60 Minuten | `off_hours_minutes` |
+| Samstag und Sonntag | 120 Minuten | `weekend_minutes` |
+
+- **Grundtakt:** `--interval` setzt den Takt werktags in der Arbeitszeit (`ingestor/src/main.py`, `daemon
+  --interval`, Standard 10; `docker-compose.yml`: `INGESTOR_INTERVAL`, ohne Wert 10). Die Vorlage `.env.example`,
+  `install.sh` und das Helm-Chart (`ingestor.syncInterval`) setzen 15 Minuten. Die übrigen Werte sind fest
+  (`WORKDAY_MINUTES`, `OFF_HOURS_MINUTES`, `WEEKEND_MINUTES`, `MEETING_MINUTES`) und je Quelle einstellbar.
+  Feiertage behandelt der Takt wie Werktage.
+- **Sitzungstage:** Tage, an denen laut eigenem Bestand eine Sitzung einer Kommune der Quelle beginnt
+  (`oparl_meetings`, ohne abgesagte und ohne von der Quelle gelöschte; `get_meeting_starts`), und der Tag davor. Diese
+  Regel geht den übrigen vor, auch am Wochenende. Die Sitzungstage liest der Daemon am Ende jedes Laufs der Quelle neu.
+- **Ruhe:** Nach je drei Läufen in Folge ohne Änderung verdoppelt sich der Abstand, höchstens bis 120 Minuten
+  (`idle_runs`, `idle_max_minutes`; `IDLE_RUNS`, `IDLE_MAX_MINUTES`). In der Arbeitszeit also 10 Minuten, nach drei
+  Läufen ohne Änderung 20, nach sechs 40, nach neun 80, ab zwölf 120. Ein längerer Grundtakt bleibt, wie er ist.
+  Ein Lauf mit Änderung (mindestens ein neues oder geändertes Objekt) setzt den Abstand auf den Grundtakt der Stunde
+  zurück, ebenso der Wechsel in einen anderen Grundtakt, etwa um 07:00 Uhr. Vollabgleiche und gescheiterte Läufe
+  zählen nicht (`SyncState.after_run`).
+- **Nächster Lauf:** einen Abstand nach dem Ende des letzten Laufs. Wechselt vorher der Grundtakt zu einem kürzeren
+  als diesem Abstand, ist der Lauf zu dessen Beginn fällig: etwa um 07:00 Uhr statt um 07:30 Uhr, am Montag um
+  00:00 Uhr nach dem Wochenende (`SyncSchedule.next_due`). Der Zeitpunkt steht in
+  `sync_config["sync_state"]["next_due"]` und gilt auch nach einem Neustart des Ingestors; eine Quelle ohne diesen
+  Zeitpunkt ist sofort fällig.
+- **Schonung geht vor:** Eine Quelle in Schonung startet nicht, auch nicht auf einen Auslöser hin (siehe
+  [Fehler und Schonung](#fehler-und-schonung)). Danach gilt der spätere von Schonungsende und nächstem Lauf.
+- **Ohne Änderung** sind das je Quelle am Wochenende 12 Läufe am Tag, werktags von 19 bis 7 Uhr 7 Läufe (19, 20,
+  21, 23, 1, 3 und 5 Uhr) und in der Arbeitszeit 14 Läufe, in einer Woche 131 statt 1008 im bisherigen
+  10-Minuten-Takt (`ingestor/tests/test_takt.py`).
+- **Gleichzeitig:** Eine Schleife prüft alle 30 Sekunden (`TICK_SECONDS`), sofort nach einem Auslöser und nach dem
+  Ende jedes Laufs, welche Quellen fällig sind. Höchstens 4 Quellen laufen zugleich (`INGESTOR_SYNC_POOL_SIZE`,
+  `daemon --pool`), je Quelle höchstens ein Lauf. Vollabgleiche belegen höchstens alle Plätze bis auf einen (bei 4
+  also 3), damit Änderungsabgleiche anderer Quellen nie auf einen Vollabgleich warten. Je Quelle laufen 2 Kommunen
+  und je Kommune 2 Listen gleichzeitig (`SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY`). Der Takt je Server gilt
+  unabhängig davon; Quellen auf demselben Server teilen ihn. Je Datenbank arbeitet genau ein Daemon
+  (PostgreSQL-Sperre, `ingestor/src/scheduler/singleton.py`).
 - Je Lauf und Quelle fragt der Ingestor die eingetragene Adresse (System, Kommunenliste oder Kommune) und
   gegebenenfalls die Kommunenliste ab, danach je Kommune die Listen in fester Reihenfolge: Gremien und Personen,
   Mitgliedschaften, Sitzungen und Vorlagen, dann Orte, Tagesordnungspunkte, Dateien und Beratungen.
@@ -288,7 +321,7 @@ Kommune.
   `ingestor/src/sync/orchestrator.py`, `_fetch_body_list`). Bricht eine Folgeseite ab (Fehler, Teilantwort), gleicht
   der Lauf die bis dahin gelesenen Kommunen ab, nennt die Seite im Sync-Log und gilt als nicht vollständig. Ebenso
   nach höchstens 20 Seiten (`MAX_BODY_PAGES`, wie beim Werkzeug „Quelle anlegen“) und wenn `links.next` auf eine schon
-  gelesene Seite zeigt: Eine fehlerhafte Liste hält den Zyklus aller Quellen nicht auf. Eine Liste, die im Kreis
+  gelesene Seite zeigt: Eine fehlerhafte Liste hält die übrigen Quellen nicht auf. Eine Liste, die im Kreis
   läuft, bricht bei jeder Liste ab, nicht nur bei der Kommunenliste (`OParlClient.fetch_list`).
 - Neu entdeckte Kommunen sind nicht gelistet (`is_listed`, `ingestor/src/storage/database.py`, `upsert_body`): Bis
   wir sie im Admin listen, erscheinen sie nicht in Kommunenauswahl, Übersichten, Sitemaps und öffentlichen Listen.
@@ -296,14 +329,25 @@ Kommune.
   OParl-Schnittstelle eines Session-Mandanten (`sync_config.session_tenant`, `lists_new_bodies`): Der Mandant hat die
   Veröffentlichung im Bürgerportal selbst eingeschaltet, seine Kommune ist gleich gelistet
   ([`SESSION_OPARL_API.md`](SESSION_OPARL_API.md)).
-- Ein Lauf über alle Quellen lässt sich außerdem im Admin („Jetzt synchronisieren“, über Redis an den Daemon) oder
-  von Hand (`python -m src.main sync --all`) auslösen. robots.txt, Takt, Zeitfenster und Schonung gelten auch dann.
-- Die Aktionen „Inkrementeller Sync“ und „Vollständiger Sync“ an einer Quelle im Admin laufen nicht im Daemon,
-  sondern als Auftrag im Worker der Anwendung, mit dem Code des Ingestors aus dem Image der Anwendung
-  (`mandari/insight_core/admin.py`, `run_sync_in_thread`; `mandari/insight_sync/tasks.py`, `run_sync_with_logging`).
-  Sie beachten robots.txt, Takt und Zeitfenster, aber nicht die [Schonung](#fehler-und-schonung), ebenso wie
+- **Auslöser:** „Jetzt synchronisieren“ auf der Startseite des Admins (alle Quellen) und die Aktionen
+  „Inkrementeller Sync“ und „Vollständiger Sync“ an einer Quelle gehen über Redis (Kanal `mandari:sync:trigger`, mit
+  `source_id` für eine Quelle) an den Daemon. Die Quelle ist sofort fällig und beginnt, sobald ein Platz frei ist;
+  läuft sie gerade, direkt danach. robots.txt, Takt je Server, Zeitfenster und Schonung gelten auch dann
+  (`mandari/insight_sync/daemon.py`, `trigger_sync`; `mandari/insight_core/admin.py`, `request_source_sync`).
+- Ohne laufenden Daemon (kein Lebenszeichen in Redis, siehe unten) und für abgeschaltete Quellen laufen die
+  Aktionen an einer Quelle als Auftrag im Worker der Anwendung, mit dem Code des Ingestors aus dem Image der Anwendung
+  (`run_sync_in_thread`; `mandari/insight_sync/tasks.py`, `run_sync_with_logging`). Sie beachten robots.txt, Takt
+  je Server und Zeitfenster, aber nicht die [Schonung](#fehler-und-schonung), ebenso wie
   `python -m src.main sync --source` bzw. `--body`. Dabei gilt die Umgebung des Workers, nicht die des Ingestors
-  (siehe [Für Selbstbetreiber](#für-selbstbetreiber)).
+  (siehe [Für Selbstbetreiber](#für-selbstbetreiber)). `python -m src.main sync --all` gleicht alle Quellen einmal ab,
+  höchstens 2 zugleich (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne Takt.
+- **Protokoll und Metriken:** Jeder Lauf schreibt ein Sync-Protokoll für seine Quelle (`insight_sync_synclog` mit
+  `source_id`, `triggered_by` `daemon` oder `admin`) mit den Zählern, der Zahl der Abrufe (`details.requests`) und dem
+  Takt (`details.takt`: Art, Abstand, Läufe ohne Änderung, nächster Lauf). Metriken je Quelle stehen in
+  [`MONITORING.md`](MONITORING.md#metriken).
+- **Lebenszeichen:** Der Daemon schreibt bei jeder Prüfung `mandari:ingestor:heartbeat` in Redis (läuft nach
+  180 Sekunden ab, `HEARTBEAT_TTL_SECONDS`). Daran erkennt die Anwendung, dass er läuft, auch wenn nachts eine Stunde
+  lang kein Lauf beginnt (`mandari/insight_sync/daemon.py`, `is_ingestor_active`).
 
 ### Änderungsfenster
 
@@ -385,27 +429,35 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 
 ## Vollabgleich
 
-- **Uhrzeit:** täglich zur vollen Stunde `--full-sync-hour`, Standard 03:00 (`ingestor/src/main.py`;
-  `docker-compose.yml`: `INGESTOR_FULL_SYNC_HOUR`; `.env.example` und Helm `ingestor.fullSyncHour` ebenfalls 3),
-  in der Ortszeit des Ingestor-Containers (`TZ`, in `docker-compose.yml` Standard `Europe/Berlin`). Die von uns
-  betriebene Instanz startet ihn um 01:00 Uhr.
+- **Wann:** je Quelle einmal je Zeitfenster, sobald das Fenster beginnt und ein Platz frei ist
+  (`ingestor/src/scheduler/takt.py`, `full_sync_due`). Ohne eigenes `full_sync_window` gilt das Standardfenster ab
+  `--full-sync-hour` für 5 Stunden (`default_full_sync_window`, `FULL_SYNC_DEFAULT_HOURS`), in Ortszeit
+  `Europe/Berlin`: Standard 03:00 bis 08:00 Uhr (`ingestor/src/main.py`; `docker-compose.yml`:
+  `INGESTOR_FULL_SYNC_HOUR`; `.env.example` und Helm `ingestor.fullSyncHour` ebenfalls 3). Die von uns betriebene
+  Instanz beginnt um 01:00 Uhr, ihr Standardfenster reicht also bis 06:00 Uhr. Werte außerhalb von 0 bis 23 schalten
+  geplante Vollabgleiche ab.
+- **Einmal je Fenster:** Den Beginn hält der Daemon in `sync_config["sync_state"]["full_attempted"]` fest. Ein
+  abgebrochener oder unvollständiger Vollabgleich wird im nächsten Fenster wiederholt, nicht in derselben Nacht;
+  auch ein Neustart des Ingestors startet ihn nicht ein zweites Mal.
 - **Umfang:** alle Seiten aller Listen ohne Filter, auch die als fehlend vermerkten. Löschmarkierungen der Quelle
   (`deleted: true`) übernehmen wir als Löschvermerk.
-- **Später Beginn:** Läuft zur vollen Stunde noch ein inkrementeller Lauf, folgt der Vollabgleich direkt nach ihm
-  (`ingestor/src/scheduler/__init__.py`, `_full_sync_pending`). Während ein Vollabgleich läuft, entfallen die
-  inkrementellen Läufe.
+- **Später Beginn:** Läuft zu Beginn des Fensters noch ein Änderungsabgleich der Quelle, folgt der Vollabgleich
+  direkt danach. Sind alle Plätze für Vollabgleiche belegt, wartet er auf einen freien Platz, solange das Fenster
+  offen ist; die Quelle gleicht derweil Änderungen in ihrem Takt ab. Während der Vollabgleich einer Quelle läuft,
+  entfallen nur ihre eigenen Änderungsabgleiche; die anderen Quellen laufen in ihrem Takt weiter.
+- **Ende:** Das Standardfenster begrenzt nur den Beginn; ein begonnener Vollabgleich läuft zu Ende.
 - **Je Quelle seltener:** `full_sync_every_days` (ganze Zahl von 1 bis 365) verlangt so viele Tage Abstand zum
   letzten vollständig erfolgreichen Vollabgleich (`last_successful_full_sync`), mit einer Stunde Spielraum. Ist er
-  nicht fällig, läuft die Quelle in dieser Nacht inkrementell. Ein Vollabgleich mit Lücke zählt nicht; er wird in der
-  nächsten Nacht wiederholt (`ingestor/src/client/source_options.py`, `full_sync_plan`).
-- **Je Quelle nur in einem Zeitfenster:** `full_sync_window`, etwa `{"start": "00:00", "end": "06:00"}` (Ortszeit,
-  Standard `Europe/Berlin`, abweichend mit `"tz"`, über Mitternacht erlaubt, Beginn und Ende verschieden).
-  Außerhalb des Fensters läuft ein Vollabgleich als inkrementeller Abgleich, ob geplant, aus dem Admin oder per
-  `sync --full`. Das Fenster muss deshalb die Startstunde (`--full-sync-hour`) enthalten und lang genug für einen
-  ganzen Vollabgleich der Quelle sein; sonst kommt für sie kein vollständiger Vollabgleich zustande.
-- **Nach dem Ende des Fensters** holt ein laufender Vollabgleich keine weitere Seite; der Ingestor prüft das vor jeder
-  Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als vollständig,
-  das Änderungsfenster rückt nicht vor, und die Listen kommen beim nächsten Vollabgleich wieder dran.
+  nicht fällig, gleicht die Quelle nur Änderungen ab. Ein Vollabgleich mit Lücke zählt nicht; er wird im nächsten
+  Fenster wiederholt (`ingestor/src/client/source_options.py`, `full_sync_plan`).
+- **Je Quelle in eigenem Zeitfenster:** `full_sync_window`, etwa `{"start": "00:00", "end": "06:00"}` (Ortszeit,
+  Standard `Europe/Berlin`, abweichend mit `"tz"`, über Mitternacht erlaubt, Beginn und Ende verschieden). Der
+  Vollabgleich der Quelle beginnt dann in ihrem Fenster, unabhängig von `--full-sync-hour`. Außerhalb des Fensters
+  läuft ein Vollabgleich als inkrementeller Abgleich, ob aus dem Admin oder per `sync --full`. Das Fenster muss lang
+  genug für einen ganzen Vollabgleich der Quelle sein.
+- **Nach dem Ende des eigenen Fensters** holt ein laufender Vollabgleich keine weitere Seite; der Ingestor prüft das
+  vor jeder Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als
+  vollständig, das Änderungsfenster rückt nicht vor, und die Listen kommen beim nächsten Vollabgleich wieder dran.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung
   und die Abrufe der Anwendung richten sich nicht danach.
 
@@ -542,6 +594,7 @@ es zu Beginn jedes Laufs der Quelle, die Texterkennung spätestens nach 5 Minute
 | Schlüssel | Bedeutung | Beispiel |
 |---|---|---|
 | `request_interval` | Abstand der Abrufe dieser Quelle in Sekunden, 1 bis 30; nur langsamer als der Standard, kleinere Werte gelten als 1 | `2.0` |
+| `sync_schedule` | Takt der Quelle (siehe [Rhythmus](#rhythmus)): `workday_minutes`, `off_hours_minutes`, `weekend_minutes`, `meeting_minutes`, `idle_max_minutes` (ganze Minuten von 5 bis 1440, kleinere gelten als 5), `workday_hours`, `meeting_hours` (`{"start": "07:00", "end": "19:00"}`, Beginn vor Ende am selben Tag), `meeting_days_before` (0 bis 7), `idle_runs` (0 bis 100, 0 = nie verlängern), `tz` | `{"weekend_minutes": 240}` |
 | `full_sync_window` | Zeitfenster des Vollabgleichs (Ortszeit, optional `tz`) | `{"start": "00:00", "end": "06:00"}` |
 | `full_sync_every_days` | Mindestabstand zwischen vollständigen Vollabgleichen in Tagen, ganze Zahl von 1 bis 365 | `7` |
 | `modified_since_margin_minutes` | Sicherheitsabstand des Änderungsfensters in Minuten, ganze Zahl von 0 bis 10080 | `60` |
@@ -554,12 +607,13 @@ es zu Beginn jedes Laufs der Quelle, die Texterkennung spätestens nach 5 Minute
 | `document_since`, `document_backfill` | Stichtag und Altbestand der Ablage (nur mit `TEXT_EXTRACTION_RUNNER=worker`) | siehe [`FILE_CACHE.md`](FILE_CACHE.md) |
 
 Bedeutung der Schlüssel im Code: `ingestor/src/client/source_options.py`, `shared/mandari_oparl/pacing.py`,
-`shared/mandari_oparl/robots.py`. Beispiel einer Quelle, die langsamer und nur nachts vollständig abgerufen werden
-soll:
+`shared/mandari_oparl/robots.py`. Beispiel einer Quelle, die langsamer, seltener und nur nachts vollständig abgerufen
+werden soll:
 
 ```json
 {
   "request_interval": 2.0,
+  "sync_schedule": {"workday_minutes": 30, "off_hours_minutes": 120, "weekend_minutes": 240},
   "full_sync_window": {"start": "22:00", "end": "05:00"},
   "full_sync_every_days": 7
 }
@@ -570,6 +624,7 @@ Befund zurückzusetzen:
 
 | Schlüssel | Inhalt |
 |---|---|
+| `sync_state` | Takt der Quelle: nächster fälliger Lauf (`next_due`), Läufe ohne Änderung in Folge (`idle_runs`), Abstand und Art des Grundtakts (`interval_minutes`, `base_minutes`, `period`), letzter Lauf und seine Änderungen (`last_run`, `last_changes`), Beginn des letzten Vollabgleichs (`full_attempted`); Zeitpunkte in UTC. Löschen macht die Quelle sofort fällig und erlaubt einen Vollabgleich im laufenden Fenster |
 | `body_sync_started` | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (UTC), Anfang des Änderungsfensters; nach nicht gespeicherten Objekten höchstens deren ältestes `modified`. Löschen setzt das Änderungsfenster auf sieben Tage zurück |
 | `timed_lists` | Listen, deren `modified` nachweislich eine Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC); nur sie bekommen das kurze Fenster. Löschen lässt die Listen ab Tagesbeginn laufen, bis ein Lauf die Uhrzeit wieder nachweist |
 | `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, mit dem Zeitpunkt der letzten Prüfung (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
@@ -596,15 +651,20 @@ Ingestor (`ingestor/src/config.py`; Groß- und Kleinschreibung egal):
 | `OPARL_UA_PROBE_ENABLED` | `true` | Vergleichsanfrage nach HTTP 403 (Abgleich und `probe-ris`) |
 | `OPARL_SERVER_ERROR_SERIES_THRESHOLD` | `5` | Serverfehler in Folge bis zur 5xx-Serie |
 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD`, `CIRCUIT_BREAKER_RECOVERY_TIMEOUT` | `5`, `60` | Schutzschalter je Server |
-| `SYNC_SOURCE_CONCURRENCY`, `SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY` | `2`, `2`, `2` | Quellen, Kommunen und Listen gleichzeitig |
+| `INGESTOR_SYNC_POOL_SIZE` | `4` | Quellen gleichzeitig im Daemon, je Quelle ein Lauf; Vollabgleiche auf höchstens allen Plätzen bis auf einen |
+| `SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY` | `2`, `2` | Kommunen je Quelle und Listen je Kommune gleichzeitig |
+| `SYNC_SOURCE_CONCURRENCY` | `2` | Quellen gleichzeitig bei `sync --all` und im Worker der Anwendung (nicht im Daemon) |
 | `TEXT_EXTRACTION_ENABLED` | `true` | Texterkennung im Abgleich |
 | `TEXT_EXTRACTION_BATCH_SIZE`, `TEXT_EXTRACTION_CONCURRENCY`, `TEXT_EXTRACTION_MAX_SIZE_MB` | `500`, `4`, `50` | Dateien je Kommune und Lauf, gleichzeitig, Größe |
 | `TEXT_EXTRACTION_RUNNER` | `ingestor` | `worker`: Ingestor lädt keine Dateien |
 | `REDIS_URL` | `redis://localhost:6379` | gemeinsamer Takt je Server |
 
 Daemon (Argumente von `python -m src.main daemon`, in `docker-compose.yml` aus der `.env`): `--interval`
-(`INGESTOR_INTERVAL`), `--full-sync-hour` (`INGESTOR_FULL_SYNC_HOUR`), `--concurrent` (`INGESTOR_CONCURRENT`,
-Abrufplätze je Quelle; je Server gilt trotzdem `INGESTOR_HOST_MAX_CONCURRENT`).
+(`INGESTOR_INTERVAL`, Grundtakt werktags 07–19 Uhr), `--full-sync-hour` (`INGESTOR_FULL_SYNC_HOUR`, Beginn des
+Standardfensters für Vollabgleiche), `--concurrent` (`INGESTOR_CONCURRENT`, Abrufplätze je Quelle; je Server gilt
+trotzdem `INGESTOR_HOST_MAX_CONCURRENT`), `--pool` (Standard `INGESTOR_SYNC_POOL_SIZE`). `docker-compose.yml` reicht
+`INGESTOR_SYNC_POOL_SIZE` durch und setzt die Speichergrenze des Dienstes über `INGESTOR_MEM_LIMIT` (Standard
+`512m`).
 
 Anwendung (`mandari/mandari/settings.py`):
 
@@ -629,10 +689,11 @@ nach. Im Helm-Chart: `ingestor.extraEnv` bzw. `app.extraEnv`.
   Variable in den Abschnitt `environment` des Dienstes `ingestor`, im Helm-Chart in `ingestor.extraEnv`; ein
   Eintrag nur in der `.env` wirkt nicht. Regeln der robots.txt für `mandari-ingestor` gelten weiter, weil mandari
   dieses Token immer zusätzlich prüft.
-- Die Sync-Aktionen an einer Quelle im Admin laufen im Worker der Anwendung, ohne Schonung (siehe
-  [Rhythmus](#rhythmus)). `INGESTOR_USER_AGENT` und die übrigen Variablen des Ingestors (`INGESTOR_*`, `OPARL_*`)
-  gehören deshalb auch in dessen Umgebung: unter Docker Compose in `x-app-environment`, im Helm-Chart in
-  `app.extraEnv`. Sonst ruft der Worker mit der Standardkennung samt support@mandari.de ab.
+- Die Sync-Aktionen an einer Quelle im Admin gehen an den Daemon, solange er läuft; ohne Daemon und für
+  abgeschaltete Quellen laufen sie im Worker der Anwendung, ohne Schonung (siehe [Rhythmus](#rhythmus)).
+  `INGESTOR_USER_AGENT` und die übrigen Variablen des Ingestors (`INGESTOR_*`, `OPARL_*`) gehören deshalb auch in
+  dessen Umgebung: unter Docker Compose in `x-app-environment`, im Helm-Chart in `app.extraEnv`. Sonst ruft der
+  Worker mit der Standardkennung samt support@mandari.de ab.
 - Die Abrufe der Anwendung (Dokument-Cache, Vorschau, Löschabgleich, Personenfotos, Quellenanlage, Live-Übertragung
   und Geodienste) melden sich mit der festen Kennung
   `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)`. Eine Umgebungsvariable dafür gibt es nicht;

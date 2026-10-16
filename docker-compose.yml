@@ -568,6 +568,9 @@ services:
     image: ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}-ingestor
     restart: unless-stopped
+    # Takt je Quelle (docs/ABRUFREGELN.md, „Rhythmus“, Issue #1026): --interval ist der Grundtakt werktags
+    # 07–19 Uhr, sonst stündlich, am Wochenende alle 2 Stunden; --full-sync-hour beginnt das nächtliche
+    # Standardfenster (5 Stunden) für Vollabgleiche von Quellen ohne eigenes full_sync_window
     command: >
       python -m src.main daemon
       --interval ${INGESTOR_INTERVAL:-10}
@@ -578,6 +581,8 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ELASTICSEARCH_URL: http://elasticsearch:9200
       TZ: ${TZ:-Europe/Berlin}
+      # So viele Quellen gleichzeitig, je Quelle höchstens ein Lauf; Vollabgleiche lassen einen Platz frei (#1026)
+      INGESTOR_SYNC_POOL_SIZE: ${INGESTOR_SYNC_POOL_SIZE:-4}
       # Änderungen am RIS-Bestand als Ereignisse ins Journal schreiben (Standard aus, siehe .env.example)
       INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
       # Dateien für den Text gleich in der Ablage der Anwendung ablegen (ein Abruf je Datei, #788)
@@ -604,7 +609,9 @@ services:
         condition: service_healthy
     networks:
       - mandari
-    mem_limit: 512m
+    # Gemessen mit vier gleichzeitigen Vollabgleichen ohne Texterkennung: unter 200 MB (#1026). Erkennt der
+    # Ingestor den Text selbst (TEXT_EXTRACTION_RUNNER=ingestor), kommen die Tesseract-Unterprozesse hinzu
+    mem_limit: ${INGESTOR_MEM_LIMIT:-512m}
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
