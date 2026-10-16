@@ -472,6 +472,24 @@ def missed_bodies_note(missed_bodies: list[str]) -> str:
     return f"Kommunen nicht vollständig gelesen, nicht lesbar: {shown}{suffix}"
 
 
+def unique_bodies(bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Jede Kommune nur einmal, nach ``id`` (die erste gewinnt; Issue #869): Steht sie auf zwei Seiten einer
+    Kommunenliste (Seiten verschieben sich zwischen den Anfragen, Liste im Kreis) oder unter zwei Adressen, gliche
+    ``sync_body_url`` sie sonst zweimal parallel ab, mit allen Listen doppelt. Einträge ohne ``id`` bleiben stehen.
+    """
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for body in bodies:
+        body_id = body.get("id") if isinstance(body, dict) else None
+        if isinstance(body_id, str):
+            if body_id in seen:
+                continue
+            seen.add(body_id)
+        unique.append(body)
+    return unique
+
+
 class SyncOrchestrator:
     """
     Orchestrates the OParl synchronization process.
@@ -699,7 +717,7 @@ class SyncOrchestrator:
                         bodies.extend(await self._fetch_body_list(client, entry, missed, first_page=data))
                     elif missed is not None:
                         missed.append(entry)
-        return bodies
+        return unique_bodies(bodies)
 
     async def _fetch_body_list(
         self,
@@ -723,6 +741,7 @@ class SyncOrchestrator:
         Gelesen werden höchstens ``MAX_BODY_PAGES`` Seiten, und eine Folgeseite, die auf eine schon gelesene Seite
         verweist, bricht ab (``ListFetchError``): Eine fehlerhafte Liste darf den Zyklus nicht endlos aufhalten.
         Nennt die letzte erlaubte Seite noch eine Folgeseite, steht diese in ``missed`` (unvollständig statt endlos).
+        Eine Kommune, die auf mehreren Seiten steht, zählt einmal (``unique_bodies``).
         """
         bodies: list[dict[str, Any]] = []
         next_page: str | None = None
@@ -731,19 +750,21 @@ class SyncOrchestrator:
             links = first_page.get("links")
             next_page = str(links["next"]) if isinstance(links, dict) and links.get("next") else None
             if next_page is None:
-                return bodies
+                return unique_bodies(bodies)
         try:
             async for page in client.fetch_list(list_url, max_pages=MAX_BODY_PAGES, next_page=next_page):
                 bodies.extend(page)
         except ListFetchError as e:
             if missed is None or not bodies:
                 raise
+            bodies = unique_bodies(bodies)
             console.print(
                 f"[red]Kommunenliste {list_url} bricht ab ({e.result.error}), "
                 f"{len(bodies)} Kommunen gelesen, Abgleich unvollständig: {e.page_url}[/red]"
             )
             missed.append(e.page_url)
             return bodies
+        bodies = unique_bodies(bodies)
         unread = client.page_limit_lists.get(list_url)
         if unread is not None:
             console.print(

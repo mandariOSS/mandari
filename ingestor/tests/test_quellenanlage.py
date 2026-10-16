@@ -357,6 +357,81 @@ async def test_liste_im_kreis_bricht_ab_wie_eine_teilantwort() -> None:
     assert quelle.anfragen == [_seite_url(1), _seite_url(2)]
 
 
+async def _kommunen_lesen(client: OParlClient, weg: str, missed: list[str]) -> list[dict[str, Any]]:
+    """Die drei Wege zur Kommunenliste: Adresse der Liste, System-Objekt, Eintrag einer Liste von Adressen."""
+    if weg == "adressliste":
+        return await _orchestrator()._fetch_bodies(client, [LISTE], missed)
+    _art, bodies, _version = await _orchestrator().auto_detect_url(client, weg, missed)
+    return bodies
+
+
+@pytest.mark.parametrize("weg", [LISTE, SYSTEM, "adressliste"])
+async def test_erste_seite_im_kreis_auf_sich_selbst(weg: str) -> None:
+    """Eine einseitige Kommunenliste, deren ``links.next`` auf sie selbst zeigt: eine Anfrage, keine Kommune doppelt."""
+    quelle = LangeListe(1, kreis_auf=1)
+    client = _client(quelle)
+    missed: list[str] = []
+    try:
+        bodies = await _kommunen_lesen(client, weg, missed)
+    finally:
+        await client._client.aclose()
+
+    assert _ids(bodies) == _kommunen(1, 1)
+    assert missed == [LISTE]
+    assert [a for a in quelle.anfragen if a != SYSTEM] == [LISTE]
+    assert client.host_health["ris.example.org"].failed_lists == [LISTE]
+    assert sync_complete([{"incomplete": []}] * len(bodies), missed, client) is False
+
+
+async def test_folgeseite_gleich_der_ersten_seite_ohne_anfrage() -> None:
+    """``fetch_list(next_page=…)`` mit der Adresse der Liste selbst bricht ab, bevor eine Anfrage hinausgeht."""
+    quelle = LangeListe(1, kreis_auf=1)
+    client = _client(quelle)
+    try:
+        with pytest.raises(ListFetchError) as excinfo:
+            [page async for page in client.fetch_list(LISTE, next_page=LISTE)]
+    finally:
+        await client._client.aclose()
+
+    assert quelle.anfragen == []
+    assert excinfo.value.page_url == LISTE
+    assert "schon gelesene Seite" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("weg", [LISTE, SYSTEM, "adressliste"])
+async def test_kommune_auf_zwei_seiten_zaehlt_einmal(weg: str) -> None:
+    """Verschieben sich die Seiten zwischen zwei Anfragen, steht eine Kommune doppelt in der Liste: zählt einmal."""
+
+    def verschoben(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == SYSTEM or request.url.params.get("page") is None:
+            return Quelle()(request)
+        # Seite 2 beginnt mit der letzten Kommune der ersten Seite (eine Kommune davor kam neu hinzu)
+        return httpx.Response(200, json={"data": [kommune(n) for n in (2, 3, 4, 5)], "links": {}})
+
+    client = _client(verschoben)
+    missed: list[str] = []
+    try:
+        bodies = await _kommunen_lesen(client, weg, missed)
+    finally:
+        await client._client.aclose()
+
+    assert _ids(bodies) == ALLE
+    assert missed == []
+
+
+async def test_dieselbe_kommunenliste_unter_zwei_adressen_zaehlt_einmal() -> None:
+    quelle = Quelle()
+    client = _client(quelle)
+    missed: list[str] = []
+    try:
+        bodies = await _orchestrator()._fetch_bodies(client, [LISTE, LISTE, kommune(1)], missed)
+    finally:
+        await client._client.aclose()
+
+    assert _ids(bodies) == ALLE
+    assert missed == []
+
+
 async def test_seitengrenze_nennt_die_nicht_gelesene_folgeseite() -> None:
     """``max_pages`` endet nicht mehr still: ``page_limit_lists`` nennt die Folgeseite, bis die Liste ganz läuft."""
     client = _client(LangeListe(5))
