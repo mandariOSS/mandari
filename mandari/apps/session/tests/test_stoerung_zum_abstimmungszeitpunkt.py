@@ -369,25 +369,6 @@ class TestVorherErfassteStimme:
         assert erfassung.post(url, _seitendaten(seite)).status_code == 302
         assert top.votes.get(person=zeile.person).vote == "excluded"
 
-    @pytest.mark.parametrize("um", [time(17, 55), time(18, 14)], ids=["abgebrochene-runde", "minute-des-beginns"])
-    def test_cockpit_und_spaetere_erfassung_zaehlen_gleich(self, monkeypatch: pytest.MonkeyPatch, um: time) -> None:
-        # Buches Stimme gilt nicht (frühere Runde bzw. Minute des Störungsbeginns): weder im Cockpit noch danach
-        w, _zeile, top = _welt(offen=True, stoerung=(time(18, 14), None))
-        _stimme(w, top, "Buche", "yes", um)
-        _stimme(w, top, "Amsel", "no", time(18, 12))
-        _stimme(w, top, "Carl", "yes", time(18, 12))
-        monkeypatch.setattr(timezone, "now", lambda: _um(w, time(18, 17)))
-        _schliessen(w, top)
-        top.refresh_from_db()
-        cockpit = (top.votes_yes, top.votes_no)
-        assert cockpit == (1, 1)
-
-        erfassung = _abstimmung(w)
-        url = f"{base(w)}/agenda/{top.pk}/voting/"
-        assert erfassung.post(url, _seitendaten(erfassung.get(url))).status_code == 302
-        top.refresh_from_db()
-        assert (top.votes_yes, top.votes_no) == cockpit
-
     def test_geheim_nach_dem_schliessen_ohne_einzelstimme(self) -> None:
         w, zeile, top = _welt(stoerung=(time(18, 14), time(18, 20)))
         _stimme(w, top, "Buche", "yes", time(18, 12))

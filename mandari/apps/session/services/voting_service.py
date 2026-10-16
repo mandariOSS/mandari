@@ -239,6 +239,13 @@ def kept_votes(item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[An
     eingetragen wurden: Befangen ist die Person unabhängig davon, ob sie erreichbar ist.
 
     Störungen sind minutengenau erfasst; eine Stimme aus der Minute ihres Beginns zählt nicht als vorher.
+
+    Grenze: Eine Stimme aus einer früheren Runde, die in der neuen Runde nur unverändert bestätigt wird, behält ihren
+    alten Zeitpunkt (unveränderte Stimmen schreibt :func:`capture_votes` nicht neu) und ist nicht als Stimme dieser
+    Runde erkennbar. Wird die Person danach in derselben Runde gestört, entfällt sie – wie schon vor dieser Regel.
+
+    Das Sitzungscockpit zählt beim Schließen weiter alle gespeicherten Stimmen (:func:`recompute_sums`); eine
+    gemeinsame Regel für Cockpit, Erfassung und die Namenslisten der Niederschrift ist eine eigene Aufgabe.
     ``votes``: gespeicherte Stimmen des TOP je Person-ID.
     """
     opened = item.vote_opened_at
@@ -287,18 +294,6 @@ def guard_kept_votes(
             counted = stored.get(attendance.person_id)
             if counted is not None and counted.vote in SessionVote.COUNTED_VOTES:
                 votes_by_person.setdefault(counted.person, "")
-
-
-def counted_person_ids(item: SessionAgendaItem) -> set[Any]:
-    """
-    Personen, deren Einzelstimmen in die Summen eingehen, nach derselben Regel wie die Abstimmungserfassung: jetzt
-    stimmberechtigt Anwesende (Störung zum Zeitpunkt der Abstimmung, sofern bekannt, sonst andauernd) und behaltene
-    Stimmen gestörter Personen (:func:`kept_votes`, Issue #1045). Für das Schließen im Sitzungscockpit, damit dessen
-    Summen nicht von der späteren Erfassung abweichen.
-    """
-    assessed = eligibility(item.meeting, item, at=participation_service.vote_time(item))
-    stored = {vote.person_id: vote for vote in item.votes.all()}
-    return set(assessed.voting_person_ids) | kept_votes(item, assessed, stored)
 
 
 @dataclass(frozen=True)
@@ -488,13 +483,10 @@ def rights_message(assessed: Eligibility, persons: list[Any]) -> str:
     return " ".join(saetze)
 
 
-def recompute_sums(agenda_item: SessionAgendaItem, *, persons: Collection[Any] | None = None) -> None:
-    """Summen (Ja/Nein/Enthaltung) aus den Einzelstimmen ableiten; mit ``persons`` nur aus deren Stimmen."""
+def recompute_sums(agenda_item: SessionAgendaItem) -> None:
+    """Summen (Ja/Nein/Enthaltung) aus den Einzelstimmen ableiten."""
     counts = dict.fromkeys(SessionVote.COUNTED_VOTES, 0)
-    votes = agenda_item.votes.filter(vote__in=SessionVote.COUNTED_VOTES)
-    if persons is not None:
-        votes = votes.filter(person_id__in=list(persons))
-    for vote in votes.values_list("vote", flat=True):
+    for vote in agenda_item.votes.filter(vote__in=SessionVote.COUNTED_VOTES).values_list("vote", flat=True):
         counts[vote] += 1
     agenda_item.votes_yes = counts["yes"]
     agenda_item.votes_no = counts["no"]

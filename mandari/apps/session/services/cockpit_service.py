@@ -746,9 +746,8 @@ def close_vote(
         raise CockpitError("Bitte das Ergebnis wählen: angenommen oder abgelehnt.")
     warning = ""
     if item.voting_method in voting_service.INDIVIDUAL_METHODS:
-        # Summen aus den Einzelstimmen der Abstimmungserfassung (eine Wahrheit), nach deren Regel: Stimmen gestörter
-        # Personen nur, wenn sie vor Beginn der Störung in dieser Runde abgegeben wurden (Issue #1045)
-        voting_service.recompute_sums(item, persons=voting_service.counted_person_ids(item))
+        # Summen aus den Einzelstimmen der Abstimmungserfassung (eine Wahrheit)
+        voting_service.recompute_sums(item)
     else:
         yes, no, abstain = _count(data, "votes_yes"), _count(data, "votes_no"), _count(data, "votes_abstain")
         if yes + no + abstain == 0:
