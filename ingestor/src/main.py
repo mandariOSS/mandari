@@ -199,7 +199,9 @@ def add_source(
     """
     Register a new OParl source.
 
-    Fetches the system endpoint to auto-detect the source name.
+    Fetches the system endpoint to auto-detect the source name. Eine neue Quelle ist inaktiv (Issue #555):
+    Der Daemon gleicht sie erst ab, wenn sie im Admin aktiviert ist. Eine schon registrierte Quelle behält
+    ihren Status; eine abgeschaltete wird hier nie wieder aktiv.
 
     Examples:
 
@@ -213,15 +215,36 @@ def add_source(
     console.print(f"[bold]Adding OParl source:[/bold] {url}")
     console.print()
 
+    from src.sync.orchestrator import source_status_label
+
     async def run_add() -> None:
         async with SyncOrchestrator() as orchestrator:
+            existed = await orchestrator.storage.get_source_by_url(url) is not None
             source_id = await orchestrator.add_source(url, name)
+            source = await orchestrator.storage.get_source_by_url(url)
             console.print()
             console.print("[green]Source registered successfully![/green]")
             console.print(f"Source ID: {source_id}")
             console.print()
-            console.print("[dim]Run sync to fetch data:[/dim]")
-            console.print(f"  mandari-ingestor sync --source {url}")
+            if not existed:
+                console.print(
+                    "[yellow]Neue Quelle, Status: inaktiv. Der Daemon gleicht sie erst ab, wenn sie im Admin "
+                    "aktiviert ist.[/yellow]"
+                )
+                console.print("[dim]Einmal von Hand abgleichen (neue Kommunen bleiben ungelistet):[/dim]")
+                console.print(f"  mandari-ingestor sync --source {url}")
+            elif source is not None and source.is_active:
+                console.print(
+                    f"[yellow]Quelle war schon registriert, Status unverändert: {source_status_label(source)}. "
+                    "Der Daemon gleicht sie im Takt ab.[/yellow]"
+                )
+            else:
+                # sync --source prüft is_active nicht: Eine abgeschaltete Quelle (Sperre, Schonung) würde abgefragt
+                console.print(
+                    "[yellow]Quelle war schon registriert, Status unverändert: inaktiv. Bitte nicht von Hand "
+                    "abgleichen: sync --source fragt auch eine abgeschaltete Quelle ab. Erst klären, warum sie "
+                    "inaktiv ist, und sie bei Bedarf im Admin aktivieren.[/yellow]"
+                )
 
     try:
         asyncio.run(run_add())
@@ -604,11 +627,10 @@ def init_sources(
                 console.print(f"[yellow]Failed to add {failed} sources[/yellow]")
 
             console.print()
-            console.print("[dim]Start syncing with:[/dim]")
-            console.print("  mandari-ingestor sync --all")
-            console.print()
-            console.print("[dim]Or start the daemon:[/dim]")
-            console.print("  mandari-ingestor daemon")
+            console.print(
+                "[yellow]Neue Quellen sind inaktiv (Issue #555): Abgleich durch sync --all und den Daemon erst, "
+                "wenn sie im Admin aktiviert sind.[/yellow]"
+            )
 
     try:
         asyncio.run(run_init())

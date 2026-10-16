@@ -78,7 +78,10 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
   (höchstens 20 Seiten, `MAX_BODY_PAGES`), mit der Kennung der Anwendung. Ist die Quelle schon angelegt, gelten ihr
   Abstand (`request_interval`) und ihre Ausnahme von der robots.txt (`robots_override`), auch für den Abruf der
   robots.txt selbst. Hat eine registrierte Quelle auf demselben Server einen größeren Abstand, gilt dieser
-  (`mandari/insight_core/management/commands/add_oparl_source.py`, `_config_for`).
+  (`mandari/insight_core/management/commands/add_oparl_source.py`, `_config_for`). Eine neue Quelle legt das
+  Werkzeug inaktiv an, neue Kommunen nicht gelistet: Regelmäßig abgefragt wird eine Quelle erst, wenn wir sie im
+  Admin aktivieren. Eine schon angelegte Quelle behält ihren Status, eine abgeschaltete bleibt abgeschaltet. Dasselbe
+  gilt für `python -m src.main add-source` und für Quellen, die ein Abgleich von Hand neu anlegt (Issue #555).
 - **Sondierung** (`python -m src.main probe-ris`): erkennt vor dem Anbinden einer Kommune ihr System mit höchstens
   fünf Anfragen je Kommune (`ingestor/src/probe/ris_probe.py`, `MAX_REQUESTS`): robots.txt, Startseite, bei HTTP 403
   eine Vergleichsanfrage (siehe [Kennung](#kennung)), danach mögliche OParl-Adressen. Weiterleitungen und die
@@ -261,6 +264,19 @@ Kommune.
 - Je Lauf und Quelle fragt der Ingestor die eingetragene Adresse (System, Kommunenliste oder Kommune) und
   gegebenenfalls die Kommunenliste ab, danach je Kommune die Listen in fester Reihenfolge: Gremien und Personen,
   Mitgliedschaften, Sitzungen und Vorlagen, dann Orte, Tagesordnungspunkte, Dateien und Beratungen.
+- Die Kommunenliste liest der Ingestor wie jede Liste über alle Seiten (`links.next`), Seite für Seite im Takt; ist
+  die eingetragene Adresse selbst die Kommunenliste, fragt er ihre erste Seite nur einmal an (Issue #869,
+  `ingestor/src/sync/orchestrator.py`, `_fetch_body_list`). Bricht eine Folgeseite ab (Fehler, Teilantwort), gleicht
+  der Lauf die bis dahin gelesenen Kommunen ab, nennt die Seite im Sync-Log und gilt als nicht vollständig. Ebenso
+  nach höchstens 20 Seiten (`MAX_BODY_PAGES`, wie beim Werkzeug „Quelle anlegen“) und wenn `links.next` auf eine schon
+  gelesene Seite zeigt: Eine fehlerhafte Liste hält den Zyklus aller Quellen nicht auf. Eine Liste, die im Kreis
+  läuft, bricht bei jeder Liste ab, nicht nur bei der Kommunenliste (`OParlClient.fetch_list`).
+- Neu entdeckte Kommunen sind nicht gelistet (`is_listed`, `ingestor/src/storage/database.py`, `upsert_body`): Bis
+  wir sie im Admin listen, erscheinen sie nicht in Kommunenauswahl, Übersichten, Sitemaps und öffentlichen Listen.
+  Was das für die Ablage ihrer Dokumente heißt, steht in [`FILE_CACHE.md`](FILE_CACHE.md). Ausnahme ist die eigene
+  OParl-Schnittstelle eines Session-Mandanten (`sync_config.session_tenant`, `lists_new_bodies`): Der Mandant hat die
+  Veröffentlichung im Bürgerportal selbst eingeschaltet, seine Kommune ist gleich gelistet
+  ([`SESSION_OPARL_API.md`](SESSION_OPARL_API.md)).
 - Ein Lauf über alle Quellen lässt sich außerdem im Admin („Jetzt synchronisieren“, über Redis an den Daemon) oder
   von Hand (`python -m src.main sync --all`) auslösen. robots.txt, Takt, Zeitfenster und Schonung gelten auch dann.
 - Die Aktionen „Inkrementeller Sync“ und „Vollständiger Sync“ an einer Quelle im Admin laufen nicht im Daemon,
@@ -472,8 +488,9 @@ Stündlich um :15 gleicht die Anwendung die Ablage mit den Quellen ab
 | robots.txt sperrt | Pause 24 Stunden | wie oben |
 
 Als fehlgeschlagen zählt ein Lauf, wenn die eingetragene Adresse oder die Kommunenliste nicht abrufbar ist (keine
-Kommune gefunden), wenn der Lauf abbricht oder wenn ein Befund vorliegt: User-Agent-Sperre, 5xx-Serie oder ein
-Server, an den wegen seiner robots.txt keine einzige Anfrage ging, weil sie sperrt oder nicht erreichbar ist
+Kommune gefunden; bricht erst eine Folgeseite der Kommunenliste ab, ist der Lauf nur unvollständig), wenn der Lauf
+abbricht oder wenn ein Befund vorliegt: User-Agent-Sperre, 5xx-Serie oder ein Server, an den wegen seiner robots.txt
+keine einzige Anfrage ging, weil sie sperrt oder nicht erreichbar ist
 (`ingestor/src/sync/orchestrator.py`, `_apply_host_findings`; `ingestor/src/storage/database.py`,
 `record_source_failure`). Andere Fehler in einzelnen Listen zählen nicht, auch nicht HTTP 429 oder
 Zeitüberschreitungen: Der Lauf fragt die übrigen Listen weiter im Takt an, nur der Schutzschalter pausiert nach

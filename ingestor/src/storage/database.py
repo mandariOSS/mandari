@@ -117,6 +117,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "summary",
         "locations",
         "georef_status",
+        # OParlBody: Sichtbarkeit im Portal (Django-managed); der Ingestor setzt sie nur beim Anlegen (Issue #555)
+        "is_listed",
         # OParlBody: Django-managed presentation + geo fields
         "display_name",
         "logo",
@@ -155,6 +157,22 @@ _NEW_OBJECT_LOCK_CLASS: Final = 513
 
 #: Schlüssel in ``OParlSource.sync_config``: ``false`` nimmt die Quelle von den Ereignissen aus.
 SYNC_CONFIG_EVENTS_KEY: Final = "events_enabled"
+
+#: Schlüssel in ``OParlSource.sync_config``: Kürzel des Session-Mandanten, dessen eigene OParl-Schnittstelle die
+#: Quelle ist (gesetzt von ``apps/session/services/insight_service.register_source``).
+SYNC_CONFIG_SESSION_TENANT_KEY: Final = "session_tenant"
+
+
+def lists_new_bodies(sync_config: dict[str, Any]) -> bool:
+    """
+    Ob neu entdeckte Kommunen dieser Quelle gleich gelistet sind (``is_listed``, Issue #555).
+
+    Nur bei der eigenen Session-Schnittstelle eines Mandanten: Er hat die Veröffentlichung im Bürgerportal selbst
+    eingeschaltet, und seine Kommune erscheint dort ohne weiteren Schritt (docs/SESSION_OPARL_API.md), so wie beim
+    Spiegel ``insight_sync/session_mirror.py``. Kommunen aller übrigen Quellen bleiben ungelistet, bis wir sie im
+    Admin listen.
+    """
+    return bool(sync_config.get(SYNC_CONFIG_SESSION_TENANT_KEY))
 
 
 @dataclass(frozen=True)
@@ -454,6 +472,10 @@ class DatabaseStorage:
         ``oparl_version`` ("1.0"/"1.1") stammt aus der Autodiscovery und wird
         nur überschrieben, wenn ein Wert erkannt wurde (Issue #122).
 
+        Eine neue Quelle ist inaktiv (Issue #555): Der Daemon gleicht sie erst ab, wenn sie im Admin bewusst
+        aktiviert ist. Bei einer vorhandenen Quelle bleibt ``is_active``, wie es ist; eine abgeschaltete Quelle
+        wird hier nie wieder aktiv.
+
         Returns the source UUID.
         """
         async with self.get_session() as session:
@@ -462,7 +484,7 @@ class DatabaseStorage:
                 name=name,
                 raw_json=raw_json or {},
                 oparl_version=oparl_version,
-                is_active=True,
+                is_active=False,
                 created_at=func.now(),
                 updated_at=func.now(),
             )
@@ -885,18 +907,20 @@ class DatabaseStorage:
         origin = await self._origin(session, body_id)
         return origin.source_id is not None and origin.events
 
-    async def _source_emits(self, session: AsyncSession, source_id: UUID) -> bool:
+    async def _source_config(self, session: AsyncSession, source_id: UUID) -> dict[str, Any]:
+        """``sync_config`` der Quelle (leer, wenn es sie nicht gibt oder der Wert kein Objekt ist)."""
+        found = await session.execute(select(OParlSource.sync_config).where(OParlSource.id == source_id))
+        sync_config = found.scalar_one_or_none()
+        return sync_config if isinstance(sync_config, dict) else {}
+
+    def _source_emits(self, sync_config: dict[str, Any]) -> bool:
         """
         Ob Änderungen aus dieser Quelle Ereignisse schreiben (Schalter und Ausnahme in ``sync_config``).
 
         Für die Kommune selbst: Vor ihrem ersten Upsert gibt es keine Zeile, über die ``_events_for``
         die Quelle fände.
         """
-        if not self.events_enabled:
-            return False
-        found = await session.execute(select(OParlSource.sync_config).where(OParlSource.id == source_id))
-        sync_config = found.scalar_one_or_none()
-        return not (isinstance(sync_config, dict) and sync_config.get(SYNC_CONFIG_EVENTS_KEY) is False)
+        return self.events_enabled and sync_config.get(SYNC_CONFIG_EVENTS_KEY) is not False
 
     async def _origin(self, session: AsyncSession, body_id: UUID) -> _Origin:
         """Herkunft der Ereignisse einer Kommune (zwischengespeichert bis zum Ende des Zyklus)."""
@@ -1028,9 +1052,16 @@ class DatabaseStorage:
         Returns the body UUID. Zeile und Ereignis (``ris.body.changed``) entstehen in einer Transaktion.
         Die Herkunft der Ereignisse ergibt sich erst nach dem Upsert (eine neue Kommune hat vorher keine
         Zeile); ob die Quelle ausgenommen ist, steht vorher an der Quelle selbst.
+
+        Eine neu entdeckte Kommune ist nicht gelistet (``is_listed = false``, Issue #555/#869): Sie erscheint
+        weder in Kommunenauswahl, Übersichten und Sitemaps noch legt der Ingestor ihre Dokumente ab, bis sie im
+        Admin bewusst gelistet ist. Ausnahme ist die eigene Session-Schnittstelle eines Mandanten
+        (``lists_new_bodies``): Ihre Kommune ist gleich gelistet. Bei einer vorhandenen Kommune bleibt
+        ``is_listed`` unverändert.
         """
         async with self.get_session() as session:
-            emit = await self._source_emits(session, source_id)
+            sync_config = await self._source_config(session, source_id)
+            emit = self._source_emits(sync_config)
             prior = await self._prior(session, OParlBody, body.external_id) if emit else None
             stmt = pg_insert(OParlBody).values(
                 id=body.id,
@@ -1051,6 +1082,8 @@ class DatabaseStorage:
                 oparl_created=body.oparl_created,
                 oparl_modified=body.oparl_modified,
                 raw_json=body.raw_json,
+                # Nur beim Anlegen; update_set lässt die Spalte aus (ENRICHMENT_FIELDS)
+                is_listed=lists_new_bodies(sync_config),
                 created_at=func.now(),
                 updated_at=func.now(),
             )

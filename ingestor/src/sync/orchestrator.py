@@ -48,6 +48,7 @@ from src.client.oparl_client import (
     ERROR_KIND_UA_BLOCKED,
     MODIFIED_SINCE_INCONCLUSIVE,
     MODIFIED_SINCE_SUPPORTED,
+    ListFetchError,
     ListMissingError,
     OParlClient,
     SyncStats,
@@ -451,6 +452,44 @@ def sync_complete(body_results: list[dict[str, Any]], missed_bodies: list[str], 
     return all(not body_result.get("incomplete") for body_result in body_results)
 
 
+#: Höchstens so viele nicht lesbare Adressen nennt der Eintrag im Sync-Log (``missed_bodies_note``)
+MISSED_BODIES_SHOWN = 5
+
+#: Höchstens so viele Seiten einer Kommunenliste liest die Erkennung, mit der ersten (Issue #869); derselbe Wert wie
+#: ``MAX_BODY_PAGES`` in ``mandari/insight_core/management/commands/add_oparl_source.py``
+MAX_BODY_PAGES = 20
+
+
+def missed_bodies_note(missed_bodies: list[str]) -> str:
+    """
+    Eintrag im Sync-Log, wenn Kommunen nicht lesbar waren (Issue #869): Seiten der Kommunenliste oder einzelne
+    Kommunen. Wie bei den übrigen Listen steht die Lücke unter den Fehlern des Laufs; der Abgleich ist nicht
+    vollständig (``sync_complete``).
+    """
+    shown = ", ".join(missed_bodies[:MISSED_BODIES_SHOWN])
+    more = len(missed_bodies) - MISSED_BODIES_SHOWN
+    suffix = f" und {more} weitere" if more > 0 else ""
+    return f"Kommunen nicht vollständig gelesen, nicht lesbar: {shown}{suffix}"
+
+
+def unique_bodies(bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Jede Kommune nur einmal, nach ``id`` (die erste gewinnt; Issue #869): Steht sie auf zwei Seiten einer
+    Kommunenliste (Seiten verschieben sich zwischen den Anfragen, Liste im Kreis) oder unter zwei Adressen, gliche
+    ``sync_body_url`` sie sonst zweimal parallel ab, mit allen Listen doppelt. Einträge ohne ``id`` bleiben stehen.
+    """
+    seen: set[str] = set()
+    unique: list[dict[str, Any]] = []
+    for body in bodies:
+        body_id = body.get("id") if isinstance(body, dict) else None
+        if isinstance(body_id, str):
+            if body_id in seen:
+                continue
+            seen.add(body_id)
+        unique.append(body)
+    return unique
+
+
 class SyncOrchestrator:
     """
     Orchestrates the OParl synchronization process.
@@ -576,8 +615,9 @@ class SyncOrchestrator:
         Args:
             client: OParl HTTP client
             url: The URL to detect
-            missed: nimmt Adressen auf, unter denen Kommunen nicht lesbar waren (weitere Seiten der
-                Kommunenliste, einzelne Kommunen); der Abgleich ist dann nicht vollständig (Issue #556)
+            missed: nimmt Adressen auf, unter denen Kommunen nicht lesbar waren (die Seite der Kommunenliste,
+                an der das Lesen abbrach, einzelne Kommunen); der Abgleich ist dann nicht vollständig (Issue #556).
+                Weitere Seiten einer Kommunenliste (``links.next``) liest die Erkennung mit (Issue #869).
 
         Returns:
             Tuple of (type_name, list_of_body_dicts, oparl_version), wobei
@@ -589,9 +629,10 @@ class SyncOrchestrator:
         result = await client.fetch(url, use_cache=False, skip_wait=True)
         response = result.data
 
+        resolved = url
         if result.status_code == 404 or is_oparl_error(response):
             reason = result.error or oparl_error_message(response)
-            response, _resolved = await self._try_oparl_10_fallback(client, url, reason)
+            response, resolved = await self._try_oparl_10_fallback(client, url, reason)
             if response is None:
                 raise ValueError(f"Could not fetch OParl endpoint: {url} ({reason})")
         elif result.error or not response:
@@ -612,11 +653,9 @@ class SyncOrchestrator:
                 first_type = items[0].get("type", "") if isinstance(items[0], dict) else ""
                 if first_type.endswith("/Body"):
                     console.print(f"[green]Detected: Body list ({len(items)} bodies)[/green]")
-                    links = response.get("links")
-                    if missed is not None and isinstance(links, dict) and links.get("next"):
-                        # Nur die erste Seite der Kommunenliste wird gelesen
-                        missed.append(str(links["next"]))
-                    return "body_list", items, oparl_version
+                    # Weitere Seiten der Kommunenliste ab links.next, ohne die erste noch einmal anzufragen
+                    bodies = await self._fetch_body_list(client, resolved, missed, first_page=response)
+                    return "body_list", bodies, oparl_version
 
         # Case 3: System object -> follow body reference
         if isinstance(response, dict) and type_str.endswith("/System"):
@@ -661,10 +700,11 @@ class SyncOrchestrator:
 
         Varianten: Listen-URL (Standard, auch OParl 1.0 ``/oparl/Body``),
         Liste von Body-URLs oder bereits eingebettete Body-Objekte. Eine nicht lesbare
-        Body-URL wird übersprungen und in ``missed`` vermerkt (Issue #556).
+        Body-URL wird übersprungen und in ``missed`` vermerkt (Issue #556). Kommunenlisten
+        werden über alle Seiten gelesen (``_fetch_body_list``, Issue #869).
         """
         if isinstance(body_ref, str):
-            return await client.fetch_list_all(body_ref)
+            return await self._fetch_body_list(client, body_ref, missed)
         bodies: list[dict[str, Any]] = []
         if isinstance(body_ref, list):
             for entry in body_ref:
@@ -674,9 +714,65 @@ class SyncOrchestrator:
                     result = await client.fetch(entry, use_cache=False)
                     data = result.data
                     if isinstance(data, dict) and not is_oparl_error(data):
-                        bodies.extend(OParlClient._extract_items(data))
+                        bodies.extend(await self._fetch_body_list(client, entry, missed, first_page=data))
                     elif missed is not None:
                         missed.append(entry)
+        return unique_bodies(bodies)
+
+    async def _fetch_body_list(
+        self,
+        client: OParlClient,
+        list_url: str,
+        missed: list[str] | None,
+        first_page: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]:
+        """
+        Alle Kommunen einer Kommunenliste, Seite für Seite über ``links.next`` (Issue #869).
+
+        ``first_page``: Die erste Seite liegt schon vor (Erkennung der Adresse); dann beginnt der Abruf bei
+        ihrer Folgeseite. Eine Antwort ohne ``links.next`` (auch eine einzelne Kommune) ist vollständig.
+
+        Die Folgeseiten laufen wie jede Liste durch ``OParlClient.fetch_list``: im Takt des Hosts, und ein
+        Fehler oder eine Teilantwort bricht die Liste mit ``ListFetchError`` ab. Waren bis dahin Kommunen
+        lesbar, bleiben sie im Abgleich; die Seite, an der das Lesen abbrach, steht in ``missed`` und der
+        Abgleich gilt als nicht vollständig (Issue #556). Ohne eine einzige lesbare Kommune (oder ohne
+        ``missed``) geht der Fehler an den Aufrufer.
+
+        Gelesen werden höchstens ``MAX_BODY_PAGES`` Seiten, und eine Folgeseite, die auf eine schon gelesene Seite
+        verweist, bricht ab (``ListFetchError``): Eine fehlerhafte Liste darf den Zyklus nicht endlos aufhalten.
+        Nennt die letzte erlaubte Seite noch eine Folgeseite, steht diese in ``missed`` (unvollständig statt endlos).
+        Eine Kommune, die auf mehreren Seiten steht, zählt einmal (``unique_bodies``).
+        """
+        bodies: list[dict[str, Any]] = []
+        next_page: str | None = None
+        if first_page is not None:
+            bodies.extend(OParlClient._extract_items(first_page))
+            links = first_page.get("links")
+            next_page = str(links["next"]) if isinstance(links, dict) and links.get("next") else None
+            if next_page is None:
+                return unique_bodies(bodies)
+        try:
+            async for page in client.fetch_list(list_url, max_pages=MAX_BODY_PAGES, next_page=next_page):
+                bodies.extend(page)
+        except ListFetchError as e:
+            if missed is None or not bodies:
+                raise
+            bodies = unique_bodies(bodies)
+            console.print(
+                f"[red]Kommunenliste {list_url} bricht ab ({e.result.error}), "
+                f"{len(bodies)} Kommunen gelesen, Abgleich unvollständig: {e.page_url}[/red]"
+            )
+            missed.append(e.page_url)
+            return bodies
+        bodies = unique_bodies(bodies)
+        unread = client.page_limit_lists.get(list_url)
+        if unread is not None:
+            console.print(
+                f"[yellow]Kommunenliste {list_url} nach {MAX_BODY_PAGES} Seiten nicht weiter gelesen, "
+                f"{len(bodies)} Kommunen gelesen, Abgleich unvollständig: {unread}[/yellow]"
+            )
+            if missed is not None:
+                missed.append(unread)
         return bodies
 
     async def sync_body_url(
@@ -742,6 +838,8 @@ class SyncOrchestrator:
                         url, "Keine Kommunen (Bodies) am Endpunkt gefunden", client.error_kind
                     )
                     return result
+                if missed_bodies:
+                    result.errors.append(missed_bodies_note(missed_bodies))
 
                 # Use first body name as source name
                 result.source_name = bodies_data[0].get("name", "Unknown")
@@ -1059,6 +1157,8 @@ class SyncOrchestrator:
                 missed_bodies: list[str] = []
                 bodies_data = await self._fetch_bodies(client, body_list_url, missed_bodies)
                 console.print(f"[dim]Found {len(bodies_data)} bodies[/dim]")
+                if missed_bodies:
+                    result.errors.append(missed_bodies_note(missed_bodies))
 
                 # Filter bodies if requested
                 if body_filter:

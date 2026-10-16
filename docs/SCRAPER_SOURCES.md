@@ -200,9 +200,9 @@ Sitzungen, Vorlagen und Wahlperioden:
 - `bodies` vor dem ersten Lauf setzen. Der Upsert ändert die Körperschaft eines vorhandenen Objekts
   nicht: Wird eine schon gecrawlte Quelle umgestellt, bleiben ihre Gremien, Sitzungen und Vorlagen
   beim bisherigen Body (Basis-URL). Dann den Bestand der Quelle vorher entfernen.
-- Jeder neue Body ist sofort in den Listen des Portals (`is_listed` an). Bodies einer Quelle, die
-  noch nicht freigegeben ist, nach dem ersten Lauf im Admin ausblenden – bei mehreren
-  Körperschaften jeden einzeln.
+- Jeder neue Body startet ungelistet (`is_listed` aus, Issue #555). Erst nach der Freigabe die
+  gewünschten Bodies im Admin listen – bei mehreren Körperschaften jeden einzeln. Vorhandene Bodies
+  behalten ihre Einstellung.
 
 ### Schritt 4: Probe-Crawl mit Limit
 
@@ -506,13 +506,16 @@ seit Issue #122; die Kommune muss nichts freischalten.
    python manage.py add_oparl_source "https://<mandant>.gremien.info/oparl/system"
    ```
 
+   Die Quelle ist danach inaktiv, alle neuen Bodies sind ungelistet (Issue #555).
    Verbandsgemeinden liefern mehrere Bodies (Ortsgemeinden, Zweckverbände);
-   nicht gewünschte Bodies danach im Admin auf `is_listed=false` setzen oder
-   löschen.
+   die gewünschten Bodies nach der Prüfung im Admin listen (`is_listed`), die
+   übrigen ungelistet lassen oder löschen. Ist die Quelle schon registriert,
+   bleibt ihr Status (aktiv oder abgeschaltet) unverändert.
 
 3. Erstlauf als Voll-Sync anstoßen (Admin-Aktion „Voll-Sync" oder
-   `mandari-ingestor sync --body <System-URL> --full`), danach übernimmt
-   der Daemon. Im Log erscheint einmalig „Server ignoriert modified_since".
+   `mandari-ingestor sync --body <System-URL> --full`); regelmäßig übernimmt
+   der Daemon erst, wenn die Quelle im Admin aktiviert ist. Im Log erscheint
+   einmalig „Server ignoriert modified_since".
 
 4. Nach dem ersten inkrementellen Lauf im Admin prüfen: `oparl_version = 1.0`,
    `sync_config.modified_since_unsupported_hosts` enthält den Host, im

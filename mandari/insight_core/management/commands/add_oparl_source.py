@@ -4,6 +4,11 @@ Management Command: OParl-Quelle hinzufügen.
 
 Registriert eine neue OParl-Datenquelle und legt die zugehörigen Bodies an.
 
+Eine neue Quelle ist inaktiv und eine neue Kommune nicht gelistet (Issue #555): Erst die bewusste Aktivierung im
+Admin lässt den Ingestor die Quelle abgleichen, erst das Listen macht eine Kommune im Bürgerportal sichtbar. Ist die
+Quelle schon registriert, aktualisiert der Befehl ihre Angaben aus dem System-Objekt; ``is_active`` bleibt, wie es
+ist, auch eine abgeschaltete Quelle bleibt abgeschaltet. Ebenso bleibt ``is_listed`` vorhandener Kommunen.
+
 Jede Anfrage hält den Takt je Host ein wie alle anderen Abrufe (``insight_core.services.host_pacing``, Issue
 #1027): höchstens eine Anfrage je ``RIS_REQUEST_INTERVAL`` (Standard eine Sekunde) an denselben Host, über alle
 Prozesse, auch jede Weiterleitung. Ist die Quelle schon registriert, gelten ihr ``request_interval`` und ihre
@@ -196,6 +201,9 @@ class Command(BaseCommand):
                 pages += 1
                 if not data or is_oparl_error(data):
                     self.stdout.write(self.style.WARNING("  Could not fetch body data"))
+                    if pages > 1:
+                        # Die übrigen Kommunen legt der Ingestor beim Abgleich an (ungelistet, Issue #869)
+                        self.stdout.write(self.style.WARNING(f"  Kommunenliste unvollständig ab Seite {next_url}"))
                     break
                 if isinstance(data.get("data"), list):
                     bodies.extend(item for item in data["data"] if isinstance(item, dict))
@@ -204,6 +212,11 @@ class Command(BaseCommand):
                 else:
                     bodies.append(data)
                     next_url = None
+            else:
+                if next_url:
+                    self.stdout.write(
+                        self.style.WARNING(f"  Kommunenliste nach {MAX_BODY_PAGES} Seiten nicht weiter gelesen")
+                    )
         return bodies
 
     def handle(self, *args, **options):
@@ -238,24 +251,31 @@ class Command(BaseCommand):
         self.stdout.write(f"  Contact: {system_data.get('contactEmail', 'N/A')}")
         self.stdout.write(f"  Website: {system_data.get('website', 'N/A')}")
 
-        # Quelle erstellen oder aktualisieren
+        # Quelle erstellen oder aktualisieren. Neu: inaktiv; vorhanden: is_active bleibt (Issue #555)
+        source_fields = {
+            "name": system_data.get("name", "Unbenannte Quelle"),
+            "contact_email": system_data.get("contactEmail"),
+            "contact_name": system_data.get("contactName"),
+            "website": system_data.get("website"),
+            "oparl_version": oparl_version,
+            "raw_json": system_data,
+        }
         source, created = OParlSource.objects.update_or_create(
             url=url,
-            defaults={
-                "name": system_data.get("name", "Unbenannte Quelle"),
-                "contact_email": system_data.get("contactEmail"),
-                "contact_name": system_data.get("contactName"),
-                "website": system_data.get("website"),
-                "is_active": True,
-                "oparl_version": oparl_version,
-                "raw_json": system_data,
-            },
+            defaults=source_fields,
+            create_defaults={**source_fields, "is_active": False},
         )
 
         if created:
             self.stdout.write(self.style.SUCCESS(f"\nSource created: {source.name}"))
+            self.stdout.write(
+                self.style.WARNING(
+                    "  Quelle inaktiv angelegt: Der Ingestor gleicht sie erst ab, wenn sie im Admin aktiviert ist."
+                )
+            )
         else:
             self.stdout.write(self.style.SUCCESS(f"\nSource updated: {source.name}"))
+            self.stdout.write(f"  Status unverändert: {'aktiv' if source.is_active else 'inaktiv'}")
 
         # Bodies verarbeiten: "body" ist laut Spec eine Listen-URL; manche
         # Server liefern stattdessen eine Liste von Body-URLs oder eingebettete
@@ -268,27 +288,29 @@ class Command(BaseCommand):
             body_url = body_data.get("id", "?")
             self.stdout.write(f"\nProcessing body {i + 1}: {body_url}")
 
-            # Body erstellen oder aktualisieren
+            # Body erstellen oder aktualisieren. Neu: nicht gelistet; vorhanden: is_listed bleibt (Issue #555)
+            body_fields = {
+                "source": source,
+                "name": body_data.get("name", "Unbenannte Kommune"),
+                "short_name": body_data.get("shortName"),
+                "website": body_data.get("website"),
+                "license": body_data.get("license"),
+                "classification": body_data.get("classification"),
+                # List URLs für Sync
+                "organization_list_url": body_data.get("organization"),
+                "person_list_url": body_data.get("person"),
+                "meeting_list_url": body_data.get("meeting"),
+                "paper_list_url": body_data.get("paper"),
+                "membership_list_url": body_data.get("membership"),
+                "agenda_item_list_url": body_data.get("agendaItem"),
+                "file_list_url": body_data.get("file"),
+                # Rohdaten
+                "raw_json": body_data,
+            }
             body, body_created = OParlBody.objects.update_or_create(
                 external_id=body_data.get("id", body_url),
-                defaults={
-                    "source": source,
-                    "name": body_data.get("name", "Unbenannte Kommune"),
-                    "short_name": body_data.get("shortName"),
-                    "website": body_data.get("website"),
-                    "license": body_data.get("license"),
-                    "classification": body_data.get("classification"),
-                    # List URLs für Sync
-                    "organization_list_url": body_data.get("organization"),
-                    "person_list_url": body_data.get("person"),
-                    "meeting_list_url": body_data.get("meeting"),
-                    "paper_list_url": body_data.get("paper"),
-                    "membership_list_url": body_data.get("membership"),
-                    "agenda_item_list_url": body_data.get("agendaItem"),
-                    "file_list_url": body_data.get("file"),
-                    # Rohdaten
-                    "raw_json": body_data,
-                },
+                defaults=body_fields,
+                create_defaults={**body_fields, "is_listed": False},
             )
 
             # OSM ID setzen falls angegeben
@@ -303,6 +325,7 @@ class Command(BaseCommand):
 
             if body_created:
                 self.stdout.write(self.style.SUCCESS(f"  Body created: {body.name}"))
+                self.stdout.write("  Nicht gelistet: im Bürgerportal sichtbar erst nach dem Listen im Admin")
             else:
                 self.stdout.write(self.style.SUCCESS(f"  Body updated: {body.name}"))
 

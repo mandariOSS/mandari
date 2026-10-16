@@ -110,9 +110,15 @@ python -m src.main list-sources
 # Kommunen (Bodies) aller Quellen anzeigen
 python -m src.main list-bodies
 
-# Alle Quellen synchronisieren
+# Alle aktiven Quellen synchronisieren
 python -m src.main sync --all
 ```
+
+Neue Quellen sind inaktiv: `sync --all` und der Daemon gleichen sie erst ab, wenn sie im Admin
+aktiviert sind. Neu entdeckte Kommunen sind nicht gelistet und erscheinen im Bürgerportal erst,
+wenn sie im Admin gelistet sind (Issue #555). Ausnahme ist die eigene OParl-Schnittstelle eines
+Session-Mandanten, der die Veröffentlichung im Bürgerportal eingeschaltet hat: Ihre Quelle ist
+aktiv und ihre Kommune gleich gelistet.
 
 ## Lizenz
 

@@ -392,6 +392,9 @@ class OParlClient:
         # Listen (Adresse wie an fetch_list übergeben), deren gefilterte erste Seite SD.NET RIM mit „keine Treffer“
         # beantwortet hat (HTTP 404, Code 802, Issue #1034); ob es die Liste gibt, sagt das nicht
         self.filtered_empty_lists: set[str] = set()
+        # Listen (Adresse wie an fetch_list übergeben), die an ``max_pages`` endeten, obwohl die Quelle eine weitere
+        # Seite nannte; Wert ist die nicht mehr angefragte Folgeseite (Issue #869). Ohne Eintrag war die Liste ganz.
+        self.page_limit_lists: dict[str, str] = {}
 
         # Caching
         self.etag_cache: dict[str, str] = {}
@@ -843,6 +846,7 @@ class OParlClient:
         max_pages: int | None = None,
         *,
         report_missing: bool = False,
+        next_page: str | None = None,
     ) -> AsyncIterator[list[dict[str, Any]]]:
         """
         Fetch a paginated OParl list.
@@ -854,10 +858,16 @@ class OParlClient:
             modified_since: Append as ?modified_since= query parameter (OParl 2.5.5).
                            Most servers (5/6 tested) support this correctly.
                            The orchestrator handles capability detection and fallback.
-            max_pages: Maximum number of pages to fetch
+            max_pages: Höchstzahl der Seiten (mit der ersten, auch wenn sie über ``next_page`` schon vorliegt). Nennt
+                die letzte gelesene Seite noch eine Folgeseite, steht diese in ``page_limit_lists``.
             report_missing: Antwortet die erste Seite ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt,
                 ``ListMissingError`` werfen (Liste gibt es nicht) statt ``ListFetchError`` bzw. einer leeren
                 Liste (Issue #1025).
+            next_page: Die erste Seite liegt dem Aufrufer schon vor (Erkennung einer Kommunenliste, Issue #869):
+                Abruf ab dieser Folgeseite (``links.next`` der ersten Seite), ohne die erste Seite noch einmal
+                anzufragen. Es gelten die Regeln für Folgeseiten (Fehler und Teilantwort brechen mit
+                ``ListFetchError`` ab); ``url`` bleibt die Adresse der Liste, ``modified_since`` gilt nicht. Ist
+                ``next_page`` die Adresse der Liste selbst (Liste im Kreis), bricht sie ohne Anfrage ab.
 
         Beantwortet SD.NET RIM die gefilterte erste Seite mit HTTP 404 und Code 802, ist die Liste leer und
         vollständig (Issue #1034, ``filtered_empty_lists``).
@@ -867,9 +877,12 @@ class OParlClient:
         """
         requested_url = url
         self.filtered_empty_lists.discard(requested_url)
+        self.page_limit_lists.pop(requested_url, None)
         url = self._with_list_params(url, self.list_params)
         current_url: str | None = url
         pages_fetched = 0
+        # Gelesene Seiten: Verweist links.next auf eine davon, liefe die Liste im Kreis (Issue #869)
+        read_pages: set[str] = set()
         tried_modified_since = False
         # Erste Seite nach „gibt es nicht“ auf die gefilterte Anfrage noch einmal ohne Filter angefragt
         retried_unfiltered = False
@@ -879,9 +892,19 @@ class OParlClient:
         # (z. B. Stadt Münster mit 401), gar nicht erst erneut damit anfragen —
         # spart pro Liste einen toten Request samt Timeout/Retry.
         host = urlparse(url).netloc
+        if next_page is not None:
+            # Erste Seite liegt schon vor (Issue #869): weiter mit ihrer Folgeseite, wie die Quelle sie nennt
+            current_url = next_page
+            pages_fetched = 1
+            read_pages.update({requested_url, url})
+            if next_page in read_pages:
+                # Die erste Seite verweist auf sich selbst: gar nicht erst anfragen, sonst kämen ihre Objekte doppelt
+                console.print(f"[red]Liste {url} läuft im Kreis: die erste Seite verweist auf sich selbst[/red]")
+                self._health(next_page).note_failed_list(url)
+                raise ListFetchError(url, next_page, self._loop_result(next_page))
         # Mit carry_modified_since gilt die Quelle als filterfähig, auch wenn ein früherer Lauf den Host
         # (vor dem Schalter) als „ohne Filter“ vermerkt hat
-        if (
+        elif (
             modified_since
             and current_url
             and (self.carry_modified_since or host not in self._modified_since_unsupported)
@@ -1009,6 +1032,8 @@ class OParlClient:
 
             self.stats.pages_fetched += 1
             pages_fetched += 1
+            page_url = current_url
+            read_pages.add(page_url)
 
             # Extract items - handle multiple OParl response formats
             items = self._extract_items(result.data)
@@ -1016,10 +1041,6 @@ class OParlClient:
             if items:
                 self.stats.objects_processed += len(items)
                 yield items
-
-            # Check if we've reached max pages
-            if max_pages and pages_fetched >= max_pages:
-                break
 
             # Get next page URL (server preserves filter params in links.next)
             if isinstance(result.data, dict):
@@ -1036,6 +1057,30 @@ class OParlClient:
                     current_url = self._append_modified_since(current_url, modified_since)
             else:
                 current_url = None
+
+            # Check if we've reached max pages
+            if max_pages and pages_fetched >= max_pages:
+                if current_url:
+                    # Nicht still (Issue #869): Der Aufrufer erfährt, ab welcher Seite die Liste ungelesen bleibt
+                    self.page_limit_lists[requested_url] = str(current_url)
+                break
+
+            # Verweist links.next auf eine schon gelesene Seite, endete die Liste nie (Issue #869): Abbruch wie bei
+            # einer Teilantwort, statt den Zyklus aller Quellen anzuhalten
+            if current_url and current_url in read_pages:
+                console.print(f"[red]Liste {url} läuft im Kreis: {page_url} verweist auf {current_url}[/red]")
+                self._health(page_url).note_failed_list(url)
+                raise ListFetchError(url, current_url, self._loop_result(current_url, result.status_code))
+
+    @staticmethod
+    def _loop_result(page_url: str, status_code: int = 0) -> FetchResult:
+        """Abbruch einer Liste, deren ``links.next`` auf eine schon gelesene Seite verweist (Issue #869)."""
+        return FetchResult(
+            url=page_url,
+            data=None,
+            status_code=status_code,
+            error="Folgeseite verweist auf eine schon gelesene Seite",
+        )
 
     async def probe_modified_since(self, list_url: str, since: datetime) -> str:
         """
