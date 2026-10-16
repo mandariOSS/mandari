@@ -121,6 +121,15 @@ steht, sodass ein weiterer Lauf nichts bewegt. Im Zweifel bleibt alles, wo es is
 Verknüpfungen von Notizen“ als Test umgesetzt (`apps/work/ris/tests/test_neuveroeffentlichung.py`).
 Neuveröffentlichte Sitzungen (neue Kennung der Sitzung) und Dateien deckt das nicht ab (#868).
 
+## Nachtrag: Tagesordnungspunkte aus Sitzungsseiten (#863)
+
+Beim Abruf aus SessionNet-Sitzungsseiten heißt ein Tagesordnungspunkt mit Vorlage nach ihr (`…#agendaitem/kvonr-<n>`)
+statt nach seiner Nummer; eine Einfügung davor ändert seine Kennung nicht mehr. Punkte ohne Vorlage haben in der
+Quelle keine stabile Kennung und heißen weiter nach ihrer Nummer (`nr-…`); für sie bleibt es beim fachlichen Anker
+aus #547. Der Bestand wird wie bei #88 in place umgeschrieben (`external_id` neu, `id` bleibt), Zeile für Zeile beim
+ersten Abruf der Sitzung und nur, wo eindeutig ist, welcher Punkt es ist. Kennungen der alten Form vergibt der Abruf
+nie wieder, damit die behaltene `id` mit keiner neuen Zeile zusammenstößt. Einzelheiten in `docs/SCRAPER_SOURCES.md`.
+
 ## Alternativen
 
 - **Interne Session-Modelle als gemeinsames Modell.** Bindet Work, Portal und App an Session;

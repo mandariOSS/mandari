@@ -156,6 +156,8 @@ class ScraperSyncRunner:
                         processed = self.processor.process(item, body_external_id)
                         if processed is None:
                             continue
+                        if entity_type == "meeting":
+                            await self._keep_agenda_item_rows(adapter, item)
                         stored = await self.orchestrator._store_entity(
                             processed, body_id, entity_type, self.source.name
                         )
@@ -283,6 +285,24 @@ class ScraperSyncRunner:
             f"{adapter.stats.pages_fetched} Seiten, {result.duration_seconds:.0f}s[/green]"
         )
         return result
+
+    async def _keep_agenda_item_rows(self, adapter: Any, meeting: dict[str, Any]) -> None:
+        """
+        Vor dem Speichern einer Sitzung: Zeilen ihrer Tagesordnungspunkte, die noch eine vom Adapter abgelöste
+        Kennung tragen, auf die neue umschreiben (``external_id`` neu, ``id`` bleibt, Issue #863). Sonst entstünde je
+        Punkt eine zweite Zeile, und Notizen und Verweise blieben an der alten. Welche Zeile zu welchem Punkt gehört,
+        entscheidet der Adapter (``agenda_item_renames``); Adapter ohne die Methode lassen alles, wie es ist.
+        """
+        plan = getattr(adapter, "agenda_item_renames", None)
+        if plan is None or not meeting.get("agendaItem"):
+            return
+        stored = await self.storage.get_agenda_items_of_meeting(meeting["id"])
+        renames = plan(meeting["id"], stored)
+        if not renames:
+            return
+        renamed = await self.storage.rename_agenda_items(meeting["id"], renames)
+        if renamed:
+            console.print(f"[dim]  Sitzung {meeting['id']}: {renamed} TOP-Kennung(en) umgestellt (#863)[/dim]")
 
     async def _sperre_festhalten(self, result: Any, message: str) -> None:
         """

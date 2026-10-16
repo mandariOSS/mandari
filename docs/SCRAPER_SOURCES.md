@@ -222,6 +222,7 @@ vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
 | Basis-URL | Body | `https://<host>/<prefix>/` (mehrere Körperschaften: `…/?__cpanr=N`) |
 | `gr0040` (Auswahl Wahlperiode, `__cwpnr`) | LegislativeTerm (am Body) | `…/gr0040.asp?__cwpnr=N` |
 | `si0057?__ksinr=` | Meeting inkl. TOPs (Ö/NÖ, Beschlüsse) | `…/si0057.asp?__ksinr=N` |
+| TOP in `si0057` | AgendaItem | `…/si0057.asp?__ksinr=N#agendaitem/kvonr-K` (mit Vorlage), sonst `…#agendaitem/nr-3.2` bzw. `nr-N1` (nichtöffentlich), ohne Nummer `…#agendaitem/pos-7` |
 | `si0050?__ksinr=` | Sitzungsdokumente (Einladung/Niederschrift) | `…/getfile.asp?id=N&type=do` |
 | `vo0050?__kvonr=` | Paper (Betreff, Nummer, Art) + Anlagen-PDFs | `…/vo0050.asp?__kvonr=N` |
 | `gr0040` | Organizations (Gremien) | `…/kp0040.asp?__kgrnr=N` |
@@ -231,6 +232,33 @@ vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
 PDF-Anlagen laufen automatisch durch die bestehende OCR-Queue
 (`text_extraction_status='pending'` → pypdf → Tesseract → Mistral) und
 werden in Elasticsearch indexiert.
+
+### Kennung der Tagesordnungspunkte
+
+Die Sitzungsseite (`si0057`) nennt je Punkt weder eine eigene Kennung noch einen Link auf eine Detailseite
+(geprüft an den Golden Files aus Lüdenscheid und Eschweiler). Stabil ist nur die Vorlage (Issue #863):
+
+- **Punkt mit Vorlage:** `…#agendaitem/kvonr-<__kvonr>`, gleich unter welcher Nummer und in welchem Teil der Sitzung
+  er steht. Fügt die Verwaltung davor einen Punkt ein oder nummeriert um, bleibt die Kennung. Berät die Sitzung
+  dieselbe Vorlage an mehreren Punkten, zählen die späteren weiter (`kvonr-<__kvonr>-2`).
+- **Punkt ohne Vorlage** (Eröffnung, Mitteilungen, Anfragen, Gliederungspunkte wie „Bauordnung“): keine stabile
+  Quelle der Kennung. Er heißt nach seiner Nummer (`nr-3.2`, im nichtöffentlichen Teil `nr-N1` wie „N 1“ auf der
+  Seite), ohne Nummer nach seiner Position (`pos-7`). Nach einer Einfügung davor trägt die Kennung einen anderen
+  Punkt; Work hängt seine Daten über den fachlichen Anker um (#547). Bekommt ein Punkt nachträglich eine Vorlage,
+  erhält er eine neue Kennung.
+- Punkte, die von der Tagesordnung verschwinden, bleiben wie bisher im Bestand stehen (keine Löschmarkierung für
+  Tagesordnungspunkte).
+
+**Umstellung des Bestands.** Bis Issue #863 war die Nummer die Kennung (`…#agendaitem/3.2`, `N1`). Der erste Abruf
+einer Sitzung mit der neuen Form schreibt ihre Punkte in place um: `external_id` neu, `id` bleibt (wie beim Umzug
+einer Quelle, ADR `docs/adr/20260929-kanonisches-modell.md`), samt Verweis der Beratungen. Notizen, Positionen,
+Suchindex und Ereignisse hängen an der Zeile und bleiben gültig; `check_ris_ids` zählt die Punkte danach als
+„Kennung abweichend“, das ist gewollt. Umgeschrieben wird nur eindeutig: ein Punkt mit Vorlage auf die Zeile mit
+derselben Beratung (auch wenn die Nummer sich seit dem letzten Abruf geändert hat), ein Punkt ohne Vorlage auf die
+Zeile unter seiner bisherigen Nummer, wenn sie gleich heißt, gleich öffentlich ist und keine Vorlage hatte. Sonst
+bleibt die alte Zeile unverändert stehen, und der Punkt bekommt eine neue. Sitzungen, die kein Abruf mehr liest
+(außerhalb des Kalenderfensters), behalten ihre Kennungen. Eine Kennung der alten Form vergibt der Adapter nie
+wieder; die behaltene `id` stößt deshalb mit keiner neuen Zeile zusammen.
 
 ### Änderungserkennung & Löschungen
 

@@ -21,13 +21,16 @@ Filterleiste (gr0040, si0040, kp0040):
            je Mandant ein eigener Body gecrawlt.
 
 external_id = normalisierte kanonische Detail-URL (nur ID-Parameter, sortiert).
+Tagesordnungspunkte haben keine eigene Seite: ``<Sitzung>#agendaitem/<Teil>``, der Teil kommt aus der
+Vorlage (``kvonr-<__kvonr>``), sonst aus der Nummer (``nr-…``) oder der Position (``pos-…``), siehe
+``agenda_item_keys`` (Issue #863).
 Ausgabe: synthetische OParl-1.1-Dicts für die bestehende Pipeline.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
@@ -519,6 +522,154 @@ def parse_legislative_terms(html: str) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
+# Kennungen der Tagesordnungspunkte (Issue #863)
+# ---------------------------------------------------------------------------
+
+#: Anfänge der Kennungsteile seit Issue #863. Bis dahin war der Teil die Nummer selbst (``3.2``, ``N1``, ``3-7``).
+AGENDA_ITEM_KEY_PREFIXES = ("kvonr-", "nr-", "pos-")
+_AGENDA_ITEM_FRAGMENT = "#agendaitem/"
+
+
+def agenda_item_key(row: AgendaRow, position: int) -> str:
+    """
+    Kennungsteil eines Tagesordnungspunkts hinter ``#agendaitem/``, ohne Zählung doppelter Teile.
+
+    Die Sitzungsseite (si0057) nennt je Punkt keine eigene Kennung und keinen Link auf eine Detailseite. Stabil ist
+    nur die Vorlage: Ein Punkt mit Vorlage heißt nach ihr (``kvonr-<__kvonr>``), gleich unter welcher Nummer und in
+    welchem Teil der Sitzung er steht. Punkte ohne Vorlage (Eröffnung, Mitteilungen, Anfragen, Gliederungspunkte)
+    haben keine stabile Quelle der Kennung; sie heißen nach ihrer Nummer, im nichtöffentlichen Teil mit ``N`` wie
+    auf der Seite (``nr-3.2``, ``nr-N1``), ohne Nummer nach ihrer Position (``pos-7``). Fügt die Verwaltung davor
+    einen Punkt ein, trägt ihre Kennung danach einen anderen Punkt; Work fängt das über den fachlichen Anker ab
+    (#547).
+    """
+    if row.paper_kvonr is not None:
+        return f"kvonr-{row.paper_kvonr}"
+    if row.number:
+        return f"nr-{row.number}" if row.public else f"nr-N{row.number}"
+    return f"pos-{position}"
+
+
+def agenda_item_keys(rows: Sequence[AgendaRow]) -> list[str]:
+    """
+    Kennungsteile aller Tagesordnungspunkte einer Sitzung (``agenda_item_key``) in der Reihenfolge der Seite.
+
+    Steht derselbe Teil zweimal auf der Seite (dieselbe Vorlage an zwei Punkten, eine Nummer doppelt), zählt der
+    spätere weiter: ``kvonr-12770-2``.
+    """
+    used: set[str] = set()
+    keys: list[str] = []
+    for position, row in enumerate(rows, start=1):
+        base = agenda_item_key(row, position)
+        key, count = base, 1
+        while key in used:
+            count += 1
+            key = f"{base}-{count}"
+        used.add(key)
+        keys.append(key)
+    return keys
+
+
+def legacy_agenda_item_keys(rows: Sequence[AgendaRow]) -> list[str]:
+    """
+    Kennungsteile, wie der Adapter sie bis Issue #863 vergab: die Nummer, bei einer Wiederholung im
+    nichtöffentlichen Teil mit ``N``, sonst mit der Position. Nur noch, um den Bestand umzustellen.
+    """
+    used: set[str] = set()
+    keys: list[str] = []
+    for position, row in enumerate(rows, start=1):
+        key = row.number or str(position)
+        legacy = key
+        if legacy in used:
+            legacy = f"{'' if row.public else 'N'}{key}"
+            if legacy in used:
+                legacy = f"{key}-{position}"
+        used.add(legacy)
+        keys.append(legacy)
+    return keys
+
+
+def is_legacy_agenda_item_id(external_id: str) -> bool:
+    """Hat die Kennung eines Tagesordnungspunkts die Form von vor Issue #863 (Teil = Nummer)?"""
+    _, fragment, key = external_id.partition(_AGENDA_ITEM_FRAGMENT)
+    return bool(fragment) and bool(key) and not key.startswith(AGENDA_ITEM_KEY_PREFIXES)
+
+
+@dataclass(frozen=True)
+class AgendaItemKey:
+    """Kennung eines Tagesordnungspunkts im laufenden Abruf und die Angaben, um seine bisherige Zeile zu finden."""
+
+    item_id: str
+    #: Kennung, die der Adapter bis Issue #863 für diesen Punkt vergeben hätte
+    legacy_id: str
+    name: str
+    public: bool
+    #: Beratung der Vorlage in dieser Sitzung (``…vo0050…#consultation/<ksinr>``), ``None`` ohne Vorlage
+    consultation: str | None
+
+
+def plan_agenda_item_renames(keys: Sequence[AgendaItemKey], stored: Iterable[Mapping[str, Any]]) -> dict[str, str]:
+    """
+    Welche Zeilen im Bestand tragen einen Punkt dieser Sitzung noch unter der Kennung von vor Issue #863?
+
+    ``keys``: die Punkte der Sitzung im laufenden Abruf. ``stored``: ihre Punkte im Bestand mit ``external_id``,
+    ``name``, ``public``, ``consultation`` (aus ``raw_json``) und ``order``. Ergebnis: bisherige Kennung -> neue.
+    Der Bestand schreibt sie in place um, ``id`` bleibt; Notizen, Positionen und Verweise bleiben damit an ihrem Punkt.
+
+    Zugeordnet wird nur eindeutig, im Zweifel nicht (dann entsteht eine neue Zeile, die alte bleibt unverändert):
+
+    - Punkt mit Vorlage: die bisherige Zeile mit derselben Beratung, auch wenn die Nummer sich inzwischen geändert
+      hat. Berät die Sitzung die Vorlage an mehreren Punkten, paarweise in der Reihenfolge, wenn es gleich viele
+      sind; sonst nur die Zeile unter der bisherigen Kennung, sofern sie dieselbe Beratung trägt.
+    - Punkt ohne Vorlage: die Zeile unter der bisherigen Kennung, wenn auch sie keine Vorlage hatte, gleich heißt
+      und gleich öffentlich ist. Hat die Verwaltung seit dem letzten Abruf umnummeriert, steht dort ein anderer
+      Punkt; dessen Notizen sollen nicht mitwandern.
+
+    Zeilen in der neuen Form fasst die Umstellung nie an. Eine Kennung in der bisherigen Form vergibt der Adapter nie
+    mehr; die behaltene ``id`` einer umgeschriebenen Zeile (``uuid5`` der bisherigen Kennung) stößt deshalb mit keiner
+    neuen Zeile zusammen.
+    """
+    in_store = list(stored)
+    rows = [row for row in in_store if is_legacy_agenda_item_id(str(row.get("external_id") or ""))]
+    if not rows:
+        return {}
+    existing = {str(row.get("external_id")) for row in in_store}
+    pending = [key for key in keys if key.item_id not in existing]
+    by_id = {str(row["external_id"]): row for row in rows}
+    renames: dict[str, str] = {}
+
+    consultations = list(dict.fromkeys(key.consultation for key in pending if key.consultation))
+    for consultation in consultations:
+        items = [key for key in pending if key.consultation == consultation]
+        candidates = sorted(
+            (row for row in rows if row.get("consultation") == consultation),
+            key=lambda row: (row.get("order") is None, row.get("order") or 0, str(row["external_id"])),
+        )
+        if len(candidates) == len(items):
+            pairs = [(str(row["external_id"]), key) for row, key in zip(candidates, items, strict=True)]
+        else:
+            pairs = [
+                (key.legacy_id, key)
+                for key in items
+                if key.legacy_id in by_id and by_id[key.legacy_id].get("consultation") == consultation
+            ]
+        for legacy_id, key in pairs:
+            renames[legacy_id] = key.item_id
+
+    for key in pending:
+        if key.consultation or key.legacy_id in renames:
+            continue
+        row = by_id.get(key.legacy_id)
+        if (
+            row is not None
+            and not row.get("consultation")
+            and row.get("name") == key.name
+            and (row.get("public") is not False) == key.public
+        ):
+            renames[key.legacy_id] = key.item_id
+    return renames
+
+
+# ---------------------------------------------------------------------------
 # Adapter
 # ---------------------------------------------------------------------------
 
@@ -555,7 +706,8 @@ class SessionNetAdapter:
     """
 
     vendor = "sessionnet"
-    schema_version = 1
+    #: 2: Tagesordnungspunkte heißen nach ihrer Vorlage statt nach ihrer Nummer (Issue #863)
+    schema_version = 2
 
     def __init__(self, config: ScraperConfig, fetcher: PoliteFetcher) -> None:
         self.config = config
@@ -574,6 +726,9 @@ class SessionNetAdapter:
         # Gremienlisten je Mandant (kein zweiter Abruf im Crawl)
         self.plans: list[BodyPlan] | None = None
         self._gremien_html: dict[int | None, str | None] = {}
+        # Sitzung -> Kennungen ihrer Tagesordnungspunkte, bis der Runner die Sitzung speichert; höchstens für die
+        # Sitzungen eines Kalendermonats (Issue #863)
+        self._agenda_keys: dict[str, list[AgendaItemKey]] = {}
 
     # -------------------- Hilfen --------------------
 
@@ -782,6 +937,18 @@ class SessionNetAdapter:
             async for entity_type, page in self._crawl_body(plan, window, full, fetched_papers):
                 yield plan.body_id, entity_type, page
 
+    def agenda_item_renames(self, meeting_id: str, stored: Iterable[Mapping[str, Any]]) -> dict[str, str]:
+        """
+        Bisherige Kennungen der Tagesordnungspunkte einer Sitzung im Bestand -> neue (Issue #863).
+
+        Der Runner fragt vor dem Speichern jeder Sitzung, ``stored`` sind deren Punkte im Bestand
+        (``plan_agenda_item_renames``). Danach vergisst der Adapter die Kennungen der Sitzung.
+        """
+        keys = self._agenda_keys.pop(meeting_id, None)
+        if not keys:
+            return {}
+        return plan_agenda_item_renames(keys, stored)
+
     async def _crawl_body(
         self,
         plan: BodyPlan,
@@ -934,6 +1101,8 @@ class SessionNetAdapter:
             papers: list[dict[str, Any]] = []
             meetings: list[dict[str, Any]] = []
             consultations: list[dict[str, Any]] = []
+            # Die Sitzungen des Vormonats hat der Runner gespeichert (oder als unverändert übersprungen)
+            self._agenda_keys.clear()
 
             for stub in stubs:
                 if not self._budget_left():
@@ -1046,20 +1215,14 @@ class SessionNetAdapter:
         if auxiliary:
             meeting["auxiliaryFile"] = auxiliary
 
-        # Tagesordnung + Beratungen
+        # Tagesordnung + Beratungen. Kennung je Punkt aus der Vorlage, sonst aus der Nummer (Issue #863); der
+        # nichtöffentliche Teil zählt oft neu ("Ö 1" … "N 1") und hat deshalb eigene Nummern-Kennungen.
         agenda_items: list[dict[str, Any]] = []
         consultations: list[dict[str, Any]] = []
-        used_item_ids: set[str] = set()
-        for index, row in enumerate(agenda.rows, start=1):
-            key = row.number or str(index)
-            item_id = f"{external_id}#agendaitem/{key}"
-            if item_id in used_item_ids:
-                # Der nichtöffentliche Teil zählt oft neu ("Ö 1" … "N 1"); ohne
-                # eigene Kennung überschriebe der NÖ-TOP den öffentlichen.
-                item_id = f"{external_id}#agendaitem/{'' if row.public else 'N'}{key}"
-                if item_id in used_item_ids:
-                    item_id = f"{external_id}#agendaitem/{key}-{index}"
-            used_item_ids.add(item_id)
+        keys: list[AgendaItemKey] = []
+        rows = zip(agenda.rows, agenda_item_keys(agenda.rows), legacy_agenda_item_keys(agenda.rows), strict=True)
+        for index, (row, key, legacy_key) in enumerate(rows, start=1):
+            item_id = f"{external_id}{_AGENDA_ITEM_FRAGMENT}{key}"
             item: dict[str, Any] = {
                 "id": item_id,
                 "type": f"{OPARL}AgendaItem",
@@ -1089,8 +1252,18 @@ class SessionNetAdapter:
                     }
                 )
             agenda_items.append(item)
+            keys.append(
+                AgendaItemKey(
+                    item_id=item_id,
+                    legacy_id=f"{external_id}{_AGENDA_ITEM_FRAGMENT}{legacy_key}",
+                    name=row.title,
+                    public=row.public,
+                    consultation=item.get("consultation"),
+                )
+            )
         if agenda_items:
             meeting["agendaItem"] = agenda_items
+        self._agenda_keys[external_id] = keys
         # Interner Transport zum Aufrufer (wird vor dem Upsert entfernt)
         meeting["mandari:consultations"] = consultations
 
