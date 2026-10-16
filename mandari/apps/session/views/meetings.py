@@ -19,6 +19,7 @@ from django.views.generic import (
     UpdateView,
 )
 
+from apps.common import local_time
 from apps.common.params import date_param, uuid_param
 
 from .. import hub_events
@@ -97,8 +98,11 @@ FORMAT_RELEVANT_FIELDS = frozenset({"format", "format_reason", "organization", "
 
 
 def _format_warnings(request, form) -> None:
-    """Hinweise der Formatprüfung (z. B. nicht eingeordneter Ausschuss) nach dem Speichern anzeigen."""
-    for warning in getattr(form.format_check, "warnings", None) or []:
+    """
+    Hinweise nach dem Speichern anzeigen: Formatprüfung (z. B. nicht eingeordneter Ausschuss) und Uhrzeiten, die es am
+    Tag der Zeitumstellung zweimal gibt (Issue #974).
+    """
+    for warning in [*(getattr(form.format_check, "warnings", None) or []), *local_time.ambiguous_notices(form)]:
         messages.warning(request, warning)
 
 
@@ -123,6 +127,9 @@ class MeetingForm(forms.ModelForm):
     class Meta:
         model = SessionMeeting
         fields = MEETING_FORM_FIELDS
+        # Beginn und Ende am Tag der Zeitumstellung (Issue #974): doppelte Stunde mit Hinweis speichern, fehlende
+        # Stunde verständlich ablehnen
+        field_classes = {"start": local_time.LocalDateTimeField, "end": local_time.LocalDateTimeField}
 
     def __init__(self, *args, tenant, **kwargs):
         super().__init__(*args, **kwargs)
