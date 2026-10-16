@@ -20,7 +20,7 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
 | Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
 | Weiterleitungen | höchstens fünf je Abruf, jede erst nach der robots.txt ihres Ziels und mit eigenem Zeitpunkt im Takt |
 | Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
-| Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer die Quelle hat ein eigenes Zeitfenster oder Zeitscheiben (siehe [Vollabgleich](#vollabgleich)) |
+| Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer eine Quelle mit OParl-Schnittstelle hat ein eigenes Zeitfenster oder Zeitscheiben (siehe [Vollabgleich](#vollabgleich)) |
 | Langsame Listen | eine optionale Liste, die in eine Zeitüberschreitung läuft, ruht 1 Stunde, danach jeweils doppelt so lange, höchstens 24 Stunden |
 | Neue Quellen | von unseren Werkzeugen inaktiv angelegt; regelmäßig abgefragt wird eine Quelle erst, wenn sie aktiv ist. Ausnahmen: das Formular im Admin, `import_oparl_sources --activate` und die eigene Schnittstelle eines Session-Mandanten. Neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
@@ -89,6 +89,11 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
   nicht erreichbar, endet die Prüfung nach dieser einen Anfrage. Abstand je Server wie im Abgleich
   (`INGESTOR_REQUEST_INTERVAL`); hat eine registrierte Quelle auf dem Server einen größeren Abstand, gilt dieser.
   Zwischen zwei Kommunen liegen zusätzlich 2 Sekunden Pause (`ingestor/src/main.py`, `probe_ris`).
+
+Der lokale Spiegel `manage.py sync_session_insight` (`mandari/insight_sync/session_mirror.py`) ruft dagegen ohne
+robots.txt und ohne Takt je Server ab, mit der Kennung `mandari-session-mirror/1.0`. Er gleicht deshalb nur
+Session-Quellen ab, also die eigene Schnittstelle eines Session-Mandanten (`sync_config["session_tenant"]`); andere
+Quellen lehnt er auch mit `--source-url` ab und verweist auf `python -m src.main sync --source`.
 
 ### Neue Quellen und Kommunen
 
@@ -589,6 +594,8 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 - **Nach dem Ende des eigenen Fensters** holt ein laufender Vollabgleich keine weitere Seite; der Ingestor prüft das
   vor jeder Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als
   vollständig, das Änderungsfenster rückt nicht vor, und die Listen kommen beim nächsten Vollabgleich wieder dran.
+  Scraper-Quellen kennen diese Frist derzeit nicht (`ScraperSyncRunner.run` ohne `fetch_deadline`): Ein begonnener
+  Vollabgleich läuft bei ihnen zu Ende, auch nach dem Ende ihres eigenen Fensters.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung
   und die Abrufe der Anwendung richten sich nicht danach.
 
