@@ -38,7 +38,14 @@ from src.client.oparl_client import OParlClient
 from src.config import settings
 from src.scrapers.base import CONTENT_HASH_FIELD
 from src.storage import ris_events
-from src.storage.database import DatabaseStorage, missing_lists_of, timed_lists_of
+from src.storage.database import (
+    DatabaseStorage,
+    full_sync_progress_of,
+    missing_lists_of,
+    slice_filter_ignored_of,
+    slow_lists_of,
+    timed_lists_of,
+)
 from src.storage.models import Base
 from src.sync.orchestrator import MissingLists, SyncOrchestrator
 from src.sync.processor import OParlProcessor, unique_nested
@@ -517,3 +524,43 @@ async def test_zeitpunkt_und_vermerke_in_sync_config(speicher: DatabaseStorage) 
     await speicher.set_list_timed(SOURCE, f"{BASE}/meeting", False)
     quelle = await speicher.get_source_by_url(SOURCE)
     assert quelle is not None and "timed_lists" not in quelle.sync_config
+
+
+@pytest.mark.integration
+async def test_zeitscheiben_und_langsame_listen_in_sync_config(speicher: DatabaseStorage) -> None:
+    """Fortschritt, langsame Listen und Befund der Zeitscheiben (Issue #1033): unter Zeilensperre, Rest bleibt."""
+    await speicher.upsert_source(SOURCE, "Bezirk")
+    einstellung = '{"full_sync_slices": {"days": 30, "since": "2010-01-01"}}'
+    async with speicher._engine.begin() as conn:
+        await conn.execute(text("UPDATE oparl_sources SET sync_config = CAST(:c AS jsonb)"), {"c": einstellung})
+    grenze = datetime(2016, 4, 3, tzinfo=UTC)
+    eintrag = {
+        "failures": 1,
+        "until": "2026-10-16T10:00:00+00:00",
+        "since": "2026-10-09T22:00:00+00:00",
+        "reason": "Zeitüberschreitung",
+    }
+    befund = {"checked_at": "2026-10-16T01:00:00+00:00", "list": f"{BASE}/paper", "detail": "ignoriert modified_until"}
+    # Alle Schreiber gleichzeitig: Jeder liest unter Zeilensperre, keiner überschreibt den anderen
+    await asyncio.gather(
+        speicher.set_full_sync_progress(SOURCE, f"{BASE}/paper", grenze),
+        speicher.set_full_sync_progress(SOURCE, f"{BASE}/meeting", grenze),
+        speicher.set_slow_list(SOURCE, f"{BASE}/consultation", eintrag),
+        speicher.set_slice_filter_ignored(SOURCE, befund),
+    )
+    quelle = await speicher.get_source_by_url(SOURCE)
+    assert quelle is not None
+    assert quelle.sync_config["full_sync_progress"][f"{BASE}/paper"] == "2016-04-03T00:00:00+00:00"
+    assert full_sync_progress_of(quelle.sync_config) == {f"{BASE}/paper": grenze, f"{BASE}/meeting": grenze}
+    assert slow_lists_of(quelle.sync_config) == {f"{BASE}/consultation": eintrag}
+    assert slice_filter_ignored_of(quelle.sync_config) == befund
+    assert quelle.sync_config["full_sync_slices"] == {"days": 30, "since": "2010-01-01"}
+
+    await asyncio.gather(
+        speicher.set_full_sync_progress(SOURCE, f"{BASE}/paper", None),
+        speicher.set_full_sync_progress(SOURCE, f"{BASE}/meeting", None),
+        speicher.set_slow_list(SOURCE, f"{BASE}/consultation", None),
+        speicher.set_slice_filter_ignored(SOURCE, None),
+    )
+    quelle = await speicher.get_source_by_url(SOURCE)
+    assert quelle is not None and set(quelle.sync_config) == {"full_sync_slices"}

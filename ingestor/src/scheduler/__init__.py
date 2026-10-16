@@ -618,6 +618,8 @@ class SyncScheduler:
         }
         if result.unstored:
             details["unstored"] = dict(sorted(result.unstored.items()))
+        # Zeitscheiben des Vollabgleichs und ausgesetzte langsame Listen (Issue #1033)
+        details.update(result.slice_details)
         try:
             await self.orchestrator.storage.write_sync_log(
                 source_id=source.id,

@@ -11,8 +11,10 @@ Stand: Code auf `dev` mit den Änderungen aus [#1025](https://github.com/mandari
 [#1031](https://github.com/mandariOSS/mandari/pull/1031) (eine robots.txt-Regel für alle Abrufe, Weiterleitungen und
 Werkzeuge im Takt je Server), aus [#1036](https://github.com/mandariOSS/mandari/issues/1036) (eine robots.txt je
 Hostname, Grenze gleichzeitiger Anfragen auch für Scraper und Vergleichsanfrage, eine Frist für die ganze Vorschau,
-Kennung und Takt je Server auch für Live-Übertragung und Geodienste) und aus
-[#1026](https://github.com/mandariOSS/mandari/issues/1026) (eigener Takt je Quelle, Abruf nach Bedarf). Die von uns
+Kennung und Takt je Server auch für Live-Übertragung und Geodienste), aus
+[#1026](https://github.com/mandariOSS/mandari/issues/1026) (eigener Takt je Quelle, Abruf nach Bedarf) und aus
+[#1033](https://github.com/mandariOSS/mandari/issues/1033) (Vollabgleich in Zeitscheiben, langsame Listen
+aussetzen). Die von uns
 betriebene Instanz (mandari.de) folgt diesen Regeln ab dem ersten Deploy, der diese Änderungen enthält; bis dahin
 läuft dort noch ein älterer Stand.
 
@@ -26,7 +28,8 @@ läuft dort noch ein älterer Stand.
 | Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
 | Weiterleitungen | höchstens fünf je Abruf, jede erst nach der robots.txt ihres Ziels und mit eigenem Zeitpunkt im Takt |
 | Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
-| Vollabgleich | je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener |
+| Vollabgleich | je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`) |
+| Langsame Listen | eine optionale Liste, die in eine Zeitüberschreitung läuft, ruht 1 Stunde, danach jeweils doppelt so lange, höchstens 24 Stunden |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
 | Abruf-Adresse | derzeit `144.76.153.200`, nur IPv4 (die von uns betriebene Instanz mandari.de); sie kann sich ändern, erkennen Sie uns am User-Agent |
 | Andere Dienste | Live-Übertragung und Geodienste mit derselben Kennung und eigenem Takt je Server (siehe [Andere Abrufe](#andere-abrufe)) |
@@ -38,8 +41,9 @@ läuft dort noch ein älterer Stand.
   Änderungen wirken spätestens nach 24 Stunden.
 - **Langsamer oder zu anderen Zeiten:** Schreiben Sie uns. Wir können für Ihre Quelle den Abstand je Anfrage
   erhöhen (`request_interval`, bis 30 Sekunden), seltener abgleichen (`sync_schedule`), den Vollabgleich in ein
-  Zeitfenster legen (`full_sync_window`), seltener ausführen (`full_sync_every_days`) oder den Dateiabruf abschalten
-  (`file_downloads`). Liegen mehrere Quellen auf Ihrem Server, setzen wir den Abstand bei allen.
+  Zeitfenster legen (`full_sync_window`), seltener ausführen (`full_sync_every_days`), nur in Zeitscheiben ausführen
+  (`full_sync_slices`) oder den Dateiabruf abschalten (`file_downloads`). Liegen mehrere Quellen auf Ihrem Server,
+  setzen wir den Abstand bei allen.
 - **Kontakt:** support@mandari.de. Infoseite: <https://mandari.de/crawler/>.
 
 ## Abruf-Adresse
@@ -422,8 +426,36 @@ Wertet Ihre Schnittstelle `modified_since` aus, bleibt unsere Last am kleinsten.
   der nächste Lauf fragt die Liste wieder an. Ein Fehlerobjekt gilt dort als leere Liste, solange eine andere Liste
   der Kommune lesbar war, sonst ebenfalls als Lücke.
 - Vermerkte Listen fragt der inkrementelle Lauf einmal am Tag an (`MISSING_LIST_RECHECK`), dann mit dem Fenster von
-  sieben Tagen; der Vollabgleich fragt sie jedes Mal an. Gibt es die Liste wieder, löscht der Ingestor den Vermerk.
+  sieben Tagen; der Vollabgleich fragt sie jedes Mal an, der Vollabgleich in Zeitscheiben nicht. Gibt es die Liste wieder, löscht der Ingestor den Vermerk.
 - HTTP 404 zählt nie als Fehlversuch für den Schutzschalter je Server.
+
+### Langsame Listen
+
+Manche Server brauchen für einzelne Listen länger als die Zeitgrenze von 60 Sekunden (`OPARL_REQUEST_TIMEOUT`), etwa
+für die Beratungen der Stadt Hamm (`body/1/consultation?modified_since=…`, gemessen am 15.10.2026). Für optionale
+Listen (Mitgliedschaften, Tagesordnungspunkte, Beratungen, Dateien, Orte; `OPTIONAL_LIST_TYPES`) gilt deshalb
+(`ingestor/src/sync/slices.py`; `ingestor/src/sync/orchestrator.py`, `_suspend_slow_list`; Issue
+[#1033](https://github.com/mandariOSS/mandari/issues/1033)):
+
+- **Zeitüberschreitung:** Bricht die Liste ab, weil die letzte Anfrage in eine Zeitüberschreitung lief oder mit
+  HTTP 504 endete, setzt der Ingestor sie aus, statt sie im nächsten Lauf wieder dreimal 60 Sekunden lang anzufragen.
+  Andere Fehler (etwa HTTP 500 oder ein Verbindungsfehler) bleiben wie bisher eine Lücke.
+- **Wachsender Abstand:** 1 Stunde nach der ersten Zeitüberschreitung, nach jeder weiteren in Folge doppelt so lange:
+  1, 2, 4, 8, 16, dann höchstens 24 Stunden (`slow_backoff`, `SLOW_LIST_BASE`, `SLOW_LIST_MAX`). Hat ein Versuch
+  mindestens eine Scheibe ganz gelesen, beginnt die Reihe wieder bei 1 Stunde. Während der Aussetzung fragt kein Lauf
+  die Liste an, auch kein Vollabgleich.
+- **Kein Datenverlust:** Die Liste behält ihren eigenen Fensteranfang: Änderungen ab dort hat noch kein Lauf ganz
+  gelesen. Nach der Aussetzung holt der inkrementelle Lauf sie in Scheiben zu einem Tag nach (`SLOW_LIST_SLICE`,
+  `slow_windows`), jede mit `modified_since` und `modified_until`, die letzte nur mit `modified_since`. Beginn ist der
+  frühere von ihrem Fensteranfang und dem Fenster des Laufs. Nach jeder ganz gelesenen Scheibe rückt der Fensteranfang
+  der Liste vor; bricht eine spätere Scheibe ab, beginnt der nächste Versuch bei ihr. Listen ohne nachgewiesene Uhrzeit
+  in `modified` beginnen am Tagesbeginn (der frühere von 00:00 Uhr UTC und 00:00 Uhr `Europe/Berlin`, `day_floor`).
+- **Keine Lücke:** Eine ausgesetzte optionale Liste macht den Lauf nicht unvollständig. Das Änderungsfenster der
+  Kommune rückt vor, und die Quelle gilt als aktuell (`last_successful_sync`); die Liste holt ihre Änderungen über
+  ihren eigenen Fensteranfang nach. Ist sie ganz gelesen, endet die Aussetzung.
+- **Sichtbar:** Die Aussetzung steht mit Ende und Fensteranfang unter den Fehlern des Sync-Protokolls des Laufs, in dem
+  sie beginnt; jeder Lauf nennt ausgesetzte Listen unter `details.suspended_lists`. Pflichtlisten (Gremien, Personen,
+  Sitzungen, Vorlagen) setzt der Ingestor nie aus: Dort bleibt eine Zeitüberschreitung eine Lücke.
 
 ### Inhaltsvergleich
 
@@ -444,7 +476,8 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 - **Einmal je Fenster:** Den Beginn hält der Daemon in `sync_config["sync_state"]["full_attempted"]` fest. Ein
   abgebrochener oder unvollständiger Vollabgleich wird im nächsten Fenster wiederholt, nicht in derselben Nacht;
   auch ein Neustart des Ingestors startet ihn nicht ein zweites Mal.
-- **Umfang:** alle Seiten aller Listen ohne Filter, auch die als fehlend vermerkten. Löschmarkierungen der Quelle
+- **Umfang:** alle Seiten aller Listen ohne Filter, auch die als fehlend vermerkten; mit `full_sync_slices` nur in
+  Zeitscheiben (siehe [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)). Löschmarkierungen der Quelle
   (`deleted: true`) übernehmen wir als Löschvermerk.
 - **Später Beginn:** Läuft zu Beginn des Fensters noch ein Änderungsabgleich der Quelle, folgt der Vollabgleich
   direkt danach. Sind alle Plätze für Vollabgleiche belegt, wartet er auf einen freien Platz, solange das Fenster
@@ -473,6 +506,54 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   vollständig, das Änderungsfenster rückt nicht vor, und die Listen kommen beim nächsten Vollabgleich wieder dran.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung
   und die Abrufe der Anwendung richten sich nicht danach.
+
+### Vollabgleich in Zeitscheiben
+
+Manche Server liefern ihre vollständigen Listen nicht aus: Bei der Stadt Hamm (SD.NET RIM) brechen die ungefilterten
+Listen der Vorlagen und Sitzungen nach 60 Sekunden mit HTTP 504 ab, mit Zeitfilter antworten sie in 3 bis 25
+Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices`, etwa
+`{"days": 30, "since": "2010-01-01"}` (`ingestor/src/client/source_options.py`, `FullSyncSlices`;
+`ingestor/src/sync/slices.py`; Issue [#1033](https://github.com/mandariOSS/mandari/issues/1033)):
+
+- **Nie ohne Filter:** Der Vollabgleich fragt jede Liste nur mit `modified_since` und `modified_until` an (OParl 1.1,
+  Abschnitt 2.5.5), auf jeder Seite. Verliert `links.next` einen Filter, hängt der Ingestor ihn wieder an. Lehnt der
+  Server den Filter ab (HTTP 400, 401, 403), fällt er nicht auf die ungefilterte Liste zurück; die Liste bleibt eine
+  Lücke (`OParlClient.fetch_list`, `strict_filter`).
+- **Scheiben von alt nach neu:** zuerst alles, was bis `since` geändert wurde (nur `modified_until`), dann Scheiben zu
+  `days` Tagen ab `since` (je `modified_since` und `modified_until`), zuletzt alles ab der letzten Grenze (nur
+  `modified_since`). Jede Scheibe vor der letzten endet spätestens zum Beginn des Laufs (`full_windows`). Beispiel:
+  `{"days": 30, "since": "2010-01-01"}` ergibt am 16.10.2026 je Liste 206 Scheiben: die erste, 204 zu 30 Tagen und
+  die letzte (`ingestor/tests/test_zeitscheiben.py`). Jede Scheibe kostet mindestens eine Anfrage, auch wenn sie
+  leer ist; SD.NET RIM meldet eine leere Scheibe mit HTTP 404 und Code 802, das gilt als leer.
+- **Einstellung:** `since` ist ein Datum (00:00 Uhr UTC) oder ein Zeitpunkt in ISO 8601 und muss in der Vergangenheit
+  liegen; `days` eine ganze Zahl von 1 bis 366, ohne Angabe 30. `lists` beschränkt die Scheiben auf einzelne Listen
+  (`organization`, `person`, `membership`, `meeting`, `paper`, `location`, `agendaitem`, `file`, `consultation`); die
+  übrigen liest der Vollabgleich wie bisher ohne Filter. Unbekannte Namen zählen nicht; ohne gültigen Namen gelten
+  alle Listen. Ungültige Einstellungen gelten als nicht gesetzt, der Vollabgleich läuft dann ohne Scheiben.
+- **Fortsetzung:** Nach jeder ganz gelesenen Scheibe steht der Beginn der nächsten in
+  `sync_config["full_sync_progress"]` (je Liste). Bricht der Vollabgleich ab (Ende des Zeitfensters, Fehler), macht
+  der nächste Vollabgleich dort weiter, nicht wieder bei `since`. Listen, die schon fertig waren, fragen dann nur ihre
+  letzte Scheibe noch einmal an. Ein Fortschritt vor `since` oder in der Zukunft gilt nicht; dann beginnt die Liste von
+  vorn.
+- **Fertig:** Hat jede Liste der Kommune in einem Lauf ihre letzte Scheibe gelesen und fehlt nichts, ist der
+  Durchgang fertig. Der Fortschritt dieser Listen wird gelöscht, der nächste Vollabgleich beginnt wieder bei `since`.
+  Erst dann zählt der Vollabgleich als vollständig (`last_successful_full_sync`, `full_sync_every_days`). Eine
+  [ausgesetzte langsame Liste](#langsame-listen) hält den Durchgang nicht auf und behält ihren Fortschritt.
+- **Fehlende Listen:** Listen mit Vermerk in `missing_lists` fragt der Vollabgleich in Zeitscheiben nicht an; SD.NET
+  RIM beantwortet jede leere Scheibe wie eine fehlende Liste. Sie prüft weiter der inkrementelle Lauf einmal am Tag.
+- **Filter ignoriert:** Liefert eine Scheibe ein Objekt, dessen `modified` mehr als einen Tag vor ihrem Beginn oder
+  nach ihrem Ende liegt (`SLICE_TOLERANCE`, fängt falsch angegebene Zeitzonen und Tagesstempel ab), beachtet der
+  Server den Filter nicht. Der Vollabgleich übernimmt nichts aus dieser Seite und bricht ab: diese Liste sofort, jede
+  andere vor ihrer nächsten Scheibe. So holt er nicht in jeder Scheibe dieselbe vollständige Liste. Die Meldung steht
+  im Sync-Protokoll, der Befund in `sync_config["full_sync_filter_ignored"]`. 30 Tage lang (`FILTER_IGNORED_RECHECK`)
+  läuft der Vollabgleich der Quelle dann nur als Änderungsabgleich, mit Hinweis im Protokoll; danach versucht er die
+  Zeitscheiben erneut.
+- **Objekte ohne `modified`** erfasst ein Abgleich in Zeitscheiben nicht, wenn der Server sie in keiner Scheibe
+  liefert. Das Sync-Protokoll nennt das bei jedem Vollabgleich in Zeitscheiben (`details.full_sync_slices.note`) und
+  zählt Objekte ohne `modified`, die der Server trotzdem liefert, je Liste (`details.full_sync_slices.without_modified`).
+  Unter `details.full_sync_slices.lists` steht je Liste, wie viele Scheiben der Lauf gelesen hat, ob sie fertig ist und
+  wo die nächste beginnt.
+- Zeitfenster (`full_sync_window`), Abstand (`full_sync_every_days`) und Takt je Server gelten unverändert.
 
 ## Dokumente
 
@@ -610,6 +691,7 @@ es zu Beginn jedes Laufs der Quelle, die Texterkennung spätestens nach 5 Minute
 | `sync_schedule` | Takt der Quelle (siehe [Rhythmus](#rhythmus)): `workday_minutes`, `off_hours_minutes`, `weekend_minutes`, `meeting_minutes`, `idle_max_minutes`, `meeting_idle_max_minutes` (ganze Minuten von 5 bis 1440, kleinere gelten als 5), `workday_hours`, `meeting_hours` (`{"start": "07:00", "end": "19:00"}`, Beginn vor Ende am selben Tag), `meeting_days_before` (0 bis 7), `idle_runs` (0 bis 100, 0 = nie verlängern), `tz` | `{"weekend_minutes": 240}` |
 | `full_sync_window` | Zeitfenster des Vollabgleichs (Ortszeit, optional `tz`) | `{"start": "00:00", "end": "06:00"}` |
 | `full_sync_every_days` | Mindestabstand zwischen vollständigen Vollabgleichen in Tagen, ganze Zahl von 1 bis 365 | `7` |
+| `full_sync_slices` | Vollabgleich nur in Zeitscheiben (siehe [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)): `since` (Pflicht), `days` (1 bis 366, Standard 30), optional `lists` | `{"days": 30, "since": "2010-01-01"}` |
 | `modified_since_margin_minutes` | Sicherheitsabstand des Änderungsfensters in Minuten, ganze Zahl von 0 bis 10080 | `60` |
 | `list_params` | Parameter für die erste Seite jeder Liste (nicht `modified_since`, Werte bis 100 Zeichen) | `{"size": 100}` |
 | `carry_modified_since` | Quelle filtert, verliert den Filter aber in `links.next` | `true` |
@@ -641,6 +723,9 @@ Befund zurückzusetzen:
 | `body_sync_started` | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (UTC), Anfang des Änderungsfensters; nach nicht gespeicherten Objekten höchstens deren ältestes `modified`. Löschen setzt das Änderungsfenster auf sieben Tage zurück |
 | `timed_lists` | Listen, deren `modified` nachweislich eine Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC); nur sie bekommen das kurze Fenster. Löschen lässt die Listen ab Tagesbeginn laufen, bis ein Lauf die Uhrzeit wieder nachweist |
 | `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, mit dem Zeitpunkt der letzten Prüfung (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
+| `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune |
+| `full_sync_progress` | Fortschritt des Vollabgleichs in Zeitscheiben: je Liste der Beginn der nächsten Scheibe (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Vollabgleich wieder bei `since` beginnen |
+| `full_sync_filter_ignored` | Befund „Server ignoriert den Filter einer Zeitscheibe“ (`checked_at`, `list`, `detail`). Solange er jünger als 30 Tage ist, läuft der Vollabgleich nur als Änderungsabgleich; Löschen lässt den nächsten Vollabgleich die Zeitscheiben wieder versuchen |
 | `modified_since_unsupported_hosts` | Server, die `modified_since` ablehnen oder ignorieren. Löschen wirkt erst nach einem Neustart des Ingestors und nur, wenn keine andere Quelle denselben Server vermerkt hat; sonst trägt die Prüfung nach dem nächsten Vollabgleich den Server aus, sobald er filtert |
 | `modified_since_check` | Ergebnis der letzten Prüfung des Filters (`checked_at`, `host`, `result`) |
 | `scraper_state` | Zustand der Scraper |
