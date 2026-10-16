@@ -18,10 +18,11 @@ from typing import Any
 
 import httpx
 import pytest
+from django.core.cache import cache
 from django.core.management import call_command
 from django.test import Client
 
-from insight_core.models import OParlBody, TileCache
+from insight_core.models import OParlBody, OParlSource, TileCache
 from insight_core.services import dienste, host_pacing, robots
 
 KENNUNG = "mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)"
@@ -49,10 +50,12 @@ def takt(monkeypatch: pytest.MonkeyPatch, settings: Any) -> Iterator[_Uhr]:
     settings.REDIS_URL = ""
     uhr = _Uhr()
     host_pacing.reset()
+    cache.delete(dienste._QUELLEN_TAKTE_KEY)
     monkeypatch.setattr(host_pacing, "_now", uhr)
     monkeypatch.setattr("insight_core.services.host_pacing.time.sleep", uhr.sleep)
     yield uhr
     host_pacing.reset()
+    cache.delete(dienste._QUELLEN_TAKTE_KEY)
 
 
 @pytest.fixture
@@ -94,6 +97,7 @@ def test_nominatim_hoechstens_eine_anfrage_je_sekunde(takt: _Uhr) -> None:
     assert takt.geschlafen == [1.0, 2.0]
 
 
+@pytest.mark.django_db
 @pytest.mark.parametrize(
     ("dienst", "sekunden"),
     [
@@ -111,12 +115,60 @@ def test_abstand_je_dienst(takt: _Uhr, dienst: str, sekunden: float) -> None:
     assert takt.geschlafen == [sekunden]
 
 
+@pytest.mark.django_db
 def test_takt_gemeinsam_mit_ris_abrufen_und_jeder_schreibweise(takt: _Uhr, settings: Any) -> None:
     """Liegt ein Geodienst auf dem Server eines RIS, teilen sich beide den Takt (Hostname ohne Port)."""
     settings.RIS_REQUEST_INTERVAL = 1.0
     assert host_pacing.wait("https://geo.stadt.example/oparl/system")
     assert dienste.warten("https://GEO.stadt.example:443/wfs?REQUEST=GetFeature", dienste.GEOPORTAL)
     assert takt.geschlafen == [1.0]
+
+
+@pytest.mark.django_db
+def test_langsamere_quelle_auf_demselben_server_gilt_auch_fuer_dienste(takt: _Uhr) -> None:
+    """
+    Geoportal und Live-Übertragung auf dem Server einer Quelle mit größerem ``request_interval`` halten deren
+    Abstand ein, in beide Richtungen: Auch der nächste RIS-Abruf kommt erst danach. Dienste von OpenStreetMap
+    und Photon (nicht in ``NEBEN_RIS``) und andere Server behalten ihren Abstand.
+    """
+    sync_config = {"request_interval": 30}
+    OParlSource.objects.create(name="Langsam", url="https://ris.stadt.example/oparl/system", sync_config=sync_config)
+
+    assert dienste.abstand(dienste.GEOPORTAL, "https://RIS.stadt.example:8443/wfs") == 30.0
+    assert dienste.abstand(dienste.LIVE, "https://ris.stadt.example/live.m3u8") == 30.0
+    assert dienste.abstand(dienste.PHOTON, "https://ris.stadt.example/api/") == 1.0
+    assert dienste.abstand(dienste.GEOPORTAL, "https://geo.anderswo.example/wfs") == 1.0
+    assert dienste.abstand(dienste.GEOPORTAL) == 1.0
+
+    assert host_pacing.wait("https://ris.stadt.example/oparl/system", sync_config=sync_config)
+    assert dienste.warten("https://ris.stadt.example/wfs", dienste.GEOPORTAL)
+    assert host_pacing.wait("https://ris.stadt.example/oparl/body", sync_config=sync_config)
+    assert takt.geschlafen == [30.0, 60.0]
+
+
+@pytest.mark.django_db
+def test_abstaende_der_quellen_aus_dem_cache(
+    takt: _Uhr, django_assert_num_queries: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    OParlSource.objects.create(
+        name="Langsam", url="https://ris.stadt.example/oparl/system", sync_config={"request_interval": 20}
+    )
+    with django_assert_num_queries(1):
+        for _ in range(3):
+            assert dienste.abstand(dienste.GEOPORTAL, "https://ris.stadt.example/wfs") == 20.0
+
+    # Gestörter Cache: Die Quellen werden je Aufruf gelesen, der Abstand bleibt
+    class _GestoerterCache:
+        def get(self, *_a: Any, **_kw: Any) -> Any:
+            raise ConnectionError("Redis weg")
+
+        def set(self, *_a: Any, **_kw: Any) -> None:
+            raise ConnectionError("Redis weg")
+
+    monkeypatch.setattr(dienste, "cache", _GestoerterCache())
+    with django_assert_num_queries(2):
+        for _ in range(2):
+            assert dienste.abstand(dienste.GEOPORTAL, "https://ris.stadt.example/wfs") == 20.0
 
 
 def test_hoechstwartezeit_reserviert_nichts(takt: _Uhr) -> None:

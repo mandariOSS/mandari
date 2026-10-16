@@ -630,14 +630,21 @@ Diese Abrufe gehen nicht an Ratsinformationssysteme. Sie melden sich mit derselb
 `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)`, und halten einen eigenen Takt je Server ein
 (`mandari/insight_core/services/dienste.py`, `ABSTAND`), vor jeder Anfrage und vor jeder Weiterleitung. Der Takt
 nutzt denselben Zeitstempel in Redis wie die Abrufe bei Ratsinformationssystemen: Liegt ein Dienst auf dem Server
-eines RIS, etwa das Geoportal einer Kommune, teilen sich beide den Takt. Ohne Redis drosselt jeder Prozess für sich.
-Eine robots.txt werten diese Abrufe nicht aus: Sie durchsuchen keine Seiten, sondern fragen Schnittstellen ab; es
-gelten die Nutzungsregeln des jeweiligen Dienstes.
+eines RIS, etwa das Geoportal einer Kommune, teilen sich beide den Takt. Hat eine registrierte Quelle auf demselben
+Hostnamen einen größeren Abstand (`request_interval`), gilt dieser für Live-Übertragung und Geoportale ebenfalls,
+in beide Richtungen (`dienste.NEBEN_RIS`, `quellen_takte`; die Abstände der Quellen liegen fünf Minuten im Cache).
+Ohne Redis drosselt jeder Prozess für sich.
+
+Eine robots.txt werten diese Abrufe nicht aus, auch nicht bei Geoportalen von Kommunen: Sie durchsuchen keine
+Seiten, sondern fragen Schnittstellen ab; es gelten die Nutzungsregeln des jeweiligen Dienstes. Eine Gruppe für
+`mandari-ingestor` in der robots.txt eines Geoportals stoppt den täglichen Abruf der Umringe also nicht. Wer ihn
+nicht möchte, schreibt uns; wir schalten die Quelle dann ab (Umring-Quelle im Admin, „Aktiv“,
+`PlanBoundarySource.is_active`).
 
 | Abruf | Ziel | Abstand je Server | Wann | Fundstelle |
 |---|---|---|---|---|
-| Live-Übertragung | Streaming-Anbieter (3Q, HLS-Server) | 1 s | nur mit `LIVE_UEBERTRAGUNG_AKTIV`: Status einmal je Minute rund um Sitzungen; während einer Übertragung ein Einzelbild im Takt der Quelle (Standard 10 Sekunden, 5 bis 60), je Einzelbild 2 bis 4 Anfragen | `mandari/hub/live/anbieter/http.py`, `dienste.LIVE` |
-| Umringe von Bebauungsplänen | Geoportale von Kommunen und Land (WFS, OGC API – Features) | 1 s; dazu 1 s Pause zwischen zwei Seiten | täglich um 04:50 (`sync_plan_boundaries`) | `mandari/insight_core/services/plan_boundaries.py`, `dienste.GEOPORTAL` |
+| Live-Übertragung | Streaming-Anbieter (3Q, HLS-Server) | 1 s; ein größerer Abstand einer registrierten Quelle auf dem Server gilt | nur mit `LIVE_UEBERTRAGUNG_AKTIV`: Status einmal je Minute rund um Sitzungen; während einer Übertragung ein Einzelbild im Takt der Quelle (Standard 10 Sekunden, 5 bis 60), je Einzelbild 2 bis 4 Anfragen | `mandari/hub/live/anbieter/http.py`, `dienste.LIVE` |
+| Umringe von Bebauungsplänen | Geoportale von Kommunen und Land (WFS, OGC API – Features) | 1 s; ein größerer Abstand einer registrierten Quelle auf dem Server gilt; dazu 1 s Pause zwischen zwei Seiten | täglich um 04:50 (`sync_plan_boundaries`) | `mandari/insight_core/services/plan_boundaries.py`, `dienste.GEOPORTAL` |
 | Nominatim (OpenStreetMap) | `nominatim.openstreetmap.org` | 1 s (Nutzungsregeln: höchstens eine Anfrage je Sekunde) | Geodaten einer Kommune von Hand (`fetch_osm_geodata`, `resolve_body_geodata`); Ersatz in der Georeferenzierung von Vorgängen, wenn Photon nichts findet | `fetch_osm_geodata.py`, `georeferencing.py`, `dienste.NOMINATIM` |
 | Overpass (OpenStreetMap) | `overpass-api.de`, Ersatz `overpass.kumi.systems` | 1 s | Straßen, Adressen und Grenzen von Hand (`import_streets`, `resolve_body_geodata`) | `mandari/insight_core/services/overpass.py`, `dienste.OVERPASS` |
 | Photon | `photon.komoot.io` (`PHOTON_API_URL`) | 1 s; in der Adresssuche höchstens 2 s Wartezeit, sonst keine Vorschläge | Georeferenzierung von Vorgängen für Orte, die das eigene Straßenverzeichnis nicht kennt; Adresssuche nur ohne eigenes Straßenverzeichnis | `georeferencing.py`, `neighborhood.py`, `dienste.PHOTON` |
