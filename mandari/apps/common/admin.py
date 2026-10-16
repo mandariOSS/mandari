@@ -22,6 +22,7 @@ from .ki_anbieter import (
     erlaubte_hosts,
     fremder_host_fuer_vorlage,
     pruefe_basis_url,
+    pruefe_ki_einstellungen,
     vorlage_nutzbar,
     wirksamer_host,
 )
@@ -353,10 +354,13 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
     Eine KI-Konfiguration für Work und Bürgerportal (Issue #950).
 
     Anbieter (Vorlage oder eigener Endpunkt), Schlüssel, Modelle, Schalter je Bereich und Grenzen. Wirksam ist
-    eine Adresse nur, wenn ihr Host in der Positivliste KI_ERLAUBTE_HOSTS steht.
+    eine Adresse nur, wenn ihr Host in der Positivliste KI_ERLAUBTE_HOSTS steht. „Speichern und Verbindung prüfen“
+    speichert wie „Speichern“ (gleiche Prüfungen) und stellt danach je Modell einen Testaufruf (Issue #1046).
     """
 
     form = AISettingsAdminForm
+    # Knopf neben „Speichern“: POST mit CSRF-Schutz, nur mit Änderungsrecht, erst nach gültigem Speichern
+    actions_submit_line = ["speichern_und_pruefen"]
 
     fieldsets = (
         (
@@ -364,9 +368,10 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
             {
                 "fields": ("provider", "base_url", "anzeigename", "verarbeitungsort", "api_key", "api_key_loeschen"),
                 "description": (
-                    "OpenAI-kompatibler Anbieter mit Verarbeitung in Europa. Ohne Anbieter bleibt die KI aus. "
-                    "Freigegeben sind nur Hosts aus der Umgebungsvariable KI_ERLAUBTE_HOSTS (derzeit: {hosts}); "
-                    "jede Adresse wird bei jedem Aufruf erneut geprüft."
+                    "OpenAI-kompatibler Anbieter; der Verarbeitungsort erscheint in Hinweisen und in der "
+                    "Einwilligung. Ohne Anbieter bleibt die KI aus. Freigegeben sind nur Hosts aus der "
+                    "Umgebungsvariable KI_ERLAUBTE_HOSTS (derzeit: {hosts}); jede Adresse wird bei jedem Aufruf "
+                    "erneut geprüft. Auf der Kommandozeile: manage.py ki_anbieter."
                 ),
             },
         ),
@@ -398,6 +403,16 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
             },
         ),
     )
+
+    @action(description="Speichern und Verbindung prüfen", permissions=["change"])
+    def speichern_und_pruefen(self, request, obj):
+        """
+        Testaufruf je Modell an den gerade gespeicherten Endpunkt (wie ``manage.py ki_anbieter pruefen``).
+
+        Kurze Zeitgrenze; die Meldungen nennen nur Host, Modell und Art des Ergebnisses, nie Schlüssel oder Inhalte.
+        """
+        for ergebnis in pruefe_ki_einstellungen(obj):
+            (messages.success if ergebnis.ok else messages.error)(request, f"Verbindungsprüfung – {ergebnis.text}")
 
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
         # Always edit the singleton instance

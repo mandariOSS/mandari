@@ -2,10 +2,10 @@
 """
 Admin-Formulare der KI-Konfiguration (Issue #950): KI-Einstellungen und Organisation.
 
-Nur Anbieter mit Verarbeitung in Europa in der Auswahl, keine Adresse außerhalb von ``KI_ERLAUBTE_HOSTS``, beim
-eigenen Endpunkt Basis-URL, Anzeigename und Verarbeitungsort als Pflicht. Eine Vorlage gilt nur für ihren Host; ein
-gespeicherter Schlüssel geht nach einem Anbieterwechsel nie an den neuen Anbieter, und ein Schlüssel ohne Anbieter
-lässt sich löschen statt die KI stillschweigend abzuschalten. Die Positivliste hat keinen Standard; die Tests
+Nur die Vorlagen in der Auswahl (seit #1046 auch Nebius, ohne Freigabe), keine Adresse außerhalb von
+``KI_ERLAUBTE_HOSTS``, beim eigenen Endpunkt Basis-URL, Anzeigename und Verarbeitungsort als Pflicht. Eine Vorlage
+gilt nur für ihren Host; ein gespeicherter Schlüssel geht nach einem Anbieterwechsel nie an den neuen Anbieter, und
+ein Schlüssel ohne Anbieter lässt sich löschen statt die KI stillschweigend abzuschalten. Die Positivliste hat keinen Standard; die Tests
 geben den Beispiel-Host ausdrücklich frei (Fixture ``_freigabe``).
 """
 
@@ -31,8 +31,8 @@ STACKIT = "https://api.openai-compat.model-serving.eu01.onstackit.cloud/v1"
 STACKIT_HOST = "api.openai-compat.model-serving.eu01.onstackit.cloud"
 IONOS_HOST = "openai.inference.de-txl.ionos.com"
 IONOS = f"https://{IONOS_HOST}/v1"
-ENTFALLEN = ("nebius", "anthropic", "openai", "mistral")
-VORLAGEN = {"stackit", "ionos", "scaleway", "ovh", "deutschlandgpt", "eigener"}
+ENTFALLEN = ("anthropic", "openai", "mistral")
+VORLAGEN = {"stackit", "ionos", "scaleway", "ovh", "deutschlandgpt", "nebius", "eigener"}
 SCHLUESSEL = "admin-testschluessel-geheim-0123456789"
 WECHSEL = "Bei einem Anbieterwechsel bitte den Schlüssel des neuen Anbieters eintragen."
 
@@ -94,7 +94,7 @@ def _org_formular(org: Organization, **werte: Any) -> Any:
 
 
 class TestKiEinstellungen:
-    def test_auswahl_nur_europa(self) -> None:
+    def test_auswahl_nur_vorlagen(self) -> None:
         auswahl = {key for key, _label in cast(Any, AISettingsAdminForm)().fields["provider"].choices}
         assert auswahl == {"", *VORLAGEN}
         assert not auswahl & set(ENTFALLEN)
@@ -221,11 +221,13 @@ class TestKiEinstellungen:
         ki = AISettings.get_settings()
         inhalt = admin_client.get(f"/admin/common/aisettings/{ki.pk}/change/").content.decode()
         assert "api.openai-compat.model-serving.eu01.onstackit.cloud" in inhalt
-        assert "Nebius" not in inhalt
+        # Nebius nur als Vorlage in der Auswahl, ohne Freigabe gekennzeichnet (Issue #1046)
+        assert "Nebius Token Factory (nicht freigegeben)" in inhalt
+        assert "api.tokenfactory.nebius.com" not in inhalt
 
 
 class TestOrganisation:
-    def test_auswahl_nur_europa(self, org: Organization) -> None:
+    def test_auswahl_nur_vorlagen(self, org: Organization) -> None:
         auswahl = {key for key, _label in _org_formular(org).fields["ai_provider"].choices}
         assert auswahl == {"", *VORLAGEN}
 

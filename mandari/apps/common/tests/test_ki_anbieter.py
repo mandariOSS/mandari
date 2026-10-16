@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Zentrale KI-Konfiguration mit Positivliste erlaubter EU-Hosts (Issue #950).
+Zentrale KI-Konfiguration mit Positivliste erlaubter Hosts (Issue #950, Nebius-Vorlage #1046).
 
 - ``pruefe_basis_url`` lässt nur ``https``-Adressen mit Host aus ``KI_ERLAUBTE_HOSTS`` zu: exakter Vergleich,
   keine Tricks über Suffix, Präfix, Zugangsdaten in der Adresse oder anderen Port.
@@ -148,10 +148,11 @@ class TestPositivliste:
         assert ki_hosts.erlaubte_hosts_aus_umgebung() == ()
         assert ki_hosts.erlaubte_hosts_aus_umgebung("") == ()
 
-    def test_keine_vorlage_fuer_anbieter_ausserhalb_europas(self) -> None:
-        assert set(ANBIETER_VORLAGEN) == {"stackit", "ionos", "scaleway", "ovh", "deutschlandgpt", "eigener"}
+    def test_vorlagen(self) -> None:
+        """Nebius ist seit #1046 wieder eine Vorlage (ohne Freigabe); Anthropic, OpenAI und Mistral nicht."""
+        assert set(ANBIETER_VORLAGEN) == {"stackit", "ionos", "scaleway", "ovh", "deutschlandgpt", "nebius", "eigener"}
         for vorlage in ANBIETER_VORLAGEN.values():
-            assert "nebius" not in vorlage.basis_url and "anthropic" not in vorlage.basis_url
+            assert "anthropic" not in vorlage.basis_url and "api.openai.com" not in vorlage.basis_url
             assert "mistral" not in vorlage.basis_url and "mistral" not in vorlage.anzeigename.lower()
 
 
@@ -166,6 +167,10 @@ class TestVorlagen:
             "scaleway": "Speicherung in Paris, Frankreich, Verarbeitung in Europa (EU) – laut Anbieter",
             "ovh": "Rechenzentrum Gravelines, Frankreich (EU) – Angabe des Anbieters",
             "deutschlandgpt": "Speicherung in Deutschland, Verarbeitung in der EU/im EWR – laut AVV des Anbieters",
+            "nebius": (
+                "je nach Modell innerhalb und außerhalb der EU, auch in den USA – laut "
+                "Unterauftragsverarbeiterliste des Anbieters"
+            ),
             "eigener": "",
         }
 
@@ -174,6 +179,7 @@ class TestVorlagen:
         [
             ("ovh", "oai.endpoints.kepler.ai.cloud.ovh.net", "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1"),
             ("deutschlandgpt", "api.deutschlandgpt.de", "https://api.deutschlandgpt.de/v2"),
+            ("nebius", "api.tokenfactory.nebius.com", "https://api.tokenfactory.nebius.com/v1"),
         ],
     )
     def test_vorbereitet_aber_nicht_freigegeben(self, anbieter: str, host: str, basis: str) -> None:
@@ -186,6 +192,36 @@ class TestVorlagen:
     def test_anzeigenamen(self) -> None:
         assert ANBIETER_VORLAGEN["ovh"].anzeigename == "OVHcloud AI Endpoints"
         assert ANBIETER_VORLAGEN["deutschlandgpt"].anzeigename == "DeutschlandGPT Platform API"
+        assert ANBIETER_VORLAGEN["nebius"].anzeigename == "Nebius Token Factory"
+
+    def test_nebius_behauptet_keine_eu(self) -> None:
+        """
+        Unterauftragsverarbeiter der Token Factory verarbeiten auch in den USA (Issue #1046). Die Einwilligung im
+        KI-Assistenten setzt den Ort hinter „Ihre Fragen werden dorthin übermittelt und verarbeitet:“.
+        """
+        ort = ANBIETER_VORLAGEN["nebius"].verarbeitungsort
+        assert "USA" in ort and "außerhalb der EU" in ort
+        assert "(EU)" not in ort and "nur in der EU" not in ort
+        assert ort[0].islower(), "steht in der Einwilligung nach einem Doppelpunkt mitten im Satz"
+
+    def test_orte_passen_ins_feld(self) -> None:
+        """Jeder Verarbeitungsort einer Vorlage ließe sich ins Feld „Verarbeitungsort“ übernehmen."""
+        laenge = AISettings._meta.get_field("verarbeitungsort").max_length
+        assert laenge is not None
+        for anbieter, vorlage in ANBIETER_VORLAGEN.items():
+            assert len(vorlage.verarbeitungsort) <= laenge, anbieter
+
+    def test_auswahl_als_aufruf(self) -> None:
+        """Neue Vorlagen brauchen keine Migration: Die Modellfelder bekommen die Auswahl als Aufruf."""
+        from apps.tenants.models import Organization
+
+        _name, _pfad, _args, plattform = AISettings._meta.get_field("provider").deconstruct()
+        _name, _pfad, _args, organisation = Organization._meta.get_field("ai_provider").deconstruct()
+        assert plattform["choices"] is ki_anbieter.auswahl_ki_einstellungen
+        assert organisation["choices"] is ki_anbieter.auswahl_organisation
+        assert ("nebius", "Nebius Token Factory") in ki_anbieter.auswahl_ki_einstellungen()
+        assert ki_anbieter.auswahl_ki_einstellungen()[0] == ("", "Nicht eingerichtet (KI aus)")
+        assert ki_anbieter.auswahl_organisation()[0] == ("", "Plattform-Einstellung")
 
     def test_max_completion_tokens_nur_fuer_deutschlandgpt(self) -> None:
         mit = {anbieter for anbieter, vorlage in ANBIETER_VORLAGEN.items() if vorlage.auch_max_completion_tokens}
@@ -376,11 +412,24 @@ class TestAufloesung:
         assert endpunkt is not None and endpunkt.base_url == STACKIT + "/v2"
         assert endpunkt.anzeigename == "STACKIT AI Model Serving"
 
-    def test_frueherer_anbieter_wirkt_nicht(self) -> None:
+    @pytest.mark.parametrize("anbieter", ["anthropic", "openai", "mistral"])
+    def test_frueherer_anbieter_wirkt_nicht(self, anbieter: str) -> None:
         _ki()
-        AISettings.objects.filter(pk=1).update(provider="nebius", base_url="")
+        AISettings.objects.filter(pk=1).update(provider=anbieter, base_url="")
         cache.delete(AISettings.CACHE_KEY)
         assert endpunkt_fuer_work() is None
+
+    def test_nebius_nur_mit_freigabe(self) -> None:
+        """Die Vorlage gibt keinen Host frei: Ohne Eintrag in KI_ERLAUBTE_HOSTS bleibt die KI aus."""
+        _ki(provider="nebius", model_name="moonshotai/Kimi-K2.6")
+        assert endpunkt_fuer_work() is None and endpunkt_fuer_insight() is None
+        with override_settings(KI_ERLAUBTE_HOSTS=["api.tokenfactory.nebius.com"]):
+            endpunkt = endpunkt_fuer_insight()
+        assert endpunkt is not None
+        assert endpunkt.base_url == "https://api.tokenfactory.nebius.com/v1"
+        assert endpunkt.chat_url == "https://api.tokenfactory.nebius.com/v1/chat/completions"
+        assert (endpunkt.anzeigename, endpunkt.modell) == ("Nebius Token Factory", "moonshotai/Kimi-K2.6")
+        assert endpunkt.auch_max_completion_tokens is False
 
     def test_eigener_endpunkt_braucht_name_und_ort(self) -> None:
         _ki(provider="eigener", base_url=STACKIT + "/")
