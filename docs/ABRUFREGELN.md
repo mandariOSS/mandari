@@ -22,7 +22,7 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
 | Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
 | Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer die Quelle hat ein eigenes Zeitfenster oder Zeitscheiben (siehe [Vollabgleich](#vollabgleich)) |
 | Langsame Listen | eine optionale Liste, die in eine Zeitüberschreitung läuft, ruht 1 Stunde, danach jeweils doppelt so lange, höchstens 24 Stunden |
-| Neue Quellen | legen unsere Werkzeuge inaktiv an; regelmäßig abgefragt wird eine Quelle erst, wenn sie aktiv ist. Ausnahmen: das Formular im Admin, `import_oparl_sources --activate` und die eigene Schnittstelle eines Session-Mandanten. Neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
+| Neue Quellen | von unseren Werkzeugen inaktiv angelegt; regelmäßig abgefragt wird eine Quelle erst, wenn sie aktiv ist. Ausnahmen: das Formular im Admin, `import_oparl_sources --activate` und die eigene Schnittstelle eines Session-Mandanten. Neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
 | Abruf-Adresse | derzeit `144.76.153.200`, nur IPv4 (die von uns betriebene Instanz mandari.de); sie kann sich ändern, erkennen Sie uns am User-Agent |
 | Andere Dienste | Live-Übertragung und Geodienste mit derselben Kennung und eigenem Takt je Server (siehe [Andere Abrufe](#andere-abrufe)) |
@@ -306,9 +306,11 @@ Kommune.
 
 ### Rhythmus
 
-Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quellen gibt es nicht mehr
-(`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.py`, Issue
-[#1026](https://github.com/mandariOSS/mandari/issues/1026)). Die Uhrzeiten gelten in Ortszeit `Europe/Berlin`.
+Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quellen gibt es im Daemon des Ingestors
+nicht mehr (`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.py`, Issue
+[#1026](https://github.com/mandariOSS/mandari/issues/1026)). Die Uhrzeiten gelten in Ortszeit `Europe/Berlin`. Das
+ältere Kommando `manage.py sync_daemon` der Anwendung gleicht dagegen weiter alle Quellen gemeinsam ab (siehe
+[Für Selbstbetreiber](#für-selbstbetreiber)).
 
 | Wann | Abstand zwischen zwei Läufen einer Quelle | Schlüssel in `sync_config["sync_schedule"]` |
 |---|---|---|
@@ -379,8 +381,12 @@ Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quell
   `mandari/insight_core/admin.py`, `request_source_sync`; `SyncScheduler._expand_triggers`). Findet „Jetzt
   synchronisieren“ keinen Daemon, meldet der Admin einen Fehler (`mandari/insight_sync/admin.py`, `trigger_sync_view`).
   Solange irgendein Sync-Protokoll den Status „läuft“ hat, lehnt „Jetzt synchronisieren“ mit „Ein Sync läuft
-  bereits.“ ab. Diesen Status tragen nur Aufträge im Worker der Anwendung (siehe unten), solange sie laufen; der
-  Daemon schreibt sein Protokoll erst am Ende eines Laufs. Die Aktionen an einer Quelle prüfen das nicht.
+  bereits.“ ab. Diesen Status tragen nur Läufe über `run_sync_with_logging`, also Aufträge im Worker der Anwendung
+  (siehe unten) und das ältere `manage.py sync_daemon`, solange sie laufen, längstens bis der Zeitplan
+  `haengende_syncs_bereinigen` sie als fehlgeschlagen markiert: Er prüft alle 5 Minuten und erfasst Protokolle, die
+  seit mehr als 15 Minuten „läuft“ melden (`mandari/insight_sync/schedules.py`; `cleanup_stale_syncs`, `STALE_AFTER`).
+  „Jetzt synchronisieren“ ist so höchstens etwa 20 Minuten gesperrt, auch wenn der Lauf länger dauert. Der Daemon des
+  Ingestors schreibt sein Protokoll erst am Ende eines Laufs. Die Aktionen an einer Quelle prüfen das nicht.
 - Die Aktionen an einer Quelle laufen stattdessen als Auftrag im Worker der Anwendung, wenn die Quelle abgeschaltet
   ist, kein Daemon als laufend gilt (weder sein Lebenszeichen in Redis, siehe unten, noch ein Sync-Protokoll der
   letzten 30 Minuten; `is_ingestor_active`) oder die Nachricht keinen Empfänger fand. Der Auftrag nutzt den Code des
@@ -399,9 +405,10 @@ Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quell
   Ein Auftrag im Worker schreibt sein Protokoll mit `triggered_by` `admin`, dem angeforderten `sync_type`, allen
   Fehlern und nur den Zählern (`run_sync_with_logging`). Ein Lauf über die Kommandozeile schreibt eines für den ganzen
   Aufruf, ohne `source_id`, mit `triggered_by` `cli`, dem angeforderten `sync_type` und höchstens 20 Fehlern
-  (`write_results_to_synclog`). Gleichen Worker oder `sync --source` eine einzelne Quelle ab, schreibt der Abgleich
-  dazu ein Protokoll der Quelle mit `triggered_by` `daemon` und dem tatsächlichen `sync_type`
-  (`SyncOrchestrator.sync_source`). Metriken je Quelle stehen in [`MONITORING.md`](MONITORING.md#metriken).
+  (`write_results_to_synclog`). Gelingt der Abgleich einer einzelnen Quelle im Worker oder mit `sync --source`,
+  schreibt er zusätzlich ein Protokoll der Quelle (`triggered_by` `daemon`, tatsächlicher `sync_type`, Status
+  „erfolgreich“; `SyncOrchestrator.sync_source`); scheitert er, entsteht dieses Protokoll nicht. Metriken je Quelle
+  stehen in [`MONITORING.md`](MONITORING.md#metriken).
 - **Lebenszeichen:** Der Daemon schreibt bei jeder Prüfung `mandari:ingestor:heartbeat` in Redis (läuft nach
   180 Sekunden ab, `HEARTBEAT_TTL_SECONDS`). Daran erkennt die Anwendung, dass er läuft, auch wenn nachts eine Stunde
   lang kein Lauf beginnt (`mandari/insight_sync/daemon.py`, `is_ingestor_active`).
@@ -883,6 +890,11 @@ nach. Im Helm-Chart: `ingestor.extraEnv` bzw. `app.extraEnv`.
   `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)`. Eine Umgebungsvariable dafür gibt es nicht;
   abweichend nur je Quelle über `sync_config["download_headers"]` (nicht für Quellenanlage, Live-Übertragung und
   Geodienste).
+- Das ältere Kommando `manage.py sync_daemon` der Anwendung gleicht alle aktiven Quellen gemeinsam ab, in festem
+  Abstand (Sync-Einstellung im Admin, `SyncConfig.interval_minutes`, angelegt aus `SYNC_INTERVAL_MINUTES`) und einmal
+  am Tag vollständig (`SyncConfig.full_sync_hour`, angelegt aus `SYNC_FULL_HOUR`), wie `sync --all` ohne den Takt je
+  Quelle (`mandari/insight_sync/management/commands/sync_daemon.py`). Docker Compose und das Helm-Chart starten es
+  nicht; verwenden Sie den Daemon des Ingestors.
 - Den gemeinsamen Takt über alle Prozesse gibt es nur mit Redis, das Ingestor und Anwendung beide erreichen.
 - Liegt ein RIS im eigenen Netz, braucht die Anwendung `INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS=true`.
 
