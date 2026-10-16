@@ -188,6 +188,9 @@ type SpeicherAntwort =
   | { art: 'konflikt'; daten: JsonResponse }
   | { art: 'stoerung' | 'server' | 'anmeldung' | 'fehler' }
 
+/** Titel, Dokumenttyp und Briefpapier mit den Feldnamen des Speicher-POST (laufen nicht über Yjs, #1018) */
+type MetaWerte = { title: string; document_type_id: string; letterhead_id: string }
+
 async function speicherAntwort(response: Response): Promise<SpeicherAntwort> {
   const json = (response.headers.get('Content-Type') || '').includes('application/json')
   const daten: JsonResponse | null = json ? await response.json().catch(() => null) : null
@@ -216,6 +219,39 @@ function einstellungMerken(key: string, wert: boolean): void {
   } catch {
     // Privater Modus o. Ä.: Einstellung gilt nur für diese Seite
   }
+}
+
+/**
+ * Kennung dieses Editorfensters (#1018): hängt an der Kollaborationsverbindung und geht beim Statuswechsel mit. Der
+ * Server schickt dem auslösenden Fenster dann keine Aufforderung zum Neuladen – es lädt selbst neu, und sein letztes
+ * Sichern beim Verlassen gilt nicht als veraltet.
+ */
+function neueFensterKennung(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+}
+
+/** Link auf eine andere Seite derselben Site, den ein normaler Klick in dieser Registerkarte öffnet */
+function linkZumVerlassen(event: MouseEvent): HTMLAnchorElement | null {
+  if (event.defaultPrevented || event.button !== 0) return null
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return null
+  const link = (event.target as Element | null)?.closest<HTMLAnchorElement>('a[href]')
+  const roh = link?.getAttribute('href') ?? ''
+  if (!link || !roh || roh.startsWith('#')) return null
+  // Links im Text (Popover), eigene Aktionen und Links mit eigenem Verhalten (HTMX, Rückfrage, neues Fenster)
+  if (link.closest('.ProseMirror, [data-ohne-sichern]')) return null
+  if (link.matches('[hx-get], [hx-post], [data-confirm], [data-action], [data-post]')) return null
+  if (link.target && link.target !== '_self') return null
+  let ziel: URL
+  try {
+    ziel = new URL(link.href, window.location.href)
+  } catch {
+    return null
+  }
+  if (ziel.origin !== window.location.origin) return null
+  // Sprung innerhalb der Seite
+  if (ziel.pathname === window.location.pathname && ziel.search === window.location.search && ziel.hash) return null
+  return link
 }
 
 function readConfig(): DocumentEditorConfig {
@@ -256,6 +292,17 @@ export const documentEditor = defineComponent(() => {
   let wiederholTimer: number | null = null
   let speicherVersuche = 0
   let serverfehler = 0
+  // Laufendes Speichern (Aufrufer warten darauf statt still abzubrechen) und das baldige Sichern von Titel, Dokumenttyp
+  // und Briefpapier mit Verbindung (#1018)
+  let speicherLauf: Promise<boolean> | null = null
+  let metaTimer: number | null = null
+  // Zuletzt gesicherte Werte von Titel, Dokumenttyp und Briefpapier (mit Verbindung gehen nur Änderungen per POST)
+  let metaGesichert: MetaWerte = {
+    title: config.title,
+    document_type_id: config.documentTypeId,
+    letterhead_id: config.letterheadId,
+  }
+  const fensterId = neueFensterKennung()
   // Stellen offener Änderungsvorschläge im Text anders hervorheben als Kommentare (die Marke selbst kennt den
   // Unterschied nicht): eigenes Stylesheet mit den Marken-IDs, ohne Inline-Stil im Template
   let vorschlagStil: CSSStyleSheet | null = null
@@ -283,8 +330,15 @@ export const documentEditor = defineComponent(() => {
     // Absenden vorlag und den der Server bestätigt hat.
     _changeSeq: 0,
     _savedSeq: 0,
+    // Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs: eigener Zähler, gesichert nur per POST (#1018)
+    _metaSeq: 0,
+    _metaSavedSeq: 0,
     // Bewusstes Verlassen (Löschen, Statuswechsel, Neu laden, eigene Formulare): keine Rückfrage
     _leavingIntentionally: false,
+    // Eigener Statuswechsel läuft (#1018): Das Fenster lädt danach selbst neu; eine Aufforderung des Servers zum
+    // Neuladen (z. B. herabgestufter Zugriff nach der Sperre) wird bis dahin nur vorgemerkt, ohne Meldung
+    _eigenerStatuswechsel: false,
+    _neuladenVorgemerkt: false,
     // Suchen & Ersetzen
     searchOpen: false,
     searchTerm: '',
@@ -424,7 +478,11 @@ export const documentEditor = defineComponent(() => {
     init(): void {
       if (this._editorInitialized) return
       this._editorInitialized = true
-      installMotionTracking(config.urls.checklist)
+      // Aktionen der Seitenleiste laden neu: vorher sichern und ohne Rückfrage gehen (#1018)
+      installMotionTracking(config.urls.checklist, {
+        sichern: () => this._vorNeuladenSichern(),
+        verlassen: () => this.leaveIntentionally(),
+      })
 
       const canEdit = this.accessLevel === 'edit' || this.accessLevel === 'admin'
       const MandariEditor = window.MandariEditor
@@ -437,7 +495,7 @@ export const documentEditor = defineComponent(() => {
 
         // WebSocket-URL für die Kollaboration
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/documents/${this.motionId}/`
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/documents/${this.motionId}/?fenster=${fensterId}`
 
         // Kollaboration ist Standard für alle Bearbeiter (Google-Docs-Modus).
         // Schlägt die erste WebSocket-Verbindung fehl, wechselt der Editor
@@ -476,8 +534,8 @@ export const documentEditor = defineComponent(() => {
         }
         document.addEventListener('keydown', this._globalKeydownHandler)
 
-        // Titel, Dokumenttyp und Briefpapier werden mitgespeichert – sie zählen als Änderung
-        this.$watch('title', () => this._markChanged())
+        // Titel, Dokumenttyp und Briefpapier werden mitgespeichert – sie zählen als Änderung (eigener Zähler, #1018)
+        this.$watch('title', () => this._metaGeaendert())
 
         // Rückfrage beim Verlassen mit ungespeicherten Änderungen (#185). Der Handler bleibt
         // wie der Keydown-Handler bewusst registriert: destroy() läuft auch in den
@@ -489,9 +547,38 @@ export const documentEditor = defineComponent(() => {
           e.returnValue = ''
         })
         // Eigene Formulare im Editor (z. B. „Kommentar erledigen“) verlassen die Seite
-        // absichtlich; per fetch abgeschickte Formulare haben preventDefault gesetzt.
+        // absichtlich; per fetch abgeschickte Formulare haben preventDefault gesetzt. Formulare der Seitenleiste
+        // (data-submit-handler) schickt motion-tracking.ts per fetch und sichert vorher (#1018).
         this.$el.addEventListener('submit', (e: Event) => {
-          if (!e.defaultPrevented) this.leaveIntentionally()
+          if (e.defaultPrevented || (e.target as HTMLElement | null)?.dataset?.submitHandler) return
+          this.leaveIntentionally()
+        })
+
+        // Links auf andere Seiten derselben Site (Kopf, Menüs, Bezug, Seitenleisten, Rahmen): erst sichern, dann
+        // ohne Rückfrage gehen. Links zum Herunterladen (download) laden die Datei nach dem Sichern (#1018).
+        document.addEventListener('click', (e: MouseEvent) => {
+          const link = linkZumVerlassen(e)
+          if (!link) return
+          e.preventDefault()
+          if (link.hasAttribute('download')) void this.herunterladen(link.href)
+          else void this.sichernUndGehen(link.href)
+        })
+
+        // Antworten mit HX-Refresh (Teilen-Dialog, Freigaben) laden die Seite neu: vorher sichern (#1018)
+        document.addEventListener('htmx:beforeOnLoad', (e: Event) => {
+          const xhr = (e as CustomEvent<{ xhr?: XMLHttpRequest }>).detail?.xhr
+          if (xhr?.getResponseHeader('HX-Refresh') !== 'true' || this._leavingIntentionally) return
+          e.preventDefault()
+          void this._sichernUndNeuLaden()
+        })
+        // Der Teilen-Dialog sichert schon vor dem Absenden: Lässt sich nicht sichern, unterbleibt die Änderung
+        document.addEventListener('htmx:confirm', (e: Event) => {
+          const detail = (e as CustomEvent<{ elt?: Element; issueRequest?: (bestaetigt?: boolean) => void }>).detail
+          if (!detail?.elt?.closest('[data-vorher-sichern]') || !detail.issueRequest) return
+          e.preventDefault()
+          void this._vorNeuladenSichern().then((gesichert) => {
+            if (gesichert) detail.issueRequest?.(true)
+          })
         })
 
         this.updateWordCount()
@@ -697,6 +784,11 @@ export const documentEditor = defineComponent(() => {
             // Server hat einen neuen Stand (Versions-Wiederherstellung oder Speichern
             // ohne Verbindung durch eine andere Person) oder die Berechtigung hat sich
             // geändert (#582) → frisch laden
+            if (this._eigenerStatuswechsel) {
+              // Gesichert ist schon, und dieses Fenster lädt gleich selbst neu (#1018)
+              this._neuladenVorgemerkt = true
+              return
+            }
             if (reason === 'access_revoked') {
               showToast('Ihr Zugriff auf dieses Dokument wurde entzogen. Die Seite wird neu geladen.', 'info')
             } else if (reason === 'access_changed') {
@@ -1450,97 +1542,156 @@ export const documentEditor = defineComponent(() => {
       editor.commands.setContent(html)
     },
 
-    async save(force = false): Promise<void> {
-      if (this.saving || !editor) return
+    /**
+     * Speichern (Strg+S, Knopf, automatisch, vor dem Verlassen). Läuft schon ein Speichern, bekommen Aufrufer dessen
+     * Ergebnis. true: Der Stand beim Aufruf ist gesichert (mit Verbindung: Yjs hat ihn bestätigt und Titel, Dokumenttyp
+     * und Briefpapier sind per POST gespeichert).
+     */
+    save(force = false): Promise<boolean> {
+      if (!editor) return Promise.resolve(false)
+      if (speicherLauf) return speicherLauf
+      speicherLauf = this._speichern(force).finally(() => {
+        speicherLauf = null
+      })
+      return speicherLauf
+    },
+
+    async _speichern(force: boolean): Promise<boolean> {
       if (wiederholTimer) {
         window.clearTimeout(wiederholTimer)
         wiederholTimer = null
       }
       this.saving = true
-      // Mit Kollaborationsverbindung zuerst den gemeinsamen Stand sichern: Dann kommt der Text unverändert an, und der
-      // Server fordert die verbundenen Fenster nicht zum Neuladen auf – sonst lud Strg+S auch dieses Fenster neu.
-      if (this.collabEnabled && this.collabStatus === 'connected' && this.collabFlush) {
-        await this.collabFlush()
-      }
-      // Stand, den diese Anfrage sichert; spätere Eingaben bleiben „ungespeichert“
-      const seq = this._changeSeq
-
-      const formData = new FormData()
-      // Token aus dem Cookie: Nach einer neuen Anmeldung in einem anderen Tab ist nur das Cookie aktuell
-      formData.append('csrfmiddlewaretoken', csrfTokenAktuell())
-      formData.append('action', 'save')
-      formData.append('title', this.title)
-      formData.append('content', this.getContent())
-      formData.append('motion_type', this.motionType)
-      formData.append('document_type_id', this.documentTypeId)
-      formData.append('letterhead_id', this.letterheadId)
-      // Ohne Kollaborationsverbindung den Stand mitschicken, von dem wir ausgehen:
-      // Der Server überschreibt dann keinen neueren Stand still (#184). Mit
-      // Verbindung führt Yjs zusammen, da braucht es die Prüfung nicht. Kam ein
-      // gestörter Versuch doch an, ist die Wiederholung kein Konflikt (gleicher Inhalt).
-      const verbunden = this.collabEnabled && this.collabStatus === 'connected'
-      if (!verbunden && this.contentHash) formData.append('base_content_hash', this.contentHash)
-      if (force) formData.append('force', '1')
-
-      let antwort: SpeicherAntwort
       try {
-        const zeitlimit = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ZEITLIMIT_MS) : undefined
-        const response = await fetch(window.location.href, {
-          method: 'POST',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
-          body: formData,
-          credentials: 'same-origin',
-          ...(zeitlimit ? { signal: zeitlimit } : {}),
-        })
-        antwort = await speicherAntwort(response)
-      } catch (error) {
-        console.error('Save error:', error)
-        antwort = { art: 'stoerung' }
-      }
+        // Mit Kollaborationsverbindung sichert Yjs den Text: erst den gemeinsamen Stand sichern und auf die
+        // Bestätigung warten. Per POST gehen dann nur Titel, Dokumenttyp und Briefpapier (#1018). Ein POST mit dem
+        // Text forderte alle Fenster – auch dieses – zum Neuladen auf, sobald er vom gespeicherten Stand abwich.
+        let mitText = true
+        if (this._verbunden() && this.collabFlush) {
+          if (await this.collabFlush()) {
+            mitText = false
+          } else if (this._verbunden()) {
+            // Verbunden, aber keine Bestätigung in der Zeit: nicht per POST überschreiben, später erneut versuchen
+            this._speichernWiederholen('stoerung', force)
+            return false
+          }
+          // Verbindung inzwischen weg: wie ohne Verbindung per POST, mit dem Stand, von dem wir ausgehen
+        }
+        // Stand, den diese Anfrage sichert; spätere Eingaben bleiben „ungespeichert“
+        const seq = this._changeSeq
+        const metaSeq = this._metaSeq
+        if (!mitText && metaSeq === this._metaSavedSeq) {
+          this._gespeichertMelden()
+          return true
+        }
 
-      if (antwort.art === 'ok') {
-        this.lastSaved = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-        this.saveError = false
-        this.saveConflict = false
-        this.speicherStoerung = ''
-        speicherVersuche = 0
-        serverfehler = 0
-        this._savedSeq = seq
-        if (typeof antwort.daten.content_hash === 'string') this.contentHash = antwort.daten.content_hash
-      } else if (antwort.art === 'konflikt') {
-        this.saveConflict = true
-        this.saveError = true
-        this.speicherStoerung = ''
-        showToast(antwort.daten.message || 'Das Dokument wurde inzwischen an anderer Stelle geändert.', 'warning')
-      } else if (
-        antwort.art === 'stoerung' ||
-        antwort.art === 'anmeldung' ||
-        (antwort.art === 'server' && serverfehler + 1 < VERSUCHE_BEI_500)
-      ) {
-        // Eingabe behalten und später erneut senden (#927-Muster); jeder Versuch schickt den dann aktuellen Stand
-        this.saveError = true
-        speicherVersuche += 1
-        if (antwort.art === 'server') serverfehler += 1
-        this.speicherStoerung =
-          antwort.art === 'anmeldung' ? 'anmeldung' : antwort.art === 'server' ? 'server' : 'verbindung'
-        const basis =
-          antwort.art === 'anmeldung'
-            ? ANMELDUNG_WARTEZEIT_MS
-            : WARTEZEITEN_MS[Math.min(speicherVersuche - 1, WARTEZEITEN_MS.length - 1)]
-        // Etwas Streuung, damit nach einem Neustart nicht alle offenen Seiten im selben Moment senden
-        const wartezeit = Math.round(basis * (0.85 + Math.random() * 0.3))
-        wiederholTimer = window.setTimeout(() => {
-          wiederholTimer = null
-          void this.save(force)
-        }, wartezeit)
-      } else {
-        this.saveError = true
-        this.speicherStoerung = ''
-        speicherVersuche = 0
-        serverfehler = 0
-      }
+        // Mit Verbindung nur die Felder schicken, die sich seit dem letzten Sichern in diesem Fenster geändert haben:
+        // Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs, andere Fenster kennen deren Änderungen erst nach
+        // dem Neuladen. Sonst setzte ein anderes Fenster beim Wechsel des Briefpapiers den neuen Titel zurück (#1018).
+        const metaWerte: MetaWerte = {
+          title: this.title,
+          document_type_id: this.documentTypeId,
+          letterhead_id: this.letterheadId,
+        }
+        const metaFelder = (Object.keys(metaWerte) as Array<keyof MetaWerte>).filter(
+          (feld) => mitText || metaWerte[feld] !== metaGesichert[feld],
+        )
+        if (!mitText && !metaFelder.length) {
+          // Zurückgeändert: nichts zu senden
+          this._metaSavedSeq = metaSeq
+          this._gespeichertMelden()
+          return true
+        }
 
-      this.saving = false
+        const formData = new FormData()
+        // Token aus dem Cookie: Nach einer neuen Anmeldung in einem anderen Tab ist nur das Cookie aktuell
+        formData.append('csrfmiddlewaretoken', csrfTokenAktuell())
+        formData.append('action', 'save')
+        // Ohne „content“ lässt der Server Text und Kollaborationsstand unberührt (#1018)
+        if (mitText) formData.append('content', this.getContent())
+        formData.append('motion_type', this.motionType)
+        for (const feld of metaFelder) formData.append(feld, metaWerte[feld])
+        // Ohne Kollaborationsverbindung den Stand mitschicken, von dem wir ausgehen:
+        // Der Server überschreibt dann keinen neueren Stand still (#184). Kam ein
+        // gestörter Versuch doch an, ist die Wiederholung kein Konflikt (gleicher Inhalt).
+        if (mitText && this.contentHash) formData.append('base_content_hash', this.contentHash)
+        if (force) formData.append('force', '1')
+
+        let antwort: SpeicherAntwort
+        try {
+          const zeitlimit = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ZEITLIMIT_MS) : undefined
+          const response = await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData,
+            credentials: 'same-origin',
+            ...(zeitlimit ? { signal: zeitlimit } : {}),
+          })
+          antwort = await speicherAntwort(response)
+        } catch (error) {
+          console.error('Save error:', error)
+          antwort = { art: 'stoerung' }
+        }
+
+        if (antwort.art === 'ok') {
+          this._gespeichertMelden()
+          this._metaSavedSeq = metaSeq
+          metaGesichert = { ...metaGesichert, ...metaWerte }
+          if (mitText) {
+            this._savedSeq = seq
+            if (typeof antwort.daten.content_hash === 'string') this.contentHash = antwort.daten.content_hash
+          }
+          return true
+        }
+        if (antwort.art === 'konflikt') {
+          this.saveConflict = true
+          this.saveError = true
+          this.speicherStoerung = ''
+          showToast(antwort.daten.message || 'Das Dokument wurde inzwischen an anderer Stelle geändert.', 'warning')
+        } else if (
+          antwort.art === 'stoerung' ||
+          antwort.art === 'anmeldung' ||
+          (antwort.art === 'server' && serverfehler + 1 < VERSUCHE_BEI_500)
+        ) {
+          this._speichernWiederholen(antwort.art, force)
+        } else {
+          this.saveError = true
+          this.speicherStoerung = ''
+          speicherVersuche = 0
+          serverfehler = 0
+        }
+        return false
+      } finally {
+        this.saving = false
+      }
+    },
+
+    /** Speichern ist gelungen: Anzeige und Wiederholungszähler zurücksetzen */
+    _gespeichertMelden(): void {
+      this.lastSaved = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+      this.saveError = false
+      this.saveConflict = false
+      this.speicherStoerung = ''
+      speicherVersuche = 0
+      serverfehler = 0
+    },
+
+    /** Eingabe behalten und später erneut senden (#927-Muster); jeder Versuch schickt den dann aktuellen Stand */
+    _speichernWiederholen(art: 'stoerung' | 'anmeldung' | 'server', force: boolean): void {
+      this.saveError = true
+      speicherVersuche += 1
+      if (art === 'server') serverfehler += 1
+      this.speicherStoerung = art === 'anmeldung' ? 'anmeldung' : art === 'server' ? 'server' : 'verbindung'
+      const basis =
+        art === 'anmeldung'
+          ? ANMELDUNG_WARTEZEIT_MS
+          : WARTEZEITEN_MS[Math.min(speicherVersuche - 1, WARTEZEITEN_MS.length - 1)]
+      // Etwas Streuung, damit nach einem Neustart nicht alle offenen Seiten im selben Moment senden
+      const wartezeit = Math.round(basis * (0.85 + Math.random() * 0.3))
+      wiederholTimer = window.setTimeout(() => {
+        wiederholTimer = null
+        void this.save(force)
+      }, wartezeit)
     },
 
     /** Wartet ein Speicherversuch (Störung, Anmeldung), jetzt senden: wieder online, Seite wieder im Vordergrund */
@@ -1549,10 +1700,12 @@ export const documentEditor = defineComponent(() => {
     },
 
     autoSave(): void {
-      // Im Kollab-Modus persistiert der Server (yjs_save inkl. HTML +
-      // gedrosselte Revisionen) — kein POST-Autosave nötig, solange
-      // die Verbindung steht.
-      if (this.collabEnabled && this.collabStatus === 'connected') return
+      // Mit Kollaborationsverbindung sichert der Server den Text (yjs_save inkl. HTML und gedrosselte Revisionen).
+      // Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs und gehen per POST (#1018).
+      if (this._verbunden()) {
+        if (this._metaUngesichert() && !this.saving) void this.save()
+        return
+      }
       // Nach einem Konflikt nicht blind weiterversuchen: Die Person entscheidet
       // über "Neu laden" oder "Trotzdem speichern" (#184).
       if (this.saveConflict) return
@@ -1561,13 +1714,40 @@ export const documentEditor = defineComponent(() => {
       if (!this.saving && editor) void this.save()
     },
 
-    /** Liegen seit dem letzten erfolgreichen Speichern Änderungen vor? */
+    /** Steht die Kollaborationsverbindung? */
+    _verbunden(): boolean {
+      return this.collabEnabled && this.collabStatus === 'connected'
+    },
+
+    /** Liegen seit dem letzten erfolgreichen Speichern Änderungen vor (Text oder Titel, Dokumenttyp, Briefpapier)? */
     hasUnsavedChanges(): boolean {
-      return this._changeSeq !== this._savedSeq
+      return this._changeSeq !== this._savedSeq || this._metaUngesichert()
+    },
+
+    _metaUngesichert(): boolean {
+      return this._metaSeq !== this._metaSavedSeq
+    },
+
+    /**
+     * Anzeige „Gespeichert“: Titel, Dokumenttyp und Briefpapier sind per POST gesichert und der Text ist gespeichert
+     * oder läuft über die Verbindung (Yjs sichert laufend).
+     */
+    get standGesichert(): boolean {
+      return !this._metaUngesichert() && (this._changeSeq === this._savedSeq || this._verbunden())
     },
 
     _markChanged(): void {
       this._changeSeq += 1
+    },
+
+    /** Titel, Dokumenttyp oder Briefpapier geändert: mit Verbindung bald per POST sichern (ohne: automatisch) */
+    _metaGeaendert(): void {
+      this._metaSeq += 1
+      if (metaTimer) window.clearTimeout(metaTimer)
+      metaTimer = window.setTimeout(() => {
+        metaTimer = null
+        if (this._verbunden() && this._metaUngesichert()) void this.save()
+      }, 1500)
     },
 
     /** Vor gewollter Navigation aufrufen: Die Rückfrage gilt nur für unbeabsichtigtes Verlassen. */
@@ -1576,25 +1756,64 @@ export const documentEditor = defineComponent(() => {
     },
 
     /**
-     * Den Editor über einen Menüpunkt verlassen, dessen Zielseite den gespeicherten Text liest (z. B. „Bei der
-     * Verwaltung einreichen“ mit vorbelegten Feldern): erst sichern, dann ohne Rückfrage gehen. Mit
-     * Kollaborationsverbindung speichert der Server sonst nur alle zehn Sekunden; das Formular hätte den letzten Satz
-     * nicht, und der Browser fragte „Website verlassen?“.
+     * Den Editor über einen Link verlassen (Menüs, Kopf, Seitenleisten, „Bei der Verwaltung einreichen“ mit
+     * vorbelegten Feldern): erst sichern, dann ohne Rückfrage gehen. Mit Kollaborationsverbindung speichert der Server
+     * sonst nur alle zehn Sekunden; die Zielseite hätte den letzten Satz nicht, und der Browser fragte „Website
+     * verlassen?“. Lässt sich nicht sichern, entscheidet die Person, ob sie trotzdem geht.
      */
     async sichernUndGehen(ziel: string): Promise<void> {
-      const verbunden = this.collabEnabled && this.collabStatus === 'connected'
-      const gesichert = verbunden && this.collabFlush ? await this.collabFlush() : await this._vorNeuladenSichern()
-      if (!gesichert) {
-        if (verbunden) showToast('Der Text ließ sich gerade nicht speichern. Bitte noch einmal versuchen.', 'error')
-        return
+      if (!(await this._vorNeuladenSichern(null))) {
+        const trotzdem = await confirmAction({
+          title: 'Änderungen nicht gespeichert',
+          message:
+            'Ihre letzten Änderungen ließen sich gerade nicht speichern. Wenn Sie die Seite jetzt verlassen, gehen sie verloren.',
+          confirmText: 'Trotzdem verlassen',
+          variant: 'danger',
+        })
+        if (!trotzdem) return
       }
       this.leaveIntentionally()
       window.location.href = ziel
     },
 
+    /** „Herunterladen als Word“ und andere Dateien: erst sichern, dann laden, ohne die Seite zu verlassen (#1018) */
+    async herunterladen(url: string): Promise<void> {
+      this.menueSchliessen()
+      const gesichert = await this._vorNeuladenSichern(
+        'Ihre Änderungen ließen sich nicht speichern. Die Datei wurde nicht erstellt.',
+      )
+      if (!gesichert) return
+      const link = document.createElement('a')
+      link.href = url
+      link.download = ''
+      link.hidden = true
+      link.dataset.ohneSichern = ''
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    },
+
+    /** „Vorschau (PDF)“: erst sichern, dann den gespeicherten Stand in einer neuen Registerkarte anzeigen (#1018) */
+    async vorschauOeffnen(url: string): Promise<void> {
+      this.menueSchliessen()
+      // Die Registerkarte sofort öffnen: Nach dem Warten aufs Sichern ließe der Browser sie sonst nicht mehr zu
+      const fenster = window.open('', '_blank')
+      if (fenster) fenster.opener = null
+      const gesichert = await this._vorNeuladenSichern(
+        'Ihre Änderungen ließen sich nicht speichern. Die Vorschau wurde deshalb nicht geöffnet.',
+      )
+      if (!gesichert) {
+        fenster?.close()
+        return
+      }
+      if (fenster) fenster.location.href = url
+      else window.open(url, '_blank', 'noopener')
+    },
+
     /** Konflikt (#184): den eigenen Stand bewusst über den neueren schreiben. */
-    saveOverwrite(): Promise<void> {
-      return this.save(true)
+    async saveOverwrite(): Promise<void> {
+      if (speicherLauf) await speicherLauf
+      await this.save(true)
     },
 
     /** Konflikt (#184): den neueren Stand vom Server holen; eigene Änderungen gehen verloren. */
@@ -1607,13 +1826,13 @@ export const documentEditor = defineComponent(() => {
     setDocumentType(id: string, name: string): void {
       this.documentTypeId = id
       this.documentTypeName = name
-      this._markChanged()
+      this._metaGeaendert()
     },
 
     setLetterhead(id: string, name: string): void {
       this.letterheadId = id
       this.letterheadName = name
-      this._markChanged()
+      this._metaGeaendert()
 
       // Briefkopf-Hintergrund neu rendern
       const container = document.getElementById('editor-container')
@@ -1706,14 +1925,16 @@ export const documentEditor = defineComponent(() => {
     },
 
     async changeStatus(newStatus: string): Promise<void> {
-      // Nach dem Wechsel lädt die Seite neu: Ohne Kollaborationsverbindung vorher speichern, sonst gingen
-      // Eingaben seit dem letzten automatischen Speichern verloren (mit Verbindung sichert Yjs laufend)
+      // Nach dem Wechsel lädt die Seite neu, und ein gesperrter Status nimmt keine Eingaben mehr an: vorher sichern
+      // (mit Verbindung den gemeinsamen Stand über Yjs, #1018), sonst fehlten die letzten Eingaben in der Fassung
       if (!(await this._vorNeuladenSichern())) return
+      this._eigenerStatuswechsel = true
       try {
         const response = await fetch(config.urls.status, {
           method: 'POST',
           headers: formHeaders(),
-          body: new URLSearchParams({ status: newStatus }),
+          // Kennung dieses Fensters: Der Server fordert es nicht zum Neuladen auf, es lädt selbst neu (#1018)
+          body: new URLSearchParams({ status: newStatus, fenster: fensterId }),
         })
         const data: JsonResponse = await response.json()
         if (data.success) {
@@ -1724,7 +1945,18 @@ export const documentEditor = defineComponent(() => {
         }
       } catch {
         showToast('Fehler beim Statuswechsel', 'error')
+      } finally {
+        if (!this._leavingIntentionally) this._statuswechselBeendet()
       }
+    },
+
+    /** Eigener Statuswechsel ohne Neuladen beendet: eine inzwischen vorgemerkte Aufforderung jetzt befolgen */
+    _statuswechselBeendet(): void {
+      this._eigenerStatuswechsel = false
+      if (!this._neuladenVorgemerkt) return
+      showToast('Der Stand des Dokuments hat sich geändert — die Seite wird neu geladen.', 'info')
+      this.leaveIntentionally()
+      window.setTimeout(() => window.location.reload(), 800)
     },
 
     async confirmDelete(): Promise<void> {
@@ -1937,16 +2169,40 @@ export const documentEditor = defineComponent(() => {
       this.closeAiPreview()
     },
 
-    /** Ungespeicherte Änderungen vor einem Neuladen sichern (ohne Kollaborationsverbindung); false = abbrechen */
-    async _vorNeuladenSichern(): Promise<boolean> {
-      const verbunden = this.collabEnabled && this.collabStatus === 'connected'
-      if (verbunden || !editor || !this.hasUnsavedChanges()) return true
-      await this.save()
-      if (this.saveError || this.hasUnsavedChanges()) {
-        showToast('Ihre Änderungen ließen sich nicht speichern. Der Schritt wurde nicht ausgeführt.', 'error')
-        return false
+    /**
+     * Vor einem Neuladen oder Verlassen sichern (Statuswechsel, Seitenleiste, Links, Teilen, Herunterladen): mit
+     * Kollaborationsverbindung den gemeinsamen Stand über Yjs und Titel, Dokumenttyp und Briefpapier per POST, ohne
+     * Verbindung alles per POST (#1018). false: nicht gesichert, der Schritt soll unterbleiben; ``meldung`` erscheint
+     * dann als Hinweis (null: keiner, der Aufrufer fragt selbst).
+     */
+    async _vorNeuladenSichern(
+      meldung: string | null = 'Ihre Änderungen ließen sich nicht speichern. Der Schritt wurde nicht ausgeführt.',
+    ): Promise<boolean> {
+      if (!editor) return true
+      if (metaTimer) {
+        window.clearTimeout(metaTimer)
+        metaTimer = null
       }
-      return true
+      // Ein laufendes Speichern abwarten; danach mit dem aktuellen Stand noch einmal
+      if (speicherLauf) await speicherLauf
+      const verbunden = this._verbunden()
+      if (!verbunden && !this.hasUnsavedChanges()) return true
+      const ok = await this.save()
+      // Mit Verbindung entscheidet die Bestätigung des Servers: Eingaben anderer zählen bis zum nächsten bestätigten
+      // Stand als „ungesichert“, die sichern deren Fenster. Ohne Verbindung muss alles gesichert sein.
+      const gesichert = verbunden ? ok || !this.hasUnsavedChanges() : ok && !this.hasUnsavedChanges()
+      if (!gesichert && meldung) showToast(meldung, 'error')
+      return gesichert
+    },
+
+    /** Nach einer Antwort mit HX-Refresh: erst sichern, dann ohne Rückfrage neu laden (#1018) */
+    async _sichernUndNeuLaden(): Promise<void> {
+      const gesichert = await this._vorNeuladenSichern(
+        'Die Änderung ist gespeichert, Ihre letzten Eingaben im Text aber nicht. Die Seite wird deshalb nicht neu geladen.',
+      )
+      if (!gesichert) return
+      this.leaveIntentionally()
+      window.location.reload()
     },
 
     // === Neuer Antragseditor (Teil von #856): Menüs, Rand, Gliederung, Ablauf ===
@@ -2457,12 +2713,13 @@ export const documentEditor = defineComponent(() => {
       if (!(await this._vorNeuladenSichern())) return
       this.ablaufLaeuft = true
       this.ablaufFehler = ''
+      this._eigenerStatuswechsel = true
       try {
         if (config.status !== 'internal_review' && config.status !== 'external_review') {
           const response = await fetch(config.urls.status, {
             method: 'POST',
             headers: formHeaders(),
-            body: new URLSearchParams({ status: 'internal_review' }),
+            body: new URLSearchParams({ status: 'internal_review', fenster: fensterId }),
           })
           const data: JsonResponse = await response.json()
           if (!data.success) {
@@ -2494,6 +2751,7 @@ export const documentEditor = defineComponent(() => {
         this.ablaufFehler = 'Die Abstimmung ließ sich nicht starten. Bitte versuchen Sie es erneut.'
       } finally {
         this.ablaufLaeuft = false
+        if (!this._leavingIntentionally) this._statuswechselBeendet()
       }
     },
 
@@ -2568,6 +2826,8 @@ export const documentEditor = defineComponent(() => {
         variant: 'info',
       })
       if (!ok) return
+      // Der aktuelle Stand wird als Version gesichert: vorher die letzten Eingaben sichern (#1018)
+      if (!(await this._vorNeuladenSichern())) return
 
       try {
         const response = await fetch(`${config.urls.revisions}${rev.id}/restore/`, {
@@ -2580,6 +2840,7 @@ export const documentEditor = defineComponent(() => {
         const data: JsonResponse = await response.json()
         if (data.success) {
           // Neu laden, um den wiederhergestellten Inhalt zu bekommen
+          this.leaveIntentionally()
           location.reload()
         } else {
           showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error')

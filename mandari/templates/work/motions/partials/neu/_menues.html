@@ -14,8 +14,8 @@ download_blocked (Gäste ohne Herunterladen, #582), organization; Alpine-Kompone
     <span x-show="speicherStoerung === 'server'" x-cloak class="text-amber-700 dark:text-amber-400">Wird erneut versucht …</span>
     <span x-show="speicherStoerung === 'anmeldung'" x-cloak class="text-red-600 dark:text-red-400">Anmeldung abgelaufen</span>
     <span x-show="!saving && saveError && !speicherStoerung" x-cloak class="text-red-600 dark:text-red-400">Nicht gespeichert</span>
-    <span x-show="!saving && !saveError && hasUnsavedChanges() && !(collabEnabled && collabStatus === 'connected')" x-cloak>Ungespeicherte Änderungen</span>
-    <span x-show="!saving && !saveError && (!hasUnsavedChanges() || (collabEnabled && collabStatus === 'connected'))"><i data-lucide="check" class="w-3.5 h-3.5" aria-hidden="true"></i>Gespeichert</span>
+    <span x-show="!saving && !saveError && !standGesichert" x-cloak>Ungespeicherte Änderungen</span>
+    <span x-show="!saving && !saveError && standGesichert"><i data-lucide="check" class="w-3.5 h-3.5" aria-hidden="true"></i>Gespeichert</span>
 </button>
 {% endpartialdef %}
 
@@ -38,8 +38,8 @@ download_blocked (Gäste ohne Herunterladen, #582), organization; Alpine-Kompone
 <p class="ke-menue-hinweis"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich: nur vereidigte Mitglieder, keine Freigaben</p>
 {% endif %}
 {% if not download_blocked %}
-<a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf" target="_blank" rel="noopener"><i data-lucide="eye" aria-hidden="true"></i>Vorschau (PDF)</a>
-<a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=docx"><i data-lucide="download" aria-hidden="true"></i>Herunterladen als Word</a>
+<a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf&amp;vorschau=1" target="_blank" rel="noopener" @click.prevent="vorschauOeffnen($el.href)"><i data-lucide="eye" aria-hidden="true"></i>Vorschau (PDF)</a>
+<a role="menuitem" class="ke-mp" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=docx" download><i data-lucide="download" aria-hidden="true"></i>Herunterladen als Word</a>
 <div role="separator" class="ke-trenn"></div>
 {% endif %}
 <button type="button" role="menuitem" class="ke-mp" @click="panelOeffnen('details')"><i data-lucide="sliders-horizontal" aria-hidden="true"></i>Details und Zuständigkeit</button>

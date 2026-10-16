@@ -195,7 +195,10 @@ class MotionStatusView(WorkViewMixin, View):
         # offene Kollab-Editoren neu laden lassen, damit die herabgestufte
         # (bzw. wiedererlangte) Zugriffsstufe sofort greift.
         if motion.is_status_locked != was_locked:
-            _broadcast_doc_reload(motion)
+            from ..consumers import fenster_kennung
+
+            # Das auslösende Editorfenster hat vorher gesichert und lädt selbst neu (#1018)
+            _broadcast_doc_reload(motion, ausser_fenster=fenster_kennung(request.POST.get("fenster")))
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse(
@@ -655,7 +658,9 @@ class MotionExportView(WorkViewMixin, View):
                 filename = f"{safe_title[:50]}.pdf"
 
                 response = HttpResponse(pdf_content, content_type="application/pdf")
-                response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                # „Vorschau (PDF)“ im Editor öffnet die Datei im Browser statt sie herunterzuladen (#1018)
+                art = "inline" if request.GET.get("vorschau") == "1" else "attachment"
+                response["Content-Disposition"] = f'{art}; filename="{filename}"'
                 freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_PDF)
                 return response
 

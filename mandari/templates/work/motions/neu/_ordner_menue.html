@@ -3,14 +3,16 @@
 Vereidigte nehmen keine Dokumente per Verschieben auf. Alpine: documentManager.moveDocuments. Kontext: motion,
 folder_entries
 {% endcomment %}
-<div x-data="{ open: false }" class="relative" @keydown.escape="open = false">
-    <button type="button" @click="open = !open" :aria-expanded="open.toString()" aria-haspopup="true"
+<div x-data="{ open: false }" class="relative" @keydown.escape="open = false"
+     @scroll.window.capture="open && menueAnKnopf($refs.knopf, $refs.menue)" @resize.window="open && menueAnKnopf($refs.knopf, $refs.menue)">
+    <button type="button" x-ref="knopf" @click="open = !open; open && $nextTick(() => menueAnKnopf($refs.knopf, $refs.menue))" :aria-expanded="open.toString()" aria-haspopup="true"
             aria-label="„{{ motion.title|truncatechars:60 }}“ in Ordner verschieben"
             class="inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-white lg:opacity-0 lg:group-hover:opacity-100 lg:focus:opacity-100">
         <i data-lucide="folder-input" class="w-4 h-4" aria-hidden="true"></i>
     </button>
-    <div x-show="open" x-cloak @click.outside="open = false"
-         class="absolute right-0 z-20 mt-1 w-56 max-h-64 overflow-y-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-1 shadow-lg text-sm">
+    {# Fest am Knopf (documentManager.menueAnKnopf): Die Tabelle mit waagerechtem Scrollen schnitt das Menü sonst ab (#1018) #}
+    <div x-show="open" x-ref="menue" x-cloak @click.outside="open = false" data-ordner-menue
+         class="fixed z-50 w-56 max-h-64 overflow-y-auto rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 py-1 shadow-lg text-sm">
         <p class="px-3 py-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Verschieben nach</p>
         <button type="button" @click="moveDocuments(['{{ motion.id }}'], ''); open = false"
                 class="block w-full text-left px-3 py-1.5 text-gray-800 dark:text-gray-200 hover:bg-band-grau">Alle Dokumente (oberste Ebene)</button>
