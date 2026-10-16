@@ -13,6 +13,7 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView
 
+from apps.common import local_time
 from apps.common.mixins import WorkViewMixin
 from apps.work.rahmen import NeueVorlageMixin
 from apps.work.stats_text import faction_meetings_sentence
@@ -148,11 +149,14 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
 
         try:
             start_datetime = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M")
-            start_datetime = (
-                timezone.make_aware(start_datetime) if timezone.is_naive(start_datetime) else start_datetime
-            )
         except ValueError:
             messages.error(request, "Ungültiges Datum oder Uhrzeit.")
+            return redirect("work:faction", org_slug=self.organization.slug)
+        try:
+            # Tag der Zeitumstellung (Issue #974): doppelte Stunde → erste Uhrzeit, fehlende Stunde → Meldung
+            start_datetime = local_time.aware(start_datetime)
+        except local_time.NonexistentLocalTimeError as exc:
+            messages.error(request, str(exc))
             return redirect("work:faction", org_slug=self.organization.slug)
 
         # Videolink (Issue #872): gleich beim Planen, nur als http(s)-Adresse; ein Link macht die Sitzung online
@@ -207,6 +211,9 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             apply_standard_agenda(meeting)
 
         messages.success(request, "Sitzung erfolgreich erstellt.")
+        notice = local_time.ambiguous_notice(meeting.start, label="Beginn")
+        if notice:
+            messages.warning(request, notice)
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
 
 

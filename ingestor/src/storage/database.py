@@ -7,7 +7,7 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 
 import logging
 import os
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
@@ -30,10 +30,17 @@ from mandari_oparl import (
     ProcessedPerson,
 )
 from mandari_oparl.extensions import AGENDA_ITEM_COLUMNS, MEETING_COLUMNS
-from sqlalchemy import and_, bindparam, func, or_, select, text, update
+from sqlalchemy import Text, and_, bindparam, func, literal, or_, select, text, update
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.client.filter_notes import (
+    LEGACY_HOSTS_KEY,
+    MODIFIED_SINCE_CHECK_KEY,
+    UNFILTERED_HOSTS_KEY,
+    UNFILTERED_LISTS_KEY,
+)
 from src.client.source_options import SourceFetchOptions
 from src.config import settings
 from src.metrics import metrics
@@ -74,6 +81,22 @@ _ENTITY_MODEL_MAP: dict[str, type] = {
     "file": OParlFile,
     "legislativeterm": OParlLegislativeTerm,
 }
+
+
+#: Abgelöste Kennung eines Tagesordnungspunkts in ``raw_json`` (Umstellung der Kennungen aus Sitzungsseiten,
+#: Issue #863). Der Abruf schreibt sie bei jedem Speichern wieder an den Punkt, der Rückweg findet die Zeile daran.
+PREVIOUS_ID_FIELD: Final = "mandari:previousId"
+
+#: Verweis einer Beratung auf einen umgeschriebenen Tagesordnungspunkt nachziehen (Spalte und ``raw_json``). Über
+#: ``raw_json`` nur unter den Beratungen der Sitzung suchen: Beide Spalten haben einen Index, ``raw_json`` nicht.
+_RENAME_CONSULTATION_REFERENCE = text(
+    "UPDATE oparl_consultations SET"
+    " agenda_item_external_id = CASE WHEN agenda_item_external_id = :old THEN :new ELSE agenda_item_external_id END,"
+    " raw_json = CASE WHEN raw_json->>'agendaItem' = :old"
+    " THEN jsonb_set(raw_json, '{agendaItem}', to_jsonb(CAST(:new AS text))) ELSE raw_json END,"
+    " updated_at = now()"
+    " WHERE agenda_item_external_id = :old OR (meeting_external_id = :meeting AND raw_json->>'agendaItem' = :old)"
+)
 
 
 # Columns that are populated by enrichment workers AFTER the initial sync
@@ -670,10 +693,10 @@ class DatabaseStorage:
         """
         ``sync_config`` einer Quelle unter Zeilensperre lesen, ändern und schreiben (Issue #1025).
 
-        Mehrere Schreiber teilen sich ``sync_config``: parallel laufende Kommunen einer Quelle, Capability-Cache,
-        Scraper-Zustand, Zensus. Ohne Sperre stellte ein Schreiber mit älterem Stand einen gerade geänderten
-        Schlüssel wieder her, etwa einen eben gelöschten Vermerk in ``missing_lists``. ``change`` ändert die Kopie
-        und meldet, ob sich etwas geändert hat; nur dann wird geschrieben.
+        Mehrere Schreiber teilen sich ``sync_config``: parallel laufende Kommunen einer Quelle, Vermerke
+        „filtert nicht“, Scraper-Zustand, Zensus. Ohne Sperre stellte ein Schreiber mit älterem Stand einen gerade
+        geänderten Schlüssel wieder her, etwa einen eben gelöschten Vermerk in ``missing_lists``. ``change`` ändert
+        die Kopie und meldet, ob sich etwas geändert hat; nur dann wird geschrieben.
         """
         async with self.get_session() as session:
             result = await session.execute(select(OParlSource).where(where).with_for_update())
@@ -716,79 +739,45 @@ class DatabaseStorage:
             source.consecutive_failures = (source.consecutive_failures or 0) + 1
             await session.commit()
 
-    # Schlüssel in OParlSource.sync_config für den persistierten
-    # Capability-Cache (Hosts, die modified_since ablehnen, Issue #22).
-    SYNC_CONFIG_MODIFIED_SINCE_KEY = "modified_since_unsupported_hosts"
-
-    async def get_modified_since_unsupported_hosts(self) -> set[str]:
-        """Union der persistierten Hosts ohne modified_since-Support (alle Quellen)."""
-        async with self.get_session() as session:
-            result = await session.execute(select(OParlSource.sync_config))
-            hosts: set[str] = set()
-            for (sync_config,) in result.all():
-                if isinstance(sync_config, dict):
-                    stored = sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or []
-                    hosts.update(h for h in stored if isinstance(h, str) and h)
-            return hosts
-
-    async def add_modified_since_unsupported_hosts(
+    async def save_filter_notes(
         self,
         source_url: str,
-        hosts: set[str],
+        lists: Mapping[str, dict[str, str] | None],
+        hosts: Mapping[str, dict[str, str] | None],
+        *,
+        drop_legacy: bool = False,
     ) -> None:
         """
-        Persistiert Hosts ohne modified_since-Support in der sync_config
-        der Quelle, damit der Fallback-Befund Daemon-Neustarts überlebt.
+        Vermerke „filtert nicht“ einer Quelle speichern (Issue #1041): je Liste in ``unfiltered_lists``, je Server in
+        ``unfiltered_hosts`` (``None`` löscht einen Eintrag). ``drop_legacy`` löscht den bisherigen Schlüssel
+        ``modified_since_unsupported_hosts``, nachdem ``FilterNotes.from_sync_config`` ihn übernommen hat. Nur in
+        der ``sync_config`` dieser Quelle, unter Zeilensperre.
         """
-        if not hosts:
-            return
 
         def change(sync_config: dict[str, Any]) -> bool:
-            stored = set(sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or [])
-            merged = stored | {h for h in hosts if h}
-            if merged == stored:
-                return False
-            sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(merged)
-            return True
+            changed = False
+            for list_url, entry in lists.items():
+                if _put_entry(sync_config, UNFILTERED_LISTS_KEY, list_url, entry):
+                    changed = True
+            for host, entry in hosts.items():
+                if _put_entry(sync_config, UNFILTERED_HOSTS_KEY, host, entry):
+                    changed = True
+            if drop_legacy and LEGACY_HOSTS_KEY in sync_config:
+                del sync_config[LEGACY_HOSTS_KEY]
+                changed = True
+            return changed
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 
-    # Ergebnis der letzten Prüfung von modified_since (nach jedem Vollabgleich)
-    SYNC_CONFIG_MODIFIED_SINCE_CHECK_KEY = "modified_since_check"
+    async def set_modified_since_check(self, source_url: str, host: str, verdict: str) -> None:
+        """Ergebnis der Prüfung von ``modified_since`` nach einem Vollabgleich an der Quelle festhalten (nur dort)."""
+        finding = {"checked_at": datetime.now(UTC).isoformat(timespec="seconds"), "host": host, "result": verdict}
 
-    async def apply_modified_since_check(self, source_url: str, host: str, verdict: str, supported: bool) -> None:
-        """
-        Ergebnis der modified_since-Prüfung festhalten: an der Quelle vermerken und den Host im
-        persistierten Capability-Cache aller Quellen eintragen (filtert nicht) oder austragen (filtert).
-        """
-        if not host:
-            return
-        async with self.get_session() as session:
-            result = await session.execute(select(OParlSource).with_for_update())
-            for source in result.scalars().all():
-                sync_config = dict(source.sync_config or {})
-                stored = {h for h in sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or [] if isinstance(h, str)}
-                changed = False
-                if supported and host in stored:
-                    stored.discard(host)
-                    changed = True
-                if source.url == source_url:
-                    if not supported and host not in stored:
-                        stored.add(host)
-                    sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_CHECK_KEY] = {
-                        "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
-                        "host": host,
-                        "result": verdict,
-                    }
-                    changed = True
-                if not changed:
-                    continue
-                if stored:
-                    sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(stored)
-                else:
-                    sync_config.pop(self.SYNC_CONFIG_MODIFIED_SINCE_KEY, None)
-                source.sync_config = sync_config
-            await session.commit()
+        def change(sync_config: dict[str, Any]) -> bool:
+            sync_config[MODIFIED_SINCE_CHECK_KEY] = finding
+            return True
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
 
     async def get_body_sync_started(self, source_id: UUID, body_external_id: str) -> datetime | None:
         """Beginn des letzten vollständig erfolgreichen Abgleichs der Kommune (Issue #1025), sonst ``None``."""
@@ -1896,6 +1885,149 @@ class DatabaseStorage:
 
     # ========== Agenda Item Operations ==========
 
+    async def get_agenda_items_of_meeting(self, meeting_external_id: str) -> list[dict[str, Any]]:
+        """
+        Tagesordnungspunkte einer Sitzung im Bestand, auch als gelöscht markierte: ``id``, ``external_id``,
+        ``number``, ``name``, ``public``, ``order``, ``deleted``, die Beratung aus ``raw_json`` (``consultation``, als
+        Verweis) und die abgelöste Kennung (``previous_id``, :data:`PREVIOUS_ID_FIELD`). Für die Umstellung der
+        Kennungen beim Abruf aus Sitzungsseiten und ihren Rückweg (Issue #863). Leer ohne die Sitzung im Bestand.
+        """
+        async with self.get_session() as session:
+            stmt = (
+                select(
+                    OParlAgendaItem.id,
+                    OParlAgendaItem.external_id,
+                    OParlAgendaItem.number,
+                    OParlAgendaItem.name,
+                    OParlAgendaItem.public,
+                    OParlAgendaItem.order,
+                    OParlAgendaItem.deleted,
+                    OParlAgendaItem.raw_json["consultation"].astext,
+                    OParlAgendaItem.raw_json[PREVIOUS_ID_FIELD].astext,
+                )
+                .join(OParlMeeting, OParlMeeting.id == OParlAgendaItem.meeting_id)
+                .where(OParlMeeting.external_id == meeting_external_id)
+            )
+            rows = (await session.execute(stmt)).all()
+        fields = ("id", "external_id", "number", "name", "public", "order", "deleted", "consultation", "previous_id")
+        return [dict(zip(fields, row, strict=True)) for row in rows]
+
+    async def get_active_agenda_item_ids(self, meeting_external_ids: list[str]) -> dict[str, set[str]]:
+        """
+        Kennungen der nicht als gelöscht markierten Tagesordnungspunkte je Sitzung (Löschabgleich der Tagesordnung,
+        Issue #863). Sitzungen ohne solche Punkte fehlen.
+        """
+        result: dict[str, set[str]] = {}
+        async with self.get_session() as session:
+            for start in range(0, len(meeting_external_ids), 500):
+                stmt = (
+                    select(OParlMeeting.external_id, OParlAgendaItem.external_id)
+                    .join(OParlMeeting, OParlMeeting.id == OParlAgendaItem.meeting_id)
+                    .where(
+                        OParlMeeting.external_id.in_(meeting_external_ids[start : start + 500]),
+                        OParlAgendaItem.deleted.is_(False),
+                    )
+                )
+                for meeting, item in (await session.execute(stmt)).all():
+                    result.setdefault(meeting, set()).add(item)
+        return result
+
+    async def get_meeting_agendas_of_source(self, source_id: UUID) -> list[tuple[str, list[Any]]]:
+        """Sitzungen einer Quelle mit der Tagesordnung, wie die Quelle sie zuletzt lieferte (``raw_json``, #863)."""
+        async with self.get_session() as session:
+            stmt = (
+                select(OParlMeeting.external_id, OParlMeeting.raw_json["agendaItem"])
+                .join(OParlBody, OParlBody.id == OParlMeeting.body_id)
+                .where(OParlBody.source_id == source_id)
+                .order_by(OParlMeeting.external_id)
+            )
+            rows = (await session.execute(stmt)).all()
+        return [(external_id, agenda if isinstance(agenda, list) else []) for external_id, agenda in rows]
+
+    async def rename_agenda_items(
+        self, meeting_external_id: str, renames: Mapping[str, str], *, keep_previous: bool = True
+    ) -> int:
+        """
+        Schreibt die Kennung (``external_id``) von Tagesordnungspunkten einer Sitzung in place um; ``id`` bleibt.
+
+        Wie beim Umzug einer Quelle mit neuer Form der Adressen (ADR ``docs/adr/20260929-kanonisches-modell.md``,
+        Nachtrag #88): Notizen, Positionen, Suchindex und Ereignisse hängen an der Zeile und bleiben gültig;
+        ``check_ris_ids`` zählt die Zeilen danach als „Kennung abweichend“, das ist gewollt. Mit um ziehen die Kennung
+        in ``raw_json`` des Punkts, die Verweise der Beratungen (Spalte und ``raw_json["agendaItem"]``) und die
+        Tagesordnung in ``raw_json`` der Sitzung: Der folgende Abruf meldet so keine Änderung, die keine ist.
+
+        ``keep_previous``: die bisherige Kennung als :data:`PREVIOUS_ID_FIELD` am Punkt festhalten (Umstellung);
+        ``False`` entfernt sie (Rückweg). Nur Punkte dieser Sitzung; ein Ziel, das schon vergeben ist, und Ketten
+        (Ziel einer Umschreibung ist Quelle einer anderen) bleiben unberührt. Eine Transaktion. Rückgabe: Zahl der
+        umgeschriebenen Punkte.
+        """
+        targets = set(renames.values())
+        pairs = [(old, new) for old, new in renames.items() if old != new and old not in targets]
+        if not pairs:
+            return 0
+        async with self.get_session() as session:
+            meeting = (
+                await session.execute(
+                    select(OParlMeeting.id, OParlMeeting.raw_json).where(
+                        OParlMeeting.external_id == meeting_external_id
+                    )
+                )
+            ).first()
+            if meeting is None:
+                return 0
+            meeting_id, meeting_raw = meeting
+            taken = set(
+                (
+                    await session.execute(
+                        select(OParlAgendaItem.external_id).where(OParlAgendaItem.external_id.in_(sorted(targets)))
+                    )
+                ).scalars()
+            )
+            done: dict[str, str] = {}
+            for old, new in pairs:
+                if new in taken:
+                    continue
+                kept = {"id": new, PREVIOUS_ID_FIELD: old} if keep_previous else {"id": new}
+                raw = (
+                    func.coalesce(OParlAgendaItem.raw_json, literal({}, JSONB))
+                    .op("-", return_type=JSONB)(literal(PREVIOUS_ID_FIELD, Text))
+                    .op("||", return_type=JSONB)(literal(kept, JSONB))
+                )
+                row = (
+                    await session.execute(
+                        update(OParlAgendaItem)
+                        .where(OParlAgendaItem.external_id == old, OParlAgendaItem.meeting_id == meeting_id)
+                        .values(
+                            external_id=new,
+                            raw_json=raw,
+                            updated_at=func.now(),
+                        )
+                        .returning(OParlAgendaItem.id)
+                    )
+                ).first()
+                if row is None:
+                    continue
+                await session.execute(
+                    _RENAME_CONSULTATION_REFERENCE, {"old": old, "new": new, "meeting": meeting_external_id}
+                )
+                taken.add(new)
+                done[old] = new
+            agenda = meeting_raw.get("agendaItem") if isinstance(meeting_raw, dict) else None
+            if done and isinstance(agenda, list):
+                for entry in agenda:
+                    if isinstance(entry, dict) and entry.get("id") in done:
+                        old = entry["id"]
+                        entry["id"] = done[old]
+                        if keep_previous:
+                            entry[PREVIOUS_ID_FIELD] = old
+                        else:
+                            entry.pop(PREVIOUS_ID_FIELD, None)
+                await session.execute(
+                    update(OParlMeeting).where(OParlMeeting.id == meeting_id).values(raw_json=meeting_raw)
+                )
+            await session.commit()
+        return len(done)
+
     async def upsert_agenda_item(
         self,
         item: ProcessedAgendaItem,
@@ -2146,14 +2278,23 @@ class DatabaseStorage:
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
+            # Für das Ereignis die Zeile des Punkts im Bestand, nicht die Kennung aus seiner Adresse (umgeschriebene
+            # Punkte, Issue #863); im selben Befehl, ohne eigene Abfrage
+            agenda_ref = consultation.agenda_item_external_id if emit else None
+            returning: list[Any] = [OParlConsultation.id]
+            if agenda_ref:
+                returning.append(
+                    select(OParlAgendaItem.id).where(OParlAgendaItem.external_id == agenda_ref).scalar_subquery()
+                )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
-            ).returning(OParlConsultation.id)
+            ).returning(*returning)
 
-            result = await session.execute(stmt)
-            consultation_id = result.scalar_one()
+            row = (await session.execute(stmt)).one()
+            consultation_id = row[0]
             if emit:
+                agenda_item_id = row[1] if agenda_ref else None
                 drafts = ris_events.consultation_events(
                     consultation_id,
                     consultation.raw_json or {},
@@ -2161,6 +2302,7 @@ class DatabaseStorage:
                     paper_id=paper_id,
                     paper_external_id=consultation.paper_external_id,
                     ids=self.id_bases,
+                    agenda_item_id=agenda_item_id,
                 )
                 await self._emit(session, body_id, drafts, consultation.oparl_modified)
             await session.commit()

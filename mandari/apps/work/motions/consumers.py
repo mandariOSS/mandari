@@ -11,7 +11,9 @@ Protocol: JSON messages with base64-encoded binary Yjs data.
 import base64
 import binascii
 import logging
+import re
 import time
+from urllib.parse import parse_qs
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
@@ -51,6 +53,17 @@ CURSOR_COLORS = [
 MSG_SYNC = 0
 MSG_AWARENESS = 1
 SYNC_STEP1 = 0
+
+
+# Kennung eines Editorfensters (#1018): zufällig im Browser erzeugt, hängt an der WebSocket-Adresse (?fenster=…) und
+# geht beim Statuswechsel mit. Nur Buchstaben, Ziffern und Bindestriche; alles andere gilt als „keine Kennung“.
+_FENSTER_KENNUNG = re.compile(r"[A-Za-z0-9-]{8,64}")
+
+
+def fenster_kennung(wert: str | None) -> str:
+    """Geprüfte Fensterkennung oder ``""``."""
+    wert = (wert or "").strip()
+    return wert if _FENSTER_KENNUNG.fullmatch(wert) else ""
 
 
 def _read_var_uint(data: bytes, pos: int) -> tuple[int, int] | None:
@@ -102,6 +115,8 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
     - yjs_state: {"type": "yjs_state", "data": "<base64>"} — Server → Client (initial state)
     - presence:  {"type": "presence", "users": [...]}       — Server → Client
     - reload:    {"type": "reload"}                         — Server → Client (z.B. nach Revision-Restore, POST-Speichern)
+    - Das Fenster, das einen Statuswechsel auslöst, bekommt keine Aufforderung (Kennung ``?fenster=`` an der Adresse,
+                 #1018): Es hat vorher gesichert und lädt selbst neu; sein letztes Sichern gilt nicht als veraltet.
     - reload mit Grund: {"type": "reload", "reason": "access_changed" | "access_revoked"} — Zugriff herabgestuft
                  bzw. entzogen (Issue #582); bei „access_revoked“ schließt der Server die Verbindung danach (4403)
     - yjs_save_rejected: {"type": "yjs_save_rejected", "reason": "reload_pending"} — Server → Client, yjs_save nach reload verworfen
@@ -138,11 +153,15 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
         # ein spaetes yjs_save (Tab-Wechsel, beforeunload, destroy) darf den
         # inzwischen per POST gespeicherten Inhalt nicht mehr ueberschreiben (#184).
         self.veraltet = False
+        # Kennung des Editorfensters (#1018), leer bei älteren Clients
+        self.fenster = ""
 
     async def connect(self):
         self.document_id = self.scope["url_route"]["kwargs"]["document_id"]
         self.group_name = f"doc_{self.document_id}"
         self.user = self.scope.get("user")
+        abfrage = parse_qs((self.scope.get("query_string") or b"").decode("latin-1"))
+        self.fenster = fenster_kennung((abfrage.get("fenster") or [""])[0])
 
         # Reject anonymous users
         if not self.user or self.user.is_anonymous:
@@ -351,6 +370,9 @@ class DocumentCollaborationConsumer(AsyncJsonWebsocketConsumer):
 
     async def doc_reload(self, event):
         """Ask all clients to reload the document (e.g. after revision restore or POST save)."""
+        if self.fenster and event.get("ausser_fenster") == self.fenster:
+            # Dieses Fenster hat den Statuswechsel ausgelöst, vorher gesichert und lädt selbst neu (#1018)
+            return
         self.veraltet = True
         await self.send_json(
             {

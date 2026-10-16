@@ -74,6 +74,8 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     # und erscheint in mandari_tasks_dead), Sicherheitsprotokoll nach Frist löschen, DSGVO-Löschlauf
     befehl_als_zeitplan("verify_audit_chain", crontab="20 4 * * *", zeitgrenze=3000, ziel=ziel)
     befehl_als_zeitplan("purge_security_audit_log", crontab="40 4 * * *", zeitgrenze=1800, ziel=ziel)
+    # Anmeldeversuche der Drosselung nach LOGIN_ATTEMPT_RETENTION_DAYS löschen (Issue #366)
+    befehl_als_zeitplan("purge_login_attempts", crontab="35 4 * * *", zeitgrenze=1800, ziel=ziel)
     befehl_als_zeitplan("session_privacy_purge", crontab="0 5 1 * *", zeitgrenze=3000, ziel=ziel)
 
     # Sitzungsmappen (Issue #218): Anforderungen aus der Oberfläche minütlich abarbeiten

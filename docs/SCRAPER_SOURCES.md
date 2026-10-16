@@ -222,6 +222,7 @@ vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
 | Basis-URL | Body | `https://<host>/<prefix>/` (mehrere Körperschaften: `…/?__cpanr=N`) |
 | `gr0040` (Auswahl Wahlperiode, `__cwpnr`) | LegislativeTerm (am Body) | `…/gr0040.asp?__cwpnr=N` |
 | `si0057?__ksinr=` | Meeting inkl. TOPs (Ö/NÖ, Beschlüsse) | `…/si0057.asp?__ksinr=N` |
+| TOP in `si0057` | AgendaItem | `…/si0057.asp?__ksinr=N#agendaitem/kvonr-K` (mit Vorlage), sonst `…#agendaitem/nr-3.2` bzw. `nr-N1` (nichtöffentlich), ohne Nummer `…#agendaitem/pos-7` |
 | `si0050?__ksinr=` | Sitzungsdokumente (Einladung/Niederschrift) | `…/getfile.asp?id=N&type=do` |
 | `vo0050?__kvonr=` | Paper (Betreff, Nummer, Art) + Anlagen-PDFs | `…/vo0050.asp?__kvonr=N` |
 | `gr0040` | Organizations (Gremien) | `…/kp0040.asp?__kgrnr=N` |
@@ -231,6 +232,72 @@ vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
 PDF-Anlagen laufen automatisch durch die bestehende OCR-Queue
 (`text_extraction_status='pending'` → pypdf → Tesseract → Mistral) und
 werden in Elasticsearch indexiert.
+
+### Kennung der Tagesordnungspunkte
+
+Die Sitzungsseite (`si0057`) nennt je Punkt weder eine eigene Kennung noch einen Link auf eine Detailseite
+(geprüft an den Golden Files aus Lüdenscheid und Eschweiler). Stabil ist nur die Vorlage (Issue #863):
+
+- **Punkt mit Vorlage:** `…#agendaitem/kvonr-<__kvonr>`, gleich unter welcher Nummer und in welchem Teil der Sitzung
+  er steht. Fügt die Verwaltung davor einen Punkt ein oder nummeriert um, bleibt die Kennung. Berät die Sitzung
+  dieselbe Vorlage an mehreren Punkten, zählen die späteren weiter (`kvonr-<__kvonr>-2`).
+- **Punkt ohne Vorlage** (Eröffnung, Mitteilungen, Anfragen, Gliederungspunkte wie „Bauordnung“): keine stabile
+  Quelle der Kennung. Er heißt nach seiner Nummer (`nr-3.2`, im nichtöffentlichen Teil `nr-N1` wie „N 1“ auf der
+  Seite), ohne Nummer nach seiner Position (`pos-7`). Nach einer Einfügung davor trägt die Kennung einen anderen
+  Punkt; Work hängt seine Daten über den fachlichen Anker um (#547). Bekommt ein Punkt nachträglich eine Vorlage,
+  erhält er eine neue Kennung.
+- **Punkte, die die Tagesordnung nicht mehr liefert** (abgesetzt, nachträglich mit Vorlage, umnummeriert ohne
+  Vorlage), markiert der Abruf nach derselben Regel wie Sitzungen und Gremien als gelöscht (`quelle_geloescht`,
+  Ereignis `ris.object.depublished`, nichtöffentliche Punkte nur nichtöffentlich): nur in Vollabgleichen ohne
+  Fehler, nur für Sitzungen, deren Tagesordnung der Lauf gelesen hat (Seite lesbar, mindestens ein Punkt), und erst
+  nach `SCRAPER_TOMBSTONE_FULL_CRAWLS` solchen Läufen in Folge. Liest ein Vollabgleich die Sitzung nicht (oder gar
+  keine Tagesordnung), beginnt die Zählung ihrer Punkte von vorn. Nur Punkte in der Form seit #863; Zähler in
+  `scraper_state.missing.agendaitem`. Taucht ein Punkt wieder auf, hebt der Upsert die Markierung auf.
+- **Bremse je Sitzung:** Für Tagesordnungspunkte gilt nicht die Bremse je Quelle (`SCRAPER_TOMBSTONE_MAX_MISSING`),
+  sondern je Sitzung: Fehlt mehr als die Hälfte ihrer Punkte, etwa weil ein ganzer Teil der Seite fehlt, zählt für
+  diese Sitzung nichts, und ihre Zähler bleiben stehen. Was der Abruf vor #863 nie gelöscht hat, hält so den Abgleich
+  der übrigen Sitzungen nicht an. `last_run.agenda_braked` nennt gebremste Sitzungen und fehlende Punkte; die Quelle
+  bekommt dafür keine Warnung im Betriebsmonitor.
+
+**Umstellung des Bestands.** Bis Issue #863 war die Nummer die Kennung (`…#agendaitem/3.2`, `N1`). Der erste Abruf
+einer Sitzung mit der neuen Form schreibt ihre Punkte in place um: `external_id` neu, `id` bleibt (wie beim Umzug
+einer Quelle, ADR `docs/adr/20260929-kanonisches-modell.md`). Mit um ziehen die Kennung in `raw_json` des Punkts, die
+Verweise der Beratungen (Spalte `agenda_item_external_id` und `raw_json.agendaItem`) und die Tagesordnung in
+`raw_json` der Sitzung; der Änderungsfeed meldet dabei nichts, und Ereignisse verweisen auf die Zeile im Bestand.
+Notizen, Positionen und Suchindex hängen an der Zeile und bleiben gültig; `check_ris_ids` zählt die Punkte danach
+als „Kennung abweichend“, das ist gewollt. Zuordnung:
+
+1. Punkt mit Vorlage: die Zeile mit derselben Beratung, auch wenn die Nummer sich seit dem letzten Abruf geändert hat.
+2. Punkt ohne Vorlage: die Zeile ohne Vorlage mit demselben Namen und gleich öffentlich, wenn der Name auf beiden
+   Seiten nur einmal vorkommt; sonst die Zeile unter seiner bisherigen Nummer (ohne Vorlage, gleich öffentlich),
+   die der Abruf bisher überschrieben hätte.
+3. Übrige Zeilen (der Punkt steht nicht mehr auf der Tagesordnung) bekommen die Kennung nach ihren eigenen Angaben
+   (`kvonr-…`, `nr-…`, bei Bedarf mit Zählung) und fallen dann unter den Löschabgleich.
+
+Die abgelöste Kennung bleibt als `mandari:previousId` an Punkt und Tagesordnung stehen; der Abruf schreibt sie bei
+jedem Speichern wieder dazu. Sitzungen, die kein Abruf mehr liest (außerhalb des Kalenderfensters), behalten ihre
+Kennungen. Eine Kennung der alten Form vergibt der Adapter nie wieder; die behaltene `id` stößt deshalb mit keiner
+neuen Zeile zusammen.
+
+**Nicht ohne Rückweg zurückfallen.** Ein Ingestor von vor #863 vergibt wieder die Nummer als Kennung und will mit der
+`id` einer umgeschriebenen Zeile eine neue anlegen: Der Primärschlüssel ist vergeben, und der ganze Abruf der Quelle
+bricht ab. Vor einem Rückfall je SessionNet-Quelle den Daemon für die Quelle anhalten (`is_active = false`) und
+
+```bash
+docker compose exec ingestor python -m src.main top-kennungen-zurueck --source <URL der Quelle>              # zählt
+docker compose exec ingestor python -m src.main top-kennungen-zurueck --source <URL der Quelle> --ausfuehren # schreibt
+```
+
+ausführen. Der Befehl gibt umgeschriebenen Zeilen genau ihre abgelöste Kennung zurück (`mandari:previousId`); danach
+passt jede `id` wieder zu ihrer Kennung. Er endet mit Fehler, wenn Zeilen ohne Rückweg bleiben; dann nicht
+zurückfallen. Punkte, die seit der Umstellung neu angelegt wurden, bleiben in der neuen Form, und der ältere Abruf
+legt sie ein zweites Mal an (Dublette, kein Abbruch).
+
+`--neue-punkte` schreibt auch diese Punkte auf die Kennung um, die der ältere Abruf vergäbe, sofern frei. Ihre `id`
+passt danach nicht mehr zur Kennung. Nur für einen dauerhaften Rückfall verwenden: **Wird nach einem Rückweg mit
+`--neue-punkte` wieder auf den neuen Abruf umgestellt, kann er solchen Zeilen eine andere als ihre ursprüngliche
+Kennung geben; liefert die Seite später die ursprüngliche, scheitert der Abruf am Primärschlüssel.** Ohne
+`--neue-punkte` ist ein späteres erneutes Umstellen sicher: Es läuft wie die erste Umstellung.
 
 ### Änderungserkennung & Löschungen
 
@@ -470,8 +537,9 @@ seit Issue #122; die Kommune muss nichts freischalten.
   "Pfad existiert nicht"-Signalen, nie bei Timeouts oder 5xx.
 - **Fehlerobjekte** werden nie als Datensatz verarbeitet.
 - **Ignoriertes `modified_since`** wird an den Listen-Links erkannt; der Host
-  landet im bestehenden Capability-Cache (`sync_config`), Folgelisten senden
-  den Parameter nicht mehr.
+  steht dann als „filtert nicht“ in `sync_config["unfiltered_hosts"]` dieser
+  Quelle, ihre Folgelisten senden den Parameter nicht mehr. Andere Quellen,
+  auch auf demselben Server, betrifft der Vermerk nicht (Issue #1041).
 - **Änderungserkennung ohne Zeitstempel**: Objekte mit synthetischem oder
   fehlendem `modified` bekommen wie Scraper-Quellen einen Content-Hash
   (`mandari:contentHash` im `raw_json`). Der inkrementelle Lauf upsertet nur
@@ -517,12 +585,14 @@ seit Issue #122; die Kommune muss nichts freischalten.
 
 3. Erstlauf als Voll-Sync anstoßen (Admin-Aktion „Voll-Sync" oder
    `mandari-ingestor sync --body <System-URL> --full`); regelmäßig übernimmt
-   der Daemon erst, wenn die Quelle im Admin aktiviert ist. Im Log erscheint
-   einmalig „Server ignoriert modified_since".
+   der Daemon erst, wenn die Quelle im Admin aktiviert ist. Nach dem
+   Vollabgleich prüft der Ingestor den Filter; im Log steht
+   „modified_since-Prüfung für <mandant>.gremien.info: ignored".
 
 4. Nach dem ersten inkrementellen Lauf im Admin prüfen: `oparl_version = 1.0`,
-   `sync_config.modified_since_unsupported_hosts` enthält den Host, im
-   SyncLog stehen nur noch wenige neue/aktualisierte Objekte.
+   `sync_config.unfiltered_hosts` enthält den Host (Vermerk „filtert nicht“,
+   gilt nur für diese Quelle, Issue #1041), im SyncLog stehen nur noch
+   wenige neue/aktualisierte Objekte.
 
 5. Geo-Daten zuordnen (OSM-Grenze, Gemeindeschlüssel, Kartenausschnitt,
    Straßen, Adressen; Zweckverbände und Gesellschaften als „keine

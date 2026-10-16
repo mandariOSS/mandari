@@ -322,7 +322,8 @@ async def test_nichtoeffentliche_tops_mit_eigener_zaehlung_ueberschreiben_nichts
     items = meeting["agendaItem"]
     assert [i["number"] for i in items] == ["1", "2", "1"]
     assert len({i["id"] for i in items}) == 3
-    assert items[2]["id"].endswith("#agendaitem/N1")
+    # Punkte ohne Vorlage nach Nummer (nichtöffentlich mit N), mit Vorlage nach ihr (Issue #863)
+    assert [i["id"].rsplit("#agendaitem/", 1)[1] for i in items] == ["nr-1", "kvonr-5001", "nr-N1"]
     assert items[2]["public"] is False
 
 
@@ -397,6 +398,20 @@ class FakeStorage:
 
     async def get_active_external_ids_for_body(self, entity_type, body_id) -> set[str]:
         return set(self.active.get((entity_type, body_id), set()))
+
+    async def get_agenda_items_of_meeting(self, meeting_external_id) -> list[dict[str, Any]]:
+        return []
+
+    async def rename_agenda_items(self, meeting_external_id, renames, keep_previous=True) -> int:
+        raise AssertionError(f"unerwartete Umstellung: {renames}")
+
+    async def get_active_agenda_item_ids(self, meeting_external_ids) -> dict[str, set[str]]:
+        sitzungen = set(meeting_external_ids)
+        result: dict[str, set[str]] = {}
+        for punkt in getattr(self, "agenda_items", set()):
+            if punkt.partition("#")[0] in sitzungen:
+                result.setdefault(punkt.partition("#")[0], set()).add(punkt)
+        return result
 
 
 class FakeOrchestrator:

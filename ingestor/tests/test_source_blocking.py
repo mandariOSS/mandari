@@ -45,7 +45,6 @@ def _fast(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "oparl_server_error_series_threshold", 5)
     monkeypatch.setattr(settings, "oparl_ua_probe_enabled", True)
     monkeypatch.setattr(settings, "circuit_breaker_enabled", False)
-    OParlClient._modified_since_unsupported.clear()
 
 
 class Recorder:
@@ -263,7 +262,7 @@ async def test_ua_block_is_not_mistaken_for_missing_modified_since_support() -> 
         await client._client.aclose()
     assert excinfo.value.error_kind == ERROR_KIND_UA_BLOCKED
     assert excinfo.value.list_url == LIST_URL
-    assert "ris.example.org" not in OParlClient.get_modified_since_unsupported()
+    assert client.filter_notes.lists == {} and client.filter_notes.hosts == {}
 
 
 # ---------------------------------------------------------------------------

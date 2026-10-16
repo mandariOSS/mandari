@@ -19,6 +19,7 @@ from django.http import HttpRequest
 from django.urls import reverse
 from ninja import Query, Router
 
+from apps.session import audit
 from apps.session.models import (
     SessionApplication,
     SessionMeeting,
@@ -83,6 +84,27 @@ def _meta(total: int, limit: int, offset: int, principal: Principal) -> ListMeta
 
 def _org(obj: Any) -> dict[str, Any] | None:
     return {"id": obj.id, "name": obj.name} if obj is not None else None
+
+
+def _log_non_public_reads(
+    request: HttpRequest, tenant: SessionTenant, principal: Principal, instances: list[Any], liste: str, umfang: str
+) -> None:
+    """
+    Nichtöffentliches der Antwort als Lesezugriff protokollieren wie in der Oberfläche (Issue #366).
+
+    Nichtöffentliches erhalten nur angemeldete Personen mit dem NÖ-Recht, nie API-Token (``auth``).
+    """
+    if principal.session_user is None or not instances:
+        return
+    audit.log_api_reads(
+        request,
+        instances,
+        tenant=tenant,
+        user=principal.session_user,
+        liste=liste,
+        umfang=umfang,
+        zugriff=audit.API_READ_V1,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -151,6 +173,9 @@ def meetings(
         ):
             item["internal_notes"] = meeting.get_internal_notes_decrypted()
         data.append(item)
+    _log_non_public_reads(
+        request, tenant, principal, [m for m in rows if not m.is_public], "Sitzungen", "nichtöffentliche Sitzungen"
+    )
     return {"data": data, "meta": _meta(total, limit, offset, principal)}
 
 
@@ -195,6 +220,10 @@ def papers(
             item["main_text"] = paper.main_text
             item["resolution_text"] = paper.resolution_text
         data.append(item)
+    if non_public:
+        _log_non_public_reads(
+            request, tenant, principal, [p for p in rows if not p.is_public], "Vorlagen", "nichtöffentliche Vorlagen"
+        )
     return {"data": data, "meta": _meta(total, limit, offset, principal)}
 
 

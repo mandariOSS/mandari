@@ -30,6 +30,7 @@ import httpx
 import pytest
 from mandari_oparl.utils import parse_datetime
 
+from src.client.filter_notes import FilterNotes
 from src.client.oparl_client import ListFetchError, ListMissingError, OParlClient
 from src.client.source_options import SourceFetchOptions
 from src.config import settings
@@ -139,6 +140,8 @@ class Speicher:
         self.uhrzeit: set[str] = {f"{BODY}/{name}" for name in LISTEN}
         #: Einträge im Sync-Log
         self.protokoll: list[dict[str, Any]] = []
+        #: Vermerke „filtert nicht“ der Quelle; gelten wie in ``sync_config`` über die Läufe hinweg (Issue #1041)
+        self.filtervermerke = FilterNotes()
 
     async def upsert_body(self, body: Any, source_id: UUID) -> UUID:
         return UUID(int=1)
@@ -217,8 +220,8 @@ def _kommune(**listen: str) -> dict[str, Any]:
 
 
 @asynccontextmanager
-async def _client(quelle: Quelle) -> AsyncIterator[OParlClient]:
-    async with OParlClient(max_concurrent=2, wait_time=0) as client:
+async def _client(quelle: Quelle, notizen: FilterNotes | None = None) -> AsyncIterator[OParlClient]:
+    async with OParlClient(max_concurrent=2, wait_time=0, filter_notes=notizen) as client:
         assert client._client is not None
         await client._client.aclose()
         client._client = httpx.AsyncClient(transport=httpx.MockTransport(quelle))
@@ -235,7 +238,7 @@ async def _lauf(
 ) -> dict[str, Any]:
     quelle.anfragen.clear()
     listen = MissingLists(SOURCE, dict(speicher.fehlend))
-    async with _client(quelle) as client:
+    async with _client(quelle, speicher.filtervermerke) as client:
         return await _orchestrator(speicher)._sync_body(
             client=client,
             body_data=kommune or _kommune(),
@@ -249,19 +252,11 @@ async def _lauf(
 
 @pytest.fixture(autouse=True)
 def _ohne_nebenlaeufe(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Keine Texterkennung, kein Suchindex; Befund „filtert nicht“ des Hosts je Test leer."""
+    """Keine Texterkennung, kein Suchindex, ein Versuch je Anfrage."""
     monkeypatch.setattr(settings, "text_extraction_enabled", False)
     monkeypatch.setattr(settings, "elasticsearch_indexing_enabled", False)
     monkeypatch.setattr(settings, "oparl_max_retries", 1)
-    vorher = OParlClient.get_modified_since_unsupported()
-    listen_vorher = set(OParlClient._list_modified_since_unsupported)
-    OParlClient._modified_since_unsupported.clear()
-    OParlClient._list_modified_since_unsupported.clear()
     yield
-    OParlClient._modified_since_unsupported.clear()
-    OParlClient._modified_since_unsupported.update(vorher)
-    OParlClient._list_modified_since_unsupported.clear()
-    OParlClient._list_modified_since_unsupported.update(listen_vorher)
 
 
 class _OhneBefund:
@@ -799,7 +794,8 @@ async def test_404_nur_mit_filter_ist_keine_fehlende_liste():
     assert quelle.filter_der_anfragen("membership")[0] is not None
     assert quelle.filter_der_anfragen("membership")[1:] == [None]
 
-    # Im selben Prozess ohne die gefilterte Anfrage, die anderen Listen weiter mit Filter
+    # Im nächsten Lauf ohne die gefilterte Anfrage (Vermerk der Quelle), die anderen Listen weiter mit Filter
+    assert set(speicher.filtervermerke.lists) == {f"{BODY}/membership"}
     await _lauf(quelle, speicher, kommune=kommune)
     assert quelle.filter_der_anfragen("membership") == [None]
     assert all(f is not None for f in quelle.filter_der_anfragen("paper"))
@@ -955,7 +951,7 @@ async def test_liste_ohne_filter_nur_wenn_sie_ohne_filter_lesbar_war():
         with pytest.raises(ListMissingError):
             async for _ in client.fetch_list(liste, modified_since=seit, report_missing=True):
                 pass
-        assert liste not in OParlClient._list_modified_since_unsupported
+        assert liste not in client.filter_notes.lists
         quelle.listen["/oparl/body/1/membership"] = []
         quelle.anfragen.clear()
         assert [page async for page in client.fetch_list(liste, modified_since=seit, report_missing=True)] == []

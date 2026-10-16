@@ -27,6 +27,7 @@ import httpx
 import pytest
 from mandari_oparl.utils import parse_datetime
 
+from src.client.filter_notes import FilterNotes
 from src.client.oparl_client import ListFetchError, ListMissingError, OParlClient
 from src.client.source_options import FullSyncSlices, FullSyncWindow, SourceFetchOptions
 from src.scheduler.takt import default_full_sync_window
@@ -214,8 +215,10 @@ def _kommune(*listen: str) -> dict[str, Any]:
 
 
 @asynccontextmanager
-async def _client(quelle: HammQuelle, frist: datetime | None = None) -> AsyncIterator[OParlClient]:
-    async with OParlClient(max_concurrent=2, wait_time=0, fetch_deadline=frist) as client:
+async def _client(
+    quelle: HammQuelle, frist: datetime | None = None, notizen: FilterNotes | None = None
+) -> AsyncIterator[OParlClient]:
+    async with OParlClient(max_concurrent=2, wait_time=0, fetch_deadline=frist, filter_notes=notizen) as client:
         assert client._client is not None
         await client._client.aclose()
         client._client = httpx.AsyncClient(transport=httpx.MockTransport(quelle))
@@ -244,7 +247,7 @@ async def _lauf(
         slow_lists_of(speicher.config),
     )
     quelle.anfragen.clear()
-    async with _client(quelle, frist) as client:
+    async with _client(quelle, frist, speicher.filtervermerke) as client:
         return await _orchestrator(speicher)._sync_body(
             client=client,
             body_data=kommune or _kommune(),
@@ -418,7 +421,7 @@ async def test_zeitscheibe_ohne_rueckfall_auf_die_ungefilterte_liste():
         # Bei 403 folgt nur die Vergleichsanfrage mit neutralem Client, ebenfalls mit Filter
         assert anfragen and all(url.params.get("modified_since") for url in anfragen)
         assert len(anfragen) == (2 if status == 403 else 1)
-        assert HOST not in OParlClient.get_modified_since_unsupported()
+        assert client.filter_notes.lists == {} and client.filter_notes.hosts == {}
 
 
 async def test_zeitscheibe_haengt_verlorene_filter_an_folgeseiten():
@@ -445,8 +448,8 @@ async def test_zeitscheibe_haengt_verlorene_filter_an_folgeseiten():
             )
         ]
         assert seiten == [[{"id": "a"}], [{"id": "b"}]]
-        # Der verlorene Filter macht den Host nicht zu einem „ohne Filter“
-        assert HOST not in OParlClient.get_modified_since_unsupported()
+        # Der verlorene Filter macht weder den Server noch die Liste zu „ohne Filter“
+        assert client.filter_notes.lists == {} and client.filter_notes.hosts == {}
     erwartet = (datetime(2020, 1, 1, tzinfo=UTC), datetime(2020, 2, 1, tzinfo=UTC))
     assert all(_grenzen(url) == erwartet for url in anfragen)
 
@@ -965,11 +968,12 @@ def _faellig(speicher: ScheibenSpeicher, tage: int) -> datetime:
 
 
 async def test_nachholen_bei_quelle_die_den_filter_ablehnt():
-    """Wie die Stadt Münster (HTTP 401 auf jeden Filter): keine Lücke, kein Befund, die Liste kommt ohne Scheiben."""
+    """Wie die Stadt Münster (HTTP 401 auf den Filter): keine Lücke, kein Befund, die Liste kommt ohne Scheiben."""
     quelle = HammQuelle()
     quelle.ungefiltert_504.clear()
     quelle.lehnt_filter_ab.add("consultation")
     speicher = ScheibenSpeicher()
+    notizen = speicher.filtervermerke
     kommune = _kommune("organization", "person", "consultation")
 
     _faellig(speicher, 3)
@@ -982,14 +986,18 @@ async def test_nachholen_bei_quelle_die_den_filter_ablehnt():
     # Eine Scheibe angefragt (401), dann wie jede Liste: mit Filter (401), ohne Filter gelesen
     assert sum(1 for url in beratungen if url.params.get("modified_until")) == 1
     assert any(not any(url.params.get(key) for key in FILTER) for url in beratungen)
-    assert HOST in OParlClient.get_modified_since_unsupported()
+    # Vermerkt ist nur diese Liste, nicht der Server (Issue #1041)
+    assert set(notizen.lists) == {f"{BODY}/consultation"} and notizen.hosts == {}
 
-    # Zweiter Lauf mit fälliger Liste: Der Host gilt jetzt als „filtert nicht“, keine Scheibe mehr
+    # Zweiter Lauf mit fälliger Liste: Die Liste gilt jetzt als „filtert nicht“, keine Scheibe mehr; die übrigen
+    # Listen der Quelle fragt der Lauf weiter mit Filter an
     _faellig(speicher, 3)
     stats = await _lauf(quelle, speicher, full=False, kommune=kommune)
     assert stats["incomplete"] == [] and SYNC_CONFIG_SLOW_LISTS_KEY not in speicher.config
     assert quelle.anfragen_an("consultation")
     assert all(not any(url.params.get(key) for key in FILTER) for url in quelle.anfragen_an("consultation"))
+    assert all(url.params.get("modified_since") for url in quelle.anfragen_an("organization"))
+    assert all(url.params.get("modified_since") for url in quelle.anfragen_an("person"))
     assert SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY not in speicher.config
 
 

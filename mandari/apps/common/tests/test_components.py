@@ -375,11 +375,22 @@ class TestUiKitPreview:
         # Vorschaudaten vollständig: keine Links ohne Ziel (z. B. Filterspalte der Suche ab 2xl, #867)
         assert 'href=""' not in html and 'hx-get=""' not in html
 
+    # Die Seite über den Test-Client braucht die Datenbank wie jede andere Seite (Issue #907): Der
+    # Kontextprozessor active_body fragt ohne gewählte Kommune ab, ob es gelistete Kommunen gibt, und
+    # ReleaseDatabaseConnectionsMiddleware prüft am Ende die offenen Verbindungen des Threads. Ohne
+    # Freigabe schluckte der Kontextprozessor den Fehler still; die Middleware dagegen scheiterte,
+    # sobald ein früherer Test eine Verbindung offen gelassen hatte (unter SQLite bleibt die
+    # Testdatenbank im Speicher immer offen). Die Vorlage selbst rendert der Test oben ohne Datenbank.
+
+    @pytest.mark.django_db
     def test_preview_url_is_hidden_without_debug(self, client: Client, settings: Any) -> None:
+        # Vor dem Umschalten auflösen: Lädt erst dieser Test die URL-Konfiguration, fehlt die Route
+        url = reverse("dev_ui_kit")
         settings.DEBUG = False
         settings.UI_KIT_PREVIEW = False
-        assert client.get(reverse("dev_ui_kit")).status_code == 404
+        assert client.get(url).status_code == 404
 
+    @pytest.mark.django_db
     def test_preview_url_renders_with_preview_flag(self, client: Client, settings: Any) -> None:
         settings.UI_KIT_PREVIEW = True
         response = client.get(reverse("dev_ui_kit"))

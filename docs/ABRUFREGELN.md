@@ -456,17 +456,37 @@ Wertet Ihre Schnittstelle `modified_since` aus, bleibt unsere Last am kleinsten.
 
 ### Quellen ohne Filter
 
-- Lehnt eine Quelle den Filter ab (HTTP 400, 401 oder 403 auf die gefilterte erste Seite) oder ignoriert sie ihn
-  (Parameter fehlt in den Links der Liste), liest der Ingestor die Liste ohne Filter. Er vergleicht selbst und
-  bricht wie oben nach fünf Seiten ohne Änderung ab.
-- Der Befund steht je Server in `sync_config["modified_since_unsupported_hosts"]`. Nach jedem Vollabgleich prüft
-  der Ingestor ihn mit einer Anfrage neu (Fenster von sieben Tagen, `MODIFIED_SINCE_PROBE_DAYS`). Bringt die
-  Prüfung keine Aussage, wiederholt er sie einmal nach 60 Sekunden (`MODIFIED_SINCE_RETRY_SECONDS`). Das Ergebnis
-  steht in `sync_config["modified_since_check"]`.
-- Antwortet eine Liste nur auf die gefilterte Anfrage mit HTTP 404 oder einem OParl-Fehlerobjekt, fragt der
-  Ingestor einmal ohne Filter nach und liest diese Liste danach ohne Filter, solange der Prozess läuft.
+Der Vermerk „filtert nicht“ gilt je Liste und nur für die Quelle, bei der er entstand
+(`ingestor/src/client/filter_notes.py`, Issue [#1041](https://github.com/mandariOSS/mandari/issues/1041)):
+
+- **Je Liste:** Lehnt eine Liste den Filter ab (HTTP 400, 401 oder 403 auf die gefilterte erste Seite), liest der
+  Ingestor diese eine Liste ohne Filter. Alle übrigen Listen der Quelle fragt er weiter mit Filter an. Beispiele vom
+  16.10.2026: Bei der Stadt Hamm und der Bezirksregierung Köln lehnt nur `body/1/location` den Filter ab (HTTP 400),
+  bei der Stadt Münster nur `organization` und `agendaitem` (HTTP 401). Dasselbe gilt, wenn eine Liste nur auf die
+  gefilterte Anfrage mit HTTP 404 oder einem OParl-Fehlerobjekt antwortet und ohne Filter lesbar ist.
+- **Vermerk:** Die Liste steht mit Grund und Zeitpunkt der letzten Prüfung in `sync_config["unfiltered_lists"]` der
+  Quelle. Folgeläufe fragen sie gleich ohne Filter an, ohne die abgelehnte Anfrage. Der inkrementelle Lauf vergleicht
+  selbst und bricht wie oben nach fünf Seiten ohne Änderung ab.
+- **Tägliche Prüfung:** Liegt die letzte Prüfung einen Tag zurück (`UNFILTERED_LIST_RECHECK`), fragt der nächste
+  inkrementelle Lauf die Liste wieder mit Filter an. Nimmt der Server den Filter jetzt an, endet der Vermerk und die
+  Liste läuft wieder gefiltert. Lehnt er weiter ab, gilt der Vermerk ab dann einen weiteren Tag.
+- **Je Server nur bei nachweislich ignoriertem Filter:** Lässt der Server den Parameter aus den Links der Liste weg
+  (OParl 1.0, more! rubin auf gremien.info) oder findet die Prüfung nach einem Vollabgleich ihn wirkungslos, gilt der
+  Vermerk für alle Listen dieses Servers in dieser Quelle (`sync_config["unfiltered_hosts"]`). Mit
+  `carry_modified_since` gilt er nicht.
+- **Prüfung nach dem Vollabgleich:** Nach jedem Vollabgleich prüft der Ingestor mit einer Anfrage an die Vorlagen der
+  ersten Kommune (sonst ihre Sitzungen; Fenster von sieben Tagen, `MODIFIED_SINCE_PROBE_DAYS`), ob die Quelle filtert.
+  Filtert sie, enden die Vermerke für den Server und für diese Liste. Lehnt sie ab, wird die Liste vermerkt; liefert
+  sie ungefiltert, der Server. Bringt die Prüfung keine Aussage, wiederholt er sie einmal nach 60 Sekunden
+  (`MODIFIED_SINCE_RETRY_SECONDS`). Das Ergebnis steht in `sync_config["modified_since_check"]`.
+- **Keine Übertragung auf andere Quellen:** Ein Vermerk gilt nie für eine andere Quelle, auch nicht für eine auf
+  demselben Server. Bis Issue #1041 galt jeder Befund für den ganzen Server und für alle Quellen
+  (`modified_since_unsupported_hosts`). Diese Einträge übernimmt der Ingestor beim ersten Lauf einer Quelle und
+  löscht den alten Schlüssel. Ein Server bleibt nur vermerkt, wenn die Quelle den Filter dort nachweislich ignoriert
+  (letzte Prüfung `ignored` für diesen Server, oder OParl 1.0 und eigener Server). Listen, die den Filter ablehnen,
+  vermerkt der nächste Lauf mit einer abgelehnten Anfrage je Liste neu.
 - SD.NET RIM beantwortet eine gefilterte Liste ohne Treffer mit HTTP 404 und Fehlercode 802. Das gilt als leere,
-  vollständige Liste, ohne Nachfrage ohne Filter (`sdnet_empty_list`).
+  vollständige Liste, ohne Nachfrage ohne Filter (`sdnet_empty_list`), und als Nachweis, dass die Liste filtert.
 - Filtert eine Quelle, verliert den Parameter aber in `links.next`, hängt der Ingestor ihn mit
   `carry_modified_since` an jede Folgeseite an.
 
@@ -509,12 +529,13 @@ mit Eintrag in `sync_config["slow_lists"]` (`ingestor/src/sync/slices.py`; `inge
   der Liste vor; bricht eine spätere Scheibe ab, beginnt der nächste Versuch bei ihr. Listen ohne nachgewiesene Uhrzeit
   in `modified` beginnen am Tagesbeginn (der frühere von 00:00 Uhr UTC und 00:00 Uhr `Europe/Berlin`, `day_floor`).
 - **Nur bei Servern, die filtern:** Tagesscheiben gibt es nur, wenn der Server die Liste mit `modified_since` filtert
-  (kein Vermerk in `modified_since_unsupported_hosts`, außer mit `carry_modified_since`, und keine Antwort mit HTTP 404
-  oder Fehlerobjekt auf den Filter, `OParlClient.filters_list`). Sonst kommt die Liste wie jede andere ab ihrem
-  Fensteranfang, ohne Scheiben. Lehnt der Server den Filter einer Scheibe ab (HTTP 400, 401, 403, 404), findet er die
-  Liste mit Filter nicht oder liefert er Objekte außerhalb der Scheibe (`modified_until` ignoriert), liest der Lauf die
-  Liste ab der offenen Scheibe ebenso ohne Scheiben weiter (`_slice_fallback`). Das ist keine Lücke und kein Befund
-  gegen den [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben); den Filter prüft nur dieser.
+  (kein Vermerk für die Liste in `unfiltered_lists` und keiner für ihren Server in `unfiltered_hosts`, außer mit
+  `carry_modified_since`; `OParlClient.filters_list`, siehe [Quellen ohne Filter](#quellen-ohne-filter)). Sonst kommt
+  die Liste wie jede andere ab ihrem Fensteranfang, ohne Scheiben. Lehnt der Server den Filter einer Scheibe ab (HTTP
+  400, 401, 403, 404), findet er die Liste mit Filter nicht oder liefert er Objekte außerhalb der Scheibe
+  (`modified_until` ignoriert), liest der Lauf die Liste ab der offenen Scheibe ebenso ohne Scheiben weiter
+  (`_slice_fallback`). Das ist keine Lücke und kein Befund gegen den
+  [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben); den Filter prüft nur dieser.
 - **Keine Lücke:** Eine ausgesetzte optionale Liste macht den Lauf nicht unvollständig. Das Änderungsfenster der
   Kommune rückt vor, und die Quelle gilt als aktuell (`last_successful_sync`); die Liste holt ihre Änderungen über
   ihren eigenen Fensteranfang nach. Ist sie ganz gelesen, endet die Aussetzung. Lässt sich die Aussetzung nicht
@@ -593,7 +614,7 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
 
 - **Nie ohne Filter:** Der Vollabgleich fragt jede Liste nur mit `modified_since` und `modified_until` an (OParl 1.1,
   Abschnitt 2.5.5), auf jeder Seite. Verliert `links.next` einen Filter, hängt der Ingestor ihn wieder an. Lehnt der
-  Server den Filter ab (HTTP 400, 401, 403), fällt er nicht auf die ungefilterte Liste zurück und vermerkt den Server
+  Server den Filter ab (HTTP 400, 401, 403), fällt er nicht auf die ungefilterte Liste zurück und vermerkt die Liste
   auch nicht als „filtert nicht“; die Liste bleibt eine Lücke (`OParlClient.fetch_list`, `strict_filter`).
 - **Scheiben von alt nach neu:** zuerst alles, was bis `since` geändert wurde (nur `modified_until`), dann Scheiben zu
   `days` Tagen ab `since` (je `modified_since` und `modified_until`), zuletzt alles ab der letzten Grenze (nur
@@ -787,7 +808,7 @@ es zu Beginn jedes Laufs der Quelle, die Texterkennung spätestens nach 5 Minute
 | `full_sync_slices` | Vollabgleich nur in Zeitscheiben (siehe [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)): `since` (Pflicht), `days` (1 bis 366, Standard 30), optional `lists` | `{"days": 30, "since": "2010-01-01"}` |
 | `modified_since_margin_minutes` | Sicherheitsabstand des Änderungsfensters in Minuten, ganze Zahl von 0 bis 10080 | `60` |
 | `list_params` | Parameter für die erste Seite jeder Liste (nicht `modified_since`, Werte bis 100 Zeichen) | `{"size": 100}` |
-| `carry_modified_since` | Quelle filtert, verliert den Filter aber in `links.next` | `true` |
+| `carry_modified_since` | Quelle filtert, verliert den Filter aber in `links.next`; hebt einen Vermerk „filtert nicht“ für den Server auf, nicht den für einzelne Listen | `true` |
 | `file_downloads` | `false`: keine Dateien dieser Quelle abrufen; nur ein ausdrückliches `false` schaltet ab | `false` |
 | `download_headers` | zusätzliche Header für Datei-Downloads (z. B. `Referer`, `Cookie`, `User-Agent`) | `{"Referer": "https://rat.example.de/bi/"}` |
 | `robots_override` | Ausnahme von der robots.txt, nur mit Freigabe und Vermerk | `{"scope": "files", "note": "Freigabe per E-Mail vom …"}` |
@@ -819,7 +840,9 @@ Befund zurückzusetzen:
 | `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune. Das ist während der Aussetzung weitergerückt: Änderungen ab `since` bis zum Fenster der Kommune holen inkrementelle Läufe dann nicht mehr nach, erst der nächste Vollabgleich der Quelle. Besser `until` auf einen vergangenen Zeitpunkt setzen: Dann holt der nächste Lauf die Liste ab `since` nach |
 | `full_sync_progress` | Fortschritt des Vollabgleichs in Zeitscheiben: je Liste der Beginn der nächsten Scheibe (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Vollabgleich wieder bei `since` beginnen |
 | `full_sync_filter_ignored` | Befund „Server ignoriert den Filter einer Zeitscheibe“ (`checked_at`, `list`, `detail`). Solange er jünger als 30 Tage ist, läuft der Vollabgleich nur als Änderungsabgleich; Löschen lässt den nächsten Vollabgleich die Zeitscheiben wieder versuchen |
-| `modified_since_unsupported_hosts` | Server, die `modified_since` ablehnen oder ignorieren. Löschen wirkt erst nach einem Neustart des Ingestors und nur, wenn keine andere Quelle denselben Server vermerkt hat; sonst trägt die Prüfung nach dem nächsten Vollabgleich den Server aus, sobald er filtert |
+| `unfiltered_lists` | Listen, die `modified_since` ablehnen oder nur gefiltert nicht finden, mit Grund und letzter Prüfung (Adresse → `reason`, `checked_at` UTC). Sie laufen ohne Filter, die übrigen Listen der Quelle mit; nach einem Tag fragt der nächste Lauf wieder mit Filter. Löschen lässt den nächsten Lauf die Listen gleich wieder mit Filter anfragen |
+| `unfiltered_hosts` | Server, auf denen die Quelle den Filter nachweislich ganz ignoriert (Host → `reason`, `checked_at` UTC); gilt nur für diese Quelle und nicht mit `carry_modified_since`. Löschen lässt den nächsten Lauf wieder mit Filter anfragen; ignoriert der Server ihn weiter, steht er danach wieder hier |
+| `modified_since_unsupported_hosts` | Bisheriger Befund je Server über alle Quellen (bis Issue #1041). Übernimmt der Ingestor beim nächsten Lauf der Quelle und löscht den Schlüssel |
 | `modified_since_check` | Ergebnis der letzten Prüfung des Filters (`checked_at`, `host`, `result`) |
 | `scraper_state` | Zustand der Scraper |
 | `probe` | Ergebnis von `probe-ris --store` |
@@ -948,7 +971,9 @@ Diese Seite beschreibt den Code auf `dev` nach den Änderungen für
 - [#1026](https://github.com/mandariOSS/mandari/issues/1026): eigener Takt je Quelle, Abruf nach Bedarf
   ([#1039](https://github.com/mandariOSS/mandari/pull/1039));
 - [#1033](https://github.com/mandariOSS/mandari/issues/1033): Vollabgleich in Zeitscheiben, langsame Listen aussetzen
-  ([#1040](https://github.com/mandariOSS/mandari/pull/1040)).
+  ([#1040](https://github.com/mandariOSS/mandari/pull/1040));
+- [#1041](https://github.com/mandariOSS/mandari/issues/1041): Vermerk „filtert nicht“ je Liste und nur für die eigene
+  Quelle, mit täglicher Prüfung ([#1044](https://github.com/mandariOSS/mandari/pull/1044)).
 
 Die von uns betriebene Instanz (mandari.de) folgt diesen Regeln ab dem ersten Deploy, der diese Änderungen enthält;
 bis dahin läuft dort noch ein älterer Stand.

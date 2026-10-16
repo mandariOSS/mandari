@@ -424,7 +424,7 @@ spätestens 15 s später.
 | Prüfung | besteht, wenn |
 |---|---|
 | `lebenszeichen` | lebende Worker alle Rollen und Warteschlangen bedienen, die die Installation braucht (wie `/health/` Feld `worker`) |
-| `rueckstau` | Sequenzierer (auch aufgehalten) und Zustellung je nicht pausiertem Abonnement höchstens 5 min, ältester fälliger Auftrag höchstens 15 min |
+| `rueckstau` | Sequenzierer (auch aufgehalten) und Zustellung je nicht pausiertem Abonnement höchstens 5 min, ältester fälliger Auftrag höchstens 15 min. `ocr` zählt gesondert (Issue #953): Dort wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu `TEXT_EXTRACTION_QUEUE_DEPTH` Aufträge, bis 30 min je Scan), deshalb scheitert `ocr` nur, wenn der älteste fällige Auftrag länger als 15 min wartet und keiner läuft (Status „läuft“ mit gültiger Sperre; der Auftrag eines abgestürzten Runners zählt nicht), wie der Beispielalarm „Texterkennung steht“. Der Text nennt „Aufträge“ für die übrigen Warteschlangen und, solange in `ocr` Aufträge fällig sind, deren Wartezeit und die Zahl der laufenden |
 | `fehlerquote` | höchstens 20 % der in der letzten Stunde beendeten Aufträge gescheitert (erst ab 5 beendeten) |
 | `gescheitert` | kein Auftrag in den letzten 24 h endgültig gescheitert und kein totes Ereignis |
 | `dokumentabruf` | Abruf der RIS-Dateien (Issue #919): keine fällige Wiederholung (`local_status = retry`) liegt länger als `DOCUMENT_FETCH_RETRY_ALERT_HOURS` (Standard 6) unbearbeitet; Quellen in Schonung, nicht abzulegende und von der Obergrenze verdrängte Dateien (`evicted`, Issue #961) zählen nicht. Mit abgeschaltetem Zeitplan `befehl:cache_files` immer in Ordnung |

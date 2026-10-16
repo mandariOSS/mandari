@@ -1002,7 +1002,7 @@ dann ohne `--dry-run` (einzelne Umzüge mit `--eintrag <Kennung>`). Zurückgedre
 früheren Punkt bzw. an der früheren Vorlage und ziehen von dort nie wieder automatisch um. Ein älteres Image läuft
 ohne Rückbau der Migration (zwei neue Tabellen).
 
-### KI-Anbieter: eine Konfiguration, nur freigegebene EU-Endpunkte
+### KI-Anbieter: eine Konfiguration, nur freigegebene Endpunkte
 
 Jeder KI-Aufruf (Schreibhilfe und Co-Editor in Work, Zusammenfassung, KI-Assistent und KI-Verortung im
 Bürgerportal) nutzt eine Konfiguration (Issue #950): Anbieter (Vorlage oder eigener OpenAI-kompatibler
@@ -1013,25 +1013,78 @@ Anbieter bleibt die KI aus; einen fest eingebauten Anbieter oder einen Rückfall
 Technische Sperre ist die Positivliste `KI_ERLAUBTE_HOSTS` (kommagetrennte Hostnamen, in Anwendung und
 Ingestor gleich setzen). Sie hat keinen Standard: Leer ist nichts erlaubt, jeder KI-Aufruf bleibt gesperrt,
 auch die externe Texterkennung über `MISTRAL_BASE_URL` (fail-closed, `shared/mandari_dokumente/ki_hosts.py`).
-Die Vorlagen im Admin (STACKIT, IONOS, Scaleway, OVHcloud, DeutschlandGPT) geben keinen Host frei; sie füllen
-nur Anzeigename, Verarbeitungsort und Basis-URL vor und sind als „nicht freigegeben“ gekennzeichnet, solange ihr
-Host fehlt. Verglichen wird der Host exakt, nur `https`, ohne Zugangsdaten in der Adresse, Port nur 443. Jede
-Adresse wird bei jedem Aufruf neu geprüft, auch wenn sie direkt in der Datenbank steht; ein nicht
-freigegebener Host ergibt „KI aus“ mit Warnung im Protokoll (ohne Schlüssel).
+Die Vorlagen im Admin (STACKIT, IONOS, Scaleway, OVHcloud, DeutschlandGPT, Nebius Token Factory) geben keinen
+Host frei; sie füllen nur Anzeigename, Verarbeitungsort und Basis-URL vor und sind als „nicht freigegeben“
+gekennzeichnet, solange ihr Host fehlt. Die Nebius-Vorlage nennt als Ort „je nach Modell innerhalb und außerhalb
+der EU, auch in den USA“ (Unterauftragsverarbeiterliste der Token Factory); zeigt die Oberfläche des Anbieters für
+das gewählte Modell einen festen Ort, kann ihn das Feld „Verarbeitungsort“ genauer nennen. Verglichen wird der
+Host exakt, nur `https`, ohne Zugangsdaten in der Adresse, Port nur 443. Jede Adresse wird bei jedem Aufruf neu
+geprüft, auch wenn sie direkt in der Datenbank steht; ein nicht freigegebener Host ergibt „KI aus“ mit Warnung im
+Protokoll (ohne Schlüssel).
 
 Solange kein Anbieter vertraglich freigegeben ist, bleibt `KI_ERLAUBTE_HOSTS` leer und die KI überall aus
 (Work, Bürgerportal, externe Texterkennung). Einschalten ist reine Konfiguration: Host in `KI_ERLAUBTE_HOSTS`
-aufnehmen (Anwendung, Worker und Ingestor neu starten), dann im Admin Vorlage bzw. Basis-URL, Modell und
-Schlüssel eintragen und die Schalter für Work und Bürgerportal setzen. Die Einwilligung im KI-Assistenten nennt
-Anbieter und Verarbeitungsort aus dieser Konfiguration und gilt nur für den Anbieter, dem zugestimmt wurde. An
-den Host der DeutschlandGPT-Vorlage geht die Antwortlänge zusätzlich als `max_completion_tokens`, weil die
-Schnittstelle `max_tokens` nicht beachtet.
+aufnehmen (Anwendung, Worker und Ingestor neu starten), dann im Admin oder mit dem Befehl `ki_anbieter` (unten)
+Vorlage bzw. Basis-URL, Modell und Schlüssel eintragen und die Schalter für Work und Bürgerportal setzen. Die
+Einwilligung im KI-Assistenten nennt Anbieter und Verarbeitungsort aus dieser Konfiguration und gilt nur für den
+Anbieter, dem zugestimmt wurde. An den Host der DeutschlandGPT-Vorlage geht die Antwortlänge zusätzlich als
+`max_completion_tokens`, weil die Schnittstelle `max_tokens` nicht beachtet.
 
 Ein gespeicherter Schlüssel gehört zu seinem Anbieter: Wer im Admin den Anbieter wechselt (anderer Host oder
 bisher kein Anbieter gewählt), muss den Schlüssel des neuen Anbieters eintragen. Einen Schlüssel ohne Anbieter
 nimmt der Admin nicht an; „API Key löschen“ (KI-Einstellungen) bzw. „Eigenen KI API Key löschen“ (Organisation)
 entfernt ihn. Eine Vorlage gilt nur für ihren eigenen Host; für einen anderen Host „Eigener Endpunkt“ mit
 Anzeigename und Verarbeitungsort wählen.
+
+**Anbieter wechseln in drei Schritten** (Befehl `ki_anbieter`, Issue #1046; ohne Aktion zeigt er die Vorlagen
+mit Host und Freigabe und die Einrichtung ohne Schlüssel, nur „Schlüssel gesetzt: ja/nein“):
+
+1. Host freigeben: den Host des Anbieters in der `.env` unter `KI_ERLAUBTE_HOSTS` eintragen und Anwendung,
+   Worker und Ingestor neu anlegen (`docker compose up -d`). Der Befehl und der Admin geben keinen Host frei.
+   Den Host des bisherigen Anbieters danach ebenso entfernen, sobald ihn nichts mehr nutzt (Organisationen mit
+   eigenem Anbieter, `MISTRAL_BASE_URL`; `ki_anbieter` nennt die Zahl der Organisationen mit eigenem Schlüssel).
+   Solange er in der Liste steht, bleibt er freigegeben.
+2. Einrichten in einem Schritt. Der Schlüssel kommt nur aus einer benannten Umgebungsvariable, nie von der
+   Kommandozeile, und erscheint in keiner Ausgabe:
+
+   ```bash
+   read -rs KI_SCHLUESSEL && export KI_SCHLUESSEL   # Eingabe bleibt unsichtbar
+   docker exec -e KI_SCHLUESSEL mandari python manage.py ki_anbieter einrichten --vorlage <vorlage> \
+     --modell <modell> --schluessel-aus-umgebung KI_SCHLUESSEL --work --buergerportal
+   unset KI_SCHLUESSEL
+   ```
+
+   Ohne Vorlage statt `--vorlage`: `--basis-url https://<host>/v1 --name "<Anbieter>" --ort "<Verarbeitungsort>"`.
+   Eigene Modelle fürs Bürgerportal und als Ausweichmodell mit `--modell-buergerportal` und `--ausweichmodell`;
+   bei einem Wechsel zu einem anderen Host leert der Befehl die des bisherigen Anbieters. Er prüft mit dem
+   Formular des Admins und bricht ab, wenn der Host nicht in `KI_ERLAUBTE_HOSTS` steht oder die Variable leer
+   ist; mit denselben Angaben wiederholt, ändert er nichts.
+3. Prüfen: `docker exec mandari python manage.py ki_anbieter pruefen` stellt je eingetragenem Modell einen
+   Testaufruf mit höchstens einem Token Antwort (Zeitgrenze 15 s, auch wenn die Schalter aus sind) und meldet nur
+   Erfolg oder die Fehlerart, etwa „Schlüssel abgelehnt“, „Modell oder Schnittstelle nicht gefunden“, „Keine
+   Antwort“, einen TLS-Fehler oder unzulässige Zeichen im Schlüssel. Im Admin tut „Speichern und Verbindung
+   prüfen“ in den KI-Einstellungen dasselbe, nach dem Speichern.
+
+**Nebius nach `common/0011` weiter nutzen:** Die Migration setzt den Anbieter auf „nicht eingerichtet“. Der
+Schlüssel stand bisher in `NEBIUS_API_KEY`; die Anwendung liest ihn nicht mehr (Compose reicht ihn nicht weiter).
+
+1. Vor `./update.sh` in der `.env` ergänzen: `KI_ERLAUBTE_HOSTS=api.tokenfactory.nebius.com`.
+   `NEBIUS_API_KEY` bleibt bis zur Übertragung stehen.
+2. Nach dem Update im Installationsverzeichnis den Schlüssel aus der `.env` übertragen und prüfen. Die erste
+   Zeile nimmt den letzten Eintrag und entfernt Anführungszeichen und einen Kommentar hinter dem
+   Wert. Nur die Bereiche einschalten, die bisher KI nutzten; ein bisheriges `NEBIUS_FALLBACK_MODEL` mit
+   `--ausweichmodell` übernehmen:
+
+   ```bash
+   export NEBIUS_API_KEY="$(grep '^NEBIUS_API_KEY=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r' \
+     | sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
+   docker exec -e NEBIUS_API_KEY mandari python manage.py ki_anbieter einrichten --vorlage nebius \
+     --modell moonshotai/Kimi-K2.6 --schluessel-aus-umgebung NEBIUS_API_KEY --work --buergerportal --pruefen
+   unset NEBIUS_API_KEY
+   ```
+
+3. Erst wenn die Prüfung „OK“ meldet, `NEBIUS_API_KEY` aus der `.env` entfernen. Der Schlüssel liegt dann
+   verschlüsselt in den KI-Einstellungen.
 
 **Rückfall auf ein älteres Image:** Die neuen Spalten haben Datenbank-Standardwerte; ein älteres Image läuft
 ohne Rückbau der Migrationen `common/0011` und `tenants/0027` weiter. Die Migrationen setzen frühere Anbieter
@@ -1051,17 +1104,20 @@ Deshalb:
 
 1. Beim Deploy dieser Version zählen, wie viele Organisationen einen eigenen Schlüssel haben (gibt nur die
    Zahl aus): `docker exec mandari python manage.py shell -c "from apps.tenants.models import Organization;
-   print(Organization.objects.filter(ai_api_key_encrypted__isnull=False).count())"`. Bei mehr als null
-   trifft jeder Rückfall auf ein Image vor #950 diese Organisationen.
-2. `NEBIUS_API_KEY` **vor** `./update.sh` aus der `.env` entfernen. `update.sh` sichert die `.env` als
-   `.env.pre-update` und kopiert sie beim automatischen Rückfall und bei `--rollback` zurück; ein erst danach
-   entfernter Eintrag stünde nach dem Rückfall wieder in der Umgebung.
+   print(Organization.objects.filter(ai_api_key_encrypted__isnull=False).count())"`; dieselbe Zahl nennt
+   `ki_anbieter`. Bei mehr als null trifft jeder Rückfall auf ein Image vor #950 diese Organisationen.
+2. Wer Nebius nicht weiter nutzt: `NEBIUS_API_KEY` **vor** `./update.sh` aus der `.env` entfernen. `update.sh`
+   sichert die `.env` als `.env.pre-update` und kopiert sie beim automatischen Rückfall und bei `--rollback`
+   zurück; ein erst danach entfernter Eintrag stünde nach dem Rückfall wieder in der Umgebung. Wer Nebius weiter
+   nutzt (oben), lässt ihn bis zur Übertragung stehen: Ein Rückfall schickt die Anfragen des Bürgerportals dann
+   an denselben Anbieter wie die neue Version.
 3. Vor einem Rückfall auf ein Image vor #950 die eigenen KI-Schlüssel der Organisationen („Eigenen KI API Key
-   löschen“) und den Plattformschlüssel („API Key löschen“ in den KI-Einstellungen) löschen.
-4. Den Nebius-Schlüssel beim Anbieter widerrufen. Der Widerruf ist der eigentliche Schutz: Sicherungen der
-   `.env` können den Eintrag zurückbringen, und ein automatischer Rückfall lässt keine Zeit für Schritt 3.
-   Ist ein Image vor #950 mit eigenen Schlüsseln gelaufen, diese Schlüssel beim jeweiligen Anbieter widerrufen
-   und neu ausstellen.
+   löschen“) und, falls er nicht für Nebius ist, den Plattformschlüssel („API Key löschen“ in den
+   KI-Einstellungen) löschen.
+4. Wer Nebius nicht weiter nutzt: den Nebius-Schlüssel beim Anbieter widerrufen. Der Widerruf ist der
+   eigentliche Schutz: Sicherungen der `.env` können den Eintrag zurückbringen, und ein automatischer Rückfall
+   lässt keine Zeit für Schritt 3. Ist ein Image vor #950 mit eigenen Schlüsseln gelaufen, diese Schlüssel beim
+   jeweiligen Anbieter widerrufen und neu ausstellen.
 
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 
@@ -1226,14 +1282,17 @@ Dokumente Text bekommen (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“).
 | Ablage | mit `FILE_CACHE_MAX_TOTAL_GB`: `cache_files` meldet nicht dauerhaft `limit` (Protokoll des Workers, „Obergrenze erreicht“), sonst warten neue Dokumente auf Platz und bekommen so lange keinen Text; dann die Grenze anheben. `cache_files --stats` zeigt Belegung und verdrängte Dokumente |
 | Stichprobe | Vorgänge mit neuen Dokumenten zeigen Text, Vorschau liefert |
 
-Die Prüfung `rueckstau` misst den ältesten fälligen Auftrag über alle Warteschlangen (höchstens 15 Minuten).
-In `ocr` wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu `TEXT_EXTRACTION_QUEUE_DEPTH`
-Aufträge, bis 30 Minuten je Datei); bei vielen gescannten Dateien, etwa nach der Nacharbeit, kann die Prüfung
-deshalb rot werden, obwohl die Erkennung arbeitet (`mandari_tasks_running{queue="ocr"}` 1, Texte entstehen).
-Dann `TEXT_EXTRACTION_QUEUE_DEPTH` senken, etwa auf `5`, und Worker und Anwendung neu starten; dieselbe Grenze
-gilt für `extract_texts` ohne `--limit`, ein ausdrückliches `--limit` darüber lässt die Prüfung bewusst
-anschlagen. Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml` messen `ocr` gesondert
-(`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit „Auftragsrückstand“.
+Die Prüfung `rueckstau` misst den ältesten fälligen Auftrag je Warteschlange (höchstens 15 Minuten), `ocr`
+gesondert (Issue #953): Dort wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu
+`TEXT_EXTRACTION_QUEUE_DEPTH` Aufträge, bis 30 Minuten je Datei). Bei vielen gescannten Dateien, etwa nach der
+Nacharbeit oder beim Altbestand einer Quelle, warten Aufträge dort deshalb oft länger als 15 Minuten, obwohl die
+Erkennung arbeitet. `rueckstau` bleibt dann grün, solange in `ocr` ein Auftrag läuft, und wird erst rot, wenn
+fällige Aufträge länger als 15 Minuten warten und keiner läuft (Text: `ocr <Sekunden> s (<n> laufend)`; der
+Auftrag eines abgestürzten Runners zählt nicht als laufend). Dann `worker-heavy` prüfen (`healthy`, bedient er
+`ocr`, Speicherabbrüche). Ob die Erkennung nachkommt, zeigen `dokumenttext` und
+`mandari_files_stored_without_text`. `TEXT_EXTRACTION_QUEUE_DEPTH` zu senken, um `rueckstau` grün zu halten, ist
+nicht mehr nötig. Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml` messen `ocr` ebenso
+gesondert (`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit „Auftragsrückstand“.
 
 **Abbruchkriterien** (ADR, Abschnitt 10; Vorgehen wie in `docs/DREHSCHEIBE_UMSTELLUNG.md`, Abschnitt 3). Eines
 genügt, dann den Rückweg gehen:
@@ -1293,6 +1352,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:check_service_levels` | täglich 06:30 | Service-Level |
 | `befehl:availability_report` | am 1. um 00:15 | Verfügbarkeitsbericht des Vormonats nach `REPORTS_ROOT`; nur mit `GATUS_URL` |
 | `befehl:verify_audit_chain` | täglich 04:20 | Hash-Ketten prüfen (Issue #221; ein Befund lässt den Lauf scheitern) |
+| `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026, Issue #366) |
 | `befehl:purge_security_audit_log` | täglich 04:40 | Sicherheitsprotokoll nach Frist |
 | `befehl:session_privacy_purge` | am 1. um 05:00 | DSGVO-Löschlauf mit Archivpaket |
 | `befehl:build_meeting_packages` | jede Minute | Sitzungsmappen (Issue #218): `--limit 5 --max-seconds 240` |
@@ -1344,7 +1404,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 
@@ -1405,7 +1465,8 @@ Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vo
 URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE_STORAGE` nennt.
 `AUDIT_EXPORT_MAX_ROWS` (Vorgabe 100000) begrenzt Exporte aus der Oberfläche, größere Zeiträume
 exportiert `export_audit_log`; `SECURITY_AUDIT_RETENTION_DAYS` (Vorgabe 365) ist die Frist des
-Sicherheitsprotokolls.
+Sicherheitsprotokolls, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30, festgelegt durch den Betreiber am 16.10.2026; 0 = keine Löschung)
+die der Anmeldeversuche für die Drosselung.
 
 Die Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218) erzeugt der Zeitplan
 `befehl:build_meeting_packages`; die Oberfläche legt nur Anforderungen an, ohne Worker bleibt eine

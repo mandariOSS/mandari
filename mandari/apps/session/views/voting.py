@@ -84,14 +84,24 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         item = _get_item(self, self.kwargs["item_id"])
         # Stimmrecht (Issue #318): Stimmberechtigte Anwesende stimmen ab, Beratende und Gäste werden
         # nur ausgewiesen; eine frühere Stimme ohne Stimmrecht entfernt das nächste Speichern.
-        # Teilnahmeart (Issue #139): gestörte Zugeschaltete und vom Landesprofil Ausgeschlossene stimmen nicht ab
-        assessed = voting_service.eligibility(item.meeting, item)
+        # Teilnahmeart (Issue #139): gestörte Zugeschaltete und vom Landesprofil Ausgeschlossene stimmen nicht ab –
+        # bei einer abgeschlossenen Abstimmung gestört zu ihrem Zeitpunkt, sonst andauernd (Issue #1045)
+        moment = participation_service.vote_time(item)
+        assessed = voting_service.eligibility(item.meeting, item, at=moment)
         loaded = list(item.votes.select_related("person"))
         votes = {v.person_id: v.vote for v in loaded}
         protocol = getattr(item.meeting, "protocol", None)
         not_voting = assessed.unreachable + assessed.remote_excluded
         for attendance in assessed.voting + assessed.advisory + assessed.others + not_voting:
             attendance.current_vote = votes.get(attendance.person_id, "")
+        # Bei der Abstimmung gestört, aber vor Beginn der Störung im Abstimmungsfenster abgestimmt: Die Stimme gilt.
+        # Sie steht mit Hinweis da und lässt sich nur ausdrücklich entfernen; neue und geänderte Stimmen dieser
+        # Personen lehnt capture_votes weiter ab (Issue #1045)
+        kept = voting_service.kept_votes(item, assessed, {v.person_id: v for v in loaded})
+        labels = dict(SessionVote.VOTE_CHOICES)
+        for attendance in assessed.unreachable:
+            attendance.vote_kept = attendance.person_id in kept
+            attendance.current_vote_label = labels.get(attendance.current_vote, "")
         # Hinweise für die Auswahl im Formular: geheime Abstimmung bzw. (offene) Wahl
         secret_rule = participation_service.remote_vote_rule(
             item.meeting, item, voting_method="secret", attendances=assessed.attendances
@@ -114,10 +124,24 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                 "barred_rule": barred,
                 "secret_hint": secret_rule.message if secret_rule and not barred else "",
                 "election_hint": election_rule.message if election_rule and not barred else "",
+                # Beschlussfähigkeit zum selben Zeitpunkt wie die Stimmliste (Issue #1045)
                 "item_quorum": attendance_service.quorum_status(
-                    item.meeting, item, attendances=assessed.attendances, substitutes=assessed.substitutes
+                    item.meeting, item, attendances=assessed.attendances, substitutes=assessed.substitutes, at=moment
                 ),
-                "stray_votes": [a for a in assessed.advisory + assessed.others + not_voting if a.current_vote],
+                "stray_votes": [
+                    a
+                    for a in assessed.advisory + assessed.others + not_voting
+                    if a.current_vote and a.person_id not in kept
+                ],
+                # Getrennt erklärt: Gestörte ohne behaltene Stimme und alle übrigen (ohne Stimmrecht, abwesend, …)
+                "stray_disrupted": [a for a in assessed.unreachable if a.current_vote and a.person_id not in kept],
+                "stray_other": [
+                    a
+                    for a in assessed.advisory + assessed.others + assessed.remote_excluded
+                    if a.current_vote and a.person_id not in kept
+                ],
+                # Beurteilt zum Zeitpunkt der Abstimmung statt live: „bei der Abstimmung gestört“ statt „dauert an“
+                "assessed_at_vote": moment is not None,
                 "attendance_complete": assessed.complete,
                 "locked": protocol is not None and protocol.is_locked,
                 "method_choices": SessionAgendaItem.VOTING_METHOD_CHOICES,
@@ -160,7 +184,7 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         if result in {value for value, _ in item._meta.get_field("vote_result").choices}:
             item.vote_result = result
 
-        assessed = voting_service.eligibility(item.meeting, item)
+        assessed = voting_service.eligibility(item.meeting, item, at=participation_service.vote_time(item))
         sperre = assessed.remote_rule
         if sperre is not None and sperre.barred:
             # In dieser Sitzung unzulässig (Issue #754): weder Summen noch Stimmen, nur die Vertagung
@@ -184,6 +208,9 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
             key = f"vote_{attendance.person_id}"
             if key in data:
                 votes_by_person[attendance.person] = data.get(key, "")
+        # Gültige Stimmen gestörter Personen nur ausdrücklich entfernen, unverändert nicht neu schreiben (Issue #1045)
+        remove = {key.removeprefix("remove_vote_") for key in data if key.startswith("remove_vote_")}
+        voting_service.guard_kept_votes(item, assessed, votes_by_person, remove=remove)
         if method not in voting_service.INDIVIDUAL_METHODS:
             # Geheim und „Nur Summen“: Summen manuell, keine Einzelstimmen – höchstens so viele wie stimmberechtigt
             # anwesend, abzüglich der Befangenen nach dieser Erfassung. Fehlt ein Feld, bleibt der gespeicherte Wert.

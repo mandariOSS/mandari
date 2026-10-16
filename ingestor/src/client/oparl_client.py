@@ -27,6 +27,7 @@ from rich.markup import escape
 
 from src.circuit_breaker import CircuitBreaker, CircuitBreakerConfig, CircuitOpenError
 from src.client import redirects
+from src.client.filter_notes import FilterNotes
 from src.client.host_pacing import host_pacer
 from src.client.oparl_compat import is_oparl_error, modified_since_dropped, oparl_error_message, sdnet_empty_list
 from src.client.robots import robots_gate
@@ -330,34 +331,6 @@ class OParlClient:
     - Prometheus metrics collection
     """
 
-    # Prozessweiter Capability-Cache: Hosts, die modified_since ablehnen
-    # (401/403/400) — überlebt Client-Instanzen innerhalb des Daemons.
-    # NOTE: Class-level and therefore process-lifetime by design — keyed by
-    # host, shared across all OParlClient instances, never expires until
-    # the daemon restarts. Bounded by the number of distinct OParl hosts.
-    # Der Orchestrator persistiert den Befund zusätzlich je Quelle in
-    # OParlSource.sync_config, damit er Daemon-Neustarts überlebt (Issue #22).
-    _modified_since_unsupported: set[str] = set()
-    # Listen (Adresse der ersten Seite), die auf modified_since mit HTTP 404 oder einem Fehlerobjekt antworten,
-    # ohne den Filter aber lesbar sind (Bezirksregierung Köln: membership). Sie laufen in diesem Prozess ohne
-    # Filter, statt jeden Lauf erst die gefilterte Anfrage zu stellen (Issue #1025). Ebenfalls prozessweit.
-    _list_modified_since_unsupported: set[str] = set()
-
-    @classmethod
-    def get_modified_since_unsupported(cls) -> set[str]:
-        """Snapshot des Capability-Caches (Hosts ohne modified_since-Support)."""
-        return set(cls._modified_since_unsupported)
-
-    @classmethod
-    def add_modified_since_unsupported(cls, hosts) -> None:
-        """Capability-Cache seeden, z. B. aus persistierter sync_config."""
-        cls._modified_since_unsupported.update(h for h in hosts if h)
-
-    @classmethod
-    def discard_modified_since_unsupported(cls, host: str) -> None:
-        """Host filtert wieder mit modified_since (Prüfung nach einem Vollabgleich)."""
-        cls._modified_since_unsupported.discard(host)
-
     def __init__(
         self,
         max_concurrent: int = 10,
@@ -370,8 +343,12 @@ class OParlClient:
         request_interval: float | None = None,
         robots_override: RobotsOverride | None = None,
         fetch_deadline: datetime | None = None,
+        filter_notes: FilterNotes | None = None,
     ) -> None:
         self.max_concurrent = max_concurrent
+        # Vermerke „filtert nicht“ der Quelle, je Liste und für Server, deren Filter sie ganz ignoriert (Issue #1041).
+        # Gehören der Quelle dieses Clients; der Orchestrator lädt sie aus ihrer sync_config und speichert sie dort.
+        self.filter_notes = filter_notes if filter_notes is not None else FilterNotes()
         # Ende des Zeitfensters eines Vollabgleichs (UTC): danach holt fetch_list keine Seite mehr
         self.fetch_deadline = fetch_deadline
         self.timeout = timeout or settings.oparl_request_timeout
@@ -859,16 +836,13 @@ class OParlClient:
 
     def filters_list(self, url: str) -> bool:
         """
-        Fragt ``fetch_list`` diese Liste mit ``modified_since`` an? Nein, wenn der Host den Filter abgelehnt oder
-        ignoriert hat (``_modified_since_unsupported``, außer mit ``carry_modified_since``) oder die Liste auf den
-        Filter mit HTTP 404 bzw. einem Fehlerobjekt antwortete (``_list_modified_since_unsupported``). Nur dann lohnt
-        das Nachholen einer langsamen Liste in Zeitscheiben (Issue #1033).
+        Filtert die Quelle diese Liste mit ``modified_since``? Nein, wenn die Liste als „filtert nicht“ vermerkt ist
+        (Filter abgelehnt, nur gefiltert nicht gefunden) oder die Quelle den Filter auf ihrem Server ganz ignoriert
+        (außer mit ``carry_modified_since``; ``filter_notes``, Issue #1041), auch wenn die tägliche Prüfung des
+        Vermerks fällig ist. Nur dann lohnt das Nachholen einer langsamen Liste in Zeitscheiben (Issue #1033).
         """
-        url = self._with_list_params(url, self.list_params)
-        host = urlparse(url).netloc
-        if url in self._list_modified_since_unsupported:
-            return False
-        return self.carry_modified_since or host not in self._modified_since_unsupported
+        host = urlparse(self._with_list_params(url, self.list_params)).netloc
+        return not self.filter_notes.unfiltered(url, host, carry=self.carry_modified_since)
 
     async def fetch_list(
         self,
@@ -929,11 +903,12 @@ class OParlClient:
         # Erste Seite nach „gibt es nicht“ auf die gefilterte Anfrage noch einmal ohne Filter angefragt
         retried_unfiltered = False
 
-        # Append modified_since as OParl query parameter if provided.
-        # Capability-Cache: Hosts, die den Filter bereits abgelehnt haben
-        # (z. B. Stadt Münster mit 401), gar nicht erst erneut damit anfragen —
-        # spart pro Liste einen toten Request samt Timeout/Retry.
+        # modified_since als Parameter der ersten Seite. Ist die Liste als „filtert nicht“ vermerkt (oder ignoriert die
+        # Quelle den Filter auf diesem Server ganz), gleich ohne Filter: spart je Lauf die abgelehnte Anfrage. Die
+        # Vermerke gelten nur für die Quelle dieses Clients (``filter_notes``, Issue #1041); einmal am Tag fragt der
+        # Lauf eine vermerkte Liste wieder mit Filter an (``FilterNotes.skip_filter``).
         host = urlparse(url).netloc
+        notes = self.filter_notes
         if next_page is not None:
             # Erste Seite liegt schon vor (Issue #869): weiter mit ihrer Folgeseite, wie die Quelle sie nennt
             current_url = next_page
@@ -947,16 +922,17 @@ class OParlClient:
         elif strict_filter:
             # Zeitscheibe (Issue #1033): immer mit Filter, unabhängig vom Befund des Hosts
             current_url = self._append_filters(url, modified_since, modified_until)
-        # Mit carry_modified_since gilt die Quelle als filterfähig, auch wenn ein früherer Lauf den Host
-        # (vor dem Schalter) als „ohne Filter“ vermerkt hat
+        # Mit carry_modified_since gilt der Server als filterfähig, auch wenn die Quelle ihn als „ignoriert den Filter“
+        # vermerkt hat; Vermerke je Liste gelten auch dann
         elif (
             modified_since
             and current_url
-            and (self.carry_modified_since or host not in self._modified_since_unsupported)
-            and url not in self._list_modified_since_unsupported
+            and not notes.skip_filter(requested_url, host, carry=self.carry_modified_since)
         ):
             current_url = self._append_modified_since(current_url, modified_since)
             tried_modified_since = True
+            if requested_url in notes.lists:
+                console.print(f"[dim]{url}: Liste ohne Filter vermerkt, tägliche Prüfung mit modified_since[/dim]")
 
         while current_url:
             if self.fetch_deadline is not None and datetime.now(UTC) >= self.fetch_deadline:
@@ -964,10 +940,10 @@ class OParlClient:
                 raise FetchWindowClosedError(url, current_url)
             result = await self.fetch(current_url, use_cache=False)
 
-            # Fallback: manche RIS (z. B. Stadt Münster) beantworten
-            # modified_since mit 401/403/400. Dann einmalig ohne den Filter
-            # neu ansetzen — die Client-seitige modified-Prüfung plus
-            # Early-Stop hält den Mehraufwand klein.
+            # Rückfall: Manche Listen lehnen modified_since ab (Stadt Münster: HTTP 401 bei organization und
+            # agendaitem; Stadt Hamm und Bezirksregierung Köln: HTTP 400 bei location). Dann diese eine Liste ohne
+            # Filter, vermerkt für diese Liste dieser Quelle (Issue #1041); die übrigen Listen bleiben gefiltert. Die
+            # Prüfung am Bestand und der Abbruch nach Seiten ohne Änderung halten den Mehraufwand klein.
             if (
                 tried_modified_since
                 and not strict_filter
@@ -976,11 +952,11 @@ class OParlClient:
                 and result.error_kind != ERROR_KIND_UA_BLOCKED  # Sperre, kein Capability-Problem
             ):
                 console.print(
-                    f"[yellow]{url}: modified_since nicht unterstützt "
-                    f"(HTTP {result.status_code}) — Fallback auf vollständige Liste[/yellow]"
+                    f"[yellow]{url}: modified_since abgelehnt (HTTP {result.status_code}) — diese Liste ohne Filter, "
+                    f"vermerkt bis zur Prüfung in einem Tag[/yellow]"
                 )
                 metrics.record_http_error(self.source_name, "modified_since_unsupported")
-                self._modified_since_unsupported.add(host)
+                notes.note_list(requested_url, f"HTTP {result.status_code}")
                 tried_modified_since = False
                 current_url = url
                 continue
@@ -998,6 +974,9 @@ class OParlClient:
                 console.print(f"[dim]{url}: keine Treffer für den Filter (SD.NET RIM: HTTP 404, Code 802)[/dim]")
                 self.filtered_empty_lists.add(requested_url)
                 self.stats.pages_fetched += 1
+                if tried_modified_since and notes.clear_list(requested_url):
+                    # Die Quelle wertet den Filter dieser Liste aus: Vermerk „filtert nicht“ endet
+                    console.print(f"[green]{url}: Liste filtert wieder mit modified_since, Vermerk gelöscht[/green]")
                 break
 
             # „Liste gibt es nicht“ (HTTP 404 oder Fehlerobjekt auf der ersten Seite, Issue #1025). Auf die
@@ -1007,19 +986,17 @@ class OParlClient:
                 result.status_code == 404 or (not result.error and is_oparl_error(result.data))
             )
             if first_page_missing and tried_modified_since and not strict_filter:
-                console.print(
-                    f"[yellow]{url}: Antwort auf modified_since "
-                    f"({'HTTP 404' if result.status_code == 404 else 'Fehlerobjekt'}) — Liste ohne Filter[/yellow]"
-                )
-                self._list_modified_since_unsupported.add(url)
+                answer = "HTTP 404" if result.status_code == 404 else "Fehlerobjekt"
+                console.print(f"[yellow]{url}: Antwort auf modified_since ({answer}) — Liste ohne Filter[/yellow]")
+                notes.note_list(requested_url, f"{answer} nur mit Filter")
                 retried_unfiltered = True
                 tried_modified_since = False
                 current_url = url
                 continue
             if first_page_missing and retried_unfiltered:
                 # Auch ohne Filter nicht da: Über den Filter sagte die erste Antwort nichts. Kommt die Liste
-                # wieder, läuft sie wie die übrigen mit Filter statt in diesem Prozess dauerhaft ohne
-                self._list_modified_since_unsupported.discard(url)
+                # wieder, läuft sie wie die übrigen mit Filter statt mit Vermerk „filtert nicht“
+                notes.clear_list(requested_url)
             if first_page_missing and report_missing:
                 reason = "HTTP 404" if result.status_code == 404 else oparl_error_message(result.data)
                 console.print(f"[dim]{url}: Liste gibt es bei der Quelle nicht ({reason})[/dim]")
@@ -1069,24 +1046,24 @@ class OParlClient:
                     raise ListFetchError(url, current_url, failed)
                 break
 
-            # Server, die modified_since stillschweigend ignorieren (OParl 1.0,
-            # more! rubin): der Parameter fehlt in self/next. Die Seite ist dann
-            # bereits die ungefilterte Liste — weiterlaufen, aber den Host
-            # merken, damit Folgelisten den toten Parameter nicht mehr senden.
-            if (
-                tried_modified_since
-                and not strict_filter
-                and pages_fetched == 0
-                and not self.carry_modified_since
-                and isinstance(result.data, dict)
-                and modified_since_dropped(result.data.get("links"))
-            ):
-                console.print(
-                    f"[yellow]{url}: Server ignoriert modified_since (Filter fehlt in den Listen-Links) "
-                    f"— Client-seitiger Abgleich[/yellow]"
-                )
-                self._modified_since_unsupported.add(host)
-                tried_modified_since = False
+            # Server, die modified_since stillschweigend ignorieren (OParl 1.0, more! rubin): der Parameter fehlt in
+            # self/next. Die Seite ist dann bereits die ungefilterte Liste — weiterlaufen, aber den Server für diese
+            # Quelle vermerken, damit ihre übrigen Listen den toten Parameter nicht mehr senden (Issue #1041).
+            # Behält die Quelle den Filter, endet ein fälliger Vermerk dieser Liste: Sie filtert wieder.
+            if tried_modified_since and not strict_filter and pages_fetched == 0:
+                if (
+                    not self.carry_modified_since
+                    and isinstance(result.data, dict)
+                    and modified_since_dropped(result.data.get("links"))
+                ):
+                    console.print(
+                        f"[yellow]{url}: Server ignoriert modified_since (Filter fehlt in den Listen-Links) "
+                        f"— Client-seitiger Abgleich, vermerkt für diese Quelle[/yellow]"
+                    )
+                    notes.note_host(host, "Filter fehlt in den Listen-Links")
+                    tried_modified_since = False
+                elif notes.clear_list(requested_url):
+                    console.print(f"[green]{url}: Liste filtert wieder mit modified_since, Vermerk gelöscht[/green]")
 
             self.stats.pages_fetched += 1
             pages_fetched += 1

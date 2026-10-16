@@ -42,6 +42,19 @@ OFFLINE_ANZEIGE = re.compile(r"Offline|Verbindung wird hergestellt")
 KONFLIKT_BANNER = "div[role=alert]:has-text('Das Dokument wurde inzwischen an anderer Stelle geändert')"
 #: Verbindungsaufbau wartet auf den Backoff des Providers (1 s, 2 s, 4 s, 8 s, …)
 RECONNECT_TIMEOUT = 40000
+#: Während der Trennung scheitert jeder neue Verbindungsaufbau sofort (der Provider versucht es mit Backoff weiter)
+GETRENNT_JS = """() => {
+    if (window.__echtesWebSocket) return
+    window.__echtesWebSocket = window.WebSocket
+    const getrennt = function () { throw new Error('E2E: Verbindung getrennt') }
+    Object.assign(getrennt, { CONNECTING: 0, OPEN: 1, CLOSING: 2, CLOSED: 3 })
+    window.WebSocket = getrennt
+}"""
+VERBUNDEN_JS = """() => {
+    if (!window.__echtesWebSocket) return
+    window.WebSocket = window.__echtesWebSocket
+    delete window.__echtesWebSocket
+}"""
 
 
 @pytest.fixture
@@ -100,10 +113,11 @@ class Verbindung:
     Verbindung normalerweise durch und erlaubt es, beide Seiten gezielt zu schließen.
 
     Im Route-Handler selbst darf nichts Synchrones auf Playwright warten (``ws.close()``
-    blockiert dort dauerhaft). Wiederverbindungsversuche während der Trennung werden deshalb
-    nicht an den Server durchgereicht, sondern bleiben im Zustand „verbindet“ hängen und
-    werden erst beim Freigeben aus dem Testthread geschlossen – der Provider verbindet dann
-    mit Backoff neu.
+    blockiert dort dauerhaft). Wiederverbindungsversuche während der Trennung scheitern deshalb
+    schon im Browser (``GETRENNT_JS``): Eine abgefangene, nicht weitergereichte Verbindung gälte
+    für die Seite sonst als offen. Sollte doch eine durchrutschen, wird sie nicht an den Server
+    durchgereicht und erst beim Freigeben aus dem Testthread geschlossen – der Provider verbindet
+    dann mit Backoff neu.
     """
 
     def __init__(self, page: Any) -> None:
@@ -122,6 +136,10 @@ class Verbindung:
 
     def trennen(self) -> None:
         self.getrennt = True
+        # Neue Verbindungen schon im Browser scheitern lassen: Eine abgefangene, nicht weitergereichte Verbindung
+        # gilt für die Seite als offen (Mock). Der Editor hielte sich dann für verbunden, obwohl kein Server antwortet,
+        # und speicherte nicht mehr ohne Verbindung (#1018).
+        self.page.evaluate(GETRENNT_JS)
         for ws, server in self._offen:
             ws.close(code=4000, reason="E2E: Verbindung getrennt")
             server.close(code=4000, reason="E2E: Verbindung getrennt")
@@ -130,6 +148,7 @@ class Verbindung:
 
     def verbinden(self) -> None:
         self.getrennt = False
+        self.page.evaluate(VERBUNDEN_JS)
         for ws in self._abgewiesen:
             ws.close(code=4000, reason="E2E: Verbindung freigegeben")
         self._abgewiesen.clear()

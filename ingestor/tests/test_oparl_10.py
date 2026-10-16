@@ -126,16 +126,6 @@ def make_orchestrator(storage: FakeStorage) -> SyncOrchestrator:
     return orch
 
 
-@pytest.fixture
-def isolated_capability_cache():
-    """Der modified_since-Capability-Cache ist prozessweit — je Test zurücksetzen."""
-    before = OParlClient.get_modified_since_unsupported()
-    OParlClient._modified_since_unsupported.clear()
-    yield
-    OParlClient._modified_since_unsupported.clear()
-    OParlClient._modified_since_unsupported.update(before)
-
-
 # ---------------------------------------------------------------------------
 # Hilfsfunktionen (oparl_compat)
 # ---------------------------------------------------------------------------
@@ -191,14 +181,14 @@ class TestCompatHelpers:
 
 
 class TestClientOParl10:
-    async def test_error_object_yields_no_items(self, isolated_capability_cache):
+    async def test_error_object_yields_no_items(self):
         server = FakeGremienInfo()
         client = make_client(server)
         pages = [page async for page in client.fetch_list(f"{HOST}/oparl/v1.1/body/KH/paper")]
         assert pages == []
         assert OParlClient._extract_items(load("error_class_missing.json")) == []
 
-    async def test_modified_since_ignored_is_detected_and_cached(self, isolated_capability_cache):
+    async def test_modified_since_ignored_is_detected_and_cached(self):
         server = FakeGremienInfo()
         client = make_client(server)
         from datetime import UTC, datetime
@@ -210,14 +200,15 @@ class TestClientOParl10:
         assert "modified_since=" in server.requests[0]
         # Folgeseite über links.next, ohne den ignorierten Parameter
         assert server.requests[1] == f"{HOST}/oparl/body/KH/paper/page/2"
-        assert "mandant-a.gremien.example" in OParlClient.get_modified_since_unsupported()
+        # Vermerkt für den Server, nur in den Vermerken dieser Quelle (Issue #1041)
+        assert "mandant-a.gremien.example" in client.filter_notes.hosts
 
         # Zweite Liste desselben Hosts sendet den Parameter gar nicht mehr
         server.requests.clear()
         await client.fetch_list_all(f"{HOST}/oparl/body/KH/meeting", modified_since=since)
         assert "modified_since" not in server.requests[0]
 
-    async def test_body_list_via_system(self, isolated_capability_cache):
+    async def test_body_list_via_system(self):
         server = FakeGremienInfo()
         client = make_client(server)
         bodies = await client.fetch_list_all(load("system.json")["body"])
@@ -230,7 +221,7 @@ class TestClientOParl10:
 
 
 class TestAutoDetect:
-    async def test_fallback_from_1_1_path(self, isolated_capability_cache):
+    async def test_fallback_from_1_1_path(self):
         server = FakeGremienInfo()
         client = make_client(server)
         orch = make_orchestrator(FakeStorage())
@@ -246,7 +237,7 @@ class TestAutoDetect:
             f"{HOST}/oparl/Body",
         ]
 
-    async def test_direct_1_0_system_url(self, isolated_capability_cache):
+    async def test_direct_1_0_system_url(self):
         server = FakeGremienInfo()
         client = make_client(server)
         orch = make_orchestrator(FakeStorage())
@@ -254,7 +245,7 @@ class TestAutoDetect:
         url_type, bodies, version = await orch.auto_detect_url(client, f"{HOST}/oparl/system")
         assert (url_type, version, len(bodies)) == ("system", "1.0", 1)
 
-    async def test_unresolvable_url_raises(self, isolated_capability_cache):
+    async def test_unresolvable_url_raises(self):
         server = FakeGremienInfo()
         client = make_client(server)
         orch = make_orchestrator(FakeStorage())
@@ -264,7 +255,7 @@ class TestAutoDetect:
         # Kandidaten wurden probiert, dann sauber aufgegeben
         assert server.requests == [f"{HOST}/other/v1.1/system", f"{HOST}/other/system", f"{HOST}/other"]
 
-    async def test_body_field_as_list_of_urls(self, isolated_capability_cache):
+    async def test_body_field_as_list_of_urls(self):
         server = FakeGremienInfo()
         client = make_client(server)
         orch = make_orchestrator(FakeStorage())
@@ -360,7 +351,7 @@ class TestIncrementalSyncWithSyntheticTimestamps:
             storage.hashes[entity.external_id] = entity.raw_json[CONTENT_HASH_FIELD]
             storage.modified[entity.external_id] = entity.oparl_modified
 
-    async def test_second_run_skips_unchanged_and_detects_content_change(self, isolated_capability_cache):
+    async def test_second_run_skips_unchanged_and_detects_content_change(self):
         server = FakeGremienInfo()
         client = make_client(server)
         storage = FakeStorage()
@@ -383,7 +374,7 @@ class TestIncrementalSyncWithSyntheticTimestamps:
         assert total == 1
         assert [e.external_id for e in stored] == [changed]
 
-    async def test_full_sync_writes_content_hash(self, isolated_capability_cache):
+    async def test_full_sync_writes_content_hash(self):
         server = FakeGremienInfo()
         client = make_client(server)
         orch = make_orchestrator(FakeStorage())

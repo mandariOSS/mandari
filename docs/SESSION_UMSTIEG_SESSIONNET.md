@@ -39,7 +39,9 @@ Wahlperioden, Gremien, Fraktionen, Ämter, Personen und Besetzungen übernimmt
 1. Vorlagen erzeugen, bei angebundenem Adapter vorbefüllt mit dem öffentlichen Bestand je Körperschaft
    (`--vorlagen … --aus-ris …`).
 2. Die Verwaltung ergänzt und korrigiert die Listen (Kontakt- und Bankdaten, Beginn der Besetzungen,
-   Stellvertretungen, nicht öffentlich geführte Mitglieder) oder liefert eigene Listen aus Session.
+   Stellvertretungen, nicht öffentlich geführte Mitglieder) oder liefert eigene Listen aus Session. Führt der
+   Mandant mehrere Körperschaften, nennt die Spalte `koerperschaft` in Gremien, Fraktionen und Besetzungen,
+   wohin eine Zeile gehört; die Körperschaften vorher im Mandanten anlegen.
 3. Prüflauf (`--dry-run`) mit Gegenprobe gegen die öffentlichen Mitgliederlisten; Fehler zeilengenau an die
    Verwaltung zurückgeben, bis der Prüflauf ohne Fehler endet.
 4. Import mit Bericht als JSON für das Prüfprotokoll; ein zweiter Lauf mit denselben Dateien ändert nichts.

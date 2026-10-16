@@ -15,6 +15,7 @@ from django.utils import timezone
 from django.views.generic import View
 from django_htmx.http import HttpResponseClientRedirect
 
+from apps.common import local_time
 from apps.common.mixins import WorkViewMixin
 
 from .. import agenda, deletion
@@ -307,12 +308,23 @@ class FactionActionView(WorkViewMixin, View):
 
         start_date = request.POST.get("start_date")
         start_time = request.POST.get("start_time", "18:00")
+        start_notice = ""
         if start_date:
             try:
                 start_dt = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M")
-                meeting.start = timezone.make_aware(start_dt) if timezone.is_naive(start_dt) else start_dt
             except ValueError:
-                pass
+                start_dt = None
+            if start_dt is not None:
+                # Tag der Zeitumstellung (Issue #974): doppelte Stunde → erste Uhrzeit, es sei denn, die Sitzung steht
+                # schon auf dieser Uhrzeit (keep_stored); fehlende Stunde → Meldung, nichts wird gespeichert
+                try:
+                    new_start = local_time.keep_stored(local_time.aware(start_dt), meeting.start)
+                except local_time.NonexistentLocalTimeError as exc:
+                    messages.error(request, str(exc))
+                    return self._redirect_detail(meeting)
+                if new_start != meeting.start:
+                    start_notice = local_time.ambiguous_notice(new_start, label="Beginn")
+                meeting.start = new_start
 
         meeting.location = request.POST.get("location", "")
         meeting.is_virtual = request.POST.get("is_virtual") == "on"
@@ -330,7 +342,10 @@ class FactionActionView(WorkViewMixin, View):
             meeting.status = new_status
 
         meeting.save()
-        return self._refresh_or_redirect(request, meeting, "Änderungen gespeichert.")
+        response = self._refresh_or_redirect(request, meeting, "Änderungen gespeichert.")
+        if start_notice:
+            messages.warning(request, start_notice)
+        return response
 
     def _invite(self, request, meeting):
         if not self.membership.has_permission("faction.invite"):

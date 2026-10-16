@@ -58,7 +58,7 @@ def _get_org_folder_or_404(organization, folder_id, membership=None):
     return get_object_or_404(DocumentFolder.visible_to(organization, membership), id=folder_uuid)
 
 
-def _broadcast_doc_reload(motion, version=None):
+def _broadcast_doc_reload(motion, version=None, ausser_fenster=""):
     """
     Alle verbundenen Kollaborations-Clients zum Neuladen auffordern.
 
@@ -67,6 +67,10 @@ def _broadcast_doc_reload(motion, version=None):
     oder Statuswechsel in einen gesperrten Status (Clients laden neu und
     erhalten dabei ihre ggf. herabgestufte Zugriffsstufe). Best-Effort:
     Fehler beim Broadcast brechen die aufrufende Aktion nicht ab.
+
+    ``ausser_fenster``: Kennung des Editorfensters, das die Aktion ausgelöst hat (#1018). Es lädt selbst neu und
+    bekommt keine Aufforderung; sein letztes Sichern beim Verlassen verwirft der Server dann nicht. Nur für Aktionen,
+    die den Inhalt nicht ändern (Statuswechsel) – nach einem neuen Inhalt muss jedes Fenster als veraltet gelten.
     """
     try:
         from asgiref.sync import async_to_sync
@@ -74,10 +78,10 @@ def _broadcast_doc_reload(motion, version=None):
 
         channel_layer = get_channel_layer()
         if channel_layer is not None:
-            async_to_sync(channel_layer.group_send)(
-                f"doc_{motion.id}",
-                {"type": "doc.reload", "version": version},
-            )
+            event = {"type": "doc.reload", "version": version}
+            if ausser_fenster:
+                event["ausser_fenster"] = ausser_fenster
+            async_to_sync(channel_layer.group_send)(f"doc_{motion.id}", event)
     except Exception as e:
         logger.warning(f"[DocumentEditor] Reload-Broadcast fehlgeschlagen: {e}")
 

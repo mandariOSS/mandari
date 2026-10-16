@@ -159,3 +159,140 @@ def test_unveraenderter_inhalt_ist_kein_konflikt(org: Any, author: Any, motion: 
     response = save(client_for(author.user), org, motion, content="<p>Alt</p>", base_content_hash="veraltet")
 
     assert response.status_code == 200
+
+
+@pytest.mark.django_db
+def test_ohne_inhalt_nur_titel_typ_und_briefpapier(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any
+) -> None:
+    """Mit Live-Zusammenarbeit schickt der Editor keinen Text (#1018): Text und Yjs-Zustand bleiben unberührt."""
+    from apps.work.motions.models import MotionType, OrganizationLetterhead
+
+    typ = MotionType.objects.create(organization=org, name="Anfrage", slug="anfrage")
+    briefkopf = OrganizationLetterhead.objects.create(organization=org, name="Fraktion", kind="generated")
+    revisionen_vorher = motion.revisions.count()
+
+    response = save(
+        client_for(author.user),
+        org,
+        motion,
+        title="Neuer Titel",
+        document_type_id=str(typ.id),
+        letterhead_id=str(briefkopf.id),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["success"] is True
+    motion.refresh_from_db()
+    assert motion.title == "Neuer Titel"
+    assert motion.document_type_id == typ.id
+    assert motion.letterhead_id == briefkopf.id
+    assert cast(Any, motion).get_content_decrypted() == "<p>Alt</p>"
+    assert motion.get_yjs_state() == STALE_STATE
+    assert motion.summary == "Kurzfassung"
+    assert motion.revisions.count() == revisionen_vorher
+    assert reloads == []
+
+
+@pytest.mark.django_db
+def test_ohne_inhalt_ueberschreibt_kein_gleichzeitiges_sichern(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Sichert die Verbindung während des POST einen neuen Text, schreibt der POST ihn nicht mit dem alten zurück."""
+    from apps.work.motions.views.editor import DocumentEditorView
+
+    echt: Any = DocumentEditorView._get_access_level
+
+    def mit_gleichzeitigem_sichern(self: Any, geladen: Motion) -> str:
+        # Nach dem Laden im View: der Consumer speichert den neuen Kollaborationsstand
+        neu = Motion.objects.get(pk=geladen.pk)
+        cast(Any, neu).set_content_encrypted("<p>Neu über Yjs</p>")
+        neu.set_yjs_state(b"neuer-zustand")
+        neu.save()
+        return str(echt(self, geladen))
+
+    monkeypatch.setattr(DocumentEditorView, "_get_access_level", mit_gleichzeitigem_sichern)
+
+    response = save(client_for(author.user), org, motion, title="Titel neu")
+
+    assert response.status_code == 200
+    motion.refresh_from_db()
+    assert motion.title == "Titel neu"
+    assert cast(Any, motion).get_content_decrypted() == "<p>Neu über Yjs</p>"
+    assert motion.get_yjs_state() == b"neuer-zustand"
+
+
+@pytest.mark.django_db
+def test_fremdes_formular_leert_nichts(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any
+) -> None:
+    """Postet ein anderes Formular versehentlich an den Editor (Teilen-Dialog mit leerem Ziel), bleibt alles (#1018)."""
+    from apps.work.motions.models import MotionType
+
+    typ = MotionType.objects.create(organization=org, name="Anfrage", slug="anfrage")
+    motion.document_type = typ
+    motion.save(update_fields=["document_type"])
+
+    response = client_for(author.user).post(
+        f"/work/{org.slug}/documents/{motion.id}/", {"visibility": "organization"}, HTTP_HX_REQUEST="true"
+    )
+
+    assert response.status_code == 400
+    motion.refresh_from_db()
+    assert cast(Any, motion).get_content_decrypted() == "<p>Alt</p>"
+    assert motion.document_type_id == typ.id
+    assert motion.get_yjs_state() == STALE_STATE
+    assert reloads == []
+
+
+@pytest.mark.django_db
+def test_nur_titel_laesst_typ_und_briefpapier(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any
+) -> None:
+    from apps.work.motions.models import MotionType
+
+    typ = MotionType.objects.create(organization=org, name="Anfrage", slug="anfrage")
+    motion.document_type = typ
+    motion.save(update_fields=["document_type"])
+
+    response = save(client_for(author.user), org, motion, title="Nur der Titel")
+
+    assert response.status_code == 200
+    motion.refresh_from_db()
+    assert motion.title == "Nur der Titel"
+    assert motion.document_type_id == typ.id
+
+
+@pytest.mark.django_db
+def test_ohne_inhalt_schreibt_nur_mitgeschickte_felder(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Zwei Fenster mit Verbindung (#1018): Ändert eines den Titel und das andere danach nur das Briefpapier, setzt dessen
+    POST den neuen Titel nicht auf den alten Stand zurück.
+    """
+    from apps.work.motions.models import OrganizationLetterhead
+    from apps.work.motions.views.editor import DocumentEditorView
+
+    briefkopf = OrganizationLetterhead.objects.create(organization=org, name="Fraktion", kind="generated")
+    echt: Any = DocumentEditorView._get_access_level
+
+    def anderes_fenster_aendert(self: Any, geladen: Motion) -> str:
+        # Nach dem Laden im View sichert ein anderes Fenster Titel und Zusammenfassung
+        Motion.objects.filter(pk=geladen.pk).update(title="Titel aus dem anderen Fenster", summary="Neu anderswo")
+        return str(echt(self, geladen))
+
+    monkeypatch.setattr(DocumentEditorView, "_get_access_level", anderes_fenster_aendert)
+
+    response = client_for(author.user).post(
+        f"/work/{org.slug}/documents/{motion.id}/",
+        {"action": "save", "letterhead_id": str(briefkopf.id)},
+        HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+    )
+
+    assert response.status_code == 200
+    motion.refresh_from_db()
+    assert motion.letterhead_id == briefkopf.id
+    assert motion.title == "Titel aus dem anderen Fenster"
+    assert motion.summary == "Neu anderswo"
+    assert cast(Any, motion).get_content_decrypted() == "<p>Alt</p>"

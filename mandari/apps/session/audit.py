@@ -22,6 +22,7 @@ Sicherheit:
   den die SessionTenantMiddleware setzt.
 """
 
+import hashlib
 import logging
 import threading
 import time
@@ -241,6 +242,8 @@ READ_DEDUP_SECONDS = 600
 #: Session-Schlüssel des Merkers und dessen Obergrenze (älteste Einträge fallen heraus)
 READ_SESSION_KEY = "audit_read_seen"
 READ_SESSION_MAX = 200
+#: Eigener Merker für Abrufe über die Session-API (Issue #366): verdrängt nie die Merker der Oberfläche
+READ_SESSION_KEY_API = "audit_read_seen_api"
 
 
 def _meeting_date(meeting: Any) -> str:
@@ -277,22 +280,22 @@ def read_logging_enabled(tenant: Any) -> bool:
     return bool(privacy.get("read_logging", True))
 
 
-def _read_seen(request: Any, key: str, now: float) -> bool:
+def _read_seen(request: Any, key: str, now: float, merker: str = READ_SESSION_KEY) -> bool:
     session = getattr(request, "session", None)
     if session is None:
         return False
-    seen = session.get(READ_SESSION_KEY)
+    seen = session.get(merker)
     if not isinstance(seen, dict):
         return False
     stamp = seen.get(key)
     return isinstance(stamp, int | float) and now - stamp < READ_DEDUP_SECONDS
 
 
-def _remember_read(request: Any, key: str, now: float) -> None:
+def _remember_read(request: Any, key: str, now: float, merker: str = READ_SESSION_KEY) -> None:
     session = getattr(request, "session", None)
     if session is None:
         return
-    seen = session.get(READ_SESSION_KEY)
+    seen = session.get(merker)
     fresh = {
         k: v
         for k, v in (seen.items() if isinstance(seen, dict) else [])
@@ -301,7 +304,7 @@ def _remember_read(request: Any, key: str, now: float) -> None:
     fresh[key] = now
     if len(fresh) > READ_SESSION_MAX:
         fresh = dict(sorted(fresh.items(), key=lambda item: item[1])[-READ_SESSION_MAX:])
-    session[READ_SESSION_KEY] = fresh
+    session[merker] = fresh
 
 
 def log_read(
@@ -314,6 +317,8 @@ def log_read(
     changes: Any = None,
     respect_setting: bool = True,
     dedup_suffix: str = "",
+    reference: str | None = None,
+    merker: str = READ_SESSION_KEY,
 ) -> Any:
     """
     Lesezugriff protokollieren – datensparsam, zusammengefasst, fehlertolerant.
@@ -327,6 +332,8 @@ def log_read(
         changes: knappe Angaben zum Umfang, nie Inhalte
         respect_setting: False für Zugriffe, die immer protokolliert werden (Protokoll-Einsicht)
         dedup_suffix: unterscheidet Zugriffe auf dasselbe Objekt (z. B. verschiedene Filter)
+        reference: Objekt-Beschreibung statt :func:`read_reference` (z. B. für eine Liste)
+        merker: Session-Schlüssel des Merkers (eigener für die Session-API)
 
     Returns: der neue Eintrag oder ``None`` (abgeschaltet, zusammengefasst oder Fehler)
     """
@@ -334,7 +341,7 @@ def log_read(
         return None
     now = time.time()
     key = f"{tenant.pk}:{action}:{instance.__class__.__name__}:{instance.pk}:{dedup_suffix}"
-    if _read_seen(request, key, now):
+    if _read_seen(request, key, now, merker):
         return None
     try:
         entry = log_event(
@@ -344,14 +351,61 @@ def log_read(
             user=user,
             changes=changes,
             request=request,
-            object_repr=read_reference(instance),
+            object_repr=read_reference(instance) if reference is None else reference,
         )
     except Exception:
         # Die Seite darf am Protokoll nicht scheitern; der Fehler landet im Betriebslog
         logger.exception("Lesezugriff konnte nicht protokolliert werden")
         return None
-    _remember_read(request, key, now)
+    _remember_read(request, key, now, merker)
     return entry
+
+
+#: Vermerk in Lesezugriffen über die Session-API (Issue #366)
+API_READ_V1 = "Session-API v1"
+API_READ_LEGACY = "Session-API, abgekündigter Pfad"
+
+
+def log_api_reads(
+    request: Any, instances: Any, *, tenant: Any, user: Any, liste: str, umfang: str, zugriff: str
+) -> Any:
+    """
+    Lesezugriff über die Session-API protokollieren (Issue #366): **ein** Eintrag je Abruf mit den Referenzen
+    und Kennungen der nichtöffentlichen Objekte der Antwort, nie Inhalte.
+
+    So kostet ein Abruf höchstens einen Eintrag (die Abfragen der Hash-Kette), egal wie viele Objekte die Seite
+    enthält. Zusammengefasst wird wie in der Oberfläche für ``READ_DEDUP_SECONDS``: derselbe Abruf mit denselben
+    nichtöffentlichen Objekten derselben Person schreibt keinen weiteren Eintrag. Der Merker liegt getrennt von
+    dem der Oberfläche (``READ_SESSION_KEY_API``), damit viele Abrufe deren Zusammenfassung nicht verdrängen.
+    Liefert den neuen Eintrag oder ``None``.
+    """
+    items = list(instances)
+    if not items:
+        return None
+    # Wie log_read: Das Protokoll darf die Antwort nie scheitern lassen, auch nicht beim Aufbau der Angaben
+    try:
+        ids = [str(item.pk) for item in items]
+        digest = hashlib.sha256(",".join(sorted(ids)).encode()).hexdigest()[:16]
+        changes = {
+            "umfang": umfang,
+            "zugriff": zugriff,
+            "anzahl": len(items),
+            "objekte": [read_reference(item) for item in items],
+            "kennungen": ids,
+        }
+    except Exception:
+        logger.exception("Lesezugriff über die Session-API konnte nicht protokolliert werden")
+        return None
+    return log_read(
+        request,
+        tenant,
+        tenant=tenant,
+        user=user,
+        changes=changes,
+        dedup_suffix=f"api:{liste}:{digest}",
+        reference=f"{liste} ({zugriff})",
+        merker=READ_SESSION_KEY_API,
+    )
 
 
 # =============================================================================
