@@ -418,8 +418,15 @@ def consultation_events(
     paper_id: UUID | None = None,
     paper_external_id: str | None = None,
     ids: IdBases | None = None,
+    agenda_item_id: UUID | None = None,
 ) -> list[Draft]:
-    """``ris.consultation.changed``; ohne bekannte Vorlage lässt sich die Beratung nicht melden."""
+    """
+    ``ris.consultation.changed``; ohne bekannte Vorlage lässt sich die Beratung nicht melden.
+
+    ``agenda_item_id``: Zeile des Tagesordnungspunkts im Bestand. Sie gilt vor der aus der Adresse gerechneten
+    Kennung: Eine umgeschriebene Zeile behält ihre Kennung (ADR kanonisches Modell, Nachträge #88 und #863), und
+    Ereignisse verweisen nur auf Zeilen des Bestands.
+    """
     paper = str(paper_id) if paper_id is not None else reference(paper_external_id or raw.get("paper"), ids)
     if paper is None:
         return []
@@ -443,7 +450,7 @@ def consultation_events(
     ):
         ref = _first_reference(value, ids)
         if ref is not None:
-            payload[name] = ref
+            payload[name] = str(agenda_item_id) if name == "agenda_item" and agenda_item_id is not None else ref
     return [Draft("ris.consultation.changed", "Consultation", consultation_id, payload)]
 
 
