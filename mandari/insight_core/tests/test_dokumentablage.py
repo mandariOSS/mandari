@@ -74,6 +74,13 @@ def _blob(inhalt: bytes) -> OParlFileBlob:
     return OParlFileBlob.objects.get(pk=_sha(inhalt))
 
 
+def _nicht_frisch(*dateien: OParlFile) -> None:
+    """Kopien älter als die Schonfrist für frische Kopien (Verdrängen schützt die letzte Stunde)."""
+    OParlFile.objects.filter(pk__in=[datei.pk for datei in dateien]).update(
+        local_cached_at=timezone.now() - timedelta(days=2)
+    )
+
+
 class TestAblageNachHash:
     def test_layout_ohne_endung(self, body: OParlBody, ablage: Path) -> None:
         datei = _datei(body, "plan.svg", mime_type="image/svg+xml")
@@ -309,8 +316,9 @@ class TestObjektspeicher:
         assert object_storage.region() == "eu-central"
 
     def test_hochladen_verdraengen_und_zurueckholen(self, body: OParlBody, objektspeicher: Any) -> None:
-        datei = _datei(body)
+        datei = _datei(body, text_extraction_status="completed")
         pfad = file_cache.store_bytes(datei, PDF)
+        _nicht_frisch(datei)
         assert file_store.upload_pending() == {"uploaded": 1}
         sha = _sha(PDF)
         assert _blob(PDF).remote_at is not None
@@ -318,10 +326,11 @@ class TestObjektspeicher:
         assert objekt["Body"].read() == PDF
 
         # Zwischenspeicher voll: verdrängt wird nur, was im Objektspeicher liegt
-        nur_lokal = _datei(body, "b.pdf")
+        nur_lokal = _datei(body, "b.pdf", text_extraction_status="completed")
         lokal_pfad = file_cache.store_bytes(nur_lokal, ANDERS)
+        _nicht_frisch(nur_lokal)
         ergebnis = file_store.evict_local(max_bytes=0)
-        assert ergebnis["evicted"] == 1
+        assert ergebnis["evicted"] == 1 and ergebnis["nicht_hochgeladen"] == 1
         assert not pfad.exists() and lokal_pfad.exists()
 
         # Vorschau holt den Inhalt zurück (Hash geprüft) und liefert ihn aus
@@ -413,8 +422,10 @@ class TestObjektspeicher:
         assert pfad.stat().st_atime_ns > vorher, "der letzte Zugriff steht in der Zugriffszeit"
 
     def test_verdraengt_wird_nach_dem_letzten_zugriff(self, body: OParlBody, objektspeicher: Any) -> None:
-        gelesen = file_cache.store_bytes(_datei(body, "a.pdf"), PDF)
-        liegt = file_cache.store_bytes(_datei(body, "b.pdf"), ANDERS)
+        a, b = (_datei(body, name, text_extraction_status="completed") for name in ("a.pdf", "b.pdf"))
+        gelesen = file_cache.store_bytes(a, PDF)
+        liegt = file_cache.store_bytes(b, ANDERS)
+        _nicht_frisch(a, b)
         file_store.upload_pending()
         jetzt = time.time_ns()
         # Zuletzt gelesen, aber älter geändert – und umgekehrt

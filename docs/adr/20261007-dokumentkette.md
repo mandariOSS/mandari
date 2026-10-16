@@ -131,6 +131,8 @@ Ingestor (Eingangsadapter, nur Metadaten)
 
 - `refused` ist bewusst nicht „gesperrt“: Gesperrt im Sinn von #787 heißt in der Quelle gelöscht oder nicht mehr
   abrufbar (`blocked_q()`); `refused` heißt, die Quelle lässt uns nicht laden.
+- `evicted` (verdrängt von der Obergrenze ohne Objektspeicher, siehe 5) ist kein Ergebnis eines Abrufs und kein
+  Zustand, aus dem der Abruf von selbst beansprucht.
 - Die Wiederholung plant der Auftrag selbst mit `run_after` ein; die Versuche des Aufgaben-Backends
   (`max_attempts`) bleiben für Abstürze des Auftrags. `fetch_attempts` wird bei Erfolg zurückgesetzt.
 - Die Vorschau setzt dieselben Zustände (über `hub.ris.abruf`), nicht mehr sofort `missing` bei der ersten 404.
@@ -168,7 +170,7 @@ Ingestor (Eingangsadapter, nur Metadaten)
   gelistete, sobald die Erkennung im Worker läuft (`TEXT_EXTRACTION_RUNNER=worker`). Vorher lädt der Ingestor
   noch selbst, und eine erweiterte Ablage ergäbe doppelte Abrufe. Die lokale Platte ist mit Objektspeicher
   Zwischenspeicher (`OBJ_CACHE_MAX_GB`); ohne Objektspeicher begrenzt `FILE_CACHE_MIN_FREE_GB`, und Abrufe warten,
-  statt Text zu verlieren.
+  statt Text zu verlieren. Zusätzlich lässt sich die Gesamtgröße begrenzen (`FILE_CACHE_MAX_TOTAL_GB`, unten).
 - **Stichtag je Quelle:** `sync_config["document_since"]`. Beim Umschalten (Etappe 2) wird er für bestehende, bisher
   nicht abgelegte Quellen auf den Umschaltzeitpunkt gesetzt, für neu angelegte Quellen auf das Ende ihres ersten
   vollständigen Syncs; für die beim Umschalten schon abgelegten (gelisteten) Quellen bleibt er leer. **Ein leerer Stichtag gilt nur für
@@ -178,6 +180,29 @@ Ingestor (Eingangsadapter, nur Metadaten)
   dem Stichtag sind **Altbestand** und werden nur abgerufen, wenn für die Quelle `sync_config["document_backfill"] =
   true` gesetzt ist; das geschieht je Quelle nach Freigabe (Last bei der Quelle). Ohne Freigabe behalten diese
   Dateien ihren vorhandenen Text. **Neue Dateien** (ab Stichtag) aller erlaubten Quellen werden abgerufen.
+- **Moduswechsel:** Liegt ein Inhalt laut Datenbank im Objektspeicher (`remote_at`), ist der Objektspeicher im
+  Dienst aber nicht konfiguriert (`OBJ_ENABLED=false`, fehlende `OBJ_*`), liefert `local_copy` „gestört“, nicht
+  „fehlt“ (#990): Ein falsch konfigurierter Dienst darf keine Abrufwelle auslösen. Den Objektspeicher aufzugeben ist
+  ein ausdrücklicher Schritt (`dokumentablage --objektspeicher-aufgeben`, löscht die Vermerke `remote_at`); erst
+  danach gilt ein lokal verdrängter Inhalt als fehlend.
+- **Verdrängen und Obergrenze** (#961, #990): Zwei Grenzen verdrängen im stündlichen Aufräumen, `OBJ_CACHE_MAX_GB`
+  (nur mit Objektspeicher, nach der Zugriffszeit der Datei) und `FILE_CACHE_MAX_TOTAL_GB` (Standard `0` =
+  unbegrenzt, nach der letzten Auslieferung bzw. dem Datum des Dokuments); `cache_files` lädt nur bis zur Obergrenze
+  nach. Beide prüfen gleich: **Mit Objektspeicher** wird nur die lokale Kopie gelöscht, und nur nach `HEAD` im
+  Objektspeicher (fehlt der Inhalt oder weicht die Größe ab, bleibt die Kopie und `remote_at` wird zurückgesetzt;
+  eine Störung bricht ab). Die Datenbank bleibt unverändert (`ok`), gelesen wird danach über `local_copy` aus dem
+  Objektspeicher. Nie verdrängt werden Inhalte, deren Text erkannt wird oder darauf wartet (auch eingereiht),
+  laufende Abrufe und Kopien aus der letzten Stunde; unter der Zeilensperre wird nachgeprüft. **Ohne
+  Objektspeicher** (nur die Obergrenze) geben alle Dateien eines Inhalts ihre Referenz frei und gehen auf
+  `evicted`; zusätzlich geschützt sind Quellen, deren Dokumente sich nicht neu abrufen ließen (Schonung, kein
+  Dateiabruf, verweigert, synthetisch, ohne Download-Adresse), und Inhalte mit `remote_at` (Moduswechsel: die
+  Obergrenze setzt dann aus).
+- **`evicted`** ist kein Zustand, aus dem der Abruf von selbst beansprucht; Zeitpläne, Sicherheitsnetz und
+  Kennzahlen zählen ihn nicht als wartend, sonst lüde der nächste Lauf wieder, was die Grenze eben verdrängt hat.
+  Ausdrücklich holen ihn die Vorschau (Live-Abruf, Fehlschläge nach der Tabelle in 4 wie bei `none`),
+  `cache_files --verdraengte` und die Admin-Aktion. Ein bestätigtes Fehlen der Kopie setzt ihn nie auf `none`, und
+  `dokumentkette zuruecksetzen` lässt ihn stehen. Text, Status der Erkennung und `sha256_hash` bleiben; die
+  Erkennung beansprucht ihn nicht (nur `ok`), es wird also nichts neu erkannt.
 
 ### 6. Vertrag `ris.file.content_stored` v1
 
@@ -327,7 +352,9 @@ erhalten; zurückgesetzt werden nur Zustandsspalten.
 - Der Auftrag `file.extract_text` öffnet keine Verbindung zur Quelle (Test mit gesperrtem Netz, Inhalt nur im
   Objektspeicher-Ersatz; fehlt der Inhalt, setzt er nur Zustände zurück).
 - Ein Abruffehler ändert `text_extraction_status` nicht (Test je Fehlerklasse der Tabelle in 4).
-- Gestörter Objektspeicher löst keinen Quellabruf aus.
+- Gestörter Objektspeicher löst keinen Quellabruf aus, ebenso wenig ein Dienst ohne Objektspeicher-Konfiguration bei
+  Inhalten mit `remote_at` (#990). Beide Grenzen verdrängen mit Objektspeicher nur nach `HEAD` und lassen
+  Texterkennung und laufende Abrufe aus.
 - Gesperrte, gelöschte und nach #787 geleerte Dateien werden von Aufträgen und Sicherheitsnetz weder eingeplant
   noch abgerufen noch erkannt; der Löschabgleich prüft gesperrte Dateien weiter.
 - Zwei Aufträge für dieselbe Datei: nur einer beansprucht, nur ein Quellabruf.

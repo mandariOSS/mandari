@@ -191,6 +191,23 @@ def test_gestoerter_objektspeicher_loest_keinen_quellabruf_aus(
     assert auftrag.task_path == text_extraction_job.TASK_PATH and auftrag.run_after > timezone.now()
 
 
+def test_objektspeicher_hier_nicht_konfiguriert_ist_gestoert(
+    objektspeicher: Any, ohne_netz: list[str], settings: Any
+) -> None:
+    """Moduswechsel (#990): Ein Worker ohne ``OBJ_*`` gibt einen Inhalt mit ``remote_at`` nicht an den Abruf zurück."""
+    datei = _datei(_quelle(), PDF)
+    file_store.upload_pending()
+    Path(str(datei.local_path)).unlink()
+    settings.OBJ_ENABLED = False
+
+    with mock.patch.object(erkennung, "extract_text", side_effect=AssertionError("keine Erkennung")):
+        assert erkennung.erkennen(str(datei.pk)) == erkennung.ZURUECKGESTELLT
+
+    datei.refresh_from_db()
+    assert (datei.local_status, datei.text_extraction_status) == ("ok", "pending"), "gestört ist nicht fehlend"
+    assert ohne_netz == []
+
+
 # =============================================================================
 # Externe Texterkennung: öffentliche RIS-Datei, nur mit freigegebenem Endpunkt (Issue #950)
 # =============================================================================

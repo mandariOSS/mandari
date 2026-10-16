@@ -211,10 +211,10 @@ vorher der Abruf (oben).
   `pending` oder aus `completed` mit älterer Version. Von zwei Aufträgen derselben Datei erkennt einer.
 - **Lesen:** Fehlt der Inhalt bestätigt (weder lokal noch im Objektspeicher), geht die Datei zurück an den Abruf
   (`local_status = none`) und die Erkennung auf den Stand davor. Ist die Ablage gestört (Objektspeicher antwortet
-  nicht, Ablage nicht eingehängt, Platte voll) oder die Umgebung (Datenbank beim Speichern, kein Platz für
-  Zwischendateien der Erkennung), bleibt alles, wie es war, und derselbe Auftrag läuft 15 Minuten später erneut –
-  kein Abruf bei der Quelle, kein Versuch gezählt. Fehlt bei Altbestand der SHA-256, berechnet ihn
-  der Auftrag und trägt ihn nach.
+  nicht oder ist im Worker nicht konfiguriert, Ablage nicht eingehängt, Platte voll) oder die Umgebung (Datenbank
+  beim Speichern, kein Platz für Zwischendateien der Erkennung), bleibt alles, wie es war, und derselbe Auftrag läuft
+  15 Minuten später erneut – kein Abruf bei der Quelle, kein Versuch gezählt. Fehlt bei Altbestand der SHA-256,
+  berechnet ihn der Auftrag und trägt ihn nach.
 - **Zustände der Erkennung:** `failed` heißt nur noch „Inhalt nicht lesbar“ oder „Speichergrenze“; ein Abruffehler
   ändert die Erkennung nie. Endet der Abruf an der Größengrenze (`too_large`), wird die Erkennung `skipped`.
 - **Bedingt speichern:** Der Text wird nur geschrieben, wenn der Inhalt noch derselbe ist (`sha256_hash`), die Datei
@@ -343,11 +343,18 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
 - `dokumentablage --hochladen` lädt Inhalte ohne Kopie im Objektspeicher hoch (`remote_at`).
 - Die lokale Ablage wird zum **Zwischenspeicher**: `dokumentablage --aufraeumen` verdrängt bei mehr als
   `OBJ_CACHE_MAX_GB` (Standard 60) die am längsten nicht gelesenen Inhalte – nur solche, die sicher im Objektspeicher
-  liegen. Eine kleinere [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) (`FILE_CACHE_MAX_TOTAL_GB`) wirkt
-  zusätzlich. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der Zugriffszeit (`atime`) der Datei,
-  höchstens einmal je Stunde. Die Änderungszeit bleibt unberührt, denn aus ihr bildet der Webserver `ETag` und
-  `Last-Modified`; so greifen bedingte Anfragen und Range-Anfragen mit `If-Range` weiter. Ein Mount mit
-  `noatime` stört nicht, die Zeit wird ausdrücklich gesetzt.
+  liegen. Geprüft wird wie bei der [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) (Issue #990): Vor dem
+  Löschen fragt der Lauf per `HEAD` nach, ob der Inhalt mit seiner Größe im Objektspeicher liegt; fehlt er oder weicht
+  die Größe ab, bleibt die Kopie, und `remote_at` wird zurückgesetzt (das nächste `--hochladen` überträgt ihn erneut),
+  eine Störung bricht den Lauf ab. Es bleiben außerdem Inhalte, deren Text erkannt wird oder darauf wartet (auch ein
+  eingereihter Auftrag `file.extract_text`), Dokumente, die gerade abgerufen werden, und Kopien aus der letzten Stunde;
+  unter der Zeilensperre wird das nachgeprüft. Zeitplan, Obergrenze und `prune_file_cache` teilen eine Sperre und
+  verdrängen nie gleichzeitig. Die Ausgabe nennt je Grund, wie viele Inhalte blieben (etwa `texterkennung`,
+  `nicht_hochgeladen`, `nicht_im_objektspeicher`, `fehler` bei einer Störung). Eine kleinere Obergrenze
+  (`FILE_CACHE_MAX_TOTAL_GB`) wirkt zusätzlich. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der
+  Zugriffszeit (`atime`) der Datei, höchstens einmal je Stunde. Die Änderungszeit bleibt unberührt, denn aus ihr
+  bildet der Webserver `ETag` und `Last-Modified`; so greifen bedingte Anfragen und Range-Anfragen mit `If-Range`
+  weiter. Ein Mount mit `noatime` stört nicht, die Zeit wird ausdrücklich gesetzt.
 - Ein neuer Inhalt geht im selben Abruf in den Objektspeicher (`cache_files`, Löschabgleich, Admin-Aktion; Issue
   #919), der Zeitplan holt nur Altbestand und gescheiterte Uploads nach. Die Vorschau legt ab, ohne in der Anfrage
   hochzuladen; verdrängt wird ohnehin nur, was im Objektspeicher liegt.
@@ -357,13 +364,18 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   (`file_store.local_copy`, `object_storage.exists`: vorhanden, fehlt, gestört): Antwortet der Objektspeicher
   nicht, ist er zu langsam oder die Ablage nicht eingehängt, ruft niemand bei der Quelle ab – die Vorschau
   antwortet mit 503 und `Retry-After`, der Abruf versucht es später. Eine Störung des Objektspeichers löst so nie
-  eine Abrufwelle bei den Kommunen aus. Nur ein bestätigtes Fehlen (404 im Objektspeicher, falscher Hash) setzt
-  die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files` neu, und der Inhalt wird neu hochgeladen.
+  eine Abrufwelle bei den Kommunen aus. Gestört ist auch ein Inhalt, der laut Datenbank im Objektspeicher liegt
+  (`remote_at`), während der Container ihn nicht konfiguriert hat (`OBJ_ENABLED=false`, fehlende `OBJ_*`;
+  **Moduswechsel**, Issue #990): Vorschau, Abruf und Texterkennung warten dann, statt bei der Quelle abzurufen, und
+  jede solche Lesung steht als Warnung im Protokoll. Ein falsch konfigurierter Dienst löst so keine Abrufwelle aus;
+  das bewusste Ausschalten ist ein eigener Schritt (unten). Nur ein bestätigtes Fehlen (404 im Objektspeicher,
+  falscher Hash) setzt die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files` neu, und der Inhalt wird
+  neu hochgeladen.
   **Betriebsrisiko:** Zeigen `OBJ_BUCKET` oder das Schlüsselschema auf einen Bestand, in dem die Inhalte (noch)
   nicht liegen – etwa bei einem Umzug des Objektspeichers –, gilt jeder lokal verdrängte Inhalt als bestätigt
-  fehlend und wird bei der Quelle neu geholt. Eine Bremse für gehäufte Fehlbestände gibt es noch nicht (Hinweis
-  für Etappe 3). Deshalb vor jedem Wechsel den Bestand im neuen Ziel vollständig bereitstellen und mit Stichproben
-  prüfen, dann erst umstellen.
+  fehlend und wird bei der Quelle neu geholt. Das Verdrängen selbst löscht dann keine lokale Kopie mehr (Prüfung per
+  `HEAD`, oben). Eine Bremse für gehäufte Fehlbestände gibt es noch nicht (Hinweis für Etappe 3). Deshalb vor jedem
+  Wechsel den Bestand im neuen Ziel vollständig bereitstellen und mit Stichproben prüfen, dann erst umstellen.
 - **Prüfsummen:** boto3 sendet seit 1.36 standardmäßig Prüfsummen im `aws-chunked`-Verfahren, was manche
   S3-kompatiblen Anbieter ablehnen. `OBJ_CHECKSUMS=when_required` (Standard) verhält sich wie frühere Versionen.
   Beim ersten Test mit dem echten Bucket Hochladen, Holen und Löschen prüfen; nur wenn der Anbieter es verlangt,
@@ -376,11 +388,25 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
 - Reihenfolge beim Einschalten: Bestand umstellen (`--umstellen`), Zugangsdaten setzen, `OBJ_ENABLED=true`,
   Neustart, `dokumentablage --hochladen --trotz-zeitplan` bis nichts mehr offen ist. Danach lädt der Zeitplan
   `befehl:dokumentablage` vor jedem Aufräumen selbst hoch (`--hochladen --aufraeumen`, solange `OBJ_ENABLED` gesetzt ist).
-- Ausschalten: `OBJ_ENABLED=false`. Lokal verdrängte Inhalte gelten dann als fehlend; die Vorschau holt sie von der
-  Quelle, `cache_files` lädt sie nach. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
+- **Ausschalten ist ein ausdrücklicher Schritt** (Issue #990). `OBJ_ENABLED=false` allein lässt lokal verdrängte
+  Inhalte gestört (Moduswechsel, oben): Die Vorschau antwortet mit 503, die Texterkennung wartet, niemand ruft bei
+  der Quelle ab. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
   (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie. Eine
-  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus, solange Inhalte laut Datenbank im
-  Objektspeicher liegen (siehe dort, „Moduswechsel“).
+  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus (siehe dort, „Moduswechsel“). Wer den
+  Objektspeicher **aufgibt**, setzt `OBJ_ENABLED=false` in Anwendung und Worker, startet neu und führt dann aus:
+
+  ```bash
+  # Probelauf: Inhalte mit remote_at und davon lokal nicht vorhanden (gehen danach an die Quelle)
+  python manage.py dokumentablage --objektspeicher-aufgeben
+  # Vermerke remote_at löschen
+  python manage.py dokumentablage --objektspeicher-aufgeben --ausfuehren --trotz-zeitplan
+  ```
+
+  Der Befehl verweigert sich, solange der Objektspeicher im Container konfiguriert ist. Danach gelten lokal
+  verdrängte Inhalte als fehlend; die Vorschau holt sie von der Quelle, `cache_files` lädt sie nach (so viele Abrufe
+  bei den Kommunen, wie der Probelauf als lokal nicht vorhanden nennt). Das Aufräumen löscht verwaiste Inhalte nur
+  noch lokal, die Obergrenze arbeitet ohne Objektspeicher. Was im Objektspeicher liegt, bleibt dort und gehört beim
+  Anbieter gelöscht; wird er später wieder eingeschaltet, lädt `--hochladen` den Bestand erneut hoch.
 
 ### Obergrenze der Gesamtgröße
 
@@ -408,8 +434,8 @@ Ohne weitere Einstellung wächst die Ablage, bis `FILE_CACHE_MIN_FREE_GB` greift
   gestört, siehe [Zustände des Abrufs](#zustände-des-abrufs)). Die Datenbank bleibt unverändert, die Dokumente
   bleiben „Lokal vorhanden“; Vorschau und Texterkennung holen den Inhalt bei Bedarf aus dem Objektspeicher
   (`file_store.local_copy`), nie von der Quelle. Noch nicht hochgeladene Inhalte bleiben, bis `--hochladen` sie
-  übertragen hat. `OBJ_CACHE_MAX_GB` wirkt daneben weiter (nach der Zugriffszeit der Datei); es gilt die kleinere
-  Grenze.
+  übertragen hat. `OBJ_CACHE_MAX_GB` wirkt daneben weiter (nach der Zugriffszeit der Datei, mit denselben Prüfungen
+  und Schutzgründen, siehe [Objektspeicher](#objektspeicher)); es gilt die kleinere Grenze.
 - **Ohne Objektspeicher:** Alle Dokumente eines Inhalts geben ihre Referenz gemeinsam frei und gehen auf
   „Verdrängt“ (`local_status=evicted`); danach verweist kein Dokument mehr auf den Inhalt, und er wird gelöscht.
   `evicted` ist kein Zustand, aus dem der Abruf von selbst beansprucht: Weder `cache_files` noch das
@@ -435,14 +461,20 @@ Ohne weitere Einstellung wächst die Ablage, bis `FILE_CACHE_MIN_FREE_GB` greift
   mit HTTP 401/403 endete. Das ist bewusst grob: Ein einziges solches Dokument schützt die ganze Quelle; eine
   Freigabe (`robots_override`, `dokumentkette freigeben`) bzw. ein gelungener Neuversuch
   (`cache_files --retry-errors`) hebt den Schutz auf. Reicht der Rest nicht bis zum Ziel, meldet der Lauf das mit
-  den geschützten Größen je Grund.
+  den geschützten Größen je Grund. Ist das Auftragsjournal nicht lesbar (Warnung „Wartende Aufträge der
+  Texterkennung nicht lesbar“), fehlt nur der Schutz eingereihter Neuerkennungen; Text geht dabei nicht verloren:
+  Mit Objektspeicher liest die Erkennung den Inhalt von dort, ohne beansprucht sie nur abgelegte Dokumente (`ok`),
+  und der bisherige Text bleibt stehen, bis das Dokument wieder abgelegt ist.
 - **Moduswechsel:** Liegen Inhalte laut Datenbank im Objektspeicher (`remote_at`), ist er im laufenden Container aber
   nicht konfiguriert (`OBJ_ENABLED=false` im Worker, fehlende `OBJ_*`), setzt die Grenze aus: Das stündliche Aufräumen
   meldet „Obergrenze ausgesetzt“ (Fehlerausgabe und Protokoll), `prune_file_cache` bricht ab. Ohne diesen Halt
   würden solche Inhalte freigegeben, verwaisten, und das nächste Aufräumen mit Objektspeicher löschte sie dort.
   `prune_file_cache --ohne-objektspeicher` macht ausdrücklich ohne Objektspeicher weiter; Inhalte mit `remote_at`
   bleiben auch dann unangetastet (geschützt als `im_objektspeicher`), auch wenn sie erst während des Laufs
-  hochgeladen werden. Die erste Zeile von `prune_file_cache` nennt den Modus.
+  hochgeladen werden. Die erste Zeile von `prune_file_cache` nennt den Modus. Vorschau, Abruf und Texterkennung
+  behandeln lokal fehlende Inhalte mit `remote_at` in einem solchen Container als gestört, nie als fehlend (Issue
+  #990); den Objektspeicher bewusst aufgeben: `dokumentablage --objektspeicher-aufgeben`
+  ([Objektspeicher](#objektspeicher), „Ausschalten“).
 - **Nachprüfung unter der Sperre:** Zwischen Planung und Verdrängen prüft jeder Stapel in beiden Modi unter
   Zeilensperre erneut: Texterkennung (auch eben beansprucht oder eingereiht), laufender Abruf, frisch abgelegt,
   inzwischen ausgeliefert oder neu verwiesen (Rang jünger), Zahl der Verweise (eine gesperrte Datei des Inhalts hält

@@ -12,6 +12,8 @@ Schritte von Hand, während der Worker den Zeitplan bedient, mit ``--trotz-zeitp
                                                        # Obergrenze (FILE_CACHE_MAX_TOTAL_GB, #961) einhalten
     python manage.py dokumentablage --hochladen        # Inhalte in den Objektspeicher (nur mit OBJ_ENABLED)
     python manage.py dokumentablage --referenzen       # Referenzzähler aus den Verweisen neu berechnen
+    python manage.py dokumentablage --objektspeicher-aufgeben [--ausfuehren]
+                                                       # Objektspeicher bewusst aufgeben (#990, nur ohne OBJ_*)
 """
 
 from __future__ import annotations
@@ -36,7 +38,12 @@ class Command(EinmaligMixin, BaseCommand):
     sperre_ttl = 3000
 
     def liest_nur(self, options: dict[str, Any]) -> bool:
-        """Nur Kennzahlen (kein Schritt gewählt): läuft auch, während der Worker den Zeitplan bedient."""
+        """
+        Nur Kennzahlen (kein Schritt gewählt) oder Probelauf von ``--objektspeicher-aufgeben``: läuft auch, während der
+        Worker den Zeitplan bedient.
+        """
+        if options.get("objektspeicher_aufgeben") and options.get("ausfuehren"):
+            return False
         return not any(options.get(name) for name in SCHRITTE)
 
     def add_arguments(self, parser: CommandParser) -> None:
@@ -47,6 +54,14 @@ class Command(EinmaligMixin, BaseCommand):
         parser.add_argument("--hochladen", action="store_true", help="Inhalte in den Objektspeicher hochladen")
         parser.add_argument("--referenzen", action="store_true", help="Referenzzähler neu berechnen")
         parser.add_argument("--limit", type=int, default=1000, help="Höchstens so viele Dateien je Schritt")
+        parser.add_argument(
+            "--objektspeicher-aufgeben",
+            action="store_true",
+            help="Objektspeicher bewusst aufgeben: Vermerke remote_at löschen (nur ohne OBJ_*; ohne --ausfuehren Probelauf)",
+        )
+        parser.add_argument(
+            "--ausfuehren", action="store_true", help="Mit --objektspeicher-aufgeben: Vermerke wirklich löschen"
+        )
 
     def handle(self, *args: Any, **options: Any) -> None:
         from insight_core.services import file_cache_limit, file_store, object_storage
@@ -55,6 +70,13 @@ class Command(EinmaligMixin, BaseCommand):
             raise CommandError("FILE_STORE_LAYOUT=kommune: keine Ablage nach SHA-256")
         if options["hochladen"] and not object_storage.enabled():
             raise CommandError("Objektspeicher ist nicht eingeschaltet (OBJ_ENABLED und Zugangsdaten)")
+        if options["objektspeicher_aufgeben"]:
+            if any(options.get(name) for name in SCHRITTE):
+                raise CommandError("--objektspeicher-aufgeben nur allein")
+            self._objektspeicher_aufgeben(ausfuehren=options["ausfuehren"])
+            return
+        if options["ausfuehren"]:
+            raise CommandError("--ausfuehren nur mit --objektspeicher-aufgeben")
 
         if options["umstellen"]:
             self._report("Umgestellt", file_store.migrate_legacy(limit=options["limit"]))
@@ -80,6 +102,29 @@ class Command(EinmaligMixin, BaseCommand):
             + ("" if stats["object_storage"] else " (aus)")
             + f"; noch im alten Layout {stats['legacy_files']}"
         )
+
+    def _objektspeicher_aufgeben(self, *, ausfuehren: bool) -> None:
+        """
+        Ausdrücklicher Schritt zum Ausschalten (Issue #990): Ohne ihn gelten Inhalte, die laut Datenbank im
+        Objektspeicher liegen, ohne konfigurierten Objektspeicher als gestört, nie als fehlend.
+        """
+        from insight_core.services import file_store, object_storage
+
+        if object_storage.enabled():
+            raise CommandError(
+                "Objektspeicher ist hier konfiguriert (OBJ_ENABLED, OBJ_*): erst in Anwendung und Worker ausschalten "
+                "und neu starten"
+            )
+        remote, missing = file_store.object_storage_dependence()
+        self.stdout.write(
+            f"Laut Datenbank im Objektspeicher: {remote} Inhalte, davon lokal nicht vorhanden: {missing}. Diese gelten "
+            "danach als fehlend und werden bei der Quelle neu abgerufen (Vorschau, cache_files). Was im Objektspeicher "
+            "liegt, bleibt dort und wird nicht mehr gelöscht."
+        )
+        if not ausfuehren:
+            self.stdout.write("Probelauf: nichts geändert. Übernehmen mit --ausfuehren.")
+            return
+        self.stdout.write(f"Vermerke gelöscht: {file_store.release_object_storage()}")
 
     def _report(self, title: str, results: Counter[str]) -> None:
         summary = ", ".join(f"{key}={value}" for key, value in sorted(results.items())) or "nichts zu tun"

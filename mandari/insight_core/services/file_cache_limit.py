@@ -47,6 +47,10 @@ wird zurückgesetzt, damit ``dokumentablage --hochladen`` ihn erneut überträgt
 Probelauf prüft nur ``verify_remote`` (``prune_file_cache --pruefe-objektspeicher``) alle oder eine Stichprobe der
 Inhalte, die gingen; geändert wird dabei nichts.
 
+**Zwischenspeicher mit Objektspeicher (``OBJ_CACHE_MAX_GB``):** ``evict_by_access`` (über ``file_store.evict_local``)
+verdrängt nach der Zugriffszeit der Datei statt nach dieser Rangfolge, aber mit denselben Prüfungen: Schutz,
+``HEAD`` vor dem Löschen, Nachprüfung unter der Sperre und dieselbe Sperre (Issue #990).
+
 **Belegung:** Inhalte unter ``<OPARL_FILES_ROOT>/sha256/<ab>/`` auf der Platte (ohne Teil-Downloads) plus Kopien im
 alten Layout je Kommune (Größe aus der Datenbank). Gelöscht wird nur unterhalb von ``OPARL_FILES_ROOT`` und nie über
 symbolische Verweise.
@@ -252,8 +256,11 @@ def _roots() -> _Roots | None:
     return _Roots(cache=cache, blobs=blobs, blobs_safe=safe)
 
 
-def _blob_sizes(root: Path) -> Iterator[int]:
-    """Größen der Inhalte unter ``sha256/<ab>/`` (reguläre Dateien, ohne Verweise und Teil-Downloads)."""
+def _blob_entries(root: Path) -> Iterator[tuple[int, int, str]]:
+    """
+    Inhalte unter ``sha256/<ab>/`` als (Zugriffszeit in Nanosekunden, Größe, SHA-256): reguläre Dateien, ohne Verweise
+    und Teil-Downloads.
+    """
     if not root.is_dir():
         return
     with os.scandir(root) as prefixes:
@@ -266,9 +273,16 @@ def _blob_sizes(root: Path) -> Iterator[int]:
                         continue
                     try:
                         if entry.is_file(follow_symlinks=False):
-                            yield entry.stat(follow_symlinks=False).st_size
+                            info = entry.stat(follow_symlinks=False)
+                            yield info.st_atime_ns, info.st_size, entry.name
                     except OSError:
                         continue
+
+
+def _blob_sizes(root: Path) -> Iterator[int]:
+    """Größen der Inhalte unter ``sha256/<ab>/`` (reguläre Dateien, ohne Verweise und Teil-Downloads)."""
+    for _, size, _ in _blob_entries(root):
+        yield size
 
 
 def _legacy_files() -> Any:
@@ -414,13 +428,18 @@ def _flag(condition: Q) -> Case:
     return Case(When(condition, then=Value(1)), default=Value(0), output_field=IntegerField())
 
 
-def _blob_rows(unrefetchable: list[Any]) -> Iterator[dict[str, Any]]:
-    """Inhalte in Rangfolge (älteste Nutzung zuerst), je Inhalt über alle Dateien, die auf ihn verweisen."""
+def _blob_rows(unrefetchable: list[Any], keys: list[str] | None = None) -> Iterator[dict[str, Any]]:
+    """
+    Inhalte in Rangfolge (älteste Nutzung zuerst), je Inhalt über alle Dateien, die auf ihn verweisen; mit ``keys``
+    nur diese Inhalte.
+    """
     from ..models import OParlFile
 
+    files = OParlFile.objects.filter(blob__isnull=False)
+    if keys is not None:
+        files = files.filter(blob_id__in=keys)
     rows = (
-        OParlFile.objects.filter(blob__isnull=False)
-        .values("blob_id")
+        files.values("blob_id")
         .annotate(
             score=Max(_score_expression()),
             busy=Max(_flag(Q(text_extraction_status__in=BUSY_TEXT))),
@@ -1046,3 +1065,91 @@ def _release_legacy(run: _Run, items: list[tuple[dict[str, Any], Path, int]]) ->
     for row in done:
         _count(run, [row["body_id"]], planned[str(row["pk"])][2])
     return True
+
+
+# =============================================================================
+# Zwischenspeicher mit Objektspeicher (OBJ_CACHE_MAX_GB)
+# =============================================================================
+
+
+def evict_by_access(*, max_bytes: int, now: datetime | None = None, batch: int = BATCH) -> Counter[str]:
+    """
+    Mit Objektspeicher die lokale Ablage auf ``max_bytes`` begrenzen (``OBJ_CACHE_MAX_GB``, ``file_store.evict_local``):
+    am längsten nicht gelesene Inhalte zuerst, nach der Zugriffszeit der Datei (``file_store._touch``).
+
+    Dieselben Prüfungen wie ``enforce`` mit Objektspeicher (Issue #990): Schutz vor der Planung (``_protection``:
+    Texterkennung, laufender Abruf, frische Kopie, nicht hochgeladen), ``HEAD`` im Objektspeicher vor dem Löschen
+    (fehlt der Inhalt dort oder weicht die Größe ab, bleibt die Kopie und ``remote_at`` wird zurückgesetzt; eine
+    Störung bricht den Lauf ab), Nachprüfung unter der Zeilensperre (``_still_evictable``) und dieselbe Sperre wie die
+    Obergrenze. Die Datenbank bleibt unverändert, die Dokumente bleiben „Lokal vorhanden“.
+
+    Rückgabe: ``bytes_before``, ``bytes_after``, ``evicted`` und je Grund die Zahl der Inhalte, die blieben.
+    """
+    results: Counter[str] = Counter()
+    if mode() != MODE_REMOTE:
+        return results
+    roots = _roots()
+    if roots is None or not roots.blobs_safe:
+        return results
+    # Älteste Zugriffszeit zuerst; Größe und Schlüssel machen die Reihenfolge stabil
+    entries = sorted(_blob_entries(roots.blobs))
+    total = sum(size for _, size, _ in entries)
+    results["bytes_before"] = total
+    if total <= max_bytes:
+        return results
+    lock = Sperre(LOCK_NAME, LOCK_TTL)
+    if not lock.erwerben():
+        # Obergrenze oder ein Handlauf verdrängt gerade: beim nächsten Termin
+        results["laeuft_schon"] += 1
+        return results
+    batch = max(1, batch)
+    result = Result(mode=MODE_REMOTE, limit=max_bytes, target=max_bytes, before=total, after=total)
+    protected: Counter[str] = Counter()
+    try:
+        run = _Run(
+            result=result,
+            now=now or timezone.now(),
+            roots=roots,
+            unrefetchable=set(),
+            lock=lock,
+            verify=True,
+            queued=_queued_files(),
+        )
+        start = 0
+        while start < len(entries) and result.after > max_bytes:
+            part = [key for _, _, key in entries[start : start + batch]]
+            rows = {row["key"]: row for row in _blob_rows([], part)}
+            items: list[tuple[dict[str, Any], Path, int]] = []
+            planned = 0
+            for key in part:
+                if result.after - planned <= max_bytes:
+                    break
+                # Nur so weit vorrücken, wie geplant wurde: Bleibt ein geplanter Inhalt, kommen die nächsten dran
+                start += 1
+                row = rows.get(key)
+                if row is None:
+                    # Kein Dokument verweist darauf: das Aufräumen verwaister Inhalte löscht ihn
+                    protected["ohne_verweis"] += 1
+                    continue
+                reason = _protection(row, MODE_REMOTE, run.now, run.queued)
+                if reason:
+                    protected[reason] += 1
+                    continue
+                found = _blob_file(roots, key)
+                if found is None:
+                    continue
+                items.append((row, found[0], found[1]))
+                planned += found[1]
+            ok = _evict_local(run, items) if items else True
+            lock.verlaengern()
+            result.after = result.before - result.freed
+            if not ok:
+                break
+    finally:
+        lock.freigeben()
+    results["bytes_after"] = result.after
+    if result.units:
+        results["evicted"] = result.units
+    results.update(protected)
+    results.update(result.skipped)
+    return results

@@ -1132,7 +1132,10 @@ Worker, wird in den folgenden Schritten eingeschaltet; jeder Schritt ist ohne De
   gemeinsame Umgebung; eigene Compose-Dateien oder Umgebungsdateien müssen sie auch `worker-heavy` geben. Laufen
   die Worker auf einem eigenen Server (`deploy/roles/worker.yml`, `docs/MEHR_SERVER_BETRIEB.md`), sehen sie die
   Ablage des Anwendungsservers nur über eine gemeinsame Ablage oder den Objektspeicher (`OBJ_ENABLED=true`);
-  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück.
+  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück. Fehlen einem Worker nur die
+  `OBJ_*`, gelten Inhalte, die laut Datenbank im Objektspeicher liegen, als gestört: Die Erkennung wartet, ohne bei
+  der Quelle abzurufen, und das Protokoll des Workers warnt je Inhalt (Issue #990, `docs/FILE_CACHE.md`,
+  „Objektspeicher“).
 - Speicher: `worker-heavy` bis 3 GB (`WORKER_HEAVY_MEM_LIMIT`), davon ein Tesseract-Unterprozess bis
   `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB` (2048). Ein OCR-Worker aus dem Ingestor-Image wird mit Schritt 3
   überflüssig und gibt seinen Speicher frei. Auf kleinen Servern (4 GB) z. B. `2g` und `1024`; große Seiten
