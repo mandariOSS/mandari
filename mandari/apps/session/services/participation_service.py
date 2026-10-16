@@ -276,6 +276,14 @@ def vote_time(item: Any) -> time | None:
     (``start_time``, ``end_time``) grenzen nur die Beratung ein. Eine Störung während des TOP sagt nicht, ob die
     Person bei der Abstimmung erreichbar war; wir schließen sie dann nicht aus und bleiben bei der andauernden
     Störung (``None``).
+
+    Minutengenau, weil Störungen nur mit Stunde und Minute erfasst werden (Sekunden änderten nichts): Beginnt eine
+    Störung in der Minute, in der die Abstimmung geschlossen wurde, gilt die Person als nicht erreichbar, endet sie
+    in dieser Minute, als erreichbar (``SessionAttendanceDisruption.covers``). Eine schon erfasste Stimme der Person
+    bleibt in beiden Fällen bestehen; abgelehnt werden nur neue und geänderte Stimmen.
+
+    Das Cockpit setzt ``vote_closed_at`` erst beim erneuten Öffnen der Abstimmung zurück. Wird das Ergebnis danach
+    außerhalb des Cockpits zurückgesetzt („offen“) und neu erfasst, gilt weiter der Zeitpunkt der ersten Abstimmung.
     """
     closed = getattr(item, "vote_closed_at", None)
     if closed is None:

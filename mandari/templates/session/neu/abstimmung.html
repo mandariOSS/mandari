@@ -141,7 +141,7 @@ session/voting/capture.html; Kontext wie VotingCaptureView. Die bisherige Seite 
             <c-rahmen.abschnitt titel="Zugeschaltet, ohne Stimme bei dieser Abstimmung" titel_id="ohne-stimme-titel" data-testid="zugeschaltet-ohne-stimme">
                 <c-rahmen.liste class="mt-2">
                     {% for attendance in unreachable %}
-                    <li class="py-2 text-sm text-gray-900 dark:text-white">{{ attendance.person.display_name }} <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">· Störung dauert an</span></li>
+                    <li class="py-2 text-sm text-gray-900 dark:text-white">{{ attendance.person.display_name }} <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">· {% if assessed_at_vote %}bei der Abstimmung gestört{% if attendance.vote_kept %}, die vorher erfasste Stimme bleibt{% endif %}{% else %}Störung dauert an{% endif %}</span></li>
                     {% endfor %}
                     {% for attendance in remote_excluded %}
                     <li class="py-2 text-sm text-gray-900 dark:text-white">{{ attendance.person.display_name }} <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">· nach dem Landesprofil ausgeschlossen</span></li>

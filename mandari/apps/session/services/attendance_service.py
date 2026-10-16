@@ -17,6 +17,7 @@ Zentrale Logik für:
 """
 
 from dataclasses import dataclass, field
+from datetime import time
 from typing import Any
 
 from django.db.models import QuerySet
@@ -209,6 +210,7 @@ def quorum_status(
     *,
     attendances: list[Any] | None = None,
     substitutes: dict[Any, frozenset[Any]] | None = None,
+    at: time | None = None,
 ) -> dict[str, Any]:
     """
     Beschlussfähigkeit (Quorum) live berechnen.
@@ -221,7 +223,8 @@ def quorum_status(
     (Issue #69, generalisiert aus dieser Session-Implementierung).
 
     Teilnahmeart (Issue #139): Zugeschaltete zählen wie Anwesende im Raum, außer während einer
-    andauernden Störung (nicht erreichbar). Für einen TOP (``item``) zählen sie nicht, wenn das Landesprofil
+    andauernden Störung (nicht erreichbar; mit ``at`` einer Störung zu diesem Zeitpunkt, etwa dem der
+    Abstimmung, Issue #1045). Für einen TOP (``item``) zählen sie nicht, wenn das Landesprofil
     nur sie von dieser Abstimmung ausschließt („für Zugeschaltete ausgeschlossen“, z. B. Bayern: anwesend
     *und stimmberechtigt*, Art. 47 Abs. 2 GO). Ist der Vorgang mit Zugeschalteten in der ganzen Sitzung
     unzulässig („in der Sitzung unzulässig“, Issue #754), zählen sie mit: Sie gelten als anwesend (z. B.
@@ -254,7 +257,7 @@ def quorum_status(
     for attendance in split.members + split.stepping_in:
         if attendance.status not in PRESENT_STATUSES:
             continue
-        if participation_service.is_disrupted(attendance):
+        if participation_service.is_disrupted(attendance, at=at):
             disrupted.append(attendance.person.display_name)
         elif rule is not None and rule.excluded and attendance.is_remote:
             excluded.append(attendance.person.display_name)

@@ -86,13 +86,20 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         # nur ausgewiesen; eine frühere Stimme ohne Stimmrecht entfernt das nächste Speichern.
         # Teilnahmeart (Issue #139): gestörte Zugeschaltete und vom Landesprofil Ausgeschlossene stimmen nicht ab –
         # bei einer abgeschlossenen Abstimmung gestört zu ihrem Zeitpunkt, sonst andauernd (Issue #1045)
-        assessed = voting_service.eligibility(item.meeting, item, at=participation_service.vote_time(item))
+        moment = participation_service.vote_time(item)
+        assessed = voting_service.eligibility(item.meeting, item, at=moment)
         loaded = list(item.votes.select_related("person"))
         votes = {v.person_id: v.vote for v in loaded}
         protocol = getattr(item.meeting, "protocol", None)
         not_voting = assessed.unreachable + assessed.remote_excluded
         for attendance in assessed.voting + assessed.advisory + assessed.others + not_voting:
             attendance.current_vote = votes.get(attendance.person_id, "")
+        # Zum Zeitpunkt der Abstimmung gestört, aber mit erfasster Stimme: Sie wurde vor Beginn der Störung abgegeben
+        # (im offenen Abstimmungsfenster) und bleibt gültig. Das Speichern entfernt sie nicht; neue und geänderte
+        # Stimmen dieser Personen lehnt capture_votes weiter ab (Issue #1045)
+        kept = {a.pk for a in assessed.unreachable if a.current_vote} if moment is not None else set()
+        for attendance in assessed.unreachable:
+            attendance.vote_kept = attendance.pk in kept
         # Hinweise für die Auswahl im Formular: geheime Abstimmung bzw. (offene) Wahl
         secret_rule = participation_service.remote_vote_rule(
             item.meeting, item, voting_method="secret", attendances=assessed.attendances
@@ -115,10 +122,15 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                 "barred_rule": barred,
                 "secret_hint": secret_rule.message if secret_rule and not barred else "",
                 "election_hint": election_rule.message if election_rule and not barred else "",
+                # Beschlussfähigkeit zum selben Zeitpunkt wie die Stimmliste (Issue #1045)
                 "item_quorum": attendance_service.quorum_status(
-                    item.meeting, item, attendances=assessed.attendances, substitutes=assessed.substitutes
+                    item.meeting, item, attendances=assessed.attendances, substitutes=assessed.substitutes, at=moment
                 ),
-                "stray_votes": [a for a in assessed.advisory + assessed.others + not_voting if a.current_vote],
+                "stray_votes": [
+                    a for a in assessed.advisory + assessed.others + not_voting if a.current_vote and a.pk not in kept
+                ],
+                # Beurteilt zum Zeitpunkt der Abstimmung statt live: „bei der Abstimmung gestört“ statt „dauert an“
+                "assessed_at_vote": moment is not None,
                 "attendance_complete": assessed.complete,
                 "locked": protocol is not None and protocol.is_locked,
                 "method_choices": SessionAgendaItem.VOTING_METHOD_CHOICES,
