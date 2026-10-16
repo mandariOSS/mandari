@@ -448,6 +448,7 @@ class _Bodies:
     by_key: dict[str, SessionBody]
     ambiguous: set[str]
     default_id: Any
+    by_pk: dict[Any, SessionBody] = field(default_factory=dict)
 
     @classmethod
     def load(cls, tenant: SessionTenant) -> _Bodies:
@@ -462,7 +463,13 @@ class _Bodies:
             by_key={key: by_pk[next(iter(pks))] for key, pks in keys.items() if len(pks) == 1},
             ambiguous={key for key, pks in keys.items() if len(pks) > 1},
             default_id=next((body.pk for body in bodies if body.is_default), None),
+            by_pk=by_pk,
         )
+
+    def name(self, body_id: Any) -> str:
+        """Name der Körperschaft für Meldungen (ohne Körperschaft: Standardkörperschaft)."""
+        body = self.by_pk.get(body_id)
+        return body.name if body is not None else "Standardkörperschaft"
 
     def find(self, value: str) -> SessionBody:
         """Körperschaft zur Zelle; unbekannt oder mehrdeutig ist ein Fehler (keine stille Zuordnung)."""
@@ -1104,6 +1111,16 @@ def _plan_organizations(plan: ImportPlan, rows_by_kind: dict[str, list[_Row]]) -
             parent = item.instance.parent if item.instance is not None else None
             if item.instance is not None and (parent is None or orgs.key(parent) != found):
                 item.changes.append("Übergeordnetes Gremium")
+            if found[0] != key[0]:
+                # Nur ohne Angabe der Körperschaft möglich (Suche im ganzen Mandanten): Hinweis statt Fehler,
+                # damit Dateien ohne die Spalte weiter durchgehen
+                plan.hint(
+                    item.file,
+                    item.line,
+                    f"„{item.label}“ ({plan.bodies.name(key[0])}) bekommt das übergeordnete Gremium "
+                    f"„{item.refs['parent_label']}“ aus der Körperschaft „{plan.bodies.name(found[0])}“. Ist das "
+                    "nicht gewollt, in der Spalte koerperschaft die Körperschaft des Gremiums angeben.",
+                )
     _fail_parent_rings(plan, orgs)
     # Fehlerhafte übergeordnete Gremien ziehen ihre Untergremien mit (auch über mehrere Stufen)
     changed = True

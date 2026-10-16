@@ -959,6 +959,35 @@ def test_gleicher_name_in_anderer_koerperschaft(tenant: SessionTenant, tmp_path:
     assert vorhanden.body == body_service.default_body(tenant)
 
 
+def test_uebergeordnetes_gremium_aus_anderer_koerperschaft_gibt_hinweis(tenant: SessionTenant, tmp_path: Path) -> None:
+    """Zeilen mit und ohne Spalte gemischt: kein Fehler (altes Verhalten), aber ein Hinweis statt stiller Zuordnung."""
+    zweite = _zweite_koerperschaft(tenant)
+    write(
+        tmp_path,
+        "gremien.csv",
+        "name;koerperschaft;art;uebergeordnet\nRat;BH;Rat;\nVerwaltungsausschuss;;Verwaltungsausschuss;Rat\n",
+    )
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert plan.errors == []
+    assert [f.text() for f in plan.hints] == [
+        "gremien.csv, Zeile 3: „Verwaltungsausschuss“ (Gemeinde Musterdorf) bekommt das übergeordnete Gremium "
+        "„Rat“ aus der Körperschaft „Gemeinde Beispielheim“. Ist das nicht gewollt, in der Spalte koerperschaft "
+        "die Körperschaft des Gremiums angeben."
+    ]
+    run("--tenant", "musterdorf", str(tmp_path))
+    ausschuss = SessionOrganization.objects.get(tenant=tenant, name="Verwaltungsausschuss")
+    assert ausschuss.body == body_service.default_body(tenant)
+    assert ausschuss.parent is not None and ausschuss.parent.body == zweite
+
+    # Mit Körperschaft auch beim Untergremium: derselbe Rat, kein Hinweis
+    write(
+        tmp_path,
+        "gremien.csv",
+        "name;koerperschaft;art;uebergeordnet\nRat;BH;Rat;\nHauptausschuss;BH;Ausschuss;Rat\n",
+    )
+    assert stammdaten_import.plan_import(tenant, tmp_path).hints == []
+
+
 def test_wahlperiode_zum_beginn_mehrdeutig(tenant: SessionTenant, tmp_path: Path) -> None:
     for _ in range(2):
         SessionLegislativeTerm.objects.create(

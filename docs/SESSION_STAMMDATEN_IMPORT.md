@@ -132,7 +132,12 @@ legt der Import nicht an; sie müssen vorher im Mandanten bestehen.
   Sammelhinweis mit den Zeilen aus. Das ist bei Samtgemeinden üblich, kann nach älteren Daten (alles in der
   Standardkörperschaft) aber auch dasselbe Gremium sein; dann vor dem Import von Hand umhängen.
 - Ämter gehören zur Standardkörperschaft (die Verwaltung); `aemter` hat deshalb keine Spalte
-  `koerperschaft`. Wahlperioden und Personen gehören dem Mandanten.
+  `koerperschaft`. In `besetzungen` bleibt die Spalte bei Ämtern leer (oder nennt die
+  Standardkörperschaft); eine andere Körperschaft ergibt „Gremium … unbekannt“. Wahlperioden und Personen
+  gehören dem Mandanten.
+- Findet der Import zu einer Zeile ohne Angabe das übergeordnete Gremium in einer anderen Körperschaft
+  (etwa „Rat“ nur mit Körperschaft, „Verwaltungsausschuss“ darunter ohne), meldet der Prüflauf einen
+  Hinweis; dann die Körperschaft auch beim Untergremium angeben.
 
 Gibt es genau eine Person gleichen Namens, nennt die Datei aber eine andere E-Mail-Adresse als der Bestand,
 meldet der Bericht „möglicherweise eine andere Person“ und ob sich dabei Bankdaten ändern; die Werte selbst
@@ -159,8 +164,9 @@ Fehler stehen mit Datei und Zeile im Bericht; mit Fehlern schreibt auch der Impo
 - ein Name, den es im Mandanten schon mit anderer Art gibt (z. B. als Fraktion statt als Gremium)
 
 Hinweise (z. B. Beginn außerhalb der genannten Wahlperiode, angenommenes Stimmrecht, andere E-Mail bei
-gleichem Namen, Gremium neu in einer Körperschaft, obwohl es den Namen in einer anderen schon gibt, Abweichung
-in der Gegenprobe) halten den Import nicht auf.
+gleichem Namen, Gremium neu in einer Körperschaft, obwohl es den Namen in einer anderen schon gibt,
+übergeordnetes Gremium aus einer anderen Körperschaft, Abweichung in der Gegenprobe) halten den Import nicht
+auf.
 
 ## Bericht und Zählabgleich
 
