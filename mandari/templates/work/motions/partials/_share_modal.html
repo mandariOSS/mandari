@@ -32,11 +32,13 @@
         </div>
 
         <!-- Body -->
+        {# Ziel erst beim Absenden setzen (htmx:config-request): htmx merkt sich hx-post beim Einlesen, oft bevor Alpine es setzt; der leere Wert schickte die Freigabe an die Editorseite (#1018) #}
         <form :action="`/work/{{ organization.slug }}/documents/${shareMotionId}/share/update/`"
               method="post"
               hx-post
               :hx-post="`/work/{{ organization.slug }}/documents/${shareMotionId}/share/update/`"
-              hx-swap="none">
+              @htmx:config-request="$event.detail.path = `/work/{{ organization.slug }}/documents/${shareMotionId}/share/update/`"
+              hx-swap="none" data-vorher-sichern>
             {% csrf_token %}
             <div class="p-6 space-y-4">
                 <!-- Visibility Options -->

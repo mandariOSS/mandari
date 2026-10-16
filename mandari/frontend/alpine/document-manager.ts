@@ -131,6 +131,22 @@ export const documentManager = defineComponent(() => {
       }
     },
 
+    /**
+     * Kleines Menü („In Ordner verschieben“) fest am Knopf ausrichten: In der Tabelle mit waagerechtem Scrollen schnitt
+     * deren Rahmen es in den unteren Zeilen ab (#1018). Reicht der Platz unten nicht, öffnet es nach oben.
+     */
+    menueAnKnopf(knopf: HTMLElement | undefined, menue: HTMLElement | undefined): void {
+      if (!knopf || !menue) return
+      const rand = 8
+      const k = knopf.getBoundingClientRect()
+      const breite = menue.offsetWidth
+      const hoehe = menue.offsetHeight
+      const passtUnten = window.innerHeight - k.bottom - rand >= hoehe + 4
+      const oben = passtUnten || k.top - rand < hoehe + 4 ? k.bottom + 4 : k.top - hoehe - 4
+      menue.style.top = `${Math.max(rand, Math.min(oben, window.innerHeight - hoehe - rand))}px`
+      menue.style.left = `${Math.max(rand, Math.min(k.right - breite, window.innerWidth - breite - rand))}px`
+    },
+
     moveDocuments(ids: string[], folderId: string): void {
       if (!ids.length) return
       const formData = new FormData()

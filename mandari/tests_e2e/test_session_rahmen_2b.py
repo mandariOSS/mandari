@@ -117,6 +117,21 @@ def test_ablaeufe_am_handy_und_tablet(
     _durchlaufen(page, live_server, ablaeufe, screenshot)
     problems.assert_clean("Abläufe aus Teil 2b im neuen Rahmen")
 
+    # Niederschrift bearbeiten am Handy: Die Speichern-Leiste liegt über der festen Leiste unten (#1018)
+    page.set_viewport_size({"width": 390, "height": 700})
+    page.goto(f"{live_server.url}{ablaeufe['niederschrift-bearbeiten']}")
+    wait_for_bundle(page)
+    speichern = page.get_by_role("button", name="Speichern", exact=True)
+    speichern.scroll_into_view_if_needed()
+    frei = speichern.evaluate(
+        """(el) => {
+            const r = el.getBoundingClientRect()
+            const punkt = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+            return !!punkt && el.contains(punkt)
+        }"""
+    )
+    assert frei, "„Speichern“ liegt unter der Leiste unten"
+
 
 @pytest.fixture
 def werkzeuge(bestand: dict[str, Any]) -> dict[str, str]:

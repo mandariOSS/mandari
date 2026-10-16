@@ -107,7 +107,7 @@ stimmberechtigte_ids, approval_type_choices, offen_text, offene_vorschlaege, can
         </ul>
     </div>
     <div class="ke-dialog-fuss">
-        <a class="ke-knopf mr-auto" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf" target="_blank" rel="noopener"><i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>Vorschau (PDF)</a>
+        <a class="ke-knopf mr-auto" href="{% url 'work:document_export' org_slug=organization.slug motion_id=motion.id %}?format=pdf&amp;vorschau=1" target="_blank" rel="noopener" @click.prevent="vorschauOeffnen($el.href)"><i data-lucide="eye" class="w-4 h-4" aria-hidden="true"></i>Vorschau (PDF)</a>
         <button type="button" class="ke-knopf" @click="ablaufDialogSchliessen()">Abbrechen</button>
     </div>
 </dialog>

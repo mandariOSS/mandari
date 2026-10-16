@@ -602,6 +602,10 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
 
         # Handle save action
         if action == "save":
+            # Nur, was der Editor schickt: Fremde Formulare, die versehentlich hierher posten (der Teilen-Dialog tat es
+            # mit leerem Ziel), leerten sonst Text, Dokumenttyp und Briefpapier (#1018)
+            if not {"content", "title", "document_type_id", "letterhead_id", "summary"} & set(request.POST):
+                return JsonResponse({"error": "Unbekannte Aktion"}, status=400)
             try:
                 title = request.POST.get("title", "").strip()
                 if title:
@@ -613,16 +617,28 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                     if "summary" in request.POST:
                         motion.summary = request.POST.get("summary", "").strip()
 
-                    # Dokumenttyp und Briefkopf nur aus der eigenen Organisation (leer = keiner)
+                    # Dokumenttyp und Briefkopf nur aus der eigenen Organisation (leer = keiner), nur wenn mitgeschickt
                     try:
-                        motion.document_type = document_type_for(
-                            self.organization, request.POST.get("document_type_id", "").strip()
-                        )
-                        motion.letterhead = letterhead_for(
-                            self.organization, request.POST.get("letterhead_id", "").strip()
-                        )
+                        if "document_type_id" in request.POST:
+                            motion.document_type = document_type_for(
+                                self.organization, request.POST.get("document_type_id", "").strip()
+                            )
+                        if "letterhead_id" in request.POST:
+                            motion.letterhead = letterhead_for(
+                                self.organization, request.POST.get("letterhead_id", "").strip()
+                            )
                     except FremdeAuswahlError:
                         return JsonResponse({"error": "Ungültiger Dokumenttyp oder Briefkopf."}, status=400)
+
+                if "content" not in request.POST:
+                    # Mit Live-Zusammenarbeit sichert Yjs den Text; der Editor schickt dann nur Titel, Dokumenttyp
+                    # und Briefpapier (#1018). Inhalt und Kollaborationsstand bleiben unberührt: nur diese Felder
+                    # schreiben, damit ein gleichzeitiges Sichern über die Verbindung nicht überschrieben wird.
+                    motion.save(update_fields=["title", "summary", "document_type", "letterhead", "updated_at"])
+                    if request.headers.get("X-Requested-With") == "XMLHttpRequest":
+                        return JsonResponse({"success": True, "saved_at": timezone.now().isoformat()})
+                    messages.success(request, "Änderungen gespeichert.")
+                    return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
 
                 try:
                     old_content = motion.get_content_decrypted()
