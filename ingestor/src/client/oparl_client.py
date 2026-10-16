@@ -857,6 +857,19 @@ class OParlClient:
             fetch_time=fetch_time,
         )
 
+    def filters_list(self, url: str) -> bool:
+        """
+        Fragt ``fetch_list`` diese Liste mit ``modified_since`` an? Nein, wenn der Host den Filter abgelehnt oder
+        ignoriert hat (``_modified_since_unsupported``, außer mit ``carry_modified_since``) oder die Liste auf den
+        Filter mit HTTP 404 bzw. einem Fehlerobjekt antwortete (``_list_modified_since_unsupported``). Nur dann lohnt
+        das Nachholen einer langsamen Liste in Zeitscheiben (Issue #1033).
+        """
+        url = self._with_list_params(url, self.list_params)
+        host = urlparse(url).netloc
+        if url in self._list_modified_since_unsupported:
+            return False
+        return self.carry_modified_since or host not in self._modified_since_unsupported
+
     async def fetch_list(
         self,
         url: str,
@@ -892,7 +905,9 @@ class OParlClient:
             strict_filter: Zeitscheibe (Issue #1033): Die Filter ``modified_since`` und ``modified_until`` stehen auf
                 jeder Seite, auch wenn ``links.next`` sie verliert, und die Liste wird nie ohne Filter angefragt.
                 Kein Rückfall bei HTTP 400/401/403 oder 404 (Fehler bzw. ``ListMissingError``), kein Befund „filtert
-                nicht“ für den Host; ob die Quelle den Filter beachtet, prüft der Aufrufer an den Objekten.
+                nicht“ für den Host; ob die Quelle den Filter beachtet, prüft der Aufrufer an den Objekten. Ein
+                OParl-Fehlerobjekt auf der ersten Seite ist ``ListMissingError`` (mit ``report_missing``) oder
+                ``ListFetchError``, nie eine leere Scheibe.
 
         Beantwortet SD.NET RIM die gefilterte erste Seite mit HTTP 404 und Code 802, ist die Liste leer und
         vollständig (Issue #1034, ``filtered_empty_lists``).
@@ -1041,6 +1056,17 @@ class OParlClient:
             # durch _extract_items laufen (Issue #122).
             if is_oparl_error(result.data):
                 console.print(f"[red]OParl-Fehlerobjekt von {current_url}: {oparl_error_message(result.data)}[/red]")
+                if strict_filter:
+                    # Zeitscheibe (Issue #1033): Ein Fehlerobjekt statt der Liste ist keine leere Scheibe, sonst rückte
+                    # der Fortschritt über ihre Objekte hinweg. Leere Treffer von SD.NET RIM (404, 802) gelten oben.
+                    self._health(current_url).note_failed_list(url)
+                    failed = FetchResult(
+                        url=current_url,
+                        data=None,
+                        status_code=result.status_code,
+                        error=f"Fehlerobjekt statt Liste ({oparl_error_message(result.data)})",
+                    )
+                    raise ListFetchError(url, current_url, failed)
                 break
 
             # Server, die modified_since stillschweigend ignorieren (OParl 1.0,

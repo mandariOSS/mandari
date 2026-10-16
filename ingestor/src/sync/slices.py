@@ -21,9 +21,12 @@ nicht; geliefert gezählt werden sie in ``BodySlices.without_modified``.
 Zeitüberschreitung oder HTTP 504 ab, setzt der Ingestor sie aus, zuerst eine Stunde, nach jeder weiteren doppelt so
 lange, höchstens 24 Stunden (``slow_backoff``); kam sie in einem Versuch voran, beginnt die Reihe wieder bei einer
 Stunde. Die Liste behält ihren eigenen Fensteranfang (``since``): Nach der Aussetzung holt der inkrementelle Lauf sie
-in Scheiben zu einem Tag nach (``slow_windows``), ohne die Änderungen der Zwischenzeit zu verlieren. Eine ausgesetzte
-optionale Liste ist deshalb keine Lücke des Laufs: Fensteranfang der Kommune und Aktualität der Quelle rücken weiter
-vor. Liest ein Lauf die Liste ganz, wird der Eintrag gelöscht.
+in Scheiben zu einem Tag nach (``slow_windows``), ohne die Änderungen der Zwischenzeit zu verlieren; filtert die Quelle
+die Liste nicht (Filter abgelehnt oder ``modified_until`` ignoriert), wie bisher ohne Scheiben ab dort. Eine
+ausgesetzte optionale Liste ist deshalb keine Lücke des Laufs: Fensteranfang der Kommune und Aktualität der Quelle
+rücken weiter vor. Ein Vollabgleich mit ausgesetzter Liste bleibt aber fällig (``last_successful_full_sync`` rückt
+nicht vor, der Durchgang in Zeitscheiben ist nicht fertig). Lässt sich die Aussetzung nicht speichern, bleibt die
+Liste eine Lücke. Liest ein Lauf die Liste ganz, wird der Eintrag gelöscht.
 """
 
 from __future__ import annotations
@@ -227,6 +230,8 @@ class BodySlices:
     without_modified: dict[str, set[str]] = field(default_factory=dict)
     #: Ausgesetzte Listen dieses Laufs -> ausgesetzt bis
     suspended: dict[str, datetime] = field(default_factory=dict)
+    #: Langsame Listen, die dieser Lauf nach einem Rückfall ohne Zeitscheiben nachholt (Quelle filtert nicht)
+    unsliced: set[str] = field(default_factory=set)
     #: Meldungen für das Sync-Protokoll (``errors``)
     notes: list[str] = field(default_factory=list)
 

@@ -51,7 +51,9 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
     auf einzelne Typen (``organization``, ``person``, ``membership``, ``meeting``, ``paper``, ``location``,
     ``agendaitem``, ``file``, ``consultation``); die übrigen liest der Vollabgleich wie bisher ohne Filter.
     Unbekannte Namen zählen nicht, ohne gültigen Namen gelten alle. Fortschritt und Befunde pflegt der Ingestor
-    (``src/sync/slices.py``). Objekte ohne ``modified`` erfasst ein Abgleich in Zeitscheiben nicht.
+    (``src/sync/slices.py``). Objekte ohne ``modified`` erfasst ein Abgleich in Zeitscheiben nicht. Ein Vollabgleich
+    in Zeitscheiben endet immer mit dem Zeitfenster: dem eigenen ``full_sync_window``, sonst dem Standardfenster des
+    Daemons (``--full-sync-hour``, 5 Stunden); ohne beides läuft statt seiner ein inkrementeller Abgleich.
 ``robots_override``
     Ausnahme von der robots.txt, nur mit Freigabe der Stelle und Pflicht-Vermerk, z. B.
     ``{"scope": "files", "note": "Freigabe per E-Mail vom …, offizielle Anfrage läuft"}``. ``scope``: ``api``,
@@ -264,16 +266,31 @@ class SourceFetchOptions:
             minutes = max(0, settings.modified_since_margin_minutes)
         return timedelta(minutes=minutes)
 
+    def sync_window(self, default_window: FullSyncWindow | None = None) -> FullSyncWindow | None:
+        """
+        Zeitfenster, das den Vollabgleich begrenzt: das eigene ``full_sync_window``. Ein Vollabgleich in Zeitscheiben
+        läuft über Stunden und braucht immer ein Ende; ohne eigenes Fenster gilt für ihn das Standardfenster des
+        Daemons (``default_window``, ab ``--full-sync-hour``, Issue #1033).
+        """
+        if self.full_sync_window is not None:
+            return self.full_sync_window
+        return default_window if self.full_sync_slices is not None else None
+
     def full_sync_plan(
         self,
         full: bool,
         now: datetime | None = None,
         last_full_sync: datetime | None = None,
+        default_window: FullSyncWindow | None = None,
     ) -> tuple[bool, datetime | None]:
         """
         Vollabgleich jetzt? Liefert ``(full, Abrufende)``. Inkrementell (``(False, None)``), wenn der letzte
         vollständige Vollabgleich jünger als ``full_sync_every_days`` ist oder ``now`` außerhalb des Fensters
         liegt; im Fenster ``(True, Fensterende)``. Ohne Optionen oder für inkrementelle Läufe bleibt es dabei.
+
+        Mit ``full_sync_slices`` gilt ohne eigenes Fenster das Standardfenster ``default_window`` (``sync_window``).
+        Ist auch das nicht bekannt (Aufruf ohne Daemon, geplanter Vollabgleich abgeschaltet), läuft kein Vollabgleich
+        in Zeitscheiben, sondern ein inkrementeller: ohne Fensterende liefe er bis in den Tag (Issue #1033).
         """
         if not full:
             return False, None
@@ -284,9 +301,10 @@ class SourceFetchOptions:
             # Eine Stunde Spielraum, damit ein nächtlicher Lauf nicht an Minuten Laufzeitunterschied scheitert
             if now - last_full_sync < timedelta(days=self.full_sync_every_days) - timedelta(hours=1):
                 return False, None
-        if self.full_sync_window is None:
-            return True, None
-        closes_at = self.full_sync_window.closes_at(now)
+        window = self.sync_window(default_window)
+        if window is None:
+            return self.full_sync_slices is None, None
+        closes_at = window.closes_at(now)
         return (closes_at is not None), closes_at
 
     def client_kwargs(self) -> dict[str, Any]:

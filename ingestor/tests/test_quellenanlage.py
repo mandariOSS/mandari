@@ -478,7 +478,9 @@ class Speicher:
     async def upsert_source(self, **kwargs: Any) -> UUID:
         return SOURCE_ID
 
-    async def update_source_sync_time(self, source_id: UUID, full_sync: bool = False, complete: bool = False) -> None:
+    async def update_source_sync_time(
+        self, source_id: UUID, full_sync: bool = False, complete: bool = False, full_complete: bool | None = None
+    ) -> None:
         self.vollstaendig.append(complete)
 
     async def record_source_failure(self, url: str, error: str, error_kind: str | None = None) -> None:

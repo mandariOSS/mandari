@@ -620,6 +620,7 @@ class DatabaseStorage:
         source_id: UUID,
         full_sync: bool = False,
         complete: bool = False,
+        full_complete: bool | None = None,
     ) -> None:
         """
         Update the last sync timestamp for a source.
@@ -628,7 +629,13 @@ class DatabaseStorage:
         fehlte, Issue #556). Nur dann rücken ``last_successful_sync`` bzw. ``last_successful_full_sync``
         vor – die Aktualität der Quelle in Admin und Änderungsfeed. ``last_sync`` zählt jeden
         durchgelaufenen Abgleich, auch mit Lücken.
+
+        ``full_complete`` (Standard: ``complete``): Der Vollabgleich hat jede Liste ganz gelesen. Eine im Vollabgleich
+        ausgesetzte langsame Liste ist keine Lücke, ``last_successful_full_sync`` rückt dann aber nicht vor und der
+        Vollabgleich bleibt fällig (Issue #1033).
         """
+        if full_complete is None:
+            full_complete = complete
         async with self.get_session() as session:
             source = await session.get(OParlSource, source_id)
             if source:
@@ -638,7 +645,7 @@ class DatabaseStorage:
                     source.last_full_sync = now
                 if complete:
                     source.last_successful_sync = now
-                    if full_sync:
+                    if full_sync and full_complete:
                         source.last_successful_full_sync = now
                 # Erfolg setzt den Fehlerstatus des Betriebsmonitors zurück
                 source.last_error = None

@@ -83,7 +83,7 @@ async def test_daemon_schreibt_start_in_der_gegenwart() -> None:
     speicher = _Speicher()
     quelle = SimpleNamespace(id=uuid4(), name="Musterstadt", url="https://ris.example.org", sync_config={})
 
-    async def sync_body_url(url: str, full: bool = False) -> SyncResult:
+    async def sync_body_url(url: str, full: bool = False, default_window: Any = None) -> SyncResult:
         return SyncResult(source_url=url, source_name="Musterstadt", success=True, full=full)
 
     orchestrator = SimpleNamespace(storage=speicher, sync_body_url=sync_body_url, print_result=lambda _r: None)

@@ -450,9 +450,22 @@ Listen (Mitgliedschaften, Tagesordnungspunkte, Beratungen, Dateien, Orte; `OPTIO
   frühere von ihrem Fensteranfang und dem Fenster des Laufs. Nach jeder ganz gelesenen Scheibe rückt der Fensteranfang
   der Liste vor; bricht eine spätere Scheibe ab, beginnt der nächste Versuch bei ihr. Listen ohne nachgewiesene Uhrzeit
   in `modified` beginnen am Tagesbeginn (der frühere von 00:00 Uhr UTC und 00:00 Uhr `Europe/Berlin`, `day_floor`).
+- **Nur bei Servern, die filtern:** Tagesscheiben gibt es nur, wenn der Server die Liste mit `modified_since` filtert
+  (kein Vermerk in `modified_since_unsupported_hosts`, außer mit `carry_modified_since`, und keine Antwort mit HTTP 404
+  oder Fehlerobjekt auf den Filter, `OParlClient.filters_list`). Sonst kommt die Liste wie jede andere ab ihrem
+  Fensteranfang, ohne Scheiben. Lehnt der Server den Filter einer Scheibe ab (HTTP 400, 401, 403, 404), findet er die
+  Liste mit Filter nicht oder liefert er Objekte außerhalb der Scheibe (`modified_until` ignoriert), liest der Lauf die
+  Liste ab der offenen Scheibe ebenso ohne Scheiben weiter (`_slice_fallback`). Das ist keine Lücke und kein Befund
+  gegen den [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben); den Filter prüft nur dieser.
 - **Keine Lücke:** Eine ausgesetzte optionale Liste macht den Lauf nicht unvollständig. Das Änderungsfenster der
   Kommune rückt vor, und die Quelle gilt als aktuell (`last_successful_sync`); die Liste holt ihre Änderungen über
-  ihren eigenen Fensteranfang nach. Ist sie ganz gelesen, endet die Aussetzung.
+  ihren eigenen Fensteranfang nach. Ist sie ganz gelesen, endet die Aussetzung. Lässt sich die Aussetzung nicht
+  speichern, bleibt die Liste wie bisher eine Lücke: Ohne gespeicherten Fensteranfang gingen sonst ihre Änderungen
+  verloren, sobald das Fenster der Kommune vorrückt.
+- **Vollabgleich bleibt fällig:** Ist eine Liste im Vollabgleich ausgesetzt (auch ohne Zeitscheiben), zählt er nicht
+  als vollständig: `last_successful_full_sync` rückt nicht vor, mit `full_sync_every_days` ist er in der nächsten
+  Nacht wieder fällig, und ein Durchgang in Zeitscheiben ist nicht fertig (`details.full_pending`,
+  `full_sync_finished`).
 - **Sichtbar:** Die Aussetzung steht mit Ende und Fensteranfang unter den Fehlern des Sync-Protokolls des Laufs, in dem
   sie beginnt; jeder Lauf nennt ausgesetzte Listen unter `details.suspended_lists`. Pflichtlisten (Gremien, Personen,
   Sitzungen, Vorlagen) setzt der Ingestor nie aus: Dort bleibt eine Zeitüberschreitung eine Lücke.
@@ -491,7 +504,8 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   Winterzeit beginnt in der doppelten Stunde kein zweiter Vollabgleich; ein Fenster ab 02:00 Uhr öffnet beim ersten
   02:00 Uhr. Bei der Umstellung auf die Sommerzeit gibt es 02:00 Uhr nicht; ein Fenster ab 02:00 Uhr öffnet dann um
   03:00 Uhr Sommerzeit (`ingestor/tests/test_takt.py`).
-- **Ende:** Das Standardfenster begrenzt nur den Beginn; ein begonnener Vollabgleich läuft zu Ende.
+- **Ende:** Das Standardfenster begrenzt nur den Beginn; ein begonnener Vollabgleich läuft zu Ende. Ausnahme: Ein
+  [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben) endet immer mit dem Fenster.
 - **Je Quelle seltener:** `full_sync_every_days` (ganze Zahl von 1 bis 365) verlangt so viele Tage Abstand zum
   letzten vollständig erfolgreichen Vollabgleich (`last_successful_full_sync`), mit einer Stunde Spielraum. Ist er
   nicht fällig, gleicht die Quelle nur Änderungen ab. Ein Vollabgleich mit Lücke zählt nicht; er wird im nächsten
@@ -537,10 +551,19 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   vorn.
 - **Fertig:** Hat jede Liste der Kommune in einem Lauf ihre letzte Scheibe gelesen und fehlt nichts, ist der
   Durchgang fertig. Der Fortschritt dieser Listen wird gelöscht, der nächste Vollabgleich beginnt wieder bei `since`.
-  Erst dann zählt der Vollabgleich als vollständig (`last_successful_full_sync`, `full_sync_every_days`). Eine
-  [ausgesetzte langsame Liste](#langsame-listen) hält den Durchgang nicht auf und behält ihren Fortschritt.
+  Erst dann zählt der Vollabgleich als vollständig (`last_successful_full_sync`, `full_sync_every_days`). Ist eine
+  [langsame Liste](#langsame-listen) ausgesetzt, ist der Durchgang nicht fertig: Alle Listen behalten ihren
+  Fortschritt, fertige fragen im nächsten Vollabgleich nur ihre letzte Scheibe noch einmal an, und die ausgesetzte setzt
+  nach ihrer Aussetzung an ihrer letzten vollständigen Scheibe fort.
+- **Zeitfenster:** Ein Vollabgleich in Zeitscheiben dauert Stunden bis Nächte und endet immer mit dem Zeitfenster der
+  Quelle: dem eigenen `full_sync_window`, sonst dem Standardfenster des Daemons (ab `--full-sync-hour` für 5 Stunden,
+  `SourceFetchOptions.sync_window`). Der Fortschritt bleibt dazwischen erhalten. Außerhalb des Fensters, und wenn kein
+  Fenster bekannt ist (Aufruf über die Kommandozeile, geplanter Vollabgleich abgeschaltet), läuft statt seiner ein
+  Änderungsabgleich. Für Hamm empfiehlt sich ein eigenes Fenster, etwa `{"start": "00:00", "end": "06:00"}`.
 - **Fehlende Listen:** Listen mit Vermerk in `missing_lists` fragt der Vollabgleich in Zeitscheiben nicht an; SD.NET
   RIM beantwortet jede leere Scheibe wie eine fehlende Liste. Sie prüft weiter der inkrementelle Lauf einmal am Tag.
+- **Fehlerobjekt:** Antwortet der Server auf eine Scheibe mit einem OParl-Fehlerobjekt statt einer Liste, ist das keine
+  leere Scheibe, sondern eine Lücke; der Fortschritt bleibt vor ihr (SD.NET RIM: HTTP 404 mit Code 802 gilt als leer).
 - **Filter ignoriert:** Liefert eine Scheibe ein Objekt, dessen `modified` mehr als einen Tag vor ihrem Beginn oder
   nach ihrem Ende liegt (`SLICE_TOLERANCE`, fängt falsch angegebene Zeitzonen und Tagesstempel ab), beachtet der
   Server den Filter nicht. Der Vollabgleich übernimmt nichts aus dieser Seite und bricht ab: diese Liste sofort, jede
@@ -553,7 +576,7 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   zählt Objekte ohne `modified`, die der Server trotzdem liefert, je Liste (`details.full_sync_slices.without_modified`).
   Unter `details.full_sync_slices.lists` steht je Liste, wie viele Scheiben der Lauf gelesen hat, ob sie fertig ist und
   wo die nächste beginnt.
-- Zeitfenster (`full_sync_window`), Abstand (`full_sync_every_days`) und Takt je Server gelten unverändert.
+- Abstand (`full_sync_every_days`) und Takt je Server gelten unverändert.
 
 ## Dokumente
 
@@ -723,7 +746,7 @@ Befund zurückzusetzen:
 | `body_sync_started` | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (UTC), Anfang des Änderungsfensters; nach nicht gespeicherten Objekten höchstens deren ältestes `modified`. Löschen setzt das Änderungsfenster auf sieben Tage zurück |
 | `timed_lists` | Listen, deren `modified` nachweislich eine Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC); nur sie bekommen das kurze Fenster. Löschen lässt die Listen ab Tagesbeginn laufen, bis ein Lauf die Uhrzeit wieder nachweist |
 | `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, mit dem Zeitpunkt der letzten Prüfung (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
-| `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune |
+| `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune. Das ist während der Aussetzung weitergerückt: Änderungen ab `since` bis zum Fenster der Kommune holen inkrementelle Läufe dann nicht mehr nach, erst der nächste Vollabgleich der Quelle. Besser `until` auf einen vergangenen Zeitpunkt setzen: Dann holt der nächste Lauf die Liste ab `since` nach |
 | `full_sync_progress` | Fortschritt des Vollabgleichs in Zeitscheiben: je Liste der Beginn der nächsten Scheibe (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Vollabgleich wieder bei `since` beginnen |
 | `full_sync_filter_ignored` | Befund „Server ignoriert den Filter einer Zeitscheibe“ (`checked_at`, `list`, `detail`). Solange er jünger als 30 Tage ist, läuft der Vollabgleich nur als Änderungsabgleich; Löschen lässt den nächsten Vollabgleich die Zeitscheiben wieder versuchen |
 | `modified_since_unsupported_hosts` | Server, die `modified_since` ablehnen oder ignorieren. Löschen wirkt erst nach einem Neustart des Ingestors und nur, wenn keine andere Quelle denselben Server vermerkt hat; sonst trägt die Prüfung nach dem nächsten Vollabgleich den Server aus, sobald er filtert |

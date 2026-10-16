@@ -17,16 +17,19 @@ from __future__ import annotations
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlencode
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
 from mandari_oparl.utils import parse_datetime
 
 from src.client.oparl_client import ListFetchError, ListMissingError, OParlClient
-from src.client.source_options import FullSyncSlices, SourceFetchOptions
+from src.client.source_options import FullSyncSlices, FullSyncWindow, SourceFetchOptions
+from src.scheduler.takt import default_full_sync_window
 from src.storage.database import (
     SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY,
     SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY,
@@ -36,7 +39,15 @@ from src.storage.database import (
     slice_filter_ignored_of,
     slow_lists_of,
 )
-from src.sync.orchestrator import MissingLists, SyncResult, TimedLists, merge_slice_details, sync_complete
+from src.sync.orchestrator import (
+    MissingLists,
+    SyncOrchestrator,
+    SyncResult,
+    TimedLists,
+    full_sync_finished,
+    merge_slice_details,
+    sync_complete,
+)
 from src.sync.slices import (
     SLICE_TOLERANCE,
     SLOW_LIST_SLICE,
@@ -53,6 +64,7 @@ from tests.test_aenderungsfenster import (  # noqa: F401 - _ohne_nebenlaeufe: au
     _ohne_nebenlaeufe,
     _orchestrator,
 )
+from tests.test_loeschung_nur_vollstaendig import _speicher_mit
 
 HOST = "oparl.hamm.example"
 BASE = f"https://{HOST}/oparl"
@@ -65,6 +77,7 @@ KEINE_TREFFER = {
     "type": "SD.NET RIM Webservice",
 }
 SCHEIBEN = {"days": 365, "since": "2020-01-01"}
+FEHLEROBJEKT = {"type": "https://schema.oparl.org/1.1/Error", "message": "Interner Fehler"}
 BEGINN = datetime(2020, 1, 1, tzinfo=UTC)
 FILTER = ("modified_since", "modified_until")
 TYPEN = {
@@ -115,6 +128,10 @@ class HammQuelle:
         self.langsam_ab: datetime | None = None
         #: Liste -> Statuscode für Scheiben, deren modified_since ab diesem Zeitpunkt liegt
         self.fehler_ab: dict[str, tuple[datetime, int]] = {}
+        #: Liste -> OParl-Fehlerobjekt mit HTTP 200 für Scheiben, deren modified_since ab diesem Zeitpunkt liegt
+        self.fehlerobjekt_ab: dict[str, datetime] = {}
+        #: Diese Listen lehnen jeden Filter mit HTTP 401 ab (wie die Stadt Münster), ohne Filter antworten sie
+        self.lehnt_filter_ab: set[str] = set()
         #: Die Quelle beachtet modified_until nicht
         self.ignoriert_until = False
         #: Objekte ohne modified liefert die Quelle in jeder gefilterten Antwort mit
@@ -128,6 +145,8 @@ class HammQuelle:
         if objekte is None:
             return httpx.Response(404, json=KEINE_TREFFER)
         gefiltert = any(params.get(key) for key in FILTER)
+        if gefiltert and name in self.lehnt_filter_ab:
+            return httpx.Response(401)
         if not gefiltert and name in self.ungefiltert_504:
             return httpx.Response(504)
         seit = parse_datetime(params["modified_since"]) if params.get("modified_since") else None
@@ -136,6 +155,8 @@ class HammQuelle:
             raise httpx.ReadTimeout("timed out", request=request)
         if name in self.fehler_ab and seit is not None and seit >= self.fehler_ab[name][0]:
             return httpx.Response(self.fehler_ab[name][1])
+        if name in self.fehlerobjekt_ab and seit is not None and seit >= self.fehlerobjekt_ab[name]:
+            return httpx.Response(200, json=FEHLEROBJEKT)
         if self.ignoriert_until:
             bis = None
         treffer = []
@@ -166,12 +187,16 @@ class ScheibenSpeicher(Speicher):
     def __init__(self) -> None:
         super().__init__()
         self.config: dict[str, Any] = {}
+        #: Speichern einer Aussetzung scheitert (Datenbank nicht erreichbar)
+        self.aussetzung_scheitert = False
 
     async def set_full_sync_progress(self, source_url: str, list_url: str, next_start: datetime | None) -> None:
         wert = None if next_start is None else next_start.astimezone(UTC).isoformat(timespec="seconds")
         _put_entry(self.config, SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY, list_url, wert)
 
     async def set_slow_list(self, source_url: str, list_url: str, entry: dict[str, Any] | None) -> None:
+        if self.aussetzung_scheitert and entry is not None:
+            raise RuntimeError("Datenbank nicht erreichbar")
         _put_entry(self.config, SYNC_CONFIG_SLOW_LISTS_KEY, list_url, entry)
 
     async def set_slice_filter_ignored(self, source_url: str, finding: dict[str, Any] | None) -> None:
@@ -205,9 +230,13 @@ async def _lauf(
     scheiben: dict[str, Any] | None = None,
     kommune: dict[str, Any] | None = None,
     frist: datetime | None = None,
+    ohne_scheiben: bool = False,
 ) -> dict[str, Any]:
-    """Abgleich der Kommune wie im Betrieb: Zustand aus ``sync_config``, Zeitscheiben nur im Vollabgleich."""
-    options = SourceFetchOptions.from_sync_config({"full_sync_slices": scheiben or SCHEIBEN})
+    """
+    Abgleich der Kommune wie im Betrieb: Zustand aus ``sync_config``, Zeitscheiben nur im Vollabgleich (mit
+    ``ohne_scheiben`` eine Quelle ohne ``full_sync_slices``).
+    """
+    options = SourceFetchOptions.from_sync_config({} if ohne_scheiben else {"full_sync_slices": scheiben or SCHEIBEN})
     run = SliceRun.build(
         SOURCE,
         options.full_sync_slices if full else None,
@@ -744,9 +773,9 @@ async def test_pflichtliste_mit_zeitueberschreitung_bleibt_eine_luecke():
     assert BODY not in speicher.begonnen
 
 
-async def test_ausgesetzte_liste_haelt_den_durchgang_nicht_auf():
-    """Vollabgleich in Zeitscheiben: Eine ausgesetzte optionale Liste ist keine Lücke. Der Durchgang der übrigen
-    Listen ist fertig, die ausgesetzte behält ihren Fortschritt."""
+async def test_ausgesetzte_liste_haelt_den_durchgang_offen():
+    """Vollabgleich in Zeitscheiben: Eine ausgesetzte optionale Liste ist keine Lücke des Laufs, der Durchgang ist
+    aber nicht fertig. Alle Listen behalten ihren Fortschritt, der Vollabgleich bleibt fällig."""
     quelle = HammQuelle()
     speicher = ScheibenSpeicher()
     ausgesetzt = SlowList(failures=2, until=datetime.now(UTC) + timedelta(hours=1), since=datetime.now(UTC))
@@ -755,8 +784,17 @@ async def test_ausgesetzte_liste_haelt_den_durchgang_nicht_auf():
 
     stats = await _lauf(quelle, speicher, kommune=_kommune("paper", "consultation"))
     assert stats["incomplete"] == []
+    assert sync_complete([stats], [], _OhneBefund()) is True
     assert quelle.anfragen_an("consultation") == []
-    assert full_sync_progress_of(speicher.config) == {f"{BODY}/consultation": datetime(2022, 1, 1, tzinfo=UTC)}
+    assert stats["full_pending"] == [f"{BODY}/consultation"]
+    assert full_sync_finished([stats]) is False
+    # Vorlagen sind fertig, behalten aber ihre letzte Grenze: Der nächste Vollabgleich fragt nur die letzte Scheibe an
+    scheiben = full_windows(FullSyncSlices.parse(SCHEIBEN), None, datetime.now(UTC))  # type: ignore[arg-type]
+    assert full_sync_progress_of(speicher.config) == {
+        f"{BODY}/consultation": datetime(2022, 1, 1, tzinfo=UTC),
+        f"{BODY}/paper": scheiben[-1].since,
+    }
+    assert stats["full_sync_slices"]["lists"][f"{BODY}/paper"]["finished"] is True
 
 
 async def test_zeitueberschreitung_im_vollabgleich_setzt_die_optionale_liste_aus():
@@ -768,6 +806,220 @@ async def test_zeitueberschreitung_im_vollabgleich_setzt_die_optionale_liste_aus
 
     stats = await _lauf(quelle, speicher, kommune=_kommune("paper", "consultation"))
     assert stats["incomplete"] == []
-    assert full_sync_progress_of(speicher.config) == {f"{BODY}/consultation": scheiben[2].since}
+    assert full_sync_progress_of(speicher.config) == {
+        f"{BODY}/consultation": scheiben[2].since,
+        f"{BODY}/paper": scheiben[-1].since,
+    }
     eintrag = SlowList.from_entry(speicher.config[SYNC_CONFIG_SLOW_LISTS_KEY][f"{BODY}/consultation"])
     assert eintrag is not None and eintrag.failures == 1
+    assert stats["full_pending"] == [f"{BODY}/consultation"] and full_sync_finished([stats]) is False
+
+    # Nach der Aussetzung: Der nächste Vollabgleich setzt die Beratungen fort, der Durchgang wird fertig
+    quelle.langsam.clear()
+    abgelaufen = SlowList(failures=1, until=datetime.now(UTC) - timedelta(minutes=1), since=eintrag.since)
+    speicher.config[SYNC_CONFIG_SLOW_LISTS_KEY][f"{BODY}/consultation"] = abgelaufen.to_entry()
+    stats = await _lauf(quelle, speicher, kommune=_kommune("paper", "consultation"))
+    assert stats["incomplete"] == [] and "full_pending" not in stats and full_sync_finished([stats]) is True
+    beratungen = [_grenzen(url) for url in quelle.anfragen_an("consultation") if url.params.get("page") in (None, "1")]
+    assert beratungen[0][0] == scheiben[2].since
+    assert SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY not in speicher.config
+    assert SYNC_CONFIG_SLOW_LISTS_KEY not in speicher.config
+
+
+async def test_ausgesetzte_liste_ohne_zeitscheiben_haelt_den_vollabgleich_faellig():
+    """Auch ohne ``full_sync_slices``: Eine im Vollabgleich ausgesetzte Liste ist keine Lücke, der Vollabgleich zählt
+    aber nicht als vollständig und wird im nächsten Fenster wiederholt."""
+    quelle = HammQuelle()
+    quelle.ungefiltert_504.clear()
+    quelle.langsam.add("consultation")
+    speicher = ScheibenSpeicher()
+    stats = await _lauf(
+        quelle, speicher, kommune=_kommune("organization", "person", "consultation"), ohne_scheiben=True
+    )
+    assert stats["incomplete"] == [] and sync_complete([stats], [], _OhneBefund()) is True
+    assert all(not any(url.params.get(key) for key in FILTER) for url in quelle.anfragen)
+    assert stats["full_pending"] == [f"{BODY}/consultation"] and full_sync_finished([stats]) is False
+    assert "full_sync_slices" not in stats
+
+
+@pytest.mark.parametrize(
+    ("complete", "full_complete", "erwartet"),
+    [(True, None, True), (True, True, True), (True, False, False), (False, True, False)],
+)
+async def test_vollabgleich_mit_ausgesetzter_liste_zaehlt_nicht_als_vollstaendig(complete, full_complete, erwartet):
+    quelle = SimpleNamespace(
+        last_sync=None,
+        last_full_sync=None,
+        last_successful_sync=None,
+        last_successful_full_sync=None,
+        last_error=None,
+        last_error_at=None,
+        last_error_kind=None,
+        consecutive_failures=0,
+    )
+    await _speicher_mit(quelle).update_source_sync_time(
+        UUID(int=1), full_sync=True, complete=complete, full_complete=full_complete
+    )
+    assert (quelle.last_successful_sync is not None) is complete
+    assert (quelle.last_successful_full_sync is not None) is erwartet
+    assert quelle.last_full_sync is not None
+
+
+async def test_ungespeicherte_aussetzung_bleibt_eine_luecke():
+    """Lässt sich die Aussetzung nicht speichern, gäbe es keinen eigenen Fensteranfang: Die Liste bleibt eine Lücke,
+    das Fenster der Kommune rückt nicht vor."""
+    quelle = HammQuelle()
+    quelle.langsam.add("consultation")
+    speicher = ScheibenSpeicher()
+    speicher.aussetzung_scheitert = True
+    stats = await _lauf(quelle, speicher, full=False, kommune=_kommune("paper", "consultation"))
+    assert stats["incomplete"] == ["consultation"]
+    assert "suspended_lists" not in stats
+    assert not any("ausgesetzt bis" in fehler for fehler in stats["errors"])
+    assert BODY not in speicher.begonnen
+    assert SYNC_CONFIG_SLOW_LISTS_KEY not in speicher.config
+
+
+async def test_fehlerobjekt_in_einer_scheibe_ist_keine_leere_scheibe():
+    """Liefert die Quelle unter Last ein Fehlerobjekt statt der Scheibe, rückt der Fortschritt nicht darüber hinweg."""
+    quelle = HammQuelle()
+    speicher = ScheibenSpeicher()
+    scheiben = full_windows(FullSyncSlices.parse(SCHEIBEN), None, datetime.now(UTC))  # type: ignore[arg-type]
+    bruch = scheiben[2].since
+    assert bruch is not None
+    quelle.fehlerobjekt_ab["paper"] = bruch
+
+    stats = await _lauf(quelle, speicher, kommune=_kommune("paper"))
+    assert stats["incomplete"] == ["paper"]
+    assert any("Fehlerobjekt statt Liste" in fehler for fehler in stats["errors"])
+    assert full_sync_progress_of(speicher.config) == {f"{BODY}/paper": bruch}
+    assert stats["full_sync_slices"]["lists"][f"{BODY}/paper"]["finished"] is False
+
+
+async def test_client_fehlerobjekt_auf_der_ersten_seite_einer_scheibe():
+    def antwort(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json=FEHLEROBJEKT)
+
+    async with OParlClient(max_concurrent=1, wait_time=0) as client:
+        assert client._client is not None
+        await client._client.aclose()
+        client._client = httpx.AsyncClient(transport=httpx.MockTransport(antwort))
+        with pytest.raises(ListFetchError, match="Fehlerobjekt statt Liste"):
+            async for _ in client.fetch_list(
+                f"{BODY}/paper", modified_since=BEGINN, modified_until=BEGINN + timedelta(days=30), strict_filter=True
+            ):
+                pass
+        # Ohne Zeitscheibe bleibt es, wie es war: leer
+        seiten = [seite async for seite in client.fetch_list(f"{BODY}/paper", modified_since=BEGINN)]
+        assert seiten == []
+
+
+# ---------------------------------------------------------------------------
+# Nachholen langsamer Listen bei Quellen, die nicht in Scheiben filtern
+# ---------------------------------------------------------------------------
+
+
+def _faellig(speicher: ScheibenSpeicher, tage: int) -> datetime:
+    """Langsame Beratungen mit abgelaufener Aussetzung, Fensteranfang vor ``tage`` Tagen; Fenster der Kommune kurz."""
+    speicher.begonnen[BODY] = datetime.now(UTC) - timedelta(hours=1)
+    seit = (datetime.now(UTC) - timedelta(days=tage)).replace(microsecond=0)
+    faellig = SlowList(failures=2, until=datetime.now(UTC) - timedelta(minutes=1), since=seit)
+    speicher.config[SYNC_CONFIG_SLOW_LISTS_KEY] = {f"{BODY}/consultation": faellig.to_entry()}
+    return seit
+
+
+async def test_nachholen_bei_quelle_die_den_filter_ablehnt():
+    """Wie die Stadt Münster (HTTP 401 auf jeden Filter): keine Lücke, kein Befund, die Liste kommt ohne Scheiben."""
+    quelle = HammQuelle()
+    quelle.ungefiltert_504.clear()
+    quelle.lehnt_filter_ab.add("consultation")
+    speicher = ScheibenSpeicher()
+    kommune = _kommune("organization", "person", "consultation")
+
+    _faellig(speicher, 3)
+    stats = await _lauf(quelle, speicher, full=False, kommune=kommune)
+    assert stats["incomplete"] == [] and "suspended_lists" not in stats
+    assert SYNC_CONFIG_SLOW_LISTS_KEY not in speicher.config
+    assert SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY not in speicher.config
+    assert {f"{BASE}/consultation/3", f"{BASE}/consultation/4"} <= set(speicher.modified)
+    beratungen = quelle.anfragen_an("consultation")
+    # Eine Scheibe angefragt (401), dann wie jede Liste: mit Filter (401), ohne Filter gelesen
+    assert sum(1 for url in beratungen if url.params.get("modified_until")) == 1
+    assert any(not any(url.params.get(key) for key in FILTER) for url in beratungen)
+    assert HOST in OParlClient.get_modified_since_unsupported()
+
+    # Zweiter Lauf mit fälliger Liste: Der Host gilt jetzt als „filtert nicht“, keine Scheibe mehr
+    _faellig(speicher, 3)
+    stats = await _lauf(quelle, speicher, full=False, kommune=kommune)
+    assert stats["incomplete"] == [] and SYNC_CONFIG_SLOW_LISTS_KEY not in speicher.config
+    assert quelle.anfragen_an("consultation")
+    assert all(not any(url.params.get(key) for key in FILTER) for url in quelle.anfragen_an("consultation"))
+    assert SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY not in speicher.config
+
+
+async def test_nachholen_bei_quelle_ohne_modified_until():
+    """Die Quelle beachtet ``modified_until`` nicht, die Liste muss mehr als zwei Tage nachholen: kein Abbruch, kein
+    Befund gegen den Vollabgleich in Zeitscheiben, die Liste kommt ab ihrem Fensteranfang ohne Scheiben."""
+    quelle = HammQuelle()
+    quelle.ignoriert_until = True
+    speicher = ScheibenSpeicher()
+    kommune = _kommune("paper", "consultation")
+
+    for _ in range(2):
+        seit = _faellig(speicher, 4)
+        # Ohne nachgewiesene Uhrzeit ab Tagesbeginn; der erste Lauf weist sie nach
+        beginn = seit if f"{BODY}/consultation" in speicher.uhrzeit else day_floor(seit)
+        stats = await _lauf(quelle, speicher, full=False, kommune=kommune)
+        assert stats["incomplete"] == [] and "suspended_lists" not in stats
+        assert not any("Zeitscheiben abgebrochen" in fehler for fehler in stats["errors"])
+        assert SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY not in speicher.config
+        assert SYNC_CONFIG_SLOW_LISTS_KEY not in speicher.config
+        assert {f"{BASE}/consultation/3", f"{BASE}/consultation/4"} <= set(speicher.modified)
+        beratungen = quelle.anfragen_an("consultation")
+        # Erste Tagesscheibe, dann ab ihrem Beginn nur mit modified_since
+        assert _grenzen(beratungen[0]) == (beginn, beginn + SLOW_LIST_SLICE)
+        assert all(_grenzen(url) == (beginn, None) for url in beratungen[1:])
+
+    # Der Vollabgleich in Zeitscheiben ist nicht gesperrt
+    options = SourceFetchOptions.from_sync_config({"full_sync_slices": SCHEIBEN})
+    full, run, meldung = await _orchestrator(speicher)._slice_run(SOURCE, options, True, speicher.config)
+    assert full is True and run.config is not None and meldung is None
+
+
+# ---------------------------------------------------------------------------
+# Zeitfenster des Vollabgleichs in Zeitscheiben
+# ---------------------------------------------------------------------------
+
+
+def _berlin(stunde: int) -> datetime:
+    return datetime(2026, 10, 13, stunde, 0, tzinfo=ZoneInfo("Europe/Berlin")).astimezone(UTC)
+
+
+def test_vollabgleich_in_zeitscheiben_endet_mit_dem_standardfenster():
+    standard = default_full_sync_window(1)
+    assert standard is not None
+    scheiben = SourceFetchOptions.from_sync_config({"full_sync_slices": SCHEIBEN})
+
+    # Ohne eigenes Fenster: das Standardfenster des Daemons, mit seinem Ende
+    assert scheiben.sync_window(standard) == standard
+    assert scheiben.full_sync_plan(True, now=_berlin(2), default_window=standard) == (True, _berlin(6))
+    # Außerhalb des Fensters (Auslöser am Tag) nur Änderungsabgleich
+    assert scheiben.full_sync_plan(True, now=_berlin(10), default_window=standard) == (False, None)
+    # Ohne Fenster (Kommandozeile, geplanter Vollabgleich aus): kein Vollabgleich in Zeitscheiben ohne Ende
+    assert scheiben.full_sync_plan(True, now=_berlin(2)) == (False, None)
+    planned, frist = SyncOrchestrator._full_sync_plan(SOURCE, scheiben, True)
+    assert planned is False and frist is None
+
+    # Eigenes Fenster geht vor
+    eigenes = SourceFetchOptions.from_sync_config(
+        {"full_sync_slices": SCHEIBEN, "full_sync_window": {"start": "00:00", "end": "04:00"}}
+    )
+    assert eigenes.sync_window(standard) == FullSyncWindow.parse({"start": "00:00", "end": "04:00"})
+    assert eigenes.full_sync_plan(True, now=_berlin(2), default_window=standard) == (True, _berlin(4))
+    assert eigenes.full_sync_plan(True, now=_berlin(2)) == (True, _berlin(4))
+
+    # Ohne Zeitscheiben bleibt es, wie es war: ohne eigenes Fenster ohne Ende
+    ohne = SourceFetchOptions()
+    assert ohne.sync_window(standard) is None
+    assert ohne.full_sync_plan(True, now=_berlin(2), default_window=standard) == (True, None)
+    assert ohne.full_sync_plan(True, now=_berlin(10)) == (True, None)
