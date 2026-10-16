@@ -163,7 +163,18 @@
         <c-ui.card title="Zugeschaltet, ohne Stimme bei dieser Abstimmung" data-testid="zugeschaltet-ohne-stimme">
             <ul class="text-sm text-gray-700 dark:text-gray-300 space-y-1">
                 {% for attendance in unreachable %}
-                <li>{{ attendance.person.display_name }} <span class="text-xs text-amber-700 dark:text-amber-400">({% if assessed_at_vote %}bei der Abstimmung gestört{% if attendance.vote_kept %}; die vorher erfasste Stimme bleibt{% endif %}{% else %}Störung dauert an{% endif %})</span></li>
+                <li>{{ attendance.person.display_name }} <span class="text-xs text-amber-700 dark:text-amber-400">({% if assessed_at_vote %}bei der Abstimmung gestört{% else %}Störung dauert an{% endif %})</span>
+                    {% if attendance.vote_kept %}
+                    <span class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-600 dark:text-gray-400" data-testid="stimme-bleibt">
+                        Vor Beginn der Störung abgestimmt: {{ attendance.current_vote_label }}. Die Stimme bleibt.
+                        <label class="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+                            <input type="checkbox" name="remove_vote_{{ attendance.person_id }}" value="1"
+                                   class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                            Stimme entfernen (—)
+                        </label>
+                    </span>
+                    {% endif %}
+                </li>
                 {% endfor %}
                 {% for attendance in remote_excluded %}
                 <li>{{ attendance.person.display_name }} <span class="text-xs text-amber-700 dark:text-amber-400">(nach dem Landesprofil ausgeschlossen)</span></li>

@@ -21,6 +21,7 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
   zugeschaltet teilnimmt (Niedersachsen: geheime Wahlen und Abstimmungen), schreibt der Service keine Stimmen.
 """
 
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import time
 from typing import Any
@@ -219,6 +220,69 @@ def eligibility(
     listed = {a.person_id for a in attendances}
     result.complete = bool(members) and not undecided and members <= listed
     return result
+
+
+def kept_votes(item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[Any, SessionVote]) -> set[Any]:
+    """
+    Person-IDs von Zugeschalteten, die bei der Abstimmung gestört sind, deren erfasste Stimme aber gilt (Issue #1045).
+
+    Gilt, wenn sie im Abstimmungsfenster des Sitzungscockpits (ab ``vote_opened_at``) und vor Beginn der Störung
+    gespeichert wurde: Die Person war bei der Stimmabgabe erreichbar. Das gilt im offenen Fenster (andauernde Störung)
+    wie nach dem Schließen (Störung zum Zeitpunkt der Abstimmung, ``assessed`` mit ``at``). Nicht dazu gehören:
+
+    - Stimmen aus einer abgebrochenen Runde. ``cancel_vote`` lässt sie stehen, für die neue Runde (neues
+      ``vote_opened_at``) hat die Person aber nicht abgestimmt;
+    - Stimmen ohne Abstimmungsfenster im Cockpit: Wann abgestimmt wurde, ist unbekannt;
+    - Ja, Nein und Enthaltung in einer geheimen Abstimmung, die dort nicht gespeichert werden (Vermerke bleiben).
+
+    Störungen sind minutengenau erfasst; eine Stimme aus der Minute ihres Beginns zählt nicht als vorher.
+    ``votes``: gespeicherte Stimmen des TOP je Person-ID.
+    """
+    opened = item.vote_opened_at
+    if opened is None:
+        return set()
+    until = item.vote_closed_at or timezone.now()
+    at = participation_service.vote_time(item)
+    secret = item.voting_method == "secret"
+    kept = set()
+    for attendance in assessed.unreachable:
+        vote = votes.get(attendance.person_id)
+        if vote is None or (secret and vote.vote in SessionVote.COUNTED_VOTES):
+            continue
+        starts = [
+            participation_service.disruption_start(disruption, until)
+            for disruption in participation_service.disruptions(attendance)
+            if (disruption.ongoing if at is None else disruption.covers(at))
+        ]
+        if starts and opened <= vote.updated_at < min(starts):
+            kept.add(attendance.person_id)
+    return kept
+
+
+def guard_kept_votes(
+    item: SessionAgendaItem, assessed: Eligibility, votes_by_person: dict[Any, str], *, remove: Collection[str]
+) -> None:
+    """
+    Formularwerte der Abstimmungserfassung für gültige Stimmen gestörter Personen (:func:`kept_votes`) bereinigen.
+
+    Entfernt wird eine solche Stimme nur, wenn es ausdrücklich gewählt ist (``remove``: Person-IDs als Text); ein
+    leeres Feld, etwa aus einer früher geladenen Seite, trifft sie nicht. Ein unveränderter Wert wird nicht neu
+    geschrieben, sonst läge ihr Zeitpunkt nach Beginn der Störung. Geänderte Werte bleiben stehen und lehnt
+    :func:`capture_votes` ab. In einer geheimen Abstimmung entfallen Ja, Nein und Enthaltung gestörter Personen wie
+    die aller anderen.
+    """
+    stored = {vote.person_id: vote for vote in item.votes.select_related("person")}
+    for person_id in kept_votes(item, assessed, stored):
+        vote = stored[person_id]
+        if str(person_id) in remove:
+            votes_by_person[vote.person] = ""
+        elif vote.person in votes_by_person and votes_by_person[vote.person] in ("", vote.vote):
+            del votes_by_person[vote.person]
+    if item.voting_method == "secret":
+        for attendance in assessed.unreachable:
+            counted = stored.get(attendance.person_id)
+            if counted is not None and counted.vote in SessionVote.COUNTED_VOTES:
+                votes_by_person.setdefault(counted.person, "")
 
 
 @dataclass(frozen=True)

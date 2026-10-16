@@ -141,7 +141,18 @@ session/voting/capture.html; Kontext wie VotingCaptureView. Die bisherige Seite 
             <c-rahmen.abschnitt titel="Zugeschaltet, ohne Stimme bei dieser Abstimmung" titel_id="ohne-stimme-titel" data-testid="zugeschaltet-ohne-stimme">
                 <c-rahmen.liste class="mt-2">
                     {% for attendance in unreachable %}
-                    <li class="py-2 text-sm text-gray-900 dark:text-white">{{ attendance.person.display_name }} <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">· {% if assessed_at_vote %}bei der Abstimmung gestört{% if attendance.vote_kept %}, die vorher erfasste Stimme bleibt{% endif %}{% else %}Störung dauert an{% endif %}</span></li>
+                    <li class="py-2 text-sm text-gray-900 dark:text-white">{{ attendance.person.display_name }} <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">· {% if assessed_at_vote %}bei der Abstimmung gestört{% else %}Störung dauert an{% endif %}</span>
+                        {% if attendance.vote_kept %}
+                        <span class="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.8125rem] text-gray-600 dark:text-gray-400" data-testid="stimme-bleibt">
+                            Vor Beginn der Störung abgestimmt: {{ attendance.current_vote_label }}. Die Stimme bleibt.
+                            <label class="inline-flex items-center gap-2 text-sm text-gray-800 dark:text-gray-200">
+                                <input type="checkbox" name="remove_vote_{{ attendance.person_id }}" value="1"
+                                       class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-600">
+                                Stimme entfernen (—)
+                            </label>
+                        </span>
+                        {% endif %}
+                    </li>
                     {% endfor %}
                     {% for attendance in remote_excluded %}
                     <li class="py-2 text-sm text-gray-900 dark:text-white">{{ attendance.person.display_name }} <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">· nach dem Landesprofil ausgeschlossen</span></li>

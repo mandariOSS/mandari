@@ -28,7 +28,7 @@ Vermerk einer Störung bleibt intern.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import time
+from datetime import datetime, time, timedelta
 from typing import Any
 
 from django.utils import timezone
@@ -118,6 +118,16 @@ def with_disruptions(queryset: Any, meeting: Any) -> Any:
 def disruptions(attendance: Any) -> list[Any]:
     """Störungsvermerke einer Anwesenheit (nutzt vorab geladene Vermerke)."""
     return list(attendance.disruptions.all()) if attendance.pk else []
+
+
+def disruption_start(disruption: Any, until: datetime) -> datetime:
+    """
+    Beginn einer Störung als Zeitpunkt: ihre Uhrzeit am Tag von ``until``, in einer Sitzung über Mitternacht am
+    Vortag, wenn sie sonst nach ``until`` läge (Issue #1045).
+    """
+    local = timezone.localtime(until)
+    start = timezone.make_aware(datetime.combine(local.date(), disruption.started_at), local.tzinfo)
+    return start - timedelta(days=1) if start > until else start
 
 
 def is_disrupted(attendance: Any, at: time | None = None) -> bool:

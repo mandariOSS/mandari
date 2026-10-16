@@ -464,9 +464,17 @@ class ProtocolCorrectionView(SessionViewMixin, TemplateView):
             votes = protocol_correction_service.current_votes(item)
             # Wie die Prüfung beim Berichtigen: Störungen zum Zeitpunkt der Abstimmung (Issue #1045)
             moment = participation_service.vote_time(item)
-            for attendance in voting_service.eligibility(meeting, item, at=moment).voting:
+            assessed = voting_service.eligibility(meeting, item, at=moment)
+            for attendance in assessed.voting:
                 attendance.current_vote = votes.get(str(attendance.person_id), "")
                 voters.append(attendance)
+            # Bei der Abstimmung gestört, vorher abgestimmt: Die Stimme gilt und lässt sich nur entfernen, nicht ändern
+            kept = voting_service.kept_votes(item, assessed, {v.person_id: v for v in item.votes.all()})
+            for attendance in assessed.unreachable:
+                if attendance.person_id in kept:
+                    attendance.current_vote = votes.get(str(attendance.person_id), "")
+                    attendance.vote_kept = True
+                    voters.append(attendance)
         public_scope = (
             protocol_correction_service.item_is_public(item)
             if item is not None

@@ -71,12 +71,12 @@ session/protocols/correction_form.html.
             <c-rahmen.liste class="mt-3">
                 {% for attendance in voters %}
                 <li class="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2">
-                    <label for="stimme-{{ attendance.person_id }}" class="min-w-0 text-sm font-medium text-gray-900 dark:text-white break-words">{{ attendance.person.display_name }}</label>
+                    <label for="stimme-{{ attendance.person_id }}" class="min-w-0 text-sm font-medium text-gray-900 dark:text-white break-words">{{ attendance.person.display_name }}{% if attendance.vote_kept %} <span class="block text-[0.8125rem] font-normal text-gray-600 dark:text-gray-400" data-testid="stimme-bleibt">Bei der Abstimmung gestört, vorher abgestimmt: Die Stimme gilt und lässt sich nur entfernen.</span>{% endif %}</label>
                     <select name="vote_{{ attendance.person_id }}" id="stimme-{{ attendance.person_id }}" aria-label="Stimme {{ attendance.person.display_name }}"
                             class="h-9 w-40 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
                         <option value="">Nicht erfasst</option>
                         {% for value, label in vote_choices %}
-                        <option value="{{ value }}"{% if attendance.current_vote == value %} selected{% endif %}>{{ label }}</option>
+                        {% if not attendance.vote_kept or attendance.current_vote == value %}<option value="{{ value }}"{% if attendance.current_vote == value %} selected{% endif %}>{{ label }}</option>{% endif %}
                         {% endfor %}
                     </select>
                 </li>
