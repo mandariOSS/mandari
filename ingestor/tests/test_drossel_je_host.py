@@ -371,3 +371,41 @@ async def test_oparl_abruf_haelt_grenze_beim_ziel_host(echte_drossel, monkeypatc
         await client._client.aclose()
 
     assert hoechstens == {"ziel.example.org": 1}
+
+
+async def test_scraper_halten_grenze_beim_ziel_host(echte_drossel, monkeypatch):
+    """
+    Auch Scraper zählen in der Grenze gleichzeitiger Anfragen je Host, am Ziel einer Weiterleitung ebenso (Issue
+    #1036): Drei Quellen leiten auf denselben Host weiter, dort ist mit Grenze 1 nie mehr als eine Anfrage offen.
+    """
+    from src.scrapers.politeness import PoliteFetcher
+
+    monkeypatch.setattr(settings, "host_max_concurrent", 1)
+    monkeypatch.setattr(host_pacer, "_sleep", lambda _s: asyncio.sleep(0))
+    offen = 0
+    hoechstens = 0
+    hosts: list[str] = []
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal offen, hoechstens
+        hosts.append(request.url.host)
+        if request.url.host != "ziel.example.org":
+            return httpx.Response(302, headers={"Location": f"https://ziel.example.org/{request.url.host}/"})
+        offen += 1
+        hoechstens = max(hoechstens, offen)
+        await asyncio.sleep(0.01)
+        offen -= 1
+        return httpx.Response(200, text="<html>Sitzung</html>")
+
+    async def quelle(name: str) -> None:
+        async with PoliteFetcher(rate_limit_seconds=0.01, source_name=name) as fetcher:
+            assert fetcher._client is not None
+            await fetcher._client.aclose()
+            fetcher._client = httpx.AsyncClient(transport=httpx.MockTransport(handler), follow_redirects=False)
+            for i in range(3):
+                assert await fetcher.fetch_text(f"https://{name}.example.de/seite/{i}") == "<html>Sitzung</html>"
+
+    await asyncio.wait_for(asyncio.gather(*(quelle(name) for name in ("eins", "zwei", "drei"))), timeout=10)
+
+    assert hosts.count("ziel.example.org") == 9, "jede Seite über die Weiterleitung abgerufen"
+    assert hoechstens == 1

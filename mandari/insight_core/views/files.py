@@ -184,6 +184,8 @@ logger = logging.getLogger(__name__)
 
 #: Gleichzeitige Abrufe beim Quell-RIS je Prozess: Langsame Quellen dürfen nicht alle Worker binden
 _LIVE_FETCH_SLOTS = threading.BoundedSemaphore(throttle.setting("FILE_PROXY_MAX_CONCURRENT"))
+#: Auf einen Abrufplatz wartet die Vorschau höchstens so lange, innerhalb der Frist ``FILE_PROXY_PACE_MAX_WAIT_SECONDS``
+_SLOT_MAX_WAIT_SECONDS = 2.0
 #: Bis zu dieser Größe bleibt ein Live-Abruf im Speicher, darüber in einer temporären Datei
 _SPOOL_BYTES = 2 * 1024 * 1024
 
@@ -366,7 +368,10 @@ def _deliver_file(request, file_obj):
         )
         response["Retry-After"] = "60"
         return response
-    if not _LIVE_FETCH_SLOTS.acquire(timeout=2):
+    # Eine Frist für alle Wartezeiten der Vorschau: auf einen Abrufplatz im Prozess (Issue #1036), auf robots.txt
+    # und Takt, auch für die Ziele von Weiterleitungen (#1027). Insgesamt höchstens FILE_PROXY_PACE_MAX_WAIT_SECONDS
+    deadline = redirects.deadline_after(_pace_max_wait())
+    if not _LIVE_FETCH_SLOTS.acquire(timeout=min(_SLOT_MAX_WAIT_SECONDS, redirects.remaining(deadline) or 0.0)):
         response = _file_proxy_error(
             "Gerade viele Abrufe",
             "Das Dokument lag noch nicht in unserem Zwischenspeicher, und gerade laufen viele Abrufe "
@@ -376,8 +381,7 @@ def _deliver_file(request, file_obj):
         response["Retry-After"] = "30"
         return response
     try:
-        # Eine Frist für alle Wartezeiten auf robots.txt und Takt, auch für die Ziele von Weiterleitungen (#1027)
-        deadline = redirects.deadline_after(_pace_max_wait())
+        # Dieselbe Frist: Was das Warten auf den Abrufplatz verbraucht hat, fehlt robots.txt und Takt
         blocked = _robots_or_pacing_blocked(file_obj, url, deadline=deadline)
         if blocked is not None:
             return blocked
@@ -387,7 +391,10 @@ def _deliver_file(request, file_obj):
 
 
 def _pace_max_wait():
-    """Höchstwartezeit der Vorschau auf robots.txt und Takt (Sekunden), für den ganzen Abruf zusammen."""
+    """
+    Höchstwartezeit der Vorschau (Sekunden) für den ganzen Abruf zusammen: Abrufplatz im Prozess, robots.txt, Takt
+    und Weiterleitungen (``FILE_PROXY_PACE_MAX_WAIT_SECONDS``, Standard 5).
+    """
     return float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
 
 

@@ -520,7 +520,10 @@ class OParlClient:
 
         ``url`` ist die Adresse, die mit 403 geantwortet hat (nach Weiterleitungen). Die Vergleichsanfrage folgt
         keiner Weiterleitung: Es bleibt bei genau einer Anfrage mit der neutralen Kennung (Issue #1027). Eine
-        Weiterleitung (3xx) ist deshalb kein Befund, sondern unklar (:func:`neutral_redirect_note`).
+        Weiterleitung (3xx) ist deshalb kein Befund, sondern unklar (:func:`neutral_redirect_note`), ebenso jede
+        andere Antwort außer 2xx und eine Vergleichsanfrage ohne Antwort (Issue #1036).
+
+        Die Vergleichsanfrage zählt wie jede Anfrage im Takt und in der Grenze gleichzeitiger Anfragen je Host.
         """
         assert self._client is not None
         health = self._health(url)
@@ -528,6 +531,8 @@ class OParlClient:
         if health.ua_blocked_at is not None:
             return ERROR_KIND_UA_BLOCKED, "User-Agent gesperrt"
         if health.ua_probe_status is not None:
+            if health.ua_probe_status == 0:
+                return None, "Zugriff verweigert; Vergleichsanfrage ohne Antwort, Sperre unklar"
             if 300 <= health.ua_probe_status < 400:
                 return None, "Zugriff verweigert; neutraler Client wurde weitergeleitet, Sperre unklar"
             return None, "Zugriff verweigert, auch für neutralen Client"
@@ -536,15 +541,16 @@ class OParlClient:
 
         health.ua_probe_status = 0
         try:
-            await self._throttle(url)
-            start = time.time()
-            response = await self._client.get(
-                url,
-                headers={"User-Agent": NEUTRAL_USER_AGENT, "Accept": "application/json"},
-                follow_redirects=False,
-            )
+            async with host_pacer.limit(url, self.effective_interval):
+                await self._throttle(url)
+                start = time.time()
+                response = await self._client.get(
+                    url,
+                    headers={"User-Agent": NEUTRAL_USER_AGENT, "Accept": "application/json"},
+                    follow_redirects=False,
+                )
         except httpx.HTTPError as exc:
-            return None, f"Zugriff verweigert; Vergleichsanfrage fehlgeschlagen: {exc}"
+            return None, f"Zugriff verweigert; Vergleichsanfrage fehlgeschlagen ({type(exc).__name__}), Sperre unklar"
         self.stats.http_requests += 1
         metrics.record_http_request(self.source_name, response.status_code, time.time() - start)
         health.ua_probe_status = response.status_code

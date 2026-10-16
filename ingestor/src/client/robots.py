@@ -4,7 +4,8 @@ robots.txt-Prüfung des Ingestors (RFC 9309, Auswertung in :mod:`mandari_oparl.r
 
 Jeder Abruf bei einer Quelle – OParl-JSON, HTML-Seiten der Scraper, Dateien für die Textextraktion –
 fragt vorher hier an. Die robots.txt eines Hosts wird einmal geladen und 24 Stunden im Prozess gehalten;
-alle Clients und Quellen eines Prozesses teilen sich den Zwischenspeicher. Der Schlüssel ist Host und
+alle Clients und Quellen eines Prozesses teilen sich den Zwischenspeicher. Der Schlüssel ist der Hostname
+(:func:`mandari_oparl.robots.host_key`, ohne Schema, Port und Unterschiede der Schreibweise, Issue #1036) und der
 User-Agent: Manche Server filtern Wörter im User-Agent und antworten dann auch auf ``/robots.txt`` mit 403
 (gilt als „nicht vorhanden“). Eine Quelle mit eigenem User-Agent bekommt deshalb ihre eigene Antwort.
 

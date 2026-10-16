@@ -544,10 +544,14 @@ FILE_ACCEL_REDIRECT = os.environ.get("FILE_ACCEL_REDIRECT", "false").lower() in 
 # Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe Ratsinformationssystem; 0 schaltet die Drossel ab
 # (nur Tests und Notfälle). Je Quelle über sync_config["request_interval"] nur langsamer: Werte unter einer
 # Sekunde hebt mandari_oparl.pacing auf eine Sekunde an (Issue #1025). Die Vorschau wartet höchstens
-# FILE_PROXY_PACE_MAX_WAIT_SECONDS auf ihren Zeitpunkt, alle Weiterleitungen eingeschlossen, und bittet sonst um
-# einen neuen Versuch.
+# FILE_PROXY_PACE_MAX_WAIT_SECONDS auf Abrufplatz, robots.txt und Zeitpunkt, alle Weiterleitungen eingeschlossen
+# (Issue #1036), und bittet sonst um einen neuen Versuch.
 RIS_REQUEST_INTERVAL = float(os.environ.get("RIS_REQUEST_INTERVAL", "1.0"))
 FILE_PROXY_PACE_MAX_WAIT_SECONDS = float(os.environ.get("FILE_PROXY_PACE_MAX_WAIT_SECONDS", "5"))
+# Takt je Host für Live-Übertragung und Geodienste (insight_core/services/dienste.py, Issue #1036), Abstand je
+# Dienst fest im Code (Nominatim höchstens eine Anfrage je Sekunde). Bewusst ohne Umgebungsvariable: False nur in
+# Tests (settings_test.py).
+DIENSTE_DROSSEL = True
 # Löschabgleich (Issue #787): Kopie und Text eines gesperrten Dokuments nach so vielen Tagen löschen
 FILE_PURGE_AFTER_DAYS = int(os.environ.get("FILE_PURGE_AFTER_DAYS", "30"))
 # Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich

@@ -89,20 +89,43 @@ class TestHostSchluessel:
     @pytest.mark.parametrize(
         ("adresse", "schluessel"),
         [
-            ("https://RIS.example.de:443/oparl", "https://ris.example.de"),
-            ("https://ris.example.de./a.pdf", "https://ris.example.de"),
-            ("https://nutzer:geheim@ris.example.de/x", "https://ris.example.de"),
-            ("http://ris.example.de:80/", "http://ris.example.de"),
-            ("http://ris.example.de/", "http://ris.example.de"),
-            ("https://ris.example.de:8443/", "https://ris.example.de:8443"),
-            ("http://ris.example.de:443/", "http://ris.example.de:443"),
-            ("https://[2001:db8::1]:443/", "https://[2001:db8::1]"),
-            ("https://bürgerinfo.example.de/bi/", "https://xn--brgerinfo-q9a.example.de"),
+            ("https://RIS.example.de:443/oparl", "ris.example.de"),
+            ("https://ris.example.de./a.pdf", "ris.example.de"),
+            ("https://nutzer:geheim@ris.example.de/x", "ris.example.de"),
+            ("http://ris.example.de:80/", "ris.example.de"),
+            ("http://ris.example.de/", "ris.example.de"),
+            ("https://ris.example.de:8443/", "ris.example.de"),
+            ("http://ris.example.de:443/", "ris.example.de"),
+            ("https://[2001:db8::1]:443/", "2001:db8::1"),
+            ("https://bürgerinfo.example.de/bi/", "xn--brgerinfo-q9a.example.de"),
         ],
     )
-    def test_robots_schluessel_ohne_standardport(self, adresse: str, schluessel: str) -> None:
-        """Eine robots.txt je Schema, Host und Port (RFC 9309): Standardport und Schreibweise laden sie nicht neu."""
+    def test_robots_schluessel_je_hostname(self, adresse: str, schluessel: str) -> None:
+        """Ein Eintrag je Hostname (#1036): Schema, Port und Schreibweise laden die robots.txt nicht neu."""
         assert host_key(adresse) == schluessel
+        assert host_key(adresse) == host_of(adresse), "derselbe Schlüssel wie der Takt je Server"
+
+    async def test_eine_robots_txt_je_hostname_fuer_alle_ports(self, echte_robots: None) -> None:
+        """Gleicher Hostname über andere Schreibweise, Schema und Port: genau ein Abruf der robots.txt (#1036)."""
+        abrufe: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            abrufe.append(str(request.url))
+            return httpx.Response(200, text="User-agent: *\nDisallow: /intern/\n")
+
+        gate = RobotsGate()
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            for adresse in (
+                "https://ris.example.de/oparl/system",
+                "https://RIS.example.de:443/intern/a",
+                "http://ris.example.de/oparl/body",
+                "https://ris.example.de.:8443/intern/b",
+            ):
+                await gate.decide(http, adresse, user_agent=UA, kind=KIND_API)
+            gesperrt = await gate.decide(http, "http://ris.example.de:8080/intern/c", user_agent=UA, kind=KIND_API)
+
+        assert abrufe == ["https://ris.example.de/robots.txt"], "ein Eintrag, geladen von der ersten Adresse"
+        assert gesperrt.blocked, "dieselbe robots.txt gilt für jeden Port des Hostnamens"
 
     def test_internationaler_name_wie_in_weiterleitungen(self) -> None:
         assert host_of("https://bürgerinfo.example.de/bi/") == host_of(str(httpx.URL("https://bürgerinfo.example.de/")))
@@ -484,7 +507,10 @@ class TestSondierung:
         assert r.ua_blocked is False
         assert any("weitergeleitet (HTTP 302 nach /bi/start.asp)" in n and "unklar" in n for n in r.notes)
 
-    @pytest.mark.parametrize(("status", "gesperrt"), [(200, True), (204, True), (404, False), (403, False)])
+    @pytest.mark.parametrize(
+        ("status", "gesperrt"),
+        [(200, True), (204, True), (301, False), (302, False), (307, False), (308, False), (404, False), (403, False)],
+    )
     async def test_vergleichsanfrage_nur_2xx_ist_ua_sperre(
         self, monkeypatch: pytest.MonkeyPatch, status: int, gesperrt: bool
     ) -> None:
@@ -495,7 +521,8 @@ class TestSondierung:
                 return httpx.Response(404)
             if "mandari" in request.headers.get("User-Agent", ""):
                 return httpx.Response(403)
-            return httpx.Response(status)
+            # Weiterleitungen mit Ziel: Die Vergleichsanfrage folgt ihnen nicht, das Ergebnis bleibt unklar (#1036)
+            return httpx.Response(status, headers={"Location": "/anmelden"} if 300 <= status < 400 else {})
 
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             r = await rp.probe_url("https://ris.example.org/", client, user_agent=UA)
