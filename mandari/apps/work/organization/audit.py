@@ -52,7 +52,14 @@ def member_repr(member: Membership) -> str:
     return f"Mitgliedschaft {user.get_full_name() or user.email}"
 
 
-def _log_member(action: str, member: Membership, changes: dict[str, Any], actor: Membership | None) -> Any:
+#: Objekt-Beschreibung ohne Personenbezug, etwa für eine abgelehnte Registrierungsanfrage: Das Konto wird danach
+#: gelöscht (Issue #238), die Änderungshistorie ist unveränderbar
+NEUTRAL_REPR = "Registrierungsanfrage"
+
+
+def _log_member(
+    action: str, member: Membership, changes: dict[str, Any], actor: Membership | None, *, neutral: bool = False
+) -> Any:
     return faction_audit.log_event(
         action,
         member,
@@ -60,7 +67,7 @@ def _log_member(action: str, member: Membership, changes: dict[str, Any], actor:
         membership=actor,
         changes=changes,
         is_internal=False,
-        object_repr=member_repr(member),
+        object_repr=NEUTRAL_REPR if neutral else member_repr(member),
     )
 
 
@@ -109,21 +116,24 @@ def log_member_access(
     new: str,
     *,
     action: str = "update",
-    roles: Iterable[str] = (),
+    roles_before: Iterable[str] = (),
+    roles_after: Iterable[str] = (),
     actor: Membership | None = None,
     reason: str = "",
+    neutral: bool = False,
 ) -> Any:
     """
-    Zugang einer Mitgliedschaft geändert, z. B. „aktiv“ → „deaktiviert“; beim Entfernen (``action="delete"``)
-    stehen die bisherigen Rollen mit im Eintrag.
+    Zugang einer Mitgliedschaft geändert, z. B. „aktiv“ → „deaktiviert“. Rollen, die dabei wirksam werden
+    (Freischaltung) oder entfallen (Entfernen), stehen mit im Eintrag. ``neutral``: ohne Namen und Rollen,
+    nur „Registrierungsanfrage“ mit der internen Kennung.
     """
     changes: dict[str, Any] = {}
     _diff(changes, "Zugang", old, new)
-    if action == "delete":
-        _diff(changes, "Rollen", _text(roles), NONE)
+    if not neutral:
+        _diff(changes, "Rollen", _text(roles_before), _text(roles_after))
     if not changes:
         return None
-    return _log_member(action, member, _with_reason(changes, reason), actor)
+    return _log_member(action, member, _with_reason(changes, reason), actor, neutral=neutral)
 
 
 def log_sworn_in(member: Membership, old: bool, new: bool, *, actor: Membership | None = None) -> Any:

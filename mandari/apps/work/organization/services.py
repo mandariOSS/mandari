@@ -671,14 +671,25 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     member.is_active = True
     member.registration_requested_at = None
     member.save()
-    audit.log_member_access(member, before, "aktiv", actor=actor)
+    audit.log_member_access(member, before, "aktiv", roles_after=_pending_roles(member, before), actor=actor)
+
+
+PENDING_TEXT = "Registrierungsanfrage offen"
 
 
 def _access_text(member: Membership) -> str:
     """Zugang für die Änderungshistorie: aktiv, deaktiviert oder offene Registrierungsanfrage."""
     if member.is_active:
         return "aktiv"
-    return "Registrierungsanfrage offen" if member.registration_requested_at else "deaktiviert"
+    return PENDING_TEXT if member.registration_requested_at else "deaktiviert"
+
+
+def _pending_roles(member: Membership, before: str) -> list[str]:
+    """
+    Rollen einer freigeschalteten Registrierungsanfrage: Die Standardrolle hängt schon an der Anfrage, steht aber
+    erst mit der Freischaltung in der Historie (offene Anfragen dort ohne Personenbezug).
+    """
+    return audit.role_names(member.roles.all()) if before == PENDING_TEXT else []
 
 
 def _access_variant(member: Membership) -> emails.AccessVariant:
@@ -728,7 +739,7 @@ def remove_member(organization: Organization, member: Membership, actor_user: Us
         _access_text(member),
         "entfernt",
         action="delete",
-        roles=audit.role_names(member.roles.all()),
+        roles_before=audit.role_names(member.roles.all()),
         actor=_active_membership(organization, actor_user),
     )
     member.delete()
@@ -832,9 +843,11 @@ def join_by_self_registration(organization: Organization, user: User) -> Members
         # Nie automatisch Administrator – auch nicht bei einer älteren Einstellung
         if created and default_role is not None and not default_role.is_admin:
             membership.roles.add(default_role)
-            audit.log_member_roles(
-                membership, [], [default_role.name], actor=membership, reason="Selbstregistrierung (Standardrolle)"
-            )
+            if membership.is_active:
+                # Offene Anfragen erscheinen erst mit der Freischaltung in der Historie (approve_registration)
+                audit.log_member_roles(
+                    membership, [], [default_role.name], actor=membership, reason="Selbstregistrierung (Standardrolle)"
+                )
     if created:
         announce_self_registration(membership)
     return membership
@@ -887,10 +900,13 @@ def approve_registration(membership: Membership, actor: Membership | None = None
     Reaktivieren); liefert, ob die Mail rausging.
     """
     before = _access_text(membership)
+    roles = _pending_roles(membership, before)
     membership.is_active = True
     membership.registration_requested_at = None
     membership.save(update_fields=["is_active", "registration_requested_at", "updated_at"])
-    audit.log_member_access(membership, before, "aktiv", actor=actor, reason="Registrierungsanfrage freigeschaltet")
+    audit.log_member_access(
+        membership, before, "aktiv", roles_after=roles, actor=actor, reason="Registrierungsanfrage freigeschaltet"
+    )
     return _announce_access(membership, "approved", actor)
 
 
@@ -902,9 +918,8 @@ def reject_registration(membership: Membership, reason: str = "") -> tuple[str, 
     user = membership.user
     organization = membership.organization
     name = user.get_display_name()
-    audit.log_member_access(
-        membership, _access_text(membership), "abgelehnt", action="delete", reason="Registrierungsanfrage abgelehnt"
-    )
+    # Ohne Personenbezug: Das Konto wird danach automatisch gelöscht (Issue #238), die Historie ist unveränderbar
+    audit.log_member_access(membership, PENDING_TEXT, "abgelehnt", action="delete", neutral=True)
     membership.delete()
     # Stempel für die automatische Löschung verwaister Konten (Issue #238)
     user.registration_rejected_at = timezone.now()

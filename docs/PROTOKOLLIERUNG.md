@@ -59,9 +59,11 @@ Hash).
   sowie erzeugte Dokumente mit nichtöffentlichem Inhalt (Tagesordnung, interne Niederschrift,
   Beschlussauszüge).
 - **Session-API:** Listen der Session-API (Sitzungen, Vorlagen) liefern Nichtöffentliches nur
-  angemeldeten Personen mit dem Recht dazu, nie API-Token. Je nichtöffentlichem Objekt der Antwort
-  entsteht ein Lesezugriff mit dem Vermerk „Session-API v1“ bzw. „Session-API (abgekündigter Pfad)“,
-  zusammengefasst wie unten und getrennt von Aufrufen in der Oberfläche (Issue #366).
+  angemeldeten Personen mit dem Recht dazu, nie API-Token. Je Abruf entsteht **ein** Lesezugriff, etwa
+  „Vorlagen (Session-API v1)“, mit Anzahl, Referenzen und Kennungen der nichtöffentlichen Objekte der
+  Antwort; so kostet auch eine Seite mit 200 Vorlagen nur einen Eintrag. Derselbe Abruf mit denselben
+  Objekten wird wie unten zusammengefasst, mit eigenem Merker getrennt von der Oberfläche. Der Filter
+  „Objekt“ der Protokollansicht findet diese Einträge nicht; die Kennungen stehen im Export (Issue #366).
 - **Nur die Referenz:** Statt eines Betreffs steht eine neutrale Beschreibung im Protokoll,
   etwa „Vorlage V/2026/0042“ oder „TOP N1, Sitzung vom 12.03.2026“. Inhalte werden nie
   gespeichert.
@@ -135,7 +137,16 @@ Fraktionssitzungen im Work-Portal) und das Sicherheitsprotokoll. In der Änderun
 stehen seit Issue #366 auch Rollen und Rechte: zugewiesene und entzogene Rollen einer Mitgliedschaft
 (auch aus Einladung, Selbstregistrierung und genehmigtem Änderungsantrag), zusätzliche und verweigerte
 Einzelrechte, Anlegen, Ändern, Zurücksetzen und Löschen einer Rolle mit erteilten und entzogenen Rechten,
-Deaktivieren, Reaktivieren, Freischalten und Entfernen einer Mitgliedschaft sowie die Vereidigung.
+Deaktivieren, Reaktivieren, Freischalten und Entfernen einer Mitgliedschaft sowie die Vereidigung. Offene
+Registrierungsanfragen erscheinen erst mit der Freischaltung namentlich; eine abgelehnte Anfrage steht nur
+neutral als „Registrierungsanfrage“ mit ihrer internen Kennung im Protokoll, denn das Konto wird danach
+gelöscht.
+
+**Grenze:** Erfasst werden die Wege des Work-Portals (Mitgliederverwaltung, Rollen, Einladungen,
+Selbstregistrierung, Änderungsanträge). Rollen- und Rechteänderungen über die Django-Administration
+(Mitgliedschaften und Rollen), über Verwaltungsbefehle (`setup_roles`, `fix_permissions --fix`) und die
+Standardrollen beim Anlegen einer Organisation (`create_default_roles`) schreiben keinen Eintrag in die
+Änderungshistorie der Fraktion. Diese Wege sind dem Plattformbetrieb vorbehalten.
 
 - Jeder Eintrag erhält eine **laufende Nummer** (`seq`), den **Hash seines Vorgängers**
   (`prev_hash`; der erste Eintrag verweist auf 64 Nullen) und seinen **eigenen Hash**

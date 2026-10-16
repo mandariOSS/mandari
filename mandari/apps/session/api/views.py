@@ -167,14 +167,22 @@ class SessionAPIMixin(OParlMixin):
             return False
         return SessionPermissionChecker(session_user).has_permission(permission)
 
-    def log_non_public_reads(self, request, tenant: SessionTenant, session_user, instances, umfang: str) -> None:
+    def log_non_public_reads(
+        self, request, tenant: SessionTenant, session_user, instances, liste: str, umfang: str
+    ) -> None:
         """Nichtöffentliches der Antwort als Lesezugriff protokollieren (Issue #366); nur Personen erhalten es."""
         if session_user is None or not instances:
             return
         from apps.session import audit
 
         audit.log_api_reads(
-            request, instances, tenant=tenant, user=session_user, umfang=umfang, zugriff=audit.API_READ_LEGACY
+            request,
+            instances,
+            tenant=tenant,
+            user=session_user,
+            liste=liste,
+            umfang=umfang,
+            zugriff=audit.API_READ_LEGACY,
         )
 
 
@@ -227,7 +235,12 @@ class SessionMeetingListAPIView(SessionAPIMixin, View):
 
         # Lesezugriffe auf Nichtöffentliches wie in der Session-API v1 (Issue #366)
         self.log_non_public_reads(
-            request, tenant, session_user, [m for m in meetings if not m.is_public], "nichtöffentliche Sitzung"
+            request,
+            tenant,
+            session_user,
+            [m for m in meetings if not m.is_public],
+            "Sitzungen",
+            "nichtöffentliche Sitzungen",
         )
         return self.json_response(
             {
@@ -288,7 +301,12 @@ class SessionPaperListAPIView(SessionAPIMixin, View):
 
         # Lesezugriffe auf Nichtöffentliches wie in der Session-API v1 (Issue #366)
         self.log_non_public_reads(
-            request, tenant, session_user, [p for p in papers if not p.is_public], "nichtöffentliche Vorlage"
+            request,
+            tenant,
+            session_user,
+            [p for p in papers if not p.is_public],
+            "Vorlagen",
+            "nichtöffentliche Vorlagen",
         )
         return self.json_response(
             {

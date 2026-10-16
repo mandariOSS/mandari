@@ -42,11 +42,12 @@ auf `…/applications/submit/` enthält die URL unter `feedback`.
   das gilt auch für die abgekündigten Pfade.
 - Ohne beides: anonym, nur öffentliche Daten.
 
-**Protokoll:** Erhält eine angemeldete Person nichtöffentliche Sitzungen oder Vorlagen, steht je
-nichtöffentlichem Objekt der Antwort ein Lesezugriff im Prüfprotokoll des Mandanten (Vermerk
-„Session-API v1“, auf den abgekündigten Pfaden „Session-API (abgekündigter Pfad)“). Wie in der
-Oberfläche nur mit Referenz, zusammengefasst je Person und Objekt für zehn Minuten und abschaltbar mit dem
-Schalter für Lesezugriffe (Issue #366, [PROTOKOLLIERUNG.md](PROTOKOLLIERUNG.md)).
+**Protokoll:** Erhält eine angemeldete Person nichtöffentliche Sitzungen oder Vorlagen, steht je Abruf
+ein Lesezugriff im Prüfprotokoll des Mandanten, etwa „Vorlagen (Session-API v1)“ bzw. auf den abgekündigten
+Pfaden „Vorlagen (Session-API, abgekündigter Pfad)“. Er nennt Anzahl, Referenzen und Kennungen der
+nichtöffentlichen Objekte der Antwort, nie Inhalte. Derselbe Abruf mit denselben Objekten innerhalb von zehn
+Minuten schreibt keinen weiteren Eintrag; der Schalter für Lesezugriffe gilt auch hier (Issue #366,
+[PROTOKOLLIERUNG.md](PROTOKOLLIERUNG.md)).
 
 Vor der Freischaltung der OParl-Schnittstelle (Einstellungen) antwortet der Mandant anonymen Aufrufern
 mit 404. Sitzungen bzw. Vorlagen lesen dann nur API-Token mit `can_read_meetings` bzw. `can_read_papers`

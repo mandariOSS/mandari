@@ -170,3 +170,45 @@ def test_eintrag_ueber_die_oberflaeche_mit_handelnder_person(
     assert eintrag.changes["Rollen"]["neu"] == "Beisitz"
     assert eintrag.membership == admin
     assert eintrag.ip_address == "192.0.2.10"
+
+
+def test_registrierungsanfragen_ohne_personenbezug_bis_zur_freischaltung(org: Any, admin: Any) -> None:
+    """
+    Offene Anfragen stehen nicht namentlich in der unveränderbaren Historie; eine abgelehnte nur neutral mit
+    interner Kennung (das Konto wird danach gelöscht), eine freigeschaltete mit Person und Standardrolle.
+    """
+    import json
+
+    standard = Role.objects.create(organization=org, name="Mitglied (Registrierung)")
+    org.registration_enabled = True
+    org.registration_auto_approve = False
+    org.registration_default_role = standard
+    org.save()
+
+    abgelehnt: Any = UserFactory(email="abgelehnt@example.org", first_name="Anna", last_name="Abgelehnt")  # type: ignore[no-untyped-call]
+    anfrage = services.join_by_self_registration(org, abgelehnt)
+    assert anfrage.is_active is False
+    assert entries(org, "Membership") == []
+
+    anfrage_id = anfrage.id
+    services.reject_registration(anfrage, "Kein Mitglied der Fraktion")
+    (eintrag,) = entries(org, "Membership")
+    assert (eintrag.action, eintrag.object_id, eintrag.object_repr) == ("delete", anfrage_id, "Registrierungsanfrage")
+    assert eintrag.changes == {"Zugang": {"alt": "Registrierungsanfrage offen", "neu": "abgelehnt"}}
+    gespeichert = json.dumps(
+        [eintrag.object_repr, eintrag.changes, eintrag.actor_label, eintrag.user_agent], ensure_ascii=False
+    )
+    for spur in ("abgelehnt@example.org", "Anna", "Abgelehnt", "Kein Mitglied"):
+        assert spur not in gespeichert
+
+    neu: Any = UserFactory(email="neu@example.org")  # type: ignore[no-untyped-call]
+    offen = services.join_by_self_registration(org, neu)
+    assert len(entries(org, "Membership")) == 1
+    services.approve_registration(offen, actor=admin)
+    freigeschaltet = entries(org, "Membership")[-1]
+    assert freigeschaltet.object_repr == "Mitgliedschaft neu@example.org"
+    assert freigeschaltet.changes == {
+        "Zugang": {"alt": "Registrierungsanfrage offen", "neu": "aktiv"},
+        "Rollen": {"alt": "", "neu": "Mitglied (Registrierung)"},
+        "Anlass": {"alt": "", "neu": "Registrierungsanfrage freigeschaltet"},
+    }

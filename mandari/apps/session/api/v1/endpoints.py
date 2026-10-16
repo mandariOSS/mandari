@@ -87,7 +87,7 @@ def _org(obj: Any) -> dict[str, Any] | None:
 
 
 def _log_non_public_reads(
-    request: HttpRequest, tenant: SessionTenant, principal: Principal, instances: list[Any], umfang: str
+    request: HttpRequest, tenant: SessionTenant, principal: Principal, instances: list[Any], liste: str, umfang: str
 ) -> None:
     """
     Nichtöffentliches der Antwort als Lesezugriff protokollieren wie in der Oberfläche (Issue #366).
@@ -97,7 +97,13 @@ def _log_non_public_reads(
     if principal.session_user is None or not instances:
         return
     audit.log_api_reads(
-        request, instances, tenant=tenant, user=principal.session_user, umfang=umfang, zugriff=audit.API_READ_V1
+        request,
+        instances,
+        tenant=tenant,
+        user=principal.session_user,
+        liste=liste,
+        umfang=umfang,
+        zugriff=audit.API_READ_V1,
     )
 
 
@@ -167,7 +173,9 @@ def meetings(
         ):
             item["internal_notes"] = meeting.get_internal_notes_decrypted()
         data.append(item)
-    _log_non_public_reads(request, tenant, principal, [m for m in rows if not m.is_public], "nichtöffentliche Sitzung")
+    _log_non_public_reads(
+        request, tenant, principal, [m for m in rows if not m.is_public], "Sitzungen", "nichtöffentliche Sitzungen"
+    )
     return {"data": data, "meta": _meta(total, limit, offset, principal)}
 
 
@@ -214,7 +222,7 @@ def papers(
         data.append(item)
     if non_public:
         _log_non_public_reads(
-            request, tenant, principal, [p for p in rows if not p.is_public], "nichtöffentliche Vorlage"
+            request, tenant, principal, [p for p in rows if not p.is_public], "Vorlagen", "nichtöffentliche Vorlagen"
         )
     return {"data": data, "meta": _meta(total, limit, offset, principal)}
 
