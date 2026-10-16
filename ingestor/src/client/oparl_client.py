@@ -84,6 +84,8 @@ class FetchResult:
     # Inhalt einer Antwort mit HTTP 404, wenn er JSON ist, etwa das Fehlerobjekt von SD.NET RIM (Issue #1034);
     # ``data`` bleibt bei 404 leer
     error_data: Any = None
+    #: Der letzte Versuch endete in einer Zeitüberschreitung oder mit HTTP 504 (langsame Listen, Issue #1033)
+    timed_out: bool = False
 
 
 #: Fehlerantworten (HTTP 404) bis zu dieser Größe liest der Client als JSON, größere (HTML-Seiten) nicht
@@ -129,6 +131,11 @@ class ListFetchError(Exception):
         self.error_kind = result.error_kind
         page = "" if page_url == list_url else f" (Seite {page_url})"
         super().__init__(f"Liste {list_url}{page} nicht abrufbar: {result.error}")
+
+    @property
+    def timed_out(self) -> bool:
+        """Abbruch nach Zeitüberschreitung oder HTTP 504 (Issue #1033)."""
+        return self.result.timed_out
 
 
 class ListMissingError(Exception):
@@ -680,6 +687,7 @@ class OParlClient:
         if blocked is not None:
             return blocked
         last_error: str | None = None
+        timed_out = False
         circuit_breaker = self._get_circuit_breaker(url)
 
         # Check if circuit is open
@@ -706,6 +714,7 @@ class OParlClient:
                         return FetchResult(url=url, data=None, status_code=404, error="Not found")
                     if status_code >= 500:
                         last_error = f"HTTP {status_code}"
+                        timed_out = status_code == 504  # Gateway: Server hat nicht rechtzeitig geantwortet
                         metrics.record_http_error(self.source_name, f"http_{status_code}")
                         self._note_server_error(url, status_code)
                     elif status_code == 403:
@@ -725,7 +734,8 @@ class OParlClient:
 
                 except (httpx.RequestError, httpx.TimeoutException) as e:
                     last_error = str(e)
-                    error_type = "timeout" if isinstance(e, httpx.TimeoutException) else "request_error"
+                    timed_out = isinstance(e, httpx.TimeoutException)
+                    error_type = "timeout" if timed_out else "request_error"
                     metrics.record_http_error(self.source_name, error_type)
 
                 # Exponential backoff
@@ -735,6 +745,7 @@ class OParlClient:
 
         except Exception as e:
             last_error = str(e)
+            timed_out = False
             metrics.record_http_error(self.source_name, "unknown")
 
         self.stats.errors += 1
@@ -746,6 +757,7 @@ class OParlClient:
             status_code=0,
             error=f"Max retries exceeded: {last_error}",
             error_kind=ERROR_KIND_SERVER_ERROR_SERIES if series else None,
+            timed_out=timed_out,
         )
 
     async def _do_fetch(
@@ -845,6 +857,19 @@ class OParlClient:
             fetch_time=fetch_time,
         )
 
+    def filters_list(self, url: str) -> bool:
+        """
+        Fragt ``fetch_list`` diese Liste mit ``modified_since`` an? Nein, wenn der Host den Filter abgelehnt oder
+        ignoriert hat (``_modified_since_unsupported``, außer mit ``carry_modified_since``) oder die Liste auf den
+        Filter mit HTTP 404 bzw. einem Fehlerobjekt antwortete (``_list_modified_since_unsupported``). Nur dann lohnt
+        das Nachholen einer langsamen Liste in Zeitscheiben (Issue #1033).
+        """
+        url = self._with_list_params(url, self.list_params)
+        host = urlparse(url).netloc
+        if url in self._list_modified_since_unsupported:
+            return False
+        return self.carry_modified_since or host not in self._modified_since_unsupported
+
     async def fetch_list(
         self,
         url: str,
@@ -853,6 +878,8 @@ class OParlClient:
         *,
         report_missing: bool = False,
         next_page: str | None = None,
+        modified_until: datetime | None = None,
+        strict_filter: bool = False,
     ) -> AsyncIterator[list[dict[str, Any]]]:
         """
         Fetch a paginated OParl list.
@@ -874,6 +901,13 @@ class OParlClient:
                 anzufragen. Es gelten die Regeln für Folgeseiten (Fehler und Teilantwort brechen mit
                 ``ListFetchError`` ab); ``url`` bleibt die Adresse der Liste, ``modified_since`` gilt nicht. Ist
                 ``next_page`` die Adresse der Liste selbst (Liste im Kreis), bricht sie ohne Anfrage ab.
+            modified_until: Obergrenze ``modified_until`` (OParl 1.1, Abschnitt 2.5.5), nur mit ``strict_filter``.
+            strict_filter: Zeitscheibe (Issue #1033): Die Filter ``modified_since`` und ``modified_until`` stehen auf
+                jeder Seite, auch wenn ``links.next`` sie verliert, und die Liste wird nie ohne Filter angefragt.
+                Kein Rückfall bei HTTP 400/401/403 oder 404 (Fehler bzw. ``ListMissingError``), kein Befund „filtert
+                nicht“ für den Host; ob die Quelle den Filter beachtet, prüft der Aufrufer an den Objekten. Ein
+                OParl-Fehlerobjekt auf der ersten Seite ist ``ListMissingError`` (mit ``report_missing``) oder
+                ``ListFetchError``, nie eine leere Scheibe.
 
         Beantwortet SD.NET RIM die gefilterte erste Seite mit HTTP 404 und Code 802, ist die Liste leer und
         vollständig (Issue #1034, ``filtered_empty_lists``).
@@ -881,6 +915,8 @@ class OParlClient:
         Yields:
             Lists of items from each page
         """
+        if strict_filter and modified_since is None and modified_until is None:
+            raise ValueError("Zeitscheibe ohne Grenzen: die Liste würde ohne Filter angefragt")
         requested_url = url
         self.filtered_empty_lists.discard(requested_url)
         self.page_limit_lists.pop(requested_url, None)
@@ -908,6 +944,9 @@ class OParlClient:
                 console.print(f"[red]Liste {url} läuft im Kreis: die erste Seite verweist auf sich selbst[/red]")
                 self._health(next_page).note_failed_list(url)
                 raise ListFetchError(url, next_page, self._loop_result(next_page))
+        elif strict_filter:
+            # Zeitscheibe (Issue #1033): immer mit Filter, unabhängig vom Befund des Hosts
+            current_url = self._append_filters(url, modified_since, modified_until)
         # Mit carry_modified_since gilt die Quelle als filterfähig, auch wenn ein früherer Lauf den Host
         # (vor dem Schalter) als „ohne Filter“ vermerkt hat
         elif (
@@ -931,6 +970,7 @@ class OParlClient:
             # Early-Stop hält den Mehraufwand klein.
             if (
                 tried_modified_since
+                and not strict_filter
                 and pages_fetched == 0
                 and result.status_code in (400, 401, 403)
                 and result.error_kind != ERROR_KIND_UA_BLOCKED  # Sperre, kein Capability-Problem
@@ -966,7 +1006,7 @@ class OParlClient:
             first_page_missing = pages_fetched == 0 and (
                 result.status_code == 404 or (not result.error and is_oparl_error(result.data))
             )
-            if first_page_missing and tried_modified_since:
+            if first_page_missing and tried_modified_since and not strict_filter:
                 console.print(
                     f"[yellow]{url}: Antwort auf modified_since "
                     f"({'HTTP 404' if result.status_code == 404 else 'Fehlerobjekt'}) — Liste ohne Filter[/yellow]"
@@ -1016,6 +1056,17 @@ class OParlClient:
             # durch _extract_items laufen (Issue #122).
             if is_oparl_error(result.data):
                 console.print(f"[red]OParl-Fehlerobjekt von {current_url}: {oparl_error_message(result.data)}[/red]")
+                if strict_filter:
+                    # Zeitscheibe (Issue #1033): Ein Fehlerobjekt statt der Liste ist keine leere Scheibe, sonst rückte
+                    # der Fortschritt über ihre Objekte hinweg. Leere Treffer von SD.NET RIM (404, 802) gelten oben.
+                    self._health(current_url).note_failed_list(url)
+                    failed = FetchResult(
+                        url=current_url,
+                        data=None,
+                        status_code=result.status_code,
+                        error=f"Fehlerobjekt statt Liste ({oparl_error_message(result.data)})",
+                    )
+                    raise ListFetchError(url, current_url, failed)
                 break
 
             # Server, die modified_since stillschweigend ignorieren (OParl 1.0,
@@ -1024,6 +1075,7 @@ class OParlClient:
             # merken, damit Folgelisten den toten Parameter nicht mehr senden.
             if (
                 tried_modified_since
+                and not strict_filter
                 and pages_fetched == 0
                 and not self.carry_modified_since
                 and isinstance(result.data, dict)
@@ -1051,9 +1103,12 @@ class OParlClient:
             # Get next page URL (server preserves filter params in links.next)
             if isinstance(result.data, dict):
                 links = result.data.get("links", {})
-                current_url = links.get("next")
+                current_url = links.get("next") if isinstance(links, dict) else None
+                if current_url and strict_filter:
+                    # Zeitscheibe: Folgeseiten nie ohne Filter, fehlende Filter wieder anhängen (Issue #1033)
+                    current_url = self._append_filters(str(current_url), modified_since, modified_until, keep=True)
                 # Quelle filtert, verliert den Filter aber in links.next: wieder anhängen (ALLRIS)
-                if (
+                elif (
                     current_url
                     and tried_modified_since
                     and modified_since is not None
@@ -1172,6 +1227,29 @@ class OParlClient:
         params["modified_since"] = [modified_since.isoformat(timespec="seconds")]
         new_query = urlencode(params, doseq=True)
         return urlunparse(parsed._replace(query=new_query))
+
+    @staticmethod
+    def _append_filters(
+        url: str, modified_since: datetime | None, modified_until: datetime | None, *, keep: bool = False
+    ) -> str:
+        """
+        ``modified_since`` und ``modified_until`` einer Zeitscheibe an die Adresse hängen (Issue #1033), im Format von
+        ``_append_modified_since``. ``keep``: nur fehlende Filter ergänzen (Folgeseiten aus ``links.next`` behalten
+        die Werte der Quelle).
+        """
+        parsed = urlparse(url)
+        params = parse_qs(parsed.query, keep_blank_values=True)
+        changed = False
+        for name, stamp in (("modified_since", modified_since), ("modified_until", modified_until)):
+            if stamp is None or (keep and params.get(name)):
+                continue
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=UTC)
+            params[name] = [stamp.isoformat(timespec="seconds")]
+            changed = True
+        if not changed:
+            return url
+        return urlunparse(parsed._replace(query=urlencode(params, doseq=True)))
 
     @staticmethod
     def _extract_items(data: dict[str, Any] | list | Any) -> list[dict[str, Any]]:

@@ -99,6 +99,8 @@ class Orchestrator:
         self.processor = SimpleNamespace(clear_id_cache=lambda: None)
         self._parallel_mode = False
         self.laeufe: list[tuple[str, bool]] = []
+        #: Standardfenster je Lauf, wie der Daemon es weitergibt (Issue #1033)
+        self.fenster: list[Any] = []
         self.sperren: dict[str, asyncio.Event] = {}
         self.aenderungen: dict[str, int] = {}
         self.fehler: set[str] = set()
@@ -110,9 +112,10 @@ class Orchestrator:
         self.sperren[name] = asyncio.Event()
         return self.sperren[name]
 
-    async def sync_body_url(self, url: str, full: bool = False) -> SyncResult:
+    async def sync_body_url(self, url: str, full: bool = False, default_window: Any = None) -> SyncResult:
         name = self.name_von(url)
         self.laeufe.append((name, full))
+        self.fenster.append(default_window)
         sperre = self.sperren.get(name)
         if sperre is not None:
             await sperre.wait()
@@ -375,6 +378,19 @@ async def test_geplanter_vollabgleich_abgeschaltet(uhr: Uhr) -> None:
     scheduler, orchestrator, _ = daemon(uhr, [a], full_sync_hour=99)
     await durchlauf(scheduler)
     assert orchestrator.laeufe == [("A", False)]
+
+
+async def test_vollabgleich_in_zeitscheiben_bekommt_das_standardfenster(uhr: Uhr) -> None:
+    """Issue #1033: Ohne eigenes Fenster endet der Vollabgleich in Zeitscheiben mit dem Standardfenster des Daemons;
+    der Daemon gibt es an den Orchestrator weiter."""
+    uhr.jetzt = berlin(DIENSTAG, 1, 0)
+    a = quelle("A", sync_config={"full_sync_slices": {"days": 30, "since": "2010-01-01"}})
+    scheduler, orchestrator, _ = daemon(uhr, [a])
+    await durchlauf(scheduler)
+    assert orchestrator.laeufe == [("A", True)]
+    assert orchestrator.fenster == [scheduler.default_window]
+    assert scheduler.default_window is not None
+    assert scheduler.default_window.closes_at(uhr.jetzt) == berlin(DIENSTAG, 6, 0)
 
 
 async def test_samstag_mit_fester_uhr_zwoelf_laeufe(uhr: Uhr) -> None:

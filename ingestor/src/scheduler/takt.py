@@ -350,5 +350,7 @@ def full_sync_due(
         return False
     if attempted is not None and attempted >= opened:
         return False
-    planned, _ = options.full_sync_plan(True, now=now, last_full_sync=last_successful_full_sync)
+    planned, _ = options.full_sync_plan(
+        True, now=now, last_full_sync=last_successful_full_sync, default_window=default_window
+    )
     return planned

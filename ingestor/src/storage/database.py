@@ -197,6 +197,15 @@ SYNC_CONFIG_TIMED_LISTS_KEY: Final = "timed_lists"
 #: Schlüssel in ``OParlSource.sync_config``: Listen, die es bei der Quelle nicht gibt, mit dem Zeitpunkt ihrer
 #: letzten Prüfung (Adresse -> Zeitpunkt in UTC, ISO 8601, Issue #1025)
 SYNC_CONFIG_MISSING_LISTS_KEY: Final = "missing_lists"
+#: Schlüssel in ``OParlSource.sync_config``: Fortschritt des Vollabgleichs in Zeitscheiben je Liste (Adresse -> Beginn
+#: der ersten nicht vollständig gelesenen Scheibe, UTC, ISO 8601; Issue #1033)
+SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY: Final = "full_sync_progress"
+#: Schlüssel in ``OParlSource.sync_config``: Befund „Server ignoriert den Filter einer Zeitscheibe“ (``checked_at``,
+#: ``list``, ``detail``); solange er gilt, läuft der Vollabgleich der Quelle nicht in Zeitscheiben (Issue #1033)
+SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY: Final = "full_sync_filter_ignored"
+#: Schlüssel in ``OParlSource.sync_config``: optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind (Adresse ->
+#: ``failures``, ``until``, ``since``, ``reason``; Issue #1033)
+SYNC_CONFIG_SLOW_LISTS_KEY: Final = "slow_lists"
 
 
 def _utc_stamp(value: Any) -> datetime | None:
@@ -234,6 +243,41 @@ def timed_lists_of(sync_config: Any) -> set[str]:
     return {url for url in stored if isinstance(url, str) and url}
 
 
+def full_sync_progress_of(sync_config: Any) -> dict[str, datetime]:
+    """Fortschritt des Vollabgleichs in Zeitscheiben (``sync_config["full_sync_progress"]``); Ungültiges zählt nicht."""
+    if not isinstance(sync_config, dict):
+        return {}
+    stored = sync_config.get(SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY)
+    if not isinstance(stored, dict):
+        return {}
+    progress: dict[str, datetime] = {}
+    for url, value in stored.items():
+        stamp = _utc_stamp(value)
+        if isinstance(url, str) and url and stamp is not None:
+            progress[url] = stamp
+    return progress
+
+
+def slow_lists_of(sync_config: Any) -> dict[str, dict[str, Any]]:
+    """Ausgesetzte langsame Listen (``sync_config["slow_lists"]``): Adresse -> Eintrag; nur Einträge als Objekt."""
+    if not isinstance(sync_config, dict):
+        return {}
+    stored = sync_config.get(SYNC_CONFIG_SLOW_LISTS_KEY)
+    if not isinstance(stored, dict):
+        return {}
+    return {
+        url: dict(entry) for url, entry in stored.items() if isinstance(url, str) and url and isinstance(entry, dict)
+    }
+
+
+def slice_filter_ignored_of(sync_config: Any) -> dict[str, Any] | None:
+    """Befund „Server ignoriert den Filter einer Zeitscheibe“ (``sync_config["full_sync_filter_ignored"]``)."""
+    if not isinstance(sync_config, dict):
+        return None
+    stored = sync_config.get(SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY)
+    return dict(stored) if isinstance(stored, dict) else None
+
+
 def body_sync_started_of(sync_config: Any, body_external_id: str) -> datetime | None:
     """Beginn des letzten vollständigen Abgleichs der Kommune aus ``sync_config``; Ungültiges zählt nicht."""
     if not isinstance(sync_config, dict):
@@ -242,7 +286,7 @@ def body_sync_started_of(sync_config: Any, body_external_id: str) -> datetime | 
     return _utc_stamp(stored.get(body_external_id) if isinstance(stored, dict) else None)
 
 
-def _put_entry(sync_config: dict[str, Any], key: str, entry: str, value: str | None) -> bool:
+def _put_entry(sync_config: dict[str, Any], key: str, entry: str, value: Any) -> bool:
     """
     Eintrag ``entry`` im Wörterbuch ``sync_config[key]`` setzen (``None`` löscht ihn; ein leeres Wörterbuch fällt
     weg). ``True``, wenn sich etwas geändert hat.
@@ -576,6 +620,7 @@ class DatabaseStorage:
         source_id: UUID,
         full_sync: bool = False,
         complete: bool = False,
+        full_complete: bool | None = None,
     ) -> None:
         """
         Update the last sync timestamp for a source.
@@ -584,7 +629,13 @@ class DatabaseStorage:
         fehlte, Issue #556). Nur dann rücken ``last_successful_sync`` bzw. ``last_successful_full_sync``
         vor – die Aktualität der Quelle in Admin und Änderungsfeed. ``last_sync`` zählt jeden
         durchgelaufenen Abgleich, auch mit Lücken.
+
+        ``full_complete`` (Standard: ``complete``): Der Vollabgleich hat jede Liste ganz gelesen. Eine im Vollabgleich
+        ausgesetzte langsame Liste ist keine Lücke, ``last_successful_full_sync`` rückt dann aber nicht vor und der
+        Vollabgleich bleibt fällig (Issue #1033).
         """
+        if full_complete is None:
+            full_complete = complete
         async with self.get_session() as session:
             source = await session.get(OParlSource, source_id)
             if source:
@@ -594,7 +645,7 @@ class DatabaseStorage:
                     source.last_full_sync = now
                 if complete:
                     source.last_successful_sync = now
-                    if full_sync:
+                    if full_sync and full_complete:
                         source.last_successful_full_sync = now
                 # Erfolg setzt den Fehlerstatus des Betriebsmonitors zurück
                 source.last_error = None
@@ -775,6 +826,39 @@ class DatabaseStorage:
 
         def change(sync_config: dict[str, Any]) -> bool:
             return _put_entry(sync_config, SYNC_CONFIG_MISSING_LISTS_KEY, list_url, checked if missing else None)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
+    async def set_full_sync_progress(self, source_url: str, list_url: str, next_start: datetime | None) -> None:
+        """
+        Fortschritt des Vollabgleichs in Zeitscheiben für eine Liste festhalten (Beginn der nächsten Scheibe) oder
+        löschen (``None``; Issue #1033). Unter Zeilensperre.
+        """
+        value = None if next_start is None else next_start.astimezone(UTC).isoformat(timespec="seconds")
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_FULL_SYNC_PROGRESS_KEY, list_url, value)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
+    async def set_slow_list(self, source_url: str, list_url: str, entry: dict[str, Any] | None) -> None:
+        """Ausgesetzte langsame Liste festhalten oder austragen (``None``; Issue #1033). Unter Zeilensperre."""
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            return _put_entry(sync_config, SYNC_CONFIG_SLOW_LISTS_KEY, list_url, entry)
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
+
+    async def set_slice_filter_ignored(self, source_url: str, finding: dict[str, Any] | None) -> None:
+        """Befund „Server ignoriert den Filter einer Zeitscheibe“ festhalten oder löschen (Issue #1033)."""
+
+        def change(sync_config: dict[str, Any]) -> bool:
+            if finding is None:
+                return sync_config.pop(SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY, None) is not None
+            if sync_config.get(SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY) == finding:
+                return False
+            sync_config[SYNC_CONFIG_SLICE_FILTER_IGNORED_KEY] = finding
+            return True
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 

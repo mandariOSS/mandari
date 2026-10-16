@@ -492,7 +492,8 @@ class SyncScheduler:
         console.print(f"\n[blue][{started:%H:%M:%S} UTC] {source.name}: {art} beginnt ({triggered_by})[/blue]")
 
         try:
-            result = await self.orchestrator.sync_body_url(source.url, full=full)
+            # Das Standardfenster begrenzt den Vollabgleich in Zeitscheiben ohne eigenes Fenster (Issue #1033)
+            result = await self.orchestrator.sync_body_url(source.url, full=full, default_window=self.default_window)
         except asyncio.CancelledError:
             raise
         except Exception as e:
@@ -618,6 +619,8 @@ class SyncScheduler:
         }
         if result.unstored:
             details["unstored"] = dict(sorted(result.unstored.items()))
+        # Zeitscheiben des Vollabgleichs und ausgesetzte langsame Listen (Issue #1033)
+        details.update(result.slice_details)
         try:
             await self.orchestrator.storage.write_sync_log(
                 source_id=source.id,
