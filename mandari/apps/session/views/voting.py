@@ -133,6 +133,13 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                     for a in assessed.advisory + assessed.others + not_voting
                     if a.current_vote and a.person_id not in kept
                 ],
+                # Getrennt erklärt: Gestörte ohne behaltene Stimme und alle übrigen (ohne Stimmrecht, abwesend, …)
+                "stray_disrupted": [a for a in assessed.unreachable if a.current_vote and a.person_id not in kept],
+                "stray_other": [
+                    a
+                    for a in assessed.advisory + assessed.others + assessed.remote_excluded
+                    if a.current_vote and a.person_id not in kept
+                ],
                 # Beurteilt zum Zeitpunkt der Abstimmung statt live: „bei der Abstimmung gestört“ statt „dauert an“
                 "assessed_at_vote": moment is not None,
                 "attendance_complete": assessed.complete,

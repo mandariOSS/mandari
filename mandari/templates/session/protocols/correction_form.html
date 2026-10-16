@@ -58,7 +58,7 @@
             <ul class="divide-y divide-gray-100 dark:divide-gray-700/50">
                 {% for attendance in voters %}
                 <li class="px-6 py-2.5 flex items-center justify-between gap-3 flex-wrap">
-                    <span class="text-sm font-medium text-gray-900 dark:text-white">{{ attendance.person.display_name }}{% if attendance.vote_kept %} <span class="block text-xs font-normal text-amber-700 dark:text-amber-400" data-testid="stimme-bleibt">Bei der Abstimmung gestört, vorher abgestimmt: Die Stimme gilt und lässt sich nur entfernen.</span>{% endif %}</span>
+                    <span class="text-sm font-medium text-gray-900 dark:text-white">{{ attendance.person.display_name }}{% if attendance.vote_kept %} <span class="block text-xs font-normal text-amber-700 dark:text-amber-400" data-testid="stimme-bleibt">Bei der Abstimmung gestört: Der vorher erfasste Eintrag gilt und lässt sich nur entfernen.</span>{% endif %}</span>
                     <select name="vote_{{ attendance.person_id }}" aria-label="Stimme {{ attendance.person.display_name }}"
                             class="px-2 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                         <option value="">—</option>

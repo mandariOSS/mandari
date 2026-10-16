@@ -33,6 +33,7 @@ from apps.session.models import (
     SessionMeeting,
     SessionProtocol,
     SessionProtocolCorrection,
+    SessionUser,
     SessionVote,
 )
 from apps.session.services import cockpit_service, participation_service, voting_service
@@ -80,10 +81,12 @@ def _stoerung(zeile: SessionAttendance, beginn: time, ende: time | None) -> None
     SessionAttendanceDisruption.objects.create(attendance=zeile, started_at=beginn, ended_at=ende)
 
 
-def _stimme(w: Welt, top: SessionAgendaItem, name: str, wert: str, um: time) -> SessionAttendance:
-    """Stimme mit dem Zeitpunkt ihrer Speicherung (``updated_at``) am Sitzungstag."""
+def _stimme(
+    w: Welt, top: SessionAgendaItem, name: str, wert: str, um: time, von: SessionUser | None = None
+) -> SessionAttendance:
+    """Stimme mit dem Zeitpunkt ihrer Speicherung (``updated_at``) am Sitzungstag, erfasst von ``von``."""
     zeile = SessionAttendance.objects.get(meeting=w.sitzung, person__family_name=name)
-    stimme = SessionVote.objects.create(agenda_item=top, person=zeile.person, vote=wert)
+    stimme = SessionVote.objects.create(agenda_item=top, person=zeile.person, vote=wert, recorded_by=von)
     SessionVote.objects.filter(pk=stimme.pk).update(updated_at=_um(w, um))
     return zeile
 
@@ -105,8 +108,12 @@ def _meldungen(antwort: Any) -> list[str]:
     return [str(m) for m in get_messages(antwort.wsgi_request)]
 
 
+def _erfasser(w: Welt, name: str = "abstimmung") -> SessionUser:
+    return nutzer(w.tenant, name, "view_meetings", "edit_protocols", "view_non_public_meetings")
+
+
 def _abstimmung(w: Welt) -> Any:
-    return client(nutzer(w.tenant, "abstimmung", "view_meetings", "edit_protocols", "view_non_public_meetings"))
+    return client(_erfasser(w))
 
 
 GESTOERT = "Wegen einer Störung nicht erreichbar: P Buche."
@@ -304,6 +311,82 @@ class TestVorherErfassteStimme:
 
         seite = _abstimmung(w).get(f"{base(w)}/agenda/{top.pk}/voting/")
         assert _namen(seite.context["stray_votes"]) == ["Buche"]
+        # Eigener Satz für Gestörte, nicht „ohne Stimmrecht oder ohne Anwesenheit“
+        inhalt = seite.content.decode()
+        assert 'data-testid="gestoert-entfernt"' in inhalt
+        assert "ohne Stimmrecht oder ohne Anwesenheit" not in inhalt
+
+    def test_anderer_erfasser_laesst_unveraenderte_stimmen_unberuehrt(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # A erfasst 18:12 Buche und Amsel; um 21:00 trägt B Carl nach; danach wird die Störung 18:14–18:20 nacherfasst
+        w, zeile, top = _welt(stoerung=None)
+        a = _erfasser(w, "erfasser-a")
+        _stimme(w, top, "Buche", "yes", time(18, 12), von=a)
+        _stimme(w, top, "Amsel", "no", time(18, 12), von=a)
+        voting_service.recompute_sums(top)
+        b = client(_erfasser(w, "erfasser-b"))
+        url = f"{base(w)}/agenda/{top.pk}/voting/"
+        monkeypatch.setattr(timezone, "now", lambda: _um(w, time(21, 0)))
+        carl = SessionAttendance.objects.get(meeting=w.sitzung, person__family_name="Carl")
+        seite = b.get(url)
+        assert b.post(url, {**_seitendaten(seite), f"vote_{carl.person_id}": "yes"}).status_code == 302
+
+        buche = top.votes.get(person=zeile.person)
+        assert (buche.recorded_by_id, buche.updated_at) == (a.pk, _um(w, time(18, 12)))
+        _stoerung(zeile, time(18, 14), time(18, 20))
+        seite = b.get(url)
+        assert seite.context["stray_votes"] == []
+        assert b.post(url, _seitendaten(seite)).status_code == 302
+        top.refresh_from_db()
+        assert top.votes.get(person=zeile.person).vote == "yes"
+        assert (top.votes_yes, top.votes_no) == (2, 1)
+
+    def test_unveraenderter_wert_einer_behaltenen_stimme_wird_nicht_neu_geschrieben(self) -> None:
+        w, zeile, top = _welt(stoerung=(time(18, 14), time(18, 20)))
+        a = _erfasser(w, "erfasser-a")
+        _stimme(w, top, "Buche", "yes", time(18, 12), von=a)
+        b = client(_erfasser(w, "erfasser-b"))
+        url = f"{base(w)}/agenda/{top.pk}/voting/"
+        carl = SessionAttendance.objects.get(meeting=w.sitzung, person__family_name="Carl")
+
+        # Ältere Seite: Buches Wert steht noch im Formular, dazu eine andere Änderung
+        daten = {**_seitendaten(b.get(url)), f"vote_{zeile.person_id}": "yes", f"vote_{carl.person_id}": "no"}
+        assert b.post(url, daten).status_code == 302
+        buche = top.votes.get(person=zeile.person)
+        assert (buche.vote, buche.recorded_by_id, buche.updated_at) == ("yes", a.pk, _um(w, time(18, 12)))
+
+    @pytest.mark.parametrize("cockpit", [True, False], ids=["vor-dem-oeffnen", "ohne-cockpit"])
+    def test_befangenheitsvermerk_bleibt(self, cockpit: bool) -> None:
+        w, zeile, top = _welt(
+            geschlossen=time(18, 15) if cockpit else None, stoerung=(time(18, 14), time(18, 20) if cockpit else None)
+        )
+        _stimme(w, top, "Buche", "excluded", time(17, 30))
+        erfassung = _abstimmung(w)
+        url = f"{base(w)}/agenda/{top.pk}/voting/"
+
+        seite = erfassung.get(url)
+        assert seite.context["stray_votes"] == []
+        assert "Befangenheitsvermerk: Er bleibt." in seite.content.decode()
+        assert erfassung.post(url, _seitendaten(seite)).status_code == 302
+        assert top.votes.get(person=zeile.person).vote == "excluded"
+
+    @pytest.mark.parametrize("um", [time(17, 55), time(18, 14)], ids=["abgebrochene-runde", "minute-des-beginns"])
+    def test_cockpit_und_spaetere_erfassung_zaehlen_gleich(self, monkeypatch: pytest.MonkeyPatch, um: time) -> None:
+        # Buches Stimme gilt nicht (frühere Runde bzw. Minute des Störungsbeginns): weder im Cockpit noch danach
+        w, _zeile, top = _welt(offen=True, stoerung=(time(18, 14), None))
+        _stimme(w, top, "Buche", "yes", um)
+        _stimme(w, top, "Amsel", "no", time(18, 12))
+        _stimme(w, top, "Carl", "yes", time(18, 12))
+        monkeypatch.setattr(timezone, "now", lambda: _um(w, time(18, 17)))
+        _schliessen(w, top)
+        top.refresh_from_db()
+        cockpit = (top.votes_yes, top.votes_no)
+        assert cockpit == (1, 1)
+
+        erfassung = _abstimmung(w)
+        url = f"{base(w)}/agenda/{top.pk}/voting/"
+        assert erfassung.post(url, _seitendaten(erfassung.get(url))).status_code == 302
+        top.refresh_from_db()
+        assert (top.votes_yes, top.votes_no) == cockpit
 
     def test_geheim_nach_dem_schliessen_ohne_einzelstimme(self) -> None:
         w, zeile, top = _welt(stoerung=(time(18, 14), time(18, 20)))

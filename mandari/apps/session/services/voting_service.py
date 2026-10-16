@@ -235,19 +235,23 @@ def kept_votes(item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[An
     - Stimmen ohne Abstimmungsfenster im Cockpit: Wann abgestimmt wurde, ist unbekannt;
     - Ja, Nein und Enthaltung in einer geheimen Abstimmung, die dort nicht gespeichert werden (Vermerke bleiben).
 
+    Befangenheitsvermerke (Mitwirkungsverbot) bleiben immer, auch ohne Abstimmungsfenster und wenn sie vor dem Öffnen
+    eingetragen wurden: Befangen ist die Person unabhängig davon, ob sie erreichbar ist.
+
     Störungen sind minutengenau erfasst; eine Stimme aus der Minute ihres Beginns zählt nicht als vorher.
     ``votes``: gespeicherte Stimmen des TOP je Person-ID.
     """
     opened = item.vote_opened_at
-    if opened is None:
-        return set()
     until = item.vote_closed_at or timezone.now()
     at = participation_service.vote_time(item)
     secret = item.voting_method == "secret"
     kept = set()
     for attendance in assessed.unreachable:
         vote = votes.get(attendance.person_id)
-        if vote is None or (secret and vote.vote in SessionVote.COUNTED_VOTES):
+        if vote is not None and vote.vote == "excluded":
+            kept.add(attendance.person_id)
+            continue
+        if vote is None or opened is None or (secret and vote.vote in SessionVote.COUNTED_VOTES):
             continue
         starts = [
             participation_service.disruption_start(disruption, until)
@@ -283,6 +287,18 @@ def guard_kept_votes(
             counted = stored.get(attendance.person_id)
             if counted is not None and counted.vote in SessionVote.COUNTED_VOTES:
                 votes_by_person.setdefault(counted.person, "")
+
+
+def counted_person_ids(item: SessionAgendaItem) -> set[Any]:
+    """
+    Personen, deren Einzelstimmen in die Summen eingehen, nach derselben Regel wie die Abstimmungserfassung: jetzt
+    stimmberechtigt Anwesende (Störung zum Zeitpunkt der Abstimmung, sofern bekannt, sonst andauernd) und behaltene
+    Stimmen gestörter Personen (:func:`kept_votes`, Issue #1045). Für das Schließen im Sitzungscockpit, damit dessen
+    Summen nicht von der späteren Erfassung abweichen.
+    """
+    assessed = eligibility(item.meeting, item, at=participation_service.vote_time(item))
+    stored = {vote.person_id: vote for vote in item.votes.all()}
+    return set(assessed.voting_person_ids) | kept_votes(item, assessed, stored)
 
 
 @dataclass(frozen=True)
@@ -404,10 +420,12 @@ def capture_votes(
                 )
                 geaendert.append(_aenderung(person, None, vote_value))
                 schreibende.append(person)
-            elif bestehend.vote != vote_value or bestehend.recorded_by_id != getattr(recorded_by, "pk", None):
-                if bestehend.vote != vote_value:
-                    geaendert.append(_aenderung(person, bestehend.vote, vote_value))
-                    schreibende.append(person)
+            elif bestehend.vote != vote_value:
+                # Nur geänderte Stimmen erhalten Erfasser und Zeitpunkt neu: Eine unveränderte Stimme behält, wann und
+                # von wem sie erfasst wurde. Der Zeitpunkt entscheidet, ob sie vor Beginn einer (auch später
+                # nacherfassten) Störung abgegeben wurde (kept_votes, Issue #1045)
+                geaendert.append(_aenderung(person, bestehend.vote, vote_value))
+                schreibende.append(person)
                 bestehend.vote = vote_value
                 bestehend.recorded_by = recorded_by
                 bestehend.updated_at = jetzt  # bulk_update setzt auto_now nicht selbst
@@ -470,10 +488,13 @@ def rights_message(assessed: Eligibility, persons: list[Any]) -> str:
     return " ".join(saetze)
 
 
-def recompute_sums(agenda_item: SessionAgendaItem) -> None:
-    """Summen (Ja/Nein/Enthaltung) aus den Einzelstimmen ableiten."""
+def recompute_sums(agenda_item: SessionAgendaItem, *, persons: Collection[Any] | None = None) -> None:
+    """Summen (Ja/Nein/Enthaltung) aus den Einzelstimmen ableiten; mit ``persons`` nur aus deren Stimmen."""
     counts = dict.fromkeys(SessionVote.COUNTED_VOTES, 0)
-    for vote in agenda_item.votes.filter(vote__in=SessionVote.COUNTED_VOTES).values_list("vote", flat=True):
+    votes = agenda_item.votes.filter(vote__in=SessionVote.COUNTED_VOTES)
+    if persons is not None:
+        votes = votes.filter(person_id__in=list(persons))
+    for vote in votes.values_list("vote", flat=True):
         counts[vote] += 1
     agenda_item.votes_yes = counts["yes"]
     agenda_item.votes_no = counts["no"]
