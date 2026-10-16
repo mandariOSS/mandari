@@ -397,11 +397,11 @@ nicht mehr (`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.p
   `run_sync_with_logging`). Er beachtet robots.txt, Takt je Server, das eigene Zeitfenster der Quelle und
   `full_sync_every_days`, aber nicht die [Schonung](#fehler-und-schonung), ebenso wie
   `python -m src.main sync --source` bzw. `--body`; ohne eigenes Fenster beginnt auch hier ein Vollabgleich sofort.
+  Im Worker gilt dessen Umgebung, nicht die des Ingestors (siehe [Für Selbstbetreiber](#für-selbstbetreiber)).
   Scraper-Quellen gleicht der Worker nicht ab, weil dem Image der Anwendung die Abhängigkeiten der Scraper fehlen; sein
   Sync-Protokoll nennt dann den Weg über den Ingestor (`is_scraper_source`, `SCRAPER_NUR_IM_INGESTOR`). `sync --source`
   und `sync --body` im Container `ingestor` gleichen sie wie der Daemon über den Scraper ab (`sync_source`,
-  `sync_body_url`, `SyncOrchestrator._scraper_runner`), ohne Zeitfenster und Mindestabstand. Dabei gilt die Umgebung
-  des Workers, nicht die des Ingestors (siehe [Für Selbstbetreiber](#für-selbstbetreiber)).
+  `sync_body_url`, `SyncOrchestrator._scraper_runner`), ohne Zeitfenster und Mindestabstand.
   `python -m src.main sync --all` gleicht alle aktiven Quellen einmal ab, höchstens 2 zugleich
   (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne den Abgleichrhythmus der Quelle (`sync_schedule`); Abstand je
   Quelle (`request_interval`) und Takt je Server gelten.
