@@ -363,6 +363,19 @@ class TestLesezugriffe:
         assert sitzungen.object_repr == "Sitzungen (Session-API v1)"
         assert sitzungen.changes["kennungen"] == [str(meeting.id)]
 
+    def test_fehler_beim_aufbau_des_eintrags_laesst_die_antwort_nicht_scheitern(
+        self, tenant: SessionTenant, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from apps.session import audit
+
+        def kaputt(_instance: object) -> str:
+            raise RuntimeError("Referenz nicht lesbar")
+
+        monkeypatch.setattr(audit, "read_reference", kaputt)
+        antwort = self.noe_client(tenant).get(f"{BASE}/{tenant.slug}/papers/")
+        assert antwort.status_code == 200
+        assert self.reads(tenant) == []
+
     def test_abfragen_haengen_nicht_von_der_zahl_der_objekte_ab(self, tenant: SessionTenant) -> None:
         """Ein Eintrag je Abruf: 3 oder 150 nichtöffentliche Vorlagen kosten gleich viele Abfragen."""
         from django.db import connection

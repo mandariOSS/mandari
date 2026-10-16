@@ -382,20 +382,26 @@ def log_api_reads(
     items = list(instances)
     if not items:
         return None
-    ids = [str(item.pk) for item in items]
-    digest = hashlib.sha256(",".join(sorted(ids)).encode()).hexdigest()[:16]
-    return log_read(
-        request,
-        tenant,
-        tenant=tenant,
-        user=user,
-        changes={
+    # Wie log_read: Das Protokoll darf die Antwort nie scheitern lassen, auch nicht beim Aufbau der Angaben
+    try:
+        ids = [str(item.pk) for item in items]
+        digest = hashlib.sha256(",".join(sorted(ids)).encode()).hexdigest()[:16]
+        changes = {
             "umfang": umfang,
             "zugriff": zugriff,
             "anzahl": len(items),
             "objekte": [read_reference(item) for item in items],
             "kennungen": ids,
-        },
+        }
+    except Exception:
+        logger.exception("Lesezugriff über die Session-API konnte nicht protokolliert werden")
+        return None
+    return log_read(
+        request,
+        tenant,
+        tenant=tenant,
+        user=user,
+        changes=changes,
         dedup_suffix=f"api:{liste}:{digest}",
         reference=f"{liste} ({zugriff})",
         merker=READ_SESSION_KEY_API,
