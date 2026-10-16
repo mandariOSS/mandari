@@ -11,7 +11,7 @@ from typing import Any
 from django.core.cache import cache
 from django.db import models
 
-from .ki_anbieter import ANBIETER_AUSWAHL, ANBIETER_VORLAGEN
+from .ki_anbieter import ANBIETER_VORLAGEN, auswahl_ki_einstellungen
 
 logger = logging.getLogger(__name__)
 
@@ -235,7 +235,6 @@ class AISettings(models.Model):
 
     #: Nicht eingerichtet: Die KI bleibt aus
     PROVIDER_NONE = ""
-    PROVIDER_CHOICES = [(PROVIDER_NONE, "Nicht eingerichtet (KI aus)"), *ANBIETER_AUSWAHL]
 
     enabled = models.BooleanField(
         default=True,
@@ -244,7 +243,8 @@ class AISettings(models.Model):
     )
     provider = models.CharField(
         max_length=20,
-        choices=PROVIDER_CHOICES,
+        # Als Aufruf: Eine neue Vorlage braucht keine Migration (Issue #1046)
+        choices=auswahl_ki_einstellungen,
         default=PROVIDER_NONE,
         blank=True,
         verbose_name="KI-Anbieter",

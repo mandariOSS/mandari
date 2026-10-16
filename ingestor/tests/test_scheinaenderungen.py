@@ -487,7 +487,7 @@ async def test_zeitpunkt_und_vermerke_in_sync_config(speicher: DatabaseStorage) 
         speicher.set_body_sync_started(source_id, BASE, beginn),
         speicher.set_body_sync_started(source_id, f"{BASE}-2", beginn),
         speicher.set_list_missing(SOURCE, f"{BASE}/membership", True, checked_at=geprueft),
-        speicher.add_modified_since_unsupported_hosts(SOURCE, {"ris.example.org"}),
+        speicher.save_filter_notes(SOURCE, {f"{BASE}/location": {"reason": "HTTP 400"}}, {}),
         speicher.update_scraper_state(SOURCE, {"runs": 1}),
         speicher.set_source_sync_config_value(source_id, "probe", {"system": "oparl"}),
     )
@@ -502,7 +502,7 @@ async def test_zeitpunkt_und_vermerke_in_sync_config(speicher: DatabaseStorage) 
     assert quelle.sync_config["missing_lists"] == {f"{BASE}/agendaitem": "2026-10-15T13:00:00+00:00"}
     assert missing_lists_of(quelle.sync_config) == {f"{BASE}/agendaitem": geprueft}
     assert quelle.sync_config["request_interval"] == 2.0  # andere Einstellungen bleiben
-    assert quelle.sync_config["modified_since_unsupported_hosts"] == ["ris.example.org"]
+    assert quelle.sync_config["unfiltered_lists"] == {f"{BASE}/location": {"reason": "HTTP 400"}}
     assert quelle.sync_config["scraper_state"] == {"runs": 1}
     assert quelle.sync_config["probe"] == {"system": "oparl"}
     assert set(quelle.sync_config["body_sync_started"]) == {BASE}
