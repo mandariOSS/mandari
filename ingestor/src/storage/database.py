@@ -7,7 +7,7 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 
 import logging
 import os
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
@@ -34,6 +34,12 @@ from sqlalchemy import and_, bindparam, func, or_, select, text, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from src.client.filter_notes import (
+    LEGACY_HOSTS_KEY,
+    MODIFIED_SINCE_CHECK_KEY,
+    UNFILTERED_HOSTS_KEY,
+    UNFILTERED_LISTS_KEY,
+)
 from src.client.source_options import SourceFetchOptions
 from src.config import settings
 from src.metrics import metrics
@@ -670,10 +676,10 @@ class DatabaseStorage:
         """
         ``sync_config`` einer Quelle unter Zeilensperre lesen, ändern und schreiben (Issue #1025).
 
-        Mehrere Schreiber teilen sich ``sync_config``: parallel laufende Kommunen einer Quelle, Capability-Cache,
-        Scraper-Zustand, Zensus. Ohne Sperre stellte ein Schreiber mit älterem Stand einen gerade geänderten
-        Schlüssel wieder her, etwa einen eben gelöschten Vermerk in ``missing_lists``. ``change`` ändert die Kopie
-        und meldet, ob sich etwas geändert hat; nur dann wird geschrieben.
+        Mehrere Schreiber teilen sich ``sync_config``: parallel laufende Kommunen einer Quelle, Vermerke
+        „filtert nicht“, Scraper-Zustand, Zensus. Ohne Sperre stellte ein Schreiber mit älterem Stand einen gerade
+        geänderten Schlüssel wieder her, etwa einen eben gelöschten Vermerk in ``missing_lists``. ``change`` ändert
+        die Kopie und meldet, ob sich etwas geändert hat; nur dann wird geschrieben.
         """
         async with self.get_session() as session:
             result = await session.execute(select(OParlSource).where(where).with_for_update())
@@ -716,79 +722,45 @@ class DatabaseStorage:
             source.consecutive_failures = (source.consecutive_failures or 0) + 1
             await session.commit()
 
-    # Schlüssel in OParlSource.sync_config für den persistierten
-    # Capability-Cache (Hosts, die modified_since ablehnen, Issue #22).
-    SYNC_CONFIG_MODIFIED_SINCE_KEY = "modified_since_unsupported_hosts"
-
-    async def get_modified_since_unsupported_hosts(self) -> set[str]:
-        """Union der persistierten Hosts ohne modified_since-Support (alle Quellen)."""
-        async with self.get_session() as session:
-            result = await session.execute(select(OParlSource.sync_config))
-            hosts: set[str] = set()
-            for (sync_config,) in result.all():
-                if isinstance(sync_config, dict):
-                    stored = sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or []
-                    hosts.update(h for h in stored if isinstance(h, str) and h)
-            return hosts
-
-    async def add_modified_since_unsupported_hosts(
+    async def save_filter_notes(
         self,
         source_url: str,
-        hosts: set[str],
+        lists: Mapping[str, dict[str, str] | None],
+        hosts: Mapping[str, dict[str, str] | None],
+        *,
+        drop_legacy: bool = False,
     ) -> None:
         """
-        Persistiert Hosts ohne modified_since-Support in der sync_config
-        der Quelle, damit der Fallback-Befund Daemon-Neustarts überlebt.
+        Vermerke „filtert nicht“ einer Quelle speichern (Issue #1041): je Liste in ``unfiltered_lists``, je Server in
+        ``unfiltered_hosts`` (``None`` löscht einen Eintrag). ``drop_legacy`` löscht den bisherigen Schlüssel
+        ``modified_since_unsupported_hosts``, nachdem ``FilterNotes.from_sync_config`` ihn übernommen hat. Nur in
+        der ``sync_config`` dieser Quelle, unter Zeilensperre.
         """
-        if not hosts:
-            return
 
         def change(sync_config: dict[str, Any]) -> bool:
-            stored = set(sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or [])
-            merged = stored | {h for h in hosts if h}
-            if merged == stored:
-                return False
-            sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(merged)
-            return True
+            changed = False
+            for list_url, entry in lists.items():
+                if _put_entry(sync_config, UNFILTERED_LISTS_KEY, list_url, entry):
+                    changed = True
+            for host, entry in hosts.items():
+                if _put_entry(sync_config, UNFILTERED_HOSTS_KEY, host, entry):
+                    changed = True
+            if drop_legacy and LEGACY_HOSTS_KEY in sync_config:
+                del sync_config[LEGACY_HOSTS_KEY]
+                changed = True
+            return changed
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 
-    # Ergebnis der letzten Prüfung von modified_since (nach jedem Vollabgleich)
-    SYNC_CONFIG_MODIFIED_SINCE_CHECK_KEY = "modified_since_check"
+    async def set_modified_since_check(self, source_url: str, host: str, verdict: str) -> None:
+        """Ergebnis der Prüfung von ``modified_since`` nach einem Vollabgleich an der Quelle festhalten (nur dort)."""
+        finding = {"checked_at": datetime.now(UTC).isoformat(timespec="seconds"), "host": host, "result": verdict}
 
-    async def apply_modified_since_check(self, source_url: str, host: str, verdict: str, supported: bool) -> None:
-        """
-        Ergebnis der modified_since-Prüfung festhalten: an der Quelle vermerken und den Host im
-        persistierten Capability-Cache aller Quellen eintragen (filtert nicht) oder austragen (filtert).
-        """
-        if not host:
-            return
-        async with self.get_session() as session:
-            result = await session.execute(select(OParlSource).with_for_update())
-            for source in result.scalars().all():
-                sync_config = dict(source.sync_config or {})
-                stored = {h for h in sync_config.get(self.SYNC_CONFIG_MODIFIED_SINCE_KEY) or [] if isinstance(h, str)}
-                changed = False
-                if supported and host in stored:
-                    stored.discard(host)
-                    changed = True
-                if source.url == source_url:
-                    if not supported and host not in stored:
-                        stored.add(host)
-                    sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_CHECK_KEY] = {
-                        "checked_at": datetime.now(UTC).isoformat(timespec="seconds"),
-                        "host": host,
-                        "result": verdict,
-                    }
-                    changed = True
-                if not changed:
-                    continue
-                if stored:
-                    sync_config[self.SYNC_CONFIG_MODIFIED_SINCE_KEY] = sorted(stored)
-                else:
-                    sync_config.pop(self.SYNC_CONFIG_MODIFIED_SINCE_KEY, None)
-                source.sync_config = sync_config
-            await session.commit()
+        def change(sync_config: dict[str, Any]) -> bool:
+            sync_config[MODIFIED_SINCE_CHECK_KEY] = finding
+            return True
+
+        await self._change_sync_config(OParlSource.url == source_url, change)
 
     async def get_body_sync_started(self, source_id: UUID, body_external_id: str) -> datetime | None:
         """Beginn des letzten vollständig erfolgreichen Abgleichs der Kommune (Issue #1025), sonst ``None``."""

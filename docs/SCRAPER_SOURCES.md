@@ -470,8 +470,9 @@ seit Issue #122; die Kommune muss nichts freischalten.
   "Pfad existiert nicht"-Signalen, nie bei Timeouts oder 5xx.
 - **Fehlerobjekte** werden nie als Datensatz verarbeitet.
 - **Ignoriertes `modified_since`** wird an den Listen-Links erkannt; der Host
-  landet im bestehenden Capability-Cache (`sync_config`), Folgelisten senden
-  den Parameter nicht mehr.
+  steht dann als „filtert nicht“ in `sync_config["unfiltered_hosts"]` dieser
+  Quelle, ihre Folgelisten senden den Parameter nicht mehr. Andere Quellen,
+  auch auf demselben Server, betrifft der Vermerk nicht (Issue #1041).
 - **Änderungserkennung ohne Zeitstempel**: Objekte mit synthetischem oder
   fehlendem `modified` bekommen wie Scraper-Quellen einen Content-Hash
   (`mandari:contentHash` im `raw_json`). Der inkrementelle Lauf upsertet nur
@@ -517,12 +518,14 @@ seit Issue #122; die Kommune muss nichts freischalten.
 
 3. Erstlauf als Voll-Sync anstoßen (Admin-Aktion „Voll-Sync" oder
    `mandari-ingestor sync --body <System-URL> --full`); regelmäßig übernimmt
-   der Daemon erst, wenn die Quelle im Admin aktiviert ist. Im Log erscheint
-   einmalig „Server ignoriert modified_since".
+   der Daemon erst, wenn die Quelle im Admin aktiviert ist. Nach dem
+   Vollabgleich prüft der Ingestor den Filter; im Log steht
+   „modified_since-Prüfung für <mandant>.gremien.info: ignored".
 
 4. Nach dem ersten inkrementellen Lauf im Admin prüfen: `oparl_version = 1.0`,
-   `sync_config.modified_since_unsupported_hosts` enthält den Host, im
-   SyncLog stehen nur noch wenige neue/aktualisierte Objekte.
+   `sync_config.unfiltered_hosts` enthält den Host (Vermerk „filtert nicht“,
+   gilt nur für diese Quelle, Issue #1041), im SyncLog stehen nur noch
+   wenige neue/aktualisierte Objekte.
 
 5. Geo-Daten zuordnen (OSM-Grenze, Gemeindeschlüssel, Kartenausschnitt,
    Straßen, Adressen; Zweckverbände und Gesellschaften als „keine

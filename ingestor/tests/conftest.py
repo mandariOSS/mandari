@@ -80,16 +80,6 @@ def _drossel_je_host(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyP
     host_pacer.reset()
 
 
-@pytest.fixture(autouse=True)
-def _listen_ohne_filter() -> Iterator[None]:
-    """Prozessweiter Befund „Liste ohne modified_since“ (``OParlClient``, Issue #1025) je Test leer."""
-    from src.client.oparl_client import OParlClient
-
-    OParlClient._list_modified_since_unsupported.clear()
-    yield
-    OParlClient._list_modified_since_unsupported.clear()
-
-
 @pytest.fixture
 def echte_drossel() -> None:
     """Drossel je Host im Test mit Standardabstand und Untergrenze wie im Betrieb (siehe ``_drossel_je_host``)."""

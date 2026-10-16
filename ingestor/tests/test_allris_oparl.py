@@ -17,9 +17,9 @@ from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-import pytest
 from mandari_oparl import OParlType, ProcessedConsultation, ProcessedOrganization
 
+from src.client.filter_notes import FilterNote, FilterNotes
 from src.client.oparl_client import OParlClient, SyncStats
 from src.client.oparl_compat import consultation_agenda_item, oparl_type_url
 from src.client.source_options import MAX_REQUEST_INTERVAL, SourceFetchOptions
@@ -32,16 +32,6 @@ BASE = f"{HOST}/oparl"
 BODY = f"{BASE}/bodies/1"
 ORG_TYPE = "https://schema.oparl.org/1.1/Organization"
 SINCE = datetime(2026, 9, 25, tzinfo=UTC)
-
-
-@pytest.fixture
-def isolated_capability_cache():
-    """Der modified_since-Capability-Cache ist prozessweit — je Test zurücksetzen."""
-    before = OParlClient.get_modified_since_unsupported()
-    OParlClient._modified_since_unsupported.clear()
-    yield
-    OParlClient._modified_since_unsupported.clear()
-    OParlClient._modified_since_unsupported.update(before)
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +227,7 @@ class TestClientAllris:
         assert OParlClient(wait_time=0).wait_time == 0
         assert OParlClient().wait_time == settings.oparl_wait_time
 
-    async def test_listenparameter_nur_auf_der_ersten_seite_und_ohne_ueberschreiben(self, isolated_capability_cache):
+    async def test_listenparameter_nur_auf_der_ersten_seite_und_ohne_ueberschreiben(self):
         server = FakeAllris()
         client = make_client(server, list_params={"size": "100"})
         items = await client.fetch_list_all(f"{BASE}/bodies/1/papers")
@@ -248,15 +238,16 @@ class TestClientAllris:
         await client.fetch_list_all(f"{BASE}/bodies/1/papers?size=5")
         assert parse_qs(urlparse(server.requests[0]).query)["size"] == ["5"]
 
-    async def test_ohne_schalter_gilt_die_quelle_als_ohne_filter(self, isolated_capability_cache):
+    async def test_ohne_schalter_gilt_die_quelle_als_ohne_filter(self):
         server = FakeAllris()
         client = make_client(server, list_params={"size": "2"})
         items = await client.fetch_list_all(f"{BASE}/bodies/1/papers", modified_since=SINCE)
         # Erste Seite gefiltert, danach die ungefilterte Liste ab Seite 2 (bisheriges Verhalten)
         assert ids_of(items)[:4] == [21, 22, 3, 4]
-        assert "www.rat.example" in OParlClient.get_modified_since_unsupported()
+        # Ignoriert: vermerkt für den Server, nur in dieser Quelle (Issue #1041)
+        assert "www.rat.example" in client.filter_notes.hosts
 
-    async def test_carry_haengt_den_filter_an_jede_folgeseite(self, isolated_capability_cache):
+    async def test_carry_haengt_den_filter_an_jede_folgeseite(self):
         server = FakeAllris()
         client = make_client(server, list_params={"size": "2"}, carry_modified_since=True)
         items = await client.fetch_list_all(f"{BASE}/bodies/1/papers", modified_since=SINCE)
@@ -265,7 +256,7 @@ class TestClientAllris:
         assert len(server.requests) == 3
         assert all("modified_since" in parse_qs(urlparse(u).query) for u in server.requests)
         assert [parse_qs(urlparse(u).query).get("page", ["1"])[0] for u in server.requests] == ["1", "2", "3"]
-        assert "www.rat.example" not in OParlClient.get_modified_since_unsupported()
+        assert "www.rat.example" not in client.filter_notes.hosts
 
     async def test_abstand_gilt_ueber_alle_parallelen_abrufe(self):
         """``request_interval``: Anfragen beginnen nacheinander im Abstand, auch bei mehreren Abrufplätzen."""
@@ -299,10 +290,11 @@ class TestClientAllris:
         assert len(zeiten) == 5
         assert max(zeiten) - min(zeiten) < 0.09
 
-    async def test_carry_gilt_auch_bei_frueher_vermerktem_host(self, isolated_capability_cache):
-        OParlClient.add_modified_since_unsupported({"www.rat.example"})
+    async def test_carry_gilt_auch_bei_frueher_vermerktem_host(self):
         server = FakeAllris()
-        client = make_client(server, carry_modified_since=True)
+        vermerk = FilterNote("Filter fehlt in den Listen-Links", datetime.now(UTC))
+        vermerkt = FilterNotes(hosts={"www.rat.example": vermerk})
+        client = make_client(server, carry_modified_since=True, filter_notes=vermerkt)
         items = await client.fetch_list_all(f"{BASE}/bodies/1/papers", modified_since=SINCE)
         assert ids_of(items) == [21, 22, 23, 24, 25]
         assert "modified_since" in parse_qs(urlparse(server.requests[0]).query)
