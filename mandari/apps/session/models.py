@@ -4420,7 +4420,13 @@ class SessionAttendanceDisruption(models.Model):
         return (end - start) % (24 * 60)
 
     def covers(self, moment) -> bool:
-        """Dauert die Störung zu diesem Zeitpunkt (Uhrzeit) an?"""
+        """
+        Dauert die Störung zu diesem Zeitpunkt (Uhrzeit) an?
+
+        Eine andauernde Störung (ohne Ende) gilt nur bis Mitternacht: Beginn 23:58 Uhr, Abstimmung um 00:05 Uhr ergibt
+        „nicht gestört“ (Uhrzeiten ohne Datum; mit Ende, etwa 23:58–00:10 Uhr, stimmt es). Bekannt, nicht geändert
+        (Issue #1045).
+        """
         if self.ended_at is None:
             return moment >= self.started_at
         if self.ended_at >= self.started_at:
