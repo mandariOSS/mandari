@@ -188,6 +188,9 @@ type SpeicherAntwort =
   | { art: 'konflikt'; daten: JsonResponse }
   | { art: 'stoerung' | 'server' | 'anmeldung' | 'fehler' }
 
+/** Titel, Dokumenttyp und Briefpapier mit den Feldnamen des Speicher-POST (laufen nicht über Yjs, #1018) */
+type MetaWerte = { title: string; document_type_id: string; letterhead_id: string }
+
 async function speicherAntwort(response: Response): Promise<SpeicherAntwort> {
   const json = (response.headers.get('Content-Type') || '').includes('application/json')
   const daten: JsonResponse | null = json ? await response.json().catch(() => null) : null
@@ -293,6 +296,12 @@ export const documentEditor = defineComponent(() => {
   // und Briefpapier mit Verbindung (#1018)
   let speicherLauf: Promise<boolean> | null = null
   let metaTimer: number | null = null
+  // Zuletzt gesicherte Werte von Titel, Dokumenttyp und Briefpapier (mit Verbindung gehen nur Änderungen per POST)
+  let metaGesichert: MetaWerte = {
+    title: config.title,
+    document_type_id: config.documentTypeId,
+    letterhead_id: config.letterheadId,
+  }
   const fensterId = neueFensterKennung()
   // Stellen offener Änderungsvorschläge im Text anders hervorheben als Kommentare (die Marke selbst kennt den
   // Unterschied nicht): eigenes Stylesheet mit den Marken-IDs, ohne Inline-Stil im Template
@@ -1576,16 +1585,32 @@ export const documentEditor = defineComponent(() => {
           return true
         }
 
+        // Mit Verbindung nur die Felder schicken, die sich seit dem letzten Sichern in diesem Fenster geändert haben:
+        // Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs, andere Fenster kennen deren Änderungen erst nach
+        // dem Neuladen. Sonst setzte ein anderes Fenster beim Wechsel des Briefpapiers den neuen Titel zurück (#1018).
+        const metaWerte: MetaWerte = {
+          title: this.title,
+          document_type_id: this.documentTypeId,
+          letterhead_id: this.letterheadId,
+        }
+        const metaFelder = (Object.keys(metaWerte) as Array<keyof MetaWerte>).filter(
+          (feld) => mitText || metaWerte[feld] !== metaGesichert[feld],
+        )
+        if (!mitText && !metaFelder.length) {
+          // Zurückgeändert: nichts zu senden
+          this._metaSavedSeq = metaSeq
+          this._gespeichertMelden()
+          return true
+        }
+
         const formData = new FormData()
         // Token aus dem Cookie: Nach einer neuen Anmeldung in einem anderen Tab ist nur das Cookie aktuell
         formData.append('csrfmiddlewaretoken', csrfTokenAktuell())
         formData.append('action', 'save')
-        formData.append('title', this.title)
         // Ohne „content“ lässt der Server Text und Kollaborationsstand unberührt (#1018)
         if (mitText) formData.append('content', this.getContent())
         formData.append('motion_type', this.motionType)
-        formData.append('document_type_id', this.documentTypeId)
-        formData.append('letterhead_id', this.letterheadId)
+        for (const feld of metaFelder) formData.append(feld, metaWerte[feld])
         // Ohne Kollaborationsverbindung den Stand mitschicken, von dem wir ausgehen:
         // Der Server überschreibt dann keinen neueren Stand still (#184). Kam ein
         // gestörter Versuch doch an, ist die Wiederholung kein Konflikt (gleicher Inhalt).
@@ -1611,6 +1636,7 @@ export const documentEditor = defineComponent(() => {
         if (antwort.art === 'ok') {
           this._gespeichertMelden()
           this._metaSavedSeq = metaSeq
+          metaGesichert = { ...metaGesichert, ...metaWerte }
           if (mitText) {
             this._savedSeq = seq
             if (typeof antwort.daten.content_hash === 'string') this.contentHash = antwort.daten.content_hash

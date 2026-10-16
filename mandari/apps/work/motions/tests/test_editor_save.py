@@ -261,3 +261,38 @@ def test_nur_titel_laesst_typ_und_briefpapier(
     motion.refresh_from_db()
     assert motion.title == "Nur der Titel"
     assert motion.document_type_id == typ.id
+
+
+@pytest.mark.django_db
+def test_ohne_inhalt_schreibt_nur_mitgeschickte_felder(
+    org: Any, author: Any, motion: Motion, reloads: list[Motion], client_for: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Zwei Fenster mit Verbindung (#1018): Ändert eines den Titel und das andere danach nur das Briefpapier, setzt dessen
+    POST den neuen Titel nicht auf den alten Stand zurück.
+    """
+    from apps.work.motions.models import OrganizationLetterhead
+    from apps.work.motions.views.editor import DocumentEditorView
+
+    briefkopf = OrganizationLetterhead.objects.create(organization=org, name="Fraktion", kind="generated")
+    echt: Any = DocumentEditorView._get_access_level
+
+    def anderes_fenster_aendert(self: Any, geladen: Motion) -> str:
+        # Nach dem Laden im View sichert ein anderes Fenster Titel und Zusammenfassung
+        Motion.objects.filter(pk=geladen.pk).update(title="Titel aus dem anderen Fenster", summary="Neu anderswo")
+        return str(echt(self, geladen))
+
+    monkeypatch.setattr(DocumentEditorView, "_get_access_level", anderes_fenster_aendert)
+
+    response = client_for(author.user).post(
+        f"/work/{org.slug}/documents/{motion.id}/",
+        {"action": "save", "letterhead_id": str(briefkopf.id)},
+        HTTP_X_REQUESTED_WITH="XMLHttpRequest",
+    )
+
+    assert response.status_code == 200
+    motion.refresh_from_db()
+    assert motion.letterhead_id == briefkopf.id
+    assert motion.title == "Titel aus dem anderen Fenster"
+    assert motion.summary == "Neu anderswo"
+    assert cast(Any, motion).get_content_decrypted() == "<p>Alt</p>"

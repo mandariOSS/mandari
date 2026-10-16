@@ -234,6 +234,26 @@ class TestMitVerbindung:
         assert nicht_neu_geladen(page), "das eigene Fenster darf nicht neu laden"
         assert "reload" not in ws.empfangene_typen()
 
+        # Danach nur der Titel: Der POST schickt nur ihn. Dokumenttyp und Briefpapier, die ein anderes Fenster
+        # inzwischen geändert haben kann, setzt er nicht auf den Stand dieses Fensters zurück.
+        posts: list[str] = []
+        page.on(
+            "request",
+            lambda r: posts.append(r.post_data or "")
+            if r.method == "POST" and r.url.endswith(f"/documents/{dokument.id}/")
+            else None,
+        )
+        Motion.objects.filter(pk=dokument.pk).update(letterhead=None)  # „anderes Fenster“ entfernt das Briefpapier
+        page.fill("#ke-titel", "Antrag Radweg Nebenstraße")
+        warten_bis(page, lambda: bool(posts), "POST nur mit dem Titel")
+        page.wait_for_function(f"() => {ALPINE_EDITOR}.hasUnsavedChanges() === false", timeout=15000)
+        assert 'name="title"' in posts[-1] and "Antrag Radweg Nebenstraße" in posts[-1]
+        assert 'name="letterhead_id"' not in posts[-1] and 'name="document_type_id"' not in posts[-1]
+        dokument.refresh_from_db()
+        assert dokument.title == "Antrag Radweg Nebenstraße"
+        assert dokument.letterhead_id is None, "das Briefpapier des anderen Fensters wurde zurückgesetzt"
+        assert dokument.document_type_id == typ.id
+
     def test_freigeben_sichert_vorher_und_laedt_nur_die_anderen(
         self, new_context: Any, asgi_server: Any, org: Any, anna: Any, bernd: Any, dokument: Motion
     ) -> None:

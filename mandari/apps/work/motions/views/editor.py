@@ -631,10 +631,24 @@ class DocumentEditorView(WorkViewMixin, TemplateView):
                         return JsonResponse({"error": "Ungültiger Dokumenttyp oder Briefkopf."}, status=400)
 
                 if "content" not in request.POST:
-                    # Mit Live-Zusammenarbeit sichert Yjs den Text; der Editor schickt dann nur Titel, Dokumenttyp
-                    # und Briefpapier (#1018). Inhalt und Kollaborationsstand bleiben unberührt: nur diese Felder
-                    # schreiben, damit ein gleichzeitiges Sichern über die Verbindung nicht überschrieben wird.
-                    motion.save(update_fields=["title", "summary", "document_type", "letterhead", "updated_at"])
+                    # Mit Live-Zusammenarbeit sichert Yjs den Text; der Editor schickt dann nur die geänderten Felder
+                    # von Titel, Dokumenttyp und Briefpapier (#1018). Nur die mitgeschickten Felder schreiben: Text und
+                    # Kollaborationsstand bleiben unberührt, ein gleichzeitiges Sichern über die Verbindung oder aus
+                    # einem anderen Fenster wird nicht mit dem hier geladenen Stand überschrieben.
+                    felder = ["updated_at"]
+                    if title:
+                        felder.append("title")
+                    if not is_guest:
+                        felder += [
+                            spalte
+                            for feld, spalte in (
+                                ("summary", "summary"),
+                                ("document_type_id", "document_type"),
+                                ("letterhead_id", "letterhead"),
+                            )
+                            if feld in request.POST
+                        ]
+                    motion.save(update_fields=felder)
                     if request.headers.get("X-Requested-With") == "XMLHttpRequest":
                         return JsonResponse({"success": True, "saved_at": timezone.now().isoformat()})
                     messages.success(request, "Änderungen gespeichert.")
