@@ -494,10 +494,15 @@ class TestModuswechselOhneObjektspeicher:
 
         out, err = _aufgeben()
         assert "2 Inhalte, davon lokal nicht vorhanden: 1, davon nicht neu abrufbar: 0" in out
-        assert "Probelauf" in out and not err
+        assert "Probelauf" in out and "1 Inhalte liegen nicht lokal" in err
         assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 2, "der Probelauf ändert nichts"
 
-        out, _ = _aufgeben("--ausfuehren")
+        # Im Zweifel verweigern: Ob die Quelle den Inhalt noch liefert (404/410, Sperren), weiß niemand vorher
+        with pytest.raises(CommandError, match="1 Inhalte liegen nicht lokal"):
+            _aufgeben("--ausfuehren")
+        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 2
+
+        out, _ = _aufgeben("--ausfuehren", "--trotz-fehlender")
         assert "Vermerke gelöscht: 2" in out
         assert not OParlFileBlob.objects.filter(remote_at__isnull=False).exists()
         # Jetzt fehlt der Inhalt bestätigt, und der Abruf holt ihn bei der Quelle
@@ -512,8 +517,13 @@ class TestModuswechselOhneObjektspeicher:
         settings.OBJ_BUCKET = BUCKET
         settings.OBJ_KEY = "test"
         settings.OBJ_SECRET = "test"
-        with pytest.raises(CommandError, match="ist hier konfiguriert"):
+        with pytest.raises(CommandError, match="ist hier eingeschaltet"):
             _aufgeben("--ausfuehren")
+        # Auch mit unvollständigen Zugangsdaten (dann ist object_storage.enabled() falsch): wer einschaltet, nutzt ihn
+        settings.OBJ_ENDPOINT = ""
+        assert not object_storage.enabled()
+        with pytest.raises(CommandError, match="ist hier eingeschaltet"):
+            _aufgeben("--ausfuehren", "--trotz-fehlender")
         with pytest.raises(CommandError, match="nur mit --objektspeicher-aufgeben"):
             call_command("dokumentablage", "--ausfuehren", stdout=StringIO())
         assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 1
@@ -526,8 +536,18 @@ class TestModuswechselOhneObjektspeicher:
         out, err = _aufgeben()
         assert "in den letzten zwei Stunden hochgeladen: 1" in out and "anderer Dienst" in err
         with pytest.raises(CommandError, match="nicht aufgegeben"):
-            _aufgeben("--ausfuehren")
+            _aufgeben("--ausfuehren", "--trotz-fehlender")
         assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 1
+
+    def test_falscher_zaehler_versteckt_keinen_inhalt(self, body: OParlBody) -> None:
+        """Lokal fehlend zählt über die Verweise, nicht über ref_count (nach Abstürzen, altem Code)."""
+        datei = _nur_im_objektspeicher(body, "a")
+        OParlFileBlob.objects.filter(pk=datei.blob_id).update(ref_count=0)
+
+        out, _ = _aufgeben()
+        assert "davon lokal nicht vorhanden: 1" in out
+        with pytest.raises(CommandError, match="nicht lokal"):
+            _aufgeben("--ausfuehren")
 
     def test_nicht_neu_abrufbare_erst_zurueckholen(
         self, objektspeicher: Any, settings: Any, quelle: dict[str, Any]
@@ -543,8 +563,9 @@ class TestModuswechselOhneObjektspeicher:
         settings.OBJ_ENABLED = False
         out, err = _aufgeben()
         assert "davon nicht neu abrufbar: 1" in out and "--zurueckholen" in err
-        with pytest.raises(CommandError, match="nicht aufgegeben"):
-            _aufgeben("--ausfuehren")
+        for optionen in (("--ausfuehren",), ("--ausfuehren", "--trotz-fehlender")):
+            with pytest.raises(CommandError, match="nicht neu abrufen"):
+                _aufgeben(*optionen)
         assert OParlFileBlob.objects.get(pk=datei.blob_id).remote_at is not None
 
         # Mit eingeschaltetem Objektspeicher zurückholen, dann geht nichts verloren
@@ -557,6 +578,37 @@ class TestModuswechselOhneObjektspeicher:
         out, _ = _aufgeben("--ausfuehren")
         assert "Vermerke gelöscht: 1" in out
         assert file_store.local_copy(OParlFile.objects.get(pk=datei.pk)).present
+        assert quelle["abrufe"] == []
+
+    def test_falscher_bucket_beim_zurueckholen_haelt_die_sperre(
+        self, objektspeicher: Any, settings: Any, quelle: dict[str, Any]
+    ) -> None:
+        """
+        Leerer bzw. falscher Bucket: Alles fehlt dort. Das Zurückholen bricht ab und lässt ``remote_at`` stehen, sonst
+        ließe sich der Objektspeicher danach aufgeben, und die PDFs lägen nur noch verweislos im Bucket.
+        """
+        settings.OBJ_EVICT_MAX_MISSING = 3
+        source = OParlSource.objects.create(name="Demo", url="https://demo.invalid/oparl/system")
+        demo = OParlBody.objects.create(source=source, external_id="https://demo.invalid/oparl/body", name="Demo")
+        dateien = [_hochgeladen(demo, f"demo{i}") for i in range(5)]
+        OParlFileBlob.objects.update(remote_at=timezone.now() - VOR_LANGEM)
+        for datei in dateien:
+            Path(datei.local_path or "").unlink()
+        objektspeicher.create_bucket(Bucket="leer")
+        settings.OBJ_BUCKET = "leer"
+
+        out = StringIO()
+        call_command("dokumentablage", "--zurueckholen", "--trotz-zeitplan", stdout=out)
+        assert "fehlt=3" in out.getvalue() and "viele_fehlend=1" in out.getvalue() and "offen=5" in out.getvalue()
+        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 5, "der Vermerk bleibt"
+
+        settings.OBJ_ENABLED = False
+        out_probe, _ = _aufgeben()
+        assert "davon lokal nicht vorhanden: 5, davon nicht neu abrufbar: 5" in out_probe
+        for optionen in (("--ausfuehren",), ("--ausfuehren", "--trotz-fehlender")):
+            with pytest.raises(CommandError, match="nicht aufgegeben"):
+                _aufgeben(*optionen)
+        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 5
         assert quelle["abrufe"] == []
 
 

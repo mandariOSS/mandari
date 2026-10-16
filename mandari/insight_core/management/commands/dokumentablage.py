@@ -13,8 +13,8 @@ Schritte von Hand, während der Worker den Zeitplan bedient, mit ``--trotz-zeitp
     python manage.py dokumentablage --hochladen        # Inhalte in den Objektspeicher (nur mit OBJ_ENABLED)
     python manage.py dokumentablage --referenzen       # Referenzzähler aus den Verweisen neu berechnen
     python manage.py dokumentablage --zurueckholen     # lokal verdrängte Inhalte aus dem Objektspeicher holen (#990)
-    python manage.py dokumentablage --objektspeicher-aufgeben [--ausfuehren]
-                                                       # Objektspeicher bewusst aufgeben (#990, nur ohne OBJ_*)
+    python manage.py dokumentablage --objektspeicher-aufgeben [--ausfuehren [--trotz-fehlender]]
+                                                       # Objektspeicher bewusst aufgeben (#990, nur ohne OBJ_ENABLED)
 """
 
 from __future__ import annotations
@@ -63,10 +63,15 @@ class Command(EinmaligMixin, BaseCommand):
         parser.add_argument(
             "--objektspeicher-aufgeben",
             action="store_true",
-            help="Objektspeicher bewusst aufgeben: Vermerke remote_at löschen (nur ohne OBJ_*; ohne --ausfuehren Probelauf)",
+            help="Objektspeicher bewusst aufgeben: Vermerke remote_at löschen (nur ohne OBJ_ENABLED; ohne --ausfuehren Probelauf)",
         )
         parser.add_argument(
             "--ausfuehren", action="store_true", help="Mit --objektspeicher-aufgeben: Vermerke wirklich löschen"
+        )
+        parser.add_argument(
+            "--trotz-fehlender",
+            action="store_true",
+            help="Mit --objektspeicher-aufgeben --ausfuehren: auch wenn neu abrufbare Inhalte nicht lokal liegen",
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
@@ -79,10 +84,10 @@ class Command(EinmaligMixin, BaseCommand):
         if options["objektspeicher_aufgeben"]:
             if any(options.get(name) for name in SCHRITTE):
                 raise CommandError("--objektspeicher-aufgeben nur allein")
-            self._objektspeicher_aufgeben(ausfuehren=options["ausfuehren"])
+            self._objektspeicher_aufgeben(ausfuehren=options["ausfuehren"], trotz_fehlender=options["trotz_fehlender"])
             return
-        if options["ausfuehren"]:
-            raise CommandError("--ausfuehren nur mit --objektspeicher-aufgeben")
+        if options["ausfuehren"] or options["trotz_fehlender"]:
+            raise CommandError("--ausfuehren und --trotz-fehlender nur mit --objektspeicher-aufgeben")
 
         if options["umstellen"]:
             self._report("Umgestellt", file_store.migrate_legacy(limit=options["limit"]))
@@ -111,18 +116,19 @@ class Command(EinmaligMixin, BaseCommand):
             + f"; noch im alten Layout {stats['legacy_files']}"
         )
 
-    def _objektspeicher_aufgeben(self, *, ausfuehren: bool) -> None:
+    def _objektspeicher_aufgeben(self, *, ausfuehren: bool, trotz_fehlender: bool) -> None:
         """
         Ausdrücklicher Schritt zum Ausschalten (Issue #990): Ohne ihn gelten Inhalte, die laut Datenbank im
-        Objektspeicher liegen, ohne konfigurierten Objektspeicher als gestört, nie als fehlend. Verweigert, solange
-        dabei Inhalte verloren gingen (nicht neu abrufbar) oder in den letzten zwei Stunden hochgeladen wurde.
+        Objektspeicher liegen, ohne konfigurierten Objektspeicher als gestört, nie als fehlend. Im Zweifel verweigert:
+        solange Inhalte nicht lokal liegen (``--trotz-fehlender`` lässt nur neu abrufbare durch), nicht neu abrufbare
+        fehlen oder in den letzten zwei Stunden hochgeladen wurde.
         """
-        from insight_core.services import file_store, object_storage
+        from insight_core.services import file_store
 
-        if object_storage.enabled():
+        if file_store.object_storage_configured():
             raise CommandError(
-                "Objektspeicher ist hier konfiguriert (OBJ_ENABLED, OBJ_*): erst in Anwendung und Worker ausschalten "
-                "und neu starten"
+                "Objektspeicher ist hier eingeschaltet (OBJ_ENABLED, auch mit unvollständigen OBJ_*): erst in Anwendung "
+                "und Worker ausschalten und neu starten"
             )
         stand = file_store.object_storage_dependence()
         self.stdout.write(
@@ -130,15 +136,17 @@ class Command(EinmaligMixin, BaseCommand):
             f"davon nicht neu abrufbar: {stand.unrefetchable}; in den letzten zwei Stunden hochgeladen: {stand.recent}."
         )
         self.stdout.write(
-            "Lokal fehlende Inhalte gelten danach als fehlend; die neu abrufbaren werden bei der Quelle neu abgerufen "
-            "(Vorschau, cache_files). Was im Objektspeicher liegt, bleibt dort und wird nicht mehr gelöscht."
+            "Was im Objektspeicher liegt, bleibt dort und wird nicht mehr gelöscht. Den Bucket erst löschen, wenn hier "
+            "„lokal nicht vorhanden: 0“ stand und Vorschau und Texterkennung ohne ihn arbeiten."
         )
-        if stand.unrefetchable:
+        if stand.missing:
             self.stderr.write(
                 self.style.ERROR(
-                    f"{stand.unrefetchable} lokal fehlende Inhalte ließen sich nicht neu abrufen (Schonung, Dateiabruf "
-                    "abgeschaltet oder verweigert, synthetische Quelle, keine Adresse) und gingen verloren: vorher mit "
-                    "eingeschaltetem Objektspeicher dokumentablage --zurueckholen (docs/FILE_CACHE.md, „Ausschalten“)."
+                    f"{stand.missing} Inhalte liegen nicht lokal. Vorher mit eingeschaltetem Objektspeicher "
+                    "dokumentablage --zurueckholen, bis „offen=0“ (docs/FILE_CACHE.md, „Ausschalten“). Nicht neu "
+                    f"abrufbar davon: {stand.unrefetchable} (Schonung, Dateiabruf abgeschaltet oder verweigert, "
+                    "synthetische Quelle, keine Adresse); sie gingen verloren und halten das Aufgeben immer auf. Die "
+                    "übrigen holte die Quelle neu, wenn sie sie noch liefert (nur mit --trotz-fehlender)."
                 )
             )
         if stand.recent:
@@ -151,10 +159,11 @@ class Command(EinmaligMixin, BaseCommand):
         if not ausfuehren:
             self.stdout.write("Probelauf: nichts geändert. Übernehmen mit --ausfuehren.")
             return
-        if not stand.releasable:
-            raise CommandError("Objektspeicher nicht aufgegeben (Gründe oben)")
+        grund = stand.refusal(allow_missing=trotz_fehlender)
+        if grund:
+            raise CommandError(f"Objektspeicher nicht aufgegeben: {grund}")
         try:
-            geloescht = file_store.release_object_storage(stand)
+            geloescht = file_store.release_object_storage(stand, allow_missing=trotz_fehlender)
         except ValueError as exc:
             raise CommandError(f"Objektspeicher nicht aufgegeben: {exc}") from exc
         self.stdout.write(f"Vermerke gelöscht: {geloescht}")

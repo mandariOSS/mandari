@@ -371,10 +371,10 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   eine Abrufwelle bei den Kommunen aus. Gestört ist auch ein Inhalt, der laut Datenbank im Objektspeicher liegt
   (`remote_at`), während der Container ihn nicht konfiguriert hat (`OBJ_ENABLED=false`, fehlende `OBJ_*`;
   **Moduswechsel**, Issue #990): Vorschau, Abruf und Texterkennung warten dann, statt bei der Quelle abzurufen, und
-  jede solche Lesung steht als Warnung im Protokoll. Ein falsch konfigurierter Dienst löst so keine Abrufwelle aus;
-  das bewusste Ausschalten ist ein eigener Schritt (unten). Nur ein bestätigtes Fehlen (404 im Objektspeicher,
-  falscher Hash) setzt die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files` neu, und der Inhalt wird
-  neu hochgeladen.
+  das Protokoll warnt höchstens einmal je Minute und Prozess. Ein falsch konfigurierter Dienst löst so keine
+  Abrufwelle aus; das bewusste Ausschalten ist ein eigener Schritt (unten). Nur ein bestätigtes Fehlen (404 im
+  Objektspeicher, falscher Hash) setzt die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files` neu, und
+  der Inhalt wird neu hochgeladen.
   **Betriebsrisiko:** Zeigen `OBJ_BUCKET` oder das Schlüsselschema auf einen Bestand, in dem die Inhalte (noch)
   nicht liegen – etwa bei einem Umzug des Objektspeichers –, gilt jeder lokal verdrängte Inhalt als bestätigt
   fehlend und wird bei der Quelle neu geholt. Das Verdrängen selbst löscht dann keine lokale Kopie mehr (Prüfung per
@@ -401,13 +401,15 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   Wer den Objektspeicher **aufgibt**, holt zuerst bei eingeschaltetem Objektspeicher alles zurück, was lokal fehlt.
   Sonst gingen Inhalte verloren, die sich nicht neu abrufen lassen (Quelle in Schonung, Dateiabruf abgeschaltet
   oder verweigert, etwa hinter ALTCHA oder per robots.txt bzw. HTTP 401/403, synthetische Quelle, keine Adresse):
-  Genau solche verdrängt `OBJ_CACHE_MAX_GB` lokal. Die übrigen lädt die Vorschau bzw. `cache_files` sonst bei den
-  Kommunen neu. Vorher `OBJ_CACHE_MAX_GB` (und eine Obergrenze `FILE_CACHE_MAX_TOTAL_GB`) über den Bestand heben,
+  Genau solche verdrängt `OBJ_CACHE_MAX_GB` lokal. Auch was die Quelle laut Faustregel liefern könnte, kann dort
+  inzwischen fehlen (404/410) oder gesperrt sein; deshalb gilt **im Zweifel verweigern**. Vorher `OBJ_CACHE_MAX_GB` (und eine Obergrenze `FILE_CACHE_MAX_TOTAL_GB`) über den Bestand heben,
   sonst verdrängt das stündliche Aufräumen das Zurückgeholte wieder; `cache_files --stats` nennt die Größe im
   Objektspeicher, Platz für `FILE_CACHE_MIN_FREE_GB` muss bleiben.
 
   ```bash
-  # 1. Mit eingeschaltetem Objektspeicher zurückholen, wiederholen, bis „offen=0“
+  # 0. Optional: Referenzzähler berichtigen (gezählt wird ohnehin über die Verweise)
+  python manage.py dokumentablage --referenzen --trotz-zeitplan
+  # 1. Mit eingeschaltetem Objektspeicher zurückholen, wiederholen, bis „offen=0“ und „fehlt“ nicht mehr erscheint
   python manage.py dokumentablage --zurueckholen --limit 5000 --trotz-zeitplan
   # 2. OBJ_ENABLED=false in Anwendung und Worker, Neustart; dann Probelauf:
   #    Inhalte mit remote_at, davon lokal nicht vorhanden, davon nicht neu abrufbar, frisch hochgeladen
@@ -416,15 +418,23 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   python manage.py dokumentablage --objektspeicher-aufgeben --ausfuehren --trotz-zeitplan
   ```
 
-  `--ausfuehren` verweigert sich, solange der Objektspeicher im Container konfiguriert ist, solange lokal fehlende
-  Inhalte nicht neu abrufbar wären und solange in den letzten zwei Stunden hochgeladen wurde (ein anderer Container
-  hat den Objektspeicher dann womöglich noch eingeschaltet; die Prüfung von `OBJ_*` sieht nur den eigenen). Danach
-  gelten lokal fehlende Inhalte als fehlend; die Vorschau holt sie von der Quelle, `cache_files` lädt sie nach (so
-  viele Abrufe bei den Kommunen, wie der Probelauf als lokal nicht vorhanden nennt). Das Aufräumen löscht verwaiste
-  Inhalte nur noch lokal, die Obergrenze arbeitet ohne Objektspeicher. Was im Objektspeicher liegt, bleibt dort.
-  **Den Bucket erst löschen, wenn geprüft ist,** dass Vorschau und Texterkennung ohne ihn arbeiten (Stichprobe,
-  `cache_files --stats`, Prüfungen in `/health/worker/`); wird er später wieder eingeschaltet, lädt `--hochladen`
-  den Bestand erneut hoch.
+  **Zurückholen:** Fehlt ein Inhalt im Objektspeicher (`fehlt`), behält er seinen Vermerk `remote_at`, bleibt
+  „offen“ und hält das Aufgeben auf; nach `OBJ_EVICT_MAX_MISSING` fehlenden Inhalten in Folge bricht der Lauf ab
+  (`viele_fehlend`, meist ein falscher `OBJ_BUCKET`). Fertig ist das Zurückholen erst bei `offen=0` ohne `fehlt`.
+  Ein Inhalt, der wirklich weder lokal noch im Objektspeicher liegt, ist schon verloren; das gehört von Hand
+  geklärt, bevor man den Objektspeicher aufgibt.
+
+  `--ausfuehren` verweigert sich, solange `OBJ_ENABLED` im Container gesetzt ist (auch mit unvollständigen `OBJ_*`),
+  solange Inhalte nicht lokal liegen („lokal nicht vorhanden“ größer als 0) und solange in den letzten zwei Stunden
+  hochgeladen wurde (ein anderer Container hat den Objektspeicher dann womöglich noch eingeschaltet; die Prüfung von
+  `OBJ_ENABLED` sieht nur den eigenen). `--trotz-fehlender` ist für den bewussten Ausnahmefall: Es lässt lokal fehlende
+  Inhalte durch, die die Quelle laut Faustregel neu liefern könnte; die Vorschau holt sie danach von der Quelle,
+  `cache_files` lädt sie nach (so viele Abrufe bei den Kommunen, wie der Probelauf als lokal nicht vorhanden nennt).
+  Nicht neu abrufbare halten immer auf. Danach löscht das Aufräumen verwaiste Inhalte nur noch lokal, die Obergrenze
+  arbeitet ohne Objektspeicher. Was im Objektspeicher liegt, bleibt dort. **Den Bucket erst löschen, wenn der
+  Probelauf vor dem Ausführen „lokal nicht vorhanden: 0“ meldete** und geprüft ist, dass Vorschau und Texterkennung
+  ohne ihn arbeiten (Stichprobe, `cache_files --stats`, Prüfungen in `/health/worker/`); wird er später wieder
+  eingeschaltet, lädt `--hochladen` den Bestand erneut hoch.
 
 ### Obergrenze der Gesamtgröße
 
