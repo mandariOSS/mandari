@@ -27,15 +27,17 @@ Architekturentscheidungen werden als ADR unter [`docs/adr/`](adr/) festgehalten.
   sinken, nach einem Abbau `--update` im selben PR.
 - **Ereignisse veröffentlicht nur der Eigentümer:** Jeder Datenbestand hat genau einen Eigentümer, nur
   er schreibt. `publish()` für einen Ereignistyp steht nur im Paket, das sein Vertrag als `x-owner`
-  nennt ([ADR Ereignisverträge](adr/20260929-ereignisvertraege.md)). `ris.*` gehört der Drehscheibe:
-  Session meldet über die Abbildung in `hub/ris/`, nicht mit eigenem `publish()`. Die CI prüft das noch
-  nicht; im Review darauf achten.
+  nennt ([ADR Ereignisverträge](adr/20260929-ereignisvertraege.md)). `ris.*` gehört der Drehscheibe
+  (`hub.ris`, Übertragungen `ris.broadcast.*` in `hub.live`): Session meldet über die Abbildung in
+  `hub/ris/`, nicht mit eigenem `publish()`, der Ingestor schreibt `ris.*` als Eingangsadapter direkt
+  ins Journal. Die CI prüft das noch nicht; im Review darauf achten.
 - **Befehle statt Direktaufruf:** Wer Daten eines anderen Moduls ändern will, schickt dem Eigentümer
   einen Befehl über `hub.commands` (`InProcessClient`, bei getrennten Installationen `HttpClient`) und
   bekommt eine Quittung oder ein Problem nach RFC 9457
   ([ADR Befehle](adr/20260929-befehle-synchron.md)). Kein Aufruf fremder Services, kein Schreiben in
   fremde Tabellen. Den Handler registriert nur das Paket aus `x-owner` (`command_handler`); sonst bricht
-  der Start ab.
+  der Start ab. Auch lesend greift ein Modul nicht auf fremde Tabellen zu, weder über deren Modelle
+  noch per SQL; RIS-Daten liest es nur über `hub.ris.selectors` (siehe oben).
 - **Jedes Ereignis und jeder Befehl hat ein Schema:** JSON Schema unter
   `hub/contracts/schemas/<typ>/v<n>.json` mit `x-owner`, `x-visibility` und Beispielen, im selben PR wie
   der erste Aufruf. Schemas ändern sich nur additiv, sonst entsteht eine neue Version.
