@@ -97,7 +97,15 @@ def wait(url: str, *, sync_config: Any = None, max_wait: float | None = None) ->
     ``max_wait``: höchstens so lange warten (z. B. in einer Web-Anfrage); sonst nichts reservieren und
     ``False`` zurückgeben.
     """
-    seconds = interval(sync_config)
+    return wait_seconds(url, interval(sync_config), max_wait=max_wait)
+
+
+def wait_seconds(url: str, seconds: float, *, max_wait: float | None = None) -> bool:
+    """
+    Wie :func:`wait`, aber mit festem Abstand ``seconds`` (0 = keine Drossel), etwa für Dienste außerhalb der
+    Ratsinformationssysteme (:mod:`insight_core.services.dienste`). Derselbe Zeitstempel je Host: Liegt ein Dienst
+    auf dem Server eines RIS, teilen sich beide den Takt.
+    """
     host = host_of(url)
     if seconds <= 0 or not host:
         return True

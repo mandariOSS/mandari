@@ -9,7 +9,8 @@ Personenfotos, Löschabgleich und das Anlegen einer Quelle, auch für das Ziel j
 (dazu das Token einer abweichenden Kennung der Quelle); Gruppen für frühere Kennungen (``mandari-file-cache``,
 ``mandari``) gelten zusätzlich, wenn es sie gibt (:data:`mandari_oparl.crawler.LEGACY_TOKENS`).
 
-Die robots.txt eines Hosts liegt 24 Stunden im gemeinsamen Django-Cache (alle Prozesse), je Host und
+Die robots.txt eines Hosts liegt 24 Stunden im gemeinsamen Django-Cache (alle Prozesse), je Hostname
+(:func:`mandari_oparl.robots.host_key`, ohne Schema, Port und Unterschiede der Schreibweise, Issue #1036) und
 User-Agent: Manche Server filtern Wörter im User-Agent und antworten dann auch auf ``/robots.txt`` mit 403.
 Abruf mit dem User-Agent, mit dem auch die Datei geladen wird (:func:`user_agent_for`), und
 ``Accept: text/plain``.
@@ -54,7 +55,8 @@ logger = logging.getLogger(__name__)
 #: Kennung aller automatischen Abrufe aus Django (gleiches Produkt-Token wie der Ingestor)
 USER_AGENT = user_agent()
 
-_CACHE_PREFIX = "robots-txt:v2:"
+# v3: Schlüssel je Hostname statt je Schema, Host und Port (Issue #1036)
+_CACHE_PREFIX = "robots-txt:v3:"
 #: Eintrag samt letzter gültiger Fassung bleibt so lange im Cache (Frische regelt ``fetched_at``)
 _CACHE_TIMEOUT = 30 * 24 * 3600
 _TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)

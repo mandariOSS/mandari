@@ -244,6 +244,60 @@ def test_vorschau_wartet_mit_abrufplatz_und_ohne_datenbankverbindung(monkeypatch
     assert ablauf == ["platz", "freigabe", "takt max_wait=True", "abruf", "platz frei"]
 
 
+@pytest.mark.parametrize(
+    ("frist", "platz_dauer", "erwartet"),
+    [
+        # Frist 3 s, der Abrufplatz wird nach 2 s frei: robots.txt und Takt bleibt 1 s
+        (3.0, 2.0, [("platz", 2.0), ("takt", 1.0)]),
+        # Frist 1 s: auch auf den Platz höchstens 1 s statt der sonst 2 s, danach bleibt nichts
+        (1.0, 1.0, [("platz", 1.0), ("takt", 0.0)]),
+    ],
+)
+def test_vorschau_wartet_insgesamt_hoechstens_die_frist(
+    settings: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    frist: float,
+    platz_dauer: float,
+    erwartet: list[tuple[str, float]],
+) -> None:
+    """
+    Abrufplatz, robots.txt, Takt und Weiterleitungen teilen sich eine Frist (``FILE_PROXY_PACE_MAX_WAIT_SECONDS``,
+    Issue #1036). Vorher begann die Frist erst nach dem Warten auf den Abrufplatz (bis zu 2 s zusätzlich).
+    """
+    from insight_core.views import files as views
+
+    settings.FILE_PROXY_PACE_MAX_WAIT_SECONDS = frist
+    uhr = SimpleNamespace(jetzt=100.0)
+    monkeypatch.setattr(redirects, "time", SimpleNamespace(monotonic=lambda: uhr.jetzt))
+    wartezeiten: list[tuple[str, float]] = []
+
+    class _Platz:
+        def acquire(self, timeout: float | None = None) -> bool:
+            assert timeout is not None
+            wartezeiten.append(("platz", round(timeout, 3)))
+            uhr.jetzt += platz_dauer
+            return True
+
+        def release(self) -> None:
+            pass
+
+    def takt(url: str, **kw: Any) -> bool:
+        wartezeiten.append(("takt", round(kw["max_wait"], 3)))
+        return False  # binnen der Restzeit kein Zeitpunkt
+
+    def kein_abruf(*_a: Any, **_kw: Any) -> Any:
+        raise AssertionError("ohne freien Zeitpunkt kein Abruf")
+
+    monkeypatch.setattr(views, "_LIVE_FETCH_SLOTS", _Platz())
+    monkeypatch.setattr(host_pacing, "wait", takt)
+    monkeypatch.setattr(views, "_fetch_live", kein_abruf)
+    response = Client().get(f"/insight/dokumente/{_datei(6).id}/preview/")
+
+    assert response.status_code == 503 and response["Retry-After"] == "30"
+    assert wartezeiten == erwartet
+    assert sum(zeit for _art, zeit in wartezeiten) <= frist
+
+
 def test_vorschau_laedt_robots_txt_nur_mit_hoechstwartezeit(
     uhr: _Uhr, settings: Any, monkeypatch: pytest.MonkeyPatch, echte_robots: None
 ) -> None:

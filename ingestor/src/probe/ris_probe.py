@@ -363,7 +363,8 @@ async def probe_url(
     # 1) robots.txt (RFC 9309). Nicht erreichbar heißt: nichts weiter anfragen, später wiederholen.
     robots_url = urlunparse((parsed.scheme, parsed.netloc, "/robots.txt", "", "", ""))
     robots, robots_txt = await _load_robots(client, robots_url, budget, user_agent)
-    # Ausgewertete robots.txt je Schema und Host: Ziele von Weiterleitungen prüfen wir gegen die ihres Hosts
+    # Ausgewertete robots.txt je Hostname (host_key, ohne Schema und Port): Ziele von Weiterleitungen prüfen wir gegen
+    # die ihres Hosts
     robots_je_host: dict[str, RobotsTxt] = {host_key(url): robots}
 
     async def folgen(ziel: str) -> bool:

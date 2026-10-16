@@ -179,6 +179,77 @@ async def test_probe_can_be_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
     assert recorder.neutral_requests == 0
 
 
+@pytest.mark.parametrize("status", [301, 302, 303, 307, 308])
+async def test_weiterleitung_auf_die_vergleichsanfrage_ist_keine_ua_sperre(status: int) -> None:
+    """3xx auf die Vergleichsanfrage: Sperre unklar, kein Befund ``ua_blocked`` (#1036)."""
+
+    def respond(request: httpx.Request, _agents: list[str]) -> httpx.Response:
+        if request.headers.get("User-Agent", "").startswith("mandari-ingestor/"):
+            return httpx.Response(403, text="Forbidden")
+        return httpx.Response(status, headers={"Location": "https://ris.example.org/anmelden?sid=geheim"})
+
+    recorder = Recorder(respond)
+    client = await make_client(recorder)
+    try:
+        result = await client.fetch(SYSTEM_URL, use_cache=False)
+        second = await client.fetch(LIST_URL, use_cache=False)
+    finally:
+        await client._client.aclose()
+
+    assert result.error_kind is None and second.error_kind is None
+    assert client.error_kind is None and client.host_findings() == []
+    assert client.host_health["ris.example.org"].ua_blocked_at is None
+    assert f"weitergeleitet (HTTP {status} nach https://ris.example.org/anmelden)" in (result.error or "")
+    assert "Sperre unklar" in (second.error or "")
+    assert recorder.neutral_requests == 1, "genau eine Vergleichsanfrage, keiner Weiterleitung gefolgt"
+
+
+async def test_vergleichsanfrage_ohne_antwort_ist_keine_ua_sperre() -> None:
+    """Scheitert die Vergleichsanfrage (Netzfehler), bleibt die Sperre unklar, auch bei späteren 403 (#1036)."""
+
+    def respond(request: httpx.Request, _agents: list[str]) -> httpx.Response:
+        if request.headers.get("User-Agent", "").startswith("mandari-ingestor/"):
+            return httpx.Response(403, text="Forbidden")
+        raise httpx.ConnectError("keine Verbindung", request=request)
+
+    recorder = Recorder(respond)
+    client = await make_client(recorder)
+    try:
+        result = await client.fetch(SYSTEM_URL, use_cache=False)
+        second = await client.fetch(LIST_URL, use_cache=False)
+    finally:
+        await client._client.aclose()
+
+    assert result.error_kind is None and second.error_kind is None
+    assert "Vergleichsanfrage fehlgeschlagen (ConnectError), Sperre unklar" in (result.error or "")
+    assert "ohne Antwort, Sperre unklar" in (second.error or "")
+    assert "auch für neutralen Client" not in (second.error or "")
+    assert recorder.neutral_requests == 1
+
+
+async def test_vergleichsanfrage_belegt_einen_platz_je_host(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Die Vergleichsanfrage zählt in der Grenze gleichzeitiger Anfragen je Host wie jede Anfrage (#1036)."""
+    from src.client.host_pacing import host_pacer
+
+    belegt: list[str] = []
+    original = host_pacer.limit
+
+    def limit(url: str, interval: float) -> Any:
+        belegt.append(url)
+        return original(url, interval)
+
+    monkeypatch.setattr(host_pacer, "limit", limit)
+    recorder = Recorder(ua_filter)
+    client = await make_client(recorder)
+    try:
+        await client.fetch(SYSTEM_URL, use_cache=False)
+    finally:
+        await client._client.aclose()
+
+    assert recorder.neutral_requests == 1
+    assert belegt == [SYSTEM_URL, SYSTEM_URL], "ein Platz für den Abruf, einer für die Vergleichsanfrage"
+
+
 async def test_ua_block_is_not_mistaken_for_missing_modified_since_support() -> None:
     from datetime import UTC, datetime
 

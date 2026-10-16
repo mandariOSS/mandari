@@ -7,24 +7,27 @@ IT-Verantwortliche der Kommunen steht unter <https://mandari.de/crawler/>.
 
 Jede Aussage auf dieser Seite stammt aus dem Code oder der Konfiguration; die Fundstelle steht jeweils dabei.
 Stand: Code auf `dev` mit den Änderungen aus [#1025](https://github.com/mandariOSS/mandari/issues/1025)
-(Änderungsfenster, fehlende Listen, höchstens eine Anfrage je Sekunde) und aus
+(Änderungsfenster, fehlende Listen, höchstens eine Anfrage je Sekunde), aus
 [#1031](https://github.com/mandariOSS/mandari/pull/1031) (eine robots.txt-Regel für alle Abrufe, Weiterleitungen und
-Werkzeuge im Takt je Server). Die von uns betriebene Instanz (mandari.de) folgt diesen Regeln ab dem ersten Deploy,
-der #1031 enthält; bis dahin läuft dort noch ein älterer Stand.
+Werkzeuge im Takt je Server) und aus [#1036](https://github.com/mandariOSS/mandari/issues/1036) (eine robots.txt je
+Hostname, Grenze gleichzeitiger Anfragen auch für Scraper und Vergleichsanfrage, eine Frist für die ganze Vorschau,
+Kennung und Takt je Server auch für Live-Übertragung und Geodienste). Die von uns betriebene Instanz (mandari.de)
+folgt diesen Regeln ab dem ersten Deploy, der #1031 und #1036 enthält; bis dahin läuft dort noch ein älterer Stand.
 
 ## Auf einen Blick
 
 | Punkt | Regel |
 |---|---|
 | Kennung | `mandari-ingestor/<Version> (+https://mandari.de/crawler/; support@mandari.de)` |
-| robots.txt | RFC 9309; für uns gilt die Gruppe `mandari-ingestor`, ohne sie `*`; je Server 24 Stunden zwischengespeichert |
+| robots.txt | RFC 9309; für uns gilt die Gruppe `mandari-ingestor`, ohne sie `*`; je Hostname 24 Stunden zwischengespeichert |
 | Takt | höchstens eine Anfrage je Sekunde und Server, über alle Abrufe von mandari zusammen; je Quelle nur langsamer |
-| Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess |
+| Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
 | Weiterleitungen | höchstens fünf je Abruf, jede erst nach der robots.txt ihres Ziels und mit eigenem Zeitpunkt im Takt |
 | Abgleich | alle 10 Minuten; gefragt wird nur nach Änderungen (`modified_since`) |
 | Vollabgleich | einmal täglich zu einer festen Stunde, je Quelle auch seltener oder nur in einem Zeitfenster |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
 | Abruf-Adresse | derzeit `144.76.153.200`, nur IPv4 (die von uns betriebene Instanz mandari.de); sie kann sich ändern, erkennen Sie uns am User-Agent |
+| Andere Dienste | Live-Übertragung und Geodienste mit derselben Kennung und eigenem Takt je Server (siehe [Andere Abrufe](#andere-abrufe)) |
 | Kontakt | support@mandari.de |
 
 ## Drosseln, ausschließen, Kontakt
@@ -93,6 +96,7 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
 |---|---|
 | Ingestor: Abgleich, Scraper, Texterkennung, Sondierung | `mandari-ingestor/<Version> (+https://mandari.de/crawler/; support@mandari.de)` |
 | Anwendung: Dokument-Cache, Vorschau, Löschabgleich, Personenfotos, Texterkennung, Quellenanlage | `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)` |
+| Anwendung: Live-Übertragung und Geodienste ([Andere Abrufe](#andere-abrufe)) | `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)` |
 
 - Die Version ist die Paketversion des Ingestors (`ingestor/pyproject.toml`, derzeit `0.1.0`;
   `ingestor/src/config.py`, `DEFAULT_USER_AGENT`). Aufbau, Infoseite und Kontaktadresse:
@@ -102,9 +106,11 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
 - Anfragen an die Schnittstelle senden `Accept: application/json`, Abrufe der robots.txt `Accept: text/plain`.
 - **Vergleichsanfrage nach HTTP 403:** Antwortet ein Server dem Abgleich mit 403, stellt der Ingestor je Server und
   Lauf einer Quelle genau eine Vergleichsanfrage mit der Standardkennung der HTTP-Bibliothek, `python-httpx/<Version>`
-  (`ingestor/src/client/oparl_client.py`, `NEUTRAL_USER_AGENT`, `_diagnose_forbidden`). Sie geht im Takt an die
-  Adresse, die 403 geliefert hat, und folgt keiner Weiterleitung. Nur eine erfolgreiche Antwort (2xx) gilt als Sperre
-  unseres User-Agents; eine Weiterleitung lässt das offen, ein Fehler heißt „Zugriff verweigert“. Das dient nur der
+  (`ingestor/src/client/oparl_client.py`, `NEUTRAL_USER_AGENT`, `_diagnose_forbidden`). Sie geht im Takt und mit
+  einem Platz in der Grenze gleichzeitiger Anfragen an die Adresse, die 403 geliefert hat, und folgt keiner
+  Weiterleitung. Nur eine erfolgreiche Antwort (2xx) gilt als Sperre unseres User-Agents. Eine Weiterleitung (3xx)
+  und eine Vergleichsanfrage ohne Antwort (Netzfehler, Zeitüberschreitung) lassen das offen („Sperre unklar“), jede
+  andere Antwort heißt „Zugriff verweigert, auch für neutralen Client“. Das dient nur der
   Diagnose: Weiter abgerufen wird mit unserer Kennung, die Quelle wird geschont (siehe
   [Fehler und Schonung](#fehler-und-schonung)). Dieselbe Vergleichsanfrage stellt `probe-ris` nach HTTP 403 auf die
   Startseite. Beide schaltet `OPARL_UA_PROBE_ENABLED=false` ab.
@@ -135,9 +141,14 @@ Ausgewertet nach RFC 9309 mit eigenem Parser, für Ingestor und Anwendung gemein
   500 KiB (`MAX_BYTES`). Zeitgrenze je Verbindungsaufbau und Lesevorgang im Ingestor 15 Sekunden
   (`ingestor/src/client/robots.py`, `ROBOTS_TIMEOUT`), in der Anwendung 5 Sekunden für den Verbindungsaufbau und
   10 Sekunden zum Lesen.
-- **Zwischenspeicher:** 24 Stunden (`CACHE_SECONDS`) je Schema, Server, Port und Kennung (`host_key`); im Ingestor je
-  Prozess (`ingestor/src/client/robots.py`), in der Anwendung im gemeinsamen Cache aller Prozesse
-  (`mandari/insight_core/services/robots.py`). Änderungen an Ihrer robots.txt wirken also spätestens nach 24 Stunden.
+- **Zwischenspeicher:** 24 Stunden (`CACHE_SECONDS`) je Hostname und Kennung (`host_key`): Schema, Port und
+  Schreibweise ergeben keinen eigenen Eintrag. `https://RIS.example.de:443/`, `http://ris.example.de/` und
+  `https://ris.example.de:8443/` teilen sich eine robots.txt, so wie sie sich den [Takt](#takt-je-server) teilen.
+  Geladen wird sie mit Schema und Port der ersten Anfrage, die sie braucht. RFC 9309 sieht eine robots.txt je Schema,
+  Host und Port vor; bei Ratsinformationssystemen ist ein Hostname ein Server, deshalb fragen wir sie nur einmal an.
+  Im Ingestor gilt der Zwischenspeicher je Prozess (`ingestor/src/client/robots.py`), in der Anwendung im
+  gemeinsamen Cache aller Prozesse (`mandari/insight_core/services/robots.py`). Änderungen an Ihrer robots.txt wirken
+  also spätestens nach 24 Stunden.
 - **Nicht vorhanden:** 4xx (auch 401, 403, 406) gilt als „keine robots.txt“, also alles erlaubt.
 - **Nicht erreichbar:** 5xx, 408, 429, ein Netzfehler oder mehr als fünf Weiterleitungen. Gab es vorher eine gültige
   Fassung, gilt sie weiter, bis ein Abruf wieder gelingt. Gab es keine, fragen wir nicht an, sondern stellen den Abruf
@@ -180,9 +191,9 @@ eigenen Abrufe (siehe „Je Quelle nur langsamer“).
 | Abruf | Abstand je Server | Gleichzeitig | Fundstelle |
 |---|---|---|---|
 | Ingestor: Schnittstelle, Texterkennung | 1 s; je Quelle 1 bis 30 s | höchstens 2 offene Anfragen je Server und Prozess | `pacing.py` `DEFAULT_INTERVAL`; `ingestor/src/config.py` `request_interval`, `host_max_concurrent` |
-| Ingestor: Scraper (RIS ohne OParl) | 2 s, nie unter 1 s | je Quelle streng nacheinander | `ingestor/src/scrapers/base.py` `rate_limit_seconds` |
+| Ingestor: Scraper (RIS ohne OParl) | 2 s, nie unter 1 s | je Quelle streng nacheinander; zusammen mit Abgleich und Texterkennung höchstens 2 offene Anfragen je Server und Prozess | `ingestor/src/scrapers/base.py` `rate_limit_seconds`, `ingestor/src/scrapers/politeness.py` |
 | Anwendung: Dokument-Cache, Löschabgleich, Personenfotos, Texterkennung, robots.txt | 1 s; je Quelle 1 bis 30 s | je Lauf nacheinander | `mandari/mandari/settings.py` `RIS_REQUEST_INTERVAL` |
-| Anwendung: Vorschau | 1 s; je Quelle 1 bis 30 s | höchstens 4 Abrufe je Prozess, 20 je Besucher-Adresse und Minute | `mandari/insight_core/throttle.py` |
+| Anwendung: Vorschau | 1 s; je Quelle 1 bis 30 s | höchstens 4 Abrufe je Prozess (`FILE_PROXY_MAX_CONCURRENT`), 20 je Besucher-Adresse und Minute | `mandari/insight_core/throttle.py` |
 | Löschabgleich zusätzlich | mindestens 2 s zwischen zwei Prüfungen je Server innerhalb eines Laufs; die `GET`-Nachprüfung nach einer `HEAD`-Stichprobe nur im gemeinsamen Takt | nacheinander | `loeschabgleich --interval` |
 | Werkzeug `add_oparl_source` | 1 s; bei einer schon angelegten Quelle deren Abstand; ein größerer Abstand einer registrierten Quelle auf dem Server gilt | nacheinander | `add_oparl_source.py` (`RIS_REQUEST_INTERVAL`) |
 | Werkzeug `probe-ris` | 1 s; ein größerer Abstand einer registrierten Quelle auf dem Server gilt; zwischen zwei Kommunen 2 s Pause | nacheinander | `ris_probe.py`, `ingestor/src/main.py` (`INGESTOR_REQUEST_INTERVAL`) |
@@ -197,14 +208,19 @@ eigenen Abrufe (siehe „Je Quelle nur langsamer“).
 - **Drossel aus:** `0` in `INGESTOR_REQUEST_INTERVAL` bzw. `RIS_REQUEST_INTERVAL` schaltet die Drossel des jeweiligen
   Prozesses ab; ein `request_interval` der Quelle gilt weiter. Das ist nur für Tests und Notfälle gedacht.
 - **Gleichzeitig im Ingestor:** Die Grenze von zwei offenen Anfragen je Server und Prozess
-  (`INGESTOR_HOST_MAX_CONCURRENT`, `ingestor/src/client/host_pacing.py`) gilt für Abgleich und Texterkennung. Folgt
-  ein Abruf einer Weiterleitung auf einen anderen Server, zieht sein Platz dorthin mit.
+  (`INGESTOR_HOST_MAX_CONCURRENT`, `ingestor/src/client/host_pacing.py`) gilt für Abgleich, Vergleichsanfrage,
+  Texterkennung und Scraper zusammen. Folgt ein Abruf einer Weiterleitung auf einen anderen Server, zieht sein Platz
+  vorher dorthin mit (`HostSlot.move_to`), auch für den Abruf der robots.txt des Ziels; am Ziel gelten also Takt und
+  Grenze. Nur der Abruf der robots.txt vor der ersten Anfrage an einen Server zählt allein im Takt (je Server und
+  Kennung höchstens einmal in 24 Stunden, nach einer Störung alle 15 Minuten).
 - **Ohne Redis** drosselt jeder Prozess für sich und versucht es nach 60 Sekunden wieder mit Redis
   (`REDIS_RETRY_SECONDS` in `ingestor/src/client/host_pacing.py` und `mandari/insight_core/services/host_pacing.py`).
   Mehrere Prozesse können dann zusammen schneller abrufen als eine Anfrage je Sekunde.
-- **Wartezeit der Vorschau:** Sie wartet höchstens 5 Sekunden auf robots.txt und freie Zeitpunkte, alle
-  Weiterleitungen eingeschlossen (`FILE_PROXY_PACE_MAX_WAIT_SECONDS`). Sonst bittet sie mit HTTP 503 und
-  `Retry-After: 30` um einen neuen Versuch, statt den Takt zu überziehen (`mandari/insight_core/views/files.py`).
+- **Wartezeit der Vorschau:** Eine Frist von höchstens 5 Sekunden für die ganze Anfrage
+  (`FILE_PROXY_PACE_MAX_WAIT_SECONDS`): auf einen der vier Abrufplätze des Prozesses (davon höchstens 2 Sekunden,
+  `_SLOT_MAX_WAIT_SECONDS`), auf robots.txt und freie Zeitpunkte, alle Weiterleitungen eingeschlossen. Jeder Schritt
+  wartet nur die Restzeit. Ist kein Platz oder kein Zeitpunkt frei, bittet sie mit HTTP 503 und `Retry-After: 30` um
+  einen neuen Versuch, statt den Takt zu überziehen (`mandari/insight_core/views/files.py`).
 - **Zeitgrenzen** gelten je Verbindungsaufbau und je Lesevorgang (Warten auf das nächste Datenpaket), nicht für die
   ganze Anfrage: 60 Sekunden an der Schnittstelle (`OPARL_REQUEST_TIMEOUT`), 30 Sekunden bei den Scrapern,
   120 Sekunden bei Dateien der Texterkennung im Ingestor (`TEXT_EXTRACTION_TIMEOUT`); in der Anwendung im
@@ -224,6 +240,9 @@ Weiterleitung:
 2. robots.txt des Ziel-Servers, mit derselben Kennung und Ausnahme der Quelle wie die erste Anfrage. Ist sie noch
    nicht bekannt, laden wir sie im Takt.
 3. Ein eigener Zeitpunkt im Takt des Ziel-Servers.
+
+Im Ingestor zieht der Platz des Abrufs in der Grenze gleichzeitiger Anfragen vorher zum Ziel-Server um (Abgleich,
+Texterkennung, Scraper): Am Ziel gelten Takt und Grenze wie am Ausgangsserver.
 
 Sperrt die robots.txt das Ziel, folgen wir nicht. Ist sie nicht erreichbar, stellen wir den Abruf zurück. Mehr als
 fünf Weiterleitungen beenden den Abruf mit einem Fehler. Die robots.txt selbst folgt ihren Weiterleitungen ebenfalls
@@ -575,7 +594,7 @@ Anwendung (`mandari/mandari/settings.py`):
 | Variable | Standard | Wirkung |
 |---|---|---|
 | `RIS_REQUEST_INTERVAL` | `1.0` | Abstand je Server in Sekunden; `0` = Drossel aus (nur Tests und Notfälle) |
-| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | `5` | höchste Wartezeit der Vorschau auf robots.txt und Takt, Weiterleitungen eingeschlossen |
+| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | `5` | höchste Wartezeit der Vorschau insgesamt: auf Abrufplatz, robots.txt und Takt, Weiterleitungen eingeschlossen |
 | `FILE_CACHE_MAX_MB` | `80` | größte Datei für die Ablage |
 | `DOCUMENT_FETCH_MAX_QUEUED` | `200` | Abrufe je Quelle und Lauf des Dokument-Caches |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | `3` | ab so vielen fehlgeschlagenen Läufen in Folge ruhen Dokument-Cache, Vorschau, Löschabgleich und Personenfotos für die Quelle |
@@ -597,19 +616,33 @@ nach. Im Helm-Chart: `ingestor.extraEnv` bzw. `app.extraEnv`.
   [Rhythmus](#rhythmus)). `INGESTOR_USER_AGENT` und die übrigen Variablen des Ingestors (`INGESTOR_*`, `OPARL_*`)
   gehören deshalb auch in dessen Umgebung: unter Docker Compose in `x-app-environment`, im Helm-Chart in
   `app.extraEnv`. Sonst ruft der Worker mit der Standardkennung samt support@mandari.de ab.
-- Die Abrufe der Anwendung (Dokument-Cache, Vorschau, Löschabgleich, Personenfotos, Quellenanlage) melden sich mit
-  der festen Kennung `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)`. Eine Umgebungsvariable
-  dafür gibt es nicht; abweichend nur je Quelle über `sync_config["download_headers"]` (nicht für die
-  Quellenanlage).
+- Die Abrufe der Anwendung (Dokument-Cache, Vorschau, Löschabgleich, Personenfotos, Quellenanlage, Live-Übertragung
+  und Geodienste) melden sich mit der festen Kennung
+  `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)`. Eine Umgebungsvariable dafür gibt es nicht;
+  abweichend nur je Quelle über `sync_config["download_headers"]` (nicht für Quellenanlage, Live-Übertragung und
+  Geodienste).
 - Den gemeinsamen Takt über alle Prozesse gibt es nur mit Redis, das Ingestor und Anwendung beide erreichen.
 - Liegt ein RIS im eigenen Netz, braucht die Anwendung `INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS=true`.
 
 ## Andere Abrufe
 
-Diese Abrufe gehen nicht an Ratsinformationssysteme und folgen nicht den Regeln dieser Seite:
+Diese Abrufe gehen nicht an Ratsinformationssysteme. Sie melden sich mit derselben Kennung,
+`mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)`, und halten einen eigenen Takt je Server ein
+(`mandari/insight_core/services/dienste.py`, `ABSTAND`), vor jeder Anfrage und vor jeder Weiterleitung. Der Takt
+nutzt denselben Zeitstempel in Redis wie die Abrufe bei Ratsinformationssystemen: Liegt ein Dienst auf dem Server
+eines RIS, etwa das Geoportal einer Kommune, teilen sich beide den Takt. Ohne Redis drosselt jeder Prozess für sich.
+Eine robots.txt werten diese Abrufe nicht aus: Sie durchsuchen keine Seiten, sondern fragen Schnittstellen ab; es
+gelten die Nutzungsregeln des jeweiligen Dienstes.
 
-- Live-Übertragung von Sitzungen bei Streaming-Anbietern, mit der Kennung `mandari (+https://mandari.de)`
-  (`mandari/hub/live/anbieter/http.py`).
-- Geodienste für die Umringe von Bebauungsplänen (`mandari/insight_core/services/plan_boundaries.py`), mit der
-  Kennung `Mandari/1.0 (https://mandari.de; support@mandari.de)` und einer Sekunde Pause zwischen zwei Seiten.
-- OpenStreetMap, Overpass und Photon für Karten, Orte und Adresssuche.
+| Abruf | Ziel | Abstand je Server | Wann | Fundstelle |
+|---|---|---|---|---|
+| Live-Übertragung | Streaming-Anbieter (3Q, HLS-Server) | 1 s | nur mit `LIVE_UEBERTRAGUNG_AKTIV`: Status einmal je Minute rund um Sitzungen; während einer Übertragung ein Einzelbild im Takt der Quelle (Standard 10 Sekunden, 5 bis 60), je Einzelbild 2 bis 4 Anfragen | `mandari/hub/live/anbieter/http.py`, `dienste.LIVE` |
+| Umringe von Bebauungsplänen | Geoportale von Kommunen und Land (WFS, OGC API – Features) | 1 s; dazu 1 s Pause zwischen zwei Seiten | täglich um 04:50 (`sync_plan_boundaries`) | `mandari/insight_core/services/plan_boundaries.py`, `dienste.GEOPORTAL` |
+| Nominatim (OpenStreetMap) | `nominatim.openstreetmap.org` | 1 s (Nutzungsregeln: höchstens eine Anfrage je Sekunde) | Geodaten einer Kommune von Hand (`fetch_osm_geodata`, `resolve_body_geodata`); Ersatz in der Georeferenzierung von Vorgängen, wenn Photon nichts findet | `fetch_osm_geodata.py`, `georeferencing.py`, `dienste.NOMINATIM` |
+| Overpass (OpenStreetMap) | `overpass-api.de`, Ersatz `overpass.kumi.systems` | 1 s | Straßen, Adressen und Grenzen von Hand (`import_streets`, `resolve_body_geodata`) | `mandari/insight_core/services/overpass.py`, `dienste.OVERPASS` |
+| Photon | `photon.komoot.io` (`PHOTON_API_URL`) | 1 s; in der Adresssuche höchstens 2 s Wartezeit, sonst keine Vorschläge | Georeferenzierung von Vorgängen für Orte, die das eigene Straßenverzeichnis nicht kennt; Adresssuche nur ohne eigenes Straßenverzeichnis | `georeferencing.py`, `neighborhood.py`, `dienste.PHOTON` |
+| Kartenkacheln | `tile.openstreetmap.org` | 0,05 s (bis zu 20 Kacheln je Sekunde); höchstens 5 s Wartezeit, sonst HTTP 503 mit `Retry-After: 5` | nur Kacheln, die nicht im eigenen Zwischenspeicher liegen; dazu je Besucher-Adresse höchstens 300 und insgesamt 1200 Abrufe je Minute | `mandari/insight_core/views/maps.py`, `dienste.KACHELN` |
+| Kacheln vorab laden | `tile.openstreetmap.org` | 0,5 s | nur von Hand (`prefetch_tiles`) | `prefetch_tiles.py`, `dienste.KACHELN_VORAB` |
+
+`DIENSTE_DROSSEL` schaltet den Takt dieser Abrufe ab; die Einstellung gibt es nur im Code für Tests
+(`mandari/mandari/settings_test.py`), nicht als Umgebungsvariable.

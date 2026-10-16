@@ -33,6 +33,8 @@ MAILERS = {"default": {"BACKEND": MAIL_BACKEND, "OPTIONS": {}}}
 ELASTICSEARCH_AUTO_INDEX = False
 # Drossel je Host aus: Tests sollen nicht sekundenweise warten (eigene Tests in test_drossel_je_host.py)
 RIS_REQUEST_INTERVAL = 0.0
+# Ebenso der Takt je Host für Live-Übertragung und Geodienste (eigene Tests in test_dienste.py)
+DIENSTE_DROSSEL = False
 # publish() prüft jedes Ereignis gegen das Vertragsregister (in der CI läuft die Suite mit DEBUG=false)
 EVENTS_VALIDATE_CONTRACTS = True
 PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]  # schnelle Hashes nur im Test
