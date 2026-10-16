@@ -244,6 +244,25 @@ async def test_umstellung_ohne_scheinaenderungen(storage: DatabaseStorage) -> No
             assert uuid.UUID(nutzlast["agenda_item"]) in zeilen
 
 
+async def test_beratung_meldet_die_zeile_des_umgeschriebenen_punkts(storage: DatabaseStorage) -> None:
+    """Nach der Umstellung ändert sich eine Beratung: Das Ereignis nennt die Zeile des Punkts (uuid5 alter Kennung)."""
+    abruf = await Abruf(storage).anlegen()
+    meeting, keys = await sitzung(INSTANZ, lesen(INSTANZ, "si0057.html"))
+    await abruf.speichern(bisherig(meeting, keys), keys=None)
+    await abruf.speichern(meeting, keys)
+    await ereignisse(storage, leeren=True)
+
+    key = next(key for key in keys if key.consultation)
+    beratung = next(c for c in meeting["mandari:consultations"] if c["id"] == key.consultation)
+    daten = {k: v for k, v in beratung.items() if k != "mandari:kvonr"} | {"role": "Entscheidung"}
+    await storage.upsert_consultation(abruf.processor.process_consultation(daten, KOERPERSCHAFT), abruf.body_id)
+
+    (geaendert,) = [n for typ, n in await ereignisse(storage) if typ == "ris.consultation.changed"]
+    assert geaendert["changed"] == ["role"]
+    assert geaendert["agenda_item"] == str(canonical_id(key.legacy_id))
+    assert geaendert["agenda_item"] != str(canonical_id(key.item_id))
+
+
 async def test_umstellung_nach_umnummerierung_ohne_doppelte_punkte(storage: DatabaseStorage) -> None:
     """
     Seit dem letzten Abruf umnummeriert: Jeder Punkt der Seite hat genau eine Zeile, keine Zeile bleibt übrig, nur der

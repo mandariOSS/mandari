@@ -235,8 +235,8 @@ class ScrapeStats:
     incomplete: dict[str, str] = field(default_factory=dict)
     #: Objekte, die eine Liste nennt, deren Detailseite aber nicht lesbar war: Es gibt sie in der Quelle
     listed: dict[str, set[str]] = field(default_factory=dict)
-    #: Sitzungen, deren Tagesordnung der Lauf vollständig gelesen hat, mit den gelieferten Tagesordnungspunkten
-    #: (Löschabgleich der Tagesordnung, Issue #863)
+    #: Sitzungen, deren Tagesordnung der Lauf gelesen hat (mindestens ein Punkt), mit den gelieferten
+    #: Tagesordnungspunkten (Löschabgleich der Tagesordnung, Issue #863)
     agendas: dict[str, set[str]] = field(default_factory=dict)
 
     @property

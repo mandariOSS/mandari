@@ -249,11 +249,15 @@ Die Sitzungsseite (`si0057`) nennt je Punkt weder eine eigene Kennung noch einen
 - **Punkte, die die Tagesordnung nicht mehr liefert** (abgesetzt, nachträglich mit Vorlage, umnummeriert ohne
   Vorlage), markiert der Abruf nach derselben Regel wie Sitzungen und Gremien als gelöscht (`quelle_geloescht`,
   Ereignis `ris.object.depublished`, nichtöffentliche Punkte nur nichtöffentlich): nur in Vollabgleichen ohne
-  Fehler, nur für Sitzungen, deren Tagesordnung der Lauf vollständig gelesen hat (Seite lesbar, Tabelle der
-  Tagesordnung vorhanden, mindestens ein Punkt), erst nach `SCRAPER_TOMBSTONE_FULL_CRAWLS` solchen Läufen in Folge
-  und mit der Bremse `SCRAPER_TOMBSTONE_MAX_MISSING`. Liest ein Lauf die Sitzung nicht vollständig, beginnt die
-  Zählung ihrer Punkte von vorn. Nur Punkte in der Form seit #863; Zähler in `scraper_state.missing.agendaitem`.
-  Taucht ein Punkt wieder auf, hebt der Upsert die Markierung auf.
+  Fehler, nur für Sitzungen, deren Tagesordnung der Lauf gelesen hat (Seite lesbar, mindestens ein Punkt), und erst
+  nach `SCRAPER_TOMBSTONE_FULL_CRAWLS` solchen Läufen in Folge. Liest ein Vollabgleich die Sitzung nicht (oder gar
+  keine Tagesordnung), beginnt die Zählung ihrer Punkte von vorn. Nur Punkte in der Form seit #863; Zähler in
+  `scraper_state.missing.agendaitem`. Taucht ein Punkt wieder auf, hebt der Upsert die Markierung auf.
+- **Bremse je Sitzung:** Für Tagesordnungspunkte gilt nicht die Bremse je Quelle (`SCRAPER_TOMBSTONE_MAX_MISSING`),
+  sondern je Sitzung: Fehlt mehr als die Hälfte ihrer Punkte, etwa weil ein ganzer Teil der Seite fehlt, zählt für
+  diese Sitzung nichts, und ihre Zähler bleiben stehen. Was der Abruf vor #863 nie gelöscht hat, hält so den Abgleich
+  der übrigen Sitzungen nicht an. `last_run.agenda_braked` nennt gebremste Sitzungen und fehlende Punkte; die Quelle
+  bekommt dafür keine Warnung im Betriebsmonitor.
 
 **Umstellung des Bestands.** Bis Issue #863 war die Nummer die Kennung (`…#agendaitem/3.2`, `N1`). Der erste Abruf
 einer Sitzung mit der neuen Form schreibt ihre Punkte in place um: `external_id` neu, `id` bleibt (wie beim Umzug
@@ -284,11 +288,16 @@ docker compose exec ingestor python -m src.main top-kennungen-zurueck --source <
 docker compose exec ingestor python -m src.main top-kennungen-zurueck --source <URL der Quelle> --ausfuehren # schreibt
 ```
 
-ausführen. Der Befehl gibt umgeschriebenen Zeilen ihre abgelöste Kennung zurück (`mandari:previousId`, `id` passt
-wieder) und neu angelegten Punkten der Tagesordnung die Kennung, die der ältere Abruf vergäbe, sofern frei. Er endet
-mit Fehler, wenn Zeilen ohne Rückweg bleiben; dann nicht zurückfallen. Punkte, die seit der Umstellung neu angelegt
-wurden und keine freie Kennung bekommen, kann der ältere Abruf ein zweites Mal anlegen. Läuft danach wieder der neue
-Abruf, stellt er erneut um.
+ausführen. Der Befehl gibt umgeschriebenen Zeilen genau ihre abgelöste Kennung zurück (`mandari:previousId`); danach
+passt jede `id` wieder zu ihrer Kennung. Er endet mit Fehler, wenn Zeilen ohne Rückweg bleiben; dann nicht
+zurückfallen. Punkte, die seit der Umstellung neu angelegt wurden, bleiben in der neuen Form, und der ältere Abruf
+legt sie ein zweites Mal an (Dublette, kein Abbruch).
+
+`--neue-punkte` schreibt auch diese Punkte auf die Kennung um, die der ältere Abruf vergäbe, sofern frei. Ihre `id`
+passt danach nicht mehr zur Kennung. Nur für einen dauerhaften Rückfall verwenden: **Wird nach einem Rückweg mit
+`--neue-punkte` wieder auf den neuen Abruf umgestellt, kann er solchen Zeilen eine andere als ihre ursprüngliche
+Kennung geben; liefert die Seite später die ursprüngliche, scheitert der Abruf am Primärschlüssel.** Ohne
+`--neue-punkte` ist ein späteres erneutes Umstellen sicher: Es läuft wie die erste Umstellung.
 
 ### Änderungserkennung & Löschungen
 

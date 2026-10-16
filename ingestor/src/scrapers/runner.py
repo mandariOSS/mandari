@@ -212,6 +212,7 @@ class ScraperSyncRunner:
             # Typen, deren Liste vollständig gelesen wurde; Tombstone erst nach N Sichtungs-Ausfällen.
             deleted_count = 0
             braked: dict[str, int] = {}
+            agenda_braked: dict[str, int] = {}
             if full and crawl_completed and not result.errors:
                 deleted_count = await self._handle_missing(
                     list(body_ids.values()),
@@ -222,6 +223,7 @@ class ScraperSyncRunner:
                     adapter.stats,
                     braked,
                     removable_agenda_item=getattr(adapter, "is_removable_agenda_item_id", None),
+                    agenda_braked=agenda_braked,
                 )
 
             # Zustand persistieren
@@ -244,6 +246,8 @@ class ScraperSyncRunner:
                 "gone_pages": adapter.stats.gone_pages,
                 "incomplete": dict(sorted(adapter.stats.incomplete.items())),
                 "tombstone_braked": braked,
+                # Tagesordnungen, deren Löschabgleich die Bremse je Sitzung ausgesetzt hat (Issue #863)
+                "agenda_braked": agenda_braked,
             }
             await self.storage.update_scraper_state(self.source.url, state)
 
@@ -344,6 +348,7 @@ class ScraperSyncRunner:
         braked: dict[str, int],
         *,
         removable_agenda_item: Callable[[str], bool] | None = None,
+        agenda_braked: dict[str, int] | None = None,
     ) -> int:
         """
         Zählt nicht mehr gesichtete Objekte hoch und tombstonet nach
@@ -355,39 +360,25 @@ class ScraperSyncRunner:
         Nicht vollständig gelesene Typen (``stats.incomplete``) und Typen, bei denen mehr Objekte fehlen,
         als die Bremse erlaubt (``braked``), lassen ihre Zähler stehen: Aus einer Lücke folgt nichts.
         Objekte, die eine Liste nennt, deren Detailseite aber nicht lesbar war, gelten als gesehen.
-
-        Tagesordnungspunkte (Issue #863): Liste ist die Tagesordnung einer Sitzung. Kandidaten sind nur die Punkte
-        der Sitzungen, deren Tagesordnung dieser Lauf vollständig gelesen hat (``stats.agendas``), und nur solche,
-        die der Adapter dafür freigibt (``removable_agenda_item``); liest ein Lauf die Sitzung nicht vollständig,
-        beginnt die Zählung ihrer Punkte von vorn.
+        Tagesordnungspunkte zählt ``_count_missing_agenda_items`` je Sitzung.
         """
         threshold = max(1, settings.scraper_tombstone_full_crawls)
         missing_state: dict[str, dict[str, int]] = {k: dict(v) for k, v in (state.get("missing") or {}).items()}
         deleted_count = 0
 
-        entity_types = [*TOMBSTONE_ENTITY_TYPES]
-        if removable_agenda_item is not None and stats.agendas:
-            entity_types.append(AGENDA_ITEM_TYPE)
-        for entity_type in entity_types:
+        for entity_type in TOMBSTONE_ENTITY_TYPES:
             if entity_type in stats.incomplete:
                 console.print(
                     f"[yellow]  Löschabgleich {entity_type} ausgesetzt: {stats.incomplete[entity_type]}[/yellow]"
                 )
                 continue
             candidates: set[str] = set()
-            if entity_type == AGENDA_ITEM_TYPE and removable_agenda_item is not None:
-                stored = await self.storage.get_active_agenda_item_ids(sorted(stats.agendas))
-                candidates = {external_id for external_id in stored if removable_agenda_item(external_id)}
-                seen_ids = set().union(*stats.agendas.values())
-            else:
-                for body_id in body_ids:
-                    if entity_type == "meeting":
-                        candidates |= await self.storage.get_active_meeting_ids_in_window(
-                            body_id, window.start, window.end
-                        )
-                    else:
-                        candidates |= await self.storage.get_active_external_ids_for_body(entity_type, body_id)
-                seen_ids = seen.get(entity_type, set()) | stats.listed.get(entity_type, set())
+            for body_id in body_ids:
+                if entity_type == "meeting":
+                    candidates |= await self.storage.get_active_meeting_ids_in_window(body_id, window.start, window.end)
+                else:
+                    candidates |= await self.storage.get_active_external_ids_for_body(entity_type, body_id)
+            seen_ids = seen.get(entity_type, set()) | stats.listed.get(entity_type, set())
             unseen = candidates - seen_ids
             if brake_engaged(len(unseen), settings.scraper_tombstone_max_missing):
                 braked[entity_type] = len(unseen)
@@ -403,17 +394,77 @@ class ScraperSyncRunner:
                 if external_id in seen_ids or external_id not in candidates:
                     del counters[external_id]
 
-            for external_id in unseen:
-                counters[external_id] = counters.get(external_id, 0) + 1
-                if counters[external_id] >= threshold:
-                    marked = await self.orchestrator._mark_deleted({"id": external_id}, entity_type, es_deletions)
-                    if marked:
-                        deleted_count += 1
-                        console.print(
-                            f"[yellow]  Tombstone: {entity_type} {external_id} "
-                            f"(nach {counters[external_id]} Full-Crawls ohne Sichtung)[/yellow]"
-                        )
-                    del counters[external_id]
+            deleted_count += await self._count_up(entity_type, unseen, counters, threshold, es_deletions)
+
+        if removable_agenda_item is not None:
+            counters = missing_state.setdefault(AGENDA_ITEM_TYPE, {})
+            unseen = await self._missing_agenda_items(stats, counters, removable_agenda_item, agenda_braked)
+            deleted_count += await self._count_up(AGENDA_ITEM_TYPE, unseen, counters, threshold, es_deletions)
 
         state["missing"] = missing_state
+        return deleted_count
+
+    async def _missing_agenda_items(
+        self,
+        stats: ScrapeStats,
+        counters: dict[str, int],
+        removable: Callable[[str], bool],
+        agenda_braked: dict[str, int] | None,
+    ) -> set[str]:
+        """
+        Tagesordnungspunkte, die in diesem Lauf als fehlend zählen (Issue #863); setzt die übrigen Zähler zurück.
+
+        Liste ist die Tagesordnung einer Sitzung: Kandidaten sind nur die Punkte der Sitzungen, deren Tagesordnung der
+        Lauf gelesen hat (``stats.agendas``, mindestens ein Punkt), und nur solche, die der Adapter dafür freigibt.
+        Die Bremse gilt je Sitzung, nicht je Quelle: Fehlt mehr als die Hälfte ihrer Punkte (etwa ein ganzer Teil der
+        Seite), zählt für diese Sitzung nichts, und ihre Zähler bleiben stehen. Was eine Quelle früher nie gelöscht hat,
+        hält so den Abgleich der übrigen Sitzungen nicht an. Liest ein Lauf eine Sitzung nicht (oder keine), beginnt die
+        Zählung ihrer Punkte von vorn.
+        """
+        stored = await self.storage.get_active_agenda_item_ids(sorted(stats.agendas)) if stats.agendas else {}
+        unseen: set[str] = set()
+        held: set[str] = set()
+        braked_meetings = braked_items = 0
+        for meeting, items in stored.items():
+            candidates = {external_id for external_id in items if removable(external_id)}
+            missing = candidates - stats.agendas.get(meeting, set())
+            if 2 * len(missing) > len(candidates):
+                braked_meetings += 1
+                braked_items += len(missing)
+                held |= missing
+                continue
+            unseen |= missing
+        for external_id in list(counters):
+            if external_id not in unseen and external_id not in held:
+                del counters[external_id]
+        if braked_meetings:
+            console.print(
+                f"[yellow]  Löschabgleich agendaitem: {braked_meetings} Sitzung(en) gebremst, dort fehlt mehr als die "
+                f"Hälfte der Punkte ({braked_items}) - nichts gezählt[/yellow]"
+            )
+            if agenda_braked is not None:
+                agenda_braked.update({"meetings": braked_meetings, "missing": braked_items})
+        return unseen
+
+    async def _count_up(
+        self,
+        entity_type: str,
+        unseen: set[str],
+        counters: dict[str, int],
+        threshold: int,
+        es_deletions: dict[str, list[str]],
+    ) -> int:
+        """Zähler der fehlenden Objekte erhöhen; nach ``threshold`` Läufen in Folge als gelöscht markieren."""
+        deleted_count = 0
+        for external_id in sorted(unseen):
+            counters[external_id] = counters.get(external_id, 0) + 1
+            if counters[external_id] >= threshold:
+                marked = await self.orchestrator._mark_deleted({"id": external_id}, entity_type, es_deletions)
+                if marked:
+                    deleted_count += 1
+                    console.print(
+                        f"[yellow]  Tombstone: {entity_type} {external_id} "
+                        f"(nach {counters[external_id]} Full-Crawls ohne Sichtung)[/yellow]"
+                    )
+                del counters[external_id]
         return deleted_count

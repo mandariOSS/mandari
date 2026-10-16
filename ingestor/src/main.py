@@ -762,6 +762,11 @@ def probe_ris(
 def top_kennungen_zurueck(
     source_url: str = typer.Option(..., "--source", "-s", help="URL der SessionNet-Quelle (wie in list-sources)"),
     ausfuehren: bool = typer.Option(False, "--ausfuehren", help="Umschreiben; ohne den Schalter nur zählen"),
+    neue_punkte: bool = typer.Option(
+        False,
+        "--neue-punkte",
+        help="Auch seit der Umstellung angelegte Punkte umschreiben (nur für einen dauerhaften Rückfall)",
+    ),
 ) -> None:
     """
     Rückweg vor einem Rückfall auf einen Ingestor von vor Issue #863 (Kennungen der Tagesordnungspunkte).
@@ -769,7 +774,9 @@ def top_kennungen_zurueck(
     Schreibt die Kennungen der Punkte einer SessionNet-Quelle auf die bisherige Form (Nummer) zurück, ``id`` bleibt.
     Ohne diesen Schritt bricht ein älterer Ingestor den Abruf der Quelle ab (Primärschlüssel vergeben). Vorher den
     Daemon für die Quelle anhalten (``is_active = false``), danach das ältere Image starten. Endet mit Fehler, wenn
-    umgeschriebene Punkte ohne Rückweg bleiben: dann nicht zurückfallen.
+    umgeschriebene Punkte ohne Rückweg bleiben: dann nicht zurückfallen. Punkte, die seit der Umstellung angelegt
+    wurden, legt der ältere Abruf ein zweites Mal an; ``--neue-punkte`` verhindert das, macht aber ein späteres
+    erneutes Umstellen unsicher (docs/SCRAPER_SOURCES.md).
     """
     from src.scrapers.top_kennungen import revert_agenda_item_ids
 
@@ -782,13 +789,18 @@ def top_kennungen_zurueck(
             if str((source.sync_config or {}).get("source_type") or "") != "scraper:sessionnet":
                 console.print("[red]Keine SessionNet-Quelle (source_type scraper:sessionnet): nichts zu tun.[/red]")
                 return 1
-            report = await revert_agenda_item_ids(orchestrator.storage, source, apply=ausfuehren)
+            report = await revert_agenda_item_ids(orchestrator.storage, source, apply=ausfuehren, new_items=neue_punkte)
         verb = "zurückgeschrieben" if ausfuehren else "zurückzuschreiben (Probelauf, --ausfuehren schreibt)"
         console.print(
             f"Sitzungen: {report.meetings}, Punkte mit abgelöster Kennung: {report.restore}, "
             f"seit der Umstellung angelegt: {report.translate} – {verb}"
             + (f", geschrieben: {report.written}" if ausfuehren else "")
         )
+        if report.new_items_left:
+            console.print(
+                f"[yellow]{report.new_items_left} seit der Umstellung angelegte Punkte bleiben in der neuen Form; "
+                "der ältere Abruf legt sie ein zweites Mal an (--neue-punkte schreibt sie um).[/yellow]"
+            )
         if report.unresolved:
             console.print(
                 f"[red]{len(report.unresolved)} umgeschriebene Punkte ohne Rückweg, nicht zurückfallen:[/red] "

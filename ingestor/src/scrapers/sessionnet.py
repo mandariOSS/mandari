@@ -248,8 +248,6 @@ class AgendaRow:
 class MeetingAgenda:
     title: str | None = None
     rows: list[AgendaRow] = field(default_factory=list)
-    #: Die Seite trägt die Tabelle der Tagesordnung (sonst ist sie nicht lesbar, auch wenn sie leer wirkt)
-    table_found: bool = False
 
 
 def parse_meeting_agenda(html: str) -> MeetingAgenda:
@@ -265,7 +263,6 @@ def parse_meeting_agenda(html: str) -> MeetingAgenda:
     )
     if table is None:
         return agenda
-    agenda.table_found = True
 
     public = True
     for row in table.find_all("tr"):
@@ -1396,9 +1393,9 @@ class SessionNetAdapter:
             )
         if agenda_items:
             meeting["agendaItem"] = agenda_items
-            if agenda.table_found:
-                # Vollständig gelesene Tagesordnung: Grundlage des Löschabgleichs ihrer Punkte (Runner)
-                self.stats.agendas[external_id] = {item["id"] for item in agenda_items}
+            # Gelesene Tagesordnung (mindestens ein Punkt): Grundlage des Löschabgleichs ihrer Punkte im Runner. Fehlt
+            # ein Teil der Seite, hält die Bremse je Sitzung den Abgleich an (``_missing_agenda_items``).
+            self.stats.agendas[external_id] = {item["id"] for item in agenda_items}
         self._agenda_keys[external_id] = keys
         # Interner Transport zum Aufrufer (wird vor dem Upsert entfernt)
         meeting["mandari:consultations"] = consultations

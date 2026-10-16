@@ -87,14 +87,15 @@ _ENTITY_MODEL_MAP: dict[str, type] = {
 #: Issue #863). Der Abruf schreibt sie bei jedem Speichern wieder an den Punkt, der Rückweg findet die Zeile daran.
 PREVIOUS_ID_FIELD: Final = "mandari:previousId"
 
-#: Verweis einer Beratung auf einen umgeschriebenen Tagesordnungspunkt nachziehen (Spalte und ``raw_json``)
+#: Verweis einer Beratung auf einen umgeschriebenen Tagesordnungspunkt nachziehen (Spalte und ``raw_json``). Über
+#: ``raw_json`` nur unter den Beratungen der Sitzung suchen: Beide Spalten haben einen Index, ``raw_json`` nicht.
 _RENAME_CONSULTATION_REFERENCE = text(
     "UPDATE oparl_consultations SET"
     " agenda_item_external_id = CASE WHEN agenda_item_external_id = :old THEN :new ELSE agenda_item_external_id END,"
     " raw_json = CASE WHEN raw_json->>'agendaItem' = :old"
     " THEN jsonb_set(raw_json, '{agendaItem}', to_jsonb(CAST(:new AS text))) ELSE raw_json END,"
     " updated_at = now()"
-    " WHERE agenda_item_external_id = :old OR raw_json->>'agendaItem' = :old"
+    " WHERE agenda_item_external_id = :old OR (meeting_external_id = :meeting AND raw_json->>'agendaItem' = :old)"
 )
 
 
@@ -1911,20 +1912,24 @@ class DatabaseStorage:
         fields = ("id", "external_id", "number", "name", "public", "order", "deleted", "consultation", "previous_id")
         return [dict(zip(fields, row, strict=True)) for row in rows]
 
-    async def get_active_agenda_item_ids(self, meeting_external_ids: list[str]) -> set[str]:
-        """Kennungen der nicht als gelöscht markierten Tagesordnungspunkte dieser Sitzungen (Löschabgleich, #863)."""
-        result: set[str] = set()
+    async def get_active_agenda_item_ids(self, meeting_external_ids: list[str]) -> dict[str, set[str]]:
+        """
+        Kennungen der nicht als gelöscht markierten Tagesordnungspunkte je Sitzung (Löschabgleich der Tagesordnung,
+        Issue #863). Sitzungen ohne solche Punkte fehlen.
+        """
+        result: dict[str, set[str]] = {}
         async with self.get_session() as session:
             for start in range(0, len(meeting_external_ids), 500):
                 stmt = (
-                    select(OParlAgendaItem.external_id)
+                    select(OParlMeeting.external_id, OParlAgendaItem.external_id)
                     .join(OParlMeeting, OParlMeeting.id == OParlAgendaItem.meeting_id)
                     .where(
                         OParlMeeting.external_id.in_(meeting_external_ids[start : start + 500]),
                         OParlAgendaItem.deleted.is_(False),
                     )
                 )
-                result.update((await session.execute(stmt)).scalars())
+                for meeting, item in (await session.execute(stmt)).all():
+                    result.setdefault(meeting, set()).add(item)
         return result
 
     async def get_meeting_agendas_of_source(self, source_id: UUID) -> list[tuple[str, list[Any]]]:
@@ -2002,7 +2007,9 @@ class DatabaseStorage:
                 ).first()
                 if row is None:
                     continue
-                await session.execute(_RENAME_CONSULTATION_REFERENCE, {"old": old, "new": new})
+                await session.execute(
+                    _RENAME_CONSULTATION_REFERENCE, {"old": old, "new": new, "meeting": meeting_external_id}
+                )
                 taken.add(new)
                 done[old] = new
             agenda = meeting_raw.get("agendaItem") if isinstance(meeting_raw, dict) else None
@@ -2271,24 +2278,23 @@ class DatabaseStorage:
                 "updated_at": func.now(),
             }
             _assert_no_enrichment_overwrite(update_set)
+            # Für das Ereignis die Zeile des Punkts im Bestand, nicht die Kennung aus seiner Adresse (umgeschriebene
+            # Punkte, Issue #863); im selben Befehl, ohne eigene Abfrage
+            agenda_ref = consultation.agenda_item_external_id if emit else None
+            returning: list[Any] = [OParlConsultation.id]
+            if agenda_ref:
+                returning.append(
+                    select(OParlAgendaItem.id).where(OParlAgendaItem.external_id == agenda_ref).scalar_subquery()
+                )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
-            ).returning(OParlConsultation.id)
+            ).returning(*returning)
 
-            result = await session.execute(stmt)
-            consultation_id = result.scalar_one()
+            row = (await session.execute(stmt)).one()
+            consultation_id = row[0]
             if emit:
-                agenda_item_id = None
-                if consultation.agenda_item_external_id:
-                    # Die Zeile im Bestand, nicht die Kennung aus der Adresse (umgeschriebene Punkte, Issue #863)
-                    agenda_item_id = (
-                        await session.execute(
-                            select(OParlAgendaItem.id).where(
-                                OParlAgendaItem.external_id == consultation.agenda_item_external_id
-                            )
-                        )
-                    ).scalar_one_or_none()
+                agenda_item_id = row[1] if agenda_ref else None
                 drafts = ris_events.consultation_events(
                     consultation_id,
                     consultation.raw_json or {},

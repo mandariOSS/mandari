@@ -229,12 +229,10 @@ def test_bisherige_form_erkennen() -> None:
     assert not is_legacy_agenda_item_id(f"{sitzung_}#agendaitem/")
 
 
-def test_tagesordnung_ohne_tabelle_ist_nicht_gelesen() -> None:
+def test_tagesordnung_ohne_tabelle_liefert_keine_punkte() -> None:
     html = (FIXTURES / "samtgemeinde" / "si0057_1001.html").read_text(encoding="utf-8")
-    assert parse_meeting_agenda(html).table_found
-    agenda = parse_meeting_agenda(ohne_tabelle(html))
-    assert not agenda.table_found
-    assert agenda.rows == []
+    assert len(parse_meeting_agenda(html).rows) == 3
+    assert parse_meeting_agenda(ohne_tabelle(html)).rows == []
 
 
 # ---------------------------------------------------------------------------
@@ -431,15 +429,19 @@ class Orchestrator(FakeOrchestrator):
 
 
 class Tagesordnung(SamtgemeindeFetcher):
-    """Samtgemeinde-Seiten; die Tagesordnung von Sitzung 1001 nach Vorgabe."""
+    """Samtgemeinde-Seiten; die Tagesordnung von Sitzung 1001 nach Vorgabe, auf Wunsch alle ohne Tabelle."""
 
     seite_1001: str | None = None
+    alle_ohne_tabelle = False
 
     async def fetch_text(self, url: str) -> str | None:
         if "si0057" in url and "__ksinr=1001" in url and self.seite_1001 is not None:
             self.requests.append(url)
-            return self.seite_1001
-        return await super().fetch_text(url)
+            return ohne_tabelle(self.seite_1001) if self.alle_ohne_tabelle else self.seite_1001
+        html = await super().fetch_text(url)
+        if html is not None and "si0057" in url and self.alle_ohne_tabelle:
+            return ohne_tabelle(html)
+        return html
 
 
 @pytest.fixture
@@ -541,6 +543,111 @@ async def test_loeschabgleich_der_tagesordnung(samtgemeinde: Tagesordnung) -> No
     assert (await lauf()).marked == [alt]
 
 
+async def test_vollabgleich_ohne_gelesene_tagesordnung_beginnt_von_vorn(samtgemeinde: Tagesordnung) -> None:
+    """Liest ein Vollabgleich keine einzige Tagesordnung, ist er keiner „in Folge“: Die Zähler beginnen von vorn."""
+    alt = f"{SITZUNG_1001}#agendaitem/nr-1"
+    samtgemeinde.seite_1001 = vorlage_folgt((FIXTURES / "samtgemeinde" / "si0057_1001.html").read_text("utf-8"))
+    state: dict[str, Any] = {}
+
+    async def lauf() -> FakeOrchestrator:
+        orchestrator = Orchestrator([], {})
+        orchestrator.storage.agenda_items = {alt, f"{SITZUNG_1001}#agendaitem/kvonr-5001"}
+        await ScraperSyncRunner(orchestrator, _quelle(state)).run(full=True)  # type: ignore[arg-type]
+        state.update(orchestrator.storage.state)
+        return orchestrator
+
+    await lauf()
+    assert state["missing"]["agendaitem"] == {alt: 1}
+    samtgemeinde.alle_ohne_tabelle = True
+    assert (await lauf()).marked == []
+    assert state["missing"]["agendaitem"] == {}
+    samtgemeinde.alle_ohne_tabelle = False
+    assert (await lauf()).marked == []
+    assert (await lauf()).marked == [alt]
+
+
+ESCHWEILER = INSTANZEN["eschweiler"][0]
+#: Sitzungen im Kalender der Fixture (Juli 2026); jede liefert die Tagesordnung aus si0057.html
+ESCHWEILER_SITZUNGEN = (4849, 4850, 4851, 4853, 4854)
+_TOP_ZEILE = re.compile(r'<tr class="smc-t-r-l"><td class="tofnum">.*?</tr>', re.DOTALL)
+
+
+def gekuerzt(html: str, behalten: int) -> str:
+    """Teilweise gelesene Seite: nur die ersten ``behalten`` Punkte der Tagesordnung."""
+    zaehler = iter(range(10**6))
+    return _TOP_ZEILE.sub(lambda m: m.group(0) if next(zaehler) < behalten else "", html)
+
+
+async def test_bremse_je_sitzung_statt_je_quelle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """
+    Mehr als zehn Altzeilen über mehrere Sitzungen (der Abruf vor #863 hat nie gelöscht) halten den Abgleich nicht an:
+    Die Bremse gilt je Sitzung. Eine teilweise gelesene Seite (mehr als die Hälfte ihrer Punkte fehlt) zählt nicht.
+    """
+    from tests.test_sessionnet_parser import FixtureFetcher
+
+    teile = agenda_item_keys(parse_meeting_agenda(lesen("eschweiler", "si0057.html")).rows)
+    assert len(teile) == 28
+
+    class TeilweiseGelesen(FixtureFetcher):
+        async def fetch_text(self, url: str) -> str | None:
+            text = await super().fetch_text(url)
+            if text is not None and "/si0057." in url and "__ksinr=4850" in url:
+                return gekuerzt(text, 10)
+            return text
+
+    fetcher = TeilweiseGelesen("eschweiler")
+
+    class Abruf:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> FixtureFetcher:
+            return fetcher
+
+        async def __aexit__(self, *args: Any) -> None:
+            return None
+
+    class Juli(CrawlWindow):
+        @classmethod
+        def from_days(cls, days_back: int, days_ahead: int, today: date | None = None) -> CrawlWindow:
+            return CrawlWindow(start=date(2026, 7, 1), end=date(2026, 7, 1))
+
+    monkeypatch.setattr(runner_module, "PoliteFetcher", Abruf)
+    monkeypatch.setattr(runner_module, "CrawlWindow", Juli)
+    monkeypatch.setattr(runner_module.settings, "text_extraction_enabled", False)
+    monkeypatch.setattr(runner_module.settings, "elasticsearch_indexing_enabled", False)
+    monkeypatch.setattr(runner_module.settings, "scraper_tombstone_full_crawls", 1)
+    monkeypatch.setattr(runner_module.settings, "scraper_tombstone_max_missing", 10)
+
+    altzeilen: dict[int, set[str]] = {}
+    im_bestand: set[str] = set()
+    for ksinr in ESCHWEILER_SITZUNGEN:
+        sitzung_ = f"{ESCHWEILER}si0057.php?__ksinr={ksinr}#agendaitem/"
+        altzeilen[ksinr] = {f"{sitzung_}nr-99.{n}" for n in range(1, 4)}
+        im_bestand |= {f"{sitzung_}{teil}" for teil in teile} | altzeilen[ksinr]
+    quelle = FakeSource()
+    quelle.url = ESCHWEILER
+    quelle.sync_config = {
+        "source_type": "scraper:sessionnet",
+        "scraper": {"base_url": ESCHWEILER, "variant": "php"},
+        "scraper_state": {},
+    }
+    orchestrator = Orchestrator([], {})
+    orchestrator.storage.agenda_items = im_bestand
+
+    result = await ScraperSyncRunner(orchestrator, quelle).run(full=True)  # type: ignore[arg-type]
+
+    assert result.success, result.errors
+    erwartet = set().union(*(altzeilen[k] for k in ESCHWEILER_SITZUNGEN if k != 4850))
+    assert len(erwartet) > 10
+    assert set(orchestrator.marked) == erwartet
+    # Sitzung 4850 nur zu 10 von 28 Punkten gelesen: gebremst, nichts gezählt, die Quelle ohne Warnung
+    last_run = orchestrator.storage.state["last_run"]
+    assert last_run["agenda_braked"] == {"meetings": 1, "missing": 28 - 10 + 3}
+    assert last_run["tombstone_braked"] == {}
+    assert orchestrator.storage.state["missing"]["agendaitem"] == {}
+
+
 # ---------------------------------------------------------------------------
 # Befehl top-kennungen-zurueck
 # ---------------------------------------------------------------------------
@@ -554,9 +661,14 @@ class RueckwegSpeicher:
         self.source = SimpleNamespace(
             id=uuid.uuid4(), url=BASE_URL, sync_config={"source_type": source_type}, name="Samtgemeinde"
         )
-        self.agenda = [{"id": f"{sitzung_}kvonr-5", "number": "2", "public": True}]
+        self.agenda = [
+            {"id": f"{sitzung_}kvonr-5", "number": "2", "public": True},
+            {"id": f"{sitzung_}nr-3", "number": "3", "public": True},
+        ]
         self.rows = [
-            {"id": canonical_id(f"{sitzung_}2"), "external_id": f"{sitzung_}kvonr-5", "previous_id": f"{sitzung_}2"}
+            {"id": canonical_id(f"{sitzung_}2"), "external_id": f"{sitzung_}kvonr-5", "previous_id": f"{sitzung_}2"},
+            # seit der Umstellung angelegt
+            {"id": canonical_id(f"{sitzung_}nr-3"), "external_id": f"{sitzung_}nr-3"},
         ]
         if verloren:
             self.rows.append({"id": canonical_id(f"{sitzung_}9"), "external_id": f"{sitzung_}nr-9"})
@@ -601,10 +713,19 @@ def test_befehl_rueckweg(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "Punkte mit abgelöster Kennung: 1" in text
     assert speicher.geschrieben == []
 
+    assert "1 seit der Umstellung angelegte Punkte bleiben in der neuen Form" in text
+
+    # Standard: nur genau die abgelösten Kennungen zurück (auch ein späteres erneutes Umstellen bleibt sicher)
     code, text = _befehl(monkeypatch, speicher, "--ausfuehren")
     assert code == 0, text
     sitzung_ = f"{BASE_URL}si0057.asp?__ksinr=1#agendaitem/"
     assert speicher.geschrieben == [({f"{sitzung_}kvonr-5": f"{sitzung_}2"}, False)]
+
+    # Mit --neue-punkte auch die seit der Umstellung angelegten Punkte
+    speicher.geschrieben.clear()
+    code, text = _befehl(monkeypatch, speicher, "--ausfuehren", "--neue-punkte")
+    assert code == 0, text
+    assert speicher.geschrieben == [({f"{sitzung_}kvonr-5": f"{sitzung_}2", f"{sitzung_}nr-3": f"{sitzung_}3"}, False)]
 
 
 def test_befehl_rueckweg_bricht_ab(monkeypatch: pytest.MonkeyPatch) -> None:
