@@ -113,6 +113,88 @@ def test_rueckstau_der_auftraege(mit_bedarf: Any) -> None:
     assert "Aufträge 960 s" in ergebnis.detail
 
 
+def _wartet_seit(auftrag: Task, sekunden: float) -> None:
+    Task.objects.filter(pk=auftrag.pk).update(run_after=timezone.now() - timedelta(seconds=sekunden))
+
+
+def _laeuft(queue: str, *, sperre: timedelta = timedelta(seconds=60)) -> Task:
+    """Laufender Auftrag; mit negativer ``sperre`` ist sein Runner tot (Sperre abgelaufen, noch nicht freigegeben)."""
+    auftrag = _auftrag(TaskStatus.LAEUFT, queue=queue)
+    Task.objects.filter(pk=auftrag.pk).update(locked_until=timezone.now() + sperre)
+    return auftrag
+
+
+@pytest.mark.django_db
+def test_rueckstau_ocr_gruen_solange_ein_auftrag_laeuft(mit_bedarf: Any) -> None:
+    """Texterkennung (#953): In ocr wartet jeder Auftrag hinter den vorigen; kein Rückstau, solange einer läuft."""
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="ocr"), status.MAX_TASK_WAIT * 3)
+    _laeuft("ocr")
+
+    ergebnis = status.check_backlog()
+
+    assert ergebnis.ok, ergebnis.detail
+    assert "Aufträge 0 s" in ergebnis.detail, "ocr zählt nicht zu den übrigen Warteschlangen"
+    assert "ocr " in ergebnis.detail and "(1 laufend)" in ergebnis.detail
+    assert "x.y" not in ergebnis.detail, "keine Namen von Aufträgen"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("runner_tot", [False, True])
+def test_rueckstau_ocr_rot_wenn_keiner_laeuft(mit_bedarf: Any, runner_tot: bool) -> None:
+    alt = _auftrag(TaskStatus.WARTEND, queue="ocr")
+    if runner_tot:
+        _laeuft("ocr", sperre=-timedelta(seconds=30))
+    _wartet_seit(alt, status.MAX_TASK_WAIT - 60)
+    assert status.check_backlog().ok, "unter der Schwelle auch ohne laufenden Auftrag"
+
+    _wartet_seit(alt, status.MAX_TASK_WAIT + 60)
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "(0 laufend)" in ergebnis.detail
+
+
+@pytest.mark.django_db
+def test_rueckstau_ocr_versuch_ueber_der_zeitgrenze_laeuft_nicht(mit_bedarf: Any) -> None:
+    """Über der Zeitgrenze bleibt ein Versuch bis zum Neustart des Runners gesperrt, arbeitet aber nicht mehr."""
+    from apps.events.task_runner import CODE_TIMEOUT
+
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="ocr"), status.MAX_TASK_WAIT + 60)
+    haengt = _laeuft("ocr")
+    Task.objects.filter(pk=haengt.pk).update(result_code=CODE_TIMEOUT)
+
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "(0 laufend)" in ergebnis.detail
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("andere", ["default", "ai"])
+def test_rueckstau_ocr_laufender_auftrag_anderswo_hilft_nicht(mit_bedarf: Any, andere: str) -> None:
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="ocr"), status.MAX_TASK_WAIT + 60)
+    _laeuft(andere)
+
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "(0 laufend)" in ergebnis.detail and "Aufträge 0 s" in ergebnis.detail
+
+
+@pytest.mark.django_db
+def test_rueckstau_anderer_warteschlangen_unveraendert(mit_bedarf: Any) -> None:
+    """Für alle übrigen Warteschlangen bleibt es bei 15 Minuten, auch wenn dort oder in ocr ein Auftrag läuft."""
+    _laeuft("default")
+    _laeuft("ocr")
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="default"), status.MAX_TASK_WAIT + 60)
+
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "Aufträge 960 s" in ergebnis.detail
+    assert "ocr" not in ergebnis.detail, "ohne fällige Aufträge in ocr kein eigener Teil"
+
+
 @pytest.mark.django_db
 def test_rueckstau_der_zustellung_ausser_pausiert(monkeypatch: pytest.MonkeyPatch) -> None:
     from apps.events import metrics

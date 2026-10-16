@@ -1279,14 +1279,17 @@ Dokumente Text bekommen (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“).
 | Ablage | mit `FILE_CACHE_MAX_TOTAL_GB`: `cache_files` meldet nicht dauerhaft `limit` (Protokoll des Workers, „Obergrenze erreicht“), sonst warten neue Dokumente auf Platz und bekommen so lange keinen Text; dann die Grenze anheben. `cache_files --stats` zeigt Belegung und verdrängte Dokumente |
 | Stichprobe | Vorgänge mit neuen Dokumenten zeigen Text, Vorschau liefert |
 
-Die Prüfung `rueckstau` misst den ältesten fälligen Auftrag über alle Warteschlangen (höchstens 15 Minuten).
-In `ocr` wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu `TEXT_EXTRACTION_QUEUE_DEPTH`
-Aufträge, bis 30 Minuten je Datei); bei vielen gescannten Dateien, etwa nach der Nacharbeit, kann die Prüfung
-deshalb rot werden, obwohl die Erkennung arbeitet (`mandari_tasks_running{queue="ocr"}` 1, Texte entstehen).
-Dann `TEXT_EXTRACTION_QUEUE_DEPTH` senken, etwa auf `5`, und Worker und Anwendung neu starten; dieselbe Grenze
-gilt für `extract_texts` ohne `--limit`, ein ausdrückliches `--limit` darüber lässt die Prüfung bewusst
-anschlagen. Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml` messen `ocr` gesondert
-(`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit „Auftragsrückstand“.
+Die Prüfung `rueckstau` misst den ältesten fälligen Auftrag je Warteschlange (höchstens 15 Minuten), `ocr`
+gesondert (Issue #953): Dort wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu
+`TEXT_EXTRACTION_QUEUE_DEPTH` Aufträge, bis 30 Minuten je Datei). Bei vielen gescannten Dateien, etwa nach der
+Nacharbeit oder beim Altbestand einer Quelle, warten Aufträge dort deshalb oft länger als 15 Minuten, obwohl die
+Erkennung arbeitet. `rueckstau` bleibt dann grün, solange in `ocr` ein Auftrag läuft, und wird erst rot, wenn
+fällige Aufträge länger als 15 Minuten warten und keiner läuft (Text: `ocr <Sekunden> s (<n> laufend)`; der
+Auftrag eines abgestürzten Runners zählt nicht als laufend). Dann `worker-heavy` prüfen (`healthy`, bedient er
+`ocr`, Speicherabbrüche). Ob die Erkennung nachkommt, zeigen `dokumenttext` und
+`mandari_files_stored_without_text`. `TEXT_EXTRACTION_QUEUE_DEPTH` zu senken, um `rueckstau` grün zu halten, ist
+nicht mehr nötig. Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml` messen `ocr` ebenso
+gesondert (`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit „Auftragsrückstand“.
 
 **Abbruchkriterien** (ADR, Abschnitt 10; Vorgehen wie in `docs/DREHSCHEIBE_UMSTELLUNG.md`, Abschnitt 3). Eines
 genügt, dann den Rückweg gehen:
