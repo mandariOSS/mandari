@@ -418,7 +418,7 @@ Kommunen (oder Betroffene) können sich jederzeit über die auf der
 Crawler-Infoseite genannten Kontakte melden. Ablauf:
 
 1. **Drosseln/Pausieren**: Quelle im Admin deaktivieren (`is_active`)
-   oder `rate_limit_seconds` erhöhen — wirkt ab dem nächsten Zyklus.
+   oder `rate_limit_seconds` erhöhen — wirkt ab dem nächsten Lauf der Quelle.
    Alternativ setzt die Kommune ein robots.txt-Disallow für unseren
    User-Agent (`mandari-ingestor`); der Ingestor respektiert das
    automatisch.

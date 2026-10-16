@@ -511,7 +511,7 @@ taugt deshalb nur, wenn sie dieselbe Adresse wie `SITE_URL` hat (etwa eine lokal
 
 Nach dem Sync ist die Kommune im Bürgerportal sichtbar
 (`/insight/vorgaenge/…`, `/insight/termine/…`, Suche/Karte je nach
-aktivierten Diensten); Änderungen erscheinen mit dem nächsten Zyklus,
+aktivierten Diensten); Änderungen erscheinen mit dem nächsten Lauf der Quelle,
 Ö→NÖ-Wechsel und Löschungen werden über Tombstones nachgezogen und im
 Portal ausgeblendet.
 
