@@ -330,13 +330,14 @@ def _deliver_file(request, file_obj):
         response["Retry-After"] = "15"
         return response
 
-    # Dokumente nur hinter einer Zugangsprüfung für Menschen (sync_config["file_downloads"] = false):
-    # nicht selbst abrufen, sondern auf das Original verweisen – dort löst der Browser die Prüfung.
+    # Dateiabruf der Quelle abgeschaltet (sync_config["file_downloads"] = false), etwa weil die Kommune Dokumente
+    # nur nach einer Zugangsprüfung für Menschen herausgibt oder nach einem Opt-out: nicht selbst abrufen, sondern
+    # auf das Original verweisen. Der Hinweis nennt bewusst keinen Grund, er stünde sonst öffentlich falsch da.
     if file_cache.downloads_disabled(file_obj.body):
         return _file_proxy_error(
             "Dokument beim Ratsinformationssystem öffnen",
-            "Diese Kommune gibt Dokumente nur nach einer Zugangsprüfung im Browser heraus. Wir rufen sie "
-            "deshalb nicht selbst ab. " + _original_link(url),
+            "Dieses Dokument rufen wir nicht selbst ab. Du findest es im Ratsinformationssystem der Kommune. "
+            + _original_link(url),
         )
 
     # Quellen-Schonung (Issue #89): eine mehrfach unerreichbare Quelle wird nicht bei jedem

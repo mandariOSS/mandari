@@ -654,6 +654,23 @@ class SyncOrchestrator:
         console.print(f"[green]Registered source: {source_name} (ID: {source_id})[/green]")
         return source_id
 
+    def _scraper_runner(self, source_row: Any) -> Any:
+        """
+        ``ScraperSyncRunner`` für eine Scraper-Quelle (``sync_config["source_type"] = "scraper:<vendor>"``), sonst None.
+
+        Scraper-Quellen laufen über den Runner statt über den OParl-Client; Zeitfenster und Mindestabstand des
+        Vollabgleichs (``_full_sync_plan``) gelten für sie nur im geplanten Vollabgleich des Daemons.
+        "bridge:*"-Quellen (z. B. oparl-bridge vor ALLRIS) sind normale OParl-Quellen und nehmen den Standardpfad.
+        """
+        if source_row is None or not isinstance(getattr(source_row, "sync_config", None), dict):
+            return None
+        source_type = str(source_row.sync_config.get("source_type") or "oparl")
+        if not source_type.startswith("scraper:"):
+            return None
+        from src.scrapers.runner import ScraperSyncRunner
+
+        return ScraperSyncRunner(self, source_row)
+
     def _register_id_base(self, url: str, source_row: Any) -> None:
         """
         Festgeschriebene Basis der Kennungen einer Quelle übernehmen (``sync_config["id_base"]``, Issue #733).
@@ -878,19 +895,11 @@ class SyncOrchestrator:
         """
         start_time = datetime.now(UTC)
         result = SyncResult(source_url=url, source_name="", success=False)
-        # Scraper-Quellen (sync_config["source_type"] = "scraper:<vendor>")
-        # laufen über den ScraperSyncRunner statt über den OParl-Client.
-        # "bridge:*"-Quellen (z. B. oparl-bridge vor ALLRIS) sind normale
-        # OParl-Quellen und nehmen den Standardpfad.
         source_row = await self.storage.get_source_by_url(url)
         self._register_id_base(url, source_row)
-        if source_row is not None and isinstance(source_row.sync_config, dict):
-            source_type = str(source_row.sync_config.get("source_type") or "oparl")
-            if source_type.startswith("scraper:"):
-                from src.scrapers.runner import ScraperSyncRunner
-
-                runner = ScraperSyncRunner(self, source_row)
-                return await runner.run(full=full)
+        runner = self._scraper_runner(source_row)
+        if runner is not None:
+            return await runner.run(full=full)
 
         # Vermerke „filtert nicht“ dieser Quelle (Issue #1041), alte Einträge je Server übernommen
         filter_notes = self._filter_notes(url, source_row)
@@ -1263,6 +1272,16 @@ class SyncOrchestrator:
         result = SyncResult(source_url=url, source_name="", success=False)
         source_row = await self.storage.get_source_by_url(url)
         self._register_id_base(url, source_row)
+        # Auch hier über den Scraper: Worker der Anwendung (``run_sync_with_logging``) und ``sync --source`` kommen
+        # über diese Methode; ohne den Zweig riefen sie die Basis-URL eines SessionNet als OParl-System ab.
+        runner = self._scraper_runner(source_row)
+        if runner is not None:
+            if body_filter:
+                console.print(
+                    "[yellow]Der Filter nach Kommune gilt nicht für Scraper-Quellen; abgeglichen wird die ganze "
+                    "Quelle.[/yellow]"
+                )
+            return await runner.run(full=full)
         # Vermerke „filtert nicht“ dieser Quelle (Issue #1041), alte Einträge je Server übernommen
         filter_notes = self._filter_notes(url, source_row)
         options = SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None))
