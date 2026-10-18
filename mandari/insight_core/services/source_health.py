@@ -48,8 +48,8 @@ ERROR_KIND_INFO = {
     "robots_blocked": {
         "label": "robots.txt sperrt",
         "reason": (
-            "robots.txt sperrt: Die robots.txt der Instanz verbietet unserem Crawler den Abruf, "
-            "die Quelle wird nicht gecrawlt (keine Umgehung)"
+            "robots.txt sperrt: Die robots.txt der Instanz verbietet unserem Ingestor den Abruf, "
+            "die Quelle wird nicht abgerufen (keine Umgehung)"
         ),
         "recommendation": (
             "Betreiber der Quelle ansprechen: um eine Freigabe unseres User-Agents in der robots.txt "
