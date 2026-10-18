@@ -1,0 +1,69 @@
+{% comment %}
+Filterzeile der Dokumentenliste (Issue #951): Suche über Titel und Kurzbeschreibung, Art, Status, Thema, Federführung,
+„Nur meine“ und die Ansicht (Tabelle oder Kacheln, documentManager.viewMode). Eine Auswahl sendet sofort ab; der
+geöffnete Ordner bleibt erhalten. Am Handy stehen die Filter hinter „Filter“ (offen, sobald einer gesetzt ist).
+Parameter wie bisher: q, type, status, thema, verantwortlich, mine, ordner.
+{% endcomment %}
+<form method="get" role="search" aria-label="Dokumente filtern"
+      x-data="{ filterOffen: {% if selected_type or selected_status or selected_topic or selected_responsible or filter_mine %}true{% else %}false{% endif %} }"
+      class="flex flex-wrap items-center gap-x-4 gap-y-3">
+    {% if current_folder %}<input type="hidden" name="ordner" value="{{ current_folder.id }}">{% endif %}
+    <div class="relative flex-1 min-w-[10rem] sm:min-w-[14rem] max-w-md">
+        <label for="dokumente-suche" class="sr-only">Dokument suchen</label>
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+        <input id="dokumente-suche" type="search" name="q" value="{{ search_query|default:'' }}" placeholder="Dokumente durchsuchen"
+               class="w-full min-h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+    </div>
+    <button type="button" class="lg:hidden inline-flex items-center gap-1.5 min-h-9 px-3 rounded-md border border-gray-300 dark:border-gray-600 text-sm text-gray-800 dark:text-gray-200"
+            @click="filterOffen = !filterOffen" :aria-expanded="filterOffen.toString()" aria-controls="dokumente-filter">
+        <i data-lucide="sliders-horizontal" class="w-4 h-4" aria-hidden="true"></i>Filter
+    </button>
+
+    <div id="dokumente-filter" class="order-last w-full flex flex-wrap items-center gap-x-4 gap-y-3" :class="filterOffen ? '' : 'max-lg:hidden'">
+        <c-form.select name="type" id="filter-art" label="Art" dicht zeile @change="$event.target.form.submit()">
+            <option value="">Alle</option>
+            {% for doc_type in document_types %}
+            <option value="{{ doc_type.id }}" {% if selected_type == doc_type.id|stringformat:"s" %}selected{% endif %}>{{ doc_type.name }}</option>
+            {% endfor %}
+            {% if document_types %}<option disabled>──────────</option>{% endif %}
+            {% for value, label in type_choices %}
+            <option value="{{ value }}" {% if selected_type == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </c-form.select>
+        <c-form.select name="status" id="filter-status" label="Status" dicht zeile @change="$event.target.form.submit()">
+            <option value="">Alle</option>
+            {% for value, label in status_choices %}
+            <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+        </c-form.select>
+        {% if org_topics %}
+        <c-form.select name="thema" id="filter-thema" label="Thema" dicht zeile @change="$event.target.form.submit()">
+            <option value="">Alle</option>
+            {% for topic in org_topics %}
+            <option value="{{ topic.id }}" {% if selected_topic == topic.id|stringformat:"s" %}selected{% endif %}>{{ topic.name }}</option>
+            {% endfor %}
+        </c-form.select>
+        {% endif %}
+        <c-form.select name="verantwortlich" id="filter-verantwortlich" label="Federführung" dicht zeile @change="$event.target.form.submit()">
+            <option value="">Alle</option>
+            <option value="me" {% if selected_responsible == "me" %}selected{% endif %}>Ich</option>
+            {% for member in org_members %}
+            <option value="{{ member.id }}" {% if selected_responsible == member.id|stringformat:"s" %}selected{% endif %}>{{ member.user.get_display_name }}</option>
+            {% endfor %}
+        </c-form.select>
+        <c-form.checkbox name="mine" id="filter-meine" value="1" label="Nur meine" checked="{% if filter_mine %}1{% endif %}" dicht @change="$event.target.form.submit()" />
+    </div>
+
+    <div class="ml-auto flex items-center gap-0.5 rounded-md bg-band-grau p-0.5" role="group" aria-label="Ansicht">
+        <button type="button" @click="setViewMode('list')" :aria-pressed="(viewMode === 'list').toString()" aria-label="Tabelle"
+                :class="viewMode === 'list' ? 'bg-white dark:bg-gray-800 text-primary-700 dark:text-primary-300' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'"
+                class="inline-flex items-center justify-center w-8 h-8 rounded">
+            <i data-lucide="list" class="w-4 h-4" aria-hidden="true"></i>
+        </button>
+        <button type="button" @click="setViewMode('grid')" :aria-pressed="(viewMode === 'grid').toString()" aria-label="Kacheln"
+                :class="viewMode === 'grid' ? 'bg-white dark:bg-gray-800 text-primary-700 dark:text-primary-300' : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'"
+                class="inline-flex items-center justify-center w-8 h-8 rounded">
+            <i data-lucide="layout-grid" class="w-4 h-4" aria-hidden="true"></i>
+        </button>
+    </div>
+</form>

@@ -1,0 +1,95 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Dokumente › Dokumenttyp anlegen oder bearbeiten im neuen Erscheinungsbild (Issue #951). Felder wie
+bisher (work/motions/settings/type_form.html); Name füllt das Kürzel (data-slug-target am Feld, frontend/js/
+form-behaviors.ts), Symbol und Farbe ohne Emojis. Kontext: MotionTypeCreateView, MotionTypeEditView.
+{% endcomment %}
+
+{% block page_title %}{% if is_new %}Neuer Dokumenttyp{% else %}{{ motion_type.name }} bearbeiten{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if is_new %}Neuer Dokumenttyp{% else %}{{ motion_type.name }}{% endif %}" dicht
+    text="{% if is_new %}Einen Dokumenttyp mit Symbol, Farbe, Freigabe und Standard-Checkliste anlegen.{% else %}Dokumenttyp bearbeiten.{% endif %}">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:document_type_list' org_slug=organization.slug %}">Dokumenttypen</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="typen" aktuell="true" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="typen" aktuell="true" %}
+    <form method="post" class="min-w-0 flex-1">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+            <c-rahmen.abschnitt titel="Typ" titel_id="typ-titel">
+                <div class="mt-3 space-y-4">
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <div>
+                            <c-form.beschriftung feld="name" pflicht>Name</c-form.beschriftung>
+                            <input type="text" id="name" name="name" required data-slug-target="slug" value="{% if motion_type %}{{ motion_type.name }}{% endif %}" placeholder="z. B. Antrag, Anfrage, Stellungnahme"
+                                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                        </div>
+                        <div>
+                            <c-form.beschriftung feld="slug" pflicht>Kurzname</c-form.beschriftung>
+                            <input type="text" id="slug" name="slug" required data-slug-field value="{% if motion_type %}{{ motion_type.slug }}{% endif %}" placeholder="z. B. antrag" aria-describedby="slug-hilfe"
+                                   class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm font-mono text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                            <c-form.hinweis id="slug-hilfe">Nur Kleinbuchstaben und Bindestriche.</c-form.hinweis>
+                        </div>
+                    </div>
+                    <c-form.textarea name="description" id="description" label="Beschreibung" rows="2" value="{% if motion_type %}{{ motion_type.description }}{% endif %}" placeholder="Kurze Beschreibung des Dokumenttyps" dicht />
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <c-form.select name="icon" id="icon" label="Symbol" dicht>
+                            {% with current_icon=motion_type.icon|default:"file-text" %}
+                            <option value="file-text" {% if current_icon == "file-text" %}selected{% endif %}>Dokument</option>
+                            <option value="help-circle" {% if current_icon == "help-circle" %}selected{% endif %}>Anfrage</option>
+                            <option value="edit" {% if current_icon == "edit" %}selected{% endif %}>Änderung</option>
+                            <option value="message-square" {% if current_icon == "message-square" %}selected{% endif %}>Stellungnahme</option>
+                            <option value="megaphone" {% if current_icon == "megaphone" %}selected{% endif %}>Presse</option>
+                            <option value="clipboard-list" {% if current_icon == "clipboard-list" %}selected{% endif %}>Protokoll</option>
+                            <option value="scale" {% if current_icon == "scale" %}selected{% endif %}>Beschluss</option>
+                            <option value="book-open" {% if current_icon == "book-open" %}selected{% endif %}>Bericht</option>
+                            {% endwith %}
+                        </c-form.select>
+                        <c-form.select name="color" id="color" label="Farbe" dicht>
+                            {% with current_color=motion_type.color|default:"blue" %}
+                            <option value="blue" {% if current_color == "blue" %}selected{% endif %}>Blau</option>
+                            <option value="green" {% if current_color == "green" %}selected{% endif %}>Grün</option>
+                            <option value="amber" {% if current_color == "amber" %}selected{% endif %}>Gelb</option>
+                            <option value="red" {% if current_color == "red" %}selected{% endif %}>Rot</option>
+                            <option value="purple" {% if current_color == "purple" %}selected{% endif %}>Lila</option>
+                            <option value="pink" {% if current_color == "pink" %}selected{% endif %}>Pink</option>
+                            <option value="gray" {% if current_color == "gray" %}selected{% endif %}>Grau</option>
+                            <option value="teal" {% if current_color == "teal" %}selected{% endif %}>Türkis</option>
+                            {% endwith %}
+                        </c-form.select>
+                    </div>
+                </div>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="Ablauf" titel_id="ablauf-titel">
+                <div class="mt-3 space-y-3">
+                    <div>
+                        <c-form.checkbox name="requires_approval" id="requires_approval" checked="{% if motion_type.requires_approval or is_new %}1{% endif %}" dicht label="Freigabe erforderlich" />
+                        <c-form.hinweis einzug>Vor der Einreichung muss das Dokument freigegeben werden.</c-form.hinweis>
+                    </div>
+                    <div>
+                        <c-form.checkbox name="is_submittable" id="is_submittable" checked="{% if motion_type.is_submittable or is_new %}1{% endif %}" dicht label="Einreichbar" />
+                        <c-form.hinweis einzug>Lässt sich offiziell bei Gremien einreichen.</c-form.hinweis>
+                    </div>
+                    <div>
+                        <c-form.checkbox name="is_default" id="is_default" :checked="motion_type.is_default" dicht label="Standard-Typ" />
+                        <c-form.hinweis einzug>Vorauswahl bei neuen Dokumenten.</c-form.hinweis>
+                    </div>
+                    <c-form.textarea name="default_checklist" id="default_checklist" label="Standard-Checkliste" rows="5" value="{{ default_checklist_text|default:'' }}" placeholder="Ein Punkt je Zeile" dicht
+                                     help="Ein Punkt je Zeile. Neue Dokumente dieses Typs erhalten die Punkte als Checkliste." />
+                </div>
+            </c-rahmen.abschnitt>
+        </div>
+        <div class="mt-8 flex flex-wrap items-center gap-4">
+            <c-ui.button type="submit" size="sm" icon="check">{% if is_new %}Typ erstellen{% else %}Speichern{% endif %}</c-ui.button>
+            <c-ui.textlink href="{% url 'work:document_type_list' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+        </div>
+    </form>
+</div>
+{% endblock %}

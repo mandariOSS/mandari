@@ -1,0 +1,27 @@
+{% comment %}
+Antwort auf eine Frage an die Ratsdaten (Issue #853): als HTMX-Ausschnitt in #ki-antwort über den Suchtreffern bzw. auf
+der eigenen Seite work/ris/frage.html. Kontext: antwort (apps.work.ris.fragen.Antwort) mit frage, html (sicheres HTML),
+quellen [{title, url, type}] oder hinweis (fester Text, wenn keine Antwort möglich war).
+Eine Fläche über die volle Breite: Antwort in Lesebreite, ab lg die Quellen als Spalte daneben (keine leere rechte Hälfte).
+{% endcomment %}
+<section aria-labelledby="ki-antwort-titel" class="mb-8 rounded-md bg-band-grau px-5 py-4 lg:grid lg:grid-cols-[minmax(0,48rem)_minmax(14rem,1fr)] lg:gap-x-12">
+    <div class="min-w-0">
+        <h2 id="ki-antwort-titel" class="text-base font-semibold text-gray-900 dark:text-white break-words">{% if antwort.frage %}„{{ antwort.frage }}“{% else %}Frage an die Ratsdaten{% endif %}</h2>
+        {% if antwort.hinweis %}
+        <p class="mt-2 text-[0.95rem] text-gray-800 dark:text-gray-200">{{ antwort.hinweis }}</p>
+        {% else %}
+        <p class="mt-1 text-sm text-gray-600 dark:text-gray-400">KI-Antwort aus den öffentlichen Ratsdaten – maßgeblich sind die Quellen.</p>
+        <div class="mt-3 text-[0.95rem] leading-relaxed text-gray-900 dark:text-gray-100 break-words [&_p+p]:mt-2 [&_ul]:mt-2 [&_ul]:list-disc [&_ul]:pl-5 [&_li]:mt-1 [&_a]:font-medium [&_a]:text-primary-700 dark:[&_a]:text-primary-300 [&_a]:underline [&_a]:underline-offset-4">{{ antwort.html }}</div>
+        {% endif %}
+    </div>
+    {% if antwort.quellen and not antwort.hinweis %}
+    <div class="min-w-0 mt-4 lg:mt-0">
+        <h3 class="text-sm font-semibold text-gray-900 dark:text-white">Quellen</h3>
+        <ol class="mt-1 space-y-1 text-sm">
+            {% for quelle in antwort.quellen %}
+            <li><a href="{{ quelle.url }}" class="text-gray-800 dark:text-gray-200 underline underline-offset-4 decoration-gray-400 hover:decoration-primary-600">{{ quelle.title }}</a></li>
+            {% endfor %}
+        </ol>
+    </div>
+    {% endif %}
+</section>

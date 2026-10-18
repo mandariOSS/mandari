@@ -25,6 +25,8 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `INSIGHT_QUESTIONS.md` | [Insight → Ratsfragen](https://docs.mandari.de/insight/ratsfragen/) |
 | `INSIGHT_FRAKTIONEN.md` | Insight → Fraktionen ohne OParl-Fraktion (Seite folgt) |
 | `LIVE_UEBERTRAGUNG.md` | Insight → Live-Übertragungen von Gremiensitzungen (Seite folgt) |
+| `INSIGHT_KI_ASSISTENT.md` | Insight → KI-Assistent (Seite folgt) |
+| `INSIGHT_MCP.md` | Insight → MCP-Schnittstelle für KI-Werkzeuge (Seite folgt) |
 | `SESSION_REMINDERS.md` | [Session → Fristen-Erinnerungen](https://docs.mandari.de/session/fristen-erinnerungen/) |
 | `PROTOKOLLIERUNG.md` | [Datenschutz → Protokollierungskonzept](https://docs.mandari.de/datenschutz/) (Seite folgt) |
 | `SESSION_MANDANT_ANLEGEN.md` | Session → Mandanten anlegen und Bürgerportal je Körperschaft (Seite folgt) |
@@ -43,6 +45,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `LASTTESTS.md` | Betrieb → Größenempfehlungen und Lasttests (Seite folgt) |
 | `EREIGNISTECHNIK_NACHWEISE.md` | – (Zusagen der Ereignistechnik: Absturz-, Doppelzustellungs- und Lasttests mit Messwerten; Entwicklung und Betrieb) |
 | `SCRAPER_SOURCES.md` | [Betrieb → Quellen anbinden](https://docs.mandari.de/betrieb/quellen-anbinden/) |
+| `ABRUFREGELN.md` | Datenschutz → Ingestor und Opt-out (Seite folgt mit mandariOSS/docs#9 unter `https://docs.mandari.de/datenschutz/ingestor/`), Infoseite `https://mandari.de/ingestor/` (folgt) |
 | `DEMO_ENVIRONMENT.md` | [Betrieb → Demo-Umgebung](https://docs.mandari.de/betrieb/demo-umgebung/) |
 | `DEMO_PRAESENTATION.md` | – (Drehbuch für Produktvorstellungen, nur intern) |
 | `ACCOUNT_SECURITY.md` | [Work → Konto und Sicherheit](https://docs.mandari.de/work/konto-und-sicherheit/); Betrieb → Anmeldesicherheit (Seite folgt) |

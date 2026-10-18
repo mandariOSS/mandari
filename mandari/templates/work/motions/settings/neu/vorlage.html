@@ -1,0 +1,64 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Dokumente › Vorlage anlegen oder bearbeiten im neuen Erscheinungsbild (Issue #951). Die Felder des
+MotionTemplateForm rendern die Bausteine c-form.* (dicht) statt der Klassen aus forms.py; Namen und Werte wie bisher
+(work/motions/settings/template_form.html), Fehler stehen jetzt am Feld. Kontext: MotionTemplateCreateView,
+MotionTemplateEditView.
+{% endcomment %}
+
+{% block page_title %}{% if is_new %}Neue Vorlage{% else %}{{ template.name }} bearbeiten{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if is_new %}Neue Vorlage{% else %}{{ template.name }}{% endif %}" dicht
+    text="{% if is_new %}Eine Vorlage mit Inhalt, Strukturhinweisen und Signatur anlegen.{% else %}Vorlage bearbeiten.{% endif %}">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:document_template_list' org_slug=organization.slug %}">Vorlagen</c-insight.zurueck></c-slot>
+    {% if not is_new %}
+    <c-slot name="aktionen"><c-ui.textlink href="{% url 'work:document_template_preview' org_slug=organization.slug template_id=template.id %}" extern class="text-sm">Vorschau</c-ui.textlink></c-slot>
+    {% endif %}
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="vorlagen" aktuell="true" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="vorlagen" aktuell="true" %}
+    <form method="post" class="min-w-0 flex-1">
+        {% csrf_token %}
+        <c-form.errors :form="form" />
+        <div class="grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+            <c-rahmen.abschnitt titel="Vorlage" titel_id="vorlage-titel">
+                <div class="mt-3 space-y-4">
+                    <c-form.field :field="form.name" label="Name" maxlength="{{ form.name.field.max_length }}" dicht required />
+                    <c-form.textarea :field="form.description" label="Beschreibung" rows="2" dicht />
+                    <div class="grid gap-4 sm:grid-cols-2">
+                        <c-form.select :field="form.motion_type" label="Dokumenttyp" help="Nur für diesen Typ verfügbar; leer: alle Typen." dicht />
+                        <c-form.select :field="form.letterhead" label="Briefkopf" help="Standard-Briefkopf dieser Vorlage." dicht />
+                    </div>
+                    <div class="space-y-2">
+                        <c-form.checkbox :field="form.is_shared_party" label="Partei-weit teilen" dicht />
+                        <p class="ml-6 -mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Für alle Organisationen der Parteigruppe verfügbar.</p>
+                        <c-form.checkbox :field="form.is_default" label="Standard-Vorlage" dicht />
+                        <p class="ml-6 -mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Vorauswahl bei neuen Dokumenten.</p>
+                        <c-form.checkbox :field="form.is_active" label="Aktiv" dicht />
+                        <p class="ml-6 -mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Inaktive Vorlagen stehen nicht zur Auswahl.</p>
+                    </div>
+                </div>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="Inhalt" titel_id="inhalt-titel">
+                <div class="mt-3 space-y-4">
+                    <c-form.textarea :field="form.content_template" label="Inhaltsvorlage" rows="10" placeholder="Vorausgefüllter Inhalt für neue Dokumente (HTML oder Markdown)" dicht />
+                    <c-form.textarea :field="form.structure_hints" label="Strukturhinweise für die KI" rows="4" placeholder="Abschnitte, Formatierung …" help="Hinweise für die KI-Unterstützung, etwa Abschnitte und Formatierung." dicht />
+                    <c-form.textarea :field="form.signature_block" label="Signaturblock" rows="4" dicht
+                                     help="Steht beim Export am Ende des Dokuments. Die Platzhalter {% templatetag openvariable %} organisation {% templatetag closevariable %}, {% templatetag openvariable %} datum {% templatetag closevariable %} und {% templatetag openvariable %} verantwortlich {% templatetag closevariable %} werden beim Anwenden ersetzt." />
+                </div>
+            </c-rahmen.abschnitt>
+        </div>
+        <div class="mt-8 flex flex-wrap items-center gap-4">
+            <c-ui.button type="submit" size="sm" icon="check">{% if is_new %}Vorlage erstellen{% else %}Speichern{% endif %}</c-ui.button>
+            <c-ui.textlink href="{% url 'work:document_template_list' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+        </div>
+    </form>
+</div>
+{% endblock %}

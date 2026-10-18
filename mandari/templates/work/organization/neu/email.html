@@ -1,0 +1,70 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Allgemein › E-Mail-Versand im neuen Erscheinungsbild (Issue #951, #65): Versandweg, eigenes SMTP und
+Testmail. Formulare und Felder wie bisher (work/organization/email_settings.html): action=save mit allen Feldern,
+action=send_test. Das Passwort wird nie ausgegeben, nur ob eines hinterlegt ist. Kontext: OrganizationEmailSettingsView.
+{% endcomment %}
+
+{% block page_title %}E-Mail-Versand{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="E-Mail-Versand" dicht
+    text="Einladungen, Erinnerungen, Freigaben und Registrierungs-Mails von {{ organization.name }} gehen über mandari oder das eigene SMTP. Sicherheitsmails laufen immer über mandari." />
+{% include "work/organization/neu/_reiter.html" with seite="email" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="email" %}
+    <div class="min-w-0 flex-1">
+        <form method="post" class="grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="save">
+
+            <c-rahmen.abschnitt titel="Versandweg" titel_id="versandweg-titel">
+                <div class="mt-3 space-y-4 max-w-xl">
+                    <c-form.select name="mail_sender_mode" id="mail_sender_mode" label="Versand über" dicht>
+                        <option value="mandari" {% if mail_sender_mode == "mandari" %}selected{% endif %}>mandari-Standardversand</option>
+                        <option value="smtp" {% if mail_sender_mode == "smtp" %}selected{% endif %}>Eigenes SMTP der Organisation</option>
+                    </c-form.select>
+                    {% include "work/organization/neu/_haken.html" with name="smtp_fallback_to_mandari" id="smtp_fallback_to_mandari" label="Bei SMTP-Fehlern über mandari versenden" an=smtp_fallback_to_mandari hilfe="Ohne Häkchen schlägt der Versand bei SMTP-Fehlern sichtbar fehl, und mandari verschickt nichts." %}
+                    <c-form.hinweis neben>Beim eigenen SMTP ist {{ organization.name }} für SPF und DKIM (am besten auch DMARC) der Absender-Domain verantwortlich. Ohne diese DNS-Einträge landen Mails oft im Spam oder werden abgewiesen.</c-form.hinweis>
+                </div>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="SMTP-Zugang" titel_id="smtp-titel">
+                <div class="mt-3 grid gap-4 sm:grid-cols-2">
+                    <c-form.field name="smtp_host" id="smtp_host" label="SMTP-Server" value="{{ smtp_host }}" placeholder="smtp.example.org" dicht />
+                    {% include "work/organization/neu/_zahl.html" with name="smtp_port" id="smtp_port" label="Port" value=smtp_port min=1 max=65535 %}
+                    <c-form.field name="smtp_username" id="smtp_username" label="Benutzername" value="{{ smtp_username }}" autocomplete="off" dicht />
+                    <div>
+                        <c-form.field name="smtp_password" id="smtp_password" type="password" label="Passwort{% if smtp_password_set %} (hinterlegt){% endif %}" autocomplete="new-password"
+                                      placeholder="{% if smtp_password_set %}Unverändert lassen{% else %}Passwort{% endif %}" dicht
+                                      help="Wird verschlüsselt gespeichert und nie angezeigt. Leer lassen: unverändert." />
+                        {% if smtp_password_set %}
+                        <c-form.checkbox name="smtp_password_clear" id="smtp_password_clear" label="Hinterlegtes Passwort löschen" dicht class="mt-2" />
+                        {% endif %}
+                    </div>
+                    <c-form.field name="smtp_from_email" id="smtp_from_email" type="email" label="Absender-Adresse" value="{{ smtp_from_email }}" placeholder="fraktion@example.org" dicht />
+                    <c-form.field name="smtp_from_name" id="smtp_from_name" label="Absender-Name" value="{{ smtp_from_name }}" placeholder="{{ organization.name }}" dicht />
+                    <c-form.checkbox name="smtp_use_tls" id="smtp_use_tls" :checked="smtp_use_tls" label="TLS verwenden (STARTTLS)" dicht class="sm:col-span-2" />
+                </div>
+            </c-rahmen.abschnitt>
+
+            <div class="2xl:col-span-2">
+                <c-ui.button type="submit" size="sm">Einstellungen speichern</c-ui.button>
+            </div>
+        </form>
+
+        <c-rahmen.abschnitt titel="Testmail" titel_id="testmail-titel" class="mt-10 max-w-3xl">
+            <c-rahmen.satz eng>Geht an Ihre eigene Adresse ({{ request.user.email }}) über den gespeicherten Versandweg.</c-rahmen.satz>
+            <form method="post" class="mt-3">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="send_test">
+                <c-ui.button type="submit" size="sm" variant="secondary" icon="mail-check">Testmail senden</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

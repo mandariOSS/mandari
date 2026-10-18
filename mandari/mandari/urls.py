@@ -9,7 +9,7 @@ from django.conf import settings
 from django.contrib import admin
 from django.db import connection
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.shortcuts import redirect, render
+from django.shortcuts import redirect
 from django.urls import include, path, re_path
 
 from apps.accounts.views import admin_login_redirect
@@ -21,6 +21,7 @@ from apps.session.api.v1.api import api as session_api_v1
 from apps.session.views.invitation_responses import InvitationResponseView
 from apps.work.faction.views.certificates import CertificateVerifyView
 from apps.work.faction.views.feeds import PersonalCalendarFeedView
+from insight_ai.mcp import endpoint as mcp_endpoint
 from insight_core.admin_monitoring import monitoring_view
 from mandari import pwa
 from mandari.media import serve_media
@@ -114,6 +115,10 @@ urlpatterns = [
         PersonalCalendarFeedView.as_view(),
         name="personal_calendar_feed",
     ),
+    # Öffentlicher, nur lesender MCP-Server für KI-Werkzeuge (Issue #899); Standard aus (INSIGHT_MCP_ENABLED).
+    # Unter /insight/, damit der Reverse-Proxy ihn ohne eigene Regel an die Anwendung gibt.
+    path("insight/mcp", mcp_endpoint, name="insight_mcp"),
+    path("insight/mcp/", mcp_endpoint),
     # Insight Core (RIS Portal, public protocols, body sitemaps)
     path("", include("insight_core.urls")),
 ]
@@ -141,24 +146,42 @@ urlpatterns += [
 # Jeder, der einmal eine Fehlerseite mit Datenbankzugriff (Anmeldestatus, Navigation)
 # gerendert hat, behielte seine Verbindung für immer. Der Executor hat zehn Threads, der
 # Pool zehn Verbindungen — eine 404-Welle eines Scanners genügte, um ihn ganz zu belegen.
+#
+# Gerendert werden die Fehlerseiten ohne Kontextprozessoren (Issue #1024): Die Vorlagen
+# (errors/base_error.html) brauchen nur ``request`` und ``csp_nonce``. Die Kontextprozessoren
+# fragten dagegen bei jeder 404 die Datenbank ab und legten für Besucher ohne Sitzung eine an
+# (Kommunenauswahl „alle“), also eine Zeile in django_session je Scanner-Anfrage. Dasselbe traf
+# jede Weiterleitung von APPEND_SLASH: CommonMiddleware rendert erst die 404 und ersetzt sie
+# danach durch die Weiterleitung.
+
+
+def fehlerseite(
+    request: HttpRequest, template_name: str, status: int, kontext: dict[str, object] | None = None
+) -> HttpResponse:
+    """Fehlerseite ohne Kontextprozessoren, also ohne Datenbankzugriff und ohne Sitzung."""
+    from django.template.context_processors import csp
+    from django.template.loader import render_to_string
+
+    inhalt = render_to_string(template_name, {"request": request, **csp(request), **(kontext or {})})
+    return HttpResponse(inhalt, status=status)
 
 
 @releases_db_connections
 def handler_400(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
     """Bad Request error handler."""
-    return render(request, "400.html", status=400)
+    return fehlerseite(request, "400.html", 400)
 
 
 @releases_db_connections
 def handler_403(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
     """Permission Denied error handler."""
-    return render(request, "403.html", status=403)
+    return fehlerseite(request, "403.html", 403)
 
 
 @releases_db_connections
 def handler_404(request: HttpRequest, exception: Exception | None = None) -> HttpResponse:
     """Page Not Found error handler."""
-    return render(request, "404.html", status=404)
+    return fehlerseite(request, "404.html", 404)
 
 
 @releases_db_connections
@@ -167,8 +190,9 @@ def handler_500(request: HttpRequest) -> HttpResponse:
 
     Fehlt die Datenbank (erschöpfter Pool, Ausfall), gibt es eine 503-Seite ohne
     Datenbankzugriff — auch dann, wenn der Fehler nicht aus der View, sondern aus einer
-    Middleware kam (Issue #344). Scheitert die normale Fehlerseite selbst, weil ihre
-    Kontextprozessoren die Datenbank brauchen, wird sie ohne Request-Kontext gerendert.
+    Middleware kam (Issue #344). Die Fehlerseite selbst braucht keine Datenbank (``fehlerseite``);
+    scheitert sie trotzdem (etwa an einem ungültigen Host für den Link „Problem melden“), wird
+    sie ohne ``request`` gerendert.
     """
     import sys
     import uuid
@@ -182,9 +206,9 @@ def handler_500(request: HttpRequest) -> HttpResponse:
     if is_database_unavailable(ausnahme):
         return database_unavailable_response(request, pool=is_pool_exhausted(ausnahme))
 
-    kontext = {"request_id": str(uuid.uuid4())[:8]}
+    kontext: dict[str, object] = {"request_id": str(uuid.uuid4())[:8]}
     try:
-        return render(request, "500.html", kontext, status=500)
+        return fehlerseite(request, "500.html", 500, kontext)
     except Exception:  # noqa: BLE001 - die Fehlerseite darf nicht selbst zum zweiten Fehler werden
         return HttpResponse(render_to_string("500.html", kontext), status=500)
 

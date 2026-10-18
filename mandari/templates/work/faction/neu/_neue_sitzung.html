@@ -1,0 +1,43 @@
+{% comment %}
+Dialog „Neue Fraktionssitzung“ im neuen Erscheinungsbild (Issue #951; Felder Issues #871, #872): gemeinsamer Baustein
+c-ui.alpine-modal statt eigenem Overlay, Felder c-form.* dicht (36 px). Formular wie bisher: POST an die Liste mit
+title, start_date, start_time, location, video_link, is_virtual, Standard-Tagesordnung (standard_agenda_offered,
+standard_agenda), rsvp_enabled, description; „Als Entwurf“ sendet save_as=draft. Kontext: showCreateModal aus dem
+x-data der Liste, standard_agenda_preview, organization, membership.
+{% endcomment %}
+<c-ui.alpine-modal show="showCreateModal" size="md" class="py-8" panel_class="max-h-[90vh] overflow-y-auto" labelledby="neue-sitzung-titel">
+    <form method="post" data-testid="neue-sitzung">
+        {% csrf_token %}
+        <div class="flex items-center justify-between gap-4 px-5 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700">
+            <h2 id="neue-sitzung-titel" class="text-base font-semibold leading-8 text-gray-900 dark:text-white">Neue Fraktionssitzung</h2>
+            <button type="button" @click="showCreateModal = false" aria-label="Schließen"
+                    class="inline-flex items-center justify-center w-8 h-8 -mr-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-band-grau dark:text-gray-400 dark:hover:text-white">
+                <i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i>
+            </button>
+        </div>
+        <div class="px-5 py-4 space-y-4">
+            <c-form.field name="title" id="neue-sitzung-titel-feld" label="Titel" placeholder="z. B. Fraktionssitzung März 2026" dicht required />
+            <div class="grid grid-cols-2 gap-3">
+                <c-form.field name="start_date" id="neue-sitzung-datum" type="date" label="Datum" dicht required />
+                <c-form.field name="start_time" id="neue-sitzung-uhrzeit" type="time" label="Uhrzeit" value="18:00" dicht required />
+            </div>
+            <c-form.field name="location" id="neue-sitzung-ort" label="Ort" placeholder="z. B. Fraktionsbüro, Rathaus Raum 203" dicht />
+            {# Videolink gleich beim Planen (Issue #872): ein Link macht die Sitzung zur Online-Sitzung #}
+            <div class="space-y-2">
+                <c-form.field name="video_link" id="create-video-link" type="url" label="Videolink" placeholder="https://meet.example.com/…" maxlength="200" dicht />
+                <c-form.checkbox name="is_virtual" id="neue-sitzung-online" label="Online-Teilnahme (auch ohne Videolink)" dicht />
+            </div>
+            {% include "work/faction/partials/_create_standard_agenda.html" with preview=standard_agenda_preview %}
+            <div>
+                <c-form.checkbox name="rsvp_enabled" id="neue-sitzung-zusagen" label="Zu- und Absagen sammeln" dicht />
+                <p class="mt-1 ml-6 text-[0.8125rem] text-gray-600 dark:text-gray-400">Standardmäßig aus. Eingeschaltet können Mitglieder in der Sitzungsansicht zu- oder absagen.</p>
+            </div>
+            <c-form.textarea name="description" id="neue-sitzung-beschreibung" label="Beschreibung" rows="3" placeholder="Optionale Beschreibung oder Hinweise" dicht />
+        </div>
+        <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 px-5 py-3 border-t border-gray-200 dark:border-gray-700">
+            <button type="button" @click="showCreateModal = false" class="mr-auto text-sm font-medium text-gray-700 dark:text-gray-300 hover:underline underline-offset-4">Abbrechen</button>
+            <c-ui.button type="submit" name="save_as" value="draft" variant="secondary" size="sm">Als Entwurf</c-ui.button>
+            <c-ui.button type="submit" size="sm">Erstellen</c-ui.button>
+        </div>
+    </form>
+</c-ui.alpine-modal>

@@ -19,6 +19,8 @@
     <span class="text-gray-900 dark:text-white font-medium">TOP {{ object.number }}</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zur Sitzung #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" with meeting=object.meeting %}<c-rahmen.brotkrume>TOP {{ object.number }}</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="max-w-2xl mx-auto">

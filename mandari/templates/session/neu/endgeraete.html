@@ -1,0 +1,80 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Endgeräte im neuen Rahmen (Issue #944), Bereich Verwaltung: Kopfband mit einem Satz zum Zweck und dem Bestand als Zahl
+im Satz (statt drei Zählerkacheln). Links alle erfassten Geräte als Liste (je Gerät Stand als Punkt mit Text, „Verwalten“
+klappt Ausgeben, Rücknahme, Defekt, Ausmustern und den Verlauf unter der Zeile auf, session/neu/_endgeraet.html) und
+die einmaligen Zuschüsse als Liste (session/neu/_endgeraet_zuschuss.html) mit dem CSV-Export als Textlink; rechts
+„Gerät aufnehmen“ und „Zuschuss erfassen“ als ruhige Formulare. Alle Formulare, Felder und Rückfragen wie
+session/devices/index.html; Rechte (manage_devices) und Kontext wie DeviceListView. Die bisherige Seite bleibt
+session/devices/index.html.
+{% endcomment %}
+
+{% block page_title %}Endgeräte{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Endgeräte" text="Geräte für die digitale Ratsarbeit ausgeben und zurücknehmen (mit Übergabeprotokoll) oder stattdessen einmalige Endgeräte-Zuschüsse auszahlen, je nach Ratsbeschluss der Kommune." dicht>
+    <p class="text-sm text-gray-700 dark:text-gray-300" data-testid="endgeraete-satz">{{ devices|length }} Gerät{{ devices|length|pluralize:"e" }} erfasst, davon {{ devices_stock }} im Bestand und {{ devices_issued }} ausgegeben; Zuschüsse gesamt {{ grants_sum }} €.</p>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]">
+    <div class="min-w-0 space-y-10">
+        <c-rahmen.abschnitt titel="Geräte" titel_id="bestand-titel" zusatz="{% if devices %}{{ devices|length }}{% endif %}" data-testid="geraetebestand">
+            {% if devices %}
+            <c-rahmen.liste class="mt-2">
+                {% for device in devices %}{% include "session/neu/_endgeraet.html" %}{% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Noch keine Geräte erfasst.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Einmalige Endgeräte-Zuschüsse" titel_id="zuschuesse-titel" zusatz="{% if grants %}{{ grants|length }}{% endif %}" data-testid="zuschuesse">
+            {% if grants %}
+            <c-rahmen.liste class="mt-2">
+                {% for grant in grants %}{% include "session/neu/_endgeraet_zuschuss.html" %}{% endfor %}
+            </c-rahmen.liste>
+            {% else %}
+            <c-rahmen.satz>Noch keine Zuschüsse. Üblich sind je nach Ratsbeschluss einmalig 300 bis 500 € je Mandatsträger.</c-rahmen.satz>
+            {% endif %}
+            <form method="post" action="{% url 'session:device_grants_csv' tenant_slug=tenant_slug %}" class="mt-3 text-sm text-gray-700 dark:text-gray-300">
+                {% csrf_token %}
+                Für die Buchhaltung: <c-ui.text-button dicht type="submit">Zuschüsse als CSV</c-ui.text-button>
+            </form>
+        </c-rahmen.abschnitt>
+    </div>
+
+    <aside class="min-w-0 space-y-10" aria-label="Gerät aufnehmen und Zuschuss erfassen">
+        <c-rahmen.abschnitt titel="Gerät aufnehmen" titel_id="aufnehmen-titel">
+            <form method="post" action="{% url 'session:device_save' tenant_slug=tenant_slug %}" class="mt-3 space-y-3" data-testid="geraet-aufnehmen">
+                {% csrf_token %}
+                <c-form.field name="label" id="geraet-bezeichnung" label="Bezeichnung" placeholder="z. B. iPad 10. Gen, 64 GB" required dicht />
+                <div class="grid grid-cols-2 gap-2">
+                    <c-form.field name="serial_number" id="geraet-seriennummer" label="Seriennummer" dicht />
+                    <c-form.field name="inventory_number" id="geraet-inventarnummer" label="Inventarnummer" dicht />
+                </div>
+                <c-form.field name="accessories" id="geraet-zubehoer" label="Zubehör" placeholder="Hülle, Tastatur, Netzteil" dicht />
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Gerät aufnehmen</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Zuschuss erfassen" titel_id="zuschuss-titel">
+            <form method="post" action="{% url 'session:device_grant_save' tenant_slug=tenant_slug %}" class="mt-3 space-y-3" data-testid="zuschuss-erfassen">
+                {% csrf_token %}
+                <c-form.select name="person" id="zuschuss-person" label="Person" placeholder="Bitte wählen…" required dicht>
+                    {% for person in persons %}<option value="{{ person.id }}">{{ person.display_name }}</option>{% endfor %}
+                </c-form.select>
+                <div>
+                    <c-form.beschriftung feld="zuschuss-betrag" pflicht>Betrag in €</c-form.beschriftung>
+                    <input type="text" name="amount" id="zuschuss-betrag" required placeholder="300,00" inputmode="decimal"
+                           class="w-32 h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm tabular-nums text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                </div>
+                <c-form.field name="note" id="zuschuss-vermerk" label="Vermerk" placeholder="z. B. Ratsbeschluss vom …, Beleg liegt vor" dicht />
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Zuschuss erfassen</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+    </aside>
+</div>
+{% endblock %}

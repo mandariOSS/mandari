@@ -1,0 +1,92 @@
+{% comment %}
+Tabellenansicht der Dokumente (Issue #951, documentManager.viewMode === 'list'): Linien zwischen den Zeilen statt
+Kasten, Status als Punkt mit Text. Spalten wachsen mit der Breite: am Handy stehen Status und Datum unter dem Titel,
+ab md Status, ab lg die Änderung, ab 2xl Federführung und Frist, ab 1.800 px Themen und Checkliste; schmaler stehen
+diese Angaben unter dem Titel. Spalten ohne einen Wert auf der Seite entfallen (spalten aus MotionListView). Die ganze
+Zeile öffnet den Editor (data-href); Auswahl und Menü behalten ihr eigenes Verhalten.
+Kontext: motion_rows, spalten, current_folder, folder_entries.
+{% endcomment %}
+<div x-show="viewMode === 'list'" class="mt-4 -mx-3 overflow-x-auto" data-testid="dokumente-tabelle">
+    <table class="w-full text-sm">
+        <thead>
+            <tr class="border-b border-gray-300 dark:border-gray-700">
+                <th scope="col" class="w-8 pl-3 pr-1 py-2"><span class="sr-only">Auswahl</span></th>
+                <c-ui.th dicht>Dokument</c-ui.th>
+                <c-ui.th dicht class="max-md:hidden">Status</c-ui.th>
+                {% if spalten.federfuehrung %}<c-ui.th dicht class="max-2xl:hidden">Federführung</c-ui.th>{% endif %}
+                {% if spalten.frist %}<c-ui.th dicht class="max-2xl:hidden">Frist</c-ui.th>{% endif %}
+                {% if spalten.themen %}<c-ui.th dicht class="max-[1800px]:hidden">Themen</c-ui.th>{% endif %}
+                {% if spalten.checkliste %}<c-ui.th dicht class="max-[1800px]:hidden">Checkliste</c-ui.th>{% endif %}
+                <c-ui.th dicht class="max-lg:hidden">Geändert</c-ui.th>
+                <th scope="col" class="w-10 px-2 py-2"><span class="sr-only">Verschieben</span></th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
+            {% for row in motion_rows %}
+            {% with motion=row.motion progress=row.motion.checklist_progress %}
+            <tr class="group cursor-pointer hover:bg-band-grau/70" data-href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}"{% if row.is_amendment %} data-aenderungsantrag{% endif %}>
+                <td class="pl-3 pr-1 py-2 align-top">
+                    <c-form.checkbox name="auswahl" id="auswahl-t-{{ motion.id }}" value="{{ motion.id }}" modell="selectedIds" class="mt-0.5"><span class="sr-only">„{{ motion.title|truncatechars:60 }}“ zum Verschieben auswählen</span></c-form.checkbox>
+                </td>
+                <td class="px-3 py-2 align-top min-w-[16rem]">
+                    <div class="{% if row.is_amendment %}pl-5 relative{% endif %}">
+                        {% if row.is_amendment %}<i data-lucide="corner-down-right" class="absolute left-0 top-0.5 w-3.5 h-3.5 text-gray-500" aria-hidden="true"></i>{% endif %}
+                        <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=motion.id %}"
+                           class="font-medium text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-300 break-words">{{ motion.title }}</a>
+                        <i data-lucide="{{ motion.get_visibility_icon }}" class="inline-block ml-1 w-3.5 h-3.5 align-[-2px] text-gray-500 dark:text-gray-400" aria-hidden="true"></i><span class="sr-only">, Sichtbarkeit: {{ motion.get_visibility_display }}</span>
+                        {# Art, Ordner, Freigaben; Federführung und Frist hier, solange ihre Spalten fehlen #}
+                        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                            {% if row.is_amendment %}Änderungsantrag zu „{{ motion.parent_motion.title|truncatechars:40 }}“ · {% endif %}{{ motion.get_type_display }}{% if motion.folder and not current_folder %} · {{ motion.folder.name }}{% endif %}{% with approvals=motion.approval_summary %}{% if approvals.total %} · Freigaben {{ approvals.approved }} von {{ approvals.total }}{% endif %}{% endwith %}<span class="2xl:hidden">{% if motion.responsible %} · Federführung {{ motion.responsible.user.get_display_name }}{% endif %}{% if motion.due_date and not motion.is_overdue %} · Frist {{ motion.due_date|date:"d.m.Y" }}{% endif %}</span>
+                        </p>
+                        <p class="lg:hidden mt-1 flex flex-wrap items-baseline gap-x-2 text-[0.8125rem]">
+                            <span class="md:hidden">{% include "work/motions/neu/_status.html" %}</span>
+                            {% if motion.administration_reference %}<span class="md:hidden text-gray-700 dark:text-gray-300" data-testid="liste-drucksachennummer">{{ motion.administration_reference }}</span>{% endif %}
+                            <span class="text-gray-600 dark:text-gray-400">Geändert {{ motion.updated_at|date:"d.m.Y" }}</span>
+                        </p>
+                        {% if motion.is_overdue %}<p class="2xl:hidden mt-0.5 text-[0.8125rem] font-medium text-red-700 dark:text-red-400">Frist {{ motion.due_date|date:"d.m.Y" }} überschritten</p>{% endif %}
+                        {% if motion.topics.all or progress.total %}
+                        <p class="min-[1800px]:hidden mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                            {% for topic in motion.topics.all %}<span class="inline-flex items-baseline gap-1.5 mr-2"><span class="shrink-0 w-2 h-2 rounded-full bg-{{ topic.color }}-500" aria-hidden="true"></span>{{ topic.name }}</span>{% endfor %}
+                            {% if progress.total %}<span class="text-gray-600 dark:text-gray-400">Checkliste {{ progress.done }} von {{ progress.total }}</span>{% endif %}
+                        </p>
+                        {% endif %}
+                    </div>
+                </td>
+                <td class="px-3 py-2 align-top max-md:hidden whitespace-nowrap">
+                    {% include "work/motions/neu/_status.html" %}
+                    {% if motion.administration_reference %}
+                    <p class="mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300" title="{{ motion.session_application.tenant.reference_label }} bei {{ motion.session_application.tenant.name }}" data-testid="liste-drucksachennummer">{{ motion.administration_reference }}</p>
+                    {% endif %}
+                </td>
+                {% if spalten.federfuehrung %}
+                <td class="px-3 py-2 align-top max-2xl:hidden text-gray-800 dark:text-gray-200">{% if motion.responsible %}{{ motion.responsible.user.get_display_name }}{% else %}<span class="text-gray-500">–</span>{% endif %}</td>
+                {% endif %}
+                {% if spalten.frist %}
+                <td class="px-3 py-2 align-top max-2xl:hidden whitespace-nowrap">
+                    {% if motion.due_date %}
+                    <span class="{% if motion.is_overdue %}font-medium text-red-700 dark:text-red-400{% else %}text-gray-800 dark:text-gray-200{% endif %}">{{ motion.due_date|date:"d.m.Y" }}</span>{% if motion.is_overdue %}<span class="block text-[0.8125rem] text-red-700 dark:text-red-400">überfällig</span>{% endif %}
+                    {% else %}<span class="text-gray-500">–</span>{% endif %}
+                </td>
+                {% endif %}
+                {% if spalten.themen %}
+                <td class="px-3 py-2 align-top max-[1800px]:hidden">
+                    {% for topic in motion.topics.all %}
+                    <span class="inline-flex items-baseline gap-1.5 mr-2 text-gray-800 dark:text-gray-200"><span class="shrink-0 w-2 h-2 rounded-full bg-{{ topic.color }}-500" aria-hidden="true"></span>{{ topic.name }}</span>
+                    {% empty %}<span class="text-gray-500">–</span>{% endfor %}
+                </td>
+                {% endif %}
+                {% if spalten.checkliste %}
+                <td class="px-3 py-2 align-top max-[1800px]:hidden whitespace-nowrap text-gray-800 dark:text-gray-200">
+                    {% if progress.total %}{{ progress.done }} von {{ progress.total }}{% else %}<span class="text-gray-500">–</span>{% endif %}
+                </td>
+                {% endif %}
+                <td class="px-3 py-2 align-top max-lg:hidden whitespace-nowrap text-gray-700 dark:text-gray-300">
+                    <time datetime="{{ motion.updated_at|date:'c' }}" title="vor {{ motion.updated_at|timesince }}">{{ motion.updated_at|date:"d.m.Y" }}</time>
+                </td>
+                <td class="px-2 py-1 align-top">{% include "work/motions/neu/_ordner_menue.html" %}</td>
+            </tr>
+            {% endwith %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

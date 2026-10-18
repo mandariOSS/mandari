@@ -1,67 +1,10 @@
-{% load insight_listen %}
 {% comment %}
 Sitzungsliste (Issue #841): ab xl mit der Zahl der öffentlichen Tagesordnungspunkte. Spalten ohne einen einzigen Wert
 (etwa „Ort“, wenn die Quelle keine Orte nennt) entfallen.
+Die Tabelle ist der gemeinsame Baustein c-liste.sitzungen (mit Work, Issue #853).
 {% endcomment %}
 {% if meetings %}
-{% with sp_ort=meetings|hat_wert:"location_name" sp_tops=meetings|hat_wert:"anzahl_tops" %}
-<div class="-mx-3">
-    <div class="relative overflow-x-auto">
-    <table class="w-full">
-        <thead>
-            <tr class="border-b border-gray-300 dark:border-gray-700">
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">Sitzung</th>
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Datum</th>
-                <th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Uhrzeit</th>
-                {% if sp_ort %}<th class="text-left px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-sm:hidden">Ort</th>{% endif %}
-                {% if sp_tops %}<th class="text-right px-3 py-2.5 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400 max-xl:hidden">Tagesordnung</th>{% endif %}
-                <th class="w-10 px-2 py-3"><span class="sr-only">Merken</span></th>
-            </tr>
-        </thead>
-        <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
-            {% for meeting in meetings %}
-            <tr class="hover:bg-band-grau/70 group cursor-pointer {% if meeting.cancelled %}opacity-60{% endif %}"
-                data-href="{% url 'insight_core:insight:meeting_detail' meeting.id %}">
-                <td class="px-3 py-3.5">
-                    <div class="flex items-center gap-2">
-                        <a href="{% url 'insight_core:insight:meeting_detail' meeting.id %}"
-                           class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors break-words">
-                            {{ meeting.get_display_name }}
-                        </a>
-                        {% if meeting.cancelled %}
-                        <span class="px-1.5 py-0.5 rounded text-xs font-medium bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400 shrink-0">Abgesagt</span>
-                        {% endif %}
-                    </div>
-                    <div class="sm:hidden text-sm text-gray-600 dark:text-gray-400 mt-0.5">
-                        {% if meeting.start %}{{ meeting.start|date:"d.m.Y" }}, {{ meeting.start|date:"H:i" }} Uhr{% endif %}
-                        {% if meeting.location_name %} &middot; {{ meeting.location_name }}{% endif %}
-                    </div>
-                </td>
-                <td class="px-3 py-3.5 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
-                    {% if meeting.start %}<time datetime="{{ meeting.start|date:'Y-m-d' }}">{{ meeting.start|date:"d.m.Y" }}</time>{% endif %}
-                </td>
-                <td class="px-3 py-3.5 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden whitespace-nowrap">
-                    {% if meeting.start %}{{ meeting.start|date:"H:i" }} Uhr{% endif %}
-                </td>
-                {% if sp_ort %}
-                <td class="px-3 py-3.5 text-sm text-gray-600 dark:text-gray-400 max-sm:hidden">{{ meeting.location_name|default:"" }}</td>
-                {% endif %}
-                {% if sp_tops %}
-                <td class="px-3 py-3.5 text-sm text-right text-gray-600 dark:text-gray-400 max-xl:hidden whitespace-nowrap">{% if meeting.anzahl_tops %}{{ meeting.anzahl_tops }} Punkt{{ meeting.anzahl_tops|pluralize:"e" }}{% endif %}</td>
-                {% endif %}
-                <td class="px-2 py-3">
-                    <div class="flex items-center gap-1">
-                        {% include "components/bookmark_star.html" with entity_type="meeting" entity_id=meeting.id size="sm" %}
-                        <i data-lucide="chevron-right" class="w-4 h-4 text-gray-300 dark:text-gray-600 group-hover:text-primary-500 transition-colors" aria-hidden="true"></i>
-                    </div>
-                </td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-    </div>
-</div>
-{% endwith %}
+<c-liste.sitzungen :sitzungen="meetings" />
 
 {% include "partials/insight_seiten.html" %}
 

@@ -1,0 +1,66 @@
+{% extends "work/base_work.html" %}
+{% load hilfe_tags %}
+{% comment %}
+Neues Ticket im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit den häufigen Fragen als Textlink,
+ein Formular ohne Kasten (Felder c-form.* dicht). Anhänge über das gemeinsame Dateifeld c-form.datei, gesteuert von
+ticketForm (frontend/alpine/support.ts: höchstens fünf Dateien, je 10 MB, entfernen einzeln). Die Tipps des bisherigen
+Hinweiskastens stehen als ein Satz im Kopfband. Kontext: SupportCreateView; die bisherige Seite bleibt
+work/support/create.html.
+{% endcomment %}
+
+{% block page_title %}Neues Ticket{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Neues Ticket" dicht data-testid="ticket-neu-kopf"
+    text="Beschreiben Sie Ihr Anliegen möglichst genau: was Sie getan haben, was passiert ist und was Sie erwartet haben. Bildschirmfotos helfen.">
+    <c-slot name="aktionen">
+        <c-ui.textlink href="{% hilfe_url 'faq' %}" extern class="text-sm">Häufige Fragen</c-ui.textlink>
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<form method="post" enctype="multipart/form-data" x-data="ticketForm" class="max-w-3xl space-y-5" data-testid="ticket-formular">
+    {% csrf_token %}
+    <c-form.field name="subject" id="subject" label="Betreff" modell="subject" placeholder="Worum geht es?" dicht required />
+
+    <div class="grid gap-5 sm:grid-cols-2">
+        <c-form.select name="category" id="category" label="Kategorie" dicht>
+            {% for value, label in categories %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+        </c-form.select>
+        <c-form.select name="priority" id="priority" label="Priorität" dicht>
+            {% for value, label in priorities %}<option value="{{ value }}" {% if value == 'normal' %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </c-form.select>
+    </div>
+
+    <c-form.textarea name="description" id="description" label="Beschreibung" rows="8" dicht required
+                     placeholder="Beschreiben Sie Ihr Anliegen möglichst genau …"
+                     help="Je genauer die Beschreibung, desto schneller können wir helfen." />
+
+    <c-form.datei name="attachments" id="attachments" label="Anhänge (optional)" multiple accept="image/*,.pdf,.doc,.docx,.txt"
+                  ziehen="ziehen" hinweis="PNG, JPG, PDF, DOC oder TXT, je Datei bis 10 MB, höchstens 5 Dateien"
+                  @dragover.prevent="ziehen = true" @dragleave.prevent="ziehen = false"
+                  @drop.prevent="ziehen = false; handleFiles($event.dataTransfer.files)" @change="handleFiles($event.target.files)">
+        <template x-if="files.length > 0">
+            <c-rahmen.liste class="mt-2" aria-live="polite">
+                <template x-for="(file, index) in files" :key="index">
+                    <li class="flex items-center gap-3 py-1.5 text-sm">
+                        <span class="flex-1 min-w-0 truncate text-gray-800 dark:text-gray-200" x-text="file.name"></span>
+                        <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400" x-text="formatSize(file.size)"></span>
+                        <button type="button" @click="removeFile(index)" class="inline-flex items-center justify-center w-8 h-8 rounded-md text-gray-600 hover:text-red-700 dark:text-gray-400 dark:hover:text-red-400 hover:bg-band-grau"
+                                :aria-label="'Anhang entfernen: ' + file.name" aria-label="Anhang entfernen">
+                            <i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i>
+                        </button>
+                    </li>
+                </template>
+            </c-rahmen.liste>
+        </template>
+    </c-form.datei>
+
+    <div class="flex flex-wrap items-center gap-4 pt-2">
+        <c-ui.button type="submit">Ticket erstellen</c-ui.button>
+        <c-ui.textlink href="{% url 'work:support' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+    </div>
+</form>
+{% endblock %}

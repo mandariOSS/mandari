@@ -1,0 +1,124 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Ladung und Rückmeldungen einer Sitzung im neuen Rahmen (Issues #225, #619, #944): Kopfband mit dem Stand als Satz statt
+fünf Zählerkacheln („12 von 15 haben geantwortet …“), daneben der Ladungsnachweis und, wenn jemand zu erinnern ist,
+„Jetzt erinnern“ als die eine Hauptaktion (Rückfrage wie bisher). Darunter die Briefe je Versand (Serienbrief, Daten,
+„Briefe versandt“) und der Status je Empfänger als Liste je Person: Versände, Empfang, Antwort mit Grund; „Rückmeldung
+eintragen“ klappt Zusage, Absage und Empfang vermerken auf (Knöpfe ohne Füllfarbe). Absagegründe nur hier, wie bisher.
+Formulare und Links wie session/meetings/invitation_status.html (bleibt die bisherige Seite); Kontext wie
+MeetingInvitationStatusView.
+{% endcomment %}
+
+{% block page_title %}Rückmeldungen: {{ meeting.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zur Sitzung und zur Ladung (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}">Ladung</c-rahmen.brotkrume><c-rahmen.brotkrume>Rückmeldungen</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Ladung und Rückmeldungen" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}">Ladung</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{{ meeting.organization.name }} · <span class="tabular-nums">{{ meeting.start|date:"l, d.m.Y, H:i" }} Uhr</span></p>
+    </c-slot>
+    <c-slot name="aktionen">
+        <c-ui.textlink href="{% url 'session:meeting_invitation' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-sm">Versand</c-ui.textlink>
+        <c-ui.button href="{% url 'session:meeting_invitation_proof' tenant_slug=tenant_slug meeting_id=meeting.id %}" variant="secondary" size="sm" icon="file-check">Ladungsnachweis (PDF)</c-ui.button>
+        {% if is_open and reminders_enabled and reminder_count %}
+        <form method="post" action="{% url 'session:meeting_invitation_remind' tenant_slug=tenant_slug meeting_id=meeting.id %}">
+            {% csrf_token %}
+            <c-ui.button type="submit" size="sm" icon="send" data-confirm="Erinnerung an {{ reminder_count }} Empfänger senden?">Jetzt erinnern</c-ui.button>
+        </form>
+        {% endif %}
+    </c-slot>
+    <p class="max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="rueckmeldungen-satz">
+        {% if overview.total %}{{ overview.confirmed|add:overview.declined }} von {{ overview.total }} {{ overview.confirmed|add:overview.declined|pluralize:"hat,haben" }} geantwortet ({{ overview.confirmed }} Zusage{{ overview.confirmed|pluralize:"n" }}, {{ overview.declined }} Absage{{ overview.declined|pluralize:"n" }}), {{ overview.open_responses }} ohne Rückmeldung; {{ overview.acknowledged }} {{ overview.acknowledged|pluralize:"hat,haben" }} den Empfang bestätigt.
+        {% else %}Noch keine Ladung versandt.{% endif %}
+    </p>
+    {% if is_open and reminders_enabled and reminder_count %}
+    <p class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="erinnerung">{{ reminder_count }} Empfänger {{ reminder_count|pluralize:"ist,sind" }} zu erinnern. Anlass: {{ reminder_reason }}; Empfängerkreis: {{ reminder_audience }} (wie der tägliche Lauf, einstellbar unter Einstellungen, Fristen-Erinnerungen).</p>
+    {% elif is_open and not reminders_enabled %}
+    <p class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="erinnerung-aus">Erinnerungen zu Ladungen sind in den Einstellungen abgeschaltet. Die Ladung selbst ist davon nicht betroffen.</p>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="space-y-10">
+    {% if letter_batches %}
+    <c-rahmen.abschnitt titel="Zustellung per Brief" titel_id="briefe-titel" data-testid="briefe">
+        <c-rahmen.satz eng>Serienbrief mit einem Anschreiben je Person: Anschrift, Tagesordnung und persönlicher Rückmeldelink mit QR-Code.</c-rahmen.satz>
+        <c-rahmen.liste class="mt-2">
+            {% for batch in letter_batches %}
+            <li class="flex flex-wrap items-center justify-between gap-x-6 gap-y-2 py-2.5">
+                <div class="min-w-0 text-sm">
+                    <p class="font-medium text-gray-900 dark:text-white">{{ batch.dispatch.get_dispatch_type_display }} vom <span class="tabular-nums">{{ batch.dispatch.sent_at|date:"d.m.Y, H:i" }}</span> Uhr</p>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ batch.total }} Brief{{ batch.total|pluralize:"e" }}{% if batch.pending %}, {{ batch.pending }} noch nicht als versandt vermerkt{% else %}, alle versandt{% endif %}</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <c-ui.textlink href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='pdf' %}" class="text-sm">Serienbrief (PDF)</c-ui.textlink>
+                    <c-ui.textlink href="{% url 'session:meeting_serial_letter' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id fmt='csv' %}" class="text-sm">Daten (CSV)</c-ui.textlink>
+                    {% if batch.pending %}
+                    <form method="post" action="{% url 'session:meeting_letters_sent' tenant_slug=tenant_slug meeting_id=meeting.id dispatch_id=batch.dispatch.id %}">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="secondary" size="sm" icon="mailbox">Briefe versandt</c-ui.button>
+                    </form>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    <c-rahmen.abschnitt titel="Status je Empfänger" titel_id="status-titel" zusatz="{% if overview.total %}{{ overview.total }}{% endif %}" data-testid="rueckmeldungen">
+        {% if overview.rows %}
+        <c-rahmen.satz eng>Bestätigt wird nur durch eine aktive Handlung (Link, Portal oder Eintrag des Sitzungsdienstes), nie durch das Öffnen der Mail.</c-rahmen.satz>
+        <c-rahmen.liste class="mt-2">
+            {% for status in overview.rows %}
+            <li class="grid grid-cols-1 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-x-6 gap-y-2 py-3">
+                <div class="min-w-0">
+                    <p class="text-sm liste-name">{{ status.name }}</p>
+                    <p class="liste-angaben">{{ status.role|default:"–" }}{% if status.substitution_for %} · Vertretung für {{ status.substitution_for.display_name }}{% endif %}</p>
+                    <ul class="mt-1 space-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                        {% for row in status.rows %}
+                        <li class="break-words">{{ row.dispatch.get_dispatch_type_display }}, {{ row.get_channel_display }}: {% if row.status == "failed" %}<span class="font-medium text-red-700 dark:text-red-400">fehlgeschlagen</span>{% elif row.status == "letter_pending" %}<span class="text-amber-800 dark:text-amber-300">Brief vorzubereiten</span>{% else %}<span class="tabular-nums">{{ row.delivered_at|date:"d.m.Y, H:i" }}</span>{% endif %}{% if row.reminder_count %} <span class="text-gray-600 dark:text-gray-400">({{ row.reminder_count }}× erinnert)</span>{% endif %}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                <div class="min-w-0 space-y-1 text-sm text-gray-700 dark:text-gray-300">
+                    <p>
+                        <span class="sr-only">Rückmeldung: </span>{% if status.attendance.status == "confirmed" %}{% include "session/neu/_status.html" with wert="accepted" text=status.response_label %}{% elif status.attendance.status == "declined" %}{% include "session/neu/_status.html" with wert="rejected" text=status.response_label %}{% else %}{% include "session/neu/_status.html" with wert="" text=status.response_label %}{% endif %}{% if status.attendance.responded_at %} <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums">{{ status.attendance.responded_at|date:"d.m.Y, H:i" }} ({{ status.attendance.get_response_source_display }})</span>{% endif %}
+                    </p>
+                    {% if status.reason %}<p class="text-[0.8125rem] text-gray-800 dark:text-gray-200 break-words"><span class="font-medium">Grund:</span> {{ status.reason }}</p>{% endif %}
+                    <p>
+                        <span class="text-gray-600 dark:text-gray-400">Empfang</span>
+                        {% if status.acknowledgement == "confirmed" %}{% include "session/neu/_status.html" with wert="approved" text="bestätigt" %}{% elif status.acknowledgement == "partial" %}{% include "session/neu/_status.html" with wert="pending" text="teilweise" %}{% elif status.acknowledgement == "open" %}{% include "session/neu/_status.html" with wert="pending" text="offen" %}{% else %}–{% endif %}
+                        {% for row in status.rows %}{% if row.acknowledged_at %}<span class="block text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums">{{ row.acknowledged_at|date:"d.m.Y, H:i" }} ({{ row.get_acknowledged_via_display }})</span>{% endif %}{% endfor %}
+                    </p>
+                    {% if can_enter_responses and status.person and is_open %}
+                    <details>
+                        <summary class="cursor-pointer text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Rückmeldung eintragen</summary>
+                        <form method="post" action="{% url 'session:meeting_response_entry' tenant_slug=tenant_slug meeting_id=meeting.id person_id=status.person.id %}" class="mt-2 max-w-md space-y-2">
+                            {% csrf_token %}
+                            <c-form.textarea name="reason" id="reason-{{ status.person.id }}" label="Grund (bei Absage)" rows="2" dicht />
+                            <c-form.checkbox name="substitute" id="substitute-{{ status.person.id }}" value="1" label="Vertretung erbeten" dicht />
+                            <div class="flex flex-wrap gap-2">
+                                <c-ui.button type="submit" variant="secondary" size="sm" name="action" value="confirm" icon="user-check">Zusage</c-ui.button>
+                                <c-ui.button type="submit" variant="secondary" size="sm" name="action" value="decline" icon="user-x">Absage</c-ui.button>
+                                {% if status.acknowledgement != "confirmed" %}
+                                <c-ui.button type="submit" variant="secondary" size="sm" name="action" value="acknowledge">Empfang vermerken</c-ui.button>
+                                {% endif %}
+                            </div>
+                        </form>
+                    </details>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        {% else %}
+        <c-rahmen.satz>Noch keine Ladung versandt. Nach dem Versand erscheinen hier die Empfänger mit Zustellung, Empfangsbestätigung und Rückmeldung.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+</div>
+{% endblock %}

@@ -1,0 +1,8 @@
+{% comment %}
+Bild oder Anfangsbuchstabe einer Person in Listen der Einstellungen (Issue #951), 32 px; ``gross`` 48 px im Kopf der
+Mitgliedsseite. Rein zur Orientierung, Bildschirmleser lesen den Namen daneben.
+  {% include "work/organization/neu/_person.html" with person=member.user %}
+{% endcomment %}
+<span class="{% if gross %}w-12 h-12 text-base{% else %}w-8 h-8 text-[0.8125rem]{% endif %} shrink-0 rounded-full bg-band-grau overflow-hidden inline-flex items-center justify-center font-semibold text-gray-700 dark:text-gray-300" aria-hidden="true">
+    {% if person.avatar %}<img src="{{ person.avatar.url }}" alt="" class="w-full h-full object-cover">{% else %}{{ person.first_name|slice:":1"|upper|default:person.email|slice:":1"|upper }}{% endif %}
+</span>

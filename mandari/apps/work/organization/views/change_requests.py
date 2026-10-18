@@ -8,16 +8,18 @@ from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..services import ServiceError
 from ._helpers import flash_error
 
 
-class ProfileChangeRequestsView(WorkViewMixin, TemplateView):
+class ProfileChangeRequestsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Change requests within profile tabs."""
 
     template_name = "work/profile/change_requests.html"
+    neue_vorlage = "work/profile/neu/antraege.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):

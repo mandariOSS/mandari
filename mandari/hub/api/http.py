@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import time
 from collections.abc import Callable, Mapping
 from datetime import datetime
@@ -46,13 +47,28 @@ class BadRequestError(Exception):
 # =============================================================================
 
 
+#: Uhrzeit, Leerzeichen, Offset am Ende – das ``+`` von ``+01:00`` wird im Query-String zum Leerzeichen
+_LOST_PLUS = re.compile(r"(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?) (\d{2}(?::?\d{2})?)$")
+
+
+def restore_offset_plus(value: str) -> str:
+    """
+    Stellt das ``+`` eines positiven Offsets wieder her, das die URL-Dekodierung zum Leerzeichen gemacht hat.
+
+    Eindeutig: Zwischen Uhrzeit und Offset steht in ISO 8601 nie ein Leerzeichen.
+    """
+    return _LOST_PLUS.sub(r"\1+\2", value)
+
+
 def parse_client_datetime(value: str, param: str) -> datetime:
     """
     ISO-8601-Zeitstempel aus einem Query-Parameter.
 
     Die Zeitzone ist Pflicht: Zeitstempel ohne Zeitzone sind mehrdeutig und werden mit einer klaren
-    400-Meldung abgelehnt (viele kommunale Server machen genau das falsch, wir nicht).
+    400-Meldung abgelehnt (viele kommunale Server machen genau das falsch, wir nicht). Ein unkodiertes
+    ``+`` vor dem Offset (``…T00:00:00+01:00`` von Hand in die Adresszeile getippt) wird toleriert.
     """
+    value = restore_offset_plus(value)
     try:
         dt = datetime.fromisoformat(value)
     except (ValueError, TypeError):

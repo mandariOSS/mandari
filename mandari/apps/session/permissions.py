@@ -341,6 +341,20 @@ class SessionMixin(LoginRequiredMixin):
                 self.session_user, checker.permissions
             ).count()
 
+        from apps.session.rahmen import OFFENE_ANTRAEGE, neues_design, rahmen_kontext
+
+        # Arbeitsvorrat-Badge (Issue #944): offene Anträge an „Anträge“, nur in der Leiste des neuen Rahmens (gezählt
+        # wie auf dem Start); die bisherige Seitenleiste bleibt unverändert
+        if neues_design(self.session_tenant) and checker.has_permission("view_applications"):
+            from apps.session.models import SessionApplication
+
+            context["pending_applications_count"] = SessionApplication.objects.filter(
+                tenant=self.session_tenant, status__in=OFFENE_ANTRAEGE
+            ).count()
+
+        # Neues Erscheinungsbild je Mandant (Issue #944): Schalter und, wenn an, die Navigation des neuen Rahmens –
+        # aus dem Kontext oben, ohne weitere Abfrage
+        context.update(rahmen_kontext(self, context))
         return context
 
     def get_queryset(self):

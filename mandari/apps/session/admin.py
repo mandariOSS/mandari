@@ -201,7 +201,7 @@ class SessionTenantAdmin(ModelAdmin):
         "is_active_display",
         "created_at",
     ]
-    list_filter = ["is_active", "created_at"]
+    list_filter = ["is_active", "session_new_design", "created_at"]
     search_fields = ["name", "slug", "contact_email"]
     prepopulated_fields = {"slug": ("name",)}
     # Freischaltung und Lizenz der OParl-Schnittstelle nur über die Einstellungen des Mandanten (Audit-Log, Issue #319)
@@ -264,7 +264,7 @@ class SessionTenantAdmin(ModelAdmin):
         (
             "Einstellungen",
             {
-                "fields": ("settings", "is_active", "scoped_permissions_enabled", "hub_events"),
+                "fields": ("settings", "is_active", "session_new_design", "scoped_permissions_enabled", "hub_events"),
             },
         ),
         (

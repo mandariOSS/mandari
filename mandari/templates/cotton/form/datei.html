@@ -1,0 +1,41 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Dateifeld mit Ablagefläche (Issue #951): ein echtes <input type="file"> liegt unsichtbar über einer gestrichelten Fläche
+„Datei wählen oder hierher ziehen“. Klick, Tastatur (Fokusrahmen an der Fläche) und Ziehen gehen ohne eigenes Skript;
+der Browser legt gezogene Dateien selbst ins Feld. Für Arbeitsflächen (Work, Session).
+  <c-form.datei name="datei" label="Unterlagen (PDF)" accept=".pdf,application/pdf" hinweis="Gescannte Seiten erkennt Work selbst." required />
+Ohne ``ziehen`` hebt der Baustein die Fläche beim Ziehen selbst hervor und nennt die gewählten Dateien darunter.
+Mit ``ziehen`` (Alpine-Ausdruck des Zustands „wird gezogen“) steuert eine Komponente der Seite alles selbst; ihre
+Ereignisse gibt man als weitere Attribute an (sie landen an der umgebenden Fläche, Ereignisse des Felds steigen dorthin
+auf), ``ref`` setzt x-ref am Feld, der Slot steht unter der Fläche (Dateiliste, abgelehnte Dateien):
+  <c-form.datei name="import_files" id="import_files" accept=".pdf,.docx" multiple ref="fileInput" ziehen="isDragging"
+      labelledby="dateien-titel" hinweis="PDF und DOCX, je Datei bis 25 MB" @dragover.prevent="isDragging = true"
+      @dragleave.prevent="isDragging = false" @drop.prevent="handleDrop($event)" @change="handleFileSelect($event)">…</c-form.datei>
+``label`` steht über der Fläche; ohne sichtbare Beschriftung benennt ``labelledby`` (ID einer Überschrift) das Feld.
+``waehlen`` ersetzt den Linktext (Standard „Datei wählen“ bzw. „Dateien wählen“), ``fehler`` zeigt einen Fehler am Feld.
+{% endcomment %}
+<c-vars name="" id="" label="" labelledby="" accept="" multiple="" required="" hinweis="" fehler="" ref="" ziehen="" waehlen="" class="" />
+{% with auto_id="id_"|add:name %}{% firstof id auto_id as fid %}
+<div class="{{ class }}" {{ attrs }}>
+    {% if label %}
+    <label for="{{ fid }}" class="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">
+        {{ label }}{% if required %} <span class="text-red-500" aria-hidden="true">*</span>{% endif %}
+    </label>
+    {% endif %}
+    <div{% if not ziehen %} x-data="{ ziehen: false, namen: [] }"{% endif %}>
+        <div class="relative"{% if not ziehen %} @dragenter="ziehen = true" @dragleave="ziehen = false" @drop="ziehen = false" @change="namen = Array.from($event.target.files || [], (f) => f.name)"{% endif %}>
+            <input type="file" name="{{ name }}" id="{{ fid }}"{% if accept %} accept="{{ accept }}"{% endif %}{% if multiple %} multiple{% endif %}{% if required %} required{% endif %}{% if ref %} x-ref="{{ ref }}"{% endif %}{% if labelledby and not label %} aria-labelledby="{{ labelledby }}"{% endif %}{% if fehler %} aria-invalid="true"{% endif %}{% if fehler or hinweis %} aria-describedby="{% if fehler %}{{ fid }}-fehler{% endif %}{% if fehler and hinweis %} {% endif %}{% if hinweis %}{{ fid }}-hinweis{% endif %}"{% endif %}
+                   class="peer absolute inset-0 z-10 w-full h-full opacity-0 cursor-pointer">
+            <div class="rounded-md border border-dashed px-6 py-6 text-center peer-focus-visible:ring-2 peer-focus-visible:ring-primary-600"
+                 :class="({{ ziehen|default:'ziehen' }}) ? 'border-primary-600 bg-primary-50 dark:bg-primary-900/20' : '{% if fehler %}border-red-600 dark:border-red-400{% else %}border-gray-400 dark:border-gray-600{% endif %}'">
+                <i data-lucide="upload" class="mx-auto w-5 h-5 text-gray-600 dark:text-gray-400" aria-hidden="true"></i>
+                <p class="mt-2 text-sm text-gray-800 dark:text-gray-200"><span class="font-medium text-primary-700 dark:text-primary-300">{% if waehlen %}{{ waehlen }}{% elif multiple %}Dateien wählen{% else %}Datei wählen{% endif %}</span> oder hierher ziehen</p>
+                {% if hinweis %}<p id="{{ fid }}-hinweis" class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ hinweis }}</p>{% endif %}
+            </div>
+        </div>
+        {% if not ziehen %}<p x-show="namen.length" x-cloak aria-live="polite" class="mt-2 text-sm text-gray-800 dark:text-gray-200 break-words">Gewählt: <span x-text="namen.join(', ')"></span></p>{% endif %}
+    </div>
+    {% if fehler %}<p id="{{ fid }}-fehler" class="mt-1 text-sm text-red-700 dark:text-red-400">{{ fehler }}</p>{% endif %}
+    {{ slot }}
+</div>
+{% endwith %}

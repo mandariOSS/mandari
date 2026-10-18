@@ -195,6 +195,8 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
   (Abschnitt „Sicherung“)
 - [ ] Worker läuft (`docker compose ps worker` „healthy“), `python manage.py events_scheduler --list`
   zeigt die Zeitpläne (Abschnitt „Geplante Aufgaben“); in der Crontab nur Aufgaben des Betriebssystems
+- [ ] Testmail aus den Systemeinstellungen: Message-ID endet auf die eigene Domain, nicht auf eine
+  Container-ID (Abschnitt „Mailversand: Message-ID und EHLO“)
 
 ---
 
@@ -207,6 +209,13 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
 sh deploy/scripts/deploy.sh rollback v0.11.0  # bestimmte Version
 ./backup.sh --restore <Sicherungsdatei>       # Daten aus einer Sicherung zurückspielen
 ```
+
+Zurück auf ein Image vor der Dokumentkette (Migration `insight_core.0059`, Issue #919): **vorher** mit dem
+laufenden Image `docker exec mandari python manage.py dokumentkette zuruecksetzen` ausführen (idempotent, nur
+Zustandsspalten). Ein älteres Image kennt die Zustände `retry`, `fetching` und `refused` nicht; danach stehen sie
+wieder als `none` bzw. `error` da (`docs/FILE_CACHE.md`, „Zustände des Abrufs“). Verdrängte Dokumente (`evicted`,
+Obergrenze #961, Migration `insight_core.0056`) bleiben verdrängt; ein Image mit `0056`, aber ohne `0059` kennt den
+Zustand.
 
 ### Datenbank-Migration
 
@@ -342,6 +351,7 @@ Alles leitet sich vom Arbeitsspeicher des **Datenbankdienstes** ab
 | `POSTGRES_MAX_CONNECTIONS` | muss zur Summe aller Dienste passen | `100` |
 | `POSTGRES_MAX_WAL_SIZE` | mehr bedeutet seltenere Checkpoints | `2GB` |
 | `POSTGRES_TEMP_FILE_LIMIT` | Obergrenze für temporäre Dateien **je Sitzung**; deutlich unter dem freien Plattenplatz | `5GB` |
+| `POSTGRES_SHARED_PRELOAD_LIBRARIES` | beim Start geladene Bibliotheken; ersetzt `postgresql.conf` und `ALTER SYSTEM`, leer = keine (siehe „Teuerste Abfragen“) | `pg_stat_statements` |
 
 **Die Falle bei `work_mem`:** Der Wert gilt je Sortiervorgang, und eine einzelne
 Abfrage kann mehrere davon haben. Im Extremfall belegt die Datenbank
@@ -398,6 +408,149 @@ aus #256:
 
 Listen- und Detailseiten lagen vorher wie nachher bei 10–50 ms; sie sind durch
 die Umstellung nicht langsamer geworden.
+
+### Teuerste Abfragen (pg_stat_statements)
+
+Welche SQL-Abfragen insgesamt die meiste Zeit kosten, zeigt die Erweiterung
+`pg_stat_statements` (Issue #1024). Sie fasst gleichartige Abfragen zusammen (Werte
+durch `$1`, `$2` ersetzt) und zählt je Abfrage Aufrufe, Gesamt- und Durchschnittszeit
+und gelesene Blöcke, über alle Datenbanken des Servers.
+
+- **Laden:** Die mitgelieferte `docker-compose.yml` startet PostgreSQL mit
+  `-c shared_preload_libraries=pg_stat_statements` (Helm-Chart: `postgres.sharedPreloadLibraries`).
+  Die Einstellung wirkt **erst nach einem Neustart des Datenbankdienstes**
+  (`docker compose up -d postgres` legt den Container neu an, die Anwendung ist dabei
+  einige Sekunden ohne Datenbank). `update.sh` startet die Datenbank nicht neu; ein
+  `docker compose up -d` ohne Dienstnamen dagegen schon. Im Helm-Chart ändert schon das
+  Upgrade die Pod-Vorlage, PostgreSQL startet dabei sofort neu; wer das zu diesem Zeitpunkt
+  nicht will, setzt vorher `postgres.sharedPreloadLibraries: ""`.
+- **Vorrang vor der Konfiguration:** Ein Wert auf der Kommandozeile (`-c`) hat Vorrang vor
+  `postgresql.conf` und `ALTER SYSTEM`. Lädt der Server dort schon Bibliotheken (etwa
+  `auto_explain` oder `pg_cron`), gehören sie mit in die Variable, kommagetrennt:
+  `POSTGRES_SHARED_PRELOAD_LIBRARIES=pg_stat_statements,auto_explain`. Sonst fehlen sie nach
+  dem Neustart. Das gilt ebenso für `postgres.sharedPreloadLibraries` im Helm-Chart. Deshalb
+  **vor dem Neustart** nachsehen, was heute geladen ist (im Cluster entsprechend mit
+  `kubectl exec`):
+
+  ```bash
+  docker compose exec postgres psql -U mandari -d mandari -c "SHOW shared_preload_libraries;"
+  ```
+
+- **Abschalten:** `POSTGRES_SHARED_PRELOAD_LIBRARIES=` (leer) in der `.env`, ebenfalls mit
+  Neustart. Leer heißt hier wirklich keine Bibliothek: Auch was in `postgresql.conf` oder per
+  `ALTER SYSTEM` eingetragen ist, wird nicht geladen. Im Helm-Chart entfällt bei
+  `postgres.sharedPreloadLibraries: ""` das Argument ganz, dort gilt dann wieder die
+  Konfiguration des Servers.
+- **Anlegen:** Die Erweiterung legt `migrate` an (Migration `common.0012`), in der
+  Datenbank von mandari. Fehlen der Datenbankrolle die Rechte (die Erweiterung braucht
+  einen Superuser bzw. die Admin-Rolle eines verwalteten Dienstes) oder die Erweiterung
+  selbst, steht eine Warnung im Protokoll, und die Migration läuft trotzdem durch. Dann
+  von Hand: `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;`
+- **Verwaltete Datenbanken** (RDS, Azure, Google Cloud SQL usw.): `pg_stat_statements` in
+  den Parametern des Dienstes einschalten (meist schon vorgeladen) und die Erweiterung mit
+  der Admin-Rolle anlegen.
+- **Sicherung ohne Superuser einspielen:** Ist die Erweiterung angelegt, enthält jeder
+  `pg_dump` der Datenbank `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` und
+  `COMMENT ON EXTENSION pg_stat_statements`. Die Erweiterung ist nicht „trusted“: Spielt eine
+  Rolle ohne Superuser-Rechte den Dump ein (etwa beim Umzug auf eine verwaltete Datenbank),
+  scheitern beide Befehle. `psql -v ON_ERROR_STOP=1` bricht dort ab, `pg_restore` spielt den
+  Rest ein und endet trotzdem mit einem Fehler. Dann die Erweiterung bei Bedarf vorher mit der
+  Admin-Rolle anlegen und beide Befehle auslassen:
+
+  ```bash
+  # SQL-Dump (backup.sh: postgres.sql)
+  grep -vE '^(CREATE EXTENSION IF NOT EXISTS|COMMENT ON EXTENSION) pg_stat_statements' postgres.sql \
+    | psql -v ON_ERROR_STOP=1 -h <host> -U <rolle> -d mandari
+  # Custom-Format (Backup-Stack: mandari.dump): Inhaltsliste ohne die Erweiterung
+  pg_restore -l mandari.dump | grep -v pg_stat_statements > ohne-pgss.list
+  pg_restore -L ohne-pgss.list -h <host> -U <rolle> -d mandari mandari.dump
+  ```
+
+  Mit Superuser (mitgelieferte `docker-compose.yml`, `./backup.sh --restore`,
+  Wiederherstellungstest des Backup-Stacks) ist nichts zu tun.
+- **Ohne die Bibliothek** läuft mandari unverändert. Nur die Abfrage der Statistik meldet
+  dann `pg_stat_statements must be loaded via "shared_preload_libraries"`.
+
+Auswerten (die zehn Abfragen mit der meisten Gesamtzeit in der eigenen Datenbank):
+
+```bash
+docker compose exec postgres psql -U mandari -d mandari -c "
+SELECT round(total_exec_time::numeric / 1000, 1) AS gesamt_s,
+       calls AS aufrufe,
+       round(mean_exec_time::numeric, 2) AS mittel_ms,
+       round(100 * total_exec_time / sum(total_exec_time) OVER (), 1) AS anteil_prozent,
+       left(regexp_replace(query, '\s+', ' ', 'g'), 120) AS abfrage
+FROM pg_stat_statements
+WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+ORDER BY total_exec_time DESC
+LIMIT 10;"
+```
+
+- `gesamt_s` und `anteil_prozent` zeigen, wo die Datenbank ihre Zeit verbringt. Eine
+  billige Abfrage, die sehr oft läuft, kann mehr kosten als eine langsame seltene.
+- `mittel_ms` zeigt einzelne langsame Abfragen; für die nächste Stufe `EXPLAIN (ANALYZE,
+  BUFFERS)` mit echten Werten statt `$1` ausführen.
+- `ORDER BY calls DESC` findet Abfragen, die zu oft laufen (etwa eine je Listeneintrag).
+- Die Werte zählen seit dem Start des Servers bzw. dem letzten Zurücksetzen. Vor einer
+  Messung (etwa vor und nach einem Deploy) zurücksetzen: `SELECT pg_stat_statements_reset();`
+- Den Text fremder Abfragen sieht nur, wer Superuser ist oder die Rolle
+  `pg_read_all_stats` hat; andere Rollen sehen dort `<insufficient privilege>`.
+- Kosten: gering, ein Eintrag je Abfrageform im gemeinsamen Speicher (höchstens 5.000,
+  `pg_stat_statements.max`; seltene fallen zuerst heraus).
+
+## ✉️ Mailversand: Message-ID und EHLO
+
+Jede Mail trägt eine Message-ID der Form `<…@domain>`, und beim Verbindungsaufbau meldet sich mandari
+beim Mailserver mit einem Namen (EHLO). Django nähme dafür den Rechnernamen, in einem Container also die
+Container-ID. Spamfilter werten eine Message-ID ohne vollständigen Domainnamen ab (rspamd
+`MID_RHS_NOT_FQDN`). mandari setzt den Namen deshalb beim Start jedes Prozesses (Anwendung, Worker,
+Verwaltungsbefehle) für alle Versandwege: Systemeinstellungen, `EMAIL_*`, eigenes SMTP einer Organisation.
+
+| Einstellung | Bedeutung |
+|---|---|
+| `EMAIL_MESSAGE_ID_DOMAIN` | vollständiger Domainname für Message-ID und EHLO, z. B. `example.com`; leer (Standard) = Domain von `DEFAULT_FROM_EMAIL`, wenn gesetzt, sonst Host aus `SITE_URL` |
+| `DEFAULT_FROM_EMAIL` | Absender, wenn die Systemeinstellungen keinen nennen; ohne Angabe `noreply@mandari.de`, der für Message-ID und EHLO nie zählt |
+
+- `docker-compose.yml` reicht beide Werte aus der `.env` an Anwendung und Worker durch, das Helm-Chart über
+  `mail.messageIdDomain` und `mail.fromEmail`. Ohne beide gilt der Host aus `SITE_URL`, mit Compose also
+  `DOMAIN`.
+- Weicht der Absender in den Systemeinstellungen von `DEFAULT_FROM_EMAIL` ab (ohne `DEFAULT_FROM_EMAIL`: vom
+  Host aus `SITE_URL`), dessen Domain in `EMAIL_MESSAGE_ID_DOMAIN` eintragen. Gelesen wird der Wert beim Start;
+  nach einer Änderung Anwendung und Worker neu starten.
+- Ein ungültiger Wert (ohne Punkt, mit `@`, IP-Adresse) hält nichts an: mandari versendet mit dem Wert, der
+  ohne die Einstellung gälte, und die Systemprüfung warnt bei jedem Verwaltungsbefehl (`common.W001`).
+  Liefert auch der keinen vollständigen Domainnamen (etwa `SITE_URL` mit IP-Adresse), nimmt mandari eine
+  IP-Adresse als Adressliteral nach RFC 5321 (`[192.0.2.10]`, `[IPv6:2001:db8::1]`), sonst `localhost`, und
+  die Systemprüfung warnt ebenso (`common.W002`; nicht bei `SITE_URL` auf `localhost`). Prüfen mit
+  `python manage.py check`.
+- Prüfen: Testmail aus den Systemeinstellungen an ein eigenes Postfach senden und im Quelltext der Mail
+  `Message-ID:` ansehen. Für die Zustellbarkeit insgesamt helfen ein Test bei mail-tester.com und Testmails
+  an Gmail- und Microsoft-365-Postfächer (Kopfzeile `Authentication-Results`: SPF, DKIM und DMARC `pass`).
+- DMARC: Mit `p=none` beginnen und Aggregatberichte (`rua=`) auswerten. Zeigen sie nur noch eigene,
+  legitime Absender, auf `p=quarantine` und später `p=reject` umstellen.
+- HTML-Mails verstecken nur den Vorschautext (Preheader) im Posteingang, und nur, wenn er Inhalt hat.
+
+## Abrufe bei Ratsinformationssystemen
+
+Ingestor und Anwendung rufen die Ratsinformationssysteme Ihrer Quellen von der Adresse Ihres Servers ab: mit der
+Kennung `mandari-ingestor`, höchstens einer Anfrage je Sekunde und Server und nach den Regeln der robots.txt.
+Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die Einstellungen je Quelle
+(`sync_config`) und die Umgebungsvariablen dazu stehen in [`docs/ABRUFREGELN.md`](docs/ABRUFREGELN.md).
+
+- Setzen Sie `INGESTOR_USER_AGENT` auf eine Kennung mit Ihrer eigenen Kontaktadresse; ohne Angabe nennt der
+  User-Agent unsere Infoseite und `support@mandari.de` ([Für Selbstbetreiber](docs/ABRUFREGELN.md#für-selbstbetreiber)).
+  Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`) und,
+  weil die Sync-Aktionen an einer Quelle im Admin ohne laufenden Daemon im Worker der Anwendung laufen, auch in
+  `x-app-environment` (Helm: `app.extraEnv`); ein Eintrag nur in der `.env` wirkt nicht.
+- Jede Quelle hat ihren eigenen Takt: werktags 07–19 Uhr im Grundtakt `INGESTOR_INTERVAL`, sonst stündlich, am
+  Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag alle 5 Minuten, nach Läufen ohne Änderung seltener.
+  Vollabgleiche laufen je Quelle in ihrem Zeitfenster, sonst ab `INGESTOR_FULL_SYNC_HOUR` (5 Stunden lang).
+  Höchstens `INGESTOR_SYNC_POOL_SIZE` Quellen (Standard 4) laufen gleichzeitig; Einzelheiten in
+  [`docs/ABRUFREGELN.md`](docs/ABRUFREGELN.md#rhythmus).
+- `docker-compose.yml` reicht dem Dienst `ingestor` nur die dort genannten Variablen durch (Abruf-Rhythmus über
+  `INGESTOR_INTERVAL`, `INGESTOR_FULL_SYNC_HOUR`, `INGESTOR_CONCURRENT`, `INGESTOR_SYNC_POOL_SIZE`, Speichergrenze
+  `INGESTOR_MEM_LIMIT`); weitere, etwa `INGESTOR_REQUEST_INTERVAL`, ergänzen Sie in seinem Abschnitt
+  `environment`, im Helm-Chart über `ingestor.extraEnv`.
 
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 
@@ -458,13 +611,13 @@ bleiben für Fehlersuche und Handbetrieb (`--once`, `--list`, geparkte Ereigniss
 
 ### Betrieb als Dienste `worker` und `worker-heavy`
 
-Jede Installationsart bringt zwei Worker als eigene Dienste aus dem Anwendungs-Image mit, mit
-derselben Umgebung wie die Anwendung:
+Jede Installationsart bringt die Worker als eigene Dienste aus dem Anwendungs-Image mit, mit
+derselben Umgebung und denselben Volumes wie die Anwendung (auch Dokumentablage und `OBJ_*`):
 
 | Dienst | Rollen und Warteschlangen | Speicherlimit |
 |---|---|---|
 | `worker` | alle Rollen; Aufträge und Abonnements aus `default`, `mail`, `index`, `adapter` | 1 GB (Runner-Neustart ab 400 MB; der Rest für die Verwaltungsbefehle der Zeitpläne, die als eigene Prozesse laufen) |
-| `worker-heavy` | nur `tasks`; Aufträge aus `ocr` und `ai` (Texterkennung, KI) | 1 GB (Runner-Neustart ab 800 MB) |
+| `worker-heavy` | nur `tasks`; Aufträge aus `ocr` (Parallelität 1) und `ai` (Texterkennung, KI) | 3 GB, `WORKER_HEAVY_MEM_LIMIT` (Runner-Neustart ab 800 MB, dazu ein Tesseract-Unterprozess bis `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, Standard 2048) |
 | `worker-live` | nur `tasks`; Aufträge aus `live` (Live-Übertragungen, [LIVE_UEBERTRAGUNG.md](docs/LIVE_UEBERTRAGUNG.md)); wartet nur, solange `LIVE_UEBERTRAGUNG_AKTIV` aus ist | 512 MB (Runner-Neustart ab 400 MB) |
 
 Getrennt sind sie, weil jeder Neustart eines Runners (Zahl der Aufträge, Speichergrenze) auf seinen
@@ -792,6 +945,30 @@ Anwendung mit `schatten` oder `aktiv` nicht (sonst liefe der Mailversand in der 
 Abonnement noch nicht zugestellt hat, bleiben im Journal liegen (ohne Benachrichtigung); vor dem
 Umschalten deshalb warten, bis der Rückstand des Abonnements null ist.
 
+### Nachfolger der Texterkennung
+
+Neuer Text einer Anlage (`ris.file.text_extracted`, vom OCR-Worker des Ingestors oder vom Auftrag
+`file.extract_text`) erreicht seine Nachfolger über Abonnements der Datendrehscheibe (Issue #919, ADR
+Dokumentkette, Abschnitt 9). Beide laufen im Worker (Rolle `dispatch`, Warteschlange `default`), transaktional und
+ohne Aufrufe nach außen.
+
+| Schalter | Abonnement | `aktiv` |
+|---|---|---|
+| `GEOREF_SUBSCRIPTION` | `insight.verortung` | Der Vorgang geht zurück auf `pending`, sofern ihn der automatische Lauf verortet hat (nie bei Ergebnissen der KI), und mit `TASKS_BACKEND=journal` reiht es den Auftrag `verortung_vorgang` ein. Ohne Journal verortet der Zeitplan `verortung_automatisch` beim nächsten Lauf. |
+| `SUMMARY_SUBSCRIPTION` | `insight.zusammenfassung` | Die KI-Zusammenfassung des Vorgangs wird verworfen, nicht neu erzeugt; eine neue entsteht wie bisher erst auf Abruf. |
+
+`aus` (Standard) registriert nichts, `schatten` zählt nur (`mandari_georef_subscription_total`,
+`mandari_summary_subscription_total`). **Einschalten:** `schatten` setzen, Worker neu starten
+(`docker compose up -d worker`), einige Tage die Zähler und `mandari_events_lag_seconds` ansehen. Dann im Admin
+(„Ereignistechnik → Abonnements“) das Abonnement pausieren und „Fortsetzen (aktiv)“, danach `aktiv` setzen und den
+Worker neu starten. Ein neues Abonnement beginnt am Ende des Journals; älterer Text bleibt beim Zeitplan.
+**Rückweg:** `aus` und Neustart des Workers; Verortung und Zusammenfassung arbeiten dann wie vorher.
+
+Die Zusammenfassung selbst lädt keine Dokumente mehr und erkennt keinen Text. Fehlt der Text, weil die Erkennung
+einer Anlage aussteht, zeigt die Vorgangsseite einen Hinweis; mit `TASKS_BACKEND=journal` und
+`TEXT_EXTRACTION_RUNNER=worker` reiht sie dafür bis zu drei Aufträge `file.extract_text` mit Vorrang ein, und zwar
+für Anlagen mit abgelegtem Inhalt (der Auftrag liest nur aus der Ablage; die übrigen holt zuerst der Abruf).
+
 ### Work-Daten nach Neuveröffentlichung im RIS
 
 Veröffentlicht ein RIS eine Tagesordnung oder Vorlage neu (Löschmarkierung und Neuanlage, neue Adressen,
@@ -825,6 +1002,123 @@ dann ohne `--dry-run` (einzelne Umzüge mit `--eintrag <Kennung>`). Zurückgedre
 früheren Punkt bzw. an der früheren Vorlage und ziehen von dort nie wieder automatisch um. Ein älteres Image läuft
 ohne Rückbau der Migration (zwei neue Tabellen).
 
+### KI-Anbieter: eine Konfiguration, nur freigegebene Endpunkte
+
+Jeder KI-Aufruf (Schreibhilfe und Co-Editor in Work, Zusammenfassung, KI-Assistent und KI-Verortung im
+Bürgerportal) nutzt eine Konfiguration (Issue #950): Anbieter (Vorlage oder eigener OpenAI-kompatibler
+Endpunkt), Basis-URL, Modell und Schlüssel stehen im Admin unter „KI-Einstellungen“, getrennt schaltbar für
+Work und das Bürgerportal; Organisationen können für Work einen eigenen Schlüssel und Anbieter eintragen. Ohne
+Anbieter bleibt die KI aus; einen fest eingebauten Anbieter oder einen Rückfall gibt es nicht.
+
+Technische Sperre ist die Positivliste `KI_ERLAUBTE_HOSTS` (kommagetrennte Hostnamen, in Anwendung und
+Ingestor gleich setzen). Sie hat keinen Standard: Leer ist nichts erlaubt, jeder KI-Aufruf bleibt gesperrt,
+auch die externe Texterkennung über `MISTRAL_BASE_URL` (fail-closed, `shared/mandari_dokumente/ki_hosts.py`).
+Die Vorlagen im Admin (STACKIT, IONOS, Scaleway, OVHcloud, DeutschlandGPT, Nebius Token Factory) geben keinen
+Host frei; sie füllen nur Anzeigename, Verarbeitungsort und Basis-URL vor und sind als „nicht freigegeben“
+gekennzeichnet, solange ihr Host fehlt. Die Nebius-Vorlage nennt als Ort „je nach Modell innerhalb und außerhalb
+der EU, auch in den USA“ (Unterauftragsverarbeiterliste der Token Factory); zeigt die Oberfläche des Anbieters für
+das gewählte Modell einen festen Ort, kann ihn das Feld „Verarbeitungsort“ genauer nennen. Verglichen wird der
+Host exakt, nur `https`, ohne Zugangsdaten in der Adresse, Port nur 443. Jede Adresse wird bei jedem Aufruf neu
+geprüft, auch wenn sie direkt in der Datenbank steht; ein nicht freigegebener Host ergibt „KI aus“ mit Warnung im
+Protokoll (ohne Schlüssel).
+
+Solange kein Anbieter vertraglich freigegeben ist, bleibt `KI_ERLAUBTE_HOSTS` leer und die KI überall aus
+(Work, Bürgerportal, externe Texterkennung). Einschalten ist reine Konfiguration: Host in `KI_ERLAUBTE_HOSTS`
+aufnehmen (Anwendung, Worker und Ingestor neu starten), dann im Admin oder mit dem Befehl `ki_anbieter` (unten)
+Vorlage bzw. Basis-URL, Modell und Schlüssel eintragen und die Schalter für Work und Bürgerportal setzen. Die
+Einwilligung im KI-Assistenten nennt Anbieter und Verarbeitungsort aus dieser Konfiguration und gilt nur für den
+Anbieter, dem zugestimmt wurde. An den Host der DeutschlandGPT-Vorlage geht die Antwortlänge zusätzlich als
+`max_completion_tokens`, weil die Schnittstelle `max_tokens` nicht beachtet.
+
+Ein gespeicherter Schlüssel gehört zu seinem Anbieter: Wer im Admin den Anbieter wechselt (anderer Host oder
+bisher kein Anbieter gewählt), muss den Schlüssel des neuen Anbieters eintragen. Einen Schlüssel ohne Anbieter
+nimmt der Admin nicht an; „API Key löschen“ (KI-Einstellungen) bzw. „Eigenen KI API Key löschen“ (Organisation)
+entfernt ihn. Eine Vorlage gilt nur für ihren eigenen Host; für einen anderen Host „Eigener Endpunkt“ mit
+Anzeigename und Verarbeitungsort wählen.
+
+**Anbieter wechseln in drei Schritten** (Befehl `ki_anbieter`, Issue #1046; ohne Aktion zeigt er die Vorlagen
+mit Host und Freigabe und die Einrichtung ohne Schlüssel, nur „Schlüssel gesetzt: ja/nein“):
+
+1. Host freigeben: den Host des Anbieters in der `.env` unter `KI_ERLAUBTE_HOSTS` eintragen und Anwendung,
+   Worker und Ingestor neu anlegen (`docker compose up -d`). Der Befehl und der Admin geben keinen Host frei.
+   Den Host des bisherigen Anbieters danach ebenso entfernen, sobald ihn nichts mehr nutzt (Organisationen mit
+   eigenem Anbieter, `MISTRAL_BASE_URL`; `ki_anbieter` nennt die Zahl der Organisationen mit eigenem Schlüssel).
+   Solange er in der Liste steht, bleibt er freigegeben.
+2. Einrichten in einem Schritt. Der Schlüssel kommt nur aus einer benannten Umgebungsvariable, nie von der
+   Kommandozeile, und erscheint in keiner Ausgabe:
+
+   ```bash
+   read -rs KI_SCHLUESSEL && export KI_SCHLUESSEL   # Eingabe bleibt unsichtbar
+   docker exec -e KI_SCHLUESSEL mandari python manage.py ki_anbieter einrichten --vorlage <vorlage> \
+     --modell <modell> --schluessel-aus-umgebung KI_SCHLUESSEL --work --buergerportal
+   unset KI_SCHLUESSEL
+   ```
+
+   Ohne Vorlage statt `--vorlage`: `--basis-url https://<host>/v1 --name "<Anbieter>" --ort "<Verarbeitungsort>"`.
+   Eigene Modelle fürs Bürgerportal und als Ausweichmodell mit `--modell-buergerportal` und `--ausweichmodell`;
+   bei einem Wechsel zu einem anderen Host leert der Befehl die des bisherigen Anbieters. Er prüft mit dem
+   Formular des Admins und bricht ab, wenn der Host nicht in `KI_ERLAUBTE_HOSTS` steht oder die Variable leer
+   ist; mit denselben Angaben wiederholt, ändert er nichts.
+3. Prüfen: `docker exec mandari python manage.py ki_anbieter pruefen` stellt je eingetragenem Modell einen
+   Testaufruf mit höchstens einem Token Antwort (Zeitgrenze 15 s, auch wenn die Schalter aus sind) und meldet nur
+   Erfolg oder die Fehlerart, etwa „Schlüssel abgelehnt“, „Modell oder Schnittstelle nicht gefunden“, „Keine
+   Antwort“, einen TLS-Fehler oder unzulässige Zeichen im Schlüssel. Im Admin tut „Speichern und Verbindung
+   prüfen“ in den KI-Einstellungen dasselbe, nach dem Speichern.
+
+**Nebius nach `common/0011` weiter nutzen:** Die Migration setzt den Anbieter auf „nicht eingerichtet“. Der
+Schlüssel stand bisher in `NEBIUS_API_KEY`; die Anwendung liest ihn nicht mehr (Compose reicht ihn nicht weiter).
+
+1. Vor `./update.sh` in der `.env` ergänzen: `KI_ERLAUBTE_HOSTS=api.tokenfactory.nebius.com`.
+   `NEBIUS_API_KEY` bleibt bis zur Übertragung stehen.
+2. Nach dem Update im Installationsverzeichnis den Schlüssel aus der `.env` übertragen und prüfen. Die erste
+   Zeile nimmt den letzten Eintrag und entfernt Anführungszeichen und einen Kommentar hinter dem
+   Wert. Nur die Bereiche einschalten, die bisher KI nutzten; ein bisheriges `NEBIUS_FALLBACK_MODEL` mit
+   `--ausweichmodell` übernehmen:
+
+   ```bash
+   export NEBIUS_API_KEY="$(grep '^NEBIUS_API_KEY=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r' \
+     | sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
+   docker exec -e NEBIUS_API_KEY mandari python manage.py ki_anbieter einrichten --vorlage nebius \
+     --modell moonshotai/Kimi-K2.6 --schluessel-aus-umgebung NEBIUS_API_KEY --work --buergerportal --pruefen
+   unset NEBIUS_API_KEY
+   ```
+
+3. Erst wenn die Prüfung „OK“ meldet, `NEBIUS_API_KEY` aus der `.env` entfernen. Der Schlüssel liegt dann
+   verschlüsselt in den KI-Einstellungen.
+
+**Rückfall auf ein älteres Image:** Die neuen Spalten haben Datenbank-Standardwerte; ein älteres Image läuft
+ohne Rückbau der Migrationen `common/0011` und `tenants/0027` weiter. Die Migrationen setzen frühere Anbieter
+auf „nicht eingerichtet“ bzw. „Plattform-Einstellung“ und leeren den früheren Nebius-Schlüssel der
+Systemeinstellungen. Die KI bleibt nach einem Rückfall auf ein Image vor #950 aber **nicht** von selbst aus:
+Ein solches Image kennt weder die Positivliste noch die neuen Vorlagen.
+
+- Eine Organisation mit eigenem Schlüssel, deren Anbieter leer ist (nach `tenants/0027`) oder eine Vorlage
+  ohne eingetragene Basis-URL (etwa STACKIT, Scaleway oder DeutschlandGPT), schickt Schlüssel und Inhalte an
+  Nebius, auch ohne `NEBIUS_API_KEY`.
+- Eine eingetragene Basis-URL (Organisation oder KI-Einstellungen) nutzt es ohne Prüfung gegen
+  `KI_ERLAUBTE_HOSTS`.
+- KI-Assistent und Zusammenfassung im Bürgerportal nutzen Nebius, sobald `NEBIUS_API_KEY` in der Umgebung
+  steht.
+
+Deshalb:
+
+1. Beim Deploy dieser Version zählen, wie viele Organisationen einen eigenen Schlüssel haben (gibt nur die
+   Zahl aus): `docker exec mandari python manage.py shell -c "from apps.tenants.models import Organization;
+   print(Organization.objects.filter(ai_api_key_encrypted__isnull=False).count())"`; dieselbe Zahl nennt
+   `ki_anbieter`. Bei mehr als null trifft jeder Rückfall auf ein Image vor #950 diese Organisationen.
+2. Wer Nebius nicht weiter nutzt: `NEBIUS_API_KEY` **vor** `./update.sh` aus der `.env` entfernen. `update.sh`
+   sichert die `.env` als `.env.pre-update` und kopiert sie beim automatischen Rückfall und bei `--rollback`
+   zurück; ein erst danach entfernter Eintrag stünde nach dem Rückfall wieder in der Umgebung. Wer Nebius weiter
+   nutzt (oben), lässt ihn bis zur Übertragung stehen: Ein Rückfall schickt die Anfragen des Bürgerportals dann
+   an denselben Anbieter wie die neue Version.
+3. Vor einem Rückfall auf ein Image vor #950 die eigenen KI-Schlüssel der Organisationen („Eigenen KI API Key
+   löschen“) und, falls er nicht für Nebius ist, den Plattformschlüssel („API Key löschen“ in den
+   KI-Einstellungen) löschen.
+4. Wer Nebius nicht weiter nutzt: den Nebius-Schlüssel beim Anbieter widerrufen. Der Widerruf ist der
+   eigentliche Schutz: Sicherungen der `.env` können den Eintrag zurückbringen, und ein automatischer Rückfall
+   lässt keine Zeit für Schritt 3. Ist ein Image vor #950 mit eigenen Schlüsseln gelaufen, diese Schlüssel beim
+   jeweiligen Anbieter widerrufen und neu ausstellen.
+
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 
 Den Text der RIS-Dateien erkennt eine Implementierung, die Bibliothek `mandari_dokumente` in `shared/`
@@ -835,13 +1129,16 @@ gleich setzen**, sonst arbeiten beide oder keiner:
 
 - `ingestor` (Standard): der OCR-Worker des Ingestors (`python -m src.main extract-daemon`, Ingestor-Image).
 - `worker`: Aufträge `file.extract_text` in der Warteschlange `ocr` (Dienst `worker-heavy` bzw. jeder Worker,
-  der `ocr` bedient). Der Zeitplan `texterkennung_einplanen` reiht alle zwei Minuten höchstens
-  `TEXT_EXTRACTION_QUEUE_DEPTH` (Standard 20) Aufträge ein; der OCR-Worker des Ingestors ruht dann. Die
-  Speichergrenze des Containers (1 GB) muss `OCR_MEMORY_LIMIT_MB` und den Worker selbst tragen; in den
-  Compose-Diensten der Anwendung (auch `worker-heavy`) ist `512` vorgegeben. Solange ein Auftrag wartet, gilt seine Datei weder als
-  abgebrochen noch als hängend (steht die Warteschlange, meldet das die Prüfung `rueckstau`). Quellen in
-  Schonung beansprucht der Zeitplan nicht; ist eine Quelle gerade nicht abrufbar (robots.txt), geht die Datei
-  ohne Abbruch zurück, und aus dieser Kommune wird 15 Minuten lang nichts eingereiht.
+  der `ocr` bedient); der OCR-Worker des Ingestors ruht dann. Der Zeitplan `texterkennung_einplanen` reiht alle
+  zwei Minuten Dateien mit abgelegtem Inhalt ein, für die noch kein Auftrag wartet, bis höchstens
+  `TEXT_EXTRACTION_QUEUE_DEPTH` (Standard 20) Aufträge warten oder laufen. Beansprucht wird erst beim Start des
+  Auftrags; bis dahin bleibt die Datei `pending` (steht die Warteschlange, melden das die Prüfungen `rueckstau`
+  und `dokumenttext`). Die Aufträge lesen nur aus Ablage und Objektspeicher und rufen nie bei der Quelle ab
+  (Dokumentkette, Issue #919, `docs/FILE_CACHE.md`, „Texterkennung aus der Ablage“; Einschalten im nächsten
+  Abschnitt). Schonung und robots.txt einer Quelle betreffen deshalb nur den Abruf, nicht die Erkennung. Die
+  Speichergrenze des Containers muss `OCR_MEMORY_LIMIT_MB` und den Worker selbst tragen: `worker-heavy` hat
+  3 GB und eine eigene Seitengrenze (`WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, Standard 2048), Anwendung und `worker`
+  (1 GB) haben `512`.
 
 Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 
@@ -849,14 +1146,15 @@ Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 |---|---|---|
 | `OCR_MAX_MEGAPIXELS` | `8` | Bildpunkte je Seite (Mio.); große Seiten (Pläne) werden mit kleinerer Auflösung gerendert, A4 bleibt bei `OCR_DPI` |
 | `OCR_DPI` | `200` | Grundauflösung |
-| `OCR_MEMORY_LIMIT_MB` | `1024` | Adressraum je Unterprozess (`pdftoppm`, `tesseract`); darüber ein zweiter Versuch mit halber Auflösung, danach wird die Seite übersprungen. Unter dem Speicherlimit des Containers halten; im Compose-Dienst `ingestor` (512 MB, erkennt den Text im Sync selbst) ist `384` vorgegeben |
+| `OCR_MEMORY_LIMIT_MB` | `1024` | Adressraum je Unterprozess (`pdftoppm`, `tesseract`); darüber ein zweiter Versuch mit halber Auflösung, danach wird die Seite übersprungen. Unter dem Speicherlimit des Containers halten; im Compose-Dienst `ingestor` (512 MB, erkennt den Text im Sync selbst) ist `384` vorgegeben, in `worker-heavy` (3 GB) gilt `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB` (2048) |
 | `OCR_PAGE_TIMEOUT` | `120` | Sekunden je Seite und Schritt |
 | `OCR_FILE_BUDGET_SECONDS` | `1200` | Zeitbudget je Datei; danach gilt der bis dahin erkannte Text |
 | `OCR_MAX_PAGES` | `100` | höchstens so viele Seiten je Datei |
 | `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
 | `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
 | `TEXT_EXTRACTION_MAX_SIZE_MB` | `50` | größere Dateien werden übersprungen |
-| `MISTRAL_API_KEY`, `MISTRAL_OCR_MODEL`, `MISTRAL_OCR_RATE_LIMIT` | leer, `pixtral-12b-2409`, `60` | Mistral vor Tesseract, Anfragen je Minute und Prozess |
+| `TEXT_EXTRACTION_BACKLOG_ALERT_HOURS` | `24` | nur Anwendung, nur mit `worker`: Prüfung `dokumenttext` in `/health/worker/` wird rot, sobald ein abgelegtes Dokument länger auf seinen Text wartet (Issue #919, `docs/FILE_CACHE.md`, „Texterkennung aus der Ablage“) |
+| `MISTRAL_API_KEY`, `MISTRAL_BASE_URL`, `MISTRAL_OCR_MODEL`, `MISTRAL_OCR_RATE_LIMIT` | leer, leer, `pixtral-12b-2409`, `60` | Externe Texterkennung vor Tesseract, nur für öffentliche RIS-Dateien und nur mit Basis-URL, deren Host in `KI_ERLAUBTE_HOSTS` steht (siehe „KI-Anbieter“); Anfragen je Minute und Prozess |
 
 Beansprucht wird in kleinen Portionen direkt vor der Bearbeitung (höchstens zwei Dateien je Platz von
 `TEXT_EXTRACTION_CONCURRENCY`); `TEXT_EXTRACTION_BATCH_SIZE` begrenzt nur die Dateien je Kommune und Runde.
@@ -869,13 +1167,162 @@ Prüfung `texterkennung` in `/health/worker/` (`docs/MONITORING.md`) und der Bet
 „Handlungsbedarf“. Wird eine aufgegebene Datei wieder auf `pending` gesetzt, bekommt sie genau einen
 weiteren Versuch; gelingt er, beginnt der Zähler von vorn.
 
-**Umstellen auf Aufträge:** Ein Worker bedient `ocr` (`docker compose ps worker-heavy`), dann
-`TEXT_EXTRACTION_RUNNER=worker` in der `.env` setzen (Compose reicht die Variable an Anwendung, Worker und
-Ingestor weiter; eigene Override-Dateien für einen OCR-Worker brauchen sie ebenfalls) und Anwendung, Worker
-und Ingestor-Dienste neu starten.
-Dateien, die der OCR-Worker gerade bearbeitet, löst die Zeitgrenze auf. **Rückweg:** Variable entfernen
-(bzw. `ingestor`) und dieselben Dienste neu starten; eingereihte Aufträge erledigen sich noch oder finden
-ihre Datei bereits bearbeitet.
+**Umstellen auf Aufträge:** als Teil der Dokumentkette, Ablauf im folgenden Abschnitt (Schritte 2 und 3).
+
+### Dokumentkette einschalten (Issue #919)
+
+Grundlage: `docs/adr/20261007-dokumentkette.md`. Abruf, Ablage und Texterkennung sind
+getrennte Schritte. Den Text erkennen nur noch Aufträge `file.extract_text` im Dienst `worker-heavy`; sie lesen
+ausschließlich aus der Dokumentablage bzw. dem Objektspeicher und rufen nie bei der Quelle ab. Ein Abruffehler
+ändert den Zustand der Texterkennung nicht mehr, Wiederholungen des Abrufs sind geregelt. Etappe 1 (ein Abrufweg,
+eigene Zustände, Befehle `dokumentkette …`) wirkt mit dem Update ohne weiteres Zutun. Etappe 2, die Erkennung im
+Worker, wird in den folgenden Schritten eingeschaltet; jeder Schritt ist ohne Deploy umkehrbar.
+
+**Voraussetzungen**
+
+- `worker` und `worker-heavy` laufen (`docker compose ps worker worker-heavy` zeigt `healthy`), bei
+  Live-Übertragungen auch `worker-live`. Kein anderer Worker bedient `ocr`: Ein Worker ohne `--queues` bedient
+  alle Warteschlangen und trüge die Texterkennung dann mit 1 GB.
+- Die Dokumentablage (`mandari_files` unter `OPARL_FILES_ROOT`) ist in Anwendung, `worker` und `worker-heavy`
+  eingehängt, mit Objektspeicher haben alle drei dieselben `OBJ_*`-Werte. Compose erledigt beides über die
+  gemeinsame Umgebung; eigene Compose-Dateien oder Umgebungsdateien müssen sie auch `worker-heavy` geben. Laufen
+  die Worker auf einem eigenen Server (`deploy/roles/worker.yml`, `docs/MEHR_SERVER_BETRIEB.md`), sehen sie die
+  Ablage des Anwendungsservers nur über eine gemeinsame Ablage oder den Objektspeicher (`OBJ_ENABLED=true`);
+  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück. Fehlen einem Worker nur die
+  `OBJ_*`, gelten Inhalte, die laut Datenbank im Objektspeicher liegen, als gestört: Die Erkennung wartet, ohne bei
+  der Quelle abzurufen, und das Protokoll des Workers warnt höchstens einmal je Minute (Issue #990,
+  `docs/FILE_CACHE.md`, „Objektspeicher“).
+- Speicher: `worker-heavy` bis 3 GB (`WORKER_HEAVY_MEM_LIMIT`), davon ein Tesseract-Unterprozess bis
+  `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB` (2048). Ein OCR-Worker aus dem Ingestor-Image wird mit Schritt 3
+  überflüssig und gibt seinen Speicher frei. Auf kleinen Servern (4 GB) z. B. `2g` und `1024`; große Seiten
+  werden dann mit kleinerer Auflösung erkannt oder übersprungen (Issue #817). Mit Helm: `worker.heavy` (3Gi,
+  `worker.heavy.ocrMemoryLimitMb`), `TASKS_BACKEND` über `app.extraEnv`, `TEXT_EXTRACTION_RUNNER` über
+  `files.textExtractionRunner` (erreicht auch den Ingestor).
+- Platz: Mit Schritt 3 legt die Ablage die neuen Dokumente aller Quellen mit erlaubtem Abruf ab und wächst
+  entsprechend. Mit Objektspeicher ist die Platte nur Zwischenspeicher (`OBJ_CACHE_MAX_GB`); ohne begrenzt
+  `FILE_CACHE_MAX_TOTAL_GB` die Gesamtgröße (Abschnitt „Obergrenze des Dokument-Caches“ unten,
+  `docs/FILE_CACHE.md`): `cache_files` lädt dann nur bis zur Grenze, das stündliche Aufräumen verdrängt die am
+  wenigsten gebrauchten Dokumente; Dokumente, deren Text erkannt wird oder darauf wartet, und laufende Abrufe
+  bleiben. Die Grenze so wählen, dass die neuen Dokumente eines Tages samt Rückstand der Erkennung darunter passen.
+- Externe Texterkennung: Mit Schritt 3 erkennt `worker-heavy` den Text statt des Ingestors. Eine externe
+  Erkennung (`MISTRAL_*`) gilt dort wie bisher nur für öffentliche RIS-Dateien und nur mit Basis-URL, deren Host in
+  `KI_ERLAUBTE_HOSTS` steht (Abschnitt „KI-Anbieter“); ohne Freigabe bleibt es bei pypdf und Tesseract.
+  `worker-heavy` braucht dafür dieselben Werte wie Anwendung und Ingestor (Compose: gemeinsame Umgebung; Helm:
+  `app.extraEnv` bzw. `app.extraEnvFromSecret`, die auch die Worker erreichen).
+- Eine Sicherung unmittelbar vorher (Abschnitt „Sicherung“).
+
+**Schritt 1: Aufträge im Worker.** Steht `TASKS_BACKEND` noch auf `immediate`, in der `.env`
+`TASKS_BACKEND=journal` setzen und erst die Worker, dann die Anwendung neu starten:
+
+```bash
+docker compose up -d worker worker-heavy worker-live
+docker compose up -d mandari
+```
+
+Prüfen: `/health/worker/?pruefung=lebenszeichen` antwortet 200, der Admin zeigt keinen Hinweis „kein Worker für
+tasks“, `mandari_tasks_oldest_queued_seconds` bleibt klein, `mandari_tasks_dead` bei 0. Erst weiter, wenn das
+einige Stunden ohne Befund läuft.
+
+**Schritt 2: Stichtag setzen.** `docker compose exec mandari python manage.py dokumentkette umschalten
+--probelauf` zeigt, was geschähe; ohne `--probelauf` setzt der Befehl je Quelle den Stichtag
+`sync_config["document_since"]`: Quellen ohne gelistete Kommune und ohne Stichtag bekommen den Zeitpunkt jetzt
+(vor dem Ende ihres ersten vollständigen Syncs `ausstehend`), Quellen mit gelisteter Kommune (bisher schon
+abgelegt) behalten einen leeren Stichtag, also ihren ganzen Bestand. Dateien vor dem Stichtag sind Altbestand und
+werden nur mit Freigabe je Quelle abgerufen (unten). Der Befehl ist wiederholbar. Immer **vor** Schritt 3: Ohne
+ihn trägt erst der nächste Lauf von `cache_files` (stündlich) die Stichtage nach, und Dokumente aus der Zeit
+dazwischen gälten als Altbestand; sie bekämen ohne Freigabe weder Ablage noch Text.
+
+**Schritt 3: Erkennung im Worker.** In der `.env` `TEXT_EXTRACTION_RUNNER=worker` setzen. Compose reicht den
+Wert an Anwendung, Worker und Ingestor weiter; ein eigener OCR-Worker aus dem Ingestor-Image braucht ihn ebenso
+oder wird angehalten. Dann neu starten, zuerst den Dienst, der die Aufträge ausführt:
+
+```bash
+docker compose up -d worker-heavy
+docker compose up -d worker worker-live
+docker compose up -d mandari ingestor
+```
+
+Ohne `TASKS_BACKEND=journal` startet die Anwendung mit `worker` nicht. Ab jetzt reiht der Zeitplan
+`texterkennung_einplanen` alle zwei Minuten Aufträge in `ocr` ein (höchstens `TEXT_EXTRACTION_QUEUE_DEPTH`
+wartende und laufende), Sync und OCR-Worker des Ingestors laden keine Dateien mehr, und abgelegt werden die neuen
+Dokumente aller Quellen mit erlaubtem Abruf (`sync_config["file_downloads"]` nicht `false`, keine Schonung,
+robots.txt).
+Dateien, die ein angehaltener OCR-Worker gerade bearbeitet hat, gibt die Zeitgrenze
+(`TEXT_EXTRACTION_STALE_MINUTES`) wieder frei.
+
+**Schritt 4: Nacharbeit, nur nach Freigabe.** Dateien, die früher an einem Abruffehler gescheitert sind
+(Fehlertext beginnt mit „Download“), haben keinen Text, obwohl der Inhalt oft schon in der Ablage liegt.
+`docker compose exec mandari python manage.py dokumentkette nacharbeiten` zeigt im Probelauf (Standard) je
+Quelle, was geschähe: Liegt der Inhalt in der Ablage (`local_status = ok`), geht die Datei zurück in die
+Erkennung, sonst zusätzlich in den Abruf; nicht freigegebener Altbestand ohne Inhalt und von der Obergrenze
+verdrängte Dokumente (`evicted`, eigene Zeile im Probelauf) bleiben unverändert. Verdrängte holt nur ein
+ausdrücklicher Abruf (`cache_files --verdraengte` bzw. die Vorschau); danach erfasst sie ein erneuter Lauf der
+Nacharbeit.
+Ausführen mit `--ausfuehren` erst, wenn Schritt 3 läuft (ohne `TEXT_EXTRACTION_RUNNER=worker` verweigert der
+Befehl, sonst lüde der Ingestor erneut bei der Quelle). Es ändern sich nur Zustandsspalten; der Befehl ist
+wiederholbar.
+
+**Altbestand je Quelle.** Dateien vor dem Stichtag einer Quelle werden nur abgerufen, wenn an der Quelle
+`sync_config["document_backfill"] = true` steht (Admin, Quelle, Feld „Sync config“). Das belastet das
+Ratsinformationssystem der Quelle: je Quelle einzeln und nach Freigabe, nicht zu Sitzungszeiten und erst, wenn
+neue Dateien ohne Rückstau durchlaufen. Ohne Freigabe behalten diese Dateien ihren vorhandenen Text; wer keinen
+hat, bekommt ohne Freigabe weder Ablage noch Text, denn mit `worker` erkennt der Ingestor nicht mehr. Eine neue
+Quelle bekommt den Stichtag nach dem Ende ihres ersten vollständigen Syncs; bis dahin ruft die Kette für sie
+nichts ab. Ihr erster Bestand ist damit Altbestand: Neue Quellen brauchen `document_backfill`, damit ihre
+Dokumente Text bekommen (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“).
+
+**Prüfen** nach einer Stunde und nach 24 Stunden (Kennzahlen in `docs/MONITORING.md`, „Dokumentkette“):
+
+| Was | Erwartung |
+|---|---|
+| `worker-heavy` | `healthy`; Speicher laut `docker stats --no-stream` dauerhaft unter 80 % des Limits; `docker inspect -f '{{.State.OOMKilled}} {{.RestartCount}}' mandari-worker-heavy` ohne Speicherabbruch |
+| Erkennung | `mandari_tasks_running{queue="ocr"}` 1, solange Arbeit ansteht; `mandari_files_stored_without_text` sinkt bzw. bleibt klein; `/health/worker/?pruefung=texterkennung` und (nach 24 Stunden) `?pruefung=dokumenttext` 200; `mandari_tasks_dead{queue="ocr"}` 0 |
+| Abruf | `mandari_files_fetch_errors_total` je Quelle nicht häufiger als vor dem Umschalten; `mandari_files_fetch_retry_due` wird abgearbeitet; `/health/worker/?pruefung=dokumentabruf` 200 |
+| Ingestor | lädt keine Dateien mehr (Protokoll: „TEXT_EXTRACTION_RUNNER=worker“, Erkennung ruht) |
+| Ablage | mit `FILE_CACHE_MAX_TOTAL_GB`: `cache_files` meldet nicht dauerhaft `limit` (Protokoll des Workers, „Obergrenze erreicht“), sonst warten neue Dokumente auf Platz und bekommen so lange keinen Text; dann die Grenze anheben. `cache_files --stats` zeigt Belegung und verdrängte Dokumente |
+| Stichprobe | Vorgänge mit neuen Dokumenten zeigen Text, Vorschau liefert |
+
+Die Prüfung `rueckstau` misst den ältesten fälligen Auftrag je Warteschlange (höchstens 15 Minuten), `ocr`
+gesondert (Issue #953): Dort wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu
+`TEXT_EXTRACTION_QUEUE_DEPTH` Aufträge, bis 30 Minuten je Datei). Bei vielen gescannten Dateien, etwa nach der
+Nacharbeit oder beim Altbestand einer Quelle, warten Aufträge dort deshalb oft länger als 15 Minuten, obwohl die
+Erkennung arbeitet. `rueckstau` bleibt dann grün, solange in `ocr` ein Auftrag läuft, und wird erst rot, wenn
+fällige Aufträge länger als 15 Minuten warten und keiner läuft (Text: `ocr <Sekunden> s (<n> laufend)`; der
+Auftrag eines abgestürzten Runners zählt nicht als laufend). Dann `worker-heavy` prüfen (`healthy`, bedient er
+`ocr`, Speicherabbrüche). Ob die Erkennung nachkommt, zeigen `dokumenttext` und
+`mandari_files_stored_without_text`. `TEXT_EXTRACTION_QUEUE_DEPTH` zu senken, um `rueckstau` grün zu halten, ist
+nicht mehr nötig. Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml` messen `ocr` ebenso
+gesondert (`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit „Auftragsrückstand“.
+
+**Abbruchkriterien** (ADR, Abschnitt 10; Vorgehen wie in `docs/DREHSCHEIBE_UMSTELLUNG.md`, Abschnitt 3). Eines
+genügt, dann den Rückweg gehen:
+
+- Der Abruf scheitert je Quelle häufiger als vor dem Umschalten, oder eine Quelle bremst uns (429, Schonung).
+- Eine Datei wird mehr als einmal bei der Quelle abgerufen (außer im Löschabgleich), etwa weil der Ingestor
+  noch lädt.
+- Der Rückstau wächst über Stunden: `mandari_files_stored_without_text` oder `mandari_files_fetch_retry_due`
+  steigen (außer direkt nach der Nacharbeit), oder in `ocr` läuft nichts, obwohl Aufträge warten.
+- `worker-heavy` wird vom Speicherlimit beendet oder liegt dauerhaft über 80 % davon.
+- Nutzer sehen Fehler: Dokumente ohne Text, die vorher einen hatten, oder eine Vorschau, die nicht liefert.
+
+**Rückweg**
+
+- Erkennung zurück zum Ingestor: `TEXT_EXTRACTION_RUNNER=ingestor` (bzw. Zeile entfernen), dieselben Dienste
+  wie in Schritt 3 neu starten, einen angehaltenen OCR-Worker wieder starten. Eingereihte Aufträge erledigen
+  sich noch oder finden ihre Datei bereits bearbeitet. Stichtage bleiben stehen und stören den Ingestor nicht.
+- Aufträge zurück: erst danach `TASKS_BACKEND=immediate` (bzw. Zeile entfernen), Anwendung und Worker neu
+  starten.
+- **Vor einem Rückfall auf ein Image ohne Dokumentkette** (`update.sh --tag`, `deploy/scripts/deploy.sh
+  rollback`): erst die Erkennung zurückschalten, warten, bis `mandari_tasks_queued{queue="ocr"}` 0 ist, dann
+  mit dem noch laufenden Image `docker compose exec mandari python manage.py dokumentkette zuruecksetzen`. Der
+  Befehl ist wiederholbar; er setzt die neuen Zustände des Abrufs zurück (`retry` und `fetching` auf `none`,
+  `refused` auf `error` mit dem früheren Fehlertext), damit das ältere Image die Dateien wiederfindet. Texte,
+  Inhalte und Stichtage bleiben, von der Obergrenze verdrängte Dokumente (`evicted`, ab Migration
+  `insight_core.0056`) bleiben verdrängt. Das gilt auch, wenn die Schritte oben nie ausgeführt wurden, denn schon das
+  Update auf Etappe 1 stellt Fehlerzustände auf `refused` um.
+
+Etappe 3 (Abruf als Auftrag über Ereignisse, Schalter `DOCUMENT_FETCH_SUBSCRIPTION`, Warteschlange `fetch`)
+folgt mit eigener Anleitung.
 
 ## ⏰ Geplante Aufgaben (Zeitpläne im Worker)
 
@@ -896,15 +1343,16 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:fetch_person_photos` | montags 03:00 | Personenfotos |
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
-| `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, neueste fehlende Dateien zuerst (`docs/FILE_CACHE.md`) |
+| `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, liegen gebliebene Abrufe freigeben, fällige Wiederholungen und neueste fehlende Dateien zuerst, je Quelle höchstens `DOCUMENT_FETCH_MAX_QUEUED` (`docs/FILE_CACHE.md`) |
 | `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
-| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788) |
+| `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788); hält mit `FILE_CACHE_MAX_TOTAL_GB` auch die Obergrenze des Dokument-Caches ein (Issue #961) |
 | `befehl:generate_alerts` | täglich 07:45 | Benachrichtigungen der Abos zu Themen und Orten; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:send_digest` | montags 08:00 | Wochenmail der Abos; nur mit `INSIGHT_SUBSCRIPTIONS_ENABLED` |
 | `befehl:check_source_health` | stündlich :15 | Zustand der Quellen (Issue #231, `docs/MONITORING.md`) |
 | `befehl:check_service_levels` | täglich 06:30 | Service-Level |
 | `befehl:availability_report` | am 1. um 00:15 | Verfügbarkeitsbericht des Vormonats nach `REPORTS_ROOT`; nur mit `GATUS_URL` |
 | `befehl:verify_audit_chain` | täglich 04:20 | Hash-Ketten prüfen (Issue #221; ein Befund lässt den Lauf scheitern) |
+| `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026, Issue #366) |
 | `befehl:purge_security_audit_log` | täglich 04:40 | Sicherheitsprotokoll nach Frist |
 | `befehl:session_privacy_purge` | am 1. um 05:00 | DSGVO-Löschlauf mit Archivpaket |
 | `befehl:build_meeting_packages` | jede Minute | Sitzungsmappen (Issue #218): `--limit 5 --max-seconds 240` |
@@ -956,7 +1404,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 
@@ -986,12 +1434,39 @@ ist wiederholbar, erzeugt nur Fehlendes und kennt `--dry-run` und `--tenant <slu
 docker compose exec mandari python manage.py session_publish_protocols
 ```
 
+**Obergrenze des Dokument-Caches** (Issue #961, `docs/FILE_CACHE.md`, „Obergrenze der Gesamtgröße“): Standard
+unbegrenzt, das Update ändert nichts (Migration `insight_core/0056`, nur eine neue Spalte). Wer die Ablage
+begrenzen will, baut einen großen Bestand zuerst von Hand ab und setzt danach die Grenze; ab dann hält das
+stündliche Aufräumen sie ein. `--dry-run` zeigt vorher Modus, Anzahl, Größe und Kommunen; der Lauf arbeitet in
+kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container der Anwendung ausführen, der dieselben
+`OBJ_*` hat wie der Worker; die erste Zeile muss den erwarteten Modus nennen:
+
+```bash
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
+# mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte dort liegen (fehlen welche: erst --hochladen)
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+docker compose exec mandari python manage.py prune_file_cache --max-gb 10
+# danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
+# FILE_CACHE_MAX_TOTAL_GB=10
+```
+
+Mit Objektspeicher löscht der Abbau (wie das stündliche Aufräumen) nur lokale Kopien, und nur nach erfolgreicher
+Prüfung per `HEAD` (Dokumentkette #919: fehlt der Inhalt, bleibt die Kopie; ist der Objektspeicher gestört, endet der
+Lauf); ohne Objektspeicher holt die Vorschau verdrängte Dokumente bei Bedarf über den Abrufweg von der Quelle,
+`cache_files` lädt sie nur mit `--verdraengte`. Liegen Inhalte laut Datenbank im
+Objektspeicher, ist er im Container aber nicht konfiguriert, bricht der Abbau ab und das stündliche Aufräumen setzt
+die Grenze aus („Obergrenze ausgesetzt“ im Protokoll des Workers): dann `OBJ_*` prüfen. Eigene Compose-Dateien
+brauchen `FILE_CACHE_MAX_TOTAL_GB` in der `environment` von Anwendung und Worker. Zurück: Variable entfernen bzw.
+auf `0` setzen und neu starten; ohne Objektspeicher lädt `cache_files --verdraengte` verdrängte Dokumente wieder
+nach.
+
 Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vorgabe
 `<MEDIA_ROOT>/audit_archive`, also im persistenten Medien-Volume und in der Sicherung; nie per
 URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE_STORAGE` nennt.
 `AUDIT_EXPORT_MAX_ROWS` (Vorgabe 100000) begrenzt Exporte aus der Oberfläche, größere Zeiträume
 exportiert `export_audit_log`; `SECURITY_AUDIT_RETENTION_DAYS` (Vorgabe 365) ist die Frist des
-Sicherheitsprotokolls.
+Sicherheitsprotokolls, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30, festgelegt durch den Betreiber am 16.10.2026; 0 = keine Löschung)
+die der Anmeldeversuche für die Drosselung.
 
 Die Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218) erzeugt der Zeitplan
 `befehl:build_meeting_packages`; die Oberfläche legt nur Anforderungen an, ohne Worker bleibt eine

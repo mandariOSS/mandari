@@ -31,7 +31,8 @@ def navigation_context(request: HttpRequest) -> dict[str, Any]:
         "is_portal": True,
         "is_marketing": False,
         "nav_context": "portal",
-        "has_chat_consent": request.session.get("chat_consent", False),
+        # Keine Einwilligung zum KI-Assistenten hier: Sie gilt nur für einen Anbieter (Issue #950); die Chatseite
+        # prüft sie selbst (insight_core.views.chat._hat_einwilligung)
         "marketing_url": marketing_url,
         # Abos zu Themen und Orten (INSIGHT_SUBSCRIPTIONS_ENABLED): ausgeschaltet keine Links darauf
         "insight_subscriptions_enabled": bool(getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False)),

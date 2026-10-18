@@ -12,6 +12,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionOrganization, SessionStandardAgendaItem, SessionTextBlock
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 
 
 class TextblockSettingsView(SessionViewMixin, TemplateView):
@@ -19,6 +20,14 @@ class TextblockSettingsView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/textblocks.html"
     permission_required = "manage_settings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/textbausteine.html"]
+            if neues_design(self.session_tenant)
+            else [self.template_name]
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

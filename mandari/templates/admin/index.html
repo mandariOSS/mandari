@@ -267,7 +267,7 @@
                 <span class="text-green-700 dark:text-green-400 font-medium">Daemon aktiv</span>
                 {% if sync_config %}
                 <span class="text-gray-400 dark:text-gray-500">
-                    (alle {{ sync_config.interval_minutes }} Min.{% if not sync_config.sync_enabled %}, pausiert{% endif %})
+                    (Takt je Quelle{% if not sync_config.sync_enabled %}, pausiert{% endif %})
                 </span>
                 {% endif %}
                 {% else %}

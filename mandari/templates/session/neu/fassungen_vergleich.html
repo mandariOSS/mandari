@@ -1,0 +1,93 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Vergleich zweier Fassungen einer Vorlage im neuen Rahmen (Issues #226, #944): im Kopfband ältere und neuere Fassung
+nebeneinander (session/neu/_fassung_vergleich_kopf.html), darunter die geänderten Texte wortgenau mit Streichungen und
+Einfügungen (<del>/<ins> aus paper_version_diff, gefärbt wie bisher), unveränderte Texte zum Aufklappen, geänderte
+Angaben als Liste (Angabe, alter und neuer Wert) und die Anlagen mit ihrer Änderung als Punkt mit Text. Ohne Kästen;
+Links wie session/papers/versions/compare.html; Rechte und Kontext wie PaperVersionCompareView. Die bisherige Seite
+bleibt session/papers/versions/compare.html.
+{% endcomment %}
+
+{% block page_title %}Vergleich der Fassungen {{ comparison.older.number }} und {{ comparison.newer.number }} – {{ paper.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zur Vorlage und zu ihren Fassungen (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}">{{ paper.display_reference|default:paper.name|truncatechars:60 }}</c-rahmen.brotkrume><c-rahmen.brotkrume href="{% url 'session:paper_versions' tenant_slug=tenant_slug paper_id=paper.id %}">Fassungen</c-rahmen.brotkrume><c-rahmen.brotkrume>Vergleich</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Fassung {{ comparison.older.number }} und Fassung {{ comparison.newer.number }} im Vergleich" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:paper_versions' tenant_slug=tenant_slug paper_id=paper.id %}">Fassungen</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words" data-testid="vorlagennummer"><span class="tabular-nums">{{ session_tenant.reference_label }} {{ paper.display_reference }}</span> · {{ paper.name }}</p>
+    </c-slot>
+    <div class="grid max-w-3xl gap-x-10 gap-y-3 sm:grid-cols-2" data-testid="vergleich-fassungen">
+        {% include "session/neu/_fassung_vergleich_kopf.html" with version=comparison.older label="Ältere Fassung" %}
+        {% include "session/neu/_fassung_vergleich_kopf.html" with version=comparison.newer label="Neuere Fassung" %}
+    </div>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="max-w-[52rem] space-y-10" data-testid="fassungsvergleich">
+    <div>
+        {% if not comparison.has_changes %}<p class="text-sm font-medium text-gray-900 dark:text-white" data-testid="keine-unterschiede">Keine Unterschiede bei Texten, Angaben und Anlagen.</p>{% endif %}
+        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">
+            Wortgenauer Vergleich: <del class="bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300">entfernt</del>,
+            <ins class="bg-green-100 text-green-800 no-underline dark:bg-green-900/40 dark:text-green-300">hinzugefügt</ins>.
+        </p>
+    </div>
+
+    {% for text in comparison.texts %}
+    {% if text.changed %}
+    <c-rahmen.abschnitt titel="{{ text.label }}" titel_id="text-{{ forloop.counter }}-titel" zusatz="geändert" data-feld="{{ text.label }}">
+        <div class="mt-2 text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words [&_del]:bg-red-100 [&_del]:text-red-800 dark:[&_del]:bg-red-900/40 dark:[&_del]:text-red-300 [&_ins]:bg-green-100 [&_ins]:text-green-800 [&_ins]:no-underline dark:[&_ins]:bg-green-900/40 dark:[&_ins]:text-green-300">{{ text.html }}</div>
+    </c-rahmen.abschnitt>
+    {% elif not text.empty %}
+    <details data-feld="{{ text.label }}">
+        <summary class="cursor-pointer text-base font-semibold text-gray-900 dark:text-white">{{ text.label }} <span class="font-normal text-gray-600 dark:text-gray-400">· unverändert</span></summary>
+        <div class="mt-2 text-[0.9375rem] leading-normal text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ text.html }}</div>
+    </details>
+    {% endif %}
+    {% endfor %}
+
+    {% if comparison.fields %}
+    <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel" zusatz="{{ comparison.fields|length }} geändert">
+        <c-rahmen.liste class="mt-2" data-testid="vergleich-angaben">
+            {% for change in comparison.fields %}
+            <li class="grid grid-cols-1 sm:grid-cols-[11rem_minmax(0,1fr)_minmax(0,1fr)] gap-x-4 gap-y-0.5 py-2.5 text-sm">
+                <span class="liste-name">{{ change.label }}</span>
+                <span class="min-w-0 text-gray-700 dark:text-gray-300 break-words"><span class="text-gray-600 dark:text-gray-400">Fassung {{ comparison.older.number }}:</span> {{ change.old }}</span>
+                <span class="min-w-0 text-gray-900 dark:text-white break-words"><span class="text-gray-600 dark:text-gray-400">Fassung {{ comparison.newer.number }}:</span> {{ change.new }}</span>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    <c-rahmen.abschnitt titel="Anlagen" titel_id="anlagen-titel" data-testid="vergleich-anlagen">
+        <c-rahmen.satz eng>Verglichen über Name, Größe, Prüfsumme und Sichtbarkeit; einen seitenweisen Vergleich von PDF-Inhalten bietet diese Ansicht nicht.</c-rahmen.satz>
+        {% if comparison.files %}
+        <c-rahmen.liste class="mt-3">
+            {% for item in comparison.files %}
+            <li class="grid grid-cols-1 sm:grid-cols-[8.5rem_minmax(0,1fr)] gap-x-4 gap-y-0.5 py-2.5" data-anlage="{{ item.name }}" data-art="{{ item.kind }}">
+                <span class="text-sm text-gray-700 dark:text-gray-300">{% if item.kind == "added" %}{% include "session/neu/_status.html" with wert="approved" text="Hinzugefügt" %}{% elif item.kind == "removed" %}{% include "session/neu/_status.html" with wert="rejected" text="Entfernt" %}{% elif item.kind == "changed" %}{% include "session/neu/_status.html" with wert="pending" text="Geändert" %}{% else %}{% include "session/neu/_status.html" with wert="" text="Unverändert" %}{% endif %}</span>
+                <div class="min-w-0">
+                    <p class="text-sm liste-name">{{ item.name }}</p>
+                    {% if item.kind == "changed" %}
+                    <ul class="mt-0.5 space-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+                        {% for change in item.changes %}<li>{{ change }}</li>{% endfor %}
+                    </ul>
+                    {% else %}
+                    {% with entry=item.new|default:item.old %}
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ entry.size_human }} · Version {{ entry.file_version_number }}{% if entry.sha256 %} · <span class="font-mono">{{ entry.sha256|slice:":12" }}</span>{% endif %}</p>
+                    {% endwith %}
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        {% else %}
+        <c-rahmen.satz>Keine Anlagen in beiden Fassungen.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+</div>
+{% endblock %}

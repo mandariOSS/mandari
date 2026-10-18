@@ -1,0 +1,64 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Gremien im neuen Rahmen (Issue #944, Bereich Gremien): Kopfband mit der Zahl im Satz und der einen Hauptaktion
+„Neues Gremium“ (nur mit manage_organizations), Filter in einer Zeile wie bisher (Typ, Wahlperiode, Körperschaft, nur
+aktive; Parameter type, term, body, active, page), darunter die Gremien als Liste mit Linien statt Karten mit farbigen
+Symbolkacheln: Name, Art und Körperschaft, die Zahl der Mitglieder und, falls inaktiv, der Stand als Punkt mit Text.
+Kontext: OrganizationListView; die bisherige Seite bleibt session/organizations/list.html.
+{% endcomment %}
+
+{% block page_title %}Gremien{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Gremien" text="{{ paginator.count }} Gremi{{ paginator.count|pluralize:'um,en' }}{% if request.GET.type or request.GET.active or request.GET.term or request.GET.body %} für die gewählten Filter{% endif %}, nach Namen sortiert." dicht>
+    {% if "manage_organizations" in permission_checker.permissions %}
+    <c-slot name="aktionen"><c-ui.button href="{% url 'session:organization_create' tenant_slug=tenant_slug %}" size="sm" icon="plus">Neues Gremium</c-ui.button></c-slot>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<form method="get" role="search" aria-label="Gremien filtern" class="flex flex-wrap items-center gap-2" data-testid="gremien-filter">
+    <label for="filter-typ" class="sr-only">Typ</label>
+    <select id="filter-typ" name="type" class="h-9 min-w-0 flex-1 basis-40 sm:flex-none sm:max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Typen</option>
+        {% for value, label in organization_types %}<option value="{{ value }}" {% if request.GET.type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    {% if legislative_terms %}
+    {# Wahlperiode (Issue #39): Gremien mit Besetzungen in der Periode #}
+    <label for="filter-periode" class="sr-only">Wahlperiode</label>
+    <select id="filter-periode" name="term" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Perioden</option>
+        {% for term in legislative_terms %}<option value="{{ term.id }}" {% if selected_term == term.id|stringformat:"s" %}selected{% endif %}>{{ term.name }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    {% include "session/partials/body_filter.html" %}
+    <c-form.checkbox name="active" id="active_filter" value="1" label="Nur aktive" checked="{% if request.GET.active == '1' %}1{% endif %}" class="h-9" />
+    <c-ui.button type="submit" variant="secondary" size="sm">Filtern</c-ui.button>
+    {% if request.GET.type or request.GET.active or request.GET.term or request.GET.body %}
+    <c-ui.textlink href="{% url 'session:organizations' tenant_slug=tenant_slug %}" class="text-sm">Filter zurücksetzen</c-ui.textlink>
+    {% endif %}
+</form>
+
+{% if organizations %}
+<c-rahmen.liste class="mt-4" data-testid="gremienliste">
+    {% for org in organizations %}
+    <li class="relative grid sm:grid-cols-[minmax(0,1fr)_10rem] gap-x-4 gap-y-0.5 py-2.5 pl-1 hover:bg-band-grau/60">
+        <div class="min-w-0">
+            <a href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=org.id %}"
+               class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ org.name }}</a>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">{{ org.get_organization_type_display }}{% if body_choice.active and org.body %} · {{ org.body.label }}{% endif %}</p>
+        </div>
+        <div class="text-sm text-gray-700 dark:text-gray-300 sm:pt-0.5">
+            <p><span class="tabular-nums">{{ org.member_count }}</span> Mitglied{{ org.member_count|pluralize:"er" }}</p>
+            {% if not org.is_active %}<p>{% include "session/neu/_status.html" with wert="" text="Inaktiv" %}</p>{% endif %}
+        </div>
+    </li>
+    {% endfor %}
+</c-rahmen.liste>
+{% include "session/neu/_seiten.html" %}
+{% else %}
+<c-rahmen.satz data-testid="gremien-leer">{% if request.GET.type or request.GET.active or request.GET.term or request.GET.body %}Für diese Filter gibt es kein Gremium. <c-ui.textlink href="{% url 'session:organizations' tenant_slug=tenant_slug %}">Filter zurücksetzen</c-ui.textlink>{% else %}Es sind noch keine Gremien vorhanden.{% endif %}</c-rahmen.satz>
+{% endif %}
+{% endblock %}

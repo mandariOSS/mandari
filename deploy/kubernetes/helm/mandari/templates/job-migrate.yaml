@@ -1,79 +1,105 @@
-{{- if .Values.migrationJob.enabled }}
 {{- /*
-Läuft vor jeder Installation und jedem Upgrade: Datenbankschema, Rollen, Suchindex
-und – falls konfiguriert – das Admin-Konto. Die Anwendung startet erst danach.
+Migrationen in zwei Schritten wie update.sh (Phase 2 safemigrate, Phase 4 migrate):
+
+  Installation  Job <name>-migrate (gewöhnliche Ressource, kein Hook): migrate, Rollen, Suchindex,
+                Admin-Konto, Website-Migrationen. Kein post-install-Hook: Mit "helm install --wait"
+                liefe der erst, wenn alle Pods bereit sind – die warten aber auf das Schema.
+  Upgrade       pre-upgrade-Hook <name>-migrate-pre: safemigrate (nur Migrationen, die vor dem
+                Ausrollen laufen dürfen) und Website-Migrationen; Secret und Datenbank gibt es dann schon.
+                post-upgrade-Hook <name>-migrate-post: migrate (auch Safe.after_deploy), Rollen,
+                Suchindex, Admin-Konto – nach dem Ausrollen.
+
+Anwendung, Worker und Ingestor warten per initContainer (mandari.waitForSchema), bis alle
+Migrationen eingespielt sind, die vor dem Ausrollen laufen dürfen.
+
+Parameter von "mandari.migrateJob": root, suffix (Namensteil), hook (leer = kein Hook),
+schritt ("vorher" = safemigrate, "voll" = migrate und Einrichtung), website (bool).
 */ -}}
+{{- define "mandari.migrateJob" -}}
+{{- $root := .root -}}
+{{- $v := $root.Values -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "mandari.fullname" . }}-migrate
+  name: {{ include "mandari.fullname" $root }}-{{ .suffix }}
   labels:
-    {{- include "mandari.labels" . | nindent 4 }}
+    {{- include "mandari.labels" $root | nindent 4 }}
     app.kubernetes.io/component: migrate
+  {{- if .hook }}
   annotations:
-    helm.sh/hook: post-install,pre-upgrade
+    helm.sh/hook: {{ .hook }}
     helm.sh/hook-weight: "-5"
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  {{- end }}
 spec:
-  backoffLimit: {{ .Values.migrationJob.backoffLimit }}
+  backoffLimit: {{ $v.migrationJob.backoffLimit }}
+  {{- if not .hook }}
+  ttlSecondsAfterFinished: {{ $v.migrationJob.ttlSecondsAfterFinished }}
+  {{- end }}
   template:
     metadata:
       labels:
-        {{- include "mandari.selectorLabels" . | nindent 8 }}
+        {{- include "mandari.selectorLabels" $root | nindent 8 }}
         app.kubernetes.io/component: migrate
     spec:
       restartPolicy: Never
-      serviceAccountName: {{ include "mandari.serviceAccountName" . }}
-      {{- with .Values.image.pullSecrets }}
+      serviceAccountName: {{ include "mandari.serviceAccountName" $root }}
+      {{- with $v.image.pullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
-        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+        {{- toYaml $v.podSecurityContext | nindent 8 }}
       initContainers:
         - name: wait-for-database
-          image: {{ .Values.postgres.image | quote }}
+          image: {{ $v.postgres.image | quote }}
+          securityContext:
+            {{- toYaml $v.securityContext | nindent 12 }}
           command:
             - sh
             - -c
             - |
               echo "Warte auf die Datenbank..."
-              for i in $(seq 1 60); do
+              for i in $(seq 1 100); do
                 if pg_isready -d "$DATABASE_URL" >/dev/null 2>&1; then
                   echo "Datenbank erreichbar."
                   exit 0
                 fi
                 sleep 3
               done
-              echo "Datenbank nach 180 Sekunden nicht erreichbar." >&2
+              echo "Datenbank nach 300 Sekunden nicht erreichbar." >&2
               exit 1
           env:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "mandari.secretName" . }}
+                  name: {{ include "mandari.secretName" $root }}
                   key: database-url
       containers:
         - name: migrate
-          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/mandari:{{ .Values.image.tag }}"
-          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          image: {{ include "mandari.appImage" $root | quote }}
+          imagePullPolicy: {{ $v.image.pullPolicy }}
           securityContext:
-            {{- toYaml .Values.securityContext | nindent 12 }}
+            {{- toYaml $v.securityContext | nindent 12 }}
           command:
             - sh
             - -c
             - |
               set -e
+              {{- if eq .schritt "vorher" }}
+              echo "== Migrationen vor dem Ausrollen (safemigrate)"
+              python manage.py safemigrate --noinput
+              {{- else }}
               echo "== Datenbank-Migrationen"
               python manage.py migrate --noinput
               echo "== Rollen und Berechtigungen"
               python manage.py setup_roles
               python manage.py fix_permissions || true
-              {{- if .Values.elasticsearch.enabled }}
+              {{- if $v.elasticsearch.enabled }}
               echo "== Suchindex"
               python manage.py setup_elasticsearch || echo "Suchindex übersprungen (Elasticsearch noch nicht bereit)"
               {{- end }}
-              {{- if .Values.adminUser.email }}
+              {{- if $v.adminUser.email }}
               echo "== Admin-Konto"
               python manage.py shell -c "
               import os
@@ -87,37 +113,63 @@ spec:
                   print('Admin-Konto existiert bereits:', email)
               "
               {{- end }}
+              {{- end }}
               echo "== Fertig"
           env:
-            {{- include "mandari.commonEnv" . | nindent 12 }}
-            {{- if .Values.adminUser.email }}
+            {{- include "mandari.appEnv" $root | nindent 12 }}
+            {{- if and (ne .schritt "vorher") $v.adminUser.email }}
             - name: ADMIN_EMAIL
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "mandari.secretName" . }}
+                  name: {{ include "mandari.secretName" $root }}
                   key: admin-email
             - name: ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: {{ include "mandari.secretName" . }}
+                  name: {{ include "mandari.secretName" $root }}
                   key: admin-password
             {{- end }}
-            {{- range $key, $value := .Values.app.extraEnv }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
-            {{- end }}
-          volumeMounts:
-            - name: media
-              mountPath: /app/media
-            - name: files
-              mountPath: /app/files
+          {{- if $v.app.extraEnvFromSecret }}
+          envFrom:
+            - secretRef:
+                name: {{ $v.app.extraEnvFromSecret }}
+          {{- end }}
           resources:
-            {{- toYaml .Values.migrationJob.resources | nindent 12 }}
-      volumes:
-        - name: media
-          persistentVolumeClaim:
-            claimName: {{ include "mandari.fullname" . }}-media
-        - name: files
-          persistentVolumeClaim:
-            claimName: {{ include "mandari.fullname" . }}-files
+            {{- toYaml $v.migrationJob.resources | nindent 12 }}
+        {{- if .website }}
+        # Website (Wagtail): eigene Datenbank, eigenes Image. Ihr Startskript migriert ebenfalls,
+        # die Pods warten aber auf diesen Schritt, damit mehrere Repliken nicht gleichzeitig migrieren.
+        - name: website-migrate
+          image: {{ include "mandari.websiteImage" $root | quote }}
+          imagePullPolicy: {{ $v.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $v.securityContext | nindent 12 }}
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              echo "== Website-Migrationen"
+              python manage.py migrate --noinput
+              python manage.py createcachetable
+              echo "== Fertig"
+          env:
+            {{- include "mandari.websiteEnv" $root | nindent 12 }}
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+        {{- end }}
+{{- end -}}
+
+{{- if .Values.migrationJob.enabled }}
+{{- if .Release.IsInstall }}
+{{ include "mandari.migrateJob" (dict "root" . "suffix" "migrate" "hook" "" "schritt" "voll" "website" .Values.website.enabled) }}
+{{- else }}
+{{ include "mandari.migrateJob" (dict "root" . "suffix" "migrate-pre" "hook" "pre-upgrade" "schritt" "vorher" "website" .Values.website.enabled) }}
+---
+{{ include "mandari.migrateJob" (dict "root" . "suffix" "migrate-post" "hook" "post-upgrade" "schritt" "voll" "website" false) }}
+{{- end }}
 {{- end }}

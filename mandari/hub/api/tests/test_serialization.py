@@ -62,6 +62,29 @@ def test_zeitfilter_liest_die_vier_parameter_mit_zeitzone() -> None:
     assert bool(filter_)
 
 
+@pytest.mark.parametrize(
+    "roh",
+    [
+        "2026-09-01T10:00:00+02:00",
+        "2026-09-01T10:00:00%2002:00",
+        "2026-09-01T10:00:00.000%2002:00",
+        "2026-09-01T10:00%200200",
+    ],
+)
+def test_unkodiertes_plus_vor_dem_offset_wird_toleriert(roh: str) -> None:
+    # Von Hand getippt: das + kommt als Leerzeichen an; die Blätter-Links tragen es wieder als +
+    filter_ = TimeFilters.from_request(_anfrage(f"modified_since={roh}"))
+
+    assert filter_.parsed["modified_since"] == T0
+    assert "+" in filter_.sent["modified_since"] and " " not in filter_.sent["modified_since"]
+
+
+def test_leerzeichen_als_trenner_von_datum_und_uhrzeit_wird_kein_offset() -> None:
+    with pytest.raises(BadRequestError) as fehler:
+        TimeFilters.from_request(_anfrage("modified_since=2026-09-01%2010:00"))
+    assert "Zeitzone" in fehler.value.message
+
+
 def test_ohne_zeitfilter_ist_die_liste_nicht_inkrementell() -> None:
     filter_ = TimeFilters.from_request(_anfrage("page=3"))
 

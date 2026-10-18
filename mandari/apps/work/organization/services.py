@@ -40,7 +40,7 @@ from apps.tenants.models import (
     UserInvitation,
 )
 
-from . import emails, selectors
+from . import audit, emails, selectors
 from .models import DATA_EXPORT_FAILED_MESSAGE, DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberChangeRequest
 
 if TYPE_CHECKING:
@@ -332,6 +332,14 @@ def accept_invitation(invitation: UserInvitation, user: User) -> str:
         roles = _invitation_roles(invitation)
         if roles:
             membership.roles.set(roles)
+            inviter = invitation.invited_by
+            audit.log_member_roles(
+                membership,
+                [],
+                audit.role_names(roles),
+                actor=membership,
+                reason="Einladung angenommen" + (f" (eingeladen von {display_name(inviter)})" if inviter else ""),
+            )
         if not organization.owner:
             organization.owner = user
             _save_organization(organization)
@@ -430,10 +438,13 @@ def invite_guest(
     share_level: str,
     document_ids: list[str],
     folder_ids: list[str],
+    allow_download: bool = True,
 ) -> GuestInviteResult:
     """
     Gast einladen: Konto anlegen (falls nötig), Gast-Mitgliedschaft ohne Rollen, optionale
     Dokument-/Ordner-Freigaben (rekursiv) und Zugangs-Mail. Prüft das Gast-Limit.
+
+    ``allow_download``: Die Freigaben erlauben Export (PDF/DOCX) und Anhänge (Issue #582).
     """
     from apps.work.motions.models import FolderGuestShare, MotionShare
 
@@ -477,7 +488,12 @@ def invite_guest(
                 motion=motion,
                 scope="user",
                 user=user,
-                defaults={"level": share_level, "created_by": inviter_user, "message": note},
+                defaults={
+                    "level": share_level,
+                    "created_by": inviter_user,
+                    "message": note,
+                    "allow_download": allow_download,
+                },
             )
             shared_docs.append(motion)
             # In-App-Hinweis; die E-Mail bündelt alle Freigaben (keine Mail-Flut)
@@ -491,7 +507,9 @@ def invite_guest(
             if folder is None:
                 continue
             FolderGuestShare.objects.update_or_create(
-                folder=folder, user=user, defaults={"level": share_level, "created_by": inviter_user}
+                folder=folder,
+                user=user,
+                defaults={"level": share_level, "created_by": inviter_user, "allow_download": allow_download},
             )
             shared_folders.append(folder)
             hub.notify_folder_shared(folder, guest_membership, share_level, inviter, send_email=False)
@@ -545,6 +563,7 @@ def update_member_expertise(organization: Organization, member: Membership, topi
     member.expertise_topics.set(selectors.topics_by_ids(organization, topic_ids))
 
 
+@transaction.atomic
 def update_member_roles(organization: Organization, member: Membership, actor: Membership, role_ids: list[str]) -> None:
     """
     Rollen setzen. Rechte-Eskalation verhindern: Nicht-Admins dürfen weder ihre eigenen
@@ -570,6 +589,7 @@ def update_member_roles(organization: Organization, member: Membership, actor: M
     ):
         raise ServiceError("Mindestens ein Administrator muss bleiben.")
     member.roles.set(roles)
+    audit.log_member_roles(member, audit.role_names(bestand), audit.role_names(roles), actor=actor)
 
 
 @transaction.atomic
@@ -584,8 +604,26 @@ def update_member_permissions(
         raise ServiceError("Gast-Zugänge haben keine Berechtigungen.")
     if not selectors.permission_checker(actor).is_admin():
         raise ServiceError("Individuelle Berechtigungen können nur Administratoren ändern.")
+    old_individual, old_denied = _permission_codes(member)
     member.individual_permissions.set(selectors.permissions_by_codenames(individual_codes))
     member.denied_permissions.set(selectors.permissions_by_codenames(denied_codes))
+    new_individual, new_denied = _permission_codes(member)
+    audit.log_member_permissions(
+        member,
+        old_individual=old_individual,
+        new_individual=new_individual,
+        old_denied=old_denied,
+        new_denied=new_denied,
+        actor=actor,
+    )
+
+
+def _permission_codes(member: Membership) -> tuple[list[str], list[str]]:
+    """Zusätzliche und verweigerte Einzelrechte einer Mitgliedschaft (Kennungen) für die Änderungshistorie."""
+    return (
+        list(member.individual_permissions.values_list("codename", flat=True)),
+        list(member.denied_permissions.values_list("codename", flat=True)),
+    )
 
 
 def _ensure_may_remove(organization: Organization, member: Membership, actor_user: User) -> None:
@@ -612,9 +650,12 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
     if member.user == actor_user:
         raise ServiceError("Sie können sich nicht selbst deaktivieren.")
     _ensure_may_remove(organization, member, actor_user)
+    was_active = member.is_active
     member.is_active = False
     member.save()
     _discard_open_invitations(organization, member.user)
+    if was_active:
+        audit.log_member_access(member, "aktiv", "deaktiviert", actor=_active_membership(organization, actor_user))
 
 
 def _restore_membership(organization: Organization, member: Membership, actor: Membership | None) -> None:
@@ -626,9 +667,29 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
     _ensure_may_restore(actor, member)
+    before = _access_text(member)
     member.is_active = True
     member.registration_requested_at = None
     member.save()
+    audit.log_member_access(member, before, "aktiv", roles_after=_pending_roles(member, before), actor=actor)
+
+
+PENDING_TEXT = "Registrierungsanfrage offen"
+
+
+def _access_text(member: Membership) -> str:
+    """Zugang für die Änderungshistorie: aktiv, deaktiviert oder offene Registrierungsanfrage."""
+    if member.is_active:
+        return "aktiv"
+    return PENDING_TEXT if member.registration_requested_at else "deaktiviert"
+
+
+def _pending_roles(member: Membership, before: str) -> list[str]:
+    """
+    Rollen einer freigeschalteten Registrierungsanfrage: Die Standardrolle hängt schon an der Anfrage, steht aber
+    erst mit der Freischaltung in der Historie (offene Anfragen dort ohne Personenbezug).
+    """
+    return audit.role_names(member.roles.all()) if before == PENDING_TEXT else []
 
 
 def _access_variant(member: Membership) -> emails.AccessVariant:
@@ -672,6 +733,15 @@ def remove_member(organization: Organization, member: Membership, actor_user: Us
     _ensure_may_remove(organization, member, actor_user)
     name = display_name(member.user)
     user = member.user
+    # Vor dem Löschen: Der Eintrag nennt Zugang und Rollen bis dahin
+    audit.log_member_access(
+        member,
+        _access_text(member),
+        "entfernt",
+        action="delete",
+        roles_before=audit.role_names(member.roles.all()),
+        actor=_active_membership(organization, actor_user),
+    )
     member.delete()
     _discard_open_invitations(organization, user)
     return name
@@ -712,6 +782,7 @@ def apply_committee_suggestions(organization: Organization, member: Membership) 
     return len(suggested)
 
 
+@transaction.atomic
 def update_sworn_in(member: Membership, actor: Membership, is_sworn_in: bool) -> None:
     """
     Vereidigungsstatus setzen. Selbst-Vereidigung verhindern: der Status schaltet den Zugriff
@@ -719,8 +790,10 @@ def update_sworn_in(member: Membership, actor: Membership, is_sworn_in: bool) ->
     """
     if member.user == actor.user and not selectors.permission_checker(actor).is_admin():
         raise ServiceError("Den eigenen Vereidigungsstatus können nur Administratoren setzen.")
+    was_sworn_in = bool(member.is_sworn_in)
     member.is_sworn_in = is_sworn_in
     member.save()
+    audit.log_sworn_in(member, was_sworn_in, bool(is_sworn_in), actor=actor)
 
 
 # ---------------------------------------------------------------------------
@@ -770,6 +843,11 @@ def join_by_self_registration(organization: Organization, user: User) -> Members
         # Nie automatisch Administrator – auch nicht bei einer älteren Einstellung
         if created and default_role is not None and not default_role.is_admin:
             membership.roles.add(default_role)
+            if membership.is_active:
+                # Offene Anfragen erscheinen erst mit der Freischaltung in der Historie (approve_registration)
+                audit.log_member_roles(
+                    membership, [], [default_role.name], actor=membership, reason="Selbstregistrierung (Standardrolle)"
+                )
     if created:
         announce_self_registration(membership)
     return membership
@@ -821,9 +899,14 @@ def approve_registration(membership: Membership, actor: Membership | None = None
     Offene Registrierungsanfrage freischalten und benachrichtigen (:func:`_announce_access`, wie beim
     Reaktivieren); liefert, ob die Mail rausging.
     """
+    before = _access_text(membership)
+    roles = _pending_roles(membership, before)
     membership.is_active = True
     membership.registration_requested_at = None
     membership.save(update_fields=["is_active", "registration_requested_at", "updated_at"])
+    audit.log_member_access(
+        membership, before, "aktiv", roles_after=roles, actor=actor, reason="Registrierungsanfrage freigeschaltet"
+    )
     return _announce_access(membership, "approved", actor)
 
 
@@ -835,6 +918,8 @@ def reject_registration(membership: Membership, reason: str = "") -> tuple[str, 
     user = membership.user
     organization = membership.organization
     name = user.get_display_name()
+    # Ohne Personenbezug: Das Konto wird danach automatisch gelöscht (Issue #238), die Historie ist unveränderbar
+    audit.log_member_access(membership, PENDING_TEXT, "abgelehnt", action="delete", neutral=True)
     membership.delete()
     # Stempel für die automatische Löschung verwaister Konten (Issue #238)
     user.registration_rejected_at = timezone.now()
@@ -933,7 +1018,9 @@ def _apply_change(organization: Organization, change_request: MemberChangeReques
                 and not _other_admins_exist(organization, member=requester)
             ):
                 raise ServiceError("Mindestens ein Administrator muss bleiben.")
+            old_roles = audit.role_names(requester.roles.all())
             requester.roles.set(roles)
+            audit.log_member_roles(requester, old_roles, audit.role_names(roles), reason="Änderungsantrag genehmigt")
     elif change_request.request_type == "committee_change":
         bodies = selectors.organization_bodies(organization)
         if bodies.exists():
@@ -941,8 +1028,17 @@ def _apply_change(organization: Organization, change_request: MemberChangeReques
     elif change_request.request_type == "permission_request":
         perm_codes = data.get("requested_permissions", [])
         if perm_codes:
+            old_individual, denied = _permission_codes(requester)
             for perm in selectors.permissions_by_codenames(perm_codes):
                 requester.individual_permissions.add(perm)
+            audit.log_member_permissions(
+                requester,
+                old_individual=old_individual,
+                new_individual=_permission_codes(requester)[0],
+                old_denied=denied,
+                new_denied=denied,
+                reason="Änderungsantrag genehmigt",
+            )
 
 
 def _ensure_reviewer(membership: Membership) -> Any:
@@ -1339,8 +1435,8 @@ def save_registration_settings(
 def update_two_factor_requirement(organization: Organization, *, required: bool) -> None:
     """Zwei-Faktor-Pflicht für alle Mitglieder ein- oder ausschalten.
 
-    Mitglieder mit Administrator-Rolle oder einer Rolle mit „2FA erforderlich" sind
-    unabhängig davon immer verpflichtet (apps/accounts/two_factor_policy.py).
+    Die Administration, Mitglieder mit Verwaltungsrechten (Mitglieder, Rollen, Einstellungen, API-Zugänge) und
+    Rollen mit „2FA erforderlich" sind unabhängig davon immer verpflichtet (apps/accounts/two_factor_policy.py).
     """
     if organization.require_2fa != required:
         organization.require_2fa = required
@@ -1667,6 +1763,7 @@ def create_role(organization: Organization, data: RoleInput, actor: Membership) 
     )
     if data.permission_codes and not role.is_admin:
         role.permissions.set(selectors.permissions_by_codenames(data.permission_codes))
+    audit.log_role("create", role, None, audit.role_state(role), actor=actor)
     return role
 
 
@@ -1690,6 +1787,7 @@ def update_role(organization: Organization, role: Role, data: RoleInput, actor: 
         and not _other_admins_exist(organization, role=role)
     ):
         raise ServiceError("Mindestens ein Administrator muss bleiben.")
+    before = audit.role_state(role)
     role.name = data.name
     role.description = data.description
     role.color = _color(data.color, role.color)
@@ -1702,8 +1800,10 @@ def update_role(organization: Organization, role: Role, data: RoleInput, actor: 
         role.permissions.clear()
     else:
         role.permissions.set(selectors.permissions_by_codenames(data.permission_codes))
+    audit.log_role("update", role, before, audit.role_state(role), actor=actor)
 
 
+@transaction.atomic
 def delete_role(role: Role) -> str:
     """Rolle löschen — keine Systemrollen, keine zugewiesenen Rollen; liefert den Namen."""
     if role.is_system_role:
@@ -1715,10 +1815,12 @@ def delete_role(role: Role) -> str:
             "Entfernen Sie zuerst die Zuweisungen."
         )
     name = role.name
+    audit.log_role("delete", role, audit.role_state(role), None)
     role.delete()
     return name
 
 
+@transaction.atomic
 def reset_role(role: Role, actor: Membership) -> bool:
     """Standard-Rolle auf ihre Definition aus setup_roles zurücksetzen (Rechte-Invariante wie beim Bearbeiten)."""
     definition = cast(Any, Role).get_default_definition(role.name)
@@ -1730,13 +1832,20 @@ def reset_role(role: Role, actor: Membership) -> bool:
         is_admin=bool(definition.get("is_admin")),
         added_codes=set(definition.get("permissions", [])) - selectors.role_permission_codes(role),
     )
-    return role.reset_to_default()
+    before = audit.role_state(role)
+    reset = bool(role.reset_to_default())
+    if reset:
+        audit.log_role("update", role, before, audit.role_state(role), actor=actor, reason="auf Standard zurückgesetzt")
+    return reset
 
 
 def restore_default_roles(organization: Organization) -> list[Role]:
     """Fehlende Standard-Rollen anlegen (Berechtigungskatalog vorher synchronisieren)."""
     cast(Any, Permission).sync_permissions()
-    return cast("list[Role]", Role.restore_missing_default_roles(organization))
+    created = cast("list[Role]", Role.restore_missing_default_roles(organization))
+    for role in created:
+        audit.log_role("create", role, None, audit.role_state(role), reason="Standardrolle ergänzt")
+    return created
 
 
 # ---------------------------------------------------------------------------

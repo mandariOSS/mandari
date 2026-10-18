@@ -18,8 +18,13 @@ namespace: mandari
 resources:
   - mandari.yaml
 
-commonLabels:
-  app.kubernetes.io/part-of: mandari
+# Ersetzt das veraltete commonLabels mit derselben Wirkung (auch in Selektoren und Pod-Vorlagen),
+# damit bestehende Installationen ihre unveränderlichen Selektoren behalten.
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: mandari
+    includeSelectors: true
+    includeTemplates: true
 
 # Beispiel: Domain an mehreren Stellen ersetzen. Nach dem Kopieren in ein Overlay
 # die Werte anpassen und die Auskommentierung entfernen.

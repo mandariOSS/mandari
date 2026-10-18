@@ -18,6 +18,24 @@
     <span class="text-gray-900 dark:text-white font-medium">Verlauf der Anlage</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Die Adresse der Anlage gehört zu keinem Bereich, darum Bereich und Elternseite hier #}
+{% block brotkrumen_aktuell %}
+{% if session_file.paper_id %}
+<c-rahmen.brotkrume href="{% url 'session:papers' tenant_slug=tenant_slug %}">Vorlagen</c-rahmen.brotkrume>
+<c-rahmen.brotkrume href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=session_file.paper_id %}">{{ parent.display_reference|default:parent.name|truncatechars:60 }}</c-rahmen.brotkrume>
+{% elif session_file.agenda_item_id %}
+<c-rahmen.brotkrume href="{% url 'session:meetings' tenant_slug=tenant_slug %}">Sitzungen</c-rahmen.brotkrume>
+{% include "session/rahmen/_krume_sitzung.html" with meeting=parent.meeting %}
+<c-rahmen.brotkrume nur_text="1">TOP {{ parent.number }}</c-rahmen.brotkrume>
+{% elif session_file.meeting_id %}
+<c-rahmen.brotkrume href="{% url 'session:meetings' tenant_slug=tenant_slug %}">Sitzungen</c-rahmen.brotkrume>
+{% include "session/rahmen/_krume_sitzung.html" with meeting=parent %}
+{% elif session_file.application_id %}
+<c-rahmen.brotkrume href="{% url 'session:applications' tenant_slug=tenant_slug %}">Anträge</c-rahmen.brotkrume>
+<c-rahmen.brotkrume href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=session_file.application_id %}">{{ parent.reference|default:"Antrag" }}</c-rahmen.brotkrume>
+{% endif %}
+<c-rahmen.brotkrume>Verlauf der Anlage</c-rahmen.brotkrume>
+{% endblock %}
 
 {% block page_content %}
 <div class="space-y-6 max-w-4xl" data-testid="anlagen-verlauf">

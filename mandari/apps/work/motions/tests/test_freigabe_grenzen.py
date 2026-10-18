@@ -5,8 +5,9 @@ Freigaben erweitern den Kreis nie über das eigene Freigaberecht hinaus.
 - Freigabeanfragen gehen nur an Mitglieder (keine Gäste); bekommt die angefragte Person
   dafür Zugriff, braucht die anfragende Person das Freigaberecht (``Motion.can_share``: Autor:in
   oder ``motions.edit_all``, jeweils mit ``motions.share``).
-- Eine Ordner-Freigabe an Gäste umfasst organisationsweite Dokumente und die eigenen Dokumente
-  der freigebenden Person – nicht die privaten oder gezielt geteilten Dokumente anderer.
+- Eine Ordner-Freigabe an Gäste umfasst organisationsweite Dokumente und die geteilten Dokumente
+  der freigebenden Person – nicht die privaten oder gezielt geteilten Dokumente anderer und auch
+  nicht die privaten der freigebenden Person (Issue #582).
 - In einen für Gäste freigegebenen Ordner verschiebt nur, wer das Dokument freigeben darf.
 """
 
@@ -96,7 +97,10 @@ def test_ordnerfreigabe_umfasst_keine_privaten_dokumente_anderer(
         organization=org, author=autorin, title="Geteilt Autorin", visibility="shared", folder=ordner
     )
     eigen_privat = Motion.objects.create(
-        organization=org, author=freigebende, title="Eigenes", visibility="private", folder=ordner
+        organization=org, author=freigebende, title="Eigenes privat", visibility="private", folder=ordner
+    )
+    eigen_geteilt = Motion.objects.create(
+        organization=org, author=freigebende, title="Eigenes geteilt", visibility="shared", folder=ordner
     )
     organisationsweit = Motion.objects.create(
         organization=org, author=autorin, title="Für alle", visibility="organization", folder=unterordner
@@ -104,10 +108,12 @@ def test_ordnerfreigabe_umfasst_keine_privaten_dokumente_anderer(
 
     sichtbar = set(cast(Any, Motion).visible_to(gast).values_list("title", flat=True))
 
-    assert sichtbar == {"Eigenes", "Für alle"}
+    assert sichtbar == {"Eigenes geteilt", "Für alle"}
     assert not fremd_privat.can_access(gast)
     assert not fremd_geteilt.can_access(gast)
-    assert eigen_privat.can_edit(gast)
+    # Privat bleibt privat, auch für die eigenen Dokumente der freigebenden Person (Issue #582)
+    assert not eigen_privat.can_access(gast)
+    assert eigen_geteilt.can_edit(gast)
     assert organisationsweit.can_access(gast)
 
     url = reverse("work:guest_documents", kwargs={"org_slug": org.slug})

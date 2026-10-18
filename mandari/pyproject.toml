@@ -342,3 +342,21 @@ ignore_imports = [
     "apps.common.service_levels -> insight_core.services.source_health",
     "apps.tenants.models -> insight_core.models",
 ]
+
+[[tool.importlinter.contracts]]
+id = "abruf-ein-weg"
+name = "Ein Weg zur Quelle: hub.ris.abruf nur aus der Drehscheibe, dem Dokument-Cache, dem Löschabgleich und der Vorschau"
+type = "protected"
+# docs/adr/20261007-dokumentkette.md, Abschnitt 7 (Issue #919): Datei-Downloads liegen nur in hub.ris.abruf.
+# Andere Module gehen über die Fassade insight_core.services.file_cache (etwa die Admin-Aktion).
+protected_modules = ["hub.ris.abruf"]
+allowed_importers = [
+    "hub.ris",
+    "insight_core.services.file_cache",
+    "insight_core.services.file_reconcile",
+    "insight_core.views.files",
+]
+ignore_imports = [
+    # Tests sind ausgenommen: Sie prüfen modulübergreifend und erzeugen keine Kopplung im Betrieb.
+    "**.tests.** -> **",
+]

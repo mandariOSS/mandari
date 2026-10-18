@@ -34,6 +34,7 @@ from apps.session.models import (
     SessionApplication,
     SessionAttendance,
     SessionConsultation,
+    SessionFile,
     SessionLegislativeTerm,
     SessionMeeting,
     SessionPaper,
@@ -218,11 +219,14 @@ class TestLeitstelleUndVerbindung:
         # Abschnitte aus dem Dokument: Das Formular „Bei Verwaltung einreichen“ ist vollständig vorbelegt
         assert daten["structured"]
         assert daten["resolution_proposal"].startswith("Die Verwaltung wird beauftragt")
-        assert daten["justification"].startswith("Der Musterweg ist der Hauptzugang")
-        assert "4.500 Euro" in daten["financial_impact"]
+        assert daten["justification"].startswith("Im Musterviertel leben rund 900 Kinder")
+        assert "25.000 Euro" in daten["financial_impact"]
         eingang = ris_submission.submit_motion(antrag, vorsitz(), daten)
         assert eingang.tenant.slug == DEMO_SESSION_SLUG
         assert re.fullmatch(r"A/\d{4}/\d{4}", eingang.reference)
+        # Die Antragsfassung hängt als PDF am Eingang
+        (pdf,) = eingang.files.filter(is_application_pdf=True)
+        assert pdf.name == f"Antrag {eingang.reference.replace('/', '-')}.pdf"
 
 
 class TestDrehbuchDaten:
@@ -242,7 +246,7 @@ class TestDrehbuchDaten:
         assert kommend.meeting_state == "invitation_sent" and kommend.invitation_sent_at is not None
         assert kommend.invitation_sent_at.date() <= kommend.invitation_deadline
         tops = {t.name: t for t in kommend.agenda_items.all()}
-        assert [tops[n].number for n in ("Eröffnung", drehbuch.TOP_JUGENDZENTRUM, drehbuch.TOP_SPIELPLATZ)] == [
+        assert [tops[n].number for n in ("Eröffnung", drehbuch.TOP_JUGENDZENTRUM, drehbuch.TOP_SPORTHALLE)] == [
             "1",
             "2",
             "3",
@@ -369,6 +373,8 @@ class TestSpiegel:
         antrag.refresh_from_db()
         assert antrag.status == "draft" and antrag.session_application_id is None
         assert not SessionApplication.objects.filter(pk=eingang.pk).exists()
+        # Keine verwaiste Antragsfassung aus der Probe
+        assert not SessionFile.objects.filter(is_application_pdf=True).exists()
         top.refresh_from_db()
         assert top.is_public and top.number == "2"
         assert gespiegelt(top).deleted is False

@@ -9,15 +9,16 @@ setzt sie auf false. Größen: sm = max-w-md, md = max-w-xl, lg = max-w-2xl. `pa
 Dialogkasten, `class` den zentrierenden Wrapper (z. B. py-8). Für einfache Dialoge ohne eigenen
 Zustand ist <c-ui.modal> (natives <dialog>) vorzuziehen. Der Dialogkasten ist role=dialog mit
 aria-modal, Fokusfalle (x-trap.inert.noscroll) und Escape; eine Überschrift im Inhalt sollte per
-aria-labelledby verknüpft werden (attrs: aria-labelledby="…").
+aria-labelledby verknüpft werden: labelledby="id-der-überschrift" setzt aria-labelledby am Element
+mit role=dialog (nicht am Wrapper, sonst fehlt dem Dialog der zugängliche Name).
 {% endcomment %}
-<c-vars show="open" size="sm" panel_class="" class="" />
+<c-vars show="open" size="sm" panel_class="" class="" labelledby="" />
 <div x-show="{{ show }}" x-cloak class="fixed inset-0 z-50 overflow-y-auto" x-transition
     @keydown.escape.window="{{ show }} = false" {{ attrs }}>
     <div class="flex items-center justify-center min-h-screen px-4 {{ class }}">
         <div class="fixed inset-0 bg-black/50" @click="{{ show }} = false"></div>
         {# Fokusfalle, Hintergrund inert, kein Scrollen (BITV, #176): x-trap gibt den Fokus beim Schließen zurück #}
-        <div role="dialog" aria-modal="true" x-trap.inert.noscroll="{{ show }}"
+        <div role="dialog" aria-modal="true"{% if labelledby %} aria-labelledby="{{ labelledby }}"{% endif %} x-trap.inert.noscroll="{{ show }}"
              class="relative bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full {% if size == 'lg' %}max-w-2xl{% elif size == 'md' %}max-w-xl{% else %}max-w-md{% endif %} {{ panel_class }}" @click.stop>
             {{ slot }}
         </div>

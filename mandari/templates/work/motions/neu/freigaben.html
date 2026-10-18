@@ -1,0 +1,104 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Freigegebene Dokumente im neuen Erscheinungsbild (Issue #951): die Seite der Gäste und die persönlichen Freigaben der
+Mitglieder. Freigegebene Ordner als navigierbarer Baum, darunter einzeln freigegebene Dokumente; Sofort-Suche
+(Alpine, nur in der Seite), Sortierung nach Datum oder Name, Hinweis „neu/geändert“ seit der letzten Anmeldung,
+Stufe der Freigabe als Text. Alles wie bisher (work/motions/guest_documents.html). Kontext: GuestSharedDocumentsView.
+{% endcomment %}
+
+{% block page_title %}Freigegebene Dokumente{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="{% if current_folder %}{{ current_folder.name }}{% else %}Freigegebene Dokumente{% endif %}" dicht
+    text="{% if current_folder %}Freigegebener Ordner{% if folder_level_label %}, Stufe {{ folder_level_label }}{% endif %}.{% else %}Dokumente und Ordner, die für Sie in {{ organization.name }} freigegeben sind.{% endif %}{% if new_count or updated_count %} Seit Ihrer letzten Anmeldung: {% if new_count %}{{ new_count }} neu{% endif %}{% if new_count and updated_count %}, {% endif %}{% if updated_count %}{{ updated_count }} geändert{% endif %}.{% endif %}">
+    {% if current_folder %}
+    <c-slot name="oben">
+        <nav aria-label="Ordnerpfad" class="mb-2 text-sm">
+            <ol class="flex flex-wrap items-center gap-1.5 text-gray-700 dark:text-gray-300">
+                <li><a href="{% url 'work:guest_documents' org_slug=organization.slug %}" class="hover:text-primary-700 hover:underline underline-offset-4">Freigaben</a></li>
+                {% for crumb in folder_breadcrumbs %}
+                <li class="flex items-center gap-1.5"><i data-lucide="chevron-right" class="w-3.5 h-3.5" aria-hidden="true"></i><a href="{% url 'work:guest_documents' org_slug=organization.slug %}?ordner={{ crumb.id }}" class="hover:text-primary-700 hover:underline underline-offset-4">{{ crumb.name }}</a></li>
+                {% endfor %}
+            </ol>
+        </nav>
+    </c-slot>
+    {% endif %}
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block work_content %}
+<div x-data="{ q: '' }">
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div class="relative flex-1 min-w-[14rem] max-w-md">
+            <label for="freigaben-suche" class="sr-only">Freigaben durchsuchen</label>
+            <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 dark:text-gray-400 pointer-events-none" aria-hidden="true"></i>
+            <input id="freigaben-suche" type="search" x-model="q" placeholder="Dokumente und Ordner durchsuchen"
+                   class="w-full min-h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+        </div>
+        <p class="sm:ml-auto text-sm text-gray-700 dark:text-gray-300">
+            Sortierung:
+            <a href="?{% if current_folder %}ordner={{ current_folder.id }}&amp;{% endif %}sort=date" {% if sort == 'date' %}aria-current="true" class="font-medium text-gray-900 dark:text-white"{% else %}class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"{% endif %}>Datum</a>
+            ·
+            <a href="?{% if current_folder %}ordner={{ current_folder.id }}&amp;{% endif %}sort=name" {% if sort == 'name' %}aria-current="true" class="font-medium text-gray-900 dark:text-white"{% else %}class="font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4"{% endif %}>Name</a>
+        </p>
+    </div>
+
+    {% if shared_folders or folder_documents %}
+    <c-rahmen.abschnitt titel="{% if current_folder %}Inhalt{% else %}Freigegebene Ordner{% endif %}" titel_id="ordner-titel" class="mt-6">
+        <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800">
+            {% for entry in shared_folders %}
+            <li data-search="{{ entry.folder.name|lower }}" x-show="!q || $el.dataset.search.includes(q.toLowerCase())">
+                <a href="{% url 'work:guest_documents' org_slug=organization.slug %}?ordner={{ entry.folder.id }}"
+                   class="flex items-center gap-3 py-2.5 text-sm hover:bg-band-grau/70">
+                    <i data-lucide="folder" class="w-4 h-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden="true"></i>
+                    <span class="flex-1 min-w-0 truncate font-medium text-gray-900 dark:text-white">{{ entry.folder.name }}</span>
+                    {% if entry.level_label %}<span class="shrink-0 text-[0.8125rem] text-gray-700 dark:text-gray-300">{{ entry.level_label }}</span>{% endif %}
+                </a>
+            </li>
+            {% endfor %}
+            {% for doc in folder_documents %}
+            <li data-search="{{ doc.title|lower }}" x-show="!q || $el.dataset.search.includes(q.toLowerCase())">
+                <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=doc.id %}"
+                   class="flex items-center gap-3 py-2.5 text-sm hover:bg-band-grau/70">
+                    <i data-lucide="file-text" class="w-4 h-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden="true"></i>
+                    <span class="flex-1 min-w-0">
+                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ doc.title }}{% if doc.is_new %} <span class="font-normal text-green-800 dark:text-green-300">· neu</span>{% elif doc.is_updated %} <span class="font-normal text-amber-800 dark:text-amber-300">· geändert</span>{% endif %}</span>
+                        <span class="mt-0.5 block text-[0.8125rem] text-gray-600 dark:text-gray-400">Zuletzt geändert {{ doc.updated_at|date:"d.m.Y" }}</span>
+                    </span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </c-rahmen.abschnitt>
+    {% elif current_folder %}
+    <p class="mt-6 text-sm text-gray-700 dark:text-gray-300">Dieser Ordner ist leer.</p>
+    {% endif %}
+
+    {% if not current_folder %}
+    {% if shared_entries %}
+    <c-rahmen.abschnitt titel="Einzeln freigegeben" titel_id="dokumente-titel" class="mt-8">
+        <ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="freigaben-dokumente">
+            {% for entry in shared_entries %}
+            <li data-search="{{ entry.motion.title|lower }}" x-show="!q || $el.dataset.search.includes(q.toLowerCase())">
+                <a href="{% url 'work:document_editor' org_slug=organization.slug motion_id=entry.motion.id %}"
+                   class="flex items-center gap-3 py-2.5 text-sm hover:bg-band-grau/70">
+                    <i data-lucide="file-text" class="w-4 h-4 shrink-0 text-gray-600 dark:text-gray-400" aria-hidden="true"></i>
+                    <span class="flex-1 min-w-0">
+                        <span class="block truncate font-medium text-gray-900 dark:text-white">{{ entry.motion.title }}{% if entry.is_new %} <span class="font-normal text-green-800 dark:text-green-300">· neu</span>{% elif entry.is_updated %} <span class="font-normal text-amber-800 dark:text-amber-300">· geändert</span>{% endif %}</span>
+                        <span class="mt-0.5 block text-[0.8125rem] text-gray-600 dark:text-gray-400">Freigegeben am {{ entry.shared_at|date:"d.m.Y" }}{% if entry.shared_by %} von {{ entry.shared_by.get_full_name|default:entry.shared_by.email }}{% endif %}</span>
+                    </span>
+                    <span class="shrink-0 text-[0.8125rem] text-gray-700 dark:text-gray-300">{{ entry.level_label }}</span>
+                </a>
+            </li>
+            {% endfor %}
+        </ul>
+    </c-rahmen.abschnitt>
+    {% elif not shared_folders %}
+    <p class="mt-6 max-w-2xl text-sm text-gray-700 dark:text-gray-300" data-testid="freigaben-leer">
+        Für Sie wurden noch keine Dokumente freigegeben. Sobald ein Mitglied der Organisation ein Dokument oder einen Ordner mit Ihnen teilt, erscheint es hier.
+    </p>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

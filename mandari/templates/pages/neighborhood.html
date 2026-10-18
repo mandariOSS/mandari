@@ -1,7 +1,8 @@
 {% extends "base_insight.html" %}
 {% load static l10n %}
 
-{% block title %}Nachbarschaft{% if active_body %} – {{ active_body.get_display_name }}{% endif %}{% endblock %}
+{# Im Bürgerportal nennt der Zusatz die Kommune schon: nicht doppelt #}
+{% block title %}Nachbarschaft{% if active_body and not insight_portal %} – {{ active_body.get_display_name }}{% endif %}{% endblock %}
 
 {% block extra_head %}
 <!-- Leaflet (lokal, DSGVO-konform); die Suche steuert frontend/alpine/neighborhood.ts -->

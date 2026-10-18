@@ -50,5 +50,7 @@ class FactionProtocolPdfView(WorkViewMixin, View):
 
         filename = f"niederschrift-{meeting.start.strftime('%Y-%m-%d')}-{variant}.pdf"
         response = HttpResponse(pdf_bytes, content_type="application/pdf")
-        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        # Eingebettet nur für die Vorschau im Genehmigungs-TOP der Sitzungsansicht (Issue #874), sonst Download
+        art = "inline" if "vorschau" in request.GET else "attachment"
+        response["Content-Disposition"] = f'{art}; filename="{filename}"'
         return response

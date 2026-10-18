@@ -1,0 +1,87 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Verwaltung › Einreichung im neuen Erscheinungsbild (Issue #951, #40): Stand der Verbindung zur
+Verwaltung als Punkt mit Text, Verbindung trennen (Rückfrage), Token hinterlegen und eingereichte Anträge. Formulare,
+Felder und Grenzen wie bisher (work/organization/ris_settings.html). Kontext: OrganizationRisSettingsView.
+{% endcomment %}
+
+{% block page_title %}Einreichung{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Einreichung bei der Verwaltung" dicht
+    text="Mit einem Einreichungs-Token der Verwaltung reicht {{ organization.name }} Anträge direkt aus dem Editor ein und sieht Eingangsnummer, Status und Beratungstermine." />
+{% include "work/organization/neu/_reiter.html" with seite="einreichung" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="einreichung" %}
+    <div class="min-w-0 flex-1 grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+        <div class="space-y-10 min-w-0">
+            <c-rahmen.abschnitt titel="Verbindung" titel_id="verbindung-titel">
+                <c-ui.angaben class="mt-3">
+                    <dt>Stand</dt>
+                    <dd data-testid="verbindung-stand">{% if connection_usable %}{% include "work/organization/neu/_status.html" with an=True %}Verbunden{% elif connection %}{% include "work/organization/neu/_status.html" with gestoert=True %}Gestört{% else %}{% include "work/organization/neu/_status.html" %}Nicht verbunden{% endif %}</dd>
+                    {% if connection %}
+                    <dt>Verwaltung</dt>
+                    <dd>{{ connection.tenant.name }}</dd>
+                    <dt>Token</dt>
+                    <dd class="font-mono">{{ connection.token_prefix }}…</dd>
+                    <dt>Verbunden am</dt>
+                    <dd>{{ connection.connected_at|date:"d.m.Y H:i" }}{% if connection.connected_by %} von {{ connection.connected_by.user.get_display_name }}{% endif %}</dd>
+                    <dt>Letzte Einreichung</dt>
+                    <dd>{% if connection.last_used_at %}{{ connection.last_used_at|date:"d.m.Y H:i" }}{% else %}noch keine{% endif %}</dd>
+                    {% endif %}
+                </c-ui.angaben>
+                {% if connection and not connection_usable %}
+                <p class="mt-3 text-sm text-amber-800 dark:text-amber-300">{{ connection_reason }}</p>
+                {% endif %}
+                {% if connection %}
+                <form method="post" class="mt-4" data-confirm="Verbindung zur Verwaltung wirklich trennen? Bereits eingereichte Anträge bleiben erhalten.">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="disconnect">
+                    <c-ui.text-button type="submit" variant="danger" dicht>Verbindung trennen</c-ui.text-button>
+                </form>
+                {% endif %}
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="{% if connection %}Token erneuern oder Verwaltung wechseln{% else %}Token hinterlegen{% endif %}" titel_id="token-titel">
+                <ol class="mt-2 list-decimal ml-5 space-y-1 text-sm text-gray-800 dark:text-gray-200">
+                    <li>Die Verwaltung erstellt im Session-RIS unter <em>Einstellungen › Einreichungs-Zugänge</em> einen Token für Ihre Fraktion.</li>
+                    <li>Sie fügen den Token (64 Zeichen) hier ein. Work prüft ihn und speichert nur eine verschlüsselte Prüfsumme.</li>
+                    <li>Danach steht im Editor „Bei der Verwaltung einreichen“ für alle mit dem Recht „Anträge ans RIS übermitteln“.</li>
+                </ol>
+                <form method="post" class="mt-4 flex flex-col sm:flex-row sm:items-end gap-3">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="connect">
+                    <div class="flex-1 min-w-0">
+                        <c-form.beschriftung feld="einreichungs-token">Einreichungs-Token</c-form.beschriftung>
+                        <input type="text" id="einreichungs-token" name="token" required minlength="64" maxlength="64" autocomplete="off" spellcheck="false" placeholder="64 Zeichen von der Verwaltung"
+                               class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm font-mono text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                    </div>
+                    <c-ui.button type="submit" size="sm">Verbinden</c-ui.button>
+                </form>
+            </c-rahmen.abschnitt>
+        </div>
+
+        <c-rahmen.abschnitt titel="Eingereichte Anträge" titel_id="eingereicht-titel">
+            {% if submitted_applications %}
+            <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm" data-testid="eingereichte-antraege">
+                {% for app in submitted_applications %}
+                <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5">
+                    <div class="min-w-0">
+                        {% if app.work_motion %}<a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=app.work_motion.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4">{{ app.title }}</a>{% else %}<span class="font-medium text-gray-900 dark:text-white">{{ app.title }}</span>{% endif %}
+                        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ app.reference }} · {{ app.tenant.name }} · {{ app.submitted_at|date:"d.m.Y" }}</p>
+                    </div>
+                    <span class="text-[0.8125rem] text-gray-800 dark:text-gray-200 whitespace-nowrap">{{ app.get_status_display }}</span>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <c-rahmen.satz>Noch keine Anträge eingereicht.</c-rahmen.satz>
+            {% endif %}
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

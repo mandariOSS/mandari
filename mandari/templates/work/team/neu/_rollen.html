@@ -1,0 +1,1 @@
+{% spaceless %}{% for role in member.roles.all %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if member.is_guest %}{% if member.roles.all %}, {% endif %}Gast{% elif not member.roles.all %}–{% endif %}{% endspaceless %}

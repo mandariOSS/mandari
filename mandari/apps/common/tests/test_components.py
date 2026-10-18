@@ -9,6 +9,8 @@ und die auf Komponenten umgestellten Konto-Seiten (Pilot, Issue #167).
 from __future__ import annotations
 
 import re
+import uuid
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -229,6 +231,138 @@ class TestRahmen:
         assert "aria-current" not in blatt
 
 
+class _Ziele:
+    """Ziele der gemeinsamen Listen wie in Work (insight_core.ris_links): eigene Adressen statt Insight."""
+
+    def url(self, art: str, kennung: object) -> str:
+        return f"/ziel/{art}/{kennung}/"
+
+
+def _sitzung(**felder: Any) -> SimpleNamespace:
+    werte: dict[str, Any] = {
+        "id": uuid.uuid4(),
+        "get_display_name": "Rat",
+        "cancelled": False,
+        "start": None,
+        "location_name": "",
+        "anzahl_tops": 0,
+    }
+    return SimpleNamespace(**(werte | felder))
+
+
+@pytest.mark.django_db
+class TestGemeinsameBausteine:
+    """Listen, Seitenwahl, Kopfband und Band teilen sich Insight und Work (Issue #853)."""
+
+    def test_liste_fuehrt_ohne_ziele_nach_insight_und_mit_zielen_dorthin(self) -> None:
+        sitzung = _sitzung()
+        insight = render('<c-liste.sitzungen :sitzungen="s" />', s=[sitzung])
+        assert f'data-href="/insight/termine/{sitzung.id}/"' in insight
+        assert "py-3.5" in insight and '<span class="sr-only">Merken</span>' in insight
+
+        work = render(
+            '<c-liste.sitzungen :sitzungen="s" :links="ziele" dicht ohne_merken />', s=[sitzung], ziele=_Ziele()
+        )
+        assert f'data-href="/ziel/sitzung/{sitzung.id}/"' in work and f'href="/ziel/sitzung/{sitzung.id}/"' in work
+        assert "/insight/" not in work and "py-3.5" not in work and "py-2" in work
+        assert '<span class="sr-only">Öffnen</span>' in work and "bookmarks" not in work
+
+    def test_zusatzspalte_je_zeile(self) -> None:
+        html = render(
+            '<c-liste.vorgaenge :vorgaenge="v" :links="ziele" dicht ohne_merken '
+            'zusatz="work/ris/neu/_person_fraktion.html" zusatz_titel="Für die Fraktion" />',
+            v=[SimpleNamespace(id=uuid.uuid4(), name="Radweg", reference="", paper_type="", date=None, konto="x")],
+            ziele=_Ziele(),
+        )
+        # Spalte ab md, darunter unter dem Titel: je Zeile mit ``eintrag``
+        assert "Für die Fraktion</th>" in html and html.count("Ihre Organisation") == 2 and "/ziel/vorgang/" in html
+
+    def test_seitenwahl_im_buergerportal_und_dicht(self) -> None:
+        from django.core.paginator import Paginator
+
+        seite = Paginator(list(range(60)), 25).get_page(2)
+        insight = render('<c-liste.seiten :seite="seite" />', seite=seite)
+        assert 'aria-label="Vorherige Seite"' in insight and "min-w-11 h-11" in insight and "?page=3" in insight
+        dicht = render('<c-liste.seiten :seite="seite" dicht />', seite=seite)
+        assert "min-w-8 h-8" in dicht and "min-w-11" not in dicht and 'aria-current="page"' in dicht
+        assert render('<c-liste.seiten :seite="seite" />', seite=Paginator([1], 25).get_page(1)).strip() == ""
+
+    def test_kopfband_wie_insight_und_dicht(self) -> None:
+        insight = render(
+            '<c-insight.kopfband titel="Vorgänge" text="Alle Vorlagen" data-testid="k">Filter</c-insight.kopfband>'
+        )
+        assert "text-[1.75rem]" in insight and "py-8 sm:py-10" in insight and 'data-testid="k"' in insight
+        assert '<div class="mt-6">Filter</div>' in insight
+        dicht = render(
+            '<c-rahmen.kopfband titel="Vorgang" text="Satz" dicht><c-slot name="oben">Zurück</c-slot>'
+            '<c-slot name="aktionen"><a href="/v/">Vorbereiten</a></c-slot>Angaben</c-rahmen.kopfband>'
+        )
+        assert "text-2xl" in dicht and "py-5" in dicht and "text-[1.75rem]" not in dicht
+        assert dicht.index("Zurück") < dicht.index("<h1") < dicht.index("Angaben") < dicht.index("Vorbereiten")
+
+    def test_band_wie_insight_und_dicht_mit_titel(self) -> None:
+        insight = render('<c-insight.band ton="grau" aria-labelledby="x">Inhalt</c-insight.band>')
+        assert "max-w-insight" in insight and "bg-band-grau" in insight and 'aria-labelledby="x"' in insight
+        dicht = render('<c-rahmen.band ton="grau" dicht titel="Für die Fraktion" titel_id="f">Inhalt</c-rahmen.band>')
+        assert "max-w-insight" not in dicht and "rounded-md px-5 py-5" in dicht
+        assert 'aria-labelledby="f"' in dicht and '<h2 id="f"' in dicht and "Für die Fraktion" in dicht
+
+    def test_abschnitt_textlink_und_angaben(self) -> None:
+        html = render(
+            '<c-rahmen.abschnitt titel="Tagesordnung" titel_id="t" zusatz="3 Punkte">'
+            '<c-slot name="link"><c-ui.textlink href="/a/">Alle</c-ui.textlink></c-slot>Inhalt</c-rahmen.abschnitt>'
+        )
+        assert 'aria-labelledby="t"' in html and '<h2 id="t"' in html and "· 3 Punkte" in html and 'href="/a/"' in html
+        extern = render('<c-ui.textlink href="https://ris.example/" extern class="text-sm">RIS</c-ui.textlink>')
+        assert 'target="_blank" rel="noopener noreferrer"' in extern and "(öffnet in neuem Fenster)" in extern
+        assert "text-sm" in extern
+        assert "<dl" in render("<c-ui.angaben><dt>Datum</dt><dd>1.1.</dd></c-ui.angaben>")
+
+    def test_textlink_im_satz_ohne_leerzeichen_vor_satzzeichen(self) -> None:
+        """Mitten im Satz folgt das Satzzeichen direkt auf den Link, nicht „Anträge .“."""
+        satz = render('Beantragen unter <c-ui.textlink href="/a/">Anträge</c-ui.textlink>.')
+        assert satz.rstrip().endswith("</a>."), satz[-40:]
+        extern = render('Unter <c-ui.textlink href="/b/" extern>/api/</c-ui.textlink>, dann')
+        assert "</span></a>, dann" in extern
+
+    def test_satz_im_abschnitt(self) -> None:
+        leer = render('<c-rahmen.satz data-testid="leer">Noch keine Vorlagen.</c-rahmen.satz>').strip()
+        assert leer.startswith('<p class="mt-3 text-sm') and 'data-testid="leer"' in leer
+        assert leer.endswith("Noch keine Vorlagen.</p>")
+        assert render("<c-rahmen.satz eng>Erläuterung</c-rahmen.satz>").strip().startswith('<p class="mt-1 text-sm')
+
+    def test_liste_mit_linien(self) -> None:
+        """c-rahmen.liste (Issue #944): Linie über der Liste und unter jedem Eintrag, ``geordnet`` als <ol>."""
+        liste = render('<c-rahmen.liste class="mt-2" data-testid="l"><li class="py-2">A</li></c-rahmen.liste>').strip()
+        assert liste.startswith("<ul ") and liste.endswith("</ul>") and 'data-testid="l"' in liste
+        assert (
+            "border-t" in liste
+            and "[&>li]:border-b" in liste
+            and " mt-2" in liste
+            and '<li class="py-2">A</li>' in liste
+        )
+        geordnet = render("<c-rahmen.liste geordnet><li>1</li></c-rahmen.liste>").strip()
+        assert geordnet.startswith("<ol ") and geordnet.endswith("</ol>")
+
+    def test_symbolknopf(self) -> None:
+        """c-ui.symbolknopf (Issue #944): 32 px, Tooltip und Name für Bildschirmleser, Link oder Knopf, Ton beim Zeigen."""
+        knopf = render(
+            '<c-ui.symbolknopf type="submit" icon="trash-2" titel="Löschen" label="Anlage löschen" ton="gefahr" />'
+        )
+        assert (
+            '<button type="submit"' in knopf and 'title="Löschen"' in knopf and 'aria-label="Anlage löschen"' in knopf
+        )
+        assert "w-8 h-8" in knopf and "hover:text-red-700" in knopf and 'data-lucide="trash-2"' in knopf
+        assert 'aria-hidden="true"' in knopf
+        link = render('<c-ui.symbolknopf href="/pdf/" icon="file-down" titel="PDF" data-testid="p" />')
+        assert '<a href="/pdf/"' in link and 'aria-label="PDF"' in link and 'data-testid="p"' in link
+        assert "hover:text-gray-900" in link and "<button" not in link
+        alpine = render(
+            '<c-ui.symbolknopf icon="pencil" titel="Bearbeiten" @click="a = !a" ::aria-expanded="a.toString()" />'
+        )
+        assert '@click="a = !a"' in alpine and ':aria-expanded="a.toString()"' in alpine
+
+
 class TestUiKitPreview:
     def test_preview_template_renders_all_components(self) -> None:
         html = render_to_string("dev/ui_kit.html", ui_kit_context())
@@ -241,11 +375,22 @@ class TestUiKitPreview:
         # Vorschaudaten vollständig: keine Links ohne Ziel (z. B. Filterspalte der Suche ab 2xl, #867)
         assert 'href=""' not in html and 'hx-get=""' not in html
 
+    # Die Seite über den Test-Client braucht die Datenbank wie jede andere Seite (Issue #907): Der
+    # Kontextprozessor active_body fragt ohne gewählte Kommune ab, ob es gelistete Kommunen gibt, und
+    # ReleaseDatabaseConnectionsMiddleware prüft am Ende die offenen Verbindungen des Threads. Ohne
+    # Freigabe schluckte der Kontextprozessor den Fehler still; die Middleware dagegen scheiterte,
+    # sobald ein früherer Test eine Verbindung offen gelassen hatte (unter SQLite bleibt die
+    # Testdatenbank im Speicher immer offen). Die Vorlage selbst rendert der Test oben ohne Datenbank.
+
+    @pytest.mark.django_db
     def test_preview_url_is_hidden_without_debug(self, client: Client, settings: Any) -> None:
+        # Vor dem Umschalten auflösen: Lädt erst dieser Test die URL-Konfiguration, fehlt die Route
+        url = reverse("dev_ui_kit")
         settings.DEBUG = False
         settings.UI_KIT_PREVIEW = False
-        assert client.get(reverse("dev_ui_kit")).status_code == 404
+        assert client.get(url).status_code == 404
 
+    @pytest.mark.django_db
     def test_preview_url_renders_with_preview_flag(self, client: Client, settings: Any) -> None:
         settings.UI_KIT_PREVIEW = True
         response = client.get(reverse("dev_ui_kit"))
@@ -334,6 +479,12 @@ class TestPanelComponents:
         html = render('<c-ui.alpine-modal show="open">x</c-ui.alpine-modal>')
         assert "max-w-md" in html
         assert "x-cloak" in html
+        assert "aria-labelledby" not in html
+
+    def test_alpine_modal_labelledby_am_dialog(self) -> None:
+        html = render('<c-ui.alpine-modal show="open" labelledby="t">x</c-ui.alpine-modal>')
+        assert 'role="dialog" aria-modal="true" aria-labelledby="t"' in html
+        assert html.count("aria-labelledby") == 1
 
     def test_panel_section_renders_count_and_action_slot(self) -> None:
         html = render(

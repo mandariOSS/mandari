@@ -75,6 +75,28 @@
         </form>
     </c-ui.card>
 
+    <c-ui.card title="Formularfelder für Arbeitsflächen" subtitle="dicht (Work, 36 px, 14 px), modell, maxlength, zeile; c-form.hinweis, c-form.beschriftung, c-ui.text-button dicht; c-form.datei – Dateifeld mit Ablagefläche; c-rahmen.reiter-link mit zahl">
+        <form class="space-y-5" novalidate>
+            <c-form.field name="titel_dicht" label="Titel" maxlength="500" dicht help="Höchstens 500 Zeichen" />
+            <c-form.select name="status_dicht" label="Status" dicht zeile><option>Alle</option><option>Entwurf</option></c-form.select>
+            <c-form.textarea name="text_dicht" id="text-dicht" label="Begründung" rows="3" dicht />
+            <div>
+                <c-form.checkbox name="bestaetigung" value="ja" dicht>Ich bestätige die Angaben.</c-form.checkbox>
+                <c-form.hinweis einzug>c-form.hinweis: Erläuterung unter einem Feld, 13 px</c-form.hinweis>
+            </div>
+            <div>
+                <c-form.beschriftung feld="farbe-beispiel" pflicht>c-form.beschriftung für eigene Felder</c-form.beschriftung>
+                <input type="color" id="farbe-beispiel" value="#4f46e5">
+                <c-ui.text-button dicht>c-ui.text-button dicht: Knopf im Aussehen eines Textlinks</c-ui.text-button>
+            </div>
+            <c-form.datei name="unterlagen" label="Unterlagen (PDF)" accept=".pdf" hinweis="Bis 20 MB" />
+        </form>
+        <c-rahmen.reiter label="Beispielreiter mit Zahl" class="mt-6">
+            <c-rahmen.reiter-link href="#" :aktiv="True">Alle</c-rahmen.reiter-link>
+            <c-rahmen.reiter-link href="#" zahl="3" zahl_text="offen">Zu prüfen</c-rahmen.reiter-link>
+        </c-rahmen.reiter>
+    </c-ui.card>
+
     <c-ui.card title="Karte mit Aktionen und Fußzeile" subtitle="c-ui.card – title, subtitle, actions-Slot, footer-Slot, padding">
         <c-slot name="actions"><c-ui.button size="sm" variant="secondary" icon="plus">Aktion</c-ui.button></c-slot>
         <p class="text-sm text-gray-600 dark:text-gray-300">Inhalt der Karte.</p>
@@ -195,7 +217,8 @@
         </div>
     </c-ui.card>
 
-    <c-ui.card title="Suche: Treffer" subtitle="c-suche.textlink – href; c-suche.reiter – tabs; c-suche.filterleiste – zeitraum, art, sortierung (c-suche.facette); c-suche.treffer-vorgang / -person – treffer">
+    <c-ui.card title="Suche: Treffer" subtitle="c-suche.feld – adresse, wert, platzhalter, fokus; c-suche.textlink – href, knopf, klasse; c-suche.reiter – tabs; c-suche.filterleiste – zeitraum, art, sortierung (c-suche.facette); c-suche.treffer-vorgang / -person – treffer. Feld, Reiter und Filter mit dicht in den Maßen von Work (32 px, 14 px)">
+        <div class="mb-4"><c-suche.feld adresse="#" wert="Radweg" platzhalter="Thema, Straße oder Aktenzeichen" dicht /></div>
         <p class="mb-4 text-sm">Zeitraum: Letzte 2 Jahre · <c-suche.textlink href="#">entfernen</c-suche.textlink></p>
         <c-suche.reiter :tabs="demo_reiter" />
         <c-suche.filterleiste :zeitraum="demo_zeitraum" :art="demo_art" :sortierung="demo_sortierung" />

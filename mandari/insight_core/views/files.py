@@ -22,7 +22,7 @@ from ..models import (
     OParlMeeting,
     withdrawn_q,
 )
-from ..services import file_accel, file_access, file_delivery, file_reconcile, file_store
+from ..services import file_accel, file_access, file_cache_limit, file_delivery, file_reconcile, file_store
 
 # =============================================================================
 # Dokumente (Files)
@@ -175,13 +175,17 @@ from django.conf import settings
 from django.utils.html import escape
 from django.views.decorators.clickjacking import xframe_options_exempt
 
+from hub.ris import abruf
+
 from .. import throttle
-from ..services import host_pacing, robots, safe_fetch
+from ..services import host_pacing, redirects, robots, safe_fetch
 
 logger = logging.getLogger(__name__)
 
 #: Gleichzeitige Abrufe beim Quell-RIS je Prozess: Langsame Quellen dürfen nicht alle Worker binden
 _LIVE_FETCH_SLOTS = threading.BoundedSemaphore(throttle.setting("FILE_PROXY_MAX_CONCURRENT"))
+#: Auf einen Abrufplatz wartet die Vorschau höchstens so lange, innerhalb der Frist ``FILE_PROXY_PACE_MAX_WAIT_SECONDS``
+_SLOT_MAX_WAIT_SECONDS = 2.0
 #: Bis zu dieser Größe bleibt ein Live-Abruf im Speicher, darüber in einer temporären Datei
 _SPOOL_BYTES = 2 * 1024 * 1024
 
@@ -229,14 +233,17 @@ def file_proxy(request, file_id):
     """
     Datei-Auslieferung für OParl-Dokumente (PDFs) — iframe-fähig und DSGVO-konform.
 
-    Reihenfolge (Issues #87/#86):
-    1. Lokale Kopie aus dem Dokument-Cache (FileResponse, kein RIS-Zugriff)
-    2. Live-Abruf mit kurzen Timeouts; erfolgreiche Antworten werden
-       direkt in den Cache geschrieben (Write-Through)
+    Reihenfolge (Issues #87/#86, #919):
+    1. Lokale Kopie aus dem Dokument-Cache bzw. dem Objektspeicher (kein RIS-Zugriff). Ist die Ablage gestört,
+       wird nicht bei der Quelle abgerufen; läuft gerade ein Abruf, heißt es „wird geladen“.
+    2. Live-Abruf über ``hub.ris.abruf`` mit kurzen Timeouts; erfolgreiche Antworten werden
+       direkt abgelegt (Write-Through), Fehlschläge setzen dieselben Zustände wie der Abruf.
     3. Freundliche Fehlerseite, wenn die Quelle nicht erreichbar ist
 
     Jeder Abruf zählt im Zugriffsprotokoll (Treffer, Abruf bei der Quelle, Fehler, Sperre; #786),
-    Folgeanfragen eines Abrufs in Teilen (Range) nicht.
+    Folgeanfragen eines Abrufs in Teilen (Range) nicht. Ausgelieferte Dokumente vermerken ihre letzte
+    Nutzung (höchstens stündlich, nicht für erkennbare Crawler): Danach richtet sich die Verdrängung unter der
+    Obergrenze (#961).
     """
     file_obj = get_object_or_404(
         OParlFile.objects.select_related("body").defer("text_content", "raw_json", "body__raw_json"), id=file_id
@@ -248,6 +255,11 @@ def file_proxy(request, file_id):
         if file_access.counts_as_access(request):
             file_access.record(file_obj, file_access.FAILED)
         raise
+    # Erkennbare Crawler bestimmen die Rangfolge nicht (#961)
+    if file_access.outcome_of(response) in (file_access.HIT, file_access.MISS) and file_cache_limit.counts_as_use(
+        request
+    ):
+        file_cache_limit.mark_used(file_obj)
     return file_access.record_response(file_obj, response, request)
 
 
@@ -274,7 +286,8 @@ def _deliver_file(request, file_obj):
     filename = file_obj.file_name or file_obj.name or "dokument.pdf"
 
     # Lokale Kopie; mit Objektspeicher wird ein lokal verdrängter Inhalt von dort geholt (#788)
-    local = file_store.local_copy(file_obj)
+    kopie = file_store.local_copy(file_obj)
+    local = kopie.path if kopie.present else None
     if local is not None:
         content_type = file_cache.content_type_for(file_obj, "application/pdf")
         # Bytes liefert der Webserver (Range, ETag), Django setzt nur Typ und Schutzkopfzeilen (#785)
@@ -291,6 +304,31 @@ def _deliver_file(request, file_obj):
     url = file_obj.download_url or file_obj.access_url
     if not url:
         raise Http404("Keine Download-URL verfügbar")
+
+    if kopie.disturbed:
+        # Ablage bzw. Objektspeicher gestört: nie bei der Quelle abrufen, eine Störung darf keine Abrufwelle
+        # bei den Kommunen auslösen (Issue #919)
+        response = _file_proxy_error(
+            "Dokument vorübergehend nicht verfügbar",
+            "Unser Dokumentspeicher antwortet gerade nicht. Bitte versuche es in einigen Minuten erneut. "
+            + _original_link(url),
+            status=503,
+        )
+        response["Retry-After"] = "300"
+        return response
+    if kopie.missing and file_obj.local_status == "ok":
+        # Bestätigt weder lokal noch im Objektspeicher: wieder abrufen (hier live, sonst über cache_files)
+        abruf.mark_content_missing(file_obj)
+    if abruf.is_being_fetched(file_obj):
+        # Ein Abruf läuft gerade: nicht parallel bei der Quelle abrufen
+        response = _file_proxy_error(
+            "Dokument wird geladen",
+            "Wir holen dieses Dokument gerade beim Ratsinformationssystem ab. Bitte versuche es gleich noch einmal. "
+            + _original_link(url),
+            status=503,
+        )
+        response["Retry-After"] = "15"
+        return response
 
     # Dokumente nur hinter einer Zugangsprüfung für Menschen (sync_config["file_downloads"] = false):
     # nicht selbst abrufen, sondern auf das Original verweisen – dort löst der Browser die Prüfung.
@@ -330,7 +368,10 @@ def _deliver_file(request, file_obj):
         )
         response["Retry-After"] = "60"
         return response
-    if not _LIVE_FETCH_SLOTS.acquire(timeout=2):
+    # Eine Frist für alle Wartezeiten der Vorschau: auf einen Abrufplatz im Prozess (Issue #1036), auf robots.txt
+    # und Takt, auch für die Ziele von Weiterleitungen (#1027). Insgesamt höchstens FILE_PROXY_PACE_MAX_WAIT_SECONDS
+    deadline = redirects.deadline_after(_pace_max_wait())
+    if not _LIVE_FETCH_SLOTS.acquire(timeout=min(_SLOT_MAX_WAIT_SECONDS, redirects.remaining(deadline) or 0.0)):
         response = _file_proxy_error(
             "Gerade viele Abrufe",
             "Das Dokument lag noch nicht in unserem Zwischenspeicher, und gerade laufen viele Abrufe "
@@ -340,12 +381,21 @@ def _deliver_file(request, file_obj):
         response["Retry-After"] = "30"
         return response
     try:
-        blocked = _robots_or_pacing_blocked(file_obj, url)
+        # Dieselbe Frist: Was das Warten auf den Abrufplatz verbraucht hat, fehlt robots.txt und Takt
+        blocked = _robots_or_pacing_blocked(file_obj, url, deadline=deadline)
         if blocked is not None:
             return blocked
-        return _fetch_live(file_obj, url, filename, force_download)
+        return _fetch_live(file_obj, url, filename, force_download, deadline=deadline)
     finally:
         _LIVE_FETCH_SLOTS.release()
+
+
+def _pace_max_wait():
+    """
+    Höchstwartezeit der Vorschau (Sekunden) für den ganzen Abruf zusammen: Abrufplatz im Prozess, robots.txt, Takt
+    und Weiterleitungen (``FILE_PROXY_PACE_MAX_WAIT_SECONDS``, Standard 5).
+    """
+    return float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
 
 
 def _source_busy_response(url):
@@ -360,46 +410,58 @@ def _source_busy_response(url):
     return response
 
 
-def _robots_or_pacing_blocked(file_obj, url):
+def _robots_or_pacing_blocked(file_obj, url, *, deadline=None):
     """
     robots.txt und Drossel je Host vor dem Live-Abruf; ``None``: Abruf erlaubt und Zeitpunkt reserviert.
 
     Läuft erst nach Schonung, Drossel je IP und mit belegtem Abrufplatz: So wird eine geschonte Quelle nicht
     über ihre robots.txt angefragt, und es warten höchstens ``FILE_PROXY_MAX_CONCURRENT`` Threads je Prozess.
     Vor jedem Warten geht die Datenbankverbindung an den Pool zurück; robots.txt und Takt zusammen warten
-    höchstens ``FILE_PROXY_PACE_MAX_WAIT_SECONDS`` (sonst 503 mit ``Retry-After``).
+    höchstens bis ``deadline`` (``time.monotonic()``; ohne Angabe ``FILE_PROXY_PACE_MAX_WAIT_SECONDS`` ab jetzt),
+    sonst 503 mit ``Retry-After``. Dieselbe Frist gilt danach für die Weiterleitungen des Abrufs.
 
     robots.txt (RFC 9309) gilt auch für die Vorschau: gesperrte Dokumente rufen wir nicht selbst ab, sondern
     verweisen auf das Original.
     """
-    import time
-
     from apps.common.db_connections import release_idle_thread_connections
 
+    if deadline is None:
+        deadline = redirects.deadline_after(_pace_max_wait())
     # Einstellungen der Quelle lesen, solange die Verbindung noch da ist (die Quelle hängt danach am Body)
     sync_config = robots.sync_config_of(file_obj)
     agent = robots.user_agent_for(file_obj)
-    max_wait = float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
-    deadline = time.monotonic() + max_wait
     release_idle_thread_connections()
     try:
-        decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=max_wait)
+        decision = robots.check(
+            url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=redirects.remaining(deadline)
+        )
     except host_pacing.PacingBusyError:
         return _source_busy_response(url)
     if decision.allowed:
         # Drossel je Host über alle Prozesse: höchstens die verbleibende Zeit warten
-        if not host_pacing.wait(url, sync_config=sync_config, max_wait=max(0.0, deadline - time.monotonic())):
+        if not host_pacing.wait(url, sync_config=sync_config, max_wait=redirects.remaining(deadline)):
             return _source_busy_response(url)
         return None
     if decision.unreachable:
-        response = _file_proxy_error(
-            "Dokument beim Ratsinformationssystem öffnen",
-            "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar. Wir rufen das "
-            "Dokument deshalb jetzt nicht selbst ab. " + _original_link(url),
-            status=503,
-        )
-        response["Retry-After"] = "900"
-        return response
+        # Dieselben Zustände wie der Abruf (Issue #919): Wiederholung, keine Sperre
+        abruf.record_live_failure(file_obj, abruf.CODE_ROBOTS_UNREACHABLE, decision.reason)
+        return _robots_unreachable_response(url)
+    abruf.record_live_failure(file_obj, abruf.CODE_ROBOTS, decision.reason)
+    return _robots_refused_response(url)
+
+
+def _robots_unreachable_response(url):
+    response = _file_proxy_error(
+        "Dokument beim Ratsinformationssystem öffnen",
+        "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar. Wir rufen das "
+        "Dokument deshalb jetzt nicht selbst ab. " + _original_link(url),
+        status=503,
+    )
+    response["Retry-After"] = "900"
+    return response
+
+
+def _robots_refused_response(url):
     return _file_proxy_error(
         "Dokument beim Ratsinformationssystem öffnen",
         "Diese Kommune untersagt automatische Abrufe ihrer Dokumente (robots.txt). Wir rufen das Dokument "
@@ -407,8 +469,12 @@ def _robots_or_pacing_blocked(file_obj, url):
     )
 
 
-def _fetch_live(file_obj, url, filename, force_download):
-    """Datei beim Quell-RIS abrufen (Größe, Dauer und Ziel begrenzt) und ausliefern (Write-Through)."""
+def _fetch_live(file_obj, url, filename, force_download, *, deadline=None):
+    """
+    Datei beim Quell-RIS abrufen (``hub.ris.abruf``: Größe, Dauer und Ziel begrenzt) und ausliefern
+    (Write-Through). Fehlschläge setzen dieselben Zustände wie der Abruf im Dokument-Cache (Issue #919).
+    Weiterleitungen warten höchstens bis ``deadline``, der Frist der Prüfung vorher (sonst 503 mit ``Retry-After``).
+    """
     from django.http import FileResponse
 
     from apps.common.db_connections import release_idle_thread_connections
@@ -416,26 +482,37 @@ def _fetch_live(file_obj, url, filename, force_download):
     from ..services import file_cache
 
     read_timeout = float(getattr(settings, "FILE_PROXY_TIMEOUT_SECONDS", 15))
-    headers = file_cache.download_headers(file_obj.body)
     spool = tempfile.SpooledTemporaryFile(max_size=_SPOOL_BYTES)  # noqa: SIM115 – FileResponse schließt sie
     # Während des Abrufs keine Datenbankverbindung festhalten (Pool)
     release_idle_thread_connections()
     try:
-        download = safe_fetch.download_to(
-            spool,
+        download = abruf.download_live(
+            file_obj,
             url,
-            max_bytes=file_cache.max_bytes(),
+            spool,
             total_seconds=throttle.setting("FILE_PROXY_TOTAL_SECONDS"),
-            timeout=httpx.Timeout(connect=5.0, read=read_timeout, write=5.0, pool=5.0),
-            headers=headers,
-            user_agent=robots.user_agent_for(file_obj),
+            read_timeout=read_timeout,
+            max_wait=_pace_max_wait(),
+            deadline=deadline,
         )
+    except redirects.RedirectBusyError:
+        # Für das Ziel einer Weiterleitung war kein Zeitpunkt frei: später erneut, kein Fehlschlag
+        spool.close()
+        return _source_busy_response(url)
+    except redirects.RedirectBlockedError as exc:
+        # Das Ziel einer Weiterleitung sperrt die robots.txt seines Hosts (Issue #1027): wie bei der Datei selbst
+        spool.close()
+        reason = f"{exc.decision.reason} (Ziel einer Weiterleitung)"
+        abruf.record_live_failure(file_obj, abruf.code_for_redirect(exc), reason)
+        if exc.decision.unreachable:
+            return _robots_unreachable_response(url)
+        return _robots_refused_response(url)
     except httpx.HTTPStatusError as e:
         spool.close()
-        if e.response.status_code == 404 and file_obj.local_status == "none":
-            file_obj.local_status = "missing"
-            file_obj.local_error = "HTTP 404"
-            file_obj.save(update_fields=["local_status", "local_error"])
+        status = e.response.status_code
+        # Zustände wie der Abruf (ADR Abschnitt 4), auch für verdrängte Dokumente (#961) wie für ``none``: 404/410
+        # kurz nach der Erfassung wird wiederholt, später ``missing``
+        abruf.record_live_failure(file_obj, abruf.code_for_status(status), f"HTTP {status}")
         if e.response.status_code != 404:
             # Abgelehnt oder gestört (etwa eine Sperre gegen unsere Server): im Browser oft trotzdem abrufbar
             return _file_proxy_error(
@@ -452,13 +529,15 @@ def _fetch_live(file_obj, url, filename, force_download):
         )
     except safe_fetch.TooLargeError:
         spool.close()
+        abruf.record_live_failure(file_obj, abruf.CODE_TOO_LARGE, f"> {file_cache.max_bytes() // 1024 // 1024} MB")
         return _file_proxy_error(
             "Datei zu groß für die Vorschau",
             "Dieses Dokument ist größer, als die Vorschau direkt abrufen kann. " + _original_link(url),
             status=413,
         )
-    except safe_fetch.DeadlineExceededError:
+    except safe_fetch.DeadlineExceededError as exc:
         spool.close()
+        abruf.record_live_failure(file_obj, abruf.code_for_exception(exc), type(exc).__name__)
         return _file_proxy_error(
             "Abruf dauert zu lange",
             "Das Ratsinformationssystem liefert das Dokument gerade sehr langsam. Bitte versuche es später erneut. "
@@ -467,6 +546,7 @@ def _fetch_live(file_obj, url, filename, force_download):
         )
     except httpx.RequestError as exc:
         spool.close()
+        abruf.record_live_failure(file_obj, abruf.code_for_exception(exc), type(exc).__name__)
         blocked = isinstance(exc, safe_fetch.BlockedDestinationError)
         if blocked:
             logger.warning("Dokument %s: Download-Adresse nicht öffentlich erreichbar, Abruf gesperrt", file_obj.id)
@@ -485,18 +565,20 @@ def _fetch_live(file_obj, url, filename, force_download):
     )
     if looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
         spool.close()
+        abruf.record_live_failure(file_obj, abruf.CODE_HTML, abruf.HTML_TEXT)
         return _file_proxy_error(
             "Quelle liefert derzeit keine Datei",
             "Das Ratsinformationssystem antwortet mit einer Hinweisseite statt mit dem Dokument "
             "(z. B. Wartung). Bitte versuche es später erneut. " + _original_link(url),
         )
 
-    # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte (nur gelistete Kommunen)
+    # Write-Through: beim nächsten Aufruf kommt die Datei von der Platte (Regel der Ablage samt Stichtag). In den
+    # Objektspeicher lädt sie der Zeitplan; der Besucher wartet nicht auf den Upload.
     try:
-        if file_cache.caches_body(file_obj.body) and file_cache.has_room_for(download.size):
-            file_cache.store_stream(file_obj, spool, content_type=content_type)
-    except Exception as exc:  # Cache-Fehler dürfen die Auslieferung nie verhindern
-        logger.warning("Dokument %s konnte nicht zwischengespeichert werden: %s", file_obj.id, exc)
+        if abruf.stores_file(file_obj) and file_cache.has_room_for(download.size):
+            abruf.ablegen(file_obj, spool, content_type=content_type, upload=False)
+    except Exception:  # Cache-Fehler dürfen die Auslieferung nie verhindern
+        logger.warning("Dokument %s konnte nicht zwischengespeichert werden", file_obj.id, exc_info=True)
 
     spool.seek(0)
     response = FileResponse(spool)

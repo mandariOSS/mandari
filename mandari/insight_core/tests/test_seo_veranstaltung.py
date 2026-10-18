@@ -16,7 +16,7 @@ import json
 import re
 import uuid
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -145,12 +145,16 @@ def _pruefe_event(event: dict[str, Any]) -> None:
     anschrift = ort["address"]
     assert anschrift["@type"] == "PostalAddress" and anschrift["addressCountry"] == "DE"
     assert anschrift.get("streetAddress") or anschrift.get("addressLocality")
+    assert isinstance(ort.get("name"), str) and ort["name"].strip(), "location.name fehlt"
     assert _absolut(event["url"]) and _absolut(event["image"])
     assert event["organizer"]["name"] and _absolut(event["organizer"]["url"])
     for gremium in event.get("performer", []):
         assert gremium["@type"] == "Organization" and gremium["name"] and _absolut(gremium["url"])
     if "offers" in event:
         angebot = event["offers"]
+        gueltig_ab = angebot.pop("validFrom")
+        assert ISO_MIT_VERSATZ.match(gueltig_ab), gueltig_ab
+        assert gueltig_ab <= event["startDate"] or gueltig_ab[:10] <= event["startDate"][:10]
         assert angebot == {
             "@type": "Offer",
             "price": "0",
@@ -314,7 +318,8 @@ class TestVeranstaltung:
         assert event is not None
         _pruefe_event(event)
         assert event["location"]["address"]["addressLocality"] == "Münster (Westf.)"
-        assert "name" not in event["location"]
+        # Ohne Raumangabe heißt der Ort wie die Gemeinde (Google erwartet location.name)
+        assert event["location"]["name"] == event["location"]["address"]["addressLocality"]
 
     @pytest.mark.parametrize(
         "koerperschaft",
@@ -421,6 +426,41 @@ class TestVeranstaltung:
 # =============================================================================
 # Eintritt frei nur bei öffentlichen Sitzungen
 # =============================================================================
+
+
+class TestOrtsnameUndGueltigAb:
+    @pytest.mark.parametrize("platzhalter", [None, "", "Noch offen", "noch offen.", "N.N."])
+    def test_ohne_raum_heisst_der_ort_wie_die_gemeinde(self, muenster: OParlBody, platzhalter: Any) -> None:
+        sitzung = _sitzung(muenster, _gremium(muenster), location_name=platzhalter)
+
+        seite = _seite(f"/insight/termine/{sitzung.id}/")
+        event = _event(seite)
+
+        assert event is not None
+        _pruefe_event(event)
+        assert event["location"]["name"] == "Münster"
+        assert "Noch offen" not in event["description"] and "N.N." not in event["description"]
+
+    def test_gueltig_ab_aus_created_der_quelle(self, muenster: OParlBody) -> None:
+        erstellt = timezone.now() - timedelta(days=20)
+        sitzung = _sitzung(muenster, _gremium(muenster), location_name="Rathaus", oparl_created=erstellt)
+        _punkt(sitzung, "1", public=True, raw_json={"public": True})
+
+        event = _event(_seite(f"/insight/termine/{sitzung.id}/"))
+
+        assert event is not None
+        assert event["offers"]["validFrom"][:10] == timezone.localtime(erstellt).date().isoformat()
+
+    def test_unglaubhaftes_created_faellt_auf_den_abgleich_zurueck(self, muenster: OParlBody) -> None:
+        ersatzwert = datetime(1999, 12, 31, tzinfo=timezone.get_current_timezone())
+        sitzung = _sitzung(muenster, _gremium(muenster), location_name="Rathaus", oparl_created=ersatzwert)
+        _punkt(sitzung, "1", public=True, raw_json={"public": True})
+
+        event = _event(_seite(f"/insight/termine/{sitzung.id}/"))
+
+        assert event is not None
+        assert not event["offers"]["validFrom"].startswith("1999")
+        _pruefe_event(event)
 
 
 class TestEintrittFrei:

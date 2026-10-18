@@ -1,0 +1,7 @@
+{% comment %}
+Spalte „Für die Fraktion“ einer Sitzung in den gemeinsamen Listen (c-liste.sitzungen, Issue #853): Vorbereitungsstand
+(``eintrag.stand`` aus apps.work.ris.neu) und „Vorbereiten“ mit dem Recht meetings.prepare. Erwartet: eintrag
+(OParlMeeting), organization, darf_vorbereiten.
+{% endcomment %}
+{% if eintrag.stand and eintrag.stand.vorlagen %}<span class="block">Positionen zu {{ eintrag.stand.positionen }} von {{ eintrag.stand.vorlagen }} Vorlage{{ eintrag.stand.vorlagen|pluralize:"n" }}</span>{% endif %}
+{% if darf_vorbereiten and not eintrag.cancelled %}<c-ui.textlink href="{% url 'work:meeting_prepare' org_slug=organization.slug meeting_id=eintrag.id %}">Vorbereiten<span class="sr-only">: {{ eintrag.get_display_name }}{% if eintrag.start %}, {{ eintrag.start|date:"d.m.Y" }}{% endif %}</span></c-ui.textlink>{% endif %}

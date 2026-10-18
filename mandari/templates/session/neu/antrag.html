@@ -1,0 +1,127 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Antrag im neuen Rahmen (Issue #944): Kopfband mit Eingangsnummer, Art, Titel, Stand und Dringlichkeit; die eine
+Hauptaktion ist „In Vorlage umwandeln“ (nur wenn möglich und mit den Rechten dazu), daneben „Bearbeiten“. Darunter
+Begründung, Beschlussvorschlag, finanzielle Auswirkungen, Dringlichkeitsbegründung, Anhänge aus mandari Work und die
+erstellten Vorlagen; rechts Angaben (ohne das, was schon im Kopfband steht), Mitzeichner und Bearbeitungsnotizen. Alle
+Aktionen der bisherigen Seite bleiben erreichbar; Rechte und Kontext wie ApplicationDetailView. Die bisherige Seite
+bleibt session/applications/detail.html.
+{% endcomment %}
+
+{% block page_title %}{{ application.title }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume>{{ application.reference }}</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{{ application.title }}" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:applications' tenant_slug=tenant_slug %}">Anträge</c-insight.zurueck>
+        <p class="mb-1 text-sm tabular-nums text-gray-600 dark:text-gray-400">{{ application.reference }} · {{ application.get_application_type_display }}</p>
+    </c-slot>
+    {% if "process_applications" in permission_checker.permissions %}
+    <c-slot name="aktionen">
+        <c-ui.button href="{% url 'session:application_process' tenant_slug=tenant_slug application_id=application.id %}" variant="secondary" size="sm" icon="pencil">Bearbeiten</c-ui.button>
+        {% if can_convert and "create_papers" in permission_checker.permissions %}
+        <c-ui.button href="{% url 'session:application_convert' tenant_slug=tenant_slug application_id=application.id %}" size="sm" icon="file-output">In Vorlage umwandeln</c-ui.button>
+        {% endif %}
+    </c-slot>
+    {% endif %}
+    <p class="flex flex-wrap gap-x-4 gap-y-0.5 text-sm text-gray-700 dark:text-gray-300">
+        <span>{% include "session/neu/_status.html" with wert=application.status text=application.get_status_display %}</span>
+        {% if application.is_urgent %}<span class="inline-flex items-center gap-1 font-medium text-red-700 dark:text-red-400"><i data-lucide="zap" class="w-3.5 h-3.5" aria-hidden="true"></i>Dringend</span>{% endif %}
+    </p>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]">
+    <div class="min-w-0 space-y-10">
+        {% if application.is_urgent and application.urgency_reason %}
+        <c-rahmen.abschnitt titel="Dringlichkeitsbegründung" titel_id="dringlichkeit-titel">
+            <p class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.urgency_reason }}</p>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if application.justification %}
+        <c-rahmen.abschnitt titel="Begründung" titel_id="begruendung-titel">
+            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.justification }}</div>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if application.resolution_proposal %}
+        <c-rahmen.abschnitt titel="Beschlussvorschlag" titel_id="beschlussvorschlag-titel">
+            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.resolution_proposal }}</div>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if application.financial_impact %}
+        <c-rahmen.abschnitt titel="Finanzielle Auswirkungen" titel_id="finanzen-titel">
+            <div class="mt-2 max-w-[48rem] text-[0.9375rem] leading-relaxed text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.financial_impact }}</div>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if application_files %}
+        <c-rahmen.abschnitt titel="Anhänge" titel_id="anhaenge-titel" zusatz="{{ application_files|length }}">
+            <c-rahmen.satz eng>Aus mandari Work übermittelt. Anhänge bleiben nichtöffentlich, die Antragsfassung (PDF) wird mit der Vorlage öffentlich.</c-rahmen.satz>
+            <c-rahmen.liste class="mt-2">
+                {% for file in application_files %}
+                <li class="flex items-baseline justify-between gap-4 py-2 text-sm">
+                    <c-ui.textlink href="{% url 'session:file_download' tenant_slug=tenant_slug file_id=file.id %}" class="min-w-0 break-words">{{ file.name }}</c-ui.textlink>
+                    <span class="shrink-0 text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ file.size_human }}</span>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if created_papers %}
+        <c-rahmen.abschnitt titel="Erstellte Vorlagen" titel_id="vorlagen-titel">
+            <c-rahmen.liste class="mt-2">
+                {% for paper in created_papers %}
+                <li class="relative grid grid-cols-[minmax(0,1fr)] sm:grid-cols-[minmax(0,1fr)_9rem] items-baseline gap-x-4 gap-y-0.5 py-2.5 hover:bg-band-grau/60">
+                    <div class="min-w-0">
+                        <a href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ paper.name }}</a>
+                        <p class="text-[0.8125rem] tabular-nums text-gray-600 dark:text-gray-400">{{ paper.reference }}</p>
+                    </div>
+                    <span class="text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=paper.status text=paper.get_status_display %}</span>
+                </li>
+                {% endfor %}
+            </c-rahmen.liste>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </div>
+
+    <aside class="min-w-0 space-y-8" aria-label="Angaben zum Antrag">
+        <c-rahmen.abschnitt titel="Angaben" titel_id="angaben-titel">
+            <c-ui.angaben class="mt-2" data-testid="antrag-angaben">
+                <dt>Eingereicht am</dt><dd class="tabular-nums">{{ application.submitted_at|date:"d.m.Y H:i" }}</dd>
+                <dt>Einreicher</dt>
+                <dd>{{ application.submitter_name }}{% if application.submitter_email %}<br><span class="text-gray-600 dark:text-gray-400 break-all">{{ application.submitter_email }}</span>{% endif %}</dd>
+                {% if application.submitting_organization %}<dt>Organisation</dt><dd>{{ application.submitting_organization.name }}</dd>{% endif %}
+                {% if application.work_motion %}<dt>Eingereicht über</dt><dd>mandari Work (digital); Statusänderungen werden der Fraktion automatisch gemeldet</dd>{% endif %}
+                {% if application.target_organization %}
+                <dt>Zuständig</dt>
+                <dd><c-ui.textlink href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=application.target_organization.id %}">{{ application.target_organization.name }}</c-ui.textlink></dd>
+                {% endif %}
+                {% if application.deadline %}<dt>Frist</dt><dd class="tabular-nums">{{ application.deadline|date:"d.m.Y" }}</dd>{% endif %}
+                {% if application.received_by %}
+                <dt>Angenommen von</dt>
+                <dd>{{ application.received_by.user.email }}{% if application.received_at %}<br><span class="tabular-nums text-gray-600 dark:text-gray-400">{{ application.received_at|date:"d.m.Y H:i" }}</span>{% endif %}</dd>
+                {% endif %}
+            </c-ui.angaben>
+        </c-rahmen.abschnitt>
+
+        {% if application.co_signers %}
+        <c-rahmen.abschnitt titel="Mitzeichner" titel_id="mitzeichner-titel">
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.co_signers }}</p>
+        </c-rahmen.abschnitt>
+        {% endif %}
+
+        {% if application.processing_notes %}
+        <c-rahmen.abschnitt titel="Bearbeitungsnotizen" titel_id="notizen-titel">
+            <p class="mt-2 text-sm text-gray-800 dark:text-gray-200 whitespace-pre-wrap break-words">{{ application.processing_notes }}</p>
+        </c-rahmen.abschnitt>
+        {% endif %}
+    </aside>
+</div>
+{% endblock %}

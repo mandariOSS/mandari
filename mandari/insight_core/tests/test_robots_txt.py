@@ -17,6 +17,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import Client
+from mandari_oparl.crawler import INFO_URL
 
 from insight_core.models import OParlBody, OParlFile, OParlPerson, OParlSource
 from insight_core.services import document_extraction, file_cache, person_photos, robots
@@ -107,8 +108,12 @@ class TestPruefung:
 
 
 def _wortfilter(agent: str) -> tuple[int, bytes]:
-    """Server, der „crawler“ im User-Agent mit 403 beantwortet, auch für /robots.txt."""
-    return (403, b"") if "crawler" in agent else (200, NUR_DOKUMENTE_GESPERRT)
+    """
+    Server, der unsere Kennung an der Infoseite im User-Agent erkennt und mit 403 beantwortet, auch für /robots.txt.
+
+    So traf früher ein Wortfilter auf „crawler“ die Infoseite ``/crawler/`` (#1061).
+    """
+    return (403, b"") if INFO_URL in agent else (200, NUR_DOKUMENTE_GESPERRT)
 
 
 KENNUNG_OHNE_INFOSEITE = "mandari-ingestor (+https://mandari.de; support@mandari.de)"
@@ -136,7 +141,7 @@ class TestUserAgentDerQuelle:
         monkeypatch.setattr(file_cache, "cache_root", lambda: tmp_path)
         datei = _datei(_quelle({"download_headers": {"User-Agent": KENNUNG_OHNE_INFOSEITE}}))
         gesehen: list[str] = []
-        assert file_cache.fetch_and_cache(datei, client=_pdf_client(gesehen)) == "robots"
+        assert file_cache.fetch_and_cache(datei, client=_pdf_client(gesehen)) == "refused"
         assert gesehen == []
 
 
@@ -147,14 +152,17 @@ class TestNichtErreichbar:
     def _stoerung(self, robots_txt: dict[str, Any]) -> None:
         robots_txt["antworten"]["rat.example.de"] = (503, b"")
 
-    def test_dokument_cache_vermerkt_nichts(self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_dokument_cache_wiederholt_spaeter(self, tmp_path: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Nicht erreichbar ist keine Sperre: Wiederholung nach 15 Minuten (Issue #919), kein Abruf der Datei."""
         monkeypatch.setattr(file_cache, "cache_root", lambda: tmp_path)
         datei = _datei(_quelle())
         gesehen: list[str] = []
-        assert file_cache.fetch_and_cache(datei, client=_pdf_client(gesehen)) == "deferred"
+        assert file_cache.fetch_and_cache(datei, client=_pdf_client(gesehen)) == "retry"
         assert gesehen == []
         datei.refresh_from_db()
-        assert (datei.local_status, datei.local_error) == ("none", "")
+        assert (datei.local_status, datei.fetch_error, datei.fetch_attempts) == ("retry", "robots_unerreichbar", 1)
+        assert datei.fetch_next_at is not None
+        assert datei.text_extraction_status == "pending", "ein Abruffehler ändert die Texterkennung nie"
 
     def test_textextraktion_bleibt_wartend(self, monkeypatch: pytest.MonkeyPatch) -> None:
         def kein_client(*_a: Any, **_kw: Any) -> Any:
@@ -164,14 +172,6 @@ class TestNichtErreichbar:
         with pytest.raises(document_extraction.RobotsUnreachableError) as fehler:
             document_extraction.download_and_extract(url="https://rat.example.de/dokumente/a.pdf")
         assert not isinstance(fehler.value, document_extraction.RobotsBlockedError)
-
-        from insight_core.management.commands.extract_texts import Command as ExtractTexts
-
-        datei = _datei(_quelle())
-        ergebnis = ExtractTexts()._process_file(datei, False)
-        assert ergebnis["deferred"] is True and not ergebnis.get("skipped")
-        datei.refresh_from_db()
-        assert datei.text_extraction_status == "pending" and not datei.text_extraction_error
 
     def test_personenfoto_vermerkt_nichts(self) -> None:
         person = OParlPerson.objects.create(
@@ -210,10 +210,16 @@ class TestDokumentCache:
         monkeypatch.setattr(file_cache, "cache_root", lambda: tmp_path)
         datei = _datei(_quelle())
         gesehen: list[str] = []
-        assert file_cache.fetch_and_cache(datei, client=_pdf_client(gesehen)) == "robots"
+        assert file_cache.fetch_and_cache(datei, client=_pdf_client(gesehen)) == "refused"
         assert gesehen == []
         datei.refresh_from_db()
-        assert datei.local_status == "error" and datei.local_error.startswith("robots.txt sperrt")
+        assert datei.local_status == "refused" and datei.local_error.startswith("robots.txt sperrt")
+        assert datei.fetch_error == "robots"
+        # Nach einer Freigabe (robots_override) wieder in der Warteschlange
+        assert datei.body is not None
+        assert robots.requeue_blocked_files(datei.body.source)["file_cache"] == 1
+        datei.refresh_from_db()
+        assert (datei.local_status, datei.fetch_error) == ("none", "")
 
     def test_ausnahme_laedt_und_nutzt_eigenen_user_agent(
         self, robots_txt: dict[str, Any], tmp_path: Any, monkeypatch: pytest.MonkeyPatch
@@ -224,7 +230,7 @@ class TestDokumentCache:
         gesehen: list[str] = []
         assert file_cache.fetch_and_cache(datei, client=_pdf_client(gesehen)) == "ok"
         assert gesehen == ["https://rat.example.de/dokumente/vorlage.pdf"]
-        assert file_cache.USER_AGENT == "mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)"
+        assert file_cache.USER_AGENT == "mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)"
         assert person_photos.USER_AGENT == file_cache.USER_AGENT
 
 

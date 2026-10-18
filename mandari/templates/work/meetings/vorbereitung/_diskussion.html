@@ -22,7 +22,7 @@ WebSocket, sonst alle 5 Sekunden. Neuester Beitrag oben, Eingabe unten fest. Ent
                 <span x-text="note.visibility_display"></span>
                 <span x-show="note.organization && note.is_own_org === false" x-text="'· ' + note.organization"></span>
                 <template x-if="note.origin">
-                    <a class="vb-textlink" :href="`/work/${orgSlug}/meetings/${note.origin.meeting_id}/prepare/`" x-text="'aus ' + note.origin.label"></a>
+                    <a class="wf-textlink" :href="`/work/${orgSlug}/meetings/${note.origin.meeting_id}/prepare/`" x-text="'aus ' + note.origin.label"></a>
                 </template>
             </p>
         </li>
@@ -31,19 +31,19 @@ WebSocket, sonst alle 5 Sekunden. Neuester Beitrag oben, Eingabe unten fest. Ent
 <p class="vb-leer-text klein" x-show="thread.length === 0 && !threadLoading">Noch keine Beiträge zu diesem TOP.</p>
 <div class="vb-schreiben">
     <label for="beitrag-neu" class="sr-only">Beitrag für die Organisation</label>
-    <textarea id="beitrag-neu" rows="3" class="vb-eingabe" x-model="newComment" placeholder="Beitrag für die Fraktion (Enter sendet)"
+    <textarea id="beitrag-neu" rows="3" class="wf-eingabe" x-model="newComment" placeholder="Beitrag für die Fraktion (Enter sendet)"
               @keydown.enter="if (!$event.shiftKey) { $event.preventDefault(); postComment(); }"></textarea>
     <div class="vb-schreiben-fuss">
         <label class="vb-klein-label">Sichtbar für
-            <select id="thread-visibility" class="vb-eingabe vb-auswahl klein" x-model="commentVisibility">
+            <select id="thread-visibility" class="wf-eingabe wf-auswahl klein" x-model="commentVisibility">
                 {% for code, label in visibility_choices %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
             </select>
         </label>
-        <label class="vb-haken" title="Beitrag als Position der Fraktion markieren">
+        <label class="wf-haken" title="Beitrag als Position der Fraktion markieren">
             <input type="checkbox" x-model="commentIsPosition"> Position der Fraktion
         </label>
         <span class="vb-platz"></span>
-        <button type="button" class="vb-knopf" @click="postComment()" :disabled="!newComment.trim()">
+        <button type="button" class="wf-knopf" @click="postComment()" :disabled="!newComment.trim()">
             <i data-lucide="send" aria-hidden="true"></i>Senden
         </button>
     </div>

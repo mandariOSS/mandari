@@ -1,0 +1,100 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Allgemein › API im neuen Erscheinungsbild (Issue #951): öffentliche Fraktions-API v1 mit Stand,
+Optionen (section=api_save), Basis-URL, Einbindungs-Snippet und Token erneuern (section=api_regenerate mit Rückfrage).
+Felder und Formulare wie bisher (work/organization/api_settings.html); Abrufzahlen stehen als Angaben statt Kacheln.
+Kontext: OrganizationApiSettingsView.
+{% endcomment %}
+
+{% block page_title %}API{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="API" dicht
+    text="Öffentliche Sitzungstermine und Tagesordnungen von {{ organization.name }} als JSON für die eigene Webseite. Nicht-öffentliche Inhalte, Protokolle und Teilnehmende liefert die API nie aus." />
+{% include "work/organization/neu/_reiter.html" with seite="api" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="api" %}
+    <div class="min-w-0 flex-1 grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+        <c-rahmen.abschnitt titel="Öffentliche API (v1)" titel_id="api-titel">
+            <c-ui.angaben class="mt-3">
+                <dt>Stand</dt>
+                <dd>{% include "work/organization/neu/_status.html" with an=api_access.is_enabled %}{% if api_access.is_enabled %}Aktiv{% else %}Ausgeschaltet{% endif %}</dd>
+                <dt>Abrufe</dt>
+                <dd class="tabular-nums">{{ api_access.request_count }}</dd>
+                <dt>Letzter Abruf</dt>
+                <dd>{% if api_access.last_request_at %}{{ api_access.last_request_at|date:"d.m.Y H:i" }}{% else %}noch keiner{% endif %}</dd>
+            </c-ui.angaben>
+
+            <form method="post" class="mt-6 space-y-4">
+                {% csrf_token %}
+                <input type="hidden" name="section" value="api_save">
+                <c-form.checkbox name="api_enabled" id="api_enabled" :checked="api_access.is_enabled" label="Öffentliche API einschalten" dicht />
+                <div class="grid gap-4 sm:grid-cols-3">
+                    {% include "work/organization/neu/_zahl.html" with name="api_past_days" id="api_past_days" label="Vergangenheit (Tage)" value=api_access.past_days min=0 max=3650 hilfe="Wie weit zurück Sitzungen erscheinen" %}
+                    {% include "work/organization/neu/_zahl.html" with name="api_future_days" id="api_future_days" label="Zukunft (Tage)" value=api_access.future_days min=1 max=3650 hilfe="Wie weit voraus Termine erscheinen" %}
+                    {% include "work/organization/neu/_zahl.html" with name="api_cache_seconds" id="api_cache_seconds" label="Cache (Sekunden)" value=api_access.cache_seconds min=0 max=86400 hilfe="Cache-Control max-age der Antworten" %}
+                </div>
+                <div class="flex flex-wrap gap-x-8 gap-y-2">
+                    <c-form.checkbox name="api_show_location" id="api_show_location" :checked="api_access.show_location" label="Sitzungsort ausliefern" dicht />
+                    <c-form.checkbox name="api_show_agenda" id="api_show_agenda" :checked="api_access.show_agenda" label="Tagesordnung ausliefern (nur öffentliche TOPs)" dicht />
+                </div>
+                <c-form.textarea name="api_allowed_origins" id="api_allowed_origins" label="Erlaubte Origins (CORS)" rows="2" value="{{ api_access.allowed_origins }}"
+                                 placeholder="https://fraktion-beispiel.de, https://www.fraktion-beispiel.de" dicht
+                                 help="Von welchen Webseiten der Browser die API einbinden darf, kommagetrennt mit https://. Leer: alle Webseiten." />
+                <c-ui.button type="submit" size="sm">API-Einstellungen speichern</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Zugang und Einbindung" titel_id="einbindung-titel">
+            <div class="mt-3 space-y-5">
+                <div>
+                    <label for="api-basis-url" class="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">Basis-URL Ihres API-Zugangs</label>
+                    <input id="api-basis-url" type="text" readonly value="{{ api_base_url }}" data-action="select"
+                           class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-grau text-sm font-mono text-gray-800 dark:text-gray-200">
+                    <c-form.hinweis>
+                        <c-ui.textlink href="{{ api_openapi_url }}" extern>Schema (OpenAPI, JSON)</c-ui.textlink>
+                        <span class="mx-1" aria-hidden="true">·</span>
+                        <c-ui.textlink href="{{ docs_url }}" extern>Dokumentation und Anleitung</c-ui.textlink>
+                    </c-form.hinweis>
+                </div>
+
+                <div x-data="{ copied: false }">
+                    <div class="flex items-center justify-between gap-2 mb-1">
+                        <p id="snippet-titel" class="text-sm font-medium text-gray-800 dark:text-gray-200">Einbindungs-Snippet für Ihre Webseite</p>
+                        <c-ui.text-button dicht
+                                @click="navigator.clipboard.writeText($refs.snippet.textContent).then(() => { copied = true; setTimeout(() => copied = false, 2000); })">
+                            <span x-show="!copied">Kopieren</span><span x-show="copied" x-cloak aria-live="polite">Kopiert</span>
+                        </c-ui.text-button>
+                    </div>
+                    <pre x-ref="snippet" aria-labelledby="snippet-titel" class="text-xs leading-relaxed bg-band-grau rounded-md p-3 overflow-x-auto text-gray-800 dark:text-gray-200"><code>&lt;div id="fraktions-termine"&gt;Termine werden geladen…&lt;/div&gt;
+&lt;script&gt;
+fetch("{{ api_meetings_url }}")
+  .then(r =&gt; r.json())
+  .then(data =&gt; {
+    const el = document.getElementById("fraktions-termine");
+    const kommende = data.meetings.filter(m =&gt; new Date(m.start) &gt;= new Date() &amp;&amp; !m.cancelled);
+    if (!kommende.length) { el.textContent = "Aktuell keine öffentlichen Termine."; return; }
+    el.innerHTML = kommende.map(m =&gt;
+      "&lt;p&gt;&lt;strong&gt;" + new Date(m.start).toLocaleString("de-DE", {dateStyle: "medium", timeStyle: "short"}) +
+      "&lt;/strong&gt; — " + m.title + (m.location ? " (" + m.location + ")" : "") + "&lt;/p&gt;"
+    ).join("");
+  })
+  .catch(() =&gt; { document.getElementById("fraktions-termine").textContent = "Termine derzeit nicht verfügbar."; });
+&lt;/script&gt;</code></pre>
+                </div>
+
+                <form method="post" data-confirm="API-Token wirklich erneuern? Bestehende Einbindungen auf Ihrer Webseite funktionieren dann nicht mehr, bis die neue URL eingetragen ist.">
+                    {% csrf_token %}
+                    <input type="hidden" name="section" value="api_regenerate">
+                    <c-ui.text-button type="submit" variant="danger" dicht>API-Token erneuern</c-ui.text-button>
+                    <c-form.hinweis>Die bisherige Basis-URL gilt danach nicht mehr.</c-form.hinweis>
+                </form>
+            </div>
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

@@ -2,40 +2,40 @@
 Dialoge der Vorbereitung: Sitzungsnotizen der Organisation, Zusammenfassung, Legende, Anlage hinzufügen, Dokument
 als Redebeitrag verknüpfen; dazu das Blatt „Position“ am Handy. Fokusfalle und Escape über <c-ui.alpine-modal>.
 {% endcomment %}
-<c-ui.alpine-modal show="sitzungsnotizenOffen" size="md" aria-labelledby="sitzungsnotizen-titel">
-    <div class="vb-dialog">
+<c-ui.alpine-modal show="sitzungsnotizenOffen" size="md" labelledby="sitzungsnotizen-titel">
+    <div class="wf-dialog">
         <h2 id="sitzungsnotizen-titel">Sitzungsnotizen</h2>
         <p class="leise">Allgemeines zur ganzen Sitzung, für die gesamte Organisation sichtbar. Wird automatisch gespeichert.</p>
-        <textarea class="vb-eingabe vb-dialog-text" x-model="orgNotes" aria-labelledby="sitzungsnotizen-titel"
+        <textarea class="wf-eingabe vb-dialog-text" x-model="orgNotes" aria-labelledby="sitzungsnotizen-titel"
                   @input="queue('org-notes', () => saveOrgNotes())"
                   placeholder="Organisatorisches, Absprachen, Hinweise zur ganzen Sitzung"></textarea>
-        <div class="vb-dialog-fuss">
+        <div class="wf-dialog-fuss">
             <span class="leise" x-text="speicherText"></span>
-            <button type="button" class="vb-knopf" @click="sitzungsnotizenOffen = false">Schließen</button>
+            <button type="button" class="wf-knopf" @click="sitzungsnotizenOffen = false">Schließen</button>
         </div>
     </div>
 </c-ui.alpine-modal>
 
-<c-ui.alpine-modal show="showSummary" size="lg" panel_class="max-h-[85vh] overflow-y-auto" aria-labelledby="zusammenfassung-titel">
-    <div class="vb-dialog">
-        <div class="vb-dialog-kopf">
+<c-ui.alpine-modal show="showSummary" size="lg" panel_class="max-h-[85vh] overflow-y-auto" labelledby="zusammenfassung-titel">
+    <div class="wf-dialog">
+        <div class="wf-dialog-kopf">
             <h2 id="zusammenfassung-titel">Zusammenfassung der Vorbereitung</h2>
-            <button type="button" class="vb-knopf vb-leise vb-ik" @click="showSummary = false" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+            <button type="button" class="wf-knopf wf-leise wf-ik" @click="showSummary = false" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
         </div>
         <p class="leise" x-show="summaryLoading">Zusammenfassung wird geladen …</p>
         <div x-show="!summaryLoading" x-html="summaryHtml"></div>
     </div>
 </c-ui.alpine-modal>
 
-<c-ui.alpine-modal show="showLegend" size="sm" aria-labelledby="legende-titel">
-    <div class="vb-dialog">
-        <div class="vb-dialog-kopf">
+<c-ui.alpine-modal show="showLegend" size="sm" labelledby="legende-titel">
+    <div class="wf-dialog">
+        <div class="wf-dialog-kopf">
             <h2 id="legende-titel">Legende</h2>
-            <button type="button" class="vb-knopf vb-leise vb-ik" @click="showLegend = false" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+            <button type="button" class="wf-knopf wf-leise wf-ik" @click="showLegend = false" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
         </div>
         <h3 class="vb-feldname">Positionen</h3>
         <ul class="vb-legende">
-            {% for code, label, klasse in positionen_alle %}<li><span class="punkt {{ klasse }}" aria-hidden="true"></span>{{ label }}</li>{% endfor %}
+            {% for code, label, klasse in positionen_alle %}<li><span class="wf-punkt {{ klasse }}" aria-hidden="true"></span>{{ label }}</li>{% endfor %}
         </ul>
         <h3 class="vb-feldname">Zeichen in der Tagesordnung</h3>
         <ul class="vb-legende">
@@ -49,38 +49,38 @@ als Redebeitrag verknüpfen; dazu das Blatt „Position“ am Handy. Fokusfalle 
     </div>
 </c-ui.alpine-modal>
 
-<c-ui.alpine-modal show="anlageOffen" size="md" aria-labelledby="anlage-titel">
-    <div class="vb-dialog">
-        <div class="vb-dialog-kopf">
+<c-ui.alpine-modal show="anlageOffen" size="md" labelledby="anlage-titel">
+    <div class="wf-dialog">
+        <div class="wf-dialog-kopf">
             <h2 id="anlage-titel">Anlage hinzufügen</h2>
-            <button type="button" class="vb-knopf vb-leise vb-ik" @click="anlageOffen = false" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+            <button type="button" class="wf-knopf wf-leise wf-ik" @click="anlageOffen = false" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
         </div>
         <label class="vb-feldname" for="anlage-datei">Datei</label>
         <input id="anlage-datei" type="file" class="vb-datei" @change="uploadFile($event)" :disabled="uploading">
         <p class="leise" x-show="uploading">Datei wird hochgeladen …</p>
         <p class="vb-feldname">Oder Link</p>
         <div class="vb-link-zeile">
-            <input type="text" class="vb-eingabe" x-model="newLinkTitle" placeholder="Titel" aria-label="Titel des Links">
-            <input type="url" class="vb-eingabe" x-model="newLinkUrl" placeholder="https://…" aria-label="Adresse des Links" @keydown.enter.prevent="addLink()">
-            <button type="button" class="vb-knopf" @click="addLink()" :disabled="!newLinkTitle.trim() || !newLinkUrl.trim()">Link anhängen</button>
+            <input type="text" class="wf-eingabe" x-model="newLinkTitle" placeholder="Titel" aria-label="Titel des Links">
+            <input type="url" class="wf-eingabe" x-model="newLinkUrl" placeholder="https://…" aria-label="Adresse des Links" @keydown.enter.prevent="addLink()">
+            <button type="button" class="wf-knopf" @click="addLink()" :disabled="!newLinkTitle.trim() || !newLinkUrl.trim()">Link anhängen</button>
         </div>
-        <label class="vb-haken" x-show="selectedItem && selectedItem.paper">
+        <label class="wf-haken" x-show="selectedItem && selectedItem.paper">
             <input type="checkbox" x-model="attachToPaper"> An der Vorlage speichern – in allen beratenden Gremien sichtbar
         </label>
     </div>
 </c-ui.alpine-modal>
 
-<c-ui.alpine-modal show="docModalOpen" size="md" aria-labelledby="verknuepfen-titel">
-    <div class="vb-dialog">
-        <div class="vb-dialog-kopf">
+<c-ui.alpine-modal show="docModalOpen" size="md" labelledby="verknuepfen-titel">
+    <div class="wf-dialog">
+        <div class="wf-dialog-kopf">
             <h2 id="verknuepfen-titel">Dokument als Redebeitrag verknüpfen</h2>
-            <button type="button" class="vb-knopf vb-leise vb-ik" @click="docModalOpen = false" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+            <button type="button" class="wf-knopf wf-leise wf-ik" @click="docModalOpen = false" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
         </div>
-        <input type="search" class="vb-eingabe" x-model="docQuery" @input="queue('doc-search', () => searchDocs(), 300)"
+        <input type="search" class="wf-eingabe" x-model="docQuery" @input="queue('doc-search', () => searchDocs(), 300)"
                placeholder="Dokument suchen" aria-label="Dokument suchen">
-        <ul class="vb-dok-treffer">
+        <ul class="wf-treffer">
             <template x-for="doc in docResults" :key="doc.id">
-                <li><button type="button" @click="linkDocument(doc)"><b x-text="doc.title"></b><span x-text="'Zuletzt geändert ' + fmtDateTime(doc.updated_at)"></span></button></li>
+                <li><button type="button" @click="linkDocument(doc)"><b x-text="doc.title"></b><small x-text="'Zuletzt geändert ' + fmtDateTime(doc.updated_at)"></small></button></li>
             </template>
         </ul>
         <p class="leise" x-show="docResults.length === 0 && !docSearching">Keine Dokumente gefunden.</p>
@@ -93,7 +93,7 @@ als Redebeitrag verknüpfen; dazu das Blatt „Position“ am Handy. Fokusfalle 
          x-trap.inert="blatt === 'position'" @keydown.escape="schliesseBlatt()">
     <div class="vb-blatt-kopf sichtbar">
         <h2 id="pos-blatt-titel">Position der Fraktion</h2>
-        <button type="button" class="vb-knopf vb-leise vb-ik" @click="schliesseBlatt()" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+        <button type="button" class="wf-knopf wf-leise wf-ik" @click="schliesseBlatt()" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
     </div>
     <template x-if="selectedItem">
         <div class="vb-pos-blatt-inhalt">
@@ -102,19 +102,19 @@ als Redebeitrag verknüpfen; dazu das Blatt „Position“ am Handy. Fokusfalle 
                 {% for code, label, klasse in positionen_haupt %}
                 <label class="vb-pos">
                     <input type="radio" name="position-blatt" value="{{ code }}" :checked="selectedItem.position === '{{ code }}'" @change="setPosition('{{ code }}')">
-                    <span class="punkt {{ klasse }}" aria-hidden="true"></span>{{ label }}
+                    <span class="wf-punkt {{ klasse }}" aria-hidden="true"></span>{{ label }}
                 </label>
                 {% endfor %}
-                <select class="vb-eingabe vb-auswahl" :class="istAndere && 'gewaehlt'" aria-label="Andere Position"
+                <select class="wf-eingabe wf-auswahl" :class="istAndere && 'gewaehlt'" aria-label="Andere Position"
                         :value="istAndere ? selectedItem.position : ''" @change="setzeAndere($event.target.value)">
                     <option value="">Andere …</option>
                     {% for code, label in positionen_andere %}<option value="{{ code }}">{{ label }}</option>{% endfor %}
                 </select>
             </fieldset>
-            <label class="vb-haken">
+            <label class="wf-haken">
                 <input type="checkbox" x-model="selectedItem.isFinal" @change="endgueltigSetzen()"> Position ist endgültig
             </label>
-            <button type="button" class="vb-textlink" @click="schliesseBlatt(); reiterWaehlen('begruendung')">Begründung schreiben</button>
+            <button type="button" class="wf-textlink" @click="schliesseBlatt(); reiterWaehlen('begruendung')">Begründung schreiben</button>
         </div>
     </template>
 </section>

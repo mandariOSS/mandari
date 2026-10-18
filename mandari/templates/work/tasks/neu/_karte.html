@@ -1,0 +1,27 @@
+{% comment %}
+Aufgabenkarte im neuen Erscheinungsbild (Issue #951): ohne farbigen Rand, Labels als Punkt mit Text (data-card-label
+für labelPicker.deleteLabel), Fälligkeit und Priorität als Text. Die Kopplung an kanbanBoard bleibt: Kennung
+task-card-<id> (OOB-Austausch), Klasse task-card (SortableJS, Platzhalter), data-id, draggable und das Ereignis
+open-panel. Mit Tastatur: Enter oder Leertaste öffnet die Aufgabe. Kontext: task, organization; ``oob`` (aus
+_karte_oob.html) tauscht die Karte per hx-swap-oob aus.
+{% endcomment %}
+<div id="task-card-{{ task.id }}"{% if oob %} hx-swap-oob="outerHTML"{% endif %} data-id="{{ task.id }}" draggable="true" role="button" tabindex="0"
+     @click="$dispatch('open-panel', { id: '{{ task.id }}' })" @keydown.enter.prevent="$dispatch('open-panel', { id: '{{ task.id }}' })" @keydown.space.prevent="$dispatch('open-panel', { id: '{{ task.id }}' })"
+     class="task-card block cursor-pointer rounded-md border border-gray-200 dark:border-gray-800 bg-band-hell px-3 py-2.5 hover:border-gray-400 dark:hover:border-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-600">
+    <p class="text-sm font-medium text-gray-900 dark:text-white line-clamp-2 break-words {% if task.is_completed %}line-through text-gray-600 dark:text-gray-400{% endif %}">{{ task.title|truncatechars:80 }}</p>
+    {% if task.description %}<p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 line-clamp-1">{{ task.description|truncatechars:60 }}</p>{% endif %}
+    {% if task.labels.all %}
+    <p class="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300">
+        {% for label in task.labels.all|slice:":4" %}<span data-card-label="{{ label.id }}" class="inline-flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-{{ label.color }}-500" aria-hidden="true"></span>{{ label.name }}</span>{% endfor %}
+    </p>
+    {% endif %}
+    <p class="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+        {% if task.due_date %}<span class="{% if task.is_overdue %}font-medium text-red-700 dark:text-red-400{% endif %}">{{ task.due_date|date:"d.m." }}{% if task.is_overdue %} überfällig{% endif %}</span>{% endif %}
+        {% if task.priority == 'urgent' %}<span class="font-medium text-red-700 dark:text-red-400">Dringend</span>{% elif task.priority == 'high' %}<span class="font-medium text-gray-800 dark:text-gray-200">Hoch</span>{% endif %}
+        {% if task.assigned_to %}<span class="truncate max-w-[10rem]">{{ task.assigned_to.user.get_display_name }}</span>{% endif %}
+        {% with progress=task.checklist_progress %}{% if progress.1 > 0 %}<span class="inline-flex items-center gap-1"><i data-lucide="check-square" class="w-3.5 h-3.5" aria-hidden="true"></i>{{ progress.0 }}/{{ progress.1 }}<span class="sr-only"> Punkte erledigt</span></span>{% endif %}{% endwith %}
+        {% if task.attachment_count > 0 %}<span class="inline-flex items-center gap-1"><i data-lucide="paperclip" class="w-3.5 h-3.5" aria-hidden="true"></i>{{ task.attachment_count }}<span class="sr-only"> Anhänge</span></span>{% endif %}
+        {% if task.related_meeting or task.related_motion or task.related_faction_meeting %}<span class="inline-flex" title="Verknüpft"><i data-lucide="link" class="w-3.5 h-3.5" aria-hidden="true"></i><span class="sr-only">Verknüpft</span></span>{% endif %}
+        <span class="inline-flex" title="{{ task.get_visibility_display }}"><i data-lucide="{% if task.visibility == 'shared' %}users{% elif task.visibility == 'organization' %}building{% else %}lock{% endif %}" class="w-3.5 h-3.5" aria-hidden="true"></i><span class="sr-only">{{ task.get_visibility_display }}</span></span>
+    </p>
+</div>

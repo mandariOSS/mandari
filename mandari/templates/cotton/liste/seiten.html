@@ -1,0 +1,28 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Seitenwahl der Listen, gemeinsam für Insight und Work (Issues #841, #853): behält Suche und Filter der Anfrage
+(seiten_url), Pfeile mit Namen. Im Bürgerportal sind die Ziele mindestens 44 px groß, ``dicht`` (Work) 32 px.
+  <c-liste.seiten :seite="page_obj" />
+  <c-liste.seiten :seite="papers" dicht />
+{% endcomment %}
+<c-vars seite="" dicht="" />
+{% load insight_listen %}
+{% if seite.has_other_pages %}
+<nav aria-label="Seiten" class="{% if dicht %}mt-4{% else %}mt-6{% endif %} flex justify-center">
+    <ul class="flex flex-wrap items-center justify-center gap-1">
+        {% if seite.has_previous %}
+        <li><a href="{% seiten_url seite.previous_page_number %}" aria-label="Vorherige Seite" class="inline-flex items-center justify-center {% if dicht %}min-w-8 h-8 px-2 rounded-md text-sm{% else %}min-w-11 h-11 px-3 rounded-lg{% endif %} text-gray-700 dark:text-gray-300 hover:bg-band-grau"><i data-lucide="chevron-left" class="{% if dicht %}w-4 h-4{% else %}w-5 h-5{% endif %}" aria-hidden="true"></i></a></li>
+        {% endif %}
+        {% for num in seite.paginator.page_range %}
+        {% if seite.number == num %}
+        <li><span aria-current="page" class="inline-flex items-center justify-center {% if dicht %}min-w-8 h-8 px-2 rounded-md text-sm{% else %}min-w-11 h-11 px-3 rounded-lg{% endif %} bg-primary-600 text-white font-medium">{{ num }}</span></li>
+        {% elif num > seite.number|add:'-3' and num < seite.number|add:'3' %}
+        <li><a href="{% seiten_url num %}" class="inline-flex items-center justify-center {% if dicht %}min-w-8 h-8 px-2 rounded-md text-sm{% else %}min-w-11 h-11 px-3 rounded-lg{% endif %} text-gray-700 dark:text-gray-300 hover:bg-band-grau">{{ num }}</a></li>
+        {% endif %}
+        {% endfor %}
+        {% if seite.has_next %}
+        <li><a href="{% seiten_url seite.next_page_number %}" aria-label="Nächste Seite" class="inline-flex items-center justify-center {% if dicht %}min-w-8 h-8 px-2 rounded-md text-sm{% else %}min-w-11 h-11 px-3 rounded-lg{% endif %} text-gray-700 dark:text-gray-300 hover:bg-band-grau"><i data-lucide="chevron-right" class="{% if dicht %}w-4 h-4{% else %}w-5 h-5{% endif %}" aria-hidden="true"></i></a></li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}

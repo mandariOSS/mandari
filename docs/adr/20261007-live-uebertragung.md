@@ -29,7 +29,8 @@ einem Einzelbild je rund 10 Sekunden TOP, Name und Fraktion zuverlässig liest (
   `status(info) → StreamStatus` (online, Phase vorher/live/nachher/unbekannt, Tafeltext, Zuschauerzahl,
   Rohdaten ohne Bild-Adressen), `einbettung_url(kennung)`. Zum Start `3q` (Player-Konfiguration und
   Streamstatus) und `hls` (allgemein: Playlist erreichbar und ohne `#EXT-X-ENDLIST`). Alle Abrufe nur über https,
-  mit Zeit- und Größengrenzen und dem User-Agent „mandari (+https://mandari.de)“.
+  mit Zeit- und Größengrenzen und dem User-Agent „mandari (+https://mandari.de)“ (seit #1036 dieselbe Kennung und
+  ein Takt je Server wie alle Abrufe bei Diensten, `insight_core/services/dienste.py`).
 - **Zeitfenster aus OParl**: Abgefragt wird nur rund um die Sitzungen des Gremiums einer aktiven Quelle (Beginn
   − 45 Minuten bis Beginn + 10 Stunden), einmal je Minute (Zeitplan `live_status_abfragen`, verpasste Termine
   ausgelassen). Zustände: geplant → live → beendet, bzw. nicht übertragen, wenn bis 3 Stunden nach Beginn nichts

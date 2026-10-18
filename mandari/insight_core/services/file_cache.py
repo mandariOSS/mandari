@@ -18,10 +18,22 @@ Storage Box mounten lässt:
 Ein Festplatten-Schutz (FILE_CACHE_MIN_FREE_GB) verhindert, dass der Cache das
 Systemlaufwerk vollschreibt.
 
-Nur gelistete Kommunen werden zwischengespeichert. Ausgeblendete Quellen (Piloten, Tests)
-luden sonst ihr ganzes Archiv nach – im September 2026 rund 46 GB, knapp die Hälfte des
-Caches, für Kommunen, die niemand im Portal sieht. Wird eine Kommune gelistet, füllt sich ihr
-Cache von selbst; ``prune_file_cache --unlisted`` räumt den Bestand ausgeblendeter Kommunen ab.
+Abgerufen wird nur über ``hub.ris.abruf`` (Issue #919, ein Weg zur Quelle): Zustände, Wiederholungen und
+Beanspruchung stehen dort. Dieses Modul ist die Fassade für ``insight_core`` (``fetch_and_cache``,
+``pending_queryset``, ``cache_pending``, ``stores_file``) und hält Pfade, Ablegen und Statistik.
+
+Abgelegt werden gelistete Kommunen; mit ``TEXT_EXTRACTION_RUNNER=worker`` alle Quellen mit erlaubtem Abruf ab
+ihrem Stichtag (``hub.ris.abruf.stores_file``). Ausgeblendete Quellen (Piloten, Tests) luden früher ihr ganzes
+Archiv nach – im September 2026 rund 46 GB, knapp die Hälfte des Caches, für Kommunen, die niemand im Portal
+sieht. Wird eine Kommune gelistet, füllt sich ihr Cache von selbst – mit ``TEXT_EXTRACTION_RUNNER=worker`` und
+gesetztem Stichtag (``document_since``) nur ab dem Stichtag; ihren Altbestand legt erst ``document_backfill`` ab
+(``docs/FILE_CACHE.md``, „Ablage für alle Quellen“). ``prune_file_cache --unlisted`` räumt den Bestand
+ausgeblendeter Kommunen ab, die nichts ablegen.
+
+Die Gesamtgröße lässt sich begrenzen (``FILE_CACHE_MAX_TOTAL_GB``, Issue #961): Darüber verdrängt das stündliche
+Aufräumen die am wenigsten gebrauchten Dokumente (``services/file_cache_limit.py``), und ``cache_pending`` lädt nur
+bis zur Grenze nach. Verdrängte Dokumente (``evicted``) holt der Abrufweg nur ausdrücklich: die Vorschau bei Bedarf
+und ``cache_files --verdraengte``.
 """
 
 import hashlib
@@ -29,10 +41,7 @@ import logging
 import os
 import re
 import shutil
-import tempfile
-import time
 from collections import Counter
-from datetime import timedelta
 from pathlib import Path
 from typing import IO
 
@@ -40,7 +49,6 @@ from django.conf import settings
 from django.db.models import Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
-from mandari_oparl.abgleich import looks_like_html
 
 from . import robots
 
@@ -51,10 +59,14 @@ logger = logging.getLogger(__name__)
 USER_AGENT = robots.USER_AGENT
 STATUS_CHOICES = [
     ("none", "Nicht zwischengespeichert"),
+    ("fetching", "Wird abgerufen"),
     ("ok", "Lokal vorhanden"),
-    ("missing", "Quelle liefert 404"),
+    ("retry", "Abruf wird wiederholt"),
+    ("missing", "Quelle liefert 404/410"),
+    ("refused", "Quelle verweigert den Abruf"),
     ("error", "Fehler beim Abruf"),
     ("too_large", "Zu groß für den Cache"),
+    ("evicted", "Verdrängt (bei Bedarf neu abrufbar)"),
 ]
 _UMLAUTS = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue"})
 
@@ -64,8 +76,17 @@ def cache_root() -> Path:
 
 
 def caches_body(body) -> bool:
-    """Werden Dokumente dieser Kommune zwischengespeichert? Nur, wenn sie im Portal gelistet ist."""
-    return bool(getattr(body, "is_listed", True))
+    """Legt diese Kommune überhaupt Dokumente ab (gelistet bzw. Ablage für alle, ``hub.ris.abruf.stores_body``)?"""
+    from hub.ris import abruf
+
+    return abruf.stores_body(body)
+
+
+def stores_file(file_obj) -> bool:
+    """Wird diese Datei abgelegt (Regel der Ablage samt Stichtag, ``hub.ris.abruf.stores_file``)?"""
+    from hub.ris import abruf
+
+    return abruf.stores_file(file_obj)
 
 
 def max_bytes() -> int:
@@ -109,10 +130,11 @@ def downloads_disabled(body) -> bool:
     source = getattr(body, "source", None) if body is not None else None
     if source is None:
         return False
-    return _downloads_disabled_in(source.sync_config)
+    return downloads_disabled_in(source.sync_config)
 
 
-def _downloads_disabled_in(sync_config) -> bool:
+def downloads_disabled_in(sync_config) -> bool:
+    """Schaltet ``sync_config`` den Dateiabruf ab (``file_downloads`` ist ``false``)?"""
     return isinstance(sync_config, dict) and sync_config.get(FILE_DOWNLOADS_KEY) is False
 
 
@@ -123,7 +145,7 @@ def sources_without_downloads() -> list:
     """
     from ..models import OParlSource
 
-    return [pk for pk, config in OParlSource.objects.values_list("pk", "sync_config") if _downloads_disabled_in(config)]
+    return [pk for pk, config in OParlSource.objects.values_list("pk", "sync_config") if downloads_disabled_in(config)]
 
 
 def source_paused(body) -> bool:
@@ -136,12 +158,6 @@ def source_paused(body) -> bool:
     if source is None:
         return False
     return (source.consecutive_failures or 0) >= backoff_failures()
-
-
-def http_timeout():
-    import httpx
-
-    return httpx.Timeout(connect=10.0, read=30.0, write=10.0, pool=10.0)
 
 
 # =============================================================================
@@ -261,14 +277,6 @@ def content_type_for(file_obj, fallback: str = "application/octet-stream") -> st
 # =============================================================================
 
 
-def _mark(file_obj, status: str, error: str = "") -> str:
-    file_obj.local_status = status
-    file_obj.local_error = error[:500]
-    file_obj.local_cached_at = timezone.now() if status == "ok" else file_obj.local_cached_at
-    file_obj.save(update_fields=["local_status", "local_error", "local_cached_at"])
-    return status
-
-
 def store_bytes(file_obj, data: bytes, *, content_type: str | None = None) -> Path:
     """Datei atomar ablegen und Metadaten (Pfad, Größe, Hash, Status) setzen."""
     from . import file_store
@@ -319,6 +327,10 @@ def _record_stored(file_obj, path: Path, size: int, sha256: str, content_type: s
     file_obj.local_status = "ok"
     file_obj.local_error = ""
     file_obj.local_cached_at = timezone.now()
+    # Abruf gelungen: Zähler und Fehlercode des Abrufs zurück (Issue #919)
+    file_obj.fetch_attempts = 0
+    file_obj.fetch_next_at = None
+    file_obj.fetch_error = ""
     update_fields = [
         "local_path",
         "local_size",
@@ -327,6 +339,9 @@ def _record_stored(file_obj, path: Path, size: int, sha256: str, content_type: s
         "local_status",
         "local_error",
         "local_cached_at",
+        "fetch_attempts",
+        "fetch_next_at",
+        "fetch_error",
     ]
     if not file_obj.mime_type and content_type:
         file_obj.mime_type = content_type.split(";")[0].strip()[:100]
@@ -335,134 +350,44 @@ def _record_stored(file_obj, path: Path, size: int, sha256: str, content_type: s
     return path
 
 
-def fetch_and_cache(file_obj, client=None) -> str:
+def fetch_and_cache(file_obj, client=None, *, include_errors: bool = False, force: bool = False) -> str:
     """
-    Datei aus dem RIS laden und lokal ablegen.
+    Datei aus dem RIS laden und ablegen – über den einen Weg zur Quelle (``hub.ris.abruf.abrufen``).
 
-    Rückgabe: "ok", "missing", "error", "too_large", "disk_full", "skipped", "paused", "robots" (die
-    robots.txt sperrt die Datei; vermerkt, bis eine Freigabe sie neu einreiht) oder "deferred" (die robots.txt
-    ist nicht erreichbar; nichts vermerkt, der nächste Lauf versucht es erneut).
+    Rückgabe: neuer Zustand (``ok``, ``retry``, ``missing``, ``refused``, ``too_large``, ``error``) oder ein
+    Ergebnis ohne Zustand (``skipped``: schon abgelegt, beansprucht oder nicht fällig; ``paused``: Quelle in
+    Schonung bzw. Abruf abgeschaltet; ``excluded``: gelöscht, gesperrt oder geleert; ``disk_full``;
+    ``storage_error``: Ablage gestört, kein Quellabruf; ``busy``). ``include_errors``: auch nicht fällige
+    Fehler erneut versuchen; ``force``: jeden Zustand außer ``ok`` (Admin-Aktion von Hand).
     """
-    import httpx
+    from hub.ris import abruf
 
-    if local_file(file_obj):
-        if file_obj.local_status != "ok":
-            _mark(file_obj, "ok")
-        return "skipped"
-    if source_paused(file_obj.body) or downloads_disabled(file_obj.body):
-        return "paused"
-    url = file_obj.download_url or file_obj.access_url
-    if not url:
-        return _mark(file_obj, "error", "Keine Download-URL")
-    # robots.txt gilt auch für Dateien (RFC 9309), geprüft mit dem User-Agent des Abrufs; nach einer Freigabe
-    # reiht robots_override neu ein. Nicht erreichbar ist keine Sperre: nichts vermerken, später erneut.
-    decision = robots.check(
-        url, robots.KIND_FILES, sync_config=robots.sync_config_of(file_obj), agent=robots.user_agent_for(file_obj)
-    )
-    if decision.unreachable:
-        return "deferred"
-    if not decision.allowed:
-        _mark(file_obj, "error", decision.reason)
-        return "robots"
-
-    from . import host_pacing
-    from .safe_fetch import guarded_client
-
-    own_client = client is None
-    if own_client:
-        # Nur öffentliche Ziele, auch nach Weiterleitungen: die Kopie wird später ausgeliefert
-        client = guarded_client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True)
-    try:
-        try:
-            # Drossel je Host über alle Prozesse (Ingestor, Vorschau, andere Quellen auf dem Host)
-            host_pacing.wait(url, sync_config=robots.sync_config_of(file_obj))
-            with client.stream("GET", url, headers=download_headers(file_obj.body)) as response:
-                if response.status_code in (404, 410):
-                    return _mark(file_obj, "missing", f"HTTP {response.status_code}")
-                if response.status_code != 200:
-                    return _mark(file_obj, "error", f"HTTP {response.status_code}")
-                declared = int(response.headers.get("content-length") or 0)
-                if declared > max_bytes():
-                    return _mark(file_obj, "too_large", f"{declared // 1024 // 1024} MB")
-                if not has_room_for(max(declared, 0)):
-                    return "disk_full"
-                # Gestreamt in eine temporäre Datei, nie die ganze Datei im Speicher (#788)
-                buffer = tempfile.SpooledTemporaryFile(max_size=2 * 1024 * 1024)  # noqa: SIM115
-                total = 0
-                head = b""
-                for chunk in response.iter_bytes():
-                    total += len(chunk)
-                    if total > max_bytes():
-                        buffer.close()
-                        return _mark(file_obj, "too_large", f"> {max_bytes() // 1024 // 1024} MB")
-                    buffer.write(chunk)
-                    if len(head) < 512:
-                        head += chunk[: 512 - len(head)]
-                content_type = response.headers.get("content-type", "")
-        except httpx.HTTPError as exc:
-            return _mark(file_obj, "error", f"{type(exc).__name__}: {exc}")
-
-        with buffer:
-            if not total:
-                return _mark(file_obj, "error", "Leere Antwort")
-            if looks_like_html(head) and "html" not in (file_obj.mime_type or "").lower():
-                return _mark(file_obj, "error", "Quelle liefert eine HTML-Seite statt der Datei")
-            if not has_room_for(total):
-                return "disk_full"
-            store_stream(file_obj, buffer, content_type=content_type)
-        return "ok"
-    finally:
-        if own_client:
-            client.close()
+    return abruf.abrufen(file_obj, client=client, include_errors=include_errors, force=force)
 
 
-def pending_queryset(body=None, retry_errors: bool = False):
-    from ..models import OParlFile
+def pending_queryset(body=None, retry_errors: bool = False, retry_evicted: bool = False):
+    """
+    Dateien, die ``cache_files`` abrufen soll (``hub.ris.abruf.pending_queryset``). Verdrängte Dokumente (Obergrenze,
+    #961) nur mit ``retry_evicted`` (``cache_files --verdraengte``).
+    """
+    from hub.ris import abruf
 
-    statuses = ["none"] + (["error"] if retry_errors else [])
-    # text_content/raw_json sind riesig (extrahierter Volltext) — nie mitladen,
-    # sonst frisst ein Lauf über zehntausende Dateien den gesamten RAM.
-    # Quellen in Schonung (mehrfach nicht erreichbar) werden ausgelassen — Nachladen
-    # würde die Sperre nur verlängern (Issue #89).
-    qs = (
-        OParlFile.objects.filter(deleted=False, local_status__in=statuses, body__is_listed=True)
-        .exclude(body__source__consecutive_failures__gte=backoff_failures())
-        .exclude(body__source_id__in=sources_without_downloads())
-        .select_related("body", "body__source")
-        .defer("text_content", "raw_json", "body__raw_json")
-    )
-    from . import file_store
-
-    if file_store.uses_blobs() and getattr(settings, "INGESTOR_STORES_FILES", False):
-        # Dateien, deren Text der Ingestor noch erkennt, legt er beim selben Abruf selbst ab (ein Abruf je
-        # Datei, #788). Maßgeblich ist die letzte Änderung des Datensatzes, nicht seine Anlage: Auch neu auf
-        # „pending“ gesetzte ältere Dateien (Ersetzen, Wiederfreigabe) holt nur der Ingestor; der Ingestor setzt
-        # sie beim Übernehmen in die Erkennung neu. Hängt die Erkennung länger als einen Tag, holt der Cache sie.
-        recent = timezone.now() - timedelta(days=1)
-        qs = qs.exclude(text_extraction_status__in=["pending", "processing"], updated_at__gte=recent)
-    if body is not None:
-        qs = qs.filter(body=body)
-    return qs.order_by("-file_date", "-oparl_created", "-created_at")
+    return abruf.pending_queryset(body, retry_errors=retry_errors, retry_evicted=retry_evicted)
 
 
-def cache_pending(body=None, *, limit: int = 500, retry_errors: bool = False, sleep: float = 0.05) -> Counter:
-    """Fehlende Kopien nachladen — neueste Dokumente zuerst, mit Festplatten-Schutz."""
-    from .safe_fetch import guarded_client
+def cache_pending(
+    body=None, *, limit: int = 500, retry_errors: bool = False, retry_evicted: bool = False, sleep: float = 0.05
+) -> Counter:
+    """
+    Fehlende Kopien nachladen — fällige Wiederholungen und neueste Dokumente zuerst, mit Festplatten-Schutz
+    (``hub.ris.abruf.nachladen``).
 
-    results: Counter = Counter()
-    if not has_room_for(0):
-        results["disk_full"] += 1
-        return results
+    Mit Obergrenze (``FILE_CACHE_MAX_TOTAL_GB``, #961) lädt ein Lauf nur bis zur Grenze nach (``limit`` im
+    Ergebnis); Platz schafft die Verdrängung im stündlichen Aufräumen (``dokumentablage --aufraeumen``).
+    """
+    from hub.ris import abruf
 
-    with guarded_client(headers={"User-Agent": USER_AGENT}, timeout=http_timeout(), follow_redirects=True) as client:
-        for file_obj in pending_queryset(body, retry_errors)[:limit].iterator(chunk_size=200):
-            status = fetch_and_cache(file_obj, client)
-            results[status] += 1
-            if status == "disk_full":
-                break
-            if sleep:
-                time.sleep(sleep)
-    return results
+    return abruf.nachladen(body, limit=limit, retry_errors=retry_errors, retry_evicted=retry_evicted, sleep=sleep)
 
 
 def backfill_sizes(batch: int = 2000) -> Counter:
@@ -519,10 +444,24 @@ def stored_bytes() -> int:
     return int(blobs) + int(legacy)
 
 
+def remote_bytes() -> int:
+    """Inhalte im Objektspeicher (``remote_at``), auf die Dokumente verweisen; jeder Inhalt einmal."""
+    from ..models import OParlFileBlob
+
+    return int(
+        OParlFileBlob.objects.filter(remote_at__isnull=False, ref_count__gt=0).aggregate(s=Sum("size"))["s"] or 0
+    )
+
+
 def cache_stats() -> dict:
+    from hub.ris import abruf
+
     from ..models import OParlFile
+    from . import file_cache_limit
 
     qs = OParlFile.objects.filter(deleted=False)
+    abzulegen = abruf.storable_q()
+    jetzt = timezone.now()
     total = qs.count()
     by_status = dict(Counter(qs.values_list("local_status", flat=True)))
     # Gemessene Größe der Kopie (#786); für Kopien vor deren Einführung die Angabe aus der Quelle
@@ -536,6 +475,10 @@ def cache_stats() -> dict:
         | Q(body__source_id__in=sources_without_downloads()),
         local_status="none",
     ).count()
+    # Mit Objektspeicher liegt nur ein Teil lokal: tatsächliche Belegung aus dem Durchlauf über die Platte (wie die
+    # Obergrenze, #961), getrennt von dem, was im Objektspeicher liegt. Ohne ist die Summe aus der Datenbank genau.
+    with_remote = file_cache_limit.mode() == file_cache_limit.MODE_REMOTE
+    stored_total = stored_bytes()
     per_body = []
     for row in (
         qs.values("body__name").annotate(n=Sum(1), cached=Sum(stored, filter=Q(local_status="ok"))).order_by("-n")
@@ -545,21 +488,37 @@ def cache_stats() -> dict:
         "root": str(cache_root()),
         "total": total,
         "ok": ok,
-        # offen = nur gelistete Kommunen; ausgeblendete werden bewusst nicht zwischengespeichert
-        "pending": qs.filter(local_status="none", body__is_listed=True).count(),
-        "unlisted": qs.filter(body__is_listed=False).count(),
+        # offen = nur Dateien, die abgelegt werden (gelistet bzw. Ablage für alle ab Stichtag, hub.ris.abruf)
+        "pending": qs.filter(abzulegen, local_status="none").count(),
+        # bewusst nicht abgelegt: ausgeblendete Kommunen, Altbestand vor dem Stichtag, Abruf abgeschaltet
+        "not_stored": qs.exclude(abzulegen).count(),
+        "fetching": by_status.get("fetching", 0),
+        "retry": by_status.get("retry", 0),
+        "retry_due": qs.filter(local_status="retry", fetch_next_at__lte=jetzt).count(),
         "missing": by_status.get("missing", 0),
+        "refused": by_status.get("refused", 0),
         "error": by_status.get("error", 0),
         "too_large": by_status.get("too_large", 0),
+        # Von der Obergrenze verdrängt (#961, ohne Objektspeicher): holt die Vorschau bei Bedarf neu, sonst nur
+        # cache_files --verdraengte (kein Zustand, aus dem der Abruf von selbst beansprucht)
+        "evicted": by_status.get("evicted", 0),
         "paused": paused,
         "coverage": round(ok / total * 100, 1) if total else 0.0,
         "cached_bytes": cached_bytes,
         "cached_gb": round(cached_bytes / 1024**3, 2),
-        # Tatsächlich belegt: jeder Inhalt einmal (Ablage nach SHA-256) plus Kopien im alten Layout
-        "stored_bytes": stored_bytes(),
+        # Abgelegt: jeder Inhalt einmal (Ablage nach SHA-256) plus Kopien im alten Layout, lokal oder im Objektspeicher
+        "stored_bytes": stored_total,
+        "object_storage": with_remote,
+        # Lokal auf der Platte (mit Objektspeicher gemessen, sonst gleich stored_bytes)
+        "local_bytes": file_cache_limit.usage_bytes() if with_remote else stored_total,
+        # Im Objektspeicher (nur mit eingeschaltetem Objektspeicher)
+        "remote_bytes": remote_bytes() if with_remote else 0,
         # Kopien ohne gemessene Größe: mit ``cache_files --sizes`` nachtragen
         "without_size": without_size,
         "disk_free_bytes": disk_free_bytes(),
         "min_free_gb": min_free_bytes() // 1024**3,
+        # Obergrenze der Gesamtgröße (0 = unbegrenzt) und ihr Zielwert in Prozent
+        "max_total_bytes": file_cache_limit.limit_bytes(),
+        "evict_target_percent": file_cache_limit.target_percent(),
         "per_body": per_body,
     }

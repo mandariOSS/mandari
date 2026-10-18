@@ -15,6 +15,7 @@ import sys
 import tempfile
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 PROJECT_DIR = Path(__file__).resolve().parent.parent / "mandari"
 sys.path.insert(0, str(PROJECT_DIR))
@@ -120,10 +121,16 @@ f_old = make_file(7, when=now - timedelta(days=800))
 
 
 class FakeResponse:
+    # Keine Weiterleitung: Abrufe folgen ihnen selbst (insight_core/services/redirects.py, Issue #1027)
+    next_request = None
+
     def __init__(self, status, content=b"", ctype="application/pdf"):
         self.status_code = status
         self.content = content
         self.headers = {"content-type": ctype, "content-length": str(len(content))}
+
+    def close(self):
+        pass
 
     def iter_bytes(self, chunk_size=4096):
         for i in range(0, len(self.content), chunk_size):
@@ -184,6 +191,14 @@ class FakeClient:
     def get(self, url, **kwargs):
         return self.respond(url)
 
+    @staticmethod
+    def build_request(method, url, headers=None, **kwargs):
+        return SimpleNamespace(method=method, url=url, headers=headers or {})
+
+    def send(self, request, **kwargs):
+        # Abrufe folgen Weiterleitungen selbst und senden dafür einzeln (insight_core/services/redirects.py)
+        return self.respond(str(request.url))
+
 
 # =============================================================================
 print()
@@ -208,15 +223,24 @@ check(
 )
 check("Erneuter Abruf übersprungen", file_cache.fetch_and_cache(f_ok, client=FakeClient()) == "skipped")
 
-check("404 -> missing", file_cache.fetch_and_cache(f_404, client=FakeClient()) == "missing")
+# Zustände des Abrufs (Issue #919, hub/ris/abruf.py): Wiederholung, verweigert, fehlend
 check(
-    "500 -> error mit Meldung",
-    file_cache.fetch_and_cache(f_500, client=FakeClient()) == "error"
-    and "HTTP 500" in OParlFile.objects.get(id=f_500.id).local_error,
+    "404 einer neuen Datei -> retry (Quelle veröffentlicht oft später)",
+    file_cache.fetch_and_cache(f_404, client=FakeClient()) == "retry",
+)
+f_404_alt = make_file(11, url="https://ris.example/getfile/404.pdf")
+OParlFile.objects.filter(id=f_404_alt.id).update(created_at=now - timedelta(days=30))
+f_404_alt.refresh_from_db()
+check("404 einer älteren Datei -> missing", file_cache.fetch_and_cache(f_404_alt, client=FakeClient()) == "missing")
+check(
+    "500 -> retry mit Meldung und Fehlercode",
+    file_cache.fetch_and_cache(f_500, client=FakeClient()) == "retry"
+    and "HTTP 500" in OParlFile.objects.get(id=f_500.id).local_error
+    and OParlFile.objects.get(id=f_500.id).fetch_error == "http_5xx",
 )
 check(
-    "HTML-Fehlerseite wird nicht als PDF gespeichert",
-    file_cache.fetch_and_cache(f_html, client=FakeClient()) == "error"
+    "HTML-Fehlerseite wird nicht als PDF gespeichert (verweigert)",
+    file_cache.fetch_and_cache(f_html, client=FakeClient()) == "refused"
     and "HTML" in OParlFile.objects.get(id=f_html.id).local_error,
 )
 check("Zu groß -> too_large", file_cache.fetch_and_cache(f_big, client=FakeClient()) == "too_large")
@@ -284,8 +308,11 @@ try:
         "Datei der zweiten Kommune liegt unter ihrem Hash",
         Path(f_bonn.local_path).parent.parent.name == "sha256" and Path(f_bonn.local_path).name == f_bonn.sha256_hash,
     )
+    # Ein Fehler (error) wird erst nach einer Woche erneut versucht, mit --retry-errors sofort
+    OParlFile.objects.filter(id=f_500.id).update(local_status="error", fetch_next_at=now + timedelta(days=7))
+    check("Fehler vor der Frist nicht erneut", file_cache.cache_pending(limit=10, sleep=0)["retry"] == 0)
     results = file_cache.cache_pending(limit=10, retry_errors=True, sleep=0)
-    check("retry-errors versucht Fehler erneut", results["error"] >= 1, str(results))
+    check("retry-errors versucht Fehler erneut", results["retry"] >= 1, str(results))
 
     _real_disk = file_cache.disk_free_bytes
     file_cache.disk_free_bytes = lambda: 10 * 1024**3
@@ -310,9 +337,10 @@ finally:
 stats = file_cache.cache_stats()
 check(
     "Statistik: Abdeckung + Belegung",
-    stats["ok"] == 3 and stats["total"] == 8 and stats["cached_bytes"] > 0 and stats["per_body"][0]["files"] == 7,
+    stats["ok"] == 3 and stats["total"] == 9 and stats["cached_bytes"] > 0 and stats["per_body"][0]["files"] == 8,
     str(stats),
 )
+check("Statistik: Wiederholung und verweigert", stats["retry"] >= 1 and stats["refused"] == 1, str(stats))
 
 # =============================================================================
 print()

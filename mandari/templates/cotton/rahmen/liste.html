@@ -1,0 +1,11 @@
+{# djlint:off H026 H025 – leere Vorgabewerte in <c-vars> sind Komponentenparameter, öffnendes/schließendes Tag ist bedingt #}
+{% comment %}
+Liste mit Linien für Arbeitsflächen (Issue #944): eine Linie über der Liste und unter jedem Eintrag, sonst nichts – keine
+Karten, keine Kästen. Die Einträge (<li>) bringen nur Abstand und Aufbau mit, die Linien setzt die Liste; das gilt auch
+für Einträge, die htmx nachlädt. ``geordnet`` macht daraus eine <ol> (echte Reihenfolge, etwa Schritte oder Stationen).
+  <c-rahmen.liste class="mt-2"><li class="py-2.5">…</li></c-rahmen.liste>
+  <c-rahmen.liste geordnet class="mt-3" data-testid="stationen">…</c-rahmen.liste>
+Weitere Attribute (class, data-testid, id) gehen an die Liste.
+{% endcomment %}
+<c-vars geordnet="" class="" />
+{% if geordnet %}<ol{% else %}<ul{% endif %} class="border-t border-gray-200 dark:border-gray-800 [&>li]:border-b [&>li]:border-gray-200 dark:[&>li]:border-gray-800 {{ class }}" {{ attrs }}>{{ slot }}{% if geordnet %}</ol>{% else %}</ul>{% endif %}

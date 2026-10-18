@@ -1,0 +1,30 @@
+{% comment %}
+Einstellungen › Organisation: Kontaktdaten (Formular update_contact, Issue #951); ohne organization.edit nur die Angaben.
+Kontext: organization, can_edit.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Kontaktdaten" titel_id="kontakt-titel">
+    {% if can_edit %}
+    <form method="post" class="mt-3 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_contact">
+        <div class="grid gap-4 sm:grid-cols-2">
+            <c-form.field name="contact_email" id="kontakt-email" type="email" label="E-Mail" value="{{ organization.contact_email }}" placeholder="info@fraktion.de" autocomplete="email" dicht />
+            <c-form.field name="contact_phone" id="kontakt-telefon" type="tel" label="Telefon" value="{{ organization.contact_phone }}" placeholder="+49 123 456789" autocomplete="tel" dicht />
+            <c-form.field name="website" id="kontakt-website" type="url" label="Website" value="{{ organization.website }}" placeholder="https://fraktion.de" autocomplete="url" dicht />
+            <c-form.textarea name="address" id="kontakt-adresse" label="Adresse" rows="2" value="{{ organization.address }}" dicht />
+        </div>
+        <c-ui.button type="submit" size="sm" variant="secondary">Kontaktdaten speichern</c-ui.button>
+    </form>
+    {% else %}
+    <c-ui.angaben class="mt-3">
+        <dt>E-Mail</dt>
+        <dd>{{ organization.contact_email|default:"Keine" }}</dd>
+        <dt>Telefon</dt>
+        <dd>{{ organization.contact_phone|default:"Keine" }}</dd>
+        <dt>Website</dt>
+        <dd>{{ organization.website|default:"Keine" }}</dd>
+        <dt>Adresse</dt>
+        <dd class="whitespace-pre-line">{{ organization.address|default:"Keine" }}</dd>
+    </c-ui.angaben>
+    {% endif %}
+</c-rahmen.abschnitt>

@@ -21,13 +21,14 @@ und ``insight_core``; die Zahl darf nur sinken.
 
 from __future__ import annotations
 
+import re
 import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from django.db.models import Exists, OuterRef, Q, QuerySet
+from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 
 from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
@@ -42,6 +43,7 @@ from insight_core.models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    OParlSource,
     withdrawn_q,
 )
 
@@ -59,6 +61,17 @@ def _uuid(value: object) -> uuid.UUID | None:
         return uuid.UUID(str(value))
     except (TypeError, ValueError, AttributeError):
         return None
+
+
+# =============================================================================
+# Quellen
+# =============================================================================
+
+
+def active_source(source_id: object) -> OParlSource | None:
+    """Aktive RIS-Quelle (Sync-Auslöser im Admin, Issue #1026); sonst ``None``."""
+    pk = _uuid(source_id)
+    return OParlSource.objects.filter(pk=pk, is_active=True).first() if pk else None
 
 
 # =============================================================================
@@ -148,6 +161,24 @@ def agenda_items(meeting: OParlMeeting) -> QuerySet[OParlAgendaItem]:
     return OParlAgendaItem.objects.filter(meeting=meeting).order_by("order", "number")
 
 
+def agenda_number_key(number: str | None) -> list[tuple[int, int | str]]:
+    """Natürliche Sortierung von TOP-Nummern: 1, 2, 10 statt 1, 10, 2; Punkte ohne Nummer stehen hinten (wie „999“)."""
+    return [(0, int(p)) if p.isdecimal() else (1, p.lower()) for p in re.split(r"(\d+)", number or "999") if p]
+
+
+def visible_agenda_items(meeting: OParlMeeting) -> list[OParlAgendaItem]:
+    """
+    Tagesordnung, wie die Sitzungsseiten von Insight und Work sie zeigen (Issue #853): ohne in der Quelle gelöschte und
+    von mandari Session zurückgenommene Punkte (etwa nachträglich nichtöffentlich gestellt), natürlich sortiert
+    (``agenda_number_key``, bei gleicher Nummer in der Reihenfolge der Quelle). Eine Abfrage.
+
+    Die Vorbereitung in Work zeigt weiter alle Punkte samt Positionen und Notizen der Organisation.
+    """
+    punkte = list(OParlAgendaItem.objects.filter(meeting=meeting, deleted=False).order_by("order", "number"))
+    punkte.sort(key=lambda punkt: agenda_number_key(punkt.number))
+    return punkte
+
+
 def agenda_item_exists(agenda_item_id: object) -> bool:
     """Gibt es diesen Tagesordnungspunkt im RIS-Bestand?"""
     pk = _uuid(agenda_item_id)
@@ -216,6 +247,57 @@ def papers_of_agenda_item(agenda_item: OParlAgendaItem) -> QuerySet[OParlPaper]:
         .exclude(withdrawn_q("paper"))
     )
     return OParlPaper.objects.filter(id__in=consultations.values("paper_id")).distinct()
+
+
+def paper_ids_of_agenda_items(agenda_item_ids: Iterable[object], *, public_only: bool = True) -> set[uuid.UUID]:
+    """
+    Kennungen der Vorlagen, die unter diesen Tagesordnungspunkten beraten werden (ohne zurückgenommene Beratungen
+    und Vorlagen). Eine Abfrage, etwa für den Bezug einer Fraktion in der Suche (Issue #853).
+
+    ``public_only`` (Standard): nur öffentliche Tagesordnungspunkte. Was jemand zu einem nichtöffentlichen Punkt
+    vermerkt hat, soll sich nicht in der Reihenfolge öffentlicher Vorlagen zeigen (wie bei Fraktionssitzungen).
+    """
+    ids = [pk for pk in (_uuid(value) for value in agenda_item_ids) if pk is not None]
+    if not ids:
+        return set()
+    items = OParlAgendaItem.objects.filter(id__in=ids)
+    if public_only:
+        items = items.filter(public=True)
+    return set(
+        OParlConsultation.objects.filter(agenda_item_external_id__in=items.values("external_id"), paper__isnull=False)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .values_list("paper_id", flat=True)
+    )
+
+
+def paper_ids_on_upcoming_agendas(bodies: Bodies, *, until: datetime, limit: int = 2000) -> set[uuid.UUID]:
+    """
+    Kennungen der Vorlagen, die von jetzt bis ``until`` in einer nicht abgesagten Sitzung der Kommunen beraten werden
+    (ohne zurückgenommene Beratungen und Vorlagen). Eine Abfrage, etwa für die Aktualität in der Suche (Issue #853).
+    """
+    sitzungen = upcoming_meetings(bodies).filter(start__lte=until).values("external_id")
+    return set(
+        OParlConsultation.objects.filter(meeting_external_id__in=sitzungen, paper__isnull=False)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .values_list("paper_id", flat=True)[:limit]
+    )
+
+
+def organization_names(organization_ids: Iterable[object], *, exclude_classifications: Iterable[str] = ()) -> list[str]:
+    """
+    Namen der Gremien zu diesen Kennungen (ohne leere Namen), alphabetisch. ``exclude_classifications`` lässt Gremien
+    mit dieser Einordnung aus (ohne Rücksicht auf Groß- und Kleinschreibung), etwa die Vertretung selbst („Rat“).
+    """
+    ids = [pk for pk in (_uuid(value) for value in organization_ids) if pk is not None]
+    if not ids:
+        return []
+    ohne = {str(value).strip().lower() for value in exclude_classifications}
+    rows = OParlOrganization.objects.filter(id__in=ids).exclude(name="").values_list("name", "classification")
+    return sorted(
+        {name for name, classification in rows if name and (classification or "").strip().lower() not in ohne}
+    )
 
 
 @dataclass(frozen=True)
@@ -337,6 +419,194 @@ def files_of_paper(paper: OParlPaper) -> QuerySet[OParlFile]:
     return OParlFile.objects.filter(paper=paper)
 
 
+def protocol_file(meeting: OParlMeeting) -> OParlFile | None:
+    """
+    Öffentliche Niederschrift einer Sitzung (OParl ``resultsProtocol``, sonst ``verbatimProtocol``), Issue #318.
+
+    Quelle ist das gespiegelte Meeting-Objekt; angezeigt wird nur eine nicht zurückgenommene Datei derselben Kommune
+    (mandari Session veröffentlicht hier ausschließlich den öffentlichen Teil, eine Rücknahme markiert die Datei sofort
+    als gelöscht). Sitzungsseiten von Insight und Work (Issue #853).
+    """
+    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
+    for key in ("resultsProtocol", "verbatimProtocol"):
+        ref = raw.get(key)
+        external_id = ref.get("id") if isinstance(ref, dict) else ref if isinstance(ref, str) else None
+        if not external_id:
+            continue
+        found = (
+            OParlFile.objects.filter(external_id=external_id, deleted=False).defer("text_content", "raw_json").first()
+        )
+        if found is not None and (found.body_id is None or found.body_id == meeting.body_id):
+            return found
+    return None
+
+
+#: Sitzungsformate aus der OParl-Erweiterung von mandari Session (Issue #138)
+BROADCAST_LABELS = {
+    "hybrid": "Hybride Sitzung: Einzelne Mitglieder sind per Bild-Ton-Übertragung zugeschaltet.",
+    "digital": "Digitale Sitzung: Die Mitglieder tagen per Videokonferenz.",
+}
+
+
+def broadcast_info(meeting: Any) -> dict[str, str] | None:
+    """
+    Sitzungsformat und Hinweis für die Öffentlichkeit (Übertragung, Anmeldung), Issue #138.
+
+    Quelle ist die OParl-Erweiterung ``mandari:meetingFormat``/``mandari:publicAccess``. Die Daten stammen von einer
+    externen Quelle: nur erwartete Typen, eigene Texte für das Format, Links nur mit http(s). Sitzungsseiten von
+    Insight und Work (Issue #853).
+    """
+    raw = meeting.raw_json if isinstance(meeting.raw_json, dict) else {}
+    access = raw.get("mandari:publicAccess")
+    access = access if isinstance(access, dict) else {}
+    url = access.get("url")
+    hint = access.get("hint")
+    format_ = raw.get("mandari:meetingFormat")
+    info = {
+        "label": BROADCAST_LABELS.get(format_, "") if isinstance(format_, str) else "",
+        "url": url[:500] if isinstance(url, str) and url.startswith(("https://", "http://")) else "",
+        "hint": hint[:1000] if isinstance(hint, str) else "",
+    }
+    return info if any(info.values()) else None
+
+
+def files_of_meeting(meeting: OParlMeeting, *, ohne: Iterable[object] = ()) -> list[OParlFile]:
+    """
+    Dateien einer Sitzung (Einladung, Anlagen, Niederschrift) nach Name, ohne gelöschte und von mandari Session
+    zurückgenommene; ``ohne`` lässt Dateien weg, die die Seite schon an anderer Stelle zeigt (etwa die Niederschrift).
+    """
+    ausgelassen = [pk for pk in (_uuid(value) for value in ohne) if pk is not None]
+    return list(
+        OParlFile.objects.filter(meeting=meeting, deleted=False)
+        .exclude(withdrawn_q())
+        .exclude(pk__in=ausgelassen)
+        .defer("raw_json")
+        .order_by("name", "file_name")
+    )
+
+
+def organization_count(meeting: OParlMeeting) -> int | None:
+    """
+    Anzahl der Gremien hinter ``OParlMeeting.get_display_name`` (Namen mit Komma verbunden) für den Stand-Satz.
+
+    Aus den vorgeladenen Gremien und ohne weitere Abfrage; ``None``, wenn sie so nicht feststeht. Der Stand-Satz beugt
+    danach auch Gremiennamen mit Komma („im Ausschuss für Planung, Bau und Umwelt“). Mehr als zwei zählt nicht: Für
+    den Satz heißt es dann nur „mehrere“.
+    """
+    named = [org for org in list(meeting.organizations.all())[:2] if org.name]
+    if named:
+        return len(named)
+    urls = meeting.raw_json.get("organization") if isinstance(meeting.raw_json, dict) else None
+    return 1 if isinstance(urls, list) and len(urls) == 1 else None
+
+
+def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
+    """
+    Beratungsverlauf einer Vorlage, chronologisch, wie ihn der Stand-Satz und der Zeitstrahl
+    (``insight_core.services.paper_status``) erwarten: je Beratung ``consultation``, ``meeting``, ``agenda_item``,
+    ``date``, ``organization_name``, ``organization_count``, ``agenda_number``, ``result``, ``public``, ``role`` und
+    ``authoritative``. Beratungen ohne bekannte Sitzung stehen an der Stelle von „jetzt“ (zwischen vergangenen und
+    kommenden). Zurückgenommene Beratungen, Sitzungen und Tagesordnungspunkte fehlen – wie in der Session-OParl-API,
+    die solche Verweise auslässt. Höchstens vier Abfragen.
+
+    Grundlage der Vorgangsseiten von Insight und Work (Issue #853, vorher je eine eigene Abfrage).
+    """
+    consultations = list(OParlConsultation.objects.filter(paper=paper).exclude(withdrawn_q()))
+    if not consultations:
+        return []
+    meeting_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
+    item_ids = [c.agenda_item_external_id for c in consultations if c.agenda_item_external_id]
+    sitzungen: dict[str, OParlMeeting] = {}
+    if meeting_ids:
+        sitzungen = {
+            m.external_id: m
+            for m in OParlMeeting.objects.filter(external_id__in=meeting_ids)
+            .exclude(withdrawn_q())
+            .prefetch_related("organizations")
+        }
+    punkte: dict[str, OParlAgendaItem] = {}
+    if item_ids:
+        punkte = {
+            a.external_id: a
+            for a in OParlAgendaItem.objects.filter(external_id__in=item_ids)
+            .exclude(withdrawn_q())
+            .exclude(withdrawn_q("meeting"))
+        }
+    verlauf: list[dict[str, Any]] = []
+    for consultation in consultations:
+        sitzung = sitzungen.get(consultation.meeting_external_id or "")
+        punkt = punkte.get(consultation.agenda_item_external_id or "")
+        verlauf.append(
+            {
+                "consultation": consultation,
+                "meeting": sitzung,
+                "agenda_item": punkt,
+                "date": sitzung.start if sitzung else None,
+                "organization_name": sitzung.get_display_name() if sitzung else None,
+                "organization_count": organization_count(sitzung) if sitzung else None,
+                "agenda_number": punkt.number if punkt else None,
+                "result": punkt.result if punkt else None,
+                "public": punkt.public if punkt else True,
+                "role": consultation.role,
+                "authoritative": consultation.authoritative,
+            }
+        )
+    jetzt = timezone.now()
+    verlauf.sort(key=lambda eintrag: eintrag["date"] or jetzt)
+    return verlauf
+
+
+def agenda_items_of_papers(paper_ids: Iterable[object]) -> dict[uuid.UUID, set[uuid.UUID]]:
+    """
+    Je Vorlage die Tagesordnungspunkte, unter denen sie beraten wird (ohne zurückgenommene Beratungen), etwa um
+    Positionen einer Organisation den Vorlagen einer Liste zuzuordnen. Zwei Abfragen für alle Vorlagen.
+    """
+    ids = [pk for pk in (_uuid(value) for value in paper_ids) if pk is not None]
+    if not ids:
+        return {}
+    beratungen = (
+        OParlConsultation.objects.filter(paper_id__in=ids)
+        .exclude(withdrawn_q())
+        .exclude(agenda_item_external_id__isnull=True)
+        .exclude(agenda_item_external_id="")
+        .values_list("paper_id", "agenda_item_external_id")
+    )
+    vorlagen_je_punkt: dict[str, set[uuid.UUID]] = {}
+    for paper_id, punkt in beratungen:
+        if punkt:
+            vorlagen_je_punkt.setdefault(punkt, set()).add(paper_id)
+    ergebnis: dict[uuid.UUID, set[uuid.UUID]] = {}
+    punkte = OParlAgendaItem.objects.filter(external_id__in=list(vorlagen_je_punkt)).values_list("id", "external_id")
+    for item_id, external_id in punkte:
+        for paper_id in vorlagen_je_punkt.get(external_id, ()):
+            ergebnis.setdefault(paper_id, set()).add(item_id)
+    return ergebnis
+
+
+def papers_of_agenda_items(agenda_items: Iterable[OParlAgendaItem]) -> dict[uuid.UUID, list[OParlPaper]]:
+    """
+    Vorlagen je Tagesordnungspunkt (ohne zurückgenommene Beratungen und Vorlagen), in einer Abfrage für alle Punkte
+    einer Sitzung statt einer je Punkt, je Punkt nach Vorlagen-Nr. und jede Vorlage einmal. Punkte ohne Vorlage fehlen.
+    Sitzungsseiten von Insight und Work (Issue #853).
+    """
+    punkte = {item.external_id: item.pk for item in agenda_items if item.external_id}
+    if not punkte:
+        return {}
+    beratungen = (
+        OParlConsultation.objects.filter(agenda_item_external_id__in=list(punkte), paper__isnull=False)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .select_related("paper")
+        .order_by("paper__reference", "paper__name", "paper_id")
+    )
+    ergebnis: dict[uuid.UUID, list[OParlPaper]] = {}
+    for beratung in beratungen:
+        liste = ergebnis.setdefault(punkte[beratung.agenda_item_external_id or ""], [])
+        if beratung.paper is not None and all(p.pk != beratung.paper_id for p in liste):
+            liste.append(beratung.paper)
+    return ergebnis
+
+
 # =============================================================================
 # Gremien und Personen
 # =============================================================================
@@ -387,6 +657,60 @@ def locations(bodies: Bodies) -> QuerySet[OParlLocation]:
     return OParlLocation.objects.filter(body__in=bodies)
 
 
+@dataclass(frozen=True)
+class PaperPlace:
+    """Ein verorteter Vorgang auf einer Karte: Punkt, Ortsbezeichnung und Angaben der Vorlage."""
+
+    paper_id: uuid.UUID
+    latitude: float
+    longitude: float
+    place: str
+    title: str
+    reference: str
+    paper_date: date | None
+
+
+#: Kartenausschnitt als (West, Süd, Ost, Nord) in Grad
+Area = tuple[float, float, float, float]
+
+
+def paper_places(
+    bodies: Bodies, *, area: Area | None = None, since: date | None = None, limit: int = 2000
+) -> list[PaperPlace]:
+    """
+    Verortungen von Vorgängen der Kommunen für Karten, neueste Vorgänge zuerst, höchstens ``limit`` Punkte.
+
+    Liest die Tabelle der Verortungen (Index auf Kommune, Breite, Länge) statt des JSON am Vorgang, ohne entfernte
+    Verortungen und ohne Vorgänge, die in der Quelle gelöscht oder zurückgenommen sind. ``area`` begrenzt auf einen
+    Kartenausschnitt, ``since`` auf Vorgänge ab diesem Datum (Vorgänge ohne Datum fallen dann heraus). Eine Abfrage.
+    """
+    from insight_core.models import PaperLocation
+
+    rows = PaperLocation.objects.filter(body__in=bodies, paper__deleted=False).exclude(
+        status=PaperLocation.STATUS_REMOVED
+    )
+    if area is not None:
+        west, south, east, north = area
+        rows = rows.filter(latitude__gte=south, latitude__lte=north, longitude__gte=west, longitude__lte=east)
+    if since is not None:
+        rows = rows.filter(paper__date__gte=since)
+    rows = rows.order_by(F("paper__date").desc(nulls_last=True), "paper_id", "pk")
+    return [
+        PaperPlace(
+            paper_id=paper_id,
+            latitude=float(lat),
+            longitude=float(lon),
+            place=str(place or ""),
+            title=str(title or reference or "Vorgang"),
+            reference=str(reference or ""),
+            paper_date=paper_date,
+        )
+        for paper_id, lat, lon, place, title, reference, paper_date in rows.values_list(
+            "paper_id", "latitude", "longitude", "name", "paper__name", "paper__reference", "paper__date"
+        )[: max(limit, 0)]
+    ]
+
+
 # =============================================================================
 # Dateien
 # =============================================================================
@@ -395,3 +719,319 @@ def locations(bodies: Bodies) -> QuerySet[OParlLocation]:
 def files(bodies: Bodies) -> QuerySet[OParlFile]:
     """Dateien der Kommunen."""
     return OParlFile.objects.filter(body__in=bodies)
+
+
+# =============================================================================
+# Öffentlicher Bestand für den KI-Assistenten und offene Schnittstellen (Issue #899)
+# =============================================================================
+#
+# Diese Abfragen liefern nur, was das Bürgerportal öffentlich zeigt, und eher weniger: keine gelöschten oder
+# zurückgenommenen Einträge, keine Dateien, die die Kommune entfernt hat. Nichtöffentliche Tagesordnungspunkte
+# erscheinen nur als Nummer mit Kennzeichen; Name, Ergebnis und Beschlusstext bleiben leer.
+
+
+def public_body(body_id: object) -> OParlBody | None:
+    """Eine nicht gelöschte Kommune; ``None`` bei ungültiger oder unbekannter Kennung."""
+    pk = _uuid(body_id)
+    return OParlBody.objects.filter(pk=pk, deleted=False).first() if pk else None
+
+
+def listed_bodies(text: str = "") -> QuerySet[OParlBody]:
+    """Gelistete Kommunen (Kommunenauswahl), wahlweise mit ``text`` im Namen oder Kurznamen, nach Namen sortiert."""
+    found = OParlBody.objects.listed()
+    if text:
+        found = found.filter(
+            Q(name__icontains=text) | Q(display_name__icontains=text) | Q(short_name__icontains=text) | Q(slug=text)
+        )
+    return found.order_by("name")
+
+
+def listed_body(reference: str) -> OParlBody | None:
+    """Eine gelistete Kommune zu Kurzname (``slug``) oder Kennung; ``None``, wenn es sie so nicht gibt."""
+    reference = reference.strip()
+    if not reference:
+        return None
+    pk = _uuid(reference)
+    found = OParlBody.objects.listed()
+    return (found.filter(pk=pk) if pk else found.filter(slug=reference.lower())).first()
+
+
+def public_meetings_between(
+    bodies: Bodies, start: datetime, end: datetime, *, organizations: Organizations | None = None
+) -> QuerySet[OParlMeeting]:
+    """
+    Nicht gelöschte Sitzungen der Kommunen mit Beginn zwischen ``start`` und ``end`` (beide einschließlich), nach
+    Beginn sortiert, mit vorgeladenen Gremien. Abgesagte Sitzungen bleiben drin (der Aufrufer kennzeichnet sie);
+    mit ``organizations`` nur Sitzungen, an denen eines der Gremien beteiligt ist.
+    """
+    found = meetings(bodies).filter(deleted=False, start__gte=start, start__lte=end)
+    if organizations is not None:
+        found = found.filter(organizations__in=list(organizations)).distinct()
+    return found.prefetch_related("organizations").order_by("start")
+
+
+def public_meeting(bodies: Bodies, meeting_id: object) -> OParlMeeting | None:
+    """Eine nicht gelöschte Sitzung der Kommunen mit vorgeladenen Gremien; sonst ``None``."""
+    pk = _uuid(meeting_id)
+    if pk is None:
+        return None
+    return meetings(bodies).filter(pk=pk, deleted=False).prefetch_related("organizations").first()
+
+
+def _natural_key(number: str | None) -> list[tuple[int, int | str]]:
+    """Sortierschlüssel für TOP-Nummern: 1, 2, 10 statt 1, 10, 2."""
+    return [
+        (0, int(part)) if part.isdigit() else (1, part.lower()) for part in re.split(r"(\d+)", number or "999") if part
+    ]
+
+
+@dataclass(frozen=True)
+class AgendaEntry:
+    """Tagesordnungspunkt mit den darunter beratenen öffentlichen Vorlagen."""
+
+    item: OParlAgendaItem
+    papers: list[OParlPaper]
+
+
+def public_agenda(meeting: OParlMeeting) -> list[AgendaEntry]:
+    """
+    Tagesordnung einer Sitzung ohne gelöschte Punkte, in natürlicher Reihenfolge der Nummern; je Punkt die
+    Vorlagen ohne zurückgenommene Beratungen und ohne gelöschte Vorlagen. Zwei Abfragen.
+    """
+    items = list(OParlAgendaItem.objects.filter(meeting=meeting, deleted=False))
+    items.sort(key=lambda item: (item.order is None, item.order or 0, _natural_key(item.number)))
+    by_item: dict[str, list[OParlPaper]] = {}
+    if items:
+        consultations = (
+            OParlConsultation.objects.filter(
+                agenda_item_external_id__in=[item.external_id for item in items],
+                paper__isnull=False,
+                paper__deleted=False,
+            )
+            .exclude(withdrawn_q())
+            .select_related("paper")
+        )
+        for consultation in consultations:
+            if consultation.paper is not None and consultation.agenda_item_external_id:
+                found = by_item.setdefault(consultation.agenda_item_external_id, [])
+                if consultation.paper not in found:
+                    found.append(consultation.paper)
+    return [AgendaEntry(item=item, papers=by_item.get(item.external_id, [])) for item in items]
+
+
+def public_papers(bodies: Bodies) -> QuerySet[OParlPaper]:
+    """Nicht gelöschte Vorlagen der Kommunen."""
+    return papers(bodies).filter(deleted=False)
+
+
+def public_paper(bodies: Bodies, paper_id: object) -> OParlPaper | None:
+    """Eine nicht gelöschte Vorlage der Kommunen; sonst ``None``."""
+    pk = _uuid(paper_id)
+    return public_papers(bodies).filter(pk=pk).first() if pk else None
+
+
+def public_papers_by_ids(bodies: Bodies, paper_ids: Iterable[object]) -> dict[uuid.UUID, OParlPaper]:
+    """Nicht gelöschte Vorlagen der Kommunen zu Kennungen (etwa Treffer der Suche); unbekannte fehlen."""
+    ids = [pk for pk in (_uuid(value) for value in paper_ids) if pk is not None]
+    if not ids:
+        return {}
+    return {paper.pk: paper for paper in public_papers(bodies).filter(pk__in=ids)}
+
+
+def public_papers_by_reference(bodies: Bodies, reference: str) -> QuerySet[OParlPaper]:
+    """Nicht gelöschte Vorlagen mit genau dieser Drucksachennummer (ohne Groß-/Kleinschreibung), neueste zuerst."""
+    reference = reference.strip()
+    if not reference:
+        return public_papers(bodies).none()
+    return public_papers(bodies).filter(reference__iexact=reference).order_by("-date", "-oparl_created")
+
+
+def search_public_papers(
+    bodies: Bodies,
+    text: str,
+    *,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    organizations: Organizations | None = None,
+) -> QuerySet[OParlPaper]:
+    """
+    Nicht gelöschte Vorlagen, deren Name oder Drucksachennummer jedes Wort aus ``text`` enthält, neueste zuerst.
+
+    Datenbank-Rückfall, wenn die Volltextsuche nicht antwortet. Wahlweise mit Datum der Vorlage im Zeitraum und
+    beraten in einer Sitzung eines der Gremien (ohne zurückgenommene Beratungen).
+    """
+    found = public_papers(bodies)
+    for word in text.split()[:8]:
+        found = found.filter(Q(name__icontains=word) | Q(reference__icontains=word))
+    if date_from is not None:
+        found = found.filter(date__gte=date_from)
+    if date_to is not None:
+        found = found.filter(date__lte=date_to)
+    if organizations is not None:
+        sitzungen = OParlMeeting.objects.filter(organizations__in=list(organizations)).values("external_id")
+        beraten = OParlConsultation.objects.filter(paper=OuterRef("pk"), meeting_external_id__in=sitzungen).exclude(
+            withdrawn_q()
+        )
+        found = found.filter(Exists(beraten))
+    return found.order_by("-date", "-oparl_created")
+
+
+@dataclass(frozen=True)
+class ConsultationStep:
+    """
+    Eine Beratung im Verlauf einer Vorlage, nur mit öffentlichen Angaben: Bei einem nichtöffentlichen
+    Tagesordnungspunkt bleiben Ergebnis und Beschlusstext leer.
+    """
+
+    meeting_id: uuid.UUID | None
+    date: datetime | None
+    cancelled: bool
+    organization_name: str | None
+    agenda_number: str | None
+    public: bool
+    result: str | None
+    resolution_text: str | None
+    role: str | None
+    authoritative: bool
+
+
+def public_consultation_history(paper_ids: Iterable[object]) -> dict[uuid.UUID, list[ConsultationStep]]:
+    """
+    Beratungsverlauf je Vorlage (ohne zurückgenommene Beratungen, ohne gelöschte Sitzungen und Punkte),
+    chronologisch, Beratungen ohne Termin zuletzt. Eine Abfrage für alle Vorlagen.
+    """
+    ids = [pk for pk in (_uuid(value) for value in paper_ids) if pk is not None]
+    if not ids:
+        return {}
+    sitzungen = OParlMeeting.objects.filter(external_id=OuterRef("meeting_external_id"), deleted=False)
+    punkte = OParlAgendaItem.objects.filter(
+        external_id=OuterRef("agenda_item_external_id"), deleted=False, meeting__deleted=False
+    )
+    rows = (
+        OParlConsultation.objects.filter(paper_id__in=ids)
+        .exclude(withdrawn_q())
+        .annotate(
+            sitzung_id=Subquery(sitzungen.values("id")[:1]),
+            sitzung_beginn=Subquery(sitzungen.values("start")[:1]),
+            sitzung_abgesagt=Subquery(sitzungen.values("cancelled")[:1]),
+            sitzung_name=Subquery(sitzungen.values("name")[:1]),
+            gremium=Subquery(sitzungen.filter(organizations__name__gt="").values("organizations__name")[:1]),
+            top_nummer=Subquery(punkte.values("number")[:1]),
+            top_oeffentlich=Subquery(punkte.values("public")[:1]),
+            top_ergebnis=Subquery(punkte.values("result")[:1]),
+            top_beschluss=Subquery(punkte.values("resolution_text")[:1]),
+        )
+        .values(
+            "paper_id",
+            "role",
+            "authoritative",
+            "sitzung_id",
+            "sitzung_beginn",
+            "sitzung_abgesagt",
+            "sitzung_name",
+            "gremium",
+            "top_nummer",
+            "top_oeffentlich",
+            "top_ergebnis",
+            "top_beschluss",
+        )
+    )
+    history: dict[uuid.UUID, list[ConsultationStep]] = {}
+    for row in rows:
+        public = row["top_oeffentlich"] is not False
+        sitzung_name = row["sitzung_name"] or ""
+        history.setdefault(row["paper_id"], []).append(
+            ConsultationStep(
+                meeting_id=row["sitzung_id"],
+                date=row["sitzung_beginn"],
+                cancelled=bool(row["sitzung_abgesagt"]),
+                organization_name=row["gremium"] or (sitzung_name if sitzung_name.lower() != "sitzung" else None),
+                agenda_number=row["top_nummer"],
+                public=public,
+                result=row["top_ergebnis"] if public else None,
+                resolution_text=row["top_beschluss"] if public else None,
+                role=row["role"],
+                authoritative=bool(row["authoritative"]),
+            )
+        )
+    for steps in history.values():
+        steps.sort(key=lambda step: (step.date is None, step.date.timestamp() if step.date else 0.0))
+    return history
+
+
+def _public_files(bodies: Bodies) -> QuerySet[OParlFile]:
+    """Dateien der Kommunen, die das Bürgerportal zeigt: nicht gelöscht, in der Quelle abrufbar, Vorgang/Sitzung da."""
+    return (
+        files(bodies)
+        .filter(deleted=False, source_missing_since__isnull=True)
+        .filter(Q(paper__isnull=True) | Q(paper__deleted=False))
+        .filter(Q(meeting__isnull=True) | Q(meeting__deleted=False))
+    )
+
+
+def public_files_of_paper(paper: OParlPaper) -> QuerySet[OParlFile]:
+    """Öffentliche Dateien einer Vorlage, ohne Volltext geladen."""
+    return _public_files([paper.body_id]).filter(paper=paper).defer("text_content", "raw_json").order_by("name")
+
+
+def public_files_by_ids(bodies: Bodies, file_ids: Iterable[object]) -> dict[uuid.UUID, OParlFile]:
+    """Öffentliche Dateien der Kommunen zu Kennungen (etwa Treffer der Suche), ohne Volltext; unbekannte fehlen."""
+    ids = [pk for pk in (_uuid(value) for value in file_ids) if pk is not None]
+    if not ids:
+        return {}
+    found = _public_files(bodies).filter(pk__in=ids).defer("text_content", "raw_json").select_related("paper")
+    return {datei.pk: datei for datei in found}
+
+
+def public_file_with_text(bodies: Bodies, file_id: object) -> OParlFile | None:
+    """Eine öffentliche Datei der Kommunen samt erkanntem Text; sonst ``None``."""
+    pk = _uuid(file_id)
+    return _public_files(bodies).filter(pk=pk).defer("raw_json").select_related("paper").first() if pk else None
+
+
+def public_organizations(bodies: Bodies, text: str = "", *, on: date | None = None) -> QuerySet[OParlOrganization]:
+    """Nicht gelöschte, am Stichtag (Standard heute) bestehende Gremien der Kommunen, wahlweise mit ``text`` im Namen."""
+    found = active_organizations(bodies, on=on).filter(deleted=False)
+    if text:
+        found = found.filter(Q(name__icontains=text) | Q(short_name__icontains=text))
+    return found.order_by("name")
+
+
+def public_organizations_named(bodies: Bodies, name: str) -> list[OParlOrganization]:
+    """
+    Gremien zu einem Namen aus einer Frage: genau gleich (auch Kurzname, ohne Groß-/Kleinschreibung), sonst
+    höchstens zehn, deren Name ihn enthält. Bestehende Gremien zuerst, aufgelöste nur ohne Treffer.
+    """
+    name = name.strip()
+    if not name:
+        return []
+    alle = organizations(bodies).filter(deleted=False)
+    for found in (active_organizations(bodies).filter(deleted=False), alle):
+        exact = list(found.filter(Q(name__iexact=name) | Q(short_name__iexact=name))[:10])
+        if exact:
+            return exact
+        partial = list(found.filter(Q(name__icontains=name) | Q(short_name__icontains=name)).order_by("name")[:10])
+        if partial:
+            return partial
+    return []
+
+
+def search_public_persons(bodies: Bodies, name: str) -> QuerySet[OParlPerson]:
+    """Nicht gelöschte Personen der Kommunen, deren Name jedes Wort aus ``name`` enthält."""
+    found = persons(bodies).filter(deleted=False)
+    for word in name.split()[:4]:
+        found = found.filter(Q(name__icontains=word) | Q(given_name__icontains=word) | Q(family_name__icontains=word))
+    return found.order_by("family_name", "name")
+
+
+def public_current_memberships(person: OParlPerson, *, on: date | None = None) -> QuerySet[OParlMembership]:
+    """Laufende Mitgliedschaften einer Person in nicht gelöschten Gremien ihrer Kommune (Stichtag Standard heute)."""
+    on = on or timezone.localdate()
+    return (
+        OParlMembership.objects.filter(person=person, deleted=False, organization__deleted=False)
+        .filter(organization__body_id=person.body_id)
+        .filter(Q(start_date__isnull=True) | Q(start_date__lte=on))
+        .filter(Q(end_date__isnull=True) | Q(end_date__gte=on))
+        .select_related("organization")
+        .order_by("organization__name")
+    )

@@ -1,0 +1,41 @@
+{% comment %}
+Sicherheit › Aktive Sitzungen (Issue #951): Liste mit Linien, die aktuelle Sitzung als Text statt Chip. Beenden einzeln
+(action=revoke_session, session_key) und aller anderen (action=revoke_all_sessions) mit Rückfrage wie bisher.
+Kontext: sessions (mit is_current).
+{% endcomment %}
+<c-rahmen.abschnitt titel="Aktive Sitzungen" titel_id="sicherheit-sitzungen">
+    {% if sessions|length > 1 %}
+    <c-slot name="link">
+        <form method="post" x-data
+              @submit.prevent="confirmAction({ title: 'Alle Sitzungen beenden', message: 'Alle anderen Sitzungen werden sofort beendet. Sie bleiben nur auf diesem Gerät angemeldet.', confirmText: 'Alle beenden', variant: 'warning' }).then(ok => ok && $el.submit())">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="revoke_all_sessions">
+            <button type="submit" class="font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Alle anderen beenden</button>
+        </form>
+    </c-slot>
+    {% endif %}
+    <c-rahmen.satz eng>Geräte, auf denen Sie angemeldet sind.</c-rahmen.satz>
+    {% if sessions %}
+    <c-rahmen.liste class="mt-3">
+        {% for session in sessions %}
+        <li class="flex items-center gap-x-4 py-2.5">
+            <div class="flex-1 min-w-0">
+                <p class="text-sm font-medium text-gray-900 dark:text-white truncate">{{ session.device_name|default:"Unbekanntes Gerät" }}{% if session.is_current %}<span class="font-normal text-gray-600 dark:text-gray-400"> · dieses Gerät</span>{% endif %}</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if session.ip_address %}{{ session.ip_address }} · {% endif %}{% if session.is_current %}jetzt aktiv{% else %}zuletzt vor {{ session.last_activity|timesince }}{% endif %}</p>
+            </div>
+            {% if not session.is_current %}
+            <form method="post" x-data
+                  @submit.prevent="confirmAction({ title: 'Sitzung beenden', message: 'Diese Sitzung auf „{{ session.device_name|default:'Unbekanntes Gerät'|escapejs }}“ wird sofort beendet.', confirmText: 'Beenden', variant: 'warning' }).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="revoke_session">
+                <input type="hidden" name="session_key" value="{{ session.session_key }}">
+                <c-ui.button type="submit" variant="ghost" size="sm" class="text-red-700 dark:text-red-400">Beenden<span class="sr-only">: {{ session.device_name|default:"Unbekanntes Gerät" }}</span></c-ui.button>
+            </form>
+            {% endif %}
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+    {% else %}
+    <c-rahmen.satz>Keine aktiven Sitzungen.</c-rahmen.satz>
+    {% endif %}
+</c-rahmen.abschnitt>

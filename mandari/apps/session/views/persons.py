@@ -23,6 +23,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import allowance_service
 from ..visibility import meeting_q
 
@@ -167,6 +168,10 @@ class PersonListView(SessionViewMixin, ListView):
     paginate_by = 50
     permission_required = "view_meetings"  # Basic access
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/personen.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_queryset(self):
         qs = super().get_queryset()
         qs = qs.order_by("family_name", "given_name")
@@ -191,6 +196,10 @@ class PersonDetailView(SessionViewMixin, DetailView):
     context_object_name = "person"
     pk_url_kwarg = "person_id"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/person.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -224,6 +233,10 @@ class PersonFormMixin:
     form_class = SessionPersonForm
     template_name = "session/persons/form.html"
     permission_required = "manage_organizations"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/person_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()

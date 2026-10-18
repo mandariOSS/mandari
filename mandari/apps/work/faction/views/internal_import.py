@@ -9,6 +9,9 @@ Nichtöffentliche Unterlage einlesen und TOPs übernehmen (Issue #873).
 
 Nur vereidigte Mitglieder mit Genehmigungsrecht (``internal_documents.can_import``); alle anderen erhalten 403,
 fremde oder nicht nichtöffentliche Unterlagen 404.
+
+Im neuen Erscheinungsbild (Schalter je Organisation, Issue #951) zeigen beide Schritte eine Vorlage aus
+``work/faction/neu/``; ``?ansicht=bisher`` öffnet die bisherige (wie ``apps.work.rahmen.NeueVorlageMixin``).
 """
 
 from __future__ import annotations
@@ -29,6 +32,7 @@ from apps.common.uploads import MB, PDF, validate_upload
 from apps.tenants.models import Membership, Organization
 from apps.work.motions import non_public
 from apps.work.motions.models import Motion
+from apps.work.rahmen import neues_design
 
 from .. import internal_documents
 from ..models import FactionMeeting
@@ -40,6 +44,11 @@ MAX_BYTES = 25 * MB
 
 UPLOAD_TEMPLATE = "work/faction/internal_import.html"
 CONFIRM_TEMPLATE = "work/faction/internal_import_confirm.html"
+#: Dieselben Schritte im neuen Erscheinungsbild (Issue #951)
+NEUE_VORLAGEN = {
+    UPLOAD_TEMPLATE: "work/faction/neu/unterlage_einlesen.html",
+    CONFIRM_TEMPLATE: "work/faction/neu/unterlage_uebernehmen.html",
+}
 
 
 class _InternalImportMixin(WorkViewMixin):
@@ -64,6 +73,8 @@ class _InternalImportMixin(WorkViewMixin):
         return redirect("work:faction_detail", org_slug=self._org.slug, meeting_id=meeting.id)
 
     def _render(self, request: HttpRequest, template: str, context: dict[str, Any], status: int = 200) -> HttpResponse:
+        if neues_design(self._org) and request.GET.get("ansicht") != "bisher":
+            template = NEUE_VORLAGEN.get(template, template)
         base = cast(dict[str, Any], cast(Any, self).get_context_data())
         return TemplateResponse(request, template, {**base, "active_nav": "faction", **context}, status=status)
 

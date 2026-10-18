@@ -597,7 +597,7 @@ python manage.py fix_permissions   # Probelauf: zeigt, was fehlt
 python manage.py fix_permissions --fix  # ergänzt fehlende Rechte/Standardrollen, ändert keine vorhandenen
 
 # OParl-Daten (Sync läuft im Ingestor, siehe oben)
-python manage.py extract_texts      # OCR für PDFs
+python manage.py extract_texts      # Texterkennung einplanen (Aufträge file.extract_text, lädt nicht)
 
 # Elasticsearch konfigurieren (Synonyme, Typo-Toleranz)
 python manage.py setup_elasticsearch
@@ -646,8 +646,15 @@ ELASTICSEARCH_AUTO_INDEX=True
 TEXT_EXTRACTION_ENABLED=True
 TEXT_EXTRACTION_MAX_SIZE_MB=50
 
-# Mistral OCR (optional, für bessere PDF-OCR)
+# KI (Issue #950): Anbieter, Basis-URL, Modell und Schlüssel im Admin (KI-Einstellungen), kein fester Anbieter
+# im Code. Jeder KI-Aufruf nur an Hosts dieser Positivliste; leer ist nichts erlaubt (KI aus, kein Standard).
+# Erst nach Freigabe eines Anbieters dessen Host eintragen, etwa KI_ERLAUBTE_HOSTS=<host-des-anbieters>;
+# dann `manage.py ki_anbieter einrichten …` und `ki_anbieter pruefen` (Issue #1046, DEPLOYMENT.md „KI-Anbieter“)
+KI_ERLAUBTE_HOSTS=
+
+# Externe Texterkennung (optional, nur öffentliche RIS-Dateien): nur mit Basis-URL aus KI_ERLAUBTE_HOSTS
 MISTRAL_API_KEY=sk-...
+MISTRAL_BASE_URL=https://<host-aus-KI_ERLAUBTE_HOSTS>/v1
 MISTRAL_OCR_RATE_LIMIT=60
 ```
 
@@ -741,6 +748,23 @@ plain = obj.get_secret_decrypted()        # Entschlüsseln und zurückgeben
 4. **OParl-Standard** - Kompatibilität mit deutschen Ratsinformationssystemen
 5. **HTMX-First** - Minimales JavaScript, maximale Interaktivität
 6. **Audit-Trail** - Vollständige Nachverfolgbarkeit aller Aktionen
+
+### Datendrehscheibe: Regeln für Beiträge
+
+Schichten, Abhängigkeiten und Prüfungen stehen in `docs/ENGINEERING_STANDARDS.md`, Abschnitt 1, und in
+der [ADR Schichtenmodell](docs/adr/20260929-schichtenmodell.md). Kurz:
+
+- **Keine fremden Tabellen:** Jeder Datenbestand hat genau einen Eigentümer, nur er schreibt. Session,
+  Work und Minutes kennen sich nicht (`lint-imports`). Auch lesend gibt es keinen Zugriff auf fremde
+  Tabellen, weder über deren Modelle noch per SQL: RIS-Daten lesen Fachmodule nur über
+  `hub.ris.selectors`, nicht über `OParl*.objects`.
+- **Ereignisse veröffentlicht nur der Eigentümer:** `publish()` steht nur im Paket, das der Vertrag als
+  `x-owner` nennt. `ris.*` gehört der Drehscheibe (`hub.ris`, Übertragungen `ris.broadcast.*` in
+  `hub.live`); der Ingestor schreibt `ris.*` als Eingangsadapter direkt ins Journal.
+- **Befehle statt Direktaufruf:** Daten eines anderen Moduls ändert ein Befehl an den Eigentümer
+  (`hub.commands`, Quittung oder Problem nach RFC 9457), kein Aufruf seiner Services.
+- **Jedes Ereignis und jeder Befehl hat ein Schema** unter `hub/contracts/schemas/<typ>/v<n>.json`, im
+  selben PR, nur additiv geändert; `scripts/check_event_contracts.py` prüft das in der CI.
 
 ---
 

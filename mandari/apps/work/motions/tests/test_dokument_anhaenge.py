@@ -231,7 +231,7 @@ def test_anhaenge_gehen_bei_der_einreichung_mit(
     application = antrag.session_application
     assert application is not None
 
-    (datei,) = SessionFile.objects.filter(application=application)
+    (datei,) = SessionFile.objects.filter(application=application, is_application_pdf=False)
     assert datei.name == "Lageplan.pdf" and datei.is_public is False and datei.tenant == tenant
     assert datei.mime_type == "application/pdf" and datei.versions.count() == 1
     with datei.file.open("rb") as handle:
@@ -259,9 +259,9 @@ def test_umwandlung_haengt_anhaenge_nichtoeffentlich_an_die_vorlage(
         application = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
         paper, _neu = convert_to_paper(application)
 
-    (datei,) = SessionFile.objects.filter(application=application)
+    (datei,) = SessionFile.objects.filter(application=application, is_application_pdf=False)
     assert datei.paper == paper and datei.is_public is False
-    assert list(paper.files.all()) == [datei]
+    assert list(paper.files.filter(is_application_pdf=False)) == [datei]
     # Öffentlich nur mit NÖ-Recht für Vorlagen, wie jede nichtöffentliche Anlage
     assert not file_service.file_visible({"view_papers"}, datei)
     assert file_service.file_visible({"view_papers", "view_non_public_papers"}, datei)
@@ -273,7 +273,7 @@ def test_antrags_anhang_laesst_sich_vor_der_umwandlung_nicht_veroeffentlichen(
     MotionDocument.objects.create(motion=antrag, file=_datei("Plan.pdf"), filename="Plan.pdf", file_size=17)
     with commit():
         application = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
-    datei = SessionFile.objects.get(application=application)
+    datei = SessionFile.objects.get(application=application, is_application_pdf=False)
 
     verwaltung = _verwaltung(tenant, can_view_applications=True, can_process_applications=True, can_edit_meetings=True)
     verwaltung.post(f"/session/{tenant.slug}/files/{datei.id}/update/", {"name": "Plan.pdf", "is_public": "on"})
@@ -311,7 +311,7 @@ def test_queryset_regel_gleicht_der_einzelpruefung_fuer_antrags_anhaenge(
     MotionDocument.objects.create(motion=antrag, file=_datei("Plan.pdf"), filename="Plan.pdf", file_size=17)
     with commit():
         application = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
-    datei = SessionFile.objects.get(application=application)
+    datei = SessionFile.objects.get(application=application, is_application_pdf=False)
 
     # Vor der Umwandlung: nur mit dem Recht, Anträge zu sehen – NÖ-Recht für Vorlagen genügt nicht
     assert not _im_queryset({"view_papers", "view_non_public_papers"}, datei)
@@ -358,7 +358,7 @@ def test_antrags_anhaenge_erhalten_text_fuer_die_suche(
     with commit():
         application = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
 
-    datei = SessionFile.objects.get(application=application)
+    datei = SessionFile.objects.get(application=application, is_application_pdf=False)
     assert "Fahrradständer am Rathaus" in datei.text_content
     mit = _verwaltung(tenant, can_view_applications=True)
     assert "Notiz.txt" in mit.get(f"/session/{tenant.slug}/search/?q=Fahrradständer").content.decode()
@@ -428,3 +428,145 @@ def test_nicht_uebernommene_anhaenge_werden_namentlich_gemeldet(
     assert any("Mit 1 Anhang." in m for m in meldungen), meldungen
     (warnung,) = [m for m in meldungen if m.startswith("Nicht übermittelt:")]
     assert "Virus.pdf (Virenprüfung" in warnung and "Plan.pdf" not in warnung
+
+
+# =============================================================================
+# Antragsfassung als PDF: beim Einreichen erzeugt, mit der Vorlage öffentlich
+# =============================================================================
+
+
+def _antragsfassungen(application: Any) -> list[SessionFile]:
+    return list(SessionFile.objects.filter(application=application, is_application_pdf=True))
+
+
+def _pdf_text(datei: SessionFile) -> str:
+    import io
+
+    from pypdf import PdfReader
+
+    with datei.file.open("rb") as handle:
+        inhalt = handle.read()
+    assert inhalt.startswith(b"%PDF")
+    return "\n".join(seite.extract_text() or "" for seite in PdfReader(io.BytesIO(inhalt)).pages)
+
+
+def test_einreichen_erzeugt_genau_eine_antragsfassung_als_pdf(
+    org: Any, antrag: Motion, autorin: Any, verbunden: Any, tenant: SessionTenant, commit: Any
+) -> None:
+    autorin.user.first_name, autorin.user.last_name = "Anna", "Autorin"
+    autorin.user.save(update_fields=["first_name", "last_name"])
+    daten = {
+        **ris_submission.build_prefill(antrag),
+        "co_signers": "Erika Muster",
+        "financial_impact": "rund 4.500 Euro",
+    }
+    with commit():
+        application = ris_submission.submit_motion(antrag, autorin, daten)
+
+    (pdf,) = _antragsfassungen(application)
+    assert pdf.name == f"Antrag {application.reference.replace('/', '-')}.pdf" and "/" not in pdf.name
+    assert pdf.is_public is False and pdf.paper is None and pdf.tenant == tenant
+    assert pdf.mime_type == "application/pdf" and pdf.versions.count() == 1 and pdf.size > 0
+    assert "Die Verwaltung plant einen Radweg." in pdf.text_content
+
+    text = _pdf_text(pdf)
+    for erwartet in (
+        "Radweg Hauptstraße",
+        application.reference,
+        "Beschlussvorschlag",
+        "Anna Autorin",
+        "Fraktion Test",
+        "Erika Muster",
+        "4.500 Euro",
+    ):
+        assert erwartet in text, erwartet
+    # Die Datei wird öffentlich: keine Kontaktdaten der einreichenden Person
+    assert "autorin@example.org" not in text
+
+
+def test_antragsfassung_uebernimmt_kein_html(
+    org: Any, antrag: Motion, autorin: Any, verbunden: Any, monkeypatch: Any
+) -> None:
+    from apps.common import pdf as pdf_bausteine
+
+    erzeugt: list[str] = []
+    echt = pdf_bausteine.html_to_pdf
+
+    def mitschreiben(html: str) -> bytes:
+        erzeugt.append(html)
+        return echt(html)
+
+    monkeypatch.setattr(pdf_bausteine, "html_to_pdf", mitschreiben)
+    daten = {**ris_submission.build_prefill(antrag), "justification": '<img src="https://x.example/a.png"><b>fett</b>'}
+    ris_submission.submit_motion(antrag, autorin, daten)
+
+    (html,) = erzeugt
+    assert "<img" not in html and "<b>fett" not in html
+    assert "&lt;b&gt;fett&lt;/b&gt;" in html
+    # Ohne hinterlegten Namen steht die E-Mail-Adresse im Namensfeld des Eingangs – nicht in der Antragsfassung
+    assert "autorin@example.org" not in html
+
+
+def test_pdf_fehler_blockiert_die_einreichung_nicht(
+    org: Any, antrag: Motion, autorin: Any, verbunden: Any, monkeypatch: Any, caplog: Any
+) -> None:
+    from apps.common import pdf as pdf_bausteine
+
+    def kaputt(_html: str) -> bytes:
+        raise RuntimeError("PDF generation error")
+
+    monkeypatch.setattr(pdf_bausteine, "html_to_pdf", kaputt)
+    MotionDocument.objects.create(motion=antrag, file=_datei("Plan.pdf"), filename="Plan.pdf", file_size=17)
+
+    application = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
+
+    antrag.refresh_from_db()
+    assert antrag.session_application == application and antrag.status == "submitted"
+    assert _antragsfassungen(application) == []
+    assert [f.name for f in SessionFile.objects.filter(application=application)] == ["Plan.pdf"]
+    assert "Antragsfassung (PDF) nicht erzeugt" in caplog.text
+
+
+def test_umwandlung_macht_nur_die_antragsfassung_oeffentlich(
+    org: Any, antrag: Motion, autorin: Any, verbunden: Any, tenant: SessionTenant, commit: Any
+) -> None:
+    from apps.session import oparl_publication
+    from apps.session.services.application_service import convert_to_paper
+
+    MotionDocument.objects.create(motion=antrag, file=_datei("Plan.pdf"), filename="Plan.pdf", file_size=17)
+    with commit():
+        application = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
+        paper, _neu = convert_to_paper(application)
+
+    (pdf,) = _antragsfassungen(application)
+    anhang = SessionFile.objects.get(application=application, is_application_pdf=False)
+    assert pdf.paper == paper and pdf.is_public is True
+    assert anhang.paper == paper and anhang.is_public is False
+    assert file_service.file_visible({"view_papers"}, pdf)
+    assert not file_service.file_visible({"view_papers"}, anhang)
+
+    # OParl (und damit der Spiegel ins Bürgerportal) zeigt die Antragsfassung erst mit der Freigabe der Vorlage
+    assert paper.status == "draft"
+    assert not cast(Any, oparl_publication).visible_files(tenant).filter(pk=pdf.pk).exists()
+    paper.status = "approved"
+    paper.save(update_fields=["status"])
+    sichtbar = set(cast(Any, oparl_publication).visible_files(tenant).values_list("pk", flat=True))
+    assert pdf.pk in sichtbar and anhang.pk not in sichtbar
+
+
+def test_meldung_zaehlt_die_antragsfassung_nicht_als_anhang(
+    org: Any, antrag: Motion, autorin: Any, verbunden: Any, client_for: Any, commit: Any
+) -> None:
+    from django.contrib.messages import get_messages
+
+    with commit():
+        antwort = client_for(autorin.user).post(
+            _url(org, antrag, "submit-ris/"),
+            {**ris_submission.build_prefill(antrag), "application_type": "motion", "confirm": "on"},
+        )
+    assert antwort.status_code == 302
+    meldungen = [str(m) for m in get_messages(antwort.wsgi_request)]
+    (erfolg,) = [m for m in meldungen if m.startswith("Antrag eingereicht.")]
+    assert "Anhang" not in erfolg
+    antrag.refresh_from_db()
+    assert len(_antragsfassungen(antrag.session_application)) == 1

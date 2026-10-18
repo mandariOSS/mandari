@@ -58,7 +58,7 @@ def _get_org_folder_or_404(organization, folder_id, membership=None):
     return get_object_or_404(DocumentFolder.visible_to(organization, membership), id=folder_uuid)
 
 
-def _broadcast_doc_reload(motion, version=None):
+def _broadcast_doc_reload(motion, version=None, ausser_fenster=""):
     """
     Alle verbundenen Kollaborations-Clients zum Neuladen auffordern.
 
@@ -67,6 +67,10 @@ def _broadcast_doc_reload(motion, version=None):
     oder Statuswechsel in einen gesperrten Status (Clients laden neu und
     erhalten dabei ihre ggf. herabgestufte Zugriffsstufe). Best-Effort:
     Fehler beim Broadcast brechen die aufrufende Aktion nicht ab.
+
+    ``ausser_fenster``: Kennung des Editorfensters, das die Aktion ausgelöst hat (#1018). Es lädt selbst neu und
+    bekommt keine Aufforderung; sein letztes Sichern beim Verlassen verwirft der Server dann nicht. Nur für Aktionen,
+    die den Inhalt nicht ändern (Statuswechsel) – nach einem neuen Inhalt muss jedes Fenster als veraltet gelten.
     """
     try:
         from asgiref.sync import async_to_sync
@@ -74,10 +78,10 @@ def _broadcast_doc_reload(motion, version=None):
 
         channel_layer = get_channel_layer()
         if channel_layer is not None:
-            async_to_sync(channel_layer.group_send)(
-                f"doc_{motion.id}",
-                {"type": "doc.reload", "version": version},
-            )
+            event = {"type": "doc.reload", "version": version}
+            if ausser_fenster:
+                event["ausser_fenster"] = ausser_fenster
+            async_to_sync(channel_layer.group_send)(f"doc_{motion.id}", event)
     except Exception as e:
         logger.warning(f"[DocumentEditor] Reload-Broadcast fehlgeschlagen: {e}")
 
@@ -95,3 +99,22 @@ def _can_manage_folder(membership, folder) -> bool:
     if membership.has_permission("organization.edit"):
         return True
     return folder.created_by_id == membership.id and membership.has_permission("motions.create")
+
+
+def _share_download_response(request, organization, allowed: bool):
+    """
+    Antwort nach dem Umschalten von „Herunterladen erlauben“ (Issue #582): zurück zur aufrufenden Work-Seite
+    (``next``) oder 204 mit Neuladen für HTMX.
+    """
+    from django.contrib import messages
+    from django.http import HttpResponse
+    from django.shortcuts import redirect
+    from django.utils.http import url_has_allowed_host_and_scheme
+
+    next_url = request.POST.get("next", "")
+    if next_url.startswith(f"/work/{organization.slug}/") and url_has_allowed_host_and_scheme(
+        next_url, allowed_hosts=None
+    ):
+        messages.success(request, "Herunterladen erlaubt." if allowed else "Herunterladen abgeschaltet.")
+        return redirect(next_url)
+    return HttpResponse(status=204, headers={"HX-Refresh": "true"})

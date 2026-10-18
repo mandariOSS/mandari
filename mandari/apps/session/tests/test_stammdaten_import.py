@@ -22,6 +22,7 @@ from django.core.management import CommandError, call_command
 
 from apps.session.models import (
     SessionAuditLog,
+    SessionBody,
     SessionLegislativeTerm,
     SessionOrganization,
     SessionOrganizationMembership,
@@ -29,7 +30,7 @@ from apps.session.models import (
     SessionStateProfile,
     SessionTenant,
 )
-from apps.session.services import stammdaten_import, stammdaten_tabellen
+from apps.session.services import body_service, stammdaten_import, stammdaten_tabellen
 from apps.session.services.stammdaten_tabellen import TableError, read_table
 from insight_core.models import (
     OParlBody,
@@ -728,6 +729,10 @@ def test_hinzugewaehlte_haben_ohne_angabe_kein_stimmrecht(tenant: SessionTenant,
 def test_stimmrecht_sachkundiger_buerger_nach_landesprofil(
     tenant: SessionTenant, tmp_path: Path, code: str, sachkundig: bool
 ) -> None:
+    # Landesprofile aus der Datei: Tests mit transaction=True im selben Worker leeren die Tabelle der Datenmigration
+    from apps.session.services import meeting_format_service
+
+    meeting_format_service.sync_profiles()
     tenant.state_profile = SessionStateProfile.objects.get(code=code)
     tenant.save()
     _co_opted_files(tmp_path)
@@ -763,9 +768,10 @@ def test_vorlage_aus_dem_ris_laesst_das_stimmrecht_hinzugewaehlter_offen() -> No
 
 # ---------------------------------------------------------------- Mehrdeutige Namen im Bestand
 
-MEHRFACH = (
-    "ist im Mandanten mehrfach vorhanden und damit nicht eindeutig "
-    "(Abgleich je Körperschaft folgt mit der Spalte koerperschaft)."
+MEHRFACH = "ist im Mandanten mehrfach vorhanden und damit nicht eindeutig."
+MEHRFACH_GREMIUM = (
+    "ist im Mandanten mehrfach vorhanden und damit nicht eindeutig; die Körperschaft in der Spalte koerperschaft "
+    "angeben."
 )
 
 
@@ -797,9 +803,9 @@ def test_mehrdeutige_namen_im_bestand_sind_fehler(tenant: SessionTenant, tmp_pat
     plan = stammdaten_import.plan_import(tenant, tmp_path)
     assert [f.text() for f in plan.errors] == [
         f"wahlperioden.csv, Zeile 2: Wahlperiode „Wahlperiode 2026–2031“ {MEHRFACH}",
-        f"gremien.csv, Zeile 2: „Bauausschuss“ {MEHRFACH}",
-        f"gremien.csv, Zeile 3: Übergeordnetes Gremium „Bauausschuss“ {MEHRFACH}",
-        f"besetzungen.csv, Zeile 2: Gremium „Verwaltungsausschuss“ {MEHRFACH}",
+        f"gremien.csv, Zeile 2: „Bauausschuss“ {MEHRFACH_GREMIUM}",
+        f"gremien.csv, Zeile 3: Übergeordnetes Gremium „Bauausschuss“ {MEHRFACH_GREMIUM}",
+        f"besetzungen.csv, Zeile 2: Gremium „Verwaltungsausschuss“ {MEHRFACH_GREMIUM}",
         "besetzungen.csv, Zeile 3: Gremium „Unterausschuss Hochbau“ hat Fehler (siehe gremien.csv, Zeile 3).",
         f"besetzungen.csv, Zeile 3: Wahlperiode „Wahlperiode 2026–2031“ {MEHRFACH}",
     ]
@@ -811,6 +817,179 @@ def test_mehrdeutige_namen_im_bestand_sind_fehler(tenant: SessionTenant, tmp_pat
         run("--tenant", "musterdorf", str(tmp_path))
     # Nichts angefasst: der inaktive Bauausschuss bleibt inaktiv
     assert SessionOrganization.objects.filter(tenant=tenant, name="Bauausschuss", is_active=False).exists()
+
+
+# ---------------------------------------------------------------- Körperschaften (Spalte koerperschaft, #756)
+
+
+def _zweite_koerperschaft(tenant: SessionTenant, **fields: Any) -> SessionBody:
+    """Zweite Körperschaft neben der Standardkörperschaft „Gemeinde Musterdorf“ (Kurzkennung musterdorf)."""
+    return SessionBody.objects.create(tenant=tenant, **({"name": "Gemeinde Beispielheim", "short_name": "BH"} | fields))
+
+
+def test_koerperschaft_trennt_gleichnamige_gremien(tenant: SessionTenant, tmp_path: Path) -> None:
+    """Samtgemeinde-Fall: Rat und Verwaltungsausschuss je Körperschaft, Besetzungen am richtigen Gremium."""
+    standard = body_service.default_body(tenant)
+    zweite = _zweite_koerperschaft(tenant)
+    write(
+        tmp_path,
+        "gremien.csv",
+        "name;koerperschaft;art;uebergeordnet\n"
+        "Rat;Gemeinde Musterdorf;Rat;\n"
+        "Verwaltungsausschuss;musterdorf;Verwaltungsausschuss;Rat\n"
+        "Rat;BH;Rat;\n"
+        "Verwaltungsausschuss;bh;Verwaltungsausschuss;Rat\n"
+        "Ausschuss für Finanzen;;Ausschuss;\n",
+    )
+    write(
+        tmp_path,
+        "fraktionen.csv",
+        "name;koerperschaft\nFraktion A;Gemeinde Musterdorf\nFraktion A;Gemeinde Beispielheim\n",
+    )
+    write(tmp_path, "personen.csv", "kennung;vorname;nachname\nP1;Ida;Muster\nP2;Max;Beispiel\n")
+    write(
+        tmp_path,
+        "besetzungen.csv",
+        "person;gremium;koerperschaft;beginn\n"
+        "P1;Verwaltungsausschuss;musterdorf;01.11.2026\n"
+        "P2;Verwaltungsausschuss;BH;01.11.2026\n"
+        "P1;Fraktion A;BH;01.11.2026\n"
+        "P2;Ausschuss für Finanzen;;01.11.2026\n",
+    )
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert plan.errors == []
+    assert plan.hints == []
+    assert plan.tallies["gremien"].created == 5
+    assert plan.tallies["fraktionen"].created == 2
+
+    run("--tenant", "musterdorf", str(tmp_path))
+    orgs = {(o.name, o.body_id): o for o in SessionOrganization.objects.filter(tenant=tenant)}
+    assert set(orgs) == {
+        ("Rat", standard.pk),
+        ("Verwaltungsausschuss", standard.pk),
+        ("Rat", zweite.pk),
+        ("Verwaltungsausschuss", zweite.pk),
+        ("Ausschuss für Finanzen", standard.pk),  # ohne Angabe: Standardkörperschaft
+        ("Fraktion A", standard.pk),
+        ("Fraktion A", zweite.pk),
+    }
+    # Übergeordnetes Gremium aus derselben Körperschaft
+    assert orgs[("Verwaltungsausschuss", standard.pk)].parent == orgs[("Rat", standard.pk)]
+    assert orgs[("Verwaltungsausschuss", zweite.pk)].parent == orgs[("Rat", zweite.pk)]
+    besetzt = {
+        (m.person.given_name, m.organization.name, m.organization.body_id)
+        for m in SessionOrganizationMembership.objects.filter(organization__tenant=tenant).select_related(
+            "person", "organization"
+        )
+    }
+    assert besetzt == {
+        ("Ida", "Verwaltungsausschuss", standard.pk),
+        ("Max", "Verwaltungsausschuss", zweite.pk),
+        ("Ida", "Fraktion A", zweite.pk),
+        ("Max", "Ausschuss für Finanzen", standard.pk),
+    }
+
+    # Zweiter Lauf: nichts geändert, kein neuer Eintrag im Prüfprotokoll
+    audit = SessionAuditLog.objects.filter(tenant=tenant).count()
+    again = stammdaten_import.plan_import(tenant, tmp_path)
+    assert again.errors == []
+    assert all(t.created == 0 and t.updated == 0 for t in again.tallies.values())
+    run("--tenant", "musterdorf", str(tmp_path))
+    assert SessionAuditLog.objects.filter(tenant=tenant).count() == audit
+
+
+def test_unbekannte_oder_mehrdeutige_koerperschaft_ist_ein_fehler(tenant: SessionTenant, tmp_path: Path) -> None:
+    _zweite_koerperschaft(tenant, name="Gemeinde Nord", short_name="MD")
+    _zweite_koerperschaft(tenant, name="Gemeinde Süd", short_name="MD")
+    _zweite_koerperschaft(tenant, name="Gemeinde Alt", short_name="ALT", is_active=False)
+    SessionOrganization.objects.create(tenant=tenant, name="Rat", organization_type="council")
+    write(
+        tmp_path,
+        "gremien.csv",
+        "name;koerperschaft;art;uebergeordnet\n"
+        "Rat;Gemeinde Nirgendwo;Rat;\n"
+        "Rat;MD;Rat;\n"
+        "Bauausschuss;md-2;Ausschuss;Rat\n"
+        "Rat;ALT;Rat;\n",
+    )
+    write(tmp_path, "personen.csv", "kennung;vorname;nachname\nP1;Ida;Muster\n")
+    write(
+        tmp_path,
+        "besetzungen.csv",
+        "person;gremium;koerperschaft;beginn\nP1;Rat;XY;01.11.2026\nP1;Rat;Gemeinde Nord;01.11.2026\n",
+    )
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert [f.text() for f in plan.errors] == [
+        "gremien.csv, Zeile 2: Spalte koerperschaft: Körperschaft „Gemeinde Nirgendwo“ unbekannt (erwartet Name, "
+        "Kurzname oder Kurzkennung einer Körperschaft des Mandanten).",
+        "gremien.csv, Zeile 3: Spalte koerperschaft: „MD“ passt zu mehreren Körperschaften – den Namen oder die "
+        "Kurzkennung angeben.",
+        "gremien.csv, Zeile 5: Die Körperschaft „Gemeinde Alt“ ist deaktiviert; dort nichts neu anlegen.",
+        # Das übergeordnete Gremium wird in derselben Körperschaft gesucht, nicht im ganzen Mandanten
+        "gremien.csv, Zeile 4: Übergeordnetes Gremium unbekannt (weder in den Dateien noch in der Körperschaft "
+        "„Gemeinde Süd“ angelegt).",
+        "besetzungen.csv, Zeile 2: Spalte koerperschaft: Körperschaft „XY“ unbekannt (erwartet Name, Kurzname oder "
+        "Kurzkennung einer Körperschaft des Mandanten).",
+        "besetzungen.csv, Zeile 3: Gremium „Rat“ in der Körperschaft „Gemeinde Nord“ unbekannt (weder in den "
+        "Dateien noch angelegt).",
+    ]
+    with pytest.raises(CommandError, match="Fehler – nichts geschrieben"):
+        run("--tenant", "musterdorf", str(tmp_path))
+    assert SessionOrganization.objects.filter(tenant=tenant).count() == 1
+
+
+def test_gleicher_name_in_anderer_koerperschaft(tenant: SessionTenant, tmp_path: Path) -> None:
+    """Neu in der genannten Körperschaft mit Hinweis; ein Verweis ohne Körperschaft ist danach mehrdeutig."""
+    _zweite_koerperschaft(tenant)
+    vorhanden = SessionOrganization.objects.create(tenant=tenant, name="Rat", organization_type="council")
+    write(tmp_path, "gremien.csv", "name;koerperschaft;art\nRat;BH;Rat\n")
+    write(tmp_path, "personen.csv", "kennung;vorname;nachname\nP1;Ida;Muster\n")
+    write(tmp_path, "besetzungen.csv", "person;gremium;beginn\nP1;Rat;01.11.2026\n")
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert [f.text() for f in plan.hints] == [
+        "gremien.csv: Neu in der genannten Körperschaft, obwohl es den Namen in einer anderen Körperschaft schon "
+        "gibt (Zeile 2). Der Import verschiebt keine Gremien zwischen Körperschaften – prüfen, ob dasselbe Gremium "
+        "gemeint ist."
+    ]
+    assert [f.text() for f in plan.errors] == [f"besetzungen.csv, Zeile 2: Gremium „Rat“ {MEHRFACH_GREMIUM}"]
+
+    # Mit Körperschaft eindeutig; der vorhandene Rat der Standardkörperschaft bleibt, wie er ist
+    write(tmp_path, "besetzungen.csv", "person;gremium;koerperschaft;beginn\nP1;Rat;BH;01.11.2026\n")
+    run("--tenant", "musterdorf", str(tmp_path))
+    membership = SessionOrganizationMembership.objects.get(organization__tenant=tenant)
+    assert membership.organization.body is not None and membership.organization.body.short_name == "BH"
+    assert membership.organization_id != vorhanden.pk
+    vorhanden.refresh_from_db()
+    assert vorhanden.body == body_service.default_body(tenant)
+
+
+def test_uebergeordnetes_gremium_aus_anderer_koerperschaft_gibt_hinweis(tenant: SessionTenant, tmp_path: Path) -> None:
+    """Zeilen mit und ohne Spalte gemischt: kein Fehler (altes Verhalten), aber ein Hinweis statt stiller Zuordnung."""
+    zweite = _zweite_koerperschaft(tenant)
+    write(
+        tmp_path,
+        "gremien.csv",
+        "name;koerperschaft;art;uebergeordnet\nRat;BH;Rat;\nVerwaltungsausschuss;;Verwaltungsausschuss;Rat\n",
+    )
+    plan = stammdaten_import.plan_import(tenant, tmp_path)
+    assert plan.errors == []
+    assert [f.text() for f in plan.hints] == [
+        "gremien.csv, Zeile 3: „Verwaltungsausschuss“ (Gemeinde Musterdorf) bekommt das übergeordnete Gremium "
+        "„Rat“ aus der Körperschaft „Gemeinde Beispielheim“. Ist das nicht gewollt, in der Spalte koerperschaft "
+        "die Körperschaft des Gremiums angeben."
+    ]
+    run("--tenant", "musterdorf", str(tmp_path))
+    ausschuss = SessionOrganization.objects.get(tenant=tenant, name="Verwaltungsausschuss")
+    assert ausschuss.body == body_service.default_body(tenant)
+    assert ausschuss.parent is not None and ausschuss.parent.body == zweite
+
+    # Mit Körperschaft auch beim Untergremium: derselbe Rat, kein Hinweis
+    write(
+        tmp_path,
+        "gremien.csv",
+        "name;koerperschaft;art;uebergeordnet\nRat;BH;Rat;\nHauptausschuss;BH;Ausschuss;Rat\n",
+    )
+    assert stammdaten_import.plan_import(tenant, tmp_path).hints == []
 
 
 def test_wahlperiode_zum_beginn_mehrdeutig(tenant: SessionTenant, tmp_path: Path) -> None:

@@ -48,8 +48,8 @@ ERROR_KIND_INFO = {
     "robots_blocked": {
         "label": "robots.txt sperrt",
         "reason": (
-            "robots.txt sperrt: Die robots.txt der Instanz verbietet unserem Crawler den Abruf, "
-            "die Quelle wird nicht gecrawlt (keine Umgehung)"
+            "robots.txt sperrt: Die robots.txt der Instanz verbietet unserem Ingestor den Abruf, "
+            "die Quelle wird nicht abgerufen (keine Umgehung)"
         ),
         "recommendation": (
             "Betreiber der Quelle ansprechen: um eine Freigabe unseres User-Agents in der robots.txt "
@@ -292,6 +292,81 @@ def _check(name: str, status: str, detail: str) -> dict:
     return {"name": name, "status": status, "detail": detail, **STATUS_META[status]}
 
 
+def _vor(age: timedelta) -> str:
+    """Alter als „vor 5 Minuten“ oder „vor 3 Stunden“."""
+    minutes = max(0, int(age.total_seconds() // 60))
+    if minutes < 120:
+        return "vor 1 Minute" if minutes == 1 else f"vor {minutes} Minuten"
+    return f"vor {minutes // 60} Stunden"
+
+
+def _ingestor_checks() -> list[dict]:
+    """
+    Ingestor-Daemon und Sync-Läufe der letzten 24 Stunden.
+
+    Der Daemon gilt als aktiv, solange sein Lebenszeichen in Redis steht (Issue #1026); der letzte Lauf steht daneben,
+    nachts und am Wochenende liegt er bis zu 2 Stunden zurück. Seit #1026 schreibt jeder Lauf ein Protokoll je Quelle.
+    Die Läufe bewertet der Monitor für den Ingestor als Ganzes: Kritisch erst, wenn in 24 Stunden keine Quelle
+    erfolgreich abgeglichen wurde. Quellen, deren Läufe alle scheiterten, nennt er; bewertet werden sie je Quelle
+    (Quellentabelle, Alarm), damit eine dauerhaft gestörte Quelle den Systemstatus nicht auf Warnung hält.
+    """
+    from django.db.models import Count, Max, Q
+
+    from insight_sync import daemon
+    from insight_sync.models import SyncLog
+
+    checks = []
+    now = timezone.now()
+    last_log = SyncLog.objects.order_by("-started_at").first()
+    last_run = f"letzter Lauf {_vor(now - last_log.started_at)}" if last_log is not None else "noch kein Lauf"
+    activity = daemon.ingestor_activity()
+    if activity == daemon.ACTIVE_BY_HEARTBEAT:
+        checks.append(_check("Ingestor-Daemon", "ok", f"Daemon aktiv (Lebenszeichen), {last_run}"))
+    elif activity is not None:
+        checks.append(_check("Ingestor-Daemon", "ok", f"Daemon aktiv (Sync-Protokoll), {last_run}"))
+    elif last_log is None:
+        checks.append(_check("Ingestor-Daemon", "warning", "Noch kein Sync-Lauf protokolliert"))
+    else:
+        age = now - last_log.started_at
+        status = "critical" if age > timedelta(hours=6) else "warning"
+        checks.append(_check("Ingestor-Daemon", status, f"Kein Lebenszeichen, {last_run}"))
+
+    runs = SyncLog.objects.filter(started_at__gte=now - timedelta(hours=24))
+    total = runs.count()
+    failed = runs.filter(status=SyncLog.Status.FAILED).count()
+    if total == 0:
+        checks.append(_check("Sync-Läufe (24 h)", "warning", "Keine Läufe in den letzten 24 Stunden"))
+        return checks
+    if failed == 0:
+        checks.append(_check("Sync-Läufe (24 h)", "ok", f"{total} Läufe, keine Fehler"))
+        return checks
+    if not runs.filter(status=SyncLog.Status.SUCCESS).exists():
+        detail = (
+            f"Alle {total} Läufe fehlgeschlagen"
+            if failed == total
+            else f"{failed} von {total} Läufen fehlgeschlagen, keiner erfolgreich"
+        )
+        checks.append(_check("Sync-Läufe (24 h)", "critical", detail))
+        return checks
+    # Quellen, deren Läufe in 24 Stunden alle scheiterten (laufende zählen nicht)
+    per_source = (
+        runs.order_by()
+        .values("source_id")
+        .annotate(
+            ok=Count("id", filter=Q(status=SyncLog.Status.SUCCESS)),
+            failed=Count("id", filter=Q(status=SyncLog.Status.FAILED)),
+            name=Max("source__name"),
+        )
+        .filter(ok=0, failed__gt=0)
+    )
+    without_success = sorted(row["name"] or "ohne Quelle" for row in per_source)
+    detail = f"{failed} von {total} Läufen fehlgeschlagen"
+    if without_success:
+        detail += f"; ohne Erfolg: {', '.join(without_success)} (Bewertung je Quelle)"
+    checks.append(_check("Sync-Läufe (24 h)", "ok", detail))
+    return checks
+
+
 def collect_system_health() -> list[dict]:
     """Datenbank, Cache, Elasticsearch, Ingestor-Daemon, Sync-Läufe, Worker."""
     checks = []
@@ -362,12 +437,23 @@ def collect_system_health() -> list[dict]:
             status = "warning"
         else:
             status = "ok"
+        gb = 1024**3
+        if stats.get("object_storage"):
+            # Mit Objektspeicher liegt nur ein Teil lokal (#961): Platte und Objektspeicher getrennt
+            belegung = (
+                f"{stats['ok']} von {stats['total']} Dokumenten abgelegt ({stats['coverage']} %), "
+                f"lokal {stats['local_bytes'] / gb:.2f} GB, im Objektspeicher {stats['remote_bytes'] / gb:.2f} GB"
+            )
+        else:
+            belegung = (
+                f"{stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
+                f"{stats['local_bytes'] / gb:.2f} GB belegt"
+            )
         checks.append(
             _check(
                 "Dokument-Cache",
                 status,
-                f"{stats['ok']} von {stats['total']} Dokumenten lokal ({stats['coverage']} %), "
-                f"{stats['cached_gb']} GB belegt, {free_gb:.0f} GB frei"
+                f"{belegung}, {free_gb:.0f} GB frei"
                 + (f", {stats['paused']} warten auf Quellen in Schonung" if stats.get("paused") else ""),
             )
         )
@@ -376,34 +462,10 @@ def collect_system_health() -> list[dict]:
 
     # Ingestor-Daemon + Sync-Läufe
     try:
-        from insight_sync import daemon
-        from insight_sync.models import SyncLog
-
-        last_log = SyncLog.objects.order_by("-started_at").first()
-        if daemon.is_ingestor_active():
-            checks.append(_check("Ingestor-Daemon", "ok", "Letzter Lauf vor weniger als 30 Minuten"))
-        elif last_log is None:
-            checks.append(_check("Ingestor-Daemon", "warning", "Noch kein Sync-Lauf protokolliert"))
-        else:
-            age = timezone.now() - last_log.started_at
-            status = "critical" if age > timedelta(hours=6) else "warning"
-            hours = int(age.total_seconds() // 3600)
-            checks.append(_check("Ingestor-Daemon", status, f"Letzter Lauf vor {hours} Stunden"))
-
-        day_ago = timezone.now() - timedelta(hours=24)
-        runs = SyncLog.objects.filter(started_at__gte=day_ago)
-        total = runs.count()
-        failed = runs.filter(status=SyncLog.Status.FAILED).count()
-        if total == 0:
-            checks.append(_check("Sync-Läufe (24 h)", "warning", "Keine Läufe in den letzten 24 Stunden"))
-        elif failed == 0:
-            checks.append(_check("Sync-Läufe (24 h)", "ok", f"{total} Läufe, keine Fehler"))
-        elif failed < total:
-            checks.append(_check("Sync-Läufe (24 h)", "warning", f"{failed} von {total} Läufen fehlgeschlagen"))
-        else:
-            checks.append(_check("Sync-Läufe (24 h)", "critical", f"Alle {total} Läufe fehlgeschlagen"))
+        checks.extend(_ingestor_checks())
     except Exception as exc:
-        checks.append(_check("Ingestor-Daemon", "warning", f"Status nicht ermittelbar: {exc}"))
+        logger.warning("Ingestor-Status nicht ermittelbar: %s", type(exc).__name__)
+        checks.append(_check("Ingestor-Daemon", "warning", f"Status nicht ermittelbar ({type(exc).__name__})"))
 
     checks.append(_worker_check())
     return checks
@@ -495,6 +557,20 @@ def collect_action_items() -> list[dict]:
         "Dokumente mit Cache-Fehler",
         OParlFile.objects.filter(deleted=False, local_status="error").count(),
         reverse("admin:insight_core_oparlfile_changelist") + "?local_status__exact=error",
+        level="ok",
+    )
+    # Zustände des Abrufs (Issue #919, hub/ris/abruf.py): Wiederholungen laufen von selbst; verweigerte Abrufe
+    # (robots.txt, Bot-Schutz) kommen erst nach einer Freigabe wieder dran
+    add(
+        "Dokumente, deren Abruf wiederholt wird (Cache-Fehler, vorübergehend)",
+        OParlFile.objects.filter(deleted=False, local_status="retry").count(),
+        reverse("admin:insight_core_oparlfile_changelist") + "?local_status__exact=retry",
+        level="ok",
+    )
+    add(
+        "Dokumente, deren Abruf die Quelle verweigert (robots.txt, Bot-Schutz)",
+        OParlFile.objects.filter(deleted=False, local_status="refused").count(),
+        reverse("admin:insight_core_oparlfile_changelist") + "?local_status__exact=refused",
         level="ok",
     )
     add(

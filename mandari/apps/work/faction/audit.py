@@ -118,6 +118,7 @@ def log_event(
     changes: dict[str, Any] | None = None,
     request: Any = None,
     is_internal: bool | None = None,
+    object_repr: str | None = None,
 ) -> Any:
     """
     Audit-Eintrag für ein Fraktions-Objekt schreiben.
@@ -130,6 +131,7 @@ def log_event(
         changes: Optionaler Änderungs-Diff (dict)
         request: Optionaler Request (sonst Thread-Local)
         is_internal: NÖ-Kennzeichnung (sonst aus instance abgeleitet)
+        object_repr: Objekt-Beschreibung (sonst ``audit_repr`` bzw. ``str(instance)``), etwa ohne Titel
     """
     from apps.work.faction.models import FactionAuditLog
 
@@ -162,10 +164,11 @@ def log_event(
 
     # Verschlüsselte Inhalte niemals in die Objekt-Beschreibung übernehmen —
     # Models mit sensitivem __str__ liefern eine sichere audit_repr
-    try:
-        object_repr = getattr(instance, "audit_repr", None) or str(instance)
-    except Exception:
-        object_repr = instance.__class__.__name__
+    if object_repr is None:
+        try:
+            object_repr = getattr(instance, "audit_repr", None) or str(instance)
+        except Exception:
+            object_repr = instance.__class__.__name__
 
     try:
         return FactionAuditLog.objects.create(

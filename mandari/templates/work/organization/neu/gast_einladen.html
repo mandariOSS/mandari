@@ -1,0 +1,90 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Mitglieder › Gast einladen im neuen Erscheinungsbild (Issue #951): E-Mail, Freigabestufe, Herunterladen,
+Dokumente und Ordner zum sofortigen Freigeben, Notiz. Felder, Ziel und die Sperre bei erreichtem Gast-Limit wie bisher
+(work/organization/guest_invite.html); Ordner eingerückt über Klassen statt Inline-Stil. Kontext: GuestInviteView.
+{% endcomment %}
+
+{% block page_title %}Gast einladen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Gast einladen" dicht
+    text="Gäste sehen nur die Übersicht „Freigegebene Dokumente“ und ihr Konto, keine weiteren Bereiche. {{ guest_count }} von {{ guest_limit }} Gastplätzen sind belegt.">
+    <c-slot name="oben"><c-insight.zurueck href="{% url 'work:members' org_slug=organization.slug %}">Mitglieder</c-insight.zurueck></c-slot>
+</c-rahmen.kopfband>
+{% include "work/organization/neu/_reiter.html" with seite="mitglieder" aktuell="true" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="mitglieder" aktuell="true" %}
+    <form method="post" class="min-w-0 flex-1">
+        {% csrf_token %}
+        {% if guest_limit_reached %}
+        <c-ui.alert variant="warning" class="mb-6 max-w-3xl" data-testid="gast-limit">Das Gast-Limit ({{ guest_limit }}) ist erreicht. Weitere Gastplätze gibt es als Erweiterung im Kundenportal.</c-ui.alert>
+        {% endif %}
+        <div class="grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+            <c-rahmen.abschnitt titel="Gast" titel_id="gast-titel">
+                <div class="mt-3 space-y-4">
+                    <c-form.field name="email" id="gast-email" type="email" label="E-Mail-Adresse" placeholder="gast@beispiel.de" autocomplete="off" dicht required autofocus
+                                  help="Der Gast erhält eine E-Mail mit einem Link zum Festlegen des Passworts." />
+                    <c-form.textarea name="message" id="gast-notiz" label="Notiz (optional)" rows="3" placeholder="Steht in der E-Mail an den Gast" dicht />
+                    <c-form.select name="share_level" id="gast-stufe" label="Freigabestufe" dicht class="max-w-xs">
+                        {% for value, label in share_levels %}
+                        <option value="{{ value }}" {% if value == "view" %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </c-form.select>
+                    <div>
+                        <input type="hidden" name="allow_download" value="0">
+                        <c-form.checkbox name="allow_download" id="gast-herunterladen" value="1" checked dicht label="Herunterladen erlauben" />
+                        <c-form.hinweis einzug>PDF, Word und Anhänge. Gilt für alle Freigaben dieser Einladung.</c-form.hinweis>
+                    </div>
+                </div>
+            </c-rahmen.abschnitt>
+
+            <div class="space-y-10 min-w-0">
+                <c-rahmen.abschnitt titel="Dokumente freigeben" titel_id="dokumente-titel">
+                    <c-rahmen.satz eng>Optional. Dokumente lassen sich auch später am Dokument freigeben.</c-rahmen.satz>
+                    {% if shareable_documents %}
+                    <fieldset class="mt-3">
+                        <legend class="sr-only">Dokumente</legend>
+                        <ul class="max-h-64 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800">
+                            {% for doc in shareable_documents %}
+                            <li class="py-1.5"><c-form.checkbox name="documents" id="dokument-{{ doc.id }}" value="{{ doc.id }}" dicht>{{ doc.title }} <span class="text-gray-600 dark:text-gray-400">· geändert {{ doc.updated_at|date:"d.m.Y" }}</span></c-form.checkbox></li>
+                            {% endfor %}
+                        </ul>
+                    </fieldset>
+                    {% else %}
+                    <c-rahmen.satz>Keine freigebbaren Dokumente vorhanden.</c-rahmen.satz>
+                    {% endif %}
+                </c-rahmen.abschnitt>
+
+                <c-rahmen.abschnitt titel="Ordner freigeben" titel_id="ordner-titel">
+                    <c-rahmen.satz eng>Optional. Eine Ordner-Freigabe gilt auch für alle Unterordner und Dokumente darin, auch für später hinzugefügte. Private Dokumente bleiben privat.</c-rahmen.satz>
+                    {% if shareable_folders %}
+                    <fieldset class="mt-3">
+                        <legend class="sr-only">Ordner</legend>
+                        <ul class="max-h-64 overflow-y-auto divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800">
+                            {% for folder, depth in shareable_folders %}
+                            <li class="py-1.5 {% if depth == 2 %}pl-4{% elif depth == 3 %}pl-8{% elif depth > 3 %}pl-12{% endif %}"><c-form.checkbox name="folders" id="ordner-{{ folder.id }}" value="{{ folder.id }}" dicht>{{ folder.name }}</c-form.checkbox></li>
+                            {% endfor %}
+                        </ul>
+                    </fieldset>
+                    {% else %}
+                    <c-rahmen.satz>Keine freigebbaren Ordner vorhanden.</c-rahmen.satz>
+                    {% endif %}
+                </c-rahmen.abschnitt>
+            </div>
+        </div>
+        <div class="mt-8 flex flex-wrap items-center gap-4">
+            {% if guest_limit_reached %}
+            <c-ui.button type="submit" size="sm" icon="user-round-plus" disabled>Gastzugang einrichten</c-ui.button>
+            {% else %}
+            <c-ui.button type="submit" size="sm" icon="user-round-plus">Gastzugang einrichten</c-ui.button>
+            {% endif %}
+            <c-ui.textlink href="{% url 'work:members' org_slug=organization.slug %}" class="text-sm">Abbrechen</c-ui.textlink>
+        </div>
+    </form>
+</div>
+{% endblock %}

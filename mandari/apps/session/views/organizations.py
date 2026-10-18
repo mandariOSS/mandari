@@ -32,6 +32,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import body_service, membership_service, state_law_service
 from .bodies import BodyFilterMixin
 
@@ -48,6 +49,10 @@ class OrganizationListView(BodyFilterMixin, SessionViewMixin, ListView):
     context_object_name = "organizations"
     paginate_by = 20
     permission_required = "view_meetings"  # Anyone who can view meetings can see orgs
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/gremien.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -99,6 +104,10 @@ class OrganizationDetailView(SessionViewMixin, DetailView):
     context_object_name = "organization"
     pk_url_kwarg = "organization_id"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/gremium.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -297,6 +306,10 @@ class OrganizationFormMixin:
     form_class = SessionOrganizationForm
     template_name = "session/organizations/form.html"
     permission_required = "manage_organizations"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/gremium_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)

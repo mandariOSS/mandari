@@ -34,7 +34,7 @@ from django.core.paginator import Page, Paginator
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 
-from hub.api.http import BadRequestError, error_response, json_response, parse_client_datetime
+from hub.api.http import BadRequestError, error_response, json_response, parse_client_datetime, restore_offset_plus
 from hub.ris.canonical import Objekt
 
 #: Zeitfilter externer Listen, in der Reihenfolge ihrer Prüfung
@@ -64,7 +64,7 @@ class TimeFilters:
     @classmethod
     def from_request(cls, request: HttpRequest) -> TimeFilters:
         """Filter der Anfrage; ein Wert ohne Zeitzone oder kein Zeitpunkt ergibt ``BadRequestError``."""
-        sent = {name: request.GET[name] for name in TIME_FILTERS if name in request.GET}
+        sent = {name: restore_offset_plus(request.GET[name]) for name in TIME_FILTERS if name in request.GET}
         return cls(sent=sent, parsed={name: parse_client_datetime(value, name) for name, value in sent.items()})
 
     @staticmethod

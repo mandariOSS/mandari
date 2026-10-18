@@ -1,0 +1,105 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Sitzung anlegen und bearbeiten im neuen Rahmen (Issue #944): eine ruhige Formularspalte mit Abschnitten statt Kasten
+(Sitzung, Termin und Ort, Öffentlichkeit, Sitzungsformat, beim Bearbeiten Stand und Absage, Einladung), Felder dicht.
+Speichern ist die eine Hauptaktion am Formularende, „Abbrechen“ ein Textlink. Felder, Optionen (Gremien mit Vorgabe der
+Öffentlichkeit, nach Körperschaft gruppiert), Kopplung an form-behaviors.ts (data-public-default) und Fehler wie
+session/meetings/form.html, die bisherige Seite bleibt. Kontext wie MeetingCreateView/MeetingUpdateView.
+{% endcomment %}
+
+{% block page_title %}{% if object %}Sitzung bearbeiten{% else %}Neue Sitzung{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Beim Bearbeiten: Weg zurück zur Sitzung #}
+{% block brotkrumen_aktuell %}{% if object %}{% include "session/rahmen/_krume_sitzung.html" with meeting=object %}<c-rahmen.brotkrume>Bearbeiten</c-rahmen.brotkrume>{% else %}<c-rahmen.brotkrume>Neue Sitzung</c-rahmen.brotkrume>{% endif %}{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{% if object %}Sitzung bearbeiten{% else %}Neue Sitzung{% endif %}" dicht>
+    <c-slot name="oben">
+        {% if object %}
+        <c-insight.zurueck href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=object.id %}">{{ object.name|truncatechars:60 }}</c-insight.zurueck>
+        {% else %}
+        <c-insight.zurueck href="{% url 'session:meetings' tenant_slug=tenant_slug %}">Sitzungen</c-insight.zurueck>
+        {% endif %}
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+{% if object %}{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=object.id as abbrechen %}{% else %}{% url 'session:meetings' tenant_slug=tenant_slug as abbrechen %}{% endif %}
+<form method="post" class="max-w-3xl space-y-8" data-testid="sitzung-formular">
+    {% include "session/neu/_formular_fehler.html" %}
+
+    <c-rahmen.abschnitt titel="Sitzung" titel_id="sitzung-titel">
+        <div class="mt-3 space-y-4">
+            <c-form.field :field="form.name" label="Name der Sitzung" placeholder="z. B. 42. Sitzung des Hauptausschusses" required dicht />
+            <div>
+                <c-form.beschriftung feld="{{ form.organization.id_for_label }}" pflicht>Gremium</c-form.beschriftung>
+                <select name="organization" id="id_organization" required data-public-default="#id_is_public" data-date-public-default="#id_date_public"{% if form.organization.errors %} aria-invalid="true" aria-describedby="id_organization-error"{% elif body_choice.active %} aria-describedby="id_organization-help"{% endif %}
+                        class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.organization.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                    <option value="">Bitte wählen</option>
+                    {% include "session/partials/organization_options.html" with groups=organization_groups organizations=organization_choices selected=form.organization.value %}
+                </select>
+                {% if body_choice.active %}
+                {% include "session/neu/_formular_feldfehler.html" with feld=form.organization %}<c-form.hinweis id="{{ form.organization.id_for_label }}-help">Die Sitzung gehört zur Körperschaft ihres Gremiums.</c-form.hinweis>
+                {% else %}
+                {% include "session/neu/_formular_feldfehler.html" with feld=form.organization %}
+                {% endif %}
+            </div>
+
+            {# Weitere beteiligte Gremien: gemeinsame Sitzung (Issue #317) #}
+            {% if form.joint_organizations.field.queryset %}
+            <fieldset data-testid="gemeinsame-sitzung">
+                <c-form.beschriftung als="legend">Weitere beteiligte Gremien (gemeinsame Sitzung)</c-form.beschriftung>
+                <c-form.hinweis>Optional. Geladen werden die Mitglieder aller beteiligten Gremien. Wer mehreren angehört, erhält eine Ladung und hat eine Stimme.</c-form.hinweis>
+                <div class="mt-2 grid gap-x-4 gap-y-2 sm:grid-cols-2">
+                    {% for org in form.joint_organizations.field.queryset %}
+                    <c-form.checkbox name="joint_organizations" id="id_joint_organizations_{{ forloop.counter0 }}" value="{{ org.id }}" checked="{% if org.id|stringformat:'s' in joint_selected %}1{% endif %}" dicht>{{ org.name }}{% if body_choice.active and org.body %} <span class="text-gray-600 dark:text-gray-400">({{ org.body.label }})</span>{% endif %}</c-form.checkbox>
+                    {% endfor %}
+                </div>
+                {% include "session/neu/_formular_feldfehler.html" with feld=form.joint_organizations %}
+            </fieldset>
+            {% endif %}
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Termin und Ort" titel_id="termin-titel">
+        <div class="mt-3 grid gap-4 sm:grid-cols-2">
+            {% include "session/neu/_formular_feld.html" with feld=form.start label="Beginn" typ="datetime-local" wert=form.start.value|date:'Y-m-d\TH:i'|default:form.start.value|default:'' pflicht=True %}
+            {% include "session/neu/_formular_feld.html" with feld=form.end label="Ende" typ="datetime-local" wert=form.end.value|date:'Y-m-d\TH:i'|default:form.end.value|default:'' %}
+            <c-form.field :field="form.location" label="Ort" placeholder="z. B. Rathaus" dicht />
+            <c-form.field :field="form.room" label="Raum" placeholder="z. B. Sitzungssaal 1" dicht />
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Öffentlichkeit" titel_id="oeffentlichkeit-titel">
+        <div class="mt-3 space-y-3">
+            <div>
+                <c-form.checkbox name="is_public" label="Öffentliche Sitzung" checked="{% if form.is_public.value and not publicity_locked %}1{% endif %}" disabled="{% if publicity_locked %}1{% endif %}" dicht />
+                <p class="ml-6 mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">Öffentliche Sitzungen werden über die OParl-API veröffentlicht. Die Vorgabe richtet sich nach dem Gremium.</p>
+                {% if form.is_public.errors %}<p class="ml-6 mt-1 text-sm text-red-700 dark:text-red-400" role="alert">{{ form.is_public.errors.0 }}</p>{% endif %}
+            </div>
+            <c-form.checkbox :field="form.date_public" label="Bei nichtöffentlicher Sitzung: Termin veröffentlichen (ohne Tagesordnung, Ort und Unterlagen)" dicht />
+        </div>
+    </c-rahmen.abschnitt>
+
+    {% include "session/neu/_formular_format.html" %}
+
+    {% if object %}
+    <c-rahmen.abschnitt titel="Stand und Absage" titel_id="stand-titel">
+        <div class="mt-3 space-y-4">
+            <c-form.select :field="form.meeting_state" label="Status" dicht class="sm:w-1/2" />
+            <c-form.checkbox :field="form.cancelled" label="Sitzung absagen" dicht />
+            <c-form.textarea :field="form.cancellation_reason" label="Absagegrund" rows="2" placeholder="Grund für die Absage" dicht />
+        </div>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    <c-rahmen.abschnitt titel="Einladung" titel_id="einladung-titel">
+        <c-form.textarea :field="form.invitation_text" label="Einladungstext" rows="4" placeholder="Optionaler Text für die Einladung" dicht class="mt-3" />
+    </c-rahmen.abschnitt>
+
+    {% if object %}{% include "session/neu/_formular_aktionen.html" with knopf="Speichern" %}{% else %}{% include "session/neu/_formular_aktionen.html" with knopf="Sitzung erstellen" %}{% endif %}
+    {# Am Ende: als erstes Kind gäbe das versteckte Feld dem ersten Abschnitt den Abstand von space-y #}
+    {% csrf_token %}
+</form>
+{% endblock %}

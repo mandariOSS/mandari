@@ -1,12 +1,12 @@
 {# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
 {% comment %}
 Eintrag im Blatt „Mehr“ der Leiste unten, gemeinsam für Insight und Work (Issue #783, #852): große Fläche für den
-Daumen, aktiver Bereich mit aria-current="page".
+Daumen, aktiver Bereich mit aria-current (``current``, Standard ``page``; ``true`` für den Bereich der Seite).
   <c-rahmen.blatt-link href="…" icon="landmark" area="gremien" aktuell="{{ insight_area }}">Gremien</c-rahmen.blatt-link>
   <c-rahmen.blatt-link href="…" icon="square-check" :aktiv="eintrag.aktiv">Aufgaben</c-rahmen.blatt-link>
 {% endcomment %}
-<c-vars href="" icon="" area="" aktuell="" aktiv="" />
-<a href="{{ href }}" {% if aktiv or area and area == aktuell %}aria-current="page"{% endif %}
+<c-vars href="" icon="" area="" aktuell="" aktiv="" current="" />
+<a href="{{ href }}" {% if aktiv or area and area == aktuell %}aria-current="{{ current|default:'page' }}"{% endif %}
     class="flex items-center gap-4 min-h-12 px-3 rounded-lg text-[1.0625rem] {% if aktiv or area and area == aktuell %}bg-primary-50 dark:bg-primary-900/40 font-semibold text-gray-900 dark:text-white{% else %}font-medium text-gray-800 dark:text-gray-200 hover:bg-band-grau{% endif %}">
     <i data-lucide="{{ icon }}" class="w-[22px] h-[22px] shrink-0 {% if aktiv or area and area == aktuell %}text-primary-700 dark:text-primary-300{% else %}text-gray-500 dark:text-gray-400{% endif %}" aria-hidden="true"></i>
     <span class="flex-1 min-w-0 truncate">{{ slot }}</span>

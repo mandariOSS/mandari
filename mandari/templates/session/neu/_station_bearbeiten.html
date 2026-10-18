@@ -1,0 +1,33 @@
+{% comment %}
+Formular einer Station der Beratungsfolge im neuen Rahmen (Issues #34, #944): klappt unter der Station auf („Bearbeiten“
+in session/neu/_beratungsfolge.html). Rolle, Zielsitzung (fest, solange ein TOP existiert), Ergebnis von Hand (nur ohne
+TOP, sonst kommt es aus der Sitzung) und „entscheidend“; Felder wie session/papers/consultation_section.html.
+Kontext: station und der Kontext der Beratungsfolge.
+{% endcomment %}
+<form id="station-{{ station.id }}" method="post" action="{% url 'session:consultation_update' tenant_slug=tenant_slug consultation_id=station.id %}"
+      x-show="bearbeiten" x-cloak class="col-start-2 col-span-full flex flex-wrap items-end gap-2">
+    {% csrf_token %}
+    <c-form.select name="role" id="station-rolle-{{ station.id }}" label="Rolle" dicht class="min-w-0 w-40">
+        {% for value, label in consultation_roles %}<option value="{{ value }}" {% if station.role == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </c-form.select>
+    <span class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-72">
+        <label for="station-sitzung-{{ station.id }}" class="block mb-1 text-sm font-medium text-gray-800 dark:text-gray-200">Zielsitzung</label>
+        <select name="meeting" id="station-sitzung-{{ station.id }}" {% if station.agenda_item %}disabled title="Zielsitzung fest, solange ein TOP existiert"{% endif %}
+                class="h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white disabled:opacity-60 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+            <option value="">Noch offen</option>
+            {% for meeting in consultation_meetings %}
+            {% if station.organization_id in meeting.participating_organization_ids %}<option value="{{ meeting.id }}" {% if station.meeting_id == meeting.id %}selected{% endif %}>{{ meeting.start|date:"d.m.Y" }}, {{ meeting.name|truncatechars:40 }}</option>{% endif %}
+            {% endfor %}
+            {% if station.meeting and station.meeting not in consultation_meetings %}<option value="{{ station.meeting_id }}" selected>{{ station.meeting.start|date:"d.m.Y" }}, {{ station.meeting.name|truncatechars:40 }}</option>{% endif %}
+        </select>
+    </span>
+    {% if station.agenda_item %}
+    <input type="hidden" name="meeting" value="{{ station.meeting_id }}">
+    {% else %}
+    <c-form.select name="result" id="station-ergebnis-{{ station.id }}" label="Ergebnis (ohne TOP)" dicht class="min-w-0 w-48">
+        {% for value, label in consultation_results %}<option value="{{ value }}" {% if station.result == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </c-form.select>
+    {% endif %}
+    <c-form.checkbox name="authoritative" id="station-entscheidend-{{ station.id }}" label="entscheidend" checked="{% if station.authoritative %}1{% endif %}" class="h-9" />
+    <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+</form>

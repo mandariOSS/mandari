@@ -1,0 +1,65 @@
+{% comment %}
+Berichtigungen der Niederschrift im neuen Rahmen (Issues #222, #318, #944): Abschnitt mit den Wegen zum Berichtigen des
+allgemeinen Teils (und des NÖ-Teils) als Textlinks, darunter die Berichtigungen als Liste mit Stand als Punkt mit Text,
+Grund, Änderungen und Antrag. Beantragte Berichtigungen bestätigen bzw. ablehnen (mit Vermerk) ohne Füllfarbe; das
+Vier-Augen-Prinzip zeigt statt „Bestätigen“ seinen Hinweis. Formulare wie session/protocols/_corrections.html.
+Kontext: corrections, can_correct, can_view_np, meeting.
+{% endcomment %}
+{% if corrections or can_correct %}
+<c-rahmen.abschnitt titel="Berichtigungen" titel_id="berichtigungen-titel" zusatz="{% if corrections %}{{ corrections|length }}{% endif %}" data-testid="berichtigungen">
+    {% if can_correct %}
+    <c-slot name="link">
+        <span class="inline-flex flex-wrap gap-x-4 gap-y-1">
+            <c-ui.textlink href="{% url 'session:meeting_protocol_correction' tenant_slug=tenant_slug meeting_id=meeting.id %}?teil=allgemein">Allgemeinen Teil berichtigen</c-ui.textlink>
+            {% if can_view_np %}
+            <c-ui.textlink href="{% url 'session:meeting_protocol_correction' tenant_slug=tenant_slug meeting_id=meeting.id %}?teil=allgemein-noe" class="inline-flex items-center gap-1"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>NÖ-Teil berichtigen</c-ui.textlink>
+            {% endif %}
+        </span>
+    </c-slot>
+    {% endif %}
+    <c-rahmen.satz eng>Nach der Genehmigung ändert sich die Niederschrift nur über eine dokumentierte Berichtigung.</c-rahmen.satz>
+    {% if corrections %}
+    <c-rahmen.liste class="mt-3">
+        {% for row in corrections %}
+        {% with c=row.correction %}
+        <li class="py-3 space-y-1" data-testid="berichtigung">
+            <p class="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-sm">
+                <span class="font-medium text-gray-900 dark:text-white">Berichtigung vom <span class="tabular-nums">{{ c.requested_at|date:"d.m.Y" }}</span>, {{ c.subject_label }}</span>
+                <span class="text-gray-700 dark:text-gray-300">{% if c.status == "applied" %}{% include "session/neu/_status.html" with wert="approved" text=c.get_status_display %}{% else %}{% include "session/neu/_status.html" with wert=c.status text=c.get_status_display %}{% endif %}</span>
+                {% if not c.is_public %}<span class="inline-flex items-center gap-1 text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>nichtöffentlich</span>{% endif %}
+            </p>
+            <p class="text-sm text-gray-800 dark:text-gray-200 break-words">Grund: {{ row.reason }}</p>
+            {% if row.changes %}<p class="liste-angaben">{{ row.changes|join:"; " }}</p>{% endif %}
+            <p class="liste-angaben">
+                Beantragt von {{ c.requested_by.user.email|default:"unbekannt" }}{% if c.decided_by and c.decided_by != c.requested_by %}, {{ c.get_status_display|lower }} durch {{ c.decided_by.user.email }}{% endif %}{% if c.decision_note %} ({{ c.decision_note }}){% endif %}
+            </p>
+            {% if c.status == 'pending' and can_correct %}
+            <div class="pt-1 space-y-2">
+                {% include "session/partials/four_eyes_hint.html" with decision=row.decision %}
+                <div class="flex flex-wrap items-center gap-2">
+                    {% if row.decision.allowed %}
+                    <form method="post" action="{% url 'session:meeting_protocol_correction_decision' tenant_slug=tenant_slug meeting_id=meeting.id correction_id=c.id decision='confirm' %}">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="secondary" size="sm" icon="check">Bestätigen</c-ui.button>
+                    </form>
+                    {% endif %}
+                    <form method="post" action="{% url 'session:meeting_protocol_correction_decision' tenant_slug=tenant_slug meeting_id=meeting.id correction_id=c.id decision='reject' %}"
+                          class="flex items-center gap-2 min-w-0 basis-full sm:basis-auto">
+                        {% csrf_token %}
+                        <label for="ablehnen-vermerk-{{ c.id }}" class="sr-only">Vermerk zur Ablehnung</label>
+                        <input id="ablehnen-vermerk-{{ c.id }}" type="text" name="note" placeholder="Vermerk (optional)"
+                               class="h-9 flex-1 sm:flex-none sm:w-64 min-w-0 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+                        <c-ui.button type="submit" variant="secondary" size="sm" icon="x">Ablehnen</c-ui.button>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+        </li>
+        {% endwith %}
+        {% endfor %}
+    </c-rahmen.liste>
+    {% else %}
+    <c-rahmen.satz>Noch keine Berichtigungen. Einzelne Tagesordnungspunkte berichtigen Sie über „Berichtigen“ am jeweiligen TOP.</c-rahmen.satz>
+    {% endif %}
+</c-rahmen.abschnitt>
+{% endif %}

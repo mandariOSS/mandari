@@ -6,7 +6,7 @@
  * `data-default-type` am Formular. Wechselt der Typ, springt die Vorlage auf die Standardvorlage
  * des Typs (oder eine typunabhängige).
  *
- * Markup: `templates/work/motions/create.html`.
+ * Markup: `templates/work/motions/create.html` und `work/motions/neu/neu.html` (#951).
  */
 
 import { defineComponent } from '../js/alpine/component'

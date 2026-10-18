@@ -8,6 +8,8 @@ from typing import Any
 
 from django import template
 
+from ..ris_links import INSIGHT
+
 register = template.Library()
 
 #: Werte, die in einer Zelle nur als Platzhalter erscheinen würden
@@ -57,3 +59,12 @@ def seiten_url(context: Any, nummer: int) -> str:
         return f"?page={nummer}"
     params["page"] = str(nummer)
     return "?" + str(params.urlencode())
+
+
+@register.simple_tag
+def ris_url(links: Any, art: str, kennung: Any) -> str:
+    """
+    Ziel eines Eintrags in den gemeinsamen RIS-Bausteinen (Issue #853): über ``links`` (``insight_core.ris_links``),
+    ohne Angabe die Detailseite in Insight. ``{% ris_url links "vorgang" paper.pk as ziel %}``.
+    """
+    return str((links or INSIGHT).url(art, kennung))

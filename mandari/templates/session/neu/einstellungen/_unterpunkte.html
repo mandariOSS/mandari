@@ -1,0 +1,18 @@
+{% comment %}
+Unterpunkte eines Reiters der Einstellungen (Issue #944, Teil 2b), etwa „Benutzer · Rollen und Rechte · Vertretungen ·
+Vier-Augen-Prinzip“: ab 1024 px als schmale Spalte links neben dem Inhalt, darunter als Zeile über dem Inhalt (am Handy
+waagerecht verschiebbar), wie die Einstellungen in Work. Nur bei Reitern mit mehr als einer sichtbaren Seite.
+  <div class="lg:flex lg:gap-10">{% include "session/neu/einstellungen/_unterpunkte.html" %}<div class="min-w-0 flex-1">…</div></div>
+{% endcomment %}
+{% with navi=session_rahmen.einstellungen %}{% if navi.unterpunkte %}
+<nav aria-label="{{ navi.reiter_label }}" class="-mt-1 mb-6 lg:mb-0 lg:w-48 lg:shrink-0 print:hidden" data-testid="einstellungen-unterpunkte">
+    <ul class="flex gap-x-5 overflow-x-auto text-sm lg:flex-col lg:gap-0.5 lg:overflow-visible">
+        {% for u in navi.unterpunkte %}
+        <li class="shrink-0">
+            <a href="{{ u.url }}"{% if u.aktiv %} aria-current="{{ u.current|default:'true' }}"{% endif %}
+               class="block py-1.5 lg:px-2.5 rounded-md {% if u.aktiv %}font-semibold text-gray-900 dark:text-white lg:bg-band-grau{% else %}text-gray-700 hover:text-gray-900 dark:text-gray-300 dark:hover:text-white lg:hover:bg-band-grau{% endif %}">{{ u.label }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+</nav>
+{% endif %}{% endwith %}

@@ -10,13 +10,17 @@
  */
 
 import type { Editor } from '@tiptap/core'
+import { type AiTarget, applyAiSuggestion, captureAiTarget, textOfRange } from '../editor/ai-range'
 import type { CollabUser } from '../editor/collaboration'
 import type { FormatState } from '../editor/index'
+import { type GliederungsEintrag, gliederungAus, randAnordnen, zuUeberschriftSpringen } from '../editor/rand'
+import { entscheidungAusfuehren, inEinemAbsatz, vorschlagPasst, vorschlagUebernehmen } from '../editor/vorschlag'
 import { defineComponent } from '../js/alpine/component'
 import { confirmAction } from '../js/alpine/confirm-dialog'
 import { showToast } from '../js/alpine/toast'
-import { csrfToken } from '../js/csrf'
+import { csrfToken, csrfTokenAktuell } from '../js/csrf'
 import { readJsonScript } from '../js/json-script'
+import { bereinigeKiHtml } from '../js/ki-ausgabe'
 import { installMotionTracking } from '../js/motion-tracking'
 import { navigateTo } from '../js/navigation'
 
@@ -62,6 +66,8 @@ export interface InlineCommentReply {
 
 export interface InlineComment {
   id: string
+  /** Mitgliedschaft der Verfasserin bzw. des Verfassers (erledigen darf sie bzw. er) */
+  author_id?: string
   mark_id: string
   content: string
   selected_text: string
@@ -70,6 +76,11 @@ export interface InlineComment {
   created_at: string
   is_resolved: boolean
   replies: InlineCommentReply[]
+  /** Änderungsvorschlag (#856): Ersatz für `selected_text` (leer = streichen); fehlt bzw. null = Kommentar */
+  vorschlag?: string | null
+  vorschlag_angenommen?: boolean | null
+  /** Eigene Notiz zum Vorschlag (leer, wenn der Kommentartext nur den Vorschlag beschreibt) */
+  notiz?: string
 }
 
 export interface DocumentEditorConfig {
@@ -91,6 +102,13 @@ export interface DocumentEditorConfig {
   letterhead: ActiveLetterheadConfig | null
   letterheads: LetterheadOption[]
   inlineComments: InlineComment[]
+  /** „neu“: Antragseditor mit Kommentaren am Rand und Ablauf in der Kopfzeile (Teil von #856); sonst „bisher“ */
+  ansicht?: 'neu' | 'bisher'
+  /** Status des Dokuments beim Laden */
+  status?: string
+  /** Eigene Mitgliedschaft und ob sie alle Kommentare erledigen darf (motions.edit_all) */
+  membershipId?: string
+  erledigenAlle?: boolean
   urls: {
     /** POST: Kommentar anlegen; `<id>/resolve/` darunter: erledigen */
     comment: string
@@ -104,8 +122,19 @@ export interface DocumentEditorConfig {
     revisions: string
     /** POST: Checkliste (Tracking-Sidebar) */
     checklist: string
+    /** POST: Zustimmung (Freigabe) bei einem Mitglied anfragen */
+    approvalRequest?: string
   }
 }
+
+/** Bereiche der rechten Spalte im neuen Editor: leer = Kommentare am Rand */
+export type EditorPanel = '' | 'kommentare' | 'details' | 'aufgaben' | 'ki' | 'verlauf'
+/** Schritte des Ablaufs, die einen Dialog öffnen */
+export type AblaufDialog = '' | 'abstimmung' | 'freigeben' | 'einreichen'
+/** Modus des neuen Editors: Text ändern, Änderungen vorschlagen (am Rand annehmen/ablehnen) oder nur lesen */
+export type EditorModus = 'bearbeiten' | 'vorschlagen' | 'ansehen'
+/** Speichern gestört und wird wiederholt (#927-Muster): Verbindung, Server oder abgelaufene Anmeldung */
+export type SpeicherStoerung = '' | 'verbindung' | 'server' | 'anmeldung'
 
 // ---- Zustandstypen ----------------------------------------------------------------
 
@@ -114,6 +143,10 @@ export interface ChatMessage {
   content: string
   hasAction?: boolean
   actionContent?: string | null
+  /** Markierte Stelle, für die der Vorschlag gilt (Schlüssel in `aiTargets`) */
+  targetId?: number | null
+  /** Hinweis unter dem Vorschlag, z. B. warum er sich nicht übernehmen lässt */
+  hint?: string
 }
 
 export interface Revision {
@@ -129,6 +162,97 @@ type JsonResponse = Record<string, any>
 
 const CONFIG_ID = 'document-editor-config'
 const PLACEHOLDER = 'Beginnen Sie hier mit dem Schreiben...'
+/** Vorauswahl „Wer stimmt ab“ im Dialog „Zur Abstimmung geben“ (json_script im neuen Editor) */
+const ABSTIMMUNG_ID = 'editor-abstimmung-vorauswahl'
+/** Mitglieder, die das Dokument erst durch die Anfrage sehen (Freigabe „Kommentieren“) */
+const ABSTIMMUNG_OHNE_ZUGANG_ID = 'editor-abstimmung-ohne-zugang'
+/** Einstellungen des neuen Editors je Browser */
+const SPEICHER_GLIEDERUNG = 'mandari.editor.gliederung'
+const SPEICHER_SEITENANSICHT = 'mandari.editor.seitenansicht'
+/** Ab dieser Breite stehen Kommentare am Rand neben dem Text (Tailwind lg) */
+const RAND_AB = '(min-width: 1024px)'
+/** Status, in denen der neue Editor im Modus „Vorschlagen“ öffnet (Abstimmung in der Fraktion) */
+const ABSTIMMUNG_STATUS = ['internal_review', 'external_review']
+
+// Speichern mit Wiederholung wie in der Sitzungsvorbereitung (frontend/js/speichern.ts, #927): Störungen werden
+// mit steigender Wartezeit wiederholt, solange die Seite offen ist, 500 bis zu dreimal, bei abgelaufener Anmeldung
+// alle 30 s und sobald die Seite wieder Fokus hat. Jeder Versuch schickt den aktuellen Stand.
+const WARTEZEITEN_MS = [1000, 2000, 4000, 8000, 15000, 30000]
+const ANMELDUNG_WARTEZEIT_MS = 30000
+const ZEITLIMIT_MS = 30000
+const VORUEBERGEHEND = new Set([408, 425, 429, 502, 503, 504])
+const VERSUCHE_BEI_500 = 3
+
+type SpeicherAntwort =
+  | { art: 'ok'; daten: JsonResponse }
+  | { art: 'konflikt'; daten: JsonResponse }
+  | { art: 'stoerung' | 'server' | 'anmeldung' | 'fehler' }
+
+/** Titel, Dokumenttyp und Briefpapier mit den Feldnamen des Speicher-POST (laufen nicht über Yjs, #1018) */
+type MetaWerte = { title: string; document_type_id: string; letterhead_id: string }
+
+async function speicherAntwort(response: Response): Promise<SpeicherAntwort> {
+  const json = (response.headers.get('Content-Type') || '').includes('application/json')
+  const daten: JsonResponse | null = json ? await response.json().catch(() => null) : null
+  // Abgelaufene Anmeldung: Django leitet auf die Anmeldeseite um, fetch folgt und liefert HTML
+  if ((response.redirected && !json) || response.status === 401) return { art: 'anmeldung' }
+  if (response.status === 403 && daten?.error === 'two_factor_setup_required') return { art: 'anmeldung' }
+  if (response.status === 409) return { art: 'konflikt', daten: daten ?? {} }
+  if (VORUEBERGEHEND.has(response.status)) return { art: 'stoerung' }
+  if (response.status === 500) return { art: 'server' }
+  if (response.ok && daten?.success) return { art: 'ok', daten }
+  return { art: 'fehler' }
+}
+
+function gespeicherteEinstellung(key: string, standard: boolean): boolean {
+  try {
+    const wert = window.localStorage.getItem(key)
+    return wert === null ? standard : wert === 'an'
+  } catch {
+    return standard
+  }
+}
+
+function einstellungMerken(key: string, wert: boolean): void {
+  try {
+    window.localStorage.setItem(key, wert ? 'an' : 'aus')
+  } catch {
+    // Privater Modus o. Ä.: Einstellung gilt nur für diese Seite
+  }
+}
+
+/**
+ * Kennung dieses Editorfensters (#1018): hängt an der Kollaborationsverbindung und geht beim Statuswechsel mit. Der
+ * Server schickt dem auslösenden Fenster dann keine Aufforderung zum Neuladen – es lädt selbst neu, und sein letztes
+ * Sichern beim Verlassen gilt nicht als veraltet.
+ */
+function neueFensterKennung(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
+}
+
+/** Link auf eine andere Seite derselben Site, den ein normaler Klick in dieser Registerkarte öffnet */
+function linkZumVerlassen(event: MouseEvent): HTMLAnchorElement | null {
+  if (event.defaultPrevented || event.button !== 0) return null
+  if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return null
+  const link = (event.target as Element | null)?.closest<HTMLAnchorElement>('a[href]')
+  const roh = link?.getAttribute('href') ?? ''
+  if (!link || !roh || roh.startsWith('#')) return null
+  // Links im Text (Popover), eigene Aktionen und Links mit eigenem Verhalten (HTMX, Rückfrage, neues Fenster)
+  if (link.closest('.ProseMirror, [data-ohne-sichern]')) return null
+  if (link.matches('[hx-get], [hx-post], [data-confirm], [data-action], [data-post]')) return null
+  if (link.target && link.target !== '_self') return null
+  let ziel: URL
+  try {
+    ziel = new URL(link.href, window.location.href)
+  } catch {
+    return null
+  }
+  if (ziel.origin !== window.location.origin) return null
+  // Sprung innerhalb der Seite
+  if (ziel.pathname === window.location.pathname && ziel.search === window.location.search && ziel.hash) return null
+  return link
+}
 
 function readConfig(): DocumentEditorConfig {
   const config = readJsonScript<DocumentEditorConfig>(CONFIG_ID)
@@ -157,6 +281,36 @@ export const documentEditor = defineComponent(() => {
   // Identitätsprüfungen von ProseMirror ("Applying a mismatched transaction").
   let editor: Editor | null = null
   let autoSaveInterval: number | null = null
+  // Markierte Stellen der KI-Vorschläge (Teil von #856): außerhalb des reaktiven Zustands, weil sie
+  // Editor-Positionen und Ereignis-Abos halten
+  const aiTargets = new Map<number, AiTarget>()
+  let aiTargetSeq = 0
+  // Neuer Editor: Gliederung und Rand nach Änderungen gebündelt neu berechnen
+  let nachAenderungTimer: number | null = null
+  let randFrame: number | null = null
+  // Speichern mit Wiederholung: geplanter Versuch, Zahl der Versuche (500 zählt getrennt)
+  let wiederholTimer: number | null = null
+  let speicherVersuche = 0
+  let serverfehler = 0
+  // Laufendes Speichern (Aufrufer warten darauf statt still abzubrechen) und das baldige Sichern von Titel, Dokumenttyp
+  // und Briefpapier mit Verbindung (#1018)
+  let speicherLauf: Promise<boolean> | null = null
+  let metaTimer: number | null = null
+  // Zuletzt gesicherte Werte von Titel, Dokumenttyp und Briefpapier (mit Verbindung gehen nur Änderungen per POST)
+  let metaGesichert: MetaWerte = {
+    title: config.title,
+    document_type_id: config.documentTypeId,
+    letterhead_id: config.letterheadId,
+  }
+  const fensterId = neueFensterKennung()
+  // Stellen offener Änderungsvorschläge im Text anders hervorheben als Kommentare (die Marke selbst kennt den
+  // Unterschied nicht): eigenes Stylesheet mit den Marken-IDs, ohne Inline-Stil im Template
+  let vorschlagStil: CSSStyleSheet | null = null
+
+  function releaseAiTargets(): void {
+    for (const target of aiTargets.values()) target.release()
+    aiTargets.clear()
+  }
 
   return {
     updatedAt: Date.now(),
@@ -176,8 +330,15 @@ export const documentEditor = defineComponent(() => {
     // Absenden vorlag und den der Server bestätigt hat.
     _changeSeq: 0,
     _savedSeq: 0,
+    // Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs: eigener Zähler, gesichert nur per POST (#1018)
+    _metaSeq: 0,
+    _metaSavedSeq: 0,
     // Bewusstes Verlassen (Löschen, Statuswechsel, Neu laden, eigene Formulare): keine Rückfrage
     _leavingIntentionally: false,
+    // Eigener Statuswechsel läuft (#1018): Das Fenster lädt danach selbst neu; eine Aufforderung des Servers zum
+    // Neuladen (z. B. herabgestufter Zugriff nach der Sperre) wird bis dahin nur vorgemerkt, ohne Meldung
+    _eigenerStatuswechsel: false,
+    _neuladenVorgemerkt: false,
     // Suchen & Ersetzen
     searchOpen: false,
     searchTerm: '',
@@ -208,6 +369,9 @@ export const documentEditor = defineComponent(() => {
     aiPreviewActive: false,
     aiPreviewContent: '',
     aiOriginalContent: '',
+    aiPreviewTargetId: null as number | null,
+    // Markierter Text, auf den sich KI-Aktionen beziehen (Anzeige im KI-Bereich)
+    aiSelectionText: '',
     previewMode: 'suggested',
     // Kommentar-Sidebar
     showResolvedComments: false,
@@ -243,6 +407,8 @@ export const documentEditor = defineComponent(() => {
     collabUserName: config.collabUserName,
     collabUserColor: config.collabUserColor,
     collabDestroy: null as (() => void) | null,
+    /** Kollaborationsstand sofort speichern und auf die Bestätigung des Servers warten (false: keine Bestätigung) */
+    collabFlush: null as ((timeoutMs?: number) => Promise<boolean>) | null,
     _everConnected: false,
     // Versionsverlauf
     historyMode: false,
@@ -279,6 +445,32 @@ export const documentEditor = defineComponent(() => {
     letterheadName: config.letterheadName,
     letterheadsData: config.letterheads,
     accessLevel: config.accessLevel,
+    // ---- Neuer Antragseditor (Teil von #856) ----
+    ansicht: config.ansicht ?? 'bisher',
+    panel: '' as EditorPanel,
+    // Geöffnetes Menü der Kopfzeile (datei, bearbeiten, ansicht, einfuegen, format, ablauf, weitere, stand)
+    menue: '',
+    dialog: '' as AblaufDialog,
+    // Modus des Textes; „Vorschlagen“ (Änderungen nachverfolgen) gibt es noch nicht
+    // Während der Abstimmung öffnet der neue Editor im Modus „Vorschlagen“; „Bearbeiten“ bleibt wählbar
+    modus: (config.ansicht === 'neu' && ABSTIMMUNG_STATUS.includes(config.status ?? '')
+      ? 'vorschlagen'
+      : 'bearbeiten') as EditorModus,
+    vorschlagOffen: false,
+    vorschlagText: '',
+    vorschlagNotiz: '',
+    vorschlagSendet: false,
+    speicherStoerung: '' as SpeicherStoerung,
+    abstimmungAuswahlOffen: false,
+    gliederung: [] as GliederungsEintrag[],
+    gliederungAn: gespeicherteEinstellung(SPEICHER_GLIEDERUNG, true),
+    seitenansicht: gespeicherteEinstellung(SPEICHER_SEITENANSICHT, false),
+    randAntwort: '',
+    randSendet: false,
+    abstimmungAuswahl: [] as string[],
+    abstimmungArt: 'council',
+    ablaufLaeuft: false,
+    ablaufFehler: '',
     _editorInitialized: false,
     _collabFailed: false,
     _recoveringEditor: false,
@@ -286,7 +478,11 @@ export const documentEditor = defineComponent(() => {
     init(): void {
       if (this._editorInitialized) return
       this._editorInitialized = true
-      installMotionTracking(config.urls.checklist)
+      // Aktionen der Seitenleiste laden neu: vorher sichern und ohne Rückfrage gehen (#1018)
+      installMotionTracking(config.urls.checklist, {
+        sichern: () => this._vorNeuladenSichern(),
+        verlassen: () => this.leaveIntentionally(),
+      })
 
       const canEdit = this.accessLevel === 'edit' || this.accessLevel === 'admin'
       const MandariEditor = window.MandariEditor
@@ -299,7 +495,7 @@ export const documentEditor = defineComponent(() => {
 
         // WebSocket-URL für die Kollaboration
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-        const wsUrl = `${wsProtocol}//${window.location.host}/ws/documents/${this.motionId}/`
+        const wsUrl = `${wsProtocol}//${window.location.host}/ws/documents/${this.motionId}/?fenster=${fensterId}`
 
         // Kollaboration ist Standard für alle Bearbeiter (Google-Docs-Modus).
         // Schlägt die erste WebSocket-Verbindung fehl, wechselt der Editor
@@ -328,14 +524,18 @@ export const documentEditor = defineComponent(() => {
               e.preventDefault()
               this.openLinkDialog()
             }
+          } else if ((e.ctrlKey || e.metaKey) && e.altKey && e.key.toLowerCase() === 'm' && this.ansicht === 'neu') {
+            // Strg+Alt+M = Kommentar zur markierten Stelle (wie in Google Docs)
+            e.preventDefault()
+            this.kommentarStarten()
           } else if (e.key === 'Escape' && this.searchOpen) {
             this.closeSearch()
           }
         }
         document.addEventListener('keydown', this._globalKeydownHandler)
 
-        // Titel, Dokumenttyp und Briefpapier werden mitgespeichert – sie zählen als Änderung
-        this.$watch('title', () => this._markChanged())
+        // Titel, Dokumenttyp und Briefpapier werden mitgespeichert – sie zählen als Änderung (eigener Zähler, #1018)
+        this.$watch('title', () => this._metaGeaendert())
 
         // Rückfrage beim Verlassen mit ungespeicherten Änderungen (#185). Der Handler bleibt
         // wie der Keydown-Handler bewusst registriert: destroy() läuft auch in den
@@ -347,12 +547,48 @@ export const documentEditor = defineComponent(() => {
           e.returnValue = ''
         })
         // Eigene Formulare im Editor (z. B. „Kommentar erledigen“) verlassen die Seite
-        // absichtlich; per fetch abgeschickte Formulare haben preventDefault gesetzt.
+        // absichtlich; per fetch abgeschickte Formulare haben preventDefault gesetzt. Formulare der Seitenleiste
+        // (data-submit-handler) schickt motion-tracking.ts per fetch und sichert vorher (#1018).
         this.$el.addEventListener('submit', (e: Event) => {
-          if (!e.defaultPrevented) this.leaveIntentionally()
+          if (e.defaultPrevented || (e.target as HTMLElement | null)?.dataset?.submitHandler) return
+          this.leaveIntentionally()
+        })
+
+        // Links auf andere Seiten derselben Site (Kopf, Menüs, Bezug, Seitenleisten, Rahmen): erst sichern, dann
+        // ohne Rückfrage gehen. Links zum Herunterladen (download) laden die Datei nach dem Sichern (#1018).
+        document.addEventListener('click', (e: MouseEvent) => {
+          const link = linkZumVerlassen(e)
+          if (!link) return
+          e.preventDefault()
+          if (link.hasAttribute('download')) void this.herunterladen(link.href)
+          else void this.sichernUndGehen(link.href)
+        })
+
+        // Antworten mit HX-Refresh (Teilen-Dialog, Freigaben) laden die Seite neu: vorher sichern (#1018)
+        document.addEventListener('htmx:beforeOnLoad', (e: Event) => {
+          const xhr = (e as CustomEvent<{ xhr?: XMLHttpRequest }>).detail?.xhr
+          if (xhr?.getResponseHeader('HX-Refresh') !== 'true' || this._leavingIntentionally) return
+          e.preventDefault()
+          void this._sichernUndNeuLaden()
+        })
+        // Der Teilen-Dialog sichert schon vor dem Absenden: Lässt sich nicht sichern, unterbleibt die Änderung
+        document.addEventListener('htmx:confirm', (e: Event) => {
+          const detail = (e as CustomEvent<{ elt?: Element; issueRequest?: (bestaetigt?: boolean) => void }>).detail
+          if (!detail?.elt?.closest('[data-vorher-sichern]') || !detail.issueRequest) return
+          e.preventDefault()
+          void this._vorNeuladenSichern().then((gesichert) => {
+            if (gesichert) detail.issueRequest?.(true)
+          })
         })
 
         this.updateWordCount()
+
+        // Speichern mit Wiederholung: wieder online bzw. wieder im Vordergrund → wartenden Versuch sofort senden
+        window.addEventListener('online', () => this.speichernNachholen())
+        window.addEventListener('focus', () => this.speichernNachholen())
+        document.addEventListener('visibilitychange', () => {
+          if (document.visibilityState === 'visible') this.speichernNachholen()
+        })
 
         // Autosave alle 60 Sekunden
         autoSaveInterval = window.setInterval(() => this.autoSave(), 60000)
@@ -398,7 +634,7 @@ export const documentEditor = defineComponent(() => {
       }
 
       // Inline-Kommentar-Popup beim Scrollen des Editors ausblenden
-      const scrollContainer = document.querySelector('.editor-container')
+      const scrollContainer = document.querySelector('.editor-container, .ke-scroll')
       if (scrollContainer) {
         scrollContainer.addEventListener(
           'scroll',
@@ -417,6 +653,24 @@ export const documentEditor = defineComponent(() => {
           void this.loadRevisions()
         }
       })
+
+      // Neuer Editor: Gliederung und Rand nach dem Laden, nach Schriftladen und bei Größenänderung. Ändert sich die
+      // Höhe des Textes (Bilder, Kollaboration), werden Gliederung und Rand neu berechnet.
+      if (this.ansicht === 'neu') {
+        this._nachAenderung()
+        window.addEventListener('resize', () => this.randNeuAnordnen(), { passive: true })
+        const textEl = document.querySelector<HTMLElement>('[data-ke-text]')
+        if (textEl && typeof ResizeObserver !== 'undefined') {
+          new ResizeObserver(() => this._nachAenderung()).observe(textEl)
+        }
+        void document.fonts?.ready.then(() => this.randNeuAnordnen())
+        this._vorschlagStileSetzen()
+        this.$watch('inlineCommentsData', () => {
+          this._vorschlagStileSetzen()
+          void this.$nextTick(() => this.randNeuAnordnen())
+        })
+        this.$watch('activeCommentId', () => this.randNeuAnordnen())
+      }
 
       // Bidirektionale Kommentar-Hervorhebung: CSS-Klasse auf der Editor-Markierung
       this.$watch('activeCommentId', (newId, oldId) => {
@@ -443,11 +697,13 @@ export const documentEditor = defineComponent(() => {
           this.updatedAt = Date.now()
           this._markChanged()
           this.updateWordCount()
+          this._nachAenderung()
         },
         onSelectionUpdate: (state) => {
           this.updatedAt = Date.now()
           this.formats = state
           this._checkTextSelection()
+          this._updateAiSelection()
         },
         onPageCount: (count, currentPage) => {
           this.pageCount = count
@@ -458,6 +714,10 @@ export const documentEditor = defineComponent(() => {
           this.searchTotal = total
         },
       })
+      // Der Anfangsinhalt löst kein onUpdate aus: Gliederung und Rand nach dem Start nachführen (auch nach dem
+      // Wechsel aus der Kollaboration in den Solo-Modus, bei dem die Höhe des Blatts gleich bleibt)
+      this._nachAenderung()
+      this._modusAnwenden()
     },
 
     _initCollabEditor(editorEl: HTMLElement, initialContent: string, wsUrl: string): void {
@@ -477,11 +737,13 @@ export const documentEditor = defineComponent(() => {
             this.updatedAt = Date.now()
             this._markChanged()
             this.updateWordCount()
+            this._nachAenderung()
           },
           onSelectionUpdate: (state) => {
             this.updatedAt = Date.now()
             this.formats = state
             this._checkTextSelection()
+            this._updateAiSelection()
           },
           onPageCount: (count, currentPage) => {
             this.pageCount = count
@@ -503,6 +765,14 @@ export const documentEditor = defineComponent(() => {
               this._switchToSoloMode('Echtzeit-Kollaboration nicht verfügbar — Solo-Modus aktiv.')
             }
           },
+          onInitialState: () => {
+            // Der Anfangsstand kommt vom Server (bzw. aus dem gespeicherten Text): Er ist gespeichert und darf beim
+            // Verlassen keine Rückfrage auslösen. Ohne gespeicherten Yjs-Stand füllt der Editor nach 400 ms aus dem
+            // gespeicherten Text auf (createCollaborativeEditor) – erst danach gleichziehen.
+            window.setTimeout(() => {
+              this._savedSeq = this._changeSeq
+            }, 600)
+          },
           onPersisted: (contentHash) => {
             // Der Server hat unseren Kollaborationsstand gespeichert: Das ist ab jetzt
             // der Stand, von dem ein späteres Speichern ohne Verbindung ausgeht (#184).
@@ -510,16 +780,30 @@ export const documentEditor = defineComponent(() => {
             this.saveConflict = false
             this._savedSeq = this._changeSeq
           },
-          onReloadRequired: () => {
+          onReloadRequired: (reason) => {
             // Server hat einen neuen Stand (Versions-Wiederherstellung oder Speichern
-            // ohne Verbindung durch eine andere Person) → frisch laden
-            showToast('Das Dokument wurde an anderer Stelle gespeichert — es wird neu geladen.', 'info')
+            // ohne Verbindung durch eine andere Person) oder die Berechtigung hat sich
+            // geändert (#582) → frisch laden
+            if (this._eigenerStatuswechsel) {
+              // Gesichert ist schon, und dieses Fenster lädt gleich selbst neu (#1018)
+              this._neuladenVorgemerkt = true
+              return
+            }
+            if (reason === 'access_revoked') {
+              showToast('Ihr Zugriff auf dieses Dokument wurde entzogen. Die Seite wird neu geladen.', 'info')
+            } else if (reason === 'access_changed') {
+              showToast('Ihre Berechtigung für dieses Dokument wurde geändert. Die Seite wird neu geladen.', 'info')
+            } else {
+              showToast('Das Dokument wurde an anderer Stelle gespeichert — es wird neu geladen.', 'info')
+            }
             this.leaveIntentionally()
             window.setTimeout(() => window.location.reload(), 800)
           },
         })
         editor = result.editor
         this.collabDestroy = result.collab.destroy
+        this.collabFlush = result.collab.flush
+        this._modusAnwenden()
       } catch (e) {
         console.error('Kollaborations-Editor konnte nicht gestartet werden, Solo-Fallback:', e)
         this.collabEnabled = false
@@ -540,6 +824,8 @@ export const documentEditor = defineComponent(() => {
         this.collabDestroy()
         this.collabDestroy = null
       }
+      // Gemerkte Stellen gehören zum alten Editor und lassen sich nicht mehr übernehmen
+      releaseAiTargets()
       if (editor) {
         editor.destroy()
         editor = null
@@ -653,6 +939,8 @@ export const documentEditor = defineComponent(() => {
       // Nicht aktualisieren, solange ein Kommentar getippt oder ein Mark-Kommentar angezeigt wird
       if (this.commentPopupExpanded) return
       if (this.markCommentPopup) return
+      // Während ein Änderungsvorschlag geschrieben wird, gilt die Stelle von damals
+      if (this.vorschlagOffen) return
 
       const { from, to, empty } = editor.state.selection
 
@@ -703,6 +991,13 @@ export const documentEditor = defineComponent(() => {
       this.inlineSelectedText = ''
     },
 
+    /** Markierten Text für den KI-Bereich nachführen (bleibt stehen, wenn der Fokus in den Chat wechselt) */
+    _updateAiSelection(): void {
+      if (!editor) return
+      const { from, to, empty } = editor.state.selection
+      this.aiSelectionText = empty ? '' : textOfRange(editor.state.doc, from, to).trim()
+    },
+
     // === Kommentardetails (Klick auf bestehende Markierung) ===
 
     _handleMarkClick(markEl: HTMLElement): void {
@@ -711,6 +1006,12 @@ export const documentEditor = defineComponent(() => {
 
       const comment = this.inlineCommentsData.find((c) => c.mark_id === markId)
       if (!comment) return
+
+      // Neuer Editor: Kommentare stehen am Rand – Karte aktivieren statt Popup (am Handy bleibt das Popup)
+      if (this.ansicht === 'neu' && !this.panel && window.matchMedia(RAND_AB).matches) {
+        this.randKarteAktivieren(markId)
+        return
+      }
 
       // Erneuter Klick auf dieselbe Markierung schaltet aus
       if (this.activeCommentId === markId) {
@@ -756,67 +1057,15 @@ export const documentEditor = defineComponent(() => {
     async submitMarkReply(): Promise<void> {
       if (!this.markReplyText.trim() || this.markReplySubmitting || !this.markCommentData) return
       this.markReplySubmitting = true
-
-      const formData = new URLSearchParams()
-      formData.append('csrfmiddlewaretoken', csrfToken())
-      formData.append('content', this.markReplyText.trim())
-      formData.append('parent', this.markCommentData.id)
-
-      try {
-        const response = await fetch(config.urls.comment, {
-          method: 'POST',
-          headers: formHeaders(),
-          body: formData,
-        })
-        const data: JsonResponse = await response.json()
-        if (data.success && data.comment) {
-          // Antwort lokal ergänzen, damit das Popup sofort aktuell ist
-          this.markCommentData.replies.push({
-            id: data.comment.id,
-            content: data.comment.content,
-            author_name: data.comment.author,
-            author_initials: String(data.comment.author).substring(0, 2).toUpperCase(),
-            created_at: data.comment.created_at,
-          })
-          this.markReplyText = ''
-        } else {
-          showToast('Fehler beim Speichern der Antwort.', 'error')
-        }
-      } catch (error) {
-        console.error('Reply error:', error)
-        showToast('Fehler beim Speichern der Antwort.', 'error')
-      }
-
+      // Antwort wird lokal ergänzt, damit das Popup sofort aktuell ist
+      if (await this._kommentarAntworten(this.markCommentData, this.markReplyText.trim())) this.markReplyText = ''
       this.markReplySubmitting = false
     },
 
     async resolveMarkComment(): Promise<void> {
       if (!this.markCommentData) return
-      const commentId = this.markCommentData.id
-
-      try {
-        const response = await fetch(`${config.urls.comment}${commentId}/resolve/`, {
-          method: 'POST',
-          headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-            'X-CSRFToken': csrfToken(),
-          },
-        })
-        const data: JsonResponse = await response.json()
-        if (data.success) {
-          this.markCommentData.is_resolved = true
-          // Markierung im Editor entfernen (erledigt)
-          if (editor) {
-            editor.commands.unsetCommentMark(this.markCommentData.mark_id)
-          }
-          this.hideMarkPopup()
-          await this.reloadCommentsSidebar()
-        } else {
-          showToast('Fehler beim Erledigen.', 'error')
-        }
-      } catch {
-        showToast('Fehler beim Erledigen.', 'error')
-      }
+      // Erledigt: Markierung im Editor entfernen, Kommentarliste neu laden
+      if (await this._kommentarErledigen(this.markCommentData)) this.hideMarkPopup()
     },
 
     async submitInlineComment(): Promise<void> {
@@ -945,7 +1194,7 @@ export const documentEditor = defineComponent(() => {
         const html = await response.text()
         const parser = new DOMParser()
         const doc = parser.parseFromString(html, 'text/html')
-        const selector = `.editor-sidebar [x-show="sidebarTab === 'comments'"]`
+        const selector = '[data-kommentar-liste]'
         const nextSidebar = doc.querySelector(selector)
         const currentSidebar = document.querySelector(selector)
         if (nextSidebar && currentSidebar) {
@@ -1293,67 +1542,170 @@ export const documentEditor = defineComponent(() => {
       editor.commands.setContent(html)
     },
 
-    async save(force = false): Promise<void> {
-      if (this.saving || !editor) return
+    /**
+     * Speichern (Strg+S, Knopf, automatisch, vor dem Verlassen). Läuft schon ein Speichern, bekommen Aufrufer dessen
+     * Ergebnis. true: Der Stand beim Aufruf ist gesichert (mit Verbindung: Yjs hat ihn bestätigt und Titel, Dokumenttyp
+     * und Briefpapier sind per POST gespeichert).
+     */
+    save(force = false): Promise<boolean> {
+      if (!editor) return Promise.resolve(false)
+      if (speicherLauf) return speicherLauf
+      speicherLauf = this._speichern(force).finally(() => {
+        speicherLauf = null
+      })
+      return speicherLauf
+    },
+
+    async _speichern(force: boolean): Promise<boolean> {
+      if (wiederholTimer) {
+        window.clearTimeout(wiederholTimer)
+        wiederholTimer = null
+      }
       this.saving = true
-      this.saveError = false
-      // Stand, den diese Anfrage sichert; spätere Eingaben bleiben „ungespeichert“
-      const seq = this._changeSeq
-
-      const formData = new FormData()
-      formData.append('csrfmiddlewaretoken', csrfToken())
-      formData.append('action', 'save')
-      formData.append('title', this.title)
-      formData.append('content', this.getContent())
-      formData.append('motion_type', this.motionType)
-      formData.append('document_type_id', this.documentTypeId)
-      formData.append('letterhead_id', this.letterheadId)
-      // Ohne Kollaborationsverbindung den Stand mitschicken, von dem wir ausgehen:
-      // Der Server überschreibt dann keinen neueren Stand still (#184). Mit
-      // Verbindung führt Yjs zusammen, da braucht es die Prüfung nicht.
-      const verbunden = this.collabEnabled && this.collabStatus === 'connected'
-      if (!verbunden && this.contentHash) formData.append('base_content_hash', this.contentHash)
-      if (force) formData.append('force', '1')
-
       try {
-        const response = await fetch(window.location.href, {
-          method: 'POST',
-          headers: { 'X-Requested-With': 'XMLHttpRequest' },
-          body: formData,
-        })
+        // Mit Kollaborationsverbindung sichert Yjs den Text: erst den gemeinsamen Stand sichern und auf die
+        // Bestätigung warten. Per POST gehen dann nur Titel, Dokumenttyp und Briefpapier (#1018). Ein POST mit dem
+        // Text forderte alle Fenster – auch dieses – zum Neuladen auf, sobald er vom gespeicherten Stand abwich.
+        let mitText = true
+        if (this._verbunden() && this.collabFlush) {
+          if (await this.collabFlush()) {
+            mitText = false
+          } else if (this._verbunden()) {
+            // Verbunden, aber keine Bestätigung in der Zeit: nicht per POST überschreiben, später erneut versuchen
+            this._speichernWiederholen('stoerung', force)
+            return false
+          }
+          // Verbindung inzwischen weg: wie ohne Verbindung per POST, mit dem Stand, von dem wir ausgehen
+        }
+        // Stand, den diese Anfrage sichert; spätere Eingaben bleiben „ungespeichert“
+        const seq = this._changeSeq
+        const metaSeq = this._metaSeq
+        if (!mitText && metaSeq === this._metaSavedSeq) {
+          this._gespeichertMelden()
+          return true
+        }
 
-        if (response.status === 409) {
-          const data: JsonResponse = await response.json()
+        // Mit Verbindung nur die Felder schicken, die sich seit dem letzten Sichern in diesem Fenster geändert haben:
+        // Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs, andere Fenster kennen deren Änderungen erst nach
+        // dem Neuladen. Sonst setzte ein anderes Fenster beim Wechsel des Briefpapiers den neuen Titel zurück (#1018).
+        const metaWerte: MetaWerte = {
+          title: this.title,
+          document_type_id: this.documentTypeId,
+          letterhead_id: this.letterheadId,
+        }
+        const metaFelder = (Object.keys(metaWerte) as Array<keyof MetaWerte>).filter(
+          (feld) => mitText || metaWerte[feld] !== metaGesichert[feld],
+        )
+        if (!mitText && !metaFelder.length) {
+          // Zurückgeändert: nichts zu senden
+          this._metaSavedSeq = metaSeq
+          this._gespeichertMelden()
+          return true
+        }
+
+        const formData = new FormData()
+        // Token aus dem Cookie: Nach einer neuen Anmeldung in einem anderen Tab ist nur das Cookie aktuell
+        formData.append('csrfmiddlewaretoken', csrfTokenAktuell())
+        formData.append('action', 'save')
+        // Ohne „content“ lässt der Server Text und Kollaborationsstand unberührt (#1018)
+        if (mitText) formData.append('content', this.getContent())
+        formData.append('motion_type', this.motionType)
+        for (const feld of metaFelder) formData.append(feld, metaWerte[feld])
+        // Ohne Kollaborationsverbindung den Stand mitschicken, von dem wir ausgehen:
+        // Der Server überschreibt dann keinen neueren Stand still (#184). Kam ein
+        // gestörter Versuch doch an, ist die Wiederholung kein Konflikt (gleicher Inhalt).
+        if (mitText && this.contentHash) formData.append('base_content_hash', this.contentHash)
+        if (force) formData.append('force', '1')
+
+        let antwort: SpeicherAntwort
+        try {
+          const zeitlimit = typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ZEITLIMIT_MS) : undefined
+          const response = await fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            body: formData,
+            credentials: 'same-origin',
+            ...(zeitlimit ? { signal: zeitlimit } : {}),
+          })
+          antwort = await speicherAntwort(response)
+        } catch (error) {
+          console.error('Save error:', error)
+          antwort = { art: 'stoerung' }
+        }
+
+        if (antwort.art === 'ok') {
+          this._gespeichertMelden()
+          this._metaSavedSeq = metaSeq
+          metaGesichert = { ...metaGesichert, ...metaWerte }
+          if (mitText) {
+            this._savedSeq = seq
+            if (typeof antwort.daten.content_hash === 'string') this.contentHash = antwort.daten.content_hash
+          }
+          return true
+        }
+        if (antwort.art === 'konflikt') {
           this.saveConflict = true
           this.saveError = true
-          showToast(data.message || 'Das Dokument wurde inzwischen an anderer Stelle geändert.', 'warning')
-        } else if (response.ok) {
-          const data: JsonResponse = await response.json()
-          if (data.success) {
-            this.lastSaved = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
-            this.saveError = false
-            this.saveConflict = false
-            this._savedSeq = seq
-            if (typeof data.content_hash === 'string') this.contentHash = data.content_hash
-          } else {
-            this.saveError = true
-          }
+          this.speicherStoerung = ''
+          showToast(antwort.daten.message || 'Das Dokument wurde inzwischen an anderer Stelle geändert.', 'warning')
+        } else if (
+          antwort.art === 'stoerung' ||
+          antwort.art === 'anmeldung' ||
+          (antwort.art === 'server' && serverfehler + 1 < VERSUCHE_BEI_500)
+        ) {
+          this._speichernWiederholen(antwort.art, force)
         } else {
           this.saveError = true
+          this.speicherStoerung = ''
+          speicherVersuche = 0
+          serverfehler = 0
         }
-      } catch (error) {
-        this.saveError = true
-        console.error('Save error:', error)
+        return false
+      } finally {
+        this.saving = false
       }
+    },
 
-      this.saving = false
+    /** Speichern ist gelungen: Anzeige und Wiederholungszähler zurücksetzen */
+    _gespeichertMelden(): void {
+      this.lastSaved = new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' })
+      this.saveError = false
+      this.saveConflict = false
+      this.speicherStoerung = ''
+      speicherVersuche = 0
+      serverfehler = 0
+    },
+
+    /** Eingabe behalten und später erneut senden (#927-Muster); jeder Versuch schickt den dann aktuellen Stand */
+    _speichernWiederholen(art: 'stoerung' | 'anmeldung' | 'server', force: boolean): void {
+      this.saveError = true
+      speicherVersuche += 1
+      if (art === 'server') serverfehler += 1
+      this.speicherStoerung = art === 'anmeldung' ? 'anmeldung' : art === 'server' ? 'server' : 'verbindung'
+      const basis =
+        art === 'anmeldung'
+          ? ANMELDUNG_WARTEZEIT_MS
+          : WARTEZEITEN_MS[Math.min(speicherVersuche - 1, WARTEZEITEN_MS.length - 1)]
+      // Etwas Streuung, damit nach einem Neustart nicht alle offenen Seiten im selben Moment senden
+      const wartezeit = Math.round(basis * (0.85 + Math.random() * 0.3))
+      wiederholTimer = window.setTimeout(() => {
+        wiederholTimer = null
+        void this.save(force)
+      }, wartezeit)
+    },
+
+    /** Wartet ein Speicherversuch (Störung, Anmeldung), jetzt senden: wieder online, Seite wieder im Vordergrund */
+    speichernNachholen(): void {
+      if (wiederholTimer && !this.saving) void this.save()
     },
 
     autoSave(): void {
-      // Im Kollab-Modus persistiert der Server (yjs_save inkl. HTML +
-      // gedrosselte Revisionen) — kein POST-Autosave nötig, solange
-      // die Verbindung steht.
-      if (this.collabEnabled && this.collabStatus === 'connected') return
+      // Mit Kollaborationsverbindung sichert der Server den Text (yjs_save inkl. HTML und gedrosselte Revisionen).
+      // Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs und gehen per POST (#1018).
+      if (this._verbunden()) {
+        if (this._metaUngesichert() && !this.saving) void this.save()
+        return
+      }
       // Nach einem Konflikt nicht blind weiterversuchen: Die Person entscheidet
       // über "Neu laden" oder "Trotzdem speichern" (#184).
       if (this.saveConflict) return
@@ -1362,13 +1714,40 @@ export const documentEditor = defineComponent(() => {
       if (!this.saving && editor) void this.save()
     },
 
-    /** Liegen seit dem letzten erfolgreichen Speichern Änderungen vor? */
+    /** Steht die Kollaborationsverbindung? */
+    _verbunden(): boolean {
+      return this.collabEnabled && this.collabStatus === 'connected'
+    },
+
+    /** Liegen seit dem letzten erfolgreichen Speichern Änderungen vor (Text oder Titel, Dokumenttyp, Briefpapier)? */
     hasUnsavedChanges(): boolean {
-      return this._changeSeq !== this._savedSeq
+      return this._changeSeq !== this._savedSeq || this._metaUngesichert()
+    },
+
+    _metaUngesichert(): boolean {
+      return this._metaSeq !== this._metaSavedSeq
+    },
+
+    /**
+     * Anzeige „Gespeichert“: Titel, Dokumenttyp und Briefpapier sind per POST gesichert und der Text ist gespeichert
+     * oder läuft über die Verbindung (Yjs sichert laufend).
+     */
+    get standGesichert(): boolean {
+      return !this._metaUngesichert() && (this._changeSeq === this._savedSeq || this._verbunden())
     },
 
     _markChanged(): void {
       this._changeSeq += 1
+    },
+
+    /** Titel, Dokumenttyp oder Briefpapier geändert: mit Verbindung bald per POST sichern (ohne: automatisch) */
+    _metaGeaendert(): void {
+      this._metaSeq += 1
+      if (metaTimer) window.clearTimeout(metaTimer)
+      metaTimer = window.setTimeout(() => {
+        metaTimer = null
+        if (this._verbunden() && this._metaUngesichert()) void this.save()
+      }, 1500)
     },
 
     /** Vor gewollter Navigation aufrufen: Die Rückfrage gilt nur für unbeabsichtigtes Verlassen. */
@@ -1376,9 +1755,65 @@ export const documentEditor = defineComponent(() => {
       this._leavingIntentionally = true
     },
 
+    /**
+     * Den Editor über einen Link verlassen (Menüs, Kopf, Seitenleisten, „Bei der Verwaltung einreichen“ mit
+     * vorbelegten Feldern): erst sichern, dann ohne Rückfrage gehen. Mit Kollaborationsverbindung speichert der Server
+     * sonst nur alle zehn Sekunden; die Zielseite hätte den letzten Satz nicht, und der Browser fragte „Website
+     * verlassen?“. Lässt sich nicht sichern, entscheidet die Person, ob sie trotzdem geht.
+     */
+    async sichernUndGehen(ziel: string): Promise<void> {
+      if (!(await this._vorNeuladenSichern(null))) {
+        const trotzdem = await confirmAction({
+          title: 'Änderungen nicht gespeichert',
+          message:
+            'Ihre letzten Änderungen ließen sich gerade nicht speichern. Wenn Sie die Seite jetzt verlassen, gehen sie verloren.',
+          confirmText: 'Trotzdem verlassen',
+          variant: 'danger',
+        })
+        if (!trotzdem) return
+      }
+      this.leaveIntentionally()
+      window.location.href = ziel
+    },
+
+    /** „Herunterladen als Word“ und andere Dateien: erst sichern, dann laden, ohne die Seite zu verlassen (#1018) */
+    async herunterladen(url: string): Promise<void> {
+      this.menueSchliessen()
+      const gesichert = await this._vorNeuladenSichern(
+        'Ihre Änderungen ließen sich nicht speichern. Die Datei wurde nicht erstellt.',
+      )
+      if (!gesichert) return
+      const link = document.createElement('a')
+      link.href = url
+      link.download = ''
+      link.hidden = true
+      link.dataset.ohneSichern = ''
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+    },
+
+    /** „Vorschau (PDF)“: erst sichern, dann den gespeicherten Stand in einer neuen Registerkarte anzeigen (#1018) */
+    async vorschauOeffnen(url: string): Promise<void> {
+      this.menueSchliessen()
+      // Die Registerkarte sofort öffnen: Nach dem Warten aufs Sichern ließe der Browser sie sonst nicht mehr zu
+      const fenster = window.open('', '_blank')
+      if (fenster) fenster.opener = null
+      const gesichert = await this._vorNeuladenSichern(
+        'Ihre Änderungen ließen sich nicht speichern. Die Vorschau wurde deshalb nicht geöffnet.',
+      )
+      if (!gesichert) {
+        fenster?.close()
+        return
+      }
+      if (fenster) fenster.location.href = url
+      else window.open(url, '_blank', 'noopener')
+    },
+
     /** Konflikt (#184): den eigenen Stand bewusst über den neueren schreiben. */
-    saveOverwrite(): Promise<void> {
-      return this.save(true)
+    async saveOverwrite(): Promise<void> {
+      if (speicherLauf) await speicherLauf
+      await this.save(true)
     },
 
     /** Konflikt (#184): den neueren Stand vom Server holen; eigene Änderungen gehen verloren. */
@@ -1391,13 +1826,13 @@ export const documentEditor = defineComponent(() => {
     setDocumentType(id: string, name: string): void {
       this.documentTypeId = id
       this.documentTypeName = name
-      this._markChanged()
+      this._metaGeaendert()
     },
 
     setLetterhead(id: string, name: string): void {
       this.letterheadId = id
       this.letterheadName = name
-      this._markChanged()
+      this._metaGeaendert()
 
       // Briefkopf-Hintergrund neu rendern
       const container = document.getElementById('editor-container')
@@ -1490,11 +1925,16 @@ export const documentEditor = defineComponent(() => {
     },
 
     async changeStatus(newStatus: string): Promise<void> {
+      // Nach dem Wechsel lädt die Seite neu, und ein gesperrter Status nimmt keine Eingaben mehr an: vorher sichern
+      // (mit Verbindung den gemeinsamen Stand über Yjs, #1018), sonst fehlten die letzten Eingaben in der Fassung
+      if (!(await this._vorNeuladenSichern())) return
+      this._eigenerStatuswechsel = true
       try {
         const response = await fetch(config.urls.status, {
           method: 'POST',
           headers: formHeaders(),
-          body: new URLSearchParams({ status: newStatus }),
+          // Kennung dieses Fensters: Der Server fordert es nicht zum Neuladen auf, es lädt selbst neu (#1018)
+          body: new URLSearchParams({ status: newStatus, fenster: fensterId }),
         })
         const data: JsonResponse = await response.json()
         if (data.success) {
@@ -1505,7 +1945,18 @@ export const documentEditor = defineComponent(() => {
         }
       } catch {
         showToast('Fehler beim Statuswechsel', 'error')
+      } finally {
+        if (!this._leavingIntentionally) this._statuswechselBeendet()
       }
+    },
+
+    /** Eigener Statuswechsel ohne Neuladen beendet: eine inzwischen vorgemerkte Aufforderung jetzt befolgen */
+    _statuswechselBeendet(): void {
+      this._eigenerStatuswechsel = false
+      if (!this._neuladenVorgemerkt) return
+      showToast('Der Stand des Dokuments hat sich geändert — die Seite wird neu geladen.', 'info')
+      this.leaveIntentionally()
+      window.setTimeout(() => window.location.reload(), 800)
     },
 
     async confirmDelete(): Promise<void> {
@@ -1542,7 +1993,7 @@ export const documentEditor = defineComponent(() => {
     sendMessage(): void {
       if (!this.userMessage.trim() || this.aiLoading) return
       const msg = this.userMessage.trim()
-      this.chatMessages.push({ role: 'user', content: msg })
+      this.chatMessages.push({ role: 'user', content: escapeHtml(msg) })
       this.userMessage = ''
       void this.aiAction('chat', msg)
     },
@@ -1554,8 +2005,14 @@ export const documentEditor = defineComponent(() => {
         if (container) container.scrollTop = container.scrollHeight
       })
 
-      const text = editor ? this.getContent() : ''
-      const selectedText = this.selectedText || ''
+      // Vorschläge (alles außer dem Chat) gelten für die markierte Stelle: Nur sie geht an die KI, und nur
+      // sie wird beim Übernehmen ersetzt. Ohne Markierung liest die KI den ganzen Text wie bisher, ihr
+      // Vorschlag lässt sich dann aber nicht übernehmen (nie das ganze Dokument ersetzen, Teil von #856).
+      const isSuggestion = action !== 'chat'
+      const target = editor ? captureAiTarget(editor) : null
+      const text = isSuggestion && target ? target.text : editor ? this.getContent() : ''
+      const selectedText = target ? target.text : ''
+      let targetUsed = false
       const historyPayload = this.chatMessages
         .filter((m) => m.role === 'user' || m.role === 'ai')
         .slice(-8)
@@ -1591,26 +2048,37 @@ export const documentEditor = defineComponent(() => {
           let content = ''
           let hasAction = false
           let actionContent: string | null = null
+          let targetId: number | null = null
+          let hint = ''
 
           if (data.content) {
-            content = String(data.content).replace(/\n/g, '<br>')
-            hasAction = action !== 'chat'
+            content = bereinigeKiHtml(String(data.content).replace(/\n/g, '<br>'))
             actionContent = data.content
+            if (isSuggestion && target) {
+              hasAction = true
+              targetId = ++aiTargetSeq
+              aiTargets.set(targetId, target)
+              targetUsed = true
+            } else if (isSuggestion) {
+              hint = 'Zum Übernehmen markieren Sie die Stelle im Text und wählen die Aktion erneut.'
+            }
           }
           if (Array.isArray(data.suggestions) && data.suggestions.length > 0) {
             content += '<ul class="mt-2 space-y-1">'
             for (const s of data.suggestions) {
-              content += `<li class="text-sm">${s}</li>`
+              content += `<li class="text-sm">${escapeHtml(String(s))}</li>`
             }
             content += '</ul>'
           }
           if (!content) content = 'Keine Vorschlaege verfuegbar.'
 
-          this.chatMessages.push({ role: 'ai', content, hasAction, actionContent })
+          this.chatMessages.push({ role: 'ai', content, hasAction, actionContent, targetId, hint })
         } else {
           this.chatMessages.push({
             role: 'ai',
-            content: 'Entschuldigung, es ist ein Fehler aufgetreten: ' + (data.error || 'Unbekannter Fehler'),
+            content:
+              'Entschuldigung, es ist ein Fehler aufgetreten: ' +
+              escapeHtml(String(data.error || 'Unbekannter Fehler')),
           })
         }
       } catch {
@@ -1620,6 +2088,9 @@ export const documentEditor = defineComponent(() => {
         })
       }
 
+      // Stelle ohne übernehmbaren Vorschlag (Fehler, Chat, leere Antwort) nicht weiter verfolgen
+      if (target && !targetUsed) target.release()
+
       this.aiLoading = false
       void this.$nextTick(() => {
         const container = this.$refs.chatMessages
@@ -1627,28 +2098,667 @@ export const documentEditor = defineComponent(() => {
       })
     },
 
-    applyAiContent(content: string | null | undefined): void {
-      if (content && editor) {
-        this.aiOriginalContent = this.getContent()
-        this.aiPreviewContent = content
-        this.previewMode = 'suggested'
-        this.aiPreviewActive = true
+    applyAiContent(content: string | null | undefined, targetId: number | null = null): void {
+      const target = targetId === null ? undefined : aiTargets.get(targetId)
+      if (!content || !editor || !target) {
+        showToast(
+          'Dieser Vorschlag lässt sich nicht mehr übernehmen. Markieren Sie die Stelle und fragen Sie erneut.',
+          'warning',
+        )
+        return
       }
+      // Original ist nur die markierte Stelle (Text), nicht das ganze Dokument
+      this.aiOriginalContent = escapeHtml(target.text).replace(/\n/g, '<br>')
+      // Vorschau per x-html: nur bereinigt (frontend/js/ki-ausgabe.ts)
+      this.aiPreviewContent = bereinigeKiHtml(content)
+      this.aiPreviewTargetId = targetId
+      this.previewMode = 'suggested'
+      this.aiPreviewActive = true
     },
 
     closeAiPreview(): void {
       this.aiPreviewActive = false
       this.aiPreviewContent = ''
       this.aiOriginalContent = ''
+      this.aiPreviewTargetId = null
       this.previewMode = 'suggested'
     },
 
-    applyAiPreview(): void {
-      if (this.aiPreviewContent && editor) {
-        this.setContent(this.aiPreviewContent)
-        this.chatMessages.push({ role: 'ai', content: 'Änderungen wurden in den Editor übernommen.' })
-        this.closeAiPreview()
+    /** Vorschlag verwerfen: Nachricht entfernen, Stelle nicht weiter verfolgen */
+    discardAiMessage(index: number): void {
+      const message = this.chatMessages[index]
+      if (!message) return
+      if (message.targetId != null) {
+        aiTargets.get(message.targetId)?.release()
+        aiTargets.delete(message.targetId)
       }
+      this.chatMessages.splice(index, 1)
+    },
+
+    /**
+     * Vorschlag nur an der markierten Stelle einsetzen (nie das ganze Dokument). Hat jemand die Stelle
+     * inzwischen geändert, bleibt alles, wie es ist, und der Vorschlag lässt sich neu anfragen.
+     */
+    applyAiPreview(): void {
+      const targetId = this.aiPreviewTargetId
+      const target = targetId === null ? undefined : aiTargets.get(targetId)
+      if (!this.aiPreviewContent || !editor || !target || targetId === null) {
+        this.closeAiPreview()
+        return
+      }
+      let result: ReturnType<typeof applyAiSuggestion> = 'failed'
+      try {
+        result = applyAiSuggestion(editor, target, this.aiPreviewContent)
+      } catch (error) {
+        console.error('KI-Vorschlag konnte nicht eingesetzt werden:', error)
+      }
+      if (result === 'applied') {
+        aiTargets.delete(targetId)
+        for (const message of this.chatMessages) {
+          if (message.targetId === targetId) message.hasAction = false
+        }
+        this.chatMessages.push({ role: 'ai', content: 'Der Vorschlag wurde an der markierten Stelle übernommen.' })
+      } else {
+        const text =
+          result === 'changed'
+            ? 'Die markierte Stelle wurde inzwischen geändert. Der Vorschlag wurde nicht übernommen.'
+            : 'Der Vorschlag ließ sich nicht einsetzen, ohne anderen Text zu ändern. Es wurde nichts übernommen.'
+        showToast(text, 'warning')
+        this.chatMessages.push({ role: 'ai', content: text })
+      }
+      this.closeAiPreview()
+    },
+
+    /**
+     * Vor einem Neuladen oder Verlassen sichern (Statuswechsel, Seitenleiste, Links, Teilen, Herunterladen): mit
+     * Kollaborationsverbindung den gemeinsamen Stand über Yjs und Titel, Dokumenttyp und Briefpapier per POST, ohne
+     * Verbindung alles per POST (#1018). false: nicht gesichert, der Schritt soll unterbleiben; ``meldung`` erscheint
+     * dann als Hinweis (null: keiner, der Aufrufer fragt selbst).
+     */
+    async _vorNeuladenSichern(
+      meldung: string | null = 'Ihre Änderungen ließen sich nicht speichern. Der Schritt wurde nicht ausgeführt.',
+    ): Promise<boolean> {
+      if (!editor) return true
+      if (metaTimer) {
+        window.clearTimeout(metaTimer)
+        metaTimer = null
+      }
+      // Ein laufendes Speichern abwarten; danach mit dem aktuellen Stand noch einmal
+      if (speicherLauf) await speicherLauf
+      const verbunden = this._verbunden()
+      if (!verbunden && !this.hasUnsavedChanges()) return true
+      const ok = await this.save()
+      // Mit Verbindung entscheidet die Bestätigung des Servers: Eingaben anderer zählen bis zum nächsten bestätigten
+      // Stand als „ungesichert“, die sichern deren Fenster. Ohne Verbindung muss alles gesichert sein.
+      const gesichert = verbunden ? ok || !this.hasUnsavedChanges() : ok && !this.hasUnsavedChanges()
+      if (!gesichert && meldung) showToast(meldung, 'error')
+      return gesichert
+    },
+
+    /** Nach einer Antwort mit HX-Refresh: erst sichern, dann ohne Rückfrage neu laden (#1018) */
+    async _sichernUndNeuLaden(): Promise<void> {
+      const gesichert = await this._vorNeuladenSichern(
+        'Die Änderung ist gespeichert, Ihre letzten Eingaben im Text aber nicht. Die Seite wird deshalb nicht neu geladen.',
+      )
+      if (!gesichert) return
+      this.leaveIntentionally()
+      window.location.reload()
+    },
+
+    // === Neuer Antragseditor (Teil von #856): Menüs, Rand, Gliederung, Ablauf ===
+
+    /** Offene Inline-Kommentare für den Rand */
+    get randKarten(): InlineComment[] {
+      return this.inlineCommentsData.filter((c) => !c.is_resolved)
+    },
+
+    menueUmschalten(key: string): void {
+      this.menue = this.menue === key ? '' : key
+    },
+
+    menueSchliessen(): void {
+      this.menue = ''
+    },
+
+    /** Pfeiltasten in der Menüleiste und in geöffneten Menüs (Fokus wandert, Escape schließt) */
+    menueTaste(event: KeyboardEvent): void {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (event.key === 'Escape' && this.menue) {
+        const knopf = document.querySelector<HTMLElement>(`[data-menue-knopf="${this.menue}"]`)
+        this.menueSchliessen()
+        knopf?.focus()
+        event.preventDefault()
+        return
+      }
+      const liste = target.closest<HTMLElement>('[role="menu"], [role="menubar"]')
+      if (!liste || !['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+      const punkte = Array.from(
+        liste.querySelectorAll<HTMLElement>(':scope > [role^="menuitem"], :scope > * > [role^="menuitem"]'),
+      ).filter((el) => !el.hasAttribute('disabled') && el.offsetParent !== null)
+      if (!punkte.length) return
+      const quer = liste.getAttribute('role') === 'menubar'
+      const vor = quer ? 'ArrowRight' : 'ArrowDown'
+      const zurueck = quer ? 'ArrowLeft' : 'ArrowUp'
+      const index = punkte.indexOf(target)
+      let ziel = index
+      if (event.key === vor) ziel = (index + 1) % punkte.length
+      else if (event.key === zurueck) ziel = (index - 1 + punkte.length) % punkte.length
+      else if (event.key === 'Home') ziel = 0
+      else if (event.key === 'End') ziel = punkte.length - 1
+      else return
+      event.preventDefault()
+      punkte[ziel].focus()
+      // In der Menüleiste folgt ein offenes Menü dem Fokus
+      if (quer && this.menue) this.menue = punkte[ziel].dataset.menueKnopf ?? ''
+    },
+
+    /** Formatbefehl aus Menü oder Werkzeugleiste (Tastatur und Maus; der Editor behält seine Auswahl) */
+    befehl(cmd: string, level = 0, value = ''): void {
+      this._executeToolbarCommand(cmd, level, value)
+      this.menueSchliessen()
+    },
+
+    /** Absatzformat aus der Auswahlliste der Werkzeugleiste (p, h1, h2, h3, quote) */
+    absatzformat(wert: string): void {
+      if (wert === 'quote') this.befehl('blockquote')
+      else if (wert.startsWith('h')) this.befehl('heading', Number(wert.slice(1)))
+      else this.befehl('paragraph')
+    },
+
+    get absatzformatWert(): string {
+      if (this.formats.header) return `h${this.formats.header}`
+      if (this.formats.blockquote) return 'quote'
+      return 'p'
+    },
+
+    panelOeffnen(key: EditorPanel): void {
+      this.menueSchliessen()
+      this.panel = this.panel === key ? '' : key
+      if (key === 'verlauf' && this.panel && this.revisions.length === 0) void this.loadRevisions()
+      void this.$nextTick(() => {
+        if (!this.panel) this.randNeuAnordnen()
+        const kopf = document.querySelector<HTMLElement>('[data-panel-titel]')
+        if (this.panel && kopf) kopf.focus()
+      })
+    },
+
+    panelSchliessen(): void {
+      this.panel = ''
+      void this.$nextTick(() => this.randNeuAnordnen())
+    },
+
+    /** Kommentar zur markierten Stelle (Werkzeugleiste, Menü „Einfügen“, Strg+Alt+M) */
+    kommentarStarten(): void {
+      this.menueSchliessen()
+      if (!editor || editor.state.selection.empty) {
+        showToast('Markieren Sie zuerst die Textstelle, die Sie kommentieren möchten.', 'info')
+        return
+      }
+      this._checkTextSelection()
+      this.expandCommentPopup()
+    },
+
+    modusSetzen(modus: EditorModus): void {
+      this.menueSchliessen()
+      this.modus = modus
+      if (modus !== 'vorschlagen') this.vorschlagAbbrechen()
+      this._modusAnwenden()
+    },
+
+    /** Nur „Bearbeiten“ ändert den Text direkt; „Vorschlagen“ und „Ansehen“ lassen markieren, aber nicht tippen */
+    _modusAnwenden(): void {
+      // Ohne Update-Ereignis: Der Moduswechsel ist keine Änderung am Text (sonst gälte der Text als ungespeichert
+      // und würde beim nächsten Speichern neu geschrieben)
+      if (editor && !editor.isDestroyed && editor.isEditable !== (this.modus === 'bearbeiten')) {
+        editor.setEditable(this.modus === 'bearbeiten', false)
+      }
+    },
+
+    /** Änderung zur markierten Stelle vorschlagen (Werkzeugleiste, Menü „Einfügen“, Knopf an der Auswahl) */
+    vorschlagStarten(): void {
+      this.menueSchliessen()
+      if (!editor || editor.state.selection.empty) {
+        showToast('Markieren Sie zuerst die Textstelle, die Sie ändern möchten.', 'info')
+        return
+      }
+      const { from, to } = editor.state.selection
+      if (!inEinemAbsatz(editor.state.doc, from, to)) {
+        showToast('Ein Vorschlag gilt für eine Stelle innerhalb eines Absatzes. Markieren Sie weniger Text.', 'info')
+        return
+      }
+      this._checkTextSelection()
+      if (!this.inlineSelectedText) return
+      this.commentPopupVisible = false
+      this.vorschlagText = this.inlineSelectedText
+      this.vorschlagNotiz = ''
+      this.vorschlagOffen = true
+      void this.$nextTick(() => {
+        const feld = this.$refs.vorschlagFeld as HTMLTextAreaElement | undefined
+        feld?.focus()
+        feld?.select()
+      })
+    },
+
+    /** Markierte Stelle im Formular „Änderung vorschlagen“ (gekürzt) */
+    get vorschlagZitat(): string {
+      const t = this.inlineSelectedText
+      return t.length > 120 ? `${t.slice(0, 119)}…` : t
+    },
+
+    vorschlagAbbrechen(): void {
+      this.vorschlagOffen = false
+      this.vorschlagText = ''
+      this.vorschlagNotiz = ''
+    },
+
+    /** Vorschlag als Kommentar an der Stelle speichern; der Text selbst bleibt bis zur Entscheidung unverändert */
+    async vorschlagSenden(): Promise<void> {
+      if (this.vorschlagSendet || !editor || !config.urls.comment) return
+      const alt = this.inlineSelectedText
+      // Ein Vorschlag gilt innerhalb eines Absatzes: Zeilenumbrüche werden zu Leerzeichen
+      const neu = this.vorschlagText.replace(/\s*\n\s*/g, ' ')
+      if (neu === alt) {
+        showToast('Der Vorschlag ändert nichts an der markierten Stelle.', 'info')
+        return
+      }
+      this.vorschlagSendet = true
+      // Marke SYNCHRON setzen, bevor sich Positionen ändern (wie bei Kommentaren)
+      const markId = crypto.randomUUID()
+      let markGesetzt = false
+      try {
+        editor
+          .chain()
+          .setTextSelection({ from: this._selectionFrom, to: this._selectionTo })
+          .setCommentMark({ commentId: markId })
+          .run()
+        markGesetzt = true
+      } catch (e) {
+        console.warn('Vorschlag: Marke ließ sich nicht setzen', e)
+      }
+      const notiz = this.vorschlagNotiz.trim()
+      const daten = new URLSearchParams({
+        content: notiz,
+        vorschlag: neu,
+        selected_text: alt,
+        selection_start: String(this._selectionFrom),
+        selection_end: String(this._selectionTo),
+        mark_id: markId,
+      })
+      const zuruecknehmen = (): void => {
+        if (markGesetzt && editor) editor.commands.unsetCommentMark(markId)
+      }
+      try {
+        const response = await fetch(config.urls.comment, { method: 'POST', headers: formHeaders(), body: daten })
+        const antwort: JsonResponse = await response.json().catch(() => ({}))
+        if (antwort.success && antwort.comment) {
+          this.inlineCommentsData.push({
+            id: String(antwort.comment.id),
+            author_id: config.membershipId ?? '',
+            mark_id: markId,
+            content: String(antwort.comment.content),
+            selected_text: alt,
+            author_name: String(antwort.comment.author),
+            author_initials: String(antwort.comment.author).substring(0, 2).toUpperCase(),
+            created_at: String(antwort.comment.created_at),
+            is_resolved: false,
+            replies: [],
+            vorschlag: neu,
+            vorschlag_angenommen: null,
+            notiz,
+          })
+          this.vorschlagAbbrechen()
+          this.activeCommentId = markId
+          await this.reloadCommentsSidebar()
+        } else {
+          zuruecknehmen()
+          showToast(
+            typeof antwort.error === 'string' ? antwort.error : 'Der Vorschlag ließ sich nicht speichern.',
+            'error',
+          )
+        }
+      } catch {
+        zuruecknehmen()
+        showToast('Der Vorschlag ließ sich nicht speichern. Bitte versuchen Sie es erneut.', 'error')
+      }
+      this.vorschlagSendet = false
+    },
+
+    istVorschlag(comment: InlineComment): boolean {
+      return comment.vorschlag !== null && comment.vorschlag !== undefined
+    },
+
+    /** Annehmen ändert den Text: nur mit Schreibrecht im Editor */
+    darfAnnehmen(): boolean {
+      return this.accessLevel === 'edit' || this.accessLevel === 'admin'
+    },
+
+    /** Ablehnen: wer annehmen darf, wer den Vorschlag gemacht hat oder wer alle Dokumente bearbeiten darf */
+    darfAblehnen(comment: InlineComment): boolean {
+      return this.darfAnnehmen() || this.darfErledigen(comment)
+    },
+
+    /**
+     * Vorschlag annehmen oder ablehnen. Annehmen prüft zuerst, ob die Stelle noch den markierten Text trägt,
+     * speichert dann die Entscheidung und ersetzt die Stelle. Hat sich die Stelle geändert, wird nichts ersetzt.
+     */
+    async vorschlagEntscheiden(comment: InlineComment, annehmen: boolean): Promise<void> {
+      if (this.randSendet) return
+      if (annehmen && (!editor || !vorschlagPasst(editor, comment.mark_id, comment.selected_text))) {
+        showToast(
+          'Die Stelle wurde inzwischen geändert. Der Vorschlag lässt sich nicht mehr übernehmen; lehnen Sie ihn ab oder ändern Sie den Text von Hand.',
+          'warning',
+        )
+        return
+      }
+      this.randSendet = true
+      try {
+        const response = await fetch(`${config.urls.comment}${comment.id}/resolve/`, {
+          method: 'POST',
+          headers: formHeaders(),
+          body: new URLSearchParams({ entscheidung: annehmen ? 'annehmen' : 'ablehnen' }),
+        })
+        const antwort: JsonResponse = await response.json().catch(() => ({}))
+        if (!antwort.success) {
+          showToast('Die Entscheidung ließ sich nicht speichern.', 'error')
+          return
+        }
+        comment.is_resolved = true
+        if (!entscheidungAusfuehren(antwort, annehmen)) {
+          // Schon entschieden (veraltete Seite): Karte mit dem Stand des Servers schließen, Text nicht anfassen
+          const gespeichert = antwort.vorschlag_angenommen === true
+          comment.vorschlag_angenommen = typeof antwort.vorschlag_angenommen === 'boolean' ? gespeichert : null
+          showToast(
+            `Über den Vorschlag wurde bereits entschieden: ${gespeichert ? 'angenommen' : 'abgelehnt'}. Am Text hat sich hier nichts geändert.`,
+            'info',
+          )
+          if (this.activeCommentId === comment.mark_id) this.activeCommentId = null
+          await this.reloadCommentsSidebar()
+          return
+        }
+        comment.vorschlag_angenommen = annehmen
+        if (editor) {
+          const ergebnis = annehmen
+            ? vorschlagUebernehmen(editor, comment.mark_id, comment.selected_text, comment.vorschlag ?? '')
+            : 'abgelehnt'
+          if (ergebnis !== 'applied') editor.commands.unsetCommentMark(comment.mark_id)
+          if (ergebnis === 'changed') {
+            showToast(
+              'Angenommen, aber die Stelle hatte sich gerade geändert. Bitte übernehmen Sie den Text von Hand.',
+              'warning',
+            )
+          }
+          // Geänderten Text gleich sichern (mit Kollaborationsverbindung speichert der Server)
+          if (ergebnis === 'applied') this.autoSave()
+        }
+        if (this.activeCommentId === comment.mark_id) this.activeCommentId = null
+        await this.reloadCommentsSidebar()
+      } catch {
+        showToast('Die Entscheidung ließ sich nicht speichern.', 'error')
+      } finally {
+        this.randSendet = false
+        this.randNeuAnordnen()
+      }
+    },
+
+    /** Offene Vorschläge im Text grün statt gelb hervorheben (Regeln je Marken-ID) */
+    _vorschlagStileSetzen(): void {
+      if (typeof CSSStyleSheet === 'undefined' || !('adoptedStyleSheets' in document)) return
+      const ids = this.inlineCommentsData
+        .filter((c) => !c.is_resolved && this.istVorschlag(c))
+        .map((c) => CSS.escape(c.mark_id))
+      if (!vorschlagStil) {
+        if (!ids.length) return
+        vorschlagStil = new CSSStyleSheet()
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, vorschlagStil]
+      }
+      // Mit #editor-container: Die Grundstile der Kommentarmarken hängen an dieser ID (sonst gewinnen sie)
+      const auswahl = ids
+        .map(
+          (id) =>
+            `.ke-editor [data-ke-text] span[data-comment-id="${id}"],.ke-editor #editor-container .tiptap span[data-comment-id="${id}"]`,
+        )
+        .join(',')
+      vorschlagStil.replaceSync(
+        auswahl
+          ? `${auswahl}{background-color:var(--ke-vorschlag) !important;border-bottom:1.5px dashed var(--ke-gruen) !important}`
+          : '',
+      )
+    },
+
+    /** „Ersetzen: „alt“ durch „neu““ bzw. „Streichen: „alt““ für die Karte am Rand */
+    vorschlagZeile(comment: InlineComment): string {
+      const kurz = (t: string): string => (t.length > 160 ? `${t.slice(0, 159)}…` : t)
+      if (!comment.vorschlag) return `Streichen: „${kurz(comment.selected_text)}“`
+      return `Ersetzen: „${kurz(comment.selected_text)}“ durch „${kurz(comment.vorschlag)}“`
+    },
+
+    gliederungUmschalten(): void {
+      this.gliederungAn = !this.gliederungAn
+      einstellungMerken(SPEICHER_GLIEDERUNG, this.gliederungAn)
+      this.menueSchliessen()
+      void this.$nextTick(() => this.randNeuAnordnen())
+    },
+
+    seitenansichtUmschalten(): void {
+      this.seitenansicht = !this.seitenansicht
+      einstellungMerken(SPEICHER_SEITENANSICHT, this.seitenansicht)
+      this.menueSchliessen()
+      void this.$nextTick(() => this.randNeuAnordnen())
+    },
+
+    zuUeberschrift(index: number): void {
+      const text = document.querySelector<HTMLElement>('[data-ke-text]')
+      if (text) zuUeberschriftSpringen(text, index)
+    },
+
+    /** Klick im Editor: offene Menüs schließen, außer der Klick gilt einem Menü oder seinem Knopf */
+    menueKlick(event: MouseEvent): void {
+      if (!this.menue) return
+      const ziel = event.target as Element | null
+      if (ziel?.closest('[data-menue-knopf], [role="menu"]')) return
+      this.menueSchliessen()
+    },
+
+    /** Kommentar erledigen dürfen Verfasserin bzw. Verfasser und wer alle Dokumente bearbeiten darf */
+    darfErledigen(comment: InlineComment): boolean {
+      return !!config.erledigenAlle || (!!comment.author_id && comment.author_id === config.membershipId)
+    },
+
+    /** Nach jeder Änderung (gebündelt): Gliederung und Kommentare am Rand nachführen */
+    _nachAenderung(): void {
+      if (this.ansicht !== 'neu') return
+      if (nachAenderungTimer) window.clearTimeout(nachAenderungTimer)
+      nachAenderungTimer = window.setTimeout(() => {
+        nachAenderungTimer = null
+        const text = document.querySelector<HTMLElement>('[data-ke-text]')
+        if (text) this.gliederung = gliederungAus(text)
+        this.randNeuAnordnen()
+      }, 150)
+    },
+
+    /** Karten am Rand neben ihre Textstelle setzen (nur Desktop, nur wenn der Rand sichtbar ist) */
+    randNeuAnordnen(): void {
+      if (this.ansicht !== 'neu') return
+      if (randFrame) window.cancelAnimationFrame(randFrame)
+      randFrame = window.requestAnimationFrame(() => {
+        randFrame = null
+        const rand = document.querySelector<HTMLElement>('[data-rand]')
+        const text = document.querySelector<HTMLElement>('[data-ke-text]')
+        if (!rand || !text) return
+        if (this.panel || !window.matchMedia(RAND_AB).matches) {
+          rand.style.minHeight = ''
+          return
+        }
+        const hoehe = randAnordnen(rand, text, this.activeCommentId)
+        rand.style.minHeight = hoehe ? `${hoehe + 24}px` : ''
+      })
+    },
+
+    randKarteAktivieren(markId: string): void {
+      if (this.activeCommentId !== markId) this.randAntwort = ''
+      this.activeCommentId = markId
+      this.randNeuAnordnen()
+    },
+
+    async randAntworten(comment: InlineComment): Promise<void> {
+      const text = this.randAntwort.trim()
+      if (!text || this.randSendet) return
+      this.randSendet = true
+      if (await this._kommentarAntworten(comment, text)) this.randAntwort = ''
+      this.randSendet = false
+      this.randNeuAnordnen()
+    },
+
+    async randErledigen(comment: InlineComment): Promise<void> {
+      if (await this._kommentarErledigen(comment)) {
+        if (this.activeCommentId === comment.mark_id) this.activeCommentId = null
+        this.randNeuAnordnen()
+      }
+    },
+
+    /** Antwort auf einen Inline-Kommentar speichern und lokal ergänzen */
+    async _kommentarAntworten(comment: InlineComment, text: string): Promise<boolean> {
+      const formData = new URLSearchParams()
+      formData.append('csrfmiddlewaretoken', csrfToken())
+      formData.append('content', text)
+      formData.append('parent', comment.id)
+      try {
+        const response = await fetch(config.urls.comment, { method: 'POST', headers: formHeaders(), body: formData })
+        const data: JsonResponse = await response.json()
+        if (data.success && data.comment) {
+          comment.replies.push({
+            id: data.comment.id,
+            content: data.comment.content,
+            author_name: data.comment.author,
+            author_initials: String(data.comment.author).substring(0, 2).toUpperCase(),
+            created_at: data.comment.created_at,
+          })
+          return true
+        }
+      } catch (error) {
+        console.error('Reply error:', error)
+      }
+      showToast('Fehler beim Speichern der Antwort.', 'error')
+      return false
+    },
+
+    /** Inline-Kommentar erledigen: Server, Markierung im Text, Kommentarliste */
+    async _kommentarErledigen(comment: InlineComment): Promise<boolean> {
+      try {
+        const response = await fetch(`${config.urls.comment}${comment.id}/resolve/`, {
+          method: 'POST',
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'X-CSRFToken': csrfToken() },
+        })
+        const data: JsonResponse = await response.json()
+        if (data.success) {
+          comment.is_resolved = true
+          if (editor) editor.commands.unsetCommentMark(comment.mark_id)
+          await this.reloadCommentsSidebar()
+          return true
+        }
+      } catch {
+        // Meldung unten
+      }
+      showToast('Fehler beim Erledigen.', 'error')
+      return false
+    },
+
+    /** Dialog eines Ablaufschritts öffnen (Kopfzeile, Infozeile, Menü „Ablauf“) */
+    ablaufDialog(key: AblaufDialog): void {
+      this.menueSchliessen()
+      this.ablaufFehler = ''
+      if (key === 'abstimmung' && !this.abstimmungAuswahl.length) {
+        this.abstimmungAuswahl = readJsonScript<string[]>(ABSTIMMUNG_ID) ?? []
+        // Ohne Stimmberechtigte (Recht „Stimmrecht“ nicht vergeben) gleich die Auswahl zeigen
+        this.abstimmungAuswahlOffen = !this.abstimmungAuswahl.length
+      }
+      this.dialog = key
+    },
+
+    ablaufDialogSchliessen(): void {
+      if (!this.ablaufLaeuft) this.dialog = ''
+    },
+
+    /** „Wer stimmt ab“: die Stimmberechtigten (Vorauswahl) oder die geänderte Auswahl */
+    get abstimmungWer(): string {
+      const vorauswahl = readJsonScript<string[]>(ABSTIMMUNG_ID) ?? []
+      const anzahl = this.abstimmungAuswahl.length
+      const gleich = anzahl === vorauswahl.length && vorauswahl.every((id) => this.abstimmungAuswahl.includes(id))
+      if (!anzahl) return 'Noch niemand ausgewählt'
+      if (gleich) return anzahl === 1 ? '1 stimmberechtigtes Mitglied' : `${anzahl} stimmberechtigte Mitglieder`
+      return anzahl === 1 ? '1 Mitglied ausgewählt' : `${anzahl} Mitglieder ausgewählt`
+    },
+
+    /** Hinweis, wenn Ausgewählte das Dokument erst durch die Anfrage sehen (der Freigabe-Weg gibt es ihnen frei) */
+    get abstimmungFreigabeHinweis(): string {
+      const ohneZugang = readJsonScript<string[]>(ABSTIMMUNG_OHNE_ZUGANG_ID) ?? []
+      const anzahl = this.abstimmungAuswahl.filter((id) => ohneZugang.includes(id)).length
+      if (!anzahl) return ''
+      return anzahl === 1
+        ? 'Eine ausgewählte Person sieht das Dokument bisher nicht und erhält Zugriff zum Lesen und Kommentieren.'
+        : `${anzahl} Ausgewählte sehen das Dokument bisher nicht und erhalten Zugriff zum Lesen und Kommentieren.`
+    },
+
+    /**
+     * „Zur Abstimmung geben“: Status „Interne Absprache“ (falls noch nicht) und je ausgewähltem Mitglied eine
+     * Zustimmungsanfrage über den vorhandenen Freigabe-Weg; danach lädt die Seite neu.
+     */
+    async abstimmungStarten(): Promise<void> {
+      if (this.ablaufLaeuft || !config.urls.approvalRequest) return
+      if (!this.abstimmungAuswahl.length) {
+        this.ablaufFehler = 'Wählen Sie mindestens ein Mitglied aus.'
+        return
+      }
+      if (!(await this._vorNeuladenSichern())) return
+      this.ablaufLaeuft = true
+      this.ablaufFehler = ''
+      this._eigenerStatuswechsel = true
+      try {
+        if (config.status !== 'internal_review' && config.status !== 'external_review') {
+          const response = await fetch(config.urls.status, {
+            method: 'POST',
+            headers: formHeaders(),
+            body: new URLSearchParams({ status: 'internal_review', fenster: fensterId }),
+          })
+          const data: JsonResponse = await response.json()
+          if (!data.success) {
+            this.ablaufFehler = data.error || 'Die Abstimmung ließ sich nicht starten.'
+            return
+          }
+        }
+        let fehler = 0
+        for (const approver of this.abstimmungAuswahl) {
+          const response = await fetch(config.urls.approvalRequest, {
+            method: 'POST',
+            headers: formHeaders(),
+            body: new URLSearchParams({ approver, approval_type: this.abstimmungArt }),
+          })
+          const data: JsonResponse = await response.json().catch(() => ({}))
+          if (!response.ok || !data.success) fehler += 1
+        }
+        if (fehler) {
+          showToast(
+            fehler === 1
+              ? 'Eine Anfrage ließ sich nicht stellen; sie fehlt in der Abstimmung.'
+              : `${fehler} Anfragen ließen sich nicht stellen; sie fehlen in der Abstimmung.`,
+            'warning',
+          )
+        }
+        this.leaveIntentionally()
+        window.setTimeout(() => location.reload(), fehler ? 1500 : 0)
+      } catch {
+        this.ablaufFehler = 'Die Abstimmung ließ sich nicht starten. Bitte versuchen Sie es erneut.'
+      } finally {
+        this.ablaufLaeuft = false
+        if (!this._leavingIntentionally) this._statuswechselBeendet()
+      }
+    },
+
+    async ablaufStatus(status: string): Promise<void> {
+      this.ablaufLaeuft = true
+      await this.changeStatus(status)
+      this.ablaufLaeuft = false
     },
 
     // === Versionsverlauf ===
@@ -1716,6 +2826,8 @@ export const documentEditor = defineComponent(() => {
         variant: 'info',
       })
       if (!ok) return
+      // Der aktuelle Stand wird als Version gesichert: vorher die letzten Eingaben sichern (#1018)
+      if (!(await this._vorNeuladenSichern())) return
 
       try {
         const response = await fetch(`${config.urls.revisions}${rev.id}/restore/`, {
@@ -1728,6 +2840,7 @@ export const documentEditor = defineComponent(() => {
         const data: JsonResponse = await response.json()
         if (data.success) {
           // Neu laden, um den wiederhergestellten Inhalt zu bekommen
+          this.leaveIntentionally()
           location.reload()
         } else {
           showToast('Fehler: ' + (data.error || 'Unbekannter Fehler'), 'error')

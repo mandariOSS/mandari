@@ -6,14 +6,16 @@ Profil: Aktivitätsübersicht mit Kennzahlen und Zeitleiste.
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors
 
 
-class ProfileActivityView(WorkViewMixin, TemplateView):
+class ProfileActivityView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Activity overview with statistics and timeline."""
 
     template_name = "work/profile/activity.html"
+    neue_vorlage = "work/profile/neu/aktivitaet.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):

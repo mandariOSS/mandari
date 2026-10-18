@@ -179,8 +179,38 @@ def test_abruf_nur_https_mit_user_agent_und_grenzen(monkeypatch: pytest.MonkeyPa
             abruf.hole("https://a.example/fehlt", http=client)
         with pytest.raises(AnbieterError, match="HTTP 500"):
             abruf.hole("https://a.example/kaputt", http=client)
-    assert gesehen[0].headers["User-Agent"] == "mandari (+https://mandari.de)"
-    assert abruf.client().headers["User-Agent"] == "mandari (+https://mandari.de)"
+    # Dieselbe Kennung mit Infoseite und Kontakt wie bei allen Abrufen (Issue #1036)
+    kennung = "mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)"
+    assert gesehen[0].headers["User-Agent"] == kennung
+    assert abruf.client().headers["User-Agent"] == kennung
+
+
+def test_takt_je_host_vor_jeder_anfrage_und_weiterleitung(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Vor jeder Anfrage, auch vor dem Ziel einer Weiterleitung, ein Zeitpunkt beim Host (Issue #1036)."""
+    from insight_core.services import dienste
+
+    reihenfolge: list[str] = []
+
+    def warten(url: Any, dienst: str, **_: Any) -> bool:
+        reihenfolge.append(f"warten {dienst} {url}")
+        return True
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        reihenfolge.append(f"abruf {request.url}")
+        if request.url.host == "player.example":
+            return httpx.Response(302, headers={"Location": "https://cdn.example/live.m3u8"})
+        return httpx.Response(200, text="#EXTM3U\n")
+
+    monkeypatch.setattr(dienste, "warten", warten)
+    with _client(handler) as client:
+        assert abruf.hole_text("https://player.example/live", http=client) == "#EXTM3U\n"
+
+    assert reihenfolge == [
+        "warten live https://player.example/live",
+        "abruf https://player.example/live",
+        "warten live https://cdn.example/live.m3u8",
+        "abruf https://cdn.example/live.m3u8",
+    ]
 
 
 @pytest.mark.parametrize(

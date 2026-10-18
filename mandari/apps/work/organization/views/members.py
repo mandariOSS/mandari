@@ -8,16 +8,18 @@ from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..services import ServiceError, display_name
 from ._helpers import flash_error
 
 
-class MemberListView(WorkViewMixin, TemplateView):
+class MemberListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List of organization members."""
 
     template_name = "work/organization/members.html"
+    neue_vorlage = "work/organization/neu/mitglieder.html"
     permission_required = "members.view"
 
     def get_context_data(self, **kwargs):
@@ -35,6 +37,10 @@ class MemberListView(WorkViewMixin, TemplateView):
         context["guest_limit"] = self.organization.guest_limit
 
         context["members"] = selectors.active_members(self.organization)
+        # Spalte „Zweiter Faktor“ nur für Administration und Organisationseinstellungen
+        context["show_two_factor"] = selectors.may_see_two_factor_status(self.membership)
+        if context["show_two_factor"]:
+            context["two_factor_user_ids"] = selectors.two_factor_user_ids(self.organization)
         context["inactive_members"] = selectors.inactive_members(self.organization)
         context["pending_invitations"] = selectors.pending_invitations(self.organization)
         context["pending_registrations"] = selectors.pending_registrations(self.organization)
@@ -42,10 +48,11 @@ class MemberListView(WorkViewMixin, TemplateView):
         return context
 
 
-class MemberDetailView(WorkViewMixin, TemplateView):
+class MemberDetailView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """View and edit a member's details."""
 
     template_name = "work/organization/member_detail.html"
+    neue_vorlage = "work/organization/neu/mitglied.html"
     permission_required = "members.view"
 
     def get_context_data(self, **kwargs):

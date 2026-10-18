@@ -138,7 +138,8 @@ class TestNeuerRahmen:
         goto(f"/work/{neu.organization.slug}/faction/")
         leiste = page.get_by_role("navigation", name="Hauptbereiche")
         expect(leiste).to_be_visible()
-        expect(leiste.locator('[aria-current="page"]')).to_contain_text("Sitzungen")
+        # Fraktionssitzungen als eigener Eintrag „Fraktion“ in der Leiste unten (Entscheidung vom 06.10.2026)
+        expect(leiste.locator('[aria-current="page"]')).to_contain_text("Fraktion")
         assert page.evaluate("() => document.documentElement.scrollWidth") <= 390
         screenshot("work-rahmen-handy")
 
@@ -147,6 +148,7 @@ class TestNeuerRahmen:
         blatt = page.locator("#work-mehr")
         expect(blatt).to_be_visible()
         expect(blatt.get_by_role("link", name="Aufgaben")).to_be_visible()
+        expect(blatt.get_by_role("link", name="Dokumente")).to_be_visible()
         ergebnis = _axe_rahmen(page)
         assert not ergebnis.failing, ergebnis.describe()
         screenshot("work-rahmen-handy-mehr")

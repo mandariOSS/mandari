@@ -8,23 +8,23 @@ mittel eine schmale Leiste aus Nummern und Stand (ausklappbar mit Titeln), am Ha
     <div class="vb-liste-kopf">
         <div class="vb-blatt-kopf">
             <h2>Tagesordnung</h2>
-            <button type="button" class="vb-knopf vb-leise vb-ik" @click="schliesseBlatt()" aria-label="Tagesordnung schließen">
+            <button type="button" class="wf-knopf wf-leise wf-ik" @click="schliesseBlatt()" aria-label="Tagesordnung schließen">
                 <i data-lucide="x" aria-hidden="true"></i>
             </button>
         </div>
-        <button type="button" class="vb-knopf vb-leise vb-ik vb-liste-auf" @click="oeffneBlatt('tagesordnung')"
+        <button type="button" class="wf-knopf wf-leise wf-ik vb-liste-auf" @click="oeffneBlatt('tagesordnung')"
                 aria-label="Tagesordnung mit Titeln zeigen" title="Tagesordnung mit Titeln zeigen">
             <i data-lucide="panel-left-open" aria-hidden="true"></i>
         </button>
-        <input type="search" x-model="search" class="vb-eingabe" placeholder="TOP suchen" aria-label="TOP suchen">
+        <input type="search" x-model="search" class="wf-eingabe" placeholder="TOP suchen" aria-label="TOP suchen">
     </div>
     <template x-for="gruppe in gruppen" :key="gruppe.titel">
         <div>
-            <p class="vb-liste-gruppe" x-show="gruppe.titel" x-text="gruppe.titel"></p>
-            <ol class="vb-tl">
+            <p class="wf-tl-gruppe" x-show="gruppe.titel" x-text="gruppe.titel"></p>
+            <ol class="wf-tl">
                 <template x-for="item in gruppe.items" :key="item.id">
                     <li>
-                        <button type="button" class="vb-tl-zeile" :id="'nav-item-' + item.id" @click="selectItem(item.id)"
+                        <button type="button" class="wf-tl-zeile" :id="'nav-item-' + item.id" @click="selectItem(item.id)"
                                 :aria-current="selectedItemId === item.id ? 'true' : null" :class="!item.paper && 'formal'"
                                 :title="'TOP ' + item.number + ': ' + item.name">
                             <span class="nr" x-text="item.number"></span>
@@ -38,7 +38,7 @@ mittel eine schmale Leiste aus Nummern und Stand (ausklappbar mit Titeln), am Ha
                                     <span x-show="item.notesCount > 0" title="Beiträge in der Diskussion"><i data-lucide="message-circle" aria-hidden="true"></i><span x-text="item.notesCount"></span><span class="sr-only"> Beiträge</span></span>
                                 </span>
                             </span>
-                            <span class="punkt" :class="positionsKlasse(item.position)" x-show="item.paper || item.position !== 'open'"
+                            <span class="wf-punkt" :class="positionsKlasse(item.position)" x-show="item.paper || item.position !== 'open'"
                                   :title="posLabel(item.position)"></span>
                             <span class="sr-only" x-show="item.paper || item.position !== 'open'" x-text="'Position: ' + posLabel(item.position)"></span>
                         </button>

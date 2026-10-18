@@ -9,7 +9,8 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
 ## 1. Vertraulichkeit
 
 ### Zutritts-/Zugangskontrolle
-- Hosting in einem europäischen Rechenzentrum; Zugriff auf Server nur per
+- Hosting in einem europäischen Rechenzentrum (im Betrieb durch mandari:
+  Hetzner Online GmbH, Rechenzentrum in Deutschland); Zugriff auf Server nur per
   SSH mit Schlüssel-Authentifizierung.
 - Anmeldung an der Anwendung mit E-Mail/Passwort, optional TOTP-basierte
   Zwei-Faktor-Authentifizierung; Rate-Limiting gegen Brute-Force
@@ -58,10 +59,12 @@ als Anlage zum Auftragsverarbeitungsvertrag ([AVV-Muster](DSGVO_AVV_MUSTER.md)).
 
 - Tägliche automatisierte Sicherung aller Datenbanken, Dateien und der
   Konfiguration, vor der Übertragung verschlüsselt (AES-256), in zwei
-  räumlich getrennte Rechenzentren; Aufbewahrung höchstens 30 Tage, danach
-  automatische Löschung. Wöchentliche Integritätsprüfung, monatlicher
-  automatisierter Wiederherstellungstest, Alarmierung bei Fehlern
-  ([Backup-Konzept](BACKUP.md)).
+  räumlich getrennte Rechenzentren (im Betrieb durch mandari: Hetzner Storage
+  Boxen in Falkenstein, Deutschland, und Helsinki, Finnland, EU; bei einer
+  eigenen Instanz auf Wunsch ausschließlich in Deutschland); Aufbewahrung
+  höchstens 30 Tage, danach automatische Löschung. Wöchentliche
+  Integritätsprüfung, monatlicher automatisierter Wiederherstellungstest,
+  Alarmierung bei Fehlern ([Backup-Konzept](BACKUP.md)).
 - Infrastruktur als Container (reproduzierbare Deployments), getrennte
   Staging-/Produktionsumgebung.
 - Monitoring des Sync-/Hintergrunddienstes (Watchdog).

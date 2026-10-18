@@ -1,0 +1,85 @@
+{% comment %}
+Mitglied: Gremien und Verknüpfung mit der RIS-Person (Issue #951). Formulare wie bisher (partials/_member_committees.html):
+link_oparl_person, unlink_oparl_person, apply_suggestions, update_committees; vergangene Gremien aufklappbar.
+Ohne verknüpfte Kommune nur ein Satz. Kontext: has_body, can_edit, oparl_person, potential_oparl_persons,
+suggested_committee_ids, active_committees, inactive_committees, member_committees, member.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Gremien" titel_id="gremien-titel">
+    {% if has_body %}
+    <c-rahmen.satz eng>Bestimmen, welche Sitzungen unter „Meine Sitzungen“ erscheinen.</c-rahmen.satz>
+    <div class="mt-3 text-sm text-gray-800 dark:text-gray-200">
+        {% if oparl_person %}
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <p>{% include "work/organization/neu/_status.html" with an=True %}Verknüpft mit der RIS-Person <span class="font-medium">{{ oparl_person.display_name }}</span></p>
+            {% if can_edit %}
+            {% if suggested_committee_ids %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="apply_suggestions">
+                <c-ui.button type="submit" size="sm" variant="secondary" icon="sparkles">{{ suggested_committee_ids|length }} Vorschläge übernehmen</c-ui.button>
+            </form>
+            {% endif %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="unlink_oparl_person">
+                <c-ui.text-button type="submit" variant="danger" dicht>Verknüpfung trennen</c-ui.text-button>
+            </form>
+            {% endif %}
+        </div>
+        {% elif potential_oparl_persons and can_edit %}
+        <p>Mögliche RIS-Personen:</p>
+        <ul class="mt-1 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800">
+            {% for person in potential_oparl_persons %}
+            <li>
+                <form method="post" class="flex items-center justify-between gap-3 py-1.5">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="link_oparl_person">
+                    <input type="hidden" name="oparl_person_id" value="{{ person.id }}">
+                    <span>{{ person.display_name }}</span>
+                    <c-ui.text-button type="submit" dicht>Verknüpfen<span class="sr-only">: {{ person.display_name }}</span></c-ui.text-button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-gray-600 dark:text-gray-400">Keine RIS-Person automatisch gefunden.</p>
+        {% endif %}
+    </div>
+
+    {% if can_edit %}
+    <form method="post" class="mt-5 space-y-4">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="update_committees">
+        {% if active_committees %}
+        <fieldset>
+            <legend class="text-sm font-medium text-gray-800 dark:text-gray-200">Aktive Gremien <span class="font-normal text-gray-600 dark:text-gray-400">· {{ active_committees|length }}</span></legend>
+            <div class="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2 max-h-64 overflow-y-auto">
+                {% for committee in active_committees %}
+                <c-form.checkbox name="committees" id="gremium-{{ committee.id }}" value="{{ committee.id }}" checked="{% if committee.id in member_committees %}1{% endif %}" dicht>{{ committee.name }}{% if committee.classification %} <span class="text-gray-600 dark:text-gray-400">· {{ committee.classification }}</span>{% endif %}{% if committee.id in suggested_committee_ids %} <span class="text-gray-600 dark:text-gray-400">· vorgeschlagen</span>{% endif %}</c-form.checkbox>
+                {% endfor %}
+            </div>
+        </fieldset>
+        {% endif %}
+        {% if inactive_committees %}
+        <div x-data="{ open: false }">
+            <c-ui.text-button dicht @click="open = !open" ::aria-expanded="open.toString()" aria-expanded="false" aria-controls="vergangene-gremien">Vergangene Gremien ({{ inactive_committees|length }})</c-ui.text-button>
+            <div id="vergangene-gremien" x-show="open" x-collapse class="mt-2 grid gap-x-6 gap-y-2 sm:grid-cols-2 max-h-48 overflow-y-auto">
+                {% for committee in inactive_committees %}
+                <c-form.checkbox name="committees" id="gremium-{{ committee.id }}" value="{{ committee.id }}" checked="{% if committee.id in member_committees %}1{% endif %}" dicht>{{ committee.name }}{% if committee.end_date %} <span class="text-gray-600 dark:text-gray-400">· bis {{ committee.end_date|date:"d.m.Y" }}</span>{% endif %}</c-form.checkbox>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+        {% if active_committees or inactive_committees %}
+        <c-ui.button type="submit" size="sm" variant="secondary">Gremien speichern</c-ui.button>
+        {% else %}
+        <c-rahmen.satz>Keine Gremien in der verknüpften Kommune gefunden.</c-rahmen.satz>
+        {% endif %}
+    </form>
+    {% else %}
+    <p class="mt-3 text-sm text-gray-800 dark:text-gray-200">{% for committee in member.oparl_committees.all %}{{ committee.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-gray-600 dark:text-gray-400">Keine Gremien zugewiesen</span>{% endfor %}</p>
+    {% endif %}
+    {% else %}
+    <c-rahmen.satz eng>Gremien lassen sich zuweisen, sobald die Organisation mit einer Kommune verknüpft ist.</c-rahmen.satz>
+    {% endif %}
+</c-rahmen.abschnitt>

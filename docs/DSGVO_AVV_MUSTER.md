@@ -72,7 +72,12 @@ Anwendung (Rollen, Aufbewahrungsfristen, Veröffentlichungs-Schalter).
 
 ## 8. Ort der Verarbeitung
 
-Rechenzentrum in der EU (Details in der Unterauftragnehmer-Anlage).
+Rechenzentrum in der EU (Details in der Unterauftragnehmer-Anlage). Im Betrieb
+durch mandari: Hosting bei der Hetzner Online GmbH, Rechenzentrum in Deutschland;
+verschlüsselte Sicherungen in Falkenstein (Deutschland) und Helsinki (Finnland,
+EU). Für eine eigene Instanz der Verantwortlichen sichern wir auf Wunsch
+ausschließlich in Deutschland. KI-Funktionen: Anbieter und Verarbeitungsort
+siehe Unterauftragnehmer-Anlage.
 
 ---
 

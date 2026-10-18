@@ -163,7 +163,9 @@ check("Anlegen ohne manage_settings -> 403", resp.status_code == 403, f"got {res
 # =============================================================================
 print()
 print("=== Phase B: Automatische Übernahme ===")
-start = (now + timedelta(days=14)).replace(microsecond=0)
+# Ortszeit zu fester Uhrzeit: Das Formular liest den Wert als Ortszeit. Ein UTC-Wert kann an Tagen der
+# Zeitumstellung in die doppelte bzw. fehlende Stunde fallen und die Sitzung wird nicht angelegt.
+start = timezone.localtime(now + timedelta(days=14)).replace(hour=10, minute=0, second=0, microsecond=0)
 resp = admin.post(
     f"{base}/meetings/create/",
     {

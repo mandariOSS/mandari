@@ -1,0 +1,13 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Antwort auf eine Frage an die Ratsdaten als eigene Seite (Issue #853), wenn das Formular ohne JavaScript abgeschickt
+wird. Mit JavaScript kommt dieselbe Antwort (partials/frage_antwort.html) direkt auf die Suchseite.
+{% endcomment %}
+
+{% block page_title %}Frage an die Ratsdaten{% endblock %}
+{% block header_title %}Frage an die Ratsdaten{% endblock %}
+
+{% block work_content %}
+{% include "work/ris/partials/frage_antwort.html" %}
+<p><a href="{% url 'work:ris_search' org_slug=organization.slug %}" class="text-sm font-medium text-primary-700 dark:text-primary-300 underline underline-offset-4">Zur Suche</a></p>
+{% endblock %}

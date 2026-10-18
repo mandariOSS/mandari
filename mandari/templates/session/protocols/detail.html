@@ -11,6 +11,8 @@
     <span class="text-gray-900 dark:text-white font-medium">Niederschrift</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zur Sitzung #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume>Niederschrift</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 {% if not protocol %}

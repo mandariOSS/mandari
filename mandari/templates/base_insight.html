@@ -1,4 +1,4 @@
-{% load static %}
+{% load static insight_titel %}
 <!DOCTYPE html>
 <html lang="de" class="scroll-smooth" data-portal="insight"
       data-authenticated="{{ request.user.is_authenticated|yesno:"true,false" }}"
@@ -16,7 +16,8 @@
     {% if seo.author %}<meta name="author" content="{{ seo.author }}">{% endif %}
     {% if seo.robots %}<meta name="robots" content="{{ seo.robots }}">{% endif %}
 
-    <title>{% block title %}mandari{% endblock %} | {% block title_suffix %}{% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}{% endblock %}</title>
+    {# Höchstens 70 Zeichen (Issue #939); Detail- und Stadtseiten leeren title_suffix, die Marke steht in og:site_name #}
+    <title>{% filter seitentitel %}{% block title %}mandari{% endblock %}{% block title_suffix %} | {% if insight_portal %}{{ insight_portal.name }}{% else %}mandari Insight{% endif %}{% endblock %}{% endfilter %}</title>
 
     <!-- Canonical URL -->
     {% if seo.canonical_url %}
@@ -24,7 +25,7 @@
     {% endif %}
 
     <!-- Open Graph -->
-    <meta property="og:title" content="{% block og_title %}{% if seo.title %}{{ seo.title }}{% else %}mandari Insight{% endif %}{% endblock %}">
+    <meta property="og:title" content="{% block og_title %}{% firstof seo.og_title seo.title "mandari Insight" %}{% endblock %}">
     <meta property="og:description" content="{% block og_description %}{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}{% endblock %}">
     <meta property="og:type" content="{% if seo.og_type %}{{ seo.og_type }}{% else %}website{% endif %}">
     <meta property="og:url" content="{% if seo.canonical_url %}{{ seo.canonical_url }}{% else %}{{ request.build_absolute_uri }}{% endif %}">
@@ -34,7 +35,7 @@
 
     <!-- Twitter Card -->
     <meta name="twitter:card" content="{% if seo.twitter_card %}{{ seo.twitter_card }}{% else %}summary{% endif %}">
-    <meta name="twitter:title" content="{% if seo.title %}{{ seo.title }}{% else %}mandari Insight{% endif %}">
+    <meta name="twitter:title" content="{% firstof seo.og_title seo.title "mandari Insight" %}">
     <meta name="twitter:description" content="{% if seo.description %}{{ seo.description }}{% else %}Kommunalpolitische Transparenz{% endif %}">
     <meta name="twitter:image" content="{% if seo.og_image %}{{ seo.og_image }}{% else %}{% static 'images/og-default.png' %}{% endif %}">
 
@@ -178,7 +179,7 @@
 </head>
 
 <body class="min-h-screen bg-band-hell text-gray-900 dark:text-gray-100">
-    {% if demo_instance %}{% include "partials/demo_hinweis.html" %}{% endif %}
+    {% if demo_instance %}{% include "partials/demo_hinweis.html" with ueber_leiste=True %}{% endif %}
     <a href="#main-content" class="skip-link">Zum Hauptinhalt springen</a>
 
     {# Kommune wechseln (im Portal einer Körperschaft ist die Kommune fest) #}

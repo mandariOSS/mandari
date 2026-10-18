@@ -1,0 +1,67 @@
+{% extends "work/base_work.html" %}
+{% load humanize %}
+{% comment %}
+Benachrichtigungen im neuen Erscheinungsbild (Issue #951, Teilpaket 4): Kopfband mit dem Stand im Satz, „Alle als
+gelesen markieren“ als Hauptaktion, Einstellungen als Textlink. Reiter „Alle · Ungelesen“ (c-rahmen.reiter, Zahl statt
+Pille). Liste mit Linien: Ungelesenes trägt einen Punkt, der Typ steht als Text – keine Symbolkreise in acht Farben.
+„Als gelesen markieren“ hängt über data-parent an [data-benachrichtigung] statt an einer Abstandsklasse
+(frontend/js/htmx-setup.ts). Kontext: NotificationCenterView; die bisherige Seite bleibt work/notifications/center.html,
+die Glocke work/notifications/partials/dropdown_list.html.
+{% endcomment %}
+
+{% block page_title %}Benachrichtigungen{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+{% with nur_ungelesen=request.GET.filter|default:"all" %}
+<c-rahmen.kopfband titel="Benachrichtigungen" dicht data-testid="benachrichtigungen-kopf"
+    text="{% if total_count %}{{ unread_count }} ungelesen von {{ total_count }}.{% else %}Hier erscheint, was Sie in Work betrifft: Aufgaben, Freigaben, Sitzungen und Antworten.{% endif %}">
+    <c-slot name="aktionen">
+        <c-ui.textlink href="{% url 'work:profile_notifications' org_slug=organization.slug %}" class="text-sm">Einstellungen</c-ui.textlink>
+        {% if unread_count > 0 %}
+        <c-ui.button size="sm" icon="check-check" hx-post="{% url 'work:notifications_mark_all_read' org_slug=organization.slug %}" hx-swap="none" data-after-request="reload">Alle als gelesen markieren</c-ui.button>
+        {% endif %}
+    </c-slot>
+</c-rahmen.kopfband>
+<c-rahmen.reiter label="Benachrichtigungen filtern" class="rahmen-zeile bg-band-hell">
+    <c-rahmen.reiter-link href="?filter=all" aktiv="{% if nur_ungelesen != 'unread' %}1{% endif %}">Alle</c-rahmen.reiter-link>
+    <c-rahmen.reiter-link href="?filter=unread" aktiv="{% if nur_ungelesen == 'unread' %}1{% endif %}" zahl="{{ unread_count }}" zahl_text="ungelesen">Ungelesen</c-rahmen.reiter-link>
+</c-rahmen.reiter>
+{% endwith %}
+{% endblock %}
+
+{% block work_content %}
+{% if notifications %}
+<ul class="-mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-b border-gray-200 dark:border-gray-800" data-testid="benachrichtigungen-liste">
+    {% for notification in notifications %}
+    <li data-benachrichtigung {% if not notification.is_read %}data-ungelesen{% endif %} class="grid grid-cols-[0.75rem_minmax(0,1fr)] sm:grid-cols-[0.75rem_minmax(0,1fr)_auto] gap-x-2 gap-y-2 py-3">
+        <span class="pt-1.5" aria-hidden="true">{% if not notification.is_read %}<span data-ungelesen-punkt class="block w-2 h-2 rounded-full bg-primary-600"></span>{% endif %}</span>
+        <div class="min-w-0">
+            <h2 class="text-sm font-semibold text-gray-900 dark:text-white break-words">{{ notification.title }}{% if not notification.is_read %}<span data-ungelesen-punkt class="sr-only"> (ungelesen)</span>{% endif %}</h2>
+            {% if notification.message %}<p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300 break-words">{{ notification.message }}</p>{% endif %}
+            <p class="mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                {{ notification.created_at|naturaltime }}{% if notification.actor %} · Von {{ notification.actor.user.display_name|default:notification.actor.user.email }}{% endif %} · {{ notification.get_notification_type_display }}
+            </p>
+        </div>
+        <div class="col-start-2 sm:col-start-3 sm:row-start-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+            {% if notification.link %}
+            <c-ui.textlink href="{{ notification.link }}" hx-post="{% url 'work:notification_mark_read' org_slug=organization.slug notification_id=notification.id %}" hx-swap="none" data-after-request="follow-href">Anzeigen<span class="sr-only">: {{ notification.title }}</span></c-ui.textlink>
+            {% endif %}
+            {% if not notification.is_read %}
+            <button type="button" hx-post="{% url 'work:notification_mark_read' org_slug=organization.slug notification_id=notification.id %}" hx-swap="none"
+                    data-after-request="notification-read" data-parent="[data-benachrichtigung]"
+                    class="inline-flex items-center gap-1.5 min-h-8 font-medium text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white">
+                <i data-lucide="check" class="w-4 h-4" aria-hidden="true"></i>Gelesen<span class="sr-only">: {{ notification.title }}</span>
+            </button>
+            {% endif %}
+        </div>
+    </li>
+    {% endfor %}
+</ul>
+{% if has_more %}
+<p class="mt-4 text-sm"><c-ui.textlink href="?page={{ page|add:1 }}{% if request.GET.filter %}&filter={{ request.GET.filter }}{% endif %}">Ältere Benachrichtigungen</c-ui.textlink></p>
+{% endif %}
+{% else %}
+<c-rahmen.satz data-testid="benachrichtigungen-leer">{% if request.GET.filter == 'unread' %}Sie haben alle Benachrichtigungen gelesen.{% else %}Sie haben noch keine Benachrichtigungen erhalten.{% endif %}</c-rahmen.satz>
+{% endif %}
+{% endblock %}

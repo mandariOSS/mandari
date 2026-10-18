@@ -164,3 +164,9 @@ Leseaufträge und Statusabfragen liegen.
   Speicher für einen Tesseract-Aufruf (`LIVE_OCR_MEMORY_LIMIT_MB`) mehr.
 - Abrufe folgen Weiterleitungen nur auf https-Adressen mit öffentlichem Namen (`hub/live/anbieter/http.py`). Ein
   Name, der erst bei der Auflösung auf eine Adresse im eigenen Netz zeigt, wird noch nicht abgefangen.
+- Kennung und Takt wie alle Abrufe bei Diensten (Issue #1036, `insight_core/services/dienste.py`): User-Agent
+  `mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)`, vor jeder Anfrage und jeder Weiterleitung
+  ein Zeitpunkt beim Server, höchstens eine Anfrage je Sekunde und Server (`dienste.LIVE`). Ein Einzelbild braucht
+  2 bis 4 Anfragen (Playlist, gegebenenfalls Variante, Segment, gegebenenfalls Initialisierungssegment) und dauert
+  deshalb bei einem Server mindestens 1 bis 3 Sekunden. Übersicht aller Abrufe:
+  [ABRUFREGELN.md](ABRUFREGELN.md#andere-abrufe).

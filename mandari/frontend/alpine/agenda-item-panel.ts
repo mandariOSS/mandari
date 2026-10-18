@@ -2,7 +2,7 @@
  * TOP-Panel der Fraktionssitzung (Alpine-Komponente `agendaItemPanel`).
  *
  * Slide-over für einen Tagesordnungspunkt, per HTMX in `#agenda-panel-content` geladen:
- * Autosave-Anzeige, ein-/ausklappbare Formulare (Beschluss, Protokolleintrag, Aufgabe,
+ * Autosave-Anzeige (mit Fehlern, frontend/alpine/autosave-anzeige.ts), ein-/ausklappbare Formulare (Beschluss, Protokolleintrag, Aufgabe,
  * Antrag, Link) und die Live-Suche nach RIS-Vorlagen. Die Konfiguration (Aktions-URL)
  * kommt aus dem View per `{{ panel_config|json_script:"agenda-item-panel-config" }}` und
  * wird in init() gelesen, weil das Partial nach jeder Aktion neu geladen wird.
@@ -14,6 +14,7 @@
 import { defineComponent } from '../js/alpine/component'
 import { csrfToken } from '../js/csrf'
 import { readJsonScript } from '../js/json-script'
+import { autosaveZustand } from './autosave-anzeige'
 
 export interface AgendaItemPanelConfig {
   /** POST-Ziel der Panel-Aktionen (u. a. `action=search_papers`) */
@@ -30,15 +31,13 @@ export interface PaperSearchResult {
 }
 
 const CONFIG_ID = 'agenda-item-panel-config'
-const SAVED_FEEDBACK_MS = 2000
 const MIN_QUERY_LENGTH = 2
 
 export const agendaItemPanel = defineComponent(() => ({
   actionUrl: '',
 
-  // Autosave-Anzeige
-  saved: false,
-  saving: false,
+  // Autosave-Anzeige: saving, saved, saveFehler; markSaving/markSaved/markFailed
+  ...autosaveZustand(),
 
   // Ein-/ausklappbare Formulare
   showDecisionForm: false,
@@ -56,18 +55,6 @@ export const agendaItemPanel = defineComponent(() => ({
 
   init() {
     this.actionUrl = readJsonScript<AgendaItemPanelConfig>(CONFIG_ID)?.actionUrl ?? ''
-  },
-
-  markSaving() {
-    this.saving = true
-  },
-
-  markSaved() {
-    this.saving = false
-    this.saved = true
-    window.setTimeout(() => {
-      this.saved = false
-    }, SAVED_FEEDBACK_MS)
   },
 
   togglePaperSearch() {

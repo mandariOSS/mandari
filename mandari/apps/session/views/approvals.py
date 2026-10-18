@@ -25,6 +25,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionDelegation, SessionTenant, SessionUser
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import delegation_service, four_eyes_service
 
 _log_event = cast(Any, audit).log_event
@@ -49,6 +50,12 @@ class FourEyesSettingsView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/four_eyes.html"
     permission_required = "manage_settings"
+
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/vier_augen.html"] if neues_design(self.session_tenant) else [self.template_name]
+        )
 
     @property
     def tenant(self) -> SessionTenant:
@@ -141,6 +148,10 @@ class DelegationListView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/delegations.html"
     permission_required = "manage_users"
+
+    def get_template_names(self) -> list[str]:
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/vertretungen.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context: dict[str, Any] = cast(Any, super()).get_context_data(**kwargs)

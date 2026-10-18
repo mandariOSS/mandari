@@ -8,14 +8,16 @@ from django.shortcuts import redirect
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 
 
-class ProfileVisibilityView(WorkViewMixin, TemplateView):
+class ProfileVisibilityView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Visibility settings, bio, and contact preferences."""
 
     template_name = "work/profile/visibility.html"
+    neue_vorlage = "work/profile/neu/sichtbarkeit.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):
@@ -39,7 +41,7 @@ class ProfileVisibilityView(WorkViewMixin, TemplateView):
         return redirect("work:profile_visibility", org_slug=self.organization.slug)
 
 
-class ProfileCommitteesView(WorkViewMixin, TemplateView):
+class ProfileCommitteesView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Personal selection of followed committees ("Meine Gremien").
 
     Unlike the admin-assigned ``Membership.oparl_committees`` this list is
@@ -47,6 +49,7 @@ class ProfileCommitteesView(WorkViewMixin, TemplateView):
     """
 
     template_name = "work/profile/committees.html"
+    neue_vorlage = "work/profile/neu/gremien.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):

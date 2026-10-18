@@ -3,27 +3,32 @@
  *
  * Reihenfolge: HTMX konfigurieren, Alpine-Komponenten und -Stores registrieren,
  * Icon-Observer starten, Alpine starten. Die Globals `htmx`, `Alpine`, `lucide`,
- * `showToast` und `confirmAction` bleiben für Templates erhalten.
+ * `showToast`, `confirmAction`, `bereinigeKiHtml` und `kiMarkdownHtml` bleiben für Templates erhalten.
  */
 
 import collapse from '@alpinejs/collapse'
 import focus from '@alpinejs/focus'
 import Alpine from 'alpinejs'
 import { documentText, merklisteController, neighborhoodSubscription, questionForm } from '../alpine/insight'
+import { insightKarte } from '../alpine/insight-karte'
 import { insightShell } from '../alpine/insight-shell'
 import { kommunenWahl } from '../alpine/kommunen-wahl'
 import { meetingCockpit } from '../alpine/meeting-cockpit'
 import { neighborhoodApp } from '../alpine/neighborhood'
+import { workGruppe, workPerson, workRahmen } from '../alpine/work-rahmen'
 import { installActions } from './actions'
 import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
 import { showToast, toastManager } from './alpine/toast'
+import { alleLoeschen, aufraeumen } from './eingaben-sicherung'
 import { installFormBehaviors } from './form-behaviors'
 import { setupHtmx } from './htmx-setup'
 import { installIconObserver, renderIcons } from './icons'
+import { bereinigeKiHtml, kiMarkdownHtml } from './ki-ausgabe'
 import { initMeetingMap } from './meeting-map'
 import { initPaperMap } from './paper-map'
 import { initSearchPlaceMap } from './search-place-map'
 import { registerBookmarksStore } from './stores/bookmarks'
+import { installTagesordnungSortieren } from './tagesordnung-sortieren'
 
 // ---- HTMX --------------------------------------------------------------------
 setupHtmx()
@@ -33,11 +38,20 @@ installActions()
 // Formularhelfer (URL-Kürzel, abhängige Auswahl, Textbausteine, Fehlerbericht) statt Inline-Skripten
 installFormBehaviors()
 
+// ---- Sicherung ungespeicherter Eingaben im Browser (#854) ---------------------------
+// Nach dem Abmelden (Seite „Abgemeldet“) alle Sicherungen löschen, sonst die abgelaufenen (älter als 24 Stunden);
+// angemeldet (Kennung des Kontos am body, Work) auch die Sicherungen anderer Konten
+if (document.querySelector('[data-eingaben-loeschen]')) alleLoeschen()
+else aufraeumen(undefined, Date.now(), document.body?.dataset.konto || '')
+
 // ---- Globals für Templates ----------------------------------------------------
 window.Alpine = Alpine
 window.lucide = { createIcons: () => renderIcons() }
 window.showToast = showToast
 window.confirmAction = confirmAction
+// KI-Antworten nur bereinigt als HTML ausgeben (KI-Assistent, pages/chat.html)
+window.bereinigeKiHtml = bereinigeKiHtml
+window.kiMarkdownHtml = kiMarkdownHtml
 
 // ---- Alpine: Plugins, Komponenten-Registry, Stores ---------------------------
 Alpine.plugin(collapse)
@@ -57,6 +71,8 @@ if (document.documentElement.dataset.portal === 'insight') {
   Alpine.data('neighborhoodSubscription', neighborhoodSubscription)
   Alpine.data('documentText', documentText)
   Alpine.data('neighborhoodApp', neighborhoodApp)
+  // Karte (gemeinsames Kartenmodul mit Work, frontend/js/vorgangskarte.ts, Issue #853)
+  Alpine.data('insightKarte', insightKarte)
   registerBookmarksStore(Alpine)
   // Vorgangsseite: Orte und amtliche Umringe; Sitzungsseite: Sitzungsort (Leaflet als Vendor-Skript, läuft vor diesem Modul)
   initPaperMap()
@@ -67,6 +83,15 @@ if (document.documentElement.dataset.portal === 'insight') {
   } catch (error) {
     console.warn('Karte im Ortsband nicht gezeichnet', error)
   }
+}
+
+if (document.documentElement.dataset.portal === 'session') {
+  // Neuer Rahmen des Sitzungsdienstes (Issue #944): dieselben Komponenten wie der Rahmen von Work (Leiste, Mandant
+  // wechseln, Blatt „Mehr“, Personenmenü); Tagesordnung per Ziehen umsortieren ohne Inline-Skript
+  Alpine.data('workRahmen', workRahmen)
+  Alpine.data('workGruppe', workGruppe)
+  Alpine.data('workPerson', workPerson)
+  installTagesordnungSortieren()
 }
 
 // Mobile: Seitenleiste nach Navigation schließen (Layouts halten `sidebarOpen` am <html>)

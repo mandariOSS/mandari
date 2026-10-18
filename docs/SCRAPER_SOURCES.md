@@ -41,6 +41,19 @@ Die robots.txt gilt schon beim Zensus: Gesperrte Pfade (Startseite, OParl-Kandid
 nicht an. Ist die robots.txt nicht erreichbar (5xx, 408, 429, Netzfehler), endet die Prüfung
 nach dieser einen Anfrage mit dem Befund `nicht_erreichbar`.
 
+Auch der Takt gilt wie im Abgleich (#1027): Vor jeder Anfrage, auch vor jeder Weiterleitung, reserviert
+der Zensus einen Zeitpunkt in der Drossel je Host (`src/client/host_pacing.py`, Redis über alle Prozesse),
+also höchstens eine Anfrage je `INGESTOR_REQUEST_INTERVAL` (Standard eine Sekunde) an denselben Host; ist
+für den Host eine Quelle mit größerem `request_interval` registriert, gilt deren Abstand. Jede
+Weiterleitung zählt als eigene Anfrage gegen die fünf. Einer Weiterleitung folgt der Zensus nur, wenn die
+robots.txt des Ziel-Hosts das Ziel erlaubt; die robots.txt eines neuen Hosts kostet dabei eine Anfrage. Die
+Vergleichsanfrage trägt dieselbe Kennung wie im Abgleich (`python-httpx/<Version>`, siehe
+`docs/MONITORING.md`), geht an die Adresse, die 403 geliefert hat, folgt keiner Weiterleitung und entfällt mit
+`OPARL_UA_PROBE_ENABLED=false`; nur eine Antwort 2xx darauf ergibt „User-Agent gesperrt“, eine Weiterleitung
+steht als unklar in den Hinweisen. `manage.py add_oparl_source` hält den Takt ebenso ein, bei einer schon
+registrierten Quelle mit deren `request_interval`, bei einer anderen registrierten Quelle auf demselben Host
+mit deren größerem Abstand, und folgt Weiterleitungen ebenfalls nur nach der robots.txt des Ziels.
+
 ```bash
 mandari-ingestor probe-ris https://buergerinfo.example.org/bi/            # eine Kommune, JSON
 mandari-ingestor probe-ris --batch kommunen.txt --format csv --out zensus.csv
@@ -115,7 +128,7 @@ Alle `scraper`-Schlüssel außer `base_url` sind optional:
 |---|---|---|
 | `body_name` | "Unbekannte Kommune" | Anzeigename des Bodies |
 | `variant` | Auto-Detect | `"asp"` oder `"php"` |
-| `rate_limit_seconds` | `2.0` | Mindestabstand zwischen Requests je Host |
+| `rate_limit_seconds` | `2.0` | Mindestabstand zwischen Requests je Host, nie unter 1 s (kleinere Werte werden angehoben, Warnung im Log) |
 | `max_concurrent` | `1` | immer 1 (Serialisierung, RIS-Server schonen) |
 | `calendar_window_days` | `[-60, 210]` | Kalenderfenster inkrementeller Läufe |
 | `full_window_days` | `[-365, 210]` | Fenster des Full-Crawls (Historie) |
@@ -129,8 +142,15 @@ Außerhalb von `scraper` (auf oberster Ebene der Sync config, auch für OParl-Qu
 |---|---|---|
 | `download_headers` | keine | Zusätzliche HTTP-Header für **Datei-Downloads** dieser Quelle (Dateicache, Textextraktion im Ingestor und in Django), z. B. `{"Referer": "https://rat.example.de/bi/", "Cookie": "consent=1"}`. Für RIS, die Anlagen nur mit Referer oder Consent-Cookie ausliefern (#116). Werte sind Klartext im Admin — keine persönlichen Sitzungs-Cookies hinterlegen. |
 | `file_downloads` | `true` | `false`: Dateien dieser Quelle **nicht automatisch abrufen** (Textextraktion im Ingestor und in Django, Dateicache, Vorschau). Für RIS, die Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefern (z. B. ALTCHA); die Vorschau verweist dann auf das Original. Die Dateien bleiben offen und werden nachgeholt, sobald der Schalter fällt. |
-| `request_interval` | `INGESTOR_REQUEST_INTERVAL` (1 s) | Mindestabstand in Sekunden zwischen dem Beginn zweier Anfragen an den Host dieser Quelle (0–30). Er gilt über alle Abrufplätze, alle Quellen auf demselben Host und alle Prozesse (Daemon, Einzelabgleich, Dokument-Cache und Vorschau in Django), weil alle denselben Zeitstempel je Host in Redis reservieren. Ohne den Schlüssel gilt der Standard (`INGESTOR_REQUEST_INTERVAL` bzw. `RIS_REQUEST_INTERVAL` in Django, je eine Anfrage je Sekunde). `0` schaltet die Drossel für die Quelle ab. Ohne erreichbares Redis drosselt jeder Prozess für sich. Je Prozess und Host laufen höchstens `INGESTOR_HOST_MAX_CONCURRENT` Anfragen (Standard 2) gleichzeitig, damit der reservierte Takt nicht so viele Sekunden vorausreicht, wie es Abrufplätze gibt. |
+| `request_interval` | `INGESTOR_REQUEST_INTERVAL` (1 s) | Mindestabstand in Sekunden zwischen dem Beginn zweier Anfragen an den Host dieser Quelle (0–30). Er gilt über alle Abrufplätze, alle Quellen auf demselben Host und alle Prozesse (Daemon, Einzelabgleich, Dokument-Cache und Vorschau in Django), weil alle denselben Zeitstempel je Host in Redis reservieren. Ohne den Schlüssel gilt der Standard (`INGESTOR_REQUEST_INTERVAL` bzw. `RIS_REQUEST_INTERVAL` in Django, je eine Anfrage je Sekunde). Der Wert darf nur verlangsamen: Werte unter 1 s, auch `0`, gelten als 1 s (Warnung im Log, `mandari_oparl.pacing.MIN_REQUEST_INTERVAL`, #1025); schneller als eine Anfrage je Sekunde und Server rufen wir nie ab. Ohne erreichbares Redis drosselt jeder Prozess für sich. Je Prozess und Host laufen höchstens `INGESTOR_HOST_MAX_CONCURRENT` Anfragen (Standard 2) gleichzeitig, damit der reservierte Takt nicht so viele Sekunden vorausreicht, wie es Abrufplätze gibt; das gilt auch für den Ziel-Host einer Weiterleitung (der Platz des Abrufs zieht dorthin um). Django (Dokument-Cache, Vorschau) kennt diese Grenze nicht, hält aber denselben Takt ein. |
 | `list_params` | keine | Zusätzliche Parameter für die erste Seite jeder OParl-Liste, z. B. `{"size": 100}` bei ALLRIS (100 statt 10 Einträge je Seite). Folgeseiten kommen aus `links.next`. |
+| `modified_since_margin_minutes` | `INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES` (120) | Sicherheitsabstand des Änderungsfensters in Minuten (0–10080). Inkrementelle Läufe fragen je Kommune nach allem, was seit dem Beginn ihres letzten vollständig erfolgreichen Abgleichs abzüglich dieses Abstands geändert wurde; ohne einen solchen Abgleich, oder liegt er weiter zurück, wie früher nach den letzten sieben Tagen (#1025). Quellen, deren Objekte erst Stunden nach ihrem `modified` sichtbar werden, brauchen einen größeren Abstand. Listen, deren `modified` keine Uhrzeit trägt, erkennt der Ingestor selbst und fragt sie ab 00:00 Uhr an (`timed_lists`). |
+| `body_sync_started` | – (pflegt der Ingestor) | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (Kennung → Zeitpunkt UTC), Anfang des Änderungsfensters. Ein Lauf mit Lücke schreibt ihn nicht fort; konnte ein Lauf Objekte nicht speichern (Fehler, Mitgliedschaft ohne Person, TOP ohne Sitzung), rückt er höchstens bis zu ihrem ältesten `modified` vor. Objekte, die die Quelle trotz Filter liefert (`modified` mehr als einen Tag vor dem Fenster der Liste), halten ihn nicht; sie kommen ohnehin in jedem Lauf wieder. Löschen setzt die Kommune auf das Fenster von sieben Tagen zurück. |
+| `missing_lists` | – (pflegt der Ingestor) | Optionale Listen (Mitgliedschaften, Tagesordnungspunkte, Beratungen, Dateien, Orte, Wahlperioden), die die Quelle nicht anbietet, mit dem Zeitpunkt der letzten Prüfung (Adresse → Zeitpunkt UTC): Die erste Seite antwortete ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt, während andere Listen der Kommune lesbar waren. Inkrementelle Läufe fragen sie einmal am Tag an, der Vollabgleich jedes Mal (in Zeitscheiben nicht, #1033); gibt es sie wieder, wird der Vermerk gelöscht. Pflichtlisten (Gremien, Personen, Sitzungen, Vorlagen) werden nie vermerkt, dort bleibt ein 404 eine Lücke; ein Fehlerobjekt gilt dort wie bisher als leere Liste, solange andere Listen der Kommune lesbar sind (#1025). Beantwortet SD.NET RIM eine gefilterte Liste ohne Treffer mit HTTP 404 und Code 802, gilt sie als leer und vollständig, nicht als fehlend (#1034). |
+| `timed_lists` | – (pflegt der Ingestor) | Listen, deren `modified` nachweislich die Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC). Nur sie fragen inkrementelle Läufe mit dem kurzen Fenster ab „Beginn minus Abstand“ an. Alle übrigen Listen beginnen um 00:00 Uhr (dem früheren Zeitpunkt von 00:00 Uhr Ortszeit und 00:00 Uhr UTC): Trägt `modified` nur das Datum, fände das kurze Fenster ab etwa 02:00 Uhr nichts mehr vom selben Tag, auch bei einer Liste, die noch kein Lauf prüfen konnte. Vermerkt, sobald ein Lauf dort Änderungen der letzten sieben Tage sieht und alle eine Uhrzeit tragen; gelöscht, sobald er dort eine solche Änderung nur mit Datum sieht, auch 00:00 Uhr Ortszeit in UTC angegeben (`22:00:00Z`) (#1025). |
+| `full_sync_slices` | keine | Vollabgleich nur in Zeitscheiben, etwa `{"days": 30, "since": "2010-01-01"}`: Der Vollabgleich fragt jede Liste nur mit `modified_since`/`modified_until` an, nie ohne Filter, von alt nach neu, und setzt nach einem Abbruch an der letzten vollständigen Scheibe fort. Für Quellen, deren ungefilterte Listen abbrechen (Stadt Hamm). `days` 1–366 (Standard 30), `since` Pflicht, optional `lists`. Er endet immer mit dem Zeitfenster (`full_sync_window`, sonst Standardfenster des Daemons). Einzelheiten in [`ABRUFREGELN.md`](ABRUFREGELN.md#vollabgleich-in-zeitscheiben) (#1033). |
+| `full_sync_progress`, `full_sync_filter_ignored` | – (pflegt der Ingestor) | Fortschritt des Vollabgleichs in Zeitscheiben je Liste und Befund „Server ignoriert den Filter“ (#1033). |
+| `slow_lists` | – (pflegt der Ingestor) | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind (1, 2, 4, 8, 16, dann höchstens 24 Stunden), mit eigenem Fensteranfang; danach holt der inkrementelle Lauf sie in Scheiben zu einem Tag nach, bei Servern ohne Filter wie bisher ohne Scheiben (#1033, [`ABRUFREGELN.md`](ABRUFREGELN.md#langsame-listen)). Nicht löschen: Die Änderungen seit dem Fensteranfang holte dann erst der nächste Vollabgleich; stattdessen `until` in die Vergangenheit setzen. |
 | `carry_modified_since` | `false` | `true`: Die Quelle filtert mit `modified_since`, lässt den Parameter aber in `links.next` weg (ALLRIS). Der Ingestor hängt ihn an jede Folgeseite an. Ohne den Schalter gilt die Quelle als „ohne Filter“, und der inkrementelle Abgleich erreicht neue Einträge erst im nächtlichen Vollabgleich, weil die Listen aufsteigend sortiert sind. |
 
 Zieht eine Quelle um und ändert dabei die Form ihrer Adressen, behalten die Objekte im Bestand ihre Kennungen
@@ -183,9 +203,9 @@ Sitzungen, Vorlagen und Wahlperioden:
 - `bodies` vor dem ersten Lauf setzen. Der Upsert ändert die Körperschaft eines vorhandenen Objekts
   nicht: Wird eine schon gecrawlte Quelle umgestellt, bleiben ihre Gremien, Sitzungen und Vorlagen
   beim bisherigen Body (Basis-URL). Dann den Bestand der Quelle vorher entfernen.
-- Jeder neue Body ist sofort in den Listen des Portals (`is_listed` an). Bodies einer Quelle, die
-  noch nicht freigegeben ist, nach dem ersten Lauf im Admin ausblenden – bei mehreren
-  Körperschaften jeden einzeln.
+- Jeder neue Body startet ungelistet (`is_listed` aus, Issue #555). Erst nach der Freigabe die
+  gewünschten Bodies im Admin listen – bei mehreren Körperschaften jeden einzeln. Vorhandene Bodies
+  behalten ihre Einstellung.
 
 ### Schritt 4: Probe-Crawl mit Limit
 
@@ -202,6 +222,7 @@ vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
 | Basis-URL | Body | `https://<host>/<prefix>/` (mehrere Körperschaften: `…/?__cpanr=N`) |
 | `gr0040` (Auswahl Wahlperiode, `__cwpnr`) | LegislativeTerm (am Body) | `…/gr0040.asp?__cwpnr=N` |
 | `si0057?__ksinr=` | Meeting inkl. TOPs (Ö/NÖ, Beschlüsse) | `…/si0057.asp?__ksinr=N` |
+| TOP in `si0057` | AgendaItem | `…/si0057.asp?__ksinr=N#agendaitem/kvonr-K` (mit Vorlage), sonst `…#agendaitem/nr-3.2` bzw. `nr-N1` (nichtöffentlich), ohne Nummer `…#agendaitem/pos-7` |
 | `si0050?__ksinr=` | Sitzungsdokumente (Einladung/Niederschrift) | `…/getfile.asp?id=N&type=do` |
 | `vo0050?__kvonr=` | Paper (Betreff, Nummer, Art) + Anlagen-PDFs | `…/vo0050.asp?__kvonr=N` |
 | `gr0040` | Organizations (Gremien) | `…/kp0040.asp?__kgrnr=N` |
@@ -211,6 +232,72 @@ vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
 PDF-Anlagen laufen automatisch durch die bestehende OCR-Queue
 (`text_extraction_status='pending'` → pypdf → Tesseract → Mistral) und
 werden in Elasticsearch indexiert.
+
+### Kennung der Tagesordnungspunkte
+
+Die Sitzungsseite (`si0057`) nennt je Punkt weder eine eigene Kennung noch einen Link auf eine Detailseite
+(geprüft an den Golden Files aus Lüdenscheid und Eschweiler). Stabil ist nur die Vorlage (Issue #863):
+
+- **Punkt mit Vorlage:** `…#agendaitem/kvonr-<__kvonr>`, gleich unter welcher Nummer und in welchem Teil der Sitzung
+  er steht. Fügt die Verwaltung davor einen Punkt ein oder nummeriert um, bleibt die Kennung. Berät die Sitzung
+  dieselbe Vorlage an mehreren Punkten, zählen die späteren weiter (`kvonr-<__kvonr>-2`).
+- **Punkt ohne Vorlage** (Eröffnung, Mitteilungen, Anfragen, Gliederungspunkte wie „Bauordnung“): keine stabile
+  Quelle der Kennung. Er heißt nach seiner Nummer (`nr-3.2`, im nichtöffentlichen Teil `nr-N1` wie „N 1“ auf der
+  Seite), ohne Nummer nach seiner Position (`pos-7`). Nach einer Einfügung davor trägt die Kennung einen anderen
+  Punkt; Work hängt seine Daten über den fachlichen Anker um (#547). Bekommt ein Punkt nachträglich eine Vorlage,
+  erhält er eine neue Kennung.
+- **Punkte, die die Tagesordnung nicht mehr liefert** (abgesetzt, nachträglich mit Vorlage, umnummeriert ohne
+  Vorlage), markiert der Abruf nach derselben Regel wie Sitzungen und Gremien als gelöscht (`quelle_geloescht`,
+  Ereignis `ris.object.depublished`, nichtöffentliche Punkte nur nichtöffentlich): nur in Vollabgleichen ohne
+  Fehler, nur für Sitzungen, deren Tagesordnung der Lauf gelesen hat (Seite lesbar, mindestens ein Punkt), und erst
+  nach `SCRAPER_TOMBSTONE_FULL_CRAWLS` solchen Läufen in Folge. Liest ein Vollabgleich die Sitzung nicht (oder gar
+  keine Tagesordnung), beginnt die Zählung ihrer Punkte von vorn. Nur Punkte in der Form seit #863; Zähler in
+  `scraper_state.missing.agendaitem`. Taucht ein Punkt wieder auf, hebt der Upsert die Markierung auf.
+- **Bremse je Sitzung:** Für Tagesordnungspunkte gilt nicht die Bremse je Quelle (`SCRAPER_TOMBSTONE_MAX_MISSING`),
+  sondern je Sitzung: Fehlt mehr als die Hälfte ihrer Punkte, etwa weil ein ganzer Teil der Seite fehlt, zählt für
+  diese Sitzung nichts, und ihre Zähler bleiben stehen. Was der Abruf vor #863 nie gelöscht hat, hält so den Abgleich
+  der übrigen Sitzungen nicht an. `last_run.agenda_braked` nennt gebremste Sitzungen und fehlende Punkte; die Quelle
+  bekommt dafür keine Warnung im Betriebsmonitor.
+
+**Umstellung des Bestands.** Bis Issue #863 war die Nummer die Kennung (`…#agendaitem/3.2`, `N1`). Der erste Abruf
+einer Sitzung mit der neuen Form schreibt ihre Punkte in place um: `external_id` neu, `id` bleibt (wie beim Umzug
+einer Quelle, ADR `docs/adr/20260929-kanonisches-modell.md`). Mit um ziehen die Kennung in `raw_json` des Punkts, die
+Verweise der Beratungen (Spalte `agenda_item_external_id` und `raw_json.agendaItem`) und die Tagesordnung in
+`raw_json` der Sitzung; der Änderungsfeed meldet dabei nichts, und Ereignisse verweisen auf die Zeile im Bestand.
+Notizen, Positionen und Suchindex hängen an der Zeile und bleiben gültig; `check_ris_ids` zählt die Punkte danach
+als „Kennung abweichend“, das ist gewollt. Zuordnung:
+
+1. Punkt mit Vorlage: die Zeile mit derselben Beratung, auch wenn die Nummer sich seit dem letzten Abruf geändert hat.
+2. Punkt ohne Vorlage: die Zeile ohne Vorlage mit demselben Namen und gleich öffentlich, wenn der Name auf beiden
+   Seiten nur einmal vorkommt; sonst die Zeile unter seiner bisherigen Nummer (ohne Vorlage, gleich öffentlich),
+   die der Abruf bisher überschrieben hätte.
+3. Übrige Zeilen (der Punkt steht nicht mehr auf der Tagesordnung) bekommen die Kennung nach ihren eigenen Angaben
+   (`kvonr-…`, `nr-…`, bei Bedarf mit Zählung) und fallen dann unter den Löschabgleich.
+
+Die abgelöste Kennung bleibt als `mandari:previousId` an Punkt und Tagesordnung stehen; der Abruf schreibt sie bei
+jedem Speichern wieder dazu. Sitzungen, die kein Abruf mehr liest (außerhalb des Kalenderfensters), behalten ihre
+Kennungen. Eine Kennung der alten Form vergibt der Adapter nie wieder; die behaltene `id` stößt deshalb mit keiner
+neuen Zeile zusammen.
+
+**Nicht ohne Rückweg zurückfallen.** Ein Ingestor von vor #863 vergibt wieder die Nummer als Kennung und will mit der
+`id` einer umgeschriebenen Zeile eine neue anlegen: Der Primärschlüssel ist vergeben, und der ganze Abruf der Quelle
+bricht ab. Vor einem Rückfall je SessionNet-Quelle den Daemon für die Quelle anhalten (`is_active = false`) und
+
+```bash
+docker compose exec ingestor python -m src.main top-kennungen-zurueck --source <URL der Quelle>              # zählt
+docker compose exec ingestor python -m src.main top-kennungen-zurueck --source <URL der Quelle> --ausfuehren # schreibt
+```
+
+ausführen. Der Befehl gibt umgeschriebenen Zeilen genau ihre abgelöste Kennung zurück (`mandari:previousId`); danach
+passt jede `id` wieder zu ihrer Kennung. Er endet mit Fehler, wenn Zeilen ohne Rückweg bleiben; dann nicht
+zurückfallen. Punkte, die seit der Umstellung neu angelegt wurden, bleiben in der neuen Form, und der ältere Abruf
+legt sie ein zweites Mal an (Dublette, kein Abbruch).
+
+`--neue-punkte` schreibt auch diese Punkte auf die Kennung um, die der ältere Abruf vergäbe, sofern frei. Ihre `id`
+passt danach nicht mehr zur Kennung. Nur für einen dauerhaften Rückfall verwenden: **Wird nach einem Rückweg mit
+`--neue-punkte` wieder auf den neuen Abruf umgestellt, kann er solchen Zeilen eine andere als ihre ursprüngliche
+Kennung geben; liefert die Seite später die ursprüngliche, scheitert der Abruf am Primärschlüssel.** Ohne
+`--neue-punkte` ist ein späteres erneutes Umstellen sicher: Es läuft wie die erste Umstellung.
 
 ### Änderungserkennung & Löschungen
 
@@ -357,7 +444,7 @@ services:
 
 ## 3. Politeness-Defaults (alle Scraper-Quellen)
 
-- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de/crawler/; support@mandari.de)`
+- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de/ingestor/; support@mandari.de)`
   (Env `INGESTOR_USER_AGENT`, ältere Schreibweise `SCRAPER_USER_AGENT`). Er gilt für
   OParl-Client, Scraper und Textextraktion. Django (Dokument-Cache, Textextraktion,
   Vorschau, Personenfotos, `add_oparl_source`) meldet sich mit demselben Produkt-Token,
@@ -398,10 +485,10 @@ Textvorlage: [ADR 2026-09-17](adr/20260917-kein-scraping-sternberg-regisafe-komu
 ## 5. Opt-out- / Takedown-Prozess
 
 Kommunen (oder Betroffene) können sich jederzeit über die auf der
-Crawler-Infoseite genannten Kontakte melden. Ablauf:
+Infoseite für Betreiber (<https://mandari.de/ingestor/>) genannten Kontakte melden. Ablauf:
 
 1. **Drosseln/Pausieren**: Quelle im Admin deaktivieren (`is_active`)
-   oder `rate_limit_seconds` erhöhen — wirkt ab dem nächsten Zyklus.
+   oder `rate_limit_seconds` erhöhen — wirkt ab dem nächsten Lauf der Quelle.
    Alternativ setzt die Kommune ein robots.txt-Disallow für unseren
    User-Agent (`mandari-ingestor`); der Ingestor respektiert das
    automatisch.
@@ -450,8 +537,9 @@ seit Issue #122; die Kommune muss nichts freischalten.
   "Pfad existiert nicht"-Signalen, nie bei Timeouts oder 5xx.
 - **Fehlerobjekte** werden nie als Datensatz verarbeitet.
 - **Ignoriertes `modified_since`** wird an den Listen-Links erkannt; der Host
-  landet im bestehenden Capability-Cache (`sync_config`), Folgelisten senden
-  den Parameter nicht mehr.
+  steht dann als „filtert nicht“ in `sync_config["unfiltered_hosts"]` dieser
+  Quelle, ihre Folgelisten senden den Parameter nicht mehr. Andere Quellen,
+  auch auf demselben Server, betrifft der Vermerk nicht (Issue #1041).
 - **Änderungserkennung ohne Zeitstempel**: Objekte mit synthetischem oder
   fehlendem `modified` bekommen wie Scraper-Quellen einen Content-Hash
   (`mandari:contentHash` im `raw_json`). Der inkrementelle Lauf upsertet nur
@@ -489,17 +577,22 @@ seit Issue #122; die Kommune muss nichts freischalten.
    python manage.py add_oparl_source "https://<mandant>.gremien.info/oparl/system"
    ```
 
+   Die Quelle ist danach inaktiv, alle neuen Bodies sind ungelistet (Issue #555).
    Verbandsgemeinden liefern mehrere Bodies (Ortsgemeinden, Zweckverbände);
-   nicht gewünschte Bodies danach im Admin auf `is_listed=false` setzen oder
-   löschen.
+   die gewünschten Bodies nach der Prüfung im Admin listen (`is_listed`), die
+   übrigen ungelistet lassen oder löschen. Ist die Quelle schon registriert,
+   bleibt ihr Status (aktiv oder abgeschaltet) unverändert.
 
 3. Erstlauf als Voll-Sync anstoßen (Admin-Aktion „Voll-Sync" oder
-   `mandari-ingestor sync --body <System-URL> --full`), danach übernimmt
-   der Daemon. Im Log erscheint einmalig „Server ignoriert modified_since".
+   `mandari-ingestor sync --body <System-URL> --full`); regelmäßig übernimmt
+   der Daemon erst, wenn die Quelle im Admin aktiviert ist. Nach dem
+   Vollabgleich prüft der Ingestor den Filter; im Log steht
+   „modified_since-Prüfung für <mandant>.gremien.info: ignored".
 
 4. Nach dem ersten inkrementellen Lauf im Admin prüfen: `oparl_version = 1.0`,
-   `sync_config.modified_since_unsupported_hosts` enthält den Host, im
-   SyncLog stehen nur noch wenige neue/aktualisierte Objekte.
+   `sync_config.unfiltered_hosts` enthält den Host (Vermerk „filtert nicht“,
+   gilt nur für diese Quelle, Issue #1041), im SyncLog stehen nur noch
+   wenige neue/aktualisierte Objekte.
 
 5. Geo-Daten zuordnen (OSM-Grenze, Gemeindeschlüssel, Kartenausschnitt,
    Straßen, Adressen; Zweckverbände und Gesellschaften als „keine

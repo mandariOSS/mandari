@@ -2,6 +2,8 @@
 Hinweisband oben auf Start (Issue #857): höchstens ein Hinweis zur Zeit, Auswahl in apps/work/dashboard/hinweise.py.
 Wegklicken und Folgen des Links markieren den Hinweis als gelesen; danach erscheint er nicht mehr, auch nicht in den
 anderen Organisationen der Person. Erwartet „hinweis“ (Hinweis oder leer). Gleiches Band im bisherigen und im neuen Rahmen.
+Mit „hinweis.ausblenden_text“ (Empfehlung zum zweiten Faktor: „Später“) steht eine beschriftete Schaltfläche statt des
+Symbols; ohne „hinweis.link_markiert_gelesen“ ist der Link ein schlichter Link.
 {% endcomment %}
 {% if hinweis %}
 <section id="hinweisband" aria-labelledby="hinweisband-titel" data-testid="hinweisband"
@@ -11,9 +13,12 @@ anderen Organisationen der Person. Erwartet „hinweis“ (Hinweis oder leer). G
         <h2 id="hinweisband-titel" class="font-semibold text-gray-900 dark:text-white">{{ hinweis.titel }}</h2>
         <p class="mt-0.5">
             {{ hinweis.text }}
-            {% if hinweis.link %}
+            {% if hinweis.link and hinweis.link_markiert_gelesen %}
             <a href="{{ hinweis.link }}"
                hx-post="{{ hinweis.gelesen_url }}" hx-swap="none" data-after-request="follow-href"
+               class="whitespace-nowrap font-medium text-primary-700 underline underline-offset-2 hover:no-underline dark:text-primary-300">{{ hinweis.linktext }}</a>
+            {% elif hinweis.link %}
+            <a href="{{ hinweis.link }}"
                class="whitespace-nowrap font-medium text-primary-700 underline underline-offset-2 hover:no-underline dark:text-primary-300">{{ hinweis.linktext }}</a>
             {% endif %}
             {% if hinweis.rueckmeldung_url %}
@@ -23,11 +28,17 @@ anderen Organisationen der Person. Erwartet „hinweis“ (Hinweis oder leer). G
             {% endif %}
         </p>
     </div>
+    {% if hinweis.ausblenden_text %}
+    <button type="button"
+            hx-post="{{ hinweis.gelesen_url }}" hx-target="#hinweisband" hx-swap="delete"
+            class="-my-0.5 flex-none rounded px-2 py-0.5 font-medium text-gray-600 hover:bg-primary-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-primary-900/40 dark:hover:text-white">{{ hinweis.ausblenden_text }}</button>
+    {% else %}
     <button type="button"
             hx-post="{{ hinweis.gelesen_url }}" hx-target="#hinweisband" hx-swap="delete" data-after-request="follow-href"
             class="-m-1 flex-none rounded p-1 text-gray-500 hover:bg-primary-100 hover:text-gray-800 dark:text-gray-400 dark:hover:bg-primary-900/40 dark:hover:text-white"
             aria-label="Hinweis ausblenden" title="Ausblenden">
         <i data-lucide="x" class="h-4 w-4" aria-hidden="true"></i>
     </button>
+    {% endif %}
 </section>
 {% endif %}

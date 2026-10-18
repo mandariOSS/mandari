@@ -13,7 +13,9 @@ from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import TemplateView
 
+from apps.common import local_time
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 from apps.work.stats_text import faction_meetings_sentence
 
 from ..models import (
@@ -38,10 +40,11 @@ def _wants_standard_agenda(form) -> bool:
     return not form.get("standard_agenda_offered") or form.get("standard_agenda") == "on"
 
 
-class FactionMeetingListView(WorkViewMixin, TemplateView):
-    """List of faction meetings. POST creates a new meeting (from modal)."""
+class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
+    """List of faction meetings. POST creates a new meeting (from modal). Neues Erscheinungsbild: Issue #951."""
 
     template_name = "work/faction/list.html"
+    neue_vorlage = "work/faction/neu/sitzungen.html"
     permission_required = "faction.view_public"
 
     def get_context_data(self, **kwargs):
@@ -101,6 +104,11 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
         context["stats_sentence"] = faction_meetings_sentence(context["stats"])
 
         context["status_choices"] = FactionMeeting.STATUS_CHOICES
+        if self.neue_ansicht():
+            from apps.work.meetings.neu import ZEITRAEUME
+
+            # Zeitraum als drei Textlinks (Issue #951), dieselben Werte wie bisher
+            context["zeitraeume"] = ZEITRAEUME
 
         # Teilnahmenachweis (Issue #68): Standard-Zeitraum + Sammel-Export-Recht
         from datetime import date as _date
@@ -141,11 +149,14 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
 
         try:
             start_datetime = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M")
-            start_datetime = (
-                timezone.make_aware(start_datetime) if timezone.is_naive(start_datetime) else start_datetime
-            )
         except ValueError:
             messages.error(request, "Ungültiges Datum oder Uhrzeit.")
+            return redirect("work:faction", org_slug=self.organization.slug)
+        try:
+            # Tag der Zeitumstellung (Issue #974): doppelte Stunde → erste Uhrzeit, fehlende Stunde → Meldung
+            start_datetime = local_time.aware(start_datetime)
+        except local_time.NonexistentLocalTimeError as exc:
+            messages.error(request, str(exc))
             return redirect("work:faction", org_slug=self.organization.slug)
 
         # Videolink (Issue #872): gleich beim Planen, nur als http(s)-Adresse; ein Link macht die Sitzung online
@@ -200,6 +211,9 @@ class FactionMeetingListView(WorkViewMixin, TemplateView):
             apply_standard_agenda(meeting)
 
         messages.success(request, "Sitzung erfolgreich erstellt.")
+        notice = local_time.ambiguous_notice(meeting.start, label="Beginn")
+        if notice:
+            messages.warning(request, notice)
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
 
 
@@ -219,6 +233,16 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         context["active_nav"] = "faction"
 
         meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
+
+        # Neue Sitzungsansicht der laufenden Sitzung (Issue #874) hinter dem Schalter der Organisation;
+        # ``?ansicht=bisher`` öffnet weiterhin die bisherige Seite mit allen Funktionen
+        from .. import sitzung
+        from . import session
+
+        if sitzung.zeigt_sitzungsansicht(meeting, self.request.GET.get("ansicht")):
+            self.template_name = session.SEITE
+            context.update(session.seiten_kontext(self, meeting, self.request.GET.get("top")))
+            return context
 
         context.update(_get_meeting_context(self, meeting))
         # Konfiguration der Alpine-Komponente `factionDetail` (frontend/alpine/faction-detail.ts):

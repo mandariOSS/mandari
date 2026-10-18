@@ -1,0 +1,82 @@
+{% comment %}
+Rechte Spalte des neuen Antragseditors (Teil von #856).
+- #karten: offene Kommentare am Rand neben ihrer Textstelle (Lage setzt documentEditor.randNeuAnordnen); Klick auf die
+  Stelle im Text oder die Karte macht sie aktiv, dann lässt sich antworten. Erledigen wie bisher (Verfasserin bzw.
+  Verfasser oder „alle Dokumente bearbeiten“).
+- #panel: auf Abruf die bisherigen Seitenleisten (alle Kommentare, Details, Aufgaben, KI, Verlauf); am Handy als Blatt.
+Kontext wie im Editor; Alpine-Komponente documentEditor.
+{% endcomment %}
+
+{% partialdef karten %}
+<div class="ke-rand" data-rand>
+    <template x-for="c in randKarten" :key="c.id">
+        <article class="ke-karte" :data-rand-karte="c.mark_id" :class="{ 'ke-karte-aktiv': activeCommentId === c.mark_id }"
+                 :data-vorschlag="istVorschlag(c) ? '' : null"
+                 tabindex="0" :aria-label="(istVorschlag(c) ? 'Änderungsvorschlag von ' : 'Kommentar von ') + c.author_name" @click="randKarteAktivieren(c.mark_id)"
+                 @keydown.enter.self="randKarteAktivieren(c.mark_id)">
+            <div class="ke-karte-kopf">
+                <span class="ke-av" x-text="c.author_initials" aria-hidden="true"></span>
+                <span class="min-w-0"><b x-text="c.author_name"></b><small x-text="formatTimeAgo(c.created_at)"></small></span>
+                <span class="ml-auto flex gap-0.5">
+                    <button type="button" class="ke-wz ke-wz-klein" x-show="istVorschlag(c) && darfAnnehmen()" aria-label="Vorschlag annehmen" title="Annehmen"
+                            @click.stop="vorschlagEntscheiden(c, true)" :disabled="randSendet"><i data-lucide="check" aria-hidden="true"></i></button>
+                    <button type="button" class="ke-wz ke-wz-klein" x-show="istVorschlag(c) && darfAblehnen(c)" aria-label="Vorschlag ablehnen" title="Ablehnen"
+                            @click.stop="vorschlagEntscheiden(c, false)" :disabled="randSendet"><i data-lucide="x" aria-hidden="true"></i></button>
+                    <button type="button" class="ke-wz ke-wz-klein" x-show="!istVorschlag(c) && darfErledigen(c)" aria-label="Kommentar erledigen" title="Erledigt"
+                            @click.stop="randErledigen(c)"><i data-lucide="check" aria-hidden="true"></i></button>
+                </span>
+            </div>
+            <p class="ke-karte-art" x-show="istVorschlag(c)">Änderungsvorschlag</p>
+            <p class="ke-karte-vorschlag" x-show="istVorschlag(c)" x-text="istVorschlag(c) ? vorschlagZeile(c) : ''"></p>
+            <p x-show="istVorschlag(c) ? !!c.notiz : true" x-text="istVorschlag(c) ? c.notiz : c.content"></p>
+            <template x-for="a in c.replies" :key="a.id">
+                <div class="ke-antwort">
+                    <div class="ke-karte-kopf">
+                        <span class="ke-av" x-text="a.author_initials" aria-hidden="true"></span>
+                        <span class="min-w-0"><b x-text="a.author_name"></b><small x-text="formatTimeAgo(a.created_at)"></small></span>
+                    </div>
+                    <p x-text="a.content"></p>
+                </div>
+            </template>
+            {% if can_comment %}
+            <div x-show="activeCommentId === c.mark_id" x-cloak class="ke-karte-antwort" @click.stop>
+                <label class="sr-only" :for="'antwort-' + c.id">Antworten</label>
+                <textarea :id="'antwort-' + c.id" rows="2" x-model="randAntwort" placeholder="Antworten"
+                          @keydown.ctrl.enter.prevent="randAntworten(c)"></textarea>
+                <div class="flex justify-end gap-2 mt-2">
+                    <button type="button" class="ke-knopf" @click="randAntworten(c)" :disabled="!randAntwort.trim() || randSendet">Antworten</button>
+                </div>
+            </div>
+            {% endif %}
+        </article>
+    </template>
+    <p class="ke-rand-leer" x-show="!randKarten.length">Keine offenen Kommentare oder Vorschläge an Textstellen.</p>
+</div>
+{% endpartialdef %}
+
+{% partialdef panel %}
+<aside class="ke-panel" x-show="panel" x-cloak aria-labelledby="ke-panel-titel" @keydown.escape.stop="panelSchliessen()">
+    <div class="ke-panel-kopf">
+        <h2 id="ke-panel-titel" tabindex="-1" data-panel-titel
+            x-text="{ kommentare: 'Kommentare', details: 'Details und Zuständigkeit', aufgaben: 'Aufgaben und Checkliste', ki: 'KI-Assistent', verlauf: 'Fassungen und Verlauf' }[panel] || ''"></h2>
+        <button type="button" class="ke-wz ml-auto" @click="panelSchliessen()" aria-label="Schließen"><i data-lucide="x" aria-hidden="true"></i></button>
+    </div>
+    <div class="ke-panel-inhalt" x-show="panel === 'kommentare'" data-kommentar-liste>
+        {% include "work/motions/partials/_comments_sidebar.html" %}
+    </div>
+    <div class="ke-panel-inhalt" x-show="panel === 'details'">
+        {% include "work/motions/partials/_details_sidebar.html" %}
+    </div>
+    <div class="ke-panel-inhalt" x-show="panel === 'aufgaben'">
+        {% include "work/motions/partials/_tasks_sidebar.html" %}
+    </div>
+    {% if can_edit and not is_guest and not is_sworn_in_only %}
+    <div class="ke-panel-inhalt" x-show="panel === 'ki'">
+        {% include "work/motions/partials/_editor_ai_panel.html" %}
+    </div>
+    {% endif %}
+    <div class="ke-panel-inhalt" x-show="panel === 'verlauf'">
+        {% include "work/motions/partials/_editor_history_panel.html" %}
+    </div>
+</aside>
+{% endpartialdef %}

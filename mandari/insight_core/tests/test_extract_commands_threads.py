@@ -22,7 +22,7 @@ from django.core.management import call_command
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
 
-from insight_core.management.commands import extract_locations, extract_texts
+from insight_core.management.commands import extract_locations
 from insight_core.models import Address, OParlBody, OParlFile, OParlPaper, OParlSource, Street
 from insight_core.services.geo_coverage import geo_status_for_bodies
 
@@ -66,11 +66,6 @@ def test_worker_thread_gibt_seine_verbindung_zurueck(monkeypatch: pytest.MonkeyP
     t.join(10)
 
     assert ergebnis == {"status": "no_locations", "offen_danach": False}
-
-
-def test_textextraktion_gibt_ihre_verbindung_ebenfalls_zurueck() -> None:
-    # Gleiches Muster wie extract_locations; der Download ließe sich nur mit viel Attrappe nachstellen.
-    assert hasattr(extract_texts.Command._process_file, "__wrapped__")
 
 
 @pytest.mark.django_db(transaction=True)

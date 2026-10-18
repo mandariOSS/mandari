@@ -12,7 +12,7 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 
-from .. import selectors
+from .. import neu, selectors
 from ._mixins import RISBodiesMixin
 
 
@@ -20,6 +20,7 @@ class RISPapersView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS papers list with search and filtering."""
 
     template_name = "work/ris/papers.html"
+    neue_vorlage = "work/ris/neu/vorgaenge.html"
     permission_required = "ris.view"
 
     def get_context_data(self, **kwargs):
@@ -56,6 +57,8 @@ class RISPapersView(RISBodiesMixin, WorkViewMixin, TemplateView):
         paginator = Paginator(papers, 25)
         context["papers"] = paginator.get_page(params.get("page", 1))
         context["paginator"] = paginator
+        if self.neu:
+            context |= neu.vorgaenge(self.organization, self.membership, context["papers"])
         return context
 
 
@@ -63,6 +66,7 @@ class RISPaperDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS paper detail view."""
 
     template_name = "work/ris/paper_detail.html"
+    neue_vorlage = "work/ris/neu/vorgang.html"
     permission_required = "ris.view"
 
     def get_context_data(self, **kwargs):
@@ -76,6 +80,10 @@ class RISPaperDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
 
         paper = get_object_or_404(selectors.papers_in_bodies(bodies), id=kwargs.get("paper_id"))
         context["paper"] = paper
+        if self.neu:
+            # Stand-Satz, Zeitstrahl, Dokumentzeilen und „Für die Fraktion“ (die alte Beratungsfolge braucht es nicht)
+            context |= neu.vorgang(self.organization, self.membership, paper)
+            return context
 
         files, from_raw_json = selectors.paper_files(paper)
         context["files"] = files

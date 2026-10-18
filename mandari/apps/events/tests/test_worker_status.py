@@ -67,7 +67,15 @@ def test_alles_in_ordnung(client: Client, mit_bedarf: Any) -> None:
     assert antwort.status_code == 200
     daten = antwort.json()
     assert daten["status"] == "ok"
-    assert set(daten["checks"]) == {"lebenszeichen", "rueckstau", "fehlerquote", "gescheitert", "texterkennung"}
+    assert set(daten["checks"]) == {
+        "lebenszeichen",
+        "rueckstau",
+        "fehlerquote",
+        "gescheitert",
+        "texterkennung",
+        "dokumentabruf",
+        "dokumenttext",
+    }
     assert all(c["ok"] for c in daten["checks"].values()), daten
     assert daten["checks"]["lebenszeichen"]["detail"] == "1 Worker (dispatch, scheduler, sequencer, tasks)"
     assert daten["checks"]["fehlerquote"]["detail"] == "0 von 3 Aufträgen der letzten Stunde gescheitert (0%)"
@@ -103,6 +111,88 @@ def test_rueckstau_der_auftraege(mit_bedarf: Any) -> None:
 
     assert not ergebnis.ok
     assert "Aufträge 960 s" in ergebnis.detail
+
+
+def _wartet_seit(auftrag: Task, sekunden: float) -> None:
+    Task.objects.filter(pk=auftrag.pk).update(run_after=timezone.now() - timedelta(seconds=sekunden))
+
+
+def _laeuft(queue: str, *, sperre: timedelta = timedelta(seconds=60)) -> Task:
+    """Laufender Auftrag; mit negativer ``sperre`` ist sein Runner tot (Sperre abgelaufen, noch nicht freigegeben)."""
+    auftrag = _auftrag(TaskStatus.LAEUFT, queue=queue)
+    Task.objects.filter(pk=auftrag.pk).update(locked_until=timezone.now() + sperre)
+    return auftrag
+
+
+@pytest.mark.django_db
+def test_rueckstau_ocr_gruen_solange_ein_auftrag_laeuft(mit_bedarf: Any) -> None:
+    """Texterkennung (#953): In ocr wartet jeder Auftrag hinter den vorigen; kein Rückstau, solange einer läuft."""
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="ocr"), status.MAX_TASK_WAIT * 3)
+    _laeuft("ocr")
+
+    ergebnis = status.check_backlog()
+
+    assert ergebnis.ok, ergebnis.detail
+    assert "Aufträge 0 s" in ergebnis.detail, "ocr zählt nicht zu den übrigen Warteschlangen"
+    assert "ocr " in ergebnis.detail and "(1 laufend)" in ergebnis.detail
+    assert "x.y" not in ergebnis.detail, "keine Namen von Aufträgen"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("runner_tot", [False, True])
+def test_rueckstau_ocr_rot_wenn_keiner_laeuft(mit_bedarf: Any, runner_tot: bool) -> None:
+    alt = _auftrag(TaskStatus.WARTEND, queue="ocr")
+    if runner_tot:
+        _laeuft("ocr", sperre=-timedelta(seconds=30))
+    _wartet_seit(alt, status.MAX_TASK_WAIT - 60)
+    assert status.check_backlog().ok, "unter der Schwelle auch ohne laufenden Auftrag"
+
+    _wartet_seit(alt, status.MAX_TASK_WAIT + 60)
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "(0 laufend)" in ergebnis.detail
+
+
+@pytest.mark.django_db
+def test_rueckstau_ocr_versuch_ueber_der_zeitgrenze_laeuft_nicht(mit_bedarf: Any) -> None:
+    """Über der Zeitgrenze bleibt ein Versuch bis zum Neustart des Runners gesperrt, arbeitet aber nicht mehr."""
+    from apps.events.task_runner import CODE_TIMEOUT
+
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="ocr"), status.MAX_TASK_WAIT + 60)
+    haengt = _laeuft("ocr")
+    Task.objects.filter(pk=haengt.pk).update(result_code=CODE_TIMEOUT)
+
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "(0 laufend)" in ergebnis.detail
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("andere", ["default", "ai"])
+def test_rueckstau_ocr_laufender_auftrag_anderswo_hilft_nicht(mit_bedarf: Any, andere: str) -> None:
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="ocr"), status.MAX_TASK_WAIT + 60)
+    _laeuft(andere)
+
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "(0 laufend)" in ergebnis.detail and "Aufträge 0 s" in ergebnis.detail
+
+
+@pytest.mark.django_db
+def test_rueckstau_anderer_warteschlangen_unveraendert(mit_bedarf: Any) -> None:
+    """Für alle übrigen Warteschlangen bleibt es bei 15 Minuten, auch wenn dort oder in ocr ein Auftrag läuft."""
+    _laeuft("default")
+    _laeuft("ocr")
+    _wartet_seit(_auftrag(TaskStatus.WARTEND, queue="default"), status.MAX_TASK_WAIT + 60)
+
+    ergebnis = status.check_backlog()
+
+    assert not ergebnis.ok
+    assert "Aufträge 960 s" in ergebnis.detail
+    assert "ocr" not in ergebnis.detail, "ohne fällige Aufträge in ocr kein eigener Teil"
 
 
 @pytest.mark.django_db
@@ -201,12 +291,114 @@ def test_je_pruefung_ein_status_damit_kein_befund_einen_anderen_verdeckt(client:
 
 
 @pytest.mark.django_db
+def test_wiederholte_pruefung_im_fenster_ohne_datenbank(client: Client, mit_bedarf: Any) -> None:
+    """
+    Issue #1024: Innerhalb des Cache-Fensters kostet ein wiederholter Abruf keine Abfrage, auch nicht im
+    Middleware-Stapel. Der Test schützt nur gegen Rückschritte: Mit dem früheren Gesamt-Cache bestand er genauso. Dass
+    eine andere Prüfung im selben Fenster wirklich gerechnet wird, prüft
+    ``test_andere_pruefung_im_fenster_wird_gerechnet``.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    _alle_worker()
+    for pfad in ("/health/worker/?pruefung=lebenszeichen", "/health/worker/?pruefung=rueckstau", "/health/worker/"):
+        erste = client.get(pfad)
+        with CaptureQueriesContext(connection) as erfasst:
+            zweite = client.get(pfad)
+        assert erfasst.captured_queries == [], pfad
+        assert (zweite.status_code, zweite.json()) == (erste.status_code, erste.json())
+
+
+@pytest.mark.django_db
+def test_andere_pruefung_im_fenster_wird_gerechnet(client: Client, mit_bedarf: Any) -> None:
+    """
+    Issue #1024: Wird im selben Cache-Fenster eine andere Prüfung abgerufen, rechnet der Abruf sie, statt sie aus dem
+    Ergebnis des vorigen zu nehmen. Mit dem früheren Gesamt-Cache scheiterte dieser Test: Der Abruf für
+    ``lebenszeichen`` rechnete alle Prüfungen mit, der für ``rueckstau`` kam danach ohne Abfrage aus dem Cache und zeigte
+    den neuen Rückstau erst nach dem Fenster.
+    """
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    _alle_worker()
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 200
+    alt = _auftrag(TaskStatus.WARTEND)
+    Task.objects.filter(pk=alt.pk).update(run_after=timezone.now() - timedelta(seconds=status.MAX_TASK_WAIT + 60))
+
+    with CaptureQueriesContext(connection) as erfasst:
+        antwort = client.get("/health/worker/?pruefung=rueckstau")
+
+    assert erfasst.captured_queries, "rueckstau wird gerechnet"
+    assert antwort.status_code == 503, antwort.json()
+    assert antwort.json()["checks"]["rueckstau"]["ok"] is False
+
+
+@pytest.mark.django_db
+def test_nur_die_gewaehlten_pruefungen_werden_gerechnet(
+    client: Client, mit_bedarf: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Issue #1024: Vorher rechnete jeder Abruf ohne Cache-Treffer alle Prüfungen, auch die teuren über die
+    Dateitabelle für ``?pruefung=lebenszeichen`` im Minutentakt. Jetzt nur die gewählten, je Prüfung zwischengespeichert.
+    """
+    gerechnet: list[str] = []
+
+    def zaehlend(name: str, pruefung: Any) -> Any:
+        def ausfuehren() -> status.Check:
+            gerechnet.append(name)
+            return cast(status.Check, pruefung())
+
+        return ausfuehren
+
+    monkeypatch.setattr(status, "CHECKS", {name: zaehlend(name, p) for name, p in status.CHECKS.items()})
+    _alle_worker()
+
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 200
+    assert gerechnet == ["lebenszeichen"]
+    assert client.get("/health/worker/?pruefung=rueckstau,lebenszeichen").status_code == 200
+    assert gerechnet == ["lebenszeichen", "rueckstau"], "lebenszeichen aus dem Cache"
+    assert client.get("/health/worker/").status_code == 200
+    assert sorted(gerechnet[2:]) == sorted(set(status.CHECKS) - {"lebenszeichen", "rueckstau"})
+
+
+@pytest.mark.django_db
+def test_befund_nach_dem_fenster_sichtbar(client: Client, mit_bedarf: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ein Fehler (und seine Behebung) wird höchstens WORKER_STATUS_CACHE_SECONDS verdeckt."""
+    from apps.common import health
+
+    gespeichert: list[float | None] = []
+    echt = cache.set_many
+
+    def merken(daten: dict[str, Any], timeout: float | None = None, **kwargs: Any) -> list[str]:
+        gespeichert.append(timeout)
+        return cast(list[str], echt(daten, timeout, **kwargs))
+
+    monkeypatch.setattr(cache, "set_many", merken)
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 503
+    assert gespeichert == [health.WORKER_STATUS_CACHE_SECONDS] and health.WORKER_STATUS_CACHE_SECONDS <= 15
+
+    _alle_worker()
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 503, "im Fenster noch der alte Befund"
+    cache.delete(health._WORKER_STATUS_KEY.format("lebenszeichen"))  # Fenster abgelaufen
+    assert client.get("/health/worker/?pruefung=lebenszeichen").status_code == 200
+
+
+@pytest.mark.django_db
 def test_unbekannte_pruefung_400_ohne_echo(client: Client) -> None:
     antwort = client.get("/health/worker/?pruefung=rueckstau,<b>gibt-es-nicht</b>")
 
     assert antwort.status_code == 400
     assert b"gibt-es-nicht" not in antwort.content
-    assert antwort.json()["pruefungen"] == ["lebenszeichen", "rueckstau", "fehlerquote", "gescheitert", "texterkennung"]
+    assert antwort.json()["pruefungen"] == [
+        "lebenszeichen",
+        "rueckstau",
+        "fehlerquote",
+        "gescheitert",
+        "texterkennung",
+        "dokumentabruf",
+        "dokumenttext",
+    ]
 
 
 @pytest.mark.django_db
@@ -225,6 +417,8 @@ def test_texte_der_pruefungen_nur_fuer_die_eigene_ueberwachung(client: Client, m
             "fehlerquote": {"ok": True},
             "gescheitert": {"ok": False},
             "texterkennung": {"ok": True},
+            "dokumentabruf": {"ok": True},
+            "dokumenttext": {"ok": True},
         },
     }
 

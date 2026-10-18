@@ -96,6 +96,7 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     EncryptedField("session.SessionTenant", "encryption_key_previous", KeyKind.TENANT_KEY),
     # --- Plattformweite Zugangsdaten (Hauptschlüssel) -------------------------------------------
     EncryptedField("common.SiteSettings", "email_host_password_encrypted", KeyKind.MASTER),
+    # Früherer Nebius-Schlüssel: ungenutzt, von common/0011 geleert (#950); bleibt, solange die Spalte besteht
     EncryptedField("common.SiteSettings", "nebius_api_key_encrypted", KeyKind.MASTER),
     EncryptedField("common.AISettings", "api_key_encrypted", KeyKind.MASTER),
     EncryptedField("minutes.ComputeSettings", "client_secret_encrypted", KeyKind.MASTER),
@@ -111,7 +112,13 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     *_tenant("common.MailOutbox", "payload_encrypted", paths=_ORG, batch_size=_LARGE),
     # --- Work ----------------------------------------------------------------------------------
     *_tenant("work.FactionMeeting", "protocol_encrypted", paths=_ORG),
-    *_tenant("work.FactionAgendaItem", "description_encrypted", "decision_encrypted", paths=("meeting__organization",)),
+    *_tenant(
+        "work.FactionAgendaItem",
+        "description_encrypted",
+        "decision_encrypted",
+        "notes_encrypted",
+        paths=("meeting__organization",),
+    ),
     *_tenant("work.FactionProtocolEntry", "content_encrypted", paths=("meeting__organization",)),
     *_tenant("work.MeetingPreparation", "notes_encrypted", paths=_ORG),
     *_tenant("work.AgendaItemPosition", "reasoning_encrypted", paths=_ORG),

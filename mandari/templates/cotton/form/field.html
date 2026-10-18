@@ -5,19 +5,26 @@ Formularfeld (Label, Eingabe, Hilfetext, Fehler) für gebundene Django-Felder od
   <c-form.field name="remember" label="…" />  (ohne gebundenes Feld)
   id="…" (optional) setzt die ID, wenn derselbe Name mehrfach auf der Seite steht (sonst id_<name>).
 Fehler werden dem Eingabefeld per aria-describedby und aria-invalid zugeordnet.
+Ergänzungen für Arbeitsflächen (Issue #951), ohne sie bleibt das Markup wie bisher:
+``dicht`` setzt die Maße von Work (Feld 36 px, Schrift 14 px, Hilfetext 13 px). ``modell`` setzt ein Alpine-Modell
+(x-model) und ``maxlength`` die Höchstlänge am Eingabefeld selbst. Weitere Attribute (etwa @input) gehen an die
+umgebende Fläche und erreichen sie trotzdem, weil Ereignisse des Felds aufsteigen.
+  <c-form.field name="title" id="title" label="Titel" modell="title" maxlength="500" dicht required />
+``inputmode`` (Issue #944) setzt die Bildschirmtastatur am Eingabefeld, etwa ``decimal`` für Beträge mit Komma.
+  <c-form.field name="amount" label="Betrag (€)" inputmode="decimal" dicht />
 {% endcomment %}
-<c-vars field="" name="" id="" label="" type="text" value="" placeholder="" help="" autocomplete="" required="" autofocus="" class="" />
+<c-vars field="" name="" id="" label="" type="text" value="" placeholder="" help="" autocomplete="" required="" autofocus="" class="" dicht="" modell="" maxlength="" inputmode="" />
 {% with fname=field.name|default:name %}{% with auto_id="id_"|add:fname %}{% firstof id field.id_for_label auto_id as fid %}
 <div class="{{ class }}" {{ attrs }}>
     {% if label %}
-    <label for="{{ fid }}" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+    <label for="{{ fid }}" class="{% if dicht %}block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1{% else %}block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1{% endif %}">
         {{ label }}{% if required %} <span class="text-red-500" aria-hidden="true">*</span>{% endif %}
     </label>
     {% endif %}
     <input type="{{ type }}" name="{{ fname }}" id="{{ fid }}"
         value="{% if field %}{{ field.value|default_if_none:'' }}{% else %}{{ value }}{% endif %}"
-        class="w-full px-4 py-3 rounded-lg border bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 transition-colors focus:ring-2 focus:ring-primary-500 focus:border-primary-500 {% if field.errors %}border-red-400 dark:border-red-600{% else %}border-gray-300 dark:border-gray-600{% endif %}"
-        {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}
+        class="{% if dicht %}w-full h-9 px-3 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if field.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}{% else %}w-full px-4 py-3 rounded-lg border bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-400 transition-colors focus:ring-2 focus:ring-primary-500 focus:border-primary-500 {% if field.errors %}border-red-400 dark:border-red-600{% else %}border-gray-300 dark:border-gray-600{% endif %}{% endif %}"
+        {% if placeholder %}placeholder="{{ placeholder }}"{% endif %}{% if modell %} x-model="{{ modell }}"{% endif %}{% if maxlength %} maxlength="{{ maxlength }}"{% endif %}{% if inputmode %} inputmode="{{ inputmode }}"{% endif %}
         {% if autocomplete %}autocomplete="{{ autocomplete }}"{% endif %}
         {% if required %}required{% endif %}
         {% if autofocus %}autofocus{% endif %}
@@ -25,6 +32,6 @@ Fehler werden dem Eingabefeld per aria-describedby und aria-invalid zugeordnet.
     {% if field.errors %}
     <p id="{{ fid }}-error" class="mt-1 text-sm text-red-600 dark:text-red-400">{{ field.errors.0 }}</p>
     {% endif %}
-    {% if help %}<p id="{{ fid }}-help" class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ help }}</p>{% endif %}
+    {% if help %}<p id="{{ fid }}-help" class="{% if dicht %}mt-1 text-[0.8125rem] text-gray-600 dark:text-gray-400{% else %}mt-1 text-xs text-gray-500 dark:text-gray-400{% endif %}">{{ help }}</p>{% endif %}
 </div>
 {% endwith %}{% endwith %}

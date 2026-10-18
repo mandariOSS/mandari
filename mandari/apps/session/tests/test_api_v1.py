@@ -17,6 +17,7 @@ from apps.common.tests.factories import UserFactory
 from apps.session.models import (
     SessionAPIToken,
     SessionApplication,
+    SessionAuditLog,
     SessionMeeting,
     SessionOrganization,
     SessionPaper,
@@ -309,3 +310,122 @@ class TestDeprecatedPaths:
         abgekuendigt = datetime.fromtimestamp(int(SESSION_API_DEPRECATION[1:]), tz=UTC)
         assert abgekuendigt == datetime(2026, 9, 27, tzinfo=UTC)
         assert abgekuendigt < parsedate_to_datetime(SESSION_API_SUNSET)
+
+
+class TestLesezugriffe:
+    """
+    Lesezugriffe auf Nichtöffentliches über die Session-API stehen im Protokoll des Mandanten (Issue #366):
+    ein Eintrag je Abruf mit den Referenzen, zusammengefasst wie in der Oberfläche.
+    """
+
+    @staticmethod
+    def reads(tenant: SessionTenant) -> list[SessionAuditLog]:
+        return list(SessionAuditLog.objects.filter(tenant=tenant, action="view").order_by("seq"))
+
+    @staticmethod
+    def noe_client(tenant: SessionTenant) -> Client:
+        return make_session_client(
+            tenant, can_view_non_public_meetings=True, can_view_non_public_papers=True, can_access_api=True
+        )
+
+    @staticmethod
+    def geheime_vorlagen(tenant: SessionTenant, anzahl: int) -> None:
+        SessionPaper.objects.bulk_create(
+            SessionPaper(tenant=tenant, reference=f"NÖ/{n:04d}", name=f"GEHEIM-{n}", is_public=False)
+            for n in range(anzahl)
+        )
+
+    def test_abruf_einer_nichtoeffentlichen_vorlage_wird_protokolliert(self, tenant: SessionTenant) -> None:
+        client = self.noe_client(tenant)
+        assert client.get(f"{BASE}/{tenant.slug}/papers/").status_code == 200
+        geheim = SessionPaper.objects.get(tenant=tenant, reference="V/2")
+        (eintrag,) = self.reads(tenant)
+        assert (eintrag.model_name, eintrag.object_id) == ("SessionTenant", tenant.id)
+        assert eintrag.object_repr == "Vorlagen (Session-API v1)"
+        # Nur Referenzen und Kennungen, nie Betreff oder Text; die öffentliche Vorlage fehlt
+        assert eintrag.changes == {
+            "umfang": "nichtöffentliche Vorlagen",
+            "zugriff": "Session-API v1",
+            "anzahl": 1,
+            "objekte": ["Vorlage V/2"],
+            "kennungen": [str(geheim.id)],
+        }
+        assert "GEHEIME-VORLAGE" not in str(eintrag.changes)
+        assert eintrag.user is not None and eintrag.user.tenant_id == tenant.pk
+
+        # Zusammengefasst wie in der Oberfläche: derselbe Abruf kurz darauf schreibt nichts Neues
+        client.get(f"{BASE}/{tenant.slug}/papers/")
+        assert len(self.reads(tenant)) == 1
+
+        client.get(f"{BASE}/{tenant.slug}/meetings/")
+        meeting = SessionMeeting.objects.get(tenant=tenant, name="GEHEIM")
+        sitzungen = self.reads(tenant)[-1]
+        assert sitzungen.object_repr == "Sitzungen (Session-API v1)"
+        assert sitzungen.changes["kennungen"] == [str(meeting.id)]
+
+    def test_fehler_beim_aufbau_des_eintrags_laesst_die_antwort_nicht_scheitern(
+        self, tenant: SessionTenant, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from apps.session import audit
+
+        def kaputt(_instance: object) -> str:
+            raise RuntimeError("Referenz nicht lesbar")
+
+        monkeypatch.setattr(audit, "read_reference", kaputt)
+        antwort = self.noe_client(tenant).get(f"{BASE}/{tenant.slug}/papers/")
+        assert antwort.status_code == 200
+        assert self.reads(tenant) == []
+
+    def test_abfragen_haengen_nicht_von_der_zahl_der_objekte_ab(self, tenant: SessionTenant) -> None:
+        """Ein Eintrag je Abruf: 3 oder 150 nichtöffentliche Vorlagen kosten gleich viele Abfragen."""
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        def queries(anzahl: int) -> int:
+            SessionPaper.objects.filter(tenant=tenant, reference__startswith="NÖ/").delete()
+            self.geheime_vorlagen(tenant, anzahl)
+            client = self.noe_client(tenant)
+            with CaptureQueriesContext(connection) as captured:
+                assert client.get(f"{BASE}/{tenant.slug}/papers/?limit=200").status_code == 200
+            return len(captured.captured_queries)
+
+        wenige, viele = queries(3), queries(150)
+        assert wenige == viele
+        assert [e.changes["anzahl"] for e in self.reads(tenant)] == [4, 151]
+
+    def test_blaettern_ueber_200_objekte_bleibt_zusammengefasst(self, tenant: SessionTenant) -> None:
+        """Je Seite ein Eintrag; der zweite Durchlauf schreibt nichts, der Merker der Oberfläche bleibt unberührt."""
+        self.geheime_vorlagen(tenant, 250)
+        client = self.noe_client(tenant)
+        for _durchlauf in range(2):
+            for offset in (0, 200):
+                assert client.get(f"{BASE}/{tenant.slug}/papers/?limit=200&offset={offset}").status_code == 200
+        anzahlen = [e.changes["anzahl"] for e in self.reads(tenant)]
+        assert len(anzahlen) == 2
+        assert sum(anzahlen) == 251
+        assert "audit_read_seen" not in client.session
+        assert len(client.session["audit_read_seen_api"]) == 2
+
+    def test_ohne_nichtoeffentliches_kein_eintrag(self, client: Client, tenant: SessionTenant) -> None:
+        # Anonym, ohne NÖ-Recht und mit Token gibt es nichts Nichtöffentliches und damit keinen Lesezugriff
+        client.get(f"{BASE}/{tenant.slug}/papers/")
+        make_session_client(tenant, can_access_api=True).get(f"{BASE}/{tenant.slug}/papers/")
+        auth = bearer(make_token(tenant, can_read_meetings=True, can_read_papers=True))
+        client.get(f"{BASE}/{tenant.slug}/meetings/", headers=auth)
+        assert self.reads(tenant) == []
+
+    def test_schalter_des_mandanten_gilt_auch_fuer_die_schnittstelle(self, tenant: SessionTenant) -> None:
+        tenant.settings = {"privacy": {"read_logging": False}}
+        tenant.save()
+        client = make_session_client(tenant, can_view_non_public_papers=True, can_access_api=True)
+        assert client.get(f"{BASE}/{tenant.slug}/papers/").status_code == 200
+        assert self.reads(tenant) == []
+
+    def test_abgekuendigter_pfad_protokolliert_ebenso(self, tenant: SessionTenant) -> None:
+        client = self.noe_client(tenant)
+        assert client.get(f"/session/{tenant.slug}/api/session/papers/").status_code == 200
+        assert client.get(f"/session/{tenant.slug}/api/session/meetings/").status_code == 200
+        assert [(e.object_repr, e.changes["anzahl"]) for e in self.reads(tenant)] == [
+            ("Vorlagen (Session-API, abgekündigter Pfad)", 1),
+            ("Sitzungen (Session-API, abgekündigter Pfad)", 1),
+        ]

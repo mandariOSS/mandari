@@ -16,6 +16,7 @@ from django.views.generic import TemplateView
 from apps.session import audit
 from apps.session.models import SessionAPIToken, SessionApplication
 from apps.session.permissions import SessionViewMixin
+from apps.session.rahmen import neues_design
 
 SESSION_KEY_NEW_TOKEN = "session_api_token_once"
 
@@ -45,6 +46,12 @@ class APITokenListView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/api_tokens.html"
     permission_required = "manage_settings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/zugaenge.html"] if neues_design(self.session_tenant) else [self.template_name]
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

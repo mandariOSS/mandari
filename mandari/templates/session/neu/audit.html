@@ -1,0 +1,72 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Audit-Log im neuen Rahmen (Issues #23, #221, #944): Kopfband mit der Zusage in einem Satz, darunter die Filter in einer
+Zeile (Objekt-Typ, Aktion, Benutzer, Zeitraum) und die Einträge als Liste statt Tabelle: Zeitpunkt und laufende Nummer,
+Benutzer (auch „in Vertretung für“), Aktion als Text, Objekt und die Änderungen aufklappbar. Mit dem Exportrecht rechts
+Kettenstatus, Prüfung und Export (session/neu/_audit_kontrolle.html). Alle Ziele der bisherigen Seite bleiben;
+Kontext wie AuditLogListView. Die bisherige Seite bleibt session/audit/list.html.
+{% endcomment %}
+
+{% block page_title %}Audit-Log{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Audit-Log" text="Revisionssicheres Protokoll: Einträge lassen sich weder bearbeiten noch löschen, eine Hash-Kette macht nachträgliche Änderungen erkennbar. Auch diese Einsicht wird protokolliert." dicht />
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 {% if can_export %}lg:grid-cols-[minmax(0,1fr)_20rem] min-[1600px]:grid-cols-[minmax(0,1fr)_24rem]{% endif %}">
+    <div class="min-w-0">
+        <form method="get" class="flex flex-wrap items-end gap-2" aria-label="Einträge filtern" data-testid="audit-filter">
+            <c-form.select name="model" id="filter_model" label="Objekt-Typ" dicht class="min-w-0 flex-1 basis-40 sm:flex-none sm:w-44">
+                <option value="">Alle</option>
+                {% for name in model_names %}<option value="{{ name }}" {% if request.GET.model == name %}selected{% endif %}>{{ name }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="action" id="filter_action" label="Aktion" dicht class="min-w-0 flex-1 basis-40 sm:flex-none sm:w-44">
+                <option value="">Alle</option>
+                {% for value, label in action_choices %}<option value="{{ value }}" {% if request.GET.action == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="user" id="filter_user" label="Benutzer" dicht class="min-w-0 flex-1 basis-48 sm:flex-none sm:w-56">
+                <option value="">Alle</option>
+                {% for su in tenant_users %}<option value="{{ su.id }}" {% if request.GET.user == su.id|stringformat:"s" %}selected{% endif %}>{{ su.user.email }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.field name="from" id="filter_from" type="date" label="Von" value="{{ request.GET.from }}" dicht class="w-40" />
+            <c-form.field name="to" id="filter_to" type="date" label="Bis" value="{{ request.GET.to }}" dicht class="w-40" />
+            <c-ui.button type="submit" variant="secondary" size="sm">Filtern</c-ui.button>
+            <c-ui.textlink href="{% url 'session:audit_log' tenant_slug=tenant_slug %}" class="inline-flex items-center min-h-9 text-sm">Zurücksetzen</c-ui.textlink>
+        </form>
+
+        {% if entries %}
+        <p class="mt-4 text-sm text-gray-600 dark:text-gray-400">{{ page_obj.paginator.count }} Eintr{{ page_obj.paginator.count|pluralize:"ag,äge" }}{% if is_paginated %}, Seite {{ page_obj.number }} von {{ page_obj.paginator.num_pages }}{% endif %}.</p>
+        <c-rahmen.liste class="mt-2" data-testid="audit-eintraege">
+            {% for entry in entries %}
+            <li class="grid grid-cols-1 sm:grid-cols-[9.5rem_minmax(0,1fr)] gap-x-4 gap-y-1 py-2.5 text-sm">
+                <div class="tabular-nums"><p class="text-gray-700 dark:text-gray-300">{{ entry.created_at|date:"d.m.Y H:i:s" }}</p>{% if entry.seq %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Nr. {{ entry.seq }}</p>{% endif %}</div>
+                <div class="min-w-0">
+                    <p class="text-gray-900 dark:text-white break-words"><span class="font-medium">{{ entry.get_action_display }}</span> · {{ entry.object_repr|truncatechars:60 }} <span class="text-gray-600 dark:text-gray-400">({{ entry.model_name }})</span></p>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">
+                        {% if entry.user %}{{ entry.user.user.email }}{% elif entry.user_ref %}gelöschtes Konto{% else %}System oder API{% endif %}{% if entry.on_behalf_of %}<span class="text-amber-800 dark:text-amber-300">, in Vertretung für {{ entry.on_behalf_of.user.email }}</span>{% endif %}
+                    </p>
+                    {% if entry.change_rows %}
+                    <details class="mt-1">
+                        <summary class="cursor-pointer text-[0.8125rem] font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ entry.change_rows|length }} Angabe{{ entry.change_rows|length|pluralize:"n" }}</summary>
+                        <dl class="mt-1.5 space-y-1 text-[0.8125rem] text-gray-800 dark:text-gray-200 break-words">
+                            {% for row in entry.change_rows %}
+                            <div><dt class="inline font-semibold">{{ row.field }}:</dt> <dd class="inline">{% if row.is_diff %}<span class="line-through text-gray-500">{{ row.alt|default:"–" }}</span> → {{ row.neu|default:"–" }}{% else %}{{ row.value|default:"–" }}{% endif %}</dd></div>
+                            {% endfor %}
+                        </dl>
+                    </details>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        {% include "session/neu/_seiten.html" %}
+        {% else %}
+        <c-rahmen.satz>Noch keine Einträge{% if request.GET %} für diese Filter{% endif %}.</c-rahmen.satz>
+        {% endif %}
+    </div>
+
+    {% if can_export %}{% include "session/neu/_audit_kontrolle.html" %}{% endif %}
+</div>
+{% endblock %}

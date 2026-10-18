@@ -48,7 +48,6 @@ class TestSystemeinstellungen:
 
         einstellungen = cast(Any, SiteSettings).get_settings()
         einstellungen.set_email_host_password("SMTP-GEHEIM-123")
-        einstellungen.set_nebius_api_key("NEBIUS-GEHEIM-456")
         einstellungen.save()
         return einstellungen
 
@@ -58,7 +57,6 @@ class TestSystemeinstellungen:
         assert seite.status_code == 200
         inhalt = seite.content.decode()
         assert "SMTP-GEHEIM-123" not in inhalt
-        assert "NEBIUS-GEHEIM-456" not in inhalt
 
     def test_leere_felder_behalten_die_werte(self) -> None:
         from django.forms.models import model_to_dict
@@ -67,13 +65,12 @@ class TestSystemeinstellungen:
 
         einstellungen = self._einstellungen()
         daten = {k: v for k, v in model_to_dict(einstellungen).items() if v is not None}
-        daten.update({"email_host_password": "", "nebius_api_key": ""})
+        daten.update({"email_host_password": ""})
         formular = cast(Any, SiteSettingsAdminForm)(data=daten, instance=einstellungen)
         assert formular.is_valid(), formular.errors
         formular.save()
         einstellungen.refresh_from_db()
         assert einstellungen.get_email_host_password() == "SMTP-GEHEIM-123"
-        assert einstellungen.get_stored_nebius_api_key() == "NEBIUS-GEHEIM-456"
 
 
 @pytest.mark.django_db

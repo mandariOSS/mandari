@@ -1,0 +1,8 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Angaben als Begriff und Wert in zwei Spalten (Issue #853), etwa „Vorlagen-Nr.“, „Datum“, „Kommune“ eines Vorgangs:
+14 px, Begriffe gedimmt, lange Werte brechen um.
+  <c-ui.angaben><dt>Datum</dt><dd>01.02.2026</dd></c-ui.angaben>
+{% endcomment %}
+<c-vars class="" />
+<dl class="grid grid-cols-[8rem_minmax(0,1fr)] gap-x-3 gap-y-2 text-sm [&_dt]:text-gray-600 dark:[&_dt]:text-gray-400 [&_dd]:text-gray-900 dark:[&_dd]:text-gray-100 [&_dd]:break-words {{ class }}" {{ attrs }}>{{ slot }}</dl>

@@ -53,7 +53,7 @@ def test_zusammenfassungsdienst_gibt_anbietertext_nicht_weiter() -> None:
     dateien.values_list.return_value = []
     with (
         mock.patch.object(SummaryService, "_current_files", return_value=dateien),
-        mock.patch.object(SummaryService, "_collect_text_content_with_extraction", return_value="Text"),
+        mock.patch.object(SummaryService, "_collect_text_content", return_value="Text"),
         pytest.raises(SummaryError) as fehler,
     ):
         dienst.generate_summary(paper, save=False)

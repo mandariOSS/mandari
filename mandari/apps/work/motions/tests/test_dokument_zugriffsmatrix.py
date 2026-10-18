@@ -12,7 +12,8 @@ Die Regel steht hier unabhängig vom Code (``soll_stufe``); jeder Weg muss sie e
 - Stufe: Autor:in verwaltet (mit ``motions.edit``), ``motions.edit_all`` bearbeitet; Federführung,
   Mitarbeit und eine persönliche Freigabe „Bearbeiten“ bearbeiten mit ``motions.edit``; wer nur über eine Freigabe Zugang hat, bleibt
   bei deren Stufe; sonst Kommentieren (``motions.comment``) oder Lesen.
-- Gäste: ausschließlich persönliche oder Ordner-Freigaben, nie Verwaltung, nie Papierkorb.
+- Gäste: ausschließlich persönliche oder Ordner-Freigaben, nie Verwaltung, nie Papierkorb. Eine Ordner-Freigabe
+  erfasst organisationsweite und geteilte Dokumente der freigebenden Person, nie private (Issue #582).
 - Status-Sperre (eingereicht, gelöscht …): Inhalt nur mit ``motions.edit_all``; Gäste kommentieren.
 - Status, Metadaten, Checkliste, Anhänge, Wiederherstellen aus dem Papierkorb folgen der Stufe ohne Sperre;
   Teilen und Versionen wiederherstellen verlangen Autor:in oder ``motions.edit_all``.
@@ -129,8 +130,10 @@ def soll_stufe(person: str, dok: str, *, sperre: bool = True) -> str:
         stufen = []
         if person in FREIGABEN:
             stufen.append(FREIGABEN[person])
-        # Ordner-Freigabe der Autorin: organisationsweite und ihre eigenen
-        if person == "gast_ordner" and (sichtbarkeit == "organization" or not _ehemalig(dok)):
+        # Ordner-Freigabe der Autorin: organisationsweite und ihre geteilten, nie private (Issue #582)
+        if person == "gast_ordner" and (
+            sichtbarkeit == "organization" or (sichtbarkeit == "shared" and not _ehemalig(dok))
+        ):
             stufen.append("view")
         if person == "gast_ordner_fremd" and sichtbarkeit == "organization":  # von jemand anderem
             stufen.append("view")

@@ -1,0 +1,24 @@
+{% comment %}
+Textbaustein-Auswahl im neuen Rahmen (Issues #85, #944), Verhalten unverändert aus frontend/js/form-behaviors.ts
+([data-textblock-picker] mit .tb-select und .tb-insert, Platzhalter {gremium}, {datum}, {sitzung}, {vorlage}). Wie
+session/partials/textblock_picker.html, aber in 14 px und als Inline-Element, damit sie neben einer Abschnittsüberschrift
+stehen kann. Kontext: text_blocks, optional tb_gremium, tb_sitzung, tb_target (ID der Ziel-Textarea, sonst die zuletzt
+benutzte).
+{% endcomment %}
+{% if text_blocks %}
+<span class="inline-flex flex-wrap items-center gap-2"
+      data-textblock-picker
+      data-tb-gremium="{{ tb_gremium|default:'' }}"
+      data-tb-sitzung="{{ tb_sitzung|default:'' }}"
+      data-tb-target="{{ tb_target|default:'' }}">
+    <label for="textbaustein-wahl" class="sr-only">Textbaustein</label>
+    <select id="textbaustein-wahl"
+            class="tb-select h-9 min-w-0 max-w-[16rem] rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-2 pr-7 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Textbaustein wählen</option>
+        {% for block in text_blocks %}
+        <option value="{{ block.content }}">{{ block.title }} ({{ block.get_category_display }})</option>
+        {% endfor %}
+    </select>
+    <c-ui.button variant="secondary" size="sm" class="tb-insert">Einfügen</c-ui.button>
+</span>
+{% endif %}

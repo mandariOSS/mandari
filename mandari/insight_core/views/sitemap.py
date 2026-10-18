@@ -54,6 +54,19 @@ def robots_txt(request):
     return HttpResponse("\n".join(lines), content_type="text/plain; charset=utf-8")
 
 
+@require_safe
+def indexnow_schluessel(request, name):
+    """``/insight/<schlüssel>.txt``: Schlüsseldatei für IndexNow (``services/indexnow.py``), nur mit ``INDEXNOW_KEY``."""
+    from ..services import indexnow
+
+    aktuell = indexnow.schluessel()
+    if not aktuell or name != aktuell:
+        raise Http404
+    response = HttpResponse(aktuell, content_type="text/plain; charset=utf-8")
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
+
+
 def _sitemap_key(body):
     """Kennung der Body-Sitemap: Slug, für Kommunen ohne Slug die ID."""
     return body.slug or str(body.id)

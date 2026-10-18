@@ -1,0 +1,81 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Jahresplanung im neuen Rahmen (Issues #82, #944; Bereich Sitzungen, Reiter „Jahresplanung“): Kopfband mit einem Satz,
+darunter eine ruhige Formularspalte statt Kasten (Serie: Gremium, Name, Rhythmus, Wochentag, Uhrzeit, Zeitraum; Ort:
+Ort, Raum, Öffentlichkeit), Felder dicht. „Vorschau berechnen“ ohne Füllfarbe. Nach der Vorschau stehen die Termine als
+nummerierte Liste mit Linien im selben Formular, jeder mit seinem Stand als Punkt mit Text („frei“ oder „Kollision“
+samt Grund) statt Farbchips; darunter „Termine als Entwurf anlegen“ als die eine Hauptaktion der Seite (erst nach der
+Prüfung der Termine). Felder, Optionen und Knöpfe (action=preview|create) wie session/calendar/plan.html, die bisherige
+Seite bleibt. Kontext wie MeetingPlanView (GET und Vorschau per POST).
+{% endcomment %}
+
+{% block page_title %}Jahresplanung{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Jahresplanung" text="Serientermine für ein Gremium berechnen, Kollisionen prüfen und als Sitzungs-Entwürfe anlegen." dicht />
+{% endblock %}
+
+{% block page_content %}
+<form method="post" class="max-w-3xl space-y-8" data-testid="jahresplanung-formular">
+    {% csrf_token %}
+    <c-rahmen.abschnitt titel="Serie" titel_id="serie-titel">
+        <div class="mt-3 grid gap-x-4 gap-y-4 sm:grid-cols-2">
+            <c-form.select name="organization" id="plan-gremium" label="Gremium" placeholder="Bitte wählen" required dicht class="min-w-0">
+                {% include "session/partials/organization_options.html" with groups=organization_groups organizations=organizations selected=form_post.organization %}
+            </c-form.select>
+            <c-form.field name="name" id="plan-name" label="Sitzungsname" value="{{ form_post.name|default:'' }}" placeholder="z. B. Sitzung des Hauptausschusses" dicht class="min-w-0" />
+            <c-form.select name="rhythm" id="plan-rhythmus" label="Rhythmus" required dicht class="min-w-0">
+                {% for value, label in rhythm_choices %}<option value="{{ value }}" {% if form_post.rhythm == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.select name="weekday" id="plan-wochentag" label="Wochentag" required dicht class="min-w-0">
+                {% for value, label in weekday_choices %}<option value="{{ value }}" {% if form_post.weekday == value|stringformat:"s" %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.field name="time" id="plan-uhrzeit" type="time" label="Uhrzeit" value="{{ form_post.time|default:'18:00' }}" required dicht class="min-w-0" />
+            <div class="grid grid-cols-2 gap-x-3">
+                <c-form.field name="date_from" id="plan-von" type="date" label="Von" value="{{ form_post.date_from|default:'' }}" required dicht class="min-w-0" />
+                <c-form.field name="date_to" id="plan-bis" type="date" label="Bis" value="{{ form_post.date_to|default:'' }}" required dicht class="min-w-0" />
+            </div>
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Ort und Öffentlichkeit" titel_id="ort-titel">
+        <div class="mt-3 grid gap-x-4 gap-y-4 sm:grid-cols-2">
+            <c-form.field name="location" id="plan-ort" label="Ort" value="{{ form_post.location|default:'' }}" placeholder="Standardort des Gremiums" dicht class="min-w-0" />
+            <c-form.field name="room" id="plan-raum" label="Raum" value="{{ form_post.room|default:'' }}" placeholder="z. B. Ratssaal" dicht class="min-w-0" />
+        </div>
+        <c-form.checkbox name="is_public" id="plan-oeffentlich" value="1" label="Öffentliche Sitzungen" checked="{% if not form_post or form_post.is_public == '1' %}1{% endif %}" dicht class="mt-4" />
+    </c-rahmen.abschnitt>
+
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <c-ui.button type="submit" name="action" value="preview" variant="secondary" size="sm" icon="eye">Vorschau berechnen</c-ui.button>
+    </div>
+
+    {% if preview %}
+    <c-rahmen.abschnitt titel="Vorschau" titel_id="vorschau-titel" zusatz="{{ preview|length }} Termin{{ preview|length|pluralize:'e' }} für {{ form.organization.name }}" data-testid="jahresplanung-vorschau">
+        <c-rahmen.liste geordnet class="mt-2">
+            {% for entry in preview %}
+            <li class="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 gap-y-0.5 py-2.5">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white tabular-nums">{{ entry.start|date:"l, d.m.Y" }}, {{ entry.start|date:"H:i" }} Uhr</p>
+                    {% for conflict in entry.conflicts %}
+                    <p class="mt-0.5 text-[0.8125rem] text-gray-700 dark:text-gray-300 break-words">
+                        {% if conflict.conflict_hidden %}
+                        {{ conflict.conflict_reason }}: Termin belegt
+                        {% else %}
+                        {{ conflict.conflict_reason }}: {{ conflict.name }} ({{ conflict.organization.name }}, {{ conflict.start|date:"H:i" }} Uhr{% if conflict.room %}, {{ conflict.room }}{% endif %})
+                        {% endif %}
+                    </p>
+                    {% endfor %}
+                </div>
+                <span class="text-[0.8125rem] text-gray-700 dark:text-gray-300">{% if entry.conflicts %}{% include "session/neu/_status.html" with wert="pending" text="Kollision" %}{% else %}{% include "session/neu/_status.html" with wert="frei" text="frei" %}{% endif %}</span>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        <div class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-3">
+            <c-ui.button type="submit" name="action" value="create" size="sm" icon="calendar-plus">{{ preview|length }} Termin{{ preview|length|pluralize:"e" }} als Entwurf anlegen</c-ui.button>
+        </div>
+    </c-rahmen.abschnitt>
+    {% endif %}
+</form>
+{% endblock %}

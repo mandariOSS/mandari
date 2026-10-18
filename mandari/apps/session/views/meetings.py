@@ -19,6 +19,7 @@ from django.views.generic import (
     UpdateView,
 )
 
+from apps.common import local_time
 from apps.common.params import date_param, uuid_param
 
 from .. import hub_events
@@ -30,6 +31,7 @@ from ..models import (
     SessionPerson,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import (
     agenda_template_service,
     body_service,
@@ -96,8 +98,11 @@ FORMAT_RELEVANT_FIELDS = frozenset({"format", "format_reason", "organization", "
 
 
 def _format_warnings(request, form) -> None:
-    """Hinweise der Formatprüfung (z. B. nicht eingeordneter Ausschuss) nach dem Speichern anzeigen."""
-    for warning in getattr(form.format_check, "warnings", None) or []:
+    """
+    Hinweise nach dem Speichern anzeigen: Formatprüfung (z. B. nicht eingeordneter Ausschuss) und Uhrzeiten, die es am
+    Tag der Zeitumstellung zweimal gibt (Issue #974).
+    """
+    for warning in [*(getattr(form.format_check, "warnings", None) or []), *local_time.ambiguous_notices(form)]:
         messages.warning(request, warning)
 
 
@@ -122,6 +127,9 @@ class MeetingForm(forms.ModelForm):
     class Meta:
         model = SessionMeeting
         fields = MEETING_FORM_FIELDS
+        # Beginn und Ende am Tag der Zeitumstellung (Issue #974): doppelte Stunde mit Hinweis speichern, fehlende
+        # Stunde verständlich ablehnen
+        field_classes = {"start": local_time.LocalDateTimeField, "end": local_time.LocalDateTimeField}
 
     def __init__(self, *args, tenant, **kwargs):
         super().__init__(*args, **kwargs)
@@ -249,6 +257,10 @@ class MeetingListView(BodyFilterMixin, SessionViewMixin, ListView):
     paginate_by = 20
     permission_required = "view_meetings"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzungen.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_queryset(self):
         qs = super().get_queryset()
         # Gemeinsame Sitzungen (Issue #317) vorab markieren – weitere Gremien nur für diese nachladen
@@ -335,6 +347,10 @@ class MeetingDetailView(SessionViewMixin, DetailView):
     context_object_name = "meeting"
     pk_url_kwarg = "meeting_id"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzung.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -456,6 +472,10 @@ class MeetingCreateView(MeetingFormMixin, SessionViewMixin, CreateView):
     form_class = MeetingForm
     permission_required = "create_meetings"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzung_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_initial(self):
         """Aus einem Gremium heraus angelegt (``?organization=``): Gremium und dessen Öffentlichkeit vorbelegen."""
         initial = super().get_initial()
@@ -517,6 +537,10 @@ class MeetingUpdateView(MeetingFormMixin, SessionViewMixin, UpdateView):
     form_class = MeetingUpdateForm
     pk_url_kwarg = "meeting_id"
     permission_required = "edit_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/sitzung_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()

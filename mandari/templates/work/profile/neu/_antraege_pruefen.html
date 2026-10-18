@@ -1,0 +1,31 @@
+{% comment %}
+Anträge › Zu prüfen (Issue #951): Anträge anderer Mitglieder für Personen mit can_review. Genehmigen
+(action=approve_request) und Ablehnen mit optionaler Begründung (action=reject_request, decision_comment) wie bisher.
+Kontext: pending_requests.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Zu prüfen" titel_id="antraege-pruefen" zusatz="{{ pending_requests|length }}">
+    <c-rahmen.liste class="mt-3" data-testid="antraege-pruefen">
+        {% for req in pending_requests %}
+        <li class="py-3" x-data="{ showReject: false }">
+            <p class="text-sm"><span class="font-medium text-gray-900 dark:text-white">{{ req.requester.user.get_full_name|default:req.requester.user.email }}</span><span class="text-gray-600 dark:text-gray-400"> · {{ req.get_request_type_display }} · {{ req.created_at|date:"d.m.Y H:i" }}</span></p>
+            <p class="mt-0.5 text-sm text-gray-700 dark:text-gray-300 break-words">{{ req.reason|truncatechars:120 }}</p>
+            <div class="mt-2 flex flex-wrap items-center gap-2">
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="approve_request">
+                    <input type="hidden" name="request_id" value="{{ req.id }}">
+                    <c-ui.button type="submit" variant="secondary" size="sm" icon="check">Genehmigen</c-ui.button>
+                </form>
+                <c-ui.button variant="ghost" size="sm" class="text-red-700 dark:text-red-400" @click="showReject = !showReject" ::aria-expanded="showReject.toString()">Ablehnen …</c-ui.button>
+            </div>
+            <form method="post" x-show="showReject" x-cloak class="mt-2 flex flex-wrap items-end gap-x-3 gap-y-2">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reject_request">
+                <input type="hidden" name="request_id" value="{{ req.id }}">
+                <c-form.field name="decision_comment" id="ablehnen-{{ req.id }}" label="Begründung (optional)" class="flex-1 min-w-[14rem]" dicht />
+                <c-ui.button type="submit" variant="danger" size="sm">Ablehnen</c-ui.button>
+            </form>
+        </li>
+        {% endfor %}
+    </c-rahmen.liste>
+</c-rahmen.abschnitt>

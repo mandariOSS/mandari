@@ -1,0 +1,220 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+"""
+Neuer Rahmen des Sitzungsdienstes im Browser (Issue #944), eingeschaltet je Mandant.
+
+Mit den Demo-Daten (setup_demo_environment) und eingeschaltetem Schalter: Start, Sitzungen, Sitzung, Vorlagen und
+Vorlage stehen im neuen Rahmen und im neuen Erscheinungsbild und laufen am Handy (390 px) und am Tablet (768 px)
+nicht seitlich über; der Rahmen hat keine schweren axe-Befunde, keine Fehler im Browser; das Blatt „Mehr“ öffnet sich
+am Handy und gibt den Fokus beim Schließen an „Mehr“ zurück. Mit ausgeschaltetem Schalter bleibt der bisherige
+Rahmen. Screenshots landen als CI-Artefakt.
+"""
+
+from __future__ import annotations
+
+from io import StringIO
+from pathlib import Path
+from typing import Any
+
+import pytest
+from django.core.management import call_command
+from playwright.sync_api import expect
+
+from apps.accounts.models import User
+from apps.common.demo_daten import DEMO_USERS
+from tests_e2e.conftest import AXE_PATH, AxeResult, BrowserProblems, login_via_form, wait_for_bundle
+
+PASSWORT = "E2e-Session-Rahmen-1"
+#: Mandant der Demo (apps/common/management/commands/setup_demo_environment.py, DEMO_SESSION_SLUG)
+MANDANT = "stadtverwaltung-musterstadt-demo"
+BREITEN = (390, 768)
+#: Breite der Seite gegen die Breite des Fensters (seitlicher Überlauf)
+UEBERLAUF = "() => ({scroll: document.documentElement.scrollWidth, breite: window.innerWidth})"
+
+
+@pytest.fixture
+def demo(settings: Any, tmp_path: Path) -> dict[str, str]:
+    """Demo-Umgebung mit eingeschaltetem neuen Rahmen für den Session-Mandanten; liefert die Kernseiten."""
+    from apps.session.models import SessionMeeting, SessionPaper, SessionTenant
+
+    settings.MEDIA_ROOT = str(tmp_path / "media")
+    call_command("setup_demo_environment", stdout=StringIO())
+    tenant = SessionTenant.objects.get(slug=MANDANT)
+    tenant.session_new_design = True
+    tenant.save(update_fields=["session_new_design"])
+    nutzer = User.objects.get(email=DEMO_USERS["verwaltung"]["email"])
+    nutzer.set_password(PASSWORT)
+    nutzer.save(update_fields=["password"])
+    sitzung = SessionMeeting.objects.filter(tenant=tenant).order_by("-start").first()
+    vorlage = SessionPaper.objects.filter(tenant=tenant, status="review").first() or SessionPaper.objects.first()
+    assert sitzung is not None and vorlage is not None
+    basis = f"/session/{MANDANT}/"
+    return {
+        "start": basis,
+        "sitzungen": f"{basis}meetings/",
+        "sitzung": f"{basis}meetings/{sitzung.pk}/",
+        "vorlagen": f"{basis}papers/",
+        "vorlage": f"{basis}papers/{vorlage.pk}/",
+    }
+
+
+def _axe_rahmen(page: Any) -> AxeResult:
+    """axe-core auf dem Rahmen (Seitenleiste, Kopfzeile, Kopfband, Reiter, Leiste unten)."""
+    page.add_script_tag(content=AXE_PATH.read_text(encoding="utf-8"))
+    ergebnis = page.evaluate(
+        "async () => await axe.run({ exclude: [['.work-page-content']] }, { resultTypes: ['violations'], "
+        "runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa', 'best-practice'] } })"
+    )
+    return AxeResult(violations=list(ergebnis.get("violations", [])))
+
+
+def test_kernseiten_am_handy_und_tablet(
+    page: Any, live_server: Any, demo: dict[str, str], problems: BrowserProblems, screenshot: Any
+) -> None:
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    for breite in BREITEN:
+        page.set_viewport_size({"width": breite, "height": 900})
+        for name, pfad in demo.items():
+            page.goto(f"{live_server.url}{pfad}")
+            wait_for_bundle(page)
+            expect(page.locator("html")).to_have_attribute("data-rahmen", "neu")
+            expect(page.locator("main#inhalt")).to_have_attribute("data-gestaltung", "neu")
+            masse = page.evaluate(UEBERLAUF)
+            assert masse["scroll"] <= masse["breite"] + 1, f"{name} bei {breite} px läuft seitlich über: {masse}"
+            # Am Handy und Tablet führt die Leiste unten, die Seitenleiste ist verborgen
+            expect(page.locator("nav[aria-label='Hauptbereiche']")).to_be_visible()
+            expect(page.locator("#session-navigation")).to_be_hidden()
+            if breite == 390:
+                screenshot(f"session-neu-{name}-390")
+    problems.assert_clean("Kernseiten im neuen Rahmen")
+
+    # Blatt „Mehr“: öffnet als Dialog, Escape schließt, der Fokus kehrt auf „Mehr“ zurück
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"{live_server.url}{demo['start']}")
+    wait_for_bundle(page)
+    mehr = page.locator("button[aria-controls='session-mehr']")
+    mehr.click()
+    dialog = page.locator("#session-mehr")
+    expect(dialog).to_be_visible()
+    expect(dialog.get_by_role("link", name="Gremien")).to_be_visible()
+    expect(dialog.get_by_role("link", name="Einstellungen")).to_be_visible()
+    page.keyboard.press("Escape")
+    expect(dialog).to_be_hidden()
+    expect(mehr).to_be_focused()
+
+    # Breit: Seitenleiste mit den Bereichen, Rahmen ohne schwere axe-Befunde
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(f"{live_server.url}{demo['sitzung']}")
+    wait_for_bundle(page)
+    leiste = page.locator("#session-navigation")
+    expect(leiste).to_be_visible()
+    expect(leiste.get_by_role("link", name="Sitzungen")).to_have_attribute("aria-current", "true")
+    ergebnis = _axe_rahmen(page)
+    assert not ergebnis.failing, ergebnis.describe()
+    screenshot("session-neu-sitzung-1280")
+    problems.assert_clean("Rahmen breit")
+
+
+def test_ohne_schalter_bisheriger_rahmen(page: Any, live_server: Any, demo: dict[str, str]) -> None:
+    from apps.session.models import SessionTenant
+
+    SessionTenant.objects.filter(slug=MANDANT).update(session_new_design=False)
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    page.goto(f"{live_server.url}{demo['sitzung']}")
+    wait_for_bundle(page)
+    assert page.locator("html").get_attribute("data-rahmen") is None
+    expect(page.locator("aside.session-sidebar")).to_have_count(1)
+
+
+@pytest.fixture
+def seiten_2a(demo: dict[str, str]) -> dict[str, str]:
+    """
+    Die acht Seiten aus Teil 2a (Issue #944) mit den Demo-Daten, dazu Sitzung und Vorlage mit den ruhigen Teilvorlagen;
+    die kommende Ratssitzung bekommt ihre Anwesenheitsliste aus der Besetzung.
+    """
+    from apps.session.models import SessionApplication, SessionMeeting, SessionOrganization, SessionPerson
+    from apps.session.services import attendance_service
+
+    sitzung = SessionMeeting.objects.filter(tenant__slug=MANDANT).order_by("-start").first()
+    assert sitzung is not None
+    attendance_service.generate_attendance(sitzung)
+    gremium = SessionOrganization.objects.filter(tenant__slug=MANDANT, memberships__isnull=False).distinct().first()
+    person = SessionPerson.objects.filter(tenant__slug=MANDANT, memberships__isnull=False).distinct().first()
+    antrag = SessionApplication.objects.filter(tenant__slug=MANDANT).order_by("status").first()
+    assert gremium is not None and person is not None and antrag is not None
+    basis = f"/session/{MANDANT}/"
+    return {
+        "gremium": f"{basis}organizations/{gremium.pk}/",
+        "person": f"{basis}persons/{person.pk}/",
+        "antrag": f"{basis}applications/{antrag.pk}/",
+        "sitzungsgelder": f"{basis}allowances/",
+        "monatspauschalen": f"{basis}allowances/monthly/",
+        "vertretungen": f"{basis}settings/delegations/",
+        "kalender": f"{basis}meetings/calendar/",
+        "audit": f"{basis}audit/",
+        "sitzung": demo["sitzung"],
+        "vorlage": demo["vorlage"],
+    }
+
+
+def test_seiten_teil2a_am_handy_und_tablet(
+    page: Any, live_server: Any, seiten_2a: dict[str, str], problems: BrowserProblems, screenshot: Any
+) -> None:
+    """Teil 2a (Issue #944): neue Gestaltung, kein seitlicher Überlauf bei 390 und 768 px, keine Fehler im Browser."""
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    for breite in BREITEN:
+        page.set_viewport_size({"width": breite, "height": 900})
+        for name, pfad in seiten_2a.items():
+            page.goto(f"{live_server.url}{pfad}")
+            wait_for_bundle(page)
+            expect(page.locator("main#inhalt")).to_have_attribute("data-gestaltung", "neu")
+            masse = page.evaluate(UEBERLAUF)
+            assert masse["scroll"] <= masse["breite"] + 1, f"{name} bei {breite} px läuft seitlich über: {masse}"
+            if breite == 390:
+                screenshot(f"session-neu-2a-{name}-390")
+    problems.assert_clean("Seiten aus Teil 2a im neuen Rahmen")
+
+
+def test_gremium_verwalten_zeigt_datumsfelder_ganz(
+    page: Any, live_server: Any, seiten_2a: dict[str, str], problems: BrowserProblems
+) -> None:
+    """
+    „Verwalten“ am Gremium (Issue #944): Von und Bis stehen nur nebeneinander, wenn das Formular breit genug ist – bei
+    keiner Fensterbreite wird ein Datumsfeld so schmal, dass das Jahr abgeschnitten ist (vorher 85 px bei 1280 px).
+    """
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    for breite in (390, 1024, 1280, 1440, 1500, 1920):
+        page.set_viewport_size({"width": breite, "height": 900})
+        page.goto(f"{live_server.url}{seiten_2a['gremium']}")
+        wait_for_bundle(page)
+        page.get_by_role("button", name="Verwalten").first.click()
+        zeitraum = page.locator("[data-testid='mitglied-zeitraum']").first.locator("input")
+        expect(zeitraum.first).to_be_visible()
+        breiten = [round(zeitraum.nth(i).bounding_box()["width"]) for i in range(zeitraum.count())]
+        assert len(breiten) == 2 and min(breiten) >= 160, f"Von/Bis bei {breite} px: {breiten}"
+        masse = page.evaluate(UEBERLAUF)
+        assert masse["scroll"] <= masse["breite"] + 1, f"Gremium bei {breite} px läuft seitlich über: {masse}"
+    problems.assert_clean("Gremium verwalten")
+
+
+def test_anwesenheit_als_liste_speichert_per_htmx(
+    page: Any, live_server: Any, seiten_2a: dict[str, str], problems: BrowserProblems
+) -> None:
+    """Am Handy: Zeiten und Notiz einer Person aufklappen, speichern; die Zeile kommt per htmx als Listenzeile zurück."""
+    login_via_form(page, live_server.url, DEMO_USERS["verwaltung"]["email"], PASSWORT)
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(f"{live_server.url}{seiten_2a['sitzung']}")
+    wait_for_bundle(page)
+    zeile = page.locator("[data-testid='anwesenheit-zeile']").first
+    notiz = zeile.locator("input[name='notes']")
+    expect(notiz).to_be_hidden()
+    zeile.get_by_role("button", name="Ankunft, Abgang und Notiz").click()
+    expect(notiz).to_be_visible()
+    notiz.fill("kommt später")
+    zeile.locator("select[name='status']").select_option("joined_late")
+    with page.expect_response(lambda antwort: "/attendance/" in antwort.url and antwort.request.method == "POST"):
+        zeile.get_by_role("button", name="Speichern").click()
+    zeile = page.locator("[data-testid='anwesenheit-zeile']").first
+    expect(zeile).to_contain_text("kommt später")
+    expect(zeile.locator("select[name='status']")).to_have_value("joined_late")
+    assert page.locator("[data-testid='anwesenheit'] table").count() == 0
+    problems.assert_clean("Anwesenheit speichern")

@@ -8,7 +8,8 @@
  * - `data-confirm="Frage"` auf Formular, Button oder Link: Rückfrage vor Absenden/Klick.
  * - `data-prompt="Frage" data-prompt-field="reason"` auf Formular: Freitext abfragen,
  *   Abbruch verhindert das Absenden, sonst landet die Antwort im benannten Feld.
- * - `data-autosubmit` auf Select/Input: bei Änderung das Formular absenden.
+ * - `data-autosubmit` auf Select/Input: bei Änderung das Formular absenden. Auch am Rahmen eines Felds
+ *   (`<c-form.select … data-autosubmit>`: weitere Attribute landen dort, Issue #951).
  * - `data-filter-param="status"` auf Select: bei Änderung den Query-Parameter setzen.
  * - `data-href="URL"` auf Zeilen/Karten: Klick navigiert, außer auf innere Links,
  *   Buttons oder Formularfelder.
@@ -239,11 +240,18 @@ export function resetSubmitOnce(event: PageTransitionEvent): void {
   }
 }
 
+/** `data-autosubmit` am Feld oder am Rahmen eines Bausteins im Formular (nicht am Formular selbst), Issue #951 */
+export function autosubmit(el: HTMLSelectElement | HTMLInputElement): boolean {
+  if (el.dataset.autosubmit !== undefined) return true
+  const rahmen = el.parentElement?.closest<HTMLElement>('[data-autosubmit]')
+  return rahmen != null && rahmen.tagName !== 'FORM' && el.form?.contains(rahmen) === true
+}
+
 export function handleChange(event: Event): void {
   const el = event.target
   if (!(el instanceof HTMLSelectElement || el instanceof HTMLInputElement)) return
 
-  if (el.dataset.autosubmit !== undefined && el.form) submitForm(el.form)
+  if (el.form && autosubmit(el)) submitForm(el.form)
 
   const param = el.dataset.filterParam
   if (param) {

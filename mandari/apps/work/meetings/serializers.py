@@ -434,13 +434,22 @@ def build_prepare_config(
     preparation: MeetingPreparation,
     data: PreparationData,
     current_user_name: str,
+    account_id: str,
 ) -> dict[str, Any]:
-    """Ein JSON-Objekt für den Client (``json_script`` im Template) — keine String-Interpolation in JS."""
+    """
+    Ein JSON-Objekt für den Client (``json_script`` im Template) — keine String-Interpolation in JS.
+
+    ``accountId`` (Kennung des Kontos, nie der Name) und ``orgId`` trennen die Sicherung ungespeicherter Eingaben im
+    Browser je Konto und Organisation (#854, frontend/js/eingaben-sicherung.ts): Dieselbe Ratssitzung wird in jeder
+    Organisation getrennt vorbereitet.
+    """
     from .models import AgendaItemPosition
 
     return {
         "orgSlug": organization.slug,
         "meetingId": str(meeting.id),
+        "orgId": str(organization.id),
+        "accountId": account_id,
         "currentUser": current_user_name,
         "positionLabels": {code: str(label) for code, label in AgendaItemPosition.POSITION_CHOICES},
         "orgNotes": decrypted(preparation, "notes") or "",

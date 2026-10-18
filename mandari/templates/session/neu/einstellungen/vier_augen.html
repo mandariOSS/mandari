@@ -1,0 +1,71 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Benutzer und Rechte › Vier-Augen-Prinzip im neuen Rahmen (Issues #222, #318, #944 Teil 2b), ersetzt
+session/settings/four_eyes.html. Je Vorgangsart eine Zeile der Liste (Ankreuzfeld bzw. Auswahl für Vorlagen, darunter
+was „selbst“ heißt), darunter der Genehmigungsweg der Niederschrift. Den bisherigen Knopf „Vertretungen“ trägt jetzt
+der Unterpunkt (sichtbar mit „Benutzer verwalten“ wie bisher). Formulare und Felder wie bisher (settings_four_eyes,
+settings_protocol_approval); Knöpfe ohne Füllfarbe. Kontext: FourEyesSettingsView.
+{% endcomment %}
+
+{% block page_title %}Vier-Augen-Prinzip{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Vier-Augen-Prinzip" text="Wer einen Vorgang erstellt oder zuletzt inhaltlich bearbeitet hat, gibt ihn nicht selbst frei, auch nicht in Vertretung." dicht />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 max-w-3xl space-y-10">
+        <c-rahmen.abschnitt titel="Je Vorgangsart" titel_id="vorgangsart-titel">
+            <c-rahmen.satz eng>Standard: an für Sitzungsgeld und Pauschalen, aus für die übrigen Vorgänge.</c-rahmen.satz>
+            <form method="post" action="{% url 'session:settings_four_eyes' tenant_slug=tenant_slug %}" class="mt-3" data-testid="vier-augen-einstellungen">
+                {% csrf_token %}
+                <c-rahmen.liste>
+                    {% for process in processes %}
+                    <li class="py-2.5">
+                        {% if process.key == "paper" %}
+                        <div class="flex flex-wrap items-center justify-between gap-x-6 gap-y-1">
+                            <label for="four_eyes_papers" class="text-sm text-gray-800 dark:text-gray-200">{{ process.label }}</label>
+                            <select id="four_eyes_papers" name="four_eyes_papers"
+                                    class="h-9 pl-3 pr-8 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                                {% for value, text in paper_choices %}
+                                <option value="{{ value }}"{% if value == process.value %} selected{% endif %}>{{ text }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">„Selbst“: {{ process.self_definition }}</p>
+                        {% else %}
+                        <c-form.checkbox name="{{ process.field }}" id="vier-augen-{{ process.key }}" checked="{% if process.value %}1{% endif %}" dicht>
+                            {{ process.label }}
+                            <span class="block mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400">„Selbst“: {{ process.self_definition }}</span>
+                        </c-form.checkbox>
+                        {% endif %}
+                    </li>
+                    {% endfor %}
+                </c-rahmen.liste>
+                <div class="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+                    <c-ui.button type="submit" variant="secondary" size="sm" icon="save">Speichern</c-ui.button>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Die Prüfung greift serverseitig; Änderungen stehen im Audit-Log.</p>
+                </div>
+            </form>
+        </c-rahmen.abschnitt>
+
+        <c-rahmen.abschnitt titel="Genehmigungsweg der Niederschrift" titel_id="genehmigungsweg-titel">
+            <c-rahmen.satz eng>Mit der Genehmigung bzw. Veröffentlichung sind Ergebnis, Stimmen und Texte schreibgeschützt; danach ändert nur eine Berichtigung.</c-rahmen.satz>
+            <form method="post" action="{% url 'session:settings_protocol_approval' tenant_slug=tenant_slug %}" class="mt-3 space-y-3" data-testid="genehmigungsweg-einstellung">
+                {% csrf_token %}
+                <c-form.select name="protocol_approval_mode" id="genehmigungsweg" label="Niederschriften werden …" dicht class="max-w-md"
+                               help="Ohne Genehmigungsschritt gibt die Person mit dem Recht „Protokolle freigeben“ die geprüfte Niederschrift direkt frei (z. B. Freischaltung im RIS); das Vier-Augen-Prinzip für die Niederschrift gilt dann für diesen Schritt.">
+                    {% for value, text in protocol_approval_choices %}
+                    <option value="{{ value }}"{% if value == protocol_approval_mode %} selected{% endif %}>{{ text }}</option>
+                    {% endfor %}
+                </c-form.select>
+                <c-ui.button type="submit" variant="secondary" size="sm" icon="save">Speichern</c-ui.button>
+            </form>
+        </c-rahmen.abschnitt>
+    </div>
+</div>
+{% endblock %}

@@ -41,6 +41,7 @@ from ..models import (
     SessionUser,
 )
 from ..permissions import SessionViewMixin, role_permissions
+from ..rahmen import neues_design
 from ..services import agenda_service, body_service, delegation_service, four_eyes_service, paper_version_service
 from ..visibility import agenda_item_visible, meeting_visible, paper_visible
 from .bodies import BodyFilterMixin
@@ -294,6 +295,10 @@ class PaperListView(BodyFilterMixin, SessionViewMixin, ListView):
     paginate_by = 20
     permission_required = "view_papers"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/vorlagen.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_queryset(self):
         qs = super().get_queryset()
         qs = qs.select_related("main_organization", "originator_organization", "originator_person").order_by(
@@ -370,6 +375,10 @@ class PaperDetailView(SessionViewMixin, DetailView):
     context_object_name = "paper"
     pk_url_kwarg = "paper_id"
     permission_required = "view_papers"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/vorlage.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -570,6 +579,10 @@ class PaperCreateView(PaperBodyFormMixin, PaperNumberingFormMixin, SessionViewMi
     ]
     permission_required = "create_papers"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/vorlage_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context["text_blocks"] = _active_text_blocks(self.session_tenant)
@@ -616,6 +629,10 @@ class PaperReviewListView(BodyFilterMixin, SessionViewMixin, ListView):
     context_object_name = "papers"
     paginate_by = 50
     permission_required = "approve_papers"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 3); die bisherige Seite bleibt unverändert
+        return ["session/neu/zu_pruefen.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset().filter(status="review")
@@ -879,6 +896,10 @@ class PaperUpdateView(PaperBodyFormMixin, PaperNumberingFormMixin, SessionViewMi
         "financial_impact_note",
     )
     content_locked = False
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/vorlage_formular.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

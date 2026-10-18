@@ -33,6 +33,11 @@ import { documentImport } from '../alpine/document-import'
 
 Alpine.data('documentImport', documentImport)
 
+// ---- Recherche im neuen Erscheinungsbild (#853): Dokumentzeile von Insight (Text aufklappen) ----------------
+import { documentText } from '../alpine/insight'
+
+Alpine.data('documentText', documentText)
+
 // ---- Satz B (#174): Fraktionssitzung, TOP-Panel, Fraktions-Einstellungen ----------
 import { agendaItemPanel } from '../alpine/agenda-item-panel'
 import { deleteConfirmation } from '../alpine/delete-confirmation'
@@ -48,8 +53,8 @@ Alpine.data('factionTitlePreview', factionTitlePreview)
 import { letterheadForm } from '../alpine/letterhead-form'
 import { createMotion } from '../alpine/motion-create'
 import { colorPicker, logoPreview, partyManager, permissionsManager } from '../alpine/organization-settings'
-import { changeRequestForm, dataExport } from '../alpine/profile'
-import { ticketForm } from '../alpine/support'
+import { changeRequestForm, dataExport, profilBild } from '../alpine/profile'
+import { ticketForm, ticketVerlauf } from '../alpine/support'
 import { assignmentHandler } from '../alpine/task-assignment'
 
 Alpine.data('colorPicker', colorPicker)
@@ -60,12 +65,30 @@ Alpine.data('letterheadForm', letterheadForm)
 Alpine.data('createMotion', createMotion)
 Alpine.data('changeRequestForm', changeRequestForm)
 Alpine.data('dataExport', dataExport)
+Alpine.data('profilBild', profilBild)
 Alpine.data('ticketForm', ticketForm)
+Alpine.data('ticketVerlauf', ticketVerlauf)
 Alpine.data('assignmentHandler', assignmentHandler)
 
 // ---- Neuer Rahmen (#852): Leiste, Raum-Dialog, Blatt „Mehr“, Glocke, Personenmenü -----------------
-import { workGlocke, workPerson, workRahmen } from '../alpine/work-rahmen'
+import { workGlocke, workGruppe, workPerson, workRahmen } from '../alpine/work-rahmen'
 
 Alpine.data('workRahmen', workRahmen)
+Alpine.data('workGruppe', workGruppe)
 Alpine.data('workGlocke', workGlocke)
 Alpine.data('workPerson', workPerson)
+
+// ---- Anzeige automatisch speichernder htmx-Formulare (Aufgaben-Panel, #854) ----------------------
+import { autosaveAnzeige } from '../alpine/autosave-anzeige'
+
+Alpine.data('autosaveAnzeige', autosaveAnzeige)
+
+// ---- Recherche: Karte mit Kachel-Proxy, Zeitraum und Ausschnitt (#853) ------------------------------------
+import { risKarte } from '../alpine/ris-karte'
+
+Alpine.data('risKarte', risKarte)
+
+// ---- Sitzungskalender im neuen Erscheinungsbild (#951): FullCalendar ohne Inline-Skript und Inline-CSS ------------
+import { sitzungsKalender } from '../alpine/sitzungs-kalender'
+
+Alpine.data('sitzungsKalender', sitzungsKalender)

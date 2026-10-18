@@ -20,8 +20,10 @@ from django.views.generic import TemplateView, View
 logger = logging.getLogger("apps.work.motions")
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin
 from apps.work.stats_text import documents_sentence
 
+from .. import freigaben
 from ..administration_feedback import with_administration_reference
 from ..models import (
     DocumentFolder,
@@ -29,16 +31,27 @@ from ..models import (
     Motion,
     MotionType,
 )
-from ._helpers import _can_manage_folder, _flatten_folder_tree, _get_org_folder_or_404
+from ._helpers import _can_manage_folder, _flatten_folder_tree, _get_org_folder_or_404, _share_download_response
 
 # Platzhalter-UUID in Ordner-URLs, die das Frontend clientseitig durch die echte ID ersetzt
 FOLDER_URL_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
 
 
-class MotionListView(WorkViewMixin, TemplateView):
+def _spalten_mit_wert(motions: list[Motion]) -> dict[str, bool]:
+    """Welche Zusatzspalten der neuen Dokumentenliste auf dieser Seite mindestens einen Wert haben (Issue #951)."""
+    return {
+        "federfuehrung": any(m.responsible_id for m in motions),
+        "frist": any(m.due_date for m in motions),
+        "themen": any(m.topics.all() for m in motions),
+        "checkliste": any(m.checklist_progress["total"] for m in motions),
+    }
+
+
+class MotionListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List of documents (formerly motions)."""
 
     template_name = "work/motions/list.html"
+    neue_vorlage = "work/motions/neu/liste.html"
     permission_required = "motions.view"
 
     def get_context_data(self, **kwargs):
@@ -146,6 +159,9 @@ class MotionListView(WorkViewMixin, TemplateView):
             for amendment in amendments_by_parent.get(motion.id, []):
                 motion_rows.append({"motion": amendment, "is_amendment": True})
         context["motion_rows"] = motion_rows
+        if self.neue_ansicht():
+            # Neue Liste (#951): Spalten ohne einen einzigen Wert auf der Seite entfallen (nutzt die Prefetches)
+            context["spalten"] = _spalten_mit_wert([row["motion"] for row in motion_rows])
 
         # Statistik über dieselbe sichtbare Menge wie Liste und Ordner-Zähler
         today = timezone.localdate()
@@ -345,8 +361,10 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
     """
     Ordner für einen Nutzer (insbesondere Gast) freigeben.
 
-    Die Freigabe gilt rekursiv für alle Unterordner und enthaltenen
-    Dokumente — auch künftig hinzukommende (FolderGuestShare).
+    Die Freigabe gilt rekursiv für alle Unterordner — auch künftig
+    hinzukommende — und erfasst dort die organisationsweiten und geteilten
+    Dokumente der freigebenden Person, nie private (FolderGuestShare,
+    Motion._folder_share_applies, Issue #582).
     """
 
     permission_required = ["guests.manage", "motions.share"]
@@ -389,7 +407,8 @@ class FolderGuestShareUpdateView(WorkViewMixin, View):
         FolderGuestShare.objects.update_or_create(
             folder=folder,
             user=user,
-            defaults={"level": level, "created_by": request.user},
+            # Herunterladen (Issue #582): nur eine ausdrückliche Angabe ändert den Schalter, neu ohne Angabe erlaubt
+            defaults={"level": level, "created_by": request.user, **freigaben.download_update(request.POST)},
         )
         if previous is None or previous.level != level:
             from apps.work.notifications.services import NotificationHub
@@ -431,6 +450,25 @@ class FolderGuestShareRemoveView(WorkViewMixin, View):
             return redirect(next_url)
         list_url = reverse("work:documents", kwargs={"org_slug": self.organization.slug})
         return redirect(f"{list_url}?ordner={folder.id}")
+
+
+class FolderGuestShareDownloadView(WorkViewMixin, View):
+    """„Herunterladen erlauben“ einer Ordner-Freigabe an- oder abschalten (Issue #582); Rechte wie beim Entziehen."""
+
+    permission_required = ["guests.manage", "motions.share"]
+    permission_require_all = False
+
+    def post(self, request, *args, **kwargs):
+        share = get_object_or_404(
+            FolderGuestShare,
+            id=kwargs.get("share_id"),
+            folder__organization=self.organization,
+        )
+        if not _can_manage_folder(self.membership, share.folder):
+            return JsonResponse({"error": "Keine Berechtigung für diesen Ordner."}, status=403)
+
+        freigaben.set_allow_download(share, freigaben.download_choice(request.POST, default=False))
+        return _share_download_response(request, self.organization, share.allow_download)
 
 
 class MotionFolderMoveView(WorkViewMixin, View):

@@ -19,3 +19,9 @@ class CommonConfig(AppConfig):
         from .observability import setup_opentelemetry
 
         setup_opentelemetry()
+
+        # Message-ID und EHLO mit vollständigem Domainnamen statt der Container-ID (Issue #957); der Import
+        # registriert zugleich die Systemprüfung der Einstellung
+        from .mail_domain import apply as apply_mail_domain
+
+        apply_mail_domain()

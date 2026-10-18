@@ -278,6 +278,9 @@ def test_vergleich_ohne_auswahl_meldet_kommune_die_im_schattenindex_fehlt(
 def test_loeschen_schuetzt_auch_bei_schalter_aktiv_und_protokolliert(settings: Any, es: FakeElasticsearch) -> None:
     from apps.accounts.models import SecurityAuditLog
 
+    # Nur eigene Einträge zählen: Was davor im Protokoll stand, gehört nicht zu diesem Test
+    vorher = set(SecurityAuditLog.objects.values_list("pk", flat=True))
+    eigene = SecurityAuditLog.objects.exclude(pk__in=vorher)
     settings.SEARCH_INDEX_SUBSCRIPTION = "aktiv"
     Subscription.objects.create(name="suchindex", cursor_seq=7, state=SubscriptionState.SCHATTEN)
     es.ablegen("schatten-papers", {"id": "1"})
@@ -291,7 +294,7 @@ def test_loeschen_schuetzt_auch_bei_schalter_aktiv_und_protokolliert(settings: A
     with pytest.raises(CommandError, match="noch zugestellt"):
         _befehl("loeschen", "--ja", "--abonnement")
     assert "schatten-papers" in es.indizes
-    assert not SecurityAuditLog.objects.exists()
+    assert not eigene.exists()
 
     assert "Gelöscht: schatten-papers" in _befehl("loeschen", "--ja")
     assert Subscription.objects.filter(name="suchindex").exists()
@@ -302,7 +305,8 @@ def test_loeschen_schuetzt_auch_bei_schalter_aktiv_und_protokolliert(settings: A
     )
     _befehl("loeschen", "--ja", "--abonnement")
 
-    eintraege = list(SecurityAuditLog.objects.filter(event="betrieb").order_by("created_at"))
+    eintraege = list(eigene.order_by("created_at"))
+    assert [eintrag.event for eintrag in eintraege] == ["betrieb"] * 2
     assert [eintrag.details["aktion"] for eintrag in eintraege] == ["suchindex_schatten_loeschen"] * 2
     assert eintraege[0].details["indizes"] == ["schatten-papers"]
     assert eintraege[0].details["quelle"] == "kommandozeile" and eintraege[0].user_ref is None

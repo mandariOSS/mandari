@@ -213,8 +213,10 @@
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
         <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Anmeldesicherheit</h3>
         <p class="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Mitglieder mit Administrator-Rolle oder einer Rolle mit „2FA erforderlich“ verwenden immer einen
-            zweiten Faktor. Hier legen Sie fest, ob das für alle Mitglieder gilt.
+            Die Administration und alle, die Mitglieder, Rollen, Einstellungen oder API-Zugänge verwalten dürfen
+            (über ihre Rolle oder als Einzelrecht), verwenden immer einen zweiten Faktor, ebenso Rollen mit
+            „2FA erforderlich“. Allen anderen empfiehlt Work ihn auf der Startseite. Hier legen Sie fest, ob er für
+            alle Mitglieder Pflicht ist.
         </p>
         {% if can_edit %}
         <form method="post" class="space-y-4">
@@ -234,7 +236,7 @@
         </form>
         {% else %}
         <p class="text-sm text-gray-600 dark:text-gray-400">
-            {% if organization.require_2fa %}Für alle Mitglieder verpflichtend.{% else %}Für Mitglieder ohne Administrator-Rolle freiwillig.{% endif %}
+            {% if organization.require_2fa %}Für alle Mitglieder verpflichtend.{% else %}Für Mitglieder ohne Verwaltungsrechte empfohlen, aber freiwillig.{% endif %}
         </p>
         {% endif %}
     </div>

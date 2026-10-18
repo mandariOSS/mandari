@@ -52,7 +52,7 @@ class SearchView(TemplateView):
         )
         if not teil:
             response = self.render_to_response(context)
-        elif len(context["params"].q) < 2:
+        elif len(context["params"].query) < 2:
             # Feld geleert oder zu kurz: Ergebnisbereich leeren statt die ganze Seite hineinzusetzen
             response = HttpResponse("")
         else:
@@ -67,19 +67,20 @@ class SearchView(TemplateView):
         from django.utils import timezone
 
         from ..seo import get_page_seo
-        from ..services.search_page import SearchParams, build_context
+        from ..services.search_filters import SearchQuery
+        from ..services.search_page import build_context
 
-        params = SearchParams.from_get(self.request.GET)
+        params = SearchQuery.from_get(self.request.GET, portal=True)
         body = None if is_all_bodies_mode(self.request) else get_active_body(self.request)
         context["params"] = params
-        context["query"] = params.q
+        context["query"] = params.query
         context["seo"] = get_page_seo(
             self.request,
-            title=f"„{params.q}“ – Suche" if params.q else "Suche",
+            title=f"„{params.query}“ – Suche" if params.query else "Suche",
             description="Volltextsuche über Vorgänge, Sitzungen, Personen, Gremien und Dokumente der Ratsinformationen.",
             body=body,
         ).to_dict()
-        if len(params.q) < 2:
+        if len(params.query) < 2:
             return context
         try:
             from ..services.search_service import get_search_service

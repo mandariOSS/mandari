@@ -10,16 +10,18 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.work.notifications.models import PREFERENCE_CATEGORIES, NotificationType, preference_hint
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 from ..services import ServiceError
 from ._helpers import flash_error
 
 
-class ProfileNotificationsView(WorkViewMixin, TemplateView):
+class ProfileNotificationsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Notification preferences within profile tabs."""
 
     template_name = "work/profile/notifications.html"
+    neue_vorlage = "work/profile/neu/benachrichtigungen.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):
@@ -54,10 +56,11 @@ class ProfileNotificationsView(WorkViewMixin, TemplateView):
         return redirect("work:profile_notifications", org_slug=self.organization.slug)
 
 
-class ProfileAbsenceView(WorkViewMixin, TemplateView):
+class ProfileAbsenceView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Absence management within profile tabs."""
 
     template_name = "work/profile/absence.html"
+    neue_vorlage = "work/profile/neu/abwesenheit.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):

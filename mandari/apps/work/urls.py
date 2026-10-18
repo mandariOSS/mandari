@@ -57,6 +57,11 @@ urlpatterns = [
         dashboard_views.DashboardView.as_view(),
         name="dashboard_explicit",
     ),
+    path(
+        "<slug:org_slug>/start/hinweis/zwei-faktor-spaeter/",
+        dashboard_views.ZweiFaktorHinweisSpaeterView.as_view(),
+        name="two_factor_hint_later",
+    ),
     # Meetings (OParl meeting preparation)
     path("<slug:org_slug>/meetings/", meetings_views.MeetingListView.as_view(), name="meetings"),
     path(
@@ -239,6 +244,11 @@ urlpatterns = [
         name="document_folder_share_remove",
     ),
     path(
+        "<slug:org_slug>/documents/folders/shares/<uuid:share_id>/download/",
+        motions_views.FolderGuestShareDownloadView.as_view(),
+        name="document_folder_share_download",
+    ),
+    path(
         "<slug:org_slug>/documents/move-to-folder/",
         motions_views.MotionFolderMoveView.as_view(),
         name="document_move_to_folder",
@@ -262,6 +272,11 @@ urlpatterns = [
         "<slug:org_slug>/documents/share/<uuid:share_id>/remove/",
         motions_views.MotionShareRemoveView.as_view(),
         name="document_share_remove",
+    ),
+    path(
+        "<slug:org_slug>/documents/share/<uuid:share_id>/download/",
+        motions_views.MotionShareDownloadView.as_view(),
+        name="document_share_download",
     ),
     path(
         "<slug:org_slug>/documents/<uuid:motion_id>/status/",
@@ -522,6 +537,22 @@ urlpatterns = [
         faction_views.FactionActionView.as_view(),
         name="faction_action",
     ),
+    # Sitzungsansicht der laufenden Sitzung (Issue #874, hinter dem Schalter der Organisation)
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/sitzung/aktion/",
+        faction_views.FactionSessionActionView.as_view(),
+        name="faction_session_action",
+    ),
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/sitzung/top/<uuid:item_id>/",
+        faction_views.FactionSessionItemView.as_view(),
+        name="faction_session_item",
+    ),
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/sitzung/top/<uuid:item_id>/unterlage/<str:schluessel>/",
+        faction_views.FactionSessionDocumentView.as_view(),
+        name="faction_session_document",
+    ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/item/<uuid:item_id>/panel/",
         faction_views.FactionItemPanelView.as_view(),
@@ -605,6 +636,7 @@ urlpatterns = [
     # RIS (wrapped insight_core views)
     path("<slug:org_slug>/ris/", ris_views.RISOverviewView.as_view(), name="ris_overview"),
     path("<slug:org_slug>/ris/search/", ris_views.RISSearchView.as_view(), name="ris_search"),
+    path("<slug:org_slug>/ris/search/frage/", ris_views.RISFrageView.as_view(), name="ris_frage"),
     path("<slug:org_slug>/ris/papers/", ris_views.RISPapersView.as_view(), name="ris_papers"),
     path(
         "<slug:org_slug>/ris/papers/<uuid:paper_id>/",
@@ -636,6 +668,11 @@ urlpatterns = [
     path("<slug:org_slug>/ris/files/", ris_views.RISFilesView.as_view(), name="ris_files"),
     # Beschlusskontrolle für Mandatsträger (Issue #37)
     path("<slug:org_slug>/ris/decisions/", ris_views.RISDecisionsView.as_view(), name="ris_decisions"),
+    path(
+        "<slug:org_slug>/ris/decisions/<uuid:item_id>/",
+        ris_views.RISDecisionDetailView.as_view(),
+        name="ris_decision_detail",
+    ),
     path("<slug:org_slug>/ris/map/", ris_views.RISMapView.as_view(), name="ris_map"),
     path("<slug:org_slug>/ris/map/data/", ris_views.RISMapDataView.as_view(), name="ris_map_data"),
     # Organization settings

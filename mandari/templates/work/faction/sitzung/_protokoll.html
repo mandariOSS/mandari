@@ -1,0 +1,49 @@
+{# Protokoll als eine Ansicht: formatierbare Notizen (automatisch gespeichert), bisherige Einträge, Aufgaben (Issue #874) #}
+{# Kontext: item, notizen_html, notizen_config, eintraege (FactionProtocolEntry, unverändert lesbar), aufgaben, rechte #}
+<section class="fs-prot" aria-labelledby="fs-prot-h" x-data="sitzungsNotizen">
+    {{ notizen_config|json_script:"fs-notizen-config" }}
+    <div class="fs-prot-kopf">
+        <h3 id="fs-prot-h">Protokoll</h3>
+        {% if notizen_config.editierbar %}
+        <div class="fs-wz" role="toolbar" aria-label="Formatierung der Notizen" aria-controls="fs-notiz" x-show="bereit" x-cloak @mousedown.prevent>
+            <button type="button" class="wf-wz-knopf" @click="befehl('bold')" :aria-pressed="format.bold ? 'true' : 'false'" aria-label="Fett (Strg+B)"><i data-lucide="bold" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf" @click="befehl('italic')" :aria-pressed="format.italic ? 'true' : 'false'" aria-label="Kursiv (Strg+I)"><i data-lucide="italic" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf" @click="befehl('underline')" :aria-pressed="format.underline ? 'true' : 'false'" aria-label="Unterstrichen (Strg+U)"><i data-lucide="underline" aria-hidden="true"></i></button>
+            <span class="wf-wz-trenn" aria-hidden="true"></span>
+            <button type="button" class="wf-wz-knopf" @click="befehl('heading')" :aria-pressed="format.heading ? 'true' : 'false'" aria-label="Zwischenüberschrift"><i data-lucide="heading" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf" @click="befehl('bulletList')" :aria-pressed="format.bulletList ? 'true' : 'false'" aria-label="Aufzählung"><i data-lucide="list" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf" @click="befehl('orderedList')" :aria-pressed="format.orderedList ? 'true' : 'false'" aria-label="Nummerierung"><i data-lucide="list-ordered" aria-hidden="true"></i></button>
+            <span class="wf-wz-trenn" aria-hidden="true"></span>
+            <button type="button" class="wf-wz-knopf" @click="befehl('link')" :aria-pressed="format.link ? 'true' : 'false'" aria-label="Link einfügen"><i data-lucide="link" aria-hidden="true"></i></button>
+            <button type="button" class="wf-wz-knopf mit-text" @click="zurAufgabe()" aria-label="Aufgabe aus diesem TOP anlegen"><i data-lucide="square-check" aria-hidden="true"></i><span aria-hidden="true">Aufgabe</span></button>
+        </div>
+        <span class="fs-status" :class="{ 'fehler': status === 'fehler' }" :title="statusText()" role="status" aria-live="polite" x-show="bereit" x-cloak>
+            <i data-lucide="cloud" aria-hidden="true"></i><span x-text="statusText()">Automatisch gespeichert</span>
+        </span>
+        {% endif %}
+    </div>
+    <div class="fs-prot-flaeche">
+        {% if notizen_config.editierbar %}
+        <p class="fs-hinweis" role="alert" x-show="konflikt" x-cloak>
+            Jemand hat die Notizen gleichzeitig geändert. Beide Fassungen stehen jetzt untereinander; bitte prüfen Sie den Text.
+        </p>
+        {% endif %}
+        <div class="fs-notiz" id="fs-notiz" x-ref="notiz" aria-labelledby="fs-prot-h">{% if notizen_html %}{{ notizen_html }}{% elif not notizen_config.editierbar %}<p class="fs-notiz-leer">Noch keine Notizen zu diesem TOP.</p>{% endif %}</div>
+
+        {% if eintraege %}
+        <section class="fs-eintraege" aria-labelledby="fs-eintraege-h">
+            <h4 id="fs-eintraege-h">Einträge <span class="fs-meta">{{ eintraege|length }}</span></h4>
+            <ol>
+                {% for e in eintraege %}
+                <li>
+                    <span class="art">{{ e.get_entry_type_display }}{% if e.entry_type == 'speech' and e.speaker_name %} von {{ e.speaker_name }}{% endif %}{% if e.entry_type == 'action' %}{% if e.action_assignee_name %} für {{ e.action_assignee_name }}{% endif %}{% if e.action_due_date %}, fällig {{ e.action_due_date|date:"d.m.Y" }}{% endif %}{% if e.action_completed %}, übernommen{% endif %}{% endif %} · {{ e.created_at|date:"d.m.Y H:i" }}</span>
+                    <span class="inhalt">{{ e.content }}</span>
+                </li>
+                {% endfor %}
+            </ol>
+        </section>
+        {% endif %}
+
+        {% include "work/faction/sitzung/_aufgaben.html" %}
+    </div>
+</section>

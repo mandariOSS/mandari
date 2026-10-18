@@ -14,16 +14,18 @@ from apps.common.mixins import WorkViewMixin
 from apps.work.faction import deletion
 from apps.work.faction.models import FactionMeetingSchedule
 from apps.work.faction.visibility import can_view_internal
+from apps.work.rahmen import NeueVorlageMixin
 
-from .. import selectors, services
+from .. import einstellungen, selectors, services
 from ..services import ServiceError
 from ._helpers import flash_error
 
 
-class TeamDirectoryView(WorkViewMixin, TemplateView):
+class TeamDirectoryView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Internal team directory — visible to all active members."""
 
     template_name = "work/team/directory.html"
+    neue_vorlage = "work/team/neu/verzeichnis.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):
@@ -45,10 +47,11 @@ class TeamDirectoryView(WorkViewMixin, TemplateView):
         return context
 
 
-class TeamMemberProfileView(WorkViewMixin, TemplateView):
+class TeamMemberProfileView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Read-only member profile in team directory."""
 
     template_name = "work/team/profile.html"
+    neue_vorlage = "work/team/neu/profil.html"
     permission_required = "dashboard.view"
 
     def get_context_data(self, **kwargs):
@@ -68,10 +71,11 @@ class TeamMemberProfileView(WorkViewMixin, TemplateView):
         return context
 
 
-class OrganizationSettingsView(WorkViewMixin, TemplateView):
+class OrganizationSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Organization settings page."""
 
     template_name = "work/organization/settings.html"
+    neue_vorlage = "work/organization/neu/allgemein.html"
     permission_required = "organization.view"
 
     def get_context_data(self, **kwargs):
@@ -111,7 +115,8 @@ class OrganizationSettingsView(WorkViewMixin, TemplateView):
                 handler(request)
             except ServiceError as exc:
                 flash_error(request, exc)
-        return redirect("work:organization", org_slug=self.organization.slug)
+        # Reiter „Sicherheit“ im neuen Erscheinungsbild bleibt nach dem Speichern offen (Issue #951)
+        return redirect(einstellungen.ziel_nach_speichern(request, self.organization))
 
     def _update_general(self, request):
         services.update_general_settings(
@@ -153,10 +158,11 @@ _STANDARD_AGENDA_SCOPE = (
 )
 
 
-class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
+class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Faction meeting settings tab in organization settings."""
 
     template_name = "work/organization/faction_settings.html"
+    neue_vorlage = "work/organization/neu/fraktion.html"
     permission_required = "faction.manage"
 
     def get_context_data(self, **kwargs):
@@ -323,10 +329,11 @@ class OrganizationFactionSettingsView(WorkViewMixin, TemplateView):
         messages.success(request, f"„{title}“ entfernt. Bereits angelegte Sitzungen behalten ihre TOPs.")
 
 
-class OrganizationDocumentsView(WorkViewMixin, TemplateView):
+class OrganizationDocumentsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Document settings tab for organization (Anträge & Vorgänge)."""
 
     template_name = "work/organization/documents.html"
+    neue_vorlage = "work/organization/neu/dokumente.html"
     permission_required = "organization.view"
 
     def get_context_data(self, **kwargs):

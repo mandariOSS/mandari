@@ -27,6 +27,7 @@ from django.views.generic import TemplateView
 from .. import audit
 from ..models import SessionMeeting, SessionTenant
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import cockpit_service
 
 STATE_TEMPLATE = "session/cockpit/_stand.html"
@@ -70,6 +71,10 @@ class MeetingCockpitView(_CockpitMixin, TemplateView):
 
     template_name = "session/cockpit/page.html"
     permission_required = "view_meetings"
+
+    def get_template_names(self) -> list[str]:
+        # Neuer Rahmen je Mandant (Issue #944): Kopfband statt Seitenkopf, der Stand bleibt der bisherige
+        return ["session/neu/cockpit.html"] if neues_design(self.tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:
         context: dict[str, Any] = cast(Any, super()).get_context_data(**kwargs)

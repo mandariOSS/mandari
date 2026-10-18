@@ -1,0 +1,7 @@
+{% comment %}
+Brotkrume zurück zur Sitzung auf ihren Unterseiten (Ladung, Rückmeldungen, Niederschrift, Abstimmung, Cockpit, TOP,
+Anlagen) im neuen Rahmen (Issue #944, Block brotkrumen_aktuell): Beschriftung wie auf der Sitzung selbst
+(session/neu/sitzung.html). Der Rahmen kennt nur den Bereich „Sitzungen“, die Sitzung dazwischen ergänzt diese Krume.
+Kontext: meeting, tenant_slug.
+{% endcomment %}
+<c-rahmen.brotkrume href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}">{{ meeting.name|truncatechars:60 }}, {{ meeting.start|date:"d.m.Y" }}</c-rahmen.brotkrume>

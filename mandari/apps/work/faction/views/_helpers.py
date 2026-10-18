@@ -260,18 +260,9 @@ def _apply_approval_item_decision(agenda_item, decision, meeting, membership):
     automatischen ersten TOP genehmigt das Protokoll der vorherigen Sitzung
     (ProtocolApprovalService setzt Status, Flag und Genehmigungs-Metadaten).
     """
-    if not agenda_item.is_approval_item or not agenda_item.approves_meeting_id:
-        return False
-    if decision is None or not decision.passed:
-        return False
+    from ..services import apply_approval_item_decision
 
-    from ..services import ProtocolApprovalService
-
-    return ProtocolApprovalService.approve_protocol(
-        agenda_item.approves_meeting,
-        approved_in_meeting=meeting,
-        approved_by=membership,
-    )
+    return apply_approval_item_decision(agenda_item, decision, meeting, membership)
 
 
 def _renumber_items(meeting, visibility):

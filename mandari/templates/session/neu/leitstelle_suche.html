@@ -1,0 +1,50 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Suche der Leitstelle über Titel und Nummern aller Mandanten der Gruppe im neuen Rahmen (Issues #317, #944): Kopfband
+mit Titel, einem Satz und dem Suchfeld samt „Suchen“ als einziger Hauptaktion; Treffer je Art als Listen
+(session/neu/_leitstelle_zeilen.html) statt Karten. Nichtöffentliches nur aus Mandanten, in denen die Person selbst das
+Sichtrecht hat; Links nur bei eigener Mitgliedschaft. Kontext wie LeitstelleSearchView; die bisherige Seite bleibt
+session/leitstelle/search.html.
+{% endcomment %}
+
+{% block page_title %}Suche · Leitstelle {{ group.name }}{% endblock %}
+{% block meta_description %}Leitstelle {{ group.name }}: Suche{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Suche in allen Mandanten" text="{{ group.name }} · Titel und Nummern von Vorlagen, Sitzungen und Tagesordnungspunkten" dicht>
+    <form method="get" class="flex max-w-2xl flex-col gap-2 sm:flex-row" role="search">
+        <label for="leitstelle-q" class="sr-only">Suchbegriff</label>
+        <input type="search" id="leitstelle-q" name="q" value="{{ raw_query }}" minlength="2" maxlength="100" autofocus
+               placeholder="z. B. Drucksachennummer oder Stichwort"
+               class="h-9 min-w-0 flex-1 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell px-3 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+        <c-ui.button type="submit" size="sm" icon="search">Suchen</c-ui.button>
+    </form>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+{% if too_short %}
+<p class="mb-6 text-sm font-medium text-red-700 dark:text-red-400" role="alert">Bitte geben Sie mindestens zwei Zeichen ein.</p>
+{% endif %}
+
+{% if query %}
+<p class="text-sm text-gray-700 dark:text-gray-300" data-testid="leitstelle-treffer">
+    {{ result.total }} Treffer für „{{ query }}“. Je Art höchstens {{ search_limit }} Treffer; Nichtöffentliches nur aus
+    Mandanten, in denen Sie selbst das Sichtrecht haben.
+</p>
+<div class="mt-8 max-w-4xl space-y-10">
+    <c-rahmen.abschnitt titel="Vorlagen" titel_id="treffer-vorlagen-titel" zusatz="{{ result.papers|length }} Treffer">
+        {% include "session/neu/_leitstelle_zeilen.html" with rows=result.papers empty="Keine Vorlagen gefunden." date_label="vom" %}
+    </c-rahmen.abschnitt>
+    <c-rahmen.abschnitt titel="Sitzungen" titel_id="treffer-sitzungen-titel" zusatz="{{ result.meetings|length }} Treffer">
+        {% include "session/neu/_leitstelle_zeilen.html" with rows=result.meetings empty="Keine Sitzungen gefunden." date_label="am" %}
+    </c-rahmen.abschnitt>
+    <c-rahmen.abschnitt titel="Tagesordnungspunkte und Beschlüsse" titel_id="treffer-tops-titel" zusatz="{{ result.items|length }} Treffer">
+        {% include "session/neu/_leitstelle_zeilen.html" with rows=result.items empty="Keine Tagesordnungspunkte gefunden." date_label="Sitzung am" %}
+    </c-rahmen.abschnitt>
+</div>
+{% elif not too_short %}
+<c-rahmen.satz>Gesucht wird in Betreff und Nummer der Vorlagen, im Namen der Sitzungen sowie in Betreff und Beschlussnummer der Tagesordnungspunkte.</c-rahmen.satz>
+{% endif %}
+{% endblock %}

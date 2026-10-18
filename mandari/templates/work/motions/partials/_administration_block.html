@@ -24,7 +24,7 @@ Kontext: motion, organization, ris_application, ris_feedback, email_submission, 
         {% endif %}
         {% include "work/motions/partials/_ris_timeline.html" with feedback=ris_feedback compact=True %}
         {% if can_submit_ris %}
-        <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+        <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}" @click.prevent="sichernUndGehen($el.href)"
            class="inline-flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">Details &amp; Beratungsfolge</a>
         {% endif %}
     </div>
@@ -36,12 +36,12 @@ Kontext: motion, organization, ris_application, ris_feedback, email_submission, 
         <p class="text-xs text-gray-700 dark:text-gray-200">{{ recipient.label }}: {% if not recipient.delivered %}nicht zugestellt{% elif recipient.confirmed_at %}Eingang bestätigt {{ recipient.confirmed_at|date:"d.m.Y" }}{% else %}Eingang offen{% endif %}</p>
         {% endfor %}
         {% if can_submit_ris %}
-        <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+        <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}" @click.prevent="sichernUndGehen($el.href)"
            class="inline-flex items-center gap-1 text-xs text-primary-600 dark:text-primary-400 hover:underline">Details</a>
         {% endif %}
     </div>
     {% elif motion.is_submittable %}
-    <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}"
+    <a href="{% url 'work:document_submit_ris' org_slug=organization.slug motion_id=motion.id %}" @click.prevent="sichernUndGehen($el.href)"
        class="w-full inline-flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700">
         <i data-lucide="send" class="w-3.5 h-3.5"></i> Bei Verwaltung einreichen
     </a>

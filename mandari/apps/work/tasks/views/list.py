@@ -17,6 +17,7 @@ from django.urls import reverse
 from django.views.generic import TemplateView, View
 
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import NeueVorlageMixin, fragment_neu
 
 from .. import selectors, services
 from ..forms import QuickTaskForm
@@ -28,10 +29,11 @@ logger = logging.getLogger(__name__)
 TASK_URL_PLACEHOLDER = "00000000-0000-0000-0000-000000000000"
 
 
-class TaskListView(WorkViewMixin, TemplateView):
+class TaskListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Kanban board view for tasks."""
 
     template_name = "work/tasks/list.html"
+    neue_vorlage = "work/tasks/neu/board.html"
     permission_required = "tasks.view"
 
     def get_context_data(self, **kwargs):
@@ -188,7 +190,9 @@ class TaskBoardAPIView(WorkViewMixin, View):
 
         if self.is_htmx:
             context = {"task": task, "organization": self.organization}
-            card_html = render_to_string("work/tasks/_card.html", context, request=request)
+            # Das Board im neuen Erscheinungsbild fordert seine Karten an (hx-headers, Issue #951)
+            karte = "work/tasks/neu/_karte.html" if fragment_neu(request) else "work/tasks/_card.html"
+            card_html = render_to_string(karte, context, request=request)
             counts = selectors.column_counts(self.organization)
             counts_html = render_to_string("work/tasks/_column_counts_oob.html", counts, request=request)
             response = HttpResponse(card_html + counts_html)

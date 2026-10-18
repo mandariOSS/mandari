@@ -23,6 +23,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services.application_service import (
     ConversionError,
     conversion_blocker,
@@ -44,6 +45,10 @@ class ApplicationListView(SessionViewMixin, ListView):
     context_object_name = "applications"
     paginate_by = 20
     permission_required = "view_applications"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/antraege.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -86,6 +91,10 @@ class ApplicationDetailView(SessionViewMixin, DetailView):
     pk_url_kwarg = "application_id"
     permission_required = "view_applications"
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/antrag.html"] if neues_design(self.session_tenant) else [self.template_name]
+
     def get_queryset(self):
         qs = super().get_queryset()
         return qs.select_related(
@@ -123,6 +132,10 @@ class ApplicationProcessView(SessionViewMixin, UpdateView):
     ]
     pk_url_kwarg = "application_id"
     permission_required = "process_applications"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944), auch für die Fehleransicht nach POST
+        return ["session/neu/antrag_bearbeiten.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
@@ -166,6 +179,10 @@ class ApplicationConvertView(SessionViewMixin, TemplateView):
     template_name = "session/applications/convert.html"
     permission_required = ["process_applications", "create_papers"]
     permission_require_all = True
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/antrag_umwandeln.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get(self, request, *args, **kwargs):
         application = self._application()

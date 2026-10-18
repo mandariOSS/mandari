@@ -119,12 +119,14 @@ def test_drehbuch(live_server: Any, praesentation: None, neue_seite: Any) -> Non
     antrag = Motion.objects.get(organization__slug=DEMO_ORG_SLUG, title=drehbuch.ANTRAG_TITEL)
     vorsitz.goto(f"{basis}/work/{DEMO_ORG_SLUG}/documents/{antrag.id}/")
     wait_for_bundle(vorsitz)
-    vorsitz.locator("a[title='Bei Verwaltung einreichen']").first.click()
+    # Die Demo zeigt Work im neuen Erscheinungsbild (#852): Einreichen steht im Menü „Ablauf“ des Editors (#856)
+    vorsitz.get_by_role("menubar", name="Menü").get_by_role("menuitem", name="Ablauf").click()
+    vorsitz.get_by_role("menu", name="Ablauf").get_by_role("menuitem", name="Bei der Verwaltung einreichen").click()
     vorsitz.wait_for_url(re.compile(r"/submit-ris/$"))
     wait_for_bundle(vorsitz)
     # Beschlussvorschlag und Begründung sind aus dem Dokument vorbelegt
     expect(vorsitz.locator("#resolution_proposal")).to_have_value(re.compile(r"^Die Verwaltung wird beauftragt"))
-    expect(vorsitz.locator("#justification")).to_have_value(re.compile(r"^Der Musterweg ist der Hauptzugang"))
+    expect(vorsitz.locator("#justification")).to_have_value(re.compile(r"^Im Musterviertel leben rund 900 Kinder"))
     vorsitz.select_option("#target_organization", label=drehbuch.GREMIUM_HA)
     vorsitz.check("input[name=confirm]")
     vorsitz.click("button:has-text('Jetzt einreichen')")
@@ -173,7 +175,7 @@ def test_drehbuch(live_server: Any, praesentation: None, neue_seite: Any) -> Non
     buerger.goto(f"{basis}/insight/termine/{portal_sitzung.id}/")
     buerger.wait_for_load_state("networkidle")
     expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_JUGENDZENTRUM)
-    expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_SPIELPLATZ)
+    expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_SPORTHALLE)
     expect(buerger.locator("main")).not_to_contain_text(drehbuch.TOP_GRUNDSTUECK)
     bildschirmfoto(buerger, "3-buergerportal-vorher")
 
@@ -197,7 +199,7 @@ def test_drehbuch(live_server: Any, praesentation: None, neue_seite: Any) -> Non
     buerger.reload()
     buerger.wait_for_load_state("networkidle")
     expect(buerger.locator("main")).not_to_contain_text(drehbuch.TOP_JUGENDZENTRUM)
-    expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_SPIELPLATZ)
+    expect(buerger.locator("main")).to_contain_text(drehbuch.TOP_SPORTHALLE)
     bildschirmfoto(buerger, "3-buergerportal-nachher")
 
     # --- 4. OParl: JSON, der TOP nur noch als gelöschtes Objekt ------------------------------

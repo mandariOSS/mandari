@@ -1,0 +1,10 @@
+{% load permission_tags %}
+{% comment %}
+Hinweis für Organisationen ohne verknüpfte Kommune im neuen Erscheinungsbild (Issue #951): ein Satz auf der Fläche statt
+des Amber-Kastens, derselbe Weg zum Support wie in work/ris/partials/_no_body_notice.html (das bleibt für die
+bisherigen Seiten). Braucht nur organization und membership aus dem WorkViewMixin.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Noch keine Kommune verknüpft" class="max-w-2xl" data-testid="ohne-kommune">
+    <c-rahmen.satz eng>Sobald Ihrer Organisation eine Stadt oder Kommune zugeordnet ist, stehen hier Vorgänge, Sitzungen, Gremien und Personen aus deren Ratsinformationssystem.
+    {% if membership|has_perm:"support.create" %}<c-ui.textlink href="{% url 'work:support_create' org_slug=organization.slug %}">Zuordnung beim Support anfragen</c-ui.textlink>{% else %}Die Zuordnung übernimmt der Support auf Anfrage Ihrer Organisationsverwaltung.{% endif %}</c-rahmen.satz>
+</c-rahmen.abschnitt>

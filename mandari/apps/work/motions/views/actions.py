@@ -21,12 +21,12 @@ import contextlib
 from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import IMPORTABLE_DOCUMENTS, MB, validate_upload
 from apps.work.notifications.services import NotificationHub
+from apps.work.rahmen import NeueVorlageMixin
 
-from .. import references
+from .. import freigaben, references, vorschlaege
 from ..forms import (
     AIAssistantForm,
     MotionCommentForm,
-    MotionShareForm,
 )
 from ..import_service import import_ocr_max_pages, motion_import_service
 from ..models import (
@@ -40,57 +40,7 @@ from ..models import (
     StatusTransitionError,
 )
 from ..services import MotionAIService
-from ._helpers import _broadcast_doc_reload, _get_org_folder_or_404
-
-
-class MotionShareView(WorkViewMixin, TemplateView):
-    """Share settings for a motion (legacy - redirects to editor)."""
-
-    template_name = "work/motions/share.html"
-    permission_required = "motions.share"
-
-    def get(self, request, *args, **kwargs):
-        # Redirect to editor page - sharing is now a modal in the editor
-        return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=kwargs.get("motion_id"))
-
-    def post(self, request, *args, **kwargs):
-        motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
-
-        # Per-Objekt-Recht: einheitliche Freigaberegel (Motion.can_share)
-        if not motion.can_share(self.membership):
-            messages.error(request, "Keine Berechtigung für dieses Dokument.")
-            return redirect("work:documents", org_slug=self.organization.slug)
-
-        form = MotionShareForm(request.POST)
-        if form.is_valid():
-            share = form.save(commit=False)
-            share.motion = motion
-            share.created_by = request.user
-
-            # Handle user sharing by email
-            if share.scope == "user":
-                from apps.accounts.models import User
-                from apps.tenants.models import Membership
-
-                email = (form.cleaned_data.get("email") or "").strip().lower()
-                user = User.objects.filter(email=email).first()
-                target = (
-                    Membership.objects.filter(user=user, organization=self.organization, is_active=True).first()
-                    if user is not None
-                    else None
-                )
-                if target is None:
-                    messages.error(request, f"'{email}' ist kein Mitglied bzw. Gast dieser Organisation.")
-                    return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
-                share.user = user
-                # Gäste erhalten nie Verwaltungsrechte
-                if share.level == "admin" and target.is_guest:
-                    share.level = "edit"
-
-            share.save()
-            messages.success(request, "Freigabe erstellt.")
-
-        return redirect("work:document_editor", org_slug=self.organization.slug, motion_id=motion.id)
+from ._helpers import _broadcast_doc_reload, _get_org_folder_or_404, _share_download_response
 
 
 class MotionAIAssistantView(WorkViewMixin, View):
@@ -166,11 +116,17 @@ class MotionCommentView(WorkViewMixin, View):
         if not motion.can_comment(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
-        form = MotionCommentForm(request.POST, motion=motion)
+        # Änderungsvorschlag (Modus „Vorschlagen“, #856): Ersatz für die markierte Stelle; ohne eigene Notiz
+        # beschreibt der Kommentartext den Vorschlag
+        data, vorschlag, grund = vorschlaege.kommentar_anfrage(request.POST)
+        if grund:
+            return JsonResponse({"error": grund}, status=400)
+        form = MotionCommentForm(data, motion=motion)
         if form.is_valid():
             comment = form.save(commit=False)
             comment.motion = motion
             comment.author = self.membership
+            comment.vorschlag = vorschlag
             # Use client-provided mark_id for inline comments, or generate one
             if comment.selected_text:
                 client_mark_id = request.POST.get("mark_id")
@@ -196,6 +152,7 @@ class MotionCommentView(WorkViewMixin, View):
                             "created_at": comment.created_at.isoformat(),
                             "mark_id": str(comment.mark_id) if comment.mark_id else None,
                             "selected_text": comment.selected_text or None,
+                            "vorschlag": comment.vorschlag,
                         },
                     }
                 )
@@ -238,7 +195,10 @@ class MotionStatusView(WorkViewMixin, View):
         # offene Kollab-Editoren neu laden lassen, damit die herabgestufte
         # (bzw. wiedererlangte) Zugriffsstufe sofort greift.
         if motion.is_status_locked != was_locked:
-            _broadcast_doc_reload(motion)
+            from ..consumers import fenster_kennung
+
+            # Das auslösende Editorfenster hat vorher gesichert und lädt selbst neu (#1018)
+            _broadcast_doc_reload(motion, ausser_fenster=fenster_kennung(request.POST.get("fenster")))
 
         if request.headers.get("X-Requested-With") == "XMLHttpRequest":
             return JsonResponse(
@@ -568,7 +528,9 @@ class MotionDocumentDownloadView(WorkViewMixin, View):
     Anhänge liegen unter media/motions/documents/ und werden vom
     Medien-Handler NICHT direkt ausgeliefert (siehe serve_media) – nur hier,
     nach derselben Zugriffsprüfung wie das Dokument selbst (can_access:
-    Sichtbarkeit bzw. persönliche/Ordner-Freigabe, auch für Gäste).
+    Sichtbarkeit bzw. persönliche/Ordner-Freigabe, auch für Gäste). Gäste
+    zusätzlich nur, wenn ihre Freigabe das Herunterladen erlaubt; ihre
+    Downloads stehen in der Änderungshistorie (Issue #582).
     """
 
     permission_required = "motions.view"
@@ -578,6 +540,8 @@ class MotionDocumentDownloadView(WorkViewMixin, View):
         motion = get_object_or_404(Motion, id=kwargs.get("motion_id"), organization=self.organization)
         if not motion.can_access(self.membership):
             raise PermissionDenied("Keine Berechtigung für dieses Dokument.")
+        if not motion.can_download(self.membership):
+            raise PermissionDenied("Herunterladen ist für diese Freigabe nicht erlaubt.")
         document = get_object_or_404(MotionDocument, id=kwargs.get("document_id"), motion=motion)
         try:
             handle = document.file.open("rb")
@@ -587,6 +551,7 @@ class MotionDocumentDownloadView(WorkViewMixin, View):
             from .. import non_public
 
             non_public.log_access(motion, self.membership, request, non_public.ACCESS_DOWNLOADED, document=document)
+        freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_ATTACHMENT, document=document)
         response = FileResponse(
             handle,
             as_attachment=True,
@@ -615,8 +580,26 @@ class MotionCommentResolveView(WorkViewMixin, View):
         if not comment.motion.can_access(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
+        # Änderungsvorschlag (#856): annehmen oder ablehnen; annehmen darf nur, wer den Text gerade bearbeiten darf
+        entscheidung = vorschlaege.entscheidung_aus(request.POST)
+        if comment.vorschlag is not None and entscheidung:
+            if not vorschlaege.darf_entscheiden(comment, self.membership, entscheidung):
+                return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+            if comment.is_resolved:
+                # Schon entschieden (Wiederholung derselben Anfrage oder eine andere Person war schneller): nichts
+                # überschreiben. Der Editor ändert den Text nur, wenn die gespeicherte Entscheidung seine eigene ist.
+                return JsonResponse(
+                    {
+                        "success": True,
+                        "mark_id": str(comment.mark_id) if comment.mark_id else None,
+                        "vorschlag_angenommen": comment.vorschlag_angenommen,
+                        "bereits_entschieden": True,
+                        "selbst": comment.resolved_by_id == self.membership.id,
+                    }
+                )
+            comment.vorschlag_angenommen = entscheidung == vorschlaege.ANNEHMEN
         # Only author or someone with edit permission can resolve
-        if comment.author != self.membership and not self.membership.has_permission("motions.edit_all"):
+        elif comment.author != self.membership and not self.membership.has_permission("motions.edit_all"):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         comment.is_resolved = True
@@ -629,6 +612,7 @@ class MotionCommentResolveView(WorkViewMixin, View):
                 {
                     "success": True,
                     "mark_id": str(comment.mark_id) if comment.mark_id else None,
+                    "vorschlag_angenommen": comment.vorschlag_angenommen,
                 }
             )
 
@@ -637,7 +621,12 @@ class MotionCommentResolveView(WorkViewMixin, View):
 
 
 class MotionExportView(WorkViewMixin, View):
-    """Export motion as PDF or DOCX."""
+    """
+    Export motion as PDF or DOCX.
+
+    Gäste ab der Stufe „Lesen“, solange ihre Freigabe das Herunterladen erlaubt; jeder Export eines Gastes
+    steht in der Änderungshistorie (Issue #582).
+    """
 
     permission_required = "motions.view"
     guest_allowed = True  # Zugriff wird share-basiert geprüft (can_access)
@@ -651,6 +640,8 @@ class MotionExportView(WorkViewMixin, View):
 
         if not motion.can_access(self.membership):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+        if not motion.can_download(self.membership):
+            return JsonResponse({"error": "Herunterladen ist für diese Freigabe nicht erlaubt."}, status=403)
 
         export_format = request.GET.get("format", "pdf")
         if export_format in ("pdf", "docx") and motion.is_sworn_in_only():
@@ -667,7 +658,10 @@ class MotionExportView(WorkViewMixin, View):
                 filename = f"{safe_title[:50]}.pdf"
 
                 response = HttpResponse(pdf_content, content_type="application/pdf")
-                response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                # „Vorschau (PDF)“ im Editor öffnet die Datei im Browser statt sie herunterzuladen (#1018)
+                art = "inline" if request.GET.get("vorschau") == "1" else "attachment"
+                response["Content-Disposition"] = f'{art}; filename="{filename}"'
+                freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_PDF)
                 return response
 
             except Exception as e:
@@ -686,6 +680,7 @@ class MotionExportView(WorkViewMixin, View):
                     content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 )
                 response["Content-Disposition"] = f'attachment; filename="{filename}"'
+                freigaben.log_guest_download(motion, self.membership, request, freigaben.DOWNLOAD_DOCX)
                 return response
 
             except Exception as e:
@@ -696,10 +691,11 @@ class MotionExportView(WorkViewMixin, View):
             return JsonResponse({"error": f"Unbekanntes Export-Format: {export_format}"}, status=400)
 
 
-class MotionImportView(WorkViewMixin, TemplateView):
+class MotionImportView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Import PDF/DOCX files as documents."""
 
     template_name = "work/motions/import.html"
+    neue_vorlage = "work/motions/neu/import.html"
     permission_required = "motions.create"
 
     ALLOWED_TYPES = {
@@ -842,7 +838,9 @@ class MotionShareUpdateView(WorkViewMixin, View):
                     motion=motion,
                     scope="user",
                     user=user,
-                    defaults={"level": level, "created_by": request.user},
+                    # Herunterladen für Gäste (Issue #582): nur eine ausdrückliche Angabe ändert den Schalter,
+                    # neue Freigaben erlauben es ohne Angabe
+                    defaults={"level": level, "created_by": request.user, **freigaben.download_update(request.POST)},
                 )
                 # Benachrichtigung bei neuer Freigabe oder geänderter Stufe (Issue #75)
                 if previous is None or previous.level != level:
@@ -866,19 +864,9 @@ class MotionShareRemoveView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         share = get_object_or_404(MotionShare, id=kwargs.get("share_id"), motion__organization=self.organization)
 
-        # Check if user can manage this share
-        motion = share.motion
-        # Gast-Verwalter:innen dürfen persönliche Gast-Freigaben entziehen (Issue #77)
-        from apps.tenants.models import Membership
-
-        manages_guest_share = (
-            share.scope == "user"
-            and share.user_id
-            and self.membership.has_permission("guests.manage")
-            and Membership.objects.filter(user_id=share.user_id, organization=self.organization, is_guest=True).exists()
-        )
-        # Entziehen verengt nur den Zugang: Freigaberecht (Motion.can_share) oder Gast-Verwaltung
-        if not motion.can_share(self.membership) and not manages_guest_share:
+        # Entziehen verengt nur den Zugang: Freigaberecht (Motion.can_share) oder – bei persönlichen
+        # Gast-Freigaben – Gast-Verwaltung (Issue #77)
+        if not freigaben.may_manage_document_share(self.membership, share):
             return JsonResponse({"error": "Keine Berechtigung"}, status=403)
 
         share.delete()
@@ -892,3 +880,24 @@ class MotionShareRemoveView(WorkViewMixin, View):
             messages.success(request, "Freigabe entzogen.")
             return redirect(next_url)
         return HttpResponse(status=204, headers={"HX-Refresh": "true"})
+
+
+class MotionShareDownloadView(WorkViewMixin, View):
+    """
+    „Herunterladen erlauben“ einer persönlichen Freigabe an- oder abschalten (Issue #582).
+
+    Gleiche Berechtigung wie das Entziehen (MotionShareRemoveView): Freigaberecht am Dokument oder
+    Gast-Verwaltung bei Gast-Freigaben.
+    """
+
+    permission_required = "motions.share"
+
+    def post(self, request, *args, **kwargs):
+        share = get_object_or_404(
+            MotionShare, id=kwargs.get("share_id"), motion__organization=self.organization, scope="user"
+        )
+        if not freigaben.may_manage_document_share(self.membership, share):
+            return JsonResponse({"error": "Keine Berechtigung"}, status=403)
+
+        freigaben.set_allow_download(share, freigaben.download_choice(request.POST, default=False))
+        return _share_download_response(request, self.organization, share.allow_download)

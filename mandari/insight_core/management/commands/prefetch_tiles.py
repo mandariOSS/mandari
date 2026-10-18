@@ -12,12 +12,11 @@ Usage:
     python manage.py prefetch_tiles --clear             # Cache leeren vor Prefetch
 """
 
-import time
-
 import httpx
 from django.core.management.base import BaseCommand, CommandError
 
 from insight_core.models import OParlBody, TileCache
+from insight_core.services import dienste
 
 
 class Command(BaseCommand):
@@ -121,10 +120,8 @@ class Command(BaseCommand):
             cached = 0
             errors = 0
 
-            with httpx.Client(
-                timeout=10.0,
-                headers={"User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"},
-            ) as client:
+            # Kennung samt Kontakt wie alle Abrufe bei Diensten (Issue #1036)
+            with httpx.Client(timeout=10.0, headers=dienste.headers()) as client:
                 for i, (z, x, y) in enumerate(tiles):
                     # Check if already cached
                     existing, _ = TileCache.get_tile(z, x, y)
@@ -132,11 +129,11 @@ class Command(BaseCommand):
                         cached += 1
                         continue
 
-                    # Fetch from OSM
-                    subdomain = ["a", "b", "c"][x % 3]
-                    tile_url = f"https://{subdomain}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    # Fetch from OSM: höchstens zwei Kacheln je Sekunde im Takt je Host (dienste.KACHELN_VORAB)
+                    tile_url = dienste.OSM_KACHEL_URL.format(z=z, x=x, y=y)
 
                     try:
+                        dienste.warten(tile_url, dienste.KACHELN_VORAB)
                         response = client.get(tile_url)
 
                         if response.status_code == 200:
@@ -153,9 +150,6 @@ class Command(BaseCommand):
                     # Progress indicator
                     if (i + 1) % 100 == 0:
                         self.stdout.write(f"    Progress: {i + 1}/{len(tiles)} tiles...")
-
-                    # Rate limiting - OSM policy requires max 2 requests per second
-                    time.sleep(0.5)
 
             total_fetched += fetched
             total_cached += cached

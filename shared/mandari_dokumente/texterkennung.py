@@ -5,7 +5,7 @@ und den Auftrag ``file.extract_text`` der Anwendung (Issue #530).
 Für PDFs gilt die Kette
 
 1. pypdf (Textebene; liefert auch die Seitengrößen),
-2. Mistral (nur mit API-Schlüssel),
+2. Mistral (nur mit Schlüssel, Adresse und erlaubtem Host, siehe ``MistralConfig.enabled``),
 3. Tesseract Seite für Seite mit Speicher- und Zeitgrenzen (``mandari_dokumente.ocr``).
 
 Text- und HTML-Dateien werden dekodiert, andere Dateien nur, wenn sie wie Text aussehen; Word-Dateien und
@@ -45,6 +45,12 @@ WORD_MIME_TYPES: Final = frozenset(
 )
 #: Textdateien werden höchstens bis zu dieser Größe gelesen
 MAX_TEXT_BYTES: Final = 20 * 1024 * 1024
+
+#: Version der Texterkennung (Issue #919, ``docs/adr/20261007-dokumentkette.md``, Abschnitt 4). Steigt um eins,
+#: wenn eine Änderung bestehende Texte verbessert und der Bestand deshalb neu erkannt werden soll; die Anwendung
+#: plant Dateien mit älterer Version dann schrittweise aus der Ablage neu ein. Texte ohne Version (vor #919) gelten
+#: als Version 1.
+EXTRACTION_VERSION: Final = 1
 
 METHOD_PYPDF: Final = "pypdf"
 METHOD_MISTRAL: Final = "mistral"

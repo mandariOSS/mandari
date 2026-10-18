@@ -1,0 +1,2 @@
+{# Status eines Tickets als Punkt mit Text (Issue #951); Kontext: ticket #}
+<span class="inline-flex items-center gap-2 whitespace-nowrap text-gray-800 dark:text-gray-200"><span class="w-2 h-2 rounded-full {% if ticket.status == 'open' %}bg-blue-600{% elif ticket.status == 'in_progress' or ticket.status == 'escalated' %}bg-amber-500{% elif ticket.status == 'waiting' or ticket.status == 'on_hold' %}bg-primary-600{% elif ticket.status == 'resolved' %}bg-green-600{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span>{{ ticket.get_status_display }}</span>

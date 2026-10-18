@@ -5,6 +5,8 @@
 {% block breadcrumb %}
 {% include "session/papers/versions/_breadcrumb.html" with current="" %}
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zur Vorlage #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:paper_detail' tenant_slug=tenant_slug paper_id=paper.id %}">{{ paper.display_reference|default:paper.name|truncatechars:60 }}</c-rahmen.brotkrume><c-rahmen.brotkrume>Fassungen</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="space-y-6" data-testid="fassungen-liste">

@@ -10,7 +10,8 @@ Mandari Insight ist eine Open-Source-Plattform für die Darstellung und Analyse 
 - **PostgreSQL 15+** - Datenbank
 - **Elasticsearch** - Volltextsuche
 - **Redis** - Caching und Sessions
-- **Groq API** - KI-Features (Zusammenfassungen, Chatbot)
+- **OpenAI-kompatibler KI-Anbieter (Vorlage oder eigener Endpunkt)** - KI-Features (Zusammenfassungen, Chatbot),
+  eingerichtet im Admin unter „KI-Einstellungen“, nur Hosts aus `KI_ERLAUBTE_HOSTS`
 - **HTMX** - Interaktivität ohne JavaScript-Framework
 - **Alpine.js** - Leichtgewichtiges JavaScript
 - **TailwindCSS** - Utility-first Styling
@@ -72,8 +73,9 @@ REDIS_URL=redis://localhost:6379/0
 # Elasticsearch (optional)
 ELASTICSEARCH_URL=http://localhost:9200
 
-# Groq API (für KI-Features)
-GROQ_API_KEY=your-api-key
+# KI: Anbieter und Schlüssel im Admin (KI-Einstellungen); hier nur die Positivliste erlaubter Hosts
+# (leer ist nichts erlaubt, die KI bleibt aus)
+KI_ERLAUBTE_HOSTS=
 
 # Django
 SECRET_KEY=your-secret-key
@@ -88,7 +90,7 @@ mandari/
 ├── insight_core/      # Hauptanwendung (Views, Templates)
 ├── insight_sync/      # OParl Synchronisation
 ├── insight_search/    # Elasticsearch Integration
-├── insight_ai/        # KI-Features (Groq)
+├── insight_ai/        # KI-Features (OpenAI-kompatibel, zentrale KI-Konfiguration)
 ├── templates/         # Django Templates
 └── static/           # Statische Dateien
 ```
@@ -108,9 +110,15 @@ python -m src.main list-sources
 # Kommunen (Bodies) aller Quellen anzeigen
 python -m src.main list-bodies
 
-# Alle Quellen synchronisieren
+# Alle aktiven Quellen synchronisieren
 python -m src.main sync --all
 ```
+
+Neue Quellen sind inaktiv: `sync --all` und der Daemon gleichen sie erst ab, wenn sie im Admin
+aktiviert sind. Neu entdeckte Kommunen sind nicht gelistet und erscheinen im Bürgerportal erst,
+wenn sie im Admin gelistet sind (Issue #555). Ausnahme ist die eigene OParl-Schnittstelle eines
+Session-Mandanten, der die Veröffentlichung im Bürgerportal eingeschaltet hat: Ihre Quelle ist
+aktiv und ihre Kommune gleich gelistet.
 
 ## Lizenz
 

@@ -103,28 +103,26 @@ class Command(EinmaligMixin, BaseCommand):
     def _robots(self, body: Any) -> None:
         """Je Quelle eine Download-Adresse gegen die robots.txt prüfen (Liste gesperrter Quellen)."""
         from insight_core.models import OParlFile, OParlSource
-        from insight_core.services import file_reconcile, file_robots
+        from insight_core.services import file_robots
 
         sources = OParlSource.objects.order_by("name")
         if body is not None:
             sources = sources.filter(pk=body.source_id)
-        with file_reconcile.fetch_client() as client:
-            for source in sources:
-                sample = (
-                    OParlFile.objects.filter(body__source=source, deleted=False)
-                    .exclude(download_url__isnull=True, access_url__isnull=True)
-                    .values_list("download_url", "access_url")
-                    .first()
-                )
-                url = (sample[0] or sample[1]) if sample else None
-                if not url:
-                    continue
-                note = file_robots.exception_note(source)
-                status = file_robots.ALLOWED if note else file_robots.file_fetch_status(None, url, client)
-                if note:
-                    rules = file_robots.rules_for(url, client)
-                    locked = rules.unreachable or not file_robots.is_allowed(rules, url)
-                    line = f"{source.name}: Ausnahme ({note})" + (" – robots.txt sperrt" if locked else "")
-                else:
-                    line = f"{source.name}: {status}"
-                self.stdout.write(line)
+        for source in sources:
+            sample = (
+                OParlFile.objects.filter(body__source=source, deleted=False)
+                .exclude(download_url__isnull=True, access_url__isnull=True)
+                .values_list("download_url", "access_url")
+                .first()
+            )
+            url = (sample[0] or sample[1]) if sample else None
+            if not url:
+                continue
+            note = file_robots.exception_note(source)
+            status = file_robots.robots_status(source, url)
+            if note:
+                locked = status != file_robots.ALLOWED
+                line = f"{source.name}: Ausnahme ({note})" + (" – robots.txt sperrt" if locked else "")
+            else:
+                line = f"{source.name}: {status}"
+            self.stdout.write(line)

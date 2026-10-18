@@ -37,6 +37,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.common.tests.factories import UserFactory
+from apps.common.tests.festgeschriebene_testdaten import sicherheitsprotokoll_zuruecksetzen
 from apps.session import urls as session_urls
 from apps.session.models import (
     SessionAgendaItem,
@@ -217,7 +218,11 @@ def rundgang(
     media = tmp_path_factory.mktemp("rundgang-media")
     # Ohne Ereignisse an die Drehscheibe: Die Daten werden außerhalb der Testtransaktion festgeschrieben, ihre
     # Ereignisse blieben sonst bei eingeschaltetem SESSION_EVENTS für spätere Module im Journal stehen
-    with override_settings(MEDIA_ROOT=str(media), SESSION_EVENTS="aus"), django_db_blocker.unblock():
+    with (
+        override_settings(MEDIA_ROOT=str(media), SESSION_EVENTS="aus"),
+        django_db_blocker.unblock(),
+        sicherheitsprotokoll_zuruecksetzen(),
+    ):
         gebaut = _baue()
         yield gebaut
         SessionTenant.objects.filter(pk=gebaut.tenant.pk).delete()

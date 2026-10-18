@@ -1,0 +1,99 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Gremium anlegen und bearbeiten im neuen Rahmen (Issue #944): eine ruhige Formularspalte mit Abschnitten statt Kasten
+(Grunddaten, Sitzungsrecht und Öffentlichkeit, Sitzungsdienst, Zeitraum und Status), Felder dicht. Speichern ist die
+eine Hauptaktion am Formularende, „Abbrechen“ ein Textlink. Felder, Optionen, die Körperschaft (ab der zweiten, für
+Ämter ausgeblendet per Alpine) und Fehler wie session/organizations/form.html, die bisherige Seite bleibt. Kontext wie
+OrganizationCreateView/OrganizationUpdateView.
+{% endcomment %}
+
+{% block page_title %}{% if object %}Gremium bearbeiten{% else %}Neues Gremium{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Beim Bearbeiten: Weg zurück zum Gremium #}
+{% block brotkrumen_aktuell %}{% if object %}<c-rahmen.brotkrume href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=object.id %}">{{ object.name|truncatechars:60 }}</c-rahmen.brotkrume><c-rahmen.brotkrume>Bearbeiten</c-rahmen.brotkrume>{% else %}<c-rahmen.brotkrume>Neues Gremium</c-rahmen.brotkrume>{% endif %}{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="{% if object %}Gremium bearbeiten{% else %}Neues Gremium{% endif %}" dicht>
+    <c-slot name="oben">
+        {% if object %}
+        <c-insight.zurueck href="{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=object.id %}">{{ object.name|truncatechars:60 }}</c-insight.zurueck>
+        {% else %}
+        <c-insight.zurueck href="{% url 'session:organizations' tenant_slug=tenant_slug %}">Gremien</c-insight.zurueck>
+        {% endif %}
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+{% if object %}{% url 'session:organization_detail' tenant_slug=tenant_slug organization_id=object.id as abbrechen %}{% else %}{% url 'session:organizations' tenant_slug=tenant_slug as abbrechen %}{% endif %}
+<form method="post" class="max-w-3xl space-y-8" data-testid="gremium-formular">
+    {% include "session/neu/_formular_fehler.html" %}
+
+    <c-rahmen.abschnitt titel="Grunddaten" titel_id="grunddaten-titel">
+        <div class="mt-3 space-y-4"{% if "body" in form.fields %} x-data="{ orgType: '{{ form.organization_type.value|default:''|escapejs }}' }"{% endif %}>
+            {% if "body" in form.fields %}
+            <c-form.select :field="form.body" label="Körperschaft" required x-show="orgType !== 'department'" dicht
+                           help="Die Körperschaft, deren Gremium es ist. Sitzungen gehören über das Gremium zu ihr." />
+            <p x-show="orgType === 'department'" x-cloak class="text-sm text-gray-700 dark:text-gray-300">Ämter gehören zur Standardkörperschaft „{{ form.default_body.name }}“.</p>
+            {% endif %}
+            <c-form.field :field="form.name" label="Name" placeholder="z. B. Hauptausschuss" required dicht />
+            <div class="grid gap-4 sm:grid-cols-3">
+                <c-form.field :field="form.short_name" label="Kurzname" dicht />
+                <c-form.select :field="form.organization_type" label="Typ" required modell="{% if 'body' in form.fields %}orgType{% endif %}" dicht />
+                <div>
+                    <c-form.beschriftung feld="{{ form.parent.id_for_label }}">Übergeordnet</c-form.beschriftung>
+                    <select name="parent" id="id_parent"{% if form.parent.errors %} aria-invalid="true" aria-describedby="id_parent-error"{% endif %}
+                            class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.parent.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                        <option value="">Keins</option>
+                        {% for org in form.parent.field.queryset %}
+                        <option value="{{ org.id }}" {% if form.parent.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
+                        {% endfor %}
+                    </select>
+                    {% include "session/neu/_formular_feldfehler.html" with feld=form.parent %}
+                </div>
+            </div>
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Sitzungsrecht und Öffentlichkeit" titel_id="sitzungsrecht-titel">
+        <div class="mt-3 space-y-4">
+            <div>
+                <c-form.select :field="form.committee_kind" label="Gesetzliche Ausschussart" dicht
+                               help="Für Sitzungsformate: Haupt-, Finanz- und Rechnungsprüfungsausschuss haben teils besondere Regeln; „Anderer Ausschuss“, wenn keine zutrifft" />
+                {% if committee_kind_hint %}
+                <p class="mt-1 text-sm text-amber-800 dark:text-amber-300">Der Name deutet auf {{ committee_kind_hint }} hin. Bitte die Ausschussart festlegen.</p>
+                {% endif %}
+            </div>
+            <c-form.select :field="form.remote_local_rule" label="Zuschaltung (örtliche Regel)" dicht
+                           help="Nur wenn die Hauptsatzung für dieses Gremium von der Regel des Landesprofils abweicht" />
+            <c-form.select :field="form.publicity" label="Öffentlichkeit der Sitzungen" dicht
+                           help="Vorgabe für neue Sitzungen; ein stets nichtöffentlicher Ausschuss (z. B. Hauptausschuss) tagt immer nichtöffentlich" />
+            <c-form.checkbox :field="form.publish_dates" label="Termine nichtöffentlicher Sitzungen veröffentlichen (ohne Tagesordnung, Ort und Unterlagen)" dicht />
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Sitzungsdienst" titel_id="sitzungsdienst-titel">
+        <div class="mt-3 grid gap-4 sm:grid-cols-3">
+            <c-form.field :field="form.meeting_frequency" label="Sitzungsturnus" placeholder="z. B. monatlich" dicht />
+            {% include "session/neu/_formular_feld.html" with feld=form.invitation_period_days label="Ladungsfrist (Tage)" typ="number" min="0" wert=form.invitation_period_days.value|default:7 %}
+            {% include "session/neu/_formular_feld.html" with feld=form.target_member_count label="Mitgliederzahl (Soll)" typ="number" min="0" wert=form.target_member_count.value|default:'' %}
+            <c-form.field :field="form.default_meeting_location" label="Standard-Sitzungsort" dicht class="sm:col-span-2" />
+            {% include "session/neu/_formular_feld.html" with feld=form.default_meeting_start_time label="Standard-Beginn" typ="time" wert=form.default_meeting_start_time.value|time:'H:i'|default:form.default_meeting_start_time.value|default:'' %}
+            {% include "session/neu/_formular_feld.html" with feld=form.allowance_amount label="Sitzungsgeld (EUR)" typ="number" schritt="0.01" min="0" wert=form.allowance_amount.value|default:'0.00' %}
+        </div>
+    </c-rahmen.abschnitt>
+
+    {# Datum als ISO-Text: Datum beim Bearbeiten, Eingabe nach einem Fehler #}
+    <c-rahmen.abschnitt titel="Zeitraum und Status" titel_id="zeitraum-titel">
+        <div class="mt-3 grid gap-4 sm:grid-cols-3 sm:items-end">
+            {% include "session/neu/_formular_feld.html" with feld=form.start_date label="Beginn" typ="date" wert=form.start_date.value|default:''|stringformat:'s' %}
+            {% include "session/neu/_formular_feld.html" with feld=form.end_date label="Ende" typ="date" wert=form.end_date.value|default:''|stringformat:'s' %}
+            <c-form.checkbox name="is_active" label="Aktiv" checked="{% if form.is_active.value|default_if_none:True %}1{% endif %}" dicht class="sm:h-9 sm:items-center" />
+        </div>
+    </c-rahmen.abschnitt>
+
+    {% if object %}{% include "session/neu/_formular_aktionen.html" with knopf="Speichern" %}{% else %}{% include "session/neu/_formular_aktionen.html" with knopf="Gremium anlegen" %}{% endif %}
+    {# Am Ende: als erstes Kind gäbe das versteckte Feld dem ersten Abschnitt den Abstand von space-y #}
+    {% csrf_token %}
+</form>
+{% endblock %}

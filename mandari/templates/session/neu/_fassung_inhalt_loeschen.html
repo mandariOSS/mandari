@@ -1,0 +1,17 @@
+{% comment %}
+Datenschutz-Löschung eines gespeicherten Inhalts im neuen Rahmen (Issues #226, #944): klappt unter der Anlage auf, der
+Grund ist Pflicht, der Knopf ohne Füllfarbe mit derselben Rückfrage wie session/files/_purge_form.html. Nur für
+Einstellungsberechtigte eingebunden; der Server prüft, ob die Löschung zulässig ist (nicht aktueller Inhalt einer
+Anlage, nicht beschlossene Fassung). Kontext: blob, purge_key (eindeutig je Seite), tenant_slug, request.
+{% endcomment %}
+<details class="mt-1">
+    <summary class="cursor-pointer text-[0.8125rem] font-medium text-red-700 dark:text-red-400 hover:underline underline-offset-4">Inhalt endgültig löschen (Datenschutz)</summary>
+    <form method="post" action="{% url 'session:file_content_purge' tenant_slug=tenant_slug blob_id=blob.id %}"
+          class="mt-2 flex flex-wrap items-end gap-x-2 gap-y-3"
+          data-confirm="Inhalt endgültig löschen? Er verschwindet aus allen gesicherten Fassungen und lässt sich nicht wiederherstellen.">
+        {% csrf_token %}
+        <input type="hidden" name="next" value="{{ request.get_full_path }}">
+        <c-form.field name="reason" id="purge_reason_{{ purge_key }}" label="Grund der Löschung" placeholder="z. B. personenbezogene Daten" maxlength="300" required dicht class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-72" />
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="trash-2">Endgültig löschen</c-ui.button>
+    </form>
+</details>

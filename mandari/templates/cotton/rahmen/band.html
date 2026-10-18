@@ -1,0 +1,26 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Band einer Seite, gemeinsam für Insight und Work (Issues #783, #853): eine Fläche, Inhalt direkt darauf – keine Karte
+in der Karte. „hell“ für den Hauptinhalt, „grau“ für Ergänzendes; nie zwei gleiche Bänder nebeneinander.
+  <c-insight.band ton="grau" aria-labelledby="naehe-titel">…</c-insight.band>
+Im Bürgerportal läuft das Band über die volle Breite und setzt den Inhalt in die Seitenspalte. ``dicht`` (Work) ist
+eine Fläche innerhalb der Inhaltsspalte – etwa „Für die Fraktion“ neben dem Inhalt: 20 px Rand, Ecken 6 px, ohne
+eigene Spalte; mit ``titel`` (und ``titel_id``) trägt sie eine Überschrift in 16 px wie c-rahmen.abschnitt.
+  <c-rahmen.band ton="grau" dicht titel="Für die Fraktion" titel_id="fraktion-titel">…</c-rahmen.band>
+Ohne ``dicht`` bleibt das Markup von Insight gleich (c-insight.band).
+„ohne“ für gemeinsame Bereiche in Work (Issue #853, Suche): nur der Abschnitt, Breite und Abstände gibt der Rahmen
+von Work vor.
+{% endcomment %}
+<c-vars ton="hell" dicht="" titel="" titel_id="" />
+{% if ton == "ohne" %}
+<section {{ attrs }}>{{ slot }}</section>
+{% elif dicht %}
+<section {% if titel_id %}aria-labelledby="{{ titel_id }}" {% endif %}class="rounded-md px-5 py-5 {% if ton == 'grau' %}bg-band-grau{% else %}bg-band-hell{% endif %}" {{ attrs }}>
+    {% if titel %}<h2 {% if titel_id %}id="{{ titel_id }}" {% endif %}class="text-base font-semibold text-gray-900 dark:text-white">{{ titel }}</h2>{% endif %}
+    {{ slot }}
+</section>
+{% else %}
+<section class="{% if ton == 'grau' %}bg-band-grau{% else %}bg-band-hell{% endif %}" {{ attrs }}>
+    <div class="max-w-insight mx-auto px-4 sm:px-8 py-8 sm:py-12">{{ slot }}</div>
+</section>
+{% endif %}

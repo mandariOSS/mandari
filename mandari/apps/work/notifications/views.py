@@ -12,19 +12,21 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 from apps.common.params import int_param
+from apps.work.rahmen import NeueVorlageMixin
 
 from . import ankuendigung
 from .models import Notification, NotificationType
 from .services import NotificationHub
 
 
-class NotificationCenterView(WorkViewMixin, TemplateView):
+class NotificationCenterView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Full notification center page."""
 
     # Nur eigene Benachrichtigungen (recipient=self.membership) – auch Gäste pollen die Glocke
     guest_allowed = True
 
     template_name = "work/notifications/center.html"
+    neue_vorlage = "work/notifications/neu/liste.html"
     permission_required = None  # All members can view their notifications
 
     def get_context_data(self, **kwargs):
@@ -37,15 +39,16 @@ class NotificationCenterView(WorkViewMixin, TemplateView):
         offset = (page - 1) * per_page
 
         own = NotificationHub.for_recipient(self.membership)
-        notifications = own.select_related("actor__user")[offset : offset + per_page]
-
         total = own.count()
+        # Reiter „Ungelesen“ (?filter=unread) zeigt nur Ungelesenes; bisher zeigte er alle (Issue #951)
+        liste = own.filter(is_read=False) if self.request.GET.get("filter") == "unread" else own
+        notifications = liste.select_related("actor__user")[offset : offset + per_page]
 
         context["notifications"] = notifications
         context["total_count"] = total
         context["unread_count"] = NotificationHub.get_unread_count(self.membership)
         context["page"] = page
-        context["has_more"] = (offset + per_page) < total
+        context["has_more"] = (offset + per_page) < (total if liste is own else liste.count())
         context["notification_types"] = NotificationType.choices
 
         return context

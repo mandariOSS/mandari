@@ -1,0 +1,40 @@
+{% comment %}
+Tabellen-Kontextleiste des Dokumenteditors: erscheint, wenn der Cursor in einer Tabelle steht.
+Alpine-Komponente documentEditor (Ereignis editor-table-cmd).
+{% endcomment %}
+<!-- Tabellen-Kontextleiste (erscheint, wenn der Cursor in einer Tabelle steht) -->
+<div x-show="formats.table" x-cloak
+     class="border-b border-gray-200 dark:border-gray-700 px-4 py-1 flex flex-wrap items-center gap-1 bg-gray-50 dark:bg-gray-800/60 flex-shrink-0 text-xs text-gray-600 dark:text-gray-300">
+    <span class="font-medium mr-2 flex items-center gap-1">
+        <i data-lucide="table" class="w-3.5 h-3.5"></i> Tabelle:
+    </span>
+    <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowBefore')"
+            class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Zeile oberhalb einfügen">
+        Zeile davor
+    </button>
+    <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addRowAfter')"
+            class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Zeile unterhalb einfügen">
+        Zeile danach
+    </button>
+    <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnBefore')"
+            class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Spalte links einfügen">
+        Spalte davor
+    </button>
+    <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'addColumnAfter')"
+            class="px-2 py-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700" title="Spalte rechts einfügen">
+        Spalte danach
+    </button>
+    <span class="border-l border-gray-300 dark:border-gray-600 h-4 mx-1"></span>
+    <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteRow')"
+            class="px-2 py-1 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" title="Aktuelle Zeile löschen">
+        Zeile löschen
+    </button>
+    <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteColumn')"
+            class="px-2 py-1 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" title="Aktuelle Spalte löschen">
+        Spalte löschen
+    </button>
+    <button type="button" @mousedown.prevent="$dispatch('editor-table-cmd', 'deleteTable')"
+            class="px-2 py-1 rounded text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20" title="Ganze Tabelle löschen">
+        Tabelle löschen
+    </button>
+</div>

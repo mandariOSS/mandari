@@ -66,6 +66,17 @@ events:
   redactNeutralize: false
 
 # -----------------------------------------------------------------------------
+# Mailversand (DEPLOYMENT.md, „Mailversand: Message-ID und EHLO“); gilt für Anwendung und Worker
+# -----------------------------------------------------------------------------
+mail:
+  # Absender, wenn die Systemeinstellungen keinen nennen (DEFAULT_FROM_EMAIL), z. B. noreply@meine-kommune.de
+  fromEmail: ""
+  # Domain hinter dem @ der Message-ID und Name im EHLO gegenüber dem Mailserver (EMAIL_MESSAGE_ID_DOMAIN),
+  # ein vollständiger Domainname. Leer = Domain von fromEmail, ohne fromEmail die von `domain`. Setzen, wenn
+  # der Absender in den Systemeinstellungen eine andere Domain hat.
+  messageIdDomain: ""
+
+# -----------------------------------------------------------------------------
 # Anwendung (Django)
 # -----------------------------------------------------------------------------
 app:
@@ -86,12 +97,19 @@ app:
   tolerations: []
   affinity: {}
 
-# Marketing-Website (Wagtail) – optional
+# Marketing-Website (Wagtail) – optional. Das Image lauscht auf Port 8001, läuft ohne eigenen
+# Benutzer (hier mit podSecurityContext als UID 1000) und schreibt nur nach /app/staticfiles
+# (emptyDir) und /app/media (eigenes Volume). Migrationen laufen im Migrations-Job.
+# Die Datenbank <postgres.database>_website legt der mitgelieferte Postgres nur beim ersten Start an.
 website:
   enabled: false
   replicas: 1
-  # Eigener Hostname; leer = derselbe Host unter /website
+  # Eigener Hostname für die Website. Leer = kein Ingress-Eintrag, die Website ist dann nur
+  # clusterintern erreichbar (Service <release>-website).
   host: ""
+  media:
+    size: 2Gi
+    className: ""
   resources:
     requests:
       cpu: 100m
@@ -99,11 +117,28 @@ website:
     limits:
       memory: 1Gi
 
-# OParl-Synchronisation (Hintergrunddienst, kein Port)
+# OParl-Synchronisation: python -m src.main daemon (wie im Dienst ingestor in docker-compose.yml)
 ingestor:
   enabled: true
-  # Intervall der inkrementellen Synchronisation in Minuten
+  # Grundtakt in Minuten werktags 07–19 Uhr (daemon --interval); sonst stündlich, am Wochenende alle 2 Stunden,
+  # an Sitzungstagen und am Vortag alle 5 Minuten, je Quelle über sync_config["sync_schedule"] (docs/ABRUFREGELN.md)
   syncInterval: 15
+  # Beginn des nächtlichen Standardfensters für Vollabgleiche, 5 Stunden lang (daemon --full-sync-hour); Quellen mit
+  # eigenem full_sync_window gleichen in ihrem Fenster ab. Quellen gleichzeitig: INGESTOR_SYNC_POOL_SIZE in extraEnv
+  fullSyncHour: 3
+  # Gleichzeitige HTTP-Anfragen (daemon --concurrent)
+  concurrent: 10
+  # /metrics (Prometheus) und /health (Probes) des Ingestors
+  metricsPort: 9090
+  # Adressraum je Tesseract-Unterprozess (OCR_MEMORY_LIMIT_MB), deutlich unter dem Speicherlimit halten
+  ocrMemoryLimitMb: 384
+  # Zusätzliche Argumente für daemon und Umgebungsvariablen nur für den Ingestor
+  extraArgs: []
+  extraEnv: {}
+  # Arbeitsverzeichnis /app/data (Zwischenstände des Abrufs)
+  data:
+    size: 2Gi
+    className: ""
   resources:
     requests:
       cpu: 100m
@@ -148,19 +183,63 @@ worker:
   affinity: {}
   # Texterkennung und KI (Warteschlangen ocr, ai) in einem eigenen Worker: Jeder Neustart eines
   # Runners wartet auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails
-  # und Suche nicht darauf, und der Speicherbedarf bekommt ein eigenes Limit.
+  # und Suche nicht darauf, und der Speicherbedarf bekommt ein eigenes Limit. Mit
+  # TEXT_EXTRACTION_RUNNER=worker (files.textExtractionRunner) erkennt er den Text aus Ablage und Objektspeicher
+  # (docs/adr/20261007-dokumentkette.md); ocr läuft mit Parallelität 1.
   heavy:
     enabled: true
     replicas: 1
     queues: "ocr,ai"
+    # Runner bis 800 MB plus ein Tesseract-Unterprozess bis ocrMemoryLimitMb unter dem Limit (3Gi)
     maxMemoryMb: 800
     extraArgs: []
+    # Adressraum je Tesseract-Unterprozess nur in worker-heavy (OCR_MEMORY_LIMIT_MB statt
+    # files.ocrMemoryLimitMb); höchstens Limit minus 1 GB
+    ocrMemoryLimitMb: 2048
     resources:
       requests:
         cpu: 100m
         memory: 256Mi
       limits:
-        memory: 1Gi
+        memory: 3Gi
+  # Live-Übertragungen (Warteschlange live, docs/LIVE_UEBERTRAGUNG.md) in einem eigenen Worker wie
+  # worker-live in docker-compose.yml: lange OCR- oder Mailaufträge halten die Lesungen nicht auf.
+  # Ohne eigenen Worker bedient der Hauptworker die Warteschlange live mit.
+  live:
+    enabled: true
+    replicas: 1
+    concurrency: "live=2"
+    maxMemoryMb: 400
+    extraArgs: []
+    resources:
+      requests:
+        cpu: 50m
+        memory: 128Mi
+      limits:
+        # Der Runner startet oberhalb von maxMemoryMb neu; Tesseract-Unterprozesse brauchen den Rest
+        memory: 512Mi
+
+# Live-Übertragungen von Gremiensitzungen (LIVE_UEBERTRAGUNG_AKTIV), Standard aus: keine Anfragen an
+# Streaming-Anbieter, kein Zeitplan
+liveStreams:
+  enabled: false
+
+# Dokumentablage und Texterkennung (docs/FILE_CACHE.md); gilt für Anwendung, Worker und Ingestor
+files:
+  # Ablage nach SHA-256 mit Referenzzählung (FILE_STORE_LAYOUT)
+  storeLayout: sha256
+  # Der Ingestor legt Dateien, die er für den Text lädt, selbst ab (INGESTOR_STORES_FILES)
+  ingestorStoresFiles: true
+  # Mindestens so viel Platz frei lassen (FILE_CACHE_MIN_FREE_GB)
+  minFreeGb: 15
+  # Wer den Text der RIS-Dateien erkennt (TEXT_EXTRACTION_RUNNER, DEPLOYMENT.md „Dokumentkette
+  # einschalten“): ingestor (Standard, der Ingestor lädt und erkennt selbst) oder worker (Aufträge im
+  # worker-heavy, lesen nur aus Ablage und Objektspeicher; braucht TASKS_BACKEND=journal über
+  # app.extraEnv). Gilt für Anwendung, Worker und Ingestor zugleich, deshalb hier und nicht in
+  # app.extraEnv setzen.
+  textExtractionRunner: ingestor
+  # Adressraum je Tesseract-Unterprozess in Anwendung und Workern (OCR_MEMORY_LIMIT_MB)
+  ocrMemoryLimitMb: 512
 
 # -----------------------------------------------------------------------------
 # Datenhaltung
@@ -173,6 +252,12 @@ postgres:
   database: mandari
   username: mandari
   password: ""          # leer = wird erzeugt
+  # Beim Start geladene Bibliotheken (shared_preload_libraries). pg_stat_statements zählt Zeit und Aufrufe je
+  # SQL-Abfrage (DEPLOYMENT.md, „Teuerste Abfragen“, Issue #1024); die Erweiterung legt die Migration an.
+  # Der Wert ersetzt shared_preload_libraries aus postgresql.conf und ALTER SYSTEM: dort geladene Bibliotheken mit
+  # aufführen (kommagetrennt). Leer = kein Argument, dann gilt die Konfiguration des Servers. Eine Änderung, auch das
+  # erste Upgrade auf diese Vorgabe, startet die Datenbank sofort neu. Verwaltete Datenbank: beim Anbieter einschalten.
+  sharedPreloadLibraries: pg_stat_statements
   storage:
     size: 20Gi
     className: ""       # leer = Standardklasse des Clusters
@@ -237,13 +322,15 @@ persistence:
 # -----------------------------------------------------------------------------
 ingress:
   enabled: true
-  className: nginx
+  # Leer = Standard-Ingress-Klasse des Clusters (k3s: traefik). install-k8s.sh setzt die erkannte Klasse.
+  className: ""
   # TLS über cert-manager. Ohne cert-manager: tls.enabled=false und eigenes
   # Zertifikat als Secret hinterlegen (tls.secretName).
   tls:
     enabled: true
     clusterIssuer: letsencrypt-prod
     secretName: ""
+  # Wirken nur mit ingress-nginx; andere Controller ignorieren sie.
   annotations:
     nginx.ingress.kubernetes.io/proxy-body-size: "100m"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
@@ -255,10 +342,19 @@ service:
 # -----------------------------------------------------------------------------
 # Betrieb
 # -----------------------------------------------------------------------------
-# Migrationen und Rolleneinrichtung laufen als Job vor jedem Upgrade
+# Migrationen wie update.sh in zwei Schritten (deploy/kubernetes/README.md, „Migrationen“):
+#   Installation: Job <release>-migrate (migrate, Rollen, Suchindex, Admin-Konto, Website)
+#   Upgrade:      pre-upgrade  <release>-migrate-pre  (safemigrate, Website-Migrationen)
+#                 post-upgrade <release>-migrate-post (migrate, Rollen, Suchindex, Admin-Konto)
+# Anwendung, Worker und Ingestor warten per initContainer, bis alle Migrationen eingespielt sind,
+# die vor dem Ausrollen laufen dürfen. Abschalten nur, wenn das Schema anders gepflegt wird.
 migrationJob:
   enabled: true
   backoffLimit: 2
+  # Fertige Installations-Jobs nach so vielen Sekunden entfernen (Logs bis dahin lesbar)
+  ttlSecondsAfterFinished: 86400
+  # Höchstens so lange warten die Pods auf das Schema, dann startet der initContainer neu
+  waitTimeoutSeconds: 1800
   resources:
     requests:
       cpu: 250m
@@ -276,6 +372,11 @@ tracing:
   otlpEndpoint: ""
 
 timezone: Europe/Berlin
+
+# IndexNow (Issue #939): geänderte Seiten an Bing, Yandex & Co. melden; leer = aus. Schlüssel aus 8–128 Zeichen
+# A–Z, a–z, 0–9 und -, z. B. `openssl rand -hex 16`. Anwendung und Website nutzen denselben Wert.
+indexnow:
+  key: ""
 
 serviceAccount:
   create: true

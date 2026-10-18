@@ -21,7 +21,9 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
   zugeschaltet teilnimmt (Niedersachsen: geheime Wahlen und Abstimmungen), schreibt der Service keine Stimmen.
 """
 
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass, field
+from datetime import time
 from typing import Any
 
 from django.db import transaction
@@ -144,6 +146,7 @@ def eligibility(
     *,
     voting_method: str | None = None,
     is_election: bool | None = None,
+    at: time | None = None,
 ) -> Eligibility:
     """
     Stimmberechtigte Anwesende, beratende Anwesende und Vollständigkeit der Anwesenheit.
@@ -160,6 +163,11 @@ def eligibility(
     Teilnahmeart (Issue #139): Zugeschaltete mit andauernder Störung stimmen nicht ab
     (``unreachable``). Mit TOP (``item``, Abstimmungsart und Wahl ggf. aus dem Formular) gilt die Regel
     des Landesprofils für Wahlen und geheime Abstimmungen (``remote_excluded``).
+
+    ``at``: Zeitpunkt der Abstimmung (Ortszeit). Dann zählt die Störung zu diesem Zeitpunkt, auch wenn sie
+    inzwischen beendet ist – für Erfassen, Nacherfassen und Berichtigen nach der Abstimmung
+    (``participation_service.vote_time``, Issue #1045). Ohne ``at`` zählt wie bisher die andauernde Störung
+    (Live-Anzeige, Abstimmung ohne bekannten Zeitpunkt).
     """
     from . import attendance_service
 
@@ -192,7 +200,7 @@ def eligibility(
                 result.advisory.append(attendance)
             else:
                 result.others.append(attendance)
-        elif can_vote(attendance) and participation_service.is_disrupted(attendance):
+        elif can_vote(attendance) and participation_service.is_disrupted(attendance, at=at):
             result.unreachable.append(attendance)
         elif can_vote(attendance) and rule is not None and rule.excluded and attendance.is_remote:
             result.remote_excluded.append(attendance)
@@ -212,6 +220,80 @@ def eligibility(
     listed = {a.person_id for a in attendances}
     result.complete = bool(members) and not undecided and members <= listed
     return result
+
+
+def kept_votes(item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[Any, SessionVote]) -> set[Any]:
+    """
+    Person-IDs von Zugeschalteten, die bei der Abstimmung gestört sind, deren erfasste Stimme aber gilt (Issue #1045).
+
+    Gilt, wenn sie im Abstimmungsfenster des Sitzungscockpits (ab ``vote_opened_at``) und vor Beginn der Störung
+    gespeichert wurde: Die Person war bei der Stimmabgabe erreichbar. Das gilt im offenen Fenster (andauernde Störung)
+    wie nach dem Schließen (Störung zum Zeitpunkt der Abstimmung, ``assessed`` mit ``at``). Nicht dazu gehören:
+
+    - Stimmen aus einer abgebrochenen Runde. ``cancel_vote`` lässt sie stehen, für die neue Runde (neues
+      ``vote_opened_at``) hat die Person aber nicht abgestimmt;
+    - Stimmen ohne Abstimmungsfenster im Cockpit: Wann abgestimmt wurde, ist unbekannt;
+    - Ja, Nein und Enthaltung in einer geheimen Abstimmung, die dort nicht gespeichert werden (Vermerke bleiben).
+
+    Befangenheitsvermerke (Mitwirkungsverbot) bleiben immer, auch ohne Abstimmungsfenster und wenn sie vor dem Öffnen
+    eingetragen wurden: Befangen ist die Person unabhängig davon, ob sie erreichbar ist.
+
+    Störungen sind minutengenau erfasst; eine Stimme aus der Minute ihres Beginns zählt nicht als vorher.
+
+    Grenze: Eine Stimme aus einer früheren Runde, die in der neuen Runde nur unverändert bestätigt wird, behält ihren
+    alten Zeitpunkt (unveränderte Stimmen schreibt :func:`capture_votes` nicht neu) und ist nicht als Stimme dieser
+    Runde erkennbar. Wird die Person danach in derselben Runde gestört, entfällt sie – wie schon vor dieser Regel.
+
+    Das Sitzungscockpit zählt beim Schließen weiter alle gespeicherten Stimmen (:func:`recompute_sums`); eine
+    gemeinsame Regel für Cockpit, Erfassung und die Namenslisten der Niederschrift ist eine eigene Aufgabe.
+    ``votes``: gespeicherte Stimmen des TOP je Person-ID.
+    """
+    opened = item.vote_opened_at
+    until = item.vote_closed_at or timezone.now()
+    at = participation_service.vote_time(item)
+    secret = item.voting_method == "secret"
+    kept = set()
+    for attendance in assessed.unreachable:
+        vote = votes.get(attendance.person_id)
+        if vote is not None and vote.vote == "excluded":
+            kept.add(attendance.person_id)
+            continue
+        if vote is None or opened is None or (secret and vote.vote in SessionVote.COUNTED_VOTES):
+            continue
+        starts = [
+            participation_service.disruption_start(disruption, until)
+            for disruption in participation_service.disruptions(attendance)
+            if (disruption.ongoing if at is None else disruption.covers(at))
+        ]
+        if starts and opened <= vote.updated_at < min(starts):
+            kept.add(attendance.person_id)
+    return kept
+
+
+def guard_kept_votes(
+    item: SessionAgendaItem, assessed: Eligibility, votes_by_person: dict[Any, str], *, remove: Collection[str]
+) -> None:
+    """
+    Formularwerte der Abstimmungserfassung für gültige Stimmen gestörter Personen (:func:`kept_votes`) bereinigen.
+
+    Entfernt wird eine solche Stimme nur, wenn es ausdrücklich gewählt ist (``remove``: Person-IDs als Text); ein
+    leeres Feld, etwa aus einer früher geladenen Seite, trifft sie nicht. Ein unveränderter Wert wird nicht neu
+    geschrieben, sonst läge ihr Zeitpunkt nach Beginn der Störung. Geänderte Werte bleiben stehen und lehnt
+    :func:`capture_votes` ab. In einer geheimen Abstimmung entfallen Ja, Nein und Enthaltung gestörter Personen wie
+    die aller anderen.
+    """
+    stored = {vote.person_id: vote for vote in item.votes.select_related("person")}
+    for person_id in kept_votes(item, assessed, stored):
+        vote = stored[person_id]
+        if str(person_id) in remove:
+            votes_by_person[vote.person] = ""
+        elif vote.person in votes_by_person and votes_by_person[vote.person] in ("", vote.vote):
+            del votes_by_person[vote.person]
+    if item.voting_method == "secret":
+        for attendance in assessed.unreachable:
+            counted = stored.get(attendance.person_id)
+            if counted is not None and counted.vote in SessionVote.COUNTED_VOTES:
+                votes_by_person.setdefault(counted.person, "")
 
 
 @dataclass(frozen=True)
@@ -238,7 +320,9 @@ def check_counts(
     Harter Fehler bei vollständig erfasster Anwesenheit; sonst Warnung – die Zahl der erfassten
     Stimmberechtigten ist dann keine verlässliche Obergrenze. Ohne Anwesenheitsliste keine Prüfung.
     """
-    assessed = assessed or eligibility(agenda_item.meeting, agenda_item)
+    assessed = assessed or eligibility(
+        agenda_item.meeting, agenda_item, at=participation_service.vote_time(agenda_item)
+    )
     if not assessed.has_list:
         return CountCheck()
     # Vom Landesprofil ausgeschlossene Zugeschaltete zählen nicht (auch bei einer Prüfung ohne TOP-Bezug)
@@ -331,10 +415,12 @@ def capture_votes(
                 )
                 geaendert.append(_aenderung(person, None, vote_value))
                 schreibende.append(person)
-            elif bestehend.vote != vote_value or bestehend.recorded_by_id != getattr(recorded_by, "pk", None):
-                if bestehend.vote != vote_value:
-                    geaendert.append(_aenderung(person, bestehend.vote, vote_value))
-                    schreibende.append(person)
+            elif bestehend.vote != vote_value:
+                # Nur geänderte Stimmen erhalten Erfasser und Zeitpunkt neu: Eine unveränderte Stimme behält, wann und
+                # von wem sie erfasst wurde. Der Zeitpunkt entscheidet, ob sie vor Beginn einer (auch später
+                # nacherfassten) Störung abgegeben wurde (kept_votes, Issue #1045)
+                geaendert.append(_aenderung(person, bestehend.vote, vote_value))
+                schreibende.append(person)
                 bestehend.vote = vote_value
                 bestehend.recorded_by = recorded_by
                 bestehend.updated_at = jetzt  # bulk_update setzt auto_now nicht selbst
@@ -346,7 +432,10 @@ def capture_votes(
         else:
             protocol_lock.ensure_unlocked(agenda_item.meeting_id)
         if schreibende:
-            beurteilt = assessed or eligibility(agenda_item.meeting, agenda_item)
+            # Störungen zum Zeitpunkt der Abstimmung, sofern bekannt (Issue #1045)
+            beurteilt = assessed or eligibility(
+                agenda_item.meeting, agenda_item, at=participation_service.vote_time(agenda_item)
+            )
             sperre = beurteilt.remote_rule
             if sperre is not None and sperre.barred:
                 # In dieser Sitzung unzulässig (Issue #754): keine Stimmen, auch keine Vermerke

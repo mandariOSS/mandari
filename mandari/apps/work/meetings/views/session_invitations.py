@@ -21,6 +21,7 @@ from django.views.generic import TemplateView
 from apps.common.mixins import WorkViewMixin
 from apps.session.models import SessionInvitationRecipient, SessionPerson
 from apps.session.services import invitation_response_service, invitation_service, portal_link_service
+from apps.work.rahmen import NeueVorlageMixin
 
 
 def _portal_person(view: Any) -> SessionPerson | None:
@@ -37,10 +38,11 @@ def _recipient_or_404(view: Any, recipient_id: Any) -> tuple[SessionPerson, Sess
     return person, recipient
 
 
-class SessionInvitationListView(WorkViewMixin, TemplateView):
-    """Anstehende Ladungen der Verwaltung mit Empfangsbestätigung und Rückmeldung."""
+class SessionInvitationListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
+    """Anstehende Ladungen der Verwaltung mit Empfangsbestätigung und Rückmeldung (neues Erscheinungsbild: #951)."""
 
     template_name = "work/meetings/session_invitations.html"
+    neue_vorlage = "work/meetings/neu/ladungen.html"
     permission_required = "meetings.view"
 
     def get_context_data(self, **kwargs: Any) -> dict[str, Any]:

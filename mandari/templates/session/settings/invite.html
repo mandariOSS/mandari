@@ -15,6 +15,8 @@
     <span class="text-gray-900 dark:text-white font-medium">Einladen</span>
 </nav>
 {% endblock %}
+{# Neuer Rahmen (Issue #944): Weg zurück zu den Benutzern #}
+{% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:users' tenant_slug=tenant_slug %}">Benutzer</c-rahmen.brotkrume><c-rahmen.brotkrume>Einladen</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
 <div class="max-w-xl mx-auto">

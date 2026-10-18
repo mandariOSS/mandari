@@ -44,13 +44,14 @@ def quelle_synchronisieren(source_id: str, full: bool = False) -> None:
 @task(queue_name="ocr")
 def file_extract_text(file_id: str) -> None:
     """
-    Auftrag ``file.extract_text`` (Issue #530): Text einer RIS-Datei mit der gemeinsamen Texterkennung
-    (``mandari_dokumente``), eingereiht vom Zeitplan ``texterkennung_einplanen`` bei
-    ``TEXT_EXTRACTION_RUNNER=worker``. Wiederholbar: Eine erledigte Datei wird übersprungen.
+    Auftrag ``file.extract_text`` (Issues #530, #919): Text einer RIS-Datei aus der Ablage erkennen, eingereiht vom
+    Zeitplan ``texterkennung_einplanen`` bei ``TEXT_EXTRACTION_RUNNER=worker``. Dünne Hülle: Der registrierte Pfad
+    bleibt, damit wartende Aufträge über einen Deploy weiterlaufen; die Logik liegt in ``hub.ris.erkennung``.
+    Wiederholbar: Eine erledigte oder beanspruchte Datei wird übersprungen.
     """
-    from .services.text_extraction_job import extract_file
+    from hub.ris.erkennung import erkennen
 
-    ergebnis = extract_file(file_id)
+    ergebnis = erkennen(file_id)
     logger.info("Texterkennung Datei %s: %s", file_id, ergebnis)
 
 

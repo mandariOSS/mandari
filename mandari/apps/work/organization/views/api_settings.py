@@ -17,14 +17,16 @@ from django.views.generic import TemplateView
 from apps.common.hilfe import docs_url
 from apps.common.mixins import WorkViewMixin
 from apps.work.faction.models import FactionPublicApiAccess
+from apps.work.rahmen import NeueVorlageMixin
 
 from .. import selectors, services
 
 
-class OrganizationApiSettingsView(WorkViewMixin, TemplateView):
+class OrganizationApiSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """API-Reiter in den Organisationseinstellungen."""
 
     template_name = "work/organization/api_settings.html"
+    neue_vorlage = "work/organization/neu/api.html"
     permission_required = "faction.manage"
 
     def get_context_data(self, **kwargs):

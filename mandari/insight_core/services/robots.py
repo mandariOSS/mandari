@@ -3,10 +3,14 @@
 robots.txt-Prüfung für Abrufe aus Django (RFC 9309, Auswertung in :mod:`mandari_oparl.robots`).
 
 Gilt für jeden automatischen Abruf bei einer Quelle: Dokument-Cache, Textextraktion, Dateivorschau,
-Personenfotos und das Anlegen einer Quelle. Der Ingestor prüft seine Abrufe selbst
-(``ingestor/src/client/robots.py``) mit denselben Regeln.
+Personenfotos, Löschabgleich und das Anlegen einer Quelle, auch für das Ziel jeder Weiterleitung
+(:mod:`~insight_core.services.redirects`). Der Ingestor prüft seine Abrufe selbst
+(``ingestor/src/client/robots.py``) mit denselben Regeln. Maßgeblich ist das Produkt-Token ``mandari-ingestor``
+(dazu das Token einer abweichenden Kennung der Quelle); Gruppen für frühere Kennungen (``mandari-file-cache``,
+``mandari``) gelten zusätzlich, wenn es sie gibt (:data:`mandari_oparl.crawler.LEGACY_TOKENS`).
 
-Die robots.txt eines Hosts liegt 24 Stunden im gemeinsamen Django-Cache (alle Prozesse), je Host und
+Die robots.txt eines Hosts liegt 24 Stunden im gemeinsamen Django-Cache (alle Prozesse), je Hostname
+(:func:`mandari_oparl.robots.host_key`, ohne Schema, Port und Unterschiede der Schreibweise, Issue #1036) und
 User-Agent: Manche Server filtern Wörter im User-Agent und antworten dann auch auf ``/robots.txt`` mit 403.
 Abruf mit dem User-Agent, mit dem auch die Datei geladen wird (:func:`user_agent_for`), und
 ``Accept: text/plain``.
@@ -29,6 +33,7 @@ from typing import Any
 
 import httpx
 from django.core.cache import cache
+from django.db.models import Q
 from mandari_oparl.crawler import PRODUCT_TOKEN, product_token, user_agent
 from mandari_oparl.robots import (
     CACHE_SECONDS,
@@ -50,7 +55,8 @@ logger = logging.getLogger(__name__)
 #: Kennung aller automatischen Abrufe aus Django (gleiches Produkt-Token wie der Ingestor)
 USER_AGENT = user_agent()
 
-_CACHE_PREFIX = "robots-txt:v2:"
+# v3: Schlüssel je Hostname statt je Schema, Host und Port (Issue #1036)
+_CACHE_PREFIX = "robots-txt:v3:"
 #: Eintrag samt letzter gültiger Fassung bleibt so lange im Cache (Frische regelt ``fetched_at``)
 _CACHE_TIMEOUT = 30 * 24 * 3600
 _TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
@@ -60,9 +66,11 @@ __all__ = [
     "KIND_FILES",
     "SKIP_ERROR_PREFIX",
     "USER_AGENT",
+    "cached_check",
     "check",
     "decide",
     "load",
+    "peek",
     "requeue_blocked_files",
     "sync_config_of",
     "user_agent_for",
@@ -81,19 +89,26 @@ def _fetch(
     url: str, agent: str = USER_AGENT, *, sync_config: Any = None, max_wait: float | None = None
 ) -> tuple[int | None, bytes]:
     """
-    robots.txt abrufen. Der Abruf zählt wie jede Anfrage an den Host (Drossel je Host); mit ``max_wait`` wird
-    höchstens so lange gewartet, sonst folgt :class:`~insight_core.services.host_pacing.PacingBusyError`.
+    robots.txt abrufen. Der Abruf zählt wie jede Anfrage an den Host (Drossel je Host), auch jede Weiterleitung
+    (höchstens fünf, :mod:`~insight_core.services.redirects`); mit ``max_wait`` wird insgesamt höchstens so lange
+    gewartet, sonst folgt :class:`~insight_core.services.host_pacing.PacingBusyError`.
     """
-    from . import host_pacing
+    from . import host_pacing, redirects
     from .safe_fetch import guarded_client
 
     target = robots_url(url)
+    # Eine Frist für die robots.txt und alle ihre Weiterleitungen
+    deadline = redirects.deadline_after(max_wait)
     if not host_pacing.wait(target, sync_config=sync_config, max_wait=max_wait):
         raise host_pacing.PacingBusyError(target)
+    before_redirect = redirects.guard(sync_config=sync_config, deadline=deadline, check_robots=False)
     try:
-        with guarded_client(timeout=_TIMEOUT, follow_redirects=True, max_redirects=5) as client:
-            response = client.get(target, headers={"User-Agent": agent, "Accept": "text/plain"})
+        with guarded_client(timeout=_TIMEOUT) as client:
+            request = client.build_request("GET", target, headers={"User-Agent": agent, "Accept": "text/plain"})
+            response = redirects.send(client, request, before_redirect=before_redirect)
             return response.status_code, response.content[:MAX_BYTES]
+    except redirects.RedirectBusyError as exc:
+        raise host_pacing.PacingBusyError(target) from exc
     except httpx.HTTPError as exc:
         logger.warning("robots.txt %s nicht abrufbar (%s), Abrufe werden zurückgestellt", target, type(exc).__name__)
         return None, b""
@@ -205,10 +220,43 @@ def check(
     return decide(url, agent=agent, sync_config=sync_config, max_wait=max_wait)
 
 
+def peek(url: str, *, agent: str | None = None) -> RobotsTxt | None:
+    """
+    Ausgewertete robots.txt zum Host von ``url`` nur aus dem Cache, ohne Abruf und ohne Blick auf die Frische;
+    ``None``, wenn keine vorliegt. War sie zuletzt nicht erreichbar, gilt die letzte gültige Fassung.
+
+    Für Hintergrundläufe, die keine Anfrage an die Quelle stellen dürfen (Obergrenze des Dokument-Caches, #961).
+    """
+    entry: dict[str, Any] | None = cache.get(_cache_key(url, agent or USER_AGENT))
+    if not entry:
+        return None
+    current = _from_entry(entry)
+    last_good = entry.get("last_good")
+    if current.state == STATE_UNREACHABLE and last_good:
+        return _from_entry(last_good)
+    return current
+
+
+def cached_check(
+    url: str, kind: str = KIND_FILES, *, sync_config: Any = None, agent: str | None = None
+) -> Decision | None:
+    """Wie :func:`check`, aber nur mit der robots.txt aus dem Cache (``None``: keine bekannt). Fragt nie an."""
+    override = robots_override(sync_config)
+    if override is not None and override.covers(kind):
+        return override.decision()
+    agent = agent or USER_AGENT
+    robots_txt = peek(url, agent=agent)
+    if robots_txt is None:
+        return None
+    return robots_txt.decide(url, tokens=(product_token(agent), PRODUCT_TOKEN))
+
+
 def requeue_blocked_files(source: Any) -> dict[str, int]:
     """
     Wegen der robots.txt übersprungene Dateien einer Quelle neu einreihen (nach Freigabe oder geänderter
-    robots.txt): Textextraktion wieder ``pending``, Dokument-Cache wieder ``none``. Rückgabe: Anzahl je Weg.
+    robots.txt): Textextraktion wieder ``pending``, Dokument-Cache wieder ``none`` – verweigerte Abrufe
+    (``refused`` mit Fehlercode ``robots``, ``hub.ris.abruf``) und ältere Einträge mit ``error``. Rückgabe:
+    Anzahl je Weg.
     """
     from ..models import OParlFile
 
@@ -216,7 +264,10 @@ def requeue_blocked_files(source: Any) -> dict[str, int]:
     extraction = files.filter(
         text_extraction_status="skipped", text_extraction_error__startswith=SKIP_ERROR_PREFIX
     ).update(text_extraction_status="pending", text_extraction_error=None)
-    file_cache = files.filter(local_status="error", local_error__startswith=SKIP_ERROR_PREFIX).update(
-        local_status="none", local_error=""
+    gesperrt = Q(local_status="refused", fetch_error="robots") | Q(
+        local_status="error", local_error__startswith=SKIP_ERROR_PREFIX
+    )
+    file_cache = files.filter(gesperrt).update(
+        local_status="none", local_error="", fetch_error="", fetch_attempts=0, fetch_next_at=None
     )
     return {"extraction": extraction, "file_cache": file_cache}

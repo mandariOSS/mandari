@@ -1,0 +1,61 @@
+{% comment %}
+Mitglieder: offene Einladungen und Registrierungen (Issue #951), je eine Liste mit Linien statt farbiger Kästen.
+Formulare, Ziele und Rückfragen wie bisher (invitation_resend, invitation_cancel mit Rückfrage, member_approve,
+member_reject mit Begründung und Rückfrage). Kontext: pending_invitations, pending_registrations.
+{% endcomment %}
+<div class="grid grid-cols-1 gap-x-12 gap-y-10 2xl:grid-cols-2">
+    {% if pending_invitations %}
+    <c-rahmen.abschnitt titel="Offene Einladungen" titel_id="einladungen-titel" zusatz="{{ pending_invitations.count }}">
+        <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="offene-einladungen">
+            {% for invitation in pending_invitations %}
+            <li class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 py-2.5">
+                <div class="min-w-0">
+                    <p class="text-sm font-medium text-gray-900 dark:text-white break-all">{{ invitation.email }}</p>
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">
+                        Eingeladen von {{ invitation.invited_by.get_full_name|default:invitation.invited_by.email }} am {{ invitation.created_at|date:"d.m.Y" }}, gültig bis {{ invitation.expires_at|date:"d.m.Y" }}{% if invitation.roles.exists %}. Rollen: {% for role in invitation.roles.all %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}
+                    </p>
+                </div>
+                <div class="flex items-center gap-1">
+                    <form method="post" action="{% url 'work:invitation_resend' org_slug=organization.slug invitation_id=invitation.id %}">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="ghost" size="sm" icon="send">Erneut senden<span class="sr-only">: {{ invitation.email }}</span></c-ui.button>
+                    </form>
+                    <form method="post" action="{% url 'work:invitation_cancel' org_slug=organization.slug invitation_id=invitation.id %}"
+                          x-data @submit.prevent="confirmAction({title: 'Einladung zurückziehen', message: 'Möchten Sie die Einladung wirklich zurückziehen?', confirmText: 'Zurückziehen', variant: 'warning'}).then(ok => ok && $el.submit())">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="ghost" size="sm" icon="x" class="text-red-700 dark:text-red-400">Zurückziehen<span class="sr-only">: {{ invitation.email }}</span></c-ui.button>
+                    </form>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </c-rahmen.abschnitt>
+    {% endif %}
+
+    {% if pending_registrations %}
+    <c-rahmen.abschnitt titel="Offene Registrierungen" titel_id="registrierungen-titel" zusatz="{{ pending_registrations|length }}">
+        <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800" data-testid="offene-registrierungen">
+            {% for membership in pending_registrations %}
+            <li class="py-2.5">
+                <p class="text-sm font-medium text-gray-900 dark:text-white break-words">{{ membership.user.get_full_name|default:membership.user.email }}</p>
+                <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400"><span class="break-all">{{ membership.user.email }}</span>, angefragt am {{ membership.registration_requested_at|date:"d.m.Y H:i" }}</p>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <form method="post" action="{% url 'work:member_approve' org_slug=organization.slug membership_id=membership.id %}">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" size="sm" variant="secondary" icon="check">Freischalten<span class="sr-only">: {{ membership.user.email }}</span></c-ui.button>
+                    </form>
+                    <form method="post" action="{% url 'work:member_reject' org_slug=organization.slug membership_id=membership.id %}" class="flex flex-wrap items-center gap-2"
+                          x-data @submit.prevent="confirmAction({title: 'Registrierung ablehnen', message: 'Die Anfrage wird gelöscht und die Person per E-Mail informiert.', confirmText: 'Ablehnen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                        {% csrf_token %}
+                        <label for="reason-{{ membership.id }}" class="sr-only">Begründung für {{ membership.user.email }} (optional)</label>
+                        <input id="reason-{{ membership.id }}" type="text" name="reason" maxlength="1000" autocomplete="off" placeholder="Begründung (optional, steht in der E-Mail)"
+                               class="w-64 max-w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
+                        <c-ui.button type="submit" size="sm" variant="ghost" icon="x" class="text-red-700 dark:text-red-400">Ablehnen<span class="sr-only">: {{ membership.user.email }}</span></c-ui.button>
+                    </form>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </c-rahmen.abschnitt>
+    {% endif %}
+</div>

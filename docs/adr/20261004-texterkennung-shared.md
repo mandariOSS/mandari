@@ -1,6 +1,7 @@
 # Texterkennung als eine Bibliothek in `shared/` und als Auftrag `file.extract_text`
 
-- Status: angenommen
+- Status: angenommen; „Aufrufer behalten Abruf und Speichern“ und „nicht sofort auf Aufträge umstellen“ abgelöst durch
+  [Dokumentkette](20261007-dokumentkette.md)
 - Datum: 2026-10-04
 - Issue: #530 (Epic #476), Vorarbeit #817
 - Bezug: [A1 Schichtenmodell](20260929-schichtenmodell.md), [A4 Aufträge und Zeitpläne](20260929-auftraege-und-zeitplaene.md),

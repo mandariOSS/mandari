@@ -32,7 +32,7 @@ import os
 import shutil
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -46,11 +46,13 @@ from mandari_dokumente import (
     MistralConfig,
     OcrLimits,
     OcrMemoryLimitError,
+    erlaubte_hosts_aus_umgebung,
     extract_text,
 )
 from mandari_oparl.abgleich import looks_like_html
 from mandari_oparl.robots import KIND_FILES, RETRY_UNREACHABLE_SECONDS
 
+from src.client import redirects
 from src.client.host_pacing import host_pacer
 from src.client.robots import robots_gate
 from src.client.source_options import SourceFetchOptions
@@ -325,9 +327,30 @@ class TextExtractor:
 
         try:
             # Drossel je Host: Dateien zählen wie jede andere Anfrage an die Quelle (mit Grenze je Host)
-            async with host_pacer.limit(download_url, interval):
+            async with host_pacer.limit(download_url, interval) as slot:
+                # Weiterleitungen: Ziel erst nach seiner robots.txt (gleiche Kennung und Ausnahme) und im Takt
+                # abrufen; der Platz in der Grenze je Host zieht mit zum Ziel-Host (#1027)
+                before_redirect = redirects.check_and_pace(
+                    None,
+                    user_agent=_user_agent_of(headers),
+                    kind=KIND_FILES,
+                    override=options.robots_override,
+                    pace=pace,
+                    slot=slot,
+                )
                 await pace(download_url)
-                downloaded = await self._download_to_file(download_url, headers)
+                downloaded = await self._download_to_file(download_url, headers, before_redirect)
+        except redirects.RedirectRefusedError as refused:
+            if refused.decision.unreachable:
+                logger.info("Datei %s zurückgestellt (Weiterleitung): %s", file_id, refused.decision.reason)
+                if file_row.body_id is not None:
+                    self._deferred_until[file_row.body_id] = self._clock() + RETRY_UNREACHABLE_SECONDS
+                # Sauber beendet, kein Abbruch: Zähler zurück wie nach jeder beendeten Bearbeitung
+                await self.storage.update_file_text(file_id=file_id, status="pending")
+                return False
+            logger.info("Datei %s nicht abgerufen (Weiterleitung): %s", file_id, refused.decision.reason)
+            await self.storage.update_file_text(file_id=file_id, status="skipped", error=refused.decision.reason)
+            return False
         except FileTooLargeError:
             await self.storage.update_file_text(
                 file_id=file_id,
@@ -477,13 +500,32 @@ class TextExtractor:
         self._options_cache[body_id] = (options, now)
         return options
 
-    async def _download_to_file(self, url: str, extra_headers: dict[str, str] | None = None) -> DownloadedFile:
+    async def _download_to_file(
+        self,
+        url: str,
+        extra_headers: dict[str, str] | None = None,
+        before_redirect: Callable[[str], Awaitable[None]] | None = None,
+    ) -> DownloadedFile:
         """
         Datei gestreamt in eine temporäre Datei laden und dabei hashen.
 
         Bricht ab, sobald die Größengrenze überschritten ist (auch bei falscher ``Content-Length``). Mit
         eingerichteter Ablage liegt die temporäre Datei im selben Dateisystem wie die Ablage.
+
+        Weiterleitungen folgen wir selbst (:mod:`src.client.redirects`): vorher ``before_redirect`` mit dem Ziel
+        (robots.txt und Takt der Quelle; ohne Angabe robots.txt ohne Ausnahme und Standardtakt).
+        ``redirects.RedirectRefusedError``, wenn die robots.txt des Ziels den Abruf nicht erlaubt.
         """
+        if before_redirect is None:
+            interval = settings.request_interval
+
+            async def pace(target: str) -> None:
+                await host_pacer.wait(target, interval)
+
+            before_redirect = redirects.check_and_pace(
+                None, user_agent=_user_agent_of(extra_headers), kind=KIND_FILES, override=None, pace=pace
+            )
+
         headers = {
             **{key: value for key, value in (extra_headers or {}).items() if key.lower() != "user-agent"},
             "User-Agent": _user_agent_of(extra_headers),
@@ -500,22 +542,24 @@ class TextExtractor:
         head = b""
         try:
             with os.fdopen(handle, "wb") as target:
-                async with (
-                    httpx.AsyncClient(timeout=self.timeout) as client,
-                    client.stream("GET", url, headers=headers, follow_redirects=True) as response,
-                ):
-                    response.raise_for_status()
-                    declared = response.headers.get("content-length")
-                    if declared and declared.isdigit() and int(declared) > self.max_size_bytes:
-                        raise FileTooLargeError
-                    async for chunk in response.aiter_bytes(256 * 1024):
-                        size += len(chunk)
-                        if size > self.max_size_bytes:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    request = client.build_request("GET", url, headers=headers)
+                    response = await redirects.send(client, request, before_redirect=before_redirect, stream=True)
+                    try:
+                        response.raise_for_status()
+                        declared = response.headers.get("content-length")
+                        if declared and declared.isdigit() and int(declared) > self.max_size_bytes:
                             raise FileTooLargeError
-                        digest.update(chunk)
-                        target.write(chunk)
-                        if len(head) < 512:
-                            head += chunk[: 512 - len(head)]
+                        async for chunk in response.aiter_bytes(256 * 1024):
+                            size += len(chunk)
+                            if size > self.max_size_bytes:
+                                raise FileTooLargeError
+                            digest.update(chunk)
+                            target.write(chunk)
+                            if len(head) < 512:
+                                head += chunk[: 512 - len(head)]
+                    finally:
+                        await response.aclose()
         except BaseException:
             path.unlink(missing_ok=True)
             raise
@@ -570,7 +614,12 @@ def runs_elsewhere() -> bool:
 
 
 def extraction_config() -> ExtractionConfig:
-    """Grenzen der Texterkennung und Mistral-Zugang aus den Einstellungen (``OCR_*``, ``MISTRAL_*``)."""
+    """
+    Grenzen der Texterkennung und Mistral-Zugang aus den Einstellungen (``OCR_*``, ``MISTRAL_*``).
+
+    Mistral wirkt nur mit Basis-URL, deren Host in ``KI_ERLAUBTE_HOSTS`` steht (``MistralConfig.enabled``). Der
+    Ingestor erkennt nur öffentliche RIS-Dateien.
+    """
     return ExtractionConfig(
         ocr=OcrLimits(
             dpi=settings.ocr_dpi,
@@ -582,6 +631,8 @@ def extraction_config() -> ExtractionConfig:
         ),
         mistral=MistralConfig(
             api_key=settings.mistral_api_key,
+            url=settings.mistral_base_url,
+            erlaubte_hosts=erlaubte_hosts_aus_umgebung(settings.ki_erlaubte_hosts),
             model=settings.mistral_ocr_model,
             timeout=settings.text_extraction_timeout,
             requests_per_minute=settings.mistral_ocr_rate_limit,

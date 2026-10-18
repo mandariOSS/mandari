@@ -221,7 +221,7 @@ class Task(models.Model):
             return False
         from django.utils import timezone
 
-        return self.due_date < timezone.now().date()
+        return self.due_date < timezone.localdate()
 
     @property
     def is_personal(self) -> bool:

@@ -2,20 +2,25 @@
 Höflicher HTML-Fetcher für Scraper-Adapter.
 
 - Drossel je Host über alle Quellen und Prozesse (konfigurierbar je Quelle, Default 1 Request / 2 s)
-- max_concurrent=1 je Quelle (Serialisierung über Lock)
-- robots.txt-Respekt nach RFC 9309 mit Platzhaltern (src/client/robots.py, 24-h-Cache je Host)
+- max_concurrent=1 je Quelle (Serialisierung über Lock); dazu wie im OParl-Abgleich höchstens
+  ``settings.host_max_concurrent`` offene Anfragen je Host und Prozess, auch am Ziel einer Weiterleitung
+  (``host_pacer.limit``, der Platz zieht mit, Issue #1036)
+- robots.txt-Respekt nach RFC 9309 mit Platzhaltern (src/client/robots.py, 24-h-Cache je Host), auch für das
+  Ziel jeder Weiterleitung, die zudem im Takt läuft (src/client/redirects.py)
 - Transparenter User-Agent (settings.user_agent, je Quelle überschreibbar)
 """
 
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
 from mandari_oparl.robots import KIND_API, Decision, RobotsOverride
 
-from src.client.host_pacing import host_pacer
+from src.client import redirects
+from src.client.host_pacing import HostSlot, host_pacer
 from src.client.robots import robots_gate
 from src.config import settings
 from src.metrics import metrics
@@ -66,10 +71,11 @@ class PoliteFetcher:
         self.last_status: int | None = None
 
     async def __aenter__(self) -> PoliteFetcher:
+        # Weiterleitungen folgen wir selbst, im Takt und nach der robots.txt des Ziels (src/client/redirects.py)
         self._client = httpx.AsyncClient(
             timeout=httpx.Timeout(self.timeout),
             headers={"User-Agent": self.user_agent},
-            follow_redirects=True,
+            follow_redirects=False,
         )
         return self
 
@@ -84,6 +90,21 @@ class PoliteFetcher:
 
     async def _pace(self, url: str) -> None:
         await host_pacer.wait(url, self.rate_limit_seconds)
+
+    def _before_redirect(self, slot: HostSlot) -> Callable[[str], Awaitable[None]]:
+        """
+        Vor einer Weiterleitung: Platz in der Grenze je Host zum Ziel umziehen (Issue #1036), robots.txt des Ziels
+        prüfen, dann im Takt (Issue #1027).
+        """
+
+        async def before_redirect(url: str) -> None:
+            await slot.move_to(url)
+            decision = await self.decide(url)
+            if not decision.allowed:
+                raise redirects.RedirectRefusedError(url, decision)
+            await self._pace(url)
+
+        return before_redirect
 
     async def decide(self, url: str, kind: str = KIND_API) -> Decision:
         """robots.txt-Entscheidung für die URL mit unserem User-Agent (RFC 9309)."""
@@ -121,12 +142,22 @@ class PoliteFetcher:
         self.last_status = None
 
         for attempt in range(self.max_retries):
-            async with self._lock:
-                # Drossel je Host über alle Quellen und Prozesse (src/client/host_pacing.py)
+            async with self._lock, host_pacer.limit(url, self.rate_limit_seconds) as slot:
+                # Drossel je Host über alle Quellen und Prozesse (src/client/host_pacing.py); je Host höchstens
+                # host_max_concurrent offene Anfragen im Prozess, der Platz zieht bei Weiterleitungen mit
                 await self._pace(url)
 
                 try:
-                    response = await self._client.get(url)
+                    response = await redirects.send(
+                        self._client,
+                        self._client.build_request("GET", url),
+                        before_redirect=self._before_redirect(slot),
+                    )
+                except redirects.RedirectRefusedError as refused:
+                    # Ziel einer Weiterleitung gesperrt bzw. seine robots.txt nicht erreichbar: wie beim Ziel selbst
+                    if refused.decision.unreachable:
+                        raise RobotsUnreachableError(f"{refused.url}: {refused.decision.reason}") from None
+                    raise RobotsDisallowedError(refused.url) from None
                 except httpx.HTTPError as e:
                     last_error = str(e)
                     self.last_status = None

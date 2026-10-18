@@ -1,0 +1,62 @@
+{# djlint:off H025 – xhtml2pdf-Tags wie <pdf:pagenumber> sind hier gültig #}
+{% extends "session/pdf/base_pdf.html" %}
+{% comment %}
+Antragsfassung (Teil von #584): PDF des aus mandari Work eingereichten Antrags, beim Einreichen erzeugt.
+Enthält genau die übermittelten Angaben. Die Texte sind Klartext und werden escaped, es wird kein HTML übernommen.
+Keine E-Mail-Adresse, keine Telefonnummer: Die Datei wird mit der Vorlage öffentlich.
+{% endcomment %}
+
+{% block extra_style %}
+    /* Schriftstück der Fraktion: Kopf neutral statt in der Farbe der Verwaltung */
+    .letterhead { border-bottom: 1.5px solid #333333; }
+    .letterhead .org-name { color: #111111; }
+    table.meta-table { width: 100%; margin-bottom: 4pt; }
+    td.label { width: 56mm; color: #444444; }
+    .text { font-size: 10.5pt; }
+    .text p { margin: 0 0 6pt 0; }
+{% endblock %}
+
+{% block letterhead %}
+<div class="letterhead">
+    <div class="org-name">{{ organization_name|default:submitter }}</div>
+    <div class="org-meta">an {{ tenant.name }}</div>
+</div>
+{% endblock %}
+
+{% block content %}
+{# Titel aus Work tragen die Art meist schon („Antrag: …“); die Art steht deshalb als eigene Zeile #}
+<h1>{{ application.title }}</h1>
+
+<table class="meta-table">
+    {% if application.reference %}<tr><td class="label">Eingangsnummer:</td><td>{{ application.reference }}</td></tr>{% endif %}
+    <tr><td class="label">Art:</td><td>{{ application.get_application_type_display }}</td></tr>
+    <tr><td class="label">Eingereicht am:</td><td>{{ application.submitted_at|date:"d.m.Y, H:i" }} Uhr</td></tr>
+    {% if submitter or organization_name %}<tr><td class="label">Eingereicht von:</td><td>{% if submitter %}{{ submitter }}{% if organization_name %}, {{ organization_name }}{% endif %}{% else %}{{ organization_name }}{% endif %}</td></tr>{% endif %}
+    {% if application.target_organization %}<tr><td class="label">Gremium:</td><td>{{ application.target_organization.name }}</td></tr>{% endif %}
+    {% if application.deadline %}<tr><td class="label">Gewünschter Beratungstermin:</td><td>{{ application.deadline|date:"d.m.Y" }}</td></tr>{% endif %}
+    {% if application.is_urgent %}<tr><td class="label">Dringlichkeit:</td><td>dringlich</td></tr>{% endif %}
+</table>
+
+<h2>Beschlussvorschlag</h2>
+<div class="text">{{ application.resolution_proposal|linebreaks }}</div>
+
+<h2>Begründung</h2>
+<div class="text">{{ application.justification|linebreaks }}</div>
+
+{% if application.financial_impact %}
+<h2>Finanzielle Auswirkungen</h2>
+<div class="text">{{ application.financial_impact|linebreaks }}</div>
+{% endif %}
+
+{% if application.is_urgent and application.urgency_reason %}
+<h2>Begründung der Dringlichkeit</h2>
+<div class="text">{{ application.urgency_reason|linebreaks }}</div>
+{% endif %}
+
+{% if application.co_signers %}
+<h2>Mitunterzeichnende</h2>
+<div class="text">{{ application.co_signers|linebreaks }}</div>
+{% endif %}
+{% endblock %}
+
+{% block footer %}Antrag {{ application.reference }} · über mandari Work eingereicht, automatisch erzeugte Fassung · Seite <pdf:pagenumber> von <pdf:pagecount>{% endblock %}

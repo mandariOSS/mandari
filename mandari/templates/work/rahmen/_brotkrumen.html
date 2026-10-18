@@ -1,0 +1,15 @@
+{% comment %}
+Brotkrumen des neuen Rahmens (Issue #852): Raum › Bereich › Reiter › Seite aus work_rahmen.brotkrumen, gezeichnet mit
+dem gemeinsamen Baustein c-rahmen.brotkrume. Nur die Krume, die die geöffnete Seite selbst ist, trägt
+aria-current="page"; eine Krume ohne Adresse ist nur Text. Kennt der Rahmen die Seite nicht selbst, ergänzt
+work/base_work_neu.html ihren Titel im Block brotkrumen_aktuell.
+{% endcomment %}
+{% for krume in work_rahmen.brotkrumen %}
+{% if krume.aktuell %}
+<c-rahmen.brotkrume :erste="forloop.first">{{ krume.label }}</c-rahmen.brotkrume>
+{% elif krume.url %}
+<c-rahmen.brotkrume href="{{ krume.url }}" :erste="forloop.first">{{ krume.label }}</c-rahmen.brotkrume>
+{% else %}
+<c-rahmen.brotkrume nur_text="1" :erste="forloop.first">{{ krume.label }}</c-rahmen.brotkrume>
+{% endif %}
+{% endfor %}

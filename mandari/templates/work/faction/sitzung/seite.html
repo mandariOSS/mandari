@@ -1,0 +1,40 @@
+{% extends "work/base_work.html" %}
+{% load django_vite %}
+{% comment %}
+Sitzungsansicht der laufenden Fraktionssitzung (Issue #874, hinter dem Schalter der Organisation).
+Kontext: apps.work.faction.views.session.seiten_kontext. Alpine-Komponenten in frontend/alpine/faction-session.ts
+(Seite, Unterlagen, Beschluss, Anwesenheit) und frontend/alpine/session-notes.ts (Notizen), registriert im
+Editor-Bundle frontend/editor/index.ts.
+{% endcomment %}
+
+{% block page_title %}{{ meeting.title }}{% endblock %}
+
+{% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ meeting.title }}</c-insight.brotkrume>{% endblock %}
+
+{% block work_extra_head %}{% vite_asset 'frontend/editor/index.ts' %}{% endblock %}
+
+{% block work_header %}{% endblock %}
+
+{% block work_content %}
+{{ sitzung_urls|json_script:"fs-sitzung-config" }}
+<div class="fs-sitzung wf" x-data="fraktionssitzung" data-aktuell="{{ item.pk|default:'' }}"
+     @keydown.window="taste($event)" @keydown.escape.window="schliessen()">
+    {% include "work/faction/sitzung/_kopf.html" %}
+    <div class="fs-flaeche">
+        <nav class="fs-tl" id="fs-tagesordnung" aria-label="Tagesordnung" :class="{ 'offen': tagesordnungOffen }">
+            {% include "work/faction/sitzung/_tagesordnung.html" %}
+        </nav>
+        {% if item %}
+        {% include "work/faction/sitzung/_top.html" %}
+        {% else %}
+        <section class="fs-fokus" id="fs-fokus">
+            <div class="fs-top-kopf">
+                <p class="fs-meta">Diese Sitzung hat noch keine Tagesordnung. TOPs tragen Sie in der <c-suche.textlink href="?ansicht=bisher">bisherigen Ansicht</c-suche.textlink> ein.</p>
+            </div>
+        </section>
+        {% endif %}
+        {% include "work/faction/sitzung/_anwesenheit.html" %}
+    </div>
+    {% if item %}{% include "work/faction/sitzung/_unten.html" %}{% endif %}
+</div>
+{% endblock %}

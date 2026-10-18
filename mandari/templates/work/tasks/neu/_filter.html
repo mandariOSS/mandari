@@ -1,0 +1,36 @@
+{% comment %}
+Filterzeile der Aufgaben im neuen Erscheinungsbild (Issue #951): „Meine · Alle“ als Textlinks (die geöffnete fett), ein
+GET-Formular mit Suche, Priorität, Label, Person (nur bei „Alle“), Überfällig und Erledigte; eine Auswahl sendet sofort
+ab (data-autosubmit am Rahmen). Parameter wie bisher. Kontext: view_mode, show_completed, search_query,
+priority_choices, priority_filter, labels, label_filter, members, assignee_filter, overdue_only, stats.
+{% endcomment %}
+<div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+    <nav aria-label="Aufgaben anzeigen" class="flex items-center gap-x-4 text-sm">
+        {% if view_mode == 'my' %}<span aria-current="page" class="font-semibold text-gray-900 dark:text-white">Meine Aufgaben</span>{% else %}<c-ui.textlink href="?view=my{% if show_completed %}&completed=1{% endif %}">Meine Aufgaben</c-ui.textlink>{% endif %}
+        {% if view_mode == 'all' %}<span aria-current="page" class="font-semibold text-gray-900 dark:text-white">Alle Aufgaben</span>{% else %}<c-ui.textlink href="?view=all{% if show_completed %}&completed=1{% endif %}">Alle Aufgaben</c-ui.textlink>{% endif %}
+    </nav>
+
+    <form method="get" role="search" aria-label="Aufgaben filtern" class="flex flex-wrap items-center gap-x-3 gap-y-2" data-testid="aufgaben-filter">
+        <input type="hidden" name="view" value="{{ view_mode }}">
+        <c-form.suche id="aufgaben-suche" wert="{{ search_query|default:'' }}" label="Aufgaben suchen" platzhalter="Aufgaben suchen" class="w-full sm:w-64" />
+        <c-form.select name="priority" id="aufgaben-prioritaet" label="Priorität" dicht zeile data-autosubmit>
+            <option value="" {% if not priority_filter %}selected{% endif %}>Alle</option>
+            {% for value, label in priority_choices %}<option value="{{ value }}" {% if priority_filter == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+        </c-form.select>
+        {% if labels %}
+        <c-form.select name="label" id="aufgaben-label" label="Label" dicht zeile data-autosubmit>
+            <option value="" {% if not label_filter %}selected{% endif %}>Alle</option>
+            {% for label in labels %}<option value="{{ label.id }}" {% if label_filter == label.id|stringformat:"s" %}selected{% endif %}>{{ label.name }}</option>{% endfor %}
+        </c-form.select>
+        {% endif %}
+        {% if view_mode == 'all' %}
+        <c-form.select name="assignee" id="aufgaben-person" label="Person" dicht zeile data-autosubmit>
+            <option value="" {% if not assignee_filter %}selected{% endif %}>Alle</option>
+            {% for member in members %}<option value="{{ member.id }}" {% if assignee_filter == member.id|stringformat:"s" %}selected{% endif %}>{{ member.user.get_display_name }}</option>{% endfor %}
+        </c-form.select>
+        {% endif %}
+        <c-form.checkbox name="overdue" id="aufgaben-ueberfaellig" value="1" checked="{% if overdue_only %}1{% endif %}" dicht data-autosubmit>Überfällig{% if stats.overdue %} ({{ stats.overdue }}){% endif %}</c-form.checkbox>
+        <c-form.checkbox name="completed" id="aufgaben-erledigte" value="1" checked="{% if show_completed %}1{% endif %}" dicht data-autosubmit>Erledigte anzeigen</c-form.checkbox>
+        <noscript><c-ui.button type="submit" variant="secondary" size="sm">Anwenden</c-ui.button></noscript>
+    </form>
+</div>

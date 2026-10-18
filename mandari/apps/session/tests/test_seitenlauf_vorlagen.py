@@ -27,6 +27,7 @@ from django.utils import timezone
 
 from apps.accounts.models import User
 from apps.common.tests.factories import UserFactory
+from apps.common.tests.festgeschriebene_testdaten import sicherheitsprotokoll_zuruecksetzen
 from apps.session import urls as session_urls
 from apps.session.models import (
     SessionAgendaItem,
@@ -346,7 +347,11 @@ def welt(django_db_setup: None, django_db_blocker: Any, tmp_path_factory: pytest
     media_root = tmp_path_factory.mktemp("seitenlauf-media")
     # Ohne Ereignisse an die Drehscheibe: Die Daten werden außerhalb der Testtransaktion festgeschrieben, ihre
     # Ereignisse blieben sonst bei eingeschaltetem SESSION_EVENTS für spätere Module im Journal stehen
-    with override_settings(MEDIA_ROOT=str(media_root), SESSION_EVENTS="aus"), django_db_blocker.unblock():
+    with (
+        override_settings(MEDIA_ROOT=str(media_root), SESSION_EVENTS="aus"),
+        django_db_blocker.unblock(),
+        sicherheitsprotokoll_zuruecksetzen(),
+    ):
         gebaut = _bauen()
         yield gebaut
         # Unternummern zuerst: Die Bezugsvorlage ist geschützt, solange es sie gibt

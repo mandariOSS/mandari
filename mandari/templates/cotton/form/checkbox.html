@@ -2,12 +2,16 @@
 {% comment %}
 Checkbox mit Beschriftung.  <c-form.checkbox name="remember_me" label="Angemeldet bleiben" checked />
   id="…" (optional) setzt die ID, wenn derselbe Name mehrfach auf der Seite steht (sonst id_<name>).
+Ergänzungen für Arbeitsflächen (Issue #951), ohne sie bleibt das Markup wie bisher:
+``value`` (Wert bei Mehrfachauswahl unter einem Namen), ``modell`` (Alpine x-model am Feld), ``disabled`` und
+``dicht`` (Beschriftung in voller Textfarbe, oben ausgerichtet – auch für mehrzeilige Bestätigungen).
+  <c-form.checkbox name="contacts" id="kontakt-1" value="{{ c.id }}" dicht>…</c-form.checkbox>
 {% endcomment %}
-<c-vars field="" name="" id="" label="" checked="" class="" />
+<c-vars field="" name="" id="" label="" checked="" class="" value="" modell="" disabled="" dicht="" />
 {% with fname=field.name|default:name %}{% with auto_id="id_"|add:fname %}{% firstof id field.id_for_label auto_id as fid %}
-<label for="{{ fid }}" class="inline-flex items-center gap-2 cursor-pointer min-h-[24px] {{ class }}" {{ attrs }}>
-    <input type="checkbox" name="{{ fname }}" id="{{ fid }}" {% if checked or field.value %}checked{% endif %}
-        class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
-    <span class="text-sm text-gray-600 dark:text-gray-400">{{ label }}{{ slot }}</span>
+<label for="{{ fid }}" class="inline-flex {% if dicht %}items-start{% else %}items-center{% endif %} gap-2 cursor-pointer min-h-[24px] {{ class }}" {{ attrs }}>
+    <input type="checkbox" name="{{ fname }}" id="{{ fid }}"{% if value %} value="{{ value }}"{% endif %}{% if modell %} x-model="{{ modell }}"{% endif %}{% if disabled %} disabled{% endif %} {% if checked or field.value %}checked{% endif %}
+        class="{% if dicht %}mt-0.5 shrink-0 {% endif %}w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+    <span class="{% if dicht %}text-sm text-gray-800 dark:text-gray-200{% else %}text-sm text-gray-600 dark:text-gray-400{% endif %}">{{ label }}{{ slot }}</span>
 </label>
 {% endwith %}{% endwith %}

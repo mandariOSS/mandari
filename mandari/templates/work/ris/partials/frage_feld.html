@@ -1,0 +1,24 @@
+{% comment %}
+Fragefeld „Fragen an die Ratsdaten“ unter dem Suchfeld (Issue #853), nur wenn die Organisation KI zulässt
+(apps.work.ris.fragen.verfuegbar). Aufgeklappt per <details>; die Antwort kommt per HTMX in #ki-antwort über den
+Treffern, ohne JavaScript als eigene Seite. Bei mehreren Kommunen gilt die im Filter gewählte (#suche-kommune).
+Feld und Knopf 32 px mit 14 px Schrift: Die Suche bleibt die eine Hauptaktion (40 px), die Frage ist ein zweiter Weg.
+{% endcomment %}
+<details class="mt-3 max-w-3xl group">
+    <summary class="list-none inline-flex items-center gap-1.5 min-h-8 cursor-pointer text-sm font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 [&::-webkit-details-marker]:hidden">
+        Fragen an die Ratsdaten
+        <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180" aria-hidden="true"></i>
+    </summary>
+    <form id="frage-form" action="{% url 'work:ris_frage' org_slug=organization.slug %}" method="post"
+          hx-post="{% url 'work:ris_frage' org_slug=organization.slug %}" hx-target="#ki-antwort" hx-swap="innerHTML show:#ki-antwort:top"
+          hx-include="#suche-kommune" hx-indicator="#frage-laden" hx-disabled-elt="#frage-senden" class="mt-2 flex gap-2">
+        {% csrf_token %}
+        <label for="frage-eingabe" class="sr-only">Ihre Frage an die Ratsdaten</label>
+        <input id="frage-eingabe" type="text" name="frage" required maxlength="500" autocomplete="off"
+               placeholder="z. B. Was steht nächste Woche im Bauausschuss an?"
+               class="flex-1 min-w-0 min-h-8 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-2 focus:ring-primary-600/30 outline-none">
+        <button id="frage-senden" type="submit" class="shrink-0 min-h-8 px-3 rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm font-semibold text-gray-900 dark:text-white hover:border-gray-500">Fragen</button>
+    </form>
+    <p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Eine KI antwortet aus den öffentlichen Ratsdaten, mit Quellen. An den KI-Dienst gehen nur Ihre Frage und öffentliche Ratsdaten, keine Inhalte Ihrer Fraktion.</p>
+    <p id="frage-laden" class="htmx-indicator mt-2 text-sm text-gray-700 dark:text-gray-300" aria-hidden="true">Die Antwort wird erstellt, das dauert bis zu anderthalb Minuten …</p>
+</details>

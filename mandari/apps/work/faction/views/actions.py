@@ -3,6 +3,7 @@
 
 import logging
 from datetime import datetime
+from urllib.parse import parse_qs, urlsplit
 
 from django.contrib import messages
 from django.db import transaction
@@ -14,6 +15,7 @@ from django.utils import timezone
 from django.views.generic import View
 from django_htmx.http import HttpResponseClientRedirect
 
+from apps.common import local_time
 from apps.common.mixins import WorkViewMixin
 
 from .. import agenda, deletion
@@ -21,7 +23,6 @@ from .. import services as faction_services
 from ..models import (
     FactionAgendaItem,
     FactionAttendance,
-    FactionDecision,
     FactionMeeting,
     FactionProtocolEntry,
 )
@@ -31,7 +32,6 @@ from ..visibility import can_view_internal, can_view_item
 from ._helpers import (
     VIDEO_LINK_MAX_LENGTH,
     VIDEO_LINK_TOO_LONG,
-    _apply_approval_item_decision,
     _get_meeting_context,
     _htmx_response,
     _render_partial,
@@ -104,7 +104,7 @@ class FactionActionView(WorkViewMixin, View):
         if self.is_htmx:
             return HttpResponse(status=400)
         messages.error(request, "Ungültige Aktion.")
-        return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
+        return self._redirect_detail(meeting)
 
     # -- Render helpers ------------------------------------------------
 
@@ -130,7 +130,17 @@ class FactionActionView(WorkViewMixin, View):
         return _htmx_response(html)
 
     def _redirect_detail(self, meeting):
-        return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=meeting.id)
+        url = reverse("work:faction_detail", kwargs={"org_slug": self.organization.slug, "meeting_id": meeting.id})
+        # Aus der bisherigen Ansicht zurück in die bisherige Ansicht, nicht in die neue Sitzungsansicht (Issue #874)
+        return redirect(f"{url}?ansicht=bisher" if self._aus_bisheriger_ansicht() else url)
+
+    def _aus_bisheriger_ansicht(self) -> bool:
+        """Kam die Aktion aus der bisherigen Ansicht (``?ansicht=bisher``)? Formularfeld oder Adresse der Seite."""
+        if self.request.POST.get("ansicht") == "bisher":
+            return True
+        # Nur der Parameter der Herkunftsseite zählt; weitergeleitet wird immer auf die eigene Sitzungsseite
+        herkunft = urlsplit(self.request.META.get("HTTP_REFERER") or "")
+        return "bisher" in parse_qs(herkunft.query).get("ansicht", [])
 
     def _refresh_or_redirect(self, request, meeting, msg=None):
         """Return HX-Refresh for HTMX requests, redirect otherwise."""
@@ -198,6 +208,8 @@ class FactionActionView(WorkViewMixin, View):
             return self._redirect_detail(meeting)
         if meeting.status in ["planned", "invited"]:
             meeting.status = "ongoing"
+            # Tatsächlicher Beginn für die Sitzungsansicht („Läuft seit …“, Issue #874)
+            meeting.started_at = timezone.now()
             meeting.save()
         return self._refresh_or_redirect(request, meeting, "Sitzung gestartet.")
 
@@ -274,6 +286,8 @@ class FactionActionView(WorkViewMixin, View):
             messages.error(request, "Keine Berechtigung zum Starten oder Beenden.")
             return self._redirect_detail(meeting)
         if new_status and new_status in dict(FactionMeeting.STATUS_CHOICES):
+            if new_status == "ongoing" and meeting.status != "ongoing" and meeting.started_at is None:
+                meeting.started_at = timezone.now()
             meeting.status = new_status
             meeting.save()
         return self._refresh_or_redirect(request, meeting, "Status geändert.")
@@ -294,12 +308,23 @@ class FactionActionView(WorkViewMixin, View):
 
         start_date = request.POST.get("start_date")
         start_time = request.POST.get("start_time", "18:00")
+        start_notice = ""
         if start_date:
             try:
                 start_dt = datetime.strptime(f"{start_date} {start_time}", "%Y-%m-%d %H:%M")
-                meeting.start = timezone.make_aware(start_dt) if timezone.is_naive(start_dt) else start_dt
             except ValueError:
-                pass
+                start_dt = None
+            if start_dt is not None:
+                # Tag der Zeitumstellung (Issue #974): doppelte Stunde → erste Uhrzeit, es sei denn, die Sitzung steht
+                # schon auf dieser Uhrzeit (keep_stored); fehlende Stunde → Meldung, nichts wird gespeichert
+                try:
+                    new_start = local_time.keep_stored(local_time.aware(start_dt), meeting.start)
+                except local_time.NonexistentLocalTimeError as exc:
+                    messages.error(request, str(exc))
+                    return self._redirect_detail(meeting)
+                if new_start != meeting.start:
+                    start_notice = local_time.ambiguous_notice(new_start, label="Beginn")
+                meeting.start = new_start
 
         meeting.location = request.POST.get("location", "")
         meeting.is_virtual = request.POST.get("is_virtual") == "on"
@@ -317,7 +342,10 @@ class FactionActionView(WorkViewMixin, View):
             meeting.status = new_status
 
         meeting.save()
-        return self._refresh_or_redirect(request, meeting, "Änderungen gespeichert.")
+        response = self._refresh_or_redirect(request, meeting, "Änderungen gespeichert.")
+        if start_notice:
+            messages.warning(request, start_notice)
+        return response
 
     def _invite(self, request, meeting):
         if not self.membership.has_permission("faction.invite"):
@@ -762,34 +790,17 @@ class FactionActionView(WorkViewMixin, View):
         except ValueError:
             return HttpResponse("Ungültige Stimmzahlen.", status=400)
 
-        result = request.POST.get("result", "accepted")
-        decision_text = request.POST.get("decision_text", "").strip()
-        notes = request.POST.get("notes", "").strip()
-
-        # Create or update decision
-        decision, created = FactionDecision.objects.update_or_create(
-            agenda_item=agenda_item,
-            defaults={
-                "votes_yes": votes_yes,
-                "votes_no": votes_no,
-                "votes_abstain": votes_abstain,
-                "result": result,
-                "decision_text": decision_text,
-                "notes": notes,
-                "recorded_by": self.membership,
-            },
+        # Erfassen, Kopie am TOP und Genehmigungs-TOP (angenommene Abstimmung genehmigt das Vorprotokoll)
+        faction_services.record_decision(
+            agenda_item,
+            self.membership,
+            votes_yes=votes_yes,
+            votes_no=votes_no,
+            votes_abstain=votes_abstain,
+            result=request.POST.get("result", "accepted"),
+            decision_text=request.POST.get("decision_text", "").strip(),
+            notes=request.POST.get("notes", "").strip(),
         )
-
-        # Update agenda item
-        agenda_item.has_decision = True
-        agenda_item.votes_for = votes_yes
-        agenda_item.votes_against = votes_no
-        agenda_item.votes_abstain = votes_abstain
-        agenda_item.save()
-
-        # Genehmigungs-TOP: angenommene Abstimmung genehmigt das Protokoll
-        # der vorherigen Sitzung (ProtocolApprovalService setzt Status + Metadaten)
-        _apply_approval_item_decision(agenda_item, decision, meeting, self.membership)
 
         if self.is_htmx:
             html = self._render_agenda(request, meeting)

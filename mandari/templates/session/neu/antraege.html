@@ -1,0 +1,70 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Anträge im neuen Rahmen (Issue #944, Bereich Anträge): Kopfband mit der Zahl und der Herkunft (mandari Work) in einem
+Satz statt Hinweiskasten, darunter die Filter in einer Zeile (Suche, Status, Art; Parameter q, status, type, page) und
+die Anträge als Liste mit Linien statt Karten mit Symbolkacheln: Eingangsnummer, Art und Eingang über dem Titel,
+Einreicher und Dringlichkeit darunter, rechts der Stand als Punkt mit Text und das zuständige Gremium. Kontext wie
+ApplicationListView; die bisherige Seite bleibt session/applications/list.html.
+{% endcomment %}
+
+{% block page_title %}Anträge{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Anträge" text="{{ paginator.count }} {{ paginator.count|pluralize:'Antrag,Anträge' }}{% if request.GET.q or request.GET.status or request.GET.type %} für die gewählten Filter{% endif %}, die neuesten zuerst. Fraktionen und politische Organisationen reichen Anträge über mandari Work ein; sie erscheinen hier automatisch zur Bearbeitung." dicht />
+{% endblock %}
+
+{% block page_content %}
+<form method="get" role="search" aria-label="Anträge filtern" class="flex flex-wrap items-center gap-2" data-testid="antraege-filter">
+    <label for="filter-suche" class="sr-only">Antrag suchen</label>
+    <span class="relative block basis-full sm:basis-64 sm:flex-1 min-w-0 max-w-md">
+        <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" aria-hidden="true"></i>
+        <input id="filter-suche" type="search" name="q" value="{{ request.GET.q }}" placeholder="Titel, Eingangsnummer oder Einreicher"
+               class="w-full h-9 pl-9 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    </span>
+    <label for="filter-status" class="sr-only">Status</label>
+    <select id="filter-status" name="status" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Status</option>
+        {% for value, label in application_statuses %}<option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <label for="filter-art" class="sr-only">Art</label>
+    <select id="filter-art" name="type" class="h-9 min-w-0 flex-1 basis-32 sm:flex-none rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+        <option value="">Alle Arten</option>
+        {% for value, label in application_types %}<option value="{{ value }}" {% if request.GET.type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+    <c-ui.button type="submit" variant="secondary" size="sm">Filtern</c-ui.button>
+    {% if request.GET.q or request.GET.status or request.GET.type %}
+    <c-ui.textlink href="{% url 'session:applications' tenant_slug=tenant_slug %}" class="text-sm">Filter zurücksetzen</c-ui.textlink>
+    {% endif %}
+</form>
+
+{% if applications %}
+<c-rahmen.liste class="mt-4" data-testid="antragsliste">
+    {% for application in applications %}
+    <li class="relative grid md:grid-cols-[minmax(0,1fr)_13rem] gap-x-4 gap-y-1 py-3 pl-1 hover:bg-band-grau/60">
+        <div class="min-w-0">
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums break-words">{% if application.reference %}{{ application.reference }} · {% endif %}{{ application.get_application_type_display }} · {{ application.submitted_at|date:"d.m.Y H:i" }}</p>
+            <a href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=application.id %}"
+               class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ application.title }}</a>
+            <p class="mt-0.5 text-[0.8125rem] text-gray-600 dark:text-gray-400 break-words">
+                {{ application.submitter_name }}{% if application.submitting_organization %} ({{ application.submitting_organization.name }}){% endif %}{% if application.is_urgent %} · <span class="inline-flex items-center gap-1 font-medium text-red-700 dark:text-red-400"><i data-lucide="zap" class="w-3.5 h-3.5" aria-hidden="true"></i>Dringend</span>{% endif %}
+            </p>
+        </div>
+        <div class="md:pt-5 text-sm text-gray-700 dark:text-gray-300">
+            <p>{% include "session/neu/_status.html" with wert=application.status text=application.get_status_display %}</p>
+            {% if application.target_organization %}<p class="liste-angaben">{{ application.target_organization.name }}</p>{% endif %}
+        </div>
+    </li>
+    {% endfor %}
+</c-rahmen.liste>
+{% include "session/neu/_seiten.html" %}
+{% else %}
+<div class="mt-8 max-w-xl">
+    <p class="font-medium text-gray-900 dark:text-white">Keine Anträge vorhanden</p>
+    <p class="mt-1 text-sm">
+        {% if request.GET.q or request.GET.status or request.GET.type %}Ihre Filterkriterien ergaben keine Treffer. <c-ui.textlink href="{% url 'session:applications' tenant_slug=tenant_slug %}">Filter zurücksetzen</c-ui.textlink>
+        {% else %}Es wurden noch keine Anträge eingereicht.{% endif %}
+    </p>
+</div>
+{% endif %}
+{% endblock %}

@@ -239,6 +239,9 @@
 
         // Close button
         const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        // Name für Bildschirmleser: der Knopf zeigt nur ein Symbol (axe button-name)
+        closeBtn.setAttribute('aria-label', 'Hinweis schließen');
         closeBtn.className = 'flex-shrink-0 text-gray-400 hover:text-gray-500';
         closeBtn.addEventListener('click', () => toast.remove());
         const closeIcon = document.createElement('i');

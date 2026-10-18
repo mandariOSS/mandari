@@ -1,0 +1,88 @@
+{% comment %}
+Abschnitt „Zuordnung“ des Vorlagenformulars im neuen Rahmen (Issues #81, #756, #944): Körperschaft (ab der zweiten,
+nach der Nummernvergabe als Text), federführendes Gremium (nach Körperschaft gruppiert), federführendes Amt, finanzielle
+Auswirkungen (Alpine: Erläuterung nur bei „Ja“) und Urheber. Felder, Optionen und Bedingungen wie im Abschnitt
+„Zuordnung“ von session/papers/form.html. Eingebunden aus session/neu/vorlage_formular.html.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Zuordnung" titel_id="zuordnung-titel">
+    <div class="mt-3 space-y-4">
+        {% if "body" in form.fields %}
+        {% if form.body.field.disabled %}
+        <p class="text-sm text-gray-800 dark:text-gray-200">Körperschaft: {% firstof object.body.name body_choice.default.name %} <span class="text-gray-600 dark:text-gray-400">(fest, seit die Vorlage ihre Nummer hat)</span></p>
+        {% else %}
+        <c-form.select :field="form.body" label="Körperschaft" help="Ohne Auswahl die Körperschaft des federführenden Gremiums" dicht />
+        {% endif %}
+        {% endif %}
+
+        <div>
+            <c-form.beschriftung feld="{{ form.main_organization.id_for_label }}">Federführendes Gremium</c-form.beschriftung>
+            <select name="main_organization" id="id_main_organization"{% if form.main_organization.errors %} aria-invalid="true" aria-describedby="id_main_organization-error"{% endif %}
+                    class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.main_organization.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                <option value="">Kein Gremium</option>
+                {% include "session/partials/organization_options.html" with groups=main_organization_groups organizations=form.main_organization.field.queryset selected=form.main_organization.value %}
+            </select>
+            {% include "session/neu/_formular_feldfehler.html" with feld=form.main_organization %}
+        </div>
+
+        {# Federführendes Amt (Issue #81) #}
+        {% if form.lead_department.field.queryset %}
+        <div>
+            <c-form.beschriftung feld="{{ form.lead_department.id_for_label }}">Federführendes Amt</c-form.beschriftung>
+            <select name="lead_department" id="id_lead_department"{% if form.lead_department.errors %} aria-invalid="true" aria-describedby="id_lead_department-error"{% endif %}
+                    class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.lead_department.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                <option value="">Kein Amt</option>
+                {% for dep in form.lead_department.field.queryset %}
+                <option value="{{ dep.id }}" {% if form.lead_department.value|stringformat:"s" == dep.id|stringformat:"s" %}selected{% endif %}>{{ dep.name }}</option>
+                {% endfor %}
+            </select>
+            {% include "session/neu/_formular_feldfehler.html" with feld=form.lead_department %}
+        </div>
+        {% endif %}
+
+        {# Finanzielle Auswirkungen (Issue #81): Erläuterung nur bei „Ja“ #}
+        <fieldset x-data="{ fin: '{{ form.has_financial_impact.value|default_if_none:'' }}' }" data-testid="finanzielle-auswirkungen">
+            <c-form.beschriftung als="legend">Finanzielle Auswirkungen <span class="text-red-500" aria-hidden="true">*</span></c-form.beschriftung>
+            <div class="mt-1 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-gray-800 dark:text-gray-200">
+                <label class="inline-flex min-h-[24px] cursor-pointer items-center gap-2">
+                    <input type="radio" name="has_financial_impact" value="True" x-model="fin"
+                           class="w-4 h-4 border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">Ja
+                </label>
+                <label class="inline-flex min-h-[24px] cursor-pointer items-center gap-2">
+                    <input type="radio" name="has_financial_impact" value="False" x-model="fin"
+                           class="w-4 h-4 border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">Nein
+                </label>
+            </div>
+            {% include "session/neu/_formular_feldfehler.html" with feld=form.has_financial_impact %}
+            <label for="id_financial_impact_note" class="sr-only">Höhe, Haushaltsstelle und Deckung</label>
+            <textarea name="financial_impact_note" id="id_financial_impact_note" rows="2" x-show="fin === 'True'" x-cloak {% if content_locked %}readonly{% endif %}
+                      placeholder="Höhe, Haushaltsstelle, Deckung …"
+                      class="mt-2 w-full px-3 py-2 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.financial_impact_note.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">{{ form.financial_impact_note.value|default:'' }}</textarea>
+            {% include "session/neu/_formular_feldfehler.html" with feld=form.financial_impact_note %}<c-form.hinweis id="{{ form.financial_impact_note.id_for_label }}-help">Pflichtangabe vor der Vorlage zur Freigabe.</c-form.hinweis>
+        </fieldset>
+
+        <div class="grid gap-4 sm:grid-cols-2">
+            <div>
+                <c-form.beschriftung feld="{{ form.originator_organization.id_for_label }}">Urheber (Organisation)</c-form.beschriftung>
+                <select name="originator_organization" id="id_originator_organization"{% if form.originator_organization.errors %} aria-invalid="true" aria-describedby="id_originator_organization-error"{% endif %}
+                        class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.originator_organization.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                    <option value="">Keine</option>
+                    {% for org in form.originator_organization.field.queryset %}
+                    <option value="{{ org.id }}" {% if form.originator_organization.value|stringformat:"s" == org.id|stringformat:"s" %}selected{% endif %}>{{ org.name }}</option>
+                    {% endfor %}
+                </select>
+                {% include "session/neu/_formular_feldfehler.html" with feld=form.originator_organization %}
+            </div>
+            <div>
+                <c-form.beschriftung feld="{{ form.originator_person.id_for_label }}">Urheber (Person)</c-form.beschriftung>
+                <select name="originator_person" id="id_originator_person"{% if form.originator_person.errors %} aria-invalid="true" aria-describedby="id_originator_person-error"{% endif %}
+                        class="w-full h-9 pl-3 pr-8 rounded-md border bg-band-hell text-sm text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if form.originator_person.errors %}border-red-600 dark:border-red-400{% else %}border-gray-300 dark:border-gray-700{% endif %}">
+                    <option value="">Keine</option>
+                    {% for person in form.originator_person.field.queryset %}
+                    <option value="{{ person.id }}" {% if form.originator_person.value|stringformat:"s" == person.id|stringformat:"s" %}selected{% endif %}>{{ person.display_name }}</option>
+                    {% endfor %}
+                </select>
+                {% include "session/neu/_formular_feldfehler.html" with feld=form.originator_person %}
+            </div>
+        </div>
+    </div>
+</c-rahmen.abschnitt>

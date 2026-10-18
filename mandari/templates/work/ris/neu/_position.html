@@ -1,0 +1,5 @@
+{% comment %}
+Position der Fraktion (apps.work.ris.fraktion.Position) als kleiner Punkt mit Text; die Farbe steht nie allein
+(Konzept Abschnitt 5: Zustimmung grün, Ablehnung rot, Enthaltung gelb, sonst grau). Parameter: position.
+{% endcomment %}
+<span class="inline-flex items-baseline gap-1.5"><span class="w-2 h-2 shrink-0 rounded-full {% if position.ton == 'zustimmung' %}bg-green-600{% elif position.ton == 'ablehnung' %}bg-red-600{% elif position.ton == 'enthaltung' %}bg-amber-500{% else %}bg-gray-400{% endif %}" aria-hidden="true"></span><span>{{ position.label }}{% if position.endgueltig %}<span class="text-gray-600 dark:text-gray-400">, endgültig</span>{% endif %}</span></span>

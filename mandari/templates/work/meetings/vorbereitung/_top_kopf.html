@@ -5,7 +5,7 @@ Vorbereitung). „Mehr“ zeigt alle Einträge und die Beratungsfolge. Am Handy 
 Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt).
 {% endcomment %}
 <div class="vb-mobil-nav">
-    <button type="button" class="vb-knopf vb-leise" @click="oeffneBlatt('tagesordnung')" aria-haspopup="dialog">
+    <button type="button" class="wf-knopf wf-leise" @click="oeffneBlatt('tagesordnung')" aria-haspopup="dialog">
         <i data-lucide="list" aria-hidden="true"></i><span x-text="'TOP ' + (topIndex + 1) + ' von ' + items.length"></span>
     </button>
     <span class="vb-platz"></span>
@@ -13,8 +13,8 @@ Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt).
 </div>
 <header class="vb-topkopf" :class="kopfOffen && 'offen'">
     <div class="vb-topkopf-text">
-        <h2 class="vb-top-h" id="top-titel" tabindex="-1">
-            <span class="vb-top-nr" x-text="selectedItem ? 'TOP ' + selectedItem.number : ''"></span>
+        <h2 class="wf-top-h" id="top-titel" tabindex="-1">
+            <span class="wf-top-nr" x-text="selectedItem ? 'TOP ' + selectedItem.number : ''"></span>
             <span x-text="selectedItem ? selectedItem.name : ''"></span>
         </h2>
         <p class="vb-top-zeile2">
@@ -23,11 +23,10 @@ Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt).
             <span class="txt" x-show="selectedItem && selectedItem.paper"
                   x-text="vorlageZeile"></span>
             <span class="txt" x-show="selectedItem && !selectedItem.paper">Ohne Vorlage</span>
-            <button type="button" class="vb-textlink" x-show="unterlagen.length === 0 && !docsLoading" @click="anlageOffen = true">Anlage hinzufügen</button>
+            <button type="button" class="wf-textlink" x-show="unterlagen.length === 0 && !docsLoading" @click="anlageOffen = true">Anlage hinzufügen</button>
         </p>
         <p class="vb-top-hinweis" x-show="selectedItem && selectedItem.withdrawnHint" x-text="selectedItem ? selectedItem.withdrawnHint : ''"></p>
-        <div class="vb-verlauf" x-show="selectedItem && selectedItem.paper && (verlauf.length > 0 || beratungsfolge.length > 1)">
-            <span class="vb-verlauf-h"><i data-lucide="git-branch" aria-hidden="true"></i>Im Beratungsverlauf</span>
+        <c-work.beratungsverlauf kennung="verlauf-h" x-show="selectedItem && selectedItem.paper && (verlauf.length > 0 || beratungsfolge.length > 1)">
             <ul x-show="verlauf.length > 0">
                 <template x-for="(cp, cpi) in verlauf" :key="cpi">
                     <li x-show="kopfOffen || cpi === 0">
@@ -38,14 +37,14 @@ Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt).
                         <template x-if="!cp.meeting_id">
                             <span class="wo" x-text="(cp.gremium || cp.sitzung) + (cp.datum_display ? ', ' + cp.datum_display : '')"></span>
                         </template>:
-                        <span class="punkt" :class="positionsKlasse(cp.position)"></span><b x-text="cp.position_display"></b><span x-text="verlaufZusatz(cp)"></span>
+                        <span class="wf-punkt" :class="positionsKlasse(cp.position)"></span><b x-text="cp.position_display"></b><span x-text="verlaufZusatz(cp)"></span>
                     </li>
                 </template>
             </ul>
             <span class="leise" x-show="verlauf.length === 0">Noch keine Position der Organisation aus anderen Gremien.</span>
-        </div>
+        </c-work.beratungsverlauf>
         <div class="vb-folge" x-show="kopfOffen && beratungsfolge.length > 1" x-cloak>
-            <span class="vb-verlauf-h"><i data-lucide="route" aria-hidden="true"></i>Beratungsfolge</span>
+            <span class="wf-verlauf-h"><i data-lucide="route" aria-hidden="true"></i>Beratungsfolge</span>
             <ol>
                 <template x-for="(c, ci) in beratungsfolge" :key="ci">
                     <li :aria-current="c.isCurrent ? 'true' : null">
@@ -63,12 +62,12 @@ Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt).
             </ol>
         </div>
     </div>
-    <button type="button" class="vb-textlink vb-mehr" x-show="kopfHatMehr" @click="kopfOffen = !kopfOffen"
+    <button type="button" class="wf-textlink vb-mehr" x-show="kopfHatMehr" @click="kopfOffen = !kopfOffen"
             :aria-expanded="kopfOffen ? 'true' : 'false'" x-text="kopfOffen ? 'Weniger' : 'Mehr'"></button>
 </header>
 <div class="vb-mobil-unterlagen" x-show="unterlagen.length > 0">
     <template x-for="(u, ui) in unterlagen" :key="u.schluessel">
-        <button type="button" class="vb-knopf" @click="unterlageAlsBlatt(ui)" aria-haspopup="dialog">
+        <button type="button" class="wf-knopf" @click="unterlageAlsBlatt(ui)" aria-haspopup="dialog">
             <i :data-lucide="u.istLink ? 'link' : 'file-text'" aria-hidden="true"></i><span x-text="u.name"></span>
         </button>
     </template>

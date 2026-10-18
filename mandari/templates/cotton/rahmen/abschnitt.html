@@ -1,0 +1,20 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Abschnitt einer Seite mit Überschrift, gemeinsam für Arbeitsflächen (Issue #853): eine Ebene, gegliedert über Abstand
+und Überschrift statt Kästen. Überschrift 16 px halbfett; ``zusatz`` steht gedimmt dahinter („· 12 Punkte“), der Slot
+``link`` rechtsbündig daneben (ein zweiter Weg, etwa „Alle Vorgänge“).
+  <c-rahmen.abschnitt titel="Dokumente" titel_id="dokumente-titel">…</c-rahmen.abschnitt>
+  <c-rahmen.abschnitt titel="Neue Vorgänge" titel_id="neu-titel">
+      <c-slot name="link"><c-ui.textlink href="…" class="text-sm">Alle Vorgänge</c-ui.textlink></c-slot>
+      …
+  </c-rahmen.abschnitt>
+Weitere Attribute (class, data-testid) gehen an die Section.
+{% endcomment %}
+<c-vars titel="" titel_id="" zusatz="" link="" />
+<section {% if titel_id %}aria-labelledby="{{ titel_id }}" {% endif %}{{ attrs }}>
+    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h2 {% if titel_id %}id="{{ titel_id }}" {% endif %}class="text-base font-semibold text-gray-900 dark:text-white">{{ titel }}{% if zusatz %} <span class="font-normal text-gray-600 dark:text-gray-400">· {{ zusatz }}</span>{% endif %}</h2>
+        {% if link %}<span class="text-sm">{{ link }}</span>{% endif %}
+    </div>
+    {{ slot }}
+</section>

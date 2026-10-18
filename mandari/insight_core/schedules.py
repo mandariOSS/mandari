@@ -11,9 +11,10 @@ Zeitpläne des Bürgerportals (``apps.events.schedule``, Issue #515).
 - ``kommunenverzeichnis_abgleichen``: stündlich die gelisteten Kommunen ins Kommunenverzeichnis übernehmen, soweit
   sie dort fehlen (Issue #783). Nach dem Deploy und nach dem Listen einer Kommune ist der Kommunenwechsel so ohne
   Handgriff vollständig; der Import der CSV-Datei bleibt ein eigener Schritt (docs/INSIGHT_KOMMUNENWECHSEL.md).
-- ``texterkennung_einplanen``: alle zwei Minuten, nur mit ``TEXT_EXTRACTION_RUNNER=worker`` (Issue #530): hängende
-  Dateien zurückstellen, wartende beanspruchen und je Datei einen Auftrag ``file.extract_text`` in die
-  Warteschlange ``ocr`` einreihen. Mit dem Standard ``ingestor`` erkennt der OCR-Worker des Ingestors den Text.
+- ``texterkennung_einplanen``: alle zwei Minuten, nur mit ``TEXT_EXTRACTION_RUNNER=worker`` (Issues #530, #919):
+  liegen gebliebene Beanspruchungen freigeben und je Datei mit abgelegtem Inhalt, deren Erkennung wartet oder
+  veraltet ist, einen Auftrag ``file.extract_text`` in die Warteschlange ``ocr`` einreihen, ohne zu beanspruchen
+  (``hub.ris.erkennung.einplanen``). Mit dem Standard ``ingestor`` erkennt der OCR-Worker des Ingestors den Text.
 """
 
 from __future__ import annotations
@@ -26,7 +27,6 @@ from apps.events.schedule import cron, every
 from .services.georef_runner import run_auto_georef_pass
 from .services.kommunenverzeichnis_import import aus_koerperschaften
 from .services.page_feedback import purge_expired
-from .services.text_extraction_job import plan as plan_text_extraction
 
 
 @every(minutes=max(1, int(settings.GEOREF_AUTO_INTERVAL_MINUTES)))
@@ -53,7 +53,9 @@ def kommunenverzeichnis_abgleichen() -> int:
 @task
 def texterkennung_einplanen() -> int:
     """Aufträge file.extract_text einreihen (nur mit TEXT_EXTRACTION_RUNNER=worker); Rückgabe: ihre Zahl."""
-    return plan_text_extraction()
+    from hub.ris.erkennung import einplanen
+
+    return einplanen()
 
 
 # Nur eingeplant, wenn die Aufträge den Text erkennen; sonst entstünde alle zwei Minuten ein leerer Lauf

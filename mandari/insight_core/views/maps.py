@@ -13,19 +13,20 @@ import httpx
 from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpResponse, JsonResponse
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
-from ..models import (
-    OParlPaper,
-    TileCache,
-)
+from ..models import TileCache
+from ..services import dienste, karten_punkte
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 #: Höchste Zoomstufe der Karten (Leaflet maxZoom) und Größengrenze einer Kachel
 MAX_TILE_ZOOM = 19
 MAX_TILE_BYTES = 1024 * 1024
+#: So lange wartet ein Kachelabruf höchstens auf seinen Zeitpunkt im Takt je Host (Issue #1036)
+TILE_PACE_MAX_WAIT_SECONDS = 5.0
 _TILE_COUNT_CACHE_KEY = "insight:tiles:count"
 
 
@@ -83,6 +84,14 @@ class MapView(ActiveBodyRequiredMixin, TemplateView):
                     "west": float(body.bbox_west),
                 }
 
+        # Startausschnitt für das gemeinsame Kartenmodul (frontend/js/vorgangskarte.ts): Rahmen, sonst Zentrum
+        context["karten_start"] = {
+            "rahmen": context.get("map_bounds"),
+            "zentrum": [context["map_center"]["lat"], context["map_center"]["lng"]]
+            if "map_center" in context
+            else None,
+        }
+
         from ..seo import get_page_seo
 
         context["seo"] = get_page_seo(
@@ -94,55 +103,8 @@ class MapView(ActiveBodyRequiredMixin, TemplateView):
         return context
 
 
-# Obergrenze ausgelieferter Features pro Request (keine Vollauslieferungen)
-MAP_MARKERS_MAX_FEATURES = 2000
-
-
-def _build_marker_features(body, show_all: bool, weeks: int) -> list[dict]:
-    """Baut die GeoJSON-Features für eine Kommune (ungefiltert, cachebar)."""
-    papers = OParlPaper.objects.filter(body=body, deleted=False, locations__isnull=False).only(
-        "id", "name", "reference", "locations"
-    )
-
-    if not show_all:
-        cutoff = timezone.now() - timedelta(weeks=weeks)
-        papers = papers.filter(date__gte=cutoff)
-
-    features = []
-    for paper in papers:
-        if paper.locations and isinstance(paper.locations, list):
-            for loc in paper.locations:
-                if "lat" in loc and "lon" in loc:
-                    features.append(
-                        {
-                            "type": "Feature",
-                            "geometry": {"type": "Point", "coordinates": [loc["lon"], loc["lat"]]},
-                            "properties": {
-                                "id": str(paper.id),
-                                "title": paper.name,
-                                "reference": paper.reference,
-                                "url": f"/insight/vorgaenge/{paper.id}/",
-                                "location_name": loc.get("name", ""),
-                            },
-                        }
-                    )
-    return features
-
-
-def _parse_bbox(raw: str | None) -> tuple[float, float, float, float] | None:
-    """Parst ?bbox=west,south,east,north (Leaflet: toBBoxString())."""
-    if not raw:
-        return None
-    try:
-        parts = [float(p) for p in raw.split(",")]
-    except (TypeError, ValueError):
-        return None
-    if len(parts) != 4:
-        return None
-    west, south, east, north = parts
-    if south > north or west > east:
-        return None
-    return west, south, east, north
+#: Obergrenze ausgelieferter Punkte je Antwort (keine Vollauslieferungen), gemeinsam mit Work (Issue #853)
+MAP_MARKERS_MAX_FEATURES = karten_punkte.HOECHSTENS
 
 
 @require_GET
@@ -151,12 +113,14 @@ def map_markers(request):
 
     Query-Parameter:
         weeks: Anzahl Wochen zurück (Standard: 4, Max: 52)
-        all: Wenn "1", alle Papers mit Locations (kein Zeitfilter)
+        all: Wenn "1", alle Vorgänge mit Ortsbezug (kein Zeitfilter)
         bbox: "west,south,east,north" — nur Marker im Kartenausschnitt
 
-    Die Feature-Liste wird serverseitig gecacht (MAP_MARKERS_CACHE_SECONDS,
-    Standard 10 Min) und pro Antwort auf MAP_MARKERS_MAX_FEATURES begrenzt
-    (Antwort enthält dann "truncated": true).
+    Die Punkte kommen aus derselben Abfrage wie die Karte der Recherche in Work
+    (``services.karten_punkte``: Tabelle der Verortungen, ohne gelöschte Vorgänge und im Admin entfernte
+    Verortungen, neueste zuerst). Die Antwort ohne Ausschnitt wird je Kommune und Zeitraum gecacht
+    (MAP_MARKERS_CACHE_SECONDS, Standard 10 Min); jede Antwort trägt höchstens MAP_MARKERS_MAX_FEATURES Punkte
+    (sonst "truncated": true, die Karte lädt dann je Ausschnitt nach).
     """
     body = get_active_body(request)
     if not body:
@@ -168,35 +132,20 @@ def map_markers(request):
     except (TypeError, ValueError):
         weeks = 4
     weeks = max(weeks, 1)
+    since = None if show_all else timezone.localdate() - timedelta(weeks=weeks)
+    area = karten_punkte.ausschnitt(request.GET.get("bbox"))
 
+    def vorgang_url(paper_id):
+        return reverse("insight_core:insight:paper_detail", args=[paper_id])
+
+    if area is not None:
+        return JsonResponse(karten_punkte.geojson([body], area=area, since=since, url=vorgang_url))
     cache_key = f"map_markers:{body.id}:{'all' if show_all else weeks}"
-    features = cache.get(cache_key)
-    if features is None:
-        features = _build_marker_features(body, show_all, weeks)
-        cache_seconds = getattr(settings, "MAP_MARKERS_CACHE_SECONDS", 600)
-        cache.set(cache_key, features, cache_seconds)
-
-    # BBox-Filter (nach dem Cache: der Cache hält die Gesamtliste pro Zeitraum)
-    bbox = _parse_bbox(request.GET.get("bbox"))
-    if bbox:
-        west, south, east, north = bbox
-        features = [
-            f
-            for f in features
-            if west <= f["geometry"]["coordinates"][0] <= east and south <= f["geometry"]["coordinates"][1] <= north
-        ]
-
-    truncated = len(features) > MAP_MARKERS_MAX_FEATURES
-    if truncated:
-        features = features[:MAP_MARKERS_MAX_FEATURES]
-
-    return JsonResponse(
-        {
-            "type": "FeatureCollection",
-            "features": features,
-            "truncated": truncated,
-        }
-    )
+    daten = cache.get(cache_key)
+    if daten is None:
+        daten = karten_punkte.geojson([body], since=since, url=vorgang_url)
+        cache.set(cache_key, daten, getattr(settings, "MAP_MARKERS_CACHE_SECONDS", 600))
+    return JsonResponse(daten)
 
 
 # =============================================================================
@@ -218,6 +167,9 @@ def tile_proxy(request, z, x, y):
 
     Nur gültige Kacheln (Zoom 0–19, x/y innerhalb des Zoomlevels); Abrufe bei OSM sind je IP und
     insgesamt gedrosselt, der Cache hat eine Obergrenze. Kacheln aus dem Cache sind nicht gedrosselt.
+    Abrufe bei OSM melden sich mit unserer Kennung samt Kontakt und halten den Takt je Host ein
+    (``dienste.KACHELN``, Issue #1036); ist binnen ``TILE_PACE_MAX_WAIT_SECONDS`` kein Zeitpunkt frei,
+    antwortet der Proxy mit 503 und ``Retry-After``, ohne bei OSM anzufragen.
     """
     from django.http import HttpResponseNotFound
 
@@ -253,14 +205,18 @@ def tile_proxy(request, z, x, y):
     ):
         return HttpResponse(status=429, headers={"Retry-After": "60"})
 
-    subdomain = ["a", "b", "c"][x % 3]
-    tile_url = f"https://{subdomain}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+    tile_url = dienste.OSM_KACHEL_URL.format(z=z, x=x, y=y)
 
+    # Eine Karte lädt Dutzende Kacheln zugleich; jeder Abruf bei OSM darf bis zu 10 s dauern. Solange die
+    # Datenbankverbindung an den Pool zurückgeben (Issue #1024), das Speichern holt sich danach eine neue
+    from apps.common.db_connections import release_idle_thread_connections
+
+    release_idle_thread_connections()
+    # Takt je Host (Issue #1036): ohne freien Zeitpunkt keine Anfrage bei OSM, der Browser versucht es später
+    if not dienste.warten(tile_url, dienste.KACHELN, max_wait=TILE_PACE_MAX_WAIT_SECONDS):
+        return HttpResponse(status=503, headers={"Retry-After": "5"})
     try:
-        with httpx.Client(
-            timeout=10.0,
-            headers={"User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"},
-        ) as client:
+        with httpx.Client(timeout=10.0, headers=dienste.headers()) as client:
             response = client.get(tile_url)
 
             if response.status_code == 200 and len(response.content) <= MAX_TILE_BYTES:

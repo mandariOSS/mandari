@@ -27,6 +27,7 @@ from django.views.generic import TemplateView
 from .. import audit, hub_events
 from ..models import SessionAgendaItem, SessionMeeting, SessionProtocolCorrection, SessionTextBlock, SessionVote
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import (
     agenda_service,
     cockpit_service,
@@ -73,6 +74,10 @@ class ProtocolDetailView(SessionViewMixin, TemplateView):
 
     template_name = "session/protocols/detail.html"
     permission_required = "view_protocols"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/niederschrift.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -168,6 +173,12 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
 
     template_name = "session/protocols/form.html"
     permission_required = "edit_protocols"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/niederschrift_bearbeiten.html"] if neues_design(self.session_tenant) else [self.template_name]
+        )
 
     def _load(self):
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
@@ -291,8 +302,15 @@ class ProtocolEditView(SessionViewMixin, TemplateView):
                     counts[field] = min(int(raw), 9999)
             # Keine Stimmenzahlen für einen gesperrten Vorgang
             if not gesperrt and any(counts[field] != getattr(item, field) for field in _COUNT_FIELDS):
+                # Abgeschlossene Abstimmung im Sitzungscockpit: Störungen zu ihrem Zeitpunkt (Issue #1045); nur dann
+                # eine eigene Prüfung je TOP, sonst gilt die gemeinsame
+                moment = participation_service.vote_time(item)
                 check = voting_service.check_counts(
-                    item, counts["votes_yes"], counts["votes_no"], counts["votes_abstain"], assessed=assessed
+                    item,
+                    counts["votes_yes"],
+                    counts["votes_no"],
+                    counts["votes_abstain"],
+                    assessed=assessed if moment is None else voting_service.eligibility(meeting, at=moment),
                 )
                 if check.exceeded:
                     (messages.error if check.hard else messages.warning)(request, check.message)
@@ -387,6 +405,14 @@ class ProtocolCorrectionView(SessionViewMixin, TemplateView):
         "allgemein-noe": SessionProtocolCorrection.TARGET_GENERAL_NP,
     }
 
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/niederschrift_berichtigen.html"]
+            if neues_design(self.session_tenant)
+            else [self.template_name]
+        )
+
     def _load(self):
         meeting = _get_meeting(self, self.kwargs["meeting_id"])
         protocol = getattr(meeting, "protocol", None)
@@ -436,9 +462,19 @@ class ProtocolCorrectionView(SessionViewMixin, TemplateView):
         voters = []
         if item is not None and item.voting_method in protocol_correction_service.INDIVIDUAL_METHODS:
             votes = protocol_correction_service.current_votes(item)
-            for attendance in voting_service.eligibility(meeting, item).voting:
+            # Wie die Prüfung beim Berichtigen: Störungen zum Zeitpunkt der Abstimmung (Issue #1045)
+            moment = participation_service.vote_time(item)
+            assessed = voting_service.eligibility(meeting, item, at=moment)
+            for attendance in assessed.voting:
                 attendance.current_vote = votes.get(str(attendance.person_id), "")
                 voters.append(attendance)
+            # Bei der Abstimmung gestört, vorher abgestimmt: Die Stimme gilt und lässt sich nur entfernen, nicht ändern
+            kept = voting_service.kept_votes(item, assessed, {v.person_id: v for v in item.votes.all()})
+            for attendance in assessed.unreachable:
+                if attendance.person_id in kept:
+                    attendance.current_vote = votes.get(str(attendance.person_id), "")
+                    attendance.vote_kept = True
+                    voters.append(attendance)
         public_scope = (
             protocol_correction_service.item_is_public(item)
             if item is not None

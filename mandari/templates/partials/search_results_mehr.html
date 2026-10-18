@@ -1,7 +1,8 @@
-{% comment %}„Mehr laden“ der Trefferliste: hängt die nächste Seite an #treffer-liste an; ohne JavaScript ein Link (next_url).{% endcomment %}
+{% comment %}„Mehr laden“ der Trefferliste: hängt die nächste Seite an #treffer-liste an; ohne JavaScript ein Link (next_url).
+In Work (suche_work) in den Maßen einer Arbeitsplattform (32 px, Schrift 14 px).{% endcomment %}
 {% if has_more and next_url %}
 <a href="{{ next_url }}" hx-get="{{ next_url }}" hx-target="#treffer-liste" hx-swap="beforeend" hx-push-url="false"
-   class="inline-flex items-center gap-2 min-h-11 px-5 rounded-lg border border-gray-300 dark:border-gray-600 font-medium text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
+   class="inline-flex items-center gap-2 {% if suche_work %}min-h-8 px-3 rounded-md text-sm{% else %}min-h-11 px-5 rounded-lg{% endif %} border border-gray-300 dark:border-gray-600 font-medium text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800">
     Weitere Treffer laden
 </a>
 {% endif %}

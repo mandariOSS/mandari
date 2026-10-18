@@ -1,0 +1,45 @@
+{% comment %}
+Protokoll-Kontrolle im neuen Rahmen (Issues #221, #944), nur mit dem Exportrecht: Stand der Hash-Kette als Text,
+„Kette jetzt prüfen“ und der Export eines Zeitraums mit Format; Knöpfe ohne Füllfarbe. Formulare und Felder wie
+session/audit/_kontrolle.html. Eingebunden aus session/neu/audit.html.
+{% endcomment %}
+<aside id="kontrolle" class="min-w-0 scroll-mt-20 space-y-8" aria-label="Export und Manipulationsschutz" data-testid="audit-kontrolle">
+    <c-rahmen.abschnitt titel="Manipulationsschutz" titel_id="kette-titel">
+        <c-rahmen.satz eng>Hash-Kette je Mandant; jeder Export und jede Prüfung wird selbst protokolliert.</c-rahmen.satz>
+        <div class="mt-3 space-y-1.5 text-sm text-gray-800 dark:text-gray-200">
+            {% if chain.verkettung_aktiv %}
+            <p>{% include "session/neu/_status.html" with wert="approved" text="Verkettung aktiv" %}</p>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Letzter Eintrag Nr. {{ chain.kopf_nr }}</p>
+            {% else %}
+            <p>{% include "session/neu/_status.html" with wert="review" text="Altbestand noch nicht verkettet" %}</p>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Der Betrieb verkettet ihn mit audit_chain_backfill.</p>
+            {% endif %}
+            {% if chain.kopf_hash %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-all">Kettenkopf: <code>{{ chain.kopf_hash }}</code></p>{% endif %}
+            {% if chain.anker_nr %}
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Einträge bis Nr. {{ chain.anker_nr }} wurden fristgerecht archiviert und gelöscht{% if chain.anker_am %} ({{ chain.anker_am|date:"d.m.Y" }}){% endif %}. Die Prüfung beginnt am Kettenanker.</p>
+            {% endif %}
+            {% if last_verify %}
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Letzte Prüfung {{ last_verify.created_at|date:"d.m.Y H:i" }}: {% if last_verify.changes.intakt %}intakt{% else %}<span class="font-medium text-red-700 dark:text-red-400">Befund</span>{% endif %} ({{ last_verify.changes.geprueft }} Einträge)</p>
+            {% endif %}
+        </div>
+        <form method="post" action="{% url 'session:audit_log_verify' tenant_slug=tenant_slug %}" class="mt-3">
+            {% csrf_token %}
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="shield-check">Kette jetzt prüfen</c-ui.button>
+        </form>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Export" titel_id="export-titel">
+        <form method="post" action="{% url 'session:audit_log_export' tenant_slug=tenant_slug %}" class="mt-2 space-y-3">
+            {% csrf_token %}
+            <div class="grid grid-cols-2 gap-2">
+                <c-form.field name="from" id="export_from" type="date" label="Von" value="{{ request.GET.from }}" dicht />
+                <c-form.field name="to" id="export_to" type="date" label="Bis" value="{{ request.GET.to }}" dicht />
+            </div>
+            <c-form.select name="format" id="export_format" label="Format" dicht>
+                {% for value, label in export_formats %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+            </c-form.select>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Jede Datei trägt eine SHA-256-Prüfsumme (im JSON-Umschlag, als SHA256SUMS im ZIP und im Protokolleintrag des Exports). Höchstens {{ export_max_rows }} Einträge je Export.</p>
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="download">Zeitraum exportieren</c-ui.button>
+        </form>
+    </c-rahmen.abschnitt>
+</aside>

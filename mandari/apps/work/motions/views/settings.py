@@ -19,6 +19,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.common.params import int_param
 from apps.common.uploads import MB, PDF, validate_upload
 from apps.work.files import attachment_response
+from apps.work.rahmen import NeueVorlageMixin
 from apps.work.sanitize import safe_editor_html
 
 from ..forms import (
@@ -56,10 +57,11 @@ def _letterhead_numbers(post) -> dict[str, int]:
 # =============================================================================
 
 
-class MotionSettingsView(WorkViewMixin, TemplateView):
+class MotionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Overview of motion/document settings."""
 
     template_name = "work/motions/settings/index.html"
+    neue_vorlage = "work/motions/settings/neu/index.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -93,10 +95,11 @@ class MotionSettingsView(WorkViewMixin, TemplateView):
         return context
 
 
-class MotionTypeListView(WorkViewMixin, TemplateView):
+class MotionTypeListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List and manage document types."""
 
     template_name = "work/motions/settings/types.html"
+    neue_vorlage = "work/motions/settings/neu/typen.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -109,10 +112,11 @@ class MotionTypeListView(WorkViewMixin, TemplateView):
         return context
 
 
-class MotionTypeCreateView(WorkViewMixin, TemplateView):
+class MotionTypeCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Create a new document type."""
 
     template_name = "work/motions/settings/type_form.html"
+    neue_vorlage = "work/motions/settings/neu/typ.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -165,10 +169,11 @@ class MotionTypeCreateView(WorkViewMixin, TemplateView):
         return redirect("work:document_type_list", org_slug=self.organization.slug)
 
 
-class MotionTypeEditView(WorkViewMixin, TemplateView):
+class MotionTypeEditView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Edit a document type."""
 
     template_name = "work/motions/settings/type_form.html"
+    neue_vorlage = "work/motions/settings/neu/typ.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -229,10 +234,11 @@ class MotionTypeDeleteView(WorkViewMixin, View):
         return redirect("work:document_type_list", org_slug=self.organization.slug)
 
 
-class TopicListView(WorkViewMixin, TemplateView):
+class TopicListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List and manage the organization's topic catalog (Themenkatalog)."""
 
     template_name = "work/motions/settings/topics.html"
+    neue_vorlage = "work/motions/settings/neu/themen.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -313,10 +319,11 @@ class TopicDeleteView(WorkViewMixin, View):
         return redirect("work:document_topic_list", org_slug=self.organization.slug)
 
 
-class MotionTemplateListView(WorkViewMixin, TemplateView):
+class MotionTemplateListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List and manage document templates."""
 
     template_name = "work/motions/settings/templates.html"
+    neue_vorlage = "work/motions/settings/neu/vorlagen.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -333,10 +340,11 @@ class MotionTemplateListView(WorkViewMixin, TemplateView):
         return context
 
 
-class MotionTemplateCreateView(WorkViewMixin, TemplateView):
+class MotionTemplateCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Create a new document template."""
 
     template_name = "work/motions/settings/template_form.html"
+    neue_vorlage = "work/motions/settings/neu/vorlage.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -372,10 +380,11 @@ class MotionTemplateCreateView(WorkViewMixin, TemplateView):
         return self.render_to_response(context)
 
 
-class MotionTemplateEditView(WorkViewMixin, TemplateView):
+class MotionTemplateEditView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Edit a document template."""
 
     template_name = "work/motions/settings/template_form.html"
+    neue_vorlage = "work/motions/settings/neu/vorlage.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -437,10 +446,11 @@ class MotionTemplateDeleteView(WorkViewMixin, View):
         return redirect("work:document_template_list", org_slug=self.organization.slug)
 
 
-class LetterheadListView(WorkViewMixin, TemplateView):
+class LetterheadListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """List and manage letterheads."""
 
     template_name = "work/motions/settings/letterheads.html"
+    neue_vorlage = "work/motions/settings/neu/briefkoepfe.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -497,10 +507,11 @@ def _letterhead_form_state(letterhead, organization) -> dict:
     }
 
 
-class LetterheadCreateView(WorkViewMixin, TemplateView):
+class LetterheadCreateView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Create a new letterhead."""
 
     template_name = "work/motions/settings/letterhead_form.html"
+    neue_vorlage = "work/motions/settings/neu/briefkopf.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):
@@ -561,10 +572,11 @@ class LetterheadCreateView(WorkViewMixin, TemplateView):
         return redirect("work:document_letterhead_list", org_slug=self.organization.slug)
 
 
-class LetterheadEditView(WorkViewMixin, TemplateView):
+class LetterheadEditView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Edit a letterhead."""
 
     template_name = "work/motions/settings/letterhead_form.html"
+    neue_vorlage = "work/motions/settings/neu/briefkopf.html"
     permission_required = "organization.edit"
 
     def get_context_data(self, **kwargs):

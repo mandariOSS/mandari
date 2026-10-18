@@ -34,6 +34,7 @@ from ..models import (
     SessionPaper,
 )
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import membership_service
 
 # =============================================================================
@@ -84,6 +85,14 @@ class TermListView(SessionViewMixin, TemplateView):
 
     template_name = "session/settings/terms.html"
     permission_required = "manage_settings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944, Teil 2b); die bisherige Seite bleibt unverändert
+        return (
+            ["session/neu/einstellungen/wahlperioden.html"]
+            if neues_design(self.session_tenant)
+            else [self.template_name]
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -277,6 +286,10 @@ class ArchiveView(SessionViewMixin, TemplateView):
 
     template_name = "session/archive.html"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/archiv.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)

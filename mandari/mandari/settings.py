@@ -128,6 +128,8 @@ INSTALLED_APPS = [
     "hub.projections",
     # Datendrehscheibe: Live-Übertragungen von Gremiensitzungen (Issue #915, docs/LIVE_UEBERTRAGUNG.md)
     "hub.live",
+    # Datendrehscheibe: RIS-Bestand, ohne Modelle – Abruf der Dateien (Issue #919), Befehl dokumentkette
+    "hub.ris",
     "apps.provisioning",
     "apps.work",
     # Mandari Session RIS (OSS - AGPL-3.0-or-later)
@@ -528,17 +530,28 @@ MEDIA_ROOT = BASE_DIR / "media"
 OPARL_FILES_ROOT = Path(os.environ.get("OPARL_FILES_ROOT", str(MEDIA_ROOT / "oparl_files")))
 FILE_CACHE_MAX_MB = int(os.environ.get("FILE_CACHE_MAX_MB", "80"))
 FILE_CACHE_MIN_FREE_GB = int(os.environ.get("FILE_CACHE_MIN_FREE_GB", "15"))
+# Obergrenze der Gesamtgröße (Issue #961, insight_core/services/file_cache_limit.py): 0 = unbegrenzt. Darüber
+# verdrängt der stündliche Lauf die am wenigsten gebrauchten Dokumente, bis FILE_CACHE_EVICT_TARGET_PERCENT der
+# Grenze erreicht sind (mit Objektspeicher nur lokal, sonst holt die Vorschau sie bei Bedarf neu).
+FILE_CACHE_MAX_TOTAL_GB = float(os.environ.get("FILE_CACHE_MAX_TOTAL_GB", "0") or 0)
+FILE_CACHE_EVICT_TARGET_PERCENT = int(os.environ.get("FILE_CACHE_EVICT_TARGET_PERCENT", "90") or 90)
 FILE_PROXY_TIMEOUT_SECONDS = int(os.environ.get("FILE_PROXY_TIMEOUT_SECONDS", "15"))
 # Lokale Kopien liefert der Webserver aus (X-Accel-Redirect, Range/ETag), Django prüft nur Zugriff und
 # Sperre (Issue #785, docs/FILE_CACHE.md). Erst einschalten, wenn der Webserver die Ablage lesen kann
 # und den Block aus dem Caddyfile hat – sonst kommen leere Antworten an.
 FILE_ACCEL_REDIRECT = os.environ.get("FILE_ACCEL_REDIRECT", "false").lower() in ("1", "true", "yes")
 # Drossel je Host über alle Prozesse (insight_core/services/host_pacing.py, gemeinsam mit dem Ingestor):
-# Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe Ratsinformationssystem. Je Quelle
-# abweichend über sync_config["request_interval"]; 0 schaltet die Drossel ab. Die Vorschau wartet höchstens
-# FILE_PROXY_PACE_MAX_WAIT_SECONDS auf ihren Zeitpunkt und bittet sonst um einen neuen Versuch.
+# Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe Ratsinformationssystem; 0 schaltet die Drossel ab
+# (nur Tests und Notfälle). Je Quelle über sync_config["request_interval"] nur langsamer: Werte unter einer
+# Sekunde hebt mandari_oparl.pacing auf eine Sekunde an (Issue #1025). Die Vorschau wartet höchstens
+# FILE_PROXY_PACE_MAX_WAIT_SECONDS auf Abrufplatz, robots.txt und Zeitpunkt, alle Weiterleitungen eingeschlossen
+# (Issue #1036), und bittet sonst um einen neuen Versuch.
 RIS_REQUEST_INTERVAL = float(os.environ.get("RIS_REQUEST_INTERVAL", "1.0"))
 FILE_PROXY_PACE_MAX_WAIT_SECONDS = float(os.environ.get("FILE_PROXY_PACE_MAX_WAIT_SECONDS", "5"))
+# Takt je Host für Live-Übertragung und Geodienste (insight_core/services/dienste.py, Issue #1036), Abstand je
+# Dienst fest im Code (Nominatim höchstens eine Anfrage je Sekunde). Bewusst ohne Umgebungsvariable: False nur in
+# Tests (settings_test.py).
+DIENSTE_DROSSEL = True
 # Löschabgleich (Issue #787): Kopie und Text eines gesperrten Dokuments nach so vielen Tagen löschen
 FILE_PURGE_AFTER_DAYS = int(os.environ.get("FILE_PURGE_AFTER_DAYS", "30"))
 # Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich
@@ -552,6 +565,12 @@ FILE_STORE_LAYOUT = os.environ.get("FILE_STORE_LAYOUT", "sha256")
 # Der Ingestor legt Dateien, die er für den Text lädt, selbst in der Ablage ab (OPARL_FILES_ROOT im
 # Ingestor). Dann holt der Dokument-Cache Dateien in der Texterkennung nicht ein zweites Mal.
 INGESTOR_STORES_FILES = os.environ.get("INGESTOR_STORES_FILES", "false").lower() in ("1", "true", "yes")
+# Abruf der RIS-Dateien (Issue #919, hub/ris/abruf.py): Ein Abruf beansprucht seine Datei höchstens so lange
+# (danach gibt cache_files sie frei), je Quelle und Lauf höchstens so viele Abrufe, und die Prüfung
+# „dokumentabruf“ (/health/worker/) scheitert, wenn fällige Wiederholungen länger als so viele Stunden liegen.
+DOCUMENT_FETCH_STALE_MINUTES = int(os.environ.get("DOCUMENT_FETCH_STALE_MINUTES", "30"))
+DOCUMENT_FETCH_MAX_QUEUED = int(os.environ.get("DOCUMENT_FETCH_MAX_QUEUED", "200"))
+DOCUMENT_FETCH_RETRY_ALERT_HOURS = float(os.environ.get("DOCUMENT_FETCH_RETRY_ALERT_HOURS", "6"))
 # S3-kompatibler Objektspeicher für die Ablage (Issue #788), Standard aus. Zugangsdaten nur aus der Umgebung.
 # Eingeschaltet ist die lokale Ablage ein Zwischenspeicher mit höchstens OBJ_CACHE_MAX_GB.
 OBJ_ENABLED = os.environ.get("OBJ_ENABLED", "false").lower() in ("1", "true", "yes")
@@ -563,7 +582,9 @@ OBJ_REGION = os.environ.get("OBJ_REGION", "")
 OBJ_ADDRESSING_STYLE = os.environ.get("OBJ_ADDRESSING_STYLE", "auto")
 OBJ_TIMEOUT_SECONDS = float(os.environ.get("OBJ_TIMEOUT_SECONDS", "30"))
 OBJ_CACHE_MAX_GB = int(os.environ.get("OBJ_CACHE_MAX_GB", "60"))
-# Gesamtdauer eines Abrufs aus dem Objektspeicher in der Vorschau (danach Rückfall auf die Quelle)
+# Verdrängen bricht ab, wenn so viele Inhalte in Folge im Objektspeicher fehlen (falscher Bucket, #990; 0 = ohne Grenze)
+OBJ_EVICT_MAX_MISSING = int(os.environ.get("OBJ_EVICT_MAX_MISSING", "20"))
+# Gesamtdauer eines Abrufs aus dem Objektspeicher (danach gilt er als gestört; kein Abruf bei der Quelle, #919)
 OBJ_FETCH_TOTAL_SECONDS = float(os.environ.get("OBJ_FETCH_TOTAL_SECONDS", "60"))
 # Prüfsummen beim Upload: "when_required" (verträglich mit S3-kompatiblen Anbietern) oder "when_supported"
 OBJ_CHECKSUMS = os.environ.get("OBJ_CHECKSUMS", "when_required")
@@ -596,6 +617,9 @@ REPORTS_ROOT = Path(os.environ.get("REPORTS_ROOT", str(MEDIA_ROOT / "berichte"))
 AUDIT_EXPORT_MAX_ROWS = int(os.environ.get("AUDIT_EXPORT_MAX_ROWS", "100000"))
 # Aufbewahrung des mandantenübergreifenden Sicherheitsprotokolls in Tagen (purge_security_audit_log)
 SECURITY_AUDIT_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_RETENTION_DAYS", "365"))
+# Aufbewahrung der Anmeldeversuche (LoginAttempt, Drosselung) in Tagen, 0 = keine Löschung (purge_login_attempts,
+# Issue #366); 30 Tage, festgelegt durch den Betreiber am 16.10.2026 (docs/PROTOKOLLE.md)
+LOGIN_ATTEMPT_RETENTION_DAYS = int(os.environ.get("LOGIN_ATTEMPT_RETENTION_DAYS", "30"))
 
 
 # Default primary key field type
@@ -713,19 +737,47 @@ INSIGHT_SEARCH_PLACES = os.environ.get("INSIGHT_SEARCH_PLACES", "true").lower() 
 INSIGHT_SEARCH_PLACES_MIN_SHARE = float(os.environ.get("INSIGHT_SEARCH_PLACES_MIN_SHARE", "0.5"))
 INSIGHT_SEARCH_PLACES_RADIUS = int(os.environ.get("INSIGHT_SEARCH_PLACES_RADIUS", "500"))
 
-# Nebius AI (KI-Features: Dokumenten-Assistent, Zusammenfassungen)
-NEBIUS_API_KEY = os.environ.get("NEBIUS_API_KEY", "")
+# KI-Anbieter (Issue #950): Anbieter, Basis-URL, Modell und Schlüssel stehen im Admin (KI-Einstellungen, für
+# Work auch je Organisation). Hier nur die Positivliste erlaubter Hosts als technische Sperre, kommagetrennt;
+# leer ist nichts erlaubt (kein Standard, shared/mandari_dokumente/ki_hosts.py). Gilt für jeden KI-Aufruf, auch
+# für die Texterkennung über MISTRAL_BASE_URL.
+from mandari_dokumente.ki_hosts import erlaubte_hosts_aus_umgebung
 
-# Mistral API (für OCR)
+KI_ERLAUBTE_HOSTS = list(erlaubte_hosts_aus_umgebung())
+
+# KI-Assistent in Insight (Issue #899): höchstens so viele Runden mit Werkzeugen je Antwort und so viele Sekunden
+# je Antwort. Anbieter und Modell kommen aus den KI-Einstellungen (Bürgerportal-Modell, Ausweichmodell).
+INSIGHT_CHAT_MAX_TOOL_ROUNDS = int(os.environ.get("INSIGHT_CHAT_MAX_TOOL_ROUNDS", "4"))
+INSIGHT_CHAT_TIME_LIMIT_SECONDS = int(os.environ.get("INSIGHT_CHAT_TIME_LIMIT_SECONDS", "90"))
+# Kostenbremse: Tagesobergrenze aller Antworten des KI-Assistenten zusammen (Modellaufrufe und Token aus den
+# Chat-Nutzungen seit Mitternacht). Ist eine erreicht, fragt der Assistent den Anbieter bis zum nächsten Tag nicht.
+INSIGHT_CHAT_DAILY_MAX_CALLS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_CALLS", "500"))
+INSIGHT_CHAT_DAILY_MAX_TOKENS = int(os.environ.get("INSIGHT_CHAT_DAILY_MAX_TOKENS", "1000000"))
+# Öffentlicher, nur lesender MCP-Server unter /insight/mcp (Issue #899, docs/INSIGHT_MCP.md). Standard aus; die
+# Freischaltung entscheidet der Betrieb. Grenzen je Adresse und Minute (alle Anfragen), je Adresse und Tag
+# (Werkzeugaufrufe) und insgesamt je Minute; 0 schaltet eine Grenze ab. INSIGHT_MCP_ALLOWED_ORIGINS: weitere Hosts,
+# deren Browser-Clients (Kopfzeile Origin) zugreifen dürfen, kommagetrennt; ALLOWED_HOSTS gelten immer.
+INSIGHT_MCP_ENABLED = os.environ.get("INSIGHT_MCP_ENABLED", "false").lower() in ("true", "1", "yes")
+INSIGHT_MCP_PER_IP_MINUTE = int(os.environ.get("INSIGHT_MCP_PER_IP_MINUTE", "30"))
+INSIGHT_MCP_PER_IP_DAY = int(os.environ.get("INSIGHT_MCP_PER_IP_DAY", "500"))
+INSIGHT_MCP_PER_MINUTE = int(os.environ.get("INSIGHT_MCP_PER_MINUTE", "300"))
+INSIGHT_MCP_ALLOWED_ORIGINS = [
+    host.strip() for host in os.environ.get("INSIGHT_MCP_ALLOWED_ORIGINS", "").split(",") if host.strip()
+]
+
+# Mistral-kompatible Texterkennung (optional): nur mit Schlüssel UND Basis-URL, deren Host in KI_ERLAUBTE_HOSTS
+# steht; sonst bleibt die Texterkennung lokal (pypdf, Tesseract). Nur für öffentliche RIS-Dateien.
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY", "")
+MISTRAL_BASE_URL = os.environ.get("MISTRAL_BASE_URL", "").strip()
 MISTRAL_OCR_RATE_LIMIT = int(os.environ.get("MISTRAL_OCR_RATE_LIMIT", "60"))  # Requests pro Minute
 
 MISTRAL_OCR_MODEL = os.environ.get("MISTRAL_OCR_MODEL", "pixtral-12b-2409")
 
 # Texterkennung (Issues #817, #530): eine Implementierung in shared/mandari_dokumente, gleiche Variablen wie
 # im Ingestor. TEXT_EXTRACTION_RUNNER wählt, wer den Text der RIS-Dateien erkennt: "ingestor" (Standard,
-# OCR-Worker des Ingestors) oder "worker" (Aufträge file.extract_text in der Warteschlange ocr, braucht
-# TASKS_BACKEND=journal). In Anwendung und Ingestor gleich setzen, sonst arbeiten beide oder keiner.
+# OCR-Worker des Ingestors) oder "worker" (Aufträge file.extract_text in der Warteschlange ocr, lesen nur aus
+# Ablage und Objektspeicher; braucht TASKS_BACKEND=journal, sonst startet die Anwendung nicht, siehe unten bei
+# TASKS). In Anwendung und Ingestor gleich setzen, sonst arbeiten beide oder keiner.
 TEXT_EXTRACTION_RUNNER = os.environ.get("TEXT_EXTRACTION_RUNNER", "ingestor").strip().lower() or "ingestor"
 if TEXT_EXTRACTION_RUNNER not in ("ingestor", "worker"):
     from django.core.exceptions import ImproperlyConfigured
@@ -739,8 +791,12 @@ TEXT_EXTRACTION_STALE_MINUTES = int(os.environ.get("TEXT_EXTRACTION_STALE_MINUTE
 TEXT_EXTRACTION_GIVE_UP_ALERT = int(os.environ.get("TEXT_EXTRACTION_GIVE_UP_ALERT", "5"))
 TEXT_EXTRACTION_MAX_ATTEMPTS = int(os.environ.get("TEXT_EXTRACTION_MAX_ATTEMPTS", "3"))
 TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", "50"))
-# Je Lauf des Zeitplans höchstens so viele Aufträge einreihen bzw. wartend halten (nur mit Runner "worker")
+# Je Lauf des Zeitplans höchstens so viele Aufträge einreihen bzw. wartend halten (nur mit Runner "worker");
+# dieselbe Grenze für extract_texts ohne --limit
 TEXT_EXTRACTION_QUEUE_DEPTH = int(os.environ.get("TEXT_EXTRACTION_QUEUE_DEPTH", "20"))
+# Prüfung „dokumenttext“ (/health/worker/, Issue #919, nur mit Runner "worker"): rot, sobald ein abgelegtes Dokument
+# länger als so viele Stunden auf seinen Text wartet
+TEXT_EXTRACTION_BACKLOG_ALERT_HOURS = float(os.environ.get("TEXT_EXTRACTION_BACKLOG_ALERT_HOURS", "24"))
 # Grenzen je Seite und Datei (DEPLOYMENT.md, „OCR-Worker des Ingestors“)
 OCR_DPI = int(os.environ.get("OCR_DPI", "200"))
 OCR_MAX_MEGAPIXELS = float(os.environ.get("OCR_MAX_MEGAPIXELS", "8"))
@@ -787,6 +843,18 @@ GEOREF_TEXT_MAX_CHARS = int(os.environ.get("GEOREF_TEXT_MAX_CHARS", "8000"))
 GEOREF_AUTO_ENABLED = os.environ.get("GEOREF_AUTO_ENABLED", "True").lower() in ("true", "1", "yes")
 GEOREF_AUTO_LIMIT = int(os.environ.get("GEOREF_AUTO_LIMIT", "50"))  # Papers pro Lauf
 GEOREF_AUTO_INTERVAL_MINUTES = int(os.environ.get("GEOREF_AUTO_INTERVAL_MINUTES", "15"))
+# Nachfolger der Texterkennung als Abonnements der Datendrehscheibe (Issue #919, ADR Dokumentkette, Abschnitt 9,
+# DEPLOYMENT.md „Nachfolger der Texterkennung“): Neuer Text (ris.file.text_extracted) stößt die Verortung seines
+# Vorgangs an (GEOREF_SUBSCRIPTION, Abonnement insight.verortung) und verwirft dessen KI-Zusammenfassung
+# (SUMMARY_SUBSCRIPTION, Abonnement insight.zusammenfassung). "aus" (Standard) registriert kein Abonnement,
+# "schatten" zählt nur, was geschähe, "aktiv" wirkt. Der Zeitplan verortung_automatisch bleibt das Sicherheitsnetz.
+GEOREF_SUBSCRIPTION = os.environ.get("GEOREF_SUBSCRIPTION", "aus").strip().lower() or "aus"
+SUMMARY_SUBSCRIPTION = os.environ.get("SUMMARY_SUBSCRIPTION", "aus").strip().lower() or "aus"
+for _name, _modus in (("GEOREF_SUBSCRIPTION", GEOREF_SUBSCRIPTION), ("SUMMARY_SUBSCRIPTION", SUMMARY_SUBSCRIPTION)):
+    if _modus not in ("aus", "schatten", "aktiv"):
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(f"{_name} muss aus, schatten oder aktiv sein.")
 # Fraktionssitzungen: periodische Erzeugung aus Sitzungsreihen (Issue #61)
 FACTION_SCHEDULE_INTERVAL_MINUTES = int(os.environ.get("FACTION_SCHEDULE_INTERVAL_MINUTES", "60"))
 FACTION_SCHEDULE_HORIZON_DAYS = int(os.environ.get("FACTION_SCHEDULE_HORIZON_DAYS", "90"))
@@ -825,6 +893,12 @@ if OPARL_CHANGES_RETENTION_DAYS < 30:
     from django.core.exceptions import ImproperlyConfigured
 
     raise ImproperlyConfigured("OPARL_CHANGES_RETENTION_DAYS muss mindestens 30 sein (Zusage des Änderungsfeeds).")
+
+# IndexNow (Issue #939, insight_core/services/indexnow.py): meldet neue, geänderte und entfernte Seiten des
+# Bürgerportals an Bing, Yandex & Co. (Abonnement insight.indexnow, Warteschlange adapter). Ohne Schlüssel aus.
+# Schlüssel: 8–128 Zeichen aus A–Z, a–z, 0–9 und -; die Anwendung liefert ihn unter /insight/<schlüssel>.txt aus.
+INDEXNOW_KEY = os.environ.get("INDEXNOW_KEY", "").strip()
+INDEXNOW_ENDPOINT = os.environ.get("INDEXNOW_ENDPOINT", "").strip() or "https://api.indexnow.org/indexnow"
 
 # Katalog der offenen Ratsinformationen nach DCAT-AP.de 3.0 (Issue #104, docs/DCAT_KATALOG.md): alle gelisteten
 # Kommunen unter /data/dcat/catalog, je Kommune unter /data/dcat/body/<uuid>/catalog (.ttl, .rdf, .jsonld).
@@ -919,6 +993,15 @@ if WORK_NOTIFICATION_SUBSCRIPTION != "aus" and TASKS["default"]["BACKEND"] != _T
 
     raise ImproperlyConfigured("WORK_NOTIFICATION_SUBSCRIPTION schatten/aktiv braucht TASKS_BACKEND=journal.")
 
+# Texterkennung im Worker (Issue #919, docs/adr/20261007-dokumentkette.md, Abschnitt 11): Voraussetzung sind
+# Aufträge im Journal mit einem Runner für ocr. Mit dem sofort ausführenden Backend liefe jede direkt eingereihte
+# Erkennung (file_extract_text.enqueue) in der Webanfrage oder im Zeitplan. Wie WORK_NOTIFICATION_SUBSCRIPTION:
+# lieber nicht starten.
+if TEXT_EXTRACTION_RUNNER == "worker" and TASKS["default"]["BACKEND"] != _TASK_BACKENDS["journal"]:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("TEXT_EXTRACTION_RUNNER=worker braucht TASKS_BACKEND=journal.")
+
 # =============================================================================
 # Email Configuration
 # =============================================================================
@@ -944,8 +1027,16 @@ SMTP_FALLBACK = {
     "timeout": int(os.environ.get("EMAIL_TIMEOUT", "30")),
 }
 
-DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "noreply@mandari.de")
+# Absender, wenn weder die Systemeinstellungen noch DEFAULT_FROM_EMAIL einen nennen. Leer gilt als nicht
+# gesetzt (docker-compose.yml reicht die Variable auch leer durch). Message-ID und EHLO richten sich nur nach
+# einem ausdrücklich gesetzten Absender, nie nach diesem Rückfall (apps.common.mail_domain, Issue #957).
+DEFAULT_FROM_EMAIL_FALLBACK = "noreply@mandari.de"
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "").strip() or DEFAULT_FROM_EMAIL_FALLBACK
 SERVER_EMAIL = os.environ.get("SERVER_EMAIL", DEFAULT_FROM_EMAIL)
+# Domain hinter dem @ der Message-ID und Name im EHLO gegenüber dem Mailserver (Issue #957). Django nähme
+# socket.getfqdn(), im Container die Container-ID. Leer = Domain von DEFAULT_FROM_EMAIL, wenn ausdrücklich
+# gesetzt, sonst Host aus SITE_URL. Gesetzt beim Start in apps.common.mail_domain (gilt für alle Versandwege).
+EMAIL_MESSAGE_ID_DOMAIN = os.environ.get("EMAIL_MESSAGE_ID_DOMAIN", "").strip()
 
 # Mail-Dienst (apps.common.mail, Issue #528): Mailarten, die als Auftrag (Warteschlange "mail") statt in
 # der Anfrage versendet werden – kommagetrennte Muster wie "work.*,konto.passwort" oder "*" für alle.

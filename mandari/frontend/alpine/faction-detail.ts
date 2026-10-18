@@ -13,6 +13,7 @@
 
 import { defineComponent } from '../js/alpine/component'
 import { showToast } from '../js/alpine/toast'
+import { autosaveFormular } from '../js/autosave'
 import { readJsonScript } from '../js/json-script'
 
 export interface FactionDetailConfig {
@@ -48,8 +49,12 @@ function errorMessage(xhr: XMLHttpRequest | undefined): string {
   return 'Ein Fehler ist aufgetreten.'
 }
 
-/** Fehlermeldung als Hinweis (Toast-Container beider Rahmen) */
+/**
+ * Fehlermeldung als Hinweis (Toast-Container beider Rahmen). Nicht beim automatischen Speichern: Das TOP-Panel erklärt
+ * den Fehler selbst (frontend/alpine/autosave-anzeige.ts, #854), ein Toast daneben wäre dieselbe Meldung noch einmal.
+ */
 function showHtmxError(event: Event): void {
+  if (autosaveFormular(event)) return
   const detail = (event as CustomEvent<{ xhr?: XMLHttpRequest }>).detail
   showToast(errorMessage(detail?.xhr), 'error')
 }

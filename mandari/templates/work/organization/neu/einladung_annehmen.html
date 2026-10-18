@@ -1,0 +1,36 @@
+{% extends "accounts/base_auth.html" %}
+{% comment %}
+Einladung annehmen im neuen Erscheinungsbild (Issue #951): öffentliche Seite außerhalb des Rahmens im Layout der
+Anmeldung (accounts/base_auth.html). Wer einlädt, die Nachricht, die Rollen und das angemeldete Konto, dann
+„Einladung annehmen“ (POST auf dieselbe Adresse) oder Abbrechen zur Anmeldung – wie bisher
+(work/organization/accept_invitation.html). Kontext: AcceptInvitationView.
+{% endcomment %}
+
+{% block title %}Einladung annehmen{% endblock %}
+{% block header_title %}Einladung zu {{ organization.name }}{% endblock %}
+{% block header_subtitle %}{{ invitation.invited_by.get_full_name|default:invitation.invited_by.email }} hat Sie eingeladen.{% endblock %}
+
+{% block content %}
+<div class="space-y-6 text-sm">
+    {% if invitation.message %}
+    <blockquote class="border-l-2 border-gray-300 dark:border-gray-600 pl-3 text-gray-800 dark:text-gray-200 whitespace-pre-line">{{ invitation.message }}</blockquote>
+    {% endif %}
+
+    <dl class="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-2">
+        {% if invitation.roles.exists %}
+        <dt class="text-gray-600 dark:text-gray-400">Rollen</dt>
+        <dd class="text-gray-900 dark:text-gray-100">{% for role in invitation.roles.all %}<span class="inline-flex items-center gap-1.5 mr-3">{% include "work/organization/neu/_farbpunkt.html" with farbe=role.color %}{{ role.name }}</span>{% endfor %}</dd>
+        {% endif %}
+        <dt class="text-gray-600 dark:text-gray-400">Angemeldet als</dt>
+        <dd class="text-gray-900 dark:text-gray-100 break-words">{{ request.user.get_full_name|default:request.user.email }}<span class="block text-gray-600 dark:text-gray-400">{{ request.user.email }}</span></dd>
+    </dl>
+
+    <form method="post">
+        {% csrf_token %}
+        <c-ui.button type="submit" size="lg" full>Einladung annehmen</c-ui.button>
+    </form>
+    <p class="text-center text-gray-600 dark:text-gray-400">Danach geht es direkt zu {{ organization.name }}. <c-ui.textlink href="{% url 'accounts:login' %}">Abbrechen</c-ui.textlink></p>
+</div>
+{% endblock %}
+
+{% block footer %}{% endblock %}

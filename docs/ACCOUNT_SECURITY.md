@@ -11,13 +11,30 @@ Implementierungsnotiz. Code: `apps/accounts/two_factor_policy.py`,
 | Bereich | Pflicht für |
 |---|---|
 | Plattform | Superuser und Staff |
-| Work | Mitglieder mit Administrator-Rolle oder einer Rolle mit „2FA erforderlich“; alle Mitglieder, wenn die Organisation „2FA für alle Mitglieder“ eingeschaltet hat |
+| Work | die Administration und alle Mitglieder mit einem Recht, Mitglieder, Rollen, Einstellungen oder API-Zugänge zu verwalten (`WORK_VERWALTUNGSRECHTE`: `members.invite`, `members.edit`, `members.remove`, `members.manage_roles`, `organization.edit`, `organization.manage_roles`, `organization.admin`, `organization.api_tokens`); Mitglieder mit einer Rolle mit „2FA erforderlich“; alle Mitglieder, wenn die Organisation „2FA für alle Mitglieder“ eingeschaltet hat |
 | Session | Nutzer mit Administrator-, Benutzer- oder Einstellungsrechten; alle Nutzer, wenn der Mandant „2FA für alle Nutzer“ eingeschaltet hat |
 
 Maßgeblich sind nur aktive Mitgliedschaften in aktiven Organisationen bzw.
-Mandanten. Die Schalter liegen in den Organisationseinstellungen (Work,
-Karte „Anmeldesicherheit“) und in den Session-Einstellungen (Karte
-„Anmeldesicherheit“, Recht „Einstellungen verwalten“, mit Audit-Eintrag).
+Mandanten. In Work zählen die wirksamen Rechte wie bei jeder
+Berechtigungsprüfung (`PermissionChecker`): Rechte der Rollen und Einzelrechte
+der Mitgliedschaft, abzüglich verweigerter Rechte. Die Vorgaberollen
+„Fraktionsvorsitz“, „Stellv. Vorsitz“ und „Geschäftsführung“ fallen damit
+unter die Pflicht, ebenso jede eigene Rolle und jedes Einzelrecht aus der
+Liste. Gastzugänge (`guests.*`) zählen nicht dazu. Die Schalter liegen in den
+Organisationseinstellungen (Work, Karte „Anmeldesicherheit“) und in den
+Session-Einstellungen (Karte „Anmeldesicherheit“, Recht „Einstellungen
+verwalten“, mit Audit-Eintrag).
+
+**Empfehlung für alle übrigen (Work):** Konten ohne zweiten Faktor sehen auf
+Start im Hinweisband „Schützen Sie Ihr Konto mit einem zweiten Faktor“ mit
+„Einrichten“ (Profil › Sicherheit) und „Später“. „Später“ stellt den Hinweis
+30 Tage zurück (`User.settings["zwei_faktor_hinweis_spaeter_bis"]`, gilt in
+allen Organisationen der Person). Ausgenommene Demo-Zugänge sehen ihn nicht,
+ebenso Installationen ohne `TWO_FACTOR_ENFORCEMENT`.
+
+**Übersicht für die Administration:** Die Mitgliederliste zeigt „Zweiter
+Faktor: ja/nein“ nur der Administration und Mitgliedern mit
+`organization.edit`, nicht schon mit `members.view_details`.
 
 ## Durchsetzung
 

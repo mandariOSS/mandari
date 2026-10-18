@@ -43,12 +43,20 @@ Organisation **„Musterfraktion (Demo)"** (Slug `musterfraktion-demo`),
 verknüpft mit der Musterstadt und der Parteigruppe „Musterpartei (Demo)":
 
 - Standard-Rollen über die `setup_roles`-Mechanik
-- 3 Demo-Nutzer: `demo-vorsitz@demo.mandari.de` (Fraktionsvorsitz),
-  `demo-mitglied@demo.mandari.de` (Fraktionsmitglied),
+- 5 Demo-Nutzer: `demo-vorsitz@demo.mandari.de` (Fraktionsvorsitz, vereidigt),
+  `demo-mitglied@demo.mandari.de` (Fraktionsmitglied, vereidigt),
+  `demo-sachkundig@demo.mandari.de` (Sachkundige Bürgerin, vereidigt),
+  `demo-unvereidigt@demo.mandari.de` (Fraktionsmitglied, noch nicht vereidigt),
   `demo-gast@demo.mandari.de` (Gast mit Ordner-Freigabe „Lesen")
 - 2 Anträge (einer im Entwurf, einer eingereicht), 1 Sitzungsvorbereitung
-  mit Positionen und Notizen zur kommenden Ratssitzung, 3 Aufgaben,
-  1 Fraktionssitzung
+  mit Positionen und Notizen zur kommenden Ratssitzung, 3 Aufgaben
+- Neues Design von Work an (Schalter `work_new_design`, nur die Demo-Organisation)
+- Am Ende ruft der Befehl `setup_demo_work` (Work-Modul) auf: Standard-Tagesordnung, eine vergangene und eine
+  kommende Fraktionssitzung (öffentliche und nicht-öffentliche TOPs, TOP-Vorschlag), eine Sitzungsreihe mit
+  Ferienpause, Positionen mit Beratungsverlauf über zwei Gremien, Kommentare und Änderungsanträge. Einzelheiten:
+  [WORK_NEUES_DESIGN.md](WORK_NEUES_DESIGN.md#demo-inhalte)
+- Danach eine neutrale Ankündigung „Was ist neu in Work“ für alle Mitglieder außer dem Gast (Hinweisband auf Start
+  und Glocke, Befehl `work_ankuendigung`)
 
 ### 3. Session (Verwaltungs-RIS)
 

@@ -5,6 +5,11 @@ zwischengespeichert. Vorschau und Download kommen dann von der Platte, unabhäng
 Ratsinformationssystem gerade erreichbar ist (Issue #87). Der Proxy hält keine Worker mehr
 minutenlang fest (Issue #86): kurze Timeouts, lokale Datei zuerst.
 
+Bei der Quelle abgerufen wird nur über ein Modul, `hub/ris/abruf.py` (Issue #919,
+`docs/adr/20261007-dokumentkette.md`): Dokument-Cache, Vorschau und Löschabgleich nutzen es, mit denselben
+[Zuständen des Abrufs](#zustände-des-abrufs) und Wiederholungen. Ein import-linter-Vertrag (`abruf-ein-weg`)
+erlaubt den Import nur aus der Drehscheibe, `file_cache`, `file_reconcile` und der Vorschau.
+
 ## Speicherlayout
 
 Seit Issue #788 liegen Dokumente **nach ihrem SHA-256** in der Ablage (`FILE_STORE_LAYOUT=sha256`, Standard):
@@ -64,14 +69,20 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `OPARL_FILES_ROOT` | `<MEDIA_ROOT>/oparl_files` | Wurzelverzeichnis des Caches (Container: `/app/files`) |
 | `FILE_CACHE_MAX_MB` | 80 | Größere Dateien werden nicht gecacht, aber weiter durchgereicht |
 | `FILE_CACHE_MIN_FREE_GB` | 15 | Unter dieser Grenze wird nichts mehr geschrieben (Schutz des Systemlaufwerks) |
+| `FILE_CACHE_MAX_TOTAL_GB` | 0 | Obergrenze der Gesamtgröße in GB, 0 = unbegrenzt (siehe [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße)) |
+| `FILE_CACHE_EVICT_TARGET_PERCENT` | 90 | Über der Obergrenze wird bis zu diesem Anteil der Grenze verdrängt (50 bis 100) |
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
-| `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, 0 = aus) |
-| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange warten Vorschau und KI-Zusammenfassung höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After` bzw. die Bitte um einen neuen Versuch. Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
+| `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, nur langsamer: Werte unter 1 s gelten als 1 s; `0` hier = Drossel aus, nur Tests und Notfälle) |
+| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange wartet die Vorschau höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After`. Die Frist gilt für den ganzen Abruf: Weiterleitungen (robots.txt des Ziels, Takt) warten nur noch die Restzeit. Die KI-Zusammenfassung lädt keine Dokumente (Issue #919). Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
 | `FILE_STORE_LAYOUT` | `sha256` | Ablage nach SHA-256 mit Referenzzählung; `kommune` = bisheriges Layout je Kommune |
-| `INGESTOR_STORES_FILES` | `false` (Compose: `true`) | Der Ingestor legt Dateien selbst ab; `cache_files` holt Dateien in der Texterkennung nicht nach |
+| `INGESTOR_STORES_FILES` | `false` (Compose: `true`) | Der Ingestor legt Dateien selbst ab; `cache_files` holt Dateien in der Texterkennung nicht nach. Mit `TEXT_EXTRACTION_RUNNER=worker` ohne Wirkung |
+| `DOCUMENT_FETCH_STALE_MINUTES` | 30 | So lange gilt die Beanspruchung einer Datei durch einen Abruf; danach gibt der nächste Lauf von `cache_files` sie frei |
+| `DOCUMENT_FETCH_MAX_QUEUED` | 200 | Höchstens so viele Abrufe je Quelle und Lauf von `cache_files`; der Rest kommt im nächsten Lauf |
+| `DOCUMENT_FETCH_RETRY_ALERT_HOURS` | 6 | Prüfung `dokumentabruf` in `/health/worker/`: rot, wenn fällige Wiederholungen länger liegen |
 | `OBJ_ENABLED` | `false` | S3-kompatibler Objektspeicher (siehe [Objektspeicher](#objektspeicher)) |
 | `OBJ_CACHE_MAX_GB` | 60 | Größe des lokalen Zwischenspeichers bei eingeschaltetem Objektspeicher |
+| `OBJ_EVICT_MAX_MISSING` | 20 | Verdrängen bricht ab, wenn so viele Inhalte in Folge im Objektspeicher fehlen (falscher Bucket; `0` = ohne Grenze) |
 | `FILE_PURGE_AFTER_DAYS` | 30 | Kopie und Text gesperrter Dokumente nach so vielen Tagen löschen (Löschabgleich) |
 | `FILE_PURGE_CONFIRM_GRACE_DAYS` | 7 | Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich |
 | `FILE_RECONCILE_MAX_MISSING` | 10 | Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu `404`/`410`, wird keines gesperrt |
@@ -83,10 +94,14 @@ Host-Cron ist dafür nicht mehr nötig; ein alter Eintrag überspringt, solange 
 bedient, und gehört aus der Crontab entfernt (Upgrade-Hinweis dort). Abschalten:
 `EVENTS_SCHEDULES_DISABLED=befehl:cache_files`.
 
-- Der Zeitplan lädt neueste Dokumente zuerst nach; jeder Live-Abruf über die Vorschau legt die Datei
-  ebenfalls ab (Write-Through). Die Ausgabe steht im Protokoll des Workers.
-- `cache_files --stats` zeigt Abdeckung, Belegung und freien Speicher (läuft immer); der
-  Betriebsmonitor hat dafür den Check „Dokument-Cache“.
+- Der Zeitplan gibt zuerst liegen gebliebene Beanspruchungen frei, lädt dann fällige Wiederholungen und die
+  neuesten Dokumente zuerst nach (je Quelle höchstens `DOCUMENT_FETCH_MAX_QUEUED`); jeder Live-Abruf über die
+  Vorschau legt die Datei ebenfalls ab (Write-Through). Die Ausgabe steht im Protokoll des Workers.
+- Abgelegt werden gelistete Kommunen, mit `TEXT_EXTRACTION_RUNNER=worker` auch alle übrigen Quellen mit erlaubtem
+  Abruf ab ihrem Stichtag ([Ablage für alle Quellen](#ablage-für-alle-quellen-stichtag)).
+- `cache_files --stats` zeigt Abdeckung, Belegung, freien Speicher und die Zustände des Abrufs (läuft immer);
+  der Betriebsmonitor hat dafür den Check „Dokument-Cache“ und unter „Handlungsbedarf“ Dateien mit Fehler, in
+  Wiederholung und mit verweigertem Abruf.
 - `purge_deleted` entfernt lokale Kopien getilgter Dateien.
 - **Größe:** `local_size` ist die gemessene Größe unserer Kopie (Bytes, `bigint`). `size` bleibt die Angabe
   der Quelle aus OParl; liefert die Quelle keine, überschreibt der Abgleich eine vorhandene nicht mehr mit
@@ -98,9 +113,133 @@ bedient, und gehört aus der Crontab entfernt (Upgrade-Hinweis dort). Abschalten
   Altersklasse des Dokuments (< 30 Tage, < 1 Jahr, < 3 Jahre, älter). Es gibt nur Zähler, keine Adressen,
   Kennungen oder einzelnen Dokumente. `cache_files --stats` zeigt die letzten 30 Tage mit Trefferquote; daraus
   ergibt sich, wie groß ein Zwischenspeicher sein muss. Ein Fehler beim Zählen verhindert die Auslieferung nie.
+  Getrennt davon vermerkt jedes ausgelieferte Dokument, wann es zuletzt ausgeliefert wurde
+  (`OParlFile.local_accessed_at`, höchstens einmal je Stunde, nur der Zeitpunkt): Danach richtet sich die
+  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße). Erkennbare Crawler und Abrufprogramme (`bot`,
+  `crawler`, `spider` im User-Agent, etwa GPTBot, ClaudeBot, Amazonbot, Bytespider, Googlebot, bingbot, dazu
+  `python-requests`, `curl` u. Ä.) zählen im Zugriffsprotokoll weiter mit, vermerken aber keine Nutzung: Sie sollen
+  nicht bestimmen, was im Cache bleibt.
   Mit der Auslieferung über den Webserver laden PDF-Betrachter große Dokumente in Teilen (Range-Anfragen),
   und jede Anfrage läuft durch Django. Gezählt wird nur die erste Anfrage eines Abrufs (ohne `Range` oder mit
   einem Bereich ab Byte 0); Folgeanfragen zählen weder als Abruf noch mit ihrer Größe.
+
+### Zustände des Abrufs
+
+Jede Datei hat einen Zustand des Abrufs (`local_status`, Issue #919). Ein Abruf beansprucht seine Datei zu Beginn
+atomar (`fetching`, `SELECT … FOR UPDATE SKIP LOCKED`); zwei Abrufe derselben Datei fragen die Quelle also nie
+doppelt an. Zeitpläne wählen nur aus. Vorschau und Löschabgleich beanspruchen nicht: Läuft ein Abruf, zeigt die
+Vorschau „wird geladen“ (HTTP 503, `Retry-After: 15`), der Löschabgleich überspringt die Datei in diesem Lauf.
+
+| Ergebnis | Zustand | Weiter |
+|---|---|---|
+| Inhalt abgelegt | `ok` | Zähler zurück, im selben Abruf in den Objektspeicher |
+| Zeitüberschreitung, Verbindung, 429, 5xx, leere Antwort, robots.txt nicht erreichbar | `retry` | nach 15 min, 1 h, 6 h, 24 h, 72 h; danach `error` |
+| 404/410 in den ersten sieben Tagen nach unserer Erfassung | `retry` | wie oben; die Quelle veröffentlicht das Objekt oft vor der Datei |
+| 404/410 später oder nach allen Wiederholungen | `missing` | Löschabgleich übernimmt |
+| HTML-Seite statt der Datei (Bot-Schutz), robots.txt verbietet | `refused` | erst nach Freigabe (`robots_override` bzw. `dokumentkette freigeben`) |
+| größer als `FILE_CACHE_MAX_MB` | `too_large` | – |
+| sonstige Fehler (etwa 403, nicht öffentliches Ziel) | `error` | neuer Versuch nach einer Woche |
+| Platte unter `FILE_CACHE_MIN_FREE_GB`, Ablage gestört, Takt belegt, Quelle in Schonung | unverändert | kein Versuch gezählt, kein Abruf bei der Quelle |
+
+- **Felder:** `fetch_attempts` (Fehlschläge in Folge), `fetch_next_at` (nächster Versuch; bei `fetching` das Ende
+  der Beanspruchung, `DOCUMENT_FETCH_STALE_MINUTES`), `fetch_error` (Fehlercode, etwa `http_5xx`, `html`,
+  `robots`), dazu wie bisher der lesbare Grund in `local_error`. Ein Abruffehler ändert die Texterkennung
+  (`text_extraction_status`) nie.
+- **Nie abgerufen** werden gelöschte (alle Gründe), gesperrte (#787) und nach #787 geleerte Dateien – weder vom
+  Zeitplan noch beim Beanspruchen. Der Löschabgleich ruft gesperrte Dateien dagegen ausdrücklich ab.
+- **Abruf erlaubt** heißt: Quelle aktiv, `sync_config["file_downloads"]` nicht `false`, keine Schonung, robots.txt
+  erlaubt. Bei abgeschaltetem Dateiabruf entsteht kein Zustand je Datei.
+- **Fehler** ohne Termin (`error` aus der Zeit vor Issue #919) versucht nur `cache_files --retry-errors` erneut;
+  die Admin-Aktion „Lokal zwischenspeichern“ versucht wie bisher jede Datei ohne Kopie.
+- **Verdrängt** (`evicted`, [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße), nur ohne Objektspeicher) ist
+  kein Zustand, aus dem ein Abruf von selbst beansprucht; weder Zeitplan noch Kennzahlen zählen ihn als wartend.
+  Ausdrücklich holen ihn die Vorschau (Live-Abruf, Fehlschläge nach der Tabelle oben wie bei `none`),
+  `cache_files --verdraengte` und die Admin-Aktion. Ein bestätigtes Fehlen der Kopie setzt ihn nie auf `none`, und
+  `dokumentkette zuruecksetzen` lässt ihn stehen.
+- **Kennzahlen:** `mandari_files_fetch_queued`, `mandari_files_fetch_retry_due` und
+  `mandari_files_fetch_errors_total` je Quelle bzw. Fehlercode, Prüfung `dokumentabruf` in `/health/worker/`
+  (`docs/MONITORING.md`).
+- **Befehl `dokumentkette`:** `freigeben <quelle> [--code html|robots]` reiht verweigerte Abrufe einer Quelle neu
+  ein; `zuruecksetzen` bereitet einen Rückfall auf ein älteres Image vor (siehe unten); `umschalten` setzt die
+  Stichtage der Ablage ([Ablage für alle Quellen](#ablage-für-alle-quellen-stichtag)).
+- **Rückfall auf ein älteres Image** (ohne Rückbau der Migration `insight_core.0059`): vorher
+  `python manage.py dokumentkette zuruecksetzen` ausführen. Es setzt `retry` und `fetching` auf `none` und `refused`
+  zurück auf `error` mit dem Fehlertext, an dem ein älteres Image die Sperre erkennt (robots.txt-Präfix bzw. „HTML
+  statt Datei“); idempotent, es ändern sich nur Zustandsspalten. Die Migration `insight_core.0059` hat denselben
+  Rückweg.
+
+### Ablage für alle Quellen (Stichtag)
+
+Bis zur Umstellung der Texterkennung auf den Worker (`TEXT_EXTRACTION_RUNNER=worker`) legt der Dokument-Cache nur
+gelistete Kommunen ab; der Ingestor lädt Dateien für den Text noch selbst, eine weitere Ablage ergäbe doppelte
+Abrufe. Mit `TEXT_EXTRACTION_RUNNER=worker` werden alle Quellen mit erlaubtem Abruf abgelegt (Entscheidung zu
+Issue #919), aber nur Dateien ab dem Stichtag der Quelle:
+
+- `sync_config["document_since"]`: leer bei den bisher abgelegten Quellen (mit gelisteter Kommune; alle Dateien),
+  sonst ein Zeitpunkt (ISO 8601) oder `ausstehend` (erster vollständiger Sync noch nicht beendet: nichts abrufen).
+  Ein leerer Stichtag gilt nur für Quellen mit gelisteter Kommune.
+- `sync_config["document_backfill"] = true` gibt den Altbestand (Dateien vor dem Stichtag) einer Quelle frei; das
+  geschieht je Quelle nach Freigabe (Last bei der Quelle). Ohne Freigabe behalten diese Dateien ihren bisherigen
+  Text; wer keinen hat, bekommt ohne Freigabe weder Ablage noch Text, denn mit `worker` erkennt der Ingestor nicht
+  mehr. Das betrifft den ganzen ersten Bestand einer **neu angelegten Quelle** (Stichtag = Ende ihres ersten
+  vollständigen Syncs): Neue Quellen brauchen `document_backfill`, damit ihre Dokumente Text bekommen.
+- Die Stichtage setzt die Anwendung, nie der Ingestor: Mit `TEXT_EXTRACTION_RUNNER=worker` trägt jeder Lauf von
+  `cache_files` sie nach. Quellen ohne gelistete Kommune und ohne Stichtag bekommen den Zeitpunkt des Laufs (beim
+  Umschalten also den Umschaltzeitpunkt), solange ihr erster vollständiger Sync fehlt `ausstehend`; aus
+  `ausstehend` wird nach dem ersten vollständigen Sync (`last_successful_full_sync`) dessen Zeitpunkt. Von Hand
+  (etwa vor dem Umschalten): `python manage.py dokumentkette umschalten` (mit `--probelauf` nur Anzeige).
+- `prune_file_cache --unlisted` lässt ausgeblendete Kommunen stehen, die ablegen.
+- Die lokale Platte ist mit Objektspeicher Zwischenspeicher (`OBJ_CACHE_MAX_GB`); ohne Objektspeicher begrenzt
+  `FILE_CACHE_MIN_FREE_GB`, und Abrufe warten, statt Text zu verlieren.
+
+### Texterkennung aus der Ablage
+
+Mit `TEXT_EXTRACTION_RUNNER=worker` erkennt nur der Auftrag `file.extract_text` (Warteschlange `ocr`, Dienst
+`worker-heavy`) den Text, und er liest ausschließlich aus der Ablage bzw. dem Objektspeicher (`file_store.local_copy`);
+er ruft nie bei der Quelle ab (`hub/ris/erkennung.py`, Issue #919, ADR Abschnitte 1, 2 und 4). Den Inhalt holt
+vorher der Abruf (oben).
+
+- **Einplanen ohne Beanspruchung:** Der Zeitplan `texterkennung_einplanen` (alle zwei Minuten) gibt liegen
+  gebliebene Beanspruchungen frei (`TEXT_EXTRACTION_STALE_MINUTES`, nach `TEXT_EXTRACTION_MAX_ATTEMPTS` Abbrüchen
+  „Speichergrenze“) und reiht Dateien mit abgelegtem Inhalt (`local_status = ok`) ein, deren Erkennung wartet
+  oder deren Text aus einer älteren Erkennungsversion stammt, solange für sie noch kein Auftrag wartet –
+  höchstens `TEXT_EXTRACTION_QUEUE_DEPTH` zugleich, wartende vor der Neuerkennung, neueste zuerst. Gelöschte,
+  gesperrte und geleerte Dateien nie. `python manage.py extract_texts` plant auf demselben Weg ein (`--dry-run`,
+  `--limit`, `--body`, `--pdf-only`, `--reprocess`), lädt und erkennt aber nicht selbst. Ohne `--limit` reiht er
+  höchstens so viele Aufträge ein, wie in `ocr` frei sind (dieselbe Grenze), den Rest übernimmt der Zeitplan; ein
+  ausdrückliches `--limit` gilt auch darüber hinaus (Vorrang, etwa mit `--body`).
+- **Beanspruchen** erst beim Start des Auftrags (`processing`, `SELECT … FOR UPDATE SKIP LOCKED`), nur aus
+  `pending` oder aus `completed` mit älterer Version. Von zwei Aufträgen derselben Datei erkennt einer.
+- **Lesen:** Fehlt der Inhalt bestätigt (weder lokal noch im Objektspeicher), geht die Datei zurück an den Abruf
+  (`local_status = none`) und die Erkennung auf den Stand davor. Ist die Ablage gestört (Objektspeicher antwortet
+  nicht oder ist im Worker nicht konfiguriert, Ablage nicht eingehängt, Platte voll) oder die Umgebung (Datenbank
+  beim Speichern, kein Platz für Zwischendateien der Erkennung), bleibt alles, wie es war, und derselbe Auftrag läuft
+  15 Minuten später erneut – kein Abruf bei der Quelle, kein Versuch gezählt. Fehlt bei Altbestand der SHA-256,
+  berechnet ihn der Auftrag und trägt ihn nach.
+- **Zustände der Erkennung:** `failed` heißt nur noch „Inhalt nicht lesbar“ oder „Speichergrenze“; ein Abruffehler
+  ändert die Erkennung nie. Endet der Abruf an der Größengrenze (`too_large`), wird die Erkennung `skipped`.
+- **Bedingt speichern:** Der Text wird nur geschrieben, wenn der Inhalt noch derselbe ist (`sha256_hash`), die Datei
+  noch beansprucht und weder gelöscht, gesperrt noch geleert ist. Sonst wird das Ergebnis verworfen und ein neuer
+  Inhalt eigens erkannt. `text_source_sha256` und `text_extraction_version` halten fest, aus welchem Inhalt und mit
+  welcher Version der Text stammt; `ris.file.text_extracted` nennt den SHA-256 (optionales Feld `sha256`).
+- **Neue Erkennungsversion** (`mandari_dokumente.EXTRACTION_VERSION`, Texte ohne Version gelten als Version 1): Der
+  Zeitplan plant betroffene Dateien schrittweise neu ein. Der alte Text bleibt stehen, bis der neue gespeichert
+  ist; liefert die Neuerkennung keinen Text oder scheitert sie, bleibt er erledigt. `extract_texts --reprocess`
+  fordert die Neuerkennung für erledigte Dateien an (Version `0`) und setzt übersprungene und gescheiterte zurück;
+  eingeplant werden sie schrittweise wie oben.
+- **Kennzahlen:** `mandari_files_stored_without_text` (abgelegt, Erkennung wartet oder läuft) und
+  `mandari_files_text_outdated` (abgelegt, Text aus älterer Version), Prüfung `dokumenttext` in `/health/worker/`
+  (nur mit `TEXT_EXTRACTION_RUNNER=worker`): rot, sobald ein abgelegtes Dokument länger als
+  `TEXT_EXTRACTION_BACKLOG_ALERT_HOURS` (Standard 24) seit dem Ablegen auf seinen Text wartet (`docs/MONITORING.md`).
+  Nach `dokumentkette nacharbeiten` erwartet, bis der Rückstand abgearbeitet ist.
+- **Nacharbeit** (`python manage.py dokumentkette nacharbeiten`, Standard Probelauf mit Zahlen je Quelle): Dateien,
+  deren Erkennung früher an einem Abruffehler scheiterte (`failed`, Fehlertext beginnt mit „Download“), kommen
+  zurück in die Kette – mit abgelegtem Inhalt in die Erkennung, ohne Inhalt zusätzlich in den Abruf (aus `none` und
+  `error`; `retry`, `refused`, `missing` und `too_large` behalten ihren Abrufzustand). Nicht abzulegende Dateien
+  (nicht freigegebener Altbestand) bleiben ohne Inhalt unverändert. `--ausfuehren` nur mit
+  `TEXT_EXTRACTION_RUNNER=worker` (sonst lüde der Ingestor erneut bei der Quelle) und nach Freigabe; wiederholbar.
+- **Start nur mit Journal:** `TEXT_EXTRACTION_RUNNER=worker` ohne `TASKS_BACKEND=journal` lässt die Anwendung nicht
+  starten (`ImproperlyConfigured`).
 
 ### Auslieferung über den Webserver
 
@@ -168,9 +307,11 @@ Gleiche Dateien (dieselbe Anlage an mehreren Vorgängen) liegen nur einmal in de
   `cache_files` Dateien in der Texterkennung nicht ein zweites Mal (hängt die Erkennung länger als einen Tag,
   doch). Maßgeblich ist die letzte Änderung des Datensatzes: Auch ältere Dateien, die wieder auf „pending“ gehen
   (neue Fassung, Wiederfreigabe nach dem Löschabgleich), holt nur der Ingestor. Ausnahme vom Streaming: Ist
-  `MISTRAL_API_KEY` gesetzt und reicht pypdf nicht, liest der Ingestor die Datei für die Mistral-OCR ganz ein
-  (die Schnittstelle erwartet sie base64-kodiert in der Anfrage, bis `TEXT_EXTRACTION_MAX_SIZE_MB`); ohne
-  Mistral rendert Tesseract seitenweise.
+  die externe Texterkennung eingerichtet (`MISTRAL_API_KEY` und `MISTRAL_BASE_URL` mit Host aus
+  `KI_ERLAUBTE_HOSTS`, DEPLOYMENT.md „KI-Anbieter“) und reicht pypdf nicht, liest der Ingestor die Datei für die
+  Mistral-OCR ganz ein (die Schnittstelle erwartet sie base64-kodiert in der Anfrage, bis
+  `TEXT_EXTRACTION_MAX_SIZE_MB`); ohne Mistral rendert Tesseract seitenweise. Mit `TEXT_EXTRACTION_RUNNER=worker` ruht der Ingestor dabei,
+  `INGESTOR_STORES_FILES` hat keine Wirkung mehr, und der Dokument-Cache holt alle Dateien selbst.
 - **Rechte:** Abgelegte Inhalte sind für alle lesbar (`0644`), auch wenn der Download als temporäre Datei mit
   `0600` entstand. Anwendung und Ingestor legen mit derselben Kennung ab (Compose: uid 1000), der Webserver liest
   sie für die Auslieferung.
@@ -203,14 +344,42 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
 - `dokumentablage --hochladen` lädt Inhalte ohne Kopie im Objektspeicher hoch (`remote_at`).
 - Die lokale Ablage wird zum **Zwischenspeicher**: `dokumentablage --aufraeumen` verdrängt bei mehr als
   `OBJ_CACHE_MAX_GB` (Standard 60) die am längsten nicht gelesenen Inhalte – nur solche, die sicher im Objektspeicher
-  liegen. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der Zugriffszeit (`atime`) der Datei,
-  höchstens einmal je Stunde. Die Änderungszeit bleibt unberührt, denn aus ihr bildet der Webserver `ETag` und
-  `Last-Modified`; so greifen bedingte Anfragen und Range-Anfragen mit `If-Range` weiter. Ein Mount mit
-  `noatime` stört nicht, die Zeit wird ausdrücklich gesetzt.
+  liegen. Geprüft wird wie bei der [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) (Issue #990): Vor dem
+  Löschen fragt der Lauf per `HEAD` nach, ob der Inhalt mit seiner Größe im Objektspeicher liegt; fehlt er oder weicht
+  die Größe ab, bleibt die Kopie, und `remote_at` wird zurückgesetzt (das nächste `--hochladen` überträgt ihn erneut),
+  eine Störung bricht den Lauf ab. Fehlen `OBJ_EVICT_MAX_MISSING` (Standard 20) Inhalte in Folge, bricht der Lauf
+  ebenfalls ab (Ausgabe `viele_fehlend`, Protokoll „OBJ_BUCKET prüfen“): Ein falscher Bucket beantwortet `HEAD` für
+  alles mit 404, und ohne diese Grenze fragte ein Lauf jeden lokalen Inhalt ab und setzte überall `remote_at` zurück.
+  Dasselbe gilt für die Obergrenze. Es bleiben außerdem Inhalte, deren Text erkannt wird oder darauf wartet (auch ein
+  eingereihter Auftrag `file.extract_text`), Dokumente, die gerade abgerufen werden, und Kopien aus der letzten Stunde;
+  unter der Zeilensperre wird das nachgeprüft. Zeitplan, Obergrenze und `prune_file_cache` teilen eine Sperre und
+  verdrängen nie gleichzeitig. Die Ausgabe nennt je Grund, wie viele Inhalte blieben (etwa `texterkennung`,
+  `nicht_hochgeladen`, `nicht_im_objektspeicher`, `fehler` bei einer Störung). Eine kleinere Obergrenze
+  (`FILE_CACHE_MAX_TOTAL_GB`) wirkt zusätzlich. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der
+  Zugriffszeit (`atime`) der Datei, höchstens einmal je Stunde. Die Änderungszeit bleibt unberührt, denn aus ihr
+  bildet der Webserver `ETag` und `Last-Modified`; so greifen bedingte Anfragen und Range-Anfragen mit `If-Range`
+  weiter. Ein Mount mit `noatime` stört nicht, die Zeit wird ausdrücklich gesetzt.
+- Ein neuer Inhalt geht im selben Abruf in den Objektspeicher (`cache_files`, Löschabgleich, Admin-Aktion; Issue
+  #919), der Zeitplan holt nur Altbestand und gescheiterte Uploads nach. Die Vorschau legt ab, ohne in der Anfrage
+  hochzuladen; verdrängt wird ohnehin nur, was im Objektspeicher liegt.
 - Fehlt ein Inhalt lokal, holt die Vorschau ihn gestreamt aus dem Objektspeicher (ohne Datenbankverbindung
-  festzuhalten, Hashprüfung, Gesamtdauer höchstens `OBJ_FETCH_TOTAL_SECONDS`, Standard 60) und liefert ihn wie
-  gewohnt aus. Antwortet der Objektspeicher nicht oder stimmt der Hash nicht, holt die Vorschau das Dokument wie
-  bisher von der Quelle.
+  festzuhalten, Hashprüfung, Gesamtdauer höchstens `OBJ_FETCH_TOTAL_SECONDS`, Standard 60, nur über
+  `FILE_CACHE_MIN_FREE_GB`) und liefert ihn wie gewohnt aus. **Nicht vorhanden ist nicht gestört**
+  (`file_store.local_copy`, `object_storage.exists`: vorhanden, fehlt, gestört): Antwortet der Objektspeicher
+  nicht, ist er zu langsam oder die Ablage nicht eingehängt, ruft niemand bei der Quelle ab – die Vorschau
+  antwortet mit 503 und `Retry-After`, der Abruf versucht es später. Eine Störung des Objektspeichers löst so nie
+  eine Abrufwelle bei den Kommunen aus. Gestört ist auch ein Inhalt, der laut Datenbank im Objektspeicher liegt
+  (`remote_at`), während der Container ihn nicht konfiguriert hat (`OBJ_ENABLED=false`, fehlende `OBJ_*`;
+  **Moduswechsel**, Issue #990): Vorschau, Abruf und Texterkennung warten dann, statt bei der Quelle abzurufen, und
+  das Protokoll warnt höchstens einmal je Minute und Prozess. Ein falsch konfigurierter Dienst löst so keine
+  Abrufwelle aus; ein Ausschalten des Objektspeichers ist derzeit nicht vorgesehen (unten). Nur ein bestätigtes Fehlen
+  (404 im Objektspeicher, falscher Hash) setzt die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files`
+  neu, und der Inhalt wird neu hochgeladen.
+  **Betriebsrisiko:** Zeigen `OBJ_BUCKET` oder das Schlüsselschema auf einen Bestand, in dem die Inhalte (noch)
+  nicht liegen – etwa bei einem Umzug des Objektspeichers –, gilt jeder lokal verdrängte Inhalt als bestätigt
+  fehlend und wird bei der Quelle neu geholt. Das Verdrängen selbst löscht dann keine lokale Kopie mehr (Prüfung per
+  `HEAD`, oben). Eine Bremse für gehäufte Fehlbestände gibt es noch nicht (Hinweis für Etappe 3). Deshalb vor jedem
+  Wechsel den Bestand im neuen Ziel vollständig bereitstellen und mit Stichproben prüfen, dann erst umstellen.
 - **Prüfsummen:** boto3 sendet seit 1.36 standardmäßig Prüfsummen im `aws-chunked`-Verfahren, was manche
   S3-kompatiblen Anbieter ablehnen. `OBJ_CHECKSUMS=when_required` (Standard) verhält sich wie frühere Versionen.
   Beim ersten Test mit dem echten Bucket Hochladen, Holen und Löschen prüfen; nur wenn der Anbieter es verlangt,
@@ -223,9 +392,143 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
 - Reihenfolge beim Einschalten: Bestand umstellen (`--umstellen`), Zugangsdaten setzen, `OBJ_ENABLED=true`,
   Neustart, `dokumentablage --hochladen --trotz-zeitplan` bis nichts mehr offen ist. Danach lädt der Zeitplan
   `befehl:dokumentablage` vor jedem Aufräumen selbst hoch (`--hochladen --aufraeumen`, solange `OBJ_ENABLED` gesetzt ist).
-- Ausschalten: `OBJ_ENABLED=false`. Lokal verdrängte Inhalte holt die Vorschau dann von der Quelle; `cache_files`
-  lädt sie nach. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
-  (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie.
+- **Ausschalten ist derzeit nicht vorgesehen** (Issue #990). Inhalte mit `remote_at` bleiben in einem Container
+  ohne Objektspeicher-Konfiguration (`OBJ_ENABLED=false` oder unvollständige `OBJ_*`) „gestört“ (Moduswechsel, oben):
+  Die Vorschau antwortet mit 503, die Texterkennung wartet, niemand ruft bei der Quelle ab, bis der Objektspeicher
+  wieder konfiguriert ist. Es gibt also keine Abrufwelle, aber auch keinen Rückweg ohne ihn. Verwaiste Inhalte, die
+  schon im Objektspeicher liegen, bleiben dort, solange er aus ist (`remote_kept` beim Aufräumen); eine
+  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus (siehe dort, „Moduswechsel“). Einen geprüften
+  Weg, den Objektspeicher aufzugeben, gibt es erst mit einem eigenen Schritt (Folgepunkt in Issue #919).
+  **Den Bucket nicht löschen, solange Vermerke `remote_at` bestehen** (`dokumentablage` nennt „im Objektspeicher
+  N“): Für lokal verdrängte Inhalte ist er die einzige Kopie. Wechseln nur, wenn der Bestand im neuen Ziel
+  vollständig bereitsteht („Betriebsrisiko“, oben). Im Mehr-Server-Betrieb
+  (`docs/MEHR_SERVER_BETRIEB.md`) brauchen alle Dienste, die Dokumente lesen, dieselben `OBJ_*`; ohne Objektspeicher
+  geht Mehr-Server-Betrieb nur mit gemeinsamer Ablage.
+- **Zurückholen** (`dokumentablage --zurueckholen --limit 5000 --trotz-zeitplan`, nur mit eingeschaltetem
+  Objektspeicher): holt lokal verdrängte Inhalte aus dem Objektspeicher in die lokale Ablage, etwa um sie vor einer
+  Wartung des Objektspeichers lokal vorzuhalten. Es lädt nur herunter (mit Hashprüfung, über
+  `FILE_CACHE_MIN_FREE_GB`) und ändert nichts in der Datenbank: Ein Inhalt, der im Objektspeicher fehlt, behält seinen
+  Vermerk `remote_at` und bleibt „offen“. Die Ausgabe nennt `geholt`, `fehlt`, `offen` und `gestoert`; `--limit`
+  zählt geholte Inhalte. Nach `OBJ_EVICT_MAX_MISSING` fehlenden Inhalten in Folge bricht der Lauf ab
+  (`viele_fehlend`, meist ein falscher `OBJ_BUCKET`). Fehlen dagegen wirklich einzelne Inhalte, bräche jeder Lauf an
+  denselben ab; dann für diesen Lauf `OBJ_EVICT_MAX_MISSING=0` setzen:
+
+  ```bash
+  docker compose exec -e OBJ_EVICT_MAX_MISSING=0 mandari python manage.py dokumentablage --zurueckholen --trotz-zeitplan
+  ```
+
+  Vorher `OBJ_CACHE_MAX_GB` (und eine Obergrenze `FILE_CACHE_MAX_TOTAL_GB`) über den Bestand
+  heben, sonst verdrängt das stündliche Aufräumen das Zurückgeholte wieder; `cache_files --stats` nennt die Größe im
+  Objektspeicher.
+
+### Obergrenze der Gesamtgröße
+
+Ohne weitere Einstellung wächst die Ablage, bis `FILE_CACHE_MIN_FREE_GB` greift. Mit `FILE_CACHE_MAX_TOTAL_GB`
+(GB, Standard `0` = unbegrenzt) bleibt sie begrenzt (Issue #961, `services/file_cache_limit.py`):
+
+- **Wann:** Das stündliche Aufräumen (`dokumentablage --aufraeumen`, Zeitplan `befehl:dokumentablage` um :50)
+  verdrängt, sobald die Belegung die Grenze überschreitet, bis `FILE_CACHE_EVICT_TARGET_PERCENT` (Standard 90 %)
+  der Grenze erreicht sind. `cache_files` lädt über den Abrufweg (`hub.ris.abruf`) nur bis zur Grenze nach und meldet
+  sonst `limit`; das gilt ebenso für die [Ablage für alle Quellen](#ablage-für-alle-quellen-stichtag) mit
+  `TEXT_EXTRACTION_RUNNER=worker`. Platz schafft der nächste Aufräumlauf, nie eine Anfrage. Was bis dahin sonst
+  abgelegt wird (Vorschau, Löschabgleich, Ingestor), kommt hinzu: Die Grenze kann also für höchstens eine Stunde um
+  die Ablagen dieser Stunde überschritten sein.
+- **Belegung:** Inhalte unter `sha256/<ab>/` auf der Platte (ohne Teil-Downloads unter `sha256/tmp`) plus Kopien
+  im alten Layout je Kommune (Größe aus der Datenbank).
+- **Wer zuerst geht:** Dokumente, die am längsten nicht über die Vorschau ausgeliefert wurden; nie ausgelieferte
+  nach dem Datum des Dokuments (Datum, sonst Anlage in der Quelle bzw. bei uns), ältere zuerst. Das ist dieselbe
+  Einteilung wie im Zugriffsprotokoll, nach dem jüngere Dokumente weit häufiger gelesen werden. Ein Inhalt, den
+  mehrere Dokumente teilen, zählt so jung wie das jüngste davon. Der Zeitpunkt der Zwischenspeicherung zählt
+  bewusst nicht: Der Erstabgleich legte die neuesten Dokumente zuerst ab, sie wären sonst zuerst gegangen.
+- **Mit Objektspeicher:** Gelöscht wird nur die lokale Kopie, und nur von Inhalten, die sicher im Objektspeicher
+  liegen: Vor dem Löschen fragt jeder Lauf per `HEAD` nach, ob der Inhalt dort mit seiner Größe liegt. Fehlt er oder
+  weicht die Größe ab, bleibt die Kopie, und `remote_at` wird zurückgesetzt (das nächste `--hochladen` überträgt ihn
+  erneut); ist der Objektspeicher gestört, bricht der Lauf ab, ohne weiter zu verdrängen (nicht vorhanden ist nicht
+  gestört, siehe [Zustände des Abrufs](#zustände-des-abrufs)). Die Datenbank bleibt unverändert, die Dokumente
+  bleiben „Lokal vorhanden“; Vorschau und Texterkennung holen den Inhalt bei Bedarf aus dem Objektspeicher
+  (`file_store.local_copy`), nie von der Quelle. Noch nicht hochgeladene Inhalte bleiben, bis `--hochladen` sie
+  übertragen hat. `OBJ_CACHE_MAX_GB` wirkt daneben weiter (nach der Zugriffszeit der Datei, mit denselben Prüfungen
+  und Schutzgründen, siehe [Objektspeicher](#objektspeicher)); es gilt die kleinere Grenze.
+- **Ohne Objektspeicher:** Alle Dokumente eines Inhalts geben ihre Referenz gemeinsam frei und gehen auf
+  „Verdrängt“ (`local_status=evicted`); danach verweist kein Dokument mehr auf den Inhalt, und er wird gelöscht.
+  `evicted` ist kein Zustand, aus dem der Abruf von selbst beansprucht: Weder `cache_files` noch das
+  Sicherheitsnetz laden verdrängte Dokumente nach, sonst lüde der nächste Lauf wieder, was die Grenze eben
+  verdrängt hat. Ausdrücklich geholt werden sie über den Abrufweg nur von der Vorschau bei Bedarf (Live-Abruf mit
+  Write-Through, wie jeder Abruf dort mit robots.txt, Drossel je Host und Schonung) und von
+  `cache_files --verdraengte` (etwa nach Anheben oder Abschalten der Grenze; ebenso die Admin-Aktion „Lokal
+  zwischenspeichern“ von Hand). Scheitert der Live-Abruf, gelten dieselben Zustände wie bei `none`
+  ([Zustände des Abrufs](#zustände-des-abrufs)): `404`/`410` in den ersten sieben Tagen nach unserer Erfassung wird
+  wiederholt, später `missing`. Ein bestätigtes Fehlen der Kopie setzt ein verdrängtes Dokument nie auf `none`.
+- **Text bleibt:** Extrahierter Text, Status der Texterkennung und Fingerabdruck (`sha256_hash`) bleiben unberührt;
+  es wird nichts neu erkannt. Suche, Vorgangsseiten, OParl-Ausgabe und Löschabgleich arbeiten weiter wie bisher. Die
+  Texterkennung beansprucht nur abgelegte Dokumente (`ok`): Ein verdrängtes Dokument ohne Text bleibt verdrängt,
+  und `mandari_files_stored_without_text` zählt es nicht als abgelegt.
+- **Nie verdrängt** werden Inhalte, deren Text gerade erkannt wird oder darauf wartet (Texterkennung
+  `pending`/`processing`, eben beansprucht oder mit wartendem Auftrag `file.extract_text`, etwa einer Neuerkennung),
+  Dokumente, die gerade abgerufen werden (`fetching`), Kopien aus der letzten Stunde und, ohne Objektspeicher,
+  Dokumente, die sich nicht neu abrufen ließen: Quelle in Schonung oder nicht aktiv, Dateiabruf abgeschaltet,
+  synthetische Quelle (Domäne `.invalid`, etwa die Demo), keine Download-Adresse oder eine Quelle, die Dateiabrufe
+  verweigert. Letzteres gilt als erkannt, sobald ein Dokument der Quelle verweigert ist (`refused`: robots.txt oder
+  HTML-Seite statt der Datei) oder einen älteren Vermerk der robots.txt trägt (Cache oder Texterkennung), die
+  robots.txt im gemeinsamen Cache eine abgelegte Datei der Quelle sperrt (angefragt wird dafür nie) oder ein Abruf
+  mit HTTP 401/403 endete. Das ist bewusst grob: Ein einziges solches Dokument schützt die ganze Quelle; eine
+  Freigabe (`robots_override`, `dokumentkette freigeben`) bzw. ein gelungener Neuversuch
+  (`cache_files --retry-errors`) hebt den Schutz auf. Reicht der Rest nicht bis zum Ziel, meldet der Lauf das mit
+  den geschützten Größen je Grund. Ist das Auftragsjournal nicht lesbar (Warnung „Wartende Aufträge der
+  Texterkennung nicht lesbar“), fehlt nur der Schutz eingereihter Neuerkennungen; Text geht dabei nicht verloren:
+  Mit Objektspeicher liest die Erkennung den Inhalt von dort, ohne beansprucht sie nur abgelegte Dokumente (`ok`),
+  und der bisherige Text bleibt stehen, bis das Dokument wieder abgelegt ist.
+- **Moduswechsel:** Liegen Inhalte laut Datenbank im Objektspeicher (`remote_at`), ist er im laufenden Container aber
+  nicht konfiguriert (`OBJ_ENABLED=false` im Worker, fehlende `OBJ_*`), setzt die Grenze aus: Das stündliche Aufräumen
+  meldet „Obergrenze ausgesetzt“ (Fehlerausgabe und Protokoll), `prune_file_cache` bricht ab. Ohne diesen Halt
+  würden solche Inhalte freigegeben, verwaisten, und das nächste Aufräumen mit Objektspeicher löschte sie dort.
+  `prune_file_cache --ohne-objektspeicher` macht ausdrücklich ohne Objektspeicher weiter; Inhalte mit `remote_at`
+  bleiben auch dann unangetastet (geschützt als `im_objektspeicher`), auch wenn sie erst während des Laufs
+  hochgeladen werden. Die erste Zeile von `prune_file_cache` nennt den Modus. Vorschau, Abruf und Texterkennung
+  behandeln lokal fehlende Inhalte mit `remote_at` in einem solchen Container als gestört, nie als fehlend (Issue
+  #990); ein Ausschalten des Objektspeichers ist derzeit nicht vorgesehen ([Objektspeicher](#objektspeicher),
+  „Ausschalten“).
+- **Nachprüfung unter der Sperre:** Zwischen Planung und Verdrängen prüft jeder Stapel in beiden Modi unter
+  Zeilensperre erneut: Texterkennung (auch eben beansprucht oder eingereiht), laufender Abruf, frisch abgelegt,
+  inzwischen ausgeliefert oder neu verwiesen (Rang jünger), Zahl der Verweise (eine gesperrte Datei des Inhalts hält
+  ihn) und, ohne Objektspeicher, Quelle in Schonung bzw. Dateiabruf abgeschaltet (je Stapel neu gelesen),
+  Download-Adresse und `remote_at`.
+- **Sicherheit:** Gelöscht wird nur unterhalb von `OPARL_FILES_ROOT`, nie über symbolische Verweise (weder die
+  Datei noch das Verzeichnis `sha256/<ab>` darf einer sein; Kopien im alten Layout müssen nach Auflösen aller
+  Verweise darunter liegen). Liegt `sha256/` selbst außerhalb, wird dort nichts verdrängt.
+- **Last:** Der Durchgang über die Platte summiert nur Größen. Die Rangfolge liefert die Datenbank über einen
+  Cursor, verdrängt wird in Stapeln zu 200 Inhalten in kurzen Transaktionen; gerade gesperrte Zeilen (eine Datei
+  wird eben abgelegt) werden übersprungen statt erwartet. Mit Objektspeicher kostet jeder verdrängte Inhalt eine
+  `HEAD`-Anfrage (vor der Zeilensperre). Eine Sperre im gemeinsamen Cache verhindert, dass Zeitplan und Handlauf
+  gleichzeitig verdrängen.
+- **Kennzahlen:** Mit Objektspeicher weisen `cache_files --stats` und die Zustandsprüfung (Monitoring,
+  „Dokument-Cache“) getrennt aus, was lokal auf der Platte liegt (Durchgang wie bei der Grenze) und was im
+  Objektspeicher; „abgelegt“ zählt Dokumente mit Kopie an einem der beiden Orte. Ohne Objektspeicher bleibt es bei
+  „lokal“ mit der Summe aus der Datenbank. `cache_files --stats` nennt außerdem die Zahl verdrängter Dokumente.
+
+**Einmaliger Abbau eines großen Bestands:** erst ansehen, dann verdrängen, danach die Grenze setzen. Alle Befehle im
+Container, in dem auch der Worker läuft (gleiche `OBJ_*`), sonst bricht der Befehl wegen des Moduswechsels ab:
+
+```bash
+# 1. Modus und Umfang ansehen (ändert nichts): erste Zeile „Modus: mit Objektspeicher“?
+python manage.py prune_file_cache --max-gb 10 --dry-run
+# 2. Mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte, die lokal gingen, dort mit ihrer Größe liegen
+python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+#    fehlen welche: dokumentablage --hochladen --trotz-zeitplan, dann Schritt 2 wiederholen
+#    (ohne --stichprobe prüft der Probelauf alle; das dauert je Inhalt eine Anfrage)
+# 3. Verdrängen; mit Objektspeicher prüft der Lauf jede lokale Kopie vor dem Löschen per HEAD
+python manage.py prune_file_cache --max-gb 10 --pruefe-objektspeicher
+# 4. danach FILE_CACHE_MAX_TOTAL_GB=10 setzen (Anwendung und Worker) und neu starten
+```
+
+Eine lokale Kopie, deren Inhalt im Objektspeicher fehlt oder eine andere Größe hat, bleibt; in beiden Fällen wird
+`remote_at` zurückgesetzt. So schützt „nicht hochgeladen“ die Kopie auch vor späteren Läufen, und das nächste
+`dokumentablage --hochladen` überträgt den Inhalt erneut. Ist der Objektspeicher nicht erreichbar, bricht der Lauf
+ab. Der echte Lauf prüft mit Objektspeicher immer (auch das stündliche Aufräumen); `--pruefe-objektspeicher` braucht
+es nur im Probelauf, die Ausgabe nennt dann geprüft, vorhanden, fehlend und abweichend. Der Befehl läuft neben dem
+Zeitplan; startet er, während das Aufräumen gerade verdrängt, endet er mit Hinweis. Ein abgebrochener Lauf
+hinterlässt nichts Halbes und lässt sich wiederholen. `cache_files --stats` zeigt danach die Grenze, die Zahl
+verdrängter Dokumente und die lokale Belegung.
 
 ### Löschabgleich
 
@@ -243,7 +546,9 @@ Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (I
   zeigen (`Cache-Control: public, max-age=86400`); das liegt bewusst innerhalb der Vorgabe des Konzepts.
 - **Änderung per Hash:** Meldet die Quelle eine Änderung (`modified`) nach unserer Kopie bzw. Texterkennung,
   lädt der Abgleich die Datei neu und vergleicht den SHA-256. Anderer Inhalt ersetzt die Kopie, der alte Text
-  wird verworfen und vom Ingestor neu erkannt; gleicher Inhalt ändert nichts.
+  wird verworfen und vom Ingestor neu erkannt; gleicher Inhalt ändert nichts. Hat die Datei noch keine Kopie und
+  wird sie abgelegt, legt der Abgleich den geladenen Inhalt gleich ab (kein zweiter Abruf, Issue #919). Der
+  Abgleich ruft über `hub.ris.abruf` ab und überspringt Dateien, die gerade abgerufen werden.
 - **Stichproben:** Gedrosselte HEAD-Anfragen auf die Download-Adressen (am längsten nicht geprüfte zuerst)
   finden Löschungen, die die Quelle nicht meldet. Ein `404`/`410` (oder ein Server ohne HEAD) wird per GET
   bestätigt, eine abweichende Größe per Hash abgeglichen. Liefert HEAD eine HTML-Seite statt der Datei
@@ -251,7 +556,9 @@ Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (I
   Host (`--interval`), höchstens `--head-limit` Anfragen je Kommune und Lauf. Antwortet ein Host mit `429`
   oder `503`, fragt der Lauf ihn nicht weiter an (auch kein GET hinterher); nach fünf Fehlern in Folge ebenso.
   Stichproben laufen nur für gelistete Kommunen (ausgeblendete zeigen nichts öffentlich); mit `--body` für
-  genau diese Kommune. Quellen in Schonung oder mit abgeschaltetem Dateiabruf bleiben unberührt.
+  genau diese Kommune. Quellen in Schonung oder mit abgeschaltetem Dateiabruf bleiben unberührt. Geprüft werden
+  auch Dateien, deren Abruf mit `404`/`410` endete (`local_status = missing`), damit auch nie abgelegte Dateien
+  gesperrt werden; liefert die Quelle eine solche Datei wieder, wird sie abgelegt bzw. neu abgerufen.
 - **Erneut prüfen:** Ein wegen `404`/`410` gesperrtes Dokument prüft der Abgleich nach 1, 7 und 25 Tagen
   erneut (vor den übrigen Stichproben) und unmittelbar vor dem Löschen noch einmal per GET. Liefert die
   Quelle es wieder, wird entsperrt statt gelöscht. Eine vorübergehende `404` (Wartung, Umstellung, eine
@@ -262,7 +569,10 @@ Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (I
   Adressen nach einer Umstellung, Wartung, Sperre unserer Abrufe); bei einer echten Massenlöschung den Lauf mit
   höherem `--max-fehlend` für diese Kommune wiederholen.
 - **robots.txt ist verbindlich:** Vor jedem Abruf einer Datei prüft der Abgleich die robots.txt des Hosts
-  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf). Eine
+  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf), mit
+  derselben Auswertung wie alle Abrufe: Gruppe `mandari-ingestor` vor `*`, frühere Kennungen nur zusätzlich
+  (`docs/MONITORING.md`). Einer Weiterleitung folgt er nur, wenn die robots.txt ihres Ziel-Hosts sie erlaubt
+  (sonst Ergebnis `robots`), und jede Weiterleitung läuft im Takt je Host. Eine
   Ausnahme trägt nur eine Quelle mit Vermerk in `sync_config["robots_override"]`, z. B.
   `{"scope": "files", "note": "Zustimmung liegt vor, Anfrage läuft"}` (Bereich `files` oder `all`, Vermerk
   mindestens zehn Zeichen; dasselbe Format wie für die übrigen Abrufe der Quelle).

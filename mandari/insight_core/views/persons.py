@@ -104,7 +104,9 @@ class PersonDetailView(DetailView):
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         person = self.object
-        today = timezone.now().date()
+        # Ortszeit wie die Sitemap (sitemaps.py) – timezone.now().date() wäre das UTC-Datum und läge
+        # zwischen 0 und 2 Uhr einen Tag zurück (ausgeschiedene Personen galten dann noch als laufend)
+        today = timezone.localdate()
 
         # Nur bestehende Mitgliedschaften in bestehenden, nicht zurückgenommenen Gremien (gelöschte Fraktionen
         # erschienen sonst als laufende Mitgliedschaft, Prüfung #848)

@@ -12,7 +12,7 @@ from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
 
-from .. import selectors
+from .. import neu, selectors
 from ._mixins import RISBodiesMixin
 
 
@@ -20,6 +20,7 @@ class RISPersonsView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS persons list."""
 
     template_name = "work/ris/persons.html"
+    neue_vorlage = "work/ris/neu/personen.html"
     permission_required = "ris.view"
 
     def get_context_data(self, **kwargs):
@@ -38,6 +39,8 @@ class RISPersonsView(RISBodiesMixin, WorkViewMixin, TemplateView):
         paginator = Paginator(selectors.persons_queryset(bodies, search=search), 50)
         context["persons"] = paginator.get_page(self.request.GET.get("page", 1))
         context["paginator"] = paginator
+        if self.neu:
+            context |= neu.personen(self.organization, self.membership, context["persons"])
         return context
 
 
@@ -45,6 +48,7 @@ class RISPersonDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
     """RIS person detail view."""
 
     template_name = "work/ris/person_detail.html"
+    neue_vorlage = "work/ris/neu/person.html"
     permission_required = "ris.view"
 
     def get_context_data(self, **kwargs):
@@ -64,4 +68,6 @@ class RISPersonDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
         context["past_memberships"] = memberships["past"]
 
         context["active_tab"] = self.request.GET.get("tab", "memberships")
+        if self.neu:
+            context |= neu.person(self.organization, self.membership, person)
         return context

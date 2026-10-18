@@ -164,7 +164,10 @@ def save_position(
         raise PreparationError("Ungültiges Ergebnis")
 
     # Zeile sperren: Gleichzeitige Teil-Saves (z. B. Position und Begründung, auch von zwei Mitgliedern) lesen sonst
-    # beide den alten Stand und das spätere save() setzt das jeweils andere Feld zurück (#854)
+    # beide den alten Stand und das spätere save() setzt das jeweils andere Feld zurück (#854).
+    # Die Sperre greift erst, wenn die Zeile existiert. Gleichzeitige Erst-Saves fängt die Eindeutigkeit
+    # (Organisation, TOP) ab: Der zweite INSERT scheitert mit IntegrityError in get_or_create's eigenem Savepoint,
+    # get_or_create liest dann die inzwischen angelegte Zeile (wieder gesperrt) und arbeitet mit ihr weiter (#926).
     position, _ = AgendaItemPosition.objects.select_for_update().get_or_create(
         organization=organization, agenda_item=agenda_item
     )

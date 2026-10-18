@@ -45,7 +45,10 @@ COPY --from=builder /usr/local/lib/python3.14/site-packages /usr/local/lib/pytho
 COPY --from=builder /usr/local/bin /usr/local/bin
 
 # Install system packages for OCR
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Vorher die Sicherheitsupdates von Debian einspielen: Das Basisimage wird nur gelegentlich neu gebaut,
+# Korrekturen (etwa für perl-base) kämen sonst erst mit dem nächsten Basisimage ins Laufzeitimage.
+RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends \
     tesseract-ocr \
     tesseract-ocr-deu \
     poppler-utils \

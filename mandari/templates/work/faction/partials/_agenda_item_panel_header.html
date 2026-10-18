@@ -1,10 +1,12 @@
 {# TOP-Panel: Auto-Save-Formular mit Kopf (Nummer, Titel, Sichtbarkeit, Badges, Schließen) #}
-{# Kontext: item, meeting, org_slug, can_edit; Zustand saving/saved aus x-data="agendaItemPanel" #}
+{# Kontext: item, meeting, org_slug, can_edit; Zustand saving/saved/saveFehler aus x-data="agendaItemPanel" #}
+{# autosave-erneut: erneutes Senden nach einem Fehler (frontend/js/htmx-setup.ts) #}
 <form id="agenda-item-update-form"
       hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
       hx-trigger="focusout from:find textarea changed delay:300ms,
                    focusout from:find input[type=text] changed delay:300ms,
-                   change from:find select"
+                   change from:find select,
+                   autosave-erneut"
       hx-swap="none"
       data-autosave="panel"
       class="flex-shrink-0">
@@ -73,5 +75,6 @@
             </span>
             {% endif %}
         </div>
+        {% include "work/partials/_autosave_hinweis.html" %}
     </div>
 </form>

@@ -1,0 +1,79 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Niederschrift bearbeiten im neuen Rahmen (Issues #31, #85, #140, #944): Kopfband mit der Sitzung und dem Stand, darunter
+ein Formular in einer Spalte: allgemeiner Teil (öffentlich mit Textbausteinen, nichtöffentlich nur mit dem NÖ-Recht),
+Unterschriften und je Tagesordnungspunkt Ergebnis, Stimmen und Texte (session/neu/_niederschrift_top_formular.html).
+Speichern steht in einer Leiste am unteren Rand, die beim Scrollen sichtbar bleibt. Felder und Knöpfe wie
+session/protocols/form.html; Rechte und Kontext wie ProtocolEditView. Die bisherige Seite bleibt
+session/protocols/form.html.
+{% endcomment %}
+
+{% block page_title %}Protokoll bearbeiten: {{ meeting.name }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+{# Weg zurück zur Sitzung und zur Niederschrift (wie die bisherige Seite) #}
+{% block brotkrumen_aktuell %}{% include "session/rahmen/_krume_sitzung.html" %}<c-rahmen.brotkrume href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}">Niederschrift</c-rahmen.brotkrume><c-rahmen.brotkrume>Bearbeiten</c-rahmen.brotkrume>{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Niederschrift bearbeiten" dicht>
+    <c-slot name="oben">
+        <c-insight.zurueck href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}">Niederschrift</c-insight.zurueck>
+        <p class="mb-1 text-sm text-gray-600 dark:text-gray-400 break-words">{{ meeting.name }}, {{ meeting.organization.name }}, <span class="tabular-nums">{{ meeting.start|date:"d.m.Y" }}</span></p>
+    </c-slot>
+    <p class="text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_status.html" with wert=protocol.status text=protocol.get_status_display %}</p>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<form method="post" class="max-w-3xl space-y-10" data-testid="niederschrift-formular">
+
+    <c-rahmen.abschnitt titel="Allgemeiner Teil" titel_id="allgemein-titel">
+        <div class="mt-3 space-y-4">
+            <div>
+                <div class="mb-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <label for="niederschrift-inhalt" class="text-sm font-medium text-gray-800 dark:text-gray-200">Niederschrift (öffentlicher Teil)</label>
+                    {% include "session/neu/_niederschrift_textbaustein.html" with tb_gremium=meeting.organization.name tb_sitzung=meeting.name %}
+                </div>
+                <c-form.textarea name="content" id="niederschrift-inhalt" rows="6" :value="protocol.content" dicht />
+            </div>
+            {% if can_view_np %}
+            <div>
+                <label for="niederschrift-inhalt-noe" class="mb-1 inline-flex items-center gap-1 text-sm font-medium text-gray-800 dark:text-gray-200"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlicher Teil (verschlüsselt gespeichert)</label>
+                <c-form.textarea name="content_np" id="niederschrift-inhalt-noe" rows="4" :value="content_np" dicht />
+            </div>
+            {% endif %}
+            <div class="grid gap-3 sm:grid-cols-2">
+                <c-form.field name="chair_name" id="niederschrift-vorsitz" label="Vorsitz (Unterschrift)" value="{{ protocol.chair_name }}" dicht />
+                <c-form.field name="recorder_name" id="niederschrift-protokollfuehrung" label="Protokollführung (Unterschrift)" value="{{ protocol.recorder_name }}" dicht />
+            </div>
+        </div>
+    </c-rahmen.abschnitt>
+
+    <c-rahmen.abschnitt titel="Tagesordnungspunkte" titel_id="tops-titel">
+        <c-rahmen.satz eng>Beschlusstext, Abstimmungsergebnis und Protokolltext je TOP.</c-rahmen.satz>
+        {% if agenda_public %}
+        <h3 class="mt-5 text-sm font-semibold text-gray-700 dark:text-gray-300">Öffentlicher Teil</h3>
+        <c-rahmen.liste geordnet class="mt-1">
+            {% for item in agenda_public %}{% include "session/neu/_niederschrift_top_formular.html" %}{% endfor %}
+        </c-rahmen.liste>
+        {% endif %}
+        {% if agenda_non_public %}
+        <h3 class="mt-8 inline-flex items-center gap-1.5 text-sm font-semibold text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlicher Teil</h3>
+        <c-rahmen.liste geordnet class="mt-1">
+            {% for item in agenda_non_public %}{% include "session/neu/_niederschrift_top_formular.html" %}{% endfor %}
+        </c-rahmen.liste>
+        {% endif %}
+        {% if not agenda_public and not agenda_non_public %}
+        <c-rahmen.satz>Keine Tagesordnungspunkte.</c-rahmen.satz>
+        {% endif %}
+    </c-rahmen.abschnitt>
+
+    {# Speichern bleibt beim Scrollen sichtbar, am Handy über der festen Leiste unten (#1018); „weiter bearbeiten“ zuerst (Eingabetaste) #}
+    <div class="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] lg:bottom-0 z-10 -mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-200 dark:border-gray-800 bg-band-hell py-3">
+        <c-ui.button type="submit" name="continue" value="1" variant="secondary" size="sm" icon="save">Speichern und weiter bearbeiten</c-ui.button>
+        <c-ui.button type="submit" size="sm" icon="check">Speichern</c-ui.button>
+        <c-ui.textlink href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-sm">Abbrechen</c-ui.textlink>
+    </div>
+    {# Am Ende: als erstes Kind gäbe das versteckte Feld dem ersten Abschnitt den Abstand von space-y #}
+    {% csrf_token %}
+</form>
+{% endblock %}

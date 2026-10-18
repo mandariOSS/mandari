@@ -1,0 +1,12 @@
+{% comment %}
+Zahlenfeld der Einstellungen im neuen Erscheinungsbild (Issue #951) mit Grenzen wie bisher: c-form.field kennt min,
+max und step nicht (weitere Attribute landen dort am Rahmen). Maße wie c-form.field dicht (36 px, 14 px).
+  {% include "work/organization/neu/_zahl.html" with name="api_past_days" id="api_past_days" label="Vergangenheit (Tage)" value=api_access.past_days min=0 max=3650 hilfe="…" %}
+``readonly`` sperrt das Feld (Priorität einer Systemrolle), ``eng`` lässt die Beschriftung kleiner (Ränder in mm).
+{% endcomment %}
+<div>
+    <label for="{{ id|default:name }}" class="block text-sm font-medium text-gray-800 dark:text-gray-200 mb-1">{{ label }}</label>
+    <input type="number" name="{{ name }}" id="{{ id|default:name }}" value="{{ value }}"{% if min != None and min != "" %} min="{{ min }}"{% endif %}{% if max %} max="{{ max }}"{% endif %}{% if step %} step="{{ step }}"{% endif %}{% if readonly %} readonly{% endif %}{% if required %} required{% endif %}{% if hilfe %} aria-describedby="{{ id|default:name }}-hilfe"{% endif %}
+           class="w-full h-9 px-3 rounded-md border border-gray-300 dark:border-gray-700 text-sm tabular-nums focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600 {% if readonly %}bg-band-grau text-gray-600 dark:text-gray-400{% else %}bg-band-hell text-gray-900 dark:text-white{% endif %}">
+    {% if hilfe %}<c-form.hinweis id="{{ id|default:name }}-hilfe">{{ hilfe }}</c-form.hinweis>{% endif %}
+</div>

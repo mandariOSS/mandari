@@ -17,7 +17,12 @@ from django.test import Client
 from django.utils import timezone
 
 from insight_core.models import OParlSource
-from insight_core.services.source_health import collect_source_health, evaluate_source, send_health_alerts
+from insight_core.services.source_health import (
+    ERROR_KIND_INFO,
+    collect_source_health,
+    evaluate_source,
+    send_health_alerts,
+)
 
 
 @pytest.fixture
@@ -64,6 +69,14 @@ def test_ua_block_is_critical_with_reason_and_recommendation(blocked_source: OPa
     assert "Betreiber der Quelle kontaktieren" in item["recommendation"]
     # Statistik des Ingestors bleibt als „Letzter Fehler“ sichtbar
     assert any("HTTP 403" in reason for reason in item["reasons"])
+
+
+def test_texte_der_fehlerklassen_nennen_den_ingestor_nicht_crawler() -> None:
+    """Der Ingestor ist kein Crawler (#1061): Grund und Empfehlung im Monitor sagen es auch nicht."""
+    for kind, info in ERROR_KIND_INFO.items():
+        text = " ".join(str(wert) for wert in info.values()).lower()
+        assert "crawler" not in text and "gecrawlt" not in text, kind
+    assert "unserem Ingestor" in ERROR_KIND_INFO["robots_blocked"]["reason"]
 
 
 def test_server_error_series_is_critical_with_statistics(flaky_source: OParlSource) -> None:

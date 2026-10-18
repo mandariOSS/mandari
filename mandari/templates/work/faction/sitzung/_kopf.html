@@ -1,0 +1,54 @@
+{# Kopf der laufenden Sitzung: Titel mit Stand, Ablaufleiste, Anwesenheit, Beenden, weitere Aktionen (Issue #874) #}
+{# Kontext: meeting, org_slug, stufen, anw, quorum, rechte, oob_kopf (bei Aktualisierung per HTMX) #}
+<header class="fs-kopf" id="fs-kopf"{% if oob_kopf %} hx-swap-oob="true"{% endif %}>
+    <a class="wf-knopf wf-leise wf-ik" href="{% url 'work:faction' org_slug=org_slug %}" aria-label="Zurück zu den Fraktionssitzungen">
+        <i data-lucide="chevron-left" aria-hidden="true"></i>
+    </a>
+    <div class="fs-titel">
+        <h1 title="{{ meeting.title }}">{{ meeting.title }}</h1>
+        <p class="fs-kopf-meta">
+            {% if meeting.started_at %}Läuft seit {{ meeting.started_at|time:"H:i" }}{% else %}Beginn {{ meeting.start|time:"H:i" }}{% endif %}{% if meeting.location %}, {{ meeting.location }}{% endif %}{% if meeting.is_virtual and meeting.video_link %}{% if meeting.location %} und{% else %},{% endif %} <a href="{{ meeting.video_link }}" target="_blank" rel="noopener noreferrer">per Video</a>{% endif %}{% if meeting.minute_taker_name %}, Schriftführung: {{ meeting.minute_taker_name }}{% endif %}
+        </p>
+    </div>
+    <ol class="fs-stufen" aria-label="Ablauf der Sitzung">
+        {% for stufe in stufen %}
+        <li class="{{ stufe.stand }}"{% if stufe.stand == 'aktuell' %} aria-current="step"{% endif %}>
+            <span class="kreis" aria-hidden="true">{% if stufe.stand == 'erledigt' %}<i data-lucide="check"></i>{% else %}{{ stufe.nr }}{% endif %}</span>
+            <span class="name">{{ stufe.name }}<span class="unter">{{ stufe.unter }}</span></span>
+        </li>
+        {% if not forloop.last %}<li class="linie" aria-hidden="true"></li>{% endif %}
+        {% endfor %}
+    </ol>
+    <div class="fs-kopf-aktionen">
+        <button type="button" class="wf-knopf wf-klein fs-anw-knopf" aria-controls="fs-anwesenheit"
+                :aria-expanded="anwesenheitOffen ? 'true' : 'false'" @click="anwesenheitUmschalten()"
+                title="{% if quorum.met %}Beschlussfähig{% else %}Nicht beschlussfähig{% endif %}">
+            <span class="wf-punkt {% if quorum.met %}zustimmung{% else %}ablehnung{% endif %}" aria-hidden="true"></span>
+            <span>{{ anw.anwesend }} von {{ anw.gesamt }}<span class="fs-desktop-nur"> anwesend</span></span>
+        </button>
+        {% if rechte.beenden %}
+        <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.pk %}"
+              data-confirm="Sitzung jetzt beenden? Danach geht es mit dem Protokoll weiter.">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="end">
+            <button type="submit" class="wf-knopf wf-klein"><span class="fs-desktop-nur">Sitzung beenden …</span><span class="fs-mobil-nur">Beenden</span></button>
+        </form>
+        {% endif %}
+        <div class="wf-menue-anker" x-data="sitzungsMenue" @click.outside="schliessen()">
+            <button type="button" class="wf-knopf wf-leise wf-ik" aria-haspopup="menu" aria-label="Weitere Aktionen"
+                    :aria-expanded="offen ? 'true' : 'false'" @click="umschalten()">
+                <i data-lucide="ellipsis" aria-hidden="true"></i>
+            </button>
+            <div class="wf-menue rechts" role="menu" x-show="offen" x-cloak>
+                {% if meeting.is_virtual and meeting.video_link %}
+                <a role="menuitem" href="{{ meeting.video_link }}" target="_blank" rel="noopener noreferrer"><i data-lucide="video" aria-hidden="true"></i>Videoraum öffnen</a>
+                {% endif %}
+                <a role="menuitem" href="?ansicht=bisher"><i data-lucide="layout-list" aria-hidden="true"></i>Bisherige Ansicht</a>
+                <a role="menuitem" href="{% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=meeting.pk variant='oeffentlich' %}"><i data-lucide="file-text" aria-hidden="true"></i>Niederschrift (öffentlich, PDF)</a>
+                {% if rechte.intern %}
+                <a role="menuitem" href="{% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=meeting.pk variant='intern' %}"><i data-lucide="lock" aria-hidden="true"></i>Niederschrift (vollständig, PDF)</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</header>

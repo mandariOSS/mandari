@@ -13,7 +13,8 @@ Geprüft wird:
 - WebSocket-Consumer: DocumentCollaborationConsumer (share-basiert) und PreparationConsumer (Gäste
   ausgeschlossen).
 - Ordner-Freigaben (FolderGuestShare): gelten rekursiv für Unterordner und enthaltene Dokumente, auch künftig
-  hinzukommende; Level-Vererbung (höchstes Level gewinnt); Gast-Übersicht mit navigierbarem Baum;
+  hinzukommende (organisationsweite und geteilte der freigebenden Person, nie private – Issue #582);
+  Level-Vererbung (höchstes Level gewinnt); Gast-Übersicht mit navigierbarem Baum;
   Verwaltungs-Endpunkte (freigeben/entziehen) inkl. Org-Grenzen.
 - Multi-Org: derselbe User ist Gast in Org A und Voll-Mitglied in Org B — in A nur Freigaben, in B alles
   Normale; Org-Switcher zeigt beide; bestehende User (Gast anderswo) können in weitere Orgs eingeladen werden
@@ -187,7 +188,7 @@ def guests(db: None) -> Guests:
     folder_secret = DocumentFolder.objects.create(organization=org_a, name="Intern", created_by=m_admin)
 
     doc_root = Motion.objects.create(
-        organization=org_a, author=m_admin, title="Projektplan", visibility="private", folder=folder_root
+        organization=org_a, author=m_admin, title="Projektplan", visibility="shared", folder=folder_root
     )
     doc_sub = Motion.objects.create(
         organization=org_a, author=m_admin, title="Jahresplanung", visibility="organization", folder=folder_sub
@@ -293,7 +294,7 @@ def test_future_document_in_subtree_is_accessible(guests: Guests, share_root: Fo
         organization=guests.org_a,
         author=guests.m_admin,
         title="Später hinzugefügt",
-        visibility="private",
+        visibility="shared",
         folder=guests.folder_subsub,
     )
     assert doc_future.can_access(guests.m_guest_a), "Künftiges Dokument im Teilbaum nicht zugänglich"
@@ -313,7 +314,7 @@ def test_visible_to_contains_subtree_and_direct_share_only(guests: Guests, share
         organization=guests.org_a,
         author=guests.m_admin,
         title="Später hinzugefügt",
-        visibility="private",
+        visibility="shared",
         folder=guests.folder_subsub,
     )
     visible = set(_visible_to(guests.m_guest_a).values_list("title", flat=True))
@@ -377,7 +378,7 @@ def test_guest_overview_deep_subfolder_is_navigable(guests: Guests, share_root: 
         organization=guests.org_a,
         author=guests.m_admin,
         title="Später hinzugefügt",
-        visibility="private",
+        visibility="shared",
         folder=guests.folder_subsub,
     )
     response = guests.c_guest.get(f"{BASE_A}/freigaben/?ordner={guests.folder_subsub.id}")

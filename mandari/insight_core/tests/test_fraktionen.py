@@ -465,14 +465,22 @@ class TestAnzeige:
             angaben = angaben_fuer(personen, stichtag=HEUTE)
         assert all(angaben[p.pk].fraktion_name == "Fraktion A" for p in personen)
 
-    def test_personenliste_zeigt_fraktion_mit_quellenhinweis(self, person: OParlPerson) -> None:
+    def test_personenliste_zeigt_fraktion_ohne_hinweis_auf_live_uebertragung(self, person: OParlPerson) -> None:
         _lesen(person, zeitpunkt=timezone.now())
 
         html = _client(person.body).get("/insight/personen/").content.decode()
 
-        assert ">Fraktion</th>" in html
-        assert 'title="laut Einblendung der Live-Übertragung">Fraktion A' in html
-        assert '<span class="sr-only"> (laut Einblendung der Live-Übertragung)</span>' in html
+        assert ">Fraktion</th>" in html and "Fraktion A" in html
+        assert "Einblendung" not in html and "Live-Übertragung" not in html
+
+    def test_personenseite_nennt_fraktion_aus_einblendung_ohne_quelle(self, person: OParlPerson) -> None:
+        _lesen(person, zeitpunkt=timezone.now())
+
+        html = _client(person.body).get(f"/insight/personen/{person.pk}/").content.decode()
+
+        kopf = html.split('<header class="rounded-2xl', 1)[1].split("</header>", 1)[0]
+        assert "Fraktion A" in kopf
+        assert "Einblendung" not in html and "Live-Übertragung" not in html
 
     def test_personenliste_ohne_bestaetigte_zuordnung_ohne_spalte(self, person: OParlPerson) -> None:
         _lesen(person, eindeutig=False, zeitpunkt=timezone.now())

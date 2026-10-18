@@ -97,6 +97,8 @@ insight_patterns = [
     # Chat (KI-Assistent)
     path("chat/", views.ChatView.as_view(), name="chat"),
     path("chat/api/message/", ohne_index(views.chat_message), name="chat_message"),
+    # IndexNow (Issue #939, services/indexnow.py): Schlüsseldatei, nur mit INDEXNOW_KEY, sonst 404
+    re_path(r"^(?P<name>[A-Za-z0-9-]{8,128})\.txt$", views.indexnow_schluessel, name="indexnow_schluessel"),
     # Rückmeldung am Seitenende („War diese Seite hilfreich?“)
     path("rueckmeldung/", ohne_index(views.page_feedback), name="page_feedback"),
 ]

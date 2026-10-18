@@ -1,0 +1,82 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Einstellungen › Datenschutz und Zugänge › Datenschutz im neuen Rahmen (Issues #43, #221, #944): links ein Formular in
+drei Abschnitten ohne Karten (Aufbewahrungsfristen je Datenart, Protokollierung von Lesezugriffen, Text der öffentlichen
+Hinweisseite), rechts der Anonymisierungs- und Löschlauf (Probelauf, Löschlauf mit Rückfrage wie bisher), die
+Betroffenenauskunft nach Art. 15 DSGVO (Formular mit data-submit-to) und die Muster-Unterlagen. Keine farbigen Knöpfe,
+keine Symbolkacheln. Formulare und Felder wie session/settings/privacy.html; Kontext PrivacySettingsView.
+{% endcomment %}
+
+{% block page_title %}Datenschutz{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Datenschutz" text="Wie lange personenbezogene Daten aufbewahrt werden, ob Lesezugriffe protokolliert werden und was die öffentliche Hinweisseite zum Datenschutz im Ratsinformationssystem sagt." dicht />
+{% include "session/neu/einstellungen/_reiter.html" %}
+{% endblock %}
+
+{% block page_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "session/neu/einstellungen/_unterpunkte.html" %}
+    <div class="min-w-0 flex-1 grid gap-x-12 gap-y-10 2xl:grid-cols-[minmax(0,1fr)_26rem]">
+        <form method="post" class="min-w-0 max-w-4xl space-y-10" data-testid="datenschutz-einstellungen">
+            <c-rahmen.abschnitt titel="Aufbewahrungsfristen je Datenart" titel_id="fristen-titel">
+                <c-rahmen.satz eng>Angabe in Jahren; 0 schaltet die Frist ab, dann wird nichts gelöscht. Maßgeblich sind die örtlichen Satzungen und Aufbewahrungsvorschriften, Details im Löschkonzept.</c-rahmen.satz>
+                <div class="mt-3 grid gap-4 sm:grid-cols-3">
+                    {% include "session/neu/einstellungen/_zahlfeld.html" with name="persons_years" id="frist-personen" label="Kontakt- und Bankdaten ausgeschiedener Mandatsträger" value=privacy.persons_years min=0 max=100 hilfe="Jahre nach Mandatsende; der Name bleibt erhalten." only %}
+                    {% include "session/neu/einstellungen/_zahlfeld.html" with name="np_content_years" id="frist-noe" label="Nichtöffentliche Inhalte (Protokolle, interne Notizen)" value=privacy.np_content_years min=0 max=100 hilfe="Jahre nach Sitzungsdatum." only %}
+                    {% include "session/neu/einstellungen/_zahlfeld.html" with name="audit_years" id="frist-audit" label="Einträge im Audit-Log" value=privacy.audit_years min=0 max=100 hilfe="Jahre nach Eintragsdatum. Vor der Löschung entsteht ein Archivpaket." only %}
+                </div>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="Protokollierung von Lesezugriffen" titel_id="lesezugriffe-titel">
+                <div class="mt-3">
+                    <c-form.checkbox name="read_logging" id="lesezugriffe" value="1" checked="{% if privacy.read_logging %}1{% endif %}" dicht>Lesezugriffe auf nichtöffentliche Sitzungen, Tagesordnungspunkte, Vorlagen und Niederschriften protokollieren</c-form.checkbox>
+                    <p class="ml-6 mt-0.5 max-w-3xl text-[0.8125rem] text-gray-600 dark:text-gray-400">Erfasst werden nur Person, Zeitpunkt und Objekt, nie Inhalte; wiederholte Aufrufe innerhalb von zehn Minuten zählen als ein Zugriff. Downloads von Anlagen, Anmeldungen und Zugriffe auf das Protokoll selbst werden unabhängig von dieser Einstellung protokolliert. Details im Protokollierungskonzept.</p>
+                </div>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="Öffentliche Hinweisseite „Datenschutz im RIS“" titel_id="hinweisseite-titel">
+                <c-rahmen.satz eng>Erreichbar ohne Anmeldung unter <c-ui.textlink href="{% url 'session:privacy_notice' tenant_slug=tenant_slug %}" extern>/session/{{ tenant_slug }}/datenschutz/</c-ui.textlink>. Ein leerer Text zeigt einen neutralen Standardhinweis.</c-rahmen.satz>
+                <c-form.textarea name="notice" id="hinweisseite" label="Text der Hinweisseite" rows="8" value="{{ privacy.notice }}" placeholder="Datenschutzhinweise Ihrer Kommune für dieses Ratsinformationssystem …" dicht class="mt-3" />
+            </c-rahmen.abschnitt>
+
+            <c-ui.button type="submit" variant="secondary" size="sm">Speichern</c-ui.button>
+            {# Am Ende: als erstes Kind gäbe das versteckte Feld dem ersten Abschnitt den Abstand von space-y #}
+            {% csrf_token %}
+        </form>
+
+        <div class="min-w-0 space-y-10">
+            <c-rahmen.abschnitt titel="Anonymisierungs- und Löschlauf" titel_id="loeschlauf-titel" data-testid="loeschlauf">
+                <c-rahmen.satz eng>Wendet die Fristen an: Kontakt- und Bankdaten ausgeschiedener Mandatsträger werden entfernt (der Name bleibt in historischen Beschlüssen erhalten), nichtöffentliche Inhalte und alte Audit-Einträge werden gelöscht. Jeder Lauf steht im Audit-Log; alternativ per Kommandozeile mit <code class="font-mono text-[0.8125rem]">manage.py session_privacy_purge</code>.</c-rahmen.satz>
+                <div class="mt-3 flex flex-wrap gap-2">
+                    <form method="post" action="{% url 'session:privacy_purge' tenant_slug=tenant_slug %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="dry_run" value="1">
+                        <c-ui.button type="submit" variant="secondary" size="sm">Probelauf (nichts löschen)</c-ui.button>
+                    </form>
+                    <form method="post" action="{% url 'session:privacy_purge' tenant_slug=tenant_slug %}"
+                          data-confirm="Löschlauf wirklich ausführen? Anonymisierte Daten sind nicht wiederherstellbar.">
+                        {% csrf_token %}
+                        <c-ui.button type="submit" variant="secondary" size="sm" icon="eraser">Löschlauf ausführen</c-ui.button>
+                    </form>
+                </div>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="Betroffenenauskunft (Art. 15 DSGVO)" titel_id="auskunft-titel" data-testid="betroffenenauskunft">
+                <c-rahmen.satz eng>Export aller zu einer Person gespeicherten Daten als JSON-Datei (Stammdaten, Mitgliedschaften, Anwesenheiten, Sitzungsgelder, Vorlagen). Bankdaten werden nur mit der Berechtigung „Sitzungsgelder verwalten“ entschlüsselt; jeder Export wird auditiert.</c-rahmen.satz>
+                <form method="get" data-submit-to="/session/{{ tenant_slug }}/persons/{person}/auskunft.json" class="mt-3 flex flex-wrap items-end gap-2">
+                    <c-form.select name="person" id="auskunft-person" label="Person" placeholder="Person wählen …" required dicht class="min-w-0 flex-1 basis-56">
+                        {% for person in persons_for_export %}<option value="{{ person.id }}">{{ person.display_name }}</option>{% endfor %}
+                    </c-form.select>
+                    <c-ui.button type="submit" variant="secondary" size="sm" icon="download">Auskunft exportieren</c-ui.button>
+                </form>
+            </c-rahmen.abschnitt>
+
+            <c-rahmen.abschnitt titel="AVV, TOM und Löschkonzept" titel_id="unterlagen-titel">
+                <c-rahmen.satz eng>Die Muster liegen im Repository unter <code class="font-mono text-[0.8125rem]">docs/DSGVO_AVV_MUSTER.md</code> (Auftragsverarbeitungsvertrag), <code class="font-mono text-[0.8125rem]">docs/DSGVO_TOM.md</code> (technische und organisatorische Maßnahmen) und <code class="font-mono text-[0.8125rem]">docs/DSGVO_LOESCHKONZEPT.md</code> (Löschkonzept und Fristen).</c-rahmen.satz>
+            </c-rahmen.abschnitt>
+        </div>
+    </div>
+</div>
+{% endblock %}

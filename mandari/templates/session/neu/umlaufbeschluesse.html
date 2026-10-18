@@ -1,0 +1,60 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Umlaufbeschlüsse im neuen Rahmen (Issues #41, #944, Bereich Beschlüsse, Reiter „Umlaufbeschlüsse“): Kopfband mit dem
+Verfahren und der Zahl in einem Satz, links die Umlaufbeschlüsse als Liste mit Linien (Nummer, Gremium und Frist über
+dem Betreff, Stand als Punkt mit Text, „Frist verstrichen“ und „Nichtöffentlich“), rechts mit dem Recht zum Bearbeiten
+von Sitzungen „Umlaufbeschluss anlegen“ als die eine Hauptaktion der Seite (Formular wie bisher, Ziel circular_create).
+Kontext wie CircularListView; die bisherige Seite bleibt session/voting/circular_list.html.
+{% endcomment %}
+
+{% block page_title %}Umlaufbeschlüsse{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Umlaufbeschlüsse" text="Beschlussfassung im schriftlichen Verfahren ohne Sitzung{% if circulars %}: {{ circulars|length }} {{ circulars|length|pluralize:'Umlaufbeschluss,Umlaufbeschlüsse' }}, die neuesten zuerst{% endif %}." dicht />
+{% endblock %}
+
+{% block page_content %}
+<div class="grid gap-x-12 gap-y-10 {% if can_manage %}lg:grid-cols-[minmax(0,1fr)_22rem] min-[1600px]:grid-cols-[minmax(0,1fr)_26rem]{% endif %}">
+    <div class="min-w-0">
+        {% if circulars %}
+        <c-rahmen.liste data-testid="umlaufliste">
+            {% for circular in circulars %}
+            <li class="relative grid md:grid-cols-[minmax(0,1fr)_13rem] gap-x-4 gap-y-1 py-3 pl-1 hover:bg-band-grau/60">
+                <div class="min-w-0">
+                    <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 tabular-nums break-words">{% if circular.reference %}{{ circular.reference }} · {% endif %}{{ circular.organization.name }} · Frist {{ circular.deadline|date:"d.m.Y" }}</p>
+                    <a href="{% url 'session:circular_detail' tenant_slug=tenant_slug circular_id=circular.id %}"
+                       class="mt-0.5 block font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words after:absolute after:inset-0">{{ circular.title }}</a>
+                    {% if not circular.is_public %}<p class="mt-0.5 inline-flex items-center gap-1 text-[0.8125rem] text-gray-700 dark:text-gray-300"><i data-lucide="lock" class="w-3.5 h-3.5" aria-hidden="true"></i>Nichtöffentlich</p>{% endif %}
+                </div>
+                <p class="md:pt-5 text-sm text-gray-700 dark:text-gray-300">{% include "session/neu/_umlauf_stand.html" %}</p>
+            </li>
+            {% endfor %}
+        </c-rahmen.liste>
+        {% else %}
+        <c-rahmen.satz>Keine Umlaufbeschlüsse vorhanden.</c-rahmen.satz>
+        {% endif %}
+    </div>
+
+    {% if can_manage %}
+    <c-rahmen.abschnitt titel="Umlaufbeschluss anlegen" titel_id="anlegen-titel">
+        <c-rahmen.satz eng>Der Umlauf startet sofort; die Rückläufe tragen Sie danach je Mitglied ein.</c-rahmen.satz>
+        <form method="post" action="{% url 'session:circular_create' tenant_slug=tenant_slug %}" class="mt-3 space-y-3" data-testid="umlauf-anlegen">
+            {% csrf_token %}
+            <c-form.select name="organization" label="Gremium" placeholder="Bitte wählen…" required dicht>
+                {% for org in organizations %}<option value="{{ org.id }}">{{ org.name }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.field name="deadline" type="date" label="Rückmeldefrist" required dicht />
+            <c-form.field name="title" label="Betreff" placeholder="z. B. Eilentscheidung: Auftragsvergabe Winterdienst" required dicht />
+            <c-form.textarea name="resolution_text" label="Beschlussvorschlag" rows="3" required dicht />
+            <c-form.select name="paper" label="Zugehörige Vorlage (optional)" dicht>
+                <option value="">Keine</option>
+                {% for paper in papers %}<option value="{{ paper.id }}">{{ paper.reference }}: {{ paper.name|truncatechars:50 }}</option>{% endfor %}
+            </c-form.select>
+            <c-form.checkbox name="is_public" value="1" label="Öffentlich" checked dicht />
+            <div><c-ui.button type="submit" size="sm" icon="send">Umlauf starten</c-ui.button></div>
+        </form>
+    </c-rahmen.abschnitt>
+    {% endif %}
+</div>
+{% endblock %}

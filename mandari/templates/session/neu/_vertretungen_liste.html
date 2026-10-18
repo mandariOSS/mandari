@@ -1,0 +1,27 @@
+{% comment %}
+Vertretungen als Liste im neuen Rahmen (Issues #222, #944): vertretene Person → Vertretung, Zeitraum, Umfang und, falls
+aufgehoben, wann und von wem; „Aufheben“ nur bei ``revocable``. Formular wie session/settings/_delegation_rows.html.
+Kontext: rows, revocable, empty_text, tenant_slug.
+{% endcomment %}
+{% if rows %}
+<c-rahmen.liste class="mt-2">
+    {% for delegation in rows %}
+    <li class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-4 py-2.5">
+        <div class="min-w-0">
+            <p class="text-sm text-gray-900 dark:text-white break-words"><span class="font-medium">{{ delegation.principal.user.email }}</span> <span class="text-gray-600 dark:text-gray-400">wird vertreten von</span> <span class="font-medium">{{ delegation.deputy.user.email }}</span></p>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400"><span class="tabular-nums">{{ delegation.start_date|date:"d.m.Y" }} bis {{ delegation.end_date|date:"d.m.Y" }}</span> · {{ delegation.scope_labels|join:", " }}</p>
+            {% if delegation.revoked_at %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Aufgehoben am {{ delegation.revoked_at|date:"d.m.Y H:i" }}{% if delegation.revoked_by %} von {{ delegation.revoked_by.user.email }}{% endif %}</p>{% endif %}
+        </div>
+        {% if revocable %}
+        <form method="post" action="{% url 'session:settings_delegation_revoke' tenant_slug=tenant_slug delegation_id=delegation.id %}"
+              data-confirm="Vertretung aufheben? Sie wirkt dann sofort nicht mehr.">
+            {% csrf_token %}
+            <c-ui.button type="submit" variant="secondary" size="sm" icon="x">Aufheben</c-ui.button>
+        </form>
+        {% endif %}
+    </li>
+    {% endfor %}
+</c-rahmen.liste>
+{% else %}
+<c-rahmen.satz>{{ empty_text }}</c-rahmen.satz>
+{% endif %}

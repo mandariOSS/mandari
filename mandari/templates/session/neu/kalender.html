@@ -1,0 +1,94 @@
+{% extends "session/base_session.html" %}
+{% comment %}
+Sitzungskalender im neuen Rahmen (Issues #82, #756, #944; Bereich Sitzungen, Reiter „Kalender“): Kopfband mit einem
+Satz zum Monat und dem Sitzungsplan als PDF; die Jahresplanung ist der Reiter daneben (nur mit dem Recht, Sitzungen zu
+bearbeiten), nicht noch einmal eine Hauptaktion. Darunter die Monatsnavigation (voriger und nächster Monat, „Heute“,
+Körperschaft) und der Monat: ab 768 px als Raster mit sieben Spalten, am Handy als Liste der Tage mit Sitzungen (sonst
+sieben Spalten zu je 50 px). Sitzungen als Text mit Uhrzeit und Gremium, nichtöffentliche mit Schloss, abgesagte
+durchgestrichen; ohne farbige Flächen. Darunter die Kalender zum Abonnieren je Gremium und der öffentliche
+Sitzungsplan im Bürgerportal. Alle Ziele der bisherigen Seite bleiben; Kontext wie MeetingCalendarView. Die bisherige
+Seite bleibt session/calendar/month.html.
+{% endcomment %}
+
+{% block page_title %}Sitzungskalender{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block session_header %}
+<c-rahmen.kopfband titel="Sitzungskalender" text="{{ month_name }} {{ year }}: {% if meetings_count %}{{ meetings_count }} Sitzung{{ meetings_count|pluralize:'en' }}{% else %}keine Sitzungen{% endif %}{% if body_choice.selected %} in {{ body_choice.selected.name }}{% endif %}." dicht>
+    <c-slot name="aktionen">
+        <c-ui.button href="{% url 'session:year_plan_pdf' tenant_slug=tenant_slug %}?year={{ year }}" variant="secondary" size="sm" icon="file-down">Sitzungsplan {{ year }} (PDF)</c-ui.button>
+    </c-slot>
+</c-rahmen.kopfband>
+{% endblock %}
+
+{% block page_content %}
+<div class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2" data-testid="monatsnavigation">
+    <div class="flex items-center gap-1">
+        <c-ui.symbolknopf icon="chevron-left" href="{% querystring year=prev_year month=prev_month %}" titel="Voriger Monat" label="Voriger Monat" />
+        <h2 class="min-w-[9.5rem] text-center text-base font-semibold text-gray-900 dark:text-white">{{ month_name }} {{ year }}</h2>
+        <c-ui.symbolknopf icon="chevron-right" href="{% querystring year=next_year month=next_month %}" titel="Nächster Monat" label="Nächster Monat" />
+        <c-ui.textlink href="{% url 'session:meeting_calendar' tenant_slug=tenant_slug %}{% if body_choice.selected %}?body={{ body_choice.selected.slug }}{% endif %}" class="ml-2 text-sm">Heute</c-ui.textlink>
+    </div>
+    {% if body_choice.active %}
+    {# Körperschaft (Issue #756): Gesamtansicht oder eine Körperschaft #}
+    <form method="get" class="flex flex-wrap items-center gap-2">
+        <input type="hidden" name="year" value="{{ year }}">
+        <input type="hidden" name="month" value="{{ month }}">
+        {% include "session/partials/body_filter.html" %}
+        <c-ui.button type="submit" variant="secondary" size="sm">Anzeigen</c-ui.button>
+    </form>
+    {% endif %}
+</div>
+
+{# Ab 768 px: Monat als Raster #}
+<div class="hidden md:block mt-4 border-t border-l border-gray-200 dark:border-gray-800" data-testid="monatsraster">
+    <div class="grid grid-cols-7" aria-hidden="true">
+        {% for label in weekday_labels %}<div class="px-2 py-1.5 border-r border-b border-gray-200 dark:border-gray-800 text-[0.8125rem] font-medium text-gray-600 dark:text-gray-400">{{ label }}</div>{% endfor %}
+    </div>
+    {% for week in weeks %}
+    <div class="grid grid-cols-7">
+        {% for cell in week %}
+        <div class="min-h-24 p-1.5 border-r border-b border-gray-200 dark:border-gray-800 {% if not cell.in_month %}bg-band-grau/50{% endif %}">
+            <p class="mb-1 text-[0.8125rem] tabular-nums {% if cell.is_today %}inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary-600 font-semibold text-white{% elif cell.in_month %}font-medium text-gray-800 dark:text-gray-200{% else %}text-gray-500{% endif %}">{{ cell.day.day }}</p>
+            <ul class="space-y-1">
+                {% for meeting in cell.meetings %}
+                <li>{% include "session/neu/_kalender_eintrag.html" %}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endfor %}
+    </div>
+    {% endfor %}
+</div>
+
+{# Am Handy: die Tage mit Sitzungen als Liste #}
+{% if meetings_count %}
+<c-rahmen.liste geordnet class="md:hidden mt-4" data-testid="monatsliste">
+    {% for week in weeks %}{% for cell in week %}{% if cell.in_month and cell.meetings %}
+    <li class="grid grid-cols-[4.5rem_minmax(0,1fr)] gap-x-3 py-2.5">
+        <p class="text-sm tabular-nums {% if cell.is_today %}font-semibold text-primary-700 dark:text-primary-300{% else %}font-medium text-gray-900 dark:text-white{% endif %}">{{ cell.day|date:"D, j." }}</p>
+        <ul class="space-y-1.5">
+            {% for meeting in cell.meetings %}<li>{% include "session/neu/_kalender_eintrag.html" %}</li>{% endfor %}
+        </ul>
+    </li>
+    {% endif %}{% endfor %}{% endfor %}
+</c-rahmen.liste>
+{% endif %}
+{% if not meetings_count %}<c-rahmen.satz>Keine Sitzungen in diesem Monat.</c-rahmen.satz>{% endif %}
+
+<c-rahmen.abschnitt titel="Kalender abonnieren" titel_id="abo-titel" class="mt-10" data-testid="kalender-abo">
+    <c-rahmen.satz eng>Ein Kalender je Gremium für Outlook oder Thunderbird, nur mit öffentlichen Sitzungen.</c-rahmen.satz>
+    <ul class="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+        {% for org in organizations %}
+        <li><c-ui.textlink href="{% url 'session:organization_ics_feed' tenant_slug=tenant_slug org_id=org.id %}" class="inline-flex items-center gap-1.5 min-h-6"><i data-lucide="rss" class="w-3.5 h-3.5" aria-hidden="true"></i>{{ org.name }}</c-ui.textlink></li>
+        {% endfor %}
+    </ul>
+    {% if session_tenant.oparl_body_id %}
+    <p class="mt-4 text-sm text-gray-700 dark:text-gray-300">Öffentliche Sitzungen erscheinen automatisch im Bürgerportal.</p>
+    <ul class="mt-1.5 flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+        <li><c-ui.textlink href="{% url 'insight_core:insight:meeting_year_plan' %}?kommune={{ session_tenant.oparl_body_id }}&year={{ year }}" extern>Öffentlicher Sitzungsplan {{ year }}</c-ui.textlink></li>
+        <li><c-ui.textlink href="{% url 'insight_core:insight:calendar_feed' %}?kommune={{ session_tenant.oparl_body_id }}">Kalender-Abo im Bürgerportal (ICS)</c-ui.textlink></li>
+    </ul>
+    {% endif %}
+</c-rahmen.abschnitt>
+{% endblock %}

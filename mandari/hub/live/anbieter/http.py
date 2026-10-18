@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Abrufe bei Streaming-Anbietern (Issue #915): nur https, Zeitgrenzen, Größengrenze, fester User-Agent.
+Abrufe bei Streaming-Anbietern (Issue #915): nur https, Zeitgrenzen, Größengrenze, Kennung und Takt je Host.
+
+Kennung und Takt wie bei allen Abrufen bei Diensten (Issue #1036, ``insight_core.services.dienste``): User-Agent
+``mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)``, vor jeder Anfrage und jeder Weiterleitung
+ein Zeitpunkt beim Host, höchstens eine Anfrage je Sekunde und Host (``dienste.LIVE``).
 
 Jede Adresse, auch jedes Ziel einer Weiterleitung (höchstens ``MAX_WEITERLEITUNGEN``), muss https sein und auf
 einen öffentlichen Namen zeigen (``ziel_pruefen``): keine IP-Adresse aus privaten, Loopback- oder Link-Local-Bereichen,
@@ -19,9 +23,11 @@ from typing import Any, Final
 
 import httpx
 
+from insight_core.services import dienste
+
 from . import AnbieterError
 
-USER_AGENT: Final = "mandari (+https://mandari.de)"
+USER_AGENT: Final = dienste.USER_AGENT
 #: Zeitgrenzen in Sekunden: Verbindungsaufbau, Lesen
 TIMEOUT: Final = httpx.Timeout(10.0, connect=5.0)
 #: Größengrenze für JSON und Playlists
@@ -72,6 +78,8 @@ def hole(url: str, *, max_bytes: int = MAX_TEXT, http: httpx.Client | None = Non
     verbindung = http or client()
     try:
         for _ in range(MAX_WEITERLEITUNGEN + 1):
+            # Takt je Host, auch für das Ziel jeder Weiterleitung
+            dienste.warten(ziel, dienste.LIVE)
             with verbindung.stream("GET", ziel, follow_redirects=False) as antwort:
                 if antwort.is_redirect:
                     ziel = ziel_pruefen(antwort.url.join(antwort.headers["location"]))

@@ -54,15 +54,21 @@ x-app-environment: &app-environment
   ALLOWED_HOSTS: ${DOMAIN:-localhost}
   CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
   SITE_URL: https://${DOMAIN:-localhost}
+  # IndexNow (siehe .env.example), leer = aus
+  INDEXNOW_KEY: ${INDEXNOW_KEY:-}
   # Dokument-Cache (siehe docs/FILE_CACHE.md)
   OPARL_FILES_ROOT: /app/files
   # Lokale Kopien liefert Caddy aus (Range, ETag); Caddy liest dafür das Volume mandari_files
   # (siehe Dienst caddy und docs/FILE_CACHE.md, „Auslieferung über den Webserver“). Standard aus.
   FILE_ACCEL_REDIRECT: ${FILE_ACCEL_REDIRECT:-false}
   # Ablage nach SHA-256 mit Referenzzählung (docs/FILE_CACHE.md, „Ablage nach SHA-256“); der Ingestor legt
-  # Dateien, die er für den Text lädt, selbst ab (Volume mandari_files im Dienst ingestor)
+  # Dateien, die er für den Text lädt, selbst ab (Volume mandari_files im Dienst ingestor). Mit
+  # TEXT_EXTRACTION_RUNNER=worker lädt er keine Dateien mehr, INGESTOR_STORES_FILES wirkt dann nicht
   FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}
   INGESTOR_STORES_FILES: ${INGESTOR_STORES_FILES:-true}
+  # Abrufe in die Ablage warten unterhalb dieses freien Platzes (GB), statt die Platte zu füllen; derselbe Wert
+  # wie im Dienst ingestor, beide schreiben in mandari_files
+  FILE_CACHE_MIN_FREE_GB: ${FILE_CACHE_MIN_FREE_GB:-15}
   # S3-kompatibler Objektspeicher (docs/FILE_CACHE.md, „Objektspeicher“), Standard aus. Zugangsdaten nie im Repo:
   # aus der .env oder einer eigenen Umgebungsdatei, die Compose zusätzlich liest (--env-file, siehe FILE_CACHE.md)
   OBJ_ENABLED: ${OBJ_ENABLED:-false}
@@ -72,14 +78,21 @@ x-app-environment: &app-environment
   OBJ_SECRET: ${OBJ_SECRET:-}
   OBJ_REGION: ${OBJ_REGION:-}
   OBJ_CACHE_MAX_GB: ${OBJ_CACHE_MAX_GB:-60}
+  # Verdrängen und Zurückholen brechen nach so vielen fehlenden Inhalten in Folge ab (falscher Bucket), 0 = ohne Grenze
+  OBJ_EVICT_MAX_MISSING: ${OBJ_EVICT_MAX_MISSING:-20}
   OBJ_CHECKSUMS: ${OBJ_CHECKSUMS:-when_required}
+  # Obergrenze der Gesamtgröße des Dokument-Caches in GB (docs/FILE_CACHE.md, „Obergrenze“), 0 = unbegrenzt
+  FILE_CACHE_MAX_TOTAL_GB: ${FILE_CACHE_MAX_TOTAL_GB:-0}
+  FILE_CACHE_EVICT_TARGET_PERCENT: ${FILE_CACHE_EVICT_TARGET_PERCENT:-90}
   # Nur mit Ratsinformationssystem im internen Netz (siehe .env.example)
   INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS: ${INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS:-false}
   # Abos zu Themen und Orten im Bürgerportal (siehe .env.example), Standard aus
   INSIGHT_SUBSCRIPTIONS_ENABLED: ${INSIGHT_SUBSCRIPTIONS_ENABLED:-false}
   # Ratsfragen im Bürgerportal (siehe .env.example), Standard aus (pausiert)
   INSIGHT_QUESTIONS_ENABLED: ${INSIGHT_QUESTIONS_ENABLED:-false}
-  # Aufträge, Ereignisse und Worker (siehe .env.example und DEPLOYMENT.md, „Worker“)
+  # Aufträge, Ereignisse und Worker (siehe .env.example und DEPLOYMENT.md, „Worker“). journal (Aufträge im
+  # Worker) ist Voraussetzung für TEXT_EXTRACTION_RUNNER=worker; erst umschalten, wenn worker und
+  # worker-heavy laufen (DEPLOYMENT.md, „Dokumentkette einschalten“)
   TASKS_BACKEND: ${TASKS_BACKEND:-immediate}
   TASKS_MAX_TASKS_PER_PROCESS: ${TASKS_MAX_TASKS_PER_PROCESS:-1000}
   TASKS_MAX_MEMORY_MB: ${TASKS_MAX_MEMORY_MB:-400}
@@ -95,13 +108,23 @@ x-app-environment: &app-environment
   EVENTS_JOURNAL_RETENTION_DAYS: ${EVENTS_JOURNAL_RETENTION_DAYS:-90}
   EVENTS_TASKS_DONE_RETENTION_DAYS: ${EVENTS_TASKS_DONE_RETENTION_DAYS:-14}
   EVENTS_TASKS_DEAD_RETENTION_DAYS: ${EVENTS_TASKS_DEAD_RETENTION_DAYS:-90}
+  # Absender, wenn die Systemeinstellungen keinen nennen, und Domain für Message-ID und EHLO (DEPLOYMENT.md,
+  # „Mailversand: Message-ID und EHLO“). Leer = Domain von DEFAULT_FROM_EMAIL, ohne den Absender DOMAIN
+  DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-}
+  EMAIL_MESSAGE_ID_DOMAIN: ${EMAIL_MESSAGE_ID_DOMAIN:-}
   # Mailarten, die als Auftrag (Warteschlange mail) statt in der Anfrage rausgehen, siehe .env.example
   MAIL_QUEUE: ${MAIL_QUEUE:-}
   MAIL_QUEUE_MAX_BYTES: ${MAIL_QUEUE_MAX_BYTES:-20971520}
-  # Wer den Text der RIS-Dateien erkennt: ingestor (Standard) oder worker (Aufträge in ocr), siehe .env.example
+  # Wer den Text der RIS-Dateien erkennt (docs/adr/20261007-dokumentkette.md, DEPLOYMENT.md):
+  #   ingestor (Standard): OCR-Worker bzw. Sync des Ingestors, der jede Datei selbst lädt
+  #   worker: Aufträge file.extract_text in der Warteschlange ocr (Dienst worker-heavy), lesen nur aus Ablage
+  #           und Objektspeicher; braucht TASKS_BACKEND=journal. Gilt zugleich für den Dienst ingestor
   TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
-  # Adressraum je Tesseract-Unterprozess der Anwendung (Import, Aufträge in ocr): im worker-heavy belegt der
-  # Runner selbst bis 800 MB, der Container hat 1 GB
+  # Höchstens so viele Aufträge der Texterkennung warten oder laufen zugleich (Zeitplan und extract_texts ohne
+  # --limit; nur mit TEXT_EXTRACTION_RUNNER=worker)
+  TEXT_EXTRACTION_QUEUE_DEPTH: ${TEXT_EXTRACTION_QUEUE_DEPTH:-20}
+  # Adressraum je Tesseract-Unterprozess in Anwendung und worker (1 GB); worker-heavy hat eine eigene Grenze
+  # (WORKER_HEAVY_OCR_MEMORY_LIMIT_MB)
   OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-512}
   # Für die Zeitpläne der Betriebsprüfungen, die jetzt im Worker laufen: Empfänger der Alarme,
   # Statusseite für den Verfügbarkeitsbericht, Metriken der Anwendung über ihren Dienstnamen
@@ -116,6 +139,9 @@ x-app-environment: &app-environment
   SEARCH_INDEX_SHADOW_MAX_DOCS: ${SEARCH_INDEX_SHADOW_MAX_DOCS:-100000}
   # Benachrichtigungen als Abonnement (aus, schatten, aktiv; siehe .env.example), Standard aus
   WORK_NOTIFICATION_SUBSCRIPTION: ${WORK_NOTIFICATION_SUBSCRIPTION:-aus}
+  # Nachfolger der Texterkennung als Abonnements (aus, schatten, aktiv; siehe .env.example), Standard aus
+  GEOREF_SUBSCRIPTION: ${GEOREF_SUBSCRIPTION:-aus}
+  SUMMARY_SUBSCRIPTION: ${SUMMARY_SUBSCRIPTION:-aus}
   # RIS-Projektor für Session-Mandanten im Schattenbetrieb (aus, schatten; siehe .env.example), Standard aus
   RIS_SESSION_PROJECTOR: ${RIS_SESSION_PROJECTOR:-aus}
   RIS_SESSION_PROJECTOR_TENANTS: ${RIS_SESSION_PROJECTOR_TENANTS:-}
@@ -134,12 +160,28 @@ x-app-environment: &app-environment
   OPARL_CHANGES_ENABLED: ${OPARL_CHANGES_ENABLED:-false}
   OPARL_CHANGES_RETENTION_DAYS: ${OPARL_CHANGES_RETENTION_DAYS:-90}
   OPARL_SNAPSHOT_PARALLEL: ${OPARL_SNAPSHOT_PARALLEL:-2}
-  # AI (optional)
-  NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
+  # KI (optional, Issue #950): Anbieter, Basis-URL, Modell und Schlüssel im Admin (KI-Einstellungen). Hier nur die
+  # Positivliste erlaubter Hosts (kommagetrennt, leer = nichts erlaubt) und die externe Texterkennung (nur mit Schlüssel
+  # UND Basis-URL aus der Positivliste, Standard aus); im Ingestor dieselben Werte
+  KI_ERLAUBTE_HOSTS: ${KI_ERLAUBTE_HOSTS:-}
+  MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+  MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-}
   # Live-Übertragungen von Gremiensitzungen (docs/LIVE_UEBERTRAGUNG.md), Standard aus: aus = keine Anfragen an
   # Streaming-Anbieter, kein Zeitplan; an = Dienst worker-live bedient die Warteschlange live
   LIVE_UEBERTRAGUNG_AKTIV: ${LIVE_UEBERTRAGUNG_AKTIV:-false}
   LIVE_PROTOKOLL_TAGE: ${LIVE_PROTOKOLL_TAGE:-90}
+  # KI-Assistent im Bürgerportal (docs/INSIGHT_KI_ASSISTENT.md): Werkzeugrunden und Zeitlimit je Antwort,
+  # Tagesobergrenze aller Antworten zusammen (Kostenbremse)
+  INSIGHT_CHAT_MAX_TOOL_ROUNDS: ${INSIGHT_CHAT_MAX_TOOL_ROUNDS:-4}
+  INSIGHT_CHAT_TIME_LIMIT_SECONDS: ${INSIGHT_CHAT_TIME_LIMIT_SECONDS:-90}
+  INSIGHT_CHAT_DAILY_MAX_CALLS: ${INSIGHT_CHAT_DAILY_MAX_CALLS:-500}
+  INSIGHT_CHAT_DAILY_MAX_TOKENS: ${INSIGHT_CHAT_DAILY_MAX_TOKENS:-1000000}
+  # Öffentlicher MCP-Server unter /insight/mcp (docs/INSIGHT_MCP.md), Standard aus
+  INSIGHT_MCP_ENABLED: ${INSIGHT_MCP_ENABLED:-false}
+  INSIGHT_MCP_PER_IP_MINUTE: ${INSIGHT_MCP_PER_IP_MINUTE:-30}
+  INSIGHT_MCP_PER_IP_DAY: ${INSIGHT_MCP_PER_IP_DAY:-500}
+  INSIGHT_MCP_PER_MINUTE: ${INSIGHT_MCP_PER_MINUTE:-300}
+  INSIGHT_MCP_ALLOWED_ORIGINS: ${INSIGHT_MCP_ALLOWED_ORIGINS:-}
   # „Worker lebt“ an die Statusseite (docs/MONITORING.md, „Worker“); leer = keine Meldung
   WORKER_PUSH_URL: ${WORKER_PUSH_URL:-}
   WORKER_PUSH_TOKEN: ${WORKER_PUSH_TOKEN:-}
@@ -219,6 +261,12 @@ services:
       # statt die Platte zu fuellen (Vorfall 24.09.2026, Issue #54).
       - -c
       - temp_file_limit=${POSTGRES_TEMP_FILE_LIMIT:-5GB}
+      # Statistik je SQL-Abfrage (pg_stat_statements, Issue #1024): Welche Abfragen kosten die meiste Zeit?
+      # Die Erweiterung legt die Migration common.0012 an. Abschalten mit POSTGRES_SHARED_PRELOAD_LIBRARIES=
+      # (leer, deshalb "-" statt ":-"); wirkt erst nach einem Neustart des Datenbankdienstes (DEPLOYMENT.md).
+      # Der Wert ersetzt postgresql.conf und ALTER SYSTEM: dort schon geladene Bibliotheken mit aufführen.
+      - -c
+      - shared_preload_libraries=${POSTGRES_SHARED_PRELOAD_LIBRARIES-pg_stat_statements}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
@@ -337,10 +385,11 @@ services:
   # Gleiches Image und dieselbe Umgebung wie die Anwendung. Starten nach den
   # Migrationen und vor der Anwendung (update.sh, deploy/scripts/deploy.sh).
   # /metrics und /health auf Port 9091 nur im internen Netz (nicht veröffentlicht).
-  # Zwei Dienste: worker (alle Rollen, alle Warteschlangen außer ocr und ai) und
-  # worker-heavy (nur Aufträge aus ocr und ai). Jeder Neustart eines Runners wartet
-  # auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails
-  # und Suche nicht auf die Texterkennung. Einzelheiten: DEPLOYMENT.md, „Worker“.
+  # Drei Dienste: worker (alle Rollen, alle Warteschlangen außer ocr, ai und live),
+  # worker-heavy (nur Aufträge aus ocr und ai, 3 GB) und worker-live (nur live). Jeder
+  # Neustart eines Runners wartet auf seinen längsten laufenden Auftrag (ocr bis 30 min);
+  # getrennt warten Mails und Suche nicht auf die Texterkennung. Einzelheiten:
+  # DEPLOYMENT.md, „Worker“.
   # ===========================================================================
   worker: &worker-dienst
     image: ghcr.io/mandarioss/mandari:${IMAGE_TAG:-latest}
@@ -389,8 +438,11 @@ services:
       retries: 3
       start_period: 60s
 
-  # Texterkennung und KI (Warteschlangen ocr, ai): eigener Runner mit mehr Speicher,
-  # sonst wie worker (Umgebung, Volumes, Healthcheck über die Heartbeat-Datei)
+  # Texterkennung und KI (Warteschlangen ocr, ai; docs/adr/20261007-dokumentkette.md, Abschnitt 8): eigener
+  # Runner mit mehr Speicher, sonst wie worker – dieselbe Umgebung (auch OBJ_* für den Objektspeicher), die
+  # Dokumentablage mandari_files unter /app/files, Healthcheck über die Heartbeat-Datei. Die Erkennung liest nur
+  # aus Ablage und Objektspeicher und ruft nie bei der Quelle ab. Er arbeitet erst mit TASKS_BACKEND=journal und
+  # TEXT_EXTRACTION_RUNNER=worker; bis dahin wartet er (DEPLOYMENT.md, „Dokumentkette einschalten“).
   worker-heavy:
     <<: *worker-dienst
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}-worker-heavy
@@ -402,12 +454,21 @@ services:
       - tasks
       - --queues
       - ocr,ai
+      # Eine Erkennung zugleich: Das Speicherlimit ist auf einen Tesseract-Unterprozess ausgelegt
+      - --concurrency
+      - ocr=1
       - --max-memory-mb
       - "800"
       - --heartbeat-file
       - /tmp/mandari-worker.heartbeat
-    # Der Runner startet oberhalb von 800 MB (--max-memory-mb) neu, bevor das Limit greift
-    mem_limit: 1g
+    environment:
+      <<: *app-environment
+      # Adressraum je Tesseract-Unterprozess (Seitengrenzen aus #817). Eigene Variable, denn OCR_MEMORY_LIMIT_MB
+      # gilt auch für Anwendung und worker (1 GB) und den Ingestor (512 MB)
+      OCR_MEMORY_LIMIT_MB: ${WORKER_HEAVY_OCR_MEMORY_LIMIT_MB:-2048}
+    # Runner bis 800 MB (startet darüber neu) plus ein Tesseract-Unterprozess bis WORKER_HEAVY_OCR_MEMORY_LIMIT_MB.
+    # Wer das Limit senkt, senkt die Seitengrenze mit (Limit minus 1 GB)
+    mem_limit: ${WORKER_HEAVY_MEM_LIMIT:-3g}
 
   # Live-Übertragungen (Warteschlange live, docs/LIVE_UEBERTRAGUNG.md): Statusabfrage je Minute und Leseaufträge
   # (~50 s, Einzelbild + Texterkennung nur im Speicher). Eigener Runner, damit lange OCR- oder Mailaufträge die
@@ -483,6 +544,8 @@ services:
       ALLOWED_HOSTS: ${DOMAIN:-localhost}
       CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
       SITE_URL: https://${DOMAIN:-localhost}
+      # IndexNow: Schlüsseldatei /<schlüssel>.txt und Meldungen der Website (gleicher Wert wie die Anwendung)
+      INDEXNOW_KEY: ${INDEXNOW_KEY:-}
       TZ: ${TZ:-Europe/Berlin}
     depends_on:
       postgres:
@@ -507,6 +570,9 @@ services:
     image: ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}-ingestor
     restart: unless-stopped
+    # Takt je Quelle (docs/ABRUFREGELN.md, „Rhythmus“, Issue #1026): --interval ist der Grundtakt werktags
+    # 07–19 Uhr, sonst stündlich, am Wochenende alle 2 Stunden; --full-sync-hour beginnt das nächtliche
+    # Standardfenster (5 Stunden) für Vollabgleiche von Quellen ohne eigenes full_sync_window
     command: >
       python -m src.main daemon
       --interval ${INGESTOR_INTERVAL:-10}
@@ -517,6 +583,8 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ELASTICSEARCH_URL: http://elasticsearch:9200
       TZ: ${TZ:-Europe/Berlin}
+      # So viele Quellen gleichzeitig, je Quelle höchstens ein Lauf; Vollabgleiche lassen einen Platz frei (#1026)
+      INGESTOR_SYNC_POOL_SIZE: ${INGESTOR_SYNC_POOL_SIZE:-4}
       # Änderungen am RIS-Bestand als Ereignisse ins Journal schreiben (Standard aus, siehe .env.example)
       INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
       # Dateien für den Text gleich in der Ablage der Anwendung ablegen (ein Abruf je Datei, #788)
@@ -526,8 +594,13 @@ services:
       # Der Sync erkennt den Text selbst (TEXT_EXTRACTION_ENABLED): Adressraum je Tesseract-Unterprozess
       # deutlich unter dem Speicherlimit des Containers (512 MB) halten (#817)
       OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-384}
-      # worker: die Aufträge der Anwendung erkennen den Text, Sync und OCR-Worker ruhen (gleich wie dort)
+      # worker: die Aufträge der Anwendung (worker-heavy) erkennen den Text, Sync und OCR-Worker ruhen und laden
+      # keine Dateien mehr (gleicher Wert wie bei der Anwendung)
       TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
+      # Externe Texterkennung und Positivliste wie in der Anwendung (Issue #950), Standard aus
+      KI_ERLAUBTE_HOSTS: ${KI_ERLAUBTE_HOSTS:-}
+      MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
+      MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-}
     volumes:
       - ingestor_data:/app/data
       - mandari_files:/app/files
@@ -538,7 +611,9 @@ services:
         condition: service_healthy
     networks:
       - mandari
-    mem_limit: 512m
+    # Gemessen mit vier gleichzeitigen Vollabgleichen ohne Texterkennung: unter 200 MB (#1026). Erkennt der
+    # Ingestor den Text selbst (TEXT_EXTRACTION_RUNNER=ingestor), kommen die Tesseract-Unterprozesse hinzu
+    mem_limit: ${INGESTOR_MEM_LIMIT:-512m}
     security_opt:
       - no-new-privileges:true
     logging: *default-logging

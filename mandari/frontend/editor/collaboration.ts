@@ -42,9 +42,10 @@ export interface CollabOptions {
   getHtml?: () => string
   /**
    * Called when the server requests a document reload (e.g. after a revision
-   * restore). Default behavior: window.location.reload().
+   * restore). Default behavior: window.location.reload(). `reason` is set when
+   * access was downgraded or revoked (#582).
    */
-  onReloadRequired?: () => void
+  onReloadRequired?: (reason?: ReloadReason) => void
   /**
    * Called after the server persisted a yjs_save (content_hash of the stored
    * HTML). The editor keeps it as the base for conflict detection when it
@@ -52,6 +53,9 @@ export interface CollabOptions {
    */
   onPersisted?: (contentHash: string) => void
 }
+
+/** Grund einer Reload-Aufforderung: Zugriff herabgestuft bzw. entzogen (#582); ohne Grund = neuer Stand. */
+export type ReloadReason = 'access_changed' | 'access_revoked'
 
 export interface CollabUser {
   name: string
@@ -70,6 +74,11 @@ export interface CollabResult {
   undoManager: Y.UndoManager
   /** Destroy collaboration (call on editor destroy) */
   destroy: () => void
+  /**
+   * Stand sofort speichern und auf die Bestätigung des Servers warten (yjs_saved). false ohne Verbindung oder
+   * nach Zeitablauf. Für Schritte, die danach den gespeicherten Text lesen (z. B. Einreichen bei der Verwaltung).
+   */
+  flush: (timeoutMs?: number) => Promise<boolean>
 }
 
 // Message types matching the Django consumer protocol
@@ -101,9 +110,11 @@ class DjangoYjsProvider {
   private onStatusChange?: (status: CollabStatus) => void
   private onInitialState?: (hasState: boolean) => void
   private getHtml?: () => string
-  private onReloadRequired?: () => void
+  private onReloadRequired?: (reason?: ReloadReason) => void
   private onPersisted?: (contentHash: string) => void
   private _beforeUnloadHandler: (() => void) | null = null
+  /** Wartende auf die nächste Bestätigung yjs_saved (flush) */
+  private persistWaiters: Array<(ok: boolean) => void> = []
   private _visibilityHandler: (() => void) | null = null
 
   constructor(
@@ -113,7 +124,7 @@ class DjangoYjsProvider {
     onStatusChange?: (status: CollabStatus) => void,
     onInitialState?: (hasState: boolean) => void,
     getHtml?: () => string,
-    onReloadRequired?: () => void,
+    onReloadRequired?: (reason?: ReloadReason) => void,
     onPersisted?: (contentHash: string) => void,
   ) {
     this.wsUrl = wsUrl
@@ -232,14 +243,22 @@ class DjangoYjsProvider {
     } else if (msg.type === 'yjs_saved' && typeof msg.content_hash === 'string') {
       // Server persisted our yjs_save; remember the fingerprint of the stored HTML (#184).
       this.onPersisted?.(msg.content_hash)
+      const wartende = this.persistWaiters
+      this.persistWaiters = []
+      for (const fertig of wartende) fertig(true)
     } else if (msg.type === 'reload') {
       // Server requests a full document reload (e.g. after revision restore or a POST
       // save by someone without connection). Our Yjs state is now stale: a late yjs_save
       // (tab hidden, beforeunload, destroy) must not overwrite the stored content (#184).
+      // After access was downgraded or revoked the server sends a reason (#582). Only the first
+      // request counts – the page is reloading anyway.
+      if (this.reloadRequested) return
       this.reloadRequested = true
       if (this.saveTimer) clearInterval(this.saveTimer)
       if (this.onReloadRequired) {
-        this.onReloadRequired()
+        this.onReloadRequired(
+          msg.reason === 'access_changed' || msg.reason === 'access_revoked' ? msg.reason : undefined,
+        )
       } else {
         window.location.reload()
       }
@@ -298,6 +317,25 @@ class DjangoYjsProvider {
         }),
       )
     }
+  }
+
+  /** Stand sofort speichern und auf die Bestätigung warten (siehe CollabResult.flush). */
+  flush(timeoutMs = 4000): Promise<boolean> {
+    if (this.reloadRequested || !this.ws || !this.connected || this.ws.readyState !== WebSocket.OPEN) {
+      return Promise.resolve(false)
+    }
+    return new Promise((resolve) => {
+      const fertig = (ok: boolean) => {
+        clearTimeout(timer)
+        resolve(ok)
+      }
+      const timer = setTimeout(() => {
+        this.persistWaiters = this.persistWaiters.filter((w) => w !== fertig)
+        resolve(false)
+      }, timeoutMs)
+      this.persistWaiters.push(fertig)
+      this._saveFullState()
+    })
   }
 
   /** Send full Yjs state to server for persistence (via yjs_save message). */
@@ -453,5 +491,7 @@ export function initCollaboration(options: CollabOptions): CollabResult {
     ydoc.destroy()
   }
 
-  return { ydoc, extensions, awareness, undoManager, destroy }
+  const flush = (timeoutMs?: number) => provider.flush(timeoutMs)
+
+  return { ydoc, extensions, awareness, undoManager, destroy, flush }
 }

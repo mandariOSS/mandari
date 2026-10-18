@@ -73,7 +73,8 @@ groups:
           description: Ursache im Protokoll des Runners (events_tasks); der Wert erlischt nach 24 Stunden.
 
       - alert: MandariAuftragsrueckstand
-        expr: max by (queue) (mandari_tasks_oldest_queued_seconds) > 900
+        # ocr gesondert (MandariTexterkennungSteht): Parallelität 1, dort wartet jeder Auftrag hinter den vorigen
+        expr: max by (queue) (mandari_tasks_oldest_queued_seconds{queue!="ocr"}) > 900
         for: 10m
         labels:
           severity: warning
@@ -91,3 +92,73 @@ groups:
           description: >-
             Nur Hinweis: Die Abfrage trägt weiter, die Zustellung ist langsamer. Hinter PgBouncer
             EVENTS_DB_DIRECT_URL prüfen.
+
+  # Dokumentkette: Abruf, Ablage und Texterkennung der RIS-Dateien (Issue #919, docs/MONITORING.md,
+  # „Dokumentkette“). Die Zustandszahlen misst jeder Prozess aus der Datenbank (max), die Fehler zählt
+  # der Prozess, der abruft (sum).
+  - name: mandari-dokumentkette
+    rules:
+      - alert: MandariAbrufFehlerJeQuelle
+        # Vergleich mit derselben Zeit am Vortag; fehlt dort die Quelle, gilt 0
+        expr: |
+          sum by (source) (increase(mandari_files_fetch_errors_total[6h])) > 20
+            and
+          sum by (source) (increase(mandari_files_fetch_errors_total[6h]))
+            > 3 * (
+              sum by (source) (increase(mandari_files_fetch_errors_total[6h] offset 1d))
+                or
+              sum by (source) (increase(mandari_files_fetch_errors_total[6h])) * 0
+            )
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Abrufe der Quelle {{ $labels.source }} scheitern deutlich häufiger als am Vortag"
+          description: >-
+            Die Quelle ist gestört oder bremst uns (429, Sperre). Fehlercodes in
+            mandari_files_fetch_errors_total ansehen, Betriebsmonitor (Gesundheit, Schonung) prüfen. Beim
+            Umschalten der Dokumentkette ist das ein Abbruchkriterium (DEPLOYMENT.md).
+
+      - alert: MandariTexterkennungSteht
+        # Aufträge file.extract_text warten, aber keiner läuft (fehlt die Reihe ocr, gilt 0)
+        expr: |
+          max(mandari_tasks_oldest_queued_seconds{queue="ocr"}) > 900
+            and on()
+          (max(mandari_tasks_running{queue="ocr"}) or vector(0)) == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Die Texterkennung steht: Aufträge in ocr warten, keiner läuft"
+          description: >-
+            worker-heavy prüfen (healthy, bedient er ocr, Speicherabbrüche). Lange Wartezeiten bei laufender
+            Erkennung sind bei vielen Scans normal (Parallelität 1, TEXT_EXTRACTION_QUEUE_DEPTH).
+
+      - alert: MandariTexterkennungRueckstauWaechst
+        expr: |
+          max(mandari_files_stored_without_text) > 100
+            and
+          max(mandari_files_stored_without_text) > max(mandari_files_stored_without_text offset 6h)
+        for: 3h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Abgelegte Dokumente warten zunehmend auf ihren Text"
+          description: >-
+            Nach dokumentkette nacharbeiten oder einer neuen Erkennungsversion erwartet. Sonst worker-heavy
+            (healthy, Speicher), mandari_tasks_running{queue="ocr"} und die Prüfungen texterkennung und
+            dokumenttext ansehen.
+
+      - alert: MandariAbrufWiederholungenStauen
+        expr: |
+          max(mandari_files_fetch_retry_due) > 50
+            and
+          max(mandari_files_fetch_retry_due) > max(mandari_files_fetch_retry_due offset 6h)
+        for: 3h
+        labels:
+          severity: warning
+        annotations:
+          summary: "Fällige Wiederholungen des Abrufs stauen sich"
+          description: >-
+            Abrufe werden nicht abgearbeitet: Worker, Drossel je Host (request_interval) oder Quellen-Schonung
+            prüfen.

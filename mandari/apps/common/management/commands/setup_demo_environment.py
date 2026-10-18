@@ -8,8 +8,10 @@ Erstellt eine vollständige, klar als Demo erkennbare Musterumgebung:
    Fraktionen, Personen, Sitzungen, Tagesordnungspunkten, Vorlagen,
    Beratungen und kleinen PDF-Dateien (synthetisch, ohne OCR).
 2. Work:     Organisation "Musterfraktion (Demo)" mit Standard-Rollen,
-   drei Demo-Nutzern (Vorsitz, Mitglied, Gast mit Ordner-Freigabe),
-   Dokumenten, Sitzungsvorbereitung, Aufgaben und einer Fraktionssitzung.
+   fünf Demo-Nutzern (Vorsitz, Mitglied, Sachkundige, nicht vereidigtes Mitglied,
+   Gast mit Ordner-Freigabe), Dokumenten, Sitzungsvorbereitung und Aufgaben, das neue Design von Work
+   an (#852). Fraktionssitzungen, Sitzungsreihe, Positionen mit Beratungsverlauf und Kommentare
+   ergänzt der Work-Befehl setup_demo_work (Issue #884).
 3. Session:  SessionTenant "Stadtverwaltung Musterstadt (Demo)" mit Gremien,
    Personen (verschlüsselte Kontaktdaten), Sitzungen, Vorlagen, Anträgen
    und einem Demo-Verwaltungsnutzer.
@@ -43,23 +45,27 @@ from django.core.management.base import BaseCommand
 from django.db import transaction
 from django.utils import timezone
 
+# Kennungen und Terminregel teilt die Basisdemo mit setup_demo_work (Work-Modul); sie stehen deshalb in der Plattform
+# (ausdrücklich weitergegeben: setup_demo_praesentation und Tests importieren sie von hier)
+from apps.common.demo_daten import DEMO_ANTRAG_SITZBAENKE, demo_ext, termin_am_sitzungstag
+from apps.common.demo_daten import DEMO_ANTRAG_TRINKBRUNNEN as DEMO_ANTRAG_TRINKBRUNNEN
+from apps.common.demo_daten import DEMO_EMAIL_DOMAIN as DEMO_EMAIL_DOMAIN
+from apps.common.demo_daten import DEMO_OPARL_PREFIX as DEMO_OPARL_PREFIX
+from apps.common.demo_daten import DEMO_ORG_SLUG as DEMO_ORG_SLUG
+from apps.common.demo_daten import DEMO_USERS as DEMO_USERS
+from apps.common.demo_daten import ist_sitzungstag as ist_sitzungstag
+
 # ---------------------------------------------------------------------------
 # Feste Demo-Kennungen (Grundlage der Idempotenz und des --reset)
 # ---------------------------------------------------------------------------
 
-DEMO_OPARL_PREFIX = "https://demo.mandari.invalid/oparl"
 DEMO_SOURCE_URL = f"{DEMO_OPARL_PREFIX}/system"
 DEMO_BODY_SLUG = "musterstadt-demo"
-DEMO_ORG_SLUG = "musterfraktion-demo"
 DEMO_PARTY_SLUG = "musterpartei-demo"
 DEMO_SESSION_SLUG = "stadtverwaltung-musterstadt-demo"
-DEMO_EMAIL_DOMAIN = "demo.mandari.de"
 DEMO_MEDIA_SUBDIR = "demo"
 # Fester Mandatsbeginn: Teil natürlicher Schlüssel (Idempotenz bei Wiederholung)
 DEMO_START_DATE = date(2024, 7, 1)
-#: Antrag der Musterfraktion, den die Verwaltung in eine Vorlage umgewandelt und auf die kommende
-#: Ratssitzung gesetzt hat (durchgehende Vorführung Work → Session)
-DEMO_ANTRAG_TRINKBRUNNEN = "Antrag: Öffentliche Trinkwasserbrunnen in der Innenstadt (Demo)"
 DEMO_RATSSITZUNG = "Ratssitzung (Demo, kommend)"
 #: Ankündigung für die Musterfraktion (Hinweisband auf Start und Glocke, Issue #857); neutral, gilt für jeden Stand
 DEMO_ANKUENDIGUNG = {
@@ -70,46 +76,6 @@ DEMO_ANKUENDIGUNG = {
     "linktext": "Was ist neu",
 }
 
-DEMO_USERS = {
-    "vorsitz": {
-        "email": f"demo-vorsitz@{DEMO_EMAIL_DOMAIN}",
-        "first_name": "Vera",
-        "last_name": "Beispiel",
-    },
-    "mitglied": {
-        "email": f"demo-mitglied@{DEMO_EMAIL_DOMAIN}",
-        "first_name": "Martin",
-        "last_name": "Muster",
-    },
-    "gast": {
-        "email": f"demo-gast@{DEMO_EMAIL_DOMAIN}",
-        "first_name": "Greta",
-        "last_name": "Gast",
-    },
-    "verwaltung": {
-        "email": f"demo-verwaltung@{DEMO_EMAIL_DOMAIN}",
-        "first_name": "Victor",
-        "last_name": "Verwaltung",
-    },
-    # Weitere Verwaltungsnutzer, um die Rollen des Session-RIS erlebbar zu
-    # machen (Sachbearbeitung, Protokollführung, reiner Lesezugriff).
-    "sachbearbeitung": {
-        "email": f"demo-sachbearbeitung@{DEMO_EMAIL_DOMAIN}",
-        "first_name": "Sabine",
-        "last_name": "Sachbearbeitung",
-    },
-    "protokoll": {
-        "email": f"demo-protokoll@{DEMO_EMAIL_DOMAIN}",
-        "first_name": "Paul",
-        "last_name": "Protokoll",
-    },
-    "lesezugriff": {
-        "email": f"demo-lesezugriff@{DEMO_EMAIL_DOMAIN}",
-        "first_name": "Lena",
-        "last_name": "Lesezugriff",
-    },
-}
-
 #: Zuordnung Demo-Nutzer -> Name der Session-Standardrolle (create_default_roles).
 DEMO_SESSION_ROLE_BY_USER = {
     "verwaltung": "Administrator",
@@ -117,44 +83,6 @@ DEMO_SESSION_ROLE_BY_USER = {
     "protokoll": "Protokollant",
     "lesezugriff": "Lesezugriff",
 }
-
-
-def _ostersonntag(jahr: int) -> date:
-    """Ostersonntag (gregorianisch, Gaußsche Osterformel in der Fassung von Meeus)."""
-    a = jahr % 19
-    b, c = divmod(jahr, 100)
-    d, e = divmod(b, 4)
-    f = (b + 8) // 25
-    g = (b - f + 1) // 3
-    h = (19 * a + b - d - g + 15) % 30
-    i, k = divmod(c, 4)
-    wochentag = (32 + 2 * e + 2 * i - h - k) % 7
-    m = (a + 11 * h + 22 * wochentag) // 451
-    monat, tag = divmod(h + wochentag - 7 * m + 114, 31)
-    return date(jahr, monat, tag + 1)
-
-
-def sitzungsfreie_tage(jahr: int) -> set[date]:
-    """Bundesweite gesetzliche Feiertage sowie Heiligabend und Silvester – an diesen Tagen tagt die Demo nicht."""
-    ostern = _ostersonntag(jahr)
-    return {
-        date(jahr, 1, 1),
-        ostern - timedelta(days=2),  # Karfreitag
-        ostern + timedelta(days=1),  # Ostermontag
-        date(jahr, 5, 1),
-        ostern + timedelta(days=39),  # Christi Himmelfahrt
-        ostern + timedelta(days=50),  # Pfingstmontag
-        date(jahr, 10, 3),
-        date(jahr, 12, 24),
-        date(jahr, 12, 25),
-        date(jahr, 12, 26),
-        date(jahr, 12, 31),
-    }
-
-
-def ist_sitzungstag(tag: date) -> bool:
-    """Montag bis Freitag und kein sitzungsfreier Tag."""
-    return tag.weekday() < 5 and tag not in sitzungsfreie_tage(tag.year)
 
 
 def aufbautag() -> date:
@@ -169,16 +97,12 @@ def sitzungstermin(tage: int, stunde: int = 17) -> datetime:
     Fällt der Tag auf ein Wochenende oder einen Feiertag, rückt ein kommender Termin auf den nächsten, ein
     vergangener auf den vorherigen Sitzungstag – kommende Sitzungen bleiben kommend, vergangene vergangen.
     """
-    tag = aufbautag() + timedelta(days=tage)
-    schritt = timedelta(days=-1 if tage < 0 else 1)
-    while not ist_sitzungstag(tag):
-        tag += schritt
-    return timezone.make_aware(datetime.combine(tag, dt_time(stunde, 0)))
+    return termin_am_sitzungstag(aufbautag(), tage, stunde)
 
 
 def _ext(kind: str, key: str) -> str:
     """Deterministische Demo-external_id (kollidiert nie mit echten Quellen)."""
-    return f"{DEMO_OPARL_PREFIX}/{kind}/{key}"
+    return demo_ext(kind, key)
 
 
 def _minimal_pdf(title: str, lines: list[str]) -> bytes:
@@ -743,7 +667,7 @@ class Command(BaseCommand):
     def _setup_work(self, body):
         from apps.tenants.models import Membership, Organization, PartyGroup, Role
         from apps.work.meetings.models import AgendaItemNote, AgendaItemPosition
-        from apps.work.models import FactionAgendaItem, FactionMeeting, MeetingPreparation, Motion, Task
+        from apps.work.models import MeetingPreparation, Motion, Task
         from apps.work.motions.models import DocumentFolder, FolderGuestShare
         from insight_core.models import OParlAgendaItem
 
@@ -789,10 +713,11 @@ class Command(BaseCommand):
         user_mitglied = self._make_user("mitglied")
         user_gast = self._make_user("gast")
 
+        # Vorsitz und Mitglied sind vereidigt (sehen nicht-öffentliche TOPs), Gäste nie
         ms_vorsitz, _ = Membership.objects.update_or_create(
             user=user_vorsitz,
             organization=org,
-            defaults={"is_active": True, "is_guest": False},
+            defaults={"is_active": True, "is_guest": False, "is_sworn_in": True},
         )
         ms_vorsitz.roles.set([role_by_name["Fraktionsvorsitz"]])
         ms_vorsitz.oparl_person = self._insight_refs["persons"]["anna-amberg"]
@@ -804,7 +729,7 @@ class Command(BaseCommand):
         ms_mitglied, _ = Membership.objects.update_or_create(
             user=user_mitglied,
             organization=org,
-            defaults={"is_active": True, "is_guest": False},
+            defaults={"is_active": True, "is_guest": False, "is_sworn_in": True},
         )
         ms_mitglied.roles.set([role_by_name["Fraktionsmitglied"]])
         ms_mitglied.oparl_person = self._insight_refs["persons"]["bernd-birkholz"]
@@ -817,7 +742,26 @@ class Command(BaseCommand):
             defaults={"is_active": True, "is_guest": True},
         )
         ms_gast.roles.clear()
-        self._count("Work: Nutzer/Mitgliedschaften", 3)
+
+        # Sachkundige Bürgerin (vereidigt, schlägt TOPs vor) und ein noch nicht vereidigtes Mitglied
+        ms_sachkundig, _ = Membership.objects.update_or_create(
+            user=self._make_user("sachkundig"),
+            organization=org,
+            defaults={"is_active": True, "is_guest": False, "is_sworn_in": True},
+        )
+        ms_sachkundig.roles.set([role_by_name["Sachkundige/r Bürger/in"]])
+        ms_sachkundig.oparl_committees.set([self._insight_refs["orgs"]["bauausschuss"]])
+
+        ms_unvereidigt, _ = Membership.objects.update_or_create(
+            user=self._make_user("unvereidigt"),
+            organization=org,
+            defaults={"is_active": True, "is_guest": False, "is_sworn_in": False},
+        )
+        ms_unvereidigt.roles.set([role_by_name["Fraktionsmitglied"]])
+        ms_unvereidigt.oparl_person = self._insight_refs["persons"]["dieter-dahl"]
+        ms_unvereidigt.save(update_fields=["oparl_person"])
+        ms_unvereidigt.oparl_committees.set([self._insight_refs["orgs"]["rat"]])
+        self._count("Work: Nutzer/Mitgliedschaften", 5)
 
         if not org.owner_id:
             org.owner = user_vorsitz
@@ -840,7 +784,7 @@ class Command(BaseCommand):
         # --- Dokumente / Anträge --------------------------------------
         motion_draft, _ = Motion.objects.update_or_create(
             organization=org,
-            title="Antrag: Mehr Sitzgelegenheiten in der Innenstadt (Demo)",
+            title=DEMO_ANTRAG_SITZBAENKE,
             defaults={
                 "motion_type": "motion",
                 "status": "draft",
@@ -862,7 +806,7 @@ class Command(BaseCommand):
 
         motion_submitted, _ = Motion.objects.update_or_create(
             organization=org,
-            title="Antrag: Öffentliche Trinkwasserbrunnen in der Innenstadt (Demo)",
+            title=DEMO_ANTRAG_TRINKBRUNNEN,
             defaults={
                 "motion_type": "motion",
                 "status": "submitted",
@@ -981,36 +925,17 @@ class Command(BaseCommand):
             )
         self._count("Work: Aufgaben", len(tasks_def))
 
-        # --- Fraktionssitzung -----------------------------------------
-        fm_start = sitzungstermin(10, stunde=19)
-        faction_meeting, _ = FactionMeeting.objects.update_or_create(
-            organization=org,
-            title="Fraktionssitzung zur Vorbereitung der Ratssitzung (Demo)",
-            defaults={
-                "description": "Interne Demo-Sitzung: Beratung der Anträge für die kommende Ratssitzung.",
-                "start": fm_start,
-                "end": fm_start + timedelta(hours=2),
-                "location": "Fraktionsbüro, Rathausplatz 1, Musterstadt",
-                "status": "planned",
-                "created_by": ms_vorsitz,
-                "related_meeting": rat3,
-            },
-        )
-        for number, title in [("1", "Begrüßung und Protokoll"), ("2", "Beratung: Anträge zur Ratssitzung")]:
-            FactionAgendaItem.objects.update_or_create(
-                meeting=faction_meeting,
-                number=number,
-                title=title,
-                defaults={"visibility": "internal"},
-            )
-        self._count("Work: Fraktionssitzung")
-
-        # --- Ankündigung im Hinweisband auf Start (Issue #857) ----------
-        # Über denselben Befehl wie im Betrieb (idempotent über den Schlüssel); Text gilt unabhängig vom Stand
+        # --- Fraktionssitzungen, Reihe, Positionen, Kommentare -----------------------------------------------
+        # Gehört fachlich zu Work und steht deshalb dort (Issue #884); ein eigener Befehl, damit die Plattform die
+        # Fraktionssitzungs-Logik (Sitzungsreihe, Standard-Tagesordnung) nicht direkt importiert
         from io import StringIO
 
         from django.core.management import call_command
 
+        call_command("setup_demo_work", aufbautag=aufbautag(), stdout=self.stdout)
+
+        # --- Ankündigung im Hinweisband auf Start (Issue #857) ----------
+        # Über denselben Befehl wie im Betrieb (idempotent über den Schlüssel); Text gilt unabhängig vom Stand
         call_command(
             "work_ankuendigung",
             "--schluessel",

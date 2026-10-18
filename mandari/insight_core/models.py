@@ -517,7 +517,10 @@ class OParlBody(SourceDeletionModel):
     # Sichtbarkeit im Portal
     is_listed = models.BooleanField(
         default=True,
-        # DB-seitiger Default: Der Ingestor legt Kommunen per SQLAlchemy an und kennt die Spalte nicht.
+        # DB-seitiger Default für Inserts ohne die Spalte. Neu entdeckte Kommunen legen der Ingestor (upsert_body)
+        # und add_oparl_source ausdrücklich ungelistet an (Issue #555); gelistet wird bewusst im Admin. Ausnahme:
+        # die eigene Session-Schnittstelle eines Mandanten (sync_config.session_tenant), deren Kommune Ingestor
+        # (lists_new_bodies) und Spiegel (insight_sync/session_mirror.py) gleich gelistet anlegen.
         db_default=True,
         verbose_name="In Listen anzeigen",
         help_text=(
@@ -1168,13 +1171,19 @@ class OParlFile(SourceDeletionModel):
     text_content = models.TextField(blank=True, null=True)
     sha256_hash = models.CharField(max_length=64, blank=True, null=True)
 
-    # Lokaler Dokument-Cache (Django-managed, siehe services/file_cache.py)
+    # Lokaler Dokument-Cache (Django-managed, siehe services/file_cache.py). Zustände des Abrufs laut
+    # docs/adr/20261007-dokumentkette.md, Abschnitt 4 (hub/ris/abruf.py)
     LOCAL_STATUS_CHOICES = [
         ("none", "Nicht zwischengespeichert"),
+        ("fetching", "Wird abgerufen"),
         ("ok", "Lokal vorhanden"),
-        ("missing", "Quelle liefert 404"),
+        ("retry", "Abruf wird wiederholt"),
+        ("missing", "Quelle liefert 404/410"),
+        ("refused", "Quelle verweigert den Abruf"),
         ("error", "Fehler beim Abruf"),
         ("too_large", "Zu groß für den Cache"),
+        # Obergrenze des Caches (Issue #961): Kopie verdrängt, bei Bedarf holt die Vorschau sie neu
+        ("evicted", "Verdrängt (bei Bedarf neu abrufbar)"),
     ]
     # db_default: Der Ingestor legt Zeilen per SQLAlchemy an, ohne diese Django-Spalten zu kennen;
     # ohne DB-Default würde jeder INSERT an NOT NULL scheitern (Schema-Contract, Issue #161).
@@ -1191,6 +1200,25 @@ class OParlFile(SourceDeletionModel):
     # Gemessene Größe unserer Kopie in Bytes (Issue #786). ``size`` ist die Angabe der Quelle aus OParl und
     # fehlt bei manchen Quellen; als Speichermaß taugt nur diese Spalte.
     local_size = models.BigIntegerField(blank=True, null=True, verbose_name="Größe der Kopie (Bytes)")
+    # Zuletzt über die Vorschau ausgeliefert (Issue #961), höchstens stündlich vermerkt. Grundlage der Verdrängung,
+    # wenn der Cache seine Obergrenze (FILE_CACHE_MAX_TOTAL_GB) erreicht; kein Personenbezug, nur ein Zeitpunkt je
+    # Dokument. Nullable ohne Default: Der Ingestor kennt die Spalte nicht.
+    local_accessed_at = models.DateTimeField(blank=True, null=True, verbose_name="Zuletzt ausgeliefert am")
+    # Abruf (Issue #919, hub/ris/abruf.py): Fehlschläge in Folge, frühester nächster Versuch (bei ``fetching``: Ende
+    # der Beanspruchung) und Fehlercode des letzten Fehlschlags. db_default: Ingestor-INSERTs und ältere Images
+    # kennen die Spalten nicht.
+    fetch_attempts = models.IntegerField(
+        default=0, db_default=0, verbose_name="Fehlgeschlagene Abrufe in Folge", help_text="Bei Erfolg wieder 0"
+    )
+    fetch_next_at = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name="Nächster Abruf frühestens",
+        help_text="Wiederholung des Abrufs; während eines Abrufs das Ende der Beanspruchung",
+    )
+    fetch_error = models.CharField(
+        max_length=40, blank=True, default="", db_default="", verbose_name="Fehlercode des Abrufs"
+    )
 
     # Löschabgleich mit der Quelle (Issue #787, services/file_reconcile.py). Gesperrt ist ein Dokument,
     # wenn es in der Quelle gelöscht ist (``deleted``) oder seine Download-Adresse 404/410 liefert.
@@ -1260,6 +1288,14 @@ class OParlFile(SourceDeletionModel):
         null=True,
         verbose_name="Bearbeitung seit",
         help_text="Beginn der laufenden Bearbeitung der Texterkennung",
+    )
+    # Herkunft des Texts (Issue #919): SHA-256 des Inhalts, aus dem der Text erkannt wurde, und Version der
+    # Bibliothek mandari_dokumente. Geschrieben vom Auftrag file.extract_text; leer bei Altbestand.
+    text_source_sha256 = models.CharField(
+        max_length=64, blank=True, null=True, verbose_name="Text erkannt aus Inhalt (SHA-256)"
+    )
+    text_extraction_version = models.CharField(
+        max_length=40, blank=True, null=True, verbose_name="Version der Texterkennung"
     )
 
     # OParl-Zeitstempel
@@ -2486,6 +2522,11 @@ class ChatUsage(models.Model):
         verbose_name="Filter-Ergebnis",
     )
     tokens_used = models.IntegerField(default=0, verbose_name="Tokens verbraucht")
+    # Verbrauch je Antwort nach Eingabe und Ausgabe sowie Zahl der Modellaufrufe (Issue #899). Mit Vorgabe in der
+    # Datenbank, damit ein älteres Image ohne die Felder weiter Zeilen anlegen kann.
+    prompt_tokens = models.IntegerField(default=0, db_default=0, verbose_name="Eingabe-Token")
+    completion_tokens = models.IntegerField(default=0, db_default=0, verbose_name="Ausgabe-Token")
+    rounds = models.PositiveSmallIntegerField(default=0, db_default=0, verbose_name="Modellaufrufe")
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
@@ -2747,7 +2788,8 @@ class PersonFraktion(models.Model):
     ]
     #: Öffentlicher Hinweis auf die Quelle (Personenliste und Personenseite)
     HINWEISE = {
-        QUELLE_EINBLENDUNG: "laut Einblendung der Live-Übertragung",
+        # Die Live-Übertragung wird öffentlich nie als Quelle genannt (Sven, 13.10.2026): nur die Fraktion selbst
+        QUELLE_EINBLENDUNG: "",
         QUELLE_HAND: "redaktionell gepflegt",
         QUELLE_OPARL: "laut Ratsinformationssystem",
     }
@@ -2831,7 +2873,7 @@ class PersonFraktion(models.Model):
 
     @property
     def hinweis(self) -> str:
-        """Öffentlicher Hinweis auf die Quelle, z. B. „laut Einblendung der Live-Übertragung“."""
+        """Öffentlicher Hinweis auf die Quelle, z. B. „redaktionell gepflegt“; leer, wenn die Quelle nicht genannt wird."""
         return self.HINWEISE.get(self.quelle, "")
 
 

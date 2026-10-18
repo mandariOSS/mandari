@@ -18,12 +18,14 @@ from django.utils import timezone
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.common import local_time
 from apps.common.formatting import MONTH_NAMES, WEEKDAY_CHOICES
 from apps.common.params import int_param
 
 from .. import audit, hub_events
 from ..models import SessionMeeting, SessionOrganization
 from ..permissions import SessionViewMixin
+from ..rahmen import neues_design
 from ..services import body_service, calendar_service
 from .bodies import BodyFilterMixin
 
@@ -33,6 +35,10 @@ class MeetingCalendarView(BodyFilterMixin, SessionViewMixin, TemplateView):
 
     template_name = "session/calendar/month.html"
     permission_required = "view_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944); die bisherige Seite bleibt unverändert
+        return ["session/neu/kalender.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -83,6 +89,10 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
 
     template_name = "session/calendar/plan.html"
     permission_required = "edit_meetings"
+
+    def get_template_names(self):
+        # Neues Erscheinungsbild je Mandant (Issue #944), auch für die Vorschau; die bisherige Seite bleibt unverändert
+        return ["session/neu/jahresplanung.html"] if neues_design(self.session_tenant) else [self.template_name]
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -165,16 +175,24 @@ class MeetingPlanView(SessionViewMixin, TemplateView):
             messages.error(request, str(exc))
             return redirect("session:meeting_plan", tenant_slug=tenant_slug)
 
-        starts = calendar_service.generate_series(
-            rhythm=form["rhythm"],
-            weekday=form["weekday"],
-            start_time=form["time"],
-            date_from=form["date_from"],
-            date_to=form["date_to"],
-        )
+        try:
+            starts = calendar_service.generate_series(
+                rhythm=form["rhythm"],
+                weekday=form["weekday"],
+                start_time=form["time"],
+                date_from=form["date_from"],
+                date_to=form["date_to"],
+            )
+        except local_time.NonexistentLocalTimeError as exc:
+            # Ein Termin fiele in die fehlende Stunde der Zeitumstellung (Issue #974)
+            messages.error(request, str(exc))
+            return redirect("session:meeting_plan", tenant_slug=tenant_slug)
         if not starts:
             messages.error(request, "Im gewählten Zeitraum ergibt die Serie keine Termine.")
             return redirect("session:meeting_plan", tenant_slug=tenant_slug)
+        # Doppelte Stunde der Zeitumstellung: in Vorschau und nach dem Anlegen sagen, welche Uhrzeit gilt (Issue #974)
+        for notice in filter(None, (local_time.ambiguous_notice(start) for start in starts)):
+            messages.warning(request, notice)
 
         entries = [
             {

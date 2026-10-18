@@ -18,7 +18,7 @@ from elasticsearch.exceptions import NotFoundError
 
 from . import search_ranking
 from .search_presentation import clean_snippet
-from .search_ranking import DATE_FIELD_BY_INDEX
+from .search_ranking import DATE_FIELD_BY_INDEX, RelationBoost
 
 HIGHLIGHT_PRE = '<mark class="bg-yellow-200 dark:bg-yellow-800">'
 HIGHLIGHT_POST = "</mark>"
@@ -213,11 +213,13 @@ class ElasticsearchService:
         sort: str = SORT_RELEVANCE,
         ranking: str | None = None,
         sources: Mapping[str, list[str]] | None = None,
+        boost: RelationBoost | None = None,
     ) -> RankedHits:
         """Schritt 1: Rangfolge der besten ``depth`` Treffer je Index, gemischt; ohne Dokumentinhalte.
 
         ``depth`` gilt für alle Indexe oder je Index; ``sources`` nennt je Index Felder, die schon dieser
-        Schritt liefert (etwa ``paper_id`` der Dateien für die Gruppierung). In v2 folgt bei weniger als ``FUZZY_FALLBACK_BELOW`` genauen Treffern die unscharfe Rückfallsuche.
+        Schritt liefert (etwa ``paper_id`` der Dateien für die Gruppierung). ``boost`` gewichtet nach dem Bezug
+        einer Organisation (Work, ``search_ranking.RelationBoost``), ohne die Treffermenge zu ändern. In v2 folgt bei weniger als ``FUZZY_FALLBACK_BELOW`` genauen Treffern die unscharfe Rückfallsuche.
         """
         if index_names is None:
             index_names = ALL_INDEXES
@@ -241,9 +243,9 @@ class ElasticsearchService:
 
         depths = depth if isinstance(depth, Mapping) else dict.fromkeys(index_names, depth)
         felder = sources or {}
-        ranked = self._rank(index_names, build, False, depths, felder, sort, version, bool(query))
+        ranked = self._rank(index_names, build, False, depths, felder, sort, version, bool(query), boost)
         if version == "v2" and query and ranked.total < FUZZY_FALLBACK_BELOW and ranked.errors < len(index_names):
-            unscharf = self._rank(index_names, build, True, depths, felder, sort, version, True)
+            unscharf = self._rank(index_names, build, True, depths, felder, sort, version, True, boost)
             if unscharf.total > ranked.total:
                 unscharf.similar_spelling = True
                 ranked = unscharf
@@ -265,7 +267,9 @@ class ElasticsearchService:
         sort: str,
         version: str,
         has_query: bool,
+        boost: RelationBoost | None = None,
     ) -> RankedHits:
+        """Treffer je Index und gemischte Rangfolge; ``queries`` und ``thresholds`` gelten ohne Bezug (``boost``)."""
         ranked = RankedHits()
         min_relevance = float(getattr(settings, "SEARCH_MIN_RELEVANCE", 0.05)) if version == "v2" and has_query else 0.0
         # (Datum fehlt?, -Datum, -Relevanz, Reihenfolge) für „Neueste“
@@ -280,7 +284,7 @@ class ElasticsearchService:
                 ranked.queries[index_name] = es_query
                 depth = depths.get(index_name, MAX_RESULT_DEPTH)
                 hits, total, threshold = self._index_hits(
-                    index_name, es_query, depth, sort, min_relevance, sources.get(index_name)
+                    index_name, es_query, depth, sort, min_relevance, sources.get(index_name), boost
                 )
                 ranked.hits_by_index[index_name] = hits
                 ranked.totals_by_index[index_name] = total
@@ -317,27 +321,54 @@ class ElasticsearchService:
         sort: str,
         min_relevance: float,
         source: list[str] | None = None,
+        boost: RelationBoost | None = None,
     ) -> tuple[list[dict[str, Any]], int, float]:
         """Treffer (``_id``, ``_score``, bei „Neueste“ ``sort``) und Gesamtzahl eines Index.
 
         Mit Mindestrelevanz (v2) entfallen Treffer unter ``min_relevance`` × bestem Wert des Index; die
         Gesamtzahl zählt dann nur die übrigen.
+
+        Mit Bezug (``boost``, Work) bestimmt die Abfrage ohne Bezug Schwelle und Treffermenge; die Faktoren ordnen
+        danach nur um (``search_ranking.with_relation`` mit ``min_score``). So bleiben Treffer und Zahlen dieselben
+        wie im Bürgerportal, auch wenn der beste Treffer einen Faktor bekommt.
         """
         date_field = DATE_FIELD_BY_INDEX.get(index_name)
         newest = sort == SORT_NEWEST and date_field is not None
+        mit_bezug = search_ranking.has_relation(index_name, boost)
         hits: list[dict[str, Any]] = []
         total = 0
         threshold = 0.0
         if not newest or min_relevance > 0:
-            # Bei „Neueste“ genügt der beste Treffer, um die Schwelle der Mindestrelevanz zu bestimmen
+            # Bei „Neueste“ und mit Bezug genügt der beste Treffer, um die Schwelle der Mindestrelevanz zu bestimmen
             result = self.client.search(
                 index=index_name,
-                body={"query": es_query, "size": 1 if newest else depth, "from": 0, "_source": source or False},
+                body={
+                    "query": es_query,
+                    "size": 1 if newest or mit_bezug else depth,
+                    "from": 0,
+                    "_source": source or False,
+                },
             )
             hits = result["hits"]["hits"]
             total = int(result["hits"]["total"]["value"])
             if min_relevance > 0 and hits:
                 threshold = float(result["hits"].get("max_score") or hits[0].get("_score") or 0) * min_relevance
+        if mit_bezug:
+            gewichtet: dict[str, Any] = {
+                "query": search_ranking.with_relation(es_query, index_name, boost, min_score=threshold),
+                "size": depth,
+                "from": 0,
+                "_source": source or False,
+                "track_total_hits": True,
+            }
+            if newest:
+                gewichtet["sort"] = [
+                    {date_field: {"order": "desc", "missing": "_last", "unmapped_type": "date"}},
+                    "_score",
+                ]
+                gewichtet["track_scores"] = True
+            result = self.client.search(index=index_name, body=gewichtet)
+            return result["hits"]["hits"], int(result["hits"]["total"]["value"]), threshold
         if newest:
             body: dict[str, Any] = {
                 "query": es_query,
@@ -379,6 +410,7 @@ class ElasticsearchService:
         file_paper_filter: Callable[[set[str]], set[str]] | None = None,
         weights: Mapping[str, float] | None = None,
         kinds: set[str] | None = None,
+        boost: RelationBoost | None = None,
     ) -> dict[str, Any]:
         """Treffer nach Vorgang gruppiert (Konzept Insight-Suche, P0.5).
 
@@ -387,6 +419,7 @@ class ElasticsearchService:
         zulässigen Vorgang entfallen dann; die Zahl zählt die gebildeten Gruppen. ``weights`` überschreibt die
         Gewichte der Rangfusion (Index mit 0 wird nur gezählt), ``kinds`` behält nur Gruppen dieser Arten
         (``paper``, ``meeting``, ``file``, ``person``, ``organization``) – so zählt ein Aufruf für alle Reiter.
+        ``boost`` gewichtet nach dem Bezug einer Organisation (Work); die Treffermenge bleibt dieselbe.
 
         Dateien mit Vorgang stehen unter ihm, auch wenn der Vorgang selbst nicht trifft; Unterlagen ohne
         Vorgang unter ihrer Sitzung. Die Reihenfolge entsteht per Rangfusion über die Indexe (Reciprocal Rank
@@ -423,6 +456,7 @@ class ElasticsearchService:
             sort=sort,
             ranking=ranking,
             sources={INDEX_FILES: ["paper_id", "meeting_id"]},
+            boost=boost,
         )
         if file_paper_filter is not None and INDEX_FILES in ranked.hits_by_index:
             files = ranked.hits_by_index[INDEX_FILES]
@@ -469,15 +503,25 @@ class ElasticsearchService:
         date_to: str | None = None,
         ranking: str | None = None,
         today: str = "now/d",
+        organization_name: str | None = None,
     ) -> dict[str, Any]:
         """Zähler für die Filter „Art“ (Originalwerte von ``paper_type``) und „Zeitraum“ über die Vorgänge.
 
         Ohne den Art-Filter selbst, damit die anderen Arten wählbar bleiben; mit derselben Mindestrelevanz wie
-        die Liste. Zeitraum: letzte 12 Monate, 2 Jahre, 5 Jahre, älter (``filters``-Aggregation auf ``date``).
+        die Liste und mit dem Gremium-Filter (``organization_name``, Work), wenn gesetzt. Ohne Bezug (Work): Er
+        ordnet nur um und ändert keine Zahl. Zeitraum: letzte 12 Monate, 2 Jahre, 5 Jahre, älter
+        (``filters``-Aggregation auf ``date``).
         """
         version = ranking_version(ranking)
         es_query = self._build_query(
-            query, body_id, INDEX_PAPERS, date_from=date_from, date_to=date_to, body_ids=body_ids, ranking=version
+            query,
+            body_id,
+            INDEX_PAPERS,
+            date_from=date_from,
+            date_to=date_to,
+            body_ids=body_ids,
+            ranking=version,
+            organization_name=organization_name,
         )
         leer: dict[str, Any] = {"paper_types": {}, "periods": {}}
         try:
@@ -811,7 +855,10 @@ class ElasticsearchService:
         fuzzy: bool = False,
         name_part_is_rare: bool = False,
     ) -> dict[str, Any]:
-        """Baut die Elasticsearch-Query für einen Index (v1 wie bis 10/2026, v2 nach ``search_ranking``)."""
+        """Baut die Elasticsearch-Query für einen Index (v1 wie bis 10/2026, v2 nach ``search_ranking``).
+
+        Ohne Bezug einer Organisation: Den wendet ``_index_hits`` erst nach der Mindestrelevanz an (Work).
+        """
         filter_clauses = self._filter_clauses(
             body_id,
             index_name,

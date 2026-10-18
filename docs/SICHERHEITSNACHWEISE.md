@@ -4,7 +4,8 @@ Was mandari heute an Sicherheitsnachweisen hat, was in welcher Reihenfolge dazuk
 und wie wir mit Befunden umgehen. Grundlage für das Trust Center und für
 Vergabeunterlagen (Issues #97 und #261, BSI IT-Grundschutz APP.3.1.A22).
 
-> **Stand:** beschlossen am 17.09.2026; Termine werden im Trust Center mit Datum fortgeschrieben.
+> **Stand:** beschlossen am 17.09.2026, fortgeschrieben am 08.10.2026 (Testzahl, Grundschutz-Selbstbewertung
+> in Prüfung); Termine werden im Trust Center mit Datum fortgeschrieben.
 
 ## 1. Was heute belegbar ist
 
@@ -13,7 +14,7 @@ Vergabeunterlagen (Issues #97 und #261, BSI IT-Grundschutz APP.3.1.A22).
 | Statische Analyse (CodeQL) je Änderung | seit 2026, 0 offene Meldungen | GitHub Code Scanning |
 | Abhängigkeiten geprüft (`pip-audit` für Anwendung und Ingestor, `npm audit`), blockierend ab „hoch“ | seit 09/2026 | CI-Job „Abhängigkeiten prüfen“ |
 | Container-Images mit Trivy gescannt | je Build | Release-Workflow |
-| Rund 1.700 automatisierte Tests je Änderung, Mandantentrennungs-Matrix über 160 Adressen | laufend | CI |
+| Rund 5.700 automatisierte Testfunktionen je Änderung (gezählt am 08.10.2026), Mandantentrennungs-Matrix über 160 Adressen | laufend | CI |
 | Sicherheitsprozess mit CVSS, Advisories, CVE | seit 09/2026 | `SECURITY.md`, `docs/SICHERHEITSMELDUNGEN.md` |
 | Kryptokonzept nach BSI TR-02102-1 | 09/2026 | `docs/KRYPTOKONZEPT.md` |
 | Technisch-organisatorische Maßnahmen, Löschkonzept | laufend | `docs/DSGVO_TOM.md`, `docs/DSGVO_LOESCHKONZEPT.md` |
@@ -59,7 +60,9 @@ Datum, Umfang, Anzahl Befunde je Schweregrad und Status.
 ## 3. Selbstbewertung nach BSI IT-Grundschutz (Basis-Absicherung, BSI-Standard 200-2)
 
 Zuordnung der bereits umgesetzten Maßnahmen zu Bausteinen; „offen“ heißt geplant,
-nicht fehlend um jeden Preis.
+nicht fehlend um jeden Preis. Ob und wann wir eine vollständige Selbstbewertung nach
+BSI-Standard 200-2 veröffentlichen, ist **in Prüfung** (ohne Termin); bis dahin ist die
+Tabelle eine Zuordnung, keine abgeschlossene Selbstbewertung.
 
 | Baustein | Anforderung (Auswahl) | Stand | Beleg |
 |---|---|---|---|
@@ -89,14 +92,16 @@ Eine Zertifizierung des Betreibers lohnt ab einem Auftragsvolumen, das die
 jährlichen Kosten (Audit, Beratung, interner Aufwand) trägt. Vorschlag: Start der
 Vorbereitung auf **ISO 27001**, sobald drei Verwaltungskunden im Managed Hosting
 laufen oder eine Vergabe sie verlangt; BSI C5 nur auf ausdrückliche Anforderung.
-Bis dahin: Grundschutz-Selbstbewertung (Abschnitt 3) jährlich fortschreiben.
+Bis dahin: die Zuordnung zum IT-Grundschutz (Abschnitt 3) fortschreiben; eine vollständige
+Selbstbewertung ist in Prüfung.
 
 ## 6. Fahrplan
 
 | Wann | Schritt | Nachweis im Trust Center |
 |---|---|---|
-| **Q4 2026** | SBOM je Release (erledigt); Grundschutz-Selbstbewertung veröffentlicht; Informationssicherheitsbeauftragter benannt (erledigt) | Abschnitt „Nachweise“ mit Links auf TOM, Löschkonzept, SBOM, Fahrplan |
+| **Q4 2026** | SBOM je Release (erledigt); Informationssicherheitsbeauftragter benannt (erledigt) | Abschnitt „Nachweise“ mit Links auf TOM, Löschkonzept, SBOM, Fahrplan |
+| **in Prüfung** | Selbstbewertung nach BSI IT-Grundschutz (Abschnitt 3), ohne Termin | Fahrplan mit Stand „in Prüfung“ |
 | **Q3 2027** | Erster externer Penetrationstest (Umfang Abschnitt 2), kritische und hohe Befunde geschlossen | Management-Summary mit Datum |
 | **Q2 2027** | Notfallübung mit gemessener Wiederanlaufzeit (#229) | RTO/RPO als Zahl |
-| **jährlich ab 2027** | Penetrationstest wiederholen, Selbstbewertung fortschreiben | Datum der letzten Prüfung |
+| **jährlich ab 2027** | Penetrationstest wiederholen | Datum der letzten Prüfung |
 | **bei Bedarf** | ISO 27001 (Abschnitt 5) | Zertifikat |

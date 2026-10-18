@@ -1,0 +1,36 @@
+{% comment %}
+Rolle: Berechtigungen je Kategorie (Issue #951), aufklappbar mit „Alle“ (unbestimmt, wenn nur ein Teil gewählt ist).
+Steuerung durch permissionsManager (frontend/alpine/organization-settings.ts): Checkboxen mit data-category und
+@change="updateState()", toggleCategory, allChecked, syncIndeterminate, toggleAll – wie bisher in role_form.html.
+Kontext: permission_categories, role_permissions.
+{% endcomment %}
+<c-rahmen.abschnitt titel="Berechtigungen" titel_id="rechte-titel">
+    <c-rahmen.satz eng>Welche Berechtigungen die Rolle gibt. Kategorie aufklappen, um einzelne Rechte zu wählen.</c-rahmen.satz>
+    <ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800">
+        {% for cat_code, cat in permission_categories.items %}
+        <li>
+            <div class="flex items-center justify-between gap-4 py-2" role="group" aria-label="{{ cat.name }}">
+                <button type="button" class="flex items-center gap-2 min-h-9 flex-1 text-left text-sm font-medium text-gray-900 dark:text-white"
+                        @click="toggleCategory('{{ cat_code }}')" :aria-expanded="openCategories.includes('{{ cat_code }}').toString()" aria-expanded="false" aria-controls="rechte-{{ cat_code }}">
+                    <i data-lucide="chevron-right" class="w-4 h-4 text-gray-500 transition-transform" :class="{ 'rotate-90': openCategories.includes('{{ cat_code }}') }" aria-hidden="true"></i>
+                    {{ cat.name }} <span class="font-normal text-gray-600 dark:text-gray-400">· {{ cat.permissions|length }}</span>
+                </button>
+                <label class="inline-flex items-center gap-2 text-[0.8125rem] text-gray-700 dark:text-gray-300" @click.stop>
+                    Alle
+                    <input type="checkbox" :checked="allChecked('{{ cat_code }}')" x-effect="syncIndeterminate($el, '{{ cat_code }}')" @change="toggleAll('{{ cat_code }}', $event.target.checked)"
+                           aria-label="Alle Rechte: {{ cat.name }}" class="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                </label>
+            </div>
+            <div id="rechte-{{ cat_code }}" x-show="openCategories.includes('{{ cat_code }}')" x-cloak class="pb-3 pl-6 grid gap-x-8 gap-y-1.5 md:grid-cols-2">
+                {% for perm in cat.permissions %}
+                <label class="inline-flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" name="permissions" value="{{ perm.code }}" data-category="{{ cat_code }}" {% if perm.code in role_permissions %}checked{% endif %} @change="updateState()"
+                           class="mt-0.5 w-4 h-4 shrink-0 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
+                    <span class="text-sm text-gray-800 dark:text-gray-200">{{ perm.name }} <span class="text-[0.8125rem] text-gray-500 dark:text-gray-400 font-mono">{{ perm.code }}</span></span>
+                </label>
+                {% endfor %}
+            </div>
+        </li>
+        {% endfor %}
+    </ul>
+</c-rahmen.abschnitt>

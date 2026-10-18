@@ -102,6 +102,21 @@ def test_own_tasks_and_board_filters(org: Any, member: Any, other: Any) -> None:
 
 
 @pytest.mark.django_db
+def test_ueberfaellig_nach_deutschem_datum_auch_nach_mitternacht(org: Any, member: Any, monkeypatch: Any) -> None:
+    """00:30 Uhr deutscher Zeit ist in UTC noch der Vortag: eine gestern fällige Aufgabe ist trotzdem überfällig."""
+    from datetime import UTC, date, datetime
+
+    monkeypatch.setattr(timezone, "now", lambda: datetime(2026, 10, 13, 22, 30, tzinfo=UTC))
+    gestern = make_task(org, member, "Gestern fällig", due_date=date(2026, 10, 13))
+    make_task(org, member, "Heute fällig", due_date=date(2026, 10, 14))
+
+    assert gestern.is_overdue
+    own = selectors.own_tasks(member, base=selectors.card_queryset(org))
+    assert list(selectors.apply_board_filters(own, overdue_only=True)) == [gestern]
+    assert selectors.board_stats(selectors.visible_tasks(org, member))["overdue"] == 1
+
+
+@pytest.mark.django_db
 def test_board_stats_and_column_counts(org: Any, member: Any) -> None:
     make_task(org, member, "A", status="todo")
     make_task(org, member, "B", status="in_progress")

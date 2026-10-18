@@ -3,7 +3,7 @@
 Neues Erscheinungsbild von Work je Organisation (Issue #852).
 
 Geprüft: Der Schalter steht für bestehende und neue Organisationen auf „aus“, dann bleibt der bisherige Rahmen
-unverändert; eingeschaltet trägt jede Seite den neuen Rahmen (sechs Bereiche, Brotkrumen, Suche, Leiste unten,
+unverändert; eingeschaltet trägt jede Seite den neuen Rahmen (sieben Bereiche, Brotkrumen, Suche, Leiste unten,
 Raum-Dialog). Rechte wie bisher: Gast sieht nur Freigegebenes, Mitglied ohne ``organization.view`` keine
 Einstellungen. Alle bisherigen Adressen bleiben gültig und landen im passenden Bereich bzw. Reiter.
 """
@@ -54,8 +54,8 @@ def _html(response: Any) -> str:
 
 
 def _aktiver_eintrag(html: str) -> list[str]:
-    """Beschriftungen aller Einträge mit aria-current="page" (Leiste, Reiter, Leiste unten, Brotkrumen)."""
-    return re.findall(r'aria-current="page"[^>]*>\s*(?:<i[^>]*></i>\s*)?(?:<span[^>]*>)?\s*([^<]+?)\s*<', html)
+    """Beschriftungen aller Einträge mit aria-current (Leiste, Unterpunkte, Reiter, Leiste unten, Brotkrumen)."""
+    return re.findall(r'aria-current="(?:page|true)"[^>]*>\s*(?:<i[^>]*></i>\s*)?(?:<span[^>]*>)?\s*([^<]+?)\s*<', html)
 
 
 @pytest.fixture
@@ -94,8 +94,8 @@ def test_mit_schalter_traegt_die_seite_den_neuen_rahmen(neu: Organization, admin
     html = _html(client_for(admin.user).get(_url("dashboard", neu)))
     assert NEU in html
     assert ALT not in html
-    # sechs Bereiche in der Seitenleiste, Start aktiv
-    for label in ("Start", "Sitzungen", "Dokumente", "Aufgaben", "Team", "Recherche"):
+    # sieben Bereiche in der Seitenleiste (Fraktionssitzungen eigener Eintrag, Entscheidung vom 06.10.2026)
+    for label in ("Start", "Sitzungen", "Fraktionssitzungen", "Dokumente", "Aufgaben", "Team", "Recherche"):
         assert f">{label}</span>" in html
     assert 'aria-label="Brotkrumen"' in html
     # Suche in der Kopfzeile führt in die Recherche, Strg+K als Tastenkürzel angekündigt
@@ -158,7 +158,6 @@ def test_gast_sieht_nur_freigaben(neu: Organization, client_for: Any) -> None:
     ("name", "bereich", "reiter"),
     [
         ("meetings", "Sitzungen", "Für mich"),
-        ("faction", "Sitzungen", "Fraktion"),
         ("ris_meetings", "Sitzungen", "Alle Gremien"),
         ("ris_overview", "Recherche", "Übersicht"),
         ("ris_search", "Recherche", "Suche"),
@@ -184,6 +183,7 @@ def test_bisherige_adressen_bleiben_und_zeigen_bereich_und_reiter(
     ("name", "bereich"),
     [
         ("dashboard", "Start"),
+        ("faction", "Fraktionssitzungen"),
         ("documents", "Dokumente"),
         ("tasks", "Aufgaben"),
         ("team", "Team"),
@@ -198,11 +198,11 @@ def test_bereiche_der_seitenleiste(neu: Organization, admin: Any, client_for: An
 
 @pytest.mark.django_db
 def test_brotkrumen_raum_bereich_reiter(neu: Organization, admin: Any, client_for: Any) -> None:
-    html = _html(client_for(admin.user).get(_url("faction", neu)))
+    html = _html(client_for(admin.user).get(_url("ris_papers", neu)))
     krumen = html.split('aria-label="Brotkrumen"', 1)[1].split("</nav>", 1)[0]
     assert f'href="{_url("dashboard", neu)}"' in krumen and "Fraktion Test" in krumen
-    assert f'href="{_url("meetings", neu)}"' in krumen
-    assert re.search(r'aria-current="page"[^>]*>Fraktion<', krumen)
+    assert f'href="{_url("ris_overview", neu)}"' in krumen
+    assert re.search(r'aria-current="page"[^>]*>Vorgänge<', krumen)
 
 
 @pytest.mark.django_db
@@ -224,7 +224,7 @@ def test_raum_dialog_listet_alle_organisationen(neu: Organization, admin: Any, c
     [
         ("dashboard", ("start", None, None)),
         ("meeting_prepare", ("sitzungen", "fuer_mich", None)),
-        ("faction_detail", ("sitzungen", "fraktion", None)),
+        ("faction_detail", ("fraktionssitzungen", None, None)),
         ("ris_meeting_detail", ("sitzungen", "alle_gremien", None)),
         ("meetings_calendar", ("sitzungen", None, "Kalender")),
         ("document_editor", ("dokumente", None, None)),

@@ -74,7 +74,7 @@ class Welt:
             "tenant": self.tenant,
             "name": "Ratssitzung",
             "organization": self.rat,
-            "start": _ganze_minute(timezone.now() + timedelta(days=14)),
+            "start": _zehn_uhr_in(14),
             "location": "Rathaus",
             "room": "Saal 1",
             "is_public": True,
@@ -88,8 +88,10 @@ class Welt:
         return SessionAgendaItem.objects.create(**daten)
 
 
-def _ganze_minute(moment: datetime) -> datetime:
-    return moment.replace(second=0, microsecond=0)
+def _zehn_uhr_in(tage: int) -> datetime:
+    """10 Uhr Ortszeit in ``tage`` Tagen: liegt nie in der doppelten oder fehlenden Stunde der Zeitumstellung,
+    auch nicht nach weiteren ganzen Tagen (Formulare lesen Termine als Ortszeit)."""
+    return timezone.localtime(timezone.now() + timedelta(days=tage)).replace(hour=10, minute=0, second=0, microsecond=0)
 
 
 @pytest.fixture

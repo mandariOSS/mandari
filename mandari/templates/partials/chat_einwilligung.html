@@ -1,4 +1,5 @@
 {# KI-Assistent: Einwilligung vor dem ersten Gespräch (aus pages/chat.html, im Gültigkeitsbereich von chatApp) #}
+{# Anbieter und Verarbeitungsort aus der KI-Konfiguration (ki_endpunkt, Issue #950), nie fest im Template #}
 <!-- DSGVO Consent Card -->
 <template x-if="!hasConsent">
     <div class="max-w-2xl mx-auto w-full fade-up">
@@ -25,8 +26,8 @@
                     <div class="flex-1 min-w-0">
                         <h2 class="text-lg font-semibold text-gray-900 dark:text-white mb-2">Datenschutzhinweis</h2>
                         <p class="text-sm text-gray-500 dark:text-gray-400 leading-relaxed mb-5">
-                            Der KI-Assistent nutzt <strong class="text-gray-700 dark:text-gray-300">Nebius AI</strong> (Kimi K2) zur Verarbeitung Ihrer Anfragen.
-                            Ihre Fragen werden an die Nebius TokenFactory API übermittelt.
+                            Der KI-Assistent nutzt <strong class="text-gray-700 dark:text-gray-300">{{ ki_endpunkt.anzeigename }}</strong> zur Verarbeitung Ihrer Anfragen.
+                            Ihre Fragen werden dorthin übermittelt und verarbeitet: {{ ki_endpunkt.verarbeitungsort }}.
                             Es gelten die Bestimmungen unserer
                             <a href="{{ marketing_url }}/datenschutz/" class="text-primary-600 dark:text-primary-400 hover:underline font-medium">Datenschutzerklärung</a>.
                         </p>
@@ -34,7 +35,7 @@
                             <input type="checkbox" x-model="consentChecked"
                                    class="mt-1 w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 dark:bg-gray-700">
                             <span class="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
-                                Ich habe die Datenschutzerklärung gelesen und stimme der Verarbeitung meiner Anfragen durch Nebius AI zu.
+                                Ich habe die Datenschutzerklärung gelesen und stimme der Verarbeitung meiner Anfragen durch {{ ki_endpunkt.anzeigename }} zu.
                             </span>
                         </label>
                     </div>

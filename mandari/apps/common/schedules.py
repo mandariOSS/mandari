@@ -41,7 +41,8 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     befehl_als_zeitplan("cache_files", crontab="40 * * * *", argumente=["--limit", "400"], zeitgrenze=3000, ziel=ziel)
     # Löschabgleich mit den Quellen (Issue #787): stündlich; Zeitgrenze und Sperre wie bei cache_files
     befehl_als_zeitplan("loeschabgleich", crontab="15 * * * *", zeitgrenze=3000, ziel=ziel)
-    # Dokumentablage (Issue #788): verwaiste Inhalte löschen, Zwischenspeicher begrenzen. Mit Objektspeicher
+    # Dokumentablage (Issue #788): verwaiste Inhalte löschen, Zwischenspeicher begrenzen, mit
+    # FILE_CACHE_MAX_TOTAL_GB die Obergrenze des Dokument-Caches einhalten (#961). Mit Objektspeicher
     # (und Ablage nach SHA-256) vorher hochladen; den Zwischenspeicher verlassen nur hochgeladene Inhalte.
     ablage = ["--aufraeumen"]
     layout = str(getattr(settings, "FILE_STORE_LAYOUT", "") or "").strip().lower()
@@ -73,6 +74,8 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     # und erscheint in mandari_tasks_dead), Sicherheitsprotokoll nach Frist löschen, DSGVO-Löschlauf
     befehl_als_zeitplan("verify_audit_chain", crontab="20 4 * * *", zeitgrenze=3000, ziel=ziel)
     befehl_als_zeitplan("purge_security_audit_log", crontab="40 4 * * *", zeitgrenze=1800, ziel=ziel)
+    # Anmeldeversuche der Drosselung nach LOGIN_ATTEMPT_RETENTION_DAYS löschen (Issue #366)
+    befehl_als_zeitplan("purge_login_attempts", crontab="35 4 * * *", zeitgrenze=1800, ziel=ziel)
     befehl_als_zeitplan("session_privacy_purge", crontab="0 5 1 * *", zeitgrenze=3000, ziel=ziel)
 
     # Sitzungsmappen (Issue #218): Anforderungen aus der Oberfläche minütlich abarbeiten

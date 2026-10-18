@@ -9,7 +9,6 @@ zusätzlich die Session-Mandanten, die mit diesen Kommunen verknüpft sind.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Sequence
 from datetime import date, datetime
 from typing import Any, cast
@@ -21,6 +20,7 @@ from django.utils import timezone
 from apps.session.models import SessionAgendaItem, SessionOrganization, SessionTenant
 from apps.session.services.resolution_service import DECIDED_ITEMS_ORDERING, DECIDED_RESULTS
 from apps.tenants.models import Organization
+from hub.ris.selectors import agenda_number_key
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -138,14 +138,9 @@ def organizations_for_filter(bodies: Bodies) -> QuerySet[OParlOrganization]:
     return OParlOrganization.objects.filter(body__in=bodies).order_by("name")
 
 
-def _natural_key(number: str | None) -> list[tuple[int, int | str]]:
-    """Natürliche Sortierung von TOP-Nummern: 1, 2, 10 statt 1, 10, 2."""
-    return [(0, int(p)) if p.isdigit() else (1, p.lower()) for p in re.split(r"(\d+)", number or "999") if p]
-
-
 def agenda_items_with_papers(meeting: OParlMeeting) -> list[dict[str, Any]]:
     """Tagesordnung natürlich sortiert, je TOP mit verknüpften Vorgängen."""
-    items = sorted(meeting.agenda_items.all(), key=lambda item: _natural_key(item.number))
+    items = sorted(meeting.agenda_items.all(), key=lambda item: agenda_number_key(item.number))
     return [{"item": item, "papers": cast(Any, item).get_papers()} for item in items]
 
 
@@ -393,7 +388,7 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
 
 
 # ---------------------------------------------------------------------------
-# Dokumente, Karte
+# Dokumente
 # ---------------------------------------------------------------------------
 
 
@@ -412,11 +407,6 @@ def annotate_files_with_context(files: Any) -> None:
     from insight_core.views import _annotate_files_with_context
 
     cast(Any, _annotate_files_with_context)(files)
-
-
-def papers_with_locations(bodies: Bodies, *, limit: int = 500) -> QuerySet[OParlPaper]:
-    """Vorgänge mit georeferenzierten Orten (Kartenansicht)."""
-    return papers_in_bodies(bodies).filter(locations__isnull=False).exclude(locations=[])[:limit]
 
 
 # ---------------------------------------------------------------------------
@@ -524,11 +514,28 @@ def decided_items(tenants: QuerySet[SessionTenant]) -> QuerySet[SessionAgendaIte
     )
 
 
+def decision_detail(bodies: Bodies, item_id: Any) -> tuple[QuerySet[SessionTenant] | None, SessionAgendaItem | None]:
+    """
+    Ein Beschluss für die Detailseite (Issue #951) aus derselben Auswahl wie die Liste (öffentlich, entschieden,
+    Verwaltungen der eigenen Kommunen): (Verwaltungen, Beschluss). Ohne verknüpfte Verwaltung (None, None), ohne
+    passenden Beschluss (Verwaltungen, None).
+    """
+    tenants = session_tenants(bodies)
+    if not tenants.exists():
+        return None, None
+    return tenants, decided_items(tenants).filter(pk=item_id).first()
+
+
 def filter_decisions(
     items: QuerySet[SessionAgendaItem], *, organization_id: str = "", year: str = "", query: str = ""
 ) -> QuerySet[SessionAgendaItem]:
     """Filter nach Gremium, Jahr und Volltext (Titel, Beschlusstext, Nummer, Adressat)."""
     if organization_id:
+        # Unbekannte Kennung aus der Adresse (etwa ?organization=abc) ergibt eine leere Liste statt eines Serverfehlers
+        try:
+            UUID(organization_id)
+        except ValueError:
+            return items.none()
         items = items.filter(Q(meeting__organization_id=organization_id))
     if year.isdigit():
         items = items.filter(meeting__start__year=int(year))

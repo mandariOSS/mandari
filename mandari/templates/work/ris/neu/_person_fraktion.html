@@ -1,0 +1,5 @@
+{% comment %}
+Spalte „Für die Fraktion“ einer Person in der gemeinsamen Liste (c-liste.personen, Issue #853): Mitglied der eigenen
+Organisation, wenn ein Konto mit der Person verknüpft ist (mit members.view). Erwartet: eintrag (OParlPerson mit konto).
+{% endcomment %}
+{% if eintrag.konto %}Ihre Organisation{% endif %}

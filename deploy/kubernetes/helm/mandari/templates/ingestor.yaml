@@ -1,4 +1,27 @@
 {{- if .Values.ingestor.enabled }}
+{{- /*
+OParl-Synchronisation wie der Dienst ingestor in docker-compose.yml: python -m src.main daemon.
+Ohne Befehl startete das Image mit "status", beendete sich und lief in eine Neustart-Schleife.
+*/ -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "mandari.fullname" . }}-ingestor-data
+  labels:
+    {{- include "mandari.labels" . | nindent 4 }}
+    app.kubernetes.io/component: ingestor
+  annotations:
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - ReadWriteOnce
+  {{- if .Values.ingestor.data.className }}
+  storageClassName: {{ .Values.ingestor.data.className | quote }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.ingestor.data.size }}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -7,7 +30,7 @@ metadata:
     {{- include "mandari.labels" . | nindent 4 }}
     app.kubernetes.io/component: ingestor
 spec:
-  # Genau eine Instanz: mehrere Sync-Läufe würden dieselben Quellen doppelt abrufen.
+  # Genau eine Instanz: Eine zweite wartete ohnehin auf die Advisory-Sperre der ersten (#55).
   replicas: 1
   strategy:
     type: Recreate
@@ -22,6 +45,9 @@ spec:
         app.kubernetes.io/component: ingestor
       annotations:
         checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        prometheus.io/scrape: "true"
+        prometheus.io/port: {{ .Values.ingestor.metricsPort | quote }}
+        prometheus.io/path: /metrics
     spec:
       serviceAccountName: {{ include "mandari.serviceAccountName" . }}
       {{- with .Values.image.pullSecrets }}
@@ -30,26 +56,80 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      # Der Ingestor schreibt in Tabellen aus den Django-Migrationen: erst starten, wenn das Schema steht
+      {{- with (include "mandari.waitForSchema" . | trim) }}
+      initContainers:
+        {{- . | nindent 8 }}
+      {{- end }}
       containers:
         - name: ingestor
           image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}/ingestor:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          command:
+            - python
+            - -m
+            - src.main
+            - daemon
+            - --interval
+            - {{ .Values.ingestor.syncInterval | quote }}
+            - --full-sync-hour
+            - {{ .Values.ingestor.fullSyncHour | quote }}
+            - --concurrent
+            - {{ .Values.ingestor.concurrent | quote }}
+            - --metrics-port
+            - {{ .Values.ingestor.metricsPort | quote }}
+            {{- range .Values.ingestor.extraArgs }}
+            - {{ . | quote }}
+            {{- end }}
           env:
             {{- include "mandari.commonEnv" . | nindent 12 }}
-            - name: SYNC_INTERVAL_MINUTES
-              value: {{ .Values.ingestor.syncInterval | quote }}
+            # Der Sync erkennt den Text selbst: Adressraum je Tesseract-Unterprozess unter dem Limit halten (#817)
+            - name: OCR_MEMORY_LIMIT_MB
+              value: {{ .Values.ingestor.ocrMemoryLimitMb | toString | quote }}
+            {{- if not (include "mandari.elasticsearchUrl" .) }}
+            # Ohne Elasticsearch sucht die Anwendung in der Datenbank; der Ingestor indexiert nicht
+            - name: ELASTICSEARCH_INDEXING_ENABLED
+              value: "false"
+            {{- end }}
             {{- if .Values.tracing.otlpEndpoint }}
             - name: OTEL_SERVICE_NAME
               value: mandari-ingestor
             {{- end }}
+            {{- range $key, $value := .Values.ingestor.extraEnv }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+            {{- end }}
+          ports:
+            - name: metrics
+              containerPort: {{ .Values.ingestor.metricsPort }}
+              protocol: TCP
           volumeMounts:
+            - name: data
+              mountPath: /app/data
             - name: files
               mountPath: /app/files
+          # /health antwortet, sobald der Daemon seinen Metrik-Server gestartet hat
+          startupProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 5
+            failureThreshold: 60
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: metrics
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
           resources:
             {{- toYaml .Values.ingestor.resources | nindent 12 }}
       volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "mandari.fullname" . }}-ingestor-data
         - name: files
           persistentVolumeClaim:
             claimName: {{ include "mandari.fullname" . }}-files

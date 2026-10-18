@@ -21,6 +21,8 @@ from django.core.management import call_command
 from django.db.models import Model
 from django.utils import timezone
 
+from apps.common.demo_daten import ist_sitzungstag
+from apps.common.demo_daten import ostersonntag as _ostersonntag
 from apps.common.management.commands import setup_demo_environment as basisdemo
 from apps.common.management.commands.setup_demo_environment import (
     DEMO_ANKUENDIGUNG,
@@ -31,8 +33,6 @@ from apps.common.management.commands.setup_demo_environment import (
     DEMO_SESSION_SLUG,
     DEMO_USERS,
     _ext,
-    _ostersonntag,
-    ist_sitzungstag,
     sitzungstermin,
 )
 from apps.session.models import (
@@ -117,7 +117,10 @@ class TestBasisdemo:
         termine = [
             *OParlMeeting.objects.filter(body__slug=DEMO_BODY_SLUG).values_list("name", "start"),
             *SessionMeeting.objects.filter(tenant__slug=DEMO_SESSION_SLUG).values_list("name", "start"),
-            *FactionMeeting.objects.filter(organization__slug=DEMO_ORG_SLUG).values_list("title", "start"),
+            # Abgesagte Termine der Sitzungsreihe (Feiertag, Ferien) bleiben an ihrem Solltermin stehen
+            *FactionMeeting.objects.filter(organization__slug=DEMO_ORG_SLUG)
+            .exclude(status="cancelled")
+            .values_list("title", "start"),
         ]
         assert len(termine) >= 10
         for name, start in termine:
@@ -189,8 +192,9 @@ class TestBasisdemo:
         ankuendigungen = Notification.objects.filter(
             notification_type=NotificationType.ANNOUNCEMENT, recipient__organization__slug=DEMO_ORG_SLUG
         )
+        # Alle Mitglieder außer dem Gast, auch die Konten für die Rollenprüfung des neuen Designs (Issue #884)
         assert sorted(ankuendigungen.values_list("recipient__user__email", flat=True)) == sorted(
-            [DEMO_USERS["mitglied"]["email"], DEMO_USERS["vorsitz"]["email"]]
+            DEMO_USERS[rolle]["email"] for rolle in ("vorsitz", "mitglied", "sachkundig", "unvereidigt")
         )
         benachrichtigung = ankuendigungen.first()
         assert benachrichtigung is not None

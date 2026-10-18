@@ -105,21 +105,25 @@ LEITSTELLE = {
 }
 TOKEN_NAME = "Demo-Drehbuch: Einreichung der Musterfraktion"
 
-ANTRAG_TITEL = "Antrag: Tempo 30 vor der Grundschule am Musterweg (Demo)"
+ANTRAG_TITEL = "Antrag: Inklusiver Spielplatz im Musterviertel (Demo)"
+#: Titel des Drehbuch-Antrags bis Oktober 2026 – ``--reset`` räumt ihn in älteren Demo-Datenbanken mit ab
+ANTRAG_TITEL_FRUEHER = ("Antrag: Tempo 30 vor der Grundschule am Musterweg (Demo)",)
 ANTRAG_INHALT = (
-    "<h2>Antrag: Tempo 30 vor der Grundschule am Musterweg</h2>"
+    "<h2>Antrag: Inklusiver Spielplatz im Musterviertel</h2>"
     "<h3>Beschlussvorschlag</h3>"
-    "<p>Die Verwaltung wird beauftragt, auf dem Musterweg im Abschnitt vor der Grundschule eine "
-    "Geschwindigkeitsbegrenzung auf 30 km/h anzuordnen und den Schulweg mit einer zusätzlichen "
-    "Querungshilfe zu sichern.</p>"
+    "<p>Die Verwaltung wird beauftragt, auf der städtischen Brachfläche an der Ecke Musterweg/Lindenstraße einen "
+    "inklusiven Spielplatz für Kinder von zwei bis zwölf Jahren zu planen und dem Ausschuss für Bauen und Verkehr "
+    "einen Entwurf mit Kostenschätzung vorzulegen. Kinder und Eltern aus dem Viertel werden an der Planung "
+    "beteiligt.</p>"
     "<h3>Begründung</h3>"
-    "<p>Der Musterweg ist der Hauptzugang zur Grundschule. Zu Schulbeginn und Schulschluss queren dort "
-    "täglich rund 250 Kinder die Fahrbahn. Eine Zählung der Elternvertretung zeigt, dass die zulässige "
-    "Geschwindigkeit von 50 km/h regelmäßig überschritten wird. Tempo 30 verkürzt den Anhalteweg und "
-    "mindert die Unfallschwere deutlich.</p>"
+    "<p>Im Musterviertel leben rund 900 Kinder unter zwölf Jahren. Der nächste Spielplatz liegt mehr als einen "
+    "Kilometer entfernt am Stadtpark, auf dem Weg dorthin liegen zwei Hauptstraßen. Die Fläche an der "
+    "Lindenstraße gehört der Stadt und liegt seit Jahren brach. Ein inklusiver Spielplatz mit barrierefreien "
+    "Wegen, Sand- und Wasserspiel und Schattenplätzen gibt allen Kindern einen Ort zum Spielen, auch Kindern im "
+    "Rollstuhl.</p>"
     "<h3>Finanzielle Auswirkungen</h3>"
-    "<p>Beschilderung und Markierung ca. 4.500 Euro brutto, Querungshilfe ca. 18.000 Euro brutto aus dem "
-    "Budget für Verkehrssicherheit.</p>"
+    "<p>Planung ca. 25.000 Euro brutto aus dem Budget für Spiel- und Freiflächen; die Baukosten ermittelt die "
+    "Verwaltung mit dem Entwurf.</p>"
 )
 
 SITZUNG_KOMMEND = "Hauptausschuss (Demo-Drehbuch)"
@@ -127,7 +131,15 @@ SITZUNG_VERGANGEN = "Hauptausschuss (Demo-Drehbuch, vergangen)"
 SITZUNG_VORBERATUNG = "Bauausschuss (Demo-Drehbuch, Vorberatung)"
 SITZUNG_B = "Regionalausschuss (Demo-Drehbuch)"
 SITZUNG_GEMEINSAM = "Gemeinsame Sitzung Haupt- und Bauausschuss (Demo-Drehbuch)"
-DREHBUCH_SITZUNGEN = (SITZUNG_KOMMEND, SITZUNG_VERGANGEN, SITZUNG_VORBERATUNG, SITZUNG_GEMEINSAM)
+#: Kommende Sitzung des Bauausschusses (Ladung noch offen): Ziel des Drehbuch-Antrags („TOP anlegen“)
+SITZUNG_BAU_KOMMEND = "Ausschuss für Bauen und Verkehr (Demo-Drehbuch)"
+DREHBUCH_SITZUNGEN = (
+    SITZUNG_KOMMEND,
+    SITZUNG_VERGANGEN,
+    SITZUNG_VORBERATUNG,
+    SITZUNG_GEMEINSAM,
+    SITZUNG_BAU_KOMMEND,
+)
 
 #: Mandantengruppe mit Leitstelle (Issue #317), nur im Profil stadtstaat
 GRUPPE_SLUG = "bezirke-musterstadt-demo"
@@ -136,7 +148,8 @@ TOP_VERKEHR = "Verkehrskonzept Innenstadt: gemeinsame Beratung"
 
 TOP_EROEFFNUNG = "Eröffnung"
 TOP_JUGENDZENTRUM = "Anmietung von Räumen für das Jugendzentrum"
-TOP_SPIELPLATZ = "Sanierung Spielplatz Stadtpark"
+TOP_SPORTHALLE = "Sanierung der Sporthalle am Stadtpark"
+TOP_MITTEILUNGEN = "Mitteilungen der Verwaltung"
 TOP_GRUNDSTUECK = "Grundstücksangelegenheit Flurstück 12/3"
 BESCHLUSS_LASTENRAD = "Beschaffung von Lastenrädern für den Bauhof"
 BESCHLUSS_HALTESTELLE = "Barrierefreier Umbau der Bushaltestelle Marktplatz"
@@ -192,13 +205,13 @@ VORLAGEN_A = (
         alter_tage=28,
     ),
     Vorlage(
-        TOP_SPIELPLATZ,
+        TOP_SPORTHALLE,
         "scheduled",
         GREMIUM_HA,
-        "Für die Sanierung des Spielplatzes am Stadtpark liegt die Ausführungsplanung vor: inklusive "
-        "Spielgeräte, neue Fallschutzflächen und eine barrierefreie Wegeführung.",
+        "Für die Sanierung der Sporthalle am Stadtpark liegt die Ausführungsplanung vor: neuer Hallenboden, "
+        "barrierefreie Umkleiden und eine Photovoltaikanlage auf dem Dach.",
         "Der Hauptausschuss stimmt der Ausführungsplanung zu und beauftragt die Verwaltung mit der Ausschreibung.",
-        "Gesamtkosten 180.000 € brutto aus dem Budget für Spiel- und Freiflächen.",
+        "Gesamtkosten 640.000 € brutto aus dem Budget für Schul- und Sportstätten.",
         alter_tage=21,
     ),
     Vorlage(
@@ -657,7 +670,7 @@ class Command(BaseCommand):
                 "visibility": "organization",
                 "author": vorsitz,
                 "responsible": vorsitz,
-                "summary": "Entwurf: Tempo 30 und eine Querungshilfe vor der Grundschule am Musterweg.",
+                "summary": "Entwurf: inklusiver Spielplatz auf der Brachfläche an der Lindenstraße im Musterviertel.",
                 "folder": None,
                 "session_application": None,
                 "administration_status": "",
@@ -676,6 +689,8 @@ class Command(BaseCommand):
             return
         for vorlage in eingang.created_papers.all():
             vorlage.delete()
+        # Anlagen des Eingangs (Antragsfassung, Anhänge) blieben sonst ohne Antrag zurück
+        eingang.files.all().delete()
         eingang.delete()
 
     # ------------------------------------------------------------------
@@ -866,6 +881,13 @@ class Command(BaseCommand):
             ],
         )
 
+        # --- Kommende Sitzung des Bauausschusses (geplant, Ladung noch offen) ---------------
+        # Dorthin bringt die Verwaltung im Drehbuch die Vorlage aus dem Work-Antrag („TOP anlegen“).
+        bau_kommend = self._sitzung(mandant, bau, SITZUNG_BAU_KOMMEND, self._termin(9), "scheduled", verwaltung)
+        tops_bau_kommend = self._tagesordnung(bau_kommend, [Top(TOP_EROEFFNUNG), Top(TOP_MITTEILUNGEN)])
+        # Eine Probe hängt dort einen TOP an; der nächste Lauf nimmt ihn wieder heraus
+        bau_kommend.agenda_items.exclude(pk__in=[top.pk for top in tops_bau_kommend.values()]).delete()
+
         # --- Kommende Sitzung (Einladung fristgerecht versandt) --------
         beginn = self._termin(7)
         kommend = self._sitzung(
@@ -885,7 +907,7 @@ class Command(BaseCommand):
             [
                 Top(TOP_EROEFFNUNG),
                 Top(TOP_JUGENDZENTRUM, vorlagen[TOP_JUGENDZENTRUM]),
-                Top(TOP_SPIELPLATZ, vorlagen[TOP_SPIELPLATZ]),
+                Top(TOP_SPORTHALLE, vorlagen[TOP_SPORTHALLE]),
                 Top(TOP_GRUNDSTUECK, vorlagen[TOP_GRUNDSTUECK], oeffentlich=False),
             ],
         )
@@ -895,7 +917,7 @@ class Command(BaseCommand):
         self._beratung(jugendzentrum, bau, tops_bau[TOP_JUGENDZENTRUM], "preliminary", 1, "approved")
         self._beratung(jugendzentrum, ha, tops_kommend[TOP_JUGENDZENTRUM], "decision", 2)
         # Die übrigen Vorlagen haben eine Station – so verlinkt auch das Bürgerportal TOP und Vorgang
-        for name in (TOP_SPIELPLATZ, TOP_GRUNDSTUECK):
+        for name in (TOP_SPORTHALLE, TOP_GRUNDSTUECK):
             self._beratung(vorlagen[name], ha, tops_kommend[name], "decision", 1)
 
         vergangen, beschluss = self._vergangene_sitzung(mandant, ha, vorlagen, personen, verwaltung, protokoll)
@@ -1137,7 +1159,9 @@ class Command(BaseCommand):
         fraktion = Organization.objects.filter(slug=DEMO_ORG_SLUG).first()
 
         if fraktion is not None:
-            antraege = list(Motion.objects.filter(organization=fraktion, title=ANTRAG_TITEL))
+            antraege = list(
+                Motion.objects.filter(organization=fraktion, title__in=(ANTRAG_TITEL, *ANTRAG_TITEL_FRUEHER))
+            )
             for antrag in antraege:
                 self._einreichung_zuruecknehmen(antrag)
                 antrag.delete()
@@ -1245,8 +1269,8 @@ class Command(BaseCommand):
         nummer = "Drucksache 22-…" if profil_name == "stadtstaat" else "Vorlagen-Nr. AN/…/<Jahr>"
         sitzung = link("session:meeting_detail", tenant_slug=a.slug, meeting_id=welt.sitzung_kommend.id)
         spickzettel = [
-            f"1. Work – als {DEMO_USERS['vorsitz']['email']}: Work-Antrag öffnen → Symbol „Bei Verwaltung "
-            "einreichen“ → bestätigen → „Jetzt einreichen“. Zeigt die Eingangsnummer A/<Jahr>/… im Editor.",
+            f"1. Work – als {DEMO_USERS['vorsitz']['email']}: Work-Antrag öffnen → Menü „Ablauf“ → „Bei der "
+            "Verwaltung einreichen“ → bestätigen → „Jetzt einreichen“. Zeigt die Eingangsnummer A/<Jahr>/… im Editor.",
             f"2. Session – als {DEMO_USERS['verwaltung']['email']}: Anträge → „{ANTRAG_TITEL}“ → „In Vorlage "
             f"umwandeln“ → Gremium prüfen → „In Vorlage umwandeln“. Zeigt die Vorlage mit {nummer}.",
             f"3. Session: {sitzung} → Beratungsfolge am TOP „{TOP_JUGENDZENTRUM}“ (Bauausschuss → "

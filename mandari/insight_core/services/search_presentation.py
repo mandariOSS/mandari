@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 import uuid
 from collections import defaultdict
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from types import SimpleNamespace
 from typing import Any, Final
@@ -265,14 +265,54 @@ def _document(doc: Mapping[str, Any]) -> dict[str, Any]:
     return {"label": document_label(doc.get("name"), doc.get("file_name")), "url": _preview_url(doc.get("id"))}
 
 
-def present_groups(groups: list[dict[str, Any]], body_slug: str = "") -> list[dict[str, Any]]:
-    """Gruppen des Suchdienstes als Treffer der Liste; ein Datenbankzugriff für alle Stand-Sätze."""
+#: Adresse eines Treffers: Art („vorgang“, „sitzung“, „person“, „gremium“) und Kennung → Adresse
+Links = Callable[[str, Any], str]
+
+_INSIGHT_PFADE: Final = {
+    "vorgang": "/insight/vorgaenge/{}/",
+    "sitzung": "/insight/termine/{}/",
+    "person": "/insight/personen/{}/",
+    "gremium": "/insight/gremien/{}/",
+}
+
+
+def insight_link(kind: str, pk: Any) -> str:
+    """Adresse eines Treffers im Bürgerportal (Standard von ``present_groups``)."""
+    return _INSIGHT_PFADE[kind].format(pk)
+
+
+def present_groups(
+    groups: list[dict[str, Any]], body_slug: str = "", links: Links | None = None
+) -> list[dict[str, Any]]:
+    """Gruppen des Suchdienstes als Treffer der Liste; ein Datenbankzugriff für alle Stand-Sätze.
+
+    ``links`` bildet Art und Kennung auf die Adresse ab; ohne Angabe die Seiten des Bürgerportals, Work übergibt seine
+    eigenen (Issue #853). Jeder Treffer nennt zusätzlich ``pk`` (Kennung des Vorgangs, der Sitzung …) und ``gremien``
+    (Gremien laut Index), damit Aufrufer ihn zuordnen können.
+    """
     paper_ids = [str(g["paper"]["id"]) for g in groups if g.get("paper")]
     statuses = statuses_for_papers(paper_ids)
-    return [_present(group, statuses, body_slug) for group in groups]
+    return [_present(group, statuses, body_slug, links or insight_link) for group in groups]
 
 
-def _present(group: dict[str, Any], statuses: Mapping[str, Any], body_slug: str) -> dict[str, Any]:
+def _present(group: dict[str, Any], statuses: Mapping[str, Any], body_slug: str, links: Links) -> dict[str, Any]:
+    entry = _present_entry(group, statuses, body_slug, links)
+    entry.setdefault("pk", "")
+    entry.setdefault("gremien", [])
+    return entry
+
+
+def _gremien(*docs: Mapping[str, Any] | None) -> list[str]:
+    names: list[str] = []
+    for doc in docs:
+        values = (doc or {}).get("organization_names") or []
+        for name in values if isinstance(values, list) else [values]:
+            if name and str(name) not in names:
+                names.append(str(name))
+    return names
+
+
+def _present_entry(group: dict[str, Any], statuses: Mapping[str, Any], body_slug: str, links: Links) -> dict[str, Any]:
     paper, meeting, main_file = group.get("paper"), group.get("meeting"), group.get("file")
     others = [_document(doc) for doc in group.get("others", [])]
     fundstelle = _document(main_file) if main_file else None
@@ -293,7 +333,9 @@ def _present(group: dict[str, Any], statuses: Mapping[str, Any], body_slug: str)
         ]
         return {
             "kind": "vorgang",
-            "url": f"/insight/vorgaenge/{paper.get('id')}/",
+            "pk": str(paper.get("id") or ""),
+            "gremien": _gremien(paper, main_file),
+            "url": links("vorgang", paper.get("id")),
             "title": _title(paper, str(paper.get("reference") or "Vorgang")),
             "context": [part for part in context if part],
             "status": getattr(status, "text", "") or "Noch keine Beratung bekannt.",
@@ -313,7 +355,9 @@ def _present(group: dict[str, Any], statuses: Mapping[str, Any], body_slug: str)
         title = _title(meeting, name) if meeting.get("_formatted") else escape(f"{name} am {datum}" if datum else name)
         return {
             "kind": "sitzung",
-            "url": f"/insight/termine/{meeting.get('id') or group.get('meeting_id')}/",
+            "pk": str(meeting.get("id") or group.get("meeting_id") or ""),
+            "gremien": _gremien(meeting, main_file),
+            "url": links("sitzung", meeting.get("id") or group.get("meeting_id")),
             "title": title,
             "context": [
                 part for part in ("Sitzung" if not main_file else "Sitzungsunterlagen", gremium, datum) if part
@@ -343,7 +387,8 @@ def _present(group: dict[str, Any], statuses: Mapping[str, Any], body_slug: str)
     if group.get("person"):
         return {
             "kind": "person",
-            "url": f"/insight/personen/{doc.get('id')}/",
+            "pk": str(doc.get("id") or ""),
+            "url": links("person", doc.get("id")),
             "title": _title(doc, "Person"),
             "context": ["Person"],
             "status": "",
@@ -354,7 +399,8 @@ def _present(group: dict[str, Any], statuses: Mapping[str, Any], body_slug: str)
         }
     return {
         "kind": "gremium",
-        "url": f"/insight/gremien/{doc.get('id')}/",
+        "pk": str(doc.get("id") or ""),
+        "url": links("gremium", doc.get("id")),
         "title": _title(doc, "Gremium"),
         "context": [p for p in ("Gremium", str(doc.get("organization_type") or "")) if p],
         "status": "",

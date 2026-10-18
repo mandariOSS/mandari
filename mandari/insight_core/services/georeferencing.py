@@ -30,6 +30,8 @@ import httpx
 from django.conf import settings
 from django.utils import timezone
 
+from insight_core.services import dienste
+
 logger = logging.getLogger(__name__)
 
 # =============================================================================
@@ -37,6 +39,7 @@ logger = logging.getLogger(__name__)
 # =============================================================================
 
 PHOTON_API_URL = getattr(settings, "PHOTON_API_URL", "https://photon.komoot.io/api/")
+NOMINATIM_SEARCH_URL = "https://nominatim.openstreetmap.org/search"
 GEOCODING_RATE_LIMIT = getattr(settings, "GEOCODING_RATE_LIMIT", 5)
 # Kappung gilt nur noch für den LLM-Pass (Kosten) und den Legacy-Photon-Pfad
 # (externe API-Calls); der Gazetteer-Pass arbeitet auf dem Volltext.
@@ -413,7 +416,7 @@ def extract_with_regex(text: str) -> list[dict]:
 
 def extract_locations_with_ai(text: str, body_name: str) -> list[dict]:
     """
-    Extract location references using LLM (Nebius provider).
+    Ortsangaben per KI erkennen (KI-Endpunkt des Bürgerportals aus der zentralen KI-Konfiguration).
 
     Args:
         text: Document text content
@@ -423,8 +426,8 @@ def extract_locations_with_ai(text: str, body_name: str) -> list[dict]:
         List of dicts with keys: raw, type, normalized
     """
     try:
+        from insight_ai.providers import get_insight_provider
         from insight_ai.providers.base import ChatMessage
-        from insight_ai.providers.nebius import NebiusProvider
         from insight_ai.services.prompts import (
             GEOREF_SYSTEM_PROMPT,
             build_georef_user_prompt,
@@ -433,9 +436,9 @@ def extract_locations_with_ai(text: str, body_name: str) -> list[dict]:
         logger.warning("insight_ai not available, skipping AI extraction")
         return []
 
-    provider = NebiusProvider()
+    provider = get_insight_provider()
     if not provider.is_available():
-        logger.warning("Nebius provider not available, skipping AI extraction")
+        logger.info("KI-Verortung übersprungen: KI im Bürgerportal nicht eingerichtet")
         return []
 
     user_prompt = build_georef_user_prompt(text, body_name)
@@ -543,8 +546,7 @@ def geocode_address(address: str, body) -> dict | None:
         if result:
             return result
 
-    # Fallback: Nominatim (1 req/sec)
-    time.sleep(1.0)
+    # Fallback: Nominatim (höchstens eine Anfrage je Sekunde, Takt je Host in _geocode_nominatim)
     return _geocode_nominatim(address, body)
 
 
@@ -561,11 +563,13 @@ def _geocode_photon(address: str, body) -> dict | None:
         params["lon"] = str(body.longitude)
 
     try:
+        # Kennung und Takt je Host wie alle Abrufe bei Diensten (Issue #1036)
+        dienste.warten(PHOTON_API_URL, dienste.PHOTON)
         response = httpx.get(
             PHOTON_API_URL,
             params=params,
             timeout=10.0,
-            headers={"User-Agent": "Mandari/1.0 (https://mandari.de)"},
+            headers=dienste.headers(),
         )
         response.raise_for_status()
         features = response.json().get("features", [])
@@ -686,11 +690,13 @@ def _geocode_nominatim(address: str, body) -> dict | None:
         params["bounded"] = "1"
 
     try:
+        # Nutzungsregeln von Nominatim: höchstens eine Anfrage je Sekunde, Kennung mit Kontakt (Issue #1036)
+        dienste.warten(NOMINATIM_SEARCH_URL, dienste.NOMINATIM)
         response = httpx.get(
-            "https://nominatim.openstreetmap.org/search",
+            NOMINATIM_SEARCH_URL,
             params=params,
             timeout=10.0,
-            headers={"User-Agent": "Mandari/1.0 (https://mandari.de)"},
+            headers=dienste.headers(),
         )
         response.raise_for_status()
         results = response.json()
