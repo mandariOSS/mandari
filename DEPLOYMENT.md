@@ -1650,6 +1650,7 @@ Ein einzelner Prozess bei normaler Last braucht es nicht. Ohne Profil und Schalt
 |---|---|---|
 | `mandari` (Webanwendung) | über PgBouncer | `DB_PGBOUNCER=true` stellt sie auf den Transaktionsmodus ein |
 | Migrationen (`migrate`, `safemigrate`) | direkt über `DB_DIRECT_URL` | auch im Container `mandari` (`update.sh`, `install.sh`, `deploy.sh`, von Hand) |
+| `events_after_restore` | direkt über `DB_DIRECT_URL` | `backup.sh` startet es bei der Wiederherstellung, wenn nur `postgres` läuft |
 | `worker`, `worker-heavy`, `worker-live` | direkt | Weckruf per `LISTEN`, lange Aufträge mit `.iterator()` |
 | `ingestor` | direkt | sitzungsgebundene Advisory-Sperre |
 | `minutes-orchestrator`, `website` | direkt | nicht auf den Transaktionsmodus eingestellt |
@@ -1662,7 +1663,11 @@ PgBouncer setzt nur der Dienst `mandari` selbst, die Worker behalten `DATABASE_U
 - `DISABLE_SERVER_SIDE_CURSORS`: `.iterator()` holt das Ergebnis auf einmal statt blockweise über
   einen Cursor. Der Cursor läge auf einer Serververbindung, die der nächste Block nicht mehr bekommt
   (`cursor … does not exist`). Große Ergebnisse, etwa der Export des Prüfprotokolls oder die
-  Sitemaps, brauchen dafür mehr Speicher im Webprozess.
+  Sitemaps, brauchen dafür mehr Speicher im Webprozess. Das gilt auch für Verwaltungsbefehle, die
+  von Hand im Container `mandari` laufen (etwa `backfill_paper_locations`, `prune_file_cache`): Sie
+  laden die Ergebnisse von `.iterator()` ganz in den Speicher des Containers (1 GB). Große
+  Wartungsbefehle deshalb im Container `worker` starten, der direkt verbunden ist:
+  `docker compose exec worker python manage.py …`.
 - `prepare_threshold = None`: keine vorbereiteten Anweisungen. Django bindet Parameter ohnehin auf
   der Clientseite, PgBouncer braucht deshalb kein `max_prepared_statements`.
 - Startparameter: Die Anwendung schickt nur `user`, `database` und `client_encoding`, die PgBouncer
@@ -1682,7 +1687,8 @@ PgBouncer setzt nur der Dienst `mandari` selbst, die Worker behalten `DATABASE_U
    ```
 3. PgBouncer starten und auf `healthy` warten:
    `docker compose up -d pgbouncer && docker compose ps pgbouncer`
-4. Anwendung neu erstellen: `docker compose up -d mandari`. Sie wartet auf einen gesunden PgBouncer.
+4. Anwendung neu erstellen: `docker compose up -d mandari`. Ihr Start wartet bis etwa eine Minute,
+   bis die Datenbank über PgBouncer erreichbar ist; PgBouncer startet sie nicht mit.
 5. Prüfen: `/health/ready/` antwortet mit `ok`, und
    ```bash
    docker compose exec mandari python manage.py shell -c \
@@ -1691,7 +1697,12 @@ PgBouncer setzt nur der Dienst `mandari` selbst, die Worker behalten `DATABASE_U
    ```
 
 `update.sh` tauscht nur die Anwendungs-Images und lässt den laufenden PgBouncer stehen; seine
-Migrationen laufen über `DB_DIRECT_URL` direkt.
+Migrationen laufen über `DB_DIRECT_URL` direkt. Erst einschalten, wenn ein Image mit Issue #1060
+läuft: Ältere Images kennen `DB_PGBOUNCER` nicht.
+
+**Docker Compose:** Für einen Server genügt dieselbe Version wie bisher; die Basisdatei nutzt für
+PgBouncer nur Profile. Die Rollen unter `deploy/roles/` brauchen Docker Compose ab 2.24.4
+(`!reset`, `!override`).
 
 **Mehrere Server:** Auf dem Datenserver `COMPOSE_PROFILES=pgbouncer` (Port 6432 an `DATA_BIND`),
 auf den web-Servern `DATA_PG_PORT=6432` und `MANDARI_DB_PGBOUNCER=true`. `deploy/roles/web.yml`
@@ -1752,6 +1763,10 @@ sind es 120 Verbindungen zu PgBouncer, in PostgreSQL bleibt es bei 20.
 ### Rückweg
 
 Nichts in der Datenbank hängt an PgBouncer; der Wechsel geht jederzeit zurück.
+
+**Vor einem Rückfall auf ein Image vor Issue #1060** (`update.sh --tag`, Rückfall in `deploy.sh`)
+PgBouncer zuerst abschalten: Ein älteres Image kennt `DB_PGBOUNCER` nicht und nutzt serverseitige
+Cursor über den Pooler.
 
 1. In der `.env` `MANDARI_DB_HOST`, `MANDARI_DB_PGBOUNCER` und `MANDARI_DB_POOL_MAX` entfernen.
 2. `docker compose up -d mandari`: Die Anwendung verbindet sich wieder direkt mit `postgres`.

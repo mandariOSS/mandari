@@ -38,7 +38,8 @@ genau einer Rolle zugeordnet ist.
 Auf jedem Server das Repository-Verzeichnis wie bei der Ein-Server-Installation anlegen
 (`install.sh` oder manuell, siehe `DEPLOYMENT.md`), dann in der `.env` die Rolle wählen.
 Compose liest `COMPOSE_FILE` aus der `.env`; `docker compose up -d`, `update.sh` und
-`deploy/scripts/deploy.sh` funktionieren danach unverändert.
+`deploy/scripts/deploy.sh` funktionieren danach unverändert. Die Rollen-Dateien brauchen Docker
+Compose ab 2.24.4 (`!reset`, `!override`).
 
 **Datenserver:**
 

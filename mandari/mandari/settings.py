@@ -301,9 +301,11 @@ DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 # verbinden sich migrate und safemigrate direkt mit PostgreSQL (wie Worker und Ingestor), egal von wo
 # sie gestartet werden (update.sh, install.sh, deploy.sh, von Hand). Fehlt DB_DIRECT_URL, laufen sie
 # über den Pooler; jede Migration ist eine eigene Transaktion, das geht, ist aber nicht der Normalfall.
+# Ebenso events_after_restore: backup.sh startet es bei der Wiederherstellung, wenn nur postgres läuft
+# und PgBouncer noch nicht.
 DB_PGBOUNCER = os.environ.get("DB_PGBOUNCER", "false").strip().lower() in ("true", "1", "yes")
 DB_DIRECT_URL = os.environ.get("DB_DIRECT_URL", "").strip().replace("postgresql+asyncpg://", "postgresql://")
-DB_DIRECT_COMMANDS = ("migrate", "safemigrate")
+DB_DIRECT_COMMANDS = ("migrate", "safemigrate", "events_after_restore")
 if DB_PGBOUNCER and DB_DIRECT_URL and len(sys.argv) > 1 and sys.argv[1] in DB_DIRECT_COMMANDS:
     DATABASE_URL = DB_DIRECT_URL
     DB_PGBOUNCER = False

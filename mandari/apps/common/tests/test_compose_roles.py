@@ -389,7 +389,8 @@ def test_pgbouncer_nur_fuer_die_anwendung() -> None:
     assert app["DB_PGBOUNCER"] == "${MANDARI_DB_PGBOUNCER:-false}", "Standard bleibt aus"
     assert app["DB_POOL_MAX"] == "${MANDARI_DB_POOL_MAX:-10}", "Vorgabe wie in settings.py"
     assert _direkt(app["DB_DIRECT_URL"])
-    assert anwendung["depends_on"]["pgbouncer"] == {"condition": "service_healthy", "required": False}
+    # Ohne depends_on auf pgbouncer: depends_on.required bräuchte Compose ab 2.20, auch ohne Profil
+    assert "pgbouncer" not in anwendung["depends_on"]
 
     # Alle anderen bleiben direkt, auch wenn sie die Umgebung über YAML-Anker erben
     for name, dienst in basis.items():

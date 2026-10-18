@@ -97,18 +97,47 @@ class TestSchalter:
         assert db["DISABLE_SERVER_SIDE_CURSORS"] is False
         assert "prepare_threshold" not in db.get("OPTIONS", {})
 
-    @pytest.mark.parametrize("befehl", ["migrate", "safemigrate"])
-    def test_migrationen_direkt(self, befehl: str) -> None:
-        """update.sh, install.sh und deploy.sh starten ``manage.py migrate``/``safemigrate`` im Anwendungscontainer."""
+    @pytest.mark.parametrize(
+        ("befehl", "argumente"),
+        [
+            ("migrate", ["--noinput"]),
+            ("safemigrate", ["--noinput"]),
+            # backup.sh, Wiederherstellung: Nur postgres läuft, PgBouncer noch nicht
+            ("events_after_restore", ["--apply"]),
+        ],
+    )
+    def test_direkt_an_postgres(self, befehl: str, argumente: list[str]) -> None:
+        """update.sh, install.sh, deploy.sh und backup.sh starten diese Befehle im Container der Anwendung."""
         s = lade_einstellungen(
             {"DATABASE_URL": POOLER, "DB_PGBOUNCER": "true", "DB_DIRECT_URL": DIREKT},
-            ["manage.py", befehl, "--noinput"],
+            ["manage.py", befehl, *argumente],
         )
         db = s.DATABASES["default"]
         assert db["HOST"] == "postgres", "am Pooler vorbei"
         assert s.DB_PGBOUNCER is False
         assert db["DISABLE_SERVER_SIDE_CURSORS"] is False, "direkt verbunden gehen serverseitige Cursor"
         assert "prepare_threshold" not in db["OPTIONS"]
+
+    def test_kurzlebige_container_der_skripte_gehen_direkt(self) -> None:
+        """Befehle, die update.sh und backup.sh per ``docker compose run --no-deps`` im Dienst der Anwendung starten.
+
+        Dabei läuft PgBouncer nicht unbedingt: Bei der Wiederherstellung ist nach ``down`` nur postgres gestartet.
+        """
+        import re
+        from pathlib import Path
+
+        from mandari import settings as einstellungen
+
+        wurzel = Path(__file__).resolve().parents[4]
+        befehle: set[str] = set()
+        for skript in ("update.sh", "backup.sh"):
+            text = (wurzel / skript).read_text(encoding="utf-8")
+            # docker compose run --rm --no-deps … mandari python manage.py <befehl>
+            befehle |= set(re.findall(r"compose run --rm --no-deps[ \\\n]+mandari python manage\.py (\w+)", text))
+            # volume_container <name> "$APP_SERVICE" … python manage.py <befehl> (backup.sh)
+            befehle |= set(re.findall(r'volume_container \S+ "\$APP_SERVICE"[ \\\n]+python manage\.py (\w+)', text))
+        assert befehle == {"safemigrate", "events_after_restore"}, "neuer Befehl: direkt verbinden oder hier ergänzen"
+        assert befehle <= set(einstellungen.DB_DIRECT_COMMANDS)
 
     def test_andere_befehle_ueber_den_pooler(self) -> None:
         s = lade_einstellungen(

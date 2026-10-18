@@ -416,10 +416,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      # Nur mit Profil pgbouncer; ohne Profil übergeht Compose die Abhängigkeit (required: false)
-      pgbouncer:
-        condition: service_healthy
-        required: false
+      # Keine Abhängigkeit von pgbouncer (depends_on.required bräuchte Compose ab 2.20): Mit Profil wartet
+      # der Start der Anwendung im Entrypoint, bis die Datenbank über PgBouncer erreichbar ist
       redis:
         condition: service_healthy
       elasticsearch:
