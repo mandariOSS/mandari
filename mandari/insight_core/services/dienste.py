@@ -8,7 +8,7 @@ Dazu gehören die Live-Übertragung von Sitzungen (Streaming-Anbieter wie 3Q und
 (``georeferencing``, ``neighborhood``) und die Geoportale für Umringe von Bebauungsplänen (``plan_boundaries``).
 
 - **Kennung:** dieselbe wie bei Abrufen von Ratsinformationssystemen aus Django (:data:`USER_AGENT`,
-  ``mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)``, :func:`mandari_oparl.crawler.user_agent`).
+  ``mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)``, :func:`mandari_oparl.crawler.user_agent`).
   Sie nennt Infoseite und Kontaktadresse, wie es die Nutzungsregeln von Nominatim und der OSM-Kacheln verlangen.
 - **Takt je Host:** Vor jeder Anfrage, auch vor jeder Weiterleitung, reserviert der Abruf einen Zeitpunkt für den
   Host, über denselben Zeitstempel in Redis wie die Abrufe bei Ratsinformationssystemen

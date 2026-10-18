@@ -444,7 +444,7 @@ services:
 
 ## 3. Politeness-Defaults (alle Scraper-Quellen)
 
-- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de/crawler/; support@mandari.de)`
+- **User-Agent**: `mandari-ingestor/<Version> (+https://mandari.de/ingestor/; support@mandari.de)`
   (Env `INGESTOR_USER_AGENT`, ältere Schreibweise `SCRAPER_USER_AGENT`). Er gilt für
   OParl-Client, Scraper und Textextraktion. Django (Dokument-Cache, Textextraktion,
   Vorschau, Personenfotos, `add_oparl_source`) meldet sich mit demselben Produkt-Token,
@@ -485,7 +485,7 @@ Textvorlage: [ADR 2026-09-17](adr/20260917-kein-scraping-sternberg-regisafe-komu
 ## 5. Opt-out- / Takedown-Prozess
 
 Kommunen (oder Betroffene) können sich jederzeit über die auf der
-Crawler-Infoseite genannten Kontakte melden. Ablauf:
+Infoseite für Betreiber (<https://mandari.de/ingestor/>) genannten Kontakte melden. Ablauf:
 
 1. **Drosseln/Pausieren**: Quelle im Admin deaktivieren (`is_active`)
    oder `rate_limit_seconds` erhöhen — wirkt ab dem nächsten Lauf der Quelle.

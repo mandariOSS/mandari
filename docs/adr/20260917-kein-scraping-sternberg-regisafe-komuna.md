@@ -100,3 +100,11 @@ Angebot gezielt und mit Beleg ausgesprochen werden kann.
 >
 > Mit freundlichen Grüßen
 > [Name], mandari
+
+## Nachtrag (Oktober 2026)
+
+Die Infoseite für Betreiber heißt seit Oktober 2026 `https://mandari.de/ingestor/`; `/crawler/` leitet
+dorthin weiter. Der Ingestor ist kein Crawler, und Wortfilter auf „crawler“ im User-Agent sollen unsere
+Abrufe nicht ungewollt treffen (#1061). Wer die Textvorlage verwendet, nennt Kennung und Takt nach
+[`docs/ABRUFREGELN.md`](../ABRUFREGELN.md#kennung): `mandari-ingestor/<Version> (+https://mandari.de/ingestor/;
+support@mandari.de)`, höchstens eine Anfrage je Sekunde und Server.

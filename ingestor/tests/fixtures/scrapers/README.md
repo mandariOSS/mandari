@@ -8,8 +8,9 @@ Felder verloren (oder das erwartete Ergebnis wurde bewusst aktualisiert).
 
 ## sessionnet/
 
-Abgerufen am 2026-07-20 mit User-Agent
-`mandari-ingestor (+https://mandari.de/crawler)`.
+Abgerufen am 2026-07-20 mit dem damaligen User-Agent
+`mandari-ingestor (+https://mandari.de/crawler)`; die Infoseite heißt heute
+`https://mandari.de/ingestor/` (Kennung siehe `docs/ABRUFREGELN.md`).
 
 | Verzeichnis | Instanz | Variante | Version |
 |---|---|---|---|

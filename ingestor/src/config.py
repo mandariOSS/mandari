@@ -26,9 +26,10 @@ def _ingestor_version() -> str:
 # drosseln, ausschließen oder ansprechen können (mandari_oparl.crawler). Dasselbe
 # Produkt-Token wertet die robots.txt-Prüfung aus.
 # Mindestens ein RIS filtert den Begriff „crawler“ im User-Agent und antwortet mit 403,
-# obwohl derselbe Abruf mit neutralem Client durchgeht (Issue #123). Für solche Quellen
-# gilt der User-Agent je Quelle (OParlSource.user_agent), z. B. ohne Infoseiten-Pfad;
-# die Sperre meldet der Monitor als „User-Agent gesperrt“.
+# obwohl derselbe Abruf mit neutralem Client durchgeht (Issue #123). Seit die Infoseite
+# /ingestor/ statt /crawler/ heißt, enthält der Standard das Wort nicht mehr. Für Quellen
+# mit anderen Wortfiltern gilt der User-Agent je Quelle (OParlSource.user_agent), z. B. ohne
+# Infoseiten-Pfad; die Sperre meldet der Monitor als „User-Agent gesperrt“.
 DEFAULT_USER_AGENT = crawler_user_agent(_ingestor_version())
 
 

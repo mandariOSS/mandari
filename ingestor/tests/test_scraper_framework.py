@@ -209,7 +209,7 @@ class TestPoliteFetcher:
         assert all(agent.startswith("mandari-ingestor/") for agent in seen_agents)
         # Kontaktadresse und Infoseite für Betreiber (Quellen mit Wortfilter: User-Agent je Quelle, Issue #123)
         assert all("support@mandari.de" in agent for agent in seen_agents)
-        assert all("https://mandari.de/crawler/" in agent for agent in seen_agents)
+        assert all("https://mandari.de/ingestor/" in agent for agent in seen_agents)
 
     async def test_404_returns_none(self):
         def handler(request: httpx.Request) -> httpx.Response:

@@ -3,7 +3,7 @@
 Abrufe bei Streaming-Anbietern (Issue #915): nur https, Zeitgrenzen, Größengrenze, Kennung und Takt je Host.
 
 Kennung und Takt wie bei allen Abrufen bei Diensten (Issue #1036, ``insight_core.services.dienste``): User-Agent
-``mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)``, vor jeder Anfrage und jeder Weiterleitung
+``mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)``, vor jeder Anfrage und jeder Weiterleitung
 ein Zeitpunkt beim Host, höchstens eine Anfrage je Sekunde und Host (``dienste.LIVE``).
 
 Jede Adresse, auch jedes Ziel einer Weiterleitung (höchstens ``MAX_WEITERLEITUNGEN``), muss https sein und auf

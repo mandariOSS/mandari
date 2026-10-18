@@ -33,7 +33,7 @@ from mandari_oparl.robots import (
 from src.client.oparl_client import ERROR_KIND_ROBOTS_BLOCKED, ERROR_KIND_SERVER_ERROR_SERIES, OParlClient
 from src.client.robots import RobotsGate, robots_gate
 from src.client.source_options import SourceFetchOptions
-from src.config import DEFAULT_USER_AGENT
+from src.config import DEFAULT_USER_AGENT, Settings
 from src.extraction.extractor import DownloadedFile, TextExtractor
 from src.sync.orchestrator import source_backoff_until
 
@@ -163,8 +163,19 @@ class TestAusnahme:
 
 
 def test_user_agent_mit_infoseite_und_kontakt():
-    assert user_agent("1.2.3") == "mandari-ingestor/1.2.3 (+https://mandari.de/crawler/; support@mandari.de)"
+    assert user_agent("1.2.3") == "mandari-ingestor/1.2.3 (+https://mandari.de/ingestor/; support@mandari.de)"
     assert INFO_URL in DEFAULT_USER_AGENT
+
+
+def test_standard_user_agent_ohne_wort_crawler(monkeypatch):
+    # Wortfilter auf „crawler“ beantworteten unsere Abrufe mit 403, solange die Infoseite /crawler/ hieß (#1061)
+    for name in ("INGESTOR_USER_AGENT", "SCRAPER_USER_AGENT", "USER_AGENT"):
+        monkeypatch.delenv(name, raising=False)
+    standard = Settings(_env_file=None).user_agent
+    assert standard == DEFAULT_USER_AGENT
+    for kennung in (standard, user_agent(), user_agent("1.2.3")):
+        assert "crawler" not in kennung.lower()
+        assert kennung.startswith(PRODUCT_TOKEN)
 
 
 # ---------------------------------------------------------------------------
@@ -260,11 +271,12 @@ class TestZwischenspeicher:
             assert len(gesehen) == 2
 
     async def test_zwischenspeicher_je_user_agent(self, echte_robots):
-        # Server mit Wortfilter: auch /robots.txt antwortet auf „crawler“ im User-Agent mit 403
+        # Server mit Filter auf unsere Kennung: auch /robots.txt antwortet mit 403, sobald die Infoseite im
+        # User-Agent steht (so traf früher ein Wortfilter auf „crawler“ die Infoseite /crawler/, #1061)
         gesehen: list[httpx.Request] = []
 
         def robots(request: httpx.Request) -> httpx.Response:
-            if "crawler" in request.headers.get("user-agent", ""):
+            if INFO_URL in request.headers.get("user-agent", ""):
                 return httpx.Response(403)
             return httpx.Response(200, text="User-agent: *\nDisallow: /*.pdf$\n")
 
@@ -513,14 +525,15 @@ class TestDateienNichtErreichbar:
         assert geladen == ["https://rat.example.de/dokumente/vorlage.pdf"]
 
     async def test_robots_txt_mit_user_agent_der_quelle(self, echte_robots, monkeypatch):
-        # Wortfilter: der Standard bekäme 403 (gilt als „nicht vorhanden“), die Kennung der Quelle die echte Datei
+        # Filter auf unsere Kennung mit Infoseite: der Standard bekäme 403 (gilt als „nicht vorhanden“), die
+        # Kennung der Quelle die echte Datei
         gesehen: list[str] = []
 
         def handler(request: httpx.Request) -> httpx.Response:
             agent = request.headers.get("user-agent", "")
             gesehen.append(agent)
             if request.url.path == "/robots.txt":
-                if "crawler" in agent:
+                if INFO_URL in agent:
                     return httpx.Response(403)
                 return httpx.Response(200, text="User-agent: *\nDisallow: /*.pdf$\n")
             raise AssertionError("gesperrte Datei darf nicht geladen werden")
