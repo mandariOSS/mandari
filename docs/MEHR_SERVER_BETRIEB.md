@@ -54,15 +54,15 @@ DATA_BIND=10.0.0.10              # private Adresse dieses Servers
 ```ini
 COMPOSE_FILE=docker-compose.yml:deploy/roles/web.yml
 DATA_HOST=10.0.0.10              # private Adresse des Datenservers
-DATA_PG_PORT=5432                # 6432, wenn dort PgBouncer aktiv ist
+DATA_PG_PORT=5432                # 6432, wenn dort PgBouncer aktiv ist, dann auch:
+# MANDARI_DB_PGBOUNCER=true      # Anwendung auf den Transaktionsmodus einstellen
 ```
 
 **Worker-Server:**
 
 ```ini
 COMPOSE_FILE=docker-compose.yml:deploy/roles/worker.yml
-DATA_HOST=10.0.0.10
-DATA_PG_PORT=5432
+DATA_HOST=10.0.0.10              # alle Dienste dieser Rolle direkt auf Port 5432
 ```
 
 Reihenfolge beim ersten Start: data → web (führt die Migrationen aus) → worker. Prüfen mit
@@ -122,20 +122,25 @@ Metriken sind je web-Server auszulesen (`docs/MONITORING.md`).
 ## PgBouncer (optional)
 
 `COMPOSE_PROFILES=pgbouncer` auf dem Datenserver startet PgBouncer im Transaktionsmodus
-(Port 6432 an `DATA_BIND`). Web- und Worker-Server zeigen dann mit `DATA_PG_PORT=6432`
-auf den Pooler. Die Anwendung nutzt bereits einen psycopg-Verbindungspool (#257); PgBouncer
-lohnt sich ab mehreren web-Servern, damit PostgreSQL nicht mit `max_connections`
-kollidiert. Im Transaktionsmodus sind sitzungsgebundene Funktionen (z. B. `SET` ohne
-`LOCAL`, Advisory-Sperren) nicht nutzbar – der Ingestor verbindet sich deshalb in
-`worker.yml` **direkt** mit PostgreSQL (Port 5432); `DATA_PG_PORT` gilt für Anwendung,
-Website und Orchestrator.
+(Port 6432 an `DATA_BIND`). Über ihn geht nur die Anwendung auf den web-Servern: dort
+`DATA_PG_PORT=6432` **und** `MANDARI_DB_PGBOUNCER=true` (Issue #1060). Der Schalter stellt die
+Anwendung auf den Transaktionsmodus ein (keine serverseitigen Cursor für `.iterator()`, keine
+vorbereiteten Anweisungen); ihre Migrationen verbinden sich über `DB_DIRECT_URL` direkt.
+Die Anwendung nutzt bereits einen psycopg-Verbindungspool (#257); PgBouncer lohnt sich ab
+mehreren web-Servern, damit PostgreSQL nicht mit `max_connections` kollidiert. Im
+Transaktionsmodus sind sitzungsgebundene Funktionen (z. B. `SET` ohne `LOCAL`,
+Advisory-Sperren, `LISTEN`) nicht nutzbar – Website, Ingestor, Orchestrator und Worker
+verbinden sich deshalb **direkt** mit PostgreSQL (Port 5432); `DATA_PG_PORT` gilt nur für die
+Anwendung. Verbindungsrechnung, Einschalten und Rückweg: `DEPLOYMENT.md`, „PgBouncer für die
+Webanwendung“.
 
 Auch `LISTEN` funktioniert im Transaktionsmodus nicht: Die Meldungen landen bei einer fremden
 Serververbindung. Die Ereignistechnik (Sequenzierer und Zustellung, `apps/events`) hört deshalb
 auf einer eigenen Direktverbindung, sobald `EVENTS_DB_DIRECT_URL` gesetzt ist, etwa
 `postgresql://mandari:…@<DATA_HOST>:5432/mandari`; für den Dienst `worker` setzt `worker.yml` sie
-selbst. Alles andere – auch die Leader-Leases – läuft
-weiter über `DATABASE_URL`: Leases sind Tabellenzeilen, die innerhalb einer Transaktion geprüft
+selbst, obwohl dessen `DATABASE_URL` inzwischen ohnehin direkt verbindet. Zeigt `DATABASE_URL`
+eines Workers doch auf einen Pooler, läuft alles andere – auch die Leader-Leases – darüber:
+Leases sind Tabellenzeilen, die innerhalb einer Transaktion geprüft
 werden, sitzungsgebundene Sperren gibt es dort nicht. Fehlt die Einstellung hinter PgBouncer,
 erkennt der Listener das an seiner Selbstprüfung, protokolliert eine Warnung
 (`mandari_events_listener_up` = 0), und Sequenzierer und Zustellung fragen nur regelmäßig ab;

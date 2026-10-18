@@ -27,9 +27,12 @@ def test_rollen_decken_alle_dienste_genau_einmal() -> None:
 
 
 def test_basisdatei_bleibt_profilfrei() -> None:
+    """Außer den optionalen Diensten (PgBouncer, #1060) startet die Basisdatei alles ohne Profil."""
     modul = _lade_skript()
     basis = modul._lade(modul.BASIS)["services"]
-    assert basis and all("profiles" not in d for d in basis.values())
+    assert modul.OPTIONAL == {"pgbouncer": ["pgbouncer"]}
+    assert basis and all("profiles" not in d for n, d in basis.items() if n not in modul.OPTIONAL)
+    assert basis["pgbouncer"]["profiles"] == ["pgbouncer"]
     assert {
         "postgres",
         "redis",
@@ -49,7 +52,12 @@ def test_worker_dienst_wie_die_anwendung_mit_lebenszeichen() -> None:
     worker, anwendung = basis["worker"], basis["mandari"]
 
     assert worker["image"] == anwendung["image"]
-    assert worker["environment"] == anwendung["environment"], "Aufträge sehen dieselbe Konfiguration"
+    # Aufträge sehen dieselbe Konfiguration; eigen ist nur die Datenbankverbindung der Anwendung (#1060)
+    eigen = {"DATABASE_URL", "DB_PGBOUNCER", "DB_POOL_MAX", "DB_DIRECT_URL"}
+    assert {k: v for k, v in anwendung["environment"].items() if k not in eigen} == {
+        k: v for k, v in worker["environment"].items() if k not in eigen
+    }
+    assert not {"DB_PGBOUNCER", "DB_POOL_MAX", "DB_DIRECT_URL"} & set(worker["environment"])
     assert worker["volumes"] == anwendung["volumes"]
     assert worker["mem_limit"] == "1g", "Verwaltungsbefehle der Zeitpläne laufen als eigene Prozesse (#516)"
     befehl = worker["command"]
@@ -350,6 +358,67 @@ def test_rollen_worker_mit_direktverbindung_fuer_den_weckruf() -> None:
         dienste = modul._lade(modul.ROLLEN[rolle])["services"]
         assert dienste["worker"]["profiles"] == ["aus"]
         assert dienste["worker-heavy"]["profiles"] == ["aus"]
+
+
+def _direkt(url: str) -> bool:
+    """Verbindungsdaten direkt zu PostgreSQL (Dienst postgres bzw. Datenserver, Port 5432)."""
+    return bool(re.search(r"@(postgres|\$\{DATA_HOST:\?[^}]*\}):5432/", url))
+
+
+def test_pgbouncer_nur_fuer_die_anwendung() -> None:
+    """Issue #1060: Profil pgbouncer, Transaktionsmodus, nur intern; nur mandari geht darüber, alles andere direkt."""
+    modul = _lade_skript()
+    basis = modul._lade(modul.BASIS)["services"]
+    pgbouncer, anwendung = basis["pgbouncer"], basis["mandari"]
+
+    umgebung = pgbouncer["environment"]
+    assert umgebung["POOL_MODE"] == "transaction"
+    assert umgebung["DB_HOST"] == "postgres"
+    assert "MAX_PREPARED_STATEMENTS" not in umgebung, "die Anwendung bereitet nichts vor (prepare_threshold=None)"
+    assert "ports" not in pgbouncer, "kein Port nach außen"
+    assert pgbouncer["networks"] == ["mandari"]
+    assert "no-new-privileges:true" in pgbouncer["security_opt"]
+    assert pgbouncer["mem_limit"] and "pg_isready" in " ".join(pgbouncer["healthcheck"]["test"])
+    # Gleiches Image wie der CI-Job, der die Anwendung hinter PgBouncer prüft
+    ci = (SKRIPT.parents[1] / ".github" / "workflows" / "pr-check.yml").read_text(encoding="utf-8")
+    assert f"image: {pgbouncer['image']}" in ci
+
+    # Die Anwendung: Host und Schalter einstellbar, Vorgabe direkt; Migrationen über DB_DIRECT_URL direkt
+    app = anwendung["environment"]
+    assert "@${MANDARI_DB_HOST:-postgres}:5432/" in app["DATABASE_URL"]
+    assert app["DB_PGBOUNCER"] == "${MANDARI_DB_PGBOUNCER:-false}", "Standard bleibt aus"
+    assert app["DB_POOL_MAX"] == "${MANDARI_DB_POOL_MAX:-10}", "Vorgabe wie in settings.py"
+    assert _direkt(app["DB_DIRECT_URL"])
+    assert anwendung["depends_on"]["pgbouncer"] == {"condition": "service_healthy", "required": False}
+
+    # Alle anderen bleiben direkt, auch wenn sie die Umgebung über YAML-Anker erben
+    for name, dienst in basis.items():
+        if name in ("mandari", "pgbouncer"):
+            continue
+        umgebung = dienst.get("environment") or {}
+        url = umgebung.get("DATABASE_URL") or umgebung.get("WEBSITE_DATABASE_URL")
+        if url:
+            assert _direkt(url), name
+        assert "DB_PGBOUNCER" not in umgebung, name
+
+
+def test_rollen_mit_pgbouncer_nur_die_anwendung() -> None:
+    """Mehr-Server-Betrieb: Nur mandari folgt DATA_PG_PORT und setzt den Schalter; Website, Worker, Ingestor direkt."""
+    modul = _lade_skript()
+    web = modul._lade(modul.ROLLEN["web"])["services"]
+    assert "${DATA_PG_PORT:-5432}" in web["mandari"]["environment"]["DATABASE_URL"]
+    assert web["mandari"]["environment"]["DB_PGBOUNCER"] == "${MANDARI_DB_PGBOUNCER:-false}"
+    assert _direkt(web["mandari"]["environment"]["DB_DIRECT_URL"])
+    assert _direkt(web["website"]["environment"]["WEBSITE_DATABASE_URL"])
+    worker = modul._lade(modul.ROLLEN["worker"])["services"]
+    for name in ("worker", "worker-heavy", "worker-live", "ingestor", "minutes-orchestrator"):
+        assert _direkt(worker[name]["environment"]["DATABASE_URL"]), name
+    assert "DATA_PG_PORT" not in modul.ROLLEN["worker"].read_text(encoding="utf-8").split("services:", 1)[1]
+    for rolle in ("web", "worker"):
+        assert modul._lade(modul.ROLLEN[rolle])["services"]["pgbouncer"]["profiles"] == ["aus"]
+    daten = modul._lade(modul.ROLLEN["data"])["services"]["pgbouncer"]
+    assert daten["ports"] == ["${DATA_BIND:?DATA_BIND (private Adresse) fehlt}:6432:5432"], "nur an DATA_BIND"
+    assert "image" not in daten, "Image nur in der Basisdatei"
 
 
 def test_worker_lebt_meldung_erreicht_den_worker() -> None:

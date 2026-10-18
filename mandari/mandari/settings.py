@@ -6,6 +6,7 @@ Mandari Insight - Kommunalpolitische Transparenz
 """
 
 import os
+import sys
 import uuid
 from pathlib import Path
 
@@ -295,6 +296,18 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@lo
 # Remove +asyncpg suffix if present (from FastAPI config)
 DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
+# PgBouncer im Transaktionsmodus (Issue #1060): DATABASE_URL zeigt auf den Pooler. Was das an der
+# Verbindung ändert, steht unten beim Pool. Migrationen gehen nicht über den Pooler: Mit DB_DIRECT_URL
+# verbinden sich migrate und safemigrate direkt mit PostgreSQL (wie Worker und Ingestor), egal von wo
+# sie gestartet werden (update.sh, install.sh, deploy.sh, von Hand). Fehlt DB_DIRECT_URL, laufen sie
+# über den Pooler; jede Migration ist eine eigene Transaktion, das geht, ist aber nicht der Normalfall.
+DB_PGBOUNCER = os.environ.get("DB_PGBOUNCER", "false").strip().lower() in ("true", "1", "yes")
+DB_DIRECT_URL = os.environ.get("DB_DIRECT_URL", "").strip().replace("postgresql+asyncpg://", "postgresql://")
+DB_DIRECT_COMMANDS = ("migrate", "safemigrate")
+if DB_PGBOUNCER and DB_DIRECT_URL and len(sys.argv) > 1 and sys.argv[1] in DB_DIRECT_COMMANDS:
+    DATABASE_URL = DB_DIRECT_URL
+    DB_PGBOUNCER = False
+
 # Parse DATABASE_URL
 import dj_database_url
 
@@ -349,6 +362,28 @@ if DB_POOL_ENABLED and DATABASES["default"]["ENGINE"].endswith("postgresql"):
         "timeout": float(os.environ.get("DB_POOL_TIMEOUT", "5")),
         "max_lifetime": float(os.environ.get("DB_POOL_MAX_LIFETIME", "1800")),
     }
+
+# PgBouncer im Transaktionsmodus (Issue #1060, DB_PGBOUNCER=true)
+#
+# Hinter PgBouncer mit pool_mode = transaction bekommt jede Transaktion, ohne Transaktion jede
+# einzelne Anweisung, irgendeine freie Serververbindung. Was danach auf der Serververbindung
+# liegen bleibt, sieht die nächste Anweisung womöglich nicht mehr:
+#
+# - Serverseitige Cursor: ``.iterator()`` legt außerhalb einer Transaktion einen Cursor WITH HOLD an
+#   und holt die Zeilen blockweise. Kommt ein Block von einer anderen Serververbindung, scheitert er
+#   mit "cursor … does not exist". Ohne serverseitige Cursor holt ``.iterator()`` das Ergebnis auf
+#   einmal; große Ergebnisse brauchen dann mehr Speicher im Prozess.
+# - Vorbereitete Anweisungen: Django bindet Parameter auf der Clientseite und schaltet sie für
+#   psycopg 3 ohnehin ab. ``prepare_threshold = None`` legt das ausdrücklich fest; deshalb braucht
+#   PgBouncer kein ``max_prepared_statements``.
+#
+# Startparameter: libpq schickt nur user, database und client_encoding, die PgBouncer alle kennt;
+# ``ignore_startup_parameters`` braucht es nicht. Der Pool der Anwendung bleibt an: Er begrenzt die
+# Verbindungen je Prozess zu PgBouncer, PgBouncer die zu PostgreSQL (``default_pool_size``).
+# Verbindungsrechnung, Einschalten und Rückweg: DEPLOYMENT.md, „PgBouncer für die Webanwendung“.
+if DB_PGBOUNCER and DATABASES["default"]["ENGINE"].endswith("postgresql"):
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    DATABASES["default"].setdefault("OPTIONS", {})["prepare_threshold"] = None
 
 # Ereignistechnik (apps.events, Issue #505): Direktverbindung zu PostgreSQL für den Weckruf per
 # LISTEN. Nötig, wenn DATABASE_URL auf PgBouncer im Transaktionsmodus zeigt; dort kommen

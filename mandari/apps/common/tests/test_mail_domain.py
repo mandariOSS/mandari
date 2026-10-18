@@ -394,10 +394,13 @@ def test_compose_reicht_die_einstellungen_durch() -> None:
     assert umgebung["DEFAULT_FROM_EMAIL"] == "${DEFAULT_FROM_EMAIL:-}"
     for dienst in ("mandari", "worker", "worker-heavy"):
         eigene = compose["services"][dienst]["environment"]
-        # worker-heavy hat eine eigene Seitengrenze der Texterkennung (Dokumentkette #919, WORKER_HEAVY_OCR_MEMORY_LIMIT_MB);
-        # sonst dieselbe Liste
-        abweichend = {"OCR_MEMORY_LIMIT_MB"} if dienst == "worker-heavy" else set()
-        assert set(eigene) == set(umgebung), dienst
+        # worker-heavy hat eine eigene Seitengrenze der Texterkennung (Dokumentkette #919, WORKER_HEAVY_OCR_MEMORY_LIMIT_MB),
+        # die Anwendung eine eigene Datenbankverbindung (PgBouncer, #1060); sonst dieselbe Liste
+        abweichend = {
+            "worker-heavy": {"OCR_MEMORY_LIMIT_MB"},
+            "mandari": {"DATABASE_URL", "DB_PGBOUNCER", "DB_POOL_MAX", "DB_DIRECT_URL"},
+        }.get(dienst, set())
+        assert set(eigene) - abweichend == set(umgebung) - abweichend, dienst
         assert {k: v for k, v in eigene.items() if k not in abweichend} == {
             k: v for k, v in umgebung.items() if k not in abweichend
         }, dienst
