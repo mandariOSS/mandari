@@ -652,9 +652,10 @@
   .ke-mp small {
     @apply block text-xs font-normal text-gray-500 dark:text-gray-400;
   }
+  /* Mindestens 4,5:1 auch auf der hervorgehobenen Zeile (hover/focus: gray-100 bzw. dunkel gray-700) */
   .ke-mp kbd,
   .ke-hinweis {
-    @apply ml-auto pl-4 font-sans text-xs font-normal text-gray-500 dark:text-gray-400;
+    @apply ml-auto pl-4 font-sans text-xs font-normal text-gray-600 dark:text-gray-300;
   }
   .ke-mp-jetzt {
     @apply font-medium text-primary-700 dark:text-primary-300;

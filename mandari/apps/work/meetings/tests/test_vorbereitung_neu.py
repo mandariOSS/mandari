@@ -183,6 +183,26 @@ def test_bisherige_ansicht_bei_eingeschaltetem_schalter(
     assert "Zur neuen Ansicht" in html
 
 
+def test_knopfnamen_enthalten_den_sichtbaren_text(
+    org: Any, sitzung: OParlMeeting, make_member: Any, client_for: Any, schalter_an: None
+) -> None:
+    """
+    WCAG 2.5.3 (axe label-content-name-mismatch): „A−“/„A+“ stehen am Anfang des Namens; die TOP-Knöpfe nennen
+    Nummer und Titel, die sie zeigen (am Handy nur die Nummer), und trennen „… TOP“ und Nummer auch im Text.
+    """
+    member = make_member(org, ["meetings.prepare"], email="namen@example.org")
+    html = _seite(client_for(member.user), org, sitzung).content.decode()
+
+    assert 'aria-label="A−, Schrift kleiner" title="Schrift kleiner">A−</button>' in html
+    assert 'aria-label="A+, Schrift größer" title="Schrift größer">A+</button>' in html
+    for richtung, top in (("Voriger", "vorigerTop"), ("Nächster", "naechsterTop")):
+        tag = re.search(r'<button[^>]*@click="zuTop\(' + top + r'\)"[^>]*>', html)
+        assert tag, top
+        name = f":aria-label=\"{top} ? '{richtung} TOP ' + {top}.number + ' ' + {top}.name : '{richtung} TOP'\""
+        assert name in tag.group(0)
+        assert f"<small>{richtung} TOP</small> <b>" in html
+
+
 def test_ansehen_aendert_keine_gespeicherten_inhalte(
     org: Any, sitzung: OParlMeeting, make_member: Any, client_for: Any, schalter_an: None
 ) -> None:
