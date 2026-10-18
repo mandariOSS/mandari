@@ -8,8 +8,10 @@
 # Adresse. Der Weg zu den web-/worker-Servern gehört in ein privates Netz (VLAN, WireGuard).
 # Alle anderen Dienste sind hier abgeschaltet (Profil „aus“ wird nie aktiviert).
 #
-# Optional: PgBouncer als Verbindungs-Pooler, aktivieren mit COMPOSE_PROFILES=pgbouncer.
-# Web- und Worker-Server zeigen dann mit DATA_PG_PORT=6432 auf den Pooler.
+# Optional: PgBouncer als Verbindungs-Pooler, aktivieren mit COMPOSE_PROFILES=pgbouncer
+# (Dienst aus der Basisdatei, hier zusätzlich an DATA_BIND veröffentlicht). Nur die Anwendung
+# auf den web-Servern geht darüber (DATA_PG_PORT=6432 und MANDARI_DB_PGBOUNCER=true, siehe
+# web.yml); Website, Worker, Ingestor und Migrationen verbinden sich direkt (Port 5432).
 
 services:
   postgres:
@@ -24,31 +26,15 @@ services:
     ports:
       - "${DATA_BIND:?DATA_BIND (private Adresse) fehlt}:9200:9200"
 
+  # Image, Transaktionsmodus, Pool je Datenbank und Healthcheck aus der Basisdatei (Profil pgbouncer)
   pgbouncer:
-    image: edoburu/pgbouncer:v1.23.1-p1
-    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-pgbouncer
-    restart: unless-stopped
-    profiles: ["pgbouncer"]
     environment:
-      DB_HOST: postgres
-      DB_PORT: "5432"
-      DB_USER: ${POSTGRES_USER:-mandari}
-      DB_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      # Wie bisher alle Datenbanken über den Pooler
       DB_NAME: "*"
-      AUTH_TYPE: scram-sha-256
-      POOL_MODE: transaction
-      MAX_CLIENT_CONN: "500"
-      DEFAULT_POOL_SIZE: "20"
+      # Mehrere web-Server: Summe ihrer Pools (MANDARI_DB_POOL_MAX je Prozess mal Prozesse) mit Reserve
+      MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-500}
     ports:
       - "${DATA_BIND:?DATA_BIND (private Adresse) fehlt}:6432:5432"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - mandari
-    mem_limit: 128m
-    security_opt:
-      - no-new-privileges:true
 
   caddy:
     profiles: ["aus"]
