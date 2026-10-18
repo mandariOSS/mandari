@@ -15,7 +15,7 @@ from collections import Counter
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -89,6 +89,9 @@ from src.sync.slices import (
     slow_backoff,
     slow_windows,
 )
+
+if TYPE_CHECKING:
+    from src.scrapers.runner import ScraperSyncRunner
 
 # Quellen-Schonung (Issue #89): ab BACKOFF_AFTER_FAILURES Fehlversuchen in Folge
 # verdoppelt sich der Abstand bis zum nächsten Versuch (10, 20, 40 … Minuten,
@@ -654,12 +657,13 @@ class SyncOrchestrator:
         console.print(f"[green]Registered source: {source_name} (ID: {source_id})[/green]")
         return source_id
 
-    def _scraper_runner(self, source_row: Any) -> Any:
+    def _scraper_runner(self, source_row: Any) -> "ScraperSyncRunner | None":
         """
         ``ScraperSyncRunner`` für eine Scraper-Quelle (``sync_config["source_type"] = "scraper:<vendor>"``), sonst None.
 
         Scraper-Quellen laufen über den Runner statt über den OParl-Client; Zeitfenster und Mindestabstand des
-        Vollabgleichs (``_full_sync_plan``) gelten für sie nur im geplanten Vollabgleich des Daemons.
+        Vollabgleichs (``_full_sync_plan``) gelten für sie nur im geplanten Vollabgleich des Daemons. Zeitscheiben,
+        langsame Listen (``_slice_run``) und Vermerke „filtert nicht“ (``_filter_notes``) gibt es bei ihnen nicht.
         "bridge:*"-Quellen (z. B. oparl-bridge vor ALLRIS) sind normale OParl-Quellen und nehmen den Standardpfad.
         """
         if source_row is None or not isinstance(getattr(source_row, "sync_config", None), dict):

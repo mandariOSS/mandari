@@ -684,6 +684,8 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   (`details.full_sync_slices.without_modified`). Unter `details.full_sync_slices.lists` steht je Liste, wie viele
   Scheiben der Lauf gelesen hat, ob sie fertig ist und wo die nächste beginnt (`BodySlices.summary`).
 - Abstand (`full_sync_every_days`) und Takt je Server gelten unverändert.
+- Nur bei Quellen mit OParl-Schnittstelle: Bei Scraper-Quellen bleibt `full_sync_slices` ohne Wirkung, ihr
+  Vollabgleich ist ein vollständiger Crawl (`SyncOrchestrator._scraper_runner` vor `_slice_run`).
 
 ## Dokumente
 
