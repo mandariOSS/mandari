@@ -8,9 +8,11 @@ Blatt „Mehr“ (_leiste_unten.html). Einklappbar wie in Work (data-leiste="sch
 <aside id="session-navigation" aria-label="Navigation"
        class="rahmen-leiste hidden lg:flex print:!hidden fixed inset-y-0 left-0 z-40 w-60 flex-col overflow-y-auto overflow-x-hidden bg-band-grau pb-[env(safe-area-inset-bottom)]">
     <div class="h-12 shrink-0 flex items-center px-4">
-        <a href="{{ session_rahmen.start_url }}" class="inline-flex items-baseline gap-1 leading-none text-gray-900 dark:text-white" aria-label="mandari Sitzungsdienst, Start">
-            <span class="text-[1.05rem] font-bold tracking-tight">m<span class="rahmen-label">andari</span><span class="text-primary-600 dark:text-primary-400" aria-hidden="true">.</span></span>
-            <span class="rahmen-label text-[0.95rem] font-semibold text-primary-700 dark:text-primary-300">Session</span>
+        {# Name als Text statt aria-label, mit dem sichtbaren „Session“; schmal bleibt sichtbar nur „m.“ (WCAG 2.5.3) #}
+        <a href="{{ session_rahmen.start_url }}" class="inline-flex items-baseline gap-1 leading-none text-gray-900 dark:text-white">
+            <span class="text-[1.05rem] font-bold tracking-tight" aria-hidden="true">m<span class="rahmen-label">andari</span><span class="text-primary-600 dark:text-primary-400">.</span></span>
+            <span class="rahmen-label text-[0.95rem] font-semibold text-primary-700 dark:text-primary-300" aria-hidden="true">Session</span>
+            <span class="sr-only">mandari Session, Start</span>
         </a>
     </div>
 

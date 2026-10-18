@@ -3,12 +3,14 @@
 Zeile über dem Text im neuen Antragseditor: Dokumenttyp und Briefpapier (wie bisher im Kopf, hier auswählbar),
 Verfasserin bzw. Verfasser, Bezug (Änderungsantrag zu …) und der Weg zu allen Kommentaren.
 Kontext: motion, can_edit, is_guest, document_types, letterheads, bezug, comments; Alpine-Komponente documentEditor.
+Die Namen der beiden Knöpfe beginnen mit ihrem sichtbaren Text (WCAG 2.5.3), daher folgt aria-label dem gewählten Wert.
 {% endcomment %}
 <div class="ke-blattkopf">
     {% if can_edit and not is_guest %}
     <div class="relative">
         <button type="button" class="ke-blattkopf-knopf" data-menue-knopf="typ" @click="menueUmschalten('typ')" aria-haspopup="menu"
-                :aria-expanded="(menue === 'typ').toString()" aria-expanded="false" aria-label="Dokumenttyp ändern">
+                :aria-expanded="(menue === 'typ').toString()" aria-expanded="false"
+                aria-label="{{ motion.get_type_display }}, Dokumenttyp ändern" :aria-label="documentTypeName + ', Dokumenttyp ändern'">
             <span x-text="documentTypeName">{{ motion.get_type_display }}</span><i data-lucide="chevron-down" class="w-3.5 h-3.5" aria-hidden="true"></i>
         </button>
         <div x-show="menue === 'typ'" x-cloak class="ke-menue" role="menu" aria-label="Dokumenttyp">
@@ -22,7 +24,8 @@ Kontext: motion, can_edit, is_guest, document_types, letterheads, bezug, comment
     </div>
     <div class="relative">
         <button type="button" class="ke-blattkopf-knopf" data-menue-knopf="briefpapier" @click="menueUmschalten('briefpapier')" aria-haspopup="menu"
-                :aria-expanded="(menue === 'briefpapier').toString()" aria-expanded="false" aria-label="Briefpapier wählen">
+                :aria-expanded="(menue === 'briefpapier').toString()" aria-expanded="false"
+                aria-label="{{ motion.letterhead.name|default:'Kein Briefpapier' }}, Briefpapier wählen" :aria-label="letterheadName + ', Briefpapier wählen'">
             <i data-lucide="file-badge" class="w-3.5 h-3.5" aria-hidden="true"></i><span x-text="letterheadName">{{ motion.letterhead.name|default:'Kein Briefpapier' }}</span><i data-lucide="chevron-down" class="w-3.5 h-3.5" aria-hidden="true"></i>
         </button>
         <div x-show="menue === 'briefpapier'" x-cloak class="ke-menue" role="menu" aria-label="Briefpapier">
