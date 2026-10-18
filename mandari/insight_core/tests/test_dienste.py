@@ -22,10 +22,11 @@ from django.core.cache import cache
 from django.core.management import call_command
 from django.test import Client
 
+from hub.live.anbieter import http as live_http
 from insight_core.models import OParlBody, OParlSource, TileCache
-from insight_core.services import dienste, host_pacing, robots
+from insight_core.services import dienste, file_cache, host_pacing, person_photos, robots
 
-KENNUNG = "mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)"
+KENNUNG = "mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)"
 PNG = b"\x89PNG\r\n\x1a\nkachel"
 
 
@@ -85,6 +86,20 @@ def test_kennung_wie_bei_ris_abrufen_mit_infoseite_und_kontakt() -> None:
     assert dienste.USER_AGENT == robots.USER_AGENT
     assert dienste.headers() == {"User-Agent": KENNUNG}
     assert dienste.headers() is not dienste.headers(), "jeder Aufrufer bekommt ein eigenes Wörterbuch"
+
+
+def test_standard_kennung_der_anwendung_ohne_wort_crawler() -> None:
+    """Wortfilter auf „crawler“ beantworteten unsere Abrufe mit 403, solange die Infoseite /crawler/ hieß (#1061)."""
+    kennungen = {
+        robots.USER_AGENT,
+        file_cache.USER_AGENT,
+        person_photos.USER_AGENT,
+        dienste.USER_AGENT,
+        dienste.headers()["User-Agent"],
+        live_http.USER_AGENT,
+    }
+    assert kennungen == {KENNUNG}
+    assert "crawler" not in KENNUNG.lower()
 
 
 def test_nominatim_hoechstens_eine_anfrage_je_sekunde(takt: _Uhr) -> None:

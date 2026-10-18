@@ -57,6 +57,12 @@ setzen (Feld *User-Agent*, leer = Standard). Den Standard beschreibt
 `docs/SCRAPER_SOURCES.md`, Abschnitt Politeness. Die Vergleichsanfrage lässt sich mit
 `OPARL_UA_PROBE_ENABLED=false` abschalten.
 
+Häufiger Grund sind Wortfilter: Manche Server sperren Wörter wie „crawler“ oder „bot“ im User-Agent.
+Bis Oktober 2026 hieß unsere Infoseite `https://mandari.de/crawler/` und stand so seit #795 im
+User-Agent; mindestens ein Ratsinformationssystem antwortete deshalb mit 403. Seit #1061 heißt sie
+`https://mandari.de/ingestor/` (die alte Adresse leitet weiter), und der Standard-User-Agent enthält
+das Wort „crawler“ nicht mehr. Ein Test sichert das ab.
+
 Handlungsempfehlung bei „User-Agent gesperrt“: den Betreiber ansprechen. Neutraler Textvorschlag
 (Angaben in spitzen Klammern ersetzen):
 
@@ -111,8 +117,8 @@ Textextraktion, Dokument-Cache und Personenfotos lassen die Dateien in der Warte
 - **Nach geänderter robots.txt:** `manage.py robots_report --refresh --requeue` reiht übersprungene
   Dateien der Quellen neu ein, deren Dateien jetzt erlaubt sind.
 
-Der User-Agent nennt Infoseite und Kontakt (`mandari-ingestor/<Version> (+https://mandari.de/crawler/;
-support@mandari.de)`). Quellen, die das Wort der Infoseite im User-Agent filtern (#123), bekommen im
+Der User-Agent nennt Infoseite und Kontakt (`mandari-ingestor/<Version> (+https://mandari.de/ingestor/;
+support@mandari.de)`). Quellen, die ein Wort unserer Kennung im User-Agent filtern (#123), bekommen im
 Admin einen User-Agent je Quelle.
 
 ## CSP-Verstoßmeldungen

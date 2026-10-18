@@ -3,7 +3,7 @@
 Diese Seite beschreibt, wann und wie mandari Ratsinformationssysteme (RIS) abruft: mit welcher Kennung, in
 welchem Takt, welche Inhalte und wie Sie den Abruf drosseln, ausschließen oder uns erreichen. Sie richtet sich an
 Betreiber von Ratsinformationssystemen und an alle, die mandari selbst betreiben. Eine Kurzfassung für
-IT-Verantwortliche der Kommunen steht unter <https://mandari.de/crawler/>.
+IT-Verantwortliche der Kommunen steht unter <https://mandari.de/ingestor/>.
 
 Jede Aussage auf dieser Seite stammt aus dem Code oder der Konfiguration; die Fundstelle steht jeweils dabei.
 Stand: Code auf `dev` nach den Änderungen für [#1027](https://github.com/mandariOSS/mandari/issues/1027),
@@ -14,7 +14,7 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
 
 | Punkt | Regel |
 |---|---|
-| Kennung | `mandari-ingestor/<Version> (+https://mandari.de/crawler/; support@mandari.de)` |
+| Kennung | `mandari-ingestor/<Version> (+https://mandari.de/ingestor/; support@mandari.de)` |
 | robots.txt | RFC 9309; für uns gilt die Gruppe `mandari-ingestor`, ohne sie `*`; je Hostname 24 Stunden zwischengespeichert |
 | Takt | höchstens eine Anfrage je Sekunde und Server, über alle Abrufe von mandari zusammen; je Quelle nur langsamer |
 | Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
@@ -37,7 +37,7 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
   Zeitfenster legen (`full_sync_window`), seltener ausführen (`full_sync_every_days`), nur in Zeitscheiben ausführen
   (`full_sync_slices`) oder den Dateiabruf abschalten (`file_downloads`). Liegen mehrere Quellen auf Ihrem Server,
   setzen wir den Abstand bei allen.
-- **Kontakt:** support@mandari.de. Infoseite: <https://mandari.de/crawler/>.
+- **Kontakt:** support@mandari.de. Infoseite: <https://mandari.de/ingestor/>.
 
 ## Abruf-Adresse
 
@@ -134,9 +134,9 @@ sie aber aktiv an:
 
 | Abruf | User-Agent |
 |---|---|
-| Ingestor: Abgleich, Scraper, Texterkennung, Sondierung | `mandari-ingestor/<Version> (+https://mandari.de/crawler/; support@mandari.de)` |
-| Anwendung: Dokument-Cache, Vorschau, Löschabgleich, Personenfotos, Texterkennung, Quellenanlage | `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)` |
-| Anwendung: Live-Übertragung und Geodienste ([Andere Abrufe](#andere-abrufe)) | `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)` |
+| Ingestor: Abgleich, Scraper, Texterkennung, Sondierung | `mandari-ingestor/<Version> (+https://mandari.de/ingestor/; support@mandari.de)` |
+| Anwendung: Dokument-Cache, Vorschau, Löschabgleich, Personenfotos, Texterkennung, Quellenanlage | `mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)` |
+| Anwendung: Live-Übertragung und Geodienste ([Andere Abrufe](#andere-abrufe)) | `mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)` |
 
 - Die Version ist die Paketversion des Ingestors (`ingestor/pyproject.toml`, derzeit `0.1.0`;
   `ingestor/src/config.py`, `DEFAULT_USER_AGENT`). Aufbau, Infoseite und Kontaktadresse:
@@ -910,7 +910,7 @@ nach. Im Helm-Chart: `ingestor.extraEnv` bzw. `app.extraEnv`.
   Worker mit der Standardkennung samt support@mandari.de ab.
 - Die Abrufe der Anwendung (Dokument-Cache, Vorschau, Löschabgleich, Personenfotos, Quellenanlage, Live-Übertragung
   und Geodienste) melden sich mit der festen Kennung
-  `mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)`. Eine Umgebungsvariable dafür gibt es nicht;
+  `mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)`. Eine Umgebungsvariable dafür gibt es nicht;
   abweichend nur je Quelle über `sync_config["download_headers"]` (nicht für Quellenanlage, Live-Übertragung und
   Geodienste).
 - Das ältere Kommando `manage.py sync_daemon` der Anwendung gleicht alle aktiven Quellen gemeinsam ab, in festem
@@ -924,7 +924,7 @@ nach. Im Helm-Chart: `ingestor.extraEnv` bzw. `app.extraEnv`.
 ## Andere Abrufe
 
 Diese Abrufe gehen nicht an Ratsinformationssysteme. Sie melden sich mit derselben Kennung,
-`mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)`, und halten einen eigenen Takt je Server ein
+`mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)`, und halten einen eigenen Takt je Server ein
 (`mandari/insight_core/services/dienste.py`, `ABSTAND`), vor jeder Anfrage und vor jeder Weiterleitung. Der Takt
 nutzt denselben Zeitstempel in Redis wie die Abrufe bei Ratsinformationssystemen: Liegt ein Dienst auf dem Server
 eines RIS, etwa das Geoportal einer Kommune, teilen sich beide den Takt. Hat eine registrierte Quelle (auch eine

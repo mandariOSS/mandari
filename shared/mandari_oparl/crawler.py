@@ -18,8 +18,11 @@ PRODUCT_TOKEN = "mandari-ingestor"
 #: zählen sie nicht (kein Rückgriff auf ``*``), damit eine Gruppe für ``mandari-ingestor`` vor ``*`` gilt.
 LEGACY_TOKENS = ("mandari-file-cache", "mandari")
 
-#: Infoseite für Betreiber: was wir abrufen, wie oft, wie man uns drosselt oder ausschließt
-INFO_URL = "https://mandari.de/crawler/"
+#: Infoseite für Betreiber: was wir abrufen, wie oft, wie man uns drosselt oder ausschließt.
+#: Bewusst ohne das Wort „crawler“: Manche Ratsinformationssysteme filtern es im User-Agent und antworten
+#: mit 403. Bis Oktober 2026 hieß die Seite ``/crawler/`` (seit #795 im User-Agent); die Website leitet
+#: die alte Adresse auf diese weiter.
+INFO_URL = "https://mandari.de/ingestor/"
 
 #: Kontaktadresse für Betreiber
 CONTACT = "support@mandari.de"

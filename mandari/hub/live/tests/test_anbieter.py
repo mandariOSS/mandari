@@ -180,7 +180,7 @@ def test_abruf_nur_https_mit_user_agent_und_grenzen(monkeypatch: pytest.MonkeyPa
         with pytest.raises(AnbieterError, match="HTTP 500"):
             abruf.hole("https://a.example/kaputt", http=client)
     # Dieselbe Kennung mit Infoseite und Kontakt wie bei allen Abrufen (Issue #1036)
-    kennung = "mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)"
+    kennung = "mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)"
     assert gesehen[0].headers["User-Agent"] == kennung
     assert abruf.client().headers["User-Agent"] == kennung
 

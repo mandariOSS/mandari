@@ -193,7 +193,7 @@ Vollständige Dokumentation: **<https://docs.mandari.de>**
 | [Insight](https://docs.mandari.de/insight/) | Bürgerportal und OParl-Aggregations-API |
 | [Work](https://docs.mandari.de/work/) | Fraktionsarbeit, Fraktions-API, Anträge einreichen |
 | [Session](https://docs.mandari.de/session/) | Verwaltungs-RIS, OParl-API, Session-API v1, Beschlusskontrolle |
-| [Datenschutz](https://docs.mandari.de/datenschutz/) | Technische Maßnahmen, Löschkonzept, Muster-AVV, Crawler |
+| [Datenschutz](https://docs.mandari.de/datenschutz/) | Technische Maßnahmen, Löschkonzept, Muster-AVV, Ingestor und Opt-out |
 | [Entwicklung](https://docs.mandari.de/entwicklung/) | Qualitätsgates, Abhängigkeiten, Mitarbeit |
 
 Wann und wie mandari Ratsinformationssysteme abruft (Kennung, robots.txt, Takt je Server, Zeitfenster, Abruf-Adresse,

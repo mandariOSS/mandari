@@ -45,7 +45,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `LASTTESTS.md` | Betrieb → Größenempfehlungen und Lasttests (Seite folgt) |
 | `EREIGNISTECHNIK_NACHWEISE.md` | – (Zusagen der Ereignistechnik: Absturz-, Doppelzustellungs- und Lasttests mit Messwerten; Entwicklung und Betrieb) |
 | `SCRAPER_SOURCES.md` | [Betrieb → Quellen anbinden](https://docs.mandari.de/betrieb/quellen-anbinden/) |
-| `ABRUFREGELN.md` | [Datenschutz → Crawler und Opt-out](https://docs.mandari.de/datenschutz/crawler/) (wird nachgezogen), [mandari.de/crawler](https://mandari.de/crawler/) |
+| `ABRUFREGELN.md` | [Datenschutz → Ingestor und Opt-out](https://docs.mandari.de/datenschutz/ingestor/) (wird nachgezogen), [mandari.de/ingestor/](https://mandari.de/ingestor/) |
 | `DEMO_ENVIRONMENT.md` | [Betrieb → Demo-Umgebung](https://docs.mandari.de/betrieb/demo-umgebung/) |
 | `DEMO_PRAESENTATION.md` | – (Drehbuch für Produktvorstellungen, nur intern) |
 | `ACCOUNT_SECURITY.md` | [Work → Konto und Sicherheit](https://docs.mandari.de/work/konto-und-sicherheit/); Betrieb → Anmeldesicherheit (Seite folgt) |

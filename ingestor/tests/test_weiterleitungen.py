@@ -32,7 +32,7 @@ from src.extraction.extractor import TextExtractor
 from src.probe import ris_probe as rp
 from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError
 
-UA = "mandari-ingestor/1.0 (+https://mandari.de/crawler/; support@mandari.de)"
+UA = "mandari-ingestor/1.0 (+https://mandari.de/ingestor/; support@mandari.de)"
 SPERRT_ALLES = RobotsTxt.parse("User-agent: *\nDisallow: /\n")
 ERLAUBT_ALLES = RobotsTxt.parse("User-agent: *\nAllow: /\n")
 

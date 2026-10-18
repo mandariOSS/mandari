@@ -18,7 +18,7 @@ import pytest
 from src.probe import ris_probe as rp
 
 FIXTURES = Path(__file__).parent / "fixtures" / "ris"
-UA = "mandari-ingestor/1.0 (+https://mandari.de/crawler)"
+UA = "mandari-ingestor/1.0 (+https://mandari.de/ingestor/)"
 
 
 @pytest.mark.parametrize(
