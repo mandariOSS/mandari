@@ -11,6 +11,9 @@ Zusammenführung der Dokumentkette (#919) mit der Obergrenze des Dokument-Caches
 - Geschützt sind Dateien in der Texterkennung (auch eben beansprucht oder eingereiht), laufende Abrufe sowie
   verweigernde und nicht aktive Quellen.
 - ``cache_files`` lädt über den einen Abrufweg nur bis zur Grenze, auch bei der Ablage für alle.
+- Restpunkte aus der Prüfung (#990): Ein Dienst ohne Objektspeicher-Konfiguration ruft Inhalte mit ``remote_at`` nie bei
+  der Quelle ab (gestört statt fehlend), das Zurückholen lädt nur herunter, und der Zwischenspeicher
+  (``OBJ_CACHE_MAX_GB``) prüft wie die Obergrenze.
 """
 
 from __future__ import annotations
@@ -27,9 +30,11 @@ import pytest
 from botocore.exceptions import EndpointConnectionError
 from django.core.cache import cache
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client
 from django.utils import timezone
 
+from apps.common.einmalig import Sperre
 from apps.events.models import Task
 from hub.ris import abruf
 from insight_core.models import OParlBody, OParlFile, OParlFileBlob, OParlSource
@@ -435,6 +440,198 @@ class TestMitObjektspeicher:
         assert not Path(datei.local_path or "").exists()
         assert _status(datei) == ["ok"], "mit Objektspeicher bleibt die Datenbank unverändert"
         assert file_store.local_copy(OParlFile.objects.get(pk=datei.pk)).present
+
+
+# =============================================================================
+# Moduswechsel ohne Objektspeicher (#990): gestört statt fehlend
+# =============================================================================
+
+
+def _nur_im_objektspeicher(body: OParlBody, name: str) -> OParlFile:
+    """Abgelegt, laut Datenbank im Objektspeicher (``remote_at``) und lokal verdrängt; der Dienst hat keine ``OBJ_*``."""
+    datei = _abgelegt(body, name, alter_tage=3000)
+    OParlFileBlob.objects.filter(pk=datei.blob_id).update(remote_at=timezone.now())
+    Path(datei.local_path or "").unlink()
+    return datei
+
+
+class TestModuswechselOhneObjektspeicher:
+    @pytest.mark.parametrize("unvollstaendig", [False, True])
+    def test_kein_quellabruf(
+        self, body: OParlBody, quelle: dict[str, Any], settings: Any, unvollstaendig: bool
+    ) -> None:
+        datei = _nur_im_objektspeicher(body, "a")
+        if unvollstaendig:
+            # OBJ_ENABLED=true, aber eine Zugangsangabe fehlt: hier nicht konfiguriert
+            settings.OBJ_ENABLED = True
+            settings.OBJ_ENDPOINT, settings.OBJ_BUCKET, settings.OBJ_KEY, settings.OBJ_SECRET = (
+                ENDPUNKT,
+                BUCKET,
+                "k",
+                "",
+            )
+            assert not object_storage.enabled()
+
+        assert file_store.local_copy(datei).disturbed
+        assert abruf.abrufen(datei) == abruf.STORAGE_ERROR
+        response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
+        assert response.status_code == 503 and response["Retry-After"] == "300"
+        assert quelle["abrufe"] == [], "ein falsch konfigurierter Dienst löst keine Abrufwelle aus"
+        assert _status(datei) == ["ok"]
+        assert OParlFileBlob.objects.get(pk=datei.blob_id).remote_at is not None
+
+    def test_warnung_hoechstens_einmal_je_minute(
+        self, body: OParlBody, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        dateien = [_nur_im_objektspeicher(body, name) for name in ("a", "b", "c")]
+        monkeypatch.setattr(file_store, "_mode_warned_at", [])
+        with caplog.at_level("WARNING", logger=file_store.logger.name):
+            for datei in dateien:
+                assert file_store.local_copy(datei).disturbed
+        assert len([r for r in caplog.records if "nicht konfiguriert" in r.getMessage()]) == 1
+
+
+# =============================================================================
+# Zurückholen aus dem Objektspeicher (#990): nur herunterladen, nichts vergessen
+# =============================================================================
+
+
+def _zurueckholen() -> str:
+    # --trotz-zeitplan: Die Frage nach dem Zeitplan lädt die Zeitpläne einmal je Prozess, mit OBJ_ENABLED des Tests
+    out = StringIO()
+    call_command("dokumentablage", "--zurueckholen", "--trotz-zeitplan", stdout=out)
+    return out.getvalue()
+
+
+def _demo_body() -> OParlBody:
+    """Synthetische Quelle (wie die Demo): Die Kopie im Objektspeicher ist die einzige."""
+    source = OParlSource.objects.create(name="Demo", url="https://demo.invalid/oparl/system")
+    return OParlBody.objects.create(source=source, external_id="https://demo.invalid/oparl/body", name="Demo")
+
+
+class TestZurueckholen:
+    def test_holt_lokal_verdraengte_zurueck(self, objektspeicher: Any, quelle: dict[str, Any]) -> None:
+        datei = _hochgeladen(_demo_body(), "demo")
+        # Falscher Zähler (alter Code, Absturz): gezählt wird über die Verweise, nicht über ref_count
+        OParlFileBlob.objects.filter(pk=datei.blob_id).update(ref_count=0)
+        vermerk = OParlFileBlob.objects.get(pk=datei.blob_id).remote_at
+        pfad = Path(datei.local_path or "")
+        pfad.unlink()
+
+        assert "Zurückgeholt: geholt=1, offen=0" in _zurueckholen()
+        assert pfad.read_bytes() == _inhalt("demo")
+        assert OParlFileBlob.objects.get(pk=datei.blob_id).remote_at == vermerk, "nichts vermerkt"
+        assert _status(datei) == ["ok"] and quelle["abrufe"] == []
+
+    def test_nur_mit_objektspeicher(self, body: OParlBody) -> None:
+        with pytest.raises(CommandError, match="nicht eingeschaltet"):
+            _zurueckholen()
+
+    def test_falscher_bucket_vergisst_nichts(self, objektspeicher: Any, settings: Any) -> None:
+        """
+        Leerer bzw. falscher Bucket: Alles fehlt dort. Das Zurückholen bricht ab und lässt ``remote_at`` stehen; mit
+        ``OBJ_EVICT_MAX_MISSING=0`` läuft es über alle fehlenden hinweg, ebenfalls ohne Vermerke zu löschen.
+        """
+        settings.OBJ_EVICT_MAX_MISSING = 3
+        dateien = [_hochgeladen(_demo_body() if i == 0 else _body(), f"d{i}") for i in range(5)]
+        for datei in dateien:
+            Path(datei.local_path or "").unlink()
+        objektspeicher.create_bucket(Bucket="leer")
+        settings.OBJ_BUCKET = "leer"
+
+        out = _zurueckholen()
+        assert "fehlt=3" in out and "viele_fehlend=1" in out and "offen=5" in out
+        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 5, "der Vermerk bleibt"
+
+        settings.OBJ_EVICT_MAX_MISSING = 0
+        out = _zurueckholen()
+        assert "fehlt=5" in out and "offen=5" in out and "viele_fehlend" not in out
+        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 5
+        assert not any(Path(datei.local_path or "").exists() for datei in dateien)
+        assert _status(*dateien) == ["ok"] * 5
+
+
+# =============================================================================
+# Zwischenspeicher mit Objektspeicher (OBJ_CACHE_MAX_GB) prüft wie die Obergrenze (#990)
+# =============================================================================
+
+
+class TestZwischenspeicherWieObergrenze:
+    def test_fehlt_im_objektspeicher_bleibt_die_kopie(self, body: OParlBody, objektspeicher: Any) -> None:
+        datei = _hochgeladen(body, "a")
+        sha256 = str(datei.blob_id)
+        objektspeicher.delete_object(Bucket=BUCKET, Key=object_storage.key_for(sha256))
+
+        ergebnis = file_store.evict_local(max_bytes=0)
+        assert ergebnis["evicted"] == 0 and ergebnis["nicht_im_objektspeicher"] == 1
+        assert Path(datei.local_path or "").exists(), "nur remote_at zu glauben, löschte die einzige Kopie"
+        assert OParlFileBlob.objects.get(pk=sha256).remote_at is None, "lädt --hochladen erneut hoch"
+
+    def test_stoerung_verdraengt_nicht(
+        self, body: OParlBody, objektspeicher: Any, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        datei = _hochgeladen(body, "a")
+
+        def gestoert(**kwargs: Any) -> Any:
+            raise EndpointConnectionError(endpoint_url=ENDPUNKT)
+
+        monkeypatch.setattr(objektspeicher, "head_object", gestoert)
+        ergebnis = file_store.evict_local(max_bytes=0)
+        assert ergebnis["evicted"] == 0 and ergebnis["fehler"] == 1
+        assert Path(datei.local_path or "").exists()
+        assert OParlFileBlob.objects.get(pk=datei.blob_id).remote_at is not None, "eine Störung ist kein Fehlen"
+
+    def test_schutz_fuer_texterkennung_und_abruf(self, body: OParlBody, objektspeicher: Any) -> None:
+        wartet = _hochgeladen(body, "wartet")
+        OParlFile.objects.filter(pk=wartet.pk).update(text_extraction_status="pending")
+        eingereiht = _hochgeladen(body, "eingereiht")
+        Task.objects.create(
+            queue=text_extraction_job.TASK_QUEUE,
+            task_path=text_extraction_job.TASK_PATH,
+            args={"args": [str(eingereiht.pk)], "kwargs": {}},
+        )
+        holt = _hochgeladen(body, "holt")
+        OParlFile.objects.filter(pk=holt.pk).update(local_status="fetching")
+        frisch = _hochgeladen(body, "frisch")
+        OParlFile.objects.filter(pk=frisch.pk).update(local_cached_at=timezone.now())
+        frei = _hochgeladen(body, "frei")
+
+        ergebnis = file_store.evict_local(max_bytes=0)
+        assert ergebnis["evicted"] == 1
+        assert (ergebnis["texterkennung"], ergebnis["abruf"], ergebnis["frisch"]) == (2, 1, 1)
+        for datei in (wartet, eingereiht, holt, frisch):
+            assert Path(datei.local_path or "").exists(), datei.name
+        assert not Path(frei.local_path or "").exists()
+        assert _status(frei) == ["ok"], "mit Objektspeicher bleibt die Datenbank unverändert"
+
+    def test_falscher_bucket_bricht_nach_n_fehlenden_ab(
+        self, body: OParlBody, objektspeicher: Any, settings: Any
+    ) -> None:
+        """HEAD liefert bei falschem Bucket für alles 404: nicht jeden Inhalt abfragen und zurücksetzen (#990)."""
+        settings.OBJ_EVICT_MAX_MISSING = 3
+        dateien = [_hochgeladen(body, f"d{i}") for i in range(5)]
+        for datei in dateien:
+            objektspeicher.delete_object(Bucket=BUCKET, Key=object_storage.key_for(str(datei.blob_id)))
+
+        ergebnis = file_store.evict_local(max_bytes=0)
+        assert ergebnis["evicted"] == 0
+        assert (ergebnis["nicht_im_objektspeicher"], ergebnis["viele_fehlend"]) == (3, 1)
+        assert OParlFileBlob.objects.filter(remote_at__isnull=False).count() == 2, "der Rest bleibt unberührt"
+        assert all(Path(datei.local_path or "").exists() for datei in dateien)
+
+        # Auch die Obergrenze bricht ab (gemeinsamer Baustein)
+        OParlFileBlob.objects.update(remote_at=timezone.now())
+        ergebnis_grenze = file_cache_limit.enforce(max_bytes=1)
+        assert ergebnis_grenze.units == 0 and ergebnis_grenze.skipped["viele_fehlend"] == 1
+        assert ergebnis_grenze.verified == {"fehlt": 3}
+
+    def test_eine_sperre_mit_der_obergrenze(self, body: OParlBody, objektspeicher: Any) -> None:
+        datei = _hochgeladen(body, "a")
+        with Sperre(file_cache_limit.LOCK_NAME, 60) as erhalten:
+            assert erhalten
+            assert file_store.evict_local(max_bytes=0)["laeuft_schon"] == 1
+        assert Path(datei.local_path or "").exists()
+        assert file_store.evict_local(max_bytes=0)["evicted"] == 1
 
 
 # =============================================================================

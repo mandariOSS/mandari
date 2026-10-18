@@ -1,7 +1,8 @@
 {% comment %}
 Leiste unten, fest: Position der Fraktion (vier gleichrangige Werte als Optionsfelder, weitere unter „Andere …“,
 endgültig), Stand der Vorbereitung, voriger und nächster TOP. Am Handy: Knopf „Position“ (öffnet das Blatt) und
-TOP-Wechsel. Die Positionspunkte stehen immer mit Text.
+TOP-Wechsel. Die Positionspunkte stehen immer mit Text. Die Namen der TOP-Knöpfe nennen Nummer und Titel, sodass
+der sichtbare Text (am Handy nur die Nummer) im Namen steht (WCAG 2.5.3).
 {% endcomment %}
 <div class="vb-leiste wf-leiste" role="region" aria-label="Position und TOP-Wechsel">
     <template x-if="selectedItem">
@@ -35,13 +36,15 @@ TOP-Wechsel. Die Positionspunkte stehen immer mit Text.
     <span class="vb-stand" :title="standText"><span class="lang" x-text="standText"></span><span class="kurz" x-text="standKurz"></span></span>
     <nav class="wf-nachbarn" aria-label="TOP wechseln">
         <button type="button" class="wf-nachbar" @click="zuTop(vorigerTop)" :disabled="!vorigerTop" aria-label="Voriger TOP"
+                :aria-label="vorigerTop ? 'Voriger TOP ' + vorigerTop.number + ' ' + vorigerTop.name : 'Voriger TOP'"
                 :title="vorigerTop ? 'TOP ' + vorigerTop.number + ': ' + vorigerTop.name : ''">
             <i data-lucide="chevron-left" aria-hidden="true"></i>
-            <span><small>Voriger TOP</small><b><span x-text="vorigerTop ? vorigerTop.number : ''"></span><span class="t" x-text="vorigerTop ? ' ' + vorigerTop.name : ''"></span></b></span>
+            <span><small>Voriger TOP</small> <b><span x-text="vorigerTop ? vorigerTop.number : ''"></span><span class="t" x-text="vorigerTop ? ' ' + vorigerTop.name : ''"></span></b></span>
         </button>
         <button type="button" class="wf-nachbar weiter" @click="zuTop(naechsterTop)" :disabled="!naechsterTop" aria-label="Nächster TOP"
+                :aria-label="naechsterTop ? 'Nächster TOP ' + naechsterTop.number + ' ' + naechsterTop.name : 'Nächster TOP'"
                 :title="naechsterTop ? 'TOP ' + naechsterTop.number + ': ' + naechsterTop.name : ''">
-            <span><small>Nächster TOP</small><b><span x-text="naechsterTop ? naechsterTop.number : ''"></span><span class="t" x-text="naechsterTop ? ' ' + naechsterTop.name : ''"></span></b></span>
+            <span><small>Nächster TOP</small> <b><span x-text="naechsterTop ? naechsterTop.number : ''"></span><span class="t" x-text="naechsterTop ? ' ' + naechsterTop.name : ''"></span></b></span>
             <i data-lucide="chevron-right" aria-hidden="true"></i>
         </button>
     </nav>

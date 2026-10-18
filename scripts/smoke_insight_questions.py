@@ -24,6 +24,7 @@ import sys
 import tempfile
 from datetime import timedelta
 from pathlib import Path
+from types import SimpleNamespace
 
 # --- Umgebung VOR django.setup() konfigurieren -------------------------------
 PROJECT_DIR = Path(__file__).resolve().parent.parent / "mandari"
@@ -481,10 +482,16 @@ def make_png():
 
 
 class FakeResponse:
+    # Keine Weiterleitung: Fotoabrufe folgen ihnen selbst (insight_core/services/redirects.py, Issue #1027)
+    next_request = None
+
     def __init__(self, status, content=b"", ctype="image/png"):
         self.status_code = status
         self.content = content
         self.headers = {"content-type": ctype}
+
+    def close(self):
+        pass
 
 
 class FakeClient:
@@ -514,6 +521,14 @@ class FakeClient:
         if url.endswith("pe106.jpg"):
             return FakeResponse(500, b"", "text/html")
         return FakeResponse(200, make_png())
+
+    @staticmethod
+    def build_request(method, url, headers=None, **kwargs):
+        return SimpleNamespace(method=method, url=url, headers=headers or {})
+
+    def send(self, request, **kwargs):
+        # Fotoabrufe folgen Weiterleitungen selbst und senden dafür einzeln (insight_core/services/redirects.py)
+        return self.get(str(request.url), headers=request.headers)
 
 
 status = person_photos.fetch_person_photo(anna, client=FakeClient())

@@ -29,7 +29,8 @@ zuerst öffentlich gesperrt, nach einer Frist gelöscht.
   zu ``FILE_PURGE_CONFIRM_GRACE_DAYS`` (Standard 7) Tage und löschen danach ohne Rückfrage.
 
 Abgefragt werden nur Quellen, die nicht in Schonung sind und Dateiabrufe zulassen; die robots.txt der
-Quelle ist verbindlich (``services/file_robots.py``, Ausnahme nur mit Vermerk).
+Quelle ist verbindlich (``services/file_robots.py`` mit der gemeinsamen Auswertung aus ``services/robots.py``,
+Ausnahme nur mit Vermerk), auch für das Ziel jeder Weiterleitung (``services/redirects.py``, Issue #1027).
 
 Abgerufen wird über den einen Weg zur Quelle (``hub.ris.abruf``, Issue #919), für gesperrte Dokumente
 ausdrücklich (sonst gäbe es kein Entsperren). Der Abgleich lädt bewusst erneut, um Änderungen zu erkennen; einen
@@ -58,7 +59,7 @@ from mandari_oparl.abgleich import GONE_STATUS, THROTTLE_STATUS, brake_engaged, 
 
 from hub.ris import abruf
 
-from . import file_cache, file_robots
+from . import file_cache, file_robots, host_pacing, redirects, robots
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +226,12 @@ def _source_key(file_obj: Any) -> Any:
 
 
 class _Pacer:
-    """Mindestabstand zwischen zwei Anfragen an denselben Host."""
+    """
+    Mindestabstand zwischen zwei Anfragen an denselben Host in diesem Lauf (``--interval``). Zusätzlich reserviert
+    jede Anfrage ihren Zeitpunkt in der gemeinsamen Drossel je Host (``host_pacing`` in ``verify``/``head_check``,
+    Issue #1025): Der Abgleich zählt so zum Takt von höchstens einer Anfrage je Sekunde und Server, den auch Ingestor
+    und Dokument-Cache einhalten.
+    """
 
     def __init__(self, interval: float) -> None:
         self.interval = interval
@@ -315,9 +321,14 @@ def _source_usable(file_obj: Any) -> bool:
     return not (file_cache.source_paused(body) or file_cache.downloads_disabled(body))
 
 
-def _robots_allows(file_obj: Any, url: str, client: httpx.Client) -> bool:
+def _robots_allows(file_obj: Any, url: str) -> bool:
     source = getattr(file_obj.body, "source", None) if file_obj.body is not None else None
-    return file_robots.file_fetch_status(source, url, client) == file_robots.ALLOWED
+    return file_robots.file_fetch_status(source, url) == file_robots.ALLOWED
+
+
+def _before_redirect(file_obj: Any) -> redirects.BeforeRedirect:
+    """Weiterleitungen nur nach der robots.txt ihres Ziels und im Takt der Quelle (Issue #1027)."""
+    return redirects.guard(sync_config=robots.sync_config_of(file_obj))
 
 
 def _store_found(file_obj: Any, source: IO[bytes], content_type: str) -> None:
@@ -351,13 +362,23 @@ def verify(file_obj: Any, client: httpx.Client, *, now: datetime | None = None, 
     url = _url(file_obj)
     if not url or not _source_usable(file_obj):
         return SKIPPED
-    if not _robots_allows(file_obj, url, client):
+    if not _robots_allows(file_obj, url):
         return ROBOTS
     with tempfile.TemporaryFile() as tmp:
         try:
-            antwort = abruf.stream(client, url, tmp, headers=file_cache.download_headers(file_obj.body))
+            host_pacing.wait(url, sync_config=robots.sync_config_of(file_obj))  # gemeinsamer Takt je Host (#1025)
+            antwort = abruf.stream(
+                client,
+                url,
+                tmp,
+                headers=file_cache.download_headers(file_obj.body),
+                before_redirect=_before_redirect(file_obj),
+            )
         except abruf.TooLargeError:
             return ERROR
+        except redirects.RedirectBlockedError:
+            # Ziel einer Weiterleitung per robots.txt gesperrt (oder seine robots.txt nicht erreichbar)
+            return ROBOTS
         except httpx.HTTPError as exc:
             logger.info("Abgleich %s: %s", file_obj.pk, type(exc).__name__)
             return ERROR
@@ -402,11 +423,14 @@ def head_check(file_obj: Any, client: httpx.Client, *, now: datetime | None = No
     url = _url(file_obj)
     if not url or not _source_usable(file_obj):
         return SKIPPED
-    if not _robots_allows(file_obj, url, client):
+    if not _robots_allows(file_obj, url):
         return ROBOTS
     headers = file_cache.download_headers(file_obj.body)
     try:
-        response = abruf.head(client, url, headers=headers)
+        host_pacing.wait(url, sync_config=robots.sync_config_of(file_obj))  # gemeinsamer Takt je Host (#1025)
+        response = abruf.head(client, url, headers=headers, before_redirect=_before_redirect(file_obj))
+    except redirects.RedirectBlockedError:
+        return ROBOTS
     except httpx.HTTPError as exc:
         logger.info("Stichprobe %s: %s", file_obj.pk, type(exc).__name__)
         return ERROR

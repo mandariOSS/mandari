@@ -178,12 +178,14 @@ from django.views.decorators.clickjacking import xframe_options_exempt
 from hub.ris import abruf
 
 from .. import throttle
-from ..services import host_pacing, robots, safe_fetch
+from ..services import host_pacing, redirects, robots, safe_fetch
 
 logger = logging.getLogger(__name__)
 
 #: Gleichzeitige Abrufe beim Quell-RIS je Prozess: Langsame Quellen dürfen nicht alle Worker binden
 _LIVE_FETCH_SLOTS = threading.BoundedSemaphore(throttle.setting("FILE_PROXY_MAX_CONCURRENT"))
+#: Auf einen Abrufplatz wartet die Vorschau höchstens so lange, innerhalb der Frist ``FILE_PROXY_PACE_MAX_WAIT_SECONDS``
+_SLOT_MAX_WAIT_SECONDS = 2.0
 #: Bis zu dieser Größe bleibt ein Live-Abruf im Speicher, darüber in einer temporären Datei
 _SPOOL_BYTES = 2 * 1024 * 1024
 
@@ -366,7 +368,10 @@ def _deliver_file(request, file_obj):
         )
         response["Retry-After"] = "60"
         return response
-    if not _LIVE_FETCH_SLOTS.acquire(timeout=2):
+    # Eine Frist für alle Wartezeiten der Vorschau: auf einen Abrufplatz im Prozess (Issue #1036), auf robots.txt
+    # und Takt, auch für die Ziele von Weiterleitungen (#1027). Insgesamt höchstens FILE_PROXY_PACE_MAX_WAIT_SECONDS
+    deadline = redirects.deadline_after(_pace_max_wait())
+    if not _LIVE_FETCH_SLOTS.acquire(timeout=min(_SLOT_MAX_WAIT_SECONDS, redirects.remaining(deadline) or 0.0)):
         response = _file_proxy_error(
             "Gerade viele Abrufe",
             "Das Dokument lag noch nicht in unserem Zwischenspeicher, und gerade laufen viele Abrufe "
@@ -376,12 +381,21 @@ def _deliver_file(request, file_obj):
         response["Retry-After"] = "30"
         return response
     try:
-        blocked = _robots_or_pacing_blocked(file_obj, url)
+        # Dieselbe Frist: Was das Warten auf den Abrufplatz verbraucht hat, fehlt robots.txt und Takt
+        blocked = _robots_or_pacing_blocked(file_obj, url, deadline=deadline)
         if blocked is not None:
             return blocked
-        return _fetch_live(file_obj, url, filename, force_download)
+        return _fetch_live(file_obj, url, filename, force_download, deadline=deadline)
     finally:
         _LIVE_FETCH_SLOTS.release()
+
+
+def _pace_max_wait():
+    """
+    Höchstwartezeit der Vorschau (Sekunden) für den ganzen Abruf zusammen: Abrufplatz im Prozess, robots.txt, Takt
+    und Weiterleitungen (``FILE_PROXY_PACE_MAX_WAIT_SECONDS``, Standard 5).
+    """
+    return float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
 
 
 def _source_busy_response(url):
@@ -396,49 +410,58 @@ def _source_busy_response(url):
     return response
 
 
-def _robots_or_pacing_blocked(file_obj, url):
+def _robots_or_pacing_blocked(file_obj, url, *, deadline=None):
     """
     robots.txt und Drossel je Host vor dem Live-Abruf; ``None``: Abruf erlaubt und Zeitpunkt reserviert.
 
     Läuft erst nach Schonung, Drossel je IP und mit belegtem Abrufplatz: So wird eine geschonte Quelle nicht
     über ihre robots.txt angefragt, und es warten höchstens ``FILE_PROXY_MAX_CONCURRENT`` Threads je Prozess.
     Vor jedem Warten geht die Datenbankverbindung an den Pool zurück; robots.txt und Takt zusammen warten
-    höchstens ``FILE_PROXY_PACE_MAX_WAIT_SECONDS`` (sonst 503 mit ``Retry-After``).
+    höchstens bis ``deadline`` (``time.monotonic()``; ohne Angabe ``FILE_PROXY_PACE_MAX_WAIT_SECONDS`` ab jetzt),
+    sonst 503 mit ``Retry-After``. Dieselbe Frist gilt danach für die Weiterleitungen des Abrufs.
 
     robots.txt (RFC 9309) gilt auch für die Vorschau: gesperrte Dokumente rufen wir nicht selbst ab, sondern
     verweisen auf das Original.
     """
-    import time
-
     from apps.common.db_connections import release_idle_thread_connections
 
+    if deadline is None:
+        deadline = redirects.deadline_after(_pace_max_wait())
     # Einstellungen der Quelle lesen, solange die Verbindung noch da ist (die Quelle hängt danach am Body)
     sync_config = robots.sync_config_of(file_obj)
     agent = robots.user_agent_for(file_obj)
-    max_wait = float(getattr(settings, "FILE_PROXY_PACE_MAX_WAIT_SECONDS", 5))
-    deadline = time.monotonic() + max_wait
     release_idle_thread_connections()
     try:
-        decision = robots.check(url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=max_wait)
+        decision = robots.check(
+            url, robots.KIND_FILES, sync_config=sync_config, agent=agent, max_wait=redirects.remaining(deadline)
+        )
     except host_pacing.PacingBusyError:
         return _source_busy_response(url)
     if decision.allowed:
         # Drossel je Host über alle Prozesse: höchstens die verbleibende Zeit warten
-        if not host_pacing.wait(url, sync_config=sync_config, max_wait=max(0.0, deadline - time.monotonic())):
+        if not host_pacing.wait(url, sync_config=sync_config, max_wait=redirects.remaining(deadline)):
             return _source_busy_response(url)
         return None
     if decision.unreachable:
         # Dieselben Zustände wie der Abruf (Issue #919): Wiederholung, keine Sperre
         abruf.record_live_failure(file_obj, abruf.CODE_ROBOTS_UNREACHABLE, decision.reason)
-        response = _file_proxy_error(
-            "Dokument beim Ratsinformationssystem öffnen",
-            "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar. Wir rufen das "
-            "Dokument deshalb jetzt nicht selbst ab. " + _original_link(url),
-            status=503,
-        )
-        response["Retry-After"] = "900"
-        return response
+        return _robots_unreachable_response(url)
     abruf.record_live_failure(file_obj, abruf.CODE_ROBOTS, decision.reason)
+    return _robots_refused_response(url)
+
+
+def _robots_unreachable_response(url):
+    response = _file_proxy_error(
+        "Dokument beim Ratsinformationssystem öffnen",
+        "Die Abrufregeln (robots.txt) des Ratsinformationssystems sind gerade nicht erreichbar. Wir rufen das "
+        "Dokument deshalb jetzt nicht selbst ab. " + _original_link(url),
+        status=503,
+    )
+    response["Retry-After"] = "900"
+    return response
+
+
+def _robots_refused_response(url):
     return _file_proxy_error(
         "Dokument beim Ratsinformationssystem öffnen",
         "Diese Kommune untersagt automatische Abrufe ihrer Dokumente (robots.txt). Wir rufen das Dokument "
@@ -446,10 +469,11 @@ def _robots_or_pacing_blocked(file_obj, url):
     )
 
 
-def _fetch_live(file_obj, url, filename, force_download):
+def _fetch_live(file_obj, url, filename, force_download, *, deadline=None):
     """
     Datei beim Quell-RIS abrufen (``hub.ris.abruf``: Größe, Dauer und Ziel begrenzt) und ausliefern
     (Write-Through). Fehlschläge setzen dieselben Zustände wie der Abruf im Dokument-Cache (Issue #919).
+    Weiterleitungen warten höchstens bis ``deadline``, der Frist der Prüfung vorher (sonst 503 mit ``Retry-After``).
     """
     from django.http import FileResponse
 
@@ -468,7 +492,21 @@ def _fetch_live(file_obj, url, filename, force_download):
             spool,
             total_seconds=throttle.setting("FILE_PROXY_TOTAL_SECONDS"),
             read_timeout=read_timeout,
+            max_wait=_pace_max_wait(),
+            deadline=deadline,
         )
+    except redirects.RedirectBusyError:
+        # Für das Ziel einer Weiterleitung war kein Zeitpunkt frei: später erneut, kein Fehlschlag
+        spool.close()
+        return _source_busy_response(url)
+    except redirects.RedirectBlockedError as exc:
+        # Das Ziel einer Weiterleitung sperrt die robots.txt seines Hosts (Issue #1027): wie bei der Datei selbst
+        spool.close()
+        reason = f"{exc.decision.reason} (Ziel einer Weiterleitung)"
+        abruf.record_live_failure(file_obj, abruf.code_for_redirect(exc), reason)
+        if exc.decision.unreachable:
+            return _robots_unreachable_response(url)
+        return _robots_refused_response(url)
     except httpx.HTTPStatusError as e:
         spool.close()
         status = e.response.status_code

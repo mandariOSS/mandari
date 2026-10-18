@@ -127,7 +127,7 @@ mandari/
 │   ├── insight_core/ OParl-Datenmodelle, Suche, SEO
 │   ├── frontend/     TypeScript (Vite), Alpine-Komponenten
 │   └── templates/    Django-Templates und Komponentenbibliothek
-├── ingestor/         OParl-Synchronisation (httpx, SQLAlchemy, APScheduler)
+├── ingestor/         OParl-Synchronisation (httpx, SQLAlchemy, asyncio)
 ├── deploy/kubernetes/ Helm-Chart und Manifeste
 ├── docs/             Technische Notizen, Standards, Architekturentscheidungen
 └── scripts/          Qualitätsprüfungen und Werkzeuge
@@ -167,7 +167,7 @@ selbst betriebenen Installationen entsteht also keine zusätzliche Angriffsfläc
 |---------|-------------|
 | Backend | Django 6.1, Python 3.14 (Image; 3.12+ unterstützt) |
 | Frontend | Django-Templates, HTMX, Alpine.js, Tailwind CSS, Vite |
-| Ingestor | Python 3.14 (httpx, SQLAlchemy, APScheduler) |
+| Ingestor | Python 3.14 (httpx, SQLAlchemy, asyncio) |
 | Datenbank | PostgreSQL 16 |
 | Suche | Elasticsearch 8 (abschaltbar) |
 | Cache und Kanäle | Redis 7 |
@@ -193,8 +193,12 @@ Vollständige Dokumentation: **<https://docs.mandari.de>**
 | [Insight](https://docs.mandari.de/insight/) | Bürgerportal und OParl-Aggregations-API |
 | [Work](https://docs.mandari.de/work/) | Fraktionsarbeit, Fraktions-API, Anträge einreichen |
 | [Session](https://docs.mandari.de/session/) | Verwaltungs-RIS, OParl-API, Session-API v1, Beschlusskontrolle |
-| [Datenschutz](https://docs.mandari.de/datenschutz/) | Technische Maßnahmen, Löschkonzept, Muster-AVV, Crawler |
+| [Datenschutz](https://docs.mandari.de/datenschutz/) | Technische Maßnahmen, Löschkonzept, Muster-AVV, Ingestor und Opt-out |
 | [Entwicklung](https://docs.mandari.de/entwicklung/) | Qualitätsgates, Abhängigkeiten, Mitarbeit |
+
+Wann und wie mandari Ratsinformationssysteme abruft (Kennung, robots.txt, Takt je Server, Zeitfenster, Abruf-Adresse,
+Kontakt), beschreibt [`docs/ABRUFREGELN.md`](docs/ABRUFREGELN.md) für Betreiber von Ratsinformationssystemen und für
+Selbstbetreiber.
 
 ## Mitwirken
 

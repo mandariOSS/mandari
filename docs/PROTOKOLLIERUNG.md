@@ -40,7 +40,7 @@ Dabei gelten vier Grundsätze:
 | Entschädigungen | Jeder Posten eines Sitzungsgelds und jeder Monatspauschale einzeln: festgesetzt, genehmigt, ausgezahlt, storniert | Entschädigung festgesetzt/genehmigt/ausgezahlt/storniert |
 | Rollen und Rechte | Zuweisen und Entziehen von Rollen; Anlegen und Ändern einer Rolle mit erteilten und entzogenen Rechten; Rollen aus einer angenommenen Einladung mit der einladenden Person als Vergebende | Rollen geändert, Rechte geändert |
 | Einladungen und Zugänge | Einladen (Adresse, Rollen, Gültigkeit), erneut Senden, Zurückziehen, Annahme; Einreichungs-Zugänge anlegen (Name, Rechte, Ablauf – nie das Token) und zurückziehen | Erstellt, Geändert, Gelöscht |
-| Lesezugriffe | Ansicht nichtöffentlicher Sitzungen, TOPs, Vorlagen (auch früherer Fassungen) und Niederschriften; Abruf von Dokumenten mit nichtöffentlichem Inhalt | Angesehen, Heruntergeladen |
+| Lesezugriffe | Ansicht nichtöffentlicher Sitzungen, TOPs, Vorlagen (auch früherer Fassungen) und Niederschriften; Abruf von Dokumenten mit nichtöffentlichem Inhalt; nichtöffentliche Sitzungen und Vorlagen in Antworten der Session-API | Angesehen, Heruntergeladen |
 | Downloads | Jeder Download einer Anlage, einer früheren Fassung und einer Sitzungsmappe; nichtöffentliche sind gekennzeichnet | Heruntergeladen |
 | Anmeldungen | Anmeldung, Abmeldung, fehlgeschlagene Anmeldung (falsches Passwort, falscher zweiter Faktor) | Anmeldung, Abmeldung, Anmeldung fehlgeschlagen |
 | Zugriffe auf das Protokoll | Einsicht (mit Filter), Export (mit Prüfsumme), Kettenprüfung (mit Ergebnis), Archivierung | Protokoll eingesehen/exportiert/geprüft/archiviert |
@@ -58,6 +58,12 @@ Hash).
   nichtöffentliche Vorlage und ihre Fassungen, der nichtöffentliche Teil einer Niederschrift
   sowie erzeugte Dokumente mit nichtöffentlichem Inhalt (Tagesordnung, interne Niederschrift,
   Beschlussauszüge).
+- **Session-API:** Listen der Session-API (Sitzungen, Vorlagen) liefern Nichtöffentliches nur
+  angemeldeten Personen mit dem Recht dazu, nie API-Token. Je Abruf entsteht **ein** Lesezugriff, etwa
+  „Vorlagen (Session-API v1)“, mit Anzahl, Referenzen und Kennungen der nichtöffentlichen Objekte der
+  Antwort; so kostet auch eine Seite mit 200 Vorlagen nur einen Eintrag. Derselbe Abruf mit denselben
+  Objekten wird wie unten zusammengefasst, mit eigenem Merker getrennt von der Oberfläche. Der Filter
+  „Objekt“ der Protokollansicht findet diese Einträge nicht; die Kennungen stehen im Export (Issue #366).
 - **Nur die Referenz:** Statt eines Betreffs steht eine neutrale Beschreibung im Protokoll,
   etwa „Vorlage V/2026/0042“ oder „TOP N1, Sitzung vom 12.03.2026“. Inhalte werden nie
   gespeichert.
@@ -89,6 +95,11 @@ nutzen dieselbe Anmeldung.
   Adresse. Hat jemand versehentlich sein Passwort in das Feld für die E-Mail-Adresse getippt,
   ist es so ebenfalls nicht lesbar.
 - Fehler beim Protokollieren verhindern keine Anmeldung; sie werden im Betriebslog vermerkt.
+- **Anmeldeversuche für die Drosselung** (`LoginAttempt`: E-Mail-Adresse, IP-Adresse, Browserkennung,
+  Ergebnis) braucht die Anwendung nur für die Zählung der letzten 15 Minuten. Der Zeitplan
+  `befehl:purge_login_attempts` löscht sie täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage,
+  festgelegt durch den Betreiber am 16.10.2026, [PROTOKOLLE.md](PROTOKOLLE.md); 0 = keine Löschung, Issue #366). Die Einträge im
+  Sicherheits- und Mandantenprotokoll folgen ihren eigenen Fristen (Abschnitt 10).
 
 ## 5. Rechtsgrundlage (allgemeiner Hinweis)
 
@@ -122,7 +133,20 @@ Dienstvereinbarungen legt die Kommune fest. Dieses Konzept ersetzt keine Rechtsb
 ## 7. Manipulationsschutz: Hash-Kette
 
 Jeder Mandant hat eine eigene Kette, ebenso jede Fraktion (Änderungshistorie der
-Fraktionssitzungen im Work-Portal) und das Sicherheitsprotokoll.
+Fraktionssitzungen im Work-Portal) und das Sicherheitsprotokoll. In der Änderungshistorie der Fraktion
+stehen seit Issue #366 auch Rollen und Rechte: zugewiesene und entzogene Rollen einer Mitgliedschaft
+(auch aus Einladung, Selbstregistrierung und genehmigtem Änderungsantrag), zusätzliche und verweigerte
+Einzelrechte, Anlegen, Ändern, Zurücksetzen und Löschen einer Rolle mit erteilten und entzogenen Rechten,
+Deaktivieren, Reaktivieren, Freischalten und Entfernen einer Mitgliedschaft sowie die Vereidigung. Offene
+Registrierungsanfragen erscheinen erst mit der Freischaltung namentlich; eine abgelehnte Anfrage steht nur
+neutral als „Registrierungsanfrage“ mit ihrer internen Kennung im Protokoll, denn das Konto wird danach
+gelöscht.
+
+**Grenze:** Erfasst werden die Wege des Work-Portals (Mitgliederverwaltung, Rollen, Einladungen,
+Selbstregistrierung, Änderungsanträge). Rollen- und Rechteänderungen über die Django-Administration
+(Mitgliedschaften und Rollen), über Verwaltungsbefehle (`setup_roles`, `fix_permissions --fix`) und die
+Standardrollen beim Anlegen einer Organisation (`create_default_roles`) schreiben keinen Eintrag in die
+Änderungshistorie der Fraktion. Diese Wege sind dem Plattformbetrieb vorbehalten.
 
 - Jeder Eintrag erhält eine **laufende Nummer** (`seq`), den **Hash seines Vorgängers**
   (`prev_hash`; der erste Eintrag verweist auf 64 Nullen) und seinen **eigenen Hash**
@@ -212,8 +236,9 @@ Ein Eintrag aus dem JSON-Export lässt sich unabhängig von mandari prüfen:
 2. **Altbestand verketten:** einmal `python manage.py audit_chain_backfill`. Bis dahin bleiben
    Einträge des betroffenen Mandanten unverkettet; der Befehl hängt den Bestand in Zeitreihenfolge
    an und schaltet die Kette scharf. Er ist wiederholbar.
-3. **Regelmäßige Läufe:** `verify_audit_chain` täglich, `purge_security_audit_log` täglich,
-   `session_privacy_purge` monatlich (siehe DEPLOYMENT.md, „Geplante Aufgaben“).
+3. **Regelmäßige Läufe:** `verify_audit_chain` täglich, `purge_login_attempts` und
+   `purge_security_audit_log` täglich, `session_privacy_purge` monatlich (Zeitpläne im Worker, siehe
+   DEPLOYMENT.md, „Geplante Aufgaben“).
 4. **Rollen vergeben:** Revision und Datenschutz den zuständigen Personen zuweisen und prüfen,
    ob die Administrator-Rolle die Protokoll-Ansicht behalten soll.
 

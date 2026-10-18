@@ -462,7 +462,6 @@ def _oparl_ohne_pause(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(asyncio, "sleep", no_sleep)
     monkeypatch.setattr(settings, "circuit_breaker_enabled", False)
-    OParlClient._modified_since_unsupported.clear()
 
 
 def _liste_mit_folgeseite(folgeseite: Callable[[httpx.Request], httpx.Response]) -> Callable[..., httpx.Response]:

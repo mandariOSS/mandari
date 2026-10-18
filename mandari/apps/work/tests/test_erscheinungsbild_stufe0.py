@@ -322,9 +322,12 @@ class TestNavigation:
             'aria-label="Menü"',
             'aria-label="Dunkelmodus"',
             'aria-label="Benachrichtigungen"',
-            'aria-label="Benutzermenü"',
         ):
             assert name in kopf, name
+        # Benutzermenü: Der Name beginnt mit den sichtbaren Initialen (WCAG 2.5.3, axe label-content-name-mismatch)
+        benutzer = re.search(r'aria-label="([^"]+), Benutzermenü"[^>]*>\s*<div[^>]*>\s*([^<]+?)\s*</div>', kopf)
+        assert benutzer, "Benutzermenü ohne sichtbare Initialen am Anfang des Namens"
+        assert benutzer.group(1) == benutzer.group(2)
         menue = re.search(r"<button[^>]*x-ref=\"menuButton\"[^>]*>", kopf, re.S)
         assert menue and 'aria-controls="work-navigation"' in menue.group(0)
 

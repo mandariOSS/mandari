@@ -43,9 +43,9 @@ Anmerkungen je Seite rechts neben dem Blatt (organisationsweit, wie bisher). Am 
         <div class="vb-werkzeuge">
             <span class="vb-werkzeuge-pdf" x-show="aktiveUnterlage && aktiveUnterlage.istPdf">
                 <button type="button" class="wf-knopf wf-leise wf-klein" @click="zoomen(-1)" :disabled="zoomStufe === 0"
-                        aria-label="Schrift kleiner" title="Schrift kleiner">A−</button>
+                        aria-label="A−, Schrift kleiner" title="Schrift kleiner">A−</button>
                 <button type="button" class="wf-knopf wf-leise wf-klein" @click="zoomen(1)" :disabled="zoomStufe >= zoomMax"
-                        aria-label="Schrift größer" title="Schrift größer">A+</button>
+                        aria-label="A+, Schrift größer" title="Schrift größer">A+</button>
                 <button type="button" class="wf-knopf wf-leise wf-klein" @click="anmerkungenOffen = !anmerkungenOffen"
                         :aria-pressed="anmerkungenOffen ? 'true' : 'false'" title="Anmerkungen zu Seiten">
                     <i data-lucide="message-square-text" aria-hidden="true"></i>

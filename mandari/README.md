@@ -10,7 +10,7 @@ Mandari Insight ist eine Open-Source-Plattform für die Darstellung und Analyse 
 - **PostgreSQL 15+** - Datenbank
 - **Elasticsearch** - Volltextsuche
 - **Redis** - Caching und Sessions
-- **OpenAI-kompatibler KI-Anbieter mit Verarbeitung in Europa** - KI-Features (Zusammenfassungen, Chatbot),
+- **OpenAI-kompatibler KI-Anbieter (Vorlage oder eigener Endpunkt)** - KI-Features (Zusammenfassungen, Chatbot),
   eingerichtet im Admin unter „KI-Einstellungen“, nur Hosts aus `KI_ERLAUBTE_HOSTS`
 - **HTMX** - Interaktivität ohne JavaScript-Framework
 - **Alpine.js** - Leichtgewichtiges JavaScript
@@ -110,9 +110,15 @@ python -m src.main list-sources
 # Kommunen (Bodies) aller Quellen anzeigen
 python -m src.main list-bodies
 
-# Alle Quellen synchronisieren
+# Alle aktiven Quellen synchronisieren
 python -m src.main sync --all
 ```
+
+Neue Quellen sind inaktiv: `sync --all` und der Daemon gleichen sie erst ab, wenn sie im Admin
+aktiviert sind. Neu entdeckte Kommunen sind nicht gelistet und erscheinen im Bürgerportal erst,
+wenn sie im Admin gelistet sind (Issue #555). Ausnahme ist die eigene OParl-Schnittstelle eines
+Session-Mandanten, der die Veröffentlichung im Bürgerportal eingeschaltet hat: Ihre Quelle ist
+aktiv und ihre Kommune gleich gelistet.
 
 ## Lizenz
 

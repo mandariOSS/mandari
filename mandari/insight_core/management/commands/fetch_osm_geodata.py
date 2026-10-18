@@ -3,7 +3,9 @@
 Management Command: Geodaten von OpenStreetMap für eine Kommune abrufen.
 
 Verwendet die OSM Nominatim API um Zentrum und Bounding Box
-für eine OSM Relation ID abzurufen.
+für eine OSM Relation ID abzurufen. Nach den Nutzungsregeln von Nominatim höchstens eine
+Anfrage je Sekunde (Takt je Host, ``insight_core.services.dienste``, Issue #1036) und mit
+unserer Kennung samt Kontaktadresse.
 
 Usage:
     python manage.py fetch_osm_geodata --body-id <UUID> --osm-id <OSM_RELATION_ID>
@@ -16,6 +18,7 @@ import httpx
 from django.core.management.base import BaseCommand, CommandError
 
 from insight_core.models import OParlBody
+from insight_core.services import dienste
 
 
 class Command(BaseCommand):
@@ -49,10 +52,9 @@ class Command(BaseCommand):
             "addressdetails": 1,
         }
 
-        headers = {"User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"}
-
         try:
-            with httpx.Client(timeout=30.0, headers=headers) as client:
+            with httpx.Client(timeout=30.0, headers=dienste.headers()) as client:
+                dienste.warten(url, dienste.NOMINATIM)
                 response = client.get(url, params=params)
 
                 if response.status_code == 200:

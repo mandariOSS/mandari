@@ -315,6 +315,21 @@ class TestSchalter:
         assert html.count('class="ke-stufe-knopf"') == 4
         assert "<script>" not in html.split("document-editor-config")[1].split("</script>", 1)[1]
 
+    def test_blattkopf_knoepfe_beginnen_mit_ihrem_sichtbaren_text(
+        self, org: Any, motion: Motion, autorin: Any, client_for: Any, neues_design: None
+    ) -> None:
+        """Dokumenttyp und Briefpapier: Der Name beginnt mit dem angezeigten Wert (WCAG 2.5.3) und folgt der Auswahl."""
+        html = client_for(autorin.user).get(url(org, motion)).content.decode()
+        for knopf, sichtbar, wert, zweck in (
+            ("typ", motion.get_type_display(), "documentTypeName", "Dokumenttyp ändern"),
+            ("briefpapier", "Kein Briefpapier", "letterheadName", "Briefpapier wählen"),
+        ):
+            tag = re.search(r'<button[^>]*data-menue-knopf="' + knopf + r'"[^>]*>', html)
+            assert tag, knopf
+            assert f'aria-label="{sichtbar}, {zweck}"' in tag.group(0)
+            assert f":aria-label=\"{wert} + ', {zweck}'\"" in tag.group(0)
+            assert f'x-text="{wert}">{sichtbar}</span>' in html.split(tag.group(0), 1)[1].split("</button>", 1)[0]
+
     def test_bisherige_ansicht_bleibt_erreichbar(
         self, org: Any, motion: Motion, autorin: Any, client_for: Any, neues_design: None
     ) -> None:

@@ -72,8 +72,8 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `FILE_CACHE_MAX_TOTAL_GB` | 0 | Obergrenze der Gesamtgröße in GB, 0 = unbegrenzt (siehe [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße)) |
 | `FILE_CACHE_EVICT_TARGET_PERCENT` | 90 | Über der Obergrenze wird bis zu diesem Anteil der Grenze verdrängt (50 bis 100) |
 | `FILE_PROXY_TIMEOUT_SECONDS` | 15 | Lese-Timeout des Proxys für Live-Abrufe |
-| `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, 0 = aus) |
-| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange wartet die Vorschau höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After`. Die KI-Zusammenfassung lädt keine Dokumente (Issue #919). Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
+| `RIS_REQUEST_INTERVAL` | 1.0 | Drossel je Host: Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe RIS, gemeinsam mit dem Ingestor über Redis (je Quelle: `sync_config.request_interval`, nur langsamer: Werte unter 1 s gelten als 1 s; `0` hier = Drossel aus, nur Tests und Notfälle) |
+| `FILE_PROXY_PACE_MAX_WAIT_SECONDS` | 5 | So lange wartet die Vorschau höchstens auf ihren Zeitpunkt (samt Abruf einer noch nicht zwischengespeicherten robots.txt), sonst HTTP 503 mit `Retry-After`. Die Frist gilt für den ganzen Abruf: Weiterleitungen (robots.txt des Ziels, Takt) warten nur noch die Restzeit. Die KI-Zusammenfassung lädt keine Dokumente (Issue #919). Gewartet wird mit belegtem Abrufplatz (`FILE_PROXY_MAX_CONCURRENT`) und ohne gehaltene Datenbankverbindung |
 | `INSIGHT_SOURCE_BACKOFF_FAILURES` | 3 | Ab so vielen Sync-Fehlversuchen in Folge werden Cache-Nachladen und Live-Abruf für die Quelle pausiert |
 | `FILE_STORE_LAYOUT` | `sha256` | Ablage nach SHA-256 mit Referenzzählung; `kommune` = bisheriges Layout je Kommune |
 | `INGESTOR_STORES_FILES` | `false` (Compose: `true`) | Der Ingestor legt Dateien selbst ab; `cache_files` holt Dateien in der Texterkennung nicht nach. Mit `TEXT_EXTRACTION_RUNNER=worker` ohne Wirkung |
@@ -82,6 +82,7 @@ Jahre ab; die Aufteilung je Stadt ist über das Verzeichnislayout jederzeit mög
 | `DOCUMENT_FETCH_RETRY_ALERT_HOURS` | 6 | Prüfung `dokumentabruf` in `/health/worker/`: rot, wenn fällige Wiederholungen länger liegen |
 | `OBJ_ENABLED` | `false` | S3-kompatibler Objektspeicher (siehe [Objektspeicher](#objektspeicher)) |
 | `OBJ_CACHE_MAX_GB` | 60 | Größe des lokalen Zwischenspeichers bei eingeschaltetem Objektspeicher |
+| `OBJ_EVICT_MAX_MISSING` | 20 | Verdrängen bricht ab, wenn so viele Inhalte in Folge im Objektspeicher fehlen (falscher Bucket; `0` = ohne Grenze) |
 | `FILE_PURGE_AFTER_DAYS` | 30 | Kopie und Text gesperrter Dokumente nach so vielen Tagen löschen (Löschabgleich) |
 | `FILE_PURGE_CONFIRM_GRACE_DAYS` | 7 | Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich |
 | `FILE_RECONCILE_MAX_MISSING` | 10 | Bremse des Löschabgleichs: Liefern in einem Lauf mehr Dokumente einer Quelle neu `404`/`410`, wird keines gesperrt |
@@ -211,10 +212,10 @@ vorher der Abruf (oben).
   `pending` oder aus `completed` mit älterer Version. Von zwei Aufträgen derselben Datei erkennt einer.
 - **Lesen:** Fehlt der Inhalt bestätigt (weder lokal noch im Objektspeicher), geht die Datei zurück an den Abruf
   (`local_status = none`) und die Erkennung auf den Stand davor. Ist die Ablage gestört (Objektspeicher antwortet
-  nicht, Ablage nicht eingehängt, Platte voll) oder die Umgebung (Datenbank beim Speichern, kein Platz für
-  Zwischendateien der Erkennung), bleibt alles, wie es war, und derselbe Auftrag läuft 15 Minuten später erneut –
-  kein Abruf bei der Quelle, kein Versuch gezählt. Fehlt bei Altbestand der SHA-256, berechnet ihn
-  der Auftrag und trägt ihn nach.
+  nicht oder ist im Worker nicht konfiguriert, Ablage nicht eingehängt, Platte voll) oder die Umgebung (Datenbank
+  beim Speichern, kein Platz für Zwischendateien der Erkennung), bleibt alles, wie es war, und derselbe Auftrag läuft
+  15 Minuten später erneut – kein Abruf bei der Quelle, kein Versuch gezählt. Fehlt bei Altbestand der SHA-256,
+  berechnet ihn der Auftrag und trägt ihn nach.
 - **Zustände der Erkennung:** `failed` heißt nur noch „Inhalt nicht lesbar“ oder „Speichergrenze“; ein Abruffehler
   ändert die Erkennung nie. Endet der Abruf an der Größengrenze (`too_large`), wird die Erkennung `skipped`.
 - **Bedingt speichern:** Der Text wird nur geschrieben, wenn der Inhalt noch derselbe ist (`sha256_hash`), die Datei
@@ -343,11 +344,21 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
 - `dokumentablage --hochladen` lädt Inhalte ohne Kopie im Objektspeicher hoch (`remote_at`).
 - Die lokale Ablage wird zum **Zwischenspeicher**: `dokumentablage --aufraeumen` verdrängt bei mehr als
   `OBJ_CACHE_MAX_GB` (Standard 60) die am längsten nicht gelesenen Inhalte – nur solche, die sicher im Objektspeicher
-  liegen. Eine kleinere [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) (`FILE_CACHE_MAX_TOTAL_GB`) wirkt
-  zusätzlich. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der Zugriffszeit (`atime`) der Datei,
-  höchstens einmal je Stunde. Die Änderungszeit bleibt unberührt, denn aus ihr bildet der Webserver `ETag` und
-  `Last-Modified`; so greifen bedingte Anfragen und Range-Anfragen mit `If-Range` weiter. Ein Mount mit
-  `noatime` stört nicht, die Zeit wird ausdrücklich gesetzt.
+  liegen. Geprüft wird wie bei der [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) (Issue #990): Vor dem
+  Löschen fragt der Lauf per `HEAD` nach, ob der Inhalt mit seiner Größe im Objektspeicher liegt; fehlt er oder weicht
+  die Größe ab, bleibt die Kopie, und `remote_at` wird zurückgesetzt (das nächste `--hochladen` überträgt ihn erneut),
+  eine Störung bricht den Lauf ab. Fehlen `OBJ_EVICT_MAX_MISSING` (Standard 20) Inhalte in Folge, bricht der Lauf
+  ebenfalls ab (Ausgabe `viele_fehlend`, Protokoll „OBJ_BUCKET prüfen“): Ein falscher Bucket beantwortet `HEAD` für
+  alles mit 404, und ohne diese Grenze fragte ein Lauf jeden lokalen Inhalt ab und setzte überall `remote_at` zurück.
+  Dasselbe gilt für die Obergrenze. Es bleiben außerdem Inhalte, deren Text erkannt wird oder darauf wartet (auch ein
+  eingereihter Auftrag `file.extract_text`), Dokumente, die gerade abgerufen werden, und Kopien aus der letzten Stunde;
+  unter der Zeilensperre wird das nachgeprüft. Zeitplan, Obergrenze und `prune_file_cache` teilen eine Sperre und
+  verdrängen nie gleichzeitig. Die Ausgabe nennt je Grund, wie viele Inhalte blieben (etwa `texterkennung`,
+  `nicht_hochgeladen`, `nicht_im_objektspeicher`, `fehler` bei einer Störung). Eine kleinere Obergrenze
+  (`FILE_CACHE_MAX_TOTAL_GB`) wirkt zusätzlich. Jeder Abruf über die Vorschau vermerkt den letzten Zugriff in der
+  Zugriffszeit (`atime`) der Datei, höchstens einmal je Stunde. Die Änderungszeit bleibt unberührt, denn aus ihr
+  bildet der Webserver `ETag` und `Last-Modified`; so greifen bedingte Anfragen und Range-Anfragen mit `If-Range`
+  weiter. Ein Mount mit `noatime` stört nicht, die Zeit wird ausdrücklich gesetzt.
 - Ein neuer Inhalt geht im selben Abruf in den Objektspeicher (`cache_files`, Löschabgleich, Admin-Aktion; Issue
   #919), der Zeitplan holt nur Altbestand und gescheiterte Uploads nach. Die Vorschau legt ab, ohne in der Anfrage
   hochzuladen; verdrängt wird ohnehin nur, was im Objektspeicher liegt.
@@ -357,13 +368,18 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   (`file_store.local_copy`, `object_storage.exists`: vorhanden, fehlt, gestört): Antwortet der Objektspeicher
   nicht, ist er zu langsam oder die Ablage nicht eingehängt, ruft niemand bei der Quelle ab – die Vorschau
   antwortet mit 503 und `Retry-After`, der Abruf versucht es später. Eine Störung des Objektspeichers löst so nie
-  eine Abrufwelle bei den Kommunen aus. Nur ein bestätigtes Fehlen (404 im Objektspeicher, falscher Hash) setzt
-  die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files` neu, und der Inhalt wird neu hochgeladen.
+  eine Abrufwelle bei den Kommunen aus. Gestört ist auch ein Inhalt, der laut Datenbank im Objektspeicher liegt
+  (`remote_at`), während der Container ihn nicht konfiguriert hat (`OBJ_ENABLED=false`, fehlende `OBJ_*`;
+  **Moduswechsel**, Issue #990): Vorschau, Abruf und Texterkennung warten dann, statt bei der Quelle abzurufen, und
+  das Protokoll warnt höchstens einmal je Minute und Prozess. Ein falsch konfigurierter Dienst löst so keine
+  Abrufwelle aus; ein Ausschalten des Objektspeichers ist derzeit nicht vorgesehen (unten). Nur ein bestätigtes Fehlen
+  (404 im Objektspeicher, falscher Hash) setzt die Datei auf `none`; dann holt sie die Vorschau bzw. `cache_files`
+  neu, und der Inhalt wird neu hochgeladen.
   **Betriebsrisiko:** Zeigen `OBJ_BUCKET` oder das Schlüsselschema auf einen Bestand, in dem die Inhalte (noch)
   nicht liegen – etwa bei einem Umzug des Objektspeichers –, gilt jeder lokal verdrängte Inhalt als bestätigt
-  fehlend und wird bei der Quelle neu geholt. Eine Bremse für gehäufte Fehlbestände gibt es noch nicht (Hinweis
-  für Etappe 3). Deshalb vor jedem Wechsel den Bestand im neuen Ziel vollständig bereitstellen und mit Stichproben
-  prüfen, dann erst umstellen.
+  fehlend und wird bei der Quelle neu geholt. Das Verdrängen selbst löscht dann keine lokale Kopie mehr (Prüfung per
+  `HEAD`, oben). Eine Bremse für gehäufte Fehlbestände gibt es noch nicht (Hinweis für Etappe 3). Deshalb vor jedem
+  Wechsel den Bestand im neuen Ziel vollständig bereitstellen und mit Stichproben prüfen, dann erst umstellen.
 - **Prüfsummen:** boto3 sendet seit 1.36 standardmäßig Prüfsummen im `aws-chunked`-Verfahren, was manche
   S3-kompatiblen Anbieter ablehnen. `OBJ_CHECKSUMS=when_required` (Standard) verhält sich wie frühere Versionen.
   Beim ersten Test mit dem echten Bucket Hochladen, Holen und Löschen prüfen; nur wenn der Anbieter es verlangt,
@@ -376,11 +392,34 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
 - Reihenfolge beim Einschalten: Bestand umstellen (`--umstellen`), Zugangsdaten setzen, `OBJ_ENABLED=true`,
   Neustart, `dokumentablage --hochladen --trotz-zeitplan` bis nichts mehr offen ist. Danach lädt der Zeitplan
   `befehl:dokumentablage` vor jedem Aufräumen selbst hoch (`--hochladen --aufraeumen`, solange `OBJ_ENABLED` gesetzt ist).
-- Ausschalten: `OBJ_ENABLED=false`. Lokal verdrängte Inhalte gelten dann als fehlend; die Vorschau holt sie von der
-  Quelle, `cache_files` lädt sie nach. Verwaiste Inhalte, die schon im Objektspeicher liegen, bleiben dort, solange er aus ist
-  (`remote_kept` beim Aufräumen); das nächste Aufräumen mit eingeschaltetem Objektspeicher löscht sie. Eine
-  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus, solange Inhalte laut Datenbank im
-  Objektspeicher liegen (siehe dort, „Moduswechsel“).
+- **Ausschalten ist derzeit nicht vorgesehen** (Issue #990). Inhalte mit `remote_at` bleiben in einem Container
+  ohne Objektspeicher-Konfiguration (`OBJ_ENABLED=false` oder unvollständige `OBJ_*`) „gestört“ (Moduswechsel, oben):
+  Die Vorschau antwortet mit 503, die Texterkennung wartet, niemand ruft bei der Quelle ab, bis der Objektspeicher
+  wieder konfiguriert ist. Es gibt also keine Abrufwelle, aber auch keinen Rückweg ohne ihn. Verwaiste Inhalte, die
+  schon im Objektspeicher liegen, bleiben dort, solange er aus ist (`remote_kept` beim Aufräumen); eine
+  [Obergrenze der Gesamtgröße](#obergrenze-der-gesamtgröße) setzt aus (siehe dort, „Moduswechsel“). Einen geprüften
+  Weg, den Objektspeicher aufzugeben, gibt es erst mit einem eigenen Schritt (Folgepunkt in Issue #919).
+  **Den Bucket nicht löschen, solange Vermerke `remote_at` bestehen** (`dokumentablage` nennt „im Objektspeicher
+  N“): Für lokal verdrängte Inhalte ist er die einzige Kopie. Wechseln nur, wenn der Bestand im neuen Ziel
+  vollständig bereitsteht („Betriebsrisiko“, oben). Im Mehr-Server-Betrieb
+  (`docs/MEHR_SERVER_BETRIEB.md`) brauchen alle Dienste, die Dokumente lesen, dieselben `OBJ_*`; ohne Objektspeicher
+  geht Mehr-Server-Betrieb nur mit gemeinsamer Ablage.
+- **Zurückholen** (`dokumentablage --zurueckholen --limit 5000 --trotz-zeitplan`, nur mit eingeschaltetem
+  Objektspeicher): holt lokal verdrängte Inhalte aus dem Objektspeicher in die lokale Ablage, etwa um sie vor einer
+  Wartung des Objektspeichers lokal vorzuhalten. Es lädt nur herunter (mit Hashprüfung, über
+  `FILE_CACHE_MIN_FREE_GB`) und ändert nichts in der Datenbank: Ein Inhalt, der im Objektspeicher fehlt, behält seinen
+  Vermerk `remote_at` und bleibt „offen“. Die Ausgabe nennt `geholt`, `fehlt`, `offen` und `gestoert`; `--limit`
+  zählt geholte Inhalte. Nach `OBJ_EVICT_MAX_MISSING` fehlenden Inhalten in Folge bricht der Lauf ab
+  (`viele_fehlend`, meist ein falscher `OBJ_BUCKET`). Fehlen dagegen wirklich einzelne Inhalte, bräche jeder Lauf an
+  denselben ab; dann für diesen Lauf `OBJ_EVICT_MAX_MISSING=0` setzen:
+
+  ```bash
+  docker compose exec -e OBJ_EVICT_MAX_MISSING=0 mandari python manage.py dokumentablage --zurueckholen --trotz-zeitplan
+  ```
+
+  Vorher `OBJ_CACHE_MAX_GB` (und eine Obergrenze `FILE_CACHE_MAX_TOTAL_GB`) über den Bestand
+  heben, sonst verdrängt das stündliche Aufräumen das Zurückgeholte wieder; `cache_files --stats` nennt die Größe im
+  Objektspeicher.
 
 ### Obergrenze der Gesamtgröße
 
@@ -408,8 +447,8 @@ Ohne weitere Einstellung wächst die Ablage, bis `FILE_CACHE_MIN_FREE_GB` greift
   gestört, siehe [Zustände des Abrufs](#zustände-des-abrufs)). Die Datenbank bleibt unverändert, die Dokumente
   bleiben „Lokal vorhanden“; Vorschau und Texterkennung holen den Inhalt bei Bedarf aus dem Objektspeicher
   (`file_store.local_copy`), nie von der Quelle. Noch nicht hochgeladene Inhalte bleiben, bis `--hochladen` sie
-  übertragen hat. `OBJ_CACHE_MAX_GB` wirkt daneben weiter (nach der Zugriffszeit der Datei); es gilt die kleinere
-  Grenze.
+  übertragen hat. `OBJ_CACHE_MAX_GB` wirkt daneben weiter (nach der Zugriffszeit der Datei, mit denselben Prüfungen
+  und Schutzgründen, siehe [Objektspeicher](#objektspeicher)); es gilt die kleinere Grenze.
 - **Ohne Objektspeicher:** Alle Dokumente eines Inhalts geben ihre Referenz gemeinsam frei und gehen auf
   „Verdrängt“ (`local_status=evicted`); danach verweist kein Dokument mehr auf den Inhalt, und er wird gelöscht.
   `evicted` ist kein Zustand, aus dem der Abruf von selbst beansprucht: Weder `cache_files` noch das
@@ -435,14 +474,20 @@ Ohne weitere Einstellung wächst die Ablage, bis `FILE_CACHE_MIN_FREE_GB` greift
   mit HTTP 401/403 endete. Das ist bewusst grob: Ein einziges solches Dokument schützt die ganze Quelle; eine
   Freigabe (`robots_override`, `dokumentkette freigeben`) bzw. ein gelungener Neuversuch
   (`cache_files --retry-errors`) hebt den Schutz auf. Reicht der Rest nicht bis zum Ziel, meldet der Lauf das mit
-  den geschützten Größen je Grund.
+  den geschützten Größen je Grund. Ist das Auftragsjournal nicht lesbar (Warnung „Wartende Aufträge der
+  Texterkennung nicht lesbar“), fehlt nur der Schutz eingereihter Neuerkennungen; Text geht dabei nicht verloren:
+  Mit Objektspeicher liest die Erkennung den Inhalt von dort, ohne beansprucht sie nur abgelegte Dokumente (`ok`),
+  und der bisherige Text bleibt stehen, bis das Dokument wieder abgelegt ist.
 - **Moduswechsel:** Liegen Inhalte laut Datenbank im Objektspeicher (`remote_at`), ist er im laufenden Container aber
   nicht konfiguriert (`OBJ_ENABLED=false` im Worker, fehlende `OBJ_*`), setzt die Grenze aus: Das stündliche Aufräumen
   meldet „Obergrenze ausgesetzt“ (Fehlerausgabe und Protokoll), `prune_file_cache` bricht ab. Ohne diesen Halt
   würden solche Inhalte freigegeben, verwaisten, und das nächste Aufräumen mit Objektspeicher löschte sie dort.
   `prune_file_cache --ohne-objektspeicher` macht ausdrücklich ohne Objektspeicher weiter; Inhalte mit `remote_at`
   bleiben auch dann unangetastet (geschützt als `im_objektspeicher`), auch wenn sie erst während des Laufs
-  hochgeladen werden. Die erste Zeile von `prune_file_cache` nennt den Modus.
+  hochgeladen werden. Die erste Zeile von `prune_file_cache` nennt den Modus. Vorschau, Abruf und Texterkennung
+  behandeln lokal fehlende Inhalte mit `remote_at` in einem solchen Container als gestört, nie als fehlend (Issue
+  #990); ein Ausschalten des Objektspeichers ist derzeit nicht vorgesehen ([Objektspeicher](#objektspeicher),
+  „Ausschalten“).
 - **Nachprüfung unter der Sperre:** Zwischen Planung und Verdrängen prüft jeder Stapel in beiden Modi unter
   Zeilensperre erneut: Texterkennung (auch eben beansprucht oder eingereiht), laufender Abruf, frisch abgelegt,
   inzwischen ausgeliefert oder neu verwiesen (Rang jünger), Zahl der Verweise (eine gesperrte Datei des Inhalts hält
@@ -524,7 +569,10 @@ Entfernt oder ändert eine Kommune ein Dokument, verschwindet es auch bei uns (I
   Adressen nach einer Umstellung, Wartung, Sperre unserer Abrufe); bei einer echten Massenlöschung den Lauf mit
   höherem `--max-fehlend` für diese Kommune wiederholen.
 - **robots.txt ist verbindlich:** Vor jedem Abruf einer Datei prüft der Abgleich die robots.txt des Hosts
-  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf). Eine
+  (mit `*` und `$` nach RFC 9309, je Host einen Tag zwischengespeichert; nicht lesbar = kein Abruf), mit
+  derselben Auswertung wie alle Abrufe: Gruppe `mandari-ingestor` vor `*`, frühere Kennungen nur zusätzlich
+  (`docs/MONITORING.md`). Einer Weiterleitung folgt er nur, wenn die robots.txt ihres Ziel-Hosts sie erlaubt
+  (sonst Ergebnis `robots`), und jede Weiterleitung läuft im Takt je Host. Eine
   Ausnahme trägt nur eine Quelle mit Vermerk in `sync_config["robots_override"]`, z. B.
   `{"scope": "files", "note": "Zustimmung liegt vor, Anfrage läuft"}` (Bereich `files` oder `all`, Vermerk
   mindestens zehn Zeichen; dasselbe Format wie für die übrigen Abrufe der Quelle).

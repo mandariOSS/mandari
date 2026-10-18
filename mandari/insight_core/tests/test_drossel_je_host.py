@@ -11,14 +11,17 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from io import StringIO
+from types import SimpleNamespace
 from typing import Any
 
 import httpx
 import pytest
+from django.core.management import call_command
 from django.test import Client
 
 from insight_core.models import OParlBody, OParlFile, OParlSource
-from insight_core.services import file_cache, host_pacing
+from insight_core.services import file_cache, file_robots, host_pacing, redirects
 
 pytestmark = pytest.mark.django_db
 
@@ -100,6 +103,17 @@ def test_redis_stoerung_faellt_auf_den_prozess_zurueck(uhr: _Uhr, settings: Any)
     assert host_pacing._state["down_until"] == pytest.approx(uhr.jetzt + host_pacing.REDIS_RETRY_SECONDS)
 
 
+def test_quelle_darf_nur_verlangsamen(uhr: _Uhr, settings: Any) -> None:
+    """Ein request_interval unter einer Sekunde, auch 0, gilt als eine Sekunde (Issue #1025)."""
+    assert host_pacing.interval({"request_interval": 0.25}) == 1.0
+    assert host_pacing.interval({"request_interval": 0}) == 1.0
+    assert host_pacing.interval({"request_interval": 1.0}) == 1.0
+    assert host_pacing.interval({"request_interval": 3}) == 3.0
+    settings.RIS_REQUEST_INTERVAL = 0.0
+    assert host_pacing.interval({}) == 0.0  # Betriebsvariable 0 schaltet weiter ab
+    assert host_pacing.interval({"request_interval": 0.5}) == 1.0
+
+
 def test_abstand_null_drosselt_nicht(uhr: _Uhr, settings: Any) -> None:
     settings.RIS_REQUEST_INTERVAL = 0.0
     for _ in range(3):
@@ -129,6 +143,31 @@ def test_dokument_cache_nutzt_den_abstand_der_quelle(monkeypatch: pytest.MonkeyP
     )
     assert file_cache.fetch_and_cache(datei, client=client) == "ok"
     assert gesehen == [("https://rat.example.de/getfile?id=1", {"request_interval": 3})]
+
+
+def _robots_transport(monkeypatch: pytest.MonkeyPatch, handler: Any) -> None:
+    """Abruf der robots.txt (``robots._fetch``) über einen nachgebildeten Server statt ins Netz."""
+    from insight_core.services import safe_fetch
+
+    monkeypatch.setattr(
+        safe_fetch, "guarded_client", lambda **kw: httpx.Client(transport=httpx.MockTransport(handler), **kw)
+    )
+
+
+def test_robots_txt_im_abstand_der_quelle(echte_robots: None, monkeypatch: pytest.MonkeyPatch, uhr: _Uhr) -> None:
+    """Die robots.txt des Löschabgleichs hält den langsameren Takt der Quelle ein, nicht nur 1 s (Issue #1025)."""
+    gesehen: list[tuple[str, Any]] = []
+
+    def wait(url: str, **kw: Any) -> bool:
+        gesehen.append((url, kw.get("sync_config")))
+        return True
+
+    monkeypatch.setattr(host_pacing, "wait", wait)
+    _robots_transport(monkeypatch, lambda r: httpx.Response(200, text="User-agent: *\n"))
+    quelle = _quelle({"request_interval": 2.5}).source
+    host = f"ris-{uuid.uuid4().hex[:8]}.example.de"  # eigener Host: keine zwischengespeicherte robots.txt
+    assert file_robots.file_fetch_status(quelle, f"https://{host}/files/a.pdf") == file_robots.ALLOWED
+    assert gesehen == [(f"https://{host}/robots.txt", {"request_interval": 2.5})]
 
 
 def test_vorschau_wartet_nicht_endlos(uhr: _Uhr, settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -205,6 +244,60 @@ def test_vorschau_wartet_mit_abrufplatz_und_ohne_datenbankverbindung(monkeypatch
     assert ablauf == ["platz", "freigabe", "takt max_wait=True", "abruf", "platz frei"]
 
 
+@pytest.mark.parametrize(
+    ("frist", "platz_dauer", "erwartet"),
+    [
+        # Frist 3 s, der Abrufplatz wird nach 2 s frei: robots.txt und Takt bleibt 1 s
+        (3.0, 2.0, [("platz", 2.0), ("takt", 1.0)]),
+        # Frist 1 s: auch auf den Platz höchstens 1 s statt der sonst 2 s, danach bleibt nichts
+        (1.0, 1.0, [("platz", 1.0), ("takt", 0.0)]),
+    ],
+)
+def test_vorschau_wartet_insgesamt_hoechstens_die_frist(
+    settings: Any,
+    monkeypatch: pytest.MonkeyPatch,
+    frist: float,
+    platz_dauer: float,
+    erwartet: list[tuple[str, float]],
+) -> None:
+    """
+    Abrufplatz, robots.txt, Takt und Weiterleitungen teilen sich eine Frist (``FILE_PROXY_PACE_MAX_WAIT_SECONDS``,
+    Issue #1036). Vorher begann die Frist erst nach dem Warten auf den Abrufplatz (bis zu 2 s zusätzlich).
+    """
+    from insight_core.views import files as views
+
+    settings.FILE_PROXY_PACE_MAX_WAIT_SECONDS = frist
+    uhr = SimpleNamespace(jetzt=100.0)
+    monkeypatch.setattr(redirects, "time", SimpleNamespace(monotonic=lambda: uhr.jetzt))
+    wartezeiten: list[tuple[str, float]] = []
+
+    class _Platz:
+        def acquire(self, timeout: float | None = None) -> bool:
+            assert timeout is not None
+            wartezeiten.append(("platz", round(timeout, 3)))
+            uhr.jetzt += platz_dauer
+            return True
+
+        def release(self) -> None:
+            pass
+
+    def takt(url: str, **kw: Any) -> bool:
+        wartezeiten.append(("takt", round(kw["max_wait"], 3)))
+        return False  # binnen der Restzeit kein Zeitpunkt
+
+    def kein_abruf(*_a: Any, **_kw: Any) -> Any:
+        raise AssertionError("ohne freien Zeitpunkt kein Abruf")
+
+    monkeypatch.setattr(views, "_LIVE_FETCH_SLOTS", _Platz())
+    monkeypatch.setattr(host_pacing, "wait", takt)
+    monkeypatch.setattr(views, "_fetch_live", kein_abruf)
+    response = Client().get(f"/insight/dokumente/{_datei(6).id}/preview/")
+
+    assert response.status_code == 503 and response["Retry-After"] == "30"
+    assert wartezeiten == erwartet
+    assert sum(zeit for _art, zeit in wartezeiten) <= frist
+
+
 def test_vorschau_laedt_robots_txt_nur_mit_hoechstwartezeit(
     uhr: _Uhr, settings: Any, monkeypatch: pytest.MonkeyPatch, echte_robots: None
 ) -> None:
@@ -233,12 +326,20 @@ def test_vorschau_laedt_robots_txt_nur_mit_hoechstwartezeit(
     for _ in range(2):
         host_pacing.wait("https://rat.example.de/oparl/papers")
     vorher = len(uhr.geschlafen)
+
+    # Ab hier läuft die Uhr beim Warten weiter; die Frist der Vorschau (redirects) liest dieselbe Uhr
+    def schlafen(sekunden: float) -> None:
+        uhr.sleep(sekunden)
+        uhr.jetzt += sekunden
+
+    monkeypatch.setattr("insight_core.services.host_pacing.time.sleep", schlafen)
+    monkeypatch.setattr(redirects, "time", SimpleNamespace(monotonic=uhr))
     response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
     assert response.status_code == 503
     assert response["Retry-After"] == "30"
     assert robots_abrufe == ["/robots.txt"]
     # robots.txt und Dokument zusammen höchstens FILE_PROXY_PACE_MAX_WAIT_SECONDS
-    assert all(sekunden <= 2 for sekunden in uhr.geschlafen[vorher:])
+    assert sum(uhr.geschlafen[vorher:]) <= 2
 
 
 def test_zusammenfassung_wartet_nicht_auf_den_takt(uhr: _Uhr, settings: Any, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -271,3 +372,52 @@ def test_zusammenfassung_wartet_nicht_auf_den_takt(uhr: _Uhr, settings: Any, mon
     # Die Erkennung steht aus: Hinweis, nicht „kein Text“ (das würde sich die Ansicht merken)
     assert not isinstance(fehler.value, NoTextContentError)
     anbieter.chat_completion.assert_not_called()
+
+
+@pytest.mark.parametrize("registriert", [False, True])
+def test_quelle_anlegen_haelt_den_takt(monkeypatch: pytest.MonkeyPatch, registriert: bool) -> None:
+    """
+    add_oparl_source (Issue #1027): Vor jeder Anfrage, auch vor einer Weiterleitung, ein reservierter Zeitpunkt;
+    bei einer schon registrierten Quelle mit deren Takt.
+    """
+    system_url = f"https://rat.example.de/oparl/{uuid.uuid4().hex[:6]}/system"
+    liste_url = "https://rat.example.de/oparl/bodies"
+    sync_config = {"request_interval": 3} if registriert else None
+    if registriert:
+        OParlSource.objects.create(name="Rat", url=system_url, sync_config=sync_config)
+    ablauf: list[tuple[str, str, Any]] = []
+
+    def wait(url: str, **kw: Any) -> bool:
+        ablauf.append(("warten", url, kw.get("sync_config")))
+        return True
+
+    monkeypatch.setattr(host_pacing, "wait", wait)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        ablauf.append(("abruf", str(request.url), None))
+        if str(request.url) == system_url:
+            return httpx.Response(
+                200,
+                json={
+                    "id": system_url,
+                    "type": "https://schema.oparl.org/1.1/System",
+                    "name": "Rat",
+                    "body": liste_url,
+                },
+            )
+        if str(request.url) == liste_url:
+            return httpx.Response(301, headers={"Location": liste_url + "/"})
+        body = {"id": f"https://rat.example.de/oparl/body/{uuid.uuid4().hex[:6]}", "name": "Beispielstadt"}
+        return httpx.Response(200, json={"data": [body], "links": {}})
+
+    echter_client = httpx.Client
+    monkeypatch.setattr(
+        "insight_core.management.commands.add_oparl_source.httpx.Client",
+        lambda **kw: echter_client(transport=httpx.MockTransport(handler), **kw),
+    )
+
+    call_command("add_oparl_source", system_url, stdout=StringIO())
+
+    erwartet = [system_url, liste_url, liste_url + "/"]
+    assert ablauf == [eintrag for url in erwartet for eintrag in (("warten", url, sync_config), ("abruf", url, None))]
+    assert OParlBody.objects.filter(source__url=system_url, name="Beispielstadt").exists()

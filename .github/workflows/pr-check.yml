@@ -186,6 +186,8 @@ jobs:
               - 'mandari/apps/events/**'
               - 'mandari/apps/common/metrics.py'
               - 'mandari/mandari/settings*.py'
+              # Webanwendung hinter PgBouncer (Issue #1060), Schritt im selben Job
+              - 'mandari/apps/common/tests/test_pgbouncer.py'
             smoke:
               - 'mandari/**'
               - 'shared/**'
@@ -983,6 +985,8 @@ jobs:
   # Commit → Sicht braucht einen Cluster ohne offene Transaktionen anderer Testprozesse.
   # --reuse-db: Die Testdatenbank wird über PgBouncer angelegt; PgBouncer hält danach
   # Serververbindungen offen, ein DROP DATABASE am Ende scheiterte daran.
+  # Ein zweiter Schritt prüft die Webanwendung mit DB_PGBOUNCER=true (Issue #1060): .iterator()
+  # außerhalb einer Transaktion und wiederholte Abfragen, je mit Kontrollversuch ohne die Einstellungen.
   events-pgbouncer:
     name: Ereignistechnik hinter PgBouncer
     needs: changes
@@ -1069,6 +1073,17 @@ jobs:
           SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
           DEBUG: 'false'
         run: cd mandari && pytest apps/events -q -rfEs --reuse-db -p no:cacheprovider
+
+      # Läuft auch, wenn der Schritt davor rot ist: zwei unabhängige Befunde
+      - name: Webanwendung über PgBouncer (DB_PGBOUNCER, Issue #1060)
+        if: ${{ !cancelled() }}
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:6432/test
+          DB_PGBOUNCER: 'true'
+          MANDARI_TEST_PGBOUNCER: '1'
+          SECRET_KEY: ci-only-secret-key-not-for-production-0123456789abcdefghijklmnopqrstuvwxyz
+          DEBUG: 'false'
+        run: cd mandari && pytest apps/common/tests/test_pgbouncer.py -q -rfEs --reuse-db -p no:cacheprovider
 
   # ===========================================================================
   # Smoke-Tests: eigener Job, läuft parallel zu pytest
@@ -1324,16 +1339,17 @@ jobs:
         run: |
           (cd mandari && uv lock --check)
           (cd ingestor && uv lock --check)
-      - name: pip-audit Django-Anwendung (blockierend bei bekannten Schwachstellen)
+      # Blockierend bei bekannten Schwachstellen; befristete Ausnahmen nur ohne korrigierte Version
+      # (mandari/pip-audit-ausnahmen.json, scripts/pip_audit_pruefen.py)
+      - name: pip-audit Django-Anwendung (blockierend, befristete Ausnahmen)
         run: |
           pip install pip-audit
           sh scripts/export_requirements.sh /tmp/mandari-requirements.txt
-          pip-audit -r /tmp/mandari-requirements.txt --no-deps --progress-spinner off
-      - name: pip-audit Ingestor (blockierend bei bekannten Schwachstellen)
+          python scripts/pip_audit_pruefen.py /tmp/mandari-requirements.txt
+      - name: pip-audit Ingestor (blockierend, befristete Ausnahmen)
         run: |
-          cd ingestor
-          uv export --frozen --no-emit-project --no-emit-package mandari-oparl --no-hashes --all-extras -o /tmp/ingestor-requirements.txt
-          pip-audit -r /tmp/ingestor-requirements.txt --no-deps --progress-spinner off
+          (cd ingestor && uv export --frozen --no-emit-project --no-emit-package mandari-oparl --no-hashes --all-extras -o /tmp/ingestor-requirements.txt)
+          python scripts/pip_audit_pruefen.py /tmp/ingestor-requirements.txt
       - name: npm audit (blockierend ab "high", Entwicklungswerkzeuge mit befristeten Ausnahmen)
         run: |
           (cd mandari && npm audit || true)

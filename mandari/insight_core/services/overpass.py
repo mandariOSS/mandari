@@ -3,10 +3,12 @@
 Overpass-Abfragen an OpenStreetMap mit Endpoint-Fallback und Retry (Issues #54, #351).
 
 Gemeinsam genutzt von ``import_streets`` (Straßen, Adressen) und ``resolve_body_geodata``
-(Grenzen per Gemeindeschlüssel oder Name). Freundlich zu OSM: eigener User-Agent mit
-Kontaktadresse, Wartezeit bei 429/504, Wechsel auf den Ersatz-Endpoint erst nach drei
-Versuchen. Scheitern alle Endpoints, kommt ``None`` zurück – nie eine leere Trefferliste,
-damit Aufrufer „nicht erreichbar“ und „kein Treffer“ unterscheiden können.
+(Grenzen per Gemeindeschlüssel oder Name). Freundlich zu OSM: Kennung mit Infoseite und
+Kontaktadresse und Takt je Host wie alle Abrufe bei Diensten (``dienste``, Issue #1036:
+höchstens eine Anfrage je Sekunde und Endpoint), Wartezeit bei 429/504, Wechsel auf den
+Ersatz-Endpoint erst nach drei Versuchen. Scheitern alle Endpoints, kommt ``None`` zurück –
+nie eine leere Trefferliste, damit Aufrufer „nicht erreichbar“ und „kein Treffer“
+unterscheiden können.
 """
 
 from __future__ import annotations
@@ -17,13 +19,12 @@ from typing import Any
 
 import httpx
 
+from insight_core.services import dienste
+
 OVERPASS_ENDPOINTS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
 ]
-
-# User-Agent mit Kontakt, wie es die Nutzungsregeln von Overpass und Nominatim verlangen
-OSM_USER_AGENT = "Mandari/1.0 (https://mandari.de; support@mandari.de)"
 
 # Wartezeit je Versuch bei 429 (zu viele Anfragen) und 504 (Server ausgelastet)
 RETRY_WAIT_SECONDS = 15
@@ -47,11 +48,12 @@ def run_overpass(
     for endpoint in OVERPASS_ENDPOINTS:
         for attempt in range(ATTEMPTS_PER_ENDPOINT):
             try:
+                dienste.warten(endpoint, dienste.OVERPASS)
                 response = httpx.post(
                     endpoint,
                     data={"data": query},
                     timeout=float(timeout + 30),
-                    headers={"User-Agent": OSM_USER_AGENT},
+                    headers=dienste.headers(),
                 )
                 if response.status_code == 200:
                     elements = response.json().get("elements", [])

@@ -351,6 +351,7 @@ Alles leitet sich vom Arbeitsspeicher des **Datenbankdienstes** ab
 | `POSTGRES_MAX_CONNECTIONS` | muss zur Summe aller Dienste passen | `100` |
 | `POSTGRES_MAX_WAL_SIZE` | mehr bedeutet seltenere Checkpoints | `2GB` |
 | `POSTGRES_TEMP_FILE_LIMIT` | Obergrenze für temporäre Dateien **je Sitzung**; deutlich unter dem freien Plattenplatz | `5GB` |
+| `POSTGRES_SHARED_PRELOAD_LIBRARIES` | beim Start geladene Bibliotheken; ersetzt `postgresql.conf` und `ALTER SYSTEM`, leer = keine (siehe „Teuerste Abfragen“) | `pg_stat_statements` |
 
 **Die Falle bei `work_mem`:** Der Wert gilt je Sortiervorgang, und eine einzelne
 Abfrage kann mehrere davon haben. Im Extremfall belegt die Datenbank
@@ -408,6 +409,95 @@ aus #256:
 Listen- und Detailseiten lagen vorher wie nachher bei 10–50 ms; sie sind durch
 die Umstellung nicht langsamer geworden.
 
+### Teuerste Abfragen (pg_stat_statements)
+
+Welche SQL-Abfragen insgesamt die meiste Zeit kosten, zeigt die Erweiterung
+`pg_stat_statements` (Issue #1024). Sie fasst gleichartige Abfragen zusammen (Werte
+durch `$1`, `$2` ersetzt) und zählt je Abfrage Aufrufe, Gesamt- und Durchschnittszeit
+und gelesene Blöcke, über alle Datenbanken des Servers.
+
+- **Laden:** Die mitgelieferte `docker-compose.yml` startet PostgreSQL mit
+  `-c shared_preload_libraries=pg_stat_statements` (Helm-Chart: `postgres.sharedPreloadLibraries`).
+  Die Einstellung wirkt **erst nach einem Neustart des Datenbankdienstes**
+  (`docker compose up -d postgres` legt den Container neu an, die Anwendung ist dabei
+  einige Sekunden ohne Datenbank). `update.sh` startet die Datenbank nicht neu; ein
+  `docker compose up -d` ohne Dienstnamen dagegen schon. Im Helm-Chart ändert schon das
+  Upgrade die Pod-Vorlage, PostgreSQL startet dabei sofort neu; wer das zu diesem Zeitpunkt
+  nicht will, setzt vorher `postgres.sharedPreloadLibraries: ""`.
+- **Vorrang vor der Konfiguration:** Ein Wert auf der Kommandozeile (`-c`) hat Vorrang vor
+  `postgresql.conf` und `ALTER SYSTEM`. Lädt der Server dort schon Bibliotheken (etwa
+  `auto_explain` oder `pg_cron`), gehören sie mit in die Variable, kommagetrennt:
+  `POSTGRES_SHARED_PRELOAD_LIBRARIES=pg_stat_statements,auto_explain`. Sonst fehlen sie nach
+  dem Neustart. Das gilt ebenso für `postgres.sharedPreloadLibraries` im Helm-Chart. Deshalb
+  **vor dem Neustart** nachsehen, was heute geladen ist (im Cluster entsprechend mit
+  `kubectl exec`):
+
+  ```bash
+  docker compose exec postgres psql -U mandari -d mandari -c "SHOW shared_preload_libraries;"
+  ```
+
+- **Abschalten:** `POSTGRES_SHARED_PRELOAD_LIBRARIES=` (leer) in der `.env`, ebenfalls mit
+  Neustart. Leer heißt hier wirklich keine Bibliothek: Auch was in `postgresql.conf` oder per
+  `ALTER SYSTEM` eingetragen ist, wird nicht geladen. Im Helm-Chart entfällt bei
+  `postgres.sharedPreloadLibraries: ""` das Argument ganz, dort gilt dann wieder die
+  Konfiguration des Servers.
+- **Anlegen:** Die Erweiterung legt `migrate` an (Migration `common.0012`), in der
+  Datenbank von mandari. Fehlen der Datenbankrolle die Rechte (die Erweiterung braucht
+  einen Superuser bzw. die Admin-Rolle eines verwalteten Dienstes) oder die Erweiterung
+  selbst, steht eine Warnung im Protokoll, und die Migration läuft trotzdem durch. Dann
+  von Hand: `CREATE EXTENSION IF NOT EXISTS pg_stat_statements;`
+- **Verwaltete Datenbanken** (RDS, Azure, Google Cloud SQL usw.): `pg_stat_statements` in
+  den Parametern des Dienstes einschalten (meist schon vorgeladen) und die Erweiterung mit
+  der Admin-Rolle anlegen.
+- **Sicherung ohne Superuser einspielen:** Ist die Erweiterung angelegt, enthält jeder
+  `pg_dump` der Datenbank `CREATE EXTENSION IF NOT EXISTS pg_stat_statements` und
+  `COMMENT ON EXTENSION pg_stat_statements`. Die Erweiterung ist nicht „trusted“: Spielt eine
+  Rolle ohne Superuser-Rechte den Dump ein (etwa beim Umzug auf eine verwaltete Datenbank),
+  scheitern beide Befehle. `psql -v ON_ERROR_STOP=1` bricht dort ab, `pg_restore` spielt den
+  Rest ein und endet trotzdem mit einem Fehler. Dann die Erweiterung bei Bedarf vorher mit der
+  Admin-Rolle anlegen und beide Befehle auslassen:
+
+  ```bash
+  # SQL-Dump (backup.sh: postgres.sql)
+  grep -vE '^(CREATE EXTENSION IF NOT EXISTS|COMMENT ON EXTENSION) pg_stat_statements' postgres.sql \
+    | psql -v ON_ERROR_STOP=1 -h <host> -U <rolle> -d mandari
+  # Custom-Format (Backup-Stack: mandari.dump): Inhaltsliste ohne die Erweiterung
+  pg_restore -l mandari.dump | grep -v pg_stat_statements > ohne-pgss.list
+  pg_restore -L ohne-pgss.list -h <host> -U <rolle> -d mandari mandari.dump
+  ```
+
+  Mit Superuser (mitgelieferte `docker-compose.yml`, `./backup.sh --restore`,
+  Wiederherstellungstest des Backup-Stacks) ist nichts zu tun.
+- **Ohne die Bibliothek** läuft mandari unverändert. Nur die Abfrage der Statistik meldet
+  dann `pg_stat_statements must be loaded via "shared_preload_libraries"`.
+
+Auswerten (die zehn Abfragen mit der meisten Gesamtzeit in der eigenen Datenbank):
+
+```bash
+docker compose exec postgres psql -U mandari -d mandari -c "
+SELECT round(total_exec_time::numeric / 1000, 1) AS gesamt_s,
+       calls AS aufrufe,
+       round(mean_exec_time::numeric, 2) AS mittel_ms,
+       round(100 * total_exec_time / sum(total_exec_time) OVER (), 1) AS anteil_prozent,
+       left(regexp_replace(query, '\s+', ' ', 'g'), 120) AS abfrage
+FROM pg_stat_statements
+WHERE dbid = (SELECT oid FROM pg_database WHERE datname = current_database())
+ORDER BY total_exec_time DESC
+LIMIT 10;"
+```
+
+- `gesamt_s` und `anteil_prozent` zeigen, wo die Datenbank ihre Zeit verbringt. Eine
+  billige Abfrage, die sehr oft läuft, kann mehr kosten als eine langsame seltene.
+- `mittel_ms` zeigt einzelne langsame Abfragen; für die nächste Stufe `EXPLAIN (ANALYZE,
+  BUFFERS)` mit echten Werten statt `$1` ausführen.
+- `ORDER BY calls DESC` findet Abfragen, die zu oft laufen (etwa eine je Listeneintrag).
+- Die Werte zählen seit dem Start des Servers bzw. dem letzten Zurücksetzen. Vor einer
+  Messung (etwa vor und nach einem Deploy) zurücksetzen: `SELECT pg_stat_statements_reset();`
+- Den Text fremder Abfragen sieht nur, wer Superuser ist oder die Rolle
+  `pg_read_all_stats` hat; andere Rollen sehen dort `<insufficient privilege>`.
+- Kosten: gering, ein Eintrag je Abfrageform im gemeinsamen Speicher (höchstens 5.000,
+  `pg_stat_statements.max`; seltene fallen zuerst heraus).
+
 ## ✉️ Mailversand: Message-ID und EHLO
 
 Jede Mail trägt eine Message-ID der Form `<…@domain>`, und beim Verbindungsaufbau meldet sich mandari
@@ -439,6 +529,28 @@ Verwaltungsbefehle) für alle Versandwege: Systemeinstellungen, `EMAIL_*`, eigen
 - DMARC: Mit `p=none` beginnen und Aggregatberichte (`rua=`) auswerten. Zeigen sie nur noch eigene,
   legitime Absender, auf `p=quarantine` und später `p=reject` umstellen.
 - HTML-Mails verstecken nur den Vorschautext (Preheader) im Posteingang, und nur, wenn er Inhalt hat.
+
+## Abrufe bei Ratsinformationssystemen
+
+Ingestor und Anwendung rufen die Ratsinformationssysteme Ihrer Quellen von der Adresse Ihres Servers ab: mit der
+Kennung `mandari-ingestor`, höchstens einer Anfrage je Sekunde und Server und nach den Regeln der robots.txt.
+Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die Einstellungen je Quelle
+(`sync_config`) und die Umgebungsvariablen dazu stehen in [`docs/ABRUFREGELN.md`](docs/ABRUFREGELN.md).
+
+- Setzen Sie `INGESTOR_USER_AGENT` auf eine Kennung mit Ihrer eigenen Kontaktadresse; ohne Angabe nennt der
+  User-Agent unsere Infoseite und `support@mandari.de` ([Für Selbstbetreiber](docs/ABRUFREGELN.md#für-selbstbetreiber)).
+  Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`) und,
+  weil die Sync-Aktionen an einer Quelle im Admin ohne laufenden Daemon im Worker der Anwendung laufen, auch in
+  `x-app-environment` (Helm: `app.extraEnv`); ein Eintrag nur in der `.env` wirkt nicht.
+- Jede Quelle hat ihren eigenen Takt: werktags 07–19 Uhr im Grundtakt `INGESTOR_INTERVAL`, sonst stündlich, am
+  Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag alle 5 Minuten, nach Läufen ohne Änderung seltener.
+  Vollabgleiche laufen je Quelle in ihrem Zeitfenster, sonst ab `INGESTOR_FULL_SYNC_HOUR` (5 Stunden lang).
+  Höchstens `INGESTOR_SYNC_POOL_SIZE` Quellen (Standard 4) laufen gleichzeitig; Einzelheiten in
+  [`docs/ABRUFREGELN.md`](docs/ABRUFREGELN.md#rhythmus).
+- `docker-compose.yml` reicht dem Dienst `ingestor` nur die dort genannten Variablen durch (Abruf-Rhythmus über
+  `INGESTOR_INTERVAL`, `INGESTOR_FULL_SYNC_HOUR`, `INGESTOR_CONCURRENT`, `INGESTOR_SYNC_POOL_SIZE`, Speichergrenze
+  `INGESTOR_MEM_LIMIT`); weitere, etwa `INGESTOR_REQUEST_INTERVAL`, ergänzen Sie in seinem Abschnitt
+  `environment`, im Helm-Chart über `ingestor.extraEnv`.
 
 ## 🖧 Mehrere Server (Rollen data / web / worker)
 
@@ -890,7 +1002,7 @@ dann ohne `--dry-run` (einzelne Umzüge mit `--eintrag <Kennung>`). Zurückgedre
 früheren Punkt bzw. an der früheren Vorlage und ziehen von dort nie wieder automatisch um. Ein älteres Image läuft
 ohne Rückbau der Migration (zwei neue Tabellen).
 
-### KI-Anbieter: eine Konfiguration, nur freigegebene EU-Endpunkte
+### KI-Anbieter: eine Konfiguration, nur freigegebene Endpunkte
 
 Jeder KI-Aufruf (Schreibhilfe und Co-Editor in Work, Zusammenfassung, KI-Assistent und KI-Verortung im
 Bürgerportal) nutzt eine Konfiguration (Issue #950): Anbieter (Vorlage oder eigener OpenAI-kompatibler
@@ -901,25 +1013,78 @@ Anbieter bleibt die KI aus; einen fest eingebauten Anbieter oder einen Rückfall
 Technische Sperre ist die Positivliste `KI_ERLAUBTE_HOSTS` (kommagetrennte Hostnamen, in Anwendung und
 Ingestor gleich setzen). Sie hat keinen Standard: Leer ist nichts erlaubt, jeder KI-Aufruf bleibt gesperrt,
 auch die externe Texterkennung über `MISTRAL_BASE_URL` (fail-closed, `shared/mandari_dokumente/ki_hosts.py`).
-Die Vorlagen im Admin (STACKIT, IONOS, Scaleway, OVHcloud, DeutschlandGPT) geben keinen Host frei; sie füllen
-nur Anzeigename, Verarbeitungsort und Basis-URL vor und sind als „nicht freigegeben“ gekennzeichnet, solange ihr
-Host fehlt. Verglichen wird der Host exakt, nur `https`, ohne Zugangsdaten in der Adresse, Port nur 443. Jede
-Adresse wird bei jedem Aufruf neu geprüft, auch wenn sie direkt in der Datenbank steht; ein nicht
-freigegebener Host ergibt „KI aus“ mit Warnung im Protokoll (ohne Schlüssel).
+Die Vorlagen im Admin (STACKIT, IONOS, Scaleway, OVHcloud, DeutschlandGPT, Nebius Token Factory) geben keinen
+Host frei; sie füllen nur Anzeigename, Verarbeitungsort und Basis-URL vor und sind als „nicht freigegeben“
+gekennzeichnet, solange ihr Host fehlt. Die Nebius-Vorlage nennt als Ort „je nach Modell innerhalb und außerhalb
+der EU, auch in den USA“ (Unterauftragsverarbeiterliste der Token Factory); zeigt die Oberfläche des Anbieters für
+das gewählte Modell einen festen Ort, kann ihn das Feld „Verarbeitungsort“ genauer nennen. Verglichen wird der
+Host exakt, nur `https`, ohne Zugangsdaten in der Adresse, Port nur 443. Jede Adresse wird bei jedem Aufruf neu
+geprüft, auch wenn sie direkt in der Datenbank steht; ein nicht freigegebener Host ergibt „KI aus“ mit Warnung im
+Protokoll (ohne Schlüssel).
 
 Solange kein Anbieter vertraglich freigegeben ist, bleibt `KI_ERLAUBTE_HOSTS` leer und die KI überall aus
 (Work, Bürgerportal, externe Texterkennung). Einschalten ist reine Konfiguration: Host in `KI_ERLAUBTE_HOSTS`
-aufnehmen (Anwendung, Worker und Ingestor neu starten), dann im Admin Vorlage bzw. Basis-URL, Modell und
-Schlüssel eintragen und die Schalter für Work und Bürgerportal setzen. Die Einwilligung im KI-Assistenten nennt
-Anbieter und Verarbeitungsort aus dieser Konfiguration und gilt nur für den Anbieter, dem zugestimmt wurde. An
-den Host der DeutschlandGPT-Vorlage geht die Antwortlänge zusätzlich als `max_completion_tokens`, weil die
-Schnittstelle `max_tokens` nicht beachtet.
+aufnehmen (Anwendung, Worker und Ingestor neu starten), dann im Admin oder mit dem Befehl `ki_anbieter` (unten)
+Vorlage bzw. Basis-URL, Modell und Schlüssel eintragen und die Schalter für Work und Bürgerportal setzen. Die
+Einwilligung im KI-Assistenten nennt Anbieter und Verarbeitungsort aus dieser Konfiguration und gilt nur für den
+Anbieter, dem zugestimmt wurde. An den Host der DeutschlandGPT-Vorlage geht die Antwortlänge zusätzlich als
+`max_completion_tokens`, weil die Schnittstelle `max_tokens` nicht beachtet.
 
 Ein gespeicherter Schlüssel gehört zu seinem Anbieter: Wer im Admin den Anbieter wechselt (anderer Host oder
 bisher kein Anbieter gewählt), muss den Schlüssel des neuen Anbieters eintragen. Einen Schlüssel ohne Anbieter
 nimmt der Admin nicht an; „API Key löschen“ (KI-Einstellungen) bzw. „Eigenen KI API Key löschen“ (Organisation)
 entfernt ihn. Eine Vorlage gilt nur für ihren eigenen Host; für einen anderen Host „Eigener Endpunkt“ mit
 Anzeigename und Verarbeitungsort wählen.
+
+**Anbieter wechseln in drei Schritten** (Befehl `ki_anbieter`, Issue #1046; ohne Aktion zeigt er die Vorlagen
+mit Host und Freigabe und die Einrichtung ohne Schlüssel, nur „Schlüssel gesetzt: ja/nein“):
+
+1. Host freigeben: den Host des Anbieters in der `.env` unter `KI_ERLAUBTE_HOSTS` eintragen und Anwendung,
+   Worker und Ingestor neu anlegen (`docker compose up -d`). Der Befehl und der Admin geben keinen Host frei.
+   Den Host des bisherigen Anbieters danach ebenso entfernen, sobald ihn nichts mehr nutzt (Organisationen mit
+   eigenem Anbieter, `MISTRAL_BASE_URL`; `ki_anbieter` nennt die Zahl der Organisationen mit eigenem Schlüssel).
+   Solange er in der Liste steht, bleibt er freigegeben.
+2. Einrichten in einem Schritt. Der Schlüssel kommt nur aus einer benannten Umgebungsvariable, nie von der
+   Kommandozeile, und erscheint in keiner Ausgabe:
+
+   ```bash
+   read -rs KI_SCHLUESSEL && export KI_SCHLUESSEL   # Eingabe bleibt unsichtbar
+   docker exec -e KI_SCHLUESSEL mandari python manage.py ki_anbieter einrichten --vorlage <vorlage> \
+     --modell <modell> --schluessel-aus-umgebung KI_SCHLUESSEL --work --buergerportal
+   unset KI_SCHLUESSEL
+   ```
+
+   Ohne Vorlage statt `--vorlage`: `--basis-url https://<host>/v1 --name "<Anbieter>" --ort "<Verarbeitungsort>"`.
+   Eigene Modelle fürs Bürgerportal und als Ausweichmodell mit `--modell-buergerportal` und `--ausweichmodell`;
+   bei einem Wechsel zu einem anderen Host leert der Befehl die des bisherigen Anbieters. Er prüft mit dem
+   Formular des Admins und bricht ab, wenn der Host nicht in `KI_ERLAUBTE_HOSTS` steht oder die Variable leer
+   ist; mit denselben Angaben wiederholt, ändert er nichts.
+3. Prüfen: `docker exec mandari python manage.py ki_anbieter pruefen` stellt je eingetragenem Modell einen
+   Testaufruf mit höchstens einem Token Antwort (Zeitgrenze 15 s, auch wenn die Schalter aus sind) und meldet nur
+   Erfolg oder die Fehlerart, etwa „Schlüssel abgelehnt“, „Modell oder Schnittstelle nicht gefunden“, „Keine
+   Antwort“, einen TLS-Fehler oder unzulässige Zeichen im Schlüssel. Im Admin tut „Speichern und Verbindung
+   prüfen“ in den KI-Einstellungen dasselbe, nach dem Speichern.
+
+**Nebius nach `common/0011` weiter nutzen:** Die Migration setzt den Anbieter auf „nicht eingerichtet“. Der
+Schlüssel stand bisher in `NEBIUS_API_KEY`; die Anwendung liest ihn nicht mehr (Compose reicht ihn nicht weiter).
+
+1. Vor `./update.sh` in der `.env` ergänzen: `KI_ERLAUBTE_HOSTS=api.tokenfactory.nebius.com`.
+   `NEBIUS_API_KEY` bleibt bis zur Übertragung stehen.
+2. Nach dem Update im Installationsverzeichnis den Schlüssel aus der `.env` übertragen und prüfen. Die erste
+   Zeile nimmt den letzten Eintrag und entfernt Anführungszeichen und einen Kommentar hinter dem
+   Wert. Nur die Bereiche einschalten, die bisher KI nutzten; ein bisheriges `NEBIUS_FALLBACK_MODEL` mit
+   `--ausweichmodell` übernehmen:
+
+   ```bash
+   export NEBIUS_API_KEY="$(grep '^NEBIUS_API_KEY=' .env | tail -n 1 | cut -d= -f2- | tr -d '\r' \
+     | sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
+   docker exec -e NEBIUS_API_KEY mandari python manage.py ki_anbieter einrichten --vorlage nebius \
+     --modell moonshotai/Kimi-K2.6 --schluessel-aus-umgebung NEBIUS_API_KEY --work --buergerportal --pruefen
+   unset NEBIUS_API_KEY
+   ```
+
+3. Erst wenn die Prüfung „OK“ meldet, `NEBIUS_API_KEY` aus der `.env` entfernen. Der Schlüssel liegt dann
+   verschlüsselt in den KI-Einstellungen.
 
 **Rückfall auf ein älteres Image:** Die neuen Spalten haben Datenbank-Standardwerte; ein älteres Image läuft
 ohne Rückbau der Migrationen `common/0011` und `tenants/0027` weiter. Die Migrationen setzen frühere Anbieter
@@ -939,17 +1104,20 @@ Deshalb:
 
 1. Beim Deploy dieser Version zählen, wie viele Organisationen einen eigenen Schlüssel haben (gibt nur die
    Zahl aus): `docker exec mandari python manage.py shell -c "from apps.tenants.models import Organization;
-   print(Organization.objects.filter(ai_api_key_encrypted__isnull=False).count())"`. Bei mehr als null
-   trifft jeder Rückfall auf ein Image vor #950 diese Organisationen.
-2. `NEBIUS_API_KEY` **vor** `./update.sh` aus der `.env` entfernen. `update.sh` sichert die `.env` als
-   `.env.pre-update` und kopiert sie beim automatischen Rückfall und bei `--rollback` zurück; ein erst danach
-   entfernter Eintrag stünde nach dem Rückfall wieder in der Umgebung.
+   print(Organization.objects.filter(ai_api_key_encrypted__isnull=False).count())"`; dieselbe Zahl nennt
+   `ki_anbieter`. Bei mehr als null trifft jeder Rückfall auf ein Image vor #950 diese Organisationen.
+2. Wer Nebius nicht weiter nutzt: `NEBIUS_API_KEY` **vor** `./update.sh` aus der `.env` entfernen. `update.sh`
+   sichert die `.env` als `.env.pre-update` und kopiert sie beim automatischen Rückfall und bei `--rollback`
+   zurück; ein erst danach entfernter Eintrag stünde nach dem Rückfall wieder in der Umgebung. Wer Nebius weiter
+   nutzt (oben), lässt ihn bis zur Übertragung stehen: Ein Rückfall schickt die Anfragen des Bürgerportals dann
+   an denselben Anbieter wie die neue Version.
 3. Vor einem Rückfall auf ein Image vor #950 die eigenen KI-Schlüssel der Organisationen („Eigenen KI API Key
-   löschen“) und den Plattformschlüssel („API Key löschen“ in den KI-Einstellungen) löschen.
-4. Den Nebius-Schlüssel beim Anbieter widerrufen. Der Widerruf ist der eigentliche Schutz: Sicherungen der
-   `.env` können den Eintrag zurückbringen, und ein automatischer Rückfall lässt keine Zeit für Schritt 3.
-   Ist ein Image vor #950 mit eigenen Schlüsseln gelaufen, diese Schlüssel beim jeweiligen Anbieter widerrufen
-   und neu ausstellen.
+   löschen“) und, falls er nicht für Nebius ist, den Plattformschlüssel („API Key löschen“ in den
+   KI-Einstellungen) löschen.
+4. Wer Nebius nicht weiter nutzt: den Nebius-Schlüssel beim Anbieter widerrufen. Der Widerruf ist der
+   eigentliche Schutz: Sicherungen der `.env` können den Eintrag zurückbringen, und ein automatischer Rückfall
+   lässt keine Zeit für Schritt 3. Ist ein Image vor #950 mit eigenen Schlüsseln gelaufen, diese Schlüssel beim
+   jeweiligen Anbieter widerrufen und neu ausstellen.
 
 ### Texterkennung: OCR-Worker des Ingestors oder Aufträge `file.extract_text`
 
@@ -1020,7 +1188,10 @@ Worker, wird in den folgenden Schritten eingeschaltet; jeder Schritt ist ohne De
   gemeinsame Umgebung; eigene Compose-Dateien oder Umgebungsdateien müssen sie auch `worker-heavy` geben. Laufen
   die Worker auf einem eigenen Server (`deploy/roles/worker.yml`, `docs/MEHR_SERVER_BETRIEB.md`), sehen sie die
   Ablage des Anwendungsservers nur über eine gemeinsame Ablage oder den Objektspeicher (`OBJ_ENABLED=true`);
-  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück.
+  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück. Fehlen einem Worker nur die
+  `OBJ_*`, gelten Inhalte, die laut Datenbank im Objektspeicher liegen, als gestört: Die Erkennung wartet, ohne bei
+  der Quelle abzurufen, und das Protokoll des Workers warnt höchstens einmal je Minute (Issue #990,
+  `docs/FILE_CACHE.md`, „Objektspeicher“).
 - Speicher: `worker-heavy` bis 3 GB (`WORKER_HEAVY_MEM_LIMIT`), davon ein Tesseract-Unterprozess bis
   `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB` (2048). Ein OCR-Worker aus dem Ingestor-Image wird mit Schritt 3
   überflüssig und gibt seinen Speicher frei. Auf kleinen Servern (4 GB) z. B. `2g` und `1024`; große Seiten
@@ -1111,14 +1282,17 @@ Dokumente Text bekommen (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“).
 | Ablage | mit `FILE_CACHE_MAX_TOTAL_GB`: `cache_files` meldet nicht dauerhaft `limit` (Protokoll des Workers, „Obergrenze erreicht“), sonst warten neue Dokumente auf Platz und bekommen so lange keinen Text; dann die Grenze anheben. `cache_files --stats` zeigt Belegung und verdrängte Dokumente |
 | Stichprobe | Vorgänge mit neuen Dokumenten zeigen Text, Vorschau liefert |
 
-Die Prüfung `rueckstau` misst den ältesten fälligen Auftrag über alle Warteschlangen (höchstens 15 Minuten).
-In `ocr` wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu `TEXT_EXTRACTION_QUEUE_DEPTH`
-Aufträge, bis 30 Minuten je Datei); bei vielen gescannten Dateien, etwa nach der Nacharbeit, kann die Prüfung
-deshalb rot werden, obwohl die Erkennung arbeitet (`mandari_tasks_running{queue="ocr"}` 1, Texte entstehen).
-Dann `TEXT_EXTRACTION_QUEUE_DEPTH` senken, etwa auf `5`, und Worker und Anwendung neu starten; dieselbe Grenze
-gilt für `extract_texts` ohne `--limit`, ein ausdrückliches `--limit` darüber lässt die Prüfung bewusst
-anschlagen. Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml` messen `ocr` gesondert
-(`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit „Auftragsrückstand“.
+Die Prüfung `rueckstau` misst den ältesten fälligen Auftrag je Warteschlange (höchstens 15 Minuten), `ocr`
+gesondert (Issue #953): Dort wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu
+`TEXT_EXTRACTION_QUEUE_DEPTH` Aufträge, bis 30 Minuten je Datei). Bei vielen gescannten Dateien, etwa nach der
+Nacharbeit oder beim Altbestand einer Quelle, warten Aufträge dort deshalb oft länger als 15 Minuten, obwohl die
+Erkennung arbeitet. `rueckstau` bleibt dann grün, solange in `ocr` ein Auftrag läuft, und wird erst rot, wenn
+fällige Aufträge länger als 15 Minuten warten und keiner läuft (Text: `ocr <Sekunden> s (<n> laufend)`; der
+Auftrag eines abgestürzten Runners zählt nicht als laufend). Dann `worker-heavy` prüfen (`healthy`, bedient er
+`ocr`, Speicherabbrüche). Ob die Erkennung nachkommt, zeigen `dokumenttext` und
+`mandari_files_stored_without_text`. `TEXT_EXTRACTION_QUEUE_DEPTH` zu senken, um `rueckstau` grün zu halten, ist
+nicht mehr nötig. Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml` messen `ocr` ebenso
+gesondert (`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit „Auftragsrückstand“.
 
 **Abbruchkriterien** (ADR, Abschnitt 10; Vorgehen wie in `docs/DREHSCHEIBE_UMSTELLUNG.md`, Abschnitt 3). Eines
 genügt, dann den Rückweg gehen:
@@ -1178,6 +1352,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:check_service_levels` | täglich 06:30 | Service-Level |
 | `befehl:availability_report` | am 1. um 00:15 | Verfügbarkeitsbericht des Vormonats nach `REPORTS_ROOT`; nur mit `GATUS_URL` |
 | `befehl:verify_audit_chain` | täglich 04:20 | Hash-Ketten prüfen (Issue #221; ein Befund lässt den Lauf scheitern) |
+| `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026, Issue #366) |
 | `befehl:purge_security_audit_log` | täglich 04:40 | Sicherheitsprotokoll nach Frist |
 | `befehl:session_privacy_purge` | am 1. um 05:00 | DSGVO-Löschlauf mit Archivpaket |
 | `befehl:build_meeting_packages` | jede Minute | Sitzungsmappen (Issue #218): `--limit 5 --max-seconds 240` |
@@ -1229,7 +1404,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 
@@ -1263,14 +1438,16 @@ docker compose exec mandari python manage.py session_publish_protocols
 unbegrenzt, das Update ändert nichts (Migration `insight_core/0056`, nur eine neue Spalte). Wer die Ablage
 begrenzen will, baut einen großen Bestand zuerst von Hand ab und setzt danach die Grenze; ab dann hält das
 stündliche Aufräumen sie ein. `--dry-run` zeigt vorher Modus, Anzahl, Größe und Kommunen; der Lauf arbeitet in
-kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container der Anwendung ausführen, der dieselben
-`OBJ_*` hat wie der Worker; die erste Zeile muss den erwarteten Modus nennen:
+kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container `worker` ausführen: Er hat dieselben
+`OBJ_*` und dieselbe Ablage wie die Anwendung und ist direkt mit PostgreSQL verbunden. Mit PgBouncer lüde der
+Container `mandari` die Ergebnisse ganz in den Speicher („PgBouncer für die Webanwendung“). Die erste Zeile muss
+den erwarteten Modus nennen:
 
 ```bash
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
+docker compose exec worker python manage.py prune_file_cache --max-gb 10 --dry-run
 # mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte dort liegen (fehlen welche: erst --hochladen)
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10
+docker compose exec worker python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+docker compose exec worker python manage.py prune_file_cache --max-gb 10
 # danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
 # FILE_CACHE_MAX_TOTAL_GB=10
 ```
@@ -1290,7 +1467,8 @@ Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vo
 URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE_STORAGE` nennt.
 `AUDIT_EXPORT_MAX_ROWS` (Vorgabe 100000) begrenzt Exporte aus der Oberfläche, größere Zeiträume
 exportiert `export_audit_log`; `SECURITY_AUDIT_RETENTION_DAYS` (Vorgabe 365) ist die Frist des
-Sicherheitsprotokolls.
+Sicherheitsprotokolls, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30, festgelegt durch den Betreiber am 16.10.2026; 0 = keine Löschung)
+die der Anmeldeversuche für die Drosselung.
 
 Die Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218) erzeugt der Zeitplan
 `befehl:build_meeting_packages`; die Oberfläche legt nur Anforderungen an, ohne Worker bleibt eine
@@ -1336,17 +1514,20 @@ Obergrenze der Datenbank.
 | Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
 | Worker (Dienst `worker`, alle Rollen ohne `ocr`/`ai`) | 19 | Pool 18 ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
 | Worker für Texterkennung und KI (Dienst `worker-heavy`) | 7 | nur Rolle `tasks` mit `ocr` und `ai`; Rechnung unten |
+| Worker für Live-Übertragungen (Dienst `worker-live`) | 7 | nur Rolle `tasks` mit `live=2`; Rechnung unten |
+| Protokoll-Orchestrator (`minutes-orchestrator`) | 2 | ein Faden; der Pool hält `DB_POOL_MIN` offen |
 | Verwaltungsbefehle der Zeitpläne (eigene Prozesse im Dienst `worker`) | 8 | höchstens 4 gleichzeitig (Parallelität von `default`), je Prozess 1–2 Verbindungen; früher als Host-Cron im Anwendungscontainer |
 | OCR-Worker | 30 | gleiches Image wie der Ingestor |
 | Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
 | Kundenportal | 10 | eigener Container, eigene Datenbank |
 | Sicherung (`pg_dump`) | 2 | nur während des Laufs |
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
-| **Summe** | **129** | |
+| **Summe** | **138** | |
 | **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb (Vorgabe der `docker-compose.yml`: 100) |
 
-Reserve: rund 70 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
-**und** prüft die Summe.
+Reserve: rund 60 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
+**und** prüft die Summe. Mit PgBouncer vor der Anwendung ändert sich nur deren Zeile, siehe
+„PgBouncer für die Webanwendung“ unten.
 
 ### Worker
 
@@ -1368,9 +1549,8 @@ arbeiten können. Er vergrößert seinen Pool beim Start selbst auf diese Zahl (
 Mit allen Rollen und allen Standard-Warteschlangen ohne Abonnements sind das 20 aus dem Pool und
 21 in der Datenbank; jedes Abonnement kommt mit einer hinzu. Der Dienst `worker` ohne `ocr` und
 `ai` braucht 18 aus dem Pool und 19 in der Datenbank, `worker-heavy`
-(`--roles tasks --queues ocr,ai`) 7. Hinter PgBouncer zählt der Pool des
-Workers gegen dessen `default_pool_size`, die Lauschverbindung geht über `EVENTS_DB_DIRECT_URL`
-direkt zur Datenbank.
+(`--roles tasks --queues ocr,ai`) 7, ebenso `worker-live` (`--roles tasks --queues live`, `live=2`).
+Die Worker verbinden sich auch dann direkt mit PostgreSQL, wenn PgBouncer vor der Anwendung läuft.
 
 ### Einstellungen der Anwendung
 
@@ -1449,6 +1629,154 @@ Gemessener Normalbetrieb (16.09.2026): mandari 13, Portal 3, Website 2.
 Der Ingestor darf mit 30 Verbindungen mehr als die Anwendung. Das ist historisch
 und nicht gemessen — wer hier Luft braucht, kürzt zuerst dort
 (`ingestor/src/storage/database.py`, `pool_size` und `max_overflow`).
+
+## PgBouncer für die Webanwendung (optional, Issue #1060)
+
+Ohne Pooler hält jede Anfrage eine PostgreSQL-Verbindung für ihre ganze Dauer, auch während das
+Template gerendert wird. PgBouncer im Transaktionsmodus gibt die Serververbindung nach jeder
+Transaktion zurück. Die Anwendung kann dann mehr Verbindungen zu PgBouncer halten, PostgreSQL sieht
+davon nur so viele, wie gerade Anweisungen laufen, höchstens `DEFAULT_POOL_SIZE`.
+
+**Wann es sich lohnt:**
+
+- mehrere Anwendungsprozesse (#718) oder mehrere web-Server: Ohne Pooler wächst die Summe ihrer
+  Pools gegen `max_connections`;
+- Lastspitzen, bei denen der Pool der Anwendung (10 Verbindungen) leerläuft, obwohl PostgreSQL
+  Luft hätte (Schwachstellen-Scanner am 15.09. und 18.10.2026).
+
+Ein einzelner Prozess bei normaler Last braucht es nicht. Ohne Profil und Schalter ändert sich nichts.
+
+**Was über PgBouncer geht:**
+
+| Dienst | Verbindung | Grund |
+|---|---|---|
+| `mandari` (Webanwendung) | über PgBouncer | `DB_PGBOUNCER=true` stellt sie auf den Transaktionsmodus ein |
+| Migrationen (`migrate`, `safemigrate`) | direkt über `DB_DIRECT_URL` | auch im Container `mandari` (`update.sh`, `install.sh`, `deploy.sh`, von Hand) |
+| `events_after_restore` | direkt über `DB_DIRECT_URL` | `backup.sh` startet es bei der Wiederherstellung, wenn nur `postgres` läuft |
+| `worker`, `worker-heavy`, `worker-live` | direkt | Weckruf per `LISTEN`, lange Aufträge mit `.iterator()` |
+| `ingestor` | direkt | sitzungsgebundene Advisory-Sperre |
+| `minutes-orchestrator`, `website` | direkt | nicht auf den Transaktionsmodus eingestellt |
+
+Die Worker erben die Umgebung der Anwendung über den Anker `x-app-environment`; die Verbindung zu
+PgBouncer setzt nur der Dienst `mandari` selbst, die Worker behalten `DATABASE_URL` zu `postgres`.
+
+**Was `DB_PGBOUNCER=true` in der Anwendung ändert:**
+
+- `DISABLE_SERVER_SIDE_CURSORS`: `.iterator()` holt das Ergebnis auf einmal statt blockweise über
+  einen Cursor. Der Cursor läge auf einer Serververbindung, die der nächste Block nicht mehr bekommt
+  (`cursor … does not exist`). Große Ergebnisse, etwa der Export des Prüfprotokolls oder die
+  Sitemaps, brauchen dafür mehr Speicher im Webprozess. Das gilt auch für Verwaltungsbefehle, die
+  von Hand im Container `mandari` laufen (etwa `backfill_paper_locations`, `prune_file_cache`): Sie
+  laden die Ergebnisse von `.iterator()` ganz in den Speicher des Containers (1 GB). Große
+  Wartungsbefehle deshalb im Container `worker` starten, der direkt verbunden ist:
+  `docker compose exec worker python manage.py …`.
+- `prepare_threshold = None`: keine vorbereiteten Anweisungen. Django bindet Parameter ohnehin auf
+  der Clientseite, PgBouncer braucht deshalb kein `max_prepared_statements`.
+- Startparameter: Die Anwendung schickt nur `user`, `database` und `client_encoding`, die PgBouncer
+  alle kennt; `ignore_startup_parameters` bleibt bei der Vorgabe des Images.
+- Der Pool der Anwendung bleibt an und darf größer werden (`MANDARI_DB_POOL_MAX`).
+
+### Einschalten (ein Server)
+
+1. Verbindungsrechnung prüfen (unten).
+2. In der `.env` ergänzen. Die ersten drei Zeilen gehören zusammen: Zeigt die Anwendung ohne den
+   Schalter auf PgBouncer, scheitern Seiten mit `.iterator()` unter Last.
+   ```
+   COMPOSE_PROFILES=pgbouncer
+   MANDARI_DB_HOST=pgbouncer
+   MANDARI_DB_PGBOUNCER=true
+   MANDARI_DB_POOL_MAX=30
+   ```
+3. PgBouncer starten und auf `healthy` warten:
+   `docker compose up -d pgbouncer && docker compose ps pgbouncer`
+4. Anwendung neu erstellen: `docker compose up -d mandari`. Ihr Start wartet bis etwa eine Minute,
+   bis die Datenbank über PgBouncer erreichbar ist; PgBouncer startet sie nicht mit.
+5. Prüfen: `/health/ready/` antwortet mit `ok`, und
+   ```bash
+   docker compose exec mandari python manage.py shell -c \
+     "from django.db import connection as c; print(c.settings_dict['HOST'], c.settings_dict['DISABLE_SERVER_SIDE_CURSORS'])"
+   # → pgbouncer True
+   ```
+
+`update.sh` tauscht nur die Anwendungs-Images und lässt den laufenden PgBouncer stehen; seine
+Migrationen laufen über `DB_DIRECT_URL` direkt. Erst einschalten, wenn ein Image mit Issue #1060
+läuft: Ältere Images kennen `DB_PGBOUNCER` nicht.
+
+**Docker Compose:** Für einen Server genügt dieselbe Version wie bisher; die Basisdatei nutzt für
+PgBouncer nur Profile. Die Rollen unter `deploy/roles/` brauchen Docker Compose ab 2.24.4
+(`!reset`, `!override`).
+
+**Mehrere Server:** Auf dem Datenserver `COMPOSE_PROFILES=pgbouncer` (Port 6432 an `DATA_BIND`),
+auf den web-Servern `DATA_PG_PORT=6432` und `MANDARI_DB_PGBOUNCER=true`. `deploy/roles/web.yml`
+setzt `DB_DIRECT_URL` auf Port 5432 des Datenservers und verbindet die Website direkt; alle Dienste
+der Rolle worker verbinden sich direkt (`docs/MEHR_SERVER_BETRIEB.md`).
+
+**Kubernetes (Helm):** Das Chart bringt keinen PgBouncer mit, und `DATABASE_URL` kommt dort aus
+einem Secret für Anwendung, Worker, Ingestor und Migrations-Job zugleich. Einen Pooler nur vor den
+Anwendungs-Pods deckt es nicht ab.
+
+**Server-Compose außerhalb des Repos:** Wer eine eigene Compose-Datei pflegt, übernimmt dieselben
+Punkte von Hand: den Dienst `pgbouncer` (nur im internen Netz), im Dienst `mandari` `DATABASE_URL`
+auf PgBouncer, `DB_PGBOUNCER=true`, `DB_DIRECT_URL` direkt zu PostgreSQL und gegebenenfalls
+`DB_POOL_MAX`; Worker, Ingestor, Orchestrator und Website behalten ihre Direktverbindung, auch wenn
+sie Umgebung von der Anwendung erben (YAML-Anker, `extends`).
+
+### Verbindungsrechnung
+
+Zwei Seiten, jede mit eigener Grenze:
+
+1. **Anwendung → PgBouncer:** `MANDARI_DB_POOL_MAX` je Prozess × Prozesse, dazu ein bis zwei je
+   Verwaltungsbefehl per `docker compose exec`, ≤ `MAX_CLIENT_CONN` (`PGBOUNCER_MAX_CLIENT_CONN`,
+   Vorgabe 200).
+2. **PgBouncer → PostgreSQL:** `DEFAULT_POOL_SIZE` (`PGBOUNCER_DEFAULT_POOL_SIZE`, Vorgabe 20) +
+   Worker + Ingestor + übrige Dienste + Reserve ≤ `max_connections`. `DEFAULT_POOL_SIZE` gilt je
+   Datenbank und Benutzer; im Einzelserver lässt PgBouncer nur die Datenbank der Anwendung durch.
+
+Für unseren Einzelserver (`max_connections` 200, Budget oben):
+
+| | ohne PgBouncer | mit PgBouncer |
+|---|---|---|
+| Anwendung zu PostgreSQL | 10 (`DB_POOL_MAX`) | 20 (`DEFAULT_POOL_SIZE`) |
+| übrige Dienste (Budget oben ohne die Anwendung) | 128 | 128 |
+| **Summe in PostgreSQL** | **138** | **148** |
+| Reserve bis 200 | 62 | 52 |
+| Anwendung zu PgBouncer | – | 30 (`MANDARI_DB_POOL_MAX`) von 200 (`MAX_CLIENT_CONN`) |
+
+Mit PgBouncer bedient die Anwendung also dreimal so viele Anfragen mit Datenbankzugriff zugleich
+und belegt in PostgreSQL höchstens 20 Verbindungen. Wer PostgreSQL nicht stärker belasten will als
+bisher, setzt `PGBOUNCER_DEFAULT_POOL_SIZE=10`; dann warten Anweisungen bei Spitzen kurz in
+PgBouncer. Mehrere Anwendungsprozesse (#718) teilen sich dieselben 20: Bei vier Prozessen mit je 30
+sind es 120 Verbindungen zu PgBouncer, in PostgreSQL bleibt es bei 20.
+
+### Überwachen
+
+- Docker-Healthcheck des Dienstes `pgbouncer` (`pg_isready` gegen PgBouncer selbst):
+  `docker compose ps pgbouncer`.
+- Den Weg Anwendung → PgBouncer → PostgreSQL prüft `/health/ready/` (Prüfung `database`). Fällt
+  PgBouncer aus, wird die Readiness rot; ein Endpunkt der Statusseite (Gatus) auf `/health/ready/`
+  deckt PgBouncer also mit ab. PgBouncer selbst hat keinen Port nach außen.
+- Auslastung, lesend über die Konsole (`STATS_USERS`), ohne das Passwort anzuzeigen:
+  ```bash
+  docker exec mandari-pgbouncer sh -c \
+    'PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U "$DB_USER" pgbouncer -c "SHOW POOLS;"'
+  ```
+  `cl_waiting` über längere Zeit größer als 0 heißt: `DEFAULT_POOL_SIZE` ist zu klein.
+
+### Rückweg
+
+Nichts in der Datenbank hängt an PgBouncer; der Wechsel geht jederzeit zurück.
+
+**Vor einem Rückfall auf ein Image vor Issue #1060** (`update.sh --tag`, Rückfall in `deploy.sh`)
+PgBouncer zuerst abschalten: Ein älteres Image kennt `DB_PGBOUNCER` nicht und nutzt serverseitige
+Cursor über den Pooler.
+
+1. In der `.env` `MANDARI_DB_HOST`, `MANDARI_DB_PGBOUNCER` und `MANDARI_DB_POOL_MAX` entfernen.
+2. `docker compose up -d mandari`: Die Anwendung verbindet sich wieder direkt mit `postgres`.
+3. `docker compose stop pgbouncer && docker compose rm -f pgbouncer`, danach `pgbouncer` aus
+   `COMPOSE_PROFILES` streichen.
+
+Erst die Anwendung umstellen, dann PgBouncer anhalten; sonst findet sie bis zum Neustart keine
+Datenbank.
 
 ## 🧾 Protokolle
 

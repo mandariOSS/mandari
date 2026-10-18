@@ -37,12 +37,15 @@ Regeln:
   Quellen sortieren etwa ``participant`` bei jedem Abruf anders, Issue #553), außer in GeoJSON;
   ``null``, leere Listen, leere Objekte und leerer Text gelten als fehlendes Feld. ``created``,
   ``modified`` und der Content-Hash zählen auf keiner Ebene: Manche Quellen stempeln sie bei jedem
-  Abruf neu. Der
+  Abruf neu. ``type`` zählt nur mit dem Namen der Klasse, nicht mit der OParl-Version im Namensraum:
+  Die Bezirksregierung Köln bettet Mitgliedschaften als ``…/1.0/Membership`` in die Person ein und
+  liefert sie in der eigenen Liste als ``…/1.1/Membership`` (Issue #1025). Der
   Rückverweis auf das übergeordnete Objekt (``meeting`` am Tagesordnungspunkt, ``paper`` an der
   Beratung, ``paper``/``meeting``/``agendaItem`` an der Datei, ``person`` an der Mitgliedschaft,
   ``body`` an der Wahlperiode, die Rückreferenzen eines Orts) zählt ebenfalls nicht: Eingebettet
   fehlt er, in der eigenen Liste steht er, und jeder Vollabgleich schriebe sonst beide Fassungen
-  abwechselnd.
+  abwechselnd. Dasselbe gilt für ``body`` an eingebetteten Objekten (Tagesordnungspunkt, Beratung,
+  Datei, Mitgliedschaft), das manche Quellen nur in der eigenen Liste nennen.
 - **Zuordnungen zählen mit.** Ändert ein Abgleich nur die Zuordnung im Bestand und nicht das Objekt
   der Quelle, ist das trotzdem eine Änderung: Eine Datei hängt erstmals an einer Vorlage oder
   Sitzung (``added`` mit der neuen Zugehörigkeit), die Gremien einer Sitzung oder die Orte einer
@@ -73,6 +76,7 @@ Drehscheibe laden es ohne die übrige Umgebung des Ingestors
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping
@@ -115,12 +119,19 @@ VOLATILE_FIELDS: Final = frozenset({"modified", "created", "mandari:contentHash"
 #: Felder, deren Listen geordnet verglichen werden: In GeoJSON trägt die Reihenfolge die Bedeutung
 #: (Länge vor Breite, Verlauf einer Linie oder Fläche).
 ORDERED_FIELDS: Final = frozenset({"geojson"})
+#: Typangabe eines Objekts; verglichen wird nur der Klassenname (``_type_name``).
+TYPE_FIELD: Final = "type"
+#: OParl-Typ-URL mit Versionsnummer im Namensraum, z. B. ``https://schema.oparl.org/1.0/Membership``.
+_TYPE_URL: Final = re.compile(r"^https?://schema\.oparl\.org/[0-9.]+/(?P<name>[A-Za-z]+)/?$")
+#: Verweis auf die Kommune an eingebetteten Objekten; manche Quellen nennen ihn nur in der eigenen Liste
+#: (Bezirksregierung Köln: ``AgendaItem.body``, Issue #1025).
+BODY_BACKREF: Final = frozenset({"body"})
 #: Rückverweise auf das übergeordnete Objekt; eingebettet fehlen sie.
-AGENDA_ITEM_BACKREFS: Final = frozenset({"meeting"})
-CONSULTATION_BACKREFS: Final = frozenset({"paper"})
-FILE_BACKREFS: Final = frozenset({"paper", "meeting", "agendaItem"})
+AGENDA_ITEM_BACKREFS: Final = frozenset({"meeting"}) | BODY_BACKREF
+CONSULTATION_BACKREFS: Final = frozenset({"paper"}) | BODY_BACKREF
+FILE_BACKREFS: Final = frozenset({"paper", "meeting", "agendaItem"}) | BODY_BACKREF
 #: In einer Person eingebettet fehlt der Mitgliedschaft die Person (OParl 1.1, ``Membership.person``).
-MEMBERSHIP_BACKREFS: Final = frozenset({"person"})
+MEMBERSHIP_BACKREFS: Final = frozenset({"person"}) | BODY_BACKREF
 #: In der Kommune eingebettet fehlt der Wahlperiode die Kommune (``LegislativeTerm.body``).
 LEGISLATIVE_TERM_BACKREFS: Final = frozenset({"body"})
 #: Rückreferenzen eines Orts gibt die Quelle nur aus, wenn er nicht eingebettet ist (OParl 1.1,
@@ -193,11 +204,28 @@ def _sort_key(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
+def _type_name(value: Any) -> Any:
+    """Klassenname einer OParl-Typ-URL ohne Version (``…/1.0/Membership`` -> ``Membership``), sonst der Wert."""
+    if isinstance(value, str):
+        match = _TYPE_URL.match(value)
+        if match:
+            return match.group("name")
+    return value
+
+
+def _comparable_field(key: str, value: Any, *, ordered: bool = False) -> Any:
+    """Vergleichswert des Felds ``key``: ``type`` als Klassenname, sonst wie :func:`comparable`."""
+    if key == TYPE_FIELD:
+        value = _type_name(value)
+    return comparable(value, ordered=ordered or key in ORDERED_FIELDS)
+
+
 def comparable(value: Any, *, ordered: bool = False) -> Any:
     """
     Fachlicher Vergleichswert eines Felds der Quelle; gleiche Werte bedeuten: nichts geändert.
 
     - ``created``, ``modified`` und der Content-Hash fehlen auf jeder Ebene (``VOLATILE_FIELDS``).
+    - ``type`` zählt auf jeder Ebene nur mit dem Klassennamen, ohne die OParl-Version (``_type_name``).
     - Listen werden zu Mengen: Reihenfolge und doppelte Einträge zählen nicht. Quellen liefern
       Verweislisten wie ``participant`` von Abruf zu Abruf unterschiedlich sortiert (Issue #553).
       Eingebettete Objekte werden dabei als Ganzes verglichen; ändert sich eines, ändert sich die
@@ -210,7 +238,7 @@ def comparable(value: Any, *, ordered: bool = False) -> Any:
         for key, item in value.items():
             if key in VOLATILE_FIELDS:
                 continue
-            item = comparable(item, ordered=ordered or key in ORDERED_FIELDS)
+            item = _comparable_field(key, item, ordered=ordered)
             if item is not None:
                 result[key] = item
     elif isinstance(value, list | tuple):
@@ -219,6 +247,21 @@ def comparable(value: Any, *, ordered: bool = False) -> Any:
     else:
         result = value
     return None if _is_empty(result) else result
+
+
+def content_fingerprint(raw: Mapping[str, Any]) -> str:
+    """
+    Prüfsumme des fachlichen Inhalts eines Objekts (:func:`comparable`): gleich, solange der Vergleich keine
+    Änderung sieht.
+
+    Für Quellen ohne verlässliche Zeitstempel (OParl 1.0, ``timestamps_unreliable``) entscheidet sie, ob ein
+    Objekt neu geschrieben wird. Listen gehen wie im Vergleich als Mengen ein: gremien.info liefert dieselbe
+    Person in den Listen mehrerer Kommunen mit den Mitgliedschaften in anderer Reihenfolge; eine Prüfsumme über
+    die wörtliche Antwort schrieb sie deshalb in jedem Lauf neu (Issue #1025).
+    """
+    value = comparable(dict(raw))
+    canonical = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+    return "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def differing_keys(
@@ -233,9 +276,7 @@ def differing_keys(
     return sorted(
         key
         for key in old.keys() | new.keys()
-        if key not in skip
-        and comparable(old.get(key), ordered=key in ORDERED_FIELDS)
-        != comparable(new.get(key), ordered=key in ORDERED_FIELDS)
+        if key not in skip and _comparable_field(key, old.get(key)) != _comparable_field(key, new.get(key))
     )
 
 
@@ -377,8 +418,15 @@ def consultation_events(
     paper_id: UUID | None = None,
     paper_external_id: str | None = None,
     ids: IdBases | None = None,
+    agenda_item_id: UUID | None = None,
 ) -> list[Draft]:
-    """``ris.consultation.changed``; ohne bekannte Vorlage lässt sich die Beratung nicht melden."""
+    """
+    ``ris.consultation.changed``; ohne bekannte Vorlage lässt sich die Beratung nicht melden.
+
+    ``agenda_item_id``: Zeile des Tagesordnungspunkts im Bestand. Sie gilt vor der aus der Adresse gerechneten
+    Kennung: Eine umgeschriebene Zeile behält ihre Kennung (ADR kanonisches Modell, Nachträge #88 und #863), und
+    Ereignisse verweisen nur auf Zeilen des Bestands.
+    """
     paper = str(paper_id) if paper_id is not None else reference(paper_external_id or raw.get("paper"), ids)
     if paper is None:
         return []
@@ -402,7 +450,7 @@ def consultation_events(
     ):
         ref = _first_reference(value, ids)
         if ref is not None:
-            payload[name] = ref
+            payload[name] = str(agenda_item_id) if name == "agenda_item" and agenda_item_id is not None else ref
     return [Draft("ris.consultation.changed", "Consultation", consultation_id, payload)]
 
 

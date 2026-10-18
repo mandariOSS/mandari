@@ -22,6 +22,7 @@ import pytest
 from django.core import mail
 from django.test import Client
 
+from apps.common.tests.verbindungsprobe import Verbindungsprobe
 from insight_core.models import OParlBody, OParlFile, OParlPaper, OParlPerson, OParlSource, TileCache
 from insight_core.services import file_cache, safe_fetch
 
@@ -160,6 +161,26 @@ class TestZusammenfassung:
         )
         Client().post(_url(_vorgang(body)))
         assert ereignisse[:2] == ["frei", "ki"]
+
+    @pytest.mark.django_db(transaction=True)
+    def test_keine_pool_verbindung_waehrend_ki_aufruf(self, body: OParlBody, monkeypatch: Any) -> None:
+        """Ohne Testtransaktion wie im Betrieb: Während des KI-Aufrufs hält die Anfrage keine Verbindung (#1024)."""
+        probe = Verbindungsprobe()
+
+        class _Beobachtend(_Provider):
+            def chat_completion(self, messages: list[Any], **kwargs: Any) -> _Antwort:
+                probe.aufruf()
+                return super().chat_completion(messages, **kwargs)
+
+        monkeypatch.setattr("insight_ai.services.summarizer.get_insight_provider", lambda: _Beobachtend())
+        paper = _vorgang(body)
+        with probe.mitschreiben(monkeypatch):
+            response = Client().post(_url(paper))
+        assert response.status_code == 200
+        assert "Kurzfassung des Vorgangs" in response.content.decode()
+        probe.pruefen(aufrufe=1)
+        paper.refresh_from_db()
+        assert paper.summary == "Kurzfassung des Vorgangs", "nach dem Aufruf holt sich die Anfrage wieder eine"
 
     def test_ruecknahme_waehrend_der_erstellung(self, body: OParlBody, monkeypatch: Any) -> None:
         paper = _vorgang(body)
@@ -363,6 +384,32 @@ class TestKachelProxy:
         assert client.get("/insight/tiles/5/1/1").status_code == 200
         assert client.get("/insight/tiles/5/2/1").status_code == 200
         assert TileCache.objects.count() == 1
+
+    @pytest.mark.django_db(transaction=True)
+    def test_keine_pool_verbindung_waehrend_abruf_bei_osm(self, monkeypatch: Any) -> None:
+        """Eine Karte lädt Dutzende Kacheln zugleich: Keine hält beim Abruf bei OSM eine Verbindung (#1024)."""
+        probe = Verbindungsprobe()
+
+        class _Client:
+            def __init__(self, *args: Any, **kwargs: Any) -> None:
+                pass
+
+            def __enter__(self) -> _Client:
+                return self
+
+            def __exit__(self, *args: Any) -> None:
+                return None
+
+            def get(self, url: str, **kwargs: Any) -> httpx.Response:
+                probe.aufruf()
+                return httpx.Response(200, content=PNG, request=httpx.Request("GET", url))
+
+        monkeypatch.setattr("insight_core.views.maps.httpx.Client", _Client)
+        with probe.mitschreiben(monkeypatch):
+            response = Client().get("/insight/tiles/4/3/2")
+        assert response.status_code == 200
+        probe.pruefen(aufrufe=1)
+        assert TileCache.objects.count() == 1, "gespeichert wird danach mit einer neuen Verbindung"
 
 
 # =============================================================================

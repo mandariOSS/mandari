@@ -6,6 +6,7 @@ Mandari Insight - Kommunalpolitische Transparenz
 """
 
 import os
+import sys
 import uuid
 from pathlib import Path
 
@@ -295,6 +296,20 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@lo
 # Remove +asyncpg suffix if present (from FastAPI config)
 DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
+# PgBouncer im Transaktionsmodus (Issue #1060): DATABASE_URL zeigt auf den Pooler. Was das an der
+# Verbindung ändert, steht unten beim Pool. Migrationen gehen nicht über den Pooler: Mit DB_DIRECT_URL
+# verbinden sich migrate und safemigrate direkt mit PostgreSQL (wie Worker und Ingestor), egal von wo
+# sie gestartet werden (update.sh, install.sh, deploy.sh, von Hand). Fehlt DB_DIRECT_URL, laufen sie
+# über den Pooler; jede Migration ist eine eigene Transaktion, das geht, ist aber nicht der Normalfall.
+# Ebenso events_after_restore: backup.sh startet es bei der Wiederherstellung, wenn nur postgres läuft
+# und PgBouncer noch nicht.
+DB_PGBOUNCER = os.environ.get("DB_PGBOUNCER", "false").strip().lower() in ("true", "1", "yes")
+DB_DIRECT_URL = os.environ.get("DB_DIRECT_URL", "").strip().replace("postgresql+asyncpg://", "postgresql://")
+DB_DIRECT_COMMANDS = ("migrate", "safemigrate", "events_after_restore")
+if DB_PGBOUNCER and DB_DIRECT_URL and len(sys.argv) > 1 and sys.argv[1] in DB_DIRECT_COMMANDS:
+    DATABASE_URL = DB_DIRECT_URL
+    DB_PGBOUNCER = False
+
 # Parse DATABASE_URL
 import dj_database_url
 
@@ -349,6 +364,28 @@ if DB_POOL_ENABLED and DATABASES["default"]["ENGINE"].endswith("postgresql"):
         "timeout": float(os.environ.get("DB_POOL_TIMEOUT", "5")),
         "max_lifetime": float(os.environ.get("DB_POOL_MAX_LIFETIME", "1800")),
     }
+
+# PgBouncer im Transaktionsmodus (Issue #1060, DB_PGBOUNCER=true)
+#
+# Hinter PgBouncer mit pool_mode = transaction bekommt jede Transaktion, ohne Transaktion jede
+# einzelne Anweisung, irgendeine freie Serververbindung. Was danach auf der Serververbindung
+# liegen bleibt, sieht die nächste Anweisung womöglich nicht mehr:
+#
+# - Serverseitige Cursor: ``.iterator()`` legt außerhalb einer Transaktion einen Cursor WITH HOLD an
+#   und holt die Zeilen blockweise. Kommt ein Block von einer anderen Serververbindung, scheitert er
+#   mit "cursor … does not exist". Ohne serverseitige Cursor holt ``.iterator()`` das Ergebnis auf
+#   einmal; große Ergebnisse brauchen dann mehr Speicher im Prozess.
+# - Vorbereitete Anweisungen: Django bindet Parameter auf der Clientseite und schaltet sie für
+#   psycopg 3 ohnehin ab. ``prepare_threshold = None`` legt das ausdrücklich fest; deshalb braucht
+#   PgBouncer kein ``max_prepared_statements``.
+#
+# Startparameter: libpq schickt nur user, database und client_encoding, die PgBouncer alle kennt;
+# ``ignore_startup_parameters`` braucht es nicht. Der Pool der Anwendung bleibt an: Er begrenzt die
+# Verbindungen je Prozess zu PgBouncer, PgBouncer die zu PostgreSQL (``default_pool_size``).
+# Verbindungsrechnung, Einschalten und Rückweg: DEPLOYMENT.md, „PgBouncer für die Webanwendung“.
+if DB_PGBOUNCER and DATABASES["default"]["ENGINE"].endswith("postgresql"):
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    DATABASES["default"].setdefault("OPTIONS", {})["prepare_threshold"] = None
 
 # Ereignistechnik (apps.events, Issue #505): Direktverbindung zu PostgreSQL für den Weckruf per
 # LISTEN. Nötig, wenn DATABASE_URL auf PgBouncer im Transaktionsmodus zeigt; dort kommen
@@ -541,11 +578,17 @@ FILE_PROXY_TIMEOUT_SECONDS = int(os.environ.get("FILE_PROXY_TIMEOUT_SECONDS", "1
 # und den Block aus dem Caddyfile hat – sonst kommen leere Antworten an.
 FILE_ACCEL_REDIRECT = os.environ.get("FILE_ACCEL_REDIRECT", "false").lower() in ("1", "true", "yes")
 # Drossel je Host über alle Prozesse (insight_core/services/host_pacing.py, gemeinsam mit dem Ingestor):
-# Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe Ratsinformationssystem. Je Quelle
-# abweichend über sync_config["request_interval"]; 0 schaltet die Drossel ab. Die Vorschau wartet höchstens
-# FILE_PROXY_PACE_MAX_WAIT_SECONDS auf ihren Zeitpunkt und bittet sonst um einen neuen Versuch.
+# Mindestabstand in Sekunden zwischen zwei Anfragen an dasselbe Ratsinformationssystem; 0 schaltet die Drossel ab
+# (nur Tests und Notfälle). Je Quelle über sync_config["request_interval"] nur langsamer: Werte unter einer
+# Sekunde hebt mandari_oparl.pacing auf eine Sekunde an (Issue #1025). Die Vorschau wartet höchstens
+# FILE_PROXY_PACE_MAX_WAIT_SECONDS auf Abrufplatz, robots.txt und Zeitpunkt, alle Weiterleitungen eingeschlossen
+# (Issue #1036), und bittet sonst um einen neuen Versuch.
 RIS_REQUEST_INTERVAL = float(os.environ.get("RIS_REQUEST_INTERVAL", "1.0"))
 FILE_PROXY_PACE_MAX_WAIT_SECONDS = float(os.environ.get("FILE_PROXY_PACE_MAX_WAIT_SECONDS", "5"))
+# Takt je Host für Live-Übertragung und Geodienste (insight_core/services/dienste.py, Issue #1036), Abstand je
+# Dienst fest im Code (Nominatim höchstens eine Anfrage je Sekunde). Bewusst ohne Umgebungsvariable: False nur in
+# Tests (settings_test.py).
+DIENSTE_DROSSEL = True
 # Löschabgleich (Issue #787): Kopie und Text eines gesperrten Dokuments nach so vielen Tagen löschen
 FILE_PURGE_AFTER_DAYS = int(os.environ.get("FILE_PURGE_AFTER_DAYS", "30"))
 # Lässt sich die Quelle vor dem Löschen nicht befragen, wartet das Löschen höchstens so viele Tage zusätzlich
@@ -576,6 +619,8 @@ OBJ_REGION = os.environ.get("OBJ_REGION", "")
 OBJ_ADDRESSING_STYLE = os.environ.get("OBJ_ADDRESSING_STYLE", "auto")
 OBJ_TIMEOUT_SECONDS = float(os.environ.get("OBJ_TIMEOUT_SECONDS", "30"))
 OBJ_CACHE_MAX_GB = int(os.environ.get("OBJ_CACHE_MAX_GB", "60"))
+# Verdrängen bricht ab, wenn so viele Inhalte in Folge im Objektspeicher fehlen (falscher Bucket, #990; 0 = ohne Grenze)
+OBJ_EVICT_MAX_MISSING = int(os.environ.get("OBJ_EVICT_MAX_MISSING", "20"))
 # Gesamtdauer eines Abrufs aus dem Objektspeicher (danach gilt er als gestört; kein Abruf bei der Quelle, #919)
 OBJ_FETCH_TOTAL_SECONDS = float(os.environ.get("OBJ_FETCH_TOTAL_SECONDS", "60"))
 # Prüfsummen beim Upload: "when_required" (verträglich mit S3-kompatiblen Anbietern) oder "when_supported"
@@ -609,6 +654,9 @@ REPORTS_ROOT = Path(os.environ.get("REPORTS_ROOT", str(MEDIA_ROOT / "berichte"))
 AUDIT_EXPORT_MAX_ROWS = int(os.environ.get("AUDIT_EXPORT_MAX_ROWS", "100000"))
 # Aufbewahrung des mandantenübergreifenden Sicherheitsprotokolls in Tagen (purge_security_audit_log)
 SECURITY_AUDIT_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_RETENTION_DAYS", "365"))
+# Aufbewahrung der Anmeldeversuche (LoginAttempt, Drosselung) in Tagen, 0 = keine Löschung (purge_login_attempts,
+# Issue #366); 30 Tage, festgelegt durch den Betreiber am 16.10.2026 (docs/PROTOKOLLE.md)
+LOGIN_ATTEMPT_RETENTION_DAYS = int(os.environ.get("LOGIN_ATTEMPT_RETENTION_DAYS", "30"))
 
 
 # Default primary key field type

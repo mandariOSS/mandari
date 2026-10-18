@@ -10,6 +10,8 @@ from urllib.parse import urlparse
 
 from django import forms
 from django.contrib import admin, messages
+from django.db import transaction
+from django.http import HttpRequest
 from django.utils.http import url_has_allowed_host_and_scheme
 from unfold.admin import ModelAdmin
 from unfold.decorators import action
@@ -22,6 +24,7 @@ from .ki_anbieter import (
     erlaubte_hosts,
     fremder_host_fuer_vorlage,
     pruefe_basis_url,
+    pruefe_ki_einstellungen,
     vorlage_nutzbar,
     wirksamer_host,
 )
@@ -353,10 +356,13 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
     Eine KI-Konfiguration für Work und Bürgerportal (Issue #950).
 
     Anbieter (Vorlage oder eigener Endpunkt), Schlüssel, Modelle, Schalter je Bereich und Grenzen. Wirksam ist
-    eine Adresse nur, wenn ihr Host in der Positivliste KI_ERLAUBTE_HOSTS steht.
+    eine Adresse nur, wenn ihr Host in der Positivliste KI_ERLAUBTE_HOSTS steht. „Speichern und Verbindung prüfen“
+    speichert wie „Speichern“ (gleiche Prüfungen) und stellt danach je Modell einen Testaufruf (Issue #1046).
     """
 
     form = AISettingsAdminForm
+    # Knopf neben „Speichern“: POST mit CSRF-Schutz, nur mit Änderungsrecht, erst nach gültigem Speichern
+    actions_submit_line = ["speichern_und_pruefen"]
 
     fieldsets = (
         (
@@ -364,9 +370,10 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
             {
                 "fields": ("provider", "base_url", "anzeigename", "verarbeitungsort", "api_key", "api_key_loeschen"),
                 "description": (
-                    "OpenAI-kompatibler Anbieter mit Verarbeitung in Europa. Ohne Anbieter bleibt die KI aus. "
-                    "Freigegeben sind nur Hosts aus der Umgebungsvariable KI_ERLAUBTE_HOSTS (derzeit: {hosts}); "
-                    "jede Adresse wird bei jedem Aufruf erneut geprüft."
+                    "OpenAI-kompatibler Anbieter; der Verarbeitungsort erscheint in Hinweisen und in der "
+                    "Einwilligung. Ohne Anbieter bleibt die KI aus. Freigegeben sind nur Hosts aus der "
+                    "Umgebungsvariable KI_ERLAUBTE_HOSTS (derzeit: {hosts}); jede Adresse wird bei jedem Aufruf "
+                    "erneut geprüft. Auf der Kommandozeile: manage.py ki_anbieter."
                 ),
             },
         ),
@@ -398,6 +405,29 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
             },
         ),
     )
+
+    @action(description="Speichern und Verbindung prüfen", permissions=["change"])
+    def speichern_und_pruefen(self, request: HttpRequest, obj: AISettings) -> None:
+        """
+        Testaufruf je Modell an den gerade gespeicherten Endpunkt (wie ``manage.py ki_anbieter pruefen``).
+
+        Unfold ruft die Aktion beim Speichern auf, noch in der Transaktion des Admins. Geprüft wird erst nach dem
+        Commit: Die Testaufrufe (je bis zu 15 s) halten weder die Zeilensperre noch eine Datenbankverbindung, und ein
+        Fehler dabei kann das Gespeicherte nicht zurückrollen. Die Meldungen nennen nur Host, Modell und Art des
+        Ergebnisses, nie Schlüssel oder Inhalte.
+        """
+        transaction.on_commit(lambda: self._melde_verbindungspruefung(request, obj), robust=True)
+
+    @staticmethod
+    def _melde_verbindungspruefung(request: HttpRequest, obj: AISettings) -> None:
+        try:
+            ergebnisse = pruefe_ki_einstellungen(obj)
+        except Exception as fehler:  # noqa: BLE001 – nur der Typ, der Text könnte Adresse oder Zeichen nennen
+            logging.getLogger(__name__).warning("KI-Verbindungsprüfung abgebrochen: %s", type(fehler).__name__)
+            messages.error(request, f"Verbindungsprüfung abgebrochen ({type(fehler).__name__}).")
+            return
+        for ergebnis in ergebnisse:
+            (messages.success if ergebnis.ok else messages.error)(request, f"Verbindungsprüfung – {ergebnis.text}")
 
     def changeform_view(self, request, object_id=None, form_url="", extra_context=None):
         # Always edit the singleton instance

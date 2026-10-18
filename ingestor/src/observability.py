@@ -124,7 +124,7 @@ def setup_logging(log_format: str | None = None, log_level: str | None = None) -
     root.setLevel(level)
     # Laute Bibliotheken bleiben auf WARNING, außer im DEBUG-Fall
     if level != "DEBUG":
-        for noisy in ("httpx", "httpcore", "apscheduler", "sqlalchemy.engine"):
+        for noisy in ("httpx", "httpcore", "sqlalchemy.engine"):
             logging.getLogger(noisy).setLevel(logging.WARNING)
         # pypdf meldet jede Unsauberkeit in PDFs als Warnung (Sept. 2026: >70 000 Zeilen am Tag)
         logging.getLogger("pypdf").setLevel(logging.ERROR)

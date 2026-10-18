@@ -9,7 +9,8 @@ Geodienst. Verlinken ist verlässlicher, als sie aus PDF-Anlagen zu rekonstruier
    „1. Änderung des Bebauungsplans Nr. 579“ die Plannummer samt Änderung.
 2. ``refresh_source`` lädt die Umringe einer Quelle (OGC API – Features oder WFS mit GeoJSON) in
    ``PlanBoundary``. Das geschieht einmal täglich über ``sync_plan_boundaries`` – nie je
-   Seitenaufruf, mit eigenem User-Agent und Pause zwischen Seiten.
+   Seitenaufruf, mit Kennung und Takt je Host wie alle Abrufe bei Diensten (``dienste``, Issue #1036:
+   höchstens eine Anfrage je Sekunde und Host, auch vor jeder Weiterleitung) und Pause zwischen Seiten.
 3. ``link_body_papers`` ordnet Vorlagen die Umringe zu. Jeder Bezug wird gespeichert
    (``PaperPlanReference``), auch ohne Treffer: Das ist die protokollierte Lücke. Ein Punkt im
    Umring kommt als Verortung (``source = plan_boundary``) an den Vorgang und wirkt damit in Karte,
@@ -41,8 +42,8 @@ from django.db import transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q
 from django.utils import timezone
 
+from insight_core.services import dienste
 from insight_core.services import polygon_geometry as geo
-from insight_core.services.overpass import OSM_USER_AGENT
 from insight_core.services.safe_fetch import (
     BlockedDestinationError,
     DeadlineExceededError,
@@ -222,6 +223,8 @@ def _sleep(seconds: float) -> None:
 def _get_json(url: str) -> Any:
     buffer = io.BytesIO()
     try:
+        # Takt je Host vor der Anfrage und vor jeder Weiterleitung (Issue #1036)
+        dienste.warten(url, dienste.GEOPORTAL)
         download_to(
             buffer,
             url,
@@ -229,7 +232,8 @@ def _get_json(url: str) -> Any:
             total_seconds=TOTAL_SECONDS,
             timeout=REQUEST_TIMEOUT,
             headers={"Accept": "application/geo+json, application/json;q=0.9"},
-            user_agent=OSM_USER_AGENT,
+            user_agent=dienste.USER_AGENT,
+            before_redirect=dienste.vor_weiterleitung(dienste.GEOPORTAL),
         )
     except BlockedDestinationError:
         raise PlanSourceError("Adresse ist nicht zulässig (kein öffentliches Ziel)") from None

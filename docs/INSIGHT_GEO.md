@@ -85,7 +85,8 @@ als Geodienst. mandari verlinkt sie, statt sie aus PDF-Anlagen zu rekonstruieren
 
 **Ablauf (täglich, `sync_plan_boundaries`):**
 
-1. Jede aktive Quelle wird einmal abgerufen (eigener User-Agent, eine Sekunde Pause zwischen Seiten,
+1. Jede aktive Quelle wird einmal abgerufen (Kennung und Takt je Server wie alle Abrufe bei Diensten,
+   [ABRUFREGELN.md](ABRUFREGELN.md#andere-abrufe), eine Sekunde Pause zwischen Seiten,
    zwei Sekunden zwischen Quellen, Obergrenzen für Seiten, Objekte und 24 MB je Antwort). Liefert ein
    Dienst mit Bestand plötzlich nichts oder weniger Objekte, als er selbst meldet (`numberMatched`,
    bei GeoServer `totalFeatures` – etwa wegen einer Obergrenze des Dienstes), bleibt der Bestand
@@ -150,7 +151,8 @@ Der Abruf läuft täglich um 04:50 als Zeitplan `befehl:sync_plan_boundaries` im
 - „Straße Hausnummer“ → Treffer aus `Address` (Präfix auf Straße und Hausnummer),
 - sonst `Street` (eine Zeile je Straßenname, Zentroid gemittelt): Präfix-Treffer zuerst, dann
   Teilstring-Treffer, höchstens 10 Ergebnisse.
-- Photon (`PHOTON_API_URL`) nur noch als Fallback, wenn die Kommune keine Straßen hat.
+- Photon (`PHOTON_API_URL`) nur noch als Fallback, wenn die Kommune keine Straßen hat; im Takt je Server
+  (höchstens eine Anfrage je Sekunde). Ist binnen 2 Sekunden kein Zeitpunkt frei, gibt es keine Vorschläge.
 
 Antwortformat unverändert: `[{"name", "lat", "lon"}]`.
 
@@ -214,7 +216,9 @@ Vorschläge liegen in `OParlBodyGeoSuggestion` (`insight_body_geo_suggestions`).
 `oparl_bodies` sind nullable oder haben einen DB-Default; der Ingestor kennt sie nicht und führt
 sie in `ENRICHMENT_FIELDS`.
 
-Rücksicht auf OSM: eigener User-Agent mit Kontaktadresse, Pause zwischen zwei Abfragen (`--pause`,
+Rücksicht auf OSM: Kennung mit Infoseite und Kontaktadresse und Takt je Server wie alle Abrufe bei Diensten
+([ABRUFREGELN.md](ABRUFREGELN.md#andere-abrufe), Nominatim und Overpass höchstens eine Anfrage je Sekunde), Pause
+zwischen zwei Abfragen (`--pause`,
 Standard 3 s), Retry mit Wartezeit bei 429/504 und Ersatz-Endpoint (`services/overpass.py`, auch von
 `import_streets` genutzt). Nach drei Abfragen in Folge ohne Antwort bricht der Lauf ab. Gespeichert
 wird je Körperschaft sofort; ein erneuter Aufruf macht dort weiter und fragt für vollständige

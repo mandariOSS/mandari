@@ -33,11 +33,13 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
 
 from django.conf import settings
+from django.db import DatabaseError
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import escape
 from django.utils.safestring import SafeString, mark_safe
 
+from apps.common.db_connections import is_pool_exhausted
 from insight_ai.services.chat_tools import Source, ToolContext, context_for
 
 if TYPE_CHECKING:
@@ -163,6 +165,26 @@ def systemprompt(now: datetime, body_name: str, org_slug: str) -> str:
     return build_chat_system_prompt(now, body_name, template=WORK_PROMPT, beispiel=beispiel)
 
 
+def _verbrauch_buchen(dienst: Any, tokens: int) -> None:
+    """
+    Verbrauch nach dem KI-Aufruf buchen (Grenze je Person, Kontingent der Organisation).
+
+    Bewusster Tausch (Issue #1024): Während des Aufrufs liegt die Datenbankverbindung beim Pool. Bekommt das Buchen
+    danach keine (Pool erschöpft) oder scheitert es an der Datenbank, wird die Antwort trotzdem ausgeliefert; dieser
+    eine Verbrauch fehlt dann im Kontingent. Die Antwort ist schon bezahlt, ein Fehler danach würde sie verwerfen.
+    Andere Fehler gehen weiter nach oben.
+    """
+    try:
+        dienst.verbrauch_buchen(tokens)
+    except DatabaseError as exc:
+        # Ohne Nutzerdaten: weder Frage noch Person oder Organisation
+        logger.warning(
+            "Work-Frage: Verbrauch nicht gebucht (%s, %d Token), Antwort wird trotzdem ausgeliefert",
+            "Pool erschöpft" if is_pool_exhausted(exc) else type(exc).__name__,
+            tokens,
+        )
+
+
 def beantworten(organization: Any, membership: Any, frage: str, body: Any, *, now: datetime | None = None) -> Antwort:
     """Eine Frage beantworten; Fehler und Grenzen enden mit einem festen Hinweis, nie mit Ausnahmetexten."""
     from apps.work.motions.services import MotionAIService
@@ -202,10 +224,10 @@ def beantworten(organization: Any, membership: Any, frage: str, body: Any, *, no
     except Exception as exc:  # Anbieter nicht konfiguriert oder Fehler: fester Hinweis, Details nur im Log
         # Auch ein Fehlschlag zählt für die Grenze je Person, mit dem Verbrauch der Runden davor
         # (insight_ai.services.chat_service.ChatAbbruchError); sonst ließe er sich beliebig oft wiederholen
-        dienst.verbrauch_buchen(int(getattr(getattr(exc, "usage", None), "total_tokens", 0) or 0))
+        _verbrauch_buchen(dienst, int(getattr(getattr(exc, "usage", None), "total_tokens", 0) or 0))
         logger.warning("Work-Frage an die Ratsdaten gescheitert: %s", type(exc).__name__)
         return Antwort(frage=frage, hinweis=NICHT_ERREICHBAR)
-    dienst.verbrauch_buchen(int(ergebnis.get("tokens_used") or 0))
+    _verbrauch_buchen(dienst, int(ergebnis.get("tokens_used") or 0))
     return Antwort(
         frage=frage,
         html=antwort_html(str(ergebnis.get("response") or ""), organization.slug),

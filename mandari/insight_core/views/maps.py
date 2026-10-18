@@ -19,12 +19,14 @@ from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
 from ..models import TileCache
-from ..services import karten_punkte
+from ..services import dienste, karten_punkte
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
 
 #: Höchste Zoomstufe der Karten (Leaflet maxZoom) und Größengrenze einer Kachel
 MAX_TILE_ZOOM = 19
 MAX_TILE_BYTES = 1024 * 1024
+#: So lange wartet ein Kachelabruf höchstens auf seinen Zeitpunkt im Takt je Host (Issue #1036)
+TILE_PACE_MAX_WAIT_SECONDS = 5.0
 _TILE_COUNT_CACHE_KEY = "insight:tiles:count"
 
 
@@ -165,6 +167,9 @@ def tile_proxy(request, z, x, y):
 
     Nur gültige Kacheln (Zoom 0–19, x/y innerhalb des Zoomlevels); Abrufe bei OSM sind je IP und
     insgesamt gedrosselt, der Cache hat eine Obergrenze. Kacheln aus dem Cache sind nicht gedrosselt.
+    Abrufe bei OSM melden sich mit unserer Kennung samt Kontakt und halten den Takt je Host ein
+    (``dienste.KACHELN``, Issue #1036); ist binnen ``TILE_PACE_MAX_WAIT_SECONDS`` kein Zeitpunkt frei,
+    antwortet der Proxy mit 503 und ``Retry-After``, ohne bei OSM anzufragen.
     """
     from django.http import HttpResponseNotFound
 
@@ -200,14 +205,18 @@ def tile_proxy(request, z, x, y):
     ):
         return HttpResponse(status=429, headers={"Retry-After": "60"})
 
-    subdomain = ["a", "b", "c"][x % 3]
-    tile_url = f"https://{subdomain}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+    tile_url = dienste.OSM_KACHEL_URL.format(z=z, x=x, y=y)
 
+    # Eine Karte lädt Dutzende Kacheln zugleich; jeder Abruf bei OSM darf bis zu 10 s dauern. Solange die
+    # Datenbankverbindung an den Pool zurückgeben (Issue #1024), das Speichern holt sich danach eine neue
+    from apps.common.db_connections import release_idle_thread_connections
+
+    release_idle_thread_connections()
+    # Takt je Host (Issue #1036): ohne freien Zeitpunkt keine Anfrage bei OSM, der Browser versucht es später
+    if not dienste.warten(tile_url, dienste.KACHELN, max_wait=TILE_PACE_MAX_WAIT_SECONDS):
+        return HttpResponse(status=503, headers={"Retry-After": "5"})
     try:
-        with httpx.Client(
-            timeout=10.0,
-            headers={"User-Agent": "Mandari/1.0 (https://mandari.dev; contact@mandari.dev)"},
-        ) as client:
+        with httpx.Client(timeout=10.0, headers=dienste.headers()) as client:
             response = client.get(tile_url)
 
             if response.status_code == 200 and len(response.content) <= MAX_TILE_BYTES:

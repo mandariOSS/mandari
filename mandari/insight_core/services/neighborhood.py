@@ -5,7 +5,9 @@ Nachbarschafts-Autocomplete aus dem eigenen Straßen- und Adressverzeichnis (Iss
 Sucht Straßen (``Street``) und Hausnummern-Punkte (``Address``) der aktiven Kommune über
 den normalisierten Namen: Präfix-Treffer zuerst, dann Teilstring-Treffer, höchstens
 ``AUTOCOMPLETE_LIMIT`` Ergebnisse. Photon dient nur noch als Fallback, wenn für die
-Kommune kein Straßenverzeichnis importiert ist.
+Kommune kein Straßenverzeichnis importiert ist; dann mit Kennung und Takt je Host wie alle
+Abrufe bei Diensten (``dienste``, Issue #1036). Ist binnen ``PHOTON_MAX_WAIT_SECONDS`` kein
+Zeitpunkt frei, gibt es keine Vorschläge statt einer Anfrage.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ import httpx
 from django.conf import settings
 from django.db.models import Avg, Min, Q
 
+from insight_core.services import dienste
 from insight_core.services.gazetteer import normalize_house_number, normalize_street_name, strip_house_number
 
 if TYPE_CHECKING:
@@ -27,7 +30,8 @@ logger = logging.getLogger(__name__)
 AUTOCOMPLETE_LIMIT = 10
 MIN_QUERY_LEN = 2
 PHOTON_LIMIT = 5
-USER_AGENT = "Mandari/2.0 (https://mandari.de)"
+#: Die Adresssuche wartet im Seitenaufruf höchstens so lange auf einen Zeitpunkt bei Photon
+PHOTON_MAX_WAIT_SECONDS = 2.0
 
 
 def autocomplete_places(body: OParlBody, query: str, limit: int = AUTOCOMPLETE_LIMIT) -> list[dict[str, Any]]:
@@ -102,8 +106,15 @@ def photon_autocomplete(body: OParlBody | None, query: str) -> list[dict[str, An
         params["lon"] = str(body.longitude)
 
     photon_url = getattr(settings, "PHOTON_API_URL", "https://photon.komoot.io/api/")
+    # Warten und Anfrage ohne ausgeliehene Datenbankverbindung (Pool, Issue #1024); danach braucht es keine mehr
+    from apps.common.db_connections import release_idle_thread_connections
+
+    release_idle_thread_connections()
+    if not dienste.warten(photon_url, dienste.PHOTON, max_wait=PHOTON_MAX_WAIT_SECONDS):
+        logger.info("Photon-Autocomplete: kein freier Zeitpunkt, keine Anfrage")
+        return []
     try:
-        response = httpx.get(photon_url, params=params, timeout=5.0, headers={"User-Agent": USER_AGENT})
+        response = httpx.get(photon_url, params=params, timeout=5.0, headers=dienste.headers())
         response.raise_for_status()
         data = response.json()
     except Exception as exc:

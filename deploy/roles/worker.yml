@@ -4,7 +4,12 @@
 # In der .env:
 #   COMPOSE_FILE=docker-compose.yml:deploy/roles/worker.yml
 #   DATA_HOST=10.0.0.10        # Server mit der Rolle „data“ (privates Netz)
-#   DATA_PG_PORT=5432          # 6432, wenn dort PgBouncer aktiv ist
+#
+# Alle Dienste dieser Rolle verbinden sich direkt mit PostgreSQL (Port 5432), auch wenn auf dem
+# Datenserver PgBouncer läuft (Issue #1060): Der Ingestor hält eine sitzungsgebundene
+# Advisory-Sperre, der Worker lauscht per LISTEN, und die Verwaltungsbefehle der Zeitpläne
+# lesen mit serverseitigen Cursorn (.iterator()). Das trägt der Transaktionsmodus nicht.
+# DATA_PG_PORT gilt nur für die Anwendung auf den web-Servern.
 #
 # Läuft diese Rolle versehentlich auf zwei Servern, verhindert der Ingestor doppelte
 # Sync-Läufe über eine PostgreSQL-Advisory-Sperre (nur eine Instanz synchronisiert, die
@@ -26,10 +31,13 @@ services:
     profiles: ["aus"]
   website:
     profiles: ["aus"]
+  # PgBouncer läuft auf dem Datenserver
+  pgbouncer:
+    profiles: !override ["aus"]
 
   minutes-orchestrator:
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:${DATA_PG_PORT:-5432}/${POSTGRES_DB:-mandari}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
     depends_on: !reset []
 
@@ -44,9 +52,9 @@ services:
 
   worker:
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:${DATA_PG_PORT:-5432}/${POSTGRES_DB:-mandari}
-      # Weckruf per LISTEN direkt an PostgreSQL, an PgBouncer vorbei (apps/events/wakeup.py); ohne
-      # ihn fragt der Worker nur ab, und mandari_events_listener_up steht auf 0
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:5432/${POSTGRES_DB:-mandari}
+      # Weckruf per LISTEN direkt an PostgreSQL (apps/events/wakeup.py). Dieselbe Adresse wie
+      # DATABASE_URL; bleibt gesetzt, falls DATABASE_URL hier doch einmal auf einen Pooler zeigt
       EVENTS_DB_DIRECT_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
       ELASTICSEARCH_URL: http://${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:9200
@@ -55,18 +63,18 @@ services:
       METRICS_URL: ${METRICS_URL:-}
     depends_on: !reset []
 
-  # Nur Aufträge aus ocr und ai: ohne Weckruf, also ohne Direktverbindung
+  # Nur Aufträge aus ocr und ai: ohne Weckruf, also ohne EVENTS_DB_DIRECT_URL
   worker-heavy:
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:${DATA_PG_PORT:-5432}/${POSTGRES_DB:-mandari}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
       ELASTICSEARCH_URL: http://${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:9200
     depends_on: !reset []
 
-  # Nur Aufträge aus live (Live-Übertragungen): ohne Weckruf, also ohne Direktverbindung
+  # Nur Aufträge aus live (Live-Übertragungen): ohne Weckruf, also ohne EVENTS_DB_DIRECT_URL
   worker-live:
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:${DATA_PG_PORT:-5432}/${POSTGRES_DB:-mandari}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
       ELASTICSEARCH_URL: http://${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:9200
     depends_on: !reset []

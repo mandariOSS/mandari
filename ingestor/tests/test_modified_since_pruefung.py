@@ -2,15 +2,15 @@
 """
 modified_since nach jedem Vollabgleich neu prüfen.
 
-Der Befund „Quelle filtert nicht mit modified_since“ hing bisher dauerhaft am Host (Capability-Cache, in
-``sync_config`` aller Quellen). Unterstützt die Quelle den Filter später, liefen die inkrementellen Läufe
-weiter über die vollständigen Listen. Jetzt prüft eine Anfrage nach jedem Vollabgleich neu. Antworten aus
+Der Befund „Quelle filtert nicht mit modified_since“ hing früher dauerhaft am Host. Unterstützt die Quelle den Filter
+später, liefen die inkrementellen Läufe weiter über die vollständigen Listen. Jetzt prüft eine Anfrage nach jedem
+Vollabgleich neu, und das Ergebnis ändert nur die Vermerke der eigenen Quelle (Issue #1041). Antworten aus
 httpx.MockTransport, keine Abrufe fremder Server.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 import pytest
 
+from src.client.filter_notes import FilterNote, FilterNotes
 from src.client.oparl_client import (
     MODIFIED_SINCE_IGNORED,
     MODIFIED_SINCE_INCONCLUSIVE,
@@ -58,13 +59,9 @@ async def _probe(handler: Callable[[httpx.Request], httpx.Response], **kwargs: A
     return verdict, gesehen
 
 
-@pytest.fixture(autouse=True)
-def _capability_cache() -> Iterator[None]:
-    saved = OParlClient.get_modified_since_unsupported()
-    OParlClient._modified_since_unsupported.clear()
-    yield
-    OParlClient._modified_since_unsupported.clear()
-    OParlClient._modified_since_unsupported.update(saved)
+def _server_vermerkt() -> FilterNotes:
+    """Vermerke einer Quelle, die den Filter auf ``HOST`` ganz ignoriert."""
+    return FilterNotes(hosts={HOST: FilterNote("Filter fehlt in den Listen-Links", datetime.now(UTC))})
 
 
 class TestProbe:
@@ -74,8 +71,7 @@ class TestProbe:
         assert parse_qs(urlparse(gesehen[0]).query)["modified_since"] == ["2026-10-01T00:00:00+00:00"]
 
     async def test_auch_bei_bekanntem_befund_wird_der_parameter_gesendet(self):
-        OParlClient.add_modified_since_unsupported({HOST})
-        verdict, gesehen = await _probe(lambda r: _seite(r, []))
+        verdict, gesehen = await _probe(lambda r: _seite(r, []), filter_notes=_server_vermerkt())
         assert verdict == MODIFIED_SINCE_SUPPORTED
         assert "modified_since=" in gesehen[0]
 
@@ -104,46 +100,75 @@ class TestProbe:
 
 class _Speicher:
     def __init__(self) -> None:
-        self.calls: list[tuple[str, str, str, bool]] = []
+        self.calls: list[tuple[str, str, str]] = []
 
-    async def apply_modified_since_check(self, source_url: str, host: str, verdict: str, supported: bool) -> None:
-        self.calls.append((source_url, host, verdict, supported))
+    async def set_modified_since_check(self, source_url: str, host: str, verdict: str) -> None:
+        self.calls.append((source_url, host, verdict))
 
 
-async def _recheck(handler: Callable[[httpx.Request], httpx.Response]) -> tuple[str | None, _Speicher]:
+async def _recheck(
+    handler: Callable[[httpx.Request], httpx.Response], notes: FilterNotes | None = None
+) -> tuple[str | None, _Speicher, FilterNotes]:
     orchestrator = SyncOrchestrator.__new__(SyncOrchestrator)
     speicher = _Speicher()
     orchestrator.storage = speicher  # type: ignore[assignment]
     bodies = [{"id": f"https://{HOST}/oparl/bodies/1", "meeting": f"{LIST_URL}-m", "paper": LIST_URL}]
-    async with OParlClient(max_concurrent=1, wait_time=0) as client:
+    async with OParlClient(max_concurrent=1, wait_time=0, filter_notes=notes) as client:
         assert client._client is not None
         await client._client.aclose()
         client._client = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         verdict = await orchestrator._recheck_modified_since(client, "https://rat.example.de/oparl/system", bodies)
-    return verdict, speicher
+    return verdict, speicher, client.filter_notes
 
 
 class TestNachVollabgleich:
     async def test_host_wird_wieder_inkrementell_abgerufen(self):
-        OParlClient.add_modified_since_unsupported({HOST})
-        verdict, speicher = await _recheck(lambda r: _seite(r, [datetime.now(UTC)]))
+        notes = _server_vermerkt()
+        notes.note_list(LIST_URL, "HTTP 400")
+        verdict, speicher, notes = await _recheck(lambda r: _seite(r, [datetime.now(UTC)]), notes)
         assert verdict == MODIFIED_SINCE_SUPPORTED
-        assert HOST not in OParlClient.get_modified_since_unsupported()
-        assert speicher.calls == [("https://rat.example.de/oparl/system", HOST, MODIFIED_SINCE_SUPPORTED, True)]
+        assert notes.hosts == {} and notes.lists == {}
+        assert notes.changed_hosts == {HOST: None} and notes.changed_lists == {LIST_URL: None}
+        assert speicher.calls == [("https://rat.example.de/oparl/system", HOST, MODIFIED_SINCE_SUPPORTED)]
 
     async def test_ungefilterte_quelle_wird_eingetragen(self):
-        verdict, speicher = await _recheck(lambda r: _seite(r, [datetime(2019, 1, 1, tzinfo=UTC)]))
+        verdict, speicher, notes = await _recheck(lambda r: _seite(r, [datetime(2019, 1, 1, tzinfo=UTC)]))
         assert verdict == MODIFIED_SINCE_IGNORED
-        assert HOST in OParlClient.get_modified_since_unsupported()
-        assert speicher.calls[0][2:] == (MODIFIED_SINCE_IGNORED, False)
+        assert set(notes.hosts) == {HOST} and notes.lists == {}
+        assert speicher.calls[0][2] == MODIFIED_SINCE_IGNORED
+
+    async def test_abgelehnter_filter_vermerkt_nur_die_gepruefte_liste(self):
+        """Lehnt die geprüfte Liste den Filter ab, gilt das für sie, nicht für den Server (Issue #1041)."""
+        verdict, speicher, notes = await _recheck(lambda r: httpx.Response(400))
+        assert verdict == MODIFIED_SINCE_UNSUPPORTED
+        assert set(notes.lists) == {LIST_URL} and notes.hosts == {}
+        assert speicher.calls[0][2] == MODIFIED_SINCE_UNSUPPORTED
 
     async def test_ohne_aussage_bleibt_der_befund(self, monkeypatch):
         monkeypatch.setattr("src.client.oparl_client.settings.oparl_max_retries", 1)
-        OParlClient.add_modified_since_unsupported({HOST})
-        verdict, speicher = await _recheck(lambda r: httpx.Response(502))
+        monkeypatch.setattr(SyncOrchestrator, "MODIFIED_SINCE_RETRY_SECONDS", 0)
+        anfragen: list[httpx.Request] = []
+        verdict, speicher, notes = await _recheck(
+            lambda r: anfragen.append(r) or httpx.Response(502), _server_vermerkt()
+        )
         assert verdict == MODIFIED_SINCE_INCONCLUSIVE
-        assert HOST in OParlClient.get_modified_since_unsupported()
+        assert len(anfragen) == 2  # einmal wiederholt
+        assert set(notes.hosts) == {HOST} and not notes.dirty
         assert speicher.calls == []
+
+    async def test_einzelne_stoerung_haelt_veralteten_befund_nicht_fest(self, monkeypatch):
+        """Münster, 15.10.2026: eine Nacht „keine Aussage“ ließ den falschen Vermerk wochenlang stehen."""
+        monkeypatch.setattr("src.client.oparl_client.settings.oparl_max_retries", 1)
+        monkeypatch.setattr(SyncOrchestrator, "MODIFIED_SINCE_RETRY_SECONDS", 0)
+        antworten = iter([httpx.Response(502)])
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            return next(antworten, None) or _seite(request, [datetime.now(UTC)])
+
+        verdict, speicher, notes = await _recheck(handler, _server_vermerkt())
+        assert verdict == MODIFIED_SINCE_SUPPORTED
+        assert notes.hosts == {}
+        assert speicher.calls[0][2] == MODIFIED_SINCE_SUPPORTED
 
     async def test_fehler_gefaehrden_den_abgleich_nicht(self):
         def kaputt(_request: httpx.Request) -> httpx.Response:
@@ -160,42 +185,31 @@ async def _wirft(*_args: Any, **_kwargs: Any) -> str:
     raise RuntimeError("unerwartet")
 
 
-async def test_storage_traegt_host_bei_allen_quellen_aus(monkeypatch):
-    """Der Capability-Cache ist die Vereinigung über alle Quellen: austragen muss überall wirken."""
-    from contextlib import asynccontextmanager
-    from types import SimpleNamespace
-
+async def test_storage_schreibt_nur_in_die_eigene_quelle(monkeypatch):
+    """Prüfung und Vermerke ändern nur die ``sync_config`` der geprüften Quelle, keine andere (Issue #1041)."""
     from src.storage.database import DatabaseStorage
 
-    quellen = [
-        SimpleNamespace(url="https://a.example/system", sync_config={"modified_since_unsupported_hosts": [HOST, "x"]}),
-        SimpleNamespace(url="https://b.example/system", sync_config={"modified_since_unsupported_hosts": [HOST]}),
-        SimpleNamespace(url="https://c.example/system", sync_config={"anderes": 1}),
-    ]
-
-    class _Sitzung:
-        committed = False
-
-        async def execute(self, _stmt: Any) -> Any:
-            return SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: quellen))
-
-        async def commit(self) -> None:
-            _Sitzung.committed = True
-
+    configs: dict[str, dict[str, Any]] = {
+        "https://a.example/system": {"anderes": 1, "modified_since_unsupported_hosts": [HOST]},
+        "https://b.example/system": {"unfiltered_hosts": {HOST: {"reason": "x"}}},
+    }
     storage = DatabaseStorage(database_url="postgresql+asyncpg://nicht/benutzt")
 
-    @asynccontextmanager
-    async def sitzung() -> Any:
-        yield _Sitzung()
+    async def aendern(where: Any, change: Callable[[dict[str, Any]], bool]) -> None:
+        url = where.right.value  # OParlSource.url == source_url
+        kopie = dict(configs[url])
+        if change(kopie):
+            configs[url] = kopie
 
-    monkeypatch.setattr(storage, "get_session", sitzung)
-    await storage.apply_modified_since_check("https://a.example/system", HOST, MODIFIED_SINCE_SUPPORTED, True)
+    monkeypatch.setattr(storage, "_change_sync_config", aendern)
+    await storage.set_modified_since_check("https://a.example/system", HOST, MODIFIED_SINCE_SUPPORTED)
+    await storage.save_filter_notes(
+        "https://a.example/system", {LIST_URL: {"reason": "HTTP 400"}}, {HOST: None}, drop_legacy=True
+    )
 
-    assert quellen[0].sync_config["modified_since_unsupported_hosts"] == ["x"]
-    assert quellen[0].sync_config["modified_since_check"]["result"] == MODIFIED_SINCE_SUPPORTED
-    assert "modified_since_unsupported_hosts" not in quellen[1].sync_config
-    assert quellen[2].sync_config == {"anderes": 1}
-    assert _Sitzung.committed
-
-    await storage.apply_modified_since_check("https://c.example/system", HOST, MODIFIED_SINCE_UNSUPPORTED, False)
-    assert quellen[2].sync_config["modified_since_unsupported_hosts"] == [HOST]
+    quelle_a = configs["https://a.example/system"]
+    assert quelle_a["modified_since_check"]["result"] == MODIFIED_SINCE_SUPPORTED
+    assert quelle_a["unfiltered_lists"] == {LIST_URL: {"reason": "HTTP 400"}}
+    assert "modified_since_unsupported_hosts" not in quelle_a and "unfiltered_hosts" not in quelle_a
+    assert quelle_a["anderes"] == 1
+    assert configs["https://b.example/system"] == {"unfiltered_hosts": {HOST: {"reason": "x"}}}

@@ -6,6 +6,7 @@ Handles nested objects and extracts relationships.
 """
 
 import re
+from datetime import datetime
 from typing import Any
 from uuid import UUID
 
@@ -52,6 +53,41 @@ def file_size(value: Any) -> int | None:
     if not isinstance(value, int) or value < 0 or value > MAX_FILE_SIZE:
         return None
     return value
+
+
+def unique_nested(entities: list[ProcessedEntity]) -> list[ProcessedEntity]:
+    """
+    Eingebettete Objekte ohne doppelte Kennung (Issue #1025).
+
+    Manche Quellen betten dasselbe Objekt mehrfach mit unterschiedlichem Inhalt ein, etwa Münster zwei
+    Beratungen einer Vorlage unter einer Kennung. Gespeichert wird je Kennung nur eine Zeile; schrieben wir alle
+    Fassungen nacheinander, änderte jeder Abgleich die Zeile mehrmals und meldete Scheinänderungen. Es bleibt je
+    Typ und Kennung die zuletzt geänderte Fassung (``modified``), bei gleichem Stand die letzte; die Reihenfolge
+    der ersten Nennung bleibt erhalten. Objekte ohne Kennung bleiben alle.
+    """
+    chosen: dict[tuple[OParlType, str], tuple[int, ProcessedEntity]] = {}
+    without_id: list[tuple[int, ProcessedEntity]] = []
+    for position, entity in enumerate(entities):
+        if not entity.external_id:
+            without_id.append((position, entity))
+            continue
+        key = (entity.oparl_type, entity.external_id)
+        earlier = chosen.get(key)
+        if earlier is None:
+            chosen[key] = (position, entity)
+            continue
+        previous = earlier[1].oparl_modified
+        current = entity.oparl_modified
+        if previous is None or (current is not None and _not_older(current, previous)):
+            chosen[key] = (earlier[0], entity)
+    return [entity for _position, entity in sorted([*chosen.values(), *without_id], key=lambda pair: pair[0])]
+
+
+def _not_older(current: datetime, previous: datetime) -> bool:
+    """``current`` ist mindestens so neu wie ``previous`` (Zeitstempel mit und ohne Zeitzone vergleichbar)."""
+    if (current.tzinfo is None) != (previous.tzinfo is None):
+        current, previous = current.replace(tzinfo=None), previous.replace(tzinfo=None)
+    return current >= previous
 
 
 def session_location_id(meeting_external_id: str | None) -> str | None:
@@ -208,6 +244,7 @@ class OParlProcessor:
                 lt = self.process_legislative_term(lt_data, external_id)
                 body.nested_entities.append(lt)
 
+        body.nested_entities = unique_nested(body.nested_entities)
         return body
 
     def process_meeting(
@@ -281,6 +318,7 @@ class OParlProcessor:
         # Process nested files (invitation, resultsProtocol, etc.)
         self._extract_files(meeting, data, body_external_id)
 
+        meeting.nested_entities = unique_nested(meeting.nested_entities)
         return meeting
 
     def process_paper(
@@ -341,6 +379,7 @@ class OParlProcessor:
         if data.get("underDirectionOf"):
             paper.references["under_direction_of"] = self._extract_refs(data["underDirectionOf"])
 
+        paper.nested_entities = unique_nested(paper.nested_entities)
         return paper
 
     def _normalize_string_field(self, value: Any) -> str | None:
@@ -387,6 +426,7 @@ class OParlProcessor:
                     mem.person_external_id = external_id
                 person.nested_entities.append(mem)
 
+        person.nested_entities = unique_nested(person.nested_entities)
         return person
 
     def process_organization(

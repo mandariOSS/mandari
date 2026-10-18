@@ -44,7 +44,7 @@ Alarmmail nennt beides (Issue #123):
 
 | Fehlerklasse | Erkennung | Was der Ingestor tut |
 |---|---|---|
-| `ua_blocked` — „User-Agent gesperrt“ | Ein Endpunkt antwortet mit HTTP 403. Der Client stellt daraufhin **genau eine** Vergleichsanfrage mit neutralem Client-Header (`python-httpx/<Version>`). Kommt darauf eine normale Antwort, filtert die Quelle gezielt auf unseren User-Agent. | Befund mit Zeitstempel in Sync-Log und Quellenstatus; die Quelle wird ab dem ersten Befund geschont (frühestens nach 60 Minuten wieder, danach wachsend bis 6 Stunden). Der Regelbetrieb läuft weiter mit unserem User-Agent — **keine Umgehung**. |
+| `ua_blocked` — „User-Agent gesperrt“ | Ein Endpunkt antwortet mit HTTP 403. Der Client stellt daraufhin **genau eine** Vergleichsanfrage mit neutralem Client-Header (`python-httpx/<Version>`) an die Adresse, die 403 geliefert hat, ohne einer Weiterleitung zu folgen. Kommt darauf eine erfolgreiche Antwort (2xx), filtert die Quelle gezielt auf unseren User-Agent. Eine Weiterleitung (3xx) ist kein Befund: Was am Ziel käme, bleibt offen; der Fehlertext nennt Status und Ziel (ohne Query-String) mit dem Vermerk „Sperre unklar“. | Befund mit Zeitstempel in Sync-Log und Quellenstatus; die Quelle wird ab dem ersten Befund geschont (frühestens nach 60 Minuten wieder, danach wachsend bis 6 Stunden). Der Regelbetrieb läuft weiter mit unserem User-Agent — **keine Umgehung**. |
 | `robots_blocked` — „robots.txt sperrt“ | Die robots.txt des Hosts verbietet unserem User-Agent den Abruf (RFC 9309, alle Quellen seit #793; Scraper seit #116). Als Befund der Quelle zählt nur eine vollständige Sperre; einzelne gesperrte Listen stehen im Sync-Log. | Kein Crawl, keine Umgehung. Fehlerklasse mit Grund und Empfehlung an der Quelle; Schonung mit täglicher Nachprüfung (robots.txt ändert sich selten). Handlungsempfehlung: Betreiber um Freigabe unseres User-Agents in der robots.txt oder um die OParl-Schnittstelle bitten (Textvorschlag unten, sinngemäß). |
 | `server_error_series` — „5xx-Serie“ | Ab `OPARL_SERVER_ERROR_SERIES_THRESHOLD` (Standard 5) aufeinanderfolgenden 5xx-Antworten je Host. | Sync-Warnung mit Statistik (Anzahl, Zeitraum, letzte Statuscodes, **betroffene Objektlisten**) statt stiller Lücke; Schonung ab dem ersten Befund (frühestens nach 30 Minuten). Eine erfolgreiche Antwort beendet die Serie. |
 
@@ -56,6 +56,12 @@ Ist ein Wert mit dem Betreiber vereinbart, lässt sich der User-Agent **je Quell
 setzen (Feld *User-Agent*, leer = Standard). Den Standard beschreibt
 `docs/SCRAPER_SOURCES.md`, Abschnitt Politeness. Die Vergleichsanfrage lässt sich mit
 `OPARL_UA_PROBE_ENABLED=false` abschalten.
+
+Häufiger Grund sind Wortfilter: Manche Server sperren Wörter wie „crawler“ oder „bot“ im User-Agent.
+Bis Oktober 2026 hieß unsere Infoseite `https://mandari.de/crawler/` und stand so seit #795 im
+User-Agent; mindestens ein Ratsinformationssystem antwortete deshalb mit 403. Seit #1061 heißt sie
+`https://mandari.de/ingestor/` (die alte Adresse leitet weiter), und der Standard-User-Agent enthält
+das Wort „crawler“ nicht mehr. Ein Test sichert das ab.
 
 Handlungsempfehlung bei „User-Agent gesperrt“: den Betreiber ansprechen. Neutraler Textvorschlag
 (Angaben in spitzen Klammern ersetzen):
@@ -79,12 +85,20 @@ Handlungsempfehlung bei „User-Agent gesperrt“: den Betreiber ansprechen. Neu
 ### robots.txt: Regeln, Ausnahmen, Bericht
 
 Jeder automatische Abruf prüft vorher die robots.txt des Hosts nach RFC 9309 (`mandari_oparl.robots`):
-OParl-Schnittstelle und HTML-Seiten im Ingestor, Dateien in Textextraktion, Dokument-Cache, Vorschau und
-bei Personenfotos, dazu RIS-Sondierung (`probe-ris`) und `manage.py add_oparl_source`. Platzhalter (`*`, `$`)
-gelten, die längste passende Regel entscheidet. `Disallow: /*.pdf$` sperrt also nur Dokumente; die Schnittstelle
-bleibt erreichbar. Eine fehlende robots.txt (4xx) erlaubt alles. Die Datei liegt 24 Stunden im Zwischenspeicher,
-je Host und User-Agent; geprüft wird mit dem User-Agent, mit dem auch abgerufen wird (Quelle bzw.
-`download_headers`).
+OParl-Schnittstelle und HTML-Seiten im Ingestor, Dateien in Textextraktion, Dokument-Cache, Vorschau,
+Löschabgleich und bei Personenfotos, dazu RIS-Sondierung (`probe-ris`) und `manage.py add_oparl_source`.
+Platzhalter (`*`, `$`) gelten, die längste passende Regel entscheidet. `Disallow: /*.pdf$` sperrt also nur
+Dokumente; die Schnittstelle bleibt erreichbar. Eine fehlende robots.txt (4xx) erlaubt alles. Die Datei liegt
+24 Stunden im Zwischenspeicher, je Host und User-Agent; geprüft wird mit dem User-Agent, mit dem auch abgerufen
+wird (Quelle bzw. `download_headers`).
+
+Maßgeblich ist die Gruppe für unser Produkt-Token `mandari-ingestor` (bei einem abweichenden User-Agent der
+Quelle zusätzlich dessen Token), sonst `*`. Gruppen für unsere früheren Kennungen `mandari-file-cache` und
+`mandari` gelten zusätzlich, wenn es sie gibt, und können nur sperren. Weiterleitungen folgen alle Abrufe selbst
+(Issue #1027): Vor jeder Weiterleitung prüfen sie die robots.txt des Ziel-Hosts und reservieren einen Zeitpunkt
+in der Drossel je Host; ein gesperrtes Ziel wird nicht angefragt und zählt wie eine gesperrte Adresse. Höchstens
+fünf Weiterleitungen je Abruf, auch für die robots.txt selbst. Die Drossel zählt je Hostname: Port und
+Schreibweise ergeben keinen eigenen Takt.
 
 **Nicht erreichbar ist keine Sperre.** Liefert `/robots.txt` 5xx, 408, 429 oder einen Netzfehler, gilt die
 letzte gültige Fassung. Gibt es keine, stellen wir den Abruf zurück und fragen nach 15 Minuten erneut. Der
@@ -103,8 +117,8 @@ Textextraktion, Dokument-Cache und Personenfotos lassen die Dateien in der Warte
 - **Nach geänderter robots.txt:** `manage.py robots_report --refresh --requeue` reiht übersprungene
   Dateien der Quellen neu ein, deren Dateien jetzt erlaubt sind.
 
-Der User-Agent nennt Infoseite und Kontakt (`mandari-ingestor/<Version> (+https://mandari.de/crawler/;
-support@mandari.de)`). Quellen, die das Wort der Infoseite im User-Agent filtern (#123), bekommen im
+Der User-Agent nennt Infoseite und Kontakt (`mandari-ingestor/<Version> (+https://mandari.de/ingestor/;
+support@mandari.de)`). Quellen, die ein Wort unserer Kennung im User-Agent filtern (#123), bekommen im
 Admin einen User-Agent je Quelle.
 
 ## CSP-Verstoßmeldungen
@@ -158,6 +172,25 @@ die Datenbank nicht (DEPLOYMENT.md, „Worker“).
 Das Helm-Chart nutzt `live` für Startup- und Liveness-Probe und `ready` für die
 Readiness-Probe. Die Statusseite (Gatus) kann `/health/ready/` als Bedingung nehmen.
 
+## Ingestor-Daemon und Sync-Läufe
+
+Zwei Systemchecks des Betriebsmonitors betreffen den Ingestor (`insight_core/services/source_health.py`,
+`_ingestor_checks`):
+
+| Prüfung | Status | Bedingung |
+|---|---|---|
+| Ingestor-Daemon | OK | Lebenszeichen in Redis (`mandari:ingestor:heartbeat`): „Daemon aktiv (Lebenszeichen), letzter Lauf vor …“; ohne Redis ein Sync-Protokoll der letzten 30 Minuten: „Daemon aktiv (Sync-Protokoll)“ |
+| | Warnung | kein Lebenszeichen, letzter Lauf höchstens 6 Stunden alt, oder noch kein Lauf |
+| | Kritisch | kein Lebenszeichen, letzter Lauf älter als 6 Stunden (Alarm, siehe unten) |
+| Sync-Läufe (24 h) | OK | mindestens ein Lauf erfolgreich; Quellen, deren Läufe alle scheiterten, nennt der Text („ohne Erfolg: …“) |
+| | Warnung | keine Läufe in den letzten 24 Stunden |
+| | Kritisch | kein Lauf erfolgreich |
+
+Seit Issue #1026 hat jede Quelle ihren eigenen Takt und schreibt je Lauf ein eigenes Protokoll; nachts und am
+Wochenende liegt der letzte Lauf bis zu 2 Stunden zurück. Die Sync-Läufe bewertet der Monitor deshalb für den
+Ingestor als Ganzes. Eine einzelne dauerhaft gestörte Quelle bewertet die Quellentabelle (siehe
+[Bewertung einer Quelle](#bewertung-einer-quelle), mit Alarm-Mail); sie hält den Systemstatus nicht auf Warnung.
+
 ## Alarmierung
 
 Zeitplan im Worker `befehl:check_source_health`, stündlich um :15 (`DEPLOYMENT.md`, „Geplante
@@ -165,7 +198,9 @@ Aufgaben“).
 
 - Kritische Quelle → E-Mail-Alarm, Wiederholung frühestens nach 7 Tagen (`health_alert_sent_at`)
 - Quelle wieder OK → Entwarnung, Zeitstempel wird gelöscht
-- Ingestor-Daemon > 6 h ohne Lauf → Alarm, max. einmal je 24 h
+- Ingestor-Daemon > 6 h ohne Lauf → Alarm, max. einmal je 24 h. Als Lauf zählt das Lebenszeichen des Daemons
+  in Redis (`mandari:ingestor:heartbeat`, alle 30 Sekunden erneuert), sonst ein Sync-Protokoll; nachts und am
+  Wochenende gleicht jede Quelle nur alle 1 bis 2 Stunden ab (Issue #1026)
 - Empfänger: `INSIGHT_ALERT_EMAILS` (kommagetrennt), sonst `INSIGHT_MODERATION_EMAILS`, sonst Superuser
 
 Bericht ohne Versand: `python manage.py check_source_health --report`
@@ -250,7 +285,23 @@ gleichermaßen; Alarme fassen sie deshalb mit `max by (…)` zusammen, wie die R
 Beispiel-Scrape-Konfiguration: `deploy/monitoring/prometheus-scrape.example.yml`;
 Grafana-Vorlage (p95-Latenz je View, Fehlerquote, Pool-Belegung, Cache-Trefferquote):
 `deploy/monitoring/grafana-mandari.json`. Der Ingestor liefert seine eigenen Metriken
-(`mandari_ingestor_*`) weiterhin über seinen Port, darunter
+(`mandari_ingestor_*`) weiterhin über seinen Port. Je Quelle (Label `source` = Name der Quelle, Takt je Quelle,
+Issue #1026, `docs/ABRUFREGELN.md`, „Rhythmus“):
+
+| Metrik | Labels | Bedeutung |
+|---|---|---|
+| `mandari_ingestor_sync_runs_total` | `source`, `sync_type`, `status` | Läufe des Daemons (`incremental`/`full`, `success`/`failed`) |
+| `mandari_ingestor_sync_duration_seconds` (Histogramm) | `source`, `sync_type` | Dauer der Läufe |
+| `mandari_ingestor_sync_requests_total` | `source`, `sync_type` | HTTP-Abrufe der Läufe |
+| `mandari_ingestor_sync_next_run_timestamp_seconds` | `source` | Unix-Zeit des nächsten fälligen Laufs, nach der Schonung |
+| `mandari_ingestor_sync_last_run_timestamp_seconds` | `source` | Unix-Zeit, zu der der letzte Lauf endete |
+| `mandari_ingestor_sync_interval_seconds` | `source` | aktueller Abstand zwischen zwei Läufen (Grundtakt, nach Ruhe verlängert) |
+| `mandari_ingestor_sync_idle_runs` | `source` | Läufe ohne Änderung in Folge |
+| `mandari_ingestor_active_syncs` | – | laufende Abgleiche im Daemon |
+
+Ein Lauf, dessen nächster Termin deutlich überschritten ist
+(`time() - mandari_ingestor_sync_next_run_timestamp_seconds > 900`), deutet auf einen vollen Pool oder einen
+hängenden Daemon. Außerdem
 `mandari_ingestor_events_published_total{type, source}`: ins Journal geschriebene Ereignisse je Typ
 und Kommune (`source` wie bei `mandari_ingestor_entities_synced_total`), sobald
 `INGESTOR_EVENTS_ENABLED` eingeschaltet ist (gezählt beim Schreiben, vor dem Commit). Bleibt der
@@ -363,8 +414,9 @@ oder `EVENTS_SCHEDULES_DISABLED=befehl:events_purge`; Gelöschtes kommt nur aus 
 
 `GET /health/worker/` fasst den Zustand von Worker, Ereignissen und Aufträgen in vier Prüfungen
 zusammen und antwortet mit **200**, wenn alle bestehen, sonst mit **503**. Gemessen wird in der
-Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Das Ergebnis gilt 15 s
-(Cache).
+Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Gerechnet werden nur die
+gewählten Prüfungen, das Ergebnis gilt je Prüfung 15 s (Cache); ein neuer Befund zeigt sich also
+spätestens 15 s später.
 
 - `?pruefung=<name>` (kommagetrennt) lässt nur die genannten Prüfungen über den Status
   entscheiden; ein unbekannter Name ergibt 400. **Für Alarme je Prüfung einen eigenen Endpunkt
@@ -378,7 +430,7 @@ Datenbank, die Anwendung antwortet also auch, wenn der Worker steht. Das Ergebni
 | Prüfung | besteht, wenn |
 |---|---|
 | `lebenszeichen` | lebende Worker alle Rollen und Warteschlangen bedienen, die die Installation braucht (wie `/health/` Feld `worker`) |
-| `rueckstau` | Sequenzierer (auch aufgehalten) und Zustellung je nicht pausiertem Abonnement höchstens 5 min, ältester fälliger Auftrag höchstens 15 min |
+| `rueckstau` | Sequenzierer (auch aufgehalten) und Zustellung je nicht pausiertem Abonnement höchstens 5 min, ältester fälliger Auftrag höchstens 15 min. `ocr` zählt gesondert (Issue #953): Dort wartet jeder Auftrag hinter den vorigen (Parallelität 1, bis zu `TEXT_EXTRACTION_QUEUE_DEPTH` Aufträge, bis 30 min je Scan), deshalb scheitert `ocr` nur, wenn der älteste fällige Auftrag länger als 15 min wartet und keiner läuft (Status „läuft“ mit gültiger Sperre; der Auftrag eines abgestürzten Runners zählt nicht), wie der Beispielalarm „Texterkennung steht“. Der Text nennt „Aufträge“ für die übrigen Warteschlangen und, solange in `ocr` Aufträge fällig sind, deren Wartezeit und die Zahl der laufenden |
 | `fehlerquote` | höchstens 20 % der in der letzten Stunde beendeten Aufträge gescheitert (erst ab 5 beendeten) |
 | `gescheitert` | kein Auftrag in den letzten 24 h endgültig gescheitert und kein totes Ereignis |
 | `dokumentabruf` | Abruf der RIS-Dateien (Issue #919): keine fällige Wiederholung (`local_status = retry`) liegt länger als `DOCUMENT_FETCH_RETRY_ALERT_HOURS` (Standard 6) unbearbeitet; Quellen in Schonung, nicht abzulegende und von der Obergrenze verdrängte Dateien (`evicted`, Issue #961) zählen nicht. Mit abgeschaltetem Zeitplan `befehl:cache_files` immer in Ordnung |

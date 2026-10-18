@@ -43,6 +43,7 @@ from insight_core.models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    OParlSource,
     withdrawn_q,
 )
 
@@ -60,6 +61,17 @@ def _uuid(value: object) -> uuid.UUID | None:
         return uuid.UUID(str(value))
     except (TypeError, ValueError, AttributeError):
         return None
+
+
+# =============================================================================
+# Quellen
+# =============================================================================
+
+
+def active_source(source_id: object) -> OParlSource | None:
+    """Aktive RIS-Quelle (Sync-Auslöser im Admin, Issue #1026); sonst ``None``."""
+    pk = _uuid(source_id)
+    return OParlSource.objects.filter(pk=pk, is_active=True).first() if pk else None
 
 
 # =============================================================================

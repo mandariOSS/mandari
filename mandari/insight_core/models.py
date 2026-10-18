@@ -517,7 +517,10 @@ class OParlBody(SourceDeletionModel):
     # Sichtbarkeit im Portal
     is_listed = models.BooleanField(
         default=True,
-        # DB-seitiger Default: Der Ingestor legt Kommunen per SQLAlchemy an und kennt die Spalte nicht.
+        # DB-seitiger Default für Inserts ohne die Spalte. Neu entdeckte Kommunen legen der Ingestor (upsert_body)
+        # und add_oparl_source ausdrücklich ungelistet an (Issue #555); gelistet wird bewusst im Admin. Ausnahme:
+        # die eigene Session-Schnittstelle eines Mandanten (sync_config.session_tenant), deren Kommune Ingestor
+        # (lists_new_bodies) und Spiegel (insight_sync/session_mirror.py) gleich gelistet anlegen.
         db_default=True,
         verbose_name="In Listen anzeigen",
         help_text=(

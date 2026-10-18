@@ -26,9 +26,10 @@ def _ingestor_version() -> str:
 # drosseln, ausschließen oder ansprechen können (mandari_oparl.crawler). Dasselbe
 # Produkt-Token wertet die robots.txt-Prüfung aus.
 # Mindestens ein RIS filtert den Begriff „crawler“ im User-Agent und antwortet mit 403,
-# obwohl derselbe Abruf mit neutralem Client durchgeht (Issue #123). Für solche Quellen
-# gilt der User-Agent je Quelle (OParlSource.user_agent), z. B. ohne Infoseiten-Pfad;
-# die Sperre meldet der Monitor als „User-Agent gesperrt“.
+# obwohl derselbe Abruf mit neutralem Client durchgeht (Issue #123). Seit die Infoseite
+# /ingestor/ statt /crawler/ heißt, enthält der Standard das Wort nicht mehr. Für Quellen
+# mit anderen Wortfiltern gilt der User-Agent je Quelle (OParlSource.user_agent), z. B. ohne
+# Infoseiten-Pfad; die Sperre meldet der Monitor als „User-Agent gesperrt“.
 DEFAULT_USER_AGENT = crawler_user_agent(_ingestor_version())
 
 
@@ -70,8 +71,9 @@ class Settings(BaseSettings):
     # Wartezeit je Abrufplatz; gilt nur noch mit abgeschalteter Drossel (INGESTOR_REQUEST_INTERVAL=0)
     oparl_wait_time: float = 0.05
     # Drossel je Host über alle Quellen und Prozesse (src/client/host_pacing.py): Mindestabstand in Sekunden
-    # zwischen zwei Anfragen an denselben Host. Standard eine Anfrage je Sekunde; je Quelle abweichend über
-    # sync_config["request_interval"]. 0 schaltet die Drossel ab (nur für Tests und Notfälle).
+    # zwischen zwei Anfragen an denselben Host. Standard eine Anfrage je Sekunde; je Quelle über
+    # sync_config["request_interval"] nur langsamer (Werte unter einer Sekunde werden angehoben, Issue #1025).
+    # 0 schaltet die Drossel ab (nur für Tests und Notfälle).
     request_interval: float = Field(
         default=DEFAULT_INTERVAL,
         validation_alias=AliasChoices("INGESTOR_REQUEST_INTERVAL", "request_interval"),
@@ -84,6 +86,14 @@ class Settings(BaseSettings):
         default=2,
         validation_alias=AliasChoices("INGESTOR_HOST_MAX_CONCURRENT", "host_max_concurrent"),
     )
+    # Änderungsfenster inkrementeller Läufe (Issue #1025): modified_since ist der Beginn des letzten vollständig
+    # erfolgreichen Abgleichs der Kommune abzüglich dieses Sicherheitsabstands in Minuten. Er fängt abweichende
+    # Uhren und Zeitzonenfehler der Quelle sowie spät sichtbare Änderungen ab. Je Quelle abweichend über
+    # sync_config["modified_since_margin_minutes"]. Ohne vollständigen Abgleich gilt das Fenster von sieben Tagen.
+    modified_since_margin_minutes: int = Field(
+        default=120,
+        validation_alias=AliasChoices("INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES", "modified_since_margin_minutes"),
+    )
     oparl_etag_cache_enabled: bool = True
     oparl_modified_since_enabled: bool = True
     oparl_max_concurrent: int = 20  # Concurrent HTTP requests
@@ -94,12 +104,19 @@ class Settings(BaseSettings):
     # each in-flight body sync holds pages, caches and extraction buffers.
     # Env-overridable (SYNC_BODY_CONCURRENCY).
     sync_body_concurrency: int = 2
-    # Max sources synced concurrently in sync_all. Together with
-    # sync_body_concurrency and sync_entity_concurrency this bounds the
+    # Max sources synced concurrently in sync_all (CLI ``sync --all``, Admin-Sync aller Quellen im Worker).
+    # Together with sync_body_concurrency and sync_entity_concurrency this bounds the
     # peak parallelism (sources x bodies x entity types) and therefore
     # the memory budget of a sync cycle (Issue #22).
     # Env-overridable (SYNC_SOURCE_CONCURRENCY).
     sync_source_concurrency: int = 2
+    # Takt je Quelle im Daemon (Issue #1026): höchstens so viele Quellen laufen gleichzeitig, je Quelle höchstens
+    # ein Lauf. Vollabgleiche belegen höchstens alle Plätze bis auf einen, damit Änderungsabgleiche anderer Quellen
+    # nie warten müssen. Der Takt je Server (request_interval, host_max_concurrent) gilt unabhängig davon.
+    sync_pool_size: int = Field(
+        default=4,
+        validation_alias=AliasChoices("INGESTOR_SYNC_POOL_SIZE", "sync_pool_size"),
+    )
     # Max entity-type syncs running concurrently within one body
     # (organizations/persons, meetings/papers, locations/agenda items/
     # files/consultations). Env-overridable (SYNC_ENTITY_CONCURRENCY).

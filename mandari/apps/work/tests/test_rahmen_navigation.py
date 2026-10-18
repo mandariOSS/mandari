@@ -100,6 +100,22 @@ def test_seitenleiste_kompakt_mit_fraktionssitzungen(neu: Organization, admin: A
 
 
 @pytest.mark.django_db
+def test_wortmarke_nennt_sich_selbst_auch_in_der_schmalen_leiste(
+    neu: Organization, admin: Any, client_for: Any
+) -> None:
+    """
+    In der schmalen Leiste bleibt von der Wortmarke sichtbar nur „m.“; ein aria-label passt dazu nie (WCAG 2.5.3,
+    axe label-content-name-mismatch). Der Name steht deshalb als Text im Link, die sichtbaren Teile sind verborgen.
+    """
+    leiste = _leiste(_html(client_for(admin.user).get(_url("dashboard", neu))))
+    marke = _teil(leiste, f'<a href="{_url("dashboard", neu)}" class="inline-flex items-baseline', "</a>")
+    assert "aria-label" not in marke.split(">", 1)[0]
+    assert '<span class="sr-only">mandari Work, Start</span>' in marke
+    assert re.search(r'<span class="[^"]*" aria-hidden="true">m<span class="rahmen-label">andari</span>', marke)
+    assert re.search(r'<span class="rahmen-label[^"]*" aria-hidden="true">Work</span>', marke)
+
+
+@pytest.mark.django_db
 def test_fraktionssitzungen_sind_eigener_bereich(neu: Organization, admin: Any, client_for: Any) -> None:
     html = _html(client_for(admin.user).get(_url("faction", neu)))
     leiste = _leiste(html)

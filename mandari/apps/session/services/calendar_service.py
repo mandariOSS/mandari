@@ -16,6 +16,7 @@ from django.db.models import Q
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from apps.common import local_time
 from apps.common.ical import build_ics_feed
 from apps.common.pdf import html_to_pdf
 
@@ -95,7 +96,9 @@ def generate_series(
     """
     Termine einer Sitzungsserie berechnen (aware datetimes, lokale Zeitzone).
 
-    monthly_N = N-ter <Wochentag> im Monat.
+    monthly_N = N-ter <Wochentag> im Monat. Fällt ein Termin am Tag der Zeitumstellung in die doppelte Stunde, gilt
+    die erste Uhrzeit; in der fehlenden Stunde wirft die Berechnung ``local_time.NonexistentLocalTimeError`` mit der
+    Meldung für die Oberfläche (Issue #974).
     """
     if date_to < date_from or (date_to - date_from).days > 400:
         return []
@@ -108,7 +111,7 @@ def generate_series(
         # Erster passender Wochentag ab date_from
         current = date_from + timedelta(days=(weekday - date_from.weekday()) % 7)
         while current <= date_to:
-            results.append(timezone.make_aware(datetime.combine(current, start_time), tz))
+            results.append(local_time.aware(datetime.combine(current, start_time), tz))
             current += step
     elif rhythm.startswith("monthly_"):
         nth = int(rhythm.split("_")[1])
@@ -117,7 +120,7 @@ def generate_series(
             first = date(year, month, 1)
             day = first + timedelta(days=(weekday - first.weekday()) % 7 + (nth - 1) * 7)
             if day.month == month and date_from <= day <= date_to:
-                results.append(timezone.make_aware(datetime.combine(day, start_time), tz))
+                results.append(local_time.aware(datetime.combine(day, start_time), tz))
             month += 1
             if month > 12:
                 month, year = 1, year + 1

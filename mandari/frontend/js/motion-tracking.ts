@@ -6,6 +6,9 @@
  * Die Templates rufen `mandariMotionMeta`, `mandariApprovalRequest` und
  * `mandariApprovalDecide` als Globals auf (`_details_sidebar.html`); die Checkliste
  * arbeitet mit `[data-checklist-action]`-Buttons (`_checklist_panel.html`).
+ *
+ * Aktionen, nach denen die Seite neu lädt (Zuständigkeit, Mitarbeit, Themen, Ordner, Frist, Freigabe anfordern,
+ * Zustimmen/Ablehnen), sichern vorher den Text des Editors und laden ohne Rückfrage „Website verlassen?“ (#1018).
  */
 
 import { showToast } from './alpine/toast'
@@ -26,7 +29,16 @@ declare global {
   }
 }
 
+/** Verbindung zum Editor: vor dem Neuladen sichern und das Neuladen als gewollt markieren (#1018) */
+export interface TrackingHooks {
+  /** Text, Titel, Dokumenttyp und Briefpapier sichern; false = nicht gesichert (Hinweis zeigt der Editor) */
+  sichern: () => Promise<boolean>
+  /** Gewolltes Neuladen: keine Rückfrage beim Verlassen */
+  verlassen: () => void
+}
+
 let installed = false
+let hooks: TrackingHooks = { sichern: async () => true, verlassen: () => {} }
 
 async function postForm(url: string, formData: FormData): Promise<TrackingResponse> {
   const response = await fetch(url, {
@@ -37,28 +49,55 @@ async function postForm(url: string, formData: FormData): Promise<TrackingRespon
   return (await response.json()) as TrackingResponse
 }
 
+/**
+ * Ziel eines Formulars aus dem Attribut: Die Details-Formulare haben ein Feld „action“, das `form.action` verdeckt
+ * (der Browser liefert dann das Feld statt der Adresse, die Anfrage ging an „…/[object HTMLInputElement]“, #1018).
+ */
+function formZiel(form: HTMLFormElement): string {
+  return form.getAttribute('action') || window.location.href
+}
+
 function errorText(data: TrackingResponse): string {
   return 'Fehler: ' + (data.error || 'Unbekannter Fehler')
 }
 
+/**
+ * Erst den Editor sichern, dann die Aktion senden und bei Erfolg ohne Rückfrage neu laden. Lässt sich nicht sichern,
+ * unterbleibt die Aktion (der Editor zeigt den Hinweis).
+ */
+async function sichernSendenNeuLaden(
+  url: string,
+  formData: FormData,
+  fehlerText: string,
+  erfolg?: (data: TrackingResponse) => void,
+): Promise<void> {
+  if (!(await hooks.sichern())) return
+  try {
+    const data = await postForm(url, formData)
+    if (data.success) {
+      erfolg?.(data)
+      hooks.verlassen()
+      location.reload()
+    } else {
+      showToast(errorText(data), 'error')
+    }
+  } catch {
+    showToast(fehlerText, 'error')
+  }
+}
+
 /** Registriert die Globals und die Checklisten-Delegation (einmalig pro Seite). */
-export function installMotionTracking(checklistUrl: string): void {
+export function installMotionTracking(checklistUrl: string, editorHooks?: TrackingHooks): void {
+  if (editorHooks) hooks = editorHooks
   if (installed) return
   installed = true
 
-  // Details-Formulare (set_responsible, set_contributors, set_topics, set_due_date)
+  // Details-Formulare (set_responsible, set_contributors, set_topics, set_folder, set_due_date)
   window.mandariMotionMeta = (event: Event): boolean => {
     event.preventDefault()
     const form = event.target as HTMLFormElement
-    postForm(form.action, new FormData(form))
-      .then((data) => {
-        if (data.success) {
-          location.reload()
-        } else {
-          showToast(errorText(data), 'error')
-        }
-      })
-      .catch(() => showToast('Fehler beim Speichern', 'error'))
+    // Werte beim Absenden festhalten, gesendet wird nach dem Sichern
+    void sichernSendenNeuLaden(formZiel(form), new FormData(form), 'Fehler beim Speichern')
     return false
   }
 
@@ -66,16 +105,9 @@ export function installMotionTracking(checklistUrl: string): void {
   window.mandariApprovalRequest = (event: Event): boolean => {
     event.preventDefault()
     const form = event.target as HTMLFormElement
-    postForm(form.action, new FormData(form))
-      .then((data) => {
-        if (data.success) {
-          showToast(data.created ? 'Freigabe angefragt.' : 'Freigabe war bereits angefragt.', 'success')
-          location.reload()
-        } else {
-          showToast(errorText(data), 'error')
-        }
-      })
-      .catch(() => showToast('Fehler beim Anfragen der Freigabe', 'error'))
+    void sichernSendenNeuLaden(formZiel(form), new FormData(form), 'Fehler beim Anfragen der Freigabe', (data) =>
+      showToast(data.created ? 'Freigabe angefragt.' : 'Freigabe war bereits angefragt.', 'success'),
+    )
     return false
   }
 
@@ -85,15 +117,7 @@ export function installMotionTracking(checklistUrl: string): void {
     formData.append('decision', decision)
     const commentEl = document.getElementById('approval-decide-comment') as HTMLTextAreaElement | null
     formData.append('comment', commentEl ? commentEl.value : '')
-    postForm(url, formData)
-      .then((data) => {
-        if (data.success) {
-          location.reload()
-        } else {
-          showToast(errorText(data), 'error')
-        }
-      })
-      .catch(() => showToast('Fehler beim Entscheiden', 'error'))
+    void sichernSendenNeuLaden(url, formData, 'Fehler beim Entscheiden')
   }
 
   // Checkliste: Event-Delegation auf dem stabilen Wrapper, Panel-Swap per innerHTML

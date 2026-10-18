@@ -39,7 +39,7 @@ from apps.session.models import (
     SessionProtocolCorrection,
     SessionVote,
 )
-from apps.session.services import four_eyes_service, protocol_lock, voting_service
+from apps.session.services import four_eyes_service, participation_service, protocol_lock, voting_service
 
 if TYPE_CHECKING:
     from django.db.models import Model
@@ -315,7 +315,8 @@ def propose(
     votes_old: dict[str, str] = {}
     votes_new: dict[str, str] = {}
     if item is not None:
-        assessed = voting_service.eligibility(item.meeting, item)
+        # Störungen zum Zeitpunkt der Abstimmung, sofern bekannt; die Berichtigung kommt immer später (Issue #1045)
+        assessed = voting_service.eligibility(item.meeting, item, at=participation_service.vote_time(item))
         votes_old, votes_new = _vote_changes(item, data, assessed)
         if any(name in new for name in COUNT_FIELDS):
             counts = {name: new.get(name, before.get(name, 0)) for name in COUNT_FIELDS}

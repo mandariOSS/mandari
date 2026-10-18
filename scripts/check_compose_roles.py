@@ -3,7 +3,8 @@
 Prüft die Compose-Rollenprofile unter deploy/roles/ gegen docker-compose.yml (Issue #55).
 
 Regeln:
-- Die Basisdatei bleibt profilfrei: Ein-Server-Installation startet unverändert alles.
+- Die Basisdatei bleibt profilfrei: Ein-Server-Installation startet unverändert alles. Einzige
+  Ausnahme sind die optionalen Dienste in ``OPTIONAL`` mit genau ihrem Profil (PgBouncer, #1060).
 - Jede Rollen-Datei kennt nur Dienste der Basisdatei (plus eigene Zusätze wie pgbouncer),
   und jeder Basisdienst ist je Rolle entweder aktiv oder über das Profil „aus“ abgeschaltet.
 - Jeder Basisdienst ist in genau einer der Rollen data/web/worker aktiv.
@@ -24,7 +25,9 @@ import yaml
 ROOT = Path(__file__).resolve().parent.parent
 BASIS = ROOT / "docker-compose.yml"
 ROLLEN = {name: ROOT / "deploy" / "roles" / f"{name}.yml" for name in ("data", "web", "worker")}
-DATENDIENSTE = {"postgres", "redis", "elasticsearch"}
+DATENDIENSTE = {"postgres", "redis", "elasticsearch", "pgbouncer"}
+#: Optionale Dienste der Basisdatei und das Profil, mit dem sie starten (sonst nie)
+OPTIONAL = {"pgbouncer": ["pgbouncer"]}
 AUS = "aus"
 
 
@@ -44,7 +47,10 @@ def pruefe() -> list[str]:
     fehler: list[str] = []
     basis = _lade(BASIS).get("services", {})
     for name, definition in basis.items():
-        if "profiles" in definition:
+        if name in OPTIONAL:
+            if definition.get("profiles") != OPTIONAL[name]:
+                fehler.append(f"Basisdatei: optionaler Dienst {name} braucht profiles {OPTIONAL[name]}")
+        elif "profiles" in definition:
             fehler.append(f"Basisdatei: Dienst {name} trägt profiles – Ein-Server-Betrieb würde ihn nicht starten")
 
     aktiv_in: dict[str, list[str]] = {name: [] for name in basis}

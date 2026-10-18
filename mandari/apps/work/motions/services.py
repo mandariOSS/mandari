@@ -21,6 +21,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, JsonResponse
 
+from apps.common.db_connections import release_idle_thread_connections
 from apps.common.ki_anbieter import KiEndpunkt, endpunkt_fuer_work, laengenlimit_hinweis
 from apps.common.models import AISettings
 
@@ -236,6 +237,9 @@ Verhalte dich wie ein pragmatischer Redaktionsassistent:
             "Content-Type": "application/json",
         }
 
+        # Der KI-Aufruf dauert bis zu 90 s: die Datenbankverbindung solange an den Pool zurückgeben (Issue #1024);
+        # in einer offenen Transaktion bleibt sie
+        release_idle_thread_connections()
         try:
             timeout = httpx.Timeout(90.0, connect=15.0)
             with httpx.Client(timeout=timeout, transport=self._transport, follow_redirects=False) as client:

@@ -35,7 +35,9 @@ x-logging: &default-logging
 
 # =============================================================================
 # Umgebung der Anwendung: für die Anwendung (mandari) und den Worker gleich, damit
-# Aufträge im Worker dieselbe Konfiguration sehen wie die Webprozesse
+# Aufträge im Worker dieselbe Konfiguration sehen wie die Webprozesse. Einzige Ausnahme:
+# die Datenbankverbindung der Anwendung (optional über PgBouncer, siehe Dienst mandari);
+# DATABASE_URL hier bleibt die Direktverbindung für Worker, worker-heavy und worker-live
 # =============================================================================
 x-app-environment: &app-environment
   # Database
@@ -78,6 +80,8 @@ x-app-environment: &app-environment
   OBJ_SECRET: ${OBJ_SECRET:-}
   OBJ_REGION: ${OBJ_REGION:-}
   OBJ_CACHE_MAX_GB: ${OBJ_CACHE_MAX_GB:-60}
+  # Verdrängen und Zurückholen brechen nach so vielen fehlenden Inhalten in Folge ab (falscher Bucket), 0 = ohne Grenze
+  OBJ_EVICT_MAX_MISSING: ${OBJ_EVICT_MAX_MISSING:-20}
   OBJ_CHECKSUMS: ${OBJ_CHECKSUMS:-when_required}
   # Obergrenze der Gesamtgröße des Dokument-Caches in GB (docs/FILE_CACHE.md, „Obergrenze“), 0 = unbegrenzt
   FILE_CACHE_MAX_TOTAL_GB: ${FILE_CACHE_MAX_TOTAL_GB:-0}
@@ -259,6 +263,12 @@ services:
       # statt die Platte zu fuellen (Vorfall 24.09.2026, Issue #54).
       - -c
       - temp_file_limit=${POSTGRES_TEMP_FILE_LIMIT:-5GB}
+      # Statistik je SQL-Abfrage (pg_stat_statements, Issue #1024): Welche Abfragen kosten die meiste Zeit?
+      # Die Erweiterung legt die Migration common.0012 an. Abschalten mit POSTGRES_SHARED_PRELOAD_LIBRARIES=
+      # (leer, deshalb "-" statt ":-"); wirkt erst nach einem Neustart des Datenbankdienstes (DEPLOYMENT.md).
+      # Der Wert ersetzt postgresql.conf und ALTER SYSTEM: dort schon geladene Bibliotheken mit aufführen.
+      - -c
+      - shared_preload_libraries=${POSTGRES_SHARED_PRELOAD_LIBRARIES-pg_stat_statements}
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
@@ -276,6 +286,51 @@ services:
     logging: *default-logging
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mandari} -d ${POSTGRES_DB:-mandari}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================================================
+  # PgBouncer (optional, Profil pgbouncer; DEPLOYMENT.md, „PgBouncer für die Webanwendung“)
+  # Verbindungs-Pooler im Transaktionsmodus, nur für die Webanwendung (mandari). Worker,
+  # Ingestor, Orchestrator, Website und Migrationen verbinden sich weiter direkt mit postgres.
+  # Nur im internen Netz, kein Port nach außen. Einschalten in der .env (alle drei Zeilen):
+  #   COMPOSE_PROFILES=pgbouncer
+  #   MANDARI_DB_HOST=pgbouncer
+  #   MANDARI_DB_PGBOUNCER=true
+  # ===========================================================================
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.23.1-p1
+    container_name: ${COMPOSE_PROJECT_NAME:-mandari}-pgbouncer
+    restart: unless-stopped
+    profiles: ["pgbouncer"]
+    environment:
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-mandari}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
+      # Nur die Datenbank der Anwendung
+      DB_NAME: ${POSTGRES_DB:-mandari}
+      AUTH_TYPE: scram-sha-256
+      POOL_MODE: transaction
+      # Verbindungen der Anwendung zu PgBouncer: MANDARI_DB_POOL_MAX je Prozess mal Prozesse, mit Reserve
+      MAX_CLIENT_CONN: ${PGBOUNCER_MAX_CLIENT_CONN:-200}
+      # Serververbindungen zu PostgreSQL; zählen gegen max_connections (DEPLOYMENT.md, Verbindungsrechnung)
+      DEFAULT_POOL_SIZE: ${PGBOUNCER_DEFAULT_POOL_SIZE:-20}
+      # Nur lesend auf die Konsole (SHOW POOLS, SHOW STATS), keine Verwaltungsbefehle
+      STATS_USERS: ${POSTGRES_USER:-mandari}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - mandari
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    logging: *default-logging
+    healthcheck:
+      # Nimmt PgBouncer Verbindungen an? Den Weg bis PostgreSQL prüft /health/ready/ der Anwendung
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -p 5432 -U ${POSTGRES_USER:-mandari} -d ${POSTGRES_DB:-mandari}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -346,13 +401,24 @@ services:
     labels:
       # deploy/scripts/restart-unhealthy.sh startet den Dienst neu, wenn die Liveness rot ist (#344)
       mandari.autoheal: "true"
-    environment: *app-environment
+    environment:
+      <<: *app-environment
+      # Nur die Webanwendung geht über PgBouncer (Profil pgbouncer, Issue #1060); Worker, Ingestor und
+      # Orchestrator haben eigene Verbindungsdaten direkt zu postgres. Ohne die Variablen wie bisher.
+      DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${MANDARI_DB_HOST:-postgres}:5432/${POSTGRES_DB:-mandari}
+      DB_PGBOUNCER: ${MANDARI_DB_PGBOUNCER:-false}
+      DB_POOL_MAX: ${MANDARI_DB_POOL_MAX:-10}
+      # migrate, safemigrate und events_after_restore verbinden sich mit DB_PGBOUNCER hierüber direkt
+      # (ohne Schalter ohne Wirkung)
+      DB_DIRECT_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
     volumes:
       - mandari_media:/app/media
       - mandari_files:/app/files
     depends_on:
       postgres:
         condition: service_healthy
+      # Keine Abhängigkeit von pgbouncer (depends_on.required bräuchte Compose ab 2.20): Mit Profil wartet
+      # der Start der Anwendung im Entrypoint, bis die Datenbank über PgBouncer erreichbar ist
       redis:
         condition: service_healthy
       elasticsearch:
@@ -562,6 +628,9 @@ services:
     image: ghcr.io/mandarioss/ingestor:${IMAGE_TAG:-latest}
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}-ingestor
     restart: unless-stopped
+    # Takt je Quelle (docs/ABRUFREGELN.md, „Rhythmus“, Issue #1026): --interval ist der Grundtakt werktags
+    # 07–19 Uhr, sonst stündlich, am Wochenende alle 2 Stunden; --full-sync-hour beginnt das nächtliche
+    # Standardfenster (5 Stunden) für Vollabgleiche von Quellen ohne eigenes full_sync_window
     command: >
       python -m src.main daemon
       --interval ${INGESTOR_INTERVAL:-10}
@@ -572,6 +641,8 @@ services:
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       ELASTICSEARCH_URL: http://elasticsearch:9200
       TZ: ${TZ:-Europe/Berlin}
+      # So viele Quellen gleichzeitig, je Quelle höchstens ein Lauf; Vollabgleiche lassen einen Platz frei (#1026)
+      INGESTOR_SYNC_POOL_SIZE: ${INGESTOR_SYNC_POOL_SIZE:-4}
       # Änderungen am RIS-Bestand als Ereignisse ins Journal schreiben (Standard aus, siehe .env.example)
       INGESTOR_EVENTS_ENABLED: ${INGESTOR_EVENTS_ENABLED:-false}
       # Dateien für den Text gleich in der Ablage der Anwendung ablegen (ein Abruf je Datei, #788)
@@ -598,7 +669,9 @@ services:
         condition: service_healthy
     networks:
       - mandari
-    mem_limit: 512m
+    # Gemessen mit vier gleichzeitigen Vollabgleichen ohne Texterkennung: unter 200 MB (#1026). Erkennt der
+    # Ingestor den Text selbst (TEXT_EXTRACTION_RUNNER=ingestor), kommen die Tesseract-Unterprozesse hinzu
+    mem_limit: ${INGESTOR_MEM_LIMIT:-512m}
     security_opt:
       - no-new-privileges:true
     logging: *default-logging

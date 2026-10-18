@@ -11,7 +11,9 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 import pytest
 
@@ -25,6 +27,12 @@ class _Speicher:
 
     async def write_sync_log(self, **felder: Any) -> None:
         self.eintraege.append(felder)
+
+    async def set_source_sync_config_value(self, *_args: Any) -> None:
+        return None
+
+    async def get_meeting_starts(self, *_args: Any) -> list[datetime]:
+        return []
 
 
 @pytest.fixture
@@ -71,14 +79,22 @@ async def test_startzeit_ohne_zeitzone_ist_ortszeit() -> None:
 
 @pytest.mark.usefixtures("berliner_zeit")
 async def test_daemon_schreibt_start_in_der_gegenwart() -> None:
-    orchestrator, speicher = _orchestrator()
-    scheduler = SyncScheduler.__new__(SyncScheduler)
+    """Der Daemon schreibt ein Protokoll je Quelle (Issue #1026), mit Start und Ende in UTC."""
+    speicher = _Speicher()
+    quelle = SimpleNamespace(id=uuid4(), name="Musterstadt", url="https://ris.example.org", sync_config={})
 
-    await scheduler._write_cycle_log(orchestrator, [], datetime.now(), "incremental")
+    async def sync_body_url(url: str, full: bool = False, default_window: Any = None) -> SyncResult:
+        return SyncResult(source_url=url, source_name="Musterstadt", success=True, full=full)
+
+    orchestrator = SimpleNamespace(storage=speicher, sync_body_url=sync_body_url, print_result=lambda _r: None)
+    scheduler = SyncScheduler(orchestrator=orchestrator, heartbeat=False)
+
+    await scheduler._sync_one(quelle, False, "daemon")
 
     eintrag = speicher.eintraege[0]
     _pruefe(eintrag)
     assert eintrag["triggered_by"] == "daemon"
+    assert eintrag["source_id"] == quelle.id
 
 
 async def test_startzeit_mit_zeitzone_bleibt_unveraendert() -> None:

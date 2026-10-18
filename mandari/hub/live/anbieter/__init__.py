@@ -6,8 +6,9 @@ Ein Adapter übersetzt nur: Kennung beim Anbieter → Stream (``aufloesen``), St
 Kennung → Adresse des Players (``einbettung_url``). Geschäftsregeln (Zeitfenster, Zustände, Entprellung) stehen in
 ``hub.live.services``. Neue Anbieter (YouTube, Vimeo, …) kommen als weiteres Modul mit ``registrieren``.
 
-Alle Abrufe laufen über ``http.hole`` (Zeitgrenzen, Größengrenze, User-Agent „mandari (+https://mandari.de)“,
-nur https). Rohdaten des Status kommen ohne Bild-Adressen (Vorschaubilder, Poster) zurück.
+Alle Abrufe laufen über ``http.hole`` (Zeitgrenzen, Größengrenze, Kennung und Takt je Host wie alle Abrufe bei
+Diensten, ``insight_core.services.dienste``, nur https). Rohdaten des Status kommen ohne Bild-Adressen
+(Vorschaubilder, Poster) zurück.
 """
 
 from __future__ import annotations

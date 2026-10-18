@@ -26,6 +26,7 @@ die hier genannten Fristen sind konfigurierbare Voreinstellungen.
 | Zugangsweg für zugeschaltete Mitglieder (hybride und digitale Sitzungen) | `SessionMeeting.remote_access_encrypted` | AES-256-GCM, nur in der Ladung an Gremienmitglieder, nie in öffentlichen Dokumenten oder der OParl-API |
 | Audit-Log (Änderungen, Lesezugriffe auf Nichtöffentliches, Anmeldungen) | `SessionAuditLog` | unveränderbar, Hash-Kette je Mandant, keine Inhalte und keine Klartext-Werte verschlüsselter Felder; Einsicht nur mit Kontrollrechten ([Protokollierungskonzept](PROTOKOLLIERUNG.md)) |
 | Sicherheitsprotokoll (Anmeldungen von Konten ohne Session-Mandant, Fehlversuche mit unbekannter Kennung) | `SecurityAuditLog` | unveränderbar, eigene Hash-Kette, Kennungen nur als HMAC, kein Passwort; nur für den Plattformbetrieb |
+| Anmeldeversuche für die Drosselung (E-Mail-Adresse, IP-Adresse, Browserkennung, Ergebnis) | `LoginAttempt` | nur im Admin lesbar; gelöscht nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026); der Datenexport der Person enthält damit die Versuche der letzten 30 Tage |
 | Anlagen und ihre früheren Fassungen | `SessionFile`, `SessionFileVersion`, Inhalte in `SessionFileBlob` | nur über zugriffsgeprüfte Downloads, Sichtbarkeit wie die Anlage (Ö/NÖ) |
 | Fassungen von Vorlagen (Texte, Angaben, Anlagen-Stand) | `SessionPaperVersion`, `SessionPaperVersionFile` | unveränderbar; Sichtbarkeit wie die Vorlage heute und zum Zeitpunkt der Fassung |
 
@@ -49,7 +50,9 @@ Archivpakete des Audit-Logs löscht mandari nicht selbst; die Kommune bietet
 sie ihrem Archiv an oder legt eine eigene Frist fest. Das plattformweite
 Sicherheitsprotokoll wird nach `SECURITY_AUDIT_RETENTION_DAYS` (Standard
 365 Tage) mit `purge_security_audit_log` nach demselben Verfahren
-archiviert und gelöscht.
+archiviert und gelöscht. Die Anmeldeversuche der Drosselung (`LoginAttempt`) löscht der Zeitplan
+`befehl:purge_login_attempts` täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026,
+[PROTOKOLLE.md](PROTOKOLLE.md); 0 = keine Löschung); ein Archivpaket entsteht dafür nicht (Issue #366).
 
 ### Konten ohne Zuordnung (plattformweit)
 

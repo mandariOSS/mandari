@@ -94,7 +94,7 @@
 | redis | ≥ 5.2.0 | MIT | Queues & Status |
 | typer | ≥ 0.15.0 | MIT | CLI-Framework |
 | rich | ≥ 13.9.0 | MIT | Konsolen-Ausgabe |
-| apscheduler | ≥ 3.10.0 | MIT | Zeitgesteuerte Sync-Jobs |
+| tzdata | ≥ 2026.1 | Apache-2.0 | Zeitzonendaten für den Takt je Quelle |
 | prometheus-client | ≥ 0.21.0 | Apache-2.0 | Metriken/Monitoring |
 | aiohttp | ≥ 3.11.0 | Apache-2.0 | HTTP (Monitoring & Resilience) |
 | pypdf | ≥ 4.0.0 | BSD-3-Clause | PDF-Textextraktion |

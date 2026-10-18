@@ -199,7 +199,9 @@ def add_source(
     """
     Register a new OParl source.
 
-    Fetches the system endpoint to auto-detect the source name.
+    Fetches the system endpoint to auto-detect the source name. Eine neue Quelle ist inaktiv (Issue #555):
+    Der Daemon gleicht sie erst ab, wenn sie im Admin aktiviert ist. Eine schon registrierte Quelle behält
+    ihren Status; eine abgeschaltete wird hier nie wieder aktiv.
 
     Examples:
 
@@ -213,15 +215,36 @@ def add_source(
     console.print(f"[bold]Adding OParl source:[/bold] {url}")
     console.print()
 
+    from src.sync.orchestrator import source_status_label
+
     async def run_add() -> None:
         async with SyncOrchestrator() as orchestrator:
+            existed = await orchestrator.storage.get_source_by_url(url) is not None
             source_id = await orchestrator.add_source(url, name)
+            source = await orchestrator.storage.get_source_by_url(url)
             console.print()
             console.print("[green]Source registered successfully![/green]")
             console.print(f"Source ID: {source_id}")
             console.print()
-            console.print("[dim]Run sync to fetch data:[/dim]")
-            console.print(f"  mandari-ingestor sync --source {url}")
+            if not existed:
+                console.print(
+                    "[yellow]Neue Quelle, Status: inaktiv. Der Daemon gleicht sie erst ab, wenn sie im Admin "
+                    "aktiviert ist.[/yellow]"
+                )
+                console.print("[dim]Einmal von Hand abgleichen (neue Kommunen bleiben ungelistet):[/dim]")
+                console.print(f"  mandari-ingestor sync --source {url}")
+            elif source is not None and source.is_active:
+                console.print(
+                    f"[yellow]Quelle war schon registriert, Status unverändert: {source_status_label(source)}. "
+                    "Der Daemon gleicht sie im Takt ab.[/yellow]"
+                )
+            else:
+                # sync --source prüft is_active nicht: Eine abgeschaltete Quelle (Sperre, Schonung) würde abgefragt
+                console.print(
+                    "[yellow]Quelle war schon registriert, Status unverändert: inaktiv. Bitte nicht von Hand "
+                    "abgleichen: sync --source fragt auch eine abgeschaltete Quelle ab. Erst klären, warum sie "
+                    "inaktiv ist, und sie bei Bedarf im Admin aktivieren.[/yellow]"
+                )
 
     try:
         asyncio.run(run_add())
@@ -370,40 +393,51 @@ def status() -> None:
 
 @app.command()
 def daemon(
-    interval: int = typer.Option(10, "--interval", "-i", help="Minutes between incremental syncs"),
-    full_sync_hour: int = typer.Option(3, "--full-sync-hour", help="Hour of day for full sync (24h format)"),
-    max_concurrent: int = typer.Option(10, "--concurrent", "-c", help="Maximum concurrent HTTP requests"),
+    interval: int = typer.Option(
+        10, "--interval", "-i", help="Grundtakt in Minuten werktags 07–19 Uhr (je Quelle über sync_schedule)"
+    ),
+    full_sync_hour: int = typer.Option(
+        3,
+        "--full-sync-hour",
+        help="Beginn des Standardfensters für Vollabgleiche (Ortszeit, 5 Stunden lang); außerhalb 0–23 aus",
+    ),
+    max_concurrent: int = typer.Option(10, "--concurrent", "-c", help="Maximum concurrent HTTP requests je Lauf"),
     metrics_port: int = typer.Option(9090, "--metrics-port", help="Port for Prometheus metrics server"),
+    pool: int | None = typer.Option(
+        None, "--pool", help="Quellen gleichzeitig (Standard INGESTOR_SYNC_POOL_SIZE, sonst 4)"
+    ),
 ) -> None:
     """
-    Start the sync scheduler daemon.
+    Start the sync scheduler daemon (Takt je Quelle, Issue #1026).
 
-    Runs continuously, performing:
-    - Incremental syncs at regular intervals (default: every 15 minutes)
-    - Full syncs once daily (default: 3 AM)
-    - Exposes Prometheus metrics on /metrics endpoint
+    Jede Quelle hat ihren eigenen Takt: werktags 07–19 Uhr im Grundtakt (--interval), sonst stündlich, am
+    Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag alle 5 Minuten; nach Läufen ohne Änderung länger.
+    Bis zu --pool Quellen laufen gleichzeitig, je Quelle höchstens ein Lauf. Vollabgleiche je Quelle in ihrem
+    Zeitfenster, sonst im Standardfenster ab --full-sync-hour. Exposes Prometheus metrics on /metrics.
 
     Use Ctrl+C to stop the daemon gracefully.
 
     Examples:
 
-        # Start with default settings (15 min incremental, 3 AM full sync)
+        # Start with default settings
         mandari-ingestor daemon
 
-        # Sync every 5 minutes
-        mandari-ingestor daemon --interval 5
+        # Grundtakt 15 Minuten, Vollabgleiche ab 01:00 Uhr
+        mandari-ingestor daemon --interval 15 --full-sync-hour 1
 
-        # Full sync at midnight
-        mandari-ingestor daemon --full-sync-hour 0
-
-        # Custom metrics port
-        mandari-ingestor daemon --metrics-port 8080
+        # Höchstens zwei Quellen gleichzeitig
+        mandari-ingestor daemon --pool 2
     """
     print_banner()
 
+    pool_size = pool if pool is not None else settings.sync_pool_size
     console.print("[bold]Starting Sync Daemon[/bold]")
-    console.print(f"  Incremental sync: every {interval} minutes")
-    console.print(f"  Full sync: daily at {full_sync_hour:02d}:00")
+    console.print(f"  Grundtakt werktags 07–19 Uhr: {interval} min (je Quelle sync_schedule)")
+    if 0 <= full_sync_hour <= 23:
+        console.print(f"  Vollabgleich: Standardfenster ab {full_sync_hour:02d}:00 (5 h), je Quelle full_sync_window")
+    else:
+        console.print("  Vollabgleich: geplanter Vollabgleich aus")
+    console.print(f"  Quellen gleichzeitig: {pool_size}")
     console.print(f"  Concurrent requests: {max_concurrent}")
     console.print(f"  Metrics server: http://0.0.0.0:{metrics_port}/metrics")
     console.print()
@@ -417,6 +451,7 @@ def daemon(
                 full_sync_hour=full_sync_hour,
                 max_concurrent=max_concurrent,
                 metrics_port=metrics_port,
+                pool_size=pool_size,
             )
         )
     except KeyboardInterrupt:
@@ -458,7 +493,9 @@ def extract_daemon(
     )
     if (settings.text_extraction_runner or "").strip().lower() == "worker":
         # Issue #530: Die Aufträge file.extract_text der Anwendung erkennen den Text; dieser Worker ruht
-        console.print("[yellow]  TEXT_EXTRACTION_RUNNER=worker: text recognition runs in the app worker, idle here[/yellow]")
+        console.print(
+            "[yellow]  TEXT_EXTRACTION_RUNNER=worker: text recognition runs in the app worker, idle here[/yellow]"
+        )
     console.print()
 
     async def run_worker() -> None:
@@ -604,11 +641,10 @@ def init_sources(
                 console.print(f"[yellow]Failed to add {failed} sources[/yellow]")
 
             console.print()
-            console.print("[dim]Start syncing with:[/dim]")
-            console.print("  mandari-ingestor sync --all")
-            console.print()
-            console.print("[dim]Or start the daemon:[/dim]")
-            console.print("  mandari-ingestor daemon")
+            console.print(
+                "[yellow]Neue Quellen sind inaktiv (Issue #555): Abgleich durch sync --all und den Daemon erst, "
+                "wenn sie im Admin aktiviert sind.[/yellow]"
+            )
 
     try:
         asyncio.run(run_init())
@@ -630,7 +666,9 @@ def probe_ris(
     """
     Zensus: Hersteller, robots-Status, Bot-Gate und OParl-Endpunkt je Kommune (Issue #114).
 
-    Höchstens fünf Anfragen je Kommune, Politeness-Regeln gelten, keine Umgehung von Gates.
+    Höchstens fünf Anfragen je Kommune im Takt je Host wie der Abgleich (Drossel über Redis, Standard eine
+    Anfrage je Sekunde, bei einer registrierten Quelle auf dem Host mit größerem Abstand dieser), robots.txt gilt
+    auch für Ziele von Weiterleitungen, keine Umgehung von Gates.
     Der Batch-Lauf liefert zusätzlich zwei Listen: „ohne OParl, robots-frei“ und
     „OParl vorhanden, nicht registriert“ (Abgleich mit den registrierten Quellen).
     """
@@ -638,6 +676,7 @@ def probe_ris(
     import io
 
     import httpx
+    from mandari_oparl.pacing import host_intervals
 
     from src.probe import ris_probe
 
@@ -651,33 +690,47 @@ def probe_ris(
         console.print("[red]Keine URL angegeben (Argument oder --batch).[/red]")
         raise typer.Exit(1)
 
+    async def quellen_lesen() -> list[tuple[Any, str, Any, bool]]:
+        """Registrierte Quellen (auch inaktive) als (id, url, sync_config, aktiv); ohne Datenbank leer."""
+        try:
+            async with SyncOrchestrator() as orchestrator:
+                quellen = await orchestrator.storage.get_all_sources(active_only=False)
+                return [(q.id, str(q.url), q.sync_config, bool(q.is_active)) for q in quellen]
+        except Exception as e:  # ohne Datenbank bleibt der Zensus nutzbar, im Standardtakt
+            console.print(
+                f"[yellow]Registrierte Quellen nicht lesbar ({type(e).__name__}), es gilt der Standardtakt[/yellow]"
+            )
+            return []
+
     async def run_probe() -> tuple[list[ris_probe.ProbeResult], set[str]]:
+        quellen = await quellen_lesen()
+        # Hat eine registrierte Quelle auf dem Host einen größeren Abstand, gilt er auch hier (Issue #1027)
+        takte = host_intervals((quell_url, sync_config) for _, quell_url, sync_config, _ in quellen)
         results: list[ris_probe.ProbeResult] = []
         async with httpx.AsyncClient(headers={"User-Agent": settings.user_agent}) as client:
             for ziel in ziele:
-                results.append(await ris_probe.probe_url(ziel, client, user_agent=settings.user_agent))
+                results.append(
+                    await ris_probe.probe_url(ziel, client, user_agent=settings.user_agent, host_intervals=takte)
+                )
                 await asyncio.sleep(2)  # Politeness: eine Kommune nach der anderen, nicht gleichzeitig
-        registriert: set[str] = set()
-        if batch or store:
+        aktive = [(quell_id, quell_url.rstrip("/")) for quell_id, quell_url, _, aktiv in quellen if aktiv]
+        registriert = {quell_url for _, quell_url in aktive}
+        if store and aktive:
             try:
                 async with SyncOrchestrator() as orchestrator:
-                    for quelle in await orchestrator.storage.get_all_sources():
-                        registriert.add(str(quelle.url).rstrip("/"))
-                        if store:
-                            treffer = next(
-                                (
-                                    r
-                                    for r in results
-                                    if r.oparl_endpoint and r.oparl_endpoint.rstrip("/") == str(quelle.url).rstrip("/")
-                                ),
-                                None,
+                    for quell_id, quell_url in aktive:
+                        treffer = next(
+                            (r for r in results if r.oparl_endpoint and r.oparl_endpoint.rstrip("/") == quell_url),
+                            None,
+                        )
+                        if treffer is not None:
+                            # Nur den eigenen Schlüssel setzen: Der Zensus läuft lange, ein ganzes sync_config
+                            # aus dem Stand vom Start überschriebe, was der Ingestor inzwischen gepflegt hat
+                            await orchestrator.storage.set_source_sync_config_value(
+                                quell_id, "probe", treffer.to_dict()
                             )
-                            if treffer is not None:
-                                cfg = dict(quelle.sync_config or {})
-                                cfg["probe"] = treffer.to_dict()
-                                await orchestrator.storage.update_source_sync_config(quelle.id, cfg)
             except Exception as e:  # ohne Datenbank bleibt der Zensus trotzdem nutzbar
-                console.print(f"[yellow]Registrierte Quellen nicht lesbar: {e}[/yellow]")
+                console.print(f"[yellow]Ergebnis nicht gespeichert: {type(e).__name__}[/yellow]")
         return results, registriert
 
     try:
@@ -703,6 +756,62 @@ def probe_ris(
         console.print(f"[green]{len(results)} Kommune(n) geprüft → {out}[/green]")
     else:
         console.print(text)
+
+
+@app.command("top-kennungen-zurueck")
+def top_kennungen_zurueck(
+    source_url: str = typer.Option(..., "--source", "-s", help="URL der SessionNet-Quelle (wie in list-sources)"),
+    ausfuehren: bool = typer.Option(False, "--ausfuehren", help="Umschreiben; ohne den Schalter nur zählen"),
+    neue_punkte: bool = typer.Option(
+        False,
+        "--neue-punkte",
+        help="Auch seit der Umstellung angelegte Punkte umschreiben (nur für einen dauerhaften Rückfall)",
+    ),
+) -> None:
+    """
+    Rückweg vor einem Rückfall auf einen Ingestor von vor Issue #863 (Kennungen der Tagesordnungspunkte).
+
+    Schreibt die Kennungen der Punkte einer SessionNet-Quelle auf die bisherige Form (Nummer) zurück, ``id`` bleibt.
+    Ohne diesen Schritt bricht ein älterer Ingestor den Abruf der Quelle ab (Primärschlüssel vergeben). Vorher den
+    Daemon für die Quelle anhalten (``is_active = false``), danach das ältere Image starten. Endet mit Fehler, wenn
+    umgeschriebene Punkte ohne Rückweg bleiben: dann nicht zurückfallen. Punkte, die seit der Umstellung angelegt
+    wurden, legt der ältere Abruf ein zweites Mal an; ``--neue-punkte`` verhindert das, macht aber ein späteres
+    erneutes Umstellen unsicher (docs/SCRAPER_SOURCES.md).
+    """
+    from src.scrapers.top_kennungen import revert_agenda_item_ids
+
+    async def run_revert() -> int:
+        async with SyncOrchestrator() as orchestrator:
+            source = await orchestrator.storage.get_source_by_url(source_url)
+            if source is None:
+                console.print(f"[red]Quelle nicht gefunden: {source_url}[/red]")
+                return 1
+            if str((source.sync_config or {}).get("source_type") or "") != "scraper:sessionnet":
+                console.print("[red]Keine SessionNet-Quelle (source_type scraper:sessionnet): nichts zu tun.[/red]")
+                return 1
+            report = await revert_agenda_item_ids(orchestrator.storage, source, apply=ausfuehren, new_items=neue_punkte)
+        verb = "zurückgeschrieben" if ausfuehren else "zurückzuschreiben (Probelauf, --ausfuehren schreibt)"
+        console.print(
+            f"Sitzungen: {report.meetings}, Punkte mit abgelöster Kennung: {report.restore}, "
+            f"seit der Umstellung angelegt: {report.translate} – {verb}"
+            + (f", geschrieben: {report.written}" if ausfuehren else "")
+        )
+        if report.new_items_left:
+            console.print(
+                f"[yellow]{report.new_items_left} seit der Umstellung angelegte Punkte bleiben in der neuen Form; "
+                "der ältere Abruf legt sie ein zweites Mal an (--neue-punkte schreibt sie um).[/yellow]"
+            )
+        if report.unresolved:
+            console.print(
+                f"[red]{len(report.unresolved)} umgeschriebene Punkte ohne Rückweg, nicht zurückfallen:[/red] "
+                + ", ".join(report.unresolved[:10])
+            )
+            return 1
+        return 0
+
+    code = asyncio.run(run_revert())
+    if code:
+        raise typer.Exit(code)
 
 
 if __name__ == "__main__":

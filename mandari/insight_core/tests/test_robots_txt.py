@@ -17,6 +17,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.test import Client
+from mandari_oparl.crawler import INFO_URL
 
 from insight_core.models import OParlBody, OParlFile, OParlPerson, OParlSource
 from insight_core.services import document_extraction, file_cache, person_photos, robots
@@ -107,8 +108,12 @@ class TestPruefung:
 
 
 def _wortfilter(agent: str) -> tuple[int, bytes]:
-    """Server, der „crawler“ im User-Agent mit 403 beantwortet, auch für /robots.txt."""
-    return (403, b"") if "crawler" in agent else (200, NUR_DOKUMENTE_GESPERRT)
+    """
+    Server, der unsere Kennung an der Infoseite im User-Agent erkennt und mit 403 beantwortet, auch für /robots.txt.
+
+    So traf früher ein Wortfilter auf „crawler“ die Infoseite ``/crawler/`` (#1061).
+    """
+    return (403, b"") if INFO_URL in agent else (200, NUR_DOKUMENTE_GESPERRT)
 
 
 KENNUNG_OHNE_INFOSEITE = "mandari-ingestor (+https://mandari.de; support@mandari.de)"
@@ -225,7 +230,7 @@ class TestDokumentCache:
         gesehen: list[str] = []
         assert file_cache.fetch_and_cache(datei, client=_pdf_client(gesehen)) == "ok"
         assert gesehen == ["https://rat.example.de/dokumente/vorlage.pdf"]
-        assert file_cache.USER_AGENT == "mandari-ingestor (+https://mandari.de/crawler/; support@mandari.de)"
+        assert file_cache.USER_AGENT == "mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)"
         assert person_photos.USER_AGENT == file_cache.USER_AGENT
 
 

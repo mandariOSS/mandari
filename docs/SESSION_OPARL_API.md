@@ -398,8 +398,13 @@ nicht an, und kein Weg (Oberfläche, Befehl, Signal) registriert eine Quelle.
 
 Beim Aktivieren wird die OParl-API des Mandanten automatisch als
 `OParlSource` registriert (Signal-Hook, `sync_config.session_tenant` =
-Mandanten-Slug). Beendet wird die Veröffentlichung nur mit einer Entscheidung,
-was mit dem bereits gespiegelten Bestand geschieht (nächster Abschnitt).
+Mandanten-Slug). Die Quelle ist aktiv, und ihre Kommune ist gleich gelistet: Der
+Ingestor legt sie beim ersten Abgleich mit `is_listed = true` an
+(`lists_new_bodies` in `ingestor/src/storage/database.py`), genau wie der Spiegel
+`insight_sync/session_mirror.py`. Neue Kommunen aller anderen Quellen bleiben
+ungelistet, bis wir sie im Admin listen (Issue #555). Beendet wird die
+Veröffentlichung nur mit einer Entscheidung, was mit dem bereits gespiegelten
+Bestand geschieht (nächster Abschnitt).
 
 ## Veröffentlichung beenden (Issue #618)
 
@@ -506,7 +511,7 @@ taugt deshalb nur, wenn sie dieselbe Adresse wie `SITE_URL` hat (etwa eine lokal
 
 Nach dem Sync ist die Kommune im Bürgerportal sichtbar
 (`/insight/vorgaenge/…`, `/insight/termine/…`, Suche/Karte je nach
-aktivierten Diensten); Änderungen erscheinen mit dem nächsten Zyklus,
+aktivierten Diensten); Änderungen erscheinen mit dem nächsten Lauf der Quelle,
 Ö→NÖ-Wechsel und Löschungen werden über Tombstones nachgezogen und im
 Portal ausgeblendet.
 

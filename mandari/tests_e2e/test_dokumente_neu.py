@@ -104,6 +104,31 @@ def test_liste_ordner_ansicht_und_verschieben(
     problems.assert_clean("Dokumentenliste")
 
 
+def test_ordner_menue_in_der_letzten_zeile_ganz_sichtbar(page: Any, live_server: Any, vorsitz: Any) -> None:
+    """Das Menü „In Ordner verschieben“ ragt über die Tabelle hinaus und wird nicht abgeschnitten (#1018)."""
+    for name in ("Haushalt 2027", "Verkehr", "Schule"):
+        DocumentFolder.objects.create(organization=vorsitz.organization, name=name, created_by=vorsitz)
+    page.set_viewport_size({"width": 1440, "height": 900})
+    _anmelden(page, live_server, vorsitz)
+    page.goto(f"{live_server.url}/work/{vorsitz.organization.slug}/documents/")
+    wait_for_bundle(page)
+
+    tabelle = page.get_by_test_id("dokumente-tabelle")
+    tabelle.get_by_role("button", name="„Antrag: Musterweg (Demo)“ in Ordner verschieben").click()
+    menue = tabelle.locator("div:has(> p:text-is('Verschieben nach'))")
+    expect(menue).to_be_visible()
+    expect(menue.get_by_role("button", name="Schule")).to_be_visible()
+    # Was am unteren Rand des Menüs zu sehen ist, gehört zum Menü (abgeschnitten läge dort die Seite darunter)
+    sichtbar = menue.evaluate(
+        """(el) => {
+            const r = el.getBoundingClientRect()
+            const punkt = document.elementFromPoint(r.left + r.width / 2, r.bottom - 4)
+            return r.bottom <= window.innerHeight && !!punkt && el.contains(punkt)
+        }"""
+    )
+    assert sichtbar, "das Ordner-Menü wird abgeschnitten"
+
+
 def test_neues_dokument_mit_standardvorlage(
     page: Any, live_server: Any, vorsitz: Any, problems: BrowserProblems
 ) -> None:

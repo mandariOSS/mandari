@@ -28,7 +28,7 @@ Vermerk einer Störung bleibt intern.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import time
+from datetime import datetime, time, timedelta
 from typing import Any
 
 from django.utils import timezone
@@ -118,6 +118,16 @@ def with_disruptions(queryset: Any, meeting: Any) -> Any:
 def disruptions(attendance: Any) -> list[Any]:
     """Störungsvermerke einer Anwesenheit (nutzt vorab geladene Vermerke)."""
     return list(attendance.disruptions.all()) if attendance.pk else []
+
+
+def disruption_start(disruption: Any, until: datetime) -> datetime:
+    """
+    Beginn einer Störung als Zeitpunkt: ihre Uhrzeit am Tag von ``until``, in einer Sitzung über Mitternacht am
+    Vortag, wenn sie sonst nach ``until`` läge (Issue #1045).
+    """
+    local = timezone.localtime(until)
+    start = timezone.make_aware(datetime.combine(local.date(), disruption.started_at), local.tzinfo)
+    return start - timedelta(days=1) if start > until else start
 
 
 def is_disrupted(attendance: Any, at: time | None = None) -> bool:
@@ -258,9 +268,38 @@ def vote_moment(item: Any) -> time | None:
     if opened is not None and closed is None:
         return now()
     if closed is not None:
-        return timezone.localtime(closed).time().replace(second=0, microsecond=0)
+        return vote_time(item)
     end: time | None = getattr(item, "end_time", None)
     return end
+
+
+def vote_time(item: Any) -> time | None:
+    """
+    Zeitpunkt einer abgeschlossenen Abstimmung zu einem TOP (Ortszeit, Minuten), sonst ``None`` (Issue #1045).
+
+    Für die Prüfung von Störungen beim Erfassen, Nacherfassen und Berichtigen: Wer zu diesem Zeitpunkt wegen einer
+    Störung nicht erreichbar war, hat nicht abgestimmt, auch wenn die Störung inzwischen beendet ist.
+
+    Gespeichert ist der Zeitpunkt nur, wenn die Abstimmung im Sitzungscockpit geschlossen wurde (``vote_closed_at``,
+    Feststellung des Ergebnisses). Läuft sie dort noch, ist sie live: ``None``, es zählt die andauernde Störung wie
+    in der Live-Anzeige. Ohne Sitzungscockpit ist kein Zeitpunkt der Abstimmung gespeichert; Beginn und Ende des TOP
+    (``start_time``, ``end_time``) grenzen nur die Beratung ein. Eine Störung während des TOP sagt nicht, ob die
+    Person bei der Abstimmung erreichbar war; wir schließen sie dann nicht aus und bleiben bei der andauernden
+    Störung (``None``).
+
+    Minutengenau, weil Störungen nur mit Stunde und Minute erfasst werden (Sekunden änderten nichts): Beginnt eine
+    Störung in der Minute, in der die Abstimmung geschlossen wurde, gilt die Person als nicht erreichbar, endet sie
+    in dieser Minute, als erreichbar (``SessionAttendanceDisruption.covers``). Eine vor Beginn der Störung im
+    Abstimmungsfenster erfasste Stimme bleibt bestehen (``voting_service.kept_votes``); abgelehnt werden neue und
+    geänderte Stimmen.
+
+    Das Cockpit setzt ``vote_closed_at`` erst beim erneuten Öffnen der Abstimmung zurück. Wird das Ergebnis danach
+    außerhalb des Cockpits zurückgesetzt („offen“) und neu erfasst, gilt weiter der Zeitpunkt der ersten Abstimmung.
+    """
+    closed = getattr(item, "vote_closed_at", None)
+    if closed is None:
+        return None
+    return timezone.localtime(closed).time().replace(second=0, microsecond=0)
 
 
 def remote_vote_rule(

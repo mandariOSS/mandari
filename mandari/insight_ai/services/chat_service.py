@@ -21,6 +21,9 @@ Einrichtung gibt es keine Anfrage. Die Tagesobergrenze aller Antworten zusammen 
 Vorher bekam das Modell fünf Suchtreffer mit je bis zu 4.000 Token Volltext. Jetzt gibt es Volltext nur
 abschnittsweise auf Anforderung. Der Verbrauch (Eingabe/Ausgabe) wird je Antwort protokolliert.
 
+Vor jedem Modellaufruf gibt der Dienst die Datenbankverbindung an den Pool zurück (Issue #1024): Eine Antwort
+dauert mehrere Runden zu je Sekunden bis Minuten, die Werkzeuge dazwischen holen sich eine neue.
+
 Einstellungen: ``INSIGHT_CHAT_MAX_TOOL_ROUNDS`` und ``INSIGHT_CHAT_TIME_LIMIT_SECONDS``.
 """
 
@@ -35,6 +38,7 @@ from typing import TYPE_CHECKING, Any
 from django.conf import settings
 from django.utils import timezone
 
+from apps.common.db_connections import release_idle_thread_connections
 from insight_ai.providers import OpenAIKompatiblerProvider, get_insight_provider
 from insight_ai.providers.base import ToolChatProvider, ToolChatResponse
 from insight_ai.services.chat_tools import TOOLS, ToolContext, context_for, run_tool, select_sources
@@ -183,6 +187,10 @@ def process_chat_message(
         remaining = deadline - time.monotonic()
         if remaining < FINAL_ANSWER_RESERVE_SECONDS * 1.5:
             break
+        # Der KI-Aufruf dauert Sekunden bis Minuten: die Datenbankverbindung solange an den Pool zurückgeben
+        # (Issue #1024). Die Werkzeuge danach holen sich bei Bedarf wieder eine; in einer offenen Transaktion
+        # bleibt sie (release_idle_thread_connections).
+        release_idle_thread_connections()
         try:
             response = provider.chat_with_tools(
                 messages,
@@ -211,6 +219,7 @@ def process_chat_message(
 
     if answer is None:
         # Abschließende Antwort ohne weitere Werkzeuge (Runden oder Zeit erschöpft, ohne Kommune, leere Antwort)
+        release_idle_thread_connections()
         try:
             response = provider.chat_with_tools(
                 messages,

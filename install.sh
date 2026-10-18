@@ -453,7 +453,7 @@ configure_interactively() {
         read -p "Redis max memory [256mb]: " input_redis_mem
         REDIS_MAXMEMORY="${input_redis_mem:-256mb}"
 
-        read -p "OParl sync interval in minutes [15]: " input_sync_interval
+        read -p "OParl sync interval on workdays 07-19 in minutes (nights hourly, weekends every 2 h) [15]: " input_sync_interval
         INGESTOR_INTERVAL="${input_sync_interval:-15}"
     else
         POSTGRES_USER="mandari"

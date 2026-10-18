@@ -18,6 +18,8 @@ from datetime import date, timedelta
 from typing import Any, Protocol
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from mandari_oparl.pacing import at_least_minimum
+
 # Volatile Felder, die NICHT in den Content-Hash eingehen (ändern sich bei
 # jedem Crawl bzw. sind der Hash selbst).
 VOLATILE_HASH_FIELDS = ("modified", "created", "mandari:contentHash")
@@ -111,6 +113,7 @@ class ScraperConfig:
     # "asp" | "php" — Seiten-Endung der SessionNet-Installation.
     # None = Auto-Detect aus base_url-Probe.
     variant: str | None = None
+    # Abstand je Host in Sekunden; nie unter einer Sekunde (mandari_oparl.pacing.MIN_REQUEST_INTERVAL, Issue #1025)
     rate_limit_seconds: float = 2.0
     max_concurrent: int = 1
     # Kalender-Fenster inkrementeller Läufe: [heute-60d, heute+210d]
@@ -154,7 +157,9 @@ class ScraperConfig:
             base_url=base_url if base_url.endswith("/") else base_url + "/",
             body_name=raw.get("body_name") or "Unbekannte Kommune",
             variant=raw.get("variant"),
-            rate_limit_seconds=float(raw.get("rate_limit_seconds", 2.0)),
+            rate_limit_seconds=at_least_minimum(
+                float(raw.get("rate_limit_seconds", 2.0)), "scraper.rate_limit_seconds"
+            ),
             max_concurrent=int(raw.get("max_concurrent", 1)),
             calendar_window_days=(int(window[0]), int(window[1])),
             full_window_days=(int(full_window[0]), int(full_window[1])),
@@ -230,6 +235,9 @@ class ScrapeStats:
     incomplete: dict[str, str] = field(default_factory=dict)
     #: Objekte, die eine Liste nennt, deren Detailseite aber nicht lesbar war: Es gibt sie in der Quelle
     listed: dict[str, set[str]] = field(default_factory=dict)
+    #: Sitzungen, deren Tagesordnung der Lauf gelesen hat (mindestens ein Punkt), mit den gelieferten
+    #: Tagesordnungspunkten (Löschabgleich der Tagesordnung, Issue #863)
+    agendas: dict[str, set[str]] = field(default_factory=dict)
 
     @property
     def parse_quota(self) -> float:
