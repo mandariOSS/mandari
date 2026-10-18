@@ -6,8 +6,8 @@ Hinter PgBouncer im Transaktionsmodus bekommt jede Transaktion, ohne Transaktion
 freie Serververbindung. Zwei Teile:
 
 - **Einstellungen:** ``DB_PGBOUNCER=true`` schaltet serverseitige Cursor ab und legt ``prepare_threshold = None``
-  fest, der Pool der Anwendung bleibt. Ohne Schalter bleibt alles wie bisher. ``migrate`` und ``safemigrate``
-  nehmen mit ``DB_DIRECT_URL`` die Direktverbindung.
+  fest, der Pool der Anwendung bleibt. Ohne Schalter bleibt alles wie bisher. ``migrate``, ``safemigrate`` und
+  ``events_after_restore`` nehmen mit ``DB_DIRECT_URL`` die Direktverbindung.
 - **Echter Lauf hinter PgBouncer** (nur mit ``MANDARI_TEST_PGBOUNCER=1``, in der CI im Job „Ereignistechnik hinter
   PgBouncer“): ``.iterator()`` außerhalb einer Transaktion und eine oft wiederholte Abfrage, während eine zweite
   Verbindung die zuletzt benutzte Serververbindung festhält, wie unter Last. Jeder ``.iterator()`` der Anwendung
@@ -41,6 +41,37 @@ def lade_einstellungen(umgebung: dict[str, str], argv: list[str] | None = None) 
             os.environ.pop(name, None)
         os.environ.update(umgebung)
         return importlib.reload(importlib.import_module("mandari.settings"))
+
+
+#: Dienst der Anwendung in den Skripten
+_ANWENDUNG = {"mandari", "$APP_SERVICE", "${APP_SERVICE}"}
+
+
+def befehle_in_einmalcontainern(text: str) -> set[str]:
+    """Verwaltungsbefehle, die ein Skript in einem Einmalcontainer der Anwendung startet (``run --no-deps``).
+
+    Erkannt werden ``docker compose run``/``$DC run`` mit ``--no-deps`` in beliebiger Reihenfolge und mit weiteren
+    Optionen, die Hüllfunktionen ``volume_container <name> <dienst> …`` (backup.sh) und ``run_manage <protokoll>
+    <befehl>`` (deploy.sh, immer der Dienst der Anwendung), Fortsetzungszeilen und Tabs. Nicht gemeint sind
+    Kommentare, Texte in Anführungszeichen mit Leerzeichen (Hinweise wie ``warn "  docker compose run …"``,
+    Beschriftungen von ``run_step``) und ``docker exec`` in laufenden Containern.
+    """
+    import re
+
+    befehle: set[str] = set()
+    for zeile in re.sub(r"\\[ \t]*\r?\n", " ", text).splitlines():
+        zeile = " ".join(zeile.split())
+        if not zeile or zeile.startswith("#"):
+            continue
+        # Paarweise von links: "$APP_SERVICE" bleibt, Hinweistexte (mit Leerzeichen) fallen weg
+        zeile = re.sub(r"\"[^\"]*\"|'[^']*'", lambda m: '""' if re.search(r"\s", m.group(0)) else m.group(0), zeile)
+        befehle |= set(re.findall(r"\brun_manage \S+ (\w+)", zeile))
+        einmal = (re.search(r"\brun\b", zeile) and "--no-deps" in zeile) or "volume_container " in zeile
+        if einmal:
+            for dienst, befehl in re.findall(r"(\S+) python manage\.py (\w+)", zeile):
+                if dienst.strip("\"'") in _ANWENDUNG:
+                    befehle.add(befehl)
+    return befehle
 
 
 @pytest.fixture
@@ -118,26 +149,49 @@ class TestSchalter:
         assert db["DISABLE_SERVER_SIDE_CURSORS"] is False, "direkt verbunden gehen serverseitige Cursor"
         assert "prepare_threshold" not in db["OPTIONS"]
 
-    def test_kurzlebige_container_der_skripte_gehen_direkt(self) -> None:
-        """Befehle, die update.sh und backup.sh per ``docker compose run --no-deps`` im Dienst der Anwendung starten.
+    @pytest.mark.parametrize(
+        ("zeilen", "erwartet"),
+        [
+            ("docker compose run --rm --no-deps mandari python manage.py safemigrate --noinput", {"safemigrate"}),
+            ('docker compose run --no-deps --rm -T -e A=b "$APP_SERVICE" python manage.py migrate', {"migrate"}),
+            ("docker compose run --rm --no-deps \\\n\t\tmandari\tpython manage.py migrate", {"migrate"}),
+            ('IMAGE_TAG="$T" $DC run --rm --no-deps -T "${APP_SERVICE}" python manage.py check', {"check"}),
+            (
+                'volume_container folge "$APP_SERVICE" \\\n    python manage.py events_after_restore --apply',
+                {"events_after_restore"},
+            ),
+            ("run_manage /tmp/plan.log migrate --plan", {"migrate"}),
+            # nicht gemeint: andere Dienste, laufende Container, Hinweise, Kommentare, die Hüllfunktion selbst
+            ("docker compose run --rm --no-deps website python manage.py migrate", set()),
+            ('docker exec "$APP_CONTAINER" python manage.py migrate --noinput', set()),
+            ('warn "  docker compose run --rm --no-deps mandari python manage.py migrate"', set()),
+            ("# docker compose run --rm --no-deps mandari python manage.py migrate", set()),
+            ('$DC run --rm --no-deps -T "$APP_SERVICE" python manage.py "$@"', set()),
+            ("run_manage() {", set()),
+        ],
+    )
+    def test_erkennung_der_einmalcontainer(self, zeilen: str, erwartet: set[str]) -> None:
+        assert befehle_in_einmalcontainern(zeilen) == erwartet
 
-        Dabei läuft PgBouncer nicht unbedingt: Bei der Wiederherstellung ist nach ``down`` nur postgres gestartet.
+    def test_einmalcontainer_der_skripte_gehen_direkt(self) -> None:
+        """Befehle, die update.sh, install.sh, backup.sh und deploy.sh in einem Einmalcontainer der Anwendung starten.
+
+        Dort läuft PgBouncer nicht unbedingt: Bei der Wiederherstellung ist nach ``down`` nur postgres gestartet.
+        Der Test findet die Schreibweisen aus ``befehle_in_einmalcontainern``; eine ganz andere Schreibweise in einem
+        Skript fände er nicht.
         """
-        import re
         from pathlib import Path
 
         from mandari import settings as einstellungen
 
         wurzel = Path(__file__).resolve().parents[4]
         befehle: set[str] = set()
-        for skript in ("update.sh", "backup.sh"):
-            text = (wurzel / skript).read_text(encoding="utf-8")
-            # docker compose run --rm --no-deps … mandari python manage.py <befehl>
-            befehle |= set(re.findall(r"compose run --rm --no-deps[ \\\n]+mandari python manage\.py (\w+)", text))
-            # volume_container <name> "$APP_SERVICE" … python manage.py <befehl> (backup.sh)
-            befehle |= set(re.findall(r'volume_container \S+ "\$APP_SERVICE"[ \\\n]+python manage\.py (\w+)', text))
-        assert befehle == {"safemigrate", "events_after_restore"}, "neuer Befehl: direkt verbinden oder hier ergänzen"
-        assert befehle <= set(einstellungen.DB_DIRECT_COMMANDS)
+        for skript in ("update.sh", "backup.sh", "install.sh", "deploy/scripts/deploy.sh"):
+            befehle |= befehle_in_einmalcontainern((wurzel / skript).read_text(encoding="utf-8"))
+        # check (Systemprüfung ohne Datenbankprüfungen) startet deploy.sh vor dem Deploy, während die Installation
+        # und damit PgBouncer läuft; es darf über den Pooler gehen
+        assert befehle == {"safemigrate", "events_after_restore", "migrate", "check"}, "neu: direkt verbinden?"
+        assert befehle - {"check"} <= set(einstellungen.DB_DIRECT_COMMANDS)
 
     def test_andere_befehle_ueber_den_pooler(self) -> None:
         s = lade_einstellungen(

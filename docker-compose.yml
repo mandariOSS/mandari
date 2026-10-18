@@ -408,7 +408,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${MANDARI_DB_HOST:-postgres}:5432/${POSTGRES_DB:-mandari}
       DB_PGBOUNCER: ${MANDARI_DB_PGBOUNCER:-false}
       DB_POOL_MAX: ${MANDARI_DB_POOL_MAX:-10}
-      # migrate und safemigrate verbinden sich mit DB_PGBOUNCER hierüber direkt (ohne Schalter ohne Wirkung)
+      # migrate, safemigrate und events_after_restore verbinden sich mit DB_PGBOUNCER hierüber direkt
+      # (ohne Schalter ohne Wirkung)
       DB_DIRECT_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
     volumes:
       - mandari_media:/app/media

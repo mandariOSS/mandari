@@ -41,7 +41,7 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:${DATA_PG_PORT:-5432}/${POSTGRES_DB:-mandari}
       # Mit DATA_PG_PORT=6432 (PgBouncer) auf true: keine serverseitigen Cursor, keine vorbereiteten Anweisungen
       DB_PGBOUNCER: ${MANDARI_DB_PGBOUNCER:-false}
-      # migrate und safemigrate mit DB_PGBOUNCER direkt an PostgreSQL, am Pooler vorbei
+      # migrate, safemigrate und events_after_restore mit DB_PGBOUNCER direkt an PostgreSQL, am Pooler vorbei
       DB_DIRECT_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:6379
       ELASTICSEARCH_URL: http://${DATA_HOST:?DATA_HOST (Server der Rolle data) fehlt}:9200

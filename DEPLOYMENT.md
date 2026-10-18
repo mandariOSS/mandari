@@ -1438,14 +1438,16 @@ docker compose exec mandari python manage.py session_publish_protocols
 unbegrenzt, das Update ändert nichts (Migration `insight_core/0056`, nur eine neue Spalte). Wer die Ablage
 begrenzen will, baut einen großen Bestand zuerst von Hand ab und setzt danach die Grenze; ab dann hält das
 stündliche Aufräumen sie ein. `--dry-run` zeigt vorher Modus, Anzahl, Größe und Kommunen; der Lauf arbeitet in
-kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container der Anwendung ausführen, der dieselben
-`OBJ_*` hat wie der Worker; die erste Zeile muss den erwarteten Modus nennen:
+kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container `worker` ausführen: Er hat dieselben
+`OBJ_*` und dieselbe Ablage wie die Anwendung und ist direkt mit PostgreSQL verbunden. Mit PgBouncer lüde der
+Container `mandari` die Ergebnisse ganz in den Speicher („PgBouncer für die Webanwendung“). Die erste Zeile muss
+den erwarteten Modus nennen:
 
 ```bash
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
+docker compose exec worker python manage.py prune_file_cache --max-gb 10 --dry-run
 # mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte dort liegen (fehlen welche: erst --hochladen)
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10
+docker compose exec worker python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+docker compose exec worker python manage.py prune_file_cache --max-gb 10
 # danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
 # FILE_CACHE_MAX_TOTAL_GB=10
 ```
