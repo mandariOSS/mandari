@@ -7,7 +7,6 @@ giving users access to their municipality's council information system.
 """
 
 from django.core.paginator import Paginator
-from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
@@ -77,7 +76,12 @@ class RISMeetingDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
         if bodies is None:
             return context
 
-        meeting = get_object_or_404(selectors.meetings_in_bodies(bodies), id=kwargs.get("meeting_id"))
+        meeting = selectors.meeting_in_bodies(bodies, kwargs["meeting_id"])
+        if meeting is None:
+            # Von Session zurückgenommen: Hinweis ohne Inhalt wie im Bürgerportal (410), sonst 404
+            return self.zurueckgenommen(
+                context, selectors.withdrawn_meeting(bodies, kwargs["meeting_id"]), "work:ris_meetings"
+            )
         context["meeting"] = meeting
         context["organizations"] = meeting.organizations.all()
         if self.neu:

@@ -12,7 +12,7 @@
     "apps/work/meetings/models.py": 5,
     "apps/work/meetings/selectors.py": 12,
     "apps/work/organization/selectors.py": 8,
-    "apps/work/ris/selectors.py": 27,
+    "apps/work/ris/selectors.py": 19,
     "insight_ai/services/summarizer.py": 3,
     "insight_search/management/commands/reindex_elasticsearch.py": 1,
     "insight_sync/management/commands/sync_session_insight.py": 3,

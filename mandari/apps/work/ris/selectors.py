@@ -5,6 +5,11 @@ Lesende Zugriffe für die RIS-Datenansicht im Work-Portal (Issue #160, Service-L
 Alle Querysets sind an die Kommunen (``OParlBody``) einer Organisation gebunden;
 die Views reichen nur noch Filterparameter durch. Die Beschlusskontrolle liest
 zusätzlich die Session-Mandanten, die mit diesen Kommunen verknüpft sind.
+
+Was mandari Session aus der Veröffentlichung zurückgenommen hat (``withdrawn_by_publisher``, etwa eine Sitzung, die
+nicht-öffentlich wurde), zeigt Work wie das Bürgerportal nicht mehr: weder in Listen noch in Suche, Übersicht und
+Beratungsfolge (``withdrawn_q``). Die Detailseite antwortet mit einem neutralen Hinweis (``withdrawn_meeting``,
+``withdrawn_paper``; Issue #853).
 """
 
 from __future__ import annotations
@@ -20,6 +25,7 @@ from django.utils import timezone
 from apps.session.models import SessionAgendaItem, SessionOrganization, SessionTenant
 from apps.session.services.resolution_service import DECIDED_ITEMS_ORDERING, DECIDED_RESULTS
 from apps.tenants.models import Organization
+from hub.ris import selectors as ris
 from hub.ris.selectors import agenda_number_key
 from insight_core.models import (
     OParlAgendaItem,
@@ -31,6 +37,7 @@ from insight_core.models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    withdrawn_q,
 )
 
 Bodies = QuerySet[OParlBody]
@@ -74,11 +81,13 @@ def overview_stats(bodies: Bodies) -> dict[str, int]:
     now = timezone.now()
     today = now.date()
     organizations = OParlOrganization.objects.filter(body__in=bodies)
+    papers = papers_in_bodies(bodies)
+    meetings = meetings_in_bodies(bodies)
     return {
-        "papers_total": OParlPaper.objects.filter(body__in=bodies).count(),
-        "papers_this_year": OParlPaper.objects.filter(body__in=bodies, date__year=today.year).count(),
-        "meetings_total": OParlMeeting.objects.filter(body__in=bodies).count(),
-        "meetings_upcoming": OParlMeeting.objects.filter(body__in=bodies, start__gt=now, cancelled=False).count(),
+        "papers_total": papers.count(),
+        "papers_this_year": papers.filter(date__year=today.year).count(),
+        "meetings_total": meetings.count(),
+        "meetings_upcoming": meetings.filter(start__gt=now, cancelled=False).count(),
         "organizations_total": organizations.count(),
         "organizations_active": organizations.filter(_active_filter(today)).count(),
         "persons_total": OParlPerson.objects.filter(body__in=bodies).count(),
@@ -87,13 +96,14 @@ def overview_stats(bodies: Bodies) -> dict[str, int]:
 
 def recent_papers(bodies: Bodies, *, limit: int = 5) -> QuerySet[OParlPaper]:
     """Neueste Vorgänge."""
-    return OParlPaper.objects.filter(body__in=bodies).order_by("-date", "-oparl_created")[:limit]
+    return papers_in_bodies(bodies).order_by("-date", "-oparl_created")[:limit]
 
 
 def upcoming_meetings(bodies: Bodies, *, limit: int = 5) -> QuerySet[OParlMeeting]:
     """Nächste, nicht abgesagte Sitzungen."""
     return (
-        OParlMeeting.objects.filter(body__in=bodies, start__gt=timezone.now(), cancelled=False)
+        meetings_in_bodies(bodies)
+        .filter(start__gt=timezone.now(), cancelled=False)
         .prefetch_related("organizations")
         .order_by("start")[:limit]
     )
@@ -105,8 +115,18 @@ def upcoming_meetings(bodies: Bodies, *, limit: int = 5) -> QuerySet[OParlMeetin
 
 
 def meetings_in_bodies(bodies: Bodies) -> QuerySet[OParlMeeting]:
-    """Sitzungen der Kommunen (Basis für Detail-Lookups)."""
-    return OParlMeeting.objects.filter(body__in=bodies)
+    """Sitzungen der Kommunen (Basis für Listen und Detail-Lookups), ohne die von Session zurückgenommenen."""
+    return ris.meetings(bodies).exclude(withdrawn_q())
+
+
+def meeting_in_bodies(bodies: Bodies, meeting_id: Any) -> OParlMeeting | None:
+    """Eine Sitzung der Kommunen für die Detailseite, ``None`` wenn es sie dort nicht gibt oder sie zurückgenommen ist."""
+    return meetings_in_bodies(bodies).filter(pk=meeting_id).first()
+
+
+def withdrawn_meeting(bodies: Bodies, meeting_id: Any) -> OParlMeeting | None:
+    """Von Session zurückgenommene Sitzung der Kommunen (für den Hinweis statt der Detailseite), sonst ``None``."""
+    return ris.meetings(bodies).filter(withdrawn_q(), pk=meeting_id).first()
 
 
 def meetings_queryset(
@@ -221,9 +241,10 @@ def organization_meetings(
 ) -> dict[str, QuerySet[OParlMeeting]]:
     """Kommende (ab heute) und vergangene Sitzungen eines Gremiums."""
     today_start = _start_of_today(timezone.now())
+    meetings = organization.meetings.exclude(withdrawn_q())
     return {
-        "upcoming": organization.meetings.filter(start__gte=today_start, cancelled=False).order_by("start"),
-        "past": organization.meetings.filter(start__lt=today_start).order_by("-start")[:past_limit],
+        "upcoming": meetings.filter(start__gte=today_start, cancelled=False).order_by("start"),
+        "past": meetings.filter(start__lt=today_start).order_by("-start")[:past_limit],
     }
 
 
@@ -274,8 +295,18 @@ def person_memberships(person: OParlPerson) -> dict[str, QuerySet[OParlMembershi
 
 
 def papers_in_bodies(bodies: Bodies) -> QuerySet[OParlPaper]:
-    """Vorgänge der Kommunen (Basis für Detail-Lookups)."""
-    return OParlPaper.objects.filter(body__in=bodies)
+    """Vorgänge der Kommunen (Basis für Listen und Detail-Lookups), ohne die von Session zurückgenommenen."""
+    return ris.papers(bodies).exclude(withdrawn_q())
+
+
+def paper_in_bodies(bodies: Bodies, paper_id: Any) -> OParlPaper | None:
+    """Ein Vorgang der Kommunen für die Detailseite, ``None`` wenn es ihn dort nicht gibt oder er zurückgenommen ist."""
+    return papers_in_bodies(bodies).filter(pk=paper_id).first()
+
+
+def withdrawn_paper(bodies: Bodies, paper_id: Any) -> OParlPaper | None:
+    """Von Session zurückgenommener Vorgang der Kommunen (für den Hinweis statt der Detailseite), sonst ``None``."""
+    return ris.papers(bodies).filter(withdrawn_q(), pk=paper_id).first()
 
 
 def papers_queryset(
@@ -322,9 +353,9 @@ def paper_files(paper: OParlPaper) -> tuple[QuerySet[OParlFile] | list[dict[str,
     ``auxiliaryFile`` aus ``raw_json`` gelesen. Zweiter Rückgabewert: ``True``,
     wenn die Dateien aus ``raw_json`` stammen.
     """
-    db_files = paper.files.all()
-    if db_files.exists():
-        return db_files, False
+    if paper.files.exists():
+        # Zurückgenommene Dateien fallen weg; ``raw_json`` nennt sie womöglich noch und gilt deshalb nicht als Ersatz
+        return paper.files.exclude(withdrawn_q()), False
     raw_json = paper.raw_json or {}
     raw_files: list[dict[str, Any]] = []
     main_file = raw_json.get("mainFile")
@@ -343,7 +374,7 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
     OParl verknüpft Consultation → Meeting/AgendaItem nur über ``external_id``-Strings;
     beide werden gebündelt nachgeladen. Ergebnis chronologisch (älteste zuerst).
     """
-    consultations: list[OParlConsultation] = list(paper.consultations.all())
+    consultations: list[OParlConsultation] = list(paper.consultations.exclude(withdrawn_q()))
     if not consultations:
         return []
 
@@ -352,7 +383,11 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
 
     meetings_by_id: dict[str, OParlMeeting] = {}
     if meeting_ids:
-        meetings = OParlMeeting.objects.filter(external_id__in=meeting_ids).prefetch_related("organizations")
+        meetings = (
+            OParlMeeting.objects.filter(external_id__in=meeting_ids)
+            .exclude(withdrawn_q())
+            .prefetch_related("organizations")
+        )
         meetings_by_id = {m.external_id: m for m in meetings}
     agenda_items_by_id: dict[str, OParlAgendaItem] = {}
     if agenda_item_ids:
@@ -394,7 +429,13 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
 
 def files_queryset(bodies: Bodies, *, search: str = "") -> QuerySet[OParlFile]:
     """Dokumente der Kommunen, neueste zuerst; Suche über Name, Dateiname und Vorgang."""
-    files = OParlFile.objects.filter(body__in=bodies).select_related("paper").order_by("-file_date", "-created_at")
+    files = (
+        OParlFile.objects.filter(body__in=bodies)
+        .exclude(withdrawn_q())
+        .exclude(withdrawn_q("paper"))
+        .select_related("paper")
+        .order_by("-file_date", "-created_at")
+    )
     if search:
         files = files.filter(
             Q(name__icontains=search) | Q(file_name__icontains=search) | Q(paper__name__icontains=search)
@@ -448,8 +489,8 @@ def orm_search(
         ``{"papers", "meetings", "organizations", "persons", "total"}``
     """
     ids = [UUID(str(body_id)) for body_id in body_ids]
-    papers = OParlPaper.objects.filter(body_id__in=ids)
-    meetings = OParlMeeting.objects.filter(body_id__in=ids)
+    papers = OParlPaper.objects.filter(body_id__in=ids).exclude(withdrawn_q())
+    meetings = OParlMeeting.objects.filter(body_id__in=ids).exclude(withdrawn_q())
     if query:
         papers = papers.filter(Q(name__icontains=query) | Q(reference__icontains=query))
         meetings = meetings.filter(Q(name__icontains=query) | Q(location_name__icontains=query))
