@@ -28,6 +28,7 @@ import pytest
 from django.test import Client
 from django.utils import timezone
 
+from insight_core import seo
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -182,6 +183,21 @@ class TestVorgang:
 
         assert description == "Münster: Antrag A/12/2026 vom 15.11.2011. KI-Zusammenfassung: Kurz und klar."
         assert "Noch keine Beratung" not in description
+
+    def test_kein_praefix_ohne_platz_fuer_den_text(self, muenster: OParlBody) -> None:
+        """Bleibt nach „KI-Zusammenfassung:“ zu wenig Platz, fällt die Zusammenfassung ganz weg (Issue #938)."""
+        paper = _vorgang(muenster, summary=ZUSAMMENFASSUNG)
+        gremium = _gremium(muenster, "Ausschuss für Stadtentwicklung, Umwelt und Wohnen")
+        _beraten(paper, _sitzung(muenster, gremium, _zeit(2011, 12, 6, 17)), "beschlossen")
+
+        description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
+
+        assert description == (
+            "Münster: Vorlage V/0881/2011 vom 15.11.2011. "
+            "Am 06.12.2011 im Ausschuss für Stadtentwicklung, Umwelt und Wohnen beschlossen."
+        )
+        # Ohne die Regel stünde hier „KI-Zusammenfassung: Die Feuerwache…“: Platz ist für die Kennzeichnung, kaum Text
+        assert seo.DESCRIPTION_MAX - len(description) - 1 >= seo._DESCRIPTION_REST_MIN
 
     def test_ki_zusammenfassung_ist_auch_im_json_ld_gekennzeichnet(self, muenster: OParlBody) -> None:
         """EU AI Act Art. 50 (Issue #938): Suchmaschinen zeigen den Text ohne die Seite, die Kennzeichnung steht darin."""

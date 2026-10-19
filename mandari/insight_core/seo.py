@@ -400,6 +400,21 @@ def paper_seitentitel(paper: Any) -> str:
     return seitentitel([f"{text} – {kennung}", *mit_nummer, text], text, kommune)
 
 
+def _ki_zusammenfassung(text: str | None, davor: str) -> str:
+    """„KI-Zusammenfassung: …“ als letzter Teil der Description nach ``davor`` – oder nichts.
+
+    Der Präfix steht nur, wenn danach noch mindestens ``_DESCRIPTION_REST_MIN`` Zeichen Text passen (oder die ganze,
+    kürzere Zusammenfassung). Sonst bliebe vom KI-Text kaum mehr als die Kennzeichnung (Issue #938).
+    """
+    text = " ".join(str(text or "").split())
+    if not text:
+        return ""
+    frei = DESCRIPTION_MAX - len(davor) - (1 if davor else 0) - len(KI_ZUSAMMENFASSUNG_PRAEFIX) - 1
+    if frei < min(len(text), _DESCRIPTION_REST_MIN):
+        return ""
+    return f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {text}"
+
+
 def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = None) -> SEOContext:
     """
     SEO-Kontext einer Vorgangsseite.
@@ -413,8 +428,9 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
     datum = _datum(paper.date)
     kopf = f"{_kennung(paper)} vom {datum}" if datum else _kennung(paper)
     stand_satz = stand.text if stand is not None and stand.kind != STAND_UNBEKANNT else ""
-    zusammenfassung = f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {paper.summary}" if paper.summary else ""
-    description = beschreibung(f"{kommune}: {kopf}." if kommune else f"{kopf}.", stand_satz, zusammenfassung)
+    kopf_satz = f"{kommune}: {kopf}." if kommune else f"{kopf}."
+    zusammenfassung = _ki_zusammenfassung(paper.summary, beschreibung(kopf_satz, stand_satz))
+    description = beschreibung(kopf_satz, stand_satz, zusammenfassung)
     canonical = build_canonical_url(request)
     ort = _gebiet(kommune)
 
