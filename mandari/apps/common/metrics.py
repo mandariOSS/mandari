@@ -14,7 +14,12 @@ Anwendungsmetriken im Prometheus-Textformat (Issue #231, Teil 2).
   beim Abruf ausgewertet, nicht laufend.
 - Zähler für Mailversand (``apps.common.email``) und PDF-Erzeugung (``apps.common.pdf``).
 
-Alle Werte gelten je Prozess und beginnen beim Start bei null.
+Alle Werte beginnen beim Start bei null. Mit mehreren Anwendungsprozessen (``APP_PROCESSES``, Issue #718)
+schreibt jeder Prozess seine Zähler und Histogramme in ``PROMETHEUS_MULTIPROC_DIR``; ``/metrics/`` liefert
+dann die Summe über alle Prozesse, gleich welcher Prozess den Abruf beantwortet. Die Sammler, die erst beim
+Abruf messen, bleiben Werte dieses einen Prozesses: der Pool (``mandari_db_pool_*``) ist der Pool des
+antwortenden Prozesses, Cache und Warteschlange gelten ohnehin für die ganze Installation. Die
+Prozesskennzahlen von prometheus_client (``process_*``, ``python_*``) entfallen dann.
 """
 
 from __future__ import annotations
@@ -22,6 +27,7 @@ from __future__ import annotations
 import contextlib
 import ipaddress
 import logging
+import os
 import secrets
 import time
 from collections.abc import Callable, Iterator
@@ -34,8 +40,9 @@ from django.db import connection
 from django.http import Http404, HttpRequest, HttpResponse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
-from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, Counter, Histogram, generate_latest
+from prometheus_client import CONTENT_TYPE_LATEST, REGISTRY, CollectorRegistry, Counter, Histogram, generate_latest
 from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily, Metric
+from prometheus_client.multiprocess import MultiProcessCollector
 from prometheus_client.registry import Collector
 
 from apps.accounts.two_factor_policy import IPNetwork, client_ip, ip_in_networks
@@ -288,10 +295,39 @@ def access_allowed(request: HttpRequest) -> bool:
     return access_allowed_from(client_ip(request), request.headers.get("Authorization", ""))
 
 
+# Kennzahlen je Prozess aus prometheus_client; mit mehreren Prozessen ohne Aussage über die Installation
+PROZESS_PRAEFIXE = ("process_", "python_")
+
+
+class AlleProzesse(Collector):
+    """Zähler und Histogramme aller Anwendungsprozesse, dazu die Sammler, die erst beim Abruf messen."""
+
+    def __init__(self, verzeichnis: str) -> None:
+        self.summen = CollectorRegistry()
+        MultiProcessCollector(self.summen, path=verzeichnis)  # type: ignore[no-untyped-call]  # ohne Annotation
+
+    def collect(self) -> Iterator[Metric]:
+        summen = list(self.summen.collect())
+        namen = {familie.name for familie in summen}
+        yield from summen
+        # Die Zähler stehen auch in REGISTRY, dort aber nur mit den Werten dieses Prozesses
+        for familie in REGISTRY.collect():
+            if familie.name not in namen and not familie.name.startswith(PROZESS_PRAEFIXE):
+                yield familie
+
+
+def exposition() -> bytes:
+    """Inhalt von ``/metrics/``; mit ``PROMETHEUS_MULTIPROC_DIR`` über alle Anwendungsprozesse summiert."""
+    verzeichnis = os.environ.get("PROMETHEUS_MULTIPROC_DIR", "")
+    if not verzeichnis:
+        return generate_latest(REGISTRY)
+    return generate_latest(AlleProzesse(verzeichnis))
+
+
 @never_cache
 @require_GET
 def metrics_view(request: HttpRequest) -> HttpResponse:
     """Prometheus-Textformat; 404 statt 403, damit der Endpunkt nach außen unsichtbar bleibt."""
     if not access_allowed(request):
         raise Http404
-    return HttpResponse(generate_latest(REGISTRY), content_type=CONTENT_TYPE_LATEST)
+    return HttpResponse(exposition(), content_type=CONTENT_TYPE_LATEST)

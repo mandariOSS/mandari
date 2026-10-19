@@ -5,11 +5,12 @@
 # Wie im Betrieb (Caddyfile im Wurzelverzeichnis): TLS endet in Caddy, Caddy
 # komprimiert und reicht an die Anwendung weiter (X-Forwarded-Proto: https).
 # Nur so setzt Django die Cookies wie in Produktion (__Host-, Secure) und prüft
-# CSRF wie dort. Unterschiede: nur localhost mit eigener Zertifizierungsstelle
-# von Caddy (tls internal) und mehrere Anwendungsprozesse statt einem Container.
+# CSRF wie dort. Unterschied: nur localhost mit eigener Zertifizierungsstelle
+# von Caddy (tls internal).
 #
 # LASTTEST_UPSTREAMS ersetzt der Workflow (.github/workflows/lasttest.yml) durch
-# die Adressen der Daphne-Prozesse, z. B. "127.0.0.1:8001 127.0.0.1:8002".
+# die Adresse der Anwendung, z. B. "127.0.0.1:8001". Mehrere Prozesse teilen sich
+# diesen Port wie im Container (mandari.app_processes, Issue #718).
 # =============================================================================
 
 {

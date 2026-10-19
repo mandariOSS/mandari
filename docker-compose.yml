@@ -408,6 +408,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@${MANDARI_DB_HOST:-postgres}:5432/${POSTGRES_DB:-mandari}
       DB_PGBOUNCER: ${MANDARI_DB_PGBOUNCER:-false}
       DB_POOL_MAX: ${MANDARI_DB_POOL_MAX:-10}
+      # Anwendungsprozesse an Port 8000 (Issue #718; DEPLOYMENT.md, „Mehrere Anwendungsprozesse“), Vorgabe 1.
+      # Jeder Prozess hat einen eigenen Pool (DB_POOL_MAX) und braucht rund 1 GB: MANDARI_MEM_LIMIT mitziehen
+      APP_PROCESSES: ${APP_PROCESSES:-1}
       # migrate, safemigrate und events_after_restore verbinden sich mit DB_PGBOUNCER hierüber direkt
       # (ohne Schalter ohne Wirkung)
       DB_DIRECT_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
@@ -425,13 +428,16 @@ services:
         condition: service_healthy
     networks:
       - mandari
-    mem_limit: 1g
+    # Für alle Anwendungsprozesse zusammen: rund 1 GB je Prozess (APP_PROCESSES), DEPLOYMENT.md
+    mem_limit: ${MANDARI_MEM_LIMIT:-1g}
     security_opt:
       - no-new-privileges:true
     logging: *default-logging
     healthcheck:
       # Liveness (Issue #344): wird bei festgefahrenem Datenbank-Pool rot. Compose startet
       # einen ungesunden Container nicht selbst neu – siehe DEPLOYMENT.md, „Automatischer Neustart“.
+      # Mit mehreren Anwendungsprozessen erreicht sie einen beliebigen; jeden einzelnen prüft und
+      # startet mandari.app_processes über seinen Prüfport neu (#718).
       test: ["CMD-SHELL", "curl -sf http://localhost:8000/health/live/ || exit 1"]
       interval: 5s
       timeout: 3s

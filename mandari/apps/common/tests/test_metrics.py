@@ -7,6 +7,11 @@ nur aus erlaubten Netzen oder mit Token (sonst 404), Kardinalität über den Vie
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 from django.core import mail
 from django.http import HttpRequest, HttpResponse
@@ -246,3 +251,29 @@ def test_registrieren_fragt_nichts_ab(
 
     generate_latest(register)
     assert aufrufe == [messfunktion], "Beim Abruf wird weiterhin gemessen"
+
+
+def test_mehrere_prozesse_werden_summiert(client: Client, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mit mehreren Anwendungsprozessen (Issue #718) beantwortet ein beliebiger Prozess den Abruf: Er muss die
+    Zähler aller Prozesse liefern, sonst springen die Werte je nach Prozess (Fehlerquote im Bericht falsch)."""
+    skript = (
+        "import sys\n"
+        "from prometheus_client import Counter\n"
+        "Counter('mandari_http_requests', 'Anfragen', ['view', 'status_class'])"
+        ".labels('test_mehrprozess', '2xx').inc(int(sys.argv[1]))\n"
+    )
+    for anzahl in ("2", "3"):
+        subprocess.run(  # noqa: S603 – fester Befehl
+            [sys.executable, "-c", skript, anzahl],
+            env=dict(os.environ, PROMETHEUS_MULTIPROC_DIR=str(tmp_path)),
+            check=True,
+        )
+    monkeypatch.setenv("PROMETHEUS_MULTIPROC_DIR", str(tmp_path))
+
+    text = client.get("/metrics/").content.decode()
+
+    assert 'mandari_http_requests_total{status_class="2xx",view="test_mehrprozess"} 5.0' in text
+    assert text.count("# TYPE mandari_http_requests_total counter") == 1
+    # Sammler, die erst beim Abruf messen, bleiben dabei; Kennzahlen nur dieses Prozesses entfallen
+    assert "# TYPE mandari_transcription_jobs gauge" in text
+    assert not [zeile for zeile in text.splitlines() if zeile.startswith(("process_", "python_"))]
