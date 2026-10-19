@@ -1,6 +1,6 @@
 {% comment %}
 Farbwahl der Einstellungen (Issue #951) mit colorPicker (frontend/alpine/organization-settings.ts): natives Farbfeld
-(x-ref nativePicker) und Hex-Eingabe (x-model hex, onHexInput), der Wert geht als verstecktes Feld ``name`` mit.
+(x-ref nativePicker) und Hex-Eingabe (x-model hex, onHexInput, onHexBlur; ohne maxlength, cleanHex kürzt eingefügten Text), der Wert geht als verstecktes Feld ``name`` mit.
 Das native Farbfeld zeigt die Farbe selbst; kein Inline-Stil.
   {% include "work/organization/neu/_farbwahl.html" with name="primary_color" id="org-farbe" label="Primärfarbe" farbe=organization.primary_color vorgabe="#6366f1" hilfe="…" %}
 {% endcomment %}
@@ -11,7 +11,7 @@ Das native Farbfeld zeigt die Farbe selbst; kein Inline-Stil.
                class="h-9 w-12 shrink-0 p-0.5 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell cursor-pointer">
         <span class="relative w-32">
             <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-gray-500 font-mono pointer-events-none" aria-hidden="true">#</span>
-            <input type="text" id="{{ id }}" x-model="hex" @input="onHexInput()" maxlength="6" placeholder="{{ vorgabe|slice:'1:' }}"{% if hilfe %} aria-describedby="{{ id }}-hilfe"{% endif %}
+            <input type="text" id="{{ id }}" x-model="hex" @input="onHexInput()" @blur="onHexBlur()" placeholder="{{ vorgabe|slice:'1:' }}"{% if hilfe %} aria-describedby="{{ id }}-hilfe"{% endif %}
                    class="w-full h-9 pl-7 pr-3 rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell text-sm font-mono text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary-600 focus:border-primary-600">
         </span>
         {% if hilfe %}<span id="{{ id }}-hilfe" class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{{ hilfe }}</span>{% endif %}
