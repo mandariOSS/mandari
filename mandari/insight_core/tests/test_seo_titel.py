@@ -285,11 +285,16 @@ class TestVorgang:
         assert None not in vorgang.values()
         assert krumen["@type"] == "BreadcrumbList"
         eintraege = krumen["itemListElement"]
-        # Ohne Ebene „Vorgänge“: /insight/k/<slug>/vorgaenge/ leitet weiter (Issue #939)
-        assert [e["name"] for e in eintraege] == ["mandari Insight", "Münster", "V/0881/2011"]
-        assert [e["position"] for e in eintraege] == [1, 2, 3]
+        # Mit Ebene „Vorgänge“: Die Liste hat eine eigene Adresse je Kommune (Issue #939)
+        assert [e["name"] for e in eintraege] == ["mandari Insight", "Münster", "Vorgänge", "V/0881/2011"]
+        assert [e["position"] for e in eintraege] == [1, 2, 3, 4]
         pfade = [re.sub(r"^https?://[^/]+", "", e["item"]) for e in eintraege]
-        assert pfade == ["/insight/", "/insight/k/muenster/", f"/insight/vorgaenge/{paper.id}/"]
+        assert pfade == [
+            "/insight/",
+            "/insight/k/muenster/",
+            "/insight/k/muenster/vorgaenge/",
+            f"/insight/vorgaenge/{paper.id}/",
+        ]
 
     def test_brotkrumen_ohne_einstieg_der_kommune(self, muenster: OParlBody) -> None:
         OParlBody.objects.filter(pk=muenster.pk).update(slug=None)
@@ -356,6 +361,7 @@ class TestSitzung:
         assert ereignis["location"]["address"]["streetAddress"] == "Musterstraße 1"
         assert [e["name"] for e in krumen["itemListElement"]][1:] == [
             "Münster",
+            "Sitzungen",
             "Bezirksvertretung Mitte am 05.11.2030",
         ]
 
@@ -401,7 +407,7 @@ class TestGremium:
         gremium, krumen = _json_ld(seite)
         assert gremium["@type"] == "Organization" and gremium["name"] == "GRÜNE"
         assert gremium["parentOrganization"]["name"] == "Münster"
-        assert [e["name"] for e in krumen["itemListElement"]] == ["mandari Insight", "Münster", "GRÜNE"]
+        assert [e["name"] for e in krumen["itemListElement"]] == ["mandari Insight", "Münster", "Gremien", "GRÜNE"]
 
     def test_art_nicht_doppelt_wenn_der_name_sie_traegt(self, muenster: OParlBody) -> None:
         ausschuss = _gremium(muenster, "Ausschuss für Umwelt und Klimaschutz", classification="Ausschuss")
@@ -440,7 +446,12 @@ class TestPerson:
         assert daten["@type"] == "Person" and daten["name"] == "Erika Muster" and daten["jobTitle"] == "Ratsmitglied"
         assert [o["name"] for o in daten["memberOf"]] == ["Rat", "Bezirksvertretung Mitte"]
         assert {o["name"] for o in daten["affiliation"]} == {"Münster", "Fraktion Bündnis 90/Die Grünen"}
-        assert [e["name"] for e in krumen["itemListElement"]] == ["mandari Insight", "Münster", "Erika Muster"]
+        assert [e["name"] for e in krumen["itemListElement"]] == [
+            "mandari Insight",
+            "Münster",
+            "Personen",
+            "Erika Muster",
+        ]
 
     def test_ohne_mandat_nicht_als_ratsmitglied(self, muenster: OParlBody) -> None:
         ausschuss = _gremium(muenster, "Ausschuss für Umwelt", classification="Ausschuss")
@@ -784,6 +795,11 @@ class TestHoechstens70Zeichen:
             "/insight/fragen/",
             "/insight/karte/",
             "/insight/nachbarschaft/",
+            # Listen je Kommune (Issue #939)
+            "/insight/k/muenster/termine/",
+            "/insight/k/muenster/vorgaenge/",
+            "/insight/k/muenster/gremien/",
+            "/insight/k/muenster/personen/",
         ],
     )
     def test_uebersichten_im_buergerportal(self, lange_namen: dict[str, str], url: str) -> None:

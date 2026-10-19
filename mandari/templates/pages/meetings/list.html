@@ -1,5 +1,5 @@
 {% extends "base_insight.html" %}
-{% load static %}
+{% load static insight_listen %}
 
 {% block title %}Sitzungen{% endblock %}
 
@@ -14,7 +14,7 @@
                    name="q"
                    value="{{ request.GET.q }}"
                    placeholder="Sitzung suchen..."
-                   hx-get="{% url 'insight_core:insight:meeting_list' %}"
+                   hx-get="{{ request.path }}"
                    hx-trigger="keyup changed delay:400ms, search"
                    hx-target="#meetings-list"
                    hx-swap="innerHTML"
@@ -44,7 +44,7 @@
             Alle
         </a>
     </div>
-    <p class="mt-4 text-[0.95rem]"><a href="{% url 'insight_core:insight:meeting_calendar' %}" class="inline-flex items-center gap-1.5 font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline"><i data-lucide="calendar" class="w-4 h-4" aria-hidden="true"></i>Als Kalender ansehen</a></p>
+    <p class="mt-4 text-[0.95rem]"><a href="{% insight_url 'meeting_calendar' %}" class="inline-flex items-center gap-1.5 font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline"><i data-lucide="calendar" class="w-4 h-4" aria-hidden="true"></i>Als Kalender ansehen</a></p>
 </c-insight.kopfband>
 <c-insight.band>
     <div id="meetings-list">

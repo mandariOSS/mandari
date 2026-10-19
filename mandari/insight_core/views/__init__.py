@@ -81,7 +81,7 @@ from .persons import (
     PersonDetailView,
     PersonListView,
 )
-from .portal import portal_entry
+from .portal import portal_entry, portal_list
 from .protocols import (
     PublicProtocolDetailView,
     PublicProtocolListView,
@@ -140,6 +140,7 @@ __all__ = [
     "kommunen_stoebern",
     "kommunen_vorschlaege",
     "portal_entry",
+    "portal_list",
     "PublicProtocolDetailView",
     "PublicProtocolListView",
     "QuestionDetailView",

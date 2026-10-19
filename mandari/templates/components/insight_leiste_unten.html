@@ -1,3 +1,4 @@
+{% load insight_listen %}
 {% comment %}
 Am Handy (unter lg) die Leiste unten mit fünf Zielen und das Blatt „Mehr“ (Issue #783, Stufe 3, Variante C). Beides
 steht geschlossen im HTML; Alpine öffnet das Blatt nur auf Klick (wie die Korrektur aus #763). Das Blatt ist ein
@@ -7,9 +8,9 @@ seitlich für das Querformat (wirkt nur mit viewport-fit=cover im Layout).
 <nav aria-label="Hauptbereiche" class="lg:hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
     <ul class="grid grid-cols-5 max-w-xl mx-auto">
         <li><c-insight.tab href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" icon="house" area="uebersicht">Start</c-insight.tab></li>
-        <li><c-insight.tab href="{% url 'insight_core:insight:meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.tab></li>
-        <li><c-insight.tab href="{% url 'insight_core:insight:paper_list' %}" icon="file-text" area="vorgaenge">Vorgänge</c-insight.tab></li>
-        <li><c-insight.tab href="{% url 'insight_core:insight:map' %}" icon="map" area="karte">Karte</c-insight.tab></li>
+        <li><c-insight.tab href="{% insight_url 'meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.tab></li>
+        <li><c-insight.tab href="{% insight_url 'paper_list' %}" icon="file-text" area="vorgaenge">Vorgänge</c-insight.tab></li>
+        <li><c-insight.tab href="{% insight_url 'map' %}" icon="map" area="karte">Karte</c-insight.tab></li>
         <li>
             <button type="button" x-ref="mehrButton" @click="openMehr()" aria-haspopup="dialog" aria-controls="insight-mehr"
                 :aria-expanded="mehrOffen.toString()" aria-expanded="false"
@@ -41,18 +42,18 @@ seitlich für das Querformat (wirkt nur mit viewport-fit=cover im Layout).
         </div>
         <nav aria-label="Weitere Bereiche" class="px-2">
             <ul class="space-y-0.5">
-                <li><c-insight.blatt-link href="{% url 'insight_core:insight:organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.blatt-link></li>
-                <li><c-insight.blatt-link href="{% url 'insight_core:insight:person_list' %}" icon="users" area="personen">Personen</c-insight.blatt-link></li>
+                <li><c-insight.blatt-link href="{% insight_url 'organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.blatt-link></li>
+                <li><c-insight.blatt-link href="{% insight_url 'person_list' %}" icon="users" area="personen">Personen</c-insight.blatt-link></li>
                 {% if insight_decisions_published %}
-                <li><c-insight.blatt-link href="{% url 'insight_core:insight:decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.blatt-link></li>
+                <li><c-insight.blatt-link href="{% insight_url 'decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.blatt-link></li>
                 {% endif %}
                 {% if insight_questions_enabled %}
-                <li><c-insight.blatt-link href="{% url 'insight_core:insight:question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.blatt-link></li>
+                <li><c-insight.blatt-link href="{% insight_url 'question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.blatt-link></li>
                 {% endif %}
-                <li><c-insight.blatt-link href="{% url 'insight_core:insight:chat' %}" icon="sparkle" area="ki">KI-Assistent</c-insight.blatt-link></li>
-                <li><c-insight.blatt-link href="{% url 'insight_core:insight:saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.blatt-link></li>
+                <li><c-insight.blatt-link href="{% insight_url 'chat' %}" icon="sparkle" area="ki">KI-Assistent</c-insight.blatt-link></li>
+                <li><c-insight.blatt-link href="{% insight_url 'saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.blatt-link></li>
                 {% if insight_subscriptions_enabled %}
-                <li><c-insight.blatt-link href="{% url 'insight_core:insight:notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.blatt-link></li>
+                <li><c-insight.blatt-link href="{% insight_url 'notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.blatt-link></li>
                 {% endif %}
             </ul>
         </nav>

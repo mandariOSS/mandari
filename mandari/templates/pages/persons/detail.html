@@ -15,7 +15,7 @@ Randspalte mit Kontakt, Terminen und Angaben (früher Reiter „Informationen & 
 {% include "partials/tombstone_notice.html" with object=person %}
 
 <header class="rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-7 sm:pb-8">
-    <c-insight.zurueck href="{% url 'insight_core:insight:person_list' %}">Personen</c-insight.zurueck>
+    <c-insight.zurueck :ziel="insight_bereich_ziel" href="{% url 'insight_core:insight:person_list' %}">Personen</c-insight.zurueck>
     <div class="flex flex-col sm:flex-row sm:items-center gap-4">
         {% include "components/person_avatar.html" with person=person size="lg" %}
         <div class="flex-1 min-w-0">

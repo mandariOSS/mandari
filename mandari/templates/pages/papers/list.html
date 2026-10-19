@@ -16,7 +16,7 @@
                        name="q"
                        value="{{ request.GET.q }}"
                        placeholder="Vorgang suchen (inkl. Dokumenteninhalte)..."
-                       hx-get="{% url 'insight_core:insight:paper_list' %}"
+                       hx-get="{{ request.path }}"
                        hx-trigger="keyup changed delay:400ms, search"
                        hx-target="#papers-list"
                        hx-swap="innerHTML"
@@ -36,7 +36,7 @@
                 <label for="filter-type" class="sr-only">Nach Typ filtern</label>
                 <select id="filter-type"
                         name="type"
-                        hx-get="{% url 'insight_core:insight:paper_list' %}"
+                        hx-get="{{ request.path }}"
                         hx-trigger="change"
                         hx-target="#papers-list"
                         hx-swap="innerHTML"
