@@ -2330,13 +2330,16 @@ def update_schedule(organization: Organization, membership: Membership, form: Ma
         raise ServiceError(str(exc)) from exc
 
 
-def restore_deleted_date(organization: Organization, exception_id: Any) -> tuple[Any, bool]:
+def restore_deleted_date(organization: Organization, form: Mapping[str, str]) -> tuple[Any, bool]:
     """
-    Gelöschten Termin wiederherstellen (Issue #1071): Ausnahme „Gelöscht“ entfernen und, wenn er noch bevorsteht und
-    die Reihe aktiv ist, den Termin wieder anlegen. Liefert das Datum und ob er wieder angelegt wurde.
+    Gelöschten Termin wiederherstellen (Issue #1071, Formularfeld ``exception_id``): Ausnahme „Gelöscht“ entfernen
+    und, wenn er noch bevorsteht und die Reihe aktiv ist, den Termin wieder anlegen. Liefert das Datum und ob er wieder
+    angelegt wurde.
     """
     from apps.work.faction.generation import restore_occurrence
     from apps.work.faction.models import FactionMeetingException
+
+    exception_id = form.get("exception_id") or ""
 
     try:
         exception = (
@@ -2352,7 +2355,7 @@ def restore_deleted_date(organization: Organization, exception_id: Any) -> tuple
         raise ServiceError("Gelöschter Termin nicht gefunden.")
     schedule, datum = exception.schedule, exception.original_date
     exception.delete()
-    return datum, restore_occurrence(schedule, datum) is not None
+    return datum, cast(Any, restore_occurrence)(schedule, datum) is not None
 
 
 def toggle_schedule(organization: Organization, schedule_id: Any) -> FactionMeetingSchedule:

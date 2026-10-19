@@ -24,7 +24,7 @@ from __future__ import annotations
 import copy
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from django.db import transaction
 from django.utils import timezone
@@ -116,7 +116,7 @@ class Schritt:
 
     @property
     def verschoben(self) -> bool:
-        return self.datum != self.meeting.scheduled_date
+        return bool(self.datum != self.meeting.scheduled_date)
 
 
 @dataclass
@@ -246,6 +246,15 @@ def _felder(
     return felder
 
 
+def _naechster_tag(frei: set[Any], datum: Any) -> Any:
+    """Nächstgelegener freier Tag; bei Gleichstand der spätere."""
+
+    def abstand(tag: Any) -> tuple[int, int]:
+        return abs((tag - datum).days), -tag.toordinal()
+
+    return min(frei, key=abstand)
+
+
 def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = None) -> Plan:
     """Was die Änderung mit den kommenden Terminen macht (ohne zu schreiben)."""
     from .models import FactionMeeting
@@ -292,12 +301,11 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
     geloescht = generation.deleted_occurrence_dates(list(schedule.exceptions.all()))
     # Tage betroffener Termine zählen mit, auch wenn der neue Beginn heute schon vorbei wäre (sie bleiben dann)
     eigene = {m.scheduled_date for m in betroffen}
+    erzeugung = cast(Any, generation)
     tage = [
         tag
-        for tag in generation.occurrence_dates(neu, heute, ende)
-        if tag not in belegt
-        and tag not in geloescht
-        and (tag in eigene or generation._occurrence_start(neu, tag) > now)
+        for tag in erzeugung.occurrence_dates(neu, heute, ende)
+        if tag not in belegt and tag not in geloescht and (tag in eigene or erzeugung._occurrence_start(neu, tag) > now)
     ]
     frei = set(tage)
 
@@ -314,7 +322,7 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
         if not frei:
             ergebnis.bleiben.append(meeting)
             continue
-        ziel = min(frei, key=lambda tag, m=meeting: (abs((tag - m.scheduled_date).days), -tag.toordinal()))
+        ziel = _naechster_tag(frei, meeting.scheduled_date)
         frei.discard(ziel)
         schritte.append(Schritt(meeting, ziel))
     # Leere, geplante Termine der Reihe nach auf die übrigen Tage; automatisch entfallene und der Rest gehen
