@@ -11,7 +11,7 @@ sich nur ``generated_until``), deshalb nennt die Nebenspalte nur die Regel und d
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
 from django.conf import settings as django_settings
@@ -36,15 +36,15 @@ from .services import FACTION_REMINDER_WINDOW_HOURS
 WOCHENTAGE = dict(formatting.WEEKDAY_CHOICES)
 
 
-def _uhr(wert: Any) -> str:
-    return wert.strftime("%H:%M")
+def _uhr(wert: time | datetime) -> str:
+    return str(wert.strftime("%H:%M"))
 
 
 def _tag(wann: datetime | date) -> str:
     """„Fr 09.10.“ in der Ortszeit."""
     if isinstance(wann, datetime):
         wann = timezone.localtime(wann)
-    return date_format(wann, "D d.m.")
+    return str(date_format(wann, "D d.m."))
 
 
 def _zeitpunkt(wann: datetime) -> str:
@@ -73,21 +73,23 @@ class Stand:
     text: str
     detail: str = ""
     entfaellt: bool = False
+    #: Erläuterung auch am Handy zeigen (Ausfallgrund, offenes Protokoll, überfällige Einladung)
+    hervorheben: bool = False
 
 
 def stand(meeting: Any, einladung: dict[str, Any]) -> Stand:
     """Stand je Zeile wie im Muster: Entwurf, Eingeladen, Abgeschlossen mit Protokollstand, Abgesagt mit Grund."""
     status = meeting.status
     if status == "cancelled":
-        return Stand("andere", "Entfällt", meeting.cancellation_reason, entfaellt=True)
+        return Stand("andere", "Entfällt", meeting.cancellation_reason, entfaellt=True, hervorheben=True)
     if status == "ongoing":
         return Stand("zustimmung", "Läuft")
     if status == "completed":
         if meeting.protocol_approved:
             return Stand("zustimmung", "Abgeschlossen", "Protokoll genehmigt")
         if meeting.protocol_status == "pending":
-            return Stand("enthaltung", "Abgeschlossen", "Protokoll zur Genehmigung")
-        return Stand("enthaltung", "Abgeschlossen", "Protokoll offen")
+            return Stand("enthaltung", "Abgeschlossen", "Protokoll zur Genehmigung", hervorheben=True)
+        return Stand("enthaltung", "Abgeschlossen", "Protokoll offen", hervorheben=True)
     if status == "invited" or meeting.invitation_sent:
         detail = f"am {_tag(meeting.invitation_sent_at)}" if meeting.invitation_sent_at else ""
         return Stand("zustimmung", "Eingeladen", detail)
@@ -97,6 +99,9 @@ def stand(meeting: Any, einladung: dict[str, Any]) -> Stand:
     if meeting.start <= timezone.now():
         return Stand(punkt, wort)
     versand = invitation_dispatch_at(meeting, einladung)
+    if versand <= timezone.now():
+        # Versandzeit vorbei, aber nichts verschickt (Freigabe fehlt oder Versand fehlgeschlagen)
+        return Stand("enthaltung", wort, "Einladung überfällig", hervorheben=True)
     if dispatches_automatically(meeting, einladung):
         return Stand(punkt, wort, f"Einladung automatisch am {_zeitpunkt(versand)}")
     return Stand(punkt, wort, f"Einladung nach Freigabe, geplant am {_zeitpunkt(versand)}")
@@ -146,7 +151,11 @@ def naechste_satz(organization: Any, stats_satz: str) -> str:
     einladung = get_invitation_settings(organization)
     if naechste.invitation_sent:
         if naechste.invitation_sent_at:
-            satz += f" Work hat am {_zeitpunkt(naechste.invitation_sent_at)} eingeladen."
+            # Automatisch: Versand ohne Klick vorgesehen und nicht vor dem geplanten Zeitpunkt (sonst „Jetzt einladen“)
+            versand = invitation_dispatch_at(naechste, einladung)
+            von_selbst = dispatches_automatically(naechste, einladung) and naechste.invitation_sent_at >= versand
+            automatisch = " automatisch" if von_selbst else ""
+            satz += f" Work hat am {_zeitpunkt(naechste.invitation_sent_at)}{automatisch} eingeladen."
     elif naechste.status in ("draft", "planned"):
         versand = invitation_dispatch_at(naechste, einladung)
         if versand > timezone.now():
@@ -177,13 +186,14 @@ class Reihe:
 
 def _rhythmus(schedule: Any) -> str:
     tag = WOCHENTAGE.get(schedule.weekday, "")
-    return {
+    texte: dict[str, str] = {
         "weekly": f"Wöchentlich {tag.lower()}s",
         "biweekly": f"Alle zwei Wochen {tag.lower()}s",
         "monthly": f"Am ersten {tag} im Monat",
         "monthly_first": f"Am ersten {tag} im Monat",
         "monthly_last": f"Am letzten {tag} im Monat",
-    }.get(schedule.recurrence, schedule.get_recurrence_display())
+    }
+    return texte.get(schedule.recurrence) or str(schedule.get_recurrence_display())
 
 
 def _von_bis(schedule: Any) -> str:
@@ -195,14 +205,15 @@ def _von_bis(schedule: Any) -> str:
 
 
 def _tag_kurz(tag: date) -> str:
-    return date_format(tag, "d.m.")
+    return str(date_format(tag, "d.m."))
 
 
 def _ausnahme(ausnahme: Any) -> str:
     grund = f" ({ausnahme.reason})" if ausnahme.reason else ""
     if ausnahme.exception_type == "cancelled":
         if ausnahme.end_date and ausnahme.end_date != ausnahme.original_date:
-            return f"Pause{grund}: {_tag_kurz(ausnahme.original_date)} bis {_tag_kurz(ausnahme.end_date)}"
+            wofuer = f" {ausnahme.reason}," if ausnahme.reason else ""
+            return f"Pause:{wofuer} {_tag_kurz(ausnahme.original_date)} bis {_tag_kurz(ausnahme.end_date)}"
         return f"Entfällt am {_tag_kurz(ausnahme.original_date)}{grund}"
     if ausnahme.exception_type == "rescheduled" and ausnahme.new_date:
         return f"Verschoben vom {_tag_kurz(ausnahme.original_date)} auf den {_tag_kurz(ausnahme.new_date)}{grund}"
@@ -236,7 +247,9 @@ def reihen(organization: Any) -> list[Reihe]:
             for a in sorted(schedule.exceptions.all(), key=lambda a: a.original_date)
             if (a.end_date or a.new_date or a.original_date) >= heute
         ]
-        regeln = [r.ris_organization.name for r in schedule.suspension_rules.all() if r.is_active]
+        regeln = [
+            r.ris_organization.name for r in schedule.suspension_rules.all() if r.is_active and r.ris_organization.name
+        ]
         if regeln:
             hinweise.append(f"Entfällt nach Sitzungen von {formatting.join_parts(regeln)}")
         hinweise = [h if h.endswith(".") else f"{h}." for h in hinweise]

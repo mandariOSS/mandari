@@ -100,7 +100,7 @@ def _seite(welt: dict[str, Any], client_for: Any, rolle: str, **anfrage: str) ->
     antwort = client_for(welt[rolle].user).get(reverse("work:faction", kwargs={"org_slug": welt["org"].slug}), anfrage)
     assert antwort.status_code == 200
     assert "work/faction/neu/sitzungen.html" in [t.name for t in antwort.templates]
-    return antwort.content.decode()
+    return str(antwort.content.decode())
 
 
 def test_vorsitz_sieht_reihe_automatik_und_verwaltung(welt: dict[str, Any], client_for: Any) -> None:
@@ -109,7 +109,7 @@ def test_vorsitz_sieht_reihe_automatik_und_verwaltung(welt: dict[str, Any], clie
     assert 'class="fs-neben fs-liste-neben"' in html
     assert "Wöchentlich montags von 18:00 bis 20:00, Fraktionsbüro, auch per Video." in html
     assert "Work legt die Termine 90 Tage im Voraus an." in html
-    assert "Pause (Weihnachten):" in html
+    assert "Pause: Weihnachten, " in html
     assert "Gelöschte Termine legt Work nicht wieder an" in html
     # Automatik: TOP-Erinnerung 54 Stunden vor Freitag 18:00 = Mittwoch 12:00, fester Einladungszeitpunkt, Protokoll
     assert "<b>Mittwoch 12:00</b><span>Erinnerung zum Eintragen von TOPs</span>" in html
@@ -134,7 +134,7 @@ def test_stand_je_zeile_und_vergangene(welt: dict[str, Any], client_for: Any) ->
     html = _seite(welt, client_for, "vorsitz")
     assert html.index('data-testid="fraktionssitzungen"') < html.index('data-testid="fraktion-vergangene"')
     assert "<span>Eingeladen</span>" in html
-    assert '<li class="entfaellt">' in html and "<small>Ratssitzung am selben Abend</small>" in html
+    assert '<li class="entfaellt hervorheben">' in html and "<small>Ratssitzung am selben Abend</small>" in html
     assert "<small>Protokoll zur Genehmigung</small>" in html
     assert "Ältere Sitzungen anzeigen" in html
     # Vereidigter Vorsitz sieht die Zahl der nichtöffentlichen TOPs, das Mitglied nur die öffentlichen
@@ -163,3 +163,16 @@ def test_ohne_reihe_nur_vorsitz_sieht_den_weg_zur_reihe(welt: dict[str, Any], cl
 def test_wochenzeit_rechnet_ueber_die_woche() -> None:
     assert liste._wochenzeit_minus(0, time(6, 0), 12) == "Sonntag 18:00"
     assert liste._wochenzeit_minus(4, time(18, 0), 54) == "Mittwoch 12:00"
+
+
+def test_einladung_ueberfaellig(welt: dict[str, Any], client_for: Any) -> None:
+    """Versandzeit vorbei, nichts verschickt: nicht mehr „Einladung automatisch am …“."""
+    FactionMeeting.objects.create(
+        organization=welt["org"],
+        title="Kurzfristig",
+        start=timezone.now() + timedelta(hours=5),
+        status="planned",
+        created_by=welt["vorsitz"],
+    )
+    html = _seite(welt, client_for, "vorsitz")
+    assert "<small>Einladung überfällig</small>" in html

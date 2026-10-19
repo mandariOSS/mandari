@@ -1,10 +1,10 @@
 {% comment %}
 Eine Zeile der Fraktionssitzungen (Issue #1071, Muster sitzungen.html): Datum und Uhrzeit, Titel mit Ort (die ganze
-Zeile öffnet die Sitzung), Stand (c-work.stand), ab 1600 px TOPs und Teilnahme. Kontext: zeile (meeting, stand, tops aus
+Zeile öffnet die Sitzung), Stand (c-work.stand; „hervorheben“ zeigt die Erläuterung auch am Handy), ab 1600 px TOPs und Teilnahme. Kontext: zeile (meeting, stand, tops aus
 apps/work/faction/liste.py), organization.
 {% endcomment %}
 {% with m=zeile.meeting %}
-<li{% if zeile.stand.entfaellt %} class="entfaellt"{% endif %}>
+<li{% if zeile.stand.entfaellt or zeile.stand.hervorheben %} class="{% if zeile.stand.entfaellt %}entfaellt{% endif %}{% if zeile.stand.entfaellt and zeile.stand.hervorheben %} {% endif %}{% if zeile.stand.hervorheben %}hervorheben{% endif %}"{% endif %}>
     <span class="wann"><b>{{ m.start|date:"D d.m." }}</b><span>{{ m.start|time:"H:i" }}</span></span>
     <span class="was"><a href="{% url 'work:faction_detail' org_slug=organization.slug meeting_id=m.id %}" title="{{ m.start|date:'l, d.m.Y' }}">{{ m.title }}</a><small>{% if m.location %}{{ m.location|truncatechars:60 }}{% elif m.is_virtual or m.video_link %}online{% endif %}</small></span>
     <c-work.stand punkt="{{ zeile.stand.punkt }}" text="{{ zeile.stand.text }}" detail="{{ zeile.stand.detail }}" data-testid="sitzung-status" />

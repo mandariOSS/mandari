@@ -1221,6 +1221,7 @@
   .fs-to-lesen { list-style: none; margin: 0; padding: 0; }
   .fs-to-lesen li { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr); gap: 2px 8px; padding: 9px 0; border-bottom: 1px solid var(--wf-linie); font-size: 14px; line-height: 1.45; }
   .fs-to-lesen li.unter { padding-left: 16px; }
+  /* Nummer als Rasterspalte einer Leseliste; wf-tl-zeile ist die anklickbare Navigationszeile mit Kürzung und Auswahl */
   .fs-to-lesen .nr { color: var(--wf-text3); font-variant-numeric: tabular-nums; font-weight: 500; }
   .fs-to-lesen .t { font-weight: 500; }
   .fs-to-lesen li.unter .t { font-weight: 400; }
@@ -1288,8 +1289,8 @@
   .fs-prot-teil { font-size: 13px; font-weight: 600; color: var(--wf-text2); margin: 28px 0 0; padding-bottom: 6px; border-bottom: 1px solid var(--wf-linie); display: flex; align-items: center; gap: 6px; }
   .fs-prot-teil svg { width: 14px; height: 14px; color: var(--wf-text3); }
   .fs-prot-top { padding: 14px 0 12px; border-bottom: 1px solid var(--wf-linie); scroll-margin-top: 112px; }
+  /* Nummer: gemeinsamer Baustein wf-top-nr (hier als erste Rasterspalte) */
   .fs-prot-top h3 { font-size: 15.5px; font-weight: 600; display: grid; grid-template-columns: 3rem minmax(0, 1fr); line-height: 1.4; margin: 0; }
-  .fs-prot-top h3 .nr { color: var(--wf-text3); font-variant-numeric: tabular-nums; font-weight: 500; }
   .fs-prot-top.unter h3 { font-weight: 500; }
   .fs-prot-inhalt { padding-left: 3rem; }
   .fs-prot-inhalt > p { margin: 6px 0 0; }
@@ -1398,6 +1399,7 @@
     .fs-sl .was { grid-column: 2; grid-row: 1; }
     .fs-sl .fs-stand { grid-column: 2; grid-row: 2; font-size: 13px; }
     .fs-sl .fs-stand small { display: none; }
+    .fs-sl > li.hervorheben .fs-stand small { display: block; white-space: normal; }
     .fs-top-zeile { grid-template-columns: 2.5rem minmax(0, 1fr) 28px; min-height: 44px; }
     .fs-griff, .fs-top-anh { display: none; }
     .fs-top-detail, .fs-top.unter .fs-top-detail { padding: 4px 12px 16px 2.75rem; }
