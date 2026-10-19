@@ -287,6 +287,31 @@ eintrafen.
 - **Live-Abstimmung**: 30 Einzelstimmen in einem Formular: p95 rund 0,9 s
   (seit #291 gesammelt gespeichert; vorher rund 2,7 s auf dem Entwicklerrechner).
 
+### 5.6 Ein Prozess gegen vier im Container — Profil `gross` (19. Oktober 2026)
+
+Stufenlast 10 bis 100 Nutzer, je Stufe 2 Minuten, Datenbank mit den
+Einstellungen der Klasse „groß“; die Anwendung startet wie im Container über
+`mandari.app_processes` (`APP_PROCESSES`, #718), alle Prozesse an einem Port.
+Zwei Läufe auf demselben Stand, nur die Prozesszahl verschieden:
+
+| Nutzer | 1 Prozess: Anfragen/s | p95 | Fehler | 4 Prozesse: Anfragen/s | p95 | Fehler |
+|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 3,4 | 171 | 0 % | 3,4 | 250 | 0 % |
+| 25 | **8,8** | **276** | 0 % | 9,2 | 312 | 0 % |
+| 50 | 16,5 | 1.287 | 0 % | 17,7 | 630 | 0 % |
+| 75 | 20,5 | 2.248 | 4,9 % | **27,0** | **700** | 0 % |
+| 100 | 25,5 | 2.357 | 17,3 % | 28,4 | 2.626 | 0 % |
+
+Getragen (p95 bis 1 s, höchstens 1 % Fehler) sind mit einem Prozess **25
+Nutzer bei 8,8 Anfragen/s**, mit vier Prozessen **75 Nutzer bei 27,0
+Anfragen/s**: dreimal so viel. Ein Prozess bleibt ab 75 Nutzern bei rund 1,6
+Kernen stehen (CPU der Stufen), vier Prozesse belegen bei 100 Nutzern 4,25
+Kerne; dann ist der Läufer mit seinen 4 vCPU für alles zusammen voll. Die Fehler mit einem Prozess sind
+`503`-Antworten bei erschöpftem Datenbank-Pool; mit vier Prozessen gab es
+keine. Speicher: ein Prozess im Mittel 430 MB (Spitze 512), vier zusammen
+1.364 MB (Spitze 1.705); PostgreSQL höchstens 42 Verbindungen. Läufe:
+Workflow `Lasttest`, Stand `8e73102`, Aufruf in Abschnitt 7.
+
 ## 6. Größenempfehlungen
 
 **Wichtig:** Ein Anwendungsprozess sättigt bei rund 20 Anfragen/s, egal wie
