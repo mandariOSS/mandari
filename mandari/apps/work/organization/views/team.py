@@ -6,7 +6,10 @@ Teamverzeichnis, Teamprofil und die allgemeinen Organisationseinstellungen
 
 from django.conf import settings as django_settings
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse
 from django.shortcuts import redirect
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -16,7 +19,7 @@ from apps.work.faction.models import FactionMeetingSchedule
 from apps.work.faction.visibility import can_view_internal
 from apps.work.rahmen import NeueVorlageMixin
 
-from .. import einstellungen, selectors, services
+from .. import einstellungen, fraktion_einstellungen, selectors, services
 from ..services import ServiceError
 from ._helpers import flash_error
 
@@ -159,20 +162,45 @@ _STANDARD_AGENDA_SCOPE = (
 
 
 class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
-    """Faction meeting settings tab in organization settings."""
+    """
+    Einstellungen › Fraktionssitzungen. Ändern nur mit ``faction.manage``; im neuen Erscheinungsbild sehen Mitglieder
+    mit ``faction.view_public`` die Seite zur Information (Nur-Lesen, Issue #1071, Muster einstellungen_mitglied).
+    Die bisherige Vorlage (``?ansicht=bisher``) bleibt wie bisher der Verwaltung vorbehalten.
+
+    Die neue Seite speichert jede Änderung sofort (htmx, ``data-autosave``): ``section=save_settings`` mit
+    ``felder=…`` und die Automatik je Reihe (``section=update_schedule_automation``) antworten auf htmx-Anfragen mit
+    204 bzw. 400 und dem Grund als Text. Ohne JavaScript speichert das Formular wie bisher als Ganzes.
+    """
 
     template_name = "work/organization/faction_settings.html"
     neue_vorlage = "work/organization/neu/fraktion.html"
-    permission_required = "faction.manage"
+    permission_required = ["faction.manage", "faction.view_public"]
+    permission_require_all = False
+
+    #: Abschnitte, die die neue Seite per htmx sofort speichert
+    SOFORT = ("save_settings", "update_schedule_automation")
+
+    def darf_verwalten(self) -> bool:
+        return bool(self.membership.has_permission("faction.manage"))
 
     def get_context_data(self, **kwargs):
+        darf_verwalten = self.darf_verwalten()
+        # Nur-Lesen gibt es nur in der neuen Vorlage; die bisherige zeigt Formulare
+        if not darf_verwalten and not self.neue_ansicht():
+            raise PermissionDenied("Fehlende Berechtigung")
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
         context["active_tab"] = "faction"
-        context["can_manage_faction"] = True  # This view requires faction.manage
+        context["can_manage_faction"] = darf_verwalten
+        context["nur_lesen"] = not darf_verwalten
         # Veröffentlichungs-Opt-in darf nur mit protocols.publish geändert werden
-        context["can_publish_protocols"] = self.membership.has_permission("protocols.publish")
+        context["can_publish_protocols"] = darf_verwalten and self.membership.has_permission("protocols.publish")
+        context["can_manage_roles"] = self.membership.has_permission("organization.manage_roles")
         context["faction_settings"] = services.faction_settings_with_defaults(self.organization)
+        context["felder"] = {key: fraktion_einstellungen.felder(key) for key in fraktion_einstellungen.ABSCHNITT_FELDER}
+        context["top_rechte"] = fraktion_einstellungen.top_rechte(self.organization)
+        # Ordner „Nichtöffentliche Vorgänge“ (Issue #873, Muster): nur Information, Dateizahl nur für Vereidigte
+        context["noe_ordner"] = fraktion_einstellungen.nichtoeffentlich_ordner(self.organization, self.membership)
 
         # Available placeholders for reference
         context["placeholders"] = [
@@ -185,15 +213,17 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
         ]
 
         # Sitzungsreihen + Ausfallregeln (Issue #61); Löschen nur mit faction.delete und Folgen im Dialog (Issue #897)
-        schedules = selectors.faction_schedules(self.organization)
-        context["can_delete_schedules"] = deletion.can_delete(self.membership)
-        context["schedules"] = (
-            deletion.with_deletion_details(schedules) if context["can_delete_schedules"] else schedules
-        )
+        schedules = list(selectors.faction_schedules(self.organization))
+        context["can_delete_schedules"] = darf_verwalten and deletion.can_delete(self.membership)
+        if context["can_delete_schedules"]:
+            schedules = deletion.with_deletion_details(schedules)
+        for schedule in schedules:
+            schedule.angaben = fraktion_einstellungen.reihe_angaben(schedule)
+        context["schedules"] = schedules
         context["weekday_choices"] = FactionMeetingSchedule.WEEKDAY_CHOICES
         context["recurrence_choices"] = FactionMeetingSchedule.RECURRENCE_CHOICES
         # Gremien-Auswahl aus den OParl-Organizations der verknüpften Kommune(n)
-        context["ris_organizations"] = selectors.all_ris_organizations(self.organization)
+        context["ris_organizations"] = selectors.all_ris_organizations(self.organization) if darf_verwalten else []
         context["schedule_horizon_days"] = getattr(django_settings, "FACTION_SCHEDULE_HORIZON_DAYS", 90)
 
         # Standard-Tagesordnung (Issue #872): NÖ-Punkte nur für Vereidigte (NÖ strikt, Issue #64)
@@ -208,12 +238,23 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
         return context
 
     def post(self, request, *args, **kwargs):
-        # Sitzungsreihen + Ausfallregeln (Issue #61) — eigene Formularaktionen
+        # Mitglieder sehen die Seite nur zur Information
+        if not self.darf_verwalten():
+            raise PermissionDenied("Fehlende Berechtigung")
         section = request.POST.get("section", "")
+        if section in self.SOFORT and self.is_htmx:
+            return self._sofort_speichern(request, section)
+        # Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): wie viele Termine sich ändern, ohne zu speichern
+        if section == "update_schedule" and "vorschau" in request.POST and self.is_htmx:
+            return self._reihe_vorschau(request)
+        # Sitzungsreihen + Ausfallregeln (Issue #61) — eigene Formularaktionen
         if section:
             handler = {
+                "save_settings": self._save_settings,
                 "add_schedule": self._add_schedule,
                 "update_schedule_automation": self._update_schedule_automation,
+                "update_schedule": self._update_schedule,
+                "restore_deleted_date": self._restore_deleted_date,
                 "toggle_schedule": self._toggle_schedule,
                 "delete_schedule": self._delete_schedule,
                 "add_exception": self._add_exception,
@@ -232,11 +273,38 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
                     handler(request)
                 except ServiceError as exc:
                     flash_error(request, exc)
+            # Wiederherstellen aus der Liste der Fraktionssitzungen führt dorthin zurück
+            if section == "restore_deleted_date" and fraktion_einstellungen.zurueck_zur_liste(request.POST):
+                return redirect("work:faction", org_slug=self.organization.slug)
             return redirect("work:organization_faction_settings", org_slug=self.organization.slug)
 
         services.save_faction_settings(self.organization, self.membership, request.POST)
         messages.success(request, "Einstellungen gespeichert.")
         return redirect("work:organization_faction_settings", org_slug=self.organization.slug)
+
+    # -- Sofort speichern (Issue #1071) ------------------------------------
+
+    def _sofort_speichern(self, request, section: str) -> HttpResponse:
+        """Ein Abschnitt der neuen Seite speichert per htmx: 204 ohne Meldung, sonst 400 mit dem Grund als Text."""
+        try:
+            if section == "save_settings":
+                services.save_faction_settings(
+                    self.organization,
+                    self.membership,
+                    request.POST,
+                    fields=fraktion_einstellungen.felder_aus(request.POST),
+                )
+            else:
+                services.save_schedule_automation(self.organization, request.POST)
+        except ServiceError as exc:
+            return HttpResponse(str(exc), status=400, content_type="text/plain; charset=utf-8")
+        return HttpResponse(status=204)
+
+    def _save_settings(self, request):
+        services.save_faction_settings(
+            self.organization, self.membership, request.POST, fields=fraktion_einstellungen.felder_aus(request.POST)
+        )
+        messages.success(request, "Einstellungen gespeichert.")
 
     # -- Sitzungsreihen + Ausfallregeln (Issue #61) -----------------------
 
@@ -262,6 +330,37 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
         if updated:
             message += f" Zu- und Absagen bei {updated} kommenden Terminen angepasst."
         messages.success(request, message)
+
+    def _reihe_vorschau(self, request) -> HttpResponse:
+        """Satz für den Abschnitt „Sitzungsreihe bearbeiten“: was mit den kommenden Terminen geschieht."""
+        try:
+            plan = services.plan_schedule_change(self.organization, request.POST)
+        except ServiceError as exc:
+            html = render_to_string(
+                "work/organization/neu/_fraktion_reihe_vorschau.html", {"fehler": str(exc)}, request=request
+            )
+            return HttpResponse(html)
+        html = render_to_string("work/organization/neu/_fraktion_reihe_vorschau.html", {"plan": plan}, request=request)
+        return HttpResponse(html)
+
+    def _update_schedule(self, request):
+        schedule, plan = services.update_schedule(self.organization, self.membership, request.POST)
+        if not plan.reihe_felder:
+            messages.info(request, f"Sitzungsreihe „{schedule.name}“: nichts geändert.")
+            return
+        messages.success(request, f"Sitzungsreihe „{schedule.name}“ gespeichert. {plan.satz()}")
+
+    def _restore_deleted_date(self, request):
+        datum, angelegt = services.restore_deleted_date(self.organization, request.POST)
+        tag = datum.strftime("%d.%m.%Y")
+        if angelegt:
+            messages.success(request, f"Termin am {tag} wiederhergestellt. Work hat ihn wieder angelegt.")
+        else:
+            messages.success(
+                request,
+                f"Termin am {tag} wiederhergestellt. Work legt ihn jetzt nicht an, weil die Reihe pausiert ist oder "
+                "der Termin außerhalb des Vorlaufs liegt.",
+            )
 
     def _toggle_schedule(self, request):
         schedule = services.toggle_schedule(self.organization, request.POST.get("schedule_id"))

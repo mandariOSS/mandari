@@ -1,0 +1,17 @@
+{% comment %}
+„Wer TOPs einbringt“ nach dem Muster (Issue #1071, Baustein .fs-rechte): welche Rollen TOPs vorschlagen, direkt
+eintragen und Vorschläge genehmigen (Rechte agenda.propose, agenda.create, agenda.approve; Issue #872). Nur Anzeige,
+geändert wird unter Rollen. Kontext: top_rechte (fraktion_einstellungen.top_rechte), can_manage_roles, org_slug.
+{% endcomment %}
+<section aria-labelledby="e-rechte">
+    <h2 id="e-rechte">Wer TOPs einbringt</h2>
+    <table class="fs-rechte">
+        <caption class="sr-only">Rechte für Tagesordnungspunkte</caption>
+        <tbody>
+            <tr><th scope="row">Vorschlagen</th><td>{{ top_rechte.vorschlagen }}. Der Vorschlag erscheint zur Genehmigung.</td></tr>
+            <tr><th scope="row">Direkt eintragen</th><td>{{ top_rechte.eintragen }}</td></tr>
+            <tr><th scope="row">Genehmigen</th><td>{{ top_rechte.genehmigen }}</td></tr>
+        </tbody>
+    </table>
+    <p class="fs-meta">Die Rechte hängen an den Rollen.{% if can_manage_roles %} <a class="wf-textlink" href="{% url 'work:roles' org_slug=org_slug %}">Rollen und Rechte</a>{% endif %}</p>
+</section>

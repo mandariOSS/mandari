@@ -6,8 +6,9 @@ Sechs Reiter statt bisher bis zu zehn: Allgemein (mit E-Mail-Versand, Registrier
 Rollen), Fraktionssitzungen, Dokumente (Typen, Themen, Vorlagen, Briefköpfe), Verwaltung (Einreichung und
 Ratsfraktionen) und Sicherheit. Alle Adressen bleiben; ein Reiter mit mehreren Seiten zeigt sie als Unterpunkte.
 
-Sichtbar ist, was die bisherige Leiste ``work/organization/_tabs.html`` zeigt: Fraktionssitzungen, API und
-Einreichung nur mit ``faction.manage``, Rollen nur mit ``organization.manage_roles``, alles Übrige für alle, die die
+Sichtbar ist, was die bisherige Leiste ``work/organization/_tabs.html`` zeigt: API und Einreichung nur mit
+``faction.manage``, Fraktionssitzungen mit ``faction.manage`` oder zur Information mit ``faction.view_public``
+(Nur-Lesen, Issue #1071), Rollen nur mit ``organization.manage_roles``, alles Übrige für alle, die die
 Einstellungen öffnen dürfen. Jede Seite prüft ihr Recht weiter selbst; an den Rechten ändert sich nichts. Knöpfe und
 Reiter, die ohne Recht auf 403 führen (E-Mail, Registrierung, Ratsfraktionen ohne ``organization.edit``), bleiben
 wie bisher sichtbar, bis Sven über das Ausblenden entscheidet (Plan #951, Frage 3).
@@ -29,12 +30,15 @@ BEREICH_SICHERHEIT = "sicherheit"
 
 @dataclass(frozen=True)
 class Seite:
-    """Eine Seite der Einstellungen: Schlüssel, Beschriftung, Adressname, nötiges Recht für den Eintrag, Abfrage."""
+    """
+    Eine Seite der Einstellungen: Schlüssel, Beschriftung, Adressname, nötiges Recht für den Eintrag (bei mehreren
+    genügt eines), Abfrage.
+    """
 
     key: str
     label: str
     url_name: str
-    recht: str = ""
+    recht: str | tuple[str, ...] = ""
     abfrage: str = ""
 
 
@@ -67,7 +71,15 @@ REITER: tuple[Reiter, ...] = (
     Reiter(
         "fraktion",
         "Fraktionssitzungen",
-        (Seite("fraktion", "Fraktionssitzungen", "work:organization_faction_settings", recht="faction.manage"),),
+        # Mitglieder mit faction.view_public sehen die Seite zur Information (Nur-Lesen, Issue #1071)
+        (
+            Seite(
+                "fraktion",
+                "Fraktionssitzungen",
+                "work:organization_faction_settings",
+                recht=("faction.manage", "faction.view_public"),
+            ),
+        ),
     ),
     Reiter(
         "dokumente",
@@ -99,7 +111,10 @@ _SEITEN: dict[str, tuple[Reiter, Seite]] = {s.key: (r, s) for r in REITER for s 
 
 
 def _sichtbar(seite: Seite, membership: Any) -> bool:
-    return not seite.recht or bool(membership is not None and membership.has_permission(seite.recht))
+    if not seite.recht:
+        return True
+    rechte = (seite.recht,) if isinstance(seite.recht, str) else seite.recht
+    return membership is not None and any(membership.has_permission(recht) for recht in rechte)
 
 
 def _url(seite: Seite, org_slug: str) -> str:

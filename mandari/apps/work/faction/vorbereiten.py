@@ -37,7 +37,7 @@ from .invitations import (
     invitation_dispatch_at,
 )
 from .liste import _dauer, _tag, _zeitpunkt
-from .services import FACTION_REMINDER_WINDOW_HOURS, invitation_attendances
+from .services import invitation_attendances, meeting_reminder_hours
 from .visibility import can_view_internal, is_item_internal
 
 if TYPE_CHECKING:
@@ -365,6 +365,9 @@ class Person:
     #: Erinnerung an die offene Rückmeldung („Offene erinnern“): wann bzw. warum nicht
     erinnert: str = ""
     erinnert_fehler: str = ""
+    #: Erinnerung an die Sitzung (Erinnerungslauf, Issue #1071): wann bzw. warum nicht
+    sitzung_erinnert: str = ""
+    sitzung_erinnert_fehler: str = ""
 
     @property
     def versand_text(self) -> str:
@@ -408,6 +411,8 @@ def personen(meeting: FactionMeeting) -> list[Person]:
                 ohne_noe=bool(a.invitation_without_internal),
                 erinnert=_kurz(a.rsvp_reminder_mailed_at),
                 erinnert_fehler=a.rsvp_reminder_error or "",
+                sitzung_erinnert=_kurz(a.reminder_mailed_at),
+                sitzung_erinnert_fehler=a.reminder_error or "",
             )
         )
     return liste
@@ -750,11 +755,14 @@ def einladung_satz(meeting: FactionMeeting, nicht_vereidigt: list[str]) -> tuple
 
 
 def erinnerung_sitzung(meeting: FactionMeeting) -> str:
-    """Erinnerung an die Sitzung (48 Stunden vorher, an alle Eingeladenen bzw. Zusagen)."""
+    """Erinnerung an die Sitzung (Einstellung, Standard 48 Stunden vorher, an alle Eingeladenen bzw. Zusagen)."""
     if meeting.reminder_sent_at:
         return f"Work hat am {_zeitpunkt(meeting.reminder_sent_at)} an die Sitzung erinnert."
-    wann = meeting.start - timedelta(hours=FACTION_REMINDER_WINDOW_HOURS)
-    dauer = _dauer(FACTION_REMINDER_WINDOW_HOURS, "vor Beginn")
+    stunden = meeting_reminder_hours(meeting.organization)
+    if stunden is None:
+        return ""
+    wann = meeting.start - timedelta(hours=stunden)
+    dauer = _dauer(stunden, "vor Beginn")
     if wann <= timezone.now():
         return ""
     if meeting.rsvp_enabled:

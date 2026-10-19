@@ -149,8 +149,8 @@ def check_manual_exceptions(schedule, date, exceptions=None) -> str | None:
     if exceptions is None:
         exceptions = list(schedule.exceptions.all())
     for exception in exceptions:
-        if exception.exception_type == "special":
-            # Sondertermine sagen nichts ab
+        if exception.exception_type in ("special", "deleted"):
+            # Sondertermine sagen nichts ab; gelöschte Termine legt die Erzeugung gar nicht erst an
             continue
         if exception.covers(date):
             reason = exception.reason or "Manuelle Ausnahme"
@@ -213,6 +213,82 @@ def evaluate_cancellation(schedule, date, *, exceptions=None, rules=None) -> str
 # =============================================================================
 
 
+def deleted_occurrence_dates(exceptions) -> set:
+    """Daten der gelöschten Termine einer Reihe (Ausnahmeart „Gelöscht“, Issue #1071)."""
+    return {e.original_date for e in exceptions if e.exception_type == "deleted"}
+
+
+def create_occurrence(schedule, date, *, exceptions=None, rules=None):
+    """
+    Einen Solltermin der Reihe anlegen, wie es der Erzeugungslauf tut: entfällt er nach den Ausfallregeln, als
+    „Entfällt“ mit Grund, sonst geplant mit Nummer, Verkettung, Anwesenheiten, Genehmigungs-TOP und
+    Standard-Tagesordnung. Prüft nicht, ob es den Termin schon gibt (das tut der Aufrufer).
+    """
+    from apps.work.faction.models import FactionAttendance, FactionMeeting
+
+    organization = schedule.organization
+    faction_settings = (organization.settings or {}).get("faction", {})
+    start = _occurrence_start(schedule, date)
+    reason = evaluate_cancellation(schedule, date, exceptions=exceptions, rules=rules)
+
+    meeting = FactionMeeting(
+        organization=organization,
+        schedule=schedule,
+        scheduled_date=date,
+        title=schedule.name,
+        start=start,
+        end=start + timedelta(minutes=schedule.duration_minutes or 120),
+        location=schedule.default_location,
+        is_virtual=bool(schedule.default_video_link),
+        video_link=schedule.default_video_link,
+        # Zu- und Absagen wie in der Reihe eingestellt (Issue #871, Standard aus)
+        rsvp_enabled=schedule.rsvp_enabled,
+        created_by=None,
+    )
+
+    if reason:
+        # Ersatzlos gestrichen — als "entfällt" sichtbar, kein Verschieben
+        meeting.status = "cancelled"
+        meeting.cancellation_reason = reason[:300]
+        meeting._audit_created_action = "auto_cancelled"
+        meeting.save()
+        return meeting
+
+    meeting.status = "planned"
+    meeting.meeting_number = FactionMeeting.get_next_meeting_number(organization)
+
+    # Vorherige Sitzung verketten (OneToOne — nur wenn noch frei)
+    previous = FactionMeeting.find_previous_meeting(organization, before_date=start)
+    if previous is not None and not FactionMeeting.objects.filter(previous_meeting=previous).exists():
+        meeting.previous_meeting = previous
+
+    meeting._audit_created_action = "generated"
+    meeting.save()
+
+    # Anwesenheiten für alle aktiven Mitglieder (wie manuelle Anlage)
+    for member in organization.memberships.filter(is_active=True, is_guest=False):
+        FactionAttendance.objects.create(meeting=meeting, membership=member, status="invited")
+
+    # Automatischer erster TOP (Genehmigung TO/Protokoll)
+    if faction_settings.get("auto_create_approval_item", True):
+        from apps.work.faction.services import ProtocolApprovalService
+
+        try:
+            ProtocolApprovalService.auto_create_approval_item(meeting)
+        except Exception:
+            logger.exception("Genehmigungs-TOP konnte nicht erstellt werden (meeting=%s)", meeting.id)
+
+    # Standard-Tagesordnung der Organisation (Issue #872), eigene Funktion in agenda.py
+    from apps.work.faction.agenda import apply_standard_agenda
+
+    try:
+        apply_standard_agenda(meeting)
+    except Exception:
+        logger.exception("Standard-Tagesordnung konnte nicht übernommen werden (meeting=%s)", meeting.id)
+
+    return meeting
+
+
 def generate_meetings_for_schedule(schedule, now=None) -> dict:
     """
     Sitzungen einer Reihe im rollierenden Horizont erzeugen (idempotent).
@@ -243,12 +319,11 @@ def generate_meetings_for_schedule(schedule, now=None) -> dict:
             "scheduled_date", flat=True
         )
     )
-
-    organization = schedule.organization
-    faction_settings = (organization.settings or {}).get("faction", {})
+    # Gelöschte Termine (Issue #1071) kommen nie wieder, auch wenn der Wasserstand nach einer Änderung neu beginnt
+    deleted_dates = deleted_occurrence_dates(exceptions)
 
     for date in occurrence_dates(schedule, from_date, horizon_end):
-        if date in existing_dates:
+        if date in existing_dates or date in deleted_dates:
             stats["skipped"] += 1
             continue
 
@@ -259,67 +334,8 @@ def generate_meetings_for_schedule(schedule, now=None) -> dict:
             stats["skipped"] += 1
             continue
 
-        reason = evaluate_cancellation(schedule, date, exceptions=exceptions, rules=rules)
-
-        meeting = FactionMeeting(
-            organization=organization,
-            schedule=schedule,
-            scheduled_date=date,
-            title=schedule.name,
-            start=start,
-            end=start + timedelta(minutes=schedule.duration_minutes or 120),
-            location=schedule.default_location,
-            is_virtual=bool(schedule.default_video_link),
-            video_link=schedule.default_video_link,
-            # Zu- und Absagen wie in der Reihe eingestellt (Issue #871, Standard aus)
-            rsvp_enabled=schedule.rsvp_enabled,
-            created_by=None,
-        )
-
-        if reason:
-            # Ersatzlos gestrichen — als "entfällt" sichtbar, kein Verschieben
-            meeting.status = "cancelled"
-            meeting.cancellation_reason = reason[:300]
-            meeting._audit_created_action = "auto_cancelled"
-            meeting.save()
-            stats["cancelled"] += 1
-            continue
-
-        meeting.status = "planned"
-        meeting.meeting_number = FactionMeeting.get_next_meeting_number(organization)
-
-        # Vorherige Sitzung verketten (OneToOne — nur wenn noch frei)
-        previous = FactionMeeting.find_previous_meeting(organization, before_date=start)
-        if previous is not None and not FactionMeeting.objects.filter(previous_meeting=previous).exists():
-            meeting.previous_meeting = previous
-
-        meeting._audit_created_action = "generated"
-        meeting.save()
-
-        # Anwesenheiten für alle aktiven Mitglieder (wie manuelle Anlage)
-        from apps.work.faction.models import FactionAttendance
-
-        for member in organization.memberships.filter(is_active=True, is_guest=False):
-            FactionAttendance.objects.create(meeting=meeting, membership=member, status="invited")
-
-        # Automatischer erster TOP (Genehmigung TO/Protokoll)
-        if faction_settings.get("auto_create_approval_item", True):
-            from apps.work.faction.services import ProtocolApprovalService
-
-            try:
-                ProtocolApprovalService.auto_create_approval_item(meeting)
-            except Exception:
-                logger.exception("Genehmigungs-TOP konnte nicht erstellt werden (meeting=%s)", meeting.id)
-
-        # Standard-Tagesordnung der Organisation (Issue #872), eigene Funktion in agenda.py
-        from apps.work.faction.agenda import apply_standard_agenda
-
-        try:
-            apply_standard_agenda(meeting)
-        except Exception:
-            logger.exception("Standard-Tagesordnung konnte nicht übernommen werden (meeting=%s)", meeting.id)
-
-        stats["created"] += 1
+        meeting = create_occurrence(schedule, date, exceptions=exceptions, rules=rules)
+        stats["cancelled" if meeting.status == "cancelled" else "created"] += 1
 
     # Wasserstand nur vorwärts und ohne save(): Die Änderungshistorie soll nicht stündlich die Reihe nennen
     from apps.work.faction.models import FactionMeetingSchedule
@@ -424,6 +440,92 @@ def _generate_locked(schedule, now=None) -> dict | None:
         return generate_meetings_for_schedule(schedule, now=now)
     finally:
         cache.delete(key)
+
+
+def restore_occurrence(schedule, date, now=None):
+    """
+    Gelöschten Termin wieder anlegen (Issue #1071, „Wiederherstellen“), nachdem seine Ausnahme entfernt wurde.
+
+    Nur für aktive Reihen, bevorstehende Solltermine im Horizont und wenn es den Termin nicht schon gibt; sonst
+    ``None``. Unter der Sperre der Reihe wie die Erzeugung, damit nichts doppelt entsteht.
+    """
+    from django.core.cache import cache
+
+    from apps.work.faction.models import FactionMeeting
+
+    now = now or timezone.now()
+    today = timezone.localtime(now, timezone.get_default_timezone()).date()
+    if not schedule.is_active or not today <= date <= today + timedelta(days=_horizon_days()):
+        return None
+    if date not in occurrence_dates(schedule, date, date) or _occurrence_start(schedule, date) <= now:
+        return None
+    key = _schedule_lock_key(schedule.pk)
+    if not cache.add(key, "1", timeout=_SCHEDULE_LOCK_TIMEOUT):
+        return None
+    try:
+        if FactionMeeting.objects.filter(schedule=schedule, scheduled_date=date).exists():
+            return None
+        return create_occurrence(schedule, date)
+    finally:
+        cache.delete(key)
+
+
+def approval_item_unchanged(meeting) -> bool:
+    """
+    Steht der Genehmigungs-TOP noch so da, wie Work ihn angelegt hat (Titel, Beschreibung, genehmigte Sitzung)? Nur
+    dann darf Work ihn nach einer Verschiebung oder Neunummerierung neu beschriften (Issue #1071).
+    """
+    item = meeting.agenda_items.filter(is_approval_item=True).first()
+    if item is None:
+        return False
+    title, description = meeting.approval_item_texts()
+    current = item.get_description_decrypted() or ""
+    return bool(
+        item.title == title and current == description and item.approves_meeting_id == meeting.previous_meeting_id
+    )
+
+
+def renumber_upcoming(organization, now=None) -> int:
+    """
+    Nummern der künftigen, noch nicht eingeladenen Sitzungen nach Datum ordnen (Issue #1071), nach dem Bearbeiten
+    einer Reihe oder dem Wiederherstellen eines Termins. Vergeben werden nur die Nummern, die diese Sitzungen schon
+    haben (eingeladene und vergangene behalten ihre). Unbearbeitete Genehmigungs-TOPs bekommen den neuen Titel
+    (Platzhalter ``{nr}``). Liefert die Zahl der umnummerierten Sitzungen.
+    """
+    from django.db import transaction
+
+    from apps.work.faction.models import FactionMeeting
+
+    now = now or timezone.now()
+    with transaction.atomic():
+        meetings = list(
+            FactionMeeting.objects.select_for_update()
+            .filter(
+                organization=organization,
+                start__gt=now,
+                invitation_sent=False,
+                invitation_claimed_at__isnull=True,
+                meeting_number__isnull=False,
+                status__in=["draft", "planned", "cancelled"],
+            )
+            .order_by("start", "created_at")
+        )
+        numbers = sorted(m.meeting_number for m in meetings)
+        unchanged = {m.pk: approval_item_unchanged(m) for m in meetings}
+        changed = 0
+        for meeting, number in zip(meetings, numbers, strict=True):
+            if meeting.meeting_number == number:
+                continue
+            meeting.meeting_number = number
+            meeting.save(update_fields=["meeting_number", "updated_at"])
+            changed += 1
+        if changed:
+            # Auch {nr_letzte_sitzung} der Folgesitzung kann sich geändert haben: alle unbearbeiteten neu beschriften
+            # (frisch geladen, damit die vorherige Sitzung mit ihrer neuen Nummer zählt)
+            for fresh in FactionMeeting.objects.filter(pk__in=[pk for pk, ok in unchanged.items() if ok]):
+                if not approval_item_unchanged(fresh):
+                    fresh.create_approval_agenda_item()
+    return changed
 
 
 def generate_meetings_now(schedule) -> dict | None:

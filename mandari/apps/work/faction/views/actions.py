@@ -253,8 +253,13 @@ class FactionActionView(WorkViewMixin, View):
     def _delete(self, request, meeting):
         """Sitzung endgültig löschen – nur mit ``faction.delete`` und Datum oder Titel als Eingabe (Issue #897)."""
         title = meeting.title
+        aus_reihe = bool(
+            meeting.schedule_id and meeting.scheduled_date and meeting.scheduled_date >= timezone.localdate()
+        )
         try:
-            deletion.delete_meeting(meeting, self.membership, request.POST.get("confirmation", ""))
+            deletion.delete_meeting(
+                meeting, self.membership, request.POST.get("confirmation", ""), reason=request.POST.get("reason", "")
+            )
         except deletion.DeletionNotAllowedError:
             return self._rejected(request, meeting, deletion.NOT_ALLOWED, 403)
         except deletion.DeletionNotConfirmedError:
@@ -262,7 +267,10 @@ class FactionActionView(WorkViewMixin, View):
         except deletion.DeletionBlockedError:
             return self._rejected(request, meeting, deletion.BLOCKED, 400)
 
-        messages.success(request, f"Sitzung „{title}“ wurde gelöscht.")
+        meldung = f"Sitzung „{title}“ wurde gelöscht."
+        if aus_reihe:
+            meldung += " Work legt den Termin nicht wieder an; die Reihe geht mit dem nächsten Termin weiter."
+        messages.success(request, meldung)
         target = reverse("work:faction", kwargs={"org_slug": self.organization.slug})
         # HTMX folgte sonst der Umleitung und tauschte die Liste samt Rahmen in den Dialog (Issue #895)
         if self.is_htmx:
