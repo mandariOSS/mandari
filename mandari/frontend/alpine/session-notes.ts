@@ -207,7 +207,7 @@ export const sitzungsNotizen = defineComponent(() => {
       if (!config) return ''
       const erwaehnen = config.personen?.length ? ' Mit @ erwähnen Sie Personen.' : ''
       return config.leiste === false
-        ? `${config.platzhalter}.${erwaehnen}`.replace('..', '.')
+        ? `${config.platzhalter}${erwaehnen ? `.${erwaehnen}` : ''}`
         : `${config.platzhalter}. Formatieren Sie mit der Leiste oder Strg+B, Strg+I, Strg+U.${erwaehnen}`
     },
 
