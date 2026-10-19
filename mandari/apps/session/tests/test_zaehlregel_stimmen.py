@@ -131,7 +131,8 @@ def _namentlich(top: SessionAgendaItem) -> str:
 
 
 def _pruefprotokoll(top: SessionAgendaItem) -> dict[str, Any]:
-    return SessionAuditLog.objects.get(action="vote_result", object_id=top.pk).changes
+    changes: dict[str, Any] = SessionAuditLog.objects.get(action="vote_result", object_id=top.pk).changes
+    return changes
 
 
 def _uebereinstimmung(w: Welt, top: SessionAgendaItem, *, entfernt: str, grund: str) -> None:
