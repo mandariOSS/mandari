@@ -154,11 +154,12 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
                 except OParlBody.DoesNotExist:
                     body = None
 
-            # Kein Fallback mehr - wenn keine Kommune ausgewählt, zeigen wir alle
-            # Nur bei erster Nutzung (keine Session) setzen wir auf "all"
+            # Ohne Auswahl gelten alle Kommunen. Nicht in die Sitzung schreiben (Issue #1091): Der Standardwert
+            # legte für jeden anonymen Aufruf eine Sitzungszeile an, auch für jeden Abruf einer Suchmaschine, die
+            # das Cookie nicht zurückschickt (1,4 Mio. Zeilen); ein fehlender Wert bedeutet ohnehin „alle“
+            # (is_all_bodies_mode)
             if body_id is None and OParlBody.objects.listed().exists():
                 show_all_bodies = True
-                request.session["active_body_id"] = "all"
 
     except Exception:
         # Datenbank noch nicht migriert oder andere Fehler

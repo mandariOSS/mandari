@@ -42,6 +42,7 @@ FRUEHERE_CRONTAB: dict[str, tuple[str, list[str]]] = {
     "fetch_person_photos": ("0 3 * * 1", []),
     "sync_plan_boundaries": ("50 4 * * *", []),
     "cleanup_orphaned_accounts": ("45 3 * * *", []),
+    "sitzungen_aufraeumen": ("25 4 * * *", []),
     # docs/FILE_CACHE.md
     "cache_files": ("40 * * * *", ["--limit", "400"]),
     "loeschabgleich": ("15 * * * *", []),
