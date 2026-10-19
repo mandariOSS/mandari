@@ -46,6 +46,8 @@ class NotificationType(models.TextChoices):
     FACTION_INVITATION = "faction_invitation", "Einladung zur Fraktionssitzung"
     FACTION_PROPOSAL_DECIDED = "faction_prop_decided", "TOP-Vorschlag entschieden"
     FACTION_PROTOCOL_APPROVED = "faction_prot_approved", "Fraktionsprotokoll genehmigt"
+    # @-Erwähnung in den Notizen eines TOPs (Issue #874)
+    FACTION_MENTION = "faction_mention", "Erwähnung im Protokoll"
 
     # Organization
     MEMBER_JOINED = "member_joined", "Neues Mitglied"
@@ -102,6 +104,7 @@ PREFERENCE_CATEGORIES: dict[str, tuple[str, ...]] = {
         NotificationType.FACTION_INVITATION_RELEASE.value,
         NotificationType.FACTION_PROPOSAL_DECIDED.value,
         NotificationType.FACTION_PROTOCOL_APPROVED.value,
+        NotificationType.FACTION_MENTION.value,
     ),
     "organization": (
         NotificationType.MEMBER_JOINED.value,
@@ -260,6 +263,7 @@ class Notification(models.Model):
             NotificationType.FACTION_INVITATION: "mail",
             NotificationType.FACTION_PROPOSAL_DECIDED: "list-checks",
             NotificationType.FACTION_PROTOCOL_APPROVED: "file-check",
+            NotificationType.FACTION_MENTION: "at-sign",
             NotificationType.MEMBER_JOINED: "user-plus",
             NotificationType.REGISTRATION_REQUEST: "user-round-search",
             NotificationType.ROLE_CHANGED: "shield",
@@ -300,6 +304,7 @@ class Notification(models.Model):
             NotificationType.FACTION_INVITATION: "purple",
             NotificationType.FACTION_PROPOSAL_DECIDED: "indigo",
             NotificationType.FACTION_PROTOCOL_APPROVED: "green",
+            NotificationType.FACTION_MENTION: "indigo",
             NotificationType.MEMBER_JOINED: "green",
             NotificationType.REGISTRATION_REQUEST: "orange",
             NotificationType.ROLE_CHANGED: "yellow",

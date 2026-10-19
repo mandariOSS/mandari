@@ -52,6 +52,16 @@ export interface CollabOptions {
    * later saves via POST without a connection (#184).
    */
   onPersisted?: (contentHash: string) => void
+  /**
+   * Jede JSON-Nachricht des Servers, bevor der Provider sie auswertet (eigene Nachrichtentypen, etwa Anwesenheit
+   * und Neuaufbau bei den Live-Notizen der Fraktionssitzung, Issue #874).
+   */
+  onJsonMessage?: (msg: any) => void
+  /**
+   * Selbst speichern (alle 10 s, beim Verbergen, Verlassen und Zerstören). false: nur über flush() – für Editoren,
+   * die erst nach dem ersten Stand speichern dürfen (Live-Notizen). Standard: true.
+   */
+  autoSave?: boolean
 }
 
 /** Grund einer Reload-Aufforderung: Zugriff herabgestuft bzw. entzogen (#582); ohne Grund = neuer Stand. */
@@ -79,6 +89,8 @@ export interface CollabResult {
    * nach Zeitablauf. Für Schritte, die danach den gespeicherten Text lesen (z. B. Einreichen bei der Verwaltung).
    */
   flush: (timeoutMs?: number) => Promise<boolean>
+  /** Stammt eine Yjs-Änderung (origin des update-Ereignisses) von anderen, also über den WebSocket? */
+  isRemoteOrigin: (origin: unknown) => boolean
 }
 
 // Message types matching the Django consumer protocol
@@ -112,6 +124,8 @@ class DjangoYjsProvider {
   private getHtml?: () => string
   private onReloadRequired?: (reason?: ReloadReason) => void
   private onPersisted?: (contentHash: string) => void
+  private onJsonMessage?: (msg: any) => void
+  private autoSave = true
   private _beforeUnloadHandler: (() => void) | null = null
   /** Wartende auf die nächste Bestätigung yjs_saved (flush) */
   private persistWaiters: Array<(ok: boolean) => void> = []
@@ -126,6 +140,8 @@ class DjangoYjsProvider {
     getHtml?: () => string,
     onReloadRequired?: (reason?: ReloadReason) => void,
     onPersisted?: (contentHash: string) => void,
+    onJsonMessage?: (msg: any) => void,
+    autoSave = true,
   ) {
     this.wsUrl = wsUrl
     this.ydoc = ydoc
@@ -135,6 +151,8 @@ class DjangoYjsProvider {
     this.getHtml = getHtml
     this.onReloadRequired = onReloadRequired
     this.onPersisted = onPersisted
+    this.onJsonMessage = onJsonMessage
+    this.autoSave = autoSave
 
     // Listen to Yjs document updates
     this.ydoc.on('update', this._onDocUpdate)
@@ -142,18 +160,20 @@ class DjangoYjsProvider {
     // Listen to awareness updates
     this.awareness.on('update', this._onAwarenessUpdate)
 
-    // Periodically save full Yjs state to server (every 10s)
-    this.saveTimer = setInterval(() => this._saveFullState(), 10000)
+    if (this.autoSave) {
+      // Periodically save full Yjs state to server (every 10s)
+      this.saveTimer = setInterval(() => this._saveFullState(), 10000)
 
-    // Save aggressively when browser/tab lifecycle changes.
-    this._beforeUnloadHandler = () => this._saveFullState()
-    this._visibilityHandler = () => {
-      if (document.visibilityState === 'hidden') {
-        this._saveFullState()
+      // Save aggressively when browser/tab lifecycle changes.
+      this._beforeUnloadHandler = () => this._saveFullState()
+      this._visibilityHandler = () => {
+        if (document.visibilityState === 'hidden') {
+          this._saveFullState()
+        }
       }
+      window.addEventListener('beforeunload', this._beforeUnloadHandler)
+      document.addEventListener('visibilitychange', this._visibilityHandler)
     }
-    window.addEventListener('beforeunload', this._beforeUnloadHandler)
-    document.addEventListener('visibilitychange', this._visibilityHandler)
 
     this.connect()
   }
@@ -211,6 +231,7 @@ class DjangoYjsProvider {
   }
 
   private _handleJsonMessage(msg: any) {
+    this.onJsonMessage?.(msg)
     if (msg.type === 'yjs_sync' && msg.data) {
       // Received Yjs sync data as base64
       const data = this._b64ToUint8(msg.data)
@@ -402,7 +423,7 @@ class DjangoYjsProvider {
       document.removeEventListener('visibilitychange', this._visibilityHandler)
     }
     // Save final state before disconnecting
-    this._saveFullState()
+    if (this.autoSave) this._saveFullState()
     this.ydoc.off('update', this._onDocUpdate)
     this.awareness.off('update', this._onAwarenessUpdate)
     awarenessProtocol.removeAwarenessStates(this.awareness, [this.ydoc.clientID], 'destroy')
@@ -467,6 +488,8 @@ export function initCollaboration(options: CollabOptions): CollabResult {
     options.getHtml,
     options.onReloadRequired,
     options.onPersisted,
+    options.onJsonMessage,
+    options.autoSave ?? true,
   )
 
   // Build TipTap extensions
@@ -493,5 +516,7 @@ export function initCollaboration(options: CollabOptions): CollabResult {
 
   const flush = (timeoutMs?: number) => provider.flush(timeoutMs)
 
-  return { ydoc, extensions, awareness, undoManager, destroy, flush }
+  const isRemoteOrigin = (origin: unknown) => origin === provider
+
+  return { ydoc, extensions, awareness, undoManager, destroy, flush, isRemoteOrigin }
 }

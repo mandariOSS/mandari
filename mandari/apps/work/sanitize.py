@@ -122,6 +122,8 @@ TAG_ATTRS: dict[str, frozenset[str]] = {
     "col": frozenset({"span"}),
     "ol": frozenset({"start", "type"}),
     "input": frozenset({"type", "checked", "disabled"}),
+    # @-Erwähnung in den Notizen der Fraktionssitzung (Issue #874): Kennung der erwähnten Mitgliedschaft
+    "span": frozenset({"data-id"}),
 }
 
 BOOLEAN_ATTRS = frozenset({"checked", "disabled"})
@@ -137,6 +139,7 @@ ALLOWED_CLASSES = frozenset(
         "comment-mark",
         "comment-mark--resolved",
         "page-break",
+        "erwaehnung",
     }
 )
 _CLASS_PATTERN_RE = re.compile(r"^language-[A-Za-z0-9_+-]{1,40}$")
@@ -155,6 +158,7 @@ STYLE_RULES: dict[str, re.Pattern[str]] = {
 _NUMBER_LIST_RE = re.compile(r"^\d{1,5}(?:,\d{1,5})*$")
 _NUMBER_RE = re.compile(r"^\d{1,5}$")
 _COMMENT_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
 _COLOR_RE = re.compile(rf"^{_COLOR}$")
 _SCHEME_RE = re.compile(r"^([a-zA-Z][a-zA-Z0-9+.-]*):")
 _CONTROL_RE = re.compile(r"[\x00-\x20\x7f]+")
@@ -226,9 +230,11 @@ def _clean_attr(tag: str, name: str, value: str | None) -> str | None:
             return "checkbox" if value.lower() == "checkbox" else None
         return value if value in ("1", "a", "A", "i", "I") else None
     if name == "data-type":
-        return value if value in ("taskList", "taskItem") else None
+        return value if value in ("taskList", "taskItem", "mention") else None
     if name in ("data-checked", "data-resolved", "data-page-break"):
         return value if value in ("true", "false") else None
+    if name == "data-id":
+        return value if _UUID_RE.match(value) else None
     if name == "data-comment-id":
         return value if _COMMENT_ID_RE.match(value) else None
     if name == "data-color":

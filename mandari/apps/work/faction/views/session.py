@@ -182,6 +182,9 @@ def top_kontext(
             "stand": sitzung.fingerabdruck(notizen),
             "editierbar": sitzung.darf_protokollieren(membership, meeting),
             "platzhalter": f"Notizen zu TOP {item.number}",
+            # Live-Mitschreiben (WebSocket, apps/work/faction/live.py) und @-Erwähnen (Issue #874)
+            "live": True,
+            "personen": sitzung.erwaehnbare_personen(personen),
         },
         "zustaendig_config": {
             "personen": [{"id": str(m.pk), "name": m.user.get_display_name()} for m in personen],

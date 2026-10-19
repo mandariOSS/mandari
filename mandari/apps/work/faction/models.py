@@ -996,6 +996,50 @@ class FactionAgendaItem(EncryptionMixin, models.Model):
             return None
 
 
+class FactionNotesState(models.Model):
+    """
+    Zustand des gemeinsamen Editors (Yjs) für die Notizen eines TOPs (Live-Mitschreiben, Issue #874).
+
+    Eigene Tabelle, damit TOP-Abfragen den Zustand nicht mitladen. Verschlüsselt mit dem Organisationsschlüssel wie
+    der Zustand der Dokumente (work/0057). Maßgeblich für Protokoll, PDF und Versand bleibt das Notizenfeld am TOP;
+    ``stand`` ist der Fingerabdruck der Notizen, die zu diesem Zustand gehören. Speichert jemand ohne Verbindung
+    (Formular, Protokollseite), entfällt der Zustand und wird aus den Notizen neu aufgebaut.
+    """
+
+    item = models.OneToOneField(
+        FactionAgendaItem, on_delete=models.CASCADE, related_name="notizen_zustand", verbose_name="TOP"
+    )
+    yjs_encrypted = models.BinaryField(editable=False, verbose_name="Editor-Zustand (verschlüsselt)")
+    stand = models.CharField(max_length=16, verbose_name="Fingerabdruck der zugehörigen Notizen")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Zustand der Live-Notizen"
+        verbose_name_plural = "Zustände der Live-Notizen"
+
+    def __str__(self) -> str:
+        return f"Live-Notizen {self.item_id}"
+
+    def _verschluesselung(self) -> Any:
+        from apps.common.encryption import TenantEncryption
+
+        return TenantEncryption(self.item.meeting.organization)
+
+    def get_state(self) -> bytes | None:
+        """Zustand im Klartext; ``None``, wenn er fehlt oder nicht lesbar ist (dann neu aus den Notizen)."""
+        from apps.common.encryption import DecryptionError
+
+        if not self.yjs_encrypted:
+            return None
+        try:
+            return self._verschluesselung().decrypt_bytes(bytes(self.yjs_encrypted)) or None
+        except DecryptionError:
+            return None
+
+    def set_state(self, state: bytes) -> None:
+        self.yjs_encrypted = self._verschluesselung().encrypt_bytes(state)
+
+
 class FactionAttendance(MemberNameSnapshotMixin):
     """
     Attendance tracking for faction meetings.
