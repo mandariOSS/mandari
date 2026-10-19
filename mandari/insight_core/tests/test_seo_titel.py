@@ -28,6 +28,7 @@ import pytest
 from django.test import Client
 from django.utils import timezone
 
+from insight_core import seo
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -170,7 +171,8 @@ class TestVorgang:
         description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
 
         assert description.startswith(
-            "Münster: Vorlage V/0881/2011 vom 15.11.2011. Am 06.12.2011 im Rat beschlossen. Die Feuerwache Süd"
+            "Münster: Vorlage V/0881/2011 vom 15.11.2011. Am 06.12.2011 im Rat beschlossen. "
+            "KI-Zusammenfassung: Die Feuerwache Süd"
         )
         assert len(description) <= 160 and description.endswith("…")
 
@@ -179,8 +181,43 @@ class TestVorgang:
 
         description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
 
-        assert description == "Münster: Antrag A/12/2026 vom 15.11.2011. Kurz und klar."
+        assert description == "Münster: Antrag A/12/2026 vom 15.11.2011. KI-Zusammenfassung: Kurz und klar."
         assert "Noch keine Beratung" not in description
+
+    def test_kein_praefix_ohne_platz_fuer_den_text(self, muenster: OParlBody) -> None:
+        """Bleibt nach „KI-Zusammenfassung:“ zu wenig Platz, fällt die Zusammenfassung ganz weg (Issue #938)."""
+        paper = _vorgang(muenster, summary=ZUSAMMENFASSUNG)
+        gremium = _gremium(muenster, "Ausschuss für Stadtentwicklung, Umwelt und Wohnen")
+        _beraten(paper, _sitzung(muenster, gremium, _zeit(2011, 12, 6, 17)), "beschlossen")
+
+        description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
+
+        assert description == (
+            "Münster: Vorlage V/0881/2011 vom 15.11.2011. "
+            "Am 06.12.2011 im Ausschuss für Stadtentwicklung, Umwelt und Wohnen beschlossen."
+        )
+        # Ohne die Regel stünde hier „KI-Zusammenfassung: Die Feuerwache…“: Platz ist für die Kennzeichnung, kaum Text
+        assert seo.DESCRIPTION_MAX - len(description) - 1 >= seo._DESCRIPTION_REST_MIN
+
+    def test_ki_zusammenfassung_ist_auch_im_json_ld_gekennzeichnet(self, muenster: OParlBody) -> None:
+        """EU AI Act Art. 50 (Issue #938): Suchmaschinen zeigen den Text ohne die Seite, die Kennzeichnung steht darin."""
+        paper = _vorgang(muenster, paper_type="Antrag", reference="A/12/2026", summary="Kurz und klar.")
+
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
+
+        assert "KI-Zusammenfassung: Kurz und klar." in _meta(seite, "property", "og:description")
+        werke = [eintrag for eintrag in _json_ld(seite) if eintrag.get("@type") == "CreativeWork"]
+        assert [werk["description"] for werk in werke] == [
+            "Münster: Antrag A/12/2026 vom 15.11.2011. KI-Zusammenfassung: Kurz und klar."
+        ]
+
+    def test_ohne_zusammenfassung_keine_ki_kennzeichnung(self, muenster: OParlBody) -> None:
+        paper = _vorgang(muenster, paper_type="Antrag", reference="A/12/2026")
+
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
+
+        assert "KI-Zusammenfassung" not in _meta(seite, "name", "description")
+        assert "data-ai-generated" not in seite
 
     @pytest.mark.parametrize(
         ("betreff", "erwartet"),

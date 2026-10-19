@@ -354,4 +354,19 @@ def test_aggregator_uebersetzt_nicht_selbst() -> None:
 
 
 def test_abbildung_nennt_ihre_version() -> None:
-    assert bestand.VERSION >= 1
+    assert bestand.VERSION >= 3
+
+
+def test_ki_zusammenfassung_ist_maschinenlesbar_gekennzeichnet(welt: dict[str, Any]) -> None:
+    """EU AI Act Art. 50 (Issue #938): ``mandari:summary`` bleibt Text, ``mandari:summaryAiGenerated`` kommt hinzu."""
+    pfad = f"/oparl/v1/paper/{welt['paper'].pk}"
+    ohne = _json(pfad)
+    assert "mandari:summary" not in ohne and "mandari:summaryAiGenerated" not in ohne
+
+    OParlPaper.objects.filter(pk=welt["paper"].pk).update(summary="Der Radweg wird gebaut.")
+    cache.clear()
+    mit = _json(pfad)
+
+    assert mit["mandari:summary"] == "Der Radweg wird gebaut."
+    assert mit["mandari:summaryAiGenerated"] is True
+    assert _json(f"/oparl/v1/body/{welt['body'].pk}/papers")["data"] == [mit]

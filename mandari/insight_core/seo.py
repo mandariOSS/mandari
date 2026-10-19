@@ -71,6 +71,9 @@ _THEMA_MIN = 20
 DESCRIPTION_MAX = 160
 #: Ein Teil der Description, der nicht mehr ganz passt, erscheint gekürzt nur ab so viel Platz
 _DESCRIPTION_REST_MIN = 30
+#: Vor der KI-Zusammenfassung in Description und JSON-LD: Suchergebnisse und Vorschaukarten zeigen den Text ohne die
+#: Seite, die Kennzeichnung muss deshalb im Text selbst stehen (EU AI Act Art. 50, Issue #938)
+KI_ZUSAMMENFASSUNG_PRAEFIX = "KI-Zusammenfassung:"
 #: Längste Art eines Vorgangs im Titel („Vorlage“, „Antrag“, „Große Anfrage“); längere Kategorien → „Vorgang“
 _ART_MAX = 25
 #: Längster Sitzungsort in der Description
@@ -405,20 +408,37 @@ def paper_seitentitel(paper: Any) -> str:
     return seitentitel([f"{text} – {kennung}", *mit_nummer, text], text, kommune)
 
 
+def _ki_zusammenfassung(text: str | None, davor: str) -> str:
+    """„KI-Zusammenfassung: …“ als letzter Teil der Description nach ``davor`` – oder nichts.
+
+    Der Präfix steht nur, wenn danach noch mindestens ``_DESCRIPTION_REST_MIN`` Zeichen Text passen (oder die ganze,
+    kürzere Zusammenfassung). Sonst bliebe vom KI-Text kaum mehr als die Kennzeichnung (Issue #938).
+    """
+    text = " ".join(str(text or "").split())
+    if not text:
+        return ""
+    frei = DESCRIPTION_MAX - len(davor) - (1 if davor else 0) - len(KI_ZUSAMMENFASSUNG_PRAEFIX) - 1
+    if frei < min(len(text), _DESCRIPTION_REST_MIN):
+        return ""
+    return f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {text}"
+
+
 def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = None) -> SEOContext:
     """
     SEO-Kontext einer Vorgangsseite.
 
     ``stand`` ist der Stand-Satz der Seite (``paper_status``, aus dem schon geladenen Beratungsverlauf). Die
     Description nennt Kommune, Art, Nummer und Datum, dann den Stand und, wenn Platz bleibt, den Anfang der
-    gespeicherten Zusammenfassung.
+    gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``).
     """
     body = paper.body
     kommune = _kommune(body)
     datum = _datum(paper.date)
     kopf = f"{_kennung(paper)} vom {datum}" if datum else _kennung(paper)
     stand_satz = stand.text if stand is not None and stand.kind != STAND_UNBEKANNT else ""
-    description = beschreibung(f"{kommune}: {kopf}." if kommune else f"{kopf}.", stand_satz, paper.summary or "")
+    kopf_satz = f"{kommune}: {kopf}." if kommune else f"{kopf}."
+    zusammenfassung = _ki_zusammenfassung(paper.summary, beschreibung(kopf_satz, stand_satz))
+    description = beschreibung(kopf_satz, stand_satz, zusammenfassung)
     canonical = build_canonical_url(request)
     ort = _gebiet(kommune)
 

@@ -2,6 +2,8 @@
 KI-Bereich des Dokumenteditors (Chat, Schnellaktionen, Kontingent). Vorschläge gelten für die markierte
 Stelle und ersetzen beim Übernehmen nur diese (frontend/editor/ai-range.ts, Teil von #856).
 Kontext: ai_available; Alpine-Komponente documentEditor.
+Antworten der KI tragen ``data-ai-generated`` (EU AI Act Art. 50, Issue #938); Alpine setzt das Attribut nur bei
+``msg.role === 'ai'``, sonst entfällt es.
 {% endcomment %}
 {% if ai_available %}
 <!-- Chat Messages -->
@@ -34,7 +36,7 @@ Kontext: ai_available; Alpine-Komponente documentEditor.
                 </template>
             </div>
             <div class="chat-bubble">
-                <div x-html="msg.content"></div>
+                <div x-html="msg.content" :data-ai-generated="msg.role === 'ai'"></div>
                 <template x-if="msg.role === 'ai' && msg.hasAction">
                     <div class="mt-3 flex gap-2">
                         <button type="button" @click="applyAiContent(msg.actionContent, msg.targetId)"

@@ -1,4 +1,7 @@
-{# KI-Assistent: Liste der Nachrichten mit Quellen und Fehlern (aus pages/chat.html, im Gültigkeitsbereich von chatApp) #}
+{% comment %}
+KI-Assistent: Liste der Nachrichten mit Quellen und Fehlern (aus pages/chat.html, im Gültigkeitsbereich von chatApp).
+Antworten der KI tragen ``data-ai-generated`` (EU AI Act Art. 50, Issue #938, docs/KI_TRANSPARENZ.md).
+{% endcomment %}
 <!-- Message List -->
 <template x-for="(msg, index) in messages" :key="index">
     <div>
@@ -25,6 +28,7 @@
                                     prose-strong:text-gray-900 dark:prose-strong:text-white
                                     prose-a:text-primary-600 dark:prose-a:text-primary-400 prose-a:font-medium prose-a:no-underline hover:prose-a:underline
                                     prose-code:text-sm prose-code:bg-gray-100 dark:prose-code:bg-gray-800 prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded"
+                             data-ai-generated="true"
                              x-html="renderMarkdown(msg.content)"></div>
                     </div>
                     <!-- Sources -->

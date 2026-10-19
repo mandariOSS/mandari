@@ -17,11 +17,13 @@ from typing import Any
 import httpx
 import pytest
 from django.core.cache import cache
+from django.urls import reverse
 
 from apps.common.models import AISettings
 from apps.common.tests.verbindungsprobe import Verbindungsprobe
 from apps.tenants.models import Organization
 from apps.work.motions import services
+from apps.work.motions.models import Motion
 from apps.work.motions.services import MotionAIService
 
 pytestmark = pytest.mark.django_db
@@ -260,3 +262,37 @@ def test_keine_pool_verbindung_waehrend_des_ki_aufrufs(org: Organization, monkey
 
     assert ergebnis.success and ergebnis.content == "Gekürzter Text"
     probe.pruefen(aufrufe=1)
+
+
+def test_schnittstelle_kennzeichnet_ki_ausgaben(
+    org: Organization, make_member: Any, client_for: Any, anfragen: list[httpx.Request]
+) -> None:
+    """EU AI Act Art. 50 (Issue #938): Die Antwort der Schreibhilfe trägt ``ai_generated``, bestehende Felder bleiben."""
+    _plattform()
+    mitglied = make_member(org, ["motions.view", "motions.edit"], email="schreibhilfe@example.org")
+
+    antwort = client_for(mitglied.user).post(
+        reverse("work:document_ai", kwargs={"org_slug": org.slug}),
+        {"action": "title", "text": "Radweg an der Hauptstraße"},
+    )
+
+    assert antwort.status_code == 200, antwort.content
+    daten = antwort.json()
+    assert daten["ai_generated"] is True and daten["success"] is True
+    assert {"content", "suggestions", "tokens_used", "quota"} <= set(daten)
+    assert len(anfragen) == 1
+
+
+def test_editor_kennzeichnet_nur_ki_nachrichten(org: Organization, make_member: Any, client_for: Any) -> None:
+    _plattform()
+    mitglied = make_member(org, ["motions.view", "motions.edit"], email="editor-ki@example.org")
+    dokument = Motion.objects.create(organization=org, author=mitglied, title="Radweg", visibility="organization")
+
+    antwort = client_for(mitglied.user).get(
+        reverse("work:document_editor", kwargs={"org_slug": org.slug, "motion_id": dokument.pk})
+    )
+
+    assert antwort.status_code == 200
+    inhalt = antwort.content.decode()
+    # Alpine setzt das Attribut nur für Antworten der KI; Fragen der Person bleiben ohne
+    assert inhalt.count(":data-ai-generated=\"msg.role === 'ai'\"") == 1
