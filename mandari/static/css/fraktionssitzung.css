@@ -1255,6 +1255,7 @@
   .fs-tln .rm-text { display: block; font-size: 13px; color: var(--wf-text2); margin-top: 2px; max-width: 30rem; }
   .fs-tln .vs { font-size: 13px; color: var(--wf-text2); white-space: nowrap; }
   .fs-tln .vs.fehler { color: var(--wf-abl); white-space: normal; overflow-wrap: anywhere; }
+  .fs-tln .rm-text.fehler { color: var(--wf-abl); }
   .fs-tln td.sp-rolle { color: var(--wf-text2); font-size: 13.5px; }
   .fs-tln tr.gruppe td { padding-top: 18px; font-size: 13px; font-weight: 600; color: var(--wf-text2); }
   /* Versandergebnis je Person (c-work.versandzeile) */
@@ -1404,6 +1405,24 @@
   .fs-teil-aktion { margin-left: auto; }
   .fs-teil-lesen { margin: 16px 0 0; border-bottom: 0; }
   .fs-griff-platz { display: block; }
+  /* Ziehen am Griff und Speicherstand der TOP-Felder (Issue #1071) */
+  .fs-griff { display: grid; place-items: center; width: 24px; height: 28px; border-radius: 4px; }
+  .fs-griff:focus-visible { outline: 2px solid var(--wf-work); outline-offset: 1px; }
+  .fs-griff svg { width: 16px; height: 16px; }
+  .fs-top.bewegt { background: var(--wf-work-flaeche); }
+  .fs-speicherstand { display: flex; align-items: baseline; gap: 8px; min-height: 20px; margin: 8px 0 0; font-size: 12.5px; }
+  .fs-speicherstand .fs-status { margin-left: 0; white-space: normal; flex-wrap: wrap; }
+  .fs-speicherstand .wf-textlink { font-size: 12.5px; }
+  .fs-sicherung p { margin: 0 0 8px; }
+  .fs-testmail { background: var(--wf-work-flaeche); color: inherit; }
+  .fs-testmail p { margin: 0 0 8px; }
+  .fs-hinweis-knopf { display: flex; align-items: center; gap: 8px; margin: 0 !important; }
+  .fs-testmail .ergebnis { margin: 8px 0 0; color: var(--wf-text2); }
+  .fs-testmail .ergebnis:empty { display: none; }
+  .fs-testmail .ergebnis .fehler { color: var(--wf-abl); }
+  .fs-ris-liste li.schon input { opacity: 0.6; }
+  .fs-ris-liste svg { width: 13px; height: 13px; margin-right: 4px; vertical-align: -2px; }
+  .fs-ris-form .fs-feldname:first-of-type { margin-top: 8px; }
   .fs-stufe-mobil { font-size: 12.5px; color: var(--wf-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .fs-top-bearbeiten input[type="text"] { width: 100%; max-width: 48rem; }
   .fs-top-bearbeiten textarea { width: 100%; max-width: 48rem; }

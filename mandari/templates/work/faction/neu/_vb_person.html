@@ -1,7 +1,7 @@
 {% load permission_tags %}
 {% comment %}
 Eine Person in der Einladung (Issue #1071, Muster tlnZeile): Kürzel und Name, Rolle, Rückmeldung mit Zeitpunkt und
-Nachricht (nur mit Zu- und Absagen), Versandergebnis der Einladung. Kontext: p (vorbereiten.Person), rm, org_slug,
+Nachricht (nur mit Zu- und Absagen; bei offenen auch die Erinnerung „Offene erinnern“), Versandergebnis der Einladung. Kontext: p (vorbereiten.Person), rm, org_slug,
 meeting, membership.
 {% endcomment %}
 <tr data-testid="fs-person">
@@ -11,6 +11,7 @@ meeting, membership.
     <td>
         <span class="fs-rm"><span class="wf-punkt {{ p.punkt }}" aria-hidden="true"></span>{{ p.wort }}{% if p.antwort_am %} <span class="fs-meta">{{ p.antwort_am }}</span>{% endif %}</span>
         {% if p.nachricht %}<span class="rm-text">„{{ p.nachricht }}“</span>{% endif %}
+        {% if p.status == "invited" %}{% if p.erinnert_fehler %}<span class="rm-text fehler">Erinnerung nicht verschickt. {{ p.erinnert_fehler }}</span>{% elif p.erinnert %}<span class="rm-text">erinnert {{ p.erinnert }}</span>{% endif %}{% endif %}
     </td>
     {% endif %}
     <td class="vs-sp">

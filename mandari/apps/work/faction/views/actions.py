@@ -63,12 +63,16 @@ class FactionActionView(WorkViewMixin, View):
             "set_rsvp": self._set_rsvp,
             "invite": self._invite,
             "release_invitations": self._release_invitations,
+            "remind_open": self._remind_open,
+            "test_invitation": self._test_invitation,
             # Agenda
             "add_item": self._add_item,
             "edit_item": self._edit_item,
             "delete_item": self._delete_item,
             "delete_item_preview": self._delete_item_preview,
             "move_item": self._move_item,
+            "ris_auswahl": self._ris_auswahl,
+            "ris_uebernehmen": self._ris_uebernehmen,
             # Protocol
             "add_entry": self._add_entry,
             "edit_entry": self._edit_entry,
@@ -640,7 +644,10 @@ class FactionActionView(WorkViewMixin, View):
         if item and not can_view_item(item, self.membership):
             return HttpResponse(status=403)
 
-        if item and direction in ("up", "down"):
+        if item and direction == "to":
+            # Ziehen am Griff (Issue #1071): an eine Stelle der obersten Ebene desselben Teils
+            self._move_item_to(meeting, item, request.POST.get("position"))
+        elif item and direction in ("up", "down"):
             siblings = list(agenda.numbered_items(meeting, item.visibility).order_by("order"))
 
             current_index = None
@@ -666,6 +673,133 @@ class FactionActionView(WorkViewMixin, View):
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
+        return self._redirect_detail(meeting)
+
+    @staticmethod
+    def _move_item_to(meeting, item, position_raw) -> None:
+        """
+        TOP an die Stelle ``position`` (ab 0) der nummerierten TOPs seines Teils setzen. Die Reihenfolge-Werte der
+        Geschwister werden nur neu verteilt (Genehmigungs-TOP und Unterpunkte bleiben, wo sie sind).
+        """
+        try:
+            position = int(position_raw)
+        except (TypeError, ValueError):
+            return
+        with transaction.atomic():
+            agenda.lock_meeting(meeting)
+            siblings = list(agenda.numbered_items(meeting, item.visibility).order_by("order"))
+            if item.pk not in {s.pk for s in siblings}:
+                return
+            werte = sorted(s.order for s in siblings)
+            neu = [s for s in siblings if s.pk != item.pk]
+            position = max(0, min(position, len(neu)))
+            neu.insert(position, next(s for s in siblings if s.pk == item.pk))
+            for sibling, wert in zip(neu, werte, strict=True):
+                if sibling.order != wert:
+                    sibling.order = wert
+                    sibling.save(update_fields=["order", "updated_at"])
+            _renumber_items(meeting, item.visibility)
+
+    # -- Aus Ratssitzung übernehmen (Issue #1071) -----------------------------
+
+    def _ris_erlaubt(self, meeting) -> bool:
+        return self._can_manage_agenda(meeting) and meeting.status in agenda.PROPOSAL_OPEN_STATUSES
+
+    def _ris_auswahl(self, request, meeting):
+        """Inhalt des Dialogs „Aus Ratssitzung übernehmen“: Sitzung wählen, Punkte ankreuzen."""
+        if not self._ris_erlaubt(meeting):
+            return HttpResponse(status=403)
+        from .. import ratssitzung
+
+        context = {
+            "meeting": meeting,
+            "org_slug": self.organization.slug,
+            "angebot": ratssitzung.angebot(meeting, self.membership, request.POST.get("ris_meeting_id")),
+            "moeglich": ratssitzung.moeglich(meeting),
+        }
+        return _htmx_response(_render_partial("work/faction/neu/_vb_ris_auswahl.html", context, request=request))
+
+    def _ris_uebernehmen(self, request, meeting):
+        """Gewählte Punkte der Ratssitzung als TOPs übernehmen; Antwort: die neue Tagesordnung."""
+        import json
+
+        if not self._ris_erlaubt(meeting):
+            return HttpResponse(status=403)
+        from .. import ratssitzung
+
+        try:
+            angelegt = ratssitzung.uebernehmen(
+                meeting,
+                self.membership,
+                request.POST.get("ris_meeting_id"),
+                request.POST.getlist("punkt"),
+                request.POST.get("parent_id", "").strip(),
+            )
+        except ratssitzung.UebernahmeError as exc:
+            if self.is_htmx:
+                return HttpResponse(str(exc), status=400, content_type="text/plain; charset=utf-8")
+            messages.error(request, str(exc))
+            return self._redirect_detail(meeting)
+        zahl = len(angelegt)
+        if zahl:
+            meldung = f"{zahl} TOP{'s' if zahl != 1 else ''} aus der Ratssitzung übernommen."
+        else:
+            meldung = "Die gewählten Punkte stehen schon auf der Tagesordnung."
+        if self.is_htmx:
+            trigger = json.dumps({"show-toast": {"message": meldung, "type": "success" if zahl else "info"}})
+            return _htmx_response(self._render_agenda(request, meeting), trigger=trigger)
+        messages.success(request, meldung)
+        return self._redirect_detail(meeting)
+
+    # -- Offene erinnern und Testmail (Issue #1071) ---------------------------
+
+    def _remind_open(self, request, meeting):
+        """„Offene erinnern“: Erinnerung an alle Eingeladenen ohne Rückmeldung, mit Sperrfrist gegen Mehrfachklicks."""
+        from .. import vorbereiten
+
+        if not self.membership.has_permission("faction.invite"):
+            if self.is_htmx:
+                return HttpResponse(status=403)
+            messages.error(request, "Keine Berechtigung zum Erinnern.")
+            return self._redirect_detail(meeting)
+        try:
+            ok, nicht = vorbereiten.offene_erinnern(meeting)
+        except vorbereiten.ErinnernNichtMoeglichError as exc:
+            messages.warning(request, str(exc))
+            return self._refresh_or_redirect(request, meeting)
+        if nicht:
+            messages.warning(
+                request,
+                f"Erinnerung an {ok} von {ok + nicht} Mitgliedern ohne Rückmeldung verschickt, "
+                f"{nicht} nicht. Die Gründe stehen bei den Personen.",
+            )
+            return self._refresh_or_redirect(request, meeting)
+        zahl = "ein Mitglied" if ok == 1 else f"{ok} Mitglieder"
+        return self._refresh_or_redirect(request, meeting, f"Erinnerung an {zahl} ohne Rückmeldung verschickt.")
+
+    def _test_invitation(self, request, meeting):
+        """Testmail der Einladung an die eigene Adresse (Dialog „Jetzt einladen“); Antwort: ein Satz."""
+        from django.core.cache import cache
+        from django.utils.html import escape
+
+        from ..services import FactionMeetingEmailService, TestmailError
+
+        if not self.membership.has_permission("faction.invite"):
+            return HttpResponse(status=403)
+        # Schutz gegen Mehrfachklicks: je Person und Sitzung höchstens eine Testmail in 30 Sekunden
+        sperre = f"faction:testmail:{meeting.pk}:{self.membership.pk}"
+        if not cache.add(sperre, "1", timeout=30):
+            text, fehler = "Die Testmail ist gerade unterwegs. Bitte warten Sie einen Moment.", True
+        else:
+            try:
+                text = FactionMeetingEmailService().send_test_invitation(meeting, self.membership)
+                fehler = False
+            except TestmailError as exc:
+                text, fehler = str(exc), True
+        if self.is_htmx:
+            klasse = ' class="fehler"' if fehler else ""
+            return HttpResponse(f'<span{klasse} data-testid="fs-testmail-ergebnis">{escape(text)}</span>')
+        (messages.error if fehler else messages.success)(request, text)
         return self._redirect_detail(meeting)
 
     # -- Protocol handlers ---------------------------------------------
