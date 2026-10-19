@@ -227,7 +227,8 @@ async def test_feste_liste_ordnet_alles_der_richtigen_koerperschaft_zu():
     paper = "https://ratsinfo.musterheide.example/bi/vo0050.asp?__kvonr={}".format
 
     # Gremien, Sitzungen und Vorlagen je Körperschaft
-    assert ids(1, "organization") == {org(1), org(12)}
+    # Samtgemeindeausschuss ohne Mitgliederseite: Nummer aus der Sitzungsliste (Issue #1075)
+    assert ids(1, "organization") == {org(1), org(11), org(12)}
     assert ids(2, "organization") == {org(2), org(21)}
     assert ids(3, "organization") == {org(3), org(31)}
     assert ids(1, "meeting") == {meeting(1001), meeting(1002), meeting(1003)}
@@ -245,8 +246,10 @@ async def test_feste_liste_ordnet_alles_der_richtigen_koerperschaft_zu():
     va_beispielfeld = collected[body_url(3)]["meeting"][meeting(3101)]
     assert va_musterdorf["organization"] == [org(21)]
     assert va_beispielfeld["organization"] == [org(31)]
-    # Gremium ohne öffentliche Mitgliederliste: Sitzung ohne Gremienverweis
-    assert collected[body_url(1)]["meeting"][meeting(1003)]["organization"] == []
+    # Gremium ohne öffentliche Mitgliederliste: Sitzung mit Gremienverweis, Mitgliederliste nicht angefragt (#1075)
+    assert collected[body_url(1)]["meeting"][meeting(1003)]["organization"] == [org(11)]
+    assert "web" not in collected[body_url(1)]["organization"][org(11)]
+    assert not any("kp0040.asp?__kgrnr=11" in url for url in fetcher.requests)
 
     # Personen je Körperschaft: Wer in zwei Räten sitzt, steht in beiden Bodies
     person_1 = "https://ratsinfo.musterheide.example/bi/pe0051.asp?__cpanr=1&__kpenr=102"

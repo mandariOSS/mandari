@@ -6,7 +6,8 @@
     "date": "01.07.2026",
     "time_start": "17:30",
     "time_end": null,
-    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler",
+    "agenda_linked": true
   },
   {
     "ksinr": 4850,
@@ -15,7 +16,8 @@
     "date": "07.07.2026",
     "time_start": "17:30",
     "time_end": null,
-    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler",
+    "agenda_linked": true
   },
   {
     "ksinr": 4851,
@@ -24,7 +26,8 @@
     "date": "08.07.2026",
     "time_start": "17:30",
     "time_end": "21:36",
-    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler",
+    "agenda_linked": true
   },
   {
     "ksinr": 4853,
@@ -33,7 +36,8 @@
     "date": "15.07.2026",
     "time_start": "17:30",
     "time_end": "18:15",
-    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler",
+    "agenda_linked": true
   },
   {
     "ksinr": 4854,
@@ -42,6 +46,7 @@
     "date": "16.07.2026",
     "time_start": "17:30",
     "time_end": null,
-    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler"
+    "location": "Rathaus der Stadt Eschweiler, Ratssaal, Johannes-Rau-Platz 1, 52249 Eschweiler",
+    "agenda_linked": true
   }
 ]
