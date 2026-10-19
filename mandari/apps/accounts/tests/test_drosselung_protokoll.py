@@ -94,7 +94,7 @@ class TestPasswortschritt:
         client = Client()
         _fehlversuche(client, KENNUNG, LOGIN_FAILURES_PER_IP + 3, "192.0.2.10")
         _fehlversuche(client, "andere@example.org", LOGIN_FAILURES_PER_IP + 3, "198.51.100.7")
-        assert sorted(e.ip_address for e in _gedrosselt()) == ["192.0.2.10", "198.51.100.7"]
+        assert sorted(str(e.ip_address) for e in _gedrosselt()) == ["192.0.2.10", "198.51.100.7"]
 
     def test_neues_fenster_schreibt_wieder(self, mitte_des_fensters: dt.datetime) -> None:
         client = Client()
@@ -130,7 +130,7 @@ class TestPasswortschritt:
     def test_ohne_cache_entscheidet_die_datenbank(self) -> None:
         client = Client()
         _fehlversuche(client, KENNUNG, LOGIN_FAILURES_PER_IP, "192.0.2.10")
-        with mock.patch.object(security_audit.cache, "add", side_effect=ConnectionError("weg")):
+        with mock.patch.object(cache, "add", side_effect=ConnectionError("weg")):
             _fehlversuche(client, KENNUNG, 5, "192.0.2.10")
         assert len(_gedrosselt()) == 1
 
