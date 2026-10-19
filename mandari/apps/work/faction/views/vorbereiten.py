@@ -16,7 +16,7 @@ from django.http import HttpRequest
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from .. import liste, vorbereiten
+from .. import agenda, liste, ratssitzung, vorbereiten
 from ..models import FactionMeeting
 from . import _helpers
 
@@ -54,7 +54,28 @@ def tagesordnung_kontext(
     """Kontext der Tagesordnung (auch für die Antworten der Aktionen): bisheriger Sitzungskontext plus Zeilen."""
     kontext: dict[str, Any] = dict(cast(Any, _helpers)._get_meeting_context(view, meeting))
     kontext |= vorbereiten.tagesordnung(meeting, view.membership, offen=offen, mit_verlauf=lesen)
+    # „Aus Ratssitzung übernehmen …“ (Issue #1071): wer die Tagesordnung verwaltet, vor Beginn, mit Kommune
+    kontext["ris_moeglich"] = (
+        bool(kontext.get("can_edit"))
+        and meeting.status in agenda.PROPOSAL_OPEN_STATUSES
+        and ratssitzung.moeglich(meeting)
+    )
     return kontext
+
+
+def _to_config(view: Any, meeting: FactionMeeting) -> dict[str, str]:
+    """Konfiguration der Komponente ``fsTagesordnung`` (Ziehen, sofort speichern, Sicherung im Browser)."""
+    slug = meeting.organization.slug
+    return {
+        "actionUrl": reverse("work:faction_action", kwargs={"org_slug": slug, "meeting_id": meeting.id}),
+        "felderUrl": reverse(
+            "work:faction_item_fields", kwargs={"org_slug": slug, "meeting_id": meeting.id, "item_id": _PLATZHALTER}
+        ),
+        # Kennungen, nie Namen: trennen die Sicherung ungespeicherter Eingaben je Konto, Organisation und Sitzung
+        "accountId": str(view.request.user.pk),
+        "orgId": str(meeting.organization_id),
+        "meetingId": str(meeting.id),
+    }
 
 
 def tagesordnung_html(view: Any, request: HttpRequest, meeting: FactionMeeting) -> str:
@@ -98,6 +119,10 @@ def seiten_kontext(view: Any, meeting: FactionMeeting, request: HttpRequest) -> 
             "ratssitzungen": vorbereiten.ratssitzungen(meeting, membership),
             "reihe_satz": liste._rhythmus(meeting.schedule) if meeting.schedule_id else "",
             "antworten": ANTWORTEN,
+            "to_config": _to_config(view, meeting),
+            "erinnern": (
+                vorbereiten.offene_erinnern_stand(meeting, rm["zahl"]["invited"]) if rm and darf_einladen else None
+            ),
         }
     )
     if empfaenger is not None:
@@ -106,6 +131,7 @@ def seiten_kontext(view: Any, meeting: FactionMeeting, request: HttpRequest) -> 
         )
         kontext["vorschau"] = _vorschau(empfaenger)
         kontext["absender"] = vorbereiten.absender(meeting.organization)
+        kontext["erstversand"] = vorbereiten.erstversand(meeting.organization)
         kontext |= vorbereiten.einladung_zeitpunkt(meeting)
     kontext["teilnehmende"] = _teilnehmende(meeting, personen or vorbereiten.personen(meeting), kontext["gaeste"])
     if modus == "lesen":

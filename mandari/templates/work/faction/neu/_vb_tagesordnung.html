@@ -11,16 +11,22 @@ can_import_internal_documents, can_approve_proposals, pending_proposals).
 <div class="fs-abschnitt-kopf">
     <h2 id="to-h">Tagesordnung</h2>
     <span class="fs-meta" data-testid="fs-to-zahl">{{ to_zahl }}</span>
+    {% if ris_moeglich %}
+    <button type="button" class="wf-knopf wf-klein fs-teil-aktion" aria-haspopup="dialog" data-testid="fs-ris-oeffnen"
+            hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-vals='{"action": "ris_auswahl"}'
+            hx-target="#fs-ris-inhalt" hx-swap="innerHTML" @click="document.getElementById('fs-ris').showModal()"><i data-lucide="list-plus" aria-hidden="true"></i>Aus Ratssitzung übernehmen …</button>
+    {% endif %}
 </div>
+{% if can_edit %}<p class="sr-only" id="griff-hilfe">Mit den Pfeiltasten nach oben oder unten verschieben, oder mit der Maus ziehen.</p>{% endif %}
 
 {% include "work/faction/neu/_vb_vorschlaege.html" %}
 
 <div class="fs-teil" data-testid="fs-teil-oeffentlich">
     <div class="fs-teil-kopf"><h3>Öffentlicher Teil</h3></div>
-    <ol class="fs-tops">
+    <ol class="fs-tops"{% if can_edit %} data-ziehbar{% endif %}>
         {% for z in to_oeffentlich %}{% include "work/faction/neu/_vb_top.html" %}{% endfor %}
     </ol>
-    {% if to_oeffentlich|length < 2 %}<p class="fs-to-leer">Fügen Sie TOPs hinzu{% if can_import_internal_documents %} oder lesen Sie eine Tagesordnung als PDF ein{% endif %}.</p>{% endif %}
+    {% if to_oeffentlich|length < 2 %}<p class="fs-to-leer">Fügen Sie TOPs hinzu{% if ris_moeglich %} oder übernehmen Sie sie aus der Ratssitzung{% elif can_import_internal_documents %} oder lesen Sie eine Tagesordnung als PDF ein{% endif %}.</p>{% endif %}
     {% if can_add_items %}
     <form class="fs-top-neu" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-target="#agenda-container" hx-swap="innerHTML" hx-include="#fs-offen">
         <input type="hidden" name="action" value="add_item">
@@ -41,7 +47,7 @@ can_import_internal_documents, can_approve_proposals, pending_proposals).
         <a class="wf-knopf wf-klein fs-teil-aktion" href="{% url 'work:faction_internal_import' org_slug=org_slug meeting_id=meeting.id %}"><i data-lucide="upload" aria-hidden="true"></i>PDF auslesen …</a>
         {% endif %}
     </div>
-    <ol class="fs-tops">
+    <ol class="fs-tops"{% if can_edit %} data-ziehbar{% endif %}>
         {% for z in to_intern %}{% include "work/faction/neu/_vb_top.html" %}{% endfor %}
     </ol>
     {% if can_add_items %}

@@ -2,13 +2,20 @@
 Ein TOP der Planung (Issue #1071, Muster topZeileHtml/detailHtml): Nummer, Titel (klappt die Angaben auf), Bezug,
 Zahl der Unterlagen, Menü. Aufgeklappt: Titel und Beschreibung (edit_item), Unterlagen, Im Beratungsverlauf, Herkunft;
 Unterpunkt, weitere Angaben im Panel (Unterlagen hochladen und verknüpfen, Links, Sichtbarkeit) und Löschen mit dem
-Dialog nach #897. Verschieben wie bisher mit move_item (oberste Ebene, nicht der Genehmigungs-TOP).
+Dialog nach #897. Verschieben mit move_item (oberste Ebene, nicht der Genehmigungs-TOP): Ziehen am Griff, Pfeiltasten am
+Griff oder Menü „Nach oben“/„Nach unten“. Titel und Beschreibung speichern beim Verlassen des Felds (fsTagesordnung,
+frontend/alpine/fs-tagesordnung.ts); das Formular mit edit_item bleibt der Weg ohne Skript.
 Kontext: z (vorbereiten.Zeile), meeting, org_slug, can_edit.
 {% endcomment %}
 {% with item=z.item %}
-<li class="fs-top{% if z.unter %} unter{% endif %}{% if z.offen %} offen{% endif %}" id="top-{{ item.pk }}" data-testid="fs-top">
+<li class="fs-top{% if z.unter %} unter{% endif %}{% if z.offen %} offen{% endif %}" id="top-{{ item.pk }}" data-testid="fs-top" data-id="{{ item.pk }}" data-titel="{{ item.title }}"{% if can_edit and z.verschiebbar %} data-verschiebbar{% endif %}>
     <div class="fs-top-zeile">
+        {% if can_edit and z.verschiebbar %}
+        <button type="button" class="fs-griff" data-griff="{{ item.pk }}" aria-label="TOP {{ item.number }} verschieben" aria-describedby="griff-hilfe"
+                @keydown.up="taste($event, 'up')" @keydown.down="taste($event, 'down')"><i data-lucide="grip-vertical" aria-hidden="true"></i></button>
+        {% else %}
         <span class="fs-griff-platz" aria-hidden="true"></span>
+        {% endif %}
         <span class="nr">{{ item.number }}</span>
         {% if z.offen %}
         <a class="fs-top-titel" href="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung" aria-expanded="true" aria-controls="d-{{ item.pk }}"
@@ -47,14 +54,18 @@ Kontext: z (vorbereiten.Zeile), meeting, org_slug, can_edit.
     {% if z.offen %}
     <div class="fs-top-detail" id="d-{{ item.pk }}">
         {% if can_edit and not item.is_approval_item %}
-        <form class="fs-top-bearbeiten" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-target="#agenda-container" hx-swap="innerHTML" hx-include="#fs-offen">
+        <form class="fs-top-bearbeiten" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" @submit.prevent="feldSpeichern($el.querySelector('[data-top-feld=title]'))">
+            {% csrf_token %}
             <input type="hidden" name="action" value="edit_item">
             <input type="hidden" name="item_id" value="{{ item.pk }}">
             <label class="fs-feldname" for="ti-{{ item.pk }}">Titel</label>
-            <input id="ti-{{ item.pk }}" class="wf-eingabe" type="text" name="title" value="{{ item.title }}" required maxlength="500">
+            <input id="ti-{{ item.pk }}" class="wf-eingabe" type="text" name="title" value="{{ item.title }}" required maxlength="500"
+                   data-top="{{ item.pk }}" data-top-feld="title" @change="feldSpeichern($el)">
             <label class="fs-feldname" for="b-{{ item.pk }}">Beschreibung</label>
-            <textarea id="b-{{ item.pk }}" class="wf-eingabe" name="description" rows="2">{{ z.beschreibung }}</textarea>
-            <div class="fs-detail-aktionen"><button type="submit" class="wf-knopf">Speichern</button></div>
+            <textarea id="b-{{ item.pk }}" class="wf-eingabe" name="description" rows="2"
+                      data-top="{{ item.pk }}" data-top-feld="description" @change="feldSpeichern($el)">{{ z.beschreibung }}</textarea>
+            {% include "work/faction/neu/_vb_speicherstand.html" %}
+            <noscript><div class="fs-detail-aktionen"><button type="submit" class="wf-knopf">Speichern</button></div></noscript>
         </form>
         {% elif z.beschreibung %}
         <p class="fs-top-beschreibung">{{ z.beschreibung|linebreaksbr }}</p>

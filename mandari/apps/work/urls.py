@@ -563,6 +563,12 @@ urlpatterns = [
         faction_views.FactionItemPanelActionView.as_view(),
         name="faction_item_panel_action",
     ),
+    # Titel und Beschreibung eines TOPs sofort speichern (Issue #1071)
+    path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/item/<uuid:item_id>/felder/",
+        faction_views.FactionItemFieldsView.as_view(),
+        name="faction_item_fields",
+    ),
     path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/item/<uuid:item_id>/attachments/<uuid:attachment_id>/download/",
         faction_views.FactionAttachmentDownloadView.as_view(),

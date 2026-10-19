@@ -19,6 +19,7 @@ Grenzen wie in der bisherigen Seite (``detail.html``):
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from django.urls import NoReverseMatch, reverse
@@ -361,6 +362,9 @@ class Person:
     versendet: str
     fehler: str
     ohne_noe: bool
+    #: Erinnerung an die offene Rückmeldung („Offene erinnern“): wann bzw. warum nicht
+    erinnert: str = ""
+    erinnert_fehler: str = ""
 
     @property
     def versand_text(self) -> str:
@@ -402,6 +406,8 @@ def personen(meeting: FactionMeeting) -> list[Person]:
                 versendet=_kurz(a.invitation_mailed_at),
                 fehler=a.invitation_error or "",
                 ohne_noe=bool(a.invitation_without_internal),
+                erinnert=_kurz(a.rsvp_reminder_mailed_at),
+                erinnert_fehler=a.rsvp_reminder_error or "",
             )
         )
     return liste
@@ -433,6 +439,72 @@ def versand(liste: list[Person]) -> dict[str, Any]:
     ok = sum(1 for p in liste if p.versendet)
     nicht = sum(1 for p in liste if p.fehler)
     return {"ok": ok, "nicht": nicht, "gesamt": len(liste), "unbekannt": len(liste) - ok - nicht}
+
+
+# -----------------------------------------------------------------------------
+# Offene erinnern (Issue #1071)
+# -----------------------------------------------------------------------------
+
+#: Sperrfrist zwischen zwei Erinnerungen von Hand an alle ohne Rückmeldung (Schutz gegen Mehrfachklicks und Spam)
+ERINNERN_SPERRE = timedelta(hours=2)
+
+
+class ErinnernNichtMoeglichError(Exception):
+    """Offene erinnern geht gerade nicht; die Meldung ist ein Satz für die Oberfläche."""
+
+
+def offene_erinnern_stand(meeting: FactionMeeting, offen: int) -> dict[str, Any]:
+    """Knopf „Offene erinnern“: möglich, zuletzt erinnert am, wieder möglich ab."""
+    jetzt = timezone.now()
+    zuletzt = meeting.rsvp_reminder_sent_at
+    wieder_ab = zuletzt + ERINNERN_SPERRE if zuletzt else None
+    gesperrt = bool(wieder_ab and wieder_ab > jetzt)
+    return {
+        "offen": offen,
+        "moeglich": bool(offen) and not gesperrt and meeting.start > jetzt and meeting.status in ("planned", "invited"),
+        "zuletzt": _zeitpunkt(zuletzt) if zuletzt else "",
+        "wieder_ab": f"{timezone.localtime(wieder_ab):%H:%M}" if gesperrt and wieder_ab else "",
+    }
+
+
+def offene_erinnern(meeting: FactionMeeting, now: Any = None) -> tuple[int, int]:
+    """
+    Erinnerung an alle Eingeladenen ohne Rückmeldung senden (vorhandener Erinnerungsversand). Nur nach dem Versand
+    der Einladung, mit Zu- und Absagen, vor Beginn und höchstens einmal je Sperrfrist: Der Zeitpunkt wird vorher
+    atomar beansprucht, ein zweiter Klick oder ein zweiter Tab verschickt nichts. Liefert (verschickt, nicht).
+    """
+    from django.db.models import Q
+
+    from .models import FactionMeeting as Sitzung
+    from .services import FactionMeetingEmailService
+
+    jetzt = now or timezone.now()
+    if not ist_eingeladen(meeting) or not meeting.rsvp_enabled:
+        raise ErinnernNichtMoeglichError("Erinnern geht erst nach der Einladung und mit Zu- und Absagen.")
+    if meeting.status not in ("planned", "invited") or meeting.start <= jetzt:
+        raise ErinnernNichtMoeglichError("Die Sitzung hat schon begonnen.")
+    if not invitation_attendances(meeting).exclude(membership__is_guest=True).exists():
+        raise ErinnernNichtMoeglichError("Alle Eingeladenen haben schon geantwortet.")
+    beansprucht = (
+        Sitzung.objects.filter(pk=meeting.pk)
+        .filter(Q(rsvp_reminder_sent_at__isnull=True) | Q(rsvp_reminder_sent_at__lte=jetzt - ERINNERN_SPERRE))
+        .update(rsvp_reminder_sent_at=jetzt)
+    )
+    if not beansprucht:
+        meeting.refresh_from_db(fields=["rsvp_reminder_sent_at"])
+        wieder = meeting.rsvp_reminder_sent_at + ERINNERN_SPERRE if meeting.rsvp_reminder_sent_at else jetzt
+        raise ErinnernNichtMoeglichError(
+            f"Work hat gerade erst erinnert. Erneut erinnern können Sie ab {timezone.localtime(wieder):%H:%M}."
+        )
+    meeting.rsvp_reminder_sent_at = jetzt
+    return FactionMeetingEmailService().send_rsvp_reminder(meeting)
+
+
+def erstversand(organization: Any) -> bool:
+    """Erste Einladung der Organisation über ihren Versandweg? Dann rät der Dialog zur Testmail (Muster)."""
+    from .models import FactionMeeting as Sitzung
+
+    return not Sitzung.objects.filter(organization=organization, invitation_sent=True).exists()
 
 
 def empfaenger(meeting: FactionMeeting) -> dict[str, Any]:
@@ -492,8 +564,6 @@ def tagesordnung_geaendert(meeting: FactionMeeting) -> bool:
 
 
 def _start_ab(meeting: FactionMeeting) -> Any:
-    from datetime import timedelta
-
     return meeting.start - timedelta(minutes=30)
 
 
@@ -647,8 +717,6 @@ def erinnerung_satz(meeting: FactionMeeting, *, mitglied: bool) -> str:
         )
     if not einstellungen["agenda_reminder_enabled"] or ist_eingeladen(meeting):
         return ""
-    from datetime import timedelta
-
     versand_am = invitation_dispatch_at(meeting, einstellungen)
     wann_dt = versand_am - timedelta(hours=einstellungen["agenda_reminder_hours"])
     if wann_dt <= timezone.now():
@@ -683,8 +751,6 @@ def einladung_satz(meeting: FactionMeeting, nicht_vereidigt: list[str]) -> tuple
 
 def erinnerung_sitzung(meeting: FactionMeeting) -> str:
     """Erinnerung an die Sitzung (48 Stunden vorher, an alle Eingeladenen bzw. Zusagen)."""
-    from datetime import timedelta
-
     if meeting.reminder_sent_at:
         return f"Work hat am {_zeitpunkt(meeting.reminder_sent_at)} an die Sitzung erinnert."
     wann = meeting.start - timedelta(hours=FACTION_REMINDER_WINDOW_HOURS)

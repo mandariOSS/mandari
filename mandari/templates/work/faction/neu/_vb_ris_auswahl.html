@@ -1,0 +1,58 @@
+{% comment %}
+Inhalt des Dialogs „Aus Ratssitzung übernehmen“ (Issue #1071, Muster risDialog): Sitzung aus dem RIS der eigenen
+Kommunen wählen, Punkte ankreuzen, wahlweise als Unterpunkte eines TOPs einordnen. Schon übernommene Punkte stehen
+angehakt und gesperrt da; nichtöffentliche Punkte nur für Vereidigte (sonst nur ihre Zahl). Aktionen ris_auswahl
+(Sitzung wechseln) und ris_uebernehmen (antwortet mit der neuen Tagesordnung). Kontext: meeting, org_slug, moeglich,
+angebot (apps.work.faction.ratssitzung.Angebot).
+{% endcomment %}
+{% if not moeglich %}
+<p>Ihre Organisation ist mit keiner Kommune verknüpft. Verknüpfen Sie sie in den Einstellungen der Organisation, dann können Sie TOPs aus dem Ratsinformationssystem übernehmen.</p>
+<div class="wf-dialog-fuss"><button type="button" class="wf-knopf" data-close-modal>Schließen</button></div>
+{% elif not angebot.sitzungen %}
+<p>Im Ratsinformationssystem Ihrer Kommune steht zurzeit keine anstehende Sitzung.</p>
+<div class="wf-dialog-fuss"><button type="button" class="wf-knopf" data-close-modal>Schließen</button></div>
+{% else %}
+<label class="fs-feldname" for="ris-sitzung">Sitzung</label>
+<select id="ris-sitzung" class="wf-eingabe" name="ris_meeting_id" data-testid="fs-ris-sitzung"
+        hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-vals='{"action": "ris_auswahl"}'
+        hx-target="#fs-ris-inhalt" hx-swap="innerHTML" hx-trigger="change">
+    {% for s in angebot.sitzungen %}<option value="{{ s.id }}"{% if s.id == angebot.gewaehlt.pk|stringformat:"s" %} selected{% endif %}>{{ s.name }}</option>{% endfor %}
+</select>
+{% if not angebot.punkte %}
+<p>Die Tagesordnung dieser Sitzung ist im Ratsinformationssystem noch nicht veröffentlicht{% if angebot.gesperrt %} oder enthält nur nichtöffentliche Punkte, die nur vereidigte Mitglieder sehen{% endif %}. Sobald sie da ist, können Sie TOPs hier übernehmen.</p>
+<div class="wf-dialog-fuss"><button type="button" class="wf-knopf" data-close-modal>Schließen</button></div>
+{% else %}
+<form class="fs-ris-form" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-target="#agenda-container" hx-swap="innerHTML" hx-include="#fs-offen"
+      x-data="{ n: 0 }" @change="n = $el.querySelectorAll('input[name=punkt]:checked:not(:disabled)').length"
+      @htmx:after-request="if ($event.detail.successful) $el.closest('dialog').close()">
+    <input type="hidden" name="action" value="ris_uebernehmen">
+    <input type="hidden" name="ris_meeting_id" value="{{ angebot.gewaehlt.pk }}">
+    <p>Gewählte Punkte kommen mit der Vorlage als Unterlage auf die Tagesordnung.{% if angebot.punkte|length != angebot.waehlbar %} Schon übernommene sind angehakt.{% endif %}</p>
+    {% if angebot.eltern %}
+    <label class="fs-feldname" for="ris-eltern">Einordnen</label>
+    <select id="ris-eltern" class="wf-eingabe" name="parent_id">
+        <option value="">Als eigene TOPs</option>
+        {% for e in angebot.eltern %}<option value="{{ e.pk }}"{% if angebot.eltern_vorschlag == e.pk|stringformat:"s" %} selected{% endif %}>Als Unterpunkte von TOP {{ e.number }} {{ e.title|truncatechars:60 }}</option>{% endfor %}
+    </select>
+    {% endif %}
+    <ul class="fs-ris-liste" data-testid="fs-ris-liste">
+        {% for p in angebot.punkte %}
+        <li{% if p.schon_als %} class="schon"{% endif %}>
+            <label>
+                <input type="checkbox" name="punkt" value="{{ p.item.pk }}"{% if p.schon_als %} checked disabled{% endif %}>
+                <span class="nr">{{ p.nummer }}</span>
+                <span>{% if p.intern %}<i data-lucide="lock" aria-hidden="true"></i><span class="sr-only">Nichtöffentlich: </span>{% endif %}{{ p.titel }}
+                    <small>{% if p.schon_als %}schon übernommen als TOP {{ p.schon_als }}{% elif p.vorlage %}Vorlage {{ p.vorlage }}{% else %}ohne Vorlage{% endif %}{% if p.intern and not p.schon_als %}, kommt in den nichtöffentlichen Teil{% endif %}</small>
+                </span>
+            </label>
+        </li>
+        {% endfor %}
+    </ul>
+    {% if angebot.gesperrt %}<p class="fs-meta">Dazu {{ angebot.gesperrt }} nichtöffentliche{% if angebot.gesperrt == 1 %}r Punkt{% else %} Punkte{% endif %}, die nur vereidigte Mitglieder sehen.</p>{% endif %}
+    <div class="wf-dialog-fuss">
+        <button type="button" class="wf-knopf" data-close-modal>Abbrechen</button>
+        <button type="submit" class="wf-knopf wf-haupt" :disabled="!n" disabled x-text="n ? (n === 1 ? '1 TOP übernehmen' : n + ' TOPs übernehmen') : 'TOPs übernehmen'">TOPs übernehmen</button>
+    </div>
+</form>
+{% endif %}
+{% endif %}
