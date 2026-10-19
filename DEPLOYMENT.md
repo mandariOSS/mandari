@@ -376,10 +376,11 @@ Kurzfassung (Rechenweg und Annahmen dort, Abschnitt 6):
 | mittel (rund 100.000 Einwohner) | 100 | 4 | 16 GB | 2 | 4 GB |
 | groß (500.000+ Einwohner, Bezirksvertretungen) | 400 | 12 | 32 GB | 8 | 8 GB |
 
-Die mitgelieferte `docker-compose.yml` startet genau einen Anwendungsprozess; er trägt
+Die mitgelieferte `docker-compose.yml` startet einen Anwendungsprozess; er trägt
 rund 15 Anfragen je Sekunde (gemessen mit dem Bestand „klein“; beim Bestand „groß“ kostet
 jede Anfrage doppelt so viel Rechenzeit, ein Prozess trägt dort also etwa die Hälfte, siehe
-docs/LASTTESTS.md, Abschnitt 5.3). Mehrere Prozesse für „mittel“ und „groß“: Issue #718.
+docs/LASTTESTS.md, Abschnitt 5.3). Für „mittel“ und „groß“ stellt `APP_PROCESSES` mehrere
+Prozesse ein, siehe „Mehrere Anwendungsprozesse“.
 
 ### Für größere Installationen
 
@@ -1510,7 +1511,7 @@ Obergrenze der Datenbank.
 
 | Dienst | Obergrenze | Woher |
 |---|---|---|
-| mandari (Daphne, 1 Prozess) | **10** | `DB_POOL_MAX`; höchstens `DB_POOL_MAX_WAITING` Anfragen warten, der Rest bekommt 503 |
+| mandari (Daphne, ein Prozess) | **10** | `DB_POOL_MAX` je Prozess; höchstens `DB_POOL_MAX_WAITING` Anfragen warten, der Rest bekommt 503. Mit `APP_PROCESSES` Prozessen das Vielfache, siehe „Mehrere Anwendungsprozesse“ |
 | Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
 | Worker (Dienst `worker`, alle Rollen ohne `ocr`/`ai`) | 19 | Pool 18 ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
 | Worker für Texterkennung und KI (Dienst `worker-heavy`) | 7 | nur Rolle `tasks` mit `ocr` und `ai`; Rechnung unten |
@@ -1558,7 +1559,7 @@ Die Worker verbinden sich auch dann direkt mit PostgreSQL, wenn PgBouncer vor de
 |---|---|---|
 | `DB_POOL` | `true` | Pool an- oder abschalten. Bei SQLite ohne Wirkung |
 | `DB_POOL_MIN` | `2` | Vorgehaltene Verbindungen, damit die erste Anfrage nicht wartet |
-| `DB_POOL_MAX` | `10` | Obergrenze je Prozess |
+| `DB_POOL_MAX` | `10` | Obergrenze je Prozess (`MANDARI_DB_POOL_MAX`); jeder der `APP_PROCESSES` Prozesse hat einen eigenen Pool |
 | `DB_POOL_MAX_WAITING` | `20` | So viele Anfragen dürfen auf eine Verbindung warten; jede weitere bekommt sofort 503. `0` = unbegrenzt |
 | `DB_POOL_TIMEOUT` | `5` | Sekunden warten bei erschöpftem Pool, danach 503 |
 | `DB_POOL_MAX_LIFETIME` | `1800` | Verbindungen nach dieser Zeit erneuern |
@@ -1639,8 +1640,8 @@ davon nur so viele, wie gerade Anweisungen laufen, höchstens `DEFAULT_POOL_SIZE
 
 **Wann es sich lohnt:**
 
-- mehrere Anwendungsprozesse (#718) oder mehrere web-Server: Ohne Pooler wächst die Summe ihrer
-  Pools gegen `max_connections`;
+- mehrere Anwendungsprozesse (`APP_PROCESSES`, „Mehrere Anwendungsprozesse“ unten) oder mehrere
+  web-Server: Ohne Pooler wächst die Summe ihrer Pools gegen `max_connections`;
 - Lastspitzen, bei denen der Pool der Anwendung (10 Verbindungen) leerläuft, obwohl PostgreSQL
   Luft hätte (Schwachstellen-Scanner am 15.09. und 18.10.2026).
 
@@ -1777,6 +1778,80 @@ Cursor über den Pooler.
 
 Erst die Anwendung umstellen, dann PgBouncer anhalten; sonst findet sie bis zum Neustart keine
 Datenbank.
+
+## Mehrere Anwendungsprozesse (Issue #718)
+
+Ein Anwendungsprozess (Daphne) trägt rund 15 Anfragen je Sekunde innerhalb der Zielwerte, sättigt bei rund
+20 und nutzt dabei höchstens etwa anderthalb Kerne (`docs/LASTTESTS.md`, Abschnitt 5). Weitere Kerne nutzt
+die Anwendung nur mit weiteren Prozessen. `APP_PROCESSES` stellt ihre Zahl im Dienst `mandari` ein,
+Vorgabe 1. Empfehlung nach Größenklasse (`docs/LASTTESTS.md`, Abschnitt 6): klein 1, mittel 2, groß 8.
+
+### Einschalten
+
+1. Verbindungsbudget und Speicher prüfen (unten).
+2. In der `.env` ergänzen, z. B. für vier Prozesse:
+   ```
+   APP_PROCESSES=4
+   MANDARI_MEM_LIMIT=4g
+   ```
+3. Anwendung neu erstellen: `docker compose up -d mandari`.
+4. Prüfen: Die Startzeile (`docker compose logs mandari | grep app_processes`) nennt Prozesse, Prüfports
+   und Verbindungen. Jeden Prozess einzeln über seinen Prüfport:
+   ```bash
+   docker compose exec mandari sh -c 'for p in $(seq 8101 $((8100 + APP_PROCESSES))); do
+     curl -s -o /dev/null -w "$p %{http_code}
+" http://localhost:$p/health/live/; done'
+   ```
+
+**Rückweg:** die Zeilen aus der `.env` entfernen und `docker compose up -d mandari`. Mit einem Prozess
+startet der Container Daphne genau wie vor #718.
+
+### Wie es arbeitet
+
+`mandari/docker-entrypoint.sh` startet `python -m mandari.app_processes` (Einzelheiten im Modul).
+
+| | ein Prozess (Vorgabe) | mehrere Prozesse |
+|---|---|---|
+| Start | ersetzt sich per `exec` durch `daphne --bind 0.0.0.0 --port 8000 …` wie bisher | startet die Daphne-Prozesse und bleibt als Hauptprozess des Containers |
+| Port 8000 | Daphne | jeder Prozess hat einen eigenen Socket (`SO_REUSEPORT`), der Kernel verteilt neue Verbindungen gleichmäßig |
+| Caddy, Docker-Healthcheck, `METRICS_URL` | unverändert | unverändert, alle an Port 8000 |
+| Prüfung | Docker-Healthcheck (`/health/live/`) | dazu je Prozess `/health/live/` über `127.0.0.1:8101`, `8102`, … alle 10 s; nach drei Fehlschlägen in Folge (festgefahrener Pool, #344) wird nur dieser Prozess neu gestartet |
+| Absturz | der Container endet, Docker startet ihn neu | nur dieser Prozess wird neu gestartet; endet er in den ersten 30 s nach seinem Start (Startfehler), endet der Container |
+| Herunterfahren | SIGTERM an Daphne | SIGTERM an alle Prozesse, wer nach 8 s noch läuft, bekommt SIGKILL |
+| `/metrics/` | Werte des Prozesses | Zähler und Histogramme über alle Prozesse summiert (`PROMETHEUS_MULTIPROC_DIR`); `mandari_db_pool_*` gilt für den Prozess, der den Abruf beantwortet; `process_*` und `python_*` entfallen |
+| WebSocket | Channel-Layer in Redis | ebenso: Verbindungen zu derselben Sitzung oder demselben Dokument in verschiedenen Prozessen erreichen sich über Redis. Ist `REDIS_URL` leer, startet die Anwendung mit mehreren Prozessen nicht |
+
+Der Docker-Healthcheck erreicht einen beliebigen Prozess; jeden einzelnen prüft `mandari.app_processes`.
+Endet ein Prozess, nehmen die übrigen seine neuen Verbindungen an. Sein Nachfolger bekommt den Socket schon
+beim Start: Verbindungen, die bis zu seiner Bereitschaft auf ihn fallen, warten einige Sekunden.
+
+### Speicher
+
+`mem_limit` gilt für alle Prozesse des Containers zusammen. Unter Last belegt ein Prozess 300 bis 480 MB
+(`docs/LASTTESTS.md`); wir empfehlen 1 GB je Prozess, also `MANDARI_MEM_LIMIT` = `APP_PROCESSES` × 1 GB
+(Vorgabe `1g`). Liegt die Grenze unter 512 MB je Prozess, warnt die Startzeile. Reicht der Speicher nicht,
+beendet der Kernel einen Prozess; er wird neu gestartet, die übrigen laufen weiter. Verwaltungsbefehle per
+`docker compose exec mandari …` laufen im selben Speicher; große Wartungsbefehle deshalb im Container `worker`.
+
+### Verbindungsbudget
+
+Jeder Prozess hat einen eigenen Pool mit `DB_POOL_MAX` Verbindungen (`MANDARI_DB_POOL_MAX`, Vorgabe 10).
+Die Anwendung belegt also bis zu `APP_PROCESSES` × `DB_POOL_MAX`:
+
+| | ohne PgBouncer | mit PgBouncer |
+|---|---|---|
+| Anwendung zu PostgreSQL | `APP_PROCESSES` × `DB_POOL_MAX`, bei vier Prozessen 40 | höchstens `PGBOUNCER_DEFAULT_POOL_SIZE` (Vorgabe 20), gleich wie viele Prozesse |
+| Anwendung zu PgBouncer | – | `APP_PROCESSES` × `MANDARI_DB_POOL_MAX`, bei vier Prozessen mit je 30 also 120, höchstens `PGBOUNCER_MAX_CLIENT_CONN` (Vorgabe 200) |
+| `max_connections` | um (`APP_PROCESSES` − 1) × `DB_POOL_MAX` erhöhen (`POSTGRES_MAX_CONNECTIONS`) | bleibt |
+
+Die Dienste der `docker-compose.yml` brauchen nach dem Budget oben schon mit einem Prozess fast alle
+100 Verbindungen der Vorgabe `POSTGRES_MAX_CONNECTIONS`. Ohne PgBouncer gehört die Erhöhung deshalb zu
+jedem zusätzlichen Prozess; ab zwei Prozessen empfehlen wir PgBouncer („PgBouncer für die Webanwendung“).
+Die Startzeile nennt die Rechnung („je Prozess bis zu DB_POOL_MAX=… Datenbankverbindungen“).
+
+**Mehrere Server:** `APP_PROCESSES` gilt je web-Server (`deploy/roles/web.yml`); im Budget zählen
+Prozesse × Server. **Kubernetes (Helm):** Dort skaliert `app.replicas` die Pods, je Pod ein Prozess
+(`APP_PROCESSES` bleibt ungesetzt).
 
 ## 🧾 Protokolle
 
