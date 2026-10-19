@@ -1,0 +1,26 @@
+{% comment %}
+Gelöschte Termine einer Sitzungsreihe (Issue #1071, Muster „Gelöscht, kommt nicht wieder“): Datum, Grund und wer
+gelöscht hat; mit faction.manage „Wiederherstellen“ (section=restore_deleted_date an die Einstellungen, zurueck=liste
+führt zurück zur Liste der Fraktionssitzungen). Kontext: geloescht (liste.GeloeschterTermin), zurueck, organization,
+darf (faction.manage).
+{% endcomment %}
+{% if geloescht %}
+<ul class="fs-pausen" data-testid="fs-geloescht">
+    {% for g in geloescht %}
+    <li>
+        <span><b>{{ g.datum }}</b>{% if g.satz %} {{ g.satz }}{% endif %} <span class="fs-meta">kommt nicht wieder</span></span>
+        {% if darf %}
+        <form method="post" action="{% url 'work:organization_faction_settings' org_slug=organization.slug %}">
+            {% csrf_token %}
+            <input type="hidden" name="section" value="restore_deleted_date">
+            <input type="hidden" name="exception_id" value="{{ g.ausnahme.id }}">
+            {% if zurueck %}<input type="hidden" name="zurueck" value="{{ zurueck }}">{% endif %}
+            <button type="submit" class="wf-textlink klein">Wiederherstellen<span class="sr-only">: {{ g.datum }}</span></button>
+        </form>
+        {% endif %}
+    </li>
+    {% endfor %}
+</ul>
+{% else %}
+<p class="fs-meta">Keine gelöschten Termine. Löschen Sie einen Termin der Reihe, legt Work ihn nicht wieder an.</p>
+{% endif %}

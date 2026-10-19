@@ -1383,6 +1383,8 @@
   .fs-einst-spalte .fs-rechte td { font-size: 14px; }
   .fs-einst-spalte .fs-rechte caption { text-align: left; caption-side: top; padding: 0; }
   .fs-einst-status .fehler { color: #b91c1c; font-weight: 600; }
+  /* Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): ungültige Eingabe */
+  .fs-einst .fs-meta .fehler { color: var(--wf-abl, #b91c1c); font-weight: 600; }
   .dark .fs-einst-status .fehler { color: #f87171; }
   .fs-schalter { position: relative; }
   .fs-schalter > input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0; cursor: inherit; z-index: 1; }

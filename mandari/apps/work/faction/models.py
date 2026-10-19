@@ -126,6 +126,9 @@ class FactionMeetingException(models.Model):
         ("cancelled", "Abgesagt"),
         ("rescheduled", "Verschoben"),
         ("special", "Sondertermin"),
+        # Gelöschter Termin der Reihe (Issue #1071): Work legt ihn nicht wieder an, auch nicht nach einer Änderung
+        # der Reihe; „Wiederherstellen“ entfernt die Ausnahme und legt den Termin wieder an
+        ("deleted", "Gelöscht"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -157,6 +160,11 @@ class FactionMeetingException(models.Model):
     new_date = models.DateField(blank=True, null=True, verbose_name="Neues Datum")
     new_time = models.TimeField(blank=True, null=True, verbose_name="Neue Uhrzeit")
 
+    # Wer einen Termin gelöscht hat (nur bei „Gelöscht“, Issue #1071): Name zum Zeitpunkt des Löschens
+    created_by_name = models.CharField(
+        max_length=200, blank=True, default="", db_default="", verbose_name="Angelegt von"
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -167,6 +175,11 @@ class FactionMeetingException(models.Model):
 
     def __str__(self):
         return f"{self.schedule.name} - {self.original_date} ({self.exception_type})"
+
+    @property
+    def is_deleted_date(self) -> bool:
+        """Gelöschter Termin („kommt nicht wieder“) statt Pause oder Sondertermin?"""
+        return self.exception_type == "deleted"
 
     def covers(self, date) -> bool:
         """Fällt das Datum in den Ausnahmezeitraum?"""
@@ -1080,6 +1093,16 @@ class FactionAttendance(MemberNameSnapshotMixin):
     rsvp_reminder_error = models.CharField(
         max_length=300, blank=True, default="", db_default="", verbose_name="Erinnerung nicht verschickt, Grund"
     )
+    # Erinnerung an die Sitzung (Issue #1071, Standard 48 Stunden vorher): Ergebnis je Person; wer schon erinnert
+    # wurde, bekommt keine zweite
+    reminder_mailed_at = models.DateTimeField(blank=True, null=True, verbose_name="An die Sitzung erinnert am")
+    reminder_error = models.CharField(
+        max_length=300,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Erinnerung an die Sitzung nicht verschickt, Grund",
+    )
 
     # Check-in
     checked_in_at = models.DateTimeField(blank=True, null=True, verbose_name="Eingecheckt um")
@@ -1402,6 +1425,8 @@ class FactionAuditLog(models.Model):
         ("internal_document_access", "Nichtöffentliche Unterlage aufgerufen"),
         ("agenda_reminder_sent", "Erinnerung zum Eintragen von TOPs versandt"),
         ("protocol_sent", "Protokoll versandt"),
+        # Sitzungsreihe bearbeitet (Issue #1071): Zahl der angepassten, verschobenen und ersetzten Termine
+        ("schedule_changed", "Sitzungsreihe geändert"),
         # Export (PDF/DOCX) oder Anhang eines Dokuments durch einen Gast (Issue #582)
         ("guest_download", "Dokument von Gast heruntergeladen"),
     ]

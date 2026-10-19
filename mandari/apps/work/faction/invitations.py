@@ -62,6 +62,9 @@ INVITATION_DEFAULTS = {
     # Erinnerung zum Eintragen von TOPs (Issue #871): Stunden vor dem geplanten Einladungsversand
     "agenda_reminder_enabled": False,
     "agenda_reminder_hours": 24,
+    # Erinnerung an die Sitzung (Issue #59, einstellbar seit #1071): Standard an, 48 Stunden vor Beginn
+    "meeting_reminder_enabled": True,
+    "meeting_reminder_hours": 48,
 }
 
 # Wer TOPs eintragen oder vorschlagen darf, bekommt die TOP-Erinnerung
@@ -73,6 +76,9 @@ RELEASE_NOTICE_FINAL_HOURS = 3
 
 # TOP-Erinnerung höchstens zwei Wochen vor dem geplanten Versand
 AGENDA_REMINDER_MAX_HOURS = 24 * 14
+
+# Erinnerung an die Sitzung höchstens zwei Wochen vor Beginn
+MEETING_REMINDER_MAX_HOURS = 24 * 14
 
 # Ein Anspruch auf den Erstversand, der so lange nicht abgeschlossen ist, gilt als hängend (Prozess beendet)
 INVITATION_CLAIM_STALE_MINUTES = 30
@@ -106,6 +112,13 @@ def get_invitation_settings(organization) -> dict:
     try:
         hours = int(faction_settings.get("agenda_reminder_hours", result["agenda_reminder_hours"]))
         result["agenda_reminder_hours"] = max(1, min(hours, AGENDA_REMINDER_MAX_HOURS))
+    except (TypeError, ValueError):
+        pass
+
+    result["meeting_reminder_enabled"] = faction_settings.get("meeting_reminder_enabled", True) is not False
+    try:
+        hours = int(faction_settings.get("meeting_reminder_hours", result["meeting_reminder_hours"]))
+        result["meeting_reminder_hours"] = max(1, min(hours, MEETING_REMINDER_MAX_HOURS))
     except (TypeError, ValueError):
         pass
 

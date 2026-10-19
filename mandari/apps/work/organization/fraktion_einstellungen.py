@@ -25,6 +25,7 @@ from apps.work.faction import liste
 #: Abschnitt der Seite → Felder, die er sofort speichert (alle aus services.FACTION_SETTINGS_FIELDS)
 ABSCHNITT_FELDER: dict[str, tuple[str, ...]] = {
     "einladung": ("invitation_dispatch", "invitation_lead_hours", "invitation_mode"),
+    "sitzungserinnerung": ("meeting_reminder_enabled", "meeting_reminder_hours"),
     "erinnerung": ("agenda_reminder_enabled", "agenda_reminder_hours"),
     "protokoll": (
         "protocol_dispatch",
@@ -56,24 +57,63 @@ def felder_aus(form: Any) -> list[str]:
 
 @dataclass
 class ReiheAngaben:
-    """Satz zu einer Sitzungsreihe: wann und wo, und was in nächster Zeit ausfällt."""
+    """Satz zu einer Sitzungsreihe: wann und wo, was in nächster Zeit ausfällt und welche Termine gelöscht sind."""
 
     satz: str
     pausen: list[str] = field(default_factory=list)
+    #: Ausnahmen ohne gelöschte Termine (Pausen, Sondertermine) für „Pausen und Ausnahmen“
+    ausnahmen: list[Any] = field(default_factory=list)
+    #: Kommende gelöschte Termine (Ausnahme „Gelöscht“, Issue #1071), je mit ``satz``
+    geloescht: list[Any] = field(default_factory=list)
 
 
 def reihe_angaben(schedule: Any) -> ReiheAngaben:
-    """„Wöchentlich montags von 18:00 bis 20:00 Uhr, Fraktionsbüro“ und kommende Pausen (wie die Liste)."""
+    """„Wöchentlich montags von 18:00 bis 20:00 Uhr, Fraktionsbüro“, kommende Pausen und gelöschte Termine."""
     satz = f"{liste._rhythmus(schedule)} {liste._von_bis(schedule)} Uhr"
     if schedule.default_location:
         satz += f", {schedule.default_location}"
     heute = timezone.localdate()
-    pausen = [
-        liste._ausnahme(a)
-        for a in sorted(schedule.exceptions.all(), key=lambda a: a.original_date)
-        if (a.end_date or a.new_date or a.original_date) >= heute
-    ]
-    return ReiheAngaben(satz=f"{satz}.", pausen=pausen)
+    alle = sorted(schedule.exceptions.all(), key=lambda a: a.original_date)
+    ausnahmen = [a for a in alle if a.exception_type != "deleted"]
+    pausen = [liste._ausnahme(a) for a in ausnahmen if (a.end_date or a.new_date or a.original_date) >= heute]
+    return ReiheAngaben(
+        satz=f"{satz}.", pausen=pausen, ausnahmen=ausnahmen, geloescht=liste.geloeschte_termine(schedule)
+    )
+
+
+@dataclass
+class NichtoeffentlichOrdner:
+    """Ordner „Nichtöffentliche Vorgänge“ im Dokumentenspeicher (Issue #873), nur zur Information."""
+
+    vereidigt: int
+    mitglieder: int
+    #: Zahl der Dokumente und Kennung des Ordners nur für Vereidigte (sonst ``None``)
+    dateien: int | None = None
+    ordner_id: Any = None
+
+
+def nichtoeffentlich_ordner(organization: Any, membership: Any) -> NichtoeffentlichOrdner:
+    """
+    Wer den Ordner öffnen darf (vereidigte Mitglieder, ``visibility.is_sworn_member``) und, für Vereidigte, wie viele
+    Dokumente darin liegen. Freigaben gibt es für diesen Ordner nicht; die Einstellungen ändern daran nichts.
+    """
+    from apps.tenants.models import Membership
+    from apps.work.faction.visibility import is_sworn_member
+    from apps.work.motions.models import DocumentFolder, Motion
+
+    mitglieder = list(Membership.objects.filter(organization=organization, is_active=True, is_guest=False))
+    ergebnis = NichtoeffentlichOrdner(
+        vereidigt=sum(1 for m in mitglieder if is_sworn_member(m)), mitglieder=len(mitglieder)
+    )
+    if not is_sworn_member(membership):
+        return ergebnis
+    ordner = DocumentFolder.objects.filter(organization=organization, sworn_in_only=True).first()
+    if ordner is not None:
+        ergebnis.ordner_id = ordner.pk
+        ergebnis.dateien = Motion.objects.filter(organization=organization, folder=ordner).count()
+    else:
+        ergebnis.dateien = 0
+    return ergebnis
 
 
 @dataclass
