@@ -70,6 +70,7 @@ from src.scrapers.base import CONTENT_HASH_FIELD
 from src.storage.database import (
     DatabaseStorage,
     full_sync_progress_of,
+    missing_list_reasons_of,
     missing_lists_of,
     slice_filter_ignored_of,
     slow_lists_of,
@@ -194,7 +195,8 @@ def day_start_window(modified_since: datetime, now: datetime | None = None) -> d
 #: Listen am Body, die OParl 1.1 als optional führt (Typnamen wie in ``_sync_entity_type``). Nur sie werden bei
 #: HTTP 404 oder Fehlerobjekt als „gibt es nicht“ vermerkt. Antwortet eine Pflichtliste (organization, person,
 #: meeting, paper) mit 404, ist das eine Lücke, etwa ein Endpunkt, der während eines Updates der Quelle kurz 404
-#: liefert; ein Fehlerobjekt gilt dort wie bisher als leere Liste (``BodyListCheck``, Issue #1025).
+#: liefert; ein Fehlerobjekt gilt dort wie bisher als leere Liste (``BodyListCheck``, Issue #1025). Listen, die die
+#: Quelle nicht freigibt (HTTP 403 für alle Clients), werden auch als Pflichtlisten vermerkt (Issue #1086).
 OPTIONAL_LIST_TYPES = frozenset({"membership", "agendaitem", "consultation", "file", "location", "legislativeterm"})
 #: Vermerkte Listen fragt auch der inkrementelle Lauf wieder an, wenn ihre letzte Prüfung so lange zurückliegt
 MISSING_LIST_RECHECK = timedelta(days=1)
@@ -252,7 +254,8 @@ class SliceFilterIgnoredError(Exception):
 class MissingLists:
     """
     Optionale Listen einer Quelle, die es bei ihr nicht gibt (HTTP 404 oder Fehlerobjekt auf der ersten Seite,
-    Issue #1025), mit dem Zeitpunkt ihrer letzten Prüfung.
+    Issue #1025), und Listen, die sie nicht freigibt (HTTP 403 für alle Clients, auch Pflichtlisten, Issue #1086), mit
+    dem Zeitpunkt ihrer letzten Prüfung und dem Grund.
 
     Gelesen aus ``sync_config["missing_lists"]`` beim Start des Abgleichs einer Quelle. Inkrementelle Läufe fragen
     eine vermerkte Liste erst wieder an, wenn ihre letzte Prüfung einen Tag zurückliegt (``MISSING_LIST_RECHECK``),
@@ -263,6 +266,8 @@ class MissingLists:
 
     source_url: str
     known: dict[str, datetime | None] = field(default_factory=dict)
+    #: Grund je vermerkter Liste, soweit bekannt (ältere Vermerke tragen nur den Zeitpunkt)
+    reasons: dict[str, str] = field(default_factory=dict)
 
     def skip(self, list_url: str, now: datetime | None = None) -> bool:
         """Vermerkt und vor weniger als einem Tag geprüft: im inkrementellen Lauf nicht anfragen."""
@@ -286,14 +291,32 @@ class BodyListCheck:
     """
 
     lists: MissingLists
-    #: Listen dieses Laufs, die es nicht gibt (Adresse -> Grund)
+    #: Listen dieses Laufs, die es nicht gibt oder die die Quelle nicht freigibt (Adresse -> Grund)
     missing: dict[str, str] = field(default_factory=dict)
+    #: Davon die Listen, die die Quelle nicht freigibt (HTTP 403 für alle Clients, Issue #1086)
+    forbidden: set[str] = field(default_factory=set)
     #: Pflichtlisten dieses Laufs, deren erste Seite ein OParl-Fehlerobjekt ist (Adresse -> Grund). Sie gelten wie
     #: bisher als leer, solange eine andere Liste der Kommune lesbar war (OParl 1.0, more! rubin: „Requested class
     #: doesn't exist.“); sonst als Lücke. HTTP 404 auf einer Pflichtliste bleibt immer eine Lücke.
     required_errors: dict[str, str] = field(default_factory=dict)
     #: Listen dieses Laufs, deren erste Seite lesbar war
     readable: int = 0
+
+
+def _note_missing_list(list_check: BodyListCheck, list_url: str, missing: ListMissingError, *, optional: bool) -> None:
+    """
+    Befund einer Liste, deren erste Seite fehlt, in ``list_check`` festhalten. Optionale Listen und Listen, die die
+    Quelle nicht freigibt (HTTP 403 für alle Clients, Issue #1086), gelten als „nicht vorhanden“. Eine Pflichtliste
+    mit HTTP 404 ist eine Lücke (``RequiredListMissingError``), mit Fehlerobjekt vorläufig leer (Issue #1025).
+    """
+    if optional or missing.forbidden:
+        list_check.missing[list_url] = missing.reason
+        if missing.forbidden:
+            list_check.forbidden.add(list_url)
+    elif missing.not_found:
+        raise RequiredListMissingError(list_url, missing.reason) from missing
+    else:
+        list_check.required_errors[list_url] = missing.reason
 
 
 @dataclass
@@ -963,7 +986,9 @@ class SyncOrchestrator:
                 # multiply peak memory (each body sync holds pages + caches).
                 body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
                 source_config = getattr(source_row, "sync_config", None)
-                missing_lists = MissingLists(url, missing_lists_of(source_config))
+                missing_lists = MissingLists(
+                    url, missing_lists_of(source_config), missing_list_reasons_of(source_config)
+                )
                 timed_lists = TimedLists(url, timed_lists_of(source_config))
 
                 async def sync_body_wrapper(body_data):
@@ -1375,7 +1400,9 @@ class SyncOrchestrator:
                 # multiply peak memory (each body sync holds pages + caches).
                 body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
                 source_config = getattr(source_row, "sync_config", None)
-                missing_lists = MissingLists(url, missing_lists_of(source_config))
+                missing_lists = MissingLists(
+                    url, missing_lists_of(source_config), missing_list_reasons_of(source_config)
+                )
                 timed_lists = TimedLists(url, timed_lists_of(source_config))
 
                 async def sync_body_wrapper(body_data):
@@ -2017,8 +2044,9 @@ class SyncOrchestrator:
         """
         Sync all entities of a specific type.
 
-        Optionale Listen, die es bei der Quelle nicht gibt (``list_check``, Issue #1025), fragt der inkrementelle
-        Lauf einmal am Tag an, der Vollabgleich jedes Mal. Nicht gespeicherte Objekte und die Genauigkeit von
+        Optionale Listen, die es bei der Quelle nicht gibt (``list_check``, Issue #1025), und Listen, die sie nicht
+        freigibt (Issue #1086), fragt der inkrementelle Lauf einmal am Tag an, der Vollabgleich jedes Mal (in
+        Zeitscheiben nicht). Nicht gespeicherte Objekte und die Genauigkeit von
         ``modified`` hält ``item_check`` fest. Das kurze Fenster gilt nur für Listen, deren ``modified``
         nachweislich die Uhrzeit trägt (``timed_lists``); die übrigen fragt der inkrementelle Lauf ab dem
         Tagesbeginn an (``day_start_window``).
@@ -2052,18 +2080,24 @@ class SyncOrchestrator:
         optional = entity_type in OPTIONAL_LIST_TYPES
         run = slices.run if slices is not None else None
         sliced_full = full and run is not None and run.config is not None and run.config.covers(entity_type)
-        if not full and optional and list_check is not None and list_url in list_check.lists.known:
+        # Vermerkt sind optionale Listen, die es nicht gibt, und Listen, die die Quelle nicht freigibt (HTTP 403 für
+        # alle Clients); nur so stehen auch Pflichtlisten hier (Issue #1086)
+        if not full and list_check is not None and list_url in list_check.lists.known:
             if list_check.lists.skip(list_url):
-                console.print(f"[dim]  {entity_type}: Liste fehlt bei der Quelle (vermerkt), nicht angefragt[/dim]")
+                reason = list_check.lists.reasons.get(list_url) or "fehlt bei der Quelle"
+                console.print(f"[dim]  {entity_type}: Liste vermerkt ({reason}), nicht angefragt[/dim]")
                 return 0
             # Tägliche Prüfung der vermerkten Liste: Gibt es sie wieder, kommen die Änderungen aus der Zeit des
             # Vermerks mit, so weit wie bisher (sieben Tage), nicht nur die seit dem letzten Lauf
             if modified_since is not None:
                 modified_since = fallback_modified_since()
-        if sliced_full and optional and list_check is not None and list_url in list_check.lists.known:
+        if sliced_full and list_check is not None and list_url in list_check.lists.known:
             # SD.NET RIM beantwortet jede leere Scheibe wie eine fehlende Liste: Die Prüfung bleibt beim täglichen
-            # inkrementellen Lauf, statt hunderte Scheiben einer Liste anzufragen, die es nicht gibt
-            console.print(f"[dim]  {entity_type}: Liste fehlt bei der Quelle (vermerkt), keine Zeitscheiben[/dim]")
+            # inkrementellen Lauf, statt hunderte Scheiben einer Liste anzufragen, die es nicht gibt. Ebenso bei
+            # einer Liste, die die Quelle nicht freigibt: Eine Scheibe fragt nur mit Filter, ein 403 darauf sagt
+            # nicht, ob die Liste ohne Filter käme (Issue #1086)
+            reason = list_check.lists.reasons.get(list_url) or "fehlt bei der Quelle"
+            console.print(f"[dim]  {entity_type}: Liste vermerkt ({reason}), keine Zeitscheiben[/dim]")
             return 0
         slow = run.slow.get(list_url) if run is not None and optional else None
         if slices is not None and slow is not None and slow.suspended():
@@ -2316,9 +2350,12 @@ class SyncOrchestrator:
         jedes Mal. Wird eine vermerkte Liste ganz gelesen, wird der Vermerk gelöscht; meldet SD.NET RIM auf den
         Filter nur „keine Treffer“, bleibt er (Issue #1034).
 
-        Pflichtlisten werden nie vermerkt. HTTP 404 ist dort eine Lücke (``RequiredListMissingError``). Ein
-        Fehlerobjekt gilt wie bisher als leere Liste, solange eine andere Liste der Kommune lesbar war; sonst als
+        Pflichtlisten werden als fehlend nie vermerkt. HTTP 404 ist dort eine Lücke (``RequiredListMissingError``).
+        Ein Fehlerobjekt gilt wie bisher als leere Liste, solange eine andere Liste der Kommune lesbar war; sonst als
         Lücke (``_settle_missing_lists``). Ohne ``list_check`` wie bisher.
+
+        Gibt die Quelle eine Liste nicht frei (HTTP 403 für alle Clients, ``ListMissingError.forbidden``), gilt sie
+        wie eine fehlende optionale Liste als „nicht vorhanden“, auch eine Pflichtliste (Issue #1086).
         """
         if list_check is None:
             async for page in client.fetch_list(list_url, modified_since=modified_since):
@@ -2332,12 +2369,7 @@ class SyncOrchestrator:
                     list_check.readable += 1
                 yield page
         except ListMissingError as missing:
-            if optional:
-                list_check.missing[list_url] = missing.reason
-            elif missing.not_found:
-                raise RequiredListMissingError(list_url, missing.reason) from missing
-            else:
-                list_check.required_errors[list_url] = missing.reason
+            _note_missing_list(list_check, list_url, missing, optional=optional)
             return
         if not readable:
             list_check.readable += 1  # lesbar, nur leer
@@ -2421,12 +2453,7 @@ class SyncOrchestrator:
                 elif list_check is None:
                     return
                 else:
-                    if optional:
-                        list_check.missing[list_url] = missing.reason
-                    elif missing.not_found:
-                        raise RequiredListMissingError(list_url, missing.reason) from missing
-                    else:
-                        list_check.required_errors[list_url] = missing.reason
+                    _note_missing_list(list_check, list_url, missing, optional=optional)
                     return
             except ListFetchError as error:
                 if not full and _filter_rejected(error):
@@ -2651,9 +2678,9 @@ class SyncOrchestrator:
 
     async def _settle_missing_lists(self, list_check: BodyListCheck, stats: dict[str, Any]) -> None:
         """
-        Fehlende Listen eines Laufs vermerken (Issue #1025), wenn mindestens eine andere Liste der Kommune lesbar
-        war; Pflichtlisten mit Fehlerobjekt gelten dann als leer (Warnung). Sonst gilt der Befund als Störung der
-        Schnittstelle: Lücke im Abgleich, kein Vermerk.
+        Fehlende und nicht freigegebene Listen eines Laufs vermerken (Issues #1025, #1086), wenn mindestens eine
+        andere Liste der Kommune lesbar war; Pflichtlisten mit Fehlerobjekt gelten dann als leer (Warnung). Sonst gilt
+        der Befund als Störung der Schnittstelle: Lücke im Abgleich, kein Vermerk.
         """
         if not list_check.missing and not list_check.required_errors:
             return
@@ -2674,27 +2701,39 @@ class SyncOrchestrator:
         stats["missing_lists"] = sorted(list_check.missing)
         for list_url, reason in sorted(list_check.missing.items()):
             if list_url not in list_check.lists.known:
+                state = (
+                    "gibt die Quelle nicht frei" if list_url in list_check.forbidden else "gibt es bei der Quelle nicht"
+                )
                 console.print(
-                    f"[dim]  Liste {list_url} gibt es bei der Quelle nicht ({reason}): vermerkt, "
+                    f"[dim]  Liste {list_url} {state} ({reason}): vermerkt, "
                     f"bis zur nächsten Prüfung (Vollabgleich, spätestens nach einem Tag) nicht mehr angefragt[/dim]"
                 )
-            await self._remember_missing_list(list_check.lists, list_url, missing=True)
+            await self._remember_missing_list(list_check.lists, list_url, missing=True, reason=reason)
 
-    async def _remember_missing_list(self, missing_lists: MissingLists | None, list_url: str, missing: bool) -> None:
+    async def _remember_missing_list(
+        self, missing_lists: MissingLists | None, list_url: str, missing: bool, *, reason: str | None = None
+    ) -> None:
         """
-        Vermerk „Liste gibt es nicht“ setzen (mit dem Zeitpunkt dieser Prüfung) oder löschen; Fehler gefährden den
-        Abgleich nie. Angefragt wird eine vermerkte Liste nur bei der Prüfung, deshalb schreibt jede Prüfung.
+        Vermerk „Liste gibt es nicht“ bzw. „nicht freigegeben“ setzen (mit dem Zeitpunkt dieser Prüfung und dem Grund,
+        ohne neuen Grund mit dem bisherigen) oder löschen; Fehler gefährden den Abgleich nie. Angefragt wird eine
+        vermerkte Liste nur bei der Prüfung, deshalb schreibt jede Prüfung.
         """
         if missing_lists is None or (not missing and list_url not in missing_lists.known):
             return
         checked_at = datetime.now(UTC)
         if missing:
             missing_lists.known[list_url] = checked_at
+            reason = reason or missing_lists.reasons.get(list_url)
+            if reason:
+                missing_lists.reasons[list_url] = reason
         else:
             del missing_lists.known[list_url]
-            console.print(f"[green]  Liste {list_url} gibt es wieder, Vermerk gelöscht[/green]")
+            missing_lists.reasons.pop(list_url, None)
+            console.print(f"[green]  Liste {list_url} wieder abrufbar, Vermerk gelöscht[/green]")
         try:
-            await self.storage.set_list_missing(missing_lists.source_url, list_url, missing, checked_at=checked_at)
+            await self.storage.set_list_missing(
+                missing_lists.source_url, list_url, missing, checked_at=checked_at, reason=reason
+            )
         except Exception as e:  # noqa: BLE001 - ohne Vermerk wird die Liste im nächsten Lauf erneut geprüft
             console.print(f"[yellow]  Vermerk zur Liste {list_url} nicht gespeichert: {e}[/yellow]")
 

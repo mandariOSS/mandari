@@ -507,12 +507,18 @@ Der Vermerk „filtert nicht“ gilt je Liste und nur für die Quelle, bei der e
 
 - Antwortet schon die erste Seite einer optionalen Liste (Mitgliedschaften, Tagesordnungspunkte, Beratungen,
   Dateien, Orte; `OPTIONAL_LIST_TYPES`) ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt, gibt es die Liste
-  bei dieser Quelle nicht. Der Ingestor vermerkt sie am Ende des Laufs mit dem Zeitpunkt der Prüfung in
+  bei dieser Quelle nicht. Der Ingestor vermerkt sie am Ende des Laufs mit Grund und Zeitpunkt der Prüfung in
   `sync_config["missing_lists"]`, aber nur, wenn mindestens eine andere Liste der Kommune lesbar war. Sonst gilt das
   als Störung der Schnittstelle: Lücke im Abgleich, kein Vermerk (`_settle_missing_lists`).
-- Pflichtlisten (Gremien, Personen, Sitzungen, Vorlagen) vermerkt er nie. Ein HTTP 404 bleibt dort eine Lücke, und
-  der nächste Lauf fragt die Liste wieder an. Ein Fehlerobjekt gilt dort als leere Liste, solange eine andere Liste
-  der Kommune lesbar war, sonst ebenfalls als Lücke.
+- Pflichtlisten (Gremien, Personen, Sitzungen, Vorlagen) vermerkt er nie als fehlend. Ein HTTP 404 bleibt dort eine
+  Lücke, und der nächste Lauf fragt die Liste wieder an. Ein Fehlerobjekt gilt dort als leere Liste, solange eine
+  andere Liste der Kommune lesbar war, sonst ebenfalls als Lücke.
+- **Nicht freigegeben:** Listen, die die Kommune mit HTTP 403 für alle sperrt (auch ohne Filter, und die
+  Vergleichsanfrage mit neutralem Client bekommt ebenfalls eine Absage), etwa die Personen und Mitgliedschaften der
+  Stadt Bochum, gelten als nicht freigegeben. Sie werden wie fehlende Listen vermerkt (Grund „nicht freigegeben“),
+  auch Pflichtlisten, und täglich neu geprüft; der Lauf bleibt vollständig, ein Vermerk „filtert nicht“ entfällt. Ist
+  nur unser User-Agent gesperrt oder bleibt die Vergleichsanfrage unklar, bleibt es eine Lücke (Issue
+  [#1086](https://github.com/mandariOSS/mandari/issues/1086)).
 - Vermerkte Listen fragt der inkrementelle Lauf einmal am Tag an (`MISSING_LIST_RECHECK`), dann mit dem Fenster von
   sieben Tagen; der Vollabgleich fragt sie jedes Mal an, der Vollabgleich in Zeitscheiben nicht. Gibt es die Liste
   wieder, löscht der Ingestor den Vermerk. Antwortet SD.NET RIM auf die Prüfung nur mit „keine Treffer“ (HTTP 404,
@@ -858,7 +864,7 @@ Befund zurückzusetzen:
 | `sync_state` | Takt der Quelle: nächster fälliger Lauf (`next_due`), Läufe ohne Änderung in Folge (`idle_runs`), Abstand und Art des Grundtakts (`interval_minutes`, `base_minutes`, `period`), letzter Lauf und seine Änderungen (`last_run`, `last_changes`), Beginn des letzten Vollabgleichs (`full_attempted`); Zeitpunkte in UTC. Löschen macht die Quelle sofort fällig und erlaubt einen Vollabgleich im laufenden Fenster |
 | `body_sync_started` | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (UTC), Anfang des Änderungsfensters; nach nicht gespeicherten Objekten höchstens deren ältestes `modified`. Löschen setzt das Änderungsfenster auf sieben Tage zurück |
 | `timed_lists` | Listen, deren `modified` nachweislich eine Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC); nur sie bekommen das kurze Fenster. Löschen lässt die Listen ab Tagesbeginn laufen, bis ein Lauf die Uhrzeit wieder nachweist |
-| `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, mit dem Zeitpunkt der letzten Prüfung (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
+| `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, und Listen, die sie nicht freigibt (HTTP 403 für alle), mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
 | `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune. Das ist während der Aussetzung weitergerückt: Änderungen ab `since` bis zum Fenster der Kommune holen inkrementelle Läufe dann nicht mehr nach, erst der nächste Vollabgleich der Quelle. Besser `until` auf einen vergangenen Zeitpunkt setzen: Dann holt der nächste Lauf die Liste ab `since` nach |
 | `full_sync_progress` | Fortschritt des Vollabgleichs in Zeitscheiben: je Liste der Beginn der nächsten Scheibe (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Vollabgleich wieder bei `since` beginnen |
 | `full_sync_filter_ignored` | Befund „Server ignoriert den Filter einer Zeitscheibe“ (`checked_at`, `list`, `detail`). Solange er jünger als 30 Tage ist, läuft der Vollabgleich nur als Änderungsabgleich; Löschen lässt den nächsten Vollabgleich die Zeitscheiben wieder versuchen |
