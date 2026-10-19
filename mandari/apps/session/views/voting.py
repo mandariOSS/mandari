@@ -97,7 +97,11 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         # Bei der Abstimmung gestört, aber vor Beginn der Störung im Abstimmungsfenster abgestimmt: Die Stimme gilt.
         # Sie steht mit Hinweis da und lässt sich nur ausdrücklich entfernen; neue und geänderte Stimmen dieser
         # Personen lehnt capture_votes weiter ab (Issue #1045)
-        kept = voting_service.kept_votes(item, assessed, {v.person_id: v for v in loaded})
+        by_person = {v.person_id: v for v in loaded}
+        kept = voting_service.kept_votes(item, assessed, by_person)
+        # Stimmen, die nach der gemeinsamen Regel mit Cockpit und Niederschrift nicht zählen: Das Speichern entfernt sie
+        # (versteckte Leerfelder), das Schließen im Cockpit hat sie bereits entfernt (Issue #1059)
+        uncounted = {v.person_id for v in voting_service.uncounted_votes(item, assessed, by_person)}
         labels = dict(SessionVote.VOTE_CHOICES)
         for attendance in assessed.unreachable:
             attendance.vote_kept = attendance.person_id in kept
@@ -129,16 +133,14 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
                     item.meeting, item, attendances=assessed.attendances, substitutes=assessed.substitutes, at=moment
                 ),
                 "stray_votes": [
-                    a
-                    for a in assessed.advisory + assessed.others + not_voting
-                    if a.current_vote and a.person_id not in kept
+                    a for a in assessed.advisory + assessed.others + not_voting if a.person_id in uncounted
                 ],
                 # Getrennt erklärt: Gestörte ohne behaltene Stimme und alle übrigen (ohne Stimmrecht, abwesend, …)
-                "stray_disrupted": [a for a in assessed.unreachable if a.current_vote and a.person_id not in kept],
+                "stray_disrupted": [a for a in assessed.unreachable if a.person_id in uncounted],
                 "stray_other": [
                     a
                     for a in assessed.advisory + assessed.others + assessed.remote_excluded
-                    if a.current_vote and a.person_id not in kept
+                    if a.person_id in uncounted
                 ],
                 # Beurteilt zum Zeitpunkt der Abstimmung statt live: „bei der Abstimmung gestört“ statt „dauert an“
                 "assessed_at_vote": moment is not None,

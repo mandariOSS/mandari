@@ -19,6 +19,8 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
   ausschließt (``participation_service.remote_vote_rule``).
 - Sperre in der Sitzung (Issue #754): Ist ein Vorgang nach dem Landesprofil unzulässig, sobald jemand
   zugeschaltet teilnimmt (Niedersachsen: geheime Wahlen und Abstimmungen), schreibt der Service keine Stimmen.
+- Zählregel (Issue #1059): Welche gespeicherten Einzelstimmen zählen, entscheidet für Sitzungscockpit,
+  Abstimmungserfassung und Niederschrift dieselbe Regel (``counted_person_ids``).
 """
 
 from collections.abc import Collection, Mapping
@@ -244,8 +246,7 @@ def kept_votes(item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[An
     alten Zeitpunkt (unveränderte Stimmen schreibt :func:`capture_votes` nicht neu) und ist nicht als Stimme dieser
     Runde erkennbar. Wird die Person danach in derselben Runde gestört, entfällt sie – wie schon vor dieser Regel.
 
-    Das Sitzungscockpit zählt beim Schließen weiter alle gespeicherten Stimmen (:func:`recompute_sums`); eine
-    gemeinsame Regel für Cockpit, Erfassung und die Namenslisten der Niederschrift ist eine eigene Aufgabe.
+    Welche gespeicherten Stimmen insgesamt zählen, entscheidet :func:`counted_person_ids` (Issue #1059).
     ``votes``: gespeicherte Stimmen des TOP je Person-ID.
     """
     opened = item.vote_opened_at
@@ -268,6 +269,123 @@ def kept_votes(item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[An
         if starts and opened <= vote.updated_at < min(starts):
             kept.add(attendance.person_id)
     return kept
+
+
+def counted_person_ids(item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[Any, SessionVote]) -> set[Any]:
+    """
+    Wessen gespeicherte Stimme zählt? Die gemeinsame Regel für Sitzungscockpit, Abstimmungserfassung und Niederschrift
+    (Issue #1059).
+
+    Es zählen die Stimmberechtigten zum Zeitpunkt der Abstimmung (``assessed.voting``, ``assessed`` mit dem Zeitpunkt aus
+    ``participation_service.vote_time``) und Gestörte, die vor Beginn der Störung abgestimmt haben (:func:`kept_votes`).
+    ``votes``: gespeicherte Stimmen des TOP je Person-ID.
+    """
+    return assessed.voting_person_ids | kept_votes(item, assessed, votes)
+
+
+def uncounted_votes(
+    item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[Any, SessionVote]
+) -> list[SessionVote]:
+    """
+    Gespeicherte Stimmen, die nach :func:`counted_person_ids` nicht zählen, in der Reihenfolge der Anwesenheitsliste.
+
+    Betroffen sind nur Personen der Anwesenheitsliste, die bei dieser Abstimmung nicht abstimmen: Stellvertretungen,
+    deren vertretenes Mitglied anwesend ist, Gestörte ohne gültige Stimme, vom Landesprofil ausgeschlossene
+    Zugeschaltete, Beratende, Gäste und Abwesende. Stimmen von Personen ohne Zeile in der Anwesenheitsliste und alle
+    Stimmen einer Sitzung ohne Anwesenheitsliste zählen wie bisher. Geliefert werden alle Werte, auch Vermerke; wer nur
+    Ja, Nein und Enthaltung braucht, filtert nach ``SessionVote.COUNTED_VOTES``.
+    """
+    if not assessed.has_list or not votes:
+        return []
+    counted = counted_person_ids(item, assessed, votes)
+    result: list[SessionVote] = []
+    seen: set[Any] = set()
+    for attendance in assessed.attendances:
+        vote = votes.get(attendance.person_id)
+        if vote is None or attendance.person_id in counted or attendance.person_id in seen:
+            continue
+        seen.add(attendance.person_id)
+        result.append(vote)
+    return result
+
+
+def uncounted_reason(assessed: Eligibility, person_id: Any) -> str:
+    """Warum die Stimme einer Person nicht zählt (fester Satzteil für Hinweise und Prüfprotokoll, Issue #1059)."""
+    if any(a.person_id == person_id for a in assessed.standby):
+        return "Stellvertretung, das vertretene Mitglied ist anwesend"
+    if any(a.person_id == person_id for a in assessed.unreachable):
+        return "wegen einer Störung nicht erreichbar"
+    if any(a.person_id == person_id for a in assessed.remote_excluded):
+        return "zugeschaltet und nach dem Landesprofil ausgeschlossen"
+    return "ohne Stimmrecht oder nicht anwesend"
+
+
+@dataclass
+class CountedVotes:
+    """Summen aus den Einzelstimmen eines TOP nach der gemeinsamen Regel (Issue #1059)."""
+
+    yes: int = 0
+    no: int = 0
+    abstain: int = 0
+    #: Ja, Nein und Enthaltung, die nicht zählen, je mit Grund (:func:`uncounted_reason`)
+    uncounted: list[tuple[SessionVote, str]] = field(default_factory=list)
+
+    @property
+    def sums(self) -> tuple[int, int, int]:
+        return self.yes, self.no, self.abstain
+
+
+def count_votes(item: SessionAgendaItem, assessed: Eligibility | None = None) -> CountedVotes:
+    """
+    Ja, Nein und Enthaltung aus den gespeicherten Einzelstimmen, die nach :func:`counted_person_ids` zählen.
+
+    Für das Sitzungscockpit: Hinweis vor dem Schließen und Summen beim Schließen. Ohne nicht gezählte Stimmen sind die
+    Summen dieselben wie aus :func:`recompute_sums`. ``assessed``: Stimmberechtigung (sonst zum Zeitpunkt der
+    Abstimmung).
+    """
+    assessed = assessed or eligibility(item.meeting, item, at=participation_service.vote_time(item))
+    stored = {vote.person_id: vote for vote in item.votes.select_related("person")}
+    dropped = [vote for vote in uncounted_votes(item, assessed, stored) if vote.vote in SessionVote.COUNTED_VOTES]
+    dropped_ids = {vote.pk for vote in dropped}
+    counts = dict.fromkeys(SessionVote.COUNTED_VOTES, 0)
+    for vote in stored.values():
+        if vote.vote in SessionVote.COUNTED_VOTES and vote.pk not in dropped_ids:
+            counts[vote.vote] += 1
+    return CountedVotes(
+        yes=counts["yes"],
+        no=counts["no"],
+        abstain=counts["abstain"],
+        uncounted=[(vote, uncounted_reason(assessed, vote.person_id)) for vote in dropped],
+    )
+
+
+@dataclass
+class ProtocolVotes:
+    """Namenslisten eines TOP in der Niederschrift (Issue #41, Regel nach Issue #1059)."""
+
+    #: namentliche Abstimmung: Ja, Nein und Enthaltung, die zählen (sonst leer)
+    roll_call: list[SessionVote] = field(default_factory=list)
+    #: Mitwirkungsverbot (Befangenheitsvermerke)
+    excluded: list[Any] = field(default_factory=list)
+
+
+def protocol_votes(item: SessionAgendaItem) -> ProtocolVotes:
+    """
+    Namentliche Stimmen und Befangene für Niederschrift, öffentliche Fassung und Beschlussauszug.
+
+    Die namentliche Liste nennt nur Stimmen, die nach :func:`counted_person_ids` zählen – dieselbe Regel wie beim
+    Schließen im Sitzungscockpit und beim Speichern der Abstimmungserfassung (Issue #1059). Befangenheitsvermerke
+    stehen wie bisher alle da. Die Stimmberechtigung wird nur bei einer namentlichen Abstimmung mit Stimmen bestimmt.
+    """
+    votes = list(item.votes.select_related("person"))
+    result = ProtocolVotes(excluded=[vote.person for vote in votes if vote.vote == "excluded"])
+    named = [vote for vote in votes if vote.vote in SessionVote.COUNTED_VOTES]
+    if item.voting_method != "roll_call" or not named:
+        return result
+    assessed = eligibility(item.meeting, item, at=participation_service.vote_time(item))
+    dropped = {vote.pk for vote in uncounted_votes(item, assessed, {vote.person_id: vote for vote in votes})}
+    result.roll_call = [vote for vote in named if vote.pk not in dropped]
+    return result
 
 
 def guard_kept_votes(

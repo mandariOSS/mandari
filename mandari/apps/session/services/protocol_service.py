@@ -33,7 +33,7 @@ from apps.session.models import (
     SessionProtocolCorrection,
     SessionTenant,
 )
-from apps.session.services import agenda_service, four_eyes_service
+from apps.session.services import agenda_service, four_eyes_service, voting_service
 
 logger = logging.getLogger(__name__)
 
@@ -435,12 +435,10 @@ def build_protocol_pdf(protocol: SessionProtocol, *, internal: bool, permissions
 
     # NÖ-Texte nur für die interne Fassung entschlüsseln
     def add_votes(item):
-        # Namentliche Abstimmung + Befangenheit (Issue #41)
-        votes = list(item.votes.select_related("person"))
-        item.roll_call_votes = (
-            [v for v in votes if v.vote in ("yes", "no", "abstain")] if item.voting_method == "roll_call" else []
-        )
-        item.excluded_persons = [v.person for v in votes if v.vote == "excluded"]
+        # Namentliche Abstimmung + Befangenheit (Issue #41), gezählt wie im Sitzungscockpit (Issue #1059)
+        votes = voting_service.protocol_votes(item)
+        item.roll_call_votes = votes.roll_call
+        item.excluded_persons = votes.excluded
         # Vorlagennummer in der Ö-Fassung nur, wenn die Vorlage selbst veröffentlicht ist (Issue #318);
         # in der internen Fassung nach dem Sichtrecht auf die Vorlage (das Sitzungsrecht genügt nicht)
         paper = item.paper

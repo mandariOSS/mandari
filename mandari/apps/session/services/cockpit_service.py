@@ -17,7 +17,9 @@ Sitzungsleitung und Protokollführung (Recht ``conduct_meetings``) steuern die S
 - **Abstimmung öffnen und schließen** zum aufgerufenen TOP. Das Ergebnis steht wie bisher in
   ``vote_result`` und den Summen; Einzelstimmen (offen, namentlich) erfasst die Abstimmungserfassung
   (``voting_service``), deren Summen das Schließen übernimmt. Summen prüft ``voting_service.check_counts``
-  gegen die stimmberechtigten Anwesenden.
+  gegen die stimmberechtigten Anwesenden. Einzelstimmen zählen nach derselben Regel wie in Erfassung und
+  Niederschrift (``voting_service.count_votes``, Issue #1059): Vor dem Schließen nennt das Cockpit, wessen Stimme
+  nicht zählt; das Schließen entfernt sie und vermerkt sie im Prüfprotokoll.
 - **Sperre nach dem Landesprofil** (Issue #754): Ist eine geheime Wahl oder Abstimmung bzw. die Beratung einer
   geheimhaltungspflichtigen Angelegenheit unzulässig, sobald ein Mitglied zugeschaltet teilnimmt
   (Niedersachsen), lehnt das Cockpit Öffnen, Schließen (Zuschaltung während der offenen Abstimmung) bzw.
@@ -52,6 +54,7 @@ from apps.session.models import (
     SessionProtocol,
     SessionTenant,
     SessionUser,
+    SessionVote,
 )
 from apps.session.services import attendance_service, participation_service, protocol_lock, voting_service
 from apps.session.visibility import NON_PUBLIC_MEETINGS
@@ -118,6 +121,9 @@ class CockpitState:
         default_factory=lambda: list(SessionAttendanceDisruption.RESPONSIBILITY_CHOICES)
     )
     interruption_hint: str = ""
+    #: offene Abstimmung mit Einzelstimmen (nur für Steuernde): Summen nach der gemeinsamen Regel und nicht gezählte
+    #: Stimmen, die das Schließen entfernt (Issue #1059)
+    vote_counted: voting_service.CountedVotes | None = None
     voting_methods: list[tuple[str, str]] = field(default_factory=lambda: list(SessionAgendaItem.VOTING_METHOD_CHOICES))
 
     @property
@@ -321,6 +327,14 @@ def build_state(meeting: SessionMeeting, permissions: Collection[str], *, versio
         if focus is not None
         else None
     )
+    vote_counted = None
+    if (
+        vote_item is not None
+        and vote_item.voting_method in voting_service.INDIVIDUAL_METHODS
+        and can_control(permissions)
+    ):
+        # Vor dem Schließen: Summen nach der Regel, mit der das Schließen zählt, und wessen Stimme nicht zählt
+        vote_counted = voting_service.count_votes(vote_item, voting_service.eligibility(meeting, vote_item))
     return CockpitState(
         meeting=meeting,
         can_control=can_control(permissions),
@@ -339,6 +353,7 @@ def build_state(meeting: SessionMeeting, permissions: Collection[str], *, versio
         remote_allowed=participation_service.remote_allowed(meeting),
         version=version,
         interruption_hint=participation_service.interruption_hint(meeting, [d for _a, d in disruptions]),
+        vote_counted=vote_counted,
     )
 
 
@@ -745,9 +760,21 @@ def close_vote(
     if result not in VOTE_RESULTS:
         raise CockpitError("Bitte das Ergebnis wählen: angenommen oder abgelehnt.")
     warning = ""
+    uncounted: list[dict[str, str]] = []
     if item.voting_method in voting_service.INDIVIDUAL_METHODS:
-        # Summen aus den Einzelstimmen der Abstimmungserfassung (eine Wahrheit)
-        voting_service.recompute_sums(item)
+        # Summen aus den Einzelstimmen der Abstimmungserfassung, die nach der gemeinsamen Regel zählen (Issue #1059).
+        # Nicht gezählte Ja-, Nein- und Enthaltungsstimmen entfernt das Schließen, wie es die Erfassung beim nächsten
+        # Speichern täte: Summen, Namensliste der Niederschrift und Erfassung stimmen danach überein.
+        counted = voting_service.count_votes(item, voting_service.eligibility(meeting, item))
+        if counted.uncounted:
+            SessionVote.objects.filter(pk__in=[vote.pk for vote, _reason in counted.uncounted]).delete()
+            uncounted = [
+                {"person": vote.person.display_name, "stimme": vote.get_vote_display(), "grund": reason}
+                for vote, reason in counted.uncounted
+            ]
+            names = "; ".join(f"{entry['person']} ({entry['stimme']}, {entry['grund']})" for entry in uncounted)
+            warning = f"Nicht gezählt und entfernt: {names}."
+        item.votes_yes, item.votes_no, item.votes_abstain = counted.sums
     else:
         yes, no, abstain = _count(data, "votes_yes"), _count(data, "votes_no"), _count(data, "votes_abstain")
         if yes + no + abstain == 0:
@@ -766,21 +793,19 @@ def close_vote(
         raise CockpitError(f"TOP {item.number}: {problem}")
     item.vote_closed_at = timezone.now()
     item.save(update_fields=["votes_yes", "votes_no", "votes_abstain", "vote_result", "vote_closed_at", "updated_at"])
-    audit.log_event(
-        "vote_result",
-        item,
-        tenant=tenant or meeting.tenant,
-        user=session_user,
-        changes={
-            "abstimmung": item.get_voting_method_display(),
-            "wahl": item.is_election,
-            "ergebnis": item.get_vote_result_display(),
-            "ja": item.votes_yes,
-            "nein": item.votes_no,
-            "enthaltung": item.votes_abstain,
-            "quelle": "Sitzungscockpit",
-        },
-    )
+    changes: dict[str, Any] = {
+        "abstimmung": item.get_voting_method_display(),
+        "wahl": item.is_election,
+        "ergebnis": item.get_vote_result_display(),
+        "ja": item.votes_yes,
+        "nein": item.votes_no,
+        "enthaltung": item.votes_abstain,
+        "quelle": "Sitzungscockpit",
+    }
+    if uncounted:
+        # Prüfprotokoll: welche Stimmen beim Schließen nicht gezählt und entfernt wurden (Issue #1059)
+        changes["nicht_gezaehlt"] = uncounted
+    audit.log_event("vote_result", item, tenant=tenant or meeting.tenant, user=session_user, changes=changes)
     message = (
         f"TOP {item.number}: {item.get_vote_result_display()} "
         f"(Ja {item.votes_yes} / Nein {item.votes_no} / Enthaltung {item.votes_abstain})."
