@@ -1,106 +1,137 @@
 [
   {
     "kgrnr": 107,
-    "name": "Anregungs- und Beschwerdeausschuss"
+    "name": "Anregungs- und Beschwerdeausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 109,
-    "name": "Arbeitsgruppe Kinderspielplätze und Jugendtreffpunkte"
+    "name": "Arbeitsgruppe Kinderspielplätze und Jugendtreffpunkte",
+    "members_page": true
   },
   {
     "kgrnr": 108,
-    "name": "Arbeitsgruppe Ortsbesichtigung"
+    "name": "Arbeitsgruppe Ortsbesichtigung",
+    "members_page": true
   },
   {
     "kgrnr": 111,
-    "name": "Arbeitsgruppe Sicherheit, Ordnung und Sauberkeit"
+    "name": "Arbeitsgruppe Sicherheit, Ordnung und Sauberkeit",
+    "members_page": true
   },
   {
     "kgrnr": 99,
-    "name": "Ausschuss für Schule und Sport"
+    "name": "Ausschuss für Schule und Sport",
+    "members_page": true
   },
   {
     "kgrnr": 98,
-    "name": "Ausschuss für Soziales, Senioren und Kultur"
+    "name": "Ausschuss für Soziales, Senioren und Kultur",
+    "members_page": true
   },
   {
     "kgrnr": 105,
-    "name": "Ausschuss für Stadtentwicklung, Umwelt und Mobilität"
+    "name": "Ausschuss für Stadtentwicklung, Umwelt und Mobilität",
+    "members_page": true
   },
   {
     "kgrnr": 106,
-    "name": "Ausschuss für Wirtschaftsförderung, Strukturwandel und Tourismus"
+    "name": "Ausschuss für Wirtschaftsförderung, Strukturwandel und Tourismus",
+    "members_page": true
   },
   {
     "kgrnr": 110,
-    "name": "Beirat für Inklusion und gesellschaftliche Teilhabe"
+    "name": "Beirat für Inklusion und gesellschaftliche Teilhabe",
+    "members_page": true
   },
   {
     "kgrnr": 112,
-    "name": "FREIE WÄHLER"
+    "name": "FREIE WÄHLER",
+    "members_page": true
   },
   {
     "kgrnr": 103,
-    "name": "Haupt- und Finanzausschuss"
+    "name": "Haupt- und Finanzausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 5,
-    "name": "Jugendhilfeausschuss"
+    "name": "Jugendhilfeausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 113,
-    "name": "LINKE-Fraktion"
+    "name": "LINKE-Fraktion",
+    "members_page": true
   },
   {
     "kgrnr": 102,
-    "name": "Wahlausschuss"
+    "name": "Wahlausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 1,
-    "name": "Rat der Stadt Eschweiler"
+    "name": "Rat der Stadt Eschweiler",
+    "members_page": true
   },
   {
     "kgrnr": 100,
-    "name": "Bau- und Vergabeausschuss"
+    "name": "Bau- und Vergabeausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 7,
-    "name": "Planungs-, Umwelt- und Bauausschuss"
+    "name": "Planungs-, Umwelt- und Bauausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 8,
-    "name": "Rechnungsprüfungsausschuss"
+    "name": "Rechnungsprüfungsausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 13,
-    "name": "Wahlprüfungsausschuss"
+    "name": "Wahlprüfungsausschuss",
+    "members_page": true
+  },
+  {
+    "kgrnr": 15,
+    "name": "Arbeitsgruppe Ortsbesichtigung",
+    "members_page": false
   },
   {
     "kgrnr": 97,
-    "name": "Ausschuss für Chancengerechtigkeit und Integration"
+    "name": "Ausschuss für Chancengerechtigkeit und Integration",
+    "members_page": true
   },
   {
     "kgrnr": 3,
-    "name": "SPD-Fraktion"
+    "name": "SPD-Fraktion",
+    "members_page": true
   },
   {
     "kgrnr": 18,
-    "name": "CDU-Fraktion"
+    "name": "CDU-Fraktion",
+    "members_page": true
   },
   {
     "kgrnr": 21,
-    "name": "GRÜNE-Fraktion"
+    "name": "GRÜNE-Fraktion",
+    "members_page": true
   },
   {
     "kgrnr": 89,
-    "name": "BASIS-Fraktion"
+    "name": "BASIS-Fraktion",
+    "members_page": true
   },
   {
     "kgrnr": 19,
-    "name": "FDP-Fraktion"
+    "name": "FDP-Fraktion",
+    "members_page": true
   },
   {
     "kgrnr": 90,
-    "name": "AfD-Fraktion"
+    "name": "AfD-Fraktion",
+    "members_page": true
   }
 ]

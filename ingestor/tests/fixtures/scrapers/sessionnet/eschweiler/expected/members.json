@@ -5,7 +5,9 @@
     "party": "SPD",
     "role": "Vorsitz",
     "section": "Vorsitzende/r",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -13,7 +15,9 @@
     "party": "CDU",
     "role": "Stv. Vorsitz",
     "section": "Stv. Vorsitzende/r",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 84,
@@ -21,7 +25,9 @@
     "party": "SPD",
     "role": "Ratsmitglied",
     "section": "Ratsmitglieder SPD-Fraktion",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 705,
@@ -29,7 +35,9 @@
     "party": "SPD",
     "role": "Ratsmitglied",
     "section": "Ratsmitglieder SPD-Fraktion",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 1043,
@@ -37,7 +45,9 @@
     "party": "CDU",
     "role": "Ratsmitglied",
     "section": "Ratsmitglieder CDU-Fraktion",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 421,
@@ -45,7 +55,9 @@
     "party": "CDU",
     "role": "Ratsmitglied",
     "section": "Ratsmitglieder CDU-Fraktion",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 960,
@@ -53,7 +65,9 @@
     "party": "BASIS",
     "role": "Ratsmitglied",
     "section": "Ratsmitglieder BASIS-Fraktion",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -61,7 +75,9 @@
     "party": "AfD",
     "role": "Ratsmitglied",
     "section": "Ratsmitglieder AfD-Fraktion",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -69,7 +85,9 @@
     "party": "AfD",
     "role": "Ratsmitglied",
     "section": "Ratsmitglieder AfD-Fraktion",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -77,7 +95,9 @@
     "party": "Bündnis 90/Die Grünen",
     "role": "Ausschussmitglied",
     "section": "Weitere beratende Mitglieder",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 1491,
@@ -85,6 +105,8 @@
     "party": "LINKE",
     "role": "Ausschussmitglied",
     "section": "Weitere beratende Mitglieder",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   }
 ]
