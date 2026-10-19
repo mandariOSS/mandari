@@ -39,10 +39,19 @@ from django.views.generic import TemplateView
 
 from apps.common.next_url import safe_next_url
 
-from . import security_notifications, webauthn_service
+from . import security_audit, security_notifications, webauthn_service
 from .forms import LoginForm, PasswordResetForm, RegistrationForm, SetPasswordForm
 from .models import LoginAttempt
-from .second_factor import CONFIRMED, LOCKED, MAX_FAILURES, client_ip, confirm_setup, log_attempt, recent_failures
+from .second_factor import (
+    CONFIRMED,
+    FAILURE_WINDOW_MINUTES,
+    LOCKED,
+    MAX_FAILURES,
+    client_ip,
+    confirm_setup,
+    log_attempt,
+    recent_failures,
+)
 from .services import SessionService, TwoFactorService
 from .two_factor_policy import (
     POLICY_CACHE_SESSION_KEY,
@@ -136,13 +145,24 @@ class LoginView(View):
         # Check for pending invitation
         invitation = self._get_pending_invitation(request)
 
-        if self.is_rate_limited(ip_address, email):
+        limit = self.rate_limit_reason(ip_address, email)
+        if limit:
+            # Sicherheitsprotokoll, höchstens ein Eintrag je Adresse und Zeitfenster (Issue #366)
+            security_audit.record_throttled(
+                request,
+                step=security_audit.STEP_PASSWORD,
+                limit=limit,
+                window_minutes=LOGIN_WINDOW_MINUTES,
+                identifier=email,
+            )
             messages.error(request, "Zu viele fehlgeschlagene Anmeldeversuche. Bitte warte 15 Minuten.")
             return render(
                 request,
                 self.template_name,
                 {
-                    "form": form,
+                    # Ungebunden: Ein gebundenes Formular prüfte beim Anzeigen der Fehler die Anmeldedaten
+                    # (authenticate), trotz Drosselung und mit einem Fehlversuch im Protokoll je Abweisung
+                    "form": LoginForm(initial={"email": email}, request=request),
                     "next": next_url,
                     "invitation": invitation,
                 },
@@ -241,21 +261,29 @@ class LoginView(View):
         return client_ip(request)
 
     def is_rate_limited(self, ip_address, email):
+        """Greift die Drosselung (siehe :meth:`rate_limit_reason`)?"""
+        return bool(self.rate_limit_reason(ip_address, email))
+
+    def rate_limit_reason(self, ip_address, email) -> str:
         """
         Fehlversuche der letzten 15 Minuten: je Adresse, je IPv6-/64-Netz und je Konto.
 
         Die Zählung je Konto greift auch dann, wenn die Versuche von vielen Adressen kommen;
         ihre Schwelle liegt höher, damit Tippfehler der Person selbst nicht sofort sperren.
+
+        Returns: die gegriffene Schwelle (``security_audit.LIMIT_*``) oder ``""``.
         """
         threshold = timezone.now() - timedelta(minutes=LOGIN_WINDOW_MINUTES)
         failures = LoginAttempt.objects.filter(was_successful=False, timestamp__gte=threshold)
         if failures.filter(ip_address=ip_address).count() >= LOGIN_FAILURES_PER_IP:
-            return True
+            return security_audit.LIMIT_ADDRESS
         netz = _ipv6_network(ip_address)
         if netz and cache.get(_network_failure_key(netz), 0) >= LOGIN_FAILURES_PER_IP:
-            return True
+            return security_audit.LIMIT_NETWORK
         email = (email or "").strip()
-        return bool(email) and failures.filter(email__iexact=email).count() >= LOGIN_FAILURES_PER_ACCOUNT
+        if email and failures.filter(email__iexact=email).count() >= LOGIN_FAILURES_PER_ACCOUNT:
+            return security_audit.LIMIT_ACCOUNT
+        return ""
 
     def log_attempt(self, request, email, success):
         """Log login attempt for security monitoring."""
@@ -325,6 +353,17 @@ class LoginTwoFactorView(View):
     def _log(self, request, user, success: bool) -> None:
         log_attempt(request, user, success=success)
 
+    @staticmethod
+    def log_throttled(request, user, step: str = security_audit.STEP_SECOND_FACTOR) -> None:
+        """Abgewiesener Code (zu viele Fehlversuche des Kontos) im Sicherheitsprotokoll (Issue #366)."""
+        security_audit.record_throttled(
+            request,
+            step=step,
+            limit=security_audit.LIMIT_ACCOUNT,
+            window_minutes=FAILURE_WINDOW_MINUTES,
+            user=user,
+        )
+
     def get(self, request):
         _data, user = self._pending(request)
         if user is None:
@@ -340,6 +379,7 @@ class LoginTwoFactorView(View):
 
         if self._recent_failures(user) >= MAX_2FA_FAILURES:
             request.session.pop(PENDING_2FA_SESSION_KEY, None)
+            self.log_throttled(request, user)
             messages.error(
                 request, "Zu viele fehlgeschlagene Versuche. Bitte warte 15 Minuten und melde dich erneut an."
             )
@@ -498,6 +538,7 @@ class TwoFactorEnrollView(View):
         if result == LOCKED:
             if pending is not None:
                 request.session.pop(PENDING_2FA_SESSION_KEY, None)
+                LoginTwoFactorView.log_throttled(request, user, security_audit.STEP_ENROLLMENT)
                 messages.error(
                     request, "Zu viele fehlgeschlagene Versuche. Bitte warte 15 Minuten und melde dich erneut an."
                 )
