@@ -5,11 +5,7 @@
 <h1 class="h1">{% if rueckmeldung_offen %}Bitte um Rückmeldung{% else %}Erinnerung: Fraktionssitzung{% endif %}</h1>
 <p class="muted">{{ organization.name }}</p>
 <p>Hallo {{ user.first_name|default:user.email }},</p>
-{% if rueckmeldung_offen %}
-<p>zur folgenden Sitzung fehlt noch deine Rückmeldung. Bitte sage in der Sitzungsansicht zu oder ab.</p>
-{% else %}
-<p>zur Erinnerung: die folgende Sitzung beginnt in etwa <strong>{{ hours_before }} Stunden</strong>.</p>
-{% endif %}
+{% if rueckmeldung_offen %}<p>zur folgenden Sitzung fehlt noch deine Rückmeldung. Bitte sage in der Sitzungsansicht zu oder ab.</p>{% else %}<p>zur Erinnerung: die folgende Sitzung beginnt in etwa <strong>{{ hours_before }} Stunden</strong>.</p>{% endif %}
 <div class="card card-warning">
     <p><strong>{{ meeting.title }}</strong></p>
     <table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">

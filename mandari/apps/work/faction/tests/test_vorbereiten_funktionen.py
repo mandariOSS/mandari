@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 import smtplib
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 from unittest import mock
 
 import pytest
@@ -202,7 +202,7 @@ def test_sofort_speichern_nur_mit_recht(welt: dict[str, Any], client_for: Any, m
 def test_sofort_speichern_mandantentrennung(welt: dict[str, Any], client_for: Any, make_member: Any) -> None:
     from apps.common.tests.factories import OrganizationFactory
 
-    fremde = OrganizationFactory(name="Andere Fraktion", slug="andere-fraktion")
+    fremde: Organization = cast(Any, OrganizationFactory)(name="Andere Fraktion", slug="andere-fraktion")
     fremd = make_member(fremde, [], email="fremd@example.org", is_admin=True)
     # Über die eigene Organisation auf die Sitzung der anderen: nicht gefunden
     antwort = _json(client_for(fremd.user), _felder_url(welt, welt["haupt"], org=fremde), {"title": "Fremd"})
@@ -381,7 +381,7 @@ def test_ris_ohne_kommune_kein_knopf(welt: dict[str, Any], client_for: Any) -> N
 
 
 def _eingeladen(welt: dict[str, Any]) -> FactionMeeting:
-    meeting = welt["meeting"]
+    meeting: FactionMeeting = welt["meeting"]
     meeting.status = "invited"
     meeting.invitation_sent = True
     meeting.invitation_sent_at = timezone.now() - timedelta(hours=1)

@@ -212,8 +212,10 @@ def uebernehmen(
         agenda.lock_meeting(meeting)
         eltern = None
         if parent_id:
+            if not _ist_uuid(parent_id):
+                raise UebernahmeError("Den gewählten TOP gibt es nicht mehr. Bitte laden Sie die Seite neu.")
             eltern = FactionAgendaItem.objects.filter(
-                pk=parent_id if _ist_uuid(parent_id) else None,
+                pk=parent_id,
                 meeting=meeting,
                 parent__isnull=True,
                 is_approval_item=False,
