@@ -15,7 +15,7 @@ eine Randspalte mit den nächsten Sitzungen und Angaben (früher Reiter „Infor
 {% include "partials/tombstone_notice.html" with object=organization %}
 
 <header class="rounded-2xl bg-gray-100 dark:bg-gray-800/60 px-5 sm:px-8 pt-5 sm:pt-6 pb-7 sm:pb-8">
-    <c-insight.zurueck href="{% url 'insight_core:insight:organization_list' %}">Gremien</c-insight.zurueck>
+    <c-insight.zurueck :ziel="insight_bereich_ziel" href="{% url 'insight_core:insight:organization_list' %}">Gremien</c-insight.zurueck>
     <div class="flex flex-col sm:flex-row sm:items-start gap-4">
         <div class="flex-1 min-w-0">
             <h1 class="max-w-4xl text-[1.75rem] sm:text-[2.25rem] leading-[1.12] font-bold tracking-[-0.02em] text-gray-900 dark:text-white break-words">{{ organization.name }}</h1>

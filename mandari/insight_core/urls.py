@@ -34,6 +34,27 @@ insight_patterns = [
     path("kommunen/stoebern/", ohne_index(views.kommunen_stoebern), name="kommunen_stoebern"),
     # Bürgerportal je Körperschaft (Issue #317): eigener Einstieg, optional mit Zielseite
     path("k/<slug:slug>/", views.portal_entry, name="portal_entry"),
+    # Listen je Kommune mit eigener Adresse, ohne Sitzung (Issue #939, navigation.KOMMUNEN_LISTEN); vor dem
+    # Einstieg mit Pfad, der sonst auf die Liste im gemeinsamen Portal weiterleitet
+    path(
+        "k/<slug:slug>/termine/",
+        listenseite(views.portal_list),
+        {"liste": "meeting_list"},
+        name="portal_meeting_list",
+    ),
+    path("k/<slug:slug>/vorgaenge/", listenseite(views.portal_list), {"liste": "paper_list"}, name="portal_paper_list"),
+    path(
+        "k/<slug:slug>/gremien/",
+        listenseite(views.portal_list),
+        {"liste": "organization_list"},
+        name="portal_organization_list",
+    ),
+    path(
+        "k/<slug:slug>/personen/",
+        listenseite(views.portal_list),
+        {"liste": "person_list"},
+        name="portal_person_list",
+    ),
     path("k/<slug:slug>/<path:rest>", views.portal_entry, name="portal_entry_path"),
     # Gremien (Organizations)
     path("gremien/", listenseite(views.OrganizationListView.as_view()), name="organization_list"),

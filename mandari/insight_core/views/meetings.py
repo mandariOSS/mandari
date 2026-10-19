@@ -26,7 +26,7 @@ from ..models import (
     OParlMeeting,
     OParlOrganization,
 )
-from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -34,7 +34,7 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class MeetingListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
+class MeetingListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Sitzungen."""
 
     model = OParlMeeting
@@ -50,13 +50,21 @@ class MeetingListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        from ..seo import get_page_seo
+        from ..seo import get_list_seo
 
-        context["seo"] = get_page_seo(
+        body = get_active_body(self.request)
+        # Kanonisch ist die Adresse je Kommune (Issue #939)
+        context["seo"] = get_list_seo(
             self.request,
+            "meeting_list",
             title="Sitzungen & Termine",
-            description="Aktuelle und vergangene Sitzungen der kommunalen Gremien mit Tagesordnungen und Dokumenten.",
-            body=get_active_body(self.request),
+            description=(
+                f"Aktuelle und vergangene Sitzungen der Gremien in {body.get_display_name()} mit Tagesordnungen "
+                "und Dokumenten."
+                if body
+                else "Aktuelle und vergangene Sitzungen der kommunalen Gremien mit Tagesordnungen und Dokumenten."
+            ),
+            body=body,
         ).to_dict()
         return context
 

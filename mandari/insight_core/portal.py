@@ -8,6 +8,11 @@ festgelegt; alle Links innerhalb des Portals bleiben in diesem Kontext, weil der
 der Sitzung des Browsers festhält (``PORTAL_SESSION_KEY``). „Alle Kommunen“ bzw. die Auswahl einer
 anderen Kommune verlassen den Kontext wieder.
 
+Die Listen je Kommune (``/insight/k/<slug>/vorgaenge/`` usw., Issue #939) zeigen denselben Kontext, halten ihn aber
+nicht in der Sitzung fest (``betrachten``): Suchmaschinen schicken kein Cookie zurück, jeder Aufruf legte sonst eine
+Sitzung an. Links aus einem solchen Kontext führen über den Einstieg (``PortalContext.url``), der ihn beim Klick
+festhält.
+
 Optional ordnet ``settings.PORTAL_HOSTS`` einem eigenen Hostnamen fest eine Körperschaft zu. Die
 Middleware wertet den Host-Header nur über ``request.get_host()`` aus (Prüfung gegen
 ``ALLOWED_HOSTS``) und nur für Hosts, die zusätzlich ausdrücklich in ``ALLOWED_HOSTS`` stehen – ein
@@ -40,6 +45,7 @@ from django.urls import Resolver404, resolve, reverse
 from django.utils.html import format_html
 
 from insight_core.farbskala import skala
+from insight_core.navigation import KOMMUNEN_LISTEN
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -95,12 +101,54 @@ class PortalContext:
     accent_color: str | None
     #: ``src`` (und bei einem Kommunen-Logo ``srcset``/``width``/``height``) für ``<img {{ … }}>``
     logo_attrs: str = ""
+    #: Nur für diese Anfrage, nicht in der Sitzung (Listen je Kommune ohne Einstieg, ``betrachten``)
+    nur_anfrage: bool = False
 
     @property
     def home_url(self) -> str:
         if self.via_host:
             return reverse("insight_core:insight:portal_home")
         return reverse("insight_core:insight:portal_entry", kwargs={"slug": self.slug})
+
+    def url(self, name: str) -> str:
+        """
+        Ziel der Portalseite ``name`` (URL-Name ohne Namensraum) in diesem Kontext.
+
+        Listen mit eigener Adresse je Kommune führen dorthin (``/insight/k/<slug>/vorgaenge/``, Issue #939). Hält
+        die Sitzung den Kontext nicht (``nur_anfrage``), führen die übrigen Seiten über den Einstieg mit Pfad
+        (``/insight/k/<slug>/karte/``), der ihn beim Klick festhält – sonst landete der Klick ohne Sitzung bei der
+        Kommunenauswahl. Auf einem Portal-Host bleibt alles bei den gewohnten Adressen.
+        """
+        ziel = reverse(f"insight_core:insight:{name}")
+        if self.via_host or not self.slug:
+            return ziel
+        liste = KOMMUNEN_LISTEN.get(name)
+        if liste is not None:
+            return reverse(f"insight_core:insight:{liste}", kwargs={"slug": self.slug})
+        if self.ueber_einstieg(name):
+            rest = ziel.removeprefix(reverse("insight_core:insight:portal_home"))
+            return reverse("insight_core:insight:portal_entry_path", kwargs={"slug": self.slug, "rest": rest})
+        return ziel
+
+    def ueber_einstieg(self, name: str) -> bool:
+        """
+        Führt ``url(name)`` über den Einstieg mit Pfad (``/insight/k/<slug>/karte/``)?
+
+        Der Einstieg hält den Kontext in der Sitzung fest (``enter``): Links dorthin tragen ``rel="nofollow"``, damit
+        Suchmaschinen sie nicht aufrufen und dabei Sitzungen anlegen (``rel``). Die Listen je Kommune bleiben ``follow``.
+        """
+        return (
+            self.nur_anfrage
+            and not self.via_host
+            and bool(self.slug)
+            and name not in KOMMUNEN_LISTEN
+            and name in DEEP_LINK_NAMES
+            and name != "portal_home"
+        )
+
+    def rel(self, name: str) -> str:
+        """``rel`` des Links auf ``url(name)``: ``nofollow`` über den Einstieg, sonst leer."""
+        return "nofollow" if self.ueber_einstieg(name) else ""
 
     @property
     def can_leave(self) -> bool:
@@ -272,7 +320,7 @@ def _resolve(request: HttpRequest) -> PortalContext | None:
     return build_context(body, via_host=False, slug=str(state.get("slug") or body.slug or ""))
 
 
-def build_context(body: OParlBody, *, via_host: bool, slug: str) -> PortalContext:
+def build_context(body: OParlBody, *, via_host: bool, slug: str, nur_anfrage: bool = False) -> PortalContext:
     fallback = tenant_branding(body)
     logo_url = body.logo.url if body.logo else fallback.get("logo_url")
     logo_attrs = body.logo_img_attrs if body.logo else (format_html('src="{}"', logo_url) if logo_url else "")
@@ -285,6 +333,7 @@ def build_context(body: OParlBody, *, via_host: bool, slug: str) -> PortalContex
         logo_url=logo_url,
         accent_color=accent or fallback.get("accent_color"),
         logo_attrs=logo_attrs,
+        nur_anfrage=nur_anfrage,
     )
 
 
@@ -329,6 +378,23 @@ def enter(request: HttpRequest, body: OParlBody, slug: str) -> PortalContext:
     if request.session.get("active_body_id") != str(body.pk):
         request.session["active_body_id"] = str(body.pk)
     portal = build_context(body, via_host=False, slug=slug)
+    request._insight_portal = portal  # type: ignore[attr-defined]
+    return portal
+
+
+def betrachten(request: HttpRequest, body: OParlBody, slug: str) -> PortalContext:
+    """
+    Kontext einer Liste je Kommune (``/insight/k/<slug>/vorgaenge/``, Issue #939) – ohne in die Sitzung zu schreiben.
+
+    Suchmaschinen schicken kein Cookie zurück: Schriebe die Liste den Kontext fest wie ``enter``, entstünde bei jedem
+    ihrer Aufrufe eine neue Sitzung in der Datenbank. Hält die Sitzung schon den Kontext dieser Kommune (Klick von
+    der Stadtseite), gilt er weiter; sonst gilt er nur für diese Anfrage (``nur_anfrage``). Auf einem Portal-Host
+    bleibt dessen Kontext (der View prüft vorher, dass die Kommune dazu passt).
+    """
+    vorhanden = get_portal(request)
+    if vorhanden is not None and (vorhanden.via_host or vorhanden.body.pk == body.pk):
+        return vorhanden
+    portal = build_context(body, via_host=False, slug=slug, nur_anfrage=True)
     request._insight_portal = portal  # type: ignore[attr-defined]
     return portal
 

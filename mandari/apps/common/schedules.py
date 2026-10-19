@@ -35,6 +35,8 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     befehl_als_zeitplan("sync_plan_boundaries", crontab="50 4 * * *", zeitgrenze=3000, ziel=ziel)
     # Verwaiste Konten nach Frist löschen (Issue #238)
     befehl_als_zeitplan("cleanup_orphaned_accounts", crontab="45 3 * * *", zeitgrenze=1800, ziel=ziel)
+    # Abgelaufene Sitzungen löschen (Issue #1091): Django räumt django_session nicht selbst auf
+    befehl_als_zeitplan("sitzungen_aufraeumen", crontab="25 4 * * *", zeitgrenze=1800, ziel=ziel)
 
     # Dokument-Cache (docs/FILE_CACHE.md): stündlich die neuesten fehlenden Dateien nachladen. Die
     # Zeitgrenze liegt unter dem Abstand, damit ein abgebrochener Lauf den nächsten nicht sperrt.

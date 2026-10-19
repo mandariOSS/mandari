@@ -4,5 +4,5 @@ Ziel der Leiste unten am Handy (Issue #783, Stufe 3, Variante C).
   <c-insight.tab href="…" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.tab>
 Aktiv, wenn ``area`` dem Bereich der Seite entspricht; das Markup teilt sich Insight mit Work: c-rahmen.tab (Issue #852).
 {% endcomment %}
-<c-vars href="" icon="" area="" />
-<c-rahmen.tab href="{{ href }}" icon="{{ icon }}" area="{{ area }}" aktuell="{{ insight_area }}">{{ slot }}</c-rahmen.tab>
+<c-vars href="" icon="" area="" rel="" />
+<c-rahmen.tab href="{{ href }}" icon="{{ icon }}" area="{{ area }}" aktuell="{{ insight_area }}" rel="{{ rel }}">{{ slot }}</c-rahmen.tab>

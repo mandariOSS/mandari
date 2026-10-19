@@ -13,7 +13,7 @@ from django.http import HttpRequest
 from django.utils.functional import SimpleLazyObject
 
 from .models import OParlBody
-from .navigation import breadcrumb_area, more_area_listed, nav_area
+from .navigation import KOMMUNEN_LISTEN, breadcrumb_area, more_area_listed, nav_area
 from .publication import DETAIL_PAGES, PORTAL_NAMESPACE, body_id_of
 
 
@@ -82,6 +82,37 @@ def _seiten_kommune(request: HttpRequest, gewaehlt: OParlBody | None, match: Any
     return OParlBody.objects.filter(pk=body_id).first()
 
 
+def _bereich_ziel(url_name: str | None, portal: Any, page_body: OParlBody | None, fremd: bool) -> dict[str, Any]:
+    """
+    Ziel der Brotkrume des Bereichs („Vorgänge“) und des Wegs zurück am Handy: ``{"href": …, "nofollow": …}``.
+
+    Im Bürgerportal einer Körperschaft und für Seiten einer anderen als der gewählten Kommune führen die Listen der
+    Sitzungen, Vorgänge, Gremien und Personen auf ihre Adresse je Kommune (``/insight/k/<slug>/vorgaenge/``, Issue
+    #939) – ohne Umweg, Suchmaschinen folgen ihr. Ohne solche Adresse wählt der Link bei einer fremden Kommune erst
+    die Kommune (``nofollow``, Issue #914). Leer auf der Übersicht des Bereichs selbst und außerhalb der Bereiche.
+    """
+    from urllib.parse import quote
+
+    from django.urls import reverse
+
+    from .services.indexierung import liste_der_kommune
+
+    bereich = breadcrumb_area(url_name)
+    if not bereich or bereich["current"]:
+        return {}
+    liste = str(bereich["list_name"])
+    if portal is not None:
+        return {"href": portal.url(liste), "nofollow": False}
+    ziel = reverse(f"insight_core:insight:{liste}")
+    if not fremd or page_body is None:
+        return {"href": ziel, "nofollow": False}
+    eigene = liste_der_kommune(page_body, liste)
+    if eigene:
+        return {"href": eigene, "nofollow": False}
+    waehlen = reverse("insight_core:insight:set_body", args=[page_body.pk])
+    return {"href": f"{waehlen}?weiter={quote(ziel)}", "nofollow": True}
+
+
 def active_body(request: HttpRequest) -> dict[str, Any]:
     """
     Stellt die aktive Kommune (Body) im Template-Context bereit.
@@ -123,11 +154,12 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
                 except OParlBody.DoesNotExist:
                     body = None
 
-            # Kein Fallback mehr - wenn keine Kommune ausgewählt, zeigen wir alle
-            # Nur bei erster Nutzung (keine Session) setzen wir auf "all"
+            # Ohne Auswahl gelten alle Kommunen. Nicht in die Sitzung schreiben (Issue #1091): Der Standardwert
+            # legte für jeden anonymen Aufruf eine Sitzungszeile an, auch für jeden Abruf einer Suchmaschine, die
+            # das Cookie nicht zurückschickt (1,4 Mio. Zeilen); ein fehlender Wert bedeutet ohnehin „alle“
+            # (is_all_bodies_mode)
             if body_id is None and OParlBody.objects.listed().exists():
                 show_all_bodies = True
-                request.session["active_body_id"] = "all"
 
     except Exception:
         # Datenbank noch nicht migriert oder andere Fehler
@@ -168,7 +200,11 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
     body_page = (
         match is not None
         and match.namespace == PORTAL_NAMESPACE
-        and (match.url_name in BODY_PAGES or match.url_name == "portal_entry")
+        and (
+            match.url_name in BODY_PAGES
+            or match.url_name == "portal_entry"
+            or match.url_name in KOMMUNEN_LISTEN.values()
+        )
     )
 
     # Kommune der Seite: auf Detailseiten die des Eintrags (Herkunft im Fuß, Brotkrumen, Datenstand)
@@ -204,6 +240,17 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
         subscriptions=bool(getattr(settings, "INSIGHT_SUBSCRIPTIONS_ENABLED", False)),
     )
 
+    page_body_foreign = page_body is not None and portal is None and (body is None or str(page_body.pk) != str(body.pk))
+    try:
+        bereich_ziel = _bereich_ziel(
+            match.url_name if match is not None and match.namespace == PORTAL_NAMESPACE else None,
+            portal,
+            page_body,
+            page_body_foreign,
+        )
+    except Exception:  # noqa: BLE001 - der Rahmen darf keine Seite brechen (wie oben)
+        bereich_ziel = {}
+
     return {
         "active_body": body,
         "page_body": page_body,
@@ -211,9 +258,9 @@ def active_body(request: HttpRequest) -> dict[str, Any]:
         # Zweite Zeile in „Zuletzt besucht“: „Kreisfreie Stadt, Nordrhein-Westfalen“
         "page_body_ort": ort_der_koerperschaft(page_body) if page_body is not None else "",
         # Seite einer anderen als der gewählten Kommune: Brotkrumen wählen beim Klick erst diese Kommune
-        "page_body_foreign": page_body is not None
-        and portal is None
-        and (body is None or str(page_body.pk) != str(body.pk)),
+        "page_body_foreign": page_body_foreign,
+        # Ziel der Brotkrume des Bereichs und des Wegs zurück am Handy (Listen je Kommune, Issue #939)
+        "insight_bereich_ziel": bereich_ziel,
         # Stadtseite der Kommune der Seite (/insight/k/<slug>/): Ziel der Brotkrume ohne Umweg über die Wahl, so
         # finden Suchmaschinen ohne Sitzung die Stadtseiten (Issue #914); leer ohne Slug oder nicht gelistet
         "page_body_stadtseite": stadtseite_url(page_body) if portal is None else "",
