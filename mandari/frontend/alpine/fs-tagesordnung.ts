@@ -57,6 +57,7 @@ type SortableKlasse = new (
     draggable: string
     animation: number
     ghostClass: string
+    forceFallback: boolean
     onEnd: (event: ZiehEreignis) => void
   },
 ) => unknown
@@ -169,6 +170,8 @@ export const fsTagesordnung = defineComponent(() => {
           draggable: '[data-verschiebbar]',
           animation: 150,
           ghostClass: 'bewegt',
+          // Ziehen über Maus-/Zeigerereignisse statt HTML5 Drag and Drop: gleiches Verhalten in allen Browsern
+          forceFallback: true,
           onEnd: (event) => {
             if (event.oldIndex === event.newIndex) return
             const zeilen = Array.from(liste.querySelectorAll<HTMLElement>(':scope > [data-verschiebbar]'))
