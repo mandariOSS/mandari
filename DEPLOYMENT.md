@@ -1469,8 +1469,10 @@ Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vo
 URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE_STORAGE` nennt.
 `AUDIT_EXPORT_MAX_ROWS` (Vorgabe 100000) begrenzt Exporte aus der Oberfläche, größere Zeiträume
 exportiert `export_audit_log`; `SECURITY_AUDIT_RETENTION_DAYS` (Vorgabe 365) ist die Frist des
-Sicherheitsprotokolls, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30, festgelegt durch den Betreiber am 16.10.2026; 0 = keine Löschung)
-die der Anmeldeversuche für die Drosselung.
+Sicherheitsprotokolls, `SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS` (Vorgabe 0 = keine Löschung) die Frist seiner
+Archivpakete ab Ablage, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30, festgelegt durch den Betreiber am 16.10.2026;
+0 = keine Löschung) die der Anmeldeversuche für die Drosselung. Die Frist der Archivpakete eines Session-Mandanten
+steht in dessen Datenschutz-Einstellungen (`session_privacy_purge` wendet sie an).
 
 Die Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218) erzeugt der Zeitplan
 `befehl:build_meeting_packages`; die Oberfläche legt nur Anforderungen an, ohne Worker bleibt eine

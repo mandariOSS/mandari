@@ -157,6 +157,7 @@ class LoginVerifyView(View):
             return _error(EXPIRED_MESSAGE, status=401)
         if step._recent_failures(user) >= MAX_2FA_FAILURES:
             request.session.pop(PENDING_2FA_SESSION_KEY, None)
+            step.log_throttled(request, user)
             return _error("Zu viele fehlgeschlagene Versuche. Bitte warte 15 Minuten.", status=429)
         try:
             webauthn_service.authenticate(request, user, _credential(_json_body(request)))

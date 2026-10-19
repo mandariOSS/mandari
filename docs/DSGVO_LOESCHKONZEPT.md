@@ -46,11 +46,14 @@ Mandatsende; Audit-Log 5–10 Jahre; NÖ-Inhalte gemäß örtlicher
 Archivsatzung (häufig dauerhafte Aufbewahrung — dann Frist deaktiviert
 lassen und dem Kommunalarchiv anbieten).
 
-Archivpakete des Audit-Logs löscht mandari nicht selbst; die Kommune bietet
-sie ihrem Archiv an oder legt eine eigene Frist fest. Das plattformweite
-Sicherheitsprotokoll wird nach `SECURITY_AUDIT_RETENTION_DAYS` (Standard
-365 Tage) mit `purge_security_audit_log` nach demselben Verfahren
-archiviert und gelöscht. Die Anmeldeversuche der Drosselung (`LoginAttempt`) löscht der Zeitplan
+Archivpakete des Audit-Logs haben eine eigene Frist: `archive_years` in den
+Datenschutz-Einstellungen, in Jahren ab Ablage des Pakets (Standard 0 = keine
+Löschung, Issue #366). Vorher bietet die Kommune sie ihrem Archiv an. Der
+Löschlauf löscht abgelaufene Pakete und nennt sie in seinem Protokolleintrag.
+Das plattformweite Sicherheitsprotokoll wird nach `SECURITY_AUDIT_RETENTION_DAYS`
+(Standard 365 Tage) mit `purge_security_audit_log` nach demselben Verfahren
+archiviert und gelöscht; seine Archivpakete löscht derselbe Lauf nach
+`SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS` (Standard 0 = keine Löschung). Die Anmeldeversuche der Drosselung (`LoginAttempt`) löscht der Zeitplan
 `befehl:purge_login_attempts` täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026,
 [PROTOKOLLE.md](PROTOKOLLE.md); 0 = keine Löschung); ein Archivpaket entsteht dafür nicht (Issue #366).
 

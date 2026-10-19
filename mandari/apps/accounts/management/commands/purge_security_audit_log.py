@@ -6,9 +6,13 @@ Einträge älter als ``SECURITY_AUDIT_RETENTION_DAYS`` (Standard 365 Tage) werde
 und als Archivpaket (JSON, CSV, Kettenanker, SHA256SUMS) im Archivspeicher abgelegt; danach
 werden sie gelöscht und der Kettenanker gesetzt, damit die Kette prüfbar bleibt.
 
-    python manage.py purge_security_audit_log             # löschen
-    python manage.py purge_security_audit_log --dry-run   # nur zählen
-    python manage.py purge_security_audit_log --days 180  # abweichende Frist
+Archivpakete selbst löscht der Lauf nach ``SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS`` ab Ablage (Standard 0:
+keine Löschung, Issue #366); jede solche Löschung steht als Eingriff in den Betrieb im Sicherheitsprotokoll.
+
+    python manage.py purge_security_audit_log                      # löschen
+    python manage.py purge_security_audit_log --dry-run            # nur zählen
+    python manage.py purge_security_audit_log --days 180           # abweichende Frist
+    python manage.py purge_security_audit_log --archive-days 3650  # abweichende Frist der Archivpakete
 
 Gedacht für einen täglichen Cron-Lauf, siehe DEPLOYMENT.md („Geplante Aufgaben“).
 """
@@ -33,18 +37,54 @@ class Command(EinmaligMixin, BaseCommand):
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--days", type=int, help="Aufbewahrung in Tagen (Standard: SECURITY_AUDIT_RETENTION_DAYS)")
+        parser.add_argument(
+            "--archive-days",
+            type=int,
+            help="Aufbewahrung der Archivpakete in Tagen (Standard: SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS)",
+        )
         parser.add_argument("--dry-run", action="store_true", help="Nur zählen, nichts löschen")
 
     def handle(self, *args: Any, **options: Any) -> None:
+        dry_run = bool(options.get("dry_run"))
         days = options.get("days")
         if days is None:
             days = int(getattr(settings, "SECURITY_AUDIT_RETENTION_DAYS", 365))
         if days <= 0:
             self.stdout.write("Frist deaktiviert – nichts gelöscht.")
+        else:
+            self._purge_entries(days, dry_run=dry_run)
+        archive_days = options.get("archive_days")
+        if archive_days is None:
+            archive_days = int(getattr(settings, "SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS", 0))
+        if archive_days > 0:
+            self._purge_archives(archive_days, dry_run=dry_run)
+
+    def _purge_archives(self, days: int, *, dry_run: bool) -> None:
+        """Archivpakete des Sicherheitsprotokolls nach ihrer Frist löschen und den Eingriff protokollieren."""
+        from apps.accounts.models import SecurityAuditLog
+
+        removed = audit_archive.purge_archives(
+            audit_chain.SECURITY, None, timezone.now() - timedelta(days=days), dry_run=dry_run
+        )
+        if dry_run:
+            self.stdout.write(f"[DRY-RUN] Archivpakete: {len(removed)} älter als {days} Tage.")
             return
+        if removed:
+            SecurityAuditLog.objects.create(
+                event="betrieb",
+                details={
+                    "aktion": "archivpakete_geloescht",
+                    "anzahl": len(removed),
+                    "pakete": [item.name for item in removed],
+                    "frist_tage": days,
+                },
+            )
+        self.stdout.write(f"Archivpakete: {len(removed)} nach {days} Tagen gelöscht.")
+
+    def _purge_entries(self, days: int, *, dry_run: bool) -> None:
         cutoff = timezone.now() - timedelta(days=days)
         spec = audit_chain.SECURITY
-        if options.get("dry_run"):
+        if dry_run:
             found = audit_archive.expired_range(spec, None, cutoff)
             count = (found[1] - found[0] + 1) if found else 0
             self.stdout.write(f"[DRY-RUN] Sicherheitsprotokoll: {count} Einträge älter als {days} Tage.")
