@@ -9,6 +9,7 @@
  */
 
 import { Editor } from '@tiptap/core'
+import { isChangeOrigin } from '@tiptap/extension-collaboration'
 import Highlight from '@tiptap/extension-highlight'
 import Image from '@tiptap/extension-image'
 import Link from '@tiptap/extension-link'
@@ -34,10 +35,11 @@ import {
 import { preparationApp } from '../alpine/prepare-meeting'
 import { type NotizenFormat, sitzungsNotizen } from '../alpine/session-notes'
 import { vorbereitung } from '../alpine/vorbereitung'
-import type { CollabOptions, CollabResult, CollabUser, ReloadReason } from './collaboration'
+import type { CollabOptions, CollabResult, CollabStatus, CollabUser, ReloadReason } from './collaboration'
 import { initCollaboration } from './collaboration'
 import { renderDiff } from './diff'
 import { CommentMark } from './extensions/comment-mark'
+import { type ErwaehnbarePerson, Erwaehnung } from './extensions/erwaehnung'
 import { FindReplace } from './extensions/find-replace'
 import { Indent } from './extensions/indent'
 import { PageBreakNode } from './extensions/page-break-node'
@@ -236,9 +238,48 @@ export interface NotesEditorOptions {
   element: HTMLElement
   content: string
   placeholder?: string
+  /** Vorschlagsliste für @-Erwähnungen; ohne Liste kein Erwähnen */
+  personen?: ErwaehnbarePerson[]
+  /** Eigene Mitgliedschaft (Auslöser einer Erwähnung) */
+  ich?: string
   onUpdate?: () => void
   onFormat?: (format: NotizenFormat) => void
 }
+
+/** Erweiterungen der Notizen: Absätze, Zwischenüberschriften, Fett, Kursiv, Unterstrichen, Listen, Links, Erwähnen. */
+function notizenErweiterungen(options: NotesEditorOptions, live: boolean) {
+  return [
+    StarterKit.configure({
+      heading: { levels: [2, 3] },
+      link: false,
+      underline: false,
+      trailingNode: false,
+      codeBlock: false,
+      horizontalRule: false,
+      // Gemeinsam: Rückgängig über Yjs (nur eigene Änderungen)
+      ...(live ? { undoRedo: false as const } : {}),
+    }),
+    Underline,
+    Link.configure({ openOnClick: false, autolink: true, protocols: ['http', 'https', 'mailto'] }),
+    Placeholder.configure({ placeholder: options.placeholder || '' }),
+    ...(options.personen?.length ? [Erwaehnung.configure({ personen: options.personen, von: options.ich ?? '' })] : []),
+  ]
+}
+
+function notizenFormat(editor: Editor): NotizenFormat {
+  const state = getFormatState(editor)
+  return {
+    bold: state.bold,
+    italic: state.italic,
+    underline: state.underline,
+    heading: state.header !== false,
+    bulletList: state.list === 'bullet',
+    orderedList: state.list === 'ordered',
+    link: state.link,
+  }
+}
+
+const NOTIZEN_ATTRIBUTE = { 'aria-label': 'Notizen', 'aria-multiline': 'true', role: 'textbox' }
 
 /**
  * Schlanker Editor für die Notizen eines TOPs in der Fraktionssitzung (Issue #874): Absätze,
@@ -250,40 +291,71 @@ export function createNotesEditor(options: NotesEditorOptions): Editor {
     element: options.element,
     editable: true,
     content: options.content,
-    editorProps: {
-      ...getEditorProps(),
-      attributes: { 'aria-label': 'Notizen', 'aria-multiline': 'true', role: 'textbox' },
-    },
-    extensions: [
-      StarterKit.configure({
-        heading: { levels: [2, 3] },
-        link: false,
-        underline: false,
-        trailingNode: false,
-        codeBlock: false,
-        horizontalRule: false,
-      }),
-      Underline,
-      Link.configure({ openOnClick: false, autolink: true, protocols: ['http', 'https', 'mailto'] }),
-      Placeholder.configure({ placeholder: options.placeholder || '' }),
-    ],
+    editorProps: { ...getEditorProps(), attributes: NOTIZEN_ATTRIBUTE },
+    extensions: notizenErweiterungen(options, false),
     onUpdate() {
       options.onUpdate?.()
     },
     onTransaction({ editor }) {
-      if (!options.onFormat) return
-      const state = getFormatState(editor)
-      options.onFormat({
-        bold: state.bold,
-        italic: state.italic,
-        underline: state.underline,
-        heading: state.header !== false,
-        bulletList: state.list === 'bullet',
-        orderedList: state.list === 'ordered',
-        link: state.link,
-      })
+      options.onFormat?.(notizenFormat(editor))
     },
   })
+}
+
+export interface LiveNotesEditorOptions extends NotesEditorOptions {
+  /** WebSocket des TOPs (apps/work/faction/live.py) */
+  wsUrl: string
+  user: { name: string; color: string }
+  /** Nur eigene Änderungen (nicht die über die Synchronisierung eingetroffenen) */
+  onLocalUpdate?: () => void
+  /** Eine Änderung anderer ist eingetroffen */
+  onRemoteUpdate?: () => void
+  onJsonMessage?: (msg: any) => void
+  onStatusChange?: (status: CollabStatus) => void
+  onPersisted?: (stand: string) => void
+  onReloadRequired?: (reason?: ReloadReason) => void
+}
+
+/**
+ * Notizen-Editor für das Live-Mitschreiben (Issue #874): wie createNotesEditor, dazu Yjs über den WebSocket des
+ * TOPs mit den Cursorn der anderen. Gespeichert wird nur über `collab.flush()` (die Alpine-Komponente entscheidet,
+ * wann der Editor einen gültigen Stand hat); der Inhalt kommt aus dem Zustand des Servers oder wird von genau einem
+ * Editor aus den Notizen gefüllt.
+ */
+export function createLiveNotesEditor(options: LiveNotesEditorOptions): { editor: Editor; collab: CollabResult } {
+  let editor: Editor
+  const collab = initCollaboration({
+    wsUrl: options.wsUrl,
+    user: options.user,
+    autoSave: false,
+    onStatusChange: options.onStatusChange,
+    onJsonMessage: options.onJsonMessage,
+    onPersisted: options.onPersisted,
+    onReloadRequired: options.onReloadRequired,
+    getHtml: () => {
+      try {
+        return editor && !editor.isDestroyed ? editor.getHTML() : ''
+      } catch {
+        return ''
+      }
+    },
+  })
+  collab.ydoc.on('update', (_update: Uint8Array, origin: unknown) => {
+    if (collab.isRemoteOrigin(origin)) options.onRemoteUpdate?.()
+  })
+  editor = new Editor({
+    element: options.element,
+    editable: true,
+    editorProps: { ...getEditorProps(), attributes: NOTIZEN_ATTRIBUTE },
+    extensions: [...notizenErweiterungen(options, true), ...collab.extensions, YjsUndo],
+    onUpdate({ transaction }) {
+      if (!isChangeOrigin(transaction)) options.onLocalUpdate?.()
+    },
+    onTransaction({ editor }) {
+      options.onFormat?.(notizenFormat(editor))
+    },
+  })
+  return { editor, collab }
 }
 
 /**
@@ -382,6 +454,7 @@ const MandariEditor = {
   createEditor,
   createCollaborativeEditor,
   createNotesEditor,
+  createLiveNotesEditor,
   Editor,
   getFormatState,
   CommentMark,

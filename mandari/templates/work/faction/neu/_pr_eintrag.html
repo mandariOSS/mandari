@@ -1,0 +1,12 @@
+{% comment %}
+Ein bisheriger Protokolleintrag, unverändert (Muster altTopHtml): Aufgabe als Zeile „Aufgabe: …“, alle anderen mit Art,
+Person und Uhrzeit (Nachtrag mit Datum) über dem Text. Kontext: e (apps.work.faction.protokoll.Eintrag).
+{% endcomment %}
+{% if e.typ == 'action' %}
+<ul class="fs-prot-aufg"><li><b>Aufgabe:</b> {{ e.inhalt }}{% if e.zusatz %} ({{ e.zusatz }}){% endif %}</li></ul>
+{% else %}
+<div class="fs-alt-e{% if e.typ == 'addendum' %} nachtrag{% endif %}">
+    <span class="fs-alt-wer">{{ e.art }}{% if e.wer %} von {{ e.wer }}{% endif %}, {% if e.typ == 'addendum' %}{{ e.wann|date:"d.m.Y H:i" }}{% else %}{{ e.wann|date:"H:i" }}{% endif %}</span>
+    <p>{{ e.inhalt|linebreaksbr }}</p>
+</div>
+{% endif %}
