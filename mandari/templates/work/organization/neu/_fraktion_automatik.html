@@ -1,22 +1,23 @@
 {% comment %}
-Felder der Automatik einer Sitzungsreihe (Issue #871) im neuen Erscheinungsbild: Zu- und Absagen sammeln, automatisch
-einladen am Wochentag zur Uhrzeit. Namen und IDs je Reihe wie bisher (partials/_faction_schedule_automation.html), ohne
-eigenes <form>. Kontext: schedule (leer bei neuer Reihe), weekday_choices.
+Automatik einer Sitzungsreihe (Issue #871) nach dem Muster (#1071): Schalter „Zu- und Absagen abfragen“ und „Zu
+einem festen Zeitpunkt einladen, ohne Freigabe“ mit Wochentag und Uhrzeit. Namen und IDs je Reihe wie bisher
+(partials/_faction_schedule_automation.html), ohne eigenes <form>. Kontext: schedule (leer bei neuer Reihe),
+weekday_choices, faction_settings.
 {% endcomment %}
-{% with key=schedule.id|default:"neu" %}
-<div class="space-y-3">
-    <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <c-form.checkbox name="rsvp_enabled" id="rsvp_enabled_{{ key }}" label="Zu- und Absagen sammeln" checked="{{ schedule.rsvp_enabled|yesno:'1,' }}" dicht />
-        <c-form.checkbox name="auto_invite" id="auto_invite_{{ key }}" label="Automatisch einladen" checked="{{ schedule.auto_invite|yesno:'1,' }}" dicht />
-    </div>
-    <div class="grid gap-3 sm:grid-cols-2">
-        <c-form.select name="auto_invite_weekday" id="auto_invite_weekday_{{ key }}" label="Einladung am" placeholder="Wochentag wählen" dicht>
-            {% for value, label in weekday_choices %}
-            <option value="{{ value }}" {% if schedule.auto_invite_weekday == value %}selected{% endif %}>{{ label }}</option>
-            {% endfor %}
-        </c-form.select>
-        <c-form.field name="auto_invite_time" id="auto_invite_time_{{ key }}" type="time" label="Einladung um" value="{{ schedule.auto_invite_time|time:'H:i' }}" dicht />
-    </div>
-    <c-form.hinweis neben>Beides standardmäßig aus. Die automatische Einladung geht am letzten gewählten Wochentag vor der Sitzung zur Uhrzeit raus, ohne Freigabe und mit der Tagesordnung von diesem Zeitpunkt.</c-form.hinweis>
-</div>
+{% with key=schedule.id|default:"neu"|stringformat:"s" %}
+<div class="fs-schalter-zeile">{% include "work/organization/neu/_schalter.html" with name="rsvp_enabled" id="rsvp_enabled_"|add:key label="Zu- und Absagen abfragen" an=schedule.rsvp_enabled %}</div>
+<div class="fs-schalter-zeile">{% include "work/organization/neu/_schalter.html" with name="auto_invite" id="auto_invite_"|add:key label="Zu einem festen Zeitpunkt einladen, ohne Freigabe" an=schedule.auto_invite hilfe="auto_invite_hilfe_"|add:key %}</div>
+<p class="fs-einst-zusatz">
+    <label class="sr-only" for="auto_invite_weekday_{{ key }}">Wochentag der Einladung</label>
+    <select class="wf-eingabe wf-auswahl" name="auto_invite_weekday" id="auto_invite_weekday_{{ key }}">
+        <option value="">Wochentag</option>
+        {% for value, label in weekday_choices %}
+        <option value="{{ value }}"{% if schedule.auto_invite_weekday == value %} selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+    </select>
+    <span>vor der Sitzung um</span>
+    <label class="sr-only" for="auto_invite_time_{{ key }}">Uhrzeit der Einladung</label>
+    <input class="wf-eingabe" type="time" name="auto_invite_time" id="auto_invite_time_{{ key }}" value="{{ schedule.auto_invite_time|time:'H:i' }}">
+</p>
+<p class="fs-meta" id="auto_invite_hilfe_{{ key }}">Mit der Tagesordnung, die dann gilt. Standard für neue Reihen: aus; dann gilt die Einladung der Organisation, heute {{ faction_settings.invitation_lead_hours }} Stunden vor Beginn.</p>
 {% endwith %}

@@ -1,40 +1,59 @@
 {% extends "work/base_work.html" %}
 {% comment %}
-Einstellungen › Fraktionssitzungen im neuen Erscheinungsbild (Issue #951): Ablauf, Einladungen, Erinnerung und
-Protokollversand, öffentliche Protokolle und erster TOP in einem Formular (ohne section, wie bisher), darunter die
-Standard-Tagesordnung und die Sitzungsreihen mit je eigenen Formularen (section=…, 12 Wege). Felder, Sperren
-(publish_protocols nur mit protocols.publish), Löschdialog mit Eingabe (deleteConfirmation) und die Live-Vorschau des
-ersten TOPs (factionTitlePreview) wie bisher (work/organization/faction_settings.html mit Partials). Der Hinweis
-„API umgezogen“ entfällt: Die API steht als Unterpunkt unter „Allgemein“. Kontext: OrganizationFactionSettingsView.
+Einstellungen › Fraktionssitzungen nach dem Muster (Issue #1071, Schritt 4; Muster einstellungen.html, Bilder
+einstellungen_vorsitz_* und einstellungen_mitglied_1440): zwei Spalten. Links die Sitzungsreihen mit Automatik, Pausen
+und Ausfallregeln, die Standard-Tagesordnung und wer TOPs einbringt (je eigene Formulare section=…, wie bisher).
+Rechts das Hauptformular (ohne section, wie bisher) mit Einladung, Erinnerung, Protokoll, erstem TOP und weiteren
+Regeln. Work speichert sofort: Jeder Abschnitt des Hauptformulars schickt per htmx nur seine Felder
+(section=save_settings, felder aus fraktion_einstellungen.ABSCHNITT_FELDER), die Automatik je Reihe ihr Formular;
+Stand, Fehler, Anmeldung/zweiter Faktor und erneutes Senden über data-autosave="einst" (frontend/js/htmx-setup.ts).
+Ohne JavaScript speichern die Knöpfe in noscript wie bisher. Ohne faction.manage (Mitglieder mit faction.view_public)
+steht alles gesperrt im fieldset, mit Hinweis wie im Muster. Kontext: OrganizationFactionSettingsView.
 {% endcomment %}
 
 {% block page_title %}Fraktionssitzungen{% endblock %}
 {% block gestaltung %}neu{% endblock %}
 
 {% block work_header %}
-<c-rahmen.kopfband titel="Fraktionssitzungen" dicht
-    text="Wie Work Fraktionssitzungen anlegt, einlädt und protokolliert, dazu die Standard-Tagesordnung und die Sitzungsreihen.">
-    <c-slot name="aktionen"><c-ui.textlink href="{% url 'work:faction' org_slug=organization.slug %}" class="text-sm">Zu den Fraktionssitzungen</c-ui.textlink></c-slot>
+<c-rahmen.kopfband titel="Einstellungen" dicht
+    text="Gilt für alle Fraktionssitzungen von {{ organization.name }}.{% if not nur_lesen %} Work speichert Änderungen sofort.{% endif %}">
+    {% if not nur_lesen %}
+    <c-slot name="aktionen">
+        <span class="fs-einst-status" x-data="einstellungenSofort" data-testid="fs-einst-status" role="status" aria-live="polite"
+              @einst-autosaving.window="markSaving()" @einst-autosaved.window="markSaved($event.detail)" @einst-autosave-failed.window="markFailed($event.detail)">
+            <span x-cloak x-show="saving">Speichert …</span>
+            <span x-cloak x-show="!saving && saveFehler" class="fehler">Nicht gespeichert</span>
+            <span x-show="!saving && !saveFehler"><i data-lucide="cloud-check" aria-hidden="true"></i>Gespeichert</span>
+        </span>
+    </c-slot>
+    <div x-data="autosaveAnzeige" @einst-autosaving.window="markSaving()" @einst-autosaved.window="markSaved($event.detail)" @einst-autosave-failed.window="markFailed($event.detail)">
+        {% include "work/partials/_autosave_hinweis.html" %}
+    </div>
+    {% endif %}
 </c-rahmen.kopfband>
 {% include "work/organization/neu/_reiter.html" with seite="fraktion" %}
 {% endblock %}
 
 {% block work_content %}
-<div class="space-y-12">
-    <form method="post">
-        {% csrf_token %}
-        <div class="grid grid-cols-1 gap-x-12 gap-y-10 xl:grid-cols-2">
+<div class="wf fs-einst" data-testid="fs-einstellungen">
+    {% if nur_lesen %}
+    <p class="fs-einst-hinweis" role="note">Diese Einstellungen ändern Vorsitz, Stellvertretung und Geschäftsführung. Sie sehen sie zur Information.</p>
+    {% endif %}
+    <fieldset class="fs-einst-raster"{% if nur_lesen %} disabled{% endif %}>
+        <legend class="sr-only">Einstellungen für Fraktionssitzungen</legend>
+        <div class="fs-einst-spalte">
+            {% include "work/organization/neu/_fraktion_reihen.html" %}
+            {% include "work/organization/neu/_fraktion_tagesordnung.html" %}
+            {% include "work/organization/neu/_fraktion_rechte.html" %}
+        </div>
+        <form method="post" class="fs-einst-spalte" id="fs-einst-form">
+            {% csrf_token %}
             {% include "work/organization/neu/_fraktion_ablauf.html" %}
             {% include "work/organization/neu/_fraktion_erster_top.html" %}
-        </div>
-        <div class="mt-8">
-            <c-ui.button type="submit" size="sm" icon="save">Einstellungen speichern</c-ui.button>
-        </div>
-    </form>
-
-    <div class="grid grid-cols-1 gap-x-12 gap-y-12 xl:grid-cols-2">
-        {% include "work/organization/neu/_fraktion_tagesordnung.html" %}
-        {% include "work/organization/neu/_fraktion_reihen.html" %}
-    </div>
+            {% if not nur_lesen %}
+            <noscript><p><button type="submit" class="wf-knopf">Einstellungen speichern</button></p></noscript>
+            {% endif %}
+        </form>
+    </fieldset>
 </div>
 {% endblock %}
