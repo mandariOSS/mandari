@@ -34,7 +34,7 @@ from django.utils import timezone
 
 from apps.session import audit
 from apps.session.models import SessionFile, SessionMeeting, SessionProtocol
-from apps.session.services import agenda_service, protocol_service
+from apps.session.services import agenda_service, protocol_service, voting_service
 
 if TYPE_CHECKING:
     from apps.session.models import SessionAgendaItem, SessionUser
@@ -89,14 +89,12 @@ def _item_lines(item: SessionAgendaItem, *, timings: bool = True) -> list[str]:
             f"Abstimmung: {item.get_vote_result_display()}{method} (Ja: {item.votes_yes}, "
             f"Nein: {item.votes_no}, Enthaltungen: {item.votes_abstain})"
         )
-    votes = list(item.votes.select_related("person"))
-    if item.voting_method == "roll_call":
-        named = [
-            f"{v.person.display_name} ({v.get_vote_display()})" for v in votes if v.vote in ("yes", "no", "abstain")
-        ]
-        if named:
-            lines.append("Namentlich: " + ", ".join(named))
-    excluded = [v.person.display_name for v in votes if v.vote == "excluded"]
+    # Namensliste aus den gespeicherten Stimmen wie die Summen; Cockpit und Erfassung wenden die Zählregel an (#1059)
+    votes = voting_service.protocol_votes(item)
+    named = [f"{v.person.display_name} ({v.get_vote_display()})" for v in votes.roll_call]
+    if named:
+        lines.append("Namentlich: " + ", ".join(named))
+    excluded = [p.display_name for p in votes.excluded]
     if excluded:
         lines.append(
             "Mitwirkungsverbot wegen Befangenheit: "

@@ -152,7 +152,7 @@ def build_extract_pdf(items: list, *, internal: bool, permissions=None) -> bytes
         raise ValueError("Keine Beschlüsse für die Ausfertigung übergeben.")
 
     from apps.session.oparl_publication import UNVEROEFFENTLICHT
-    from apps.session.services import protocol_service
+    from apps.session.services import protocol_service, voting_service
 
     tenant = items[0].meeting.tenant
     protocols = {
@@ -182,12 +182,10 @@ def build_extract_pdf(items: list, *, internal: bool, permissions=None) -> bytes
             or (paper.is_public and paper.status not in UNVEROEFFENTLICHT)
         )
         item.resolution_np = item.get_resolution_text_decrypted() if internal else ""
-        # Namentliche Abstimmung + Befangenheit (Issue #41)
-        votes = list(item.votes.select_related("person"))
-        item.roll_call_votes = (
-            [v for v in votes if v.vote in ("yes", "no", "abstain")] if item.voting_method == "roll_call" else []
-        )
-        item.excluded_persons = [v.person for v in votes if v.vote == "excluded"]
+        # Namentliche Abstimmung + Befangenheit (Issue #41), dieselben Stimmen wie die Summen (Issue #1059)
+        votes = voting_service.protocol_votes(item)
+        item.roll_call_votes = votes.roll_call
+        item.excluded_persons = votes.excluded
 
     context = {
         "tenant": tenant,
