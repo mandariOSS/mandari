@@ -240,6 +240,8 @@ export interface NotesEditorOptions {
   placeholder?: string
   /** Vorschlagsliste für @-Erwähnungen; ohne Liste kein Erwähnen */
   personen?: ErwaehnbarePerson[]
+  /** Eigene Mitgliedschaft (Auslöser einer Erwähnung) */
+  ich?: string
   onUpdate?: () => void
   onFormat?: (format: NotizenFormat) => void
 }
@@ -260,7 +262,7 @@ function notizenErweiterungen(options: NotesEditorOptions, live: boolean) {
     Underline,
     Link.configure({ openOnClick: false, autolink: true, protocols: ['http', 'https', 'mailto'] }),
     Placeholder.configure({ placeholder: options.placeholder || '' }),
-    ...(options.personen?.length ? [Erwaehnung.configure({ personen: options.personen })] : []),
+    ...(options.personen?.length ? [Erwaehnung.configure({ personen: options.personen, von: options.ich ?? '' })] : []),
   ]
 }
 

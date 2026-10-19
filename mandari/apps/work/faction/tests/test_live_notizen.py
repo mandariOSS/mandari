@@ -101,7 +101,9 @@ def _kommunikator(user: Any, item: FactionAgendaItem) -> WebsocketCommunicator:
     return kommunikator
 
 
-async def _verbinden(user: Any, item: FactionAgendaItem) -> tuple[WebsocketCommunicator, dict, dict]:
+async def _verbinden(
+    user: Any, item: FactionAgendaItem
+) -> tuple[WebsocketCommunicator, dict[str, Any], dict[str, Any]]:
     kommunikator = _kommunikator(user, item)
     verbunden, _ = await kommunikator.connect()
     assert verbunden
@@ -112,16 +114,16 @@ async def _verbinden(user: Any, item: FactionAgendaItem) -> tuple[WebsocketCommu
     return kommunikator, hallo, zustand
 
 
-async def _bis(kommunikator: WebsocketCommunicator, art: str, timeout: float = 1) -> dict:
+async def _bis(kommunikator: WebsocketCommunicator, art: str, timeout: float = 1) -> dict[str, Any]:
     while True:
-        nachricht = await kommunikator.receive_json_from(timeout=timeout)
+        nachricht: dict[str, Any] = await kommunikator.receive_json_from(timeout=timeout)
         if nachricht["type"] == art:
             return nachricht
 
 
-async def _nichts_ausser_praesenz(kommunikator: WebsocketCommunicator) -> list[dict]:
+async def _nichts_ausser_praesenz(kommunikator: WebsocketCommunicator) -> list[dict[str, Any]]:
     """Alles, was noch ankommt, außer Anwesenheitsmeldungen."""
-    rest = []
+    rest: list[dict[str, Any]] = []
     while not await kommunikator.receive_nothing(timeout=0.3):
         nachricht = await kommunikator.receive_json_from()
         if nachricht["type"] != "praesenz":
@@ -146,9 +148,9 @@ def _abgelehnt(user: Any, item: FactionAgendaItem) -> bool:
 def test_fremde_organisation_gast_und_nicht_vereidigte_bekommen_keine_verbindung(
     org: Any, make_member: Any, mitglied: Any, top: Any, noe_top: Any
 ) -> None:
-    andere = OrganizationFactory(name="Andere Fraktion", slug="andere")
+    andere = OrganizationFactory(name="Andere Fraktion", slug="andere")  # type: ignore[no-untyped-call]
     fremd = make_member(andere, VORSITZ, email="fremd@example.org")
-    gast = MembershipFactory(user=UserFactory(email="gast@example.org"), organization=org, is_guest=True)
+    gast = MembershipFactory(user=UserFactory(email="gast@example.org"), organization=org, is_guest=True)  # type: ignore[no-untyped-call]
 
     assert _abgelehnt(fremd.user, top)
     assert _abgelehnt(gast.user, top)
@@ -161,7 +163,7 @@ def test_fremde_organisation_gast_und_nicht_vereidigte_bekommen_keine_verbindung
 
 @pytest.mark.django_db(transaction=True)
 def test_lesende_verbindung_aendert_nichts(vorsitz: Any, mitglied: Any, top: Any) -> None:
-    async def lauf() -> tuple[dict, list[dict], list[dict]]:
+    async def lauf() -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
         schreibend, _, zustand = await _verbinden(vorsitz.user, top)
         assert zustand["seed"] is True
         lesend, hallo, lese_zustand = await _verbinden(mitglied.user, top)
@@ -194,7 +196,7 @@ def test_nach_genehmigung_nur_lesen(vorsitz: Any, meeting: Any, top: Any) -> Non
     meeting.protocol_approved = True
     meeting.save(update_fields=["status", "protocol_approved"])
 
-    async def lauf() -> tuple[str, list[dict]]:
+    async def lauf() -> tuple[str, list[dict[str, Any]]]:
         kommunikator, hallo, _ = await _verbinden(vorsitz.user, top)
         await kommunikator.send_json_to({"type": "yjs_save", "data": _b64(ZUSTAND), "html": "<p>Nachher</p>"})
         rest = await _nichts_ausser_praesenz(kommunikator)
@@ -211,7 +213,7 @@ def test_nach_genehmigung_nur_lesen(vorsitz: Any, meeting: Any, top: Any) -> Non
 
 @pytest.mark.django_db(transaction=True)
 def test_genehmigung_waehrend_der_verbindung_stoppt_das_speichern(vorsitz: Any, meeting: Any, top: Any) -> None:
-    async def lauf() -> list[dict]:
+    async def lauf() -> list[dict[str, Any]]:
         kommunikator, _, _ = await _verbinden(vorsitz.user, top)
         await FactionMeeting.objects.filter(pk=meeting.pk).aupdate(status="completed", protocol_approved=True)
         await kommunikator.send_json_to({"type": "yjs_save", "data": _b64(ZUSTAND), "html": "<p>Spät</p>"})
@@ -229,7 +231,7 @@ def test_genehmigung_waehrend_der_verbindung_stoppt_das_speichern(vorsitz: Any, 
 
 @pytest.mark.django_db(transaction=True)
 def test_zustand_verschluesselt_und_notizen_im_bisherigen_feld(vorsitz: Any, top: Any) -> None:
-    async def lauf() -> tuple[dict, dict]:
+    async def lauf() -> tuple[dict[str, Any], dict[str, Any]]:
         kommunikator, _, _ = await _verbinden(vorsitz.user, top)
         await kommunikator.send_json_to(
             {
@@ -262,7 +264,7 @@ def test_nur_ein_editor_fuellt_den_leeren_zustand(vorsitz: Any, make_member: Any
     sitzung.notizen_speichern(top, "<p>Vorhanden</p>", basis=None, membership=vorsitz)
     schrift = make_member(org, ["faction.view_public", "protocols.edit"], email="schrift@example.org")
 
-    async def lauf() -> tuple[dict, dict, list[dict]]:
+    async def lauf() -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
         erster, _, z1 = await _verbinden(vorsitz.user, top)
         zweiter, _, z2 = await _verbinden(schrift.user, top)
         # Der zweite hat noch keinen Inhalt: sein Speichern zählt nicht, solange der erste füllt
@@ -290,7 +292,7 @@ def test_speichern_ohne_verbindung_laesst_neu_aufbauen(
     client = client_for(vorsitz.user)
     aktion = reverse("work:faction_session_action", kwargs={"org_slug": org.slug, "meeting_id": meeting.pk})
 
-    async def lauf() -> tuple[dict, list[dict]]:
+    async def lauf() -> tuple[dict[str, Any], list[dict[str, Any]]]:
         kommunikator, _, _ = await _verbinden(vorsitz.user, top)
         await kommunikator.send_json_to({"type": "yjs_save", "data": _b64(ZUSTAND), "html": "<p>Live</p>"})
         await _bis(kommunikator, "yjs_saved")
@@ -377,7 +379,7 @@ def test_erwaehnung_uebersteht_die_bereinigung() -> None:
 def test_erwaehnte_person_wird_einmal_benachrichtigt(
     org: Any, make_member: Any, vorsitz: Any, mitglied: Any, top: Any
 ) -> None:
-    andere = OrganizationFactory(name="Andere Fraktion", slug="andere")
+    andere = OrganizationFactory(name="Andere Fraktion", slug="andere")  # type: ignore[no-untyped-call]
     fremd = make_member(andere, MITGLIED, email="fremd@example.org")
     html = f"<p>{_erwaehnung(mitglied)} stellt die Rückfrage. {_erwaehnung(fremd)} {_erwaehnung(vorsitz)}</p>"
 
@@ -416,3 +418,32 @@ def test_erwaehnung_im_nichtoeffentlichen_top_nur_fuer_vereidigte(
         )
     )
     assert empfaenger == {vereidigt.pk}
+
+
+@pytest.mark.django_db
+def test_ausloeser_ist_wer_die_erwaehnung_eingefuegt_hat(
+    org: Any, make_member: Any, vorsitz: Any, mitglied: Any, top: Any
+) -> None:
+    """Beim gemeinsamen Schreiben speichert oft jemand anders; ``data-von`` zählt nur mit Protokollrecht."""
+    schrift = make_member(org, ["faction.view_public", "protocols.edit"], email="schrift@example.org")
+    dritte = make_member(org, MITGLIED, email="dritte@example.org")
+
+    def erwaehnt(person: Any, von: Any) -> str:
+        return (
+            f'<span class="erwaehnung" data-type="mention" data-id="{person.pk}" data-von="{von.pk}">'
+            f"@{person.user.get_display_name()}</span>"
+        )
+
+    # Die Schriftführung erwähnt die Vorsitzende, gespeichert hat der Editor der Vorsitzenden
+    html = f"<p>{erwaehnt(vorsitz, schrift)} {erwaehnt(dritte, mitglied)}</p>"
+    assert 'data-von="' in sanitize_editor_html(html)
+    sitzung.notizen_speichern(top, html, basis=None, membership=vorsitz)
+
+    an_vorsitz = Notification.objects.get(recipient=vorsitz, notification_type=NotificationType.FACTION_MENTION)
+    assert an_vorsitz.actor == schrift
+    # Angeblich vom Mitglied ohne Protokollrecht eingefügt: Auslöser ist, wer gespeichert hat
+    an_dritte = Notification.objects.get(recipient=dritte, notification_type=NotificationType.FACTION_MENTION)
+    assert an_dritte.actor == vorsitz
+    # Selbst erwähnt: keine Benachrichtigung
+    sitzung.notizen_speichern(top, html + f"<p>{erwaehnt(schrift, schrift)}</p>", basis=None, membership=vorsitz)
+    assert not Notification.objects.filter(recipient=schrift).exists()

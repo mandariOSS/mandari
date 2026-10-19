@@ -56,6 +56,7 @@ def dokument_kontext(view: Any, meeting: FactionMeeting) -> dict[str, Any]:
                 "platzhalter": "Notiz ergänzen",
                 "leiste": False,
                 "personen": erwaehnbar[t.intern],
+                "ich": str(membership.pk),
             }
     return {
         "meeting": meeting,
