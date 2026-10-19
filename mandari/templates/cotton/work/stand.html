@@ -1,0 +1,9 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Stand mit Punkt, Wort und einer Zeile Erläuterung (Issue #1071): Stand einer Sitzung in der Liste („Eingeladen · am
+Fr 09.10.“), Rückmeldung einer Person in der Einladung. Der Punkt ist nie allein Träger der Bedeutung.
+  <c-work.stand punkt="zustimmung" text="Eingeladen" detail="am Fr 09.10." />
+Parameter: punkt (zustimmung, ablehnung, enthaltung, offen, andere), text, detail; weitere Attribute an die Hülle.
+{% endcomment %}
+<c-vars punkt="andere" text="" detail="" />
+<span class="fs-stand" {{ attrs }}><span class="wf-punkt {{ punkt }}" aria-hidden="true"></span><span>{{ text }}</span>{% if detail %}<small>{{ detail }}</small>{% endif %}</span>

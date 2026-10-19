@@ -656,7 +656,8 @@ def test_fraktionssitzungen_hauptaktion_textlinks_und_weiteres(welt: Welt, clien
     html = _neu(welt, client_for, "vorsitz", "work:faction")
     slug = welt.org.slug
 
-    assert "16 Sitzungen, davon 16 anstehend." in html
+    # Satz zur nächsten Sitzung statt der Zahlen (Muster, Issue #1071)
+    assert "Die nächste Fraktionssitzung ist am " in html
     assert "$dispatch(&#x27;open-create-modal&#x27;)" in html or "$dispatch('open-create-modal')" in html
     assert 'x-show="showCreateModal"' in html and 'aria-labelledby="neue-sitzung-titel"' in html
     assert reverse("work:faction_audit", kwargs={"org_slug": slug}) in html

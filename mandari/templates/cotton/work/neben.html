@@ -1,0 +1,11 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Nebenspalte der Fraktionssitzungs-Seiten nach dem Muster (Issue #1071): gedämpfte Fläche rechts neben der Hauptspalte,
+am Handy darunter. Inhalt sind Abschnitte (c-work.neben-abschnitt). Gestaltung .fs-neben in fraktionssitzung.css.
+  <c-work.neben label="Sitzungsreihe und Weiteres" class="fs-liste-neben">…</c-work.neben>
+Parameter: label (Name der Region), class (zusätzliche Klassen); weitere Attribute gehen an das aside.
+{% endcomment %}
+<c-vars label="" class="" />
+<aside class="fs-neben {{ class }}"{% if label %} aria-label="{{ label }}"{% endif %} {{ attrs }}>
+    {{ slot }}
+</aside>
