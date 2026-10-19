@@ -52,12 +52,13 @@ def test_worker_dienst_wie_die_anwendung_mit_lebenszeichen() -> None:
     worker, anwendung = basis["worker"], basis["mandari"]
 
     assert worker["image"] == anwendung["image"]
-    # Aufträge sehen dieselbe Konfiguration; eigen ist nur die Datenbankverbindung der Anwendung (#1060)
-    eigen = {"DATABASE_URL", "DB_PGBOUNCER", "DB_POOL_MAX", "DB_DIRECT_URL"}
+    # Aufträge sehen dieselbe Konfiguration; eigen sind nur die Datenbankverbindung der Anwendung (#1060) und
+    # die Zahl ihrer Prozesse (#718)
+    eigen = {"DATABASE_URL", "DB_PGBOUNCER", "DB_POOL_MAX", "DB_DIRECT_URL", "APP_PROCESSES"}
     assert {k: v for k, v in anwendung["environment"].items() if k not in eigen} == {
         k: v for k, v in worker["environment"].items() if k not in eigen
     }
-    assert not {"DB_PGBOUNCER", "DB_POOL_MAX", "DB_DIRECT_URL"} & set(worker["environment"])
+    assert not {"DB_PGBOUNCER", "DB_POOL_MAX", "DB_DIRECT_URL", "APP_PROCESSES"} & set(worker["environment"])
     assert worker["volumes"] == anwendung["volumes"]
     assert worker["mem_limit"] == "1g", "Verwaltungsbefehle der Zeitpläne laufen als eigene Prozesse (#516)"
     befehl = worker["command"]
