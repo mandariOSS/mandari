@@ -1,4 +1,4 @@
-{# Protokoll als eine Ansicht: formatierbare Notizen (automatisch gespeichert), bisherige Einträge, Aufgaben (Issue #874) #}
+{# Protokoll als eine Ansicht: formatierbare Notizen (live gemeinsam, automatisch gespeichert, @-Erwähnen), bisherige Einträge, Aufgaben (Issue #874) #}
 {# Kontext: item, notizen_html, notizen_config, eintraege (FactionProtocolEntry, unverändert lesbar), aufgaben, rechte #}
 <section class="fs-prot" aria-labelledby="fs-prot-h" x-data="sitzungsNotizen">
     {{ notizen_config|json_script:"fs-notizen-config" }}
@@ -15,11 +15,16 @@
             <button type="button" class="wf-wz-knopf" @click="befehl('orderedList')" :aria-pressed="format.orderedList ? 'true' : 'false'" aria-label="Nummerierung"><i data-lucide="list-ordered" aria-hidden="true"></i></button>
             <span class="wf-wz-trenn" aria-hidden="true"></span>
             <button type="button" class="wf-wz-knopf" @click="befehl('link')" :aria-pressed="format.link ? 'true' : 'false'" aria-label="Link einfügen"><i data-lucide="link" aria-hidden="true"></i></button>
+            {% if notizen_config.personen %}<button type="button" class="wf-wz-knopf" @click="befehl('erwaehnen')" aria-label="Person erwähnen (@)"><i data-lucide="at-sign" aria-hidden="true"></i></button>{% endif %}
             <button type="button" class="wf-wz-knopf mit-text" @click="zurAufgabe()" aria-label="Aufgabe aus diesem TOP anlegen"><i data-lucide="square-check" aria-hidden="true"></i><span aria-hidden="true">Aufgabe</span></button>
         </div>
-        <span class="fs-status" :class="{ 'fehler': status === 'fehler' }" :title="statusText()" role="status" aria-live="polite" x-show="bereit" x-cloak>
+        {% if notizen_config.live %}{% include "work/faction/sitzung/_mit.html" %}{% endif %}
+        <span class="fs-status" :class="{ 'fehler': status === 'fehler' || status === 'getrennt' }" :title="statusText()" role="status" aria-live="polite" x-show="bereit" x-cloak>
             <i data-lucide="cloud" aria-hidden="true"></i><span x-text="statusText()">Automatisch gespeichert</span>
         </span>
+        {% elif notizen_config.live %}
+        <span class="fs-mit-satz" x-show="art === 'lesen'" x-cloak>Sie lesen live mit.</span>
+        {% include "work/faction/sitzung/_mit.html" %}
         {% endif %}
     </div>
     <div class="fs-prot-flaeche">
