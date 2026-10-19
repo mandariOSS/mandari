@@ -253,10 +253,6 @@
                        class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">
                         Alle Logs →
                     </a>
-                    <a href="{% url 'admin:insight_sync_syncconfig_changelist' %}"
-                       class="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400">
-                        Einstellungen →
-                    </a>
                 </div>
             </div>
 
@@ -265,11 +261,7 @@
                 {% if daemon_running %}
                 <span class="w-2.5 h-2.5 rounded-full bg-green-500 animate-pulse"></span>
                 <span class="text-green-700 dark:text-green-400 font-medium">Daemon aktiv</span>
-                {% if sync_config %}
-                <span class="text-gray-400 dark:text-gray-500">
-                    (Takt je Quelle{% if not sync_config.sync_enabled %}, pausiert{% endif %})
-                </span>
-                {% endif %}
+                <span class="text-gray-400 dark:text-gray-500">(Takt je Quelle)</span>
                 {% else %}
                 <span class="w-2.5 h-2.5 rounded-full bg-gray-400"></span>
                 <span class="text-gray-500 dark:text-gray-400">Daemon inaktiv</span>

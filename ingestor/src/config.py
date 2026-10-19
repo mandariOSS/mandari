@@ -104,7 +104,7 @@ class Settings(BaseSettings):
     # each in-flight body sync holds pages, caches and extraction buffers.
     # Env-overridable (SYNC_BODY_CONCURRENCY).
     sync_body_concurrency: int = 2
-    # Max sources synced concurrently in sync_all (CLI ``sync --all``, Admin-Sync aller Quellen im Worker).
+    # Max sources synced concurrently in sync_all (CLI ``sync --all``).
     # Together with sync_body_concurrency and sync_entity_concurrency this bounds the
     # peak parallelism (sources x bodies x entity types) and therefore
     # the memory budget of a sync cycle (Issue #22).

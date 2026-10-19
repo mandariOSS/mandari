@@ -45,6 +45,7 @@ from src.sync.orchestrator import (
     SyncOrchestrator,
     SyncResult,
     TimedLists,
+    fallback_modified_since,
     full_sync_finished,
     merge_slice_details,
     sync_complete,
@@ -758,8 +759,9 @@ async def test_langsame_liste_wird_mit_wachsendem_abstand_ausgesetzt():
     assert timedelta(minutes=59) < eintrag.until - vorher <= timedelta(hours=1, minutes=1)
     assert f"{BODY}/consultation" in stats["suspended_lists"]
     assert any("ausgesetzt bis" in fehler for fehler in stats["errors"])
-    # Fensteranfang der Liste: das Fenster dieses Laufs (sieben Tage, ohne Zeitpunkt der Kommune)
-    assert eintrag.since <= vorher - timedelta(days=7)
+    # Fensteranfang der Liste: das Fenster dieses Laufs (sieben Tage ab 00:00 Uhr Ortszeit des Rechners, ohne
+    # Zeitpunkt der Kommune); nicht gegen vorher - 7 Tage, sonst scheitert der Test nachts außerhalb von UTC
+    assert eintrag.since <= fallback_modified_since().replace(tzinfo=UTC)
 
     # Nächster Lauf in der Aussetzung: keine Anfrage an die Liste
     stats = await _lauf(quelle, speicher, full=False, kommune=kommune)

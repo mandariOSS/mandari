@@ -955,10 +955,6 @@ DCAT_CONTRIBUTOR_ID = os.environ.get("DCAT_CONTRIBUTOR_ID", "").strip()
 # Fertige Kataloge im Cache (Sekunden, 0 = aus); ein neuer Veröffentlichungsstand gilt sofort
 DCAT_CACHE_SECONDS = int(os.environ.get("DCAT_CACHE_SECONDS", "300"))
 
-# Sync-Einstellungen (alle 10 Minuten inkrementell, Full-Sync um 3 Uhr)
-SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))
-SYNC_FULL_HOUR = int(os.environ.get("SYNC_FULL_HOUR", "3"))
-
 # Zeitpläne (apps.events.schedule, Issue #516): einzelne abschalten, Namen kommagetrennt, z. B.
 # "befehl:build_meeting_packages". Ihre Termine verstreichen ohne Auftrag; ein noch vorhandener
 # Cron-Eintrag des Befehls läuft dann wieder (Rückweg je Befehl, DEPLOYMENT.md „Geplante Aufgaben“).
@@ -1010,8 +1006,9 @@ TASKS = {
                 "apps.events.verwaltungsbefehle.befehl_ausfuehren": {"timeout": 3660, "max_attempts": 1},
                 # PDF-Export mit vielen Einträgen braucht länger als die 5 Minuten der Warteschlange
                 "apps.work.background_tasks.generate_dsgvo_export_task": {"timeout": 900, "max_attempts": 3},
-                # Admin (Issue #515): Ein Sync oder das Löschen einer großen Kommune dauert länger als
-                # 5 Minuten. Ein Sync wird nicht wiederholt (Protokoll und nächster Lauf zeigen den Fehler).
+                # Admin (Issue #515): Das Löschen einer großen Kommune dauert länger als 5 Minuten. Den Sync einer
+                # Quelle macht seit Issue #554 nur der Ingestor; der Auftrag ist eine leere Hülle für vor dem
+                # Deploy eingereihte Aufträge und wird nicht wiederholt.
                 "insight_core.background_tasks.quelle_synchronisieren": {"timeout": 3600, "max_attempts": 1},
                 "insight_core.background_tasks.kommune_loeschen": {"timeout": 3600, "max_attempts": 3},
                 # Texterkennung einer Datei (Issue #530): Zeitbudget je Datei (OCR_FILE_BUDGET_SECONDS) plus Abruf;
@@ -1373,11 +1370,6 @@ UNFOLD = {
                         "title": _("Sync-Protokoll"),
                         "icon": "history",
                         "link": reverse_lazy("admin:insight_sync_synclog_changelist"),
-                    },
-                    {
-                        "title": _("Sync-Einstellungen"),
-                        "icon": "settings",
-                        "link": reverse_lazy("admin:insight_sync_syncconfig_changelist"),
                     },
                 ],
             },
