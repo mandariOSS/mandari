@@ -25,7 +25,7 @@ ABO_ENDUNGEN = (".ics",)
 
 def ohne_neue_sitzung(request: HttpRequest) -> bool:
     """Crawler, Abrufprogramm oder Kalender-Abo – eine neue Sitzung käme nie wieder zurück."""
-    from insight_core.services.file_cache_limit import is_crawler
+    from .services.file_cache_limit import is_crawler
 
     kennung = request.META.get("HTTP_USER_AGENT", "")
     return is_crawler(kennung) or request.path.endswith(ABO_ENDUNGEN)
@@ -38,7 +38,14 @@ class KeineSitzungFuerCrawlerMiddleware:
     def __call__(self, request: HttpRequest) -> HttpResponse:
         response = self.get_response(request)
         session = getattr(request, "session", None)
-        if session is None or settings.SESSION_COOKIE_NAME in request.COOKIES or session.session_key:
+        # Nur eine neue, beschriebene Sitzung ohne mitgeschicktes Cookie: Antworten, die die Sitzung nicht anfassen
+        # (Sitemaps, Dateien), bleiben ohne „Vary: Cookie“, und die Erkennung läuft nur bei Bedarf
+        if (
+            session is None
+            or not session.modified
+            or session.session_key
+            or settings.SESSION_COOKIE_NAME in request.COOKIES
+        ):
             return response
         if ohne_neue_sitzung(request):
             # Leere, nie gespeicherte Sitzung: SessionMiddleware speichert nichts und setzt kein Cookie
