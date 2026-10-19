@@ -10,6 +10,7 @@ Wendet die je Mandant konfigurierten Aufbewahrungsfristen an
 - Nicht-öffentliche Inhalte (NÖ-Protokollteil, interne Notizen) leeren
 - Audit-Log-Einträge nach Fristablauf löschen – vorher entsteht ein geprüftes Archivpaket
   (Issue #221, Speicherort AUDIT_ARCHIVE_ROOT bzw. AUDIT_ARCHIVE_STORAGE)
+- Archivpakete des Audit-Logs nach ihrer eigenen Frist löschen (Issue #366)
 
 Jeder Lauf wird nachweisbar im Audit-Log dokumentiert.
 
@@ -57,6 +58,7 @@ class Command(EinmaligMixin, BaseCommand):
                 f"{prefix}{tenant.name}: "
                 f"{stats['persons_anonymized']} Person(en) anonymisiert, "
                 f"{stats['np_meetings_cleared']} Sitzung(en) NÖ-Inhalte geleert, "
-                f"{stats['audit_deleted']} Audit-Eintrag/-Einträge gelöscht{archive}"
+                f"{stats['audit_deleted']} Audit-Eintrag/-Einträge gelöscht{archive}, "
+                f"{len(stats['archives_deleted'])} Archivpaket(e) nach Frist gelöscht"
                 + (f" — übersprungen: {', '.join(stats['skipped'])}" if stats["skipped"] else "")
             )

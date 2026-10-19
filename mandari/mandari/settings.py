@@ -644,7 +644,8 @@ SESSION_PACKAGE_MAX_PAGES = int(os.environ.get("SESSION_PACKAGE_MAX_PAGES", "300
 # Protokollierung (Issue #221, docs/PROTOKOLLIERUNG.md)
 # Archivpakete vor der fristgerechten Löschung: Alias eines Eintrags in STORAGES (z. B. ein
 # S3-Speicher) oder – leer – ein Verzeichnis. Liegt es unter MEDIA_ROOT, liefert serve_media es
-# nie aus (PROTECTED_MEDIA_PREFIXES). Die Pakete löscht mandari nicht selbst.
+# nie aus (PROTECTED_MEDIA_PREFIXES). Gelöscht werden Pakete nur nach einer eigenen Frist (Issue #366):
+# je Session-Mandant in den Datenschutz-Einstellungen, für das Sicherheitsprotokoll unten.
 AUDIT_ARCHIVE_STORAGE = os.environ.get("AUDIT_ARCHIVE_STORAGE", "")
 AUDIT_ARCHIVE_ROOT = Path(os.environ.get("AUDIT_ARCHIVE_ROOT", str(MEDIA_ROOT / "audit_archive")))
 # Berichte der Zeitpläne (Issue #516), etwa der monatliche Verfügbarkeitsbericht: im Medien-Volume
@@ -654,6 +655,9 @@ REPORTS_ROOT = Path(os.environ.get("REPORTS_ROOT", str(MEDIA_ROOT / "berichte"))
 AUDIT_EXPORT_MAX_ROWS = int(os.environ.get("AUDIT_EXPORT_MAX_ROWS", "100000"))
 # Aufbewahrung des mandantenübergreifenden Sicherheitsprotokolls in Tagen (purge_security_audit_log)
 SECURITY_AUDIT_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_RETENTION_DAYS", "365"))
+# Aufbewahrung der Archivpakete des Sicherheitsprotokolls in Tagen ab Ablage, 0 = keine Löschung
+# (purge_security_audit_log, Issue #366)
+SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS", "0"))
 # Aufbewahrung der Anmeldeversuche (LoginAttempt, Drosselung) in Tagen, 0 = keine Löschung (purge_login_attempts,
 # Issue #366); 30 Tage, festgelegt durch den Betreiber am 16.10.2026 (docs/PROTOKOLLE.md)
 LOGIN_ATTEMPT_RETENTION_DAYS = int(os.environ.get("LOGIN_ATTEMPT_RETENTION_DAYS", "30"))

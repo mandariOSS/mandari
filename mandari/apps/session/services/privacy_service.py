@@ -6,6 +6,7 @@ DSGVO-Paket für das Session RIS (Issue #43).
   (0 = Frist deaktiviert, es wird nichts gelöscht):
   * persons_years: Kontakt-/Bankdaten ausgeschiedener Mandatsträger
   * audit_years: Audit-Log-Einträge
+  * archive_years: Archivpakete des Audit-Logs (ab Ablage des Pakets, Issue #366)
   * np_content_years: nicht-öffentliche Inhalte (NÖ-Protokollteil,
     interne Sitzungsnotizen)
 - **Anonymisierungs-/Löschlauf** (:func:`run_privacy_purge`): entfernt
@@ -33,11 +34,16 @@ logger = logging.getLogger(__name__)
 PRIVACY_DEFAULTS = {
     "persons_years": 0,
     "audit_years": 0,
+    "archive_years": 0,
     "np_content_years": 0,
     "notice": "",
     # Lesezugriffe auf nichtöffentliche Inhalte protokollieren (Issue #221), Standard: an
     "read_logging": True,
 }
+
+
+#: Fristen in Jahren (0 bis 100) in den Mandanten-Einstellungen
+RETENTION_KEYS = ("persons_years", "audit_years", "archive_years", "np_content_years")
 
 
 def get_privacy_settings(tenant) -> dict:
@@ -46,7 +52,7 @@ def get_privacy_settings(tenant) -> dict:
     if not isinstance(stored, dict):
         stored = {}
     result = dict(PRIVACY_DEFAULTS)
-    for key in ("persons_years", "audit_years", "np_content_years"):
+    for key in RETENTION_KEYS:
         with contextlib.suppress(TypeError, ValueError):
             result[key] = max(0, min(int(stored.get(key, result[key])), 100))
     result["notice"] = str(stored.get("notice", "") or "")
@@ -152,8 +158,8 @@ def run_privacy_purge(
     ``allow_backfill`` verkettet vorher den Altbestand (Befehlszeile).
 
     Returns:
-        dict: persons_anonymized, audit_deleted, audit_archive, np_meetings_cleared,
-              skipped (Liste deaktivierter Datenarten), dry_run
+        dict: persons_anonymized, audit_deleted, audit_archive, archives_deleted (Namen der gelöschten
+              Archivpakete), np_meetings_cleared, skipped (Liste deaktivierter Datenarten), dry_run
     """
     from apps.session import audit
     from apps.session.models import SessionMeeting, SessionPerson, SessionProtocol
@@ -164,6 +170,7 @@ def run_privacy_purge(
     stats = {
         "persons_anonymized": 0,
         "audit_deleted": 0,
+        "archives_deleted": [],
         "np_meetings_cleared": 0,
         "skipped": [],
         "dry_run": dry_run,
@@ -270,6 +277,22 @@ def run_privacy_purge(
     else:
         stats["skipped"].append("Audit-Log (Frist deaktiviert)")
 
+    # 4) Archivpakete des Audit-Logs nach Frist (Issue #366), gezählt ab Ablage des Pakets
+    if settings["archive_years"] > 0:
+        from apps.common import audit_archive, audit_chain
+
+        try:
+            removed = audit_archive.purge_archives(
+                audit_chain.SESSION, tenant.pk, years_before(now, settings["archive_years"]), dry_run=dry_run
+            )
+        except Exception as exc:  # Speicher nicht erreichbar: die übrigen Schritte gelten trotzdem
+            logger.exception("Archivpakete von %s nicht gelöscht", tenant.slug)
+            stats["skipped"].append(f"Archivpakete (Löschung ausgesetzt: {type(exc).__name__})")
+        else:
+            stats["archives_deleted"] = [item.name for item in removed]
+    else:
+        stats["skipped"].append("Archivpakete (Frist deaktiviert)")
+
     # Lauf selbst nachweisbar dokumentieren (auch im Dry-Run)
     if not dry_run:
         audit.log_event(
@@ -284,10 +307,12 @@ def run_privacy_purge(
                     "noe_inhalte_geleert": stats["np_meetings_cleared"],
                     "audit_geloescht": stats["audit_deleted"],
                     "audit_archiv": stats.get("audit_archive", ""),
+                    "archivpakete_geloescht": stats["archives_deleted"],
                     "fristen": {
                         "personen_jahre": settings["persons_years"],
                         "noe_jahre": settings["np_content_years"],
                         "audit_jahre": settings["audit_years"],
+                        "archiv_jahre": settings["archive_years"],
                     },
                 }
             },
