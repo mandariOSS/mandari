@@ -1298,6 +1298,44 @@
   .fs-prot-aufg { list-style: none; margin: 6px 0 0; padding: 0; font-size: .9375em; }
   .fs-prot-beschluss { margin-top: 8px; }
   .fs-prot-aufg b, .fs-prot-beschluss b { font-weight: 600; }
+  /* Protokoll als Dokument (neu/_pr_dokument.html): Kopfzeile, Titel, Angaben, Notizen je TOP, bisherige Einträge */
+  .fs-prot-meta { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; margin: 0; font-size: 13px; color: var(--wf-text2); }
+  .fs-prot-meta .fs-meta { display: inline-flex; align-items: center; gap: 4px; }
+  .fs-prot-meta svg { width: 13px; height: 13px; }
+  .fs-prot-titel { font-size: 20px; line-height: 1.3; font-weight: 700; margin: 6px 0 4px; }
+  .fs-prot-angaben { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 6px 12px; margin: 14px 0 8px; font-size: 14px; line-height: 1.5; }
+  .fs-prot-angaben dt { color: var(--wf-text2); }
+  .fs-prot-angaben dd { margin: 0; overflow-wrap: anywhere; }
+  .fs-prot-top h3 { grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: start; }
+  .fs-prot-top h3 svg { width: 13px; height: 13px; margin-right: 4px; vertical-align: -1px; color: var(--wf-text3); }
+  .fs-prot-mehr { margin: -4px 0 0 8px; opacity: .55; }
+  .fs-prot-top:hover .fs-prot-mehr, .fs-prot-mehr:focus-visible { opacity: 1; }
+  .fs-prot-notiz.fs-notiz { min-height: 0; max-width: none; font-size: inherit; margin-top: 4px; }
+  .fs-prot-notiz.fs-notiz .ProseMirror { min-height: 1.6em; padding: 2px 6px; margin: 0 -6px; border-radius: 4px; }
+  .fs-prot-notiz.fs-notiz .ProseMirror:hover { background: var(--wf-grau-hell); }
+  .fs-prot-notiz.fs-notiz .ProseMirror:focus { background: var(--wf-flaeche); box-shadow: 0 0 0 1px var(--wf-linie-stark); }
+  .fs-prot-notiz.fs-notiz p:last-child { margin-bottom: 0; }
+  .fs-prot-status { margin: 2px 0 0; font-size: 12.5px; color: var(--wf-text2); }
+  .fs-prot-status.fehler { color: var(--wf-abl); }
+  .fs-prot-aktion { margin: 6px 0 0; font-size: 13px; }
+  .fs-alt-e { margin-top: 8px; }
+  .fs-alt-e p { margin: 0; }
+  .fs-alt-wer { display: block; font-size: .8125em; color: var(--wf-text3); line-height: 1.4; }
+  .fs-alt-e.nachtrag { padding-left: 10px; border-left: 2px solid var(--wf-linie-stark); }
+  .fs-prot-allgemein { padding-top: 6px; }
+  .fs-prot-gesperrt { margin-top: 20px; }
+  .fs-prot-leer { margin-top: 16px; }
+  .fs-gl-h { font-size: 13px; font-weight: 600; color: var(--wf-text2); margin: 0 0 8px; }
+  .fs-gl ul { list-style: none; margin: 0; padding: 0; }
+  .fs-gl li { margin: 0 0 6px; }
+  .fs-gl li.unter { padding-left: 12px; }
+  .fs-gl a.wf-textlink { color: var(--wf-text2); text-decoration: none; }
+  .fs-gl a.wf-textlink:hover { color: var(--wf-tinte); text-decoration: underline; }
+  /* Aufgaben aus der Sitzung in der Nebenspalte */
+  .fs-pr-aufgaben li { padding: 6px 0; border-bottom: 1px solid var(--wf-linie); }
+  .fs-pr-aufgaben li:last-child { border-bottom: 0; }
+  .fs-pr-aufgaben .fs-meta { display: block; font-size: 12.5px; }
+  .fs-schritte small .wf-textlink { font-size: inherit; }
   /* Gliederung links (ab 1600 px) */
   .fs-gl { display: none; position: sticky; top: 24px; align-self: start; padding: 24px 0 24px 24px; font-size: 13.5px; }
   .fs-gl a { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1490,6 +1528,10 @@
     .fs-liste-flaeche, .fs-r-zwei, .fs-r-protokoll { grid-template-columns: minmax(0, 1fr); }
     .fs-liste-haupt { padding: 4px 16px 24px; }
     .fs-spalte, .fs-dok-wrap { padding: 16px 16px 32px; }
+    .fs-prot-angaben { grid-template-columns: 7.5rem minmax(0, 1fr); }
+    .fs-prot-top h3 { grid-template-columns: 2.5rem minmax(0, 1fr) auto; }
+    .fs-prot-inhalt { padding-left: 2.5rem; }
+    .fs-prot-mehr { opacity: 1; }
     .fs-neben { border-left: 0; border-top: 1px solid var(--wf-linie); padding: 16px 16px 32px; }
     /* Liste: Datum links, Titel und Stand untereinander */
     .fs-sl > li { grid-template-columns: 4.5rem minmax(0, 1fr); padding: 10px 0; margin: 0; }

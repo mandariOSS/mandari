@@ -1,0 +1,73 @@
+{% load permission_tags %}
+{% comment %}
+Nebenspalte nach der Sitzung (Issue #1071, Schritt 3; Muster protokollHtml/altNebenHtml):
+- Vorsitz und Protokollierende: „Bisheriges Protokoll“ (nur Sitzungen aus Einzeleinträgen), Schritte nach der Sitzung
+  (Anwesenheit bestätigen, Genehmigung, Versand per E-Mail, Teilnahmenachweise; c-work.schritt) und Aufgaben aus der
+  Sitzung.
+- Mitglieder: Ihre Teilnahme mit Teilnahmenachweis, Ihre Aufgaben, Per E-Mail.
+- Abgesagt: der Grund.
+- Für alle: Herunterladen (PDF je Fassung nach Recht, wie bisher) und Änderungshistorie.
+Kontext: meeting, org_slug, rechte, dok, schritte, versand, aufgaben_sitzung, eigene_aufgaben, teilnahme, nachweis_tag,
+can_export_attendance, darf_einstellungen, darf_intern, membership.
+{% endcomment %}
+{% if meeting.status == 'cancelled' %}
+<c-work.neben-abschnitt titel="Abgesagt" kennung="ab-h">
+    <p>{% if meeting.cancellation_reason %}{{ meeting.cancellation_reason }}{% else %}Diese Sitzung findet nicht statt.{% endif %}</p>
+    <p class="fs-meta">Tagesordnung und Teilnahmen bleiben gespeichert.</p>
+</c-work.neben-abschnitt>
+{% elif rechte.schritte %}
+{% if dok.alt %}
+<c-work.neben-abschnitt titel="Bisheriges Protokoll" kennung="alt-h" data-testid="fs-pr-alt">
+    <p>Diese Sitzung ist mit Einzeleinträgen protokolliert: {{ dok.zahlen.alle }} Eintr{{ dok.zahlen.alle|pluralize:"ag,äge" }}, davon {{ dok.zahlen.speech }} Wortbeitr{{ dok.zahlen.speech|pluralize:"ag,äge" }}, {{ dok.zahlen.note }} Notiz{{ dok.zahlen.note|pluralize:"en" }}, {{ dok.zahlen.action }} Aufgabe{{ dok.zahlen.action|pluralize:"n" }} und {{ dok.zahlen.decision }} Beschl{{ dok.zahlen.decision|pluralize:"uss,üsse" }}.</p>
+    <p>Work zeigt alle Einträge unverändert, in ihrer Reihenfolge, mit Person und Uhrzeit. Nichts wird gelöscht, zusammengefasst oder umgeschrieben. Neue Sitzungen schreiben die Notizen als ein Dokument je TOP.</p>
+</c-work.neben-abschnitt>
+{% endif %}
+<c-work.neben-abschnitt titel="{% if meeting.protocol_approved %}Abgeschlossen{% else %}Nach der Sitzung{% endif %}" kennung="schritte-h" data-testid="fs-pr-schritte">
+    <ol class="fs-schritte">
+        {% for s in schritte %}
+        <c-work.schritt nr="{{ s.nr }}" stand="{{ s.stand }}" titel="{{ s.titel }}">{{ s.text }}{% if s.nr == '1' and rechte.bestaetigen %} <button type="button" class="wf-textlink" @click="document.getElementById('fs-bestaetigen').showModal()" aria-haspopup="dialog">Anwesenheit bestätigen …</button>{% endif %}{% if s.nr == '2' and rechte.genehmigen %} <button type="button" class="wf-textlink" @click="document.getElementById('fs-genehmigen').showModal()" aria-haspopup="dialog">Direkt genehmigen …</button>{% endif %}{% if s.nr == '3' and not versand.verschickt and darf_einstellungen %} <a class="wf-textlink" href="{% url 'work:organization_faction_settings' org_slug=org_slug %}">Einstellung der Fraktion</a>{% endif %}</c-work.schritt>
+        {% endfor %}
+        <c-work.schritt nr="4" titel="Teilnahmenachweise">{% if meeting.attendance_confirmed_at %}Mitglieder laden ihren Nachweis selbst herunter.{% else %}Nach der Bestätigung laden Mitglieder ihren Nachweis selbst herunter.{% endif %}{% if can_export_attendance %} Für die Verwaltung: <a class="wf-textlink" href="{% url 'work:faction_attendance_export' org_slug=org_slug %}?from={{ nachweis_tag|date:'Y-m-d' }}&amp;to={{ nachweis_tag|date:'Y-m-d' }}">Sammel-Export</a>{% endif %}</c-work.schritt>
+    </ol>
+</c-work.neben-abschnitt>
+{% if aufgaben_sitzung %}
+<c-work.neben-abschnitt titel="Aufgaben aus der Sitzung" kennung="auf-h">
+    <ul class="fs-pr-aufgaben">
+        {% for a, t in aufgaben_sitzung %}
+        <li><a class="wf-textlink" href="{% url 'work:tasks' org_slug=org_slug %}?open={{ a.erste_id }}">{{ a.titel }}</a><span class="fs-meta">{% if a.zustaendig %}{{ a.zustaendig|join:", " }}{% else %}TOP {{ t.item.number }}{% endif %}{% if a.faellig %}, bis {{ a.faellig|date:"d.m." }}{% endif %}{% if a.gesamt > 1 %}, {{ a.erledigt }} von {{ a.gesamt }} erledigt{% elif a.erledigt %}, erledigt{% endif %}</span></li>
+        {% endfor %}
+    </ul>
+</c-work.neben-abschnitt>
+{% endif %}
+{% else %}
+{% if teilnahme %}
+<c-work.neben-abschnitt titel="Ihre Teilnahme" kennung="tn-h" data-testid="fs-pr-teilnahme">
+    <p>{{ teilnahme.satz }}</p>
+    {% if teilnahme.nachweis %}
+    <p><a class="wf-knopf" href="{% url 'work:faction_certificate' org_slug=org_slug %}?from={{ nachweis_tag|date:'Y-m-d' }}&amp;to={{ nachweis_tag|date:'Y-m-d' }}"><i data-lucide="file-text" aria-hidden="true"></i>Teilnahmenachweis (PDF)</a></p>
+    {% endif %}
+</c-work.neben-abschnitt>
+{% endif %}
+{% if eigene_aufgaben %}
+<c-work.neben-abschnitt titel="Ihre Aufgaben" kennung="ea-h">
+    <ul class="fs-pr-aufgaben">
+        {% for task in eigene_aufgaben %}
+        <li><a class="wf-textlink" href="{% url 'work:tasks' org_slug=org_slug %}?open={{ task.pk }}">{{ task.title }}</a>{% if task.due_date or task.is_completed %}<span class="fs-meta">{% if task.due_date %}bis {{ task.due_date|date:"d.m." }}{% endif %}{% if task.is_completed %}{% if task.due_date %}, {% endif %}erledigt{% endif %}</span>{% endif %}</li>
+        {% endfor %}
+    </ul>
+</c-work.neben-abschnitt>
+{% endif %}
+<c-work.neben-abschnitt titel="Per E-Mail" kennung="mail-h">
+    <p>{% if versand.verschickt %}Work hat das Protokoll am {{ meeting.protocol_sent_at|date:"d.m." }} per E-Mail verschickt{% if not darf_intern %}, an Sie ohne nichtöffentlichen Teil{% endif %}.{% elif versand.modus == 'off' %}Work verschickt Protokolle nicht automatisch. Sie lesen es hier oder laden es als PDF.{% elif versand.modus == 'after_completion' %}Work verschickt das Protokoll nach dem Ende der Sitzung automatisch per E-Mail{% if not darf_intern %}, an Sie ohne nichtöffentlichen Teil{% endif %}.{% else %}Nach der Genehmigung bekommen Sie das Protokoll automatisch per E-Mail{% if not darf_intern %}, ohne nichtöffentlichen Teil{% endif %}.{% endif %}</p>
+</c-work.neben-abschnitt>
+{% endif %}
+
+{% if rechte.pdf_intern or rechte.pdf_oeffentlich or membership|has_perm:"faction.view_audit" %}
+<c-work.neben-abschnitt titel="Herunterladen" kennung="dl-h">
+    <ul class="fs-weiteres">
+        {% if rechte.pdf_intern %}<li><a href="{% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=meeting.id variant='intern' %}"><i data-lucide="download" aria-hidden="true"></i>Protokoll, vollständig (PDF)</a></li>{% endif %}
+        {% if rechte.pdf_oeffentlich %}<li><a href="{% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=meeting.id variant='oeffentlich' %}"><i data-lucide="download" aria-hidden="true"></i>Protokoll, öffentlicher Teil (PDF)</a></li>{% endif %}
+        {% if membership|has_perm:"faction.view_audit" %}<li><a href="{% url 'work:faction_audit' org_slug=org_slug %}?meeting={{ meeting.id }}"><i data-lucide="history" aria-hidden="true"></i>Änderungshistorie</a></li>{% endif %}
+    </ul>
+</c-work.neben-abschnitt>
+{% endif %}

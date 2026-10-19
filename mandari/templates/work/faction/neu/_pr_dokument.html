@@ -1,0 +1,47 @@
+{% comment %}
+Protokoll als Dokument nach der Sitzung (Issue #1071, Schritt 3; Muster protokollHtml/protTopHtml/altTopHtml):
+Kopfangaben (Zeit, Leitung, Anwesenheit, Beschlussfähigkeit), öffentlicher Teil, nichtöffentlicher Teil nur für
+Vereidigte (sonst nur die Zahl, fs-gesperrt), je TOP Notizen (bearbeitbar, solange protokolliert werden darf; Editor
+sitzungsNotizen mit eigener Konfiguration je TOP), bisherige Einzeleinträge unverändert mit Person und Uhrzeit,
+Aufgaben und Beschluss. „Details“ öffnet das Panel des TOPs (Einträge, Aufgaben, Anhänge, Abstimmung).
+Auch Antwort der Aktionen in #agenda-container (apps/work/faction/views/protokoll.py, dokument_html).
+Kontext: meeting, organization, dok, angaben, genehmigung, rechte, notizen_editierbar, to_gesperrt.
+{% endcomment %}
+<article class="fs-prot-dok" aria-labelledby="prot-titel" data-testid="fs-prot-dok">
+    <p class="fs-prot-meta">{{ organization.name }}, {% if meeting.status == 'cancelled' %}Sitzung abgesagt{% else %}Protokoll, {% if genehmigung.genehmigt %}{% if genehmigung.direkt %}direkt {% endif %}genehmigt{% if genehmigung.am %} am {{ genehmigung.am|date:"d.m.Y" }}{% endif %}{% else %}Entwurf{% endif %}{% if dok.alt %}, bisherige Einzeleinträge{% endif %}{% endif %}
+        {% if notizen_editierbar %}<span class="fs-meta"><i data-lucide="cloud" aria-hidden="true"></i>Notizen werden automatisch gespeichert</span>{% endif %}
+    </p>
+    <h2 class="fs-prot-titel" id="prot-titel">{{ meeting.title }} am {{ meeting.start|date:"d.m.Y" }}</h2>
+    <dl class="fs-prot-angaben">
+        <dt>Zeit und Ort</dt><dd>{{ angaben.zeit }}</dd>
+        {% if meeting.status == 'cancelled' %}
+        <dt>Abgesagt</dt><dd>{{ meeting.cancellation_reason|default:"Ohne Angabe eines Grundes." }}</dd>
+        {% else %}
+        {% if angaben.leitung %}<dt>Sitzungsleitung</dt><dd>{{ angaben.leitung }}</dd>{% endif %}
+        {% if angaben.schrift %}<dt>Schriftführung</dt><dd>{{ angaben.schrift }}</dd>{% endif %}
+        {% if angaben.vor_ort %}<dt>Anwesend vor Ort</dt><dd>{{ angaben.vor_ort|join:", " }}</dd>{% endif %}
+        {% if angaben.online %}<dt>Anwesend online</dt><dd>{{ angaben.online|join:", " }}</dd>{% endif %}
+        {% if angaben.gaeste %}<dt>Gäste</dt><dd>{{ angaben.gaeste|join:", " }}</dd>{% endif %}
+        {% if angaben.entschuldigt %}<dt>Entschuldigt</dt><dd>{{ angaben.entschuldigt|join:", " }}</dd>{% endif %}
+        {% if angaben.abwesend %}<dt>Abwesend</dt><dd>{{ angaben.abwesend|join:", " }}</dd>{% endif %}
+        {% if angaben.quorum %}<dt>Beschlussfähig</dt><dd>{% if angaben.quorum.met %}ja{% else %}nein{% endif %}, {{ angaben.quorum.voting_present }} von {{ angaben.quorum.voting_total }} Stimmberechtigten{% if angaben.ohne_stimme %} <span class="fs-meta">(* ohne Stimmrecht)</span>{% endif %}</dd>{% endif %}
+        {% endif %}
+    </dl>
+
+    {% if meeting.status == 'cancelled' and dok.tops %}<h3 class="fs-prot-teil">Geplante Tagesordnung</h3>{% endif %}
+    {% for t in dok.oeffentlich %}{% include "work/faction/neu/_pr_top.html" %}{% empty %}{% if not dok.intern and not dok.gesperrt %}<p class="fs-meta fs-prot-leer">Keine Tagesordnungspunkte.</p>{% endif %}{% endfor %}
+
+    {% if dok.intern %}
+    <h3 class="fs-prot-teil"><i data-lucide="lock" aria-hidden="true"></i>Nichtöffentlicher Teil</h3>
+    {% for t in dok.intern %}{% include "work/faction/neu/_pr_top.html" %}{% endfor %}
+    {% endif %}
+    {% if dok.gesperrt %}<div class="fs-prot-gesperrt">{% include "work/faction/neu/_vb_gesperrt.html" %}</div>{% endif %}
+
+    {% if dok.allgemein %}
+    {# Einträge ohne TOP gehören wie im PDF zur internen Fassung: der Kontext enthält sie nur für Vereidigte #}
+    <h3 class="fs-prot-teil"><i data-lucide="lock" aria-hidden="true"></i>Einträge ohne TOP und Nachträge</h3>
+    <div class="fs-prot-inhalt fs-prot-allgemein">
+        {% for e in dok.allgemein %}{% include "work/faction/neu/_pr_eintrag.html" %}{% endfor %}
+    </div>
+    {% endif %}
+</article>

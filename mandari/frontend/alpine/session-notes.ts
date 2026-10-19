@@ -7,19 +7,23 @@
  * stehen danach beide Fassungen untereinander im Editor – es geht nichts verloren.
  *
  * Wer nur mitliest, bekommt keinen Editor (der Server rendert die Notizen als HTML).
- * Konfiguration per `{{ notizen_config|json_script:"fs-notizen-config" }}`; Markup: `_protokoll.html`.
+ * Konfiguration per `{{ notizen_config|json_script:"fs-notizen-config" }}`; Markup: `_protokoll.html`. Stehen mehrere
+ * Editoren auf einer Seite (Protokoll nach der Sitzung, `neu/_pr_dokument.html`), nennt `data-konfig` am Element die
+ * Kennung des eigenen json_script.
  */
 
 import type { Editor } from '@tiptap/core'
 import { defineComponent } from '../js/alpine/component'
 import { readJsonScript } from '../js/json-script'
-import { aktion, notizenAbmelden, notizenAnmelden } from './faction-session'
+import { aktion, notizenAbmelden, notizenAnmelden, vorAnfragenSichern } from './faction-session'
 
 interface NotizenConfig {
   itemId: string
   stand: string
   editierbar: boolean
   platzhalter: string
+  /** Ohne Werkzeugleiste (Protokoll nach der Sitzung): Platzhalter ohne Hinweis auf die Leiste */
+  leiste?: boolean
 }
 
 interface Antwort {
@@ -72,7 +76,8 @@ export const sitzungsNotizen = defineComponent(() => {
     } as NotizenFormat,
 
     init() {
-      config = readJsonScript<NotizenConfig>('fs-notizen-config')
+      // Mehrere Editoren auf einer Seite (Protokoll nach der Sitzung, Issue #1071): eigene Konfiguration je Element
+      config = readJsonScript<NotizenConfig>(this.$el.dataset.konfig || 'fs-notizen-config')
       this.stand = config?.stand ?? ''
       const MandariEditor = window.MandariEditor
       const element = this.$refs.notiz
@@ -82,7 +87,10 @@ export const sitzungsNotizen = defineComponent(() => {
       editor = MandariEditor.createNotesEditor({
         element,
         content: inhalt,
-        placeholder: `${config.platzhalter}. Formatieren Sie mit der Leiste oder Strg+B, Strg+I, Strg+U.`,
+        placeholder:
+          config.leiste === false
+            ? config.platzhalter
+            : `${config.platzhalter}. Formatieren Sie mit der Leiste oder Strg+B, Strg+I, Strg+U.`,
         onUpdate: () => this.geaendert(),
         onFormat: (format) => {
           this.format = format
@@ -90,6 +98,7 @@ export const sitzungsNotizen = defineComponent(() => {
       })
       this.bereit = true
       notizenAnmelden(this)
+      vorAnfragenSichern()
       beimVerlassen = () => {
         if (ausstehend) void this.speichern(true)
       }
