@@ -3,11 +3,11 @@
 Scraper-Quellen auch beim Abgleich einer einzelnen Quelle über den Scraper (Teil von Issue #1027).
 
 Der Daemon gleicht eine Quelle über ``sync_body_url`` ab, das Scraper-Quellen (``sync_config["source_type"] =
-"scraper:<vendor>"``) an den ``ScraperSyncRunner`` gibt. Der Worker der Anwendung (``run_sync_with_logging``, Aktionen
-„Inkrementeller Sync“ und „Vollständiger Sync“ ohne laufenden Ingestor oder an einer abgeschalteten Quelle) und
-``python -m src.main sync --source`` kommen dagegen über ``sync_source``. Dort fehlte der Zweig: Die Basis-URL eines
-SessionNet wurde als OParl-System abgerufen, der Abgleich schlug mit „Failed to fetch system“ fehl und zählte als
-Fehler der Quelle. Jetzt nehmen beide Einstiege denselben Weg. Ohne Netz und ohne Datenbank.
+"scraper:<vendor>"``) an den ``ScraperSyncRunner`` gibt. ``python -m src.main sync --source`` kam bis Issue #1043
+über einen eigenen Einstieg (``sync_source``), dem der Zweig fehlte: Die Basis-URL eines SessionNet wurde als
+OParl-System abgerufen, der Abgleich schlug mit „Failed to fetch system“ fehl und zählte als Fehler der Quelle. Seit
+Issue #554 gibt es nur noch den Einstieg des Daemons; ``sync --source`` nutzt ihn ebenfalls. Ohne Netz und ohne
+Datenbank.
 """
 
 from __future__ import annotations
@@ -17,7 +17,9 @@ from typing import Any
 
 import pytest
 from mandari_oparl import IdBases
+from typer.testing import CliRunner
 
+from src import main as cli
 from src.scrapers import runner as runner_module
 from src.sync import orchestrator as orchestrator_module
 from src.sync.orchestrator import SyncOrchestrator, SyncResult
@@ -88,15 +90,12 @@ def runner_attrappe(monkeypatch: pytest.MonkeyPatch) -> type[_Runner]:
     return _Runner
 
 
-@pytest.mark.parametrize("einstieg", ["sync_source", "sync_body_url"])
 @pytest.mark.parametrize("full", [False, True])
-async def test_scraper_quelle_laeuft_ueber_den_scraper(
-    runner_attrappe: type[_Runner], einstieg: str, full: bool
-) -> None:
+async def test_scraper_quelle_laeuft_ueber_den_scraper(runner_attrappe: type[_Runner], full: bool) -> None:
     quelle = _quelle(dict(SCRAPER))
     orchestrator = _orchestrator(quelle)
 
-    result = await getattr(orchestrator, einstieg)(BASIS, full=full)
+    result = await orchestrator.sync_body_url(BASIS, full=full)
 
     assert result.success is True
     assert result.full is full
@@ -107,7 +106,7 @@ async def test_scraper_quelle_laeuft_ueber_den_scraper(
 async def test_filter_nach_kommune_gilt_bei_scraper_quellen_nicht(runner_attrappe: type[_Runner]) -> None:
     quelle = _quelle(dict(SCRAPER))
 
-    result = await _orchestrator(quelle).sync_source(BASIS, body_filter="Musterdorf")
+    result = await _orchestrator(quelle).sync_body_url(BASIS, body_filter="Musterdorf")
 
     assert result.success is True
     assert runner_attrappe.laeufe == [(quelle, False)]
@@ -136,3 +135,53 @@ def test_scraper_typ_ergibt_runner(runner_attrappe: type[_Runner]) -> None:
     assert isinstance(runner, _Runner)
     assert runner.source is quelle
     assert runner.orchestrator is orchestrator
+
+
+def test_nur_ein_einstieg_fuer_den_abgleich_einer_quelle() -> None:
+    """Issue #554: Den abweichenden Altpfad ``sync_source`` gibt es nicht mehr."""
+    assert not hasattr(SyncOrchestrator, "sync_source")
+
+
+@pytest.mark.parametrize(
+    ("argumente", "erwartet"),
+    [
+        ([], {"full": False, "body_filter": None}),
+        (["--full"], {"full": True, "body_filter": None}),
+        (["--filter", "Musterdorf"], {"full": False, "body_filter": "Musterdorf"}),
+    ],
+)
+def test_sync_source_nimmt_den_einstieg_des_daemons(
+    monkeypatch: pytest.MonkeyPatch, argumente: list[str], erwartet: dict[str, Any]
+) -> None:
+    """``sync --source`` gleicht über ``sync_body_url`` ab wie der Daemon, mit ``--full`` und ``--filter``."""
+    aufrufe: list[dict[str, Any]] = []
+    protokolle: list[str] = []
+
+    class Orchestrator:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            return None
+
+        async def __aenter__(self) -> Orchestrator:
+            return self
+
+        async def __aexit__(self, *args: object) -> None:
+            return None
+
+        async def sync_body_url(self, url: str, **kwargs: Any) -> SyncResult:
+            aufrufe.append({"url": url, **kwargs})
+            return SyncResult(source_url=url, source_name="Samtgemeinde", success=True)
+
+        def print_result(self, result: SyncResult) -> None:
+            return None
+
+        async def write_results_to_synclog(self, results: list[SyncResult], *args: Any, **kwargs: Any) -> None:
+            protokolle.append(kwargs["triggered_by"])
+
+    monkeypatch.setattr(cli, "SyncOrchestrator", Orchestrator)
+    result = CliRunner().invoke(cli.app, ["sync", "--source", BASIS, *argumente])
+
+    assert result.exit_code == 0, result.output
+    assert len(aufrufe) == 1
+    assert aufrufe[0]["url"] == BASIS
+    assert {schluessel: aufrufe[0][schluessel] for schluessel in erwartet} == erwartet
+    assert protokolle == ["cli"], "ein Protokoll für den Aufruf, kein zweites mit triggered_by=daemon"

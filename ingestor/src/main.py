@@ -86,7 +86,7 @@ def sync(
         None,
         "--source",
         "-s",
-        help="Legacy: OParl System URL (prefer --body for direct Body URLs)",
+        help="Basis-URL einer Quelle (wie im Admin); Abgleich wie im Daemon, auch für Scraper-Quellen",
     ),
     full: bool = typer.Option(False, "--full", "-f", help="Perform full sync (ignore last sync timestamp)"),
     all_sources: bool = typer.Option(False, "--all", "-a", help="Sync all registered sources"),
@@ -98,9 +98,9 @@ def sync(
     """
     Synchronize OParl data.
 
-    Supports three input modes:
-    1. --body URL  (recommended): Direct Body URL, auto-detects type
-    2. --source URL (legacy): System URL, discovers bodies
+    Supports three input modes, all through the daemon's entry point (``sync_body_url``, Issue #554):
+    1. --body URL: Direct Body URL, auto-detects type
+    2. --source URL: Basis-URL einer Quelle (System, Kommunenliste oder Scraper-Quelle), optional mit --filter
     3. --all: Sync all registered sources
 
     Examples:
@@ -117,7 +117,7 @@ def sync(
         # Full sync
         mandari-ingestor sync --body URL --full
 
-        # Legacy: Sync via system URL
+        # Sync a source by its base URL (as registered)
         mandari-ingestor sync --source https://example.oparl.org/oparl/system
 
         # Sync all registered sources
@@ -164,9 +164,11 @@ def sync(
                     results.append(result)
             else:
                 assert source_url is not None
-                result = await orchestrator.sync_source(
+                # Derselbe Einstieg wie im Daemon (Issue #554)
+                result = await orchestrator.sync_body_url(
                     url=source_url,
                     full=full,
+                    max_concurrent=max_concurrent,
                     body_filter=body_filter,
                 )
                 orchestrator.print_result(result)

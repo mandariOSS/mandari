@@ -904,11 +904,14 @@ class SyncOrchestrator:
         full: bool = False,
         max_concurrent: int | None = None,
         default_window: FullSyncWindow | None = None,
+        body_filter: str | None = None,
     ) -> SyncResult:
         """
         Sync from any OParl URL (auto-detects Body, Body-List, or System).
 
-        This is the primary entry point for the Body-First architecture.
+        Einziger Einstieg für den Abgleich einer Quelle (Issue #554): Daemon, ``sync --source``, ``sync --body`` und
+        ``sync --all`` kommen hierher. Scraper-Quellen (``sync_config["source_type"] = "scraper:<vendor>"``) gibt er
+        an den ``ScraperSyncRunner`` ab.
 
         Args:
             url: OParl URL (Body, Body-List, or System endpoint)
@@ -916,6 +919,8 @@ class SyncOrchestrator:
             max_concurrent: Max concurrent HTTP requests
             default_window: Standardfenster des Daemons für Vollabgleiche; es begrenzt den Vollabgleich in
                 Zeitscheiben einer Quelle ohne eigenes ``full_sync_window`` (Issue #1033)
+            body_filter: nur Kommunen, deren Name (ohne Groß-/Kleinschreibung) oder Kennung den Text enthält
+                (``sync --source --filter``); der Abgleich gilt dann nicht als vollständig. Nicht für Scraper-Quellen.
 
         Returns:
             SyncResult with statistics
@@ -926,6 +931,11 @@ class SyncOrchestrator:
         self._register_id_base(url, source_row)
         runner = self._scraper_runner(source_row)
         if runner is not None:
+            if body_filter:
+                console.print(
+                    "[yellow]Der Filter nach Kommune gilt nicht für Scraper-Quellen; abgeglichen wird die ganze "
+                    "Quelle.[/yellow]"
+                )
             return await runner.run(full=full)
 
         # Vermerke „filtert nicht“ dieser Quelle (Issue #1041), alte Einträge je Server übernommen
@@ -976,6 +986,15 @@ class SyncOrchestrator:
                     raw_json=bodies_data[0] if len(bodies_data) == 1 else {"bodies_count": len(bodies_data)},
                     oparl_version=oparl_version,
                 )
+
+                # Filter nach Kommune (sync --source --filter); Name und Rohdaten der Quelle bleiben wie im Daemon
+                if body_filter:
+                    bodies_data = [
+                        b
+                        for b in bodies_data
+                        if body_filter.lower() in b.get("name", "").lower() or body_filter in b.get("id", "")
+                    ]
+                    console.print(f"[dim]Filtered to {len(bodies_data)} bodies[/dim]")
 
                 # Sync bodies
                 if len(bodies_data) > 1:
@@ -1029,9 +1048,9 @@ class SyncOrchestrator:
                     result.unstored.update(body_result.get("unstored") or {})
                     merge_slice_details(result.slice_details, body_result)
 
-                # Update sync timestamp; vollständig nur ohne Lücke (Issue #556), der Vollabgleich nur ohne
-                # ausgesetzte Liste (Issue #1033)
-                complete = sync_complete(body_results, missed_bodies, client)
+                # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556), der
+                # Vollabgleich nur ohne ausgesetzte Liste (Issue #1033)
+                complete = not body_filter and sync_complete(body_results, missed_bodies, client)
                 await self.storage.update_source_sync_time(
                     source_id,
                     full_sync=full,
@@ -1277,248 +1296,6 @@ class SyncOrchestrator:
             await self.storage.record_source_failure(url, error, error_kind)
         except Exception as exc:
             console.print(f"[yellow]Warning: Quellen-Fehlerstatus nicht gespeichert: {exc}[/yellow]")
-
-    async def sync_source(
-        self,
-        url: str,
-        full: bool = False,
-        body_filter: str | None = None,
-        default_window: FullSyncWindow | None = None,
-    ) -> SyncResult:
-        """
-        Synchronize a single OParl source.
-
-        Args:
-            url: The OParl API URL
-            full: Whether to perform a full sync (ignores last_sync)
-            body_filter: Optional body name/ID filter
-            default_window: Standardfenster für Vollabgleiche (siehe ``sync_body_url``)
-
-        Returns:
-            SyncResult with statistics
-        """
-        start_time = datetime.now(UTC)
-        result = SyncResult(source_url=url, source_name="", success=False)
-        source_row = await self.storage.get_source_by_url(url)
-        self._register_id_base(url, source_row)
-        # Auch hier über den Scraper: Worker der Anwendung (``run_sync_with_logging``) und ``sync --source`` kommen
-        # über diese Methode; ohne den Zweig riefen sie die Basis-URL eines SessionNet als OParl-System ab.
-        runner = self._scraper_runner(source_row)
-        if runner is not None:
-            if body_filter:
-                console.print(
-                    "[yellow]Der Filter nach Kommune gilt nicht für Scraper-Quellen; abgeglichen wird die ganze "
-                    "Quelle.[/yellow]"
-                )
-            return await runner.run(full=full)
-        # Vermerke „filtert nicht“ dieser Quelle (Issue #1041), alte Einträge je Server übernommen
-        filter_notes = self._filter_notes(url, source_row)
-        options = SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None))
-        full, fetch_deadline = self._full_sync_plan(url, options, full, source_row, default_window)
-        full, slice_run, slice_note = await self._slice_run(
-            url, options, full, getattr(source_row, "sync_config", None)
-        )
-        if slice_note is not None:
-            fetch_deadline = None  # nur Änderungsabgleich: das Zeitfenster gilt nur für den Vollabgleich
-            result.errors.append(slice_note)
-        result.full = full
-
-        client: OParlClient | None = None
-        try:
-            async with OParlClient(
-                max_concurrent=self.max_concurrent,
-                source_name=url.split("/")[2] if "/" in url else "unknown",
-                user_agent=getattr(source_row, "user_agent", None),
-                fetch_deadline=fetch_deadline,
-                filter_notes=filter_notes,
-                **options.client_kwargs(),
-            ) as client:
-                # Fetch system
-                console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
-                system_result = await client.fetch(url, use_cache=False, skip_wait=True)
-                system_data = system_result.data
-                reason = system_result.error or (
-                    f"HTTP {system_result.status_code}" if system_result.status_code else "keine Antwort"
-                )
-
-                # OParl 1.0 (more! rubin): 1.1-Pfad liefert Fehlerobjekt/404 (Issue #122)
-                if is_oparl_error(system_data):
-                    reason = oparl_error_message(system_data)
-                    system_data, _resolved = await self._try_oparl_10_fallback(client, url, reason)
-                elif system_data is None and system_result.status_code == 404:
-                    system_data, _resolved = await self._try_oparl_10_fallback(client, url, reason)
-
-                if not system_data:
-                    result.errors.append(f"Failed to fetch system from {url} ({reason})")
-                    self._collect_host_findings(result, client)
-                    await self._record_source_failure(url, reason, system_result.error_kind or client.error_kind)
-                    return result
-
-                result.source_name = system_data.get("name", "Unknown")
-                console.print(f"[green]Connected to: {result.source_name}[/green]")
-
-                # Ensure source exists in database
-                source_id = await self.storage.upsert_source(
-                    url=url,
-                    name=result.source_name,
-                    raw_json=system_data,
-                    oparl_version=detect_oparl_version(system_data),
-                )
-
-                # Get body list URL
-                body_list_url = system_data.get("body")
-                if not body_list_url:
-                    result.errors.append("No body list found in system")
-                    return result
-
-                # Fetch all bodies
-                console.print("[blue]Fetching bodies list...[/blue]")
-                missed_bodies: list[str] = []
-                bodies_data = await self._fetch_bodies(client, body_list_url, missed_bodies)
-                console.print(f"[dim]Found {len(bodies_data)} bodies[/dim]")
-                if missed_bodies:
-                    result.errors.append(missed_bodies_note(missed_bodies))
-
-                # Filter bodies if requested
-                if body_filter:
-                    bodies_data = [
-                        b
-                        for b in bodies_data
-                        if body_filter.lower() in b.get("name", "").lower() or body_filter in b.get("id", "")
-                    ]
-                    console.print(f"[dim]Filtered to {len(bodies_data)} bodies[/dim]")
-
-                # Sync all bodies IN PARALLEL for massive speedup
-                console.print(f"[bold green]Starting PARALLEL sync of {len(bodies_data)} bodies...[/bold green]")
-
-                # Disable Progress bars if syncing multiple bodies in parallel
-                # Rich doesn't support multiple live displays simultaneously
-                if len(bodies_data) > 1:
-                    self._parallel_mode = True
-
-                # Bound per-body concurrency so multi-body sources don't
-                # multiply peak memory (each body sync holds pages + caches).
-                body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
-                source_config = getattr(source_row, "sync_config", None)
-                missing_lists = MissingLists(
-                    url, missing_lists_of(source_config), missing_list_reasons_of(source_config)
-                )
-                timed_lists = TimedLists(url, timed_lists_of(source_config))
-
-                async def sync_body_wrapper(body_data):
-                    """Wrapper to catch exceptions per body."""
-                    async with body_semaphore:
-                        try:
-                            return await self._sync_body(
-                                client=client,
-                                body_data=body_data,
-                                source_id=source_id,
-                                full=full,
-                                options=options,
-                                missing_lists=missing_lists,
-                                timed_lists=timed_lists,
-                                slices=slice_run,
-                            )
-                        except Exception as e:
-                            console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
-                            return {"errors": [str(e)], "incomplete": ["body"]}
-
-                # Run all body syncs in parallel (bounded by semaphore)
-                body_results = await asyncio.gather(
-                    *[sync_body_wrapper(body_data) for body_data in bodies_data],
-                    return_exceptions=False,
-                )
-
-                # Aggregate results
-                for body_result in body_results:
-                    result.bodies_synced += 1
-                    result.meetings_synced += body_result.get("meetings", 0)
-                    result.papers_synced += body_result.get("papers", 0)
-                    result.persons_synced += body_result.get("persons", 0)
-                    result.organizations_synced += body_result.get("organizations", 0)
-                    result.memberships_synced += body_result.get("memberships", 0)
-                    result.files_synced += body_result.get("files", 0)
-                    result.locations_synced += body_result.get("locations", 0)
-                    result.agenda_items_synced += body_result.get("agenda_items", 0)
-                    result.consultations_synced += body_result.get("consultations", 0)
-                    result.errors.extend(body_result.get("errors", []))
-                    result.unstored.update(body_result.get("unstored") or {})
-                    merge_slice_details(result.slice_details, body_result)
-
-                # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556)
-                complete = not body_filter and sync_complete(body_results, missed_bodies, client)
-                await self.storage.update_source_sync_time(
-                    source_id,
-                    full_sync=full,
-                    complete=complete,
-                    full_complete=complete and full_sync_finished(body_results),
-                )
-                result.http_stats = client.stats
-                result.success = True
-                await self._apply_host_findings(result, client)
-                if full:
-                    await self._recheck_modified_since(client, url, bodies_data)
-
-                # Calculate total entities synced
-                total_synced = (
-                    result.meetings_synced
-                    + result.papers_synced
-                    + result.persons_synced
-                    + result.organizations_synced
-                    + result.memberships_synced
-                    + result.files_synced
-                    + result.agenda_items_synced
-                    + result.consultations_synced
-                )
-
-                end_time = datetime.now(UTC)
-                duration = (end_time - start_time).total_seconds()
-
-                # Write sync log to Django's SyncLog table
-                try:
-                    await self.storage.write_sync_log(
-                        source_id=source_id,
-                        sync_type="full" if full else "incremental",
-                        status="success",
-                        started_at=start_time,
-                        finished_at=end_time,
-                        duration_seconds=duration,
-                        entities_synced=total_synced,
-                        errors=result.errors,
-                        details={
-                            "meetings": result.meetings_synced,
-                            "papers": result.papers_synced,
-                            "persons": result.persons_synced,
-                            "organizations": result.organizations_synced,
-                            "memberships": result.memberships_synced,
-                            "files": result.files_synced,
-                            "agenda_items": result.agenda_items_synced,
-                            "consultations": result.consultations_synced,
-                            **self._finding_details(result),
-                            **result.slice_details,
-                        },
-                        triggered_by="daemon",
-                    )
-                except Exception as log_err:
-                    console.print(f"[yellow]Warning: Could not write sync log: {log_err}[/yellow]")
-
-                # Record metrics
-                metrics.record_entities_batch(result.source_name, total_synced)
-
-        except Exception as e:
-            result.errors.append(str(e))
-            console.print(f"[red]Sync failed: {e}[/red]")
-            await self._record_source_failure(url, str(e), client.error_kind if client else None)
-            if client is not None:
-                self._collect_host_findings(result, client)
-
-            # Sync log is written by the scheduler (one per cycle, not per source)
-
-        # Geänderte Vermerke „filtert nicht“ in der sync_config dieser Quelle speichern (Issue #1041)
-        await self._save_filter_notes(url, filter_notes)
-
-        result.duration_seconds = (datetime.now(UTC) - start_time).total_seconds()
-        return result
 
     async def _sync_body(
         self,
