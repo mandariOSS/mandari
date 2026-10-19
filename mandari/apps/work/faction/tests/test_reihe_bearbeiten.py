@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date, time, timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.contrib.messages import get_messages
@@ -144,7 +144,7 @@ def test_uhrzeit_und_ort_wirken_nur_auf_nicht_eingeladene_termine(
     assert _ortszeit(eingeladen) == time(18, 0) and eingeladen.location == "Büro"
     assert _ortszeit(einzeln) == time(19, 30) and einzeln.location == "Rathaus, Raum 3"
     assert _ortszeit(normal) == time(19, 30) and normal.location == "Neues Büro"
-    assert normal.end - normal.start == timedelta(minutes=120)
+    assert normal.end is not None and normal.end - normal.start == timedelta(minutes=120)
     schedule.refresh_from_db()
     assert schedule.time == time(19, 30) and schedule.default_location == "Neues Büro"
     assert any("Ändert 2 kommende Termine" in m and "1 eingeladene Sitzung bleibt" in m for m in _meldungen(response))
@@ -167,7 +167,7 @@ def test_rhythmuswechsel_verschiebt_termine_ohne_datenverlust(
         client_for(vorsitz.user).post(_url(org), _formular(schedule, weekday=neuer_tag))
 
     nachher = _termine(schedule)
-    assert {m.scheduled_date.weekday() for m in nachher} == {neuer_tag}
+    assert {m.scheduled_date.weekday() for m in nachher if m.scheduled_date} == {neuer_tag}
     assert {m.start.astimezone(timezone.get_default_timezone()).weekday() for m in nachher} == {neuer_tag}
     # Dieselben Sitzungen, nur verschoben: Nummern bleiben, nichts gelöscht, der eigene TOP hängt noch am Termin
     assert {m.pk for m in vorher} <= {m.pk for m in nachher}
@@ -255,7 +255,7 @@ def test_mitglied_darf_reihe_nicht_bearbeiten_und_nichts_wiederherstellen(
 def test_reihe_und_ausnahme_anderer_organisation_bleiben_unberuehrt(
     org: Any, vorsitz: Any, client_for: Any, django_capture_on_commit_callbacks: CaptureCallbacks
 ) -> None:
-    fremd = OrganizationFactory(name="Andere Fraktion", slug="andere-fraktion")
+    fremd = cast(Any, OrganizationFactory)(name="Andere Fraktion", slug="andere-fraktion")
     fremde_reihe = _reihe(fremd, django_capture_on_commit_callbacks)
     fremde_ausnahme = FactionMeetingException.objects.create(
         schedule=fremde_reihe, original_date=_morgen() + timedelta(days=7), exception_type="deleted"
@@ -283,6 +283,7 @@ def test_geloeschter_termin_kommt_nicht_wieder_und_laesst_sich_wiederherstellen(
     schedule = _reihe(org, django_capture_on_commit_callbacks)
     termin = _termine(schedule)[1]
     tag = termin.scheduled_date
+    assert tag is not None
 
     response = client_for(vorsitz.user).post(
         reverse("work:faction_action", kwargs={"org_slug": org.slug, "meeting_id": termin.id}),
@@ -333,7 +334,7 @@ def test_vergangene_und_reihenlose_termine_werden_nicht_gemerkt(org: Any, vorsit
     einzeln = FactionMeeting.objects.create(
         organization=org, title="Sondersitzung", start=timezone.now() + timedelta(days=3), status="planned"
     )
-    deletion.delete_meeting(einzeln, vorsitz, einzeln.start.strftime("%d.%m.%Y"))
+    deletion.delete_meeting(einzeln, vorsitz, "Sondersitzung")
     assert not FactionMeetingException.objects.exists()
 
 

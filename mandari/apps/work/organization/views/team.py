@@ -245,7 +245,7 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
         if section in self.SOFORT and self.is_htmx:
             return self._sofort_speichern(request, section)
         # Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): wie viele Termine sich ändern, ohne zu speichern
-        if section == "update_schedule" and request.POST.get("vorschau") and self.is_htmx:
+        if section == "update_schedule" and "vorschau" in request.POST and self.is_htmx:
             return self._reihe_vorschau(request)
         # Sitzungsreihen + Ausfallregeln (Issue #61) — eigene Formularaktionen
         if section:
@@ -274,7 +274,7 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
                 except ServiceError as exc:
                     flash_error(request, exc)
             # Wiederherstellen aus der Liste der Fraktionssitzungen führt dorthin zurück
-            if section == "restore_deleted_date" and request.POST.get("zurueck") == "liste":
+            if section == "restore_deleted_date" and fraktion_einstellungen.zurueck_zur_liste(request.POST):
                 return redirect("work:faction", org_slug=self.organization.slug)
             return redirect("work:organization_faction_settings", org_slug=self.organization.slug)
 
@@ -351,7 +351,7 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
         messages.success(request, f"Sitzungsreihe „{schedule.name}“ gespeichert. {plan.satz()}")
 
     def _restore_deleted_date(self, request):
-        datum, angelegt = services.restore_deleted_date(self.organization, request.POST.get("exception_id"))
+        datum, angelegt = services.restore_deleted_date(self.organization, request.POST)
         tag = datum.strftime("%d.%m.%Y")
         if angelegt:
             messages.success(request, f"Termin am {tag} wiederhergestellt. Work hat ihn wieder angelegt.")

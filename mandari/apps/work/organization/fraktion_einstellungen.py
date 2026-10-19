@@ -50,6 +50,11 @@ def felder(abschnitt: str) -> str:
     return ",".join(ABSCHNITT_FELDER[abschnitt])
 
 
+def zurueck_zur_liste(form: Any) -> bool:
+    """Führt „Wiederherstellen“ aus der Liste der Fraktionssitzungen dorthin zurück (``zurueck=liste``)?"""
+    return bool(form.get("zurueck") == "liste")
+
+
 def felder_aus(form: Any) -> list[str]:
     """Felder einer Anfrage ``section=save_settings`` (``felder=a,b``)."""
     return [f.strip() for f in str(form.get("felder", "")).split(",")]
