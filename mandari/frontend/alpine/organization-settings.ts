@@ -18,9 +18,13 @@ import { defineComponent } from '../js/alpine/component'
 
 const DEFAULT_COLOR = '#6366f1'
 
-/** Hex-Eingabe bereinigen: nur Hex-Ziffern, höchstens sechs. */
+/**
+ * Hex-Eingabe bereinigen: nur der Teil nach der letzten Raute (eingefügt „HEX #E3000F“),
+ * davon nur Hex-Ziffern, höchstens sechs.
+ */
 export function cleanHex(value: string): string {
-  return value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6)
+  const code = value.includes('#') ? value.slice(value.lastIndexOf('#') + 1) : value
+  return code.replace(/[^0-9a-fA-F]/g, '').slice(0, 6)
 }
 
 export const colorPicker = defineComponent(() => ({

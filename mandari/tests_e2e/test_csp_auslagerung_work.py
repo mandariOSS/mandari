@@ -143,6 +143,9 @@ class TestOrganisation:
         expect(page.locator("#fraktion-neu-farbe")).to_have_value("ffee00")
         page.focus("#fraktion-neu-farbe")
         page.keyboard.press("ControlOrMeta+a")
+        page.keyboard.insert_text("HEX #E3000F")  # Text vor der Raute zählt nicht
+        expect(farbwahl.locator('input[name="color"]')).to_have_value("#E3000F")
+        page.keyboard.press("ControlOrMeta+a")
         page.keyboard.insert_text(" #FFED00")
         expect(farbwahl.locator('input[name="color"]')).to_have_value("#FFED00")
 
