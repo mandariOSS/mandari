@@ -294,6 +294,15 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
             context.update(vorbereiten.seiten_kontext(self, meeting, self.request))
             return context
 
+        # Nach der Sitzung (abgeschlossen, abgesagt) die Seite nach dem Muster (Issue #1071, Schritt 3)
+        from .. import protokoll as protokoll_logik
+        from . import protokoll
+
+        if protokoll_logik.zeigt_protokoll(meeting, self.request.GET.get("ansicht")):
+            self.template_name = protokoll_logik.SEITE
+            context.update(protokoll.seiten_kontext(self, meeting, self.request))
+            return context
+
         context.update(_get_meeting_context(self, meeting))
         # Konfiguration der Alpine-Komponente `factionDetail` (frontend/alpine/faction-detail.ts):
         # Panel-URL mit Platzhalter-UUID, die clientseitig durch die TOP-ID ersetzt wird; Aktions-URL für die

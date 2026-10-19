@@ -117,6 +117,11 @@ class FactionActionView(WorkViewMixin, View):
     def _render_agenda(self, request, meeting):
         # Seite vor der Sitzung nach dem Muster (Issue #1071): ihre Tagesordnung statt der bisherigen
         if fragment_neu(request):
+            # Nach der Sitzung (Issue #1071, Schritt 3): das Protokoll als Dokument
+            from . import protokoll
+
+            if protokoll.ist_nach_der_sitzung(meeting):
+                return protokoll.dokument_html(self, request, meeting)
             from . import vorbereiten
 
             return vorbereiten.tagesordnung_html(self, request, meeting)
