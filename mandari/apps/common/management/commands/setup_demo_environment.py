@@ -668,10 +668,10 @@ class Command(BaseCommand):
         """
         Orte der Vorgänge (Issue #853): Karte in Work und Insight zeigt Punkte, auch nach dem nächtlichen Neuaufbau.
 
-        Wie eine Verortung von Hand (``locations`` am Vorgang, gespiegelt in ``PaperLocation``); der Abgleich ist
-        idempotent, ein wiederholter Lauf legt keine Punkte doppelt an.
+        Wie eine bestätigte Verortung von Hand: ``locations`` am Vorgang (Anzeige) und je Ort eine Zeile in
+        ``PaperLocation`` (Karte, Umkreissuche). Feste Punkte je Vorgang; ein wiederholter Lauf legt keinen doppelt an.
         """
-        from insight_core.services.paper_locations import sync_paper_locations
+        from insight_core.models import PaperLocation
 
         anzahl = 0
         for key, orte in DEMO_ORTE.items():
@@ -682,7 +682,22 @@ class Command(BaseCommand):
             paper.georef_status = "completed"
             paper.georef_method = "manual"
             paper.save(update_fields=["locations", "georef_status", "georef_method", "updated_at"])
-            sync_paper_locations(paper)
+            punkte = []
+            for name, lat, lon in orte:
+                zeile, _ = PaperLocation.objects.update_or_create(
+                    paper=paper,
+                    latitude=lat,
+                    longitude=lon,
+                    defaults={
+                        "body": paper.body,
+                        "name": name,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "status": PaperLocation.STATUS_CONFIRMED,
+                    },
+                )
+                punkte.append(zeile.pk)
+            PaperLocation.objects.filter(paper=paper).exclude(pk__in=punkte).delete()
             anzahl += len(orte)
         return anzahl
 
