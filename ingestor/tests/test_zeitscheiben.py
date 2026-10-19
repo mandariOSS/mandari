@@ -300,10 +300,11 @@ def _feste_uhr(monkeypatch: pytest.MonkeyPatch, jetzt: datetime, ortszeit: str) 
 
 #: Feste Uhr um die kritischen Stunden: Zwischen 22 Uhr (Sommerzeit) bzw. 23 Uhr (Winterzeit) und 24 Uhr UTC ist in
 #: Berlin schon der nächste Tag. Fensteranfang (vier Tage zurück) am 14./15.10. (Sommerzeit), am 23./24.10.
-#: (Tagesscheiben über den Wechsel auf die Winterzeit am 25.10.2026) und am 25./26.10. (Tag des Wechsels)
+#: (Tagesscheiben über den Wechsel auf die Winterzeit am 25.10.2026), am 25./26.10. (Tag des Wechsels) und am
+#: 27./28.10. (Winterzeit, das Fenster von sieben Tagen liegt noch in der Sommerzeit)
 FESTE_UHRZEITEN = [
     datetime(2026, 10, tag, tzinfo=UTC) + timedelta(hours=stunde, minutes=minute)
-    for tag in (18, 27, 29)
+    for tag in (18, 27, 29, 31)
     for stunde, minute in ((21, 59), (22, 30), (23, 59), (24, 1))
 ]
 
