@@ -325,7 +325,7 @@ def submit_application(
     Legt einen Antrag an. Erfordert ein API-Token des Mandanten mit ``can_submit_applications``.
 
     Die Einreichung läuft über den Befehl ``submission.submit`` (Issue #540): dieselbe Prüfung wie aus mandari
-    Work, Quittung mit Eingangsnummer (``reference``), Eingangszeit (``received_at``) und Inhalts-Hash
+    Work, Quittung mit Eingangsnummer (``reference``), Eingangszeit (``submitted_at``) und Inhalts-Hash
     (``content_hash``, SHA-256 über das kanonische JSON des Befehlsinhalts nach RFC 8785).
     """
     tenant = get_tenant(tenant_slug)
@@ -359,7 +359,7 @@ def submit_application(
         "reference": receipt.reference,
         "status": str(receipt.data.get("status") or "submitted"),
         "feedback": feedback_url,
-        "received_at": receipt.received_at,
+        "submitted_at": receipt.received_at,
         "content_hash": receipt.content_hash,
     }
 

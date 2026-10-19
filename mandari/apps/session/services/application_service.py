@@ -378,25 +378,6 @@ def submitting_organization_for_token(token: Any, claimed_id: object = None) -> 
     return bound
 
 
-#: Länge eines Eintrags unter Mitunterzeichnenden im Befehl ``submission.submit``
-CO_SIGNER_MAX_LENGTH = 200
-
-
-def split_co_signers(text: str) -> list[str]:
-    """
-    Mitunterzeichnende aus einem Textfeld (eine Person je Zeile) als Liste für ``submission.submit``.
-
-    Zeilen über ``CO_SIGNER_MAX_LENGTH`` Zeichen werden an Komma oder Semikolon getrennt: Die APIs nehmen das Feld
-    seit jeher als Text bis 5000 Zeichen an, oft mit allen Namen in einer Zeile.
-    """
-    names: list[str] = []
-    for line in (text or "").splitlines():
-        line = line.strip()
-        parts = [line] if len(line) <= CO_SIGNER_MAX_LENGTH else re.split(r"[,;]", line)
-        names.extend(part.strip() for part in parts if part.strip())
-    return names
-
-
 def submit_with_token(
     tenant: SessionTenant,
     token: Any,
@@ -407,10 +388,10 @@ def submit_with_token(
     """
     Antrag mit API-Token einreichen (Session-API v1 und abgekündigter Pfad) über den Befehl ``submission.submit``.
 
-    ``fields`` sind die Felder der API (``title``, ``submitter_name``, ``co_signers`` als Text, ``deadline`` als
-    Datum, ``target_organization_id`` …). Geprüft wird im Handler (``apps.session.commands``). Ein Zielgremium, das
-    es beim Mandanten nicht (aktiv) gibt, bleibt wie bisher unbeachtet. Ohne ``idempotency_key`` gilt jede Anfrage
-    als neue Einreichung.
+    ``fields`` sind die Felder der API (``title``, ``submitter_name``, ``co_signers`` als Text bis 5000 Zeichen,
+    ``deadline`` als Datum, ``target_organization_id`` …). Geprüft wird im Handler (``apps.session.commands``). Die
+    Mitunterzeichnenden gehen unverändert als ``co_signers_text`` mit. Ein Zielgremium, das es beim Mandanten nicht
+    gibt oder das inaktiv ist, bleibt unbeachtet. Ohne ``idempotency_key`` gilt jede Anfrage als neue Einreichung.
 
     Returns:
         Quittung (``hub.commands.Receipt``); ``CommandError`` mit Problem nach RFC 9457, wenn der Befehl scheitert.
@@ -435,9 +416,8 @@ def submit_with_token(
     for name in ("financial_impact", "urgency_reason"):
         if fields.get(name):
             body[name] = fields[name]
-    co_signers = split_co_signers(fields.get("co_signers") or "")
-    if co_signers:
-        body["co_signers"] = co_signers
+    if (fields.get("co_signers") or "").strip():
+        body["co_signers_text"] = fields["co_signers"]
     if fields.get("deadline"):
         body["deadline"] = fields["deadline"].isoformat()
     if fields.get("submitting_organization_id"):

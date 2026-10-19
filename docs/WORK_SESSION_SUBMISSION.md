@@ -85,7 +85,7 @@ sehen ohne Rückfrage Eingangsnummer, Bearbeitungsstatus und Beratungstermine (I
 Work prüft das vor dem Senden. Der Session-Handler prüft unabhängig davon noch einmal Mitgliedschaft und
 Recht `motions.submit_to_ris`, Verbindung und Token, Pflichttexte (nicht nur Leerraum), Zielgremium des
 Mandanten und die Grenzen des Vertrags (Titel 500, Beschlussvorschlag und Begründung je 50.000, finanzielle
-Auswirkungen 10.000 Zeichen, höchstens 100 Mitunterzeichnende mit je 200 Zeichen). Ablehnungen erscheinen im
+Auswirkungen 10.000 Zeichen, Mitunterzeichnende 5.000 Zeichen als Text). Ablehnungen erscheinen im
 Formular mit der Bezeichnung des Felds.
 
 ## Antragsfassung als PDF

@@ -118,6 +118,12 @@
       },
       "maxItems": 100
     },
+    "co_signers_text": {
+      "description": "Mitunterzeichnende als Text, eine Person je Zeile, wie ihn Formulare und die Session-API annehmen; statt co_signers, nicht zusammen damit. Der Eigentümer speichert den Text unverändert (ohne Leerraum am Anfang und Ende).",
+      "x-content": true,
+      "type": "string",
+      "maxLength": 5000
+    },
     "attachments": {
       "description": "Anlagen, je Eintrag Dateiname, Größe in Bytes und SHA-256 (hexadezimal) der Datei. So deckt der Inhalts-Hash der Quittung auch die Anlagen ab. Die Dateien selbst gehen nur innerhalb einer Installation mit (Command.attachments); der Eigentümer prüft Größe und Hash, Dateityp und Virenprüfung und meldet nicht angenommene Anlagen in der Quittung.",
       "x-content": true,

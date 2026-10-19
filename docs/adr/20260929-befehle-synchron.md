@@ -161,9 +161,10 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
 - **Ein Einreichungsweg.** Der Handler liegt in `apps/session/commands.py` und prüft allein: Mandant,
   Auslöser, Pflichttexte, Zielgremium, Anlagen. Work sendet über den `InProcessClient`, die Session-API v1
   und der abgekündigte Pfad rufen `dispatch()` auf (`application_service.submit_with_token`). Die drei Wege
-  lesen nur noch ihr Format ein (Aliase der Antragsart, Kürzen optionaler Felder im alten Pfad,
-  Mitunterzeichnende als Text); Work behält die Hinweise seines Formulars, etwa zur Begründung der
-  Dringlichkeit.
+  lesen nur noch ihr Format ein (Aliase der Antragsart, Kürzen optionaler Felder im alten Pfad); Work behält
+  die Hinweise seines Formulars, etwa zur Begründung der Dringlichkeit. Mitunterzeichnende gehen als Text
+  (`co_signers_text`, bis 5000 Zeichen) mit, wie Formular und APIs sie bisher annahmen; die Grenzen von
+  `co_signers` (Liste) zu lockern wäre keine additive Änderung.
 - **Auslöser bestimmen die Berechtigung.** `system:session.api-token.<Kennung>` steht für ein API-Token des
   Mandanten (gültig, „Anträge einreichen“; die einreichende Organisation ist die, die das Token in Work
   verbunden hat). `user:<Kennung>` steht für ein Mitglied der einreichenden Organisation mit
@@ -183,7 +184,8 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
 - **API v1:** `Idempotency-Key` ist dort optional, weil die bestehende Schnittstelle sonst brechen würde. Ohne
   Schlüssel gilt jede Anfrage als neue Einreichung wie bisher. Die Pflicht gilt für das Profil Einreichung
   unter eigener Adresse (`POST /api/v1/einreichung/antraege`), das noch aussteht. Die Antwort trägt zusätzlich
-  `received_at` und `content_hash`.
+  `submitted_at` (Eingangszeit der Quittung; `received_at` heißt im Rückmeldestand schon der Eingang bei der
+  Verwaltung) und `content_hash`.
 - **Inhalts-Hash gewollt.** Die offene Frage zu HMAC und abschaltbarem Inhalts-Hash (#541) betrifft erst
   personenbezogene Befehle mit wenig Entropie; für Anträge bleibt der Hash der Nachweis für Einreichende.
 

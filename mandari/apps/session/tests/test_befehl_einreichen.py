@@ -364,7 +364,9 @@ def test_api_v1_quittung_und_idempotenzschluessel(tenant: SessionTenant, token: 
     daten = erste.json()
     antrag = SessionApplication.objects.get()
     assert daten["id"] == str(antrag.pk) and daten["reference"] == antrag.reference
-    assert daten["status"] == "submitted" and len(daten["content_hash"]) == 64 and daten["received_at"]
+    assert daten["status"] == "submitted" and len(daten["content_hash"]) == 64
+    # Eingangszeit der Quittung; „received_at“ ist im Rückmeldestand der Eingang bei der Verwaltung
+    assert daten["submitted_at"] and "received_at" not in daten
 
     zweite = _post(API_V1, token[1], FELDER, **{"Idempotency-Key": "abc-123"})
     assert zweite.status_code == 201 and zweite.json() == daten
@@ -385,13 +387,49 @@ def test_api_v1_prueft_im_handler(tenant: SessionTenant, token: tuple[SessionAPI
         {"loc": ["body", "payload", "title"], "msg": "darf nicht leer sein", "type": "befehl"}
     ]
 
-    lang = ", ".join(f"Person Nummer {n}" for n in range(30))
-    ok = _post(API_V1, token[1], {**FELDER, "co_signers": lang, "target_organization_id": str(tenant.pk)})
+    ok = _post(API_V1, token[1], {**FELDER, "target_organization_id": str(tenant.pk)})
     assert ok.status_code == 201, ok.content
-    antrag = SessionApplication.objects.get()
-    # Unbekanntes Zielgremium bleibt wie bisher unbeachtet; lange Namenszeilen werden an Kommas getrennt
-    assert antrag.target_organization is None
-    assert antrag.co_signers.splitlines()[:2] == ["Person Nummer 0", "Person Nummer 1"]
+    # Unbekanntes Zielgremium bleibt wie bisher unbeachtet
+    assert SessionApplication.objects.get(pk=ok.json()["id"]).target_organization is None
+
+
+@pytest.mark.parametrize(
+    "mitunterzeichnende",
+    [
+        "\n".join(f"Person {n}" for n in range(150)),  # mehr als 100 Namen
+        "Fraktion " + "x" * 300,  # eine Zeile über 200 Zeichen ohne Trennzeichen
+        "y" * 5000,  # die bisherige Obergrenze des Felds
+    ],
+)
+def test_api_nehmen_mitunterzeichnende_wie_bisher_an(
+    tenant: SessionTenant, token: tuple[SessionAPIToken, str], mitunterzeichnende: str
+) -> None:
+    neu = _post(API_V1, token[1], {**FELDER, "co_signers": mitunterzeichnende})
+    alt = _post(ALT, token[1], {**FELDER, "co_signers": mitunterzeichnende})
+    assert (neu.status_code, alt.status_code) == (201, 201), (neu.content, alt.content)
+    for antwort in (neu.json()["id"], alt.json()["application"]["id"]):
+        assert SessionApplication.objects.get(pk=antwort).co_signers == mitunterzeichnende
+    # Über 5000 Zeichen lehnt die API v1 wie bisher ab
+    assert _post(API_V1, token[1], {**FELDER, "co_signers": "z" * 5001}).status_code == 422
+
+
+def test_api_uebergehen_ein_inaktives_zielgremium(tenant: SessionTenant, token: tuple[SessionAPIToken, str]) -> None:
+    ruhend = SessionOrganization.objects.create(tenant=tenant, name="Alter Ausschuss", is_active=False)
+    for url in (API_V1, ALT):
+        antwort = _post(url, token[1], {**FELDER, "target_organization_id": str(ruhend.pk)})
+        assert antwort.status_code == 201, antwort.content
+    assert set(SessionApplication.objects.values_list("target_organization", flat=True)) == {None}
+
+
+def test_liste_und_text_der_mitunterzeichnenden_nicht_zusammen(
+    tenant: SessionTenant, token: tuple[SessionAPIToken, str]
+) -> None:
+    problem = _abgelehnt(_befehl(tenant, commands.token_actor_ref(token[0]), co_signers_text="Max Mustermann"))
+    assert [e["pointer"] for e in problem.errors] == ["/co_signers_text"]
+    quittung = dispatch(
+        _befehl(tenant, commands.token_actor_ref(token[0]), key="k-2", co_signers=None, co_signers_text=" A\nB ")
+    )
+    assert SessionApplication.objects.get(pk=cast(Any, quittung.aggregate_id)).co_signers == "A\nB"
 
 
 def test_alter_pfad_nutzt_den_befehl_im_alten_format(tenant: SessionTenant, token: tuple[SessionAPIToken, str]) -> None:

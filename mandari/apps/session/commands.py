@@ -101,7 +101,7 @@ def submit(command: Command) -> HandlerResult:
         submitter_name=submitter["name"].strip(),
         submitter_email=submitter["email"].strip().lower(),
         submitter_phone=(submitter.get("phone") or "").strip(),
-        co_signers="\n".join(name.strip() for name in body.get("co_signers") or () if name.strip()),
+        co_signers=_co_signers(body),
         target_organization=target,
         is_urgent=bool(body.get("is_urgent")),
         urgency_reason=(body.get("urgency_reason") or "").strip(),
@@ -211,6 +211,9 @@ def _check(command: Command, tenant: SessionTenant) -> tuple[SessionOrganization
         f"$.submitter.{name}: darf nicht leer sein" for name in ("name", "email") if not body["submitter"][name].strip()
     ]
 
+    if body.get("co_signers") and body.get("co_signers_text"):
+        problems.append("$.co_signers_text: nicht zusammen mit co_signers")
+
     target = None
     if body.get("target_organization"):
         target = SessionOrganization.objects.filter(
@@ -225,6 +228,13 @@ def _check(command: Command, tenant: SessionTenant) -> tuple[SessionOrganization
         errors = validation_problem(problems).errors
         raise CommandError(Problem(status=422, kind="validierung", detail=INVALID, errors=errors))
     return target, attachments
+
+
+def _co_signers(body: Mapping[str, Any]) -> str:
+    """Mitunterzeichnende wie gespeichert: der Text unverändert, die Liste eine Person je Zeile."""
+    if body.get("co_signers_text"):
+        return str(body["co_signers_text"]).strip()
+    return "\n".join(name.strip() for name in body.get("co_signers") or () if name.strip())
 
 
 def _attachments(

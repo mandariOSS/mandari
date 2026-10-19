@@ -1595,6 +1595,7 @@ Beispiel 2:
 | `submitter.email` | ja | Zeichenkette (email, höchstens 254 Zeichen) |  |
 | `submitter.phone` | nein | Zeichenkette (höchstens 50 Zeichen) |  |
 | `co_signers` | nein, Inhalt | Liste aus Zeichenkette (höchstens 200 Zeichen) (0 bis 100 Einträge) | Mitunterzeichnende, je Eintrag ein Name. |
+| `co_signers_text` | nein, Inhalt | Zeichenkette (höchstens 5000 Zeichen) | Mitunterzeichnende als Text, eine Person je Zeile, wie ihn Formulare und die Session-API annehmen; statt co_signers, nicht zusammen damit. Der Eigentümer speichert den Text unverändert (ohne Leerraum am Anfang und Ende). |
 | `attachments` | nein, Inhalt | Liste aus Objekt (0 bis 100 Einträge) | Anlagen, je Eintrag Dateiname, Größe in Bytes und SHA-256 (hexadezimal) der Datei. So deckt der Inhalts-Hash der Quittung auch die Anlagen ab. Die Dateien selbst gehen nur innerhalb einer Installation mit (Command.attachments); der Eigentümer prüft Größe und Hash, Dateityp und Virenprüfung und meldet nicht angenommene Anlagen in der Quittung. |
 | `attachments[].name` | ja | Zeichenkette (höchstens 255 Zeichen) |  |
 | `attachments[].size` | ja | Ganzzahl (0 bis …) |  |

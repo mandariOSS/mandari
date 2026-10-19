@@ -297,7 +297,8 @@ FIELD_LABELS = {
     "justification": "Begründung",
     "financial_impact": "Finanzielle Auswirkungen",
     "urgency_reason": "Begründung der Dringlichkeit",
-    "co_signers": "Mitunterzeichnende (je Zeile höchstens 200 Zeichen, höchstens 100 Personen)",
+    "co_signers": "Mitunterzeichnende",
+    "co_signers_text": "Mitunterzeichnende (höchstens 5000 Zeichen)",
     "target_organization": "Zielgremium",
     "deadline": "Gewünschter Beratungstermin",
     "application_type": "Antragsart",
@@ -318,23 +319,22 @@ def idempotency_key(motion) -> str:
     """
     Idempotenzschlüssel der Einreichung, abgeleitet aus dem eigenen Stand (kein eigenes Feld nötig).
 
-    Dokument und Zeitpunkt seiner letzten Speicherung: Scheitert nach der Quittung das Speichern in Work, bleibt
-    das Dokument unverändert, die Wiederholung sendet denselben Schlüssel und erhält dieselbe Quittung statt
-    eines zweiten Antrags. Eine festgehaltene Einreichung speichert das Dokument; jede spätere Einreichung (etwa
-    nachdem die Verwaltung den Antrag gelöscht oder eine Probe zurückgesetzt hat) trägt deshalb einen neuen
-    Schlüssel und erhält nie die Quittung eines nicht mehr vorhandenen Antrags.
+    Dokument und Zeitpunkt seiner letzten Speicherung, so wie es zu Beginn der Anfrage geladen wurde: Scheitert
+    nach der Quittung das Speichern in Work, bleibt das Dokument unverändert, die Wiederholung sendet denselben
+    Schlüssel und erhält dieselbe Quittung statt eines zweiten Antrags. Ebenso ein zweiter Klick, der dasselbe
+    Dokument geladen hat, während der erste noch Anlagen liest. Eine festgehaltene Einreichung speichert das
+    Dokument; jede spätere Einreichung (etwa nachdem die Verwaltung den Antrag gelöscht oder eine Probe
+    zurückgesetzt hat) trägt deshalb einen neuen Schlüssel.
     """
-    from .models import Motion
-
-    # Aus der Datenbank, nicht vom übergebenen Objekt: Ein veralteter Stand ergäbe einen alten Schlüssel.
-    saved = Motion.objects.filter(pk=motion.pk).values_list("updated_at", flat=True).first()
-    stamp = int(saved.timestamp() * 1_000_000) if saved else 0
+    stamp = int(motion.updated_at.timestamp() * 1_000_000) if motion.updated_at else 0
     return f"work.motion.{motion.pk}.{stamp}"
 
 
-def _co_signer_list(text: str) -> list[str]:
-    """Mitunterzeichnende aus dem Formular: eine Person je Zeile."""
-    return [line.strip() for line in (text or "").splitlines() if line.strip()]
+def _already_linked(motion) -> bool:
+    """Ist das Dokument inzwischen verknüpft (etwa durch einen zweiten Klick, der früher fertig war)?"""
+    from .models import Motion
+
+    return Motion.objects.filter(pk=motion.pk, session_application__isnull=False).exists()
 
 
 def _command_body(motion, membership, data: dict, attachments: list[dict]) -> dict:
@@ -354,9 +354,9 @@ def _command_body(motion, membership, data: dict, attachments: list[dict]) -> di
     for name in ("financial_impact", "urgency_reason"):
         if data.get(name):
             body[name] = data[name]
-    co_signers = _co_signer_list(data.get("co_signers", ""))
-    if co_signers:
-        body["co_signers"] = co_signers
+    # Wie bisher als Text (eine Person je Zeile), unverändert gespeichert
+    if (data.get("co_signers") or "").strip():
+        body["co_signers_text"] = data["co_signers"]
     if data.get("deadline"):
         body["deadline"] = data["deadline"].isoformat()
     if data.get("target_organization_id"):
@@ -445,12 +445,17 @@ def submit_motion(motion, membership, data: dict, *, skipped: list[str] | None =
     if not allowed:
         raise SubmissionError(reason)
 
+    # Vor dem Lesen der Anlagen: Der Schlüssel gehört zum Stand, den diese Anfrage geprüft hat.
+    key = idempotency_key(motion)
     with ExitStack() as stack:
         items, files, documents, not_transferred = _open_attachments(motion, stack)
+        # Große Anlagen brauchen Zeit; ist das Dokument inzwischen eingereicht, nicht noch einmal senden.
+        if _already_linked(motion):
+            raise SubmissionError("Dieses Dokument wurde bereits eingereicht.")
         command = Command(
             name="submission.submit",
             body=_command_body(motion, membership, data, items),
-            idempotency_key=idempotency_key(motion),
+            idempotency_key=key,
             tenant_ref=f"session:{connection.tenant_id}",
             actor_ref=f"user:{membership.user_id}",
             attachments=files,

@@ -95,7 +95,8 @@ def test_work_sendet_den_befehl_ueber_den_client(
     assert (befehl.tenant_ref, befehl.actor_ref) == (f"session:{tenant.pk}", f"user:{autorin.user_id}")
     assert befehl.idempotency_key.startswith(f"work.motion.{antrag.pk}.")
     assert befehl.body["submitting_organization"] == str(antrag.organization_id)
-    assert befehl.body["co_signers"] == ["Erika Muster", "Max Muster"] and befehl.body["application_pdf"] is True
+    # Mitunterzeichnende wie bisher als Text, unverändert gespeichert
+    assert befehl.body["co_signers_text"] == "Erika Muster\n\nMax Muster" and befehl.body["application_pdf"] is True
     (anlage,) = befehl.body["attachments"]
     assert (anlage["name"], anlage["size"]) == ("Plan.pdf", 13) and set(befehl.attachments) == {anlage["sha256"]}
 
@@ -139,6 +140,27 @@ def test_nach_einer_festgehaltenen_einreichung_gilt_ein_neuer_schluessel(
     zweite = ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
     assert zweite.pk != erste.pk and SessionApplication.objects.filter(pk=zweite.pk).exists()
     assert client.befehle[0].idempotency_key != client.befehle[1].idempotency_key
+
+
+def test_zweiter_klick_nach_der_ersten_einreichung_sendet_nicht_noch_einmal(
+    antrag: Motion, autorin: Any, client: Mitschnitt
+) -> None:
+    """Beide Anfragen haben das Dokument vor der Einreichung geladen; die zweite liest noch Anlagen."""
+    zweiter_klick = Motion.objects.get(pk=antrag.pk)
+    ris_submission.submit_motion(antrag, autorin, ris_submission.build_prefill(antrag))
+
+    with pytest.raises(ris_submission.SubmissionError, match="bereits eingereicht"):
+        ris_submission.submit_motion(zweiter_klick, autorin, ris_submission.build_prefill(zweiter_klick))
+    assert SessionApplication.objects.count() == 1 and len(client.befehle) == 1
+
+
+def test_schluessel_gehoert_zum_geladenen_stand(antrag: Motion) -> None:
+    """Ein zweiter Klick mit demselben geladenen Stand sendet denselben Schlüssel (dieselbe Quittung)."""
+    geladen = Motion.objects.get(pk=antrag.pk)
+    antrag.save()  # Speicherung nach dem Laden, etwa durch die erste Einreichung
+    stempel = int(geladen.updated_at.timestamp() * 1_000_000)
+    assert ris_submission.idempotency_key(geladen) == f"work.motion.{antrag.pk}.{stempel}"
+    assert ris_submission.idempotency_key(geladen) != ris_submission.idempotency_key(antrag)
 
 
 def test_einreichen_nie_aus_einer_offenen_transaktion(antrag: Motion, autorin: Any) -> None:

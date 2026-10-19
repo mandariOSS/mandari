@@ -124,7 +124,9 @@ class ApplicationCreated(Schema):
     reference: str = Field(description="Eingangsnummer")
     status: str
     feedback: str | None = Field(None, description="URL des Rückmeldestands (mit demselben Token abrufbar)")
-    received_at: datetime | None = Field(None, description="Eingangszeit")
+    submitted_at: datetime | None = Field(
+        None, description="Eingangszeit der Einreichung (nicht der Eingang bei der Verwaltung im Rückmeldestand)"
+    )
     content_hash: str | None = Field(
         None, description="SHA-256 (hexadezimal) über das kanonische JSON des Befehlsinhalts (RFC 8785)"
     )
