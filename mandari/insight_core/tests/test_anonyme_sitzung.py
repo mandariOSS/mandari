@@ -48,11 +48,13 @@ def test_anonymer_aufruf_legt_keine_sitzung_an(bestand: dict[str, Any], seite: s
         "sitzung": f"/insight/termine/{bestand['sitzung'].id}/",
     }[seite]
 
+    vorher = Session.objects.count()  # andere Tests derselben Datenbank können Sitzungen hinterlassen
+
     antwort = Client().get(pfad)
 
     assert antwort.status_code == 200
     assert settings.SESSION_COOKIE_NAME not in antwort.cookies
-    assert not Session.objects.exists()
+    assert Session.objects.count() == vorher
 
 
 def test_ohne_auswahl_gelten_weiter_alle_kommunen(bestand: dict[str, Any]) -> None:
@@ -86,5 +88,6 @@ def test_aufraeumen_loescht_nur_abgelaufene_sitzungen() -> None:
 
     call_command("sitzungen_aufraeumen", "--trotz-zeitplan", stdout=ausgabe)
 
-    assert list(Session.objects.values_list("session_key", flat=True)) == ["neu" + "0" * 29]
-    assert "gelöscht: 7" in ausgabe.getvalue()
+    eigene = Session.objects.filter(session_key__regex=r"^(alt|neu)0")
+    assert list(eigene.values_list("session_key", flat=True)) == ["neu" + "0" * 29]
+    assert not Session.objects.filter(expire_date__lt=jetzt).exists()
