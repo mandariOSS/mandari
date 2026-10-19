@@ -1,0 +1,5 @@
+{% comment %}
+Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): wie viele kommende Termine sich ändern (apps/work/faction/reihe.py,
+Plan.satz) oder warum die Eingabe nicht passt. Kontext: plan oder fehler.
+{% endcomment %}
+{% if fehler %}<span class="fehler">{{ fehler }}</span>{% else %}{{ plan.satz }}{% endif %}

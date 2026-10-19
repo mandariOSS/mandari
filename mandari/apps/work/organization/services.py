@@ -1941,6 +1941,8 @@ FACTION_SETTINGS_FIELDS = frozenset(
         "invitation_lead_hours",
         "agenda_reminder_enabled",
         "agenda_reminder_hours",
+        "meeting_reminder_enabled",
+        "meeting_reminder_hours",
         "protocol_dispatch",
         "protocol_dispatch_delay_hours",
         "quorum_rule",
@@ -1987,7 +1989,12 @@ def _apply_faction_settings(
 ) -> None:
     """Felder aus ``wanted`` (alle bei ``None``) in die Einstellungen der Organisation übernehmen, ohne zu speichern."""
     from apps.common.quorum import QUORUM_RULES
-    from apps.work.faction.invitations import AGENDA_REMINDER_MAX_HOURS, INVITATION_DISPATCH_MODES, INVITATION_MODES
+    from apps.work.faction.invitations import (
+        AGENDA_REMINDER_MAX_HOURS,
+        INVITATION_DISPATCH_MODES,
+        INVITATION_MODES,
+        MEETING_REMINDER_MAX_HOURS,
+    )
     from apps.work.faction.protocol_dispatch import PROTOCOL_DISPATCH_MAX_DELAY_HOURS, PROTOCOL_DISPATCH_MODES
 
     def want(key: str) -> bool:
@@ -2023,6 +2030,18 @@ def _apply_faction_settings(
         )
         if reminder_hours is not None:
             faction_settings["agenda_reminder_hours"] = reminder_hours
+
+    # Erinnerung an die Sitzung (Issue #1071): Standard an, 48 Stunden vor Beginn. Das Formular als Ganzes (ohne
+    # JavaScript, bisherige Vorlage) enthält sie nur in der neuen Vorlage; fehlt das Stundenfeld, bleibt sie, wie sie ist.
+    meeting_reminder_in_form = wanted is not None or "meeting_reminder_hours" in form
+    if want("meeting_reminder_enabled") and meeting_reminder_in_form:
+        faction_settings["meeting_reminder_enabled"] = form.get("meeting_reminder_enabled") == "on"
+    if want("meeting_reminder_hours") and meeting_reminder_in_form:
+        meeting_hours = _hours(
+            form, "meeting_reminder_hours", 1, MEETING_REMINDER_MAX_HOURS, "Erinnerung an die Sitzung", strict
+        )
+        if meeting_hours is not None:
+            faction_settings["meeting_reminder_hours"] = meeting_hours
 
     # Automatischer Protokollversand (Issue #871): Standard aus. Beim Einschalten zählt erst, was danach
     # fällig wird – ältere Protokolle gehen nicht nachträglich raus.
@@ -2199,6 +2218,10 @@ def add_schedule(organization: Organization, data: ScheduleInput) -> FactionMeet
     if weekday not in dict(FactionMeetingSchedule.WEEKDAY_CHOICES):
         weekday = 0
     automation = _parse_automation(data.automation or ScheduleAutomationInput())
+    from apps.work.faction.services import safe_link_url
+
+    if data.default_video_link and not safe_link_url(data.default_video_link):
+        raise ServiceError("Bitte den Videolink als vollständige Adresse mit https:// angeben.")
     schedule = FactionMeetingSchedule.objects.create(
         organization=organization,
         name=data.name,
@@ -2269,6 +2292,67 @@ def _schedule(organization: Organization, schedule_id: Any) -> FactionMeetingSch
     if schedule is None:
         raise ServiceError("Sitzungsreihe nicht gefunden.")
     return schedule
+
+
+def _schedule_or_error(organization: Organization, schedule_id: Any) -> FactionMeetingSchedule:
+    """Wie ``_schedule``, ungültige Kennungen inbegriffen."""
+    try:
+        return _schedule(organization, schedule_id)
+    except (ValidationError, ValueError) as exc:
+        raise ServiceError("Sitzungsreihe nicht gefunden.") from exc
+
+
+def plan_schedule_change(organization: Organization, form: Mapping[str, str]) -> Any:
+    """
+    Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): was die Änderung mit den kommenden Terminen macht
+    (``apps.work.faction.reihe.Plan``), ohne zu speichern.
+    """
+    from apps.work.faction import reihe
+
+    schedule = _schedule_or_error(organization, form.get("schedule_id"))
+    try:
+        return reihe.plan(schedule, reihe.werte_aus(form))
+    except reihe.ReiheError as exc:
+        raise ServiceError(str(exc)) from exc
+
+
+def update_schedule(organization: Organization, membership: Membership, form: Mapping[str, str]) -> tuple[Any, Any]:
+    """
+    Bestehende Sitzungsreihe bearbeiten (Issue #1071): Name, Wiederholung, Wochentag, Beginn, Dauer, Ort, Videolink.
+    Wirkt auf künftige, noch nicht eingeladene Termine (``apps.work.faction.reihe``). Liefert Reihe und Plan.
+    """
+    from apps.work.faction import reihe
+
+    schedule = _schedule_or_error(organization, form.get("schedule_id"))
+    try:
+        return schedule, reihe.apply(schedule, reihe.werte_aus(form), membership)
+    except reihe.ReiheError as exc:
+        raise ServiceError(str(exc)) from exc
+
+
+def restore_deleted_date(organization: Organization, exception_id: Any) -> tuple[Any, bool]:
+    """
+    Gelöschten Termin wiederherstellen (Issue #1071): Ausnahme „Gelöscht“ entfernen und, wenn er noch bevorsteht und
+    die Reihe aktiv ist, den Termin wieder anlegen. Liefert das Datum und ob er wieder angelegt wurde.
+    """
+    from apps.work.faction.generation import restore_occurrence
+    from apps.work.faction.models import FactionMeetingException
+
+    try:
+        exception = (
+            FactionMeetingException.objects.filter(
+                id=exception_id, schedule__organization=organization, exception_type="deleted"
+            )
+            .select_related("schedule__organization")
+            .first()
+        )
+    except (ValidationError, ValueError):
+        exception = None
+    if exception is None:
+        raise ServiceError("Gelöschter Termin nicht gefunden.")
+    schedule, datum = exception.schedule, exception.original_date
+    exception.delete()
+    return datum, restore_occurrence(schedule, datum) is not None
 
 
 def toggle_schedule(organization: Organization, schedule_id: Any) -> FactionMeetingSchedule:

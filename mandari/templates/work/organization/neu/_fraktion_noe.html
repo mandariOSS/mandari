@@ -1,0 +1,13 @@
+{% comment %}
+„Nichtöffentliche Vorgänge“ (Muster einstellungen.html, Idee #873): der Ordner im Dokumentenspeicher, in dem Work
+nichtöffentliche Unterlagen ablegt, die in Fraktionssitzungen eingelesen werden. Nur Information, nichts einstellbar:
+Zugriff haben immer nur vereidigte Mitglieder, Freigaben sind ausgeschlossen. Zahl der Dateien und „Ordner öffnen“ nur
+für Vereidigte. Kontext: noe_ordner (fraktion_einstellungen.NichtoeffentlichOrdner), organization.
+{% endcomment %}
+<section aria-labelledby="e-noe" id="einst-noe" data-testid="fs-einst-noe">
+    <h2 id="e-noe">Nichtöffentliche Vorgänge</h2>
+    <p class="fs-pdf-ordner"><i data-lucide="folder-lock" aria-hidden="true"></i><span>Ordner im Dokumentenspeicher für nichtöffentliche Unterlagen, die Sie in Fraktionssitzungen einlesen. Zugriff haben immer nur vereidigte Mitglieder, zurzeit {{ noe_ordner.vereidigt }} von {{ noe_ordner.mitglieder }}. Freigaben an andere Personen, Gäste, Links oder Organisationen sind nicht möglich; das lässt sich nicht ändern.</span></p>
+    {% if noe_ordner.dateien is not None %}
+    <p class="fs-meta">{% if noe_ordner.ordner_id %}{{ noe_ordner.dateien }} Datei{{ noe_ordner.dateien|pluralize:"en" }}. <a class="wf-textlink" href="{% url 'work:documents' org_slug=organization.slug %}?ordner={{ noe_ordner.ordner_id }}">Ordner öffnen</a>{% else %}Noch keine Unterlagen. Work legt den Ordner beim ersten Einlesen an.{% endif %}</p>
+    {% endif %}
+</section>

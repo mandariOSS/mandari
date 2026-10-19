@@ -167,7 +167,7 @@ def _lesen_kontext(meeting: FactionMeeting, kontext: dict[str, Any]) -> dict[str
     from django.utils import timezone
 
     from ..invitations import get_invitation_settings, invitation_dispatch_at
-    from ..services import FACTION_REMINDER_WINDOW_HOURS
+    from ..services import meeting_reminder_hours
 
     versand_am = invitation_dispatch_at(meeting, get_invitation_settings(meeting.organization))
     folgt = (
@@ -175,11 +175,12 @@ def _lesen_kontext(meeting: FactionMeeting, kontext: dict[str, Any]) -> dict[str
         if versand_am > timezone.now()
         else "Einladung folgt in Kürze"
     )
-    erinnerung = meeting.start - timedelta(hours=FACTION_REMINDER_WINDOW_HOURS)
+    stunden = meeting_reminder_hours(meeting.organization)
+    erinnerung = meeting.start - timedelta(hours=stunden) if stunden is not None else None
     return {
         "einladung_folgt": folgt,
         "erinnerung_tag": liste._tag(erinnerung)
-        if erinnerung > timezone.now() and not meeting.reminder_sent_at
+        if erinnerung is not None and erinnerung > timezone.now() and not meeting.reminder_sent_at
         else "",
         "eigene_unterlagen": vorbereiten.eigene_unterlagen(kontext),
     }

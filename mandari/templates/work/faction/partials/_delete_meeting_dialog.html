@@ -2,6 +2,7 @@
 Fraktionssitzung endgültig löschen (Issue #897) – Inhalt von #delete-meeting-modal, beim Öffnen geladen (Aktion
 delete_preview, nur mit faction.delete). Nennt die Folgen mit Zahlen, bietet das Absagen als schonende Alternative an
 und verlangt das Datum der Sitzung (der Titel geht auch) als ausdrückliche Eingabe.
+Termine einer Sitzungsreihe merkt Work als „Gelöscht, kommt nicht wieder“ (Issue #1071), mit optionalem Grund (reason).
 Kontext: meeting, impact, phrases_json, can_cancel, org_slug.
 {% endcomment %}
 <p class="text-sm text-gray-700 dark:text-gray-300">
@@ -25,5 +26,11 @@ Kontext: meeting, impact, phrases_json, can_cancel, org_slug.
       x-data="deleteConfirmation" data-phrases="{{ phrases_json }}" @htmx:response-error.stop="showError($event)">
     {% csrf_token %}
     <input type="hidden" name="action" value="delete">
+    {% if meeting.schedule_id and meeting.scheduled_date %}
+    <p class="mb-3 text-sm text-gray-700 dark:text-gray-300">Der Termin gehört zur Sitzungsreihe „{{ meeting.schedule.name }}“. Work legt ihn nicht wieder an; die Reihe geht mit dem nächsten Termin weiter.</p>
+    <label for="delete-meeting-reason" class="block text-sm text-gray-700 dark:text-gray-300">Grund <span class="text-gray-500 dark:text-gray-400">optional, erscheint in der Liste</span></label>
+    <input id="delete-meeting-reason" name="reason" type="text" maxlength="500" placeholder="z. B. Herbstferien"
+           class="mt-1 mb-3 w-full h-8 px-2 text-sm rounded-md border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
+    {% endif %}
     {% include "work/faction/partials/_delete_confirmation.html" with needs_input=True input_id="delete-meeting-confirmation" label="Zur Bestätigung das Datum der Sitzung eingeben:" expected=meeting.start|date:"d.m.Y" %}
 </form>
