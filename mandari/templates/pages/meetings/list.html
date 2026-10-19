@@ -44,7 +44,7 @@
             Alle
         </a>
     </div>
-    <p class="mt-4 text-[0.95rem]"><a href="{% insight_url 'meeting_calendar' %}" class="inline-flex items-center gap-1.5 font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline"><i data-lucide="calendar" class="w-4 h-4" aria-hidden="true"></i>Als Kalender ansehen</a></p>
+    <p class="mt-4 text-[0.95rem]">{% insight_rel 'meeting_calendar' as kalender_rel %}<a href="{% insight_url 'meeting_calendar' %}"{% if kalender_rel %} rel="{{ kalender_rel }}"{% endif %} class="inline-flex items-center gap-1.5 font-medium text-primary-700 dark:text-primary-300 underline-offset-4 hover:underline"><i data-lucide="calendar" class="w-4 h-4" aria-hidden="true"></i>Als Kalender ansehen</a></p>
 </c-insight.kopfband>
 <c-insight.band>
     <div id="meetings-list">

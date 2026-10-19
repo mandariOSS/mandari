@@ -125,10 +125,30 @@ class PortalContext:
         liste = KOMMUNEN_LISTEN.get(name)
         if liste is not None:
             return reverse(f"insight_core:insight:{liste}", kwargs={"slug": self.slug})
-        if self.nur_anfrage and name in DEEP_LINK_NAMES and name != "portal_home":
+        if self.ueber_einstieg(name):
             rest = ziel.removeprefix(reverse("insight_core:insight:portal_home"))
             return reverse("insight_core:insight:portal_entry_path", kwargs={"slug": self.slug, "rest": rest})
         return ziel
+
+    def ueber_einstieg(self, name: str) -> bool:
+        """
+        Führt ``url(name)`` über den Einstieg mit Pfad (``/insight/k/<slug>/karte/``)?
+
+        Der Einstieg hält den Kontext in der Sitzung fest (``enter``): Links dorthin tragen ``rel="nofollow"``, damit
+        Suchmaschinen sie nicht aufrufen und dabei Sitzungen anlegen (``rel``). Die Listen je Kommune bleiben ``follow``.
+        """
+        return (
+            self.nur_anfrage
+            and not self.via_host
+            and bool(self.slug)
+            and name not in KOMMUNEN_LISTEN
+            and name in DEEP_LINK_NAMES
+            and name != "portal_home"
+        )
+
+    def rel(self, name: str) -> str:
+        """``rel`` des Links auf ``url(name)``: ``nofollow`` über den Einstieg, sonst leer."""
+        return "nofollow" if self.ueber_einstieg(name) else ""
 
     @property
     def can_leave(self) -> bool:

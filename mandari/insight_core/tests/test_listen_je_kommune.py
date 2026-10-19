@@ -260,13 +260,34 @@ class TestVerlinkung:
             assert alt not in html, "keine Umwege über die Kommunenauswahl"
 
     def test_navigation_einer_liste_ohne_sitzung(self, kommunen: dict[str, Any]) -> None:
-        nav = _bereiche(Client().get("/insight/k/nord/gremien/").content.decode())
+        html = Client().get("/insight/k/nord/gremien/").content.decode()
+        nav = _bereiche(html)
 
         for liste in LISTEN:
             assert f'href="/insight/k/nord/{liste}/"' in nav, liste
-        # Bereiche ohne eigene Adresse führen über den Einstieg, der den Kontext beim Klick festhält
-        assert 'href="/insight/k/nord/karte/"' in nav
-        assert 'href="/insight/k/nord/"' in nav
+            assert f'href="/insight/k/nord/{liste}/" rel=' not in html, f"{liste}: Suchmaschinen folgen"
+        # Bereiche ohne eigene Adresse führen über den Einstieg, der den Kontext beim Klick festhält und dabei eine
+        # Sitzung anlegt: nofollow, Suchmaschinen rufen ihn nicht auf
+        assert 'href="/insight/k/nord/karte/" rel="nofollow"' in nav
+        assert 'href="/insight/k/nord/chat/" rel="nofollow"' in nav
+        assert html.count('href="/insight/k/nord/karte/" rel="nofollow"') == 2, "Seitenleiste und Leiste unten"
+        assert 'href="/insight/k/nord/gespeichert/" rel="nofollow"' in html
+        assert re.search(r'href="/insight/k/nord/karte/"(?! rel="nofollow")', html) is None
+        assert 'href="/insight/k/nord/"' in nav, "die Stadtseite bleibt follow"
+
+    def test_kalender_der_sitzungsliste_mit_nofollow(self, kommunen: dict[str, Any]) -> None:
+        html = Client().get("/insight/k/nord/termine/").content.decode()
+
+        assert '<a href="/insight/k/nord/termine/kalender/" rel="nofollow"' in html
+
+    def test_ohne_nofollow_wenn_die_sitzung_den_kontext_haelt(self, kommunen: dict[str, Any]) -> None:
+        client = Client()
+        client.get("/insight/k/nord/")
+
+        html = client.get("/insight/k/nord/gremien/").content.decode()
+
+        assert 'href="/insight/karte/"' in html and "nofollow" not in _bereiche(html)
+        assert '<a href="/insight/termine/kalender/" class=' in client.get("/insight/k/nord/termine/").content.decode()
 
     def test_einstieg_mit_pfad_haelt_den_kontext_fest(self, kommunen: dict[str, Any]) -> None:
         client = Client()

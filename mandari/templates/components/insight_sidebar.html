@@ -54,24 +54,24 @@ ausgeschlossen.
             <li><c-insight.nav-link href="{% insight_url 'meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.nav-link></li>
             <li><c-insight.nav-link href="{% insight_url 'paper_list' %}" icon="file-text" area="vorgaenge">Vorgänge</c-insight.nav-link></li>
             {% if insight_decisions_published %}
-            <li><c-insight.nav-link href="{% insight_url 'decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'decision_list' %}" rel="{% insight_rel 'decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.nav-link></li>
             {% endif %}
             <li><c-insight.nav-link href="{% insight_url 'organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.nav-link></li>
             <li><c-insight.nav-link href="{% insight_url 'person_list' %}" icon="users" area="personen">Personen</c-insight.nav-link></li>
             {% if insight_questions_enabled %}
-            <li><c-insight.nav-link href="{% insight_url 'question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'question_portal' %}" rel="{% insight_rel 'question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.nav-link></li>
             {% endif %}
-            <li><c-insight.nav-link href="{% insight_url 'map' %}" icon="map" area="karte">Karte</c-insight.nav-link></li>
-            <li><c-insight.nav-link href="{% insight_url 'chat' %}" icon="sparkle" area="ki">KI-Assistent</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'map' %}" rel="{% insight_rel 'map' %}" icon="map" area="karte">Karte</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'chat' %}" rel="{% insight_rel 'chat' %}" icon="sparkle" area="ki">KI-Assistent</c-insight.nav-link></li>
         </ul>
     </nav>
 
     {# Für Sie: Merkliste, Benachrichtigungen, Konto #}
     <div class="mt-auto px-3 pt-8 pb-5" role="group" aria-label="Für Sie">
         <ul class="space-y-0.5">
-            <li><c-insight.nav-link href="{% insight_url 'saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'saved' %}" rel="{% insight_rel 'saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.nav-link></li>
             {% if insight_subscriptions_enabled %}
-            <li><c-insight.nav-link href="{% insight_url 'notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'notifications' %}" rel="{% insight_rel 'notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.nav-link></li>
             {% endif %}
             {% if request.user.is_authenticated %}
             <li class="flex items-center gap-3 h-10 px-3 text-[0.9rem]">
