@@ -18,7 +18,7 @@ from ..models import (
     withdrawn_q,
 )
 from ..services import fraktionen, personen_liste
-from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -34,7 +34,7 @@ COUNCIL_ROLES = [
 ]
 
 
-class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
+class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Personen mit Ratsrolle-Annotation."""
 
     model = OParlPerson
@@ -49,13 +49,22 @@ class PersonListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        from ..seo import get_page_seo
+        from ..seo import get_list_seo
 
-        context["seo"] = get_page_seo(
+        body = get_active_body(self.request)
+        # Kanonisch ist die Adresse je Kommune (Issue #939)
+        context["seo"] = get_list_seo(
             self.request,
+            "person_list",
             title="Personen & Ratsmitglieder",
-            description="Ratsmitglieder und Beteiligte der Kommunalpolitik: Wer sitzt in welchem Gremium und trifft Entscheidungen?",
-            body=get_active_body(self.request),
+            description=(
+                f"Ratsmitglieder und Beteiligte der Kommunalpolitik in {body.get_display_name()}: Wer sitzt in "
+                "welchem Gremium und trifft Entscheidungen?"
+                if body
+                else "Ratsmitglieder und Beteiligte der Kommunalpolitik: Wer sitzt in welchem Gremium und trifft "
+                "Entscheidungen?"
+            ),
+            body=body,
         ).to_dict()
         # Fraktion, Funktion und Gremien aus den laufenden Mitgliedschaften (Issue #841), eine Abfrage je Seite
         persons = list(context["persons"])

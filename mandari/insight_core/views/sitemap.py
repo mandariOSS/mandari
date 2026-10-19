@@ -17,6 +17,7 @@ from django.views.decorators.http import require_safe
 
 from .. import publication
 from ..models import OParlBody
+from ..navigation import KOMMUNEN_LISTEN
 from ..services import sitemaps
 
 # =============================================================================
@@ -187,7 +188,8 @@ class _Urlset:
 @require_safe
 def body_sitemap(request, body_slug):
     """
-    Grund-Sitemap einer Kommune: Stadtseite, Gremien, Personen mit laufender Mitgliedschaft und Ratsfragen.
+    Grund-Sitemap einer Kommune: Stadtseite, ihre Listen (Sitzungen, Vorgänge, Gremien, Personen; Issue #939),
+    Gremien, Personen mit laufender Mitgliedschaft und Ratsfragen.
 
     Vorgänge und Sitzungen stehen in eigenen, nummerierten Dateien (``body_sitemap_seite``, Issue #914).
     """
@@ -202,6 +204,9 @@ def body_sitemap(request, body_slug):
         # Stadtseite der Kommune (/insight/k/<slug>/): Einstieg für „Ratsinformationen <Kommune>“
         stadtseite = reverse("insight_core:insight:portal_entry", kwargs={"slug": body.slug})
         urlset.add(stadtseite, body.last_sync, "daily", "0.9")
+        # Listen je Kommune (Issue #939), erste Seite: Über ihre Seitenlinks erreichen Suchmaschinen die Detailseiten
+        for liste in KOMMUNEN_LISTEN.values():
+            urlset.add(reverse(f"insight_core:insight:{liste}", kwargs={"slug": body.slug}), None, "daily", "0.7")
     for org_id, lastmod in sitemaps.gremien(body.pk):
         urlset.add(f"/insight/gremien/{org_id}/", lastmod, "monthly", "0.5")
     # Nur Personen mit laufender Mitgliedschaft; die übrigen Personenseiten tragen noindex

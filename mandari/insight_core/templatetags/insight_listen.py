@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
-"""Filter für Listen des Bürgerportals (Issue #841): Spalten nur zeigen, wenn sie etwas enthalten."""
+"""
+Filter für Listen des Bürgerportals (Issue #841): Spalten nur zeigen, wenn sie etwas enthalten; Seitenlinks; Ziele
+der Listen im Bürgerportal einer Körperschaft (``insight_url``, ``insight_rel``, Issue #939).
+"""
 
 from __future__ import annotations
 
@@ -7,6 +10,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from django import template
+from django.urls import reverse
 
 from ..ris_links import INSIGHT
 
@@ -59,6 +63,30 @@ def seiten_url(context: Any, nummer: int) -> str:
         return f"?page={nummer}"
     params["page"] = str(nummer)
     return "?" + str(params.urlencode())
+
+
+@register.simple_tag(takes_context=True)
+def insight_url(context: Any, name: str) -> str:
+    """
+    Ziel einer Seite des Bürgerportals (URL-Name ohne Namensraum) für Navigation und Übersichten.
+
+    Im Bürgerportal einer Körperschaft führen die Listen auf ihre Adresse je Kommune (``/insight/k/<slug>/vorgaenge/``,
+    Issue #939), sonst wie ``{% url 'insight_core:insight:<name>' %}`` (``portal.PortalContext.url``).
+    """
+    portal = context.get("insight_portal")
+    if portal is not None:
+        return str(portal.url(name))
+    return reverse(f"insight_core:insight:{name}")
+
+
+@register.simple_tag(takes_context=True)
+def insight_rel(context: Any, name: str) -> str:
+    """
+    ``rel`` zum Link aus ``insight_url``: ``nofollow``, wenn er über den Einstieg mit Pfad führt, der eine Sitzung
+    anlegt (``portal.PortalContext.ueber_einstieg``); sonst leer. ``rel="{% insight_rel 'map' %}"`` an den Bausteinen.
+    """
+    portal = context.get("insight_portal")
+    return str(portal.rel(name)) if portal is not None else ""
 
 
 @register.simple_tag

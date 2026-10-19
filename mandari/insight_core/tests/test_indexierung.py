@@ -362,6 +362,18 @@ class TestGrundSitemap:
         grund = client.get("/sitemap-insight-koeln.xml").content.decode()
         assert "/insight/vorgaenge/" not in grund and "/insight/termine/" not in grund
 
+    def test_listen_je_kommune(self, client: Client, stadt: dict[str, Any]) -> None:
+        # Erste Seite der Listen mit eigener Adresse (Issue #939), direkt nach der Stadtseite
+        locs = _locs(_xml(client, "/sitemap-insight-koeln.xml"))
+        listen = [
+            f"{settings.SITE_URL}/insight/k/koeln/{liste}/" for liste in ("termine", "vorgaenge", "gremien", "personen")
+        ]
+        assert locs[1:5] == listen
+
+    def test_ohne_slug_keine_listen(self, client: Client) -> None:
+        body = _kommune(2, "Stadt Darmstadt")
+        assert "/vorgaenge/" not in client.get(f"/sitemap-insight-{body.pk}.xml").content.decode()
+
     def test_personen_nur_mit_laufender_mitgliedschaft(self, client: Client) -> None:
         body = _kommune(1, "Stadt Köln", slug="koeln")
         rat = _gremium(body, 1)
@@ -719,6 +731,13 @@ class TestListen:
         "/insight/karte/",
         "/insight/nachbarschaft/",
     )
+    #: Listen mit eigener Adresse je Kommune (Issue #939): Die ist kanonisch, auch für die Liste mit gewählter Kommune
+    KANONISCH = {
+        "/insight/vorgaenge/": "/insight/k/koeln/vorgaenge/",
+        "/insight/termine/": "/insight/k/koeln/termine/",
+        "/insight/gremien/": "/insight/k/koeln/gremien/",
+        "/insight/personen/": "/insight/k/koeln/personen/",
+    }
 
     @pytest.mark.parametrize("pfad", LISTEN)
     def test_ohne_parameter_bleibt_die_liste_wie_sie_ist(self, client: Client, gewaehlt: OParlBody, pfad: str) -> None:
@@ -726,7 +745,7 @@ class TestListen:
         assert antwort.status_code == 200
         html = antwort.content.decode()
         assert _robots(html) == "index, follow"
-        assert _canonical(html) == f"{settings.SITE_URL}{pfad}"
+        assert _canonical(html) == f"{settings.SITE_URL}{self.KANONISCH.get(pfad, pfad)}"
         assert "X-Robots-Tag" not in antwort
 
     @pytest.mark.parametrize("pfad", LISTEN)
@@ -740,7 +759,7 @@ class TestListen:
         assert antwort.status_code == 200
         html = antwort.content.decode()
         assert _robots(html) == "noindex, follow"
-        assert _canonical(html) == f"{settings.SITE_URL}{pfad}", "Canonical unverändert"
+        assert _canonical(html) == f"{settings.SITE_URL}{self.KANONISCH.get(pfad, pfad)}", "Canonical ohne Parameter"
 
     def test_weiterleitung_ohne_kommune_per_kopf(self, gewaehlt: OParlBody) -> None:
         """Ohne gewählte Kommune leiten Listen zur Auswahl weiter; mit Parametern trägt die Weiterleitung noindex."""
@@ -901,9 +920,10 @@ class TestBrotkrumen:
         krumen = _brotkrumen(client.get(f"/insight/vorgaenge/{vorgang.pk}/").content.decode())
         kommune = _link(krumen, "Köln")
         assert 'href="/insight/k/koeln/"' in kommune and "nofollow" not in kommune
+        # Seit Issue #939 hat die Liste eine eigene Adresse je Kommune: ohne Umweg über die Wahl, ohne nofollow
         bereich = _link(krumen, "Vorgänge")
-        waehlen = reverse("insight_core:insight:set_body", args=[body.id])
-        assert f'href="{waehlen}?weiter=/insight/vorgaenge/"' in bereich and 'rel="nofollow"' in bereich
+        assert 'href="/insight/k/koeln/vorgaenge/"' in bereich and "nofollow" not in bereich
+        assert Client().get("/insight/k/koeln/vorgaenge/").status_code == 200
 
         stadtseite = Client().get("/insight/k/koeln/")
         assert stadtseite.status_code == 200, "kein Umweg: die Stadtseite antwortet direkt"
@@ -920,8 +940,18 @@ class TestBrotkrumen:
         assert f'href="{waehlen}?weiter=/insight/"' in kommune and 'rel="nofollow"' in kommune
         assert "/insight/k/" not in _brotkrumen(html)
 
-    def test_weg_zurueck_am_handy_mit_nofollow(self, client: Client) -> None:
+    def test_weg_zurueck_am_handy_ohne_umweg(self, client: Client) -> None:
         body = _kommune(1, "Stadt Köln", display_name="Köln", slug="koeln")
+        _kommune(2, "Stadt Bonn", slug="bonn")
+        vorgang = _vorgang(body, 1)
+        html = client.get(f"/insight/vorgaenge/{vorgang.pk}/").content.decode()
+        zurueck = re.search(r'<nav aria-label="Zurück"[^>]*>\s*<a ([^>]*)>', html)
+        # Liste je Kommune (Issue #939) statt Umweg über die Wahl der Kommune
+        assert zurueck and 'href="/insight/k/koeln/vorgaenge/"' in zurueck.group(1)
+        assert "nofollow" not in zurueck.group(1)
+
+    def test_weg_zurueck_am_handy_ohne_stadtseite_mit_nofollow(self, client: Client) -> None:
+        body = _kommune(1, "Pilotstadt")
         _kommune(2, "Stadt Bonn", slug="bonn")
         vorgang = _vorgang(body, 1)
         html = client.get(f"/insight/vorgaenge/{vorgang.pk}/").content.decode()

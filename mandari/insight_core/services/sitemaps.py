@@ -2,8 +2,8 @@
 """
 Sitemaps des Bürgerportals (Issue #914): alle öffentlichen Vorgänge und Sitzungen der gelisteten Kommunen.
 
-Je Kommune gibt es eine Grund-Sitemap (Stadtseite, Gremien, Personen mit laufender Mitgliedschaft, Ratsfragen)
-und für Vorgänge und Sitzungen nummerierte Dateien mit höchstens ``EINTRAEGE_JE_DATEI`` Adressen:
+Je Kommune gibt es eine Grund-Sitemap (Stadtseite und ihre Listen, Gremien, Personen mit laufender Mitgliedschaft,
+Ratsfragen) und für Vorgänge und Sitzungen nummerierte Dateien mit höchstens ``EINTRAEGE_JE_DATEI`` Adressen:
 ``/sitemap-insight-<slug>-vorgaenge-<n>.xml``. Alle Pfade beginnen mit ``/sitemap-insight-``; nur dieser Präfix
 geht in der Produktion an Django.
 
