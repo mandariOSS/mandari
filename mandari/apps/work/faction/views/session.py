@@ -185,6 +185,8 @@ def top_kontext(
             # Live-Mitschreiben (WebSocket, apps/work/faction/live.py) und @-Erwähnen (Issue #874)
             "live": True,
             "personen": sitzung.erwaehnbare_personen(personen),
+            # Wer eine Erwähnung einfügt (data-von, Auslöser der Benachrichtigung)
+            "ich": str(membership.pk),
         },
         "zustaendig_config": {
             "personen": [{"id": str(m.pk), "name": m.user.get_display_name()} for m in personen],

@@ -122,8 +122,8 @@ TAG_ATTRS: dict[str, frozenset[str]] = {
     "col": frozenset({"span"}),
     "ol": frozenset({"start", "type"}),
     "input": frozenset({"type", "checked", "disabled"}),
-    # @-Erwähnung in den Notizen der Fraktionssitzung (Issue #874): Kennung der erwähnten Mitgliedschaft
-    "span": frozenset({"data-id"}),
+    # @-Erwähnung in den Notizen der Fraktionssitzung (Issue #874): erwähnte und erwähnende Mitgliedschaft
+    "span": frozenset({"data-id", "data-von"}),
 }
 
 BOOLEAN_ATTRS = frozenset({"checked", "disabled"})
@@ -233,7 +233,7 @@ def _clean_attr(tag: str, name: str, value: str | None) -> str | None:
         return value if value in ("taskList", "taskItem", "mention") else None
     if name in ("data-checked", "data-resolved", "data-page-break"):
         return value if value in ("true", "false") else None
-    if name == "data-id":
+    if name in ("data-id", "data-von"):
         return value if _UUID_RE.match(value) else None
     if name == "data-comment-id":
         return value if _COMMENT_ID_RE.match(value) else None

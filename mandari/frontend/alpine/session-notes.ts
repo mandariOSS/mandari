@@ -38,6 +38,8 @@ interface NotizenConfig {
   live?: boolean
   /** Vorschlagsliste für @-Erwähnungen */
   personen?: ErwaehnbarePerson[]
+  /** Eigene Mitgliedschaft (Auslöser einer Erwähnung) */
+  ich?: string
 }
 
 interface Antwort {
@@ -117,6 +119,8 @@ export const sitzungsNotizen = defineComponent(() => {
   let leserVersuche = 0
   let leserTimer = 0
   let beendet = false
+  // Notizen, mit denen der Live-Editor gestartet ist (Rückfall auf das Formular)
+  let ausgangAktuell = ''
 
   return {
     art: 'aus' as Art,
@@ -190,6 +194,7 @@ export const sitzungsNotizen = defineComponent(() => {
         content: inhalt,
         placeholder: this.platzhalter(),
         personen: config.personen,
+        ich: config.ich,
         onUpdate: () => this.geaendert(),
         onFormat: (format) => {
           this.format = format
@@ -222,6 +227,7 @@ export const sitzungsNotizen = defineComponent(() => {
         content: '',
         placeholder: this.platzhalter(),
         personen,
+        ich: config.ich,
         wsUrl: wsAdresse(config.itemId),
         user: { name: 'Ich', color: '#6b7280' },
         onLocalUpdate: () => this.geaendert(),
@@ -240,11 +246,11 @@ export const sitzungsNotizen = defineComponent(() => {
       })
       editor = erstellt.editor
       collab = erstellt.collab
-      // Schreiben erst mit gültigem Stand (vom Server, selbst gefüllt oder von den anderen), sonst gingen Eingaben
-      // in einem leeren Zustand verloren
-      editor.setEditable(false)
+      // Speichern erst mit gültigem Stand (vom Server, selbst gefüllt oder von den anderen); was bis dahin getippt
+      // wird, bleibt im Editor und wird mit dem Stand zusammengeführt
       this.bereit = true
       // Kommt keine Verbindung zustande (WebSocket gesperrt), arbeitet die Komponente wie bisher im Formular-Modus
+      ausgangAktuell = ausgang
       wartenTimer = window.setTimeout(() => {
         if (!verbunden && this.art === 'live') this.zumFormular(ausgang)
       }, VERBINDEN_MS)
@@ -281,7 +287,13 @@ export const sitzungsNotizen = defineComponent(() => {
     freigeben() {
       gueltig = true
       window.clearTimeout(wartenTimer)
-      if (this.status !== 'lesen') editor?.setEditable(true)
+      // Vorher Getipptes jetzt speichern
+      if (ausstehend) this.geaendert()
+    },
+
+    /** Was vor dem ersten Stand getippt wurde (sonst leer) */
+    getippt(): string {
+      return editor && !editor.isEmpty ? editor.getHTML() : ''
     },
 
     zustandErhalten(msg: any, ausgang: string, zusammengefuehrt: boolean) {
@@ -308,10 +320,11 @@ export const sitzungsNotizen = defineComponent(() => {
         return
       }
       if (msg.seed) {
-        // Dieser Editor füllt den Zustand aus den Notizen (genau einer je TOP)
-        this.freigeben()
-        const inhalt = zusammengefuehrt ? ausgang : html
+        // Dieser Editor füllt den Zustand aus den Notizen (genau einer je TOP); schon Getipptes kommt darunter
+        const getippt = this.getippt()
+        const inhalt = `${zusammengefuehrt ? ausgang : html}${getippt}`
         if (text(inhalt) || inhalt.includes('<li')) editor.commands.setContent(inhalt)
+        this.freigeben()
         if (zusammengefuehrt) this.konflikt = true
         return
       }
@@ -328,6 +341,11 @@ export const sitzungsNotizen = defineComponent(() => {
 
     verbindung(s: CollabStatus) {
       if (this.art !== 'live') return
+      if (s === 'disconnected' && !verbunden) {
+        // Keine Verbindung möglich (etwa ohne WebSocket-Weiterleitung): sofort wie bisher über das Formular
+        this.zumFormular(ausgangAktuell)
+        return
+      }
       if (s === 'connected') {
         if (this.status === 'getrennt') this.status = ausstehend ? 'ungespeichert' : 'gespeichert'
         if (ausstehend) this.geaendert()
@@ -363,7 +381,7 @@ export const sitzungsNotizen = defineComponent(() => {
     /** Neu aufbauen: Die Notizen wurden ohne Verbindung geändert, der gemeinsame Zustand gilt nicht mehr. */
     neuAufbauen(html: string, vorher: string) {
       if (!element || beendet) return
-      const eigene = editor && gueltig ? editor.getHTML() : ''
+      const eigene = editor && gueltig ? editor.getHTML() : this.getippt()
       const basis = vorher || zuletztGespeichert
       const offen = Boolean(eigene) && text(eigene) !== text(basis) && text(eigene) !== text(html)
       const ausgang = offen ? `${html}${KONFLIKT_MARKE}${eigene}` : html
@@ -382,7 +400,7 @@ export const sitzungsNotizen = defineComponent(() => {
     /** Ohne Verbindung: wie bisher über das Formular speichern (aktueller Inhalt bleibt im Editor). */
     zumFormular(ausgang: string) {
       if (!element) return
-      const inhalt = editor && gueltig ? editor.getHTML() : ausgang
+      const inhalt = editor && gueltig ? editor.getHTML() : `${ausgang}${this.getippt()}`
       window.clearTimeout(wartenTimer)
       const altEditor = editor
       const altCollab = collab

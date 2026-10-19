@@ -3,7 +3,7 @@
  *
  * „@“ öffnet eine Vorschlagsliste der Mitglieder (Muster `fraktionssitzungen/sitzung.html`, Popup `.fs-erw`).
  * Gewählt wird mit Pfeiltasten und Eingabe oder per Klick; die Erwähnung steht als eigener Knoten im Text:
- * `<span class="erwaehnung" data-type="mention" data-id="<Mitgliedschaft>">@Name</span>`. Der Server bereinigt
+ * `<span class="erwaehnung" data-type="mention" data-id="<erwähnt>" data-von="<eingefügt von>">@Name</span>`. Der Server bereinigt
  * das HTML (apps/work/sanitize.py) und benachrichtigt neu erwähnte Personen (apps/work/faction/erwaehnungen.py).
  */
 
@@ -19,6 +19,8 @@ export interface ErwaehnbarePerson {
 
 export interface ErwaehnungOptionen {
   personen: ErwaehnbarePerson[]
+  /** Mitgliedschaft der Person am Editor: steht als `data-von` an der Erwähnung (Auslöser der Benachrichtigung) */
+  von: string
 }
 
 const MAX_TREFFER = 8
@@ -185,7 +187,7 @@ export const Erwaehnung = Node.create<ErwaehnungOptionen>({
   selectable: false,
 
   addOptions() {
-    return { personen: [] }
+    return { personen: [], von: '' }
   },
 
   addAttributes() {
@@ -194,6 +196,11 @@ export const Erwaehnung = Node.create<ErwaehnungOptionen>({
         default: null,
         parseHTML: (element) => element.getAttribute('data-id'),
         renderHTML: (attrs) => (attrs.id ? { 'data-id': attrs.id } : {}),
+      },
+      von: {
+        default: null,
+        parseHTML: (element) => element.getAttribute('data-von'),
+        renderHTML: (attrs) => (attrs.von ? { 'data-von': attrs.von } : {}),
       },
       label: {
         default: '',
@@ -221,6 +228,7 @@ export const Erwaehnung = Node.create<ErwaehnungOptionen>({
 
   addProseMirrorPlugins() {
     const personen = this.options.personen
+    const von = this.options.von || null
     return [
       Suggestion<ErwaehnbarePerson, ErwaehnbarePerson>({
         editor: this.editor,
@@ -232,7 +240,7 @@ export const Erwaehnung = Node.create<ErwaehnungOptionen>({
             .chain()
             .focus()
             .insertContentAt(range, [
-              { type: 'mention', attrs: { id: props.id, label: props.name } },
+              { type: 'mention', attrs: { id: props.id, label: props.name, von } },
               { type: 'text', text: ' ' },
             ])
             .run()

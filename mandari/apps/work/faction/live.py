@@ -96,7 +96,7 @@ def _kuerzel(name: str) -> str:
     return (teile[0][0] + teile[-1][0]).upper()
 
 
-class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):
+class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc]  # channels ohne Typangaben
     """WebSocket ``ws/fraktion/notizen/<item_id>/``: Live-Notizen eines TOPs."""
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -199,15 +199,18 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):
         # oder halben Stand)
         fuellt = cache.get(_seed_schluessel(self.item_id))
         if fuellt and fuellt != self.kennung:
+            logger.debug("Live-Notizen %s: Speichern von %s übersprungen, %s füllt", self.item_id, self.kennung, fuellt)
             return
         ergebnis = await self._persistieren(zustand, html)
         if ergebnis is None:
+            logger.debug("Live-Notizen %s: Speichern von %s ohne Recht", self.item_id, self.kennung)
             return
         if ergebnis.get("abweichung"):
             # Die Notizen wurden ohne Verbindung geändert: alle verbundenen Editoren bauen neu auf (einmal)
             if cache.add(f"fs-notizen-neu:{self.item_id}", 1, 5):
                 await database_sync_to_async(neu_aufbauen)(self.item_id, ergebnis["html"])
             return
+        logger.debug("Live-Notizen %s: gespeichert von %s (%s)", self.item_id, self.kennung, ergebnis["stand"])
         self.basis = ergebnis["stand"]
         cache.delete(_seed_schluessel(self.item_id))
         await self.send_json({"type": "yjs_saved", "content_hash": ergebnis["stand"], "gespeichert_um": ergebnis["um"]})
@@ -216,7 +219,7 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):
                 self.group_name, {"type": "notizen.inhalt", "html": ergebnis["html"], "von": self.channel_name}
             )
 
-    @database_sync_to_async
+    @database_sync_to_async  # type: ignore[untyped-decorator]
     def _persistieren(self, zustand: bytes, html: str) -> dict[str, Any] | None:
         from apps.work.sanitize import safe_editor_html
 
@@ -320,7 +323,7 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):
         except (ValueError, TypeError, ValidationError):
             return None
 
-    @database_sync_to_async
+    @database_sync_to_async  # type: ignore[untyped-decorator]
     def _zugriff(self) -> tuple[str, Any, str] | None:
         """(Stufe, Mitgliedschaft, Anzeigename) oder ``None`` ohne Zugriff."""
         from apps.tenants.models import Membership
@@ -349,7 +352,7 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):
         stufe = "edit" if sitzung.darf_protokollieren(membership, item.meeting) else "view"
         return stufe, membership, membership.user.get_display_name()
 
-    @database_sync_to_async
+    @database_sync_to_async  # type: ignore[untyped-decorator]
     def _laden(self) -> tuple[bytes | None, str, str]:
         """(Zustand, falls er zu den Notizen passt; Notizen als HTML; Stand der Notizen)."""
         from apps.work.sanitize import safe_editor_html

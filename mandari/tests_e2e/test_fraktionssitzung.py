@@ -375,3 +375,62 @@ def test_zwei_personen_schreiben_gleichzeitig_ohne_verlust(
     gespeichert = cast(Any, tops[1]).get_notes_decrypted()
     assert "Fassung der Sitzungsleitung." in gespeichert
     assert "Fassung der Schriftführung." in gespeichert
+
+
+def test_live_mitschreiben_und_erwaehnen(
+    asgi_server: Any, org: Any, make_member: Any, sitzung: Any, zwei_browser: Any
+) -> None:
+    """
+    Live-Mitschreiben über den WebSocket (ASGI-Testserver, Issue #874): Vorsitz und Schriftführung schreiben in die
+    Notizen desselben TOPs, sehen den Text und einander unter „gerade im Protokoll“; eine @-Erwähnung benachrichtigt.
+    """
+    from apps.work.notifications.models import Notification, NotificationType
+
+    vorsitz, meeting, tops = sitzung
+    vorsitz.user.first_name, vorsitz.user.last_name = "Vera", "Beispiel"
+    vorsitz.user.save(update_fields=["first_name", "last_name"])
+    schrift = make_member(org, ["faction.view_public", "protocols.create"], email="schrift-live@example.org")
+    schrift.user.first_name, schrift.user.last_name = "Sophie", "Schema"
+    schrift.user.set_password(PASSWORD)
+    schrift.user.save(update_fields=["password", "first_name", "last_name"])
+    meeting.minute_taker = schrift
+    meeting.save(update_fields=["minute_taker"])
+    seite_a, seite_b = zwei_browser
+    for seite, person in ((seite_a, vorsitz), (seite_b, schrift)):
+        seite.set_viewport_size({"width": 1440, "height": 900})
+        login_via_form(seite, asgi_server.url, person.user.email, PASSWORD)
+        oeffnen(seite, asgi_server, org, meeting, tops[1])
+        seite.wait_for_function(f"() => {NOTIZEN}.art === 'live'", timeout=15000)
+
+    # Beide sehen einander als „gerade im Protokoll“
+    expect(seite_a.locator(".fs-mit .av")).to_have_count(1, timeout=10000)
+    expect(seite_b.locator(".fs-mit .av")).to_have_count(1, timeout=10000)
+    expect(seite_a.locator(".fs-mit")).to_have_attribute("aria-label", re.compile(r"Sophie Schema, schreibt mit"))
+
+    seite_a.locator(NOTIZ).click()
+    seite_a.keyboard.type("Hilfsfrist im Norden.")
+    expect(seite_b.locator(NOTIZ)).to_contain_text("Hilfsfrist im Norden.", timeout=10000)
+
+    seite_b.locator(NOTIZ).click()
+    seite_b.keyboard.press("End")
+    seite_b.keyboard.press("Enter")
+    seite_b.keyboard.type("Rückfrage an ")
+    seite_b.keyboard.type("@Vera")
+    vorschlag = seite_b.locator(".fs-erw [role=option]").first
+    expect(vorschlag).to_be_visible(timeout=5000)
+    seite_b.keyboard.press("Enter")
+    expect(seite_b.locator(f"{NOTIZ} .erwaehnung")).to_have_count(1)
+    expect(seite_a.locator(f"{NOTIZ} .erwaehnung")).to_have_count(1, timeout=10000)
+    expect(seite_b.locator(".fs-status")).to_contain_text(re.compile(r"gespeichert um"), timeout=10000)
+
+    def gespeichert() -> str:
+        tops[1].refresh_from_db()
+        return str(cast(Any, tops[1]).get_notes_decrypted() or "")
+
+    seite_b.wait_for_timeout(500)
+    notizen = gespeichert()
+    assert "Hilfsfrist im Norden." in notizen and "Rückfrage an" in notizen
+    assert f'data-id="{vorsitz.pk}"' in notizen
+    assert Notification.objects.filter(
+        recipient=vorsitz, notification_type=NotificationType.FACTION_MENTION, actor=schrift
+    ).exists()
