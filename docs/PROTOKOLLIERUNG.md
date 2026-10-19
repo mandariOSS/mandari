@@ -104,7 +104,9 @@ nutzen dieselbe Anmeldung.
   Konto) und Fensterbeginn, dazu das Konto nur als Referenz (zweiter Schritt) bzw. die eingegebene Kennung
   nur als HMAC (Passwortschritt). Die Zahl der weiteren Abweisungen im Fenster steht nicht im Eintrag,
   denn Einträge sind unveränderbar. Die Zusammenfassung hält der Cache fest; fällt er aus, prüft die
-  Datenbank je Adresse. Die Abweisung prüft das Passwort nicht und zählt nicht als weiterer Fehlversuch.
+  Datenbank je Adresse bzw. je /64-Netz. Eine Abweisung zählt nicht als weiterer Fehlversuch.
+- **Eine Form der Kennung:** Die eingegebene Adresse wird einmal normalisiert (ohne Leerraum am Rand,
+  klein) und so für die Zählung der Drosselung, den Anmeldeversuch (`LoginAttempt`) und den HMAC verwendet.
 - **Anmeldeversuche für die Drosselung** (`LoginAttempt`: E-Mail-Adresse, IP-Adresse, Browserkennung,
   Ergebnis) braucht die Anwendung nur für die Zählung der letzten 15 Minuten. Der Zeitplan
   `befehl:purge_login_attempts` löscht sie täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage,
