@@ -85,6 +85,11 @@ import { autosaveAnzeige } from '../alpine/autosave-anzeige'
 
 Alpine.data('autosaveAnzeige', autosaveAnzeige)
 
+// ---- Einstellungen › Fraktionssitzungen: sofort speichern, Rückfrage vor dem Verlassen (#1071) -------------------
+import { einstellungenSofort } from '../alpine/einstellungen-sofort'
+
+Alpine.data('einstellungenSofort', einstellungenSofort)
+
 // ---- Recherche: Karte mit Kachel-Proxy, Zeitraum und Ausschnitt (#853) ------------------------------------
 import { risKarte } from '../alpine/ris-karte'
 

@@ -1,0 +1,2 @@
+{# Attribute „sofort speichern“ (Issue #1071) für einen Abschnitt (felder) bzw. ein Textfeld (tippen) des Hauptformulars; nichts bei nur_lesen #}
+{% if not nur_lesen %}hx-post="{{ request.path }}" hx-vals='{"section": "save_settings", "felder": "{{ felder }}"}' hx-trigger="{% if tippen %}input changed delay:800ms{% else %}change{% endif %}, autosave-erneut" hx-swap="none" hx-sync="this:queue last" data-autosave="einst"{% endif %}
