@@ -38,23 +38,46 @@ export interface NotizenSicherung {
   sichern(): Promise<void>
 }
 
-let aktiveNotizen: NotizenSicherung | null = null
+// Alle Notiz-Editoren der Seite: die Sitzungsansicht hat einen, das Protokoll nach der Sitzung einen je TOP (Issue #1071)
+const aktiveNotizen = new Set<NotizenSicherung>()
 
 export function notizenAnmelden(notizen: NotizenSicherung): void {
-  aktiveNotizen = notizen
+  aktiveNotizen.add(notizen)
 }
 
 export function notizenAbmelden(notizen: NotizenSicherung): void {
-  if (aktiveNotizen === notizen) aktiveNotizen = null
+  aktiveNotizen.delete(notizen)
 }
 
-/** Ausstehende Notizen speichern (vor einem TOP-Wechsel oder einem Neuaufbau des TOPs). */
+/** Ausstehende Notizen aller Editoren speichern (vor einem TOP-Wechsel oder einem Neuaufbau). */
 export async function notizenSichern(): Promise<void> {
-  try {
-    await aktiveNotizen?.sichern()
-  } catch {
-    // Fehler zeigt die Notizen-Komponente selbst an; der Wechsel geht trotzdem weiter
-  }
+  await Promise.all(
+    [...aktiveNotizen].map(async (notizen) => {
+      try {
+        await notizen.sichern()
+      } catch {
+        // Fehler zeigt die Notizen-Komponente selbst an; der Wechsel geht trotzdem weiter
+      }
+    }),
+  )
+}
+
+let sichernAngemeldet = false
+
+/**
+ * Anfragen von Elementen mit `data-top-wechsel` oder `data-sichern-vorher` erst senden, wenn alle Notizen gespeichert
+ * sind (sonst lädt ein Neuaufbau den alten Stand, und das Speichern danach endet im Konflikt). Einmal je Seite.
+ */
+export function vorAnfragenSichern(): void {
+  if (sichernAngemeldet) return
+  sichernAngemeldet = true
+  document.body.addEventListener('htmx:confirm', (event) => {
+    const detail = (event as CustomEvent<HtmxDetail>).detail
+    const elt = detail.elt
+    if (!elt?.closest('[data-top-wechsel], [data-sichern-vorher]') || detail.question) return
+    event.preventDefault()
+    void notizenSichern().then(() => detail.issueRequest?.(true))
+  })
 }
 
 /** POST an den Aktions-Endpunkt mit Formularwerten; liefert die Antwort (JSON oder Text). */
@@ -104,13 +127,7 @@ export const fraktionssitzung = defineComponent(() => ({
     })
     const body = document.body
     // Vor einem TOP-Wechsel (und vor Aktionen, die den TOP neu aufbauen) die Notizen speichern
-    body.addEventListener('htmx:confirm', (event) => {
-      const detail = (event as CustomEvent<HtmxDetail>).detail
-      const elt = detail.elt
-      if (!elt?.closest('[data-top-wechsel], [data-sichern-vorher]') || detail.question) return
-      event.preventDefault()
-      void notizenSichern().then(() => detail.issueRequest?.(true))
-    })
+    vorAnfragenSichern()
     // Neuer TOP: aktuellen TOP merken, Blatt am Handy schließen, Überschrift fokussieren
     body.addEventListener('htmx:afterSwap', (event) => {
       const target = (event as CustomEvent<HtmxDetail>).detail.target
