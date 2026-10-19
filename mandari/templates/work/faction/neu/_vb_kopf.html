@@ -1,0 +1,108 @@
+{% load permission_tags %}
+{% comment %}
+Kopf der Seite vor der Sitzung (Issue #1071, Muster sitzung.html): Zurück, Titel mit Termin und Ort, Ablaufleiste
+Planung → Einladung → Sitzung → Protokoll (Markup wie der Kopf der laufenden Sitzung, .fs-kopf/.fs-stufen), Menü
+„Weitere Aktionen“. Darunter die Infoleiste: ein Satz und höchstens eine Hauptaktion (Einladen, Freigeben,
+Aktualisieren, Starten), nach dem Versand dazu „Versandergebnis“.
+Kontext: meeting, org_slug, stufen, info, verwalten, can_edit, can_delete, can_start, can_manage_attendance, darf_einladen,
+eingeladen,
+empfaenger, membership.
+{% endcomment %}
+<header class="fs-kopf" id="fs-kopf">
+    <a class="wf-knopf wf-leise wf-ik" href="{% url 'work:faction' org_slug=org_slug %}" aria-label="Zurück zu den Fraktionssitzungen">
+        <i data-lucide="chevron-left" aria-hidden="true"></i>
+    </a>
+    <div class="fs-titel">
+        <h1 title="{{ meeting.title }}">{{ meeting.title }}</h1>
+        {% for stufe in stufen %}{% if stufe.stand == 'aktuell' %}<span class="fs-mobil-nur fs-stufe-mobil">Schritt {{ stufe.nr }} von 4: {{ stufe.name }}, {{ stufe.unter }}</span>{% endif %}{% endfor %}
+        <p class="fs-kopf-meta">{{ meeting.start|date:"D d.m.Y" }}, {{ meeting.start|time:"H:i" }}{% if meeting.end %} bis {{ meeting.end|time:"H:i" }}{% endif %}{% if meeting.location %}, {{ meeting.location }}{% endif %}{% if meeting.is_virtual %}{% if meeting.location %}, auch{% else %},{% endif %} per Video{% endif %}</p>
+    </div>
+    <ol class="fs-stufen" aria-label="Ablauf der Sitzung">
+        {% for stufe in stufen %}
+        <li class="{{ stufe.stand }}"{% if stufe.stand == 'aktuell' %} aria-current="step"{% endif %}>
+            <span class="kreis" aria-hidden="true">{% if stufe.stand == 'erledigt' %}<i data-lucide="check"></i>{% else %}{{ stufe.nr }}{% endif %}</span>
+            <span class="name">{{ stufe.name }}<span class="unter">{{ stufe.unter }}</span></span>
+            {% if stufe.stand == 'erledigt' %}<span class="sr-only">, erledigt</span>{% endif %}
+        </li>
+        {% if not forloop.last %}<li class="linie" aria-hidden="true"></li>{% endif %}
+        {% endfor %}
+    </ol>
+    <div class="fs-kopf-aktionen">
+        <div class="wf-menue-anker" x-data="{ offen: false }" @click.outside="offen = false" @keydown.escape="offen = false">
+            <button type="button" class="wf-knopf wf-leise wf-ik" aria-haspopup="menu" aria-label="Weitere Aktionen"
+                    :aria-expanded="offen ? 'true' : 'false'" @click="offen = !offen" data-testid="fs-weitere">
+                <i data-lucide="ellipsis" aria-hidden="true"></i>
+            </button>
+            <div class="wf-menue rechts" role="menu" x-show="offen" x-cloak>
+                {% if can_edit %}
+                <button type="button" role="menuitem" @click="offen = false; $dispatch('open-edit-meeting')"><i data-lucide="pencil" aria-hidden="true"></i>Sitzung bearbeiten …</button>
+                {% endif %}
+                {% if eingeladen and darf_einladen and meeting.status in 'planned,invited' %}
+                <button type="button" role="menuitem" @click="offen = false; document.getElementById('fs-aktualisieren').showModal()"><i data-lucide="refresh-cw" aria-hidden="true"></i>Aktualisierung senden …</button>
+                {% endif %}
+                {% if meeting.status == 'draft' and can_edit %}
+                <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="update_status">
+                    <input type="hidden" name="status" value="planned">
+                    <button type="submit" role="menuitem"><i data-lucide="calendar-check" aria-hidden="true"></i>Als geplant markieren</button>
+                </form>
+                {% endif %}
+                {% if can_manage_attendance %}
+                <button type="button" role="menuitem" @click="offen = false; $dispatch('open-add-attendee')"><i data-lucide="user-plus" aria-hidden="true"></i>Teilnehmer hinzufügen …</button>
+                {% endif %}
+                {% if meeting.is_virtual and meeting.video_link %}
+                <a role="menuitem" href="{{ meeting.video_link }}" target="_blank" rel="noopener noreferrer"><i data-lucide="video" aria-hidden="true"></i>Videoraum öffnen</a>
+                {% endif %}
+                <a role="menuitem" href="{% url 'work:faction_ics' org_slug=org_slug meeting_id=meeting.id %}"><i data-lucide="calendar-plus" aria-hidden="true"></i>In Kalender übernehmen</a>
+                {% if membership|has_perm:"faction.view_audit" %}
+                <a role="menuitem" href="{% url 'work:faction_audit' org_slug=org_slug %}?meeting={{ meeting.id }}"><i data-lucide="history" aria-hidden="true"></i>Änderungshistorie</a>
+                {% endif %}
+                <a role="menuitem" href="?ansicht=bisher"><i data-lucide="layout-list" aria-hidden="true"></i>Bisherige Ansicht</a>
+                {% if can_edit and meeting.status != 'cancelled' %}
+                <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" data-confirm="Sitzung wirklich absagen? Sie bleibt mit allen Daten erhalten.">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="cancel">
+                    <button type="submit" role="menuitem"><i data-lucide="calendar-x" aria-hidden="true"></i>Sitzung absagen …</button>
+                </form>
+                {% endif %}
+                {% if can_delete %}
+                <button type="button" role="menuitem" aria-haspopup="dialog" aria-controls="delete-meeting-modal" @click="offen = false; $dispatch('open-delete-meeting')"><i data-lucide="trash-2" aria-hidden="true"></i>Sitzung löschen …</button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</header>
+
+{% if info.fett %}
+<div class="fs-info" role="status" data-testid="fs-info">
+    <p class="fs-info-text"><b>{{ info.fett }}</b> {{ info.text }}</p>
+    <div class="fs-info-aktionen">
+        {% if info.versand %}
+        <button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-versand').showModal()" aria-haspopup="dialog"><i data-lucide="mail" aria-hidden="true"></i>Versandergebnis</button>
+        {% endif %}
+        {% if info.aktion == "einladen" %}
+        <button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-einladen').showModal()" aria-haspopup="dialog">Jetzt einladen …</button>
+        {% elif info.aktion == "freigeben" %}
+        <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" data-confirm="Einladungsversand jetzt freigeben?">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="release_invitations">
+            <button type="submit" class="wf-knopf wf-klein wf-haupt">Versand freigeben</button>
+        </form>
+        {% if darf_einladen %}<button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-einladen').showModal()" aria-haspopup="dialog">Jetzt einladen …</button>{% endif %}
+        {% elif info.aktion == "aktualisieren" %}
+        <button type="button" class="wf-knopf wf-klein wf-haupt" @click="document.getElementById('fs-aktualisieren').showModal()" aria-haspopup="dialog">Aktualisierung senden …</button>
+        {% elif info.aktion == "starten" %}
+        {% if can_start %}
+        <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="start">
+            <button type="submit" class="wf-knopf wf-klein wf-haupt"><i data-lucide="play" aria-hidden="true"></i>Sitzung starten</button>
+        </form>
+        {% else %}
+        <button type="button" class="wf-knopf wf-klein" disabled title="Ab {{ info.starten_ab }} möglich"><i data-lucide="play" aria-hidden="true"></i>Sitzung starten</button>
+        {% endif %}
+        {% endif %}
+    </div>
+</div>
+{% endif %}

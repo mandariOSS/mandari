@@ -1062,6 +1062,16 @@ class FactionAttendance(MemberNameSnapshotMixin):
     response_message = models.TextField(blank=True, verbose_name="Nachricht", help_text="Begründung bei Absage")
     responded_at = models.DateTimeField(blank=True, null=True, verbose_name="Antwort am")
 
+    # Versandergebnis der Einladung je Person (Issue #1071): Stand des letzten Versands (Erstversand oder
+    # Aktualisierung). „Verschickt“ heißt an den Mailversand der Organisation übergeben; Fehler mit Grund.
+    invitation_mailed_at = models.DateTimeField(blank=True, null=True, verbose_name="Einladung verschickt am")
+    invitation_error = models.CharField(
+        max_length=300, blank=True, default="", db_default="", verbose_name="Einladung nicht verschickt, Grund"
+    )
+    invitation_without_internal = models.BooleanField(
+        default=False, db_default=False, verbose_name="Einladung ohne nichtöffentlichen Teil"
+    )
+
     # Check-in
     checked_in_at = models.DateTimeField(blank=True, null=True, verbose_name="Eingecheckt um")
     checked_out_at = models.DateTimeField(blank=True, null=True, verbose_name="Ausgecheckt um")

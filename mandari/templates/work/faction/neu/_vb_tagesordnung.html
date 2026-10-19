@@ -1,0 +1,60 @@
+{% comment %}
+Tagesordnung bearbeiten (Issue #1071, Muster sitzung.html, Planung): Kopf mit Zahl, Vorschläge zum Aufnehmen oder
+Ablehnen, öffentlicher und nichtöffentlicher Teil als Liste (c. f. _vb_top.html) mit Zeile zum Hinzufügen. Inhalt von
+#agenda-container; die Aktionen (add_item, edit_item, move_item, delete_item, refresh_agenda) antworten mit diesem
+Teil, wenn die Anfrage von der neuen Seite kommt (X-Work-Gestaltung). #fs-offen trägt den aufgeklappten TOP mit.
+Nicht vereidigt: nichtöffentlicher Teil nur als Zahl mit Erklärung (fs-gesperrt), serverseitig ohne Inhalte.
+Kontext: vorbereiten.tagesordnung() und _get_meeting_context() (meeting, org_slug, can_edit, can_view_internal,
+can_import_internal_documents, can_approve_proposals, pending_proposals).
+{% endcomment %}
+<input type="hidden" id="fs-offen" name="offen" value="{{ to_offen }}">
+<div class="fs-abschnitt-kopf">
+    <h2 id="to-h">Tagesordnung</h2>
+    <span class="fs-meta" data-testid="fs-to-zahl">{{ to_zahl }}</span>
+</div>
+
+{% include "work/faction/neu/_vb_vorschlaege.html" %}
+
+<div class="fs-teil" data-testid="fs-teil-oeffentlich">
+    <div class="fs-teil-kopf"><h3>Öffentlicher Teil</h3></div>
+    <ol class="fs-tops">
+        {% for z in to_oeffentlich %}{% include "work/faction/neu/_vb_top.html" %}{% endfor %}
+    </ol>
+    {% if to_oeffentlich|length < 2 %}<p class="fs-to-leer">Fügen Sie TOPs hinzu{% if can_import_internal_documents %} oder lesen Sie eine Tagesordnung als PDF ein{% endif %}.</p>{% endif %}
+    {% if can_add_items %}
+    <form class="fs-top-neu" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-target="#agenda-container" hx-swap="innerHTML" hx-include="#fs-offen">
+        <input type="hidden" name="action" value="add_item">
+        <input type="hidden" name="visibility" value="public">
+        <span class="fs-griff-platz"></span><span class="plus" aria-hidden="true"><i data-lucide="plus"></i></span>
+        <label class="sr-only" for="neu-oe">Neuer öffentlicher TOP</label>
+        <input id="neu-oe" class="wf-eingabe" type="text" name="title" autocomplete="off" required maxlength="500" placeholder="TOP hinzufügen">
+        <button type="submit" class="wf-knopf">Hinzufügen</button>
+    </form>
+    {% endif %}
+</div>
+
+{% if can_view_internal %}
+<div class="fs-teil noe" data-testid="fs-teil-intern">
+    <div class="fs-teil-kopf">
+        <h3><i data-lucide="lock" aria-hidden="true"></i>Nichtöffentlicher Teil <span class="fs-meta">sehen nur vereidigte Mitglieder</span></h3>
+        {% if can_import_internal_documents %}
+        <a class="wf-knopf wf-klein fs-teil-aktion" href="{% url 'work:faction_internal_import' org_slug=org_slug meeting_id=meeting.id %}"><i data-lucide="upload" aria-hidden="true"></i>PDF auslesen …</a>
+        {% endif %}
+    </div>
+    <ol class="fs-tops">
+        {% for z in to_intern %}{% include "work/faction/neu/_vb_top.html" %}{% endfor %}
+    </ol>
+    {% if can_add_items %}
+    <form class="fs-top-neu" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-target="#agenda-container" hx-swap="innerHTML" hx-include="#fs-offen">
+        <input type="hidden" name="action" value="add_item">
+        <input type="hidden" name="visibility" value="internal">
+        <span class="fs-griff-platz"></span><span class="plus" aria-hidden="true"><i data-lucide="plus"></i></span>
+        <label class="sr-only" for="neu-noe">Neuer nichtöffentlicher TOP</label>
+        <input id="neu-noe" class="wf-eingabe" type="text" name="title" autocomplete="off" required maxlength="500" placeholder="Nichtöffentlichen TOP hinzufügen">
+        <button type="submit" class="wf-knopf">Hinzufügen</button>
+    </form>
+    {% endif %}
+</div>
+{% elif to_gesperrt %}
+{% include "work/faction/neu/_vb_gesperrt.html" %}
+{% endif %}

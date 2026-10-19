@@ -1375,6 +1375,74 @@
     .fs-schalter .spur, .fs-schalter .spur::after { transition: none; }
   }
 
+  /* ---------- Seite vor der Sitzung (Planung, Einladung, Rückmeldungen; neu/vorbereiten.html) ---------- */
+  .fs-vb .fs-kopf { flex-wrap: nowrap; }
+  /* Infoleiste: ein Satz und die eine Hauptaktion, Fläche in der Kennfarbe */
+  .fs-info { display: flex; align-items: center; gap: 8px 16px; min-height: 40px; padding: 4px 12px 4px 20px; background: var(--wf-work-flaeche); border-bottom: 1px solid var(--wf-linie); font-size: 13.5px; flex: none; }
+  .fs-info-text { margin: 0; min-width: 0; flex: 1 1 auto; }
+  .fs-info-text b { font-weight: 600; }
+  .fs-info-aktionen { display: flex; align-items: center; gap: 8px; flex: none; }
+  .fs-info-aktionen form { margin: 0; }
+  .fs-zurueck { margin: 0 0 8px; font-size: 14px; }
+  .fs-hinweis-satz { display: flex; gap: 8px; align-items: baseline; margin: 0 0 12px; font-size: 14px; color: var(--wf-warn); }
+  .fs-hinweis-satz svg { width: 14px; height: 14px; flex: none; align-self: center; }
+  .fs-feldname { display: block; font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
+  .fs-feldname .fs-meta { font-weight: 400; }
+  .fs-teil-kopf h3 { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: inherit; margin: 0; flex-wrap: wrap; }
+  .fs-teil-kopf .fs-meta { font-weight: 400; }
+  .fs-teil-aktion { margin-left: auto; }
+  .fs-teil-lesen { margin: 16px 0 0; border-bottom: 0; }
+  .fs-griff-platz { display: block; }
+  .fs-stufe-mobil { font-size: 12.5px; color: var(--wf-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fs-top-bearbeiten input[type="text"] { width: 100%; max-width: 48rem; }
+  .fs-top-bearbeiten textarea { width: 100%; max-width: 48rem; }
+  .fs-top-beschreibung { margin: 12px 0 0; max-width: 48rem; }
+  .fs-detail dd svg { width: 13px; height: 13px; }
+  .fs-verlauf-dd ul { list-style: none; margin: 0; padding: 0; }
+  .fs-verlauf-dd li { margin: 0 0 4px; line-height: 1.5; }
+  .fs-verlauf-dd b { font-weight: 600; }
+  .fs-verlauf-dd .wf-punkt { margin: 0 5px 0 2px; }
+  .fs-vs-ablehnen { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+  .fs-vs-ablehnen label { flex: 1 1 100%; }
+  .fs-vs-ablehnen input[type="text"] { flex: 1 1 18rem; min-width: 0; }
+  .fs-vorschlaege .vs-akt form { margin: 0; }
+  /* Termin und Ort in der Nebenspalte */
+  .fs-termin-form input:not([type="hidden"]) { width: 100%; }
+  .fs-felder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .fs-felder label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
+  .fs-felder label:first-child { grid-column: 1 / -1; }
+  .fs-termin-form .fs-meta { margin-top: 8px; }
+  .fs-schalter-zeile { margin: 8px 0 0; }
+  .fs-neben-kopf { margin-bottom: 4px; }
+  .fs-neben-kopf .wf-textlink { margin-left: auto; }
+  .fs-neben .fs-abschnitt-kopf h2 { margin: 0; }
+  /* Einladung: Kürzel, Rückmeldung, Hinweise unter der Liste */
+  .fs-av { width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10.5px; font-weight: 600; flex: none; background: var(--wf-work-flaeche); color: var(--wf-work-text); }
+  .fs-rm { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+  .fs-rm .wf-punkt { align-self: center; }
+  .fs-unter-liste { margin: 12px 0 0; font-size: 13px; color: var(--wf-text2); }
+  .fs-unter-liste + .fs-unter-liste { margin-top: 4px; }
+  .fs-unter-liste svg { width: 14px; height: 14px; }
+  .fs-inline-form { display: inline; margin: 0; }
+  .fs-meine-antwort { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fs-meine-antwort form { margin: 0; }
+  /* Lesende Tagesordnung: Beratungsverlauf und Herkunft */
+  .fs-t-knopf { background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; font-weight: 500; cursor: pointer; }
+  .fs-t-knopf:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .fs-h2 { font-size: 16px; font-weight: 600; margin: 20px 0 4px; }
+  .fs-to-lesen .vl { grid-column: 2; font-size: 13px; color: var(--wf-text2); display: flex; gap: 6px; align-items: baseline; }
+  .fs-to-lesen .vl svg { width: 13px; height: 13px; color: var(--wf-text3); flex: none; align-self: center; }
+  .fs-to-lesen .b svg { width: 13px; height: 13px; }
+  .fs-to-lesen .b .von { color: var(--wf-work-text); }
+  .fs-to-kompakt li { padding: 5px 0; font-size: 13.5px; grid-template-columns: 2.75rem minmax(0, 1fr); border-bottom: 0; }
+  .fs-to-kompakt li.unter { padding-left: 12px; }
+  .fs-to-kompakt .t { font-weight: 400; }
+  .fs-to-kompakt .teil { display: block; font-size: 12px; color: var(--wf-text3); padding: 10px 0 2px; grid-column: 1 / -1; }
+  .fs-unterlagen-liste li { margin: 0 0 6px; }
+  .fs-unterlagen-liste svg { width: 13px; height: 13px; margin-right: 4px; }
+  .fs-einladen-dialog .fs-mail { max-height: 22rem; overflow-y: auto; }
+  .fs-einladen-dialog .wf-dialog-fuss { margin-top: 16px; }
+
   /* ---------- Breiten ---------- */
   @media (min-width: 1600px) {
     .fs-sl > li { grid-template-columns: 7rem minmax(0, 1.5fr) minmax(0, 1.6fr) minmax(0, .9fr) minmax(0, .9fr); }
@@ -1401,7 +1469,10 @@
     .fs-sl .fs-stand small { display: none; }
     .fs-sl > li.hervorheben .fs-stand small { display: block; white-space: normal; }
     .fs-top-zeile { grid-template-columns: 2.5rem minmax(0, 1fr) 28px; min-height: 44px; }
-    .fs-griff, .fs-top-anh { display: none; }
+    .fs-griff, .fs-griff-platz, .fs-top-anh { display: none; }
+    .fs-info { flex-wrap: wrap; padding: 6px 16px; }
+    .fs-info-aktionen { width: 100%; }
+    .fs-info-aktionen .wf-knopf { height: 36px; }
     .fs-top-detail, .fs-top.unter .fs-top-detail { padding: 4px 12px 16px 2.75rem; }
     .fs-top-neu { grid-template-columns: 2.5rem minmax(0, 1fr) auto; }
     .fs-detail { grid-template-columns: minmax(0, 1fr); gap: 2px; }

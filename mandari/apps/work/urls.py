@@ -580,6 +580,11 @@ urlpatterns = [
         name="faction_internal_import_confirm",
     ),
     path(
+        "<slug:org_slug>/faction/<uuid:meeting_id>/termin.ics",
+        faction_views.FactionMeetingIcsView.as_view(),
+        name="faction_ics",
+    ),
+    path(
         "<slug:org_slug>/faction/<uuid:meeting_id>/niederschrift/<slug:variant>.pdf",
         faction_views.FactionProtocolPdfView.as_view(),
         name="faction_protocol_pdf",

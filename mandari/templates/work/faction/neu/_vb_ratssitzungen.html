@@ -1,0 +1,11 @@
+{% comment %}
+Ratssitzungen, die diese Fraktionssitzung vorbereitet (Issue #1071, Muster „Ratssitzung“): aus den verknüpften TOPs,
+mit dem Weg zur Vorbereitung bzw. zur Sitzung. Kontext: ratssitzungen (vorbereiten.ratssitzungen).
+{% endcomment %}
+{% if ratssitzungen %}
+<c-work.neben-abschnitt titel="Ratssitzung" kennung="rat-h" data-testid="fs-ratssitzungen">
+    {% for rs in ratssitzungen %}
+    <p>Diese Sitzung bereitet {% if rs.href %}<a class="wf-textlink" href="{{ rs.href }}">{{ rs.name }}{% if rs.datum %} am {{ rs.datum }}{% endif %}</a>{% else %}{{ rs.name }}{% if rs.datum %} am {{ rs.datum }}{% endif %}{% endif %} vor.{% if rs.vorbereiten and forloop.last %} Die Position je Vorlage halten Sie dort fest.{% endif %}</p>
+    {% endfor %}
+</c-work.neben-abschnitt>
+{% endif %}

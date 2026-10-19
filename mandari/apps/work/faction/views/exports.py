@@ -6,6 +6,8 @@ Niederschrift als PDF in zwei Fassungen:
 - oeffentlich: nur Ö-TOPs und deren Einträge (protocols.view_public)
 - intern: inkl. NÖ-Teil und TOP-loser Einträge — nur für Vereidigte mit
   Zugriff auf den nicht-öffentlichen Teil und protocols.view_full
+
+Dazu der Termin einer Sitzung als Kalenderdatei (Issue #1071, „In Kalender übernehmen“).
 """
 
 import logging
@@ -53,4 +55,24 @@ class FactionProtocolPdfView(WorkViewMixin, View):
         # Eingebettet nur für die Vorschau im Genehmigungs-TOP der Sitzungsansicht (Issue #874), sonst Download
         art = "inline" if "vorschau" in request.GET else "attachment"
         response["Content-Disposition"] = f'{art}; filename="{filename}"'
+        return response
+
+
+class FactionMeetingIcsView(WorkViewMixin, View):
+    """
+    Termin einer Fraktionssitzung als Kalenderdatei (Issue #1071): derselbe Eintrag wie der Anhang der Einladung
+    (gleiche UID und SEQUENCE), damit Kalender ihn nicht doppelt führen. Enthält Titel, Zeit, Ort und Videolink, keine
+    Tagesordnung.
+    """
+
+    permission_required = "faction.view_public"
+
+    def get(self, request, *args, **kwargs):
+        meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
+
+        from ..services import FactionMeetingEmailService
+
+        ics = FactionMeetingEmailService().build_meeting_ics(meeting)
+        response = HttpResponse(ics, content_type="text/calendar; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="fraktionssitzung-{meeting.start:%Y-%m-%d}.ics"'
         return response
