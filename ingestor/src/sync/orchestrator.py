@@ -862,7 +862,8 @@ class SyncOrchestrator:
         ``missed``) geht der Fehler an den Aufrufer.
 
         Gelesen werden höchstens ``MAX_BODY_PAGES`` Seiten, und eine Folgeseite, die auf eine schon gelesene Seite
-        verweist, bricht ab (``ListFetchError``): Eine fehlerhafte Liste darf den Zyklus nicht endlos aufhalten.
+        verweist, bricht ab (``ListFetchError``), ebenso Folgeseiten, die immer dieselben Kommunen liefern (Issue
+        #1088): Eine fehlerhafte Liste darf den Zyklus nicht endlos aufhalten.
         Nennt die letzte erlaubte Seite noch eine Folgeseite, steht diese in ``missed`` (unvollständig statt endlos).
         Eine Kommune, die auf mehreren Seiten steht, zählt einmal (``unique_bodies``).
         """

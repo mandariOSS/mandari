@@ -121,6 +121,10 @@ def _is_list_page(data: Any) -> bool:
     return isinstance(data, list) or (isinstance(data, dict) and isinstance(data.get("data"), list))
 
 
+#: Fehlertext einer Liste, deren Folgeseiten mit immer neuer Adresse dieselben Einträge liefern (Issue #1088)
+REPEATED_PAGES_ERROR = "Folgeseiten liefern immer dieselben Einträge (Liste im Kreis)"
+
+
 class ListFetchError(Exception):
     """
     Eine Objektliste (oder eine ihrer Seiten) war nicht abrufbar.
@@ -916,6 +920,11 @@ class OParlClient:
         Beantwortet SD.NET RIM die gefilterte erste Seite mit HTTP 404 und Code 802, ist die Liste leer und
         vollständig (Issue #1034, ``filtered_empty_lists``).
 
+        Eine Liste im Kreis bricht mit ``ListFetchError`` ab: ``links.next`` verweist auf eine schon gelesene Seite
+        (Issue #869), oder zwei Seiten in Folge bringen keine Kennung, die nicht schon auf ihrer vorigen Seite stand,
+        und die Quelle nennt noch eine Folgeseite (Issue #1088; mit ``next_page`` zählt die vorliegende erste Seite
+        nicht mit).
+
         Yields:
             Lists of items from each page
         """
@@ -929,6 +938,9 @@ class OParlClient:
         pages_fetched = 0
         # Gelesene Seiten: Verweist links.next auf eine davon, liefe die Liste im Kreis (Issue #869)
         read_pages: set[str] = set()
+        # Kennungen der zuletzt gelesenen Seite mit Kennungen und Seiten in Folge ohne neue Kennung (Issue #1088)
+        previous_ids: frozenset[str] = frozenset()
+        stale_pages = 0
         tried_modified_since = False
         # Erste Seite nach „gibt es nicht“ auf die gefilterte Anfrage noch einmal ohne Filter angefragt
         retried_unfiltered = False
@@ -1113,6 +1125,15 @@ class OParlClient:
             # Extract items - handle multiple OParl response formats
             items = self._extract_items(result.data)
 
+            # Bringt die Seite keine Kennung, die nicht schon auf der vorigen stand, zählt sie als Wiederholung;
+            # Seiten ohne Kennungen zählen nicht (Issue #1088). Nur die vorige Seite, kein Speicher über die Liste.
+            page_ids = frozenset(
+                item["id"] for item in items if isinstance(item, dict) and isinstance(item.get("id"), str)
+            )
+            if page_ids:
+                stale_pages = stale_pages + 1 if page_ids <= previous_ids else 0
+                previous_ids = page_ids
+
             if items:
                 self.stats.objects_processed += len(items)
                 yield items
@@ -1150,14 +1171,29 @@ class OParlClient:
                 self._health(page_url).note_failed_list(url)
                 raise ListFetchError(url, current_url, self._loop_result(current_url, result.status_code))
 
+            # Immer neue Adressen, aber dieselben Einträge (OWL-IT, Issue #1088): Zwei Seiten in Folge ohne neue
+            # Kennung gegenüber ihrer vorigen Seite, und die Quelle nennt noch eine weitere. Objektlisten haben keine
+            # Seitengrenze, sie liefen sonst endlos im Takt des Hosts.
+            if current_url and stale_pages >= 2:
+                console.print(
+                    f"[red]Liste {url} läuft im Kreis: Folgeseiten liefern immer dieselben Einträge ({page_url})[/red]"
+                )
+                self._health(page_url).note_failed_list(url)
+                raise ListFetchError(
+                    url, current_url, self._loop_result(current_url, result.status_code, error=REPEATED_PAGES_ERROR)
+                )
+
     @staticmethod
-    def _loop_result(page_url: str, status_code: int = 0) -> FetchResult:
-        """Abbruch einer Liste, deren ``links.next`` auf eine schon gelesene Seite verweist (Issue #869)."""
+    def _loop_result(page_url: str, status_code: int = 0, *, error: str | None = None) -> FetchResult:
+        """
+        Abbruch einer Liste, die im Kreis läuft: ``links.next`` verweist auf eine schon gelesene Seite (Issue #869),
+        oder ein eigener Fehlertext ``error`` (Folgeseiten mit immer denselben Einträgen, Issue #1088).
+        """
         return FetchResult(
             url=page_url,
             data=None,
             status_code=status_code,
-            error="Folgeseite verweist auf eine schon gelesene Seite",
+            error=error or "Folgeseite verweist auf eine schon gelesene Seite",
         )
 
     async def probe_modified_since(self, list_url: str, since: datetime) -> str:
