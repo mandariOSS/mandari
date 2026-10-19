@@ -590,7 +590,18 @@ def _claim_reminder(meeting, now) -> bool:
     from .models import FactionMeeting
 
     with transaction.atomic():
-        locked = FactionMeeting.objects.select_for_update().filter(pk=meeting.pk, reminder_sent_at__isnull=True).first()
+        # Nach der Sperre noch einmal prüfen: inzwischen abgesagt, begonnen oder nicht mehr eingeladen → keine Erinnerung
+        locked = (
+            FactionMeeting.objects.select_for_update()
+            .filter(
+                pk=meeting.pk,
+                reminder_sent_at__isnull=True,
+                status__in=["planned", "invited"],
+                invitation_sent=True,
+                start__gt=now,
+            )
+            .first()
+        )
         if locked is None:
             return False
         locked.reminder_sent_at = now

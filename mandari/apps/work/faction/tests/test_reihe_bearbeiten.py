@@ -154,6 +154,8 @@ def test_uhrzeit_und_ort_wirken_nur_auf_nicht_eingeladene_termine(
 def test_rhythmuswechsel_verschiebt_termine_ohne_datenverlust(
     org: Any, vorsitz: Any, client_for: Any, django_capture_on_commit_callbacks: CaptureCallbacks
 ) -> None:
+    org.settings = {"faction": {"first_agenda_title_no_previous": "Tagesordnung vom {datum}"}}
+    org.save(update_fields=["settings"])
     schedule = _reihe(org, django_capture_on_commit_callbacks)
     vorher = _termine(schedule)
     nummern = sorted(m.meeting_number for m in vorher)
@@ -174,27 +176,62 @@ def test_rhythmuswechsel_verschiebt_termine_ohne_datenverlust(
     assert sorted(m.meeting_number for m in nachher if m.meeting_number)[: len(nummern)] == nummern
     eigener.refresh_from_db()
     assert eigener.meeting_id == mit_inhalt.pk
+    assert _nach_datum_fortlaufend(schedule)
+    # Der unbearbeitete Genehmigungs-TOP nennt das neue Datum
+    for meeting in nachher:
+        genehmigung = meeting.agenda_items.get(is_approval_item=True)
+        assert genehmigung.title == f"Tagesordnung vom {meeting.start:%d.%m.%Y}"
 
 
-def test_seltenerer_rhythmus_entfernt_nur_leere_termine(
+def _nach_datum_fortlaufend(schedule: FactionMeetingSchedule) -> bool:
+    nummern = [m.meeting_number for m in _termine(schedule) if m.meeting_number and not m.invitation_sent]
+    return nummern == sorted(nummern)
+
+
+def test_seltenerer_rhythmus_loescht_nichts_bearbeitetes(
     org: Any, vorsitz: Any, client_for: Any, django_capture_on_commit_callbacks: CaptureCallbacks
 ) -> None:
     schedule = _reihe(org, django_capture_on_commit_callbacks)
-    termine = _termine(schedule)
-    mit_inhalt = termine[2]
-    FactionAgendaItem.objects.create(
-        meeting=mit_inhalt, number="2", title="Antrag Radweg", visibility="public", order=5
-    )
-    eingeladen = termine[0]
-    FactionMeeting.objects.filter(pk=eingeladen.pk).update(status="invited", invitation_sent=True)
+    titel, vorsitz_gesetzt, ort = _termine(schedule)
+    FactionAgendaItem.objects.filter(meeting=titel, is_approval_item=True).update(title="Eigener erster Punkt")
+    FactionMeeting.objects.filter(pk=vorsitz_gesetzt.pk).update(chaired_by=vorsitz)
+    FactionMeeting.objects.filter(pk=ort.pk).update(location="Rathaus")
+    vorher = {m.pk for m in _termine(schedule)}
 
     with django_capture_on_commit_callbacks(execute=True):
-        client_for(vorsitz.user).post(_url(org), _formular(schedule, recurrence="monthly_last"))
+        client_for(vorsitz.user).post(_url(org), _formular(schedule, recurrence="biweekly"))
 
-    uebrig = {m.pk for m in _termine(schedule)}
-    # Eingeladene Sitzung und Termin mit Inhalten bleiben in jedem Fall; nur der leere mittlere darf wegfallen
-    assert eingeladen.pk in uebrig and mit_inhalt.pk in uebrig
-    assert FactionAgendaItem.objects.filter(meeting=mit_inhalt, title="Antrag Radweg").exists()
+    # Nichts gelöscht, alle Bearbeitungen da
+    assert vorher <= {m.pk for m in _termine(schedule)}
+    assert FactionAgendaItem.objects.filter(meeting=titel, title="Eigener erster Punkt").exists()
+    assert FactionMeeting.objects.get(pk=vorsitz_gesetzt.pk).chaired_by_id == vorsitz.pk
+    assert FactionMeeting.objects.get(pk=ort.pk).location == "Rathaus"
+
+
+def test_ohne_tag_im_neuen_rhythmus_absagen_statt_loeschen_und_wieder_ansetzen(
+    org: Any, vorsitz: Any, client_for: Any, django_capture_on_commit_callbacks: CaptureCallbacks
+) -> None:
+    schedule = _reihe(org, django_capture_on_commit_callbacks)
+    vorher = {m.pk for m in _termine(schedule)}
+    teilnahmen = FactionAttendance.objects.filter(meeting__schedule=schedule).count()
+
+    with django_capture_on_commit_callbacks(execute=True):
+        client_for(vorsitz.user).post(_url(org), _formular(schedule, recurrence="biweekly"))
+
+    abgesagt = [m for m in _termine(schedule) if m.cancellation_reason == reihe.RHYTHMUS_GRUND]
+    # 3 Termine, im Horizont von 21 Tagen höchstens 2 Tage alle zwei Wochen: mindestens einer ohne Tag
+    assert abgesagt and all(m.status == "cancelled" for m in abgesagt)
+    assert vorher <= {m.pk for m in _termine(schedule)}
+    assert FactionAttendance.objects.filter(meeting__schedule=schedule).count() >= teilnahmen
+    assert _nach_datum_fortlaufend(schedule)
+
+    schedule.refresh_from_db()
+    with django_capture_on_commit_callbacks(execute=True):
+        client_for(vorsitz.user).post(_url(org), _formular(schedule, recurrence="weekly"))
+
+    wieder = FactionMeeting.objects.filter(pk__in=[m.pk for m in abgesagt])
+    assert {m.status for m in wieder} == {"planned"} and {m.cancellation_reason for m in wieder} == {""}
+    assert _nach_datum_fortlaufend(schedule)
 
 
 def test_vorschau_zaehlt_und_speichert_nichts(
@@ -314,6 +351,7 @@ def test_geloeschter_termin_kommt_nicht_wieder_und_laesst_sich_wiederherstellen(
     assert response.status_code == 302 and response.url == reverse("work:faction", kwargs={"org_slug": org.slug})
     assert not FactionMeetingException.objects.filter(pk=ausnahme.pk).exists()
     assert FactionMeeting.objects.get(schedule=schedule, scheduled_date=tag).status == "planned"
+    assert _nach_datum_fortlaufend(schedule)
 
 
 def test_mitglied_sieht_geloeschte_termine_ohne_wiederherstellen(
@@ -392,6 +430,18 @@ def test_erinnerung_ausgeschaltet_oder_spaeter(org: Any, vorsitz: Any) -> None:
 
     run_faction_reminder_pass(now=meeting.start - timedelta(hours=23))
     assert [m.to for m in mail.outbox] == [[vorsitz.user.email]]
+
+
+def test_erinnerung_nach_absage_nicht_mehr_beansprucht(org: Any, vorsitz: Any) -> None:
+    from apps.work.faction.services import _claim_reminder
+
+    meeting = _eingeladen(org, 10)
+    # Zwischen Auswahl und Sperre abgesagt: Die Prüfung nach der Sperre verhindert die Erinnerung
+    FactionMeeting.objects.filter(pk=meeting.pk).update(status="cancelled")
+
+    assert _claim_reminder(meeting, timezone.now()) is False
+    meeting.refresh_from_db()
+    assert meeting.reminder_sent_at is None
 
 
 def test_erinnerung_ohne_adresse_mit_grund(org: Any, vorsitz: Any) -> None:

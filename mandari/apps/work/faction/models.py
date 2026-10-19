@@ -636,6 +636,27 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         settings = self.organization.settings or {}
         return settings.get("faction", {})
 
+    def approval_item_texts(self) -> tuple[str, str]:
+        """
+        Titel und Beschreibung des Genehmigungs-TOPs, wie Work sie aus den Einstellungen anlegt (Platzhalter ersetzt).
+        Auch zum Vergleich: Stimmt der TOP noch damit überein, hat ihn niemand bearbeitet (Issue #1071).
+        """
+        settings = self.get_faction_settings()
+
+        # Default-Texte (Issue #63): verbindliche Standard-Formulierung,
+        # je Organisation weiterhin anpassbar
+        default_title_with_prev = "Tagesordnung festlegen und letztes Protokoll genehmigen"
+        default_title_no_prev = "Tagesordnung festlegen"
+
+        # Leere Vorlagen fallen auf den Default zurück (Issue #63)
+        if self.previous_meeting:
+            title_template = settings.get("first_agenda_title_with_previous") or default_title_with_prev
+        else:
+            title_template = settings.get("first_agenda_title_no_previous") or default_title_no_prev
+        title = self._replace_placeholders(title_template)
+        description = self._replace_placeholders(settings.get("first_agenda_description", ""))
+        return title, description
+
     def create_approval_agenda_item(self) -> "FactionAgendaItem":
         """
         Create the first agenda item for TO/protocol approval.
@@ -646,26 +667,7 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
         - {nr} - Meeting number
         - {datum} - Date of current meeting
         """
-        settings = self.get_faction_settings()
-
-        # Default-Texte (Issue #63): verbindliche Standard-Formulierung,
-        # je Organisation weiterhin anpassbar
-        default_title_with_prev = "Tagesordnung festlegen und letztes Protokoll genehmigen"
-        default_title_no_prev = "Tagesordnung festlegen"
-
-        # Get custom template or use default (leere Vorlagen fallen auf den
-        # Default zurück — Issue #63)
-        if self.previous_meeting:
-            title_template = settings.get("first_agenda_title_with_previous") or default_title_with_prev
-        else:
-            title_template = settings.get("first_agenda_title_no_previous") or default_title_no_prev
-
-        # Replace placeholders
-        title = self._replace_placeholders(title_template)
-
-        # Get description template
-        description_template = settings.get("first_agenda_description", "")
-        description = self._replace_placeholders(description_template)
+        title, description = self.approval_item_texts()
 
         # Check if approval item already exists
         existing = self.agenda_items.filter(is_approval_item=True).first()
