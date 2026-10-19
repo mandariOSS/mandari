@@ -45,7 +45,7 @@ versand, to_oeffentlich, to_intern.
             <p><b>{{ meeting.start|date:"l, j. F Y" }}, {{ meeting.start|time:"H:i" }}{% if meeting.end %} bis {{ meeting.end|time:"H:i" }}{% endif %} Uhr</b>{% if meeting.location %}<br>{{ meeting.location }}{% endif %}{% if meeting.video_link %}<br>Per Video: {{ meeting.video_link }}{% endif %}</p>
             <p><b>Tagesordnung</b></p>
             <ol>
-                {% for z in to_oeffentlich %}<li{% if z.unter %} class="unter"{% endif %}><span>{{ z.item.number }}</span><span>{{ z.item.title }}</span></li>{% endfor %}
+                {% for z in to_oeffentlich %}{% if p.intern or not z.intern %}<li{% if z.unter %} class="unter"{% endif %}><span>{{ z.item.number }}</span><span>{{ z.item.title }}</span></li>{% endif %}{% endfor %}
             </ol>
             {% if p.intern and to_intern %}
             <p><b>Nichtöffentlicher Teil</b></p>

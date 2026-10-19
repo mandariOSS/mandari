@@ -342,13 +342,22 @@ class FactionActionView(WorkViewMixin, View):
 
         meeting.location = request.POST.get("location", "")
         if request.POST.get("video_aus_link"):
-            # Nebenspalte der neuen Seite (Issue #1071): ein Videolink macht die Sitzung online, wie bei der Anlage
-            meeting.is_virtual = bool(request.POST.get("video_link", "").strip())
+            # Nebenspalte der neuen Seite (Issue #1071): ein Videolink macht die Sitzung online, wie bei der Anlage;
+            # online ohne Link bleibt online, nur das Entfernen eines Links schaltet „online“ ab
+            neuer_link = request.POST.get("video_link", "").strip()
+            if neuer_link:
+                meeting.is_virtual = True
+            elif meeting.video_link:
+                meeting.is_virtual = False
         else:
             meeting.is_virtual = request.POST.get("is_virtual") == "on"
         video_link = request.POST.get("video_link", "").strip() if meeting.is_virtual else ""
         if len(video_link) > VIDEO_LINK_MAX_LENGTH:
             messages.error(request, VIDEO_LINK_TOO_LONG)
+            return self._redirect_detail(meeting)
+        # Nur http(s)-Adressen, wie beim Anlegen (Issue #872): kein javascript: oder data: im Link der Seite
+        if video_link and not faction_services.safe_link_url(video_link):
+            messages.error(request, "Bitte einen gültigen Videolink angeben (https://…).")
             return self._redirect_detail(meeting)
         meeting.video_link = video_link
         # Zu- und Absagen je Sitzung (Issue #871); nur Formulare mit dem Feld ändern den Schalter

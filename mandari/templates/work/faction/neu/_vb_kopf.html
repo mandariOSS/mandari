@@ -81,6 +81,13 @@ empfaenger, membership.
         {% if info.versand %}
         <button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-versand').showModal()" aria-haspopup="dialog"><i data-lucide="mail" aria-hidden="true"></i>Versandergebnis</button>
         {% endif %}
+        {% if info.starten and can_start %}
+        <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="start">
+            <button type="submit" class="wf-knopf wf-klein"><i data-lucide="play" aria-hidden="true"></i>Sitzung starten</button>
+        </form>
+        {% endif %}
         {% if info.aktion == "einladen" %}
         <button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-einladen').showModal()" aria-haspopup="dialog">Jetzt einladen …</button>
         {% elif info.aktion == "freigeben" %}

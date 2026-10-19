@@ -103,12 +103,85 @@ def _org_slug(item: FactionAgendaItem) -> str:
     return str(item.meeting.organization.slug)
 
 
-def _verweise(item: FactionAgendaItem, membership: Membership) -> list[Verweis]:
+def _unterlagen_alle(items: list[FactionAgendaItem], membership: Membership) -> dict[Any, list[sitzung.Unterlage]]:
+    """
+    Unterlagen aller TOPs wie :func:`apps.work.faction.sitzung.unterlagen` (gleiche Reihenfolge und Sichtbarkeit), aber
+    mit einer festen Zahl an Abfragen statt mehrerer je TOP: Vorlagen, Dateien, Dokumente und Anlagen gesammelt.
+    """
+    from hub.ris import selectors as ris
+
+    from . import services as faction_services
+    from .models import FactionAgendaItem, FactionAgendaItemAttachment
+
+    ids = [item.pk for item in items]
+    ergebnis: dict[Any, list[sitzung.Unterlage]] = {pk: [] for pk in ids}
+    if not ids:
+        return ergebnis
+    papiere: dict[Any, list[Any]] = {pk: [] for pk in ids}
+    durch = FactionAgendaItem.related_papers.through.objects.filter(factionagendaitem_id__in=ids)
+    for zeile in durch.select_related("oparlpaper"):
+        papiere[zeile.factionagendaitem_id].append(zeile.oparlpaper)
+    papier_ids = {paper.pk for liste in papiere.values() for paper in liste}
+    dateien: dict[Any, list[Any]] = {}
+    if papier_ids:
+        for datei in ris.files_of_papers(papier_ids).defer("text_content", "raw_json"):
+            dateien.setdefault(datei.paper_id, []).append(datei)
+    motion_durch = FactionAgendaItem.related_motions.through.objects.filter(factionagendaitem_id__in=ids)
+    motion_zuordnung = list(motion_durch.values_list("factionagendaitem_id", "motion_id"))
+    sichtbar: dict[Any, Any] = {}
+    if motion_zuordnung:
+        from apps.work.motions.models import Motion
+
+        dokumente = cast(Any, Motion).visible_to(membership).filter(pk__in={mid for _i, mid in motion_zuordnung})
+        sichtbar = {m.pk: m for m in dokumente}
+    anlagen: dict[Any, list[Any]] = {}
+    for anlage in FactionAgendaItemAttachment.objects.filter(agenda_item_id__in=ids).order_by("created_at"):
+        anlagen.setdefault(anlage.agenda_item_id, []).append(anlage)
+
+    fassung: str | None = None
+    for item in items:
+        liste = ergebnis[item.pk]
+        vorige = item.approves_meeting if item.is_approval_item and item.approves_meeting_id else None
+        if vorige is not None:
+            if fassung is None:
+                fassung = sitzung.protokoll_fassung(membership)
+            if fassung:
+                titel = f"Protokoll vom {timezone.localtime(vorige.start):%d.%m.%Y}" if vorige.start else "Protokoll"
+                liste.append(sitzung.Unterlage(f"p-{vorige.pk}", "protokoll", titel, vorige, fassung=fassung))
+        mit_datum = sorted((p for p in papiere[item.pk] if p.date), key=lambda p: p.date, reverse=True)
+        for paper in [*mit_datum, *(p for p in papiere[item.pk] if not p.date)]:
+            eigene = list(dateien.get(paper.pk, []))
+            haupt = sitzung._haupt_datei_kennung(paper)
+            eigene.sort(key=lambda f: (0 if haupt and f.external_id == haupt else 1, (f.name or f.file_name or "")))
+            if not eigene:
+                name = paper.reference or paper.name or "Vorlage"
+                liste.append(sitzung.Unterlage(f"v-{paper.pk}", "ris_vorlage", name, paper))
+                continue
+            for datei in eigene:
+                ist_haupt = len(eigene) == 1 or bool(haupt and datei.external_id == haupt)
+                titel = (paper.reference or paper.name or "Vorlage") if ist_haupt else (datei.name or datei.file_name)
+                liste.append(sitzung.Unterlage(f"r-{datei.pk}", "ris_datei", titel or "Datei", datei, paper))
+        motions = [sichtbar[mid] for iid, mid in motion_zuordnung if iid == item.pk and mid in sichtbar]
+        for motion in sorted(motions, key=lambda m: m.title or ""):
+            liste.append(sitzung.Unterlage(f"d-{motion.pk}", "dokument", motion.title or "Dokument", motion))
+        for anlage in anlagen.get(item.pk, []):
+            liste.append(sitzung.Unterlage(f"a-{anlage.pk}", "anlage", anlage.filename or "Anlage", anlage))
+        links = [
+            link
+            for link in (item.reference_links or [])
+            if isinstance(link, dict) and cast(Any, faction_services).safe_link_url(str(link.get("url") or ""))
+        ]
+        if links:
+            liste.append(sitzung.Unterlage("links", "links", "Links", links))
+    return ergebnis
+
+
+def _verweise(item: FactionAgendaItem, unterlagen: list[sitzung.Unterlage]) -> list[Verweis]:
     """Unterlagen eines TOPs als Links: Protokoll zur Genehmigung, RIS-Dateien und -Vorlagen, Dokumente, Anlagen."""
     slug = _org_slug(item)
     intern = is_item_internal(item)
     verweise: list[Verweis] = []
-    for u in sitzung.unterlagen(item, membership):
+    for u in unterlagen:
         if u.art == "protokoll":
             variante = "intern" if u.fassung == "intern" else "oeffentlich"
             href = reverse(
@@ -168,11 +241,12 @@ def tagesordnung(
     darf_verlauf = sitzung.darf_beratungsverlauf_sehen(membership)
     offen_id = str(offen or "")
     teile: dict[str, list[Zeile]] = {"oeffentlich": [], "intern": []}
+    alle_unterlagen = _unterlagen_alle([z.item for z in ordnung.zeilen], membership)
     for teil, quelle in (("oeffentlich", ordnung.oeffentlich), ("intern", ordnung.intern)):
         oben = [z for z in quelle if not z.unter and not z.item.is_approval_item]
         for z in quelle:
             item = z.item
-            verweise = _verweise(item, membership)
+            verweise = _verweise(item, alle_unterlagen[item.pk])
             zeile = Zeile(
                 item=item,
                 unter=z.unter,
@@ -185,7 +259,11 @@ def tagesordnung(
                 letzter=bool(oben) and oben[-1].item.pk == item.pk,
                 offen=str(item.pk) == offen_id,
             )
-            if darf_verlauf and (mit_verlauf or zeile.offen):
+            # Beratungsverlauf nur für TOPs mit Bezug zum RIS (verknüpfter TOP oder Vorlage), sonst keine Abfrage
+            mit_bezug = bool(item.related_agenda_item_id) or any(
+                u.art in ("ris_datei", "ris_vorlage") for u in alle_unterlagen[item.pk]
+            )
+            if darf_verlauf and mit_bezug and (mit_verlauf or zeile.offen):
                 zeile.verlauf = sitzung.beratungsverlauf(item, meeting.organization)
             if zeile.offen:
                 zeile.beschreibung = cast(Any, item).get_description_decrypted() or ""
@@ -204,6 +282,7 @@ def tagesordnung(
         "to_gesamt": gesamt,
         "to_offen": offen_id,
         "to_eltern": [z for z in oeffentlich if not z.unter and not z.item.is_approval_item],
+        "to_eltern_intern": [z for z in intern if not z.unter and not z.item.is_approval_item],
     }
 
 
@@ -463,10 +542,30 @@ class Info:
     #: Knopf „Versandergebnis“ neben der Aktion
     versand: bool = False
     starten_ab: str = ""
+    #: „Sitzung starten“ zusätzlich anbieten (ab 30 Minuten vor Beginn mit faction.start, unabhängig von der Einladung)
+    starten: bool = False
 
 
 def info(meeting: FactionMeeting, membership: Membership, *, verwalten: bool, versand_zahl: dict[str, Any]) -> Info:
-    """Satz und Aktion der Infoleiste je Zustand und Rolle (Muster: zeichneInfo)."""
+    """
+    Satz und Aktion der Infoleiste je Zustand und Rolle (Muster: zeichneInfo). „Sitzung starten“ gibt es wie bisher
+    (``can_start``) für alle mit ``faction.start`` ab 30 Minuten vor Beginn, auch ohne Einladung und ohne Verwaltung.
+    """
+    darf_starten = membership.has_permission("faction.start") and meeting.status in ("planned", "invited")
+    start_ab = _start_ab(meeting)
+    ergebnis = _info(meeting, membership, verwalten=verwalten, versand_zahl=versand_zahl)
+    if darf_starten and not ergebnis.fett:
+        # Eingeladen, ohne Verwaltung: nur der Hinweis zum Start
+        if start_ab <= timezone.now():
+            ergebnis = Info("Eingeladen.", "Sie können die Sitzung jetzt starten.", "starten")
+        else:
+            ergebnis = Info("Eingeladen.", f"Starten können Sie die Sitzung ab {_zeitpunkt(start_ab)}.", "starten")
+        ergebnis.starten_ab = _zeitpunkt(start_ab)
+    ergebnis.starten = darf_starten and start_ab <= timezone.now() and ergebnis.aktion != "starten"
+    return ergebnis
+
+
+def _info(meeting: FactionMeeting, membership: Membership, *, verwalten: bool, versand_zahl: dict[str, Any]) -> Info:
     einstellungen = get_invitation_settings(meeting.organization)
     jetzt = timezone.now()
     darf_einladen = membership.has_permission("faction.invite")

@@ -89,7 +89,7 @@ def seiten_kontext(view: Any, meeting: FactionMeeting, request: HttpRequest) -> 
             "stufen": vorbereiten.stufen(meeting, kontext["to_gesamt"], rm),
             "info": vorbereiten.info(meeting, membership, verwalten=verwalten, versand_zahl=versand),
             "personen": personen,
-            "gaeste": [a for a in kontext["attendances"] if a.is_guest] if verwalten else [],
+            "gaeste": [a for a in kontext["attendances"] if a.is_guest],
             "rm": rm,
             "versand": versand,
             "empfaenger": empfaenger,
@@ -107,9 +107,27 @@ def seiten_kontext(view: Any, meeting: FactionMeeting, request: HttpRequest) -> 
         kontext["vorschau"] = _vorschau(empfaenger)
         kontext["absender"] = vorbereiten.absender(meeting.organization)
         kontext |= vorbereiten.einladung_zeitpunkt(meeting)
+    kontext["teilnehmende"] = _teilnehmende(meeting, personen or vorbereiten.personen(meeting), kontext["gaeste"])
     if modus == "lesen":
         kontext |= _lesen_kontext(meeting, kontext)
     return kontext
+
+
+def _teilnehmende(meeting: FactionMeeting, alle: list[Any], gaeste: list[Any]) -> dict[str, Any] | None:
+    """
+    Teilnehmende wie die Teilnehmerliste der bisherigen Seite (für alle sichtbar): nach Rückmeldung gruppiert, wenn
+    Zu- und Absagen an sind, sonst alle Eingeladenen; Gäste als eigene Gruppe.
+    """
+    gruppen: list[dict[str, Any]]
+    rm = None
+    if meeting.rsvp_enabled:
+        rm = vorbereiten.rueckmeldungen(alle)
+        gruppen = list(rm["gruppen"])
+    else:
+        gruppen = [{"name": "Eingeladen", "personen": alle}] if alle else []
+    if gaeste:
+        gruppen.append({"name": "Gäste", "personen": [{"name": a.get_display_name()} for a in gaeste]})
+    return {"rm": rm, "gruppen": gruppen} if gruppen else None
 
 
 #: Knöpfe der eigenen Antwort: Status, Beschriftung, Symbol (Muster antwortHtml)
@@ -132,20 +150,11 @@ def _lesen_kontext(meeting: FactionMeeting, kontext: dict[str, Any]) -> dict[str
         else "Einladung folgt in Kürze"
     )
     erinnerung = meeting.start - timedelta(hours=FACTION_REMINDER_WINDOW_HOURS)
-    alle = vorbereiten.personen(meeting)
-    if meeting.rsvp_enabled:
-        rm = vorbereiten.rueckmeldungen(alle)
-        teilnehmende: dict[str, Any] | None = {"rm": rm, "gruppen": rm["gruppen"]}
-    elif alle:
-        teilnehmende = {"rm": None, "gruppen": [{"name": "Eingeladen", "personen": alle}]}
-    else:
-        teilnehmende = None
     return {
         "einladung_folgt": folgt,
         "erinnerung_tag": liste._tag(erinnerung)
         if erinnerung > timezone.now() and not meeting.reminder_sent_at
         else "",
-        "teilnehmende": teilnehmende,
         "eigene_unterlagen": vorbereiten.eigene_unterlagen(kontext),
     }
 

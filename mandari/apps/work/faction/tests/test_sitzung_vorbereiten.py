@@ -122,6 +122,9 @@ _AKTION_FELD = re.compile(r"""name=["']action["'][^>]*value=["'](\w+)["']""")
 _AKTION_BIND = re.compile(r"""itemMode === 'add' \? '(\w+)' : '(\w+)'""")
 _EREIGNIS = re.compile(r"""\$dispatch\(\s*'(open-[a-z-]+)'""")
 _LINK = re.compile(r"""href=["'](/work/[^"'?#]+)""")
+#: TOP anlegen je Teil: bisher Dialog mit Sichtbarkeit, neu Formular mit festem Feld oder Auswahl
+_ANLEGEN_ALT = re.compile(r"""open-add-item',\s*\{\s*visibility:\s*'(public|internal)'""")
+_ANLEGEN_NEU = re.compile(r"""name="visibility" value="(public|internal)"|<option value="(public|internal)">""")
 
 
 def _inhalt(html: str) -> str:
@@ -138,13 +141,14 @@ def _funktionen(html: str) -> set[str]:
         funktionen |= {f"aktion:{a}" for a in paar}
     funktionen |= {f"dialog:{e}" for e in _EREIGNIS.findall(teil)}
     funktionen |= {f"link:{pfad}" for pfad in _LINK.findall(teil)}
+    funktionen |= {f"anlegen:{v}" for v in _ANLEGEN_ALT.findall(teil)}
+    funktionen |= {f"anlegen:{a or b}" for a, b in _ANLEGEN_NEU.findall(teil)}
     return funktionen
 
 
 #: Was die bisherige Seite anders anbot, mit Begründung
 AUSNAHMEN = {
-    # TOP anlegen und ändern direkt in der Liste (Aktionen add_item und edit_item) statt über den Dialog
-    "dialog:open-add-item",
+    # TOP ändern direkt in der Liste (Aktion edit_item) statt über den Dialog
     "dialog:open-edit-item",
     # TOP vorschlagen im Formular über der Tagesordnung (Aktion propose) statt über den Dialog
     "dialog:open-proposal",
@@ -163,7 +167,12 @@ def _vergleich(welt: dict[str, Any], client_for: Any, rolle: str) -> list[str]:
     assert NEU in [t.name for t in neu.templates]
     vorher = _funktionen(_html(alt))
     nachher = _funktionen(_html(neu)) | _funktionen(_html(bearbeiten))
-    return sorted(vorher - nachher - AUSNAHMEN)
+    ausnahmen = set(AUSNAHMEN)
+    # TOP anlegen: Verwaltende über die Zeile „TOP hinzufügen“ je Teil statt über den Dialog. Für Mitglieder gilt die
+    # Ausnahme nur, wenn jeder Teil (öffentlich, nichtöffentlich), den der Dialog bot, als Formular da ist.
+    if rolle == "vorsitz" or {f for f in vorher if f.startswith("anlegen:")} <= nachher:
+        ausnahmen.add("dialog:open-add-item")
+    return sorted(vorher - nachher - ausnahmen)
 
 
 def test_funktionen_erkennen() -> None:
@@ -458,3 +467,126 @@ def test_hx_kopfzeile_ist_json(welt: dict[str, Any], client_for: Any) -> None:
     html = _html(_seite(welt, client_for, "vorsitz"))
     kopf = re.search(r"hx-headers='([^']+)'", html)
     assert kopf and json.loads(kopf.group(1)) == {"X-Work-Gestaltung": "neu"}
+
+
+# ---------------------------------------------------------------------------
+# Nachbesserungen aus der Prüfung
+# ---------------------------------------------------------------------------
+
+
+def test_vereidigtes_mitglied_traegt_nichtoeffentlichen_top_ein(welt: dict[str, Any], client_for: Any) -> None:
+    html = _html(_seite(welt, client_for, "rat"))
+    assert 'name="visibility"' in html and '<option value="internal">nichtöffentlich</option>' in html
+    assert "unter NÖ 1" in html
+    antwort = client_for(welt["rat"].user).post(
+        _aktion(welt), {"action": "add_item", "title": "Vertrauliches", "visibility": "internal"}
+    )
+    assert antwort.status_code == 302
+    assert welt["meeting"].agenda_items.get(title="Vertrauliches").visibility == "internal"
+    # Nicht vereidigt: keine Auswahl
+    assert '<option value="internal">' not in _html(_seite(welt, client_for, "sachkundig"))
+
+
+def test_starten_ab_dreissig_minuten_auch_ohne_einladung(
+    welt: dict[str, Any], client_for: Any, make_member: Any
+) -> None:
+    FactionMeeting.objects.filter(pk=welt["meeting"].pk).update(start=timezone.now() + timedelta(minutes=10))
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    assert "Noch nicht eingeladen." in html and 'value="start"' in html and "Sitzung starten" in html
+    # Nach dem Versand auch für Rollen mit faction.start ohne Verwaltung
+    leitung = make_member(welt["org"], ["faction.view_public", "faction.start"], email="leitung@example.org")
+    FactionMeeting.objects.filter(pk=welt["meeting"].pk).update(
+        status="invited", invitation_sent=True, invitation_sent_at=timezone.now()
+    )
+    seite = _html(client_for(leitung.user).get(_adresse(welt)))
+    assert 'data-modus="lesen"' in seite and 'value="start"' in seite
+    # Ohne das Recht kein Start
+    assert 'value="start"' not in _html(_seite(welt, client_for, "rat"))
+
+
+def test_teilnehmende_in_der_planung_mit_gaesten(welt: dict[str, Any], client_for: Any) -> None:
+    client = client_for(welt["vorsitz"].user)
+    client.post(_aktion(welt), {"action": "add_attendee", "attendee_type": "guest", "guest_name": "Gerda Gast"})
+    html = _html(client.get(_adresse(welt)))
+    assert 'data-modus="planung"' in html and 'data-testid="fs-teilnehmende"' in html
+    assert "Martin Muster" in html and "Gäste: Gerda Gast." in html
+
+
+def _termin(meeting: FactionMeeting, **felder: str) -> dict[str, str]:
+    lokal = timezone.localtime(meeting.start)
+    return {
+        "action": "update",
+        "title": meeting.title,
+        "start_date": f"{lokal:%Y-%m-%d}",
+        "start_time": f"{lokal:%H:%M}",
+        **felder,
+    }
+
+
+def test_videolink_nur_http(welt: dict[str, Any], client_for: Any) -> None:
+    meeting = welt["meeting"]
+    for felder in ({"video_aus_link": "1"}, {"is_virtual": "on"}):
+        client_for(welt["vorsitz"].user).post(
+            _aktion(welt), _termin(meeting, video_link="javascript:alert(1)", **felder)
+        )
+        meeting.refresh_from_db()
+        assert meeting.video_link == "https://video.example.org/fraktion"
+
+
+def test_online_bleibt_ohne_link(welt: dict[str, Any], client_for: Any) -> None:
+    meeting = welt["meeting"]
+    FactionMeeting.objects.filter(pk=meeting.pk).update(video_link="", is_virtual=True)
+    meeting.refresh_from_db()
+    client_for(welt["vorsitz"].user).post(
+        _aktion(welt), _termin(meeting, location="Rathaus", video_link="", video_aus_link="1")
+    )
+    meeting.refresh_from_db()
+    assert meeting.is_virtual is True and meeting.location == "Rathaus"
+
+
+def test_vorschau_ohne_noe_unterpunkte(welt: dict[str, Any], client_for: Any) -> None:
+    FactionAgendaItem.objects.create(
+        meeting=welt["meeting"],
+        title="Vertraulicher Unterpunkt",
+        number="1.2",
+        visibility="internal",
+        order=2,
+        parent=welt["haupt"],
+    )
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    vorschauen = re.findall(r'data-testid="fs-mail-vorschau">(.*?)</div>', html, flags=re.S)
+    assert len(vorschauen) == 2
+    assert "Vertraulicher Unterpunkt" in vorschauen[0] and "Vertraulicher Unterpunkt" not in vorschauen[1]
+
+
+def test_abfragen_wachsen_nicht_mit_den_tops(welt: dict[str, Any], client_for: Any) -> None:
+    from django.core.files.uploadedfile import SimpleUploadedFile
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from apps.work.faction.models import FactionAgendaItemAttachment
+
+    def tops(n: int, start: int) -> None:
+        for i in range(start, start + n):
+            item = FactionAgendaItem.objects.create(
+                meeting=welt["meeting"], title=f"Zusatz {i}", number=str(10 + i), visibility="public", order=20 + i
+            )
+            FactionAgendaItemAttachment.objects.create(
+                agenda_item=item, file=SimpleUploadedFile(f"a{i}.pdf", b"%PDF-1.4"), filename=f"a{i}.pdf"
+            )
+
+    def zaehlen() -> list[int]:
+        ergebnis = []
+        for rolle in ("vorsitz", "rat"):
+            client = client_for(welt[rolle].user)
+            client.get(_adresse(welt))
+            with CaptureQueriesContext(connection) as abfragen:
+                assert client.get(_adresse(welt)).status_code == 200
+            ergebnis.append(len(abfragen))
+        return ergebnis
+
+    tops(2, 0)
+    vorher = zaehlen()
+    tops(6, 2)
+    nachher = zaehlen()
+    assert nachher == vorher, f"{vorher} → {nachher}"

@@ -4,12 +4,7 @@ Teilnehmerliste der bisherigen Seite für alle sichtbar), Erinnerung zum Eintrag
 und die eigenen Unterlagen aller sichtbaren TOPs. Kontext: teilnehmende, erinnerung_tops, ratssitzungen,
 eigene_unterlagen, meeting.
 {% endcomment %}
-{% if teilnehmende %}
-<c-work.neben-abschnitt titel="Teilnehmende" kennung="tln-h" data-testid="fs-teilnehmende">
-    {% if teilnehmende.rm %}<p>{{ teilnehmende.rm.satz }}.</p>{% endif %}
-    {% for gruppe in teilnehmende.gruppen %}<p class="fs-meta">{{ gruppe.name }}: {% for p in gruppe.personen %}{{ p.name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>{% endfor %}
-</c-work.neben-abschnitt>
-{% endif %}
+{% include "work/faction/neu/_vb_teilnehmende.html" %}
 
 {% if erinnerung_tops %}
 <c-work.neben-abschnitt titel="Erinnerung" kennung="erin-h">

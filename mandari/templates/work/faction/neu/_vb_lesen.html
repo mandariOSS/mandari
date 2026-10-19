@@ -4,7 +4,7 @@ wenn für die Sitzung eingeschaltet), TOP eintragen (agenda.create) bzw. vorschl
 Genehmigen (agenda.approve) und die Tagesordnung zum Lesen mit Unterlagen und Beratungsverlauf. Nicht vereidigt: der
 nichtöffentliche Teil nur als Zahl mit Erklärung.
 Kontext: meeting, org_slug, eingeladen, info, my_attendance, can_add_items, can_propose_agenda, my_proposals,
-to_oeffentlich, to_intern, to_gesperrt, to_eltern, can_view_internal, darf_einladen, empfaenger.
+to_oeffentlich, to_intern, to_gesperrt, to_eltern, to_eltern_intern, can_view_internal, darf_einladen, empfaenger.
 {% endcomment %}
 <div class="fs-antwort" role="group" aria-labelledby="antwort-h" data-testid="fs-antwort">
     <h2 id="antwort-h">{% if not eingeladen %}{{ einladung_folgt|default:"Einladung folgt" }}{% elif meeting.rsvp_enabled and my_attendance %}Können Sie teilnehmen?{% else %}Sie sind eingeladen{% endif %}</h2>
@@ -46,7 +46,7 @@ to_oeffentlich, to_intern, to_gesperrt, to_eltern, can_view_internal, darf_einla
     {% csrf_token %}
     {% if can_add_items %}
     <input type="hidden" name="action" value="add_item">
-    <input type="hidden" name="visibility" value="public">
+    {% if not can_view_internal %}<input type="hidden" name="visibility" value="public">{% endif %}
     <h3 id="tf-h">TOP eintragen</h3>
     <p class="fs-meta">Sie tragen Punkte direkt in die Tagesordnung ein.</p>
     {% else %}
@@ -57,11 +57,20 @@ to_oeffentlich, to_intern, to_gesperrt, to_eltern, can_view_internal, darf_einla
     <div class="fs-top-form-zeile">
         <label class="sr-only" for="tf-titel">Titel des TOPs</label>
         <input id="tf-titel" class="wf-eingabe" type="text" name="title" autocomplete="off" required maxlength="500" placeholder="Worum geht es?">
-        {% if can_add_items and to_eltern %}
+        {% if can_add_items and can_view_internal %}
+        {# Vereidigte tragen auch nichtöffentliche TOPs ein (wie bisher; der Server prüft die Vereidigung) #}
+        <label class="sr-only" for="tf-sicht">Teil der Tagesordnung</label>
+        <select id="tf-sicht" class="wf-eingabe wf-auswahl" name="visibility">
+            <option value="public">öffentlich</option>
+            <option value="internal">nichtöffentlich</option>
+        </select>
+        {% endif %}
+        {% if can_add_items and to_eltern or can_add_items and to_eltern_intern %}
         <label class="sr-only" for="tf-unter">Unter welchem TOP</label>
         <select id="tf-unter" class="wf-eingabe wf-auswahl" name="parent_id">
             <option value="">als eigener TOP</option>
             {% for z in to_eltern %}<option value="{{ z.item.pk }}">unter {{ z.item.number }} {{ z.item.title|truncatechars:40 }}</option>{% endfor %}
+            {% if to_eltern_intern %}<optgroup label="Nichtöffentlicher Teil">{% for z in to_eltern_intern %}<option value="{{ z.item.pk }}">unter NÖ {{ z.item.number }} {{ z.item.title|truncatechars:40 }}</option>{% endfor %}</optgroup>{% endif %}
         </select>
         {% endif %}
         <button type="submit" class="wf-knopf">{% if can_add_items %}Eintragen{% else %}Vorschlagen{% endif %}</button>

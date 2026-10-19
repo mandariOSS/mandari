@@ -1377,6 +1377,17 @@
 
   /* ---------- Seite vor der Sitzung (Planung, Einladung, Rückmeldungen; neu/vorbereiten.html) ---------- */
   .fs-vb .fs-kopf { flex-wrap: nowrap; }
+  /* Ablaufleiste vor der Sitzung: Namen und Stand wie im Muster, solange Platz ist (der Kopf der laufenden Sitzung
+     braucht mehr Raum für Anwesenheit und Beenden und kürzt früher) */
+  @container fs-kopf (min-width: 900px) {
+    .fs-vb .fs-stufen li:not(.aktuell):not(.linie), .fs-vb .fs-stufen .linie { display: flex; }
+    .fs-vb .fs-stufen li:not(.aktuell) .name { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+    .fs-vb .fs-stufen .linie { width: 16px; }
+  }
+  @container fs-kopf (min-width: 1150px) {
+    .fs-vb .fs-stufen li:not(.aktuell) .unter { display: block; }
+    .fs-vb .fs-stufen .linie { width: 24px; }
+  }
   /* Infoleiste: ein Satz und die eine Hauptaktion, Fläche in der Kennfarbe */
   .fs-info { display: flex; align-items: center; gap: 8px 16px; min-height: 40px; padding: 4px 12px 4px 20px; background: var(--wf-work-flaeche); border-bottom: 1px solid var(--wf-linie); font-size: 13.5px; flex: none; }
   .fs-info-text { margin: 0; min-width: 0; flex: 1 1 auto; }
