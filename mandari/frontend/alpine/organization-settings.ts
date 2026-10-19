@@ -6,7 +6,8 @@
  * im Attribut (ein Wert mit Anführungszeichen könnte sonst aus dem String ausbrechen):
  *
  * - `colorPicker`: `data-color` (Startfarbe), `data-fallback-color` (wenn leer).
- *   Markup: `work/organization/settings.html`, `work/organization/role_form.html`.
+ *   Markup: `work/organization/settings.html`, `work/organization/role_form.html`,
+ *   `work/organization/neu/_farbwahl.html`, `work/organization/neu/_farbe.html`.
  * - `logoPreview`: `work/organization/settings.html`.
  * - `permissionsManager`: `data-is-admin="true|false"`; Kategorien über `data-category`
  *   an den Rechte-Checkboxen. Markup: `work/organization/role_form.html`.
@@ -44,6 +45,11 @@ export const colorPicker = defineComponent(() => ({
     const clean = cleanHex(this.hex)
     this.hex = clean
     if (clean.length === 6) this.color = `#${clean}`
+  },
+
+  /** Unvollständige Eingabe beim Verlassen verwerfen: das Feld zeigt wieder die gültige Farbe. */
+  onHexBlur() {
+    this.hex = this.color.replace('#', '')
   },
 }))
 

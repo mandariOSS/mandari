@@ -25,6 +25,7 @@ from playwright.sync_api import expect
 
 from apps.common.permissions import get_permissions_by_category
 from apps.common.tests.factories import RoleFactory
+from apps.tenants.models import CouncilParty
 from apps.work.motions.models import MotionTemplate, MotionType
 from apps.work.organization.models import DataExport
 from tests_e2e.conftest import ADMIN_PASSWORD, BrowserProblems, component_state, wait_for_component
@@ -109,6 +110,38 @@ class TestOrganisation:
         expect(kurzname).to_have_count(0)
         page.get_by_role("button", name="Fraktion hinzufügen").click()
         expect(kurzname).to_be_visible()
+        problems.assert_clean("Ratsfraktionen")
+
+    def test_ratsfraktion_farbe_als_hex_code(
+        self, page: Any, goto: Any, login: Any, admin: Any, problems: BrowserProblems
+    ) -> None:
+        """Neues Erscheinungsbild: Hex-Code mit Raute einfügen (#1069), das Farbfeld folgt, gespeichert wird #RRGGBB."""
+        org = admin.organization
+        org.work_new_design = True
+        org.save(update_fields=["work_new_design"])
+        slug = _anmelden(login, admin)
+        goto(f"/work/{slug}/organization/parties/")
+        wait_for_component(page, "partyManager")
+        page.get_by_role("button", name="Fraktion hinzufügen").click()
+        page.fill("#fraktion-neu-name", "FDP-Fraktion")
+        page.fill("#fraktion-neu-kurz", "FDP")
+
+        farbwahl = page.locator('[x-data="colorPicker"]', has=page.locator("#fraktion-neu-farbe"))
+        page.focus("#fraktion-neu-farbe")
+        page.keyboard.press("ControlOrMeta+a")
+        page.keyboard.insert_text("#FFED00")
+        expect(page.locator("#fraktion-neu-farbe")).to_have_value("FFED00")
+        expect(farbwahl.locator('input[type="color"]')).to_have_value("#ffed00")
+        expect(farbwahl.locator('input[name="color"]')).to_have_value("#FFED00")
+
+        # Unvollständige Eingabe: beim Verlassen zeigt das Feld wieder die gültige Farbe
+        page.fill("#fraktion-neu-farbe", "12ab")
+        page.locator("#fraktion-neu-kurz").focus()
+        expect(page.locator("#fraktion-neu-farbe")).to_have_value("FFED00")
+
+        page.get_by_role("button", name="Hinzufügen", exact=True).click()
+        expect(page.get_by_test_id("ratsfraktionen-liste")).to_contain_text("FDP-Fraktion")
+        assert CouncilParty.objects.get(organization=org, short_name="FDP").color == "#FFED00"
         problems.assert_clean("Ratsfraktionen")
 
 

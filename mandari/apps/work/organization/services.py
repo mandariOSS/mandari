@@ -1157,7 +1157,7 @@ def add_party(organization: Organization, data: PartyInput) -> CouncilParty:
         email=data.email,
         contact_name=data.contact_name,
         contact_phone=data.contact_phone,
-        color=data.color,
+        color=_color(data.color, "#6b7280"),
         is_coalition_member=data.is_coalition_member,
         coalition_order=data.coalition_order,
     )
@@ -1174,7 +1174,7 @@ def update_party(organization: Organization, party: CouncilParty, data: PartyInp
     party.email = data.email
     party.contact_name = data.contact_name
     party.contact_phone = data.contact_phone
-    party.color = data.color
+    party.color = _color(data.color, party.color)
     party.is_coalition_member = data.is_coalition_member
     party.coalition_order = data.coalition_order
     party.is_active = data.is_active
