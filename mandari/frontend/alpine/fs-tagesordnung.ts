@@ -20,14 +20,9 @@
  */
 
 import { defineComponent } from '../js/alpine/component'
-import {
-  beiAbmeldungSperren,
-  Eingabensicherung,
-  type GesicherterBereich,
-  vergleichen,
-} from '../js/eingaben-sicherung'
+import { beiAbmeldungSperren, Eingabensicherung, type GesicherterBereich, vergleichen } from '../js/eingaben-sicherung'
 import { readJsonScript } from '../js/json-script'
-import { type SpeicherStand, Speicherdienst } from '../js/speichern'
+import { Speicherdienst, type SpeicherStand } from '../js/speichern'
 
 interface ToConfig {
   /** Aktions-URL der Sitzung (move_item) */
@@ -217,7 +212,8 @@ export const fsTagesordnung = defineComponent(() => {
     serverstandMerken(): void {
       for (const feld of Array.from(this.$el.querySelectorAll<HTMLInputElement>('[data-top-feld]'))) {
         const top = feld.dataset.top || ''
-        if (top) sicherung.serverstandSetzen({ top, bereich: BEREICH }, { [feld.dataset.topFeld || '']: feld.defaultValue })
+        if (top)
+          sicherung.serverstandSetzen({ top, bereich: BEREICH }, { [feld.dataset.topFeld || '']: feld.defaultValue })
       }
     },
 
@@ -286,7 +282,8 @@ export const fsTagesordnung = defineComponent(() => {
         this.meldung = 'Nicht gespeichert: Richten Sie zuerst den zweiten Faktor ein. Work sendet danach erneut.'
       } else if (s.anmeldung === 'abgelaufen') {
         this.stand = 'anmeldung'
-        this.meldung = 'Nicht gespeichert: Ihre Anmeldung ist abgelaufen. Melden Sie sich neu an; Work sendet danach erneut.'
+        this.meldung =
+          'Nicht gespeichert: Ihre Anmeldung ist abgelaufen. Melden Sie sich neu an; Work sendet danach erneut.'
       } else if (s.wiederholt > 0) {
         this.stand = 'wiederholt'
         this.meldung = s.offline
