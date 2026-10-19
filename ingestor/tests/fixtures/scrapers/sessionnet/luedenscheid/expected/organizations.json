@@ -1,110 +1,142 @@
 [
   {
     "kgrnr": 82,
-    "name": "AfD-Fraktion"
+    "name": "AfD-Fraktion",
+    "members_page": true
   },
   {
     "kgrnr": 86,
-    "name": "Ausschuss für Bürgeranliegen"
+    "name": "Ausschuss für Bürgeranliegen",
+    "members_page": true
   },
   {
     "kgrnr": 85,
-    "name": "Ausschuss für Chancengerechtigkeit und Integration"
+    "name": "Ausschuss für Chancengerechtigkeit und Integration",
+    "members_page": true
   },
   {
     "kgrnr": 57,
-    "name": "Ausschuss für Soziales, Senioren und Demografie"
+    "name": "Ausschuss für Soziales, Senioren und Demografie",
+    "members_page": true
   },
   {
     "kgrnr": 74,
-    "name": "Ausschuss für Umwelt und Klimaschutz"
+    "name": "Ausschuss für Umwelt und Klimaschutz",
+    "members_page": true
   },
   {
     "kgrnr": 8,
-    "name": "Bau- und Verkehrsausschuss"
+    "name": "Bau- und Verkehrsausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 87,
-    "name": "Beirat für Menschen mit Behinderung"
+    "name": "Beirat für Menschen mit Behinderung",
+    "members_page": true
   },
   {
     "kgrnr": 10,
-    "name": "CDU-Fraktion"
+    "name": "CDU-Fraktion",
+    "members_page": true
+  },
+  {
+    "kgrnr": 68,
+    "name": "Dringlichkeitssitzung",
+    "members_page": false
   },
   {
     "kgrnr": 11,
-    "name": "FDP-Fraktion"
+    "name": "FDP-Fraktion",
+    "members_page": true
   },
   {
     "kgrnr": 84,
-    "name": "Finanzausschuss"
+    "name": "Finanzausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 12,
-    "name": "Fraktion BÜNDNIS 90/DIE GRÜNEN"
+    "name": "Fraktion BÜNDNIS 90/DIE GRÜNEN",
+    "members_page": true
   },
   {
     "kgrnr": 75,
-    "name": "Fraktion Die Linke"
+    "name": "Fraktion Die Linke",
+    "members_page": true
   },
   {
     "kgrnr": 40,
-    "name": "Fraktionsvorstand der CDU"
+    "name": "Fraktionsvorstand der CDU",
+    "members_page": true
   },
   {
     "kgrnr": 41,
-    "name": "Fraktionsvorstand der SPD"
+    "name": "Fraktionsvorstand der SPD",
+    "members_page": true
   },
   {
     "kgrnr": 83,
-    "name": "Hauptausschuss"
+    "name": "Hauptausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 2,
-    "name": "Jugendhilfeausschuss"
+    "name": "Jugendhilfeausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 13,
-    "name": "Kulturausschuss"
+    "name": "Kulturausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 14,
-    "name": "Kuratorium Zeppelin-Gymnasium"
+    "name": "Kuratorium Zeppelin-Gymnasium",
+    "members_page": true
   },
   {
     "kgrnr": 1,
-    "name": "Rat der Stadt Lüdenscheid"
+    "name": "Rat der Stadt Lüdenscheid",
+    "members_page": true
   },
   {
     "kgrnr": 17,
-    "name": "Rechnungsprüfungsausschuss"
+    "name": "Rechnungsprüfungsausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 72,
-    "name": "Schulausschuss"
+    "name": "Schulausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 21,
-    "name": "SPD-Fraktion"
+    "name": "SPD-Fraktion",
+    "members_page": true
   },
   {
     "kgrnr": 73,
-    "name": "Sportausschuss"
+    "name": "Sportausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 70,
-    "name": "Stadtplanungsausschuss"
+    "name": "Stadtplanungsausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 23,
-    "name": "Wahlausschuss"
+    "name": "Wahlausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 25,
-    "name": "Wahlprüfungsausschuss"
+    "name": "Wahlprüfungsausschuss",
+    "members_page": true
   },
   {
     "kgrnr": 24,
-    "name": "Werksausschuss Stadtreinigungs-, Transport- und Baubetrieb Lüdenscheid"
+    "name": "Werksausschuss Stadtreinigungs-, Transport- und Baubetrieb Lüdenscheid",
+    "members_page": true
   }
 ]

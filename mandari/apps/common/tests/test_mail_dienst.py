@@ -473,6 +473,7 @@ ERLAUBT = {
 SOFORT = {
     Path("apps/common/admin.py"): 1,  # Testmail der Systemeinstellungen
     Path("apps/work/organization/services.py"): 1,  # Testmail der Organisation
+    Path("apps/work/faction/services.py"): 1,  # Testmail der Einladung einer Fraktionssitzung
     Path("apps/work/motions/email_submission.py"): 1,  # Einreichung: Zustellung je Empfänger vermerkt
     Path("apps/session/services/invitation_response_service.py"): 1,  # Ladung: Zustellung je Empfänger
     Path("apps/work/background_tasks.py"): 1,  # Benachrichtigung: läuft schon als Auftrag

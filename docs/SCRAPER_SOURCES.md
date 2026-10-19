@@ -226,8 +226,37 @@ vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
 | `si0050?__ksinr=` | Sitzungsdokumente (Einladung/Niederschrift) | `…/getfile.asp?id=N&type=do` |
 | `vo0050?__kvonr=` | Paper (Betreff, Nummer, Art) + Anlagen-PDFs | `…/vo0050.asp?__kvonr=N` |
 | `gr0040` | Organizations (Gremien) | `…/kp0040.asp?__kgrnr=N` |
-| `kp0040?__kgrnr=` | Persons + Memberships (inkl. Stimmrecht) | `…/pe0051.asp?__kpenr=N` |
+| `kp0040?__kgrnr=` | Persons + Memberships (inkl. Stimmrecht, Beginn/Ende beendeter Mitgliedschaften) | `…/pe0051.asp?__kpenr=N` |
 | TOP ↔ Vorlage | Consultation | `…/vo0050.asp?__kvonr=N#consultation/<ksinr>` |
+
+Eigenheiten, die der Adapter ausgleicht (Issue #1075, geprüft an zwei weiteren Instanzen mit SessionNet 5.4.5
+und 5.5.0):
+
+- **Gremien ohne Mitgliederseite.** Gremien, deren Mitglieder nicht veröffentlicht sind (etwa Samtgemeinde-,
+  Verwaltungs- oder Grundstücksverkehrsausschuss), führt `gr0040` ohne Link auf `kp0040`. Ihre Nummer steht im
+  Link auf die Sitzungsliste (`si0046…__ksigrnr=N`, dieselbe Nummer); der Adapter legt das Gremium unter
+  derselben Kennung an (`kp0040…?__kgrnr=N`, ohne `web`) und fragt keine Mitgliederliste an. Ohne beide Links
+  hat ein Gremium keine stabile Kennung und fehlt. Bei gleichnamigen Gremien ordnet der Kalender eine Sitzung
+  dem mit Mitgliederseite zu.
+- **Beendete Mitgliedschaften.** `kp0040` zeigt frühere Mitglieder unter „Mitgliedschaft beendet:“ in einer
+  eigenen Tabelle mit „von“ und „bis“. Sie erscheinen als Mitgliedschaft mit `endDate` (und `startDate`, falls
+  angegeben), nicht als aktuelle; ohne Ende fehlt die Zeile. Steht dieselbe Person auch aktuell im Gremium, trägt
+  die beendete Zeile das Ende in der Kennung (`…#membership/<kpenr>-bis-<Ende>`), die aktuelle behält ihre.
+  Abschnitte „Verwaltung“ und „zur Beratung
+  hinzugezogen“ haben wie „beratende Mitglieder“ kein Stimmrecht. Mitglieder liest der Adapter weiter nur für
+  die vorausgewählte Wahlperiode.
+- **Angekündigte Sitzungen.** Solange die Tagesordnung nicht veröffentlicht ist, verweist der Kalendereintrag
+  nicht auf `si0057`; die Nummer steht nur im Link „Termin übernehmen“ (`yvcs…key=N&uid=siN`). Der Adapter legt
+  die Sitzung aus dem Kalender an (Gremium, Datum, Zeit, Ort), ohne weitere Seite abzurufen, unter der Kennung
+  `si0057…?__ksinr=N`, die sie auch mit Tagesordnung behält. Einträge ohne Termin-Link (etwa vergangene
+  nichtöffentliche Sitzungen) haben keine Kennung und fehlen weiterhin.
+- **Öffentlich oder nicht.** Das Kennzeichen am Punkt („Ö 1“, „N 1“) entscheidet; nur ohne Kennzeichen gilt die
+  Abschnittsüberschrift. Nicht jede Tagesordnung hat eine.
+- **Fehlerseite.** Nicht öffentliche Vorgänge beantwortet SessionNet mit Status 200 und einer Fehlerseite im
+  eigenen Layout („SessionNet Fehlermeldung“, `smc_page_error_layout`). Sie wird nie ausgewertet. Fehlercode
+  1104 („Zum Öffnen des Vorgangs fehlt die Berechtigung“) zählt wie ein toter Verweis, nicht als Störung und nicht
+  gegen die Parse-Quote; eine Sitzung mit nicht öffentlicher Seite entsteht dann aus dem Kalender. Andere
+  Fehlercodes sind eine Störung. Die Gegenprobe „Mandant“ gilt auch für angekündigte Sitzungen.
 
 PDF-Anlagen laufen automatisch durch die bestehende OCR-Queue
 (`text_extraction_status='pending'` → pypdf → Tesseract → Mistral) und
@@ -331,6 +360,8 @@ Kennung geben; liefert die Seite später die ursprüngliche, scheitert der Abruf
   Formular, Weiterleitung oder Titel. Eine Kalenderseite muss zudem die
   Tageszeilen des Monats tragen (`td.silink`, auch an Tagen ohne Sitzung);
   fehlen sie, ist der Monat nicht lesbar und ergibt keine leere Liste.
+  Die Fehlerseite von SessionNet trägt dessen Layout und wird eigens
+  erkannt (siehe „Was der Adapter extrahiert“, Issue #1075).
 - **Bremse**: Fehlen in einem Lauf mehr als 10 Objekte eines Typs
   (`SCRAPER_TOMBSTONE_MAX_MISSING`), zählt der Lauf keines davon
   (`last_run.tombstone_braked`, Konsole „gebremst“) – Quelle prüfen. Der
@@ -362,7 +393,7 @@ Kennung geben; liefert die Seite später die ursprüngliche, scheitert der Abruf
 - Golden-File-Tests (`ingestor/tests/test_sessionnet_parser.py`) mit
   eingefrorenen HTML-Fixtures zweier realer Instanzen und einer pseudonymisierten Instanz mit
   mehreren Körperschaften (`tests/test_sessionnet_mehrere_koerperschaften.py`) sichern die Parser
-  in CI ab.
+  in CI ab; anonymisierte Ausschnitte weiterer Instanzen stehen in `tests/test_sessionnet_luecken.py`.
 - robots-Sperren erscheinen als Fehlerklasse `robots_blocked` im
   Betriebsmonitor (Admin → Monitoring) und in der Alarmmail, mit Grund und
   Empfehlung; die Quelle wird täglich erneut geprüft (#116).

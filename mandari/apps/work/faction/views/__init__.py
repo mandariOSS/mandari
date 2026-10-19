@@ -41,6 +41,7 @@ from .meetings import (
 )
 from .panel import (
     FactionAttachmentDownloadView,
+    FactionItemFieldsView,
     FactionItemPanelActionView,
     FactionItemPanelView,
 )
@@ -62,6 +63,7 @@ __all__ = [
     "FactionCertificateDownloadView",
     "FactionInternalImportConfirmView",
     "FactionInternalImportView",
+    "FactionItemFieldsView",
     "FactionItemPanelActionView",
     "FactionItemPanelView",
     "FactionMeetingDetailView",

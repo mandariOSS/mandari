@@ -1,0 +1,14 @@
+{% comment %}
+Speicherstand der Felder eines TOPs (Issue #1071, Muster „Work speichert sofort“): leer, „Speichert …“, „Gespeichert“
+oder der Grund, warum nicht, mit Link zur Anmeldung bzw. zum zweiten Faktor und „Erneut versuchen“. Zustand aus der
+Komponente fsTagesordnung (frontend/alpine/fs-tagesordnung.ts).
+{% endcomment %}
+<p class="fs-speicherstand" role="status" aria-live="polite" data-testid="fs-speicherstand">
+    <span class="fs-status" x-show="stand === 'speichert'" x-cloak>Speichert …</span>
+    <span class="fs-status" x-show="stand === 'gespeichert'" x-cloak><i data-lucide="cloud-check" aria-hidden="true"></i>Gespeichert</span>
+    <span class="fs-status fehler" x-show="['fehler', 'wiederholt', 'anmeldung'].includes(stand)" x-cloak>
+        <span x-text="meldung"></span>
+        <a class="wf-textlink" x-show="stand === 'anmeldung' && anmeldungZiel" :href="anmeldungZiel" target="_blank" rel="noopener">Zweiten Faktor einrichten</a>
+        <button type="button" class="wf-textlink" x-show="stand !== 'anmeldung'" @click="erneut()">Erneut versuchen</button>
+    </span>
+</p>

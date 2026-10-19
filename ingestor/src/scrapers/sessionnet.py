@@ -4,6 +4,7 @@ SessionNet-Adapter (Somacos Session/SessionNet, Bürgerinfo-Frontend).
 Verifiziert gegen SessionNet 5.5 (Layout 6) an zwei realen Instanzen:
 - buergerinfo.luedenscheid.de (klassisch, *.asp)
 - rat.eschweiler.de/bi (PHP-Variante, *.php — identisches Markup)
+Geprüft außerdem an zwei weiteren Instanzen (5.4.5 und 5.5.0, *.php), Lücken dort siehe Issue #1075.
 
 Seitenkürzel (produktweit stabil):
 - si0040   Sitzungskalender (Monatsansicht, __cjahr/__cmonat/__canz)
@@ -12,6 +13,8 @@ Seitenkürzel (produktweit stabil):
 - vo0050   Vorlagendetail (__kvonr; Betreff, Nummer, Art, Anlagen-PDFs)
 - gr0040   Gremienliste
 - kp0040   Gremium-Mitglieder (__kgrnr; Personen mit pe0051-Links)
+- si0046   Sitzungsliste eines Gremiums (nur die Nummer __ksigrnr = __kgrnr, Gremien ohne kp0040)
+- yvcs     Termin-Link im Kalender (key/uid = __ksinr, auch bei angekündigten Sitzungen)
 - getfile  Datei-Download (id, type=do)
 
 Filterleiste (gr0040, si0040, kp0040):
@@ -64,11 +67,31 @@ _DATE_RE = re.compile(r"(\d{2}\.\d{2}\.\d{4})")
 #: Der Produktname allein genügt nicht: Prüfseiten übernehmen die angefragte Adresse (üblicher
 #: Installationspfad ``/sessionnet/…``) in Formular, Weiterleitung oder Titel.
 _SMC_LAYOUT_RE = re.compile(r"class=[\"'][^\"']*\bsmc", re.IGNORECASE)
+#: Fehlerseite von SessionNet im eigenen Layout, mit Status 200 (Issue #1075): ``smc_page_error_layout`` am Rahmen,
+#: Titel "SessionNet Fehlermeldung"
+_ERROR_PAGE_RE = re.compile(r"class=[\"'][^\"']*\bsmc_page_error_layout\b|<title>[^<]*Fehlermeldung", re.IGNORECASE)
+_ERROR_CODE_RE = re.compile(r"Fehlercode:\s*(\d+)")
+#: "Zum Öffnen des Vorgangs fehlt die Berechtigung": Der Vorgang ist nicht öffentlich
+ERROR_CODE_NOT_PUBLIC = "1104"
 
 
 def is_sessionnet_page(html: str) -> bool:
     """Trägt die Seite das SessionNet-Layout (und ist damit keine Sperr-, Prüf- oder Hinweisseite)?"""
     return _SMC_LAYOUT_RE.search(html) is not None
+
+
+def sessionnet_error_code(html: str) -> str | None:
+    """
+    Fehlercode, wenn die Seite die Fehlerseite von SessionNet ist ("" ohne Code), sonst ``None``.
+
+    SessionNet beantwortet etwa einen nicht öffentlichen Vorgang mit Status 200 und einer Fehlerseite im eigenen
+    Layout ("Zum Öffnen des Vorgangs fehlt die Berechtigung. Fehlercode: 1104"). Ausgewertet ergäbe sie eine Vorlage
+    namens "SessionNet Fehlermeldung" (Issue #1075).
+    """
+    if _ERROR_PAGE_RE.search(html) is None:
+        return None
+    match = _ERROR_CODE_RE.search(html)
+    return match.group(1) if match else ""
 
 
 # ---------------------------------------------------------------------------
@@ -130,6 +153,9 @@ class MeetingStub:
     time_start: str | None = None  # HH:MM
     time_end: str | None = None
     location: str | None = None
+    #: Verweist der Eintrag auf die Tagesordnung (si0057)? Angekündigte Sitzungen ohne veröffentlichte
+    #: Tagesordnung nennen ihre Nummer nur im Termin-Link (Issue #1075).
+    agenda_linked: bool = True
 
     def sort_key(self) -> tuple:
         return (self.date or "", self.ksinr)
@@ -144,6 +170,39 @@ def is_calendar_page(html: str) -> bool:
     return BeautifulSoup(html, "html.parser").select_one("td.silink") is not None
 
 
+#: Kennung im Termin-Link (yvcs, "Termin übernehmen"): ``uid=si<__ksinr>``
+_TERMIN_UID_RE = re.compile(r"^si(\d+)$")
+
+
+def _announced_stub(cell: Any) -> MeetingStub | None:
+    """
+    Kalendereintrag ohne Link auf die Tagesordnung (Issue #1075).
+
+    Solange die Tagesordnung nicht veröffentlicht ist, nennt der Kalender die Sitzung nur mit Gremium, Zeit und Ort;
+    ihre Nummer steht im Link "Termin übernehmen" (``yvcs….php?key=<__ksinr>&uid=si<__ksinr>&…``). Ohne diesen Link
+    (etwa vergangene nichtöffentliche Sitzungen) hat der Eintrag keine stabile Kennung und wird übersprungen.
+    """
+    row = cell.find_parent("tr")
+    termin = row.find("a", href=re.compile(r"yvcs\.(asp|php)\?")) if row is not None else None
+    if termin is None:
+        return None
+    href = _attr(termin, "href")
+    uid = _TERMIN_UID_RE.match(parse_qs(urlparse(href).query).get("uid", [""])[0])
+    ksinr = _query_int(href, "key")
+    if uid is None or ksinr is None or int(uid.group(1)) != ksinr:
+        return None
+    heading = cell.find("div", class_="smc-el-h")
+    name = _clean(heading.get_text() if heading is not None else "")
+    if not name:
+        return None
+    stub = MeetingStub(ksinr=ksinr, name=name, committee=name, agenda_linked=False)
+    # title="Termin übernehmen: <dd.mm.yyyy> <Gremium>"
+    date_match = _DATE_RE.search(_clean(_attr(termin, "title")) or _clean(_attr(termin, "aria-label")))
+    if date_match:
+        stub.date = date_match.group(1)
+    return stub
+
+
 def parse_calendar(html: str) -> list[MeetingStub]:
     """Parst die Monatsansicht des Sitzungskalenders (si0040)."""
     soup = BeautifulSoup(html, "html.parser")
@@ -151,19 +210,23 @@ def parse_calendar(html: str) -> list[MeetingStub]:
     for cell in soup.select("td.silink"):
         link = cell.find("a", href=re.compile(r"si0057\.(asp|php)\?"))
         if link is None:
-            continue
-        ksinr = _query_int(link.get("href", ""), "__ksinr")
-        if ksinr is None:
-            continue
-        stub = MeetingStub(ksinr=ksinr, name=_clean(link.get_text()))
-        # title="Details anzeigen: <Gremium> <dd.mm.yyyy>"
-        title = _clean(link.get("title", ""))
-        if title.startswith("Details anzeigen:"):
-            rest = title.removeprefix("Details anzeigen:").strip()
-            date_match = _DATE_RE.search(rest)
-            if date_match:
-                stub.date = date_match.group(1)
-                stub.committee = _clean(rest[: date_match.start()]) or None
+            announced = _announced_stub(cell)
+            if announced is None:
+                continue
+            stub = announced
+        else:
+            ksinr = _query_int(link.get("href", ""), "__ksinr")
+            if ksinr is None:
+                continue
+            stub = MeetingStub(ksinr=ksinr, name=_clean(link.get_text()))
+            # title="Details anzeigen: <Gremium> <dd.mm.yyyy>"
+            title = _clean(link.get("title", ""))
+            if title.startswith("Details anzeigen:"):
+                rest = title.removeprefix("Details anzeigen:").strip()
+                date_match = _DATE_RE.search(rest)
+                if date_match:
+                    stub.date = date_match.group(1)
+                    stub.committee = _clean(rest[: date_match.start()]) or None
         # <ul class="smc-detail-list"><li>17:00-18:45 Uhr</li><li>Ort</li></ul>
         detail_list = cell.find("ul", class_="smc-detail-list")
         if detail_list is not None:
@@ -282,16 +345,18 @@ def parse_meeting_agenda(html: str) -> MeetingAgenda:
             continue
 
         badge = num_cell.find("span", class_="badge")
-        raw_number = _clean(badge.get_text() if badge else num_cell.get_text())
-        # "Ö 3.2" / "N 1" -> "3.2" / "1"; Ö/N ist redundant zur Sektion
-        number = re.sub(r"^[ÖöNn]\s+", "", raw_number.replace("\xa0", " ")).strip() or None
+        raw_number = _clean(badge.get_text() if badge else num_cell.get_text()).replace("\xa0", " ")
+        # "Ö 3.2" / "N 1" -> "3.2" / "1". Das Kennzeichen entscheidet, ob der Punkt öffentlich ist: Nicht jede
+        # Tagesordnung hat Abschnittsüberschriften (Issue #1075); ohne Kennzeichen gilt die Sektion.
+        marker = re.match(r"^([ÖöNn])\s+", raw_number)
+        number = (raw_number[marker.end() :] if marker else raw_number).strip() or None
 
         title_div = title_cell.find("div", class_=re.compile(r"smc-card-header-title"))
         title = _clean(title_div.get_text() if title_div else title_cell.get_text())
         if not title:
             continue
 
-        item = AgendaRow(number=number, title=title, public=public)
+        item = AgendaRow(number=number, title=title, public=public if marker is None else marker.group(1) in "Öö")
 
         beschluss = title_cell.find("p", class_=re.compile(r"box2_beschluss"))
         if beschluss is not None:
@@ -328,32 +393,71 @@ def parse_paper(html: str) -> dict[str, Any]:
 
 
 def parse_organizations(html: str) -> list[dict[str, Any]]:
-    """Parst die Gremienliste (gr0040): kgrnr + Name."""
+    """
+    Parst die Gremienliste (gr0040): kgrnr, Name und ob das Gremium eine Mitgliederseite (kp0040) hat.
+
+    Gremien, deren Mitglieder nicht veröffentlicht sind (etwa Verwaltungs- oder Samtgemeindeausschuss), führt die
+    Liste ohne Link auf kp0040; ihre Nummer steht dann nur im Link auf die Sitzungsliste (si0046, ``__ksigrnr``,
+    dieselbe Nummer wie ``__kgrnr``). Ohne beide Links fehlt eine stabile Kennung: übersprungen (Issue #1075).
+    """
     soup = BeautifulSoup(html, "html.parser")
     orgs: dict[int, dict[str, Any]] = {}
     for cell in soup.select("td.grname"):
         link = cell.find("a", href=re.compile(r"kp0040\.(asp|php)\?"))
-        if link is None:
-            continue
-        kgrnr = _query_int(link.get("href", ""), "__kgrnr")
-        name = _clean(link.get_text())
+        if link is not None:
+            kgrnr = _query_int(link.get("href", ""), "__kgrnr")
+            name = _clean(link.get_text())
+        else:
+            row = cell.find_parent("tr")
+            meetings = row.find("a", href=re.compile(r"si0046\.(asp|php)\?.*__ksigrnr=")) if row is not None else None
+            kgrnr = _query_int(_attr(meetings, "href"), "__ksigrnr") if meetings is not None else None
+            name = _clean(cell.get_text())
         if kgrnr is None or not name:
             continue
-        orgs.setdefault(kgrnr, {"kgrnr": kgrnr, "name": name})
+        orgs.setdefault(kgrnr, {"kgrnr": kgrnr, "name": name, "members_page": link is not None})
     return list(orgs.values())
+
+
+#: Abschnitte der Mitgliederliste ohne Stimmrecht: "… ohne Stimmrecht", "mit beratender Stimme", "Beratende
+#: Mitglieder", "zur Beratung hinzugezogen", "Verwaltung" (Protokoll, Fachbereiche; Issue #1075)
+_NO_VOTE_RE = re.compile(r"ohne stimmrecht|beratend|hinzugezogen|^verwaltung\b", re.IGNORECASE)
+
+
+def _cell_date(row: Any, css_class: str) -> str | None:
+    """Datum (ISO) aus der ersten Zelle der Klasse, etwa ``mgadat`` (von) oder ``mgedat`` (bis)."""
+    cell = row.find("td", class_=css_class)
+    match = _DATE_RE.search(_clean(cell.get_text())) if cell is not None else None
+    return _iso_date(match.group(1)) if match else None
+
+
+def _ended_table(table: Any) -> bool:
+    """Steht die Tabelle unter der Überschrift "Mitgliedschaft beendet:"?"""
+    heading = table.find_previous(["h2", "h3"]) if table is not None else None
+    return heading is not None and "beendet" in _clean(heading.get_text()).lower()
 
 
 def parse_members(html: str) -> list[dict[str, Any]]:
     """
     Parst die Mitgliederliste eines Gremiums (kp0040).
 
-    Liefert Zeilen mit kpenr, Name, Partei/Mitgliedschaft, Funktion und
-    Stimmrecht (aus der Abschnittsüberschrift, z. B. "... ohne Stimmrecht:").
+    Liefert Zeilen mit kpenr, Name, Partei/Mitgliedschaft, Funktion,
+    Stimmrecht (aus der Abschnittsüberschrift, z. B. "... ohne Stimmrecht:")
+    sowie Beginn und Ende der Mitgliedschaft (Spalten "von"/"bis", ISO).
+
+    Unter "Mitgliedschaft beendet:" stehen frühere Mitglieder in einer eigenen
+    Tabelle mit Beginn und Ende (Issue #1075). Sie bekommen ihr Ende; eine
+    beendete Mitgliedschaft ohne Ende fehlt, statt als aktuelle zu erscheinen.
     """
     soup = BeautifulSoup(html, "html.parser")
     members: list[dict[str, Any]] = []
     section: str | None = None
+    table: Any = None
+    ended = False
     for row in soup.find_all("tr"):
+        row_table = row.find_parent("table")
+        if row_table is not table:
+            # Jede Tabelle beginnt ohne Abschnitt; die Tabelle der beendeten Mitgliedschaften hat oft keinen
+            table, section, ended = row_table, None, _ended_table(row_table)
         header = row.find("td", class_=re.compile(r"smcfield_puname"))
         if header is not None:
             section = _clean(header.get_text()).rstrip(":") or None
@@ -372,15 +476,11 @@ def parse_members(html: str) -> list[dict[str, Any]]:
             name = _clean(name_cell.get_text())
         if not name:
             continue
+        end_date = _cell_date(row, "mgedat")
+        if ended and end_date is None:
+            continue
         party_cell = row.find("td", class_="pepartei")
         role_cell = row.find("td", class_="amname")
-        voting = True
-        if section:
-            lowered = section.lower()
-            # "... ohne Stimmrecht", "mit beratender Stimme", "Beratende
-            # Mitglieder ..." => kein Stimmrecht
-            if "ohne stimmrecht" in lowered or "beratend" in lowered:
-                voting = False
         members.append(
             {
                 "kpenr": kpenr,
@@ -388,10 +488,42 @@ def parse_members(html: str) -> list[dict[str, Any]]:
                 "party": _clean(party_cell.get_text()) if party_cell else None,
                 "role": (_clean(role_cell.get_text()) if role_cell else None) or section,
                 "section": section,
-                "voting_right": voting,
+                "voting_right": not (section and _NO_VOTE_RE.search(section)),
+                "start_date": _cell_date(row, "mgadat"),
+                "end_date": end_date,
             }
         )
     return members
+
+
+def _member_key(row: Mapping[str, Any]) -> str:
+    """Person einer Mitgliederzeile: ``__kpenr``, ohne Personenseite der normalisierte Name."""
+    return str(row["kpenr"]) if row.get("kpenr") is not None else _slug(str(row.get("name") or ""))
+
+
+def membership_keys(rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    """
+    Kennungsteile der Mitgliedschaften eines Gremiums hinter ``#membership/``, in der Reihenfolge von ``rows``.
+
+    Eine Mitgliedschaft heißt nach ihrer Person (``_member_key``). Steht dieselbe Person auch aktuell im Gremium,
+    bekommt ihre beendete Zeile das Ende als Zusatz (``11-bis-2023-05-31``); sonst überschriebe sie die aktuelle, und
+    das aktuelle Mitglied verschwände (Issue #1075). Aktuelle Zeilen behalten ihre Kennung. Bleibt ein Teil doppelt,
+    zählt der spätere weiter (``-2``).
+    """
+    current = {_member_key(row) for row in rows if not row.get("end_date")}
+    used: set[str] = set()
+    keys: list[str] = []
+    for row in rows:
+        base = _member_key(row)
+        if row.get("end_date") and base in current:
+            base = f"{base}-bis-{row['end_date']}"
+        key, count = base, 1
+        while key in used:
+            count += 1
+            key = f"{base}-{count}"
+        used.add(key)
+        keys.append(key)
+    return keys
 
 
 # Mandantenauswahl: "Alle Mandanten" ist eine Ansicht, keine Körperschaft
@@ -459,9 +591,12 @@ def parse_calendar_mandanten(html: str) -> dict[int, str]:
     result: dict[int, str] = {}
     for cell in soup.select("td.silink"):
         link = cell.find("a", href=re.compile(r"si0057\.(asp|php)\?"))
-        if link is None:
-            continue
-        ksinr = _query_int(_attr(link, "href"), "__ksinr")
+        if link is not None:
+            ksinr = _query_int(_attr(link, "href"), "__ksinr")
+        else:
+            # Angekündigte Sitzung: Nummer aus dem Termin-Link (Issue #1075)
+            announced = _announced_stub(cell)
+            ksinr = announced.ksinr if announced is not None else None
         row = cell.find_parent("tr")
         mandant_cell = row.find("td", class_="pagel") if row is not None else None
         if ksinr is None or mandant_cell is None:
@@ -850,6 +985,8 @@ class SessionNetAdapter:
         # Sitzung -> Kennungen ihrer Tagesordnungspunkte, bis der Runner die Sitzung speichert; höchstens für die
         # Sitzungen eines Kalendermonats (Issue #863)
         self._agenda_keys: dict[str, list[AgendaItemKey]] = {}
+        #: War die zuletzt mit ``_fetch`` geholte Seite die Fehlerseite "nicht öffentlich" (Fehlercode 1104)?
+        self.last_not_public = False
 
     # -------------------- Hilfen --------------------
 
@@ -865,11 +1002,20 @@ class SessionNetAdapter:
         """
         if is_detail:
             self.stats.detail_pages_attempted += 1
+        self.last_not_public = False
         html = await self.fetcher.fetch_text(url)
+        error_code = sessionnet_error_code(html) if html is not None else None
         if html is not None and not is_sessionnet_page(html):
             art = detect_gate(200, html) or "fremder Aufbau"
             console.print(f"[yellow]Scraper: keine SessionNet-Seite ({art}), nicht ausgewertet: {url}[/yellow]")
             metrics.record_scraper_parse_failure(self.fetcher.source_name, "fremde_seite")
+            html = None
+        elif error_code is not None:
+            # Fehlerseite im SessionNet-Layout mit Status 200 (Issue #1075)
+            console.print(f"[yellow]Scraper: SessionNet-Fehlerseite ({error_code or 'ohne Code'}): {url}[/yellow]")
+            self.last_not_public = error_code == ERROR_CODE_NOT_PUBLIC
+            if not self.last_not_public:
+                metrics.record_scraper_parse_failure(self.fetcher.source_name, "fehlerseite")
             html = None
         elif html is not None and expected is not None and not expected(html):
             console.print(f"[yellow]Scraper: Seite ohne erwarteten Aufbau, nicht ausgewertet: {url}[/yellow]")
@@ -877,8 +1023,9 @@ class SessionNetAdapter:
             html = None
         if html is None:
             self.stats.failed_pages += 1
-            # Ein toter Verweis ist keine Störung: Die Quelle sagt selbst, dass es die Seite nicht gibt
-            if is_gone(getattr(self.fetcher, "last_status", None)):
+            # Ein toter Verweis ist keine Störung: Die Quelle sagt selbst, dass es die Seite nicht gibt. Ebenso ein
+            # nicht öffentlicher Vorgang (Fehlercode 1104): Die Quelle gibt ihn bewusst nicht heraus.
+            if self.last_not_public or is_gone(getattr(self.fetcher, "last_status", None)):
                 self.stats.gone_pages += 1
         else:
             self.stats.pages_fetched += 1
@@ -1091,6 +1238,8 @@ class SessionNetAdapter:
         # ---------------- Gremien ----------------
         org_by_name: dict[str, str] = {}
         org_dicts: list[dict[str, Any]] = []
+        # Gremien ohne veröffentlichte Mitglieder (kein Link auf kp0040, Issue #1075): keine Mitgliederliste abrufen
+        without_members: set[str] = set()
         if plan.cpanr in self._gremien_html:
             gr_html = self._gremien_html[plan.cpanr]
         else:
@@ -1105,20 +1254,22 @@ class SessionNetAdapter:
                 self.stats.mark_incomplete("Gremienliste ohne Gremien", "organization", "person", "membership")
             for org in orgs:
                 external_id = self.urls.external_id("kp0040", __kgrnr=org["kgrnr"])
-                org_by_name[org["name"]] = external_id
-                org_dicts.append(
-                    with_content_hash(
-                        {
-                            "id": external_id,
-                            "type": f"{OPARL}Organization",
-                            "body": body_id,
-                            "name": org["name"],
-                            "organizationType": "Gremium",
-                            "web": self.urls.page("kp0040", __kgrnr=org["kgrnr"]),
-                            "modified": self._crawl_time,
-                        }
-                    )
-                )
+                # Sitzungen finden ihr Gremium über den Namen; bei gleichnamigen Gremien zählt eines mit Mitgliederseite
+                if org["members_page"] or org["name"] not in org_by_name:
+                    org_by_name[org["name"]] = external_id
+                org_dict: dict[str, Any] = {
+                    "id": external_id,
+                    "type": f"{OPARL}Organization",
+                    "body": body_id,
+                    "name": org["name"],
+                    "organizationType": "Gremium",
+                    "modified": self._crawl_time,
+                }
+                if org["members_page"]:
+                    org_dict["web"] = self.urls.page("kp0040", __kgrnr=org["kgrnr"])
+                else:
+                    without_members.add(external_id)
+                org_dicts.append(with_content_hash(org_dict))
             self.stats.entities_parsed += len(org_dicts)
         if org_dicts:
             yield ("organization", org_dicts)
@@ -1128,6 +1279,8 @@ class SessionNetAdapter:
             persons: dict[str, dict[str, Any]] = {}
             memberships: list[dict[str, Any]] = []
             for org in org_dicts:
+                if org["id"] in without_members:
+                    continue
                 if not self._budget_left():
                     self.stats.mark_incomplete("Detailseiten-Budget erreicht", "person", "membership")
                     break
@@ -1142,18 +1295,16 @@ class SessionNetAdapter:
                     continue
                 rows = parse_members(html)
                 self.stats.detail_pages_parsed += 1
-                for row in rows:
+                for row, membership_key in zip(rows, membership_keys(rows), strict=True):
                     if row["kpenr"] is not None:
                         # Bei mehreren Körperschaften je Körperschaft eine Person:
                         # Wer im Samtgemeinderat und im Rat einer Mitgliedsgemeinde
                         # sitzt, erscheint in beiden Bodies vollständig.
                         person_id = self.urls.external_id("pe0051", **plan.params(), __kpenr=row["kpenr"])
-                        member_key: Any = row["kpenr"]
                     else:
                         # Ohne Detailseite: stabiles Fragment-Schema auf
                         # Basis der Body-URL + normalisiertem Namen
-                        member_key = _slug(row["name"])
-                        person_id = f"{body_id}#person/{member_key}"
+                        person_id = f"{body_id}#person/{_member_key(row)}"
                     persons.setdefault(
                         person_id,
                         with_content_hash(
@@ -1166,19 +1317,21 @@ class SessionNetAdapter:
                             }
                         ),
                     )
-                    memberships.append(
-                        with_content_hash(
-                            {
-                                "id": f"{org['id']}#membership/{member_key}",
-                                "type": f"{OPARL}Membership",
-                                "person": person_id,
-                                "organization": org["id"],
-                                "role": row["role"],
-                                "votingRight": row["voting_right"],
-                                "modified": self._crawl_time,
-                            }
-                        )
-                    )
+                    membership: dict[str, Any] = {
+                        "id": f"{org['id']}#membership/{membership_key}",
+                        "type": f"{OPARL}Membership",
+                        "person": person_id,
+                        "organization": org["id"],
+                        "role": row["role"],
+                        "votingRight": row["voting_right"],
+                        "modified": self._crawl_time,
+                    }
+                    # Beginn und Ende nur, wenn die Seite sie nennt (beendete Mitgliedschaften, Issue #1075)
+                    if row.get("start_date"):
+                        membership["startDate"] = row["start_date"]
+                    if row.get("end_date"):
+                        membership["endDate"] = row["end_date"]
+                    memberships.append(with_content_hash(membership))
                 self.stats.entities_parsed += len(rows)
             if persons:
                 yield ("person", list(persons.values()))
@@ -1221,7 +1374,7 @@ class SessionNetAdapter:
             month_key = f"{year:04d}-{month:02d}"
             if plan.cpanr is not None:
                 month_key = f"p{plan.cpanr}:{month_key}"
-            snapshot = with_content_hash({"stubs": [vars(s) for s in stubs]})["mandari:contentHash"]
+            snapshot = with_content_hash({"stubs": [_snapshot_entry(s) for s in stubs]})["mandari:contentHash"]
             self.list_snapshots[month_key] = snapshot
             if not full and self.previous_snapshots.get(month_key) == snapshot:
                 # Listen-Diffing: Kalendermonat unverändert -> Detailseiten
@@ -1276,24 +1429,29 @@ class SessionNetAdapter:
         org_by_name: dict[str, str],
     ) -> dict[str, Any] | None:
         external_id = self.urls.external_id("si0057", __ksinr=stub.ksinr)
-        agenda_html = await self._fetch(self.urls.page("si0057", __ksinr=stub.ksinr), is_detail=True)
-        if not agenda_html:
-            self.stats.parse_failures += 1
-            metrics.record_scraper_parse_failure(self.fetcher.source_name, "si0057")
-            return None
-        agenda = parse_meeting_agenda(agenda_html)
-
+        agenda = MeetingAgenda()
         info: dict[str, Any] = {}
-        info_html = await self._fetch(self.urls.page("si0050", __ksinr=stub.ksinr))
-        if info_html:
-            info = parse_meeting_info(info_html)
+        # Angekündigte Sitzung ohne veröffentlichte Tagesordnung oder nicht öffentliche Sitzungsseite (Fehlercode
+        # 1104): nur die Angaben aus dem Kalender, unter derselben Kennung wie später mit Tagesordnung (Issue #1075)
+        if stub.agenda_linked:
+            agenda_html = await self._fetch(self.urls.page("si0057", __ksinr=stub.ksinr), is_detail=True)
+            if agenda_html:
+                agenda = parse_meeting_agenda(agenda_html)
+                info_html = await self._fetch(self.urls.page("si0050", __ksinr=stub.ksinr))
+                if info_html:
+                    info = parse_meeting_info(info_html)
+            elif not self.last_not_public:
+                self.stats.parse_failures += 1
+                metrics.record_scraper_parse_failure(self.fetcher.source_name, "si0057")
+                return None
 
         name = stub.name or agenda.title
         if not name:
             self.stats.parse_failures += 1
             metrics.record_scraper_parse_failure(self.fetcher.source_name, "si0057")
             return None
-        self.stats.detail_pages_parsed += 1
+        if stub.agenda_linked:
+            self.stats.detail_pages_parsed += 1
 
         meeting: dict[str, Any] = {
             "id": external_id,
@@ -1407,6 +1565,10 @@ class SessionNetAdapter:
     async def _build_paper(self, kvonr: int, body_id: str) -> dict[str, Any] | None:
         external_id = self.urls.external_id("vo0050", __kvonr=kvonr)
         html = await self._fetch(self.urls.page("vo0050", __kvonr=kvonr), is_detail=True)
+        if not html and self.last_not_public:
+            # Nicht öffentliche Vorlage (Fehlercode 1104): erwartete Antwort, kein Parse-Fehler (Issue #1075)
+            self.stats.detail_pages_parsed += 1
+            return None
         if not html:
             self.stats.parse_failures += 1
             metrics.record_scraper_parse_failure(self.fetcher.source_name, "vo0050")
@@ -1453,6 +1615,14 @@ def _parse_german_datetime(date_str: str, time_str: str | None) -> str | None:
         return dt.replace(tzinfo=TZ_BERLIN).isoformat(timespec="seconds")
     except (ValueError, AttributeError):
         return None
+
+
+def _snapshot_entry(stub: MeetingStub) -> dict[str, Any]:
+    """Kalendereintrag im Listen-Snapshot; ``agenda_linked`` nur bei angekündigten Sitzungen (Hash sonst wie bisher)."""
+    entry = vars(stub).copy()
+    if stub.agenda_linked:
+        entry.pop("agenda_linked")
+    return entry
 
 
 def _slug(value: str) -> str:

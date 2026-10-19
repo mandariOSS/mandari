@@ -1,4 +1,5 @@
 {% extends "work/base_work.html" %}
+{% load static %}
 {% comment %}
 Fraktionssitzung vor der Sitzung nach dem Muster (Issue #1071, Schritt 2; Muster sitzung.html, Zustände planung,
 einladen, zusagen): Kopf mit Ablaufleiste, Infoleiste mit der einen Hauptaktion, darunter Hauptspalte und Nebenspalte.
@@ -35,7 +36,15 @@ Die bisherige Seite bleibt unter ?ansicht=bisher (work/faction/detail.html).
 
     <div class="fs-r-zwei">
         {% if modus == "planung" %}
-        <section class="fs-spalte" aria-labelledby="to-h">
+        <section class="fs-spalte" aria-labelledby="to-h"{% if can_edit %} x-data="fsTagesordnung"{% endif %}>
+            {% if can_edit %}
+            {{ to_config|json_script:"fs-to-config" }}
+            <p class="sr-only" role="status" aria-live="polite" x-text="ansage"></p>
+            <div class="fs-hinweis fs-sicherung" role="alert" x-show="angebote.length" x-cloak data-testid="fs-sicherung">
+                <p>Nicht gespeicherte Eingaben aus Ihrem letzten Besuch: <span x-text="angebote.map(a => a.text).join('; ')"></span>. Inzwischen kann sich der Stand geändert haben; Übernehmen ersetzt ihn.</p>
+                <p class="fs-hinweis-knopf"><button type="button" class="wf-knopf wf-klein" @click="angebotUebernehmen()">Übernehmen</button><button type="button" class="wf-knopf wf-klein wf-leise" @click="angebotVerwerfen()">Verwerfen</button></p>
+            </div>
+            {% endif %}
             {% if eingeladen %}<p class="fs-zurueck"><a class="wf-textlink" href="{{ request.path }}">Zurück zur Einladung</a></p>{% endif %}
             {% include "work/faction/neu/_vb_hinweise.html" %}
             <div id="agenda-container"
@@ -78,4 +87,8 @@ Die bisherige Seite bleibt unter ?ansicht=bisher (work/faction/detail.html).
     {% include "work/faction/partials/_detail_item_modals.html" %}
     {% include "work/faction/partials/_detail_meeting_modals.html" %}
 </div>
+{% if modus == "planung" and can_edit %}
+{# SortableJS (Ziehen am Griff) als Vendor-Skript wie beim Aufgabenboard; die Logik liegt in frontend/alpine/fs-tagesordnung.ts #}
+<script src="{% static 'vendor/sortablejs/Sortable.min.js' %}"></script>
+{% endif %}
 {% endblock %}

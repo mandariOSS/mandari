@@ -122,10 +122,11 @@ FILE_DOWNLOADS_KEY = "file_downloads"
 
 def downloads_disabled(body) -> bool:
     """
-    Die Quelle liefert Dokumente nur hinter einer Zugangsprüfung für Menschen (z. B. ALTCHA vor den
-    Anlagen). Cache, Vorschau und Textextraktion fragen sie dann gar nicht erst an – jeder Abruf brächte
-    nur die Prüfseite und würde den Bot-Schutz weiter verschärfen. Geschaltet über
-    ``sync_config["file_downloads"] = false``; die Dateien werden nachgeholt, sobald der Schalter fällt.
+    Der Dateiabruf dieser Quelle ist abgeschaltet (``sync_config["file_downloads"] = false``), z. B. weil die
+    Quelle Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefert (ALTCHA), ihre robots.txt die
+    Dateien sperrt (Hamm: ``/*.pdf$``) oder mit der Kommune so vereinbart (Köln). Cache, Vorschau und
+    Textextraktion fragen sie dann gar nicht erst an; die Vorschau verweist auf das Original. Die Dateien
+    werden nachgeholt, sobald der Schalter fällt.
     """
     source = getattr(body, "source", None) if body is not None else None
     if source is None:

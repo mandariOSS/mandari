@@ -5,7 +5,9 @@
     "party": "BÜNDNIS 90/DIE GRÜNEN",
     "role": "Ratsmitglied",
     "section": "Vorsitz",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 2158,
@@ -13,7 +15,9 @@
     "party": "CDU",
     "role": "Ratsmitglied",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 2136,
@@ -21,7 +25,9 @@
     "party": "SPD",
     "role": "Ratsmitglied",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 879,
@@ -29,7 +35,9 @@
     "party": "SPD",
     "role": "Ratsmitglied",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 2160,
@@ -37,7 +45,9 @@
     "party": "CDU",
     "role": "Ratsmitglied",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 2386,
@@ -45,7 +55,9 @@
     "party": "Die Linke",
     "role": "Ratsmitglied",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 2212,
@@ -53,7 +65,9 @@
     "party": "SPD",
     "role": "Ratsmitglied",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 2418,
@@ -61,7 +75,9 @@
     "party": "AfD",
     "role": "Ratsmitglied",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": 1970,
@@ -69,7 +85,9 @@
     "party": "CDU",
     "role": "Ratsmitglied",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -77,7 +95,9 @@
     "party": "Fraktionslos",
     "role": "Sachk. Bürger/in (mit Stimmr.)",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -85,7 +105,9 @@
     "party": "",
     "role": "Sachk. Bürger/in (mit Stimmr.)",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -93,7 +115,9 @@
     "party": "",
     "role": "Sachk. Bürger/in (mit Stimmr.)",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -101,7 +125,9 @@
     "party": "Fraktionslos",
     "role": "Sachk. Bürger/in (mit Stimmr.)",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -109,7 +135,9 @@
     "party": "",
     "role": "Sachk. Bürger/in",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -117,7 +145,9 @@
     "party": "Fraktionslos",
     "role": "Sachk. Bürger/in (mit Stimmr.)",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -125,7 +155,9 @@
     "party": "Fraktionslos",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -133,7 +165,9 @@
     "party": "",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -141,7 +175,9 @@
     "party": "Agentur für Arbeit",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -149,7 +185,9 @@
     "party": "Fraktionslos",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -157,7 +195,9 @@
     "party": "Fraktionslos",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -165,7 +205,9 @@
     "party": "Fraktionslos",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -173,7 +215,9 @@
     "party": "",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -181,7 +225,9 @@
     "party": "Fraktionslos",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -189,7 +235,9 @@
     "party": "BÜNDNIS 90/DIE GRÜNEN",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -197,7 +245,9 @@
     "party": "",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -205,7 +255,9 @@
     "party": "",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -213,7 +265,9 @@
     "party": "FDP",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": null,
+    "end_date": null
   },
   {
     "kpenr": null,
@@ -221,7 +275,9 @@
     "party": "AfD",
     "role": "Ratsmitglied",
     "section": "Ausschussmitglieder mit Stimmrecht",
-    "voting_right": true
+    "voting_right": true,
+    "start_date": "2025-11-17",
+    "end_date": "2025-12-11"
   },
   {
     "kpenr": null,
@@ -229,7 +285,9 @@
     "party": "Fraktionslos",
     "role": "Beratendes Mitglied",
     "section": "Ausschussmitglieder mit beratender Stimme",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": "2025-11-17",
+    "end_date": "2026-04-13"
   },
   {
     "kpenr": null,
@@ -237,6 +295,8 @@
     "party": "CDU-Internationale Liste",
     "role": "Beratendes Mitglied",
     "section": "Beratende Mitglieder Ausschuss für Chancengerechtigkeit und Integration",
-    "voting_right": false
+    "voting_right": false,
+    "start_date": "2025-12-15",
+    "end_date": "2026-01-29"
   }
 ]
