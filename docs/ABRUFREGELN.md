@@ -371,7 +371,11 @@ nicht mehr (`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.p
   nach höchstens 20 Seiten (`MAX_BODY_PAGES`, wie beim Werkzeug „Quelle anlegen“) und wenn `links.next` auf eine schon
   gelesene Seite zeigt: Eine fehlerhafte Liste läuft so nicht endlos. Ist schon die erste Seite nicht lesbar, findet
   der Lauf keine Kommune und gilt als fehlgeschlagen (siehe [Fehler und Schonung](#fehler-und-schonung)). Eine Liste,
-  die im Kreis läuft, bricht bei jeder Liste ab, nicht nur bei der Kommunenliste (`OParlClient.fetch_list`).
+  die im Kreis läuft, bricht bei jeder Liste ab, nicht nur bei der Kommunenliste (`OParlClient.fetch_list`). Im Kreis
+  läuft auch eine Liste, deren Folgeseiten unter immer neuer Adresse dieselben Einträge liefern (Sammelserver von
+  OWL-IT, Issue [#1088](https://github.com/mandariOSS/mandari/issues/1088)): Bringen zwei Seiten in Folge keine
+  Kennung, die nicht schon auf ihrer vorigen Seite stand, und nennt die Quelle noch eine Folgeseite, bricht die Liste
+  ab; Seiten ohne Kennungen zählen nicht, verglichen wird nur mit der vorigen Seite.
 - Neu entdeckte Kommunen sind nicht gelistet (`upsert_body`, siehe
   [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)).
 - **Auslöser:** „Jetzt synchronisieren“ auf der Startseite des Admins (alle aktiven Quellen) und die Aktionen
