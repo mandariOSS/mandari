@@ -17,7 +17,7 @@ Geprüft wird:
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.urls import reverse
@@ -89,7 +89,7 @@ def welt(org: Organization, make_member: Any) -> dict[str, Any]:
     haupt = FactionAgendaItem.objects.create(
         meeting=meeting, title="Trinkwasserbrunnen", number="1", visibility="public", order=1
     )
-    haupt.set_notes_encrypted("<p>Die Fraktion regt einen vierten Standort an.</p>")
+    cast(Any, haupt).set_notes_encrypted("<p>Die Fraktion regt einen vierten Standort an.</p>")
     haupt.save()
     FactionDecision.objects.create(
         agenda_item=haupt,
@@ -100,7 +100,7 @@ def welt(org: Organization, make_member: Any) -> dict[str, Any]:
         decision_text="Zustimmung im Rat.",
     )
     noe = FactionAgendaItem.objects.create(meeting=meeting, title=NOE_TITEL, number="1", visibility="internal", order=2)
-    noe.set_notes_encrypted(f"<p>{NOE_NOTIZ}</p>")
+    cast(Any, noe).set_notes_encrypted(f"<p>{NOE_NOTIZ}</p>")
     noe.save()
     FactionDecision.objects.create(
         agenda_item=noe, votes_yes=4, votes_no=1, votes_abstain=0, result="accepted", decision_text=NOE_BESCHLUSS
@@ -302,7 +302,7 @@ def test_nicht_vereidigt_sieht_vom_noe_teil_nichts(welt: dict[str, Any], client_
 
 
 def test_noe_eintraege_ohne_top_nur_fuer_vereidigte(welt: dict[str, Any], client_for: Any) -> None:
-    eintrag = FactionProtocolEntry(meeting=welt["meeting"], entry_type="note", created_by=welt["vorsitz"], order=5)
+    eintrag: Any = FactionProtocolEntry(meeting=welt["meeting"], entry_type="note", created_by=welt["vorsitz"], order=5)
     eintrag.set_content_encrypted("Allgemeiner interner Hinweis")
     eintrag.save()
     assert "Allgemeiner interner Hinweis" in _seite(welt, client_for, "rat")
@@ -316,7 +316,7 @@ def test_noe_eintraege_ohne_top_nur_fuer_vereidigte(welt: dict[str, Any], client
 
 def test_bisheriges_protokoll_aus_einzeleintraegen(welt: dict[str, Any], client_for: Any) -> None:
     FactionAgendaItem.objects.filter(meeting=welt["meeting"]).update(notes_encrypted=b"")
-    eintrag = FactionProtocolEntry(
+    eintrag: Any = FactionProtocolEntry(
         meeting=welt["meeting"],
         agenda_item=welt["haupt"],
         entry_type="speech",
