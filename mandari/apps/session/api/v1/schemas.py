@@ -118,10 +118,16 @@ class ApplicationIn(Schema):
 
 
 class ApplicationCreated(Schema):
+    """Quittung der Einreichung (Befehl ``submission.submit``); eine Wiederholung mit demselben Schlüssel erhält sie unverändert."""
+
     id: UUID
-    reference: str
+    reference: str = Field(description="Eingangsnummer")
     status: str
     feedback: str | None = Field(None, description="URL des Rückmeldestands (mit demselben Token abrufbar)")
+    received_at: datetime | None = Field(None, description="Eingangszeit")
+    content_hash: str | None = Field(
+        None, description="SHA-256 (hexadezimal) über das kanonische JSON des Befehlsinhalts (RFC 8785)"
+    )
 
 
 class FeedbackPaper(Schema):

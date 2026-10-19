@@ -10,24 +10,24 @@ Notizen gibt es nur für angemeldete Personen mit dem NÖ-Recht (``auth.TOKEN_PE
 
 from __future__ import annotations
 
-import contextlib
+from collections.abc import Mapping
 from typing import Annotated, Any, cast
 from uuid import UUID
 
 from django.db.models import QuerySet
 from django.http import HttpRequest
 from django.urls import reverse
-from ninja import Query, Router
+from ninja import Header, Query, Router
 
 from apps.session import audit
 from apps.session.models import (
     SessionApplication,
     SessionMeeting,
-    SessionOrganization,
     SessionPaper,
     SessionTenant,
 )
 from apps.session.oparl_publication import visible_papers
+from hub.commands import CommandError
 
 from .auth import BearerOrSession, Principal, client_ip, resolve_principal
 from .problems import Problem
@@ -262,14 +262,72 @@ def applications(
     return {"data": data, "meta": _meta(total, limit, offset, principal)}
 
 
+#: Felder der API zu Stellen im Befehl ``submission.submit`` (für ``errors`` im Format der API)
+_COMMAND_FIELDS = {
+    "submitter": "submitter_name",
+    "target_organization": "target_organization_id",
+    "submitting_organization": "submitting_organization_id",
+}
+
+
+def command_problem(error: CommandError) -> Problem:
+    """Problem des Befehls als Fehler der API; ``errors`` mit ``loc``/``msg``/``type`` wie bei Pydantic."""
+    problem = error.problem
+    extensions: dict[str, Any] = {}
+    if problem.errors:
+        extensions["errors"] = [_api_error(item) for item in problem.errors]
+    return Problem(problem.status, problem.detail, kind=problem.kind, **extensions)
+
+
+def _api_error(item: Mapping[str, str]) -> dict[str, Any]:
+    parts = [part for part in item.get("pointer", "").split("/") if part]
+    field = parts[0] if parts else ""
+    if field == "submitter" and len(parts) > 1:
+        field = f"submitter_{parts[1]}"
+    field = _COMMAND_FIELDS.get(field, field)
+    return {
+        "loc": ["body", "payload", field] if field else ["body", "payload"],
+        "msg": item.get("detail", ""),
+        "type": "befehl",
+    }
+
+
+def _idempotency_key(raw: str | None) -> str | None:
+    """Wert des Headers ``Idempotency-Key``, als String (in Anführungszeichen) oder Token."""
+    value = (raw or "").strip()
+    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+        value = value[1:-1]
+    return value or None
+
+
 @router.post(
     "/{tenant_slug}/applications/submit/",
     response={201: ApplicationCreated},
     url_name="submit_application",
     summary="Antrag einreichen (API-Token)",
 )
-def submit_application(request: HttpRequest, tenant_slug: str, payload: ApplicationIn) -> tuple[int, dict[str, Any]]:
-    """Legt einen Antrag an. Erfordert ein API-Token des Mandanten mit ``can_submit_applications``."""
+def submit_application(
+    request: HttpRequest,
+    tenant_slug: str,
+    payload: ApplicationIn,
+    idempotency_key: Annotated[
+        str | None,
+        Header(
+            alias="Idempotency-Key",
+            description=(
+                "Optional, empfohlen: Wiederholungen mit demselben Schlüssel und demselben Inhalt liefern dieselbe "
+                "Quittung, ohne erneut einzureichen; derselbe Schlüssel mit anderem Inhalt ergibt 422."
+            ),
+        ),
+    ] = None,
+) -> tuple[int, dict[str, Any]]:
+    """
+    Legt einen Antrag an. Erfordert ein API-Token des Mandanten mit ``can_submit_applications``.
+
+    Die Einreichung läuft über den Befehl ``submission.submit`` (Issue #540): dieselbe Prüfung wie aus mandari
+    Work, Quittung mit Eingangsnummer (``reference``), Eingangszeit (``received_at``) und Inhalts-Hash
+    (``content_hash``, SHA-256 über das kanonische JSON des Befehlsinhalts nach RFC 8785).
+    """
     tenant = get_tenant(tenant_slug)
     principal = resolve_principal(request, tenant)
     if principal.token is None:
@@ -281,51 +339,28 @@ def submit_application(request: HttpRequest, tenant_slug: str, payload: Applicat
     if not principal.has_permission("submit_applications"):
         raise Problem(403, "Dieses Token darf keine Anträge einreichen.", kind="keine-berechtigung")
 
-    from apps.session.services.application_service import (
-        SUBMITTING_ORGANIZATION_MISMATCH,
-        SubmittingOrganizationMismatchError,
-        submitting_organization_for_token,
-    )
+    from apps.session.services.application_service import submit_with_token
 
     try:
-        submitting_org = submitting_organization_for_token(principal.token, payload.submitting_organization_id)
-    except SubmittingOrganizationMismatchError as exc:
-        raise Problem(403, SUBMITTING_ORGANIZATION_MISMATCH, kind="keine-berechtigung") from exc
-    target_org = None
-    if payload.target_organization_id:
-        with contextlib.suppress(SessionOrganization.DoesNotExist):
-            target_org = SessionOrganization.objects.get(id=payload.target_organization_id, tenant=tenant)
-
-    application = SessionApplication.objects.create(
-        tenant=tenant,
-        title=payload.title,
-        application_type=payload.application_type,
-        justification=payload.justification,
-        resolution_proposal=payload.resolution_proposal,
-        financial_impact=payload.financial_impact,
-        submitting_organization=submitting_org,
-        submitter_name=payload.submitter_name,
-        submitter_email=payload.submitter_email,
-        submitter_phone=payload.submitter_phone,
-        co_signers=payload.co_signers,
-        target_organization=target_org,
-        is_urgent=payload.is_urgent,
-        urgency_reason=payload.urgency_reason,
-        deadline=payload.deadline,
-        submitted_via_token=principal.token,
-    )
+        receipt = submit_with_token(
+            tenant, principal.token, payload.model_dump(), idempotency_key=_idempotency_key(idempotency_key)
+        )
+    except CommandError as exc:
+        raise command_problem(exc) from None
     principal.token.record_usage(client_ip(request))
     feedback_url = request.build_absolute_uri(
         reverse(
             "session_api_v1:application_feedback",
-            kwargs={"tenant_slug": tenant.slug, "application_id": application.id},
+            kwargs={"tenant_slug": tenant.slug, "application_id": receipt.aggregate_id},
         )
     )
     return 201, {
-        "id": application.id,
-        "reference": application.reference,
-        "status": application.status,
+        "id": receipt.aggregate_id,
+        "reference": receipt.reference,
+        "status": str(receipt.data.get("status") or "submitted"),
         "feedback": feedback_url,
+        "received_at": receipt.received_at,
+        "content_hash": receipt.content_hash,
     }
 
 

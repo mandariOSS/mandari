@@ -1595,6 +1595,11 @@ Beispiel 2:
 | `submitter.email` | ja | Zeichenkette (email, höchstens 254 Zeichen) |  |
 | `submitter.phone` | nein | Zeichenkette (höchstens 50 Zeichen) |  |
 | `co_signers` | nein, Inhalt | Liste aus Zeichenkette (höchstens 200 Zeichen) (0 bis 100 Einträge) | Mitunterzeichnende, je Eintrag ein Name. |
+| `attachments` | nein, Inhalt | Liste aus Objekt (0 bis 100 Einträge) | Anlagen, je Eintrag Dateiname, Größe in Bytes und SHA-256 (hexadezimal) der Datei. So deckt der Inhalts-Hash der Quittung auch die Anlagen ab. Die Dateien selbst gehen nur innerhalb einer Installation mit (Command.attachments); der Eigentümer prüft Größe und Hash, Dateityp und Virenprüfung und meldet nicht angenommene Anlagen in der Quittung. |
+| `attachments[].name` | ja | Zeichenkette (höchstens 255 Zeichen) |  |
+| `attachments[].size` | ja | Ganzzahl (0 bis …) |  |
+| `attachments[].sha256` | ja | Zeichenkette (Muster `^[0-9a-f]{64}$`) |  |
+| `application_pdf` | nein | Wahrheitswert | Antragsfassung als PDF aus den übermittelten Angaben erzeugen und an den Eingang hängen (Standard: nein). |
 
 Beispiel 1:
 
@@ -1614,6 +1619,30 @@ Beispiel 1:
   },
   "co_signers": [
     "Max Mustermann"
+  ]
+}
+```
+
+Beispiel 2:
+
+```json
+{
+  "application_type": "inquiry",
+  "title": "Zustand der Radwege",
+  "resolution_proposal": "Die Verwaltung berichtet über den Zustand der Radwege.",
+  "justification": "Bürgerinnen und Bürger melden Schäden.",
+  "submitting_organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+  "submitter": {
+    "name": "Erika Mustermann",
+    "email": "fraktion@example.org"
+  },
+  "application_pdf": true,
+  "attachments": [
+    {
+      "name": "Fotos.pdf",
+      "size": 48213,
+      "sha256": "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b"
+    }
   ]
 }
 ```

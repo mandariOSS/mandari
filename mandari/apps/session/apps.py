@@ -37,3 +37,6 @@ class SessionConfig(AppConfig):
 
         m2m_changed.connect(rollen_geaendert, sender=SessionUser.roles.through, dispatch_uid="session_rollen_spiegel")
         post_migrate.connect(post_migrate_abgleichen, sender=self, dispatch_uid="session_rollen_post_migrate")
+
+        # Befehle beim Dispatcher der Installation registrieren (submission.submit, Issue #540)
+        from . import commands  # noqa: F401 – der Import registriert die Handler

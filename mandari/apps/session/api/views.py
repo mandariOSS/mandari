@@ -7,7 +7,6 @@ Provides:
 - Extended Session API for non-public data (authenticated)
 """
 
-import contextlib
 import json
 from datetime import UTC, datetime
 from typing import Any
@@ -23,7 +22,6 @@ from apps.session.models import (
     SessionAPIToken,
     SessionApplication,
     SessionMeeting,
-    SessionOrganization,
     SessionPaper,
     SessionTenant,
 )
@@ -538,46 +536,32 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
                 status=400,
             )
 
-        # Einreichende Organisation: nur die, die den Token in Work verbunden hat
-        from apps.session.services.application_service import (
-            SUBMITTING_ORGANIZATION_MISMATCH,
-            SubmittingOrganizationMismatchError,
-            submitting_organization_for_token,
-        )
+        # Einreichung über den Befehl submission.submit (Issue #540): Organisation, Zielgremium und Inhalt prüft
+        # der Handler. Hier bleibt das alte Format: optionale Felder werden wie bisher gekürzt, Fehler als
+        # {"error": …}. Ein Zielgremium, das es beim Mandanten nicht gibt, bleibt wie bisher unbeachtet.
+        from apps.session.services.application_service import submit_with_token
+        from hub.commands import CommandError
 
+        fields = {
+            "title": data["title"],
+            "application_type": application_type,
+            "justification": data["justification"],
+            "resolution_proposal": data["resolution_proposal"],
+            "financial_impact": (data.get("financial_impact") or "")[: max_lengths["financial_impact"]],
+            "submitter_name": data["submitter_name"],
+            "submitter_email": submitter_email,
+            "submitter_phone": (data.get("submitter_phone") or "")[: max_lengths["submitter_phone"]],
+            "co_signers": (data.get("co_signers") or "")[: max_lengths["co_signers"]],
+            "is_urgent": bool(data.get("is_urgent", False)),
+            "urgency_reason": (data.get("urgency_reason") or "")[: max_lengths["urgency_reason"]],
+            "deadline": deadline,
+            "submitting_organization_id": data.get("submitting_organization_id"),
+            "target_organization_id": data.get("target_organization_id"),
+        }
         try:
-            submitting_org = submitting_organization_for_token(api_token, data.get("submitting_organization_id"))
-        except SubmittingOrganizationMismatchError:
-            return self.json_response({"error": SUBMITTING_ORGANIZATION_MISMATCH}, status=403)
-
-        # Get target organization - optional
-        target_org = None
-        if data.get("target_organization_id"):
-            with contextlib.suppress(SessionOrganization.DoesNotExist):
-                target_org = SessionOrganization.objects.get(
-                    id=data["target_organization_id"],
-                    tenant=tenant,
-                )
-
-        # Create application
-        application = SessionApplication.objects.create(
-            tenant=tenant,
-            title=data["title"][: max_lengths["title"]],
-            application_type=application_type,
-            justification=data["justification"][: max_lengths["justification"]],
-            resolution_proposal=data["resolution_proposal"][: max_lengths["resolution_proposal"]],
-            financial_impact=(data.get("financial_impact") or "")[: max_lengths["financial_impact"]],
-            submitting_organization=submitting_org,
-            submitter_name=data["submitter_name"][: max_lengths["submitter_name"]],
-            submitter_email=submitter_email[: max_lengths["submitter_email"]],
-            submitter_phone=(data.get("submitter_phone") or "")[: max_lengths["submitter_phone"]],
-            co_signers=(data.get("co_signers") or "")[: max_lengths["co_signers"]],
-            target_organization=target_org,
-            is_urgent=bool(data.get("is_urgent", False)),
-            urgency_reason=(data.get("urgency_reason") or "")[: max_lengths["urgency_reason"]],
-            deadline=deadline,
-            submitted_via_token=api_token,
-        )
+            receipt = submit_with_token(tenant, api_token, fields)
+        except CommandError as exc:
+            return self.json_response(legacy_error(exc.problem), status=legacy_status(exc.problem.status))
 
         # Record token usage
         api_token.record_usage(get_client_ip(request))
@@ -586,10 +570,23 @@ class ApplicationSubmitAPIView(SessionAPIMixin, View):
             {
                 "success": True,
                 "application": {
-                    "id": str(application.id),
-                    "reference": application.reference,
-                    "status": application.status,
+                    "id": str(receipt.aggregate_id),
+                    "reference": receipt.reference,
+                    "status": str(receipt.data.get("status") or "submitted"),
                 },
             },
             status=201,
         )
+
+
+def legacy_status(status: int) -> int:
+    """Status der alten API: Prüfungen des Inhalts melden 400 (die API v1 meldet sie mit 422)."""
+    return 400 if status == 422 else status
+
+
+def legacy_error(problem: Any) -> dict[str, Any]:
+    """Problem des Befehls im alten Format ``{"error": …}`` (feste Texte, Felder nur mit Namen)."""
+    fields = sorted({str(item.get("pointer", "")).strip("/").split("/")[0] for item in problem.errors} - {""})
+    if fields:
+        return {"error": f"Invalid field: {', '.join(fields)}", "message": problem.detail}
+    return {"error": problem.detail}

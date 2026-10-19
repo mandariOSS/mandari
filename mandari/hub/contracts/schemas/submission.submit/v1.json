@@ -117,6 +117,40 @@
         "maxLength": 200
       },
       "maxItems": 100
+    },
+    "attachments": {
+      "description": "Anlagen, je Eintrag Dateiname, Größe in Bytes und SHA-256 (hexadezimal) der Datei. So deckt der Inhalts-Hash der Quittung auch die Anlagen ab. Die Dateien selbst gehen nur innerhalb einer Installation mit (Command.attachments); der Eigentümer prüft Größe und Hash, Dateityp und Virenprüfung und meldet nicht angenommene Anlagen in der Quittung.",
+      "x-content": true,
+      "type": "array",
+      "maxItems": 100,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "size",
+          "sha256"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
+      }
+    },
+    "application_pdf": {
+      "description": "Antragsfassung als PDF aus den übermittelten Angaben erzeugen und an den Eingang hängen (Standard: nein).",
+      "type": "boolean"
     }
   },
   "examples": [
@@ -135,6 +169,25 @@
       },
       "co_signers": [
         "Max Mustermann"
+      ]
+    },
+    {
+      "application_type": "inquiry",
+      "title": "Zustand der Radwege",
+      "resolution_proposal": "Die Verwaltung berichtet über den Zustand der Radwege.",
+      "justification": "Bürgerinnen und Bürger melden Schäden.",
+      "submitting_organization": "3c9a1e2b-4d5f-4a6b-8c7d-9e0f1a2b3c4d",
+      "submitter": {
+        "name": "Erika Mustermann",
+        "email": "fraktion@example.org"
+      },
+      "application_pdf": true,
+      "attachments": [
+        {
+          "name": "Fotos.pdf",
+          "size": 48213,
+          "sha256": "3a7bd3e2360a3d29eea436fcfb7e44c735d117c42d1c1835420b6b9942dd4f1b"
+        }
       ]
     }
   ]

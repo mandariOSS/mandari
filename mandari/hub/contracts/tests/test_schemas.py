@@ -85,6 +85,7 @@ INHALTSFELDER: dict[str, list[str]] = {
         "#/properties/urgency_reason",
         "#/properties/submitter",
         "#/properties/co_signers",
+        "#/properties/attachments",
     ],
     "attendance.respond": ["#/properties/reason"],
 }
@@ -102,6 +103,9 @@ INHALTSBLAETTER: dict[str, dict[str, int | None]] = {
         "#/properties/submitter/properties/email": 254,
         "#/properties/submitter/properties/phone": 50,
         "#/properties/co_signers/items": 200,
+        "#/properties/attachments/items/properties/name": 255,
+        "#/properties/attachments/items/properties/size": None,
+        "#/properties/attachments/items/properties/sha256": None,
     },
     "attendance.respond": {"#/properties/reason": 2000},
 }
