@@ -127,6 +127,28 @@ class TestPasswortschritt:
         assert eintrag.details["schwelle"] == security_audit.LIMIT_ACCOUNT
         assert eintrag.ip_address == "203.0.113.200"
 
+    @pytest.mark.parametrize("schreibweise", [f"  {KENNUNG}", KENNUNG.upper(), f" {KENNUNG.title()} "])
+    def test_kontoschwelle_unabhaengig_von_der_schreibweise(self, schreibweise: str) -> None:
+        """Leerraum am Rand und Großbuchstaben zählen zum selben Konto (eine Form für Zählung und Protokoll)."""
+        client = Client()
+        for nummer in range(LOGIN_FAILURES_PER_ACCOUNT):
+            _fehlversuche(client, schreibweise, 1, f"203.0.113.{nummer + 1}")
+        assert set(LoginAttempt.objects.values_list("email", flat=True)) == {KENNUNG}
+
+        _fehlversuche(client, KENNUNG, 1, "203.0.113.200")
+        (eintrag,) = _gedrosselt()
+        assert eintrag.details["schwelle"] == security_audit.LIMIT_ACCOUNT
+        assert eintrag.identifier_hash == security_audit.identifier_hash(KENNUNG)
+
+    def test_ohne_cache_ipv6_je_netz(self) -> None:
+        client = Client()
+        _fehlversuche(client, KENNUNG, LOGIN_FAILURES_PER_IP, "2001:db8:5:6::1")
+        with mock.patch.object(cache, "add", side_effect=ConnectionError("weg")):
+            for host in range(2, 6):
+                _fehlversuche(client, KENNUNG, 1, f"2001:db8:5:6::{host}")
+        (eintrag,) = _gedrosselt()
+        assert eintrag.details["netz"] == "2001:db8:5:6::/64"
+
     def test_ohne_cache_entscheidet_die_datenbank(self) -> None:
         client = Client()
         _fehlversuche(client, KENNUNG, LOGIN_FAILURES_PER_IP, "192.0.2.10")
@@ -144,8 +166,8 @@ class TestPasswortschritt:
         assert response.status_code == 200
         assert "Zu viele fehlgeschlagene Anmeldeversuche" in _meldungen(response)
 
-    def test_abweisung_prueft_keine_anmeldedaten(self) -> None:
-        """Die Abweisung prüft das Passwort nicht und schreibt keinen weiteren Fehlversuch (keine Flut)."""
+    def test_abweisung_zeigt_leeres_formular(self) -> None:
+        """Die Abweisung zeigt ein leeres Formular und schreibt keinen weiteren Fehlversuch (keine Flut)."""
         client = Client()
         _fehlversuche(client, KENNUNG, LOGIN_FAILURES_PER_IP, "192.0.2.10")
         fehlversuche = SecurityAuditLog.objects.filter(event="login_failed").count()
@@ -186,3 +208,17 @@ def test_record_throttled_ohne_request_daten() -> None:
         )
     (eintrag,) = _gedrosselt()
     assert eintrag.ip_address is None
+
+
+def test_datenexport_findet_anmeldeversuche_jeder_schreibweise() -> None:
+    """Der Datenexport der Person findet die normalisiert gespeicherten Anmeldeversuche."""
+    from apps.work.organization.export_service import DsgvoExportService
+
+    user = make_user("Gross.Schreibung@Example.org")
+    Client().post(
+        reverse("accounts:login"),
+        {"email": " Gross.Schreibung@Example.org", "password": FALSCH},
+        REMOTE_ADDR="192.0.2.50",
+    )
+    (versuch,) = DsgvoExportService()._collect_login_attempts(user)
+    assert versuch["was_successful"] is False

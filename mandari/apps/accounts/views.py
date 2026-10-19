@@ -140,7 +140,8 @@ class LoginView(View):
 
         # Rate limiting check
         ip_address = self.get_client_ip(request)
-        email = request.POST.get("email", "")
+        # Eine Form der Kennung für Zählung, Anmeldeversuch und HMAC
+        email = security_audit.normalize_identifier(request.POST.get("email"))
 
         # Check for pending invitation
         invitation = self._get_pending_invitation(request)
@@ -160,8 +161,7 @@ class LoginView(View):
                 request,
                 self.template_name,
                 {
-                    # Ungebunden: Ein gebundenes Formular prüfte beim Anzeigen der Fehler die Anmeldedaten
-                    # (authenticate), trotz Drosselung und mit einem Fehlversuch im Protokoll je Abweisung
+                    # Bei der Abweisung ein leeres Formular, nur mit der eingegebenen Adresse
                     "form": LoginForm(initial={"email": email}, request=request),
                     "next": next_url,
                     "invitation": invitation,
@@ -280,7 +280,7 @@ class LoginView(View):
         netz = _ipv6_network(ip_address)
         if netz and cache.get(_network_failure_key(netz), 0) >= LOGIN_FAILURES_PER_IP:
             return security_audit.LIMIT_NETWORK
-        email = (email or "").strip()
+        email = security_audit.normalize_identifier(email)
         if email and failures.filter(email__iexact=email).count() >= LOGIN_FAILURES_PER_ACCOUNT:
             return security_audit.LIMIT_ACCOUNT
         return ""
@@ -291,7 +291,7 @@ class LoginView(View):
         # Login darf nicht scheitern, wenn das Protokollieren fehlschlägt
         with contextlib.suppress(Exception):
             LoginAttempt.objects.create(
-                email=email,
+                email=security_audit.normalize_identifier(email),
                 ip_address=ip_address,
                 user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
                 was_successful=success,

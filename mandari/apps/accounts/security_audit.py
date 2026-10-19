@@ -69,10 +69,14 @@ LIMIT_NETWORK = "Netz"
 LIMIT_ACCOUNT = "Konto"
 
 
+def normalize_identifier(identifier: str | None) -> str:
+    """Eingegebene Kennung in einer Form: ohne Leerraum am Rand, klein (Zählung, Anmeldeversuch, HMAC)."""
+    return (identifier or "").strip().lower()
+
+
 def identifier_hash(identifier: str) -> str:
-    """Schlüsselgebundener Hash einer eingegebenen Kennung (normalisiert: getrimmt, klein)."""
-    normalized = (identifier or "").strip().lower()
-    return salted_hmac(IDENTIFIER_SALT, normalized, algorithm="sha256").hexdigest()
+    """Schlüsselgebundener Hash einer eingegebenen Kennung (normalisiert, :func:`normalize_identifier`)."""
+    return salted_hmac(IDENTIFIER_SALT, normalize_identifier(identifier), algorithm="sha256").hexdigest()
 
 
 def _session_users(user: Any) -> list[Any]:
@@ -166,19 +170,22 @@ def _first_in_window(scope: str, ip_address: str | None, start: dt.datetime, win
     """
     ``True`` nur für den ersten abgewiesenen Versuch der Adresse im Fenster.
 
-    Der Cache entscheidet atomar (``add``); fällt er aus, prüft die Datenbank, ob es für genau diese
-    Adresse im Fenster schon einen Eintrag gibt.
+    Der Cache entscheidet atomar (``add``); fällt er aus, prüft die Datenbank, ob es für diese Adresse
+    (IPv6: für dieses /64-Netz) im Fenster schon einen Eintrag gibt.
     """
-    key = "security-throttled:" + hashlib.sha256(f"{scope}|{start.isoformat()}".encode()).hexdigest()
+    marker = f"{scope or 'ohne-adresse'}|{start.isoformat()}"
+    key = "security-throttled:" + hashlib.sha256(marker.encode()).hexdigest()
     try:
         return bool(cache.add(key, 1, window_seconds + 60))
     except Exception:
         logger.warning("Cache für die Zusammenfassung gedrosselter Anmeldungen nicht erreichbar")
     from apps.accounts.models import SecurityAuditLog
 
-    return not SecurityAuditLog.objects.filter(
-        event=EVENT_THROTTLED, ip_address=ip_address, created_at__gte=start
-    ).exists()
+    earlier = SecurityAuditLog.objects.filter(event=EVENT_THROTTLED, created_at__gte=start)
+    if scope and scope != ip_address:
+        # IPv6: Einträge tragen das Netz in den Angaben (siehe record_throttled)
+        return not earlier.filter(details__netz=scope).exists()
+    return not earlier.filter(ip_address=ip_address).exists()
 
 
 def record_throttled(
@@ -207,7 +214,7 @@ def record_throttled(
         window_seconds = max(int(window_minutes), 1) * 60
         start = _window_start(timezone.now(), window_seconds)
         scope = _throttle_scope(ip_address)
-        if not _first_in_window(scope or "ohne-adresse", ip_address, start, window_seconds):
+        if not _first_in_window(scope, ip_address, start, window_seconds):
             return False
         details: dict[str, Any] = {
             "grund": REASON_THROTTLED,

@@ -17,6 +17,7 @@ from typing import Any
 from django.utils import timezone
 
 from .models import LoginAttempt
+from .security_audit import normalize_identifier
 from .services import TwoFactorService
 
 #: Fehlversuche je Konto im Zeitfenster, ab denen weitere Eingaben abgewiesen werden
@@ -33,7 +34,7 @@ LOCKED = "locked"
 def recent_failures(user: Any) -> int:
     """Falsche Codes des Kontos im Zeitfenster (über alle Wege)."""
     return LoginAttempt.objects.filter(
-        email=user.email,
+        email__iexact=user.email,
         was_successful=False,
         failure_reason=FAILURE_REASON,
         timestamp__gte=timezone.now() - timedelta(minutes=FAILURE_WINDOW_MINUTES),
@@ -56,7 +57,7 @@ def log_attempt(request: Any, user: Any, *, success: bool) -> None:
     """Code-Eingabe festhalten; ein Fehler beim Protokollieren verhindert nie den Vorgang."""
     with contextlib.suppress(Exception):
         LoginAttempt.objects.create(
-            email=user.email,
+            email=normalize_identifier(user.email),
             ip_address=client_ip(request),
             user_agent=request.META.get("HTTP_USER_AGENT", "")[:500],
             was_successful=success,
