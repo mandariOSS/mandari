@@ -1005,10 +1005,13 @@ class FactionNotesState(models.Model):
     def __str__(self) -> str:
         return f"Live-Notizen {self.item_id}"
 
+    def get_encryption_organization(self) -> Any:
+        return self.item.meeting.organization
+
     def _verschluesselung(self) -> Any:
         from apps.common.encryption import TenantEncryption
 
-        return TenantEncryption(self.item.meeting.organization)
+        return TenantEncryption(self.get_encryption_organization())
 
     def get_state(self) -> bytes | None:
         """Zustand im Klartext; ``None``, wenn er fehlt oder nicht lesbar ist (dann neu aus den Notizen)."""
