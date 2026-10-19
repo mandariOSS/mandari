@@ -217,8 +217,9 @@ SYNC_CONFIG_BODY_SYNC_STARTED_KEY: Final = "body_sync_started"
 #: Zeitpunkt des Nachweises). Nur sie bekommen das kurze Änderungsfenster, alle übrigen eines ab Tagesbeginn
 #: (Issue #1025).
 SYNC_CONFIG_TIMED_LISTS_KEY: Final = "timed_lists"
-#: Schlüssel in ``OParlSource.sync_config``: Listen, die es bei der Quelle nicht gibt, mit dem Zeitpunkt ihrer
-#: letzten Prüfung (Adresse -> Zeitpunkt in UTC, ISO 8601, Issue #1025)
+#: Schlüssel in ``OParlSource.sync_config``: Listen, die es bei der Quelle nicht gibt (Issue #1025) oder die sie nicht
+#: freigibt (HTTP 403 für alle Clients, Issue #1086), mit Zeitpunkt der letzten Prüfung und Grund (Adresse ->
+#: ``checked_at`` in UTC, ISO 8601, und ``reason``; ältere Einträge: Adresse -> Zeitpunkt)
 SYNC_CONFIG_MISSING_LISTS_KEY: Final = "missing_lists"
 #: Schlüssel in ``OParlSource.sync_config``: Fortschritt des Vollabgleichs in Zeitscheiben je Liste (Adresse -> Beginn
 #: der ersten nicht vollständig gelesenen Scheibe, UTC, ISO 8601; Issue #1033)
@@ -242,18 +243,36 @@ def _utc_stamp(value: Any) -> datetime | None:
     return stamp if stamp.tzinfo is not None else stamp.replace(tzinfo=UTC)
 
 
-def missing_lists_of(sync_config: Any) -> dict[str, datetime | None]:
-    """
-    Vermerkte fehlende Listen einer Quelle (``sync_config["missing_lists"]``): Adresse -> letzte Prüfung.
-
-    Ungültige Adressen zählen nicht; ein ungültiger Zeitpunkt wird ``None`` (die Liste ist neu zu prüfen).
-    """
+def _missing_list_entries(sync_config: Any) -> dict[str, Any]:
+    """Einträge in ``sync_config["missing_lists"]`` mit gültiger Adresse."""
     if not isinstance(sync_config, dict):
         return {}
     stored = sync_config.get(SYNC_CONFIG_MISSING_LISTS_KEY)
     if not isinstance(stored, dict):
         return {}
-    return {url: _utc_stamp(checked) for url, checked in stored.items() if isinstance(url, str) and url}
+    return {url: entry for url, entry in stored.items() if isinstance(url, str) and url}
+
+
+def missing_lists_of(sync_config: Any) -> dict[str, datetime | None]:
+    """
+    Vermerkte fehlende oder nicht freigegebene Listen einer Quelle (``sync_config["missing_lists"]``): Adresse ->
+    letzte Prüfung (``checked_at``, in älteren Einträgen der Wert selbst).
+
+    Ungültige Adressen zählen nicht; ein ungültiger Zeitpunkt wird ``None`` (die Liste ist neu zu prüfen).
+    """
+    return {
+        url: _utc_stamp(entry.get("checked_at") if isinstance(entry, dict) else entry)
+        for url, entry in _missing_list_entries(sync_config).items()
+    }
+
+
+def missing_list_reasons_of(sync_config: Any) -> dict[str, str]:
+    """Grund je vermerkter Liste (``reason``, Issue #1086); ältere Einträge ohne Grund fehlen."""
+    return {
+        url: entry["reason"]
+        for url, entry in _missing_list_entries(sync_config).items()
+        if isinstance(entry, dict) and isinstance(entry.get("reason"), str) and entry["reason"]
+    }
 
 
 def timed_lists_of(sync_config: Any) -> set[str]:
@@ -805,16 +824,25 @@ class DatabaseStorage:
         await self._change_sync_config(OParlSource.id == source_id, change)
 
     async def set_list_missing(
-        self, source_url: str, list_url: str, missing: bool, checked_at: datetime | None = None
+        self,
+        source_url: str,
+        list_url: str,
+        missing: bool,
+        checked_at: datetime | None = None,
+        reason: str | None = None,
     ) -> None:
         """
-        Liste der Quelle als „gibt es nicht“ vermerken, mit dem Zeitpunkt der Prüfung (Standard: jetzt), oder den
-        Vermerk löschen (Issue #1025). Unter Zeilensperre.
+        Liste der Quelle als „gibt es nicht“ bzw. „nicht freigegeben“ vermerken, mit dem Zeitpunkt der Prüfung
+        (Standard: jetzt) und dem Grund (``checked_at``, ``reason``; ohne Grund nur der Zeitpunkt), oder den Vermerk
+        löschen (Issues #1025, #1086). Unter Zeilensperre.
         """
         checked = (checked_at or datetime.now(UTC)).astimezone(UTC).isoformat(timespec="seconds")
+        entry: str | dict[str, str] | None = None
+        if missing:
+            entry = {"checked_at": checked, "reason": reason} if reason else checked
 
         def change(sync_config: dict[str, Any]) -> bool:
-            return _put_entry(sync_config, SYNC_CONFIG_MISSING_LISTS_KEY, list_url, checked if missing else None)
+            return _put_entry(sync_config, SYNC_CONFIG_MISSING_LISTS_KEY, list_url, entry)
 
         await self._change_sync_config(OParlSource.url == source_url, change)
 

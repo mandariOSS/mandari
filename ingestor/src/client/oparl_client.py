@@ -87,8 +87,13 @@ class FetchResult:
     error_data: Any = None
     #: Der letzte Versuch endete in einer Zeitüberschreitung oder mit HTTP 504 (langsame Listen, Issue #1033)
     timed_out: bool = False
+    #: HTTP 403, und die Vergleichsanfrage mit neutralem Client bekam ebenfalls eine Absage: keine Sperre unseres
+    #: User-Agents, die Quelle verweigert den Zugriff allen (``HostHealth.forbidden_for_all``, Issue #1086)
+    forbidden_for_all: bool = False
 
 
+#: Grund im Vermerk einer Liste, die die Quelle nicht freigibt (HTTP 403 für alle Clients, Issue #1086)
+FORBIDDEN_LIST_REASON = "nicht freigegeben: HTTP 403, auch für neutralen Client"
 #: Fehlerantworten (HTTP 404) bis zu dieser Größe liest der Client als JSON, größere (HTML-Seiten) nicht
 _ERROR_BODY_MAX_BYTES = 16 * 1024
 #: Filter einer OParl-Liste (OParl 1.1, Abschnitt 2.5.5)
@@ -146,14 +151,21 @@ class ListMissingError(Exception):
     Orchestrator vermerkt sie und fragt sie bis zum nächsten Vollabgleich, höchstens aber einen Tag lang, nicht mehr
     an. Bei Pflichtlisten ist HTTP 404 (``not_found``) eine Lücke im Abgleich; ein Fehlerobjekt gilt dort wie bisher
     als leere Liste, solange andere Listen der Kommune lesbar sind.
+
+    ``forbidden``: Die Quelle gibt die Liste nicht frei (Issue #1086). Die erste Seite antwortet ohne Filter mit
+    HTTP 403, und auch ein neutraler Client bekommt eine Absage (keine Sperre unseres User-Agents). Das gilt auch bei
+    Pflichtlisten als „nicht vorhanden“, nicht als Lücke: Die Kommune gibt die Daten bewusst nicht heraus.
     """
 
-    def __init__(self, list_url: str, reason: str, *, not_found: bool = False) -> None:
+    def __init__(self, list_url: str, reason: str, *, not_found: bool = False, forbidden: bool = False) -> None:
         self.list_url = list_url
         self.reason = reason
-        #: HTTP 404 (sonst ein OParl-Fehlerobjekt)
+        #: HTTP 404 (sonst ein OParl-Fehlerobjekt oder ``forbidden``)
         self.not_found = not_found
-        super().__init__(f"Liste {list_url} gibt es bei der Quelle nicht ({reason})")
+        #: HTTP 403 für alle Clients: Liste nicht freigegeben
+        self.forbidden = forbidden
+        text = "gibt die Quelle nicht frei" if forbidden else "gibt es bei der Quelle nicht"
+        super().__init__(f"Liste {list_url} {text} ({reason})")
 
 
 class FetchWindowClosedError(ListFetchError):
@@ -210,6 +222,17 @@ class HostHealth:
     @property
     def server_error_series(self) -> bool:
         return self.consecutive_server_errors >= max(1, settings.oparl_server_error_series_threshold)
+
+    @property
+    def forbidden_for_all(self) -> bool:
+        """
+        Verweigert der Host den Zugriff allen (Issue #1086)? Die Vergleichsanfrage nach einem 403 bekam ebenfalls eine
+        Absage (HTTP 4xx außer 408 und 429). Nicht bei einer Sperre unseres User-Agents und nicht, wenn es keine
+        Vergleichsanfrage gab (abgeschaltet) oder sie ohne Antwort blieb, weitergeleitet, gedrosselt oder mit einem
+        Serverfehler beantwortet wurde: Dann ist offen, ob ein anderer Client durchkäme.
+        """
+        status = self.ua_probe_status
+        return self.ua_blocked_at is None and status is not None and 400 <= status < 500 and status not in (408, 429)
 
     @property
     def error_kind(self) -> str | None:
@@ -696,10 +719,16 @@ class OParlClient:
                         self._note_server_error(url, status_code)
                     elif status_code == 403:
                         # Die Adresse, die 403 geliefert hat (nach Weiterleitungen), nicht die angefragte
-                        kind, detail = await self._diagnose_forbidden(str(e.response.request.url))
+                        forbidden_url = str(e.response.request.url)
+                        kind, detail = await self._diagnose_forbidden(forbidden_url)
                         self.stats.errors += 1
                         return FetchResult(
-                            url=url, data=None, status_code=403, error=f"HTTP 403 ({detail})", error_kind=kind
+                            url=url,
+                            data=None,
+                            status_code=403,
+                            error=f"HTTP 403 ({detail})",
+                            error_kind=kind,
+                            forbidden_for_all=kind is None and self._health(forbidden_url).forbidden_for_all,
                         )
                     else:
                         return FetchResult(
@@ -869,7 +898,8 @@ class OParlClient:
                 die letzte gelesene Seite noch eine Folgeseite, steht diese in ``page_limit_lists``.
             report_missing: Antwortet die erste Seite ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt,
                 ``ListMissingError`` werfen (Liste gibt es nicht) statt ``ListFetchError`` bzw. einer leeren
-                Liste (Issue #1025).
+                Liste (Issue #1025). Ebenso bei HTTP 403 für alle Clients (``forbidden``: nicht freigegeben,
+                Issue #1086); ist nur unser User-Agent gesperrt, bleibt es ``ListFetchError``.
             next_page: Die erste Seite liegt dem Aufrufer schon vor (Erkennung einer Kommunenliste, Issue #869):
                 Abruf ab dieser Folgeseite (``links.next`` der ersten Seite), ohne die erste Seite noch einmal
                 anzufragen. Es gelten die Regeln für Folgeseiten (Fehler und Teilantwort brechen mit
@@ -1001,6 +1031,16 @@ class OParlClient:
                 reason = "HTTP 404" if result.status_code == 404 else oparl_error_message(result.data)
                 console.print(f"[dim]{url}: Liste gibt es bei der Quelle nicht ({reason})[/dim]")
                 raise ListMissingError(url, reason, not_found=result.status_code == 404)
+
+            # Nicht freigegeben (Issue #1086): Die erste Seite antwortet auch ohne Filter mit HTTP 403, und der
+            # neutrale Client bekam ebenfalls eine Absage, etwa bei den Personen der Stadt Bochum (SD.NET RIM). Über
+            # den Filter sagt das nichts: Ein Vermerk „filtert nicht“ aus der Anfrage mit Filter oder aus einem
+            # früheren Lauf endet. Gibt die Quelle die Liste frei, läuft sie wie die übrigen mit Filter.
+            if pages_fetched == 0 and not tried_modified_since and not strict_filter and result.forbidden_for_all:
+                notes.clear_list(requested_url)
+                if report_missing:
+                    console.print(f"[dim]{url}: Liste gibt die Quelle nicht frei ({FORBIDDEN_LIST_REASON})[/dim]")
+                    raise ListMissingError(url, FORBIDDEN_LIST_REASON, forbidden=True)
 
             if result.error:
                 # Keine stille Lücke (Issue #123): der Aufrufer erfährt, welche
