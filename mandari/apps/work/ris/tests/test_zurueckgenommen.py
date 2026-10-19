@@ -145,7 +145,7 @@ def test_listenseiten_ohne_zurueckgenommene(
     client = client_for(mitglied.user)
 
     def seite(name: str) -> str:
-        return client.get(reverse(name, kwargs={"org_slug": org.slug})).content.decode()
+        return str(client.get(reverse(name, kwargs={"org_slug": org.slug})).content.decode())
 
     sitzungen, vorgaenge, uebersicht = seite("work:ris_meetings"), seite("work:ris_papers"), seite("work:ris_overview")
 
