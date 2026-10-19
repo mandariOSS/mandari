@@ -171,7 +171,7 @@ def tagesordnung(meeting: FactionMeeting, membership: Membership) -> Tagesordnun
     darf_intern = can_view_internal(membership)
     alle = list(
         FactionAgendaItem.objects.filter(meeting=meeting, proposal_status="active")
-        .select_related("decision", "parent", "meeting__organization", "approves_meeting")
+        .select_related("decision", "parent", "meeting__organization", "approves_meeting", "proposed_by__user")
         .annotate(eintraege=Count("protocol_entries"))
         .order_by("order", "number")
     )

@@ -1,0 +1,11 @@
+{% comment %}
+Nichtöffentlicher Teil für Nicht-Vereidigte (Issues #64, #1071, Muster gesperrtHtml): nur die Zahl und die Erklärung,
+keine Titel, keine Unterlagen (der Kontext enthält keine nichtöffentlichen Objekte). Kontext: to_gesperrt.
+{% endcomment %}
+<div class="fs-gesperrt" role="note" data-testid="fs-gesperrt">
+    <i data-lucide="lock" aria-hidden="true"></i>
+    <div>
+        <b>Nichtöffentlicher Teil, {{ to_gesperrt }} TOP{{ to_gesperrt|pluralize:"s" }}</b>
+        <p>Diese Punkte sehen nur vereidigte Mitglieder. Für Sie ist in Work keine Vereidigung eingetragen. Wenn Sie vereidigt sind, kann der Vorsitz das unter Team nachtragen.</p>
+    </div>
+</div>

@@ -39,6 +39,41 @@ def invitation_attendances(meeting, *, update: bool = False):
     return attendances.filter(status="invited")
 
 
+def _invitation_error_text(error: Exception, address: str) -> str:
+    """Grund, warum eine Einladung nicht rausging, als Satz für das Versandergebnis (ohne Interna des Servers)."""
+    import smtplib
+
+    if isinstance(error, smtplib.SMTPRecipientsRefused):
+        return f"Der Mailserver hat die Adresse {address} abgelehnt."
+    if isinstance(error, smtplib.SMTPAuthenticationError):
+        return "Der Mailserver hat die Anmeldung abgelehnt. Bitte den E-Mail-Versand in den Einstellungen prüfen."
+    if isinstance(error, (smtplib.SMTPException, OSError)):
+        return "Der Mailserver war nicht erreichbar oder hat den Versand abgelehnt."
+    return "Der Versand ist fehlgeschlagen."
+
+
+def _record_invitation_result(attendance, *, error: str = "", without_internal: bool = False) -> None:
+    """
+    Versandergebnis der Einladung je Person speichern (Issue #1071): Zeitpunkt der Übergabe an den Mailversand oder
+    der Grund, warum nichts rausging. Gilt jeweils für den letzten Versand (Erstversand oder Aktualisierung).
+    """
+    from .models import FactionAttendance
+
+    werte = {
+        "invitation_mailed_at": None if error else timezone.now(),
+        "invitation_error": error[:300],
+        "invitation_without_internal": without_internal and not error,
+    }
+    try:
+        FactionAttendance.objects.filter(pk=attendance.pk).update(**werte)
+    except Exception:
+        # Das Ergebnis ist eine Anzeige; ein Fehler beim Speichern darf den Versand nicht abbrechen
+        logger.exception("Versandergebnis der Einladung nicht gespeichert (attendance=%s)", attendance.pk)
+        return
+    for feld, wert in werte.items():
+        setattr(attendance, feld, wert)
+
+
 class FactionMeetingEmailService:
     """
     Service for sending faction meeting emails (Issue #59).
@@ -173,6 +208,7 @@ class FactionMeetingEmailService:
         user = attendance.membership.user
         if not user.email:
             logger.warning(f"Skipping invitation for user {user.id} - no email address")
+            _record_invitation_result(attendance, error="Keine E-Mail-Adresse hinterlegt.")
             return False
 
         # NÖ-Teil nur für Vereidigte mit entsprechender Berechtigung
@@ -228,7 +264,7 @@ class FactionMeetingEmailService:
             # Tagesordnung (ggf. mit NÖ-Teil) liegt bis zum Versand mit ihrem Schlüssel verschlüsselt
             from apps.common import mail
 
-            mail.send(
+            uebergeben = mail.send(
                 kind="work.fraktion.einladung",
                 organization=meeting.organization,
                 subject=subject,
@@ -241,10 +277,15 @@ class FactionMeetingEmailService:
                 ],
                 fail_silently=False,
             )
+            if not uebergeben:
+                _record_invitation_result(attendance, error="Keine gültige E-Mail-Adresse hinterlegt.")
+                return False
             logger.info(f"Invitation sent to {user.email} for meeting {meeting.id} (update={update})")
+            _record_invitation_result(attendance, without_internal=not include_internal)
             return True
         except Exception as e:
             logger.error(f"Failed to send invitation to {user.email}: {e}")
+            _record_invitation_result(attendance, error=_invitation_error_text(e, user.email))
             return False
 
     def _get_simple_invitation_text(

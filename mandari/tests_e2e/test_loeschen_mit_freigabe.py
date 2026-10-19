@@ -66,7 +66,12 @@ def test_sitzung_loeschen_erst_nach_eingabe_des_datums(
     login(admin.user.email, PASSWORD)
     goto(f"/work/{slug}/faction/{meeting.id}/")
 
-    page.get_by_role("button", name="Sitzung löschen …").click()
+    if neuer_rahmen:
+        # Seite vor der Sitzung nach dem Muster (Issue #1071): Löschen steht im Menü „Weitere Aktionen“
+        page.get_by_role("button", name="Weitere Aktionen").click()
+        page.get_by_role("menuitem", name="Sitzung löschen …").click()
+    else:
+        page.get_by_role("button", name="Sitzung löschen …").click()
     dialog = page.locator("#delete-meeting-modal")
     expect(dialog.get_by_text("Wird mitgelöscht")).to_be_visible()
     expect(dialog.locator("dt", has_text="Tagesordnungspunkte").locator("xpath=..").locator("dd")).to_have_text("2")

@@ -285,6 +285,15 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
             context.update(session.seiten_kontext(self, meeting, self.request.GET.get("top")))
             return context
 
+        # Vor der Sitzung (Entwurf, geplant, eingeladen) die Seite nach dem Muster (Issue #1071, Schritt 2)
+        from .. import vorbereiten as vorbereiten_logik
+        from . import vorbereiten
+
+        if vorbereiten_logik.zeigt_vorbereitung(meeting, self.request.GET.get("ansicht")):
+            self.template_name = vorbereiten_logik.SEITE
+            context.update(vorbereiten.seiten_kontext(self, meeting, self.request))
+            return context
+
         context.update(_get_meeting_context(self, meeting))
         # Konfiguration der Alpine-Komponente `factionDetail` (frontend/alpine/faction-detail.ts):
         # Panel-URL mit Platzhalter-UUID, die clientseitig durch die TOP-ID ersetzt wird; Aktions-URL für die

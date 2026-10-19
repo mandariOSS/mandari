@@ -419,6 +419,11 @@ def files_of_paper(paper: OParlPaper) -> QuerySet[OParlFile]:
     return OParlFile.objects.filter(paper=paper)
 
 
+def files_of_papers(paper_ids: Iterable[object]) -> QuerySet[OParlFile]:
+    """Dateien mehrerer Vorlagen in einer Abfrage (Seite einer Fraktionssitzung, Issue #1071)."""
+    return OParlFile.objects.filter(paper_id__in=list(paper_ids))
+
+
 def protocol_file(meeting: OParlMeeting) -> OParlFile | None:
     """
     Öffentliche Niederschrift einer Sitzung (OParl ``resultsProtocol``, sonst ``verbatimProtocol``), Issue #318.

@@ -291,6 +291,9 @@ def test_migration_sichert_namen_im_bestand(org: Any, anna: Any, make_member: An
 
         executor = MigrationExecutor(connection)
         executor.migrate([NACHHER])
+        # Weiter bis zum aktuellen Stand: die Prüfungen nutzen die heutigen Modelle (spätere Spalten, Issue #1071)
+        executor = MigrationExecutor(connection)
+        executor.migrate(executor.loader.graph.leaf_nodes())
 
         assert FactionAttendance.objects.get(pk=teilnahme.pk).member_name_snapshot == NAME
         assert FactionAttendance.objects.get(pk=teilnahme.pk).confirmed_final_by_name_snapshot == "bernd.b"
