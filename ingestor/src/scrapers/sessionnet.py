@@ -13,6 +13,8 @@ Seitenkürzel (produktweit stabil):
 - vo0050   Vorlagendetail (__kvonr; Betreff, Nummer, Art, Anlagen-PDFs)
 - gr0040   Gremienliste
 - kp0040   Gremium-Mitglieder (__kgrnr; Personen mit pe0051-Links)
+- si0046   Sitzungsliste eines Gremiums (nur die Nummer __ksigrnr = __kgrnr, Gremien ohne kp0040)
+- yvcs     Termin-Link im Kalender (key/uid = __ksinr, auch bei angekündigten Sitzungen)
 - getfile  Datei-Download (id, type=do)
 
 Filterleiste (gr0040, si0040, kp0040):
