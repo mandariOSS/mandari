@@ -20,7 +20,7 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
 | Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
 | Weiterleitungen | höchstens fünf je Abruf, jede erst nach der robots.txt ihres Ziels und mit eigenem Zeitpunkt im Takt |
 | Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
-| Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer die Quelle hat ein eigenes Zeitfenster oder Zeitscheiben (siehe [Vollabgleich](#vollabgleich)) |
+| Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer eine Quelle mit OParl-Schnittstelle hat ein eigenes Zeitfenster oder Zeitscheiben (siehe [Vollabgleich](#vollabgleich)) |
 | Langsame Listen | eine optionale Liste, die in eine Zeitüberschreitung läuft, ruht 1 Stunde, danach jeweils doppelt so lange, höchstens 24 Stunden |
 | Neue Quellen | von unseren Werkzeugen inaktiv angelegt; regelmäßig abgefragt wird eine Quelle erst, wenn sie aktiv ist. Ausnahmen: das Formular im Admin, `import_oparl_sources --activate` und die eigene Schnittstelle eines Session-Mandanten. Neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
@@ -89,6 +89,11 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
   nicht erreichbar, endet die Prüfung nach dieser einen Anfrage. Abstand je Server wie im Abgleich
   (`INGESTOR_REQUEST_INTERVAL`); hat eine registrierte Quelle auf dem Server einen größeren Abstand, gilt dieser.
   Zwischen zwei Kommunen liegen zusätzlich 2 Sekunden Pause (`ingestor/src/main.py`, `probe_ris`).
+
+Der lokale Spiegel `manage.py sync_session_insight` (`mandari/insight_sync/session_mirror.py`) ruft dagegen ohne
+robots.txt und ohne Takt je Server ab, mit der Kennung `mandari-session-mirror/1.0`. Er gleicht deshalb nur
+Session-Quellen ab, also die eigene Schnittstelle eines Session-Mandanten (`sync_config["session_tenant"]`); andere
+Quellen lehnt er auch mit `--source-url` ab und verweist auf `python -m src.main sync --source`.
 
 ### Neue Quellen und Kommunen
 
@@ -376,7 +381,10 @@ nicht mehr (`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.p
   robots.txt, Takt je Server, das eigene Zeitfenster der Quelle (`full_sync_window`), `full_sync_every_days` und
   Schonung gelten auch dann. Ohne eigenes Fenster beginnt ein angeforderter Vollabgleich sofort, auch tagsüber, und
   läuft zu Ende; ein Vollabgleich in Zeitscheiben nur im Standardfenster, außerhalb läuft stattdessen ein
-  Änderungsabgleich (`SourceFetchOptions.full_sync_plan`, siehe [Vollabgleich](#vollabgleich)). Auslöser für
+  Änderungsabgleich (`SourceFetchOptions.full_sync_plan`, siehe [Vollabgleich](#vollabgleich)). Ausnahme
+  Scraper-Quellen (`source_type = "scraper:*"`): `sync_body_url` gibt sie vor `_full_sync_plan` an
+  `ScraperSyncRunner.run(full=full)` ab (`SyncOrchestrator._scraper_runner`); Zeitfenster und
+  `full_sync_every_days` gelten für sie nur im geplanten Vollabgleich (`full_sync_due`). Auslöser für
   unbekannte oder inaktive Quellen verwirft der Daemon (`mandari/insight_sync/daemon.py`, `trigger_sync`;
   `mandari/insight_core/admin.py`, `request_source_sync`; `SyncScheduler._expand_triggers`). Findet „Jetzt
   synchronisieren“ keinen Daemon, meldet der Admin einen Fehler (`mandari/insight_sync/admin.py`, `trigger_sync_view`).
@@ -391,12 +399,17 @@ nicht mehr (`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.p
   ist, kein Daemon als laufend gilt (weder sein Lebenszeichen in Redis, siehe unten, noch ein Sync-Protokoll der
   letzten 30 Minuten; `is_ingestor_active`) oder die Nachricht keinen Empfänger fand. Der Auftrag nutzt den Code des
   Ingestors aus dem Image der Anwendung (`run_sync_in_thread`; `mandari/insight_sync/tasks.py`,
-  `run_sync_with_logging`). Er beachtet robots.txt, Takt je Server und das eigene Zeitfenster der Quelle, aber nicht
-  die [Schonung](#fehler-und-schonung), ebenso wie `python -m src.main sync --source` bzw. `--body`; ohne eigenes
-  Fenster beginnt auch hier ein Vollabgleich sofort. Dabei gilt die Umgebung des Workers, nicht die des Ingestors
-  (siehe [Für Selbstbetreiber](#für-selbstbetreiber)). `python -m src.main sync --all` gleicht alle aktiven Quellen
-  einmal ab, höchstens 2 zugleich (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne den Abgleichrhythmus der
-  Quelle (`sync_schedule`); Abstand je Quelle (`request_interval`) und Takt je Server gelten.
+  `run_sync_with_logging`). Er beachtet robots.txt, Takt je Server, das eigene Zeitfenster der Quelle und
+  `full_sync_every_days`, aber nicht die [Schonung](#fehler-und-schonung), ebenso wie
+  `python -m src.main sync --source` bzw. `--body`; ohne eigenes Fenster beginnt auch hier ein Vollabgleich sofort.
+  Im Worker gilt dessen Umgebung, nicht die des Ingestors (siehe [Für Selbstbetreiber](#für-selbstbetreiber)).
+  Scraper-Quellen gleicht der Worker nicht ab, weil dem Image der Anwendung die Abhängigkeiten der Scraper fehlen; sein
+  Sync-Protokoll nennt dann den Weg über den Ingestor (`is_scraper_source`, `SCRAPER_NUR_IM_INGESTOR`). `sync --source`
+  und `sync --body` im Container `ingestor` gleichen sie wie der Daemon über den Scraper ab (`sync_source`,
+  `sync_body_url`, `SyncOrchestrator._scraper_runner`), ohne Zeitfenster und Mindestabstand.
+  `python -m src.main sync --all` gleicht alle aktiven Quellen einmal ab, höchstens 2 zugleich
+  (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne den Abgleichrhythmus der Quelle (`sync_schedule`); Abstand je
+  Quelle (`request_interval`) und Takt je Server gelten.
 - **Protokoll und Metriken:** Jeder Lauf des Daemons schreibt ein Sync-Protokoll für seine Quelle
   (`insight_sync_synclog` mit `source_id`, `triggered_by` `daemon` oder `admin` und `sync_type` so, wie der Lauf
   tatsächlich lief) mit den Zählern, höchstens 20 Fehlern, der Zahl der Abrufe (`details.requests`) und dem Takt
@@ -565,10 +578,11 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   `INGESTOR_FULL_SYNC_HOUR`; `.env.example` und Helm `ingestor.fullSyncHour` ebenfalls 3). Die von uns betriebene
   Instanz beginnt um 01:00 Uhr, ihr Standardfenster reicht also bis 06:00 Uhr. Werte außerhalb von 0 bis 23 schalten
   geplante Vollabgleiche ab, auch in eigenen Fenstern der Quellen; im Admin angeforderte bleiben möglich.
-- **Von Hand angefordert:** Ein im Admin angeforderter Vollabgleich hält nur das eigene `full_sync_window` der Quelle
-  ein. Ohne eigenes Fenster beginnt er sofort, auch tagsüber, und läuft zu Ende; das Standardfenster bindet nur den
-  Vollabgleich in Zeitscheiben (siehe „Auslöser“ unter [Rhythmus](#rhythmus) und
-  [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)).
+- **Von Hand angefordert:** Ein im Admin angeforderter Vollabgleich hält das eigene `full_sync_window` der Quelle und
+  `full_sync_every_days` ein (`SourceFetchOptions.full_sync_plan`, `SyncOrchestrator._full_sync_plan`); bei
+  Scraper-Quellen gelten beide nur für den geplanten Vollabgleich. Ohne eigenes Fenster beginnt er sofort, auch
+  tagsüber, und läuft zu Ende; das Standardfenster bindet nur den Vollabgleich in Zeitscheiben (siehe „Auslöser“
+  unter [Rhythmus](#rhythmus) und [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)).
 - **Einmal je Fenster:** Den Beginn hält der Daemon in `sync_config["sync_state"]["full_attempted"]` fest. Ein
   abgebrochener oder unvollständiger Vollabgleich wird im nächsten Fenster wiederholt, nicht in derselben Nacht;
   auch ein Neustart des Ingestors startet ihn nicht ein zweites Mal.
@@ -601,6 +615,8 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 - **Nach dem Ende des eigenen Fensters** holt ein laufender Vollabgleich keine weitere Seite; der Ingestor prüft das
   vor jeder Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als
   vollständig, das Änderungsfenster rückt nicht vor, und die Listen kommen beim nächsten Vollabgleich wieder dran.
+  Scraper-Quellen kennen diese Frist derzeit nicht (`ScraperSyncRunner.run` ohne `fetch_deadline`): Ein begonnener
+  Vollabgleich läuft bei ihnen zu Ende, auch nach dem Ende ihres eigenen Fensters.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung
   und die Abrufe der Anwendung richten sich nicht danach.
 
@@ -668,13 +684,16 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   (`details.full_sync_slices.without_modified`). Unter `details.full_sync_slices.lists` steht je Liste, wie viele
   Scheiben der Lauf gelesen hat, ob sie fertig ist und wo die nächste beginnt (`BodySlices.summary`).
 - Abstand (`full_sync_every_days`) und Takt je Server gelten unverändert.
+- Nur bei Quellen mit OParl-Schnittstelle: Bei Scraper-Quellen bleibt `full_sync_slices` ohne Wirkung, ihr
+  Vollabgleich ist ein vollständiger Crawl (`SyncOrchestrator._scraper_runner` vor `_slice_run`).
 
 ## Dokumente
 
 Dateien (Vorlagen, Anlagen, Niederschriften, fast immer PDF) laden Ingestor und Anwendung unter folgenden Regeln.
 Für alle gilt: robots.txt wie oben, Takt je Server wie oben, Weiterleitungen wie oben, und
 `sync_config["file_downloads"] = false` schaltet den Dateiabruf einer Quelle ganz ab. Die Vorschau verweist dann auf
-das Original.
+das Original, ohne einen Grund zu nennen: Der Schalter steht bei einer Zugangsprüfung für Menschen ebenso wie nach
+einem Opt-out (`mandari/insight_core/views/files.py`, `_deliver_file`).
 
 ### Texterkennung im Ingestor
 
@@ -710,8 +729,11 @@ das Original.
 - **Größe:** höchstens 80 MB je Datei (`FILE_CACHE_MAX_MB`).
 - **Abgeschaltet und Schonung:** Eine abgeschaltete Quelle (`is_active`) fragen Dokument-Cache und Personenfotos
   nicht an. Vorschau und Löschabgleich richten sich nur nach `file_downloads` und der Schonung, nicht nach
-  `is_active`. Sollen gar keine Abrufe mehr stattfinden, gehört zur Abschaltung deshalb auch
-  `file_downloads = false`; eine Sperre per robots.txt wirkt ohnehin bei allen Abrufen. Nach drei fehlgeschlagenen
+  `is_active`. Sollen gar keine Abrufe beim Ratsinformationssystem mehr stattfinden, gehört zur Abschaltung deshalb
+  auch `file_downloads = false`; eine Sperre per robots.txt wirkt ohnehin bei allen Abrufen bei
+  Ratsinformationssystemen. Umringe vom Geoportal (`PlanBoundarySource.is_active`) und Live-Übertragung
+  (`BroadcastSource.active`) werten die robots.txt nicht aus und werden getrennt abgeschaltet (siehe
+  [Andere Abrufe](#andere-abrufe)). Nach drei fehlgeschlagenen
   Läufen des Abgleichs in Folge fragen Dokument-Cache, Vorschau, Löschabgleich und Personenfotos die Quelle nicht
   an, bis ein Lauf sie wieder erreicht (`INSIGHT_SOURCE_BACKOFF_FAILURES`; was als fehlgeschlagen zählt, steht unter
   [Fehler und Schonung](#fehler-und-schonung)).
