@@ -47,8 +47,10 @@ export const colorPicker = defineComponent(() => ({
     if (clean.length === 6) this.color = `#${clean}`
   },
 
-  /** Unvollständige Eingabe beim Verlassen verwerfen: das Feld zeigt wieder die gültige Farbe. */
+  /** Beim Verlassen: Kurzform (`fff`) ausschreiben, sonst Unvollständiges verwerfen und die gültige Farbe zeigen. */
   onHexBlur() {
+    const clean = cleanHex(this.hex)
+    if (clean.length === 3) this.color = `#${[...clean].map((c) => c + c).join('')}`
     this.hex = this.color.replace('#', '')
   },
 }))

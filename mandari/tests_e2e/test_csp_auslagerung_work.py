@@ -134,12 +134,21 @@ class TestOrganisation:
         expect(farbwahl.locator('input[type="color"]')).to_have_value("#ffed00")
         expect(farbwahl.locator('input[name="color"]')).to_have_value("#FFED00")
 
-        # Unvollständige Eingabe: beim Verlassen zeigt das Feld wieder die gültige Farbe
+        # Kurzform wird beim Verlassen ausgeschrieben, Unvollständiges verworfen
+        page.fill("#fraktion-neu-farbe", "#fe0")
+        page.locator("#fraktion-neu-kurz").focus()
+        expect(page.locator("#fraktion-neu-farbe")).to_have_value("ffee00")
         page.fill("#fraktion-neu-farbe", "12ab")
         page.locator("#fraktion-neu-kurz").focus()
-        expect(page.locator("#fraktion-neu-farbe")).to_have_value("FFED00")
+        expect(page.locator("#fraktion-neu-farbe")).to_have_value("ffee00")
+        page.focus("#fraktion-neu-farbe")
+        page.keyboard.press("ControlOrMeta+a")
+        page.keyboard.insert_text(" #FFED00")
+        expect(farbwahl.locator('input[name="color"]')).to_have_value("#FFED00")
 
-        page.get_by_role("button", name="Hinzufügen", exact=True).click()
+        # Knopf im Fraktionsformular (die Verwaltungskontakte haben ebenfalls „Hinzufügen“)
+        formular = page.locator("form", has=page.locator("#fraktion-neu-farbe"))
+        formular.get_by_role("button", name="Hinzufügen", exact=True).click()
         expect(page.get_by_test_id("ratsfraktionen-liste")).to_contain_text("FDP-Fraktion")
         assert CouncilParty.objects.get(organization=org, short_name="FDP").color == "#FFED00"
         problems.assert_clean("Ratsfraktionen")
