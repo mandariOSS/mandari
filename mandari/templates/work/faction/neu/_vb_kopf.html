@@ -68,7 +68,7 @@ empfaenger, membership.
                 <a role="menuitem" href="{% url 'work:faction_audit' org_slug=org_slug %}?meeting={{ meeting.id }}"><i data-lucide="history" aria-hidden="true"></i>Änderungshistorie</a>
                 {% endif %}
                 <a role="menuitem" href="?ansicht=bisher"><i data-lucide="layout-list" aria-hidden="true"></i>Bisherige Ansicht</a>
-                {% if can_edit and meeting.status != 'cancelled' %}
+                {% if can_edit and meeting.status in 'draft,planned,invited,ongoing' %}
                 <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" data-confirm="Sitzung wirklich absagen? Sie bleibt mit allen Daten erhalten.">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="cancel">

@@ -243,9 +243,17 @@ class FactionActionView(WorkViewMixin, View):
         if not self._can_manage_meeting(meeting):
             messages.error(request, "Keine Berechtigung zum Absagen.")
             return self._redirect_detail(meeting)
-        if meeting.status not in ["completed", "cancelled"]:
-            meeting.status = "cancelled"
-            meeting.save()
+        if meeting.status in ["completed", "cancelled"]:
+            # Abgeschlossene oder schon abgesagte Sitzungen bleiben, wie sie sind – ohne Erfolgsmeldung
+            meldung = (
+                "Die Sitzung ist bereits abgesagt."
+                if meeting.status == "cancelled"
+                else "Eine abgeschlossene Sitzung lässt sich nicht mehr absagen."
+            )
+            messages.error(request, meldung)
+            return self._refresh_or_redirect(request, meeting)
+        meeting.status = "cancelled"
+        meeting.save()
         return self._refresh_or_redirect(request, meeting, "Sitzung abgesagt.")
 
     def _rejected(self, request, meeting, message, status):

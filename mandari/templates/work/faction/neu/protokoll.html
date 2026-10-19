@@ -38,7 +38,8 @@ Die bisherige Seite bleibt unter ?ansicht=bisher (work/faction/detail.html). Kon
             <ul>{% for t in dok.tops %}<li{% if t.unter %} class="unter"{% endif %}><a class="wf-textlink" href="#p-{{ t.item.pk }}">{{ t.item.number }} {{ t.item.title }}</a></li>{% endfor %}</ul>
         </nav>
         {% endif %}
-        <div class="fs-dok-wrap" id="agenda-container"
+        {# data-sichern-vorher: Neuaufbau nach Panel-Aktionen erst, wenn alle Notizen gespeichert sind (faction-session.ts) #}
+        <div class="fs-dok-wrap" id="agenda-container" data-sichern-vorher
              hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
              hx-vals='{"action": "refresh_agenda"}'
              hx-trigger="agenda-refresh from:body"

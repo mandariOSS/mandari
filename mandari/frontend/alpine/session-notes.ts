@@ -15,7 +15,7 @@
 import type { Editor } from '@tiptap/core'
 import { defineComponent } from '../js/alpine/component'
 import { readJsonScript } from '../js/json-script'
-import { aktion, notizenAbmelden, notizenAnmelden } from './faction-session'
+import { aktion, notizenAbmelden, notizenAnmelden, vorAnfragenSichern } from './faction-session'
 
 interface NotizenConfig {
   itemId: string
@@ -98,6 +98,7 @@ export const sitzungsNotizen = defineComponent(() => {
       })
       this.bereit = true
       notizenAnmelden(this)
+      vorAnfragenSichern()
       beimVerlassen = () => {
         if (ausstehend) void this.speichern(true)
       }

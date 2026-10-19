@@ -337,3 +337,22 @@ def test_abgesagte_sitzung(welt: dict[str, Any], client_for: Any) -> None:
     html = _seite(welt, client_for, "vorsitz")
     assert "Abgesagt." in html and "Haushaltsklausur" in html and "Geplante Tagesordnung" in html
     assert "vierten Standort" not in html and 'id="fs-bestaetigen"' not in html
+
+
+def test_abgeschlossene_sitzung_laesst_sich_nicht_absagen(welt: dict[str, Any], client_for: Any) -> None:
+    """Kein „Sitzung absagen …“ nach dem Ende; die Aktion meldet einen Fehler statt Erfolg und ändert nichts."""
+    client = client_for(welt["vorsitz"].user)
+    assert 'value="cancel"' not in client.get(_adresse(welt)).content.decode()
+    antwort = client.post(_aktion(welt), {"action": "cancel"}, follow=True)
+    welt["meeting"].refresh_from_db()
+    assert welt["meeting"].status == "completed"
+    meldungen = [str(m) for m in antwort.context["messages"]]
+    assert "Eine abgeschlossene Sitzung lässt sich nicht mehr absagen." in meldungen
+    assert "Sitzung abgesagt." not in meldungen
+
+
+def test_neuladen_wartet_auf_das_speichern_der_notizen(welt: dict[str, Any], client_for: Any) -> None:
+    """Das Dokument lädt nach Panel-Aktionen erst neu, wenn alle Notizen gespeichert sind (faction-session.ts)."""
+    html = _seite(welt, client_for, "vorsitz")
+    anfang = html.index('id="agenda-container"')
+    assert "data-sichern-vorher" in html[anfang : html.index(">", anfang)]
