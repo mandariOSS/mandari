@@ -1,0 +1,39 @@
+{% comment %}
+Ein TOP im Protokoll (Muster protTopHtml): Nummer (wf-top-nr) und Titel, „Details“ öffnet das Panel des TOPs.
+Darunter Notizen (bearbeitbar über sitzungsNotizen, Konfiguration je TOP per json_script t.konfig_id), bisherige
+Einträge, Aufgaben, Beschluss und für Protokollierende „Abstimmung erfassen …“ (Dialog der bisherigen Seite).
+In der abgesagten Sitzung nur Nummer und Titel. Kontext: t (apps.work.faction.protokoll.ProtTop), meeting, rechte,
+notizen_editierbar.
+{% endcomment %}
+<section class="fs-prot-top{% if t.unter %} unter{% endif %}" id="p-{{ t.item.pk }}" aria-labelledby="ph-{{ t.item.pk }}">
+    <h3 id="ph-{{ t.item.pk }}"><span class="wf-top-nr">{{ t.item.number }}</span><span>{% if t.intern and t.unter %}<i data-lucide="lock" aria-hidden="true"></i><span class="sr-only">Nichtöffentlich: </span>{% endif %}{{ t.item.title }}</span>
+        <button type="button" class="wf-knopf wf-leise wf-ik fs-prot-mehr" @click="$dispatch('open-item-panel', { id: '{{ t.item.pk }}' })"
+                aria-label="TOP {{ t.item.number }}: Unterlagen, Einträge und Aufgaben" title="Unterlagen, Einträge und Aufgaben"><i data-lucide="panel-right-open" aria-hidden="true"></i></button>
+    </h3>
+    {% if meeting.status != 'cancelled' %}
+    <div class="fs-prot-inhalt">
+        {% if t.item.is_approval_item and t.item.approves_meeting %}<p class="fs-meta">Genehmigt das Protokoll vom {{ t.item.approves_meeting.start|date:"d.m.Y" }}.</p>{% endif %}
+        {% if t.konfig %}
+        <div class="fs-prot-notiz-feld" x-data="sitzungsNotizen" data-konfig="{{ t.konfig_id }}">
+            {{ t.konfig|json_script:t.konfig_id }}
+            <p class="fs-hinweis" role="alert" x-show="konflikt" x-cloak>Jemand hat die Notizen gleichzeitig geändert. Beide Fassungen stehen jetzt untereinander; bitte prüfen Sie den Text.</p>
+            <div class="fs-prot-notiz fs-notiz" x-ref="notiz" aria-label="Notizen zu TOP {{ t.item.number }}">{{ t.notiz_html }}</div>
+            <p class="fs-prot-status" :class="{ 'fehler': status === 'fehler' }" role="status" aria-live="polite" x-show="bereit && status !== 'gespeichert'" x-cloak x-text="statusText()"></p>
+        </div>
+        {% elif t.notiz_html %}
+        <div class="fs-prot-notiz fs-notiz">{{ t.notiz_html }}</div>
+        {% endif %}
+        {% for e in t.eintraege %}{% include "work/faction/neu/_pr_eintrag.html" %}{% endfor %}
+        {% if t.aufgaben %}
+        <ul class="fs-prot-aufg">
+            {% for a in t.aufgaben %}<li><b>Aufgabe:</b> {{ a.titel }}{% if a.zustaendig or a.faellig or a.erledigt %} ({% if a.zustaendig %}{{ a.zustaendig|join:", " }}{% endif %}{% if a.faellig %}{% if a.zustaendig %}, {% endif %}bis {{ a.faellig|date:"d.m." }}{% endif %}{% if a.gesamt > 1 %}, {{ a.erledigt }} von {{ a.gesamt }} erledigt{% elif a.erledigt %}, erledigt{% endif %}){% endif %}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        {% if t.beschluss %}<p class="fs-prot-beschluss"><b>Beschluss:</b> {{ t.beschluss }}{% if t.beschluss_text %} {{ t.beschluss_text }}{% endif %}</p>{% endif %}
+        {% if t.leer and not t.konfig %}<p class="fs-meta">Ohne Eintrag.</p>{% endif %}
+        {% if rechte.protokollieren and not t.item.is_approval_item %}
+        <p class="fs-prot-aktion"><button type="button" class="wf-textlink" @click="$dispatch('open-decision', { item_id: '{{ t.item.pk }}', title: '{{ t.item.title|escapejs }}' })">{% if t.beschluss %}Abstimmung ändern …{% else %}Abstimmung erfassen …{% endif %}</button></p>
+        {% endif %}
+    </div>
+    {% endif %}
+</section>
