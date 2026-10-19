@@ -470,6 +470,64 @@ def restore_occurrence(schedule, date, now=None):
         cache.delete(key)
 
 
+def approval_item_unchanged(meeting) -> bool:
+    """
+    Steht der Genehmigungs-TOP noch so da, wie Work ihn angelegt hat (Titel, Beschreibung, genehmigte Sitzung)? Nur
+    dann darf Work ihn nach einer Verschiebung oder Neunummerierung neu beschriften (Issue #1071).
+    """
+    item = meeting.agenda_items.filter(is_approval_item=True).first()
+    if item is None:
+        return False
+    title, description = meeting.approval_item_texts()
+    current = item.get_description_decrypted() or ""
+    return bool(
+        item.title == title and current == description and item.approves_meeting_id == meeting.previous_meeting_id
+    )
+
+
+def renumber_upcoming(organization, now=None) -> int:
+    """
+    Nummern der künftigen, noch nicht eingeladenen Sitzungen nach Datum ordnen (Issue #1071), nach dem Bearbeiten
+    einer Reihe oder dem Wiederherstellen eines Termins. Vergeben werden nur die Nummern, die diese Sitzungen schon
+    haben (eingeladene und vergangene behalten ihre). Unbearbeitete Genehmigungs-TOPs bekommen den neuen Titel
+    (Platzhalter ``{nr}``). Liefert die Zahl der umnummerierten Sitzungen.
+    """
+    from django.db import transaction
+
+    from apps.work.faction.models import FactionMeeting
+
+    now = now or timezone.now()
+    with transaction.atomic():
+        meetings = list(
+            FactionMeeting.objects.select_for_update()
+            .filter(
+                organization=organization,
+                start__gt=now,
+                invitation_sent=False,
+                invitation_claimed_at__isnull=True,
+                meeting_number__isnull=False,
+                status__in=["draft", "planned", "cancelled"],
+            )
+            .order_by("start", "created_at")
+        )
+        numbers = sorted(m.meeting_number for m in meetings)
+        unchanged = {m.pk: approval_item_unchanged(m) for m in meetings}
+        changed = 0
+        for meeting, number in zip(meetings, numbers, strict=True):
+            if meeting.meeting_number == number:
+                continue
+            meeting.meeting_number = number
+            meeting.save(update_fields=["meeting_number", "updated_at"])
+            changed += 1
+        if changed:
+            # Auch {nr_letzte_sitzung} der Folgesitzung kann sich geändert haben: alle unbearbeiteten neu beschriften
+            # (frisch geladen, damit die vorherige Sitzung mit ihrer neuen Nummer zählt)
+            for fresh in FactionMeeting.objects.filter(pk__in=[pk for pk, ok in unchanged.items() if ok]):
+                if not approval_item_unchanged(fresh):
+                    fresh.create_approval_agenda_item()
+    return changed
+
+
 def generate_meetings_now(schedule) -> dict | None:
     """
     Termine einer Reihe sofort erzeugen (Issue #896): nach dem Anlegen und nach Änderungen an der Reihe.

@@ -11,12 +11,15 @@ Regeln je betroffenem Termin:
 
 - Liegt sein Datum auch im neuen Rhythmus, bleibt er an diesem Tag. Beginn, Dauer, Ort, Videolink und Titel übernimmt
   er nur, wenn sie noch dem bisherigen Stand der Reihe entsprechen; was jemand am Termin selbst geändert hat, bleibt.
-- Termine mit Inhalten (eigene TOPs, Notizen, Beschlüsse, Unterlagen, Rückmeldungen, Aufgaben …) werden nie gelöscht,
-  sondern auf den nächstgelegenen freien Tag des neuen Rhythmus verschoben. Gibt es keinen, bleiben sie unverändert.
-- Leere, automatisch angelegte Termine wandern der Reihe nach auf die freien Tage (Nummern bleiben fortlaufend). Was
-  übrig bleibt, wird gelöscht (mit Eintrag in der Änderungshistorie), weil es im neuen Rhythmus keinen Tag mehr hat.
+- Bearbeitete Termine (alles, was nicht genau dem automatisch angelegten Stand entspricht, :func:`_unveraendert`)
+  wandern auf den nächstgelegenen freien Tag des neuen Rhythmus. Gibt es keinen, bleiben sie unverändert.
+- Unveränderte Termine wandern der Reihe nach auf die freien Tage. Was ohne Tag bleibt, sagt Work ab („Entfällt:
+  Rhythmus der Sitzungsreihe geändert“) statt zu löschen; liegt sein Tag nach einer weiteren Änderung wieder im
+  Rhythmus, setzt Work ihn wieder an. Gelöscht werden nur automatisch als „Entfällt“ angelegte Einträge, die nie
+  jemand berührt hat und die keine Daten tragen.
 - Fehlende Tage legt die Reihe danach wie gewohnt an (``generation.generate_meetings_now``); gelöschte Termine
-  (Ausnahme „Gelöscht“) kommen auch dann nicht wieder.
+  (Ausnahme „Gelöscht“) kommen auch dann nicht wieder. Danach ordnet Work die Nummern der nicht eingeladenen
+  künftigen Sitzungen nach Datum (``generation.renumber_upcoming``).
 """
 
 from __future__ import annotations
@@ -41,6 +44,9 @@ FELDER = ("name", "recurrence", "weekday", "time", "duration_minutes", "default_
 
 #: Was ein leerer, automatisch angelegter Termin beim Löschen höchstens mitnimmt (deletion.DELETED_LABELS)
 _LEER_ERLAUBT = {"Tagesordnungspunkte", "Anwesenheiten und Zusagen"}
+
+#: Ausfallgrund für Termine, die nach einem Rhythmuswechsel keinen Tag mehr haben
+RHYTHMUS_GRUND = "Entfällt: Rhythmus der Sitzungsreihe geändert"
 
 #: Feste Meldungen
 GESPERRT = "Die Reihe legt gerade Termine an. Bitte versuchen Sie es in einer Minute noch einmal."
@@ -127,6 +133,11 @@ class Plan:
     rhythmus_geaendert: bool
     angepasst: list[Schritt] = field(default_factory=list)
     verschoben: list[Schritt] = field(default_factory=list)
+    #: Geplante Termine ohne Tag im neuen Rhythmus: abgesagt („Entfällt“, ``RHYTHMUS_GRUND``), Inhalte bleiben
+    abgesagt: list[Any] = field(default_factory=list)
+    #: Wegen eines früheren Rhythmuswechsels abgesagte Termine, deren Tag wieder im Rhythmus liegt
+    wieder: list[Schritt] = field(default_factory=list)
+    #: Automatisch als „Entfällt“ angelegte, nie berührte Platzhalter ohne Tag im neuen Rhythmus (ohne Daten)
     entfernt: list[Any] = field(default_factory=list)
     #: Termine mit Inhalten ohne freien Tag im neuen Rhythmus: bleiben, wie sie sind
     bleiben: list[Any] = field(default_factory=list)
@@ -137,8 +148,15 @@ class Plan:
 
     @property
     def zahl(self) -> int:
-        """Termine, die sich ändern (angepasst, verschoben, entfernt, neu)."""
-        return len(self.angepasst) + len(self.verschoben) + len(self.entfernt) + self.neu
+        """Termine, die sich ändern."""
+        return (
+            len(self.angepasst)
+            + len(self.verschoben)
+            + len(self.abgesagt)
+            + len(self.wieder)
+            + len(self.entfernt)
+            + self.neu
+        )
 
     def satz(self) -> str:
         """„Ändert 6 kommende Termine: 4 angepasst, 2 verschoben. …“ für Vorschau und Meldung."""
@@ -147,8 +165,12 @@ class Plan:
             teile.append(f"{len(self.angepasst)} angepasst")
         if self.verschoben:
             teile.append(f"{len(self.verschoben)} mit Inhalten verschoben")
+        if self.wieder:
+            teile.append(f"{len(self.wieder)} wieder angesetzt")
+        if self.abgesagt:
+            teile.append(f"{len(self.abgesagt)} ohne Tag im neuen Rhythmus abgesagt, mit allen Inhalten")
         if self.entfernt:
-            teile.append(f"{len(self.entfernt)} leere entfernt")
+            teile.append(f"{len(self.entfernt)} leere „Entfällt“-Einträge entfernt")
         if self.neu:
             teile.append(f"{self.neu} neu angelegt")
         if teile:
@@ -171,36 +193,105 @@ class Plan:
         return satz
 
 
-def _hat_inhalte(meeting: FactionMeeting, alt: FactionMeetingSchedule) -> bool:
+#: Felder der Sitzung, die nach dem Anlegen durch die Reihe leer sind; ist eines gesetzt, hat jemand den Termin bearbeitet
+_LEER_FELDER = (
+    "chaired_by_id",
+    "chaired_by_name_snapshot",
+    "minute_taker_id",
+    "minute_taker_name_snapshot",
+    "related_meeting_id",
+    "started_at",
+    "invitation_released_at",
+    "release_notice_first_sent_at",
+    "release_notice_final_sent_at",
+    "attendance_confirmed_at",
+    "agenda_reminder_sent_at",
+    "rsvp_reminder_sent_at",
+    "reminder_sent_at",
+    "protocol_sent_at",
+    "protocol_approved",
+    "protocol_approved_at",
+)
+#: Felder eines TOPs, die nach dem Anlegen leer sind
+_TOP_LEER_FELDER = (
+    "parent_id",
+    "has_decision",
+    "notes_updated_at",
+    "notes_encrypted",
+    "decision_encrypted",
+    "proposed_by_id",
+    "reviewed_by_id",
+    "related_agenda_item_id",
+    "reference_links",
+    "votes_for",
+    "votes_against",
+    "votes_abstain",
+)
+#: Audit-Einträge, die beim automatischen Anlegen entstehen (Sitzung, TOPs, Teilnahmen)
+_AUDIT_ANLAGE = {"generated", "auto_cancelled", "create"}
+_AUDIT_ANLAGE_MODELLE = {"FactionMeeting", "FactionAgendaItem", "FactionAttendance"}
+
+
+def _unveraendert(meeting: FactionMeeting, alt: FactionMeetingSchedule) -> bool:
     """
-    Hat der Termin mehr als das, was die Reihe automatisch anlegt? Im Zweifel ja: Dann wird er verschoben statt
-    gelöscht. Geprüft über die Löschkaskade (alles, was mit verschwände) und die angelegten TOPs und Teilnahmen.
+    Steht der Termin noch genau so da, wie die Reihe ihn angelegt hat? Nur dann zählt er als leer. Geprüft werden
+    Titel, Beschreibung, Zeit, Ort, Videolink, Vorsitz, Protokollführung und alle Abläufe der Sitzung, jeder TOP gegen
+    seine Vorlage (Standard-TOP bzw. Genehmigungs-TOP aus den Einstellungen), Teilnahmen, Anhänge, Protokoll,
+    verknüpfte Dokumente, die Löschkaskade (etwa Aufgaben) und die Änderungshistorie. Im Zweifel nicht leer.
     """
     from apps.work.faction import deletion
 
-    from .models import FactionAgendaItemAttachment
+    from .models import FactionAgendaItemAttachment, FactionAuditLog
 
-    if meeting.description or meeting.title != alt.name:
-        return True
+    if meeting.description or meeting.title != alt.name or meeting.protocol_status != "draft":
+        return False
+    if meeting.location != alt.default_location or meeting.video_link != alt.default_video_link:
+        return False
+    if meeting.is_virtual != bool(alt.default_video_link) or meeting.rsvp_enabled != alt.rsvp_enabled:
+        return False
+    if not _folgt(meeting, alt) or meeting.end is None:
+        return False
+    if meeting.end - meeting.start != timedelta(minutes=alt.duration_minutes or 120):
+        return False
+    if any(getattr(meeting, name, None) for name in _LEER_FELDER):
+        return False
+    for item in meeting.agenda_items.select_related("standard_item"):
+        if any(getattr(item, name, None) for name in _TOP_LEER_FELDER) or item.proposal_status != "active":
+            return False
+        if item.is_approval_item:
+            if not cast(Any, generation).approval_item_unchanged(meeting):
+                return False
+            continue
+        standard = item.standard_item
+        if standard is None or item.title != standard.title or item.description_encrypted:
+            return False
+    if FactionAgendaItemAttachment.objects.filter(agenda_item__meeting=meeting).exists():
+        return False
+    if meeting.agenda_items.filter(related_motions__isnull=False).exists():
+        return False
+    if meeting.agenda_items.filter(related_papers__isnull=False).exists():
+        return False
+    if meeting.protocol_entries.exists():
+        return False
+    if meeting.attendances.exclude(
+        status="invited",
+        responded_at__isnull=True,
+        is_guest=False,
+        checked_in_at__isnull=True,
+        confirmed_final_at__isnull=True,
+        response_message="",
+    ).exists():
+        return False
     try:
         folgen = deletion.impact_of(meeting)
     except deletion.DeletionBlockedError:
-        return True
+        return False
     if folgen.kept or {zeile.label for zeile in folgen.deleted} - _LEER_ERLAUBT:
-        return True
-    if meeting.agenda_items.filter(is_approval_item=False, standard_item__isnull=True).exists():
-        return True
-    if meeting.agenda_items.filter(notes_updated_at__isnull=False).exists():
-        return True
-    if meeting.agenda_items.filter(has_decision=True).exists():
-        return True
-    if FactionAgendaItemAttachment.objects.filter(agenda_item__meeting=meeting).exists():
-        return True
-    if meeting.agenda_items.filter(related_motions__isnull=False).exists():
-        return True
-    if meeting.agenda_items.filter(related_papers__isnull=False).exists():
-        return True
-    return meeting.attendances.exclude(status="invited", responded_at__isnull=True, is_guest=False).exists()
+        return False
+    historie = FactionAuditLog.objects.filter(meeting_id_ref=meeting.pk)
+    if historie.exclude(action__in=_AUDIT_ANLAGE).exists():
+        return False
+    return not historie.exclude(model_name__in=_AUDIT_ANLAGE_MODELLE).exists()
 
 
 def _folgt(meeting: FactionMeeting, alt: FactionMeetingSchedule) -> bool:
@@ -255,6 +346,26 @@ def _naechster_tag(frei: set[Any], datum: Any) -> Any:
     return min(frei, key=abstand)
 
 
+def _art(meeting: FactionMeeting, alt: FactionMeetingSchedule) -> str | None:
+    """
+    Wie der Termin bei einer Änderung der Reihe behandelt wird: ``inhalt`` (geplant, bearbeitet), ``leer`` (geplant,
+    unverändert), ``rhythmus`` (von einem früheren Rhythmuswechsel abgesagt), ``platzhalter`` (automatisch als
+    „Entfällt“ angelegt und nie berührt) oder ``None`` (bleibt außen vor, etwa von Hand abgesagt).
+    """
+    if meeting.status in ("draft", "planned"):
+        return "leer" if _unveraendert(meeting, alt) else "inhalt"
+    if meeting.cancellation_reason == RHYTHMUS_GRUND:
+        return "rhythmus"
+    if (
+        meeting.cancellation_reason.startswith("Entfällt")
+        and meeting.meeting_number is None
+        and not meeting.attendances.exists()
+        and _unveraendert(meeting, alt)
+    ):
+        return "platzhalter"
+    return None
+
+
 def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = None) -> Plan:
     """Was die Änderung mit den kommenden Terminen macht (ohne zu schreiben)."""
     from .models import FactionMeeting
@@ -278,14 +389,12 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
         ).order_by("scheduled_date")
     )
     betroffen: list[FactionMeeting] = []
-    leer: dict[Any, bool] = {}
+    art: dict[Any, str] = {}
     for meeting in kandidaten:
-        inhalte = _hat_inhalte(meeting, schedule)
-        # Von Hand abgesagte Termine bleiben; automatisch entfallene („Entfällt …“) ohne Inhalte gehen mit der Reihe
-        if meeting.status == "cancelled" and (inhalte or not meeting.cancellation_reason.startswith("Entfällt")):
-            continue
-        betroffen.append(meeting)
-        leer[meeting.pk] = not inhalte
+        einordnung = _art(meeting, schedule)
+        if einordnung is not None:
+            betroffen.append(meeting)
+            art[meeting.pk] = einordnung
     ergebnis.eingeladen = kuenftig.exclude(pk__in=[m.pk for m in betroffen]).exclude(status="cancelled").count()
 
     if not reihe_felder:
@@ -314,30 +423,34 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
     for meeting in betroffen:
         if meeting.scheduled_date in frei:
             frei.discard(meeting.scheduled_date)
-            schritte.append(Schritt(meeting, meeting.scheduled_date))
+            schritt = Schritt(meeting, meeting.scheduled_date)
+            (ergebnis.wieder if art[meeting.pk] == "rhythmus" else schritte).append(schritt)
         else:
             offen.append(meeting)
-    # Termine mit Inhalten auf den nächstgelegenen freien Tag (bei Gleichstand den späteren)
-    for meeting in [m for m in offen if not leer[m.pk]]:
+    # Termine mit Inhalten auf den nächstgelegenen freien Tag (bei Gleichstand den späteren), sonst bleiben sie
+    for meeting in [m for m in offen if art[m.pk] == "inhalt"]:
         if not frei:
             ergebnis.bleiben.append(meeting)
             continue
         ziel = _naechster_tag(frei, meeting.scheduled_date)
         frei.discard(ziel)
         schritte.append(Schritt(meeting, ziel))
-    # Leere, geplante Termine der Reihe nach auf die übrigen Tage; automatisch entfallene und der Rest gehen
-    for meeting in [m for m in offen if leer[m.pk]]:
-        if meeting.status != "cancelled" and frei:
+    # Unveränderte Termine der Reihe nach auf die übrigen Tage (Nummern bleiben in Folge); ohne Tag: absagen, nie löschen
+    for meeting in [m for m in offen if art[m.pk] == "leer"]:
+        if frei:
             ziel = min(frei)
             frei.discard(ziel)
             schritte.append(Schritt(meeting, ziel))
         else:
-            ergebnis.entfernt.append(meeting)
+            ergebnis.abgesagt.append(meeting)
+    # Nie berührte „Entfällt“-Platzhalter ohne Tag verschwinden; von einem Rhythmuswechsel abgesagte bleiben abgesagt
+    ergebnis.entfernt = [m for m in offen if art[m.pk] == "platzhalter"]
 
-    for schritt in schritte:
+    for schritt in [*schritte, *ergebnis.wieder]:
         schritt.felder = _felder(schritt.meeting, schedule, neu, schritt.datum, now)
+    for schritt in schritte:
         if schritt.verschoben:
-            (ergebnis.verschoben if not leer[schritt.meeting.pk] else ergebnis.angepasst).append(schritt)
+            (ergebnis.verschoben if art[schritt.meeting.pk] == "inhalt" else ergebnis.angepasst).append(schritt)
         elif schritt.felder:
             ergebnis.angepasst.append(schritt)
     # Nur nach einem Rhythmuswechsel beginnt die Reihe von vorn; sonst bleibt der Wasserstand (gelöschte Termine)
@@ -346,10 +459,22 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
     return ergebnis
 
 
+def _speichern(meeting: FactionMeeting, felder: dict[str, Any], extra: dict[str, Any]) -> None:
+    """Felder setzen und speichern; ein unbearbeiteter Genehmigungs-TOP bekommt den Titel zum neuen Datum."""
+    beschriften = cast(Any, generation).approval_item_unchanged(meeting)
+    for name, wert in {**felder, **extra}.items():
+        setattr(meeting, name, wert)
+    meeting.save(update_fields=sorted({*felder, *extra, "updated_at"}))
+    if beschriften and ("start" in felder or "title" in felder):
+        meeting.create_approval_agenda_item()
+
+
 def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None) -> Plan:
     """
-    Änderung übernehmen: Reihe speichern, Termine nach :func:`plan` anpassen, verschieben oder (leer) entfernen,
-    danach fehlende Tage anlegen. Unter der Sperre der Reihe, damit der Erzeugungslauf nicht dazwischen anlegt.
+    Änderung übernehmen: Reihe speichern, Termine nach :func:`plan` anpassen, verschieben, absagen oder wieder
+    ansetzen, danach fehlende Tage anlegen und die Nummern ordnen. Gelöscht werden nur nie berührte
+    „Entfällt“-Platzhalter. Unter der Sperre der Reihe und mit gesperrten Terminen: Was gerade eingeladen wird, ist nach
+    der Sperre nicht mehr betroffen.
     """
     from django.core.cache import cache
 
@@ -362,6 +487,12 @@ def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None
     try:
         with transaction.atomic():
             schedule.refresh_from_db()
+            # Künftige Termine sperren; plan() liest danach den gesperrten, aktuellen Stand (Einladung, Status)
+            list(
+                FactionMeeting.objects.select_for_update()
+                .filter(schedule=schedule, start__gt=timezone.now())
+                .values_list("pk", flat=True)
+            )
             ergebnis = plan(schedule, werte)
             if not ergebnis.reihe_felder:
                 return ergebnis
@@ -381,22 +512,27 @@ def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None
             schedule.save(update_fields=update_fields)
             ausnahmen = list(schedule.exceptions.all())
             regeln = list(schedule.suspension_rules.filter(is_active=True).select_related("ris_organization"))
+
+            def grund(tag: Any) -> str:
+                return (generation.evaluate_cancellation(schedule, tag, exceptions=ausnahmen, rules=regeln) or "")[:300]
+
             for schritt in schritte:
-                meeting = schritt.meeting
-                for name, wert in schritt.felder.items():
-                    setattr(meeting, name, wert)
-                felder = list(schritt.felder)
-                if schritt.verschoben and meeting.status in ("draft", "planned"):
-                    grund = generation.evaluate_cancellation(
-                        schedule, schritt.datum, exceptions=ausnahmen, rules=regeln
-                    )
-                    if grund:
-                        meeting.status = "cancelled"
-                        meeting.cancellation_reason = grund[:300]
-                        felder += ["status", "cancellation_reason"]
+                extra: dict[str, Any] = {}
                 if schritt.verschoben:
-                    felder.append("scheduled_date")
-                meeting.save(update_fields=sorted({*felder, "updated_at"}))
+                    extra["scheduled_date"] = schritt.datum
+                    if schritt.meeting.status in ("draft", "planned") and grund(schritt.datum):
+                        extra.update(status="cancelled", cancellation_reason=grund(schritt.datum))
+                _speichern(schritt.meeting, schritt.felder, extra)
+            for schritt in ergebnis.wieder:
+                ausfall = grund(schritt.datum)
+                extra = (
+                    {"cancellation_reason": ausfall} if ausfall else {"status": "planned", "cancellation_reason": ""}
+                )
+                _speichern(schritt.meeting, schritt.felder, extra)
+            for meeting in ergebnis.abgesagt:
+                meeting.status = "cancelled"
+                meeting.cancellation_reason = RHYTHMUS_GRUND
+                meeting.save(update_fields=["status", "cancellation_reason", "updated_at"])
             audit.log_event(
                 "schedule_changed",
                 schedule,
@@ -404,11 +540,19 @@ def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None
                 changes={
                     "Termine angepasst": {"alt": 0, "neu": len(ergebnis.angepasst)},
                     "Termine mit Inhalten verschoben": {"alt": 0, "neu": len(ergebnis.verschoben)},
-                    "Leere Termine entfernt": {"alt": 0, "neu": len(ergebnis.entfernt)},
+                    "Termine wieder angesetzt": {"alt": 0, "neu": len(ergebnis.wieder)},
+                    "Termine abgesagt (Rhythmuswechsel)": {"alt": 0, "neu": len(ergebnis.abgesagt)},
+                    "Leere Entfällt-Einträge entfernt": {"alt": 0, "neu": len(ergebnis.entfernt)},
                     "Termine neu angelegt": {"alt": 0, "neu": ergebnis.neu},
                 },
             )
     finally:
         cache.delete(key)
-    transaction.on_commit(lambda: generation.generate_meetings_now(schedule))
+    organization = schedule.organization
+
+    def danach() -> None:
+        generation.generate_meetings_now(schedule)
+        cast(Any, generation).renumber_upcoming(organization)
+
+    transaction.on_commit(danach)
     return ergebnis

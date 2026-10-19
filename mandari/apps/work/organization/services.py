@@ -2353,9 +2353,15 @@ def restore_deleted_date(organization: Organization, form: Mapping[str, str]) ->
         exception = None
     if exception is None:
         raise ServiceError("Gelöschter Termin nicht gefunden.")
+    from apps.work.faction.generation import renumber_upcoming
+
     schedule, datum = exception.schedule, exception.original_date
     exception.delete()
-    return datum, cast(Any, restore_occurrence)(schedule, datum) is not None
+    angelegt = cast(Any, restore_occurrence)(schedule, datum) is not None
+    if angelegt:
+        # Der wiederhergestellte Termin bekommt die nächste freie Nummer; danach nach Datum ordnen (Issue #1071)
+        cast(Any, renumber_upcoming)(organization)
+    return datum, angelegt
 
 
 def toggle_schedule(organization: Organization, schedule_id: Any) -> FactionMeetingSchedule:
