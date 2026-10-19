@@ -135,8 +135,10 @@ als Sprung sichtbar.
 ### 4.2 Lasttest mit Zeit-Budgets (werktags auf `dev`, von Hand, Pfadfilter)
 
 Der Workflow `Lasttest` startet die Anwendung wie im Betrieb — Daphne hinter
-Caddy (TLS, Kompression), PostgreSQL mit den Einstellungen der Größenklasse,
-Redis, Elasticsearch —, erzeugt die Daten und lässt die Szenarien laufen
+Caddy (TLS, Kompression), mit der gewählten Zahl Prozesse über
+`mandari.app_processes` wie im Container (#718), PostgreSQL mit den
+Einstellungen der Größenklasse, Redis, Elasticsearch —, erzeugt die Daten und
+lässt die Szenarien laufen
 (Profil `klein`: rund sieben Minuten). Der Lauf scheitert, wenn
 
 - die Fehlerquote gesamt oder in einem Szenario über 1 % liegt,
@@ -229,7 +231,9 @@ Datenbank.
 ### 5.3 Kapazität — Profil `gross`, vier Prozesse
 
 Stufenlast 25 bis 200 Nutzer, je Stufe 2 Minuten, Datenbank mit den
-Einstellungen der Klasse „groß“:
+Einstellungen der Klasse „groß“. Gemessen vor #718 mit vier Daphne-Prozessen
+an eigenen Ports, verteilt durch Caddy (`least_conn`); seitdem startet der
+Workflow die Prozesse wie der Container (Abschnitt 5.6):
 
 | Nutzer | Anfragen/s | Fehlerquote | Median | p95 | CPU Anwendung | CPU Datenbank |
 |---:|---:|---:|---:|---:|---:|---:|
@@ -283,12 +287,39 @@ eintrafen.
 - **Live-Abstimmung**: 30 Einzelstimmen in einem Formular: p95 rund 0,9 s
   (seit #291 gesammelt gespeichert; vorher rund 2,7 s auf dem Entwicklerrechner).
 
+### 5.6 Ein Prozess gegen vier im Container — Profil `gross` (19. Oktober 2026)
+
+Stufenlast 10 bis 100 Nutzer, je Stufe 2 Minuten, Datenbank mit den
+Einstellungen der Klasse „groß“; die Anwendung startet wie im Container über
+`mandari.app_processes` (`APP_PROCESSES`, #718), alle Prozesse an einem Port.
+Zwei Läufe auf demselben Stand, nur die Prozesszahl verschieden:
+
+| Nutzer | 1 Prozess: Anfragen/s | p95 | Fehler | 4 Prozesse: Anfragen/s | p95 | Fehler |
+|---:|---:|---:|---:|---:|---:|---:|
+| 10 | 3,4 | 171 | 0 % | 3,4 | 250 | 0 % |
+| 25 | **8,8** | **276** | 0 % | 9,2 | 312 | 0 % |
+| 50 | 16,5 | 1.287 | 0 % | 17,7 | 630 | 0 % |
+| 75 | 20,5 | 2.248 | 4,9 % | **27,0** | **700** | 0 % |
+| 100 | 25,5 | 2.357 | 17,3 % | 28,4 | 2.626 | 0 % |
+
+Getragen (p95 bis 1 s, höchstens 1 % Fehler) sind mit einem Prozess **25
+Nutzer bei 8,8 Anfragen/s**, mit vier Prozessen **75 Nutzer bei 27,0
+Anfragen/s**: dreimal so viel. Ein Prozess bleibt ab 75 Nutzern bei rund 1,6
+Kernen stehen (CPU der Stufen), vier Prozesse belegen bei 100 Nutzern 4,25
+Kerne; dann ist der Läufer mit seinen 4 vCPU für alles zusammen voll. Die Fehler mit einem Prozess sind
+`503`-Antworten bei erschöpftem Datenbank-Pool; mit vier Prozessen gab es
+keine. Speicher: ein Prozess im Mittel 430 MB (Spitze 512), vier zusammen
+1.364 MB (Spitze 1.705); PostgreSQL höchstens 42 Verbindungen. Läufe:
+Workflow `Lasttest`, Stand `8e73102`, Aufruf in Abschnitt 7.
+
 ## 6. Größenempfehlungen
 
-**Wichtig:** Mit der mitgelieferten `docker-compose.yml` läuft genau ein
-Anwendungsprozess. Er sättigt bei rund 20 Anfragen/s, egal wie viele Kerne der
-Server hat. Die Klasse „mittel“ liegt damit an der Grenze, „groß“ braucht
-mehrere Prozesse (#718).
+**Wichtig:** Ein Anwendungsprozess sättigt bei rund 20 Anfragen/s, egal wie
+viele Kerne der Server hat. Weitere Kerne nutzt die Anwendung nur mit weiteren
+Prozessen: in Docker Compose `APP_PROCESSES` (Vorgabe 1, `DEPLOYMENT.md`,
+„Mehrere Anwendungsprozesse“, #718), im Helm-Chart `app.replicas`. Mit einem
+Prozess liegt die Klasse „mittel“ an der Grenze, „groß“ ist mit einem Prozess
+nicht zu tragen.
 
 Rechenweg: Bedarf in Anfragen je Sekunde × gemessene CPU-Sekunden je Anfrage
 (Abschnitte 5.2 und 5.3) ÷ Zielauslastung 60 %. Für den Bedarf nehmen wir an,
@@ -306,13 +337,13 @@ Nutzungszahlen hat, rechnet mit derselben Formel nach.
 |---|---|---|---|---|
 | vCPU (gesamt) | 2 | 4 | 12 | Rechenweg oben; dazu Suche, Cache, System. groß bisher 8 (abgeleitet), jetzt aus der Messung |
 | RAM (gesamt) | 8 GB | 16 GB | 32 GB | Summe der Dienstgrenzen unten |
-| Anwendungsprozesse (Daphne) | 1 | 2 | 8 | ein Prozess trägt rund 15 Anfragen/s beim Bestand `klein` (gemessen, 5.2), beim Bestand `gross` etwa die Hälfte (doppelte Kosten je Anfrage, 5.3), und nutzt bis 1,5 Kerne. Docker Compose startet heute genau einen Prozess (#718); mehrere über das Helm-Chart (`app.replicas`) |
-| RAM je Anwendungsprozess | 1 GB | 1 GB | 1 GB | gemessen 300 bis 480 MB je Prozess unter Last; Limit in `docker-compose.yml` |
+| Anwendungsprozesse (Daphne) | 1 | 2 | 8 | ein Prozess trägt rund 15 Anfragen/s beim Bestand `klein` (gemessen, 5.2), beim Bestand `gross` etwa die Hälfte (doppelte Kosten je Anfrage, 5.3), und nutzt bis 1,5 Kerne. Docker Compose: `APP_PROCESSES` (#718); Helm-Chart: `app.replicas` |
+| RAM je Anwendungsprozess | 1 GB | 1 GB | 1 GB | gemessen 300 bis 480 MB je Prozess unter Last; Docker Compose: `MANDARI_MEM_LIMIT` = Prozesse × 1 GB (Grenze für den ganzen Container: 1g, 2g, 8g) |
 | PostgreSQL `mem_limit` | 1 GB | 4 GB | 8 GB | Bestand: 0,1 / 0,5 / 2 GB je Mandant und Jahr, Index soll in den Cache passen |
 | `shared_buffers` / `effective_cache_size` | 256 MB / 768 MB | 1 GB / 3 GB | 2 GB / 6 GB | Faustregel ein Viertel / drei Viertel (`DEPLOYMENT.md`); so auch im Lasttest |
 | `work_mem` | 8 MB | 8 MB | 16 MB | gilt je Sortiervorgang; mit `max_connections` gemeinsam ändern |
 | `max_connections` | 100 | 200 | 300 | Summe der Dienstgrenzen plus Reserve, siehe unten |
-| `DB_POOL_MAX` je Anwendungsprozess | 10 | 10 | 10 | mehr Prozesse statt größerer Pools; im Lasttest nie mehr als 42 Verbindungen bei vier Prozessen |
+| `DB_POOL_MAX` je Anwendungsprozess | 10 | 10 | 10 | mehr Prozesse statt größerer Pools; im Lasttest nie mehr als 42 Verbindungen bei vier Prozessen. Jeder Prozess hat einen eigenen Pool; ab zwei Prozessen PgBouncer (`DEPLOYMENT.md`), dann sieht PostgreSQL von der Anwendung höchstens `PGBOUNCER_DEFAULT_POOL_SIZE` |
 | Elasticsearch Heap | 1 GB | 2 GB | 4 GB | 1 GB Heap reichte im Lasttest auch für `gross` (1,8 GB Container); Reserve für echte Volltexte |
 | Redis | 256 MB | 512 MB | 1 GB | Cache, Sessions, Channel-Layer; gemessen unter 30 MB |
 | Ingestor (nur mit Bürgerportal) | 1 GB | 2 GB | 4 GB | OCR-Worker je nach Dokumentvolumen zusätzlich |
@@ -321,7 +352,7 @@ Verbindungsbudget je Klasse (Muster aus `DEPLOYMENT.md`):
 
 | Dienst | klein | mittel | groß |
 |---|---:|---:|---:|
-| Anwendung (Prozesse × `DB_POOL_MAX`) | 10 | 20 | 80 |
+| Anwendung (Prozesse × `DB_POOL_MAX`; mit PgBouncer `DEFAULT_POOL_SIZE`) | 10 | 20 | 80 |
 | Ingestor | 30 | 30 | 30 |
 | OCR-Worker | 30 | 30 | 30 |
 | Sicherung (`pg_dump`) | 2 | 2 | 2 |
@@ -343,6 +374,10 @@ während einer Ratssitzung) —, aber die Kosten je Anfrage auf Zielhardware.
 ```bash
 # In der CI: Actions → Lasttest → Run workflow (Profil, optional Nutzer, Laufzeit,
 # Prozesse, Stufen für eine Kapazitätsmessung, z. B. 25,50,75,100,150,200)
+
+# Ein Prozess gegen vier (Abschnitt 5.6, #718), nacheinander auf demselben Stand:
+gh workflow run lasttest.yml --ref dev -f profil=gross -f prozesse=1 -f stufen=10,25,50,75,100 -f stufendauer=120
+gh workflow run lasttest.yml --ref dev -f profil=gross -f prozesse=4 -f stufen=10,25,50,75,100 -f stufendauer=120
 
 # Lokal: Daten, Budget-Gate, Lasttest (Befehle und Umgebungsvariablen in loadtest/README.md)
 cd mandari && python manage.py generate_load_data --profile klein

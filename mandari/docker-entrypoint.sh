@@ -8,6 +8,7 @@ set -e
 #   - collectstatic nur wenn nötig
 #   - Elasticsearch-Setup im Hintergrund
 #   - Daphne (ASGI) für HTTP + WebSocket (Echtzeit-Collaboration)
+#   - APP_PROCESSES Daphne-Prozesse an Port 8000 (Vorgabe 1, Issue #718)
 # =============================================================================
 
 # Function to wait for database
@@ -69,10 +70,15 @@ wait_for_db
 # Daphne ist der offizielle ASGI-Server von Django Channels und unterstützt
 # sowohl HTTP als auch WebSocket-Verbindungen (nötig für Echtzeit-Collaboration).
 # Gunicorn (WSGI) kann KEINE WebSocket-Verbindungen handhaben.
-echo "Starting daphne (ASGI)..."
-exec daphne \
-    --bind 0.0.0.0 \
-    --port 8000 \
+#
+# Anwendungsprozesse (Issue #718): APP_PROCESSES, Vorgabe 1. Mit 1 ersetzt sich
+# mandari.app_processes per exec durch genau den bisherigen Aufruf
+# (daphne --bind 0.0.0.0 --port 8000 und die Argumente nach "--"). Mit mehr
+# teilen sich die Prozesse Port 8000; Prüfung je Prozess, Neustart und
+# Herunterfahren übernimmt das Modul (mandari/app_processes.py, DEPLOYMENT.md,
+# „Mehrere Anwendungsprozesse“).
+echo "Starting daphne (ASGI), APP_PROCESSES=${APP_PROCESSES:-1}..."
+exec python -m mandari.app_processes --bind 0.0.0.0 --port 8000 -- \
     --verbosity 1 \
     --access-log - \
     --proxy-headers \

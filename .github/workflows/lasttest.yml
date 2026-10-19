@@ -2,7 +2,8 @@
 # =============================================================================
 # Lasttest nach Mengengerüst mit Performance-Budgets (Issue #228)
 # =============================================================================
-# Startet die Anwendung wie im Betrieb – Daphne hinter Caddy (TLS, Kompression),
+# Startet die Anwendung wie im Betrieb – Daphne hinter Caddy (TLS, Kompression), mit
+# so vielen Prozessen wie gewählt über mandari.app_processes wie im Container (#718),
 # PostgreSQL mit den Einstellungen der Größenklasse, Redis, Elasticsearch –,
 # erzeugt die synthetischen Daten des Mengengerüsts (manage.py generate_load_data),
 # lässt die Locust-Szenarien laufen (loadtest/locustfile.py) und prüft p95 je
@@ -234,28 +235,29 @@ jobs:
           python manage.py reindex_elasticsearch
           echo "Suchindex: $(( $(date +%s) - beginn )) s" | tee -a "../$ERGEBNISSE/generator.txt"
 
+      # Wie im Container (mandari/docker-entrypoint.sh, Issue #718): mandari.app_processes startet
+      # APP_PROCESSES Daphne-Prozesse an einem Port, mit einem Prozess genau Daphne wie bisher
       - name: Anwendung starten (Daphne hinter Caddy)
         env:
-          PROZESSE: ${{ steps.lauf.outputs.prozesse }}
+          APP_PROCESSES: ${{ steps.lauf.outputs.prozesse }}
         run: |
           set -euo pipefail
-          upstreams=""
           cd mandari
-          for i in $(seq 1 "$PROZESSE"); do
-            port=$((8000 + i))
-            nohup daphne --bind 127.0.0.1 --port "$port" --proxy-headers mandari.asgi:application \
-              > "../$ERGEBNISSE/daphne-$i.log" 2>&1 &
-            upstreams="$upstreams 127.0.0.1:$port"
-          done
+          nohup python -m mandari.app_processes --bind 127.0.0.1 --port 8001 --check-port-base 8100 -- \
+            --proxy-headers mandari.asgi:application > "../$ERGEBNISSE/daphne.log" 2>&1 &
           cd ..
-          sed "s/LASTTEST_UPSTREAMS/${upstreams# }/" loadtest/Caddyfile > "$RUNNER_TEMP/Caddyfile"
+          sed "s/LASTTEST_UPSTREAMS/127.0.0.1:8001/" loadtest/Caddyfile > "$RUNNER_TEMP/Caddyfile"
           docker run -d --name lasttest-caddy --network host \
             -v "$RUNNER_TEMP/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine
-          for port in $upstreams; do
+          # Mit einem Prozess Port 8001, mit mehreren jeden Prozess über seinen Prüfport (8101, 8102, …)
+          ports=8001
+          if [ "$APP_PROCESSES" -gt 1 ]; then ports=$(seq 8101 $((8100 + APP_PROCESSES))); fi
+          for port in $ports; do
             for i in $(seq 1 60); do
-              curl -sf "http://$port/health/" >/dev/null && break
+              curl -sf "http://127.0.0.1:$port/health/" >/dev/null && break
               sleep 1
             done
+            curl -sf "http://127.0.0.1:$port/health/" >/dev/null
           done
           # Anmeldeseite über Caddy: TLS, Weiterleitung und Anwendung in einem Aufruf
           for i in $(seq 1 30); do
@@ -311,7 +313,7 @@ jobs:
       - name: Fehler der Anwendung (Protokoll)
         if: ${{ !cancelled() }}
         run: |
-          for f in "$ERGEBNISSE"/daphne-*.log; do
+          for f in "$ERGEBNISSE"/daphne*.log; do
             [ -f "$f" ] || continue
             echo "::group::$f (letzte 80 Zeilen)"
             tail -n 80 "$f"
