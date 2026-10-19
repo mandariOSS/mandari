@@ -1,5 +1,5 @@
 {% comment %}
-Dialog „Neue Fraktionssitzung“ im neuen Erscheinungsbild (Issue #951; Felder Issues #871, #872): gemeinsamer Baustein
+Dialog „Fraktionssitzung planen“ (Issue #1071, Titel und Knopf nach dem Muster; davor #951; Felder Issues #871, #872): gemeinsamer Baustein
 c-ui.alpine-modal statt eigenem Overlay, Felder c-form.* dicht (36 px). Formular wie bisher: POST an die Liste mit
 title, start_date, start_time, location, video_link, is_virtual, Standard-Tagesordnung (standard_agenda_offered,
 standard_agenda), rsvp_enabled, description; „Als Entwurf“ sendet save_as=draft. Kontext: showCreateModal aus dem
@@ -9,7 +9,7 @@ x-data der Liste, standard_agenda_preview, organization, membership.
     <form method="post" data-testid="neue-sitzung">
         {% csrf_token %}
         <div class="flex items-center justify-between gap-4 px-5 pt-4 pb-3 border-b border-gray-200 dark:border-gray-700">
-            <h2 id="neue-sitzung-titel" class="text-base font-semibold leading-8 text-gray-900 dark:text-white">Neue Fraktionssitzung</h2>
+            <h2 id="neue-sitzung-titel" class="text-base font-semibold leading-8 text-gray-900 dark:text-white">Fraktionssitzung planen</h2>
             <button type="button" @click="showCreateModal = false" aria-label="Schließen"
                     class="inline-flex items-center justify-center w-8 h-8 -mr-2 rounded-md text-gray-500 hover:text-gray-900 hover:bg-band-grau dark:text-gray-400 dark:hover:text-white">
                 <i data-lucide="x" class="w-4 h-4" aria-hidden="true"></i>
@@ -37,7 +37,7 @@ x-data der Liste, standard_agenda_preview, organization, membership.
         <div class="flex flex-wrap items-center justify-end gap-x-4 gap-y-2 px-5 py-3 border-t border-gray-200 dark:border-gray-700">
             <button type="button" @click="showCreateModal = false" class="mr-auto text-sm font-medium text-gray-700 dark:text-gray-300 hover:underline underline-offset-4">Abbrechen</button>
             <c-ui.button type="submit" name="save_as" value="draft" variant="secondary" size="sm">Als Entwurf</c-ui.button>
-            <c-ui.button type="submit" size="sm">Erstellen</c-ui.button>
+            <c-ui.button type="submit" size="sm">Planen</c-ui.button>
         </div>
     </form>
 </c-ui.alpine-modal>

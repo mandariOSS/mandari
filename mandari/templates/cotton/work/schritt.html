@@ -1,0 +1,12 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Ein Schritt nach der Sitzung (Issue #1071, Muster „Nach der Sitzung“): Kreis mit Nummer bzw. Haken, Titel fett,
+Erläuterung darunter (Inhalt, darf Links und Knöpfe enthalten). In einer Liste <ol class="fs-schritte">.
+  <ol class="fs-schritte">
+      <c-work.schritt nr="1" stand="erledigt" titel="Anwesenheit bestätigt">Am 13.10. von Vera Beispiel.</c-work.schritt>
+      <c-work.schritt nr="2" stand="aktuell" titel="Genehmigung in Nr. 25">…</c-work.schritt>
+  </ol>
+Parameter: nr, stand (erledigt, aktuell oder leer), titel.
+{% endcomment %}
+<c-vars nr="" stand="" titel="" />
+<li{% if stand %} class="{{ stand }}"{% endif %}{% if stand == "aktuell" %} aria-current="step"{% endif %} {{ attrs }}><span class="kreis">{% if stand == "erledigt" %}<i data-lucide="check" aria-hidden="true"></i><span class="sr-only">erledigt</span>{% else %}{{ nr }}{% endif %}</span><span><b>{{ titel }}</b>{% if slot %}<small>{{ slot }}</small>{% endif %}</span></li>

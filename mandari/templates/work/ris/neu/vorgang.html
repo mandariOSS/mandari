@@ -9,6 +9,7 @@ Seite bleibt work/ris/paper_detail.html.
 {% endcomment %}
 
 {% block page_title %}{% if paper %}{{ paper.reference|default:paper.name|truncatechars:50 }}{% else %}Vorgang{% endif %}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
 {% block brotkrumen_aktuell %}{% if paper %}<c-insight.brotkrume>{{ paper.reference|default:paper.name|truncatechars:50 }}</c-insight.brotkrume>{% endif %}{% endblock %}
 
 {% block work_header %}

@@ -1,0 +1,10 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Versandergebnis einer Person (Issue #1071, Muster „Einladen“): Name mit Zusatz (Adresse oder Rolle), rechts das Ergebnis,
+bei einem Fehler der Grund in einer eigenen Zeile. In einer Liste <ul class="fs-versandliste">.
+  <c-work.versandzeile wer="Klara Kopie" zusatz="k.kopie@example.org" ergebnis="Zugestellt 18:00" />
+  <c-work.versandzeile wer="Max Muster" ergebnis="Nicht zugestellt" fehler grund="Postfach voll" />
+Parameter: wer, zusatz, ergebnis, fehler (Ergebnis als Fehler hervorheben), grund.
+{% endcomment %}
+<c-vars wer="" zusatz="" ergebnis="" fehler="" grund="" />
+<li {{ attrs }}><span class="wer">{{ wer }}{% if zusatz %}<small>{{ zusatz }}</small>{% endif %}</span><span class="erg{% if fehler %} fehler{% endif %}">{{ ergebnis }}</span>{% if grund %}<span class="grund">{{ grund }}</span>{% endif %}</li>
