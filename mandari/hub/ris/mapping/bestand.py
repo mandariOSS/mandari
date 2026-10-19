@@ -69,8 +69,9 @@ from insight_core.models import (
 )
 from insight_core.services.file_reconcile import is_blocked
 
-#: Version der Abbildung (2: Beschlussfassung und Genehmigung der Niederschrift aus eigenen Spalten, Issue #525)
-VERSION: Final = 2
+#: Version der Abbildung (2: Beschlussfassung und Genehmigung der Niederschrift aus eigenen Spalten, Issue #525;
+#: 3: ``mandari:summaryAiGenerated`` zur KI-Zusammenfassung, Issue #938)
+VERSION: Final = 3
 
 # Verbreitete Angaben fremder Quellen, die keiner der sieben Werte sind, aber eindeutig dazugehören.
 # Manche RIS ordnen nach dem Kommunalrecht: Hauptorgan (Rat, Kreistag) und Hilfsorgan (Ausschüsse,
@@ -644,6 +645,8 @@ class BestandMapping:
                 **_timestamps(paper),
                 "mandari:originalId": paper.external_id,
                 "mandari:summary": paper.summary,
+                # Die Zusammenfassung erzeugt eine KI, ungeprüft (EU AI Act Art. 50, Issue #938, docs/KI_TRANSPARENZ.md)
+                "mandari:summaryAiGenerated": True if paper.summary else None,
             }
         )
 

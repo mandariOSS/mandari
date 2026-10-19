@@ -211,6 +211,18 @@ def test_vorgang_mit_beratungsfolge_und_beschluss(ctx: ToolContext, stadt: Muste
     assert "Radweg erhält eine rote Markierung" not in json.dumps(ergebnis, ensure_ascii=False)
 
 
+def test_vorgang_kennzeichnet_die_ki_zusammenfassung(ctx: ToolContext, stadt: Musterstadt) -> None:
+    """EU AI Act Art. 50 (Issue #938): Wer das Werkzeug über MCP nutzt, erfährt, dass die Zusammenfassung KI-Text ist."""
+    ohne = rufe(ctx, "vorgang", id=str(stadt.vorlage.pk))
+    assert "zusammenfassung" not in ohne and "zusammenfassung_ki_erzeugt" not in ohne
+
+    type(stadt.vorlage).objects.filter(pk=stadt.vorlage.pk).update(summary="Der Radweg wird markiert.")
+    mit = rufe(ctx, "vorgang", id=str(stadt.vorlage.pk))
+
+    assert mit["zusammenfassung"] == "Der Radweg wird markiert."
+    assert mit["zusammenfassung_ki_erzeugt"] is True
+
+
 def test_vorgang_nichtoeffentlich_beraten_ohne_ergebnis(ctx: ToolContext, stadt: Musterstadt) -> None:
     ergebnis = rufe(ctx, "vorgang", id=str(stadt.grundstueck.pk))
     (schritt,) = ergebnis["beratungsfolge"]

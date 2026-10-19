@@ -27,6 +27,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `LIVE_UEBERTRAGUNG.md` | Insight → Live-Übertragungen von Gremiensitzungen (Seite folgt) |
 | `INSIGHT_KI_ASSISTENT.md` | Insight → KI-Assistent (Seite folgt) |
 | `INSIGHT_MCP.md` | Insight → MCP-Schnittstelle für KI-Werkzeuge (Seite folgt) |
+| `KI_TRANSPARENZ.md` | Datenschutz → KI-Transparenz nach EU AI Act Art. 50 (Seite folgt) |
 | `SESSION_REMINDERS.md` | [Session → Fristen-Erinnerungen](https://docs.mandari.de/session/fristen-erinnerungen/) |
 | `PROTOKOLLIERUNG.md` | [Datenschutz → Protokollierungskonzept](https://docs.mandari.de/datenschutz/) (Seite folgt) |
 | `SESSION_MANDANT_ANLEGEN.md` | Session → Mandanten anlegen und Bürgerportal je Körperschaft (Seite folgt) |

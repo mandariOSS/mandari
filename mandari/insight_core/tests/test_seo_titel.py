@@ -170,7 +170,8 @@ class TestVorgang:
         description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
 
         assert description.startswith(
-            "Münster: Vorlage V/0881/2011 vom 15.11.2011. Am 06.12.2011 im Rat beschlossen. Die Feuerwache Süd"
+            "Münster: Vorlage V/0881/2011 vom 15.11.2011. Am 06.12.2011 im Rat beschlossen. "
+            "KI-Zusammenfassung: Die Feuerwache Süd"
         )
         assert len(description) <= 160 and description.endswith("…")
 
@@ -179,8 +180,28 @@ class TestVorgang:
 
         description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
 
-        assert description == "Münster: Antrag A/12/2026 vom 15.11.2011. Kurz und klar."
+        assert description == "Münster: Antrag A/12/2026 vom 15.11.2011. KI-Zusammenfassung: Kurz und klar."
         assert "Noch keine Beratung" not in description
+
+    def test_ki_zusammenfassung_ist_auch_im_json_ld_gekennzeichnet(self, muenster: OParlBody) -> None:
+        """EU AI Act Art. 50 (Issue #938): Suchmaschinen zeigen den Text ohne die Seite, die Kennzeichnung steht darin."""
+        paper = _vorgang(muenster, paper_type="Antrag", reference="A/12/2026", summary="Kurz und klar.")
+
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
+
+        assert "KI-Zusammenfassung: Kurz und klar." in _meta(seite, "property", "og:description")
+        werke = [eintrag for eintrag in _json_ld(seite) if eintrag.get("@type") == "CreativeWork"]
+        assert [werk["description"] for werk in werke] == [
+            "Münster: Antrag A/12/2026 vom 15.11.2011. KI-Zusammenfassung: Kurz und klar."
+        ]
+
+    def test_ohne_zusammenfassung_keine_ki_kennzeichnung(self, muenster: OParlBody) -> None:
+        paper = _vorgang(muenster, paper_type="Antrag", reference="A/12/2026")
+
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
+
+        assert "KI-Zusammenfassung" not in _meta(seite, "name", "description")
+        assert "data-ai-generated" not in seite
 
     @pytest.mark.parametrize(
         ("betreff", "erwartet"),

@@ -323,3 +323,34 @@ class TestEinwilligung:
         assert "response.status === 409" in inhalt and "window.location.reload()" in inhalt
         # Prüfsumme statt Klartext: Der Host des Anbieters steht nicht im Quelltext
         assert "onstackit.cloud" not in inhalt and SCHLUESSEL not in inhalt
+
+
+class TestKennzeichnungDerAntworten:
+    """EU AI Act Art. 50 (Issue #938): Antworten des KI-Assistenten sind sichtbar und maschinenlesbar gekennzeichnet."""
+
+    def test_schnittstelle_kennzeichnet_die_antwort(self, besucher: Client, anfragen: list[httpx.Request]) -> None:
+        _einrichten()
+        assert _einwilligen(besucher).status_code == 200
+
+        antwort = besucher.post(
+            reverse("insight_core:insight:chat_message"),
+            {"message": "Was ist geplant?"},
+            content_type="application/json",
+        )
+
+        assert antwort.status_code == 200, antwort.content
+        daten = antwort.json()
+        assert daten["ai_generated"] is True
+        # Bestehende Felder bleiben (nur ergänzt)
+        assert {"response", "sources", "remaining_today", "remaining_week"} <= set(daten)
+
+    def test_seite_kennzeichnet_antworten_sichtbar_und_im_html(self, besucher: Client) -> None:
+        _einrichten()
+
+        inhalt = besucher.get(reverse("insight_core:insight:chat")).content.decode()
+
+        assert "Antworten erstellt eine KI aus öffentlichen Ratsdokumenten. Sie können Fehler enthalten." in inhalt
+        # Nur die Antworten der KI tragen das Merkmal, nicht die Fragen
+        assert inhalt.count('data-ai-generated="true"') == 1
+        antwortblock = inhalt[inhalt.index("msg.role === 'assistant'") :]
+        assert 'data-ai-generated="true"' in antwortblock[: antwortblock.index("renderMarkdown(msg.content)")]

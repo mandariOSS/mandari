@@ -45,7 +45,9 @@
             {% if paper.summary %}
             <div class="prose dark:prose-invert max-w-none">
                 <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Zusammenfassung</h3>
-                <p class="text-gray-600 dark:text-gray-400">{{ paper.summary }}</p>
+                <p class="text-gray-600 dark:text-gray-400" data-ai-generated="true">{{ paper.summary }}</p>
+                {# Kennzeichnung nach EU AI Act Art. 50 (Issue #938), wie partials/paper_summary.html #}
+                <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Mit KI aus den Dokumenten erstellt. Die Zusammenfassung kann Fehler enthalten.</p>
             </div>
             {% endif %}
         </div>

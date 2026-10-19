@@ -89,10 +89,12 @@ class MotionAIAssistantView(WorkViewMixin, View):
 
             if result.success:
                 quota = motion_ai_service.get_quota_status()
+                # ``ai_generated`` kennzeichnet Inhalt und Vorschläge maschinenlesbar (EU AI Act Art. 50, Issue #938)
                 return JsonResponse(
                     {
                         "success": True,
                         "content": result.content,
+                        "ai_generated": True,
                         "suggestions": result.suggestions,
                         "tokens_used": result.total_tokens,
                         "quota": quota,

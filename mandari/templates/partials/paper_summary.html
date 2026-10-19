@@ -1,9 +1,11 @@
 {% comment %}
 KI-Zusammenfassung eines Vorgangs (Vorgangsseite und HTMX-Endpunkt von Insight, Vorgangsseite von Work, Issue #853).
 Erwartet: paper und summary bzw. error/offer; ``dicht`` (Work) setzt die Überschrift in 16 px.
+Kennzeichnung nach EU AI Act Art. 50 (Issue #938, docs/KI_TRANSPARENZ.md): sichtbar im Satz unter dem Text,
+maschinenlesbar über ``data-ai-generated`` am KI-Text.
 {% endcomment %}{% if summary %}
 <h2 class="{% if dicht %}text-base font-semibold{% else %}text-[1.375rem] font-bold tracking-tight{% endif %} text-gray-900 dark:text-white">Zusammenfassung</h2>
-<div class="mt-3 prose prose-sm dark:prose-invert max-w-3xl">
+<div class="mt-3 prose prose-sm dark:prose-invert max-w-3xl" data-ai-generated="true">
     {{ summary|linebreaks }}
 </div>
 <p class="text-sm text-gray-600 dark:text-gray-400 mt-3">

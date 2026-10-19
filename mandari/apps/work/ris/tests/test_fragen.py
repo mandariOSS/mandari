@@ -107,6 +107,10 @@ def test_antwort_mit_links_und_quellen_in_work(
     assert antwort.status_code == 200 and "<html" not in html
     assert f'<a href="{work_link}">' in html and "/insight/termine/" not in html
     assert "KI-Antwort aus den öffentlichen Ratsdaten – maßgeblich sind die Quellen." in html
+    # Maschinenlesbar gekennzeichnet ist genau der KI-Text, nicht die Quellenliste (EU AI Act Art. 50, Issue #938)
+    assert html.count('data-ai-generated="true"') == 1
+    ki_text = html[html.index('data-ai-generated="true"') : html.index(">Quellen</h3>")]
+    assert f'<a href="{work_link}">' in ki_text
     assert html.count(f'href="{work_link}"') == 2  # in der Antwort und als Quelle
     # Systemprompt von Work, Links im Werkzeugergebnis auf Work-Seiten
     gesendet = json.dumps([a["messages"] for a in fake.aufrufe], ensure_ascii=False)

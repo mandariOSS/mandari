@@ -381,10 +381,11 @@ def chat_message(request):
     rate_info["remaining_today"] = max(0, rate_info["remaining_today"] - 1)
     rate_info["remaining_week"] = max(0, rate_info["remaining_week"] - 1)
 
-    # 9. Return response
+    # 9. Return response; ``ai_generated`` kennzeichnet die Antwort maschinenlesbar (EU AI Act Art. 50, Issue #938)
     return JsonResponse(
         {
             "response": result["response"],
+            "ai_generated": True,
             "sources": result["sources"],
             "remaining_today": rate_info["remaining_today"],
             "remaining_week": rate_info["remaining_week"],

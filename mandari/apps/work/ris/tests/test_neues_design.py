@@ -544,3 +544,19 @@ def test_vorgang_mit_zusammenfassung_aus_dem_baustein_von_insight(welt: Welt, cl
     assert "Kurz gesagt: eine neue Feuerwache" in zusammenfassung
     assert "Die Zusammenfassung kann Fehler enthalten." in zusammenfassung
     assert '<h2 class="text-base font-semibold' in zusammenfassung
+    # Maschinenlesbar gekennzeichnet (EU AI Act Art. 50, Issue #938)
+    ki_text = zusammenfassung[zusammenfassung.index('data-ai-generated="true"') :]
+    assert ki_text.index("Kurz gesagt") < ki_text.index("</div>")
+
+
+def test_vorgang_im_bisherigen_rahmen_kennzeichnet_die_ki_zusammenfassung(welt: Welt, client_for: Any) -> None:
+    """EU AI Act Art. 50 (Issue #938): auch die bisherige Vorgangsseite nennt die KI, sichtbar und im HTML."""
+    welt.org.work_new_design = False
+    welt.org.save(update_fields=["work_new_design"])
+    welt.vorlage.summary = "Kurz gesagt: eine neue Feuerwache im Norden."
+    welt.vorlage.save(update_fields=["summary"])
+
+    html = _seite(client_for, welt.vorsitz, "work:ris_paper_detail", paper_id=welt.vorlage.pk).content.decode()
+
+    assert '<p class="text-gray-600 dark:text-gray-400" data-ai-generated="true">Kurz gesagt: eine neue' in html
+    assert "Mit KI aus den Dokumenten erstellt. Die Zusammenfassung kann Fehler enthalten." in html

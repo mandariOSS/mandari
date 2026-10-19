@@ -69,6 +69,9 @@ _THEMA_MIN = 20
 DESCRIPTION_MAX = 160
 #: Ein Teil der Description, der nicht mehr ganz passt, erscheint gekürzt nur ab so viel Platz
 _DESCRIPTION_REST_MIN = 30
+#: Vor der KI-Zusammenfassung in Description und JSON-LD: Suchergebnisse und Vorschaukarten zeigen den Text ohne die
+#: Seite, die Kennzeichnung muss deshalb im Text selbst stehen (EU AI Act Art. 50, Issue #938)
+KI_ZUSAMMENFASSUNG_PRAEFIX = "KI-Zusammenfassung:"
 #: Längste Art eines Vorgangs im Titel („Vorlage“, „Antrag“, „Große Anfrage“); längere Kategorien → „Vorgang“
 _ART_MAX = 25
 #: Längster Sitzungsort in der Description
@@ -403,14 +406,15 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
 
     ``stand`` ist der Stand-Satz der Seite (``paper_status``, aus dem schon geladenen Beratungsverlauf). Die
     Description nennt Kommune, Art, Nummer und Datum, dann den Stand und, wenn Platz bleibt, den Anfang der
-    gespeicherten Zusammenfassung.
+    gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``).
     """
     body = paper.body
     kommune = _kommune(body)
     datum = _datum(paper.date)
     kopf = f"{_kennung(paper)} vom {datum}" if datum else _kennung(paper)
     stand_satz = stand.text if stand is not None and stand.kind != STAND_UNBEKANNT else ""
-    description = beschreibung(f"{kommune}: {kopf}." if kommune else f"{kopf}.", stand_satz, paper.summary or "")
+    zusammenfassung = f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {paper.summary}" if paper.summary else ""
+    description = beschreibung(f"{kommune}: {kopf}." if kommune else f"{kopf}.", stand_satz, zusammenfassung)
     canonical = build_canonical_url(request)
     ort = _gebiet(kommune)
 
