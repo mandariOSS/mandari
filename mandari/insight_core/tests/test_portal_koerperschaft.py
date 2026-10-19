@@ -193,10 +193,17 @@ class TestEinstieg:
 class TestWeiterleitung:
     def test_tiefer_link_fuehrt_auf_portalseite(self, kommunen: dict[str, OParlBody]) -> None:
         client = Client()
-        antwort = client.get("/insight/k/nord/termine/")
+        antwort = client.get("/insight/k/nord/termine/kalender/")
 
-        assert antwort.status_code == 302 and antwort["Location"] == "/insight/termine/"
+        assert antwort.status_code == 302 and antwort["Location"] == "/insight/termine/kalender/"
         assert client.get("/insight/termine/").context["active_body"] == kommunen["nord"]
+
+    def test_listen_je_kommune_antworten_direkt(self, kommunen: dict[str, OParlBody]) -> None:
+        # Seit Issue #939 eigene Adressen statt Weiterleitung (insight_core/tests/test_listen_je_kommune.py)
+        antwort = Client().get("/insight/k/nord/termine/")
+
+        assert antwort.status_code == 200
+        assert antwort.context["active_body"] == kommunen["nord"]
 
     @pytest.mark.parametrize(
         "pfad",
@@ -218,8 +225,10 @@ class TestWeiterleitung:
         antwort = Client().get("/insight/k/nord/?next=https://evil.example/&redirect=//evil.example")
 
         assert antwort.status_code == 200
+        antwort = Client().get("/insight/k/nord/termine/kalender/?next=https://evil.example/")
+        assert antwort["Location"] == "/insight/termine/kalender/"
         antwort = Client().get("/insight/k/nord/termine/?next=https://evil.example/")
-        assert antwort["Location"] == "/insight/termine/"
+        assert antwort.status_code == 200 and "evil.example" not in antwort.content.decode()
 
 
 class TestEigenerHost:

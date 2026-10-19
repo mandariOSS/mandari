@@ -16,7 +16,7 @@ from hub.ris import selectors as ris_selectors
 
 from ..models import OParlPaper
 from ..services import file_reconcile
-from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -24,7 +24,7 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
+class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Vorgänge."""
 
     model = OParlPaper
@@ -71,13 +71,19 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
                 .order_by("paper_type")
             )
 
-        from ..seo import get_page_seo
+        from ..seo import get_list_seo
 
-        # Dieselbe Kommune wie oben, ohne zweite Abfrage (Performance-Budget der Vorgangsliste)
-        context["seo"] = get_page_seo(
+        # Dieselbe Kommune wie oben, ohne zweite Abfrage (Performance-Budget der Vorgangsliste); kanonisch ist die
+        # Adresse je Kommune (Issue #939)
+        context["seo"] = get_list_seo(
             self.request,
+            "paper_list",
             title="Vorgänge & Beschlüsse",
-            description="Anträge, Vorlagen und Beschlüsse der Kommunalpolitik durchsuchen und nachvollziehen.",
+            description=(
+                f"Anträge, Vorlagen und Beschlüsse aus {body.get_display_name()} durchsuchen und nachvollziehen."
+                if body
+                else "Anträge, Vorlagen und Beschlüsse der Kommunalpolitik durchsuchen und nachvollziehen."
+            ),
             body=body,
         ).to_dict()
         # Stand je Vorgang aus dem Beratungsverlauf (Spalte „Stand“ auf breiten Bildschirmen, Issue #841)

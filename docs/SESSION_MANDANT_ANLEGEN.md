@@ -238,8 +238,12 @@ Im Einstieg gilt:
 - **Links bleiben im Kontext:** Der Einstieg hält die Körperschaft für die Sitzung des Browsers
   fest; „Übersicht“ führt zurück zum Einstieg. Über „Alle Kommunen im Bürgerportal“ oder die
   Auswahl einer anderen Kommune verlassen Besucher den Einstieg.
-- **Direkte Links auf Portalseiten:** `/insight/k/<slug>/termine/` hält die Körperschaft fest und
-  führt auf `/insight/termine/`. Zulässig sind nur die öffentlichen Portalseiten (Übersicht,
+- **Listen mit eigener Adresse:** `/insight/k/<slug>/termine/`, `…/vorgaenge/`, `…/gremien/` und
+  `…/personen/` zeigen die Listen der Körperschaft direkt, auch ohne Sitzung (Suchmaschinen,
+  Issue #939). Sie schreiben nichts in die Sitzung; Navigation und Brotkrumen führen auf diese
+  Adressen, sie stehen in der Grund-Sitemap der Kommune.
+- **Direkte Links auf Portalseiten:** `/insight/k/<slug>/karte/` hält die Körperschaft fest und
+  führt auf `/insight/karte/`. Zulässig sind nur die öffentlichen Portalseiten (Übersicht,
   Sitzungen, Vorgänge, Gremien, Personen, Beschlüsse, Ratsfragen, Dokumente, Suche, Karte,
   Nachbarschaft, Merkliste, Benachrichtigungen, Chat). Parameter werden nie weitergegeben.
 

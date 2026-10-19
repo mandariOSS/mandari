@@ -14,7 +14,7 @@
                    name="q"
                    value="{{ request.GET.q }}"
                    placeholder="Gremium suchen..."
-                   hx-get="{% url 'insight_core:insight:organization_list' %}"
+                   hx-get="{{ request.path }}"
                    hx-trigger="keyup changed delay:400ms, search"
                    hx-target="#organizations-list"
                    hx-swap="innerHTML"

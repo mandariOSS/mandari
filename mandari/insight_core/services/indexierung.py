@@ -3,8 +3,9 @@
 Was Suchmaschinen im Bürgerportal indexieren sollen (Issue #914).
 
 Suchmaschinen haben keine Sitzung. Indexiert werden sollen die Detailseiten (Vorgänge, Sitzungen, Gremien,
-Personen mit laufendem Mandat) und die Stadtseiten ``/insight/k/<slug>/``; alles, was nur eine andere Sicht
-auf denselben Bestand ist, bekommt ``noindex``:
+Personen mit laufendem Mandat), die Stadtseiten ``/insight/k/<slug>/`` und deren Listen
+``/insight/k/<slug>/vorgaenge/`` usw. (Issue #939, ``liste_der_kommune``): Über deren Seitenlinks erreichen
+Suchmaschinen die Detailseiten. Alles, was nur eine andere Sicht auf denselben Bestand ist, bekommt ``noindex``:
 
 - **Suche** (``/insight/suche/``) immer: ``noindex, follow`` im Seitenkopf.
 - **Listen** (Vorgänge, Sitzungen, Gremien, Personen, Beschlüsse …), sobald ein Filter-, Seiten- oder
@@ -170,6 +171,22 @@ def stadtseite_url(body: Any) -> str:
     if body is None or not body.slug or not body.is_listed or body.deleted:
         return ""
     return reverse("insight_core:insight:portal_entry", kwargs={"slug": body.slug})
+
+
+def liste_der_kommune(body: Any, list_name: str) -> str:
+    """
+    Eigene Adresse einer Liste je Kommune (Issue #939): ``/insight/k/<slug>/vorgaenge/`` für ``paper_list``.
+
+    Wie die Stadtseite nur für gelistete Kommunen mit Slug; leer für Listen ohne eigene Adresse
+    (``navigation.KOMMUNEN_LISTEN``). Die Adresse ist die kanonische der Liste, auch für die Liste im gemeinsamen
+    Portal (``/insight/vorgaenge/`` mit gewählter Kommune).
+    """
+    from ..navigation import KOMMUNEN_LISTEN
+
+    name = KOMMUNEN_LISTEN.get(list_name)
+    if name is None or not stadtseite_url(body):
+        return ""
+    return reverse(f"insight_core:insight:{name}", kwargs={"slug": body.slug})
 
 
 def _sortierschluessel(name: str) -> str:

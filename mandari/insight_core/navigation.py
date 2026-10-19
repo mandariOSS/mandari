@@ -10,6 +10,15 @@ eigenen Eintrag (Dokumente, Nachbarschaft) zählen zum Bereich, in dem sie fachl
 
 from __future__ import annotations
 
+#: Listen mit eigener Adresse je Kommune (Issue #939): URL-Name der Liste im gemeinsamen Portal → URL-Name unter
+#: ``/insight/k/<slug>/`` (``/insight/k/muenster/vorgaenge/``). Suchmaschinen erreichen sie ohne Sitzung.
+KOMMUNEN_LISTEN: dict[str, str] = {
+    "meeting_list": "portal_meeting_list",
+    "paper_list": "portal_paper_list",
+    "organization_list": "portal_organization_list",
+    "person_list": "portal_person_list",
+}
+
 #: URL-Name (Namespace ``insight_core:insight``) → Bereich der Navigation
 NAV_AREAS: dict[str, str] = {
     "portal_home": "uebersicht",
@@ -39,6 +48,11 @@ NAV_AREAS: dict[str, str] = {
     "file_list": "suche",
     "saved": "gespeichert",
     "notifications": "benachrichtigungen",
+    # Listen je Kommune (Issue #939) gehören zum Bereich ihrer Liste
+    "portal_meeting_list": "sitzungen",
+    "portal_paper_list": "vorgaenge",
+    "portal_organization_list": "gremien",
+    "portal_person_list": "personen",
 }
 
 
@@ -66,13 +80,16 @@ AREA_PAGES: dict[str, tuple[str, str]] = {
 def breadcrumb_area(url_name: str | None) -> dict[str, str | bool]:
     """Bereich als zweite Brotkrume („Beispielstadt › Vorgänge › …“); leer auf der Übersicht und außerhalb der Bereiche.
 
-    ``current`` ist wahr, wenn die Seite selbst die Übersicht des Bereichs ist (dann ohne Link, mit aria-current).
+    ``current`` ist wahr, wenn die Seite selbst die Übersicht des Bereichs ist (dann ohne Link, mit aria-current) –
+    auch unter ihrer Adresse je Kommune (``KOMMUNEN_LISTEN``). ``list_name`` ist der URL-Name der Übersicht ohne
+    Namensraum; das Ziel des Links rechnet ``context_processors.active_body`` (``insight_bereich_ziel``).
     """
     area = nav_area(url_name)
     if area not in AREA_PAGES:
         return {}
     label, list_name = AREA_PAGES[area]
-    return {"label": label, "url_name": f"insight_core:insight:{list_name}", "current": url_name == list_name}
+    current = url_name in (list_name, KOMMUNEN_LISTEN.get(list_name))
+    return {"label": label, "url_name": f"insight_core:insight:{list_name}", "list_name": list_name, "current": current}
 
 
 #: Bereiche, die am Handy im Blatt „Mehr“ liegen (Leiste unten: Start, Sitzungen, Vorgänge, Karte, Mehr; Stufe 3)

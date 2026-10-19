@@ -1,4 +1,4 @@
-{% load static %}
+{% load static insight_listen %}
 {% comment %}
 Seitenleiste des Bürgerportals (Issue #783, Variante A): eigene graue Fläche ohne Trennlinien, oben die Kommune als
 weiße Schaltfläche, sieben Bereiche (Beschlüsse und Ratsfragen nur mit Inhalten), unten „Für Sie“. Nur ab lg; am
@@ -51,27 +51,27 @@ ausgeschlossen.
     <nav class="mt-5 px-3" aria-label="Bereiche">
         <ul class="space-y-0.5">
             <li><c-insight.nav-link href="{% if insight_portal %}{{ insight_portal.home_url }}{% else %}{% url 'insight_core:insight:portal_home' %}{% endif %}" icon="house" area="uebersicht">Übersicht</c-insight.nav-link></li>
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.nav-link></li>
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:paper_list' %}" icon="file-text" area="vorgaenge">Vorgänge</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'meeting_list' %}" icon="calendar-days" area="sitzungen">Sitzungen</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'paper_list' %}" icon="file-text" area="vorgaenge">Vorgänge</c-insight.nav-link></li>
             {% if insight_decisions_published %}
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'decision_list' %}" rel="{% insight_rel 'decision_list' %}" icon="gavel" area="beschluesse">Beschlüsse</c-insight.nav-link></li>
             {% endif %}
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.nav-link></li>
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:person_list' %}" icon="users" area="personen">Personen</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'organization_list' %}" icon="landmark" area="gremien">Gremien</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'person_list' %}" icon="users" area="personen">Personen</c-insight.nav-link></li>
             {% if insight_questions_enabled %}
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'question_portal' %}" rel="{% insight_rel 'question_portal' %}" icon="message-circle-question" area="ratsfragen">Ratsfragen</c-insight.nav-link></li>
             {% endif %}
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:map' %}" icon="map" area="karte">Karte</c-insight.nav-link></li>
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:chat' %}" icon="sparkle" area="ki">KI-Assistent</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'map' %}" rel="{% insight_rel 'map' %}" icon="map" area="karte">Karte</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'chat' %}" rel="{% insight_rel 'chat' %}" icon="sparkle" area="ki">KI-Assistent</c-insight.nav-link></li>
         </ul>
     </nav>
 
     {# Für Sie: Merkliste, Benachrichtigungen, Konto #}
     <div class="mt-auto px-3 pt-8 pb-5" role="group" aria-label="Für Sie">
         <ul class="space-y-0.5">
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'saved' %}" rel="{% insight_rel 'saved' %}" icon="bookmark" area="gespeichert">Gespeichert</c-insight.nav-link></li>
             {% if insight_subscriptions_enabled %}
-            <li><c-insight.nav-link href="{% url 'insight_core:insight:notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.nav-link></li>
+            <li><c-insight.nav-link href="{% insight_url 'notifications' %}" rel="{% insight_rel 'notifications' %}" icon="bell" area="benachrichtigungen">Benachrichtigungen</c-insight.nav-link></li>
             {% endif %}
             {% if request.user.is_authenticated %}
             <li class="flex items-center gap-3 h-10 px-3 text-[0.9rem]">
