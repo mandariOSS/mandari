@@ -74,18 +74,16 @@ def dashboard_callback(request, context):
             source.hours_since_sync = 999
     context["recent_sources"] = sources
 
-    # Sync-Verwaltung: Logs, Config, laufender Sync, Daemon-Status
+    # Sync-Verwaltung: Logs, laufender Sync, Daemon-Status
     try:
         from insight_sync import daemon
-        from insight_sync.models import SyncConfig, SyncLog
+        from insight_sync.models import SyncLog
 
         context["recent_sync_logs"] = SyncLog.objects.order_by("-started_at")[:5]
-        context["sync_config"] = SyncConfig.get()
         context["is_syncing"] = SyncLog.objects.filter(status=SyncLog.Status.RUNNING).exists()
         context["daemon_running"] = daemon.is_ingestor_active()
     except Exception:
         context["recent_sync_logs"] = []
-        context["sync_config"] = None
         context["is_syncing"] = False
         context["daemon_running"] = False
 

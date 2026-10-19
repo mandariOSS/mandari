@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Aufträge aus dem Admin des Bürgerportals (Issue #515): Sync einer Quelle und Löschen einer Kommune.
+Aufträge aus dem Admin des Bürgerportals (Issue #515): Löschen einer Kommune.
 
-Beide liefen bis Issue #515 in einem Faden im Webprozess. Jetzt legt der Admin sie immer im Journal
-an (``apps.events.tasks_backend.journal_backend``), auch solange die Webprozesse Aufträge sonst sofort
-ausführen: Ein Sync oder eine Löschung dauert Minuten und gehört nicht in die Anfrage. Ausgeführt
-werden sie vom Worker (Warteschlange ``default``); Zeitgrenze und Versuche stehen in
-``TASKS["default"]["OPTIONS"]["tasks"]``.
+Sie lief bis Issue #515 in einem Faden im Webprozess. Jetzt legt der Admin sie immer im Journal an
+(``apps.events.tasks_backend.journal_backend``), auch solange die Webprozesse Aufträge sonst sofort
+ausführen: Eine Löschung dauert Minuten und gehört nicht in die Anfrage. Ausgeführt wird sie vom Worker
+(Warteschlange ``default``); Zeitgrenze und Versuche stehen in ``TASKS["default"]["OPTIONS"]["tasks"]``.
+
+Den Sync einer Quelle legt der Admin seit Issue #554 nicht mehr im Worker an: Abgeglichen wird nur noch
+im Ingestor (``insight_sync.daemon.trigger_sync``). ``quelle_synchronisieren`` bleibt als leere Hülle.
 """
 
 from __future__ import annotations
@@ -29,16 +31,18 @@ def deletion_lock_key(body_id: str) -> str:
 
 @task
 def quelle_synchronisieren(source_id: str, full: bool = False) -> None:
-    """Synchronisiert eine Quelle wie bisher aus dem Admin (Sync-Protokoll mit ``triggered_by=admin``)."""
-    from insight_sync.tasks import run_sync_with_logging
-
-    from .models import OParlSource
-
-    source = OParlSource.objects.filter(pk=source_id).first()
-    if source is None:
-        logger.warning("Sync aus dem Admin: Quelle %s gibt es nicht mehr", source_id)
-        return
-    run_sync_with_logging(source=source, full=full, triggered_by="admin")
+    """
+    Früher: Sync einer Quelle im Worker der Anwendung. Seit Issue #554 gleicht nur noch der Ingestor ab; der Admin
+    schickt dafür einen Auslöser über Redis. Dünne Hülle: Der registrierte Pfad bleibt, damit vor dem Deploy
+    eingereihte Aufträge nicht scheitern; sie tun nichts außer einer Warnung im Log.
+    """
+    logger.warning(
+        "Sync aus dem Admin im Worker übersprungen (Quelle %s, vollständig=%s): Quellen gleicht nur noch der "
+        "Ingestor ab. Im Admin erneut anstoßen oder im Container ingestor python -m src.main sync --source "
+        "<Basis-URL> ausführen.",
+        source_id,
+        full,
+    )
 
 
 @task(queue_name="ocr")

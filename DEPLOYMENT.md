@@ -540,9 +540,9 @@ Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die
 
 - Setzen Sie `INGESTOR_USER_AGENT` auf eine Kennung mit Ihrer eigenen Kontaktadresse; ohne Angabe nennt der
   User-Agent unsere Infoseite und `support@mandari.de` ([Für Selbstbetreiber](docs/ABRUFREGELN.md#für-selbstbetreiber)).
-  Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`) und,
-  weil die Sync-Aktionen an einer Quelle im Admin ohne laufenden Daemon im Worker der Anwendung laufen, auch in
-  `x-app-environment` (Helm: `app.extraEnv`); ein Eintrag nur in der `.env` wirkt nicht.
+  Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`); ein
+  Eintrag nur in der `.env` wirkt nicht. Die Anwendung gleicht seit Issue #554 selbst nicht mehr ab; die
+  Sync-Aktionen im Admin gehen nur an den Ingestor.
 - Jede Quelle hat ihren eigenen Takt: werktags 07–19 Uhr im Grundtakt `INGESTOR_INTERVAL`, sonst stündlich, am
   Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag alle 5 Minuten, nach Läufen ohne Änderung seltener.
   Vollabgleiche laufen je Quelle in ihrem Zeitfenster, sonst ab `INGESTOR_FULL_SYNC_HOUR` (5 Stunden lang).
