@@ -240,7 +240,9 @@ und 5.5.0):
   dem mit Mitgliederseite zu.
 - **Beendete Mitgliedschaften.** `kp0040` zeigt frühere Mitglieder unter „Mitgliedschaft beendet:“ in einer
   eigenen Tabelle mit „von“ und „bis“. Sie erscheinen als Mitgliedschaft mit `endDate` (und `startDate`, falls
-  angegeben), nicht als aktuelle; ohne Ende fehlt die Zeile. Abschnitte „Verwaltung“ und „zur Beratung
+  angegeben), nicht als aktuelle; ohne Ende fehlt die Zeile. Steht dieselbe Person auch aktuell im Gremium, trägt
+  die beendete Zeile das Ende in der Kennung (`…#membership/<kpenr>-bis-<Ende>`), die aktuelle behält ihre.
+  Abschnitte „Verwaltung“ und „zur Beratung
   hinzugezogen“ haben wie „beratende Mitglieder“ kein Stimmrecht. Mitglieder liest der Adapter weiter nur für
   die vorausgewählte Wahlperiode.
 - **Angekündigte Sitzungen.** Solange die Tagesordnung nicht veröffentlicht ist, verweist der Kalendereintrag
@@ -252,8 +254,9 @@ und 5.5.0):
   Abschnittsüberschrift. Nicht jede Tagesordnung hat eine.
 - **Fehlerseite.** Nicht öffentliche Vorgänge beantwortet SessionNet mit Status 200 und einer Fehlerseite im
   eigenen Layout („SessionNet Fehlermeldung“, `smc_page_error_layout`). Sie wird nie ausgewertet. Fehlercode
-  1104 („Zum Öffnen des Vorgangs fehlt die Berechtigung“) zählt wie ein toter Verweis, nicht als Störung; eine
-  Sitzung mit nicht öffentlicher Seite entsteht dann aus dem Kalender. Andere Fehlercodes sind eine Störung.
+  1104 („Zum Öffnen des Vorgangs fehlt die Berechtigung“) zählt wie ein toter Verweis, nicht als Störung und nicht
+  gegen die Parse-Quote; eine Sitzung mit nicht öffentlicher Seite entsteht dann aus dem Kalender. Andere
+  Fehlercodes sind eine Störung. Die Gegenprobe „Mandant“ gilt auch für angekündigte Sitzungen.
 
 PDF-Anlagen laufen automatisch durch die bestehende OCR-Queue
 (`text_extraction_status='pending'` → pypdf → Tesseract → Mistral) und

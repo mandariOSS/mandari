@@ -496,6 +496,36 @@ def parse_members(html: str) -> list[dict[str, Any]]:
     return members
 
 
+def _member_key(row: Mapping[str, Any]) -> str:
+    """Person einer Mitgliederzeile: ``__kpenr``, ohne Personenseite der normalisierte Name."""
+    return str(row["kpenr"]) if row.get("kpenr") is not None else _slug(str(row.get("name") or ""))
+
+
+def membership_keys(rows: Sequence[Mapping[str, Any]]) -> list[str]:
+    """
+    Kennungsteile der Mitgliedschaften eines Gremiums hinter ``#membership/``, in der Reihenfolge von ``rows``.
+
+    Eine Mitgliedschaft heißt nach ihrer Person (``_member_key``). Steht dieselbe Person auch aktuell im Gremium,
+    bekommt ihre beendete Zeile das Ende als Zusatz (``11-bis-2023-05-31``); sonst überschriebe sie die aktuelle, und
+    das aktuelle Mitglied verschwände (Issue #1075). Aktuelle Zeilen behalten ihre Kennung. Bleibt ein Teil doppelt,
+    zählt der spätere weiter (``-2``).
+    """
+    current = {_member_key(row) for row in rows if not row.get("end_date")}
+    used: set[str] = set()
+    keys: list[str] = []
+    for row in rows:
+        base = _member_key(row)
+        if row.get("end_date") and base in current:
+            base = f"{base}-bis-{row['end_date']}"
+        key, count = base, 1
+        while key in used:
+            count += 1
+            key = f"{base}-{count}"
+        used.add(key)
+        keys.append(key)
+    return keys
+
+
 # Mandantenauswahl: "Alle Mandanten" ist eine Ansicht, keine Körperschaft
 _ALL_VIEW_RE = re.compile(r"^alle\b", re.IGNORECASE)
 _TERM_WORD_RE = re.compile(r"wahlperiode", re.IGNORECASE)
@@ -561,9 +591,12 @@ def parse_calendar_mandanten(html: str) -> dict[int, str]:
     result: dict[int, str] = {}
     for cell in soup.select("td.silink"):
         link = cell.find("a", href=re.compile(r"si0057\.(asp|php)\?"))
-        if link is None:
-            continue
-        ksinr = _query_int(_attr(link, "href"), "__ksinr")
+        if link is not None:
+            ksinr = _query_int(_attr(link, "href"), "__ksinr")
+        else:
+            # Angekündigte Sitzung: Nummer aus dem Termin-Link (Issue #1075)
+            announced = _announced_stub(cell)
+            ksinr = announced.ksinr if announced is not None else None
         row = cell.find_parent("tr")
         mandant_cell = row.find("td", class_="pagel") if row is not None else None
         if ksinr is None or mandant_cell is None:
@@ -980,8 +1013,9 @@ class SessionNetAdapter:
         elif error_code is not None:
             # Fehlerseite im SessionNet-Layout mit Status 200 (Issue #1075)
             console.print(f"[yellow]Scraper: SessionNet-Fehlerseite ({error_code or 'ohne Code'}): {url}[/yellow]")
-            metrics.record_scraper_parse_failure(self.fetcher.source_name, "fehlerseite")
             self.last_not_public = error_code == ERROR_CODE_NOT_PUBLIC
+            if not self.last_not_public:
+                metrics.record_scraper_parse_failure(self.fetcher.source_name, "fehlerseite")
             html = None
         elif html is not None and expected is not None and not expected(html):
             console.print(f"[yellow]Scraper: Seite ohne erwarteten Aufbau, nicht ausgewertet: {url}[/yellow]")
@@ -1261,18 +1295,16 @@ class SessionNetAdapter:
                     continue
                 rows = parse_members(html)
                 self.stats.detail_pages_parsed += 1
-                for row in rows:
+                for row, membership_key in zip(rows, membership_keys(rows), strict=True):
                     if row["kpenr"] is not None:
                         # Bei mehreren Körperschaften je Körperschaft eine Person:
                         # Wer im Samtgemeinderat und im Rat einer Mitgliedsgemeinde
                         # sitzt, erscheint in beiden Bodies vollständig.
                         person_id = self.urls.external_id("pe0051", **plan.params(), __kpenr=row["kpenr"])
-                        member_key: Any = row["kpenr"]
                     else:
                         # Ohne Detailseite: stabiles Fragment-Schema auf
                         # Basis der Body-URL + normalisiertem Namen
-                        member_key = _slug(row["name"])
-                        person_id = f"{body_id}#person/{member_key}"
+                        person_id = f"{body_id}#person/{_member_key(row)}"
                     persons.setdefault(
                         person_id,
                         with_content_hash(
@@ -1286,7 +1318,7 @@ class SessionNetAdapter:
                         ),
                     )
                     membership: dict[str, Any] = {
-                        "id": f"{org['id']}#membership/{member_key}",
+                        "id": f"{org['id']}#membership/{membership_key}",
                         "type": f"{OPARL}Membership",
                         "person": person_id,
                         "organization": org["id"],
@@ -1533,6 +1565,10 @@ class SessionNetAdapter:
     async def _build_paper(self, kvonr: int, body_id: str) -> dict[str, Any] | None:
         external_id = self.urls.external_id("vo0050", __kvonr=kvonr)
         html = await self._fetch(self.urls.page("vo0050", __kvonr=kvonr), is_detail=True)
+        if not html and self.last_not_public:
+            # Nicht öffentliche Vorlage (Fehlercode 1104): erwartete Antwort, kein Parse-Fehler (Issue #1075)
+            self.stats.detail_pages_parsed += 1
+            return None
         if not html:
             self.stats.parse_failures += 1
             metrics.record_scraper_parse_failure(self.fetcher.source_name, "vo0050")

@@ -10,6 +10,8 @@ Nummern sind erfunden, die Seiten auf das Nötige gekürzt. Kein Netzwerk.
 3. Fehlerseite von SessionNet mit Status 200 ("Fehlercode: 1104") nicht als Inhalt auswerten
 4. Angekündigte Sitzungen ohne Link auf die Tagesordnung aus dem Kalender (Kennung im Termin-Link)
 5. Öffentlich/nichtöffentlich aus dem Kennzeichen des Punkts, wenn eine Abschnittsüberschrift fehlt
+6. Eine beendete Mitgliedschaft überschreibt nicht die aktuelle derselben Person; angekündigte Sitzungen in der
+   Gegenprobe "Mandant"; nicht öffentliche Vorlagen zählen nicht gegen die Parse-Quote
 """
 
 from __future__ import annotations
@@ -18,11 +20,13 @@ from datetime import date
 from typing import Any
 from urllib.parse import parse_qs, urlparse
 
-from src.scrapers.base import CrawlWindow, ScraperConfig
+from src.scrapers.base import BodySpec, CrawlWindow, ScraperConfig
 from src.scrapers.sessionnet import (
     SessionNetAdapter,
     is_sessionnet_page,
+    membership_keys,
     parse_calendar,
+    parse_calendar_mandanten,
     parse_meeting_agenda,
     parse_members,
     parse_organizations,
@@ -93,6 +97,10 @@ MITGLIEDER = page(
     '<tr class="smc-t-r-l"><td class="pename"><a href="pe0051.php?__kpenr=14">Greta Vorher</a></td>'
     '<td class="pepartei">Liste A</td><td class="amname">Mitglied</td><td data-label="Beginn" class="mgadat">'
     '01.11.2021</td><td data-label="Ende" class="mgedat">31.03.2024</td></tr>'
+    # Dieselbe Person wie aktuell (kpenr 11), frühere Mitgliedschaft
+    '<tr class="smc-t-r-l"><td class="pename"><a href="pe0051.php?__kpenr=11">Erika Mustermann</a></td>'
+    '<td class="pepartei">Liste A</td><td class="amname">Stellvertretung</td><td class="mgadat"></td>'
+    '<td class="mgedat">31.05.2023</td></tr>'
     # Beendet ohne Ende: nicht als aktuelle Mitgliedschaft
     '<tr class="smc-t-r-l"><td class="pename">Otto Ohnedatum</td><td class="pepartei">Liste B</td>'
     '<td class="amname">Mitglied</td><td class="mgadat"></td><td class="mgedat"></td></tr>'
@@ -187,7 +195,8 @@ def test_gremium_ohne_mitgliederseite_mit_nummer_aus_der_sitzungsliste() -> None
 
 
 def test_beendete_mitgliedschaften_mit_ende_und_ohne_stimmrecht_der_verwaltung() -> None:
-    members = {m["name"]: m for m in parse_members(MITGLIEDER)}
+    rows = parse_members(MITGLIEDER)
+    members = {m["name"]: m for m in rows if not (m["kpenr"] == 11 and m["end_date"])}
     assert set(members) == {"Erika Mustermann", "Max Beispiel", "Paula Protokoll", "Hans Frueher", "Greta Vorher"}
     aktuell = members["Erika Mustermann"]
     assert (aktuell["voting_right"], aktuell["start_date"], aktuell["end_date"]) == (True, None, None)
@@ -200,6 +209,30 @@ def test_beendete_mitgliedschaften_mit_ende_und_ohne_stimmrecht_der_verwaltung()
     assert members["Hans Frueher"]["section"] is None
     assert (members["Greta Vorher"]["start_date"], members["Greta Vorher"]["end_date"]) == ("2021-11-01", "2024-03-31")
     assert members["Greta Vorher"]["kpenr"] == 14
+
+
+def test_beendete_mitgliedschaft_ueberschreibt_nicht_die_aktuelle() -> None:
+    rows = parse_members(MITGLIEDER)
+    keys = dict(zip(((r["name"], r["end_date"]) for r in rows), membership_keys(rows), strict=True))
+    # Aktuelle Zeile wie bisher nach der Person, beendete derselben Person mit dem Ende als Zusatz
+    assert keys[("Erika Mustermann", None)] == "11"
+    assert keys[("Erika Mustermann", "2023-05-31")] == "11-bis-2023-05-31"
+    # Ohne aktuelle Zeile derselben Person bleibt auch die beendete bei der Person
+    assert keys[("Greta Vorher", "2024-03-31")] == "14"
+    assert keys[("Hans Frueher", "2022-10-13")] == "hans-frueher"
+    assert len(set(keys.values())) == len(rows)
+    # Weitere Dopplung zählt weiter
+    doppelt = [{"kpenr": 5, "name": "A", "end_date": None}, {"kpenr": 5, "name": "A", "end_date": None}]
+    assert membership_keys(doppelt) == ["5", "5-2"]
+
+
+def test_gegenprobe_mandant_liest_angekuendigte_sitzungen() -> None:
+    html = KALENDER.replace(
+        '<td class="pagel pagel3" data-label="Mandant"></td><td class="sitermin"><a href="yvcs.php?key=5214',
+        '<td class="pagel pagel3" data-label="Mandant">Gemeinde Musterdorf</td>'
+        '<td class="sitermin"><a href="yvcs.php?key=5214',
+    )
+    assert parse_calendar_mandanten(html) == {5214: "Gemeinde Musterdorf"}
 
 
 def test_fehlerseite_von_sessionnet_wird_erkannt() -> None:
@@ -299,8 +332,10 @@ async def test_adapter_liest_die_luecken_ohne_zusaetzliche_abrufe() -> None:
     assert (greta["startDate"], greta["endDate"]) == ("2021-11-01", "2024-03-31")
     verwaltung = next(m for m in collected["membership"].values() if m["person"].endswith("__kpenr=13"))
     assert verwaltung["votingRight"] is False
-    aktuell = next(m for m in collected["membership"].values() if m["person"].endswith("__kpenr=11"))
+    aktuell = collected["membership"][f"{url('kp0040', __kgrnr=1)}#membership/11"]
     assert "endDate" not in aktuell
+    frueher = collected["membership"][f"{url('kp0040', __kgrnr=1)}#membership/11-bis-2023-05-31"]
+    assert (frueher["person"], frueher["endDate"]) == (aktuell["person"], "2023-05-31")
 
     # Angekündigte Sitzung aus dem Kalender, ohne Abruf ihrer Seiten, mit Gremium über den Namen
     angekuendigt = collected["meeting"][url("si0057", __ksinr=5214)]
@@ -314,6 +349,9 @@ async def test_adapter_liest_die_luecken_ohne_zusaetzliche_abrufe() -> None:
     # Nicht öffentliche Vorlage: keine Vorlage "SessionNet Fehlermeldung", Lauf trotzdem vollständig
     assert "paper" not in collected
     assert adapter.stats.gone_pages == adapter.stats.failed_pages == 1
+    # Die nicht öffentliche Vorlage zählt nicht gegen die Parse-Quote
+    assert adapter.stats.parse_failures == 0
+    assert adapter.stats.parse_quota == 1.0
     assert adapter.stats.complete
 
     processor = OParlProcessor()
@@ -347,3 +385,31 @@ async def test_andere_fehlerseite_bleibt_eine_stoerung() -> None:
     assert adapter.stats.failed_pages == 1
     assert adapter.stats.gone_pages == 0
     assert not adapter.stats.complete
+
+
+async def test_angekuendigte_sitzung_eines_anderen_mandanten_wird_nicht_zugeordnet() -> None:
+    toggle = (
+        '<ul class="nav nav-pills"><li class="nav-item dropdown"><a aria-label="Mandant auswählen" '
+        'title="Mandant auswählen" class="nav-link dropdown-toggle" href="#">Samtgemeinde Musterheide</a>'
+        '<div class="dropdown-menu"><a href="gr0040.php?__cpanr=2" class="dropdown-item smcfiltermenumandant">'
+        "Gemeinde Musterdorf</a></div></li></ul>"
+    )
+    gremien = GREMIEN.replace('<table id="smc_page_gr0040', toggle + '<table id="smc_page_gr0040')
+    # Die Instanz hat __cpanr nicht beachtet: Die angekündigte Sitzung gehört laut Spalte "Mandant" zur Gemeinde
+    kalender = KALENDER.replace(
+        '<td class="pagel pagel3" data-label="Mandant"></td><td class="sitermin"><a href="yvcs.php?key=5214',
+        '<td class="pagel pagel3" data-label="Mandant">Gemeinde Musterdorf</td>'
+        '<td class="sitermin"><a href="yvcs.php?key=5214',
+    ).replace(
+        '<td class="pagel pagel3" data-label="Mandant"></td><td class="sitermin"><a href="yvcs.php?key=5182',
+        '<td class="pagel pagel3" data-label="Mandant">Samtgemeinde Musterheide</td>'
+        '<td class="sitermin"><a href="yvcs.php?key=5182',
+    )
+    fetcher = Fetcher({**PAGES, "gr0040": gremien, "si0040": kalender})
+    config = ScraperConfig(
+        base_url=BASE_URL, body_name="Samtgemeinde Musterheide", variant="php", bodies=[BodySpec(cpanr=1)]
+    )
+    adapter = SessionNetAdapter(config, fetcher)  # type: ignore[arg-type]
+    collected = await crawl(adapter)
+
+    assert set(collected["meeting"]) == {url("si0057", __ksinr=5182)}
