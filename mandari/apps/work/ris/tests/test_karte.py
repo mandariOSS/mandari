@@ -132,3 +132,23 @@ def test_andere_organisation_sieht_keine_punkte(
     )
 
     assert daten.json()["features"] == []
+
+
+def test_demo_zeigt_punkte_auch_nach_dem_neuaufbau(client_for: Any) -> None:
+    """Die Demo-Vorgänge haben Orte; der nächtliche Neuaufbau (wiederholter Lauf) legt keinen Punkt doppelt an."""
+    import io
+
+    from django.core.management import call_command
+
+    from apps.common.management.commands.setup_demo_environment import DEMO_ORG_SLUG, DEMO_ORTE
+    from apps.tenants.models import Membership
+
+    call_command("setup_demo_environment", stdout=io.StringIO())
+    call_command("setup_demo_environment", stdout=io.StringIO())
+    vorsitz = Membership.objects.get(organization__slug=DEMO_ORG_SLUG, user__email__startswith="demo-vorsitz@")
+
+    daten = client_for(vorsitz.user).get(reverse("work:ris_map_data", kwargs={"org_slug": DEMO_ORG_SLUG})).json()
+
+    assert len(daten["features"]) == sum(len(orte) for orte in DEMO_ORTE.values())
+    brunnen = [f for f in daten["features"] if "Trinkwasserbrunnen" in f["properties"]["title"]]
+    assert sorted(f["properties"]["location_name"] for f in brunnen) == ["Bahnhofsvorplatz", "Marktplatz", "Stadtpark"]
