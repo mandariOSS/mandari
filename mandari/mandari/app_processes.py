@@ -386,9 +386,18 @@ class Supervisor:
 
 
 def _send(process: subprocess.Popen[bytes], signum: int) -> None:
-    # Schon beendet: nichts zu tun
+    """Signal senden, ohne den Prozess abzuräumen.
+
+    Nicht ``Popen.send_signal``: Es ruft vorher ``poll()`` auf und räumt einen gerade beendeten Prozess ab.
+    ``_collect_exits`` sähe ihn danach nicht mehr (``returncode`` gesetzt), und sein Platz bliebe leer.
+    Abgeräumt wird nur in ``_collect_exits`` und ``_shutdown``; ist ``returncode`` gesetzt, ist die PID frei
+    und darf kein Signal mehr bekommen.
+    """
+    if process.returncode is not None:
+        return
+    # Schon beendet, aber noch nicht abgeräumt: Die PID gehört weiter ihm, das Signal geht ins Leere
     with contextlib.suppress(ProcessLookupError):
-        process.send_signal(signum)
+        os.kill(process.pid, signum)
 
 
 def main(argv: Sequence[str] | None = None) -> int:

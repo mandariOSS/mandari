@@ -103,20 +103,38 @@ def test_befehl_je_prozess() -> None:
 
 
 class FakeProcess:
-    """Wie ``subprocess.Popen``: ``returncode`` steht erst nach ``poll()`` fest; ``ende`` setzt der Test."""
+    """Wie ``subprocess.Popen``: ``returncode`` steht erst nach ``poll()`` fest; ``ende`` setzt der Test.
+
+    Signale gehen per ``os.kill`` an die PID; ``signale_abfangen`` leitet sie hierher um.
+    """
+
+    alle: dict[int, FakeProcess] = {}
 
     def __init__(self, pid: int) -> None:
         self.pid = pid
         self.ende: int | None = None
         self.returncode: int | None = None
         self.signale: list[int] = []
+        FakeProcess.alle[pid] = self
 
     def poll(self) -> int | None:
         self.returncode = self.ende
         return self.returncode
 
-    def send_signal(self, signum: int) -> None:
-        self.signale.append(signum)
+
+@pytest.fixture(autouse=True)
+def signale_abfangen(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Kein echtes Signal an die erfundenen PIDs der FakeProcess-Objekte."""
+    echt = os.kill
+
+    def kill(pid: int, signum: int) -> None:
+        if pid in FakeProcess.alle:
+            FakeProcess.alle[pid].signale.append(signum)
+        else:
+            echt(pid, signum)
+
+    FakeProcess.alle = {}
+    monkeypatch.setattr(os, "kill", kill)
 
 
 class Uhr:
@@ -223,6 +241,35 @@ def test_pruefung_wartet_den_start_ab() -> None:
         assert sup._checks == {}
     finally:
         sup._pool.shutdown()
+
+
+@nur_linux
+def test_signal_raeumt_einen_gerade_beendeten_prozess_nicht_ab() -> None:
+    """Endet ein Prozess zwischen dem Einsammeln und dem Signal (Prüfung, Herunterfahren), darf das Signal ihn nicht
+    abräumen: Sonst sähe ``_collect_exits`` sein Ende nie, und der Platz bliebe ohne Prozess."""
+    sup = Supervisor(processes=1, bind="127.0.0.1", port=8000, server_args=[], reap_orphans=False)
+    child = sup.children[0]
+    child.process = subprocess.Popen([sys.executable, "-c", "pass"])  # noqa: S603 – fester Befehl
+    child.started = sup.clock() - 120
+    # Warten, bis er beendet ist, ohne ihn abzuräumen
+    os.waitid(os.P_PID, child.process.pid, os.WEXITED | os.WNOWAIT)
+
+    app_processes._send(child.process, signal.SIGTERM)
+
+    assert child.process.returncode is None
+    neu: list[int] = []
+    sup._spawn = lambda child: neu.append(child.slot)  # type: ignore[method-assign]
+    sup._handle_exits()
+    assert neu == [1], "Der Platz wird neu besetzt"
+
+
+def test_kein_signal_an_eine_freigegebene_pid() -> None:
+    """Ist der Prozess abgeräumt (``returncode`` gesetzt), kann die PID schon einem anderen gehören."""
+    prozess = FakeProcess(4711)
+    prozess.ende = 0
+    prozess.poll()
+    app_processes._send(prozess, signal.SIGTERM)  # type: ignore[arg-type]
+    assert prozess.signale == []
 
 
 # --- Echte Prozesse (Linux) ------------------------------------------------------------------------------
