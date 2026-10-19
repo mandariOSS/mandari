@@ -12,7 +12,9 @@ Es zählen die Stimmen der Stimmberechtigten zum Zeitpunkt der Abstimmung und di
 
 In allen drei Fällen nennt das Cockpit vor dem Schließen die Stimme, die nicht zählt, das Schließen entfernt sie und
 vermerkt sie im Prüfprotokoll; Cockpit-Ergebnis, Summen nach dem Speichern der Erfassung und die Namensliste der
-Niederschrift stimmen überein. Gewöhnliche Abstimmungen bleiben, wie sie waren.
+Niederschrift stimmen überein. Die Niederschrift nennt die gespeicherten Stimmen, aus denen auch die gedruckten Summen
+stammen, und filtert nicht nachträglich nach dem heutigen Stand der Anwesenheit. Gewöhnliche Abstimmungen bleiben, wie
+sie waren.
 """
 
 from __future__ import annotations
@@ -135,6 +137,30 @@ def _pruefprotokoll(top: SessionAgendaItem) -> dict[str, Any]:
     return changes
 
 
+def _summen_und_namen(top: SessionAgendaItem) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
+    """Gedruckte Summen und Zahl der Namen je Stimme in der öffentlichen Fassung der Niederschrift."""
+    zeilen = protocol_publication._item_lines(SessionAgendaItem.objects.select_related("meeting").get(pk=top.pk))
+    treffer = next(
+        m for zeile in zeilen if (m := re.search(r"Ja: (\d+), Nein: (\d+), Enthaltungen: (\d+)", zeile)) is not None
+    )
+    summen = (int(treffer[1]), int(treffer[2]), int(treffer[3]))
+    namen = _namentlich(top)
+    return summen, (namen.count("(Ja)"), namen.count("(Nein)"), namen.count("(Enthaltung)"))
+
+
+def _stellvertretung(w: Welt) -> SessionAttendance:
+    """Amsel ist entschuldigt, ihre Stellvertretung „Stellv“ ist anwesend und rückt nach; Amsels Zeile zurück."""
+    amsel = _zeile(w, "Amsel")
+    amsel.status = "excused"
+    amsel.save()
+    stellv = person(w.tenant, "Stellv")
+    SessionOrganizationMembership.objects.create(
+        organization=w.gremium, person=stellv, has_voting_rights=True, substitute_for=amsel.person
+    )
+    SessionAttendance.objects.create(meeting=w.sitzung, person=stellv, status="present")
+    return amsel
+
+
 def _uebereinstimmung(w: Welt, top: SessionAgendaItem, *, entfernt: str, grund: str) -> None:
     """Cockpit vorher und nachher, Erfassung und Niederschrift: Ja 0, Nein 1 (Amsel bzw. Carl), ohne ``entfernt``."""
     vorher = _vor_dem_schliessen(w)
@@ -157,14 +183,7 @@ def _uebereinstimmung(w: Welt, top: SessionAgendaItem, *, entfernt: str, grund: 
 class TestDreiFaelle:
     def test_stellvertretung_und_das_vertretene_mitglied_kommt(self, monkeypatch: pytest.MonkeyPatch) -> None:
         w, top = _welt(monkeypatch)
-        amsel = _zeile(w, "Amsel")
-        amsel.status = "excused"
-        amsel.save()
-        stellv = person(w.tenant, "Stellv")
-        SessionOrganizationMembership.objects.create(
-            organization=w.gremium, person=stellv, has_voting_rights=True, substitute_for=amsel.person
-        )
-        SessionAttendance.objects.create(meeting=w.sitzung, person=stellv, status="present")
+        amsel = _stellvertretung(w)
         _stimme(w, top, "Stellv", "yes", time(18, 5))
         _stimme(w, top, "Carl", "no", time(18, 5))
         assert _vor_dem_schliessen(w).uncounted == []
@@ -242,19 +261,23 @@ class TestGewoehnlicheAbstimmung:
 
 
 class TestNiederschrift:
-    def test_namensliste_nach_der_regel(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        # Bestand von vor der Regel: Das Cockpit hatte auch die Stimme der beratenden Person gezählt
+    def test_altbestand_summen_und_namen_stimmen_ueberein(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Bestand von vor der Regel: Das Cockpit hatte auch die Stimme der beratenden Person gezählt. Die Niederschrift
+        # nennt dieselben Stimmen wie die gespeicherten Summen; angeglichen wird beim nächsten Speichern der Erfassung
         w, top = _welt(monkeypatch)
         _stimme(w, top, "Amsel", "yes", time(18, 5))
         _stimme(w, top, "Carl", "no", time(18, 5))
         _stimme(w, top, "Dachs", "yes", time(18, 5))
         _stimme(w, top, "Buche", "excluded", time(17, 0))
+        top.vote_result = "approved"
+        top.save()
 
-        assert _namentlich(top) == "Namentlich: P Amsel (Ja), P Carl (Nein)"
+        assert _summen_und_namen(top) == ((2, 1, 0), (2, 1, 0))
+        assert _namentlich(top) == "Namentlich: P Amsel (Ja), P Carl (Nein), P Dachs (Ja)"
         votes = voting_service.protocol_votes(top)
         assert [p.family_name for p in votes.excluded] == ["Buche"]
-        assert [v.person.family_name for v in votes.roll_call] == ["Amsel", "Carl"]
-        # Beschlussauszug und Niederschrift-PDF über dieselbe Regel
+        assert [v.person.family_name for v in votes.roll_call] == ["Amsel", "Carl", "Dachs"]
+        # Beschlussauszug mit denselben Namen
         captured: dict[str, Any] = {}
         monkeypatch.setattr(resolution_service, "html_to_pdf", lambda html: b"")
         monkeypatch.setattr(
@@ -263,7 +286,23 @@ class TestNiederschrift:
         resolution_service.build_extract_pdf(
             [SessionAgendaItem.objects.select_related("meeting__tenant").get(pk=top.pk)], internal=False
         )
-        assert [v.person.family_name for v in captured["items"][0].roll_call_votes] == ["Amsel", "Carl"]
+        assert [v.person.family_name for v in captured["items"][0].roll_call_votes] == ["Amsel", "Carl", "Dachs"]
+
+    def test_mitglied_kommt_nach_dem_schliessen(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        # Die Stellvertretung stimmt für das entschuldigte Mitglied ab, das Cockpit schließt; erst danach kommt Amsel
+        w, top = _welt(monkeypatch)
+        amsel = _stellvertretung(w)
+        _stimme(w, top, "Stellv", "yes", time(18, 5))
+        _stimme(w, top, "Carl", "no", time(18, 5))
+        _schliessen(w, top)
+        assert _summen(top) == (1, 1, 0)
+        assert "nicht_gezaehlt" not in _pruefprotokoll(top)
+
+        amsel.status = "joined_late"
+        amsel.save()
+        assert _summen_und_namen(top) == ((1, 1, 0), (1, 1, 0))
+        assert _namentlich(top) == "Namentlich: P Carl (Nein), P Stellv (Ja)"
+        assert [v.person.family_name for v in voting_service.protocol_votes(top).roll_call] == ["Carl", "Stellv"]
 
     def test_ohne_anwesenheitsliste_wie_bisher(self, monkeypatch: pytest.MonkeyPatch) -> None:
         w, top = _welt(monkeypatch)

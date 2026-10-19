@@ -89,7 +89,7 @@ def _item_lines(item: SessionAgendaItem, *, timings: bool = True) -> list[str]:
             f"Abstimmung: {item.get_vote_result_display()}{method} (Ja: {item.votes_yes}, "
             f"Nein: {item.votes_no}, Enthaltungen: {item.votes_abstain})"
         )
-    # Namensliste nach derselben Regel wie Sitzungscockpit und Abstimmungserfassung (Issue #1059)
+    # Namensliste aus den gespeicherten Stimmen wie die Summen; Cockpit und Erfassung wenden die Zählregel an (#1059)
     votes = voting_service.protocol_votes(item)
     named = [f"{v.person.display_name} ({v.get_vote_display()})" for v in votes.roll_call]
     if named:

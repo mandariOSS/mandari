@@ -99,7 +99,7 @@ class VotingCaptureView(SessionViewMixin, TemplateView):
         # Personen lehnt capture_votes weiter ab (Issue #1045)
         by_person = {v.person_id: v for v in loaded}
         kept = voting_service.kept_votes(item, assessed, by_person)
-        # Stimmen, die nach der gemeinsamen Regel mit Cockpit und Niederschrift nicht zählen: Das Speichern entfernt sie
+        # Stimmen, die nach der gemeinsamen Regel mit dem Cockpit nicht zählen: Das Speichern entfernt sie
         # (versteckte Leerfelder), das Schließen im Cockpit hat sie bereits entfernt (Issue #1059)
         uncounted = {v.person_id for v in voting_service.uncounted_votes(item, assessed, by_person)}
         labels = dict(SessionVote.VOTE_CHOICES)

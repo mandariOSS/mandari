@@ -17,9 +17,9 @@ Sitzungsleitung und Protokollführung (Recht ``conduct_meetings``) steuern die S
 - **Abstimmung öffnen und schließen** zum aufgerufenen TOP. Das Ergebnis steht wie bisher in
   ``vote_result`` und den Summen; Einzelstimmen (offen, namentlich) erfasst die Abstimmungserfassung
   (``voting_service``), deren Summen das Schließen übernimmt. Summen prüft ``voting_service.check_counts``
-  gegen die stimmberechtigten Anwesenden. Einzelstimmen zählen nach derselben Regel wie in Erfassung und
-  Niederschrift (``voting_service.count_votes``, Issue #1059): Vor dem Schließen nennt das Cockpit, wessen Stimme
-  nicht zählt; das Schließen entfernt sie und vermerkt sie im Prüfprotokoll.
+  gegen die stimmberechtigten Anwesenden. Einzelstimmen zählen nach derselben Regel wie in der Erfassung
+  (``voting_service.count_votes``, Issue #1059): Vor dem Schließen nennt das Cockpit, wessen Stimme nicht zählt; das
+  Schließen entfernt sie und vermerkt sie im Prüfprotokoll, die Niederschrift nennt danach dieselben Stimmen.
 - **Sperre nach dem Landesprofil** (Issue #754): Ist eine geheime Wahl oder Abstimmung bzw. die Beratung einer
   geheimhaltungspflichtigen Angelegenheit unzulässig, sobald ein Mitglied zugeschaltet teilnimmt
   (Niedersachsen), lehnt das Cockpit Öffnen, Schließen (Zuschaltung während der offenen Abstimmung) bzw.

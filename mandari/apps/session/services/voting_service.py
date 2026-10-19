@@ -19,8 +19,9 @@ Digitale Abstimmung und Umlaufbeschlüsse (Issue #41).
   ausschließt (``participation_service.remote_vote_rule``).
 - Sperre in der Sitzung (Issue #754): Ist ein Vorgang nach dem Landesprofil unzulässig, sobald jemand
   zugeschaltet teilnimmt (Niedersachsen: geheime Wahlen und Abstimmungen), schreibt der Service keine Stimmen.
-- Zählregel (Issue #1059): Welche gespeicherten Einzelstimmen zählen, entscheidet für Sitzungscockpit,
-  Abstimmungserfassung und Niederschrift dieselbe Regel (``counted_person_ids``).
+- Zählregel (Issue #1059): Welche gespeicherten Einzelstimmen zählen, entscheidet für Sitzungscockpit und
+  Abstimmungserfassung dieselbe Regel (``counted_person_ids``); beide entfernen nicht gezählte Stimmen beim Schreiben,
+  die Niederschrift nennt die gespeicherten Stimmen, aus denen auch die Summen stammen.
 """
 
 from collections.abc import Collection, Mapping
@@ -273,8 +274,8 @@ def kept_votes(item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[An
 
 def counted_person_ids(item: SessionAgendaItem, assessed: Eligibility, votes: Mapping[Any, SessionVote]) -> set[Any]:
     """
-    Wessen gespeicherte Stimme zählt? Die gemeinsame Regel für Sitzungscockpit, Abstimmungserfassung und Niederschrift
-    (Issue #1059).
+    Wessen gespeicherte Stimme zählt? Die gemeinsame Regel für Sitzungscockpit und Abstimmungserfassung (Issue #1059);
+    die Niederschrift nennt danach die Stimmen, die beide stehen lassen (:func:`protocol_votes`).
 
     Es zählen die Stimmberechtigten zum Zeitpunkt der Abstimmung (``assessed.voting``, ``assessed`` mit dem Zeitpunkt aus
     ``participation_service.vote_time``) und Gestörte, die vor Beginn der Störung abgestimmt haben (:func:`kept_votes`).
@@ -361,9 +362,9 @@ def count_votes(item: SessionAgendaItem, assessed: Eligibility | None = None) ->
 
 @dataclass
 class ProtocolVotes:
-    """Namenslisten eines TOP in der Niederschrift (Issue #41, Regel nach Issue #1059)."""
+    """Namenslisten eines TOP in der Niederschrift (Issue #41)."""
 
-    #: namentliche Abstimmung: Ja, Nein und Enthaltung, die zählen (sonst leer)
+    #: namentliche Abstimmung: gespeicherte Ja-, Nein- und Enthaltungsstimmen (sonst leer)
     roll_call: list[SessionVote] = field(default_factory=list)
     #: Mitwirkungsverbot (Befangenheitsvermerke)
     excluded: list[Any] = field(default_factory=list)
@@ -373,19 +374,19 @@ def protocol_votes(item: SessionAgendaItem) -> ProtocolVotes:
     """
     Namentliche Stimmen und Befangene für Niederschrift, öffentliche Fassung und Beschlussauszug.
 
-    Die namentliche Liste nennt nur Stimmen, die nach :func:`counted_person_ids` zählen – dieselbe Regel wie beim
-    Schließen im Sitzungscockpit und beim Speichern der Abstimmungserfassung (Issue #1059). Befangenheitsvermerke
-    stehen wie bisher alle da. Die Stimmberechtigung wird nur bei einer namentlichen Abstimmung mit Stimmen bestimmt.
+    Genannt werden die gespeicherten Stimmen, aus denen auch die gespeicherten Summen stammen: Die Zählregel
+    (:func:`counted_person_ids`, Issue #1059) wenden das Schließen im Sitzungscockpit und das Speichern der
+    Abstimmungserfassung an, indem sie nicht gezählte Stimmen entfernen. Hier wird nicht nachträglich nach dem heutigen
+    Stand der Anwesenheit gefiltert, sonst widersprächen sich Summen und Namen derselben Niederschrift – etwa wenn das
+    vertretene Mitglied erst nach der Abstimmung seiner Stellvertretung kommt.
     """
     votes = list(item.votes.select_related("person"))
-    result = ProtocolVotes(excluded=[vote.person for vote in votes if vote.vote == "excluded"])
-    named = [vote for vote in votes if vote.vote in SessionVote.COUNTED_VOTES]
-    if item.voting_method != "roll_call" or not named:
-        return result
-    assessed = eligibility(item.meeting, item, at=participation_service.vote_time(item))
-    dropped = {vote.pk for vote in uncounted_votes(item, assessed, {vote.person_id: vote for vote in votes})}
-    result.roll_call = [vote for vote in named if vote.pk not in dropped]
-    return result
+    return ProtocolVotes(
+        roll_call=[vote for vote in votes if vote.vote in SessionVote.COUNTED_VOTES]
+        if item.voting_method == "roll_call"
+        else [],
+        excluded=[vote.person for vote in votes if vote.vote == "excluded"],
+    )
 
 
 def guard_kept_votes(

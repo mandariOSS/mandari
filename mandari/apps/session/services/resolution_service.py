@@ -182,7 +182,7 @@ def build_extract_pdf(items: list, *, internal: bool, permissions=None) -> bytes
             or (paper.is_public and paper.status not in UNVEROEFFENTLICHT)
         )
         item.resolution_np = item.get_resolution_text_decrypted() if internal else ""
-        # Namentliche Abstimmung + Befangenheit (Issue #41), gezählt wie im Sitzungscockpit (Issue #1059)
+        # Namentliche Abstimmung + Befangenheit (Issue #41), dieselben Stimmen wie die Summen (Issue #1059)
         votes = voting_service.protocol_votes(item)
         item.roll_call_votes = votes.roll_call
         item.excluded_persons = votes.excluded

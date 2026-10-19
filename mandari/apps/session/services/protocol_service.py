@@ -435,7 +435,7 @@ def build_protocol_pdf(protocol: SessionProtocol, *, internal: bool, permissions
 
     # NÖ-Texte nur für die interne Fassung entschlüsseln
     def add_votes(item):
-        # Namentliche Abstimmung + Befangenheit (Issue #41), gezählt wie im Sitzungscockpit (Issue #1059)
+        # Namentliche Abstimmung + Befangenheit (Issue #41), dieselben Stimmen wie die Summen (Issue #1059)
         votes = voting_service.protocol_votes(item)
         item.roll_call_votes = votes.roll_call
         item.excluded_persons = votes.excluded
