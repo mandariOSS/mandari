@@ -203,7 +203,7 @@ def _uuid(raw: str) -> uuid.UUID | None:
         return None
 
 
-def _check(command: Command, tenant: SessionTenant) -> tuple[SessionOrganization | None, list[tuple[str, File]]]:
+def _check(command: Command, tenant: SessionTenant) -> tuple[SessionOrganization | None, list[tuple[str, File[Any]]]]:
     """Zielgremium und Anlagen (Name, Datei); 422 mit allen Verstößen auf einmal."""
     body = command.body
     problems = [f"$.{name}: darf nicht leer sein" for name in REQUIRED_TEXTS if not body[name].strip()]
@@ -229,9 +229,9 @@ def _check(command: Command, tenant: SessionTenant) -> tuple[SessionOrganization
 
 def _attachments(
     items: Sequence[Mapping[str, Any]], files: Mapping[str, Any]
-) -> tuple[list[tuple[str, File]], list[str]]:
+) -> tuple[list[tuple[str, File[Any]]], list[str]]:
     """Anlagen aus dem Inhalt mit den mitgegebenen Dateien abgleichen (Größe und SHA-256)."""
-    attachments: list[tuple[str, File]] = []
+    attachments: list[tuple[str, File[Any]]] = []
     problems: list[str] = []
     for index, item in enumerate(items):
         handle = files.get(item["sha256"])

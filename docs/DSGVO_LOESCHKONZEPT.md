@@ -57,6 +57,16 @@ archiviert und gelöscht; seine Archivpakete löscht derselbe Lauf nach
 `befehl:purge_login_attempts` täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026,
 [PROTOKOLLE.md](PROTOKOLLE.md); 0 = keine Löschung); ein Archivpaket entsteht dafür nicht (Issue #366).
 
+Einreichungen von Anträgen laufen über den Befehl `submission.submit` (Issue #540). Der Idempotenzspeicher
+(`events_idempotency`) hält je Einreichung Idempotenzschlüssel, Hash der Anfrage und Quittung (Eingangsnummer,
+Eingangszeit, Inhalts-Hash, Kennung des Antrags, Status, Stelle und Code nicht angenommener Anlagen), keine
+Texte, Namen oder Adressen. Die Hashes sind ungesalzene SHA-256-Werte über den Antrag; bei einem Antrag mit
+Titel, Beschlussvorschlag und Begründung lässt sich der Inhalt daraus nicht erraten, sie bleiben aber wie der
+Inhalt geschützt (nur in der Datenbank der Installation, kein Export). Der Zeitplan `idempotenzschluessel_aufraeumen` löscht
+die Einträge täglich nach `EVENTS_IDEMPOTENCY_RETENTION_DAYS` (Standard 30 Tage); von Hand
+`manage.py events_idempotency_purge`. Danach gilt eine Wiederholung mit demselben Schlüssel als neue Einreichung.
+Der Antrag selbst folgt den Fristen des Mandanten.
+
 ### Konten ohne Zuordnung (plattformweit)
 
 Unabhängig von den Mandantenfristen räumt die Plattform Konten auf, die nirgends mehr

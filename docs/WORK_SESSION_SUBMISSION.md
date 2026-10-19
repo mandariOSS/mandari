@@ -19,9 +19,14 @@ sehen ohne Rückfrage Eingangsnummer, Bearbeitungsstatus und Beratungstermine (I
    Titel, Antragsart (aus Dokumenttyp/Titel geraten), Beschlussvorschlag, Begründung,
    finanzielle Auswirkungen (aus Überschriften wie „Beschlussvorschlag“, „Begründung“,
    „Finanzielle Auswirkungen“ herausgelöst), Zielgremium, Mitunterzeichnende, Dringlichkeit,
-   Wunschtermin. Nach Bestätigung entsteht der `SessionApplication`-Datensatz mit
-   Eingangsnummer `A/<Jahr>/<Nr>`; das Dokument wechselt auf „Eingereicht“ und ist über
-   `Motion.session_application` verknüpft.
+   Wunschtermin. Nach Bestätigung sendet Work den Befehl `submission.submit` über den Client
+   (`hub.commands.InProcessClient`, Issue #540); geprüft wird im Session-Handler
+   (`apps/session/commands.py`), derselbe wie für die APIs. Es entsteht der `SessionApplication`-Datensatz mit
+   Eingangsnummer `A/<Jahr>/<Nr>`, die Quittung nennt Eingangsnummer, Eingangszeit und Inhalts-Hash. Erst
+   danach hält Work seinen Stand fest: Das Dokument wechselt auf „Eingereicht“ und ist über
+   `Motion.session_application` verknüpft. Der Idempotenzschlüssel kommt aus Dokument und Zeitpunkt seiner
+   letzten Speicherung; scheitert das Festhalten in Work, liefert die Wiederholung dieselbe Quittung statt
+   eines zweiten Eingangs.
 4. **Einreichen setzt den Status über die Übergänge**: `Motion.advance_to("submitted")` geht die
    definierten Übergänge (`Motion.VALID_TRANSITIONS`); wer mit `motions.approve` einen Entwurf
    einreicht, gibt ihn damit zugleich frei. Die einreichende Person erhält eine
@@ -77,6 +82,12 @@ sehen ohne Rückfrage Eingangsnummer, Bearbeitungsstatus und Beratungstermine (I
 - Dokument im Status „Freigegeben“ – oder die einreichende Person besitzt `motions.approve`
 - Noch keine Einreichung für dieses Dokument
 
+Work prüft das vor dem Senden. Der Session-Handler prüft unabhängig davon noch einmal Mitgliedschaft und
+Recht `motions.submit_to_ris`, Verbindung und Token, Pflichttexte (nicht nur Leerraum), Zielgremium des
+Mandanten und die Grenzen des Vertrags (Titel 500, Beschlussvorschlag und Begründung je 50.000, finanzielle
+Auswirkungen 10.000 Zeichen, höchstens 100 Mitunterzeichnende mit je 200 Zeichen). Ablehnungen erscheinen im
+Formular mit der Bezeichnung des Felds.
+
 ## Antragsfassung als PDF
 
 Beim Einreichen aus Work entsteht aus den übermittelten Angaben automatisch ein schlichtes A4-PDF des Antrags
@@ -92,10 +103,17 @@ Bis zur Umwandlung ist die Antragsfassung intern wie die Anhänge (nur mit `view
 hängt sie **öffentlich** an die Vorlage, alle anderen Anhänge bleiben nichtöffentlich (#584). Über OParl und damit im
 Bürgerportal erscheint sie erst, wenn die Vorlage freigegeben ist (`oparl_publication.visible_files`: nicht Entwurf
 oder Prüfung); als älteste öffentliche Anlage ist sie dort die Hauptdatei (`mainFile`). Die Verwaltung kann sie vorher
-an der Vorlage auf nichtöffentlich stellen. Einreichungen über die API v1 erhalten kein PDF.
+an der Vorlage auf nichtöffentlich stellen. Einreichungen über die API v1 erhalten kein PDF; im Befehl entscheidet
+das Feld `application_pdf`, das Work setzt.
+
+Anhänge gehen nicht als Text im Befehl mit: Der Inhalt nennt je Anhang Name, Größe und SHA-256, die Dateien stehen in
+`Command.attachments` und gehen nur innerhalb einer Installation mit. Der Handler prüft Größe und Hash, Dateityp,
+Größe und Virenprüfung; nicht Angenommenes meldet die Quittung als Stelle und Code, Work nennt dann den Namen.
 
 ## Dateien
 
+- Befehl: `apps/session/commands.py` (Handler `submission.submit`), Vertrag
+  `hub/contracts/schemas/submission.submit/v1.json`
 - Service: `apps/work/motions/ris_submission.py` (Einreichen), `apps/work/motions/administration_feedback.py`
   (Rückmeldung), `apps/session/services/application_feedback.py` (öffentlich zulässiger Rückmeldestand)
 - Work-Views: `apps/work/motions/views/ris.py`, `apps/work/organization/views/ris_settings.py`
@@ -105,7 +123,9 @@ an der Vorlage auf nichtöffentlich stellen. Einreichungen über die API v1 erha
 - Tests: `scripts/smoke_ris_submission.py` (Fraktion → Verwaltung → Rückmeldung, Rechte, Sperren),
   `apps/work/motions/tests/test_verwaltung_rueckmeldung.py` (Ende-zu-Ende, Ö/NÖ, Idempotenz, Admin,
   Organisationstrennung), `apps/session/tests/test_antrag_rueckmeldung.py` (Aufbereitung, API),
-  `apps/work/motions/tests/test_dokument_anhaenge.py` (Anhänge und Antragsfassung als PDF)
+  `apps/work/motions/tests/test_dokument_anhaenge.py` (Anhänge und Antragsfassung als PDF),
+  `apps/session/tests/test_befehl_einreichen.py` (Handler, API v1, abgekündigter Pfad),
+  `apps/work/motions/tests/test_einreichung_befehl.py` (Weg aus Work, Wiederholung, Prüfung im Handler)
 
 ## Externe Work-Installationen
 
@@ -121,5 +141,5 @@ Einreichen und Rückmeldestand bereit (`docs/API_V1_SESSION.md`):
   IP-Beschränkung des Tokens gelten.
 
 Der Work-seitige Abruf aus einer anderen Installation (Verbindung per URL statt lokalem Mandanten,
-regelmäßiger Abgleich) ist noch nicht umgesetzt; innerhalb einer Installation arbeitet Work direkt
-über den `ApplicationService`.
+regelmäßiger Abgleich, `HttpClient` mit Anlagen) ist noch nicht umgesetzt; innerhalb einer Installation
+sendet Work den Befehl über den `InProcessClient`.
