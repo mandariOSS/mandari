@@ -6,9 +6,18 @@ Provides wrapped versions of insight_core views with organization context,
 giving users access to their municipality's council information system.
 """
 
+from typing import Any
+
+from django.http import Http404
+from django.shortcuts import render
+from django.urls import reverse
+
 from apps.work.rahmen import neues_design
 
 from .. import neu, selectors
+
+#: Seite für Sitzungen und Vorgänge, die mandari Session aus der Veröffentlichung zurückgenommen hat (Issue #853)
+ZURUECKGENOMMEN_VORLAGE = "work/ris/zurueckgenommen.html"
 
 
 class RISBodiesMixin:
@@ -34,6 +43,27 @@ class RISBodiesMixin:
         if self.neu:
             return [self.neue_vorlage]
         return super().get_template_names()
+
+    def zurueckgenommen(self, context: dict[str, Any], objekt: Any, liste: str) -> dict[str, Any]:
+        """
+        Detailseite eines Objekts, das es in den Kommunen nicht (mehr) gibt: Hat mandari Session es zurückgenommen
+        (``objekt``), zeigt die Seite wie das Bürgerportal nur einen neutralen Hinweis ohne Titel und Inhalt
+        (``render_to_response`` antwortet mit 410) und den Weg zur Liste (Adressname ``liste``), sonst 404.
+        """
+        if objekt is None:
+            raise Http404
+        context["zurueckgenommen_am"] = objekt.deleted_at
+        context["zurueckgenommen"] = True
+        context["zurueckgenommen_liste"] = reverse(liste, kwargs={"org_slug": self.organization.slug})
+        return context
+
+    def render_to_response(self, context: dict[str, Any], **response_kwargs: Any) -> Any:
+        if context.get("zurueckgenommen"):
+            response = render(self.request, ZURUECKGENOMMEN_VORLAGE, context, status=410)
+            response["Cache-Control"] = "no-store"
+            response["X-Robots-Tag"] = "noindex"
+            return response
+        return super().render_to_response(context, **response_kwargs)
 
     def get_bodies(self):
         """Alle verknüpften Kommunen als QuerySet (für body__in-Filter)."""

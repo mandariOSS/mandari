@@ -7,7 +7,6 @@ giving users access to their municipality's council information system.
 """
 
 from django.core.paginator import Paginator
-from django.shortcuts import get_object_or_404
 from django.views.generic import TemplateView
 
 from apps.common.mixins import WorkViewMixin
@@ -78,7 +77,12 @@ class RISPaperDetailView(RISBodiesMixin, WorkViewMixin, TemplateView):
         if bodies is None:
             return context
 
-        paper = get_object_or_404(selectors.papers_in_bodies(bodies), id=kwargs.get("paper_id"))
+        paper = selectors.paper_in_bodies(bodies, kwargs["paper_id"])
+        if paper is None:
+            # Von Session zurückgenommen: Hinweis ohne Inhalt wie im Bürgerportal (410), sonst 404
+            return self.zurueckgenommen(
+                context, selectors.withdrawn_paper(bodies, kwargs["paper_id"]), "work:ris_papers"
+            )
         context["paper"] = paper
         if self.neu:
             # Stand-Satz, Zeitstrahl, Dokumentzeilen und „Für die Fraktion“ (die alte Beratungsfolge braucht es nicht)
