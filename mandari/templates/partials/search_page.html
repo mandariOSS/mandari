@@ -6,7 +6,8 @@ Derselbe Bereich dient der Recherche in Work (Issue #853, apps.work.ris.suche): 
 Work (Abschnitt ohne eigenes Band, klebende Spalte unter der niedrigeren Kopfzeile, kein Abo-Link des Bürgerportals),
 suche_adresse ist das Ziel der Filter, dazu Gremium, Kommune und eigener Zeitraum; Reiter und Filter in den Maßen
 einer Arbeitsplattform (dicht). Ohne Suchdienst zeigt Work die Datenbanksuche direkt (datenbanksuche) mit Links auf
-die vollständigen Listen (alle_anzeigen), das Bürgerportal lädt sie nach (fallback).
+die vollständigen Listen (alle_anzeigen), das Bürgerportal lädt sie nach (fallback). Vorgänge mit der gesuchten
+Vorlagennummer stehen oben (nummer_passt), fehlt sie, sagt der Leerzustand das (nummer_gesucht, Issue #1102).
 {% endcomment %}
 {% if request.htmx %}
 <span hx-swap-oob="innerHTML:#suche-titel">{% if query %}„{{ query }}“{% if active_body and not suche_work %} in {{ active_body.get_display_name }}{% endif %}{% else %}Suche{% endif %}</span>
@@ -68,6 +69,10 @@ man nach dem Filtern tief unten am Ende der neuen Liste. Der Anker hat erst ab 2
     <div id="mehr-laden" class="pt-4">{% include "partials/search_results_mehr.html" %}</div>
     {% else %}
     <div class="py-8">
+        {% if nummer_gesucht and not without_filters_url %}
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Die Vorlage {{ nummer_gesucht }} liegt uns noch nicht vor.</h2>
+        <p class="mt-2 max-w-xl text-gray-700 dark:text-gray-300">Manche Kommunen geben Vorlagen erst später über ihre Schnittstelle frei. Sobald sie dort erscheint, übernehmen wir sie.</p>
+        {% else %}
         <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Keine Treffer{% if query %} für „{{ query }}“{% endif %}</h2>
         {% if without_filters_url %}
         <p class="mt-2 text-gray-700 dark:text-gray-300">Mit den gewählten Filtern gibt es nichts. <c-suche.textlink href="{{ without_filters_url }}" hx-get="{{ without_filters_url }}" hx-target="#suchergebnis" hx-push-url="true">Ohne Filter: {{ without_filters_count|default:"Treffer anzeigen" }}</c-suche.textlink></p>
@@ -75,6 +80,7 @@ man nach dem Filtern tief unten am Ende der neuen Liste. Der Anker hat erst ab 2
         <p class="mt-2 max-w-xl text-gray-700 dark:text-gray-300">Prüfen Sie die Schreibweise oder suchen Sie mit weniger Wörtern. Zusammengesetzte Wörter findet die Suche nur ganz („Feuerwehrbedarfsplan“, nicht „Feuerwehr“ allein).</p>
         {% else %}
         <p class="mt-2 max-w-xl text-gray-700 dark:text-gray-300">Prüfen Sie die Schreibweise oder suchen Sie mit weniger Wörtern. Bei Straßen genügt der Name ohne „Straße“.</p>
+        {% endif %}
         {% endif %}
     </div>
     {% endif %}

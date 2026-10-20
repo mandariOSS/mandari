@@ -5,6 +5,9 @@ Jahr wie bisher (Parameter q, type, year, page). Die Liste ist der gemeinsame Ba
 (c-liste.vorgaenge, mit Stand-Satz aus dem Beratungsverlauf) mit der Spalte „Für die Fraktion“: zuletzt gesetzte
 Position und Dokumente der Organisation; ohne einen Wert auf der Seite entfällt sie (fraktion_spalte), unterhalb von
 2xl steht sie wie der Stand unter dem Titel (zusatz_ab), damit die Titel nicht umbrechen. Kontext: apps/work/ris/neu.vorgaenge; die bisherige Seite bleibt work/ris/papers.html.
+Vorlagennummern findet die Suche in jeder Schreibweise, die passende Nummer steht vorn (Issue #1102). „Suchen“ bzw. die
+Eingabetaste schickt direkt=1 mit: Bei genau einem passenden Treffer öffnet sich der Vorgang (die Auswahlfelder senden
+ohne den Button und leiten nie weiter). Fehlt die Nummer bei uns, sagt die Seite das (nummer_gesucht).
 {% endcomment %}
 
 {% block page_title %}Vorgänge{% endblock %}
@@ -33,7 +36,7 @@ Position und Dokumente der Organisation; ohne einen Wert auf der Seite entfällt
         <option value="">Alle Jahre</option>
         {% for year in years %}<option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>{% endfor %}
     </select>
-    <c-ui.button type="submit" size="sm">Suchen</c-ui.button>
+    <c-ui.button type="submit" size="sm" name="direkt" value="1">Suchen</c-ui.button>
     {% if search_query or selected_type or selected_year %}<c-ui.textlink href="{% url 'work:ris_papers' org_slug=organization.slug %}" class="text-sm">Zurücksetzen</c-ui.textlink>{% endif %}
     <c-ui.textlink href="{% url 'work:ris_search' org_slug=organization.slug %}{% if search_query %}?q={{ search_query|urlencode }}{% endif %}" class="text-sm sm:ml-auto">Volltextsuche</c-ui.textlink>
 </form>
@@ -44,6 +47,11 @@ Position und Dokumente der Organisation; ohne einen Wert auf der Seite entfällt
                        zusatz="{% if fraktion_spalte %}work/ris/neu/_vorgang_zeile_fraktion.html{% endif %}" zusatz_titel="Für die Fraktion" zusatz_ab="2xl" />
 </div>
 <c-liste.seiten :seite="papers" dicht />
+{% elif nummer_gesucht %}
+<div class="mt-6 text-sm text-gray-600 dark:text-gray-400">
+    <p class="font-medium text-gray-900 dark:text-white">Die Vorlage {{ nummer_gesucht }} liegt uns noch nicht vor.</p>
+    <p class="mt-1">Manche Kommunen geben Vorlagen erst später über ihre Schnittstelle frei. Sobald sie dort erscheint, übernehmen wir sie.</p>
+</div>
 {% else %}
 <p class="mt-6 text-sm text-gray-600 dark:text-gray-400">{% if search_query or selected_type or selected_year %}Für diese Auswahl gibt es keine Vorgänge. <c-ui.textlink href="{% url 'work:ris_papers' org_slug=organization.slug %}">Zurücksetzen</c-ui.textlink>{% else %}Es sind noch keine Vorgänge vorhanden.{% endif %}</p>
 {% endif %}

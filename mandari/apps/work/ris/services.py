@@ -20,6 +20,7 @@ from django.utils import timezone
 from django.utils.html import escape
 from django.utils.safestring import SafeString, mark_safe
 
+from hub.ris import vorlagennummer
 from insight_core.models import OParlBody
 from insight_core.services import karten_punkte
 
@@ -35,6 +36,54 @@ logger = logging.getLogger(__name__)
 SEARCH_PAGE_SIZE = 25
 DEFAULT_MAP_CENTER = (51.5, 7.5)
 DEFAULT_MAP_ZOOM = 13
+
+
+# ---------------------------------------------------------------------------
+# Vorgangsliste
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Vorgangsfilter:
+    """Suchbegriff, Art und Jahr der Vorgangsliste (Parameter ``q``, ``type``, ``year``; ungültiges Jahr = keines)."""
+
+    search: str = ""
+    paper_type: str = ""
+    year: int | None = None
+
+    @classmethod
+    def aus(cls, params: Mapping[str, str]) -> Vorgangsfilter:
+        try:
+            year = int(params["year"]) if params.get("year") else None
+        except ValueError:
+            year = None
+        return cls(search=params.get("q", "").strip(), paper_type=params.get("type") or "", year=year)
+
+    @property
+    def nummer_gesucht(self) -> str:
+        """Gesuchte Vorlagennummer für den Leerzustand (Issue #1102); nur ohne Art und Jahr, sonst leer."""
+        if self.paper_type or self.year is not None or not vorlagennummer.sieht_wie_nummer_aus(self.search):
+            return ""
+        return self.search
+
+
+def einziger_nummerntreffer(bodies: Bodies, params: Mapping[str, str]) -> Any:
+    """
+    Der Vorgang, zu dem „Suchen“ bzw. die Eingabetaste (``direkt=1``) direkt führt: Die Eingabe ist eine Vorlagennummer
+    und hat auf Seite 1 genau einen, genau passenden Treffer (Issue #1102). Sonst ``None``; die Auswahl von Art und
+    Jahr sendet ohne den Button und führt nie direkt.
+    """
+    filter_ = Vorgangsfilter.aus(params)
+    if params.get("direkt") != "1" or params.get("page", "1") not in ("", "1"):
+        return None
+    if not vorlagennummer.sieht_wie_nummer_aus(filter_.search):
+        return None
+    treffer = list(
+        selectors.papers_queryset(bodies, search=filter_.search, paper_type=filter_.paper_type, year=filter_.year)[:2]
+    )
+    if len(treffer) != 1 or not vorlagennummer.genau(getattr(treffer[0], "nummer_rang", None)):
+        return None
+    return treffer[0]
 
 
 # ---------------------------------------------------------------------------

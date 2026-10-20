@@ -31,6 +31,7 @@ from typing import Any
 from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
 from django.utils import timezone
 
+from hub.ris import vorlagennummer
 from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
 from insight_core.models import (
     OParlAgendaItem,
@@ -400,8 +401,35 @@ def paper_exists(paper_id: object) -> bool:
 
 
 def search_papers(bodies: Bodies, text: str) -> QuerySet[OParlPaper]:
-    """Vorlagen mit ``text`` im Namen oder in der Drucksachennummer, neueste zuerst."""
-    return papers(bodies).filter(Q(name__icontains=text) | Q(reference__icontains=text)).order_by("-date")
+    """
+    Vorlagen mit ``text`` im Namen oder in der Drucksachennummer, neueste zuerst.
+
+    Sieht ``text`` wie eine Vorlagennummer aus, auch jede andere Schreibweise dieser Nummer; die passende Nummer steht
+    dann vorn (``vorlagennummer.suchen``, Issue #1102).
+    """
+    return vorlagennummer.suchen(papers(bodies), text, reihenfolge=("-date",))
+
+
+def search_papers_in(found: QuerySet[OParlPaper], text: str) -> QuerySet[OParlPaper]:
+    """
+    Vorgangslisten: ``found`` (Vorlagen der Kommunen samt Filtern des Aufrufers) eingeschränkt auf ``text`` in Name
+    oder Nummer, bei einer Vorlagennummer in jeder Schreibweise und mit der passenden Nummer vorn, sonst neueste
+    zuerst. Ohne ``text`` nur sortiert. Die eine Suche der Vorgangslisten in Insight und Work (Issue #1102).
+    """
+    if not text.strip():
+        return found.order_by("-date", "-oparl_created")
+    return vorlagennummer.suchen(found, text)
+
+
+def public_papers_by_number(bodies: Bodies, text: str, *, limit: int = 10) -> list[OParlPaper]:
+    """
+    Nicht gelöschte, nicht zurückgenommene Vorlagen, deren Nummer zu ``text`` passt (jede Schreibweise, Issue #1102),
+    genau passende zuerst, dann Folgevorlagen; leer, wenn ``text`` keine Vorlagennummer ist. Für Treffer, die die
+    Suche oben anheftet (``nummer_rang`` je Vorlage).
+    """
+    if vorlagennummer.nummer(text) is None:
+        return []
+    return list(vorlagennummer.passend(public_papers(bodies).exclude(withdrawn_q()), text)[:limit])
 
 
 def recent_papers(bodies: Bodies, *, limit: int = 5) -> QuerySet[OParlPaper]:
@@ -863,11 +891,13 @@ def search_public_papers(
     Nicht gelöschte Vorlagen, deren Name oder Drucksachennummer jedes Wort aus ``text`` enthält, neueste zuerst.
 
     Datenbank-Rückfall, wenn die Volltextsuche nicht antwortet. Wahlweise mit Datum der Vorlage im Zeitraum und
-    beraten in einer Sitzung eines der Gremien (ohne zurückgenommene Beratungen).
+    beraten in einer Sitzung eines der Gremien (ohne zurückgenommene Beratungen). Ist ``text`` eine Vorlagennummer,
+    passt auch jede andere Schreibweise; die passende Nummer steht dann vorn (Issue #1102).
     """
     found = public_papers(bodies)
+    woerter = Q()
     for word in text.split()[:8]:
-        found = found.filter(Q(name__icontains=word) | Q(reference__icontains=word))
+        woerter &= Q(name__icontains=word) | Q(reference__icontains=word)
     if date_from is not None:
         found = found.filter(date__gte=date_from)
     if date_to is not None:
@@ -878,7 +908,7 @@ def search_public_papers(
             withdrawn_q()
         )
         found = found.filter(Exists(beraten))
-    return found.order_by("-date", "-oparl_created")
+    return vorlagennummer.suchen(found, text, bedingung=woerter)
 
 
 @dataclass(frozen=True)
