@@ -3,7 +3,6 @@
 Admin-Konfiguration für Sync-Verwaltung.
 
 - SyncLogAdmin: Readonly-Protokoll aller Sync-Läufe
-- SyncConfigAdmin: Singleton-Editor für Daemon-Einstellungen
 - trigger-sync/: POST-Endpoint zum Starten eines Syncs vom Dashboard
 """
 
@@ -13,9 +12,9 @@ from django.urls import reverse
 from django.utils.html import format_html
 from unfold.admin import ModelAdmin
 
-from apps.common.admin_mixins import ReadOnlyAdminMixin, SingletonAdminMixin
+from apps.common.admin_mixins import ReadOnlyAdminMixin
 
-from .models import SyncConfig, SyncLog
+from .models import SyncLog
 
 
 @admin.register(SyncLog)
@@ -81,23 +80,6 @@ class SyncLogAdmin(ReadOnlyAdminMixin, ModelAdmin):
         minutes = int(obj.duration_seconds // 60)
         seconds = obj.duration_seconds % 60
         return f"{minutes} min {seconds:.0f} s"
-
-
-@admin.register(SyncConfig)
-class SyncConfigAdmin(SingletonAdminMixin, ModelAdmin):
-    list_display = [
-        "sync_enabled",
-        "interval_minutes",
-        "full_sync_hour",
-        "max_concurrent",
-        "updated_at",
-    ]
-    readonly_fields = ["updated_at"]
-
-    def changelist_view(self, request, extra_context=None):
-        """Direkt zum einzigen Objekt weiterleiten."""
-        config = SyncConfig.get()
-        return HttpResponseRedirect(reverse("admin:insight_sync_syncconfig_change", args=[config.pk]))
 
 
 def trigger_sync_view(request):

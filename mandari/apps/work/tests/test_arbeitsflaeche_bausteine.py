@@ -23,6 +23,7 @@ SEITEN_CSS = {"work-vorbereitung.css": "vb", "fraktionssitzung.css": "fs"}
 SEITEN_TEMPLATES = [
     *(BASIS / "templates" / "work" / "meetings" / "vorbereitung").glob("*.html"),
     *(BASIS / "templates" / "work" / "faction" / "sitzung").glob("*.html"),
+    *(BASIS / "templates" / "work" / "faction" / "neu").glob("*.html"),
 ]
 
 #: Bausteine, die es nur noch gemeinsam gibt: Name ohne Präfix (vb-…, fs-…, wf-…)
@@ -126,3 +127,56 @@ def test_beratungsverlauf_baustein() -> None:
     ) in html
     # Ohne Adresse kein Link
     assert '<span class="wo">Rat, 17.10.2026</span>: <span class="wf-punkt andere"' in html
+
+
+def test_bausteine_der_fraktionssitzungen() -> None:
+    """Gemeinsame Bausteine nach dem Muster (Issue #1071): Nebenspalte, Stand, Schritt, Versandzeile."""
+    html = _rendern(
+        '<c-work.neben label="Sitzungsreihe und Weiteres" class="fs-liste-neben">'
+        '<c-work.neben-abschnitt titel="Automatisch" kennung="a-h" zusatz="2">x</c-work.neben-abschnitt>'
+        "</c-work.neben>"
+    )
+    assert '<aside class="fs-neben fs-liste-neben" aria-label="Sitzungsreihe und Weiteres"' in html
+    assert (
+        '<section aria-labelledby="a-h"' in html
+        and '<h2 id="a-h">Automatisch <span class="fs-meta">2</span></h2>' in html
+    )
+    stand = _rendern('<c-work.stand punkt="zustimmung" text="Eingeladen" detail="am Fr 09.10." />')
+    assert (
+        '<span class="wf-punkt zustimmung" aria-hidden="true"></span><span>Eingeladen</span><small>am Fr 09.10.</small>'
+    ) in stand
+    schritte = _rendern(
+        '<c-work.schritt nr="1" stand="erledigt" titel="Anwesenheit bestätigt" />'
+        '<c-work.schritt nr="2" stand="aktuell" titel="Genehmigung">In Nr. 25</c-work.schritt>'
+    )
+    assert '<li class="erledigt"' in schritte and '<span class="sr-only">erledigt</span>' in schritte
+    assert '<li class="aktuell" aria-current="step"' in schritte and "<small>In Nr. 25</small>" in schritte
+    versand = _rendern('<c-work.versandzeile wer="Max" ergebnis="Nicht zugestellt" fehler grund="Postfach voll" />')
+    assert '<span class="erg fehler">Nicht zugestellt</span><span class="grund">Postfach voll</span>' in versand
+
+
+def test_bausteine_aus_dem_muster_stehen_in_der_css() -> None:
+    """Die Bausteine für Liste, Planung, Einladung, Protokoll, PDF-Einlesen und Einstellungen sind übertragen."""
+    klassen = _definierte_klassen((CSS / "fraktionssitzung.css").read_text(encoding="utf-8"))
+    for name in (
+        "fs-liste-flaeche",
+        "fs-weiteres",
+        "fs-neben",
+        "fs-sl",
+        "fs-stand",
+        "fs-tops",
+        "fs-top-zeile",
+        "fs-vorschlaege",
+        "fs-versandliste",
+        "fs-antwort",
+        "fs-tln",
+        "fs-r-protokoll",
+        "fs-prot-teil",
+        "fs-schritte",
+        "fs-pdf-liste",
+        "fs-pdf-wahl",
+        "fs-einst-raster",
+        "fs-einst-zeile",
+        "fs-schalter",
+    ):
+        assert name in klassen, name

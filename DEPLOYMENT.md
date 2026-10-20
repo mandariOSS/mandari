@@ -376,10 +376,11 @@ Kurzfassung (Rechenweg und Annahmen dort, Abschnitt 6):
 | mittel (rund 100.000 Einwohner) | 100 | 4 | 16 GB | 2 | 4 GB |
 | groß (500.000+ Einwohner, Bezirksvertretungen) | 400 | 12 | 32 GB | 8 | 8 GB |
 
-Die mitgelieferte `docker-compose.yml` startet genau einen Anwendungsprozess; er trägt
+Die mitgelieferte `docker-compose.yml` startet einen Anwendungsprozess; er trägt
 rund 15 Anfragen je Sekunde (gemessen mit dem Bestand „klein“; beim Bestand „groß“ kostet
 jede Anfrage doppelt so viel Rechenzeit, ein Prozess trägt dort also etwa die Hälfte, siehe
-docs/LASTTESTS.md, Abschnitt 5.3). Mehrere Prozesse für „mittel“ und „groß“: Issue #718.
+docs/LASTTESTS.md, Abschnitt 5.3). Für „mittel“ und „groß“ stellt `APP_PROCESSES` mehrere
+Prozesse ein, siehe „Mehrere Anwendungsprozesse“.
 
 ### Für größere Installationen
 
@@ -539,9 +540,9 @@ Takt, Änderungsfenster, Vollabgleich, Dokumentabrufe, Schonung bei Fehlern, die
 
 - Setzen Sie `INGESTOR_USER_AGENT` auf eine Kennung mit Ihrer eigenen Kontaktadresse; ohne Angabe nennt der
   User-Agent unsere Infoseite und `support@mandari.de` ([Für Selbstbetreiber](docs/ABRUFREGELN.md#für-selbstbetreiber)).
-  Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`) und,
-  weil die Sync-Aktionen an einer Quelle im Admin ohne laufenden Daemon im Worker der Anwendung laufen, auch in
-  `x-app-environment` (Helm: `app.extraEnv`); ein Eintrag nur in der `.env` wirkt nicht.
+  Die Variable gehört in den Abschnitt `environment` des Dienstes `ingestor` (Helm: `ingestor.extraEnv`); ein
+  Eintrag nur in der `.env` wirkt nicht. Die Anwendung gleicht seit Issue #554 selbst nicht mehr ab; die
+  Sync-Aktionen im Admin gehen nur an den Ingestor.
 - Jede Quelle hat ihren eigenen Takt: werktags 07–19 Uhr im Grundtakt `INGESTOR_INTERVAL`, sonst stündlich, am
   Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag alle 5 Minuten, nach Läufen ohne Änderung seltener.
   Vollabgleiche laufen je Quelle in ihrem Zeitfenster, sonst ab `INGESTOR_FULL_SYNC_HOUR` (5 Stunden lang).
@@ -1343,6 +1344,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:fetch_person_photos` | montags 03:00 | Personenfotos |
 | `befehl:sync_plan_boundaries` | täglich 04:50 | Umringe von Bebauungsplänen (Issue #598, `docs/INSIGHT_GEO.md`) |
 | `befehl:cleanup_orphaned_accounts` | täglich 03:45 | verwaiste Konten nach Frist löschen (Issue #238) |
+| `befehl:sitzungen_aufraeumen` | täglich 04:25 | abgelaufene Sitzungen in Blöcken löschen (Issue #1091) |
 | `befehl:cache_files` | stündlich :40 | Dokument-Cache: `--limit 400`, liegen gebliebene Abrufe freigeben, fällige Wiederholungen und neueste fehlende Dateien zuerst, je Quelle höchstens `DOCUMENT_FETCH_MAX_QUEUED` (`docs/FILE_CACHE.md`) |
 | `befehl:loeschabgleich` | stündlich :15 | Löschabgleich der Dokumente mit den Quellen (Issue #787, `docs/FILE_CACHE.md`; vor dem ersten Lauf `loeschabgleich --robots` ansehen) |
 | `befehl:dokumentablage` | stündlich :50 | Dokumentablage: `--aufraeumen`, mit Objektspeicher `--hochladen --aufraeumen` (Issue #788); hält mit `FILE_CACHE_MAX_TOTAL_GB` auch die Obergrenze des Dokument-Caches ein (Issue #961) |
@@ -1404,7 +1406,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 
@@ -1438,14 +1440,16 @@ docker compose exec mandari python manage.py session_publish_protocols
 unbegrenzt, das Update ändert nichts (Migration `insight_core/0056`, nur eine neue Spalte). Wer die Ablage
 begrenzen will, baut einen großen Bestand zuerst von Hand ab und setzt danach die Grenze; ab dann hält das
 stündliche Aufräumen sie ein. `--dry-run` zeigt vorher Modus, Anzahl, Größe und Kommunen; der Lauf arbeitet in
-kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container der Anwendung ausführen, der dieselben
-`OBJ_*` hat wie der Worker; die erste Zeile muss den erwarteten Modus nennen:
+kurzen Stapeln und ist jederzeit abbrechbar und wiederholbar. Im Container `worker` ausführen: Er hat dieselben
+`OBJ_*` und dieselbe Ablage wie die Anwendung und ist direkt mit PostgreSQL verbunden. Mit PgBouncer lüde der
+Container `mandari` die Ergebnisse ganz in den Speicher („PgBouncer für die Webanwendung“). Die erste Zeile muss
+den erwarteten Modus nennen:
 
 ```bash
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run
+docker compose exec worker python manage.py prune_file_cache --max-gb 10 --dry-run
 # mit Objektspeicher: Stichprobe per HEAD, ob die Inhalte dort liegen (fehlen welche: erst --hochladen)
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
-docker compose exec mandari python manage.py prune_file_cache --max-gb 10
+docker compose exec worker python manage.py prune_file_cache --max-gb 10 --dry-run --pruefe-objektspeicher --stichprobe 500
+docker compose exec worker python manage.py prune_file_cache --max-gb 10
 # danach in der .env (Anwendung und Worker lesen sie über docker-compose.yml) und Neustart:
 # FILE_CACHE_MAX_TOTAL_GB=10
 ```
@@ -1465,8 +1469,10 @@ Archivpakete vor der fristgerechten Löschung landen in `AUDIT_ARCHIVE_ROOT` (Vo
 URL abrufbar) oder in einem Speicher aus `STORAGES`, dessen Alias `AUDIT_ARCHIVE_STORAGE` nennt.
 `AUDIT_EXPORT_MAX_ROWS` (Vorgabe 100000) begrenzt Exporte aus der Oberfläche, größere Zeiträume
 exportiert `export_audit_log`; `SECURITY_AUDIT_RETENTION_DAYS` (Vorgabe 365) ist die Frist des
-Sicherheitsprotokolls, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30, festgelegt durch den Betreiber am 16.10.2026; 0 = keine Löschung)
-die der Anmeldeversuche für die Drosselung.
+Sicherheitsprotokolls, `SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS` (Vorgabe 0 = keine Löschung) die Frist seiner
+Archivpakete ab Ablage, `LOGIN_ATTEMPT_RETENTION_DAYS` (Vorgabe 30, festgelegt durch den Betreiber am 16.10.2026;
+0 = keine Löschung) die der Anmeldeversuche für die Drosselung. Die Frist der Archivpakete eines Session-Mandanten
+steht in dessen Datenschutz-Einstellungen (`session_privacy_purge` wendet sie an).
 
 Die Sitzungsmappen (Gesamt-PDF und ZIP-Paket, Issue #218) erzeugt der Zeitplan
 `befehl:build_meeting_packages`; die Oberfläche legt nur Anforderungen an, ohne Worker bleibt eine
@@ -1508,21 +1514,24 @@ Obergrenze der Datenbank.
 
 | Dienst | Obergrenze | Woher |
 |---|---|---|
-| mandari (Daphne, 1 Prozess) | **10** | `DB_POOL_MAX`; höchstens `DB_POOL_MAX_WAITING` Anfragen warten, der Rest bekommt 503 |
+| mandari (Daphne, ein Prozess) | **10** | `DB_POOL_MAX` je Prozess; höchstens `DB_POOL_MAX_WAITING` Anfragen warten, der Rest bekommt 503. Mit `APP_PROCESSES` Prozessen das Vielfache, siehe „Mehrere Anwendungsprozesse“ |
 | Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
 | Worker (Dienst `worker`, alle Rollen ohne `ocr`/`ai`) | 19 | Pool 18 ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
 | Worker für Texterkennung und KI (Dienst `worker-heavy`) | 7 | nur Rolle `tasks` mit `ocr` und `ai`; Rechnung unten |
+| Worker für Live-Übertragungen (Dienst `worker-live`) | 7 | nur Rolle `tasks` mit `live=2`; Rechnung unten |
+| Protokoll-Orchestrator (`minutes-orchestrator`) | 2 | ein Faden; der Pool hält `DB_POOL_MIN` offen |
 | Verwaltungsbefehle der Zeitpläne (eigene Prozesse im Dienst `worker`) | 8 | höchstens 4 gleichzeitig (Parallelität von `default`), je Prozess 1–2 Verbindungen; früher als Host-Cron im Anwendungscontainer |
 | OCR-Worker | 30 | gleiches Image wie der Ingestor |
 | Website (Wagtail) | 10 | eigener Container, eigene Datenbank |
 | Kundenportal | 10 | eigener Container, eigene Datenbank |
 | Sicherung (`pg_dump`) | 2 | nur während des Laufs |
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
-| **Summe** | **129** | |
+| **Summe** | **138** | |
 | **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb (Vorgabe der `docker-compose.yml`: 100) |
 
-Reserve: rund 70 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
-**und** prüft die Summe.
+Reserve: rund 60 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
+**und** prüft die Summe. Mit PgBouncer vor der Anwendung ändert sich nur deren Zeile, siehe
+„PgBouncer für die Webanwendung“ unten.
 
 ### Worker
 
@@ -1544,9 +1553,8 @@ arbeiten können. Er vergrößert seinen Pool beim Start selbst auf diese Zahl (
 Mit allen Rollen und allen Standard-Warteschlangen ohne Abonnements sind das 20 aus dem Pool und
 21 in der Datenbank; jedes Abonnement kommt mit einer hinzu. Der Dienst `worker` ohne `ocr` und
 `ai` braucht 18 aus dem Pool und 19 in der Datenbank, `worker-heavy`
-(`--roles tasks --queues ocr,ai`) 7. Hinter PgBouncer zählt der Pool des
-Workers gegen dessen `default_pool_size`, die Lauschverbindung geht über `EVENTS_DB_DIRECT_URL`
-direkt zur Datenbank.
+(`--roles tasks --queues ocr,ai`) 7, ebenso `worker-live` (`--roles tasks --queues live`, `live=2`).
+Die Worker verbinden sich auch dann direkt mit PostgreSQL, wenn PgBouncer vor der Anwendung läuft.
 
 ### Einstellungen der Anwendung
 
@@ -1554,7 +1562,7 @@ direkt zur Datenbank.
 |---|---|---|
 | `DB_POOL` | `true` | Pool an- oder abschalten. Bei SQLite ohne Wirkung |
 | `DB_POOL_MIN` | `2` | Vorgehaltene Verbindungen, damit die erste Anfrage nicht wartet |
-| `DB_POOL_MAX` | `10` | Obergrenze je Prozess |
+| `DB_POOL_MAX` | `10` | Obergrenze je Prozess (`MANDARI_DB_POOL_MAX`); jeder der `APP_PROCESSES` Prozesse hat einen eigenen Pool |
 | `DB_POOL_MAX_WAITING` | `20` | So viele Anfragen dürfen auf eine Verbindung warten; jede weitere bekommt sofort 503. `0` = unbegrenzt |
 | `DB_POOL_TIMEOUT` | `5` | Sekunden warten bei erschöpftem Pool, danach 503 |
 | `DB_POOL_MAX_LIFETIME` | `1800` | Verbindungen nach dieser Zeit erneuern |
@@ -1625,6 +1633,228 @@ Gemessener Normalbetrieb (16.09.2026): mandari 13, Portal 3, Website 2.
 Der Ingestor darf mit 30 Verbindungen mehr als die Anwendung. Das ist historisch
 und nicht gemessen — wer hier Luft braucht, kürzt zuerst dort
 (`ingestor/src/storage/database.py`, `pool_size` und `max_overflow`).
+
+## PgBouncer für die Webanwendung (optional, Issue #1060)
+
+Ohne Pooler hält jede Anfrage eine PostgreSQL-Verbindung für ihre ganze Dauer, auch während das
+Template gerendert wird. PgBouncer im Transaktionsmodus gibt die Serververbindung nach jeder
+Transaktion zurück. Die Anwendung kann dann mehr Verbindungen zu PgBouncer halten, PostgreSQL sieht
+davon nur so viele, wie gerade Anweisungen laufen, höchstens `DEFAULT_POOL_SIZE`.
+
+**Wann es sich lohnt:**
+
+- mehrere Anwendungsprozesse (`APP_PROCESSES`, „Mehrere Anwendungsprozesse“ unten) oder mehrere
+  web-Server: Ohne Pooler wächst die Summe ihrer Pools gegen `max_connections`;
+- Lastspitzen, bei denen der Pool der Anwendung (10 Verbindungen) leerläuft, obwohl PostgreSQL
+  Luft hätte (Schwachstellen-Scanner am 15.09. und 18.10.2026).
+
+Ein einzelner Prozess bei normaler Last braucht es nicht. Ohne Profil und Schalter ändert sich nichts.
+
+**Was über PgBouncer geht:**
+
+| Dienst | Verbindung | Grund |
+|---|---|---|
+| `mandari` (Webanwendung) | über PgBouncer | `DB_PGBOUNCER=true` stellt sie auf den Transaktionsmodus ein |
+| Migrationen (`migrate`, `safemigrate`) | direkt über `DB_DIRECT_URL` | auch im Container `mandari` (`update.sh`, `install.sh`, `deploy.sh`, von Hand) |
+| `events_after_restore` | direkt über `DB_DIRECT_URL` | `backup.sh` startet es bei der Wiederherstellung, wenn nur `postgres` läuft |
+| `worker`, `worker-heavy`, `worker-live` | direkt | Weckruf per `LISTEN`, lange Aufträge mit `.iterator()` |
+| `ingestor` | direkt | sitzungsgebundene Advisory-Sperre |
+| `minutes-orchestrator`, `website` | direkt | nicht auf den Transaktionsmodus eingestellt |
+
+Die Worker erben die Umgebung der Anwendung über den Anker `x-app-environment`; die Verbindung zu
+PgBouncer setzt nur der Dienst `mandari` selbst, die Worker behalten `DATABASE_URL` zu `postgres`.
+
+**Was `DB_PGBOUNCER=true` in der Anwendung ändert:**
+
+- `DISABLE_SERVER_SIDE_CURSORS`: `.iterator()` holt das Ergebnis auf einmal statt blockweise über
+  einen Cursor. Der Cursor läge auf einer Serververbindung, die der nächste Block nicht mehr bekommt
+  (`cursor … does not exist`). Große Ergebnisse, etwa der Export des Prüfprotokolls oder die
+  Sitemaps, brauchen dafür mehr Speicher im Webprozess. Das gilt auch für Verwaltungsbefehle, die
+  von Hand im Container `mandari` laufen (etwa `backfill_paper_locations`, `prune_file_cache`): Sie
+  laden die Ergebnisse von `.iterator()` ganz in den Speicher des Containers (1 GB). Große
+  Wartungsbefehle deshalb im Container `worker` starten, der direkt verbunden ist:
+  `docker compose exec worker python manage.py …`.
+- `prepare_threshold = None`: keine vorbereiteten Anweisungen. Django bindet Parameter ohnehin auf
+  der Clientseite, PgBouncer braucht deshalb kein `max_prepared_statements`.
+- Startparameter: Die Anwendung schickt nur `user`, `database` und `client_encoding`, die PgBouncer
+  alle kennt; `ignore_startup_parameters` bleibt bei der Vorgabe des Images.
+- Der Pool der Anwendung bleibt an und darf größer werden (`MANDARI_DB_POOL_MAX`).
+
+### Einschalten (ein Server)
+
+1. Verbindungsrechnung prüfen (unten).
+2. In der `.env` ergänzen. Die ersten drei Zeilen gehören zusammen: Zeigt die Anwendung ohne den
+   Schalter auf PgBouncer, scheitern Seiten mit `.iterator()` unter Last.
+   ```
+   COMPOSE_PROFILES=pgbouncer
+   MANDARI_DB_HOST=pgbouncer
+   MANDARI_DB_PGBOUNCER=true
+   MANDARI_DB_POOL_MAX=30
+   ```
+3. PgBouncer starten und auf `healthy` warten:
+   `docker compose up -d pgbouncer && docker compose ps pgbouncer`
+4. Anwendung neu erstellen: `docker compose up -d mandari`. Ihr Start wartet bis etwa eine Minute,
+   bis die Datenbank über PgBouncer erreichbar ist; PgBouncer startet sie nicht mit.
+5. Prüfen: `/health/ready/` antwortet mit `ok`, und
+   ```bash
+   docker compose exec mandari python manage.py shell -c \
+     "from django.db import connection as c; print(c.settings_dict['HOST'], c.settings_dict['DISABLE_SERVER_SIDE_CURSORS'])"
+   # → pgbouncer True
+   ```
+
+`update.sh` tauscht nur die Anwendungs-Images und lässt den laufenden PgBouncer stehen; seine
+Migrationen laufen über `DB_DIRECT_URL` direkt. Erst einschalten, wenn ein Image mit Issue #1060
+läuft: Ältere Images kennen `DB_PGBOUNCER` nicht.
+
+**Docker Compose:** Für einen Server genügt dieselbe Version wie bisher; die Basisdatei nutzt für
+PgBouncer nur Profile. Die Rollen unter `deploy/roles/` brauchen Docker Compose ab 2.24.4
+(`!reset`, `!override`).
+
+**Mehrere Server:** Auf dem Datenserver `COMPOSE_PROFILES=pgbouncer` (Port 6432 an `DATA_BIND`),
+auf den web-Servern `DATA_PG_PORT=6432` und `MANDARI_DB_PGBOUNCER=true`. `deploy/roles/web.yml`
+setzt `DB_DIRECT_URL` auf Port 5432 des Datenservers und verbindet die Website direkt; alle Dienste
+der Rolle worker verbinden sich direkt (`docs/MEHR_SERVER_BETRIEB.md`).
+
+**Kubernetes (Helm):** Das Chart bringt keinen PgBouncer mit, und `DATABASE_URL` kommt dort aus
+einem Secret für Anwendung, Worker, Ingestor und Migrations-Job zugleich. Einen Pooler nur vor den
+Anwendungs-Pods deckt es nicht ab.
+
+**Server-Compose außerhalb des Repos:** Wer eine eigene Compose-Datei pflegt, übernimmt dieselben
+Punkte von Hand: den Dienst `pgbouncer` (nur im internen Netz), im Dienst `mandari` `DATABASE_URL`
+auf PgBouncer, `DB_PGBOUNCER=true`, `DB_DIRECT_URL` direkt zu PostgreSQL und gegebenenfalls
+`DB_POOL_MAX`; Worker, Ingestor, Orchestrator und Website behalten ihre Direktverbindung, auch wenn
+sie Umgebung von der Anwendung erben (YAML-Anker, `extends`).
+
+### Verbindungsrechnung
+
+Zwei Seiten, jede mit eigener Grenze:
+
+1. **Anwendung → PgBouncer:** `MANDARI_DB_POOL_MAX` je Prozess × Prozesse, dazu ein bis zwei je
+   Verwaltungsbefehl per `docker compose exec`, ≤ `MAX_CLIENT_CONN` (`PGBOUNCER_MAX_CLIENT_CONN`,
+   Vorgabe 200).
+2. **PgBouncer → PostgreSQL:** `DEFAULT_POOL_SIZE` (`PGBOUNCER_DEFAULT_POOL_SIZE`, Vorgabe 20) +
+   Worker + Ingestor + übrige Dienste + Reserve ≤ `max_connections`. `DEFAULT_POOL_SIZE` gilt je
+   Datenbank und Benutzer; im Einzelserver lässt PgBouncer nur die Datenbank der Anwendung durch.
+
+Für unseren Einzelserver (`max_connections` 200, Budget oben):
+
+| | ohne PgBouncer | mit PgBouncer |
+|---|---|---|
+| Anwendung zu PostgreSQL | 10 (`DB_POOL_MAX`) | 20 (`DEFAULT_POOL_SIZE`) |
+| übrige Dienste (Budget oben ohne die Anwendung) | 128 | 128 |
+| **Summe in PostgreSQL** | **138** | **148** |
+| Reserve bis 200 | 62 | 52 |
+| Anwendung zu PgBouncer | – | 30 (`MANDARI_DB_POOL_MAX`) von 200 (`MAX_CLIENT_CONN`) |
+
+Mit PgBouncer bedient die Anwendung also dreimal so viele Anfragen mit Datenbankzugriff zugleich
+und belegt in PostgreSQL höchstens 20 Verbindungen. Wer PostgreSQL nicht stärker belasten will als
+bisher, setzt `PGBOUNCER_DEFAULT_POOL_SIZE=10`; dann warten Anweisungen bei Spitzen kurz in
+PgBouncer. Mehrere Anwendungsprozesse (#718) teilen sich dieselben 20: Bei vier Prozessen mit je 30
+sind es 120 Verbindungen zu PgBouncer, in PostgreSQL bleibt es bei 20.
+
+### Überwachen
+
+- Docker-Healthcheck des Dienstes `pgbouncer` (`pg_isready` gegen PgBouncer selbst):
+  `docker compose ps pgbouncer`.
+- Den Weg Anwendung → PgBouncer → PostgreSQL prüft `/health/ready/` (Prüfung `database`). Fällt
+  PgBouncer aus, wird die Readiness rot; ein Endpunkt der Statusseite (Gatus) auf `/health/ready/`
+  deckt PgBouncer also mit ab. PgBouncer selbst hat keinen Port nach außen.
+- Auslastung, lesend über die Konsole (`STATS_USERS`), ohne das Passwort anzuzeigen:
+  ```bash
+  docker exec mandari-pgbouncer sh -c \
+    'PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -U "$DB_USER" pgbouncer -c "SHOW POOLS;"'
+  ```
+  `cl_waiting` über längere Zeit größer als 0 heißt: `DEFAULT_POOL_SIZE` ist zu klein.
+
+### Rückweg
+
+Nichts in der Datenbank hängt an PgBouncer; der Wechsel geht jederzeit zurück.
+
+**Vor einem Rückfall auf ein Image vor Issue #1060** (`update.sh --tag`, Rückfall in `deploy.sh`)
+PgBouncer zuerst abschalten: Ein älteres Image kennt `DB_PGBOUNCER` nicht und nutzt serverseitige
+Cursor über den Pooler.
+
+1. In der `.env` `MANDARI_DB_HOST`, `MANDARI_DB_PGBOUNCER` und `MANDARI_DB_POOL_MAX` entfernen.
+2. `docker compose up -d mandari`: Die Anwendung verbindet sich wieder direkt mit `postgres`.
+3. `docker compose stop pgbouncer && docker compose rm -f pgbouncer`, danach `pgbouncer` aus
+   `COMPOSE_PROFILES` streichen.
+
+Erst die Anwendung umstellen, dann PgBouncer anhalten; sonst findet sie bis zum Neustart keine
+Datenbank.
+
+## Mehrere Anwendungsprozesse (Issue #718)
+
+Ein Anwendungsprozess (Daphne) trägt rund 15 Anfragen je Sekunde innerhalb der Zielwerte, sättigt bei rund
+20 und nutzt dabei höchstens etwa anderthalb Kerne (`docs/LASTTESTS.md`, Abschnitt 5). Weitere Kerne nutzt
+die Anwendung nur mit weiteren Prozessen. `APP_PROCESSES` stellt ihre Zahl im Dienst `mandari` ein,
+Vorgabe 1. Empfehlung nach Größenklasse (`docs/LASTTESTS.md`, Abschnitt 6): klein 1, mittel 2, groß 8.
+
+### Einschalten
+
+1. Verbindungsbudget und Speicher prüfen (unten).
+2. In der `.env` ergänzen, z. B. für vier Prozesse:
+   ```
+   APP_PROCESSES=4
+   MANDARI_MEM_LIMIT=4g
+   ```
+3. Anwendung neu erstellen: `docker compose up -d mandari`.
+4. Prüfen: Die Startzeile (`docker compose logs mandari | grep app_processes`) nennt Prozesse, Prüfports
+   und Verbindungen. Jeden Prozess einzeln über seinen Prüfport:
+   ```bash
+   docker compose exec mandari sh -c 'for p in $(seq 8101 $((8100 + APP_PROCESSES))); do
+     curl -s -o /dev/null -w "$p %{http_code}
+" http://localhost:$p/health/live/; done'
+   ```
+
+**Rückweg:** die Zeilen aus der `.env` entfernen und `docker compose up -d mandari`. Mit einem Prozess
+startet der Container Daphne genau wie vor #718.
+
+### Wie es arbeitet
+
+`mandari/docker-entrypoint.sh` startet `python -m mandari.app_processes` (Einzelheiten im Modul).
+
+| | ein Prozess (Vorgabe) | mehrere Prozesse |
+|---|---|---|
+| Start | ersetzt sich per `exec` durch `daphne --bind 0.0.0.0 --port 8000 …` wie bisher | startet die Daphne-Prozesse und bleibt als Hauptprozess des Containers |
+| Port 8000 | Daphne | jeder Prozess hat einen eigenen Socket (`SO_REUSEPORT`), der Kernel verteilt neue Verbindungen gleichmäßig |
+| Caddy, Docker-Healthcheck, `METRICS_URL` | unverändert | unverändert, alle an Port 8000 |
+| Prüfung | Docker-Healthcheck (`/health/live/`) | dazu je Prozess `/health/live/` über `127.0.0.1:8101`, `8102`, … alle 10 s; nach drei Fehlschlägen in Folge (festgefahrener Pool, #344) wird nur dieser Prozess neu gestartet |
+| Absturz | der Container endet, Docker startet ihn neu | nur dieser Prozess wird neu gestartet; endet er in den ersten 30 s nach seinem Start (Startfehler), endet der Container |
+| Herunterfahren | SIGTERM an Daphne | SIGTERM an alle Prozesse, wer nach 8 s noch läuft, bekommt SIGKILL |
+| `/metrics/` | Werte des Prozesses | Zähler und Histogramme über alle Prozesse summiert (`PROMETHEUS_MULTIPROC_DIR`); `mandari_db_pool_*` gilt für den Prozess, der den Abruf beantwortet; `process_*` und `python_*` entfallen |
+| WebSocket | Channel-Layer in Redis | ebenso: Verbindungen zu derselben Sitzung oder demselben Dokument in verschiedenen Prozessen erreichen sich über Redis. Ist `REDIS_URL` leer, startet die Anwendung mit mehreren Prozessen nicht |
+
+Der Docker-Healthcheck erreicht einen beliebigen Prozess; jeden einzelnen prüft `mandari.app_processes`.
+Endet ein Prozess, nehmen die übrigen seine neuen Verbindungen an. Sein Nachfolger bekommt den Socket schon
+beim Start: Verbindungen, die bis zu seiner Bereitschaft auf ihn fallen, warten einige Sekunden.
+
+### Speicher
+
+`mem_limit` gilt für alle Prozesse des Containers zusammen. Unter Last belegt ein Prozess 300 bis 480 MB
+(`docs/LASTTESTS.md`); wir empfehlen 1 GB je Prozess, also `MANDARI_MEM_LIMIT` = `APP_PROCESSES` × 1 GB
+(Vorgabe `1g`). Liegt die Grenze unter 512 MB je Prozess, warnt die Startzeile. Reicht der Speicher nicht,
+beendet der Kernel einen Prozess; er wird neu gestartet, die übrigen laufen weiter. Verwaltungsbefehle per
+`docker compose exec mandari …` laufen im selben Speicher; große Wartungsbefehle deshalb im Container `worker`.
+
+### Verbindungsbudget
+
+Jeder Prozess hat einen eigenen Pool mit `DB_POOL_MAX` Verbindungen (`MANDARI_DB_POOL_MAX`, Vorgabe 10).
+Die Anwendung belegt also bis zu `APP_PROCESSES` × `DB_POOL_MAX`:
+
+| | ohne PgBouncer | mit PgBouncer |
+|---|---|---|
+| Anwendung zu PostgreSQL | `APP_PROCESSES` × `DB_POOL_MAX`, bei vier Prozessen 40 | höchstens `PGBOUNCER_DEFAULT_POOL_SIZE` (Vorgabe 20), gleich wie viele Prozesse |
+| Anwendung zu PgBouncer | – | `APP_PROCESSES` × `MANDARI_DB_POOL_MAX`, bei vier Prozessen mit je 30 also 120, höchstens `PGBOUNCER_MAX_CLIENT_CONN` (Vorgabe 200) |
+| `max_connections` | um (`APP_PROCESSES` − 1) × `DB_POOL_MAX` erhöhen (`POSTGRES_MAX_CONNECTIONS`) | bleibt |
+
+Die Dienste der `docker-compose.yml` brauchen nach dem Budget oben schon mit einem Prozess fast alle
+100 Verbindungen der Vorgabe `POSTGRES_MAX_CONNECTIONS`. Ohne PgBouncer gehört die Erhöhung deshalb zu
+jedem zusätzlichen Prozess; ab zwei Prozessen empfehlen wir PgBouncer („PgBouncer für die Webanwendung“).
+Die Startzeile nennt die Rechnung („je Prozess bis zu DB_POOL_MAX=… Datenbankverbindungen“).
+
+**Mehrere Server:** `APP_PROCESSES` gilt je web-Server (`deploy/roles/web.yml`); im Budget zählen
+Prozesse × Server. **Kubernetes (Helm):** Dort skaliert `app.replicas` die Pods, je Pod ein Prozess
+(`APP_PROCESSES` bleibt ungesetzt).
 
 ## 🧾 Protokolle
 

@@ -146,7 +146,7 @@ Außerhalb von `scraper` (auf oberster Ebene der Sync config, auch für OParl-Qu
 | `list_params` | keine | Zusätzliche Parameter für die erste Seite jeder OParl-Liste, z. B. `{"size": 100}` bei ALLRIS (100 statt 10 Einträge je Seite). Folgeseiten kommen aus `links.next`. |
 | `modified_since_margin_minutes` | `INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES` (120) | Sicherheitsabstand des Änderungsfensters in Minuten (0–10080). Inkrementelle Läufe fragen je Kommune nach allem, was seit dem Beginn ihres letzten vollständig erfolgreichen Abgleichs abzüglich dieses Abstands geändert wurde; ohne einen solchen Abgleich, oder liegt er weiter zurück, wie früher nach den letzten sieben Tagen (#1025). Quellen, deren Objekte erst Stunden nach ihrem `modified` sichtbar werden, brauchen einen größeren Abstand. Listen, deren `modified` keine Uhrzeit trägt, erkennt der Ingestor selbst und fragt sie ab 00:00 Uhr an (`timed_lists`). |
 | `body_sync_started` | – (pflegt der Ingestor) | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (Kennung → Zeitpunkt UTC), Anfang des Änderungsfensters. Ein Lauf mit Lücke schreibt ihn nicht fort; konnte ein Lauf Objekte nicht speichern (Fehler, Mitgliedschaft ohne Person, TOP ohne Sitzung), rückt er höchstens bis zu ihrem ältesten `modified` vor. Objekte, die die Quelle trotz Filter liefert (`modified` mehr als einen Tag vor dem Fenster der Liste), halten ihn nicht; sie kommen ohnehin in jedem Lauf wieder. Löschen setzt die Kommune auf das Fenster von sieben Tagen zurück. |
-| `missing_lists` | – (pflegt der Ingestor) | Optionale Listen (Mitgliedschaften, Tagesordnungspunkte, Beratungen, Dateien, Orte, Wahlperioden), die die Quelle nicht anbietet, mit dem Zeitpunkt der letzten Prüfung (Adresse → Zeitpunkt UTC): Die erste Seite antwortete ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt, während andere Listen der Kommune lesbar waren. Inkrementelle Läufe fragen sie einmal am Tag an, der Vollabgleich jedes Mal (in Zeitscheiben nicht, #1033); gibt es sie wieder, wird der Vermerk gelöscht. Pflichtlisten (Gremien, Personen, Sitzungen, Vorlagen) werden nie vermerkt, dort bleibt ein 404 eine Lücke; ein Fehlerobjekt gilt dort wie bisher als leere Liste, solange andere Listen der Kommune lesbar sind (#1025). Beantwortet SD.NET RIM eine gefilterte Liste ohne Treffer mit HTTP 404 und Code 802, gilt sie als leer und vollständig, nicht als fehlend (#1034). |
+| `missing_lists` | – (pflegt der Ingestor) | Optionale Listen (Mitgliedschaften, Tagesordnungspunkte, Beratungen, Dateien, Orte, Wahlperioden), die die Quelle nicht anbietet, mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC): Die erste Seite antwortete ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt, während andere Listen der Kommune lesbar waren. Inkrementelle Läufe fragen sie einmal am Tag an, der Vollabgleich jedes Mal (in Zeitscheiben nicht, #1033); gibt es sie wieder, wird der Vermerk gelöscht. Pflichtlisten (Gremien, Personen, Sitzungen, Vorlagen) werden nie als fehlend vermerkt, dort bleibt ein 404 eine Lücke; ein Fehlerobjekt gilt dort wie bisher als leere Liste, solange andere Listen der Kommune lesbar sind (#1025). Listen, die die Quelle mit HTTP 403 für alle sperrt (auch ohne Filter und für den neutralen Vergleichs-Client), stehen hier als nicht freigegeben, auch Pflichtlisten (#1086). Beantwortet SD.NET RIM eine gefilterte Liste ohne Treffer mit HTTP 404 und Code 802, gilt sie als leer und vollständig, nicht als fehlend (#1034). |
 | `timed_lists` | – (pflegt der Ingestor) | Listen, deren `modified` nachweislich die Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC). Nur sie fragen inkrementelle Läufe mit dem kurzen Fenster ab „Beginn minus Abstand“ an. Alle übrigen Listen beginnen um 00:00 Uhr (dem früheren Zeitpunkt von 00:00 Uhr Ortszeit und 00:00 Uhr UTC): Trägt `modified` nur das Datum, fände das kurze Fenster ab etwa 02:00 Uhr nichts mehr vom selben Tag, auch bei einer Liste, die noch kein Lauf prüfen konnte. Vermerkt, sobald ein Lauf dort Änderungen der letzten sieben Tage sieht und alle eine Uhrzeit tragen; gelöscht, sobald er dort eine solche Änderung nur mit Datum sieht, auch 00:00 Uhr Ortszeit in UTC angegeben (`22:00:00Z`) (#1025). |
 | `full_sync_slices` | keine | Vollabgleich nur in Zeitscheiben, etwa `{"days": 30, "since": "2010-01-01"}`: Der Vollabgleich fragt jede Liste nur mit `modified_since`/`modified_until` an, nie ohne Filter, von alt nach neu, und setzt nach einem Abbruch an der letzten vollständigen Scheibe fort. Für Quellen, deren ungefilterte Listen abbrechen (Stadt Hamm). `days` 1–366 (Standard 30), `since` Pflicht, optional `lists`. Er endet immer mit dem Zeitfenster (`full_sync_window`, sonst Standardfenster des Daemons). Einzelheiten in [`ABRUFREGELN.md`](ABRUFREGELN.md#vollabgleich-in-zeitscheiben) (#1033). |
 | `full_sync_progress`, `full_sync_filter_ignored` | – (pflegt der Ingestor) | Fortschritt des Vollabgleichs in Zeitscheiben je Liste und Befund „Server ignoriert den Filter“ (#1033). |
@@ -226,8 +226,37 @@ vergleichen. Danach das Limit entfernen und einen Full-Sync auslösen
 | `si0050?__ksinr=` | Sitzungsdokumente (Einladung/Niederschrift) | `…/getfile.asp?id=N&type=do` |
 | `vo0050?__kvonr=` | Paper (Betreff, Nummer, Art) + Anlagen-PDFs | `…/vo0050.asp?__kvonr=N` |
 | `gr0040` | Organizations (Gremien) | `…/kp0040.asp?__kgrnr=N` |
-| `kp0040?__kgrnr=` | Persons + Memberships (inkl. Stimmrecht) | `…/pe0051.asp?__kpenr=N` |
+| `kp0040?__kgrnr=` | Persons + Memberships (inkl. Stimmrecht, Beginn/Ende beendeter Mitgliedschaften) | `…/pe0051.asp?__kpenr=N` |
 | TOP ↔ Vorlage | Consultation | `…/vo0050.asp?__kvonr=N#consultation/<ksinr>` |
+
+Eigenheiten, die der Adapter ausgleicht (Issue #1075, geprüft an zwei weiteren Instanzen mit SessionNet 5.4.5
+und 5.5.0):
+
+- **Gremien ohne Mitgliederseite.** Gremien, deren Mitglieder nicht veröffentlicht sind (etwa Samtgemeinde-,
+  Verwaltungs- oder Grundstücksverkehrsausschuss), führt `gr0040` ohne Link auf `kp0040`. Ihre Nummer steht im
+  Link auf die Sitzungsliste (`si0046…__ksigrnr=N`, dieselbe Nummer); der Adapter legt das Gremium unter
+  derselben Kennung an (`kp0040…?__kgrnr=N`, ohne `web`) und fragt keine Mitgliederliste an. Ohne beide Links
+  hat ein Gremium keine stabile Kennung und fehlt. Bei gleichnamigen Gremien ordnet der Kalender eine Sitzung
+  dem mit Mitgliederseite zu.
+- **Beendete Mitgliedschaften.** `kp0040` zeigt frühere Mitglieder unter „Mitgliedschaft beendet:“ in einer
+  eigenen Tabelle mit „von“ und „bis“. Sie erscheinen als Mitgliedschaft mit `endDate` (und `startDate`, falls
+  angegeben), nicht als aktuelle; ohne Ende fehlt die Zeile. Steht dieselbe Person auch aktuell im Gremium, trägt
+  die beendete Zeile das Ende in der Kennung (`…#membership/<kpenr>-bis-<Ende>`), die aktuelle behält ihre.
+  Abschnitte „Verwaltung“ und „zur Beratung
+  hinzugezogen“ haben wie „beratende Mitglieder“ kein Stimmrecht. Mitglieder liest der Adapter weiter nur für
+  die vorausgewählte Wahlperiode.
+- **Angekündigte Sitzungen.** Solange die Tagesordnung nicht veröffentlicht ist, verweist der Kalendereintrag
+  nicht auf `si0057`; die Nummer steht nur im Link „Termin übernehmen“ (`yvcs…key=N&uid=siN`). Der Adapter legt
+  die Sitzung aus dem Kalender an (Gremium, Datum, Zeit, Ort), ohne weitere Seite abzurufen, unter der Kennung
+  `si0057…?__ksinr=N`, die sie auch mit Tagesordnung behält. Einträge ohne Termin-Link (etwa vergangene
+  nichtöffentliche Sitzungen) haben keine Kennung und fehlen weiterhin.
+- **Öffentlich oder nicht.** Das Kennzeichen am Punkt („Ö 1“, „N 1“) entscheidet; nur ohne Kennzeichen gilt die
+  Abschnittsüberschrift. Nicht jede Tagesordnung hat eine.
+- **Fehlerseite.** Nicht öffentliche Vorgänge beantwortet SessionNet mit Status 200 und einer Fehlerseite im
+  eigenen Layout („SessionNet Fehlermeldung“, `smc_page_error_layout`). Sie wird nie ausgewertet. Fehlercode
+  1104 („Zum Öffnen des Vorgangs fehlt die Berechtigung“) zählt wie ein toter Verweis, nicht als Störung und nicht
+  gegen die Parse-Quote; eine Sitzung mit nicht öffentlicher Seite entsteht dann aus dem Kalender. Andere
+  Fehlercodes sind eine Störung. Die Gegenprobe „Mandant“ gilt auch für angekündigte Sitzungen.
 
 PDF-Anlagen laufen automatisch durch die bestehende OCR-Queue
 (`text_extraction_status='pending'` → pypdf → Tesseract → Mistral) und
@@ -331,6 +360,8 @@ Kennung geben; liefert die Seite später die ursprüngliche, scheitert der Abruf
   Formular, Weiterleitung oder Titel. Eine Kalenderseite muss zudem die
   Tageszeilen des Monats tragen (`td.silink`, auch an Tagen ohne Sitzung);
   fehlen sie, ist der Monat nicht lesbar und ergibt keine leere Liste.
+  Die Fehlerseite von SessionNet trägt dessen Layout und wird eigens
+  erkannt (siehe „Was der Adapter extrahiert“, Issue #1075).
 - **Bremse**: Fehlen in einem Lauf mehr als 10 Objekte eines Typs
   (`SCRAPER_TOMBSTONE_MAX_MISSING`), zählt der Lauf keines davon
   (`last_run.tombstone_braked`, Konsole „gebremst“) – Quelle prüfen. Der
@@ -362,7 +393,7 @@ Kennung geben; liefert die Seite später die ursprüngliche, scheitert der Abruf
 - Golden-File-Tests (`ingestor/tests/test_sessionnet_parser.py`) mit
   eingefrorenen HTML-Fixtures zweier realer Instanzen und einer pseudonymisierten Instanz mit
   mehreren Körperschaften (`tests/test_sessionnet_mehrere_koerperschaften.py`) sichern die Parser
-  in CI ab.
+  in CI ab; anonymisierte Ausschnitte weiterer Instanzen stehen in `tests/test_sessionnet_luecken.py`.
 - robots-Sperren erscheinen als Fehlerklasse `robots_blocked` im
   Betriebsmonitor (Admin → Monitoring) und in der Alarmmail, mit Grund und
   Empfehlung; die Quelle wird täglich erneut geprüft (#116).

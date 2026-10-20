@@ -309,6 +309,18 @@ def test_council_parties_and_contacts(org: Any) -> None:
 
 
 @pytest.mark.django_db
+def test_council_party_color_only_valid_hex(org: Any) -> None:
+    """Fraktionsfarbe nur als #RRGGBB (#1069): sonst Grau beim Anlegen, beim Bearbeiten bleibt die bisherige."""
+    party = services.add_party(org, services.PartyInput(name="Liberale", short_name="FDP", color="#FFED00"))
+    assert party.color == "#FFED00"
+    services.update_party(org, party, services.PartyInput(name="Liberale", short_name="FDP", color="gelb; x"))
+    party.refresh_from_db()
+    assert party.color == "#FFED00"
+    andere = services.add_party(org, services.PartyInput(name="Andere", short_name="AND", color="#12345678"))
+    assert andere.color == "#6b7280"
+
+
+@pytest.mark.django_db
 def test_role_services(org: Any, member: Any, admin: Any) -> None:
     PermissionFactory(codename="motions.view")  # type: ignore[no-untyped-call]
     with pytest.raises(ServiceError, match="erforderlich"):

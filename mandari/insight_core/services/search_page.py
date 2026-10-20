@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING, Any, Final
 
 from django.utils.text import slugify
 
+from hub.ris.vorlagennummer import RANG_GENAU, sieht_wie_nummer_aus
+
 from .search_filters import PERIOD_CUSTOM, PERIODS, SORTS, SearchQuery
 from .search_presentation import Links, count_sentence, german_date, normalize_paper_type, present_groups
 
@@ -154,9 +156,19 @@ def build_context(
         **scope,
         **filters,
     )
+    # Vorlagennummer: passende Vorgänge aus der Datenbank oben anheften, dieselben aus dem Suchdienst entfallen
+    angeheftet = nummerntreffer(params, body, body_ids)
+    roh: list[dict[str, Any]] = grouped["groups"]
     counts: Mapping[str, Any] = grouped["counts"]
+    if angeheftet:
+        kennungen = {g["key"] for g in angeheftet}
+        roh = (angeheftet if params.page == 1 else []) + [g for g in roh if _paper_id(g) not in kennungen]
+        counts = {**counts, "vorgaenge": max(int(counts.get("vorgaenge") or 0), len(angeheftet))}
     totals: Mapping[str, int] = grouped["totals_by_index"]
-    groups = present_groups(grouped["groups"], slug, links=links)
+    groups = present_groups(roh, slug, links=links)
+    for gruppe, treffer in zip(roh, groups, strict=True):
+        if gruppe.get("nummer_rang"):
+            treffer["nummer_passt"] = gruppe["nummer_rang"] <= RANG_GENAU
 
     tab_counts = {
         "": int(counts.get("vorgaenge", 0)) + int(counts.get("unterlagen", 0)) + int(counts.get("meetings", 0)),
@@ -188,6 +200,8 @@ def build_context(
     context: dict[str, Any] = {
         "params": params,
         "query": params.query,
+        # Leerzustand: „Die Vorlage … liegt uns noch nicht vor.“ (Issue #1102)
+        "nummer_gesucht": nummer_im_leerzustand(params),
         "groups": groups,
         "count_sentence": count_sentence(counts),
         "similar_spelling": grouped["similar_spelling"],
@@ -219,6 +233,64 @@ def build_context(
         context["without_filters_count"] = count_sentence(ohne["counts"])
         context["without_filters_url"] = params.without_filters().url()
     return context
+
+
+#: Höchstens so viele Vorgänge mit passender Vorlagennummer stehen über den Treffern des Suchdienstes
+NUMMERNTREFFER: Final = 10
+
+
+def nummer_im_leerzustand(params: SearchQuery) -> str:
+    """
+    Nummer für den Leerzustand „Die Vorlage … liegt uns noch nicht vor.“ (Issue #1102), sonst leer.
+
+    Nur auf den Reitern „Alle“ und „Vorgänge“ und ohne Filter des Inhalts, wie ``nummerntreffer``: Auf anderen Reitern
+    oder mit Filtern fehlt die Vorlage dort nur, ob es sie gibt, sagt der leere Reiter nicht.
+    """
+    if not sieht_wie_nummer_aus(params.query) or params.result_type not in ("", "papers"):
+        return ""
+    if replace(params, body_filter="").has_filters:
+        return ""
+    return params.query
+
+
+def nummerntreffer(params: SearchQuery, body: OParlBody | None, body_ids: list[str] | None) -> list[dict[str, Any]]:
+    """
+    Vorgänge, deren Nummer zur Eingabe passt, aus der Datenbank (Issue #1102), im Format der Gruppen des Suchdienstes.
+
+    Der Suchdienst findet Vorlagennummern nur in der gespeicherten Schreibweise; die Datenbank vergleicht den
+    Schlüssel (``hub.ris.vorlagennummer``) in der gewählten Kommune bzw. denselben Kommunen wie die Suche. Nur auf den
+    Reitern „Alle“ und „Vorgänge“ und ohne Filter des Inhalts (sonst stünde oben, was die Filter ausschließen). Eine
+    Abfrage, nur wenn die Eingabe wie eine Nummer aussieht.
+    """
+    if not sieht_wie_nummer_aus(params.query) or params.result_type not in ("", "papers"):
+        return []
+    if replace(params, body_filter="").has_filters:
+        return []
+    from hub.ris import selectors as ris
+
+    bereich: list[Any] = [body.pk] if body is not None else list(body_ids or [])
+    if not bereich:
+        return []
+    return [
+        {
+            "kind": "paper",
+            "key": str(paper.pk),
+            "nummer_rang": getattr(paper, "nummer_rang", None),
+            "paper": {
+                "id": str(paper.pk),
+                "name": paper.name,
+                "reference": paper.reference,
+                "paper_type": paper.paper_type,
+                "date": paper.date.isoformat() if paper.date else None,
+            },
+            "others": [],
+        }
+        for paper in ris.public_papers_by_number(bereich, params.query, limit=NUMMERNTREFFER)
+    ]
+
+
+def _paper_id(gruppe: Mapping[str, Any]) -> str:
+    return str((gruppe.get("paper") or {}).get("id") or "")
 
 
 def period_options(params: SearchQuery, counts: Mapping[str, int], *, custom: bool = False) -> list[dict[str, Any]]:

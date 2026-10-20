@@ -1,0 +1,25 @@
+{% comment %}
+Nebenspalte der Mitglieder (Issue #1071, Muster einladungHtml): Teilnehmende (mit Zu- und Absagen; wie die
+Teilnehmerliste der bisherigen Seite für alle sichtbar), Erinnerung zum Eintragen von TOPs, vorbereitete Ratssitzungen
+und die eigenen Unterlagen aller sichtbaren TOPs. Kontext: teilnehmende, erinnerung_tops, ratssitzungen,
+eigene_unterlagen, meeting.
+{% endcomment %}
+{% include "work/faction/neu/_vb_teilnehmende.html" %}
+
+{% if erinnerung_tops %}
+<c-work.neben-abschnitt titel="Erinnerung" kennung="erin-h">
+    <p>{{ erinnerung_tops }}</p>
+</c-work.neben-abschnitt>
+{% endif %}
+
+{% include "work/faction/neu/_vb_ratssitzungen.html" %}
+
+{% if eigene_unterlagen %}
+<c-work.neben-abschnitt titel="Eigene Unterlagen" kennung="unt-h" data-testid="fs-eigene-unterlagen">
+    <ul class="fs-unterlagen-liste">
+        {% for v, top in eigene_unterlagen %}
+        <li><a class="wf-textlink" href="{{ v.href }}"{% if v.extern %} target="_blank" rel="noopener noreferrer"{% endif %}>{% if v.gesperrt %}<i data-lucide="lock" aria-hidden="true"></i>{% endif %}{{ v.titel }}</a> <span class="fs-meta">{{ top }}</span></li>
+        {% endfor %}
+    </ul>
+</c-work.neben-abschnitt>
+{% endif %}

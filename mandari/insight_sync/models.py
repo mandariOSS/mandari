@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Models für Sync-Verwaltung: Protokoll und Konfiguration.
+Models für Sync-Verwaltung: Protokoll der Sync-Läufe (schreibt der Ingestor).
 """
 
-from django.conf import settings
 from django.db import models
 
 
@@ -64,52 +63,3 @@ class SyncLog(models.Model):
     def __str__(self):
         source_name = self.source.name if self.source else "Alle Quellen"
         return f"{self.get_sync_type_display()} – {source_name} – {self.get_status_display()}"
-
-
-class SyncConfig(models.Model):
-    """Singleton: Daemon-Konfiguration für den Sync."""
-
-    sync_enabled = models.BooleanField(
-        default=True,
-        verbose_name="Sync aktiv",
-        help_text="Daemon pausieren/fortsetzen",
-    )
-    interval_minutes = models.PositiveIntegerField(
-        default=15,
-        verbose_name="Intervall (Minuten)",
-        help_text="Minuten zwischen inkrementellen Syncs",
-    )
-    full_sync_hour = models.PositiveIntegerField(
-        default=99,
-        verbose_name="Full-Sync-Stunde",
-        help_text="Stunde (0–23) für den täglichen Full Sync. Wert > 23 = deaktiviert.",
-    )
-    max_concurrent = models.PositiveIntegerField(
-        default=10,
-        verbose_name="Max. gleichzeitige Requests",
-    )
-    updated_at = models.DateTimeField(auto_now=True, verbose_name="Aktualisiert")
-
-    class Meta:
-        verbose_name = "Sync-Einstellung"
-        verbose_name_plural = "Sync-Einstellungen"
-
-    def __str__(self):
-        state = "aktiv" if self.sync_enabled else "pausiert"
-        return f"Sync-Konfiguration ({state}, alle {self.interval_minutes} Min.)"
-
-    def save(self, *args, **kwargs):
-        self.pk = 1
-        super().save(*args, **kwargs)
-
-    @classmethod
-    def get(cls) -> "SyncConfig":
-        """Liefert die Singleton-Instanz (erstellt sie ggf. mit Defaults aus settings)."""
-        obj, _ = cls.objects.get_or_create(
-            pk=1,
-            defaults={
-                "interval_minutes": getattr(settings, "SYNC_INTERVAL_MINUTES", 15),
-                "full_sync_hour": getattr(settings, "SYNC_FULL_HOUR", 99),
-            },
-        )
-        return obj

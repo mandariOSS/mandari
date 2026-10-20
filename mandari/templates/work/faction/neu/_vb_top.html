@@ -1,0 +1,106 @@
+{% comment %}
+Ein TOP der Planung (Issue #1071, Muster topZeileHtml/detailHtml): Nummer, Titel (klappt die Angaben auf), Bezug,
+Zahl der Unterlagen, Menü. Aufgeklappt: Titel und Beschreibung (edit_item), Unterlagen, Im Beratungsverlauf, Herkunft;
+Unterpunkt, weitere Angaben im Panel (Unterlagen hochladen und verknüpfen, Links, Sichtbarkeit) und Löschen mit dem
+Dialog nach #897. Verschieben mit move_item (oberste Ebene, nicht der Genehmigungs-TOP): Ziehen am Griff, Pfeiltasten am
+Griff oder Menü „Nach oben“/„Nach unten“. Titel und Beschreibung speichern beim Verlassen des Felds (fsTagesordnung,
+frontend/alpine/fs-tagesordnung.ts); das Formular mit edit_item bleibt der Weg ohne Skript.
+Kontext: z (vorbereiten.Zeile), meeting, org_slug, can_edit.
+{% endcomment %}
+{% with item=z.item %}
+<li class="fs-top{% if z.unter %} unter{% endif %}{% if z.offen %} offen{% endif %}" id="top-{{ item.pk }}" data-testid="fs-top" data-id="{{ item.pk }}" data-titel="{{ item.title }}"{% if can_edit and z.verschiebbar %} data-verschiebbar{% endif %}>
+    <div class="fs-top-zeile">
+        {% if can_edit and z.verschiebbar %}
+        <button type="button" class="fs-griff" data-griff="{{ item.pk }}" aria-label="TOP {{ item.number }} verschieben" aria-describedby="griff-hilfe"
+                @keydown.up="taste($event, 'up')" @keydown.down="taste($event, 'down')"><i data-lucide="grip-vertical" aria-hidden="true"></i></button>
+        {% else %}
+        <span class="fs-griff-platz" aria-hidden="true"></span>
+        {% endif %}
+        <span class="nr">{{ item.number }}</span>
+        {% if z.offen %}
+        <a class="fs-top-titel" href="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung" aria-expanded="true" aria-controls="d-{{ item.pk }}"
+           hx-get="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung" hx-select="#agenda-container" hx-target="#agenda-container" hx-swap="outerHTML">{{ item.title }}</a>
+        {% else %}
+        <a class="fs-top-titel" href="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung&amp;top={{ item.pk }}#top-{{ item.pk }}" aria-expanded="false"
+           hx-get="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung&amp;top={{ item.pk }}" hx-select="#agenda-container" hx-target="#agenda-container" hx-swap="outerHTML">{{ item.title }}</a>
+        {% endif %}
+        <span class="fs-top-bezug" title="{{ z.bezug }}">{{ z.bezug }}</span>
+        <span class="fs-top-anh">{% if z.unterlagen %}<i data-lucide="paperclip" aria-hidden="true"></i>{{ z.unterlagen|length }}<span class="sr-only"> Unterlagen</span>{% endif %}</span>
+        {% if can_edit %}
+        <div class="wf-menue-anker" x-data="{ offen: false }" @click.outside="offen = false" @keydown.escape="offen = false">
+            <button type="button" class="wf-knopf wf-leise wf-ik wf-klein" aria-haspopup="menu" :aria-expanded="offen ? 'true' : 'false'" @click="offen = !offen" aria-label="Aktionen für TOP {{ item.number }}">
+                <i data-lucide="ellipsis" aria-hidden="true"></i>
+            </button>
+            <div class="wf-menue rechts" role="menu" x-show="offen" x-cloak>
+                <button type="button" role="menuitem" @click="offen = false; $dispatch('open-item-panel', { id: '{{ item.pk }}' })"><i data-lucide="panel-right" aria-hidden="true"></i>Unterlagen und Weiteres …</button>
+                {% if not item.is_approval_item and not z.unter %}
+                <button type="button" role="menuitem" @click="offen = false; $dispatch('open-add-sub', { parent_id: '{{ item.pk }}', visibility: '{{ item.visibility }}' })"><i data-lucide="plus" aria-hidden="true"></i>Unterpunkt …</button>
+                {% endif %}
+                {% if z.verschiebbar %}
+                {% if not z.erster %}
+                <button type="button" role="menuitem" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-vals='{"action": "move_item", "item_id": "{{ item.pk }}", "direction": "up"}' hx-include="#fs-offen" hx-target="#agenda-container" hx-swap="innerHTML"><i data-lucide="arrow-up" aria-hidden="true"></i>Nach oben</button>
+                {% endif %}
+                {% if not z.letzter %}
+                <button type="button" role="menuitem" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-vals='{"action": "move_item", "item_id": "{{ item.pk }}", "direction": "down"}' hx-include="#fs-offen" hx-target="#agenda-container" hx-swap="innerHTML"><i data-lucide="arrow-down" aria-hidden="true"></i>Nach unten</button>
+                {% endif %}
+                {% endif %}
+                {% if not item.is_approval_item %}
+                <button type="button" role="menuitem" aria-haspopup="dialog" aria-controls="delete-item-modal" @click="offen = false; $dispatch('open-delete-item', { id: '{{ item.pk }}', title: '{{ item.title|escapejs }}' })"><i data-lucide="trash-2" aria-hidden="true"></i>Löschen …</button>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}<span aria-hidden="true"></span>{% endif %}
+    </div>
+    {% if z.offen %}
+    <div class="fs-top-detail" id="d-{{ item.pk }}">
+        {% if can_edit and not item.is_approval_item %}
+        <form class="fs-top-bearbeiten" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" @submit.prevent="feldSpeichern($el.querySelector('[data-top-feld=title]'))">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="edit_item">
+            <input type="hidden" name="item_id" value="{{ item.pk }}">
+            <label class="fs-feldname" for="ti-{{ item.pk }}">Titel</label>
+            <input id="ti-{{ item.pk }}" class="wf-eingabe" type="text" name="title" value="{{ item.title }}" required maxlength="500"
+                   data-top="{{ item.pk }}" data-top-feld="title" @change="feldSpeichern($el)">
+            <label class="fs-feldname" for="b-{{ item.pk }}">Beschreibung</label>
+            <textarea id="b-{{ item.pk }}" class="wf-eingabe" name="description" rows="2"
+                      data-top="{{ item.pk }}" data-top-feld="description" @change="feldSpeichern($el)">{{ z.beschreibung }}</textarea>
+            {% include "work/faction/neu/_vb_speicherstand.html" %}
+            <noscript><div class="fs-detail-aktionen"><button type="submit" class="wf-knopf">Speichern</button></div></noscript>
+        </form>
+        {% elif z.beschreibung %}
+        <p class="fs-top-beschreibung">{{ z.beschreibung|linebreaksbr }}</p>
+        {% endif %}
+        <dl class="fs-detail">
+            <dt>Unterlagen</dt>
+            <dd>
+                {% for v in z.unterlagen %}<a href="{{ v.href }}"{% if v.extern %} target="_blank" rel="noopener noreferrer"{% endif %}>{% if v.gesperrt %}<i data-lucide="lock" aria-hidden="true"></i>{% endif %}{{ v.titel }}</a>{% empty %}<span class="fs-meta">keine</span>{% endfor %}
+                <button type="button" class="wf-textlink" @click="$dispatch('open-item-panel', { id: '{{ item.pk }}' })">Hinzufügen …</button>
+            </dd>
+            {% if z.verlauf %}
+            <dt>Im Beratungsverlauf</dt>
+            <dd class="fs-verlauf-dd">
+                <ul>
+                    {% for v in z.verlauf %}
+                    <li>{% if v.meeting_id %}<a href="{% if v.ziel %}{% url 'work:meeting_prepare' org_slug=org_slug meeting_id=v.meeting_id %}{% else %}{% url 'work:meeting_detail' org_slug=org_slug meeting_id=v.meeting_id %}{% endif %}">{{ v.wo }}</a>{% else %}{{ v.wo }}{% endif %}: <span class="wf-punkt {{ v.punkt }}" aria-hidden="true"></span><b>{{ v.position }}</b>{% if v.ergebnis %}, Ergebnis: {{ v.ergebnis|lower }}{% endif %}{% if v.endgueltig %}, endgültig{% endif %}{% if v.begruendung %}. „{{ v.begruendung }}“{% endif %}</li>
+                    {% endfor %}
+                </ul>
+            </dd>
+            {% endif %}
+            {% if item.standard_item_id %}<dt>Herkunft</dt><dd>Standard-Tagesordnung der Fraktion</dd>{% endif %}
+            {% if item.proposed_by_id %}<dt>Vorgeschlagen</dt><dd>von {{ item.proposed_by.user.get_display_name }}{% if item.proposed_at %} am {{ item.proposed_at|date:"d.m.Y" }}{% endif %}</dd>{% endif %}
+        </dl>
+        {% if can_edit %}
+        <div class="fs-detail-aktionen">
+            {% if not z.unter and not item.is_approval_item %}
+            <button type="button" class="wf-knopf" @click="$dispatch('open-add-sub', { parent_id: '{{ item.pk }}', visibility: '{{ item.visibility }}' })"><i data-lucide="plus" aria-hidden="true"></i>Unterpunkt</button>
+            {% endif %}
+            <button type="button" class="wf-knopf wf-leise" @click="$dispatch('open-item-panel', { id: '{{ item.pk }}' })"><i data-lucide="panel-right" aria-hidden="true"></i>Weitere Angaben …</button>
+            {% if not item.is_approval_item %}
+            <button type="button" class="wf-knopf wf-leise" aria-haspopup="dialog" aria-controls="delete-item-modal" @click="$dispatch('open-delete-item', { id: '{{ item.pk }}', title: '{{ item.title|escapejs }}' })"><i data-lucide="trash-2" aria-hidden="true"></i>Löschen</button>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+</li>
+{% endwith %}

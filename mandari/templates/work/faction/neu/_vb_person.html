@@ -1,0 +1,26 @@
+{% load permission_tags %}
+{% comment %}
+Eine Person in der Einladung (Issue #1071, Muster tlnZeile): Kürzel und Name, Rolle, Rückmeldung mit Zeitpunkt und
+Nachricht (nur mit Zu- und Absagen; bei offenen auch die Erinnerung „Offene erinnern“), Versandergebnis der Einladung. Kontext: p (vorbereiten.Person), rm, org_slug,
+meeting, membership.
+{% endcomment %}
+<tr data-testid="fs-person">
+    <td><span class="wer"><span class="fs-av" aria-hidden="true">{{ p.kuerzel }}</span>{{ p.name }}</span></td>
+    <td class="sp-rolle">{{ p.rollen }}</td>
+    {% if rm %}
+    <td>
+        <span class="fs-rm"><span class="wf-punkt {{ p.punkt }}" aria-hidden="true"></span>{{ p.wort }}{% if p.antwort_am %} <span class="fs-meta">{{ p.antwort_am }}</span>{% endif %}</span>
+        {% if p.nachricht %}<span class="rm-text">„{{ p.nachricht }}“</span>{% endif %}
+        {% if p.status == "invited" %}{% if p.erinnert_fehler %}<span class="rm-text fehler">Erinnerung nicht verschickt. {{ p.erinnert_fehler }}</span>{% elif p.erinnert %}<span class="rm-text">erinnert {{ p.erinnert }}</span>{% endif %}{% endif %}
+    </td>
+    {% endif %}
+    <td class="vs-sp">
+        {% if p.fehler %}
+        <span class="vs fehler"><b>Nicht versendet.</b> {{ p.fehler }}{% if p.attendance.membership_id and membership|has_perm:"members.view" %} <a class="wf-textlink" href="{% url 'work:member_detail' org_slug=org_slug member_id=p.attendance.membership_id %}">Adresse prüfen</a>{% endif %}</span>
+        {% elif p.versendet %}
+        <span class="vs">versendet {{ p.versendet }}{% if p.ohne_noe %}, ohne nichtöffentlichen Teil{% endif %}</span>
+        {% else %}
+        <span class="vs">{% if meeting.invitation_sent_at %}Ergebnis nicht erfasst{% else %}nicht verschickt{% endif %}</span>
+        {% endif %}
+    </td>
+</tr>

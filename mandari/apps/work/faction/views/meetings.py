@@ -85,8 +85,15 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
 
         # Annotate
         meetings = meetings.annotate(
-            attendee_count=Count("attendances", filter=Q(attendances__status__in=["confirmed", "present"]))
+            attendee_count=Count(
+                "attendances", filter=Q(attendances__status__in=["confirmed", "present"]), distinct=True
+            )
         )
+        if self.neue_ansicht():
+            from ..liste import mit_zahlen
+
+            # TOPs je Sitzung für die Liste nach dem Muster (Issue #1071)
+            meetings = mit_zahlen(meetings)
 
         # Pagination
         paginator = Paginator(meetings, 15)
@@ -109,6 +116,7 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
 
             # Zeitraum als drei Textlinks (Issue #951), dieselben Werte wie bisher
             context["zeitraeume"] = ZEITRAEUME
+            context.update(self._muster_kontext(context, time_filter, today_start))
 
         # Teilnahmenachweis (Issue #68): Standard-Zeitraum + Sammel-Export-Recht
         from datetime import date as _date
@@ -127,6 +135,39 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             )
 
         return context
+
+    def _muster_kontext(self, context, time_filter, today_start) -> dict:
+        """
+        Liste nach dem Muster (Issue #1071): Stand je Zeile, „Vergangene“ unter den kommenden Sitzungen,
+        Satz im Kopfband und die Nebenspalte (Sitzungsreihe, Automatik, Pausen). Nur lesend.
+        """
+        from .. import liste
+
+        intern = can_view_internal(self.membership)
+        seite = context["meetings"]
+        kontext = {
+            "zeilen": liste.zeilen(seite, self.organization, intern=intern),
+            "kopf_satz": liste.naechste_satz(self.organization, context["stats_sentence"]),
+            "reihen": liste.reihen(self.organization),
+            "automatik": liste.automatik(self.organization),
+            "zuletzt": [],
+        }
+        # Wie im Muster: unter den kommenden die letzten drei vergangenen, „Ältere Sitzungen anzeigen“ führt zu
+        # Zeitraum „Vergangene“. Nur auf der ersten Seite ohne Suche und Statusfilter.
+        ungefiltert = not context.get("search_query") and not context.get("selected_status")
+        if time_filter == "upcoming" and ungefiltert and seite.number == 1:
+            vergangen = liste.mit_zahlen(
+                FactionMeeting.objects.filter(organization=self.organization, start__lt=today_start)
+                .select_related("schedule")
+                .annotate(
+                    attendee_count=Count(
+                        "attendances", filter=Q(attendances__status__in=["confirmed", "present"]), distinct=True
+                    )
+                )
+                .order_by("-start")
+            )[:3]
+            kontext["zuletzt"] = liste.zeilen(vergangen, self.organization, intern=intern)
+        return kontext
 
     def post(self, request, *args, **kwargs):
         """Create a new meeting from the modal form."""
@@ -242,6 +283,15 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
         if sitzung.zeigt_sitzungsansicht(meeting, self.request.GET.get("ansicht")):
             self.template_name = session.SEITE
             context.update(session.seiten_kontext(self, meeting, self.request.GET.get("top")))
+            return context
+
+        # Vor der Sitzung (Entwurf, geplant, eingeladen) die Seite nach dem Muster (Issue #1071, Schritt 2)
+        from .. import vorbereiten as vorbereiten_logik
+        from . import vorbereiten
+
+        if vorbereiten_logik.zeigt_vorbereitung(meeting, self.request.GET.get("ansicht")):
+            self.template_name = vorbereiten_logik.SEITE
+            context.update(vorbereiten.seiten_kontext(self, meeting, self.request))
             return context
 
         context.update(_get_meeting_context(self, meeting))

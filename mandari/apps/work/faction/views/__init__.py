@@ -25,6 +25,7 @@ from .certificates import (
     FactionCertificateDownloadView,
 )
 from .exports import (
+    FactionMeetingIcsView,
     FactionProtocolPdfView,
 )
 from .feeds import (
@@ -40,6 +41,7 @@ from .meetings import (
 )
 from .panel import (
     FactionAttachmentDownloadView,
+    FactionItemFieldsView,
     FactionItemPanelActionView,
     FactionItemPanelView,
 )
@@ -61,9 +63,11 @@ __all__ = [
     "FactionCertificateDownloadView",
     "FactionInternalImportConfirmView",
     "FactionInternalImportView",
+    "FactionItemFieldsView",
     "FactionItemPanelActionView",
     "FactionItemPanelView",
     "FactionMeetingDetailView",
+    "FactionMeetingIcsView",
     "FactionMeetingListView",
     "FactionProtocolPdfView",
     "FactionSessionActionView",

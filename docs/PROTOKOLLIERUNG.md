@@ -95,6 +95,18 @@ nutzen dieselbe Anmeldung.
   Adresse. Hat jemand versehentlich sein Passwort in das Feld für die E-Mail-Adresse getippt,
   ist es so ebenfalls nicht lesbar.
 - Fehler beim Protokollieren verhindern keine Anmeldung; sie werden im Betriebslog vermerkt.
+- **Von der Drosselung abgewiesene Versuche** (Ereignis „Anmeldung durch Drosselung abgewiesen“,
+  `login_throttled`, Issue #366) stehen immer im Sicherheitsprotokoll, auch bei Session-Nutzern. Erfasst
+  werden Passwortschritt, Code- und Schlüsselschritt sowie die Einrichtung des zweiten Faktors bei der
+  Anmeldung. **Zusammengefasst je Adresse und Zeitfenster:** Der erste abgewiesene Versuch einer Adresse
+  in einem festen 15-Minuten-Fenster schreibt einen Eintrag, alle weiteren in diesem Fenster nicht. IPv6
+  zählt wie die Drosselung je /64-Netz. Der Eintrag nennt Schritt, gegriffene Schwelle (Adresse, Netz,
+  Konto) und Fensterbeginn, dazu das Konto nur als Referenz (zweiter Schritt) bzw. die eingegebene Kennung
+  nur als HMAC (Passwortschritt). Die Zahl der weiteren Abweisungen im Fenster steht nicht im Eintrag,
+  denn Einträge sind unveränderbar. Die Zusammenfassung hält der Cache fest; fällt er aus, prüft die
+  Datenbank je Adresse bzw. je /64-Netz. Eine Abweisung zählt nicht als weiterer Fehlversuch.
+- **Eine Form der Kennung:** Die eingegebene Adresse wird einmal normalisiert (ohne Leerraum am Rand,
+  klein) und so für die Zählung der Drosselung, den Anmeldeversuch (`LoginAttempt`) und den HMAC verwendet.
 - **Anmeldeversuche für die Drosselung** (`LoginAttempt`: E-Mail-Adresse, IP-Adresse, Browserkennung,
   Ergebnis) braucht die Anwendung nur für die Zählung der letzten 15 Minuten. Der Zeitplan
   `befehl:purge_login_attempts` löscht sie täglich nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage,
@@ -222,12 +234,23 @@ Ein Eintrag aus dem JSON-Export lässt sich unabhängig von mandari prüfen:
   gelöschten Eintrags als Anker; die Prüfung beginnt dort.
 - **Speicherort:** Einstellung `AUDIT_ARCHIVE_STORAGE` (ein konfigurierter Speicher der
   Installation) oder `AUDIT_ARCHIVE_ROOT` (Verzeichnis, Standard unterhalb des Medienverzeichnisses
-  ohne Web-Zugriff). mandari löscht Archivpakete nicht selbst: Die Kommune bietet sie ihrem Archiv
-  an oder legt eine eigene Frist fest.
+  ohne Web-Zugriff).
+- **Frist für Archivpakete** (Issue #366): *Einstellungen → Datenschutz → Archivpakete des
+  Audit-Logs* in Jahren ab Ablage des Pakets (Standard 0 = keine Löschung). Der Löschlauf löscht
+  abgelaufene Pakete des Mandanten aus dem Archivspeicher und nennt sie im Protokolleintrag des
+  Laufs. Maßgeblich ist der Zeitstempel (UTC) am Anfang des Paketnamens, nicht die Änderungszeit
+  des Speichers; andere Dateien im Ordner bleiben unberührt. Vorher bietet die Kommune die Pakete
+  ihrem Archiv an. Die Kette bleibt ab dem Anker prüfbar, nur das Stück vor dem Anker lässt sich
+  danach nicht mehr vorlegen.
 - **Oberfläche:** Ein Lauf aus der Oberfläche löscht höchstens 50 000 Einträge; der Rest folgt
   beim nächsten Lauf. Der Befehl kennt keine Obergrenze.
 - **Sicherheitsprotokoll:** `SECURITY_AUDIT_RETENTION_DAYS` (Standard 365 Tage); der Befehl
-  `purge_security_audit_log` archiviert und löscht nach demselben Verfahren.
+  `purge_security_audit_log` archiviert und löscht nach demselben Verfahren. Seine Archivpakete
+  löscht er nach `SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS` ab Ablage (Standard 0 = keine Löschung,
+  `--archive-days`); jede solche Löschung steht als „Eingriff in den Betrieb“
+  (`archivpakete_geloescht`, mit Paketnamen) im Sicherheitsprotokoll.
+- **Verschlüsselung der Archivpakete** mit einem öffentlichen Schlüssel des Mandanten ist noch
+  offen (Issue #366). Bis dahin schützen Speicherort und Dateirechte (0600) die Pakete.
 
 ## 11. Einführung und Betrieb
 

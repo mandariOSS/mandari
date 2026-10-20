@@ -4,7 +4,9 @@
    Farben, Knöpfe, Eingaben, Menüs, Reiter, Tagesordnungszeilen, „Im Beratungsverlauf“, Aufgaben, Werkzeugleiste, Leiste
    unten und Dialoge teilt die Seite mit der Sitzungsvorbereitung (work-flaeche.css, Präfix wf-); hier stehen Aufbau,
    Breiten und was es nur in der laufenden Sitzung gibt (Ablaufleiste, Protokoll, Beschluss, Anwesenheit).
-   Auf breiten Bildschirmen wachsen Unterlagen und Protokoll mit (keine Leerflächen, Regel aus #841). */
+   Auf breiten Bildschirmen wachsen Unterlagen und Protokoll mit (keine Leerflächen, Regel aus #841).
+   Am Ende: Bausteine der übrigen Fraktionssitzungs-Seiten nach dem Muster (Liste, Planung, Einladung, Protokoll,
+   Einstellungen; Issue #1071). */
 
 @layer components {
   .fs-sitzung {
@@ -1088,5 +1090,476 @@
     .fs-anw-knopf {
       display: none;
     }
+  }
+
+  /* =====================================================================================================
+     Bausteine der übrigen Fraktionssitzungs-Seiten nach dem Muster (Issue #1071): Liste mit Nebenspalte,
+     Planung (TOP-Liste, Vorschläge), Einladung (Rückmeldungen, Versand je Person), Protokoll-Schritte,
+     PDF-Einlesen und Einstellungen. Aus assets/fraktion.css des Musters übertragen, Farben aus work-flaeche.css
+     (--wf-…, Dunkelmodus dort), Knöpfe/Punkte/Textlinks sind die gemeinsamen wf-Bausteine. Die Seiten setzen
+     „wf“ an ihre Wurzel. Klassen, die die laufende Sitzung schon anders belegt (fs-dok, fs-hinweis,
+     fs-flaeche), heißen hier fs-prot-dok bzw. bleiben weg.
+     ===================================================================================================== */
+
+  /* ---------- Seiten ohne Innenabstand des Rahmens (Liste, Sitzungsstufen): Fläche bis an den Rand ---------- */
+  .work-main .work-page-content:has(> .fs-seite) {
+    padding: 0;
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .fs-seite { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; font-size: 14px; line-height: 1.45; }
+
+  /* ---------- Raster: Hauptspalte und Nebenspalte ---------- */
+  .fs-liste-flaeche { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) clamp(20rem, 22vw, 32rem); }
+  .fs-liste-haupt { padding: 8px 32px 48px; min-width: 0; }
+  .fs-liste-haupt > * { max-width: 116rem; }
+  .fs-r-zwei { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) clamp(22rem, 21vw, 34rem); }
+  .fs-spalte { padding: 20px 32px 64px; min-width: 0; }
+  .fs-r-zwei > .fs-spalte > * { max-width: 116rem; }
+  .fs-abschnitt-kopf { display: flex; align-items: center; gap: 12px; min-height: 32px; margin-bottom: 8px; flex-wrap: wrap; }
+  .fs-abschnitt-kopf h2 { font-size: 16px; font-weight: 600; }
+
+  /* Nebenspalte: Abschnitte mit Überschrift, gedämpfte Fläche (c-work.neben, c-work.neben-abschnitt) */
+  .fs-neben { background: var(--wf-grau-hell); border-left: 1px solid var(--wf-linie); padding: 20px 24px 48px; min-width: 0; font-size: 14px; line-height: 1.5; }
+  .fs-neben h2 { font-size: 14px; font-weight: 600; margin: 24px 0 6px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .fs-neben > section:first-child > h2:first-child, .fs-neben > h2:first-child { margin-top: 0; }
+  .fs-neben p { margin: 0 0 8px; }
+  .fs-neben ul, .fs-neben ol { list-style: none; margin: 0; padding: 0; }
+  .fs-neben .fs-meta { line-height: 1.45; }
+  .fs-neben .wf-textlink { font-size: 14px; }
+  /* „Weiteres“: Links und aufklappbare Formulare mit kleinem Symbol */
+  .fs-weiteres > li > a, .fs-weiteres > li > button, .fs-weiteres > li > details > summary {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 0; background: none; border: 0;
+    color: var(--wf-work-text); text-decoration: none; font-size: 14px; cursor: pointer; text-align: left; list-style: none;
+  }
+  .fs-weiteres > li > details > summary::-webkit-details-marker { display: none; }
+  .fs-weiteres > li > a:hover, .fs-weiteres > li > button:hover, .fs-weiteres > li > details > summary:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .fs-weiteres svg { width: 14px; height: 14px; color: var(--wf-text3); flex: none; }
+  .fs-weiteres details[open] { padding-bottom: 12px; }
+  .fs-weiteres form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; margin: 0; }
+  /* Was Work von selbst tut: Zeitpunkt fett, darunter die Handlung */
+  .fs-auto li { margin: 0 0 8px; }
+  .fs-auto b { font-weight: 600; display: block; }
+
+  /* ---------- Liste der Sitzungen ---------- */
+  .fs-liste-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 24px; padding: 12px 0 4px; }
+  .fs-liste-filter form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+  .fs-liste-filter nav { display: flex; gap: 16px; font-size: 13.5px; }
+  .fs-liste-filter nav [aria-current] { font-weight: 600; }
+  .fs-gruppe { font-size: 13px; font-weight: 600; color: var(--wf-text2); padding: 16px 0 6px; margin: 0; border-bottom: 1px solid var(--wf-linie); }
+  .fs-sl { list-style: none; margin: 0; padding: 0; }
+  .fs-sl > li {
+    position: relative; display: grid; grid-template-columns: 6.5rem minmax(0, 1.6fr) minmax(0, 1.7fr); gap: 4px 16px;
+    align-items: center; padding: 10px 8px; margin: 0 -8px; border-bottom: 1px solid var(--wf-linie);
+  }
+  .fs-sl > li:hover { background: var(--wf-grau-hell); }
+  .fs-sl > li.entfaellt { color: var(--wf-text2); }
+  .fs-sl > li.entfaellt:hover { background: none; }
+  .fs-sl .wann { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fs-sl .wann b { font-weight: 600; font-size: 14px; }
+  .fs-sl .wann span { font-size: 13px; color: var(--wf-text2); }
+  .fs-sl .was { min-width: 0; }
+  .fs-sl .was a { color: var(--wf-tinte); font-weight: 500; text-decoration: none; overflow-wrap: anywhere; }
+  /* Die ganze Zeile öffnet die Sitzung (ohne Skript) */
+  .fs-sl .was a::after { content: ""; position: absolute; inset: 0; }
+  .fs-sl .was a:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .fs-sl .was small, .fs-stand small { display: block; font-size: 13px; color: var(--wf-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fs-sl .sp-breit { display: none; font-size: 13.5px; color: var(--wf-text2); }
+  .fs-mehr { margin: 12px 0 0; font-size: 14px; }
+  /* Stand mit Punkt und einer Zeile Erläuterung (c-work.stand), auch für Rückmeldungen */
+  .fs-stand { display: grid; grid-template-columns: 8px minmax(0, 1fr); column-gap: 8px; align-items: baseline; font-size: 14px; min-width: 0; }
+  .fs-stand .wf-punkt { align-self: center; }
+  .fs-stand small { grid-column: 2; }
+
+  /* ---------- Planung: Tagesordnung als Liste ---------- */
+  .fs-teil + .fs-teil { margin-top: 20px; }
+  .fs-teil-kopf { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--wf-text2); min-height: 36px; padding: 4px 0; border-bottom: 1px solid var(--wf-linie); }
+  .fs-teil-kopf svg { color: var(--wf-text3); width: 14px; height: 14px; }
+  .fs-teil.noe .fs-teil-kopf { color: var(--wf-tinte); }
+  .fs-tops { list-style: none; margin: 0; padding: 0; }
+  .fs-top { border-bottom: 1px solid var(--wf-linie); }
+  .fs-top-zeile { display: grid; grid-template-columns: 24px 3rem minmax(0, 2fr) minmax(0, 1.2fr) 4.5rem 28px; align-items: center; gap: 4px 8px; min-height: 40px; padding: 4px 0; }
+  .fs-top .nr { color: var(--wf-text3); font-variant-numeric: tabular-nums; font-weight: 500; font-size: 13.5px; white-space: nowrap; }
+  .fs-top.unter .nr { padding-left: 16px; }
+  .fs-top-titel { background: none; border: 0; padding: 4px 0; text-align: left; font-size: 14px; font-weight: 500; color: var(--wf-tinte); cursor: pointer; min-width: 0; line-height: 1.4; }
+  .fs-top-titel:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .fs-top.unter .fs-top-titel { padding-left: 16px; font-weight: 400; }
+  .fs-top-bezug { font-size: 13px; color: var(--wf-text2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fs-top-anh { font-size: 13px; color: var(--wf-text2); display: inline-flex; align-items: center; gap: 4px; }
+  .fs-top-anh svg { width: 14px; height: 14px; }
+  .fs-griff { cursor: grab; color: var(--wf-text3); opacity: 0; background: none; border: 0; padding: 0; }
+  .fs-top-zeile:hover .fs-griff, .fs-griff:focus-visible { opacity: 1; }
+  .fs-top.offen > .fs-top-zeile { background: var(--wf-grau-hell); }
+  .fs-top.offen .fs-top-titel { font-weight: 600; }
+  .fs-top-detail { padding: 4px 36px 16px calc(24px + 3rem + 16px); background: var(--wf-grau-hell); }
+  .fs-top.unter .fs-top-detail { padding-left: calc(24px + 3rem + 32px); }
+  .fs-detail { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 8px 12px; margin: 12px 0 0; font-size: 14px; align-items: baseline; max-width: 56rem; }
+  .fs-detail dt { color: var(--wf-text2); font-size: 13px; }
+  .fs-detail dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; }
+  .fs-detail dd a { color: var(--wf-work-text); display: inline-flex; align-items: center; gap: 4px; }
+  .fs-detail-aktionen { display: flex; gap: 8px; margin-top: 12px; }
+  .fs-top-neu { display: grid; grid-template-columns: 24px 3rem minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 44px; }
+  .fs-top-neu .plus { color: var(--wf-text3); display: grid; place-items: center; }
+  .fs-top-neu:not(:focus-within) .wf-knopf { visibility: hidden; }
+  .fs-to-leer { padding: 16px 0 4px; color: var(--wf-text2); font-size: 14px; }
+  /* Gesperrter nichtöffentlicher Teil mit Erklärung (nicht vereidigt) */
+  .fs-gesperrt { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 4px 10px; padding: 12px 0; border-bottom: 1px solid var(--wf-linie); font-size: 14px; line-height: 1.5; }
+  .fs-gesperrt svg { width: 16px; height: 16px; margin-top: 2px; color: var(--wf-text2); }
+  .fs-gesperrt p { margin: 2px 0 0; color: var(--wf-text2); max-width: 46rem; }
+
+  /* Vorschläge sachkundiger Bürgerinnen und Bürger: warten auf Genehmigung */
+  .fs-vorschlaege { margin: 4px 0 16px; padding: 8px 12px 4px; background: var(--wf-work-flaeche); border-radius: 6px; }
+  .fs-vorschlaege h3 { font-size: 13.5px; font-weight: 600; display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; margin: 0; }
+  .fs-vorschlaege ul { list-style: none; margin: 4px 0 0; padding: 0; }
+  .fs-vorschlaege li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 16px; align-items: center; padding: 8px 0; border-top: 1px solid var(--wf-linie); }
+  .fs-vorschlaege .vs-was b { display: block; font-size: 14px; font-weight: 500; }
+  .fs-vorschlaege .vs-was small { display: block; font-size: 12.5px; color: var(--wf-text2); margin-top: 1px; }
+  .fs-vorschlaege .vs-akt { display: flex; gap: 6px; }
+
+  /* Lesende Tagesordnung (Einladung, Mitgliedersicht, Seitenfeld) */
+  .fs-to-lesen { list-style: none; margin: 0; padding: 0; }
+  .fs-to-lesen li { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr); gap: 2px 8px; padding: 9px 0; border-bottom: 1px solid var(--wf-linie); font-size: 14px; line-height: 1.45; }
+  .fs-to-lesen li.unter { padding-left: 16px; }
+  /* Nummer als Rasterspalte einer Leseliste; wf-tl-zeile ist die anklickbare Navigationszeile mit Kürzung und Auswahl */
+  .fs-to-lesen .nr { color: var(--wf-text3); font-variant-numeric: tabular-nums; font-weight: 500; }
+  .fs-to-lesen .t { font-weight: 500; }
+  .fs-to-lesen li.unter .t { font-weight: 400; }
+  .fs-to-lesen .b { grid-column: 2; font-size: 13px; color: var(--wf-text2); display: flex; flex-wrap: wrap; gap: 2px 14px; }
+  .fs-to-lesen .b a { color: var(--wf-text2); display: inline-flex; align-items: center; gap: 4px; }
+  .fs-to-lesen .b a:hover { color: var(--wf-work-text); }
+
+  /* ---------- Einladung: Antwort der Mitglieder, Rückmeldungen, Versand je Person ---------- */
+  .fs-antwort { padding: 4px 0 20px; border-bottom: 1px solid var(--wf-linie); margin-bottom: 8px; }
+  .fs-antwort h2 { font-size: 18px; font-weight: 600; margin: 0; }
+  .fs-termin { margin: 6px 0 0; font-size: 14.5px; line-height: 1.55; }
+  .fs-antwort-knoepfe { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+  .fs-antwort-knoepfe .wf-knopf { height: 40px; padding: 0 16px; min-width: 7.5rem; }
+  .fs-antwort-knoepfe .wf-knopf[aria-pressed="true"] { background: rgb(var(--primary-600)); border-color: rgb(var(--primary-600)); color: #fff; }
+  .fs-antwort-knoepfe .rechts { margin-left: auto; display: flex; gap: 16px; align-items: center; font-size: 13.5px; }
+  .fs-antwort-stand { margin: 12px 0 0; font-size: 14px; color: var(--wf-text2); }
+  .fs-antwort-stand:empty { display: none; }
+  .fs-nachricht { margin-top: 12px; max-width: 40rem; }
+  .fs-lesespalte { max-width: 64rem; }
+  .fs-top-form { padding: 12px 0 20px; border-bottom: 1px solid var(--wf-linie); }
+  .fs-top-form h3 { font-size: 15px; font-weight: 600; margin: 0; }
+  .fs-top-form-zeile { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .fs-top-form-zeile input[type="text"] { flex: 1 1 18rem; min-width: 0; }
+  .fs-top-form-zeile select { flex: 0 1 18rem; min-width: 0; }
+  .fs-meine-vs { list-style: none; margin: 10px 0 0; padding: 0; font-size: 13.5px; color: var(--wf-text2); }
+  /* Rückmeldungen und Teilnahme als Tabelle (am Handy als Zeilen) */
+  .fs-tln { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .fs-tln th { text-align: left; font-size: 12px; font-weight: 500; color: var(--wf-text3); padding: 6px 12px 6px 0; border-bottom: 1px solid var(--wf-linie); }
+  .fs-tln td { vertical-align: middle; padding: 8px 12px 8px 0; border-bottom: 1px solid var(--wf-linie); }
+  .fs-tln .wer { display: flex; align-items: center; gap: 8px; font-weight: 500; white-space: nowrap; }
+  .fs-tln .rm-text { display: block; font-size: 13px; color: var(--wf-text2); margin-top: 2px; max-width: 30rem; }
+  .fs-tln .vs { font-size: 13px; color: var(--wf-text2); white-space: nowrap; }
+  .fs-tln .vs.fehler { color: var(--wf-abl); white-space: normal; overflow-wrap: anywhere; }
+  .fs-tln .rm-text.fehler { color: var(--wf-abl); }
+  .fs-tln td.sp-rolle { color: var(--wf-text2); font-size: 13.5px; }
+  .fs-tln tr.gruppe td { padding-top: 18px; font-size: 13px; font-weight: 600; color: var(--wf-text2); }
+  /* Versandergebnis je Person (c-work.versandzeile) */
+  .fs-versandliste { list-style: none; margin: 8px 0 0; padding: 0; }
+  .fs-versandliste li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 12px; padding: 8px 0; border-bottom: 1px solid var(--wf-linie); font-size: 14px; }
+  .fs-versandliste .wer small { display: block; font-size: 12.5px; color: var(--wf-text3); }
+  .fs-versandliste .erg { font-size: 13px; color: var(--wf-text2); white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; }
+  .fs-versandliste .erg.fehler { color: var(--wf-abl); font-weight: 600; }
+  .fs-versandliste .grund { grid-column: 1 / -1; font-size: 13px; color: var(--wf-abl); overflow-wrap: anywhere; }
+  /* Einladung im Dialog: Angaben, Empfänger, Vorschau der E-Mail */
+  .fs-dialog-angaben { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: 8px 12px; margin: 0 0 12px; font-size: 14px; }
+  .fs-dialog-angaben dt { color: var(--wf-text2); }
+  .fs-dialog-angaben dd { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+  .fs-empf { list-style: none; margin: 6px 0 0; padding: 0; columns: 2; column-gap: 24px; font-size: 13.5px; }
+  .fs-empf li { padding: 1px 0; break-inside: avoid; }
+  .fs-vorschau-kopf { display: flex; align-items: center; gap: 12px; margin: 4px 0 8px; flex-wrap: wrap; }
+  .fs-vorschau-kopf h3 { font-size: 14px; font-weight: 600; margin: 0; }
+  .fs-umschalter { display: inline-flex; gap: 2px; padding: 2px; background: var(--wf-grau); border-radius: 6px; }
+  .fs-umschalter button { height: 26px; padding: 0 10px; border: 0; border-radius: 4px; background: none; font-size: 13px; color: var(--wf-text2); cursor: pointer; }
+  .fs-umschalter button[aria-pressed="true"] { background: var(--wf-flaeche); color: var(--wf-tinte); font-weight: 600; box-shadow: 0 1px 2px rgba(17, 24, 39, .08); }
+  .fs-mail { border: 1px solid var(--wf-linie); border-radius: 6px; padding: 14px 16px; font-size: 14px; line-height: 1.55; background: var(--wf-flaeche); overflow-wrap: anywhere; }
+  .fs-mail p { margin: 0 0 10px; }
+  .fs-mail .betreff { font-weight: 600; margin-bottom: 2px; }
+  .fs-mail ol { list-style: none; margin: 0 0 10px; padding: 0; }
+  .fs-mail li { display: grid; grid-template-columns: 3rem minmax(0, 1fr); }
+  .fs-mail li.unter { padding-left: 16px; }
+
+  /* ---------- Protokoll nach der Sitzung ---------- */
+  .fs-r-protokoll { flex: 1 1 auto; display: grid; grid-template-columns: minmax(0, 1fr) clamp(22rem, 24vw, 30rem); }
+  .fs-dok-wrap { padding: 24px 32px 64px; min-width: 0; }
+  .fs-prot-dok { max-width: 48rem; margin: 0 auto; font-size: 15px; line-height: 1.6; }
+  .fs-prot-teil { font-size: 13px; font-weight: 600; color: var(--wf-text2); margin: 28px 0 0; padding-bottom: 6px; border-bottom: 1px solid var(--wf-linie); display: flex; align-items: center; gap: 6px; }
+  .fs-prot-teil svg { width: 14px; height: 14px; color: var(--wf-text3); }
+  .fs-prot-top { padding: 14px 0 12px; border-bottom: 1px solid var(--wf-linie); scroll-margin-top: 112px; }
+  /* Nummer: gemeinsamer Baustein wf-top-nr (hier als erste Rasterspalte) */
+  .fs-prot-top h3 { font-size: 15.5px; font-weight: 600; display: grid; grid-template-columns: 3rem minmax(0, 1fr); line-height: 1.4; margin: 0; }
+  .fs-prot-top.unter h3 { font-weight: 500; }
+  .fs-prot-inhalt { padding-left: 3rem; }
+  .fs-prot-inhalt > p { margin: 6px 0 0; }
+  .fs-prot-aufg { list-style: none; margin: 6px 0 0; padding: 0; font-size: .9375em; }
+  .fs-prot-beschluss { margin-top: 8px; }
+  .fs-prot-aufg b, .fs-prot-beschluss b { font-weight: 600; }
+  /* Gliederung links (ab 1600 px) */
+  .fs-gl { display: none; position: sticky; top: 24px; align-self: start; padding: 24px 0 24px 24px; font-size: 13.5px; }
+  .fs-gl a { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  /* Schritte nach der Sitzung: bestätigen, genehmigen, versenden, Nachweise (c-work.schritt) */
+  .fs-schritte { list-style: none; margin: 0 0 4px; padding: 0; }
+  .fs-schritte > li { display: grid; grid-template-columns: 22px minmax(0, 1fr); gap: 10px; padding: 6px 0; font-size: 13.5px; }
+  .fs-schritte .kreis { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; border: 1.5px solid var(--wf-linie-stark); color: var(--wf-text2); background: var(--wf-flaeche); }
+  .fs-schritte .kreis svg { width: 13px; height: 13px; }
+  .fs-schritte .aktuell .kreis { background: rgb(var(--primary-600)); border-color: rgb(var(--primary-600)); color: #fff; }
+  .fs-schritte .erledigt .kreis { border-color: var(--wf-zust); color: var(--wf-zust); }
+  .fs-schritte b { display: block; font-weight: 600; }
+  .fs-schritte small { display: block; margin-top: 2px; line-height: 1.45; color: var(--wf-text2); font-size: 12.5px; }
+
+  /* ---------- Unterlagen einlesen: RIS-Auswahl und PDF ---------- */
+  .fs-ris-liste, .fs-pdf-liste { list-style: none; margin: 8px 0 0; padding: 0; }
+  .fs-ris-liste li { border-bottom: 1px solid var(--wf-linie); }
+  .fs-ris-liste label { display: grid; grid-template-columns: 20px 2.25rem minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px 0; font-size: 14px; cursor: pointer; }
+  .fs-ris-liste .nr, .fs-pdf-liste .nr { color: var(--wf-text3); font-variant-numeric: tabular-nums; }
+  .fs-ris-liste small, .fs-pdf-liste small { display: block; font-size: 12.5px; color: var(--wf-text2); }
+  .fs-ris-liste li.schon label { cursor: default; color: var(--wf-text2); }
+  .fs-pdf-wahl { display: flex; align-items: center; gap: 16px; margin: 12px 0 16px; flex-wrap: wrap; }
+  .fs-pdf-wahl label.wf-knopf:focus-within { outline: 2px solid var(--wf-work); outline-offset: 2px; }
+  .fs-pdf-ordner, .fs-pdf-datei { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 8px; margin: 0; }
+  .fs-pdf-ordner { font-size: 13.5px; color: var(--wf-text2); line-height: 1.5; }
+  .fs-pdf-ordner svg { width: 16px; height: 16px; color: var(--wf-work-text); margin-top: 2px; }
+  .fs-pdf-datei { font-size: 14px; margin-bottom: 12px; }
+  .fs-pdf-datei svg { width: 16px; height: 16px; color: var(--wf-text2); margin-top: 2px; }
+  .fs-pdf-datei small { display: block; font-size: 12.5px; color: var(--wf-text2); }
+  .fs-pdf-lesen { color: var(--wf-text2); }
+  .fs-pdf-liste li { display: grid; grid-template-columns: 20px 2.25rem minmax(0, 1fr); gap: 8px; align-items: start; padding: 8px 0; border-bottom: 1px solid var(--wf-linie); font-size: 14px; }
+  .fs-pdf-liste li input[type="checkbox"] { margin-top: 8px; }
+  .fs-pdf-liste .nr { padding-top: 6px; }
+  .fs-pdf-liste input[type="text"] { width: 100%; }
+  .fs-pdf-liste li.schon input[type="text"] { color: var(--wf-text2); background: var(--wf-grau-hell); }
+
+  /* ---------- Einstellungen › Fraktionssitzungen ---------- */
+  .fs-einst-flaeche { padding: 4px 32px 64px; min-width: 0; }
+  .fs-einst-status { flex: none; font-size: 13px; }
+  .fs-einst-hinweis { margin: 16px 0 0; padding: 10px 12px; background: var(--wf-work-flaeche); border-radius: 6px; font-size: 14px; max-width: 60rem; }
+  .fs-einst-raster { border: 0; margin: 0; padding: 0; min-width: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 56px; max-width: 128rem; }
+  .fs-einst-spalte { min-width: 0; }
+  .fs-einst-spalte section { padding: 20px 0; border-bottom: 1px solid var(--wf-linie); }
+  .fs-einst-spalte section:last-of-type { border-bottom: 0; }
+  .fs-einst-spalte h2 { font-size: 16px; font-weight: 600; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 0 0 6px; }
+  .fs-einst-spalte p { font-size: 14px; line-height: 1.55; margin: 8px 0 0; max-width: 52rem; }
+  .fs-einst-spalte .fs-einst-satz { margin: 0 0 4px; color: var(--wf-text2); }
+  .fs-einst-zeile { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 12px; margin-top: 8px; max-width: 52rem; }
+  .fs-einst-zeile.zwei { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .fs-einst-zeile label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; min-width: 0; }
+  .fs-einst-zeile input, .fs-einst-zeile select { width: 100%; }
+  .fs-einst-unter { margin-top: 14px; }
+  .fs-einst-zusatz { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 0 42px; font-size: 13px; }
+  .fs-std { list-style: none; margin: 8px 0 0; padding: 0; max-width: 52rem; }
+  .fs-std li { display: grid; grid-template-columns: 2rem minmax(0, 1fr) auto; gap: 8px; align-items: center; min-height: 36px; padding: 2px 0; border-bottom: 1px solid var(--wf-linie); font-size: 14px; }
+  .fs-std .nr { color: var(--wf-text3); font-variant-numeric: tabular-nums; }
+  .fs-std .t small { display: block; font-size: 12.5px; color: var(--wf-text2); }
+  .fs-std-neu { display: flex; gap: 8px; margin-top: 8px; max-width: 52rem; }
+  .fs-std-neu input { flex: 1; min-width: 0; }
+  .fs-rechte { max-width: 52rem; margin-top: 4px; border-collapse: collapse; }
+  .fs-rechte th { width: 10rem; font-size: 13.5px; font-weight: 600; text-align: left; padding: 8px 12px 8px 0; white-space: nowrap; vertical-align: top; }
+  .fs-rechte td { padding: 8px 0; }
+  .fs-radios { display: flex; flex-direction: column; gap: 10px; margin-top: 6px; }
+  .fs-radios small { display: block; color: var(--wf-text2); font-size: 12.5px; margin-top: 2px; }
+  .fs-radio-zusatz { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 13px; }
+  /* Schalter (role="switch"), etwa „Automatisch einladen“ */
+  .fs-schalter { display: inline-flex; align-items: center; gap: 10px; background: none; border: 0; padding: 4px 0; cursor: pointer; font-size: 14px; color: var(--wf-tinte); text-align: left; }
+  .fs-schalter .spur { position: relative; width: 32px; height: 18px; border-radius: 9px; background: var(--wf-linie-stark); flex: none; transition: background-color .15s; }
+  .fs-schalter .spur::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(17, 24, 39, .25); transition: transform .15s; }
+  .fs-schalter[aria-checked="true"] .spur { background: var(--wf-work); }
+  .fs-schalter[aria-checked="true"] .spur::after { transform: translateX(14px); }
+  .fs-schalter:disabled { cursor: default; opacity: .6; }
+  /* Pausen einer Reihe */
+  .fs-pausen { list-style: none; margin: 4px 0 0; padding: 0; }
+  .fs-pausen li { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 36px; border-bottom: 1px solid var(--wf-linie); font-size: 14px; }
+  .fs-pausen form { margin: 0; }
+  /* Einstellungen im echten Work (organization/neu/fraktion.html): Schalter als Checkbox im Formular, damit die Seite
+     auch ohne JavaScript speichert; Stand „Gespeichert“ im Kopf; Knöpfe der Reihen und Standard-TOPs */
+  .fs-einst { min-width: 0; }
+  .fs-einst .fs-einst-hinweis { margin-bottom: 4px; }
+  .fs-einst-status { display: inline-flex; align-items: center; gap: 6px; color: var(--wf-text2, #535a68); }
+  .fs-einst-status > span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .fs-einst-status svg { width: 16px; height: 16px; flex: none; }
+  .fs-einst-spalte .fs-rechte td { font-size: 14px; }
+  .fs-einst-spalte .fs-rechte caption { text-align: left; caption-side: top; padding: 0; }
+  .fs-einst-status .fehler { color: #b91c1c; font-weight: 600; }
+  .dark .fs-einst-status .fehler { color: #f87171; }
+  .fs-schalter { position: relative; }
+  .fs-schalter > input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0; cursor: inherit; z-index: 1; }
+  .fs-schalter > input:checked + .spur { background: var(--wf-work); }
+  .fs-schalter > input:checked + .spur::after { transform: translateX(14px); }
+  .fs-schalter > input:focus-visible + .spur { outline: 2px solid var(--wf-work); outline-offset: 2px; }
+  .fs-schalter:has(> input:disabled) { cursor: default; opacity: .6; }
+  .fs-radios label { display: flex; align-items: flex-start; gap: 8px; font-size: 14px; cursor: pointer; }
+  .fs-radios input { accent-color: var(--wf-work); width: 16px; height: 16px; margin: 2px 0 0; flex: none; }
+  .fs-radio-zusatz select { width: auto; max-width: 100%; }
+  .fs-einst-zusatz input[type="time"] { width: 7.5rem; }
+  .fs-einst-spalte .fs-meta { font-size: 13px; }
+  .fs-einst-spalte textarea { max-width: 52rem; }
+  .fs-einst-spalte details > summary { list-style: none; }
+  .fs-einst-spalte details > summary::-webkit-details-marker { display: none; }
+  .fs-einst-knopf { display: flex; align-items: flex-end; }
+  .fs-einst-aktionen { display: flex; align-items: center; gap: 16px; margin-top: 12px; }
+  .fs-einst-aktionen form, .fs-std .akt form { margin: 0; display: inline-flex; }
+  .fs-std .akt { display: inline-flex; align-items: center; }
+  .fs-std code, .fs-rechte code { font-size: 13px; }
+  .fs-einst fieldset:disabled .wf-knopf, .fs-einst fieldset:disabled .wf-textlink { cursor: default; opacity: .45; }
+  @media (prefers-reduced-motion: reduce) {
+    .fs-schalter .spur, .fs-schalter .spur::after { transition: none; }
+  }
+
+  /* ---------- Seite vor der Sitzung (Planung, Einladung, Rückmeldungen; neu/vorbereiten.html) ---------- */
+  .fs-vb .fs-kopf { flex-wrap: nowrap; }
+  /* Ablaufleiste vor der Sitzung: Namen und Stand wie im Muster, solange Platz ist (der Kopf der laufenden Sitzung
+     braucht mehr Raum für Anwesenheit und Beenden und kürzt früher) */
+  @container fs-kopf (min-width: 900px) {
+    .fs-vb .fs-stufen li:not(.aktuell):not(.linie), .fs-vb .fs-stufen .linie { display: flex; }
+    .fs-vb .fs-stufen li:not(.aktuell) .name { position: static; width: auto; height: auto; overflow: visible; clip-path: none; }
+    .fs-vb .fs-stufen .linie { width: 16px; }
+  }
+  @container fs-kopf (min-width: 1150px) {
+    .fs-vb .fs-stufen li:not(.aktuell) .unter { display: block; }
+    .fs-vb .fs-stufen .linie { width: 24px; }
+  }
+  /* Infoleiste: ein Satz und die eine Hauptaktion, Fläche in der Kennfarbe */
+  .fs-info { display: flex; align-items: center; gap: 8px 16px; min-height: 40px; padding: 4px 12px 4px 20px; background: var(--wf-work-flaeche); border-bottom: 1px solid var(--wf-linie); font-size: 13.5px; flex: none; }
+  .fs-info-text { margin: 0; min-width: 0; flex: 1 1 auto; }
+  .fs-info-text b { font-weight: 600; }
+  .fs-info-aktionen { display: flex; align-items: center; gap: 8px; flex: none; }
+  .fs-info-aktionen form { margin: 0; }
+  .fs-zurueck { margin: 0 0 8px; font-size: 14px; }
+  .fs-hinweis-satz { display: flex; gap: 8px; align-items: baseline; margin: 0 0 12px; font-size: 14px; color: var(--wf-warn); }
+  .fs-hinweis-satz svg { width: 14px; height: 14px; flex: none; align-self: center; }
+  .fs-feldname { display: block; font-size: 13px; font-weight: 500; margin: 12px 0 4px; }
+  .fs-feldname .fs-meta { font-weight: 400; }
+  .fs-teil-kopf h3 { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: inherit; margin: 0; flex-wrap: wrap; }
+  .fs-teil-kopf .fs-meta { font-weight: 400; }
+  .fs-teil-aktion { margin-left: auto; }
+  .fs-teil-lesen { margin: 16px 0 0; border-bottom: 0; }
+  .fs-griff-platz { display: block; }
+  /* Ziehen am Griff und Speicherstand der TOP-Felder (Issue #1071) */
+  .fs-griff { display: grid; place-items: center; width: 24px; height: 28px; border-radius: 4px; }
+  .fs-griff:focus-visible { outline: 2px solid var(--wf-work); outline-offset: 1px; }
+  .fs-griff svg { width: 16px; height: 16px; }
+  .fs-top.bewegt { background: var(--wf-work-flaeche); }
+  .fs-speicherstand { display: flex; align-items: baseline; gap: 8px; min-height: 20px; margin: 8px 0 0; font-size: 12.5px; }
+  .fs-speicherstand .fs-status { margin-left: 0; white-space: normal; flex-wrap: wrap; }
+  .fs-speicherstand .wf-textlink { font-size: 12.5px; }
+  .fs-sicherung p { margin: 0 0 8px; }
+  .fs-testmail { background: var(--wf-work-flaeche); color: inherit; }
+  .fs-testmail p { margin: 0 0 8px; }
+  .fs-hinweis-knopf { display: flex; align-items: center; gap: 8px; margin: 0 !important; }
+  .fs-testmail .ergebnis { margin: 8px 0 0; color: var(--wf-text2); }
+  .fs-testmail .ergebnis:empty { display: none; }
+  .fs-testmail .ergebnis .fehler { color: var(--wf-abl); }
+  .fs-ris-liste li.schon input { opacity: 0.6; }
+  .fs-ris-liste svg { width: 13px; height: 13px; margin-right: 4px; vertical-align: -2px; }
+  .fs-ris-form .fs-feldname:first-of-type { margin-top: 8px; }
+  .fs-stufe-mobil { font-size: 12.5px; color: var(--wf-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .fs-top-bearbeiten input[type="text"] { width: 100%; max-width: 48rem; }
+  .fs-top-bearbeiten textarea { width: 100%; max-width: 48rem; }
+  .fs-top-beschreibung { margin: 12px 0 0; max-width: 48rem; }
+  .fs-detail dd svg { width: 13px; height: 13px; }
+  .fs-verlauf-dd ul { list-style: none; margin: 0; padding: 0; }
+  .fs-verlauf-dd li { margin: 0 0 4px; line-height: 1.5; }
+  .fs-verlauf-dd b { font-weight: 600; }
+  .fs-verlauf-dd .wf-punkt { margin: 0 5px 0 2px; }
+  .fs-vs-ablehnen { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+  .fs-vs-ablehnen label { flex: 1 1 100%; }
+  .fs-vs-ablehnen input[type="text"] { flex: 1 1 18rem; min-width: 0; }
+  .fs-vorschlaege .vs-akt form { margin: 0; }
+  /* Termin und Ort in der Nebenspalte */
+  .fs-termin-form input:not([type="hidden"]) { width: 100%; }
+  .fs-felder { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 8px; }
+  .fs-felder label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; font-weight: 500; }
+  .fs-felder label:first-child { grid-column: 1 / -1; }
+  .fs-termin-form .fs-meta { margin-top: 8px; }
+  .fs-schalter-zeile { margin: 8px 0 0; }
+  .fs-neben-kopf { margin-bottom: 4px; }
+  .fs-neben-kopf .wf-textlink { margin-left: auto; }
+  .fs-neben .fs-abschnitt-kopf h2 { margin: 0; }
+  /* Einladung: Kürzel, Rückmeldung, Hinweise unter der Liste */
+  .fs-av { width: 24px; height: 24px; border-radius: 50%; display: inline-grid; place-items: center; font-size: 10.5px; font-weight: 600; flex: none; background: var(--wf-work-flaeche); color: var(--wf-work-text); }
+  .fs-rm { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+  .fs-rm .wf-punkt { align-self: center; }
+  .fs-unter-liste { margin: 12px 0 0; font-size: 13px; color: var(--wf-text2); }
+  .fs-unter-liste + .fs-unter-liste { margin-top: 4px; }
+  .fs-unter-liste svg { width: 14px; height: 14px; }
+  .fs-inline-form { display: inline; margin: 0; }
+  .fs-meine-antwort { display: flex; flex-wrap: wrap; gap: 6px; }
+  .fs-meine-antwort form { margin: 0; }
+  /* Lesende Tagesordnung: Beratungsverlauf und Herkunft */
+  .fs-t-knopf { background: none; border: 0; padding: 0; text-align: left; color: inherit; font: inherit; font-weight: 500; cursor: pointer; }
+  .fs-t-knopf:hover { text-decoration: underline; text-underline-offset: 3px; }
+  .fs-h2 { font-size: 16px; font-weight: 600; margin: 20px 0 4px; }
+  .fs-to-lesen .vl { grid-column: 2; font-size: 13px; color: var(--wf-text2); display: flex; gap: 6px; align-items: baseline; }
+  .fs-to-lesen .vl svg { width: 13px; height: 13px; color: var(--wf-text3); flex: none; align-self: center; }
+  .fs-to-lesen .b svg { width: 13px; height: 13px; }
+  .fs-to-lesen .b .von { color: var(--wf-work-text); }
+  .fs-to-kompakt li { padding: 5px 0; font-size: 13.5px; grid-template-columns: 2.75rem minmax(0, 1fr); border-bottom: 0; }
+  .fs-to-kompakt li.unter { padding-left: 12px; }
+  .fs-to-kompakt .t { font-weight: 400; }
+  .fs-to-kompakt .teil { display: block; font-size: 12px; color: var(--wf-text3); padding: 10px 0 2px; grid-column: 1 / -1; }
+  .fs-unterlagen-liste li { margin: 0 0 6px; }
+  .fs-unterlagen-liste svg { width: 13px; height: 13px; margin-right: 4px; }
+  .fs-einladen-dialog .fs-mail { max-height: 22rem; overflow-y: auto; }
+  .fs-einladen-dialog .wf-dialog-fuss { margin-top: 16px; }
+
+  /* ---------- Breiten ---------- */
+  @media (min-width: 1600px) {
+    .fs-sl > li { grid-template-columns: 7rem minmax(0, 1.5fr) minmax(0, 1.6fr) minmax(0, .9fr) minmax(0, .9fr); }
+    .fs-sl .sp-breit { display: block; }
+    .fs-r-protokoll { grid-template-columns: 15rem minmax(0, 1fr) clamp(22rem, 24vw, 30rem); }
+    .fs-gl { display: block; }
+    .fs-top-zeile { grid-template-columns: 24px 3.5rem minmax(0, 2fr) minmax(0, 1.3fr) 6rem 28px; }
+  }
+  @media (max-width: 1279.98px) {
+    .fs-top-zeile { grid-template-columns: 24px 3rem minmax(0, 1fr) 4rem 28px; }
+    .fs-top-bezug { display: none; }
+    .fs-einst-raster { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 1023.98px) {
+    .fs-liste-flaeche, .fs-r-zwei, .fs-r-protokoll { grid-template-columns: minmax(0, 1fr); }
+    .fs-liste-haupt { padding: 4px 16px 24px; }
+    .fs-spalte, .fs-dok-wrap { padding: 16px 16px 32px; }
+    .fs-neben { border-left: 0; border-top: 1px solid var(--wf-linie); padding: 16px 16px 32px; }
+    /* Liste: Datum links, Titel und Stand untereinander */
+    .fs-sl > li { grid-template-columns: 4.5rem minmax(0, 1fr); padding: 10px 0; margin: 0; }
+    .fs-sl .wann { flex-direction: column; gap: 0; align-self: start; grid-row: 1 / span 2; }
+    .fs-sl .was { grid-column: 2; grid-row: 1; }
+    .fs-sl .fs-stand { grid-column: 2; grid-row: 2; font-size: 13px; }
+    .fs-sl .fs-stand small { display: none; }
+    .fs-sl > li.hervorheben .fs-stand small { display: block; white-space: normal; }
+    .fs-top-zeile { grid-template-columns: 2.5rem minmax(0, 1fr) 28px; min-height: 44px; }
+    .fs-griff, .fs-griff-platz, .fs-top-anh { display: none; }
+    .fs-info { flex-wrap: wrap; padding: 6px 16px; }
+    .fs-info-aktionen { width: 100%; }
+    .fs-info-aktionen .wf-knopf { height: 36px; }
+    .fs-top-detail, .fs-top.unter .fs-top-detail { padding: 4px 12px 16px 2.75rem; }
+    .fs-top-neu { grid-template-columns: 2.5rem minmax(0, 1fr) auto; }
+    .fs-detail { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .fs-detail dd { margin-bottom: 8px; }
+    .fs-teil-kopf { flex-wrap: wrap; }
+    .fs-vorschlaege li { grid-template-columns: minmax(0, 1fr); }
+    .fs-vorschlaege .vs-akt .wf-knopf { height: 36px; }
+    .fs-tln thead, .fs-tln .sp-rolle { display: none; }
+    .fs-tln tr:not(.gruppe) { display: grid; grid-template-columns: minmax(0, 1fr) auto; padding: 10px 0; border-bottom: 1px solid var(--wf-linie); }
+    .fs-tln tr:not(.gruppe) td { border: 0; padding: 0; }
+    .fs-tln tr:not(.gruppe) td.vs-sp { grid-column: 1 / -1; padding-top: 4px; }
+    .fs-antwort h2 { font-size: 17px; }
+    .fs-antwort-knoepfe { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .fs-antwort-knoepfe .wf-knopf { min-width: 0; padding: 0 8px; }
+    .fs-antwort-knoepfe .rechts { grid-column: 1 / -1; margin: 6px 0 0; }
+    .fs-top-form-zeile input[type="text"], .fs-top-form-zeile select, .fs-top-form-zeile .wf-knopf { flex: 1 1 100%; height: 40px; }
+    .fs-empf { columns: 1; }
+    .fs-dialog-angaben { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+    .fs-dialog-angaben dd { margin-bottom: 6px; }
+    .fs-einst-flaeche { padding: 4px 16px 32px; }
+    .fs-einst-zeile { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    .fs-einst-zeile.zwei { grid-template-columns: minmax(0, 1fr); }
+    .fs-rechte th { width: 7.5rem; white-space: normal; }
+  }
+  @media (max-width: 420px) {
+    .fs-sl > li { grid-template-columns: 4rem minmax(0, 1fr); gap: 2px 12px; }
   }
 }

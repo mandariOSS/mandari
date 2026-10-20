@@ -78,7 +78,9 @@ def test_vorschau_verweist_auf_das_original() -> None:
     response = Client().get(f"/insight/dokumente/{datei.id}/preview/")
     assert response.status_code == 200
     html = response.content.decode()
-    assert "Zugangsprüfung" in html
+    assert "Dieses Dokument rufen wir nicht selbst ab." in html
+    # Kein Grund: Der Schalter steht auch nach einem Opt-out, nicht nur bei einer Zugangsprüfung
+    assert "Zugangsprüfung" not in html
     assert 'href="https://ris.gesperrt.example/public/doc?DOCTYP=130&amp;DOLFDNR=1&amp;OTYP=41"' in html
     assert 'rel="noopener noreferrer"' in html
 

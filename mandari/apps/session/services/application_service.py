@@ -10,7 +10,6 @@ import logging
 import re
 from pathlib import PurePosixPath
 from typing import Any
-from uuid import UUID
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
@@ -242,44 +241,67 @@ def attach_application_pdf(application: SessionApplication) -> SessionFile:
     return session_file
 
 
-def attachment_accepted(name: str, size: int) -> str | None:
-    """Warum eine Datei nicht als Antrags-Anhang angenommen wird – oder ``None`` (#584)."""
+#: Gründe, aus denen eine Anlage nicht angenommen wird; die Codes stehen in der Quittung von ``submission.submit``.
+ATTACHMENT_TYPE = "dateityp"
+ATTACHMENT_SIZE = "groesse"
+ATTACHMENT_SCAN = "virenpruefung"
+
+
+def attachment_reason_text(code: str) -> str:
+    """Text für Nutzer:innen zu einem Grund (``ATTACHMENT_*``)."""
+    from . import file_service
+
+    return {
+        ATTACHMENT_TYPE: "Dateityp wird von der Verwaltung nicht angenommen",
+        ATTACHMENT_SIZE: f"größer als {file_service.MAX_FILE_SIZE_MB} MB",
+        ATTACHMENT_SCAN: "Virenprüfung nicht bestanden oder nicht verfügbar",
+    }.get(code, "nicht angenommen")
+
+
+def attachment_rejection(name: str, size: int) -> str | None:
+    """Code, aus dem eine Datei nicht als Antrags-Anhang angenommen wird (Dateityp, Größe) – oder ``None``."""
     from . import file_service
 
     ext = PurePosixPath(name or "").suffix.lower()
     if ext not in file_service.ALLOWED_EXTENSIONS:
-        return "Dateityp wird von der Verwaltung nicht angenommen"
+        return ATTACHMENT_TYPE
     if size > file_service.MAX_FILE_SIZE_MB * 1024 * 1024:
-        return f"größer als {file_service.MAX_FILE_SIZE_MB} MB"
+        return ATTACHMENT_SIZE
     return None
 
 
-def attach_application_files(application: SessionApplication, files: list[tuple[str, Any]]) -> list[str]:
+def attachment_accepted(name: str, size: int) -> str | None:
+    """Warum eine Datei nicht als Antrags-Anhang angenommen wird – oder ``None`` (#584)."""
+    code = attachment_rejection(name, size)
+    return attachment_reason_text(code) if code else None
+
+
+def attach_application_files(application: SessionApplication, files: list[tuple[str, Any]]) -> list[tuple[int, str]]:
     """
-    Anhänge eines eingereichten Antrags speichern (Work → Session, #584).
+    Anhänge eines eingereichten Antrags speichern (Befehl ``submission.submit``, #584, #540).
 
     ``files``: Paare aus Anzeigename und Django-``File`` (Dateiname ohne Pfad). Geprüft wird wie bei Anlagen der
     Verwaltung (Dateityp, Größe, Virenscan-Hook); gespeichert über die Fassungsablage
     (Deduplizierung je Mandant). Anhänge bleiben nichtöffentlich.
 
     Returns:
-        Namen der nicht angenommenen Dateien (mit Grund).
+        Stelle in ``files`` und Code (``ATTACHMENT_*``) je nicht angenommener Datei.
     """
     from apps.session.models import SessionFile
 
     from . import file_service, file_version_service
 
-    skipped: list[str] = []
-    for name, content in files:
-        reason = attachment_accepted(name, int(getattr(content, "size", 0) or 0))
+    skipped: list[tuple[int, str]] = []
+    for index, (name, content) in enumerate(files):
+        reason = attachment_rejection(name, int(getattr(content, "size", 0) or 0))
         if reason is None:
             try:
                 file_service.scan_upload(content)
             except Exception:  # Befund oder Prüfung nicht verfügbar – der Hook wirft beliebige Ausnahmen
                 logger.warning("Antrags-Anhang abgelehnt (Virenprüfung): Antrag %s", application.pk)
-                reason = "Virenprüfung nicht bestanden oder nicht verfügbar"
+                reason = ATTACHMENT_SCAN
         if reason is not None:
-            skipped.append(f"{name} ({reason})")
+            skipped.append((index, reason))
             continue
         mime_type = file_service.mime_type_for_name(name)
         session_file = SessionFile(
@@ -317,6 +339,23 @@ class SubmittingOrganizationMismatchError(PermissionError):
     """Die angegebene einreichende Organisation passt nicht zur Verbindung des Tokens."""
 
 
+def connected_token(tenant: SessionTenant, organization_id: object) -> Any:
+    """
+    Einreichungs-Token, mit dem eine Organisation in Work mit diesem Mandanten verbunden ist – oder ``None``.
+
+    Grundlage ist dieselbe Verbindung (``AdministrationConnection``) wie bei ``submitting_organization_for_token``.
+    """
+    from apps.session.models import SessionAPIToken
+    from apps.work.motions.models import AdministrationConnection
+
+    connection = AdministrationConnection.objects.filter(
+        organization_id=organization_id, tenant=tenant, is_active=True
+    ).first()
+    if connection is None:
+        return None
+    return SessionAPIToken.objects.filter(token=connection.token_hash, tenant=tenant).first()
+
+
 def submitting_organization_for_token(token: Any, claimed_id: object = None) -> Any:
     """
     Einreichende Organisation eines API-Tokens.
@@ -337,6 +376,64 @@ def submitting_organization_for_token(token: Any, claimed_id: object = None) -> 
     if claimed_id and (bound is None or str(bound.pk) != str(claimed_id)):
         raise SubmittingOrganizationMismatchError(SUBMITTING_ORGANIZATION_MISMATCH)
     return bound
+
+
+def submit_with_token(
+    tenant: SessionTenant,
+    token: Any,
+    fields: dict[str, Any],
+    *,
+    idempotency_key: str | None = None,
+) -> Any:
+    """
+    Antrag mit API-Token einreichen (Session-API v1 und abgekündigter Pfad) über den Befehl ``submission.submit``.
+
+    ``fields`` sind die Felder der API (``title``, ``submitter_name``, ``co_signers`` als Text bis 5000 Zeichen,
+    ``deadline`` als Datum, ``target_organization_id`` …). Geprüft wird im Handler (``apps.session.commands``). Die
+    Mitunterzeichnenden gehen unverändert als ``co_signers_text`` mit. Ein Zielgremium, das es beim Mandanten nicht
+    gibt oder das inaktiv ist, bleibt unbeachtet. Ohne ``idempotency_key`` gilt jede Anfrage als neue Einreichung.
+
+    Returns:
+        Quittung (``hub.commands.Receipt``); ``CommandError`` mit Problem nach RFC 9457, wenn der Befehl scheitert.
+    """
+    import uuid
+
+    from hub.commands import Command, dispatch
+
+    from ..commands import SUBMIT, tenant_ref, token_actor_ref
+
+    submitter: dict[str, Any] = {"name": fields["submitter_name"], "email": fields["submitter_email"]}
+    if fields.get("submitter_phone"):
+        submitter["phone"] = fields["submitter_phone"]
+    body: dict[str, Any] = {
+        "application_type": fields.get("application_type") or "motion",
+        "title": fields["title"],
+        "resolution_proposal": fields["resolution_proposal"],
+        "justification": fields["justification"],
+        "submitter": submitter,
+        "is_urgent": bool(fields.get("is_urgent")),
+    }
+    for name in ("financial_impact", "urgency_reason"):
+        if fields.get(name):
+            body[name] = fields[name]
+    if (fields.get("co_signers") or "").strip():
+        body["co_signers_text"] = fields["co_signers"]
+    if fields.get("deadline"):
+        body["deadline"] = fields["deadline"].isoformat()
+    if fields.get("submitting_organization_id"):
+        body["submitting_organization"] = str(fields["submitting_organization_id"])
+    target_id = fields.get("target_organization_id")
+    if target_id and SessionOrganization.objects.filter(pk=target_id, tenant=tenant, is_active=True).exists():
+        body["target_organization"] = str(target_id)
+    return dispatch(
+        Command(
+            name=SUBMIT,
+            body=body,
+            idempotency_key=idempotency_key or f"api.{uuid.uuid4()}",
+            tenant_ref=tenant_ref(tenant),
+            actor_ref=token_actor_ref(token),
+        )
+    )
 
 
 class ApplicationService:
@@ -362,102 +459,3 @@ class ApplicationService:
             is_active=True,
             organization_type__in=["committee", "council", "advisory"],
         ).order_by("name")
-
-    @staticmethod
-    @transaction.atomic
-    def submit_application(
-        tenant: SessionTenant,
-        title: str,
-        justification: str,
-        resolution_proposal: str,
-        submitter_name: str,
-        submitter_email: str,
-        application_type: str = "motion",
-        submitting_organization=None,
-        target_organization_id: UUID | None = None,
-        submitter_phone: str = "",
-        co_signers: str = "",
-        financial_impact: str = "",
-        is_urgent: bool = False,
-        urgency_reason: str = "",
-        deadline=None,
-        submitted_via_token=None,
-    ) -> SessionApplication:
-        """
-        Submit a new application from Work module.
-
-        This is the primary method for Work → Session integration.
-
-        Args:
-            tenant: Target SessionTenant
-            title: Application title
-            justification: Why this should be approved
-            resolution_proposal: What should be decided
-            submitter_name: Name of the person submitting
-            submitter_email: Email of the submitter
-            application_type: Type of application (motion, inquiry, etc.)
-            submitting_organization: Work Organization (optional)
-            target_organization_id: Target SessionOrganization UUID (optional)
-            submitter_phone: Phone number (optional)
-            co_signers: List of co-signers (optional)
-            financial_impact: Financial implications (optional)
-            is_urgent: Whether this is urgent (optional)
-            urgency_reason: Reason for urgency (optional)
-            deadline: Requested decision deadline (optional)
-            submitted_via_token: SessionAPIToken der Einreichung (für den Abruf des Rückmeldestands)
-
-        Returns:
-            Created SessionApplication
-
-        Raises:
-            ValueError: If required fields are missing or invalid
-        """
-        # Validate required fields
-        if not title or not title.strip():
-            raise ValueError("Titel ist erforderlich")
-        if not justification or not justification.strip():
-            raise ValueError("Begründung ist erforderlich")
-        if not resolution_proposal or not resolution_proposal.strip():
-            raise ValueError("Beschlussvorschlag ist erforderlich")
-        if not submitter_name or not submitter_name.strip():
-            raise ValueError("Name des Einreichers ist erforderlich")
-        if not submitter_email or not submitter_email.strip():
-            raise ValueError("E-Mail des Einreichers ist erforderlich")
-
-        # Antragsart gegen die Model-Choices validieren (Model ist führend)
-        valid_types = {choice[0] for choice in SessionApplication._meta.get_field("application_type").choices}
-        if application_type not in valid_types:
-            raise ValueError(f"Ungültige Antragsart: {application_type}. Gültig: {', '.join(sorted(valid_types))}")
-
-        # Get target organization if specified
-        target_org = None
-        if target_organization_id:
-            try:
-                target_org = SessionOrganization.objects.get(
-                    id=target_organization_id,
-                    tenant=tenant,
-                    is_active=True,
-                )
-            except SessionOrganization.DoesNotExist:
-                raise ValueError("Zielgremium nicht gefunden") from None
-
-        # Create application
-        return SessionApplication.objects.create(
-            tenant=tenant,
-            title=title.strip(),
-            application_type=application_type,
-            justification=justification.strip(),
-            resolution_proposal=resolution_proposal.strip(),
-            financial_impact=financial_impact.strip() if financial_impact else "",
-            submitting_organization=submitting_organization,
-            submitter_name=submitter_name.strip(),
-            submitter_email=submitter_email.strip().lower(),
-            submitter_phone=submitter_phone.strip() if submitter_phone else "",
-            co_signers=co_signers.strip() if co_signers else "",
-            target_organization=target_org,
-            is_urgent=is_urgent,
-            urgency_reason=urgency_reason.strip() if urgency_reason else "",
-            deadline=deadline,
-            submitted_via_token=submitted_via_token,
-            status="submitted",
-        )

@@ -28,7 +28,23 @@ nur `order`, `public: false` und `label: "nicht-öffentlich beraten"`; der Besch
 einer öffentlichen, entscheidenden Station. Bearbeitungsnotizen und andere Interna der Verwaltung
 werden nie ausgeliefert. Anträge anderer Tokens bzw. Organisationen antworten mit 404. Die Antwort
 auf `…/applications/submit/` enthält die URL unter `feedback`.
+
 Öffentliche OParl-1.1-Daten liefert unverändert `/session/<slug>/api/oparl/` (`docs/SESSION_OPARL_API.md`).
+
+### Einreichen (Issue #540)
+
+`POST …/applications/submit/` sendet den Befehl `submission.submit`; geprüft wird wie bei Einreichungen aus
+mandari Work. Die Antwort (201) ist die Quittung: `id`, `reference` (Eingangsnummer), `status`, `feedback`,
+`submitted_at` (Eingangszeit der Einreichung) und `content_hash` (SHA-256 über das kanonische JSON des
+Befehlsinhalts nach RFC 8785). `submitted_at` ist nicht `received_at` im Rückmeldestand: Dort steht der Eingang bei
+der Verwaltung, zunächst `null`. Der Header `Idempotency-Key` ist optional und empfohlen: Eine Wiederholung mit
+demselben Schlüssel und denselben Angaben liefert dieselbe Quittung, ohne erneut einzureichen; derselbe Schlüssel
+mit anderen Angaben ergibt 422 (`idempotenzschluessel-wiederverwendet`). Schlüssel gelten je Token und 30 Tage.
+Ohne Schlüssel ist jede Anfrage eine neue Einreichung. Pflichttexte nur aus Leerraum ergeben jetzt 422 mit
+`errors` (`type` `befehl`). `co_signers` bleibt Text bis 5000 Zeichen und wird unverändert gespeichert. Ein
+Zielgremium, das es beim Mandanten nicht gibt, bleibt wie bisher unbeachtet. **Neu:** Auch ein inaktives
+Zielgremium wird übergangen (bisher wurde es gesetzt); der Antrag geht dann ohne Zielgremium ein.
+
 
 ## Authentifizierung
 

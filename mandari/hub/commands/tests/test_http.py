@@ -258,6 +258,59 @@ def test_client_sendet_keinen_inhalt_ohne_kanonische_darstellung() -> None:
     assert gesehen == []
 
 
+def test_client_sendet_keine_befehle_mit_anlagen() -> None:
+    """Anlagen gehen nur im selben Prozess mit (#540); ohne sie käme ein unvollständiger Befehl an."""
+    import io
+
+    gesehen: list[httpx.Request] = []
+
+    def antworten(request: httpx.Request) -> httpx.Response:
+        gesehen.append(request)
+        return httpx.Response(500)
+
+    befehl = Command(
+        name="submission.submit",
+        body=json_body(),
+        idempotency_key="k-1",
+        tenant_ref=TENANT,
+        attachments={"0" * 64: io.BytesIO(b"x")},
+    )
+    with pytest.raises(CommandError) as info:
+        HttpClient(BASE_URL, TOKEN, transport=httpx.MockTransport(antworten)).send(befehl)
+    assert (info.value.problem.status, info.value.problem.kind) == (501, "anlagen-nicht-unterstuetzt")
+    assert gesehen == []
+
+
+def test_anlagen_tragen_ihren_sha256_als_schluessel() -> None:
+    import io
+
+    with pytest.raises(ValueError, match="SHA-256"):
+        Command(
+            name="submission.submit",
+            body=json_body(),
+            idempotency_key="k-1",
+            tenant_ref=TENANT,
+            attachments={"Plan.pdf": io.BytesIO(b"x")},
+        )
+    datei = io.BytesIO(b"x")
+    befehl = Command(
+        name="submission.submit",
+        body=json_body(),
+        idempotency_key="k-1",
+        tenant_ref=TENANT,
+        attachments={"a" * 64: datei},
+    )
+    # Dateien werden nicht kopiert, und sie zählen nicht zum Vergleich von Befehlen
+    assert befehl.attachments["a" * 64] is datei
+    assert befehl == Command(
+        name="submission.submit",
+        body=json_body(),
+        idempotency_key="k-1",
+        tenant_ref=TENANT,
+        correlation_id=befehl.correlation_id,
+    )
+
+
 def test_client_sendet_schluessel_mandant_und_korrelation() -> None:
     gesehen: list[httpx.Request] = []
 

@@ -6,6 +6,7 @@ Mandari Insight - Kommunalpolitische Transparenz
 """
 
 import os
+import sys
 import uuid
 from pathlib import Path
 
@@ -169,6 +170,8 @@ MIDDLEWARE = [
     # belegte eine Pool-Verbindung; Dutzende Fotos einer Seite scheiterten mit 400 (Issue #667).
     "mandari.media.PublicMediaMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    # Keine neuen Sitzungen für Crawler und Kalender-Abos ohne Cookie (Issue #1091); direkt hinter SessionMiddleware
+    "insight_core.sitzung.KeineSitzungFuerCrawlerMiddleware",
     # Eigener Host je Körperschaft (PORTAL_HOSTS, Issue #317); ohne Einträge wirkungslos
     "insight_core.portal.PortalHostMiddleware",
     # Subdomain redirect for organization shortcuts (e.g., volt.mandari.de -> /work/volt/)
@@ -295,6 +298,20 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres:postgres@lo
 # Remove +asyncpg suffix if present (from FastAPI config)
 DATABASE_URL = DATABASE_URL.replace("postgresql+asyncpg://", "postgresql://")
 
+# PgBouncer im Transaktionsmodus (Issue #1060): DATABASE_URL zeigt auf den Pooler. Was das an der
+# Verbindung ändert, steht unten beim Pool. Migrationen gehen nicht über den Pooler: Mit DB_DIRECT_URL
+# verbinden sich migrate und safemigrate direkt mit PostgreSQL (wie Worker und Ingestor), egal von wo
+# sie gestartet werden (update.sh, install.sh, deploy.sh, von Hand). Fehlt DB_DIRECT_URL, laufen sie
+# über den Pooler; jede Migration ist eine eigene Transaktion, das geht, ist aber nicht der Normalfall.
+# Ebenso events_after_restore: backup.sh startet es bei der Wiederherstellung, wenn nur postgres läuft
+# und PgBouncer noch nicht.
+DB_PGBOUNCER = os.environ.get("DB_PGBOUNCER", "false").strip().lower() in ("true", "1", "yes")
+DB_DIRECT_URL = os.environ.get("DB_DIRECT_URL", "").strip().replace("postgresql+asyncpg://", "postgresql://")
+DB_DIRECT_COMMANDS = ("migrate", "safemigrate", "events_after_restore")
+if DB_PGBOUNCER and DB_DIRECT_URL and len(sys.argv) > 1 and sys.argv[1] in DB_DIRECT_COMMANDS:
+    DATABASE_URL = DB_DIRECT_URL
+    DB_PGBOUNCER = False
+
 # Parse DATABASE_URL
 import dj_database_url
 
@@ -349,6 +366,28 @@ if DB_POOL_ENABLED and DATABASES["default"]["ENGINE"].endswith("postgresql"):
         "timeout": float(os.environ.get("DB_POOL_TIMEOUT", "5")),
         "max_lifetime": float(os.environ.get("DB_POOL_MAX_LIFETIME", "1800")),
     }
+
+# PgBouncer im Transaktionsmodus (Issue #1060, DB_PGBOUNCER=true)
+#
+# Hinter PgBouncer mit pool_mode = transaction bekommt jede Transaktion, ohne Transaktion jede
+# einzelne Anweisung, irgendeine freie Serververbindung. Was danach auf der Serververbindung
+# liegen bleibt, sieht die nächste Anweisung womöglich nicht mehr:
+#
+# - Serverseitige Cursor: ``.iterator()`` legt außerhalb einer Transaktion einen Cursor WITH HOLD an
+#   und holt die Zeilen blockweise. Kommt ein Block von einer anderen Serververbindung, scheitert er
+#   mit "cursor … does not exist". Ohne serverseitige Cursor holt ``.iterator()`` das Ergebnis auf
+#   einmal; große Ergebnisse brauchen dann mehr Speicher im Prozess.
+# - Vorbereitete Anweisungen: Django bindet Parameter auf der Clientseite und schaltet sie für
+#   psycopg 3 ohnehin ab. ``prepare_threshold = None`` legt das ausdrücklich fest; deshalb braucht
+#   PgBouncer kein ``max_prepared_statements``.
+#
+# Startparameter: libpq schickt nur user, database und client_encoding, die PgBouncer alle kennt;
+# ``ignore_startup_parameters`` braucht es nicht. Der Pool der Anwendung bleibt an: Er begrenzt die
+# Verbindungen je Prozess zu PgBouncer, PgBouncer die zu PostgreSQL (``default_pool_size``).
+# Verbindungsrechnung, Einschalten und Rückweg: DEPLOYMENT.md, „PgBouncer für die Webanwendung“.
+if DB_PGBOUNCER and DATABASES["default"]["ENGINE"].endswith("postgresql"):
+    DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+    DATABASES["default"].setdefault("OPTIONS", {})["prepare_threshold"] = None
 
 # Ereignistechnik (apps.events, Issue #505): Direktverbindung zu PostgreSQL für den Weckruf per
 # LISTEN. Nötig, wenn DATABASE_URL auf PgBouncer im Transaktionsmodus zeigt; dort kommen
@@ -607,7 +646,8 @@ SESSION_PACKAGE_MAX_PAGES = int(os.environ.get("SESSION_PACKAGE_MAX_PAGES", "300
 # Protokollierung (Issue #221, docs/PROTOKOLLIERUNG.md)
 # Archivpakete vor der fristgerechten Löschung: Alias eines Eintrags in STORAGES (z. B. ein
 # S3-Speicher) oder – leer – ein Verzeichnis. Liegt es unter MEDIA_ROOT, liefert serve_media es
-# nie aus (PROTECTED_MEDIA_PREFIXES). Die Pakete löscht mandari nicht selbst.
+# nie aus (PROTECTED_MEDIA_PREFIXES). Gelöscht werden Pakete nur nach einer eigenen Frist (Issue #366):
+# je Session-Mandant in den Datenschutz-Einstellungen, für das Sicherheitsprotokoll unten.
 AUDIT_ARCHIVE_STORAGE = os.environ.get("AUDIT_ARCHIVE_STORAGE", "")
 AUDIT_ARCHIVE_ROOT = Path(os.environ.get("AUDIT_ARCHIVE_ROOT", str(MEDIA_ROOT / "audit_archive")))
 # Berichte der Zeitpläne (Issue #516), etwa der monatliche Verfügbarkeitsbericht: im Medien-Volume
@@ -617,6 +657,9 @@ REPORTS_ROOT = Path(os.environ.get("REPORTS_ROOT", str(MEDIA_ROOT / "berichte"))
 AUDIT_EXPORT_MAX_ROWS = int(os.environ.get("AUDIT_EXPORT_MAX_ROWS", "100000"))
 # Aufbewahrung des mandantenübergreifenden Sicherheitsprotokolls in Tagen (purge_security_audit_log)
 SECURITY_AUDIT_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_RETENTION_DAYS", "365"))
+# Aufbewahrung der Archivpakete des Sicherheitsprotokolls in Tagen ab Ablage, 0 = keine Löschung
+# (purge_security_audit_log, Issue #366)
+SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS = int(os.environ.get("SECURITY_AUDIT_ARCHIVE_RETENTION_DAYS", "0"))
 # Aufbewahrung der Anmeldeversuche (LoginAttempt, Drosselung) in Tagen, 0 = keine Löschung (purge_login_attempts,
 # Issue #366); 30 Tage, festgelegt durch den Betreiber am 16.10.2026 (docs/PROTOKOLLE.md)
 LOGIN_ATTEMPT_RETENTION_DAYS = int(os.environ.get("LOGIN_ATTEMPT_RETENTION_DAYS", "30"))
@@ -914,10 +957,6 @@ DCAT_CONTRIBUTOR_ID = os.environ.get("DCAT_CONTRIBUTOR_ID", "").strip()
 # Fertige Kataloge im Cache (Sekunden, 0 = aus); ein neuer Veröffentlichungsstand gilt sofort
 DCAT_CACHE_SECONDS = int(os.environ.get("DCAT_CACHE_SECONDS", "300"))
 
-# Sync-Einstellungen (alle 10 Minuten inkrementell, Full-Sync um 3 Uhr)
-SYNC_INTERVAL_MINUTES = int(os.environ.get("SYNC_INTERVAL_MINUTES", "10"))
-SYNC_FULL_HOUR = int(os.environ.get("SYNC_FULL_HOUR", "3"))
-
 # Zeitpläne (apps.events.schedule, Issue #516): einzelne abschalten, Namen kommagetrennt, z. B.
 # "befehl:build_meeting_packages". Ihre Termine verstreichen ohne Auftrag; ein noch vorhandener
 # Cron-Eintrag des Befehls läuft dann wieder (Rückweg je Befehl, DEPLOYMENT.md „Geplante Aufgaben“).
@@ -969,8 +1008,9 @@ TASKS = {
                 "apps.events.verwaltungsbefehle.befehl_ausfuehren": {"timeout": 3660, "max_attempts": 1},
                 # PDF-Export mit vielen Einträgen braucht länger als die 5 Minuten der Warteschlange
                 "apps.work.background_tasks.generate_dsgvo_export_task": {"timeout": 900, "max_attempts": 3},
-                # Admin (Issue #515): Ein Sync oder das Löschen einer großen Kommune dauert länger als
-                # 5 Minuten. Ein Sync wird nicht wiederholt (Protokoll und nächster Lauf zeigen den Fehler).
+                # Admin (Issue #515): Das Löschen einer großen Kommune dauert länger als 5 Minuten. Den Sync einer
+                # Quelle macht seit Issue #554 nur der Ingestor; der Auftrag ist eine leere Hülle für vor dem
+                # Deploy eingereihte Aufträge und wird nicht wiederholt.
                 "insight_core.background_tasks.quelle_synchronisieren": {"timeout": 3600, "max_attempts": 1},
                 "insight_core.background_tasks.kommune_loeschen": {"timeout": 3600, "max_attempts": 3},
                 # Texterkennung einer Datei (Issue #530): Zeitbudget je Datei (OCR_FILE_BUDGET_SECONDS) plus Abruf;
@@ -1332,11 +1372,6 @@ UNFOLD = {
                         "title": _("Sync-Protokoll"),
                         "icon": "history",
                         "link": reverse_lazy("admin:insight_sync_synclog_changelist"),
-                    },
-                    {
-                        "title": _("Sync-Einstellungen"),
-                        "icon": "settings",
-                        "link": reverse_lazy("admin:insight_sync_syncconfig_changelist"),
                     },
                 ],
             },

@@ -464,6 +464,7 @@ class Speicher:
         self.id_bases = IdBases()
         self.vollstaendig: list[bool] = []
         self.fehler: list[str] = []
+        self.quelle: dict[str, Any] = {}
 
     async def get_source_by_url(self, url: str) -> Any:
         return SimpleNamespace(url=url, sync_config={}, user_agent=None, last_successful_full_sync=None)
@@ -472,6 +473,7 @@ class Speicher:
         return None
 
     async def upsert_source(self, **kwargs: Any) -> UUID:
+        self.quelle = kwargs
         return SOURCE_ID
 
     async def update_source_sync_time(
@@ -483,7 +485,9 @@ class Speicher:
         self.fehler.append(error)
 
 
-async def _abgleich(monkeypatch: pytest.MonkeyPatch, quelle: Quelle) -> tuple[Any, Speicher, list[str]]:
+async def _abgleich(
+    monkeypatch: pytest.MonkeyPatch, quelle: Quelle, url: str = LISTE, **optionen: Any
+) -> tuple[Any, Speicher, list[str]]:
     echter_client = httpx.AsyncClient
     monkeypatch.setattr(
         "src.client.oparl_client.httpx.AsyncClient",
@@ -498,7 +502,7 @@ async def _abgleich(monkeypatch: pytest.MonkeyPatch, quelle: Quelle) -> tuple[An
         return {"incomplete": []}
 
     orchestrator._sync_body = sync_body  # type: ignore[method-assign]
-    result = await orchestrator.sync_body_url(LISTE)
+    result = await orchestrator.sync_body_url(url, **optionen)
     return result, speicher, abgeglichen
 
 
@@ -509,6 +513,25 @@ async def test_abgleich_gleicht_kommunen_aller_seiten_ab(monkeypatch: pytest.Mon
     assert sorted(abgeglichen) == sorted(ALLE)
     assert result.bodies_synced == 5
     assert speicher.vollstaendig == [True]
+
+
+@pytest.mark.parametrize("filter_", ["kommune 3", f"{BASE}/body/3"])
+async def test_sync_source_mit_filter_gleicht_nur_passende_kommunen_ab(
+    monkeypatch: pytest.MonkeyPatch, filter_: str
+) -> None:
+    """
+    ``sync --source <System> --filter`` läuft seit Issue #554 über den Einstieg des Daemons: nur passende Kommunen
+    (Name ohne Groß-/Kleinschreibung oder Kennung), der Abgleich gilt nicht als vollständig, Name und Rohdaten der
+    Quelle bleiben wie im Daemon (erste Kommune der ganzen Liste).
+    """
+    result, speicher, abgeglichen = await _abgleich(monkeypatch, Quelle(), SYSTEM, body_filter=filter_)
+
+    assert result.success and result.errors == []
+    assert abgeglichen == [f"{BASE}/body/3"]
+    assert speicher.vollstaendig == [False]
+    assert speicher.quelle["url"] == SYSTEM
+    assert speicher.quelle["name"] == "Kommune 1"
+    assert speicher.quelle["raw_json"] == {"bodies_count": 5}
 
 
 async def test_abgleich_mit_abgebrochener_kommunenliste_ist_unvollstaendig(monkeypatch: pytest.MonkeyPatch) -> None:

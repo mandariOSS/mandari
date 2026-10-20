@@ -1,0 +1,120 @@
+{% load permission_tags %}
+{% comment %}
+Dialoge der Seite vor der Sitzung (Issue #1071, Muster einladenDialog, versandDialog, aktualisierungDialog):
+- „Jetzt einladen“: an wen, Absender, Rückmeldung, Vorschau der E-Mail je Fassung (vereidigt oder ohne
+  nichtöffentlichen Teil); sendet die Aktion invite (Erstversand genau einmal, Recht faction.invite).
+- „Versandergebnis“: je Person verschickt oder nicht verschickt mit Grund (c-work.versandzeile).
+- „Aktualisierung senden“: invite nach dem Versand (Aktualisierung an alle außer Absagen, Kalender-SEQUENCE + 1).
+- „Aus Ratssitzung übernehmen“: Inhalt lädt die Aktion ris_auswahl beim Öffnen (_vb_ris_auswahl.html).
+- Testmail der Einladung an die eigene Adresse (Aktion test_invitation) im Dialog „Jetzt einladen“.
+Kontext: meeting, org_slug, organization, empfaenger, vorschau, absender, einladung_zeitpunkt, einladung_automatisch,
+einladung_vorbei, darf_einladen, eingeladen, personen, erstversand, ris_moeglich,
+versand, to_oeffentlich, to_intern.
+{% endcomment %}
+{% if ris_moeglich %}
+<c-ui.modal id="fs-ris" title="Aus Ratssitzung übernehmen" size="lg">
+    <div class="wf-dialog" id="fs-ris-inhalt" data-testid="fs-ris-inhalt"><p class="fs-meta">Wird geladen …</p></div>
+</c-ui.modal>
+{% endif %}
+
+{% if empfaenger and darf_einladen and not eingeladen %}
+<c-ui.modal id="fs-einladen" title="Jetzt einladen" size="lg">
+    <div class="wf-dialog fs-einladen-dialog" x-data="{ vorschau: 0, namen: false }">
+        <div class="fs-hinweis fs-testmail" data-testid="fs-testmail">
+            <p>{% if erstversand %}<b>Ihre erste Einladung über diesen Versandweg.</b> Schicken Sie vorher eine Testmail an sich selbst und prüfen Sie Absender und Darstellung.{% else %}Prüfen Sie Absender und Darstellung vorab mit einer Testmail an sich selbst.{% endif %}{% if membership|has_perm:"organization.edit" %} Den Versandweg ändern Sie unter <a class="wf-textlink" href="{% url 'work:organization_email_settings' org_slug=org_slug %}">Einstellungen › E-Mail-Versand</a>.{% endif %}</p>
+            <p class="fs-hinweis-knopf">
+                <button type="button" class="wf-knopf wf-klein" hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-vals='{"action": "test_invitation"}'
+                        hx-target="#fs-testmail-erg" hx-swap="innerHTML" hx-disabled-elt="this"><i data-lucide="mail" aria-hidden="true"></i>Testmail an mich senden</button>
+            </p>
+            <p class="ergebnis" id="fs-testmail-erg" aria-live="polite"></p>
+        </div>
+        <p>{% if einladung_vorbei %}Der geplante Versand am {{ einladung_zeitpunkt }} ist vorbei.{% elif einladung_automatisch %}Ohne Ihr Zutun lädt Work am {{ einladung_zeitpunkt }} ein.{% else %}Geplant ist der Versand nach Freigabe am {{ einladung_zeitpunkt }}.{% endif %} Laden Sie jetzt ein, entfällt der geplante Versand; spätere Änderungen gehen als Aktualisierung an alle.</p>
+        <dl class="fs-dialog-angaben">
+            <dt>An</dt>
+            <dd>
+                {% if empfaenger.anzahl %}Alle {{ empfaenger.anzahl }} Mitglied{{ empfaenger.anzahl|pluralize:"er" }}.{% else %}Niemand: Es gibt keine eingeladenen aktiven Mitglieder.{% endif %}
+                {% if empfaenger.nicht_vereidigt %}{{ empfaenger.nicht_vereidigt|join:", " }} {% if empfaenger.nicht_vereidigt|length == 1 %}ist nicht vereidigt und erhält{% else %}sind nicht vereidigt und erhalten{% endif %} die Tagesordnung ohne nichtöffentlichen Teil.{% endif %}
+                {% if empfaenger.anzahl %}<button type="button" class="wf-textlink" @click="namen = !namen" :aria-expanded="namen ? 'true' : 'false'" aria-controls="empf-liste" x-text="namen ? 'Namen ausblenden' : 'Alle Namen'">Alle Namen</button>{% endif %}
+                <ul class="fs-empf" id="empf-liste" x-show="namen" x-cloak>
+                    {% for e in empfaenger.alle %}<li>{{ e.name }} <span class="fs-meta">{{ e.mail|default:"keine E-Mail-Adresse" }}</span></li>{% endfor %}
+                </ul>
+            </dd>
+            <dt>Absender</dt>
+            <dd>{{ absender }}</dd>
+            <dt>Rückmeldung</dt>
+            <dd>{% if meeting.rsvp_enabled %}Mitglieder sagen in Work zu oder ab.{% else %}Zu- und Absagen sind aus.{% endif %}</dd>
+        </dl>
+        {% if vorschau %}
+        <div class="fs-vorschau-kopf">
+            <h3>Vorschau</h3>
+            {% if vorschau|length > 1 %}
+            <div class="fs-umschalter" role="group" aria-label="Vorschau der Einladung für">
+                {% for p in vorschau %}<button type="button" :aria-pressed="vorschau === {{ forloop.counter0 }} ? 'true' : 'false'" @click="vorschau = {{ forloop.counter0 }}">{{ p.name }}{% if not p.intern %}, nicht vereidigt{% endif %}</button>{% endfor %}
+            </div>
+            {% endif %}
+        </div>
+        {% for p in vorschau %}
+        <div class="fs-mail" x-show="vorschau === {{ forloop.counter0 }}"{% if not forloop.first %} x-cloak{% endif %} data-testid="fs-mail-vorschau">
+            <p class="betreff">Einladung: {{ meeting.title }}</p>
+            <p class="fs-meta">Von {{ absender }}<br>An {{ p.mail|default:"keine E-Mail-Adresse" }}</p>
+            <p>Guten Tag {{ p.name }},</p>
+            <p>Sie sind zur Fraktionssitzung eingeladen.</p>
+            <p><b>{{ meeting.start|date:"l, j. F Y" }}, {{ meeting.start|time:"H:i" }}{% if meeting.end %} bis {{ meeting.end|time:"H:i" }}{% endif %} Uhr</b>{% if meeting.location %}<br>{{ meeting.location }}{% endif %}{% if meeting.video_link %}<br>Per Video: {{ meeting.video_link }}{% endif %}</p>
+            <p><b>Tagesordnung</b></p>
+            <ol>
+                {% for z in to_oeffentlich %}{% if p.intern or not z.intern %}<li{% if z.unter %} class="unter"{% endif %}><span>{{ z.item.number }}</span><span>{{ z.item.title }}</span></li>{% endif %}{% endfor %}
+            </ol>
+            {% if p.intern and to_intern %}
+            <p><b>Nichtöffentlicher Teil</b></p>
+            <ol>
+                {% for z in to_intern %}<li{% if z.unter %} class="unter"{% endif %}><span>{{ z.item.number }}</span><span>{{ z.item.title }}</span></li>{% endfor %}
+            </ol>
+            {% endif %}
+            <p class="fs-meta">Im Anhang: Tagesordnung als PDF{% if not p.intern %} ohne nichtöffentlichen Teil{% endif %} und der Termin für Ihren Kalender.</p>
+        </div>
+        {% endfor %}
+        {% endif %}
+        <form class="wf-dialog-fuss" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="invite">
+            <button type="button" class="wf-knopf" data-close-modal>Abbrechen</button>
+            <button type="submit" class="wf-knopf wf-haupt"{% if not empfaenger.anzahl %} disabled{% endif %}>Einladung an {{ empfaenger.anzahl }} Mitglied{{ empfaenger.anzahl|pluralize:"er" }} senden</button>
+        </form>
+    </div>
+</c-ui.modal>
+{% endif %}
+
+{% if eingeladen and verwalten %}
+<c-ui.modal id="fs-versand" title="Versandergebnis" size="md">
+    <div class="wf-dialog">
+        <p>{% if meeting.invitation_sent_at %}Eingeladen am {{ meeting.invitation_sent_at|date:"D d.m. \u\m H:i" }}.{% endif %}{% if meeting.invitation_updated_at %} Zuletzt aktualisiert am {{ meeting.invitation_updated_at|date:"D d.m. \u\m H:i" }}.{% endif %}
+            {% if versand.gesamt %}{{ versand.ok }} von {{ versand.gesamt }} verschickt{% if versand.nicht %}, {{ versand.nicht }} nicht{% endif %}.{% endif %}
+            {% if versand.unbekannt %}Für {{ versand.unbekannt }} Person{{ versand.unbekannt|pluralize:"en" }} ist kein Ergebnis erfasst (Versand vor dieser Erfassung oder nicht eingeladen).{% endif %}</p>
+        <p class="fs-meta">„Verschickt“ heißt: an den E-Mail-Versand der Fraktion übergeben. Ob die Nachricht im Postfach angekommen ist, meldet der Mailserver nicht zurück.</p>
+        <ul class="fs-versandliste" data-testid="fs-versandliste">
+            {% for p in personen %}
+            {% if p.fehler %}
+            <c-work.versandzeile wer="{{ p.name }}" zusatz="{{ p.rollen }}" ergebnis="Nicht verschickt" fehler="1" grund="{{ p.fehler }}" />
+            {% else %}
+            <c-work.versandzeile wer="{{ p.name }}" zusatz="{{ p.rollen }}" ergebnis="{{ p.versand_text }}" />
+            {% endif %}
+            {% endfor %}
+        </ul>
+        <div class="wf-dialog-fuss"><button type="button" class="wf-knopf" data-close-modal>Schließen</button></div>
+    </div>
+</c-ui.modal>
+{% endif %}
+
+{% if eingeladen and darf_einladen and meeting.status in 'planned,invited' %}
+<c-ui.modal id="fs-aktualisieren" title="Aktualisierung senden" size="sm">
+    <form class="wf-dialog" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="invite">
+        <p>Alle, die nicht abgesagt haben, erhalten die aktuelle Tagesordnung und den geänderten Kalendereintrag. Nicht Vereidigte erhalten sie ohne nichtöffentlichen Teil.</p>
+        <div class="wf-dialog-fuss">
+            <button type="button" class="wf-knopf" data-close-modal>Abbrechen</button>
+            <button type="submit" class="wf-knopf wf-haupt">Aktualisierung senden</button>
+        </div>
+    </form>
+</c-ui.modal>
+{% endif %}

@@ -402,6 +402,7 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `mandari:snapshot` | Body | Adresse des Snapshots der Kommune (nur wenn der Änderungsfeed eingeschaltet und die Kommune gelistet ist) |
 | `mandari:originalOrganizationType` | Organization | Angabe der Quelle, wenn sie keiner der Werte der Spezifikation ist |
 | `mandari:summary` | Paper | KI-generierte Zusammenfassung (falls vorhanden) |
+| `mandari:summaryAiGenerated` | Paper | `true`, wenn `mandari:summary` vorhanden ist: Der Text ist KI-erzeugt und nicht redaktionell geprüft (EU AI Act Art. 50, siehe `KI_TRANSPARENZ.md`) |
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
 | `mandari:sha256`, `mandari:pageCount` | File | SHA-256-Hash / Seitenzahl |
 | `mandari:locationName`, `mandari:locationAddress` | Meeting | abgekündigt: Ortsangabe als Text, wenn die Quelle kein Location-Objekt liefert; steht jetzt in `Meeting.location` |

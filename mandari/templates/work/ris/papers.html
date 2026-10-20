@@ -43,7 +43,7 @@
             <option value="{{ year.year }}" {% if selected_year == year.year %}selected{% endif %}>{{ year.year }}</option>
             {% endfor %}
         </select>
-        <button type="submit"
+        <button type="submit" name="direkt" value="1" aria-label="Suchen"
                 class="px-4 py-2.5 bg-primary-600 text-white rounded-xl hover:bg-primary-700 shadow-sm transition-colors text-sm">
             <i data-lucide="filter" class="w-4 h-4"></i>
         </button>
@@ -148,6 +148,10 @@
 {% else %}
 <div class="text-center py-12 bg-gray-50 dark:bg-gray-800/50 rounded-xl">
     <i data-lucide="file-text" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    {% if nummer_gesucht %}
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Die Vorlage {{ nummer_gesucht }} liegt uns noch nicht vor.</h3>
+    <p class="text-gray-500 dark:text-gray-400">Manche Kommunen geben Vorlagen erst später über ihre Schnittstelle frei. Sobald sie dort erscheint, übernehmen wir sie.</p>
+    {% else %}
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Vorgänge gefunden</h3>
     <p class="text-gray-500 dark:text-gray-400">
         {% if search_query or selected_type or selected_year %}
@@ -156,6 +160,7 @@
         Es sind noch keine Vorgänge vorhanden.
         {% endif %}
     </p>
+    {% endif %}
 </div>
 {% endif %}
 

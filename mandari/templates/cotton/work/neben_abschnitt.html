@@ -1,0 +1,12 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Abschnitt der Nebenspalte (c-work.neben, Issue #1071): Überschrift 14 px halbfett, ``zusatz`` gedimmt dahinter, darunter
+der Inhalt ohne Kasten.
+  <c-work.neben-abschnitt titel="Automatisch" kennung="fs-auto-h"><ul class="fs-auto">…</ul></c-work.neben-abschnitt>
+Parameter: titel, kennung (id der Überschrift, benennt den Abschnitt), zusatz; weitere Attribute gehen an die section.
+{% endcomment %}
+<c-vars titel="" kennung="" zusatz="" />
+<section{% if kennung %} aria-labelledby="{{ kennung }}"{% endif %} {{ attrs }}>
+    <h2{% if kennung %} id="{{ kennung }}"{% endif %}>{{ titel }}{% if zusatz %} <span class="fs-meta">{{ zusatz }}</span>{% endif %}</h2>
+    {{ slot }}
+</section>

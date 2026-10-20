@@ -5,5 +5,5 @@ Eintrag der Insight-Navigation (Seitenleiste, Issue #783, Variante A).
 Aktiv, wenn ``area`` dem Bereich der Seite entspricht (``insight_area`` aus dem Kontextprozessor). Das Markup teilt
 sich Insight mit Work: c-rahmen.nav-link (Issue #852).
 {% endcomment %}
-<c-vars href="" icon="" area="" />
-<c-rahmen.nav-link href="{{ href }}" icon="{{ icon }}" area="{{ area }}" aktuell="{{ insight_area }}" :attrs="attrs">{{ slot }}</c-rahmen.nav-link>
+<c-vars href="" icon="" area="" rel="" />
+<c-rahmen.nav-link href="{{ href }}" icon="{{ icon }}" area="{{ area }}" aktuell="{{ insight_area }}" rel="{{ rel }}" :attrs="attrs">{{ slot }}</c-rahmen.nav-link>

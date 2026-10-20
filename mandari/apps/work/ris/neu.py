@@ -19,6 +19,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from hub.ris import selectors as ris
+from insight_core.services.vorgang_dokumente import dokumente_anhaengen
 
 from . import fraktion
 from .links import WorkRisLinks
@@ -83,8 +84,8 @@ def uebersicht_satz(stats: dict[str, int], body: Any) -> str:
 
 
 def uebersicht(organization: Any, membership: Any, bodies: Any, context: dict[str, Any]) -> dict[str, Any]:
-    """Übersicht: Satz mit den Kennzahlen, nächste Sitzungen mit Vorbereitungsstand, neue Vorgänge mit Stand,
-    für die Fraktion die eigenen Gremien und zuletzt eingereichte Dokumente."""
+    """Übersicht: Satz mit den Kennzahlen, nächste Sitzungen mit Vorbereitungsstand, neue Vorgänge mit Stand und
+    Dokumenten, für die Fraktion die eigenen Gremien und zuletzt eingereichte Dokumente."""
     from apps.work.organization.selectors import my_committees
     from insight_core.services.search_presentation import statuses_for_papers
 
@@ -98,6 +99,7 @@ def uebersicht(organization: Any, membership: Any, bodies: Any, context: dict[st
     staende = statuses_for_papers(str(v.pk) for v in vorgaenge)
     for vorgang in vorgaenge:
         vorgang.stand = staende.get(str(vorgang.pk))
+    dokumente_anhaengen(vorgaenge)
     gremien = my_committees(membership).within(bodies)
     return {
         **erlaubt,
@@ -185,9 +187,10 @@ def _letzte_position(
 
 def vorgaenge(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[str, Any]:
     """
-    Vorgangsliste: je Vorgang der Stand-Satz (eine Abfrage für die Seite) und für die Fraktion die zuletzt gesetzte
-    Position (mit ``meetings.prepare``) und die Dokumente der Organisation zur Vorlage. Die Spalte „Für die Fraktion“
-    entfällt wie die übrigen Spalten der Liste, wenn sie in keiner Zeile einen Wert hat (``fraktion_spalte``).
+    Vorgangsliste: je Vorgang der Stand-Satz (eine Abfrage für die Seite), Vorlage und Anlagen aus dem RIS (eine
+    Abfrage, Issue #1103) und für die Fraktion die zuletzt gesetzte Position (mit ``meetings.prepare``) und die
+    Dokumente der Organisation zur Vorlage. Die Spalte „Für die Fraktion“ entfällt wie die übrigen Spalten der Liste,
+    wenn sie in keiner Zeile einen Wert hat (``fraktion_spalte``).
     """
     from insight_core.services.search_presentation import statuses_for_papers
 
@@ -205,6 +208,7 @@ def vorgaenge(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[
         vorgang.stand = staende.get(str(vorgang.pk))
         vorgang.position = _letzte_position(punkte.get(vorgang.pk, ()), positionen)
         vorgang.dokumente = dokumente.get(vorgang.pk, [])
+    dokumente_anhaengen(liste)
     return {**erlaubt, "fraktion_spalte": any(v.position is not None or v.dokumente for v in liste)}
 
 

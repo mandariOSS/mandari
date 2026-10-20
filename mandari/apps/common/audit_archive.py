@@ -12,6 +12,9 @@ Export und Archivpakete für Protokolle mit Hash-Kette (Issue #221).
   Einträge bilden immer ein Anfangsstück der Kette. Sie werden beim Schreiben des Pakets geprüft
   (eine manipulierte Kette wird nie gelöscht), das Paket landet im Archivspeicher, dann werden
   die Einträge gelöscht und der Kettenanker gesetzt – ab ihm beginnt künftig die Prüfung.
+- **Frist für Archivpakete** (:func:`purge_archives`, Issue #366): Pakete eines Bereichs, die vor einem
+  Stichtag entstanden sind, werden aus dem Archivspeicher gelöscht. Maßgeblich ist der Zeitstempel am
+  Anfang des Dateinamens (UTC, beim Ablegen gesetzt), nicht die Änderungszeit des Speichers.
 
 Alle Dateien entstehen in temporären Dateien (bis 8 MB im Speicher, darüber auf der Platte) und
 werden stapelweise aus der Datenbank gelesen; große Protokolle belasten den Speicher nicht.
@@ -19,6 +22,7 @@ werden stapelweise aus der Datenbank gelesen; große Protokolle belasten den Spe
 
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import json
 import tempfile
@@ -42,6 +46,9 @@ FORMAT_ARCHIVE = "mandari-protokoll-archiv"
 FORMAT_VERSION = 1
 #: Ab dieser Größe schreiben die temporären Dateien auf die Platte
 SPOOL_BYTES = 8 * 1024 * 1024
+#: Zeitstempel (UTC) am Anfang des Dateinamens eines Archivpakets
+ARCHIVE_STAMP_FORMAT = "%Y%m%d-%H%M%S"
+ARCHIVE_STAMP_LENGTH = len("20260101-000000")
 
 HASH_METHOD = (
     "SHA-256 über das kanonische JSON (sortierte Schlüssel, ohne Leerzeichen, UTF-8) aller Felder "
@@ -298,6 +305,11 @@ def archive_storage() -> Storage:
     )
 
 
+def archive_folder(spec: audit_chain.ChainSpec, scope_id: Any) -> str:
+    """Ordner der Archivpakete eines Bereichs im Archivspeicher (``session/<Mandant>``, ``security``)."""
+    return spec.scope_key(scope_id).replace(":", "/")
+
+
 @dataclass
 class ArchiveResult:
     """Ergebnis einer Archivierung mit Löschung."""
@@ -406,8 +418,10 @@ def archive_and_delete(
         extra_files={"kette.json": json.dumps(anchor, ensure_ascii=False, indent=2) + "\n"},
     )
     target = storage or archive_storage()
-    folder = spec.scope_key(scope_id).replace(":", "/")
-    stored_name = target.save(f"{folder}/{now:%Y%m%d-%H%M%S}-{package.name}", File(package.file))
+    folder = archive_folder(spec, scope_id)
+    # Der Zeitstempel im Namen (UTC) ist die Grundlage der Frist für Archivpakete (purge_archives)
+    stamp = now.astimezone(dt.UTC).strftime(ARCHIVE_STAMP_FORMAT)
+    stored_name = target.save(f"{folder}/{stamp}-{package.name}", File(package.file))
 
     with transaction.atomic():
         locked = audit_chain.lock_head(spec, scope_id)
@@ -431,3 +445,68 @@ def archive_and_delete(
         archive_sha256=package.sha256,
         deferred=deferred,
     )
+
+
+# =============================================================================
+# Frist für Archivpakete (Issue #366)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class StoredArchive:
+    """Ein abgelegtes Archivpaket: Name im Archivspeicher und Zeitpunkt der Ablage (UTC)."""
+
+    name: str
+    created_at: dt.datetime
+
+
+def _stamp(file_name: str) -> dt.datetime | None:
+    """Ablagezeitpunkt aus dem Dateinamen; ``None`` für Dateien, die kein Archivpaket sind."""
+    if not file_name.endswith(".zip") or "-protokoll-" not in file_name:
+        return None
+    try:
+        stamp = dt.datetime.strptime(file_name[:ARCHIVE_STAMP_LENGTH], ARCHIVE_STAMP_FORMAT)
+    except ValueError:
+        return None
+    return stamp.replace(tzinfo=dt.UTC)
+
+
+def list_archives(spec: audit_chain.ChainSpec, scope_id: Any, *, storage: Storage | None = None) -> list[StoredArchive]:
+    """Archivpakete eines Bereichs, älteste zuerst; andere Dateien im Ordner bleiben unbeachtet."""
+    target = storage or archive_storage()
+    folder = archive_folder(spec, scope_id)
+    try:
+        _dirs, files = target.listdir(folder)
+    except (FileNotFoundError, NotADirectoryError):
+        return []
+    found = []
+    for file_name in files:
+        stamp = _stamp(file_name)
+        if stamp is not None:
+            found.append(StoredArchive(name=f"{folder}/{file_name}", created_at=stamp))
+    return sorted(found, key=lambda item: (item.created_at, item.name))
+
+
+def purge_archives(
+    spec: audit_chain.ChainSpec,
+    scope_id: Any,
+    cutoff: dt.datetime,
+    *,
+    storage: Storage | None = None,
+    dry_run: bool = False,
+) -> list[StoredArchive]:
+    """
+    Archivpakete eines Bereichs löschen, die bis ``cutoff`` abgelegt wurden.
+
+    Nur Dateien mit dem Namensschema der Archivpakete werden gelöscht, nur im Ordner dieses Bereichs.
+    Der Kettenanker in der Datenbank bleibt: Die Kette ist weiter ab ihm prüfbar, nur die Einträge vor
+    dem Anker lassen sich danach nicht mehr vorlegen. Das ist der Zweck der Frist.
+
+    Returns: die gelöschten (bei ``dry_run``: die zu löschenden) Pakete.
+    """
+    target = storage or archive_storage()
+    expired = [item for item in list_archives(spec, scope_id, storage=target) if item.created_at <= cutoff]
+    if not dry_run:
+        for item in expired:
+            target.delete(item.name)
+    return expired

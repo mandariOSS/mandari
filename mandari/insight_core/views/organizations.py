@@ -20,7 +20,7 @@ from ..models import (
 )
 from ..ranking import sort_organizations_by_ranking
 from ..services import personen_liste, question_service
-from ._helpers import ActiveBodyRequiredMixin, get_active_body
+from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
 # =============================================================================
@@ -28,7 +28,7 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 
 
-class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
+class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, ListView):
     """Liste aller Gremien mit Aktiv/Alle-Tabs."""
 
     model = OParlOrganization
@@ -123,14 +123,20 @@ class OrganizationListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
             context["all_count"] = all_orgs.count()
 
         context["tab"] = tab
-        from ..seo import get_page_seo
+        from ..seo import get_list_seo
 
-        _body = get_active_body(self.request)
-        context["seo"] = get_page_seo(
+        # Kanonisch ist die Adresse je Kommune (Issue #939)
+        context["seo"] = get_list_seo(
             self.request,
+            "organization_list",
             title="Gremien & Ausschüsse",
-            description="Alle Gremien, Ausschüsse und Fraktionen mit Mitgliedern und Sitzungen im Überblick.",
-            body=_body,
+            description=(
+                f"Alle Gremien, Ausschüsse und Fraktionen in {body.get_display_name()} mit Mitgliedern und "
+                "Sitzungen im Überblick."
+                if body
+                else "Alle Gremien, Ausschüsse und Fraktionen mit Mitgliedern und Sitzungen im Überblick."
+            ),
+            body=body,
         ).to_dict()
         return context
 

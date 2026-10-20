@@ -3,13 +3,20 @@
 Befehl, Quittung und Ergebnis eines Handlers (``docs/adr/20260929-befehle-synchron.md``).
 
 - ``Command``: Name und Version (Vertrag in ``hub.contracts``), Inhalt, Idempotenzschlüssel,
-  Mandant (``tenant_ref`` wie in der Ereignishülle) und Auslöser (``actor_ref``).
+  Mandant (``tenant_ref`` wie in der Ereignishülle) und Auslöser (``actor_ref``), dazu optional Anlagen
+  (``attachments``): Dateien, die nur innerhalb einer Installation mitgehen.
 - ``HandlerResult``: was der Handler beim Eigentümer liefert, v. a. die Eingangsnummer bzw. Kennung.
 - ``Receipt``: die Quittung, die beide Clients zurückgeben: Eingangsnummer, Eingangszeit und
   Inhalts-Hash (SHA-256 über das kanonische JSON des Inhalts, RFC 8785).
 
 Quittungen enthalten nur Kennungen, Codes und Zeitpunkte, nie Inhalte; sie werden gespeichert und bei
 einer Wiederholung mit demselben Schlüssel unverändert zurückgegeben.
+
+**Anlagen** (#540): Dateien gehören nicht in den JSON-Inhalt. Der Inhalt nennt jede Anlage mit Name, Größe und
+SHA-256, damit deckt der Inhalts-Hash der Quittung auch die Anlagen ab; die Dateien selbst stehen in
+``Command.attachments`` (SHA-256 → lesbare Datei) und gehen nur über den ``InProcessClient``. Der Eigentümer
+prüft, dass Datei und Angabe im Inhalt zusammenpassen. Der ``HttpClient`` lehnt Befehle mit Anlagen ab, bis
+der HTTP-Weg sie überträgt. Anlagen zählen nicht zum Hash der Anfrage; maßgeblich ist der Inhalt.
 
 Der Inhalt eines Befehls ist höchstens ``MAX_DEPTH`` Ebenen tief verschachtelt. Kopieren, Prüfen und
 kanonisches JSON arbeiten rekursiv; ein tiefer verschachtelter Inhalt endete sonst je nach Plattform
@@ -36,6 +43,8 @@ MAX_REFERENCE_LENGTH: Final = 200
 #: Größte Verschachtelungstiefe des Inhalts (Objekte und Listen); Verträge sind weit flacher.
 MAX_DEPTH: Final = 64
 TOO_DEEP: Final = f"Der Inhalt ist zu tief verschachtelt (höchstens {MAX_DEPTH} Ebenen)."
+#: Schlüssel einer Anlage: SHA-256 der Datei, hexadezimal und klein geschrieben.
+ATTACHMENT_KEY_RE: Final = re.compile(r"[0-9a-f]{64}")
 
 
 def exceeds_depth(value: object, limit: int = MAX_DEPTH) -> bool:
@@ -66,6 +75,8 @@ class Command:
     version: int = 1
     actor_ref: str | None = None
     correlation_id: uuid.UUID = field(default_factory=uuid.uuid4)
+    #: Anlagen je SHA-256 (hexadezimal): lesbare Dateien (``read``/``seek``), nur innerhalb einer Installation.
+    attachments: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         if not TENANT_REF_RE.fullmatch(self.tenant_ref):
@@ -74,7 +85,11 @@ class Command:
             raise ValueError("actor_ref muss user:<uuid> oder system:<auftrag> sein")
         if exceeds_depth(self.body):
             raise ValueError(TOO_DEEP)
+        if not all(isinstance(key, str) and ATTACHMENT_KEY_RE.fullmatch(key) for key in self.attachments):
+            raise ValueError("Anlagen werden mit ihrem SHA-256 (64 Hexadezimalzeichen, klein) benannt")
         object.__setattr__(self, "body", copy.deepcopy(dict(self.body)))
+        # Dateien werden nicht kopiert: Der Handler liest dieselben Objekte.
+        object.__setattr__(self, "attachments", dict(self.attachments))
 
 
 @dataclass(frozen=True, kw_only=True)

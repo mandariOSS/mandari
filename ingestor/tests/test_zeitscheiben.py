@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, tzinfo
 from types import SimpleNamespace
 from typing import Any
 from urllib.parse import urlencode
@@ -45,6 +45,7 @@ from src.sync.orchestrator import (
     SyncOrchestrator,
     SyncResult,
     TimedLists,
+    fallback_modified_since,
     full_sync_finished,
     merge_slice_details,
     sync_complete,
@@ -272,6 +273,43 @@ class _OhneBefund:
         return []
 
 
+_ECHTE_ZEIT = datetime
+
+
+class _ZeitTyp(type):
+    """Mit fester Uhr im Modul bleibt ``isinstance(wert, datetime)`` für echte Zeitpunkte wahr."""
+
+    def __instancecheck__(cls, wert: object) -> bool:
+        return isinstance(wert, _ECHTE_ZEIT)
+
+
+def _feste_uhr(monkeypatch: pytest.MonkeyPatch, jetzt: datetime, ortszeit: str) -> None:
+    """
+    ``datetime.now()`` in Orchestrator und Zeitscheiben liefert ``jetzt``, ohne Zone als naive Ortszeit des Ingestors
+    (``ortszeit``: in der CI UTC, im Container ``Europe/Berlin``).
+    """
+    zone = ZoneInfo(ortszeit)
+
+    class FesteUhr(_ECHTE_ZEIT, metaclass=_ZeitTyp):
+        @classmethod
+        def now(cls, tz: tzinfo | None = None) -> datetime:
+            return jetzt.astimezone(tz) if tz is not None else jetzt.astimezone(zone).replace(tzinfo=None)
+
+    for modul in ("src.sync.orchestrator", "src.sync.slices"):
+        monkeypatch.setattr(f"{modul}.datetime", FesteUhr)
+
+
+#: Feste Uhr um die kritischen Stunden: Zwischen 22 Uhr (Sommerzeit) bzw. 23 Uhr (Winterzeit) und 24 Uhr UTC ist in
+#: Berlin schon der nächste Tag. Fensteranfang (vier Tage zurück) am 14./15.10. (Sommerzeit), am 23./24.10.
+#: (Tagesscheiben über den Wechsel auf die Winterzeit am 25.10.2026), am 25./26.10. (Tag des Wechsels) und am
+#: 27./28.10. (Winterzeit, das Fenster von sieben Tagen liegt noch in der Sommerzeit)
+FESTE_UHRZEITEN = [
+    datetime(2026, 10, tag, tzinfo=UTC) + timedelta(hours=stunde, minutes=minute)
+    for tag in (18, 27, 29, 31)
+    for stunde, minute in ((21, 59), (22, 30), (23, 59), (24, 1))
+]
+
+
 # ---------------------------------------------------------------------------
 # Einstellung full_sync_slices
 # ---------------------------------------------------------------------------
@@ -376,6 +414,28 @@ def test_langsame_liste_in_tagesscheiben():
     assert all(s.until - s.since == SLOW_LIST_SLICE for s in scheiben[:-1])  # type: ignore[operator]
     # Tagesbeginn: der frühere von 00:00 Uhr UTC und 00:00 Uhr Ortszeit
     assert day_floor(datetime(2026, 10, 15, 13, 0, tzinfo=UTC)) == datetime(2026, 10, 14, 22, 0, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("stempel", "tagesbeginn"),
+    [
+        # Sommerzeit: Ab 22 Uhr UTC ist in Berlin schon der nächste Tag, dann ist 00:00 Uhr UTC früher
+        ("2026-10-18T21:59Z", "2026-10-17T22:00Z"),
+        ("2026-10-18T22:30Z", "2026-10-18T00:00Z"),
+        ("2026-10-18T23:59Z", "2026-10-18T00:00Z"),
+        ("2026-10-19T00:01Z", "2026-10-18T22:00Z"),
+        # 25.10.2026: Der Tag beginnt in Berlin noch in der Sommerzeit, der nächste in der Winterzeit (23 Uhr UTC)
+        ("2026-10-25T21:59Z", "2026-10-24T22:00Z"),
+        ("2026-10-25T22:30Z", "2026-10-24T22:00Z"),
+        ("2026-10-25T23:59Z", "2026-10-25T00:00Z"),
+        ("2026-10-26T00:01Z", "2026-10-25T23:00Z"),
+        # Schon abgerundet heißt nicht fertig: Vor 00:00 Uhr UTC liegt 00:00 Uhr Berlin desselben Tages
+        ("2026-10-18T00:00Z", "2026-10-17T22:00Z"),
+        ("2026-10-27T00:00Z", "2026-10-26T23:00Z"),
+    ],
+)
+def test_tagesbeginn_um_mitternacht_und_ueber_den_wechsel_auf_die_winterzeit(stempel, tagesbeginn):
+    assert day_floor(datetime.fromisoformat(stempel)) == datetime.fromisoformat(tagesbeginn)
 
 
 def test_eintraege_aus_sync_config():
@@ -699,8 +759,9 @@ async def test_langsame_liste_wird_mit_wachsendem_abstand_ausgesetzt():
     assert timedelta(minutes=59) < eintrag.until - vorher <= timedelta(hours=1, minutes=1)
     assert f"{BODY}/consultation" in stats["suspended_lists"]
     assert any("ausgesetzt bis" in fehler for fehler in stats["errors"])
-    # Fensteranfang der Liste: das Fenster dieses Laufs (sieben Tage, ohne Zeitpunkt der Kommune)
-    assert eintrag.since <= vorher - timedelta(days=7)
+    # Fensteranfang der Liste: das Fenster dieses Laufs (sieben Tage ab 00:00 Uhr Ortszeit des Rechners, ohne
+    # Zeitpunkt der Kommune); nicht gegen vorher - 7 Tage, sonst scheitert der Test nachts außerhalb von UTC
+    assert eintrag.since <= fallback_modified_since().replace(tzinfo=UTC)
 
     # Nächster Lauf in der Aussetzung: keine Anfrage an die Liste
     stats = await _lauf(quelle, speicher, full=False, kommune=kommune)
@@ -743,27 +804,40 @@ async def test_langsame_liste_wird_in_tagesscheiben_nachgeholt():
     assert {f"{BASE}/consultation/3", f"{BASE}/consultation/4"} <= set(speicher.modified)
 
 
-async def test_abbruch_einer_langsamen_liste_behaelt_ihren_fortschritt():
-    quelle = HammQuelle()
+@pytest.mark.parametrize("ortszeit", ["UTC", "Europe/Berlin"])
+@pytest.mark.parametrize("jetzt", FESTE_UHRZEITEN, ids=lambda t: f"{t:%d.%m.%H:%M}")
+async def test_abbruch_einer_langsamen_liste_behaelt_ihren_fortschritt(monkeypatch, jetzt, ortszeit):
+    """
+    Die dritte Tagesscheibe läuft in die Zeitüberschreitung: Der Fensteranfang der Liste rückt auf sie vor.
+
+    Mit fester Uhr (Issue #1066): Die erste Scheibe beginnt am Tagesbeginn des Fensteranfangs (``day_floor``). Liegt
+    er zwischen 22 Uhr (Winterzeit 23 Uhr) und 24 Uhr UTC, ist das 00:00 Uhr UTC, sonst 00:00 Uhr Berlin. Der Test
+    rechnet die Grenzen wie der Lauf; bisher nahm er an, die Scheiben lägen immer auf 00:00 Uhr Berlin.
+    """
+    _feste_uhr(monkeypatch, jetzt, ortszeit)
+    quelle = HammQuelle(jetzt)
     speicher = ScheibenSpeicher()
-    seit = day_floor(datetime.now(UTC) - timedelta(days=4))
-    faellig = SlowList(failures=1, until=datetime.now(UTC) - timedelta(minutes=1), since=seit)
+    # Fenster der Kommune kurz (letzter vollständiger Abgleich vor einer Stunde): Die Liste beginnt an ihrem eigenen
+    # Fensteranfang vor vier Tagen, auf den Tagesbeginn abgerundet
+    speicher.begonnen[BODY] = jetzt - timedelta(hours=1)
+    seit = jetzt - timedelta(days=4)
+    beginn = day_floor(seit)
+    faellig = SlowList(failures=4, until=jetzt - timedelta(minutes=1), since=seit)
     speicher.config[SYNC_CONFIG_SLOW_LISTS_KEY] = {f"{BODY}/consultation": faellig.to_entry()}
     # Die ersten beiden Tagesscheiben antworten, die dritte läuft in die Zeitüberschreitung
     quelle.langsam.add("consultation")
-    quelle.langsam_ab = seit + 2 * SLOW_LIST_SLICE
+    quelle.langsam_ab = beginn + 2 * SLOW_LIST_SLICE
 
-    faellig.failures = 4
-    speicher.config[SYNC_CONFIG_SLOW_LISTS_KEY] = {f"{BODY}/consultation": faellig.to_entry()}
-    jetzt = datetime.now(UTC)
     stats = await _lauf(quelle, speicher, full=False, kommune=_kommune("paper", "consultation"))
     assert stats["incomplete"] == []
+    grenzen = [_grenzen(url) for url in quelle.anfragen_an("consultation") if url.params.get("page") in (None, "1")]
+    assert grenzen == [(beginn + n * SLOW_LIST_SLICE, beginn + (n + 1) * SLOW_LIST_SLICE) for n in range(3)]
     eintrag = SlowList.from_entry(speicher.config[SYNC_CONFIG_SLOW_LISTS_KEY][f"{BODY}/consultation"])
     assert eintrag is not None
-    assert eintrag.since == seit + 2 * SLOW_LIST_SLICE
+    assert eintrag.since == beginn + 2 * SLOW_LIST_SLICE
     # Die Liste kam voran: Die Reihe beginnt wieder bei einer Stunde statt bei 16
     assert eintrag.failures == 1
-    assert eintrag.until - jetzt <= timedelta(hours=1, minutes=1)
+    assert eintrag.until == jetzt + timedelta(hours=1)
 
 
 async def test_pflichtliste_mit_zeitueberschreitung_bleibt_eine_luecke():

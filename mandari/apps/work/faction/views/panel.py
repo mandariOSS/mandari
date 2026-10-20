@@ -618,3 +618,59 @@ class FactionItemPanelActionView(WorkViewMixin, View):
             item.save(update_fields=["reference_links"])
 
         return self._panel_response(request, meeting, item, "Link entfernt")
+
+
+#: Höchstlänge eines TOP-Titels (wie ``FactionAgendaItem.title``)
+TITEL_LAENGE = FactionAgendaItem._meta.get_field("title").max_length or 500
+
+
+class FactionItemFieldsView(WorkViewMixin, View):
+    """
+    Titel und Beschreibung eines TOPs sofort speichern (Issue #1071, Seite vor der Sitzung: „Work speichert sofort“).
+
+    JSON wie beim Speicherdienst der Vorbereitung (``frontend/js/speichern.ts``): ``{"title": …, "description": …}``,
+    jedes Feld optional; Antwort ``{"ok": true, "title": …}``. Rechte wie die Aktualisierung im Panel: Ersteller der
+    Sitzung oder ``faction.manage``, solange die Sitzung offen ist; nichtöffentliche TOPs nur für Vereidigte; der
+    Genehmigungs-TOP behält seinen Titel. Fehler als ``{"error": "<Satz>"}``.
+    """
+
+    permission_required = "faction.view_public"
+    http_method_names = ["post"]
+
+    def post(self, request, *args, **kwargs):
+        meeting = get_object_or_404(FactionMeeting, id=kwargs["meeting_id"], organization=self.organization)
+        item = get_object_or_404(FactionAgendaItem, id=kwargs["item_id"], meeting=meeting)
+        if not can_view_item(item, self.membership):
+            return JsonResponse({"error": "Gesperrte Information"}, status=403)
+        can_edit = (
+            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
+        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        if not can_edit or item.is_approval_item:
+            return JsonResponse({"error": "Keine Berechtigung zum Bearbeiten"}, status=403)
+        try:
+            daten = json.loads(request.body or b"{}")
+        except (ValueError, UnicodeDecodeError):
+            return JsonResponse({"error": "Ungültige Eingabe"}, status=400)
+        if not isinstance(daten, dict):
+            return JsonResponse({"error": "Ungültige Eingabe"}, status=400)
+        felder = ["updated_at"]
+        if "title" in daten:
+            titel = str(daten.get("title") or "").strip()
+            if not titel:
+                return JsonResponse({"error": "Der Titel darf nicht leer sein."}, status=400)
+            if len(titel) > TITEL_LAENGE:
+                return JsonResponse(
+                    {"error": f"Der Titel darf höchstens {TITEL_LAENGE} Zeichen lang sein."}, status=400
+                )
+            item.title = titel
+            felder.append("title")
+        if "description" in daten:
+            beschreibung = str(daten.get("description") or "").strip()
+            if beschreibung:
+                item.set_description_encrypted(beschreibung)
+            else:
+                item.description_encrypted = None
+            felder.append("description_encrypted")
+        if len(felder) > 1:
+            item.save(update_fields=felder)
+        return JsonResponse({"ok": True, "title": item.title, "number": item.number})

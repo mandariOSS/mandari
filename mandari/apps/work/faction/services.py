@@ -39,6 +39,59 @@ def invitation_attendances(meeting, *, update: bool = False):
     return attendances.filter(status="invited")
 
 
+def _invitation_error_text(error: Exception, address: str) -> str:
+    """Grund, warum eine Einladung nicht rausging, als Satz für das Versandergebnis (ohne Interna des Servers)."""
+    import smtplib
+
+    if isinstance(error, smtplib.SMTPRecipientsRefused):
+        return f"Der Mailserver hat die Adresse {address} abgelehnt."
+    if isinstance(error, smtplib.SMTPAuthenticationError):
+        return "Der Mailserver hat die Anmeldung abgelehnt. Bitte den E-Mail-Versand in den Einstellungen prüfen."
+    if isinstance(error, (smtplib.SMTPException, OSError)):
+        return "Der Mailserver war nicht erreichbar oder hat den Versand abgelehnt."
+    return "Der Versand ist fehlgeschlagen."
+
+
+def _record_invitation_result(attendance, *, error: str = "", without_internal: bool = False) -> None:
+    """
+    Versandergebnis der Einladung je Person speichern (Issue #1071): Zeitpunkt der Übergabe an den Mailversand oder
+    der Grund, warum nichts rausging. Gilt jeweils für den letzten Versand (Erstversand oder Aktualisierung).
+    """
+    from .models import FactionAttendance
+
+    werte = {
+        "invitation_mailed_at": None if error else timezone.now(),
+        "invitation_error": error[:300],
+        "invitation_without_internal": without_internal and not error,
+    }
+    try:
+        FactionAttendance.objects.filter(pk=attendance.pk).update(**werte)
+    except Exception:
+        # Das Ergebnis ist eine Anzeige; ein Fehler beim Speichern darf den Versand nicht abbrechen
+        logger.exception("Versandergebnis der Einladung nicht gespeichert (attendance=%s)", attendance.pk)
+        return
+    for feld, wert in werte.items():
+        setattr(attendance, feld, wert)
+
+
+def _record_reminder_result(attendance, *, error: str = "") -> None:
+    """Ergebnis der Erinnerung an die offene Rückmeldung je Person (Issue #1071), wie beim Versand der Einladung."""
+    from .models import FactionAttendance
+
+    werte = {"rsvp_reminder_mailed_at": None if error else timezone.now(), "rsvp_reminder_error": error[:300]}
+    try:
+        FactionAttendance.objects.filter(pk=attendance.pk).update(**werte)
+    except Exception:
+        logger.exception("Ergebnis der Erinnerung nicht gespeichert (attendance=%s)", attendance.pk)
+        return
+    for feld, wert in werte.items():
+        setattr(attendance, feld, wert)
+
+
+class TestmailError(Exception):
+    """Testmail der Einladung nicht verschickt; die Meldung ist ein Satz für die Oberfläche."""
+
+
 class FactionMeetingEmailService:
     """
     Service for sending faction meeting emails (Issue #59).
@@ -173,10 +226,52 @@ class FactionMeetingEmailService:
         user = attendance.membership.user
         if not user.email:
             logger.warning(f"Skipping invitation for user {user.id} - no email address")
+            _record_invitation_result(attendance, error="Keine E-Mail-Adresse hinterlegt.")
             return False
 
         # NÖ-Teil nur für Vereidigte mit entsprechender Berechtigung
         include_internal = self._include_internal(attendance.membership)
+        subject, text_content, html_content = self._invitation_content(
+            meeting, user, include_internal=include_internal, update=update, invitation_mode=invitation_mode
+        )
+
+        try:
+            # Versand über den Weg der Organisation – eigenes SMTP oder mandari-Standard (Issue #65);
+            # Tagesordnung (ggf. mit NÖ-Teil) liegt bis zum Versand mit ihrem Schlüssel verschlüsselt
+            from apps.common import mail
+
+            uebergeben = mail.send(
+                kind="work.fraktion.einladung",
+                organization=meeting.organization,
+                subject=subject,
+                body=text_content,
+                html_body=html_content,
+                to=[user.email],
+                attachments=[
+                    ("tagesordnung.pdf", pdf_full if include_internal else pdf_public, "application/pdf"),
+                    ("sitzung.ics", ics_bytes, "text/calendar"),
+                ],
+                fail_silently=False,
+            )
+            if not uebergeben:
+                _record_invitation_result(attendance, error="Keine gültige E-Mail-Adresse hinterlegt.")
+                return False
+            logger.info(f"Invitation sent to {user.email} for meeting {meeting.id} (update={update})")
+            _record_invitation_result(attendance, without_internal=not include_internal)
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send invitation to {user.email}: {e}")
+            _record_invitation_result(attendance, error=_invitation_error_text(e, user.email))
+            return False
+
+    def _invitation_content(
+        self, meeting, user, *, include_internal: bool, update: bool = False, invitation_mode: str | None = None
+    ) -> tuple[str, str, str | None]:
+        """Betreff, Text und HTML der Einladung an ``user`` (auch für die Testmail, Issue #1071)."""
+        if invitation_mode is None:
+            from .invitations import get_invitation_settings
+
+            invitation_mode = get_invitation_settings(meeting.organization)["invitation_mode"]
         public_items = meeting.agenda_items.filter(visibility="public", proposal_status="active").order_by(
             "order", "number"
         )
@@ -192,7 +287,6 @@ class FactionMeetingEmailService:
             "meeting": meeting,
             "user": user,
             "organization": meeting.organization,
-            "attendance": attendance,
             "public_agenda_items": public_items,
             "internal_agenda_items": internal_items,
             "is_sworn_in": include_internal,
@@ -222,30 +316,7 @@ class FactionMeetingEmailService:
                 opt_out=invitation_mode == "opt_out",
                 rsvp=meeting.rsvp_enabled,
             )
-
-        try:
-            # Versand über den Weg der Organisation – eigenes SMTP oder mandari-Standard (Issue #65);
-            # Tagesordnung (ggf. mit NÖ-Teil) liegt bis zum Versand mit ihrem Schlüssel verschlüsselt
-            from apps.common import mail
-
-            mail.send(
-                kind="work.fraktion.einladung",
-                organization=meeting.organization,
-                subject=subject,
-                body=text_content,
-                html_body=html_content,
-                to=[user.email],
-                attachments=[
-                    ("tagesordnung.pdf", pdf_full if include_internal else pdf_public, "application/pdf"),
-                    ("sitzung.ics", ics_bytes, "text/calendar"),
-                ],
-                fail_silently=False,
-            )
-            logger.info(f"Invitation sent to {user.email} for meeting {meeting.id} (update={update})")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to send invitation to {user.email}: {e}")
-            return False
+        return subject, text_content, html_content
 
     def _get_simple_invitation_text(
         self,
@@ -371,10 +442,15 @@ class FactionMeetingEmailService:
         except Exception:
             logger.exception("In-App-Erinnerung fehlgeschlagen (meeting=%s)", meeting.id)
 
-    def _send_reminder_email(self, meeting, attendance, hours_before: int) -> bool:
-        """Send a single reminder email."""
+    def _send_reminder_email(self, meeting, attendance, hours_before: int, *, offen: bool = False) -> bool:
+        """
+        Eine Erinnerung senden. ``offen``: Erinnerung an die fehlende Rückmeldung („Offene erinnern“, Issue #1071);
+        dann wird das Ergebnis je Person festgehalten wie beim Versand der Einladung.
+        """
         user = attendance.membership.user
         if not user.email:
+            if offen:
+                _record_reminder_result(attendance, error="Keine E-Mail-Adresse hinterlegt.")
             return False
 
         context = {
@@ -383,23 +459,31 @@ class FactionMeetingEmailService:
             "organization": meeting.organization,
             "attendance": attendance,
             "hours_before": hours_before,
+            "rueckmeldung_offen": offen,
             "meeting_url": self.get_meeting_url(meeting),
         }
 
-        subject = f"Erinnerung: {meeting.title} in {hours_before} Stunden"
+        if offen:
+            subject = f"Bitte um Rückmeldung: {meeting.title}"
+        else:
+            subject = f"Erinnerung: {meeting.title} in {hours_before} Stunden"
 
         try:
             html_content, text_content = render_email("work/faction/email/reminder.html", context)
         except Exception:
             # Fall back to simple text
             html_content = None
-            text_content = f"Erinnerung: {meeting.title} findet in {hours_before} Stunden statt."
+            text_content = (
+                f"Erinnerung: Zu {meeting.title} fehlt noch deine Rückmeldung."
+                if offen
+                else f"Erinnerung: {meeting.title} findet in {hours_before} Stunden statt."
+            )
 
         try:
             # Versand über den Weg der Organisation (Issue #65)
             from apps.common import mail
 
-            mail.send(
+            uebergeben = mail.send(
                 kind="work.fraktion.erinnerung",
                 organization=meeting.organization,
                 subject=subject,
@@ -408,10 +492,78 @@ class FactionMeetingEmailService:
                 to=[user.email],
                 fail_silently=False,
             )
-            return True
+            if offen:
+                _record_reminder_result(
+                    attendance, error="" if uebergeben else "Keine gültige E-Mail-Adresse hinterlegt."
+                )
+            return bool(uebergeben) if offen else True
         except Exception as e:
             logger.error(f"Failed to send reminder to {user.email}: {e}")
+            if offen:
+                _record_reminder_result(attendance, error=_invitation_error_text(e, user.email))
             return False
+
+    def send_rsvp_reminder(self, meeting) -> tuple[int, int]:
+        """
+        „Offene erinnern“ (Issue #1071): nur an eingeladene aktive Mitglieder ohne Rückmeldung (keine Gäste).
+        Liefert (verschickt, nicht verschickt); das Ergebnis steht je Person an der Teilnahme.
+        """
+        attendances = list(
+            invitation_attendances(meeting).exclude(membership__is_guest=True).select_related("membership__user")
+        )
+        hours_before = max(1, int((meeting.start - timezone.now()).total_seconds() // 3600))
+        ok = sum(1 for a in attendances if self._send_reminder_email(meeting, a, hours_before, offen=True))
+        return ok, len(attendances) - ok
+
+    # -- Testmail der Einladung --------------------------------------------
+
+    def send_test_invitation(self, meeting, membership) -> str:
+        """
+        Testmail der Einladung an die eigene Adresse (Issue #1071, wie „Testmail senden“ unter Einstellungen ›
+        E-Mail-Versand, #65): derselbe Text und dieselben Anhänge, die diese Person beim Versand erhielte (mit
+        nichtöffentlichem Teil nur für Vereidigte), sofort über den Versandweg der Organisation. Ändert nichts an der
+        Sitzung und am Versandergebnis. Liefert die Erfolgsmeldung; Fehler als ``TestmailError`` mit Satz.
+        """
+        from apps.common import mail
+        from apps.common.org_email import OrgMailError
+
+        user = membership.user
+        if not user.email:
+            raise TestmailError("Ihr Benutzerkonto hat keine E-Mail-Adresse.")
+        include_internal = self._include_internal(membership)
+        subject, text_content, html_content = self._invitation_content(meeting, user, include_internal=include_internal)
+        try:
+            ok = mail.send(
+                kind="work.fraktion.einladung.test",
+                organization=meeting.organization,
+                subject=f"Testmail – {subject}",
+                body=text_content,
+                html_body=html_content,
+                to=[user.email],
+                attachments=[
+                    (
+                        "tagesordnung.pdf",
+                        self.build_agenda_pdf(meeting, include_internal=include_internal),
+                        "application/pdf",
+                    ),
+                    ("sitzung.ics", self.build_meeting_ics(meeting), "text/calendar"),
+                ],
+                fail_silently=False,
+                sofort=True,
+            )
+        except OrgMailError as exc:
+            logger.warning("Testmail der Einladung über Organisations-SMTP fehlgeschlagen (meeting=%s)", meeting.pk)
+            raise TestmailError(
+                "Testmail nicht verschickt: Der Versand über den eigenen Mailserver war nicht möglich. Bitte prüfen "
+                "Sie die Zugangsdaten unter Einstellungen › E-Mail-Versand."
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 – Fehler verständlich anzeigen
+            logger.warning("Testmail der Einladung fehlgeschlagen (meeting=%s)", meeting.pk)
+            raise TestmailError(f"Testmail nicht verschickt. {_invitation_error_text(exc, user.email)}") from exc
+        if not ok:
+            raise TestmailError("Testmail nicht verschickt: Ihre E-Mail-Adresse ist ungültig.")
+        jetzt = timezone.localtime()
+        return f"Testmail an {user.email} versendet, {jetzt:%H:%M}. Bitte prüfen Sie Ihr Postfach."
 
 
 def run_faction_reminder_pass(now=None) -> dict:

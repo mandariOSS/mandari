@@ -20,7 +20,7 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
 | Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
 | Weiterleitungen | höchstens fünf je Abruf, jede erst nach der robots.txt ihres Ziels und mit eigenem Zeitpunkt im Takt |
 | Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
-| Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer die Quelle hat ein eigenes Zeitfenster oder Zeitscheiben (siehe [Vollabgleich](#vollabgleich)) |
+| Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer eine Quelle mit OParl-Schnittstelle hat ein eigenes Zeitfenster, Zeitscheiben oder einen noch nicht erreichten Mindestabstand (`full_sync_every_days`) (siehe [Vollabgleich](#vollabgleich)) |
 | Langsame Listen | eine optionale Liste, die in eine Zeitüberschreitung läuft, ruht 1 Stunde, danach jeweils doppelt so lange, höchstens 24 Stunden |
 | Neue Quellen | von unseren Werkzeugen inaktiv angelegt; regelmäßig abgefragt wird eine Quelle erst, wenn sie aktiv ist. Ausnahmen: das Formular im Admin, `import_oparl_sources --activate` und die eigene Schnittstelle eines Session-Mandanten. Neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
@@ -90,6 +90,11 @@ Von Hand kommen zwei Werkzeuge hinzu, ebenfalls nach der robots.txt und im selbe
   (`INGESTOR_REQUEST_INTERVAL`); hat eine registrierte Quelle auf dem Server einen größeren Abstand, gilt dieser.
   Zwischen zwei Kommunen liegen zusätzlich 2 Sekunden Pause (`ingestor/src/main.py`, `probe_ris`).
 
+Der lokale Spiegel `manage.py sync_session_insight` (`mandari/insight_sync/session_mirror.py`) ruft dagegen ohne
+robots.txt und ohne Takt je Server ab, mit der Kennung `mandari-session-mirror/1.0`. Er gleicht deshalb nur
+Session-Quellen ab, also die eigene Schnittstelle eines Session-Mandanten (`sync_config["session_tenant"]`); andere
+Quellen lehnt er auch mit `--source-url` ab und verweist auf `python -m src.main sync --source`.
+
 ### Neue Quellen und Kommunen
 
 Eine neue Quelle fragt der Ingestor regelmäßig erst ab, wenn sie aktiv ist (Issue
@@ -110,8 +115,9 @@ sie aber aktiv an:
   übernimmt dann nur Name, Kontakt, Website, OParl-Version und Rohdaten aus dem System-Objekt („Status
   unverändert: …“). Anders beim Session-Mandanten: Seine Quelle schaltet mandari beim Veröffentlichen wieder ein.
 - **Regelmäßig** gleichen der Daemon und `sync --all` nur aktive Quellen ab (`get_all_sources`); aktiviert wird im
-  Admin. Von Hand angestoßene Abgleiche laufen auch bei inaktiven Quellen: die Aktionen an einer Quelle im Admin (dann
-  im Worker der Anwendung, siehe [Rhythmus](#rhythmus)), `sync --source` und `sync --body`.
+  Admin. Von Hand im Container `ingestor` laufen Abgleiche auch bei inaktiven Quellen: `sync --source` und
+  `sync --body`. Die Sync-Aktionen im Admin gleichen eine inaktive Quelle nicht ab; sie nennen den Befehl für einen
+  Probelauf (siehe [Rhythmus](#rhythmus)).
 - **Neue Kommunen sind nicht gelistet** (`is_listed = false`), ob der Abgleich sie findet (`upsert_body`, auch bei
   Scraper-Quellen) oder `add_oparl_source` sie anlegt (Ausgabe „Nicht gelistet: …“). Vorhandene Kommunen behalten ihre
   Sichtbarkeit; der Abgleich überschreibt `is_listed` nie (`ENRICHMENT_FIELDS`). Bis wir eine Kommune im Admin
@@ -308,9 +314,9 @@ Kommune.
 
 Jede Quelle hat ihren eigenen Takt; einen gemeinsamen Durchlauf über alle Quellen gibt es im Daemon des Ingestors
 nicht mehr (`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.py`, Issue
-[#1026](https://github.com/mandariOSS/mandari/issues/1026)). Die Uhrzeiten gelten in Ortszeit `Europe/Berlin`. Das
-ältere Kommando `manage.py sync_daemon` der Anwendung gleicht dagegen weiter alle Quellen gemeinsam ab (siehe
-[Für Selbstbetreiber](#für-selbstbetreiber)).
+[#1026](https://github.com/mandariOSS/mandari/issues/1026)). Die Uhrzeiten gelten in Ortszeit `Europe/Berlin`. Die
+Anwendung gleicht seit Issue [#554](https://github.com/mandariOSS/mandari/issues/554) selbst nicht mehr ab; ihr
+Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
 
 | Wann | Abstand zwischen zwei Läufen einer Quelle | Schlüssel in `sync_config["sync_schedule"]` |
 |---|---|---|
@@ -366,7 +372,11 @@ nicht mehr (`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.p
   nach höchstens 20 Seiten (`MAX_BODY_PAGES`, wie beim Werkzeug „Quelle anlegen“) und wenn `links.next` auf eine schon
   gelesene Seite zeigt: Eine fehlerhafte Liste läuft so nicht endlos. Ist schon die erste Seite nicht lesbar, findet
   der Lauf keine Kommune und gilt als fehlgeschlagen (siehe [Fehler und Schonung](#fehler-und-schonung)). Eine Liste,
-  die im Kreis läuft, bricht bei jeder Liste ab, nicht nur bei der Kommunenliste (`OParlClient.fetch_list`).
+  die im Kreis läuft, bricht bei jeder Liste ab, nicht nur bei der Kommunenliste (`OParlClient.fetch_list`). Im Kreis
+  läuft auch eine Liste, deren Folgeseiten unter immer neuer Adresse dieselben Einträge liefern (Sammelserver von
+  OWL-IT, Issue [#1088](https://github.com/mandariOSS/mandari/issues/1088)): Bringen zwei Seiten in Folge keine
+  Kennung, die nicht schon auf ihrer vorigen Seite stand, und nennt die Quelle noch eine Folgeseite, bricht die Liste
+  ab; Seiten ohne Kennungen zählen nicht, verglichen wird nur mit der vorigen Seite.
 - Neu entdeckte Kommunen sind nicht gelistet (`upsert_body`, siehe
   [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)).
 - **Auslöser:** „Jetzt synchronisieren“ auf der Startseite des Admins (alle aktiven Quellen) und die Aktionen
@@ -376,39 +386,46 @@ nicht mehr (`ingestor/src/scheduler/__init__.py`, `ingestor/src/scheduler/takt.p
   robots.txt, Takt je Server, das eigene Zeitfenster der Quelle (`full_sync_window`), `full_sync_every_days` und
   Schonung gelten auch dann. Ohne eigenes Fenster beginnt ein angeforderter Vollabgleich sofort, auch tagsüber, und
   läuft zu Ende; ein Vollabgleich in Zeitscheiben nur im Standardfenster, außerhalb läuft stattdessen ein
-  Änderungsabgleich (`SourceFetchOptions.full_sync_plan`, siehe [Vollabgleich](#vollabgleich)). Auslöser für
+  Änderungsabgleich (`SourceFetchOptions.full_sync_plan`, siehe [Vollabgleich](#vollabgleich)). Ausnahme
+  Scraper-Quellen (`source_type = "scraper:*"`): `sync_body_url` gibt sie vor `_full_sync_plan` an
+  `ScraperSyncRunner.run(full=full)` ab (`SyncOrchestrator._scraper_runner`); Zeitfenster und
+  `full_sync_every_days` gelten für sie nur im geplanten Vollabgleich (`full_sync_due`). Auslöser für
   unbekannte oder inaktive Quellen verwirft der Daemon (`mandari/insight_sync/daemon.py`, `trigger_sync`;
-  `mandari/insight_core/admin.py`, `request_source_sync`; `SyncScheduler._expand_triggers`). Findet „Jetzt
-  synchronisieren“ keinen Daemon, meldet der Admin einen Fehler (`mandari/insight_sync/admin.py`, `trigger_sync_view`).
-  Solange irgendein Sync-Protokoll den Status „läuft“ hat, lehnt „Jetzt synchronisieren“ mit „Ein Sync läuft
-  bereits.“ ab. Diesen Status tragen nur Läufe über `run_sync_with_logging`, also Aufträge im Worker der Anwendung
-  (siehe unten) und das ältere `manage.py sync_daemon`, solange sie laufen, längstens bis der Zeitplan
-  `haengende_syncs_bereinigen` sie als fehlgeschlagen markiert: Er prüft alle 5 Minuten und erfasst Protokolle, die
-  seit mehr als 15 Minuten „läuft“ melden (`mandari/insight_sync/schedules.py`; `cleanup_stale_syncs`, `STALE_AFTER`).
-  „Jetzt synchronisieren“ ist so höchstens etwa 20 Minuten gesperrt, auch wenn der Lauf länger dauert. Der Daemon des
-  Ingestors schreibt sein Protokoll erst am Ende eines Laufs. Die Aktionen an einer Quelle prüfen das nicht.
-- Die Aktionen an einer Quelle laufen stattdessen als Auftrag im Worker der Anwendung, wenn die Quelle abgeschaltet
-  ist, kein Daemon als laufend gilt (weder sein Lebenszeichen in Redis, siehe unten, noch ein Sync-Protokoll der
-  letzten 30 Minuten; `is_ingestor_active`) oder die Nachricht keinen Empfänger fand. Der Auftrag nutzt den Code des
-  Ingestors aus dem Image der Anwendung (`run_sync_in_thread`; `mandari/insight_sync/tasks.py`,
-  `run_sync_with_logging`). Er beachtet robots.txt, Takt je Server und das eigene Zeitfenster der Quelle, aber nicht
-  die [Schonung](#fehler-und-schonung), ebenso wie `python -m src.main sync --source` bzw. `--body`; ohne eigenes
-  Fenster beginnt auch hier ein Vollabgleich sofort. Dabei gilt die Umgebung des Workers, nicht die des Ingestors
-  (siehe [Für Selbstbetreiber](#für-selbstbetreiber)). `python -m src.main sync --all` gleicht alle aktiven Quellen
-  einmal ab, höchstens 2 zugleich (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne den Abgleichrhythmus der
-  Quelle (`sync_schedule`); Abstand je Quelle (`request_interval`) und Takt je Server gelten.
+  `SyncScheduler._expand_triggers`).
+- **Nur über den Ingestor:** Einen Rückfall auf den Worker der Anwendung gibt es seit Issue
+  [#554](https://github.com/mandariOSS/mandari/issues/554) nicht mehr. Nimmt kein Daemon den Auslöser an, meldet der
+  Admin einen Fehler: bei „Jetzt synchronisieren“, wenn die Nachricht keinen Empfänger fand
+  (`mandari/insight_sync/admin.py`, `trigger_sync_view`), bei den Aktionen an einer Quelle auch, wenn kein Daemon als
+  laufend gilt (weder sein Lebenszeichen in Redis, siehe unten, noch ein Sync-Protokoll der letzten 30 Minuten;
+  `is_ingestor_active`; `mandari/insight_core/admin.py`, `request_source_sync`). Für eine inaktive Quelle schicken die
+  Aktionen keinen Auslöser; der Admin warnt und nennt den Befehl für einen Probelauf von Hand,
+  `python -m src.main sync --source <Basis-URL>` im Container `ingestor` (`manual_sync_command`). Eine neue Quelle
+  wird so erst nach ihrer Prüfung regelmäßig abgefragt (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)).
+  Vor dem Deploy eingereihte Aufträge `quelle_synchronisieren` tun nichts außer einer Warnung im Log.
+- Solange irgendein Sync-Protokoll den Status „läuft“ hat, lehnt „Jetzt synchronisieren“ mit „Ein Sync läuft
+  bereits.“ ab; der Zeitplan `haengende_syncs_bereinigen` markiert solche Protokolle nach 15 Minuten als
+  fehlgeschlagen (prüft alle 5 Minuten; `mandari/insight_sync/schedules.py`; `cleanup_stale_syncs`, `STALE_AFTER`).
+  Seit Issue [#554](https://github.com/mandariOSS/mandari/issues/554) schreibt kein Weg mehr diesen Status: Daemon und
+  Kommandozeile schreiben ihr Protokoll erst am Ende eines Laufs.
+- **Von Hand:** `python -m src.main sync --source <Basis-URL>` bzw. `--body` im Container `ingestor` gleicht eine
+  Quelle über denselben Einstieg ab wie der Daemon (`SyncOrchestrator.sync_body_url`), auch eine inaktive. Es beachtet
+  robots.txt, Takt je Server, das eigene Zeitfenster der Quelle und `full_sync_every_days`, aber nicht die
+  [Schonung](#fehler-und-schonung); ohne eigenes Fenster beginnt ein Vollabgleich sofort. Scraper-Quellen gleicht es
+  wie der Daemon über den Scraper ab (`SyncOrchestrator._scraper_runner`), ohne Zeitfenster und Mindestabstand.
+  `--filter` (nur mit `--source`) beschränkt den Abgleich auf Kommunen, deren Name oder Kennung passt; er gilt dann
+  nicht als vollständig. Für Scraper-Quellen wirkt der Filter nicht.
+  `python -m src.main sync --all` gleicht alle aktiven Quellen einmal ab, höchstens 2 zugleich
+  (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne den Abgleichrhythmus der Quelle (`sync_schedule`); Abstand je
+  Quelle (`request_interval`) und Takt je Server gelten.
 - **Protokoll und Metriken:** Jeder Lauf des Daemons schreibt ein Sync-Protokoll für seine Quelle
   (`insight_sync_synclog` mit `source_id`, `triggered_by` `daemon` oder `admin` und `sync_type` so, wie der Lauf
   tatsächlich lief) mit den Zählern, höchstens 20 Fehlern, der Zahl der Abrufe (`details.requests`) und dem Takt
   (`details.takt`: Art, Abstand, Läufe ohne Änderung, nächster Lauf), dazu gegebenenfalls ausgesetzte Listen
   (`details.suspended_lists`) und den Stand der Zeitscheiben (`details.full_sync_slices`; `SyncScheduler._write_log`).
-  Ein Auftrag im Worker schreibt sein Protokoll mit `triggered_by` `admin`, dem angeforderten `sync_type`, allen
-  Fehlern und nur den Zählern (`run_sync_with_logging`). Ein Lauf über die Kommandozeile schreibt eines für den ganzen
-  Aufruf, ohne `source_id`, mit `triggered_by` `cli`, dem angeforderten `sync_type` und höchstens 20 Fehlern
-  (`write_results_to_synclog`). Gelingt der Abgleich einer einzelnen Quelle im Worker oder mit `sync --source`,
-  schreibt er zusätzlich ein Protokoll der Quelle (`triggered_by` `daemon`, tatsächlicher `sync_type`, Status
-  „erfolgreich“; `SyncOrchestrator.sync_source`); scheitert er, entsteht dieses Protokoll nicht. Metriken je Quelle
-  stehen in [`MONITORING.md`](MONITORING.md#metriken).
+  Ein Lauf über die Kommandozeile schreibt eines für den ganzen Aufruf, ohne `source_id`, mit `triggered_by` `cli`,
+  dem angeforderten `sync_type` und höchstens 20 Fehlern (`write_results_to_synclog`); `sync --source` schreibt seit
+  Issue [#554](https://github.com/mandariOSS/mandari/issues/554) kein zweites Protokoll der Quelle mit `triggered_by`
+  `daemon` mehr. Metriken je Quelle stehen in [`MONITORING.md`](MONITORING.md#metriken).
 - **Lebenszeichen:** Der Daemon schreibt bei jeder Prüfung `mandari:ingestor:heartbeat` in Redis (läuft nach
   180 Sekunden ab, `HEARTBEAT_TTL_SECONDS`). Daran erkennt die Anwendung, dass er läuft, auch wenn nachts eine Stunde
   lang kein Lauf beginnt (`mandari/insight_sync/daemon.py`, `is_ingestor_active`).
@@ -494,12 +511,18 @@ Der Vermerk „filtert nicht“ gilt je Liste und nur für die Quelle, bei der e
 
 - Antwortet schon die erste Seite einer optionalen Liste (Mitgliedschaften, Tagesordnungspunkte, Beratungen,
   Dateien, Orte; `OPTIONAL_LIST_TYPES`) ohne Filter mit HTTP 404 oder einem OParl-Fehlerobjekt, gibt es die Liste
-  bei dieser Quelle nicht. Der Ingestor vermerkt sie am Ende des Laufs mit dem Zeitpunkt der Prüfung in
+  bei dieser Quelle nicht. Der Ingestor vermerkt sie am Ende des Laufs mit Grund und Zeitpunkt der Prüfung in
   `sync_config["missing_lists"]`, aber nur, wenn mindestens eine andere Liste der Kommune lesbar war. Sonst gilt das
   als Störung der Schnittstelle: Lücke im Abgleich, kein Vermerk (`_settle_missing_lists`).
-- Pflichtlisten (Gremien, Personen, Sitzungen, Vorlagen) vermerkt er nie. Ein HTTP 404 bleibt dort eine Lücke, und
-  der nächste Lauf fragt die Liste wieder an. Ein Fehlerobjekt gilt dort als leere Liste, solange eine andere Liste
-  der Kommune lesbar war, sonst ebenfalls als Lücke.
+- Pflichtlisten (Gremien, Personen, Sitzungen, Vorlagen) vermerkt er nie als fehlend. Ein HTTP 404 bleibt dort eine
+  Lücke, und der nächste Lauf fragt die Liste wieder an. Ein Fehlerobjekt gilt dort als leere Liste, solange eine
+  andere Liste der Kommune lesbar war, sonst ebenfalls als Lücke.
+- **Nicht freigegeben:** Listen, die die Kommune mit HTTP 403 für alle sperrt (auch ohne Filter, und die
+  Vergleichsanfrage mit neutralem Client bekommt ebenfalls eine Absage), etwa die Personen und Mitgliedschaften der
+  Stadt Bochum, gelten als nicht freigegeben. Sie werden wie fehlende Listen vermerkt (Grund „nicht freigegeben“),
+  auch Pflichtlisten, und täglich neu geprüft; der Lauf bleibt vollständig, ein Vermerk „filtert nicht“ entfällt. Ist
+  nur unser User-Agent gesperrt oder bleibt die Vergleichsanfrage unklar, bleibt es eine Lücke (Issue
+  [#1086](https://github.com/mandariOSS/mandari/issues/1086)).
 - Vermerkte Listen fragt der inkrementelle Lauf einmal am Tag an (`MISSING_LIST_RECHECK`), dann mit dem Fenster von
   sieben Tagen; der Vollabgleich fragt sie jedes Mal an, der Vollabgleich in Zeitscheiben nicht. Gibt es die Liste
   wieder, löscht der Ingestor den Vermerk. Antwortet SD.NET RIM auf die Prüfung nur mit „keine Treffer“ (HTTP 404,
@@ -565,10 +588,11 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   `INGESTOR_FULL_SYNC_HOUR`; `.env.example` und Helm `ingestor.fullSyncHour` ebenfalls 3). Die von uns betriebene
   Instanz beginnt um 01:00 Uhr, ihr Standardfenster reicht also bis 06:00 Uhr. Werte außerhalb von 0 bis 23 schalten
   geplante Vollabgleiche ab, auch in eigenen Fenstern der Quellen; im Admin angeforderte bleiben möglich.
-- **Von Hand angefordert:** Ein im Admin angeforderter Vollabgleich hält nur das eigene `full_sync_window` der Quelle
-  ein. Ohne eigenes Fenster beginnt er sofort, auch tagsüber, und läuft zu Ende; das Standardfenster bindet nur den
-  Vollabgleich in Zeitscheiben (siehe „Auslöser“ unter [Rhythmus](#rhythmus) und
-  [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)).
+- **Von Hand angefordert:** Ein im Admin angeforderter Vollabgleich hält das eigene `full_sync_window` der Quelle und
+  `full_sync_every_days` ein (`SourceFetchOptions.full_sync_plan`, `SyncOrchestrator._full_sync_plan`); bei
+  Scraper-Quellen gelten beide nur für den geplanten Vollabgleich. Ohne eigenes Fenster beginnt er sofort, auch
+  tagsüber, und läuft zu Ende; das Standardfenster bindet nur den Vollabgleich in Zeitscheiben (siehe „Auslöser“
+  unter [Rhythmus](#rhythmus) und [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)).
 - **Einmal je Fenster:** Den Beginn hält der Daemon in `sync_config["sync_state"]["full_attempted"]` fest. Ein
   abgebrochener oder unvollständiger Vollabgleich wird im nächsten Fenster wiederholt, nicht in derselben Nacht;
   auch ein Neustart des Ingestors startet ihn nicht ein zweites Mal.
@@ -601,6 +625,8 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 - **Nach dem Ende des eigenen Fensters** holt ein laufender Vollabgleich keine weitere Seite; der Ingestor prüft das
   vor jeder Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als
   vollständig, das Änderungsfenster rückt nicht vor, und die Listen kommen beim nächsten Vollabgleich wieder dran.
+  Scraper-Quellen kennen diese Frist derzeit nicht (`ScraperSyncRunner.run` ohne `fetch_deadline`): Ein begonnener
+  Vollabgleich läuft bei ihnen zu Ende, auch nach dem Ende ihres eigenen Fensters.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung
   und die Abrufe der Anwendung richten sich nicht danach.
 
@@ -643,7 +669,7 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   `full_sync_window`, sonst dem Standardfenster des Daemons (ab `--full-sync-hour` für 5 Stunden,
   `SourceFetchOptions.sync_window`). Weil jede Scheibe mindestens eine Anfrage kostet, kann ein Durchgang mehrere
   Fenster brauchen; der Fortschritt bleibt dazwischen erhalten. Außerhalb des Fensters, und wenn kein Fenster bekannt
-  ist (Aufruf über die Kommandozeile oder als Auftrag im Worker der Anwendung ohne eigenes `full_sync_window`,
+  ist (Aufruf über die Kommandozeile ohne eigenes `full_sync_window`,
   geplanter Vollabgleich abgeschaltet), läuft statt seiner ein Änderungsabgleich (`SourceFetchOptions.full_sync_plan`).
   Für Hamm empfiehlt sich ein eigenes Fenster, etwa `{"start": "00:00", "end": "06:00"}`.
 - **Fehlende Listen:** Listen mit Vermerk in `missing_lists` fragt der Vollabgleich in Zeitscheiben nicht an; SD.NET
@@ -668,13 +694,16 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   (`details.full_sync_slices.without_modified`). Unter `details.full_sync_slices.lists` steht je Liste, wie viele
   Scheiben der Lauf gelesen hat, ob sie fertig ist und wo die nächste beginnt (`BodySlices.summary`).
 - Abstand (`full_sync_every_days`) und Takt je Server gelten unverändert.
+- Nur bei Quellen mit OParl-Schnittstelle: Bei Scraper-Quellen bleibt `full_sync_slices` ohne Wirkung, ihr
+  Vollabgleich ist ein vollständiger Crawl (`SyncOrchestrator._scraper_runner` vor `_slice_run`).
 
 ## Dokumente
 
 Dateien (Vorlagen, Anlagen, Niederschriften, fast immer PDF) laden Ingestor und Anwendung unter folgenden Regeln.
 Für alle gilt: robots.txt wie oben, Takt je Server wie oben, Weiterleitungen wie oben, und
 `sync_config["file_downloads"] = false` schaltet den Dateiabruf einer Quelle ganz ab. Die Vorschau verweist dann auf
-das Original.
+das Original, ohne einen Grund zu nennen: Der Schalter steht bei einer Zugangsprüfung für Menschen ebenso wie nach
+einem Opt-out (`mandari/insight_core/views/files.py`, `_deliver_file`).
 
 ### Texterkennung im Ingestor
 
@@ -710,8 +739,11 @@ das Original.
 - **Größe:** höchstens 80 MB je Datei (`FILE_CACHE_MAX_MB`).
 - **Abgeschaltet und Schonung:** Eine abgeschaltete Quelle (`is_active`) fragen Dokument-Cache und Personenfotos
   nicht an. Vorschau und Löschabgleich richten sich nur nach `file_downloads` und der Schonung, nicht nach
-  `is_active`. Sollen gar keine Abrufe mehr stattfinden, gehört zur Abschaltung deshalb auch
-  `file_downloads = false`; eine Sperre per robots.txt wirkt ohnehin bei allen Abrufen. Nach drei fehlgeschlagenen
+  `is_active`. Sollen gar keine Abrufe beim Ratsinformationssystem mehr stattfinden, gehört zur Abschaltung deshalb
+  auch `file_downloads = false`; eine Sperre per robots.txt wirkt ohnehin bei allen Abrufen bei
+  Ratsinformationssystemen. Umringe vom Geoportal (`PlanBoundarySource.is_active`) und Live-Übertragung
+  (`BroadcastSource.active`) werten die robots.txt nicht aus und werden getrennt abgeschaltet (siehe
+  [Andere Abrufe](#andere-abrufe)). Nach drei fehlgeschlagenen
   Läufen des Abgleichs in Folge fragen Dokument-Cache, Vorschau, Löschabgleich und Personenfotos die Quelle nicht
   an, bis ein Lauf sie wieder erreicht (`INSIGHT_SOURCE_BACKOFF_FAILURES`; was als fehlgeschlagen zählt, steht unter
   [Fehler und Schonung](#fehler-und-schonung)).
@@ -836,7 +868,7 @@ Befund zurückzusetzen:
 | `sync_state` | Takt der Quelle: nächster fälliger Lauf (`next_due`), Läufe ohne Änderung in Folge (`idle_runs`), Abstand und Art des Grundtakts (`interval_minutes`, `base_minutes`, `period`), letzter Lauf und seine Änderungen (`last_run`, `last_changes`), Beginn des letzten Vollabgleichs (`full_attempted`); Zeitpunkte in UTC. Löschen macht die Quelle sofort fällig und erlaubt einen Vollabgleich im laufenden Fenster |
 | `body_sync_started` | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (UTC), Anfang des Änderungsfensters; nach nicht gespeicherten Objekten höchstens deren ältestes `modified`. Löschen setzt das Änderungsfenster auf sieben Tage zurück |
 | `timed_lists` | Listen, deren `modified` nachweislich eine Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC); nur sie bekommen das kurze Fenster. Löschen lässt die Listen ab Tagesbeginn laufen, bis ein Lauf die Uhrzeit wieder nachweist |
-| `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, mit dem Zeitpunkt der letzten Prüfung (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
+| `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, und Listen, die sie nicht freigibt (HTTP 403 für alle), mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
 | `slow_lists` | Optionale Listen, die nach Zeitüberschreitungen ausgesetzt sind: Zeitüberschreitungen in Folge (`failures`), ausgesetzt bis (`until`), eigener Fensteranfang (`since`), Grund (`reason`); Zeitpunkte in UTC. Löschen beendet die Aussetzung; die Liste läuft dann wieder mit dem Fenster der Kommune. Das ist während der Aussetzung weitergerückt: Änderungen ab `since` bis zum Fenster der Kommune holen inkrementelle Läufe dann nicht mehr nach, erst der nächste Vollabgleich der Quelle. Besser `until` auf einen vergangenen Zeitpunkt setzen: Dann holt der nächste Lauf die Liste ab `since` nach |
 | `full_sync_progress` | Fortschritt des Vollabgleichs in Zeitscheiben: je Liste der Beginn der nächsten Scheibe (Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Vollabgleich wieder bei `since` beginnen |
 | `full_sync_filter_ignored` | Befund „Server ignoriert den Filter einer Zeitscheibe“ (`checked_at`, `list`, `detail`). Solange er jünger als 30 Tage ist, läuft der Vollabgleich nur als Änderungsabgleich; Löschen lässt den nächsten Vollabgleich die Zeitscheiben wieder versuchen |
@@ -867,7 +899,7 @@ Ingestor (`ingestor/src/config.py`; Groß- und Kleinschreibung egal):
 | `CIRCUIT_BREAKER_FAILURE_THRESHOLD`, `CIRCUIT_BREAKER_RECOVERY_TIMEOUT` | `5`, `60` | Schutzschalter je Server |
 | `INGESTOR_SYNC_POOL_SIZE` | `4` | Quellen gleichzeitig im Daemon, je Quelle ein Lauf; Vollabgleiche auf höchstens allen Plätzen bis auf einen |
 | `SYNC_BODY_CONCURRENCY`, `SYNC_ENTITY_CONCURRENCY` | `2`, `2` | Kommunen je Quelle und Listen je Kommune gleichzeitig |
-| `SYNC_SOURCE_CONCURRENCY` | `2` | Quellen gleichzeitig bei `sync --all` und im Worker der Anwendung (nicht im Daemon) |
+| `SYNC_SOURCE_CONCURRENCY` | `2` | Quellen gleichzeitig bei `sync --all` (nicht im Daemon) |
 | `TEXT_EXTRACTION_ENABLED` | `true` | Texterkennung im Abgleich |
 | `TEXT_EXTRACTION_BATCH_SIZE`, `TEXT_EXTRACTION_CONCURRENCY`, `TEXT_EXTRACTION_MAX_SIZE_MB` | `500`, `4`, `50` | Dateien je Kommune und Lauf, gleichzeitig, Größe |
 | `TEXT_EXTRACTION_RUNNER` | `ingestor` | `worker`: Ingestor lädt keine Dateien |
@@ -903,21 +935,19 @@ nach. Im Helm-Chart: `ingestor.extraEnv` bzw. `app.extraEnv`.
   Variable in den Abschnitt `environment` des Dienstes `ingestor`, im Helm-Chart in `ingestor.extraEnv`; ein
   Eintrag nur in der `.env` wirkt nicht. Regeln der robots.txt für `mandari-ingestor` gelten weiter, weil mandari
   dieses Token immer zusätzlich prüft.
-- Die Sync-Aktionen an einer Quelle im Admin gehen an den Daemon, solange er läuft; ohne Daemon und für
-  abgeschaltete Quellen laufen sie im Worker der Anwendung, ohne Schonung (siehe [Rhythmus](#rhythmus)).
-  `INGESTOR_USER_AGENT` und die übrigen Variablen des Ingestors (`INGESTOR_*`, `OPARL_*`) gehören deshalb auch in
-  dessen Umgebung: unter Docker Compose in `x-app-environment`, im Helm-Chart in `app.extraEnv`. Sonst ruft der
-  Worker mit der Standardkennung samt support@mandari.de ab.
+- Die Sync-Aktionen im Admin gehen nur an den Daemon des Ingestors (siehe [Rhythmus](#rhythmus)); die Anwendung
+  gleicht seit Issue [#554](https://github.com/mandariOSS/mandari/issues/554) selbst nicht mehr ab.
+  Abrufvariablen des Ingestors wie `INGESTOR_USER_AGENT` wirken deshalb nur im Dienst `ingestor`; für den Abgleich
+  müssen sie nicht mehr zusätzlich in `x-app-environment` bzw. `app.extraEnv` stehen.
 - Die Abrufe der Anwendung (Dokument-Cache, Vorschau, Löschabgleich, Personenfotos, Quellenanlage, Live-Übertragung
   und Geodienste) melden sich mit der festen Kennung
   `mandari-ingestor (+https://mandari.de/ingestor/; support@mandari.de)`. Eine Umgebungsvariable dafür gibt es nicht;
   abweichend nur je Quelle über `sync_config["download_headers"]` (nicht für Quellenanlage, Live-Übertragung und
   Geodienste).
-- Das ältere Kommando `manage.py sync_daemon` der Anwendung gleicht alle aktiven Quellen gemeinsam ab, in festem
-  Abstand (Sync-Einstellung im Admin, `SyncConfig.interval_minutes`, angelegt aus `SYNC_INTERVAL_MINUTES`) und einmal
-  am Tag vollständig (`SyncConfig.full_sync_hour`, angelegt aus `SYNC_FULL_HOUR`), wie `sync --all` ohne den Takt je
-  Quelle (`mandari/insight_sync/management/commands/sync_daemon.py`). Docker Compose und das Helm-Chart starten es
-  nicht; verwenden Sie den Daemon des Ingestors.
+- Das ältere Kommando `manage.py sync_daemon` der Anwendung samt Sync-Einstellung im Admin (`SyncConfig`,
+  `SYNC_INTERVAL_MINUTES`, `SYNC_FULL_HOUR`) gibt es seit Issue
+  [#554](https://github.com/mandariOSS/mandari/issues/554) nicht mehr; Docker Compose und das Helm-Chart starteten es
+  nie. Abgeglichen wird nur im Daemon des Ingestors.
 - Den gemeinsamen Takt über alle Prozesse gibt es nur mit Redis, das Ingestor und Anwendung beide erreichen.
 - Liegt ein RIS im eigenen Netz, braucht die Anwendung `INSIGHT_FETCH_ALLOW_PRIVATE_NETWORKS=true`.
 

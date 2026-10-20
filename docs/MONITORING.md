@@ -211,6 +211,14 @@ Bericht ohne Versand: `python manage.py check_source_health --report`
 `apps/common/metrics.py`). Alle Werte gelten je Prozess und beginnen beim Neustart bei null –
 das ist für Prometheus normal (`rate()`/`increase()` rechnen Neustarts heraus).
 
+Mit mehreren Anwendungsprozessen (`APP_PROCESSES`, `DEPLOYMENT.md`, „Mehrere Anwendungsprozesse“)
+beantwortet ein beliebiger Prozess den Abruf. Zähler und Histogramme sind dann über alle Prozesse
+summiert (prometheus_client im Mehrprozessbetrieb, `PROMETHEUS_MULTIPROC_DIR`) und beginnen erst mit
+einem Neustart des Containers bei null, nicht mit dem Neustart eines einzelnen Prozesses. Die Werte, die
+erst beim Abruf gemessen werden, gelten weiter für den antwortenden Prozess: `mandari_db_pool_*` zeigt
+den Pool eines Prozesses (die Belegung aller Pools zusammen zeigt `pg_stat_activity` bzw. PgBouncer).
+Die Prozesskennzahlen von prometheus_client (`process_*`, `python_*`) entfallen dann.
+
 | Metrik | Labels | Bedeutung |
 |---|---|---|
 | `mandari_http_request_duration_seconds` (Histogramm) | `view`, `status_class` | Antwortzeit je View |

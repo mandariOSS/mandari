@@ -15,7 +15,7 @@ from collections import Counter
 from collections.abc import AsyncIterator, Iterable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 from uuid import UUID
 from zoneinfo import ZoneInfo
@@ -70,6 +70,7 @@ from src.scrapers.base import CONTENT_HASH_FIELD
 from src.storage.database import (
     DatabaseStorage,
     full_sync_progress_of,
+    missing_list_reasons_of,
     missing_lists_of,
     slice_filter_ignored_of,
     slow_lists_of,
@@ -89,6 +90,9 @@ from src.sync.slices import (
     slow_backoff,
     slow_windows,
 )
+
+if TYPE_CHECKING:
+    from src.scrapers.runner import ScraperSyncRunner
 
 # Quellen-Schonung (Issue #89): ab BACKOFF_AFTER_FAILURES Fehlversuchen in Folge
 # verdoppelt sich der Abstand bis zum nächsten Versuch (10, 20, 40 … Minuten,
@@ -191,7 +195,8 @@ def day_start_window(modified_since: datetime, now: datetime | None = None) -> d
 #: Listen am Body, die OParl 1.1 als optional führt (Typnamen wie in ``_sync_entity_type``). Nur sie werden bei
 #: HTTP 404 oder Fehlerobjekt als „gibt es nicht“ vermerkt. Antwortet eine Pflichtliste (organization, person,
 #: meeting, paper) mit 404, ist das eine Lücke, etwa ein Endpunkt, der während eines Updates der Quelle kurz 404
-#: liefert; ein Fehlerobjekt gilt dort wie bisher als leere Liste (``BodyListCheck``, Issue #1025).
+#: liefert; ein Fehlerobjekt gilt dort wie bisher als leere Liste (``BodyListCheck``, Issue #1025). Listen, die die
+#: Quelle nicht freigibt (HTTP 403 für alle Clients), werden auch als Pflichtlisten vermerkt (Issue #1086).
 OPTIONAL_LIST_TYPES = frozenset({"membership", "agendaitem", "consultation", "file", "location", "legislativeterm"})
 #: Vermerkte Listen fragt auch der inkrementelle Lauf wieder an, wenn ihre letzte Prüfung so lange zurückliegt
 MISSING_LIST_RECHECK = timedelta(days=1)
@@ -249,7 +254,8 @@ class SliceFilterIgnoredError(Exception):
 class MissingLists:
     """
     Optionale Listen einer Quelle, die es bei ihr nicht gibt (HTTP 404 oder Fehlerobjekt auf der ersten Seite,
-    Issue #1025), mit dem Zeitpunkt ihrer letzten Prüfung.
+    Issue #1025), und Listen, die sie nicht freigibt (HTTP 403 für alle Clients, auch Pflichtlisten, Issue #1086), mit
+    dem Zeitpunkt ihrer letzten Prüfung und dem Grund.
 
     Gelesen aus ``sync_config["missing_lists"]`` beim Start des Abgleichs einer Quelle. Inkrementelle Läufe fragen
     eine vermerkte Liste erst wieder an, wenn ihre letzte Prüfung einen Tag zurückliegt (``MISSING_LIST_RECHECK``),
@@ -260,6 +266,8 @@ class MissingLists:
 
     source_url: str
     known: dict[str, datetime | None] = field(default_factory=dict)
+    #: Grund je vermerkter Liste, soweit bekannt (ältere Vermerke tragen nur den Zeitpunkt)
+    reasons: dict[str, str] = field(default_factory=dict)
 
     def skip(self, list_url: str, now: datetime | None = None) -> bool:
         """Vermerkt und vor weniger als einem Tag geprüft: im inkrementellen Lauf nicht anfragen."""
@@ -283,14 +291,32 @@ class BodyListCheck:
     """
 
     lists: MissingLists
-    #: Listen dieses Laufs, die es nicht gibt (Adresse -> Grund)
+    #: Listen dieses Laufs, die es nicht gibt oder die die Quelle nicht freigibt (Adresse -> Grund)
     missing: dict[str, str] = field(default_factory=dict)
+    #: Davon die Listen, die die Quelle nicht freigibt (HTTP 403 für alle Clients, Issue #1086)
+    forbidden: set[str] = field(default_factory=set)
     #: Pflichtlisten dieses Laufs, deren erste Seite ein OParl-Fehlerobjekt ist (Adresse -> Grund). Sie gelten wie
     #: bisher als leer, solange eine andere Liste der Kommune lesbar war (OParl 1.0, more! rubin: „Requested class
     #: doesn't exist.“); sonst als Lücke. HTTP 404 auf einer Pflichtliste bleibt immer eine Lücke.
     required_errors: dict[str, str] = field(default_factory=dict)
     #: Listen dieses Laufs, deren erste Seite lesbar war
     readable: int = 0
+
+
+def _note_missing_list(list_check: BodyListCheck, list_url: str, missing: ListMissingError, *, optional: bool) -> None:
+    """
+    Befund einer Liste, deren erste Seite fehlt, in ``list_check`` festhalten. Optionale Listen und Listen, die die
+    Quelle nicht freigibt (HTTP 403 für alle Clients, Issue #1086), gelten als „nicht vorhanden“. Eine Pflichtliste
+    mit HTTP 404 ist eine Lücke (``RequiredListMissingError``), mit Fehlerobjekt vorläufig leer (Issue #1025).
+    """
+    if optional or missing.forbidden:
+        list_check.missing[list_url] = missing.reason
+        if missing.forbidden:
+            list_check.forbidden.add(list_url)
+    elif missing.not_found:
+        raise RequiredListMissingError(list_url, missing.reason) from missing
+    else:
+        list_check.required_errors[list_url] = missing.reason
 
 
 @dataclass
@@ -654,6 +680,24 @@ class SyncOrchestrator:
         console.print(f"[green]Registered source: {source_name} (ID: {source_id})[/green]")
         return source_id
 
+    def _scraper_runner(self, source_row: Any) -> "ScraperSyncRunner | None":
+        """
+        ``ScraperSyncRunner`` für eine Scraper-Quelle (``sync_config["source_type"] = "scraper:<vendor>"``), sonst None.
+
+        Scraper-Quellen laufen über den Runner statt über den OParl-Client; Zeitfenster und Mindestabstand des
+        Vollabgleichs (``_full_sync_plan``) gelten für sie nur im geplanten Vollabgleich des Daemons. Zeitscheiben,
+        langsame Listen (``_slice_run``) und Vermerke „filtert nicht“ (``_filter_notes``) gibt es bei ihnen nicht.
+        "bridge:*"-Quellen (z. B. oparl-bridge vor ALLRIS) sind normale OParl-Quellen und nehmen den Standardpfad.
+        """
+        if source_row is None or not isinstance(getattr(source_row, "sync_config", None), dict):
+            return None
+        source_type = str(source_row.sync_config.get("source_type") or "oparl")
+        if not source_type.startswith("scraper:"):
+            return None
+        from src.scrapers.runner import ScraperSyncRunner
+
+        return ScraperSyncRunner(self, source_row)
+
     def _register_id_base(self, url: str, source_row: Any) -> None:
         """
         Festgeschriebene Basis der Kennungen einer Quelle übernehmen (``sync_config["id_base"]``, Issue #733).
@@ -818,7 +862,8 @@ class SyncOrchestrator:
         ``missed``) geht der Fehler an den Aufrufer.
 
         Gelesen werden höchstens ``MAX_BODY_PAGES`` Seiten, und eine Folgeseite, die auf eine schon gelesene Seite
-        verweist, bricht ab (``ListFetchError``): Eine fehlerhafte Liste darf den Zyklus nicht endlos aufhalten.
+        verweist, bricht ab (``ListFetchError``), ebenso Folgeseiten, die immer dieselben Kommunen liefern (Issue
+        #1088): Eine fehlerhafte Liste darf den Zyklus nicht endlos aufhalten.
         Nennt die letzte erlaubte Seite noch eine Folgeseite, steht diese in ``missed`` (unvollständig statt endlos).
         Eine Kommune, die auf mehreren Seiten steht, zählt einmal (``unique_bodies``).
         """
@@ -860,11 +905,14 @@ class SyncOrchestrator:
         full: bool = False,
         max_concurrent: int | None = None,
         default_window: FullSyncWindow | None = None,
+        body_filter: str | None = None,
     ) -> SyncResult:
         """
         Sync from any OParl URL (auto-detects Body, Body-List, or System).
 
-        This is the primary entry point for the Body-First architecture.
+        Einziger Einstieg für den Abgleich einer Quelle (Issue #554): Daemon, ``sync --source``, ``sync --body`` und
+        ``sync --all`` kommen hierher. Scraper-Quellen (``sync_config["source_type"] = "scraper:<vendor>"``) gibt er
+        an den ``ScraperSyncRunner`` ab.
 
         Args:
             url: OParl URL (Body, Body-List, or System endpoint)
@@ -872,25 +920,24 @@ class SyncOrchestrator:
             max_concurrent: Max concurrent HTTP requests
             default_window: Standardfenster des Daemons für Vollabgleiche; es begrenzt den Vollabgleich in
                 Zeitscheiben einer Quelle ohne eigenes ``full_sync_window`` (Issue #1033)
+            body_filter: nur Kommunen, deren Name (ohne Groß-/Kleinschreibung) oder Kennung den Text enthält
+                (``sync --source --filter``); der Abgleich gilt dann nicht als vollständig. Nicht für Scraper-Quellen.
 
         Returns:
             SyncResult with statistics
         """
         start_time = datetime.now(UTC)
         result = SyncResult(source_url=url, source_name="", success=False)
-        # Scraper-Quellen (sync_config["source_type"] = "scraper:<vendor>")
-        # laufen über den ScraperSyncRunner statt über den OParl-Client.
-        # "bridge:*"-Quellen (z. B. oparl-bridge vor ALLRIS) sind normale
-        # OParl-Quellen und nehmen den Standardpfad.
         source_row = await self.storage.get_source_by_url(url)
         self._register_id_base(url, source_row)
-        if source_row is not None and isinstance(source_row.sync_config, dict):
-            source_type = str(source_row.sync_config.get("source_type") or "oparl")
-            if source_type.startswith("scraper:"):
-                from src.scrapers.runner import ScraperSyncRunner
-
-                runner = ScraperSyncRunner(self, source_row)
-                return await runner.run(full=full)
+        runner = self._scraper_runner(source_row)
+        if runner is not None:
+            if body_filter:
+                console.print(
+                    "[yellow]Der Filter nach Kommune gilt nicht für Scraper-Quellen; abgeglichen wird die ganze "
+                    "Quelle.[/yellow]"
+                )
+            return await runner.run(full=full)
 
         # Vermerke „filtert nicht“ dieser Quelle (Issue #1041), alte Einträge je Server übernommen
         filter_notes = self._filter_notes(url, source_row)
@@ -941,6 +988,15 @@ class SyncOrchestrator:
                     oparl_version=oparl_version,
                 )
 
+                # Filter nach Kommune (sync --source --filter); Name und Rohdaten der Quelle bleiben wie im Daemon
+                if body_filter:
+                    bodies_data = [
+                        b
+                        for b in bodies_data
+                        if body_filter.lower() in b.get("name", "").lower() or body_filter in b.get("id", "")
+                    ]
+                    console.print(f"[dim]Filtered to {len(bodies_data)} bodies[/dim]")
+
                 # Sync bodies
                 if len(bodies_data) > 1:
                     self._parallel_mode = True
@@ -950,7 +1006,9 @@ class SyncOrchestrator:
                 # multiply peak memory (each body sync holds pages + caches).
                 body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
                 source_config = getattr(source_row, "sync_config", None)
-                missing_lists = MissingLists(url, missing_lists_of(source_config))
+                missing_lists = MissingLists(
+                    url, missing_lists_of(source_config), missing_list_reasons_of(source_config)
+                )
                 timed_lists = TimedLists(url, timed_lists_of(source_config))
 
                 async def sync_body_wrapper(body_data):
@@ -991,9 +1049,9 @@ class SyncOrchestrator:
                     result.unstored.update(body_result.get("unstored") or {})
                     merge_slice_details(result.slice_details, body_result)
 
-                # Update sync timestamp; vollständig nur ohne Lücke (Issue #556), der Vollabgleich nur ohne
-                # ausgesetzte Liste (Issue #1033)
-                complete = sync_complete(body_results, missed_bodies, client)
+                # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556), der
+                # Vollabgleich nur ohne ausgesetzte Liste (Issue #1033)
+                complete = not body_filter and sync_complete(body_results, missed_bodies, client)
                 await self.storage.update_source_sync_time(
                     source_id,
                     full_sync=full,
@@ -1239,236 +1297,6 @@ class SyncOrchestrator:
             await self.storage.record_source_failure(url, error, error_kind)
         except Exception as exc:
             console.print(f"[yellow]Warning: Quellen-Fehlerstatus nicht gespeichert: {exc}[/yellow]")
-
-    async def sync_source(
-        self,
-        url: str,
-        full: bool = False,
-        body_filter: str | None = None,
-        default_window: FullSyncWindow | None = None,
-    ) -> SyncResult:
-        """
-        Synchronize a single OParl source.
-
-        Args:
-            url: The OParl API URL
-            full: Whether to perform a full sync (ignores last_sync)
-            body_filter: Optional body name/ID filter
-            default_window: Standardfenster für Vollabgleiche (siehe ``sync_body_url``)
-
-        Returns:
-            SyncResult with statistics
-        """
-        start_time = datetime.now(UTC)
-        result = SyncResult(source_url=url, source_name="", success=False)
-        source_row = await self.storage.get_source_by_url(url)
-        self._register_id_base(url, source_row)
-        # Vermerke „filtert nicht“ dieser Quelle (Issue #1041), alte Einträge je Server übernommen
-        filter_notes = self._filter_notes(url, source_row)
-        options = SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None))
-        full, fetch_deadline = self._full_sync_plan(url, options, full, source_row, default_window)
-        full, slice_run, slice_note = await self._slice_run(
-            url, options, full, getattr(source_row, "sync_config", None)
-        )
-        if slice_note is not None:
-            fetch_deadline = None  # nur Änderungsabgleich: das Zeitfenster gilt nur für den Vollabgleich
-            result.errors.append(slice_note)
-        result.full = full
-
-        client: OParlClient | None = None
-        try:
-            async with OParlClient(
-                max_concurrent=self.max_concurrent,
-                source_name=url.split("/")[2] if "/" in url else "unknown",
-                user_agent=getattr(source_row, "user_agent", None),
-                fetch_deadline=fetch_deadline,
-                filter_notes=filter_notes,
-                **options.client_kwargs(),
-            ) as client:
-                # Fetch system
-                console.print(f"\n[bold blue]Connecting to {url}...[/bold blue]")
-                system_result = await client.fetch(url, use_cache=False, skip_wait=True)
-                system_data = system_result.data
-                reason = system_result.error or (
-                    f"HTTP {system_result.status_code}" if system_result.status_code else "keine Antwort"
-                )
-
-                # OParl 1.0 (more! rubin): 1.1-Pfad liefert Fehlerobjekt/404 (Issue #122)
-                if is_oparl_error(system_data):
-                    reason = oparl_error_message(system_data)
-                    system_data, _resolved = await self._try_oparl_10_fallback(client, url, reason)
-                elif system_data is None and system_result.status_code == 404:
-                    system_data, _resolved = await self._try_oparl_10_fallback(client, url, reason)
-
-                if not system_data:
-                    result.errors.append(f"Failed to fetch system from {url} ({reason})")
-                    self._collect_host_findings(result, client)
-                    await self._record_source_failure(url, reason, system_result.error_kind or client.error_kind)
-                    return result
-
-                result.source_name = system_data.get("name", "Unknown")
-                console.print(f"[green]Connected to: {result.source_name}[/green]")
-
-                # Ensure source exists in database
-                source_id = await self.storage.upsert_source(
-                    url=url,
-                    name=result.source_name,
-                    raw_json=system_data,
-                    oparl_version=detect_oparl_version(system_data),
-                )
-
-                # Get body list URL
-                body_list_url = system_data.get("body")
-                if not body_list_url:
-                    result.errors.append("No body list found in system")
-                    return result
-
-                # Fetch all bodies
-                console.print("[blue]Fetching bodies list...[/blue]")
-                missed_bodies: list[str] = []
-                bodies_data = await self._fetch_bodies(client, body_list_url, missed_bodies)
-                console.print(f"[dim]Found {len(bodies_data)} bodies[/dim]")
-                if missed_bodies:
-                    result.errors.append(missed_bodies_note(missed_bodies))
-
-                # Filter bodies if requested
-                if body_filter:
-                    bodies_data = [
-                        b
-                        for b in bodies_data
-                        if body_filter.lower() in b.get("name", "").lower() or body_filter in b.get("id", "")
-                    ]
-                    console.print(f"[dim]Filtered to {len(bodies_data)} bodies[/dim]")
-
-                # Sync all bodies IN PARALLEL for massive speedup
-                console.print(f"[bold green]Starting PARALLEL sync of {len(bodies_data)} bodies...[/bold green]")
-
-                # Disable Progress bars if syncing multiple bodies in parallel
-                # Rich doesn't support multiple live displays simultaneously
-                if len(bodies_data) > 1:
-                    self._parallel_mode = True
-
-                # Bound per-body concurrency so multi-body sources don't
-                # multiply peak memory (each body sync holds pages + caches).
-                body_semaphore = asyncio.Semaphore(settings.sync_body_concurrency)
-                source_config = getattr(source_row, "sync_config", None)
-                missing_lists = MissingLists(url, missing_lists_of(source_config))
-                timed_lists = TimedLists(url, timed_lists_of(source_config))
-
-                async def sync_body_wrapper(body_data):
-                    """Wrapper to catch exceptions per body."""
-                    async with body_semaphore:
-                        try:
-                            return await self._sync_body(
-                                client=client,
-                                body_data=body_data,
-                                source_id=source_id,
-                                full=full,
-                                options=options,
-                                missing_lists=missing_lists,
-                                timed_lists=timed_lists,
-                                slices=slice_run,
-                            )
-                        except Exception as e:
-                            console.print(f"[red]Error syncing {body_data.get('name', 'Unknown')}: {e}[/red]")
-                            return {"errors": [str(e)], "incomplete": ["body"]}
-
-                # Run all body syncs in parallel (bounded by semaphore)
-                body_results = await asyncio.gather(
-                    *[sync_body_wrapper(body_data) for body_data in bodies_data],
-                    return_exceptions=False,
-                )
-
-                # Aggregate results
-                for body_result in body_results:
-                    result.bodies_synced += 1
-                    result.meetings_synced += body_result.get("meetings", 0)
-                    result.papers_synced += body_result.get("papers", 0)
-                    result.persons_synced += body_result.get("persons", 0)
-                    result.organizations_synced += body_result.get("organizations", 0)
-                    result.memberships_synced += body_result.get("memberships", 0)
-                    result.files_synced += body_result.get("files", 0)
-                    result.locations_synced += body_result.get("locations", 0)
-                    result.agenda_items_synced += body_result.get("agenda_items", 0)
-                    result.consultations_synced += body_result.get("consultations", 0)
-                    result.errors.extend(body_result.get("errors", []))
-                    result.unstored.update(body_result.get("unstored") or {})
-                    merge_slice_details(result.slice_details, body_result)
-
-                # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556)
-                complete = not body_filter and sync_complete(body_results, missed_bodies, client)
-                await self.storage.update_source_sync_time(
-                    source_id,
-                    full_sync=full,
-                    complete=complete,
-                    full_complete=complete and full_sync_finished(body_results),
-                )
-                result.http_stats = client.stats
-                result.success = True
-                await self._apply_host_findings(result, client)
-                if full:
-                    await self._recheck_modified_since(client, url, bodies_data)
-
-                # Calculate total entities synced
-                total_synced = (
-                    result.meetings_synced
-                    + result.papers_synced
-                    + result.persons_synced
-                    + result.organizations_synced
-                    + result.memberships_synced
-                    + result.files_synced
-                    + result.agenda_items_synced
-                    + result.consultations_synced
-                )
-
-                end_time = datetime.now(UTC)
-                duration = (end_time - start_time).total_seconds()
-
-                # Write sync log to Django's SyncLog table
-                try:
-                    await self.storage.write_sync_log(
-                        source_id=source_id,
-                        sync_type="full" if full else "incremental",
-                        status="success",
-                        started_at=start_time,
-                        finished_at=end_time,
-                        duration_seconds=duration,
-                        entities_synced=total_synced,
-                        errors=result.errors,
-                        details={
-                            "meetings": result.meetings_synced,
-                            "papers": result.papers_synced,
-                            "persons": result.persons_synced,
-                            "organizations": result.organizations_synced,
-                            "memberships": result.memberships_synced,
-                            "files": result.files_synced,
-                            "agenda_items": result.agenda_items_synced,
-                            "consultations": result.consultations_synced,
-                            **self._finding_details(result),
-                            **result.slice_details,
-                        },
-                        triggered_by="daemon",
-                    )
-                except Exception as log_err:
-                    console.print(f"[yellow]Warning: Could not write sync log: {log_err}[/yellow]")
-
-                # Record metrics
-                metrics.record_entities_batch(result.source_name, total_synced)
-
-        except Exception as e:
-            result.errors.append(str(e))
-            console.print(f"[red]Sync failed: {e}[/red]")
-            await self._record_source_failure(url, str(e), client.error_kind if client else None)
-            if client is not None:
-                self._collect_host_findings(result, client)
-
-            # Sync log is written by the scheduler (one per cycle, not per source)
-
-        # Geänderte Vermerke „filtert nicht“ in der sync_config dieser Quelle speichern (Issue #1041)
-        await self._save_filter_notes(url, filter_notes)
-
-        result.duration_seconds = (datetime.now(UTC) - start_time).total_seconds()
-        return result
 
     async def _sync_body(
         self,
@@ -1994,8 +1822,9 @@ class SyncOrchestrator:
         """
         Sync all entities of a specific type.
 
-        Optionale Listen, die es bei der Quelle nicht gibt (``list_check``, Issue #1025), fragt der inkrementelle
-        Lauf einmal am Tag an, der Vollabgleich jedes Mal. Nicht gespeicherte Objekte und die Genauigkeit von
+        Optionale Listen, die es bei der Quelle nicht gibt (``list_check``, Issue #1025), und Listen, die sie nicht
+        freigibt (Issue #1086), fragt der inkrementelle Lauf einmal am Tag an, der Vollabgleich jedes Mal (in
+        Zeitscheiben nicht). Nicht gespeicherte Objekte und die Genauigkeit von
         ``modified`` hält ``item_check`` fest. Das kurze Fenster gilt nur für Listen, deren ``modified``
         nachweislich die Uhrzeit trägt (``timed_lists``); die übrigen fragt der inkrementelle Lauf ab dem
         Tagesbeginn an (``day_start_window``).
@@ -2029,18 +1858,24 @@ class SyncOrchestrator:
         optional = entity_type in OPTIONAL_LIST_TYPES
         run = slices.run if slices is not None else None
         sliced_full = full and run is not None and run.config is not None and run.config.covers(entity_type)
-        if not full and optional and list_check is not None and list_url in list_check.lists.known:
+        # Vermerkt sind optionale Listen, die es nicht gibt, und Listen, die die Quelle nicht freigibt (HTTP 403 für
+        # alle Clients); nur so stehen auch Pflichtlisten hier (Issue #1086)
+        if not full and list_check is not None and list_url in list_check.lists.known:
             if list_check.lists.skip(list_url):
-                console.print(f"[dim]  {entity_type}: Liste fehlt bei der Quelle (vermerkt), nicht angefragt[/dim]")
+                reason = list_check.lists.reasons.get(list_url) or "fehlt bei der Quelle"
+                console.print(f"[dim]  {entity_type}: Liste vermerkt ({reason}), nicht angefragt[/dim]")
                 return 0
             # Tägliche Prüfung der vermerkten Liste: Gibt es sie wieder, kommen die Änderungen aus der Zeit des
             # Vermerks mit, so weit wie bisher (sieben Tage), nicht nur die seit dem letzten Lauf
             if modified_since is not None:
                 modified_since = fallback_modified_since()
-        if sliced_full and optional and list_check is not None and list_url in list_check.lists.known:
+        if sliced_full and list_check is not None and list_url in list_check.lists.known:
             # SD.NET RIM beantwortet jede leere Scheibe wie eine fehlende Liste: Die Prüfung bleibt beim täglichen
-            # inkrementellen Lauf, statt hunderte Scheiben einer Liste anzufragen, die es nicht gibt
-            console.print(f"[dim]  {entity_type}: Liste fehlt bei der Quelle (vermerkt), keine Zeitscheiben[/dim]")
+            # inkrementellen Lauf, statt hunderte Scheiben einer Liste anzufragen, die es nicht gibt. Ebenso bei
+            # einer Liste, die die Quelle nicht freigibt: Eine Scheibe fragt nur mit Filter, ein 403 darauf sagt
+            # nicht, ob die Liste ohne Filter käme (Issue #1086)
+            reason = list_check.lists.reasons.get(list_url) or "fehlt bei der Quelle"
+            console.print(f"[dim]  {entity_type}: Liste vermerkt ({reason}), keine Zeitscheiben[/dim]")
             return 0
         slow = run.slow.get(list_url) if run is not None and optional else None
         if slices is not None and slow is not None and slow.suspended():
@@ -2293,9 +2128,12 @@ class SyncOrchestrator:
         jedes Mal. Wird eine vermerkte Liste ganz gelesen, wird der Vermerk gelöscht; meldet SD.NET RIM auf den
         Filter nur „keine Treffer“, bleibt er (Issue #1034).
 
-        Pflichtlisten werden nie vermerkt. HTTP 404 ist dort eine Lücke (``RequiredListMissingError``). Ein
-        Fehlerobjekt gilt wie bisher als leere Liste, solange eine andere Liste der Kommune lesbar war; sonst als
+        Pflichtlisten werden als fehlend nie vermerkt. HTTP 404 ist dort eine Lücke (``RequiredListMissingError``).
+        Ein Fehlerobjekt gilt wie bisher als leere Liste, solange eine andere Liste der Kommune lesbar war; sonst als
         Lücke (``_settle_missing_lists``). Ohne ``list_check`` wie bisher.
+
+        Gibt die Quelle eine Liste nicht frei (HTTP 403 für alle Clients, ``ListMissingError.forbidden``), gilt sie
+        wie eine fehlende optionale Liste als „nicht vorhanden“, auch eine Pflichtliste (Issue #1086).
         """
         if list_check is None:
             async for page in client.fetch_list(list_url, modified_since=modified_since):
@@ -2309,12 +2147,7 @@ class SyncOrchestrator:
                     list_check.readable += 1
                 yield page
         except ListMissingError as missing:
-            if optional:
-                list_check.missing[list_url] = missing.reason
-            elif missing.not_found:
-                raise RequiredListMissingError(list_url, missing.reason) from missing
-            else:
-                list_check.required_errors[list_url] = missing.reason
+            _note_missing_list(list_check, list_url, missing, optional=optional)
             return
         if not readable:
             list_check.readable += 1  # lesbar, nur leer
@@ -2398,12 +2231,7 @@ class SyncOrchestrator:
                 elif list_check is None:
                     return
                 else:
-                    if optional:
-                        list_check.missing[list_url] = missing.reason
-                    elif missing.not_found:
-                        raise RequiredListMissingError(list_url, missing.reason) from missing
-                    else:
-                        list_check.required_errors[list_url] = missing.reason
+                    _note_missing_list(list_check, list_url, missing, optional=optional)
                     return
             except ListFetchError as error:
                 if not full and _filter_rejected(error):
@@ -2628,9 +2456,9 @@ class SyncOrchestrator:
 
     async def _settle_missing_lists(self, list_check: BodyListCheck, stats: dict[str, Any]) -> None:
         """
-        Fehlende Listen eines Laufs vermerken (Issue #1025), wenn mindestens eine andere Liste der Kommune lesbar
-        war; Pflichtlisten mit Fehlerobjekt gelten dann als leer (Warnung). Sonst gilt der Befund als Störung der
-        Schnittstelle: Lücke im Abgleich, kein Vermerk.
+        Fehlende und nicht freigegebene Listen eines Laufs vermerken (Issues #1025, #1086), wenn mindestens eine
+        andere Liste der Kommune lesbar war; Pflichtlisten mit Fehlerobjekt gelten dann als leer (Warnung). Sonst gilt
+        der Befund als Störung der Schnittstelle: Lücke im Abgleich, kein Vermerk.
         """
         if not list_check.missing and not list_check.required_errors:
             return
@@ -2651,27 +2479,39 @@ class SyncOrchestrator:
         stats["missing_lists"] = sorted(list_check.missing)
         for list_url, reason in sorted(list_check.missing.items()):
             if list_url not in list_check.lists.known:
+                state = (
+                    "gibt die Quelle nicht frei" if list_url in list_check.forbidden else "gibt es bei der Quelle nicht"
+                )
                 console.print(
-                    f"[dim]  Liste {list_url} gibt es bei der Quelle nicht ({reason}): vermerkt, "
+                    f"[dim]  Liste {list_url} {state} ({reason}): vermerkt, "
                     f"bis zur nächsten Prüfung (Vollabgleich, spätestens nach einem Tag) nicht mehr angefragt[/dim]"
                 )
-            await self._remember_missing_list(list_check.lists, list_url, missing=True)
+            await self._remember_missing_list(list_check.lists, list_url, missing=True, reason=reason)
 
-    async def _remember_missing_list(self, missing_lists: MissingLists | None, list_url: str, missing: bool) -> None:
+    async def _remember_missing_list(
+        self, missing_lists: MissingLists | None, list_url: str, missing: bool, *, reason: str | None = None
+    ) -> None:
         """
-        Vermerk „Liste gibt es nicht“ setzen (mit dem Zeitpunkt dieser Prüfung) oder löschen; Fehler gefährden den
-        Abgleich nie. Angefragt wird eine vermerkte Liste nur bei der Prüfung, deshalb schreibt jede Prüfung.
+        Vermerk „Liste gibt es nicht“ bzw. „nicht freigegeben“ setzen (mit dem Zeitpunkt dieser Prüfung und dem Grund,
+        ohne neuen Grund mit dem bisherigen) oder löschen; Fehler gefährden den Abgleich nie. Angefragt wird eine
+        vermerkte Liste nur bei der Prüfung, deshalb schreibt jede Prüfung.
         """
         if missing_lists is None or (not missing and list_url not in missing_lists.known):
             return
         checked_at = datetime.now(UTC)
         if missing:
             missing_lists.known[list_url] = checked_at
+            reason = reason or missing_lists.reasons.get(list_url)
+            if reason:
+                missing_lists.reasons[list_url] = reason
         else:
             del missing_lists.known[list_url]
-            console.print(f"[green]  Liste {list_url} gibt es wieder, Vermerk gelöscht[/green]")
+            missing_lists.reasons.pop(list_url, None)
+            console.print(f"[green]  Liste {list_url} wieder abrufbar, Vermerk gelöscht[/green]")
         try:
-            await self.storage.set_list_missing(missing_lists.source_url, list_url, missing, checked_at=checked_at)
+            await self.storage.set_list_missing(
+                missing_lists.source_url, list_url, missing, checked_at=checked_at, reason=reason
+            )
         except Exception as e:  # noqa: BLE001 - ohne Vermerk wird die Liste im nächsten Lauf erneut geprüft
             console.print(f"[yellow]  Vermerk zur Liste {list_url} nicht gespeichert: {e}[/yellow]")
 

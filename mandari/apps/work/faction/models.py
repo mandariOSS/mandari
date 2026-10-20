@@ -492,6 +492,10 @@ class FactionMeeting(MemberNameSnapshotMixin, EncryptionMixin, models.Model):
     # Automatik (Issue #871): Erinnerung zum Eintragen von TOPs und Protokollversand je Sitzung höchstens einmal
     agenda_reminder_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="TOP-Erinnerung versandt am")
     protocol_sent_at = models.DateTimeField(blank=True, null=True, verbose_name="Protokoll versandt am")
+    # „Offene erinnern“ (Issue #1071): zuletzt von Hand an alle ohne Rückmeldung erinnert; Sperrfrist gegen Mehrfachklicks
+    rsvp_reminder_sent_at = models.DateTimeField(
+        blank=True, null=True, verbose_name="An offene Rückmeldungen erinnert am"
+    )
     # Erstversand beansprucht am (Issue #871): Bleibt ein Anspruch ohne ``invitation_sent_at`` hängen
     # (Prozess beendet), gibt ihn der Einladungslauf nach einer Frist frei und versendet erneut.
     invitation_claimed_at = models.DateTimeField(blank=True, null=True, verbose_name="Einladungsversand beansprucht am")
@@ -1061,6 +1065,21 @@ class FactionAttendance(MemberNameSnapshotMixin):
     # Response
     response_message = models.TextField(blank=True, verbose_name="Nachricht", help_text="Begründung bei Absage")
     responded_at = models.DateTimeField(blank=True, null=True, verbose_name="Antwort am")
+
+    # Versandergebnis der Einladung je Person (Issue #1071): Stand des letzten Versands (Erstversand oder
+    # Aktualisierung). „Verschickt“ heißt an den Mailversand der Organisation übergeben; Fehler mit Grund.
+    invitation_mailed_at = models.DateTimeField(blank=True, null=True, verbose_name="Einladung verschickt am")
+    invitation_error = models.CharField(
+        max_length=300, blank=True, default="", db_default="", verbose_name="Einladung nicht verschickt, Grund"
+    )
+    invitation_without_internal = models.BooleanField(
+        default=False, db_default=False, verbose_name="Einladung ohne nichtöffentlichen Teil"
+    )
+    # Erinnerung an die offene Rückmeldung („Offene erinnern“, Issue #1071): Ergebnis wie beim Versand der Einladung
+    rsvp_reminder_mailed_at = models.DateTimeField(blank=True, null=True, verbose_name="An Rückmeldung erinnert am")
+    rsvp_reminder_error = models.CharField(
+        max_length=300, blank=True, default="", db_default="", verbose_name="Erinnerung nicht verschickt, Grund"
+    )
 
     # Check-in
     checked_in_at = models.DateTimeField(blank=True, null=True, verbose_name="Eingecheckt um")

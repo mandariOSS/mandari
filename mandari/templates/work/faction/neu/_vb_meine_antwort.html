@@ -1,0 +1,19 @@
+{% comment %}
+Eigene Zu- oder Absage für die Verwaltung (Issue #871, bisher „Meine Teilnahme“ in der Seitenleiste): nur wenn
+Zu- und Absagen für die Sitzung an sind. Mitglieder antworten in der Hauptspalte (_vb_lesen.html).
+Kontext: meeting, org_slug, my_attendance, antworten.
+{% endcomment %}
+{% if meeting.rsvp_enabled and my_attendance and not meeting.attendance_confirmed_at %}
+<c-work.neben-abschnitt titel="Ihre Teilnahme" kennung="meine-h" data-testid="fs-meine-antwort">
+    <div class="fs-meine-antwort">
+        {% for wert, wort, symbol in antworten %}
+        <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="respond">
+            <input type="hidden" name="status" value="{{ wert }}">
+            <button type="submit" class="wf-knopf wf-klein" aria-pressed="{% if my_attendance.status == wert %}true{% else %}false{% endif %}">{{ wort }}</button>
+        </form>
+        {% endfor %}
+    </div>
+</c-work.neben-abschnitt>
+{% endif %}

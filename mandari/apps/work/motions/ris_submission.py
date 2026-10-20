@@ -17,9 +17,11 @@ Ablauf:
 
 from __future__ import annotations
 
+import hashlib
 import html
 import logging
 import re
+from contextlib import ExitStack
 
 from django.db import transaction
 from django.utils import timezone
@@ -267,64 +269,173 @@ def attachment_preview(motion) -> tuple[list, list[tuple]]:
     return accepted, rejected
 
 
-def _transfer_attachments(motion, application) -> list[str]:
-    """Anhänge des Dokuments an den eingereichten Antrag in Session geben; liefert Nicht-Übernommenes."""
-    from pathlib import PurePosixPath
-
-    from django.core.files import File
-
-    from apps.session.services.application_service import attach_application_files
-
-    pairs, handles, missing = [], [], []
-    try:
-        for document in motion.documents.all():
-            try:
-                handle = document.file.open("rb")
-            except (FileNotFoundError, ValueError, OSError):
-                missing.append(f"{document.filename} (Datei nicht gefunden)")
-                continue
-            handles.append(handle)
-            name = PurePosixPath((document.filename or "").replace("\\", "/")).name or "Anhang"
-            pairs.append((document.filename or name, File(handle, name=name)))
-        return missing + attach_application_files(application, pairs)
-    finally:
-        for handle in handles:
-            handle.close()
-
-
-def _attach_application_pdf(motion, application) -> None:
-    """
-    Antrag als PDF an den Eingang hängen (Teil von #584) – mit der Umwandlung in eine Vorlage wird es öffentlich.
-
-    Best effort: Scheitert die Erzeugung oder Ablage, wird ohne PDF eingereicht. Der Sicherungspunkt hält die
-    Einreichungs-Transaktion dabei intakt.
-    """
-    from apps.session.services.application_service import attach_application_pdf
-
-    try:
-        with transaction.atomic():
-            attach_application_pdf(application)
-    except Exception:
-        logger.exception("Einreichung von Dokument %s: Antragsfassung (PDF) nicht erzeugt", motion.pk)
-
+# =============================================================================
+# Einreichen über den Befehl submission.submit (Issue #540)
+# =============================================================================
 
 #: Meldung, wenn die Ablage der Anhänge in Session scheitert (fester Text, keine Ausnahme-Details)
 ATTACHMENTS_FAILED = (
     "Die Anhänge konnten nicht an die Verwaltung übergeben werden. Der Antrag wurde nicht eingereicht – "
     "bitte später erneut versuchen."
 )
+#: Meldungen zu Problemen des Befehls, die keinen Text der Verwaltung tragen
+SUBMIT_FAILED = "Der Antrag konnte nicht eingereicht werden. Bitte später erneut versuchen."
+KEY_REUSED = (
+    "Für dieses Dokument liegt schon eine Einreichung mit anderen Angaben vor. Bitte die Seite neu laden und die "
+    "Angaben prüfen."
+)
+#: Gründe der Verwaltung für nicht angenommene Anhänge (Codes aus der Quittung)
+ATTACHMENT_REASONS = {
+    "dateityp": "Dateityp wird von der Verwaltung nicht angenommen",
+    "groesse": "zu groß",
+    "virenpruefung": "Virenprüfung nicht bestanden oder nicht verfügbar",
+}
+#: Felder des Befehls → Bezeichnung im Formular
+FIELD_LABELS = {
+    "title": "Titel",
+    "resolution_proposal": "Beschlussvorschlag",
+    "justification": "Begründung",
+    "financial_impact": "Finanzielle Auswirkungen",
+    "urgency_reason": "Begründung der Dringlichkeit",
+    "co_signers": "Mitunterzeichnende",
+    "co_signers_text": "Mitunterzeichnende (höchstens 5000 Zeichen)",
+    "target_organization": "Zielgremium",
+    "deadline": "Gewünschter Beratungstermin",
+    "application_type": "Antragsart",
+    "submitter": "Name und E-Mail-Adresse der einreichenden Person",
+    "attachments": "Anhänge",
+}
+_CHUNK = 1024 * 1024
 
 
-@transaction.atomic
+def _client():
+    """Client für Befehle an die Verwaltung; mandari Session läuft in derselben Installation."""
+    from hub.commands import InProcessClient
+
+    return InProcessClient()
+
+
+def idempotency_key(motion) -> str:
+    """
+    Idempotenzschlüssel der Einreichung, abgeleitet aus dem eigenen Stand (kein eigenes Feld nötig).
+
+    Dokument und Zeitpunkt seiner letzten Speicherung, so wie es zu Beginn der Anfrage geladen wurde: Scheitert
+    nach der Quittung das Speichern in Work, bleibt das Dokument unverändert, die Wiederholung sendet denselben
+    Schlüssel und erhält dieselbe Quittung statt eines zweiten Antrags. Ebenso ein zweiter Klick, der dasselbe
+    Dokument geladen hat, während der erste noch Anlagen liest. Eine festgehaltene Einreichung speichert das
+    Dokument; jede spätere Einreichung (etwa nachdem die Verwaltung den Antrag gelöscht oder eine Probe
+    zurückgesetzt hat) trägt deshalb einen neuen Schlüssel.
+    """
+    stamp = int(motion.updated_at.timestamp() * 1_000_000) if motion.updated_at else 0
+    return f"work.motion.{motion.pk}.{stamp}"
+
+
+def _already_linked(motion) -> bool:
+    """Ist das Dokument inzwischen verknüpft (etwa durch einen zweiten Klick, der früher fertig war)?"""
+    from .models import Motion
+
+    return Motion.objects.filter(pk=motion.pk, session_application__isnull=False).exists()
+
+
+def _command_body(motion, membership, data: dict, attachments: list[dict]) -> dict:
+    """Inhalt des Befehls aus den geprüften Formularwerten; leere optionale Angaben bleiben weg."""
+    user = membership.user
+    body: dict = {
+        "application_type": data.get("application_type") or "motion",
+        "title": data.get("title") or "",
+        "resolution_proposal": data.get("resolution_proposal") or "",
+        "justification": data.get("justification") or "",
+        "submitter": {"name": user.get_full_name() or user.email, "email": user.email},
+        "submitting_organization": str(motion.organization_id),
+        "is_urgent": bool(data.get("is_urgent")),
+        # Die Verwaltung erzeugt aus den Angaben die Antragsfassung als PDF (#584)
+        "application_pdf": True,
+    }
+    for name in ("financial_impact", "urgency_reason"):
+        if data.get(name):
+            body[name] = data[name]
+    # Wie bisher als Text (eine Person je Zeile), unverändert gespeichert
+    if (data.get("co_signers") or "").strip():
+        body["co_signers_text"] = data["co_signers"]
+    if data.get("deadline"):
+        body["deadline"] = data["deadline"].isoformat()
+    if data.get("target_organization_id"):
+        body["target_organization"] = str(data["target_organization_id"])
+    if attachments:
+        body["attachments"] = attachments
+    return body
+
+
+def _sha256(handle) -> tuple[int, str]:
+    """Größe und SHA-256 einer Datei; setzt sie danach an den Anfang zurück."""
+    digest = hashlib.sha256()
+    size = 0
+    handle.seek(0)
+    for chunk in iter(lambda: handle.read(_CHUNK), b""):
+        digest.update(chunk)
+        size += len(chunk)
+    handle.seek(0)
+    return size, digest.hexdigest()
+
+
+def _open_attachments(motion, stack: ExitStack) -> tuple[list[dict], dict, list, list[str]]:
+    """
+    Anhänge für den Befehl: (Angaben im Inhalt, Dateien je SHA-256, mitgehende Dokumente, nicht Übernommenes).
+
+    Was die Verwaltung nach Dateityp oder Größe nicht annimmt, steht vorher in der Vorschau und geht nicht mit (#584).
+    """
+    accepted, rejected = attachment_preview(motion)
+    skipped = [f"{document.filename} ({reason})" for document, reason in rejected]
+    items: list[dict] = []
+    files: dict = {}
+    documents: list = []
+    for document in accepted:
+        try:
+            handle = stack.enter_context(document.file.open("rb"))
+        except (FileNotFoundError, ValueError, OSError):
+            skipped.append(f"{document.filename} (Datei nicht gefunden)")
+            continue
+        size, digest = _sha256(handle)
+        items.append({"name": document.filename or "Anhang", "size": size, "sha256": digest})
+        files.setdefault(digest, handle)
+        documents.append(document)
+    return items, files, documents, skipped
+
+
+def problem_message(problem) -> str:
+    """Meldung für Nutzer:innen zu einem Problem des Befehls (feste Texte, Felder mit ihrer Bezeichnung)."""
+    if problem.kind == "validierung" and problem.errors:
+        labels: list[str] = []
+        for item in problem.errors:
+            name = str(item.get("pointer", "")).strip("/").split("/")[0]
+            label = FIELD_LABELS.get(name, "Angaben")
+            if label not in labels:
+                labels.append(label)
+        return "Bitte prüfen: " + "; ".join(labels) + "."
+    if problem.kind == "idempotenzschluessel-wiederverwendet":
+        return KEY_REUSED
+    if problem.kind == "anlagen-nicht-abgelegt":
+        return ATTACHMENTS_FAILED
+    if problem.kind in {"keine-berechtigung", "mandant-unbekannt"}:
+        # Feste Texte des Handlers in mandari Session, ohne Inhalte
+        return str(problem.detail)
+    return SUBMIT_FAILED
+
+
 def submit_motion(motion, membership, data: dict, *, skipped: list[str] | None = None):
     """
-    Antrag an die verbundene Verwaltung übergeben und das Dokument auf
-    „Eingereicht“ setzen. ``data`` enthält die geprüften Formularwerte.
+    Antrag an die verbundene Verwaltung übergeben und das Dokument auf „Eingereicht“ setzen. ``data`` enthält
+    die geprüften Formularwerte.
 
-    Wird ``skipped`` übergeben, stehen danach die Anhänge darin, die nicht übernommen wurden
-    (Name mit Grund) – etwa nach der Virenprüfung oder weil die Datei fehlt.
+    Der Antrag geht als Befehl ``submission.submit`` an mandari Session (Issue #540); geprüft wird dort. Die
+    Quittung ist festgeschrieben, bevor Work seinen Stand speichert (Muster aus #539): Schlüssel aus dem
+    Dokument ableiten, Befehl senden, Quittung speichern. Scheitert der letzte Schritt, liefert die Wiederholung
+    mit demselben Schlüssel dieselbe Quittung. Der Aufruf steht deshalb nie in einer offenen Transaktion.
+
+    Wird ``skipped`` übergeben, stehen danach die Anhänge darin, die nicht übernommen wurden (Name mit Grund) –
+    etwa nach der Virenprüfung oder weil die Datei fehlt.
     """
-    from apps.session.services.application_service import ApplicationService
+    from hub.commands import Command, CommandError
 
     connection = get_connection(motion.organization)
     usable, reason = connection_state(connection)
@@ -334,65 +445,70 @@ def submit_motion(motion, membership, data: dict, *, skipped: list[str] | None =
     if not allowed:
         raise SubmissionError(reason)
 
-    user = membership.user
-    submitter_name = user.get_full_name() or user.email
-    token = connection.get_token()
-    try:
-        application = ApplicationService.submit_application(
-            tenant=connection.tenant,
-            title=data["title"],
-            justification=data["justification"],
-            resolution_proposal=data["resolution_proposal"],
-            submitter_name=submitter_name,
-            submitter_email=user.email,
-            application_type=data.get("application_type") or "motion",
-            submitting_organization=motion.organization,
-            target_organization_id=data.get("target_organization_id") or None,
-            co_signers=data.get("co_signers", ""),
-            financial_impact=data.get("financial_impact", ""),
-            is_urgent=bool(data.get("is_urgent")),
-            urgency_reason=data.get("urgency_reason", ""),
-            deadline=data.get("deadline"),
-            submitted_via_token=token,
+    # Vor dem Lesen der Anlagen: Der Schlüssel gehört zum Stand, den diese Anfrage geprüft hat.
+    key = idempotency_key(motion)
+    with ExitStack() as stack:
+        items, files, documents, not_transferred = _open_attachments(motion, stack)
+        # Große Anlagen brauchen Zeit; ist das Dokument inzwischen eingereicht, nicht noch einmal senden.
+        if _already_linked(motion):
+            raise SubmissionError("Dieses Dokument wurde bereits eingereicht.")
+        command = Command(
+            name="submission.submit",
+            body=_command_body(motion, membership, data, items),
+            idempotency_key=key,
+            tenant_ref=f"session:{connection.tenant_id}",
+            actor_ref=f"user:{membership.user_id}",
+            attachments=files,
         )
-    except ValueError as exc:
-        raise SubmissionError(str(exc)) from exc
+        try:
+            receipt = _client().send(command)
+        except CommandError as exc:
+            raise SubmissionError(problem_message(exc.problem)) from None
 
-    _attach_application_pdf(motion, application)
-
-    # Anhänge gehen mit (#584); nicht angenommene stehen vorher in der Vorschau. Scheitert die Ablage,
-    # scheitert die Einreichung als Ganzes (Transaktion) – mit fester Meldung statt einer Fehlerseite.
-    try:
-        not_transferred = _transfer_attachments(motion, application)
-    except Exception as exc:
-        logger.exception("Einreichung von Dokument %s: Anhänge konnten nicht abgelegt werden", motion.pk)
-        raise SubmissionError(ATTACHMENTS_FAILED) from exc
+    for entry in receipt.data.get("attachments_rejected") or ():
+        index = entry.get("index")
+        name = documents[index].filename if isinstance(index, int) and 0 <= index < len(documents) else "Anhang"
+        not_transferred.append(f"{name} ({ATTACHMENT_REASONS.get(entry.get('reason'), 'nicht angenommen')})")
     if not_transferred:
-        logger.info("Einreichung %s: %s Anhänge nicht übernommen", application.pk, len(not_transferred))
+        logger.info("Einreichung %s: %s Anhänge nicht übernommen", receipt.aggregate_id, len(not_transferred))
         if skipped is not None:
             skipped.extend(not_transferred)
 
-    from .administration_feedback import SUBMISSION_VIA, record_submission, send_receipt
+    _record_receipt(motion, membership, connection, receipt)
+    motion.refresh_from_db()
+    return motion.session_application
 
-    motion.session_application = application
-    motion.administration_status = "submitted"
-    motion.save(update_fields=["session_application", "administration_status", "updated_at"])
+
+@transaction.atomic
+def _record_receipt(motion, membership, connection, receipt) -> None:
+    """Quittung in Work festhalten: Verknüpfung, Status über die Übergänge, erstes Rückmeldeereignis."""
+    from .administration_feedback import SUBMISSION_VIA, record_submission, send_receipt
+    from .models import Motion
+
+    locked = Motion.objects.select_for_update().get(pk=motion.pk)
+    if locked.session_application_id == receipt.aggregate_id:
+        return  # Eine gleichzeitige Wiederholung hat die Quittung schon festgehalten
+    if locked.session_application_id:
+        raise SubmissionError("Dieses Dokument wurde bereits eingereicht.")
+
+    locked.session_application_id = receipt.aggregate_id
+    locked.administration_status = "submitted"
+    locked.save(update_fields=["session_application", "administration_status", "updated_at"])
     # Status über die definierten Übergänge (Issue #316): Wer mit Freigaberecht einreicht, gibt damit frei
-    if motion.status == "submitted":
-        motion.submitted_at = timezone.now()
-        motion.save(update_fields=["submitted_at", "updated_at"])
+    if locked.status == "submitted":
+        locked.submitted_at = timezone.now()
+        locked.save(update_fields=["submitted_at", "updated_at"])
     else:
         try:
-            motion.advance_to("submitted", via=SUBMISSION_VIA)
+            locked.advance_to("submitted", via=SUBMISSION_VIA)
         except StatusTransitionError as exc:
-            raise SubmissionError(f"Im Status „{motion.get_status_display()}“ kann nicht eingereicht werden.") from exc
-    record_submission(motion, application)
+            # Rollt nur den Stand in Work zurück; die Verwaltung hat den Antrag (Quittung), eine Wiederholung mit
+            # demselben Schlüssel verknüpft ihn ohne zweiten Eingang.
+            raise SubmissionError(f"Im Status „{locked.get_status_display()}“ kann nicht eingereicht werden.") from exc
+    record_submission(locked, locked.session_application)
 
-    if token is not None:
-        token.record_usage()
     connection.last_used_at = timezone.now()
     connection.save(update_fields=["last_used_at"])
 
-    motion_id, membership_id = motion.pk, membership.pk
+    motion_id, membership_id = locked.pk, membership.pk
     transaction.on_commit(lambda: send_receipt(motion_id, membership_id), robust=True)
-    return application

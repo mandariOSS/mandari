@@ -17,6 +17,7 @@ from django_htmx.http import HttpResponseClientRedirect
 
 from apps.common import local_time
 from apps.common.mixins import WorkViewMixin
+from apps.work.rahmen import fragment_neu
 
 from .. import agenda, deletion
 from .. import services as faction_services
@@ -59,14 +60,19 @@ class FactionActionView(WorkViewMixin, View):
             "update_status": self._update_status,
             # Meeting
             "update": self._update_meeting,
+            "set_rsvp": self._set_rsvp,
             "invite": self._invite,
             "release_invitations": self._release_invitations,
+            "remind_open": self._remind_open,
+            "test_invitation": self._test_invitation,
             # Agenda
             "add_item": self._add_item,
             "edit_item": self._edit_item,
             "delete_item": self._delete_item,
             "delete_item_preview": self._delete_item_preview,
             "move_item": self._move_item,
+            "ris_auswahl": self._ris_auswahl,
+            "ris_uebernehmen": self._ris_uebernehmen,
             # Protocol
             "add_entry": self._add_entry,
             "edit_entry": self._edit_entry,
@@ -109,6 +115,11 @@ class FactionActionView(WorkViewMixin, View):
     # -- Render helpers ------------------------------------------------
 
     def _render_agenda(self, request, meeting):
+        # Seite vor der Sitzung nach dem Muster (Issue #1071): ihre Tagesordnung statt der bisherigen
+        if fragment_neu(request):
+            from . import vorbereiten
+
+            return vorbereiten.tagesordnung_html(self, request, meeting)
         try:
             ctx = _get_meeting_context(self, meeting)
             return _render_partial("work/faction/_agenda.html", ctx, request=request)
@@ -326,11 +337,31 @@ class FactionActionView(WorkViewMixin, View):
                     start_notice = local_time.ambiguous_notice(new_start, label="Beginn")
                 meeting.start = new_start
 
+        # Ende (Issue #1071): nur Formulare mit dem Feld ändern es; leer = ohne Ende, sonst am Tag des Beginns
+        if "end_time" in request.POST:
+            end_notice_error = self._apply_end_time(request, meeting)
+            if end_notice_error:
+                messages.error(request, end_notice_error)
+                return self._redirect_detail(meeting)
+
         meeting.location = request.POST.get("location", "")
-        meeting.is_virtual = request.POST.get("is_virtual") == "on"
+        if request.POST.get("video_aus_link"):
+            # Nebenspalte der neuen Seite (Issue #1071): ein Videolink macht die Sitzung online, wie bei der Anlage;
+            # online ohne Link bleibt online, nur das Entfernen eines Links schaltet „online“ ab
+            neuer_link = request.POST.get("video_link", "").strip()
+            if neuer_link:
+                meeting.is_virtual = True
+            elif meeting.video_link:
+                meeting.is_virtual = False
+        else:
+            meeting.is_virtual = request.POST.get("is_virtual") == "on"
         video_link = request.POST.get("video_link", "").strip() if meeting.is_virtual else ""
         if len(video_link) > VIDEO_LINK_MAX_LENGTH:
             messages.error(request, VIDEO_LINK_TOO_LONG)
+            return self._redirect_detail(meeting)
+        # Nur http(s)-Adressen, wie beim Anlegen (Issue #872): kein javascript: oder data: im Link der Seite
+        if video_link and not faction_services.safe_link_url(video_link):
+            messages.error(request, "Bitte einen gültigen Videolink angeben (https://…).")
             return self._redirect_detail(meeting)
         meeting.video_link = video_link
         # Zu- und Absagen je Sitzung (Issue #871); nur Formulare mit dem Feld ändern den Schalter
@@ -346,6 +377,40 @@ class FactionActionView(WorkViewMixin, View):
         if start_notice:
             messages.warning(request, start_notice)
         return response
+
+    def _apply_end_time(self, request, meeting) -> str:
+        """Ende aus ``end_time`` (HH:MM) am Tag des Beginns setzen; Rückgabe: Fehlermeldung oder leer."""
+        end_time = request.POST.get("end_time", "").strip()
+        if not end_time:
+            meeting.end = None
+            return ""
+        try:
+            ende = datetime.strptime(f"{timezone.localtime(meeting.start):%Y-%m-%d} {end_time}", "%Y-%m-%d %H:%M")
+        except ValueError:
+            return "Ungültige Uhrzeit für das Ende."
+        try:
+            ende_aware = local_time.aware(ende)
+        except local_time.NonexistentLocalTimeError as exc:
+            return str(exc)
+        if ende_aware <= meeting.start:
+            return "Das Ende muss nach dem Beginn liegen."
+        meeting.end = ende_aware
+        return ""
+
+    def _set_rsvp(self, request, meeting):
+        """Zu- und Absagen für diese Sitzung ein- oder ausschalten (Issue #871), wie das Feld im Bearbeiten-Dialog."""
+        can_edit = (
+            meeting.created_by == self.membership or self.membership.has_permission("faction.manage")
+        ) and meeting.status in ["draft", "planned", "invited", "ongoing"]
+        if not can_edit:
+            if self.is_htmx:
+                return HttpResponse(status=403)
+            messages.error(request, "Keine Berechtigung zum Bearbeiten.")
+            return self._redirect_detail(meeting)
+        meeting.rsvp_enabled = request.POST.get("rsvp_enabled") == "on"
+        meeting.save(update_fields=["rsvp_enabled", "updated_at"])
+        meldung = "Zu- und Absagen eingeschaltet." if meeting.rsvp_enabled else "Zu- und Absagen ausgeschaltet."
+        return self._refresh_or_redirect(request, meeting, meldung)
 
     def _invite(self, request, meeting):
         if not self.membership.has_permission("faction.invite"):
@@ -579,7 +644,10 @@ class FactionActionView(WorkViewMixin, View):
         if item and not can_view_item(item, self.membership):
             return HttpResponse(status=403)
 
-        if item and direction in ("up", "down"):
+        if item and direction == "to":
+            # Ziehen am Griff (Issue #1071): an eine Stelle der obersten Ebene desselben Teils
+            self._move_item_to(meeting, item, request.POST.get("position"))
+        elif item and direction in ("up", "down"):
             siblings = list(agenda.numbered_items(meeting, item.visibility).order_by("order"))
 
             current_index = None
@@ -605,6 +673,133 @@ class FactionActionView(WorkViewMixin, View):
             html = self._render_agenda(request, meeting)
             return _htmx_response(html)
 
+        return self._redirect_detail(meeting)
+
+    @staticmethod
+    def _move_item_to(meeting, item, position_raw) -> None:
+        """
+        TOP an die Stelle ``position`` (ab 0) der nummerierten TOPs seines Teils setzen. Die Reihenfolge-Werte der
+        Geschwister werden nur neu verteilt (Genehmigungs-TOP und Unterpunkte bleiben, wo sie sind).
+        """
+        try:
+            position = int(position_raw)
+        except (TypeError, ValueError):
+            return
+        with transaction.atomic():
+            agenda.lock_meeting(meeting)
+            siblings = list(agenda.numbered_items(meeting, item.visibility).order_by("order"))
+            if item.pk not in {s.pk for s in siblings}:
+                return
+            werte = sorted(s.order for s in siblings)
+            neu = [s for s in siblings if s.pk != item.pk]
+            position = max(0, min(position, len(neu)))
+            neu.insert(position, next(s for s in siblings if s.pk == item.pk))
+            for sibling, wert in zip(neu, werte, strict=True):
+                if sibling.order != wert:
+                    sibling.order = wert
+                    sibling.save(update_fields=["order", "updated_at"])
+            _renumber_items(meeting, item.visibility)
+
+    # -- Aus Ratssitzung übernehmen (Issue #1071) -----------------------------
+
+    def _ris_erlaubt(self, meeting) -> bool:
+        return self._can_manage_agenda(meeting) and meeting.status in agenda.PROPOSAL_OPEN_STATUSES
+
+    def _ris_auswahl(self, request, meeting):
+        """Inhalt des Dialogs „Aus Ratssitzung übernehmen“: Sitzung wählen, Punkte ankreuzen."""
+        if not self._ris_erlaubt(meeting):
+            return HttpResponse(status=403)
+        from .. import ratssitzung
+
+        context = {
+            "meeting": meeting,
+            "org_slug": self.organization.slug,
+            "angebot": ratssitzung.angebot(meeting, self.membership, request.POST.get("ris_meeting_id")),
+            "moeglich": ratssitzung.moeglich(meeting),
+        }
+        return _htmx_response(_render_partial("work/faction/neu/_vb_ris_auswahl.html", context, request=request))
+
+    def _ris_uebernehmen(self, request, meeting):
+        """Gewählte Punkte der Ratssitzung als TOPs übernehmen; Antwort: die neue Tagesordnung."""
+        import json
+
+        if not self._ris_erlaubt(meeting):
+            return HttpResponse(status=403)
+        from .. import ratssitzung
+
+        try:
+            angelegt = ratssitzung.uebernehmen(
+                meeting,
+                self.membership,
+                request.POST.get("ris_meeting_id"),
+                request.POST.getlist("punkt"),
+                request.POST.get("parent_id", "").strip(),
+            )
+        except ratssitzung.UebernahmeError as exc:
+            if self.is_htmx:
+                return HttpResponse(str(exc), status=400, content_type="text/plain; charset=utf-8")
+            messages.error(request, str(exc))
+            return self._redirect_detail(meeting)
+        zahl = len(angelegt)
+        if zahl:
+            meldung = f"{zahl} TOP{'s' if zahl != 1 else ''} aus der Ratssitzung übernommen."
+        else:
+            meldung = "Die gewählten Punkte stehen schon auf der Tagesordnung."
+        if self.is_htmx:
+            trigger = json.dumps({"show-toast": {"message": meldung, "type": "success" if zahl else "info"}})
+            return _htmx_response(self._render_agenda(request, meeting), trigger=trigger)
+        messages.success(request, meldung)
+        return self._redirect_detail(meeting)
+
+    # -- Offene erinnern und Testmail (Issue #1071) ---------------------------
+
+    def _remind_open(self, request, meeting):
+        """„Offene erinnern“: Erinnerung an alle Eingeladenen ohne Rückmeldung, mit Sperrfrist gegen Mehrfachklicks."""
+        from .. import vorbereiten
+
+        if not self.membership.has_permission("faction.invite"):
+            if self.is_htmx:
+                return HttpResponse(status=403)
+            messages.error(request, "Keine Berechtigung zum Erinnern.")
+            return self._redirect_detail(meeting)
+        try:
+            ok, nicht = vorbereiten.offene_erinnern(meeting)
+        except vorbereiten.ErinnernNichtMoeglichError as exc:
+            messages.warning(request, str(exc))
+            return self._refresh_or_redirect(request, meeting)
+        if nicht:
+            messages.warning(
+                request,
+                f"Erinnerung an {ok} von {ok + nicht} Mitgliedern ohne Rückmeldung verschickt, "
+                f"{nicht} nicht. Die Gründe stehen bei den Personen.",
+            )
+            return self._refresh_or_redirect(request, meeting)
+        zahl = "ein Mitglied" if ok == 1 else f"{ok} Mitglieder"
+        return self._refresh_or_redirect(request, meeting, f"Erinnerung an {zahl} ohne Rückmeldung verschickt.")
+
+    def _test_invitation(self, request, meeting):
+        """Testmail der Einladung an die eigene Adresse (Dialog „Jetzt einladen“); Antwort: ein Satz."""
+        from django.core.cache import cache
+        from django.utils.html import escape
+
+        from ..services import FactionMeetingEmailService, TestmailError
+
+        if not self.membership.has_permission("faction.invite"):
+            return HttpResponse(status=403)
+        # Schutz gegen Mehrfachklicks: je Person und Sitzung höchstens eine Testmail in 30 Sekunden
+        sperre = f"faction:testmail:{meeting.pk}:{self.membership.pk}"
+        if not cache.add(sperre, "1", timeout=30):
+            text, fehler = "Die Testmail ist gerade unterwegs. Bitte warten Sie einen Moment.", True
+        else:
+            try:
+                text = FactionMeetingEmailService().send_test_invitation(meeting, self.membership)
+                fehler = False
+            except TestmailError as exc:
+                text, fehler = str(exc), True
+        if self.is_htmx:
+            klasse = ' class="fehler"' if fehler else ""
+            return HttpResponse(f'<span{klasse} data-testid="fs-testmail-ergebnis">{escape(text)}</span>')
+        (messages.error if fehler else messages.success)(request, text)
         return self._redirect_detail(meeting)
 
     # -- Protocol handlers ---------------------------------------------
@@ -844,6 +1039,9 @@ class FactionActionView(WorkViewMixin, View):
             attendance.responded_at = timezone.now()
             attendance.save()
 
+            if self.is_htmx and fragment_neu(request):
+                # Seite vor der Sitzung (Issue #1071): Antwort und Stand stehen an mehreren Stellen, also neu laden
+                return self._refresh_or_redirect(request, meeting)
             if self.is_htmx:
                 ctx = _get_meeting_context(self, meeting)
                 html = _render_partial("work/faction/_sidebar.html", ctx, request=request)
@@ -1010,6 +1208,9 @@ class FactionActionView(WorkViewMixin, View):
                 attendance.checked_in_at = timezone.now()
                 attendance.save()
 
+        if self.is_htmx and fragment_neu(request):
+            # Seite vor der Sitzung (Issue #1071): die Liste steht in der Einladung, also neu laden
+            return self._refresh_or_redirect(request, meeting, "Teilnehmer hinzugefügt.")
         if self.is_htmx:
             html = self._render_attendance(request, meeting)
             return _htmx_response(html)

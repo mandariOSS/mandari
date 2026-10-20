@@ -488,7 +488,8 @@ class DsgvoExportService:
                 "failure_reason": a.failure_reason,
                 "timestamp": _dt(a.timestamp),
             }
-            for a in LoginAttempt.objects.filter(email=user.email).order_by("-timestamp")
+            # Unabhängig von der Schreibweise: Anmeldeversuche speichern die Adresse normalisiert
+            for a in LoginAttempt.objects.filter(email__iexact=user.email).order_by("-timestamp")
         ]
 
     def _collect_2fa(self, user) -> dict | None:

@@ -521,6 +521,8 @@ def _vorgang_details(ctx: ToolContext, paper: OParlPaper) -> dict[str, Any]:
             "beratungsfolge": folge[-12:],
             "beschluss": beschluss,
             "zusammenfassung": _short(paper.summary, 600),
+            # Die gespeicherte Zusammenfassung ist KI-Text ohne redaktionelle Prüfung (EU AI Act Art. 50, Issue #938)
+            "zusammenfassung_ki_erzeugt": bool(paper.summary),
             "dokumente": dokumente,
         }
     )

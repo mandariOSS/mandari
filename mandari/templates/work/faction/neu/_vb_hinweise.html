@@ -1,0 +1,7 @@
+{% comment %}
+Hinweise über der Hauptspalte (Issue #1071), wie die Hinweise der bisherigen Seite: Protokoll der vorigen Sitzung noch
+nicht genehmigt. Ein Satz ohne Kasten. Kontext: meeting.
+{% endcomment %}
+{% if meeting.previous_meeting and not meeting.previous_meeting.protocol_approved %}
+<p class="fs-hinweis-satz" data-testid="fs-hinweis-protokoll"><i data-lucide="alert-triangle" aria-hidden="true"></i>Das Protokoll der vorigen Sitzung vom {{ meeting.previous_meeting.start|date:"d.m.Y" }} ist noch nicht genehmigt.</p>
+{% endif %}

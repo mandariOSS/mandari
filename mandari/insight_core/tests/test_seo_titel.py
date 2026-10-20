@@ -28,6 +28,7 @@ import pytest
 from django.test import Client
 from django.utils import timezone
 
+from insight_core import seo
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -170,7 +171,8 @@ class TestVorgang:
         description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
 
         assert description.startswith(
-            "Münster: Vorlage V/0881/2011 vom 15.11.2011. Am 06.12.2011 im Rat beschlossen. Die Feuerwache Süd"
+            "Münster: Vorlage V/0881/2011 vom 15.11.2011. Am 06.12.2011 im Rat beschlossen. "
+            "KI-Zusammenfassung: Die Feuerwache Süd"
         )
         assert len(description) <= 160 and description.endswith("…")
 
@@ -179,8 +181,43 @@ class TestVorgang:
 
         description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
 
-        assert description == "Münster: Antrag A/12/2026 vom 15.11.2011. Kurz und klar."
+        assert description == "Münster: Antrag A/12/2026 vom 15.11.2011. KI-Zusammenfassung: Kurz und klar."
         assert "Noch keine Beratung" not in description
+
+    def test_kein_praefix_ohne_platz_fuer_den_text(self, muenster: OParlBody) -> None:
+        """Bleibt nach „KI-Zusammenfassung:“ zu wenig Platz, fällt die Zusammenfassung ganz weg (Issue #938)."""
+        paper = _vorgang(muenster, summary=ZUSAMMENFASSUNG)
+        gremium = _gremium(muenster, "Ausschuss für Stadtentwicklung, Umwelt und Wohnen")
+        _beraten(paper, _sitzung(muenster, gremium, _zeit(2011, 12, 6, 17)), "beschlossen")
+
+        description = _meta(_seite(Client(), f"/insight/vorgaenge/{paper.id}/"), "name", "description")
+
+        assert description == (
+            "Münster: Vorlage V/0881/2011 vom 15.11.2011. "
+            "Am 06.12.2011 im Ausschuss für Stadtentwicklung, Umwelt und Wohnen beschlossen."
+        )
+        # Ohne die Regel stünde hier „KI-Zusammenfassung: Die Feuerwache…“: Platz ist für die Kennzeichnung, kaum Text
+        assert seo.DESCRIPTION_MAX - len(description) - 1 >= seo._DESCRIPTION_REST_MIN
+
+    def test_ki_zusammenfassung_ist_auch_im_json_ld_gekennzeichnet(self, muenster: OParlBody) -> None:
+        """EU AI Act Art. 50 (Issue #938): Suchmaschinen zeigen den Text ohne die Seite, die Kennzeichnung steht darin."""
+        paper = _vorgang(muenster, paper_type="Antrag", reference="A/12/2026", summary="Kurz und klar.")
+
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
+
+        assert "KI-Zusammenfassung: Kurz und klar." in _meta(seite, "property", "og:description")
+        werke = [eintrag for eintrag in _json_ld(seite) if eintrag.get("@type") == "CreativeWork"]
+        assert [werk["description"] for werk in werke] == [
+            "Münster: Antrag A/12/2026 vom 15.11.2011. KI-Zusammenfassung: Kurz und klar."
+        ]
+
+    def test_ohne_zusammenfassung_keine_ki_kennzeichnung(self, muenster: OParlBody) -> None:
+        paper = _vorgang(muenster, paper_type="Antrag", reference="A/12/2026")
+
+        seite = _seite(Client(), f"/insight/vorgaenge/{paper.id}/")
+
+        assert "KI-Zusammenfassung" not in _meta(seite, "name", "description")
+        assert "data-ai-generated" not in seite
 
     @pytest.mark.parametrize(
         ("betreff", "erwartet"),
@@ -285,11 +322,16 @@ class TestVorgang:
         assert None not in vorgang.values()
         assert krumen["@type"] == "BreadcrumbList"
         eintraege = krumen["itemListElement"]
-        # Ohne Ebene „Vorgänge“: /insight/k/<slug>/vorgaenge/ leitet weiter (Issue #939)
-        assert [e["name"] for e in eintraege] == ["mandari Insight", "Münster", "V/0881/2011"]
-        assert [e["position"] for e in eintraege] == [1, 2, 3]
+        # Mit Ebene „Vorgänge“: Die Liste hat eine eigene Adresse je Kommune (Issue #939)
+        assert [e["name"] for e in eintraege] == ["mandari Insight", "Münster", "Vorgänge", "V/0881/2011"]
+        assert [e["position"] for e in eintraege] == [1, 2, 3, 4]
         pfade = [re.sub(r"^https?://[^/]+", "", e["item"]) for e in eintraege]
-        assert pfade == ["/insight/", "/insight/k/muenster/", f"/insight/vorgaenge/{paper.id}/"]
+        assert pfade == [
+            "/insight/",
+            "/insight/k/muenster/",
+            "/insight/k/muenster/vorgaenge/",
+            f"/insight/vorgaenge/{paper.id}/",
+        ]
 
     def test_brotkrumen_ohne_einstieg_der_kommune(self, muenster: OParlBody) -> None:
         OParlBody.objects.filter(pk=muenster.pk).update(slug=None)
@@ -356,6 +398,7 @@ class TestSitzung:
         assert ereignis["location"]["address"]["streetAddress"] == "Musterstraße 1"
         assert [e["name"] for e in krumen["itemListElement"]][1:] == [
             "Münster",
+            "Sitzungen",
             "Bezirksvertretung Mitte am 05.11.2030",
         ]
 
@@ -401,7 +444,7 @@ class TestGremium:
         gremium, krumen = _json_ld(seite)
         assert gremium["@type"] == "Organization" and gremium["name"] == "GRÜNE"
         assert gremium["parentOrganization"]["name"] == "Münster"
-        assert [e["name"] for e in krumen["itemListElement"]] == ["mandari Insight", "Münster", "GRÜNE"]
+        assert [e["name"] for e in krumen["itemListElement"]] == ["mandari Insight", "Münster", "Gremien", "GRÜNE"]
 
     def test_art_nicht_doppelt_wenn_der_name_sie_traegt(self, muenster: OParlBody) -> None:
         ausschuss = _gremium(muenster, "Ausschuss für Umwelt und Klimaschutz", classification="Ausschuss")
@@ -440,7 +483,12 @@ class TestPerson:
         assert daten["@type"] == "Person" and daten["name"] == "Erika Muster" and daten["jobTitle"] == "Ratsmitglied"
         assert [o["name"] for o in daten["memberOf"]] == ["Rat", "Bezirksvertretung Mitte"]
         assert {o["name"] for o in daten["affiliation"]} == {"Münster", "Fraktion Bündnis 90/Die Grünen"}
-        assert [e["name"] for e in krumen["itemListElement"]] == ["mandari Insight", "Münster", "Erika Muster"]
+        assert [e["name"] for e in krumen["itemListElement"]] == [
+            "mandari Insight",
+            "Münster",
+            "Personen",
+            "Erika Muster",
+        ]
 
     def test_ohne_mandat_nicht_als_ratsmitglied(self, muenster: OParlBody) -> None:
         ausschuss = _gremium(muenster, "Ausschuss für Umwelt", classification="Ausschuss")
@@ -784,6 +832,11 @@ class TestHoechstens70Zeichen:
             "/insight/fragen/",
             "/insight/karte/",
             "/insight/nachbarschaft/",
+            # Listen je Kommune (Issue #939)
+            "/insight/k/muenster/termine/",
+            "/insight/k/muenster/vorgaenge/",
+            "/insight/k/muenster/gremien/",
+            "/insight/k/muenster/personen/",
         ],
     )
     def test_uebersichten_im_buergerportal(self, lange_namen: dict[str, str], url: str) -> None:

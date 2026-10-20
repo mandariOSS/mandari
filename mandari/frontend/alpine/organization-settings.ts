@@ -6,7 +6,8 @@
  * im Attribut (ein Wert mit Anführungszeichen könnte sonst aus dem String ausbrechen):
  *
  * - `colorPicker`: `data-color` (Startfarbe), `data-fallback-color` (wenn leer).
- *   Markup: `work/organization/settings.html`, `work/organization/role_form.html`.
+ *   Markup: `work/organization/settings.html`, `work/organization/role_form.html`,
+ *   `work/organization/neu/_farbwahl.html`, `work/organization/neu/_farbe.html`.
  * - `logoPreview`: `work/organization/settings.html`.
  * - `permissionsManager`: `data-is-admin="true|false"`; Kategorien über `data-category`
  *   an den Rechte-Checkboxen. Markup: `work/organization/role_form.html`.
@@ -17,9 +18,13 @@ import { defineComponent } from '../js/alpine/component'
 
 const DEFAULT_COLOR = '#6366f1'
 
-/** Hex-Eingabe bereinigen: nur Hex-Ziffern, höchstens sechs. */
+/**
+ * Hex-Eingabe bereinigen: nur der Teil nach der letzten Raute (eingefügt „HEX #E3000F“),
+ * davon nur Hex-Ziffern, höchstens sechs.
+ */
 export function cleanHex(value: string): string {
-  return value.replace(/[^0-9a-fA-F]/g, '').slice(0, 6)
+  const code = value.includes('#') ? value.slice(value.lastIndexOf('#') + 1) : value
+  return code.replace(/[^0-9a-fA-F]/g, '').slice(0, 6)
 }
 
 export const colorPicker = defineComponent(() => ({
@@ -44,6 +49,13 @@ export const colorPicker = defineComponent(() => ({
     const clean = cleanHex(this.hex)
     this.hex = clean
     if (clean.length === 6) this.color = `#${clean}`
+  },
+
+  /** Beim Verlassen: Kurzform (`fff`) ausschreiben, sonst Unvollständiges verwerfen und die gültige Farbe zeigen. */
+  onHexBlur() {
+    const clean = cleanHex(this.hex)
+    if (clean.length === 3) this.color = `#${[...clean].map((c) => c + c).join('')}`
+    this.hex = this.color.replace('#', '')
   },
 }))
 

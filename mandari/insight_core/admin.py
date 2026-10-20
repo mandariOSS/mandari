@@ -5,8 +5,9 @@ Django Admin Konfiguration für OParl-Models.
 Verwendet Django Unfold für modernes Admin-Interface.
 """
 
+import shlex
 from datetime import datetime
-from typing import Any
+from typing import Any, Final
 
 from django import forms
 from django.contrib import admin, messages
@@ -58,46 +59,82 @@ def _reference_protection(label: str, references: list[Any]) -> list[str]:
     ]
 
 
-def run_sync_in_thread(source, full: bool = False):
-    """Sync einer Quelle als Auftrag im Worker anlegen, ohne den Admin zu blockieren (Issue #515).
+#: Ergebnisse von ``request_source_sync``
+SYNC_AN_INGESTOR: Final = "ingestor"
+SYNC_KEIN_INGESTOR: Final = "kein_ingestor"
+SYNC_QUELLE_INAKTIV: Final = "inaktiv"
 
-    Immer im Journal, auch solange die Webprozesse Aufträge sonst sofort ausführen: Ein Sync dauert
-    Minuten. Bis Issue #515 lief er in einem Faden im Webprozess.
-
-    Args:
-        source: OParlSource instance
-        full: True für Full Sync
-    """
-    from apps.events.tasks_backend import journal_backend
-
-    from .background_tasks import quelle_synchronisieren
-
-    journal_backend().enqueue(quelle_synchronisieren, [str(source.pk)], {"full": bool(full)})
+#: Fehlermeldung, wenn kein Ingestor den Auslöser annimmt (kein Rückfall auf den Worker, Issue #554)
+KEIN_INGESTOR: Final = (
+    "Kein Ingestor erreichbar (kein Lebenszeichen in Redis oder niemand hört auf den Auslöser). Bitte den Dienst "
+    "ingestor und Redis prüfen."
+)
 
 
-def request_source_sync(source, full: bool = False) -> str:
-    """Sync einer Quelle anstoßen: über den Ingestor-Daemon, wenn er läuft, sonst als Auftrag im Worker.
+def request_source_sync(source: OParlSource, full: bool = False) -> str:
+    """Sync einer Quelle beim Ingestor anstoßen; abgeglichen wird nur dort (Issue #554).
 
     Über den Daemon gilt der Takt je Quelle (Issue #1026): höchstens ein Lauf je Quelle zugleich, die Schonung bei
-    Fehlern geht vor. Abgeschaltete Quellen gleicht der Daemon nicht ab; sie laufen wie bisher im Worker. Liefert
-    ``"daemon"`` oder ``"worker"``.
+    Fehlern geht vor. Einen Rückfall auf den Worker der Anwendung gibt es nicht mehr. Inaktive Quellen bekommen keinen
+    Auslöser: Eine neue Quelle wird erst nach der Prüfung aktiv (Issue #555). Liefert ``SYNC_AN_INGESTOR``,
+    ``SYNC_KEIN_INGESTOR`` (kein Lebenszeichen oder kein Empfänger) oder ``SYNC_QUELLE_INAKTIV``.
     """
     from insight_sync import daemon
 
-    if source.is_active and daemon.is_ingestor_active() and daemon.trigger_sync(full=full, source=source):
-        return "daemon"
-    run_sync_in_thread(source, full=full)
-    return "worker"
+    if not source.is_active:
+        return SYNC_QUELLE_INAKTIV
+    if daemon.is_ingestor_active() and daemon.trigger_sync(full=full, source=source):
+        return SYNC_AN_INGESTOR
+    return SYNC_KEIN_INGESTOR
 
 
-def _sync_message(name: str, full: bool, weg: str) -> str:
-    art = "Vollständiger" if full else "Inkrementeller"
-    if weg == "daemon":
-        return (
-            f"{art} Sync für '{name}' an den Ingestor gesendet. Er beginnt, sobald ein Platz frei ist; "
-            "eine Quelle in Schonung bleibt in Ruhe."
+def manual_sync_command(source: OParlSource, full: bool = False) -> str:
+    """Abgleich von Hand im Container ``ingestor`` (``python -m src.main sync --source``), z. B. als Probelauf."""
+    befehl = f"python -m src.main sync --source {shlex.quote(source.url)}"
+    return f"{befehl} --full" if full else befehl
+
+
+def _sync_art(full: bool) -> str:
+    return "Vollständiger" if full else "Inkrementeller"
+
+
+def _report_source_sync(request: HttpRequest, source: OParlSource, full: bool, ergebnis: str) -> None:
+    """Rückmeldung im Admin zu ``request_source_sync`` für eine Quelle."""
+    if ergebnis == SYNC_AN_INGESTOR:
+        messages.success(
+            request,
+            f"{_sync_art(full)} Sync für '{source.name}' an den Ingestor gesendet. Er beginnt, sobald ein Platz frei "
+            "ist; eine Quelle in Schonung bleibt in Ruhe.",
         )
-    return f"{art} Sync für '{name}' gestartet. Läuft im Hintergrund."
+    elif ergebnis == SYNC_QUELLE_INAKTIV:
+        messages.warning(request, _inactive_message(source, full))
+    else:
+        messages.error(request, f"{_sync_art(full)} Sync für '{source.name}' nicht gestartet: {KEIN_INGESTOR}")
+
+
+def _inactive_message(source: OParlSource, full: bool) -> str:
+    return (
+        f"'{source.name}' ist inaktiv und wird nicht abgeglichen: Inaktive Quellen gleicht der Ingestor nicht ab. "
+        "Für einen Probelauf, wenn klar ist, warum die Quelle inaktiv ist, im Container ingestor: "
+        f"{manual_sync_command(source, full)}"
+    )
+
+
+def _report_bulk_sync(request: HttpRequest, sources: list[OParlSource], full: bool, ergebnisse: list[str]) -> None:
+    """Rückmeldung im Admin zu ``request_source_sync`` für mehrere Quellen."""
+    gesendet = ergebnisse.count(SYNC_AN_INGESTOR)
+    if gesendet:
+        messages.success(request, f"{_sync_art(full)} Sync für {gesendet} Quellen an den Ingestor gesendet.")
+    ohne_ingestor = [s.name for s, e in zip(sources, ergebnisse, strict=True) if e == SYNC_KEIN_INGESTOR]
+    if ohne_ingestor:
+        messages.error(
+            request,
+            f"{_sync_art(full)} Sync für {len(ohne_ingestor)} Quellen nicht gestartet ({', '.join(ohne_ingestor)}): "
+            f"{KEIN_INGESTOR}",
+        )
+    for source, ergebnis in zip(sources, ergebnisse, strict=True):
+        if ergebnis == SYNC_QUELLE_INAKTIV:
+            messages.warning(request, _inactive_message(source, full))
 
 
 class SourceTypeListFilter(admin.SimpleListFilter):
@@ -326,34 +363,24 @@ class OParlSourceAdmin(ModelAdmin):
     @action(description="Inkrementeller Sync", url_path="sync-incremental")
     def sync_incremental_action(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
-        messages.success(request, _sync_message(obj.name, False, request_source_sync(obj, full=False)))
+        _report_source_sync(request, obj, False, request_source_sync(obj, full=False))
         return redirect(f"../../{object_id}/change/")
 
     @action(description="Vollständiger Sync", url_path="sync-full")
     def sync_full_action(self, request, object_id):
         obj = self.model.objects.get(pk=object_id)
-        messages.success(request, _sync_message(obj.name, True, request_source_sync(obj, full=True)))
+        _report_source_sync(request, obj, True, request_source_sync(obj, full=True))
         return redirect(f"../../{object_id}/change/")
 
     @admin.action(description="Inkrementeller Sync (ausgewählte)")
     def sync_all_incremental(self, request, queryset):
-        wege = [request_source_sync(source, full=False) for source in queryset]
-        messages.success(request, _sync_count_message(len(wege), False, wege))
+        sources = list(queryset)
+        _report_bulk_sync(request, sources, False, [request_source_sync(s, full=False) for s in sources])
 
     @admin.action(description="Vollständiger Sync (ausgewählte)")
     def sync_all_full(self, request, queryset):
-        wege = [request_source_sync(source, full=True) for source in queryset]
-        messages.success(request, _sync_count_message(len(wege), True, wege))
-
-
-def _sync_count_message(count: int, full: bool, wege: list[str]) -> str:
-    art = "Vollständiger" if full else "Inkrementeller"
-    daemon = wege.count("daemon")
-    if daemon == count:
-        return f"{art} Sync für {count} Quellen an den Ingestor gesendet."
-    if daemon == 0:
-        return f"{art} Sync für {count} Quellen gestartet."
-    return f"{art} Sync für {count} Quellen angestoßen ({daemon} über den Ingestor, {count - daemon} im Worker)."
+        sources = list(queryset)
+        _report_bulk_sync(request, sources, True, [request_source_sync(s, full=True) for s in sources])
 
 
 class GeoCoverageListFilter(admin.SimpleListFilter):

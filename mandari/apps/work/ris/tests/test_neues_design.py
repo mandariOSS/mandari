@@ -435,9 +435,10 @@ def test_listen_sind_die_listen_von_insight_mit_zielen_in_work(welt: Welt, clien
         html = _seite(client_for, welt.vorsitz, name, query).content.decode()
         liste = html[html.index(f'data-testid="{testid}"') :]
         liste = liste[: liste.index("</table>")]
-        # Zeile wie in Insight (ganze Zeile klickbar), das Ziel liegt in Work, ohne Merkliste von Insight
+        # Zeile wie in Insight (ganze Zeile klickbar), das Ziel liegt in Work, ohne Merkliste von Insight. Dokumente
+        # öffnen wie auf der Vorgangsseite von Work über den gemeinsamen Dateiabruf (Issue #1103)
         assert f'data-href="{reverse(ziel, kwargs={"org_slug": slug, **ziel_kwargs})}"' in liste, name
-        assert "/insight/" not in liste and "bookmarks" not in liste, name
+        assert not re.search(r"/insight/(?!dokumente/)", liste) and "bookmarks" not in liste, name
         assert "Für die Fraktion</th>" in liste, name
 
     # Fraktion an Personen wie in Insight: auch aus der bestätigten Zuordnung, mit Quelle
@@ -447,6 +448,51 @@ def test_listen_sind_die_listen_von_insight_mit_zielen_in_work(welt: Welt, clien
     assert "Fraktion Mitte" in person and "Vorsitz, Hauptausschuss" in person
     gremium = _seite(client_for, welt.vorsitz, "work:ris_organization_detail", org_id=welt.ausschuss.pk)
     assert "Fraktion Mitte" in gremium.content.decode()
+
+
+def test_vorgangsliste_und_uebersicht_mit_vorlage_und_anlagen_wie_die_vorgangsseite(
+    welt: Welt, client_for: Any
+) -> None:
+    """Issue #1103: Hauptdokument und Anlagen unter dem Titel; zurückgenommene und gesperrte Anlagen fehlen."""
+    haupt = OParlFile.objects.create(
+        external_id=_kennung("files"),
+        body=welt.body,
+        paper=welt.vorlage,
+        name="Vorlage Feuerwehrbedarfsplan",
+        download_url="https://ris.neu.example/vorlage.pdf",
+        mime_type="application/pdf",
+        size=245760,
+    )
+    welt.vorlage.raw_json = {"mainFile": {"id": haupt.external_id}}
+    welt.vorlage.save(update_fields=["raw_json"])
+    OParlFile.objects.create(
+        external_id="https://mandari.example/session/musterstadt/api/oparl/file/1",
+        body=welt.body,
+        paper=welt.vorlage,
+        name="Zurückgenommene Anlage",
+        download_url="https://mandari.example/datei.pdf",
+        deleted=True,
+    )
+    OParlFile.objects.create(
+        external_id=_kennung("files"),
+        body=welt.body,
+        paper=welt.vorlage,
+        name="Entfernte Anlage",
+        download_url="https://ris.neu.example/entfernt.pdf",
+        source_missing_since=timezone.now(),
+    )
+    anlage = OParlFile.objects.get(name="Anlage Bedarfsplan")
+
+    for name in ("work:ris_papers", "work:ris_overview"):
+        html = _seite(client_for, welt.leser, name).content.decode()
+        zeile = html[html.index('data-testid="vorgang-dokumente"') :]
+        zeile = zeile[: zeile.index("</details>")]
+        assert f'href="/insight/dokumente/{haupt.pk}/preview/"' in zeile, name
+        assert 'Vorlage<span class="sr-only"> V/1 öffnen,</span>' in zeile and "PDF, 240.0 KB" in zeile, name
+        assert "1 Anlage" in zeile and f'href="/insight/dokumente/{anlage.pk}/preview/"' in zeile, name
+        assert "Zurückgenommene Anlage" not in html and "Entfernte Anlage" not in html, name
+        # Der zweite Vorgang hat keine Dokumente und keine Dokumentzeile
+        assert html.count('data-testid="vorgang-dokumente"') == 1, name
 
 
 def test_vorgangsliste_ohne_werte_fuer_die_fraktion_ohne_spalte(welt: Welt, client_for: Any) -> None:
@@ -544,3 +590,19 @@ def test_vorgang_mit_zusammenfassung_aus_dem_baustein_von_insight(welt: Welt, cl
     assert "Kurz gesagt: eine neue Feuerwache" in zusammenfassung
     assert "Die Zusammenfassung kann Fehler enthalten." in zusammenfassung
     assert '<h2 class="text-base font-semibold' in zusammenfassung
+    # Maschinenlesbar gekennzeichnet (EU AI Act Art. 50, Issue #938)
+    ki_text = zusammenfassung[zusammenfassung.index('data-ai-generated="true"') :]
+    assert ki_text.index("Kurz gesagt") < ki_text.index("</div>")
+
+
+def test_vorgang_im_bisherigen_rahmen_kennzeichnet_die_ki_zusammenfassung(welt: Welt, client_for: Any) -> None:
+    """EU AI Act Art. 50 (Issue #938): auch die bisherige Vorgangsseite nennt die KI, sichtbar und im HTML."""
+    welt.org.work_new_design = False
+    welt.org.save(update_fields=["work_new_design"])
+    welt.vorlage.summary = "Kurz gesagt: eine neue Feuerwache im Norden."
+    welt.vorlage.save(update_fields=["summary"])
+
+    html = _seite(client_for, welt.vorsitz, "work:ris_paper_detail", paper_id=welt.vorlage.pk).content.decode()
+
+    assert '<p class="text-gray-600 dark:text-gray-400" data-ai-generated="true">Kurz gesagt: eine neue' in html
+    assert "Mit KI aus den Dokumenten erstellt. Die Zusammenfassung kann Fehler enthalten." in html

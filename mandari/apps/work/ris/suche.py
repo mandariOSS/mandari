@@ -33,8 +33,9 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.utils.html import escape
 
+from hub.ris import vorlagennummer
 from insight_core.services.search_filters import PERIOD_CUSTOM, SearchQuery
-from insight_core.services.search_page import active_filters, build_context
+from insight_core.services.search_page import active_filters, build_context, nummer_im_leerzustand
 from insight_core.services.search_presentation import Links, german_date, normalize_paper_type, statuses_for_papers
 
 from . import selectors
@@ -172,18 +173,19 @@ def _datenbank(
     vorgaenge = []
     for paper in funde["papers"]:
         status = staende.get(str(paper.pk))
-        vorgaenge.append(
-            _treffer(
-                "vorgang",
-                paper.pk,
-                links,
-                paper.name or paper.reference or "Vorgang",
-                [normalize_paper_type(paper.paper_type), paper.reference or "", german_date(paper.date)],
-                bezug,
-                status=getattr(status, "text", "") or "Noch keine Beratung bekannt.",
-                status_kind=getattr(status, "kind", ""),
-            )
+        treffer = _treffer(
+            "vorgang",
+            paper.pk,
+            links,
+            paper.name or paper.reference or "Vorgang",
+            [normalize_paper_type(paper.paper_type), paper.reference or "", german_date(paper.date)],
+            bezug,
+            status=getattr(status, "text", "") or "Noch keine Beratung bekannt.",
+            status_kind=getattr(status, "kind", ""),
         )
+        # Gesuchte Vorlagennummer: steht schon vorn (selectors.orm_search), hier nur hervorgehoben (Issue #1102)
+        treffer["nummer_passt"] = vorlagennummer.genau(getattr(paper, "nummer_rang", None))
+        vorgaenge.append(treffer)
     sitzungen = [
         _treffer(
             "sitzung",
@@ -202,7 +204,10 @@ def _datenbank(
         for o in funde["organizations"]
     ]
     personen = [_treffer("person", p.pk, links, p.name or "Person", ["Person"], bezug) for p in funde["persons"]]
-    nach_bezug = sorted(vorgaenge, key=lambda t: -t["faktor"]) + sorted(sitzungen, key=lambda t: -t["faktor"])
+    # Die gesuchte Vorlagennummer bleibt vor dem Bezug der Fraktion (sortiert ist stabil)
+    nach_bezug = sorted(vorgaenge, key=lambda t: (not t["nummer_passt"], -t["faktor"])) + sorted(
+        sitzungen, key=lambda t: -t["faktor"]
+    )
     reiter = {
         "": nach_bezug,
         "papers": vorgaenge,
@@ -226,6 +231,7 @@ def _datenbank(
     ]
     return {
         "groups": groups,
+        "nummer_gesucht": nummer_im_leerzustand(params),
         "datenbanksuche": True,
         "alle_anzeigen": alle_anzeigen,
         "count_sentence": f"{n} Treffer in Titeln und Aktenzeichen"

@@ -411,7 +411,6 @@
   "insight_search/tests/test_suchindex_abonnement.py": 1.0,
   "insight_search/tests/test_suchindex_schatten_befehl.py": 0.4,
   "insight_search/tests/test_suchqualitaet.py": 0.0,
-  "insight_sync/tests/test_session_mirror_ort.py": 0.0,
-  "insight_sync/tests/test_sync_daemon.py": 0.0
+  "insight_sync/tests/test_session_mirror_ort.py": 0.0
  }
 }

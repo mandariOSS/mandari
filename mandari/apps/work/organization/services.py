@@ -44,7 +44,7 @@ from . import audit, emails, selectors
 from .models import DATA_EXPORT_FAILED_MESSAGE, DATA_EXPORT_STALE_AFTER, DataExport, MemberAbsence, MemberChangeRequest
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Iterable, Mapping
 
     from django.core.files.uploadedfile import UploadedFile
 
@@ -1157,7 +1157,7 @@ def add_party(organization: Organization, data: PartyInput) -> CouncilParty:
         email=data.email,
         contact_name=data.contact_name,
         contact_phone=data.contact_phone,
-        color=data.color,
+        color=_color(data.color, "#6b7280"),
         is_coalition_member=data.is_coalition_member,
         coalition_order=data.coalition_order,
     )
@@ -1174,7 +1174,7 @@ def update_party(organization: Organization, party: CouncilParty, data: PartyInp
     party.email = data.email
     party.contact_name = data.contact_name
     party.contact_phone = data.contact_phone
-    party.color = data.color
+    party.color = _color(data.color, party.color)
     party.is_coalition_member = data.is_coalition_member
     party.coalition_order = data.coalition_order
     party.is_active = data.is_active
@@ -1923,73 +1923,170 @@ def update_parties(organization: Organization, party_ids: list[str], new_party_n
     organization.parties.set(parties)
 
 
-def save_faction_settings(organization: Organization, membership: Membership, form: Mapping[str, str]) -> None:
-    """Workflow-, Einladungs-, Beschlussfähigkeits- und Titel-Einstellungen der Fraktionssitzungen speichern."""
+#: Schalter der Fraktionssitzungen: fehlt das Feld im Formular, ist der Schalter aus
+FACTION_SETTINGS_SWITCHES = (
+    "auto_create_approval_item",
+    "link_previous_meeting",
+    "protocol_revision_safe",
+    "auto_lock_protocol_on_complete",
+    "require_protocol_approval",
+)
+#: Felder, die die Einstellungsseite einzeln speichert (Issue #1071, sofort speichern); ``publish_protocols`` nur mit
+#: ``protocols.publish``
+FACTION_SETTINGS_FIELDS = frozenset(
+    {
+        *FACTION_SETTINGS_SWITCHES,
+        "invitation_mode",
+        "invitation_dispatch",
+        "invitation_lead_hours",
+        "agenda_reminder_enabled",
+        "agenda_reminder_hours",
+        "protocol_dispatch",
+        "protocol_dispatch_delay_hours",
+        "quorum_rule",
+        "first_agenda_title_with_previous",
+        "first_agenda_title_no_previous",
+        "first_agenda_description",
+        "publish_protocols",
+    }
+)
+
+
+def _hours(form: Mapping[str, str], key: str, lowest: int, highest: int, label: str, strict: bool) -> int | None:
+    """
+    Stundenfeld lesen. Wie bisher (Formular als Ganzes): ungültige Werte bleiben unbeachtet, Werte außerhalb der
+    Grenzen werden begrenzt. Beim Speichern einzelner Felder (``strict``) meldet die Seite beides als Fehler, sonst
+    stünde im Feld etwas anderes als gespeichert.
+    """
+    try:
+        value = int(form.get(key, ""))
+    except (TypeError, ValueError):
+        if strict:
+            raise ServiceError(f"{label}: bitte eine ganze Zahl von {lowest} bis {highest} eingeben.") from None
+        return None
+    if strict and not lowest <= value <= highest:
+        raise ServiceError(f"{label}: bitte eine ganze Zahl von {lowest} bis {highest} eingeben.")
+    return max(lowest, min(value, highest))
+
+
+def _choice(form: Mapping[str, str], key: str, choices: Any, strict: bool) -> str | None:
+    value = form.get(key, "")
+    if value in choices:
+        return value
+    if strict:
+        raise ServiceError("Ungültige Auswahl.")
+    return None
+
+
+def _apply_faction_settings(
+    organization: Organization,
+    membership: Membership,
+    form: Mapping[str, str],
+    wanted: set[str] | None,
+    strict: bool,
+) -> None:
+    """Felder aus ``wanted`` (alle bei ``None``) in die Einstellungen der Organisation übernehmen, ohne zu speichern."""
     from apps.common.quorum import QUORUM_RULES
     from apps.work.faction.invitations import AGENDA_REMINDER_MAX_HOURS, INVITATION_DISPATCH_MODES, INVITATION_MODES
     from apps.work.faction.protocol_dispatch import PROTOCOL_DISPATCH_MAX_DELAY_HOURS, PROTOCOL_DISPATCH_MODES
 
+    def want(key: str) -> bool:
+        return wanted is None or key in wanted
+
     settings = organization.settings or {}
     faction_settings = settings.get("faction", {})
 
-    for key in (
-        "auto_create_approval_item",
-        "link_previous_meeting",
-        "protocol_revision_safe",
-        "auto_lock_protocol_on_complete",
-        "require_protocol_approval",
-    ):
-        faction_settings[key] = form.get(key) == "on"
+    for key in FACTION_SETTINGS_SWITCHES:
+        if want(key):
+            faction_settings[key] = form.get(key) == "on"
 
     # Einladungslogik je Organisation (Issue #62)
-    invitation_mode = form.get("invitation_mode", "")
-    if invitation_mode in INVITATION_MODES:
-        faction_settings["invitation_mode"] = invitation_mode
-    invitation_dispatch = form.get("invitation_dispatch", "")
-    if invitation_dispatch in INVITATION_DISPATCH_MODES:
-        faction_settings["invitation_dispatch"] = invitation_dispatch
-    try:
-        lead_hours = int(form.get("invitation_lead_hours", ""))
-        faction_settings["invitation_lead_hours"] = max(1, min(lead_hours, 24 * 60))
-    except (TypeError, ValueError):
-        pass
+    if want("invitation_mode"):
+        invitation_mode = _choice(form, "invitation_mode", INVITATION_MODES, strict)
+        if invitation_mode is not None:
+            faction_settings["invitation_mode"] = invitation_mode
+    if want("invitation_dispatch"):
+        invitation_dispatch = _choice(form, "invitation_dispatch", INVITATION_DISPATCH_MODES, strict)
+        if invitation_dispatch is not None:
+            faction_settings["invitation_dispatch"] = invitation_dispatch
+    if want("invitation_lead_hours"):
+        lead_hours = _hours(form, "invitation_lead_hours", 1, 24 * 60, "Einladungsvorlauf", strict)
+        if lead_hours is not None:
+            faction_settings["invitation_lead_hours"] = lead_hours
 
     # Erinnerung zum Eintragen von TOPs (Issue #871): Standard aus
-    faction_settings["agenda_reminder_enabled"] = form.get("agenda_reminder_enabled") == "on"
-    try:
-        reminder_hours = int(form.get("agenda_reminder_hours", ""))
-        faction_settings["agenda_reminder_hours"] = max(1, min(reminder_hours, AGENDA_REMINDER_MAX_HOURS))
-    except (TypeError, ValueError):
-        pass
+    if want("agenda_reminder_enabled"):
+        faction_settings["agenda_reminder_enabled"] = form.get("agenda_reminder_enabled") == "on"
+    if want("agenda_reminder_hours"):
+        reminder_hours = _hours(
+            form, "agenda_reminder_hours", 1, AGENDA_REMINDER_MAX_HOURS, "Erinnerung zum Eintragen von TOPs", strict
+        )
+        if reminder_hours is not None:
+            faction_settings["agenda_reminder_hours"] = reminder_hours
 
     # Automatischer Protokollversand (Issue #871): Standard aus. Beim Einschalten zählt erst, was danach
     # fällig wird – ältere Protokolle gehen nicht nachträglich raus.
-    protocol_dispatch = form.get("protocol_dispatch", "")
-    if protocol_dispatch in PROTOCOL_DISPATCH_MODES:
-        was_off = faction_settings.get("protocol_dispatch", "off") not in ("after_completion", "after_approval")
-        faction_settings["protocol_dispatch"] = protocol_dispatch
-        if protocol_dispatch != "off" and (was_off or not faction_settings.get("protocol_dispatch_since")):
-            faction_settings["protocol_dispatch_since"] = timezone.now().isoformat()
-    try:
-        delay_hours = int(form.get("protocol_dispatch_delay_hours", ""))
-        faction_settings["protocol_dispatch_delay_hours"] = max(0, min(delay_hours, PROTOCOL_DISPATCH_MAX_DELAY_HOURS))
-    except (TypeError, ValueError):
-        pass
+    if want("protocol_dispatch"):
+        protocol_dispatch = _choice(form, "protocol_dispatch", PROTOCOL_DISPATCH_MODES, strict)
+        if protocol_dispatch is not None:
+            was_off = faction_settings.get("protocol_dispatch", "off") not in ("after_completion", "after_approval")
+            faction_settings["protocol_dispatch"] = protocol_dispatch
+            if protocol_dispatch != "off" and (was_off or not faction_settings.get("protocol_dispatch_since")):
+                faction_settings["protocol_dispatch_since"] = timezone.now().isoformat()
+    if want("protocol_dispatch_delay_hours"):
+        delay_hours = _hours(
+            form, "protocol_dispatch_delay_hours", 0, PROTOCOL_DISPATCH_MAX_DELAY_HOURS, "Protokollversand", strict
+        )
+        if delay_hours is not None:
+            faction_settings["protocol_dispatch_delay_hours"] = delay_hours
 
     # Beschlussfähigkeit (Issue #69): nur Datenfeld/Erweiterungspunkt
-    quorum_rule = form.get("quorum_rule", "")
-    if quorum_rule in QUORUM_RULES:
-        faction_settings["quorum_rule"] = quorum_rule
+    if want("quorum_rule"):
+        quorum_rule = _choice(form, "quorum_rule", QUORUM_RULES, strict)
+        if quorum_rule is not None:
+            faction_settings["quorum_rule"] = quorum_rule
 
     for key in ("first_agenda_title_with_previous", "first_agenda_title_no_previous", "first_agenda_description"):
-        faction_settings[key] = form.get(key, "").strip()
+        if want(key):
+            faction_settings[key] = form.get(key, "").strip()
 
     settings["faction"] = faction_settings
     organization.settings = settings
     # Öffentliche Protokolle (Opt-in): nur mit protocols.publish änderbar
-    if membership.has_permission("protocols.publish"):
+    if want("publish_protocols") and membership.has_permission("protocols.publish"):
         organization.publish_protocols = form.get("publish_protocols") == "on"
-    _save_organization(organization)
+
+
+def save_faction_settings(
+    organization: Organization,
+    membership: Membership,
+    form: Mapping[str, str],
+    fields: Iterable[str] | None = None,
+) -> None:
+    """
+    Workflow-, Einladungs-, Beschlussfähigkeits- und Titel-Einstellungen der Fraktionssitzungen speichern.
+
+    Ohne ``fields`` wie bisher das ganze Formular (fehlende Schalter sind aus). Mit ``fields`` nur diese Felder
+    (Issue #1071: die Einstellungsseite speichert jede Änderung sofort); alle anderen Einstellungen bleiben, wie sie
+    in der Datenbank stehen, auch wenn eine zweite Person gleichzeitig etwas anderes ändert. Ungültige Werte melden
+    dann einen ``ServiceError``, statt still übergangen oder begrenzt zu werden.
+    """
+    if fields is None:
+        _apply_faction_settings(organization, membership, form, None, strict=False)
+        _save_organization(organization)
+        return
+
+    wanted = {f for f in fields if f}
+    if not wanted or wanted - FACTION_SETTINGS_FIELDS:
+        raise ServiceError("Unbekannte Einstellung.")
+    if "publish_protocols" in wanted and not membership.has_permission("protocols.publish"):
+        raise ServiceError("Öffentliche Protokolle ändern nur Personen mit dem Recht „Protokolle veröffentlichen“.")
+    with transaction.atomic():
+        locked = Organization.objects.select_for_update().get(pk=organization.pk)
+        _apply_faction_settings(locked, membership, form, wanted, strict=True)
+        _save_organization(locked, update_fields=["settings", "publish_protocols", "updated_at"])
+    organization.settings = locked.settings
+    organization.publish_protocols = locked.publish_protocols
 
 
 def faction_settings_with_defaults(organization: Organization) -> dict[str, Any]:

@@ -59,7 +59,7 @@ class PrivacySettingsView(SessionViewMixin, TemplateView):
         privacy = settings.setdefault("privacy", {})
 
         old = privacy_service.get_privacy_settings(tenant)
-        for key in ("persons_years", "audit_years", "np_content_years"):
+        for key in privacy_service.RETENTION_KEYS:
             try:
                 privacy[key] = max(0, min(int(request.POST.get(key, 0) or 0), 100))
             except (TypeError, ValueError):
@@ -82,6 +82,7 @@ class PrivacySettingsView(SessionViewMixin, TemplateView):
                 "dsgvo_einstellungen": {
                     "personen_jahre": {"alt": old["persons_years"], "neu": new["persons_years"]},
                     "audit_jahre": {"alt": old["audit_years"], "neu": new["audit_years"]},
+                    "archiv_jahre": {"alt": old["archive_years"], "neu": new["archive_years"]},
                     "noe_jahre": {"alt": old["np_content_years"], "neu": new["np_content_years"]},
                     "hinweisseite_geaendert": old["notice"] != new["notice"],
                     "lesezugriffe_protokollieren": {"alt": old["read_logging"], "neu": new["read_logging"]},
@@ -112,7 +113,8 @@ class PrivacyPurgeRunView(SessionViewMixin, View):
             request,
             f"{prefix}{stats['persons_anonymized']} Person(en) anonymisiert, "
             f"{stats['np_meetings_cleared']} Sitzung(en) NÖ-Inhalte geleert, "
-            f"{stats['audit_deleted']} Audit-Eintrag/-Einträge gelöscht{archive}.",
+            f"{stats['audit_deleted']} Audit-Eintrag/-Einträge gelöscht{archive}, "
+            f"{len(stats['archives_deleted'])} Archivpaket(e) nach Frist gelöscht.",
         )
         if stats["skipped"]:
             messages.info(request, "Übersprungen: " + ", ".join(stats["skipped"]))

@@ -1,0 +1,7 @@
+{% comment %}
+Schalter (role="switch") als Checkbox im Formular (Issue #1071, Baustein .fs-schalter aus dem Muster): speichert ohne
+JavaScript mit dem Formular, mit htmx sofort. Wert wie eine Checkbox ohne value („on“).
+  {% include "work/organization/neu/_schalter.html" with name="agenda_reminder_enabled" id="e-erin-an" label="Erinnerung verschicken" an=faction_settings.agenda_reminder_enabled %}
+``gesperrt`` sperrt den Schalter (Recht fehlt), ``hilfe`` ist die id eines erklärenden Satzes (aria-describedby).
+{% endcomment %}
+<label class="fs-schalter" for="{{ id|default:name }}"><input type="checkbox" role="switch" name="{{ name }}" id="{{ id|default:name }}"{% if an %} checked{% endif %}{% if gesperrt %} disabled{% endif %}{% if hilfe %} aria-describedby="{{ hilfe }}"{% endif %}><span class="spur" aria-hidden="true"></span>{{ label }}</label>

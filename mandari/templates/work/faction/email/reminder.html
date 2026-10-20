@@ -1,11 +1,11 @@
 {% extends "emails/base_email.html" %}
-{% block subject %}Erinnerung: Fraktionssitzung{% endblock %}
-{% block preheader %}{{ meeting.title }} beginnt in etwa {{ hours_before }} Stunden.{% endblock %}
+{% block subject %}{% if rueckmeldung_offen %}Bitte um Rückmeldung{% else %}Erinnerung: Fraktionssitzung{% endif %}{% endblock %}
+{% block preheader %}{% if rueckmeldung_offen %}Zu {{ meeting.title }} fehlt noch deine Rückmeldung.{% else %}{{ meeting.title }} beginnt in etwa {{ hours_before }} Stunden.{% endif %}{% endblock %}
 {% block content %}
-<h1 class="h1">Erinnerung: Fraktionssitzung</h1>
+<h1 class="h1">{% if rueckmeldung_offen %}Bitte um Rückmeldung{% else %}Erinnerung: Fraktionssitzung{% endif %}</h1>
 <p class="muted">{{ organization.name }}</p>
 <p>Hallo {{ user.first_name|default:user.email }},</p>
-<p>zur Erinnerung: die folgende Sitzung beginnt in etwa <strong>{{ hours_before }} Stunden</strong>.</p>
+{% if rueckmeldung_offen %}<p>zur folgenden Sitzung fehlt noch deine Rückmeldung. Bitte sage in der Sitzungsansicht zu oder ab.</p>{% else %}<p>zur Erinnerung: die folgende Sitzung beginnt in etwa <strong>{{ hours_before }} Stunden</strong>.</p>{% endif %}
 <div class="card card-warning">
     <p><strong>{{ meeting.title }}</strong></p>
     <table role="presentation" class="table" width="100%" cellpadding="0" cellspacing="0" border="0">
@@ -39,7 +39,7 @@
 </div>
 {% if meeting_url %}
 <div class="btn-wrap">
-    <a class="btn" href="{{ meeting_url }}">Zur Sitzung im Work-Portal</a>
+    <a class="btn" href="{{ meeting_url }}">{% if rueckmeldung_offen %}Zu- oder absagen{% else %}Zur Sitzung im Work-Portal{% endif %}</a>
 </div>
 {% endif %}
 {% if attendance.status == 'tentative' %}

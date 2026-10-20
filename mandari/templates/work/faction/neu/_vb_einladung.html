@@ -1,0 +1,62 @@
+{% load permission_tags %}
+{% comment %}
+Einladung nach dem Versand, Sicht der Verwaltung (Issue #1071, Muster zusagenHtml): je Person Rolle, Rückmeldung (wenn
+Zu- und Absagen an sind, gruppiert nach offen, vielleicht, zugesagt, abgesagt) und das Versandergebnis der Einladung
+(verschickt am, ohne nichtöffentlichen Teil, nicht verschickt mit Grund). Am Handy als Zeilen (.fs-tln).
+„Offene erinnern“ (Aktion remind_open, Recht faction.invite) schickt allen ohne Rückmeldung eine Erinnerung; das
+Ergebnis steht je Person, eine Sperrfrist verhindert Mehrfachversand.
+Kontext: meeting, org_slug, personen, rm, versand, gaeste, can_edit, erinnerung_sitzung, erinnern,
+membership.
+{% endcomment %}
+{% if rm %}
+<div class="fs-abschnitt-kopf">
+    <h2 id="rm-h">Rückmeldungen</h2>
+    <span class="fs-meta" data-testid="fs-rm-satz">{{ rm.satz }}</span>
+    {% if erinnern and erinnern.offen %}
+    <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" class="fs-teil-aktion" data-submit-once>
+        {% csrf_token %}
+        <input type="hidden" name="action" value="remind_open">
+        <button type="submit" class="wf-knopf wf-klein" data-testid="fs-offene-erinnern"{% if not erinnern.moeglich %} disabled aria-describedby="erinnern-hilfe"{% endif %}><i data-lucide="bell" aria-hidden="true"></i>Offene erinnern</button>
+    </form>
+    {% endif %}
+</div>
+{% else %}
+<div class="fs-abschnitt-kopf">
+    <h2 id="rm-h">Einladung</h2>
+    <span class="fs-meta">{% if versand.unbekannt == versand.gesamt %}an {{ versand.gesamt }} Mitglied{{ versand.gesamt|pluralize:"er" }}{% else %}{{ versand.ok }} von {{ versand.gesamt }} versendet{% endif %}</span>
+</div>
+{% endif %}
+
+<table class="fs-tln" data-testid="fs-tln">
+    <caption class="sr-only">{% if rm %}Rückmeldungen und Versand der Einladung je Person{% else %}Versand der Einladung je Person{% endif %}</caption>
+    <thead>
+        <tr><th scope="col">Name</th><th scope="col" class="sp-rolle">Rolle</th>{% if rm %}<th scope="col">Rückmeldung</th>{% endif %}<th scope="col">Einladung</th></tr>
+    </thead>
+    <tbody>
+        {% if rm %}
+        {% for gruppe in rm.gruppen %}
+        <tr class="gruppe"><td colspan="4">{{ gruppe.name }}, {{ gruppe.personen|length }}</td></tr>
+        {% for p in gruppe.personen %}{% include "work/faction/neu/_vb_person.html" %}{% endfor %}
+        {% endfor %}
+        {% else %}
+        {% for p in personen %}{% include "work/faction/neu/_vb_person.html" %}{% endfor %}
+        {% endif %}
+    </tbody>
+</table>
+
+{% if gaeste %}<p class="fs-unter-liste">Gäste: {% for a in gaeste %}{{ a.get_display_name }}{% if not forloop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+
+{% if not rm %}
+<div class="fs-unter-liste">Zu- und Absagen sind für diese Sitzung aus.
+    {% if can_edit %}
+    <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" class="fs-inline-form">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="set_rsvp">
+        <input type="hidden" name="rsvp_enabled" value="on">
+        <button type="submit" class="wf-textlink">Für diese Sitzung einschalten</button>
+    </form>
+    {% endif %}
+</div>
+{% endif %}
+{% if erinnern and erinnern.zuletzt %}<p class="fs-unter-liste" id="erinnern-hilfe">An alle ohne Rückmeldung erinnert am {{ erinnern.zuletzt }}.{% if erinnern.wieder_ab %} Erneut erinnern können Sie ab {{ erinnern.wieder_ab }}.{% endif %}</p>{% endif %}
+{% if erinnerung_sitzung %}<p class="fs-unter-liste">{{ erinnerung_sitzung }}</p>{% endif %}

@@ -236,6 +236,26 @@ def test_mit_schalter_neuer_rahmen_und_neue_kernseiten() -> None:
     assert 'data-gestaltung="neu"' in gremien.content.decode()
 
 
+def test_wortmarke_und_tastenhinweis_barrierefrei() -> None:
+    """
+    Die Wortmarke heißt, wie sie aussieht („mandari Session“), auch in der schmalen Leiste, in der sichtbar nur
+    „m.“ bleibt (WCAG 2.5.3, axe label-content-name-mismatch); der Tastenhinweis der Suche erreicht auf dem grauen
+    Suchfeld 4,5:1 (gray-600 auf band-grau, dunkel gray-400).
+    """
+    tenant = _mandant("marke", neu=True)
+    welt = _welt(tenant)
+    html = _client(tenant, "Administrator").get(welt["start"]).content.decode()
+
+    leiste = html.split('id="session-navigation"', 1)[1].split("</aside>", 1)[0]
+    marke = leiste.split('class="inline-flex items-baseline', 1)[1].split("</a>", 1)[0]
+    assert "aria-label" not in marke.split(">", 1)[0]
+    assert '<span class="sr-only">mandari Session, Start</span>' in marke
+    assert re.search(r'<span class="rahmen-label[^"]*" aria-hidden="true">Session</span>', marke)
+    hinweis = re.search(r'<kbd class="([^"]+)"[^>]*>Strg K</kbd>', html)
+    assert hinweis, "Tastenhinweis der Suche fehlt"
+    assert "text-gray-600" in hinweis.group(1).split() and "text-gray-500" not in hinweis.group(1).split()
+
+
 def test_alle_aktionen_der_sitzung_bleiben_erreichbar() -> None:
     tenant = _mandant("aktionen", neu=True)
     welt = _welt(tenant)

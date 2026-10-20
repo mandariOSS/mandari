@@ -176,8 +176,10 @@ def _get_meeting_context(view, meeting):
 
     # TOP-Vorschläge: NÖ-Vorschläge sind für Nicht-Vereidigte unsichtbar
     # (Organisation mitladen: die Beschreibung wird je Vorschlag mit ihrem Schlüssel entschlüsselt)
-    pending_proposals = meeting.agenda_items.filter(proposal_status="proposed").select_related(
-        "proposed_by__user", "meeting__organization"
+    pending_proposals = (
+        meeting.agenda_items.filter(proposal_status="proposed")
+        .select_related("proposed_by__user", "meeting__organization")
+        .prefetch_related("proposed_by__roles")
     )
     # Eigene Vorschläge mit Stand (offen/abgelehnt) für die Vorschlagenden
     my_proposals = meeting.agenda_items.filter(

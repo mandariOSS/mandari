@@ -21,14 +21,27 @@ data-cockpit-form und feste ids: Eingaben und Fokus überstehen das Nachladen de
         <input type="hidden" name="aktion" value="abstimmung_schliessen">
         <input type="hidden" name="item" value="{{ vote.id }}">
         {% if vote.voting_method == "open" or vote.voting_method == "roll_call" %}
-        <p class="text-sm text-gray-600 dark:text-gray-300">
+        {% with gezaehlt=state.vote_counted %}
+        <p class="text-sm text-gray-600 dark:text-gray-300" data-testid="cockpit-einzelstimmen">
+            {% if gezaehlt %}
+            Erfasste Einzelstimmen: Ja {{ gezaehlt.yes }} · Nein {{ gezaehlt.no }} · Enthaltung {{ gezaehlt.abstain }}
+            {% else %}
             Erfasste Einzelstimmen: Ja {{ vote.votes_yes }} · Nein {{ vote.votes_no }} · Enthaltung {{ vote.votes_abstain }}
+            {% endif %}
             {% if state.can_capture_votes %}
             {% url 'session:meeting_cockpit' tenant_slug=tenant_slug meeting_id=meeting.id as cockpit_url %}
             – <a href="{% url 'session:voting_capture' tenant_slug=tenant_slug item_id=vote.id %}?next={{ cockpit_url|urlencode }}"
                  class="text-primary-600 dark:text-primary-400 hover:underline">Einzelstimmen erfassen</a>
             {% endif %}
         </p>
+        {% if gezaehlt.uncounted %}
+        {# Nicht gezählte Stimmen (Issue #1059): Das Schließen entfernt sie und vermerkt sie im Prüfprotokoll #}
+        <p class="text-sm text-amber-700 dark:text-amber-400" role="status" data-testid="cockpit-nicht-gezaehlt">
+            Nicht gezählt, das Schließen entfernt {% if gezaehlt.uncounted|length == 1 %}die Stimme{% else %}die Stimmen{% endif %}:
+            {% for stimme, grund in gezaehlt.uncounted %}{{ stimme.person.display_name }} ({{ stimme.get_vote_display }}, {{ grund }}){% if not forloop.last %}; {% endif %}{% endfor %}.
+        </p>
+        {% endif %}
+        {% endwith %}
         {% else %}
         <div class="grid grid-cols-3 gap-2">
             <label class="text-sm text-gray-700 dark:text-gray-300">Ja

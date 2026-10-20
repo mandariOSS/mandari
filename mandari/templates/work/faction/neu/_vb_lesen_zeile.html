@@ -1,0 +1,13 @@
+{% comment %}
+Ein TOP der lesenden Tagesordnung (Issue #1071, Muster lesenZeile): Nummer, Titel (öffnet die Angaben im Panel wie
+bisher), kurz „Im Beratungsverlauf“,
+„von Ihnen eingetragen“ und die Unterlagen als Links. Kontext: z (vorbereiten.Zeile), org_slug.
+{% endcomment %}
+<li{% if z.unter %} class="unter"{% endif %}>
+    <span class="nr">{{ z.item.number }}</span>
+    <button type="button" class="t fs-t-knopf" @click="$dispatch('open-item-panel', { id: '{{ z.item.pk }}' })" aria-haspopup="dialog" title="Angaben zu TOP {{ z.item.number }}">{{ z.item.title }}</button>
+    {% if z.verlauf %}<span class="vl"><i data-lucide="git-branch" aria-hidden="true"></i><span>{% for v in z.verlauf %}{{ v.wo }}: {{ v.position }}{% if v.ergebnis %}, {{ v.ergebnis|lower }}{% endif %}{% if not forloop.last %}; {% endif %}{% endfor %}</span></span>{% endif %}
+    {% if z.unterlagen or z.von_mir %}
+    <span class="b">{% if z.von_mir %}<span class="von">von Ihnen eingetragen</span>{% endif %}{% for v in z.unterlagen %}<a href="{{ v.href }}"{% if v.extern %} target="_blank" rel="noopener noreferrer"{% endif %}><i data-lucide="{% if v.gesperrt %}lock{% else %}file-text{% endif %}" aria-hidden="true"></i>{{ v.titel }}</a>{% endfor %}</span>
+    {% endif %}
+</li>

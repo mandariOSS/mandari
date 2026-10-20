@@ -43,11 +43,13 @@ import { agendaItemPanel } from '../alpine/agenda-item-panel'
 import { deleteConfirmation } from '../alpine/delete-confirmation'
 import { factionDetail } from '../alpine/faction-detail'
 import { factionTitlePreview } from '../alpine/faction-title-preview'
+import { fsTagesordnung } from '../alpine/fs-tagesordnung'
 
 Alpine.data('agendaItemPanel', agendaItemPanel)
 Alpine.data('deleteConfirmation', deleteConfirmation)
 Alpine.data('factionDetail', factionDetail)
 Alpine.data('factionTitlePreview', factionTitlePreview)
+Alpine.data('fsTagesordnung', fsTagesordnung)
 
 // ---- Ausgelagerte Inline-Skripte (#172, CSP ohne unsafe-inline) ----------------------------
 import { letterheadForm } from '../alpine/letterhead-form'
@@ -82,6 +84,11 @@ Alpine.data('workPerson', workPerson)
 import { autosaveAnzeige } from '../alpine/autosave-anzeige'
 
 Alpine.data('autosaveAnzeige', autosaveAnzeige)
+
+// ---- Einstellungen › Fraktionssitzungen: sofort speichern, Rückfrage vor dem Verlassen (#1071) -------------------
+import { einstellungenSofort } from '../alpine/einstellungen-sofort'
+
+Alpine.data('einstellungenSofort', einstellungenSofort)
 
 // ---- Recherche: Karte mit Kachel-Proxy, Zeitraum und Ausschnitt (#853) ------------------------------------
 import { risKarte } from '../alpine/ris-karte'

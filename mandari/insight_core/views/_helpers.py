@@ -84,6 +84,22 @@ def page_number(request: HttpRequest, maximum: int = 500) -> int:
     return min(max(page, 1), maximum)
 
 
+#: So weit blättern die Listen der Sitzungen, Vorgänge, Gremien und Personen höchstens (Issue #939). Suchmaschinen
+#: folgen den Seitenlinks der Listen je Kommune; tiefere Seiten kosten wachsende OFFSET-Abfragen. Ältere Einträge
+#: erreichen Suchmaschinen über die Sitemaps, Menschen über Suche und Filter.
+LISTEN_SEITEN_HOECHSTENS = 200
+
+
+class BegrenzteSeitenMixin:
+    """Liste mit höchstens ``LISTEN_SEITEN_HOECHSTENS`` Seiten; dahinter 404 wie hinter der letzten Seite.
+
+    Gezählt wird nur bis zur Grenze (``COUNT`` über die begrenzte Abfrage), nicht der ganze Bestand.
+    """
+
+    def paginate_queryset(self, queryset, page_size):
+        return super().paginate_queryset(queryset[: LISTEN_SEITEN_HOECHSTENS * page_size], page_size)
+
+
 def is_all_bodies_mode(request):
     """Prüft ob der 'Alle Kommunen' Modus aktiv ist."""
     if get_portal(request) is not None:

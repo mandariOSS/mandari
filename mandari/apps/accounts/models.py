@@ -354,7 +354,9 @@ class SecurityAuditLog(models.Model):
     Nimmt Anmeldungen, Abmeldungen und fehlgeschlagene Anmeldungen von Konten auf, die keinem
     Session-Mandanten zugeordnet sind (Work-Portal, Bürgerportal, Plattform-Administration),
     sowie Fehlversuche mit unbekannter Kennung. Ereignisse von Session-Nutzern stehen im
-    Protokoll ihres Mandanten (``SessionAuditLog``). Dazu kommen Eingriffe der
+    Protokoll ihres Mandanten (``SessionAuditLog``). Von der Drosselung abgewiesene Anmeldeversuche
+    (``login_throttled``) stehen immer hier, höchstens ein Eintrag je Adresse und Zeitfenster
+    (Issue #366, :func:`apps.accounts.security_audit.record_throttled`). Dazu kommen Eingriffe der
     Plattform-Administration in den Betrieb (``betrieb``, etwa ein Abonnement der Ereignistechnik
     pausieren oder ein geparktes Ereignis verwerfen) mit Aktion und Kennungen in ``details``.
 
@@ -371,6 +373,7 @@ class SecurityAuditLog(models.Model):
         ("login", "Anmeldung"),
         ("logout", "Abmeldung"),
         ("login_failed", "Anmeldung fehlgeschlagen"),
+        ("login_throttled", "Anmeldung durch Drosselung abgewiesen"),
         ("betrieb", "Eingriff in den Betrieb"),
     ]
 

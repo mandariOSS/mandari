@@ -1,13 +1,20 @@
 {% comment %}
 Vorgangsliste (Issue #841): ab 2xl mit dem Stand aus dem Beratungsverlauf (wie Vorgangsseite und Suche,
 services/search_presentation.statuses_for_papers). Spalten ohne einen einzigen Wert entfallen.
-Die Tabelle ist der gemeinsame Baustein c-liste.vorgaenge (mit Work, Issue #853).
+Die Tabelle ist der gemeinsame Baustein c-liste.vorgaenge (mit Work, Issue #853). Sucht jemand eine Vorlagennummer,
+die wir nicht haben (nummer_gesucht, Issue #1102), sagen wir das so, statt nur „Keine Vorgänge gefunden“.
 {% endcomment %}
 {% if papers %}
 <c-liste.vorgaenge :vorgaenge="papers" />
 
 {% include "partials/insight_seiten.html" %}
 
+{% elif nummer_gesucht %}
+<div class="py-12 text-center">
+    <i data-lucide="file-search" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
+    <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Die Vorlage {{ nummer_gesucht }} liegt uns noch nicht vor.</h3>
+    <p class="max-w-xl mx-auto text-gray-600 dark:text-gray-400">Manche Kommunen geben Vorlagen erst später über ihre Schnittstelle frei. Sobald sie dort erscheint, übernehmen wir sie.</p>
+</div>
 {% else %}
 <div class="py-12 text-center">
     <i data-lucide="file-text" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>

@@ -41,6 +41,7 @@ from src.storage import ris_events
 from src.storage.database import (
     DatabaseStorage,
     full_sync_progress_of,
+    missing_list_reasons_of,
     missing_lists_of,
     slice_filter_ignored_of,
     slow_lists_of,
@@ -496,11 +497,18 @@ async def test_zeitpunkt_und_vermerke_in_sync_config(speicher: DatabaseStorage) 
     assert await speicher.get_body_sync_started(source_id, "unbekannt") is None
     await speicher.set_list_missing(SOURCE, f"{BASE}/agendaitem", True, checked_at=geprueft)
     await speicher.set_list_missing(SOURCE, f"{BASE}/membership", False)
+    # Nicht freigegeben (Issue #1086): Vermerk mit Grund
+    await speicher.set_list_missing(SOURCE, f"{BASE}/person", True, checked_at=geprueft, reason="HTTP 403 für alle")
     await speicher.set_body_sync_started(source_id, f"{BASE}-2", None)
     quelle = await speicher.get_source_by_url(SOURCE)
     assert quelle is not None
-    assert quelle.sync_config["missing_lists"] == {f"{BASE}/agendaitem": "2026-10-15T13:00:00+00:00"}
-    assert missing_lists_of(quelle.sync_config) == {f"{BASE}/agendaitem": geprueft}
+    assert quelle.sync_config["missing_lists"] == {
+        f"{BASE}/agendaitem": "2026-10-15T13:00:00+00:00",
+        f"{BASE}/person": {"checked_at": "2026-10-15T13:00:00+00:00", "reason": "HTTP 403 für alle"},
+    }
+    assert missing_lists_of(quelle.sync_config) == {f"{BASE}/agendaitem": geprueft, f"{BASE}/person": geprueft}
+    assert missing_list_reasons_of(quelle.sync_config) == {f"{BASE}/person": "HTTP 403 für alle"}
+    await speicher.set_list_missing(SOURCE, f"{BASE}/person", False)
     assert quelle.sync_config["request_interval"] == 2.0  # andere Einstellungen bleiben
     assert quelle.sync_config["unfiltered_lists"] == {f"{BASE}/location": {"reason": "HTTP 400"}}
     assert quelle.sync_config["scraper_state"] == {"runs": 1}

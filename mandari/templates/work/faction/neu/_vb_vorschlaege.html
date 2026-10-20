@@ -1,0 +1,38 @@
+{% comment %}
+Vorschläge, die auf Genehmigung warten (Issue #872, Muster vorschlaegeHtml): Aufnehmen oder mit Begründung ablehnen
+(accept_proposal, reject_proposal; Recht agenda.approve, serverseitig geprüft). Nichtöffentliche Vorschläge fehlen für
+Nicht-Vereidigte schon im Kontext. Kontext: can_approve_proposals, pending_proposals, meeting, org_slug.
+{% endcomment %}
+{% if can_approve_proposals and pending_proposals %}
+<section class="fs-vorschlaege" aria-labelledby="vs-h" data-testid="fs-vorschlaege">
+    <h3 id="vs-h">Vorschläge <span class="fs-meta">{% if pending_proposals|length == 1 %}einer wartet{% else %}{{ pending_proposals|length }} warten{% endif %} auf Ihre Genehmigung</span></h3>
+    <ul>
+        {% for vorschlag in pending_proposals %}
+        <li x-data="{ ablehnen: false }">
+            <span class="vs-was">
+                <b>{{ vorschlag.title }}{% if vorschlag.visibility == 'internal' %} <span class="fs-meta">(nichtöffentlich)</span>{% endif %}</b>
+                <small>{% if vorschlag.proposed_by %}von {{ vorschlag.proposed_by.user.get_display_name }}{% for rolle in vorschlag.proposed_by.roles.all %}{% if forloop.first %}, {{ rolle.name }}{% endif %}{% endfor %}, {% endif %}{{ vorschlag.proposed_at|date:"D d.m., H:i" }}</small>
+                {% with beschreibung=vorschlag.get_description_decrypted %}{% if beschreibung %}<small>{{ beschreibung|truncatewords:40 }}</small>{% endif %}{% endwith %}
+            </span>
+            <span class="vs-akt">
+                <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="accept_proposal">
+                    <input type="hidden" name="item_id" value="{{ vorschlag.id }}">
+                    <button type="submit" class="wf-knopf">Aufnehmen</button>
+                </form>
+                <button type="button" class="wf-knopf wf-leise" @click="ablehnen = !ablehnen" :aria-expanded="ablehnen ? 'true' : 'false'" aria-controls="vs-ab-{{ vorschlag.id }}">Ablehnen …</button>
+            </span>
+            <form id="vs-ab-{{ vorschlag.id }}" class="fs-vs-ablehnen" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" x-show="ablehnen" x-cloak>
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reject_proposal">
+                <input type="hidden" name="item_id" value="{{ vorschlag.id }}">
+                <label for="vs-grund-{{ vorschlag.id }}" class="fs-meta">Begründung für {{ vorschlag.proposed_by.user.get_display_name|default:"die vorschlagende Person" }}, freiwillig</label>
+                <input type="text" class="wf-eingabe" id="vs-grund-{{ vorschlag.id }}" name="reason" maxlength="500">
+                <button type="submit" class="wf-knopf">Ablehnen</button>
+            </form>
+        </li>
+        {% endfor %}
+    </ul>
+</section>
+{% endif %}

@@ -527,15 +527,24 @@ class TestBrotkrumen:
             "Erika Muster": f"/insight/personen/{person.id}/",
         }
 
-    def test_insight_kommune_objekt_ohne_zwischenebene(self, muenster: OParlBody) -> None:
+    #: Liste je Kommune als Zwischenebene (Issue #939): Name und Adresse zur Detailseite
+    LISTEN = {
+        "vorgaenge": ("Vorgänge", "/insight/k/muenster/vorgaenge/"),
+        "termine": ("Sitzungen", "/insight/k/muenster/termine/"),
+        "gremien": ("Gremien", "/insight/k/muenster/gremien/"),
+        "personen": ("Personen", "/insight/k/muenster/personen/"),
+    }
+
+    def test_insight_kommune_liste_objekt(self, muenster: OParlBody) -> None:
         for name, url in self._seiten(muenster).items():
             krumen = _json_ld(_seite(url))[-1]
 
             assert krumen["@type"] == "BreadcrumbList"
             eintraege = krumen["itemListElement"]
-            assert [e["name"] for e in eintraege] == ["mandari Insight", "Münster", name], url
-            assert [e["position"] for e in eintraege] == [1, 2, 3]
-            assert [_pfad(e["item"]) for e in eintraege] == ["/insight/", "/insight/k/muenster/", url]
+            liste, adresse = self.LISTEN[url.split("/")[2]]
+            assert [e["name"] for e in eintraege] == ["mandari Insight", "Münster", liste, name], url
+            assert [e["position"] for e in eintraege] == [1, 2, 3, 4]
+            assert [_pfad(e["item"]) for e in eintraege] == ["/insight/", "/insight/k/muenster/", adresse, url]
 
     def test_jede_ebene_ist_ohne_weiterleitung_erreichbar(self, muenster: OParlBody) -> None:
         for url in self._seiten(muenster).values():

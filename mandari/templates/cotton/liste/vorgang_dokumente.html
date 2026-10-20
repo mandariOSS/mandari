@@ -1,0 +1,49 @@
+{# djlint:off H026 – leere Vorgabewerte in <c-vars> sind Komponentenparameter #}
+{% comment %}
+Vorlage und Anlagen eines Vorgangs unter seinem Titel in der Vorgangsliste (Issue #1103, wie die Trefferliste in
+SessionNet): das Hauptdokument als Link mit Dateityp und Größe, die Anlagen als Zahl zum Aufklappen (natives
+<details>, ohne JavaScript). Die Kurzliste nennt höchstens zehn Anlagen, für weitere führt ein Link zum Vorgang.
+  <c-liste.vorgang-dokumente :zeile="paper.dokumentzeile" :vorgang="paper" ziel="{{ ziel }}" dicht="{{ dicht }}" />
+zeile: insight_core.services.vorgang_dokumente.Dokumentzeile, vom Aufrufer für die ganze Seite in einer Abfrage
+geladen (dokumente_anhaengen); ohne Zeile erscheint nichts. vorgang: für den Linktext („Vorlage V/0591/2026 öffnen“).
+ziel: Adresse des Vorgangs. Dateien öffnen wie auf den Vorgangsseiten von Insight und Work über den Dateiabruf des
+Portals (c-insight.document-row), nofollow wie dort (#939).
+Das Hauptdokument steht links (float), damit die Zahl der Anlagen in derselben Zeile bleibt und die aufgeklappte
+Liste darunter die volle Breite hat, ohne dass der Knopf springt. Klickflächen 24 px, im Bürgerportal auf dem Handy
+44 px wie c-insight.document-row.
+{% endcomment %}
+<c-vars zeile="" vorgang="" ziel="" dicht="" />
+{% load insight_listen %}
+{% if zeile.haupt %}
+{% with haupt=zeile.haupt anzahl=zeile.anlagen|length kennung=vorgang.reference|default:vorgang.name|default:""|truncatechars:60 %}
+<div class="flow-root mt-1 {% if dicht %}text-[0.8125rem]{% else %}text-sm{% endif %} text-gray-600 dark:text-gray-400" data-testid="vorgang-dokumente">
+    <a href="{% url 'insight_core:insight:file_proxy' haupt.pk %}" rel="nofollow"
+       class="group/haupt float-left mr-4 inline-flex items-center gap-1.5 {% if dicht %}min-h-6{% else %}min-h-11 sm:min-h-6{% endif %}">
+        <i data-lucide="file-text" class="w-3.5 h-3.5 shrink-0" aria-hidden="true"></i>
+        <span class="font-medium text-primary-700 dark:text-primary-300 group-hover/haupt:underline underline-offset-4">Vorlage<span class="sr-only">{% if kennung %} {{ kennung }}{% endif %} öffnen,</span></span>
+        <span>{{ haupt|dateityp }}{% if haupt.size %}, {{ haupt.size_human }}{% endif %}</span>
+    </a>
+    {% if anzahl %}
+    <details class="group/anlagen">
+        <summary class="inline-flex items-center gap-1 {% if dicht %}min-h-6{% else %}min-h-11 sm:min-h-6{% endif %} cursor-pointer list-none font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4 [&::-webkit-details-marker]:hidden">
+            {{ anzahl }} Anlage{{ anzahl|pluralize:"n" }}{% if kennung %}<span class="sr-only"> zu {{ kennung }}</span>{% endif %}
+            <i data-lucide="chevron-down" class="w-3.5 h-3.5 transition-transform group-open/anlagen:rotate-180" aria-hidden="true"></i>
+        </summary>
+        <ul class="clear-left pb-1">
+            {% for anlage in zeile.anlagen_kurz %}
+            <li>
+                <a href="{% url 'insight_core:insight:file_proxy' anlage.pk %}" rel="nofollow" class="group/anlage inline-flex flex-wrap items-center gap-x-1.5 {% if dicht %}min-h-6{% else %}min-h-11 sm:min-h-6{% endif %} py-0.5">
+                    <span class="text-gray-800 dark:text-gray-200 break-words group-hover/anlage:underline underline-offset-4">{{ anlage.name|default:anlage.file_name|default:"Anlage" }}<span class="sr-only">,</span></span>
+                    <span>{{ anlage|dateityp }}{% if anlage.size %}, {{ anlage.size_human }}{% endif %}</span>
+                </a>
+            </li>
+            {% endfor %}
+            {% if zeile.weitere %}
+            <li><a href="{{ ziel }}#dokumente-titel" class="inline-flex items-center {% if dicht %}min-h-6{% else %}min-h-11 sm:min-h-6{% endif %} py-0.5 font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Alle {{ anzahl }} Anlagen beim Vorgang</a></li>
+            {% endif %}
+        </ul>
+    </details>
+    {% endif %}
+</div>
+{% endwith %}
+{% endif %}

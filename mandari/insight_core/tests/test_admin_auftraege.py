@@ -1,23 +1,24 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Sync einer Quelle und Löschen einer Kommune aus dem Admin als Aufträge im Worker (Issue #515).
+Aufträge aus dem Admin im Worker (Issue #515): Löschen einer Kommune; der Sync einer Quelle nur noch als leere Hülle.
 
-Beides lief vorher in einem Faden im Webprozess. Jetzt landet es immer im Journal, auch solange die
-Webprozesse Aufträge sonst sofort ausführen (Standard ``TASKS_BACKEND=immediate``, so auch hier).
+Beides lief vorher in einem Faden im Webprozess. Den Sync einer Quelle macht seit Issue #554 nur der Ingestor; der
+Auftrag ``quelle_synchronisieren`` bleibt registriert, damit vor dem Deploy eingereihte Aufträge nicht scheitern.
 """
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
 from django.core.cache import cache
 
 from apps.events.models import Task, TaskStatus
-from apps.events.tasks_backend import journal_options
+from apps.events.tasks_backend import journal_backend, journal_options
 from insight_core import background_tasks
-from insight_core.admin import run_sync_in_thread
 from insight_core.models import OParlBody, OParlSource
+from insight_sync.models import SyncLog
 
 RIS = "https://ris.example.org/oparl"
 
@@ -28,34 +29,30 @@ def source(db: Any) -> OParlSource:
 
 
 @pytest.mark.django_db
-def test_sync_aus_dem_admin_landet_im_journal_statt_in_einem_faden(
-    source: OParlSource, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    aufrufe: list[Any] = []
-    monkeypatch.setattr("insight_sync.tasks.run_sync_with_logging", lambda **k: aufrufe.append(k))
+def test_wartender_sync_auftrag_bleibt_ausfuehrbar(source: OParlSource) -> None:
+    """Vor dem Deploy eingereihte Aufträge: Pfad und Optionen bleiben, damit sie danach nicht scheitern."""
+    journal_backend().enqueue(background_tasks.quelle_synchronisieren, [str(source.pk)], {"full": True})
 
-    run_sync_in_thread(source, full=True)
-
-    assert aufrufe == [], "nicht in der Anfrage ausführen"
     auftrag = Task.objects.get()
     assert auftrag.task_path == "insight_core.background_tasks.quelle_synchronisieren"
     assert auftrag.status == TaskStatus.WARTEND
-    assert auftrag.queue == "default"
-    assert auftrag.args == {"args": [str(source.pk)], "kwargs": {"full": True}}
-    assert auftrag.max_attempts == 1, "ein gescheiterter Sync wird nicht wiederholt"
+    assert auftrag.max_attempts == 1
     optionen, _ = journal_options()
-    assert optionen.timeout_for(auftrag.task_path, auftrag.queue) == 3600, "länger als die 5 min von default"
+    assert optionen.timeout_for(auftrag.task_path, auftrag.queue) == 3600
 
 
 @pytest.mark.django_db
-def test_auftrag_synchronisiert_die_quelle(source: OParlSource, monkeypatch: pytest.MonkeyPatch) -> None:
-    aufrufe: list[dict[str, Any]] = []
-    monkeypatch.setattr("insight_sync.tasks.run_sync_with_logging", lambda **k: aufrufe.append(k))
+def test_sync_auftrag_gleicht_nicht_mehr_ab(source: OParlSource, caplog: pytest.LogCaptureFixture) -> None:
+    """Issue #554: Den Sync macht nur der Ingestor; der Auftrag warnt nur im Log."""
+    with caplog.at_level(logging.WARNING, logger="insight_core.background_tasks"):
+        background_tasks.quelle_synchronisieren.call(str(source.pk), full=True)
+        background_tasks.quelle_synchronisieren.call("00000000-0000-0000-0000-000000000000")
 
-    background_tasks.quelle_synchronisieren.call(str(source.pk), full=True)
-    background_tasks.quelle_synchronisieren.call("00000000-0000-0000-0000-000000000000")
-
-    assert aufrufe == [{"source": source, "full": True, "triggered_by": "admin"}], "gelöschte Quelle: nichts"
+    assert not SyncLog.objects.exists(), "kein Abgleich, kein Protokoll"
+    warnungen = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnungen) == 2
+    assert str(source.pk) in warnungen[0]
+    assert "nur noch der Ingestor" in warnungen[0]
 
 
 @pytest.mark.django_db

@@ -570,6 +570,22 @@ CASES: list[Case] = [
     _fraktion("edit_item", item_id="{fitem}", title="TOP geändert", foreign={"top": {"item_id": "{a_fitem}"}}),
     _fraktion("delete_item", item_id="{fitem}", foreign={"top": {"item_id": "{a_fitem}"}}),
     _fraktion("move_item", item_id="{fitem2}", direction="up", foreign={"top": {"item_id": "{a_fitem2}"}}),
+    # Seite vor der Sitzung nach dem Muster (Issue #1071)
+    _fraktion(
+        "move_item", item_id="{fitem2}", direction="to", position="0", foreign={"ziehen": {"item_id": "{a_fitem2}"}}
+    ),
+    _fraktion("ris_auswahl", ris_meeting_id="{ris_meeting}"),
+    _fraktion(
+        "ris_uebernehmen",
+        ris_meeting_id="{ris_meeting}",
+        punkt="{ris_item}",
+        foreign={
+            "ratssitzung": {"ris_meeting_id": "{a_ris_meeting}", "punkt": "{a_ris_item}"},
+            "eltern_top": {"parent_id": "{a_fitem}"},
+        },
+    ),
+    _fraktion("remind_open"),
+    _fraktion("test_invitation"),
     _fraktion(
         "add_entry",
         entry_type="note",
@@ -621,6 +637,7 @@ CASES: list[Case] = [
     ),
     _fraktion("create_task", entry_id="{fentry}", foreign={"eintrag": {"entry_id": "{a_fentry}"}}),
     _top("update", title="TOP neu", description="Beschreibung", visibility="public"),
+    Case("faction_item_fields", path=FITEM, data={"title": "TOP neu", "description": "Beschreibung"}, method="json"),
     _top("add_entry", entry_type="note", content="Eintrag", foreign={"redner": REDNER, "zustaendig": ZUSTAENDIG}),
     _top(
         "edit_entry",

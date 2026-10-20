@@ -21,7 +21,8 @@ fallen zuerst Zusätze weg (die Art vor der Drucksachennummer), dann wird das Th
 „…“; die Kommune bleibt (``seitentitel``). ``og:title`` und die Namen in den strukturierten Daten bleiben ausführlich.
 
 Die Brotkrumen der strukturierten Daten führen nur über Adressen, die Suchmaschinen direkt erreichen
-(Bürgerportal → Kommune → Objekt, Issue #939).
+(Bürgerportal → Kommune → Liste → Objekt, Issue #939). Die Listen der Sitzungen, Vorgänge, Gremien und Personen
+sind kanonisch unter ihrer Adresse je Kommune (``/insight/k/<slug>/vorgaenge/``, ``get_list_seo``).
 """
 
 from __future__ import annotations
@@ -42,7 +43,8 @@ from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.utils.safestring import SafeString, mark_safe
 
-from .services.indexierung import stadtseite_url
+from .navigation import AREA_PAGES
+from .services.indexierung import liste_der_kommune, stadtseite_url
 from .services.paper_status import NONE as STAND_UNBEKANNT
 from .services.paper_status import PaperStatus, in_committee
 from .services.search_presentation import normalize_paper_type
@@ -69,6 +71,9 @@ _THEMA_MIN = 20
 DESCRIPTION_MAX = 160
 #: Ein Teil der Description, der nicht mehr ganz passt, erscheint gekürzt nur ab so viel Platz
 _DESCRIPTION_REST_MIN = 30
+#: Vor der KI-Zusammenfassung in Description und JSON-LD: Suchergebnisse und Vorschaukarten zeigen den Text ohne die
+#: Seite, die Kennzeichnung muss deshalb im Text selbst stehen (EU AI Act Art. 50, Issue #938)
+KI_ZUSAMMENFASSUNG_PRAEFIX = "KI-Zusammenfassung:"
 #: Längste Art eines Vorgangs im Titel („Vorlage“, „Antrag“, „Große Anfrage“); längere Kategorien → „Vorgang“
 _ART_MAX = 25
 #: Längster Sitzungsort in der Description
@@ -303,19 +308,25 @@ def seite_der_kommune(body: Any) -> str:
     return _absolut(seite) if seite else ""
 
 
-def brotkrumen(body: Any, name: str, url: str) -> list[tuple[str, str]]:
-    """Brotkrumen einer Detailseite für die strukturierten Daten: Bürgerportal → Kommune → Objekt.
+#: URL-Name einer Liste → ihr Name in den Brotkrumen („Vorgänge“)
+_LISTEN_NAMEN = {list_name: label for label, list_name in AREA_PAGES.values()}
+
+
+def brotkrumen(body: Any, name: str, url: str, liste: str = "") -> list[tuple[str, str]]:
+    """Brotkrumen für die strukturierten Daten: Bürgerportal → Kommune → Liste → Objekt.
 
     Die Kommune erscheint mit ihrer Seite (``/insight/k/<slug>/``), sofern sie eine erreichbare hat
-    (``seite_der_kommune``: gelistet, mit Slug). Eine Ebene für den Bereich (Sitzungen, Vorgänge …) gibt es nicht:
-    Dessen Listen haben keine eigene Adresse, die Suchmaschinen ohne gewählte Kommune erreichen
-    (``/insight/k/<slug>/termine/`` leitet weiter, Issue #939). Die sichtbaren Brotkrumen der Kopfzeile bleiben
-    davon unberührt.
+    (``seite_der_kommune``: gelistet, mit Slug). Mit ``liste`` (URL-Name, etwa ``paper_list``) folgt die Liste des
+    Bereichs unter ihrer Adresse je Kommune (``/insight/k/<slug>/vorgaenge/``, Issue #939) – nur, wenn es die gibt;
+    wie in den sichtbaren Brotkrumen der Kopfzeile.
     """
     krumen: list[tuple[str, str]] = [("mandari Insight", _absolut(reverse("insight_core:insight:portal_home")))]
     seite = seite_der_kommune(body)
     if seite:
         krumen.append((_kommune(body), seite))
+        eigene = liste_der_kommune(body, liste) if liste else ""
+        if eigene and _absolut(eigene) != url:
+            krumen.append((_LISTEN_NAMEN.get(liste, ""), _absolut(eigene)))
     krumen.append((name, url))
     return krumen
 
@@ -397,20 +408,37 @@ def paper_seitentitel(paper: Any) -> str:
     return seitentitel([f"{text} – {kennung}", *mit_nummer, text], text, kommune)
 
 
+def _ki_zusammenfassung(text: str | None, davor: str) -> str:
+    """„KI-Zusammenfassung: …“ als letzter Teil der Description nach ``davor`` – oder nichts.
+
+    Der Präfix steht nur, wenn danach noch mindestens ``_DESCRIPTION_REST_MIN`` Zeichen Text passen (oder die ganze,
+    kürzere Zusammenfassung). Sonst bliebe vom KI-Text kaum mehr als die Kennzeichnung (Issue #938).
+    """
+    text = " ".join(str(text or "").split())
+    if not text:
+        return ""
+    frei = DESCRIPTION_MAX - len(davor) - (1 if davor else 0) - len(KI_ZUSAMMENFASSUNG_PRAEFIX) - 1
+    if frei < min(len(text), _DESCRIPTION_REST_MIN):
+        return ""
+    return f"{KI_ZUSAMMENFASSUNG_PRAEFIX} {text}"
+
+
 def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = None) -> SEOContext:
     """
     SEO-Kontext einer Vorgangsseite.
 
     ``stand`` ist der Stand-Satz der Seite (``paper_status``, aus dem schon geladenen Beratungsverlauf). Die
     Description nennt Kommune, Art, Nummer und Datum, dann den Stand und, wenn Platz bleibt, den Anfang der
-    gespeicherten Zusammenfassung.
+    gespeicherten Zusammenfassung – als KI-Text gekennzeichnet (``KI_ZUSAMMENFASSUNG_PRAEFIX``).
     """
     body = paper.body
     kommune = _kommune(body)
     datum = _datum(paper.date)
     kopf = f"{_kennung(paper)} vom {datum}" if datum else _kennung(paper)
     stand_satz = stand.text if stand is not None and stand.kind != STAND_UNBEKANNT else ""
-    description = beschreibung(f"{kommune}: {kopf}." if kommune else f"{kopf}.", stand_satz, paper.summary or "")
+    kopf_satz = f"{kommune}: {kopf}." if kommune else f"{kopf}."
+    zusammenfassung = _ki_zusammenfassung(paper.summary, beschreibung(kopf_satz, stand_satz))
+    description = beschreibung(kopf_satz, stand_satz, zusammenfassung)
     canonical = build_canonical_url(request)
     ort = _gebiet(kommune)
 
@@ -442,7 +470,7 @@ def get_paper_seo(paper: Any, request: HttpRequest, stand: PaperStatus | None = 
         keywords=[kommune, paper.paper_type or "Vorgang", "Kommunalpolitik"],
         # Letzte Brotkrume wie in der Kopfzeile: Drucksachennummer, sonst der gekürzte Betreff
         breadcrumbs=brotkrumen(
-            body, (paper.reference or "").strip() or kuerzen(betreff(paper) or "Vorgang", 50), canonical
+            body, (paper.reference or "").strip() or kuerzen(betreff(paper) or "Vorgang", 50), canonical, "paper_list"
         ),
     )
 
@@ -605,7 +633,7 @@ def get_meeting_seo(
         og_type="event",
         json_ld=json_ld,
         keywords=["Sitzung", gremium, kommune],
-        breadcrumbs=brotkrumen(body, haupt, canonical),
+        breadcrumbs=brotkrumen(body, haupt, canonical, "meeting_list"),
     )
 
 
@@ -662,7 +690,7 @@ def get_organization_seo(
         og_type="website",
         json_ld=json_ld,
         keywords=[name, art or "Gremium", kommune],
-        breadcrumbs=brotkrumen(organization.body, kuerzen(name, TITEL_BETREFF_MAX), canonical),
+        breadcrumbs=brotkrumen(organization.body, kuerzen(name, TITEL_BETREFF_MAX), canonical, "organization_list"),
     )
 
 
@@ -751,7 +779,7 @@ def get_person_seo(
         og_type="profile",
         json_ld=json_ld,
         keywords=[name, funktion or "Kommunalpolitik", kommune],
-        breadcrumbs=brotkrumen(person.body, name, canonical),
+        breadcrumbs=brotkrumen(person.body, name, canonical, "person_list"),
     )
 
 
@@ -865,6 +893,24 @@ def get_page_seo(
         robots=robots,
         keywords=keywords or ["Kommunalpolitik", "Ratsinformationen", "Transparenz"],
     )
+
+
+def get_list_seo(request: HttpRequest, liste: str, title: str, description: str, body: Any = None) -> SEOContext:
+    """
+    SEO der Listen mit eigener Adresse je Kommune (Sitzungen, Vorgänge, Gremien, Personen; Issue #939).
+
+    Kanonisch ist die Adresse je Kommune (``/insight/k/<slug>/vorgaenge/``) – auch für die Liste im gemeinsamen
+    Portal mit gewählter Kommune (``/insight/vorgaenge/``), die Suchmaschinen ohne Sitzung nur als Weiterleitung
+    sehen. Weitere Seiten und Filter verweisen auf dieselbe Adresse und tragen ``noindex, follow``
+    (``services.indexierung.listenseite``). Ohne eigene Adresse (Kommune ohne Slug) bleibt alles wie bei
+    ``get_page_seo``.
+    """
+    seo = get_page_seo(request, title=title, description=description, body=body)
+    eigene = liste_der_kommune(body, liste)
+    if eigene:
+        seo.canonical_url = _absolut(eigene)
+        seo.breadcrumbs = brotkrumen(body, _LISTEN_NAMEN.get(liste, title), seo.canonical_url)
+    return seo
 
 
 def get_portal_home_seo(request: HttpRequest, body: Any = None) -> SEOContext:

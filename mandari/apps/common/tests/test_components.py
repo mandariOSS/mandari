@@ -277,6 +277,36 @@ class TestGemeinsameBausteine:
         # Spalte ab md, darunter unter dem Titel: je Zeile mit ``eintrag``
         assert "Für die Fraktion</th>" in html and html.count("Ihre Organisation") == 2 and "/ziel/vorgang/" in html
 
+    def test_vorgang_mit_vorlage_und_anlagen_unter_dem_titel(self) -> None:
+        """Issue #1103: Hauptdokument als Link mit Typ und Größe, Anlagen zum Aufklappen; ohne Zeile nichts."""
+        from insight_core.services.vorgang_dokumente import Dokumentzeile
+
+        def datei(name: str, groesse: str) -> SimpleNamespace:
+            return SimpleNamespace(
+                pk=uuid.uuid4(), name=name, file_name="", mime_type="application/pdf", size=1, size_human=groesse
+            )
+
+        haupt, anlage = datei("Vorlage", "240.0 KB"), datei("Anlage 1 Lageplan", "80.0 KB")
+        mit = SimpleNamespace(
+            id=uuid.uuid4(),
+            name="Radweg",
+            reference="V/0591/2026",
+            paper_type="",
+            date=None,
+            dokumentzeile=Dokumentzeile(haupt, [anlage]),
+        )
+        ohne = SimpleNamespace(id=uuid.uuid4(), name="Gehweg", reference="", paper_type="", date=None)
+        html = render(
+            '<c-liste.vorgaenge :vorgaenge="v" :links="ziele" dicht ohne_merken />', v=[mit, ohne], ziele=_Ziele()
+        )
+
+        assert html.count('data-testid="vorgang-dokumente"') == 1 and "text-[0.8125rem]" in html
+        assert f'href="/insight/dokumente/{haupt.pk}/preview/" rel="nofollow"' in html
+        assert 'Vorlage<span class="sr-only"> V/0591/2026 öffnen,</span>' in html and "PDF, 240.0 KB" in html
+        assert '1 Anlage<span class="sr-only"> zu V/0591/2026</span>' in html
+        assert f'href="/insight/dokumente/{anlage.pk}/preview/"' in html and "Anlage 1 Lageplan" in html
+        assert "#dokumente-titel" not in html
+
     def test_seitenwahl_im_buergerportal_und_dicht(self) -> None:
         from django.core.paginator import Paginator
 

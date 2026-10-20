@@ -22,10 +22,11 @@ keine Symbolkacheln. Formulare und Felder wie session/settings/privacy.html; Kon
         <form method="post" class="min-w-0 max-w-4xl space-y-10" data-testid="datenschutz-einstellungen">
             <c-rahmen.abschnitt titel="Aufbewahrungsfristen je Datenart" titel_id="fristen-titel">
                 <c-rahmen.satz eng>Angabe in Jahren; 0 schaltet die Frist ab, dann wird nichts gelöscht. Maßgeblich sind die örtlichen Satzungen und Aufbewahrungsvorschriften, Details im Löschkonzept.</c-rahmen.satz>
-                <div class="mt-3 grid gap-4 sm:grid-cols-3">
+                <div class="mt-3 grid gap-4 sm:grid-cols-2">
                     {% include "session/neu/einstellungen/_zahlfeld.html" with name="persons_years" id="frist-personen" label="Kontakt- und Bankdaten ausgeschiedener Mandatsträger" value=privacy.persons_years min=0 max=100 hilfe="Jahre nach Mandatsende; der Name bleibt erhalten." only %}
                     {% include "session/neu/einstellungen/_zahlfeld.html" with name="np_content_years" id="frist-noe" label="Nichtöffentliche Inhalte (Protokolle, interne Notizen)" value=privacy.np_content_years min=0 max=100 hilfe="Jahre nach Sitzungsdatum." only %}
                     {% include "session/neu/einstellungen/_zahlfeld.html" with name="audit_years" id="frist-audit" label="Einträge im Audit-Log" value=privacy.audit_years min=0 max=100 hilfe="Jahre nach Eintragsdatum. Vor der Löschung entsteht ein Archivpaket." only %}
+                    {% include "session/neu/einstellungen/_zahlfeld.html" with name="archive_years" id="frist-archiv" label="Archivpakete des Audit-Logs" value=privacy.archive_years min=0 max=100 hilfe="Jahre nach Ablage des Pakets. Vorher dem Archiv anbieten." only %}
                 </div>
             </c-rahmen.abschnitt>
 
@@ -48,7 +49,7 @@ keine Symbolkacheln. Formulare und Felder wie session/settings/privacy.html; Kon
 
         <div class="min-w-0 space-y-10">
             <c-rahmen.abschnitt titel="Anonymisierungs- und Löschlauf" titel_id="loeschlauf-titel" data-testid="loeschlauf">
-                <c-rahmen.satz eng>Wendet die Fristen an: Kontakt- und Bankdaten ausgeschiedener Mandatsträger werden entfernt (der Name bleibt in historischen Beschlüssen erhalten), nichtöffentliche Inhalte und alte Audit-Einträge werden gelöscht. Jeder Lauf steht im Audit-Log; alternativ per Kommandozeile mit <code class="font-mono text-[0.8125rem]">manage.py session_privacy_purge</code>.</c-rahmen.satz>
+                <c-rahmen.satz eng>Wendet die Fristen an: Kontakt- und Bankdaten ausgeschiedener Mandatsträger werden entfernt (der Name bleibt in historischen Beschlüssen erhalten), nichtöffentliche Inhalte, alte Audit-Einträge und abgelaufene Archivpakete werden gelöscht. Jeder Lauf steht im Audit-Log; alternativ per Kommandozeile mit <code class="font-mono text-[0.8125rem]">manage.py session_privacy_purge</code>.</c-rahmen.satz>
                 <div class="mt-3 flex flex-wrap gap-2">
                     <form method="post" action="{% url 'session:privacy_purge' tenant_slug=tenant_slug %}">
                         {% csrf_token %}

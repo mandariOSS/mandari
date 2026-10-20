@@ -50,7 +50,7 @@ Adressen umgehen, die Tagesobergrenze nicht. Eine laufende Antwort kann sie um h
 | `sitzungen_im_zeitraum(von, bis, gremium?, tagesordnung?)` | Sitzungen (höchstens 92 Tage, 30 Einträge) als Zeilen „Beginn \| Gremium \| Ort \| Link“; mit `tagesordnung=true` bei bis zu drei Sitzungen gleich die Tagesordnungen |
 | `sitzung(id)` | Sitzung mit Tagesordnung (Punkte, Ergebnisse, beratene Vorlagen) |
 | `vorgaenge_suchen(text, von?, bis?, gremium?)` | Vorgänge mit Stand-Satz; trifft die Drucksachennummer genau einen Vorgang, gleich dessen Einzelheiten |
-| `vorgang(id)` | Stand, Beratungsfolge, Beschlusstext, Zusammenfassung, Dokumentliste |
+| `vorgang(id)` | Stand, Beratungsfolge, Beschlusstext, Zusammenfassung (dazu `zusammenfassung_ki_erzeugt: true`, siehe `KI_TRANSPARENZ.md`), Dokumentliste |
 | `gremien(suchtext?)` | bestehende Gremien |
 | `personen(name)` | Personen mit laufenden Mitgliedschaften (ohne E-Mail, Telefon, Geschlecht, Foto) |
 | `dokumente_suchen(text)` | Dokumente mit kurzem Ausschnitt (höchstens 300 Zeichen) |

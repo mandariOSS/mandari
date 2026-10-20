@@ -8,6 +8,8 @@
     <!-- Filters -->
     <div class="mb-4">
         <form method="get" class="flex flex-col sm:flex-row gap-3 max-w-4xl" id="paper-filter-form">
+            {% comment %}Eingabetaste: genau ein passender Treffer für eine Vorlagennummer öffnet den Vorgang (Issue #1102){% endcomment %}
+            <input type="hidden" name="direkt" value="1">
             <div class="relative flex-1 min-w-0">
                 <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" aria-hidden="true"></i>
                 <label for="search-papers" class="sr-only">Vorgang suchen</label>
@@ -15,8 +17,8 @@
                        id="search-papers"
                        name="q"
                        value="{{ request.GET.q }}"
-                       placeholder="Vorgang suchen (inkl. Dokumenteninhalte)..."
-                       hx-get="{% url 'insight_core:insight:paper_list' %}"
+                       placeholder="Titel oder Vorlagen-Nr."
+                       hx-get="{{ request.path }}"
                        hx-trigger="keyup changed delay:400ms, search"
                        hx-target="#papers-list"
                        hx-swap="innerHTML"
@@ -36,7 +38,7 @@
                 <label for="filter-type" class="sr-only">Nach Typ filtern</label>
                 <select id="filter-type"
                         name="type"
-                        hx-get="{% url 'insight_core:insight:paper_list' %}"
+                        hx-get="{{ request.path }}"
                         hx-trigger="change"
                         hx-target="#papers-list"
                         hx-swap="innerHTML"

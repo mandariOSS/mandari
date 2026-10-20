@@ -129,6 +129,8 @@ class Speicher:
         self.begonnen: dict[str, datetime] = {}
         #: Vermerkte fehlende Listen -> Zeitpunkt der letzten Prüfung
         self.fehlend: dict[str, datetime | None] = {}
+        #: Grund je vermerkter Liste (Issue #1086)
+        self.gruende: dict[str, str] = {}
         self.modified: dict[str, datetime | None] = {}
         self.vermerke: list[tuple[str, bool]] = []
         #: Kennungen, deren Speichern mit einer Ausnahme scheitert (Deadlock, Constraint)
@@ -171,11 +173,19 @@ class Speicher:
         self.protokoll.append(felder)
 
     async def set_list_missing(
-        self, source_url: str, list_url: str, missing: bool, checked_at: datetime | None = None
+        self,
+        source_url: str,
+        list_url: str,
+        missing: bool,
+        checked_at: datetime | None = None,
+        reason: str | None = None,
     ) -> None:
         self.vermerke.append((list_url, missing))
+        self.gruende.pop(list_url, None)
         if missing:
             self.fehlend[list_url] = checked_at or datetime.now(UTC)
+            if reason:
+                self.gruende[list_url] = reason
         else:
             self.fehlend.pop(list_url, None)
 
@@ -237,7 +247,7 @@ async def _lauf(
     options: SourceFetchOptions | None = None,
 ) -> dict[str, Any]:
     quelle.anfragen.clear()
-    listen = MissingLists(SOURCE, dict(speicher.fehlend))
+    listen = MissingLists(SOURCE, dict(speicher.fehlend), dict(speicher.gruende))
     async with _client(quelle, speicher.filtervermerke) as client:
         return await _orchestrator(speicher)._sync_body(
             client=client,

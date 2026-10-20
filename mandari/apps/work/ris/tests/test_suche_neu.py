@@ -261,6 +261,9 @@ def test_ohne_schalter_bleibt_die_bisherige_seite(
 
     assert [t.name for t in antwort.templates][0] == "work/ris/search.html"
     assert not dienst.aufrufe  # die bisherige Seite fragt search_all, nicht die gruppierte Suche
+    # Ohne Suchdienst die Treffer der Datenbanksuche aus dem ausgelagerten Teil (Vorlage unter 300 Zeilen)
+    assert "work/ris/partials/_search_datenbank.html" in [t.name for t in antwort.templates]
+    assert "Radweg Hauptstraße" in antwort.content.decode()
 
 
 @pytest.mark.django_db
@@ -336,3 +339,37 @@ def test_filter_reiter_und_feld_in_den_massen_von_work(
     eingabe = re.search(r'<input id="suche-eingabe"[^>]*>', html, re.S)
     assert eingabe and "min-h-10" in eingabe.group(0) and "autofocus" not in eingabe.group(0)
     assert html.count('id="suche-form"') == 1
+
+
+@pytest.mark.django_db
+def test_ohne_bezug_dieselbe_abfrage_wie_im_buergerportal(
+    org: Any, body: OParlBody, mitglied: Any, dienst: _Dienst
+) -> None:
+    """
+    Bewertungssatz (``insight_search/bewertung``): Work fragt den Suchdienst mit denselben Angaben wie das Bürgerportal
+    und bekommt dieselben Treffer; nur der Bereich (Kommunen der Organisation) und die Gewichtung nach dem Bezug der
+    Fraktion kommen hinzu, ohne eigene Daten in derselben Reihenfolge.
+    """
+    from datetime import date
+
+    from django.http import QueryDict
+
+    from apps.work.ris import selectors, suche
+    from insight_core.services.search_filters import SearchQuery
+    from insight_core.services.search_page import build_context
+
+    heute = date(2026, 10, 19)
+    insight = build_context(dienst, SearchQuery.from_get(QueryDict("q=Radweg"), portal=True), body, None, heute)
+    aufruf_insight = dienst.aufrufe[-1]
+    work = suche.ergebnis(
+        org, mitglied, SearchQuery.from_get(QueryDict("q=Radweg")), selectors.bodies_for_organization(org),
+        service=dienst, today=heute,
+    )  # fmt: skip
+    aufruf_work = dienst.aufrufe[-1]
+
+    def ohne_bereich(aufruf: dict[str, Any]) -> dict[str, Any]:
+        return {k: v for k, v in aufruf.items() if k not in {"body_id", "body_ids", "boost"}}
+
+    assert ohne_bereich(aufruf_work) == ohne_bereich(aufruf_insight)
+    assert aufruf_insight["body_id"] == str(body.pk) and aufruf_work["body_ids"] == [str(body.pk)]
+    assert [t["pk"] for t in work["groups"]] == [t["pk"] for t in insight["groups"]]

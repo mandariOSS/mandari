@@ -5,7 +5,7 @@ Management-Command: Demo- und Musterumgebung aufbauen.
 Erstellt eine vollständige, klar als Demo erkennbare Musterumgebung:
 
 1. Insight:  Fiktive Kommune "Musterstadt (Demo)" als OParlBody mit Gremien,
-   Fraktionen, Personen, Sitzungen, Tagesordnungspunkten, Vorlagen,
+   Fraktionen, Personen, Sitzungen, Tagesordnungspunkten, Vorlagen (mit Orten für die Karte),
    Beratungen und kleinen PDF-Dateien (synthetisch, ohne OCR).
 2. Work:     Organisation "Musterfraktion (Demo)" mit Standard-Rollen,
    fünf Demo-Nutzern (Vorsitz, Mitglied, Sachkundige, nicht vereidigtes Mitglied,
@@ -67,6 +67,23 @@ DEMO_MEDIA_SUBDIR = "demo"
 # Fester Mandatsbeginn: Teil natürlicher Schlüssel (Idempotenz bei Wiederholung)
 DEMO_START_DATE = date(2024, 7, 1)
 DEMO_RATSSITZUNG = "Ratssitzung (Demo, kommend)"
+#: Mitte der fiktiven Musterstadt auf der Karte (bisher die Standardmitte der Karte in Work)
+DEMO_KARTENMITTE = (51.5, 7.5)
+#: Orte der Demo-Vorgänge (Schlüssel aus papers_def): Bezeichnung, Breite, Länge – fiktiv um die Kartenmitte
+DEMO_ORTE: dict[str, list[tuple[str, float, float]]] = {
+    "spielplatz": [("Spielplatz am Stadtpark", 51.5031, 7.4948)],
+    "radweg": [("Bahnhofstraße", 51.4978, 7.5052), ("Bahnhofstraße / Am Anger", 51.4993, 7.5079)],
+    "grundschule": [("Grundschule Am Anger", 51.5011, 7.5094)],
+    "ladesaeulen": [("Parkplatz am Rathaus", 51.5004, 7.5009), ("Bahnhofsvorplatz", 51.4969, 7.5031)],
+    "bplan": [("Am Stadtpark", 51.5044, 7.4931)],
+    "beleuchtung": [("Musterviertel", 51.4952, 7.4968)],
+    "trinkbrunnen": [
+        ("Marktplatz", 51.5009, 7.4996),
+        ("Stadtpark", 51.5036, 7.4957),
+        ("Bahnhofsvorplatz", 51.4969, 7.5031),
+    ],
+    "feuerwehr": [("Feuerwache Nord", 51.5072, 7.5023)],
+}
 #: Ankündigung für die Musterfraktion (Hinweisband auf Start und Glocke, Issue #857); neutral, gilt für jeden Stand
 DEMO_ANKUENDIGUNG = {
     "schluessel": "demo-was-ist-neu",
@@ -224,6 +241,9 @@ class Command(BaseCommand):
                     "Alle Daten sind synthetisch und dienen ausschließlich der Demonstration von mandari."
                 ),
                 "classification": "Kreisangehörige Stadt (Demo)",
+                # Mitte der Karte (Work und Insight); die Orte der Vorgänge liegen darum (DEMO_ORTE)
+                "latitude": DEMO_KARTENMITTE[0],
+                "longitude": DEMO_KARTENMITTE[1],
                 "deleted": False,
                 "oparl_created": now,
                 "oparl_modified": now,
@@ -417,6 +437,7 @@ class Command(BaseCommand):
                 },
             )
         self._count("Insight: Vorlagen", len(papers_def))
+        self._count("Insight: Orte", self._verorten(papers))
 
         # --- Tagesordnungen + Beratungen ------------------------------
         # (meeting_key, [(TOP-Nr, Titel, paper_key|None, result)])
@@ -642,6 +663,43 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------
     # 2. Work: Musterfraktion (Demo)
     # ------------------------------------------------------------------
+
+    def _verorten(self, papers) -> int:
+        """
+        Orte der Vorgänge (Issue #853): Karte in Work und Insight zeigt Punkte, auch nach dem nächtlichen Neuaufbau.
+
+        Wie eine bestätigte Verortung von Hand: ``locations`` am Vorgang (Anzeige) und je Ort eine Zeile in
+        ``PaperLocation`` (Karte, Umkreissuche). Feste Punkte je Vorgang; ein wiederholter Lauf legt keinen doppelt an.
+        """
+        from insight_core.models import PaperLocation
+
+        anzahl = 0
+        for key, orte in DEMO_ORTE.items():
+            paper = papers[key]
+            paper.locations = [
+                {"lat": lat, "lon": lon, "name": name, "source": "manual", "confidence": 1.0} for name, lat, lon in orte
+            ]
+            paper.georef_status = "completed"
+            paper.georef_method = "manual"
+            paper.save(update_fields=["locations", "georef_status", "georef_method", "updated_at"])
+            punkte = []
+            for name, lat, lon in orte:
+                zeile, _ = PaperLocation.objects.update_or_create(
+                    paper=paper,
+                    latitude=lat,
+                    longitude=lon,
+                    defaults={
+                        "body": paper.body,
+                        "name": name,
+                        "source": "manual",
+                        "confidence": 1.0,
+                        "status": PaperLocation.STATUS_CONFIRMED,
+                    },
+                )
+                punkte.append(zeile.pk)
+            PaperLocation.objects.filter(paper=paper).exclude(pk__in=punkte).delete()
+            anzahl += len(orte)
+        return anzahl
 
     def _make_user(self, key: str):
         from apps.accounts.models import User

@@ -48,7 +48,7 @@
             Angabe in Jahren; 0 = Frist deaktiviert (es wird nichts gelöscht). Maßgeblich sind die
             örtlichen Satzungen und Aufbewahrungsvorschriften — Details im Löschkonzept.
         </p>
-        <div class="grid sm:grid-cols-3 gap-4">
+        <div class="grid sm:grid-cols-2 gap-4">
             <div>
                 <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
                     Kontakt-/Bankdaten ausgeschiedener Mandatsträger
@@ -72,6 +72,14 @@
                 <input type="number" name="audit_years" value="{{ privacy.audit_years }}" min="0" max="100"
                        class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
                 <p class="text-xs text-gray-400 mt-1">Jahre nach Eintragsdatum. Vor der Löschung entsteht ein Archivpaket.</p>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Archivpakete des Audit-Logs
+                </label>
+                <input type="number" name="archive_years" value="{{ privacy.archive_years }}" min="0" max="100"
+                       class="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+                <p class="text-xs text-gray-400 mt-1">Jahre nach Ablage des Pakets. Vorher dem Archiv anbieten.</p>
             </div>
         </div>
 
@@ -119,7 +127,7 @@
         <p class="text-sm text-gray-600 dark:text-gray-400">
             Wendet die konfigurierten Fristen an: Kontakt- und Bankdaten ausgeschiedener
             Mandatsträger werden entfernt (der Name bleibt in historischen Beschlüssen erhalten),
-            NÖ-Inhalte und alte Audit-Einträge werden gelöscht. Jeder Lauf wird im Audit-Log
+            NÖ-Inhalte, alte Audit-Einträge und abgelaufene Archivpakete werden gelöscht. Jeder Lauf wird im Audit-Log
             dokumentiert. Alternativ per Kommandozeile: <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">manage.py session_privacy_purge</code>
         </p>
         <div class="flex flex-wrap gap-3">
