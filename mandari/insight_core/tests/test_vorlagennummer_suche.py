@@ -58,7 +58,7 @@ def bestand(db: Any) -> dict[str, Any]:
     }
 
 
-def _zeilen(html: str) -> list[str]:
+def _zeilen(html: str) -> list[tuple[str, str]]:
     return re.findall(r"<tr class=\"([^\"]*)\"\s+data-href=\"[^\"]*\">(.*?)</tr>", html, re.S)
 
 

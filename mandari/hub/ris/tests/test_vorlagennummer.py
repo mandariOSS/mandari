@@ -134,6 +134,11 @@ def _referenzen(papers: Any) -> list[str | None]:
     return [p.reference for p in papers]
 
 
+def _rang(paper: OParlPaper) -> int | None:
+    """Rang der Nummernsuche (Annotation ``nummer_rang``)."""
+    return getattr(paper, "nummer_rang", None)
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize("eingabe", SCHREIBWEISEN)
 def test_jede_schreibweise_findet_die_vorlage_zuerst(bestand: dict[str, Any], eingabe: str) -> None:
@@ -141,8 +146,8 @@ def test_jede_schreibweise_findet_die_vorlage_zuerst(bestand: dict[str, Any], ei
     # Genau diese Nummer oben, die Folgevorlage direkt darunter, andere Kreise, Jahre und Kommunen nicht. „XV/0591/2026“
     # enthält „V/0591/2026“ und bleibt ein Treffer der bisherigen Textsuche, ist aber keine passende Nummer.
     assert _referenzen(gefunden)[:2] == ["V/0591/2026", "V/0591/2026/1"]
-    assert gefunden[0].nummer_rang == 1 and gefunden[1].nummer_rang == 3
-    assert all(p.nummer_rang == 4 for p in gefunden[2:])
+    assert _rang(gefunden[0]) == 1 and _rang(gefunden[1]) == 3
+    assert all(_rang(p) == 4 for p in gefunden[2:])
     assert not {"V/0591/2025", "AN/0591/2026"} & set(_referenzen(gefunden))
 
 
@@ -150,7 +155,7 @@ def test_jede_schreibweise_findet_die_vorlage_zuerst(bestand: dict[str, Any], ei
 def test_textsuche_bleibt_und_steht_hinter_der_nummer(bestand: dict[str, Any]) -> None:
     """Treffer der bisherigen Suche (Nummer im Titel) bleiben, stehen aber hinter den passenden Nummern."""
     gefunden = list(ris.search_papers_in(ris.papers([bestand["muenster"]]), "V/0591/2026"))
-    assert gefunden[-1] == bestand["ohne_nummer"] and gefunden[-1].nummer_rang == 4
+    assert gefunden[-1] == bestand["ohne_nummer"] and _rang(gefunden[-1]) == 4
 
 
 @pytest.mark.django_db
@@ -158,7 +163,7 @@ def test_endstueck_findet_je_kommune(bestand: dict[str, Any]) -> None:
     muenster = list(ris.search_papers_in(ris.papers([bestand["muenster"]]), "0591/2026"))
     # Endstück genau (beide Kreise, neueste zuerst), dann die Folgevorlage
     assert _referenzen(muenster)[:3] == ["XV/0591/2026", "V/0591/2026", "V/0591/2026/1"]
-    assert [p.nummer_rang for p in muenster[:3]] == [2, 2, 3]
+    assert [_rang(p) for p in muenster[:3]] == [2, 2, 3]
     assert "AN/0591/2026" not in _referenzen(muenster)
     koeln = list(ris.search_papers_in(ris.papers([bestand["koeln"]]), "0591/2026"))
     assert _referenzen(koeln) == ["AN/0591/2026"]
@@ -186,7 +191,7 @@ def test_kreis_trennt_an_von_v(bestand: dict[str, Any]) -> None:
 )
 def test_nummern_anderer_kreise(bestand: dict[str, Any], eingabe: str, erwartet: str) -> None:
     gefunden = ris.search_papers_in(ris.papers([bestand["muenster"]]), eingabe)
-    assert gefunden[0].reference == erwartet and gefunden[0].nummer_rang == 1
+    assert gefunden[0].reference == erwartet and _rang(gefunden[0]) == 1
 
 
 @pytest.mark.django_db
