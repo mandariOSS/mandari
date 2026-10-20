@@ -233,12 +233,13 @@ def test_nummernsuche_nutzt_den_ausdrucksindex(bestand: dict[str, Any]) -> None:
         pytest.skip("Ausdrucksindex nur in PostgreSQL")
     nummer = vorlagennummer.nummer("V 591 2026")
     assert nummer is not None
-    abfrage = OParlPaper.objects.filter(*nummer.bedingungen()).values("pk")
+    abfrage = OParlPaper.objects.filter(*nummer.bedingungen()).order_by().values("pk")
     sql, params = abfrage.query.sql_with_params()
     with connection.cursor() as cursor:
         # Im kleinen Testbestand wäre das Lesen der Tabelle billiger; gezeigt wird, dass der Index zum Ausdruck der
-        # Abfrage passt (ohne Kommune, damit kein anderer Index in Frage kommt)
+        # Abfrage passt (ohne Kommune und ohne Sortierung, damit kein anderer Index in Frage kommt)
         cursor.execute("SET LOCAL enable_seqscan = off")
+        cursor.execute("SET LOCAL enable_indexscan = off")
         cursor.execute(f"EXPLAIN {sql}", params)
         plan = "\n".join(zeile[0] for zeile in cursor.fetchall())
     assert "oparl_paper_nummer_trgm" in plan, plan
