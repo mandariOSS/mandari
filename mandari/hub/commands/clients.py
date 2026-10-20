@@ -30,6 +30,7 @@ UNREACHABLE: Final = "Der Eigentümer ist nicht erreichbar. Bitte später mit de
 BAD_RESPONSE: Final = (
     "Der Eigentümer hat unerwartet geantwortet. Bitte später mit demselben Idempotenzschlüssel wiederholen."
 )
+ATTACHMENTS_UNSUPPORTED: Final = "Anlagen lassen sich über HTTP noch nicht übertragen."
 
 
 class CommandClient(Protocol):
@@ -77,6 +78,10 @@ class HttpClient:
             raise CommandError.of(400, "idempotenzschluessel-fehlt", KEY_MISSING)
         # Ebenso ein Inhalt, der sich nicht als JSON darstellen lässt: dasselbe 422 wie beim Dispatcher.
         checked_content_hash(command.body)
+        # Anlagen gehen bisher nur im selben Prozess mit; ohne sie käme beim Eigentümer ein unvollständiger
+        # Befehl an. Nichts wird gesendet.
+        if command.attachments:
+            raise CommandError.of(501, "anlagen-nicht-unterstuetzt", ATTACHMENTS_UNSUPPORTED)
         headers = {
             "Authorization": f"Bearer {self._token}",
             "Accept": "application/json, application/problem+json",

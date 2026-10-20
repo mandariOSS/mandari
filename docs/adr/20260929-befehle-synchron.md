@@ -156,6 +156,39 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
   mit einem Schlüssel der Installation, und der Inhalts-Hash der Quittung je Befehl abschaltbar.
   Bis dahin führt kein Handler einen solchen Befehl aus.
 
+## Nachtrag: erster Handler `submission.submit` (#540)
+
+- **Ein Einreichungsweg.** Der Handler liegt in `apps/session/commands.py` und prüft allein: Mandant,
+  Auslöser, Pflichttexte, Zielgremium, Anlagen. Work sendet über den `InProcessClient`, die Session-API v1
+  und der abgekündigte Pfad rufen `dispatch()` auf (`application_service.submit_with_token`). Die drei Wege
+  lesen nur noch ihr Format ein (Aliase der Antragsart, Kürzen optionaler Felder im alten Pfad); Work behält
+  die Hinweise seines Formulars, etwa zur Begründung der Dringlichkeit. Mitunterzeichnende gehen als Text
+  (`co_signers_text`, bis 5000 Zeichen) mit, wie Formular und APIs sie bisher annahmen; die Grenzen von
+  `co_signers` (Liste) zu lockern wäre keine additive Änderung.
+- **Auslöser bestimmen die Berechtigung.** `system:session.api-token.<Kennung>` steht für ein API-Token des
+  Mandanten (gültig, „Anträge einreichen“; die einreichende Organisation ist die, die das Token in Work
+  verbunden hat). `user:<Kennung>` steht für ein Mitglied der einreichenden Organisation mit
+  `motions.submit_to_ris`, deren Verbindung zum Mandanten besteht und deren Token gültig ist. Andere Auslöser
+  lehnt der Handler ab (403). Damit ist auch der Bereich des Idempotenzschlüssels je Token bzw. Person getrennt.
+- **Anlagen gehen nicht in den JSON-Inhalt.** Der Inhalt nennt je Anlage Name, Größe und SHA-256; so deckt
+  der Inhalts-Hash der Quittung auch die Anlagen ab. Die Dateien stehen in `Command.attachments` (SHA-256 →
+  Datei) und gehen nur im selben Prozess mit; der `HttpClient` lehnt Befehle mit Anlagen mit 501 ab, bis der
+  HTTP-Weg sie überträgt. Der Handler prüft Größe und Hash, Dateityp, Größe und Virenprüfung; nicht
+  Angenommenes steht in der Quittung als Stelle und Code, nie mit Namen. Scheitert die Ablage, rollt der Befehl
+  zurück (503).
+- **Schlüssel in Work ohne eigenes Feld.** Work leitet den Schlüssel aus Dokument und Zeitpunkt seiner letzten
+  Speicherung ab. Scheitert nach der Quittung das Speichern in Work, ist das Dokument unverändert und die
+  Wiederholung erhält dieselbe Quittung. Eine festgehaltene Einreichung speichert das Dokument, jede spätere
+  Einreichung trägt daher einen neuen Schlüssel. Nicht abgedeckt: Bearbeitet jemand das Dokument zwischen dem
+  Fehler und der Wiederholung, entsteht ein zweiter Eingang.
+- **API v1:** `Idempotency-Key` ist dort optional, weil die bestehende Schnittstelle sonst brechen würde. Ohne
+  Schlüssel gilt jede Anfrage als neue Einreichung wie bisher. Die Pflicht gilt für das Profil Einreichung
+  unter eigener Adresse (`POST /api/v1/einreichung/antraege`), das noch aussteht. Die Antwort trägt zusätzlich
+  `submitted_at` (Eingangszeit der Quittung; `received_at` heißt im Rückmeldestand schon der Eingang bei der
+  Verwaltung) und `content_hash`.
+- **Inhalts-Hash gewollt.** Die offene Frage zu HMAC und abschaltbarem Inhalts-Hash (#541) betrifft erst
+  personenbezogene Befehle mit wenig Entropie; für Anträge bleibt der Hash der Nachweis für Einreichende.
+
 ## Bezug
 
 - [A5 Verträge](20260929-ereignisvertraege.md), [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md)
