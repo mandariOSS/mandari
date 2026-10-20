@@ -12,7 +12,7 @@
  *   (`<c-form.select … data-autosubmit>`: weitere Attribute landen dort, Issue #951).
  * - `data-filter-param="status"` auf Select: bei Änderung den Query-Parameter setzen.
  * - `data-href="URL"` auf Zeilen/Karten: Klick navigiert, außer auf innere Links,
- *   Buttons oder Formularfelder.
+ *   Buttons, Formularfelder oder Aufklappbereiche (`<details>`, etwa die Anlagen einer Vorgangszeile).
  * - `data-action="reload|back|print|select|click-target|clear-target|share|confirm-submit|fullscreen"` auf Buttons
  *   (`data-target` als Selektor für click-/clear-target, confirm-submit und fullscreen, `data-share-title` für share).
  *   `fullscreen` schaltet das Element `data-target` in den Vollbildmodus und wieder heraus (Esc beendet ihn auch);
@@ -34,7 +34,7 @@ import { type ConfirmVariant, confirmAction } from './alpine/confirm-dialog'
 import { showToast } from './alpine/toast'
 import { csrfToken } from './csrf'
 
-const INTERACTIVE = 'a, button, input, select, textarea, label, summary, [contenteditable]'
+const INTERACTIVE = 'a, button, input, select, textarea, label, summary, details, [contenteditable]'
 
 function closestWithData(target: EventTarget | null, attr: string): HTMLElement | null {
   const el = target instanceof Element ? target : null
