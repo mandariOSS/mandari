@@ -155,7 +155,10 @@ def test_jede_schreibweise_findet_die_vorlage_zuerst(bestand: dict[str, Any], ei
 def test_textsuche_bleibt_und_steht_hinter_der_nummer(bestand: dict[str, Any]) -> None:
     """Treffer der bisherigen Suche (Nummer im Titel) bleiben, stehen aber hinter den passenden Nummern."""
     gefunden = list(ris.search_papers_in(ris.papers([bestand["muenster"]]), "V/0591/2026"))
-    assert gefunden[-1] == bestand["ohne_nummer"] and _rang(gefunden[-1]) == 4
+    raenge = {p.pk: _rang(p) or 0 for p in gefunden}
+    assert raenge[bestand["ohne_nummer"].pk] == 4
+    # Reihenfolge nach Rang; innerhalb eines Rangs zählt das Datum (ohne Datum je nach Datenbank vorn oder hinten)
+    assert list(raenge.values()) == sorted(raenge.values())
 
 
 @pytest.mark.django_db
