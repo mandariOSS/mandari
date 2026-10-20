@@ -837,6 +837,20 @@ TEXT_EXTRACTION_MAX_SIZE_MB = int(os.environ.get("TEXT_EXTRACTION_MAX_SIZE_MB", 
 # Je Lauf des Zeitplans höchstens so viele Aufträge einreihen bzw. wartend halten (nur mit Runner "worker");
 # dieselbe Grenze für extract_texts ohne --limit
 TEXT_EXTRACTION_QUEUE_DEPTH = int(os.environ.get("TEXT_EXTRACTION_QUEUE_DEPTH", "20"))
+# Texterkennung in zwei Stufen (Issue #1107, nur mit Runner "worker"): Auftrag file.read_text_layer liest in der
+# Warteschlange text (Dienst worker) nur die Textebene, in einem eigenen Prozess mit Speicher- und Zeitgrenze; nur
+# Dateien ohne ausreichende Textebene gehen an file.extract_text in ocr (worker-heavy). Höchstens so viele Aufträge
+# warten oder laufen in text; die Tiefe bestimmt den Durchsatz (der Zeitplan füllt alle zwei Minuten nach).
+TEXT_LAYER_QUEUE_DEPTH = int(os.environ.get("TEXT_LAYER_QUEUE_DEPTH", "300"))
+# Adressraum je Prozess der ersten Stufe (MB, 0 = ohne Grenze); darüber geht die Datei an ocr
+TEXT_LAYER_MEMORY_LIMIT_MB = int(os.environ.get("TEXT_LAYER_MEMORY_LIMIT_MB", "512"))
+# Eingescannte Seiten eines sonst getippten PDFs erkennen (Seite mit Bild und kaum Text): an = solche PDFs gehen an
+# ocr, Tesseract liest nur diese Seiten; aus = jeder Text in der Textebene reicht (wie bisher, auch im Ingestor)
+TEXT_EXTRACTION_OCR_MIXED_PAGES = os.environ.get("TEXT_EXTRACTION_OCR_MIXED_PAGES", "true").lower() in (
+    "1",
+    "true",
+    "yes",
+)
 # Prüfung „dokumenttext“ (/health/worker/, Issue #919, nur mit Runner "worker"): rot, sobald ein abgelegtes Dokument
 # länger als so viele Stunden auf seinen Text wartet
 TEXT_EXTRACTION_BACKLOG_ALERT_HOURS = float(os.environ.get("TEXT_EXTRACTION_BACKLOG_ALERT_HOURS", "24"))
@@ -972,7 +986,7 @@ EVENTS_SCHEDULES_DISABLED = [
 # Runner ``manage.py events_tasks`` (eigener Prozess bzw. Container). Ohne laufenden Runner
 # bleiben Aufträge liegen – erst den Runner starten, dann umschalten.
 # Ein vollständiger Importpfad eines anderen Backends ist ebenfalls erlaubt.
-TASK_QUEUES = ["default", "mail", "index", "ocr", "ai", "adapter", "live"]
+TASK_QUEUES = ["default", "mail", "index", "text", "ocr", "ai", "adapter", "live"]
 
 # Live-Übertragungen von Gremiensitzungen (Issue #915, docs/LIVE_UEBERTRAGUNG.md): Status der Streaming-Anbieter rund
 # um die Sitzungen, Einzelbilder per Texterkennung (nur im Speicher). Aus = keine Anfragen nach außen, kein Zeitplan,
@@ -1000,8 +1014,13 @@ TASKS = {
             "max_tasks_per_process": int(os.environ.get("TASKS_MAX_TASKS_PER_PROCESS", "1000")),
             "max_memory_mb": int(os.environ.get("TASKS_MAX_MEMORY_MB", "400")),
             # Warteschlange live (Issue #915): ein Leseauftrag und die Statusabfrage zugleich (Dienst worker-live);
-            # aus = 0, dann erwartet die Anwesenheitsprüfung keinen Worker für live
-            "concurrency": {"live": 2 if LIVE_UEBERTRAGUNG_AKTIV else 0},
+            # aus = 0, dann erwartet die Anwesenheitsprüfung keinen Worker für live. Warteschlange text (Issue #1107,
+            # erste Stufe der Texterkennung, Dienst worker mit --concurrency text=3): nur mit Runner "worker" in
+            # Gebrauch, sonst 0 und ohne Worker
+            "concurrency": {
+                "live": 2 if LIVE_UEBERTRAGUNG_AKTIV else 0,
+                "text": 3 if TEXT_EXTRACTION_RUNNER == "worker" else 0,
+            },
             "tasks": {
                 # Verwaltungsbefehle als Zeitpläne (Issue #516): eigene Zeitgrenze je Befehl, höchstens
                 # 3600 s; der Prozess endet vorher (apps.events.verwaltungsbefehle)
@@ -1016,6 +1035,8 @@ TASKS = {
                 # Texterkennung einer Datei (Issue #530): Zeitbudget je Datei (OCR_FILE_BUDGET_SECONDS) plus Abruf;
                 # Abbrüche zählt die Datei selbst (TEXT_EXTRACTION_MAX_ATTEMPTS)
                 "insight_core.background_tasks.file_extract_text": {"timeout": 1800, "max_attempts": 3},
+                # Erste Stufe (Issue #1107): der Prozess der Textebene endet nach 120 s, dazu Lesen und Speichern
+                "insight_core.background_tasks.file_read_text_layer": {"timeout": 300, "max_attempts": 3},
                 # Live-Übertragungen (Issue #915): ein Leseauftrag dauert rund 50 s, die Statusabfrage Sekunden; beide
                 # nicht wiederholen, der Zeitplan reiht jede Minute neu ein
                 "hub.live.auftraege.live_bilder_lesen": {"timeout": 120, "max_attempts": 1},

@@ -4,6 +4,8 @@ Kennzahlen und Statusprüfung der Texterkennung aus der Ablage (Issue #919, ADR 
 
 - ``mandari_files_stored_without_text``: abgelegte Inhalte (``local_status = ok``), deren Erkennung wartet oder
   läuft – der Rückstand der Erkennung.
+- ``mandari_files_awaiting_ocr``: davon die, deren Textebene nicht reicht (Vermerk der ersten Stufe, Issue #1107):
+  der Rückstand der Erkennung aus dem Bild in ``ocr``. Der Rest wartet auf die erste Stufe in ``text``.
 - ``mandari_files_text_outdated``: abgelegte Inhalte mit Text aus einer älteren Erkennungsversion (bzw. mit
   angeforderter Neuerkennung); der Zeitplan plant sie nach den wartenden schrittweise neu ein. Kein Alarm.
 
@@ -35,7 +37,7 @@ from . import erkennung
 
 logger = logging.getLogger(__name__)
 
-CACHE_KEY: Final = "dokumentkette:erkennung:kennzahlen:v1"
+CACHE_KEY: Final = "dokumentkette:erkennung:kennzahlen:v2"
 CACHE_SECONDS: Final = 60
 
 
@@ -69,6 +71,11 @@ class ErkennungCollector(Collector):
             "mandari_files_stored_without_text",
             "Abgelegte RIS-Dateien, deren Texterkennung wartet oder läuft",
             value=zahlen.get("stored_without_text", 0),
+        )
+        yield GaugeMetricFamily(
+            "mandari_files_awaiting_ocr",
+            "Abgelegte RIS-Dateien ohne Text, deren Textebene nicht reicht (warten auf die Erkennung aus dem Bild)",
+            value=zahlen.get("awaiting_ocr", 0),
         )
         yield GaugeMetricFamily(
             "mandari_files_text_outdated",

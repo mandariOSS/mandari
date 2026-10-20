@@ -10,8 +10,9 @@ Anwendung sie beantworten kann, auch wenn der Worker selbst steht:
 - ``rueckstau``: Sequenzierer (ältestes Ereignis ohne Folgenummer, Stau durch offene Transaktionen),
   Zustellung (ältestes nicht zugestelltes Ereignis je nicht pausiertem Abonnement) jeweils höchstens
   ``MAX_EVENT_LAG`` (5 min), ältester fälliger Auftrag höchstens ``MAX_TASK_WAIT`` (15 min). Warteschlangen in
-  ``SEPARATE_QUEUES`` (``ocr``) zählen gesondert: Sie scheitern nur, wenn ihr ältester fälliger Auftrag länger
-  als ``MAX_TASK_WAIT`` wartet und keiner läuft (Issue #953); ein Versuch über seiner Zeitgrenze läuft nicht mehr.
+  ``SEPARATE_QUEUES`` (``text``, ``ocr``) zählen gesondert: Sie scheitern nur, wenn ihr ältester fälliger Auftrag
+  länger als ``MAX_TASK_WAIT`` wartet und keiner läuft (Issues #953, #1107); ein Versuch über seiner Zeitgrenze läuft
+  nicht mehr.
 - ``fehlerquote``: In der letzten Stunde beendete Aufträge, davon gescheitert (fehlgeschlagen oder
   tot) höchstens ``MAX_ERROR_RATE`` (20 %), sobald mindestens ``MIN_FINISHED`` beendet sind.
 - ``gescheitert``: endgültig gescheiterte Aufträge der letzten 24 Stunden und tote Ereignisse (nach
@@ -45,11 +46,12 @@ logger = logging.getLogger(__name__)
 MAX_EVENT_LAG: Final = 300.0
 #: Wartezeit des ältesten fälligen Auftrags, ab der die Prüfung scheitert
 MAX_TASK_WAIT: Final = 900.0
-#: Warteschlangen, in denen jeder Auftrag hinter den vorigen wartet: ``ocr`` (Texterkennung, Parallelität 1, bis zu
-#: ``TEXT_EXTRACTION_QUEUE_DEPTH`` Aufträge zu je bis 30 Minuten). Eine lange Wartezeit ist dort normal, solange ein
-#: Auftrag läuft; der Rückstau scheitert nur, wenn fällige Aufträge länger als ``MAX_TASK_WAIT`` warten und keiner
-#: läuft (Issue #953, wie der Beispielalarm ``MandariTexterkennungSteht``).
-SEPARATE_QUEUES: Final = ("ocr",)
+#: Warteschlangen, in denen jeder Auftrag hinter vielen vorigen wartet: ``ocr`` (Texterkennung, Parallelität 1, bis zu
+#: ``TEXT_EXTRACTION_QUEUE_DEPTH`` Aufträge zu je bis 30 Minuten) und ``text`` (erste Stufe, Issue #1107: bewusst
+#: ``TEXT_LAYER_QUEUE_DEPTH`` Aufträge im Voraus, je Sekunden bis zwei Minuten). Eine lange Wartezeit ist dort normal,
+#: solange ein Auftrag läuft; der Rückstau scheitert nur, wenn fällige Aufträge länger als ``MAX_TASK_WAIT`` warten und
+#: keiner läuft (Issue #953, wie der Beispielalarm ``MandariTexterkennungSteht``).
+SEPARATE_QUEUES: Final = ("text", "ocr")
 #: Zeitfenster und Grenzen der Fehlerquote
 ERROR_WINDOW: Final = timedelta(hours=1)
 MAX_ERROR_RATE: Final = 0.2

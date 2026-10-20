@@ -1002,7 +1002,9 @@ spec:
             - --metrics-port
             - "9091"
             - "--queues"
-            - "default,mail,index,adapter"
+            - "default,mail,index,adapter,text"
+            - "--concurrency"
+            - "text=3"
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

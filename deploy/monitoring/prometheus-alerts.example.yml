@@ -73,8 +73,9 @@ groups:
           description: Ursache im Protokoll des Runners (events_tasks); der Wert erlischt nach 24 Stunden.
 
       - alert: MandariAuftragsrueckstand
-        # ocr gesondert (MandariTexterkennungSteht): Parallelität 1, dort wartet jeder Auftrag hinter den vorigen
-        expr: max by (queue) (mandari_tasks_oldest_queued_seconds{queue!="ocr"}) > 900
+        # text und ocr gesondert (MandariTexterkennungSteht): ocr mit Parallelität 1, dort wartet jeder Auftrag hinter
+        # den vorigen; text wird bewusst mit TEXT_LAYER_QUEUE_DEPTH Aufträgen im Voraus gefüllt (Issue #1107)
+        expr: max by (queue) (mandari_tasks_oldest_queued_seconds{queue!~"ocr|text"}) > 900
         for: 10m
         labels:
           severity: warning
@@ -120,19 +121,21 @@ groups:
             Umschalten der Dokumentkette ist das ein Abbruchkriterium (DEPLOYMENT.md).
 
       - alert: MandariTexterkennungSteht
-        # Aufträge file.extract_text warten, aber keiner läuft (fehlt die Reihe ocr, gilt 0)
+        # Aufträge der Texterkennung warten, aber keiner läuft, je Stufe: text (file.read_text_layer, Issue #1107)
+        # und ocr (file.extract_text). Ohne Reihe der laufenden gilt die Warteschlange als stehend
         expr: |
-          max(mandari_tasks_oldest_queued_seconds{queue="ocr"}) > 900
-            and on()
-          (max(mandari_tasks_running{queue="ocr"}) or vector(0)) == 0
+          max by (queue) (mandari_tasks_oldest_queued_seconds{queue=~"ocr|text"}) > 900
+            unless on(queue)
+          max by (queue) (mandari_tasks_running{queue=~"ocr|text"}) > 0
         for: 15m
         labels:
           severity: warning
         annotations:
-          summary: "Die Texterkennung steht: Aufträge in ocr warten, keiner läuft"
+          summary: "Die Texterkennung steht: Aufträge in {{ $labels.queue }} warten, keiner läuft"
           description: >-
-            worker-heavy prüfen (healthy, bedient er ocr, Speicherabbrüche). Lange Wartezeiten bei laufender
-            Erkennung sind bei vielen Scans normal (Parallelität 1, TEXT_EXTRACTION_QUEUE_DEPTH).
+            text: worker prüfen (healthy, bedient er text). ocr: worker-heavy prüfen (healthy, bedient er ocr,
+            Speicherabbrüche). Lange Wartezeiten bei laufender Erkennung sind normal (ocr mit Parallelität 1 und
+            TEXT_EXTRACTION_QUEUE_DEPTH, text mit TEXT_LAYER_QUEUE_DEPTH Aufträgen im Voraus).
 
       - alert: MandariTexterkennungRueckstauWaechst
         expr: |

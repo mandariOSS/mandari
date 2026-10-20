@@ -119,12 +119,21 @@ x-app-environment: &app-environment
   MAIL_QUEUE_MAX_BYTES: ${MAIL_QUEUE_MAX_BYTES:-20971520}
   # Wer den Text der RIS-Dateien erkennt (docs/adr/20261007-dokumentkette.md, DEPLOYMENT.md):
   #   ingestor (Standard): OCR-Worker bzw. Sync des Ingestors, der jede Datei selbst lädt
-  #   worker: Aufträge file.extract_text in der Warteschlange ocr (Dienst worker-heavy), lesen nur aus Ablage
-  #           und Objektspeicher; braucht TASKS_BACKEND=journal. Gilt zugleich für den Dienst ingestor
+  #   worker: Aufträge in zwei Stufen (Issue #1107), lesen nur aus Ablage und Objektspeicher; braucht
+  #           TASKS_BACKEND=journal. file.read_text_layer liest in der Warteschlange text nur die Textebene (Dienst
+  #           worker), file.extract_text erkennt in ocr den Text aus dem Bild (Dienst worker-heavy). Gilt zugleich
+  #           für den Dienst ingestor
   TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}
-  # Höchstens so viele Aufträge der Texterkennung warten oder laufen zugleich (Zeitplan und extract_texts ohne
-  # --limit; nur mit TEXT_EXTRACTION_RUNNER=worker)
+  # Höchstens so viele Aufträge der Erkennung aus dem Bild warten oder laufen zugleich in ocr (Zeitplan und
+  # extract_texts ohne --limit; nur mit TEXT_EXTRACTION_RUNNER=worker)
   TEXT_EXTRACTION_QUEUE_DEPTH: ${TEXT_EXTRACTION_QUEUE_DEPTH:-20}
+  # Erste Stufe (Issue #1107): höchstens so viele Aufträge in text; die Tiefe bestimmt den Durchsatz, denn der
+  # Zeitplan füllt nur alle zwei Minuten nach. Adressraum je Prozess der Textebene in MB (darüber an ocr)
+  TEXT_LAYER_QUEUE_DEPTH: ${TEXT_LAYER_QUEUE_DEPTH:-300}
+  TEXT_LAYER_MEMORY_LIMIT_MB: ${TEXT_LAYER_MEMORY_LIMIT_MB:-512}
+  # Eingescannte Seiten eines sonst getippten PDFs erkennen (Seite mit Bild und kaum Text); false = jeder Text in der
+  # Textebene reicht wie bisher
+  TEXT_EXTRACTION_OCR_MIXED_PAGES: ${TEXT_EXTRACTION_OCR_MIXED_PAGES:-true}
   # Adressraum je Tesseract-Unterprozess in Anwendung und worker (1 GB); worker-heavy hat eine eigene Grenze
   # (WORKER_HEAVY_OCR_MEMORY_LIMIT_MB)
   OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-512}
@@ -449,8 +458,9 @@ services:
   # Gleiches Image und dieselbe Umgebung wie die Anwendung. Starten nach den
   # Migrationen und vor der Anwendung (update.sh, deploy/scripts/deploy.sh).
   # /metrics und /health auf Port 9091 nur im internen Netz (nicht veröffentlicht).
-  # Drei Dienste: worker (alle Rollen, alle Warteschlangen außer ocr, ai und live),
-  # worker-heavy (nur Aufträge aus ocr und ai, 3 GB) und worker-live (nur live). Jeder
+  # Drei Dienste: worker (alle Rollen, alle Warteschlangen außer ocr, ai und live, dazu die
+  # erste Stufe der Texterkennung in text), worker-heavy (nur Aufträge aus ocr und ai, 3 GB)
+  # und worker-live (nur live). Jeder
   # Neustart eines Runners wartet auf seinen längsten laufenden Auftrag (ocr bis 30 min);
   # getrennt warten Mails und Suche nicht auf die Texterkennung. Einzelheiten:
   # DEPLOYMENT.md, „Worker“.
@@ -464,7 +474,11 @@ services:
       - manage.py
       - events_worker
       - --queues
-      - default,mail,index,adapter
+      - default,mail,index,adapter,text
+      # Erste Stufe der Texterkennung (Issue #1107): drei Plätze, je Auftrag ein eigener Prozess mit
+      # TEXT_LAYER_MEMORY_LIMIT_MB, niedriger Priorität und Vorrang beim Speicherwächter (trifft ihn, nicht den Worker)
+      - --concurrency
+      - text=3
       - --heartbeat-file
       - /tmp/mandari-worker.heartbeat
     labels:
@@ -483,7 +497,8 @@ services:
       - mandari
     # Der Runner startet oberhalb von TASKS_MAX_MEMORY_MB (Standard 400) neu, bevor das Limit greift.
     # Die Verwaltungsbefehle der Zeitpläne (früher Host-Cron im Anwendungscontainer, etwa die
-    # Sitzungsmappen) laufen hier als eigene Prozesse und brauchen den Rest bis 1 GB.
+    # Sitzungsmappen) und die Prozesse der Textebene (meist unter 150 MB, höchstens
+    # TEXT_LAYER_MEMORY_LIMIT_MB) laufen hier als eigene Prozesse und brauchen den Rest bis 1 GB.
     mem_limit: 1g
     # Laufende Aufträge dürfen beim Beenden 20 s zu Ende laufen (--shutdown-timeout), dann SIGKILL
     stop_grace_period: 30s
@@ -518,7 +533,10 @@ services:
       - tasks
       - --queues
       - ocr,ai
-      # Eine Erkennung zugleich: Das Speicherlimit ist auf einen Tesseract-Unterprozess ausgelegt
+      # Eine Erkennung zugleich: Das Speicherlimit ist auf einen Tesseract-Unterprozess ausgelegt. Mehr Plätze
+      # (ocr=N) nur mit WORKER_HEAVY_MEM_LIMIT von etwa 1 GB + N × WORKER_HEAVY_OCR_MEMORY_LIMIT_MB, oder ein zweiter
+      # Container wie dieser (auch auf einem eigenen Server, docs/MEHR_SERVER_BETRIEB.md); doppelte Arbeit
+      # verhindert das Beanspruchen der Datei
       - --concurrency
       - ocr=1
       - --max-memory-mb

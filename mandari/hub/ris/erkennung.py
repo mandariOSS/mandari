@@ -3,11 +3,25 @@
 Texterkennung der RIS-Dateien aus der Ablage: der eine Weg zur Erkennung (Issue #919,
 ``docs/adr/20261007-dokumentkette.md``, Abschnitte 1, 2, 4 und 10).
 
-Nur der Auftrag ``file.extract_text`` erkennt Text. Registriert bleibt der Pfad
-``insight_core.background_tasks.file_extract_text`` (wartende Aufträge laufen über einen Deploy weiter); er ruft
-``erkennen`` auf. Der Auftrag liest ausschließlich über ``file_store.local_copy`` (lokal, sonst aus dem
-Objektspeicher) und ruft **nie** bei der Quelle ab. Der Zeitplan ``texterkennung_einplanen`` (``einplanen``), der
-Befehl ``extract_texts`` (``befehl_einplanen``) und ``dokumentkette nacharbeiten`` (``nacharbeiten``) planen nur ein.
+Nur die Aufträge der Texterkennung erkennen Text. Registriert bleiben die Pfade
+``insight_core.background_tasks.file_extract_text`` (ruft ``erkennen`` auf) und ``file_read_text_layer``
+(``textebene_lesen``); wartende Aufträge laufen über einen Deploy weiter. Die Aufträge lesen ausschließlich über
+``file_store.local_copy`` (lokal, sonst aus dem Objektspeicher) und rufen **nie** bei der Quelle ab. Der Zeitplan
+``texterkennung_einplanen`` (``einplanen``), der Befehl ``extract_texts`` (``befehl_einplanen``) und
+``dokumentkette nacharbeiten`` (``nacharbeiten``) planen nur ein.
+
+**Zwei Stufen** (Issue #1107): Rund 90 % der Dateien bringen ihren Text in der Textebene mit. Der leichte Auftrag
+``file.read_text_layer`` (Warteschlange ``text``, Dienst ``worker`` mit mehreren Plätzen) liest nur sie, in einem
+eigenen Prozess mit Speicher- und Zeitgrenze (``mandari_dokumente.extract_text_layer_isolated``). Reicht sie
+(``TextLayer.sufficient``, dieselbe Entscheidung wie in der vollständigen Kette), speichert er den Text wie die zweite
+Stufe. Sonst vermerkt er den Inhalt (``text_ocr_needed_sha256``), gibt die Datei frei und reiht ``file.extract_text``
+in ``ocr`` ein, solange dort Platz ist (``TEXT_EXTRACTION_QUEUE_DEPTH``); den Rest plant der Zeitplan nach. Ebenso,
+wenn sein Prozess an Speicher oder Zeit scheitert: Die zweite Stufe hat mehr von beidem. Der Zeitplan füllt ``text``
+mit unvermerkten Dateien (``TEXT_LAYER_QUEUE_DEPTH``) und ``ocr`` nur mit vermerkten. **Ohne Worker für ``text``**
+(``apps.events.presence.queue_served``, etwa eine eigene Compose-Datei ohne ``text`` in ``--queues``) plant er wie
+bisher alles in ``ocr`` ein: Dort läuft die vollständige Kette, nichts bleibt liegen. Beide Stufen werden **reihum über
+die Quellen** gefüllt (``_reihum``): zuerst die Quelle mit den wenigsten Aufträgen in der Warteschlange, damit eine
+große Quelle die kleinen nicht über Tage blockiert.
 
 **Beanspruchen** (Abschnitt 2): atomar beim Start des Auftrags (``SELECT … FOR UPDATE SKIP LOCKED``), nur Dateien
 mit abgelegtem Inhalt (``local_status = ok``), die nicht ausgeschlossen sind (gelöscht, gesperrt, nach #787
@@ -53,8 +67,9 @@ from __future__ import annotations
 import errno
 import hashlib
 import logging
-from collections import Counter
-from dataclasses import dataclass, field
+import random
+from collections import Counter, deque
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -62,15 +77,29 @@ from typing import TYPE_CHECKING, Any, Final
 import mandari_dokumente
 from django.conf import settings
 from django.db import InterfaceError, OperationalError, router, transaction
-from django.db.models import Case, Count, F, IntegerField, Q, QuerySet, Value, When
+from django.db.models import BooleanField, Case, Count, F, IntegerField, Q, QuerySet, Value, When
 from django.db.models.functions import Coalesce, Greatest
 from django.db.models.signals import post_save
 from django.utils import timezone
-from mandari_dokumente import MEMORY_LIMIT_REASON, METHOD_NONE, OcrMemoryLimitError, extract_text
+from mandari_dokumente import (
+    MEMORY_LIMIT_REASON,
+    METHOD_NONE,
+    IsolationLimits,
+    OcrMemoryLimitError,
+    extract_text,
+    extract_text_layer_isolated,
+)
 
 from insight_core.models import OParlFile
 from insight_core.services import file_store
-from insight_core.services.text_extraction_job import queued_file_ids, runner_is_worker, waiting_tasks
+from insight_core.services.text_extraction_job import (
+    TASK_QUEUE,
+    TEXT_LAYER_QUEUE,
+    queued_file_ids,
+    runner_is_worker,
+    task_file_ids,
+    waiting_tasks,
+)
 
 from . import abruf
 
@@ -99,6 +128,8 @@ OHNE_INHALT: Final = "ohne_inhalt"
 VERWORFEN: Final = "verworfen"
 #: Nicht zu beanspruchen (schon beansprucht, erledigt, ausgeschlossen oder ohne abgelegten Inhalt)
 NICHT_ZU_TUN: Final = "nicht_zu_tun"
+#: Erste Stufe: Die Textebene reicht nicht, die Datei geht an die Erkennung aus dem Bild (``ocr``)
+ZUR_TEXTERKENNUNG: Final = "zur_texterkennung"
 
 #: Nach einer Störung der Ablage läuft derselbe Auftrag frühestens so viel später erneut
 STORAGE_RETRY: Final = timedelta(minutes=15)
@@ -133,6 +164,29 @@ def _max_bytes() -> int:
 
 def queue_depth() -> int:
     return int(getattr(settings, "TEXT_EXTRACTION_QUEUE_DEPTH", 20))
+
+
+def text_layer_queue_depth() -> int:
+    """Höchstens so viele Aufträge der ersten Stufe warten oder laufen in ``text`` (Issue #1107)."""
+    return int(getattr(settings, "TEXT_LAYER_QUEUE_DEPTH", 300))
+
+
+def _mixed_pages() -> bool:
+    return bool(getattr(settings, "TEXT_EXTRACTION_OCR_MIXED_PAGES", True))
+
+
+def _layer_limits() -> IsolationLimits:
+    return IsolationLimits(memory_limit_mb=int(getattr(settings, "TEXT_LAYER_MEMORY_LIMIT_MB", 512)))
+
+
+def text_stufe_aktiv() -> bool:
+    """
+    Bedient ein lebender Worker die Warteschlange ``text``? Sonst plant der Zeitplan wie vor Issue #1107 alles in
+    ``ocr`` ein (vollständige Kette), damit ohne passenden Worker nichts liegen bleibt.
+    """
+    from apps.events.presence import queue_served
+
+    return queue_served(TEXT_LAYER_QUEUE)
 
 
 def backlog_alert_hours() -> float:
@@ -171,6 +225,16 @@ def _has_text_q() -> Q:
     return Q(text_content__isnull=False) & ~Q(text_content="")
 
 
+def ocr_needed_q() -> Q:
+    """Die erste Stufe hat für den aktuellen Inhalt vermerkt: Die Textebene reicht nicht (Issue #1107)."""
+    return Q(text_ocr_needed_sha256=F("sha256_hash"))
+
+
+def _ocr_vermerkt() -> Case:
+    """``ocr_needed_q`` als Wahrheitswert ohne NULL (für Filter in beide Richtungen)."""
+    return Case(When(ocr_needed_q(), then=Value(True)), default=Value(False), output_field=BooleanField())
+
+
 # =============================================================================
 # Beanspruchen, Freigeben, Beenden
 # =============================================================================
@@ -184,17 +248,17 @@ class Beanspruchung:
     vorher: str
 
 
-def beanspruchen(file_id: Any, *, now: datetime | None = None) -> Beanspruchung | None:
-    """Datei atomar beanspruchen (``processing``, Versuch zählt); ``None``, wenn es nichts zu tun gibt."""
+def beanspruchen(file_id: Any, *, now: datetime | None = None, erste_stufe: bool = False) -> Beanspruchung | None:
+    """
+    Datei atomar beanspruchen (``processing``, Versuch zählt); ``None``, wenn es nichts zu tun gibt. Die erste Stufe
+    (``erste_stufe``) lässt Dateien aus, deren Textebene schon als unzureichend vermerkt ist: Sie warten auf ``ocr``.
+    """
     now = now or timezone.now()
     with transaction.atomic():
-        vorher = (
-            OParlFile.objects.select_for_update(skip_locked=True)
-            .filter(pk=file_id)
-            .filter(claimable_q())
-            .values_list("text_extraction_status", flat=True)
-            .first()
-        )
+        auswahl = OParlFile.objects.select_for_update(skip_locked=True).filter(pk=file_id).filter(claimable_q())
+        if erste_stufe:
+            auswahl = auswahl.alias(ocr_vermerkt=_ocr_vermerkt()).filter(ocr_vermerkt=False)
+        vorher = auswahl.values_list("text_extraction_status", flat=True).first()
         if vorher is None:
             return None
         OParlFile.objects.filter(pk=file_id).update(
@@ -307,49 +371,120 @@ def skip_too_large(now: datetime | None = None) -> int:
 # =============================================================================
 
 
-def candidates(limit: int, *, base: QuerySet[Any] | None = None) -> list[Any]:
+def candidates(
+    limit: int,
+    *,
+    base: QuerySet[Any] | None = None,
+    ocr_vermerkt: bool | None = None,
+    belegt: Counter[Any] | None = None,
+) -> list[Any]:
     """
-    Dateien, die ein Auftrag beanspruchen könnte und für die noch keiner wartet: wartende vor der Neuerkennung, je
-    die neuesten zuerst.
+    Dateien, die ein Auftrag beanspruchen könnte und für die noch keiner wartet (in keiner der beiden Stufen), reihum
+    über die Quellen (``_reihum``); je Quelle wartende vor der Neuerkennung, je die neuesten zuerst. ``ocr_vermerkt``:
+    nur Dateien mit (``True``, zweite Stufe) bzw. ohne (``False``, erste Stufe) Vermerk, ``None`` alle. ``belegt``:
+    Aufträge je Quelle, die in der Ziel-Warteschlange schon warten oder laufen.
     """
+    if limit <= 0:
+        return []
     qs = (base if base is not None else OParlFile.objects.all()).filter(claimable_q())
     eingereiht = queued_file_ids()
     if eingereiht:
         qs = qs.exclude(pk__in=eingereiht)
+    if ocr_vermerkt is not None:
+        qs = qs.alias(ocr_vermerkt=_ocr_vermerkt()).filter(ocr_vermerkt=ocr_vermerkt)
+    quellen = list(qs.order_by().values_list("body__source_id", flat=True).distinct())
     vorrang = Case(When(text_extraction_status=PENDING, then=Value(0)), default=Value(1), output_field=IntegerField())
-    return list(
-        qs.annotate(erkennung_vorrang=vorrang)
-        .order_by("erkennung_vorrang", "-created_at")
-        .values_list("pk", flat=True)[: max(0, limit)]
+    reihen: dict[Any, deque[Any]] = {}
+    for quelle in quellen:
+        je_quelle = qs.filter(body__source_id=quelle) if quelle is not None else qs.filter(body__source__isnull=True)
+        reihen[quelle] = deque(
+            je_quelle.annotate(erkennung_vorrang=vorrang)
+            .order_by("erkennung_vorrang", "-created_at")
+            .values_list("pk", flat=True)[:limit]
+        )
+    return _reihum(reihen, limit, belegt or Counter())
+
+
+def _reihum(reihen: dict[Any, deque[Any]], limit: int, belegt: Counter[Any]) -> list[Any]:
+    """
+    Reihum über die Quellen (Issue #1107): Jeder Platz geht an die Quelle mit den wenigsten Aufträgen in der
+    Warteschlange (``belegt`` plus die eben vergebenen), bei Gleichstand in zufälliger Reihenfolge. So bekommt jede
+    Quelle mit Arbeit ihren Anteil, auch wenn weniger Plätze frei sind, als Quellen warten, und eine große Quelle
+    blockiert die kleinen nicht.
+    """
+    reihenfolge = list(reihen)
+    random.shuffle(reihenfolge)  # noqa: S311 - nur die Reihenfolge bei Gleichstand, kein Geheimnis
+    zaehler = Counter({quelle: belegt.get(quelle, 0) for quelle in reihenfolge})
+    ergebnis: list[Any] = []
+    while len(ergebnis) < limit:
+        offen = [quelle for quelle in reihenfolge if reihen[quelle]]
+        if not offen:
+            break
+        quelle = min(offen, key=lambda q: zaehler[q])
+        ergebnis.append(reihen[quelle].popleft())
+        zaehler[quelle] += 1
+    return ergebnis
+
+
+def _belegung(stufe: str) -> Counter[Any]:
+    """Wartende und laufende Aufträge der Warteschlange ``stufe`` je Quelle (für ``_reihum``)."""
+    from apps.events.models import TaskStatus
+
+    ids = task_file_ids([stufe], [TaskStatus.WARTEND, TaskStatus.LAEUFT])
+    if not ids:
+        return Counter()
+    return Counter(
+        dict(
+            OParlFile.objects.filter(pk__in=ids)
+            .order_by()
+            .values("body__source_id")
+            .annotate(anzahl=Count("pk"))
+            .values_list("body__source_id", "anzahl")
+        )
     )
 
 
-def _enqueue(file_ids: list[Any], *, run_after: datetime | None = None) -> int:
+def _enqueue(file_ids: list[Any], *, run_after: datetime | None = None, stufe: str = TASK_QUEUE) -> int:
     """
-    Je Datei einen Auftrag ins Journal (Warteschlange ``ocr``), auch wenn Aufträge sonst sofort laufen; mit
-    ``run_after`` frühestens dann. Den Zeitpunkt setzt die Zeile direkt: ``Task.using(run_after=…)`` prüft gegen das
-    konfigurierte Backend, das ihn nicht kennen muss.
+    Je Datei einen Auftrag ins Journal (``stufe``: ``ocr`` = ``file.extract_text``, ``text`` =
+    ``file.read_text_layer``), auch wenn Aufträge sonst sofort laufen; mit ``run_after`` frühestens dann. Den Zeitpunkt
+    setzt die Zeile direkt: ``Task.using(run_after=…)`` prüft gegen das konfigurierte Backend, das ihn nicht kennen
+    muss.
     """
     from apps.events.models import Task as TaskRow
     from apps.events.tasks_backend import journal_backend
-    from insight_core.background_tasks import file_extract_text
+    from insight_core.background_tasks import file_extract_text, file_read_text_layer
 
     if not file_ids:
         return 0
+    auftrag = file_read_text_layer if stufe == TEXT_LAYER_QUEUE else file_extract_text
     backend = journal_backend()
     with transaction.atomic():
         for file_id in file_ids:
-            ergebnis = backend.enqueue(file_extract_text, [str(file_id)], {})
+            ergebnis = backend.enqueue(auftrag, [str(file_id)], {})
             if run_after is not None:
                 TaskRow.objects.filter(pk=ergebnis.id).update(run_after=run_after)
     return len(file_ids)
+
+
+def _fuellen(stufe: str, tiefe: int, *, ocr_vermerkt: bool | None) -> int:
+    """Warteschlange ``stufe`` bis ``tiefe`` wartende und laufende Aufträge auffüllen, reihum über die Quellen."""
+    frei = tiefe - waiting_tasks(stufe)
+    if frei <= 0:
+        return 0
+    eingereiht = _enqueue(candidates(frei, ocr_vermerkt=ocr_vermerkt, belegt=_belegung(stufe)), stufe=stufe)
+    if eingereiht:
+        logger.info("Texterkennung: %d Aufträge in %s eingereiht", eingereiht, stufe)
+    return eingereiht
 
 
 def einplanen(now: datetime | None = None) -> int:
     """
     Zeitplan ``texterkennung_einplanen`` (nur mit ``TEXT_EXTRACTION_RUNNER=worker``): liegen gebliebene
     Beanspruchungen freigeben, nie abgelegte zu große Dateien überspringen, dann Aufträge für Dateien ohne wartenden
-    Auftrag einreihen, bis ``TEXT_EXTRACTION_QUEUE_DEPTH`` warten. Rückgabe: Zahl der eingereihten Aufträge.
+    Auftrag einreihen. Mit Worker für ``text`` (Issue #1107): ``text`` mit unvermerkten Dateien bis
+    ``TEXT_LAYER_QUEUE_DEPTH``, ``ocr`` mit vermerkten bis ``TEXT_EXTRACTION_QUEUE_DEPTH``; ohne ihn alles in ``ocr``.
+    Rückgabe: Zahl der eingereihten Aufträge.
     """
     if not runner_is_worker():
         return 0
@@ -360,13 +495,10 @@ def einplanen(now: datetime | None = None) -> int:
     skip_too_large(now)
     # Reste beendeter Prozesse (Speicherwächter, Zeitgrenze des Runners) in diesem Container
     purge_leftover_temp_files()
-    frei = queue_depth() - waiting_tasks()
-    if frei <= 0:
-        return 0
-    eingereiht = _enqueue(candidates(frei))
-    if eingereiht:
-        logger.info("Texterkennung: %d Aufträge eingereiht", eingereiht)
-    return eingereiht
+    if not text_stufe_aktiv():
+        return _fuellen(TASK_QUEUE, queue_depth(), ocr_vermerkt=None)
+    erste = _fuellen(TEXT_LAYER_QUEUE, text_layer_queue_depth(), ocr_vermerkt=False)
+    return erste + _fuellen(TASK_QUEUE, queue_depth(), ocr_vermerkt=True)
 
 
 # =============================================================================
@@ -406,10 +538,11 @@ def erkennen(file_id: str) -> str:
         return GESCHEITERT
 
 
-def _erkennen(datei: OParlFile, beanspruchung: Beanspruchung) -> str:
-    from apps.common.db_connections import release_idle_thread_connections
-    from insight_core.services.document_extraction import extraction_config
-
+def _inhalt(datei: OParlFile, beanspruchung: Beanspruchung, stufe: str) -> tuple[Path, str] | str:
+    """
+    Inhalt der beanspruchten Datei für beide Stufen: (Pfad, SHA-256) oder der Ergebniscode, mit dem der Auftrag endet
+    (Bild, Video und Ton sowie zu große Dateien übersprungen, Inhalt fehlt, Ablage gestört).
+    """
     mime = datei.mime_type or ""
     if mime.startswith(("image/", "video/", "audio/")):
         _beenden(beanspruchung, SKIPPED, f"Unsupported MIME type: {mime}")
@@ -424,45 +557,130 @@ def _erkennen(datei: OParlFile, beanspruchung: Beanspruchung) -> str:
             return OHNE_INHALT
         pfad = kopie.path
         if kopie.disturbed or pfad is None:
-            return _spaeter(beanspruchung)
+            return _spaeter(beanspruchung, stufe)
         groesse = pfad.stat().st_size
         if groesse > _max_bytes():
             # Die Ablage nimmt größere Dateien (FILE_CACHE_MAX_MB) als die Texterkennung
             _beenden(beanspruchung, SKIPPED, f"File too large: > {_max_bytes()} bytes")
             return UEBERSPRUNGEN
-        sha256 = _sha256(datei, pfad)
+        return pfad, _sha256(datei, pfad)
     except OSError:
         logger.warning("Datei %s: Ablage nicht lesbar, Texterkennung später erneut", datei.pk, exc_info=True)
-        return _spaeter(beanspruchung)
+        return _spaeter(beanspruchung, stufe)
+
+
+def _erkennen(datei: OParlFile, beanspruchung: Beanspruchung) -> str:
+    from apps.common.db_connections import release_idle_thread_connections
+    from insight_core.services.document_extraction import extraction_config
+
+    gelesen = _inhalt(datei, beanspruchung, TASK_QUEUE)
+    if isinstance(gelesen, str):
+        return gelesen
+    pfad, sha256 = gelesen
     # Die Erkennung dauert; die Datenbankverbindung geht solange an den Pool zurück
     release_idle_thread_connections()
     # Öffentliche RIS-Datei: externe Texterkennung zulässig (nur mit Endpunkt aus KI_ERLAUBTE_HOSTS, Issue #950).
     # Ohne die ausdrückliche Erlaubnis bliebe der einzige Erkennungsweg auch mit freigegebenem Endpunkt lokal.
-    ergebnis = extract_text(pfad, mime, datei.file_name or datei.name or "", extraction_config(allow_external=True))
+    config = replace(extraction_config(allow_external=True), ocr_mixed_pages=_mixed_pages())
+    ergebnis = extract_text(pfad, datei.mime_type or "", datei.file_name or datei.name or "", config)
     if not _speichern(datei, ergebnis, sha256):
         return VERWORFEN
     return ERLEDIGT if ergebnis.text else OHNE_TEXT
 
 
-def _gestoert(beanspruchung: Beanspruchung) -> str:
+def _gestoert(beanspruchung: Beanspruchung, stufe: str = TASK_QUEUE) -> str:
     """Störung der Umgebung: wie ``_spaeter``; ist auch die Datenbank weg, gibt die Zeitgrenze die Beanspruchung frei."""
     try:
-        return _spaeter(beanspruchung)
+        return _spaeter(beanspruchung, stufe)
     except (OperationalError, InterfaceError):
         # Weiter gestört: Die Beanspruchung gibt der Zeitplan nach TEXT_EXTRACTION_STALE_MINUTES frei
         logger.warning("Datei %s: Beanspruchung bleibt bis zur Zeitgrenze", beanspruchung.file_id, exc_info=True)
         return ZURUECKGESTELLT
 
 
-def _spaeter(beanspruchung: Beanspruchung) -> str:
+def _spaeter(beanspruchung: Beanspruchung, stufe: str = TASK_QUEUE) -> str:
     """Ablage gestört: Stand vor der Beanspruchung, derselbe Auftrag nach ``STORAGE_RETRY`` (kein Quellabruf)."""
     freigeben(beanspruchung)
     try:
-        _enqueue([beanspruchung.file_id], run_after=timezone.now() + STORAGE_RETRY)
+        _enqueue([beanspruchung.file_id], run_after=timezone.now() + STORAGE_RETRY, stufe=stufe)
     except Exception:
         # Das Sicherheitsnetz plant die Datei ohnehin wieder ein
         logger.warning("Datei %s: Texterkennung nicht neu eingeplant", beanspruchung.file_id, exc_info=True)
     return ZURUECKGESTELLT
+
+
+# =============================================================================
+# Der Auftrag ``file.read_text_layer`` (erste Stufe, Issue #1107)
+# =============================================================================
+
+
+def textebene_lesen(file_id: str) -> str:
+    """
+    Auftrag ``file.read_text_layer`` für eine Datei: beanspruchen wie die zweite Stufe (nur ohne Vermerk), aus der
+    Ablage lesen, die Textebene in einem eigenen Prozess lesen. Reicht sie, bedingt speichern wie ``erkennen``; sonst
+    an ``ocr`` übergeben (``_zur_texterkennung``). Rückgabe: Ergebniscode.
+    """
+    beanspruchung = beanspruchen(file_id, erste_stufe=True)
+    if beanspruchung is None:
+        return NICHT_ZU_TUN
+    datei = OParlFile.objects.defer("text_content", "raw_json").filter(pk=file_id).first()
+    if datei is None:
+        return NICHT_ZU_TUN
+    try:
+        return _textebene(datei, beanspruchung)
+    except (OperationalError, InterfaceError):
+        logger.warning("Textebene der Datei %s: Datenbank gestört, später erneut", file_id, exc_info=True)
+        return _gestoert(beanspruchung, TEXT_LAYER_QUEUE)
+    except Exception as exc:
+        if isinstance(exc, OSError) and exc.errno in _KEIN_PLATZ:
+            logger.warning("Textebene der Datei %s: kein Platz, später erneut", file_id, exc_info=True)
+            return _gestoert(beanspruchung, TEXT_LAYER_QUEUE)
+        # Unerwartet: Die zweite Stufe übernimmt mit der vollständigen Kette; ein unlesbarer Inhalt endet dort als
+        # gescheitert. Sofort eingereiht, sonst landete die Datei ohne Vermerk wieder hier.
+        logger.exception("Textebene der Datei %s nicht gelesen, weiter mit der Texterkennung", file_id)
+        return _zur_texterkennung(datei, beanspruchung, datei.sha256_hash, sofort=True)
+
+
+def _textebene(datei: OParlFile, beanspruchung: Beanspruchung) -> str:
+    from apps.common.db_connections import release_idle_thread_connections
+    from insight_core.services.document_extraction import extraction_config
+
+    gelesen = _inhalt(datei, beanspruchung, TEXT_LAYER_QUEUE)
+    if isinstance(gelesen, str):
+        return gelesen
+    pfad, sha256 = gelesen
+    release_idle_thread_connections()
+    # Nur die Textebene: kein externer Dienst, Seitengrenze und Entscheidung wie in der zweiten Stufe
+    config = replace(extraction_config(), ocr_mixed_pages=_mixed_pages())
+    ausgang = extract_text_layer_isolated(
+        pfad, datei.mime_type or "", datei.file_name or datei.name or "", config, _layer_limits()
+    )
+    if ausgang.result is None:
+        logger.info("Textebene der Datei %s reicht nicht (%s), weiter mit der Texterkennung", datei.pk, ausgang.reason)
+        return _zur_texterkennung(datei, beanspruchung, sha256)
+    if not _speichern(datei, ausgang.result, sha256):
+        return VERWORFEN
+    return ERLEDIGT if ausgang.result.text else OHNE_TEXT
+
+
+def _zur_texterkennung(
+    datei: OParlFile, beanspruchung: Beanspruchung, sha256: str | None, *, sofort: bool = False
+) -> str:
+    """
+    Die Textebene reicht nicht: Inhalt vermerken (nur, solange er noch der aktuelle und die Datei beansprucht ist),
+    freigeben (der Versuch zählt nicht) und ``file.extract_text`` in ``ocr`` einreihen, wenn dort Platz ist (bzw.
+    ``sofort``); sonst plant der Zeitplan die vermerkte Datei ein.
+    """
+    with transaction.atomic():
+        vermerkt = bool(sha256) and bool(
+            OParlFile.objects.filter(pk=datei.pk, sha256_hash=sha256, text_extraction_status=PROCESSING).update(
+                text_ocr_needed_sha256=sha256, updated_at=timezone.now()
+            )
+        )
+        freigeben(beanspruchung)
+        if sofort or (vermerkt and waiting_tasks(TASK_QUEUE) < queue_depth()):
+            _enqueue([datei.pk], stufe=TASK_QUEUE)
+    return ZUR_TEXTERKENNUNG
 
 
 def _sha256(datei: OParlFile, pfad: Path) -> str:
@@ -574,8 +792,15 @@ class Einplanung:
     schon_eingereiht: int = 0
     #: bereit, aber nicht eingereiht: plant der Zeitplan ``texterkennung_einplanen`` schrittweise ein
     dem_zeitplan: int = 0
-    #: freie Plätze der Warteschlange ``ocr`` (``TEXT_EXTRACTION_QUEUE_DEPTH`` minus wartende und laufende Aufträge)
+    #: freie Plätze der ersten Warteschlange (``text`` mit ``TEXT_LAYER_QUEUE_DEPTH`` bzw. ohne Worker für ``text``
+    #: ``ocr`` mit ``TEXT_EXTRACTION_QUEUE_DEPTH``, jeweils minus wartende und laufende Aufträge)
     frei: int = 0
+    #: erste Warteschlange: ``text`` (zwei Stufen, Issue #1107) oder ``ocr``
+    warteschlange: str = TASK_QUEUE
+    #: davon gleich in ``ocr`` (Textebene schon als unzureichend vermerkt)
+    in_ocr: int = 0
+    #: ``--limit`` reiht mehr ein, als in einer Warteschlange frei ist
+    ueber_frei: bool = False
 
 
 def befehl_einplanen(
@@ -591,11 +816,12 @@ def befehl_einplanen(
     erkennt nicht. ``reprocess``: erledigte Dateien als „Neuerkennung angefordert“ markieren (Version ``0``, der Text
     bleibt), übersprungene und gescheiterte zurück auf ``pending``.
 
-    Ohne ``limit`` höchstens so viele, wie in der Warteschlange ``ocr`` frei sind (``TEXT_EXTRACTION_QUEUE_DEPTH``
-    minus wartende und laufende Aufträge, ADR Abschnitte 2 und 8); den Rest plant der Zeitplan
-    ``texterkennung_einplanen`` schrittweise ein. Sonst flutete ein Aufruf das Journal mit einem Auftrag je Datei
-    (mit ``reprocess`` praktisch dem ganzen Bestand). Ein ausdrückliches ``limit`` gilt auch über die freien Plätze
-    hinaus (bewusste Vorrangentscheidung, etwa für eine Kommune).
+    Ohne ``limit`` höchstens so viele, wie in den Warteschlangen frei sind (``TEXT_EXTRACTION_QUEUE_DEPTH`` bzw.
+    ``TEXT_LAYER_QUEUE_DEPTH`` minus wartende und laufende Aufträge, ADR Abschnitte 2 und 8); den Rest plant der
+    Zeitplan ``texterkennung_einplanen`` schrittweise ein. Sonst flutete ein Aufruf das Journal mit einem Auftrag je
+    Datei (mit ``reprocess`` praktisch dem ganzen Bestand). Ein ausdrückliches ``limit`` gilt auch über die freien
+    Plätze hinaus (bewusste Vorrangentscheidung, etwa für eine Kommune). Verteilt wird wie im Zeitplan (Issue #1107):
+    Mit Worker für ``text`` gehen unvermerkte Dateien an die erste Stufe und vermerkte an ``ocr``, sonst alle an ``ocr``.
     """
     basis = OParlFile.objects.filter(abruf.not_excluded_q())
     if body_id is not None:
@@ -618,12 +844,25 @@ def befehl_einplanen(
         eingereiht = set(queued_file_ids())
         bereit = basis.filter(claimable_q())
         stand.schon_eingereiht = bereit.filter(pk__in=eingereiht).count() if eingereiht else 0
-        stand.frei = max(0, queue_depth() - waiting_tasks())
-        ids = candidates(limit if limit > 0 else stand.frei, base=basis)
-        stand.auftraege = len(ids)
+        frei_ocr = max(0, queue_depth() - waiting_tasks(TASK_QUEUE))
+        ids_text: list[Any] = []
+        if text_stufe_aktiv():
+            stand.warteschlange = TEXT_LAYER_QUEUE
+            stand.frei = max(0, text_layer_queue_depth() - waiting_tasks(TEXT_LAYER_QUEUE))
+            ids_text = candidates(limit if limit > 0 else stand.frei, base=basis, ocr_vermerkt=False)
+            rest = max(0, limit - len(ids_text)) if limit > 0 else frei_ocr
+            ids_ocr = candidates(rest, base=basis, ocr_vermerkt=True)
+        else:
+            stand.frei = frei_ocr
+            ids_ocr = candidates(limit if limit > 0 else stand.frei, base=basis)
+        stand.auftraege = len(ids_text) + len(ids_ocr)
+        zwei_stufen = stand.warteschlange == TEXT_LAYER_QUEUE
+        stand.in_ocr = len(ids_ocr) if zwei_stufen else 0
+        stand.ueber_frei = len(ids_ocr) > frei_ocr or (zwei_stufen and len(ids_text) > stand.frei)
         stand.dem_zeitplan = max(0, bereit.count() - stand.schon_eingereiht - stand.auftraege)
         if ausfuehren:
-            _enqueue(ids)
+            _enqueue(ids_text, stufe=TEXT_LAYER_QUEUE)
+            _enqueue(ids_ocr, stufe=TASK_QUEUE)
         else:
             transaction.set_rollback(True)
     return stand
@@ -725,18 +964,25 @@ def nacharbeiten(*, ausfuehren: bool = False, chunk: int = 1000) -> Nacharbeit:
 
 def counts() -> dict[str, int]:
     """
-    Abgelegte Inhalte ohne Text (Erkennung wartet oder läuft) und mit Text aus einer älteren Erkennungsversion
-    (Neuerkennung steht aus), eine Abfrage.
+    Abgelegte Inhalte ohne Text (Erkennung wartet oder läuft), davon mit unzureichender Textebene (warten auf die
+    Erkennung aus dem Bild, Issue #1107), und mit Text aus einer älteren Erkennungsversion (Neuerkennung steht aus),
+    eine Abfrage.
     """
+    ohne_text = Q(text_extraction_status__in=[PENDING, PROCESSING])
     zahlen = (
         OParlFile.objects.filter(abruf.not_excluded_q(), local_status=abruf.OK)
         .filter(text_extraction_status__in=[PENDING, PROCESSING, COMPLETED])
         .aggregate(
-            ohne_text=Count("pk", filter=Q(text_extraction_status__in=[PENDING, PROCESSING])),
+            ohne_text=Count("pk", filter=ohne_text),
+            fuer_ocr=Count("pk", filter=ohne_text & ocr_needed_q()),
             veraltet=Count("pk", filter=Q(text_extraction_status=COMPLETED) & outdated_q()),
         )
     )
-    return {"stored_without_text": int(zahlen["ohne_text"] or 0), "text_outdated": int(zahlen["veraltet"] or 0)}
+    return {
+        "stored_without_text": int(zahlen["ohne_text"] or 0),
+        "awaiting_ocr": int(zahlen["fuer_ocr"] or 0),
+        "text_outdated": int(zahlen["veraltet"] or 0),
+    }
 
 
 def overdue_without_text(now: datetime | None = None) -> int:

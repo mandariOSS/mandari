@@ -1297,6 +1297,12 @@ class OParlFile(SourceDeletionModel):
     text_extraction_version = models.CharField(
         max_length=40, blank=True, null=True, verbose_name="Version der Texterkennung"
     )
+    # Texterkennung in zwei Stufen (Issue #1107): SHA-256 des Inhalts, dessen Textebene nicht reicht. Gleich
+    # sha256_hash heißt: Die erste Stufe (file.read_text_layer) war schon da, die Datei wartet auf die Erkennung aus
+    # dem Bild (file.extract_text, Warteschlange ocr). Ein neuer Inhalt macht den Vermerk von selbst ungültig.
+    text_ocr_needed_sha256 = models.CharField(
+        max_length=64, blank=True, null=True, verbose_name="Textebene reicht nicht (Inhalt, SHA-256)"
+    )
 
     # OParl-Zeitstempel
     oparl_created = models.DateTimeField(blank=True, null=True)

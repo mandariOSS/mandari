@@ -45,13 +45,28 @@ def quelle_synchronisieren(source_id: str, full: bool = False) -> None:
     )
 
 
+@task(queue_name="text")
+def file_read_text_layer(file_id: str) -> None:
+    """
+    Auftrag ``file.read_text_layer`` (Issue #1107): erste, leichte Stufe der Texterkennung. Liest nur die Textebene
+    einer RIS-Datei aus der Ablage (Dienst ``worker``, Warteschlange ``text``); reicht sie nicht, plant er
+    ``file.extract_text`` in ``ocr`` ein. Die Logik liegt in ``hub.ris.erkennung``. Wiederholbar wie
+    ``file_extract_text``.
+    """
+    from hub.ris.erkennung import textebene_lesen
+
+    ergebnis = textebene_lesen(file_id)
+    logger.info("Textebene Datei %s: %s", file_id, ergebnis)
+
+
 @task(queue_name="ocr")
 def file_extract_text(file_id: str) -> None:
     """
     Auftrag ``file.extract_text`` (Issues #530, #919): Text einer RIS-Datei aus der Ablage erkennen, eingereiht vom
-    Zeitplan ``texterkennung_einplanen`` bei ``TEXT_EXTRACTION_RUNNER=worker``. Dünne Hülle: Der registrierte Pfad
-    bleibt, damit wartende Aufträge über einen Deploy weiterlaufen; die Logik liegt in ``hub.ris.erkennung``.
-    Wiederholbar: Eine erledigte oder beanspruchte Datei wird übersprungen.
+    Zeitplan ``texterkennung_einplanen`` bei ``TEXT_EXTRACTION_RUNNER=worker`` bzw. von ``file.read_text_layer``, wenn
+    die Textebene nicht reicht (Issue #1107). Dünne Hülle: Der registrierte Pfad bleibt, damit wartende Aufträge über
+    einen Deploy weiterlaufen; die Logik liegt in ``hub.ris.erkennung``. Wiederholbar: Eine erledigte oder
+    beanspruchte Datei wird übersprungen.
     """
     from hub.ris.erkennung import erkennen
 

@@ -451,6 +451,9 @@ class OParlFile(Base):
     # Texterkennung. Schreibt nur der Auftrag file.extract_text der Anwendung.
     text_source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     text_extraction_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Texterkennung in zwei Stufen (Django, Issue #1107, Migration insight_core 0061): Inhalt, dessen Textebene nicht
+    # reicht. Schreibt nur der Auftrag file.read_text_layer der Anwendung.
+    text_ocr_needed_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # Tombstone: Quelle hat das Objekt geloescht (deleted:true) --
     # wir loeschen nie physisch, sondern markieren nur (Issue #17)

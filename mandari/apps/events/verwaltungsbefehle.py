@@ -124,10 +124,6 @@ def zeitplan_uebernimmt(befehl: str) -> bool:
     eintrag = registry.get(schedule_name(befehl))
     if eintrag is None or eintrag.name in disabled_schedules():
         return False
-    from .presence import live_workers
+    from .presence import live_roles, queue_served
 
-    queue = eintrag.task.queue_name
-    worker = live_workers()
-    plant = any("scheduler" in w.roles for w in worker)
-    fuehrt_aus = any("tasks" in w.roles and (not w.queues or queue in w.queues) for w in worker)
-    return plant and fuehrt_aus
+    return "scheduler" in live_roles() and queue_served(eintrag.task.queue_name)

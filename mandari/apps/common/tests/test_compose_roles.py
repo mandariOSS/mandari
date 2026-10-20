@@ -189,9 +189,38 @@ def test_schalter_der_dokumentkette_bleiben_aus_und_gleich() -> None:
     assert anwendung["TEXT_EXTRACTION_QUEUE_DEPTH"] == "${TEXT_EXTRACTION_QUEUE_DEPTH:-20}"
 
 
+def test_erste_stufe_der_texterkennung_im_hauptworker() -> None:
+    """
+    Issue #1107: Der Hauptworker bedient die Warteschlange text (nur Textebene) mit mehreren Plätzen; die Erkennung
+    aus dem Bild bleibt in worker-heavy mit einem Platz. Die Einstellungen der ersten Stufe erreichen Anwendung und
+    Worker über die gemeinsame Umgebung.
+    """
+    from django.conf import settings
+
+    modul = _lade_skript()
+    basis = modul._lade(modul.BASIS)["services"]
+    haupt, ocr, anwendung = basis["worker"], basis["worker-heavy"], basis["mandari"]["environment"]
+    assert "text" in settings.TASK_QUEUES
+    assert "text" in str(_option(haupt["command"], "--queues")).split(",")
+    assert _option(haupt["command"], "--concurrency") == "text=3"
+    assert "text" not in str(_option(ocr["command"], "--queues")).split(",")
+    assert _option(ocr["command"], "--concurrency") == "ocr=1"
+    assert haupt["mem_limit"] == "1g", "die Prozesse der Textebene haben eine eigene Grenze, der Worker bleibt bei 1 GB"
+    assert anwendung["TEXT_LAYER_QUEUE_DEPTH"] == "${TEXT_LAYER_QUEUE_DEPTH:-300}"
+    assert anwendung["TEXT_LAYER_MEMORY_LIMIT_MB"] == "${TEXT_LAYER_MEMORY_LIMIT_MB:-512}"
+    assert anwendung["TEXT_EXTRACTION_OCR_MIXED_PAGES"] == "${TEXT_EXTRACTION_OCR_MIXED_PAGES:-true}"
+
+
 def test_env_beispiel_nennt_die_grenzen_des_worker_heavy() -> None:
     text = (SKRIPT.parents[1] / ".env.example").read_text(encoding="utf-8")
-    for name in ("WORKER_HEAVY_MEM_LIMIT", "WORKER_HEAVY_OCR_MEMORY_LIMIT_MB", "TEXT_EXTRACTION_QUEUE_DEPTH"):
+    for name in (
+        "WORKER_HEAVY_MEM_LIMIT",
+        "WORKER_HEAVY_OCR_MEMORY_LIMIT_MB",
+        "TEXT_EXTRACTION_QUEUE_DEPTH",
+        "TEXT_LAYER_QUEUE_DEPTH",
+        "TEXT_LAYER_MEMORY_LIMIT_MB",
+        "TEXT_EXTRACTION_OCR_MIXED_PAGES",
+    ):
         assert f"# {name}=" in text, name
 
 
@@ -226,6 +255,16 @@ def test_helm_worker_heavy_mit_eigener_grenze() -> None:
         "mandari-worker-heavy": ["2048"],
         "mandari-worker-live": [str(werte["files"]["ocrMemoryLimitMb"])],
     }
+    # Erste Stufe der Texterkennung (Issue #1107): der Hauptworker bedient text mit drei Plätzen
+    argumente = {
+        dok["metadata"]["name"]: dok["spec"]["template"]["spec"]["containers"][0]["command"]
+        for dok in yaml.safe_load_all(manifest)
+        if dok and dok["kind"] == "Deployment" and dok["metadata"]["name"].startswith("mandari-worker")
+    }
+    haupt = argumente["mandari-worker"]
+    assert "text" in haupt[haupt.index("--queues") + 1].split(",")
+    assert haupt[haupt.index("--concurrency") + 1] == "text=3"
+    assert "text" not in argumente["mandari-worker-heavy"][argumente["mandari-worker-heavy"].index("--queues") + 1]
 
 
 def test_helm_schalter_der_texterkennung_erreicht_auch_den_ingestor() -> None:
@@ -448,6 +487,7 @@ def test_doku_der_dokumentkette_nennt_befehle_kennzahlen_und_alarme() -> None:
         "mandari_files_fetch_retry_due",
         "mandari_files_fetch_errors_total",
         "mandari_files_stored_without_text",
+        "mandari_files_awaiting_ocr",
         "mandari_files_text_outdated",
     ):
         assert f"| `{metrik}` |" in monitoring, metrik
@@ -508,7 +548,8 @@ def test_doku_der_dokumentkette_passt_zu_befehl_pruefungen_und_warteschlange_ocr
         (wurzel / "deploy" / "monitoring" / "prometheus-alerts.example.yml").read_text(encoding="utf-8")
     )
     alle = {r["alert"]: r for g in regeln["groups"] for r in g["rules"]}
-    assert 'queue!="ocr"' in alle["MandariAuftragsrueckstand"]["expr"]
+    # ocr und die erste Stufe text (Issue #1107) je eigener Alarm statt „Auftragsrückstand“
+    assert 'queue!~"ocr|text"' in alle["MandariAuftragsrueckstand"]["expr"]
     steht = alle["MandariTexterkennungSteht"]["expr"]
-    assert 'mandari_tasks_oldest_queued_seconds{queue="ocr"}' in steht
-    assert 'mandari_tasks_running{queue="ocr"}' in steht
+    assert 'mandari_tasks_oldest_queued_seconds{queue=~"ocr|text"}' in steht
+    assert 'mandari_tasks_running{queue=~"ocr|text"}' in steht
