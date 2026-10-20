@@ -139,20 +139,24 @@ class TestOhneSitzung:
     @pytest.mark.parametrize("liste", LISTEN)
     def test_keine_sitzung_fuer_suchmaschinen(self, kommunen: dict[str, Any], liste: str) -> None:
         client = Client(HTTP_USER_AGENT="Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
+        # Gezählt wird der Zuwachs: Tests mit eigenen Verbindungen (Fäden) können festgeschriebene Sitzungen
+        # hinterlassen, die je nach Aufteilung der CI vor diesem Test in derselben Datenbank stehen
+        vorher = Session.objects.count()
 
         for pfad in (f"/insight/k/nord/{liste}/", f"/insight/k/nord/{liste}/?page=1"):
             antwort = client.get(pfad)
             assert antwort.status_code == 200, pfad
             assert settings.SESSION_COOKIE_NAME not in antwort.cookies, pfad
-        assert Session.objects.count() == 0
+        assert Session.objects.count() == vorher
 
     def test_htmx_ausschnitt_ohne_sitzung(self, kommunen: dict[str, Any]) -> None:
+        vorher = Session.objects.count()
         antwort = Client().get("/insight/k/nord/vorgaenge/", {"q": "Radweg"}, headers={"HX-Request": "true"})
 
         assert antwort.status_code == 200 and antwort["X-Robots-Tag"] == "noindex"
         html = antwort.content.decode()
         assert "Radweg Nord" in html and "Radweg Süd" not in html and "<html" not in html
-        assert Session.objects.count() == 0
+        assert Session.objects.count() == vorher
 
     @pytest.mark.parametrize("liste", LISTEN)
     def test_filter_bleiben_auf_der_adresse(self, kommunen: dict[str, Any], liste: str) -> None:

@@ -638,7 +638,7 @@ def textebene_lesen(file_id: str) -> str:
         # Unerwartet: Die zweite Stufe übernimmt mit der vollständigen Kette; ein unlesbarer Inhalt endet dort als
         # gescheitert. Sofort eingereiht, sonst landete die Datei ohne Vermerk wieder hier.
         logger.exception("Textebene der Datei %s nicht gelesen, weiter mit der Texterkennung", file_id)
-        return _zur_texterkennung(datei, beanspruchung, datei.sha256_hash, sofort=True)
+        return _zur_texterkennung(datei, beanspruchung, datei.sha256_hash, immer_einreihen=True)
 
 
 def _textebene(datei: OParlFile, beanspruchung: Beanspruchung) -> str:
@@ -664,12 +664,12 @@ def _textebene(datei: OParlFile, beanspruchung: Beanspruchung) -> str:
 
 
 def _zur_texterkennung(
-    datei: OParlFile, beanspruchung: Beanspruchung, sha256: str | None, *, sofort: bool = False
+    datei: OParlFile, beanspruchung: Beanspruchung, sha256: str | None, *, immer_einreihen: bool = False
 ) -> str:
     """
     Die Textebene reicht nicht: Inhalt vermerken (nur, solange er noch der aktuelle und die Datei beansprucht ist),
     freigeben (der Versuch zählt nicht) und ``file.extract_text`` in ``ocr`` einreihen, wenn dort Platz ist (bzw.
-    ``sofort``); sonst plant der Zeitplan die vermerkte Datei ein.
+    ``immer_einreihen``); sonst plant der Zeitplan die vermerkte Datei ein.
     """
     with transaction.atomic():
         vermerkt = bool(sha256) and bool(
@@ -678,7 +678,7 @@ def _zur_texterkennung(
             )
         )
         freigeben(beanspruchung)
-        if sofort or (vermerkt and waiting_tasks(TASK_QUEUE) < queue_depth()):
+        if immer_einreihen or (vermerkt and waiting_tasks(TASK_QUEUE) < queue_depth()):
             _enqueue([datei.pk], stufe=TASK_QUEUE)
     return ZUR_TEXTERKENNUNG
 
