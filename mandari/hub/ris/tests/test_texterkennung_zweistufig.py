@@ -54,7 +54,7 @@ from apps.events.models import Event, Task, TaskStatus
 from apps.events.tests.hilfen import nur_postgres
 from hub.ris import abruf, erkennung
 from insight_core.models import OParlBody, OParlFile, OParlFileBlob, OParlSource
-from insight_core.services import file_cache, file_store, text_extraction_job
+from insight_core.services import file_cache, file_store, object_storage, text_extraction_job
 
 GETIPPT = "Antrag der Fraktion zum Radweg an der Promenade"
 ZWEI_STUFEN = override_settings(
@@ -480,7 +480,7 @@ def test_ohne_gemeinsame_ablage_ist_ein_fehlender_inhalt_gestoert(
 
     # Laut Datenbank im Objektspeicher, dort aber nicht gefunden: ebenso gestört (lokal beim Anwendungsserver möglich)
     OParlFileBlob.objects.filter(pk=datei.blob_id).update(remote_at=timezone.now())
-    monkeypatch.setattr(file_store.object_storage, "enabled", lambda: True)
+    monkeypatch.setattr(object_storage, "enabled", lambda: True)
     monkeypatch.setattr(file_store, "fetch_remote", lambda *_a, **_k: file_store.Copy(file_store.MISSING))
     assert file_store.local_copy(datei).disturbed
     settings.FILE_STORE_SHARED = True
