@@ -68,6 +68,8 @@ x-app-environment: &app-environment
   # TEXT_EXTRACTION_RUNNER=worker lädt er keine Dateien mehr, INGESTOR_STORES_FILES wirkt dann nicht
   FILE_STORE_LAYOUT: ${FILE_STORE_LAYOUT:-sha256}
   INGESTOR_STORES_FILES: ${INGESTOR_STORES_FILES:-true}
+  # false nur auf einem Erkennungsserver ohne die Ablage des Anwendungsservers (docs/MEHR_SERVER_BETRIEB.md)
+  FILE_STORE_SHARED: ${FILE_STORE_SHARED:-true}
   # Abrufe in die Ablage warten unterhalb dieses freien Platzes (GB), statt die Platte zu füllen; derselbe Wert
   # wie im Dienst ingestor, beide schreiben in mandari_files
   FILE_CACHE_MIN_FREE_GB: ${FILE_CACHE_MIN_FREE_GB:-15}

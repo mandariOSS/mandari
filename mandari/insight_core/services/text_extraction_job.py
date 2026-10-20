@@ -61,15 +61,15 @@ def task_file_ids(queues: Iterable[str], statuses: Iterable[str]) -> list[str]:
     return ids
 
 
-def queued_file_ids() -> list[str]:
+def queued_file_ids(queues: Iterable[str] = STAGES) -> list[str]:
     """
-    Dateien, deren Auftrag (erste oder zweite Stufe) eingereiht ist, aber noch nicht läuft (``wartend``, auch nach
-    einem Abbruch wieder eingereiht oder für später neu eingeplant). Sie warten auf einen Platz in ihrer
-    Warteschlange, nicht auf einen toten Worker.
+    Dateien, deren Auftrag (erste oder zweite Stufe, bzw. nur in ``queues``) eingereiht ist, aber noch nicht läuft
+    (``wartend``, auch nach einem Abbruch wieder eingereiht oder für später neu eingeplant). Sie warten auf einen
+    Platz in ihrer Warteschlange, nicht auf einen toten Worker.
     """
     from apps.events.models import TaskStatus
 
-    return task_file_ids(STAGES, [TaskStatus.WARTEND])
+    return task_file_ids(queues, [TaskStatus.WARTEND])
 
 
 def waiting_tasks(queue: str = TASK_QUEUE) -> int:

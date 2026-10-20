@@ -601,6 +601,10 @@ FILE_RECONCILE_MAX_MISSING = int(os.environ.get("FILE_RECONCILE_MAX_MISSING", "1
 # Ablage nach SHA-256 mit Referenzzählung (Issue #788): "sha256" (Standard) oder "kommune" (bisheriges
 # Layout je Kommune, ohne Deduplizierung und ohne Objektspeicher)
 FILE_STORE_LAYOUT = os.environ.get("FILE_STORE_LAYOUT", "sha256")
+# Sieht dieser Dienst die gemeinsame Ablage (Anwendungsserver oder gemeinsam eingehängt)? false nur auf einem Server,
+# der die Inhalte allein über den Objektspeicher sieht (eigener Erkennungsserver, docs/MEHR_SERVER_BETRIEB.md): Was
+# weder dort noch im Objektspeicher liegt, gilt dann als gestört statt als fehlend und löst keinen Abruf aus.
+FILE_STORE_SHARED = os.environ.get("FILE_STORE_SHARED", "true").lower() in ("1", "true", "yes")
 # Der Ingestor legt Dateien, die er für den Text lädt, selbst in der Ablage ab (OPARL_FILES_ROOT im
 # Ingestor). Dann holt der Dokument-Cache Dateien in der Texterkennung nicht ein zweites Mal.
 INGESTOR_STORES_FILES = os.environ.get("INGESTOR_STORES_FILES", "false").lower() in ("1", "true", "yes")

@@ -8,7 +8,9 @@ Texterkennung in zwei Stufen (Issue #1107).
 - Auftrag ``file.read_text_layer``: Ein PDF mit Textebene wird in der ersten Stufe fertig und erreicht ``ocr`` nie,
   gescannte und gemischte PDFs landen in ``ocr``; ist ``ocr`` voll, plant der Zeitplan sie später ein.
 - Zwei Worker auf derselben Warteschlange bearbeiten keine Datei doppelt.
-- Das Einplanen wechselt zwischen den Quellen ab; ohne Worker für ``text`` plant es wie bisher alles in ``ocr`` ein.
+- Das Einplanen wechselt zwischen den Quellen ab; ohne Worker für ``text`` plant es wie bisher alles in ``ocr`` ein,
+  auch Dateien mit wartendem Auftrag in ``text``, und schließt verwaiste Aufträge dort.
+- Ein Erkennungsserver ohne die gemeinsame Ablage (``FILE_STORE_SHARED=false``) bestätigt kein Fehlen eines Inhalts.
 """
 
 from __future__ import annotations
@@ -51,8 +53,8 @@ from apps.events import presence
 from apps.events.models import Event, Task, TaskStatus
 from apps.events.tests.hilfen import nur_postgres
 from hub.ris import abruf, erkennung
-from insight_core.models import OParlBody, OParlFile, OParlSource
-from insight_core.services import file_cache, text_extraction_job
+from insight_core.models import OParlBody, OParlFile, OParlFileBlob, OParlSource
+from insight_core.services import file_cache, file_store, text_extraction_job
 
 GETIPPT = "Antrag der Fraktion zum Radweg an der Promenade"
 ZWEI_STUFEN = override_settings(
@@ -402,6 +404,87 @@ def test_ohne_worker_fuer_text_plant_der_zeitplan_alles_in_ocr() -> None:
 
     assert erkennung.einplanen() == 2
     assert set(_wartend("ocr")) == dateien and _wartend("text") == []
+
+
+def _text_aus_queues() -> None:
+    """Rückweg: Der Dienst worker bedient text nicht mehr (``text`` aus ``--queues``)."""
+    presence.announce("haupt", ["sequencer", "dispatch", "tasks", "scheduler"], ["default", "mail", "index"])
+    assert not erkennung.text_stufe_aktiv()
+
+
+@pytest.mark.django_db
+@ZWEI_STUFEN
+def test_ohne_worker_fuer_text_gehen_wartende_dateien_nach_ocr(worker_fuer_text: None) -> None:
+    """
+    Ein wartender Auftrag in text hält seine Datei nicht fest, wenn kein Worker text mehr bedient (Rückweg, längerer
+    Ausfall): Sie geht nach ocr. Seit 15 Minuten fällige Aufträge in text schließt der Zeitplan (rueckstau).
+    """
+    datei = _datei(_quelle(), TEXT_PDF)
+    assert erkennung.einplanen() == 1 and _wartend("text") == [str(datei.pk)]
+
+    _text_aus_queues()
+    assert erkennung.einplanen() == 1
+    assert _wartend("ocr") == [str(datei.pk)], "nicht hinter dem wartenden Auftrag in text eingesperrt"
+    assert _wartend("text") == [str(datei.pk)], "noch keine 15 Minuten fällig (etwa ein Neustart des Workers)"
+    assert erkennung.einplanen() == 0, "kein zweiter Auftrag in ocr"
+
+    Task.objects.filter(queue="text").update(run_after=timezone.now() - timedelta(minutes=16))
+    assert erkennung.einplanen() == 0
+    (geschlossen,) = Task.objects.filter(queue="text")
+    assert (geschlossen.status, geschlossen.result_code) == (TaskStatus.ERLEDIGT, erkennung.OHNE_WORKER)
+    assert _wartend("ocr") == [str(datei.pk)]
+    with mock.patch.object(erkennung, "extract_text", return_value=ExtractionResult(GETIPPT, "pypdf", 2)):
+        assert erkennung.erkennen(str(datei.pk)) == erkennung.ERLEDIGT
+
+
+@pytest.mark.django_db
+@ZWEI_STUFEN
+def test_ohne_worker_fuer_text_gibt_die_zeitgrenze_die_datei_frei(worker_fuer_text: None) -> None:
+    """In der ersten Stufe abgebrochen, ihr Auftrag wartet erneut: Ohne Worker für text gibt die Zeitgrenze sie frei."""
+    datei = _datei(_quelle(), TEXT_PDF)
+    assert erkennung.einplanen() == 1
+    OParlFile.objects.filter(pk=datei.pk).update(
+        text_extraction_status="processing",
+        text_extraction_started_at=timezone.now() - timedelta(hours=2),
+        text_extraction_attempts=1,
+    )
+    assert erkennung.release_stale() == (0, 0), "mit Worker für text übernimmt der wartende Auftrag"
+
+    _text_aus_queues()
+    assert erkennung.einplanen() == 1
+    datei.refresh_from_db()
+    assert datei.text_extraction_status == "pending"
+    assert _wartend("ocr") == [str(datei.pk)]
+
+
+@pytest.mark.django_db
+@ZWEI_STUFEN
+def test_ohne_gemeinsame_ablage_ist_ein_fehlender_inhalt_gestoert(
+    worker_fuer_text: None, settings: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Eigener Erkennungsserver (``FILE_STORE_SHARED=false``): Was weder lokal noch im Objektspeicher liegt, kann auf dem
+    Anwendungsserver liegen (noch nicht hochgeladen, altes Layout). Kein bestätigtes Fehlen, kein neuer Abruf.
+    """
+    datei = _datei(_quelle(), SCAN_PDF)
+    # Liegt nur auf dem Anwendungsserver und ist noch nicht hochgeladen (remote_at leer)
+    Path(str(datei.local_path)).unlink()
+    assert file_store.local_copy(datei).missing, "mit der gemeinsamen Ablage bestätigt fehlend"
+
+    settings.FILE_STORE_SHARED = False
+    assert file_store.local_copy(datei).disturbed
+    assert erkennung.erkennen(str(datei.pk)) == erkennung.ZURUECKGESTELLT
+    datei.refresh_from_db()
+    assert (datei.local_status, datei.text_extraction_status) == ("ok", "pending"), "kein Abruf bei der Quelle"
+    assert _wartend("ocr") == [str(datei.pk)]
+
+    # Laut Datenbank im Objektspeicher, dort aber nicht gefunden: ebenso gestört (lokal beim Anwendungsserver möglich)
+    OParlFileBlob.objects.filter(pk=datei.blob_id).update(remote_at=timezone.now())
+    monkeypatch.setattr(file_store.object_storage, "enabled", lambda: True)
+    monkeypatch.setattr(file_store, "fetch_remote", lambda *_a, **_k: file_store.Copy(file_store.MISSING))
+    assert file_store.local_copy(datei).disturbed
+    settings.FILE_STORE_SHARED = True
+    assert file_store.local_copy(datei).missing
 
 
 @pytest.mark.django_db

@@ -1199,7 +1199,9 @@ jeder Schritt ist ohne Deploy umkehrbar.
   gemeinsame Umgebung; eigene Compose-Dateien oder Umgebungsdateien müssen sie auch `worker-heavy` geben. Laufen
   die Worker auf einem eigenen Server (`deploy/roles/worker.yml`, `docs/MEHR_SERVER_BETRIEB.md`), sehen sie die
   Ablage des Anwendungsservers nur über eine gemeinsame Ablage oder den Objektspeicher (`OBJ_ENABLED=true`);
-  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück. Fehlen einem Worker nur die
+  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück. Nur über den Objektspeicher
+  brauchen sie `FILE_STORE_SHARED=false` und einen vollständig hochgeladenen Bestand (`docs/MEHR_SERVER_BETRIEB.md`,
+  „Texterkennung auf einem eigenen Server“). Fehlen einem Worker nur die
   `OBJ_*`, gelten Inhalte, die laut Datenbank im Objektspeicher liegen, als gestört: Die Erkennung wartet, ohne bei
   der Quelle abzurufen, und das Protokoll des Workers warnt höchstens einmal je Minute (Issue #990,
   `docs/FILE_CACHE.md`, „Objektspeicher“).
@@ -1339,8 +1341,10 @@ genügt, dann den Rückweg gehen:
 **Rückweg**
 
 - Nur die erste Stufe zurück (Issue #1107): `text` aus `--queues` des Dienstes `worker` nehmen und ihn neu starten;
-  die Anwendung plant dann wie vorher alles in `ocr` ein (vollständige Kette), wartende Aufträge in `text`
-  erledigen sich, sobald er wieder läuft, oder ihre Dateien gibt die Zeitgrenze frei. Eingescannte Seiten
+  die Anwendung plant dann wie vorher alles in `ocr` ein (vollständige Kette). Dateien mit wartendem Auftrag in
+  `text` gehen dabei mit nach `ocr`; diese Aufträge schließt der Zeitplan, sobald sie 15 Minuten fällig sind
+  (Ergebniscode `ohne_worker`), danach ist `rueckstau` für `text` wieder grün (`lebenszeichen` meldet weiter den
+  fehlenden Worker für `text`). Dasselbe gilt, wenn der Worker für `text` länger ausfällt. Eingescannte Seiten
   getippter PDFs nicht mehr erkennen: `TEXT_EXTRACTION_OCR_MIXED_PAGES=false` (bisherige Schwelle: jeder Text
   reicht).
 - Erkennung zurück zum Ingestor: `TEXT_EXTRACTION_RUNNER=ingestor` (bzw. Zeile entfernen), dieselben Dienste

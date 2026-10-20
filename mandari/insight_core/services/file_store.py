@@ -353,6 +353,15 @@ class Copy:
         return self.state == DISTURBED
 
 
+def shared_store() -> bool:
+    """
+    Sieht dieser Dienst die gemeinsame Ablage der Installation (``FILE_STORE_SHARED``, Standard ja)? Ein eigener
+    Erkennungsserver, der die Inhalte nur über den Objektspeicher sieht, bestätigt kein Fehlen: Was dort nicht liegt,
+    kann auf dem Anwendungsserver liegen (noch nicht hochgeladen, altes Layout).
+    """
+    return bool(getattr(settings, "FILE_STORE_SHARED", True))
+
+
 def store_reachable() -> bool:
     """Ist die lokale Ablage eingehängt (Wurzel und bei Ablage nach SHA-256 deren Verzeichnis vorhanden)?"""
     root = file_cache.cache_root()
@@ -365,6 +374,8 @@ def store_reachable() -> bool:
 _MODE_WARNING_INTERVAL: Final = 60.0
 #: Zeitpunkt der letzten Warnung (``time.monotonic``) als veränderbare Zelle
 _mode_warned_at: list[float] = []
+#: ebenso für Inhalte, die ein Dienst ohne die gemeinsame Ablage nicht findet
+_not_shared_warned_at: list[float] = []
 
 
 def _warn_mode_change(sha256: str) -> None:
@@ -380,6 +391,19 @@ def _warn_mode_change(sha256: str) -> None:
     )
 
 
+def _not_shared(file_obj: Any) -> Copy:
+    """Ohne die gemeinsame Ablage: weder hier noch im Objektspeicher ist gestört, nicht fehlend (höchstens 1×/min)."""
+    now = time.monotonic()
+    if not _not_shared_warned_at or now - _not_shared_warned_at[0] >= _MODE_WARNING_INTERVAL:
+        _not_shared_warned_at[:] = [now]
+        logger.warning(
+            "Inhalt der Datei %s weder lokal noch im Objektspeicher; dieser Dienst sieht die gemeinsame Ablage nicht "
+            "(FILE_STORE_SHARED=false): gestört, kein Abruf bei der Quelle (weitere Fälle höchstens einmal je Minute)",
+            getattr(file_obj, "pk", None),
+        )
+    return Copy(DISTURBED)
+
+
 def local_copy(file_obj: Any) -> Copy:
     """
     Kopie der Datei lesen: lokal, sonst aus dem Objektspeicher (gestreamt in die Ablage, Zeitgrenze, Hashprüfung).
@@ -392,6 +416,10 @@ def local_copy(file_obj: Any) -> Copy:
     (``OBJ_ENABLED=false``, fehlende ``OBJ_*``), ist das ebenfalls gestört (Moduswechsel, Issue #990): Ein falsch
     konfigurierter Dienst löst so keine Abrufwelle bei den Quellen aus. Den Objektspeicher aufzugeben ist derzeit
     nicht vorgesehen (``docs/FILE_CACHE.md``, „Ausschalten“).
+
+    Ein Dienst ohne die gemeinsame Ablage (``FILE_STORE_SHARED=false``, eigener Erkennungsserver) bestätigt nie ein
+    Fehlen: Ein Inhalt, der weder hier noch im Objektspeicher liegt, kann auf dem Anwendungsserver liegen (noch nicht
+    hochgeladen, im alten Layout ohne Blob); er gilt dort als gestört.
     """
     from ..models import OParlFileBlob
 
@@ -406,10 +434,17 @@ def local_copy(file_obj: Any) -> Copy:
             if not object_storage.enabled():
                 _warn_mode_change(sha256)
                 return Copy(DISTURBED)
-            return fetch_remote(sha256, size=blob["size"])
+            kopie = fetch_remote(sha256, size=blob["size"])
+            if kopie.missing and not shared_store():
+                # Im Objektspeicher fehlt er (remote_at ist zurückgesetzt), lokal auf dem Anwendungsserver vielleicht
+                # nicht: Dessen Hochladen holt ihn nach, das Fehlen bestätigt nur ein Dienst mit der gemeinsamen Ablage
+                return _not_shared(file_obj)
+            return kopie
     if (getattr(file_obj, "local_path", None) or sha256) and not store_reachable():
         # Die Datei hatte eine Kopie, aber die Ablage ist nicht eingehängt: kein Fehlen, eine Störung
         return Copy(DISTURBED)
+    if not shared_store():
+        return _not_shared(file_obj)
     return Copy(MISSING)
 
 

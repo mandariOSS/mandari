@@ -19,7 +19,9 @@ in ``ocr`` ein, solange dort Platz ist (``TEXT_EXTRACTION_QUEUE_DEPTH``); den Re
 wenn sein Prozess an Speicher oder Zeit scheitert: Die zweite Stufe hat mehr von beidem. Der Zeitplan füllt ``text``
 mit unvermerkten Dateien (``TEXT_LAYER_QUEUE_DEPTH``) und ``ocr`` nur mit vermerkten. **Ohne Worker für ``text``**
 (``apps.events.presence.queue_served``, etwa eine eigene Compose-Datei ohne ``text`` in ``--queues``) plant er wie
-bisher alles in ``ocr`` ein: Dort läuft die vollständige Kette, nichts bleibt liegen. Beide Stufen werden **reihum über
+bisher alles in ``ocr`` ein: Dort läuft die vollständige Kette. Wartende Aufträge in ``text`` halten ihre Dateien dann
+nicht fest (``eingereiht_in``), und seit ``VERWAIST_NACH`` fällige schließt er (``verwaiste_schliessen``); so bleibt
+nichts liegen. Beide Stufen werden **reihum über
 die Quellen** gefüllt (``_reihum``): zuerst die Quelle mit den wenigsten Aufträgen in der Warteschlange, damit eine
 große Quelle die kleinen nicht über Tage blockiert.
 
@@ -69,6 +71,7 @@ import hashlib
 import logging
 import random
 from collections import Counter, deque
+from collections.abc import Iterable
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -93,6 +96,7 @@ from mandari_dokumente import (
 from insight_core.models import OParlFile
 from insight_core.services import file_store
 from insight_core.services.text_extraction_job import (
+    STAGES,
     TASK_QUEUE,
     TEXT_LAYER_QUEUE,
     queued_file_ids,
@@ -133,6 +137,11 @@ ZUR_TEXTERKENNUNG: Final = "zur_texterkennung"
 
 #: Nach einer Störung der Ablage läuft derselbe Auftrag frühestens so viel später erneut
 STORAGE_RETRY: Final = timedelta(minutes=15)
+#: Ohne Worker für ``text`` schließt der Zeitplan Aufträge der ersten Stufe, die seit so langer Zeit fällig sind (wie
+#: ``MAX_TASK_WAIT`` der Prüfung ``rueckstau``); ein Neustart des Workers bleibt darunter
+VERWAIST_NACH: Final = timedelta(minutes=15)
+#: Ergebniscode dieser geschlossenen Aufträge
+OHNE_WORKER: Final = "ohne_worker"
 #: ``OSError`` mit diesen Nummern (kein Platz für Zwischendateien) ist eine Störung der Umgebung, kein unlesbarer
 #: Inhalt; andere ``OSError`` der Bibliotheken (etwa „cannot identify image file“) bleiben ``failed``
 _KEIN_PLATZ: Final = frozenset(n for n in (errno.ENOSPC, getattr(errno, "EDQUOT", None)) if n is not None)
@@ -187,6 +196,15 @@ def text_stufe_aktiv() -> bool:
     from apps.events.presence import queue_served
 
     return queue_served(TEXT_LAYER_QUEUE)
+
+
+def eingereiht_in(text_aktiv: bool) -> tuple[str, ...]:
+    """
+    Warteschlangen, deren wartende Aufträge eine Datei schon einplanen. Ohne Worker für ``text`` nur ``ocr``: Ein
+    wartender Auftrag der ersten Stufe hielte seine Datei sonst fest, bis wieder ein Worker ``text`` bedient (Rückweg
+    in ``DEPLOYMENT.md``, längerer Ausfall), und sie käme nie nach ``ocr``. Doppelte Aufträge löst die Beanspruchung.
+    """
+    return tuple(STAGES) if text_aktiv else (TASK_QUEUE,)
 
 
 def backlog_alert_hours() -> float:
@@ -298,13 +316,13 @@ def _beenden(beanspruchung: Beanspruchung, status: str, fehler: str) -> None:
     OParlFile.objects.filter(pk=beanspruchung.file_id, text_extraction_status=PROCESSING).update(**werte)
 
 
-def release_stale(now: datetime | None = None) -> tuple[int, int]:
+def release_stale(now: datetime | None = None, *, warteschlangen: Iterable[str] = STAGES) -> tuple[int, int]:
     """
     Liegen gebliebene Beanspruchungen freigeben (Worker beendet, wie ``release_stale_extractions`` im Ingestor):
     länger als ``TEXT_EXTRACTION_STALE_MINUTES`` in ``processing`` → zurück; nach ``TEXT_EXTRACTION_MAX_ATTEMPTS``
     begonnenen, nie beendeten Versuchen aufgegeben („Speichergrenze“), mit dem Zeitpunkt in ``text_extracted_at``.
     Dateien mit Text (Neuerkennung) gehen zurück auf ``completed`` und behalten ihn. Dateien mit wartendem Auftrag
-    bleiben unberührt. Rückgabe: (zurück, aufgegeben).
+    (in ``warteschlangen``, siehe ``eingereiht_in``) bleiben unberührt. Rückgabe: (zurück, aufgegeben).
     """
     now = now or timezone.now()
     cutoff = now - _stale_after()
@@ -316,7 +334,7 @@ def release_stale(now: datetime | None = None) -> tuple[int, int]:
     kandidaten = list(OParlFile.objects.filter(stale).values_list("pk", flat=True))
     if not kandidaten:
         return 0, 0
-    eingereiht = set(queued_file_ids())
+    eingereiht = set(queued_file_ids(warteschlangen))
     # Eingereiht, aber noch nicht begonnen: kein Abbruch, sonst entstünde ein zweiter Auftrag je Datei
     offen = [pk for pk in kandidaten if str(pk) not in eingereiht]
     if not offen:
@@ -377,17 +395,19 @@ def candidates(
     base: QuerySet[Any] | None = None,
     ocr_vermerkt: bool | None = None,
     belegt: Counter[Any] | None = None,
+    warteschlangen: Iterable[str] = STAGES,
 ) -> list[Any]:
     """
-    Dateien, die ein Auftrag beanspruchen könnte und für die noch keiner wartet (in keiner der beiden Stufen), reihum
-    über die Quellen (``_reihum``); je Quelle wartende vor der Neuerkennung, je die neuesten zuerst. ``ocr_vermerkt``:
-    nur Dateien mit (``True``, zweite Stufe) bzw. ohne (``False``, erste Stufe) Vermerk, ``None`` alle. ``belegt``:
-    Aufträge je Quelle, die in der Ziel-Warteschlange schon warten oder laufen.
+    Dateien, die ein Auftrag beanspruchen könnte und für die noch keiner wartet (in keiner der ``warteschlangen``,
+    Standard: beide Stufen, siehe ``eingereiht_in``), reihum über die Quellen (``_reihum``); je Quelle wartende vor der
+    Neuerkennung, je die neuesten zuerst. ``ocr_vermerkt``: nur Dateien mit (``True``, zweite Stufe) bzw. ohne
+    (``False``, erste Stufe) Vermerk, ``None`` alle. ``belegt``: Aufträge je Quelle, die in der Ziel-Warteschlange schon
+    warten oder laufen.
     """
     if limit <= 0:
         return []
     qs = (base if base is not None else OParlFile.objects.all()).filter(claimable_q())
-    eingereiht = queued_file_ids()
+    eingereiht = queued_file_ids(warteschlangen)
     if eingereiht:
         qs = qs.exclude(pk__in=eingereiht)
     if ocr_vermerkt is not None:
@@ -467,12 +487,13 @@ def _enqueue(file_ids: list[Any], *, run_after: datetime | None = None, stufe: s
     return len(file_ids)
 
 
-def _fuellen(stufe: str, tiefe: int, *, ocr_vermerkt: bool | None) -> int:
+def _fuellen(stufe: str, tiefe: int, *, ocr_vermerkt: bool | None, warteschlangen: Iterable[str] = STAGES) -> int:
     """Warteschlange ``stufe`` bis ``tiefe`` wartende und laufende Aufträge auffüllen, reihum über die Quellen."""
     frei = tiefe - waiting_tasks(stufe)
     if frei <= 0:
         return 0
-    eingereiht = _enqueue(candidates(frei, ocr_vermerkt=ocr_vermerkt, belegt=_belegung(stufe)), stufe=stufe)
+    auswahl = candidates(frei, ocr_vermerkt=ocr_vermerkt, belegt=_belegung(stufe), warteschlangen=warteschlangen)
+    eingereiht = _enqueue(auswahl, stufe=stufe)
     if eingereiht:
         logger.info("Texterkennung: %d Aufträge in %s eingereiht", eingereiht, stufe)
     return eingereiht
@@ -483,7 +504,8 @@ def einplanen(now: datetime | None = None) -> int:
     Zeitplan ``texterkennung_einplanen`` (nur mit ``TEXT_EXTRACTION_RUNNER=worker``): liegen gebliebene
     Beanspruchungen freigeben, nie abgelegte zu große Dateien überspringen, dann Aufträge für Dateien ohne wartenden
     Auftrag einreihen. Mit Worker für ``text`` (Issue #1107): ``text`` mit unvermerkten Dateien bis
-    ``TEXT_LAYER_QUEUE_DEPTH``, ``ocr`` mit vermerkten bis ``TEXT_EXTRACTION_QUEUE_DEPTH``; ohne ihn alles in ``ocr``.
+    ``TEXT_LAYER_QUEUE_DEPTH``, ``ocr`` mit vermerkten bis ``TEXT_EXTRACTION_QUEUE_DEPTH``; ohne ihn alles in ``ocr``,
+    auch Dateien mit wartendem Auftrag in ``text`` (``eingereiht_in``), und verwaiste Aufträge in ``text`` schließen.
     Rückgabe: Zahl der eingereihten Aufträge.
     """
     if not runner_is_worker():
@@ -491,14 +513,40 @@ def einplanen(now: datetime | None = None) -> int:
     from insight_core.services.document_extraction import purge_leftover_temp_files
 
     now = now or timezone.now()
-    release_stale(now)
+    zwei_stufen = text_stufe_aktiv()
+    warteschlangen = eingereiht_in(zwei_stufen)
+    release_stale(now, warteschlangen=warteschlangen)
     skip_too_large(now)
     # Reste beendeter Prozesse (Speicherwächter, Zeitgrenze des Runners) in diesem Container
     purge_leftover_temp_files()
-    if not text_stufe_aktiv():
-        return _fuellen(TASK_QUEUE, queue_depth(), ocr_vermerkt=None)
+    if not zwei_stufen:
+        verwaiste_schliessen(now)
+        return _fuellen(TASK_QUEUE, queue_depth(), ocr_vermerkt=None, warteschlangen=warteschlangen)
     erste = _fuellen(TEXT_LAYER_QUEUE, text_layer_queue_depth(), ocr_vermerkt=False)
     return erste + _fuellen(TASK_QUEUE, queue_depth(), ocr_vermerkt=True)
+
+
+def verwaiste_schliessen(now: datetime | None = None) -> int:
+    """
+    Ohne Worker für ``text`` (Rückweg in ``DEPLOYMENT.md``, längerer Ausfall): wartende Aufträge der ersten Stufe, die
+    seit ``VERWAIST_NACH`` fällig sind, als erledigt schließen (Ergebniscode ``ohne_worker``). Ihre Dateien plant der
+    Zeitplan ohnehin in ``ocr`` ein (``eingereiht_in``); sonst stünden die Aufträge, bis wieder ein Worker ``text``
+    bedient, und ``rueckstau`` bliebe rot. Laufende Aufträge gehören einem Runner und bleiben unberührt; holt ein
+    Runner einen Auftrag gerade, sieht das UPDATE ihn nicht mehr als wartend. Rückgabe: Zahl der geschlossenen.
+    """
+    from apps.events.models import Task as TaskRow
+    from apps.events.models import TaskStatus
+
+    now = now or timezone.now()
+    geschlossen = TaskRow.objects.filter(
+        queue=TEXT_LAYER_QUEUE,
+        task_path=STAGES[TEXT_LAYER_QUEUE],
+        status=TaskStatus.WARTEND,
+        run_after__lt=now - VERWAIST_NACH,
+    ).update(status=TaskStatus.ERLEDIGT, result_code=OHNE_WORKER, finished_at=now, locked_until=None)
+    if geschlossen:
+        logger.warning("Texterkennung: %d Aufträge in text ohne Worker geschlossen, Dateien gehen an ocr", geschlossen)
+    return geschlossen
 
 
 # =============================================================================
@@ -841,12 +889,14 @@ def befehl_einplanen(
         wartend = basis.filter(text_extraction_status=PENDING)
         stand.verdraengt = wartend.filter(local_status=abruf.EVICTED).count()
         stand.ohne_inhalt = wartend.exclude(local_status__in=[abruf.OK, abruf.EVICTED]).count()
-        eingereiht = set(queued_file_ids())
+        zwei_stufen = text_stufe_aktiv()
+        warteschlangen = eingereiht_in(zwei_stufen)
+        eingereiht = set(queued_file_ids(warteschlangen))
         bereit = basis.filter(claimable_q())
         stand.schon_eingereiht = bereit.filter(pk__in=eingereiht).count() if eingereiht else 0
         frei_ocr = max(0, queue_depth() - waiting_tasks(TASK_QUEUE))
         ids_text: list[Any] = []
-        if text_stufe_aktiv():
+        if zwei_stufen:
             stand.warteschlange = TEXT_LAYER_QUEUE
             stand.frei = max(0, text_layer_queue_depth() - waiting_tasks(TEXT_LAYER_QUEUE))
             ids_text = candidates(limit if limit > 0 else stand.frei, base=basis, ocr_vermerkt=False)
@@ -854,9 +904,8 @@ def befehl_einplanen(
             ids_ocr = candidates(rest, base=basis, ocr_vermerkt=True)
         else:
             stand.frei = frei_ocr
-            ids_ocr = candidates(limit if limit > 0 else stand.frei, base=basis)
+            ids_ocr = candidates(limit if limit > 0 else stand.frei, base=basis, warteschlangen=warteschlangen)
         stand.auftraege = len(ids_text) + len(ids_ocr)
-        zwei_stufen = stand.warteschlange == TEXT_LAYER_QUEUE
         stand.in_ocr = len(ids_ocr) if zwei_stufen else 0
         stand.ueber_frei = len(ids_ocr) > frei_ocr or (zwei_stufen and len(ids_text) > stand.frei)
         stand.dem_zeitplan = max(0, bereit.count() - stand.schon_eingereiht - stand.auftraege)
