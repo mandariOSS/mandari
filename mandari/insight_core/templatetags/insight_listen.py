@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Filter für Listen des Bürgerportals (Issue #841): Spalten nur zeigen, wenn sie etwas enthalten; Seitenlinks; Ziele
-der Listen im Bürgerportal einer Körperschaft (``insight_url``, ``insight_rel``, Issue #939).
+der Listen im Bürgerportal einer Körperschaft (``insight_url``, ``insight_rel``, Issue #939); Dateityp der
+Dokumentlinks (``dateityp``, Issue #1103).
 """
 
 from __future__ import annotations
@@ -52,6 +53,21 @@ def hat_wert(objekte: Iterable[Any] | None, pfad: str) -> bool:
     if not objekte:
         return False
     return any(not ist_leer(_wert(objekt, pfad)) for objekt in objekte)
+
+
+@register.filter
+def dateityp(datei: Any) -> str:
+    """
+    Kurzer Dateityp für Dokumentlinks der Listen (Issue #1103): „PDF“, sonst die Endung des Dateinamens („DOCX“),
+    sonst „Dokument“.
+    """
+    if "pdf" in str(getattr(datei, "mime_type", "") or "").lower():
+        return "PDF"
+    name = str(getattr(datei, "file_name", "") or "")
+    endung = name.rsplit(".", 1)[1] if "." in name else ""
+    if endung.isascii() and endung.isalnum() and 2 <= len(endung) <= 4:
+        return endung.upper()
+    return "Dokument"
 
 
 @register.simple_tag(takes_context=True)

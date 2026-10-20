@@ -9,6 +9,8 @@ einen einzigen Wert entfallen.
 Parameter wie c-liste.sitzungen; ``dicht`` zeigt den Stand unterhalb von 2xl unter dem Titel (Arbeitsfläche).
 ``zusatz_ab="2xl"`` setzt auch die Zusatzspalte erst ab 2xl als Spalte und darunter unter den Titel, damit lange Titel
 bei 1.280 px nicht umbrechen (Work: „Für die Fraktion“ der Vorgänge); ohne Angabe ab md wie bisher.
+Unter dem Titel stehen Vorlage und Anlagen (c-liste.vorgang-dokumente, Issue #1103), wenn der Aufrufer sie für die
+Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen); der Baustein fragt nicht selbst nach.
 {% endcomment %}
 <c-vars vorgaenge="" links="" dicht="" ohne_merken="" zusatz="" zusatz_titel="" zusatz_ab="" />
 {% load insight_listen %}
@@ -43,6 +45,7 @@ bei 1.280 px nicht umbrechen (Work: „Für die Fraktion“ der Vorgänge); ohne
                         {% if paper.paper_type %}{{ paper.paper_type }}{% endif %}
                     </div>
                     {% if dicht and paper.stand %}<p class="2xl:hidden mt-0.5 text-sm text-gray-700 dark:text-gray-300">{{ paper.stand.text }}</p>{% endif %}
+                    {% if paper.dokumentzeile %}<c-liste.vorgang-dokumente :zeile="paper.dokumentzeile" :vorgang="paper" ziel="{{ ziel }}" dicht="{{ dicht }}" />{% endif %}
                     {% if zusatz %}<div class="{% if zusatz_ab == '2xl' %}2xl:hidden{% else %}md:hidden{% endif %} mt-1 text-sm">{% include zusatz with eintrag=paper %}</div>{% endif %}
                 </td>
                 {% if sp_nr %}

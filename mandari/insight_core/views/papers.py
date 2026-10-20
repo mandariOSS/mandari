@@ -16,6 +16,7 @@ from hub.ris import selectors as ris_selectors
 
 from ..models import OParlPaper
 from ..services import file_reconcile
+from ..services.vorgang_dokumente import dokumente_anhaengen
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -93,6 +94,8 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
         staende = statuses_for_papers(str(p.pk) for p in papers)
         for paper in papers:
             paper.stand = staende.get(str(paper.pk))
+        # Vorlage und Anlagen je Vorgang in einer Abfrage für die Seite (Issue #1103)
+        dokumente_anhaengen(papers)
         context["papers"] = papers
         return context
 

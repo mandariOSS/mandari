@@ -424,6 +424,19 @@ def files_of_papers(paper_ids: Iterable[object]) -> QuerySet[OParlFile]:
     return OParlFile.objects.filter(paper_id__in=list(paper_ids))
 
 
+def visible_files_of_papers(paper_ids: Iterable[object]) -> QuerySet[OParlFile]:
+    """
+    Abrufbare Dateien mehrerer Vorlagen in einer Abfrage, ohne Volltext und Rohdaten (Vorgangslisten, Issue #1103).
+
+    Es gelten die Regeln der Vorgangsseiten: keine von Session zurückgenommenen Dateien und keine, die der Löschabgleich
+    sperrt (in der Quelle gelöscht oder dort nicht mehr abrufbar, #787). Zurückgenommen setzt ``deleted`` voraus, die
+    beiden Bedingungen decken also ``withdrawn_by_publisher`` und ``file_reconcile.is_blocked`` ab.
+    """
+    return OParlFile.objects.filter(
+        paper_id__in=list(paper_ids), deleted=False, source_missing_since__isnull=True
+    ).defer("text_content", "raw_json")
+
+
 def protocol_file(meeting: OParlMeeting) -> OParlFile | None:
     """
     Öffentliche Niederschrift einer Sitzung (OParl ``resultsProtocol``, sonst ``verbatimProtocol``), Issue #318.
