@@ -20,7 +20,7 @@ import sys
 import threading
 import uuid
 from collections import Counter, deque
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -455,7 +455,7 @@ def test_zwei_worker_bearbeiten_keine_datei_doppelt(worker_fuer_text: None, im_p
     """
     datei = _datei(_quelle(), TEXT_PDF)
     zweiter: list[str] = []
-    lesen = getattr(erkennung, "extract_text_layer_isolated")  # noqa: B009 - der Ersatz aus der Fixture im_prozess
+    lesen: Callable[..., TextLayerOutcome] = getattr(erkennung, "extract_text_layer_isolated")  # noqa: B009 - Ersatz
 
     def waehrenddessen(*args: Any, **kwargs: Any) -> TextLayerOutcome:
         zweiter.append(erkennung.textebene_lesen(str(datei.pk)))
