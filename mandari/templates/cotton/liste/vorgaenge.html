@@ -7,6 +7,8 @@ einen einzigen Wert entfallen.
   <c-liste.vorgaenge :vorgaenge="papers" :links="ris_links" dicht ohne_merken
                      zusatz="work/ris/neu/_vorgang_zeile_fraktion.html" zusatz_titel="Für die Fraktion" />
 Parameter wie c-liste.sitzungen; ``dicht`` zeigt den Stand unterhalb von 2xl unter dem Titel (Arbeitsfläche).
+Hat die Suche nach einer Vorlagennummer genau diese Nummer gefunden (``nummer_rang`` 1 oder 2 aus
+hub.ris.vorlagennummer, Issue #1102), ist die Zeile leicht hinterlegt und die Nummer kräftiger.
 ``zusatz_ab="2xl"`` setzt auch die Zusatzspalte erst ab 2xl als Spalte und darunter unter den Titel, damit lange Titel
 bei 1.280 px nicht umbrechen (Work: „Für die Fraktion“ der Vorgänge); ohne Angabe ab md wie bisher.
 Unter dem Titel stehen Vorlage und Anlagen (c-liste.vorgang-dokumente, Issue #1103), wenn der Aufrufer sie für die
@@ -32,7 +34,7 @@ Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen);
         <tbody class="divide-y divide-gray-200 dark:divide-gray-800">
             {% for paper in vorgaenge %}
             {% ris_url links "vorgang" paper.id as ziel %}
-            <tr class="hover:bg-band-grau/70 group cursor-pointer"
+            <tr class="hover:bg-band-grau/70 group cursor-pointer{% if paper.nummer_rang and paper.nummer_rang <= 2 %} bg-primary-50/70 dark:bg-primary-900/20{% endif %}"
                 data-href="{{ ziel }}">
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %}">
                     <a href="{{ ziel }}"
@@ -50,7 +52,7 @@ Seite geladen hat (insight_core.services.vorgang_dokumente.dokumente_anhaengen);
                 </td>
                 {% if sp_nr %}
                 <td class="px-3 {% if dicht %}py-2{% else %}py-3.5{% endif %} text-sm max-sm:hidden whitespace-nowrap">
-                    {% if paper.reference %}<span class="font-mono text-gray-600 dark:text-gray-400">{{ paper.reference }}</span>{% endif %}
+                    {% if paper.reference %}{% if paper.nummer_rang and paper.nummer_rang <= 2 %}<span class="font-mono font-semibold text-gray-900 dark:text-white">{{ paper.reference }}</span><span class="sr-only"> (gesuchte Nummer)</span>{% else %}<span class="font-mono text-gray-600 dark:text-gray-400">{{ paper.reference }}</span>{% endif %}{% endif %}
                 </td>
                 {% endif %}
                 {% if sp_typ %}

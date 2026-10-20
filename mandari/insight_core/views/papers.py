@@ -5,14 +5,16 @@ Views für Mandari Insight Core.
 Server-Side Rendering mit Django Templates + HTMX.
 """
 
-from django.db.models import Q
+from django.http import HttpResponseRedirect
 from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from django.views.generic import DetailView, ListView
 
 from apps.common.mixins import HTMXMixin
 from hub.ris import selectors as ris_selectors
+from hub.ris import vorlagennummer
 
 from ..models import OParlPaper
 from ..services import file_reconcile
@@ -39,6 +41,27 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
             return ["partials/paper_list_items.html"]
         return [self.template_name]
 
+    def get(self, request, *args, **kwargs):
+        ziel = self._einziger_nummerntreffer()
+        if ziel:
+            return HttpResponseRedirect(ziel)
+        return super().get(request, *args, **kwargs)
+
+    def _einziger_nummerntreffer(self) -> str:
+        """
+        Adresse des Vorgangs, wenn die Eingabetaste (``direkt=1`` aus dem Formular) eine Vorlagennummer mit genau einem
+        Treffer abschickt, der genau passt (Issue #1102); sonst leer. HTMX-Antworten ersetzen nur die Liste und leiten
+        nie weiter.
+        """
+        if self.is_htmx or self.request.GET.get("direkt") != "1" or self.request.GET.get("page", "1") not in ("", "1"):
+            return ""
+        if not vorlagennummer.sieht_wie_nummer_aus(self.request.GET.get("q", "")):
+            return ""
+        treffer = list(self.get_queryset()[:2])
+        if len(treffer) != 1 or not vorlagennummer.genau(getattr(treffer[0], "nummer_rang", None)):
+            return ""
+        return reverse("insight_core:insight:paper_detail", kwargs={"pk": treffer[0].pk})
+
     def get_queryset(self):
         body = get_active_body(self.request)
         if not body:
@@ -46,21 +69,21 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
 
         qs = OParlPaper.objects.filter(body=body, deleted=False)
 
-        # Suche
-        q = self.request.GET.get("q", "").strip()
-        if q:
-            qs = qs.filter(Q(name__icontains=q) | Q(reference__icontains=q))
-
         # Typ-Filter
         paper_type = self.request.GET.get("type", "").strip()
         if paper_type:
             qs = qs.filter(paper_type=paper_type)
 
-        return qs.order_by("-date", "-oparl_created")
+        # Suche in Name und Nummer, Vorlagennummern in jeder Schreibweise mit dem passenden Vorgang vorn (Issue #1102)
+        return ris_selectors.search_papers_in(qs, self.request.GET.get("q", ""))
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         body = get_active_body(self.request)
+        # Leerzustand bei einer Vorlagennummer: „Die Vorlage … liegt uns noch nicht vor.“ (nur ohne weiteren Filter)
+        q = self.request.GET.get("q", "").strip()
+        if vorlagennummer.sieht_wie_nummer_aus(q) and not self.request.GET.get("type", "").strip():
+            context["nummer_gesucht"] = q
 
         if body:
             # Verfügbare Typen für Filter

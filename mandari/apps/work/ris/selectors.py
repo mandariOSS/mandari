@@ -312,15 +312,16 @@ def withdrawn_paper(bodies: Bodies, paper_id: Any) -> OParlPaper | None:
 def papers_queryset(
     bodies: Bodies, *, search: str = "", paper_type: str = "", year: int | None = None
 ) -> QuerySet[OParlPaper]:
-    """Vorgangsliste mit Suche (Name/Aktenzeichen), Art und Jahr, neueste zuerst."""
+    """
+    Vorgangsliste mit Suche (Name/Aktenzeichen), Art und Jahr, neueste zuerst; Vorlagennummern in jeder Schreibweise
+    mit der passenden Nummer vorn (dieselbe Suche wie die Vorgangsliste in Insight, Issue #1102).
+    """
     papers = papers_in_bodies(bodies)
-    if search:
-        papers = papers.filter(Q(name__icontains=search) | Q(reference__icontains=search))
     if paper_type:
         papers = papers.filter(paper_type=paper_type)
     if year is not None:
         papers = papers.filter(date__year=year)
-    return papers.order_by("-date", "-oparl_created")
+    return ris.search_papers_in(papers, search)
 
 
 def paper_types(bodies: Bodies) -> QuerySet[OParlPaper, Any]:
@@ -489,10 +490,9 @@ def orm_search(
         ``{"papers", "meetings", "organizations", "persons", "total"}``
     """
     ids = [UUID(str(body_id)) for body_id in body_ids]
-    papers = OParlPaper.objects.filter(body_id__in=ids).exclude(withdrawn_q())
+    papers = ris.papers(ids).exclude(withdrawn_q())
     meetings = OParlMeeting.objects.filter(body_id__in=ids).exclude(withdrawn_q())
     if query:
-        papers = papers.filter(Q(name__icontains=query) | Q(reference__icontains=query))
         meetings = meetings.filter(Q(name__icontains=query) | Q(location_name__icontains=query))
     if date_from:
         papers = papers.filter(date__gte=date_from)
@@ -505,7 +505,8 @@ def orm_search(
     if committee:
         meetings = meetings.filter(organizations__name=committee)
 
-    papers = papers.order_by("-date")[:limit]
+    # Vorlagennummern in jeder Schreibweise, passende Nummer vorn (Issue #1102)
+    papers = ris.search_papers_in(papers, query)[:limit]
     meetings = meetings.prefetch_related("organizations").order_by("-start")[:limit]
     organizations = (
         OParlOrganization.objects.filter(body_id__in=ids)

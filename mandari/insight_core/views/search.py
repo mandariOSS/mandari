@@ -13,6 +13,8 @@ from django.utils.http import urlencode
 from django.views.decorators.http import require_GET
 from django.views.generic import TemplateView
 
+from hub.ris import selectors as ris_selectors
+
 from ..models import (
     OParlBody,
     OParlMeeting,
@@ -200,10 +202,8 @@ def search_results(request):
         # Optionaler Body-Filter: body=None bedeutet kommunenübergreifende Suche über gelistete Kommunen
         body_filter = {"body": body} if body else {"body_id__in": _searchable_body_ids()}
 
-        # Vorgänge
-        papers = OParlPaper.objects.filter(deleted=False, **body_filter).filter(
-            Q(name__icontains=query) | Q(reference__icontains=query)
-        )[:10]
+        # Vorgänge; Vorlagennummern in jeder Schreibweise, passende Nummer vorn (Issue #1102)
+        papers = ris_selectors.search_papers_in(OParlPaper.objects.filter(deleted=False, **body_filter), query)[:10]
         for paper in papers:
             results.append(
                 {
