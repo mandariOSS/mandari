@@ -139,3 +139,20 @@ def test_work_datenbanksuche_findet_die_nummer(
     liste = html.split('id="treffer-liste"', 1)[1].split("</ol>", 1)[0]
     assert liste.index("Sanierung Stadthalle</a>") < liste.index("Ergänzung")
     assert "Gesuchte Vorlagennummer" in liste
+
+
+def test_work_datenbanksuche_leerzustand_nur_ohne_filter_und_auf_vorgangsreitern(
+    org: Any, client: Any, vorgaenge: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def kaputt() -> Any:
+        raise ConnectionError("Suchdienst aus")
+
+    monkeypatch.setattr(search_service, "get_search_service", kaputt)
+    suche = reverse("work:ris_search", kwargs={"org_slug": org.slug})
+
+    assert (
+        "Die Vorlage V/0591/2026 liegt uns noch nicht vor." in client.get(suche, {"q": "V/0591/2026"}).content.decode()
+    )
+    # Ein Filter kann die Vorlage ausschließen, ein anderer Reiter enthält keine Vorlagen
+    assert "liegt uns noch nicht vor" not in client.get(suche, {"q": "V/0989/2017", "art": "Antrag"}).content.decode()
+    assert "liegt uns noch nicht vor" not in client.get(suche, {"q": "V/0989/2017", "typ": "meetings"}).content.decode()

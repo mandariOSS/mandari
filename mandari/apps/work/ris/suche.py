@@ -35,7 +35,7 @@ from django.utils.html import escape
 
 from hub.ris import vorlagennummer
 from insight_core.services.search_filters import PERIOD_CUSTOM, SearchQuery
-from insight_core.services.search_page import active_filters, build_context
+from insight_core.services.search_page import active_filters, build_context, nummer_im_leerzustand
 from insight_core.services.search_presentation import Links, german_date, normalize_paper_type, statuses_for_papers
 
 from . import selectors
@@ -231,7 +231,7 @@ def _datenbank(
     ]
     return {
         "groups": groups,
-        "nummer_gesucht": params.query if vorlagennummer.sieht_wie_nummer_aus(params.query) else "",
+        "nummer_gesucht": nummer_im_leerzustand(params),
         "datenbanksuche": True,
         "alle_anzeigen": alle_anzeigen,
         "count_sentence": f"{n} Treffer in Titeln und Aktenzeichen"
