@@ -203,3 +203,17 @@ def test_suche_ohne_nummer_wie_bisher(bestand: dict[str, Any], monkeypatch: pyte
     html = _suche(monkeypatch, "muenster", "Feuerwache", [])
 
     assert "Gesuchte Vorlagennummer" not in html and FEHLT not in html and "Keine Treffer für „Feuerwache“" in html
+
+
+def test_leerzustand_der_suche_nur_auf_vorgangsreitern(
+    monkeypatch: pytest.MonkeyPatch, bestand: dict[str, Any]
+) -> None:
+    """Auf den Reitern Sitzungen, Personen, Gremien, Unterlagen sagt ein leerer Reiter nichts über die Vorlage."""
+    monkeypatch.setattr(search_service, "get_search_service", lambda: _Dienst([]))
+    client = Client()
+    client.get("/insight/k/muenster/")
+
+    assert f"Die Vorlage V 999 2026 {FEHLT}" in client.get("/insight/suche/", {"q": "V 999 2026"}).content.decode()
+    for reiter in ("meetings", "persons", "organizations", "files"):
+        html = client.get("/insight/suche/", {"q": "V/0591/2026", "result_type": reiter}).content.decode()
+        assert FEHLT not in html, reiter

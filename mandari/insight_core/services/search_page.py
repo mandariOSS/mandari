@@ -201,7 +201,7 @@ def build_context(
         "params": params,
         "query": params.query,
         # Leerzustand: „Die Vorlage … liegt uns noch nicht vor.“ (Issue #1102)
-        "nummer_gesucht": params.query if sieht_wie_nummer_aus(params.query) else "",
+        "nummer_gesucht": nummer_im_leerzustand(params),
         "groups": groups,
         "count_sentence": count_sentence(counts),
         "similar_spelling": grouped["similar_spelling"],
@@ -237,6 +237,20 @@ def build_context(
 
 #: Höchstens so viele Vorgänge mit passender Vorlagennummer stehen über den Treffern des Suchdienstes
 NUMMERNTREFFER: Final = 10
+
+
+def nummer_im_leerzustand(params: SearchQuery) -> str:
+    """
+    Nummer für den Leerzustand „Die Vorlage … liegt uns noch nicht vor.“ (Issue #1102), sonst leer.
+
+    Nur auf den Reitern „Alle“ und „Vorgänge“ und ohne Filter des Inhalts, wie ``nummerntreffer``: Auf anderen Reitern
+    oder mit Filtern fehlt die Vorlage dort nur, ob es sie gibt, sagt der leere Reiter nicht.
+    """
+    if not sieht_wie_nummer_aus(params.query) or params.result_type not in ("", "papers"):
+        return ""
+    if replace(params, body_filter="").has_filters:
+        return ""
+    return params.query
 
 
 def nummerntreffer(params: SearchQuery, body: OParlBody | None, body_ids: list[str] | None) -> list[dict[str, Any]]:
