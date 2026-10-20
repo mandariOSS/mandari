@@ -170,6 +170,8 @@ MIDDLEWARE = [
     # belegte eine Pool-Verbindung; Dutzende Fotos einer Seite scheiterten mit 400 (Issue #667).
     "mandari.media.PublicMediaMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
+    # Keine neuen Sitzungen für Crawler und Kalender-Abos ohne Cookie (Issue #1091); direkt hinter SessionMiddleware
+    "insight_core.sitzung.KeineSitzungFuerCrawlerMiddleware",
     # Eigener Host je Körperschaft (PORTAL_HOSTS, Issue #317); ohne Einträge wirkungslos
     "insight_core.portal.PortalHostMiddleware",
     # Subdomain redirect for organization shortcuts (e.g., volt.mandari.de -> /work/volt/)

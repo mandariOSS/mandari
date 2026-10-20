@@ -91,3 +91,52 @@ def test_aufraeumen_loescht_nur_abgelaufene_sitzungen() -> None:
     eigene = Session.objects.filter(session_key__regex=r"^(alt|neu)0")
     assert list(eigene.values_list("session_key", flat=True)) == ["neu" + "0" * 29]
     assert not Session.objects.filter(expire_date__lt=jetzt).exists()
+
+
+GOOGLEBOT = "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)"
+BROWSER = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0 Safari/537.36"
+
+
+def test_crawler_auf_der_stadtseite_bekommt_keine_sitzung(bestand: dict[str, Any]) -> None:
+    # Die Stadtseite hält den Kontext der Kommune in der Sitzung fest (portal.enter); für Crawler verwirft die
+    # Middleware die neue Sitzung (Teil 2 von #1091)
+    vorher = Session.objects.count()
+
+    antwort = Client(HTTP_USER_AGENT=GOOGLEBOT).get("/insight/k/musterstadt/")
+
+    assert antwort.status_code == 200
+    assert settings.SESSION_COOKIE_NAME not in antwort.cookies
+    assert Session.objects.count() == vorher
+
+
+def test_mensch_auf_der_stadtseite_behaelt_den_kontext(bestand: dict[str, Any]) -> None:
+    client = Client(HTTP_USER_AGENT=BROWSER)
+
+    antwort = client.get("/insight/k/musterstadt/")
+
+    assert antwort.status_code == 200
+    assert settings.SESSION_COOKIE_NAME in antwort.cookies
+    assert client.session["active_body_id"] == str(bestand["body"].id)
+
+
+def test_kalender_abo_mit_kommune_legt_keine_sitzung_an(bestand: dict[str, Any]) -> None:
+    # Kalenderprogramme rufen den Feed regelmäßig ohne Cookie ab; ?kommune= wählte dabei jedes Mal die Kommune
+    vorher = Session.objects.count()
+
+    antwort = Client(HTTP_USER_AGENT="Microsoft Office/16.0 (Windows NT 10.0; Microsoft Outlook 16.0)").get(
+        f"/insight/termine/kalender.ics?kommune={bestand['body'].id}"
+    )
+
+    assert antwort.status_code == 200
+    assert settings.SESSION_COOKIE_NAME not in antwort.cookies
+    assert Session.objects.count() == vorher
+
+
+def test_bestehende_sitzung_bleibt_auch_fuer_crawler_kennung(bestand: dict[str, Any]) -> None:
+    client = Client(HTTP_USER_AGENT=BROWSER)
+    client.get(f"/insight/kommune/{bestand['body'].id}/")
+    schluessel = client.session.session_key
+
+    client.get("/insight/", HTTP_USER_AGENT=GOOGLEBOT)
+
+    assert Session.objects.filter(session_key=schluessel).exists()
