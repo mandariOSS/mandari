@@ -104,14 +104,14 @@ class PortalHomeView(TemplateView):
 
     def get(self, request, *args, **kwargs):
         # Self-Hosting-Fall: Existiert genau eine Kommune, wird sie automatisch
-        # gewählt — kein Auswahlzwang beim ersten Aufruf.
+        # gewählt — kein Auswahlzwang beim ersten Aufruf. Ohne Weiterleitung wie ActiveBodyRequiredMixin: Für
+        # Crawler verwirft KeineSitzungFuerCrawlerMiddleware die neue Sitzung, eine Weiterleitung auf diese Seite
+        # liefe dann im Kreis (Issue #1110)
         if is_all_bodies_mode(request):
-            bodies = OParlBody.objects.listed()
-            if bodies.count() == 1:
-                only_body = bodies.first()
-                request.session["active_body_id"] = str(only_body.id)
+            bodies = list(OParlBody.objects.listed()[:2])
+            if len(bodies) == 1:
+                request.session["active_body_id"] = str(bodies[0].id)
                 request.session.modified = True
-                return redirect("insight_core:insight:portal_home")
         return super().get(request, *args, **kwargs)
 
     def get_template_names(self):

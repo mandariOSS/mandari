@@ -8,7 +8,7 @@ Läuft gegen eine frische SQLite-Instanz:
 Prüfungen:
   1. Kommune-Auswahl (leer / 1 Kommune / 8 Kommunen):
      - 0 Kommunen: freundlicher Empty-State statt Fehler
-     - 1 Kommune (Self-Hosting): automatische Auswahl + Redirect, kein Auswahlzwang
+     - 1 Kommune (Self-Hosting): automatische Auswahl ohne Weiterleitung (#1110), kein Auswahlzwang
      - 8 Kommunen: Auswahlseite mit Suchfeld statt Liste (#783), Vorschläge mit Name und
        Bundesland aus AGS, "In allen Kommunen suchen", ohne Wappen/Logos
   2. set_body-/clear_body-Flow: Session-Persistenz, Redirects, HTMX-HX-Redirect
@@ -118,8 +118,12 @@ solo = OParlBody.objects.create(
 
 client = Client()
 resp = client.get("/insight/")
-check("GET /insight/ mit 1 Kommune: Redirect", resp.status_code == 302, f"status={resp.status_code}")
+# Ohne Weiterleitung auf sich selbst (Issue #1110): Crawler ohne Sitzung liefen sonst im Kreis
+check("GET /insight/ mit 1 Kommune: direkt 200", resp.status_code == 200, f"status={resp.status_code}")
 check("Session auf Kommune gesetzt", client.session.get("active_body_id") == str(solo.id))
+crawler = Client(HTTP_USER_AGENT="Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)")
+resp_crawler = crawler.get("/insight/")
+check("Crawler mit 1 Kommune: 200 ohne Schleife", resp_crawler.status_code == 200, f"status={resp_crawler.status_code}")
 resp = client.get("/insight/")
 check("Nach Auto-Auswahl: Kommune-Home 200", resp.status_code == 200, f"status={resp.status_code}")
 check("Kommune-Home zeigt Kommune", "Solostadt" in html(resp))
