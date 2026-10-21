@@ -322,7 +322,7 @@ def version_2(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_ohne_neue_version_ist_nichts_veraltet() -> None:
     body = _quelle()
     _datei(body, PDF, text_extraction_status="completed", text_content="Text")
-    assert erkennung.counts() == {"stored_without_text": 0, "text_outdated": 0}
+    assert erkennung.counts() == {"stored_without_text": 0, "awaiting_ocr": 0, "text_outdated": 0}
     assert erkennung.outdated_versions() == ["0"]
 
 
@@ -545,19 +545,25 @@ def test_kennzahlen_und_pruefung(settings: Any, version_2: None) -> None:
     alt = _datei(body, PDF)
     OParlFile.objects.filter(pk=alt.pk).update(local_cached_at=timezone.now() - timedelta(hours=30))
     _datei(body, PDF + b"n")
-    _datei(body, PDF + b"p", text_extraction_status="processing")
+    vermerkt = _datei(body, PDF + b"p", text_extraction_status="processing")
+    OParlFile.objects.filter(pk=vermerkt.pk).update(text_ocr_needed_sha256=_sha(PDF + b"p"))
     _datei(body, PDF + b"v", text_extraction_status="completed", text_extraction_version="1")
     _datei(body, PDF + b"a", text_extraction_status="completed", text_extraction_version="2")
     _datei(body)  # ohne Inhalt: wartet auf den Abruf, nicht auf die Erkennung
     _datei(body, PDF + b"g", deleted=True)
 
-    assert erkennung.counts() == {"stored_without_text": 3, "text_outdated": 1}
+    assert erkennung.counts() == {"stored_without_text": 3, "awaiting_ocr": 1, "text_outdated": 1}
     # Der Sammler hält die Zahlen eine Minute im gemeinsamen Cache; ein früherer Test im selben Prozess kann ihn
     # gefüllt haben (Reihenfolge der Testteile in der CI)
     cache.delete(erkennung_kennzahlen.CACHE_KEY)
     familien = {f.name: f for f in erkennung_kennzahlen.ErkennungCollector().collect()}
-    assert set(familien) == {"mandari_files_stored_without_text", "mandari_files_text_outdated"}
+    assert set(familien) == {
+        "mandari_files_stored_without_text",
+        "mandari_files_awaiting_ocr",
+        "mandari_files_text_outdated",
+    }
     assert familien["mandari_files_stored_without_text"].samples[0].value == 3
+    assert familien["mandari_files_awaiting_ocr"].samples[0].value == 1
 
     # Mit dem Ingestor ruht die Prüfung (sonst schlüge ein Altbestand ohne Text schon mit dem Deploy an)
     pruefung = erkennung_kennzahlen.check_text()

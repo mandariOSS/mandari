@@ -3,31 +3,34 @@
 Befehl ``extract_texts``: Texterkennung von RIS-Dateien einplanen (Issue #919, ``docs/adr/20261007-dokumentkette.md``,
 Abschnitt 1).
 
-Der Befehl lädt nichts und erkennt nicht selbst: Er reiht je Datei einen Auftrag ``file.extract_text`` in die
-Warteschlange ``ocr`` ein (Dienst ``worker-heavy``). Der Auftrag liest den Inhalt aus der Ablage bzw. dem
+Der Befehl lädt nichts und erkennt nicht selbst: Er reiht je Datei einen Auftrag ein, wie der Zeitplan
+``texterkennung_einplanen`` (Issue #1107): ``file.read_text_layer`` in die Warteschlange ``text`` (erste Stufe, Dienst
+``worker``), für Dateien mit schon als unzureichend vermerkter Textebene ``file.extract_text`` in ``ocr`` (Dienst
+``worker-heavy``); bedient kein Worker ``text``, alle in ``ocr``. Die Aufträge lesen den Inhalt aus der Ablage bzw. dem
 Objektspeicher, nie bei der Quelle (``hub/ris/erkennung.py``). Eingeplant werden Dateien mit abgelegtem Inhalt
 (``local_status = ok``), deren Erkennung wartet oder deren Text aus einer älteren Erkennungsversion stammt und für die
 noch kein Auftrag wartet. Dateien ohne abgelegten Inhalt holt zuerst der Abruf (``cache_files``).
 
 Verwendung:
-    python manage.py extract_texts                    # einplanen, so viele wie in ocr frei sind
+    python manage.py extract_texts                    # einplanen, so viele wie frei sind
     python manage.py extract_texts --dry-run          # nur zählen
     python manage.py extract_texts --limit 100       # 100 Aufträge, auch über die freien Plätze hinaus
     python manage.py extract_texts --body <uuid>     # nur für eine Kommune
     python manage.py extract_texts --pdf-only        # nur PDF-Dateien
     python manage.py extract_texts --reprocess       # auch erledigte, übersprungene und gescheiterte Dateien
 
-Ohne ``--limit`` reiht der Befehl höchstens so viele Aufträge ein, wie in der Warteschlange ``ocr`` frei sind
-(``TEXT_EXTRACTION_QUEUE_DEPTH`` minus wartende und laufende); den Rest plant der Zeitplan ``texterkennung_einplanen``
-schrittweise ein (ADR Abschnitte 2 und 8). Ein ausdrückliches ``--limit`` gilt auch darüber hinaus (Vorrang, etwa
-mit ``--body``); dann kann die Prüfung des Rückstaus anschlagen, bis die Aufträge abgearbeitet sind.
+Ohne ``--limit`` reiht der Befehl höchstens so viele Aufträge ein, wie in den Warteschlangen frei sind
+(``TEXT_LAYER_QUEUE_DEPTH`` bzw. ``TEXT_EXTRACTION_QUEUE_DEPTH`` minus wartende und laufende); den Rest plant der
+Zeitplan ``texterkennung_einplanen`` schrittweise ein (ADR Abschnitte 2 und 8). Ein ausdrückliches ``--limit`` gilt
+auch darüber hinaus (Vorrang, etwa mit ``--body``); dann kann die Prüfung des Rückstaus anschlagen, bis die Aufträge
+abgearbeitet sind.
 
 ``--reprocess`` markiert erledigte Dateien als „Neuerkennung angefordert“ (der bisherige Text bleibt, bis der neue
 gespeichert ist) und setzt übersprungene und gescheiterte zurück auf „wartend“; eingeplant wird wie oben schrittweise.
 Braucht
 ``TEXT_EXTRACTION_RUNNER=worker``; mit ``ingestor`` erkennt der OCR-Worker des Ingestors wartende Dateien selbst.
-``--batch-size``, ``--workers`` und ``--verbose`` haben keine Wirkung mehr (die Parallelität bestimmt die
-Warteschlange ``ocr``).
+``--batch-size``, ``--workers`` und ``--verbose`` haben keine Wirkung mehr (die Parallelität bestimmen die
+Warteschlangen ``text`` und ``ocr``).
 """
 
 from typing import Any
@@ -41,7 +44,10 @@ from insight_core.services.text_extraction_job import runner_is_worker
 
 
 class Command(BaseCommand):
-    help = "Plant die Texterkennung von RIS-Dateien ein (Aufträge file.extract_text); lädt und erkennt nicht selbst."
+    help = (
+        "Plant die Texterkennung von RIS-Dateien ein (Aufträge file.read_text_layer bzw. file.extract_text); "
+        "lädt und erkennt nicht selbst."
+    )
 
     def add_arguments(self, parser: CommandParser) -> None:
         add_extraction_arguments(
@@ -51,8 +57,9 @@ class Command(BaseCommand):
             workers=4,
             workers_note="; ohne Wirkung",
             limit_help=(
-                "Höchstens so viele Aufträge einreihen, auch über die freien Plätze der Warteschlange ocr hinaus "
-                "(0 = nur die freien Plätze, TEXT_EXTRACTION_QUEUE_DEPTH; den Rest plant der Zeitplan ein)"
+                "Höchstens so viele Aufträge einreihen, auch über die freien Plätze der Warteschlangen hinaus "
+                "(0 = nur die freien Plätze, TEXT_LAYER_QUEUE_DEPTH bzw. TEXT_EXTRACTION_QUEUE_DEPTH; den Rest plant "
+                "der Zeitplan ein)"
             ),
         )
         parser.add_argument(
@@ -65,7 +72,7 @@ class Command(BaseCommand):
         dry_run = bool(options["dry_run"])
         if not dry_run and not runner_is_worker():
             raise CommandError(
-                "extract_texts plant Aufträge file.extract_text ein und braucht TEXT_EXTRACTION_RUNNER=worker. "
+                "extract_texts plant Aufträge der Texterkennung ein und braucht TEXT_EXTRACTION_RUNNER=worker. "
                 "Mit ingestor erkennt der OCR-Worker des Ingestors wartende Dateien selbst (--dry-run zählt nur)."
             )
         body_id = None
@@ -106,16 +113,20 @@ class Command(BaseCommand):
         if dry_run:
             self.stdout.write(self.style.WARNING(f"Probelauf: {stand.auftraege} Aufträge würden eingereiht"))
         else:
-            self.stdout.write(self.style.SUCCESS(f"Eingereiht: {stand.auftraege} Aufträge file.extract_text"))
+            self.stdout.write(
+                self.style.SUCCESS(f"Eingereiht: {stand.auftraege} Aufträge (Warteschlange {stand.warteschlange})")
+            )
+        if stand.in_ocr:
+            self.stdout.write(f"Davon gleich in ocr (Textebene reicht nicht): {stand.in_ocr}")
         if stand.dem_zeitplan:
             self.stdout.write(
                 f"Übrige {stand.dem_zeitplan} Dateien plant der Zeitplan texterkennung_einplanen schrittweise ein "
-                f"(freie Plätze in ocr: {stand.frei}; mehr nur mit --limit)"
+                f"(freie Plätze in {stand.warteschlange}: {stand.frei}; mehr nur mit --limit)"
             )
-        if stand.auftraege > stand.frei:
+        if stand.ueber_frei:
             self.stdout.write(
                 self.style.WARNING(
-                    f"--limit über den freien Plätzen in ocr ({stand.frei}): "
+                    f"--limit über den freien Plätzen in {stand.warteschlange} ({stand.frei}): "
                     "die Prüfung des Rückstaus kann anschlagen, bis die Aufträge abgearbeitet sind"
                 )
             )

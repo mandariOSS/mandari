@@ -57,6 +57,8 @@ DEFAULT_CONCURRENCY: Final[Mapping[str, int]] = {
     "default": 4,
     "mail": 2,
     "index": 2,
+    # Erste Stufe der Texterkennung (Textebene, je Auftrag ein eigener Prozess mit Speichergrenze, Issue #1107)
+    "text": 3,
     "ocr": 1,
     "ai": 1,
     "adapter": 2,
@@ -70,6 +72,7 @@ DEFAULT_TIMEOUTS: Final[Mapping[str, float]] = {
     "default": 300,
     "mail": 120,
     "index": 600,
+    "text": 300,
     "ocr": 1800,
     "ai": 900,
     "adapter": 900,

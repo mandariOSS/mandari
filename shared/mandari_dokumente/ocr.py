@@ -81,6 +81,8 @@ class OcrResult:
     timed_out_pages: int = 0
     budget_exhausted: bool = False
     notes: list[str] = field(default_factory=list)
+    #: Erkannter Text je Seite (ab 1), nur Seiten mit Text; zum Zusammenführen mit der Textebene (Issue #1107)
+    page_texts: dict[int, str] = field(default_factory=dict)
 
 
 class OcrMemoryLimitError(Exception):
@@ -200,13 +202,15 @@ def ocr_pdf(
     limits: OcrLimits | None = None,
     runner: Runner | None = None,
     clock: Callable[[], float] = time.monotonic,
+    pages: Sequence[int] | None = None,
 ) -> OcrResult:
     """
     Text eines PDFs Seite für Seite erkennen, mit Speicher- und Zeitgrenzen je Seite und Budget je Datei.
 
     ``page_sizes`` (Breite, Höhe in PDF-Punkten je Seite, etwa aus pypdf) bestimmt die Auflösung je Seite;
     ohne Größe wird die lange Seite auf die Grenze der Bildpunkte skaliert. Ohne ``page_count`` läuft die
-    Erkennung bis zur ersten Seite, die sich nicht rendern lässt.
+    Erkennung bis zur ersten Seite, die sich nicht rendern lässt. ``pages`` (ab 1) beschränkt die Erkennung auf
+    diese Seiten, etwa die eingescannten eines sonst getippten PDFs (Issue #1107); ``max_pages`` gilt weiter.
     """
     limits = limits or OcrLimits()
     result = OcrResult()
@@ -216,20 +220,24 @@ def ocr_pdf(
 
     ocr = PageOcr(limits, runner)
     max_pages = min(page_count, limits.max_pages) if page_count else limits.max_pages
+    auswahl = pages is not None
+    seiten = sorted({n for n in pages if 1 <= n <= max_pages}) if pages is not None else range(1, max_pages + 1)
     started = clock()
     fragments: list[str] = []
+    erledigt = 0
 
-    for page_no in range(1, max_pages + 1):
+    for page_no in seiten:
         if clock() - started > limits.file_budget:
             result.budget_exhausted = True
-            result.notes.append(f"Zeitbudget erschöpft nach {page_no - 1} Seiten")
-            logger.warning("OCR %s: Zeitbudget erschöpft nach %d Seiten", source.name, page_no - 1)
+            result.notes.append(f"Zeitbudget erschöpft nach {erledigt} Seiten")
+            logger.warning("OCR %s: Zeitbudget erschöpft nach %d Seiten", source.name, erledigt)
             break
+        erledigt += 1
         size = page_sizes[page_no - 1] if page_sizes and page_no - 1 < len(page_sizes) else None
         dpi = page_dpi(size[0], size[1], limits) if size else None
         text, status = _page(ocr, source, page_no, dpi)
         if status == "nicht_renderbar":
-            if page_no == 1:
+            if page_no == 1 and not auswahl:
                 # Schon die erste Seite nicht renderbar: kein OCR möglich (defekte Datei)
                 return result
             if not page_count:
@@ -243,6 +251,7 @@ def ocr_pdf(
             result.timed_out_pages += 1
         if text:
             fragments.append(text)
+            result.page_texts[page_no] = text
 
     result.text = "\n\n".join(fragments)
     if result.memory_limited_pages:

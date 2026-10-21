@@ -11,10 +11,12 @@ Zeitpläne des Bürgerportals (``apps.events.schedule``, Issue #515).
 - ``kommunenverzeichnis_abgleichen``: stündlich die gelisteten Kommunen ins Kommunenverzeichnis übernehmen, soweit
   sie dort fehlen (Issue #783). Nach dem Deploy und nach dem Listen einer Kommune ist der Kommunenwechsel so ohne
   Handgriff vollständig; der Import der CSV-Datei bleibt ein eigener Schritt (docs/INSIGHT_KOMMUNENWECHSEL.md).
-- ``texterkennung_einplanen``: alle zwei Minuten, nur mit ``TEXT_EXTRACTION_RUNNER=worker`` (Issues #530, #919):
-  liegen gebliebene Beanspruchungen freigeben und je Datei mit abgelegtem Inhalt, deren Erkennung wartet oder
-  veraltet ist, einen Auftrag ``file.extract_text`` in die Warteschlange ``ocr`` einreihen, ohne zu beanspruchen
-  (``hub.ris.erkennung.einplanen``). Mit dem Standard ``ingestor`` erkennt der OCR-Worker des Ingestors den Text.
+- ``texterkennung_einplanen``: alle zwei Minuten, nur mit ``TEXT_EXTRACTION_RUNNER=worker`` (Issues #530, #919,
+  #1107): liegen gebliebene Beanspruchungen freigeben und je Datei mit abgelegtem Inhalt, deren Erkennung wartet oder
+  veraltet ist, einen Auftrag einreihen, ohne zu beanspruchen (``hub.ris.erkennung.einplanen``): zuerst
+  ``file.read_text_layer`` in ``text`` (nur Textebene), ``file.extract_text`` in ``ocr`` nur für Dateien, deren
+  Textebene nicht reicht; ohne Worker für ``text`` alles in ``ocr``. Reihum über die Quellen. Mit dem Standard
+  ``ingestor`` erkennt der OCR-Worker des Ingestors den Text.
 """
 
 from __future__ import annotations
@@ -52,7 +54,7 @@ def kommunenverzeichnis_abgleichen() -> int:
 
 @task
 def texterkennung_einplanen() -> int:
-    """Aufträge file.extract_text einreihen (nur mit TEXT_EXTRACTION_RUNNER=worker); Rückgabe: ihre Zahl."""
+    """Aufträge der Texterkennung einreihen (nur mit TEXT_EXTRACTION_RUNNER=worker); Rückgabe: ihre Zahl."""
     from hub.ris.erkennung import einplanen
 
     return einplanen()

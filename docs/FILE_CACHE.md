@@ -194,22 +194,36 @@ Issue #919), aber nur Dateien ab dem Stichtag der Quelle:
 
 ### Texterkennung aus der Ablage
 
-Mit `TEXT_EXTRACTION_RUNNER=worker` erkennt nur der Auftrag `file.extract_text` (Warteschlange `ocr`, Dienst
-`worker-heavy`) den Text, und er liest ausschließlich aus der Ablage bzw. dem Objektspeicher (`file_store.local_copy`);
-er ruft nie bei der Quelle ab (`hub/ris/erkennung.py`, Issue #919, ADR Abschnitte 1, 2 und 4). Den Inhalt holt
-vorher der Abruf (oben).
+Mit `TEXT_EXTRACTION_RUNNER=worker` erkennen nur die Aufträge der Texterkennung den Text, in zwei Stufen
+(Issue #1107): `file.read_text_layer` (Warteschlange `text`, Dienst `worker`) liest nur die Textebene und ist für
+die meisten Dateien schon fertig; nur Dateien, deren Textebene nicht reicht, gehen an `file.extract_text`
+(Warteschlange `ocr`, Dienst `worker-heavy`). Beide lesen ausschließlich aus der Ablage bzw. dem Objektspeicher
+(`file_store.local_copy`) und rufen nie bei der Quelle ab (`hub/ris/erkennung.py`, Issue #919, ADR Abschnitte 1, 2
+und 4). Den Inhalt holt vorher der Abruf (oben).
 
 - **Einplanen ohne Beanspruchung:** Der Zeitplan `texterkennung_einplanen` (alle zwei Minuten) gibt liegen
   gebliebene Beanspruchungen frei (`TEXT_EXTRACTION_STALE_MINUTES`, nach `TEXT_EXTRACTION_MAX_ATTEMPTS` Abbrüchen
   „Speichergrenze“) und reiht Dateien mit abgelegtem Inhalt (`local_status = ok`) ein, deren Erkennung wartet
-  oder deren Text aus einer älteren Erkennungsversion stammt, solange für sie noch kein Auftrag wartet –
-  höchstens `TEXT_EXTRACTION_QUEUE_DEPTH` zugleich, wartende vor der Neuerkennung, neueste zuerst. Gelöschte,
-  gesperrte und geleerte Dateien nie. `python manage.py extract_texts` plant auf demselben Weg ein (`--dry-run`,
-  `--limit`, `--body`, `--pdf-only`, `--reprocess`), lädt und erkennt aber nicht selbst. Ohne `--limit` reiht er
-  höchstens so viele Aufträge ein, wie in `ocr` frei sind (dieselbe Grenze), den Rest übernimmt der Zeitplan; ein
-  ausdrückliches `--limit` gilt auch darüber hinaus (Vorrang, etwa mit `--body`).
+  oder deren Text aus einer älteren Erkennungsversion stammt, solange für sie noch kein Auftrag wartet: in `text`
+  höchstens `TEXT_LAYER_QUEUE_DEPTH`, in `ocr` (nur Dateien, deren Textebene als unzureichend vermerkt ist)
+  höchstens `TEXT_EXTRACTION_QUEUE_DEPTH` zugleich. Bedient kein lebender Worker `text`, plant er wie vor
+  Issue #1107 alles in `ocr` ein. Die Plätze gehen reihum an die Quellen, zuerst an die mit den wenigsten
+  Aufträgen in der Warteschlange; je Quelle wartende vor der Neuerkennung, neueste zuerst. Gelöschte, gesperrte und
+  geleerte Dateien nie. `python manage.py extract_texts` plant auf demselben Weg ein (`--dry-run`, `--limit`,
+  `--body`, `--pdf-only`, `--reprocess`), lädt und erkennt aber nicht selbst. Ohne `--limit` reiht er höchstens so
+  viele Aufträge ein, wie frei sind (dieselben Grenzen), den Rest übernimmt der Zeitplan; ein ausdrückliches
+  `--limit` gilt auch darüber hinaus (Vorrang, etwa mit `--body`).
+- **Zwei Stufen** (Issue #1107): `file.read_text_layer` liest die Textebene mit pypdf in einem eigenen Prozess
+  (Adressraum `TEXT_LAYER_MEMORY_LIMIT_MB`, 120 Sekunden, niedrige Priorität). Reicht sie, ist die Datei fertig
+  (gespeichert wie unten). Sonst, und wenn der Prozess an Speicher oder Zeit scheitert, vermerkt der Auftrag den
+  Inhalt (`text_ocr_needed_sha256`), gibt die Datei frei und reiht `file.extract_text` in `ocr` ein, solange dort
+  Platz ist; den Rest plant der Zeitplan nach. Ein neuer Inhalt macht den Vermerk von selbst ungültig. Die Textebene
+  reicht nicht, wenn sie keinen Text hat oder (mit `TEXT_EXTRACTION_OCR_MIXED_PAGES`, Standard an) einzelne Seiten
+  ein Bild, aber weniger als 20 Zeichen tragen, etwa eine eingescannte Anlage hinter einem getippten Anschreiben;
+  `file.extract_text` erkennt dann nur diese Seiten. Leerseiten ohne Bild brauchen keine Erkennung.
 - **Beanspruchen** erst beim Start des Auftrags (`processing`, `SELECT … FOR UPDATE SKIP LOCKED`), nur aus
-  `pending` oder aus `completed` mit älterer Version. Von zwei Aufträgen derselben Datei erkennt einer.
+  `pending` oder aus `completed` mit älterer Version (die erste Stufe nur ohne Vermerk). Von zwei Aufträgen derselben
+  Datei erkennt einer, auch in zwei Workern auf derselben Warteschlange.
 - **Lesen:** Fehlt der Inhalt bestätigt (weder lokal noch im Objektspeicher), geht die Datei zurück an den Abruf
   (`local_status = none`) und die Erkennung auf den Stand davor. Ist die Ablage gestört (Objektspeicher antwortet
   nicht oder ist im Worker nicht konfiguriert, Ablage nicht eingehängt, Platte voll) oder die Umgebung (Datenbank
@@ -351,7 +365,7 @@ Ablage in einem S3-kompatiblen Objektspeicher unter denselben Schlüsseln (`sha2
   ebenfalls ab (Ausgabe `viele_fehlend`, Protokoll „OBJ_BUCKET prüfen“): Ein falscher Bucket beantwortet `HEAD` für
   alles mit 404, und ohne diese Grenze fragte ein Lauf jeden lokalen Inhalt ab und setzte überall `remote_at` zurück.
   Dasselbe gilt für die Obergrenze. Es bleiben außerdem Inhalte, deren Text erkannt wird oder darauf wartet (auch ein
-  eingereihter Auftrag `file.extract_text`), Dokumente, die gerade abgerufen werden, und Kopien aus der letzten Stunde;
+  eingereihter Auftrag der Texterkennung), Dokumente, die gerade abgerufen werden, und Kopien aus der letzten Stunde;
   unter der Zeilensperre wird das nachgeprüft. Zeitplan, Obergrenze und `prune_file_cache` teilen eine Sperre und
   verdrängen nie gleichzeitig. Die Ausgabe nennt je Grund, wie viele Inhalte blieben (etwa `texterkennung`,
   `nicht_hochgeladen`, `nicht_im_objektspeicher`, `fehler` bei einer Störung). Eine kleinere Obergrenze
@@ -464,7 +478,7 @@ Ohne weitere Einstellung wächst die Ablage, bis `FILE_CACHE_MIN_FREE_GB` greift
   Texterkennung beansprucht nur abgelegte Dokumente (`ok`): Ein verdrängtes Dokument ohne Text bleibt verdrängt,
   und `mandari_files_stored_without_text` zählt es nicht als abgelegt.
 - **Nie verdrängt** werden Inhalte, deren Text gerade erkannt wird oder darauf wartet (Texterkennung
-  `pending`/`processing`, eben beansprucht oder mit wartendem Auftrag `file.extract_text`, etwa einer Neuerkennung),
+  `pending`/`processing`, eben beansprucht oder mit wartendem Auftrag der Texterkennung, etwa einer Neuerkennung),
   Dokumente, die gerade abgerufen werden (`fetching`), Kopien aus der letzten Stunde und, ohne Objektspeicher,
   Dokumente, die sich nicht neu abrufen ließen: Quelle in Schonung oder nicht aktiv, Dateiabruf abgeschaltet,
   synthetische Quelle (Domäne `.invalid`, etwa die Demo), keine Download-Adresse oder eine Quelle, die Dateiabrufe

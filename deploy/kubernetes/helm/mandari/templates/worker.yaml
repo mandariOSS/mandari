@@ -149,11 +149,17 @@ spec:
 {{- $live := .Values.worker.live }}
 {{- /* Hauptworker: ohne eigene Worker für ocr/ai und live bedient er alle Warteschlangen */ -}}
 {{- $args := list }}
+{{- $bedientText := true }}
 {{- if and (or $heavy.enabled $live.enabled) .Values.worker.queues }}
 {{- $queues := list .Values.worker.queues }}
 {{- if not $heavy.enabled }}{{- $queues = append $queues $heavy.queues }}{{- end }}
 {{- if not $live.enabled }}{{- $queues = append $queues "live" }}{{- end }}
 {{- $args = list "--queues" (join "," $queues) }}
+{{- $bedientText = has "text" (splitList "," (join "," $queues)) }}
+{{- end }}
+{{- /* Plätze der ersten Stufe der Texterkennung (Warteschlange text), nur wenn dieser Worker sie bedient */ -}}
+{{- if and .Values.worker.concurrency $bedientText }}
+{{- $args = concat $args (list "--concurrency" .Values.worker.concurrency) }}
 {{- end }}
 {{- $args = concat $args .Values.worker.extraArgs }}
 {{ include "mandari.workerDeployment" (dict "root" . "name" "worker" "replicas" .Values.worker.replicas "maxMemoryMb" .Values.worker.maxMemoryMb "resources" .Values.worker.resources "args" $args) }}

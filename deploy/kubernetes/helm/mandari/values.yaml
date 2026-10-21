@@ -156,8 +156,12 @@ worker:
   # Speichergrenze des Runners in MB; unter dem Speicherlimit halten (TASKS_MAX_MEMORY_MB)
   maxMemoryMb: 400
   # Warteschlangen dieses Workers, solange worker.heavy.enabled: alle außer ocr und ai. Ohne
-  # eigenen Worker für die Texterkennung bedient er alle.
-  queues: "default,mail,index,adapter"
+  # eigenen Worker für die Texterkennung bedient er alle. text ist die erste, leichte Stufe der
+  # Texterkennung (nur Textebene, Issue #1107); fehlt sie hier, plant die Anwendung alles in ocr ein.
+  queues: "default,mail,index,adapter,text"
+  # Plätze der ersten Stufe (je Auftrag ein eigener Prozess mit TEXT_LAYER_MEMORY_LIMIT_MB, 512 MB);
+  # gilt nur, wenn dieser Worker text bedient. Leer = Standard der Anwendung (3).
+  concurrency: "text=3"
   # Zusätzliche Argumente, z. B. ["--stale-after", "600"]
   extraArgs: []
   # Nur für die Worker, z. B. EVENTS_DB_DIRECT_URL hinter PgBouncer
@@ -185,7 +189,9 @@ worker:
   # Runners wartet auf seinen längsten laufenden Auftrag (ocr bis 30 min); getrennt warten Mails
   # und Suche nicht darauf, und der Speicherbedarf bekommt ein eigenes Limit. Mit
   # TEXT_EXTRACTION_RUNNER=worker (files.textExtractionRunner) erkennt er den Text aus Ablage und Objektspeicher
-  # (docs/adr/20261007-dokumentkette.md); ocr läuft mit Parallelität 1.
+  # (docs/adr/20261007-dokumentkette.md); ocr läuft mit Parallelität 1. Mehr Plätze über
+  # extraArgs ["--concurrency", "ocr=2"] nur mit mehr Speicher (etwa 1 GB plus ocrMemoryLimitMb je
+  # Platz) oder mit replicas: 2; doppelte Arbeit verhindert das Beanspruchen der Datei.
   heavy:
     enabled: true
     replicas: 1
