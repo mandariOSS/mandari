@@ -318,11 +318,15 @@ def test_datenmigration_verweigert_und_zurueck() -> None:
 
         executor = MigrationExecutor(connection)
         executor.migrate([NACHHER])
-        stand = dict(OParlFile.objects.values_list("pk", "local_status"))
+        # Modell im Stand nach der Migration: spätere Migrationen ergänzen Spalten, die es hier noch nicht gibt
+        datei_neu = (
+            MigrationExecutor(connection).loader.project_state([NACHHER]).apps.get_model("insight_core", "OParlFile")
+        )
+        stand = dict(datei_neu.objects.values_list("pk", "local_status"))
         assert stand[robots_pk] == stand[html_pk] == "refused"
         assert (stand[sonst_pk], stand[ok_pk], stand[verdraengt_pk]) == ("error", "ok", "evicted")
-        assert OParlFile.objects.get(pk=robots_pk).fetch_error == "robots"
-        assert OParlFile.objects.get(pk=html_pk).local_error == MIGRATION.HTML_TEXT, "Fehlertext bleibt"
+        assert datei_neu.objects.get(pk=robots_pk).fetch_error == "robots"
+        assert datei_neu.objects.get(pk=html_pk).local_error == MIGRATION.HTML_TEXT, "Fehlertext bleibt"
 
         executor = MigrationExecutor(connection)
         executor.migrate([VORHER])

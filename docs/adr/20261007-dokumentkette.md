@@ -258,6 +258,16 @@ Ingestor (Eingangsadapter, nur Metadaten)
   `OCR_MEMORY_LIMIT_MB` (in Produktion 2 GB); der Runner bekommt eine eigene Grenze (Richtwert 3 GB), die
   Seitengrenzen aus #817 bleiben. Die Spezifikation N8 wird mit diesem ADR angepasst. Damit ist O12
   (Texterkennung in eigenem Prozess) beantwortet.
+- **Nachtrag (20.10.2026, Issue #1107): zwei Stufen.** Rund 90 % der Dateien liefern ihren Text aus der
+  Textebene. Vor `file.extract_text` liest deshalb der leichte Auftrag `file.read_text_layer` (Warteschlange
+  `text`, Dienst `worker`, mehrere Plätze) nur die Textebene, je Auftrag in einem eigenen Prozess mit Speicher-
+  und Zeitgrenze. Reicht sie (`mandari_dokumente.TextLayer.sufficient`, dieselbe Entscheidung wie in der
+  vollständigen Kette), speichert er wie `file.extract_text` (Beanspruchung, bedingtes Speichern,
+  `text_extracted`). Sonst vermerkt er den Inhalt (`text_ocr_needed_sha256`) und übergibt an `ocr`. Der Zeitplan
+  füllt `text` mit unvermerkten, `ocr` nur mit vermerkten Dateien, je reihum über die Quellen; ohne lebenden
+  Worker für `text` plant er wie zuvor alles in `ocr` ein. Gemischte PDFs (eingescannte Seiten hinter Text)
+  gehen in der Anwendung an `ocr`, Tesseract liest dort nur diese Seiten (`TEXT_EXTRACTION_OCR_MIXED_PAGES`).
+  Die Erkennungsversion bleibt 1; ob der Bestand dafür neu erkannt wird, ist eine eigene Entscheidung.
 
 ### 9. Nachfolger
 

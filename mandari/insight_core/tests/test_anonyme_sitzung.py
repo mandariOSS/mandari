@@ -33,7 +33,7 @@ def bestand(db: Any) -> dict[str, Any]:
     body = OParlBody.objects.create(
         external_id="https://ris.example.org/body/1", source=source, name="Musterstadt", slug="musterstadt"
     )
-    # Zweite Kommune: Mit nur einer wählt die Startseite sie selbst (Self-Hosting) und leitet weiter
+    # Zweite Kommune: Mit nur einer wählt die Startseite sie selbst (Self-Hosting, Tests unten)
     OParlBody.objects.create(external_id="https://ris.example.org/body/2", source=source, name="Beispielort")
     vorgang = OParlPaper.objects.create(external_id="https://ris.example.org/paper/1", body=body, name="Radweg")
     sitzung = OParlMeeting.objects.create(external_id="https://ris.example.org/meeting/1", body=body, name="Rat")
@@ -140,3 +140,25 @@ def test_bestehende_sitzung_bleibt_auch_fuer_crawler_kennung(bestand: dict[str, 
     client.get("/insight/", HTTP_USER_AGENT=GOOGLEBOT)
 
     assert Session.objects.filter(session_key=schluessel).exists()
+
+
+@pytest.fixture
+def eine_kommune(db: Any) -> OParlBody:
+    source = OParlSource.objects.create(name="RIS Einzelstadt", url="https://ris.einzel.example.org/system")
+    return OParlBody.objects.create(
+        external_id="https://ris.einzel.example.org/body/1", source=source, name="Einzelstadt", slug="einzelstadt"
+    )
+
+
+@pytest.mark.parametrize(
+    "kennung", [GOOGLEBOT, "python-requests/2.32", "Mozilla/5.0 (X11; Linux x86_64) Firefox/140.0"]
+)
+def test_startseite_mit_einer_kommune_ohne_weiterleitung(eine_kommune: OParlBody, kennung: str) -> None:
+    """Issue #1110: Die Startseite wählt die einzige Kommune selbst, ohne Weiterleitung auf sich selbst.
+
+    Für Crawler verwirft die Middleware die neue Sitzung; eine Weiterleitung liefe dann im Kreis.
+    """
+    antwort = Client(HTTP_USER_AGENT=kennung).get("/insight/")
+
+    assert antwort.status_code == 200
+    assert "Einzelstadt" in antwort.content.decode()

@@ -93,6 +93,13 @@ def live_roles(ttl: timedelta = PRESENCE_TTL) -> set[str]:
     return {rolle for worker in live_workers(ttl) for rolle in worker.roles}
 
 
+def queue_served(queue: str, ttl: timedelta = PRESENCE_TTL) -> bool:
+    """Bedient ein lebender Worker mit der Rolle ``tasks`` die Warteschlange ``queue``? (ohne ``--queues``: alle)"""
+    return any(
+        "tasks" in worker.roles and (not worker.queues or queue in worker.queues) for worker in live_workers(ttl)
+    )
+
+
 def required_roles() -> frozenset[str]:
     """Rollen, die ein Worker dieser Installation bedienen muss; leer = kein Worker nötig."""
     wert = str(getattr(settings, "EVENTS_WORKER_REQUIRED", "") or "").strip().lower()

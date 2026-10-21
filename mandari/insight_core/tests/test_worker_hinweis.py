@@ -48,7 +48,7 @@ def test_fehlender_worker_bei_bedarf_ist_kritisch(ohne_bedarf: Any) -> None:
 def test_fehlender_worker_fuer_texterkennung_ist_kritisch(ohne_bedarf: Any) -> None:
     ohne_bedarf.EVENTS_WORKER_REQUIRED = ""
     ohne_bedarf.TASKS = journal_einstellungen()
-    presence.announce("haupt", sorted(presence.ALL_ROLES), ["default", "mail", "index", "adapter"])
+    presence.announce("haupt", sorted(presence.ALL_ROLES), ["default", "mail", "index", "adapter", "text"])
 
     check = _worker(collect_system_health())
 

@@ -617,7 +617,7 @@ derselben Umgebung und denselben Volumes wie die Anwendung (auch Dokumentablage 
 
 | Dienst | Rollen und Warteschlangen | Speicherlimit |
 |---|---|---|
-| `worker` | alle Rollen; Aufträge und Abonnements aus `default`, `mail`, `index`, `adapter` | 1 GB (Runner-Neustart ab 400 MB; der Rest für die Verwaltungsbefehle der Zeitpläne, die als eigene Prozesse laufen) |
+| `worker` | alle Rollen; Aufträge und Abonnements aus `default`, `mail`, `index`, `adapter`, dazu `text` (erste Stufe der Texterkennung, nur Textebene, 3 Plätze, Issue #1107) | 1 GB (Runner-Neustart ab 400 MB; der Rest für die Verwaltungsbefehle der Zeitpläne und die Prozesse der Textebene, die als eigene Prozesse laufen, diese je höchstens `TEXT_LAYER_MEMORY_LIMIT_MB`) |
 | `worker-heavy` | nur `tasks`; Aufträge aus `ocr` (Parallelität 1) und `ai` (Texterkennung, KI) | 3 GB, `WORKER_HEAVY_MEM_LIMIT` (Runner-Neustart ab 800 MB, dazu ein Tesseract-Unterprozess bis `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, Standard 2048) |
 | `worker-live` | nur `tasks`; Aufträge aus `live` (Live-Übertragungen, [LIVE_UEBERTRAGUNG.md](docs/LIVE_UEBERTRAGUNG.md)); wartet nur, solange `LIVE_UEBERTRAGUNG_AKTIV` aus ist | 512 MB (Runner-Neustart ab 400 MB) |
 
@@ -1129,11 +1129,15 @@ Seite, nicht den Prozess. Wer sie ausführt, wählt `TEXT_EXTRACTION_RUNNER` –
 gleich setzen**, sonst arbeiten beide oder keiner:
 
 - `ingestor` (Standard): der OCR-Worker des Ingestors (`python -m src.main extract-daemon`, Ingestor-Image).
-- `worker`: Aufträge `file.extract_text` in der Warteschlange `ocr` (Dienst `worker-heavy` bzw. jeder Worker,
-  der `ocr` bedient); der OCR-Worker des Ingestors ruht dann. Der Zeitplan `texterkennung_einplanen` reiht alle
-  zwei Minuten Dateien mit abgelegtem Inhalt ein, für die noch kein Auftrag wartet, bis höchstens
-  `TEXT_EXTRACTION_QUEUE_DEPTH` (Standard 20) Aufträge warten oder laufen. Beansprucht wird erst beim Start des
-  Auftrags; bis dahin bleibt die Datei `pending` (steht die Warteschlange, melden das die Prüfungen `rueckstau`
+- `worker`: Aufträge in zwei Stufen (Issue #1107); der OCR-Worker des Ingestors ruht dann.
+  `file.read_text_layer` (Warteschlange `text`, Dienst `worker`) liest nur die Textebene, in einem eigenen Prozess
+  mit Speicher- und Zeitgrenze; reicht sie, ist die Datei fertig (rund 90 % der Dateien). Sonst geht sie an
+  `file.extract_text` (Warteschlange `ocr`, Dienst `worker-heavy` bzw. jeder Worker, der `ocr` bedient). Der
+  Zeitplan `texterkennung_einplanen` reiht alle zwei Minuten Dateien mit abgelegtem Inhalt ein, für die noch kein
+  Auftrag wartet, reihum über die Quellen: in `text` bis höchstens `TEXT_LAYER_QUEUE_DEPTH` (Standard 300), in
+  `ocr` nur Dateien mit unzureichender Textebene bis höchstens `TEXT_EXTRACTION_QUEUE_DEPTH` (Standard 20)
+  wartende oder laufende Aufträge. Bedient kein Worker `text`, plant er alles in `ocr` ein (vollständige Kette wie
+  vor #1107). Beansprucht wird erst beim Start des Auftrags; bis dahin bleibt die Datei `pending` (steht die Warteschlange, melden das die Prüfungen `rueckstau`
   und `dokumenttext`). Die Aufträge lesen nur aus Ablage und Objektspeicher und rufen nie bei der Quelle ab
   (Dokumentkette, Issue #919, `docs/FILE_CACHE.md`, „Texterkennung aus der Ablage“; Einschalten im nächsten
   Abschnitt). Schonung und robots.txt einer Quelle betreffen deshalb nur den Abruf, nicht die Erkennung. Die
@@ -1173,23 +1177,31 @@ weiteren Versuch; gelingt er, beginnt der Zähler von vorn.
 ### Dokumentkette einschalten (Issue #919)
 
 Grundlage: `docs/adr/20261007-dokumentkette.md`. Abruf, Ablage und Texterkennung sind
-getrennte Schritte. Den Text erkennen nur noch Aufträge `file.extract_text` im Dienst `worker-heavy`; sie lesen
-ausschließlich aus der Dokumentablage bzw. dem Objektspeicher und rufen nie bei der Quelle ab. Ein Abruffehler
-ändert den Zustand der Texterkennung nicht mehr, Wiederholungen des Abrufs sind geregelt. Etappe 1 (ein Abrufweg,
-eigene Zustände, Befehle `dokumentkette …`) wirkt mit dem Update ohne weiteres Zutun. Etappe 2, die Erkennung im
-Worker, wird in den folgenden Schritten eingeschaltet; jeder Schritt ist ohne Deploy umkehrbar.
+getrennte Schritte. Den Text erkennen nur noch Aufträge in zwei Stufen (Issue #1107): `file.read_text_layer` liest
+im Dienst `worker` nur die Textebene, `file.extract_text` erkennt im Dienst `worker-heavy` den Text aus dem Bild,
+nur für Dateien, deren Textebene nicht reicht. Beide lesen ausschließlich aus der Dokumentablage bzw. dem
+Objektspeicher und rufen nie bei der Quelle ab. Ein Abruffehler ändert den Zustand der Texterkennung nicht mehr,
+Wiederholungen des Abrufs sind geregelt. Etappe 1 (ein Abrufweg, eigene Zustände, Befehle `dokumentkette …`) wirkt
+mit dem Update ohne weiteres Zutun. Etappe 2, die Erkennung im Worker, wird in den folgenden Schritten eingeschaltet;
+jeder Schritt ist ohne Deploy umkehrbar.
 
 **Voraussetzungen**
 
 - `worker` und `worker-heavy` laufen (`docker compose ps worker worker-heavy` zeigt `healthy`), bei
-  Live-Übertragungen auch `worker-live`. Kein anderer Worker bedient `ocr`: Ein Worker ohne `--queues` bedient
-  alle Warteschlangen und trüge die Texterkennung dann mit 1 GB.
+  Live-Übertragungen auch `worker-live`. `worker` bedient zusätzlich die Warteschlange `text` (Compose:
+  `--queues default,mail,index,adapter,text --concurrency text=3`, Helm: `worker.queues`, `worker.concurrency`);
+  eigene Compose-Dateien brauchen das ebenso. Fehlt es, plant die Anwendung alles wie bisher in `ocr` ein, und
+  `/health/worker/?pruefung=lebenszeichen` meldet „kein Worker für tasks (Warteschlangen text)“. Kein anderer
+  Worker bedient `ocr`: Ein Worker ohne `--queues` bedient alle Warteschlangen und trüge die Texterkennung dann mit
+  1 GB.
 - Die Dokumentablage (`mandari_files` unter `OPARL_FILES_ROOT`) ist in Anwendung, `worker` und `worker-heavy`
   eingehängt, mit Objektspeicher haben alle drei dieselben `OBJ_*`-Werte. Compose erledigt beides über die
   gemeinsame Umgebung; eigene Compose-Dateien oder Umgebungsdateien müssen sie auch `worker-heavy` geben. Laufen
   die Worker auf einem eigenen Server (`deploy/roles/worker.yml`, `docs/MEHR_SERVER_BETRIEB.md`), sehen sie die
   Ablage des Anwendungsservers nur über eine gemeinsame Ablage oder den Objektspeicher (`OBJ_ENABLED=true`);
-  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück. Fehlen einem Worker nur die
+  sonst findet die Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück. Nur über den Objektspeicher
+  brauchen sie `FILE_STORE_SHARED=false` und einen vollständig hochgeladenen Bestand (`docs/MEHR_SERVER_BETRIEB.md`,
+  „Texterkennung auf einem eigenen Server“). Fehlen einem Worker nur die
   `OBJ_*`, gelten Inhalte, die laut Datenbank im Objektspeicher liegen, als gestört: Die Erkennung wartet, ohne bei
   der Quelle abzurufen, und das Protokoll des Workers warnt höchstens einmal je Minute (Issue #990,
   `docs/FILE_CACHE.md`, „Objektspeicher“).
@@ -1198,7 +1210,10 @@ Worker, wird in den folgenden Schritten eingeschaltet; jeder Schritt ist ohne De
   überflüssig und gibt seinen Speicher frei. Auf kleinen Servern (4 GB) z. B. `2g` und `1024`; große Seiten
   werden dann mit kleinerer Auflösung erkannt oder übersprungen (Issue #817). Mit Helm: `worker.heavy` (3Gi,
   `worker.heavy.ocrMemoryLimitMb`), `TASKS_BACKEND` über `app.extraEnv`, `TEXT_EXTRACTION_RUNNER` über
-  `files.textExtractionRunner` (erreicht auch den Ingestor).
+  `files.textExtractionRunner` (erreicht auch den Ingestor). Die erste Stufe läuft im Dienst `worker` (1 GB) in
+  eigenen Prozessen mit je höchstens `TEXT_LAYER_MEMORY_LIMIT_MB` (512) Adressraum, meist unter 150 MB, mit
+  niedriger Priorität (`nice`). Reicht der Speicher des Containers nicht, beendet der Speicherwächter zuerst einen
+  dieser Prozesse, nicht den Worker; die Datei geht dann an `ocr`.
 - Platz: Mit Schritt 3 legt die Ablage die neuen Dokumente aller Quellen mit erlaubtem Abruf ab und wächst
   entsprechend. Mit Objektspeicher ist die Platte nur Zwischenspeicher (`OBJ_CACHE_MAX_GB`); ohne begrenzt
   `FILE_CACHE_MAX_TOTAL_GB` die Gesamtgröße (Abschnitt „Obergrenze des Dokument-Caches“ unten,
@@ -1244,12 +1259,26 @@ docker compose up -d mandari ingestor
 ```
 
 Ohne `TASKS_BACKEND=journal` startet die Anwendung mit `worker` nicht. Ab jetzt reiht der Zeitplan
-`texterkennung_einplanen` alle zwei Minuten Aufträge in `ocr` ein (höchstens `TEXT_EXTRACTION_QUEUE_DEPTH`
-wartende und laufende), Sync und OCR-Worker des Ingestors laden keine Dateien mehr, und abgelegt werden die neuen
+`texterkennung_einplanen` alle zwei Minuten Aufträge ein, reihum über die Quellen: zuerst `file.read_text_layer`
+in `text` (höchstens `TEXT_LAYER_QUEUE_DEPTH` wartende und laufende), `file.extract_text` in `ocr` nur für
+Dateien, deren Textebene nicht reicht (höchstens `TEXT_EXTRACTION_QUEUE_DEPTH`). Sync und OCR-Worker des
+Ingestors laden keine Dateien mehr, und abgelegt werden die neuen
 Dokumente aller Quellen mit erlaubtem Abruf (`sync_config["file_downloads"]` nicht `false`, keine Schonung,
 robots.txt).
 Dateien, die ein angehaltener OCR-Worker gerade bearbeitet hat, gibt die Zeitgrenze
 (`TEXT_EXTRACTION_STALE_MINUTES`) wieder frei.
+
+**Parallelität und Durchsatz** (Issue #1107). Rund 90 % der Dateien brauchen nur die erste Stufe. Ihre Plätze
+(`--concurrency text=3` im Dienst `worker`) sind echte Prozesse, je einer je Platz und CPU-Kern; mehr Plätze nur
+mit freien Kernen. Weil der Zeitplan nur alle zwei Minuten nachfüllt, begrenzt `TEXT_LAYER_QUEUE_DEPTH` den
+Durchsatz (höchstens so viele Dateien je zwei Minuten); für einen großen Rückstand, etwa neue Kommunen mit
+Altbestand, den Wert erhöhen statt die Plätze. In `ocr` läuft eine Erkennung zugleich (`--concurrency ocr=1`),
+weil `WORKER_HEAVY_MEM_LIMIT` auf einen Tesseract-Unterprozess ausgelegt ist. Mehr Plätze (`ocr=N`) brauchen
+etwa 1 GB plus N × `WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, oder ein zweiter Container wie `worker-heavy`, auch auf
+einem eigenen Server über den Objektspeicher (`docs/MEHR_SERVER_BETRIEB.md`, „Texterkennung auf einem eigenen
+Server“). Zwei Worker auf derselben Warteschlange bearbeiten keine Datei doppelt: Der Auftrag beansprucht die
+Datei beim Start, der zweite endet ohne Wirkung. Die Plätze gehen reihum an die Quellen, zuerst an die mit den
+wenigsten Aufträgen in der Warteschlange; eine große Quelle hält die kleinen nicht auf.
 
 **Schritt 4: Nacharbeit, nur nach Freigabe.** Dateien, die früher an einem Abruffehler gescheitert sind
 (Fehlertext beginnt mit „Download“), haben keinen Text, obwohl der Inhalt oft schon in der Ablage liegt.
@@ -1277,7 +1306,7 @@ Dokumente Text bekommen (`docs/FILE_CACHE.md`, „Ablage für alle Quellen“).
 | Was | Erwartung |
 |---|---|
 | `worker-heavy` | `healthy`; Speicher laut `docker stats --no-stream` dauerhaft unter 80 % des Limits; `docker inspect -f '{{.State.OOMKilled}} {{.RestartCount}}' mandari-worker-heavy` ohne Speicherabbruch |
-| Erkennung | `mandari_tasks_running{queue="ocr"}` 1, solange Arbeit ansteht; `mandari_files_stored_without_text` sinkt bzw. bleibt klein; `/health/worker/?pruefung=texterkennung` und (nach 24 Stunden) `?pruefung=dokumenttext` 200; `mandari_tasks_dead{queue="ocr"}` 0 |
+| Erkennung | `mandari_tasks_running{queue="text"}` bis 3 und `mandari_tasks_running{queue="ocr"}` 1, solange Arbeit ansteht; `mandari_files_awaiting_ocr` (wartet auf `ocr`) deutlich kleiner als `mandari_files_stored_without_text`, beide sinken bzw. bleiben klein; `/health/worker/?pruefung=texterkennung` und (nach 24 Stunden) `?pruefung=dokumenttext` 200; `mandari_tasks_dead` für `text` und `ocr` 0 |
 | Abruf | `mandari_files_fetch_errors_total` je Quelle nicht häufiger als vor dem Umschalten; `mandari_files_fetch_retry_due` wird abgearbeitet; `/health/worker/?pruefung=dokumentabruf` 200 |
 | Ingestor | lädt keine Dateien mehr (Protokoll: „TEXT_EXTRACTION_RUNNER=worker“, Erkennung ruht) |
 | Ablage | mit `FILE_CACHE_MAX_TOTAL_GB`: `cache_files` meldet nicht dauerhaft `limit` (Protokoll des Workers, „Obergrenze erreicht“), sonst warten neue Dokumente auf Platz und bekommen so lange keinen Text; dann die Grenze anheben. `cache_files --stats` zeigt Belegung und verdrängte Dokumente |
@@ -1292,8 +1321,11 @@ fällige Aufträge länger als 15 Minuten warten und keiner läuft (Text: `ocr <
 Auftrag eines abgestürzten Runners zählt nicht als laufend). Dann `worker-heavy` prüfen (`healthy`, bedient er
 `ocr`, Speicherabbrüche). Ob die Erkennung nachkommt, zeigen `dokumenttext` und
 `mandari_files_stored_without_text`. `TEXT_EXTRACTION_QUEUE_DEPTH` zu senken, um `rueckstau` grün zu halten, ist
-nicht mehr nötig. Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml` messen `ocr` ebenso
-gesondert (`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit „Auftragsrückstand“.
+nicht mehr nötig. Die erste Stufe `text` zählt ebenso gesondert (Issue #1107): Der Zeitplan füllt sie bewusst mit
+`TEXT_LAYER_QUEUE_DEPTH` Aufträgen im Voraus; steht sie (fällige Aufträge, keiner läuft), den Dienst `worker`
+prüfen (`healthy`, bedient er `text`). Die Beispielalarme in `deploy/monitoring/prometheus-alerts.example.yml`
+messen `text` und `ocr` ebenso gesondert (`MandariTexterkennungSteht`: Aufträge warten, keiner läuft) statt mit
+„Auftragsrückstand“.
 
 **Abbruchkriterien** (ADR, Abschnitt 10; Vorgehen wie in `docs/DREHSCHEIBE_UMSTELLUNG.md`, Abschnitt 3). Eines
 genügt, dann den Rückweg gehen:
@@ -1302,12 +1334,19 @@ genügt, dann den Rückweg gehen:
 - Eine Datei wird mehr als einmal bei der Quelle abgerufen (außer im Löschabgleich), etwa weil der Ingestor
   noch lädt.
 - Der Rückstau wächst über Stunden: `mandari_files_stored_without_text` oder `mandari_files_fetch_retry_due`
-  steigen (außer direkt nach der Nacharbeit), oder in `ocr` läuft nichts, obwohl Aufträge warten.
+  steigen (außer direkt nach der Nacharbeit), oder in `text` bzw. `ocr` läuft nichts, obwohl Aufträge warten.
 - `worker-heavy` wird vom Speicherlimit beendet oder liegt dauerhaft über 80 % davon.
 - Nutzer sehen Fehler: Dokumente ohne Text, die vorher einen hatten, oder eine Vorschau, die nicht liefert.
 
 **Rückweg**
 
+- Nur die erste Stufe zurück (Issue #1107): `text` aus `--queues` des Dienstes `worker` nehmen und ihn neu starten;
+  die Anwendung plant dann wie vorher alles in `ocr` ein (vollständige Kette). Dateien mit wartendem Auftrag in
+  `text` gehen dabei mit nach `ocr`; diese Aufträge schließt der Zeitplan, sobald sie 15 Minuten fällig sind
+  (Ergebniscode `ohne_worker`), danach ist `rueckstau` für `text` wieder grün (`lebenszeichen` meldet weiter den
+  fehlenden Worker für `text`). Dasselbe gilt, wenn der Worker für `text` länger ausfällt. Eingescannte Seiten
+  getippter PDFs nicht mehr erkennen: `TEXT_EXTRACTION_OCR_MIXED_PAGES=false` (bisherige Schwelle: jeder Text
+  reicht).
 - Erkennung zurück zum Ingestor: `TEXT_EXTRACTION_RUNNER=ingestor` (bzw. Zeile entfernen), dieselben Dienste
   wie in Schritt 3 neu starten, einen angehaltenen OCR-Worker wieder starten. Eingereihte Aufträge erledigen
   sich noch oder finden ihre Datei bereits bearbeitet. Stichtage bleiben stehen und stören den Ingestor nicht.
@@ -1516,7 +1555,7 @@ Obergrenze der Datenbank.
 |---|---|---|
 | mandari (Daphne, ein Prozess) | **10** | `DB_POOL_MAX` je Prozess; höchstens `DB_POOL_MAX_WAITING` Anfragen warten, der Rest bekommt 503. Mit `APP_PROCESSES` Prozessen das Vielfache, siehe „Mehrere Anwendungsprozesse“ |
 | Ingestor | 30 | SQLAlchemy `pool_size=10` + `max_overflow=20` |
-| Worker (Dienst `worker`, alle Rollen ohne `ocr`/`ai`) | 19 | Pool 18 ohne Abonnements, dazu die Direktverbindung des Weckrufs; Rechnung unten |
+| Worker (Dienst `worker`, alle Rollen ohne `ocr`/`ai`) | 22 | Pool 21 ohne Abonnements (mit drei Plätzen in `text`, Issue #1107), dazu die Direktverbindung des Weckrufs; Rechnung unten |
 | Worker für Texterkennung und KI (Dienst `worker-heavy`) | 7 | nur Rolle `tasks` mit `ocr` und `ai`; Rechnung unten |
 | Worker für Live-Übertragungen (Dienst `worker-live`) | 7 | nur Rolle `tasks` mit `live=2`; Rechnung unten |
 | Protokoll-Orchestrator (`minutes-orchestrator`) | 2 | ein Faden; der Pool hält `DB_POOL_MIN` offen |
@@ -1526,7 +1565,7 @@ Obergrenze der Datenbank.
 | Kundenportal | 10 | eigener Container, eigene Datenbank |
 | Sicherung (`pg_dump`) | 2 | nur während des Laufs |
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
-| **Summe** | **138** | |
+| **Summe** | **141** | |
 | **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb (Vorgabe der `docker-compose.yml`: 100) |
 
 Reserve: rund 60 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
@@ -1544,15 +1583,15 @@ arbeiten können. Er vergrößert seinen Pool beim Start selbst auf diese Zahl (
 | Hauptfaden (Lebenszeichen in `events_worker`) und Reserve | 1 + 2 |
 | Rolle `sequencer` | 1 |
 | Rolle `dispatch` | 1 je Abonnement |
-| Rolle `tasks` | 1 (Koordinator) + Summe der Parallelität der gewählten Warteschlangen (Standard: `default` 4, `mail` 2, `index` 2, `ocr` 1, `ai` 1, `adapter` 2, zusammen 12) |
+| Rolle `tasks` | 1 (Koordinator) + Summe der Parallelität der gewählten Warteschlangen (Standard: `default` 4, `mail` 2, `index` 2, `text` 3 (nur mit `TEXT_EXTRACTION_RUNNER=worker`, sonst 0), `ocr` 1, `ai` 1, `adapter` 2, zusammen 15) |
 | Rolle `scheduler` | 1 |
 | Selbstprüfung des Weckrufs (mit `sequencer` oder `dispatch`) | 1 |
 | Abruf von `/metrics` (außer mit `--metrics-port 0`) | 1 |
 | Lauschverbindung des Weckrufs, am Pool vorbei | +1 in der Datenbank |
 
-Mit allen Rollen und allen Standard-Warteschlangen ohne Abonnements sind das 20 aus dem Pool und
-21 in der Datenbank; jedes Abonnement kommt mit einer hinzu. Der Dienst `worker` ohne `ocr` und
-`ai` braucht 18 aus dem Pool und 19 in der Datenbank, `worker-heavy`
+Mit allen Rollen und allen Standard-Warteschlangen ohne Abonnements sind das 23 aus dem Pool und
+24 in der Datenbank; jedes Abonnement kommt mit einer hinzu. Der Dienst `worker` ohne `ocr` und
+`ai`, mit `text=3`, braucht 21 aus dem Pool und 22 in der Datenbank, `worker-heavy`
 (`--roles tasks --queues ocr,ai`) 7, ebenso `worker-live` (`--roles tasks --queues live`, `live=2`).
 Die Worker verbinden sich auch dann direkt mit PostgreSQL, wenn PgBouncer vor der Anwendung läuft.
 

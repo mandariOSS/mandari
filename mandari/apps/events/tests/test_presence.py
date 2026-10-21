@@ -98,7 +98,9 @@ def test_fehlende_rollen_gegen_lebende_worker(ohne_bedarf: Any) -> None:
 def test_runner_muessen_zusammen_jede_warteschlange_bedienen(ohne_bedarf: Any) -> None:
     """Hauptworker ohne ocr und ai, dazu ein eigener Worker für beide (docker-compose.yml)."""
     ohne_bedarf.TASKS = journal_einstellungen()
-    presence.announce("haupt", ["sequencer", "dispatch", "tasks", "scheduler"], ["default", "mail", "index", "adapter"])
+    presence.announce(
+        "haupt", ["sequencer", "dispatch", "tasks", "scheduler"], ["default", "mail", "index", "text", "adapter"]
+    )
 
     stand = presence.worker_status()
     assert stand.degraded
@@ -112,3 +114,18 @@ def test_runner_muessen_zusammen_jede_warteschlange_bedienen(ohne_bedarf: Any) -
     presence.withdraw("ocr")
     presence.announce("alle", ["tasks"], [])
     assert not presence.worker_status().degraded, "ein Worker ohne --queues bedient alle"
+
+
+@pytest.mark.django_db
+def test_wer_bedient_eine_warteschlange() -> None:
+    """Issue #1107: Die Texterkennung plant die erste Stufe nur ein, wenn ein Worker die Warteschlange text bedient."""
+    assert not presence.queue_served("text")
+    presence.announce("planer", ["scheduler"], [])
+    presence.announce("schwer", ["tasks"], ["ocr", "ai"])
+    assert not presence.queue_served("text")
+    assert presence.queue_served("ocr")
+    presence.announce("haupt", ["tasks", "scheduler"], ["default", "text"])
+    assert presence.queue_served("text")
+    presence.withdraw("haupt")
+    presence.announce("alle", ["tasks"], [])
+    assert presence.queue_served("text"), "ohne --queues alle"

@@ -1,6 +1,6 @@
 # Mehr-Server-Betrieb: Compose-Rollen data, web, worker
 
-Stand: 17.09.2026 · Issue #55
+Stand: 20.10.2026 · Issues #55, #1107
 
 mandari läuft standardmäßig auf **einem** Server: `docker compose up -d` startet alle Dienste
 aus `docker-compose.yml`. Für größere Installationen (oder um Datenhaltung, Web-Auslieferung
@@ -112,6 +112,71 @@ docker compose exec -T mandari python manage.py check_source_health --trotz-zeit
 docker compose exec -T mandari python manage.py check_source_health --trotz-zeitplan
 # → einer läuft, der andere meldet „läuft bereits auf … – übersprungen“
 ```
+
+## Texterkennung auf einem eigenen Server
+
+Die Texterkennung der RIS-Dateien (`TEXT_EXTRACTION_RUNNER=worker`, `DEPLOYMENT.md`, „Dokumentkette einschalten“)
+braucht vor allem Rechenzeit: die erste Stufe `text` (nur Textebene, Dienst `worker`) einen Kern je Platz, die
+Erkennung aus dem Bild `ocr` (Dienst `worker-heavy`) zusätzlich Speicher für Tesseract. Beide lesen nur aus der
+Dokumentablage oder dem Objektspeicher, nie bei der Quelle (Issues #919, #1107). Ein zusätzlicher Server übernimmt
+deshalb einen Teil der Erkennung, ohne die Ablage des Anwendungsservers einzuhängen, wenn der Objektspeicher
+eingeschaltet ist und der Bestand darin liegt (Voraussetzungen unten):
+
+```ini
+# .env des Erkennungsservers (dieselbe Basis wie auf den übrigen Servern)
+COMPOSE_FILE=docker-compose.yml:deploy/roles/worker.yml
+DATA_HOST=10.0.0.10
+TASKS_BACKEND=journal
+TEXT_EXTRACTION_RUNNER=worker
+OBJ_ENABLED=true                 # dieselben OBJ_*-Werte wie Anwendung und Worker
+OBJ_CACHE_MAX_GB=20              # lokaler Zwischenspeicher dieses Servers
+FILE_STORE_SHARED=false          # sieht die Ablage des Anwendungsservers nicht
+```
+
+**Voraussetzungen.** Vor dem ersten Start ist der Bestand umgestellt und hochgeladen: `dokumentablage --umstellen`
+und `dokumentablage --hochladen` (je mit `--trotz-zeitplan`, `docs/FILE_CACHE.md`, „Objektspeicher“) melden nichts
+mehr offen. Prüfen im Container `mandari` des Anwendungsservers, beide Zahlen 0:
+
+```bash
+docker compose exec -T mandari python manage.py shell -c "
+from insight_core.models import OParlFile, OParlFileBlob
+print('nicht hochgeladen', OParlFileBlob.objects.filter(remote_at__isnull=True, ref_count__gt=0).count())
+print('altes Layout', OParlFile.objects.filter(local_status='ok', blob__isnull=True).count())"
+```
+
+`FILE_STORE_SHARED=false` ist Pflicht. Damit bestätigt der Erkennungsserver nie, dass ein Inhalt fehlt: Was weder in
+seinem Zwischenspeicher noch im Objektspeicher liegt, gilt als gestört. Der Auftrag gibt die Datei frei und versucht
+es nach 15 Minuten erneut, ohne Abruf bei der Quelle; das Protokoll von `worker-heavy` warnt höchstens einmal je
+Minute. Ohne die Einstellung hielte er solche Inhalte für verloren, setzte sie auf „nicht abgelegt“ zurück, und der
+Abrufweg holte sie erneut bei der Quelle, auch bei Quellen, die unsere Abrufe sperren. Neue Inhalte lädt der Abruf
+sofort in den Objektspeicher; scheitert das, holt das stündliche Hochladen sie nach. Bis dahin warten sie hier, oder
+ein Worker des Anwendungsservers erkennt sie.
+
+```bash
+docker compose up -d worker-heavy        # nur die Erkennung, nicht die übrigen Dienste der Rolle
+```
+
+- **Keine doppelte Arbeit:** Mehrere `worker-heavy` (auf einem oder mehreren Servern) teilen sich die
+  Warteschlange `ocr`. Jeder Runner holt einen Auftrag nur einmal (`SELECT … FOR UPDATE SKIP LOCKED`), und der
+  Auftrag beansprucht seine Datei beim Start; ein zweiter Auftrag derselben Datei endet ohne Wirkung. Gespeichert
+  wird nur, solange der Inhalt noch derselbe ist.
+- **Die erste Stufe auslagern:** ebenso ein Dienst wie `worker-heavy` mit `--roles tasks --queues text
+  --concurrency text=N` (N höchstens die Zahl der Kerne), etwa in einer eigenen Compose-Datei dieses Servers. Er teilt
+  sich die Warteschlange mit dem Hauptworker; wer ihn dort entlasten will, nimmt `text` aus dessen `--queues`. Der
+  Zeitplan füllt `text` nur, solange irgendein lebender Worker sie bedient.
+- **Lokale Kopien begrenzen:** Inhalte aus dem Objektspeicher landen im Volume `mandari_files` dieses Servers. Das
+  stündliche Aufräumen (`befehl:dokumentablage`) läuft nur im Worker mit Scheduler und sieht diese Platte nicht. Auf
+  dem Erkennungsserver deshalb per Host-Cron stündlich, versetzt zum Zeitplan (:50):
+  `docker compose exec -T worker-heavy python manage.py dokumentablage --aufraeumen --trotz-zeitplan`. Er verdrängt
+  nur Kopien, die nach `HEAD` sicher im Objektspeicher liegen, und lässt Inhalte stehen, deren Text gerade erkannt
+  wird oder darauf wartet; dieselbe Sperre in Redis verhindert zwei Läufe zugleich. Ohne diesen Lauf füllt sich die
+  Platte bis `FILE_CACHE_MIN_FREE_GB`, danach stellt die Erkennung ihre Aufträge immer wieder zurück.
+- **Ohne Objektspeicher** braucht der Erkennungsserver die gemeinsame Ablage `mandari_files` wie jeder Server mit
+  `worker`-Rolle (Voraussetzungen oben), und `FILE_STORE_SHARED` bleibt `true`. Ohne gemeinsame Ablage findet die
+  Erkennung keine Inhalte und gibt die Dateien an den Abruf zurück.
+- **Updates:** `update.sh` startet alle Dienste der Rolle `worker`. Auf dem Erkennungsserver stattdessen
+  `docker compose pull worker-heavy && docker compose up -d worker-heavy`, nach den Migrationen auf dem
+  Anwendungsserver.
 
 ## Prozesslokale Zustände
 

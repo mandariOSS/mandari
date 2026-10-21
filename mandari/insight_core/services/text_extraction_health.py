@@ -9,9 +9,10 @@ nach mehreren Abbrüchen als gescheitert auf (Grund „Speichergrenze“). Gemes
 
 - ``haengend``: Dateien länger als die Zeitgrenze (plus Spielraum) in ``processing`` – der Worker löst sie
   nicht auf, läuft also nicht oder hängt selbst. Mit ``TEXT_EXTRACTION_RUNNER=worker`` zählen Dateien, deren
-  Auftrag noch wartet, nicht dazu (Issue #530): Sie warten auf einen Platz in der Warteschlange ``ocr``. Lange
-  Wartezeiten sind dort normal, solange ein Auftrag läuft; warten fällige Aufträge länger als 15 Minuten und läuft
-  keiner, meldet das die Prüfung ``rueckstau`` (Issue #953). Ob die Erkennung nachkommt, misst ``dokumenttext``.
+  Auftrag noch wartet, nicht dazu (Issue #530): Sie warten auf einen Platz in der Warteschlange ``text`` bzw. ``ocr``
+  (Issue #1107). Lange Wartezeiten sind dort normal, solange ein Auftrag läuft; warten fällige Aufträge länger als
+  15 Minuten und läuft keiner, meldet das die Prüfung ``rueckstau`` (Issue #953). Ob die Erkennung nachkommt, misst
+  ``dokumenttext``.
 - ``abgebrochen``: Dateien mit mindestens einem Abbruch, die noch einmal laufen.
 - ``aufgegeben``: in den letzten 24 Stunden nach wiederholten Abbrüchen aufgegebene Dateien. Maßgeblich ist der
   Zeitpunkt der Aufgabe (``text_extracted_at``, beim Aufgeben gesetzt), nicht ``updated_at``: Spätere Änderungen

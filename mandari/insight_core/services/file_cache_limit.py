@@ -738,7 +738,7 @@ def _enforce(result: Result, now: datetime, batch: int, lock: Sperre | None, *, 
 
 
 def _queued_files() -> frozenset[str]:
-    """Dateien, für die ein Auftrag ``file.extract_text`` wartet (Texterkennung bzw. Neuerkennung eingereiht)."""
+    """Dateien, für die ein Auftrag der Texterkennung wartet (erste oder zweite Stufe, auch Neuerkennung)."""
     from .text_extraction_job import queued_file_ids
 
     try:

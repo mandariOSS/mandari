@@ -136,6 +136,8 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "fetch_error",
         "text_source_sha256",
         "text_extraction_version",
+        # OParlFile: Textebene reicht nicht, Datei wartet auf die Erkennung aus dem Bild (Django, Issue #1107)
+        "text_ocr_needed_sha256",
         # OParlPaper: AI enrichment + georeferencing (Django-managed)
         "summary",
         "locations",
