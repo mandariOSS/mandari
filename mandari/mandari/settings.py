@@ -150,6 +150,11 @@ ASGI_APPLICATION = "mandari.asgi.application"
 # Passwort, zweitem Faktor und Konto und blendet einen Hinweis ein. In Produktion nie setzen.
 DEMO_INSTANCE = os.environ.get("DEMO_INSTANCE", "false").lower() in ("1", "true", "yes")
 
+# SEITENHINWEIS (apps/common/seitenhinweis.py): kurzer Betriebshinweis oben in Insight und Work, etwa bei Störungen
+# außerhalb von mandari (leer = aus). Ein- und Ausschalten nur über die Umgebung, ohne Deploy.
+SEITENHINWEIS = os.environ.get("SEITENHINWEIS", "").strip()
+SEITENHINWEIS_LINK = os.environ.get("SEITENHINWEIS_LINK", "https://status.mandari.de/").strip()
+
 MIDDLEWARE = [
     # Vor allem anderen: gibt die Datenbankverbindung am Ende jeder Anfrage im Thread der
     # View zurück, auch wenn der Client aufgelegt und asgiref die Aufgabe abgebrochen hat.
@@ -281,6 +286,7 @@ TEMPLATES = [
                 "insight_core.context_processors.navigation_context",
                 "insight_core.context_processors.active_body",
                 "apps.common.demo.demo_context",  # Hinweis in der Demo-Instanz (Issue #99)
+                "apps.common.seitenhinweis.seitenhinweis_context",  # Betriebshinweis aus der Umgebung
                 "apps.work.rahmen.rahmen_kontext",  # neues Erscheinungsbild von Work je Organisation (Issue #852)
             ],
         },

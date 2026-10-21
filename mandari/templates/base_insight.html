@@ -257,6 +257,7 @@
         </header>
 
         <main id="main-content" class="flex-1" tabindex="-1">
+            {% include "partials/seitenhinweis.html" with rahmen="max-w-insight mx-auto px-4 sm:px-8 pt-5" %}
             {% include "partials/insight_hinweise.html" %}
             {# Seiten in Bändern überschreiben „page“ (Kopfband, Inhalt, Nebenband); alle übrigen füllen „content“ #}
             {% block page %}
