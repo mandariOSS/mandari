@@ -9,6 +9,10 @@ Die Prüfung scheitert,
 - wenn eine Ausnahme abgelaufen ist (damit sie nicht liegen bleibt),
 - wenn es für eine ausgenommene Meldung inzwischen eine korrigierte Version gibt (dann aktualisieren statt ausnehmen).
 
+Eine Korrektur, die es nur als Vorabversion gibt (etwa ``26.10.0rc1``), zählt noch nicht als korrigierte Version:
+Vorabversionen setzen wir nicht in Betrieb. Erscheint die endgültige Version, scheitert die Prüfung trotz Ausnahme
+(Issue #1123).
+
 Aufruf (aus dem Repository-Wurzelverzeichnis): ``python scripts/pip_audit_pruefen.py <requirements.txt> …``
 """
 
@@ -19,6 +23,8 @@ import json
 import pathlib
 import subprocess
 import sys
+
+from packaging.version import InvalidVersion, Version
 
 WURZEL = pathlib.Path(__file__).resolve().parent.parent
 AUSNAHMEN = WURZEL / "mandari" / "pip-audit-ausnahmen.json"
@@ -35,6 +41,19 @@ def ausnahmen_laden(heute: datetime.date) -> tuple[dict[str, dict], list[str]]:
         for kennung in [eintrag["kennung"], *eintrag.get("aliase", [])]:
             gueltig[kennung] = eintrag
     return gueltig, fehler
+
+
+def endgueltige_korrekturen(fix_versions: list[str]) -> list[str]:
+    """Korrigierte Versionen ohne Vorabversionen; nicht lesbare Angaben zählen als endgültig."""
+    endgueltig: list[str] = []
+    for angabe in fix_versions:
+        try:
+            if Version(angabe).is_prerelease:
+                continue
+        except InvalidVersion:
+            pass
+        endgueltig.append(angabe)
+    return endgueltig
 
 
 def pruefen(requirements: str, gueltig: dict[str, dict]) -> tuple[list[str], set[str]]:
@@ -65,7 +84,7 @@ def pruefen(requirements: str, gueltig: dict[str, dict]) -> tuple[list[str], set
                 fehler.append(
                     f"{beschreibung} (korrigiert in: {', '.join(meldung.get('fix_versions', [])) or 'noch keiner'})"
                 )
-            elif meldung.get("fix_versions"):
+            elif endgueltige_korrekturen(meldung.get("fix_versions", [])):
                 fehler.append(
                     f"{beschreibung}: korrigiert in {', '.join(meldung['fix_versions'])} – aktualisieren und die "
                     f"Ausnahme {eintrag['kennung']} entfernen"

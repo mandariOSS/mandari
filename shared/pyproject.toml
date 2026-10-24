@@ -9,7 +9,7 @@ authors = [{ name = "Sven Konopka" }]
 dependencies = [
     "pydantic>=2.10.0",
     # mandari_dokumente (Texterkennung): Textebene und Seitengrößen, Mistral-Anbindung
-    "pypdf>=6.19.0",
+    "pypdf>=6.21.2",
     "httpx>=0.28.0",
 ]
 
