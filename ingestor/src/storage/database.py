@@ -2690,6 +2690,7 @@ class DatabaseStorage:
         page_count: int | None = None,
         sha256_hash: str | None = None,
         reset_attempts: bool = True,
+        undo_attempt: bool = False,
     ) -> None:
         """
         Update a file with text extraction results.
@@ -2697,6 +2698,10 @@ class DatabaseStorage:
         ``reset_attempts=False``: Die Datei wird zurückgestellt, bevor ihre Bearbeitung begann (robots.txt
         nicht erreichbar); der Abbruchzähler bleibt, sonst liefe eine Datei, an der der Worker schon starb,
         wieder parallel statt einzeln und zuletzt (Issue #817).
+
+        ``undo_attempt=True``: Die Datei wird nach dem Beginn zurückgestellt, ohne dass die Bearbeitung etwas
+        über die Datei sagt (Quelle nicht erreichbar, Issue #1121); der begonnene Versuch zählt nicht, frühere
+        Abbrüche bleiben gezählt.
 
         Liegt ein Text vor (``completed`` mit ``text_content``), meldet ``ris.file.text_extracted`` das in
         derselben Transaktion (Issue #821): Wer auf das Ereignis hin den Bestand liest, sieht den Text.
@@ -2718,7 +2723,9 @@ class DatabaseStorage:
                 "text_extraction_started_at": None,
                 "updated_at": func.now(),
             }
-            if reset_attempts:
+            if undo_attempt:
+                values["text_extraction_attempts"] = func.greatest(OParlFile.text_extraction_attempts - 1, 0)
+            elif reset_attempts:
                 # Bearbeitung beendet (gleich wie): kein Abbruch, Zähler zurücksetzen (Issue #817)
                 values["text_extraction_attempts"] = 0
             if text_content is not None:

@@ -26,7 +26,8 @@ Quelle nicht erreichbar (Issue #1121): Verbindungs- und Protokollfehler, Zeitüb
 5xx beim Download stellen die ganze Quelle zurück (15 min, danach doppelt so lange je weiterem Fehlschlag in
 Folge, höchstens ``MAX_DEFER_SECONDS``; ``Retry-After`` gilt mindestens). Die Datei bleibt ``pending``, statt mit
 allen anderen Dateien der Quelle als gescheitert zu enden, solange die Quelle uns abweist. Erst nach
-``MAX_TRANSIENT_FAILURES`` solchen Fehlschlägen derselben Datei in Folge gilt sie als gescheitert.
+``MAX_TRANSIENT_FAILURES`` solchen Fehlschlägen derselben Datei in Folge gilt sie als gescheitert; je
+Zurückstellung zählt nur der Fehlschlag, der sie auslöst, und der begonnene Versuch zählt nicht als Abbruch.
 """
 
 from __future__ import annotations
@@ -106,7 +107,7 @@ def retry_after_seconds(error: BaseException) -> float:
     if not isinstance(error, httpx.HTTPStatusError):
         return 0.0
     value = (error.response.headers.get("retry-after") or "").strip()
-    return float(value) if value.isdigit() else 0.0
+    return float(value) if value.isascii() and value.isdigit() else 0.0
 
 
 def _error_text(error: BaseException) -> str:
@@ -125,8 +126,13 @@ class SourceBackoff:
     until: dict[Any, float] = field(default_factory=dict)
     #: Je Body: Zurückstellungen nach Downloadfehlern in Folge (bestimmt den Abstand)
     streak: dict[Any, int] = field(default_factory=dict)
-    #: Je Datei: vorübergehende Fehlschläge in Folge
+    #: Je Datei: vorübergehende Fehlschläge in Folge, höchstens einer je Zurückstellung der Quelle
     file_failures: dict[Any, int] = field(default_factory=dict)
+
+    def hold(self, body_id: Any, until: float) -> None:
+        """Quelle mindestens bis ``until`` zurückstellen (robots.txt nicht erreichbar); kürzt keine längere Frist."""
+        if body_id is not None:
+            self.until[body_id] = max(self.until.get(body_id, until), until)
 
     def deferred(self, body_id: Any, now: float) -> bool:
         """Ist die Quelle zurückgestellt? Abgelaufene Fristen verfallen."""
@@ -402,8 +408,7 @@ class TextExtractor:
         )
         if decision.unreachable:
             logger.info("Datei %s zurückgestellt: %s", file_id, decision.reason)
-            if file_row.body_id is not None:
-                self._backoff.until[file_row.body_id] = self._clock() + RETRY_UNREACHABLE_SECONDS
+            self._backoff.hold(file_row.body_id, self._clock() + RETRY_UNREACHABLE_SECONDS)
             # Noch nicht begonnen: Abbruchzähler bleiben, eine verdächtige Datei läuft weiter einzeln und zuletzt
             await self.storage.update_file_text(file_id=file_id, status="pending", reset_attempts=False)
             return False
@@ -434,10 +439,9 @@ class TextExtractor:
         except redirects.RedirectRefusedError as refused:
             if refused.decision.unreachable:
                 logger.info("Datei %s zurückgestellt (Weiterleitung): %s", file_id, refused.decision.reason)
-                if file_row.body_id is not None:
-                    self._backoff.until[file_row.body_id] = self._clock() + RETRY_UNREACHABLE_SECONDS
-                # Sauber beendet, kein Abbruch: Zähler zurück wie nach jeder beendeten Bearbeitung
-                await self.storage.update_file_text(file_id=file_id, status="pending")
+                self._backoff.hold(file_row.body_id, self._clock() + RETRY_UNREACHABLE_SECONDS)
+                # Begonnen, aber ohne Befund zur Datei: der Versuch zählt nicht, frühere Abbrüche bleiben
+                await self.storage.update_file_text(file_id=file_id, status="pending", undo_attempt=True)
                 return False
             logger.info("Datei %s nicht abgerufen (Weiterleitung): %s", file_id, refused.decision.reason)
             await self.storage.update_file_text(file_id=file_id, status="skipped", error=refused.decision.reason)
@@ -469,12 +473,20 @@ class TextExtractor:
     async def _defer_after_transient(self, file_row: Any, url: str, error: BaseException) -> bool:
         """
         Vorübergehender Downloadfehler (Issue #1121): Quelle zurückstellen, Datei wieder ``pending``. ``False``
-        beim ``MAX_TRANSIENT_FAILURES``-ten Fehlschlag derselben Datei in Folge: Sie gilt dann als gescheitert.
+        beim ``MAX_TRANSIENT_FAILURES``-ten Fehlschlag derselben Datei in Folge: Sie gilt dann als gescheitert
+        (eine kaputte Datei am Anfang der Warteschlange hält die Quelle sonst auf Dauer an), und die Quelle wird
+        dafür nicht zurückgestellt.
+
+        Je Zurückstellung zählt nur der Fehlschlag, der sie auslöst. Parallel bearbeitete Dateien derselben Runde
+        scheitern dann an der Quelle, nicht an sich selbst. So enden bei einem langen Ausfall nur einzelne Dateien
+        am Anfang der Warteschlange als gescheitert, nicht alle, die in den Runden gerade an der Reihe sind.
         """
-        if self._backoff.file_failed(file_row.id) >= MAX_TRANSIENT_FAILURES:
+        now = self._clock()
+        counts = not self._backoff.deferred(file_row.body_id, now)
+        if counts and self._backoff.file_failed(file_row.id) >= MAX_TRANSIENT_FAILURES:
             self._backoff.file_failures.pop(file_row.id, None)
             return False
-        seconds = self._backoff.defer(file_row.body_id, self._clock(), retry_after_seconds(error))
+        seconds = self._backoff.defer(file_row.body_id, now, retry_after_seconds(error))
         if seconds:
             logger.warning(
                 "Quelle von Body %s für %d min zurückgestellt, Download von %s gescheitert: %s",
@@ -485,8 +497,8 @@ class TextExtractor:
             )
         else:
             logger.info("Datei %s zurückgestellt, Download gescheitert: %s", file_row.id, _error_text(error))
-        # Sauber beendet, kein Abbruch: Zähler zurück wie nach jeder beendeten Bearbeitung
-        await self.storage.update_file_text(file_id=file_row.id, status="pending")
+        # Begonnen, aber ohne Befund zur Datei: der Versuch zählt nicht, frühere Abbrüche bleiben (Issue #817)
+        await self.storage.update_file_text(file_id=file_row.id, status="pending", undo_attempt=True)
         return True
 
     async def _extract_and_store(

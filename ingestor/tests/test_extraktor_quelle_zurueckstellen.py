@@ -5,6 +5,7 @@ stellen die ganze Quelle mit wachsendem Abstand zurück; die Datei bleibt ``pend
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,8 +19,10 @@ from src.extraction.extractor import (
     MAX_DEFER_SECONDS,
     MAX_TRANSIENT_FAILURES,
     DownloadedFile,
+    SourceBackoff,
     TextExtractor,
     is_transient,
+    retry_after_seconds,
 )
 
 BODY = uuid.UUID(int=1)
@@ -133,7 +136,7 @@ async def test_verbindungsfehler_stellt_quelle_zurueck_und_laesst_datei_pending(
     # Nur die erste Datei fragt an; die zweite derselben Portion bleibt unangefragt, weitere werden nicht beansprucht
     assert geladen == ["d0"]
     assert speicher.updates == [
-        {"file_id": "d0", "status": "pending"},
+        {"file_id": "d0", "status": "pending", "undo_attempt": True},
         {"file_id": "d1", "status": "pending", "reset_attempts": False},
     ]
     assert len(speicher.dateien) == 4
@@ -205,6 +208,52 @@ async def test_dieselbe_datei_scheitert_nach_drei_fehlschlaegen(
     assert [update["status"] for update in speicher.updates] == ["pending"] * (MAX_TRANSIENT_FAILURES - 1) + ["failed"]
     assert speicher.updates[-1]["error"] == "Download failed: ReadTimeout"
     assert "a" not in extractor._backoff.file_failures
+    # Der Fehlschlag, mit dem die Datei aufgegeben wird, stellt die Quelle nicht zurück: Weiter mit der nächsten
+    assert not extractor._deferred(BODY)
+
+
+async def test_parallele_fehlschlaege_einer_runde_zaehlen_einmal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fällt die Quelle aus, scheitern die gleichzeitig laufenden Dateien an ihr, nicht an sich selbst."""
+    speicher = _Speicher([_datei(f"d{nummer}") for nummer in range(4)])
+    uhr = _Uhr()
+    extractor = TextExtractor(speicher, clock=uhr)
+    extractor.concurrency = 4
+
+    async def download(url: str, *_args: Any) -> DownloadedFile:
+        await asyncio.sleep(0.01)
+        raise httpx.ConnectError("abgewiesen")
+
+    monkeypatch.setattr(extractor, "_download_to_file", download)
+    for _ in range(MAX_TRANSIENT_FAILURES + 2):
+        speicher.dateien = [_datei(f"d{nummer}") for nummer in range(4)]
+        assert await extractor.extract_pending_files(BODY) == 0
+        uhr.jetzt = extractor._backoff.until[BODY]
+
+    # Je Runde ein gezählter Fehlschlag: höchstens eine Datei aufgegeben, nicht alle vier
+    gescheitert = [u["file_id"] for u in speicher.updates if u["status"] == "failed"]
+    assert len(gescheitert) <= 1
+    assert sum(extractor._backoff.file_failures.values()) <= MAX_TRANSIENT_FAILURES
+
+
+def test_robots_frist_kuerzt_keine_laengere_zurueckstellung() -> None:
+    backoff = SourceBackoff()
+    assert backoff.defer(BODY, 0.0, minimum=7200) == 7200
+    backoff.hold(BODY, RETRY_UNREACHABLE_SECONDS)
+    assert backoff.until[BODY] == 7200
+    backoff.hold(BODY, 9000)
+    assert backoff.until[BODY] == 9000
+
+
+@pytest.mark.parametrize(("wert", "sekunden"), [("120", 120.0), ("", 0.0), ("Wed, 21 Oct 2026 07:28:00 GMT", 0.0)])
+def test_retry_after(wert: str, sekunden: float) -> None:
+    assert retry_after_seconds(_status(503, {"Retry-After": wert})) == sekunden
+
+
+def test_retry_after_mit_sonderziffern() -> None:
+    antwort = httpx.Response(503, headers=[(b"Retry-After", "²".encode())], request=ANFRAGE)
+    assert retry_after_seconds(httpx.HTTPStatusError("503", request=ANFRAGE, response=antwort)) == 0.0
 
 
 async def test_dateifehler_wie_bisher_gescheitert_ohne_zurueckstellen(

@@ -333,6 +333,27 @@ async def test_zaehler_beim_start_und_zuruecksetzen_beim_ende(speicher: tuple[Da
 
 
 @pytest.mark.integration
+async def test_versuch_zuruecknehmen_laesst_fruehere_abbrueche_stehen(
+    speicher: tuple[DatabaseStorage, uuid.UUID],
+) -> None:
+    """Quelle nicht erreichbar nach dem Beginn (Issue #1121): nur der begonnene Versuch zählt nicht."""
+    storage, body_id = speicher
+    datei = await _datei_anlegen(storage, body_id, 1)
+    await storage.get_pending_files(body_id=body_id)
+    assert await storage.mark_extraction_started(datei) == 1
+    await storage.update_file_text(datei, status="pending", undo_attempt=True)
+    assert (await _zeile(storage, datei))[:2] == ("pending", 0)
+
+    # Zwei Abbrüche, dann scheitert der nächste Versuch an der Quelle: die Abbrüche bleiben gezählt
+    await storage.get_pending_files(body_id=body_id)
+    for _ in range(3):
+        await storage.mark_extraction_started(datei)
+    await storage.update_file_text(datei, status="pending", undo_attempt=True)
+    status, versuche, beginn, _ = await _zeile(storage, datei)
+    assert (status, versuche, beginn) == ("pending", 2, None)
+
+
+@pytest.mark.integration
 async def test_haengende_dateien_zurueckstellen_oder_aufgeben(speicher: tuple[DatabaseStorage, uuid.UUID]) -> None:
     storage, body_id = speicher
     alt = datetime.now(UTC) - timedelta(hours=2)
