@@ -21,6 +21,12 @@ gelten sie als gescheitert („Speichergrenze“) statt den Worker immer wieder 
 Beansprucht wird in kleinen Portionen (``CLAIM_PER_SLOT`` Dateien je Platz der Parallelität): Das
 Beanspruchen startet die Zeitgrenze, eine beanspruchte Datei darf also nicht hinter einem ganzen Stapel
 warten, sonst gälte sie als abgebrochen, obwohl der Worker lebt.
+
+Quelle nicht erreichbar (Issue #1121): Verbindungs- und Protokollfehler, Zeitüberschreitungen sowie 408, 429 und
+5xx beim Download stellen die ganze Quelle zurück (15 min, danach doppelt so lange je weiterem Fehlschlag in
+Folge, höchstens ``MAX_DEFER_SECONDS``; ``Retry-After`` gilt mindestens). Die Datei bleibt ``pending``, statt mit
+allen anderen Dateien der Quelle als gescheitert zu enden, solange die Quelle uns abweist. Erst nach
+``MAX_TRANSIENT_FAILURES`` solchen Fehlschlägen derselben Datei in Folge gilt sie als gescheitert.
 """
 
 from __future__ import annotations
@@ -33,7 +39,7 @@ import shutil
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -76,10 +82,94 @@ RELEASE_STALE_EVERY_SECONDS = 60.0
 #: beanspruchte Datei wartet so höchstens auf eine andere Datei ihres Platzes (``OCR_FILE_BUDGET_SECONDS``
 #: plus Abruf), deutlich unter ``TEXT_EXTRACTION_STALE_MINUTES``, statt auf einen ganzen Stapel.
 CLAIM_PER_SLOT = 2
+#: Antworten, mit denen die Quelle gerade nicht liefert (Überlast, Wartung, Drossel): Quelle zurückstellen (#1121)
+TRANSIENT_STATUS_CODES = frozenset({408, 429, 500, 502, 503, 504})
+#: Längster Abstand, um den ein Downloadfehler die Quelle zurückstellt (der Abstand verdoppelt sich je Fehlschlag)
+MAX_DEFER_SECONDS = 6 * 60 * 60
+#: Nach so vielen vorübergehenden Fehlschlägen derselben Datei in Folge gilt sie doch als gescheitert
+MAX_TRANSIENT_FAILURES = 3
 
 
 class FileTooLargeError(Exception):
     """Die Datei überschreitet ``TEXT_EXTRACTION_MAX_SIZE_MB`` (Abbruch während des Downloads)."""
+
+
+def is_transient(error: BaseException) -> bool:
+    """Liegt der Downloadfehler an der Quelle (nicht erreichbar, überlastet) statt an der Datei?"""
+    if isinstance(error, httpx.HTTPStatusError):
+        return error.response.status_code in TRANSIENT_STATUS_CODES
+    return isinstance(error, httpx.TimeoutException | httpx.NetworkError | httpx.RemoteProtocolError)
+
+
+def retry_after_seconds(error: BaseException) -> float:
+    """``Retry-After`` in Sekunden aus einer Fehlerantwort; 0 ohne Angabe (HTTP-Datum zählt nicht)."""
+    if not isinstance(error, httpx.HTTPStatusError):
+        return 0.0
+    value = (error.response.headers.get("retry-after") or "").strip()
+    return float(value) if value.isdigit() else 0.0
+
+
+def _error_text(error: BaseException) -> str:
+    """Lesbarer Fehler; Zeitüberschreitungen von httpx haben oft keinen Text."""
+    return str(error) or type(error).__name__
+
+
+@dataclass
+class SourceBackoff:
+    """
+    Zurückgestellte Quellen je Body und vorübergehende Fehlschläge je Datei (Issue #1121), geteilt von allen
+    Extraktoren an einem Speicher: Sync und Scraper legen je Kommune einen eigenen Extraktor an.
+    """
+
+    #: Je Body: bis zu diesem Zeitpunkt (Uhr des Extraktors) nichts beanspruchen
+    until: dict[Any, float] = field(default_factory=dict)
+    #: Je Body: Zurückstellungen nach Downloadfehlern in Folge (bestimmt den Abstand)
+    streak: dict[Any, int] = field(default_factory=dict)
+    #: Je Datei: vorübergehende Fehlschläge in Folge
+    file_failures: dict[Any, int] = field(default_factory=dict)
+
+    def deferred(self, body_id: Any, now: float) -> bool:
+        """Ist die Quelle zurückgestellt? Abgelaufene Fristen verfallen."""
+        until = self.until.get(body_id)
+        if until is None:
+            return False
+        if now < until:
+            return True
+        del self.until[body_id]
+        return False
+
+    def defer(self, body_id: Any, now: float, minimum: float = 0.0) -> float:
+        """
+        Quelle nach einem Downloadfehler zurückstellen. Rückgabe: Abstand in Sekunden; 0, wenn sie schon
+        zurückgestellt ist (parallele Fehlschläge derselben Runde verlängern den Abstand nicht).
+        """
+        if body_id is None or self.deferred(body_id, now):
+            return 0.0
+        streak = self.streak.get(body_id, 0) + 1
+        self.streak[body_id] = streak
+        seconds = min(max(RETRY_UNREACHABLE_SECONDS * 2 ** min(streak - 1, 10), minimum), MAX_DEFER_SECONDS)
+        self.until[body_id] = now + seconds
+        return float(seconds)
+
+    def file_failed(self, file_id: Any) -> int:
+        """Vorübergehenden Fehlschlag einer Datei zählen; Rückgabe: Fehlschläge in Folge."""
+        failures = self.file_failures.get(file_id, 0) + 1
+        self.file_failures[file_id] = failures
+        return failures
+
+    def succeeded(self, body_id: Any, file_id: Any) -> None:
+        """Download gelungen: Die Quelle liefert wieder, Abstand und Zähler der Datei beginnen von vorn."""
+        self.streak.pop(body_id, None)
+        self.file_failures.pop(file_id, None)
+
+
+def _backoff_of(storage: Any) -> SourceBackoff:
+    """Zustand am Speicher (``extraction_backoff``); der erste Extraktor an einem Speicher legt ihn an."""
+    backoff = getattr(storage, "extraction_backoff", None)
+    if not isinstance(backoff, SourceBackoff):
+        backoff = SourceBackoff()
+        storage.extraction_backoff = backoff
+    return backoff
 
 
 @dataclass
@@ -127,8 +217,9 @@ class TextExtractor:
         # Je Body: (Wert, geladen um); gültig SOURCE_OPTIONS_TTL_SECONDS
         self._header_cache: dict[Any, tuple[dict[str, str], float]] = {}
         self._options_cache: dict[Any, tuple[SourceFetchOptions, float]] = {}
-        # Bodies, deren robots.txt nicht erreichbar war: bis zu diesem Zeitpunkt nichts beanspruchen
-        self._deferred_until: dict[Any, float] = {}
+        # Zurückgestellte Bodies (robots.txt oder Quelle nicht erreichbar), geteilt mit den anderen Extraktoren
+        # am selben Speicher (Issue #1121)
+        self._backoff = _backoff_of(storage)
 
     async def release_stale(self) -> tuple[int, int]:
         """
@@ -228,14 +319,8 @@ class TextExtractor:
         return extracted
 
     def _deferred(self, body_id: Any) -> bool:
-        """Ist die Kommune zurückgestellt (robots.txt eben nicht erreichbar)? Abgelaufene Fristen verfallen."""
-        until = self._deferred_until.get(body_id)
-        if until is None:
-            return False
-        if self._clock() < until:
-            return True
-        del self._deferred_until[body_id]
-        return False
+        """Ist die Kommune zurückgestellt (robots.txt oder Quelle eben nicht erreichbar)?"""
+        return self._backoff.deferred(body_id, self._clock())
 
     async def _process_claimed(self, files: list[Any]) -> int:
         """
@@ -290,6 +375,12 @@ class TextExtractor:
             )
             return False
 
+        # Quelle eben zurückgestellt (etwa nach dem Downloadfehler einer Datei derselben Portion, Issue #1121):
+        # nicht anfragen, noch nicht begonnen, die Datei bleibt "pending"
+        if file_row.body_id is not None and self._deferred(file_row.body_id):
+            await self.storage.update_file_text(file_id=file_id, status="pending", reset_attempts=False)
+            return False
+
         # robots.txt (RFC 9309) gilt auch für Dateien; viele Systeme sperren nur Dokumente (Disallow: /*.pdf$).
         # Gesperrte Dateien werden übersprungen; nach einer Freigabe holt sie robots_override (Django) zurück.
         # Ist die robots.txt nicht erreichbar, bleibt die Datei "pending" und kommt später wieder dran.
@@ -312,7 +403,7 @@ class TextExtractor:
         if decision.unreachable:
             logger.info("Datei %s zurückgestellt: %s", file_id, decision.reason)
             if file_row.body_id is not None:
-                self._deferred_until[file_row.body_id] = self._clock() + RETRY_UNREACHABLE_SECONDS
+                self._backoff.until[file_row.body_id] = self._clock() + RETRY_UNREACHABLE_SECONDS
             # Noch nicht begonnen: Abbruchzähler bleiben, eine verdächtige Datei läuft weiter einzeln und zuletzt
             await self.storage.update_file_text(file_id=file_id, status="pending", reset_attempts=False)
             return False
@@ -344,7 +435,7 @@ class TextExtractor:
             if refused.decision.unreachable:
                 logger.info("Datei %s zurückgestellt (Weiterleitung): %s", file_id, refused.decision.reason)
                 if file_row.body_id is not None:
-                    self._deferred_until[file_row.body_id] = self._clock() + RETRY_UNREACHABLE_SECONDS
+                    self._backoff.until[file_row.body_id] = self._clock() + RETRY_UNREACHABLE_SECONDS
                 # Sauber beendet, kein Abbruch: Zähler zurück wie nach jeder beendeten Bearbeitung
                 await self.storage.update_file_text(file_id=file_id, status="pending")
                 return False
@@ -359,18 +450,44 @@ class TextExtractor:
             )
             return False
         except Exception as e:
-            logger.warning("Download failed for %s: %s", download_url, e)
+            if is_transient(e) and await self._defer_after_transient(file_row, download_url, e):
+                return False
+            logger.warning("Download failed for %s: %s", download_url, _error_text(e))
             await self.storage.update_file_text(
                 file_id=file_id,
                 status="failed",
-                error=f"Download failed: {e}",
+                error=f"Download failed: {_error_text(e)}",
             )
             return False
+        self._backoff.succeeded(file_row.body_id, file_id)
 
         try:
             return await self._extract_and_store(file_row, downloaded, mime_type, file_name)
         finally:
             downloaded.discard()
+
+    async def _defer_after_transient(self, file_row: Any, url: str, error: BaseException) -> bool:
+        """
+        Vorübergehender Downloadfehler (Issue #1121): Quelle zurückstellen, Datei wieder ``pending``. ``False``
+        beim ``MAX_TRANSIENT_FAILURES``-ten Fehlschlag derselben Datei in Folge: Sie gilt dann als gescheitert.
+        """
+        if self._backoff.file_failed(file_row.id) >= MAX_TRANSIENT_FAILURES:
+            self._backoff.file_failures.pop(file_row.id, None)
+            return False
+        seconds = self._backoff.defer(file_row.body_id, self._clock(), retry_after_seconds(error))
+        if seconds:
+            logger.warning(
+                "Quelle von Body %s für %d min zurückgestellt, Download von %s gescheitert: %s",
+                file_row.body_id,
+                round(seconds / 60),
+                url,
+                _error_text(error),
+            )
+        else:
+            logger.info("Datei %s zurückgestellt, Download gescheitert: %s", file_row.id, _error_text(error))
+        # Sauber beendet, kein Abbruch: Zähler zurück wie nach jeder beendeten Bearbeitung
+        await self.storage.update_file_text(file_id=file_row.id, status="pending")
+        return True
 
     async def _extract_and_store(
         self, file_row: Any, downloaded: DownloadedFile, mime_type: str, file_name: str

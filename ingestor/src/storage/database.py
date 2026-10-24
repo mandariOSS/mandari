@@ -441,6 +441,9 @@ class DatabaseStorage:
         # Letztes Auflösen abgebrochener Textextraktionen (Uhr des Extraktors, Issue #817): gilt für alle
         # Extraktoren an diesem Speicher, auch wenn Sync und Scraper je Kommune einen eigenen anlegen
         self.stale_extractions_released_at: float | None = None
+        # Zurückgestellte Quellen und vorübergehende Downloadfehler je Datei (Issue #1121, ``SourceBackoff`` des
+        # Extraktors): geteilt von allen Extraktoren an diesem Speicher
+        self.extraction_backoff: Any = None
 
         # Cache for body UUIDs (external_id -> UUID)
         self._body_uuid_cache: dict[str, UUID] = {}
