@@ -1,12 +1,47 @@
 {
-  "erklaerung": "Befristete Ausnahmen für pip-audit (Django-Anwendung und Ingestor). Nur für Meldungen ohne korrigierte Version, deren betroffener Teil bei uns nicht läuft. Sobald es eine korrigierte Version gibt, scheitert die Prüfung trotz Ausnahme. Prüfung: scripts/pip_audit_pruefen.py",
+  "erklaerung": "Befristete Ausnahmen für pip-audit (Django-Anwendung und Ingestor). Nur für Meldungen ohne korrigierte Version, deren betroffener Teil bei uns nicht läuft. Eine Korrektur nur als Vorabversion (rc) zählt nicht. Sobald es eine endgültige korrigierte Version gibt, scheitert die Prüfung trotz Ausnahme. Prüfung: scripts/pip_audit_pruefen.py",
   "ausnahmen": [
     {
       "kennung": "GHSA-8pqf-f4m5-798g",
       "aliase": ["CVE-2026-106454"],
       "paket": "twisted 26.4.0 (über daphne)",
-      "grund": "ReDoS in wildcardToRegexp() des IMAP-Servers (twisted.mail), mittel, CVSS 4.3. mandari nutzt Twisted nur als ASGI-Server über daphne, twisted.mail wird nirgends importiert. Eine korrigierte Version gibt es noch nicht (Stand 15.10.2026).",
-      "bis": "2026-10-31"
+      "grund": "ReDoS in wildcardToRegexp() des IMAP-Servers (twisted.mail), mittel, CVSS 4.3. mandari nutzt Twisted nur als ASGI-Server über daphne, twisted.mail wird nirgends importiert. Eine korrigierte Version gibt es noch nicht (Stand 24.10.2026).",
+      "bis": "2026-11-15"
+    },
+    {
+      "kennung": "GHSA-cwm5-jh59-mwxr",
+      "aliase": ["CVE-2026-115778"],
+      "paket": "twisted 26.4.0 (über daphne)",
+      "grund": "Denial of Service im Telnet-Transport von twisted.conch (unbegrenzter Puffer für Subnegotiation), hoch. mandari nutzt Twisted nur als ASGI-Server über daphne, twisted.conch wird nirgends importiert. Korrigiert bisher nur in der Vorabversion 26.10.0rc1 (22.10.2026), die wir nicht in Betrieb nehmen; Update auf 26.10.0, sobald sie erscheint (#1123).",
+      "bis": "2026-11-15"
+    },
+    {
+      "kennung": "GHSA-2qrf-pqgx-qh9v",
+      "aliase": ["CVE-2026-115774"],
+      "paket": "twisted 26.4.0 (über daphne)",
+      "grund": "Denial of Service im IMAP4-Server von twisted.mail (negative Literalgröße in SEARCH), mittel. twisted.mail wird nirgends importiert. Korrigiert bisher nur in der Vorabversion 26.10.0rc1 (22.10.2026), die wir nicht in Betrieb nehmen; Update auf 26.10.0, sobald sie erscheint (#1123).",
+      "bis": "2026-11-15"
+    },
+    {
+      "kennung": "GHSA-3476-c5c2-fr73",
+      "aliase": ["CVE-2026-115775"],
+      "paket": "twisted 26.4.0 (über daphne)",
+      "grund": "Denial of Service im XML-Elementstrom von twisted.words (domish, unbegrenzter Elementbaum), hoch. twisted.words wird nirgends importiert. Korrigiert bisher nur in der Vorabversion 26.10.0rc1 (22.10.2026), die wir nicht in Betrieb nehmen; Update auf 26.10.0, sobald sie erscheint (#1123).",
+      "bis": "2026-11-15"
+    },
+    {
+      "kennung": "GHSA-53xc-49m8-p798",
+      "aliase": ["CVE-2026-115776"],
+      "paket": "twisted 26.4.0 (über daphne)",
+      "grund": "Denial of Service im IRC-Server von twisted.words (unbegrenzter Zeilenpuffer), hoch. twisted.words wird nirgends importiert. Korrigiert bisher nur in der Vorabversion 26.10.0rc1 (22.10.2026), die wir nicht in Betrieb nehmen; Update auf 26.10.0, sobald sie erscheint (#1123).",
+      "bis": "2026-11-15"
+    },
+    {
+      "kennung": "GHSA-q7qq-6mhp-9rc4",
+      "aliase": ["CVE-2026-115877"],
+      "paket": "twisted 26.4.0 (über daphne)",
+      "grund": "HTTP Request Smuggling in twisted.web über ein einzelnes CR oder LF in einem Header-Wert, mittel. twisted.web liegt im Anfragepfad von daphne. daphne hat keinen veröffentlichten Port und ist nur über den Reverse-Proxy erreichbar. Geprüft am 24.10.2026: Der Proxy beantwortet ein einzelnes CR im Header-Wert mit 400 und gibt Header nach einem einzelnen LF mit CRLF neu geschrieben weiter. Korrigiert bisher nur in der Vorabversion 26.10.0rc1 (22.10.2026), die wir nicht in Betrieb nehmen; Update auf 26.10.0, sobald sie erscheint (#1123).",
+      "bis": "2026-11-15"
     }
   ]
 }
