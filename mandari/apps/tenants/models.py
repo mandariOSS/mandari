@@ -26,6 +26,17 @@ from apps.common.ki_anbieter import ANBIETER_VORLAGEN, auswahl_organisation
 from apps.common.permissions import DEFAULT_ROLES, PERMISSIONS
 from apps.common.tokens import HashedTokenMixin, unusable_token_hash
 
+# Status einer Organisation aus Sicht der Provisioning-API v2. „gesperrt“ und „beendet“ schalten die
+# Organisation ab (is_active=False); „beendet“ hält zusätzlich fest, dass der Vertrag geendet hat.
+PROVISIONING_STATUS_ACTIVE = "aktiv"
+PROVISIONING_STATUS_SUSPENDED = "gesperrt"
+PROVISIONING_STATUS_ENDED = "beendet"
+PROVISIONING_STATUS_CHOICES = [
+    (PROVISIONING_STATUS_ACTIVE, "Aktiv"),
+    (PROVISIONING_STATUS_SUSPENDED, "Gesperrt"),
+    (PROVISIONING_STATUS_ENDED, "Beendet"),
+]
+
 
 class PartyGroup(models.Model):
     """
@@ -455,6 +466,31 @@ class Organization(models.Model):
         help_text="Maximale aktive Gast-Zugänge (Standard 25, per Addon erweiterbar)",
     )
 
+    # Provisioning-API v2 (deklarativ, Issue #1132): Kennung der Bereitstellung im aufrufenden System und
+    # der dort zuletzt gesetzte Status. Alle Felder nullbar, damit ein älteres Image nach einem Rückfall
+    # weiter Organisationen anlegen kann. „beendet“ sperrt nur, Daten bleiben vollständig erhalten.
+    provisioning_ref = models.CharField(
+        max_length=64,
+        unique=True,
+        null=True,
+        blank=True,
+        verbose_name="Bereitstellungs-Referenz",
+        help_text="Externe Kennung der Bereitstellung (Provisioning-API v2); leer = nicht verknüpft",
+    )
+    provisioning_status = models.CharField(
+        max_length=20,
+        choices=PROVISIONING_STATUS_CHOICES,
+        null=True,
+        blank=True,
+        verbose_name="Bereitstellungs-Status",
+        help_text="Zuletzt über die Provisioning-API v2 gesetzter Status (leer = nie gesetzt)",
+    )
+    provisioning_status_changed_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Bereitstellungs-Status geändert am",
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -472,7 +508,7 @@ class Organization(models.Model):
         # Schlüsselspalten nie über ein allgemeines save() zurückschreiben (Schlüsselwechsel)
         super().save(*args, **exclude_key_fields_from_save(self, kwargs))
 
-    def clean(self):
+    def clean(self) -> None:
         """
         Validierung der Pflicht-Zuordnungen.
 
@@ -506,6 +542,17 @@ class Organization(models.Model):
     def has_free_guest_slot(self) -> bool:
         """True, wenn noch ein Gast-Platz frei ist."""
         return self.get_active_guest_count() < self.guest_limit
+
+    def has_free_member_slot(self, reserved: int = 0) -> bool:
+        """
+        True, wenn unter ``member_limit`` noch ein Platz frei ist (leer = unbegrenzt).
+
+        ``reserved`` zählt zusätzlich belegte Plätze mit, etwa offene Einladungen. Bestehende
+        Mitglieder über dem Limit bleiben unberührt; es kommen nur keine neuen hinzu.
+        """
+        if self.member_limit is None:
+            return True
+        return self.get_active_member_count() + reserved < self.member_limit
 
     # === MULTI-BODY / MULTI-PARTY HELPERS ===
 

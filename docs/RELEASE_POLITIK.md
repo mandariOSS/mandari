@@ -87,7 +87,7 @@ Ist eine Korrektur in der Frist nicht möglich, veröffentlichen wir eine
 | **OParl-API** (`/oparl/v1/`) | folgt dem OParl-Standard (1.0, 1.1); Erweiterungen unter `mandari:`-Präfix | **12 Monate**, alte Version bleibt parallel erreichbar |
 | **Session-API** (`/api/v1/session/`) | Pfadversion (`v1`, `v2`) | **6 Monate**, alte Version parallel |
 | **Fraktions-API / Work** | Pfadversion | **6 Monate**, alte Version parallel |
-| **Provisioning-API** (Kundenportal) | intern, nur für den Betreiber | keine Zusage |
+| **Provisioning-API** (`/api/provisioning/`, `/api/provisioning/v2/`) | Pfadversion (v1, v2); intern, nur für den Betreiber | keine Zusage |
 
 Abkündigungen stehen im Changelog unter „Abgekündigt“ mit Datum des Wegfalls, in der
 API-Antwort als Header `Deprecation` (RFC 9745, Zeitpunkt der Abkündigung) und `Sunset` (RFC 8594, Zeitpunkt

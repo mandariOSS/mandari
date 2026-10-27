@@ -137,7 +137,12 @@ class InvitationResendView(WorkViewMixin, View):
 
     def post(self, request, *args, **kwargs):
         invitation = selectors.get_open_invitation_or_404(self.organization, kwargs.get("invitation_id"))
-        services.resend_invitation(self.organization, invitation)
+        try:
+            services.resend_invitation(self.organization, invitation)
+        except ServiceError as exc:
+            # Abgelaufene Einladung bei erreichtem Mitglieder-Limit
+            flash_error(request, exc)
+            return redirect("work:members", org_slug=self.organization.slug)
         messages.success(request, f"Einladung an {invitation.email} wurde erneut versendet.")
         return redirect("work:members", org_slug=self.organization.slug)
 

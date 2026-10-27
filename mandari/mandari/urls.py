@@ -85,6 +85,8 @@ urlpatterns = [
     path("api/", include("insight_core.api_urls")),
     # Provisioning-API fürs Billing-Portal (nur aktiv wenn PROVISIONING_API_KEY gesetzt)
     path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),
+    # Provisioning-API v2, deklarativ (nur aktiv wenn PROVISIONING_V2_API_KEY gesetzt, Issue #1132)
+    path("api/provisioning/v2/", include("apps.provisioning.v2.urls", namespace="provisioning_v2")),
     # Offene Schnittstelle der Drehscheibe: Aggregator über den RIS-Bestand aller Kommunen (OParl 1.1)
     path("oparl/", include("hub.api.urls", namespace="oparl_api")),
     # Katalog der offenen Ratsinformationen nach DCAT-AP.de für Datenportale (Issue #104)
