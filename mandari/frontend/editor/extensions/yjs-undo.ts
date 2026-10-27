@@ -6,15 +6,16 @@ export const YjsUndo = Extension.create({
 
   addCommands() {
     return {
-      // y-tiptap 3: undo/redo dispatchen selbst über den Yjs-UndoManager
+      // y-tiptap 3: undo/redo dispatchen selbst über den Yjs-UndoManager.
+      // Ab 3.0.10 liefern sie ohne UndoManager undefined; als false melden.
       undo:
         () =>
         ({ state }) =>
-          undo(state),
+          undo(state) ?? false,
       redo:
         () =>
         ({ state }) =>
-          redo(state),
+          redo(state) ?? false,
     }
   },
 })
