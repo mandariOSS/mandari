@@ -42,6 +42,13 @@
       "paket": "twisted 26.4.0 (über daphne)",
       "grund": "HTTP Request Smuggling in twisted.web über ein einzelnes CR oder LF in einem Header-Wert, mittel. twisted.web liegt im Anfragepfad von daphne. daphne hat keinen veröffentlichten Port und ist nur über den Reverse-Proxy erreichbar. Geprüft am 24.10.2026: Der Proxy beantwortet ein einzelnes CR im Header-Wert mit 400 und gibt Header nach einem einzelnen LF mit CRLF neu geschrieben weiter. Korrigiert bisher nur in der Vorabversion 26.10.0rc1 (22.10.2026), die wir nicht in Betrieb nehmen; Update auf 26.10.0, sobald sie erscheint (#1123).",
       "bis": "2026-11-15"
+    },
+    {
+      "kennung": "GHSA-jj36-9pvh-vj5r",
+      "aliase": ["CVE-2026-83813"],
+      "paket": "twisted 26.4.0 (über daphne)",
+      "grund": "Gefälschte DNS-Antworten in twisted.names (DNSDatagramProtocol prüft die Absenderadresse der Antwort nicht). mandari nutzt Twisted nur als ASGI-Server über daphne, twisted.names wird nirgends importiert; Namen löst der Reaktor über den Systemresolver auf. Korrigiert bisher nur in der Vorabversion 26.10.0rc1 (22.10.2026), die wir nicht in Betrieb nehmen; Update auf 26.10.0, sobald sie erscheint (#1123).",
+      "bis": "2026-11-15"
     }
   ]
 }
