@@ -56,18 +56,21 @@ PARTY_NAME_MAX = 100
 
 
 class ProvisioningError(Exception):
-    """Fehler mit HTTP-Status, fester Kennung und optional Fehlern je Feld (nie Ausnahmetexte)."""
+    """Fehler mit HTTP-Status, fester Kennung, optional Fehlern je Feld und fester Meldung (nie Ausnahmetexte)."""
 
-    def __init__(self, status: int, code: str, fields: Mapping[str, str] | None = None) -> None:
+    def __init__(self, status: int, code: str, fields: Mapping[str, str] | None = None, *, message: str = "") -> None:
         super().__init__(code)
         self.status = status
         self.code = code
         self.fields = dict(fields or {})
+        self.message = message
 
     def payload(self) -> dict[str, Any]:
         data: dict[str, Any] = {"error": self.code}
         if self.fields:
             data["fields"] = self.fields
+        if self.message:
+            data["message"] = self.message
         return data
 
 
@@ -433,6 +436,14 @@ def _required(spec: WorkSpec, names: tuple[str, ...]) -> None:
 
 
 def _create(ref: str, spec: WorkSpec) -> tuple[Organization, UserInvitation]:
+    if spec.status != PROVISIONING_STATUS_ACTIVE:
+        # Anlegen lädt die Admin-Person ein; eine gesperrte oder beendete Organisation darf das nicht
+        raise ProvisioningError(
+            409,
+            "create_requires_active",
+            message="Neue Organisationen lassen sich nur mit Status „aktiv“ anlegen (mit Einladung der "
+            "Admin-Person). Erst anlegen, dann sperren oder beenden.",
+        )
     if NEW_SLUG_RE.fullmatch(spec.slug) is None:
         raise validation_error({"slug": "3-40 Zeichen, nur a-z, 0-9 und Bindestrich"})
     inviter = find_system_inviter()
@@ -474,6 +485,11 @@ class PutResult:
     invitation_sent: bool | None = None
 
 
+def _locked_by_ref(ref: str) -> Organization | None:
+    """Organisation mit dieser Referenz, gesperrt bis zum Ende der Transaktion."""
+    return Organization.objects.select_for_update().filter(provisioning_ref=ref).first()
+
+
 def _adopt_or_create(ref: str, spec: WorkSpec) -> tuple[PutResult, UserInvitation | None]:
     # Übernahme braucht nur den Slug (keine Einladung), Anlegen auch Name und Admin-E-Mail
     _required(spec, ("slug",) if spec.adopt else ("name", "slug", "admin_email"))
@@ -484,9 +500,13 @@ def _adopt_or_create(ref: str, spec: WorkSpec) -> tuple[PutResult, UserInvitatio
             raise ProvisioningError(409, "adopt_not_found")
         organization, invitation = _create(ref, spec)
         return PutResult(organization, changed=["created"], created=True), invitation
+    if existing.provisioning_ref == ref:
+        # Eine gleichzeitige Anfrage mit derselben Referenz war schneller (Übernahme oder Anlegen):
+        # nach ihrem Commit trägt die Organisation die Referenz schon, also normal abgleichen
+        return PutResult(existing, changed=_update(existing, spec)), None
     if not spec.adopt:
         raise ProvisioningError(409, "slug_taken")
-    if existing.provisioning_ref is not None:
+    if existing.provisioning_ref not in (None, ref):
         # Schon unter einer anderen Referenz bereitgestellt
         raise ProvisioningError(409, "ref_conflict")
     existing.provisioning_ref = ref
@@ -504,7 +524,7 @@ def put_work_organization(ref: str, spec: WorkSpec) -> PutResult:
     invitation: UserInvitation | None = None
     try:
         with transaction.atomic():
-            organization = Organization.objects.select_for_update().filter(provisioning_ref=ref).first()
+            organization = _locked_by_ref(ref)
             if organization is not None:
                 result = PutResult(organization, changed=_update(organization, spec))
             else:

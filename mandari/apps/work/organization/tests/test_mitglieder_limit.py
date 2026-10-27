@@ -170,3 +170,60 @@ def test_freischalten_in_der_oberflaeche_zeigt_die_meldung(client_for: Any, org:
     assert request.is_active is False
     assert any("Mitglieder-Limit erreicht" in str(message) for message in get_messages(response.wsgi_request))
     assert User.objects.filter(email="anfrage@example.org").exists()
+
+
+@pytest.mark.django_db
+def test_selbstregistrierung_zaehlt_offene_einladungen_mit(org: Any, admin: Any) -> None:
+    org.registration_enabled = True
+    org.registration_auto_approve = True
+    org.save()
+    set_limit(org, 2)
+    # Ein aktives Mitglied (admin) und eine offene Einladung belegen beide Plätze
+    services.invite_member(org, admin.user, "eingeladen@example.org", [], "")
+    user = cast(Any, UserFactory)(email="selbst@example.org")
+
+    membership = services.join_by_self_registration(org, user)
+
+    assert membership.is_active is False
+    assert membership.registration_requested_at is not None
+
+
+@pytest.mark.django_db(transaction=True)
+def test_limitpruefungen_laufen_gesperrt_in_einer_transaktion(
+    org: Any, admin: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """
+    Jede Limitprüfung sperrt die Organisationszeile vor dem Zählen; das geht nur in einer Transaktion.
+
+    SQLite kennt kein SELECT … FOR UPDATE, daher prüft der Test den Rahmen: Bei gesetztem Limit läuft die
+    Prüfung auf jedem Weg innerhalb eines atomic-Blocks (sonst schlüge die Sperre unter PostgreSQL fehl).
+    """
+    from django.db import connection
+
+    original = services._member_slot_free
+    calls: list[bool] = []
+
+    def spy(organization: Any, **kwargs: Any) -> Any:
+        calls.append(connection.in_atomic_block)
+        return original(organization, **kwargs)
+
+    monkeypatch.setattr(services, "_member_slot_free", spy)
+    set_limit(org, 100)
+    org.registration_enabled = True
+    org.registration_auto_approve = True
+    org.save()
+
+    services.invite_member(org, admin.user, "neu@example.org", [], "")
+    invitation = UserInvitation.objects.get(organization=org, email="neu@example.org")
+    services.accept_invitation(invitation, cast(Any, UserFactory)(email="neu@example.org"))
+    inactive = cast(Any, MembershipFactory)(organization=org, is_active=False)
+    services.reactivate_member(org, inactive, admin)
+    services.approve_registration(pending_request(org, "anfrage@example.org"), actor=admin)
+    services.join_by_self_registration(org, cast(Any, UserFactory)(email="selbst@example.org"))
+    expired = UserInvitation.create_for_organization(organization=org, email="alt@example.org", invited_by=admin.user)
+    UserInvitation.objects.filter(pk=expired.pk).update(expires_at=timezone.now() - timedelta(days=1))
+    expired.refresh_from_db()
+    services.resend_invitation(org, expired)
+
+    assert len(calls) == 6
+    assert all(calls), "jede Prüfung läuft in einer Transaktion"

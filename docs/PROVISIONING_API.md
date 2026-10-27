@@ -59,7 +59,7 @@ Der Körper ist ein JSON-Objekt. **Nicht mitgeschickte Felder bleiben unverände
 | `body_ags` | Text oder `null` | bei `aktiv` Pflicht¹ | Heimatkommune über den Amtlichen Gemeindeschlüssel: 8 Ziffern, für Kreise 5, Bezirke 3, Länder 2. `null` entfernt die Kommune |
 | `body_id` | UUID oder `null` | – | Heimatkommune über die Kennung, wenn der Schlüssel mehrdeutig ist oder fehlt (etwa bei Verbandsgemeinden). Mit `body_ags` zusammen müssen beide passen |
 | `party_group` | Text oder `null` | bei `aktiv` Pflicht¹ | Partei über ihre Kennung (UUID), ihren Namen oder Slug (Groß- und Kleinschreibung egal). Einen unbekannten Namen legt mandari wie in v1 als neue Partei an. Höchstens 100 Zeichen |
-| `status` | `aktiv`, `gesperrt`, `beendet` | Vorgabe `aktiv` | siehe Status |
+| `status` | `aktiv`, `gesperrt`, `beendet` | nur `aktiv` (Vorgabe) | siehe Status; Anlegen mit einem anderen Status gibt 409 `create_requires_active` |
 | `member_limit` | ganze Zahl ≥ 1 oder `null` | Vorgabe `null` | Höchstzahl aktiver regulärer Mitglieder, `null` = unbegrenzt. Wird in Work durchgesetzt |
 | `guest_limit` | ganze Zahl ≥ 0 | Vorgabe 25 | Höchstzahl aktiver Gast-Zugänge |
 | `billing_reference` | Text, höchstens 100 Zeichen | Vorgabe leer | Vertrags- oder Abrechnungsnummer des aufrufenden Systems |
@@ -74,7 +74,10 @@ Fehlt eines, antwortet v2 mit 400 und dem Feld `body_ags` bzw. `party_group`.
 1. **Referenz bekannt:** mitgeschickte Felder vergleichen und nur Abweichungen schreiben. Ein anderer `slug`
    gibt 409 `slug_immutable`. Ohne Abweichung: 200 mit `"changed": false`, nichts wird geschrieben.
 2. **Referenz unbekannt, Slug frei:** Organisation anlegen wie in v1 (Standard-Rollen, Einladung an
-   `admin_email` mit Administrator-Rolle, 14 Tage gültig). Antwort 201 mit `invitation_sent`.
+   `admin_email` mit Administrator-Rolle, 14 Tage gültig). Antwort 201 mit `invitation_sent`. Anlegen geht
+   nur mit Status `aktiv`: Mit `gesperrt` oder `beendet` antwortet v2 mit 409 `create_requires_active`
+   (mit `message`), legt nichts an und lädt niemanden ein. Wer eine gesperrte Organisation braucht, legt
+   sie aktiv an und sperrt sie mit dem nächsten `PUT`.
 3. **Referenz unbekannt, Slug belegt:** 409 `slug_taken`.
 4. **Übernahme (`"adopt": true`):** Gibt es eine Organisation mit diesem Slug **ohne** Referenz, erhält sie
    die Referenz, und die mitgeschickten Felder werden angewendet. Keine Einladung, `admin_email` ist nicht
@@ -92,8 +95,10 @@ Administration regelt die Organisation in Work selbst, damit eine Änderung im a
 Administratorrechte vergibt.
 
 Alles läuft in einer Transaktion: Schlägt die Prüfung fehl, bleibt auch eine dabei angelegte Partei nicht
-zurück. Treffen zwei Anfragen mit derselben neuen Referenz gleichzeitig ein, erhält die zweite 409
-`conflict`; ihre Wiederholung trifft dann den Bestand.
+zurück. Treffen zwei Anfragen mit derselben Referenz gleichzeitig ein, gleicht die zweite die von der ersten
+angelegte oder übernommene Organisation normal ab (kein `ref_conflict`, keine zweite Einladung). Stoßen
+beide beim Anlegen auf die Eindeutigkeit von Slug oder Referenz, erhält die zweite 409 `conflict`; ihre
+Wiederholung trifft dann den Bestand.
 
 ### Status
 
@@ -159,6 +164,7 @@ Soll-Zustand wieder her.
 | 409 | `{"error": "slug_immutable"}` | Slug einer bestehenden Organisation lässt sich nicht ändern |
 | 409 | `{"error": "ref_conflict"}` | Übernahme einer Organisation, die schon eine andere Referenz hat |
 | 409 | `{"error": "adopt_not_found"}` | Übernahme ohne Organisation mit diesem Slug |
+| 409 | `{"error": "create_requires_active", "message": "…"}` | Anlegen mit `gesperrt` oder `beendet`; nur `aktiv` legt an |
 | 409 | `{"error": "conflict"}` | gleichzeitige Anfrage; wiederholen |
 | 500 | `{"error": "no_system_user"}` | kein aktiver Superuser als Absender der Einladung |
 
@@ -171,9 +177,13 @@ Soll-Zustand wieder her.
   gesendet wird.
 - Eine Einladung lässt sich nicht annehmen, solange das Limit erreicht ist; sie bleibt gültig.
 - Reaktivieren und Freischalten offener Registrierungsanfragen nur unterhalb des Limits.
-- Selbstregistrierung mit sofortiger Freischaltung wird bei erreichtem Limit zur offenen Anfrage.
+- Selbstregistrierung mit sofortiger Freischaltung wird bei erreichtem Limit zur offenen Anfrage; offene
+  Einladungen zählen dabei mit wie beim Einladen.
 - Bestehende Mitglieder bleiben immer, auch über dem Limit. Gäste zählen nicht mit.
 - `null` heißt unbegrenzt (Vorgabe, auch für selbst betriebene Installationen).
+- Bei gesetztem Limit sperrt jede Prüfung die Zeile der Organisation (`SELECT … FOR UPDATE`) vor dem
+  Zählen, damit gleichzeitige Beitritte das Limit nicht gemeinsam überschreiten. Ohne Limit entfallen Sperre
+  und Abfrage.
 
 Die Meldungen in Work nennen das Limit und den Weg (Einladung zurückziehen, Mitglied deaktivieren oder
 Limit erhöhen).

@@ -245,6 +245,44 @@ def test_uebernahme_ohne_einladung(api: Client, body: OParlBody, party: PartyGro
     assert not mail.outbox
 
 
+@pytest.mark.django_db
+def test_gleichzeitige_uebernahme_derselben_ref(
+    api: Client, body: OParlBody, party: PartyGroup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apps.provisioning.v2 import services as v2_services
+
+    cast(Any, OrganizationFactory)(name="Bestand", slug="fraktion-bestand", body=body, party_group=party)
+    data = desired(slug="fraktion-bestand", name="Bestand", adopt=True)
+    del data["admin_email"]
+    assert put(api, "kunde-7", data).status_code == 200
+
+    # Die zweite Anfrage suchte die Referenz, bevor die erste ihre Übernahme festschrieb
+    monkeypatch.setattr(v2_services, "_locked_by_ref", lambda ref: None)
+    second = put(api, "kunde-7", data)
+
+    assert second.status_code == 200, second.json()
+    assert second.json()["changed"] is False and second.json()["ref"] == "kunde-7"
+    assert "adopted" not in second.json()
+    # Eine andere Referenz bleibt ein Konflikt
+    assert put(api, "kunde-8", data).json() == {"error": "ref_conflict"}
+
+
+@pytest.mark.django_db
+def test_gleichzeitiges_anlegen_derselben_ref(
+    api: Client, system_user: Any, body: OParlBody, party: PartyGroup, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from apps.provisioning.v2 import services as v2_services
+
+    assert put(api, "kunde-1", desired()).status_code == 201
+    monkeypatch.setattr(v2_services, "_locked_by_ref", lambda ref: None)
+
+    second = put(api, "kunde-1", desired())
+
+    assert second.status_code == 200, second.json()
+    assert second.json()["changed"] is False and "invitation_sent" not in second.json()
+    assert len(mail.outbox) == 1 and UserInvitation.objects.count() == 1
+
+
 # ---------------------------------------------------------------------------
 # Status
 # ---------------------------------------------------------------------------
@@ -283,6 +321,7 @@ def test_status_aktiv_gesperrt_beendet_ohne_datenverlust(
 
 @pytest.mark.django_db
 def test_status_zeigt_aenderung_von_hand(api: Client, system_user: Any, body: OParlBody, party: PartyGroup) -> None:
+    put(api, "kunde-1", desired())
     put(api, "kunde-1", desired(status="beendet"))
     Organization.objects.filter(provisioning_ref="kunde-1").update(is_active=True)
 
@@ -292,14 +331,19 @@ def test_status_zeigt_aenderung_von_hand(api: Client, system_user: Any, body: OP
 
 
 @pytest.mark.django_db
-def test_gesperrt_anlegen_ohne_kommune_und_partei(api: Client, system_user: Any) -> None:
-    data = desired(status="gesperrt")
-    del data["body_ags"], data["party_group"]
+@pytest.mark.parametrize("status", ["gesperrt", "beendet"])
+def test_anlegen_nur_mit_status_aktiv(api: Client, system_user: Any, body: OParlBody, status: str) -> None:
+    # Anlegen lädt die Admin-Person ein; gesperrt oder beendet anlegen würde trotzdem einladen
+    response = put(api, "kunde-1", desired(status=status, party_group="Ganz Neue Partei"))
 
-    response = put(api, "kunde-1", data)
-
-    assert response.status_code == 201
-    assert response.json()["status"] == "gesperrt" and response.json()["body"] is None
+    assert response.status_code == 409
+    data = response.json()
+    assert data["error"] == "create_requires_active"
+    assert "aktiv" in data["message"]
+    assert not Organization.objects.exists()
+    assert not UserInvitation.objects.exists()
+    assert not mail.outbox
+    assert not PartyGroup.objects.filter(name="Ganz Neue Partei").exists()
 
 
 # ---------------------------------------------------------------------------
