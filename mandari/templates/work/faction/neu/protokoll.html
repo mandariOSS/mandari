@@ -1,0 +1,63 @@
+{% extends "work/base_work.html" %}
+{% load django_vite %}
+{% comment %}
+Fraktionssitzung nach der Sitzung nach dem Muster (Issue #1071, Schritt 3; Muster sitzung.html, Zustände protokoll,
+abgeschlossen, alt): Kopf mit Ablaufleiste, Infoleiste mit der einen Hauptaktion (Anwesenheit bestätigen, direkt
+genehmigen, Nachtrag), Gliederung (ab 1600 px), Protokoll als Dokument, Nebenspalte mit den Schritten bzw. „Ihre
+Teilnahme“. Auch für abgesagte Sitzungen (Grund, geplante Tagesordnung, Löschen und Historie wie bisher).
+Geschrieben wird über die bisherigen Aktionen (work:faction_action, Panel, Notizen der Sitzungsansicht);
+hx-headers X-Work-Gestaltung sorgt dafür, dass ihre Antworten das neue Dokument liefern. Panel, Abstimmungsdialog,
+Teilnehmer- und Löschdialoge sind die der bisherigen Seite (Komponente factionDetail).
+Die bisherige Seite bleibt unter ?ansicht=bisher (work/faction/detail.html). Kontext: views/protokoll.py.
+{% endcomment %}
+
+{% block page_title %}{{ meeting.title }}{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block brotkrumen_aktuell %}<c-insight.brotkrume>{{ meeting.title }}</c-insight.brotkrume>{% endblock %}
+
+{% block work_extra_head %}{% if notizen_editierbar %}{% vite_asset 'frontend/editor/index.ts' %}{% endif %}{% endblock %}
+
+{% block work_header %}{% endblock %}
+
+{% block work_content %}
+{{ detail_config|json_script:"faction-detail-config" }}
+{% if notizen_editierbar %}{{ sitzung_urls|json_script:"fs-sitzung-config" }}{% endif %}
+<div class="fs-seite fs-vb fs-pr wf" x-data="factionDetail" hx-headers='{"X-Work-Gestaltung": "neu"}' data-testid="fs-protokoll" data-zustand="{{ meeting.status }}"
+     @open-add-attendee.window="showAddAttendeeModal = true"
+     @open-delete-meeting.window="openDeleteMeeting()"
+     @open-decision.window="openDecision($event.detail)"
+     @open-item-panel.window="openItemPanel($event.detail.id)"
+     @close-item-panel.window="closePanel()">
+    {% include "work/faction/neu/_vb_kopf.html" %}
+
+    <div class="fs-r-protokoll">
+        {% if dok.tops %}
+        <nav class="fs-gl" aria-label="Gliederung des Protokolls">
+            <h2 class="fs-gl-h">Gliederung</h2>
+            <ul>{% for t in dok.tops %}<li{% if t.unter %} class="unter"{% endif %}><a class="wf-textlink" href="#p-{{ t.item.pk }}">{{ t.item.number }} {{ t.item.title }}</a></li>{% endfor %}</ul>
+        </nav>
+        {% endif %}
+        {# data-sichern-vorher: Neuaufbau nach Panel-Aktionen erst, wenn alle Notizen gespeichert sind (faction-session.ts) #}
+        <div class="fs-dok-wrap" id="agenda-container" data-sichern-vorher
+             hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
+             hx-vals='{"action": "refresh_agenda"}'
+             hx-trigger="agenda-refresh from:body"
+             hx-target="this"
+             hx-swap="innerHTML">
+            {% include "work/faction/neu/_pr_dokument.html" %}
+        </div>
+        <c-work.neben label="{% if rechte.schritte %}Schritte nach der Sitzung{% else %}Ihre Teilnahme und Downloads{% endif %}" class="fs-abschluss">
+            {% include "work/faction/neu/_pr_neben.html" %}
+        </c-work.neben>
+    </div>
+
+    {# Ziel des Dialogs „Teilnehmer hinzufügen“ (bisheriges Markup); die Aktion lädt die Seite danach neu #}
+    <div id="sidebar-container" hidden></div>
+    {% include "work/faction/neu/_pr_dialoge.html" %}
+    {# Panel, Abstimmungs- und TOP-Dialoge sowie Sitzungsdialoge (Teilnehmer, löschen) wie bisher #}
+    {% include "work/faction/partials/_detail_panel.html" %}
+    {% include "work/faction/partials/_detail_item_modals.html" %}
+    {% include "work/faction/partials/_detail_meeting_modals.html" %}
+</div>
+{% endblock %}
