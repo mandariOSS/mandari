@@ -243,6 +243,16 @@ METRICS_ALLOWED_NETWORKS = [
     if network.strip()
 ]
 METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
+# Provisioning-API v2 (/api/provisioning/v2/, Issue #1132): eigener Schlüssel für das aufrufende System
+# (Bearer). Leer = abgeschaltet, alle Routen antworten mit 404. Optional nur aus diesen Netzen (CIDR,
+# kommagetrennt; leer = keine Beschränkung); andere Absender erhalten 404. Wie bei ADMIN_ALLOWED_NETWORKS
+# muss der vorgelagerte Proxy X-Forwarded-For durch die echte Client-Adresse ersetzen.
+PROVISIONING_V2_API_KEY = os.environ.get("PROVISIONING_V2_API_KEY", "")
+PROVISIONING_V2_ALLOWED_NETWORKS = [
+    str(_ipaddress.ip_network(network.strip(), strict=False))
+    for network in os.environ.get("PROVISIONING_V2_ALLOWED_NETWORKS", "").split(",")
+    if network.strip()
+]
 # Woher check_service_levels die Metriken der laufenden Instanz holt (leer = Fehlerquote nicht prüfen).
 # Der Abruf setzt den Host-Header auf den ersten Eintrag aus ALLOWED_HOSTS, damit Django die
 # Loopback-Adresse nicht mit 400 abweist.

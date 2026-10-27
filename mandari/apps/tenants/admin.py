@@ -151,7 +151,14 @@ class OrganizationAdmin(ModelAdmin):
     search_fields = ["name", "slug"]
     prepopulated_fields = {"slug": ["name"]}
     filter_horizontal = ["oparl_organizations", "bodies", "parties"]
-    readonly_fields = ["encryption_key", "created_at", "updated_at", "member_list_link"]
+    readonly_fields = [
+        "encryption_key",
+        "created_at",
+        "updated_at",
+        "member_list_link",
+        "provisioning_status",
+        "provisioning_status_changed_at",
+    ]
     autocomplete_fields = ["owner"]
 
     fieldsets = (
@@ -187,10 +194,20 @@ class OrganizationAdmin(ModelAdmin):
         (
             "Plan & Limits",
             {
-                "fields": ("plan", "billing_reference", "member_limit", "guest_limit"),
+                "fields": (
+                    "plan",
+                    "billing_reference",
+                    "member_limit",
+                    "guest_limit",
+                    "provisioning_ref",
+                    "provisioning_status",
+                    "provisioning_status_changed_at",
+                ),
                 "description": (
                     "Gäste zählen nicht gegen das Mitglieder-Limit, reguläre Mitglieder "
-                    "nicht gegen das Gast-Limit (Standard 25, per Addon erweiterbar)."
+                    "nicht gegen das Gast-Limit (Standard 25, per Addon erweiterbar). "
+                    "Referenz und Status setzt die Provisioning-API v2; ein leeres Feld "
+                    "„Bereitstellungs-Referenz“ löst die Verknüpfung."
                 ),
                 "classes": ("collapse",),
             },

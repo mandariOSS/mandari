@@ -16,14 +16,20 @@ import logging
 import os
 import re
 
-from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.http import Http404, JsonResponse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
-from apps.tenants.models import Organization, Role, UserInvitation
+from apps.tenants.models import Organization
+
+from .services import (
+    create_organization_with_admin_invitation,
+    find_system_inviter,
+    invitation_accept_url,
+    send_admin_invitation,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,38 +68,6 @@ class ProvisioningView(View):
             return json.loads(request.body.decode("utf-8") or "{}")
         except (json.JSONDecodeError, UnicodeDecodeError):
             return {}
-
-
-def _invitation_accept_url(invitation: UserInvitation) -> str:
-    """Absolute Annahme-URL (gleiches Muster wie die Work-Einladung)."""
-    from django.conf import settings as django_settings
-    from django.urls import reverse
-
-    base_url = getattr(django_settings, "SITE_URL", "https://mandari.de").rstrip("/")
-    return f"{base_url}{reverse('work:accept_invitation', kwargs={'token': invitation.token_for_link()})}"
-
-
-def _send_admin_invitation(org: Organization, invitation: UserInvitation, accept_url: str) -> bool:
-    """
-    Einladungs-Mail an den künftigen Org-Admin im gemeinsamen Mail-Layout über den
-    mandari-Standardversand (Site-Einstellungen). False bei Versandfehler (#239).
-    """
-    from apps.common import mail
-
-    try:
-        return mail.send_template(
-            kind="plattform.einladung",
-            subject=f"Deine neue mandari work Organisation: {org.name}",
-            template_name="emails/provisioning/admin_invitation",
-            context={"organization": org, "invitation": invitation, "accept_url": accept_url},
-            to=[invitation.email],
-            fail_silently=False,
-        )
-    except Exception as e:
-        # Einladung bleibt in der DB; die Antwort meldet invitation_sent=False. Der Link geht nur
-        # per Mail, nie über die Provisionierungs-Antwort.
-        logger.warning(f"[Provisioning] Einladungs-Mail an {invitation.email} fehlgeschlagen: {e}")
-        return False
 
 
 def _org_payload(org: Organization) -> dict:
@@ -172,8 +146,7 @@ class OrganizationCollectionView(ProvisioningView):
         if Organization.objects.filter(slug=slug).exists():
             return JsonResponse({"error": "slug_taken"}, status=409)
 
-        User = get_user_model()
-        system_user = User.objects.filter(is_superuser=True, is_active=True).order_by("date_joined").first()
+        system_user = find_system_inviter()
         if system_user is None:
             logger.error("[Provisioning] Kein Superuser als Einladungs-Absender vorhanden")
             return JsonResponse({"error": "no_system_user"}, status=500)
@@ -189,21 +162,13 @@ class OrganizationCollectionView(ProvisioningView):
             }
             if guest_limit is not None:
                 org_kwargs["guest_limit"] = guest_limit
-            org = Organization.objects.create(**org_kwargs)
-            # Standard-Rollen entstehen automatisch per post_save-Signal
-            # (tenants/signals.py) — hier nur die Admin-Rolle heraussuchen.
-            admin_role = Role.objects.filter(organization=org, is_admin=True).order_by("priority").first()
-            invitation = UserInvitation.create_for_organization(
-                organization=org,
-                email=admin_email,
-                invited_by=system_user,
-                roles=[admin_role] if admin_role else None,
-                message="Willkommen bei mandari work! Über diese Einladung richtest du dein Konto ein.",
-                valid_days=14,
+            # Gemeinsamer Weg mit v2 (services.py): Organisation, Standard-Rollen, Admin-Einladung
+            org, invitation = create_organization_with_admin_invitation(
+                admin_email=admin_email, inviter=system_user, **org_kwargs
             )
 
-        accept_url = _invitation_accept_url(invitation)
-        invitation_sent = _send_admin_invitation(org, invitation, accept_url)
+        accept_url = invitation_accept_url(invitation)
+        invitation_sent = send_admin_invitation(org, invitation, accept_url)
 
         logger.info(f"[Provisioning] Organisation '{slug}' angelegt (Plan {plan}) für {admin_email}")
         payload = _org_payload(org)
