@@ -74,11 +74,18 @@ def _record_invitation_result(attendance, *, error: str = "", without_internal: 
         setattr(attendance, feld, wert)
 
 
-def _record_reminder_result(attendance, *, error: str = "") -> None:
-    """Ergebnis der Erinnerung an die offene Rückmeldung je Person (Issue #1071), wie beim Versand der Einladung."""
+def _record_reminder_result(attendance, *, error: str = "", sitzung: bool = False) -> None:
+    """
+    Ergebnis einer Erinnerung je Person (Issue #1071), wie beim Versand der Einladung: an die offene Rückmeldung
+    bzw. (``sitzung``) an die Sitzung selbst.
+    """
     from .models import FactionAttendance
 
-    werte = {"rsvp_reminder_mailed_at": None if error else timezone.now(), "rsvp_reminder_error": error[:300]}
+    if sitzung:
+        zeit, grund = "reminder_mailed_at", "reminder_error"
+    else:
+        zeit, grund = "rsvp_reminder_mailed_at", "rsvp_reminder_error"
+    werte = {zeit: None if error else timezone.now(), grund: error[:300]}
     try:
         FactionAttendance.objects.filter(pk=attendance.pk).update(**werte)
     except Exception:
@@ -404,11 +411,12 @@ class FactionMeetingEmailService:
             recipients = active.filter(status__in=["confirmed", "tentative"])
         else:
             recipients = active.filter(membership__is_guest=False).exclude(status__in=["declined", "absent", "excused"])
-        attendances = list(recipients.select_related("membership__user"))
+        # Wer schon an diese Sitzung erinnert wurde, bekommt keine zweite Erinnerung (Issue #1071)
+        attendances = list(recipients.filter(reminder_mailed_at__isnull=True).select_related("membership__user"))
         sent_count = 0
 
         for attendance in attendances:
-            if self._send_reminder_email(meeting, attendance, hours_before):
+            if self._send_reminder_email(meeting, attendance, hours_before, sitzung=True):
                 sent_count += 1
 
         # In-App-Erinnerung (Issue #70) — E-Mail ging bereits separat raus
@@ -442,15 +450,19 @@ class FactionMeetingEmailService:
         except Exception:
             logger.exception("In-App-Erinnerung fehlgeschlagen (meeting=%s)", meeting.id)
 
-    def _send_reminder_email(self, meeting, attendance, hours_before: int, *, offen: bool = False) -> bool:
+    def _send_reminder_email(
+        self, meeting, attendance, hours_before: int, *, offen: bool = False, sitzung: bool = False
+    ) -> bool:
         """
         Eine Erinnerung senden. ``offen``: Erinnerung an die fehlende Rückmeldung („Offene erinnern“, Issue #1071);
-        dann wird das Ergebnis je Person festgehalten wie beim Versand der Einladung.
+        ``sitzung``: Erinnerung an die Sitzung (Erinnerungslauf). In beiden Fällen wird das Ergebnis je Person
+        festgehalten wie beim Versand der Einladung.
         """
+        festhalten = offen or sitzung
         user = attendance.membership.user
         if not user.email:
-            if offen:
-                _record_reminder_result(attendance, error="Keine E-Mail-Adresse hinterlegt.")
+            if festhalten:
+                _record_reminder_result(attendance, error="Keine E-Mail-Adresse hinterlegt.", sitzung=sitzung)
             return False
 
         context = {
@@ -492,15 +504,17 @@ class FactionMeetingEmailService:
                 to=[user.email],
                 fail_silently=False,
             )
-            if offen:
+            if festhalten:
                 _record_reminder_result(
-                    attendance, error="" if uebergeben else "Keine gültige E-Mail-Adresse hinterlegt."
+                    attendance,
+                    error="" if uebergeben else "Keine gültige E-Mail-Adresse hinterlegt.",
+                    sitzung=sitzung,
                 )
-            return bool(uebergeben) if offen else True
+            return bool(uebergeben) if festhalten else True
         except Exception as e:
             logger.error(f"Failed to send reminder to {user.email}: {e}")
-            if offen:
-                _record_reminder_result(attendance, error=_invitation_error_text(e, user.email))
+            if festhalten:
+                _record_reminder_result(attendance, error=_invitation_error_text(e, user.email), sitzung=sitzung)
             return False
 
     def send_rsvp_reminder(self, meeting) -> tuple[int, int]:
@@ -566,22 +580,64 @@ class FactionMeetingEmailService:
         return f"Testmail an {user.email} versendet, {jetzt:%H:%M}. Bitte prüfen Sie Ihr Postfach."
 
 
+def _claim_reminder(meeting, now) -> bool:
+    """
+    Erinnerung an die Sitzung beanspruchen, bevor etwas rausgeht (Issue #1071): Nur wer ``reminder_sent_at`` als
+    erster Lauf setzt, verschickt. So entsteht auch bei parallelen Läufen keine zweite Erinnerung.
+    """
+    from django.db import transaction
+
+    from .models import FactionMeeting
+
+    with transaction.atomic():
+        # Nach der Sperre noch einmal prüfen: inzwischen abgesagt, begonnen oder nicht mehr eingeladen → keine Erinnerung
+        locked = (
+            FactionMeeting.objects.select_for_update()
+            .filter(
+                pk=meeting.pk,
+                reminder_sent_at__isnull=True,
+                status__in=["planned", "invited"],
+                invitation_sent=True,
+                start__gt=now,
+            )
+            .first()
+        )
+        if locked is None:
+            return False
+        locked.reminder_sent_at = now
+        locked.save(update_fields=["reminder_sent_at"])
+    meeting.reminder_sent_at = now
+    return True
+
+
+def meeting_reminder_hours(organization) -> int | None:
+    """Vorlauf der Erinnerung an die Sitzung in Stunden, ``None`` wenn ausgeschaltet (Einstellung, Issue #1071)."""
+    from .invitations import get_invitation_settings
+
+    einstellungen = get_invitation_settings(organization)
+    if not einstellungen["meeting_reminder_enabled"]:
+        return None
+    return int(einstellungen["meeting_reminder_hours"])
+
+
 def run_faction_reminder_pass(now=None) -> dict:
     """
     Periodischer Erinnerungslauf (Issue #59).
 
     Wird vom Zeitplan ``fraktionserinnerungen_senden`` (apps/work/schedules.py) aufgerufen —
-    analog zum Auto-Georef-Lauf. Verschickt einmalig je Sitzung eine
-    Erinnerung an Zusagen/Vielleicht-Antworten, sobald der Sitzungsbeginn
-    weniger als FACTION_REMINDER_WINDOW_HOURS (48 h) entfernt ist.
+    analog zum Auto-Georef-Lauf. Verschickt einmalig je Sitzung eine Erinnerung, sobald der Sitzungsbeginn
+    weniger als den eingestellten Vorlauf entfernt ist (Einstellung „Erinnerung an die Sitzung“, Standard an und
+    48 Stunden, Issue #1071): mit Zu- und Absagen an Zusagen und Vielleicht-Antworten, sonst an alle Eingeladenen.
 
-    Ein Cache-Lock verhindert parallele Läufe (mehrere Worker/Prozesse).
+    Ein Cache-Lock verhindert parallele Läufe (mehrere Worker/Prozesse); zusätzlich beansprucht jeder Lauf die
+    Sitzung vor dem Versand (``_claim_reminder``) und überspringt Personen, die schon erinnert wurden.
 
     Returns:
         Statistik-Dict (meetings, sent bzw. skipped-Grund).
     """
     from django.core.cache import cache
 
+    from .invitations import MEETING_REMINDER_MAX_HOURS
     from .models import FactionMeeting
 
     now = now or timezone.now()
@@ -591,7 +647,7 @@ def run_faction_reminder_pass(now=None) -> dict:
 
     try:
         stats = {"meetings": 0, "sent": 0}
-        window_end = now + timedelta(hours=FACTION_REMINDER_WINDOW_HOURS)
+        window_end = now + timedelta(hours=MEETING_REMINDER_MAX_HOURS)
         meetings = FactionMeeting.objects.filter(
             status__in=["planned", "invited"],
             invitation_sent=True,
@@ -601,16 +657,22 @@ def run_faction_reminder_pass(now=None) -> dict:
         ).select_related("organization")
 
         service = FactionMeetingEmailService()
+        vorlauf: dict = {}
         for meeting in meetings:
+            if meeting.organization_id not in vorlauf:
+                vorlauf[meeting.organization_id] = meeting_reminder_hours(meeting.organization)
+            stunden = vorlauf[meeting.organization_id]
+            if stunden is None or meeting.start > now + timedelta(hours=stunden):
+                continue
+            # Einmalig je Sitzung — auch bei 0 Empfängern oder einem Fehler nicht erneut versuchen
+            if not _claim_reminder(meeting, now):
+                continue
             hours_before = max(1, int((meeting.start - now).total_seconds() // 3600))
             try:
                 sent = service.send_reminder(meeting, hours_before=hours_before)
             except Exception:
                 logger.exception("Erinnerungsversand fehlgeschlagen (meeting=%s)", meeting.id)
                 continue
-            # Einmalig je Sitzung — auch bei 0 Empfängern nicht erneut versuchen
-            meeting.reminder_sent_at = now
-            meeting.save(update_fields=["reminder_sent_at"])
             stats["meetings"] += 1
             stats["sent"] += sent
 

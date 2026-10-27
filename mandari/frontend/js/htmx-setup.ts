@@ -166,6 +166,19 @@ export function setupHtmx(): void {
   htmx.config.allowEval = false
   htmx.config.selfRequestsOnly = true
 
+  // Textfelder mit eigenem Sofort-Speichern (data-sofort-tippen, Issue #1071) speichern über ihren eigenen Auslöser
+  // (input mit Verzögerung). Ihr change darf den umgebenden Abschnitt mit eigenem hx-post nicht noch einmal auslösen,
+  // sonst gingen zwei gleiche Anfragen raus. Abgefangen in der Erfassungsphase, damit es auch für nachgeladene Felder gilt.
+  document.addEventListener(
+    'change',
+    (event) => {
+      if (event.target instanceof HTMLElement && event.target.hasAttribute('data-sofort-tippen')) {
+        event.stopPropagation()
+      }
+    },
+    true,
+  )
+
   document.body.addEventListener('htmx:beforeRequest', (event) => {
     const form = autosaveFormular(event)
     if (!form?.dataset.autosave) return

@@ -1,6 +1,7 @@
 {% comment %}
 Rechte Spalte der Einstellungen › Fraktionssitzungen (Issue #1071, Muster einstellungen.html): Einladung,
-Erinnerung zum Eintragen von TOPs, Protokoll versenden, öffentliche Protokolle und weitere Regeln. Teil des
+Erinnerung an die Sitzung, Erinnerung zum Eintragen von TOPs, Protokoll versenden, öffentliche Protokolle und weitere
+Regeln. Teil des
 Hauptformulars; Feldnamen und Werte wie bisher (Issues #62, #69, #871). Jeder Abschnitt speichert seine Felder sofort
 (_sofort.html, Felder je Abschnitt aus fraktion_einstellungen.ABSCHNITT_FELDER). publish_protocols nur mit
 protocols.publish (sonst gesperrt, wie bisher). Kontext: faction_settings, felder, organization, can_publish_protocols,
@@ -27,6 +28,17 @@ nur_lesen.
         </select>
     </p>
     <p class="fs-meta" id="e-rueck-h">Gilt für Sitzungen mit Zu- und Absagen. Die schalten Sie je Sitzungsreihe oder je Sitzung ein, Standard ist aus. Bei Opt-out stehen nach dem Versand alle auf „Zugesagt“ und können absagen.</p>
+</section>
+
+<section aria-labelledby="e-erv" id="einst-sitzungserinnerung" {% include "work/organization/neu/_sofort.html" with felder=felder.sitzungserinnerung %}>
+    <h2 id="e-erv">Erinnerung an die Sitzung</h2>
+    <div class="fs-schalter-zeile">{% include "work/organization/neu/_schalter.html" with name="meeting_reminder_enabled" id="id_meeting_reminder_enabled" label="Vor Beginn an die Sitzung erinnern" an=faction_settings.meeting_reminder_enabled hilfe="e-erv-h" %}</div>
+    <div class="fs-einst-zeile zwei">
+        <label for="id_meeting_reminder_hours">Stunden vor Beginn
+            <input class="wf-eingabe" type="number" name="meeting_reminder_hours" id="id_meeting_reminder_hours" value="{{ faction_settings.meeting_reminder_hours }}" min="1" max="336" {% include "work/organization/neu/_sofort.html" with felder=felder.sitzungserinnerung tippen=True %}>
+        </label>
+    </div>
+    <p id="e-erv-h">Mit Zu- und Absagen an alle, die zugesagt oder „vielleicht“ geantwortet haben, ohne Zu- und Absagen an alle Eingeladenen. Jede Person bekommt die Erinnerung einmal; das Ergebnis steht in der Sitzung bei der Einladung. Standard: an, 48 Stunden vorher.</p>
 </section>
 
 <section aria-labelledby="e-erin" id="einst-erinnerung" {% include "work/organization/neu/_sofort.html" with felder=felder.erinnerung %}>
