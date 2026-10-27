@@ -103,10 +103,16 @@ class KiAttrappe:
 
 
 def absatz_markieren(page: Any, text: str) -> None:
-    """Einen Absatz von Anfang bis Ende per Tastatur markieren."""
+    """Einen Absatz von Anfang bis Ende per Tastatur markieren und warten, bis der Editor die Markierung kennt.
+
+    ProseMirror übernimmt die Auswahl von Shift+End erst mit dem nächsten ``selectionchange``. Kommt der Klick auf
+    den KI-Reiter davor (in der CI unter Last gesehen), hat der Editor den Fokus schon verloren und verwirft die
+    Auswahl: Die Markierung bliebe leer.
+    """
     page.locator(f"{PROSEMIRROR} p", has_text=text).click()
     page.keyboard.press("Home")
     page.keyboard.press("Shift+End")
+    page.wait_for_function(f"(text) => {ALPINE_EDITOR}.aiSelectionText.includes(text)", arg=text, timeout=5000)
 
 
 def am_absatzende_tippen(page: Any, absatz: str, text: str) -> None:
