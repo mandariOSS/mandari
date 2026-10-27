@@ -290,10 +290,19 @@ def dispatch_invitations_once(meeting, now=None) -> int | None:
     """
     from .models import FactionMeeting
 
+    status_vorher = meeting.status
     claimed = FactionMeeting.objects.filter(pk=meeting.pk, invitation_sent=False).update(
         invitation_sent=True, invitation_claimed_at=now or timezone.now()
     )
     if not claimed:
+        return None
+    # Stand nach dem Anspruch lesen: Hat jemand die Sitzung inzwischen verschoben oder abgesagt (etwa der
+    # Rhythmuswechsel der Reihe, der die Termine dabei sperrt), gilt der neue Stand, nicht der beim Aufruf geladene
+    meeting.refresh_from_db()
+    if meeting.status == "cancelled" and status_vorher != "cancelled":
+        FactionMeeting.objects.filter(pk=meeting.pk, invitation_sent_at__isnull=True).update(
+            invitation_sent=False, invitation_claimed_at=None
+        )
         return None
     try:
         return dispatch_invitations(meeting)

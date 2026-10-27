@@ -444,6 +444,30 @@ def test_erinnerung_nach_absage_nicht_mehr_beansprucht(org: Any, vorsitz: Any) -
     assert meeting.reminder_sent_at is None
 
 
+def test_einladung_nach_rhythmuswechsel_mit_aktuellem_stand(
+    org: Any, vorsitz: Any, client_for: Any, django_capture_on_commit_callbacks: CaptureCallbacks
+) -> None:
+    from apps.work.faction.invitations import dispatch_invitations_once
+
+    schedule = _reihe(org, django_capture_on_commit_callbacks)
+    termine = _termine(schedule)
+    # Der Einladungslauf hat die Termine geladen; währenddessen ändert der Vorsitz den Rhythmus
+    geladen = {m.pk: FactionMeeting.objects.get(pk=m.pk) for m in termine}
+    with django_capture_on_commit_callbacks(execute=True):
+        client_for(vorsitz.user).post(_url(org), _formular(schedule, recurrence="biweekly"))
+    abgesagt = [m for m in _termine(schedule) if m.cancellation_reason == reihe.RHYTHMUS_GRUND]
+    assert abgesagt
+    mail.outbox.clear()
+
+    for meeting in abgesagt:
+        assert dispatch_invitations_once(geladen[meeting.pk]) is None
+        meeting.refresh_from_db()
+        # Bleibt abgesagt, keine Einladung, Anspruch zurückgegeben
+        assert meeting.status == "cancelled" and meeting.cancellation_reason == reihe.RHYTHMUS_GRUND
+        assert meeting.invitation_sent is False and meeting.invitation_claimed_at is None
+    assert not mail.outbox
+
+
 def test_erinnerung_ohne_adresse_mit_grund(org: Any, vorsitz: Any) -> None:
     vorsitz.user.email = ""
     vorsitz.user.save(update_fields=["email"])
