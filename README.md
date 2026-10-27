@@ -157,8 +157,10 @@ Der Betriebsstatus ist öffentlich einsehbar: <https://status.mandari.de>.
 | Session-API v1 | `/api/v1/session/<kommune>/` | Token oder Sitzung, [OpenAPI](https://docs.mandari.de/session/api-v1/) |
 | Fraktions-API | `/api/public/v1/` | Token |
 
-Für den SaaS-Betrieb kann ein Kundenportal Organisationen über `/api/provisioning/` anlegen.
-Ohne gesetzten `PROVISIONING_API_KEY` ist diese Schnittstelle vollständig abgeschaltet — bei
+Für den SaaS-Betrieb kann ein System des Betreibers Organisationen über `/api/provisioning/` anlegen;
+Version 2 unter `/api/provisioning/v2/` setzt den Soll-Zustand deklarativ und wiederholbar
+([docs/PROVISIONING_API.md](docs/PROVISIONING_API.md)). Ohne gesetzten `PROVISIONING_API_KEY` bzw.
+`PROVISIONING_V2_API_KEY` ist die jeweilige Version vollständig abgeschaltet — bei
 selbst betriebenen Installationen entsteht also keine zusätzliche Angriffsfläche.
 
 ## Technik

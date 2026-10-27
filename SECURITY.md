@@ -109,7 +109,10 @@ verändert und unter eigenem Namen anbietet, wird selbst Hersteller.
   Verschlüsselungsschlüssel. **Sichern Sie sie getrennt vom Server.** Ohne diesen Schlüssel
   sind verschlüsselte Inhalte unwiederbringlich unlesbar.
 - `DEBUG` bleibt in Produktion aus. `manage.py check --deploy` läuft in der CI blockierend.
-- Die Provisioning-Schnittstelle ist ohne `PROVISIONING_API_KEY` vollständig abgeschaltet.
+- Die Provisioning-Schnittstelle ist ohne `PROVISIONING_API_KEY` (v1) bzw. `PROVISIONING_V2_API_KEY`
+  (v2) vollständig abgeschaltet. v2 lässt sich zusätzlich mit `PROVISIONING_V2_ALLOWED_NETWORKS` auf
+  interne Netze beschränken; die Route gehört nicht ins offene Netz
+  ([docs/PROVISIONING_API.md](docs/PROVISIONING_API.md)).
 - Elasticsearch und PostgreSQL gehören nicht ins offene Netz; im Compose-Stack sind sie nur
   intern erreichbar, in Kubernetes hilft `networkPolicy.enabled=true`.
 - Sicherheitsrelevante Einstellungen und Maßnahmen sind unter
