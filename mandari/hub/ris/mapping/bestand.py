@@ -25,7 +25,8 @@ Grundsätze:
   baut je Seite einen ``RefContext``.
 
 Bekannte Einschränkung: Verweise ohne Fremdschlüssel im Bestand (``participant``, ``originatorPerson``,
-``subOrganizationOf`` …) entfallen, statt Adressen der Quelle durchzureichen.
+``subOrganizationOf`` …) entfallen, statt Adressen der Quelle durchzureichen. ``originatorOrganization`` kommt aus
+der Erkennung der antragstellenden Fraktionen (``insight_core.services.vorgang_urheber``, Issue #1138).
 
 ``VERSION`` steigt, wenn sich für dasselbe Objekt des Bestands die Abbildung ändert.
 """
@@ -66,12 +67,15 @@ from insight_core.models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    VorgangUrheber,
 )
 from insight_core.services.file_reconcile import is_blocked
+from insight_core.services.vorgang_urheber import urheber_je_vorgang
 
 #: Version der Abbildung (2: Beschlussfassung und Genehmigung der Niederschrift aus eigenen Spalten, Issue #525;
-#: 3: ``mandari:summaryAiGenerated`` zur KI-Zusammenfassung, Issue #938)
-VERSION: Final = 3
+#: 3: ``mandari:summaryAiGenerated`` zur KI-Zusammenfassung, Issue #938;
+#: 4: antragstellende Fraktionen ``originatorOrganization``, ``mandari:originator…``, Issue #1138)
+VERSION: Final = 4
 
 # Verbreitete Angaben fremder Quellen, die keiner der sieben Werte sind, aber eindeutig dazugehören.
 # Manche RIS ordnen nach dem Kommunalrecht: Hauptorgan (Rat, Kreistag) und Hilfsorgan (Ausschüsse,
@@ -241,6 +245,8 @@ class RefContext:
         self.location_by_ext: dict[str, OParlLocation] = {}
         # Kennung des Tagesordnungspunkts in der Quelle -> Kennungen seiner Beratungen
         self.consultations_by_agenda_ext: dict[str, list[Any]] = {}
+        # Vorgang -> antragstellende Fraktionen (Issue #1138)
+        self.urheber_by_paper: dict[Any, list[VorgangUrheber]] = {}
 
     @classmethod
     def empty(cls, objects: Iterable[Any]) -> RefContext:
@@ -307,8 +313,12 @@ class RefContext:
 
     @classmethod
     def for_papers(cls, papers: Iterable[OParlPaper]) -> RefContext:
-        """Für Vorlagen: Die eingebetteten Beratungen brauchen Sitzung und Tagesordnungspunkt."""
-        return cls.for_consultations([c for paper in papers for c in paper.consultations.all()])
+        """Für Vorlagen: Die eingebetteten Beratungen brauchen Sitzung und Tagesordnungspunkt; dazu die Antragsteller."""
+        papers = list(papers)
+        ctx = cls.for_consultations([c for paper in papers for c in paper.consultations.all()])
+        if papers:
+            ctx.urheber_by_paper = urheber_je_vorgang(paper.id for paper in papers)
+        return ctx
 
     def _load_consultations(self, agenda_exts: set[str]) -> None:
         if not agenda_exts:
@@ -647,8 +657,36 @@ class BestandMapping:
                 "mandari:summary": paper.summary,
                 # Die Zusammenfassung erzeugt eine KI, ungeprüft (EU AI Act Art. 50, Issue #938, docs/KI_TRANSPARENZ.md)
                 "mandari:summaryAiGenerated": True if paper.summary else None,
+                **self._urheber(ctx.urheber_by_paper.get(paper.id, [])),
             }
         )
+
+    def _urheber(self, urheber: list[VorgangUrheber]) -> Objekt:
+        """
+        Antragstellende Fraktionen (Issue #1138, ``docs/OPARL_API.md``): ``originatorOrganization`` nur mit
+        Organisationsobjekt im Bestand, sonst der Name in ``mandari:originatorName``; ``mandari:originator`` nennt alle
+        mit Name, Kurzform und Art, ``mandari:originatorSource`` den Weg der Erkennung.
+        """
+        if not urheber:
+            return {}
+        return {
+            "originatorOrganization": [
+                self.uris.obj("organization", u.organisation_id) for u in urheber if u.organisation_id
+            ],
+            "mandari:originatorName": [u.bezeichnung for u in urheber if not u.organisation_id],
+            "mandari:originator": [
+                clean(
+                    {
+                        "name": u.bezeichnung,
+                        "shortName": u.kurzform,
+                        "type": u.art,
+                        "organization": self.uris.obj("organization", u.organisation_id) if u.organisation_id else None,
+                    }
+                )
+                for u in urheber
+            ],
+            "mandari:originatorSource": urheber[0].herkunft,
+        }
 
     def consultation(self, consultation: OParlConsultation, ctx: RefContext) -> Objekt:
         meeting_id = ctx.meeting_by_ext.get(consultation.meeting_external_id or "")

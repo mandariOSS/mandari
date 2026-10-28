@@ -33,8 +33,11 @@ from django.db.models.fields.reverse_related import ForeignObjectRel
 # Protokollen (SyncLog, SET_NULL) auf Quellen; das sind Betriebsdaten, keine Arbeitsdaten.
 RIS_APP_LABELS = frozenset({"insight_core", "insight_sync"})
 #: Gepflegte Daten in diesen Apps, die wie Arbeitsdaten anderer Module zählen: Sie entstehen nicht aus der Quelle und
-#: kämen mit ihr nicht wieder. Fraktionszuordnungen (Issue #916) sind zum Teil von Hand gepflegt.
-GEPFLEGTE_MODELLE = frozenset({"insight_core.PersonFraktion"})
+#: kämen mit ihr nicht wieder. Fraktionszuordnungen (Issue #916) sind zum Teil von Hand gepflegt, die
+#: Fraktionszugehörigkeiten und -namen für die Erkennung der Antragsteller (Issue #1138) ganz.
+GEPFLEGTE_MODELLE = frozenset(
+    {"insight_core.PersonFraktion", "insight_core.FraktionsZugehoerigkeit", "insight_core.FraktionsBezeichnung"}
+)
 
 ModelType = type[models.Model]
 
