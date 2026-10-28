@@ -15,6 +15,11 @@ Suchmaschinen über die Sitemaps.
 an (Issue #919). Es wird nur registriert, wenn ``GEOREF_SUBSCRIPTION`` nicht ``aus`` ist; mit ``schatten`` startet
 ein neu angelegtes Abonnement im Schattenbetrieb und zählt nur. Ein neues Abonnement beginnt am Ende des Journals;
 Vorgänge mit älterem Text verortet der Zeitplan ``verortung_automatisch`` wie bisher.
+
+``insight.urheber`` (``insight_core.services.vorgang_urheber``) ermittelt nach einer neuen oder geänderten Vorlage
+und nach neuem Text ihrer Anlagen die antragstellenden Fraktionen (Issue #1138). Schalter ``URHEBER_SUBSCRIPTION``
+(Standard ``aktiv``; ``schatten`` zählt nur, ``aus`` registriert nichts). Den Bestand bearbeitet
+``manage.py vorgang_urheber_ermitteln``.
 """
 
 from __future__ import annotations
@@ -24,7 +29,7 @@ import logging
 from django.conf import settings
 
 from apps.events import subscriber
-from insight_core.services import fraktionen_live, georef_abonnement, indexnow
+from insight_core.services import fraktionen_live, georef_abonnement, indexnow, vorgang_urheber
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +81,23 @@ def register_verortung() -> bool:
     return True
 
 
+def register_urheber() -> bool:
+    """Registriert ``insight.urheber`` je nach Schalter; ``True``, wenn registriert."""
+    modus = getattr(settings, "URHEBER_SUBSCRIPTION", "aktiv")
+    if modus == "aus":
+        return False
+    subscriber(
+        vorgang_urheber.NAME,
+        types=vorgang_urheber.TYPES,
+        batch=vorgang_urheber.BATCH,
+        queue=vorgang_urheber.QUEUE,
+        transactional=True,
+        shadow=modus == "schatten",
+    )(vorgang_urheber.urheber_abonnement)
+    return True
+
+
 register()
 register_indexnow()
 register_verortung()
+register_urheber()

@@ -20,7 +20,7 @@ die wir nicht haben (nummer_gesucht, Issue #1102), sagen wir das so, statt nur �
     <i data-lucide="file-text" class="w-12 h-12 mx-auto text-gray-400 mb-4"></i>
     <h3 class="text-lg font-medium text-gray-900 dark:text-white mb-2">Keine Vorgänge gefunden</h3>
     <p class="text-gray-500 dark:text-gray-400">
-        {% if request.GET.q or request.GET.type %}
+        {% if request.GET.q or request.GET.type or request.GET.fraktion %}
             Ihre Suche ergab keine Treffer. Versuchen Sie andere Filterkriterien.
         {% else %}
             Es sind noch keine Vorgänge vorhanden.
