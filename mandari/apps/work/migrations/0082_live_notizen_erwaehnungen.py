@@ -13,7 +13,7 @@ from django.db import migrations, models
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("work", "0080_offene_erinnern"),
+        ("work", "0081_reihe_bearbeiten_erinnerung"),
     ]
 
     operations = [
