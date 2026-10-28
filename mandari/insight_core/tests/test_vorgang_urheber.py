@@ -49,7 +49,7 @@ pytestmark = pytest.mark.django_db
 
 RIS = "https://ris.beispielstadt.example/oparl"
 _nummer = count()
-DATEN = Path(__file__).resolve().parents[1] / "data"
+DATEN = Path(__file__).resolve().parents[1] / "fraktionslisten"
 
 
 @pytest.fixture

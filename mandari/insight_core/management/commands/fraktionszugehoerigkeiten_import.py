@@ -14,8 +14,8 @@ Eine Zeile gilt als vorhanden, wenn Kommune, Name, Vorname, Fraktion und ``guelt
 ``fraktion`` (Name wie in den Zugehörigkeiten), ``bezeichnung``, ``kurzform``, ``gueltig_ab``, ``gueltig_bis``,
 ``quelle`` (``FraktionsBezeichnung``); der Befehl erkennt sie an der Spalte ``bezeichnung``.
 
-Startdaten für Münster: ``insight_core/data/fraktionszugehoerigkeiten_muenster.csv`` und
-``insight_core/data/fraktionsbezeichnungen_muenster.csv``. Danach die Vorgänge der Kommune neu ermitteln:
+Startdaten für Münster: ``insight_core/fraktionslisten/fraktionszugehoerigkeiten_muenster.csv`` und
+``insight_core/fraktionslisten/fraktionsbezeichnungen_muenster.csv``. Danach die Vorgänge der Kommune neu ermitteln:
 ``manage.py vorgang_urheber_ermitteln --kommune <kommune> --alle``.
 """
 

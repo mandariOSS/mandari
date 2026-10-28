@@ -985,7 +985,7 @@ docker compose exec -d mandari python manage.py vorgang_urheber_ermitteln --stap
 ```
 
 Kommunen ohne Fraktionsmitgliedschaften in OParl bekommen eine gepflegte Liste (Admin „Fraktionszugehörigkeiten“ oder
-`manage.py fraktionszugehoerigkeiten_import <csv>`; Startdaten Münster unter `mandari/insight_core/data/`). Danach die
+`manage.py fraktionszugehoerigkeiten_import <csv>`; Startdaten Münster unter `mandari/insight_core/fraktionslisten/`). Danach die
 Kommune neu ermitteln: `vorgang_urheber_ermitteln --kommune <slug> --alle`.
 
 ### Work-Daten nach Neuveröffentlichung im RIS
