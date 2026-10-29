@@ -441,7 +441,12 @@ def _ist_leer(html: str) -> bool:
 
 
 def notizen_speichern(
-    item: FactionAgendaItem, html: str, *, basis: str | None, membership: Membership
+    item: FactionAgendaItem,
+    html: str,
+    *,
+    basis: str | None,
+    membership: Membership,
+    yjs: bytes | None = None,
 ) -> NotizErgebnis:
     """
     Notizen eines TOPs speichern, nur wenn niemand inzwischen gespeichert hat (``basis`` = Stand beim Laden).
@@ -449,16 +454,37 @@ def notizen_speichern(
     Weicht der gespeicherte Stand ab, bleibt er unverändert; zurück kommt der aktuelle Stand, damit der Browser
     beide Fassungen zusammenführen kann (keine stillen Verluste). Gespeichert wird nur die Positivliste des Editors.
     Die Änderungshistorie erhält höchstens alle zehn Minuten je TOP einen Eintrag (ohne Inhalt).
+
+    Live-Mitschreiben (``yjs`` = Zustand des gemeinsamen Editors, :mod:`apps.work.faction.live`): Maßgeblich ist der
+    Stand, zu dem der gespeicherte Zustand gehört; gibt es keinen, der Stand beim Verbinden (``basis``). Der Zustand
+    wird mit den Notizen gespeichert. Speichert jemand ohne Verbindung, entfällt der Zustand; verbundene Editoren
+    bauen ihn danach aus den neuen Notizen auf (``live.neu_aufbauen``).
+
+    Neu erwähnte Personen bekommen danach eine Benachrichtigung (:mod:`apps.work.faction.erwaehnungen`).
     """
-    from . import audit
-    from .models import FactionAgendaItem
+    from . import audit, erwaehnungen, live
+    from .models import FactionAgendaItem, FactionNotesState
 
     sauber = "" if _ist_leer(html) else sanitize_editor_html(html)
+    zustand_verworfen = False
     with transaction.atomic():
         gesperrt = FactionAgendaItem.objects.select_for_update().select_related("meeting__organization").get(pk=item.pk)
+        zustand = FactionNotesState.objects.select_for_update().filter(item=gesperrt).first()
         aktuell = str(cast(Any, gesperrt).get_notes_decrypted() or "")
-        if basis is not None and basis != fingerabdruck(aktuell):
+        erwartet = zustand.stand if yjs is not None and zustand is not None else basis
+        if erwartet is not None and erwartet != fingerabdruck(aktuell):
             return NotizErgebnis(False, aktuell, fingerabdruck(aktuell), gesperrt.notes_updated_at)
+        if yjs is not None:
+            if zustand is None:
+                zustand = FactionNotesState(item=gesperrt)
+            zustand.item = gesperrt
+            zustand.set_state(yjs)
+            zustand.stand = fingerabdruck(sauber)
+            zustand.save()
+        elif zustand is not None and sauber != aktuell:
+            # Ohne Verbindung gespeichert: Der Zustand passt nicht mehr zu den Notizen
+            zustand.delete()
+            zustand_verworfen = True
         if sauber == aktuell:
             return NotizErgebnis(True, aktuell, fingerabdruck(aktuell), gesperrt.notes_updated_at)
         cast(Any, gesperrt).set_notes_encrypted(sauber)
@@ -467,6 +493,8 @@ def notizen_speichern(
         FactionAgendaItem.objects.filter(pk=item.pk).update(
             notes_encrypted=gesperrt.notes_encrypted, notes_updated_at=jetzt, updated_at=jetzt
         )
+        if zustand_verworfen:
+            transaction.on_commit(lambda: live.neu_aufbauen(gesperrt.pk, sauber, vorher=aktuell))
     if _historie_faellig(item):
         audit.log_event(
             "update",
@@ -474,6 +502,7 @@ def notizen_speichern(
             membership=membership,
             changes={"notes_encrypted": {"alt": "[verschlüsselt geändert]", "neu": "[verschlüsselt geändert]"}},
         )
+    erwaehnungen.benachrichtigen(gesperrt, sauber, von=membership, vorher=aktuell)
     return NotizErgebnis(True, sauber, fingerabdruck(sauber), jetzt)
 
 
@@ -515,6 +544,15 @@ def _mitglieder(organization: Organization, *, nur_vereidigte: bool) -> list[Mem
         .order_by("user__last_name", "user__first_name", "user__email")
     )
     return [m for m in qs if not nur_vereidigte or is_sworn_member(m)]
+
+
+def erwaehnbare_personen(personen: list[Membership]) -> list[dict[str, str]]:
+    """Vorschlagsliste für @-Erwähnungen in den Notizen: Kennung, Name und erste Rolle je Person."""
+    liste = []
+    for m in personen:
+        rollen = [r.name for r in m.roles.all()]
+        liste.append({"id": str(m.pk), "name": m.user.get_display_name(), "rolle": rollen[0] if rollen else ""})
+    return liste
 
 
 def personen_und_gruppen(organization: Organization, *, nur_vereidigte: bool) -> tuple[list[Membership], list[Gruppe]]:

@@ -18,7 +18,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 
-from .. import protokoll
+from .. import protokoll, sitzung
 from ..models import FactionMeeting
 from . import _helpers
 from .vorbereiten import _detail_config
@@ -43,13 +43,20 @@ def dokument_kontext(view: Any, meeting: FactionMeeting) -> dict[str, Any]:
     g = protokoll.genehmigung(meeting)
     editierbar = r.protokollieren and meeting.status == "completed"
     if editierbar:
+        # @-Erwähnen auch nach der Sitzung (Issue #874); bei nichtöffentlichen TOPs nur Vereidigte
+        erwaehnbar: dict[bool, list[dict[str, str]]] = {}
         for t in d.tops:
+            if t.intern not in erwaehnbar:
+                personen, _gruppen = sitzung.personen_und_gruppen(meeting.organization, nur_vereidigte=t.intern)
+                erwaehnbar[t.intern] = sitzung.erwaehnbare_personen(personen)
             t.konfig = {
                 "itemId": str(t.item.pk),
                 "stand": t.stand,
                 "editierbar": True,
                 "platzhalter": "Notiz ergänzen",
                 "leiste": False,
+                "personen": erwaehnbar[t.intern],
+                "ich": str(membership.pk),
             }
     return {
         "meeting": meeting,

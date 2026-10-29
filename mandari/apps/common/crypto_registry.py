@@ -120,6 +120,8 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
         paths=("meeting__organization",),
     ),
     *_tenant("work.FactionProtocolEntry", "content_encrypted", paths=("meeting__organization",)),
+    # Zustand des gemeinsamen Editors der Live-Notizen (Issue #874), Format wie work.Motion.yjs_document_encrypted
+    *_tenant("work.FactionNotesState", "yjs_encrypted", paths=("item__meeting__organization",), batch_size=_LARGE),
     *_tenant("work.MeetingPreparation", "notes_encrypted", paths=_ORG),
     *_tenant("work.AgendaItemPosition", "reasoning_encrypted", paths=_ORG),
     *_tenant("work.AgendaPrivateNote", "content_encrypted", paths=_ORG),
