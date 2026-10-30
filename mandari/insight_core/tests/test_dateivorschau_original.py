@@ -133,6 +133,7 @@ def test_abruf_abgelehnt(datei: OParlFile, quelle: dict[str, Any]) -> None:
 def test_nicht_gefunden_ohne_link(datei: OParlFile, quelle: dict[str, Any]) -> None:
     quelle["antwort"] = httpx.Response(404, content=b"weg")
     status, html = _abruf(datei)
+    assert status == 404, "mit 200 wertet Google die Antwort als Soft 404 (Issue #1145)"
     assert "Datei nicht gefunden" in html
     assert LINK not in html
 

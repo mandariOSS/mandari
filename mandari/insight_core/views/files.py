@@ -527,6 +527,8 @@ def _fetch_live(file_obj, url, filename, force_download, *, deadline=None):
             "Die Probleme werden nach unserem nächsten Scan in der Regel gelöst. "
             "Bei längerfristigen Problemen mit bestimmten Dokumenten melden Sie sich bitte bei "
             'unserem Support unter <a href="mailto:support@mandari.de">support@mandari.de</a>.',
+            # Sonst wertet Google die Antwort als Soft 404 (Issue #1145)
+            status=404,
         )
     except safe_fetch.TooLargeError:
         spool.close()

@@ -191,10 +191,54 @@ class TestBlaettern:
         assert _robots(erste) == "index, follow"
         assert zweite.status_code == 200
         html = zweite.content.decode()
-        assert _robots(html) == "noindex, follow", "weitere Seiten: nicht im Index, Links folgen"
-        assert _canonical(html) == f"{settings.SITE_URL}/insight/k/nord/vorgaenge/"
+        # Eigene kanonische Adresse: Auf Seite 1 kanonisiert, folgt Google den Links auf Dauer nicht mehr (Issue #1145)
+        assert _robots(html) == "index, follow"
+        assert _canonical(html) == f"{settings.SITE_URL}/insight/k/nord/vorgaenge/?page=2"
+        assert "<title>Vorgänge – Seite 2 |" in html
         assert 'href="?page=1"' in html
         assert Client().get("/insight/k/nord/vorgaenge/?page=3").status_code == 404
+
+    @pytest.mark.parametrize(
+        ("anfrage", "robots", "kanonisch"),
+        [
+            ("vorgaenge/?page=1", "index, follow", "vorgaenge/"),
+            ("vorgaenge/?page=2&utm_source=x", "index, follow", "vorgaenge/?page=2"),
+            ("vorgaenge/?page=last", "noindex, follow", "vorgaenge/"),
+            ("vorgaenge/?page=2&q=Vorgang", "noindex, follow", "vorgaenge/"),
+            ("vorgaenge/?period=past", "noindex, follow", "vorgaenge/"),
+            ("termine/?period=past", "index, follow", "termine/?period=past"),
+            ("termine/?page=2&period=past", "index, follow", "termine/?period=past&page=2"),
+            ("termine/?period=all", "noindex, follow", "termine/"),
+        ],
+    )
+    def test_blaetteransichten(self, kommunen: dict[str, Any], anfrage: str, robots: str, kanonisch: str) -> None:
+        _vorgaenge(kommunen["nord"], 30)
+        for nummer in range(30):
+            OParlMeeting.objects.create(
+                external_id=f"{kommunen['nord'].external_id}/meeting/alt/{nummer}",
+                body=kommunen["nord"],
+                name=f"Alte Sitzung {nummer}",
+                start=timezone.now() - timedelta(days=nummer + 1),
+            )
+
+        html = Client().get(f"/insight/k/nord/{anfrage}").content.decode()
+
+        assert _robots(html) == robots
+        assert (_canonical(html) or "").replace("&amp;", "&") == f"{settings.SITE_URL}/insight/k/nord/{kanonisch}"
+
+    def test_vergangene_sitzungen_haben_einen_eigenen_titel(self, kommunen: dict[str, Any]) -> None:
+        html = Client().get("/insight/k/nord/termine/?period=past").content.decode()
+        assert "<title>Vergangene Sitzungen |" in html
+
+    def test_weitere_seite_im_gemeinsamen_portal_bleibt_noindex(self, kommunen: dict[str, Any]) -> None:
+        _vorgaenge(kommunen["nord"], 30)
+        client = Client()
+        client.get(reverse("insight_core:insight:set_body", args=[kommunen["nord"].id]))
+
+        html = client.get("/insight/vorgaenge/?page=2").content.decode()
+
+        assert _robots(html) == "noindex, follow"
+        assert _canonical(html) == f"{settings.SITE_URL}/insight/k/nord/vorgaenge/"
 
     def test_hoechstens_so_viele_seiten(self, kommunen: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(_helpers, "LISTEN_SEITEN_HOECHSTENS", 1)
