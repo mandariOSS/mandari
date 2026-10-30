@@ -31,6 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.http import HttpRequest, HttpResponseBase
@@ -100,6 +101,14 @@ def ohne_index_kopf(response: HttpResponseBase) -> HttpResponseBase:
     return response
 
 
+def _auf_kanonischer_adresse(request: HttpRequest, response: HttpResponseBase) -> bool:
+    """Antwortet die Seite unter ihrer kanonischen Adresse? Unter einem Mandanten-Slug verweist sie auf den der Kommune."""
+    kontext = getattr(response, "context_data", None)
+    seo = kontext.get("seo") if isinstance(kontext, dict) else None
+    kanonisch = seo.get("canonical_url", "") if isinstance(seo, dict) else ""
+    return urlsplit(kanonisch).path == request.path
+
+
 def _robots_im_kopf(response: HttpResponseBase, wert: str) -> bool:
     """robots-Wert der noch nicht gerenderten Seite (``TemplateResponse``) setzen; ``False``, wenn das nicht geht."""
     kontext = getattr(response, "context_data", None)
@@ -135,7 +144,11 @@ def listenseite(view: View) -> View:
         if ist_teilansicht(request):
             return ohne_index_kopf(response)
         # Nur die Adressen je Kommune haben ein ``slug``; im gemeinsamen Portal bleibt jeder Parameter ``noindex``
-        if "slug" in kwargs and blaetteransicht(request, kwargs.get("liste")) is not None:
+        if (
+            "slug" in kwargs
+            and blaetteransicht(request, kwargs.get("liste")) is not None
+            and _auf_kanonischer_adresse(request, response)
+        ):
             return response
         if hat_ansichtsparameter(request) and not _robots_im_kopf(response, NOINDEX_FOLLOW):
             # Schon fertige Antwort (z. B. Weiterleitung zur Auswahl der Kommune): dann über den Kopf
@@ -174,13 +187,18 @@ def sitzung_mit_inhalt(start: datetime | None, tagesordnungspunkte: int, nieders
 
 
 def sitzungen_mit_inhalt(sitzungen: QuerySet[Any], jetzt: datetime) -> QuerySet[Any]:
-    """``sitzung_mit_inhalt`` als Abfrage für die Sitemap: Unterabfrage statt Join, die Zeilen bleiben einzeln."""
+    """
+    ``sitzung_mit_inhalt`` als Abfrage für die Sitemap: Unterabfrage statt Join, die Zeilen bleiben einzeln.
+
+    Die Niederschrift gilt hier schon mit einem Verweis der Quelle; ob die Datei noch existiert, prüft nur die Seite
+    (``ris_selectors.protocol_file``). In der Produktion führt jeder Verweis auf eine Datei.
+    """
     from ..models import OParlAgendaItem
 
     return sitzungen.filter(
         Exists(OParlAgendaItem.objects.filter(meeting=OuterRef("pk"), deleted=False))
-        | Q(raw_json__has_key="resultsProtocol")
-        | Q(raw_json__has_key="verbatimProtocol")
+        | (Q(raw_json__has_key="resultsProtocol") & ~Q(raw_json__resultsProtocol=None))
+        | (Q(raw_json__has_key="verbatimProtocol") & ~Q(raw_json__verbatimProtocol=None))
         | Q(start__gte=jetzt, start__lte=jetzt + SITZUNG_OHNE_INHALT_VORLAUF)
     )
 

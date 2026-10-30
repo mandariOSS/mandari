@@ -21,7 +21,8 @@ import pytest
 from django.conf import settings
 from django.contrib.sessions.models import Session
 from django.db import connection
-from django.test import Client
+from django.http import HttpResponse
+from django.test import Client, RequestFactory
 from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from django.utils import timezone
@@ -36,6 +37,7 @@ from insight_core.models import (
     OParlPerson,
     OParlSource,
 )
+from insight_core.services import indexierung
 from insight_core.views import _helpers
 
 pytestmark = pytest.mark.django_db
@@ -229,6 +231,16 @@ class TestBlaettern:
     def test_vergangene_sitzungen_haben_einen_eigenen_titel(self, kommunen: dict[str, Any]) -> None:
         html = Client().get("/insight/k/nord/termine/?period=past").content.decode()
         assert "<title>Vergangene Sitzungen |" in html
+
+    def test_blaetteransicht_nur_auf_der_kanonischen_adresse(self) -> None:
+        """Unter einem Mandanten-Slug zeigt die Seite kanonisch auf die Adresse der Kommune: dort bleibt ``noindex``."""
+        anfrage = RequestFactory().get("/insight/k/mandant/vorgaenge/?page=2")
+        antwort = HttpResponse()
+        antwort.context_data = {"seo": {"canonical_url": "https://mandari.de/insight/k/nord/vorgaenge/"}}  # type: ignore[attr-defined]
+        assert not indexierung._auf_kanonischer_adresse(anfrage, antwort)
+
+        antwort.context_data = {"seo": {"canonical_url": "https://mandari.de/insight/k/mandant/vorgaenge/?page=2"}}  # type: ignore[attr-defined]
+        assert indexierung._auf_kanonischer_adresse(anfrage, antwort)
 
     def test_weitere_seite_im_gemeinsamen_portal_bleibt_noindex(self, kommunen: dict[str, Any]) -> None:
         _vorgaenge(kommunen["nord"], 30)

@@ -1081,6 +1081,8 @@ class TestNurSeitenMitInhalt:
             body, 7, start=jetzt - timedelta(days=30), raw_json={"resultsProtocol": niederschrift.external_id}
         )
 
+        verweis_ohne_wert = _sitzung(body, 8, start=jetzt - timedelta(days=30), raw_json={"resultsProtocol": None})
+
         eintraege = self._eintraege("sitzungen", body)
 
         assert eintraege == {bald_leer.pk, mit_top.pk, mit_niederschrift.pk}
@@ -1089,6 +1091,7 @@ class TestNurSeitenMitInhalt:
             (ohne_termin_leer, "noindex, follow"),
             (fern_leer, "noindex, follow"),
             (nur_geloeschter_top, "noindex, follow"),
+            (verweis_ohne_wert, "noindex, follow"),
             (bald_leer, "index, follow"),
             (mit_top, "index, follow"),
             (mit_niederschrift, "index, follow"),

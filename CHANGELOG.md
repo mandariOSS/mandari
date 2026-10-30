@@ -264,7 +264,6 @@ Release in Produktion. Selbst-Hoster lesen vor dem Update den Abschnitt „Brech
 - Ungenutzte direkte Abhängigkeiten `gunicorn`, `django-redis`, `python-dateutil` und `markdown` (siehe „Brechend“).
 
 ### Behoben
-- Insight, Seitenindexierung: Die Sitemaps nennen nur noch Vorgänge mit ausgelesenem Text oder aus den letzten zwei Jahren und Sitzungen mit Tagesordnung, Niederschrift oder Termin in den nächsten 60 Tagen; Sitzungen ohne Inhalt tragen `noindex, follow`. Folgeseiten und vergangene Sitzungen der Listen je Kommune haben eine eigene kanonische Adresse und bleiben im Index. `/insight/` verlinkt alle gelisteten Kommunen statt der ersten zwölf. Die Dateivorschau antwortet mit 404, wenn die Datei auch an der Quelle fehlt (#1145).
 - Session: Der Erinnerungslauf bricht eine umgebende Transaktion nicht mehr ab, wenn eine Erinnerung bereits verschickt war (Savepoint um den Dublettenschutz).
 - `extract_locations` und `extract_texts` geben die Datenbankverbindungen ihrer Worker-Threads zurück und laden die Vorgänge stapelweise; bisher war der Pool nach fünf Stapeln leer, und große Kommunen sprengten das Speicherlimit (#54).
 - `check_body_geodata` zählt Straßen und Adressen getrennt; der gemeinsame Join erzeugte ein Kreuzprodukt, dessen temporäre Dateien die Platte des Datenbankservers füllten. Neu: `temp_file_limit` (`POSTGRES_TEMP_FILE_LIMIT`, Vorgabe 5 GB) begrenzt temporäre Dateien je Sitzung (#54).

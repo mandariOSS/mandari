@@ -386,7 +386,7 @@ try:
     resp.close()
 
     resp = client.get(f"/insight/dokumente/{f_404.id}/preview/")
-    check("RIS 404 -> Fehlerseite", resp.status_code == 200 and "Datei nicht gefunden" in resp.content.decode())
+    check("RIS 404 -> Fehlerseite", resp.status_code == 404 and "Datei nicht gefunden" in resp.content.decode())
     f_down = make_file(9, url="https://ris.example/getfile/down.pdf")
     resp = client.get(f"/insight/dokumente/{f_down.id}/preview/")
     page = resp.content.decode()

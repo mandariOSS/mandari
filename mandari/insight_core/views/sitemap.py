@@ -46,7 +46,6 @@ def robots_txt(request):
         "Disallow: /api/",
         "Disallow: /session/",
         "Disallow: /work/",
-        "Disallow: /oparl/",
         "Disallow: /insight/merkliste/",
         "Disallow: /insight/gespeichert/",
         "Disallow: /insight/dokumente/",
