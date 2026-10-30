@@ -1,7 +1,7 @@
 {% extends "base_insight.html" %}
 {% load static insight_listen %}
 
-{% block title %}Sitzungen{% endblock %}
+{% block title %}{% if request.GET.period == "past" %}Vergangene Sitzungen{% else %}Sitzungen{% endif %}{% if page_obj.number > 1 %} – Seite {{ page_obj.number }}{% endif %}{% endblock %}
 
 {% block page %}
 <c-insight.kopfband titel="Sitzungen" text="{% if active_body %}Öffentliche Sitzungen der Gremien von {{ active_body.get_display_name }}, mit Tagesordnung und Unterlagen.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">

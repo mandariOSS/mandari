@@ -166,10 +166,11 @@ def seiten(ereignisse: Iterable[Any]) -> list[str]:
             if kennung is not None:
                 gefunden.setdefault((art, kennung), None)
     ohne_index = _personen_ohne_index([kennung for art, kennung in gefunden if art == "Person"])
+    ohne_index |= _sitzungen_ohne_index([kennung for art, kennung in gefunden if art == "Meeting"])
     return [
         f"{_basis()}{PFADE[art]}{kennung}/"
         for art, kennung in gefunden
-        if not (art == "Person" and kennung in ohne_index)
+        if not (art in ("Person", "Meeting") and kennung in ohne_index)
     ]
 
 
@@ -183,6 +184,18 @@ def _personen_ohne_index(kennungen: list[uuid.UUID]) -> set[uuid.UUID]:
     bestand = OParlPerson.objects.filter(id__in=kennungen, deleted=False)
     laufend = set(mit_laufender_mitgliedschaft(bestand, timezone.localdate()).values_list("id", flat=True))
     return set(bestand.values_list("id", flat=True)) - laufend
+
+
+def _sitzungen_ohne_index(kennungen: list[uuid.UUID]) -> set[uuid.UUID]:
+    """Sitzungen, deren Seite ``noindex`` trägt: vorhanden, aber ohne Inhalt (``indexierung``, Issue #1145)."""
+    if not kennungen:
+        return set()
+    from ..models import OParlMeeting
+    from .indexierung import sitzungen_mit_inhalt
+
+    bestand = OParlMeeting.objects.filter(id__in=kennungen, deleted=False)
+    mit_inhalt = set(sitzungen_mit_inhalt(bestand, timezone.now()).values_list("id", flat=True))
+    return set(bestand.values_list("id", flat=True)) - mit_inhalt
 
 
 def indexnow(events: list[Any], delivery: Any) -> None:

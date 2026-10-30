@@ -1,7 +1,7 @@
 {% extends "base_insight.html" %}
 {% load static %}
 
-{% block title %}Personen{% endblock %}
+{% block title %}Personen{% if page_obj.number > 1 %} – Seite {{ page_obj.number }}{% endif %}{% endblock %}
 
 {% block page %}
 <c-insight.kopfband titel="Personen" text="{% if active_body %}Ratsmitglieder und sachkundige Bürgerinnen und Bürger von {{ active_body.get_display_name }}.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">

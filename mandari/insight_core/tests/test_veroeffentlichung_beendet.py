@@ -76,9 +76,14 @@ def welt() -> dict[str, Any]:
     tenant.save(update_fields=["oparl_body"])
     ids = {name: uuid.uuid4() for name in ("m", "p", "f", "o", "pe")}
     meeting = OParlMeeting.objects.create(
-        external_id=f"{basis}meeting/{ids['m']}/", body=body, name="Sitzung Hafenkante", start=timezone.now()
+        external_id=f"{basis}meeting/{ids['m']}/",
+        body=body,
+        name="Sitzung Hafenkante",
+        start=timezone.now() + timedelta(days=7),
     )
-    paper = OParlPaper.objects.create(external_id=f"{basis}paper/{ids['p']}/", body=body, name="Radweg Hafenkante")
+    paper = OParlPaper.objects.create(
+        external_id=f"{basis}paper/{ids['p']}/", body=body, name="Radweg Hafenkante", date=timezone.now()
+    )
     datei = OParlFile.objects.create(external_id=f"{basis}file/{ids['f']}/", paper=paper, name="Anlage Hafenkante")
     OParlOrganization.objects.create(external_id=f"{basis}organization/{ids['o']}/", body=body, name="Bauausschuss")
     OParlPerson.objects.create(external_id=f"{basis}person/{ids['pe']}/", body=body, name="Erika Hafenkante")
@@ -88,7 +93,10 @@ def welt() -> dict[str, Any]:
         external_id="https://ris.fremd.example/oparl/body/1", source=fremd_quelle, name="Fremdstadt", slug="fremd"
     )
     fremd_vorlage = OParlPaper.objects.create(
-        external_id="https://ris.fremd.example/oparl/paper/1", body=fremd, name="Radweg Hafenkante Fremdstadt"
+        external_id="https://ris.fremd.example/oparl/paper/1",
+        body=fremd,
+        name="Radweg Hafenkante Fremdstadt",
+        date=timezone.now(),
     )
 
     gremium = SessionOrganization.objects.create(tenant=tenant, name="Bauausschuss")
