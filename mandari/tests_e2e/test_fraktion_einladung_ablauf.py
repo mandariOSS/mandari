@@ -45,8 +45,8 @@ TOP_HAUSHALT = "Haushalt 2027"
 TOP_RADWEG = "Radwegkonzept"
 TOP_NOE = "Ankauf Bauland Nord"
 NOTIZTEXT = "Die Fraktion trägt den Entwurf mit."
-ERKLAERUNG = "Diese Punkte sehen nur vereidigte Mitglieder."
-ZUGANG = "kann der Vorsitz das unter Team nachtragen"
+ERKLAERUNG = "Diese Punkte sehen nur vereidigte Mitglieder mit Zugriff auf den nichtöffentlichen Teil."
+ZUGANG = "Zugang gibt der Vorsitz."
 #: Lesen mit Protokoll; den nichtöffentlichen Teil sieht trotzdem nur, wer auch vereidigt ist
 MITGLIED = ["faction.view_public", "faction.view_non_public", "protocols.view_public", "protocols.view_full"]
 BREIT = {"width": 1440, "height": 900}
@@ -195,6 +195,18 @@ def _einladungsmails() -> dict[str, Any]:
     return {m.to[0]: m for m in mail.outbox if m.subject == f"Einladung: {TITEL}"}
 
 
+def _mailserver_lehnt_ab(monkeypatch: pytest.MonkeyPatch, abgelehnt: str) -> None:
+    """Der Mailserver lehnt eine Adresse ab, alles andere geht durch den echten Versandweg."""
+    echter_versand = delivery.deliver
+
+    def versand(nachricht: Any, weg: Any, *, kind: str) -> str:
+        if nachricht.to == (abgelehnt,):
+            raise smtplib.SMTPRecipientsRefused({abgelehnt: (550, b"unbekannt")})
+        return echter_versand(nachricht, weg, kind=kind)
+
+    monkeypatch.setattr(delivery, "deliver", versand)
+
+
 def _einladung_pruefen(fraktion: Fraktion, meeting: FactionMeeting) -> None:
     """Alle Eingeladenen haben Kalenderdatei und Tagesordnung, der nichtöffentliche Teil nur für Vereidigte."""
     mails = _einladungsmails()
@@ -297,15 +309,16 @@ def test_von_der_einladung_bis_zum_protokoll(
     _neu_laden(page)
     expect(page.get_by_test_id("fs-rm-satz")).to_have_text("1 Zusage, 1 Absage und 1 offen")
 
-    # Der Zeitplan erinnert 48 Stunden vorher: vorher nicht, dann mit Zu- und Absagen nur die Zusage, genau einmal
+    # Der Zeitplan erinnert genau 48 Stunden vorher, eine Minute früher noch nicht: Ein anderer Vorlauf fiele auf.
+    # Mit Zu- und Absagen geht die Erinnerung nur an die Zusage, und nur einmal
     mail.outbox.clear()
-    _erinnerungslauf(meeting.start - timedelta(hours=49))
+    _erinnerungslauf(meeting.start - timedelta(hours=48, minutes=1))
     assert mail.outbox == []
-    _erinnerungslauf(meeting.start - timedelta(hours=24))
+    _erinnerungslauf(meeting.start - timedelta(hours=48))
     assert _empfaenger(mail.outbox) == [fraktion.rat.user.email]
-    assert mail.outbox[0].subject == f"Erinnerung: {TITEL} in 24 Stunden"
+    assert mail.outbox[0].subject == f"Erinnerung: {TITEL} in 48 Stunden"
     assert _sitzung_url(fraktion, meeting) in mail.outbox[0].body
-    _erinnerungslauf(meeting.start - timedelta(hours=23))
+    _erinnerungslauf(meeting.start - timedelta(hours=47))
     assert len(mail.outbox) == 1
     _neu_laden(page)
     expect(page.get_by_test_id("fs-tln").locator("tr", has_text="Martin Muster")).to_contain_text(
@@ -360,14 +373,7 @@ def test_abgelehnte_adresse_wird_angezeigt_und_bleibt_nach_dem_neuladen(
 ) -> None:
     meeting = _geplante_sitzung(fraktion)
     abgelehnt = fraktion.sachkundig.user.email
-    echter_versand = delivery.deliver
-
-    def versand(nachricht: Any, weg: Any, *, kind: str) -> str:
-        if nachricht.to == (abgelehnt,):
-            raise smtplib.SMTPRecipientsRefused({abgelehnt: (550, b"unbekannt")})
-        return echter_versand(nachricht, weg, kind=kind)
-
-    monkeypatch.setattr(delivery, "deliver", versand)
+    _mailserver_lehnt_ab(monkeypatch, abgelehnt)
 
     page.set_viewport_size(BREIT)
     login(fraktion.vorsitz.user.email, PASSWORT)
@@ -412,6 +418,55 @@ def test_abgelehnte_adresse_wird_angezeigt_und_bleibt_nach_dem_neuladen(
     _neu_laden(page)
     ergebnis_pruefen()
     problems.assert_clean("Abgelehnte Adresse")
+
+
+def test_bisherige_ansicht_zeigt_testmail_und_abgelehnte_adresse(
+    page: Any,
+    goto: Any,
+    login: Any,
+    fraktion: Fraktion,
+    monkeypatch: pytest.MonkeyPatch,
+    problems: BrowserProblems,
+    screenshot: Any,
+) -> None:
+    """Neu angelegte Organisationen starten mit dem Schalter aus: Sie brauchen dasselbe Versandergebnis (Issue #855)."""
+    fraktion.org.work_new_design = False
+    fraktion.org.save(update_fields=["work_new_design"])
+    meeting = _geplante_sitzung(fraktion)
+    abgelehnt = fraktion.sachkundig.user.email
+    _mailserver_lehnt_ab(monkeypatch, abgelehnt)
+    page.set_viewport_size(BREIT)
+    login(fraktion.vorsitz.user.email, PASSWORT)
+    goto(_sitzung_url(fraktion, meeting))
+
+    hinweis = page.get_by_test_id("fs-testmail-bisher")
+    expect(hinweis).to_contain_text("Ihre erste Einladung über diesen Versandweg.")
+    expect(hinweis.get_by_role("link", name="Einstellungen › E-Mail-Versand")).to_be_visible()
+    hinweis.get_by_role("button", name="Testmail an mich senden").click()
+    expect(hinweis.locator("#fs-testmail-erg")).to_contain_text(f"Testmail an {fraktion.vorsitz.user.email} versendet")
+
+    page.get_by_role("button", name="Einladen", exact=True).click()
+    page.get_by_role("button", name="Bestätigen").click()  # hx-confirm: eigener Dialog statt confirm()
+    ergebnis = page.get_by_test_id("fs-versand-bisher")
+    expect(ergebnis).to_contain_text("2 von 3 versendet, 1 nicht.")
+    wait_for_bundle(page)
+    assert sorted(_einladungsmails()) == sorted(p.user.email for p in (fraktion.vorsitz, fraktion.rat))
+
+    def ergebnis_pruefen() -> None:
+        expect(ergebnis).to_contain_text("2 von 3 versendet, 1 nicht.")
+        fehler = page.get_by_test_id("fs-versand-fehler")
+        expect(fehler).to_contain_text("Klara Kopie: Nicht versendet.")
+        expect(fehler).to_contain_text(f"Der Mailserver hat die Adresse {abgelehnt} abgelehnt.")
+        expect(hinweis).to_have_count(0)
+        expect(page.locator("body")).not_to_contain_text(re.compile("zugestellt", re.IGNORECASE))
+
+    ergebnis_pruefen()
+    ergebnis.get_by_text("Alle Empfänger").click()
+    expect(ergebnis.locator("li", has_text="Vera Beispiel")).to_contain_text("versendet")
+    screenshot("fraktion_versandergebnis_bisherige_ansicht_1440")
+    _neu_laden(page)
+    ergebnis_pruefen()
+    problems.assert_clean("Versandergebnis in der bisherigen Ansicht")
 
 
 def test_gesperrte_tops_mit_erklaerung_auch_in_der_bisherigen_ansicht(

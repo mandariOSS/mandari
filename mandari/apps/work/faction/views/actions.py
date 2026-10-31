@@ -449,8 +449,15 @@ class FactionActionView(WorkViewMixin, View):
             meeting.save(update_fields=["invitation_sequence", "invitation_updated_at"])
 
             sent_count = dispatch_invitations(meeting, update=True)
+            nicht = faction_services.invitation_attendances(meeting, update=True).exclude(invitation_error="").count()
 
-            if sent_count > 0:
+            if nicht:
+                messages.warning(
+                    request,
+                    f"Aktualisierte Einladung an {sent_count} von {sent_count + nicht} Mitgliedern versendet, "
+                    f"{nicht} nicht. Den Grund nennt das Versandergebnis.",
+                )
+            elif sent_count > 0:
                 messages.success(request, f"Aktualisierte Einladung an {sent_count} Mitglieder versendet.")
             else:
                 messages.warning(request, "Aktualisierung versendet. Keine E-Mails versendet.")
@@ -461,9 +468,16 @@ class FactionActionView(WorkViewMixin, View):
             from ..invitations import dispatch_invitations_once
 
             sent_count = dispatch_invitations_once(meeting)
+            nicht = meeting.attendances.exclude(invitation_error="").count()
 
             if sent_count is None:
                 messages.info(request, "Die Einladungen wurden gerade bereits versendet.")
+            elif nicht:
+                messages.warning(
+                    request,
+                    f"Einladungen an {sent_count} von {sent_count + nicht} Mitgliedern versendet, {nicht} nicht. "
+                    "Den Grund nennt das Versandergebnis.",
+                )
             elif sent_count > 0:
                 messages.success(request, f"Einladungen an {sent_count} Mitglieder versendet.")
             else:

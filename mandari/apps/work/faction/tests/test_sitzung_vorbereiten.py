@@ -25,6 +25,7 @@ from typing import Any
 from unittest import mock
 
 import pytest
+from django.contrib.messages import get_messages
 from django.urls import reverse
 from django.utils import timezone
 
@@ -36,6 +37,9 @@ pytestmark = pytest.mark.django_db
 NEU = "work/faction/neu/vorbereiten.html"
 ALT = "work/faction/detail.html"
 NOE_TITEL = "Grundstücksangelegenheit Flurstück 12"
+ERKLAERUNG = (
+    "Diese Punkte sehen nur vereidigte Mitglieder mit Zugriff auf den nichtöffentlichen Teil. Zugang gibt der Vorsitz."
+)
 
 
 @pytest.fixture
@@ -306,15 +310,34 @@ def test_nicht_vereidigt_sieht_vom_noe_teil_nur_die_zahl(welt: dict[str, Any], c
 
 def test_bisherige_ansicht_erklaert_den_gesperrten_teil(welt: dict[str, Any], client_for: Any) -> None:
     """Wie die neue Seite: warum gesperrt und wer Zugang gibt (Issue #855); Vereidigte brauchen die Erklärung nicht."""
-    erklaerung = "Diese Punkte sehen nur vereidigte Mitglieder."
     gesperrt = _html(_seite(welt, client_for, "sachkundig", ansicht="bisher"))
-    assert "Gesperrte Information" in gesperrt and erklaerung in gesperrt
-    assert "kann der Vorsitz das unter Team nachtragen" in gesperrt
+    assert "Gesperrte Information" in gesperrt and ERKLAERUNG in gesperrt
     assert NOE_TITEL not in gesperrt
     vereidigt = _html(_seite(welt, client_for, "rat", ansicht="bisher"))
-    assert NOE_TITEL in vereidigt and erklaerung not in vereidigt
+    assert NOE_TITEL in vereidigt and ERKLAERUNG not in vereidigt
     # Dieselbe Erklärung auf der neuen Seite
-    assert erklaerung in _html(_seite(welt, client_for, "sachkundig"))
+    assert ERKLAERUNG in _html(_seite(welt, client_for, "sachkundig"))
+
+
+@pytest.mark.parametrize(
+    ("vereidigt", "rechte"),
+    [
+        pytest.param(False, ["faction.view_public", "faction.view_non_public"], id="ohne-vereidigung"),
+        pytest.param(True, ["faction.view_public"], id="ohne-recht"),
+    ],
+)
+def test_erklaerung_stimmt_bei_jedem_grund_der_sperre(
+    welt: dict[str, Any], client_for: Any, make_member: Any, vereidigt: bool, rechte: list[str]
+) -> None:
+    """Gesperrt ist, wem die Vereidigung oder das Recht fehlt; der Satz darf keinen der beiden Gründe behaupten."""
+    person = make_member(welt["org"], rechte, email="gesperrt@example.org")
+    person.is_sworn_in = vereidigt
+    person.save(update_fields=["is_sworn_in"])
+    client = client_for(person.user)
+    for anfrage in ({}, {"ansicht": "bisher"}):
+        html = _html(client.get(_adresse(welt), anfrage))
+        assert ERKLAERUNG in html and NOE_TITEL not in html, anfrage
+        assert "keine Vereidigung" not in html and "nachtragen" not in html, anfrage
 
 
 def test_tagesordnung_vererbt_ihren_formularen_keine_aktion(welt: dict[str, Any], client_for: Any) -> None:
@@ -406,6 +429,73 @@ def test_versandfehler_mit_grund(welt: dict[str, Any], client_for: Any) -> None:
     assert "2 von 3 Einladungen versendet, eine nicht." in html and "2 von 3 versendet, 1 nicht." in html
     assert "Nicht versendet" in html and "Der Mailserver hat die Adresse klara@example.org abgelehnt." in html
     assert "zugestellt" not in html.lower() and "nicht verschickt" not in html.lower()
+
+
+@pytest.mark.parametrize("schalter", ["ansicht-bisher", "schalter-aus"])
+def test_bisherige_seite_zeigt_versandergebnis_mit_grund(welt: dict[str, Any], client_for: Any, schalter: str) -> None:
+    """
+    Neu angelegte Organisationen starten mit dem Schalter aus (Issue #855): Dort steht dasselbe Ergebnis, auch nach dem
+    Neuladen, und die Meldung verschweigt die abgelehnte Adresse nicht. Mitglieder sehen weder Ergebnis noch Adresse.
+    """
+    anfrage = {"ansicht": "bisher"} if schalter == "ansicht-bisher" else {}
+    if schalter == "schalter-aus":
+        Organization.objects.filter(pk=welt["org"].pk).update(work_new_design=False)
+    fehler = smtplib.SMTPRecipientsRefused({"klara@example.org": (550, b"unbekannt")})
+
+    def senden(**kwargs: Any) -> bool:
+        if kwargs["to"] == ["klara@example.org"]:
+            raise fehler
+        return True
+
+    client = client_for(welt["vorsitz"].user)
+    with mock.patch("apps.common.mail.send", side_effect=senden):
+        erstversand = client.post(_aktion(welt), {"action": "invite"})
+        aktualisierung = client.post(_aktion(welt), {"action": "invite"})
+    assert [str(m) for m in get_messages(erstversand.wsgi_request)] == [
+        "Einladungen an 2 von 3 Mitgliedern versendet, 1 nicht. Den Grund nennt das Versandergebnis."
+    ]
+    assert [str(m) for m in get_messages(aktualisierung.wsgi_request)][-1] == (
+        "Aktualisierte Einladung an 2 von 3 Mitgliedern versendet, 1 nicht. Den Grund nennt das Versandergebnis."
+    )
+
+    seite = client.get(_adresse(welt), anfrage)
+    assert ALT in [t.name for t in seite.templates]
+    html = _html(seite)
+    assert 'data-testid="fs-versand-bisher"' in html and "2 von 3 versendet, 1 nicht." in html
+    assert "Klara Kopie: Nicht versendet." in html
+    assert "Der Mailserver hat die Adresse klara@example.org abgelehnt." in html
+    assert "ohne nichtöffentlichen Teil" not in html.split("fs-versand-fehler")[1].split("</ul>")[0]
+    assert "zugestellt" not in html.lower()
+
+    mitglied = _html(_seite(welt, client_for, "rat", **anfrage))
+    assert "fs-versand-bisher" not in mitglied and "klara@example.org" not in mitglied
+
+
+def test_bisherige_seite_ohne_erfasstes_ergebnis_ohne_abschnitt(welt: dict[str, Any], client_for: Any) -> None:
+    """Versand vor dieser Erfassung: keine Zahlen, die so aussehen, als sei nichts rausgegangen."""
+    FactionMeeting.objects.filter(pk=welt["meeting"].pk).update(invitation_sent=True, status="invited")
+    assert "fs-versand-bisher" not in _html(_seite(welt, client_for, "vorsitz", ansicht="bisher"))
+
+
+def test_bisherige_seite_weist_vor_der_ersten_einladung_auf_die_testmail_hin(
+    welt: dict[str, Any], client_for: Any, make_member: Any
+) -> None:
+    html = _html(_seite(welt, client_for, "vorsitz", ansicht="bisher"))
+    assert 'data-testid="fs-testmail-bisher"' in html and "Ihre erste Einladung über diesen Versandweg." in html
+    assert "Einstellungen › E-Mail-Versand" in html and 'value="test_invitation"' in html
+    # Darf einladen, sieht die Einstellungen nicht: Hinweis ohne den Weg dorthin
+    einladend = make_member(welt["org"], ["faction.view_public", "faction.invite"], email="einladend@example.org")
+    html = _html(client_for(einladend.user).get(_adresse(welt), {"ansicht": "bisher"}))
+    assert "Ihre erste Einladung über diesen Versandweg." in html and "Einstellungen › E-Mail-Versand" not in html
+    # Darf nicht einladen: kein Hinweis
+    assert "fs-testmail-bisher" not in _html(_seite(welt, client_for, "rat", ansicht="bisher"))
+    # Nach der ersten Einladung der Organisation entfällt er, auch für die nächste Sitzung
+    _einladen(welt, client_for)
+    naechste = FactionMeeting.objects.create(
+        organization=welt["org"], title="Nächste Sitzung", start=timezone.now() + timedelta(days=9), status="planned"
+    )
+    adresse = reverse("work:faction_detail", kwargs={"org_slug": welt["org"].slug, "meeting_id": naechste.pk})
+    assert "fs-testmail-bisher" not in _html(client_for(welt["vorsitz"].user).get(adresse, {"ansicht": "bisher"}))
 
 
 def test_rueckmeldungen_nach_muster(welt: dict[str, Any], client_for: Any) -> None:
