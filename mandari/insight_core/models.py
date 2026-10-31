@@ -2911,3 +2911,203 @@ class PersonFraktionBeleg(models.Model):
 
     def __str__(self) -> str:
         return str(self.wortmeldung)
+
+
+class FraktionsZugehoerigkeit(models.Model):
+    """Gepflegte Zugehörigkeit einer Person zu einer Fraktion oder Ratsgruppe (Issue #1138).
+
+    Für Kommunen, deren Ratsinformationssystem keine Fraktionsmitgliedschaften über OParl liefert (etwa Münster).
+    Die Erkennung der antragstellenden Fraktionen (``services/vorgang_urheber.py``) nutzt die Liste nur dort, wo OParl
+    in der Kommune keine einzige Fraktionsmitgliedschaft kennt. Geführt wird die Person mit Vor- und Nachname, weil
+    Unterschriften unter Anträgen genau das nennen; eine Verknüpfung mit ``OParlPerson`` ist nicht nötig.
+
+    **Gezählt wird die Fraktion bzw. Ratsgruppe, nicht die Partei der Wahl.** Mit ``gueltig_ab``/``gueltig_bis`` bilden
+    wir Nachbesetzungen und Fraktionswechsel ab. Eine leere Fraktion heißt „offen“ (bekannt gewählt, Fraktion nicht
+    gesichert) und wird nie verwendet. Pflege im Admin oder per ``manage.py fraktionszugehoerigkeiten_import``.
+    """
+
+    ART_FRAKTION = "fraktion"
+    ART_GRUPPE = "gruppe"
+    ART_EINZELMANDAT = "einzelmandat"
+    ART_CHOICES = [
+        (ART_FRAKTION, "Fraktion"),
+        (ART_GRUPPE, "Ratsgruppe"),
+        (ART_EINZELMANDAT, "Einzelmandat (ohne Fraktionsstatus)"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    body = models.ForeignKey(
+        OParlBody, on_delete=models.PROTECT, related_name="fraktions_zugehoerigkeiten", verbose_name="Kommune"
+    )
+    nachname = models.CharField("Nachname", max_length=200)
+    vorname = models.CharField("Vorname", max_length=200)
+    fraktion = models.CharField(
+        "Fraktion oder Ratsgruppe", max_length=200, blank=True, default="", help_text="Leer: offen, wird nicht genutzt."
+    )
+    kurzform = models.CharField(
+        "Kurzform", max_length=100, blank=True, default="", help_text="Name für Leser, z. B. „Grüne“, „SPD“."
+    )
+    art = models.CharField("Art", max_length=20, choices=ART_CHOICES, default=ART_FRAKTION)
+    gueltig_ab = models.DateField("Gültig ab", blank=True, null=True)
+    gueltig_bis = models.DateField("Gültig bis", blank=True, null=True)
+    quelle = models.CharField(
+        "Quelle", max_length=1000, blank=True, default="", help_text="Adresse oder Angabe der Quelle"
+    )
+    notiz = models.CharField("Notiz", max_length=500, blank=True, default="")
+    angelegt = models.DateTimeField("Angelegt", auto_now_add=True)
+    geaendert = models.DateTimeField("Geändert", auto_now=True)
+
+    class Meta:
+        db_table = "insight_fraktions_zugehoerigkeiten"
+        verbose_name = "Fraktionszugehörigkeit (gepflegt)"
+        verbose_name_plural = "Fraktionszugehörigkeiten (gepflegt)"
+        ordering = ["body", "fraktion", "nachname", "vorname"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["body", "nachname", "vorname", "fraktion", "gueltig_ab"],
+                nulls_distinct=False,
+                name="fraktionszugehoerigkeit_eindeutig",
+            ),
+            models.CheckConstraint(
+                condition=Q(gueltig_ab__isnull=True)
+                | Q(gueltig_bis__isnull=True)
+                | Q(gueltig_bis__gte=F("gueltig_ab")),
+                name="fraktionszugehoerigkeit_zeitraum",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.vorname} {self.nachname} – {self.fraktion or 'offen'}"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.gueltig_ab and self.gueltig_bis and self.gueltig_bis < self.gueltig_ab:
+            raise ValidationError({"gueltig_bis": "Das Ende liegt vor dem Beginn."})
+
+
+class FraktionsBezeichnung(models.Model):
+    """Name einer gepflegten Fraktion oder Ratsgruppe in einem Zeitraum (Issue #1138): Umbenennungen.
+
+    Benennt sich eine Gruppe um, ohne dass sich ihre Besetzung ändert (Münster: „Die PARTEI/ÖDP“ bis 30.09.2026, ab
+    01.10.2026 „Die PARTEI & MOVE Münster“), bleiben die Zugehörigkeiten der Personen unverändert unter dem Namen
+    ``fraktion``; hier steht, wie die Gruppe zu welchem Datum hieß. Ohne Eintrag gilt ``fraktion`` selbst.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    body = models.ForeignKey(
+        OParlBody, on_delete=models.PROTECT, related_name="fraktions_bezeichnungen", verbose_name="Kommune"
+    )
+    fraktion = models.CharField(
+        "Fraktion (wie in den Zugehörigkeiten)",
+        max_length=200,
+        help_text="Name, unter dem die Personen geführt werden.",
+    )
+    bezeichnung = models.CharField("Name im Zeitraum", max_length=200)
+    kurzform = models.CharField("Kurzform", max_length=100, blank=True, default="")
+    gueltig_ab = models.DateField("Gültig ab", blank=True, null=True)
+    gueltig_bis = models.DateField("Gültig bis", blank=True, null=True)
+    quelle = models.CharField("Quelle", max_length=1000, blank=True, default="")
+    angelegt = models.DateTimeField("Angelegt", auto_now_add=True)
+    geaendert = models.DateTimeField("Geändert", auto_now=True)
+
+    class Meta:
+        db_table = "insight_fraktions_bezeichnungen"
+        verbose_name = "Fraktionsname im Zeitraum (gepflegt)"
+        verbose_name_plural = "Fraktionsnamen im Zeitraum (gepflegt)"
+        ordering = ["body", "fraktion", "gueltig_ab"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["body", "fraktion", "gueltig_ab"], nulls_distinct=False, name="fraktionsbezeichnung_eindeutig"
+            ),
+            models.CheckConstraint(
+                condition=Q(gueltig_ab__isnull=True)
+                | Q(gueltig_bis__isnull=True)
+                | Q(gueltig_bis__gte=F("gueltig_ab")),
+                name="fraktionsbezeichnung_zeitraum",
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.fraktion}: {self.bezeichnung}"
+
+    def clean(self) -> None:
+        super().clean()
+        if self.gueltig_ab and self.gueltig_bis and self.gueltig_bis < self.gueltig_ab:
+            raise ValidationError({"gueltig_bis": "Das Ende liegt vor dem Beginn."})
+
+
+class VorgangUrheber(models.Model):
+    """Antragstellende Fraktion oder Ratsgruppe eines Vorgangs, abgeleitet (Issue #1138).
+
+    Eine Zeile je Fraktion; gemeinsame Anträge haben mehrere. ``herkunft`` nennt den Weg der Erkennung
+    (``services/urheber_erkennung.py``): ``source`` (Quelle), ``title`` (Vorlagenart/Titel), ``person``
+    (``originatorPerson`` mit Fraktion am Datum), ``signature`` (Unterschriften im Dokument). ``organisation_id`` zeigt
+    auf die Fraktion im RIS-Bestand, wenn es sie dort gibt; sonst steht nur ``bezeichnung`` (aus der gepflegten Liste).
+
+    Abgeleitete Daten mit Kennungen statt Fremdschlüsseln (wie ``PersonFraktionBeleg``): Sie entstehen jederzeit neu
+    und dürfen das Aufräumen des Bestands weder blockieren noch von ihm still mitgelöscht werden müssen
+    (ADR ``docs/adr/20260929-fremdschluessel-ris-bestand.md``). Zeilen zu gelöschten Vorgängen sind ohne Wirkung.
+    """
+
+    SOURCE = "source"
+    TITLE = "title"
+    PERSON = "person"
+    SIGNATURE = "signature"
+    HERKUNFT_CHOICES = [
+        (SOURCE, "Quelle (originatorOrganization)"),
+        (TITLE, "Vorlagenart oder Titel"),
+        (PERSON, "Antragsteller (originatorPerson)"),
+        (SIGNATURE, "Unterschrift im Dokument"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    paper_id = models.UUIDField("Vorgang", db_index=True)
+    body_id = models.UUIDField("Kommune")
+    organisation_id = models.UUIDField("Fraktion im RIS", blank=True, null=True)
+    bezeichnung = models.CharField("Fraktion", max_length=500)
+    kurzform = models.CharField("Kurzform", max_length=100, blank=True, default="")
+    art = models.CharField(
+        "Art", max_length=20, choices=FraktionsZugehoerigkeit.ART_CHOICES, default=FraktionsZugehoerigkeit.ART_FRAKTION
+    )
+    herkunft = models.CharField("Herkunft", max_length=20, choices=HERKUNFT_CHOICES)
+    angelegt = models.DateTimeField("Ermittelt", auto_now_add=True)
+
+    class Meta:
+        db_table = "insight_vorgang_urheber"
+        verbose_name = "Antragstellende Fraktion"
+        verbose_name_plural = "Antragstellende Fraktionen"
+        ordering = ["bezeichnung"]
+        constraints = [
+            models.UniqueConstraint(fields=["paper_id", "bezeichnung"], name="vorgangurheber_eine_je_fraktion"),
+        ]
+        indexes = [models.Index(fields=["body_id", "bezeichnung"], name="vorgangurheber_body_fraktion")]
+
+    def __str__(self) -> str:
+        return self.bezeichnung
+
+    @property
+    def anzeigename(self) -> str:
+        """Name für Leser: Kurzform („Grüne“), sonst die volle Bezeichnung."""
+        return self.kurzform or self.bezeichnung
+
+
+class VorgangUrheberStand(models.Model):
+    """Wann und mit welcher Version die antragstellenden Fraktionen eines Vorgangs ermittelt wurden (Issue #1138).
+
+    Auch Vorgänge ohne Ergebnis haben einen Stand: So setzt der Bestandslauf nach einem Abbruch fort und ermittelt
+    nur neu, was eine ältere Version der Erkennung bearbeitet hat.
+    """
+
+    paper_id = models.UUIDField("Vorgang", primary_key=True)
+    body_id = models.UUIDField("Kommune", db_index=True)
+    version = models.PositiveSmallIntegerField("Version der Erkennung")
+    herkunft = models.CharField("Herkunft", max_length=20, blank=True, default="")
+    ermittelt = models.DateTimeField("Ermittelt")
+
+    class Meta:
+        db_table = "insight_vorgang_urheber_stand"
+        verbose_name = "Stand der Urheber-Erkennung"
+        verbose_name_plural = "Stände der Urheber-Erkennung"
+
+    def __str__(self) -> str:
+        return f"{self.paper_id} v{self.version}"

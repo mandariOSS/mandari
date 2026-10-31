@@ -33,7 +33,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any
-from urllib.parse import urljoin
+from urllib.parse import urlencode, urljoin
 
 from django.conf import settings
 from django.core.serializers.json import DjangoJSONEncoder
@@ -44,7 +44,7 @@ from django.utils import timezone
 from django.utils.safestring import SafeString, mark_safe
 
 from .navigation import AREA_PAGES
-from .services.indexierung import liste_der_kommune, stadtseite_url
+from .services.indexierung import blaetteransicht, liste_der_kommune, stadtseite_url
 from .services.paper_status import NONE as STAND_UNBEKANNT
 from .services.paper_status import PaperStatus, in_committee
 from .services.search_presentation import normalize_paper_type
@@ -901,15 +901,19 @@ def get_list_seo(request: HttpRequest, liste: str, title: str, description: str,
 
     Kanonisch ist die Adresse je Kommune (``/insight/k/<slug>/vorgaenge/``) – auch für die Liste im gemeinsamen
     Portal mit gewählter Kommune (``/insight/vorgaenge/``), die Suchmaschinen ohne Sitzung nur als Weiterleitung
-    sehen. Weitere Seiten und Filter verweisen auf dieselbe Adresse und tragen ``noindex, follow``
-    (``services.indexierung.listenseite``). Ohne eigene Adresse (Kommune ohne Slug) bleibt alles wie bei
-    ``get_page_seo``.
+    sehen. Filter verweisen auf dieselbe Adresse und tragen ``noindex, follow`` (``services.indexierung.listenseite``).
+    Weitere Seiten und vergangene Sitzungen unter der Adresse je Kommune sind eigene Seiten mit eigener kanonischer
+    Adresse (Issue #1145): Google rät davon ab, Folgeseiten auf die erste zu kanonisieren, und folgt deren Links dann
+    nicht mehr. Ohne eigene Adresse (Kommune ohne Slug) bleibt alles wie bei ``get_page_seo``.
     """
     seo = get_page_seo(request, title=title, description=description, body=body)
     eigene = liste_der_kommune(body, liste)
     if eigene:
         seo.canonical_url = _absolut(eigene)
         seo.breadcrumbs = brotkrumen(body, _LISTEN_NAMEN.get(liste, title), seo.canonical_url)
+        ansicht = blaetteransicht(request, liste) if request.path == eigene else None
+        if ansicht:
+            seo.canonical_url = f"{seo.canonical_url}?{urlencode(ansicht)}"
     return seo
 
 

@@ -401,6 +401,9 @@ nicht in eingebetteten Datei-Objekten (Payload-Größe).
 | `mandari:changes` | Body | Adresse des Änderungsfeeds der Kommune (nur wenn eingeschaltet und die Kommune gelistet ist) |
 | `mandari:snapshot` | Body | Adresse des Snapshots der Kommune (nur wenn der Änderungsfeed eingeschaltet und die Kommune gelistet ist) |
 | `mandari:originalOrganizationType` | Organization | Angabe der Quelle, wenn sie keiner der Werte der Spezifikation ist |
+| `mandari:originatorName` | Paper | Antragstellende Fraktionen ohne Organisationsobjekt im Bestand (Namen, siehe „Antragstellende Fraktionen“) |
+| `mandari:originator` | Paper | alle antragstellenden Fraktionen mit `name`, `shortName`, `type` (`fraktion`, `gruppe`, `einzelmandat`) und `organization` (nur mit Organisationsobjekt) |
+| `mandari:originatorSource` | Paper | Weg der Erkennung: `source`, `title`, `person`, `signature` |
 | `mandari:summary` | Paper | KI-generierte Zusammenfassung (falls vorhanden) |
 | `mandari:summaryAiGenerated` | Paper | `true`, wenn `mandari:summary` vorhanden ist: Der Text ist KI-erzeugt und nicht redaktionell geprüft (EU AI Act Art. 50, siehe `KI_TRANSPARENZ.md`) |
 | `mandari:originalAccessUrl` | File | Original-Datei-URL beim Quellserver |
@@ -416,13 +419,55 @@ Die Felder der Beschlussfassung (Issue #525) liefern Quellen, die mandari Sessio
 speichert sie in eigenen Spalten (`mandari_oparl/extensions.py` übersetzt für Ingestor und Spiegel gleich);
 die Schnittstelle gibt sie aus diesen Spalten aus, nicht aus den Rohdaten der Quelle.
 
+## Antragstellende Fraktionen (Paper)
+
+Keine Quelle liefert bisher `originatorOrganization`. Wir ermitteln deshalb selbst, welche Fraktion(en) oder
+Ratsgruppe(n) einen Antrag oder eine Anfrage gestellt haben (Issue #1138), ohne KI und in dieser Reihenfolge; der erste
+Weg mit Ergebnis gilt:
+
+1. `source`: Die Quelle nennt `originatorOrganization`.
+2. `title`: Vorlagenart oder Titel nennen die Fraktion beim Antrag („Antrag der CDU-Fraktion: …“, „(Antrag
+   SPD-Fraktion)“, Vorlagenart „Antrag CDU“). Antworten und Stellungnahmen der Verwaltung zählen nicht.
+3. `person`: Die Quelle nennt `originatorPerson`; gezählt wird deren Fraktion am Datum der Vorlage.
+4. `signature`: Im Unterschriftenblock des Hauptdokuments stehen Personen mit Fraktion am Datum der Vorlage.
+
+Abgeglichen wird nur mit den Fraktionen und Ratsgruppen der eigenen Kommune, über Schreibvarianten
+(„Grüne“, „Bündnis 90/Die Grünen“, „GRÜNE“). Gemeinsame Anträge nennen mehrere; Mehrdeutiges bleibt leer.
+Gezählt wird die Fraktion, nicht die Partei der Wahl. Kennt OParl in einer Kommune keine Fraktionsmitgliedschaften
+(etwa Münster), gilt eine von uns gepflegte Liste mit Zeiträumen; der Name ist der zum Datum der Vorlage.
+
+**Wo die Fraktion steht:**
+
+- `originatorOrganization`: Verweise auf unsere Organization-Objekte, nur wenn es die Fraktion dort gibt.
+- `mandari:originatorName`: die Namen der Fraktionen, für die es **kein** Organization-Objekt gibt. Wir verlinken in
+  diesem Fall nicht künstlich. Wer nur Namen braucht (etwa für eine Anzeige), nimmt `mandari:originator`.
+- `mandari:originator`: alle antragstellenden Fraktionen in einer Liste, je Eintrag `name` (Name zum Datum der
+  Vorlage), `shortName` (Kurzform für Leser, z. B. „Grüne“), `type` (`fraktion`, `gruppe` für Ratsgruppen,
+  `einzelmandat` für Mandate ohne Fraktionsstatus) und `organization` (Adresse des Organization-Objekts, falls es eines
+  gibt).
+- `mandari:originatorSource`: der Weg der Erkennung (`source`, `title`, `person`, `signature`).
+
+```json
+"originatorOrganization": ["https://mandari.de/oparl/v1/organization/…"],
+"mandari:originatorName": ["Fraktion Volt"],
+"mandari:originator": [
+  {"name": "SPD-Fraktion", "shortName": "SPD", "type": "fraktion", "organization": "https://mandari.de/oparl/v1/organization/…"},
+  {"name": "Fraktion Volt", "shortName": "Volt", "type": "fraktion"}
+],
+"mandari:originatorSource": "title"
+```
+
+Ohne erkannte Fraktion fehlen alle vier Felder. Die Erkennung läuft nach dem Abruf; ändert sich nur ihr Ergebnis,
+ändert sich `modified` der Vorlage nicht.
+
 ## Einschränkungen (v1)
 
 - **Nicht abgebildete Referenzen**: Felder ohne Fremdschlüssel im Datenmodell
-  (`Meeting.participant`, `Paper.originatorPerson`/`originatorOrganization`/
-  `underDirectionOf`/`relatedPaper`, `Organization.subOrganizationOf`,
+  (`Meeting.participant`, `Paper.originatorPerson`/`underDirectionOf`/`relatedPaper`,
+  `Organization.subOrganizationOf`,
   `AgendaItem.resolutionFile`) werden ausgelassen, statt Original-URLs
-  durchzureichen.
+  durchzureichen. `Paper.originatorOrganization` steht dagegen aus der eigenen Erkennung bereit
+  (siehe „Antragstellende Fraktionen“).
 - **Lizenz**: Die Lizenz der Quelldaten wird — soweit von der Kommune angegeben —
   am Body-Objekt (`license`) durchgereicht. Eine übergreifende Angabe am System-Objekt gibt es
   nur, wenn der Betreiber `OPARL_LICENSE_URL` setzt; sie gilt laut Spezifikation für alle Objekte

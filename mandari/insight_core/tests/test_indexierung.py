@@ -35,6 +35,7 @@ from django.utils import timezone
 
 from insight_core import publication
 from insight_core.models import (
+    OParlAgendaItem,
     OParlBody,
     OParlFile,
     OParlMeeting,
@@ -63,6 +64,8 @@ def _kommune(nummer: int, name: str, **felder: Any) -> OParlBody:
 
 
 def _vorgang(body: OParlBody, nummer: int, **felder: Any) -> OParlPaper:
+    # Aus den letzten zwei Jahren: Alte Vorgänge ohne Text fehlen in der Sitemap (TestNurSeitenMitInhalt)
+    felder.setdefault("date", timezone.now())
     return OParlPaper.objects.create(
         external_id=f"{body.external_id}/paper/{nummer}", body=body, name=f"Vorgang {nummer}", **felder
     )
@@ -156,7 +159,8 @@ def stadt(klein: int) -> dict[str, Any]:
     eingang = datetime(2025, 1, 1, tzinfo=UTC)
     for rang, vorgang in enumerate(reversed(vorgaenge)):
         OParlPaper.objects.filter(pk=vorgang.pk).update(created_at=eingang + timedelta(hours=rang))
-    sitzungen = [_sitzung(body, nummer, start=timezone.now()) for nummer in range(4)]
+    # Termin in den nächsten Wochen: Sitzungen ohne Inhalt und Termin fehlen in der Sitemap (TestNurSeitenMitInhalt)
+    sitzungen = [_sitzung(body, nummer, start=timezone.now() + timedelta(days=7)) for nummer in range(4)]
     return {"body": body, "vorgaenge": vorgaenge, "sitzungen": sitzungen}
 
 
@@ -525,8 +529,8 @@ def bonn(klein: int) -> dict[str, Any]:
         OParlPaper.objects.filter(pk=vorgang.pk).update(created_at=eingang + timedelta(hours=nummer))
         vorgaenge.append(vorgang)
     sitzungen = [
-        _sitzung(body, 1, oparl_modified=ERSATZWERT, oparl_created=datetime(2023, 3, 4, tzinfo=UTC)),
-        _sitzung(body, 2, oparl_modified=ERSATZWERT, oparl_created=ERSATZWERT),
+        _sitzung(body, 1, start=zukunft, oparl_modified=ERSATZWERT, oparl_created=datetime(2023, 3, 4, tzinfo=UTC)),
+        _sitzung(body, 2, start=zukunft, oparl_modified=ERSATZWERT, oparl_created=ERSATZWERT),
     ]
     return {"body": body, "vorgaenge": vorgaenge, "sitzungen": sitzungen}
 
@@ -999,17 +1003,101 @@ class TestStadtseitenAufDerAuswahl:
         for pfad, _name in namen:
             assert Client().get(pfad).status_code == 200, pfad
 
-    def test_hoechstens_zwoelf(self, client: Client) -> None:
+    def test_alle_kommunen_bis_zur_grenze(self, client: Client) -> None:
+        """Die Liste ist alphabetisch: Eine zu kleine Grenze ließ Köln und Münster ohne internen Link (Issue #1145)."""
         for nummer in range(15):
             _kommune(nummer, f"Stadt {nummer:02d}", slug=f"stadt-{nummer:02d}")
         zeile = self._zeile(client.get("/insight/").content.decode())
-        assert zeile.count("<a ") == indexierung.STADTSEITEN_HOECHSTENS == 12
-        assert "Stadt 11" in zeile and "Stadt 12" not in zeile
+        assert zeile.count("<a ") == 15
+        assert "Stadt 14" in zeile
+        assert [stadt.name for stadt in indexierung.stadtseiten(hoechstens=2)] == ["Stadt 00", "Stadt 01"]
 
     def test_ohne_kommunen_mit_slug_keine_zeile(self, client: Client) -> None:
         _kommune(1, "Stadt Darmstadt")
         _kommune(2, "Stadt Erbach")
         assert "Direkt zu den Ratsinformationen" not in client.get("/insight/").content.decode()
+
+
+class TestNurSeitenMitInhalt:
+    """Sitemap und Index nennen nur Seiten, für die sich der Abruf lohnt (Issue #1145)."""
+
+    @pytest.fixture
+    def body(self) -> OParlBody:
+        return _kommune(1, "Stadt Köln", display_name="Köln", slug="koeln", last_sync=timezone.now())
+
+    def _eintraege(self, art: str, body: OParlBody) -> set[Any]:
+        return {kennung for kennung, _ in sitemaps.eintraege(sitemaps.ARTEN[art], body.pk, 1)}
+
+    def _datei(self, body: OParlBody, nummer: int, **felder: Any) -> OParlFile:
+        return OParlFile.objects.create(
+            external_id=f"{body.external_id}/file/{nummer}", body=body, name=f"Datei {nummer}", **felder
+        )
+
+    def test_vorgaenge(self, body: OParlBody) -> None:
+        alt = timezone.now() - timedelta(days=3 * 365)
+        neu_ohne_text = _vorgang(body, 1)
+        alt_ohne_text = _vorgang(body, 2, date=alt)
+        alt_mit_text = _vorgang(body, 3, date=alt)
+        self._datei(body, 3, paper=alt_mit_text, text_extraction_status="completed")
+        alt_mit_wartender_datei = _vorgang(body, 4, date=alt)
+        self._datei(body, 4, paper=alt_mit_wartender_datei, text_extraction_status="pending")
+        alt_mit_geloeschter_datei = _vorgang(body, 5, date=alt)
+        self._datei(body, 5, paper=alt_mit_geloeschter_datei, text_extraction_status="completed", deleted=True)
+        ohne_datum = _vorgang(body, 6, date=None)
+
+        eintraege = self._eintraege("vorgaenge", body)
+
+        assert eintraege == {neu_ohne_text.pk, alt_mit_text.pk}
+        for raus in (alt_ohne_text, alt_mit_wartender_datei, alt_mit_geloeschter_datei, ohne_datum):
+            assert raus.pk not in eintraege
+        # Aus der Sitemap heißt nicht aus dem Index
+        assert _robots(Client().get(f"/insight/vorgaenge/{alt_ohne_text.pk}/").content.decode()) == "index, follow"
+
+    def test_ein_vorgang_mit_mehreren_dateien_steht_einmal_in_der_sitemap(self, body: OParlBody) -> None:
+        vorgang = _vorgang(body, 1)
+        self._datei(body, 1, paper=vorgang, text_extraction_status="completed")
+        self._datei(body, 2, paper=vorgang, text_extraction_status="completed")
+
+        assert list(sitemaps.eintraege(sitemaps.ARTEN["vorgaenge"], body.pk, 1)) == [(vorgang.pk, None)]
+        assert [datei.eintraege for datei in sitemaps._dateien_berechnen(sitemaps.ARTEN["vorgaenge"], body.pk)] == [1]
+
+    def test_sitzungen(self, body: OParlBody) -> None:
+        jetzt = timezone.now()
+        vergangen_leer = _sitzung(body, 1, start=jetzt - timedelta(days=30))
+        ohne_termin_leer = _sitzung(body, 2, start=None)
+        fern_leer = _sitzung(body, 3, start=jetzt + timedelta(days=61))
+        bald_leer = _sitzung(body, 4, start=jetzt + timedelta(days=30))
+        mit_top = _sitzung(body, 5, start=jetzt - timedelta(days=30))
+        OParlAgendaItem.objects.create(external_id=f"{mit_top.external_id}/top/1", meeting=mit_top, name="Punkt")
+        nur_geloeschter_top = _sitzung(body, 6, start=jetzt - timedelta(days=30))
+        OParlAgendaItem.objects.create(
+            external_id=f"{nur_geloeschter_top.external_id}/top/1",
+            meeting=nur_geloeschter_top,
+            name="Weg",
+            deleted=True,
+        )
+        niederschrift = self._datei(body, 7)
+        mit_niederschrift = _sitzung(
+            body, 7, start=jetzt - timedelta(days=30), raw_json={"resultsProtocol": niederschrift.external_id}
+        )
+
+        verweis_ohne_wert = _sitzung(body, 8, start=jetzt - timedelta(days=30), raw_json={"resultsProtocol": None})
+
+        eintraege = self._eintraege("sitzungen", body)
+
+        assert eintraege == {bald_leer.pk, mit_top.pk, mit_niederschrift.pk}
+        for sitzung, erwartet in (
+            (vergangen_leer, "noindex, follow"),
+            (ohne_termin_leer, "noindex, follow"),
+            (fern_leer, "noindex, follow"),
+            (nur_geloeschter_top, "noindex, follow"),
+            (verweis_ohne_wert, "noindex, follow"),
+            (bald_leer, "index, follow"),
+            (mit_top, "index, follow"),
+            (mit_niederschrift, "index, follow"),
+        ):
+            html = Client().get(f"/insight/termine/{sitzung.pk}/").content.decode()
+            assert _robots(html) == erwartet, sitzung.name
 
 
 def test_sortierung_nach_din_5007() -> None:

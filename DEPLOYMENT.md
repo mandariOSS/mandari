@@ -970,6 +970,24 @@ einer Anlage aussteht, zeigt die Vorgangsseite einen Hinweis; mit `TASKS_BACKEND
 `TEXT_EXTRACTION_RUNNER=worker` reiht sie dafür bis zu drei Aufträge `file.extract_text` mit Vorrang ein, und zwar
 für Anlagen mit abgelegtem Inhalt (der Auftrag liest nur aus der Ablage; die übrigen holt zuerst der Abruf).
 
+### Antragstellende Fraktionen (Issue #1138)
+
+Das Abonnement `insight.urheber` ermittelt nach jeder neuen oder geänderten Vorlage und nach neuem Text ihrer Anlagen,
+welche Fraktion(en) sie gestellt haben (`URHEBER_SUBSCRIPTION`, Standard `aktiv`; `schatten` zählt nur, `aus`
+registriert nichts). Es schreibt nur die eigenen Tabellen `insight_vorgang_urheber` und `insight_vorgang_urheber_stand`.
+Ein neues Abonnement beginnt am Ende des Journals; den Bestand bearbeitet einmalig nach dem Deploy:
+
+```bash
+# Probe ohne Speichern (zählt je Weg)
+docker compose exec -T mandari python manage.py vorgang_urheber_ermitteln --probe --kommune <slug>
+# Bestandslauf, gedrosselt, setzt nach Abbruch fort
+docker compose exec -d mandari python manage.py vorgang_urheber_ermitteln --stapel 500 --pause 1
+```
+
+Kommunen ohne Fraktionsmitgliedschaften in OParl bekommen eine gepflegte Liste (Admin „Fraktionszugehörigkeiten“ oder
+`manage.py fraktionszugehoerigkeiten_import <csv>`; Startdaten Münster unter `mandari/insight_core/fraktionslisten/`). Danach die
+Kommune neu ermitteln: `vorgang_urheber_ermitteln --kommune <slug> --alle`.
+
 ### Work-Daten nach Neuveröffentlichung im RIS
 
 Veröffentlicht ein RIS eine Tagesordnung oder Vorlage neu (Löschmarkierung und Neuanlage, neue Adressen,

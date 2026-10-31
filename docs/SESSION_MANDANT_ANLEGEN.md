@@ -222,8 +222,9 @@ Leere führen. Das Verzeichnis der Kommune im Dokument-Cache ändert sich mit de
 Adresse passt, den Slug trotzdem gleich dem Cache-Verzeichnis wählen (Rückfall, siehe
 `docs/FILE_CACHE.md`). Der Sitemap-Index (`/sitemap-insight-index.xml`) führt jede gelistete Kommune,
 ohne Slug unter ihrer ID: die Grund-Sitemap (`/sitemap-insight-<slug>.xml` mit Stadtseite, Gremien,
-Personen mit laufender Mitgliedschaft und Ratsfragen) und alle Vorgänge und Sitzungen in nummerierten
-Dateien mit höchstens 10.000 Einträgen (`/sitemap-insight-<slug>-vorgaenge-1.xml`,
+Personen mit laufender Mitgliedschaft und Ratsfragen) sowie in nummerierten Dateien mit höchstens
+10.000 Einträgen die Vorgänge mit ausgelesenem Text oder aus den letzten zwei Jahren und die Sitzungen mit
+Tagesordnung, Niederschrift oder Termin in den nächsten 60 Tagen (`/sitemap-insight-<slug>-vorgaenge-1.xml`,
 `/sitemap-insight-<slug>-sitzungen-1.xml` …).
 
 Im Einstieg gilt:

@@ -370,3 +370,44 @@ def test_ki_zusammenfassung_ist_maschinenlesbar_gekennzeichnet(welt: dict[str, A
     assert mit["mandari:summary"] == "Der Radweg wird gebaut."
     assert mit["mandari:summaryAiGenerated"] is True
     assert _json(f"/oparl/v1/body/{welt['body'].pk}/papers")["data"] == [mit]
+
+
+def test_antragstellende_fraktionen(welt: dict[str, Any]) -> None:
+    """Issue #1138: ``originatorOrganization`` nur mit Organisationsobjekt, sonst der Name in ``mandari:originatorName``."""
+    from insight_core.models import VorgangUrheber
+
+    pfad = f"/oparl/v1/paper/{welt['paper'].pk}"
+    assert "originatorOrganization" not in _json(pfad)
+
+    fraktion = OParlOrganization.objects.create(
+        external_id=f"{RIS}/organization/9", body=welt["body"], name="SPD-Fraktion", organization_type="Fraktion"
+    )
+    for organisation, name, kurz, art in (
+        (fraktion.pk, "SPD-Fraktion", "SPD", "fraktion"),
+        (None, "Ratsgruppe Beispiel", "Beispiel", "gruppe"),
+    ):
+        VorgangUrheber.objects.create(
+            paper_id=welt["paper"].pk,
+            body_id=welt["body"].pk,
+            organisation_id=organisation,
+            bezeichnung=name,
+            kurzform=kurz,
+            art=art,
+            herkunft="title",
+        )
+    cache.clear()
+    vorlage = _json(pfad)
+
+    assert vorlage["originatorOrganization"] == [f"{API}/organization/{fraktion.pk}"]
+    assert vorlage["mandari:originatorName"] == ["Ratsgruppe Beispiel"]
+    assert vorlage["mandari:originatorSource"] == "title"
+    assert vorlage["mandari:originator"] == [
+        {"name": "Ratsgruppe Beispiel", "shortName": "Beispiel", "type": "gruppe"},
+        {
+            "name": "SPD-Fraktion",
+            "shortName": "SPD",
+            "type": "fraktion",
+            "organization": f"{API}/organization/{fraktion.pk}",
+        },
+    ]
+    assert pruefe(vorlage, "Paper") == []

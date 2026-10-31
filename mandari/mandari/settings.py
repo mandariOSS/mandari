@@ -927,7 +927,14 @@ GEOREF_AUTO_INTERVAL_MINUTES = int(os.environ.get("GEOREF_AUTO_INTERVAL_MINUTES"
 # "schatten" zählt nur, was geschähe, "aktiv" wirkt. Der Zeitplan verortung_automatisch bleibt das Sicherheitsnetz.
 GEOREF_SUBSCRIPTION = os.environ.get("GEOREF_SUBSCRIPTION", "aus").strip().lower() or "aus"
 SUMMARY_SUBSCRIPTION = os.environ.get("SUMMARY_SUBSCRIPTION", "aus").strip().lower() or "aus"
-for _name, _modus in (("GEOREF_SUBSCRIPTION", GEOREF_SUBSCRIPTION), ("SUMMARY_SUBSCRIPTION", SUMMARY_SUBSCRIPTION)):
+# Antragstellende Fraktionen (Issue #1138): Neue oder geänderte Vorlagen und neuer Text ihrer Anlagen stoßen die
+# Ermittlung an (Abonnement insight.urheber). Standard "aktiv": schreibt nur die eigenen, abgeleiteten Tabellen.
+URHEBER_SUBSCRIPTION = os.environ.get("URHEBER_SUBSCRIPTION", "aktiv").strip().lower() or "aktiv"
+for _name, _modus in (
+    ("GEOREF_SUBSCRIPTION", GEOREF_SUBSCRIPTION),
+    ("SUMMARY_SUBSCRIPTION", SUMMARY_SUBSCRIPTION),
+    ("URHEBER_SUBSCRIPTION", URHEBER_SUBSCRIPTION),
+):
     if _modus not in ("aus", "schatten", "aktiv"):
         from django.core.exceptions import ImproperlyConfigured
 

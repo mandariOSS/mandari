@@ -7,7 +7,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable, Iterator
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 
 import httpx
@@ -15,6 +15,7 @@ import pytest
 from django.db import transaction
 from django.db.models import Max
 from django.test import Client
+from django.utils import timezone
 
 from apps.events import registry
 from apps.events.dispatch import deliver_batch, ensure_subscription, rewind
@@ -22,7 +23,14 @@ from apps.events.models import Event, ParkedEvent
 from apps.events.publishing import publish
 from apps.events.registry import Subscriber, get
 from insight_core import publication, subscribers
-from insight_core.models import OParlBody, OParlMembership, OParlOrganization, OParlPerson, OParlSource
+from insight_core.models import (
+    OParlBody,
+    OParlMeeting,
+    OParlMembership,
+    OParlOrganization,
+    OParlPerson,
+    OParlSource,
+)
 from insight_core.services import indexnow
 
 pytestmark = pytest.mark.django_db
@@ -195,6 +203,26 @@ class TestSeiten:
         )
 
         assert adressen == [f"https://mandari.de/insight/vorgaenge/{oeffentlich}/"]
+
+    def test_sitzungen_ohne_inhalt_fehlen(self) -> None:
+        """Ihre Seite trägt ``noindex`` (Issue #1145): Melden kostet nur Abrufe."""
+        body = _kommune(1)
+        vorbei = OParlMeeting.objects.create(
+            external_id=f"{body.external_id}/meeting/leer",
+            body=body,
+            name="Leer",
+            start=timezone.now() - timedelta(days=30),
+        )
+        bald = OParlMeeting.objects.create(
+            external_id=f"{body.external_id}/meeting/bald",
+            body=body,
+            name="Bald",
+            start=timezone.now() + timedelta(days=7),
+        )
+
+        adressen = indexnow.seiten([_ereignis(body, "Meeting", vorbei.id), _ereignis(body, "Meeting", bald.id)])
+
+        assert adressen == [f"https://mandari.de/insight/termine/{bald.id}/"]
 
     def test_personen_nur_mit_laufender_mitgliedschaft(self) -> None:
         body = _kommune(1)

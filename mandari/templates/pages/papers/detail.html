@@ -99,6 +99,13 @@
             <dt class="text-gray-600 dark:text-gray-400">Art</dt>
             <dd class="text-gray-900 dark:text-gray-100 break-words">{{ paper.paper_type }}</dd>
             {% endif %}
+            {% if urheber %}
+            {% comment %}Antragstellende Fraktionen (Issue #1138): Name zum Antragsdatum, Kurzform für Leser; mit Gremium im RIS verlinkt{% endcomment %}
+            <dt class="text-gray-600 dark:text-gray-400">Gestellt von</dt>
+            <dd class="text-gray-900 dark:text-gray-100 break-words" data-testid="vorgang-urheber">
+                {% for u in urheber %}{% if u.organisation_id %}<a href="{% url 'insight_core:insight:organization_detail' u.organisation_id %}" title="{{ u.bezeichnung }}" class="text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">{{ u.anzeigename }}</a>{% else %}<span title="{{ u.bezeichnung }}">{{ u.anzeigename }}</span>{% endif %}{% if u.art == "gruppe" %} (Ratsgruppe){% elif u.art == "einzelmandat" %} (Einzelmandat){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}
+            </dd>
+            {% endif %}
             {% if paper.date %}
             <dt class="text-gray-600 dark:text-gray-400">Datum</dt>
             <dd class="text-gray-900 dark:text-gray-100 tabular-nums">{{ paper.date|date:"d.m.Y" }}</dd>

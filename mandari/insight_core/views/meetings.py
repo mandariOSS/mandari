@@ -26,6 +26,7 @@ from ..models import (
     OParlMeeting,
     OParlOrganization,
 )
+from ..services import indexierung
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -338,9 +339,13 @@ class MeetingDetailView(DetailView):
         try:
             from ..seo import get_meeting_seo
 
-            context["seo"] = get_meeting_seo(
-                meeting, self.request, agenda_count=len(agenda_items), tagesordnung=agenda_items
-            ).to_dict()
+            seo = get_meeting_seo(meeting, self.request, agenda_count=len(agenda_items), tagesordnung=agenda_items)
+            # Gremium und Datum allein sind keine Seite für den Suchindex (Issue #1145); den Links folgen sie weiter
+            if not indexierung.sitzung_mit_inhalt(
+                meeting.start, len(agenda_items), context["protocol_file"], timezone.now()
+            ):
+                seo.robots = indexierung.NOINDEX_FOLLOW
+            context["seo"] = seo.to_dict()
         except Exception:
             import logging
 

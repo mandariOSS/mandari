@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Sitemaps des Bürgerportals (Issue #914): alle öffentlichen Vorgänge und Sitzungen der gelisteten Kommunen.
+Sitemaps des Bürgerportals (Issue #914): die öffentlichen Vorgänge und Sitzungen der gelisteten Kommunen, die etwas zu
+bieten haben (Issue #1145, ``indexierung.vorgaenge_mit_inhalt``, ``indexierung.sitzungen_mit_inhalt``). Suchmaschinen
+rufen je Tag nur wenige Hundert Seiten ab; die Sitemap nennt ihnen die, für die sich das lohnt.
 
 Je Kommune gibt es eine Grund-Sitemap (Stadtseite und ihre Listen, Gremien, Personen mit laufender Mitgliedschaft,
 Ratsfragen) und für Vorgänge und Sitzungen nummerierte Dateien mit höchstens ``EINTRAEGE_JE_DATEI`` Adressen:
@@ -8,7 +10,7 @@ Ratsfragen) und für Vorgänge und Sitzungen nummerierte Dateien mit höchstens 
 geht in der Produktion an Django.
 
 Die Dateien teilen den Bestand in der Reihenfolge des Eingangs (``created_at``, dann ``id``) auf: Neue Einträge
-landen in der letzten Datei, die älteren Dateien bleiben stabil. Der Container hat wenig Speicher, deshalb lesen
+landen meist in der letzten Datei; bekommt ein älterer Vorgang Text, rückt er an seine Stelle. Der Container hat wenig Speicher, deshalb lesen
 alle Abfragen nur Kennung und Änderungszeitpunkt (``values_list``) und laufen über ``iterator``; Seitenzahl, Anzahl
 und letzte Änderung je Datei rechnet die Datenbank in einer Abfrage je Art aus. Diese Aufteilung liest den ganzen
 Bestand einer Kommune; der Index hält sie deshalb ``DATEIEN_CACHE_SEKUNDEN`` im Cache.
@@ -109,7 +111,11 @@ def aenderungszeitpunkt(felder: tuple[str, ...] = RIS_ZEITPUNKTE, *, jetzt: date
 
 
 def _bestand(art: Art, body_id: Any) -> QuerySet[Any]:
-    return art.modell()._default_manager.filter(body_id=body_id, deleted=False)
+    from .indexierung import sitzungen_mit_inhalt, vorgaenge_mit_inhalt
+
+    bestand = art.modell()._default_manager.filter(body_id=body_id, deleted=False)
+    auswahl = vorgaenge_mit_inhalt if art.kennung == "vorgaenge" else sitzungen_mit_inhalt
+    return auswahl(bestand, timezone.now())
 
 
 def _zeitpunkt(wert: Any) -> datetime | None:
@@ -125,7 +131,8 @@ def _zeitpunkt(wert: Any) -> datetime | None:
 def _cache_schluessel(art: Art, body_id: Any) -> str:
     # Mit der Dateigröße: Ändert sie sich, gilt eine zwischengespeicherte Aufteilung nicht mehr. „lastmod2“: Seit
     # Issue #939 zählen nur glaubhafte Änderungszeitpunkte; Aufteilungen mit den alten Werten gelten nicht weiter.
-    return f"insight:sitemap:dateien:lastmod2:{art.kennung}:{EINTRAEGE_JE_DATEI}:{body_id}"
+    # „inhalt“: Seit Issue #1145 stehen nur noch Einträge mit Inhalt darin.
+    return f"insight:sitemap:dateien:lastmod2:inhalt:{art.kennung}:{EINTRAEGE_JE_DATEI}:{body_id}"
 
 
 def dateien(art: Art, body_id: Any) -> list[Datei]:
