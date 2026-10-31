@@ -86,6 +86,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 - Provisionierungs-API: Die Antwort auf das Anlegen einer Organisation enthält kein Feld `invitation_url` mehr; der Einladungslink geht nur per Mail (#501).
 - Systemeinstellungen: die verdeckte Wahl des Mail-Backends (`email_backend`); das Backend bestimmt `EMAIL_BACKEND` bzw. ein eingetragener SMTP-Host (#501).
 - Systemeinstellungen: die wirkungslosen Felder „Seitenname“ und „Seitenbeschreibung“ (#588).
+- Systemeinstellungen: die Datenbankspalten `site_name` und `site_description` dieser Felder (Migration `common.0014`). Vor einem Rückfall auf ein Image ohne `common.0007`, etwa `v0.11.0`, gehört `manage.py migrate common 0013` (`DEPLOYMENT.md`, „Rollback“) (#604).
 - Befehl `manage.py sync_oparl`; synchronisiert wird nur noch über den Ingestor (von Hand: `python -m src.main sync --all` im Ingestor-Container) (#500).
 - Ingestor: die wirkungslosen Befehle `metrics`, `circuit-breakers` und `init-db`; Kennzahlen liefert der Endpunkt `/metrics` des Daemons, die Verbindungsprüfung `status` (#500).
 - Ingestor: Redis-Kanäle `mandari:sync` und `mandari:entities` (ohne Abonnenten) samt Einstellung `EVENTS_ENABLED` (#500).
