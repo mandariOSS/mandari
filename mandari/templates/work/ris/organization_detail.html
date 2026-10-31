@@ -5,7 +5,7 @@
 {% block header_title %}Gremium{% endblock %}
 {% block header_subtitle %}
 {% if org %}
-<p class="work-page-subtitle">{{ org.name }}</p>
+<p class="work-page-subtitle break-words">{{ org.name }}</p>
 {% endif %}
 {% endblock %}
 
@@ -29,9 +29,9 @@
             <div class="flex-shrink-0 p-3 bg-primary-50/70 dark:bg-primary-900/20 rounded-xl">
                 <i data-lucide="building-2" class="w-7 h-7 text-primary-500 dark:text-primary-400"></i>
             </div>
-            <div class="flex-1">
+            <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-3 mb-2">
-                    <h1 class="text-xl font-semibold text-gray-900 dark:text-white">{{ org.name }}</h1>
+                    <h1 class="min-w-0 break-words text-xl font-semibold text-gray-900 dark:text-white">{{ org.name }}</h1>
                     {% if org.is_active %}
                     <span class="px-2.5 py-0.5 text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">Aktiv</span>
                     {% else %}
@@ -53,11 +53,11 @@
         </div>
     </div>
 
-    <!-- Tab Navigation -->
-    <div class="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 mb-6">
+    <!-- Tab Navigation: am Handy eine eigene Leiste mit waagerechtem Bildlauf -->
+    <div class="flex items-center gap-1 border-b border-gray-200 dark:border-gray-700 mb-6 max-sm:overflow-x-auto">
         <button type="button" @click="tab = 'members'"
                 :class="tab === 'members' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
-                class="px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2">
+                class="px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 max-sm:flex-shrink-0 max-sm:whitespace-nowrap">
             <i data-lucide="users" class="w-4 h-4"></i>
             Mitglieder & Vertretungen
             <span class="px-1.5 py-0.5 text-xs bg-gray-100 dark:bg-gray-700 rounded-full"
@@ -65,13 +65,13 @@
         </button>
         <button type="button" @click="tab = 'calendar'"
                 :class="tab === 'calendar' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
-                class="px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2">
+                class="px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 max-sm:flex-shrink-0 max-sm:whitespace-nowrap">
             <i data-lucide="calendar" class="w-4 h-4"></i>
             Sitzungskalender
         </button>
         <button type="button" @click="tab = 'info'"
                 :class="tab === 'info' ? 'border-primary-500 text-primary-600 dark:text-primary-400' : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'"
-                class="px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2">
+                class="px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-2 max-sm:flex-shrink-0 max-sm:whitespace-nowrap">
             <i data-lucide="info" class="w-4 h-4"></i>
             Informationen
         </button>
@@ -101,7 +101,7 @@
             <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4 text-sm">
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Name</dt>
-                    <dd class="text-gray-900 dark:text-white font-medium">{{ org.name }}</dd>
+                    <dd class="text-gray-900 dark:text-white font-medium max-sm:break-words">{{ org.name }}</dd>
                 </div>
                 {% if org.short_name %}
                 <div>
@@ -136,7 +136,7 @@
                 {% if org.website %}
                 <div>
                     <dt class="text-gray-500 dark:text-gray-400 text-xs mb-1">Website</dt>
-                    <dd><a href="{{ org.website }}" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:underline">{{ org.website }}</a></dd>
+                    <dd><a href="{{ org.website }}" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:underline max-sm:break-all">{{ org.website }}</a></dd>
                 </div>
                 {% endif %}
                 <div>
