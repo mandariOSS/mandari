@@ -71,7 +71,8 @@ def _bestand_anlegen() -> None:
 def _bestand() -> tuple[str, str]:
     with connection.cursor() as cursor:
         cursor.execute(f"SELECT maintenance_message, email_backend FROM {TABELLE} WHERE id = 1")
-        return cursor.fetchone()
+        zeile: tuple[str, str] = cursor.fetchone()
+    return zeile
 
 
 @pytest.mark.parametrize(
