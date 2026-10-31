@@ -8,7 +8,8 @@ Münster); Namen von Personen sind erfunden.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -267,3 +268,34 @@ def test_reihenfolge_titel_vor_person_vor_unterschrift() -> None:
     assert ue.ermitteln(vorlage, kommune).herkunft == ue.PERSON
     vorlage.personen = []
     assert ue.ermitteln(vorlage, kommune).herkunft == ue.SIGNATURE
+
+
+@pytest.mark.parametrize(
+    "stichtag",
+    [
+        date(2026, 3, 1),
+        datetime(2026, 3, 1, tzinfo=UTC),
+        datetime(2026, 3, 1, tzinfo=ZoneInfo("Europe/Berlin")),
+        datetime(2026, 3, 1),
+    ],
+)
+def test_zeitraum_vertraegt_datum_und_zeitstempel(stichtag: date) -> None:
+    """Bestandsdatenbanken liefern für ``date``, ``start_date`` und ``end_date`` Zeitstempel (Vorfall 31.10.2026)."""
+    gepflegt = Fraktion.aus_name("SPD-Fraktion", beginn=date(2026, 3, 1), ende=date(2026, 3, 1))
+    aus_oparl = Fraktion.aus_name(
+        "SPD-Fraktion", beginn=datetime(2026, 3, 1, tzinfo=UTC), ende=datetime(2026, 3, 1, tzinfo=UTC)
+    )
+
+    assert gepflegt.gilt_am(stichtag)
+    assert aus_oparl.gilt_am(stichtag)
+    assert Zugehoerigkeit(fraktion=gepflegt, beginn=date(2026, 3, 1), ende=date(2026, 3, 1)).gilt_am(stichtag)
+    assert Zugehoerigkeit(
+        fraktion=aus_oparl, beginn=datetime(2026, 3, 1, tzinfo=UTC), ende=datetime(2026, 3, 1, tzinfo=UTC)
+    ).gilt_am(stichtag)
+
+
+def test_zeitraum_grenzen_mit_zeitstempel() -> None:
+    fraktion = Fraktion.aus_name("SPD-Fraktion", ende=datetime(2026, 3, 1, tzinfo=UTC))
+
+    assert fraktion.gilt_am(date(2026, 3, 1))
+    assert not fraktion.gilt_am(datetime(2026, 3, 2, tzinfo=UTC))

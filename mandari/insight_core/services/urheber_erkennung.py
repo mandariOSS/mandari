@@ -34,12 +34,15 @@ import re
 import unicodedata
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Final
+from zoneinfo import ZoneInfo
 
 #: Version der Erkennung; steigt, wenn sich für dieselben Daten das Ergebnis ändern kann. Der Bestandslauf ermittelt
 #: Vorlagen mit älterer Version neu.
 VERSION: Final = 1
+
+_ORTSZEIT: Final = ZoneInfo("Europe/Berlin")
 
 FRAKTION: Final = "fraktion"
 GRUPPE: Final = "gruppe"
@@ -136,6 +139,25 @@ def ist_fraktion(name: str, art: str = "", einordnung: str = "") -> bool:
 # =============================================================================
 
 
+def _tag(wert: date | None) -> date | None:
+    """
+    Nur das Datum eines Werts.
+
+    Bestandsdatenbanken führen die Datumsfelder der Ratsdaten als Zeitstempel. Der Tag zählt in Ortszeit, weil Quellen
+    sowohl Mitternacht UTC als auch Mitternacht Ortszeit liefern.
+    """
+    if isinstance(wert, datetime):
+        return wert.astimezone(_ORTSZEIT).date() if wert.tzinfo else wert.date()
+    return wert
+
+
+def _im_zeitraum(beginn: date | None, ende: date | None, stichtag: date) -> bool:
+    tag = _tag(stichtag)
+    von, bis = _tag(beginn), _tag(ende)
+    assert tag is not None
+    return (von is None or von <= tag) and (bis is None or bis >= tag)
+
+
 @dataclass(frozen=True)
 class Fraktion:
     """
@@ -196,7 +218,7 @@ class Fraktion:
     def gilt_am(self, stichtag: date | None) -> bool:
         if stichtag is None:
             return True
-        return (self.beginn is None or self.beginn <= stichtag) and (self.ende is None or self.ende >= stichtag)
+        return _im_zeitraum(self.beginn, self.ende, stichtag)
 
     def erkennbar(self) -> bool:
         return bool(self.schluessel or self.eigenname or self.kuerzel)
@@ -216,7 +238,7 @@ class Zugehoerigkeit:
     def gilt_am(self, stichtag: date | None) -> bool:
         if stichtag is None:
             return self.ende is None
-        return (self.beginn is None or self.beginn <= stichtag) and (self.ende is None or self.ende >= stichtag)
+        return _im_zeitraum(self.beginn, self.ende, stichtag)
 
 
 @dataclass
