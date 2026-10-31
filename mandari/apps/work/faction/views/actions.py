@@ -45,6 +45,10 @@ class FactionActionView(WorkViewMixin, View):
 
     permission_required = "faction.view_public"
 
+    def get(self, request, *args, **kwargs):
+        """War die Anmeldung beim Absenden abgelaufen, führt die Anmeldung hierher: zurück zur Sitzung (Issue #1160)."""
+        return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=kwargs["meeting_id"])
+
     def post(self, request, *args, **kwargs):
         meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
 
@@ -147,16 +151,18 @@ class FactionActionView(WorkViewMixin, View):
 
     def _redirect_detail(self, meeting):
         url = reverse("work:faction_detail", kwargs={"org_slug": self.organization.slug, "meeting_id": meeting.id})
-        # Aus der bisherigen Ansicht zurück in die bisherige Ansicht, nicht in die neue Sitzungsansicht (Issue #874)
-        return redirect(f"{url}?ansicht=bisher" if self._aus_bisheriger_ansicht() else url)
+        # Zurück in die Ansicht, aus der die Aktion kam: die bisherige (Issue #874) oder die Tagesordnung nach dem
+        # Versand (Issue #1160), nicht in die Sitzungs- bzw. Einladungsansicht
+        ansicht = self._herkunftsansicht()
+        return redirect(f"{url}?ansicht={ansicht}" if ansicht else url)
 
-    def _aus_bisheriger_ansicht(self) -> bool:
-        """Kam die Aktion aus der bisherigen Ansicht (``?ansicht=bisher``)? Formularfeld oder Adresse der Seite."""
+    def _herkunftsansicht(self) -> str:
+        """Ansicht, aus der die Aktion kam (``bisher``, ``tagesordnung``, sonst leer): Formularfeld oder Seitenadresse."""
         if self.request.POST.get("ansicht") == "bisher":
-            return True
+            return "bisher"
         # Nur der Parameter der Herkunftsseite zählt; weitergeleitet wird immer auf die eigene Sitzungsseite
-        herkunft = urlsplit(self.request.META.get("HTTP_REFERER") or "")
-        return "bisher" in parse_qs(herkunft.query).get("ansicht", [])
+        herkunft = parse_qs(urlsplit(self.request.META.get("HTTP_REFERER") or "").query).get("ansicht", [])
+        return next((ansicht for ansicht in ("bisher", "tagesordnung") if ansicht in herkunft), "")
 
     def _refresh_or_redirect(self, request, meeting, msg=None):
         """Return HX-Refresh for HTMX requests, redirect otherwise."""
@@ -680,8 +686,17 @@ class FactionActionView(WorkViewMixin, View):
             return HttpResponse(status=403)
 
         if item and direction == "to":
-            # Ziehen am Griff (Issue #1071): an eine Stelle der obersten Ebene desselben Teils
-            self._move_item_to(meeting, item, request.POST.get("position"))
+            # Ziehen am Griff (Issue #1071): an eine Stelle der obersten Ebene, auch in den anderen Teil (Issue #1160)
+            teil = request.POST.get("teil")
+            wechselt = teil in ("public", "internal") and teil != item.visibility and item.proposal_status == "active"
+            if wechselt and (
+                not agenda.open_for_members(meeting) or (teil == "internal" and not can_view_internal(self.membership))
+            ):
+                return HttpResponse(status=403)
+            with transaction.atomic():
+                if wechselt:
+                    agenda.move_to_part(meeting, item, teil)
+                self._move_item_to(meeting, item, request.POST.get("position"))
         elif item and direction in ("up", "down"):
             siblings = list(agenda.numbered_items(meeting, item.visibility).order_by("order"))
 
@@ -1305,10 +1320,17 @@ class FactionActionView(WorkViewMixin, View):
         if not can_view_item(item, self.membership):
             return HttpResponse(status=403)
 
+        # Wer aufnimmt, entscheidet über den Teil der Tagesordnung (Issue #1160), in den nichtöffentlichen nur Vereidigte
+        visibility = request.POST.get("visibility")
+        if visibility not in ("public", "internal"):
+            visibility = None
+        if visibility == "internal" and not can_view_internal(self.membership):
+            return HttpResponse(status=403)
+
         from ..services import AgendaProposalService
 
         assign_number = request.POST.get("number", "").strip()
-        AgendaProposalService.accept_proposal(item, self.membership, assign_number or None)
+        AgendaProposalService.accept_proposal(item, self.membership, assign_number or None, visibility)
 
         messages.success(request, f"Vorschlag '{item.title}' angenommen.")
         return self._refresh_or_redirect(request, meeting)

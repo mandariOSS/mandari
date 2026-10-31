@@ -11,7 +11,7 @@ Kontext: to_oeffentlich, to_intern, to_gesperrt, meeting, org_slug, can_edit, ra
     <ol class="fs-to-lesen fs-to-kompakt">
         {% for z in to_oeffentlich %}<li{% if z.unter %} class="unter"{% endif %}><span class="nr">{{ z.item.number }}</span><span class="t">{{ z.item.title }}</span></li>{% empty %}<li><span class="t fs-meta">Noch keine TOPs</span></li>{% endfor %}
         {% if to_intern %}<li aria-hidden="true"><span class="teil">Nichtöffentlicher Teil</span></li>{% endif %}
-        {% for z in to_intern %}<li{% if z.unter %} class="unter"{% endif %}><span class="nr">{% if not z.unter %}NÖ {% endif %}{{ z.item.number }}</span><span class="t">{{ z.item.title }}</span></li>{% endfor %}
+        {% for z in to_intern %}<li{% if z.unter %} class="unter"{% endif %}><span class="nr">{{ z.nummer }}</span><span class="t">{{ z.item.title }}</span></li>{% endfor %}
     </ol>
     {% if to_gesperrt %}<p class="fs-meta fs-unter-liste"><i data-lucide="lock" aria-hidden="true"></i> Nichtöffentlicher Teil: {{ to_gesperrt }} TOP{{ to_gesperrt|pluralize:"s" }}, nur für Vereidigte.</p>{% endif %}
     <p class="fs-meta fs-unter-liste">Die Einladung enthielt die Tagesordnung vom {{ meeting.invitation_updated_at|default:meeting.invitation_sent_at|date:"D d.m., H:i" }}. Änderungen gehen als Aktualisierung an alle.</p>

@@ -44,12 +44,14 @@ import { deleteConfirmation } from '../alpine/delete-confirmation'
 import { factionDetail } from '../alpine/faction-detail'
 import { factionTitlePreview } from '../alpine/faction-title-preview'
 import { fsTagesordnung } from '../alpine/fs-tagesordnung'
+import { fsTopEntwurf } from '../alpine/fs-top-entwurf'
 
 Alpine.data('agendaItemPanel', agendaItemPanel)
 Alpine.data('deleteConfirmation', deleteConfirmation)
 Alpine.data('factionDetail', factionDetail)
 Alpine.data('factionTitlePreview', factionTitlePreview)
 Alpine.data('fsTagesordnung', fsTagesordnung)
+Alpine.data('fsTopEntwurf', fsTopEntwurf)
 
 // ---- Ausgelagerte Inline-Skripte (#172, CSP ohne unsafe-inline) ----------------------------
 import { letterheadForm } from '../alpine/letterhead-form'

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import TYPE_CHECKING, Any, cast
 
+from django.db.models import Q
 from django.urls import NoReverseMatch, reverse
 from django.utils import timezone
 from django.utils.formats import date_format
@@ -98,6 +99,14 @@ class Zeile:
     letzter: bool = False
     offen: bool = False
     beschreibung: str = ""
+
+    @property
+    def nummer(self) -> str:
+        """Nummer zur Anzeige: Nichtöffentliche TOPs tragen „NÖ“, die Nummerierung schreibt es meist schon selbst."""
+        nummer = str(self.item.number or "")
+        if self.unter or not nummer or self.item.visibility != "internal" or nummer.startswith("NÖ"):
+            return nummer
+        return f"NÖ {nummer}"
 
 
 def _org_slug(item: FactionAgendaItem) -> str:
@@ -292,9 +301,7 @@ def eigene_unterlagen(teile: dict[str, Any]) -> list[tuple[Verweis, str]]:
     liste: list[tuple[Verweis, str]] = []
     for zeile in [*teile["to_oeffentlich"], *teile["to_intern"]]:
         for verweis in zeile.unterlagen:
-            nummer = (
-                f"NÖ {zeile.item.number}" if zeile.intern and zeile.item.visibility == "internal" else zeile.item.number
-            )
+            nummer = zeile.nummer
             liste.append((verweis, f"TOP {nummer}" if nummer else ""))
     return liste
 
@@ -581,7 +588,11 @@ def tagesordnung_geaendert(meeting: FactionMeeting) -> bool:
     stand = meeting.invitation_updated_at or meeting.invitation_sent_at
     if not stand:
         return False
-    return meeting.agenda_items.filter(proposal_status="active", updated_at__gt=stand).exists()
+    # Aufgenommene Vorschläge über reviewed_at (Issue #1160): Die Annahme speichert mit update_fields, updated_at bleibt
+    # beim Zeitpunkt des Vorschlags stehen, und der kann vor dem Versand liegen.
+    return meeting.agenda_items.filter(
+        Q(updated_at__gt=stand) | Q(reviewed_at__gt=stand), proposal_status="active"
+    ).exists()
 
 
 # =============================================================================

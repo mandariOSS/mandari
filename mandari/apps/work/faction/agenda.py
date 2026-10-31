@@ -106,6 +106,34 @@ def renumber(meeting: FactionMeeting, visibility: str) -> None:
                 child.save(update_fields=["number"])
 
 
+def move_to_part(meeting: FactionMeeting, item: FactionAgendaItem, visibility: str) -> None:
+    """
+    TOP in den anderen Teil der Tagesordnung legen und beide Teile neu nummerieren (Issue #1160). Rechte prüft der Aufrufer.
+
+    In den nicht-öffentlichen Teil gehen die Unterpunkte mit: Sonst stünden sie weiter in den öffentlichen Listen
+    (Einladung, PDF). Zurück im öffentlichen Teil bleiben sie nicht-öffentlich, bis jemand sie einzeln freigibt. Ein
+    Unterpunkt eines nicht-öffentlichen TOPs wird aus demselben Grund nicht öffentlich.
+    """
+    previous = item.visibility
+    if visibility == previous:
+        return
+    parent = item.parent
+    if visibility == "public" and parent is not None and parent.visibility == "internal":
+        return
+    with transaction.atomic():
+        lock_meeting(meeting)
+        item.visibility = visibility
+        item.save(update_fields=["visibility", "updated_at"])
+        if visibility == "internal":
+            for child in item.children.filter(visibility="public"):
+                child.visibility = visibility
+                child.save(update_fields=["visibility", "updated_at"])
+        renumber(meeting, previous)
+        renumber(meeting, visibility)
+        # renumber arbeitet auf eigenen Instanzen: Ein späteres save() überschriebe die neue Nummer sonst
+        item.refresh_from_db(fields=["number"])
+
+
 # =============================================================================
 # Standard-Tagesordnung
 # =============================================================================
