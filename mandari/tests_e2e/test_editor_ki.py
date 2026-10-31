@@ -31,6 +31,7 @@ from tests_e2e.test_editor_kollaboration import CONNECTED, editor_oeffnen
 
 playwright_sync = pytest.importorskip("playwright.sync_api")
 expect = playwright_sync.expect
+PlaywrightTimeoutError = playwright_sync.TimeoutError
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -107,12 +108,20 @@ def absatz_markieren(page: Any, text: str) -> None:
 
     ProseMirror übernimmt die Auswahl von Shift+End erst mit dem nächsten ``selectionchange``. Kommt der Klick auf
     den KI-Reiter davor (in der CI unter Last gesehen), hat der Editor den Fokus schon verloren und verwirft die
-    Auswahl: Die Markierung bliebe leer.
+    Auswahl: Die Markierung bliebe leer. Trifft kurz nach dem Verbinden noch der Anfangsstand der Zusammenarbeit ein,
+    fällt die Auswahl ebenfalls weg, auch wenn sich der Text nicht ändert. Deshalb wird neu markiert, statt nur länger
+    zu warten.
     """
-    page.locator(f"{PROSEMIRROR} p", has_text=text).click()
-    page.keyboard.press("Home")
-    page.keyboard.press("Shift+End")
-    page.wait_for_function(f"(text) => {ALPINE_EDITOR}.aiSelectionText.includes(text)", arg=text, timeout=5000)
+    for versuch in range(1, 4):
+        page.locator(f"{PROSEMIRROR} p", has_text=text).click()
+        page.keyboard.press("Home")
+        page.keyboard.press("Shift+End")
+        try:
+            page.wait_for_function(f"(text) => {ALPINE_EDITOR}.aiSelectionText.includes(text)", arg=text, timeout=5000)
+            return
+        except PlaywrightTimeoutError:
+            if versuch == 3:
+                raise
 
 
 def am_absatzende_tippen(page: Any, absatz: str, text: str) -> None:
