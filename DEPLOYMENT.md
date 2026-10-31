@@ -217,6 +217,12 @@ wieder als `none` bzw. `error` da (`docs/FILE_CACHE.md`, „Zustände des Abrufs
 Obergrenze #961, Migration `insight_core.0056`) bleiben verdrängt; ein Image mit `0056`, aber ohne `0059` kennt den
 Zustand.
 
+Zurück auf ein Image vor `common.0007`, etwa `v0.11.0` (Issue #604): **vorher** mit dem laufenden Image
+`docker exec mandari python manage.py migrate common 0013` ausführen. Das legt die mit `common.0014` gelöschten Spalten
+`site_name` und `site_description` mit ihren Standardwerten wieder an; ohne sie scheitert in diesen Images jeder Zugriff
+auf die Systemeinstellungen. Der automatische Rückfall von `update.sh` macht das nicht von selbst. Images ab `common.0007`
+brauchen die Spalten nicht.
+
 ### Datenbank-Migration
 
 Migrationen laufen beim Update, nicht im Entrypoint: verträgliche vor dem Umschalten
