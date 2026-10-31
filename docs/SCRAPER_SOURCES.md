@@ -613,7 +613,8 @@ seit Issue #122; die Kommune muss nichts freischalten.
    Verbandsgemeinden liefern mehrere Bodies (Ortsgemeinden, Zweckverbände);
    die gewünschten Bodies nach der Prüfung im Admin listen (`is_listed`), die
    übrigen ungelistet lassen oder löschen. Ist die Quelle schon registriert,
-   bleibt ihr Status (aktiv oder abgeschaltet) unverändert.
+   bleibt ihr Status (aktiv oder abgeschaltet) unverändert. Hängt eine Kommune
+   schon an einer anderen Quelle, bricht der Befehl ab, ohne etwas zu schreiben.
 
 3. Erstlauf als Voll-Sync anstoßen (Admin-Aktion „Voll-Sync" oder
    `mandari-ingestor sync --body <System-URL> --full`); regelmäßig übernimmt

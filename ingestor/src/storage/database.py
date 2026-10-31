@@ -646,6 +646,19 @@ class DatabaseStorage:
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
+    async def get_body_source(self, url: str) -> tuple[str, OParlSource] | None:
+        """Kennung und Quelle der Kommune mit dieser Adresse, auch mit oder ohne Schrägstrich am Ende; sonst None."""
+        address = url.rstrip("/")
+        async with self.get_session() as session:
+            stmt = (
+                select(OParlBody.external_id, OParlSource)
+                .select_from(OParlBody)
+                .join(OParlSource, OParlBody.source_id == OParlSource.id)
+                .where(OParlBody.external_id.in_([address, f"{address}/"]))
+            )
+            row = (await session.execute(stmt)).first()
+            return (row[0], row[1]) if row is not None else None
+
     async def get_all_sources(self, active_only: bool = True) -> list[OParlSource]:
         """
         Get all registered sources.

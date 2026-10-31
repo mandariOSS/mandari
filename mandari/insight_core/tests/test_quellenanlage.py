@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 ``add_oparl_source``: Neuanlage inaktiv und ungelistet, keine Reaktivierung (Issue #555), Kommunenliste über alle
-Seiten (Issue #869). Dazu das Formular „Quelle hinzufügen“ im Admin, das „Aktiv“ nicht mehr vorbelegt.
+Seiten (Issue #869), keine Kommune wandert auf eine andere Quelle. Dazu das Formular „Quelle hinzufügen“ im Admin,
+das „Aktiv“ nicht mehr vorbelegt.
 
 Bisher setzte der Befehl jede Quelle per ``update_or_create`` auf aktiv, auch eine im Admin abgeschaltete, und neue
 Kommunen erschienen sofort im Bürgerportal. Jetzt ist eine neue Quelle inaktiv, eine vorhandene behält ihren Status,
@@ -19,6 +20,7 @@ from typing import Any
 import httpx
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.test import Client
 from django.urls import reverse
 
@@ -51,7 +53,7 @@ class Server:
     def __call__(self, request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         self.anfragen.append(url)
-        if url == self.system:
+        if url.rstrip("/") == self.system:
             return httpx.Response(
                 200, json={"id": self.system, "type": "https://schema.oparl.org/1.1/System", "body": self.liste}
             )
@@ -60,6 +62,8 @@ class Server:
             return httpx.Response(200, json=seite)
         if url == f"{self.liste}?page=2":
             return self.zweite_seite or httpx.Response(200, json={"data": [self.kommune(3)], "links": {}})
+        if url == self.kommune(1)["id"]:
+            return httpx.Response(200, json=self.kommune(1))
         return httpx.Response(404)
 
 
@@ -132,6 +136,62 @@ def test_abgebrochene_kommunenliste_wird_gemeldet(server: Server) -> None:
     source = OParlSource.objects.get(url=server.system)
     assert OParlBody.objects.filter(source=source).count() == 2
     assert f"Kommunenliste unvollständig ab Seite {server.liste}?page=2" in ausgabe
+
+
+#: Einstellungen einer vorhandenen Quelle, die eine zweite Quelle nicht hätte
+EINSTELLUNGEN = {"file_downloads": False, "request_interval": 2.0}
+
+
+@pytest.mark.parametrize(
+    ("registriert", "aufgerufen"),
+    [
+        pytest.param("system", "system/", id="Schrägstrich am Ende"),
+        pytest.param("liste", "system", id="System statt Kommunenliste"),
+        pytest.param("system", "liste", id="Kommunenliste statt System"),
+        pytest.param("system", "kommune", id="Adresse der Kommune"),
+    ],
+)
+def test_andere_schreibweise_laesst_die_kommune_an_ihrer_quelle(
+    server: Server, registriert: str, aufgerufen: str
+) -> None:
+    adressen = {
+        "system": server.system,
+        "system/": f"{server.system}/",
+        "liste": server.liste,
+        "kommune": server.kommune(1)["id"],
+    }
+    source = OParlSource.objects.create(
+        name="Vorhanden", url=adressen[registriert], is_active=True, sync_config=EINSTELLUNGEN
+    )
+    body = OParlBody.objects.create(
+        source=source, external_id=server.kommune(1)["id"], name="Vorhanden 1", is_listed=True
+    )
+
+    with pytest.raises(CommandError, match="schon an einer anderen Quelle") as abbruch:
+        call_command("add_oparl_source", adressen[aufgerufen], stdout=StringIO())
+
+    assert source.url in str(abbruch.value)
+    # Nichts geschrieben: keine zweite Quelle, keine weitere Kommune, Quelle und Kommune unverändert
+    assert not OParlSource.objects.filter(url=adressen[aufgerufen]).exists()
+    assert list(OParlBody.objects.filter(external_id__contains=server.system.rsplit("/", 1)[0])) == [body]
+    body.refresh_from_db()
+    assert (body.source_id, body.name, body.is_listed) == (source.pk, "Vorhanden 1", True)
+    source.refresh_from_db()
+    assert (source.name, source.is_active, source.sync_config) == ("Vorhanden", True, EINSTELLUNGEN)
+
+
+def test_registrierte_quelle_holt_keine_kommune_einer_anderen(server: Server) -> None:
+    andere = OParlSource.objects.create(name="Andere", url=f"{server.liste}/andere", is_active=True)
+    OParlBody.objects.create(source=andere, external_id=server.kommune(2)["id"], name="Vorhanden 2")
+    eigene = OParlSource.objects.create(name="Alt", url=server.system, is_active=False)
+
+    with pytest.raises(CommandError, match=andere.url):
+        _anlegen(server)
+
+    eigene.refresh_from_db()
+    assert eigene.name == "Alt"
+    assert OParlBody.objects.get(external_id=server.kommune(2)["id"]).source_id == andere.pk
+    assert not OParlBody.objects.filter(source=eigene).exists()
 
 
 def _haken_gesetzt(antwort: Any) -> bool:

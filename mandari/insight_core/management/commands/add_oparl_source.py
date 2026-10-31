@@ -7,7 +7,8 @@ Registriert eine neue OParl-Datenquelle und legt die zugehörigen Bodies an.
 Eine neue Quelle ist inaktiv und eine neue Kommune nicht gelistet (Issue #555): Erst die bewusste Aktivierung im
 Admin lässt den Ingestor die Quelle abgleichen, erst das Listen macht eine Kommune im Bürgerportal sichtbar. Ist die
 Quelle schon registriert, aktualisiert der Befehl ihre Angaben aus dem System-Objekt; ``is_active`` bleibt, wie es
-ist, auch eine abgeschaltete Quelle bleibt abgeschaltet. Ebenso bleibt ``is_listed`` vorhandener Kommunen.
+ist, auch eine abgeschaltete Quelle bleibt abgeschaltet. Ebenso bleibt ``is_listed`` vorhandener Kommunen. Hängt
+eine Kommune aus der Antwort schon an einer anderen Quelle, bricht der Befehl ab, bevor er etwas schreibt.
 
 Jede Anfrage hält den Takt je Host ein wie alle anderen Abrufe (``insight_core.services.host_pacing``, Issue
 #1027): höchstens eine Anfrage je ``RIS_REQUEST_INTERVAL`` (Standard eine Sekunde) an denselben Host, über alle
@@ -35,6 +36,9 @@ _NAMESPACE_VERSION = re.compile(r"^https?://schema\.oparl\.org/(1\.[01])/")
 
 # Obergrenze für paginierte Body-Listen (Verbandsgemeinden haben Dutzende Bodies)
 MAX_BODY_PAGES = 20
+
+#: Höchstens so viele Kommunen nennt der Abbruch, wenn sie schon an einer anderen Quelle hängen
+FOREIGN_BODIES_SHOWN = 5
 
 
 def is_oparl_error(data) -> bool:
@@ -219,6 +223,34 @@ class Command(BaseCommand):
                     )
         return bodies
 
+    def _abort_on_foreign_bodies(self, url: str, system_data: dict[str, Any], bodies: list[dict]) -> None:
+        """
+        Eine vorhandene Kommune bleibt an ihrer Quelle (Issue #555).
+
+        Unter einer anderen Schreibweise der Adresse (Schrägstrich, System statt Kommunenliste) hinge sie sonst an einer
+        zweiten, inaktiven Quelle ohne deren Einstellungen; der Abgleich holt sie nicht zurück, und zum Beispiel gälte
+        ``file_downloads`` der zweiten Quelle. Die Adresse selbst kann eine Kommune oder eine Kommunenliste sein, dann
+        steht die Kommune nur in der Antwort. Läuft vor dem ersten Schreiben: Beim Abbruch bleibt alles unverändert.
+        """
+        listed = system_data.get("data")
+        answer = [system_data, *(listed if isinstance(listed, list) else []), *bodies]
+        ids = {item["id"] for item in answer if isinstance(item, dict) and isinstance(item.get("id"), str)}
+        foreign = list(
+            OParlBody.objects.filter(external_id__in=ids)
+            .exclude(source__url=url)
+            .select_related("source")
+            .order_by("external_id")
+        )
+        if not foreign:
+            return
+        shown = "; ".join(f"{b.name} ({b.external_id}) an {b.source.url}" for b in foreign[:FOREIGN_BODIES_SHOWN])
+        more = len(foreign) - FOREIGN_BODIES_SHOWN
+        suffix = f" und {more} weitere" if more > 0 else ""
+        raise CommandError(
+            f"Nichts geändert: Kommune hängt schon an einer anderen Quelle: {shown}{suffix}. Bitte die registrierte "
+            "Adresse verwenden. Zieht eine Quelle um, wird ihre Adresse an der vorhandenen Quelle geändert."
+        )
+
     def handle(self, *args, **options):
         url = options["url"]
         # Bereits registrierte Quelle: ihr Takt (request_interval) und ihre robots-Ausnahme gelten auch hier
@@ -251,6 +283,15 @@ class Command(BaseCommand):
         self.stdout.write(f"  Contact: {system_data.get('contactEmail', 'N/A')}")
         self.stdout.write(f"  Website: {system_data.get('website', 'N/A')}")
 
+        # Bodies verarbeiten: "body" ist laut Spec eine Listen-URL; manche
+        # Server liefern stattdessen eine Liste von Body-URLs oder eingebettete
+        # Body-Objekte. Listen-URLs (auch 1.0: /oparl/Body) werden paginiert.
+        bodies = self.resolve_bodies(system_data.get("body", []))
+
+        self.stdout.write(f"\nFound {len(bodies)} body/bodies")
+
+        self._abort_on_foreign_bodies(url, system_data, bodies)
+
         # Quelle erstellen oder aktualisieren. Neu: inaktiv; vorhanden: is_active bleibt (Issue #555)
         source_fields = {
             "name": system_data.get("name", "Unbenannte Quelle"),
@@ -276,13 +317,6 @@ class Command(BaseCommand):
         else:
             self.stdout.write(self.style.SUCCESS(f"\nSource updated: {source.name}"))
             self.stdout.write(f"  Status unverändert: {'aktiv' if source.is_active else 'inaktiv'}")
-
-        # Bodies verarbeiten: "body" ist laut Spec eine Listen-URL; manche
-        # Server liefern stattdessen eine Liste von Body-URLs oder eingebettete
-        # Body-Objekte. Listen-URLs (auch 1.0: /oparl/Body) werden paginiert.
-        bodies = self.resolve_bodies(system_data.get("body", []))
-
-        self.stdout.write(f"\nFound {len(bodies)} body/bodies")
 
         for i, body_data in enumerate(bodies):
             body_url = body_data.get("id", "?")

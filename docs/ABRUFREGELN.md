@@ -101,17 +101,20 @@ Eine neue Quelle fragt der Ingestor regelmäßig erst ab, wenn sie aktiv ist (Is
 [#555](https://github.com/mandariOSS/mandari/issues/555)). Eine neue Quelle ist inaktiv (`is_active = false`), und es
 gibt dafür einen Weg und eine Liste:
 
-- **Registrieren:** das Werkzeug „Quelle anlegen“ (`add_oparl_source`, Ausgabe „Quelle inaktiv angelegt …“). Für
-  Quellen, die es nicht abfragen kann, etwa Scraper-Quellen, gibt es das Formular „Quelle hinzufügen“ im Admin. Dort ist
-  „Aktiv“ nicht vorbelegt; wer den Haken setzt, entscheidet sich bewusst dafür (`OParlSourceAdmin`,
-  `mandari/insight_core/admin.py`). Das Modell behält den Standardwert `True`: Wer eine Quelle per Shell anlegt, setzt
-  `is_active` selbst.
+- **Registrieren:** das Werkzeug „Quelle anlegen“ (`add_oparl_source`, Ausgabe „Quelle inaktiv angelegt …“). Hängt
+  eine Kommune aus der Antwort des Servers schon an einer anderen Quelle, bricht es ab, ohne etwas zu schreiben: Eine
+  andere Schreibweise der Adresse wird so nicht zur zweiten Quelle ohne die Einstellungen der ersten. Zieht eine Quelle
+  um, wird ihre Adresse an der vorhandenen Quelle geändert. Für Quellen, die das Werkzeug nicht abfragen kann, etwa
+  Scraper-Quellen, gibt es das Formular „Quelle hinzufügen“ im Admin. Dort ist „Aktiv“ nicht vorbelegt; wer den Haken
+  setzt, entscheidet sich bewusst dafür (`OParlSourceAdmin`, `mandari/insight_core/admin.py`). Das Modell behält den
+  Standardwert `True`: Wer eine Quelle per Shell anlegt, setzt `is_active` selbst.
 - **Bekannte Quellen:** `manage.py import_oparl_sources` legt die einzige Liste bekannter Quellen an, inaktiv und ohne
   Abruf (`mandari/insight_core/management/commands/import_oparl_sources.py`).
 - **Der Ingestor legt keine Quellen an:** `sync --source` und `sync --body` lehnen eine Adresse ab, die keine
-  registrierte Quelle ist, ohne Abruf und mit Hinweis auf `add_oparl_source` (`ingestor/src/main.py`). Das gilt auch für
-  die Adresse einer einzelnen Kommune; dafür gibt es `sync --source <Adresse der Quelle> --filter <Kommune>`, das die
-  Einstellungen der Quelle beachtet.
+  registrierte Quelle ist, ohne Abruf (`ingestor/src/main.py`, `print_unknown_source`). Die Meldung nennt die registrierte
+  Adresse, wenn die Quelle erkennbar dieselbe ist, und sonst die Quellen desselben Servers; bei einer inaktiven Quelle
+  schlägt sie keinen Abgleich vor. Auch die Adresse einer einzelnen Kommune wird abgelehnt; dafür gibt es
+  `sync --source <Adresse der Quelle> --filter <Kommune>`, das die Einstellungen der Quelle beachtet.
 - **Angelegte Quellen behalten ihren Status:** Keines der Werkzeuge ändert `is_active` einer vorhandenen Quelle; eine
   abgeschaltete bleibt abgeschaltet (`import_oparl_sources --update` ändert nur den Namen). `add_oparl_source`
   übernimmt dann nur Name, Kontakt, Website, OParl-Version und Rohdaten aus dem System-Objekt („Status
@@ -417,7 +420,9 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   [Schonung](#fehler-und-schonung); ohne eigenes Fenster beginnt ein Vollabgleich sofort. Scraper-Quellen gleicht es
   wie der Daemon über den Scraper ab (`SyncOrchestrator._scraper_runner`), ohne Zeitfenster und Mindestabstand.
   `--filter` (nur mit `--source`) beschränkt den Abgleich auf Kommunen, deren Name oder Kennung passt; er gilt dann
-  nicht als vollständig. Für Scraper-Quellen wirkt der Filter nicht.
+  nicht als vollständig. Passt keine Kommune, endet der Befehl mit einem Fehler (Rückgabewert 1), und die Quelle bleibt
+  unverändert, auch ihr Fehlerzustand und damit eine laufende [Schonung](#fehler-und-schonung). Für Scraper-Quellen wirkt
+  der Filter nicht.
   `python -m src.main sync --all` gleicht alle aktiven Quellen einmal ab, höchstens 2 zugleich
   (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne den Abgleichrhythmus der Quelle (`sync_schedule`); Abstand je
   Quelle (`request_interval`) und Takt je Server gelten.

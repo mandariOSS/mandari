@@ -26,11 +26,15 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import json
+import shlex
 from datetime import UTC
+from os.path import commonprefix
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import typer
+from mandari_oparl.pacing import host_of
 from rich.panel import Panel
 from rich.table import Table
 
@@ -74,15 +78,69 @@ def print_banner() -> None:
     console.print()
 
 
-def print_unknown_sources(urls: list[str]) -> None:
-    """Hinweis, wenn eine Adresse keine registrierte Quelle ist: Der Ingestor legt keine Quellen an (Issue #555)."""
-    for url in urls:
-        console.print(f"[red]Keine registrierte Quelle:[/red] {url}")
-    console.print()
-    console.print("Neue Quelle anlegen (inaktiv, im Container der Anwendung):")
-    console.print(f"  python manage.py add_oparl_source {urls[0]}")
-    console.print("[dim]Registrierte Adressen zeigt: mandari-ingestor list-sources[/dim]")
-    console.print("[dim]Nur eine Kommune einer Quelle: sync --source <Adresse der Quelle> --filter <Kommune>[/dim]")
+#: Höchstens so viele Quellen desselben Servers nennt der Hinweis zu einer unbekannten Adresse
+SERVER_SOURCES_SHOWN = 5
+
+
+def _address_key(url: str) -> tuple[str, str, str]:
+    """Adresse zum Vergleich mit registrierten Quellen: ohne Schema, Port und Schrägstrich am Ende."""
+    parts = urlsplit(url)
+    return host_of(url), parts.path.rstrip("/"), parts.query
+
+
+def _print_sync_hint(source: Any, body_filter: str | None = None) -> None:
+    """Befehl für eine registrierte Quelle; für eine inaktive keiner, denn ``sync`` fragt auch sie ab."""
+    if not source.is_active:
+        console.print(
+            "[yellow]Die Quelle ist inaktiv. Bitte nicht von Hand abgleichen: sync fragt auch eine abgeschaltete "
+            "Quelle ab. Erst klären, warum sie inaktiv ist.[/yellow]"
+        )
+        return
+    command = f"mandari-ingestor sync --source {shlex.quote(source.url)}"
+    if body_filter:
+        command += f" --filter {shlex.quote(body_filter)}"
+    console.print(f"  {command}", soft_wrap=True)
+
+
+async def print_unknown_source(storage: Any, url: str) -> None:
+    """
+    Abweisung einer Adresse, die keine registrierte Quelle ist: Der Ingestor legt keine Quellen an (Issue #555).
+
+    Die Meldung nennt bewusst keinen Befehl mit der abgewiesenen Adresse. Oft ist sie nur eine andere Schreibweise einer
+    vorhandenen Quelle oder die Adresse einer ihrer Kommunen; eine zweite Quelle dafür hätte nicht deren Einstellungen
+    (Takt, Dateiabruf). Deshalb nennt sie, wenn erkennbar, die registrierte Adresse.
+    """
+    console.print(f"[red]Keine registrierte Quelle:[/red] {url}", soft_wrap=True)
+
+    body = await storage.get_body_source(url)
+    if body is not None:
+        external_id, source = body
+        console.print(f"Das ist eine Kommune der Quelle {source.url}.", soft_wrap=True)
+        _print_sync_hint(source, external_id)
+        return
+
+    sources = await storage.get_all_sources(active_only=False)
+    same = next((source for source in sources if _address_key(source.url) == _address_key(url)), None)
+    if same is not None:
+        console.print(f"Registriert ist die Adresse {same.url}.", soft_wrap=True)
+        _print_sync_hint(same)
+        return
+
+    # Auf einem Server liegen oft viele Quellen: die mit dem längsten gemeinsamen Anfang zuerst
+    on_server = sorted(
+        (str(source.url) for source in sources if host_of(source.url) == host_of(url)),
+        key=lambda other: (-len(commonprefix([other, url])), other),
+    )
+    if on_server:
+        console.print("Auf diesem Server sind registriert:")
+        for other in on_server[:SERVER_SOURCES_SHOWN]:
+            console.print(f"  {other}", soft_wrap=True)
+        if len(on_server) > SERVER_SOURCES_SHOWN:
+            console.print(f"  und {len(on_server) - SERVER_SOURCES_SHOWN} weitere (list-sources)")
+    console.print(
+        "Neue Quellen legt der Ingestor nicht an. Neuanlage nach Prüfung im Container der Anwendung "
+        "(manage.py add_oparl_source) oder im Admin, siehe docs/ABRUFREGELN.md."
+    )
 
 
 @app.command()
@@ -162,8 +220,9 @@ def sync(
                 # registrierten Quelle zählt nicht als Quelle; dafür gibt es --source mit --filter.
                 adressen = body_url or [source_url or ""]
                 unbekannt = [url for url in adressen if await orchestrator.storage.get_source_by_url(url) is None]
+                for url in unbekannt:
+                    await print_unknown_source(orchestrator.storage, url)
                 if unbekannt:
-                    print_unknown_sources(unbekannt)
                     return 1
 
             results = []
@@ -191,6 +250,11 @@ def sync(
                     max_concurrent=max_concurrent,
                     body_filter=body_filter,
                 )
+                if result.filter_without_match:
+                    # Kein Lauf und damit kein Sync-Protokoll; die Quelle blieb unverändert
+                    for error in result.errors:
+                        console.print(error, style="red", markup=False, soft_wrap=True)
+                    return 1
                 orchestrator.print_result(result)
                 results.append(result)
 
