@@ -8,8 +8,9 @@ Liste mit Entfernen und einer Zeile zum Zuordnen. Formulare und Felder wie sessi
     <c-rahmen.abschnitt titel="Katalog" titel_id="katalog-titel" zusatz="{{ rates|length }}" data-testid="pauschalen-katalog">
         <details class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300">
             <summary class="cursor-pointer font-medium text-primary-700 dark:text-primary-300 hover:underline underline-offset-4">Sätze nach EntschVO NRW (Stand 2025)</summary>
-            <p class="mt-2">Die Aufwandsentschädigung wird als Vollpauschale oder als Teilpauschale und Sitzungsgeld (26,00 € je Sitzung, höchstens zwei am Tag) gezahlt, die Beträge richten sich nach der Gemeindegröße (§ 2). Funktionszulagen sind Vielfache der Vollpauschale (§ 5), etwa Fraktionsvorsitz zweifach (ab acht Mitgliedern dreifach), Ausschussvorsitz einfach, stellvertretende Bürgermeisterin oder stellvertretender Bürgermeister dreifach bzw. 1,5-fach. Die Sätze steigen seit 2025 jährlich um 2 %; bitte jeweils zum Jahreswechsel im Katalog anpassen.</p>
+            <p class="mt-2">Die Aufwandsentschädigung wird als Vollpauschale oder als Teilpauschale und Sitzungsgeld (26,00 € je Sitzung, höchstens zwei am Tag) gezahlt, die Beträge richten sich nach der Gemeindegröße (§ 2). Funktionszulagen sind Vielfache der Vollpauschale (§ 5), etwa Fraktionsvorsitz zweifach (ab acht Mitgliedern dreifach), Ausschussvorsitz einfach, stellvertretende Bürgermeisterin oder stellvertretender Bürgermeister dreifach bzw. 1,5-fach.</p>
         </details>
+        <p class="mt-1 max-w-3xl text-sm text-gray-700 dark:text-gray-300" data-testid="pauschalen-jahreswechsel">Die Sätze steigen seit 2025 jährlich um 2 %; bitte jeweils zum Jahreswechsel im Katalog anpassen.</p>
         {% if rates %}
         <c-rahmen.liste class="mt-2">
             {% for rate in rates %}

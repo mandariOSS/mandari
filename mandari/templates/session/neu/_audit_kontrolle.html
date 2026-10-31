@@ -10,7 +10,7 @@ session/audit/_kontrolle.html. Eingebunden aus session/neu/audit.html.
             {% if chain.verkettung_aktiv %}
             <p>{% include "session/neu/_status.html" with wert="approved" text="Verkettung aktiv" %}</p>
             <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Letzter Eintrag Nr. {{ chain.kopf_nr }}</p>
-            {% else %}
+            {% elif not demo_instance %}
             <p>{% include "session/neu/_status.html" with wert="review" text="Altbestand noch nicht verkettet" %}</p>
             <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Der Betrieb verkettet ihn mit audit_chain_backfill.</p>
             {% endif %}

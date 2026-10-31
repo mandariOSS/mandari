@@ -22,6 +22,9 @@ from django.utils.http import content_disposition_header
 from django.views import View
 from django.views.generic import TemplateView
 
+from apps.common import audit_chain
+from apps.common.demo import ist_demo
+
 from .. import audit
 from ..models import SessionPerson, SessionTenant
 from ..permissions import SessionPermissionChecker, SessionViewMixin
@@ -117,7 +120,16 @@ class PrivacyPurgeRunView(SessionViewMixin, View):
             f"{len(stats['archives_deleted'])} Archivpaket(e) nach Frist gelöscht.",
         )
         if stats["skipped"]:
-            messages.info(request, "Übersprungen: " + ", ".join(stats["skipped"]))
+            # Den Befehl für den Altbestand nennt die Meldung nur der Administration (Issue #745)
+            betrieb = SessionPermissionChecker(self.session_user).sieht_betriebshinweise
+            texte = (
+                stats["skipped"] if betrieb else [audit_chain.ohne_betriebshinweis(text) for text in stats["skipped"]]
+            )
+            meldung = "Übersprungen: " + ", ".join(texte)
+            # Zeitplan befehl:session_privacy_purge (apps/common/schedules.py) verkettet selbst; die Demo braucht das nicht
+            if stats["audit_not_chained"] and not ist_demo():
+                meldung += ". Der monatliche Lauf am 1. verkettet den Altbestand und holt die Löschung nach."
+            messages.info(request, meldung)
         return redirect("session:privacy_settings", tenant_slug=tenant_slug)
 
 

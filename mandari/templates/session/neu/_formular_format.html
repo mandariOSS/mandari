@@ -20,7 +20,7 @@ session/neu/sitzung_formular.html.
     {% else %}
     <c-rahmen.satz eng>
         Hybride und digitale Sitzungen sind erst möglich, wenn der Mandant ein Landesprofil gewählt hat{% if can_manage_settings %}:
-        <c-ui.textlink href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}">Einstellungen „Sitzungsformate“</c-ui.textlink>{% endif %}.
+        <c-ui.textlink href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}">Einstellungen „Sitzungsformate“</c-ui.textlink>{% endif %}.{% if not can_manage_settings %} Das wählen Personen mit dem Recht „Einstellungen verwalten“.{% endif %}
     </c-rahmen.satz>
     {% endif %}
 

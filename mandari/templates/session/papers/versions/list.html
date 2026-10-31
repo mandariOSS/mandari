@@ -31,12 +31,12 @@
         {% endif %}
     </div>
 
-    <c-ui.alert variant="info" icon="info">
+    <p class="max-w-3xl text-sm text-gray-600 dark:text-gray-400">
         mandari sichert bei jedem Workflow-Schritt und jedem Beratungsergebnis automatisch eine Fassung.
         Fassungen lassen sich nicht ändern; Wiederherstellen legt eine neue an.
         Ins Bürgerportal gelangt nie eine ältere Fassung: Dort steht nur die freigegebene Vorlage im aktuellen Stand,
         mit Betreff und öffentlichen Anlagen – Sachverhalt und Beschlussvorschlag werden nicht veröffentlicht.
-    </c-ui.alert>
+    </p>
 
     {% if rows %}
     <form method="get" action="{% url 'session:paper_version_compare' tenant_slug=tenant_slug paper_id=paper.id %}">
