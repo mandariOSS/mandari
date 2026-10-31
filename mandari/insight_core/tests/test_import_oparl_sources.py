@@ -58,7 +58,7 @@ def _vorhandene_quellen() -> tuple[OParlSource, OParlSource]:
     )
 
 
-def _zeilen(*adressen: str) -> dict[str, dict[str, Any]]:
+def _zeilen(*adressen: str) -> dict[str, Any]:
     return {zeile["url"]: zeile for zeile in OParlSource.objects.filter(url__in=adressen).values()}
 
 
