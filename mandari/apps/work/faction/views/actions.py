@@ -47,8 +47,7 @@ class FactionActionView(WorkViewMixin, View):
 
     def get(self, request, *args, **kwargs):
         """War die Anmeldung beim Absenden abgelaufen, führt die Anmeldung hierher: zurück zur Sitzung (Issue #1160)."""
-        meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
-        return self._redirect_detail(meeting)
+        return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=kwargs["meeting_id"])
 
     def post(self, request, *args, **kwargs):
         meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)

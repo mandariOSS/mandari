@@ -24,6 +24,7 @@ from apps.common.params import uuid_param
 from apps.work.motions.freigaben import guest_download_rows
 from apps.work.rahmen import NeueVorlageMixin
 
+from ..audit import locked_object_ids
 from ..models import FactionAuditLog
 from ..visibility import LOCKED_PLACEHOLDER, can_view_internal
 
@@ -77,18 +78,11 @@ class FactionAuditLogView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         sworn = can_view_internal(self.membership)
         # Gast-Downloads (Issue #582): Titel und Dateiname nur, wer das Dokument sieht, sonst gesperrt
         downloads = guest_download_rows(page_entries, self.membership)
-        # Ein TOP kann nach einem Eintrag nichtöffentlich geworden sein (Issue #1160). Einträge sind unveränderlich,
-        # deshalb gilt die Sperre beim Lesen für alle Einträge eines Objekts, sobald einer von ihnen gesperrt ist.
+        # Auch frühere Einträge eines TOPs, der inzwischen nichtöffentlich ist (Issue #1160)
         gesperrte_objekte = (
             set()
             if sworn
-            else set(
-                FactionAuditLog.objects.filter(
-                    organization=self.organization,
-                    is_internal=True,
-                    object_id__in={entry.object_id for entry in page_entries if entry.object_id},
-                ).values_list("object_id", flat=True)
-            )
+            else locked_object_ids(self.organization, {entry.object_id for entry in page_entries if entry.object_id})
         )
         entries = []
         for entry in page_entries:

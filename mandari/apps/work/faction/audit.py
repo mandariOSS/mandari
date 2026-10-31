@@ -104,6 +104,22 @@ def resolve_is_internal(instance) -> bool:
     return False
 
 
+def locked_object_ids(organization: Any, object_ids: set[Any]) -> set[Any]:
+    """
+    Objekte mit mindestens einem gesperrten Eintrag (Issue #1160).
+
+    Ein TOP kann nach früheren Einträgen nicht-öffentlich geworden sein. Einträge sind unveränderlich, deshalb gilt die
+    Sperre beim Lesen für alle Einträge des Objekts, auch wenn es später wieder öffentlich wird oder gelöscht ist.
+    """
+    from apps.work.faction.models import FactionAuditLog
+
+    return set(
+        FactionAuditLog.objects.filter(
+            organization=organization, is_internal=True, object_id__in=object_ids
+        ).values_list("object_id", flat=True)
+    )
+
+
 # =============================================================================
 # Eintrag schreiben
 # =============================================================================
