@@ -373,7 +373,7 @@ class Person:
     def versand_text(self) -> str:
         """Ergebnis für die Versandliste, wenn nichts schiefging."""
         if self.versendet:
-            return f"verschickt {self.versendet}" + (", ohne nichtöffentlichen Teil" if self.ohne_noe else "")
+            return f"versendet {self.versendet}" + (", ohne nichtöffentlichen Teil" if self.ohne_noe else "")
         return "kein Ergebnis erfasst"
 
 

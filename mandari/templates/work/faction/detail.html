@@ -51,13 +51,15 @@
         <c-ui.alert variant="warning" icon="alert-triangle">Protokoll der vorherigen Sitzung ({{ meeting.previous_meeting.start|date:"d.m.Y" }}) noch nicht genehmigt</c-ui.alert>
         {% endif %}
 
-        {# Tagesordnung (HTMX-Ziel) — lädt sich nach Panel-Aktionen selbst neu (agenda-refresh) #}
-        <div id="agenda-container"
+        {# Lädt die Tagesordnung nach Aktionen im Panel neu. Eigenes Element: Am Container würde hx-vals an alle Formulare darin vererbt und ihr Feld „action“ überschreiben (Issue #855) #}
+        <div hidden
              hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
              hx-vals='{"action": "refresh_agenda"}'
              hx-trigger="agenda-refresh from:body"
-             hx-target="this"
-             hx-swap="innerHTML">
+             hx-target="#agenda-container"
+             hx-swap="innerHTML"></div>
+        {# Tagesordnung (HTMX-Ziel) #}
+        <div id="agenda-container">
             {% include "work/faction/_agenda.html" %}
         </div>
     </div>

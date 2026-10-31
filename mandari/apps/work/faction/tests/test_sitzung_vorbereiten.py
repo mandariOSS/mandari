@@ -304,6 +304,33 @@ def test_nicht_vereidigt_sieht_vom_noe_teil_nur_die_zahl(welt: dict[str, Any], c
     assert "Ihr Vorschlag „Radweg am Musterweg“ wartet auf Genehmigung." in html
 
 
+def test_bisherige_ansicht_erklaert_den_gesperrten_teil(welt: dict[str, Any], client_for: Any) -> None:
+    """Wie die neue Seite: warum gesperrt und wer Zugang gibt (Issue #855); Vereidigte brauchen die Erklärung nicht."""
+    erklaerung = "Diese Punkte sehen nur vereidigte Mitglieder."
+    gesperrt = _html(_seite(welt, client_for, "sachkundig", ansicht="bisher"))
+    assert "Gesperrte Information" in gesperrt and erklaerung in gesperrt
+    assert "kann der Vorsitz das unter Team nachtragen" in gesperrt
+    assert NOE_TITEL not in gesperrt
+    vereidigt = _html(_seite(welt, client_for, "rat", ansicht="bisher"))
+    assert NOE_TITEL in vereidigt and erklaerung not in vereidigt
+    # Dieselbe Erklärung auf der neuen Seite
+    assert erklaerung in _html(_seite(welt, client_for, "sachkundig"))
+
+
+def test_tagesordnung_vererbt_ihren_formularen_keine_aktion(welt: dict[str, Any], client_for: Any) -> None:
+    """
+    htmx vererbt hx-vals und lässt es vor Formularfeldern gelten: Am Container schickte „TOP hinzufügen“ refresh_agenda
+    statt add_item, der TOP ging verloren (Issue #855). Den Ablauf im Browser prüft tests_e2e/test_fraktion_einladung_ablauf.py.
+    """
+    client = client_for(welt["vorsitz"].user)
+    for ansicht in ("tagesordnung", "bisher"):
+        html = _html(client.get(_adresse(welt), {"ansicht": ansicht}))
+        container = re.search(r'<div id="agenda-container"[^>]*>', html)
+        assert container is not None and "hx-" not in container.group(), ansicht
+        ausloeser = re.search(r'<div hidden[^>]*hx-trigger="agenda-refresh from:body"[^>]*>', html)
+        assert ausloeser is not None and 'hx-target="#agenda-container"' in ausloeser.group(), ansicht
+
+
 def test_nicht_vereidigter_vorsitz_auch_in_der_antwort_der_aktion(
     welt: dict[str, Any], client_for: Any, make_member: Any
 ) -> None:
@@ -374,6 +401,11 @@ def test_versandfehler_mit_grund(welt: dict[str, Any], client_for: Any) -> None:
     a = welt["meeting"].attendances.get(membership=welt["sachkundig"])
     assert a.invitation_error == "Der Mailserver hat die Adresse klara@example.org abgelehnt."
     assert a.invitation_mailed_at is None
+    # Das Ergebnis steht an der Teilnahme, die Seite zeigt es auch später; „versendet“ verspricht keine Zustellung
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    assert "2 von 3 Einladungen versendet, eine nicht." in html and "2 von 3 versendet, 1 nicht." in html
+    assert "Nicht versendet" in html and "Der Mailserver hat die Adresse klara@example.org abgelehnt." in html
+    assert "zugestellt" not in html.lower() and "nicht verschickt" not in html.lower()
 
 
 def test_rueckmeldungen_nach_muster(welt: dict[str, Any], client_for: Any) -> None:

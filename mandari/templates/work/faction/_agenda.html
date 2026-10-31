@@ -46,12 +46,15 @@
         {% endif %}
 
         {# NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs NICHTS #}
-        {# außer "Gesperrte Information" — kein Titel, keine Inhalte, keine Anhänge #}
+        {# außer "Gesperrte Information" und der Erklärung (Issue #855) — kein Titel, keine Inhalte, keine Anhänge #}
         {% if locked_internal_count and not can_view_internal %}
-        <div class="p-3 bg-amber-50 dark:bg-amber-900/20 flex items-center gap-2">
-            <i data-lucide="lock" class="w-4 h-4 text-amber-600"></i>
-            <span class="text-sm font-semibold text-amber-700 dark:text-amber-400">Nicht-öffentlicher Teil</span>
-            <span class="text-xs text-amber-600">(nur für Vereidigte)</span>
+        <div class="p-3 bg-amber-50 dark:bg-amber-900/20" data-testid="fs-gesperrt-bisher">
+            <div class="flex items-center gap-2">
+                <i data-lucide="lock" class="w-4 h-4 text-amber-600"></i>
+                <span class="text-sm font-semibold text-amber-700 dark:text-amber-400">Nicht-öffentlicher Teil</span>
+                <span class="text-xs text-amber-600">(nur für Vereidigte)</span>
+            </div>
+            <p class="mt-1 text-xs text-amber-800 dark:text-amber-200">Diese Punkte sehen nur vereidigte Mitglieder. Für Sie ist in Work keine Vereidigung eingetragen. Wenn Sie vereidigt sind, kann der Vorsitz das unter Team nachtragen.</p>
         </div>
         {% for _ in ""|rjust:locked_internal_count %}
         <div class="p-4 flex items-center gap-3 bg-amber-50/30 dark:bg-amber-900/10">
