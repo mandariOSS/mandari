@@ -93,12 +93,14 @@ def _ueberlappen(a: dict[str, float], b: dict[str, float]) -> bool:
 def test_typ_und_briefpapier_am_handy_nicht_abgeschnitten(
     page: Any, live_server: Any, org: Any, autorin: Any, dokument: Motion
 ) -> None:
-    MotionType.objects.create(organization=org, name="Beschlussvorlage der Verwaltung", slug="beschlussvorlage")
+    MotionType.objects.create(organization=org, name="Beschlussvorlage", slug="beschlussvorlage")
     OrganizationLetterhead.objects.create(
         organization=org, name="Fraktion im Rat der Stadt mit langem Namen", kind="generated"
     )
     _oeffnen(page, live_server, org, autorin, dokument, HANDY)
-    page.evaluate(f"() => {{ {ALPINE_EDITOR}.setDocumentType('', 'Beschlussvorlage der Verwaltung') }}")
+    # So lang, dass der Knopf „Briefpapier“ noch in der ersten Zeile steht, sein Menü aber nicht mehr daneben passt
+    page.locator(".ke-blattkopf [data-menue-knopf=typ]").click()
+    page.locator(".ke-blattkopf").get_by_role("menuitemradio", name="Beschlussvorlage").click()
 
     for name in ("typ", "briefpapier"):
         page.locator(f".ke-blattkopf [data-menue-knopf={name}]").click()
@@ -122,6 +124,13 @@ def test_kopfmenues_bleiben_im_sichtbaren_bereich(
 ) -> None:
     _oeffnen(page, live_server, org, autorin, dokument, {"width": breite, "height": hoehe})
     assert page.evaluate("() => document.querySelector('.work-main').getBoundingClientRect().height") == hoehe
+    # Am Desktop sind 100vh und 100dvh gleich, der Unterschied zeigt sich nur am Handy: darum die Regel selbst prüfen
+    regel = page.evaluate(
+        """() => [...document.styleSheets]
+            .flatMap((blatt) => { try { return [...blatt.cssRules] } catch { return [] } })
+            .find((r) => r.selectorText === '.work-main' && r.style.height)?.style.height"""
+    )
+    assert regel == "100dvh"
 
     page.locator(f"[data-menue-knopf='{knopf}']").click()
     box = _box(page.locator(".ke-kopf .ke-menue:visible"))

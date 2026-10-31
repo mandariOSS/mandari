@@ -110,13 +110,18 @@ def test_abo_adressvorschlaege_nicht_abgeschnitten(
     page.locator('input[name="neighborhood_name"]').fill("Linden")
     letzter = page.get_by_role("button", name="Lindenallee 12")
     expect(letzter).to_be_visible()
-    letzter.scroll_into_view_if_needed()
-    box = letzter.bounding_box()
-    assert box is not None
-    mitte = {"x": box["x"] + box["width"] / 2, "y": box["y"] + box["height"] / 2}
-    oben = page.evaluate(
-        "(p) => document.elementFromPoint(p.x, p.y)?.closest('button')?.textContent.trim() ?? ''",
-        mitte,
+    # Elemente mit overflow-hidden lassen sich per Skript rollen: darum die Lage messen, ohne zu rollen
+    kappen = letzter.evaluate(
+        """(el) => {
+            const unten = el.getBoundingClientRect().bottom
+            const treffer = []
+            for (let a = el.closest('[x-show]').parentElement; a && a !== document.body; a = a.parentElement) {
+                if (getComputedStyle(a).overflowY !== 'visible' && a.getBoundingClientRect().bottom < unten) {
+                    treffer.push(a.className)
+                }
+            }
+            return treffer
+        }"""
     )
-    assert oben == "Lindenallee 12", f"An der Stelle des letzten Vorschlags liegt: {oben!r}"
+    assert not kappen, f"Die Vorschläge werden abgeschnitten von: {kappen}"
     problems.assert_clean("Abo: Adressvorschläge")
