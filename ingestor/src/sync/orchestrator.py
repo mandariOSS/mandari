@@ -640,46 +640,6 @@ class SyncOrchestrator:
         """Async context manager exit."""
         await self.storage.close()
 
-    # ========== Source Management ==========
-
-    async def add_source(self, url: str, name: str | None = None) -> UUID:
-        """
-        Register a new OParl source.
-
-        Fetches the system endpoint to get source metadata.
-
-        Args:
-            url: The OParl API URL (system endpoint)
-            name: Optional override for source name
-
-        Returns:
-            The source UUID
-        """
-        console.print(f"[blue]Fetching system info from {url}...[/blue]")
-
-        async with OParlClient(max_concurrent=1) as client:
-            system_data = await client.fetch_system(url)
-            if is_oparl_error(system_data):
-                # 1.1-Pfad auf einem OParl-1.0-Server (Issue #122)
-                system_data, _resolved = await self._try_oparl_10_fallback(
-                    client, url, oparl_error_message(system_data)
-                )
-
-        if not system_data:
-            raise ValueError(f"Could not fetch OParl system from {url}")
-
-        source_name = name or system_data.get("name", "Unknown Source")
-
-        source_id = await self.storage.upsert_source(
-            url=url,
-            name=source_name,
-            raw_json=system_data,
-            oparl_version=detect_oparl_version(system_data),
-        )
-
-        console.print(f"[green]Registered source: {source_name} (ID: {source_id})[/green]")
-        return source_id
-
     def _scraper_runner(self, source_row: Any) -> "ScraperSyncRunner | None":
         """
         ``ScraperSyncRunner`` für eine Scraper-Quelle (``sync_config["source_type"] = "scraper:<vendor>"``), sonst None.
@@ -2692,7 +2652,9 @@ class SyncOrchestrator:
         sources = await self.storage.get_all_sources()
 
         if not sources:
-            console.print("[yellow]No sources registered. Use 'add-source' first.[/yellow]")
+            console.print(
+                "[yellow]Keine aktive Quelle (anlegen: manage.py add_oparl_source, aktivieren: Admin)[/yellow]"
+            )
             return []
 
         # Quellen in Schonung überspringen (Issue #89)

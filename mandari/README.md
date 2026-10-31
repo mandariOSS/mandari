@@ -97,13 +97,11 @@ mandari/
 
 ## OParl-Synchronisation
 
-Die Synchronisation übernimmt der Ingestor (`ingestor/`, eigener Container). Quellen werden im
-Admin angelegt; manuelle Läufe im Ingestor-Container:
+Die Synchronisation übernimmt der Ingestor (`ingestor/`, eigener Container). Neue Quellen legt
+`python manage.py add_oparl_source <Adresse>` im Container der Anwendung an, inaktiv; aktiviert wird im Admin
+(`docs/ABRUFREGELN.md`, „Neue Quellen und Kommunen“). Manuelle Läufe im Ingestor-Container:
 
 ```bash
-# OParl-Quelle registrieren
-python -m src.main add-source https://oparl.example.com/api
-
 # Registrierte Quellen mit Status, letztem Sync und Zahl der Kommunen anzeigen
 python -m src.main list-sources
 

@@ -111,6 +111,7 @@ def test_list_sources_ohne_quellen(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.exit_code == 0, result.output
     assert "Noch keine Quelle registriert" in ausgabe.getvalue()
+    assert "python manage.py add_oparl_source" in ausgabe.getvalue()
 
 
 def test_list_bodies_zeigt_kommunen(monkeypatch: pytest.MonkeyPatch) -> None:

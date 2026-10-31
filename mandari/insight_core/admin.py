@@ -222,6 +222,10 @@ class OParlSourceAdmin(ModelAdmin):
     actions_detail = ["sync_incremental_action", "sync_full_action"]
     actions = ["sync_all_incremental", "sync_all_full", "reset_health"]
 
+    def get_changeform_initial_data(self, request: HttpRequest) -> dict[str, Any]:
+        """Beim Hinzufügen ist „Aktiv“ nicht vorbelegt: Aktiv wird eine Quelle erst nach der Prüfung (Issue #555)."""
+        return {"is_active": False, **super().get_changeform_initial_data(request)}
+
     def get_deleted_objects(self, objs, request):
         # Eine Quelle nimmt per Kaskade ihre Kommunen mit – dieselbe Prüfung wie beim Löschen einer
         # Kommune, bevor Django alle abhängigen Objekte einsammelt (Issue #421).

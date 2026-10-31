@@ -22,7 +22,7 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
 | Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
 | Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer eine Quelle mit OParl-Schnittstelle hat ein eigenes Zeitfenster, Zeitscheiben oder einen noch nicht erreichten Mindestabstand (`full_sync_every_days`) (siehe [Vollabgleich](#vollabgleich)) |
 | Langsame Listen | eine optionale Liste, die in eine Zeitüberschreitung läuft, ruht 1 Stunde, danach jeweils doppelt so lange, höchstens 24 Stunden |
-| Neue Quellen | von unseren Werkzeugen inaktiv angelegt; regelmäßig abgefragt wird eine Quelle erst, wenn sie aktiv ist. Ausnahmen: das Formular im Admin, `import_oparl_sources --activate` und die eigene Schnittstelle eines Session-Mandanten. Neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
+| Neue Quellen | inaktiv angelegt; regelmäßig abgefragt wird eine Quelle erst, wenn sie aktiv ist. Ausnahme: die eigene Schnittstelle eines Session-Mandanten. Neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
 | Dokumente | geladen, wenn sie fehlen oder die Quelle sie geändert hat; dazu Stichproben per `HEAD` |
 | Abruf-Adresse | derzeit `144.76.153.200`, nur IPv4 (die von uns betriebene Instanz mandari.de); sie kann sich ändern, erkennen Sie uns am User-Agent |
 | Andere Dienste | Live-Übertragung und Geodienste mit derselben Kennung und eigenem Takt je Server (siehe [Andere Abrufe](#andere-abrufe)) |
@@ -98,26 +98,28 @@ Quellen lehnt er auch mit `--source-url` ab und verweist auf `python -m src.main
 ### Neue Quellen und Kommunen
 
 Eine neue Quelle fragt der Ingestor regelmäßig erst ab, wenn sie aktiv ist (Issue
-[#555](https://github.com/mandariOSS/mandari/issues/555)). Unsere Werkzeuge legen sie inaktiv an; einige Wege legen
-sie aber aktiv an:
+[#555](https://github.com/mandariOSS/mandari/issues/555)). Eine neue Quelle ist inaktiv (`is_active = false`), und es
+gibt dafür einen Weg und eine Liste:
 
-- **Inaktiv** (`is_active = false`) legen eine neue Quelle an: das Werkzeug „Quelle anlegen“ (`add_oparl_source`,
-  Ausgabe „Quelle inaktiv angelegt …“), `python -m src.main add-source` und `init-sources`, ein Abgleich von Hand
-  (`sync --source`, `sync --body`) mit einer noch unbekannten Adresse (`ingestor/src/storage/database.py`,
-  `upsert_source`) und `manage.py import_oparl_sources` ohne `--activate`
-  (`mandari/insight_core/management/commands/import_oparl_sources.py`).
-- **Aktiv** legen eine neue Quelle an: das Formular „Quelle hinzufügen“ im Admin, in dem „Aktiv“ vorbelegt ist
-  (`OParlSource.is_active` hat den Standardwert `True`, `mandari/insight_core/models.py`; wer dort eine Quelle anlegt,
-  nimmt den Haken vor dem Speichern heraus, wenn sie noch nicht abgefragt werden soll), `import_oparl_sources
-  --activate` und die eigene OParl-Schnittstelle eines Session-Mandanten (siehe Ausnahme unten).
+- **Registrieren:** das Werkzeug „Quelle anlegen“ (`add_oparl_source`, Ausgabe „Quelle inaktiv angelegt …“). Für
+  Quellen, die es nicht abfragen kann, etwa Scraper-Quellen, gibt es das Formular „Quelle hinzufügen“ im Admin. Dort ist
+  „Aktiv“ nicht vorbelegt; wer den Haken setzt, entscheidet sich bewusst dafür (`OParlSourceAdmin`,
+  `mandari/insight_core/admin.py`). Das Modell behält den Standardwert `True`: Wer eine Quelle per Shell anlegt, setzt
+  `is_active` selbst.
+- **Bekannte Quellen:** `manage.py import_oparl_sources` legt die einzige Liste bekannter Quellen an, inaktiv und ohne
+  Abruf (`mandari/insight_core/management/commands/import_oparl_sources.py`).
+- **Der Ingestor legt keine Quellen an:** `sync --source` und `sync --body` lehnen eine Adresse ab, die keine
+  registrierte Quelle ist, ohne Abruf und mit Hinweis auf `add_oparl_source` (`ingestor/src/main.py`). Das gilt auch für
+  die Adresse einer einzelnen Kommune; dafür gibt es `sync --source <Adresse der Quelle> --filter <Kommune>`, das die
+  Einstellungen der Quelle beachtet.
 - **Angelegte Quellen behalten ihren Status:** Keines der Werkzeuge ändert `is_active` einer vorhandenen Quelle; eine
   abgeschaltete bleibt abgeschaltet (`import_oparl_sources --update` ändert nur den Namen). `add_oparl_source`
   übernimmt dann nur Name, Kontakt, Website, OParl-Version und Rohdaten aus dem System-Objekt („Status
   unverändert: …“). Anders beim Session-Mandanten: Seine Quelle schaltet mandari beim Veröffentlichen wieder ein.
 - **Regelmäßig** gleichen der Daemon und `sync --all` nur aktive Quellen ab (`get_all_sources`); aktiviert wird im
-  Admin. Von Hand im Container `ingestor` laufen Abgleiche auch bei inaktiven Quellen: `sync --source` und
-  `sync --body`. Die Sync-Aktionen im Admin gleichen eine inaktive Quelle nicht ab; sie nennen den Befehl für einen
-  Probelauf (siehe [Rhythmus](#rhythmus)).
+  Admin. Von Hand im Container `ingestor` laufen Abgleiche registrierter Quellen auch dann, wenn sie inaktiv sind:
+  `sync --source` und `sync --body`. Die Sync-Aktionen im Admin gleichen eine inaktive Quelle nicht ab; sie nennen
+  den Befehl für einen Probelauf (siehe [Rhythmus](#rhythmus)).
 - **Neue Kommunen sind nicht gelistet** (`is_listed = false`), ob der Abgleich sie findet (`upsert_body`, auch bei
   Scraper-Quellen) oder `add_oparl_source` sie anlegt (Ausgabe „Nicht gelistet: …“). Vorhandene Kommunen behalten ihre
   Sichtbarkeit; der Abgleich überschreibt `is_listed` nie (`ENRICHMENT_FIELDS`). Bis wir eine Kommune im Admin
@@ -408,7 +410,9 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   Seit Issue [#554](https://github.com/mandariOSS/mandari/issues/554) schreibt kein Weg mehr diesen Status: Daemon und
   Kommandozeile schreiben ihr Protokoll erst am Ende eines Laufs.
 - **Von Hand:** `python -m src.main sync --source <Basis-URL>` bzw. `--body` im Container `ingestor` gleicht eine
-  Quelle über denselben Einstieg ab wie der Daemon (`SyncOrchestrator.sync_body_url`), auch eine inaktive. Es beachtet
+  registrierte Quelle über denselben Einstieg ab wie der Daemon (`SyncOrchestrator.sync_body_url`), auch eine inaktive.
+  Die Adresse muss genau die der Quelle sein (`list-sources`); eine andere lehnt der Befehl ab (siehe
+  [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)). Der Abgleich beachtet
   robots.txt, Takt je Server, das eigene Zeitfenster der Quelle und `full_sync_every_days`, aber nicht die
   [Schonung](#fehler-und-schonung); ohne eigenes Fenster beginnt ein Vollabgleich sofort. Scraper-Quellen gleicht es
   wie der Daemon über den Scraper ab (`SyncOrchestrator._scraper_runner`), ohne Zeitfenster und Mindestabstand.

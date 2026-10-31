@@ -103,6 +103,7 @@ dem Betreiber, keine Umgehung. Vorab manuell prüfen schadet nicht:
 
 Admin → Insight → OParl-Quellen → Hinzufügen:
 
+- **Aktiv**: nicht vorbelegt; erst setzen, wenn die Quelle geprüft ist (Issue #555)
 - **Name**: z. B. „Stadt Eschweiler (SessionNet)"
 - **URL**: die Basis-URL (dient als eindeutiger Quellen-Schlüssel), z. B.
   `https://rat.eschweiler.de/bi/`

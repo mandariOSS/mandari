@@ -3,10 +3,10 @@ Mandari Ingestor - CLI Entry Point
 
 Command-line interface for OParl data synchronization.
 
-Usage:
-    # Add a new source
-    uv run python -m src.main add-source --url https://example.oparl.org/oparl/v1
+Neue Quellen legt ``manage.py add_oparl_source`` in der Anwendung an, inaktiv (Issue #555); der Ingestor gleicht nur
+registrierte Quellen ab.
 
+Usage:
     # Run incremental sync
     uv run python -m src.main sync --source https://example.oparl.org/oparl/v1
 
@@ -74,13 +74,24 @@ def print_banner() -> None:
     console.print()
 
 
+def print_unknown_sources(urls: list[str]) -> None:
+    """Hinweis, wenn eine Adresse keine registrierte Quelle ist: Der Ingestor legt keine Quellen an (Issue #555)."""
+    for url in urls:
+        console.print(f"[red]Keine registrierte Quelle:[/red] {url}")
+    console.print()
+    console.print("Neue Quelle anlegen (inaktiv, im Container der Anwendung):")
+    console.print(f"  python manage.py add_oparl_source {urls[0]}")
+    console.print("[dim]Registrierte Adressen zeigt: mandari-ingestor list-sources[/dim]")
+    console.print("[dim]Nur eine Kommune einer Quelle: sync --source <Adresse der Quelle> --filter <Kommune>[/dim]")
+
+
 @app.command()
 def sync(
     body_url: list[str] | None = typer.Option(  # noqa: B008 – Typer-Konvention für Optionen
         None,
         "--body",
         "-b",
-        help="Direct OParl Body URL(s). Auto-detects Body, Body-List, or System URLs.",
+        help="Adresse(n) registrierter Quellen; erkennt System, Kommunenliste oder einzelne Kommune.",
     ),
     source_url: str | None = typer.Option(
         None,
@@ -99,26 +110,26 @@ def sync(
     Synchronize OParl data.
 
     Supports three input modes, all through the daemon's entry point (``sync_body_url``, Issue #554):
-    1. --body URL: Direct Body URL, auto-detects type
+    1. --body URL: Adresse einer registrierten Quelle, auch mehrere
     2. --source URL: Basis-URL einer Quelle (System, Kommunenliste oder Scraper-Quelle), optional mit --filter
     3. --all: Sync all registered sources
 
+    Eine Adresse, die keine registrierte Quelle ist, lehnen --body und --source ohne Abruf ab (Issue #555): Neue
+    Quellen legt ``manage.py add_oparl_source`` an. Registrierte Adressen zeigt ``list-sources``.
+
     Examples:
-
-        # Sync a direct Body URL (recommended)
-        mandari-ingestor sync --body https://ris-oparl.itk-rheinland.de/Oparl/bodies/0015
-
-        # Sync multiple bodies
-        mandari-ingestor sync --body URL1 --body URL2
-
-        # Sync a Body-List URL (auto-detected)
-        mandari-ingestor sync --body https://oparl.stadt-muenster.de/bodies
-
-        # Full sync
-        mandari-ingestor sync --body URL --full
 
         # Sync a source by its base URL (as registered)
         mandari-ingestor sync --source https://example.oparl.org/oparl/system
+
+        # Nur eine Kommune der Quelle
+        mandari-ingestor sync --source https://example.oparl.org/oparl/system --filter Musterstadt
+
+        # Sync multiple sources
+        mandari-ingestor sync --body URL1 --body URL2
+
+        # Full sync
+        mandari-ingestor sync --source URL --full
 
         # Sync all registered sources
         mandari-ingestor sync --all
@@ -128,9 +139,8 @@ def sync(
     if not body_url and not source_url and not all_sources:
         console.print("[red]Error:[/red] Please specify --body URL, --source URL, or --all")
         console.print("\nExamples:")
-        console.print("  mandari-ingestor sync --body https://oparl.stadt-muenster.de/bodies")
-        console.print("  mandari-ingestor sync --body https://ris-oparl.itk-rheinland.de/Oparl/bodies/0015")
         console.print("  mandari-ingestor sync --source https://example.oparl.org/oparl/system")
+        console.print("  mandari-ingestor sync --body https://example.oparl.org/oparl/system")
         console.print("  mandari-ingestor sync --all")
         raise typer.Exit(1)
 
@@ -139,13 +149,23 @@ def sync(
     console.print(f"Concurrent requests: {max_concurrent}")
     console.print()
 
-    async def run_sync() -> None:
+    async def run_sync() -> int:
         from datetime import datetime
 
         start_time = datetime.now(UTC)
         sync_type = "full" if full else "incremental"
 
         async with SyncOrchestrator(max_concurrent=max_concurrent) as orchestrator:
+            if not all_sources:
+                # Vor dem ersten Abruf: sync_body_url legte eine unbekannte Adresse sonst als Quelle an (Issue #555)
+                # und riefe ohne deren Einstellungen ab (Takt, Dateiabruf). Auch die Adresse einer Kommune einer
+                # registrierten Quelle zählt nicht als Quelle; dafür gibt es --source mit --filter.
+                adressen = body_url or [source_url or ""]
+                unbekannt = [url for url in adressen if await orchestrator.storage.get_source_by_url(url) is None]
+                if unbekannt:
+                    print_unknown_sources(unbekannt)
+                    return 1
+
             results = []
             if all_sources:
                 console.print("[blue]Syncing all registered sources...[/blue]")
@@ -182,77 +202,18 @@ def sync(
                     sync_type,
                     triggered_by="cli",
                 )
+        return 0
 
     try:
-        asyncio.run(run_sync())
+        code = asyncio.run(run_sync())
     except KeyboardInterrupt:
         console.print("\n[yellow]Sync interrupted by user[/yellow]")
         raise typer.Exit(130) from None
     except Exception as e:
         console.print(f"\n[red]Sync failed: {e}[/red]")
         raise typer.Exit(1) from e
-
-
-@app.command("add-source")
-def add_source(
-    url: str = typer.Argument(..., help="OParl API URL (system endpoint)"),
-    name: str | None = typer.Option(None, "--name", "-n", help="Display name (auto-detected if not specified)"),
-) -> None:
-    """
-    Register a new OParl source.
-
-    Fetches the system endpoint to auto-detect the source name. Eine neue Quelle ist inaktiv (Issue #555):
-    Der Daemon gleicht sie erst ab, wenn sie im Admin aktiviert ist. Eine schon registrierte Quelle behält
-    ihren Status; eine abgeschaltete wird hier nie wieder aktiv.
-
-    Examples:
-
-        # Add source with auto-detected name
-        mandari-ingestor add-source https://example.oparl.org/oparl/v1
-
-        # Add source with custom name
-        mandari-ingestor add-source https://example.oparl.org/oparl/v1 --name "Stadt Example"
-    """
-    print_banner()
-    console.print(f"[bold]Adding OParl source:[/bold] {url}")
-    console.print()
-
-    from src.sync.orchestrator import source_status_label
-
-    async def run_add() -> None:
-        async with SyncOrchestrator() as orchestrator:
-            existed = await orchestrator.storage.get_source_by_url(url) is not None
-            source_id = await orchestrator.add_source(url, name)
-            source = await orchestrator.storage.get_source_by_url(url)
-            console.print()
-            console.print("[green]Source registered successfully![/green]")
-            console.print(f"Source ID: {source_id}")
-            console.print()
-            if not existed:
-                console.print(
-                    "[yellow]Neue Quelle, Status: inaktiv. Der Daemon gleicht sie erst ab, wenn sie im Admin "
-                    "aktiviert ist.[/yellow]"
-                )
-                console.print("[dim]Einmal von Hand abgleichen (neue Kommunen bleiben ungelistet):[/dim]")
-                console.print(f"  mandari-ingestor sync --source {url}")
-            elif source is not None and source.is_active:
-                console.print(
-                    f"[yellow]Quelle war schon registriert, Status unverändert: {source_status_label(source)}. "
-                    "Der Daemon gleicht sie im Takt ab.[/yellow]"
-                )
-            else:
-                # sync --source prüft is_active nicht: Eine abgeschaltete Quelle (Sperre, Schonung) würde abgefragt
-                console.print(
-                    "[yellow]Quelle war schon registriert, Status unverändert: inaktiv. Bitte nicht von Hand "
-                    "abgleichen: sync --source fragt auch eine abgeschaltete Quelle ab. Erst klären, warum sie "
-                    "inaktiv ist, und sie bei Bedarf im Admin aktivieren.[/yellow]"
-                )
-
-    try:
-        asyncio.run(run_add())
-    except Exception as e:
-        console.print(f"\n[red]Failed to add source: {e}[/red]")
-        raise typer.Exit(1) from e
+    if code:
+        raise typer.Exit(code)
 
 
 def _format_sync_time(value: Any) -> str:
@@ -280,8 +241,8 @@ def list_sources() -> None:
             if not sources:
                 console.print("[yellow]Noch keine Quelle registriert.[/yellow]")
                 console.print()
-                console.print("[dim]Quelle hinzufügen:[/dim]")
-                console.print("  mandari-ingestor add-source https://example.oparl.org/oparl/v1")
+                console.print("[dim]Quelle anlegen (im Container der Anwendung):[/dim]")
+                console.print("  python manage.py add_oparl_source https://example.oparl.org/oparl/system")
                 return
 
             bodies_per_source = Counter(body.source_id for body in await orchestrator.storage.get_all_bodies())
@@ -576,82 +537,6 @@ def test_connection(
         asyncio.run(run_test())
     except Exception as e:
         console.print(f"[red]Connection failed: {e}[/red]")
-        raise typer.Exit(1) from e
-
-
-@app.command("init-sources")
-def init_sources(
-    priority: int = typer.Option(
-        1, "--priority", "-p", help="Add sources up to this priority level (1=major cities, 2=medium, 3=all)"
-    ),
-    default_only: bool = typer.Option(False, "--default", "-d", help="Only add default recommended sources"),
-) -> None:
-    """
-    Initialize all known German OParl sources.
-
-    Adds predefined OParl sources from German municipalities to the database.
-    Sources are prioritized by city size and API reliability.
-
-    Priority levels:
-    - 1: Major cities (Köln, Düsseldorf, Dresden, München, etc.)
-    - 2: Medium cities and districts
-    - 3: All municipalities (including smaller ones)
-
-    Examples:
-
-        # Add only major cities (recommended for getting started)
-        mandari-ingestor init-sources --priority 1
-
-        # Add default reliable sources
-        mandari-ingestor init-sources --default
-
-        # Add all known sources
-        mandari-ingestor init-sources --priority 3
-    """
-    print_banner()
-
-    from src.sources import get_all_sources, get_default_sources
-
-    if default_only:
-        sources = get_default_sources()
-        console.print("[bold]Adding default recommended sources...[/bold]")
-    else:
-        all_sources = get_all_sources()
-        sources = [s for s in all_sources if s.priority <= priority]
-        console.print(f"[bold]Adding sources with priority <= {priority}...[/bold]")
-
-    console.print(f"[dim]Found {len(sources)} sources to add[/dim]")
-    console.print()
-
-    async def run_init() -> None:
-        async with SyncOrchestrator() as orchestrator:
-            added = 0
-            failed = 0
-
-            for source in sources:
-                try:
-                    console.print(f"[blue]Adding:[/blue] {source.name}")
-                    await orchestrator.add_source(source.url, source.name)
-                    added += 1
-                except Exception as e:
-                    console.print(f"[red]  Failed: {e}[/red]")
-                    failed += 1
-
-            console.print()
-            console.print(f"[bold green]Added {added} sources successfully[/bold green]")
-            if failed > 0:
-                console.print(f"[yellow]Failed to add {failed} sources[/yellow]")
-
-            console.print()
-            console.print(
-                "[yellow]Neue Quellen sind inaktiv (Issue #555): Abgleich durch sync --all und den Daemon erst, "
-                "wenn sie im Admin aktiviert sind.[/yellow]"
-            )
-
-    try:
-        asyncio.run(run_init())
-    except Exception as e:
-        console.print(f"\n[red]Initialization failed: {e}[/red]")
         raise typer.Exit(1) from e
 
 

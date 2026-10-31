@@ -293,8 +293,11 @@ docker compose exec ingestor python -m src.main sync --all
 # Full Sync (alle Daten komplett neu laden)
 docker compose exec ingestor python -m src.main sync --all --full
 
-# Einzelne Kommune über die Body-URL
-docker compose exec ingestor python -m src.main sync --body https://oparl.stadt-muenster.de/bodies/0001
+# Einzelne Quelle über ihre registrierte Adresse (eine unbekannte Adresse lehnt der Befehl ab)
+docker compose exec ingestor python -m src.main sync --source https://oparl.stadt-muenster.de/system
+
+# Nur eine Kommune dieser Quelle
+docker compose exec ingestor python -m src.main sync --source https://oparl.stadt-muenster.de/system --filter https://oparl.stadt-muenster.de/bodies/0001
 
 # Mit mehr parallelen Requests (schneller, aber mehr Last)
 docker compose exec ingestor python -m src.main sync --all --concurrent 20
