@@ -304,6 +304,8 @@ class FactionMeetingDetailView(WorkViewMixin, TemplateView):
             return context
 
         context.update(_get_meeting_context(self, meeting))
+        # Versandergebnis und Hinweis auf die Testmail wie auf der neuen Seite (Issue #855)
+        context.update(vorbereiten_logik.bisherige_ansicht(meeting, self.membership))
         # Konfiguration der Alpine-Komponente `factionDetail` (frontend/alpine/faction-detail.ts):
         # Panel-URL mit Platzhalter-UUID, die clientseitig durch die TOP-ID ersetzt wird; Aktions-URL für die
         # Löschdialoge, die ihre Folgen beim Öffnen laden (Issue #897)

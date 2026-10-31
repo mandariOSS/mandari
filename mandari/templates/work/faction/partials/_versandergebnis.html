@@ -1,0 +1,46 @@
+{% load permission_tags %}
+{% comment %}
+Bisherige Seite (Issue #855): vor der ersten Einladung der Hinweis auf die Testmail, nach dem Versand das Ergebnis je
+Person mit Grund, wie auf der neuen Seite (neu/_vb_dialoge.html, neu/_vb_person.html). Bei einem Fehler steht die Person
+gleich sichtbar da, die übrigen hinter „Alle Empfänger“. Kontext: vorbereiten.bisherige_ansicht(), meeting, org_slug,
+membership.
+{% endcomment %}
+{% if erste_einladung %}
+<c-ui.card padding="sm" data-testid="fs-testmail-bisher">
+    <p class="text-sm text-gray-700 dark:text-gray-300"><b>Ihre erste Einladung über diesen Versandweg.</b> Schicken Sie vorher eine Testmail an sich selbst und prüfen Sie Absender und Darstellung.{% if membership|has_perm:"organization.edit" %} Den Versandweg ändern Sie unter <a class="text-primary-700 dark:text-primary-400 underline" href="{% url 'work:organization_email_settings' org_slug=org_slug %}">Einstellungen › E-Mail-Versand</a>.{% endif %}</p>
+    <form class="mt-2" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"
+          hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" hx-target="#fs-testmail-erg" hx-swap="innerHTML" hx-disabled-elt="find button">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="test_invitation">
+        <c-ui.button type="submit" variant="secondary" size="sm" icon="mail">Testmail an mich senden</c-ui.button>
+    </form>
+    <p class="mt-2 text-sm" id="fs-testmail-erg" aria-live="polite"></p>
+</c-ui.card>
+{% endif %}
+
+{% if versandergebnis %}
+{% with zahl=versandergebnis.zahl %}
+<c-ui.card padding="sm" data-testid="fs-versand-bisher">
+    <div class="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+        <h3 class="text-sm font-medium text-gray-900 dark:text-white">Versandergebnis</h3>
+        <p class="text-sm text-gray-700 dark:text-gray-300">{{ zahl.ok }} von {{ zahl.gesamt }} versendet{% if zahl.nicht %}, {{ zahl.nicht }} nicht{% endif %}.</p>
+    </div>
+    {% if versandergebnis.fehler %}
+    <ul class="mt-2 space-y-1" data-testid="fs-versand-fehler">
+        {% for p in versandergebnis.fehler %}
+        <li class="text-sm text-red-700 dark:text-red-400"><b>{{ p.name }}: Nicht versendet.</b> {{ p.fehler }}{% if p.attendance.membership_id and membership|has_perm:"members.view" %} <a class="underline" href="{% url 'work:member_detail' org_slug=org_slug member_id=p.attendance.membership_id %}">Adresse prüfen</a>{% endif %}</li>
+        {% endfor %}
+    </ul>
+    {% endif %}
+    <details class="mt-2">
+        <summary class="cursor-pointer text-sm text-gray-700 dark:text-gray-300 hover:underline">Alle Empfänger</summary>
+        <ul class="mt-1 divide-y divide-gray-100 dark:divide-gray-700/50">
+            {% for p in versandergebnis.personen %}
+            <li class="py-1 flex flex-wrap justify-between gap-x-4 text-sm text-gray-700 dark:text-gray-300"><span>{{ p.name }}</span><span>{% if p.fehler %}Nicht versendet{% else %}{{ p.versand_text }}{% endif %}</span></li>
+            {% endfor %}
+        </ul>
+    </details>
+    <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">„Versendet“ heißt: an den E-Mail-Versand der Fraktion übergeben. Ob die Nachricht im Postfach angekommen ist, meldet der Mailserver nicht zurück.</p>
+</c-ui.card>
+{% endwith %}
+{% endif %}

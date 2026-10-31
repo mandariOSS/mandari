@@ -21,7 +21,7 @@ meeting, membership.
         {% elif p.versendet %}
         <span class="vs">versendet {{ p.versendet }}{% if p.ohne_noe %}, ohne nichtöffentlichen Teil{% endif %}</span>
         {% else %}
-        <span class="vs">{% if meeting.invitation_sent_at %}Ergebnis nicht erfasst{% else %}nicht verschickt{% endif %}</span>
+        <span class="vs">{% if meeting.invitation_sent_at %}Ergebnis nicht erfasst{% else %}nicht versendet{% endif %}</span>
         {% endif %}
         {% if p.sitzung_erinnert_fehler %}<span class="rm-text fehler">Erinnerung an die Sitzung nicht verschickt. {{ p.sitzung_erinnert_fehler }}</span>
         {% elif p.sitzung_erinnert %}<span class="rm-text">an die Sitzung erinnert {{ p.sitzung_erinnert }}</span>{% endif %}

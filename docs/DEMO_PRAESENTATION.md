@@ -118,6 +118,7 @@ Link `/insight/kommune/<uuid>/` erreichbar.
 | 8 | Leitstelle | Seitenleiste „Mandant wechseln“ → „Bezirksamt Musterstadt-Süd (Demo)“ | Eigener Mandant, eigene Nummernfolge ab `…0001` |
 | 9 | Leitstelle (nur `stadtstaat`) | Seitenleiste „Leitstelle Bezirke Musterstadt (Demo)“ | Kennzahlen, Vorlagen in Prüfung, Fristen und Sitzungen beider Bezirke auf einer Seite; Suche über beide Bezirke |
 | 10 | Verwaltung (nur `stadtstaat`) | Sitzungen → „Gemeinsame Sitzung Haupt- und Bauausschuss (Demo-Drehbuch)“ → Ladung | Beide Ausschüsse genannt; Hakan Heller sitzt in beiden und steht im Empfängerkreis einmal |
+| 11 | Fraktionsvorsitz (`demo-vorsitz@…`), dann `demo-mitglied@…` und `demo-unvereidigt@…` | **Fraktionssitzung einladen:** Work → Fraktionssitzungen → „Fraktionssitzung planen“ → Titel, Datum in einer Woche, „Zu- und Absagen sammeln“ anhaken → „Planen“ → TOPs hinzufügen, auch einen nichtöffentlichen → „Jetzt einladen …“ → „Testmail an mich senden“ → „Einladung an … Mitglieder senden“ → „Versandergebnis“. Dieselbe Sitzung als `demo-mitglied@…` öffnen → „Zusagen“; als `demo-unvereidigt@…` öffnen | Einladung mit Tagesordnung als PDF und Kalenderdatei; Versandergebnis je Person („versendet“, ohne nichtöffentlichen Teil für nicht Vereidigte, vom Mailserver abgelehnte Adressen mit Grund); Zusage in den Rückmeldungen; die Erinnerung plant der Zeitplan selbst (Standard 48 Stunden vor Beginn); nicht Vereidigte sehen vom nichtöffentlichen Teil nur die Zahl und die Erklärung, wer Zugang gibt |
 
 Hinweise für die Vorführung:
 
@@ -133,6 +134,10 @@ Hinweise für die Vorführung:
 - Der Umsetzungsstand im Bürgerportal hängt an der mit dem Mandanten verknüpften Kommune der
   Basisdemo („Musterstadt (Demo)“), nicht an der gespiegelten. Der ausgegebene Beschluss-Link
   führt direkt dorthin.
+- Schritt 11 legt jedes Mal eine neue Sitzung an und lässt sich deshalb beliebig oft proben; die
+  Sitzung bleibt bis zum Aufräumen der Basisdemo stehen. In einer Demo-Instanz (`DEMO_INSTANCE`)
+  verlässt keine Mail den Server: Das Versandergebnis zeigt „versendet“, ein Postfach zum Vorzeigen
+  gibt es dort nicht.
 
 ## Proben und Aufräumen
 
@@ -153,3 +158,6 @@ Hinweise für die Vorführung:
 - `tests_e2e/test_demo_drehbuch.py`: spielt das Drehbuch im Browser durch (Profil `stadtstaat`):
   `MANDARI_E2E=1 pytest tests_e2e/test_demo_drehbuch.py --browser-channel chromium` nach
   `npm run build`.
+- `tests_e2e/test_fraktion_einladung_ablauf.py`: den Ablauf aus Schritt 11 von der Sitzung bis zum
+  Protokoll mit eigenen Testdaten, samt Zeitplänen für Einladung und Erinnerung und einer vom
+  Mailserver abgelehnten Adresse.
