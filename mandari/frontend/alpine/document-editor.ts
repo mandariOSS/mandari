@@ -335,8 +335,9 @@ export const documentEditor = defineComponent(() => {
     _metaSavedSeq: 0,
     // Bewusstes Verlassen (Löschen, Statuswechsel, Neu laden, eigene Formulare): keine Rückfrage
     _leavingIntentionally: false,
-    // Eigener Statuswechsel läuft (#1018): Das Fenster lädt danach selbst neu; eine Aufforderung des Servers zum
-    // Neuladen (z. B. herabgestufter Zugriff nach der Sperre) wird bis dahin nur vorgemerkt, ohne Meldung
+    // Eigener Statuswechsel oder eigenes Wiederherstellen läuft (#1018): Das Fenster lädt danach selbst neu; eine
+    // Aufforderung des Servers zum Neuladen (herabgestufter Zugriff nach der Sperre, die Wiederherstellung selbst)
+    // wird bis dahin nur vorgemerkt, ohne Meldung
     _eigenerStatuswechsel: false,
     _neuladenVorgemerkt: false,
     // Suchen & Ersetzen
@@ -2829,6 +2830,8 @@ export const documentEditor = defineComponent(() => {
       // Der aktuelle Stand wird als Version gesichert: vorher die letzten Eingaben sichern (#1018)
       if (!(await this._vorNeuladenSichern())) return
 
+      // Der Server fordert auch dieses Fenster zum Neuladen auf: keine Meldung „an anderer Stelle gespeichert“ (#1018)
+      this._eigenerStatuswechsel = true
       try {
         const response = await fetch(`${config.urls.revisions}${rev.id}/restore/`, {
           method: 'POST',
@@ -2847,6 +2850,8 @@ export const documentEditor = defineComponent(() => {
         }
       } catch {
         showToast('Fehler beim Wiederherstellen', 'error')
+      } finally {
+        if (!this._leavingIntentionally) this._statuswechselBeendet()
       }
     },
 

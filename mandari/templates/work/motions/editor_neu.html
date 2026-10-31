@@ -26,7 +26,7 @@ Suche und Dunkelmodus selbst mit (partials/neu/_kopf.html).{% endcomment %}
 {% if ablauf.aktion == "abstimmung" %}{{ abstimmung_vorauswahl|json_script:"editor-abstimmung-vorauswahl" }}{{ abstimmung_ohne_zugang|json_script:"editor-abstimmung-ohne-zugang" }}{% endif %}
 <div class="editor-wrapper ke-editor" x-data="documentEditor" data-ansicht="neu"
      @click="menueKlick($event)" @click.outside="menueSchliessen()" @keydown="menueTaste($event)"
-     :class="{ 'ke-seiten': seitenansicht, 'ke-mit-panel': panel !== '', 'ke-ohne-gliederung': !gliederungAn || !gliederung.length }">
+     :class="{ 'ke-seiten': seitenansicht, 'ke-mit-panel': panel !== '', 'ke-ohne-gliederung': !gliederungAn || !gliederung.length, 'ke-menue-offen': menue !== '' }">
     {% include "work/motions/partials/_editor_konflikt.html" %}
     {% include "work/motions/partials/neu/_kopf.html" %}
 

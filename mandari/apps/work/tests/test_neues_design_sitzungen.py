@@ -790,3 +790,13 @@ def test_neue_vorlagen_mit_bausteinen_statt_handarbeit(name: str) -> None:
     for handarbeit in ("rounded-xl border", "rounded-full text-[10px]", "<style", "c-ui.card", "c-ui.badge"):
         assert handarbeit not in text, f"{name}: {handarbeit}"
     assert _inline_skripte(text) == 0, name
+
+
+def test_gremienfilter_nennt_gremien_ungekuerzt(welt: Welt, client_for: Any) -> None:
+    """Issue #1018: Bei 40 Zeichen abgeschnittene Namen ließen sich in der Auswahl nicht unterscheiden."""
+    lang = "Ausschuss für Umwelt, Klimaschutz, Mobilität und Stadtentwicklung"
+    OParlOrganization.objects.create(
+        external_id=_kennung("org", "lang"), body=welt.body, name=lang, classification="Ausschuss"
+    )
+    html = _neu(welt, client_for, "vorsitz", "work:meetings", {"view": "all", "time": "all"})
+    assert f"{lang}</option>" in html

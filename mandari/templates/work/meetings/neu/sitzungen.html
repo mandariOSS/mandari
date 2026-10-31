@@ -46,7 +46,7 @@ Kontext: apps/work/meetings/neu.sitzungen; die bisherige Seite bleibt work/meeti
     {% if view_mode == 'all' %}
     <c-form.select name="committee" id="sitzungen-gremium" label="Gremium" dicht zeile data-autosubmit>
         <option value="">Alle Gremien</option>
-        {% for committee in all_committees %}<option value="{{ committee.id }}" {% if committee_filter == committee.id|stringformat:'s' %}selected{% endif %}>{{ committee.name|truncatechars:40 }}</option>{% endfor %}
+        {% for committee in all_committees %}<option value="{{ committee.id }}" {% if committee_filter == committee.id|stringformat:'s' %}selected{% endif %}>{{ committee.name }}</option>{% endfor %}
     </c-form.select>
     {% endif %}
     <noscript><c-ui.button type="submit" size="sm" variant="secondary">Anwenden</c-ui.button></noscript>

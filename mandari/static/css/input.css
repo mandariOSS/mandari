@@ -432,6 +432,10 @@
     /* Ersetzt die Kopfzeile des Rahmens (editor_neu.html): Aussparung oben am Handy wie dort */
     padding-top: env(safe-area-inset-top, 0px);
   }
+  /* Der Kopf ist ein eigener Stapelkontext: Offene Menüs lägen sonst unter den Popups im Text (.comment-popup, z-index 45, #1018) */
+  .ke-editor.ke-menue-offen .ke-kopf {
+    z-index: 46;
+  }
   .ke-kopfzeile {
     @apply flex items-center gap-3 px-3 pt-1.5 min-w-0 lg:px-4;
   }
@@ -623,8 +627,11 @@
 
   /* Menüs */
   .ke-menue {
-    @apply absolute left-0 top-full z-50 mt-1 py-1 min-w-[15rem] max-h-[70vh] overflow-y-auto rounded-md bg-white shadow-lg text-[13.5px] dark:bg-gray-800;
+    @apply absolute left-0 top-full z-50 mt-1 py-1 min-w-[15rem] overflow-y-auto rounded-md bg-white shadow-lg text-[13.5px] dark:bg-gray-800;
     border: 1px solid var(--ke-linie);
+    /* Rollt lieber selbst, als unten abgeschnitten zu werden: Abzug für den Kopf mit Werkzeugleiste und die Leiste am Handy (#1018) */
+    max-height: 70vh;
+    max-height: min(70dvh, calc(100dvh - 14rem));
   }
   .ke-menue-breit {
     @apply min-w-[19rem];
@@ -831,7 +838,7 @@
 
   /* Zeile über dem Text */
   .ke-blattkopf {
-    @apply flex flex-wrap items-center gap-x-4 gap-y-1 mb-6 text-[13px] text-gray-600 dark:text-gray-400;
+    @apply relative flex flex-wrap items-center gap-x-4 gap-y-1 mb-6 text-[13px] text-gray-600 dark:text-gray-400;
   }
   .ke-blattkopf-knopf {
     @apply inline-flex items-center gap-1 h-7 -ml-1 px-1 rounded hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-gray-800 dark:hover:text-white;
@@ -1093,6 +1100,12 @@
     }
     .ke-kopfzeile {
       @apply pb-1;
+    }
+    /* Typ und Briefpapier: an der Zeile statt am Knopf ausrichten, sonst schneidet .ke-scroll das Menü rechts ab (#1018) */
+    .ke-blattkopf .ke-menue {
+      right: 0;
+      min-width: 0;
+      max-width: 24rem;
     }
   }
 }

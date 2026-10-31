@@ -94,3 +94,29 @@ def test_umkreis_wechsel_laedt_ergebnisse_neu(page: Any, goto: Any, problems: Br
     # Nicht die ganze Seite in die Liste geladen
     expect(ergebnisse.locator("#neighborhood-map")).to_have_count(0)
     problems.assert_clean("Nachbarschaft: Umkreis")
+
+
+def test_abo_adressvorschlaege_nicht_abgeschnitten(
+    page: Any, goto: Any, settings: Any, problems: BrowserProblems
+) -> None:
+    """Issue #1018: Die Karte mit overflow-hidden schnitt die Liste unter dem Adressfeld ab."""
+    settings.INSIGHT_SUBSCRIPTIONS_ENABLED = True
+    body = _kommune()
+    vorschlaege = [{"name": f"Lindenallee {nummer}", "lat": LAT, "lon": LON} for nummer in range(1, 13)]
+    page.route("**/nachbarschaft/autocomplete/**", lambda route: route.fulfill(json=vorschlaege))
+    goto(f"/insight/kommune/{body.id}/")
+    goto("/insight/benachrichtigungen/")
+
+    page.locator('input[name="neighborhood_name"]').fill("Linden")
+    letzter = page.get_by_role("button", name="Lindenallee 12")
+    expect(letzter).to_be_visible()
+    letzter.scroll_into_view_if_needed()
+    box = letzter.bounding_box()
+    assert box is not None
+    mitte = {"x": box["x"] + box["width"] / 2, "y": box["y"] + box["height"] / 2}
+    oben = page.evaluate(
+        "(p) => document.elementFromPoint(p.x, p.y)?.closest('button')?.textContent.trim() ?? ''",
+        mitte,
+    )
+    assert oben == "Lindenallee 12", f"An der Stelle des letzten Vorschlags liegt: {oben!r}"
+    problems.assert_clean("Abo: Adressvorschläge")

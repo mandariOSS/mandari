@@ -20,6 +20,8 @@
  *   Öffentlichkeit der gewählten Option (`data-public="1|0"`) und sperrt es bei `data-public-locked`, z. B. für
  *   den stets nichtöffentlichen Hauptausschuss; mit `data-date-public-default="<Selektor>"` zusätzlich
  *   „Termin veröffentlichen“ nach `data-date-public` (`templates/session/meetings/form.html`, Issue #757).
+ * - `data-aussen-schliessen` an einem `<details>`: schließt die Ausklappliste bei einem Klick daneben, also auch beim
+ *   Öffnen der nächsten (`templates/cotton/suche/facette.html`, Issue #1018).
  */
 
 const UMLAUTE: Record<string, string> = { ä: 'ae', ö: 'oe', ü: 'ue', ß: 'ss' }
@@ -199,6 +201,15 @@ function onPublicDefaultChange(event: Event): void {
   if (termin instanceof HTMLInputElement) termin.checked = vorgabe.datePublic && !checkbox.checked
 }
 
+// ---- Ausklapplisten -------------------------------------------------------------------------
+
+function onAussenKlick(event: MouseEvent): void {
+  const ziel = event.target
+  for (const details of document.querySelectorAll<HTMLDetailsElement>('details[data-aussen-schliessen][open]')) {
+    if (!(ziel instanceof Node && details.contains(ziel))) details.open = false
+  }
+}
+
 // ---- Einstieg -------------------------------------------------------------------------------
 
 export function installFormBehaviors(root: Document = document): void {
@@ -207,6 +218,7 @@ export function installFormBehaviors(root: Document = document): void {
   root.addEventListener('change', onPublicDefaultChange)
   root.addEventListener('focusin', onFocusIn)
   root.addEventListener('click', onTextblockClick)
+  root.addEventListener('click', onAussenKlick)
   // Vite-Module laufen nach dem Parsen: das Markup der Seite steht bereits
   applyFilters(root)
   fillBrowserInfo(root)
