@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Kommunenlisten über alle Seiten (Issue #869) und Neuanlage inaktiv bzw. ungelistet (Teil von Issue #555).
+Kommunenlisten über alle Seiten (Issue #869), Neuanlage inaktiv bzw. ungelistet und ein Registrierungsweg (Issue #555).
 
 Bisher las die Erkennung einer Quelle, deren Adresse eine Kommunenliste ist, nur deren erste Seite; die Kommunen auf
 den Folgeseiten (``links.next``) wurden nie abgeglichen. Jetzt folgt sie der Liste wie jeder anderen: im Takt, und ein
 Fehler auf einer Folgeseite bricht ab und macht den Abgleich unvollständig, ebenso die Seitengrenze und eine Liste,
 die im Kreis läuft. Dazu: Neue Quellen sind inaktiv, eine vorhandene Quelle behält ``is_active`` (auch abgeschaltet),
-neu entdeckte Kommunen sind nicht gelistet, außer bei der eigenen Session-Schnittstelle eines Mandanten.
+neu entdeckte Kommunen sind nicht gelistet, außer bei der eigenen Session-Schnittstelle eines Mandanten. ``sync``
+lehnt eine Adresse ab, die keine registrierte Quelle ist.
 
 Antworten aus ``httpx.MockTransport``, keine Abrufe fremder Server. Die Speicher-Tests laufen gegen PostgreSQL
 (``INGESTOR_TEST_DATABASE_URL``, in der CI gesetzt; lokal ohne Datenbank übersprungen).
@@ -15,6 +16,7 @@ Antworten aus ``httpx.MockTransport``, keine Abrufe fremder Server. Die Speicher
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import io
 import os
 import uuid
@@ -38,7 +40,7 @@ from src.client.oparl_client import ListFetchError, OParlClient
 from src.config import settings
 from src.storage.database import ENRICHMENT_FIELDS, DatabaseStorage
 from src.storage.models import Base, OParlBody, OParlSource
-from src.sync.orchestrator import MAX_BODY_PAGES, SyncOrchestrator, missed_bodies_note, sync_complete
+from src.sync.orchestrator import MAX_BODY_PAGES, SyncOrchestrator, SyncResult, missed_bodies_note, sync_complete
 from src.sync.processor import OParlProcessor
 
 BASE = "https://ris.example.org/oparl"
@@ -465,12 +467,13 @@ class Speicher:
         self.vollstaendig: list[bool] = []
         self.fehler: list[str] = []
         self.quelle: dict[str, Any] = {}
+        self.vermerke: list[str] = []
 
     async def get_source_by_url(self, url: str) -> Any:
         return SimpleNamespace(url=url, sync_config={}, user_agent=None, last_successful_full_sync=None)
 
     async def save_filter_notes(self, source_url: str, lists: Any, hosts: Any, *, drop_legacy: bool = False) -> None:
-        return None
+        self.vermerke.append(source_url)
 
     async def upsert_source(self, **kwargs: Any) -> UUID:
         self.quelle = kwargs
@@ -532,6 +535,21 @@ async def test_sync_source_mit_filter_gleicht_nur_passende_kommunen_ab(
     assert speicher.quelle["url"] == SYSTEM
     assert speicher.quelle["name"] == "Kommune 1"
     assert speicher.quelle["raw_json"] == {"bodies_count": 5}
+
+
+async def test_filter_ohne_treffer_laesst_die_quelle_unveraendert(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ein Tippfehler ist kein erfolgreicher Lauf: Sonst höbe er Fehlerzustand und Schonung der Quelle auf."""
+    result, speicher, abgeglichen = await _abgleich(monkeypatch, Quelle(), SYSTEM, body_filter="Tippfehler")
+
+    assert result.filter_without_match
+    assert not result.success
+    assert abgeglichen == []
+    assert speicher.quelle == {}, "Name und Rohdaten nicht geschrieben"
+    assert speicher.vollstaendig == [], "Zeitstempel und Fehlerzustand nicht zurückgesetzt (update_source_sync_time)"
+    assert speicher.fehler == [], "auch kein neuer Fehler: Die Quelle hat nichts falsch gemacht"
+    assert speicher.vermerke == []
+    assert "„Tippfehler“" in result.errors[-1]
+    assert "Kommune 1" in result.errors[-1]
 
 
 async def test_abgleich_mit_abgebrochener_kommunenliste_ist_unvollstaendig(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -620,27 +638,39 @@ async def test_neue_kommune_ungelistet_vorhandene_behaelt_ihren_status(
 
 
 # ---------------------------------------------------------------------------
-# add-source nennt den tatsächlichen Status (Teil von Issue #555)
+# Ein Registrierungsweg: Der Ingestor legt keine Quellen an (Issue #555)
 # ---------------------------------------------------------------------------
 
 
-def _registrierte_quelle(is_active: bool) -> SimpleNamespace:
-    return SimpleNamespace(
-        url=SYSTEM, is_active=is_active, consecutive_failures=0, last_error_kind=None, last_error_at=None
-    )
+def _registrierte_quelle(is_active: bool = True, url: str = SYSTEM) -> SimpleNamespace:
+    return SimpleNamespace(url=url, is_active=is_active)
 
 
-def _add_source(monkeypatch: pytest.MonkeyPatch, vorher: SimpleNamespace | None, nachher: SimpleNamespace) -> str:
-    """``add-source`` mit Attrappe des Orchestrators; ``vorher``/``nachher``: die Quelle vor bzw. nach dem Anlegen."""
-    stand = [vorher, nachher]
+def _sync(
+    monkeypatch: pytest.MonkeyPatch,
+    registriert: list[SimpleNamespace],
+    *argumente: str,
+    kommunen: dict[str, SimpleNamespace] | None = None,
+) -> SimpleNamespace:
+    """``sync`` mit Attrappe des Orchestrators: Rückgabewert, abgeglichene Adressen, Sync-Protokolle und Ausgabe."""
+    abgeglichen: list[str] = []
+    protokolle: list[Any] = []
 
-    class Speicher:
+    class Quellen:
         async def get_source_by_url(self, url: str) -> SimpleNamespace | None:
-            return stand.pop(0)
+            return next((quelle for quelle in registriert if quelle.url == url), None)
+
+        async def get_body_source(self, url: str) -> tuple[str, SimpleNamespace] | None:
+            quelle = (kommunen or {}).get(url)
+            return (url, quelle) if quelle is not None else None
+
+        async def get_all_sources(self, active_only: bool = True) -> list[SimpleNamespace]:
+            assert active_only is False, "auch inaktive Quellen zählen als registriert"
+            return registriert
 
     class Orchestrator:
         def __init__(self, *args: object, **kwargs: object) -> None:
-            self.storage = Speicher()
+            self.storage = Quellen()
 
         async def __aenter__(self) -> Orchestrator:
             return self
@@ -648,39 +678,174 @@ def _add_source(monkeypatch: pytest.MonkeyPatch, vorher: SimpleNamespace | None,
         async def __aexit__(self, *args: object) -> None:
             return None
 
-        async def add_source(self, url: str, name: str | None = None) -> UUID:
-            return SOURCE_ID
+        async def sync_body_url(self, url: str, **kwargs: Any) -> SyncResult:
+            if kwargs.get("body_filter") == "Tippfehler":
+                return SyncResult(
+                    source_url=url,
+                    source_name="Musterstadt",
+                    success=False,
+                    errors=["Keine Kommune passt zum Filter [Tippfehler]"],
+                    filter_without_match=True,
+                )
+            abgeglichen.append(url)
+            return SyncResult(source_url=url, source_name="Musterstadt", success=True)
+
+        async def sync_all(self, full: bool = False) -> list[SyncResult]:
+            return []
+
+        def print_result(self, result: SyncResult) -> None:
+            return None
+
+        async def write_results_to_synclog(self, results: list[SyncResult], *args: Any, **kwargs: Any) -> None:
+            protokolle.extend(results)
 
     ausgabe = io.StringIO()
     monkeypatch.setattr(cli, "SyncOrchestrator", Orchestrator)
-    monkeypatch.setattr(cli, "console", Console(file=ausgabe, width=300))
-    result = CliRunner().invoke(cli.app, ["add-source", SYSTEM])
-    assert result.exit_code == 0, result.output
-    assert stand == []
-    return " ".join(ausgabe.getvalue().split())
+    monkeypatch.setattr(cli, "console", Console(file=ausgabe, width=120))
+    result = CliRunner().invoke(cli.app, ["sync", *argumente])
+    return SimpleNamespace(
+        code=result.exit_code, abgeglichen=abgeglichen, protokolle=protokolle, ausgabe=ausgabe.getvalue()
+    )
 
 
-def test_add_source_neue_quelle_ist_inaktiv_und_darf_einmal_von_hand_laufen(monkeypatch: pytest.MonkeyPatch) -> None:
-    text = _add_source(monkeypatch, None, _registrierte_quelle(False))
-
-    assert "Neue Quelle, Status: inaktiv" in text
-    assert f"mandari-ingestor sync --source {SYSTEM}" in text
-
-
-def test_add_source_vorhandene_aktive_quelle_behaelt_ihren_status(monkeypatch: pytest.MonkeyPatch) -> None:
-    text = _add_source(monkeypatch, _registrierte_quelle(True), _registrierte_quelle(True))
-
-    assert "Status unverändert: aktiv" in text
-    assert "sync --source" not in text
+def _abgewiesen(lauf: SimpleNamespace, adresse: str) -> None:
+    assert lauf.code == 1
+    # Kein Aufruf von sync_body_url: kein Abruf und kein upsert_source, also keine neue Quelle
+    assert lauf.abgeglichen == []
+    assert f"Keine registrierte Quelle: {adresse}" in lauf.ausgabe
+    assert "Sync failed" not in lauf.ausgabe
+    # Der Rat, genau diese Adresse anzulegen, führte zu einer zweiten Quelle ohne die Einstellungen der ersten
+    assert f"add_oparl_source {adresse}" not in lauf.ausgabe
 
 
-def test_add_source_raet_bei_abgeschalteter_quelle_vom_handabruf_ab(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``sync --source`` prüft ``is_active`` nicht: Für eine abgeschaltete Quelle (etwa Köln) kein Handabruf-Rezept."""
-    text = _add_source(monkeypatch, _registrierte_quelle(False), _registrierte_quelle(False))
+@pytest.mark.parametrize("option", ["--source", "--body"])
+def test_sync_weist_unbekannte_adresse_ohne_fertigen_befehl_ab(monkeypatch: pytest.MonkeyPatch, option: str) -> None:
+    lauf = _sync(monkeypatch, [], option, SYSTEM)
 
-    assert "Status unverändert: inaktiv" in text
-    assert "Bitte nicht von Hand abgleichen" in text
-    assert "mandari-ingestor sync --source" not in text
+    _abgewiesen(lauf, SYSTEM)
+    assert "Neue Quellen legt der Ingestor nicht an" in lauf.ausgabe
+    assert "sync --source" not in lauf.ausgabe
+
+
+@pytest.mark.parametrize(
+    "schreibweise",
+    [
+        pytest.param(f"{SYSTEM}/", id="Schrägstrich am Ende"),
+        pytest.param(SYSTEM.replace("https://", "http://"), id="anderes Schema"),
+        pytest.param(SYSTEM.replace("ris.example.org", "RIS.example.org"), id="Großschreibung im Host"),
+    ],
+)
+def test_sync_nennt_bei_anderer_schreibweise_die_registrierte_adresse(
+    monkeypatch: pytest.MonkeyPatch, schreibweise: str
+) -> None:
+    lauf = _sync(monkeypatch, [_registrierte_quelle()], "--source", schreibweise)
+
+    _abgewiesen(lauf, schreibweise)
+    assert f"mandari-ingestor sync --source {SYSTEM}\n" in lauf.ausgabe
+    assert "add_oparl_source" not in lauf.ausgabe
+
+
+@pytest.mark.parametrize("option", ["--source", "--body"])
+def test_sync_nennt_bei_einer_kommune_quelle_und_filter(monkeypatch: pytest.MonkeyPatch, option: str) -> None:
+    adresse = kommune(1)["id"]
+    quelle = _registrierte_quelle()
+
+    lauf = _sync(monkeypatch, [quelle], option, adresse, kommunen={adresse: quelle})
+
+    _abgewiesen(lauf, adresse)
+    assert f"mandari-ingestor sync --source {SYSTEM} --filter {adresse}\n" in lauf.ausgabe
+    assert "add_oparl_source" not in lauf.ausgabe
+
+
+def test_sync_quotet_adressen_im_vorschlag(monkeypatch: pytest.MonkeyPatch) -> None:
+    adresse = f"{BASE}/bodies?id=1&typ=2"
+    quelle = _registrierte_quelle()
+
+    lauf = _sync(monkeypatch, [quelle], "--body", adresse, kommunen={adresse: quelle})
+
+    assert f"--source {SYSTEM} --filter '{adresse}'\n" in lauf.ausgabe
+
+
+@pytest.mark.parametrize(
+    ("adresse", "kommune_bekannt"),
+    [pytest.param(f"{SYSTEM}/", False, id="andere Schreibweise"), pytest.param(kommune(1)["id"], True, id="Kommune")],
+)
+def test_sync_schlaegt_fuer_inaktive_quelle_keinen_abgleich_vor(
+    monkeypatch: pytest.MonkeyPatch, adresse: str, kommune_bekannt: bool
+) -> None:
+    """``sync`` prüft ``is_active`` nicht: Für eine abgeschaltete Quelle (Sperre, Schonung) kein fertiger Befehl."""
+    quelle = _registrierte_quelle(False)
+
+    lauf = _sync(monkeypatch, [quelle], "--source", adresse, kommunen={adresse: quelle} if kommune_bekannt else None)
+
+    _abgewiesen(lauf, adresse)
+    assert SYSTEM in lauf.ausgabe
+    assert "Bitte nicht von Hand abgleichen" in lauf.ausgabe
+    assert "sync --source http" not in lauf.ausgabe
+
+
+def test_sync_nennt_quellen_desselben_servers_die_aehnlichste_zuerst(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Viele Quellen teilen sich einen Server; welche gemeint ist, zeigt der gemeinsame Anfang der Adresse."""
+    registriert = [_registrierte_quelle(url=f"https://ris.example.org/rim{nummer}/oparl/system") for nummer in range(7)]
+    fremd = _registrierte_quelle(url="https://andere.example.org/rim3/oparl/system")
+    adresse = "https://ris.example.org/rim3/oparl/bodies"
+
+    lauf = _sync(monkeypatch, [*registriert, fremd], "--source", adresse)
+
+    _abgewiesen(lauf, adresse)
+    zeilen = lauf.ausgabe.splitlines()
+    start = zeilen.index("Auf diesem Server sind registriert:")
+    assert zeilen[start + 1] == "  https://ris.example.org/rim3/oparl/system"
+    assert zeilen[start + 6] == "  und 2 weitere (list-sources)"
+    assert fremd.url not in lauf.ausgabe
+    assert "Neue Quellen legt der Ingestor nicht an" in lauf.ausgabe
+
+
+def test_sync_body_gleicht_nichts_ab_wenn_eine_adresse_unbekannt_ist(monkeypatch: pytest.MonkeyPatch) -> None:
+    lauf = _sync(monkeypatch, [_registrierte_quelle()], "--body", SYSTEM, "--body", LISTE)
+
+    _abgewiesen(lauf, LISTE)
+    assert f"Keine registrierte Quelle: {SYSTEM}" not in lauf.ausgabe
+
+
+@pytest.mark.parametrize("option", ["--source", "--body"])
+@pytest.mark.parametrize("aktiv", [True, False])
+def test_sync_gleicht_registrierte_quelle_ab_auch_eine_inaktive(
+    monkeypatch: pytest.MonkeyPatch, option: str, aktiv: bool
+) -> None:
+    lauf = _sync(monkeypatch, [_registrierte_quelle(aktiv)], option, SYSTEM)
+
+    assert lauf.code == 0
+    assert lauf.abgeglichen == [SYSTEM]
+
+
+def test_sync_all_prueft_keine_adresse(monkeypatch: pytest.MonkeyPatch) -> None:
+    lauf = _sync(monkeypatch, [], "--all")
+
+    assert lauf.code == 0
+    assert lauf.abgeglichen == []
+    assert "Keine registrierte Quelle" not in lauf.ausgabe
+
+
+def test_sync_endet_ohne_treffer_im_filter_mit_fehler(monkeypatch: pytest.MonkeyPatch) -> None:
+    lauf = _sync(monkeypatch, [_registrierte_quelle()], "--source", SYSTEM, "--filter", "Tippfehler")
+
+    assert lauf.code == 1
+    assert "Keine Kommune passt zum Filter [Tippfehler]" in lauf.ausgabe
+    assert lauf.protokolle == [], "kein Lauf, also kein Sync-Protokoll"
+
+
+@pytest.mark.parametrize("befehl", ["add-source", "init-sources"])
+def test_entfernte_befehle_gibt_es_nicht(befehl: str) -> None:
+    result = CliRunner().invoke(cli.app, [befehl, SYSTEM])
+
+    assert result.exit_code == 2
+    assert befehl not in {command.name for command in cli.app.registered_commands}
+
+
+def test_eigene_quellenliste_des_ingestors_ist_entfallen() -> None:
+    assert importlib.util.find_spec("src.sources") is None
+    assert not hasattr(SyncOrchestrator, "add_source")
 
 
 # ---------------------------------------------------------------------------
@@ -755,6 +920,21 @@ async def test_quelle_bleibt_inaktiv_und_wird_nie_wieder_aktiv(speicher: Databas
         await session.commit()
     await speicher.upsert_source(SYSTEM, "Musterstadt")
     assert await _spalte(speicher, aktiv) is False
+
+
+@pytest.mark.integration
+async def test_kommune_wird_mit_ihrer_quelle_gefunden(speicher: DatabaseStorage) -> None:
+    source_id = await speicher.upsert_source(SYSTEM, "Musterstadt")
+    await speicher.upsert_body(OParlProcessor().process_body(kommune(1), kommune(1)["id"]), source_id)
+
+    for adresse in (kommune(1)["id"], f"{kommune(1)['id']}/"):
+        treffer = await speicher.get_body_source(adresse)
+        assert treffer is not None
+        kennung, quelle = treffer
+        assert (kennung, quelle.url, quelle.is_active) == (kommune(1)["id"], SYSTEM, False)
+
+    assert await speicher.get_body_source(kommune(2)["id"]) is None
+    assert await speicher.get_body_source(SYSTEM) is None
 
 
 @pytest.mark.integration
