@@ -22,7 +22,7 @@ from django.utils import timezone
 
 from apps.tenants.models import Organization
 from apps.work.faction import ratssitzung, vorbereiten
-from apps.work.faction.models import FactionAgendaItem, FactionAttendance, FactionMeeting
+from apps.work.faction.models import FactionAgendaItem, FactionAttendance, FactionAuditLog, FactionMeeting
 from insight_core.models import OParlAgendaItem, OParlBody, OParlConsultation, OParlMeeting, OParlPaper, OParlSource
 
 from . import test_sitzung_vorbereiten as basis
@@ -194,6 +194,40 @@ def test_ziehen_in_den_anderen_teil_gilt_nach_dem_versand_als_aenderung(welt: di
     assert "Tagesordnung geändert." not in _html(_seite(welt, client_for, "vorsitz"))
     _in_teil(welt, client_for, "vorsitz", welt["haupt"], "internal")
     assert "Tagesordnung geändert." in _html(_seite(welt, client_for, "vorsitz"))
+
+
+def test_aenderungshistorie_sperrt_top_nach_dem_wechsel_in_den_nichtoeffentlichen_teil(
+    welt: dict[str, Any], client_for: Any, make_member: Any
+) -> None:
+    lesend = make_member(welt["org"], ["faction.view_public", "faction.view_audit"], email="olga@example.org")
+    url = reverse("work:faction_audit", kwargs={"org_slug": welt["org"].slug})
+    titel = "Grundstück am Nordring"
+    top = FactionAgendaItem.objects.create(
+        meeting=welt["meeting"], title=titel, number="3", visibility="public", order=9
+    )
+    assert titel in _html(client_for(lesend.user).get(url))
+
+    _in_teil(welt, client_for, "vorsitz", top, "internal")
+
+    html = _html(client_for(lesend.user).get(url))
+    assert titel not in html and "Gesperrte Information" in html
+    # Vereidigte lesen den Verlauf weiter
+    assert titel in _html(client_for(welt["vorsitz"].user).get(url))
+
+
+def test_neuer_titel_beim_wechsel_im_panel_steht_gesperrt_im_verlauf(welt: dict[str, Any], client_for: Any) -> None:
+    meeting, termine = welt["meeting"], welt["meeting"].agenda_items.get(title="Termine")
+    url = reverse(
+        "work:faction_item_panel_action",
+        kwargs={"org_slug": welt["org"].slug, "meeting_id": meeting.pk, "item_id": termine.pk},
+    )
+    titel = "Vertrauliche Personalsache"
+    client_for(welt["vorsitz"].user).post(url, {"action": "update", "title": titel, "visibility": "internal"})
+
+    termine.refresh_from_db()
+    assert termine.title == titel and termine.visibility == "internal" and termine.number == "NÖ 1"
+    eintraege = list(FactionAuditLog.objects.filter(object_id=termine.pk, object_repr__contains=titel))
+    assert eintraege and all(eintrag.is_internal for eintrag in eintraege)
 
 
 def test_tagesordnung_nennt_den_teil_je_liste(welt: dict[str, Any], client_for: Any) -> None:

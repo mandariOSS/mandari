@@ -130,6 +130,8 @@ def move_to_part(meeting: FactionMeeting, item: FactionAgendaItem, visibility: s
                 child.save(update_fields=["visibility", "updated_at"])
         renumber(meeting, previous)
         renumber(meeting, visibility)
+        # renumber arbeitet auf eigenen Instanzen: Ein späteres save() überschriebe die neue Nummer sonst
+        item.refresh_from_db(fields=["number"])
 
 
 # =============================================================================

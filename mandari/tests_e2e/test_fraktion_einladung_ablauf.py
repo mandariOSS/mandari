@@ -572,6 +572,13 @@ def test_vorschlag_nach_dem_versand(
     formular = seite.get_by_test_id("fs-top-form")
     titel = formular.locator("#tf-titel")
     begruendung = formular.locator("#tf-begruendung")
+
+    # Ein nur getippter Titel, den es schon gibt, bleibt erhalten
+    titel.fill(TOP_HAUSHALT)
+    _neu_laden(seite)
+    wait_for_component(seite, "fsTopEntwurf")
+    expect(titel).to_have_value(TOP_HAUSHALT)
+
     titel.fill(TOP_RADWEG)
     begruendung.fill("Bitte in der Sitzung beraten.")
 
@@ -633,9 +640,17 @@ def test_vereidigte_schlagen_nichtoeffentlich_vor(
 
     seite = _als(new_context, live_server, vorschlagend)
     _oeffnen(seite, live_server, fraktion, meeting)
+    wait_for_component(seite, "fsTopEntwurf")
     formular = seite.get_by_test_id("fs-top-form")
     formular.locator("#tf-titel").fill(TOP_RADWEG)
     formular.locator("#tf-sicht").select_option("internal")
+
+    # Die wiederhergestellte Eingabe bleibt nichtöffentlich
+    _neu_laden(seite)
+    wait_for_component(seite, "fsTopEntwurf")
+    expect(formular.locator("#tf-titel")).to_have_value(TOP_RADWEG)
+    expect(formular.locator("#tf-sicht")).to_have_value("internal")
+
     formular.get_by_role("button", name="Vorschlagen").click()
     expect(seite.get_by_test_id("fs-meine-vorschlaege")).to_contain_text(TOP_RADWEG)
     assert FactionAgendaItem.objects.get(meeting=meeting, title=TOP_RADWEG).visibility == "internal"

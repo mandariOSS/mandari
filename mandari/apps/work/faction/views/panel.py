@@ -311,10 +311,11 @@ class FactionItemPanelActionView(WorkViewMixin, View):
         else:
             visibility = None
 
-        item.save()
         if visibility:
-            # Nummern beider Teile und Unterpunkte wie beim Ziehen (Issue #1160)
+            # Nummern beider Teile und Unterpunkte wie beim Ziehen (Issue #1160). Vor dem Speichern: Ein neuer Titel
+            # steht im Änderungsverlauf sonst noch als öffentlich.
             agenda.move_to_part(meeting, item, visibility)
+        item.save()
         return self._none_response(message="Gespeichert")
 
     def _add_entry(self, request, meeting, item, can_edit):
