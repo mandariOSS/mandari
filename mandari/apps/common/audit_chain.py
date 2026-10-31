@@ -493,6 +493,20 @@ def verify(spec: ChainSpec, scope_id: Any, *, on_entry: Callable[[Any], None] | 
     return result
 
 
+def ohne_betriebshinweis(meldung: str) -> str:
+    """
+    Meldung ohne den Befehl ``audit_chain_backfill``: für Oberflächen und Personen, die ihn nicht ausführen können
+    (Issue #745). Die Befehlszeile und die Protokolleinträge behalten den vollen Text.
+    """
+    for mit_befehl, ohne_befehl in (
+        (" – Befehl audit_chain_backfill ausführen.", "."),
+        (" (audit_chain_backfill).", "."),
+        (": audit_chain_backfill ausführen)", ")"),
+    ):
+        meldung = meldung.replace(mit_befehl, ohne_befehl)
+    return meldung
+
+
 def scope_ids(spec: ChainSpec) -> list[Any]:
     """Alle Bereiche einer Kette, die Einträge oder einen Kettenkopf haben."""
     if spec.scope_field is None:

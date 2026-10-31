@@ -13,54 +13,51 @@
     </p>
 </div>
 
-{% if invitation_warnings %}
-<!-- Fristwarnung Ladungsversand (Issue #29) -->
-<div class="mb-6 rounded-xl border p-4 {% if invitation_overdue_count %}bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800{% else %}bg-amber-50 border-amber-200 dark:bg-amber-900/20 dark:border-amber-800{% endif %}">
-    <div class="flex items-center gap-2 mb-2">
-        <i data-lucide="alarm-clock" class="w-5 h-5 {% if invitation_overdue_count %}text-red-600{% else %}text-amber-600{% endif %}"></i>
-        <h2 class="font-semibold {% if invitation_overdue_count %}text-red-800 dark:text-red-300{% else %}text-amber-800 dark:text-amber-300{% endif %}">
+{% if invitation_warnings or overdue_resolutions %}
+<!-- Fristen (Issues #29, #37, #745): eine Karte statt zweier Warnkästen, verstrichene Fristen bleiben rot -->
+<div class="mb-6 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 divide-y divide-gray-200 dark:divide-gray-700" data-testid="start-fristen">
+    {% if invitation_warnings %}
+    <section class="px-6 py-4">
+        <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <i data-lucide="alarm-clock" class="w-5 h-5 {% if invitation_overdue_count %}text-red-600 dark:text-red-400{% else %}text-amber-500{% endif %}" aria-hidden="true"></i>
             Ladungsfristen im Blick
         </h2>
-    </div>
-    <ul class="space-y-1">
-        {% for meeting in invitation_warnings %}
-        <li class="text-sm {% if meeting.invitation_overdue %}text-red-700 dark:text-red-400{% else %}text-amber-700 dark:text-amber-400{% endif %}">
-            <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="hover:underline font-medium">{{ meeting.name }}</a>
-            ({{ meeting.organization.name }}, Sitzung am {{ meeting.start|date:"d.m.Y" }}):
-            {% if meeting.invitation_overdue %}
-            Ladungsfrist verstrichen — musste bis {{ meeting.invitation_deadline|date:"d.m." }} raus!
-            {% else %}
-            Ladung muss bis {{ meeting.invitation_deadline|date:"d.m." }} raus.
-            {% endif %}
-        </li>
-        {% endfor %}
-    </ul>
-</div>
-{% endif %}
-
-{% if overdue_resolutions %}
-<!-- Beschlusskontrolle: überfällige Beschlüsse (Issue #37) -->
-<div class="mb-6 rounded-xl border p-4 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800">
-    <div class="flex items-center justify-between gap-2 mb-2 flex-wrap">
-        <div class="flex items-center gap-2">
-            <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600"></i>
-            <h2 class="font-semibold text-red-800 dark:text-red-300">
+        <ul class="mt-2 space-y-1">
+            {% for meeting in invitation_warnings %}
+            <li class="text-sm text-gray-600 dark:text-gray-400">
+                <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="font-medium text-gray-900 dark:text-white hover:underline">{{ meeting.name }}</a>
+                ({{ meeting.organization.name }}, Sitzung am {{ meeting.start|date:"d.m.Y" }}):
+                {% if meeting.invitation_overdue %}
+                <span class="font-medium text-red-700 dark:text-red-400">Ladungsfrist verstrichen — musste bis {{ meeting.invitation_deadline|date:"d.m." }} raus!</span>
+                {% else %}
+                Ladung muss bis {{ meeting.invitation_deadline|date:"d.m." }} raus.
+                {% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+    {% if overdue_resolutions %}
+    <section class="px-6 py-4">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+            <h2 class="font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="w-5 h-5 text-red-600 dark:text-red-400" aria-hidden="true"></i>
                 Überfällige Beschlüsse ({{ overdue_resolutions_count }})
             </h2>
+            <a href="{% url 'session:resolutions' tenant_slug=tenant_slug %}?overdue=1" class="text-sm text-primary-600 dark:text-primary-400 hover:underline">Zur Beschlusskontrolle</a>
         </div>
-        <a href="{% url 'session:resolutions' tenant_slug=tenant_slug %}?overdue=1"
-           class="text-sm text-red-700 dark:text-red-400 hover:underline">Zur Beschlusskontrolle</a>
-    </div>
-    <ul class="space-y-1">
-        {% for item in overdue_resolutions %}
-        <li class="text-sm text-red-700 dark:text-red-400">
-            <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=item.meeting_id %}" class="hover:underline font-medium">
-                {% if item.resolution_number %}{{ item.resolution_number }}{% else %}TOP {{ item.number }}{% endif %}: {{ item.name }}
-            </a>
-            ({{ item.meeting.organization.name }}) — Frist {{ item.implementation_deadline|date:"d.m.Y" }} verstrichen{% if item.implementation_recipient %}, zuständig: {{ item.implementation_recipient }}{% endif %}
-        </li>
-        {% endfor %}
-    </ul>
+        <ul class="mt-2 space-y-1">
+            {% for item in overdue_resolutions %}
+            <li class="text-sm text-gray-600 dark:text-gray-400">
+                <a href="{% url 'session:meeting_detail' tenant_slug=tenant_slug meeting_id=item.meeting_id %}" class="font-medium text-gray-900 dark:text-white hover:underline">
+                    {% if item.resolution_number %}{{ item.resolution_number }}{% else %}TOP {{ item.number }}{% endif %}: {{ item.name }}
+                </a>
+                ({{ item.meeting.organization.name }}) — <span class="font-medium text-red-700 dark:text-red-400">Frist {{ item.implementation_deadline|date:"d.m.Y" }} verstrichen</span>{% if item.implementation_recipient %}, zuständig: {{ item.implementation_recipient }}{% endif %}
+            </li>
+            {% endfor %}
+        </ul>
+    </section>
+    {% endif %}
 </div>
 {% endif %}
 

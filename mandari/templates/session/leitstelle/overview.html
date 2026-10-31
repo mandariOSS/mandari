@@ -16,11 +16,11 @@ aller Mandanten. Regeln zu Sichtbarkeit und Protokoll: apps/session/services/lei
 <c-layout.page-header title="Leitstelle {{ group.name }}"
                       subtitle="{{ accesses|length }} Mandant{{ accesses|length|pluralize:'en' }} · Stand {{ stand|date:'d.m.Y, H:i' }} Uhr" />
 
-<c-ui.alert variant="info" icon="shield-check" class="mb-6">
+<p class="mb-6 max-w-3xl text-sm text-gray-600 dark:text-gray-400">
     Titel nichtöffentlicher Vorgänge sehen Sie nur in Mandanten, in denen Sie selbst das Sichtrecht haben; sonst
     erscheinen sie als „Nichtöffentlich“. Links führen nur in Mandanten, in denen Sie Mitglied sind. Jeder Aufruf
     wird im Protokoll der Mandanten festgehalten.
-</c-ui.alert>
+</p>
 
 <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6" data-testid="leitstelle-kennzahlen">
     <c-ui.kpi-tile label="Vorlagen in Prüfung" value="{{ overview.totals.papers_review }}" tone="blue" />
@@ -51,8 +51,8 @@ aller Mandanten. Regeln zu Sichtbarkeit und Protokoll: apps/session/services/lei
     {% include "session/leitstelle/_rows.html" with rows=overview.meetings total=overview.totals.meetings_upcoming empty="Keine Sitzungen in den nächsten Wochen." date_label="am" %}
 </c-ui.card>
 {% else %}
-<c-ui.alert variant="info" class="mt-6">
+<p class="mt-6 max-w-3xl text-sm text-gray-600 dark:text-gray-400">
     Ihre Gruppenrolle umfasst nur die Kennzahlen. Arbeitsvorräte, Fristen und die Suche sieht die Gruppenrolle „Leitstelle“.
-</c-ui.alert>
+</p>
 {% endif %}
 {% endblock %}

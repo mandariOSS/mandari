@@ -22,10 +22,10 @@
         </p>
     </div>
 
-    <!-- NRW-Hinweis -->
-    <div class="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4 text-sm text-blue-800 dark:text-blue-300">
-        <p class="font-semibold mb-1 flex items-center gap-2"><i data-lucide="info" class="w-4 h-4"></i> EntschVO NRW (Stand 2025)</p>
-        <p>
+    <!-- NRW-Hinweis: aufklappbar statt Hinweiskasten (Issue #745), Text unverändert -->
+    <details class="text-sm text-gray-700 dark:text-gray-300" data-testid="pauschalen-nrw">
+        <summary class="cursor-pointer font-medium text-primary-600 dark:text-primary-400 hover:underline">Sätze nach EntschVO NRW (Stand 2025)</summary>
+        <p class="mt-2 max-w-3xl">
             Die Aufwandsentschädigung wird als <strong>Vollpauschale</strong> oder als
             <strong>Teilpauschale + Sitzungsgeld</strong> (26,00 €/Sitzung, max. 2/Tag) gezahlt —
             Beträge nach Gemeindegröße (§ 2). Funktionszulagen sind Vielfache der Vollpauschale
@@ -33,7 +33,7 @@
             stellv. Bürgermeister:in 3-fach/1,5-fach. Die Sätze steigen seit 2025 jährlich um 2 % —
             bitte jeweils zum Jahreswechsel im Katalog anpassen.
         </p>
-    </div>
+    </details>
 
     <!-- Katalog -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden">

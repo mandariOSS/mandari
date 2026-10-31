@@ -184,11 +184,14 @@ class AuditLogExportView(SessionViewMixin, View):
 
         count = audit_log_service.period_queryset(self.session_tenant, date_from, date_to).count()
         if count > settings.AUDIT_EXPORT_MAX_ROWS:
+            # Befehle für den Betrieb nennen die Meldungen nur der Administration (Issue #745)
+            betrieb = SessionPermissionChecker(self.session_user).sieht_betriebshinweise
+            befehl = " mit dem Befehl export_audit_log" if betrieb else ""
             messages.error(
                 request,
                 f"Der Zeitraum umfasst {count} Einträge – mehr als {settings.AUDIT_EXPORT_MAX_ROWS} lassen sich hier "
-                "nicht exportieren. Bitte einen kürzeren Zeitraum wählen; der Betrieb kann größere Exporte mit dem "
-                "Befehl export_audit_log erstellen.",
+                f"nicht exportieren. Bitte einen kürzeren Zeitraum wählen; der Betrieb kann größere Exporte{befehl} "
+                "erstellen.",
             )
             return redirect("session:audit_log", tenant_slug=tenant_slug)
 
@@ -231,11 +234,13 @@ class AuditLogVerifyView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug):
         tenant = self.session_tenant
+        # Befehle für den Betrieb nennen die Meldungen nur der Administration (Issue #745)
+        betrieb = SessionPermissionChecker(self.session_user).sieht_betriebshinweise
         if SessionAuditLog.objects.filter(tenant=tenant).count() > UI_VERIFY_MAX_ENTRIES:
+            befehl = " mit dem Befehl verify_audit_chain" if betrieb else ""
             messages.warning(
                 request,
-                "Das Protokoll ist zu groß für eine Prüfung in der Oberfläche. Der Betrieb prüft es mit dem Befehl "
-                "verify_audit_chain.",
+                f"Das Protokoll ist zu groß für eine Prüfung in der Oberfläche. Der Betrieb prüft es{befehl}.",
             )
             return redirect("session:audit_log", tenant_slug=tenant_slug)
 
@@ -250,7 +255,7 @@ class AuditLogVerifyView(SessionViewMixin, View):
         if result.ok:
             text = f"Die Hash-Kette ist intakt ({result.checked} Einträge geprüft)."
             for warning in result.warnings:
-                messages.warning(request, warning)
+                messages.warning(request, warning if betrieb else audit_chain.ohne_betriebshinweis(warning))
             messages.success(request, text)
         else:
             messages.error(
