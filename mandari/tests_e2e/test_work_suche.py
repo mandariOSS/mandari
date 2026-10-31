@@ -194,3 +194,27 @@ def test_gremium_und_reiter_filtern_per_htmx(
     assert "gremium=Ausschuss" in page.url, "Der Reiter behält den Gremium-Filter"
     expect(page.locator("#treffer-liste > li")).to_have_count(5)
     problems.assert_clean("Suche filtern")
+
+
+def test_filter_schliessen_bei_klick_daneben(
+    page: Any, goto: Any, login: Any, suche: dict[str, Any], problems: BrowserProblems
+) -> None:
+    """Issue #1018: Offene Filter blieben stehen, bis man ihren Knopf noch einmal traf."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    login(suche["admin"].user.email, PASSWORD)
+    goto(f"/work/{suche['slug']}/ris/search/?q=Stadtpark")
+    art = page.locator("details[data-aussen-schliessen]").filter(has=page.locator("summary", has_text="Art"))
+    zeitraum = page.locator("details[data-aussen-schliessen]").filter(has=page.locator("summary", has_text="Zeitraum"))
+
+    art.locator("summary").click()
+    expect(art.locator("fieldset")).to_be_visible()
+    art.locator("legend").evaluate("(el) => el.parentElement.click()")
+    expect(art.locator("fieldset")).to_be_visible()
+
+    # Der nächste Filter schließt den ersten, ein Klick daneben auch den zweiten
+    zeitraum.locator("summary").click()
+    expect(zeitraum.locator("fieldset")).to_be_visible()
+    expect(art.locator("fieldset")).to_be_hidden()
+    page.locator("#suche-zahl").click()
+    expect(zeitraum.locator("fieldset")).to_be_hidden()
+    problems.assert_clean("Suche: Filter schließen")

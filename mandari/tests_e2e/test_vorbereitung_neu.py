@@ -216,6 +216,25 @@ class TestVorbereitungNeu:
         expect(page.locator(f"#nav-item-{letzter.id}")).to_be_in_viewport()
         problems.assert_clean("Vorbereitung mit 81 TOPs")
 
+    @pytest.mark.parametrize("breite", [1440, 390])
+    def test_meldung_liegt_ueber_der_leiste(
+        self, page: Any, goto: Any, login: Any, admin: Any, schalter_an: None, tmp_path: Path, breite: int
+    ) -> None:
+        """Issue #1018: Unten rechts lag sie sonst auf dem TOP-Wechsel und nahm ihm die Klicks."""
+        meeting = _sitzung(admin, tmp_path)
+        page.set_viewport_size({"width": breite, "height": 844 if breite == 390 else 900})
+        login(admin.user.email, PASSWORD)
+        goto(f"/work/{admin.organization.slug}/meetings/{meeting.id}/prepare/")
+        wait_for_component(page, "vorbereitung")
+        page.evaluate("() => { window.showToast('Die Position wurde gespeichert.', 'success') }")
+        meldung = page.locator("[x-data='toastManager'] [x-show='toast.visible']")
+        expect(meldung).to_be_visible()
+        page.wait_for_timeout(400)  # Einblenden abwarten
+        unten = meldung.bounding_box()
+        oben = page.locator(".vb-leiste").bounding_box()
+        assert unten and oben
+        assert unten["y"] + unten["height"] <= oben["y"], f"Die Meldung {unten} liegt auf der Leiste {oben}"
+
     def test_handy_ein_top_je_bildschirm(
         self,
         page: Any,

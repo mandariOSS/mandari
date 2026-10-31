@@ -2,6 +2,8 @@
     /* Constrain entire layout to viewport height so sidebar stays fixed */
     .work-main {
         height: 100vh !important;
+        /* Sichtbare Höhe: 100vh reicht am Handy unter die Adressleiste (#1018) */
+        height: 100dvh !important;
         min-height: 0 !important;
         overflow: hidden !important;
     }
