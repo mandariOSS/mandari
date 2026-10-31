@@ -12,7 +12,7 @@ session/audit/_kontrolle.html. Eingebunden aus session/neu/audit.html.
             <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Letzter Eintrag Nr. {{ chain.kopf_nr }}</p>
             {% elif not demo_instance %}
             <p>{% include "session/neu/_status.html" with wert="review" text="Altbestand noch nicht verkettet" %}</p>
-            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if permission_checker.sieht_betriebshinweise %}Der Betrieb verkettet ihn mit audit_chain_backfill.{% else %}Die Administration kann die Verkettung veranlassen.{% endif %}</p>
+            <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Der Betrieb verkettet ihn mit audit_chain_backfill.</p>
             {% endif %}
             {% if chain.kopf_hash %}<p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 break-all">Kettenkopf: <code>{{ chain.kopf_hash }}</code></p>{% endif %}
             {% if chain.anker_nr %}

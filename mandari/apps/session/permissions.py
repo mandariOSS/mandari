@@ -234,8 +234,8 @@ class SessionPermissionChecker:
     @property
     def sieht_betriebshinweise(self) -> bool:
         """
-        Hinweise für den Betrieb (Befehle wie ``audit_chain_backfill``, Issue #745): nur für die Administration des
-        Mandanten und nie in der öffentlichen Demo; alle anderen können mit ihnen nichts anfangen.
+        Befehle für den Betrieb auf Seiten der Verwaltung (Issue #745): nur für die Administration des Mandanten und
+        nie in der öffentlichen Demo. Die Audit-Seiten nennen ihre Befehle allen mit Kontrollrecht, außer in der Demo.
         """
         return is_admin_user(self.session_user) and not ist_demo()
 

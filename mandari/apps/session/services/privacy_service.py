@@ -173,6 +173,7 @@ def run_privacy_purge(
         "archives_deleted": [],
         "np_meetings_cleared": 0,
         "skipped": [],
+        "audit_not_chained": False,
         "dry_run": dry_run,
     }
 
@@ -270,6 +271,7 @@ def run_privacy_purge(
             if outcome.deferred:
                 stats["skipped"].append(f"Audit-Log: {outcome.deferred} Einträge folgen beim nächsten Lauf")
             if outcome.not_chained:
+                stats["audit_not_chained"] = True
                 stats["skipped"].append("Audit-Log (Altbestand noch nicht verkettet: audit_chain_backfill ausführen)")
             if outcome.error:
                 logger.error("Audit-Log von %s nicht gelöscht: %s", tenant.slug, outcome.error)

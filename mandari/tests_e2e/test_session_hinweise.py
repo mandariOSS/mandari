@@ -3,8 +3,8 @@
 Hinweise des Sitzungsdienstes in der Demo (Issue #745), im Browser und in beiden Rahmen.
 
 Mit den Demo-Daten (setup_demo_environment) und eingeschaltetem Demo-Schalter: Start, Anträge, Einstellungen,
-Datenschutz und Audit-Log zeigen keine Betriebshinweise, die Fristen auf dem Start bleiben, und der Hinweis der Demo
-steht weiter auf der Seite. Screenshots aus beiden Rahmen landen als CI-Artefakt (Vorher/Nachher im PR).
+Datenschutz, Audit-Log, Pauschalen und das Sitzungsformular zeigen keine Betriebshinweise, die Fristen auf dem Start
+bleiben, und der Hinweis der Demo steht weiter auf der Seite. Screenshots aus beiden Rahmen landen als CI-Artefakt (Vorher/Nachher im PR).
 """
 
 from __future__ import annotations
@@ -31,6 +31,8 @@ SEITEN = {
     "einstellungen": "settings",
     "datenschutz": "privacy_settings",
     "audit": "audit_log",
+    "pauschalen": "allowances_monthly",
+    "sitzung-anlegen": "meeting_create",
 }
 BETRIEBSHINWEISE = ("audit_chain_backfill", "send_session_reminders", "session_privacy_purge", "manage.py")
 

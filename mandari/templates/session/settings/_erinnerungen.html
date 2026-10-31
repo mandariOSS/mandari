@@ -88,13 +88,8 @@ Einstellungen (Anlass, Empfängerkreis, Zeitpunkte); sie gelten für den täglic
             </div>
         </fieldset>
         {% endwith %}
-        <div class="flex items-center justify-between gap-3 flex-wrap">
-            {% if permission_checker.sieht_betriebshinweise %}
-            <p class="text-xs text-gray-500 dark:text-gray-400">
-                Voraussetzung: Der tägliche Erinnerungslauf (<code>send_session_reminders</code>) ist im Betrieb eingerichtet.
-            </p>
-            {% endif %}
-            <c-ui.button type="submit" size="sm" icon="save" class="ml-auto">Speichern</c-ui.button>
+        <div class="flex justify-end">
+            <c-ui.button type="submit" size="sm" icon="save">Speichern</c-ui.button>
         </div>
     </form>
 </div>

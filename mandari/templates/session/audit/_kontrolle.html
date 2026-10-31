@@ -8,7 +8,7 @@
                 {% if chain.verkettung_aktiv %}
                 Verkettung aktiv – letzter Eintrag Nr. {{ chain.kopf_nr }}
                 {% else %}
-                <span class="text-amber-700 dark:text-amber-400">Altbestand noch nicht verkettet{% if permission_checker.sieht_betriebshinweise %} (Betrieb: audit_chain_backfill){% else %}; die Administration kann die Verkettung veranlassen{% endif %}</span>
+                <span class="text-amber-700 dark:text-amber-400">Altbestand noch nicht verkettet (Betrieb: audit_chain_backfill)</span>
                 {% endif %}
             </p>
             {% endif %}

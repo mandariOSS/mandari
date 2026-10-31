@@ -1,4 +1,5 @@
 {% extends "session/base_session.html" %}
+{% load hilfe_tags %}
 
 {% block page_title %}Datenschutz{% endblock %}
 
@@ -27,13 +28,10 @@
             AVV, TOM und Löschkonzept
         </h2>
         <p class="text-sm text-gray-600 dark:text-gray-400">
-            Die Muster-Dokumente liegen im Repository unter
-            <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">docs/DSGVO_AVV_MUSTER.md</code>
-            (Auftragsverarbeitungsvertrag),
-            <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">docs/DSGVO_TOM.md</code>
-            (technische und organisatorische Maßnahmen) und
-            <code class="text-xs bg-gray-100 dark:bg-gray-700 px-1 py-0.5 rounded">docs/DSGVO_LOESCHKONZEPT.md</code>
-            (Löschkonzept und Fristen).
+            Die Muster-Dokumente stehen in der Dokumentation:
+            <c-ui.textlink href="{% hilfe_url 'datenschutz_avv' %}" extern>Auftragsverarbeitungsvertrag</c-ui.textlink>,
+            <c-ui.textlink href="{% hilfe_url 'datenschutz_tom' %}" extern>technische und organisatorische Maßnahmen</c-ui.textlink> und
+            <c-ui.textlink href="{% hilfe_url 'datenschutz_loeschkonzept' %}" extern>Löschkonzept und Fristen</c-ui.textlink>.
         </p>
     </div>
 

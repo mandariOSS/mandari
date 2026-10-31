@@ -6,6 +6,7 @@ Hinweisseite), rechts der Anonymisierungs- und Löschlauf (Probelauf, Löschlauf
 Betroffenenauskunft nach Art. 15 DSGVO (Formular mit data-submit-to) und die Muster-Unterlagen. Keine farbigen Knöpfe,
 keine Symbolkacheln. Formulare und Felder wie session/settings/privacy.html; Kontext PrivacySettingsView.
 {% endcomment %}
+{% load hilfe_tags %}
 
 {% block page_title %}Datenschutz{% endblock %}
 {% block gestaltung %}neu{% endblock %}
@@ -75,7 +76,7 @@ keine Symbolkacheln. Formulare und Felder wie session/settings/privacy.html; Kon
             </c-rahmen.abschnitt>
 
             <c-rahmen.abschnitt titel="AVV, TOM und Löschkonzept" titel_id="unterlagen-titel">
-                <c-rahmen.satz eng>Die Muster liegen im Repository unter <code class="font-mono text-[0.8125rem]">docs/DSGVO_AVV_MUSTER.md</code> (Auftragsverarbeitungsvertrag), <code class="font-mono text-[0.8125rem]">docs/DSGVO_TOM.md</code> (technische und organisatorische Maßnahmen) und <code class="font-mono text-[0.8125rem]">docs/DSGVO_LOESCHKONZEPT.md</code> (Löschkonzept und Fristen).</c-rahmen.satz>
+                <c-rahmen.satz eng>Die Muster stehen in der Dokumentation: <c-ui.textlink href="{% hilfe_url 'datenschutz_avv' %}" extern>Auftragsverarbeitungsvertrag</c-ui.textlink>, <c-ui.textlink href="{% hilfe_url 'datenschutz_tom' %}" extern>technische und organisatorische Maßnahmen</c-ui.textlink> und <c-ui.textlink href="{% hilfe_url 'datenschutz_loeschkonzept' %}" extern>Löschkonzept und Fristen</c-ui.textlink>.</c-rahmen.satz>
             </c-rahmen.abschnitt>
         </div>
     </div>
