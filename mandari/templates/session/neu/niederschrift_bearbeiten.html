@@ -68,7 +68,7 @@ session/protocols/form.html.
     </c-rahmen.abschnitt>
 
     {# Speichern bleibt beim Scrollen sichtbar, am Handy über der festen Leiste unten (#1018); „weiter bearbeiten“ zuerst (Eingabetaste) #}
-    <div class="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] lg:bottom-0 z-10 -mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-200 dark:border-gray-800 bg-band-hell py-3">
+    <div data-meldungen-darueber class="sticky bottom-[calc(4rem+env(safe-area-inset-bottom))] lg:bottom-0 z-10 -mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-gray-200 dark:border-gray-800 bg-band-hell py-3">
         <c-ui.button type="submit" name="continue" value="1" variant="secondary" size="sm" icon="save">Speichern und weiter bearbeiten</c-ui.button>
         <c-ui.button type="submit" size="sm" icon="check">Speichern</c-ui.button>
         <c-ui.textlink href="{% url 'session:meeting_protocol' tenant_slug=tenant_slug meeting_id=meeting.id %}" class="text-sm">Abbrechen</c-ui.textlink>

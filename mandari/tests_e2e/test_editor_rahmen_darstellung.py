@@ -190,7 +190,8 @@ def test_meldungen_verdecken_modus_knopf_und_leiste_nicht(
     page.wait_for_timeout(400)  # Einblenden abwarten
 
     modus = _box(page.locator("[data-menue-knopf=modus]"))
-    leiste = page.locator("nav[aria-label='Hauptbereiche']:visible")
+    # Am Handy steht über der Leiste „Hauptbereiche“ noch der Knopf „Kommentare“
+    leiste = page.locator(".ke-mobil-leiste:visible")
     for meldung in meldungen.all():
         box = _box(meldung)
         assert not _ueberlappen(box, modus), f"Meldung {box} verdeckt den Modus-Knopf {modus}"

@@ -434,3 +434,31 @@ def test_live_mitschreiben_und_erwaehnen(
     assert Notification.objects.filter(
         recipient=vorsitz, notification_type=NotificationType.FACTION_MENTION, actor=schrift
     ).exists()
+
+
+@pytest.mark.parametrize("breite", [1920, 1440, 1280, 390])
+def test_meldung_blockiert_den_top_wechsel_nicht(
+    page: Any, live_server: Any, login: Any, org: Any, sitzung: Any, breite: int
+) -> None:
+    """Issue #1018: Nach „Erfassen“ lag die Meldung auf „Nächster TOP“ und nahm den Klick 5 s lang an."""
+    vorsitz, meeting, tops = sitzung
+    page.set_viewport_size({"width": breite, "height": 844 if breite == 390 else 900})
+    login(vorsitz.user.email, PASSWORD)
+    oeffnen(page, live_server, org, meeting, tops[1])
+
+    leiste = page.locator("#fs-unten")
+    if breite == 390:
+        leiste.get_by_role("button", name="Beschluss", exact=True).click()
+    leiste.get_by_role("button", name="Erfassen").click()
+    meldung = page.locator("[x-data='toastManager'] [x-show='toast.visible']").filter(has_text="Beschluss erfasst")
+    expect(meldung).to_be_visible()
+    page.wait_for_timeout(400)  # Einblenden und Austausch der Leiste abwarten
+
+    unten = meldung.bounding_box()
+    oben = leiste.bounding_box()
+    assert unten and oben
+    assert unten["y"] + unten["height"] <= oben["y"], f"Die Meldung {unten} liegt auf der Leiste {oben}"
+    # Der Klick darf nicht auf die Meldung treffen, solange sie steht
+    leiste.locator("[data-nav=nach]").click(timeout=2000)
+    expect(page.locator("#fs-top-titel")).to_contain_text("Termine")
+    expect(meldung).to_be_visible()
