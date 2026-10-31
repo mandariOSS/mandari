@@ -24,6 +24,7 @@ from apps.common.params import uuid_param
 from apps.work.motions.freigaben import guest_download_rows
 from apps.work.rahmen import NeueVorlageMixin
 
+from ..audit import locked_object_ids
 from ..models import FactionAuditLog
 from ..visibility import LOCKED_PLACEHOLDER, can_view_internal
 
@@ -77,9 +78,15 @@ class FactionAuditLogView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         sworn = can_view_internal(self.membership)
         # Gast-Downloads (Issue #582): Titel und Dateiname nur, wer das Dokument sieht, sonst gesperrt
         downloads = guest_download_rows(page_entries, self.membership)
+        # Auch frühere Einträge eines TOPs, der inzwischen nichtöffentlich ist (Issue #1160)
+        gesperrte_objekte = (
+            set()
+            if sworn
+            else locked_object_ids(self.organization, {entry.object_id for entry in page_entries if entry.object_id})
+        )
         entries = []
         for entry in page_entries:
-            locked = entry.is_internal and not sworn
+            locked = not sworn and (entry.is_internal or entry.object_id in gesperrte_objekte)
             object_repr = entry.object_repr
             changes = entry.changes
             details: list[tuple[str, str]] = []

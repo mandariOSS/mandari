@@ -15,6 +15,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import DOCUMENTS, MB, validate_upload
 from apps.work.files import attachment_response
 
+from .. import agenda
 from ..models import (
     FactionAgendaItem,
     FactionAgendaItemAttachment,
@@ -307,8 +308,13 @@ class FactionItemPanelActionView(WorkViewMixin, View):
 
             if visibility == "internal" and not can_view_internal(self.membership):
                 return HttpResponse(status=403)
-            item.visibility = visibility
+        else:
+            visibility = None
 
+        if visibility:
+            # Nummern beider Teile und Unterpunkte wie beim Ziehen (Issue #1160). Vor dem Speichern: Ein neuer Titel
+            # steht im Änderungsverlauf sonst noch als öffentlich.
+            agenda.move_to_part(meeting, item, visibility)
         item.save()
         return self._none_response(message="Gespeichert")
 

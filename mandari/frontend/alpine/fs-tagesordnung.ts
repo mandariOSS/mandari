@@ -5,6 +5,8 @@
  * - **Ziehen:** TOPs der obersten Ebene am Griff verschieben, je Teil (öffentlich, nichtöffentlich). SortableJS wie
  *   das Aufgabenboard (Vendor-Skript, global `window.Sortable`). Nach dem Ablegen geht die neue Stelle an die
  *   bisherige Aktion `move_item` (`direction=to`, `position` ab 0); der Server antwortet mit der neuen Tagesordnung.
+ *   Auch in den anderen Teil (`teil`, Issue #1160): Aus dem nichtöffentlichen in den öffentlichen Teil erst nach einer
+ *   Rückfrage, denn dann sehen ihn alle Mitglieder. Scheitert das Speichern, lädt die Tagesordnung den Stand des Servers.
  *   Tastatur: Griff fokussieren, Pfeil hoch oder runter (`move_item` up/down); der Fokus bleibt am Griff, eine
  *   Ansage nennt die neue Nummer. Die Einträge „Nach oben“/„Nach unten“ im Menü je TOP bleiben.
  * - **Sofort speichern:** Titel und Beschreibung des aufgeklappten TOPs speichern beim Verlassen des Felds bzw. mit
@@ -46,6 +48,8 @@ const GESPEICHERT_MS = 2500
 
 interface ZiehEreignis {
   item: HTMLElement
+  from: HTMLElement
+  to: HTMLElement
   oldIndex?: number
   newIndex?: number
 }
@@ -53,11 +57,15 @@ interface ZiehEreignis {
 type SortableKlasse = new (
   el: HTMLElement,
   optionen: {
+    group: string
     handle: string
     draggable: string
+    emptyInsertThreshold: number
     animation: number
     ghostClass: string
     forceFallback: boolean
+    fallbackOnBody: boolean
+    onStart: () => void
     onEnd: (event: ZiehEreignis) => void
   },
 ) => unknown
@@ -166,21 +174,74 @@ export const fsTagesordnung = defineComponent(() => {
       if (!Sortable) return
       for (const liste of Array.from(this.$el.querySelectorAll<HTMLElement>('ol.fs-tops[data-ziehbar]'))) {
         new Sortable(liste, {
+          // Beide Teile gehören zusammen; den nichtöffentlichen zeigt der Server nur Vereidigten
+          group: 'fs-tagesordnung',
           handle: '.fs-griff',
           draggable: '[data-verschiebbar]',
+          emptyInsertThreshold: 24,
           animation: 150,
           ghostClass: 'bewegt',
           // Ziehen über Maus-/Zeigerereignisse statt HTML5 Drag and Drop: gleiches Verhalten in allen Browsern
           forceFallback: true,
+          fallbackOnBody: true,
+          onStart: () => this.$el.classList.add('fs-zieht'),
           onEnd: (event) => {
-            if (event.oldIndex === event.newIndex) return
-            const zeilen = Array.from(liste.querySelectorAll<HTMLElement>(':scope > [data-verschiebbar]'))
-            const position = zeilen.indexOf(event.item)
-            const id = event.item.dataset.id || ''
-            if (id && position >= 0) this.verschieben(id, { direction: 'to', position: String(position) }, false)
+            this.$el.classList.remove('fs-zieht')
+            void this.abgelegt(event)
           },
         })
       }
+    },
+
+    /** Nach dem Ablegen: neue Stelle speichern, beim Wechsel des Teils mit dem Ziel-Teil */
+    async abgelegt(event: ZiehEreignis): Promise<void> {
+      const andererTeil = event.from !== event.to
+      if (!andererTeil && event.oldIndex === event.newIndex) return
+      const zeilen = Array.from(event.to.querySelectorAll<HTMLElement>(':scope > [data-verschiebbar]'))
+      const position = zeilen.indexOf(event.item)
+      const id = event.item.dataset.id || ''
+      if (!id || position < 0) return
+      const werte: Record<string, string> = { direction: 'to', position: String(position) }
+      if (andererTeil) {
+        const teil = event.to.dataset.teil || ''
+        if (teil === 'public') {
+          const bestaetigt = await window.confirmAction({
+            title: 'In den öffentlichen Teil verschieben?',
+            message:
+              'Dann sehen alle Mitglieder diesen TOP, auch Nicht-Vereidigte. Er steht auch in der nächsten Aktualisierung.',
+            confirmText: 'Verschieben',
+            variant: 'danger',
+          })
+          if (!bestaetigt) {
+            this.standNeuLaden()
+            return
+          }
+        }
+        werte.teil = teil
+      }
+      this.beiFehlerNeuLaden()
+      this.verschieben(id, werte, false)
+      if (andererTeil) {
+        this.ansage =
+          werte.teil === 'internal'
+            ? 'TOP in den nichtöffentlichen Teil verschoben.'
+            : 'TOP in den öffentlichen Teil verschoben.'
+      }
+    },
+
+    /** Die Zeile liegt schon am neuen Platz: Scheitert das Speichern, zeigt die Seite wieder den Stand des Servers */
+    beiFehlerNeuLaden(): void {
+      document.body.addEventListener(
+        'htmx:afterRequest',
+        (event: Event) => {
+          if (!(event as CustomEvent<{ successful?: boolean }>).detail?.successful) this.standNeuLaden()
+        },
+        { once: true },
+      )
+    },
+
+    standNeuLaden(): void {
+      window.htmx.trigger(document.body, 'agenda-refresh')
     },
 
     /** Pfeil hoch oder runter am Griff */

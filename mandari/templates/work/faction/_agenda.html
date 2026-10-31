@@ -158,6 +158,12 @@
                     {% csrf_token %}
                     <input type="hidden" name="action" value="accept_proposal">
                     <input type="hidden" name="item_id" value="{{ item.id }}">
+                    {% if can_view_internal %}
+                    <c-form.select name="visibility" id="annehmen-teil-{{ item.id }}" label="Teil" dicht zeile class="mb-2">
+                        <option value="public"{% if item.visibility != 'internal' %} selected{% endif %}>Öffentlich</option>
+                        <option value="internal"{% if item.visibility == 'internal' %} selected{% endif %}>Nichtöffentlich</option>
+                    </c-form.select>
+                    {% endif %}
                     <c-ui.button type="submit" size="sm" variant="success" icon="check">Annehmen</c-ui.button>
                 </form>
                 <form hx-post="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}"

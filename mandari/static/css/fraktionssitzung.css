@@ -1600,6 +1600,8 @@
   .fs-griff:focus-visible { outline: 2px solid var(--wf-work); outline-offset: 1px; }
   .fs-griff svg { width: 16px; height: 16px; }
   .fs-top.bewegt { background: var(--wf-work-flaeche); }
+  /* Beim Ziehen bietet auch ein leerer Teil eine Ablage (Issue #1160) */
+  .fs-zieht ol.fs-tops[data-ziehbar]:not(:has(> .fs-top)) { min-height: 44px; margin-top: 6px; border: 1px dashed var(--wf-linie); border-radius: 6px; }
   .fs-speicherstand { display: flex; align-items: baseline; gap: 8px; min-height: 20px; margin: 8px 0 0; font-size: 12.5px; }
   .fs-speicherstand .fs-status { margin-left: 0; white-space: normal; flex-wrap: wrap; }
   .fs-speicherstand .wf-textlink { font-size: 12.5px; }

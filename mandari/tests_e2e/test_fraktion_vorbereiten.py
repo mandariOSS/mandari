@@ -7,6 +7,7 @@ auch wenn der Server kurz nicht erreichbar ist (Eingabe bleibt im Browser, wird 
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 
@@ -84,6 +85,65 @@ def test_tops_ziehen_und_mit_pfeiltasten_verschieben(
     nummern = dict(FactionAgendaItem.objects.filter(meeting=meeting).values_list("title", "number"))
     assert nummern == {"Verkehr": "1", "Haushalt 2031": "2", "Presse": "3"}
     screenshot("fraktion_vorbereiten_ziehen_1440")
+
+
+def _ziehen(page: Any, griff: Any, ziel: Any) -> None:
+    griff.hover()
+    page.mouse.down()
+    griff_box = griff.bounding_box()
+    # Erst anheben, damit Sortable die Ablage vorbereitet und auch ein leerer Teil Höhe bekommt
+    page.mouse.move(griff_box["x"] + 6, griff_box["y"] + 14, steps=4)
+    expect(page.locator("[x-data^='fsTagesordnung']")).to_have_class(re.compile(r"\bfs-zieht\b"))
+    box = ziel.bounding_box()
+    page.mouse.move(box["x"] + 60, box["y"] + box["height"] / 2, steps=16)
+    page.mouse.up()
+
+
+def test_top_zwischen_oeffentlichem_und_nichtoeffentlichem_teil_ziehen(
+    page: Any, goto: Any, login: Any, admin: Any, problems: BrowserProblems, screenshot: Any
+) -> None:
+    """Issue #1160: auch in einen leeren Teil; aus dem nichtöffentlichen Teil heraus erst nach der Rückfrage."""
+    admin.is_sworn_in = True
+    admin.save(update_fields=["is_sworn_in"])
+    meeting = _sitzung(admin)
+    _oeffnen(page, goto, login, admin, meeting)
+    verkehr = FactionAgendaItem.objects.get(meeting=meeting, title="Verkehr")
+
+    # In den leeren nichtöffentlichen Teil
+    _ziehen(page, page.locator(f'[data-griff="{verkehr.pk}"]'), page.locator('ol[data-teil="internal"]'))
+    nichtoeffentlich = page.get_by_test_id("fs-teil-intern")
+    expect(nichtoeffentlich.locator(f"#top-{verkehr.pk} .nr")).to_have_text("NÖ 1")
+    verkehr.refresh_from_db()
+    assert verkehr.visibility == "internal" and verkehr.number == "NÖ 1"
+    expect(page.get_by_test_id("fs-teil-oeffentlich").locator(".fs-top-titel")).to_have_text(
+        ["Haushalt 2031", "Presse"]
+    )
+    assert FactionAgendaItem.objects.get(meeting=meeting, title="Presse").number == "2"
+    screenshot("fraktion_vorbereiten_teil_wechseln_1440")
+
+    # Zurück in den öffentlichen Teil: Abbrechen lässt ihn, wo er ist
+    wait_for_component(page, "fsTagesordnung")
+    ziel = page.get_by_test_id("fs-teil-oeffentlich").locator(".fs-top").first
+    _ziehen(page, page.locator(f'[data-griff="{verkehr.pk}"]'), ziel)
+    expect(page.get_by_text("auch Nicht-Vereidigte")).to_be_visible()
+    screenshot("fraktion_vorbereiten_teil_rueckfrage_1440")
+    page.get_by_role("button", name="Abbrechen", exact=True).click()
+    expect(nichtoeffentlich.locator(f"#top-{verkehr.pk}")).to_be_visible()
+    verkehr.refresh_from_db()
+    assert verkehr.visibility == "internal"
+
+    # Mit Bestätigung
+    wait_for_component(page, "fsTagesordnung")
+    ziel = page.get_by_test_id("fs-teil-oeffentlich").locator(".fs-top").first
+    _ziehen(page, page.locator(f'[data-griff="{verkehr.pk}"]'), ziel)
+    page.get_by_role("button", name="Verschieben", exact=True).click()
+    # Die Zeile liegt schon dort, erst die Antwort des Servers bringt die neue Nummer
+    expect(page.get_by_test_id("fs-teil-oeffentlich").locator(f"#top-{verkehr.pk} .nr")).to_have_text(
+        re.compile(r"^\d+$")
+    )
+    verkehr.refresh_from_db()
+    assert verkehr.visibility == "public"
+    problems.assert_clean("TOP zwischen den Teilen ziehen")
 
 
 def test_titel_und_beschreibung_sofort_speichern_auch_nach_stoerung(

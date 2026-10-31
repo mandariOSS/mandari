@@ -1082,7 +1082,7 @@ class AgendaProposalService:
         )
 
     @classmethod
-    def accept_proposal(cls, item, reviewed_by, assign_number: str = None):
+    def accept_proposal(cls, item, reviewed_by, assign_number: str = None, visibility: str | None = None):
         """
         Accept a proposed agenda item.
 
@@ -1090,6 +1090,8 @@ class AgendaProposalService:
             item: The FactionAgendaItem to accept
             reviewed_by: Membership of the reviewer
             assign_number: Optional TOP number to assign
+            visibility: Teil der Tagesordnung, wenn er vom Vorschlag abweicht (Issue #1160); die Prüfung der
+                Vereidigung liegt beim Aufrufer
 
         Returns:
             True if accepted, False if already processed
@@ -1109,6 +1111,10 @@ class AgendaProposalService:
             if current is None:
                 return False
 
+            # Vor der Annahme setzen: Ihr Eintrag im Änderungsverlauf gilt schon für den gewählten Teil
+            if visibility:
+                current.visibility = visibility
+
             # Nummer und Platz am Ende des jeweiligen Teils — ermittelt, solange der Vorschlag noch nicht mitzählt
             number = assign_number or agenda.next_number(item.meeting, current.visibility)
             order = agenda.next_order(item.meeting)
@@ -1117,7 +1123,7 @@ class AgendaProposalService:
                 return False
             current.number = number
             current.order = order
-            current.save(update_fields=["number", "order"])
+            current.save(update_fields=["number", "order", "visibility"])
             if not assign_number:
                 # Gleicht Altbestand aus, in dem offene oder abgelehnte Vorschläge noch mitgezählt wurden
                 agenda.renumber(item.meeting, current.visibility)
