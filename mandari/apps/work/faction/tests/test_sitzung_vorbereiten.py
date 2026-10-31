@@ -31,6 +31,7 @@ from django.utils import timezone
 
 from apps.tenants.models import Organization
 from apps.work.faction.models import FactionAgendaItem, FactionAttendance, FactionMeeting
+from apps.work.notifications.models import Notification, NotificationType
 
 pytestmark = pytest.mark.django_db
 
@@ -522,6 +523,196 @@ def test_aktualisierung_nach_aenderung(welt: dict[str, Any], client_for: Any) ->
     FactionAgendaItem.objects.create(meeting=welt["meeting"], title="Neu", number="3", visibility="public", order=9)
     html = _html(_seite(welt, client_for, "vorsitz"))
     assert "Tagesordnung geändert." in html and 'id="fs-aktualisieren"' in html
+
+
+# ---------------------------------------------------------------------------
+# TOP-Vorschläge nach dem Versand (Issue #1160)
+# ---------------------------------------------------------------------------
+
+OFFENER_VORSCHLAG = "Radweg am Musterweg"
+
+
+def _aufnehmen(
+    welt: dict[str, Any], client_for: Any, titel: str = OFFENER_VORSCHLAG, *, teil: str = "", **kopf: str
+) -> Any:
+    vorschlag = welt["meeting"].agenda_items.get(title=titel)
+    daten = {"action": "accept_proposal", "item_id": str(vorschlag.pk)}
+    if teil:
+        daten["visibility"] = teil
+    return client_for(welt["vorsitz"].user).post(_aktion(welt), daten, **kopf)
+
+
+def test_offene_vorschlaege_stehen_nach_dem_versand_auf_der_ersten_seite(welt: dict[str, Any], client_for: Any) -> None:
+    _einladen(welt, client_for)
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    assert 'data-modus="einladung"' in html
+    assert 'data-testid="fs-vorschlaege"' in html and OFFENER_VORSCHLAG in html
+    assert 'value="accept_proposal"' in html and 'value="reject_proposal"' in html
+
+
+def test_vorschlag_nach_dem_versand_wird_gespeichert_und_aufgenommen(welt: dict[str, Any], client_for: Any) -> None:
+    _einladen(welt, client_for)
+    titel = "Spielplatz im Südpark"
+    antwort = client_for(welt["sachkundig"].user).post(
+        _aktion(welt), {"action": "propose", "title": titel, "description": "Bitte beraten"}
+    )
+    assert antwort.status_code == 302
+    vorschlag = welt["meeting"].agenda_items.get(title=titel)
+    assert vorschlag.proposal_status == "proposed" and vorschlag.get_description_decrypted() == "Bitte beraten"
+    assert f"Ihr Vorschlag „{titel}“ wartet auf Genehmigung." in _html(_seite(welt, client_for, "sachkundig"))
+
+    assert titel in _html(_seite(welt, client_for, "vorsitz"))
+    assert _aufnehmen(welt, client_for, titel).status_code == 302
+    vorschlag.refresh_from_db()
+    assert vorschlag.proposal_status == "active" and vorschlag.number == "3"
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    assert "Tagesordnung geändert." in html and 'id="fs-aktualisieren"' in html
+    assert f'data-top-titel="{titel}"' in _html(_seite(welt, client_for, "rat"))
+
+
+def test_vor_dem_versand_eingegangener_vorschlag_zaehlt_nach_der_aufnahme_als_aenderung(
+    welt: dict[str, Any], client_for: Any
+) -> None:
+    _einladen(welt, client_for)
+    assert "Tagesordnung geändert." not in _html(_seite(welt, client_for, "vorsitz"))
+
+    assert _aufnehmen(welt, client_for).status_code == 302
+    meeting = welt["meeting"]
+    meeting.refresh_from_db()
+    vorschlag = meeting.agenda_items.get(title=OFFENER_VORSCHLAG)
+    # Die Annahme lässt updated_at stehen: Nur reviewed_at zeigt, dass sich die Tagesordnung geändert hat
+    assert vorschlag.updated_at < meeting.invitation_sent_at < vorschlag.reviewed_at
+    assert "Tagesordnung geändert." in _html(_seite(welt, client_for, "vorsitz"))
+
+    # Nach der Aktualisierung ist die Fassung wieder aktuell
+    _einladen(welt, client_for)
+    assert "Tagesordnung geändert." not in _html(_seite(welt, client_for, "vorsitz"))
+
+
+def test_abgelehnter_vorschlag_aendert_die_tagesordnung_nicht(welt: dict[str, Any], client_for: Any) -> None:
+    _einladen(welt, client_for)
+    vorschlag = welt["meeting"].agenda_items.get(title=OFFENER_VORSCHLAG)
+    client_for(welt["vorsitz"].user).post(_aktion(welt), {"action": "reject_proposal", "item_id": str(vorschlag.pk)})
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    assert "Tagesordnung geändert." not in html and 'data-testid="fs-vorschlaege"' not in html
+
+
+def test_entscheidung_auf_der_tagesordnung_bleibt_auf_der_tagesordnung(welt: dict[str, Any], client_for: Any) -> None:
+    _einladen(welt, client_for)
+    adresse = _adresse(welt)
+    antwort = _aufnehmen(welt, client_for, HTTP_REFERER=f"https://mandari.example{adresse}?ansicht=tagesordnung")
+    assert antwort["Location"] == f"{adresse}?ansicht=tagesordnung"
+
+
+def test_entscheidung_auf_der_einladung_bleibt_auf_der_einladung(welt: dict[str, Any], client_for: Any) -> None:
+    _einladen(welt, client_for)
+    adresse = _adresse(welt)
+    antwort = _aufnehmen(welt, client_for, HTTP_REFERER=f"https://mandari.example{adresse}")
+    assert antwort["Location"] == adresse
+
+
+def test_vereidigte_schlagen_auch_nichtoeffentlich_vor(welt: dict[str, Any], client_for: Any) -> None:
+    assert 'id="tf-sicht"' not in _html(_seite(welt, client_for, "sachkundig"))
+
+    sachkundig = welt["sachkundig"]
+    sachkundig.is_sworn_in = True
+    sachkundig.save(update_fields=["is_sworn_in"])
+    assert 'id="tf-sicht"' in _html(_seite(welt, client_for, "sachkundig"))
+
+    titel = "Grundstücksangelegenheit"
+    client_for(sachkundig.user).post(_aktion(welt), {"action": "propose", "title": titel, "visibility": "internal"})
+    vorschlag = welt["meeting"].agenda_items.get(title=titel)
+    assert vorschlag.visibility == "internal" and vorschlag.proposal_status == "proposed"
+
+
+def test_bisherige_ansicht_bietet_den_nichtoeffentlichen_teil_nur_vereidigten(
+    welt: dict[str, Any], client_for: Any
+) -> None:
+    assert 'id="vorschlag-teil"' not in _html(_seite(welt, client_for, "sachkundig", ansicht="bisher"))
+
+    sachkundig = welt["sachkundig"]
+    sachkundig.is_sworn_in = True
+    sachkundig.save(update_fields=["is_sworn_in"])
+    html = _html(_seite(welt, client_for, "sachkundig", ansicht="bisher"))
+    assert 'id="vorschlag-teil"' in html and 'name="visibility"' in html
+
+
+def test_aufnehmen_legt_den_vorschlag_in_den_gewaehlten_teil(welt: dict[str, Any], client_for: Any) -> None:
+    """Wer aufnimmt, ordnet ein: Der TOP steht nie, auch nicht kurz, im öffentlichen Teil (Issue #1160)."""
+    _einladen(welt, client_for)
+    assert 'id="vs-teil-' in _html(_seite(welt, client_for, "vorsitz"))
+
+    assert _aufnehmen(welt, client_for, teil="internal").status_code == 302
+
+    vorschlag = welt["meeting"].agenda_items.get(title=OFFENER_VORSCHLAG)
+    assert vorschlag.visibility == "internal" and vorschlag.proposal_status == "active"
+    assert vorschlag.number == "NÖ 2"
+    assert OFFENER_VORSCHLAG not in _html(_seite(welt, client_for, "sachkundig"))
+    vorsitz = _html(_seite(welt, client_for, "vorsitz"))
+    assert "Tagesordnung geändert." in vorsitz
+    # Die Nummer trägt „NÖ“ schon selbst: in der Nebenspalte nicht doppelt
+    assert '<span class="nr">NÖ 2</span>' in vorsitz and "NÖ NÖ" not in vorsitz
+    meldung = Notification.objects.get(
+        recipient=welt["sachkundig"], notification_type=NotificationType.FACTION_PROPOSAL_DECIDED
+    )
+    assert OFFENER_VORSCHLAG not in meldung.title and OFFENER_VORSCHLAG not in meldung.message
+
+
+def test_aufnehmen_ohne_auswahl_behaelt_den_teil_des_vorschlags(welt: dict[str, Any], client_for: Any) -> None:
+    assert _aufnehmen(welt, client_for).status_code == 302
+    vorschlag = welt["meeting"].agenda_items.get(title=OFFENER_VORSCHLAG)
+    assert vorschlag.visibility == "public" and vorschlag.number == "3"
+
+
+def test_nichtoeffentlicher_vorschlag_ist_beim_aufnehmen_vorausgewaehlt(welt: dict[str, Any], client_for: Any) -> None:
+    welt["meeting"].agenda_items.filter(title=OFFENER_VORSCHLAG).update(visibility="internal")
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    assert '<option value="internal" selected>nichtöffentlich</option>' in html
+
+
+def test_nicht_vereidigte_nehmen_nicht_in_den_nichtoeffentlichen_teil_auf(
+    welt: dict[str, Any], client_for: Any, make_member: Any
+) -> None:
+    genehmigend = make_member(welt["org"], ["faction.view_public", "agenda.approve"], email="gerda@example.org")
+    vorschlag = welt["meeting"].agenda_items.get(title=OFFENER_VORSCHLAG)
+    html = _html(client_for(genehmigend.user).get(_adresse(welt)))
+    assert OFFENER_VORSCHLAG in html and 'id="vs-teil-' not in html
+
+    antwort = client_for(genehmigend.user).post(
+        _aktion(welt), {"action": "accept_proposal", "item_id": str(vorschlag.pk), "visibility": "internal"}
+    )
+    assert antwort.status_code == 403
+    vorschlag.refresh_from_db()
+    assert vorschlag.proposal_status == "proposed" and vorschlag.visibility == "public"
+
+
+def test_wechsel_des_teils_im_panel_nummeriert_beide_teile_neu(welt: dict[str, Any], client_for: Any) -> None:
+    meeting = welt["meeting"]
+    termine = meeting.agenda_items.get(title="Beschlüsse")
+    url = reverse(
+        "work:faction_item_panel_action",
+        kwargs={"org_slug": welt["org"].slug, "meeting_id": meeting.pk, "item_id": termine.pk},
+    )
+    antwort = client_for(welt["vorsitz"].user).post(url, {"action": "update", "visibility": "internal"})
+    assert antwort.status_code == 204
+
+    nummern = {i.title: i.number for i in meeting.agenda_items.filter(parent__isnull=True, proposal_status="active")}
+    # Ohne gewählte Stelle zählt die bisherige Reihenfolge der Sitzung
+    assert nummern == {"Beschlüsse": "NÖ 1", "Termine": "1", NOE_TITEL: "NÖ 2"}
+
+
+def test_formular_sichert_eingaben_im_browser(welt: dict[str, Any], client_for: Any) -> None:
+    html = _html(_seite(welt, client_for, "sachkundig"))
+    assert 'x-data="fsTopEntwurf"' in html
+    assert f'data-sitzung="{welt["meeting"].pk}"' in html and f'data-organisation="{welt["org"].pk}"' in html
+    assert f'data-konto="{welt["sachkundig"].user.pk}"' in html
+    # Der Titel eigener Vorschläge steht an der Zeile: Daran erkennt die Sicherung, dass der Server ihn angenommen hat
+    assert f'data-top-titel="{OFFENER_VORSCHLAG}"' in html
+
+
+def test_aktionsadresse_fuehrt_nach_der_anmeldung_zur_sitzung(welt: dict[str, Any], client_for: Any) -> None:
+    antwort = client_for(welt["sachkundig"].user).get(_aktion(welt))
+    assert antwort.status_code == 302 and antwort["Location"] == _adresse(welt)
 
 
 # ---------------------------------------------------------------------------

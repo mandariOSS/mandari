@@ -1,7 +1,8 @@
 {% comment %}
 Vorschläge, die auf Genehmigung warten (Issue #872, Muster vorschlaegeHtml): Aufnehmen oder mit Begründung ablehnen
-(accept_proposal, reject_proposal; Recht agenda.approve, serverseitig geprüft). Nichtöffentliche Vorschläge fehlen für
-Nicht-Vereidigte schon im Kontext. Kontext: can_approve_proposals, pending_proposals, meeting, org_slug.
+(accept_proposal, reject_proposal; Recht agenda.approve, serverseitig geprüft). Vereidigte wählen beim Aufnehmen den
+Teil der Tagesordnung (Issue #1160). Nichtöffentliche Vorschläge fehlen für Nicht-Vereidigte schon im Kontext.
+Kontext: can_approve_proposals, can_view_internal, pending_proposals, meeting, org_slug.
 {% endcomment %}
 {% if can_approve_proposals and pending_proposals %}
 <section class="fs-vorschlaege" aria-labelledby="vs-h" data-testid="fs-vorschlaege">
@@ -19,6 +20,13 @@ Nicht-Vereidigte schon im Kontext. Kontext: can_approve_proposals, pending_propo
                     {% csrf_token %}
                     <input type="hidden" name="action" value="accept_proposal">
                     <input type="hidden" name="item_id" value="{{ vorschlag.id }}">
+                    {% if can_view_internal %}
+                    <label class="sr-only" for="vs-teil-{{ vorschlag.id }}">Teil der Tagesordnung für {{ vorschlag.title }}</label>
+                    <select id="vs-teil-{{ vorschlag.id }}" class="wf-eingabe wf-auswahl" name="visibility">
+                        <option value="public"{% if vorschlag.visibility != 'internal' %} selected{% endif %}>öffentlich</option>
+                        <option value="internal"{% if vorschlag.visibility == 'internal' %} selected{% endif %}>nichtöffentlich</option>
+                    </select>
+                    {% endif %}
                     <button type="submit" class="wf-knopf">Aufnehmen</button>
                 </form>
                 <button type="button" class="wf-knopf wf-leise" @click="ablehnen = !ablehnen" :aria-expanded="ablehnen ? 'true' : 'false'" aria-controls="vs-ab-{{ vorschlag.id }}">Ablehnen …</button>

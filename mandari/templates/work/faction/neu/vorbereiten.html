@@ -4,7 +4,7 @@
 Fraktionssitzung vor der Sitzung nach dem Muster (Issue #1071, Schritt 2; Muster sitzung.html, Zustände planung,
 einladen, zusagen): Kopf mit Ablaufleiste, Infoleiste mit der einen Hauptaktion, darunter Hauptspalte und Nebenspalte.
 Hauptspalte je Modus (apps/work/faction/views/vorbereiten.py): „planung“ Tagesordnung bearbeiten (Verwaltung),
-„einladung“ Versand und Rückmeldungen je Person (Verwaltung nach dem Versand), „lesen“ für Mitglieder (Einladung,
+„einladung“ offene Vorschläge, Versand und Rückmeldungen je Person (Verwaltung nach dem Versand), „lesen“ für Mitglieder (Einladung,
 eigene Zu- oder Absage, TOP eintragen bzw. vorschlagen, lesende Tagesordnung). Geschrieben wird über die bisherigen
 Aktionen (work:faction_action, Panel); hx-headers X-Work-Gestaltung sorgt dafür, dass ihre Antworten die neue
 Tagesordnung liefern. Panel, TOP-Dialoge und Löschdialoge sind die der bisherigen Seite (Komponente factionDetail).
@@ -65,6 +65,8 @@ Die bisherige Seite bleibt unter ?ansicht=bisher (work/faction/detail.html).
         {% elif modus == "einladung" %}
         <section class="fs-spalte" aria-labelledby="rm-h">
             {% include "work/faction/neu/_vb_hinweise.html" %}
+            {# Auch nach dem Versand gehen Vorschläge ein, und vor dem Versand offene müssen hier auffallen (Issue #1160) #}
+            {% include "work/faction/neu/_vb_vorschlaege.html" %}
             {% include "work/faction/neu/_vb_einladung.html" %}
         </section>
         <c-work.neben label="Tagesordnung">

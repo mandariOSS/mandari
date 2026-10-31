@@ -81,6 +81,126 @@ def test_ziehen_setzt_top_an_die_stelle_und_nummeriert_neu(welt: dict[str, Any],
     assert 'data-griff="' in _html(antwort) and "data-ziehbar" in _html(antwort)
 
 
+def _in_teil(
+    welt: dict[str, Any], client_for: Any, rolle: str, item: FactionAgendaItem, teil: str, pos: str = "0"
+) -> Any:
+    daten = {"action": "move_item", "item_id": str(item.pk), "direction": "to", "position": pos, "teil": teil}
+    return _post(welt, client_for, rolle, daten, **_neu())
+
+
+def test_ziehen_in_den_nichtoeffentlichen_teil_nummeriert_beide_teile(welt: dict[str, Any], client_for: Any) -> None:
+    meeting = welt["meeting"]
+    termine = meeting.agenda_items.get(title="Termine")
+    antwort = _in_teil(welt, client_for, "vorsitz", welt["haupt"], "internal", "1")
+    assert antwort.status_code == 200
+
+    nummern = {i.title: i.number for i in meeting.agenda_items.filter(parent__isnull=True, proposal_status="active")}
+    assert nummern == {"Termine": "1", basis.NOE_TITEL: "NÖ 1", "Beschlüsse": "NÖ 2"}
+    # Die Antwort ist die neue Tagesordnung, der TOP steht im nichtöffentlichen Teil
+    html = _html(antwort)
+    assert (
+        html.index(f'id="top-{termine.pk}"')
+        < html.index('data-teil="internal"')
+        < html.index(f'id="top-{welt["haupt"].pk}"')
+    )
+
+
+def test_ziehen_in_den_nichtoeffentlichen_teil_an_die_gewaehlte_stelle(welt: dict[str, Any], client_for: Any) -> None:
+    meeting = welt["meeting"]
+    _in_teil(welt, client_for, "vorsitz", welt["haupt"], "internal", "0")
+    reihenfolge = meeting.agenda_items.filter(visibility="internal", parent__isnull=True).order_by("order")
+    assert [i.title for i in reihenfolge] == ["Beschlüsse", basis.NOE_TITEL]
+    assert [i.number for i in reihenfolge] == ["NÖ 1", "NÖ 2"]
+
+
+def test_unterpunkte_gehen_in_den_nichtoeffentlichen_teil_mit_und_bleiben_dort(
+    welt: dict[str, Any], client_for: Any
+) -> None:
+    """Die Einladung listet öffentliche Unterpunkte auch unter einem nichtöffentlichen TOP (Issue #1160)."""
+    meeting, haupt = welt["meeting"], welt["haupt"]
+    unter = meeting.agenda_items.get(title="Feuerwehrbedarfsplan")
+
+    _in_teil(welt, client_for, "vorsitz", haupt, "internal")
+    unter.refresh_from_db()
+    assert unter.visibility == "internal" and unter.number == "NÖ 1.1"
+    assert "Feuerwehrbedarfsplan" not in _html(_seite(welt, client_for, "sachkundig"))
+
+    # Zurück im öffentlichen Teil gibt erst eine eigene Entscheidung den Unterpunkt frei
+    haupt.refresh_from_db()
+    _in_teil(welt, client_for, "vorsitz", haupt, "public")
+    unter.refresh_from_db()
+    assert unter.visibility == "internal"
+    haupt.refresh_from_db()
+    assert haupt.visibility == "public" and haupt.number == "1"
+
+
+def test_unterpunkt_eines_nichtoeffentlichen_tops_wird_nicht_oeffentlich(welt: dict[str, Any], client_for: Any) -> None:
+    meeting, haupt = welt["meeting"], welt["haupt"]
+    unter = meeting.agenda_items.get(title="Feuerwehrbedarfsplan")
+    _in_teil(welt, client_for, "vorsitz", haupt, "internal")
+    url = reverse(
+        "work:faction_item_panel_action",
+        kwargs={"org_slug": welt["org"].slug, "meeting_id": meeting.pk, "item_id": unter.pk},
+    )
+    client_for(welt["vorsitz"].user).post(url, {"action": "update", "visibility": "public"})
+    unter.refresh_from_db()
+    assert unter.visibility == "internal"
+
+
+def test_ziehen_in_den_nichtoeffentlichen_teil_nur_fuer_vereidigte(
+    welt: dict[str, Any], client_for: Any, make_member: Any
+) -> None:
+    verwaltend = make_member(welt["org"], ["faction.view_public", "faction.manage"], email="nina@example.org")
+    welt["verwaltend"] = verwaltend
+    haupt = welt["haupt"]
+    assert _in_teil(welt, client_for, "verwaltend", haupt, "internal").status_code == 403
+    haupt.refresh_from_db()
+    assert haupt.visibility == "public"
+    # Der nichtöffentliche Teil wird dieser Person gar nicht erst angeboten
+    assert 'data-teil="internal"' not in _html(client_for(verwaltend.user).get(basis._adresse(welt)))
+
+
+def test_nichtoeffentlichen_top_ziehen_nur_fuer_vereidigte(
+    welt: dict[str, Any], client_for: Any, make_member: Any
+) -> None:
+    welt["verwaltend"] = make_member(welt["org"], ["faction.view_public", "faction.manage"], email="nina@example.org")
+    geheim = welt["meeting"].agenda_items.get(title=basis.NOE_TITEL)
+    assert _in_teil(welt, client_for, "verwaltend", geheim, "public").status_code == 403
+    geheim.refresh_from_db()
+    assert geheim.visibility == "internal"
+
+
+def test_ziehen_in_den_anderen_teil_nur_mit_recht_und_solange_die_sitzung_offen_ist(
+    welt: dict[str, Any], client_for: Any
+) -> None:
+    meeting, haupt = welt["meeting"], welt["haupt"]
+    assert _in_teil(welt, client_for, "rat", haupt, "internal").status_code == 403
+
+    FactionMeeting.objects.filter(pk=meeting.pk).update(status="completed", protocol_approved=True)
+    assert _in_teil(welt, client_for, "vorsitz", haupt, "internal").status_code == 403
+    haupt.refresh_from_db()
+    assert haupt.visibility == "public"
+
+
+def test_vorschlag_laesst_sich_nicht_in_den_anderen_teil_ziehen(welt: dict[str, Any], client_for: Any) -> None:
+    vorschlag = welt["meeting"].agenda_items.get(title="Radweg am Musterweg")
+    _in_teil(welt, client_for, "vorsitz", vorschlag, "internal")
+    vorschlag.refresh_from_db()
+    assert vorschlag.visibility == "public" and vorschlag.proposal_status == "proposed"
+
+
+def test_ziehen_in_den_anderen_teil_gilt_nach_dem_versand_als_aenderung(welt: dict[str, Any], client_for: Any) -> None:
+    basis._einladen(welt, client_for)
+    assert "Tagesordnung geändert." not in _html(_seite(welt, client_for, "vorsitz"))
+    _in_teil(welt, client_for, "vorsitz", welt["haupt"], "internal")
+    assert "Tagesordnung geändert." in _html(_seite(welt, client_for, "vorsitz"))
+
+
+def test_tagesordnung_nennt_den_teil_je_liste(welt: dict[str, Any], client_for: Any) -> None:
+    html = _html(_seite(welt, client_for, "vorsitz"))
+    assert 'data-teil="public" data-ziehbar' in html and 'data-teil="internal" data-ziehbar' in html
+
+
 def test_ziehen_ans_ende_und_ungueltige_stelle(welt: dict[str, Any], client_for: Any) -> None:
     meeting, haupt = welt["meeting"], welt["haupt"]
     for position in ("99", "abc"):

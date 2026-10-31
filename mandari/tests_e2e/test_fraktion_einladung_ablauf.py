@@ -541,3 +541,116 @@ def test_bisherige_ansicht_nimmt_vorschlag_auf(
     vorschlag.refresh_from_db()
     assert vorschlag.proposal_status == "active"
     problems.assert_clean("Vorschlag aufnehmen")
+
+
+def test_vorschlag_nach_dem_versand(
+    page: Any,
+    goto: Any,
+    login: Any,
+    new_context: Any,
+    live_server: Any,
+    org: Any,
+    make_member: Any,
+    fraktion: Fraktion,
+    problems: BrowserProblems,
+) -> None:
+    """
+    Issue #1160: Nach dem Versand schlägt ein Mitglied einen TOP vor, eine nicht abgeschickte Eingabe übersteht das
+    Neuladen, die Verwaltung sieht den Vorschlag auf der ersten Seite, nimmt ihn auf und wird zur Aktualisierung aufgefordert.
+    """
+    meeting = _geplante_sitzung(fraktion)
+    meeting.status = "invited"
+    meeting.invitation_sent = True
+    meeting.invitation_sent_at = timezone.now()
+    meeting.save(update_fields=["status", "invitation_sent", "invitation_sent_at"])
+    vorschlagend = make_member(org, [*MITGLIED, "agenda.propose"], email="paula-e2e@example.org")
+    _einrichten(vorschlagend, "Paula", "Probe", vereidigt=False)
+
+    seite = _als(new_context, live_server, vorschlagend)
+    _oeffnen(seite, live_server, fraktion, meeting)
+    wait_for_component(seite, "fsTopEntwurf")
+    formular = seite.get_by_test_id("fs-top-form")
+    titel = formular.locator("#tf-titel")
+    begruendung = formular.locator("#tf-begruendung")
+    titel.fill(TOP_RADWEG)
+    begruendung.fill("Bitte in der Sitzung beraten.")
+
+    # Nicht abgeschickt und neu geladen: Die Eingabe ist wieder da
+    _neu_laden(seite)
+    wait_for_component(seite, "fsTopEntwurf")
+    expect(seite.get_by_test_id("fs-top-entwurf")).to_be_visible()
+    expect(titel).to_have_value(TOP_RADWEG)
+    expect(begruendung).to_have_value("Bitte in der Sitzung beraten.")
+
+    formular.get_by_role("button", name="Vorschlagen").click()
+    expect(seite.get_by_test_id("fs-meine-vorschlaege")).to_contain_text(TOP_RADWEG)
+
+    # Der Server hat ihn angenommen: Das Formular ist leer, auch nach erneutem Laden
+    wait_for_component(seite, "fsTopEntwurf")
+    expect(seite.get_by_test_id("fs-top-entwurf")).to_be_hidden()
+    expect(titel).to_have_value("")
+    _neu_laden(seite)
+    wait_for_component(seite, "fsTopEntwurf")
+    expect(titel).to_have_value("")
+    assert FactionAgendaItem.objects.get(meeting=meeting, title=TOP_RADWEG).proposal_status == "proposed"
+
+    # Verwaltung: auf der ersten Seite der Sitzung, ohne „Bearbeiten“
+    page.set_viewport_size(BREIT)
+    login(fraktion.vorsitz.user.email, PASSWORT)
+    goto(_sitzung_url(fraktion, meeting))
+    expect(page.get_by_test_id("fs-vorbereiten")).to_have_attribute("data-modus", "einladung")
+    vorschlaege = page.get_by_test_id("fs-vorschlaege")
+    expect(vorschlaege).to_contain_text(TOP_RADWEG)
+    vorschlaege.get_by_role("button", name="Aufnehmen").click()
+
+    expect(page.get_by_test_id("fs-vorschlaege")).to_have_count(0)
+    expect(page.get_by_test_id("fs-to-kompakt")).to_contain_text(TOP_RADWEG)
+    expect(page.get_by_test_id("fs-info")).to_contain_text("Tagesordnung geändert.")
+    expect(page.get_by_test_id("fs-info").get_by_role("button", name="Aktualisierung senden")).to_be_visible()
+    assert FactionAgendaItem.objects.get(meeting=meeting, title=TOP_RADWEG).proposal_status == "active"
+    problems.assert_clean("Vorschlag nach dem Versand")
+
+
+def test_vereidigte_schlagen_nichtoeffentlich_vor(
+    page: Any,
+    goto: Any,
+    login: Any,
+    new_context: Any,
+    live_server: Any,
+    org: Any,
+    make_member: Any,
+    fraktion: Fraktion,
+    problems: BrowserProblems,
+) -> None:
+    """Issue #1160: Der Teil wird beim Vorschlagen gewählt, Nicht-Vereidigte sehen den aufgenommenen TOP nie."""
+    meeting = _geplante_sitzung(fraktion)
+    meeting.status = "invited"
+    meeting.invitation_sent = True
+    meeting.invitation_sent_at = timezone.now()
+    meeting.save(update_fields=["status", "invitation_sent", "invitation_sent_at"])
+    vorschlagend = make_member(org, [*MITGLIED, "agenda.propose"], email="paula-e2e@example.org")
+    _einrichten(vorschlagend, "Paula", "Probe", vereidigt=True)
+
+    seite = _als(new_context, live_server, vorschlagend)
+    _oeffnen(seite, live_server, fraktion, meeting)
+    formular = seite.get_by_test_id("fs-top-form")
+    formular.locator("#tf-titel").fill(TOP_RADWEG)
+    formular.locator("#tf-sicht").select_option("internal")
+    formular.get_by_role("button", name="Vorschlagen").click()
+    expect(seite.get_by_test_id("fs-meine-vorschlaege")).to_contain_text(TOP_RADWEG)
+    assert FactionAgendaItem.objects.get(meeting=meeting, title=TOP_RADWEG).visibility == "internal"
+
+    page.set_viewport_size(BREIT)
+    login(fraktion.vorsitz.user.email, PASSWORT)
+    goto(_sitzung_url(fraktion, meeting))
+    vorschlaege = page.get_by_test_id("fs-vorschlaege")
+    expect(vorschlaege).to_contain_text("(nichtöffentlich)")
+    expect(vorschlaege.locator("select[name=visibility]")).to_have_value("internal")
+    vorschlaege.get_by_role("button", name="Aufnehmen").click()
+    expect(page.get_by_test_id("fs-to-kompakt")).to_contain_text("NÖ 2")
+    expect(page.get_by_test_id("fs-info")).to_contain_text("Tagesordnung geändert.")
+
+    klara = _als(new_context, live_server, fraktion.sachkundig)
+    _oeffnen(klara, live_server, fraktion, meeting)
+    assert TOP_RADWEG not in klara.content()
+    problems.assert_clean("Nichtöffentlicher Vorschlag")
