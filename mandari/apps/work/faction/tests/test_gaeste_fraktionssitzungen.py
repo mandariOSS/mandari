@@ -19,7 +19,7 @@ from django.utils import timezone
 
 from apps.common.tests.factories import MembershipFactory, UserFactory
 from apps.work.faction.feeds import build_personal_feed
-from apps.work.faction.models import FactionAttendance, FactionMeeting
+from apps.work.faction.models import FactionAgendaItem, FactionAttendance, FactionMeeting
 from apps.work.faction.services import FactionMeetingEmailService
 
 
@@ -62,6 +62,29 @@ def test_einladung_geht_nicht_an_gaeste(org: Any, vorsitz: Any, gast: Any) -> No
     empfaenger = {adresse for nachricht in mail.outbox for adresse in nachricht.to}
     assert "gast@example.org" not in empfaenger
     assert "vorsitz@example.org" in empfaenger
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("ansicht", ["", "?ansicht=bisher"])
+def test_gast_sieht_nichts_von_der_sitzung(org: Any, vorsitz: Any, gast: Any, client_for: Any, ansicht: str) -> None:
+    """Auch vereidigt eingetragen: Gäste landen bei ihren Freigaben und sehen nichts von der Sitzung."""
+    gast.is_sworn_in = True
+    gast.save(update_fields=["is_sworn_in"])
+    meeting = FactionMeeting.objects.create(
+        organization=org,
+        title="Vertrauliche Klausur",
+        start=timezone.now() + timedelta(days=2),
+        status="planned",
+        created_by=vorsitz,
+    )
+    FactionAgendaItem.objects.create(meeting=meeting, number="1", title="Bauland Nord", visibility="internal", order=1)
+    url = reverse("work:faction_detail", kwargs={"org_slug": org.slug, "meeting_id": meeting.id})
+
+    antwort = client_for(gast.user).get(f"{url}{ansicht}", follow=True)
+
+    assert antwort.redirect_chain[-1][0].endswith("/freigaben/")
+    assert "Bauland Nord" not in antwort.content.decode()
+    assert "Vertrauliche Klausur" not in antwort.content.decode()
 
 
 @pytest.mark.django_db

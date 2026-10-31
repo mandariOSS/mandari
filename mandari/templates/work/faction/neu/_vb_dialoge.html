@@ -3,7 +3,7 @@
 Dialoge der Seite vor der Sitzung (Issue #1071, Muster einladenDialog, versandDialog, aktualisierungDialog):
 - „Jetzt einladen“: an wen, Absender, Rückmeldung, Vorschau der E-Mail je Fassung (vereidigt oder ohne
   nichtöffentlichen Teil); sendet die Aktion invite (Erstversand genau einmal, Recht faction.invite).
-- „Versandergebnis“: je Person verschickt oder nicht verschickt mit Grund (c-work.versandzeile).
+- „Versandergebnis“: je Person versendet oder nicht versendet mit Grund (c-work.versandzeile).
 - „Aktualisierung senden“: invite nach dem Versand (Aktualisierung an alle außer Absagen, Kalender-SEQUENCE + 1).
 - „Aus Ratssitzung übernehmen“: Inhalt lädt die Aktion ris_auswahl beim Öffnen (_vb_ris_auswahl.html).
 - Testmail der Einladung an die eigene Adresse (Aktion test_invitation) im Dialog „Jetzt einladen“.
@@ -88,13 +88,13 @@ versand, to_oeffentlich, to_intern.
 <c-ui.modal id="fs-versand" title="Versandergebnis" size="md">
     <div class="wf-dialog">
         <p>{% if meeting.invitation_sent_at %}Eingeladen am {{ meeting.invitation_sent_at|date:"D d.m. \u\m H:i" }}.{% endif %}{% if meeting.invitation_updated_at %} Zuletzt aktualisiert am {{ meeting.invitation_updated_at|date:"D d.m. \u\m H:i" }}.{% endif %}
-            {% if versand.gesamt %}{{ versand.ok }} von {{ versand.gesamt }} verschickt{% if versand.nicht %}, {{ versand.nicht }} nicht{% endif %}.{% endif %}
+            {% if versand.gesamt %}{{ versand.ok }} von {{ versand.gesamt }} versendet{% if versand.nicht %}, {{ versand.nicht }} nicht{% endif %}.{% endif %}
             {% if versand.unbekannt %}Für {{ versand.unbekannt }} Person{{ versand.unbekannt|pluralize:"en" }} ist kein Ergebnis erfasst (Versand vor dieser Erfassung oder nicht eingeladen).{% endif %}</p>
-        <p class="fs-meta">„Verschickt“ heißt: an den E-Mail-Versand der Fraktion übergeben. Ob die Nachricht im Postfach angekommen ist, meldet der Mailserver nicht zurück.</p>
+        <p class="fs-meta">„Versendet“ heißt: an den E-Mail-Versand der Fraktion übergeben. Ob die Nachricht im Postfach angekommen ist, meldet der Mailserver nicht zurück.</p>
         <ul class="fs-versandliste" data-testid="fs-versandliste">
             {% for p in personen %}
             {% if p.fehler %}
-            <c-work.versandzeile wer="{{ p.name }}" zusatz="{{ p.rollen }}" ergebnis="Nicht verschickt" fehler="1" grund="{{ p.fehler }}" />
+            <c-work.versandzeile wer="{{ p.name }}" zusatz="{{ p.rollen }}" ergebnis="Nicht versendet" fehler="1" grund="{{ p.fehler }}" />
             {% else %}
             <c-work.versandzeile wer="{{ p.name }}" zusatz="{{ p.rollen }}" ergebnis="{{ p.versand_text }}" />
             {% endif %}

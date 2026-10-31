@@ -26,6 +26,7 @@ from django.views import View
 from django.views.generic import ListView
 
 from apps.common import audit_chain
+from apps.common.demo import ist_demo
 
 from .. import audit
 from ..models import SessionAuditLog, SessionUser
@@ -184,11 +185,13 @@ class AuditLogExportView(SessionViewMixin, View):
 
         count = audit_log_service.period_queryset(self.session_tenant, date_from, date_to).count()
         if count > settings.AUDIT_EXPORT_MAX_ROWS:
+            # Der Betrieb führt den Befehl aus; wer hier exportieren darf, braucht den Namen, die Demo nicht (Issue #745)
+            befehl = "" if ist_demo() else " mit dem Befehl export_audit_log"
             messages.error(
                 request,
                 f"Der Zeitraum umfasst {count} Einträge – mehr als {settings.AUDIT_EXPORT_MAX_ROWS} lassen sich hier "
-                "nicht exportieren. Bitte einen kürzeren Zeitraum wählen; der Betrieb kann größere Exporte mit dem "
-                "Befehl export_audit_log erstellen.",
+                f"nicht exportieren. Bitte einen kürzeren Zeitraum wählen; der Betrieb kann größere Exporte{befehl} "
+                "erstellen.",
             )
             return redirect("session:audit_log", tenant_slug=tenant_slug)
 
@@ -231,11 +234,13 @@ class AuditLogVerifyView(SessionViewMixin, View):
 
     def post(self, request, tenant_slug):
         tenant = self.session_tenant
+        # Der Betrieb führt die Befehle aus; wer hier prüfen darf, braucht die Namen, die Demo nicht (Issue #745)
+        demo = ist_demo()
         if SessionAuditLog.objects.filter(tenant=tenant).count() > UI_VERIFY_MAX_ENTRIES:
+            befehl = "" if demo else " mit dem Befehl verify_audit_chain"
             messages.warning(
                 request,
-                "Das Protokoll ist zu groß für eine Prüfung in der Oberfläche. Der Betrieb prüft es mit dem Befehl "
-                "verify_audit_chain.",
+                f"Das Protokoll ist zu groß für eine Prüfung in der Oberfläche. Der Betrieb prüft es{befehl}.",
             )
             return redirect("session:audit_log", tenant_slug=tenant_slug)
 
@@ -250,7 +255,7 @@ class AuditLogVerifyView(SessionViewMixin, View):
         if result.ok:
             text = f"Die Hash-Kette ist intakt ({result.checked} Einträge geprüft)."
             for warning in result.warnings:
-                messages.warning(request, warning)
+                messages.warning(request, audit_chain.ohne_betriebshinweis(warning) if demo else warning)
             messages.success(request, text)
         else:
             messages.error(

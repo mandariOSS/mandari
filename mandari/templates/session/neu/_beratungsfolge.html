@@ -39,7 +39,7 @@ consultation_organizations, consultation_meetings, tenant_slug).
         </c-form.select>
         <c-form.select name="meeting" id="consultation-add-meeting" label="Zielsitzung (optional)" dicht class="min-w-0 flex-1 basis-56 sm:flex-none sm:w-72">
             <option value="">Noch offen</option>
-            {% for meeting in consultation_meetings %}<option value="{{ meeting.id }}" data-org="{{ meeting.participating_organization_ids|join:' ' }}">{{ meeting.start|date:"d.m.Y" }}, {{ meeting.name|truncatechars:40 }}</option>{% endfor %}
+            {% for meeting in consultation_meetings %}<option value="{{ meeting.id }}" data-org="{{ meeting.participating_organization_ids|join:' ' }}">{{ meeting.start|date:"d.m.Y" }}, {{ meeting.name }}</option>{% endfor %}
         </c-form.select>
         <c-ui.button type="submit" variant="secondary" size="sm" icon="plus">Hinzufügen</c-ui.button>
     </form>

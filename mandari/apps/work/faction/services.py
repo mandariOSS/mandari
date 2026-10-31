@@ -39,6 +39,15 @@ def invitation_attendances(meeting, *, update: bool = False):
     return attendances.filter(status="invited")
 
 
+def not_sent_invitation_count(meeting, *, update: bool = False) -> int:
+    """
+    Wie viele Einladungen des letzten Versands nicht rausgingen, für die Meldung nach dem Versand (Issue #855). Eine
+    Aktualisierung zählt nur ihre Empfänger: Der alte Fehler einer Person, die inzwischen abgesagt hat, gehört nicht dazu.
+    """
+    attendances = invitation_attendances(meeting, update=True) if update else meeting.attendances.all()
+    return attendances.exclude(invitation_error="").count()
+
+
 def _invitation_error_text(error: Exception, address: str) -> str:
     """Grund, warum eine Einladung nicht rausging, als Satz für das Versandergebnis (ohne Interna des Servers)."""
     import smtplib

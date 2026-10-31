@@ -1,6 +1,6 @@
 {# Leiste fest am unteren Rand: Beschluss kompakt, voriger und nächster TOP (Issue #874) #}
 {# Kontext: item, decision, beschluss_punkt, vor/nach (sitzung.TopZeile), rechte, quorum, ergebnisse, aendern, oob, oob_zeile, sitzung_urls #}
-<div class="wf-leiste fs-unten" id="fs-unten" role="region" aria-label="Beschluss und TOP wechseln" x-data="beschlussLeiste"
+<div class="wf-leiste fs-unten" id="fs-unten" role="region" aria-label="Beschluss und TOP wechseln" data-meldungen-darueber x-data="beschlussLeiste"
      data-ja="{{ decision.votes_yes|default:0 }}" data-nein="{{ decision.votes_no|default:0 }}" data-enthaltung="{{ decision.votes_abstain|default:0 }}"
      :class="{ 'beschluss-offen': offen }"{% if oob %} hx-swap-oob="true"{% endif %}>
     {% if decision and not aendern %}

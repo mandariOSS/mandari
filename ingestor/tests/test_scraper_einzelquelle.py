@@ -157,9 +157,13 @@ def test_sync_source_nimmt_den_einstieg_des_daemons(
     aufrufe: list[dict[str, Any]] = []
     protokolle: list[str] = []
 
+    class Quellen:
+        async def get_source_by_url(self, url: str) -> SimpleNamespace:
+            return SimpleNamespace(url=url)
+
     class Orchestrator:
         def __init__(self, *args: object, **kwargs: object) -> None:
-            return None
+            self.storage = Quellen()
 
         async def __aenter__(self) -> Orchestrator:
             return self

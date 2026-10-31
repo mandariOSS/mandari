@@ -7,7 +7,7 @@ Die Namen der beiden Knöpfe beginnen mit ihrem sichtbaren Text (WCAG 2.5.3), da
 {% endcomment %}
 <div class="ke-blattkopf">
     {% if can_edit and not is_guest %}
-    <div class="relative">
+    <div class="lg:relative">
         <button type="button" class="ke-blattkopf-knopf" data-menue-knopf="typ" @click="menueUmschalten('typ')" aria-haspopup="menu"
                 :aria-expanded="(menue === 'typ').toString()" aria-expanded="false"
                 aria-label="{{ motion.get_type_display }}, Dokumenttyp ändern" :aria-label="documentTypeName + ', Dokumenttyp ändern'">
@@ -22,7 +22,7 @@ Die Namen der beiden Knöpfe beginnen mit ihrem sichtbaren Text (WCAG 2.5.3), da
             {% endfor %}
         </div>
     </div>
-    <div class="relative">
+    <div class="lg:relative">
         <button type="button" class="ke-blattkopf-knopf" data-menue-knopf="briefpapier" @click="menueUmschalten('briefpapier')" aria-haspopup="menu"
                 :aria-expanded="(menue === 'briefpapier').toString()" aria-expanded="false"
                 aria-label="{{ motion.letterhead.name|default:'Kein Briefpapier' }}, Briefpapier wählen" :aria-label="letterheadName + ', Briefpapier wählen'">

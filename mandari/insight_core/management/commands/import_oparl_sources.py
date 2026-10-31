@@ -2,8 +2,9 @@
 """
 Django management command to import known German OParl sources.
 
-Adds sources with is_active=False so they don't sync automatically.
-Activate individual sources manually as needed.
+Die einzige Liste bekannter Quellen (Issue #555). Der Befehl ruft nichts ab und legt neue Quellen immer inaktiv an;
+aktiviert wird nach der Prüfung einzeln im Admin. Vorhandene Quellen bleiben unverändert: Ihr Status und ihre
+Einstellungen (``sync_config``) ändert der Befehl nie, ``--update`` setzt nur den Namen.
 
 Letzte Prüfung: 2026-03-11 (alle Endpoints live getestet)
 Quelle: https://github.com/OParl/resources/blob/main/endpoints.yml
@@ -40,6 +41,9 @@ OPARL_SOURCES = [
     ("Stadt Krefeld", "https://ris.krefeld.de/webservice/oparl/v1.1/system"),
     ("Stadt Freiburg", "https://ris.freiburg.de/oparl"),
     ("München Transparent", "https://www.muenchen-transparent.de/oparl/v1.0"),
+    # Endpunkte 2026-07 geprüft, OParl aktiv
+    ("Stadt Bochum", "https://bochum.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    ("Stadt Hamm", "https://hamm.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     # =========================================================================
     # Großstädte (instabil bei Prüfung 2026-03-11, aber behalten)
     # =========================================================================
@@ -60,6 +64,9 @@ OPARL_SOURCES = [
     ),
     ("Stadt Gronau", "https://gronau.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Stadt Brühl", "https://ratsinfo.bruehl.de/webservice/oparl/v1.1/system"),
+    ("Stadt Kleve", "https://ris.kleve.de/webservice/oparl/v1.1/system"),
+    ("Stadt Moers", "https://ris.moers.de/webservice/oparl/v1.1/system"),
+    ("Bezirksregierung Köln", "https://bezreg-koeln.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Stadt Lahr/Schwarzwald", "https://lahr.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
     ("Stadt Bad Kreuznach", "https://bad-kreuznach-stadt.gremien.info/oparl/system"),
     ("Stadt Pirmasens", "https://oparl.stadt-pirmasens.de/oparl/system"),
@@ -196,18 +203,23 @@ OPARL_SOURCES = [
     # Aggregatoren (liefern Daten vieler Kommunen gebündelt)
     # =========================================================================
     ("Politik bei Uns", "https://oparl.politik-bei-uns.de/system"),
+    # =========================================================================
+    # OParl vorhanden, aber vom Betreiber deaktiviert (Stand 2026-07): Der Endpunkt antwortet
+    # {"error": "Webservice \"OParl\" ist nicht aktiviert!"}. Eine Freischaltungsanfrage an die Kommune genügt.
+    # Erst nach der Freischaltung einkommentieren.
+    # =========================================================================
+    # ("Stadt Essen", "https://ris.essen.de/webservice/oparl/v1.1/system"),
+    # ("Stadt Minden", "https://minden.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    # ("Stadt Steinfurt", "https://steinfurt.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    # ("Stadt Greven", "https://greven.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
+    # ("Stadt Tecklenburg", "https://tecklenburg.ratsinfomanagement.net/webservice/oparl/v1.1/system"),
 ]
 
 
 class Command(BaseCommand):
-    help = "Import known German OParl sources (with is_active=False by default)"
+    help = "Import known German OParl sources (new sources always with is_active=False)"
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            "--activate",
-            action="store_true",
-            help="Set is_active=True for new sources (default: False)",
-        )
         parser.add_argument(
             "--update",
             action="store_true",
@@ -215,11 +227,9 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args, **options):
-        activate = options["activate"]
         update = options["update"]
 
-        self.stdout.write(self.style.NOTICE(f"\nImporting {len(OPARL_SOURCES)} OParl sources..."))
-        self.stdout.write(self.style.NOTICE(f"is_active will be set to: {activate}\n"))
+        self.stdout.write(self.style.NOTICE(f"\nImporting {len(OPARL_SOURCES)} OParl sources...\n"))
 
         created = 0
         updated = 0
@@ -231,7 +241,8 @@ class Command(BaseCommand):
                     url=url,
                     defaults={
                         "name": name,
-                        "is_active": activate,
+                        # Ausdrücklich: Der Standardwert des Modells ist True
+                        "is_active": False,
                     },
                 )
 
@@ -256,6 +267,6 @@ class Command(BaseCommand):
         self.stdout.write(self.style.HTTP_INFO(f"Skipped: {skipped}"))
         self.stdout.write("=" * 50)
 
-        if created > 0 and not activate:
+        if created > 0:
             self.stdout.write(self.style.NOTICE("\nSources were added with is_active=False."))
             self.stdout.write(self.style.NOTICE("Activate them in Django Admin to start syncing."))

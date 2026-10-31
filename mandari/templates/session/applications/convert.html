@@ -23,19 +23,10 @@
 {% block brotkrumen_aktuell %}<c-rahmen.brotkrume href="{% url 'session:application_detail' tenant_slug=tenant_slug application_id=application.id %}">{{ application.reference }}</c-rahmen.brotkrume><c-rahmen.brotkrume>In Vorlage umwandeln</c-rahmen.brotkrume>{% endblock %}
 
 {% block page_content %}
-<!-- Hinweis -->
-<div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl p-4 mb-6">
-    <div class="flex items-start gap-3">
-        <i data-lucide="info" class="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5"></i>
-        <div>
-            <p class="text-sm text-amber-800 dark:text-amber-300">
-                <strong>Umwandlung:</strong> Aus dem Antrag wird eine neue Vorlage im Entwurf erstellt; sie durchläuft
-                Mitzeichnung und Freigabe wie jede Vorlage. Der Antragsstatus wird automatisch
-                auf „In Vorlage umgewandelt" gesetzt.
-            </p>
-        </div>
-    </div>
-</div>
+<p class="mb-6 max-w-3xl text-sm text-gray-600 dark:text-gray-400">
+    Aus dem Antrag wird eine neue Vorlage im Entwurf erstellt; sie durchläuft Mitzeichnung und Freigabe wie jede Vorlage.
+    Der Antragsstatus wird automatisch auf „In Vorlage umgewandelt" gesetzt.
+</p>
 
 <div class="grid lg:grid-cols-2 gap-6">
     <!-- Linke Seite: Antragsdaten -->

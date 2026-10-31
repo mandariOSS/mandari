@@ -43,6 +43,9 @@ SEITEN: dict[str, str] = {
     "fraktions_api": "work/fraktions-api/",
     "termine_einbinden": "work/termine-einbinden/",
     "beschluesse": "work/beschluesse/",
+    "datenschutz_avv": "datenschutz/avv-muster/",
+    "datenschutz_tom": "datenschutz/tom/",
+    "datenschutz_loeschkonzept": "datenschutz/loeschkonzept/",
 }
 
 

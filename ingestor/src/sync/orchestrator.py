@@ -528,6 +528,8 @@ class SyncResult:
     # Zeitscheiben und ausgesetzte Listen über alle Kommunen (Issue #1033), im Sync-Log unter ``full_sync_slices``
     # und ``suspended_lists`` (``merge_slice_details``)
     slice_details: dict[str, Any] = field(default_factory=dict)
+    # sync --source --filter: Keine Kommune passt, nichts abgeglichen, die Quelle blieb unverändert (Issue #555)
+    filter_without_match: bool = False
 
 
 def merge_slice_details(target: dict[str, Any], body_result: dict[str, Any]) -> None:
@@ -575,6 +577,18 @@ def missed_bodies_note(missed_bodies: list[str]) -> str:
     more = len(missed_bodies) - MISSED_BODIES_SHOWN
     suffix = f" und {more} weitere" if more > 0 else ""
     return f"Kommunen nicht vollständig gelesen, nicht lesbar: {shown}{suffix}"
+
+
+#: Höchstens so viele Kommunen nennt die Meldung, wenn der Filter nach Kommune nichts trifft
+FILTER_BODIES_SHOWN = 10
+
+
+def no_filter_match_note(body_filter: str, bodies: list[dict[str, Any]]) -> str:
+    """Meldung, wenn ``sync --source --filter`` keine Kommune trifft, meist ein Tippfehler (Issue #555)."""
+    shown = ", ".join(str(body.get("name") or body.get("id")) for body in bodies[:FILTER_BODIES_SHOWN])
+    more = len(bodies) - FILTER_BODIES_SHOWN
+    suffix = f" und {more} weitere" if more > 0 else ""
+    return f"Keine Kommune passt zum Filter „{body_filter}“, nichts abgeglichen. Kommunen der Quelle: {shown}{suffix}"
 
 
 def unique_bodies(bodies: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -639,46 +653,6 @@ class SyncOrchestrator:
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
         """Async context manager exit."""
         await self.storage.close()
-
-    # ========== Source Management ==========
-
-    async def add_source(self, url: str, name: str | None = None) -> UUID:
-        """
-        Register a new OParl source.
-
-        Fetches the system endpoint to get source metadata.
-
-        Args:
-            url: The OParl API URL (system endpoint)
-            name: Optional override for source name
-
-        Returns:
-            The source UUID
-        """
-        console.print(f"[blue]Fetching system info from {url}...[/blue]")
-
-        async with OParlClient(max_concurrent=1) as client:
-            system_data = await client.fetch_system(url)
-            if is_oparl_error(system_data):
-                # 1.1-Pfad auf einem OParl-1.0-Server (Issue #122)
-                system_data, _resolved = await self._try_oparl_10_fallback(
-                    client, url, oparl_error_message(system_data)
-                )
-
-        if not system_data:
-            raise ValueError(f"Could not fetch OParl system from {url}")
-
-        source_name = name or system_data.get("name", "Unknown Source")
-
-        source_id = await self.storage.upsert_source(
-            url=url,
-            name=source_name,
-            raw_json=system_data,
-            oparl_version=detect_oparl_version(system_data),
-        )
-
-        console.print(f"[green]Registered source: {source_name} (ID: {source_id})[/green]")
-        return source_id
 
     def _scraper_runner(self, source_row: Any) -> "ScraperSyncRunner | None":
         """
@@ -921,7 +895,9 @@ class SyncOrchestrator:
             default_window: Standardfenster des Daemons für Vollabgleiche; es begrenzt den Vollabgleich in
                 Zeitscheiben einer Quelle ohne eigenes ``full_sync_window`` (Issue #1033)
             body_filter: nur Kommunen, deren Name (ohne Groß-/Kleinschreibung) oder Kennung den Text enthält
-                (``sync --source --filter``); der Abgleich gilt dann nicht als vollständig. Nicht für Scraper-Quellen.
+                (``sync --source --filter``); der Abgleich gilt dann nicht als vollständig. Trifft er keine Kommune,
+                endet der Lauf ohne Abgleich und ohne Änderung an der Quelle (``filter_without_match``). Nicht für
+                Scraper-Quellen.
 
         Returns:
             SyncResult with statistics
@@ -980,7 +956,23 @@ class SyncOrchestrator:
                 result.source_name = bodies_data[0].get("name", "Unknown")
                 console.print(f"[green]Source: {result.source_name} ({url_type}, OParl {oparl_version or '?'})[/green]")
 
-                # Ensure source exists in database (use URL as source identifier)
+                # Filter nach Kommune (sync --source --filter). Ohne Treffer endet der Lauf, bevor er die Quelle
+                # anfasst: Ein Tippfehler darf weder Name und Rohdaten noch den Fehlerzustand (Schonung) ändern.
+                selected_bodies = bodies_data
+                if body_filter:
+                    selected_bodies = [
+                        b
+                        for b in bodies_data
+                        if body_filter.lower() in b.get("name", "").lower() or body_filter in b.get("id", "")
+                    ]
+                    console.print(f"[dim]Filtered to {len(selected_bodies)} bodies[/dim]")
+                    if not selected_bodies:
+                        result.filter_without_match = True
+                        result.errors.append(no_filter_match_note(body_filter, bodies_data))
+                        return result
+
+                # Ensure source exists in database (use URL as source identifier); Name und Rohdaten der Quelle wie im
+                # Daemon, also aus allen Kommunen, auch mit Filter
                 source_id = await self.storage.upsert_source(
                     url=url,
                     name=result.source_name,
@@ -988,14 +980,7 @@ class SyncOrchestrator:
                     oparl_version=oparl_version,
                 )
 
-                # Filter nach Kommune (sync --source --filter); Name und Rohdaten der Quelle bleiben wie im Daemon
-                if body_filter:
-                    bodies_data = [
-                        b
-                        for b in bodies_data
-                        if body_filter.lower() in b.get("name", "").lower() or body_filter in b.get("id", "")
-                    ]
-                    console.print(f"[dim]Filtered to {len(bodies_data)} bodies[/dim]")
+                bodies_data = selected_bodies
 
                 # Sync bodies
                 if len(bodies_data) > 1:
@@ -2692,7 +2677,9 @@ class SyncOrchestrator:
         sources = await self.storage.get_all_sources()
 
         if not sources:
-            console.print("[yellow]No sources registered. Use 'add-source' first.[/yellow]")
+            console.print(
+                "[yellow]Keine aktive Quelle (anlegen: manage.py add_oparl_source, aktivieren: Admin)[/yellow]"
+            )
             return []
 
         # Quellen in Schonung überspringen (Issue #89)

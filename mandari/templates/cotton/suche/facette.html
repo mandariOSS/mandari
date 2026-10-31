@@ -7,10 +7,10 @@ optionen (Liste von {value, label?, count?, checked}; bei radio steht „ohne Fi
 adresse (Ziel der Anfrage; Standard die Suche des Bürgerportals, Work übergibt seine Suche, Issue #853),
 dicht (Maße einer Arbeitsplattform: Knopf 32 px, Schrift 14 px; Work. Ohne dicht die Maße des Bürgerportals).
 Die Felder gehören per form="suche-form" zum Suchformular: Mit HTMX wirkt eine Änderung sofort, ohne JavaScript
-übernimmt „Anwenden“.
+übernimmt „Anwenden“. Mit JavaScript schließt ein Klick daneben die Liste (data-aussen-schliessen, frontend/js/form-behaviors.ts).
 {% endcomment %}
 <c-vars titel="" name="" typ="checkbox" optionen="" adresse="" dicht="" />
-<details class="relative group">
+<details class="relative group" data-aussen-schliessen>
     <summary class="list-none inline-flex items-center gap-1.5 {% if dicht %}min-h-8 px-2.5 rounded-md text-sm{% else %}min-h-11 px-3.5 rounded-lg{% endif %} border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 cursor-pointer hover:border-gray-500 [&::-webkit-details-marker]:hidden">
         {{ titel }}{% for o in optionen %}{% if o.checked and o.value %}<span class="sr-only"> (gewählt: {{ o.label|default:o.value }})</span><span class="w-1.5 h-1.5 rounded-full bg-primary-700 dark:bg-primary-300" aria-hidden="true"></span>{% endif %}{% endfor %}
         <i data-lucide="chevron-down" class="w-4 h-4 transition-transform group-open:rotate-180" aria-hidden="true"></i>

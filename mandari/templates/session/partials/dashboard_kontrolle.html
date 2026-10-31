@@ -13,7 +13,7 @@
         {% if audit_summary.last_verify %}
         <c-ui.kpi-tile label="Letzte Kettenprüfung am {{ audit_summary.last_verify.created_at|date:'d.m.Y' }}" value="{% if audit_summary.last_verify.changes.intakt %}intakt{% else %}Befund{% endif %}" tone="{% if audit_summary.last_verify.changes.intakt %}green{% else %}red{% endif %}" />
         {% else %}
-        <c-ui.kpi-tile label="Letzte Kettenprüfung" value="noch keine" tone="amber" />
+        <c-ui.kpi-tile label="Letzte Kettenprüfung" value="noch keine" tone="muted" />
         {% endif %}
         {% endif %}
     </div>

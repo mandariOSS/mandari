@@ -373,7 +373,7 @@ class Person:
     def versand_text(self) -> str:
         """Ergebnis für die Versandliste, wenn nichts schiefging."""
         if self.versendet:
-            return f"verschickt {self.versendet}" + (", ohne nichtöffentlichen Teil" if self.ohne_noe else "")
+            return f"versendet {self.versendet}" + (", ohne nichtöffentlichen Teil" if self.ohne_noe else "")
         return "kein Ergebnis erfasst"
 
 
@@ -503,6 +503,27 @@ def offene_erinnern(meeting: FactionMeeting, now: Any = None) -> tuple[int, int]
         )
     meeting.rsvp_reminder_sent_at = jetzt
     return FactionMeetingEmailService().send_rsvp_reminder(meeting)
+
+
+def bisherige_ansicht(meeting: FactionMeeting, membership: Membership) -> dict[str, Any]:
+    """
+    Versandergebnis und Hinweis auf die Testmail für die bisherige Seite (Issue #855), aus denselben Daten wie die neue:
+    Wer die Sitzung verwaltet, sieht nach dem Versand das Ergebnis je Person mit Grund; wer einladen darf, vor der ersten
+    Einladung der Organisation den Hinweis. Ohne erfasstes Ergebnis (Versand vor dieser Erfassung) entfällt der Abschnitt.
+    """
+    ergebnis = None
+    if ist_eingeladen(meeting) and darf_verwalten(membership, meeting):
+        liste = personen(meeting)
+        zahl = versand(liste)
+        if zahl["unbekannt"] < zahl["gesamt"]:
+            ergebnis = {"zahl": zahl, "personen": liste, "fehler": [p for p in liste if p.fehler]}
+    erste_einladung = (
+        not ist_eingeladen(meeting)
+        and meeting.status in ("draft", "planned")
+        and membership.has_permission("faction.invite")
+        and erstversand(meeting.organization)
+    )
+    return {"versandergebnis": ergebnis, "erste_einladung": erste_einladung}
 
 
 def erstversand(organization: Any) -> bool:

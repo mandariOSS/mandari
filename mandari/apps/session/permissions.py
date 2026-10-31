@@ -15,6 +15,7 @@ from django.contrib.auth.mixins import LoginRequiredMixin
 from django.core.exceptions import PermissionDenied
 from django.http import Http404
 
+from apps.common.demo import ist_demo
 from apps.common.mixins import HTMXMixin
 from apps.common.params import without_nul
 
@@ -229,6 +230,14 @@ class SessionPermissionChecker:
         if not self.session_user:
             return False
         return self.session_user.roles.filter(is_admin=True).exists()
+
+    @property
+    def sieht_betriebshinweise(self) -> bool:
+        """
+        Befehle für den Betrieb auf Seiten der Verwaltung (Issue #745): nur für die Administration des Mandanten und
+        nie in der öffentlichen Demo. Die Audit-Seiten nennen ihre Befehle allen mit Kontrollrecht, außer in der Demo.
+        """
+        return is_admin_user(self.session_user) and not ist_demo()
 
 
 class SessionMixin(LoginRequiredMixin):

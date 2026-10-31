@@ -14,13 +14,13 @@
         <!-- Selbstregistrierung aktivieren -->
         <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
             <div class="flex items-start justify-between gap-4">
-                <div>
+                <div class="min-w-0">
                     <h3 class="font-semibold text-gray-900 dark:text-white mb-1">Selbstregistrierung</h3>
-                    <p class="text-sm text-gray-500 dark:text-gray-400">
+                    <p class="text-sm text-gray-500 dark:text-gray-400 break-words">
                         Ermöglicht es Nutzern, sich selbst für {{ organization.name }} zu registrieren.
                         Der Registrierungslink lautet:
                     </p>
-                    <code class="mt-2 inline-block px-3 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-primary-600 dark:text-primary-400 select-all">
+                    <code class="mt-2 inline-block px-3 py-1.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg text-sm text-primary-600 dark:text-primary-400 select-all max-sm:break-all">
                         {{ request.scheme }}://{{ request.get_host }}/accounts/register/{{ organization.slug }}/
                     </code>
                 </div>

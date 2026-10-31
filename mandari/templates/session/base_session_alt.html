@@ -336,7 +336,7 @@
 </head>
 
 <body class="bg-[#faf9f7] dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-    {% if demo_instance %}{% include "partials/demo_hinweis.html" %}{% endif %}
+    {% if demo_instance %}{% include "partials/demo_hinweis.html" with ueber_leiste=True %}{% endif %}
     <div class="session-layout" x-data="{
         sidebarOpen: false,
         sidebarCollapsed: localStorage.getItem('sessionSidebarCollapsed') === 'true'
@@ -364,7 +364,7 @@
                     {% if user_tenants|length > 1 %}
                     <details class="session-tenant-switch" data-testid="mandant-wechseln">
                         <summary class="session-org-type cursor-pointer select-none">Mandant wechseln</summary>
-                        <ul class="mt-1 space-y-0.5">
+                        <ul class="mt-1 space-y-0.5 max-h-[40vh] overflow-y-auto">
                             {% for t in user_tenants %}{% if t.slug != session_tenant.slug %}
                             <li><a href="{% url 'session:dashboard' tenant_slug=t.slug %}"
                                    class="block rounded px-2 py-1 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700">{{ t.name }}</a></li>

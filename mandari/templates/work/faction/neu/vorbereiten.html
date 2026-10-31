@@ -47,13 +47,15 @@ Die bisherige Seite bleibt unter ?ansicht=bisher (work/faction/detail.html).
             {% endif %}
             {% if eingeladen %}<p class="fs-zurueck"><a class="wf-textlink" href="{{ request.path }}">Zurück zur Einladung</a></p>{% endif %}
             {% include "work/faction/neu/_vb_hinweise.html" %}
-            <div id="agenda-container"
+            {# Lädt die Tagesordnung nach Aktionen im Panel neu. Eigenes Element: Am Container würde hx-vals an alle Formulare darin vererbt und ihr Feld „action“ überschreiben (Issue #855) #}
+            <div hidden
                  hx-post="{% url 'work:faction_action' org_slug=organization.slug meeting_id=meeting.id %}"
                  hx-vals='{"action": "refresh_agenda"}'
                  hx-include="#fs-offen"
                  hx-trigger="agenda-refresh from:body"
-                 hx-target="this"
-                 hx-swap="innerHTML">
+                 hx-target="#agenda-container"
+                 hx-swap="innerHTML"></div>
+            <div id="agenda-container">
                 {% include "work/faction/neu/_vb_tagesordnung.html" %}
             </div>
         </section>

@@ -659,3 +659,15 @@ def test_listen_nicht_in_12_px() -> None:
         text = (neu / datei).read_text(encoding="utf-8")
         for klein in ("text-xs", "text-[11px]", "text-[10px]", "text-[0.75rem]"):
             assert klein not in text, f"{datei}: {klein}"
+
+
+def test_beratungsfolge_nennt_sitzungen_ungekuerzt() -> None:
+    """Issue #1018: Bei 40 Zeichen abgeschnittene Namen ließen sich in der Auswahl nicht unterscheiden."""
+    tenant = _mandant("lang2a", neu=True)
+    welt = _welt_2a(tenant)
+    lang = "Sondersitzung des Rates zum Haushalt und zur Mobilität, Teil zwei"
+    SessionMeeting.objects.filter(pk=welt["sitzung_obj"].pk).update(name=lang)
+    html = _client(tenant, "Administrator").get(welt["vorlage"]).content.decode()
+    # Hinzufügen und je Station der Beratungsfolge im Rat, die noch keinen TOP hat
+    assert html.count(f"{lang}</option>") >= 2
+    assert lang[:39] + "…" not in html

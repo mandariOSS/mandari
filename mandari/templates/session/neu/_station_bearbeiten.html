@@ -16,9 +16,9 @@ Kontext: station und der Kontext der Beratungsfolge.
                 class="h-9 w-full rounded-md border border-gray-300 dark:border-gray-700 bg-band-hell pl-3 pr-8 text-sm text-gray-900 dark:text-white disabled:opacity-60 focus:border-primary-600 focus:ring-1 focus:ring-primary-600 focus:outline-none">
             <option value="">Noch offen</option>
             {% for meeting in consultation_meetings %}
-            {% if station.organization_id in meeting.participating_organization_ids %}<option value="{{ meeting.id }}" {% if station.meeting_id == meeting.id %}selected{% endif %}>{{ meeting.start|date:"d.m.Y" }}, {{ meeting.name|truncatechars:40 }}</option>{% endif %}
+            {% if station.organization_id in meeting.participating_organization_ids %}<option value="{{ meeting.id }}" {% if station.meeting_id == meeting.id %}selected{% endif %}>{{ meeting.start|date:"d.m.Y" }}, {{ meeting.name }}</option>{% endif %}
             {% endfor %}
-            {% if station.meeting and station.meeting not in consultation_meetings %}<option value="{{ station.meeting_id }}" selected>{{ station.meeting.start|date:"d.m.Y" }}, {{ station.meeting.name|truncatechars:40 }}</option>{% endif %}
+            {% if station.meeting and station.meeting not in consultation_meetings %}<option value="{{ station.meeting_id }}" selected>{{ station.meeting.start|date:"d.m.Y" }}, {{ station.meeting.name }}</option>{% endif %}
         </select>
     </span>
     {% if station.agenda_item %}

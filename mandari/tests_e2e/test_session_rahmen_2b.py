@@ -132,6 +132,16 @@ def test_ablaeufe_am_handy_und_tablet(
     )
     assert frei, "„Speichern“ liegt unter der Leiste unten"
 
+    # Eine Meldung steht über der Speichern-Leiste und nimmt ihr keine Klicks weg (#1018)
+    page.evaluate("() => { window.showToast('Die Niederschrift wurde gespeichert.', 'success') }")
+    meldung = page.locator("[x-data='toastManager'] [x-show='toast.visible']")
+    expect(meldung).to_be_visible()
+    page.wait_for_timeout(400)  # Einblenden abwarten
+    unten = meldung.bounding_box()
+    oben = page.locator("[data-meldungen-darueber]").bounding_box()
+    assert unten and oben
+    assert unten["y"] + unten["height"] <= oben["y"], f"Die Meldung {unten} liegt auf der Speichern-Leiste {oben}"
+
 
 @pytest.fixture
 def werkzeuge(bestand: dict[str, Any]) -> dict[str, str]:

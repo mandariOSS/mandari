@@ -14,10 +14,16 @@
     </p>
     {% endif %}
     {% else %}
+    {% if can_manage_settings %}
     <c-ui.alert variant="info" icon="scale">
-        Hybride und digitale Sitzungen sind erst möglich, wenn der Mandant ein Landesprofil gewählt hat{% if can_manage_settings %} –
-        <a href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}" class="underline">Einstellungen „Sitzungsformate“</a>{% endif %}.
+        Hybride und digitale Sitzungen sind erst möglich, wenn der Mandant ein Landesprofil gewählt hat –
+        <a href="{% url 'session:settings_meeting_formats' tenant_slug=tenant_slug %}" class="underline">Einstellungen „Sitzungsformate“</a>.
     </c-ui.alert>
+    {% else %}
+    <p class="text-sm text-gray-500 dark:text-gray-400" data-testid="landesprofil-zustaendig">
+        Hybride und digitale Sitzungen sind erst möglich, wenn der Mandant ein Landesprofil gewählt hat. Das wählen Personen mit dem Recht „Einstellungen verwalten“.
+    </p>
+    {% endif %}
     {% endif %}
 
     <c-form.select :field="form.format" label="Format"
