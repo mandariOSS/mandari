@@ -77,6 +77,44 @@ class ServiceError(Exception):
         self.level = level
 
 
+def _member_slot_free(organization: Organization, *, count_pending: bool = False) -> tuple[bool, int]:
+    """
+    Ist unter ``member_limit`` noch ein Platz frei? Liefert zusätzlich die Zahl offener Einladungen.
+
+    Nur innerhalb einer Transaktion aufrufen: Bei gesetztem Limit wird die Organisationszeile vor dem
+    Zählen gesperrt, damit gleichzeitige Beitritte das Limit nicht gemeinsam überschreiten. Ohne Limit
+    weder Sperre noch Abfrage.
+    """
+    if organization.member_limit is None:
+        return True, 0
+    list(Organization.objects.select_for_update().filter(pk=organization.pk).values_list("pk", flat=True))
+    pending = selectors.pending_invitations(organization).count() if count_pending else 0
+    return organization.has_free_member_slot(reserved=pending), pending
+
+
+def _ensure_free_member_slot(organization: Organization, *, count_pending: bool = False) -> None:
+    """
+    Mitglieder-Limit (``member_limit``, leer = unbegrenzt) durchsetzen wie das Gast-Limit (Issue #1132).
+
+    Neue reguläre Mitglieder, Reaktivierungen und Freischaltungen gibt es nur unterhalb des Limits; mit
+    ``count_pending`` belegen auch offene Einladungen einen Platz. Bestehende Mitglieder bleiben immer.
+    Nur innerhalb einer Transaktion aufrufen (Sperre, siehe :func:`_member_slot_free`).
+    """
+    free, pending = _member_slot_free(organization, count_pending=count_pending)
+    if free:
+        return
+    if pending:
+        raise ServiceError(
+            f"Mitglieder-Limit erreicht ({organization.member_limit}): {organization.get_active_member_count()} "
+            f"aktive Mitglieder und {pending} offene Einladungen. Ziehen Sie eine offene Einladung zurück, "
+            "deaktivieren Sie ein Mitglied oder erhöhen Sie das Limit im Kundenportal."
+        )
+    raise ServiceError(
+        f"Mitglieder-Limit erreicht ({organization.member_limit}). Bestehende Mitglieder bleiben erhalten; "
+        "für weitere Mitglieder deaktivieren Sie ein Mitglied oder erhöhen Sie das Limit im Kundenportal."
+    )
+
+
 def _hub() -> Any:
     """NotificationHub spät importieren (Zyklus work.notifications) und untypisiert durchreichen."""
     from apps.work.notifications.services import NotificationHub
@@ -242,6 +280,7 @@ def invite_member(organization: Organization, inviter: User, email: str, role_id
 
     if selectors.find_pending_invitation(organization, email):
         raise ServiceError(f"Eine Einladung für {email} ist bereits ausstehend.", message_levels.WARNING)
+    _ensure_free_member_slot(organization, count_pending=True)
 
     roles = selectors.roles_by_ids(organization, role_ids) if role_ids else None
     problem = _grant_problem(actor, list(roles)) if roles is not None else None
@@ -268,10 +307,14 @@ def resend_invitation(organization: Organization, invitation: UserInvitation) ->
     Ablauf um sieben Tage verlängern und Einladung mit neuem Link erneut mailen.
 
     Gespeichert ist nur der Hash des bisherigen Tokens; der Link der ersten Mail wird damit ungültig.
+    Eine abgelaufene Einladung belegt danach wieder einen Platz und unterliegt deshalb dem Mitglieder-Limit.
     """
-    invitation.expires_at = timezone.now() + timedelta(days=INVITATION_VALID_DAYS)
-    invitation.issue_token()
-    invitation.save()
+    with transaction.atomic():
+        if invitation.expires_at <= timezone.now():
+            _ensure_free_member_slot(organization, count_pending=True)
+        invitation.expires_at = timezone.now() + timedelta(days=INVITATION_VALID_DAYS)
+        invitation.issue_token()
+        invitation.save()
     send_invitation_email(organization, invitation)
 
 
@@ -323,6 +366,12 @@ def accept_invitation(invitation: UserInvitation, user: User) -> str:
                 "Ihr Zugang zu dieser Organisation ist deaktiviert. Bitte wenden Sie sich an ihre Verwaltung."
             )
     else:
+        if not _member_slot_free(organization)[0]:
+            # Die Einladung bleibt offen und lässt sich annehmen, sobald wieder ein Platz frei ist
+            raise ServiceError(
+                f"{organization.name} hat das Mitglieder-Limit erreicht. Ihre Einladung bleibt gültig; "
+                "bitte wenden Sie sich an die Verwaltung der Organisation."
+            )
         membership = Membership.objects.create(
             user=user,
             organization=organization,
@@ -658,6 +707,7 @@ def deactivate_member(organization: Organization, member: Membership, actor_user
         audit.log_member_access(member, "aktiv", "deaktiviert", actor=_active_membership(organization, actor_user))
 
 
+@transaction.atomic
 def _restore_membership(organization: Organization, member: Membership, actor: Membership | None) -> None:
     """
     Deaktivierte Mitgliedschaft wieder aktivieren – einzige Stelle dafür (Mitgliederverwaltung und
@@ -666,6 +716,8 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     """
     if member.is_guest and not member.is_active and not organization.has_free_guest_slot():
         raise ServiceError(f"Gast-Limit erreicht ({organization.guest_limit}). Erweiterung als Addon im Kundenportal.")
+    if not member.is_guest and not member.is_active:
+        _ensure_free_member_slot(organization)
     _ensure_may_restore(actor, member)
     before = _access_text(member)
     member.is_active = True
@@ -829,8 +881,11 @@ def join_by_self_registration(organization: Organization, user: User) -> Members
     Person sowie Freigebende informieren. Eine bestehende Mitgliedschaft bleibt unverändert.
     """
     _ensure_registration_open(organization, user.email)
-    auto_approve = organization.registration_auto_approve
     with transaction.atomic():
+        # Bei erreichtem Mitglieder-Limit (offene Einladungen zählen mit, wie beim Einladen) wird aus dem
+        # sofortigen Beitritt eine offene Anfrage; freischalten lässt sie sich erst, wenn wieder ein Platz
+        # frei ist (approve_registration)
+        auto_approve = organization.registration_auto_approve and _member_slot_free(organization, count_pending=True)[0]
         membership, created = Membership.objects.get_or_create(
             user=user,
             organization=organization,
@@ -897,16 +952,19 @@ def announce_self_registration(membership: Membership) -> None:
 def approve_registration(membership: Membership, actor: Membership | None = None) -> bool:
     """
     Offene Registrierungsanfrage freischalten und benachrichtigen (:func:`_announce_access`, wie beim
-    Reaktivieren); liefert, ob die Mail rausging.
+    Reaktivieren); liefert, ob die Mail rausging. Unterliegt dem Mitglieder-Limit.
     """
-    before = _access_text(membership)
-    roles = _pending_roles(membership, before)
-    membership.is_active = True
-    membership.registration_requested_at = None
-    membership.save(update_fields=["is_active", "registration_requested_at", "updated_at"])
-    audit.log_member_access(
-        membership, before, "aktiv", roles_after=roles, actor=actor, reason="Registrierungsanfrage freigeschaltet"
-    )
+    with transaction.atomic():
+        if not membership.is_guest and not membership.is_active:
+            _ensure_free_member_slot(membership.organization)
+        before = _access_text(membership)
+        roles = _pending_roles(membership, before)
+        membership.is_active = True
+        membership.registration_requested_at = None
+        membership.save(update_fields=["is_active", "registration_requested_at", "updated_at"])
+        audit.log_member_access(
+            membership, before, "aktiv", roles_after=roles, actor=actor, reason="Registrierungsanfrage freigeschaltet"
+        )
     return _announce_access(membership, "approved", actor)
 
 
@@ -1941,6 +1999,8 @@ FACTION_SETTINGS_FIELDS = frozenset(
         "invitation_lead_hours",
         "agenda_reminder_enabled",
         "agenda_reminder_hours",
+        "meeting_reminder_enabled",
+        "meeting_reminder_hours",
         "protocol_dispatch",
         "protocol_dispatch_delay_hours",
         "quorum_rule",
@@ -1987,7 +2047,12 @@ def _apply_faction_settings(
 ) -> None:
     """Felder aus ``wanted`` (alle bei ``None``) in die Einstellungen der Organisation übernehmen, ohne zu speichern."""
     from apps.common.quorum import QUORUM_RULES
-    from apps.work.faction.invitations import AGENDA_REMINDER_MAX_HOURS, INVITATION_DISPATCH_MODES, INVITATION_MODES
+    from apps.work.faction.invitations import (
+        AGENDA_REMINDER_MAX_HOURS,
+        INVITATION_DISPATCH_MODES,
+        INVITATION_MODES,
+        MEETING_REMINDER_MAX_HOURS,
+    )
     from apps.work.faction.protocol_dispatch import PROTOCOL_DISPATCH_MAX_DELAY_HOURS, PROTOCOL_DISPATCH_MODES
 
     def want(key: str) -> bool:
@@ -2023,6 +2088,18 @@ def _apply_faction_settings(
         )
         if reminder_hours is not None:
             faction_settings["agenda_reminder_hours"] = reminder_hours
+
+    # Erinnerung an die Sitzung (Issue #1071): Standard an, 48 Stunden vor Beginn. Das Formular als Ganzes (ohne
+    # JavaScript, bisherige Vorlage) enthält sie nur in der neuen Vorlage; fehlt das Stundenfeld, bleibt sie, wie sie ist.
+    meeting_reminder_in_form = wanted is not None or "meeting_reminder_hours" in form
+    if want("meeting_reminder_enabled") and meeting_reminder_in_form:
+        faction_settings["meeting_reminder_enabled"] = form.get("meeting_reminder_enabled") == "on"
+    if want("meeting_reminder_hours") and meeting_reminder_in_form:
+        meeting_hours = _hours(
+            form, "meeting_reminder_hours", 1, MEETING_REMINDER_MAX_HOURS, "Erinnerung an die Sitzung", strict
+        )
+        if meeting_hours is not None:
+            faction_settings["meeting_reminder_hours"] = meeting_hours
 
     # Automatischer Protokollversand (Issue #871): Standard aus. Beim Einschalten zählt erst, was danach
     # fällig wird – ältere Protokolle gehen nicht nachträglich raus.
@@ -2199,6 +2276,10 @@ def add_schedule(organization: Organization, data: ScheduleInput) -> FactionMeet
     if weekday not in dict(FactionMeetingSchedule.WEEKDAY_CHOICES):
         weekday = 0
     automation = _parse_automation(data.automation or ScheduleAutomationInput())
+    from apps.work.faction.services import safe_link_url
+
+    if data.default_video_link and not safe_link_url(data.default_video_link):
+        raise ServiceError("Bitte den Videolink als vollständige Adresse mit https:// angeben.")
     schedule = FactionMeetingSchedule.objects.create(
         organization=organization,
         name=data.name,
@@ -2269,6 +2350,76 @@ def _schedule(organization: Organization, schedule_id: Any) -> FactionMeetingSch
     if schedule is None:
         raise ServiceError("Sitzungsreihe nicht gefunden.")
     return schedule
+
+
+def _schedule_or_error(organization: Organization, schedule_id: Any) -> FactionMeetingSchedule:
+    """Wie ``_schedule``, ungültige Kennungen inbegriffen."""
+    try:
+        return _schedule(organization, schedule_id)
+    except (ValidationError, ValueError) as exc:
+        raise ServiceError("Sitzungsreihe nicht gefunden.") from exc
+
+
+def plan_schedule_change(organization: Organization, form: Mapping[str, str]) -> Any:
+    """
+    Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): was die Änderung mit den kommenden Terminen macht
+    (``apps.work.faction.reihe.Plan``), ohne zu speichern.
+    """
+    from apps.work.faction import reihe
+
+    schedule = _schedule_or_error(organization, form.get("schedule_id"))
+    try:
+        return reihe.plan(schedule, reihe.werte_aus(form))
+    except reihe.ReiheError as exc:
+        raise ServiceError(str(exc)) from exc
+
+
+def update_schedule(organization: Organization, membership: Membership, form: Mapping[str, str]) -> tuple[Any, Any]:
+    """
+    Bestehende Sitzungsreihe bearbeiten (Issue #1071): Name, Wiederholung, Wochentag, Beginn, Dauer, Ort, Videolink.
+    Wirkt auf künftige, noch nicht eingeladene Termine (``apps.work.faction.reihe``). Liefert Reihe und Plan.
+    """
+    from apps.work.faction import reihe
+
+    schedule = _schedule_or_error(organization, form.get("schedule_id"))
+    try:
+        return schedule, reihe.apply(schedule, reihe.werte_aus(form), membership)
+    except reihe.ReiheError as exc:
+        raise ServiceError(str(exc)) from exc
+
+
+def restore_deleted_date(organization: Organization, form: Mapping[str, str]) -> tuple[Any, bool]:
+    """
+    Gelöschten Termin wiederherstellen (Issue #1071, Formularfeld ``exception_id``): Ausnahme „Gelöscht“ entfernen
+    und, wenn er noch bevorsteht und die Reihe aktiv ist, den Termin wieder anlegen. Liefert das Datum und ob er wieder
+    angelegt wurde.
+    """
+    from apps.work.faction.generation import restore_occurrence
+    from apps.work.faction.models import FactionMeetingException
+
+    exception_id = form.get("exception_id") or ""
+
+    try:
+        exception = (
+            FactionMeetingException.objects.filter(
+                id=exception_id, schedule__organization=organization, exception_type="deleted"
+            )
+            .select_related("schedule__organization")
+            .first()
+        )
+    except (ValidationError, ValueError):
+        exception = None
+    if exception is None:
+        raise ServiceError("Gelöschter Termin nicht gefunden.")
+    from apps.work.faction.generation import renumber_upcoming
+
+    schedule, datum = exception.schedule, exception.original_date
+    exception.delete()
+    angelegt = cast(Any, restore_occurrence)(schedule, datum) is not None
+    if angelegt:
+        # Der wiederhergestellte Termin bekommt die nächste freie Nummer; danach nach Datum ordnen (Issue #1071)
+        cast(Any, renumber_upcoming)(organization)
+    return datum, angelegt
 
 
 def toggle_schedule(organization: Organization, schedule_id: Any) -> FactionMeetingSchedule:

@@ -277,15 +277,49 @@ def _delete_with_audit(obj: Model, impact: DeletionImpact) -> None:
 
 
 @transaction.atomic
-def delete_meeting(meeting: FactionMeeting, membership: Membership | None, confirmation: Any) -> DeletionImpact:
-    """Sitzung endgültig löschen: nur mit ``faction.delete`` und passender Eingabe (Datum oder Titel)."""
+def delete_meeting(
+    meeting: FactionMeeting, membership: Membership | None, confirmation: Any, reason: str = ""
+) -> DeletionImpact:
+    """
+    Sitzung endgültig löschen: nur mit ``faction.delete`` und passender Eingabe (Datum oder Titel).
+
+    Ein bevorstehender Termin einer Sitzungsreihe wird als Ausnahme „Gelöscht“ an der Reihe gemerkt (Issue #1071),
+    mit Grund und Namen: Die Reihe legt ihn nicht wieder an, auch nicht nach einer Änderung des Rhythmus.
+    """
     if not can_delete(membership):
         raise DeletionNotAllowedError(NOT_ALLOWED)
     if not confirmed(confirmation, meeting_phrases(meeting)):
         raise DeletionNotConfirmedError(NOT_CONFIRMED_MEETING)
     impact = impact_of(meeting)
+    remember_deleted_occurrence(meeting, membership, reason)
     _delete_with_audit(meeting, impact)
     return impact
+
+
+def remember_deleted_occurrence(meeting: FactionMeeting, membership: Membership | None, reason: str = "") -> bool:
+    """
+    Gelöschten Termin an der Reihe merken (Ausnahme „Gelöscht“), wenn er zu einer Reihe gehört und noch bevorsteht.
+    Eine schon vorhandene Ausnahme an diesem Tag (etwa eine Pause) bleibt unverändert. Liefert, ob gemerkt wurde.
+    """
+    from .models import FactionMeetingException
+
+    if meeting.schedule_id is None or meeting.scheduled_date is None:
+        return False
+    if meeting.scheduled_date < timezone.localdate():
+        return False
+    name = ""
+    if membership is not None and getattr(membership, "user", None) is not None:
+        name = (membership.user.get_full_name() or membership.user.email or "").strip()
+    _exception, created = FactionMeetingException.objects.get_or_create(
+        schedule_id=meeting.schedule_id,
+        original_date=meeting.scheduled_date,
+        defaults={
+            "exception_type": "deleted",
+            "reason": (reason or "").strip()[:500],
+            "created_by_name": name[:200],
+        },
+    )
+    return created
 
 
 @transaction.atomic

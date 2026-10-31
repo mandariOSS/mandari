@@ -86,4 +86,7 @@ TWO_FACTOR_ENFORCEMENT = False
 # Wartungsmodus in Tests aus (keine Einstellungsabfrage je Anfrage); geprüft in apps/common/tests/test_wartungsmodus.py
 MAINTENANCE_MODE_ENFORCEMENT = False
 ADMIN_ALLOWED_NETWORKS = []
+# Provisioning-API v2 in Tests aus, unabhängig von einer lokalen .env; die Tests setzen den Schlüssel selbst
+PROVISIONING_V2_API_KEY = ""
+PROVISIONING_V2_ALLOWED_NETWORKS = []
 WEBAUTHN_RP_ID = "testserver"

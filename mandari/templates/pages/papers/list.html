@@ -1,7 +1,7 @@
 {% extends "base_insight.html" %}
 {% load static %}
 
-{% block title %}Vorgänge{% endblock %}
+{% block title %}Vorgänge{% if page_obj.number > 1 %} – Seite {{ page_obj.number }}{% endif %}{% endblock %}
 
 {% block page %}
 <c-insight.kopfband titel="Vorgänge" text="{% if active_body %}Vorlagen, Anträge und Anfragen von {{ active_body.get_display_name }} mit Beratungsverlauf und Dokumenten.{% else %}Bitte wählen Sie eine Kommune aus.{% endif %}">
@@ -23,7 +23,7 @@
                        hx-target="#papers-list"
                        hx-swap="innerHTML"
                        hx-indicator="#search-loading"
-                       hx-include="#filter-type"
+                       hx-include="#filter-type, #filter-fraktion"
                        class="w-full pl-10 pr-10 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 focus:ring-2 focus:ring-primary-500/20 outline-none">
                 <!-- Loading indicator -->
                 <div id="search-loading" class="htmx-indicator absolute right-3 top-1/2 -translate-y-1/2">
@@ -42,11 +42,29 @@
                         hx-trigger="change"
                         hx-target="#papers-list"
                         hx-swap="innerHTML"
-                        hx-include="#search-papers"
+                        hx-include="#search-papers, #filter-fraktion"
                         class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-none">
                     <option value="">Alle Typen</option>
                     {% for type in paper_types %}
                     <option value="{{ type }}" {% if request.GET.type == type %}selected{% endif %}>{{ type }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+            {% if paper_fraktionen %}
+            <div class="shrink-0">
+                <label for="filter-fraktion" class="sr-only">Nach antragstellender Fraktion filtern</label>
+                <select id="filter-fraktion"
+                        name="fraktion"
+                        hx-get="{{ request.path }}"
+                        hx-trigger="change"
+                        hx-target="#papers-list"
+                        hx-swap="innerHTML"
+                        hx-include="#search-papers, #filter-type"
+                        class="w-full sm:w-auto px-4 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white focus:border-primary-500 outline-none">
+                    <option value="">Alle Fraktionen</option>
+                    {% for wert, anzeige in paper_fraktionen %}
+                    <option value="{{ wert }}" {% if request.GET.fraktion == wert %}selected{% endif %}>{{ anzeige }}</option>
                     {% endfor %}
                 </select>
             </div>

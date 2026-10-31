@@ -16,9 +16,10 @@ from apps.common.mixins import HTMXMixin
 from hub.ris import selectors as ris_selectors
 from hub.ris import vorlagennummer
 
-from ..models import OParlPaper
+from ..models import OParlPaper, VorgangUrheber
 from ..services import file_reconcile
 from ..services.vorgang_dokumente import dokumente_anhaengen
+from ..services.vorgang_urheber import fraktionen_der_kommune, urheber_je_vorgang
 from ._helpers import ActiveBodyRequiredMixin, BegrenzteSeitenMixin, get_active_body
 from ._withdrawn import withdrawn_response
 
@@ -74,6 +75,13 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
         if paper_type:
             qs = qs.filter(paper_type=paper_type)
 
+        # Antragstellende Fraktion (Issue #1138)
+        fraktion = self.request.GET.get("fraktion", "").strip()
+        if fraktion:
+            qs = qs.filter(
+                pk__in=VorgangUrheber.objects.filter(body_id=body.pk, bezeichnung=fraktion).values("paper_id")
+            )
+
         # Suche in Name und Nummer, Vorlagennummern in jeder Schreibweise mit dem passenden Vorgang vorn (Issue #1102)
         return ris_selectors.search_papers_in(qs, self.request.GET.get("q", ""))
 
@@ -82,7 +90,11 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
         body = get_active_body(self.request)
         # Leerzustand bei einer Vorlagennummer: „Die Vorlage … liegt uns noch nicht vor.“ (nur ohne weiteren Filter)
         q = self.request.GET.get("q", "").strip()
-        if vorlagennummer.sieht_wie_nummer_aus(q) and not self.request.GET.get("type", "").strip():
+        if (
+            vorlagennummer.sieht_wie_nummer_aus(q)
+            and not self.request.GET.get("type", "").strip()
+            and not self.request.GET.get("fraktion", "").strip()
+        ):
             context["nummer_gesucht"] = q
 
         if body:
@@ -94,6 +106,8 @@ class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, BegrenzteSeitenMixin, Li
                 .distinct()
                 .order_by("paper_type")
             )
+            # Fraktionen, die in der Kommune Vorgänge gestellt haben (Filter, Issue #1138)
+            context["paper_fraktionen"] = fraktionen_der_kommune(body.pk)
 
         from ..seo import get_list_seo
 
@@ -145,6 +159,8 @@ class PaperDetailView(DetailView):
         # entfernt hat oder die dort nicht mehr abrufbar sind (Löschabgleich, #787)
         files = [f for f in paper.files.all() if not f.withdrawn_by_publisher and not file_reconcile.is_blocked(f)]
         context["files"] = files
+        # Antragstellende Fraktionen (Issue #1138)
+        context["urheber"] = urheber_je_vorgang([paper.pk]).get(paper.pk, [])
 
         # Beratungsverlauf (Consultations mit Meeting-Info), Stand-Satz und Zeitstrahl; der Verlauf kommt aus der
         # Lese-Fassade wie auf der Vorgangsseite von Work (Issue #853)

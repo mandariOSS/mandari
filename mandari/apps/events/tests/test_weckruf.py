@@ -28,7 +28,7 @@ from typing import Any
 
 import psycopg
 import pytest
-from django.db import connection, transaction
+from django.db import DEFAULT_DB_ALIAS, connection, connections, transaction
 from prometheus_client import REGISTRY
 from psycopg.conninfo import conninfo_to_dict
 
@@ -90,8 +90,10 @@ def test_ohne_direktverbindung_gelten_die_daten_der_standarddatenbank(
     settings: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     settings.EVENTS_DB_DIRECT_URL = ""
+    # Am echten Wrapper patchen, nicht am Proxy `connection`: Seit pytest 9.2 löscht undo() sonst
+    # `settings_dict` an der Verbindung, und alle folgenden Tests des Workers scheitern.
     monkeypatch.setattr(
-        connection,
+        connections[DEFAULT_DB_ALIAS],
         "settings_dict",
         {
             "NAME": "mandari",

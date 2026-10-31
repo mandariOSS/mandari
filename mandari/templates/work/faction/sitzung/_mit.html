@@ -1,0 +1,6 @@
+{# Wer gerade im Protokoll dieses TOPs ist (Live-Mitschreiben, Issue #874); Daten aus sitzungsNotizen.andere() #}
+<span class="fs-mit" role="img" :aria-label="andereText()" x-show="andere().length" x-cloak>
+    <template x-for="p in andere()" :key="p.user">
+        <span class="av" :class="{ 'schreibt': p.schreibt }" :style="`--fs-av-farbe: ${p.color}`" :title="p.name + (p.schreibt ? ', schreibt mit' : ', liest mit')" x-text="p.kuerzel"></span>
+    </template>
+</span>

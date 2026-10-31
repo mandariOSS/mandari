@@ -9,6 +9,7 @@ from django.contrib import messages
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse
 from django.shortcuts import redirect
+from django.template.loader import render_to_string
 from django.utils import timezone
 from django.views.generic import TemplateView
 
@@ -198,6 +199,8 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
         context["faction_settings"] = services.faction_settings_with_defaults(self.organization)
         context["felder"] = {key: fraktion_einstellungen.felder(key) for key in fraktion_einstellungen.ABSCHNITT_FELDER}
         context["top_rechte"] = fraktion_einstellungen.top_rechte(self.organization)
+        # Ordner „Nichtöffentliche Vorgänge“ (Issue #873, Muster): nur Information, Dateizahl nur für Vereidigte
+        context["noe_ordner"] = fraktion_einstellungen.nichtoeffentlich_ordner(self.organization, self.membership)
 
         # Available placeholders for reference
         context["placeholders"] = [
@@ -241,12 +244,17 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
         section = request.POST.get("section", "")
         if section in self.SOFORT and self.is_htmx:
             return self._sofort_speichern(request, section)
+        # Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): wie viele Termine sich ändern, ohne zu speichern
+        if section == "update_schedule" and "vorschau" in request.POST and self.is_htmx:
+            return self._reihe_vorschau(request)
         # Sitzungsreihen + Ausfallregeln (Issue #61) — eigene Formularaktionen
         if section:
             handler = {
                 "save_settings": self._save_settings,
                 "add_schedule": self._add_schedule,
                 "update_schedule_automation": self._update_schedule_automation,
+                "update_schedule": self._update_schedule,
+                "restore_deleted_date": self._restore_deleted_date,
                 "toggle_schedule": self._toggle_schedule,
                 "delete_schedule": self._delete_schedule,
                 "add_exception": self._add_exception,
@@ -265,6 +273,9 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
                     handler(request)
                 except ServiceError as exc:
                     flash_error(request, exc)
+            # Wiederherstellen aus der Liste der Fraktionssitzungen führt dorthin zurück
+            if section == "restore_deleted_date" and fraktion_einstellungen.zurueck_zur_liste(request.POST):
+                return redirect("work:faction", org_slug=self.organization.slug)
             return redirect("work:organization_faction_settings", org_slug=self.organization.slug)
 
         services.save_faction_settings(self.organization, self.membership, request.POST)
@@ -319,6 +330,37 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
         if updated:
             message += f" Zu- und Absagen bei {updated} kommenden Terminen angepasst."
         messages.success(request, message)
+
+    def _reihe_vorschau(self, request) -> HttpResponse:
+        """Satz für den Abschnitt „Sitzungsreihe bearbeiten“: was mit den kommenden Terminen geschieht."""
+        try:
+            plan = services.plan_schedule_change(self.organization, request.POST)
+        except ServiceError as exc:
+            html = render_to_string(
+                "work/organization/neu/_fraktion_reihe_vorschau.html", {"fehler": str(exc)}, request=request
+            )
+            return HttpResponse(html)
+        html = render_to_string("work/organization/neu/_fraktion_reihe_vorschau.html", {"plan": plan}, request=request)
+        return HttpResponse(html)
+
+    def _update_schedule(self, request):
+        schedule, plan = services.update_schedule(self.organization, self.membership, request.POST)
+        if not plan.reihe_felder:
+            messages.info(request, f"Sitzungsreihe „{schedule.name}“: nichts geändert.")
+            return
+        messages.success(request, f"Sitzungsreihe „{schedule.name}“ gespeichert. {plan.satz()}")
+
+    def _restore_deleted_date(self, request):
+        datum, angelegt = services.restore_deleted_date(self.organization, request.POST)
+        tag = datum.strftime("%d.%m.%Y")
+        if angelegt:
+            messages.success(request, f"Termin am {tag} wiederhergestellt. Work hat ihn wieder angelegt.")
+        else:
+            messages.success(
+                request,
+                f"Termin am {tag} wiederhergestellt. Work legt ihn jetzt nicht an, weil die Reihe pausiert ist oder "
+                "der Termin außerhalb des Vorlaufs liegt.",
+            )
 
     def _toggle_schedule(self, request):
         schedule = services.toggle_schedule(self.organization, request.POST.get("schedule_id"))

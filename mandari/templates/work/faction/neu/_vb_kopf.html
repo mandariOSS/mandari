@@ -3,7 +3,8 @@
 Kopf der Seite vor der Sitzung (Issue #1071, Muster sitzung.html): Zurück, Titel mit Termin und Ort, Ablaufleiste
 Planung → Einladung → Sitzung → Protokoll (Markup wie der Kopf der laufenden Sitzung, .fs-kopf/.fs-stufen), Menü
 „Weitere Aktionen“. Darunter die Infoleiste: ein Satz und höchstens eine Hauptaktion (Einladen, Freigeben,
-Aktualisieren, Starten), nach dem Versand dazu „Versandergebnis“.
+Aktualisieren, Starten), nach dem Versand dazu „Versandergebnis“. Nach der Sitzung (neu/protokoll.html) Bestätigen,
+Direkt genehmigen oder Nachtrag; Kalender und Videoraum entfallen dort, dafür „Protokoll als PDF“.
 Kontext: meeting, org_slug, stufen, info, verwalten, can_edit, can_delete, can_start, can_manage_attendance, darf_einladen,
 eingeladen,
 empfaenger, membership.
@@ -15,6 +16,7 @@ empfaenger, membership.
     <div class="fs-titel">
         <h1 title="{{ meeting.title }}">{{ meeting.title }}</h1>
         {% for stufe in stufen %}{% if stufe.stand == 'aktuell' %}<span class="fs-mobil-nur fs-stufe-mobil">Schritt {{ stufe.nr }} von 4: {{ stufe.name }}, {{ stufe.unter }}</span>{% endif %}{% endfor %}
+        {% if meeting.protocol_approved %}<span class="fs-mobil-nur fs-stufe-mobil">Abgeschlossen, Protokoll {{ stufen.3.unter }}</span>{% endif %}
         <p class="fs-kopf-meta">{{ meeting.start|date:"D d.m.Y" }}, {{ meeting.start|time:"H:i" }}{% if meeting.end %} bis {{ meeting.end|time:"H:i" }}{% endif %}{% if meeting.location %}, {{ meeting.location }}{% endif %}{% if meeting.is_virtual %}{% if meeting.location %}, auch{% else %},{% endif %} per Video{% endif %}</p>
     </div>
     <ol class="fs-stufen" aria-label="Ablauf der Sitzung">
@@ -51,15 +53,22 @@ empfaenger, membership.
                 {% if can_manage_attendance %}
                 <button type="button" role="menuitem" @click="offen = false; $dispatch('open-add-attendee')"><i data-lucide="user-plus" aria-hidden="true"></i>Teilnehmer hinzufügen …</button>
                 {% endif %}
+                {% if meeting.status != 'completed' and meeting.status != 'cancelled' %}
                 {% if meeting.is_virtual and meeting.video_link %}
                 <a role="menuitem" href="{{ meeting.video_link }}" target="_blank" rel="noopener noreferrer"><i data-lucide="video" aria-hidden="true"></i>Videoraum öffnen</a>
                 {% endif %}
                 <a role="menuitem" href="{% url 'work:faction_ics' org_slug=org_slug meeting_id=meeting.id %}"><i data-lucide="calendar-plus" aria-hidden="true"></i>In Kalender übernehmen</a>
+                {% endif %}
+                {% if rechte.pdf_intern %}
+                <a role="menuitem" href="{% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=meeting.id variant='intern' %}"><i data-lucide="download" aria-hidden="true"></i>Protokoll als PDF</a>
+                {% elif rechte.pdf_oeffentlich %}
+                <a role="menuitem" href="{% url 'work:faction_protocol_pdf' org_slug=org_slug meeting_id=meeting.id variant='oeffentlich' %}"><i data-lucide="download" aria-hidden="true"></i>Protokoll als PDF</a>
+                {% endif %}
                 {% if membership|has_perm:"faction.view_audit" %}
                 <a role="menuitem" href="{% url 'work:faction_audit' org_slug=org_slug %}?meeting={{ meeting.id }}"><i data-lucide="history" aria-hidden="true"></i>Änderungshistorie</a>
                 {% endif %}
                 <a role="menuitem" href="?ansicht=bisher"><i data-lucide="layout-list" aria-hidden="true"></i>Bisherige Ansicht</a>
-                {% if can_edit and meeting.status != 'cancelled' %}
+                {% if can_edit and meeting.status in 'draft,planned,invited,ongoing' %}
                 <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" data-confirm="Sitzung wirklich absagen? Sie bleibt mit allen Daten erhalten.">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="cancel">
@@ -99,6 +108,12 @@ empfaenger, membership.
         {% if darf_einladen %}<button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-einladen').showModal()" aria-haspopup="dialog">Jetzt einladen …</button>{% endif %}
         {% elif info.aktion == "aktualisieren" %}
         <button type="button" class="wf-knopf wf-klein wf-haupt" @click="document.getElementById('fs-aktualisieren').showModal()" aria-haspopup="dialog">Aktualisierung senden …</button>
+        {% elif info.aktion == "bestaetigen" %}
+        <button type="button" class="wf-knopf wf-klein wf-haupt" @click="document.getElementById('fs-bestaetigen').showModal()" aria-haspopup="dialog">Anwesenheit bestätigen …</button>
+        {% elif info.aktion == "genehmigen" %}
+        <button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-genehmigen').showModal()" aria-haspopup="dialog">Direkt genehmigen …</button>
+        {% elif info.aktion == "nachtrag" %}
+        <button type="button" class="wf-knopf wf-klein" @click="document.getElementById('fs-nachtrag').showModal()" aria-haspopup="dialog">Nachtrag erfassen</button>
         {% elif info.aktion == "starten" %}
         {% if can_start %}
         <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">

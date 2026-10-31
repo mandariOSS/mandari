@@ -117,6 +117,11 @@ class FactionActionView(WorkViewMixin, View):
     def _render_agenda(self, request, meeting):
         # Seite vor der Sitzung nach dem Muster (Issue #1071): ihre Tagesordnung statt der bisherigen
         if fragment_neu(request):
+            # Nach der Sitzung (Issue #1071, Schritt 3): das Protokoll als Dokument
+            from . import protokoll
+
+            if protokoll.ist_nach_der_sitzung(meeting):
+                return protokoll.dokument_html(self, request, meeting)
             from . import vorbereiten
 
             return vorbereiten.tagesordnung_html(self, request, meeting)
@@ -238,9 +243,17 @@ class FactionActionView(WorkViewMixin, View):
         if not self._can_manage_meeting(meeting):
             messages.error(request, "Keine Berechtigung zum Absagen.")
             return self._redirect_detail(meeting)
-        if meeting.status not in ["completed", "cancelled"]:
-            meeting.status = "cancelled"
-            meeting.save()
+        if meeting.status in ["completed", "cancelled"]:
+            # Abgeschlossene oder schon abgesagte Sitzungen bleiben, wie sie sind – ohne Erfolgsmeldung
+            meldung = (
+                "Die Sitzung ist bereits abgesagt."
+                if meeting.status == "cancelled"
+                else "Eine abgeschlossene Sitzung lässt sich nicht mehr absagen."
+            )
+            messages.error(request, meldung)
+            return self._refresh_or_redirect(request, meeting)
+        meeting.status = "cancelled"
+        meeting.save()
         return self._refresh_or_redirect(request, meeting, "Sitzung abgesagt.")
 
     def _rejected(self, request, meeting, message, status):
@@ -253,8 +266,13 @@ class FactionActionView(WorkViewMixin, View):
     def _delete(self, request, meeting):
         """Sitzung endgültig löschen – nur mit ``faction.delete`` und Datum oder Titel als Eingabe (Issue #897)."""
         title = meeting.title
+        aus_reihe = bool(
+            meeting.schedule_id and meeting.scheduled_date and meeting.scheduled_date >= timezone.localdate()
+        )
         try:
-            deletion.delete_meeting(meeting, self.membership, request.POST.get("confirmation", ""))
+            deletion.delete_meeting(
+                meeting, self.membership, request.POST.get("confirmation", ""), reason=request.POST.get("reason", "")
+            )
         except deletion.DeletionNotAllowedError:
             return self._rejected(request, meeting, deletion.NOT_ALLOWED, 403)
         except deletion.DeletionNotConfirmedError:
@@ -262,7 +280,10 @@ class FactionActionView(WorkViewMixin, View):
         except deletion.DeletionBlockedError:
             return self._rejected(request, meeting, deletion.BLOCKED, 400)
 
-        messages.success(request, f"Sitzung „{title}“ wurde gelöscht.")
+        meldung = f"Sitzung „{title}“ wurde gelöscht."
+        if aus_reihe:
+            meldung += " Work legt den Termin nicht wieder an; die Reihe geht mit dem nächsten Termin weiter."
+        messages.success(request, meldung)
         target = reverse("work:faction", kwargs={"org_slug": self.organization.slug})
         # HTMX folgte sonst der Umleitung und tauschte die Liste samt Rahmen in den Dialog (Issue #895)
         if self.is_htmx:

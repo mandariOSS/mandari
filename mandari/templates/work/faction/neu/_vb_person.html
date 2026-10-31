@@ -1,7 +1,8 @@
 {% load permission_tags %}
 {% comment %}
 Eine Person in der Einladung (Issue #1071, Muster tlnZeile): Kürzel und Name, Rolle, Rückmeldung mit Zeitpunkt und
-Nachricht (nur mit Zu- und Absagen; bei offenen auch die Erinnerung „Offene erinnern“), Versandergebnis der Einladung. Kontext: p (vorbereiten.Person), rm, org_slug,
+Nachricht (nur mit Zu- und Absagen; bei offenen auch die Erinnerung „Offene erinnern“), Versandergebnis der Einladung
+und der Erinnerung an die Sitzung. Kontext: p (vorbereiten.Person), rm, org_slug,
 meeting, membership.
 {% endcomment %}
 <tr data-testid="fs-person">
@@ -22,5 +23,7 @@ meeting, membership.
         {% else %}
         <span class="vs">{% if meeting.invitation_sent_at %}Ergebnis nicht erfasst{% else %}nicht verschickt{% endif %}</span>
         {% endif %}
+        {% if p.sitzung_erinnert_fehler %}<span class="rm-text fehler">Erinnerung an die Sitzung nicht verschickt. {{ p.sitzung_erinnert_fehler }}</span>
+        {% elif p.sitzung_erinnert %}<span class="rm-text">an die Sitzung erinnert {{ p.sitzung_erinnert }}</span>{% endif %}
     </td>
 </tr>

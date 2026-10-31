@@ -1810,3 +1810,54 @@ class PersonFraktionAdmin(ModelAdmin):
     def ablehnen_auswahl(self, request: HttpRequest, queryset: QuerySet[PersonFraktion]) -> None:
         anzahl = sum(fraktionen_service.ablehnen(zuordnung) for zuordnung in queryset)
         messages.success(request, f"{anzahl} Zuordnung(en) abgelehnt.")
+
+
+# =============================================================================
+# Antragstellende Fraktionen (Issue #1138)
+# =============================================================================
+
+from .models import FraktionsBezeichnung, FraktionsZugehoerigkeit, VorgangUrheber  # noqa: E402
+
+
+@admin.register(FraktionsZugehoerigkeit)
+class FraktionsZugehoerigkeitAdmin(ModelAdmin):
+    """
+    Gepflegte Fraktionszugehörigkeiten für Kommunen ohne Fraktionsmitgliedschaften in OParl (Issue #1138).
+
+    Gezählt wird die Fraktion bzw. Ratsgruppe, nicht die Partei der Wahl. Nachbesetzungen und Wechsel über
+    „Gültig ab/bis“; eine leere Fraktion heißt „offen“. Import per ``manage.py fraktionszugehoerigkeiten_import``.
+    Nach Änderungen die Vorgänge der Kommune neu ermitteln (``vorgang_urheber_ermitteln --kommune … --alle``).
+    """
+
+    list_display = ["nachname", "vorname", "fraktion", "kurzform", "art", "body", "gueltig_ab", "gueltig_bis"]
+    list_filter = ["body", "art", "fraktion"]
+    list_select_related = ["body"]
+    search_fields = ["nachname", "vorname", "fraktion", "kurzform"]
+    readonly_fields = ["angelegt", "geaendert"]
+    ordering = ["body", "fraktion", "nachname"]
+
+
+@admin.register(FraktionsBezeichnung)
+class FraktionsBezeichnungAdmin(ModelAdmin):
+    """Namen einer gepflegten Fraktion oder Ratsgruppe je Zeitraum (Umbenennung bei gleicher Besetzung, #1138)."""
+
+    list_display = ["fraktion", "bezeichnung", "kurzform", "body", "gueltig_ab", "gueltig_bis"]
+    list_filter = ["body"]
+    list_select_related = ["body"]
+    search_fields = ["fraktion", "bezeichnung", "kurzform"]
+    readonly_fields = ["angelegt", "geaendert"]
+
+
+@admin.register(VorgangUrheber)
+class VorgangUrheberAdmin(ModelAdmin):
+    """Ermittelte antragstellende Fraktionen (nur lesen; sie entstehen bei jedem Lauf neu)."""
+
+    list_display = ["paper_id", "bezeichnung", "kurzform", "art", "herkunft", "angelegt"]
+    list_filter = ["herkunft", "art"]
+    search_fields = ["bezeichnung", "=paper_id"]
+
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        return False
+
+    def has_change_permission(self, request: HttpRequest, obj: Any = None) -> bool:
+        return False

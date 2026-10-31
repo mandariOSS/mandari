@@ -25,8 +25,8 @@
     "ms": 500
   },
   "insight_vorgaenge": {
-    "beschreibung": "Insight: Vorgangsliste",
-    "abfragen": 14,
+    "beschreibung": "Insight: Vorgangsliste (+1 Auswahl der antragstellenden Fraktionen, #1138)",
+    "abfragen": 15,
     "ms": 500
   },
   "session_sitzungsliste": {
@@ -65,8 +65,8 @@
     "ms": 500
   },
   "oparl_vorgaenge": {
-    "beschreibung": "OParl (Aggregator): Vorgangsliste einer Kommune, erste Seite",
-    "abfragen": 11,
+    "beschreibung": "OParl (Aggregator): Vorgangsliste einer Kommune, erste Seite (+1 antragstellende Fraktionen der Seite, #1138)",
+    "abfragen": 12,
     "ms": 500
   },
   "oparl_sitzungen": {

@@ -9,11 +9,15 @@ Suchmaschinen die Detailseiten. Alles, was nur eine andere Sicht auf denselben B
 
 - **Suche** (``/insight/suche/``) immer: ``noindex, follow`` im Seitenkopf.
 - **Listen** (Vorgänge, Sitzungen, Gremien, Personen, Beschlüsse …), sobald ein Filter-, Seiten- oder
-  Sortierparameter gesetzt ist. Ohne Parameter bleibt die Liste, wie sie ist.
+  Sortierparameter gesetzt ist. Ohne Parameter bleibt die Liste, wie sie ist. Ausnahme sind die Blätteransichten der
+  Listen je Kommune (``blaetteransicht``): Sie tragen ihre eigene kanonische Adresse und bleiben im Index, sonst
+  folgen Suchmaschinen ihren Links auf Dauer nicht mehr.
 - **Teilansichten** (HTMX-Ausschnitte, JSON für Karte, Kalender und Kommunenwechsel) sowie **Dateien**
   (PDF-Vorschau, Download, Kalender-Abo, Kartenkacheln) über den Kopf ``X-Robots-Tag: noindex``.
 - **Personen ohne laufende Mitgliedschaft**: ``noindex, follow`` und nicht in der Sitemap; die Seite bleibt
   erreichbar.
+- **Sitzungen ohne Inhalt** (``sitzung_mit_inhalt``): ``noindex, follow`` und nicht in der Sitemap, bis eine
+  Tagesordnung oder Niederschrift vorliegt.
 
 Die Dekoratoren stehen in ``insight_core/urls.py`` an den Adressen, für die sie gelten. Kanonische Adressen
 setzt weiter ``insight_core/seo.py``.
@@ -25,8 +29,9 @@ import functools
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Any
+from urllib.parse import urlsplit
 
 from django.db.models import Exists, OuterRef, Q, QuerySet
 from django.http import HttpRequest, HttpResponseBase
@@ -36,8 +41,15 @@ from django.urls import reverse
 NOINDEX_FOLLOW = "noindex, follow"
 #: Kopf ``X-Robots-Tag`` für Teilansichten und Dateien
 X_ROBOTS_NOINDEX = "noindex"
-#: Höchstens so viele Stadtseiten verlinkt die Kommunenauswahl (keine langen Listen)
-STADTSEITEN_HOECHSTENS = 12
+#: Höchstens so viele Stadtseiten verlinkt die Kommunenauswahl. Die Grenze muss über der Zahl der gelisteten Kommunen
+#: liegen: Die Liste ist alphabetisch, und was herausfällt, hat keinen starken internen Link mehr (Issue #1145)
+STADTSEITEN_HOECHSTENS = 100
+#: Eine Sitzung ohne Tagesordnung bleibt so lange vor ihrem Termin im Index: Gesucht wird dann der Termin selbst
+SITZUNG_OHNE_INHALT_VORLAUF = timedelta(days=60)
+#: Vorgänge ohne ausgelesenen Text stehen nur so lange in der Sitemap (Issue #1145)
+VORGANG_OHNE_TEXT_SITEMAP = timedelta(days=2 * 365)
+#: Nur diese Parameter ergeben in einer Liste je Kommune eine eigene Seite (``blaetteransicht``)
+_BLAETTER_PARAMETER = frozenset({"page", "period"})
 
 #: Parameter, die keine eigene Ansicht ergeben (Kampagnen- und Klick-Kennungen); alle übrigen filtern,
 #: blättern oder sortieren
@@ -56,6 +68,27 @@ def hat_ansichtsparameter(request: HttpRequest) -> bool:
     return any(name not in _NEUTRALE_PARAMETER and not name.startswith("utm_") for name in request.GET)
 
 
+def blaetteransicht(request: HttpRequest, liste: str | None) -> dict[str, str] | None:
+    """
+    Parameter einer Blätteransicht der Liste je Kommune für ihre kanonische Adresse, sonst ``None`` (Issue #1145).
+
+    Das sind weitere Seiten (``?page=2``) und die vergangenen Sitzungen (``?period=past``), auch zusammen. Eine leere
+    Antwort ist die Liste selbst (``?page=1``). Jeder weitere Parameter filtert oder sortiert, das bleibt ``noindex``.
+    """
+    namen = {name for name in request.GET if name not in _NEUTRALE_PARAMETER and not name.startswith("utm_")}
+    seite = request.GET.get("page", "1")
+    if not namen <= _BLAETTER_PARAMETER or not seite.isdecimal() or int(seite) < 1:
+        return None
+    ansicht: dict[str, str] = {}
+    if "period" in namen:
+        if liste != "meeting_list" or request.GET["period"] != "past":
+            return None
+        ansicht["period"] = "past"
+    if int(seite) > 1:
+        ansicht["page"] = str(int(seite))
+    return ansicht
+
+
 def ist_teilansicht(request: HttpRequest) -> bool:
     """Anfrage von htmx: Die Antwort ist ein Ausschnitt, keine ganze Seite."""
     return request.headers.get("HX-Request") == "true"
@@ -66,6 +99,14 @@ def ohne_index_kopf(response: HttpResponseBase) -> HttpResponseBase:
     if "X-Robots-Tag" not in response:
         response["X-Robots-Tag"] = X_ROBOTS_NOINDEX
     return response
+
+
+def _auf_kanonischer_adresse(request: HttpRequest, response: HttpResponseBase) -> bool:
+    """Antwortet die Seite unter ihrer kanonischen Adresse? Unter einem Mandanten-Slug verweist sie auf den der Kommune."""
+    kontext = getattr(response, "context_data", None)
+    seo = kontext.get("seo") if isinstance(kontext, dict) else None
+    kanonisch = seo.get("canonical_url", "") if isinstance(seo, dict) else ""
+    return urlsplit(kanonisch).path == request.path
 
 
 def _robots_im_kopf(response: HttpResponseBase, wert: str) -> bool:
@@ -102,6 +143,13 @@ def listenseite(view: View) -> View:
         response = view(request, *args, **kwargs)
         if ist_teilansicht(request):
             return ohne_index_kopf(response)
+        # Nur die Adressen je Kommune haben ein ``slug``; im gemeinsamen Portal bleibt jeder Parameter ``noindex``
+        if (
+            "slug" in kwargs
+            and blaetteransicht(request, kwargs.get("liste")) is not None
+            and _auf_kanonischer_adresse(request, response)
+        ):
+            return response
         if hat_ansichtsparameter(request) and not _robots_im_kopf(response, NOINDEX_FOLLOW):
             # Schon fertige Antwort (z. B. Weiterleitung zur Auswahl der Kommune): dann über den Kopf
             ohne_index_kopf(response)
@@ -120,6 +168,54 @@ def suchseite(view: View) -> View:
         return ohne_index_kopf(response)
 
     return wrapper
+
+
+# ---------------------------------------------------------------------------
+# Sitzungen und Vorgänge
+# ---------------------------------------------------------------------------
+
+
+def sitzung_mit_inhalt(start: datetime | None, tagesordnungspunkte: int, niederschrift: Any, jetzt: datetime) -> bool:
+    """
+    Hat die Sitzungsseite etwas zu bieten? Tagesordnung, Niederschrift oder ein Termin in den nächsten Wochen.
+
+    Dieselbe Regel gilt für die Sitemap (``sitzungen_mit_inhalt``). Ohne das steht auf der Seite nur Gremium und Datum.
+    """
+    if tagesordnungspunkte or niederschrift:
+        return True
+    return start is not None and jetzt <= start <= jetzt + SITZUNG_OHNE_INHALT_VORLAUF
+
+
+def sitzungen_mit_inhalt(sitzungen: QuerySet[Any], jetzt: datetime) -> QuerySet[Any]:
+    """
+    ``sitzung_mit_inhalt`` als Abfrage für die Sitemap: Unterabfrage statt Join, die Zeilen bleiben einzeln.
+
+    Die Niederschrift gilt hier schon mit einem Verweis der Quelle; ob die Datei noch existiert, prüft nur die Seite
+    (``ris_selectors.protocol_file``). In der Produktion führt jeder Verweis auf eine Datei.
+    """
+    from ..models import OParlAgendaItem
+
+    return sitzungen.filter(
+        Exists(OParlAgendaItem.objects.filter(meeting=OuterRef("pk"), deleted=False))
+        | (Q(raw_json__has_key="resultsProtocol") & ~Q(raw_json__resultsProtocol=None))
+        | (Q(raw_json__has_key="verbatimProtocol") & ~Q(raw_json__verbatimProtocol=None))
+        | Q(start__gte=jetzt, start__lte=jetzt + SITZUNG_OHNE_INHALT_VORLAUF)
+    )
+
+
+def vorgaenge_mit_inhalt(vorgaenge: QuerySet[Any], jetzt: datetime) -> QuerySet[Any]:
+    """
+    Vorgänge für die Sitemap (Issue #1145): mit ausgelesenem Dokumententext oder aus den letzten zwei Jahren.
+
+    Alte Vorgänge ohne Text zeigen nur Titel und Dateinamen. Sie bleiben im Index erlaubt und über die Listen
+    erreichbar, sollen aber nicht um das knappe Crawl-Budget konkurrieren. Sobald ihr Text vorliegt, kommen sie dazu.
+    """
+    from ..models import OParlFile
+
+    return vorgaenge.filter(
+        Exists(OParlFile.objects.filter(paper=OuterRef("pk"), deleted=False, text_extraction_status="completed"))
+        | Q(date__gte=jetzt - VORGANG_OHNE_TEXT_SITEMAP)
+    )
 
 
 # ---------------------------------------------------------------------------

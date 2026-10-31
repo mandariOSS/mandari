@@ -3,8 +3,8 @@
 Einstellungen › Fraktionssitzungen nach dem Muster (Issue #1071, Schritt 4; Muster einstellungen.html, Bilder
 einstellungen_vorsitz_* und einstellungen_mitglied_1440): zwei Spalten. Links die Sitzungsreihen mit Automatik, Pausen
 und Ausfallregeln, die Standard-Tagesordnung und wer TOPs einbringt (je eigene Formulare section=…, wie bisher).
-Rechts das Hauptformular (ohne section, wie bisher) mit Einladung, Erinnerung, Protokoll, erstem TOP und weiteren
-Regeln. Work speichert sofort: Jeder Abschnitt des Hauptformulars schickt per htmx nur seine Felder
+Rechts das Hauptformular (ohne section, wie bisher) mit Einladung, Erinnerung an die Sitzung, Erinnerung zum
+Eintragen von TOPs, Protokoll, erstem TOP und weiteren Regeln, darunter „Nichtöffentliche Vorgänge“ (nur Information). Work speichert sofort: Jeder Abschnitt des Hauptformulars schickt per htmx nur seine Felder
 (section=save_settings, felder aus fraktion_einstellungen.ABSCHNITT_FELDER), die Automatik je Reihe ihr Formular;
 Stand, Fehler, Anmeldung/zweiter Faktor und erneutes Senden über data-autosave="einst" (frontend/js/htmx-setup.ts).
 Ohne JavaScript speichern die Knöpfe in noscript wie bisher. Ohne faction.manage (Mitglieder mit faction.view_public)
@@ -50,6 +50,7 @@ steht alles gesperrt im fieldset, mit Hinweis wie im Muster. Kontext: Organizati
             {% csrf_token %}
             {% include "work/organization/neu/_fraktion_ablauf.html" %}
             {% include "work/organization/neu/_fraktion_erster_top.html" %}
+            {% include "work/organization/neu/_fraktion_noe.html" %}
             {% if not nur_lesen %}
             <noscript><p><button type="submit" class="wf-knopf">Einstellungen speichern</button></p></noscript>
             {% endif %}

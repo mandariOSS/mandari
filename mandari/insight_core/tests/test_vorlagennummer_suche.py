@@ -104,8 +104,8 @@ def test_formular_schickt_direkt_nur_mit_der_eingabetaste(bestand: dict[str, Any
     formular = html.split('id="paper-filter-form"', 1)[1].split("</form>", 1)[0]
 
     assert '<input type="hidden" name="direkt" value="1">' in formular
-    # Die Live-Suche schickt nur das Suchfeld und die Art (hx-include), nicht direkt=1
-    assert 'hx-include="#filter-type"' in formular
+    # Die Live-Suche schickt nur das Suchfeld, die Art und die Fraktion (hx-include), nicht direkt=1
+    assert 'hx-include="#filter-type, #filter-fraktion"' in formular
 
 
 def test_leerzustand_bei_fehlender_nummer(bestand: dict[str, Any]) -> None:

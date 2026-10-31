@@ -4,8 +4,8 @@ Liste der Fraktionssitzungen nach dem Muster (Issue #1071, Schritt 1): Stand je 
 Nebenspalte mit Sitzungsreihe, Automatik und Pausen.
 
 Alles wird aus vorhandenen Daten abgeleitet (Sitzungsreihen, Ausnahmen, RIS-Ausfallregeln, Einladungs- und
-Protokollversand-Einstellungen); nichts davon schreibt. Gelöschte Termine speichert Work nicht einzeln (die Reihe merkt
-sich nur ``generated_until``), deshalb nennt die Nebenspalte nur die Regel und die Liste keine gelöschten Termine.
+Protokollversand-Einstellungen); nichts davon schreibt. Gelöschte Termine einer Reihe merkt Work seit Issue #1071 als
+Ausnahme „Gelöscht“; die Nebenspalte nennt die kommenden („Gelöscht, kommt nicht wieder“) mit „Wiederherstellen“.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from .invitations import (
     invitation_dispatch_at,
 )
 from .protocol_dispatch import get_protocol_dispatch_settings
-from .services import FACTION_REMINDER_WINDOW_HOURS
 
 WOCHENTAGE = dict(formatting.WEEKDAY_CHOICES)
 
@@ -182,6 +181,32 @@ class Reihe:
     satz: str
     aktiv: bool
     hinweise: list[str] = field(default_factory=list)
+    #: Kommende gelöschte Termine (Issue #1071)
+    geloescht: list[Any] = field(default_factory=list)
+
+
+@dataclass
+class GeloeschterTermin:
+    """Ein gelöschter Termin der Reihe: Ausnahme, Datum als Text und Satz mit Grund und Person."""
+
+    ausnahme: Any
+    datum: str
+    satz: str
+
+
+def geloeschte_termine(schedule: Any) -> list[GeloeschterTermin]:
+    """Kommende gelöschte Termine einer Reihe (Ausnahme „Gelöscht“), aufsteigend; nutzt vorgeladene Ausnahmen."""
+    heute = timezone.localdate()
+    ergebnis = []
+    for ausnahme in sorted(schedule.exceptions.all(), key=lambda a: a.original_date):
+        if ausnahme.exception_type != "deleted" or ausnahme.original_date < heute:
+            continue
+        teile = [ausnahme.reason] if ausnahme.reason else []
+        if ausnahme.created_by_name:
+            teile.append(f"gelöscht von {ausnahme.created_by_name}")
+        datum = str(date_format(ausnahme.original_date, "D d.m.Y"))
+        ergebnis.append(GeloeschterTermin(ausnahme, datum, ", ".join(teile)))
+    return ergebnis
 
 
 def _rhythmus(schedule: Any) -> str:
@@ -245,7 +270,7 @@ def reihen(organization: Any) -> list[Reihe]:
         hinweise = [
             _ausnahme(a)
             for a in sorted(schedule.exceptions.all(), key=lambda a: a.original_date)
-            if (a.end_date or a.new_date or a.original_date) >= heute
+            if a.exception_type != "deleted" and (a.end_date or a.new_date or a.original_date) >= heute
         ]
         regeln = [
             r.ris_organization.name for r in schedule.suspension_rules.all() if r.is_active and r.ris_organization.name
@@ -253,7 +278,7 @@ def reihen(organization: Any) -> list[Reihe]:
         if regeln:
             hinweise.append(f"Entfällt nach Sitzungen von {formatting.join_parts(regeln)}")
         hinweise = [h if h.endswith(".") else f"{h}." for h in hinweise]
-        ergebnis.append(Reihe(schedule.name, satz, schedule.is_active, hinweise))
+        ergebnis.append(Reihe(schedule.name, satz, schedule.is_active, hinweise, geloeschte_termine(schedule)))
     return ergebnis
 
 
@@ -301,7 +326,13 @@ def automatik(organization: Any) -> list[tuple[str, str]]:
                 )
             )
 
-    punkte.append((_dauer(FACTION_REMINDER_WINDOW_HOURS, "vorher"), "Erinnerung an die Sitzung an alle Eingeladenen"))
+    if einladung["meeting_reminder_enabled"]:
+        punkte.append(
+            (
+                _dauer(einladung["meeting_reminder_hours"], "vorher"),
+                "Erinnerung an die Sitzung an alle Eingeladenen bzw. an Zu- und Vielleicht-Antworten",
+            )
+        )
 
     verzoegerung = protokoll["protocol_dispatch_delay_hours"]
     if protokoll["protocol_dispatch"] == "after_approval":

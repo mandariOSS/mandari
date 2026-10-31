@@ -176,6 +176,8 @@ paper_kept = OParlPaper.objects.create(
     external_id=f"{RIS}/paper/1",
     body=body,
     name="Vorlage bleibt",
+    # Aus den letzten zwei Jahren: Ältere Vorgänge ohne Text stehen nicht in der Sitemap (Issue #1145)
+    date=datetime.now(UTC),
     reference="V/2024/001",
     oparl_created=ts(0),
     oparl_modified=ts(1),

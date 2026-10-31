@@ -243,6 +243,16 @@ METRICS_ALLOWED_NETWORKS = [
     if network.strip()
 ]
 METRICS_TOKEN = os.environ.get("METRICS_TOKEN", "")
+# Provisioning-API v2 (/api/provisioning/v2/, Issue #1132): eigener Schlüssel für das aufrufende System
+# (Bearer). Leer = abgeschaltet, alle Routen antworten mit 404. Optional nur aus diesen Netzen (CIDR,
+# kommagetrennt; leer = keine Beschränkung); andere Absender erhalten 404. Wie bei ADMIN_ALLOWED_NETWORKS
+# muss der vorgelagerte Proxy X-Forwarded-For durch die echte Client-Adresse ersetzen.
+PROVISIONING_V2_API_KEY = os.environ.get("PROVISIONING_V2_API_KEY", "")
+PROVISIONING_V2_ALLOWED_NETWORKS = [
+    str(_ipaddress.ip_network(network.strip(), strict=False))
+    for network in os.environ.get("PROVISIONING_V2_ALLOWED_NETWORKS", "").split(",")
+    if network.strip()
+]
 # Woher check_service_levels die Metriken der laufenden Instanz holt (leer = Fehlerquote nicht prüfen).
 # Der Abruf setzt den Host-Header auf den ersten Eintrag aus ALLOWED_HOSTS, damit Django die
 # Loopback-Adresse nicht mit 400 abweist.
@@ -917,7 +927,14 @@ GEOREF_AUTO_INTERVAL_MINUTES = int(os.environ.get("GEOREF_AUTO_INTERVAL_MINUTES"
 # "schatten" zählt nur, was geschähe, "aktiv" wirkt. Der Zeitplan verortung_automatisch bleibt das Sicherheitsnetz.
 GEOREF_SUBSCRIPTION = os.environ.get("GEOREF_SUBSCRIPTION", "aus").strip().lower() or "aus"
 SUMMARY_SUBSCRIPTION = os.environ.get("SUMMARY_SUBSCRIPTION", "aus").strip().lower() or "aus"
-for _name, _modus in (("GEOREF_SUBSCRIPTION", GEOREF_SUBSCRIPTION), ("SUMMARY_SUBSCRIPTION", SUMMARY_SUBSCRIPTION)):
+# Antragstellende Fraktionen (Issue #1138): Neue oder geänderte Vorlagen und neuer Text ihrer Anlagen stoßen die
+# Ermittlung an (Abonnement insight.urheber). Standard "aktiv": schreibt nur die eigenen, abgeleiteten Tabellen.
+URHEBER_SUBSCRIPTION = os.environ.get("URHEBER_SUBSCRIPTION", "aktiv").strip().lower() or "aktiv"
+for _name, _modus in (
+    ("GEOREF_SUBSCRIPTION", GEOREF_SUBSCRIPTION),
+    ("SUMMARY_SUBSCRIPTION", SUMMARY_SUBSCRIPTION),
+    ("URHEBER_SUBSCRIPTION", URHEBER_SUBSCRIPTION),
+):
     if _modus not in ("aus", "schatten", "aktiv"):
         from django.core.exceptions import ImproperlyConfigured
 

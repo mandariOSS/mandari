@@ -1,0 +1,59 @@
+{% comment %}
+Dialoge nach der Sitzung (Issue #1071, Schritt 3; Muster bestaetigenDialog, genehmigenDialog, Nachtrag):
+- „Anwesenheit bestätigen“: Liste der Anwesenden; Aktion confirm_attendance (Vorstand/Vorsitz, can_confirm_attendance).
+- „Protokoll direkt genehmigen“: Aktion approve_protocol (protocols.approve); nennt den eingestellten E-Mail-Versand.
+- „Nachtrag erfassen“: nach der Genehmigung, Aktion add_entry mit entry_type addendum (wie bisher in der Seitenleiste),
+  wahlweise zu einem TOP. Ohne TOP gehört der Nachtrag wie im PDF zur internen Fassung.
+Kontext: meeting, org_slug, rechte, angaben, genehmigung, versand, darf_einstellungen, dok.
+{% endcomment %}
+{% if rechte.bestaetigen %}
+<c-ui.modal id="fs-bestaetigen" title="Anwesenheit bestätigen" size="sm">
+    <form class="wf-dialog" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="confirm_attendance">
+        <p>{{ angaben.namen_satz }}</p>
+        <p>Die bestätigte Liste ist die Grundlage der Teilnahmenachweise. Danach lässt sie sich nicht mehr ändern.</p>
+        <div class="wf-dialog-fuss">
+            <button type="button" class="wf-knopf" data-close-modal>Abbrechen</button>
+            <button type="submit" class="wf-knopf wf-haupt">Bestätigen</button>
+        </div>
+    </form>
+</c-ui.modal>
+{% endif %}
+
+{% if rechte.genehmigen %}
+<c-ui.modal id="fs-genehmigen" title="Protokoll direkt genehmigen" size="sm">
+    <form class="wf-dialog" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="approve_protocol">
+        <p>Üblich ist die Genehmigung in {{ genehmigung.wo }}. Als Vorsitz können Sie das Protokoll auch direkt genehmigen. Danach sind Änderungen nur noch als Nachtrag möglich.</p>
+        <p>{% if versand.modus == 'after_approval' %}Work verschickt das genehmigte Protokoll danach automatisch per E-Mail: an vereidigte Mitglieder vollständig, an alle anderen den öffentlichen Teil.{% else %}{{ versand.satz }}{% endif %}{% if darf_einstellungen %} So ist es in den <a class="wf-textlink" href="{% url 'work:organization_faction_settings' org_slug=org_slug %}">Einstellungen der Fraktion</a> eingestellt.{% endif %}</p>
+        <div class="wf-dialog-fuss">
+            <button type="button" class="wf-knopf" data-close-modal>Abbrechen</button>
+            <button type="submit" class="wf-knopf wf-haupt">Genehmigen</button>
+        </div>
+    </form>
+</c-ui.modal>
+{% endif %}
+
+{% if rechte.nachtrag %}
+<c-ui.modal id="fs-nachtrag" title="Nachtrag erfassen" size="sm">
+    <form class="wf-dialog" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="add_entry">
+        <input type="hidden" name="entry_type" value="addendum">
+        <p>Das Protokoll ist genehmigt. Korrekturen stehen als gekennzeichneter Nachtrag darunter, das Original bleibt unverändert.</p>
+        <label class="fs-feldname" for="fs-nachtrag-top">Zu TOP</label>
+        <select class="wf-auswahl" id="fs-nachtrag-top" name="agenda_item_id">
+            <option value="">Ohne TOP (nur für Vereidigte sichtbar)</option>
+            {% for t in dok.tops %}<option value="{{ t.item.pk }}">{{ t.item.number }} {{ t.item.title|truncatechars:70 }}</option>{% endfor %}
+        </select>
+        <label class="fs-feldname" for="fs-nachtrag-text">Text des Nachtrags</label>
+        <textarea class="wf-eingabe" id="fs-nachtrag-text" name="content" rows="4" required></textarea>
+        <div class="wf-dialog-fuss">
+            <button type="button" class="wf-knopf" data-close-modal>Abbrechen</button>
+            <button type="submit" class="wf-knopf wf-haupt">Nachtrag erfassen</button>
+        </div>
+    </form>
+</c-ui.modal>
+{% endif %}

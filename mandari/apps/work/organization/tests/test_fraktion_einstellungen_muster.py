@@ -112,7 +112,7 @@ def test_aufbau_und_texte_wie_im_muster(org: Any, vorsitz: Any, reihe: Any, clie
         "Work speichert Änderungen sofort.",
         "Gespeichert",
         "Zu einem festen Zeitpunkt einladen, ohne Freigabe",
-        "Pausen und Ausfallregeln …",
+        "Pausen, gelöschte Termine und Ausfallregeln …",
         "Weihnachtspause",
         "Gelöschte Termine legt Work nicht wieder an.",
         "fest, mit dem Genehmigungsablauf für das letzte Protokoll",

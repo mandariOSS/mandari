@@ -482,6 +482,124 @@
   .fs-notiz-leer {
     color: var(--wf-text3);
   }
+  /* Live-Mitschreiben (Issue #874): wer gerade im Protokoll ist, fremde Cursor, @-Erwähnungen */
+  .fs-mit {
+    display: inline-flex;
+    gap: 4px;
+    flex: none;
+    margin-left: auto;
+  }
+  .fs-mit + .fs-status {
+    margin-left: 10px;
+  }
+  .fs-mit .av {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--wf-grau);
+    color: var(--wf-text2);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .fs-mit .av.schreibt {
+    background: var(--wf-flaeche);
+    color: var(--fs-av-farbe, var(--wf-work-text));
+    box-shadow:
+      0 0 0 2px var(--wf-flaeche),
+      0 0 0 3.5px var(--fs-av-farbe, var(--wf-work));
+  }
+  .fs-mit-satz {
+    font-size: 13px;
+    color: var(--wf-text2);
+  }
+  .fs-notiz .collaboration-carets__caret {
+    position: relative;
+    margin: 0 -1px;
+    border-left: 1px solid;
+    border-right: 1px solid;
+    word-break: normal;
+    pointer-events: none;
+  }
+  .fs-notiz .collaboration-carets__label {
+    position: absolute;
+    top: -1.35em;
+    left: -1px;
+    padding: 1px 4px;
+    border-radius: 3px 3px 3px 0;
+    color: #fff;
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+    user-select: none;
+  }
+  .erwaehnung {
+    padding: 0 3px;
+    border-radius: 4px;
+    background: var(--wf-work-flaeche);
+    color: var(--wf-work-text);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .fs-erw {
+    position: fixed;
+    z-index: 80;
+    width: 20rem;
+    max-width: calc(100vw - 16px);
+    max-height: 360px;
+    overflow-y: auto;
+    background: var(--wf-flaeche);
+    border: 1px solid var(--wf-linie);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgb(17 24 39 / 0.14);
+    font-size: 14px;
+  }
+  .fs-erw ul {
+    list-style: none;
+    margin: 0;
+    padding: 4px 0;
+  }
+  .fs-erw [role="option"] {
+    display: flex;
+    flex-direction: column;
+    padding: 5px 12px;
+    cursor: pointer;
+    line-height: 1.35;
+  }
+  .fs-erw [role="option"][aria-selected="true"],
+  .fs-erw [role="option"]:hover {
+    background: var(--wf-grau-hell);
+  }
+  .fs-erw [role="option"] span,
+  .fs-erw [role="option"] small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .fs-erw [role="option"] small {
+    font-size: 12px;
+    color: var(--wf-text2);
+  }
+  .fs-erw .erw-gruppe {
+    padding: 8px 12px 2px;
+    font-size: 12px;
+    color: var(--wf-text3);
+  }
+  .fs-erw .erw-leer {
+    padding: 8px 12px;
+    color: var(--wf-text2);
+  }
+  .fs-erw .erw-fuss {
+    margin: 0;
+    padding: 6px 12px 8px;
+    border-top: 1px solid var(--wf-linie);
+    font-size: 12px;
+    color: var(--wf-text2);
+  }
   .fs-hinweis {
     margin: 0 0 12px;
     padding: 8px 12px;
@@ -1298,6 +1416,44 @@
   .fs-prot-aufg { list-style: none; margin: 6px 0 0; padding: 0; font-size: .9375em; }
   .fs-prot-beschluss { margin-top: 8px; }
   .fs-prot-aufg b, .fs-prot-beschluss b { font-weight: 600; }
+  /* Protokoll als Dokument (neu/_pr_dokument.html): Kopfzeile, Titel, Angaben, Notizen je TOP, bisherige Einträge */
+  .fs-prot-meta { display: flex; align-items: center; gap: 4px 12px; flex-wrap: wrap; margin: 0; font-size: 13px; color: var(--wf-text2); }
+  .fs-prot-meta .fs-meta { display: inline-flex; align-items: center; gap: 4px; }
+  .fs-prot-meta svg { width: 13px; height: 13px; }
+  .fs-prot-titel { font-size: 20px; line-height: 1.3; font-weight: 700; margin: 6px 0 4px; }
+  .fs-prot-angaben { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 6px 12px; margin: 14px 0 8px; font-size: 14px; line-height: 1.5; }
+  .fs-prot-angaben dt { color: var(--wf-text2); }
+  .fs-prot-angaben dd { margin: 0; overflow-wrap: anywhere; }
+  .fs-prot-top h3 { grid-template-columns: 3rem minmax(0, 1fr) auto; align-items: start; }
+  .fs-prot-top h3 svg { width: 13px; height: 13px; margin-right: 4px; vertical-align: -1px; color: var(--wf-text3); }
+  .fs-prot-mehr { margin: -4px 0 0 8px; opacity: .55; }
+  .fs-prot-top:hover .fs-prot-mehr, .fs-prot-mehr:focus-visible { opacity: 1; }
+  .fs-prot-notiz.fs-notiz { min-height: 0; max-width: none; font-size: inherit; margin-top: 4px; }
+  .fs-prot-notiz.fs-notiz .ProseMirror { min-height: 1.6em; padding: 2px 6px; margin: 0 -6px; border-radius: 4px; }
+  .fs-prot-notiz.fs-notiz .ProseMirror:hover { background: var(--wf-grau-hell); }
+  .fs-prot-notiz.fs-notiz .ProseMirror:focus { background: var(--wf-flaeche); box-shadow: 0 0 0 1px var(--wf-linie-stark); }
+  .fs-prot-notiz.fs-notiz p:last-child { margin-bottom: 0; }
+  .fs-prot-status { margin: 2px 0 0; font-size: 12.5px; color: var(--wf-text2); }
+  .fs-prot-status.fehler { color: var(--wf-abl); }
+  .fs-prot-aktion { margin: 6px 0 0; font-size: 13px; }
+  .fs-alt-e { margin-top: 8px; }
+  .fs-alt-e p { margin: 0; }
+  .fs-alt-wer { display: block; font-size: .8125em; color: var(--wf-text3); line-height: 1.4; }
+  .fs-alt-e.nachtrag { padding-left: 10px; border-left: 2px solid var(--wf-linie-stark); }
+  .fs-prot-allgemein { padding-top: 6px; }
+  .fs-prot-gesperrt { margin-top: 20px; }
+  .fs-prot-leer { margin-top: 16px; }
+  .fs-gl-h { font-size: 13px; font-weight: 600; color: var(--wf-text2); margin: 0 0 8px; }
+  .fs-gl ul { list-style: none; margin: 0; padding: 0; }
+  .fs-gl li { margin: 0 0 6px; }
+  .fs-gl li.unter { padding-left: 12px; }
+  .fs-gl a.wf-textlink { color: var(--wf-text2); text-decoration: none; }
+  .fs-gl a.wf-textlink:hover { color: var(--wf-tinte); text-decoration: underline; }
+  /* Aufgaben aus der Sitzung in der Nebenspalte */
+  .fs-pr-aufgaben li { padding: 6px 0; border-bottom: 1px solid var(--wf-linie); }
+  .fs-pr-aufgaben li:last-child { border-bottom: 0; }
+  .fs-pr-aufgaben .fs-meta { display: block; font-size: 12.5px; }
+  .fs-schritte small .wf-textlink { font-size: inherit; }
   /* Gliederung links (ab 1600 px) */
   .fs-gl { display: none; position: sticky; top: 24px; align-self: start; padding: 24px 0 24px 24px; font-size: 13.5px; }
   .fs-gl a { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1383,6 +1539,8 @@
   .fs-einst-spalte .fs-rechte td { font-size: 14px; }
   .fs-einst-spalte .fs-rechte caption { text-align: left; caption-side: top; padding: 0; }
   .fs-einst-status .fehler { color: #b91c1c; font-weight: 600; }
+  /* Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): ungültige Eingabe */
+  .fs-einst .fs-meta .fehler { color: var(--wf-abl, #b91c1c); font-weight: 600; }
   .dark .fs-einst-status .fehler { color: #f87171; }
   .fs-schalter { position: relative; }
   .fs-schalter > input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; margin: 0; cursor: inherit; z-index: 1; }
@@ -1522,6 +1680,10 @@
     .fs-liste-flaeche, .fs-r-zwei, .fs-r-protokoll { grid-template-columns: minmax(0, 1fr); }
     .fs-liste-haupt { padding: 4px 16px 24px; }
     .fs-spalte, .fs-dok-wrap { padding: 16px 16px 32px; }
+    .fs-prot-angaben { grid-template-columns: 7.5rem minmax(0, 1fr); }
+    .fs-prot-top h3 { grid-template-columns: 2.5rem minmax(0, 1fr) auto; }
+    .fs-prot-inhalt { padding-left: 2.5rem; }
+    .fs-prot-mehr { opacity: 1; }
     .fs-neben { border-left: 0; border-top: 1px solid var(--wf-linie); padding: 16px 16px 32px; }
     /* Liste: Datum links, Titel und Stand untereinander */
     .fs-sl > li { grid-template-columns: 4.5rem minmax(0, 1fr); padding: 10px 0; margin: 0; }

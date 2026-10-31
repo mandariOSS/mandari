@@ -5,7 +5,8 @@ Fraktionssitzung vor der Sitzung nach dem Muster (Issue #1071, Schritt 2): Planu
 Geprüft wird:
 
 - Schalter und Zustände: Entwurf, geplant und eingeladen zeigen die neue Seite; laufend bleibt die Sitzungsansicht,
-  abgeschlossen und abgesagt bleiben auf der bisherigen Seite; ``?ansicht=bisher`` führt zurück.
+  abgeschlossen und abgesagt zeigen die Seite nach der Sitzung (test_sitzung_protokoll); ``?ansicht=bisher`` führt
+  zurück.
 - Keine Funktion fällt weg: Jede Aktion der bisherigen Seite (Aktionen, Dialoge, Links) ist für jede Rolle auf der
   neuen Seite erreichbar (Hauptansicht oder „Tagesordnung bearbeiten“). Ausnahmen mit Begründung.
 - Rollen: Vorsitz plant und lädt ein, Mitglieder sehen die Einladung und antworten, Nicht-Vereidigte sehen vom
@@ -238,8 +239,8 @@ def test_bestand_zeigt_was_der_vergleich_pruefen_soll(welt: dict[str, Any], clie
         ("planned", NEU),
         ("invited", NEU),
         ("ongoing", "work/faction/sitzung/seite.html"),
-        ("completed", ALT),
-        ("cancelled", ALT),
+        ("completed", "work/faction/neu/protokoll.html"),
+        ("cancelled", "work/faction/neu/protokoll.html"),
     ],
 )
 def test_zustaende(welt: dict[str, Any], client_for: Any, status: str, vorlage: str) -> None:

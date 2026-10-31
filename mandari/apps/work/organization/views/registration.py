@@ -58,7 +58,13 @@ class MemberApproveView(WorkViewMixin, View):
     def post(self, request, *args, **kwargs):
         membership = selectors.get_pending_registration_or_404(self.organization, kwargs["membership_id"])
         name = membership.user.get_display_name()
-        if services.approve_registration(membership, actor=self.membership):
+        try:
+            sent = services.approve_registration(membership, actor=self.membership)
+        except services.ServiceError as exc:
+            # Mitglieder-Limit erreicht: Die Anfrage bleibt offen
+            flash_error(request, exc)
+            return redirect("work:members", org_slug=self.organization.slug)
+        if sent:
             messages.success(request, f"{name} wurde freigeschaltet und per E-Mail informiert.")
         else:
             messages.warning(

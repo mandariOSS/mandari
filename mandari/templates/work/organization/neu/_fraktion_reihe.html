@@ -1,13 +1,51 @@
 {% comment %}
 Eine Sitzungsreihe nach dem Muster (Issue #1071, Muster einstellungen.html „Sitzungsreihe“): Satz zu Rhythmus, Zeit
-und Ort, die Automatik (sofort gespeichert, section=update_schedule_automation), Vorlauf und Pausen, darunter
-„Pausen und Ausfallregeln …“ mit Ausnahmen und RIS-Ausfallregeln (je eigene Formulare wie bisher). Pausieren bzw.
-Aktivieren und Löschen (Dialog, nur mit faction.delete) wie bisher. Kontext: schedule (mit angaben), ris_organizations,
-weekday_choices, can_delete_schedules, schedule_horizon_days, faction_settings, nur_lesen.
+und Ort, „Sitzungsreihe bearbeiten …“ (section=update_schedule, Vorschau der betroffenen Termine per htmx mit
+vorschau=1, _fraktion_reihe_vorschau.html), die Automatik (sofort gespeichert, section=update_schedule_automation),
+Vorlauf, Pausen und gelöschte Termine, darunter „Pausen, gelöschte Termine und Ausfallregeln …“ mit Ausnahmen,
+gelöschten Terminen (Wiederherstellen: section=restore_deleted_date) und RIS-Ausfallregeln (je eigene Formulare).
+Pausieren bzw. Aktivieren und Löschen (Dialog, nur mit faction.delete) wie bisher. Kontext: schedule (mit angaben),
+ris_organizations, weekday_choices, recurrence_choices, can_delete_schedules, schedule_horizon_days, faction_settings,
+nur_lesen.
 {% endcomment %}
-<section aria-labelledby="reihe-{{ schedule.id }}-titel" data-testid="fs-reihe">
+<section aria-labelledby="reihe-{{ schedule.id }}-titel" data-testid="fs-reihe"{% if forloop.first %} id="reihen-titel"{% endif %}>
     <h2 id="reihe-{{ schedule.id }}-titel">Sitzungsreihe <span class="fs-meta">{{ schedule.name }}{% if not schedule.is_active %} · Pausiert{% endif %}</span></h2>
     <p>{{ schedule.angaben.satz }}{% if schedule.default_video_link %} Videolink: <a class="wf-textlink" href="{{ schedule.default_video_link }}" rel="noopener" target="_blank">{{ schedule.default_video_link }}</a>{% endif %}</p>
+
+    {% if not nur_lesen %}
+    <details class="fs-einst-unter" data-testid="fs-reihe-bearbeiten">
+        <summary class="wf-textlink">Sitzungsreihe bearbeiten …</summary>
+        <form method="post" hx-post="{{ request.path }}" hx-vals='{"vorschau": "1"}' hx-trigger="input delay:500ms, change"
+              hx-target="#reihe-vorschau-{{ schedule.id }}" hx-swap="innerHTML" hx-sync="this:replace">
+            {% csrf_token %}
+            <input type="hidden" name="section" value="update_schedule">
+            <input type="hidden" name="schedule_id" value="{{ schedule.id }}">
+            <div class="fs-einst-zeile zwei">
+                <label>Name<input class="wf-eingabe" type="text" name="name" id="reihe-name-{{ schedule.id }}" value="{{ schedule.name }}" maxlength="200" required></label>
+                <label>Wiederholung
+                    <select class="wf-eingabe wf-auswahl" name="recurrence" id="reihe-wiederholung-{{ schedule.id }}">
+                        {% for value, label in recurrence_choices %}<option value="{{ value }}"{% if schedule.recurrence == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </label>
+            </div>
+            <div class="fs-einst-zeile">
+                <label>Wochentag
+                    <select class="wf-eingabe wf-auswahl" name="weekday" id="reihe-wochentag-{{ schedule.id }}">
+                        {% for value, label in weekday_choices %}<option value="{{ value }}"{% if schedule.weekday == value %} selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </label>
+                <label>Beginn<input class="wf-eingabe" type="time" name="time" id="reihe-beginn-{{ schedule.id }}" value="{{ schedule.time|time:'H:i' }}" required></label>
+                <label>Dauer in Minuten<input class="wf-eingabe" type="number" name="duration_minutes" id="reihe-dauer-{{ schedule.id }}" value="{{ schedule.duration_minutes }}" min="15" max="1440" step="15"></label>
+            </div>
+            <div class="fs-einst-zeile zwei">
+                <label>Ort <span class="fs-meta">optional</span><input class="wf-eingabe" type="text" name="default_location" id="reihe-ort-{{ schedule.id }}" value="{{ schedule.default_location }}" maxlength="500"></label>
+                <label>Videolink <span class="fs-meta">optional</span><input class="wf-eingabe" type="url" name="default_video_link" id="reihe-video-{{ schedule.id }}" value="{{ schedule.default_video_link }}" placeholder="https://" maxlength="200"></label>
+            </div>
+            <p class="fs-meta" id="reihe-vorschau-{{ schedule.id }}" aria-live="polite" data-testid="fs-reihe-vorschau">Änderungen gelten für Termine, die noch nicht eingeladen sind. Eingeladene, laufende und vergangene Sitzungen bleiben, wie sie sind; Termine mit Inhalten verschiebt Work, statt sie zu löschen.</p>
+            <p><button type="submit" class="wf-knopf wf-klein">Übernehmen</button></p>
+        </form>
+    </details>
+    {% endif %}
 
     <form method="post" class="fs-einst-unter" id="automatik-{{ schedule.id }}"{% if not nur_lesen %} hx-post="{{ request.path }}" hx-trigger="change, autosave-erneut" hx-swap="none" hx-sync="this:queue last" data-autosave="einst"{% endif %}>
         {% csrf_token %}
@@ -17,14 +55,14 @@ weekday_choices, can_delete_schedules, schedule_horizon_days, faction_settings, 
         {% if not nur_lesen %}<noscript><p><button type="submit" class="wf-knopf wf-klein">Automatik speichern</button></p></noscript>{% endif %}
     </form>
 
-    <p>{% if schedule.is_active %}Work legt die Termine {{ schedule_horizon_days|default:"90" }} Tage im Voraus an.{% else %}Pausiert: Work legt keine neuen Termine an.{% endif %}{% if schedule.angaben.pausen %} {{ schedule.angaben.pausen|join:" " }}{% endif %} Gelöschte Termine legt Work nicht wieder an.</p>
+    <p>{% if schedule.is_active %}Work legt die Termine {{ schedule_horizon_days|default:"90" }} Tage im Voraus an.{% else %}Pausiert: Work legt keine neuen Termine an.{% endif %}{% if schedule.angaben.pausen %} {{ schedule.angaben.pausen|join:" " }}{% endif %}{% if schedule.angaben.geloescht %} Gelöscht: {% for g in schedule.angaben.geloescht %}{{ g.datum }}{% if g.ausnahme.reason %} ({{ g.ausnahme.reason }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}.{% endif %} Gelöschte Termine legt Work nicht wieder an.</p>
 
     <details class="fs-einst-unter">
-        <summary class="wf-textlink">Pausen und Ausfallregeln …</summary>
+        <summary class="wf-textlink">Pausen, gelöschte Termine und Ausfallregeln …</summary>
         <h3 class="fs-feldname">Pausen und Ausnahmen</h3>
-        {% if schedule.exceptions.all %}
+        {% if schedule.angaben.ausnahmen %}
         <ul class="fs-pausen">
-            {% for exception in schedule.exceptions.all %}
+            {% for exception in schedule.angaben.ausnahmen %}
             <li>
                 <span><b>{{ exception.original_date|date:"d.m.Y" }}{% if exception.end_date %} bis {{ exception.end_date|date:"d.m.Y" }}{% endif %}</b>{% if exception.reason %} {{ exception.reason }}{% endif %}</span>
                 <form method="post">
@@ -51,6 +89,9 @@ weekday_choices, can_delete_schedules, schedule_horizon_days, faction_settings, 
         </form>
         <p class="fs-meta">Termine im Zeitraum entfallen ersatzlos und bleiben als „Entfällt“ sichtbar.</p>
         {% endif %}
+
+        <h3 class="fs-feldname">Gelöschte Termine</h3>
+        {% include "work/organization/neu/_fraktion_geloescht.html" with geloescht=schedule.angaben.geloescht zurueck="" darf=can_manage_faction %}
 
         <h3 class="fs-feldname">Ausfallregeln aus dem Ratsinformationssystem</h3>
         {% if schedule.suspension_rules.all %}
