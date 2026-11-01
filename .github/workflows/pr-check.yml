@@ -943,7 +943,7 @@ jobs:
           python-version: '3.14'
 
       - name: Protokolle und Coverage-Daten der Teile
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: testteil-*
           path: ${{ runner.temp }}/teile
