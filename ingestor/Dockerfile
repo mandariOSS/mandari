@@ -3,9 +3,9 @@
 # Optimized for faster builds with better caching
 
 # uv mit fester Version (Dependabot hebt sie wie die Python-Basis)
-FROM ghcr.io/astral-sh/uv:0.12.23 AS uv
+FROM ghcr.io/astral-sh/uv:0.13.6 AS uv
 
-FROM python:3.14-slim AS builder
+FROM python:3.15-slim AS builder
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -34,7 +34,7 @@ RUN uv pip install --system --no-deps /build/shared/ \
     && uv pip install --system --no-deps --no-sources /build/ingestor/
 
 # --- Final stage ---
-FROM python:3.14-slim
+FROM python:3.15-slim
 
 WORKDIR /app
 
