@@ -237,7 +237,13 @@ def _active_membership(organization: Organization, user: User | None) -> Members
 
 
 def send_invitation_email(organization: Organization, invitation: UserInvitation) -> bool:
-    """Einladungs-Mail mit Annahme-Link über den Versandweg der Organisation; die Einladung bleibt auch ohne Mail."""
+    """
+    Einladungs-Mail mit Annahme-Link über mandari; die Einladung bleibt auch ohne Mail.
+
+    Mit dem Link legt die eingeladene Person ihr Passwort fest, und ihre Adresse gilt danach als
+    bestätigt (``RegisterView``). Er läuft deshalb nie über das eigene SMTP der Organisation;
+    Antworten erreichen weiterhin deren Kontaktadresse.
+    """
     accept_url = emails.absolute_url(reverse("work:accept_invitation", kwargs={"token": invitation.token_for_link()}))
     success = emails.send_organization_mail(
         organization,
@@ -249,6 +255,8 @@ def send_invitation_email(organization: Organization, invitation: UserInvitation
             "inviter_name": display_name(invitation.invited_by) if invitation.invited_by else "",
             "accept_url": accept_url,
         },
+        # Links zum Setzen eines Passworts oder Bestätigen einer Adresse laufen nie über fremde Mailserver
+        via_organization=False,
     )
     if not success:
         logger.error("Einladungs-Mail der Organisation %s konnte nicht versendet werden", organization.slug)
@@ -908,8 +916,16 @@ def join_by_self_registration(organization: Organization, user: User) -> Members
     return membership
 
 
-def confirm_self_registration(organization: Organization, token: EmailVerificationToken) -> Membership:
-    """Bestätigungslink einlösen (einmalig), Adresse als bestätigt markieren und beitreten."""
+def confirm_self_registration(organization: Organization, token: EmailVerificationToken, account: User) -> Membership:
+    """
+    Bestätigungslink einlösen (einmalig), Adresse als bestätigt markieren und beitreten.
+
+    ``account`` ist das angemeldete Konto, das den Link einlöst; es muss das Konto des Links sein. Der
+    Link beweist nur die Kontrolle über das Postfach, das Passwort hat gesetzt, wer sich registriert hat.
+    Erst beides zusammen zeigt, dass das Konto der Inhaberin des Postfachs gehört.
+    """
+    if account.pk != token.user_id:
+        raise ServiceError("Bitte melden Sie sich mit dem Konto an, zu dem dieser Link gehört.")
     user = token.user
     if user.email.lower() != token.email.lower():
         raise ServiceError("Dieser Link gehört zu einer früheren E-Mail-Adresse. Bitte registrieren Sie sich erneut.")
