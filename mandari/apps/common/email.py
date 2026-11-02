@@ -29,12 +29,33 @@ logger = logging.getLogger(__name__)
 _TEXT_SKIP_RE = re.compile(r"<!--\s*text:skip\s*-->.*?<!--\s*/text:skip\s*-->", re.DOTALL)
 # Preheader ohne Inhalt (Issue #957): Der versteckte Teil entfällt samt Markern. Spamfilter zählen versteckte
 # Teile (rspamd MANY_INVISIBLE_PARTS); ein leerer bringt im Posteingang nichts.
+# Der Lookbehind lässt den Einzug nur am Anfang eines Leerraums beginnen. Ohne ihn setzt die Suche an jeder Stelle
+# eines Leerraums neu an und läuft bis zu dessen Ende, quadratisch in seiner Länge; das gerenderte HTML enthält
+# Freitexte samt Leerzeichen. So bleibt die Laufzeit linear in der Größe der Mail.
 _EMPTY_PREHEADER_RE = re.compile(
-    r"[ \t]*<!--\s*text:skip\s*-->\s*<span class=\"preheader\">\s*</span>\s*<!--\s*/text:skip\s*-->[ \t]*\r?\n?"
+    r"(?<![ \t])[ \t]*<!--\s*text:skip\s*-->\s*<span class=\"preheader\">\s*</span>\s*<!--\s*/text:skip\s*-->"
+    r"[ \t]*\r?\n?"
 )
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 # html2text maskiert Markdown-Sonderzeichen (z. B. "\-"); in einer reinen Textmail stören die Backslashes.
 _MD_ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!])")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+class _Html2Text(html2text.HTML2Text):
+    """html2text, das Leerraum im Fließtext vor dem Maskieren zusammenfasst.
+
+    html2text maskiert Markdown-Zeichen am Zeilenanfang mit Ausdrücken der Form ``^(\\s*)…`` (MULTILINE). In einer
+    langen Folge von Zeilenumbrüchen setzen sie an jedem Zeilenanfang neu an und laufen bis zum Ende der Folge,
+    quadratisch in ihrer Länge. Außerhalb von ``<pre>`` fasst html2text Leerraum danach ohnehin zu einem Leerzeichen
+    zusammen; hier geschieht das vorher. Die Textfassung bleibt gleich, denn die Maskierungen am Zeilenanfang
+    (``\\.``, ``\\+``, ``\\-``) entfernt ``html_to_text`` anschließend wieder.
+    """
+
+    def handle_data(self, data: str, entity_char: bool = False) -> None:
+        if not self.pre:
+            data = _WHITESPACE_RE.sub(" ", data)
+        super().handle_data(data, entity_char)
 
 
 def get_from_email() -> str:
@@ -66,7 +87,7 @@ def inline_css(html: str) -> str:
 
 def html_to_text(html: str) -> str:
     """Text-Alternative aus HTML erzeugen (Links bleiben als ``[Text](URL)`` erhalten)."""
-    converter = html2text.HTML2Text()
+    converter = _Html2Text()
     converter.body_width = 0  # kein Zeilenumbruch, Links bleiben intakt
     converter.ignore_images = True
     converter.ignore_emphasis = True

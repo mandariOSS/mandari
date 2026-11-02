@@ -20,6 +20,10 @@ from ._helpers import flash_error
 
 logger = logging.getLogger(__name__)
 
+#: Höchstlänge der persönlichen Nachricht einer Einladung in Zeichen. Sie wird gespeichert und in die Einladungsmail
+#: gerendert; gekürzt wird wie beim erneuten Senden eines Gastzugangs (GuestAccessResendView).
+MAX_INVITATION_MESSAGE_LENGTH = 2000
+
 
 class MemberInviteView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Invite a new member."""
@@ -50,7 +54,7 @@ class MemberInviteView(NeueVorlageMixin, WorkViewMixin, TemplateView):
                 request.user,
                 email,
                 request.POST.getlist("roles"),
-                request.POST.get("message", "").strip(),
+                request.POST.get("message", "").strip()[:MAX_INVITATION_MESSAGE_LENGTH],
             )
         except ServiceError as exc:
             flash_error(request, exc)
@@ -99,7 +103,7 @@ class GuestInviteView(NeueVorlageMixin, WorkViewMixin, TemplateView):
                 self.organization,
                 self.membership,
                 email=email,
-                note=request.POST.get("message", "").strip(),
+                note=request.POST.get("message", "").strip()[:MAX_INVITATION_MESSAGE_LENGTH],
                 share_level=request.POST.get("share_level", "view"),
                 document_ids=request.POST.getlist("documents"),
                 folder_ids=request.POST.getlist("folders"),
