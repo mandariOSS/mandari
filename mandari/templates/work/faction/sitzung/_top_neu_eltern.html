@@ -1,0 +1,12 @@
+{# Auswahl „Als Unterpunkt von“ im Dialog „TOP hinzufügen“ (Issue #1166); mit oob (TOP-Wechsel, neuer TOP) kommt sie neu #}
+{# Kontext: ordnung (sitzung.Tagesordnung, für Nicht-Vereidigte ohne Nichtöffentliches), oob #}
+<div id="fs-top-neu-eltern"{% if oob %} hx-swap-oob="true"{% endif %}>
+    {% if ordnung.eltern_oeffentlich or ordnung.eltern_intern %}
+    <label class="fs-feldname" for="fs-top-neu-unter">Als Unterpunkt von <span class="fs-meta">freiwillig{% if ordnung.eltern_intern %}, unter einem nichtöffentlichen TOP immer nichtöffentlich{% endif %}</span></label>
+    <select id="fs-top-neu-unter" class="wf-eingabe wf-auswahl w-full" name="parent_id">
+        <option value="">als eigener TOP</option>
+        {% for z in ordnung.eltern_oeffentlich %}<option value="{{ z.item.pk }}">{{ z.item.number }} {{ z.item.title|truncatechars:50 }}</option>{% endfor %}
+        {% if ordnung.eltern_intern %}<optgroup label="Nichtöffentlicher Teil">{% for z in ordnung.eltern_intern %}<option value="{{ z.item.pk }}">{{ z.item.number }} {{ z.item.title|truncatechars:50 }}</option>{% endfor %}</optgroup>{% endif %}
+    </select>
+    {% endif %}
+</div>

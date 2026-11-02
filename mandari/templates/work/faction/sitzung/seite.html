@@ -30,12 +30,18 @@ Editor-Bundle frontend/editor/index.ts.
         {% else %}
         <section class="fs-fokus" id="fs-fokus">
             <div class="fs-top-kopf">
+                {% if rechte.top_neu %}
+                <p class="fs-meta">Diese Sitzung hat noch keine Tagesordnung. Den ersten TOP fügen Sie über „TOP hinzufügen“ in der Tagesordnung ein.</p>
+                <button type="button" class="wf-knopf wf-klein fs-mobil-nur" @click="tagesordnungOffen = true" aria-controls="fs-tagesordnung"><i data-lucide="list" aria-hidden="true"></i>Tagesordnung</button>
+                {% else %}
                 <p class="fs-meta">Diese Sitzung hat noch keine Tagesordnung. TOPs tragen Sie in der <c-suche.textlink href="?ansicht=bisher">bisherigen Ansicht</c-suche.textlink> ein.</p>
+                {% endif %}
             </div>
         </section>
         {% endif %}
         {% include "work/faction/sitzung/_anwesenheit.html" %}
     </div>
     {% if item %}{% include "work/faction/sitzung/_unten.html" %}{% endif %}
+    {% if rechte.top_neu %}{% include "work/faction/sitzung/_top_neu.html" %}{% endif %}
 </div>
 {% endblock %}

@@ -227,6 +227,15 @@
     height: 14px;
     margin-top: 2px;
   }
+  /* „TOP hinzufügen“ unter der Tagesordnung (Issue #1166): eine leise Zeile wie die TOPs */
+  .fs-tl-neu {
+    margin-top: 8px;
+  }
+  .fs-tl-neu .nr svg {
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+  }
   .fs-fokus {
     min-width: 0;
     display: flex;

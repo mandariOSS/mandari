@@ -90,6 +90,48 @@ def next_order(meeting: FactionMeeting) -> int:
     return (highest or 0) + 1
 
 
+def add_item(
+    meeting: FactionMeeting,
+    *,
+    title: str,
+    visibility: str,
+    parent: FactionAgendaItem | None = None,
+    description: str = "",
+) -> FactionAgendaItem:
+    """
+    TOP ans Ende seines Teils bzw. als letzten Unterpunkt von ``parent`` eintragen (Vorbereitung #855, laufende
+    Sitzung #1166). Rechte, Teil und Eingaben prüft der Aufrufer; Unterpunkte eines nicht-öffentlichen TOPs bleiben
+    nicht-öffentlich. Die Sitzung ist bis zum Speichern gesperrt, damit gleichzeitige Einträge verschiedene Nummern
+    erhalten. Den Änderungsverlauf schreibt das Speichern (``audit.audit_post_save``).
+    """
+    from .models import FactionAgendaItem
+
+    if parent is not None and parent.visibility == "internal":
+        visibility = "internal"
+    with transaction.atomic():
+        lock_meeting(meeting)
+        if parent is not None:
+            number = f"{parent.number}.{parent.children.count() + 1}"
+        else:
+            number = next_number(meeting, visibility)
+        item = FactionAgendaItem(
+            meeting=meeting,
+            title=title,
+            number=number,
+            visibility=visibility,
+            order=next_order(meeting),
+            parent=parent,
+        )
+        if description:
+            cast(Any, item).set_description_encrypted(description)
+        item.save()
+        if parent is None:
+            # Gleicht Altbestand aus, in dem offene oder abgelehnte Vorschläge noch mitgezählt wurden
+            renumber(meeting, visibility)
+            item.refresh_from_db(fields=["number"])
+    return item
+
+
 def renumber(meeting: FactionMeeting, visibility: str) -> None:
     """TOPs eines Teils nach ihrer Reihenfolge neu nummerieren (Unterpunkte als 2.1, 2.2 …)."""
     for position, item in enumerate(
