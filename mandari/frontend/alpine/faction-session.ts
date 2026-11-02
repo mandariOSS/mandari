@@ -118,10 +118,22 @@ const BREIT = '(min-width: 2200px)'
 // Titel, Beschreibung und Inhalte nichtöffentlicher TOPs sind in der Sitzungsansicht verdeckt, bis jemand den Teil
 // aktiv einblendet (etwa beim Teilen des Bildschirms oder am Beamer). Der Server liefert die Seite verdeckt (Klasse
 // `noe-verdeckt` an `.fs-sitzung`, Vorleser-Ersatz und `aria-hidden` im Markup); diese Komponente nimmt das nur weg.
-// Der Zustand gilt je Sitzung im Browser-Tab: Er übersteht TOP-Wechsel und Neuladen, ein neuer Tab beginnt verdeckt.
+// Der Zustand gilt je Sitzung im Browser-Tab: Er übersteht TOP-Wechsel und Neuladen. Ein neuer Tab beginnt verdeckt,
+// auch ein duplizierter oder wiederhergestellter (die Browser kopieren dabei den sessionStorage; gemerkt wird deshalb
+// nur bei echtem Neuladen, etwa nicht beim Duplizieren für den Beamer).
 // Nur Sichtschutz: Wer keine Rechte für den Teil hat, bekommt ihn vom Server gar nicht.
 
 const NOE_SCHLUESSEL = 'fs-noe-sichtbar:'
+
+/** Wurde die Seite neu geladen (nicht neu geöffnet, dupliziert oder wiederhergestellt)? */
+function neuGeladen(): boolean {
+  try {
+    const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+    return navigation?.type === 'reload'
+  } catch {
+    return false
+  }
+}
 
 function noeGemerkt(sitzung: string): boolean {
   try {
@@ -152,7 +164,9 @@ export const fraktionssitzung = defineComponent(() => ({
   init() {
     this.aktuell = this.$el.dataset.aktuell ?? ''
     this.sitzung = this.$el.dataset.sitzung ?? ''
-    this.noeSichtbar = noeGemerkt(this.sitzung)
+    this.noeSichtbar = neuGeladen() && noeGemerkt(this.sitzung)
+    // Kopierter Zustand eines duplizierten Tabs gilt hier nicht (der Tab, aus dem er stammt, behält seinen)
+    if (!this.noeSichtbar) noeMerken(this.sitzung, false)
     const breite = window.matchMedia(BREIT)
     this.breit = breite.matches
     breite.addEventListener('change', (event) => {

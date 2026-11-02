@@ -499,6 +499,11 @@ def test_nichtoeffentlicher_teil_erst_nach_dem_einblenden_lesbar(
     wait_for_bundle(tab)
     expect(tab.locator(f"#fs-tl-{noe.pk} .fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
     expect(tab.locator('#fs-unten [data-nav="nach"]')).to_have_attribute("title", "Nächster TOP: NÖ 1 (Taste J)")
+    # Wie ein duplizierter Tab (gleicher sessionStorage, aber kein Neuladen): ebenfalls verdeckt
+    tab.evaluate("([k, v]) => sessionStorage.setItem(k, v)", [f"fs-noe-sichtbar:{meeting.pk}", "1"])
+    tab.goto(page.url)
+    wait_for_bundle(tab)
+    expect(tab.locator(f"#fs-tl-{noe.pk} .fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
     tab.close()
 
     # Wieder verdecken über den Schalter an „Nichtöffentlicher Teil“
