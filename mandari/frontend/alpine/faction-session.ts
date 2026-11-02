@@ -171,6 +171,8 @@ export const fraktionssitzung = defineComponent(() => ({
   /** J: nächster TOP, K: voriger TOP (nicht beim Schreiben) */
   taste(event: KeyboardEvent) {
     if (event.altKey || event.ctrlKey || event.metaKey || tippt(event.target)) return
+    // Offener Dialog (etwa „TOP hinzufügen“): kein TOP-Wechsel dahinter, sonst ginge die Auswahl im Dialog verloren
+    if (document.querySelector('dialog[open]')) return
     const richtung =
       event.key === 'j' || event.key === 'J' ? 'nach' : event.key === 'k' || event.key === 'K' ? 'vor' : ''
     if (!richtung) return
