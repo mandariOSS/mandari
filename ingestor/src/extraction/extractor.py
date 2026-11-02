@@ -8,6 +8,9 @@ Implementierung nutzt der Auftrag ``file.extract_text`` der Anwendung; welcher W
 
 Async-capable: PDF downloads via httpx, sync extraction via asyncio.to_thread().
 
+Die Textebene (pypdf) liest ein eigener Prozess mit Speicher- und Zeitgrenze (``TEXT_LAYER_MEMORY_LIMIT_MB``), nie der
+Ingestor selbst; Rendern und Tesseract laufen ohnehin als begrenzte Unterprozesse (``TextExtractor._extract_text``).
+
 Downloads laufen gestreamt in eine temporäre Datei, die beim Schreiben gehasht wird; die Größengrenze
 greift schon während des Downloads, nie liegt eine ganze Datei im Arbeitsspeicher (Issue #788). Ist die
 Dokumentablage eingerichtet (``OPARL_FILES_ROOT``), legt der Ingestor die Datei danach gleich unter
@@ -50,11 +53,14 @@ import httpx
 from mandari_dokumente import (
     MEMORY_LIMIT_REASON,
     ExtractionConfig,
+    IsolationLimits,
     MistralConfig,
     OcrLimits,
     OcrMemoryLimitError,
+    TextLayer,
     erlaubte_hosts_aus_umgebung,
     extract_text,
+    extract_text_layer_isolated,
 )
 from mandari_oparl.abgleich import looks_like_html
 from mandari_oparl.robots import KIND_FILES, RETRY_UNREACHABLE_SECONDS
@@ -728,13 +734,30 @@ class TextExtractor:
         """
         Text der geladenen Datei mit der gemeinsamen Texterkennung (läuft in einem Thread).
 
+        Die Textebene liest ein eigener Prozess mit Speicher- und Zeitgrenze (``extract_text_layer_isolated``, wie
+        der Auftrag ``file.read_text_layer`` der Anwendung), nie dieser Prozess: pypdf hält die entpackten Inhalte
+        aller Seiten, und eine kleine, stark komprimierte Datei träfe sonst den ganzen Ingestor mit allen
+        laufenden Abgleichen. Reicht die Textebene nicht, geht die Datei mit der dort gelesenen Textebene
+        (Seitenzahl, Seitengrößen) an die Erkennung aus dem Bild; endet der Prozess an einer Grenze, mit einer
+        leeren (Tesseract dann ohne bekannte Seitenzahl).
+
         ``OcrMemoryLimitError`` geht an den Aufrufer (Datei gilt als gescheitert, Grund „Speichergrenze“).
 
         Returns:
             (text, page_count, extraction_method)
         """
-        result = extract_text(source, mime_type, file_name, extraction_config())
+        config = extraction_config()
+        stufe = extract_text_layer_isolated(source, mime_type, file_name, config, text_layer_limits())
+        if stufe.result is not None:
+            return stufe.result.text, stufe.result.page_count, stufe.result.method
+        layer = stufe.layer if stufe.layer is not None else TextLayer()
+        result = extract_text(source, mime_type, file_name, config, layer=layer)
         return result.text, result.page_count, result.method
+
+
+def text_layer_limits() -> IsolationLimits:
+    """Grenzen des Prozesses, der die Textebene liest (``TEXT_LAYER_MEMORY_LIMIT_MB``, Zeit wie in der Anwendung)."""
+    return IsolationLimits(memory_limit_mb=settings.text_layer_memory_limit_mb)
 
 
 def runs_elsewhere() -> bool:

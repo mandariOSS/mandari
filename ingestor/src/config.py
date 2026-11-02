@@ -155,6 +155,10 @@ class Settings(BaseSettings):
     ocr_page_timeout: float = 120.0
     ocr_file_budget_seconds: float = 1200.0
     ocr_max_pages: int = 100
+    # Die Textebene (pypdf) liest ein eigener Prozess mit dieser Grenze des Adressraums in MB (0 = ohne) und 120 s
+    # Zeitgrenze, nie der Ingestor selbst; wie TEXT_LAYER_MEMORY_LIMIT_MB der Anwendung (Issue #1107). Deutlich unter
+    # dem Speicherlimit des Containers halten. Darüber geht die Datei an die Erkennung aus dem Bild.
+    text_layer_memory_limit_mb: int = 384
     # Dateien in "processing", deren Bearbeitung länger zurückliegt, gelten als abgebrochen (Worker beendet):
     # zurück nach "pending", nach TEXT_EXTRACTION_MAX_ATTEMPTS abgebrochenen Versuchen "failed" (Speichergrenze)
     text_extraction_stale_minutes: int = 60

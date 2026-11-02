@@ -16,6 +16,9 @@ wie bisher nur für Dateien ganz ohne Textebene.
 Erkennung aus dem Bild braucht; ``extract_text_layer_isolated`` führt ihn in einem eigenen Prozess mit Speicher- und
 Zeitgrenze aus (``python -m mandari_dokumente textebene``). Die Anwendung nutzt das für den leichten Auftrag
 ``file.read_text_layer``; nur Dateien, für die er ``None`` liefert, gehen an ``extract_text`` im schweren Worker.
+Der Ingestor liest die Textebene nur so und gibt ``extract_text`` die dort gelesene Textebene mit (``layer``,
+``TextLayerOutcome.layer``) bzw. eine leere, wenn der Prozess an einer Grenze endete: Sein langlebiger Prozess liest
+sie nie selbst.
 
 Text- und HTML-Dateien werden dekodiert, andere Dateien nur, wenn sie wie Text aussehen; Word-Dateien und
 andere Binärformate ergeben keinen Text. Das Ergebnis ist ein ``ExtractionResult`` ohne Null-Bytes
@@ -97,13 +100,19 @@ def extract_text(
     mime_type: str | None = None,
     file_name: str = "",
     config: ExtractionConfig | None = None,
+    *,
+    layer: TextLayer | None = None,
 ) -> ExtractionResult:
-    """Text aus einer Datei (Pfad) oder aus Bytes; Art nach MIME-Typ, Dateiname bzw. Dateianfang."""
+    """
+    Text aus einer Datei (Pfad) oder aus Bytes; Art nach MIME-Typ, Dateiname bzw. Dateianfang. ``layer``: die
+    Textebene, schon in einem eigenen Prozess gelesen (``TextLayerOutcome.layer``) oder bewusst leer; dann liest
+    ``extract_text`` sie nicht noch einmal in diesem Prozess.
+    """
     config = config or ExtractionConfig()
     mime = _mime(mime_type)
     if _is_pdf(source, mime, file_name):
-        layer = read_text_layer(source, config.ocr.max_pages)
-        result = _extract_pdf(source, file_name, config, layer)
+        gelesen = layer if layer is not None else read_text_layer(source, config.ocr.max_pages)
+        result = _extract_pdf(source, file_name, config, gelesen)
     else:
         result = _extract_other(source, mime, file_name)
     return _clean(result)
@@ -120,14 +129,20 @@ def extract_text_layer(
     sind, erkennt sie vollständig (sie brauchen nie eine Erkennung aus dem Bild); ein PDF nur, wenn seine Textebene
     reicht (``TextLayer.sufficient``, dieselbe Entscheidung wie in ``extract_text``).
     """
-    config = config or ExtractionConfig()
+    return _text_layer_stage(source, mime_type, file_name, config or ExtractionConfig())[0]
+
+
+def _text_layer_stage(
+    source: Path | bytes, mime_type: str | None, file_name: str, config: ExtractionConfig
+) -> tuple[ExtractionResult | None, TextLayer | None]:
+    """``extract_text_layer`` und die gelesene Textebene (``None`` bei Dateien, die keine PDFs sind)."""
     mime = _mime(mime_type)
     if not _is_pdf(source, mime, file_name):
-        return _clean(_extract_other(source, mime, file_name))
+        return _clean(_extract_other(source, mime, file_name)), None
     layer = read_text_layer(source, config.ocr.max_pages)
     if not layer.sufficient(config.ocr_mixed_pages):
-        return None
-    return _clean(_from_layer(layer))
+        return None, layer
+    return _clean(_from_layer(layer)), layer
 
 
 def _mime(mime_type: str | None) -> str:
@@ -143,7 +158,8 @@ def _clean(result: ExtractionResult) -> ExtractionResult:
 
 
 def _from_layer(layer: TextLayer) -> ExtractionResult:
-    return ExtractionResult(layer.text, METHOD_PYPDF, layer.page_count)
+    notes = (f"Textebene gekürzt nach {len(layer.pages)} von {layer.page_count} Seiten",) if layer.truncated else ()
+    return ExtractionResult(layer.text, METHOD_PYPDF, layer.page_count, notes)
 
 
 def _extract_other(source: Path | bytes, mime: str, file_name: str) -> ExtractionResult:
@@ -254,6 +270,9 @@ class TextLayerOutcome:
 
     result: ExtractionResult | None
     reason: str
+    #: Die im Prozess gelesene Textebene, wenn sie nicht reicht (``LAYER_NEEDS_OCR``): Seitenzahl und -größen für die
+    #: Erkennung aus dem Bild, ohne sie noch einmal zu lesen. ``None`` an einer Grenze oder bei einem Fehler.
+    layer: TextLayer | None = field(default=None, compare=False)
 
 
 def run_isolated(
@@ -290,20 +309,21 @@ def extract_text_layer_isolated(
     ``extract_text`` mit mehr Speicher und Zeit, und ein unlesbarer Inhalt endet wie bisher als gescheitert.
 
     Eigener Prozess, weil pypdf reines Python ist: Mehrere Threads eines Workers liefen nacheinander (GIL), und eine
-    große oder defekte Datei träfe den ganzen Worker.
+    große oder defekte Datei träfe den ganzen Worker. pypdf hält zudem die entpackten Inhalte aller gelesenen Seiten;
+    ein Prozess mit Speichergrenze endet daran mit ``LAYER_MEMORY``, nie mit einem Teil des Textes.
+
+    Reicht die Textebene nicht (``LAYER_NEEDS_OCR``), trägt ``layer`` die im Prozess gelesene Textebene.
     """
     limits = limits or IsolationLimits()
+    # Werte mit "=": ein Dateiname, der mit "-" beginnt, gilt sonst als Option
     command = [
         sys.executable,
         "-m",
         "mandari_dokumente",
         "textebene",
-        "--mime",
-        mime_type or "",
-        "--name",
-        file_name or "",
-        "--max-pages",
-        str(config.ocr.max_pages),
+        f"--mime={mime_type or ''}",
+        f"--name={file_name or ''}",
+        f"--max-pages={config.ocr.max_pages}",
     ]
     if config.ocr_mixed_pages:
         command.append("--gemischt")
@@ -333,8 +353,10 @@ def extract_text_layer_isolated(
     except (UnicodeDecodeError, ValueError):
         logger.warning("Textebene %s: Ausgabe nicht lesbar, weiter mit der Texterkennung", file_name)
         return TextLayerOutcome(None, LAYER_ERROR)
-    if not isinstance(daten, dict) or daten.get("needs_ocr", True):
+    if not isinstance(daten, dict):
         return TextLayerOutcome(None, LAYER_NEEDS_OCR)
+    if daten.get("needs_ocr", True):
+        return TextLayerOutcome(None, LAYER_NEEDS_OCR, _layer_aus(daten.get("layer")))
     seiten = daten.get("page_count")
     result = ExtractionResult(
         str(daten.get("text") or ""),
@@ -357,8 +379,10 @@ def text_layer_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("pfad")
     args = parser.parse_args(argv)
     config = ExtractionConfig(ocr=OcrLimits(max_pages=args.max_pages), ocr_mixed_pages=args.gemischt)
+    # Der Aufrufer liest stderr ganz in seinen Speicher: keine Warnung je unsauberem Objekt (wie im Ingestor)
+    logging.getLogger("pypdf").setLevel(logging.ERROR)
     try:
-        result = extract_text_layer(Path(args.pfad), args.mime, args.name, config)
+        result, layer = _text_layer_stage(Path(args.pfad), args.mime, args.name, config)
     except MemoryError:
         sys.stderr.write("MemoryError\n")
         return EXIT_MEMORY
@@ -371,9 +395,45 @@ def text_layer_main(argv: Sequence[str] | None = None) -> int:
             "page_count": result.page_count,
             "notes": list(result.notes),
         }
+    elif layer is not None:
+        daten["layer"] = _layer_daten(layer)
     sys.stdout.buffer.write(json.dumps(daten, ensure_ascii=False).encode("utf-8"))
     sys.stdout.buffer.flush()
     return 0
+
+
+def _layer_daten(layer: TextLayer) -> dict[str, object]:
+    """Textebene als JSON-Objekt für den Aufrufer des Prozesses (``_layer_aus``)."""
+    return {
+        "pages": list(layer.pages),
+        "page_count": layer.page_count,
+        "page_sizes": [list(groesse) if groesse is not None else None for groesse in layer.page_sizes],
+        "scan_pages": list(layer.scan_pages),
+        "truncated": layer.truncated,
+    }
+
+
+def _layer_aus(daten: object) -> TextLayer | None:
+    """Textebene aus der Ausgabe des Prozesses (``_layer_daten``); ``None``, wenn sie fehlt oder nicht passt."""
+    if not isinstance(daten, dict):
+        return None
+    try:
+        seiten = tuple(str(seite) for seite in daten.get("pages") or ())
+        groessen = tuple(
+            (float(groesse[0]), float(groesse[1])) if isinstance(groesse, list) and len(groesse) == 2 else None
+            for groesse in daten.get("page_sizes") or ()
+        )
+        scans = tuple(int(nummer) for nummer in daten.get("scan_pages") or ())
+    except (TypeError, ValueError):
+        return None
+    seitenzahl = daten.get("page_count")
+    return TextLayer(
+        seiten,
+        seitenzahl if isinstance(seitenzahl, int) else None,
+        groessen,
+        scans,
+        bool(daten.get("truncated")),
+    )
 
 
 @contextmanager

@@ -1147,6 +1147,10 @@ Seite, nicht den Prozess. Wer sie ausführt, wählt `TEXT_EXTRACTION_RUNNER` –
 gleich setzen**, sonst arbeiten beide oder keiner:
 
 - `ingestor` (Standard): der OCR-Worker des Ingestors (`python -m src.main extract-daemon`, Ingestor-Image).
+  Die Textebene liest er wie die erste Stufe der Aufträge je Datei in einem eigenen Prozess mit Speicher- und
+  Zeitgrenze (`TEXT_LAYER_MEMORY_LIMIT_MB`, 120 Sekunden), nie im eigenen Prozess: Eine kleine, stark komprimierte
+  Datei trifft so höchstens diesen Prozess, nicht den Sync. Endet er an einer Grenze, erkennt der Ingestor die Datei
+  aus dem Bild.
 - `worker`: Aufträge in zwei Stufen (Issue #1107); der OCR-Worker des Ingestors ruht dann.
   `file.read_text_layer` (Warteschlange `text`, Dienst `worker`) liest nur die Textebene, in einem eigenen Prozess
   mit Speicher- und Zeitgrenze; reicht sie, ist die Datei fertig (rund 90 % der Dateien). Sonst geht sie an
@@ -1173,6 +1177,7 @@ Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 | `OCR_PAGE_TIMEOUT` | `120` | Sekunden je Seite und Schritt |
 | `OCR_FILE_BUDGET_SECONDS` | `1200` | Zeitbudget je Datei; danach gilt der bis dahin erkannte Text |
 | `OCR_MAX_PAGES` | `100` | höchstens so viele Seiten je Datei |
+| `TEXT_LAYER_MEMORY_LIMIT_MB` | `512` (Anwendung), `384` (Ingestor) | Adressraum je Prozess, der die Textebene (pypdf) liest; darüber geht die Datei an die Erkennung aus dem Bild. Unter dem Speicherlimit des Containers halten. Die Textebene liefert höchstens 3000 Seiten und 5 Mio. Zeichen Text |
 | `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
 | `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
 | `TEXT_EXTRACTION_MAX_SIZE_MB` | `50` | größere Dateien werden übersprungen |
