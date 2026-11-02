@@ -8,7 +8,7 @@
     {% for zeile in ordnung.oeffentlich %}{% include "work/faction/sitzung/_tagesordnung_zeile.html" %}{% endfor %}
 </ul>
 {% if ordnung.intern or ordnung.gesperrt %}
-<div class="wf-tl-gruppe">Nichtöffentlicher Teil</div>
+<div class="wf-tl-gruppe fs-noe-gruppe">Nichtöffentlicher Teil{% if ordnung.intern %}{% include "work/faction/sitzung/_noe_schalter.html" %}{% endif %}</div>
 <ul class="wf-tl">
     {% for zeile in ordnung.intern %}{% include "work/faction/sitzung/_tagesordnung_zeile.html" %}{% endfor %}
     {% if ordnung.gesperrt %}

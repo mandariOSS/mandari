@@ -435,6 +435,97 @@ def test_kopf_und_leiste_ohne_ueberlappung(page: Any, live_server: Any, login: A
     pruefen("390 px, Beschluss geöffnet")
 
 
+def test_nichtoeffentlicher_teil_erst_nach_dem_einblenden_lesbar(
+    page: Any, live_server: Any, login: Any, org: Any, sitzung: Any, axe: Any, screenshot: Any
+) -> None:
+    """
+    Sichtschutz (Issue #1166): Auch mit Rechten sind NÖ-Titel in Tagesordnung, Kopf und „Nächster TOP“ weichgezeichnet
+    und Unterlagen und Protokoll abgedeckt, bis der Teil eingeblendet ist. Der Zustand gilt je Sitzung im Browser-Tab
+    (TOP-Wechsel, Neuladen); ein neuer Tab beginnt wieder verdeckt.
+    """
+    vorsitz, meeting, tops = sitzung
+    titel = "Anfrage Hitzeschutz an Schulen"
+    noe = FactionAgendaItem.objects.create(
+        meeting=meeting, number="NÖ 1", title=titel, visibility="internal", order=len(tops)
+    )
+    page.set_viewport_size({"width": 1440, "height": 900})
+    login(vorsitz.user.email, PASSWORD)
+    page.goto(f"{live_server.url}/work/{org.slug}/faction/{meeting.pk}/?top={noe.pk}")
+    wait_for_bundle(page)
+    zeile = page.locator(f"#fs-tl-{noe.pk} .fs-noe")
+    kopf = page.locator("#fs-top-titel .fs-noe")
+    abdeckung = page.locator(".fs-noe-abdeckung")
+    schalter = page.locator("#fs-tagesordnung .fs-noe-schalter")
+
+    # Verdeckt: Nummer lesbar, Titel weichgezeichnet und für Vorleser ersetzt, Abdeckung statt Protokoll
+    expect(page.locator(f"#fs-tl-{noe.pk} .nr")).to_have_text("NÖ 1")
+    for verdeckt in (zeile, kopf):
+        expect(verdeckt).to_have_css("filter", re.compile(r"^blur\("))
+        expect(verdeckt).to_have_attribute("aria-hidden", "true")
+    expect(page.locator(f"#fs-tl-{noe.pk} a")).to_have_accessible_name("NÖ 1 Nichtöffentlicher TOP, ausgeblendet")
+    expect(abdeckung).to_be_visible()
+    expect(page.locator("#fs-notiz")).to_be_hidden()
+    expect(page.locator("#fs-unten")).to_contain_text("Nichtöffentlich, ausgeblendet")
+    expect(schalter).to_have_attribute("aria-pressed", "false")
+    result = axe()
+    assert not result.failing, result.describe()
+    screenshot("fraktionssitzung-noe-verdeckt-1440")
+
+    # Einblenden über die Abdeckung: lesbar, Fokus auf der Überschrift, Protokoll beschreibbar
+    abdeckung.get_by_role("button", name="Nichtöffentlichen Teil einblenden").click()
+    expect(abdeckung).to_be_hidden()
+    expect(kopf).to_have_css("filter", "none")
+    expect(kopf).not_to_have_attribute("aria-hidden", "true")
+    expect(page.locator("#fs-top-titel")).to_be_focused()
+    expect(schalter).to_have_attribute("aria-pressed", "true")
+    expect(schalter).to_have_attribute("title", "Nichtöffentlichen Teil wieder verdecken")
+    page.locator(NOTIZ).click()
+    page.keyboard.type("Messwerte liegen vor.")
+    expect(page.locator(".fs-status")).to_contain_text(re.compile(r"Automatisch gespeichert um"), timeout=10000)
+    screenshot("fraktionssitzung-noe-eingeblendet-1440")
+
+    # TOP-Wechsel per HTMX und Neuladen: bleibt eingeblendet, „Nächster TOP“ nennt den Titel
+    page.locator("#fs-tagesordnung").get_by_text("Sonstiges").click()
+    expect(page.locator("#fs-top-titel")).to_contain_text("Sonstiges")
+    nach = page.locator('#fs-unten [data-nav="nach"]')
+    expect(nach).to_have_attribute("title", f"Nächster TOP: NÖ 1 {titel} (Taste J)")
+    page.reload()
+    wait_for_bundle(page)
+    expect(zeile).to_have_css("filter", "none")
+
+    # Neuer Tab: wieder verdeckt
+    tab = page.context.new_page()
+    tab.goto(page.url)
+    wait_for_bundle(tab)
+    expect(tab.locator(f"#fs-tl-{noe.pk} .fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
+    expect(tab.locator('#fs-unten [data-nav="nach"]')).to_have_attribute("title", "Nächster TOP: NÖ 1 (Taste J)")
+    # Wie ein duplizierter Tab (gleicher sessionStorage, aber kein Neuladen): ebenfalls verdeckt
+    tab.evaluate("([k, v]) => sessionStorage.setItem(k, v)", [f"fs-noe-sichtbar:{meeting.pk}", "1"])
+    tab.goto(page.url)
+    wait_for_bundle(tab)
+    expect(tab.locator(f"#fs-tl-{noe.pk} .fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
+    tab.close()
+
+    # Wieder verdecken über den Schalter an „Nichtöffentlicher Teil“
+    schalter.click()
+    expect(schalter).to_have_attribute("aria-pressed", "false")
+    expect(zeile).to_have_css("filter", re.compile(r"^blur\("))
+    expect(nach).to_have_attribute("title", "Nächster TOP: NÖ 1 (Taste J)")
+
+    # Breit: „Nächster TOP“ mit weichgezeichnetem Titel; am Handy die Abdeckung im NÖ-TOP
+    page.set_viewport_size({"width": 1920, "height": 1080})
+    expect(nach.locator(".fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
+    screenshot("fraktionssitzung-noe-naechster-1920")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.locator("#fs-top-titel").click()
+    page.keyboard.press("j")
+    expect(page.locator("#fs-top-titel")).to_contain_text("NÖ 1")
+    expect(abdeckung).to_be_visible()
+    result = axe()
+    assert not result.failing, result.describe()
+    screenshot("fraktionssitzung-noe-verdeckt-390")
+
+
 @pytest.fixture
 def zwei_browser(new_context: Any) -> Iterator[tuple[Any, Any]]:
     """Zwei unabhängige Browserkontexte (eigene Anmeldung), je eine Seite."""

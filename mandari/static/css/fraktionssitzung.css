@@ -1815,3 +1815,57 @@
     .fs-sl > li { grid-template-columns: 4rem minmax(0, 1fr); gap: 2px 12px; }
   }
 }
+
+/* =====================================================================================================
+   Sichtschutz für den nichtöffentlichen Teil der laufenden Sitzung (Issue #1166, Spur noe). Titel, Beschreibung
+   und Beratungsverlauf nichtöffentlicher TOPs sind weichgezeichnet (.fs-noe); Unterlagen, Protokoll und Beschluss
+   (.fs-noe-inhalt) ersetzt eine Abdeckung (.fs-noe-ersatz), bis jemand den Teil einblendet, etwa vor dem Teilen
+   des Bildschirms. Der Server liefert die Seite mit der Klasse noe-verdeckt an .fs-sitzung (kein Aufblitzen beim
+   Laden), faction-session.ts nimmt sie erst nach dem Einblenden weg und merkt den Zustand je Sitzung im Browser-Tab.
+   Templates: _noe_text.html, _noe_schalter.html, _noe_abdeckung.html. Nur Sichtschutz, die Rechte prüft der Server.
+   ===================================================================================================== */
+@layer components {
+  .fs-noe-inhalt {
+    display: contents;
+  }
+  .fs-sitzung.noe-verdeckt .fs-noe-inhalt,
+  .fs-sitzung:not(.noe-verdeckt) .fs-noe-ersatz {
+    display: none !important;
+  }
+  /* Weichzeichnen mit der Schriftgröße: Tagesordnung und Leiste etwa 5 px, Überschrift des TOPs etwa 7 px */
+  .fs-sitzung.noe-verdeckt .fs-noe {
+    filter: blur(0.4em);
+    user-select: none;
+  }
+  /* Schalter an der Überschrift „Nichtöffentlicher Teil“: rechts in ihrer Zeile, ohne sie höher zu machen */
+  .fs-noe-gruppe {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .fs-noe-gruppe .fs-noe-schalter {
+    margin: -5px -8px -5px 0;
+  }
+  .fs-top-kopf .fs-noe-schalter {
+    flex: none;
+  }
+  /* Abdeckung statt Unterlagen und Protokoll eines verdeckten NÖ-TOPs (über alle Spalten der Arbeitsfläche) */
+  .fs-noe-abdeckung {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 48px 24px;
+    text-align: center;
+  }
+  .fs-noe-abdeckung p {
+    margin: 0;
+    max-width: 32rem;
+  }
+  .fs-noe-abdeckung .wf-knopf {
+    margin-top: 8px;
+  }
+}
