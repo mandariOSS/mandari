@@ -38,6 +38,8 @@ from datetime import date
 from typing import Any, Final
 
 from django.db.models import Prefetch, QuerySet
+from django.db.models.functions import Substr
+from mandari_dokumente import MAX_TEXT_CHARS
 
 from hub.ris.canonical import (
     ORGANIZATION_TYPES,
@@ -178,19 +180,32 @@ class BestandUris:
 # =============================================================================
 
 
+def _embedded_files() -> QuerySet[OParlFile]:
+    """
+    Eingebettete Dateien ohne Text: Er steht nur am Objekt-Endpunkt (``file_with_text``) und kann Millionen Zeichen
+    lang sein. ``raw_json`` bleibt, ``_file_day`` liest es je Datei.
+    """
+    return OParlFile.objects.filter(deleted=False).defer("text_content")
+
+
 def prepare_meetings(queryset: QuerySet[OParlMeeting]) -> QuerySet[OParlMeeting]:
     return queryset.prefetch_related(
         Prefetch("organizations", queryset=OParlOrganization.objects.filter(deleted=False).only("id")),
         Prefetch("agenda_items", queryset=OParlAgendaItem.objects.filter(deleted=False)),
-        Prefetch("files", queryset=OParlFile.objects.filter(deleted=False)),
+        Prefetch("files", queryset=_embedded_files()),
     )
 
 
 def prepare_papers(queryset: QuerySet[OParlPaper]) -> QuerySet[OParlPaper]:
     return queryset.prefetch_related(
-        Prefetch("files", queryset=OParlFile.objects.filter(deleted=False)),
+        Prefetch("files", queryset=_embedded_files()),
         Prefetch("consultations", queryset=OParlConsultation.objects.filter(deleted=False)),
     )
+
+
+def prepare_files(queryset: QuerySet[OParlFile]) -> QuerySet[OParlFile]:
+    """Objekt-Endpunkt ``file``: Text höchstens ``MAX_TEXT_CHARS`` Zeichen, gekürzt in der Datenbank (``_file_text``)."""
+    return queryset.defer("text_content").annotate(text_begrenzt=Substr("text_content", 1, MAX_TEXT_CHARS))
 
 
 def prepare_organizations(queryset: QuerySet[OParlOrganization]) -> QuerySet[OParlOrganization]:
@@ -360,6 +375,15 @@ def _file_day(file_obj: OParlFile) -> str | None:
         except ValueError:
             pass
     return iso_day(file_obj.file_date)
+
+
+def _file_text(file_obj: OParlFile) -> str | None:
+    """
+    ``File.text``: höchstens ``MAX_TEXT_CHARS`` Zeichen, auch bei älteren, längeren Texten. Mit ``prepare_files``
+    vorgeladen ist der Text schon in der Datenbank gekürzt, sonst wird er hier gekürzt.
+    """
+    text = getattr(file_obj, "text_begrenzt", None) if hasattr(file_obj, "text_begrenzt") else file_obj.text_content
+    return text[:MAX_TEXT_CHARS] if text else None
 
 
 class BestandMapping:
@@ -722,7 +746,7 @@ class BestandMapping:
                 "accessUrl": proxy_url,
                 "downloadUrl": f"{proxy_url}?download=1",
                 # Gesperrte Dokumente (in der Quelle gelöscht oder nicht mehr abrufbar, #787): kein Text
-                "text": (file_obj.text_content or None) if include_text and not is_blocked(file_obj) else None,
+                "text": _file_text(file_obj) if include_text and not is_blocked(file_obj) else None,
                 "paper": [self.uris.obj("paper", file_obj.paper_id)] if file_obj.paper_id else None,
                 "meeting": [self.uris.obj("meeting", file_obj.meeting_id)] if file_obj.meeting_id else None,
                 **_timestamps(file_obj),

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Prefetch, Q, QuerySet
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -22,6 +22,7 @@ from django.utils import timezone
 from apps.work.organization import selectors as organization_selectors
 from apps.work.organization.selectors import MyCommittees
 from apps.work.ris.verknuepfungen import Hinweis, hinweise_fuer_tops
+from hub.ris import selectors as ris
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -186,7 +187,11 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
     consultations = (
         OParlConsultation.objects.filter(agenda_item_external_id__in=external_ids)
         .select_related("paper")
-        .prefetch_related("paper__files", "paper__consultations")
+        # Dateien ohne Volltext und Rohdaten: Die Vorbereitung zeigt nur Namen, Art und Größe
+        .prefetch_related(
+            Prefetch("paper__files", queryset=ris.files_without_text()),
+            "paper__consultations",
+        )
     )
 
     paper_ids = {consultation.paper.id for consultation in consultations if consultation.paper}

@@ -125,7 +125,7 @@ async def test_zu_grosse_datei_wird_uebersprungen(monkeypatch: pytest.MonkeyPatc
 async def test_text_und_ablage_aus_einem_abruf(monkeypatch: pytest.MonkeyPatch, ablage: Path) -> None:
     gesendet = _transport(monkeypatch, lambda request: httpx.Response(200, content=INHALT))
     monkeypatch.setattr(
-        TextExtractor, "_extract_text", staticmethod(lambda source, mime, name: ("Beschluss", 1, "pypdf"))
+        TextExtractor, "_extract_text", staticmethod(lambda source, mime, name: ("Beschluss", 1, "pypdf", ()))
     )
     storage = _Storage()
     datei = _datei()
@@ -145,7 +145,7 @@ async def test_text_und_ablage_aus_einem_abruf(monkeypatch: pytest.MonkeyPatch, 
 async def test_ausgeblendete_kommune_und_hinweisseiten_werden_nicht_abgelegt(
     monkeypatch: pytest.MonkeyPatch, ablage: Path
 ) -> None:
-    monkeypatch.setattr(TextExtractor, "_extract_text", staticmethod(lambda source, mime, name: ("", None, "none")))
+    monkeypatch.setattr(TextExtractor, "_extract_text", staticmethod(lambda source, mime, name: ("", None, "none", ())))
     _transport(monkeypatch, lambda request: httpx.Response(200, content=INHALT))
     storage = _Storage(gelistet=False)
     await TextExtractor(storage)._process_file(_datei())
@@ -161,7 +161,9 @@ async def test_ausgeblendete_kommune_und_hinweisseiten_werden_nicht_abgelegt(
 @pytest.mark.asyncio
 async def test_ohne_ablage_im_temp_verzeichnis(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(settings, "oparl_files_root", "")
-    monkeypatch.setattr(TextExtractor, "_extract_text", staticmethod(lambda source, mime, name: ("Text", 1, "pypdf")))
+    monkeypatch.setattr(
+        TextExtractor, "_extract_text", staticmethod(lambda source, mime, name: ("Text", 1, "pypdf", ()))
+    )
     _transport(monkeypatch, lambda request: httpx.Response(200, content=INHALT))
     storage = _Storage()
     assert await TextExtractor(storage)._process_file(_datei())

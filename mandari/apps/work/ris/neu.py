@@ -167,7 +167,8 @@ def sitzung(organization: Any, membership: Any, meeting: Any) -> dict[str, Any]:
         "dokumente": fraktion.dokumente_zur_sitzung(organization, membership, meeting),
         "protocol_file": niederschrift,
         "broadcast": ris.broadcast_info(meeting),
-        "sitzungsdateien": [d for d in dateien if not file_reconcile.is_blocked(d)],
+        # Dokumentzeilen mit dem Anfang des Texts, ohne Volltext (``with_text_start``)
+        "sitzungsdateien": ris.with_text_start(d for d in dateien if not file_reconcile.is_blocked(d)),
         "sitzungsdateien_gesperrt": [d for d in dateien if file_reconcile.is_blocked(d)],
         "ist_kommend": bool(meeting.start and meeting.start > timezone.now()),
     }
@@ -213,7 +214,10 @@ def vorgaenge(organization: Any, membership: Any, seite: Iterable[Any]) -> dict[
 
 
 def _dateien(paper: Any) -> tuple[list[Any], list[Any], list[dict[str, Any]]]:
-    """(abrufbare Dateien, nicht mehr abrufbare, Dateien nur aus den Rohdaten). Zurückgenommene fehlen ganz."""
+    """
+    (abrufbare Dateien, nicht mehr abrufbare, Dateien nur aus den Rohdaten). Zurückgenommene fehlen ganz. Die
+    abrufbaren tragen den Anfang ihres Texts für die Dokumentzeile (``with_text_start``), den Volltext nicht.
+    """
     from insight_core.services import file_reconcile
 
     from .selectors import paper_files
@@ -224,7 +228,7 @@ def _dateien(paper: Any) -> tuple[list[Any], list[Any], list[dict[str, Any]]]:
         return [], [], list(dateien)
     sichtbar = [datei for datei in dateien if not datei.withdrawn_by_publisher]
     return (
-        [d for d in sichtbar if not file_reconcile.is_blocked(d)],
+        ris.with_text_start(d for d in sichtbar if not file_reconcile.is_blocked(d)),
         [d for d in sichtbar if file_reconcile.is_blocked(d)],
         [],
     )

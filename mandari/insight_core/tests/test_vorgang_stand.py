@@ -328,7 +328,8 @@ class TestKomponenten:
             "mime_type": "application/pdf",
             "size": 120_000,
             "size_human": "117,2 KB",
-            "text_content": "Der Rat möge beschließen …",
+            "text_anfang": "Der Rat möge beschließen …",
+            "text_gekuerzt": False,
             "download_url": "https://ris.example/antrag.pdf",
             "access_url": None,
         }
@@ -364,7 +365,7 @@ class TestKomponenten:
         assert html.count(">Text<") == 1
 
     def test_ohne_text_und_ohne_adresse(self) -> None:
-        datei = self._datei(text_content="  \n", download_url=None, mime_type="image/png")
+        datei = self._datei(text_anfang="  \n", download_url=None, mime_type="image/png")
         html = render('<ul><c-insight.document-row :file="datei" /></ul>', datei=datei)
         assert ">Text<" not in html and ">Ansehen<" not in html and ">Herunterladen<" not in html
         assert "<span>Dokument</span>" in html

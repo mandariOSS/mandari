@@ -22,8 +22,9 @@ sie nie selbst.
 
 Text- und HTML-Dateien werden dekodiert, andere Dateien nur, wenn sie wie Text aussehen; Word-Dateien und
 andere Binärformate ergeben keinen Text. Das Ergebnis ist ein ``ExtractionResult`` ohne Null-Bytes
-(PostgreSQL lehnt sie in Textfeldern ab). ``OcrMemoryLimitError`` aus der Texterkennung geht an den Aufrufer:
-Er entscheidet, ob die Datei als gescheitert gilt („Speichergrenze“).
+(PostgreSQL lehnt sie in Textfeldern ab) und mit höchstens ``MAX_TEXT_CHARS`` Zeichen (``limit_text``): Eine kleine
+Datei kann sehr viel Text ergeben, und jeder Leseweg müsste ihn sonst ganz verarbeiten. ``OcrMemoryLimitError`` aus
+der Texterkennung geht an den Aufrufer: Er entscheidet, ob die Datei als gescheitert gilt („Speichergrenze“).
 """
 
 from __future__ import annotations
@@ -55,6 +56,10 @@ WORD_MIME_TYPES: Final = frozenset(
 )
 #: Textdateien werden höchstens bis zu dieser Größe gelesen
 MAX_TEXT_BYTES: Final = 20 * 1024 * 1024
+#: Höchstens so viele Zeichen erkannten Texts je Datei; der Rest wird verworfen und in ``notes`` vermerkt
+#: (``limit_text``). Lange Ratsdokumente wie Haushaltspläne erreichen gut 1 Mio. Zeichen; die Grenze lässt dafür
+#: Raum und begrenzt zugleich, was Speichern, Suchindex und Lesewege je Datei verarbeiten.
+MAX_TEXT_CHARS: Final = 5_000_000
 
 #: Version der Texterkennung (Issue #919, ``docs/adr/20261007-dokumentkette.md``, Abschnitt 4). Steigt um eins,
 #: wenn eine Änderung bestehende Texte verbessert und der Bestand deshalb neu erkannt werden soll; die Anwendung
@@ -154,7 +159,25 @@ def _is_pdf(source: Path | bytes, mime: str, file_name: str) -> bool:
 
 
 def _clean(result: ExtractionResult) -> ExtractionResult:
-    return replace(result, text=result.text.replace("\x00", "").strip())
+    return limit_text(replace(result, text=result.text.replace("\x00", "").strip()))
+
+
+def truncation_note(limit: int | None = None) -> str:
+    """Vermerk für einen an der Obergrenze gekürzten Text (ohne Inhalte)."""
+    grenze = MAX_TEXT_CHARS if limit is None else limit
+    return f"Text nach {grenze:,} Zeichen gekürzt (Obergrenze je Datei)".replace(",", ".")
+
+
+def limit_text(result: ExtractionResult) -> ExtractionResult:
+    """
+    Text auf ``MAX_TEXT_CHARS`` Zeichen kürzen (Schnitt zwischen zwei Zeichen, nie in einem) und den Schnitt in
+    ``notes`` vermerken; kürzere Texte bleiben unverändert. Ein gekürzter Text wird nicht erneut gekürzt, Aufrufer
+    dürfen die Funktion also vor dem Speichern noch einmal anwenden.
+    """
+    grenze = MAX_TEXT_CHARS
+    if len(result.text) <= grenze:
+        return result
+    return replace(result, text=result.text[:grenze], notes=(*result.notes, truncation_note(grenze)))
 
 
 def _from_layer(layer: TextLayer) -> ExtractionResult:

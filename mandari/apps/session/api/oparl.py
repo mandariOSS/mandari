@@ -141,7 +141,12 @@ def _mapping(tenant):
 
 
 def _public_files_qs():
-    return SessionFile.objects.filter(is_public=True).select_related("paper", "meeting", "agenda_item__meeting")
+    # Eingebettete Dateien ohne Text: Er steht nur am Objekt-Endpunkt
+    return (
+        SessionFile.objects.filter(is_public=True)
+        .select_related("paper", "meeting", "agenda_item__meeting")
+        .defer("text_content")
+    )
 
 
 def _prepare_meetings(qs, tenant):
@@ -195,6 +200,11 @@ def _prepare_files(qs, tenant):
     return qs.select_related("paper", "meeting", "agenda_item__meeting")
 
 
+def _prepare_file_list(qs, tenant):
+    # Die Liste gibt den Text nicht aus (nur der Objekt-Endpunkt)
+    return _prepare_files(qs, tenant).defer("text_content")
+
+
 # Segment -> (Queryset-Funktion, prepare, Abbildung, Objekttyp)
 LIST_SPECS = {
     "organizations": (pub.visible_organizations, _prepare_organizations, SessionMapping.organization, "organization"),
@@ -204,7 +214,7 @@ LIST_SPECS = {
     "agendaitems": (pub.visible_agenda_items, _prepare_agenda_items, SessionMapping.agenda_item, "agendaitem"),
     "papers": (pub.visible_papers, _prepare_papers, SessionMapping.paper, "paper"),
     "consultations": (pub.visible_consultations, _prepare_consultations, SessionMapping.consultation, "consultation"),
-    "files": (pub.visible_files, _prepare_files, SessionMapping.file, "file"),
+    "files": (pub.visible_files, _prepare_file_list, SessionMapping.file, "file"),
     "legislativeterms": (pub.visible_legislative_terms, None, SessionMapping.legislative_term, "legislativeterm"),
 }
 

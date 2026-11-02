@@ -1171,6 +1171,10 @@ gleich setzen**, sonst arbeiten beide oder keiner:
   3 GB und eine eigene Seitengrenze (`WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, Standard 2048), Anwendung und `worker`
   (1 GB) haben `512`.
 
+Je Datei speichern beide Wege höchstens 5.000.000 Zeichen Text (feste Grenze `MAX_TEXT_CHARS` in
+`shared/mandari_dokumente`); was darüber hinausgeht, wird verworfen und in `text_extraction_error` vermerkt.
+Dokumentzeilen der Vorgangs- und Sitzungsseiten zeigen davon nur den Anfang.
+
 Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 
 | Variable | Standard | Wirkung |
