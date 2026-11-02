@@ -29,10 +29,13 @@
         <select class="wf-eingabe wf-auswahl" id="fs-bes-ergebnis" name="result">
             {% for wert, text in ergebnisse.items %}<option value="{{ wert }}"{% if decision and decision.result == wert %} selected{% endif %}>{{ text }}</option>{% endfor %}
         </select>
-        <label class="sr-only" for="fs-bes-text">Beschlusstext, wenn er vom TOP abweicht</label>
-        <input class="wf-eingabe" id="fs-bes-text" type="text" name="decision_text" value="{{ decision.decision_text|default:'' }}" placeholder="Beschlusstext, wenn abweichend">
-        <button type="submit" class="wf-knopf wf-haupt">Erfassen</button>
-        {% if quorum.has_list and not quorum.met %}<span class="fs-warn">Nicht beschlussfähig</span>{% endif %}
+        {# Feld, „Erfassen“ und Hinweis rücken zusammen in die zweite Zeile, wenn die Leiste zu schmal ist (Issue #1166) #}
+        <span class="fs-bes-abschluss">
+            <label class="sr-only" for="fs-bes-text">Beschlusstext, wenn er vom TOP abweicht</label>
+            <input class="wf-eingabe" id="fs-bes-text" type="text" name="decision_text" value="{{ decision.decision_text|default:'' }}" placeholder="Beschlusstext, wenn abweichend">
+            <button type="submit" class="wf-knopf wf-haupt">Erfassen</button>
+            {% if quorum.has_list and not quorum.met %}<span class="fs-warn">Nicht beschlussfähig</span>{% endif %}
+        </span>
     </form>
     {% else %}
     <div class="fs-beschluss"><span class="beschriftung">Beschluss</span><span class="fs-meta">Noch kein Beschluss.</span></div>

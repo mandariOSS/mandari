@@ -78,6 +78,9 @@
   .fs-kopf-meta a {
     color: inherit;
   }
+  /* Die Ablaufleiste behält ihre Breite (Issue #1166): Gekürzt wird nur der Titel links. Schrumpfte die Leiste mit,
+     liefen die Linien durch die Beschriftungen und „Protokoll“ unter die Knöpfe. Was je Breite sichtbar bleibt,
+     regeln die Abfragen auf den Kopf darunter. */
   .fs-stufen {
     display: flex;
     align-items: center;
@@ -85,13 +88,13 @@
     list-style: none;
     margin: 0 auto;
     padding: 0;
-    min-width: 0;
+    flex: none;
   }
   .fs-stufen li {
     display: flex;
     align-items: center;
     gap: 8px;
-    min-width: 0;
+    flex: none;
   }
   .fs-stufen .kreis {
     width: 22px;
@@ -201,6 +204,11 @@
     min-width: 0;
     background: var(--wf-flaeche);
   }
+  /* Nummernspalte breit genug für „NÖ 10“, sonst bricht die Nummer in zwei Zeilen (Issue #1166). Die Spalte der
+     Tagesordnung ist dafür 0,5rem breiter (.fs-flaeche), die Titel behalten ihre Breite */
+  .fs-tl .wf-tl-zeile {
+    grid-template-columns: 2.75rem minmax(0, 1fr) 16px;
+  }
   .fs-tl .wf-tl-gruppe {
     padding: 12px 16px 4px;
   }
@@ -237,9 +245,10 @@
     flex: 1 1 auto;
     min-width: 0;
   }
+  /* Beschreibung des TOPs als Text wie in den Dialogen der Vorbereitung (15 px), nicht als Randnotiz (Issue #1166) */
   .fs-top-zeile2 {
     margin: 2px 0 0;
-    font-size: 13.5px;
+    font-size: 15px;
     color: var(--wf-text2);
     white-space: nowrap;
     overflow: hidden;
@@ -443,9 +452,11 @@
     min-height: 0;
     flex: 1 1 auto;
   }
+  /* Das Protokoll ist das Arbeitsdokument der Sitzung: eine Stufe größer als die Unterlagen (17 px, ab 1.800 px
+     18 px wie der Editor in Work); die Schriftgröße der Unterlagen (A−/A+) wirkt weiter mit (Issue #1166) */
   .fs-notiz {
     min-height: 7rem;
-    font-size: var(--fs-dok);
+    font-size: calc(var(--fs-dok) + 1px);
     line-height: 1.6;
     max-width: 60rem;
   }
@@ -659,6 +670,32 @@
   .fs-aufgabenbereich .wf-aufgabe-neu {
     margin-top: 10px;
   }
+  /* Am Desktop kompakt wie Bedienelemente in Leisten (28 px, 13 px): Das Protokoll darüber bleibt das Wichtigste
+     (Issue #1166); am Handy bleiben die Felder 32 px hoch */
+  @media (min-width: 1024px) {
+    .fs-aufgabenbereich .wf-aufgabe-neu input.wf-eingabe {
+      height: 28px;
+      padding: 0 8px;
+      font-size: 13px;
+    }
+    .fs-aufgabenbereich .fs-cb-feld {
+      min-height: 28px;
+      padding: 1px 2px 1px 4px;
+    }
+    .fs-aufgabenbereich .fs-cb-feld input[type="text"] {
+      height: 24px;
+      font-size: 13px;
+    }
+    .fs-aufgabenbereich .fs-chip {
+      height: 22px;
+      font-size: 12.5px;
+    }
+    .fs-aufgabenbereich .wf-aufgabe-neu .wf-knopf {
+      height: 28px;
+      padding: 0 8px;
+      font-size: 13px;
+    }
+  }
   /* Schmales Protokoll am Desktop (1.280–1.440 px mit Seitenleiste): Was und Fällig, darunter Zuständig breit und
      Anlegen daneben – die offene Auswahl liegt dann unter dem Formular und verdeckt „Anlegen“ nicht */
   @media (min-width: 1024px) {
@@ -863,9 +900,21 @@
     width: 14px;
     height: 14px;
   }
+  /* Der Platzhalter „Beschlusstext, wenn abweichend“ bleibt ganz lesbar (Issue #1166). Reicht die Zeile nicht,
+     rücken Feld, „Erfassen“ und Hinweis gemeinsam in eine zweite Zeile statt abgeschnitten zu werden (schmale
+     Leiste, Handy). */
+  form.fs-beschluss {
+    flex-wrap: wrap;
+  }
+  .fs-bes-abschluss {
+    display: flex;
+    align-items: center;
+    gap: inherit;
+    flex: 1 1 auto;
+  }
   .fs-beschluss input[type="text"] {
-    flex: 1 1 12rem;
-    min-width: 6rem;
+    flex: 1 1 15.5rem;
+    min-width: 15.5rem;
     max-width: 24rem;
   }
   .fs-nav {
@@ -880,19 +929,27 @@
     width: 12rem;
     flex: none;
   }
-  @container fs-unten (max-width: 1320px) {
+  /* Breite Leiste: Platz gibt zuerst der TOP-Wechsel ab (Namen gekürzt), nicht das Beschlussfeld */
+  @container fs-unten (min-width: 1600px) {
+    form.fs-beschluss {
+      flex-shrink: 0;
+    }
+  }
+  /* Unter 1.600 px Leistenbreite (Fenster unter etwa 1.840 px mit Seitenleiste) passen Beschluss und die Namen der
+     Nachbar-TOPs nicht nebeneinander: TOP-Wechsel nur als Pfeil (der Name bleibt für Vorleser). So bleibt die
+     Beschriftung „Beschluss“ bis 1.420 px Leistenbreite sichtbar und der Hinweis „Nicht beschlussfähig“ neben
+     „Erfassen“ bis 1.300 px */
+  @container fs-unten (max-width: 1599.98px) {
     .fs-nav b {
       display: none;
     }
-    .fs-warn {
-      display: none;
-    }
-    /* Nur „Voriger/Nächster TOP“: nicht schrumpfen, sonst läuft die Beschriftung über den Pfeil (1.440 px);
-       spezifischer als die Grundregel weiter unten */
+    /* Nicht schrumpfen, sonst läuft die Beschriftung über den Pfeil; spezifischer als die Grundregel .wf-nachbarn */
     .fs-unten .fs-nav {
       flex: none;
     }
-    /* Die Beschriftung „Beschluss“ bleibt für Vorleser; so passt das Ergebnis ganz in die Auswahl (1.280 px) */
+  }
+  /* Darunter (auch am Handy) ohne die sichtbare Beschriftung „Beschluss“; für Vorleser bleibt sie */
+  @container fs-unten (max-width: 1419.98px) {
     form.fs-beschluss .beschriftung {
       position: absolute;
       width: 1px;
@@ -902,8 +959,8 @@
       white-space: nowrap;
     }
   }
-  /* Schmale Leiste (auch am Handy): TOP-Wechsel nur als Pfeil, der Name bleibt für Vorleser */
-  @container fs-unten (max-width: 1150px) {
+  /* TOP-Wechsel nur als Pfeil (siehe oben), der Name bleibt für Vorleser */
+  @container fs-unten (max-width: 1599.98px) {
     .fs-nav .wf-nachbar > span {
       position: absolute;
       width: 1px;
@@ -917,8 +974,23 @@
       justify-content: center;
       padding: 0;
     }
+  }
+  /* Schmale Leiste: ohne den Hinweis (er steht oben in der Ablaufleiste unter „Sitzung“), engere Abstände; so
+     bleibt die Leiste bis zum Fenster von 1.366 px mit Seitenleiste einzeilig, darunter rückt das Beschlussfeld in
+     die zweite Zeile */
+  @container fs-unten (max-width: 1300px) {
+    .fs-warn {
+      display: none;
+    }
     .fs-beschluss {
-      gap: 8px 10px;
+      gap: 8px;
+    }
+    .fs-zaehler {
+      gap: 4px;
+    }
+    /* Drei Ziffern passen auch in 32 px */
+    .fs-zaehler input {
+      width: 2rem;
     }
   }
   .fs-ergebnis {
@@ -1080,6 +1152,10 @@
     .fs-titel {
       min-width: 0;
     }
+    /* Bis 320 px Breite (WCAG 1.4.10) passt „Erfassen“ neben das Feld */
+    .fs-beschluss input[type="text"] {
+      min-width: 0;
+    }
     .fs-stufen,
     .fs-titel .fs-kopf-meta,
     .fs-desktop-nur {
@@ -1161,7 +1237,7 @@
     .fs-flaeche {
       flex: 1 1 auto;
       min-height: 0;
-      grid-template-columns: clamp(15rem, 14vw, 19rem) minmax(0, 1fr);
+      grid-template-columns: calc(clamp(15rem, 14vw, 19rem) + 0.5rem) minmax(0, 1fr);
     }
     .fs-tl,
     .fs-fokus {
@@ -1190,7 +1266,7 @@
   /* Sehr breit: Anwesenheit als eigene Spalte rechts statt aufklappendem Feld (Prototyp Fassung 2) */
   @media (min-width: 2200px) {
     .fs-flaeche {
-      grid-template-columns: clamp(16rem, 11vw, 19rem) minmax(0, 1fr) 25rem;
+      grid-template-columns: calc(clamp(16rem, 11vw, 19rem) + 0.5rem) minmax(0, 1fr) 25rem;
     }
     .fs-anw {
       position: static;
