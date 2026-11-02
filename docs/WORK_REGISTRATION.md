@@ -19,9 +19,12 @@ aktiv (Voreinstellung), geht die Mail über den mandari-Standardversand – SMTP
 Absender aus den Site-Einstellungen, ersatzweise aus den Umgebungsvariablen. Ohne Rückfall wird der
 Fehler protokolliert; Freischalten und Ablehnen zeigen ihn in der Oberfläche an.
 
-Ausnahmen: Links, mit denen sich ein Passwort setzen lässt (Gastzugang für neue Konten,
-Passwort-Zurücksetzen), gehen immer über mandari. Antworten landen bei der Kontaktadresse der
-Organisation, sofern hinterlegt; Anfragen an Freigebende antworten direkt an die anfragende Person.
+Ausnahmen: Links, mit denen sich ein Passwort setzen oder eine Adresse bestätigen lässt (Einladung,
+Bestätigungslink der Selbstregistrierung, Gastzugang für neue Konten, Passwort-Zurücksetzen), gehen
+immer über mandari (`via_organization=False`). Wer sie einlöst, gilt als Inhaberin des Postfachs; den
+SMTP-Server einer Organisation trägt aber deren Verwaltung selbst ein und könnte die Links mitlesen.
+Antworten landen bei der Kontaktadresse der Organisation, sofern hinterlegt; Anfragen an Freigebende
+antworten direkt an die anfragende Person.
 Jede Mail geht an genau eine Adresse. Versandfehler brechen den Ablauf nie ab; Freischalten und
 Ablehnen melden in der Oberfläche, wenn die Mail nicht rausging.
 
@@ -42,7 +45,9 @@ Freitext wie Einladungsnachricht oder Ablehnungsgrund.
 
 - Die erlaubten Domains gelten für die bestätigte Adresse; angemeldete Konten registrieren sich
   immer mit ihrer Kontoadresse. Konten mit bestätigter Adresse treten ohne erneuten Link bei.
-- Konten aus einer Einladung gelten als bestätigt (der Einladungslink kam per Mail).
+- Konten aus einer Einladung gelten als bestätigt (der Einladungslink kam per Mail über mandari).
+  Besteht zur eingeladenen Adresse schon ein Konto, auch in anderer Groß-/Kleinschreibung, führt der
+  Link zur Anmeldung; ein zweites Konto entsteht nicht.
 - Wer den Bestätigungslink nie nutzt, behält kein Konto: unbestätigte Konten werden nach 9 Tagen
   automatisch gelöscht, sofern sie nirgends zugeordnet sind (Issue #238).
 - Bestätigungsmails sind je IP und Adresse pro Stunde gedrosselt
@@ -58,7 +63,7 @@ Freischalten und Ablehnen liefern für sie 404. Die Migration `tenants/0021_regi
 
 ## Weitere Mails
 
-- **Einladung** (`invitation.html`): beim Einladen und erneuten Senden.
+- **Einladung** (`invitation.html`): beim Einladen und erneuten Senden, immer über mandari.
 - **Gastzugang** (`guest_access.html`): Passwort-Link über mandari, Dokumentenlink über den
   Versandweg der Organisation.
 - **Reaktivierung** (`access_granted.html`, Variante `reactivated`): beim Reaktivieren und wenn eine

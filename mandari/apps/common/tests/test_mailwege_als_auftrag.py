@@ -97,7 +97,8 @@ def test_registrierung_mit_bestaetigung(client: Client, org: Any) -> None:
     assert "Bitte bestätigen Sie Ihre Registrierung" in nachricht.subject
 
 
-def test_einladung_der_organisation_ueber_ihr_smtp(org: Any, make_member: Any) -> None:
+def test_einladung_der_organisation_mit_eigenem_smtp_geht_ueber_mandari(org: Any, make_member: Any) -> None:
+    """Der Annahme-Link läuft auch aus dem Postausgang nie über das SMTP der Organisation."""
     from apps.work.organization import services
 
     einladend = make_member(org, ["members.invite"], email="einladend@example.org")
@@ -110,9 +111,10 @@ def test_einladung_der_organisation_ueber_ihr_smtp(org: Any, make_member: Any) -
     with mock.patch(
         "apps.common.mail.config.organization_backend",
         return_value=build_backend("django.core.mail.backends.locmem.EmailBackend"),
-    ):
+    ) as verbindung:
         nachricht = _erst_im_runner("eingeladen@example.org", "work.zugang.invitation")
-    assert "fraktion@example.org" in nachricht.from_email
+    verbindung.assert_not_called()
+    assert "fraktion@example.org" not in nachricht.from_email
 
 
 def _fraktionssitzung(org: Any, make_member: Any, status: str) -> tuple[Any, Any]:

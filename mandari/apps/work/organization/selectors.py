@@ -307,8 +307,14 @@ def find_membership(organization: Organization, user: User) -> Membership | None
 
 
 def find_user_by_email(email: str) -> User | None:
-    """Benutzerkonto zu einer E-Mail-Adresse (Einladungsfluss)."""
-    return User.objects.filter(email=email).first()
+    """
+    Benutzerkonto zu einer E-Mail-Adresse (Einladungsfluss), ohne Beachtung der Groß-/Kleinschreibung.
+
+    So findet eine Einladung an ``otto.gross@…`` auch das Konto ``Otto.Gross@…`` und legt kein zweites
+    an. Gibt es (aus der Zeit vor dieser Regel) mehrere Schreibweisen, gilt die exakte, sonst die älteste.
+    """
+    konten = User.objects.filter(email__iexact=email)
+    return konten.filter(email=email).first() or konten.order_by("date_joined").first()
 
 
 def admin_members(organization: Organization, *, exclude: Membership) -> list[Membership]:

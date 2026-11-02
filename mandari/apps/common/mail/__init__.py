@@ -85,7 +85,7 @@ def send(
 
     ``organization`` wählt ihren Versandweg (eigenes SMTP, sonst Plattform) und verschlüsselt den
     Postausgang mit ihrem Mandantenschlüssel; ``via_organization=False`` erzwingt den Weg der Plattform
-    (Links zum Setzen eines Passworts). ``from_email`` gilt nur auf dem Weg der Plattform.
+    (Links zum Setzen eines Passworts oder Bestätigen einer Adresse). ``from_email`` gilt nur auf dem Weg der Plattform.
     """
     check_kind(kind)
     if isinstance(to, str) or isinstance(reply_to, str):

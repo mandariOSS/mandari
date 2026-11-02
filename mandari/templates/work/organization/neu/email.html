@@ -10,7 +10,7 @@ action=send_test. Das Passwort wird nie ausgegeben, nur ob eines hinterlegt ist.
 
 {% block work_header %}
 <c-rahmen.kopfband titel="E-Mail-Versand" dicht
-    text="Einladungen, Erinnerungen, Freigaben und Registrierungs-Mails von {{ organization.name }} gehen über mandari oder das eigene SMTP. Sicherheitsmails laufen immer über mandari." />
+    text="Sitzungseinladungen, Erinnerungen, Freigaben und Hinweise zur Registrierung von {{ organization.name }} gehen über mandari oder das eigene SMTP. Einladungen ins Team, Bestätigungslinks und Sicherheitsmails laufen immer über mandari." />
 {% include "work/organization/neu/_reiter.html" with seite="email" %}
 {% endblock %}
 
