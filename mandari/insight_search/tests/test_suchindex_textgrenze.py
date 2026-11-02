@@ -55,23 +55,34 @@ def _auswahl(sql: str) -> str:
 # --- Grenze je Dokument ---------------------------------------------------------------------------
 
 
-def test_volltext_je_datei_gekuerzt() -> None:
-    datei = SimpleNamespace(
+def _datei_ohne_bestand(text_content: str) -> SimpleNamespace:
+    return SimpleNamespace(
         id=uuid.uuid4(),
         body_id=None,
         name="Anlage",
         file_name="anlage.txt",
         mime_type="text/plain",
         access_url="",
-        text_content="ä" * (INDEX_TEXT_MAX_CHARS + 10),
+        text_content=text_content,
         paper_id=None,
         paper=None,
         meeting_id=None,
         oparl_modified=None,
     )
-    doc = file_to_doc(datei, context_info={})
+
+
+def test_volltext_je_datei_gekuerzt() -> None:
+    assert INDEX_TEXT_MAX_CHARS == 5_000_000
+    doc = file_to_doc(_datei_ohne_bestand("ä" * (INDEX_TEXT_MAX_CHARS + 10)), context_info={})
     assert len(doc["text_content"]) == INDEX_TEXT_MAX_CHARS
     assert doc["text_preview"] == "ä" * 500 + "..."
+
+
+def test_steuerzeichen_vergroessern_das_dokument_nicht() -> None:
+    doc = file_to_doc(_datei_ohne_bestand("A\x00B\x01C\tD\nE\rF\x1f" + "\x01😀" * 1000), context_info={})
+    assert doc["text_content"] == "ABC\tD\nE\rF" + "😀" * 1000
+    # Wie der Client serialisiert: höchstens vier Bytes je Zeichen statt sechs je maskiertem Steuerzeichen
+    assert len(json.dumps(doc["text_content"], ensure_ascii=False).encode()) < 4 * 2000 + 100
 
 
 def test_grenze_wie_im_ingestor() -> None:
@@ -124,9 +135,15 @@ def test_vorschau_eines_vorgangs_laedt_nur_den_anfang(kommune: Any) -> None:
 
 
 class _Knoten(BaseNode):
-    """Elasticsearch-Knoten im Speicher: beantwortet Ping und Bulk und merkt sich jede Bulk-Anfrage."""
+    """
+    Elasticsearch-Knoten im Speicher: beantwortet Ping und Bulk und merkt sich jede Bulk-Anfrage.
+
+    ``antworten``: Verhalten je Bulk-Anfrage der Reihe nach (``ok``, ``500`` = Anfrage scheitert,
+    ``abgelehnt`` = jedes Dokument mit Status 400 abgelehnt); danach ``ok``.
+    """
 
     anfragen: ClassVar[list[bytes]] = []
+    antworten: ClassVar[list[str]] = []
 
     def perform_request(
         self,
@@ -142,19 +159,38 @@ class _Knoten(BaseNode):
             return NodeApiResponse(meta, b"{}")
         assert body is not None
         _Knoten.anfragen.append(body)
+        art_der_antwort = _Knoten.antworten.pop(0) if _Knoten.antworten else "ok"
+        if art_der_antwort == "500":
+            fehler = {"error": {"type": "geheim_typ", "reason": "Ausschnitt GEHEIMTEXT"}, "status": 500}
+            meta = ApiResponseMeta(status=500, http_version="1.1", headers=kopf, duration=0.0, node=self.config)
+            return NodeApiResponse(meta, json.dumps(fehler).encode())
         aktionen = [json.loads(zeile) for zeile in body.splitlines()[::2] if zeile]
+        if art_der_antwort == "abgelehnt":
+            ablehnung = {"type": "mapper_parsing_exception", "reason": "Wert GEHEIMTEXT nicht lesbar"}
+            items = [
+                {art: {"_index": werte["_index"], "_id": werte["_id"], "status": 400, "error": ablehnung}}
+                for aktion in aktionen
+                for art, werte in aktion.items()
+            ]
+            return NodeApiResponse(meta, json.dumps({"errors": True, "items": items}).encode())
         items = [{art: {"_id": werte["_id"], "status": 201}} for aktion in aktionen for art, werte in aktion.items()]
         return NodeApiResponse(meta, json.dumps({"errors": False, "items": items}).encode())
 
 
-@pytest.mark.django_db
-def test_neuaufbau_teilt_bulk_anfragen_nach_bytes(kommune: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.fixture
+def knoten(monkeypatch: pytest.MonkeyPatch) -> type[_Knoten]:
     echt = elasticsearch.Elasticsearch
     monkeypatch.setattr(elasticsearch, "Elasticsearch", lambda url, **kw: echt(url, node_class=_Knoten, **kw))
     _Knoten.anfragen = []
+    _Knoten.antworten = []
+    return _Knoten
+
+
+@pytest.mark.django_db
+def test_neuaufbau_teilt_bulk_anfragen_nach_bytes(kommune: Any, knoten: type[_Knoten]) -> None:
     body = kommune("Beispielstadt")
-    # Steuerzeichen stehen in JSON sechsfach maskiert: je großes Dokument rund 6 MB
-    gross = [_datei(body, "\x01" * (INDEX_TEXT_MAX_CHARS + 1000)).pk for _ in range(3)]
+    # Volle Länge: je großes Dokument rund 5 MB, zwei passen nicht in eine Anfrage
+    gross = [_datei(body, "x" * (INDEX_TEXT_MAX_CHARS + 1000)).pk for _ in range(3)]
     klein = _datei(body, "Radweg entlang der Bahnstrecke").pk
 
     call_command("reindex_elasticsearch", "--index", "files", "--body", str(body.pk), stdout=io.StringIO())
@@ -169,3 +205,26 @@ def test_neuaufbau_teilt_bulk_anfragen_nach_bytes(kommune: Any, monkeypatch: pyt
         assert all(len(quelle["text_content"]) <= INDEX_TEXT_MAX_CHARS for quelle in quellen)
     assert sorted(gesehen) == sorted(str(pk) for pk in [*gross, klein])
     assert len(_Knoten.anfragen) >= 3
+
+
+@pytest.mark.django_db
+def test_neuaufbau_laeuft_bei_fehlern_weiter_und_zeigt_keine_inhalte(
+    kommune: Any, knoten: type[_Knoten], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from insight_search.management.commands import reindex_elasticsearch
+
+    monkeypatch.setattr(reindex_elasticsearch, "BATCH_SIZE", 1)  # je Dokument eine Anfrage
+    knoten.antworten = ["500", "abgelehnt", "ok"]
+    body = kommune("Beispielstadt")
+    for _ in range(3):
+        _datei(body, "Vertraulicher Inhalt GEHEIMTEXT")
+    ausgabe, fehler = io.StringIO(), io.StringIO()
+
+    call_command("reindex_elasticsearch", "--index", "files", "--body", str(body.pk), stdout=ausgabe, stderr=fehler)
+
+    assert len(knoten.anfragen) == 3, "nach dem Fehler geht es mit den übrigen Dokumenten weiter"
+    assert "files: 1/3 indexed, 2 failed" in ausgabe.getvalue()
+    assert "Done!" in ausgabe.getvalue()
+    meldungen = fehler.getvalue()
+    assert "Status 500" in meldungen and "Status 400, mapper_parsing_exception" in meldungen
+    assert "GEHEIMTEXT" not in meldungen + ausgabe.getvalue(), "weder Dokument noch Meldung von Elasticsearch"

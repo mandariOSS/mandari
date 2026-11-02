@@ -11,6 +11,7 @@ Portals (Issue #429): siehe ``DJANGO_ONLY_FIELDS``.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 # Felder, die nur die Portal-Indexierung (Django) setzt. Der Ingestor lässt sie weg;
@@ -40,9 +41,15 @@ FILE_PREVIEW_CHARS = 5000
 
 #: Höchstens so viele Zeichen des Volltexts einer Datei kommen in den Suchindex (``text_content``); derselbe
 #: Wert wie ``INDEX_TEXT_MAX_CHARS`` in Django (``insight_core/services/search_documents.py``), damit beide
-#: Wege dasselbe Dokument schreiben. Hervorheben kann Elasticsearch ohnehin nur die erste Million Zeichen
-#: (``index.highlight.max_analyzed_offset``). Die Grenze hält jedes Dokument und damit jede Bulk-Anfrage klein.
-FILE_TEXT_MAX_CHARS = 1_000_000
+#: Wege dasselbe Dokument schreiben. Bis zu dieser Stelle ist der Text auffindbar, auch in langen Dokumenten
+#: wie Haushaltsplänen; hervorheben kann Elasticsearch davon nur die erste Million Zeichen
+#: (``index.highlight.max_analyzed_offset``). Die Grenze hält jedes Dokument und damit jede Bulk-Anfrage
+#: begrenzt (ohne Steuerzeichen höchstens vier Bytes je Zeichen).
+FILE_TEXT_MAX_CHARS = 5_000_000
+
+#: Steuerzeichen außer Tabulator und Zeilenumbruch: Für die Suche bedeutungslos, in JSON aber als ``\uXXXX``
+#: sechsmal so groß wie im Text. ``file_to_doc`` entfernt sie (wie Django).
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def paper_to_doc(paper, files=None) -> dict[str, Any]:
@@ -137,14 +144,14 @@ def file_to_doc(file) -> dict[str, Any]:
 
     access_url, paper_name/paper_reference und der Kontext (Gremien, Sitzung, TOP)
     kommen von Django und bleiben beim partiellen Update erhalten. Der Volltext ist auf
-    ``FILE_TEXT_MAX_CHARS`` Zeichen gekürzt.
+    ``FILE_TEXT_MAX_CHARS`` Zeichen gekürzt und ohne Steuerzeichen (außer Tabulator und Zeilenumbruch).
     """
     text_preview = ""
     if file.text_content:
         text_preview = file.text_content[:500].strip()
         if len(file.text_content) > 500:
             text_preview += "..."
-    text_content = (file.text_content or "")[:FILE_TEXT_MAX_CHARS]
+    text_content = _CONTROL_CHARS.sub("", (file.text_content or "")[:FILE_TEXT_MAX_CHARS])
 
     return {
         "id": str(file.id),

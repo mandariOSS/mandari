@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
@@ -29,6 +30,24 @@ from insight_search.abonnement import BULK_BYTES
 from insight_search.indices import INDEXES
 
 BATCH_SIZE = 500
+
+
+def bulk_error_summary(item: dict[str, Any]) -> str:
+    """
+    Fehler eines Dokuments aus ``streaming_bulk`` ohne Inhalt: Index, Kennung, Status und Fehlerart.
+
+    Nie das Dokument selbst (``data``) und nie die Meldung von Elasticsearch: Beide können Ausschnitte des
+    Textes enthalten.
+    """
+    aktion, info = next(iter(item.items()), ("?", {}))
+    fehler = info.get("error")
+    if isinstance(fehler, dict):
+        art = str(fehler.get("type") or "unbekannt")
+    elif info.get("exception") is not None:
+        art = type(info["exception"]).__name__
+    else:
+        art = "unbekannt"
+    return f"{aktion} {info.get('_index')}/{info.get('_id')}: Status {info.get('status')}, {art}"
 
 
 class Command(BaseCommand):
@@ -116,20 +135,28 @@ class Command(BaseCommand):
                 {"_index": index_name, "_id": doc["id"], "_source": doc}
                 for doc in iter_all_documents(index_name, kommunen)
             )
+            # Abgelehnte Dokumente und fehlgeschlagene Anfragen (HTTP-Fehler) zählen als Fehler, der Neuaufbau
+            # läuft weiter; nur ein nicht erreichbares Elasticsearch beendet diesen Index.
             try:
                 for ok, item in streaming_bulk(
-                    client, actions, chunk_size=BATCH_SIZE, max_chunk_bytes=BULK_BYTES, raise_on_error=False
+                    client,
+                    actions,
+                    chunk_size=BATCH_SIZE,
+                    max_chunk_bytes=BULK_BYTES,
+                    raise_on_error=False,
+                    raise_on_exception=False,
                 ):
                     if ok:
                         indexed += 1
                         continue
                     errors += 1
                     if errors <= 3:
-                        self.stderr.write(self.style.WARNING(f"  Bulk error: {item}"))
+                        self.stderr.write(self.style.WARNING(f"  Bulk error: {bulk_error_summary(item)}"))
             except Exception as e:
-                self.stderr.write(self.style.ERROR(f"  Error indexing '{index_name}': {e}"))
+                self.stderr.write(self.style.ERROR(f"  Error indexing '{index_name}': {type(e).__name__}"))
 
-            self.stdout.write(self.style.SUCCESS(f"  {index_name}: {indexed}/{count} indexed"))
+            fehlerhaft = f", {errors} failed" if errors else ""
+            self.stdout.write(self.style.SUCCESS(f"  {index_name}: {indexed}/{count} indexed{fehlerhaft}"))
             total_indexed += indexed
 
         elapsed = time.monotonic() - start_time

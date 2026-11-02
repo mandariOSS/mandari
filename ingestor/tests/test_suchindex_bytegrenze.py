@@ -9,8 +9,8 @@ Dokumente ab:
   Anfrage, mehrere große Dokumente liegen also nie zusammen in einer Anfrage.
 - Die Anfrage entsteht gleich als UTF-8-Bytes, ohne Zwischenstufen als Zeilen und Text, und httpx behält sie
   nach dem Senden nicht an der Anfrage (sonst lebte sie bis zur zyklischen Speicherbereinigung weiter).
-- Der Volltext je Datei ist für den Index gekürzt (wie in Django), und die Dateitexte kommen in Seiten nach
-  Bytes und schon gekürzt aus der Datenbank.
+- Der Volltext je Datei ist für den Index gekürzt und ohne Steuerzeichen (wie in Django), und die Dateitexte
+  kommen in Seiten nach Bytes und schon gekürzt aus der Datenbank.
 """
 
 from __future__ import annotations
@@ -139,9 +139,15 @@ def ohne_speicherbereinigung() -> Iterator[None]:
 
 
 async def test_speicher_beim_schreiben_haengt_nicht_an_der_zahl_der_dokumente(ohne_speicherbereinigung: None) -> None:
-    # Steuerzeichen stehen in JSON sechsfach maskiert: je Dokument rund 6 MB in der Anfrage
-    steuerzeichen = "\x01" * 1_000_000
-    docs = [{"id": f"gross-{n}", "text_content": steuerzeichen} for n in range(6)]
+    from src.indexing.document_builders import FILE_TEXT_MAX_CHARS, file_to_doc
+    from src.indexing.elasticsearch import _bulk_entry
+
+    # Dokumente in der größten Form, die der Index annimmt: voller Volltext aus Umlauten (je rund 10 MB in UTF-8),
+    # alle mit demselben Text, damit nur die Verarbeitung zählt
+    text = "ä" * FILE_TEXT_MAX_CHARS
+    docs = [{**file_to_doc(_datei(text)), "id": f"gross-{n}"} for n in range(8)]
+    einzeln = sum(len(teil) for teil in _bulk_entry("files", docs[0]))
+    ladung = einzeln * len(docs)
     transport = _Elasticsearch()
     indexer = _indexer(transport)
 
@@ -151,11 +157,27 @@ async def test_speicher_beim_schreiben_haengt_nicht_an_der_zahl_der_dokumente(oh
     nachher, spitze = tracemalloc.get_traced_memory()
     await indexer._client.aclose()  # type: ignore[union-attr]
 
-    # Vorher lagen alle Dokumente zugleich als Zeilen, als Text und als Bytes im Speicher (rund 100 MiB)
-    assert spitze - vorher < 3 * GRENZE, f"Spitze {(spitze - vorher) / 2**20:.0f} MiB"
+    assert len(transport.groessen) == len(docs), "je großes Dokument eine Anfrage"
+    assert max(transport.groessen) <= max(GRENZE, einzeln)
+    # Begrenzt durch ein Vielfaches der größten Anfrage, nicht durch die ganze Ladung: Eine Rückkehr zu einer
+    # Anfrage aus allen Dokumenten hielte die Ladung mindestens einmal im Speicher (vorher dreimal, als Zeilen,
+    # Text und Bytes) und überschritte die Grenze deutlich.
+    grenze = 5 * max(GRENZE, einzeln)
+    assert grenze < ladung
+    assert spitze - vorher < grenze, f"Spitze {(spitze - vorher) / 2**20:.0f} MiB, Grenze {grenze / 2**20:.0f} MiB"
     # httpx hält die gesendeten Bytes nicht über einen Zyklus fest, bis die Speicherbereinigung läuft
     assert nachher - vorher < 1024 * 1024, f"nach dem Senden noch {(nachher - vorher) / 2**20:.1f} MiB belegt"
-    assert len(transport.groessen) == len(docs), "je großes Dokument eine Anfrage"
+
+
+def test_steuerzeichen_vergroessern_das_dokument_nicht() -> None:
+    from src.indexing.document_builders import file_to_doc
+    from src.indexing.elasticsearch import _bulk_entry
+
+    doc = file_to_doc(_datei("A\x00B\x01C\tD\nE\rF\x1f" + "\x01😀" * 1000))
+    assert doc["text_content"] == "ABC\tD\nE\rF" + "😀" * 1000
+    # Höchstens vier Bytes je Zeichen des Textes (statt sechs für jedes maskierte Steuerzeichen)
+    _, quelle, _ = _bulk_entry("files", doc)
+    assert len(quelle) < 4 * 2000 + 500
 
 
 # ---------------------------------------------------------------------------
@@ -180,7 +202,7 @@ def _datei(text_content: str) -> SimpleNamespace:
 def test_volltext_je_datei_gekuerzt() -> None:
     from src.indexing.document_builders import FILE_TEXT_MAX_CHARS, file_to_doc
 
-    assert FILE_TEXT_MAX_CHARS == 1_000_000  # wie INDEX_TEXT_MAX_CHARS in Django (search_documents.py)
+    assert FILE_TEXT_MAX_CHARS == 5_000_000  # wie INDEX_TEXT_MAX_CHARS in Django (search_documents.py)
     doc = file_to_doc(_datei("ä" * (FILE_TEXT_MAX_CHARS + 10)))
     assert len(doc["text_content"]) == FILE_TEXT_MAX_CHARS
     assert doc["text_preview"] == "ä" * 500 + "..."
@@ -210,9 +232,9 @@ class _Indexer:
 
 
 class _Speicher:
-    def __init__(self) -> None:
+    def __init__(self, text_content: str) -> None:
         self.aufrufe: list[dict[str, Any]] = []
-        self.datei = _datei("x" * 1_500_000)
+        self.datei = _datei(text_content)
 
     async def iter_for_body(self, *_args: Any, **_kwargs: Any) -> AsyncIterator[list[Any]]:
         return
@@ -230,7 +252,7 @@ async def test_sync_laedt_dateitexte_gekuerzt(monkeypatch: pytest.MonkeyPatch) -
 
     _Indexer.docs = []
     monkeypatch.setattr(es_modul, "ElasticsearchIndexer", _Indexer)
-    speicher = _Speicher()
+    speicher = _Speicher("x" * (FILE_TEXT_MAX_CHARS + 10))
     orchestrator = SyncOrchestrator.__new__(SyncOrchestrator)
     orchestrator.storage = speicher  # type: ignore[assignment]
     stats: dict[str, Any] = {}
