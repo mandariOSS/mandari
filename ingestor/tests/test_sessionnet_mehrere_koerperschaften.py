@@ -432,7 +432,7 @@ class FakeOrchestrator:
     async def _record_source_failure(self, *args, **kwargs) -> None:
         raise AssertionError(f"unerwarteter Quellenfehler: {args}")
 
-    async def _mark_deleted(self, entity, entity_type, es_deletions) -> bool:
+    async def _mark_deleted(self, entity, entity_type, es_deletions, *, body_id) -> bool:
         self.marked.append(entity["id"])
         es_deletions.setdefault(entity_type, []).append(entity["id"])
         return True

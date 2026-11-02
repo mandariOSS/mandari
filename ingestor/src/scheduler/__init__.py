@@ -619,6 +619,9 @@ class SyncScheduler:
         }
         if result.unstored:
             details["unstored"] = dict(sorted(result.unstored.items()))
+        # Kennungen anderer Quellen, die der Abgleich abgewiesen hat (nichts davon geschrieben)
+        if result.foreign:
+            details["foreign"] = dict(sorted(result.foreign.items()))
         # Zeitscheiben des Vollabgleichs und ausgesetzte langsame Listen (Issue #1033)
         details.update(result.slice_details)
         try:

@@ -581,7 +581,9 @@ class _Mitschnitt:
 
     async def execute(self, stmt: Any, *args: Any, **kwargs: Any) -> Any:
         self.gesendet.append(stmt)
-        return SimpleNamespace(scalar_one=lambda: SOURCE_ID, scalar_one_or_none=lambda: self.sync_config)
+        return SimpleNamespace(
+            scalar_one=lambda: SOURCE_ID, scalar_one_or_none=lambda: self.sync_config, first=lambda: (SOURCE_ID,)
+        )
 
     async def commit(self) -> None:
         return None

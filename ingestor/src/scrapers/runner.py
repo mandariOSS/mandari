@@ -40,7 +40,7 @@ from src.redaction import MaskingConsole
 from src.scrapers import get_adapter
 from src.scrapers.base import CrawlWindow, ScraperConfig, ScrapeStats
 from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError, RobotsUnreachableError
-from src.storage.database import PREVIOUS_ID_FIELD
+from src.storage.database import PREVIOUS_ID_FIELD, start_foreign_rejections
 from src.storage.events import start_correlation
 
 if TYPE_CHECKING:
@@ -136,6 +136,8 @@ class ScraperSyncRunner:
 
             # Alle Ereignisse dieses Crawls tragen dieselbe Korrelations-ID (src/storage/events.py)
             start_correlation()
+            # Kennungen anderer Quellen, die der Speicher in diesem Crawl abweist (Sync-Log ``foreign``)
+            foreign = start_foreign_rejections()
 
             # Body-Kennung -> UUID; mehrere Einträge bei mehreren Körperschaften je Instanz
             body_ids: dict[str, UUID] = {}
@@ -290,6 +292,7 @@ class ScraperSyncRunner:
             field_name = _RESULT_FIELD_BY_TYPE.get(entity_type)
             if field_name:
                 setattr(result, field_name, getattr(result, field_name) + count)
+        result.foreign.update(foreign)
         result.success = crawl_completed
         result.duration_seconds = (datetime.now(UTC) - start_time).total_seconds()
 
@@ -361,7 +364,13 @@ class ScraperSyncRunner:
         als die Bremse erlaubt (``braked``), lassen ihre Zähler stehen: Aus einer Lücke folgt nichts.
         Objekte, die eine Liste nennt, deren Detailseite aber nicht lesbar war, gelten als gesehen.
         Tagesordnungspunkte zählt ``_count_missing_agenda_items`` je Sitzung.
+
+        Markiert werden nur Objekte dieser Quelle: Die Löschmarkierung ist an die Quelle der Kommunen gebunden
+        (``mark_entity_deleted``), alle Kommunen in ``body_ids`` gehören zu ihr. Ohne Kommune wird nichts gezählt.
         """
+        if not body_ids:
+            return 0
+        owner = body_ids[0]
         threshold = max(1, settings.scraper_tombstone_full_crawls)
         missing_state: dict[str, dict[str, int]] = {k: dict(v) for k, v in (state.get("missing") or {}).items()}
         deleted_count = 0
@@ -394,12 +403,12 @@ class ScraperSyncRunner:
                 if external_id in seen_ids or external_id not in candidates:
                     del counters[external_id]
 
-            deleted_count += await self._count_up(entity_type, unseen, counters, threshold, es_deletions)
+            deleted_count += await self._count_up(entity_type, unseen, counters, threshold, es_deletions, owner)
 
         if removable_agenda_item is not None:
             counters = missing_state.setdefault(AGENDA_ITEM_TYPE, {})
             unseen = await self._missing_agenda_items(stats, counters, removable_agenda_item, agenda_braked)
-            deleted_count += await self._count_up(AGENDA_ITEM_TYPE, unseen, counters, threshold, es_deletions)
+            deleted_count += await self._count_up(AGENDA_ITEM_TYPE, unseen, counters, threshold, es_deletions, owner)
 
         state["missing"] = missing_state
         return deleted_count
@@ -453,13 +462,19 @@ class ScraperSyncRunner:
         counters: dict[str, int],
         threshold: int,
         es_deletions: dict[str, list[str]],
+        body_id: UUID,
     ) -> int:
-        """Zähler der fehlenden Objekte erhöhen; nach ``threshold`` Läufen in Folge als gelöscht markieren."""
+        """
+        Zähler der fehlenden Objekte erhöhen; nach ``threshold`` Läufen in Folge als gelöscht markieren (nur Objekte
+        der Quelle von ``body_id``).
+        """
         deleted_count = 0
         for external_id in sorted(unseen):
             counters[external_id] = counters.get(external_id, 0) + 1
             if counters[external_id] >= threshold:
-                marked = await self.orchestrator._mark_deleted({"id": external_id}, entity_type, es_deletions)
+                marked = await self.orchestrator._mark_deleted(
+                    {"id": external_id}, entity_type, es_deletions, body_id=body_id
+                )
                 if marked:
                     deleted_count += 1
                     console.print(

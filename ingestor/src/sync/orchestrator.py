@@ -69,11 +69,13 @@ from src.redaction import MaskingConsole
 from src.scrapers.base import CONTENT_HASH_FIELD
 from src.storage.database import (
     DatabaseStorage,
+    ForeignObjectError,
     full_sync_progress_of,
     missing_list_reasons_of,
     missing_lists_of,
     slice_filter_ignored_of,
     slow_lists_of,
+    start_foreign_rejections,
     timed_lists_of,
 )
 from src.storage.events import start_correlation
@@ -522,6 +524,9 @@ class SyncResult:
     host_findings: list[dict[str, Any]] = field(default_factory=list)
     # Gelesen, aber nicht gespeichert, je Typ über alle Kommunen (Issue #1025), im Sync-Log unter ``unstored``
     unstored: Counter[str] = field(default_factory=Counter)
+    # Abgewiesene Kennungen anderer Quellen je Art über alle Kommunen (Upsert, Löschung, Verweis), im Sync-Log unter
+    # ``foreign`` (``start_foreign_rejections``)
+    foreign: Counter[str] = field(default_factory=Counter)
     # Lief der Abgleich als Vollabgleich? Außerhalb des Zeitfensters der Quelle wird aus einem angeforderten
     # Vollabgleich ein inkrementeller (``_full_sync_plan``); der Daemon protokolliert, was tatsächlich lief
     full: bool = False
@@ -1032,6 +1037,7 @@ class SyncOrchestrator:
                     result.consultations_synced += body_result.get("consultations", 0)
                     result.errors.extend(body_result.get("errors", []))
                     result.unstored.update(body_result.get("unstored") or {})
+                    result.foreign.update(body_result.get("foreign") or {})
                     merge_slice_details(result.slice_details, body_result)
 
                 # Update sync timestamp; vollständig nur ohne Lücke und ohne Filter auf Kommunen (Issue #556), der
@@ -1335,8 +1341,10 @@ class SyncOrchestrator:
 
         # Alle Ereignisse dieses Abgleichs tragen dieselbe Korrelations-ID (src/storage/events.py)
         start_correlation()
+        # Kennungen anderer Quellen, die der Speicher in diesem Abgleich abweist (Sync-Log ``foreign``)
+        foreign = start_foreign_rejections()
 
-        # Process and store body
+        # Process and store body; eine Kommune einer anderen Quelle bricht hier ab (ForeignObjectError)
         processed_body = self.processor.process_body(body_data, body_external_id)
         body_id = await self.storage.upsert_body(processed_body, source_id)
         # Voriger Abgleich des Bodies: Ab dann geschriebene Objekte gehen in den Suchindex (inkrementell)
@@ -1561,6 +1569,10 @@ class SyncOrchestrator:
             await self._settle_missing_lists(list_check, stats)
         if body_slices is not None:
             await self._settle_slices(body_slices, stats, full)
+        if foreign:
+            stats["foreign"] = dict(sorted(foreign.items()))
+            summary = ", ".join(f"{name}: {count}" for name, count in sorted(foreign.items()))
+            console.print(f"[yellow]  Kennungen anderer Quellen abgewiesen, nicht geschrieben ({summary})[/yellow]")
 
         # Update body sync time
         await self.storage.update_body_sync_time(body_id)
@@ -1757,10 +1769,14 @@ class SyncOrchestrator:
         item: dict[str, Any],
         entity_type: str,
         es_deletions: dict[str, list[str]] | None,
+        *,
+        body_id: UUID,
     ) -> bool:
         """
         Handle an OParl tombstone (deleted: true): mark the row as deleted
         (never physically delete) and queue its search document for removal.
+
+        Markiert werden nur Objekte derselben Quelle wie die Kommune ``body_id`` des Abgleichs.
 
         Returns True if the entity was newly marked.
         """
@@ -1769,8 +1785,8 @@ class SyncOrchestrator:
             return False
         modified = self.processor.parse_datetime(item.get("modified"))
         if entity_type == "meeting":
-            await self._retract_session_location(external_id, modified)
-        entity_id = await self.storage.mark_entity_deleted(entity_type, external_id, modified=modified)
+            await self._retract_session_location(external_id, modified, body_id=body_id)
+        entity_id = await self.storage.mark_entity_deleted(entity_type, external_id, modified=modified, body_id=body_id)
         if entity_id is None:
             return False
         index_name = self._ES_INDEX_BY_ENTITY_TYPE.get(entity_type)
@@ -1778,7 +1794,9 @@ class SyncOrchestrator:
             es_deletions.setdefault(index_name, []).append(str(entity_id))
         return True
 
-    async def _retract_session_location(self, meeting_external_id: str, modified: datetime | None = None) -> None:
+    async def _retract_session_location(
+        self, meeting_external_id: str, modified: datetime | None = None, *, body_id: UUID
+    ) -> None:
         """
         Eigenes Location-Objekt zum Ort einer Session-Sitzung zurücknehmen (``session_location_id``).
 
@@ -1789,7 +1807,7 @@ class SyncOrchestrator:
         """
         location_id = session_location_id(meeting_external_id)
         if location_id is not None:
-            await self.storage.mark_entity_deleted("location", location_id, modified=modified)
+            await self.storage.mark_entity_deleted("location", location_id, modified=modified, body_id=body_id)
 
     async def _sync_entity_type(
         self,
@@ -1936,9 +1954,9 @@ class SyncOrchestrator:
                 person_refs = {ref for ref in (item.get("person") for item in page) if isinstance(ref, str) and ref}
                 org_refs = {ref for ref in (item.get("organization") for item in page) if isinstance(ref, str) and ref}
                 if person_refs:
-                    await self.storage.get_person_ids_by_external_ids(list(person_refs))
+                    await self.storage.get_person_ids_by_external_ids(list(person_refs), body_id)
                 if org_refs:
-                    await self.storage.get_organization_ids_by_external_ids(list(org_refs))
+                    await self.storage.get_organization_ids_by_external_ids(list(org_refs), body_id)
 
             new_on_page = 0
             updated_on_page = 0
@@ -1953,7 +1971,7 @@ class SyncOrchestrator:
                         # markieren statt upserten (sonst wuerde ein geloeschtes
                         # Objekt wieder als aktiv eingespielt).
                         if item.get("deleted") is True:
-                            if await self._mark_deleted(item, entity_type, es_deletions):
+                            if await self._mark_deleted(item, entity_type, es_deletions, body_id=body_id):
                                 deleted_count += 1
                             continue
                         if item_check is not None:
@@ -1997,7 +2015,7 @@ class SyncOrchestrator:
                         # Handle deleted items (Bonn/Aachen/Köln/ITK send deleted
                         # flag): mark as tombstone instead of physically deleting
                         if item.get("deleted") is True:
-                            if await self._mark_deleted(item, entity_type, es_deletions):
+                            if await self._mark_deleted(item, entity_type, es_deletions, body_id=body_id):
                                 deleted_on_page += 1
                                 deleted_count += 1
                             continue
@@ -2583,10 +2601,14 @@ class SyncOrchestrator:
 
         Returns True if the entity was actually stored, False if skipped
         (e.g. membership with unresolvable FK references).
+
+        Geschrieben und verknüpft werden nur Objekte derselben Quelle wie ``body_id``: Steht die Kennung unter einer
+        anderen Quelle, wirft der Speicher ``ForeignObjectError`` (der Lauf zählt das Objekt als nicht gespeichert),
+        und Verweise auf Sitzungen und Vorlagen anderer Quellen lösen nicht auf.
         """
         if isinstance(entity, ProcessedMeeting):
             await self.storage.upsert_meeting(entity, body_id)
-            await self._retract_session_location(entity.external_id)
+            await self._retract_session_location(entity.external_id, body_id=body_id)
             # Eingebettete TOPs und Dateien speichert upsert_meeting selbst; hier nur zählen
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedFile):
@@ -2604,10 +2626,14 @@ class SyncOrchestrator:
         elif isinstance(entity, ProcessedPerson):
             await self.storage.upsert_person(entity, body_id)
             metrics.record_entity_synced("person", body_name or "unknown")
-            # Process nested memberships (OParl 1.0: embedded in Person objects)
+            # Process nested memberships (OParl 1.0: embedded in Person objects); eine Mitgliedschaft einer anderen
+            # Quelle bleibt aus (gezählt), die Person ist gespeichert
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedMembership):
-                    await self.storage.upsert_membership(nested, body_id)
+                    try:
+                        await self.storage.upsert_membership(nested, body_id)
+                    except ForeignObjectError:
+                        continue
                     metrics.record_entity_synced("membership", body_name or "unknown")
         elif isinstance(entity, ProcessedOrganization):
             await self.storage.upsert_organization(entity, body_id)
@@ -2624,9 +2650,10 @@ class SyncOrchestrator:
             # AgendaItems need meeting_id - try to look it up
             meeting_id = None
             if entity.meeting_external_id:
-                meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_id)
+                meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_id, body_id)
             if not meeting_id:
-                # Sitzung nicht im Bestand: nicht gespeichert, der Lauf hält es fest (Issue #1025)
+                # Sitzung nicht im Bestand (oder einer anderen Quelle): nicht gespeichert, der Lauf hält es fest
+                # (Issue #1025)
                 return False
             await self.storage.upsert_agenda_item(entity, meeting_id)
             metrics.record_entity_synced("agendaitem", body_name or "unknown")
@@ -2637,16 +2664,16 @@ class SyncOrchestrator:
             meeting_id = None
             if entity.paper_external_ids:
                 # Use first paper reference (files can belong to multiple papers)
-                paper_id = await self.storage.get_paper_uuid(entity.paper_external_ids[0])
+                paper_id = await self.storage.get_paper_uuid(entity.paper_external_ids[0], body_id)
             if entity.meeting_external_ids:
-                meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_ids[0])
+                meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_ids[0], body_id)
             await self.storage.upsert_file(entity, body_id, paper_id=paper_id, meeting_id=meeting_id)
             metrics.record_entity_synced("file", body_name or "unknown")
         elif isinstance(entity, ProcessedConsultation):
             # Consultations can belong to papers - try to look it up
             paper_id = None
             if entity.paper_external_id:
-                paper_id = await self.storage.get_paper_uuid(entity.paper_external_id)
+                paper_id = await self.storage.get_paper_uuid(entity.paper_external_id, body_id)
             await self.storage.upsert_consultation(entity, body_id, paper_id)
             metrics.record_entity_synced("consultation", body_name or "unknown")
         else:
@@ -2851,6 +2878,7 @@ class SyncOrchestrator:
                 "files": result.files_synced,
                 **self._finding_details(result),
                 **({"unstored": dict(sorted(result.unstored.items()))} if result.unstored else {}),
+                **({"foreign": dict(sorted(result.foreign.items()))} if result.foreign else {}),
                 **result.slice_details,
             }
 

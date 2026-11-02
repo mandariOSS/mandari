@@ -197,7 +197,10 @@ class MerkSpeicher:
         self.aufrufe.append(("upsert_meeting", meeting.external_id))
         return uuid4()
 
-    async def mark_entity_deleted(self, entity_type: str, external_id: str, modified: Any = None) -> Any:
+    async def mark_entity_deleted(
+        self, entity_type: str, external_id: str, modified: Any = None, *, body_id: Any
+    ) -> Any:
+        assert body_id is not None  # an die Quelle der Kommune gebunden
         self.aufrufe.append(("mark_entity_deleted", entity_type, external_id))
         return uuid4()
 
@@ -230,7 +233,7 @@ def test_ruecknahme_einer_session_sitzung_nimmt_den_ort_mit() -> None:
     speicher = MerkSpeicher()
     grabstein = {"id": f"{BASIS}meeting/7f0c/", "deleted": True, "modified": "2026-09-30T10:00:00+02:00"}
 
-    markiert = asyncio.run(_orchestrator(speicher)._mark_deleted(grabstein, "meeting", None))
+    markiert = asyncio.run(_orchestrator(speicher)._mark_deleted(grabstein, "meeting", None, body_id=uuid4()))
 
     assert markiert is True
     assert speicher.aufrufe == [
@@ -246,9 +249,9 @@ def test_sitzungen_anderer_quellen_beruehren_keinen_ort() -> None:
     meeting = OParlProcessor().process_meeting({"id": fremd, "name": "Rat"}, "https://ris.example/oparl/body/1")
 
     asyncio.run(orch._store_entity(meeting, uuid4(), "meeting", "Musterstadt"))
-    asyncio.run(orch._mark_deleted({"id": fremd, "deleted": True}, "meeting", None))
+    asyncio.run(orch._mark_deleted({"id": fremd, "deleted": True}, "meeting", None, body_id=uuid4()))
     # Andere Objekttypen des Session-RIS: nur das Objekt selbst
-    asyncio.run(orch._mark_deleted({"id": f"{BASIS}paper/7f0c/", "deleted": True}, "paper", None))
+    asyncio.run(orch._mark_deleted({"id": f"{BASIS}paper/7f0c/", "deleted": True}, "paper", None, body_id=uuid4()))
 
     assert speicher.aufrufe == [
         ("upsert_meeting", fremd),
