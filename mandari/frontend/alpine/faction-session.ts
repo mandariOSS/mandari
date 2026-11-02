@@ -433,9 +433,12 @@ let fokusNachAustausch = ''
 export const anwesenheitsListe = defineComponent(() => ({
   init() {
     if (!fokusNachAustausch) return
-    const ziel = this.$el.querySelector<HTMLElement>(fokusNachAustausch)
+    const auswahl = fokusNachAustausch
     fokusNachAustausch = ''
-    ziel?.focus({ preventScroll: true })
+    // Erst nach dem Aufbau fokussieren: Beim Einfügen ist die Liste noch verborgen (x-cloak, x-show), focus() ginge
+    // sonst ins Leere
+    const liste = this.$el
+    window.requestAnimationFrame(() => liste.querySelector<HTMLElement>(auswahl)?.focus({ preventScroll: true }))
   },
 
   senden(werte: Record<string, string>) {
