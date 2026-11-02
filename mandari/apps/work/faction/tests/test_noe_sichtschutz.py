@@ -92,6 +92,8 @@ def _ohne_verdecktes(html: str) -> str:
     """HTML ohne die verdeckten Stellen und die Kurzinfo zum Einblenden: Was übrig bleibt, wäre lesbar."""
     html = html.replace(VERDECKT, "")
     html = re.sub(r'<p class="fs-top-zeile2 fs-noe"[^>]*aria-hidden="true"[^>]*>.*?</p>', "", html, flags=re.S)
+    # Auswahl „Als Unterpunkt von“ im Dialog „TOP hinzufügen“: sichtbar nur die Nummer, der Titel erst eingeblendet
+    html = re.sub(r'data-voll="[^"]*"', "", html)
     return re.sub(r'data-noe-titel="[^"]*"', "", html)
 
 
