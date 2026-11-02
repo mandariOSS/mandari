@@ -6,6 +6,7 @@ die Einladungsmail gerendert werden, wie beim erneuten Senden eines Gastzugangs 
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import pytest
@@ -28,6 +29,17 @@ def admin(org: Any, make_member: Any) -> Any:
 
 def test_grenze() -> None:
     assert MAX_INVITATION_MESSAGE_LENGTH == 2000
+
+
+@pytest.mark.parametrize("name", ["member_invite", "guest_invite"])
+@pytest.mark.parametrize("ansicht", ["", "?ansicht=bisher"])
+def test_eingabefeld_kuendigt_die_grenze_an(org: Any, admin: Any, client_for: Any, name: str, ansicht: str) -> None:
+    """Neue und bisherige Vorlage begrenzen das Nachrichtenfeld schon im Browser auf die Grenze des Servers."""
+    seite = client_for(admin.user).get(reverse(f"work:{name}", kwargs={"org_slug": org.slug}) + ansicht)
+
+    felder = re.findall(r'<textarea[^>]*name="message"[^>]*>', seite.content.decode())
+    assert len(felder) == 1
+    assert f'maxlength="{MAX_INVITATION_MESSAGE_LENGTH}"' in felder[0]
 
 
 def test_mitglied_einladen_kuerzt_die_nachricht(org: Any, admin: Any, client_for: Any) -> None:

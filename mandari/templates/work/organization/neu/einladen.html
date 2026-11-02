@@ -27,7 +27,7 @@ Kontext: MemberInviteView.
                 <div class="mt-3 space-y-4">
                     <c-form.field name="email" id="einladung-email" type="email" label="E-Mail-Adresse" placeholder="email@beispiel.de" autocomplete="off" dicht required autofocus
                                   help="Die Person meldet sich mit dieser Adresse an oder legt ein Konto an." />
-                    <c-form.textarea name="message" id="einladung-nachricht" label="Persönliche Nachricht (optional)" rows="3" placeholder="Steht in der Einladungs-E-Mail" dicht />
+                    <c-form.textarea name="message" id="einladung-nachricht" label="Persönliche Nachricht (optional)" rows="3" maxlength="2000" placeholder="Steht in der Einladungs-E-Mail" dicht />
                 </div>
             </c-rahmen.abschnitt>
 

@@ -113,3 +113,28 @@ def test_zu_lange_frage_wird_nicht_gespeichert(person: OParlPerson, settings: An
     assert "höchstens 2000 Zeichen" in antwort.content.decode()
     assert not PublicQuestion.objects.exists()
     assert mail.outbox == []
+
+
+@pytest.mark.parametrize("laenge", [ANSWER_TEXT_MAX_LENGTH + 1, 2_600_000])
+def test_zu_lange_antwort_wird_nicht_gespeichert(person: OParlPerson, settings: Any, laenge: int) -> None:
+    """Über den Antwort-Link: Eine zu lange Antwort endet im Formular, die Frage bleibt unbeantwortet, keine Mail."""
+    settings.INSIGHT_QUESTIONS_ENABLED = True
+    settings.INSIGHT_MODERATION_EMAILS = ["moderation@example.org"]
+    frage = PublicQuestion.objects.create(
+        body=person.body,
+        recipient=person,
+        questioner_name="Bert",
+        questioner_email="bert@example.org",
+        subject="Offene Frage zur Schule",
+        question_text="Wann wird die Schule saniert?",
+        status="published",
+    )
+    mail.outbox.clear()
+
+    antwort = Client().post(f"/insight/fragen/antworten/{frage.answer_token}/", {"answer_text": "y" * laenge})
+
+    assert antwort.status_code == 200
+    assert "höchstens 5000 Zeichen" in antwort.content.decode()
+    frage.refresh_from_db()
+    assert (frage.answer_text, frage.answer_status, frage.answered_at) == ("", "none", None)
+    assert mail.outbox == []
