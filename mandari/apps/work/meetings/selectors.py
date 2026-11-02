@@ -667,7 +667,8 @@ def resolve_consultations(paper_ids: set[Any], current_meeting: OParlMeeting) ->
     consultations_by_paper: dict[Any, list[dict[str, Any]]] = {}
     for c in consults:
         # Sitzung einer anderen Quelle gilt als unbekannt
-        m = meetings_by_ext.get(c.meeting_external_id) if c.meeting_external_id and c.meeting_in_source else None
+        in_quelle = c.meeting_in_source  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
+        m = meetings_by_ext.get(c.meeting_external_id) if c.meeting_external_id and in_quelle else None
         org_names = ", ".join(o.short_name or o.name or "" for o in m.organizations.all()) if m else ""
         consultations_by_paper.setdefault(c.paper_id, []).append(
             {

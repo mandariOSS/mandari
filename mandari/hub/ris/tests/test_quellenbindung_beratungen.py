@@ -159,7 +159,7 @@ def test_work_live_neuveroeffentlichung_startseite_und_schnittstelle(welt: Simpl
     assert live._vorlagen([SimpleNamespace(agenda_item=welt.punkt_2)]) == {}  # type: ignore[list-item]
     assert neuveroeffentlichung._vorlagen_je_top([welt.punkt_2.external_id]) == {}
     assert RefContext.for_agenda_items([welt.punkt_2]).consultations_by_agenda_ext == {}
-    assert [p.vorgang for p in zuletzt_beschlossen(welt.kommune_b)] == [None]
+    assert [p.vorgang for p in zuletzt_beschlossen(welt.kommune_b)] == [None]  # type: ignore[attr-defined]
     # Suchindex: Ändert sich Punkt 2, betrifft das keine Datei der Quelle A
     assert search_projection.context_file_ids("AgendaItem", [welt.punkt_2.pk]) == []
     assert search_projection.context_file_ids("Meeting", [welt.vergangen.pk]) == []
@@ -183,7 +183,7 @@ def test_verlauf_einer_vorlage_nennt_keine_sitzung_einer_anderen_quelle(welt: Si
     OParlConsultation.objects.filter(paper=welt.vorlage_b).update(raw_json={"organization": [welt.gremium.external_id]})
     assert search_documents.paper_to_doc(welt.vorlage_b, files=[])["organization_names"] == ["Rat B"]
     dateien = [welt.datei_a]
-    _annotate_files_with_context(dateien)
+    _annotate_files_with_context(dateien)  # type: ignore[no-untyped-call]
     assert not dateien[0].context_info
 
     # Offene Schnittstelle: Die Beratung nennt weder Sitzung noch Punkt einer anderen Quelle

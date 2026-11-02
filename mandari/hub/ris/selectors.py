@@ -141,7 +141,7 @@ def consultation_references_in_source(consultation_ids: Iterable[object]) -> tup
     punkte: set[uuid.UUID] = set()
     if not ids:
         return sitzungen, punkte
-    rows = with_reference_checks(OParlConsultation.objects.filter(pk__in=ids)).values_list(
+    rows = with_reference_checks(OParlConsultation.objects.filter(pk__in=ids)).values_list(  # type: ignore[misc]
         "pk", "meeting_in_source", "agenda_item_in_source"
     )
     for pk, sitzung, punkt in rows:
@@ -701,8 +701,8 @@ def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
     verlauf: list[dict[str, Any]] = []
     for consultation in consultations:
         # Sitzung bzw. Punkt einer anderen Quelle gilt als unbekannt
-        sitzung = sitzungen.get(consultation.meeting_external_id or "") if consultation.meeting_in_source else None
-        punkt = punkte.get(consultation.agenda_item_external_id or "") if consultation.agenda_item_in_source else None
+        sitzung = sitzungen.get(consultation.meeting_external_id or "") if consultation.meeting_in_source else None  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
+        punkt = punkte.get(consultation.agenda_item_external_id or "") if consultation.agenda_item_in_source else None  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
         verlauf.append(
             {
                 "consultation": consultation,
