@@ -240,6 +240,15 @@ def test_notizen_werden_bereinigt_gespeichert_und_konflikte_erkannt(
     item.refresh_from_db()
     assert sitzung.notizen(item) == gespeichert
 
+    # Derselbe Text mit veraltetem Stand (zwei Speicherungen kurz hintereinander) ist kein Konflikt (Issue #1166)
+    doppelt = client.post(
+        aktion_url(org, sitzung_laeuft),
+        {"action": "notizen", "item_id": item.pk, "html": gespeichert, "stand": sitzung.fingerabdruck("")},
+    )
+    assert doppelt.status_code == 200 and doppelt.json()["stand"] == stand
+    item.refresh_from_db()
+    assert sitzung.notizen(item) == gespeichert
+
     # Mit aktuellem Stand gelingt das Speichern
     weiter = client.post(
         aktion_url(org, sitzung_laeuft),

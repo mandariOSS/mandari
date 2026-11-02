@@ -284,6 +284,59 @@ def test_nur_ein_editor_fuellt_den_leeren_zustand(vorsitz: Any, make_member: Any
 
 
 @pytest.mark.django_db(transaction=True)
+def test_leere_notizen_zusage_haelt_speichern_nicht_auf(vorsitz: Any, make_member: Any, org: Any, top: Any) -> None:
+    """
+    Neuer TOP ohne Notizen, zwei Editoren (Issue #1166): Bisher hielt die Zusage des ersten die Speicherungen des
+    zweiten bis zu 20 s ohne Antwort auf; sein Browser wich nach 4 s auf das Formular aus, und alle Editoren bauten
+    neu auf. Dabei landete ein älterer Stand doppelt im Protokoll. Die Zusage bleibt (nur einer fügt eine offene
+    eigene Fassung ein), hält aber niemanden mehr auf. Der erste bekommt den gespeicherten Stand als Basis.
+    """
+    schrift = make_member(org, ["faction.view_public", "protocols.edit"], email="schrift-leer@example.org")
+
+    async def lauf() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
+        erster, _, z1 = await _verbinden(vorsitz.user, top)
+        zweiter, _, z2 = await _verbinden(schrift.user, top)
+        await zweiter.send_json_to({"type": "yjs_save", "data": _b64(ZUSTAND), "html": "<p>Erster Satz</p>"})
+        gespeichert = await _bis(zweiter, "yjs_saved")
+        fremd = await _bis(erster, "fremd_gespeichert")
+        await zweiter.disconnect()
+        await erster.disconnect()
+        return z1, z2, gespeichert, fremd
+
+    z1, z2, gespeichert, fremd = asyncio.run(lauf())
+
+    assert z1["seed"] is True and z2["seed"] is False
+    assert gespeichert["content_hash"] == sitzung.fingerabdruck("<p>Erster Satz</p>")
+    assert fremd["html"] == "<p>Erster Satz</p>"
+    top.refresh_from_db()
+    assert sitzung.notizen(top) == "<p>Erster Satz</p>"
+
+
+@pytest.mark.django_db
+def test_gleicher_text_mit_veraltetem_stand_ist_kein_konflikt(vorsitz: Any, top: Any) -> None:
+    """Gleicher Text gilt als gespeichert, auch mit veraltetem Stand; der Live-Zustand bleibt (Issue #1166)."""
+    sitzung.notizen_speichern(top, "<p>Satz</p>", basis=None, membership=vorsitz, yjs=ZUSTAND)
+    zustand_vorher = FactionNotesState.objects.get(item=top).stand
+
+    # Formular (Rückfall ohne WebSocket) mit dem Stand von vorher: kein Konflikt, Zustand bleibt erhalten
+    formular = sitzung.notizen_speichern(top, "<p>Satz</p>", basis=sitzung.fingerabdruck(""), membership=vorsitz)
+    assert formular.gespeichert and formular.stand == sitzung.fingerabdruck("<p>Satz</p>")
+    assert FactionNotesState.objects.get(item=top).stand == zustand_vorher
+
+    # Live mit gleichem Text, aber abweichendem Stand des Zustands: gespeichert, Zustand passt danach zum Text
+    FactionNotesState.objects.filter(item=top).update(stand="veraltet")
+    live = sitzung.notizen_speichern(top, "<p>Satz</p>", basis=None, membership=vorsitz, yjs=ZUSTAND)
+    assert live.gespeichert
+    assert FactionNotesState.objects.get(item=top).stand == sitzung.fingerabdruck("<p>Satz</p>")
+
+    # Abweichender Text mit veraltetem Stand bleibt ein Konflikt
+    anders = sitzung.notizen_speichern(top, "<p>Anders</p>", basis=sitzung.fingerabdruck(""), membership=vorsitz)
+    assert not anders.gespeichert and anders.html == "<p>Satz</p>"
+    top.refresh_from_db()
+    assert sitzung.notizen(top) == "<p>Satz</p>"
+
+
+@pytest.mark.django_db(transaction=True)
 def test_speichern_ohne_verbindung_laesst_neu_aufbauen(
     vorsitz: Any, org: Any, meeting: Any, top: Any, client_for: Any
 ) -> None:

@@ -206,6 +206,8 @@ class DjangoYjsProvider {
       }
 
       this.ws.onmessage = (event) => {
+        // Nach destroy() nichts mehr melden: Ein neuer Editor hat übernommen (Issue #1166)
+        if (this.destroyed) return
         if (typeof event.data === 'string') {
           // JSON message from Django consumer
           this._handleJsonMessage(JSON.parse(event.data))
@@ -217,6 +219,9 @@ class DjangoYjsProvider {
 
       this.ws.onclose = () => {
         this.connected = false
+        // Das Schließen nach destroy() ist kein Verbindungsabbruch: Sonst wiche der neu aufgebaute Editor sofort auf
+        // das Formular aus (Notizen der Fraktionssitzung, Issue #1166)
+        if (this.destroyed) return
         this.onStatusChange?.('disconnected')
         this._scheduleReconnect()
       }
