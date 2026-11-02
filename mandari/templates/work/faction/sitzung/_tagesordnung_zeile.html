@@ -7,7 +7,7 @@
        data-top-wechsel data-top-id="{{ zeile.item.pk }}"
        :aria-current="istAktuell($el.dataset.topId) ? 'true' : null">
         <span class="nr">{{ zeile.item.number }}</span>
-        <span class="titel">{{ zeile.item.title }}</span>
+        <span class="titel">{% include "work/faction/sitzung/_noe_text.html" with text=zeile.item.title noe=zeile.intern %}</span>
         <span class="stand">{% if zeile.besprochen %}<i data-lucide="check" aria-hidden="true"></i><span class="sr-only">, besprochen</span>{% endif %}</span>
     </a>
 </li>
