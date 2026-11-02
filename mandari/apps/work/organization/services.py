@@ -916,8 +916,16 @@ def join_by_self_registration(organization: Organization, user: User) -> Members
     return membership
 
 
-def confirm_self_registration(organization: Organization, token: EmailVerificationToken) -> Membership:
-    """Bestätigungslink einlösen (einmalig), Adresse als bestätigt markieren und beitreten."""
+def confirm_self_registration(organization: Organization, token: EmailVerificationToken, account: User) -> Membership:
+    """
+    Bestätigungslink einlösen (einmalig), Adresse als bestätigt markieren und beitreten.
+
+    ``account`` ist das angemeldete Konto, das den Link einlöst; es muss das Konto des Links sein. Der
+    Link beweist nur die Kontrolle über das Postfach, das Passwort hat gesetzt, wer sich registriert hat.
+    Erst beides zusammen zeigt, dass das Konto der Inhaberin des Postfachs gehört.
+    """
+    if account.pk != token.user_id:
+        raise ServiceError("Bitte melden Sie sich mit dem Konto an, zu dem dieser Link gehört.")
     user = token.user
     if user.email.lower() != token.email.lower():
         raise ServiceError("Dieser Link gehört zu einer früheren E-Mail-Adresse. Bitte registrieren Sie sich erneut.")

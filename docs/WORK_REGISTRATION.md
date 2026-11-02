@@ -36,8 +36,8 @@ Freitext wie Einladungsnachricht oder Ablehnungsgrund.
 | Schritt | Ergebnis | Mail |
 |---------|----------|------|
 | Formular `/accounts/register/<org>/` | Konto ohne Anmeldung, keine Mitgliedschaft | Bestätigungslink (48 h gültig) an die Person |
-| Link öffnen (GET) | nur Bestätigungsseite – Link-Scanner lösen nichts aus | – |
-| Bestätigen (POST) | Adresse bestätigt, Mitgliedschaft entsteht | siehe unten |
+| Link öffnen (GET) | nur Bestätigungsseite – Link-Scanner lösen nichts aus; ohne Anmeldung Hinweis und Knopf zur Anmeldung, die danach zurück zum Link führt | – |
+| Bestätigen (POST), angemeldet mit dem registrierten Konto | Adresse bestätigt, Mitgliedschaft entsteht | siehe unten |
 | … mit automatischer Freischaltung | Mitgliedschaft aktiv | „Willkommen“ an die Person, In-App-Hinweis „Neues Mitglied“ an Freigebende |
 | … ohne automatische Freischaltung | offene Anfrage (`Membership.registration_requested_at`) | Eingangsbestätigung an die Person, Anfrage an alle mit `members.invite` (ersatzweise Eigentümer), In-App-Hinweis „Registrierungsanfrage“ |
 | Freischalten | Mitgliedschaft aktiv | „Zugang freigeschaltet“ mit Link und Hinweis auf Zwei-Faktor-Pflicht |
@@ -52,7 +52,14 @@ Freitext wie Einladungsnachricht oder Ablehnungsgrund.
   automatisch gelöscht, sofern sie nirgends zugeordnet sind (Issue #238).
 - Bestätigungsmails sind je IP und Adresse pro Stunde gedrosselt
   (`SELF_REGISTER_MAILS_PER_IP_PER_HOUR`, `SELF_REGISTER_MAILS_PER_ADDRESS_PER_HOUR`).
-- Der Link meldet nicht an; die Anmeldung läuft über Passwort und gegebenenfalls zweiten Faktor.
+- Der Link meldet nicht an und bestätigt allein nichts: Bestätigen kann nur, wer mit dem Konto des
+  Links angemeldet ist (Passwort und gegebenenfalls zweiter Faktor). Der Link beweist die Kontrolle
+  über das Postfach, die Anmeldung die über das Konto, dessen Passwort bei der Registrierung gesetzt
+  wurde. Ohne Anmeldung leitet die Bestätigung zur Anmeldung und danach zurück zum Link; mit einem
+  anderen Konto wird sie abgewiesen (403).
+- Hat jemand anderes die Adresse registriert, übernimmt die Inhaberin das Konto über „Passwort
+  vergessen“. Das ersetzt das fremde Passwort, beendet dessen Sitzungen und bestätigt die Adresse;
+  danach kann sie den Link angemeldet einlösen.
 
 ## Offene Anfragen und deaktivierte Mitglieder
 
