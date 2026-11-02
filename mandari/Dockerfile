@@ -19,24 +19,37 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libffi-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# uv nur im Builder, nicht im fertigen Image
+# uv nur im Builder, nicht im fertigen Image. UV_NO_BUILD: uv installiert nur fertige Wheels, ein Bau lüde das
+# Build-Backend ohne Hash-Prüfung aus dem Paketindex (scripts/check_image_hashes.py verlangt das).
 COPY --from=uv /uv /bin/uv
+ENV UV_NO_BUILD=1
 
 # Python dependencies
 # Reproduzierbarer Build aus mandari/uv.lock (wie das Ingestor-Image). Verzeichnisse wie im Repo, damit der
 # Pfad ../shared aus [tool.uv.sources] aufgeht.
 # --locked: Build bricht ab, wenn uv.lock nicht mehr zu pyproject.toml passt (dann `uv lock` im Ordner mandari).
-# Export mit Hashes, pip prüft sie bei der Installation (--require-hashes).
+# --offline: Der Export liest nur uv.lock und die pyproject.toml-Dateien. Ein lokales Paket, dessen Metadaten nicht
+# feststehen, baut uv dafür auch mit UV_NO_BUILD; ohne Netz scheitert das, statt ein Build-Backend zu laden.
+# Export mit Hashes, pip prüft sie bei der Installation (--require-hashes). --only-binary :all: lässt nur fertige
+# Wheels zu: Ein Quelltextpaket bräuchte zum Bauen ein Build-Backend, das pip ohne Hash-Prüfung nachladen würde.
+# Das Build-Backend von ../shared (Gruppe build-backend: hatchling) kommt ebenso mit Hashes aus uv.lock, aber in
+# die System-Python des Builders statt nach /install: Ins fertige Image geht nur /install.
+# scripts/check_image_hashes.py prüft diese Regeln.
 COPY shared/pyproject.toml /build/shared/pyproject.toml
 COPY mandari/pyproject.toml mandari/uv.lock /build/mandari/
 WORKDIR /build/mandari
-RUN uv export --quiet --locked --no-dev --no-emit-project --no-emit-package mandari-oparl \
+RUN uv export --quiet --locked --offline --no-dev --no-emit-project --no-emit-package mandari-oparl \
         --format requirements.txt -o /tmp/requirements.lock \
-    && pip install --no-cache-dir --prefix=/install --require-hashes -r /tmp/requirements.lock
+    && uv export --quiet --locked --offline --only-group build-backend --no-emit-project \
+        --format requirements.txt -o /tmp/build-backend.lock \
+    && pip install --no-cache-dir --prefix=/install --only-binary :all: --require-hashes -r /tmp/requirements.lock \
+    && pip install --no-cache-dir --only-binary :all: --require-hashes -r /tmp/build-backend.lock
 
-# Shared package ohne eigene Abhängigkeitsauflösung (pydantic kommt aus der Lock-Datei)
+# Shared package ohne eigene Abhängigkeitsauflösung (pydantic kommt aus der Lock-Datei) und ohne Netz:
+# --no-build-isolation nimmt das Build-Backend aus dem Schritt davor, --no-index und --network=none verhindern,
+# dass pip etwas nachlädt.
 COPY shared/ /tmp/shared/
-RUN pip install --no-cache-dir --prefix=/install --no-deps /tmp/shared/
+RUN --network=none pip install --no-cache-dir --prefix=/install --no-deps --no-build-isolation --no-index /tmp/shared/
 
 # =============================================================================
 # Stage 2: Frontend assets bauen

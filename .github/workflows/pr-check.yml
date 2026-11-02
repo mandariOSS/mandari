@@ -475,6 +475,12 @@ jobs:
         if: ${{ !cancelled() }}
         run: python scripts/check_version_consistency.py
 
+      # Die Images installieren nichts ohne Hash-Prüfung, auch nicht das Build-Backend der lokalen Pakete.
+      # Hier und nicht nur im Job "Test": Der läuft bei einer reinen Dockerfile-Änderung nicht.
+      - name: Images installieren nur hash-geprüfte Pakete
+        if: ${{ !cancelled() }}
+        run: python scripts/check_image_hashes.py
+
       - name: Jedes Smoke-Skript laeuft in der CI
         if: ${{ !cancelled() }}
         run: python scripts/check_smoke_in_ci.py
