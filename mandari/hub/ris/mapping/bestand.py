@@ -44,6 +44,7 @@ from hub.ris.canonical import (
     Objekt,
     as_list,
     clean,
+    file_text,
     implementation_extension,
     iso,
     iso_date,
@@ -53,6 +54,7 @@ from hub.ris.canonical import (
     schema_type,
     tombstone,
     vote_extension,
+    with_limited_text,
 )
 from hub.ris.mapping.session import ORGANIZATION_TYPES as SESSION_ORGANIZATION_TYPES
 from insight_core.models import (
@@ -178,19 +180,32 @@ class BestandUris:
 # =============================================================================
 
 
+def _embedded_files() -> QuerySet[OParlFile]:
+    """
+    Eingebettete Dateien ohne Text: Er steht nur am Objekt-Endpunkt (``file_with_text``) und kann Millionen Zeichen
+    lang sein. ``raw_json`` bleibt, ``_file_day`` liest es je Datei.
+    """
+    return OParlFile.objects.filter(deleted=False).defer("text_content")
+
+
 def prepare_meetings(queryset: QuerySet[OParlMeeting]) -> QuerySet[OParlMeeting]:
     return queryset.prefetch_related(
         Prefetch("organizations", queryset=OParlOrganization.objects.filter(deleted=False).only("id")),
         Prefetch("agenda_items", queryset=OParlAgendaItem.objects.filter(deleted=False)),
-        Prefetch("files", queryset=OParlFile.objects.filter(deleted=False)),
+        Prefetch("files", queryset=_embedded_files()),
     )
 
 
 def prepare_papers(queryset: QuerySet[OParlPaper]) -> QuerySet[OParlPaper]:
     return queryset.prefetch_related(
-        Prefetch("files", queryset=OParlFile.objects.filter(deleted=False)),
+        Prefetch("files", queryset=_embedded_files()),
         Prefetch("consultations", queryset=OParlConsultation.objects.filter(deleted=False)),
     )
+
+
+def prepare_files(queryset: QuerySet[OParlFile]) -> QuerySet[OParlFile]:
+    """Objekt-Endpunkt ``file``: Text höchstens bis zur Obergrenze, gekürzt in der Datenbank (``with_limited_text``)."""
+    return with_limited_text(queryset)
 
 
 def prepare_organizations(queryset: QuerySet[OParlOrganization]) -> QuerySet[OParlOrganization]:
@@ -722,7 +737,7 @@ class BestandMapping:
                 "accessUrl": proxy_url,
                 "downloadUrl": f"{proxy_url}?download=1",
                 # Gesperrte Dokumente (in der Quelle gelöscht oder nicht mehr abrufbar, #787): kein Text
-                "text": (file_obj.text_content or None) if include_text and not is_blocked(file_obj) else None,
+                "text": file_text(file_obj) if include_text and not is_blocked(file_obj) else None,
                 "paper": [self.uris.obj("paper", file_obj.paper_id)] if file_obj.paper_id else None,
                 "meeting": [self.uris.obj("meeting", file_obj.meeting_id)] if file_obj.meeting_id else None,
                 **_timestamps(file_obj),

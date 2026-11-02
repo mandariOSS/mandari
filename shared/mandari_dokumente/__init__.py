@@ -21,6 +21,7 @@ from .texterkennung import (
     LAYER_NEEDS_OCR,
     LAYER_OK,
     LAYER_TIMEOUT,
+    MAX_TEXT_CHARS,
     METHOD_MISTRAL,
     METHOD_NONE,
     METHOD_PYPDF,
@@ -34,6 +35,8 @@ from .texterkennung import (
     extract_text,
     extract_text_layer,
     extract_text_layer_isolated,
+    limit_text,
+    truncation_note,
 )
 
 __all__ = [
@@ -43,6 +46,7 @@ __all__ = [
     "LAYER_NEEDS_OCR",
     "LAYER_OK",
     "LAYER_TIMEOUT",
+    "MAX_TEXT_CHARS",
     "MEMORY_LIMIT_REASON",
     "MIN_PAGE_CHARS",
     "METHOD_MISTRAL",
@@ -68,7 +72,9 @@ __all__ = [
     "extract_text_layer",
     "extract_text_layer_isolated",
     "ist_erlaubter_host",
+    "limit_text",
     "ocr_pdf",
     "page_dpi",
     "read_text_layer",
+    "truncation_note",
 ]

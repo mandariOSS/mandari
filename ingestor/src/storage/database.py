@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
+from mandari_dokumente import MAX_TEXT_CHARS, truncation_note
 from mandari_oparl import (
     IdBases,
     ProcessedAgendaItem,
@@ -2742,6 +2743,9 @@ class DatabaseStorage:
 
         Liegt ein Text vor (``completed`` mit ``text_content``), meldet ``ris.file.text_extracted`` das in
         derselben Transaktion (Issue #821): Wer auf das Ereignis hin den Bestand liest, sieht den Text.
+
+        Gespeichert werden höchstens ``MAX_TEXT_CHARS`` Zeichen; die Texterkennung kürzt schon selbst, hier gilt die
+        Grenze auch für Texte, die an ihr vorbei kommen (Schnitt vermerkt in ``text_extraction_error``).
         """
         from datetime import datetime
 
@@ -2751,6 +2755,9 @@ class DatabaseStorage:
         # wieder neu verarbeitet (Sept. 2026: ~14 000 Fehlversuche am Tag).
         if text_content is not None:
             text_content = text_content.replace("\x00", "")
+            if len(text_content) > MAX_TEXT_CHARS:
+                text_content = text_content[:MAX_TEXT_CHARS]
+                error = "; ".join(teil for teil in (error, truncation_note(MAX_TEXT_CHARS)) if teil)
         if error is not None:
             error = error.replace("\x00", "")
 

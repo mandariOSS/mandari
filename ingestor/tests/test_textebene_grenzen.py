@@ -224,7 +224,7 @@ def test_ingestor_liest_die_textebene_in_eigenem_prozess_mit_grenzen(
     pfad = tmp_path / "download.part"
     pfad.write_bytes(pdf_bytes([(*A4, "Antrag Radweg"), (*A4, "Begruendung")]))
 
-    text, seiten, methode = TextExtractor._extract_text(pfad, "application/pdf", "-anlage.pdf")
+    text, seiten, methode, _hinweise = TextExtractor._extract_text(pfad, "application/pdf", "-anlage.pdf")
 
     assert "Antrag Radweg" in text and "Begruendung" in text
     assert (seiten, methode) == (2, "pypdf")
@@ -236,7 +236,7 @@ def test_ingestor_erkennt_andere_dateien_ohne_eigenen_prozess(tmp_path: Path, mo
     pfad = tmp_path / "download.part"
     pfad.write_bytes(b"<html><body><p>Tagesordnung</p></body></html>")
 
-    assert TextExtractor._extract_text(pfad, "text/html", "to.html") == ("Tagesordnung", None, "text")
+    assert TextExtractor._extract_text(pfad, "text/html", "to.html")[:3] == ("Tagesordnung", None, "text")
 
 
 @pytest.mark.usefixtures("plaetze")
@@ -263,7 +263,7 @@ def test_hoechstens_so_viele_prozesse_der_textebene_zugleich(tmp_path: Path, mon
     ergebnisse: list[tuple[str, int | None, str]] = []
 
     def bearbeiten() -> None:
-        ergebnisse.append(TextExtractor._extract_text(pfad, "application/pdf", "antrag.pdf"))
+        ergebnisse.append(TextExtractor._extract_text(pfad, "application/pdf", "antrag.pdf")[:3])
 
     threads = [threading.Thread(target=bearbeiten) for _ in range(6)]
     for thread in threads:
@@ -285,7 +285,7 @@ def test_scan_geht_mit_seitengroessen_aus_dem_prozess_an_die_erkennung(
     pfad = tmp_path / "download.part"
     pfad.write_bytes(pdf_bytes([(*A4, ""), (*A0, "")]))
 
-    text, seiten, methode = TextExtractor._extract_text(pfad, "application/pdf", "plan.pdf")
+    text, seiten, methode, _hinweise = TextExtractor._extract_text(pfad, "application/pdf", "plan.pdf")
 
     assert (text, seiten, methode) == ("Seite 1\n\nSeite 2", 2, "tesseract")
     gerendert = runner.renders()
@@ -320,7 +320,7 @@ def test_an_einer_grenze_des_prozesses_erkennt_der_ingestor_aus_dem_bild(
     pfad = tmp_path / "download.part"
     pfad.write_bytes(pdf_bytes([(*A4, "Antrag Radweg")]))
 
-    assert TextExtractor._extract_text(pfad, "application/pdf", "antrag.pdf") == ("Seite 1", None, "tesseract")
+    assert TextExtractor._extract_text(pfad, "application/pdf", "antrag.pdf")[:3] == ("Seite 1", None, "tesseract")
 
 
 # =============================================================================

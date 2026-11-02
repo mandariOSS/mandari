@@ -524,7 +524,7 @@ class TextExtractor:
 
         # Extract text
         try:
-            text, page_count, method = await asyncio.to_thread(
+            text, page_count, method, notes = await asyncio.to_thread(
                 self._extract_text, downloaded.path, mime_type, file_name
             )
         except OcrMemoryLimitError as e:
@@ -548,6 +548,9 @@ class TextExtractor:
             await self._store(file_row, downloaded, mime_type)
             return False
         await self._store(file_row, downloaded, mime_type)
+        # Hinweise der Erkennung (etwa Text an der Obergrenze gekürzt) wie bei den Aufträgen der Anwendung vermerken;
+        # ohne Hinweis bleibt das Feld wie bisher unberührt
+        hinweise = "; ".join(notes)[:500] or None
 
         if text.strip():
             await self.storage.update_file_text(
@@ -555,6 +558,7 @@ class TextExtractor:
                 text_content=text.strip(),
                 method=method,
                 status="completed",
+                error=hinweise,
                 page_count=page_count,
                 sha256_hash=sha256_hash,
             )
@@ -563,6 +567,7 @@ class TextExtractor:
             file_id=file_id,
             method=method or "none",
             status="completed",
+            error=hinweise,
             page_count=page_count,
             sha256_hash=sha256_hash,
         )
@@ -734,7 +739,7 @@ class TextExtractor:
         return stored
 
     @staticmethod
-    def _extract_text(source: Path, mime_type: str, file_name: str) -> tuple[str, int | None, str]:
+    def _extract_text(source: Path, mime_type: str, file_name: str) -> tuple[str, int | None, str, tuple[str, ...]]:
         """
         Text der geladenen Datei mit der gemeinsamen Texterkennung (läuft in einem Thread).
 
@@ -749,17 +754,17 @@ class TextExtractor:
         ``OcrMemoryLimitError`` geht an den Aufrufer (Datei gilt als gescheitert, Grund „Speichergrenze“).
 
         Returns:
-            (text, page_count, extraction_method)
+            (text, page_count, extraction_method, Hinweise ohne Inhalte)
         """
         config = extraction_config()
         stufe = extract_text_layer_isolated(
             source, mime_type, file_name, config, text_layer_limits(), runner=_run_text_layer
         )
         if stufe.result is not None:
-            return stufe.result.text, stufe.result.page_count, stufe.result.method
+            return stufe.result.text, stufe.result.page_count, stufe.result.method, stufe.result.notes
         layer = stufe.layer if stufe.layer is not None else TextLayer()
         result = extract_text(source, mime_type, file_name, config, layer=layer)
-        return result.text, result.page_count, result.method
+        return result.text, result.page_count, result.method, result.notes
 
 
 def text_layer_limits() -> IsolationLimits:

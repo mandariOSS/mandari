@@ -27,6 +27,7 @@ from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import DOCUMENTS, MB, is_embeddable, validate_upload
 from apps.work.rahmen import neues_design
 from apps.work.sanitize import safe_editor_html
+from hub.ris import selectors as ris
 
 from .. import sitzung
 from ..models import FactionAgendaItem, FactionDecision, FactionMeeting
@@ -209,11 +210,20 @@ def top_kontext(
 
 def unterlage_kontext(unterlage: sitzung.Unterlage) -> dict[str, Any]:
     """Inhalt eines Reiters: Text der RIS-Datei, Dokumentinhalt, Vorschau der Anlage oder Links."""
-    kontext: dict[str, Any] = {"unterlage": unterlage, "text": "", "html": "", "vorschau_url": ""}
+    kontext: dict[str, Any] = {
+        "unterlage": unterlage,
+        "text": "",
+        "text_gekuerzt": False,
+        "html": "",
+        "vorschau_url": "",
+    }
     objekt = unterlage.objekt
     if unterlage.art == "ris_datei":
-        # Der Text ist beim Laden der Reiter zurückgestellt und kommt erst hier (eine Abfrage für den gezeigten Reiter)
-        kontext["text"] = (objekt.text_content or "").strip()
+        # Der Text ist beim Laden der Reiter zurückgestellt und kommt erst hier (eine Abfrage für den gezeigten Reiter),
+        # nur sein Anfang wie in den Dokumentzeilen: Der ganze Text kann Millionen Zeichen lang sein
+        (mit_anfang,) = ris.with_text_start([objekt])
+        kontext["text"] = str(getattr(mit_anfang, "text_anfang", "")).strip()
+        kontext["text_gekuerzt"] = bool(getattr(mit_anfang, "text_gekuerzt", False))
         kontext["vorschau_url"] = reverse("insight_core:insight:file_proxy", args=[objekt.pk])
         # Ohne Text: PDFs (und Dateien ohne Angabe) in der Vorschau, andere Formate als Dokumentzeile zum Herunterladen
         art = (objekt.mime_type or "").lower()

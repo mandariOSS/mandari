@@ -1,5 +1,5 @@
 {# Inhalt eines Reiters unter „Unterlagen“: Text der RIS-Datei, eigenes Dokument, Vorschau der Anlage, Links (Issue #874) #}
-{# Kontext: unterlage (sitzung.Unterlage), text, html, vorschau_url, ist_pdf, ist_bild, item, meeting, org_slug #}
+{# Kontext: unterlage (sitzung.Unterlage), text, text_gekuerzt, html, vorschau_url, ist_pdf, ist_bild, item, meeting, org_slug #}
 {# Dateien ohne Vorschau als Dokumentzeile von Insight (c-insight.document-row), Textlinks wie in Insight (c-suche.textlink) #}
 {% with u=unterlage o=unterlage.objekt %}
 <div class="fs-dok{% if u.art == 'ris_datei' and not text and ist_pdf or u.art == 'anlage' and ist_pdf or u.art == 'protokoll' %} mit-rahmen{% endif %}" id="fs-dok"
@@ -15,7 +15,8 @@
             <c-suche.textlink href="{{ vorschau_url }}" target="_blank" rel="noopener noreferrer">Original (PDF) öffnen</c-suche.textlink>
             <c-suche.textlink href="{% url 'work:ris_paper_detail' org_slug=org_slug paper_id=u.vorlage.pk %}">Vorgang im RIS</c-suche.textlink>
         </p>
-        <div class="fs-dok-text">{{ text }}</div>
+        <div class="fs-dok-text">{{ text }}{% if text_gekuerzt %} …{% endif %}</div>
+        {% if text_gekuerzt %}<p class="fs-meta">Hier gekürzt, den vollständigen Text enthält das Original (PDF).</p>{% endif %}
         {% elif ist_pdf %}
         <iframe class="fs-dok-rahmen" src="{{ vorschau_url }}" title="{{ u.titel }}" loading="lazy"></iframe>
         {% else %}

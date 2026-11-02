@@ -156,9 +156,14 @@ class PaperDetailView(DetailView):
         paper = self.object
 
         # Alle Dateien – ohne zurückgenommene Anlagen aus Session und ohne Dokumente, die die Kommune
-        # entfernt hat oder die dort nicht mehr abrufbar sind (Löschabgleich, #787)
-        files = [f for f in paper.files.all() if not f.withdrawn_by_publisher and not file_reconcile.is_blocked(f)]
-        context["files"] = files
+        # entfernt hat oder die dort nicht mehr abrufbar sind (Löschabgleich, #787). Ohne Volltext geladen: Die
+        # Dokumentzeile zeigt nur seinen Anfang, je Datei und Seite begrenzt (``with_text_start``)
+        files = [
+            f
+            for f in paper.files.defer("text_content", "raw_json")
+            if not f.withdrawn_by_publisher and not file_reconcile.is_blocked(f)
+        ]
+        context["files"] = ris_selectors.with_text_start(files)
         # Antragstellende Fraktionen (Issue #1138)
         context["urheber"] = urheber_je_vorgang([paper.pk]).get(paper.pk, [])
 

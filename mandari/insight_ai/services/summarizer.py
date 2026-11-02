@@ -22,6 +22,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
 
 from django.conf import settings
+from django.db.models.functions import Substr
 from django.utils import timezone
 
 from apps.common.db_connections import release_idle_thread_connections
@@ -46,6 +47,8 @@ FILE_DOWNLOADS_KEY: Final = "file_downloads"
 #: Von der Obergrenze des Dokument-Caches verdrängt (#961, gleich ``file_cache_limit.EVICTED``): niemand holt die
 #: Anlage von selbst, ihr Text kommt erst nach einem ausdrücklichen Abruf (Vorschau, ``cache_files --verdraengte``)
 EVICTED: Final = "evicted"
+#: Text aller Anlagen zusammen höchstens so viele Zeichen (rund 60.000 Token); jede Anlage bekommt denselben Anteil
+TEXT_BUDGET_CHARS: Final = 200_000
 
 
 class SummaryError(Exception):
@@ -232,7 +235,8 @@ class SummaryService:
 
     def _collect_text_content(self, paper: "OParlPaper") -> str:
         """
-        Gespeicherten Text aller aktuellen Anlagen zusammenführen (ohne Abruf, ohne Erkennung).
+        Gespeicherten Text aller aktuellen Anlagen zusammenführen (ohne Abruf, ohne Erkennung): je Anlage der Anfang,
+        zusammen höchstens ``TEXT_BUDGET_CHARS`` Zeichen, gekürzte Anlagen mit Vermerk.
 
         Args:
             paper: OParlPaper instance
@@ -240,11 +244,20 @@ class SummaryService:
         Returns:
             Combined text content from all files
         """
+        # Nur der Anfang je Anlage, zusammen höchstens TEXT_BUDGET_CHARS Zeichen; gekürzt wird in der Datenbank, die
+        # Volltexte (je Datei bis zu Millionen Zeichen) kommen nicht in den Speicher
+        mit_text = self._current_files(paper).filter(text_content__isnull=False).exclude(text_content="")
+        anzahl = mit_text.count()
+        if not anzahl:
+            return ""
+        je_datei = max(1, TEXT_BUDGET_CHARS // anzahl)
         texts = []
-        for file in self._current_files(paper):
-            if file.text_content and file.text_content.strip():
+        for file in mit_text.only("id", "name", "file_name").annotate(anfang=Substr("text_content", 1, je_datei + 1)):
+            text = (file.anfang or "")[:je_datei].strip()
+            if text:
                 file_name = file.name or file.file_name or "Dokument"
-                texts.append(f"### {file_name}\n{file.text_content.strip()}")
+                gekuerzt = "\n[… gekürzt]" if len(file.anfang) > je_datei else ""
+                texts.append(f"### {file_name}\n{text}{gekuerzt}")
         return "\n\n---\n\n".join(texts)
 
     def _text_pending(self, paper: "OParlPaper") -> bool:

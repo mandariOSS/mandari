@@ -118,8 +118,8 @@ OBJECT_TYPES: Final[dict[str, Spec]] = {
     "consultation": Spec(
         "consultation", OParlConsultation, BestandMapping.consultation, context=RefContext.for_consultations
     ),
-    # Der erkannte Text nur am Objekt-Endpunkt, nicht in Listen und Einbettungen
-    "file": Spec("file", OParlFile, BestandMapping.file_with_text),
+    # Der erkannte Text nur am Objekt-Endpunkt, nicht in Listen und Einbettungen, und höchstens bis zur Obergrenze
+    "file": Spec("file", OParlFile, BestandMapping.file_with_text, bestand.prepare_files),
     "location": _LOCATION,
     "legislativeterm": Spec("legislativeterm", OParlLegislativeTerm, BestandMapping.legislative_term),
 }

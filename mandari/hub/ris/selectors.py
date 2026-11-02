@@ -26,10 +26,12 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Final, cast
 
 from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
+from django.db.models.functions import Length, Substr
 from django.utils import timezone
+from mandari_dokumente import MAX_TEXT_CHARS
 
 from hub.ris import vorlagennummer
 from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
@@ -447,6 +449,43 @@ def files_of_paper(paper: OParlPaper) -> QuerySet[OParlFile]:
     return OParlFile.objects.filter(paper=paper)
 
 
+def files_without_text() -> QuerySet[OParlFile]:
+    """Dateien ohne Volltext und Rohdaten, etwa zum Vorladen für Seiten, die nur Name, Art und Größe zeigen."""
+    return OParlFile.objects.defer("text_content", "raw_json")
+
+
+#: Dokumentzeilen (Vorgang, Sitzung): Anfang des erkannten Texts, höchstens so viele Zeichen je Datei …
+TEXTANFANG_ZEICHEN: Final = 100_000
+#: … und alle Dateien einer Seite zusammen höchstens so viele (bei vielen Dateien bekommt jede denselben Anteil)
+TEXTANFANG_JE_SEITE: Final = 1_000_000
+
+
+def with_text_start(files: Iterable[OParlFile]) -> list[OParlFile]:
+    """
+    Anfang des erkannten Texts für Dokumentzeilen, ohne den Volltext zu laden: setzt an jeder Datei ``text_anfang``
+    (höchstens ``TEXTANFANG_ZEICHEN`` Zeichen, alle zusammen höchstens ``TEXTANFANG_JE_SEITE``) und ``text_gekuerzt``
+    (der Text geht weiter). Eine Abfrage für alle Dateien; gekürzt wird in der Datenbank (``Substr``).
+
+    Die Dateien sollen ohne ``text_content`` geladen sein (``defer``): Der Volltext kann Millionen Zeichen lang sein
+    und gehört nicht in den Speicher einer Seite.
+    """
+    liste = list(files)
+    if not liste:
+        return liste
+    je_datei = max(1, min(TEXTANFANG_ZEICHEN, TEXTANFANG_JE_SEITE // len(liste)))
+    # Ein Zeichen mehr: zeigt, ob der Text weitergeht
+    anfaenge = dict(
+        OParlFile.objects.filter(pk__in=[datei.pk for datei in liste])
+        .annotate(anfang=Substr("text_content", 1, je_datei + 1))
+        .values_list("pk", "anfang")
+    )
+    for datei in liste:
+        anfang = anfaenge.get(datei.pk) or ""
+        datei.text_anfang = anfang[:je_datei]  # type: ignore[attr-defined]
+        datei.text_gekuerzt = len(anfang) > je_datei  # type: ignore[attr-defined]
+    return liste
+
+
 def files_of_papers(paper_ids: Iterable[object]) -> QuerySet[OParlFile]:
     """Dateien mehrerer Vorlagen in einer Abfrage (Seite einer Fraktionssitzung, Issue #1071)."""
     return OParlFile.objects.filter(paper_id__in=list(paper_ids))
@@ -520,13 +559,14 @@ def files_of_meeting(meeting: OParlMeeting, *, ohne: Iterable[object] = ()) -> l
     """
     Dateien einer Sitzung (Einladung, Anlagen, Niederschrift) nach Name, ohne gelöschte und von mandari Session
     zurückgenommene; ``ohne`` lässt Dateien weg, die die Seite schon an anderer Stelle zeigt (etwa die Niederschrift).
+    Ohne Volltext geladen; den Anfang für Dokumentzeilen liefert ``with_text_start``.
     """
     ausgelassen = [pk for pk in (_uuid(value) for value in ohne) if pk is not None]
     return list(
         OParlFile.objects.filter(meeting=meeting, deleted=False)
         .exclude(withdrawn_q())
         .exclude(pk__in=ausgelassen)
-        .defer("raw_json")
+        .defer("text_content", "raw_json")
         .order_by("name", "file_name")
     )
 
@@ -1031,10 +1071,26 @@ def public_files_by_ids(bodies: Bodies, file_ids: Iterable[object]) -> dict[uuid
     return {datei.pk: datei for datei in found}
 
 
-def public_file_with_text(bodies: Bodies, file_id: object) -> OParlFile | None:
-    """Eine öffentliche Datei der Kommunen samt erkanntem Text; sonst ``None``."""
+def public_file_with_text(bodies: Bodies, file_id: object, *, max_chars: int = MAX_TEXT_CHARS) -> OParlFile | None:
+    """
+    Eine öffentliche Datei der Kommunen samt erkanntem Text; sonst ``None``. Den Text liest
+    ``hub.ris.canonical.file_text``: höchstens ``max_chars`` (und nie mehr als ``MAX_TEXT_CHARS``) Zeichen vom Anfang,
+    gekürzt in der Datenbank; ``text_content`` selbst ist nicht geladen. ``text_laenge`` nennt die Länge des
+    gespeicherten Texts.
+    """
     pk = _uuid(file_id)
-    return _public_files(bodies).filter(pk=pk).defer("raw_json").select_related("paper").first() if pk else None
+    if not pk:
+        return None
+    dateien = (
+        _public_files(bodies)
+        .filter(pk=pk)
+        .defer("text_content", "raw_json")
+        .annotate(
+            text_begrenzt=Substr("text_content", 1, max(1, min(max_chars, MAX_TEXT_CHARS))),
+            text_laenge=Length("text_content"),
+        )
+    )
+    return cast(OParlFile | None, dateien.select_related("paper").first())
 
 
 def public_organizations(bodies: Bodies, text: str = "", *, on: date | None = None) -> QuerySet[OParlOrganization]:

@@ -218,6 +218,8 @@ class Reader:
             .filter(Q(paper__isnull=False) | Q(meeting__isnull=False) | Q(agenda_item__isnull=False))
             .exclude(public_protocol__isnull=False)
             .select_related("paper", "meeting", "agenda_item__meeting")
+            # Der Zustand braucht den erkannten Text nicht
+            .defer("text_content")
         )
         return {f.pk: file_state(f, is_published=self.is_published) for f in files}
 

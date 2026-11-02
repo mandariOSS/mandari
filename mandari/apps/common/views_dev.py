@@ -97,7 +97,7 @@ def _demo_treffer() -> dict[str, object]:
 
 
 def _demo_file(name: str) -> SimpleNamespace:
-    """Anlage für die Vorschau der Dokumentzeile (Attribute wie OParlFile)."""
+    """Anlage für die Vorschau der Dokumentzeile (Attribute wie OParlFile nach ``with_text_start``)."""
     return SimpleNamespace(
         id=uuid.uuid5(uuid.NAMESPACE_URL, name),
         name=name,
@@ -105,7 +105,8 @@ def _demo_file(name: str) -> SimpleNamespace:
         mime_type="application/pdf",
         size=245_760,
         size_human="240 KB",
-        text_content="Der Rat möge beschließen:\n\n1. Die Verwaltung wird beauftragt, …",
+        text_anfang="Der Rat möge beschließen:\n\n1. Die Verwaltung wird beauftragt, …",
+        text_gekuerzt=False,
         download_url="https://ris.example/datei.pdf",
         access_url=None,
     )

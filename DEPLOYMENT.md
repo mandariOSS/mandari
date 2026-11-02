@@ -1171,6 +1171,18 @@ gleich setzen**, sonst arbeiten beide oder keiner:
   3 GB und eine eigene Seitengrenze (`WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, Standard 2048), Anwendung und `worker`
   (1 GB) haben `512`.
 
+Je Datei speichern beide Wege höchstens 5.000.000 Zeichen Text (feste Grenze `MAX_TEXT_CHARS` in
+`shared/mandari_dokumente`); was darüber hinausgeht, wird verworfen und in `text_extraction_error` vermerkt.
+Dokumentzeilen der Vorgangs- und Sitzungsseiten zeigen davon nur den Anfang.
+
+Ältere, längere Texte (vor der Grenze gespeichert) findet `python manage.py texte_begrenzen`: Ohne Schalter zählt er
+nur und nennt jede betroffene Datei mit Kennung und Länge, getrennt nach `oparl_files` und `session_files`.
+`--ausfuehren` kürzt sie in Stapeln (`--stapel`, Standard 10 Dateien je Transaktion) auf die Grenze; die Bedingung
+„länger als die Grenze“ steht im `UPDATE` selbst. RIS-Dateien bekommen denselben Vermerk wie bei der Texterkennung
+und werden danach vom Befehl selbst neu in den Suchindex geschrieben (Signal der Texterkennung, eine Datei nach der
+anderen); Anlagen in Session stehen nicht im Suchindex. Erst zählen, dann nach Freigabe ausführen; ein zweiter Lauf
+findet nichts mehr.
+
 Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 
 | Variable | Standard | Wirkung |

@@ -389,7 +389,8 @@ Die Antwort ist NDJSON (`application/x-ndjson`): je Zeile ein JSON-Objekt.
 
 Die Original-URL bleibt als `mandari:originalAccessUrl` erhalten. Der extrahierte
 Volltext (`text`) wird nur am Objekt-Endpunkt `/oparl/v1/file/<uuid>` ausgeliefert,
-nicht in eingebetteten Datei-Objekten (Payload-Größe).
+nicht in eingebetteten Datei-Objekten (Payload-Größe), und umfasst höchstens 5.000.000 Zeichen
+(Obergrenze der Texterkennung je Datei).
 
 ## Vendor-Attribute (Namespace `mandari:`)
 
