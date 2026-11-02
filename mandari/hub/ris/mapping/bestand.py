@@ -57,7 +57,11 @@ from hub.ris.canonical import (
     with_limited_text,
 )
 from hub.ris.mapping.session import ORGANIZATION_TYPES as SESSION_ORGANIZATION_TYPES
-from hub.ris.selectors import consultation_agenda_item_in_source, consultation_references_in_source
+from hub.ris.selectors import (
+    consultation_agenda_item_in_source,
+    consultation_references_in_source,
+    with_reference_checks,
+)
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -200,7 +204,8 @@ def prepare_meetings(queryset: QuerySet[OParlMeeting]) -> QuerySet[OParlMeeting]
 def prepare_papers(queryset: QuerySet[OParlPaper]) -> QuerySet[OParlPaper]:
     return queryset.prefetch_related(
         Prefetch("files", queryset=_embedded_files()),
-        Prefetch("consultations", queryset=OParlConsultation.objects.filter(deleted=False)),
+        # Quellenprüfung der Bezüge gleich in der Abfrage der Beratungen (RefContext.for_consultations)
+        Prefetch("consultations", queryset=with_reference_checks(OParlConsultation.objects.filter(deleted=False))),
     )
 
 
@@ -317,9 +322,19 @@ class RefContext:
         """
         ctx = cls()
         consultations = list(consultations)
-        ctx.consultations_with_meeting, ctx.consultations_with_agenda_item = consultation_references_in_source(
-            c.pk for c in consultations if c.meeting_external_id or c.agenda_item_external_id
-        )
+        mit_bezug = [c for c in consultations if c.meeting_external_id or c.agenda_item_external_id]
+        if all(hasattr(c, "meeting_in_source") and hasattr(c, "agenda_item_in_source") for c in mit_bezug):
+            # Schon mit with_reference_checks geladen (prepare_papers): keine weitere Abfrage
+            ctx.consultations_with_meeting = {c.pk for c in mit_bezug if c.meeting_in_source}  # type: ignore[attr-defined]
+            ctx.consultations_with_agenda_item = {
+                c.pk
+                for c in mit_bezug
+                if c.agenda_item_in_source  # type: ignore[attr-defined]
+            }
+        else:
+            ctx.consultations_with_meeting, ctx.consultations_with_agenda_item = consultation_references_in_source(
+                c.pk for c in mit_bezug
+            )
         meeting_exts = {c.meeting_external_id for c in consultations if c.meeting_external_id}
         agenda_exts = {c.agenda_item_external_id for c in consultations if c.agenda_item_external_id}
         if meeting_exts:
