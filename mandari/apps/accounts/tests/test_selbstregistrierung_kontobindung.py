@@ -68,7 +68,7 @@ def _registrieren(org: Any, passwort: str) -> str:
     assert antwort.status_code == 200
     [nachricht] = [m for m in mail.outbox if ADRESSE in m.to]
     mail.outbox.clear()
-    treffer = BESTAETIGEN_RE.search(nachricht.body)
+    treffer = BESTAETIGEN_RE.search(str(nachricht.body))
     assert treffer, nachricht.body
     return treffer.group(0)
 
