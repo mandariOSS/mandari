@@ -40,7 +40,7 @@ from src.redaction import MaskingConsole
 from src.scrapers import get_adapter
 from src.scrapers.base import CrawlWindow, ScraperConfig, ScrapeStats
 from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError, RobotsUnreachableError
-from src.storage.database import PREVIOUS_ID_FIELD, start_foreign_rejections
+from src.storage.database import PREVIOUS_ID_FIELD, ForeignObjectError, start_foreign_rejections
 from src.storage.events import start_correlation
 
 if TYPE_CHECKING:
@@ -164,9 +164,14 @@ class ScraperSyncRunner:
                         processed = self.processor.process(item, body_external_id)
                         if processed is None:
                             continue
-                        stored = await self.orchestrator._store_entity(
-                            processed, body_id, entity_type, self.source.name
-                        )
+                        try:
+                            stored = await self.orchestrator._store_entity(
+                                processed, body_id, entity_type, self.source.name
+                            )
+                        except ForeignObjectError:
+                            # Kennung einer anderen Quelle: nicht geschrieben, gezählt (Sync-Log ``foreign``), der
+                            # Crawl läuft mit den übrigen Objekten weiter
+                            continue
                         if stored:
                             stats[entity_type] = stats.get(entity_type, 0) + 1
                 crawl_completed = True
@@ -321,7 +326,7 @@ class ScraperSyncRunner:
         stored = await self.storage.get_agenda_items_of_meeting(meeting["id"])
         renames = plan(meeting["id"], stored)
         if renames:
-            renamed = await self.storage.rename_agenda_items(meeting["id"], renames)
+            renamed = await self.storage.rename_agenda_items(meeting["id"], renames, source_id=self.source.id)
             if renamed:
                 console.print(f"[dim]  Sitzung {meeting['id']}: {renamed} TOP-Kennung(en) umgestellt (#863)[/dim]")
         # Neue Kennung -> abgelöste: aus dem Bestand (frühere Umstellung) und aus dieser

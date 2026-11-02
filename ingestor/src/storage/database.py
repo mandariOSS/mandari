@@ -194,14 +194,16 @@ def _owned_by_source_of(model: type, body_id: UUID | None) -> Any:
 PREVIOUS_ID_FIELD: Final = "mandari:previousId"
 
 #: Verweis einer Beratung auf einen umgeschriebenen Tagesordnungspunkt nachziehen (Spalte und ``raw_json``). Über
-#: ``raw_json`` nur unter den Beratungen der Sitzung suchen: Beide Spalten haben einen Index, ``raw_json`` nicht.
+#: ``raw_json`` nur unter den Beratungen der Sitzung suchen: Beide Spalten haben einen Index, ``raw_json`` nicht. Nur
+#: Beratungen derselben Quelle (``:source``) und solche ohne Kommune (Altbestand).
 _RENAME_CONSULTATION_REFERENCE = text(
     "UPDATE oparl_consultations SET"
     " agenda_item_external_id = CASE WHEN agenda_item_external_id = :old THEN :new ELSE agenda_item_external_id END,"
     " raw_json = CASE WHEN raw_json->>'agendaItem' = :old"
     " THEN jsonb_set(raw_json, '{agendaItem}', to_jsonb(CAST(:new AS text))) ELSE raw_json END,"
     " updated_at = now()"
-    " WHERE agenda_item_external_id = :old OR (meeting_external_id = :meeting AND raw_json->>'agendaItem' = :old)"
+    " WHERE (agenda_item_external_id = :old OR (meeting_external_id = :meeting AND raw_json->>'agendaItem' = :old))"
+    " AND (body_id IS NULL OR body_id IN (SELECT id FROM oparl_bodies WHERE source_id = :source))"
 )
 
 
@@ -2207,7 +2209,7 @@ class DatabaseStorage:
         return [(external_id, agenda if isinstance(agenda, list) else []) for external_id, agenda in rows]
 
     async def rename_agenda_items(
-        self, meeting_external_id: str, renames: Mapping[str, str], *, keep_previous: bool = True
+        self, meeting_external_id: str, renames: Mapping[str, str], *, source_id: UUID, keep_previous: bool = True
     ) -> int:
         """
         Schreibt die Kennung (``external_id``) von Tagesordnungspunkten einer Sitzung in place um; ``id`` bleibt.
@@ -2222,6 +2224,9 @@ class DatabaseStorage:
         ``False`` entfernt sie (Rückweg). Nur Punkte dieser Sitzung; ein Ziel, das schon vergeben ist, und Ketten
         (Ziel einer Umschreibung ist Quelle einer anderen) bleiben unberührt. Eine Transaktion. Rückgabe: Zahl der
         umgeschriebenen Punkte.
+
+        ``source_id``: Quelle, deren Abruf umschreibt. Gehört die Sitzung zu einer anderen Quelle, geschieht nichts;
+        nachgezogen werden nur Beratungen dieser Quelle (und solche ohne Kommune).
         """
         targets = set(renames.values())
         pairs = [(old, new) for old, new in renames.items() if old != new and old not in targets]
@@ -2230,9 +2235,9 @@ class DatabaseStorage:
         async with self.get_session() as session:
             meeting = (
                 await session.execute(
-                    select(OParlMeeting.id, OParlMeeting.raw_json).where(
-                        OParlMeeting.external_id == meeting_external_id
-                    )
+                    select(OParlMeeting.id, OParlMeeting.raw_json)
+                    .join(OParlBody, OParlBody.id == OParlMeeting.body_id)
+                    .where(OParlMeeting.external_id == meeting_external_id, OParlBody.source_id == source_id)
                 )
             ).first()
             if meeting is None:
@@ -2270,7 +2275,8 @@ class DatabaseStorage:
                 if row is None:
                     continue
                 await session.execute(
-                    _RENAME_CONSULTATION_REFERENCE, {"old": old, "new": new, "meeting": meeting_external_id}
+                    _RENAME_CONSULTATION_REFERENCE,
+                    {"old": old, "new": new, "meeting": meeting_external_id, "source": source_id},
                 )
                 taken.add(new)
                 done[old] = new
@@ -2574,6 +2580,7 @@ class DatabaseStorage:
 
             row = await self._upserted(session, stmt, "consultation", consultation.external_id)
             consultation_id = row[0]
+            await self._note_foreign_consultation_references(session, consultation, body_id)
             if emit:
                 agenda_item_id = row[1] if agenda_ref else None
                 drafts = ris_events.consultation_events(
@@ -2588,6 +2595,39 @@ class DatabaseStorage:
                 await self._emit(session, body_id, drafts, consultation.oparl_modified)
             await session.commit()
             return consultation_id
+
+    @staticmethod
+    async def _note_foreign_consultation_references(
+        session: AsyncSession, consultation: ProcessedConsultation, body_id: UUID
+    ) -> None:
+        """
+        Beratung, die eine Sitzung oder einen Tagesordnungspunkt einer anderen Quelle nennt: als abgewiesenen Verweis
+        zählen (``consultation (Verweis)``). Die Beratung nennt beide nur als Kennung (Text); gespeichert bleibt sie,
+        die Anwendung wertet solche Bezüge nur innerhalb einer Quelle aus (``hub.ris.selectors``). Eine Abfrage.
+        """
+        checks = []
+        if consultation.meeting_external_id:
+            checks.append(
+                select(OParlMeeting.id)
+                .where(
+                    OParlMeeting.external_id == consultation.meeting_external_id,
+                    ~_owned_by_source_of(OParlMeeting, body_id),
+                )
+                .exists()
+            )
+        if consultation.agenda_item_external_id:
+            checks.append(
+                select(OParlAgendaItem.id)
+                .where(
+                    OParlAgendaItem.external_id == consultation.agenda_item_external_id,
+                    ~_owned_by_source_of(OParlAgendaItem, body_id),
+                )
+                .exists()
+            )
+        if not checks:
+            return
+        if (await session.execute(select(or_(*checks)))).scalar():
+            _note_foreign(f"consultation{FOREIGN_REFERENCE}", consultation.external_id)
 
     # ========== Membership Operations ==========
 

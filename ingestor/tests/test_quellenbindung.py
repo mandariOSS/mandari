@@ -27,6 +27,7 @@ from sqlalchemy import select, text, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 from src.config import settings
+from src.scrapers.runner import ScraperSyncRunner
 from src.storage import database
 from src.storage.database import DatabaseStorage
 from src.storage.models import (
@@ -46,6 +47,11 @@ from src.storage.models import (
 )
 from src.sync.orchestrator import SyncOrchestrator, SyncResult
 from src.sync.processor import OParlProcessor
+from tests.test_sessionnet_mehrere_koerperschaften import (  # noqa: F401 - fixture_fetcher: Fixture
+    FakeOrchestrator,
+    FakeSource,
+    fixture_fetcher,
+)
 
 DATABASE_URL = os.environ.get("INGESTOR_TEST_DATABASE_URL", "")
 SCHEMA = f"ingestor_quellenbindung_{uuid.uuid4().hex[:12]}"
@@ -277,7 +283,16 @@ def _stadt_a() -> Ris:
         "paper": [
             objekt(B, "paper", 1, name="Von A überschrieben", modified=SPAETER),
             {"id": f"{B}/paper/2", "type": f"{OPARL}Paper", "deleted": True, "modified": SPAETER},
-            objekt(A, "paper", 1, name="Vorlage A1"),
+            objekt(
+                A,
+                "paper",
+                1,
+                name="Vorlage A1",
+                # Eingebettete Beratung, die Sitzung und Punkt von Stadt B nennt (nur als Kennung)
+                consultation=[
+                    objekt(A, "consultation", 1, meeting=f"{B}/meeting/1", agendaItem=f"{B}/agendaitem/1"),
+                ],
+            ),
         ],
         "agendaitem": [objekt(A, "agendaitem", 1, name="Punkt in Sitzung B", meeting=f"{B}/meeting/1")],
         "file": [objekt(A, "file", 1, name="Anlage A", accessUrl=f"{A}/anlage/1", paper=[f"{B}/paper/3"])],
@@ -389,6 +404,7 @@ async def test_abgleich_einer_quelle_laesst_objekte_anderer_quellen_unveraendert
         assert ergebnis.success
         assert ergebnis.foreign == {
             "agendaitem": 1,
+            "consultation (Verweis)": 1,
             "meeting (Verweis)": 1,
             "organization": 1,
             "paper": 1,
@@ -543,11 +559,18 @@ async def _spalten(storage: DatabaseStorage, model: type, external_id: str) -> d
 
 @pytest.fixture
 async def bestand(speicher: DatabaseStorage) -> Bestand:
+    """
+    Auch Quelle A hat einen Tagesordnungspunkt und eine Mitgliedschaft: Eine Bedingung, die nicht auf die vorhandene
+    Zeile bezogen ist („gibt es irgendeinen Punkt in einer Sitzung von A?“), wäre damit erfüllt und fiele auf.
+    """
     zwei = Bestand(speicher)
     await zwei.stadt_b()
     body_a = await zwei.kommune_anlegen(A)
     for art in ("organization", "person", "meeting", "paper"):
         await zwei.schreiben(art, objekt(A, art, 1, name=f"{art} A"), body_a, KOMMUNE_A)
+    await zwei.schreiben("agendaitem", objekt(A, "agendaitem", 1, meeting=f"{A}/meeting/1"), body_a, KOMMUNE_A)
+    mitgliedschaft = objekt(A, "membership", 1, person=f"{A}/person/1", organization=f"{A}/organization/1")
+    assert await zwei.schreiben("membership", mitgliedschaft, body_a, KOMMUNE_A) is not None
     return zwei
 
 
@@ -676,3 +699,39 @@ async def test_zeile_ohne_kommune_gehoert_keiner_quelle(bestand: Bestand) -> Non
     for kommune in (KOMMUNE_A, KOMMUNE_B):
         assert await abgewiesen(bestand.schreiben("file", _fremd("file"), bestand.kommune[kommune], kommune))
     assert await _spalten(storage, OParlFile, kennung) == vorher
+
+
+async def test_beratung_mit_sitzung_einer_anderen_quelle_zaehlt_als_verweis(bestand: Bestand) -> None:
+    """Die Beratung von A bleibt gespeichert; ihr Bezug auf Sitzung und Punkt von B zählt unter ``foreign``."""
+    body_a = bestand.kommune[KOMMUNE_A]
+    gezaehlt = database.start_foreign_rejections()
+    fremd = objekt(A, "consultation", 5, meeting=f"{B}/meeting/1", agendaItem=f"{B}/agendaitem/1")
+    eigen = objekt(A, "consultation", 6, meeting=f"{A}/meeting/1", agendaItem=f"{A}/agendaitem/1")
+    unbekannt = objekt(A, "consultation", 7, meeting=f"{B}/meeting/99")
+
+    for daten in (fremd, eigen, unbekannt):
+        assert await bestand.schreiben("consultation", daten, body_a, KOMMUNE_A) is not None
+
+    assert gezaehlt == {"consultation (Verweis)": 1}
+
+
+@pytest.mark.usefixtures("fixture_fetcher")
+async def test_scraper_ueberspringt_objekte_anderer_quellen_einzeln() -> None:
+    """Weist der Speicher ein Objekt ab, läuft der Crawl mit den übrigen weiter; das Sync-Log zählt es."""
+    orchestrator = FakeOrchestrator()
+    fremd = "https://ratsinfo.musterheide.example/bi/vo0050.asp?__kvonr=5001"
+    speichern = orchestrator._store_entity
+
+    async def abweisen(processed: Any, body_id: Any, entity_type: str, source_name: str) -> bool:
+        if processed.external_id == fremd:
+            database._note_foreign(entity_type, processed.external_id)
+            raise database.ForeignObjectError(entity_type, processed.external_id)
+        return await speichern(processed, body_id, entity_type, source_name)
+
+    orchestrator._store_entity = abweisen  # type: ignore[method-assign]
+    result = await ScraperSyncRunner(orchestrator, FakeSource()).run(full=True)  # type: ignore[arg-type]
+
+    assert result.success, result.errors
+    assert result.foreign == {"paper": 1}
+    gespeichert = {external_id for _, external_id, _ in orchestrator.stored}
+    assert fremd not in gespeichert and len(gespeichert) > 1
