@@ -87,9 +87,13 @@ Die Images installieren kein Paket ohne Hash-Prüfung. Das gilt auch für das Bu
 lokalen Pakete `shared/` und `ingestor/` (`[build-system] requires`, derzeit `hatchling`): Es steht
 in der Abhängigkeitsgruppe `build-backend` beider `pyproject.toml`, wird mit Hashes aus der
 `uv.lock` installiert, und die lokalen Pakete entstehen danach ohne Netz. Gesperrte Abhängigkeiten
-kommen nur als fertige Wheels ins Image. Wer das Build-Backend wechselt oder eine Abhängigkeit
-aufnimmt, die es nur als Quelltext gibt, passt Gruppe bzw. Dockerfile an;
-`python scripts/check_image_hashes.py` prüft das (auch in der CI und vor jedem Release-Bau).
+kommen nur als fertige Wheels ins Image, und uv baut in den Builder-Stages nichts aus Quelltext
+(`ENV UV_NO_BUILD=1`). Wer das Build-Backend wechselt oder eine Abhängigkeit aufnimmt, die es nur
+als Quelltext gibt, passt Gruppe bzw. Dockerfile an; `python scripts/check_image_hashes.py` prüft
+das (auch in der CI und vor jedem Release-Bau). Das Skript liest jedes Dockerfile im Repository
+außer `docs/examples`; ein neues Image, das pip oder uv aufruft, gehört in seine Liste `IMAGES`.
+Heredocs (`RUN <<EOF`) und Installer außerhalb von `RUN` lassen sich dort nicht prüfen und sind
+deshalb in diesen Dockerfiles nicht erlaubt.
 
 ## Tests und Prüfungen
 

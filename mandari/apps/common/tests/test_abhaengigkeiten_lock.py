@@ -259,21 +259,39 @@ def test_images_installieren_nur_hash_gepruefte_pakete(hashpruefung: ModuleType)
     assert not probleme, "\n".join(probleme)
 
 
-EXPORT_DER_GRUPPE = (
-    "RUN uv export --quiet --locked --only-group build-backend --no-emit-project \\\n"
+# Kopf einer Builder-Stage wie in den Dockerfiles: uv baut nichts (UV_NO_BUILD), exportiert offline, und das
+# Build-Backend kommt mit Hashes aus der Gruppe build-backend.
+BUILDER = (
+    "FROM python:3.14-slim AS builder\n"
+    "ENV UV_NO_BUILD=1\n"
+    "RUN uv export --quiet --locked --offline --only-group build-backend --no-emit-project \\\n"
     "        --format requirements.txt -o /tmp/build-backend.lock \\\n"
     "    && pip install --no-cache-dir --only-binary :all: --require-hashes -r /tmp/build-backend.lock\n"
 )
 
+OHNE_HASH = "ohne `--require-hashes`"
+QUELLTEXT = "Quelltextpakete"
+NO_BINARY = "`--no-binary`"
+NUR_OHNE_NETZ = "nur mit `RUN --network=none`"
+HEREDOC = "Heredoc"
+AUSSERHALB = "außerhalb einer RUN-Anweisung"
+UV_OHNE_NO_BUILD = "ohne `UV_NO_BUILD=1`"
+UV_OHNE_OFFLINE = "ohne `--offline`"
+
 
 def test_hashpruefung_laesst_gesperrten_und_netzlosen_bau_durch(hashpruefung: ModuleType) -> None:
     dockerfile = (
-        "FROM python:3.14-slim AS builder\n" + EXPORT_DER_GRUPPE + "# Kommentar zwischen den Anweisungen\n"
+        BUILDER + "# Kommentar zwischen den Anweisungen\n"
         "RUN --network=none pip install --no-cache-dir --prefix=/install --no-deps --no-build-isolation \\\n"
         "    # Kommentar mitten in der Fortsetzung\n"
         "        --no-index /tmp/shared/\n"
         "RUN uv pip install --system --no-build --require-hashes -r /tmp/requirements.lock\n"
+        "RUN uv pip install --system --require-hashes -r /tmp/requirements.lock  # --no-build kommt aus ENV\n"
         "RUN --network=none uv pip install --system --no-deps --offline /tmp/wheels/*.whl\n"
+        # Ein # mitten im Wort beginnt keinen Kommentar
+        "RUN pip install --require-hashes --only-binary=:all: -r /tmp/a#b.lock\n"
+        "RUN python -m pip check && rm -rf /root/.cache/pip /root/.cache/uv\n"
+        'CMD ["python", "-m", "src.main"]\n'
     )
     assert hashpruefung.pruefe_dockerfile(dockerfile) == []
 
@@ -282,28 +300,104 @@ def test_hashpruefung_laesst_gesperrten_und_netzlosen_bau_durch(hashpruefung: Mo
     ("anweisung", "meldung"),
     [
         # Stand vor der Änderung: lokale Pakete mit Build-Isolation
-        ("RUN pip install --no-cache-dir --prefix=/install --no-deps /tmp/shared/", "ohne `--require-hashes`"),
+        ("RUN pip install --no-cache-dir --prefix=/install --no-deps /tmp/shared/", OHNE_HASH),
         (
             "RUN uv pip install --system --no-deps /build/shared/ \\\n"
             "    && uv pip install --system --no-deps --no-sources /build/ingestor/",
-            "ohne `--require-hashes`",
+            OHNE_HASH,
         ),
         # Ohne Hash nur ohne Netz und ohne Index, nicht eines von beiden
-        ("RUN pip install --no-index --no-build-isolation /tmp/shared/", "ohne `--require-hashes`"),
-        ("RUN --network=none pip install --no-build-isolation /tmp/shared/", "ohne `--require-hashes`"),
-        ('RUN ["pip", "install", "/tmp/shared/"]', "ohne `--require-hashes`"),
-        ("RUN uv sync --locked --no-dev", "ohne `--require-hashes`"),
+        ("RUN pip install --no-index --no-build-isolation /tmp/shared/", OHNE_HASH),
+        ("RUN --network=none pip install --no-build-isolation /tmp/shared/", OHNE_HASH),
+        ('RUN ["pip", "install", "/tmp/shared/"]', OHNE_HASH),
+        ("RUN uv sync --locked --no-dev", OHNE_HASH),
+        ("RUN uv pip sync --system /tmp/requirements.lock", OHNE_HASH),
+        ("RUN pip3 install /tmp/shared/", OHNE_HASH),
+        ("RUN pip3.14 install /tmp/shared/", OHNE_HASH),
+        ("RUN python3 -m pip install /tmp/shared/", OHNE_HASH),
+        # Hinter einer Shell, einer Befehlsersetzung oder einem anderen Befehl
+        ('RUN sh -c "pip install /tmp/shared/"', OHNE_HASH),
+        ("RUN echo $(pip install /tmp/shared/)", OHNE_HASH),
+        ("RUN echo `pip install /tmp/shared/`", OHNE_HASH),
+        ("RUN find /tmp -name '*.whl' -exec pip install {} +", OHNE_HASH),
+        # Optionen im Shell-Kommentar zählen nicht; ein # mitten im Wort beendet den Befehl nicht
+        ("RUN pip install /tmp/shared/  # --require-hashes --only-binary :all:", OHNE_HASH),
+        ("RUN pip install --require-hashes --only-binary :all: -r /tmp/a#b && pip install /tmp/shared/", OHNE_HASH),
         # Hash-geprüft, aber ein Quelltextpaket würde mit frisch geladenem Build-Backend gebaut
-        ("RUN pip install --prefix=/install --require-hashes -r /tmp/requirements.lock", "Quelltextpakete"),
-        ("RUN uv pip install --system --require-hashes -r /tmp/requirements.lock", "Quelltextpakete"),
-        ("RUN uv pip install --system --no-build-isolation --require-hashes -r /tmp/r.lock", "Quelltextpakete"),
+        ("RUN pip install --prefix=/install --require-hashes -r /tmp/requirements.lock", QUELLTEXT),
+        # pip kürzt Optionen ab: --no-build ist dort --no-build-isolation, kein Verbot von Quelltextpaketen
+        ("RUN pip install --require-hashes --no-build -r /tmp/r.lock", QUELLTEXT),
+        ("RUN pip install --require-hashes --only-binary :all: --only-binary :none: -r /tmp/r.lock", QUELLTEXT),
+        ("RUN UV_NO_BUILD=0 uv pip install --system --require-hashes -r /tmp/r.lock", QUELLTEXT),
+        ("RUN UV_NO_BUILD=0 uv pip install --system --no-build-isolation --require-hashes -r /tmp/r.lock", QUELLTEXT),
+        ("RUN pip install --require-hashes --only-binary :all: --no-binary :all: -r /tmp/r.lock", NO_BINARY),
+        ("RUN pip install --require-hashes --only-binary :all: --no-bin=foo -r /tmp/r.lock", NO_BINARY),
+        ("RUN uv pip install --system --require-hashes --no-binary-package foo -r /tmp/r.lock", NO_BINARY),
+        # Andere Installer laden ohne Hash-Prüfung: nur ohne Netz
+        ("RUN python -m build --wheel /tmp/shared/", NUR_OHNE_NETZ),
+        ("RUN pyproject-build /tmp/shared/", NUR_OHNE_NETZ),
+        ("RUN uvx hatchling build", NUR_OHNE_NETZ),
+        ("RUN pipx install hatch", NUR_OHNE_NETZ),
+        # Nicht zeilenweise prüfbar: sicher abweisen
+        ("RUN <<EOF\npip install /tmp/shared/\nEOF", HEREDOC),
+        ("RUN <<-'EOF' bash\n\tset -e\n\techo ok\n\tEOF", HEREDOC),
+        ("ONBUILD RUN pip install /tmp/shared/", AUSSERHALB),
+        # uv nur mit UV_NO_BUILD=1 (ENV oder vor dem Befehl) oder --no-build
+        ("RUN UV_NO_BUILD=0 uv export --locked --offline -o /tmp/r.lock", UV_OHNE_NO_BUILD),
+        ("ENV UV_NO_BUILD=false\nRUN uv export --locked --offline -o /tmp/r.lock", UV_OHNE_NO_BUILD),
+        ("FROM python:3.14-slim AS zweite\nRUN uv export --locked --offline -o /tmp/r.lock", UV_OHNE_NO_BUILD),
+        # Für Metadaten, die nicht feststehen, baut uv lokale Pakete auch mit UV_NO_BUILD: Auflösen nur offline
+        ("RUN uv export --locked --only-group build-backend -o /tmp/b.lock", UV_OHNE_OFFLINE),
+        ("RUN uv lock --check", UV_OHNE_OFFLINE),
+        ("RUN uv pip compile pyproject.toml -o /tmp/r.lock", UV_OHNE_OFFLINE),
+        ("RUN UV_OFFLINE=0 uv tree", UV_OHNE_OFFLINE),
     ],
 )
 def test_hashpruefung_meldet_installation_ohne_hash(hashpruefung: ModuleType, anweisung: str, meldung: str) -> None:
-    dockerfile = "FROM python:3.14-slim AS builder\n" + EXPORT_DER_GRUPPE + anweisung + "\n"
-    probleme = hashpruefung.pruefe_dockerfile(dockerfile)
-    assert probleme, "nicht erkannt"
-    assert all(meldung in problem for problem in probleme), probleme
+    probleme = hashpruefung.pruefe_dockerfile(BUILDER + anweisung + "\n")
+    assert any(meldung in problem for problem in probleme), probleme
+
+
+@pytest.mark.parametrize(
+    "anweisungen",
+    [
+        "FROM builder AS weiter\nRUN uv export --locked --offline -o /tmp/r.lock",
+        "FROM python:3.14-slim\nRUN uv export --locked --offline --no-build -o /tmp/r.lock",
+        "FROM python:3.14-slim\nRUN UV_NO_BUILD=1 uv export --locked --offline -o /tmp/r.lock",
+        "FROM python:3.14-slim\nENV UV_NO_BUILD 1\nRUN uv export --locked --offline -o /tmp/r.lock",
+        "FROM python:3.14-slim\nENV UV_NO_BUILD=1 UV_OFFLINE=1\nRUN uv export --locked -o /tmp/r.lock",
+        "FROM python:3.14-slim\nENV UV_NO_BUILD=1\nRUN --network=none uv lock --check",
+    ],
+)
+def test_hashpruefung_uv_mit_uv_no_build(hashpruefung: ModuleType, anweisungen: str) -> None:
+    """ENV gilt in der Stage und in Stages, die auf ihr aufbauen; eine neue Basis beginnt ohne."""
+    assert hashpruefung.pruefe_dockerfile(BUILDER + anweisungen + "\n") == []
+
+
+def test_hashpruefung_findet_jedes_dockerfile_mit_installation(hashpruefung: ModuleType, tmp_path: Path) -> None:
+    """Ein Dockerfile mit pip-/uv-Aufruf, das nicht in IMAGES steht, ist ein Fehler (außer unter docs/examples)."""
+    mit_pip = "FROM python:3.14-slim\nRUN pip install --require-hashes --only-binary :all: -r /tmp/r.lock\n"
+    dateien = {
+        "dienst/Dockerfile": mit_pip,
+        "dienst/Dockerfile.dev": "FROM python:3.14-slim\nENV UV_NO_BUILD=1\nRUN uv export -o /tmp/r.lock\n",
+        "worker/gpu.Dockerfile": mit_pip,
+        "backup/Dockerfile": "FROM postgres:16-alpine\nRUN apk add --no-cache openssh-client-default\n",
+        "docs/examples/beispiel.Dockerfile": "FROM python:3.14-slim\nRUN pip install uv\n",
+        "docs/examples/Dockerfile": "FROM python:3.14-slim\nRUN pip install uv\n",
+        "mandari/node_modules/paket/Dockerfile": "FROM python:3.14-slim\nRUN pip install uv\n",
+        ".venv/Dockerfile": "FROM python:3.14-slim\nRUN pip install uv\n",
+    }
+    for name, inhalt in dateien.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(inhalt, encoding="utf-8")
+
+    probleme = hashpruefung.pruefe(images=(), wurzel=tmp_path)
+    assert sorted(problem.split(":", 1)[0] for problem in probleme) == [
+        "dienst/Dockerfile",
+        "dienst/Dockerfile.dev",
+        "worker/gpu.Dockerfile",
+    ], probleme
+    assert all("nicht in IMAGES" in problem for problem in probleme), probleme
 
 
 def test_hashpruefung_verlangt_den_export_der_gruppe(hashpruefung: ModuleType) -> None:

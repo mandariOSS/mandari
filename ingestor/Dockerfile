@@ -12,26 +12,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# uv nur im Builder, nicht im fertigen Image
+# uv nur im Builder, nicht im fertigen Image. UV_NO_BUILD: uv installiert nur fertige Wheels, ein Bau lüde das
+# Build-Backend ohne Hash-Prüfung aus dem Paketindex (scripts/check_image_hashes.py verlangt das).
 COPY --from=uv /uv /bin/uv
+ENV UV_NO_BUILD=1
 
 # Abhängigkeiten reproduzierbar aus ingestor/uv.lock, wie das Django-Image aus mandari/uv.lock.
 # Ohne Lock-Datei zog ein Neubau ungeprüfte neue Versionen (SQLAlchemy 2.1 ohne greenlet: Ingestor
 # startete nicht). Verzeichnisse wie im Repo, damit der Pfad ../shared aus [tool.uv.sources] aufgeht.
 # --locked: Build bricht ab, wenn uv.lock nicht mehr zu pyproject.toml passt (dann `uv lock` im Ordner ingestor).
+# --offline: Der Export liest nur uv.lock und die pyproject.toml-Dateien. Ein lokales Paket, dessen Metadaten nicht
+# feststehen, baut uv dafür auch mit UV_NO_BUILD; ohne Netz scheitert das, statt ein Build-Backend zu laden.
 # Export mit Hashes, die Installation prüft sie (--require-hashes). --no-build lässt nur fertige Wheels zu: Ein
 # Quelltextpaket bräuchte zum Bauen ein Build-Backend, das uv ohne Hash-Prüfung nachladen würde.
 # scripts/check_image_hashes.py prüft diese Regeln.
 COPY shared/pyproject.toml /build/shared/pyproject.toml
 COPY ingestor/pyproject.toml ingestor/uv.lock ingestor/README.md /build/ingestor/
 WORKDIR /build/ingestor
-RUN uv export --quiet --locked --no-dev --no-emit-project --no-emit-package mandari-oparl \
+RUN uv export --quiet --locked --offline --no-dev --no-emit-project --no-emit-package mandari-oparl \
         --format requirements.txt -o /tmp/requirements.lock \
     && uv pip install --system --no-build --require-hashes -r /tmp/requirements.lock
 
 # Build-Backend der lokalen Pakete (Gruppe build-backend: hatchling) ebenso mit Hashes aus uv.lock, aber in einer
 # eigenen Umgebung: /usr/local geht vollständig ins fertige Image, das Build-Backend nicht.
-RUN uv export --quiet --locked --only-group build-backend --no-emit-project \
+RUN uv export --quiet --locked --offline --only-group build-backend --no-emit-project \
         --format requirements.txt -o /tmp/build-backend.lock \
     && python -m venv /opt/build-backend \
     && /opt/build-backend/bin/pip install --no-cache-dir --only-binary :all: --require-hashes \
