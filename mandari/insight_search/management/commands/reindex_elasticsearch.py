@@ -7,65 +7,28 @@ Usage:
     python manage.py reindex_elasticsearch --index files # Nur Files
     python manage.py reindex_elasticsearch --body <uuid> # Nur eine Kommune
     python manage.py reindex_elasticsearch --clear       # Index leeren + rebuild
+
+Die Dokumente kommen aus derselben Projektion wie beim Abonnement ``suchindex`` und dem Vollbau des
+Schattenindex (``insight_core.services.search_projection``): Dateitexte in kleinen Abschnitten und schon in
+der Datenbank gekürzt, von den Dateien eines Vorgangs nur der Anfang. Die Bulk-Anfragen sind nach Anzahl
+(``BATCH_SIZE``) und Bytes (``abonnement.BULK_BYTES``) begrenzt, sodass der Speicherbedarf nicht von der
+Größe einzelner Texte abhängt.
 """
 
 from __future__ import annotations
 
 import time
+import uuid
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
 
-from insight_core.models import (
-    OParlBody,
-    OParlFile,
-    OParlMeeting,
-    OParlOrganization,
-    OParlPaper,
-    OParlPerson,
-)
-from insight_core.services.search_documents import (
-    file_to_doc,
-    meeting_to_doc,
-    organization_to_doc,
-    paper_to_doc,
-    person_to_doc,
-)
+from insight_core.models import OParlBody
+from insight_core.services.search_projection import count_documents, iter_all_documents
+from insight_search.abonnement import BULK_BYTES
+from insight_search.indices import INDEXES
 
 BATCH_SIZE = 500
-
-INDEX_CONFIG = {
-    "papers": {
-        "model": OParlPaper,
-        "builder": paper_to_doc,
-        "queryset_filter": lambda qs: qs.prefetch_related("files"),
-    },
-    "meetings": {
-        "model": OParlMeeting,
-        "builder": meeting_to_doc,
-        "queryset_filter": None,
-    },
-    "persons": {
-        "model": OParlPerson,
-        "builder": person_to_doc,
-        "queryset_filter": None,
-    },
-    "organizations": {
-        "model": OParlOrganization,
-        "builder": organization_to_doc,
-        "queryset_filter": None,
-    },
-    "files": {
-        "model": OParlFile,
-        "builder": file_to_doc,
-        # Gesperrte Dokumente (Löschabgleich, #787) bleiben auch beim Neuaufbau draußen
-        "queryset_filter": lambda qs: qs.filter(
-            source_missing_since__isnull=True,
-            text_content__isnull=False,
-            text_extraction_status="completed",
-        ).select_related("paper"),
-    },
-}
 
 
 class Command(BaseCommand):
@@ -75,7 +38,7 @@ class Command(BaseCommand):
         parser.add_argument(
             "--index",
             type=str,
-            choices=list(INDEX_CONFIG.keys()),
+            choices=list(INDEXES),
             help="Only reindex a specific index (papers, meetings, etc.)",
         )
         parser.add_argument(
@@ -92,7 +55,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         try:
             from elasticsearch import Elasticsearch
-            from elasticsearch.helpers import bulk
+            from elasticsearch.helpers import streaming_bulk
         except ImportError:
             self.stderr.write(self.style.ERROR("elasticsearch package not installed. Run: pip install elasticsearch"))
             return
@@ -113,9 +76,10 @@ class Command(BaseCommand):
         body_uuid = options.get("body")
         clear = options.get("clear", False)
 
-        indexes_to_process = {index_filter: INDEX_CONFIG[index_filter]} if index_filter else INDEX_CONFIG
+        indexes_to_process = [index_filter] if index_filter else list(INDEXES)
 
         body_name = ""
+        kommunen: list[uuid.UUID] = []
         if body_uuid:
             try:
                 body = OParlBody.objects.get(id=body_uuid)
@@ -123,15 +87,12 @@ class Command(BaseCommand):
             except OParlBody.DoesNotExist:
                 self.stderr.write(self.style.ERROR(f"Body not found: {body_uuid}"))
                 return
+            kommunen = [body.pk]
 
         start_time = time.monotonic()
         total_indexed = 0
 
-        for index_name, config in indexes_to_process.items():
-            model = config["model"]
-            builder = config["builder"]
-            qs_filter = config["queryset_filter"]
-
+        for index_name in indexes_to_process:
             # Clear index if requested
             if clear:
                 self.stdout.write(f"  Clearing index '{index_name}'...")
@@ -145,55 +106,28 @@ class Command(BaseCommand):
                 except Exception as e:
                     self.stdout.write(self.style.WARNING(f"  Could not clear '{index_name}': {e}"))
 
-            # Build queryset (Tombstones bleiben draußen — von der Quelle
-            # gelöschte Objekte gehören nicht in den Suchindex)
-            qs = model.objects.filter(deleted=False)
-            if body_uuid:
-                qs = qs.filter(body_id=body_uuid)
-            if qs_filter:
-                qs = qs_filter(qs)
-
-            count = qs.count()
+            # Bestand wie im Abonnement: Tombstones und gesperrte Dateien (Löschabgleich, #787) bleiben draußen
+            count = count_documents(index_name, kommunen)
             self.stdout.write(f"Indexing {count} {index_name}" + (f" for {body_name}" if body_name else "") + "...")
 
             indexed = 0
-
-            # Process in batches
-            for offset in range(0, count, BATCH_SIZE):
-                batch = list(qs[offset : offset + BATCH_SIZE])
-                actions = []
-                for obj in batch:
-                    try:
-                        if index_name == "papers":
-                            files = obj.files.filter(
-                                deleted=False,
-                                source_missing_since__isnull=True,
-                                text_content__isnull=False,
-                                text_extraction_status="completed",
-                            )
-                            doc = builder(obj, files=files)
-                        else:
-                            doc = builder(obj)
-
-                        actions.append(
-                            {
-                                "_index": index_name,
-                                "_id": doc["id"],
-                                "_source": doc,
-                            }
-                        )
-                    except Exception as e:
-                        self.stderr.write(self.style.WARNING(f"  Error building doc for {obj.id}: {e}"))
-
-                if actions:
-                    try:
-                        success, errors = bulk(client, actions, raise_on_error=False)
-                        indexed += success
-                        if errors:
-                            for err in errors[:3]:
-                                self.stderr.write(self.style.WARNING(f"  Bulk error: {err}"))
-                    except Exception as e:
-                        self.stderr.write(self.style.ERROR(f"  Error indexing batch: {e}"))
+            errors = 0
+            actions = (
+                {"_index": index_name, "_id": doc["id"], "_source": doc}
+                for doc in iter_all_documents(index_name, kommunen)
+            )
+            try:
+                for ok, item in streaming_bulk(
+                    client, actions, chunk_size=BATCH_SIZE, max_chunk_bytes=BULK_BYTES, raise_on_error=False
+                ):
+                    if ok:
+                        indexed += 1
+                        continue
+                    errors += 1
+                    if errors <= 3:
+                        self.stderr.write(self.style.WARNING(f"  Bulk error: {item}"))
+            except Exception as e:
+                self.stderr.write(self.style.ERROR(f"  Error indexing '{index_name}': {e}"))
 
             self.stdout.write(self.style.SUCCESS(f"  {index_name}: {indexed}/{count} indexed"))
             total_indexed += indexed

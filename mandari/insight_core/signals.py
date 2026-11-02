@@ -199,13 +199,8 @@ def _reindex_paper_files(paper_id) -> None:
         return
     if paper.deleted:
         return
-    files = paper.files.filter(
-        deleted=False,
-        source_missing_since__isnull=True,
-        text_content__isnull=False,
-        text_extraction_status="completed",
-    )
-    _index_document("papers", str(paper.id), _paper_to_doc(paper, files=files))
+    # paper_to_doc lädt die indexierbaren Dateien selbst, vom Text nur den Anfang für die Vorschau
+    _index_document("papers", str(paper.id), _paper_to_doc(paper))
 
 
 def remove_file_from_index(instance) -> None:
