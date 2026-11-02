@@ -29,11 +29,12 @@ from datetime import date, datetime
 from typing import Any, Final, cast
 
 from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
-from django.db.models.functions import Substr
+from django.db.models.functions import Length, Substr
 from django.utils import timezone
+from mandari_dokumente import MAX_TEXT_CHARS
 
 from hub.ris import vorlagennummer
-from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension, with_limited_text
+from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -1070,16 +1071,25 @@ def public_files_by_ids(bodies: Bodies, file_ids: Iterable[object]) -> dict[uuid
     return {datei.pk: datei for datei in found}
 
 
-def public_file_with_text(bodies: Bodies, file_id: object) -> OParlFile | None:
+def public_file_with_text(bodies: Bodies, file_id: object, *, max_chars: int = MAX_TEXT_CHARS) -> OParlFile | None:
     """
     Eine öffentliche Datei der Kommunen samt erkanntem Text; sonst ``None``. Den Text liest
-    ``hub.ris.canonical.file_text``: höchstens ``MAX_TEXT_CHARS`` Zeichen, auch wenn ein älterer, längerer
-    gespeichert ist (gekürzt in der Datenbank, ``with_limited_text``); ``text_content`` selbst ist nicht geladen.
+    ``hub.ris.canonical.file_text``: höchstens ``max_chars`` (und nie mehr als ``MAX_TEXT_CHARS``) Zeichen vom Anfang,
+    gekürzt in der Datenbank; ``text_content`` selbst ist nicht geladen. ``text_laenge`` nennt die Länge des
+    gespeicherten Texts.
     """
     pk = _uuid(file_id)
     if not pk:
         return None
-    dateien = with_limited_text(_public_files(bodies).filter(pk=pk).defer("raw_json"))
+    dateien = (
+        _public_files(bodies)
+        .filter(pk=pk)
+        .defer("text_content", "raw_json")
+        .annotate(
+            text_begrenzt=Substr("text_content", 1, max(1, min(max_chars, MAX_TEXT_CHARS))),
+            text_laenge=Length("text_content"),
+        )
+    )
     return cast(OParlFile | None, dateien.select_related("paper").first())
 
 

@@ -68,6 +68,9 @@ FILES_DEPTH_FACTOR = 5
 #: Dokumente je Gruppe, deren Namen die Liste nennt
 MAX_DOCS_PER_GROUP = 10
 FILE_LABEL_FIELDS = ["id", "name", "file_name"]
+#: Volltexte im Suchindex (je Datei bis zur Obergrenze der Texterkennung): nie aus ``_source`` laden; Ausschnitte
+#: kommen nur über die Hervorhebung, sonst ``text_preview``
+LARGE_TEXT_FIELDS: dict[str, list[str]] = {INDEX_PAPERS: ["file_contents_preview"], INDEX_FILES: ["text_content"]}
 #: Bis zu dieser Zahl ist ``cardinality`` praktisch genau; darüber zeigt die Seite „rund“
 GROUP_COUNT_PRECISION = 3000
 #: Gruppe eines Treffers: Vorgang, sonst Sitzung, sonst das Dokument selbst (``papers`` hat kein ``paper_id``)
@@ -630,7 +633,7 @@ class ElasticsearchService:
                 other_files += files[1:MAX_DOCS_PER_GROUP]
 
         docs: dict[tuple[str, str], dict[str, Any]] = {}
-        excludes = {INDEX_PAPERS: ["file_contents_preview", "file_names"], INDEX_FILES: ["text_content"]}
+        excludes = {**LARGE_TEXT_FIELDS, INDEX_PAPERS: [*LARGE_TEXT_FIELDS[INDEX_PAPERS], "file_names"]}
         for index_name, ids in [*wanted.items(), (INDEX_FILES, main_files)]:
             if ids:
                 docs.update(self._fetch(index_name, ids, queries.get(index_name), excludes.get(index_name, [])))
@@ -797,6 +800,8 @@ class ElasticsearchService:
                 # Dieselbe Abfrage (für die Hervorhebung), eingeschränkt auf die Treffer der Seite
                 "query": {"bool": {"must": [queries[index_name]], "filter": [{"ids": {"values": ids}}]}},
                 "size": len(ids),
+                # Ohne Volltexte wie ``_fetch``: Ausschnitte liefert die Hervorhebung
+                "_source": {"excludes": LARGE_TEXT_FIELDS.get(index_name, [])},
                 "highlight": HIGHLIGHT,
             }
             try:
@@ -822,8 +827,13 @@ class ElasticsearchService:
 
     @staticmethod
     def _to_result(hit: dict[str, Any], index_name: str) -> dict[str, Any]:
-        """Treffer als Ergebnis-Dict (Quelle, Index, Typ, Hervorhebung in ``_formatted``)."""
-        doc: dict[str, Any] = dict(hit.get("_source") or {})
+        """
+        Treffer als Ergebnis-Dict (Quelle, Index, Typ, Hervorhebung in ``_formatted``). Volltexte
+        (``LARGE_TEXT_FIELDS``) übernimmt es nie, auch nicht aus ``_source``; in ``_formatted`` stehen von ihnen nur
+        Hervorhebungsfragmente (``fragment_size``), den kurzen Anfang einer Datei trägt ``text_preview``.
+        """
+        gross = {feld for felder in LARGE_TEXT_FIELDS.values() for feld in felder}
+        doc: dict[str, Any] = {k: v for k, v in (hit.get("_source") or {}).items() if k not in gross}
         doc["_rankingScore"] = hit.get("_score", 0)
         doc["_index"] = index_name
         if "type" not in doc:
@@ -833,7 +843,10 @@ class ElasticsearchService:
         if "highlight" in hit:
             formatted = dict(doc)
             for field_name, fragments in hit["highlight"].items():
-                formatted[field_name] = fragments[0] if fragments else doc.get(field_name, "")
+                if fragments:
+                    formatted[field_name] = fragments[0]
+                elif field_name not in gross:
+                    formatted[field_name] = doc.get(field_name, "")
             doc["_formatted"] = formatted
         return doc
 

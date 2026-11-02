@@ -476,9 +476,10 @@ def resolve_file_anchor(organization: Organization | None, anchor_type: str | No
         if bodies is None:
             raise Http404
         file_obj = get_object_or_404(
-            OParlFile.objects.filter(
-                Q(body__in=bodies) | Q(paper__body__in=bodies) | Q(meeting__body__in=bodies)
-            ).distinct(),
+            # Die Anmerkung braucht nur die Datei, nicht ihren Text
+            OParlFile.objects.filter(Q(body__in=bodies) | Q(paper__body__in=bodies) | Q(meeting__body__in=bodies))
+            .defer("text_content", "raw_json")
+            .distinct(),
             id=file_id,
         )
         return {"oparl_file": file_obj}

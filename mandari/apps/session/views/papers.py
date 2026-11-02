@@ -415,7 +415,8 @@ class PaperDetailView(SessionViewMixin, DetailView):
 
         # Files — NÖ-Anlagen nur für Berechtigte sichtbar
         permissions = self.session_permissions
-        files = paper.files.order_by("name")
+        # Ohne erkannten Text: Die Liste zeigt Name, Art und Größe
+        files = paper.files.defer("text_content").order_by("name")
         if not self.has_permission("view_non_public_papers"):
             files = files.filter(is_public=True)
         context["files"] = list(files)

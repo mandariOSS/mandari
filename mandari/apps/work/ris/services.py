@@ -160,6 +160,9 @@ def _elasticsearch_search(params: SearchQuery, body_ids: list[str]) -> SearchRes
     for doc in result["results"]:
         formatted = doc.get("_formatted") or {}
         doc["formatted"] = {name: highlight_html(formatted[name]) for name in HIGHLIGHT_FIELDS if formatted.get(name)}
+        if "text_content" not in doc["formatted"] and doc.get("text_preview"):
+            # Ohne Fundstelle im Text (etwa nur der Name trifft): der kurze Anfang aus dem Index, nie der Volltext
+            doc["formatted"]["text_content"] = highlight_html(doc["text_preview"])
     return SearchResult(
         backend="elasticsearch",
         total=result["total"],

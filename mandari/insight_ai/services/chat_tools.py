@@ -54,6 +54,8 @@ SNIPPET_CHARS = 300
 PASSAGE_CHARS = 1000
 MAX_PASSAGES = 3
 MAX_PASSAGE_TOTAL = 3000
+#: ``dokument_abschnitt`` liest vom Text nur diesen Anfang (Zeichen, in der Datenbank gekürzt) und sucht darin
+ABSCHNITT_SUCHE_ZEICHEN = 1_000_000
 
 WOCHENTAGE_KURZ = ("Mo", "Di", "Mi", "Do", "Fr", "Sa", "So")
 UUID_RE = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
@@ -683,7 +685,7 @@ def best_passages(text: str, frage: str) -> list[tuple[int, str]]:
 
 def dokument_abschnitt(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, Any]:
     frage = _text_arg(args, "frage", required=True, limit=300)
-    datei = ris.public_file_with_text(ctx.bodies, _id_arg(args))
+    datei = ris.public_file_with_text(ctx.bodies, _id_arg(args), max_chars=ABSCHNITT_SUCHE_ZEICHEN)
     if datei is None:
         raise ToolError("Dokument nicht gefunden.")
     paper = datei.paper
@@ -694,8 +696,9 @@ def dokument_abschnitt(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, A
     elif datei.meeting_id:
         url = ctx.link("meeting_detail", datei.meeting_id)
         ctx.note(url, datei.name or "Sitzung", "meeting", detail=True)
-    # Höchstens bis zur Obergrenze der Texterkennung, in der Datenbank gekürzt (``public_file_with_text``)
-    text = file_text(datei) or ""
+    # Nur der Anfang bis ABSCHNITT_SUCHE_ZEICHEN, in der Datenbank gekürzt (``public_file_with_text``)
+    text = (file_text(datei) or "")[:ABSCHNITT_SUCHE_ZEICHEN]
+    laenge = int(getattr(datei, "text_laenge", None) or len(text))
     kopf = {
         "name": _short(datei.name or datei.file_name, 120),
         "vorgang": _short(paper.name, 120) if paper else None,
@@ -706,7 +709,8 @@ def dokument_abschnitt(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, A
     abschnitte = [
         {"ab_zeichen": position, "text": " ".join(chunk.split())} for position, chunk in best_passages(text, frage)
     ]
-    return _compact({**kopf, "laenge_zeichen": len(text), "abschnitte": abschnitte})
+    hinweis = f"Durchsucht wurden die ersten {len(text)} Zeichen." if laenge > len(text) else None
+    return _compact({**kopf, "laenge_zeichen": laenge, "abschnitte": abschnitte, "hinweis": hinweis})
 
 
 #: Längere Ergebnisse für Tagesordnungen und Dokumentabschnitte (Zeichen)
