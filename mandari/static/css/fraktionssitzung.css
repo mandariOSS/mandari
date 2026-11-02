@@ -204,7 +204,8 @@
     min-width: 0;
     background: var(--wf-flaeche);
   }
-  /* Nummernspalte breit genug für „NÖ 10“, sonst bricht die Nummer in zwei Zeilen (Issue #1166) */
+  /* Nummernspalte breit genug für „NÖ 10“, sonst bricht die Nummer in zwei Zeilen (Issue #1166). Die Spalte der
+     Tagesordnung ist dafür 0,5rem breiter (.fs-flaeche), die Titel behalten ihre Breite */
   .fs-tl .wf-tl-zeile {
     grid-template-columns: 2.75rem minmax(0, 1fr) 16px;
   }
@@ -935,7 +936,9 @@
     }
   }
   /* Unter 1.600 px Leistenbreite (Fenster unter etwa 1.840 px mit Seitenleiste) passen Beschluss und die Namen der
-     Nachbar-TOPs nicht nebeneinander: nur „Voriger/Nächster TOP“, die Beschriftung „Beschluss“ bleibt für Vorleser */
+     Nachbar-TOPs nicht nebeneinander: TOP-Wechsel nur als Pfeil (der Name bleibt für Vorleser). So bleibt die
+     Beschriftung „Beschluss“ bis 1.420 px Leistenbreite sichtbar und der Hinweis „Nicht beschlussfähig“ neben
+     „Erfassen“ bis 1.300 px */
   @container fs-unten (max-width: 1599.98px) {
     .fs-nav b {
       display: none;
@@ -944,6 +947,9 @@
     .fs-unten .fs-nav {
       flex: none;
     }
+  }
+  /* Darunter (auch am Handy) ohne die sichtbare Beschriftung „Beschluss“; für Vorleser bleibt sie */
+  @container fs-unten (max-width: 1419.98px) {
     form.fs-beschluss .beschriftung {
       position: absolute;
       width: 1px;
@@ -953,9 +959,8 @@
       white-space: nowrap;
     }
   }
-  /* Darunter (auch am Handy) TOP-Wechsel nur als Pfeil, der Name bleibt für Vorleser. So bleibt der Hinweis
-     „Nicht beschlussfähig“ neben „Erfassen“ bis 1.300 px Leistenbreite stehen (Fenster etwa 1.540 px mit Seitenleiste) */
-  @container fs-unten (max-width: 1419.98px) {
+  /* TOP-Wechsel nur als Pfeil (siehe oben), der Name bleibt für Vorleser */
+  @container fs-unten (max-width: 1599.98px) {
     .fs-nav .wf-nachbar > span {
       position: absolute;
       width: 1px;
@@ -1147,6 +1152,10 @@
     .fs-titel {
       min-width: 0;
     }
+    /* Bis 320 px Breite (WCAG 1.4.10) passt „Erfassen“ neben das Feld */
+    .fs-beschluss input[type="text"] {
+      min-width: 0;
+    }
     .fs-stufen,
     .fs-titel .fs-kopf-meta,
     .fs-desktop-nur {
@@ -1228,7 +1237,7 @@
     .fs-flaeche {
       flex: 1 1 auto;
       min-height: 0;
-      grid-template-columns: clamp(15rem, 14vw, 19rem) minmax(0, 1fr);
+      grid-template-columns: calc(clamp(15rem, 14vw, 19rem) + 0.5rem) minmax(0, 1fr);
     }
     .fs-tl,
     .fs-fokus {
@@ -1257,7 +1266,7 @@
   /* Sehr breit: Anwesenheit als eigene Spalte rechts statt aufklappendem Feld (Prototyp Fassung 2) */
   @media (min-width: 2200px) {
     .fs-flaeche {
-      grid-template-columns: clamp(16rem, 11vw, 19rem) minmax(0, 1fr) 25rem;
+      grid-template-columns: calc(clamp(16rem, 11vw, 19rem) + 0.5rem) minmax(0, 1fr) 25rem;
     }
     .fs-anw {
       position: static;
