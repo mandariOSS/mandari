@@ -1647,6 +1647,7 @@ class SyncOrchestrator:
         try:
             from src.indexing.document_builders import (
                 FILE_PREVIEW_CHARS,
+                FILE_TEXT_MAX_CHARS,
                 file_to_doc,
                 meeting_to_doc,
                 organization_to_doc,
@@ -1724,13 +1725,15 @@ class SyncOrchestrator:
                             await indexer.index_documents(index_name, docs)
                             indexed_total += len(docs)
 
-                    # Dateien mit extrahiertem Text
+                    # Dateien mit extrahiertem Text: Seiten nach Bytes, Texte schon in der Datenbank gekürzt
                     async for files in self.storage.iter_files_with_text(
-                        body_id, page_size, updated_since=updated_since
+                        body_id, page_size, updated_since=updated_since, max_chars=FILE_TEXT_MAX_CHARS
                     ):
                         docs = [file_to_doc(f) for f in files]
                         await indexer.index_documents("files", docs)
                         indexed_total += len(docs)
+                        # Texte nicht über das Laden der nächsten Seite hinaus festhalten
+                        del files, docs
 
                     stats["indexed"] = indexed_total
                     scope = "" if updated_since is None else f" (geändert seit {updated_since:%d.%m. %H:%M} UTC)"

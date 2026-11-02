@@ -11,11 +11,27 @@ from __future__ import annotations
 import contextlib
 import re
 from collections.abc import Container, Iterable
+from types import SimpleNamespace
 from typing import Any
+
+from django.db.models.functions import Substr
 
 #: Textvorschau eines Vorgangs: höchstens so viele Zeichen je Datei und insgesamt
 PREVIEW_CHARS_PER_FILE = 5000
 PREVIEW_CHARS_TOTAL = 25000
+
+#: Höchstens so viele Zeichen des Volltexts einer Datei kommen in den Suchindex (``text_content``). Bis zu dieser
+#: Stelle ist der Text auffindbar, auch in langen Dokumenten wie Haushaltsplänen; hervorheben kann Elasticsearch
+#: davon nur die erste Million Zeichen (``index.highlight.max_analyzed_offset``,
+#: ``search_service.HIGHLIGHT_MAX_ANALYZED_OFFSET``). Die Grenze hält jedes Dokument und damit jede Bulk-Anfrage
+#: begrenzt (ohne Steuerzeichen höchstens vier Bytes je Zeichen). Der Ingestor nutzt denselben Wert
+#: (``ingestor/src/indexing/document_builders.py``, ``FILE_TEXT_MAX_CHARS``), damit beide Wege dasselbe Dokument
+#: schreiben.
+INDEX_TEXT_MAX_CHARS = 5_000_000
+
+#: Steuerzeichen außer Tabulator und Zeilenumbruch: Für die Suche bedeutungslos, in JSON aber als ``\uXXXX``
+#: sechsmal so groß wie im Text. ``file_to_doc`` entfernt sie (wie der Ingestor).
+_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 def paper_to_doc(paper, files=None) -> dict[str, Any]:
@@ -24,19 +40,20 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
     Args:
         paper: OParlPaper instance.
         files: Optional queryset/list of related OParlFile objects with text_content.
-               If None, auto-fetches from DB via paper.files.
+               If None, auto-fetches from DB via paper.files (vom Text nur der Anfang, den die Vorschau nutzt).
     """
     # Build file contents preview for semantic search / paper-boosting
     if files is None:
         try:
-            files = paper.files.filter(
+            auswahl = paper.files.filter(
                 deleted=False,
                 source_missing_since__isnull=True,
                 text_content__isnull=False,
                 text_extraction_status="completed",
-            )
+            ).values_list("file_name", Substr("text_content", 1, PREVIEW_CHARS_PER_FILE))
         except Exception:
-            files = []
+            auswahl = []
+        files = [SimpleNamespace(file_name=file_name, text_content=anfang) for file_name, anfang in auswahl]
 
     file_names: list[str] = []
     file_texts: list[str] = []
@@ -157,12 +174,16 @@ def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, A
         file: OParlFile instance.
         context_info: Kontext aus ``file_contexts`` (Gremien, Sitzung, TOP); ein leeres Dict heißt „ohne
                       Sitzung“. ``None``: Der Kontext wird für diese eine Datei nachgeschlagen.
+
+    Der Volltext ist auf ``INDEX_TEXT_MAX_CHARS`` Zeichen gekürzt und ohne Steuerzeichen (außer Tabulator und
+    Zeilenumbruch).
     """
     text_preview = ""
     if file.text_content:
         text_preview = file.text_content[:500].strip()
         if len(file.text_content) > 500:
             text_preview += "..."
+    text_content = _CONTROL_CHARS.sub("", (file.text_content or "")[:INDEX_TEXT_MAX_CHARS])
 
     doc = {
         "id": str(file.id),
@@ -172,7 +193,7 @@ def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, A
         "file_name": file.file_name or "",
         "mime_type": file.mime_type or "",
         "access_url": file.access_url or "",
-        "text_content": file.text_content or "",
+        "text_content": text_content,
         "text_preview": text_preview,
         "paper_id": str(file.paper_id) if file.paper_id else None,
         "paper_name": file.paper.name if file.paper else None,

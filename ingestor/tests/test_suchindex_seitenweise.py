@@ -173,12 +173,21 @@ async def test_keyset_seiten_bis_zur_kurzen_seite() -> None:
 
 async def test_dateien_mit_text_seitenweise_und_je_vorgangsseite() -> None:
     statements: list[Any] = []
-    storage = _speicher_mit([[SimpleNamespace(id=UUID(int=1))], []], statements)
+    kopf = SimpleNamespace(id=UUID(int=1), text_bytes=8)
+    zeile = SimpleNamespace(id=UUID(int=1), text_content="Volltext")
+    storage = _speicher_mit([[kopf], [zeile], []], statements)
 
-    seiten = [rows async for rows in storage.iter_files_with_text(uuid4(), page_size=1)]
-    assert len(seiten) == 1 and len(statements) == 2
-    assert "oparl_files.text_content IS NOT NULL" in _sql(statements[0])
-    assert "LIMIT" in _sql(statements[0])
+    seiten = [rows async for rows in storage.iter_files_with_text(uuid4(), page_size=1, max_chars=1000)]
+    # Je Seite erst Kennungen und Textgröße, dann die Texte; die leere nächste Seite beendet den Lauf
+    assert seiten == [[zeile]] and len(statements) == 3
+    koepfe = _sql(statements[0])
+    assert "oparl_files.text_content IS NOT NULL" in koepfe
+    assert "LIMIT" in koepfe
+    assert koepfe.split("FROM")[0].count("oparl_files.text_content") == 1, "Kennungen ohne Text"
+    assert "octet_length(oparl_files.text_content)" in koepfe
+    texte = _sql(statements[1])
+    assert "substr(oparl_files.text_content" in texte.split("FROM")[0]
+    assert "oparl_files.id IN" in texte
 
     assert await storage.get_files_with_text_for_papers(uuid4(), []) == []
     paper_id = uuid4()
@@ -242,7 +251,12 @@ class _AenderungsSpeicher:
         return [f for f in self.files if f.paper_id in set(paper_ids)]
 
     async def iter_files_with_text(
-        self, body_id: UUID, page_size: int | None = None, *, updated_since: datetime | None = None
+        self,
+        body_id: UUID,
+        page_size: int | None = None,
+        *,
+        updated_since: datetime | None = None,
+        max_chars: int | None = None,
     ) -> AsyncIterator:
         rows = [f for f in self.files if updated_since is None or f.updated_at >= updated_since]
         if rows:
