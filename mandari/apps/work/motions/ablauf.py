@@ -26,6 +26,8 @@ from typing import Any
 from django.db.models import Q
 from django.utils import formats
 
+from apps.common.permissions import STIMMRECHT
+
 #: Stufen des Ablaufs (Schlüssel, Beschriftung, Untertitel solange sie noch nicht dran sind)
 STUFEN: tuple[tuple[str, str, str], ...] = (
     ("entwurf", "Entwurf", "Schreiben und kommentieren"),
@@ -45,9 +47,6 @@ ABSEITS_STATUS = frozenset({"rejected", "withdrawn", "archived", "deleted"})
 
 #: Schritt (Dialog) und die Stufe, die ihn auslöst
 AKTION_STUFE: dict[str, int] = {"abstimmung": ABSTIMMUNG, "freigeben": FREIGABE, "einreichen": EINREICHUNG}
-
-#: Recht „Stimmrecht bei Abstimmungen“ (apps/common/permissions.py)
-STIMMRECHT = "voting.participate"
 
 
 @dataclass(frozen=True)
@@ -241,16 +240,16 @@ def stimmberechtigte_ids(organization: Any) -> set[Any]:
     """
     Aktive Mitglieder (keine Gäste) mit Stimmrecht – Vorauswahl im Dialog „Zur Abstimmung geben“.
 
-    Dieselbe Regel wie ``PermissionChecker``: Admin-Rolle, Rollen- oder Einzelrecht, ausdrücklich verweigert geht
-    vor. Eine Abfrage statt einer Rechteprüfung je Mitglied.
+    Dieselbe Regel wie ``PermissionChecker``: Rollen- oder Einzelrecht, ausdrücklich verweigert geht vor. Die
+    Administrator-Rolle gibt kein Stimmrecht (Issue #1166), auch wenn sie es gespeichert hat. Eine Abfrage statt einer
+    Rechteprüfung je Mitglied.
     """
     from apps.tenants.models import Membership
 
     return set(
         Membership.objects.filter(organization=organization, is_active=True, is_guest=False)
         .filter(
-            Q(roles__is_admin=True)
-            | Q(roles__permissions__codename=STIMMRECHT)
+            Q(roles__is_admin=False, roles__permissions__codename=STIMMRECHT)
             | Q(individual_permissions__codename=STIMMRECHT)
         )
         .exclude(denied_permissions__codename=STIMMRECHT)

@@ -4,7 +4,9 @@ Beschlussfähigkeit (Quorum) für Fraktionssitzungen (Issue #69).
 
 Standardregel: beschlussfähig, wenn MEHR als 50 % der stimmberechtigten
 (Rats-)Mitglieder anwesend sind. Stimmberechtigt sind aktive Mitglieder
-mit der Berechtigung ``voting.participate``.
+mit der Berechtigung ``voting.participate`` aus einer Rolle, die sie
+enthält, oder als Einzelrecht; die Administrator-Rolle allein gibt kein
+Stimmrecht (Issue #1166).
 
 Berechnung über den gemeinsamen Baustein :mod:`apps.common.quorum`
 (generalisiert aus dem Session-RIS). Andere Regeln gibt es noch nicht —
@@ -20,6 +22,19 @@ def get_quorum_rule(organization) -> str:
     return ((organization.settings or {}).get("faction", {})).get("quorum_rule", DEFAULT_QUORUM_RULE)
 
 
+def stimmberechtigt(membership) -> bool:
+    """
+    Zählt die Person als stimmberechtigt? Aktives Mitglied mit Stimmrecht (``PermissionChecker``).
+
+    Dieselbe Regel für Beschlussfähigkeit und die Gruppe „Stimmberechtigt“ der Anwesenheitsliste.
+    """
+    from apps.common.permissions import STIMMRECHT, PermissionChecker
+
+    return bool(
+        membership is not None and membership.is_active and PermissionChecker(membership).has_permission(STIMMRECHT)
+    )
+
+
 def faction_quorum_status(meeting) -> dict:
     """
     Beschlussfähigkeit einer Fraktionssitzung live berechnen.
@@ -32,8 +47,6 @@ def faction_quorum_status(meeting) -> dict:
     Returns:
         dict: has_list, voting_total, voting_present, required, met, rule
     """
-    from apps.common.permissions import PermissionChecker
-
     # Rechte vorgeladen: die Prüfung „stimmberechtigt“ fragt nicht je Teilnahme nach (Issue #874)
     attendances = list(
         meeting.attendances.filter(is_guest=False, membership__isnull=False)
@@ -42,11 +55,7 @@ def faction_quorum_status(meeting) -> dict:
             "membership__roles__permissions", "membership__individual_permissions", "membership__denied_permissions"
         )
     )
-    voting = [
-        a
-        for a in attendances
-        if a.membership.is_active and PermissionChecker(a.membership).has_permission("voting.participate")
-    ]
+    voting = [a for a in attendances if stimmberechtigt(a.membership)]
     present = [a for a in voting if a.status == "present"]
 
     return quorum_status(

@@ -1029,7 +1029,7 @@
     white-space: nowrap;
   }
 
-  /* Anwesenheit mit Sitzungsleitung und Schriftführung; vor Ort oder online */
+  /* Anwesenheit mit Sitzungsleitung und Schriftführung; je Person vor Ort, online oder entschuldigt */
   .fs-anw {
     position: fixed;
     right: 16px;
@@ -1085,6 +1085,16 @@
     margin: 0;
     color: var(--wf-text2);
   }
+  /* Hinweis zur Bedienung und Gruppen (Stimmberechtigt, Weitere Mitglieder, Gäste; Issue #1166) */
+  .fs-anw-hinweis {
+    margin: 0;
+    padding: 8px 16px 0;
+    font-size: 12px;
+    color: var(--wf-text3);
+  }
+  .fs-anw .wf-tl-gruppe {
+    padding: 10px 16px 2px;
+  }
   .fs-anw-liste {
     list-style: none;
     margin: 0;
@@ -1100,12 +1110,8 @@
   .fs-anw-liste li:hover {
     background: var(--wf-grau-hell);
   }
-  .fs-anw-liste label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
+  .fs-anw-name {
     font-size: 13.5px;
-    cursor: pointer;
     min-width: 0;
   }
   .fs-anw-liste small {
@@ -1115,9 +1121,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-  .fs-anw-liste select {
-    width: 8.75rem;
   }
   .fs-art {
     display: inline-flex;

@@ -38,7 +38,7 @@ Kontext: RoleListView.
                         <a href="{% url 'work:role_edit' org_slug=organization.slug role_id=role.id %}" class="font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ role.name }}</a>
                         {% if role.is_system_role or role.is_admin %}<span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_system_role %}Systemrolle{% endif %}{% if role.is_system_role and role.is_admin %} · {% endif %}{% if role.is_admin %}Administrator{% endif %}</span>{% endif %}
                     </p>
-                    <p class="ml-[1.125rem] text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_admin %}Alle Berechtigungen{% else %}{{ role.permissions.count }} Berechtigungen{% endif %}, {{ role.member_count }} Mitglied{{ role.member_count|pluralize:"er" }}</p>
+                    <p class="ml-[1.125rem] text-[0.8125rem] text-gray-600 dark:text-gray-400">{% if role.is_admin %}Alle Berechtigungen außer Stimmrecht{% else %}{{ role.permissions.count }} Berechtigungen{% endif %}, {{ role.member_count }} Mitglied{{ role.member_count|pluralize:"er" }}</p>
                 </div>
                 {% if role.has_default_definition %}
                 <form method="post" action="{% url 'work:role_reset' org_slug=organization.slug role_id=role.id %}"

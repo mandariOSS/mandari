@@ -936,7 +936,8 @@ def test_nichtoeffentlicher_top_fragt_rechte_nicht_je_person_ab(
     assert html.count("vereidigt-") >= 12
     with django_assert_max_num_queries(len(seite_vorher)):
         html = client.get(ganze_seite).content.decode()
-    assert html.count(", stimmberechtigt") >= 12
+    # Alle stehen in der Gruppe „Stimmberechtigt“ (Vorsitz, Mitglied und zwölf Vereidigte, Issue #1166)
+    assert "Stimmberechtigt · 14" in html
 
 
 def test_beschluss_ueberschreibt_gleichzeitig_gespeicherte_notizen_nicht(

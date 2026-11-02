@@ -836,27 +836,54 @@ def protokolleintraege(item: FactionAgendaItem) -> list[Any]:
     )
 
 
+@dataclass(frozen=True)
+class AnwesenheitGruppe:
+    """Eine Gruppe der Anwesenheitsliste: Kennung (für ``id``), Überschrift und Teilnahmen nach Namen."""
+
+    schluessel: str
+    titel: str
+    teilnahmen: list[Any]
+
+
 @dataclass
 class Anwesenheit:
     teilnahmen: list[Any]
     anwesend: int
     gesamt: int
+    #: Stimmberechtigte zuerst, dann weitere Mitglieder, dann Gäste (Issue #1166); leere Gruppen fehlen
+    gruppen: list[AnwesenheitGruppe] = field(default_factory=list)
 
 
 def anwesenheit(meeting: FactionMeeting) -> Anwesenheit:
     """
-    Teilnahmen (Mitglieder, dann Gäste) und wie viele Mitglieder anwesend sind.
+    Teilnahmen (Mitglieder, dann Gäste), wie viele Mitglieder anwesend sind, und die Gruppen der Liste.
 
-    Rollen und Rechte sind vorgeladen: Die Liste nennt je Person die Rollen und „stimmberechtigt“
-    (``voting.participate``), ohne eigene Abfragen je Teilnahme.
+    Gruppen (Issue #1166): „Stimmberechtigt“ nach derselben Regel wie die Beschlussfähigkeit
+    (:func:`.quorum.stimmberechtigt`, die Administrator-Rolle allein gibt kein Stimmrecht), dann „Weitere Mitglieder“,
+    dann „Gäste“, je nach Namen. Rollen und Rechte sind vorgeladen, ohne eigene Abfragen je Teilnahme.
     """
+    from .quorum import stimmberechtigt
+
     teilnahmen = list(
         meeting.attendances.select_related("membership__user")
         .prefetch_related(*(f"membership__{feld}" for feld in RECHTE_VORLADEN))
         .order_by("is_guest", "membership__user__last_name", "membership__user__first_name", "guest_name")
     )
     mitglieder = [a for a in teilnahmen if not a.is_guest]
-    return Anwesenheit(teilnahmen, sum(1 for a in mitglieder if a.status == "present"), len(mitglieder))
+    stimme = {a.pk: stimmberechtigt(a.membership) for a in mitglieder}
+    mit_stimme = [a for a in mitglieder if stimme[a.pk]]
+    ohne_stimme = [a for a in mitglieder if not stimme[a.pk]]
+    gaeste = [a for a in teilnahmen if a.is_guest]
+    gruppen = [
+        AnwesenheitGruppe(schluessel, titel, liste)
+        for schluessel, titel, liste in (
+            ("stimmberechtigt", "Stimmberechtigt", mit_stimme),
+            ("weitere", "Weitere Mitglieder", ohne_stimme),
+            ("gaeste", "Gäste", gaeste),
+        )
+        if liste
+    ]
+    return Anwesenheit(teilnahmen, sum(1 for a in mitglieder if a.status == "present"), len(mitglieder), gruppen)
 
 
 def rollen_auswahl(organization: Organization) -> list[Membership]:
