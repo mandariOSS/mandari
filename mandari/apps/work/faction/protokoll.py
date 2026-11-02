@@ -319,9 +319,7 @@ def zeitraum(meeting: FactionMeeting) -> str:
 
 
 def angaben(meeting: FactionMeeting) -> Angaben:
-    from apps.common.permissions import STIMMRECHT, PermissionChecker
-
-    from .quorum import faction_quorum_status
+    from .quorum import faction_quorum_status, stimmberechtigt
 
     teilnahmen = sitzung.anwesenheit(meeting).teilnahmen
     vor_ort: list[str] = []
@@ -337,8 +335,9 @@ def angaben(meeting: FactionMeeting) -> Angaben:
                 gaeste.append(name)
             continue
         if a.status == "present":
-            # Stimmrecht wie in der Beschlussfähigkeit: nie allein über die Administrator-Rolle (Issue #1166)
-            stimme = a.membership is not None and cast(Any, PermissionChecker)(a.membership).has_permission(STIMMRECHT)
+            # Stimmrecht wie in der Beschlussfähigkeit und der Anwesenheitsliste: aktives Mitglied, nie allein über
+            # die Administrator-Rolle (Issue #1166)
+            stimme = stimmberechtigt(a.membership)
             if not stimme:
                 ohne_stimme = True
                 name = f"{name}*"

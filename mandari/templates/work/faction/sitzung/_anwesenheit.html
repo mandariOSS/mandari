@@ -44,7 +44,7 @@
                 <button type="button" data-id="{{ a.pk }}" data-wahl="excused" @click="waehlen($el)" aria-label="{{ name }} entschuldigt" aria-pressed="{% if a.status == 'excused' or a.status == 'declined' %}true{% else %}false{% endif %}">entschuldigt</button>
             </span>
             {% else %}
-            <span class="fs-meta">{% if a.status == 'present' %}{% if a.is_guest %}anwesend{% else %}{{ a.get_participation_type_display|lower }}{% endif %}{% else %}{{ a.get_status_display|lower }}{% endif %}</span>
+            <span class="fs-meta">{% if a.status == 'present' %}{% if a.is_guest %}anwesend{% else %}{{ a.get_participation_type_display|lower }}{% endif %}{% elif a.status == 'declined' %}entschuldigt{% else %}{{ a.get_status_display|lower }}{% endif %}</span>
             {% endif %}
         </li>
         {% endwith %}

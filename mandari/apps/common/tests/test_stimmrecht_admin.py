@@ -45,12 +45,12 @@ def _stimmrecht() -> Any:
 
 
 def _darf_abstimmen(membership: Any) -> bool:
-    return bool(PermissionChecker(membership).has_permission(STIMMRECHT))
+    return bool(cast(Any, PermissionChecker)(membership).has_permission(STIMMRECHT))
 
 
 def test_admin_allein_hat_kein_stimmrecht_aber_alle_anderen_rechte(org: Any, make_member: Any) -> None:
     admin = make_member(org, [], is_admin=True)
-    checker = PermissionChecker(admin)
+    checker = cast(Any, PermissionChecker)(admin)
     assert checker.is_admin()
     assert not checker.has_permission(STIMMRECHT)
     assert STIMMRECHT not in checker.permissions
