@@ -440,6 +440,11 @@ def _ist_leer(html: str) -> bool:
     return not text.strip() and "<li" not in (html or "")
 
 
+def notizen_leer(html: str) -> bool:
+    """Notizen ohne Text und ohne Liste (der Editor legt leer ``<p></p>`` an)."""
+    return _ist_leer(html)
+
+
 def notizen_speichern(
     item: FactionAgendaItem,
     html: str,
@@ -452,7 +457,8 @@ def notizen_speichern(
     Notizen eines TOPs speichern, nur wenn niemand inzwischen gespeichert hat (``basis`` = Stand beim Laden).
 
     Weicht der gespeicherte Stand ab, bleibt er unverändert; zurück kommt der aktuelle Stand, damit der Browser
-    beide Fassungen zusammenführen kann (keine stillen Verluste). Gespeichert wird nur die Positivliste des Editors.
+    beide Fassungen zusammenführen kann (keine stillen Verluste). Gleicht der Text dem gespeicherten, gilt er als
+    gespeichert, egal welcher Stand mitkam (Issue #1166). Gespeichert wird nur die Positivliste des Editors.
     Die Änderungshistorie erhält höchstens alle zehn Minuten je TOP einen Eintrag (ohne Inhalt).
 
     Live-Mitschreiben (``yjs`` = Zustand des gemeinsamen Editors, :mod:`apps.work.faction.live`): Maßgeblich ist der
@@ -471,8 +477,11 @@ def notizen_speichern(
         gesperrt = FactionAgendaItem.objects.select_for_update().select_related("meeting__organization").get(pk=item.pk)
         zustand = FactionNotesState.objects.select_for_update().filter(item=gesperrt).first()
         aktuell = str(cast(Any, gesperrt).get_notes_decrypted() or "")
+        gleich = sauber == aktuell
         erwartet = zustand.stand if yjs is not None and zustand is not None else basis
-        if erwartet is not None and erwartet != fingerabdruck(aktuell):
+        # Gleicher Text ist nie ein Konflikt, auch mit veraltetem Stand (zwei Speicherungen kurz hintereinander,
+        # Rückfall vom WebSocket auf das Formular): Sonst stünde derselbe Text doppelt in den Notizen (Issue #1166)
+        if not gleich and erwartet is not None and erwartet != fingerabdruck(aktuell):
             return NotizErgebnis(False, aktuell, fingerabdruck(aktuell), gesperrt.notes_updated_at)
         if yjs is not None:
             if zustand is None:
@@ -481,11 +490,11 @@ def notizen_speichern(
             zustand.set_state(yjs)
             zustand.stand = fingerabdruck(sauber)
             zustand.save()
-        elif zustand is not None and sauber != aktuell:
+        elif zustand is not None and not gleich:
             # Ohne Verbindung gespeichert: Der Zustand passt nicht mehr zu den Notizen
             zustand.delete()
             zustand_verworfen = True
-        if sauber == aktuell:
+        if gleich:
             return NotizErgebnis(True, aktuell, fingerabdruck(aktuell), gesperrt.notes_updated_at)
         cast(Any, gesperrt).set_notes_encrypted(sauber)
         jetzt = timezone.now()

@@ -76,12 +76,13 @@ def _senden(item_id: Any, nachricht: dict[str, Any]) -> None:
         logger.warning("Live-Notizen: Nachricht an TOP %s nicht verteilt", item_id)
 
 
-def neu_aufbauen(item_id: Any, html: str, *, vorher: str = "") -> None:
+def neu_aufbauen(item_id: Any, html: str, *, vorher: str | None = None) -> None:
     """
     Verbundene Editoren den Zustand aus den gespeicherten Notizen neu aufbauen lassen (ohne Verbindung gespeichert).
 
-    ``vorher`` = Notizen vor dieser Speicherung: Weicht der Inhalt eines Editors davon ab, hatte er noch nicht
-    gespeicherte Eingaben; er stellt sie unter die neuen Notizen (nichts geht verloren).
+    ``vorher`` = Notizen vor dieser Speicherung (``None``, wenn unbekannt; der Editor nimmt dann seinen eigenen
+    letzten Stand): Weicht der Inhalt eines Editors davon ab, hatte er noch nicht gespeicherte Eingaben; er führt sie
+    mit den neuen Notizen zusammen (nichts geht verloren, ein älterer Stand derselben Eingabe ergibt keinen Konflikt).
     """
     cache.delete(_seed_schluessel(item_id))
     _senden(item_id, {"type": "notizen.neu", "html": html, "vorher": vorher})
@@ -149,8 +150,16 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
             await self.send_json({"type": "yjs_state", "data": base64.b64encode(zustand).decode("ascii")})
         else:
             # Kein passender Zustand: genau ein schreibender Editor füllt ihn aus den Notizen, die anderen
-            # bekommen den Inhalt über die Synchronisierung
-            seed = self.stufe == "edit" and cache.add(_seed_schluessel(self.item_id), self.kennung, SEED_SPERRE)
+            # bekommen den Inhalt über die Synchronisierung. Leere Notizen füllt niemand: Eine Sperre hielte sonst die
+            # Speicherungen der anderen bis zu SEED_SPERRE Sekunden auf, ihr Browser wiche nach 4 s auf das Formular
+            # aus und alle Editoren bauten neu auf (doppelte Fassungen, Issue #1166)
+            from . import sitzung
+
+            seed = (
+                self.stufe == "edit"
+                and not sitzung.notizen_leer(html)
+                and cache.add(_seed_schluessel(self.item_id), self.kennung, SEED_SPERRE)
+            )
             await self.send_json({"type": "yjs_state", "data": None, "html": html, "seed": bool(seed)})
         await self._praesenz("da", frage=True)
 
@@ -266,7 +275,7 @@ class ProtokollNotizenConsumer(AsyncJsonWebsocketConsumer):  # type: ignore[misc
         if self.entzogen:
             return
         self.veraltet = self.stufe == "edit"
-        await self.send_json({"type": "neu_aufbauen", "html": event.get("html", ""), "vorher": event.get("vorher", "")})
+        await self.send_json({"type": "neu_aufbauen", "html": event.get("html", ""), "vorher": event.get("vorher")})
 
     async def notizen_praesenz(self, event: dict[str, Any]) -> None:
         if event.get("von") == self.channel_name or self.entzogen:

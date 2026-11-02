@@ -10,8 +10,9 @@
  *   (WebSocket gesperrt, Netz weg) speichert die Komponente wie im Formular-Modus; kommt keine Verbindung zustande,
  *   arbeitet sie ganz im Formular-Modus.
  * - **Formular**: Änderungen gehen nach kurzer Pause an den Server. Er speichert nur, wenn sein Stand dem Stand beim
- *   Laden entspricht (`stand`). Hat jemand anders inzwischen gespeichert (409), stehen danach beide Fassungen
- *   untereinander im Editor – es geht nichts verloren.
+ *   Laden entspricht (`stand`). Hat jemand anders inzwischen gespeichert (409), führt `zusammenfuehren` beide Fassungen
+ *   zusammen: Ist die eine nur ein älterer Stand der anderen, gilt die neuere; nur echte Abweichungen stehen
+ *   untereinander (Issue #1166). Es geht nichts verloren.
  * - **Lesen** (ohne Protokollrecht): kein Editor; im Live-Fall kommt der gespeicherte Stand über den WebSocket.
  *
  * Konfiguration per `{{ notizen_config|json_script:"fs-notizen-config" }}`; Markup: `_protokoll.html`. Stehen mehrere
@@ -26,6 +27,7 @@ import type { ErwaehnbarePerson } from '../editor/extensions/erwaehnung'
 import { defineComponent } from '../js/alpine/component'
 import { readJsonScript } from '../js/json-script'
 import { aktion, notizenAbmelden, notizenAnmelden, vorAnfragenSichern } from './faction-session'
+import { zusammenfuehren } from './notizen-zusammenfuehren'
 
 interface NotizenConfig {
   itemId: string
@@ -80,7 +82,6 @@ const WIEDERHOLEN_MS = 5000
 const VERBINDEN_MS = 4000
 /** So lange wartet ein Editor ohne eigenen Stand auf den Inhalt der anderen, dann baut er neu auf */
 const INHALT_WARTEN_MS = 5000
-const KONFLIKT_MARKE = '<p><strong>Ihre gleichzeitige Fassung:</strong></p>'
 
 function wsAdresse(itemId: string): string {
   const protokoll = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
@@ -113,7 +114,12 @@ export const sitzungsNotizen = defineComponent(() => {
   let gueltig = false
   let ersterStand = true
   let verbunden = false
-  let zuletztGespeichert = ''
+  // Stand der Notizen, auf dem dieser Editor beruht (geladen, zuletzt gespeichert oder neu aufgebaut): Basis für das
+  // Zusammenführen (Issue #1166)
+  let basisFassung = ''
+  // Nach einem Neuaufbau: eigene, zusammengeführte Fassung, die noch in den gemeinsamen Zustand muss
+  let nachholen: string | null = null
+  let konfliktNachAufbau = false
   let wartenTimer = 0
   let leser: WebSocket | null = null
   let leserVersuche = 0
@@ -150,6 +156,7 @@ export const sitzungsNotizen = defineComponent(() => {
       const live = Boolean(config.live) && 'WebSocket' in window
       if (config.editierbar && window.MandariEditor) {
         const inhalt = element.innerHTML
+        basisFassung = inhalt
         if (live) this.liveStarten(inhalt, false)
         else this.formularStarten(inhalt)
         notizenAnmelden(this)
@@ -213,12 +220,14 @@ export const sitzungsNotizen = defineComponent(() => {
 
     // ---- Live-Modus -----------------------------------------------------------------------------------------
 
-    liveStarten(ausgang: string, zusammengefuehrt: boolean) {
+    liveStarten(ausgang: string, zusammengefuehrt: boolean, konflikt = false) {
       if (!config || !element || beendet) return
       this.art = 'live'
       gueltig = false
       ersterStand = true
       verbunden = false
+      nachholen = zusammengefuehrt ? ausgang : null
+      konfliktNachAufbau = konflikt
       this.anwesende = []
       element.innerHTML = ''
       const personen = config.personen
@@ -279,7 +288,7 @@ export const sitzungsNotizen = defineComponent(() => {
       } else if (msg.type === 'praesenz') {
         this.praesenz(msg.art, msg.person as Anwesend)
       } else if (msg.type === 'neu_aufbauen') {
-        this.neuAufbauen(String(msg.html ?? ''), String(msg.vorher ?? ''))
+        this.neuAufbauen(String(msg.html ?? ''), typeof msg.vorher === 'string' ? msg.vorher : null)
       }
     },
 
@@ -287,6 +296,20 @@ export const sitzungsNotizen = defineComponent(() => {
     freigeben() {
       gueltig = true
       window.clearTimeout(wartenTimer)
+      if (konfliktNachAufbau) this.konflikt = true
+      konfliktNachAufbau = false
+      // Nach einem Neuaufbau kam der Stand von einem anderen Editor: eigene Fassung jetzt einarbeiten (Issue #1166)
+      const eigene = nachholen
+      nachholen = null
+      if (eigene !== null && editor) {
+        const gemeinsam = editor.getHTML()
+        const ergebnis = zusammenfuehren(eigene, gemeinsam, basisFassung)
+        if (ergebnis.konflikt) this.konflikt = true
+        if (ergebnis.html !== gemeinsam) {
+          editor.commands.setContent(ergebnis.html)
+          ausstehend = true
+        }
+      }
       // Vorher Getipptes jetzt speichern
       if (ausstehend) this.geaendert()
     },
@@ -310,22 +333,22 @@ export const sitzungsNotizen = defineComponent(() => {
           }
         }
         this.freigeben()
-        if (zusammengefuehrt) this.konflikt = true
         return
       }
       const html = String(msg.html ?? '')
       if (!erster) {
         // Der Zustand wurde verworfen (jemand hat ohne Verbindung gespeichert): neu aufbauen
-        this.neuAufbauen(html, zuletztGespeichert)
+        this.neuAufbauen(html, null)
         return
       }
+      if (!zusammengefuehrt) basisFassung = html
       if (msg.seed) {
         // Dieser Editor füllt den Zustand aus den Notizen (genau einer je TOP); schon Getipptes kommt darunter
         const getippt = this.getippt()
         const inhalt = `${zusammengefuehrt ? ausgang : html}${getippt}`
+        nachholen = null
         if (text(inhalt) || inhalt.includes('<li')) editor.commands.setContent(inhalt)
         this.freigeben()
-        if (zusammengefuehrt) this.konflikt = true
         return
       }
       if (!text(html) && !html.includes('<li')) {
@@ -378,13 +401,19 @@ export const sitzungsNotizen = defineComponent(() => {
       return `Gerade im Protokoll: ${liste.map((p) => `${p.name}${p.schreibt ? ', schreibt mit' : ', liest mit'}`).join('; ')}`
     },
 
-    /** Neu aufbauen: Die Notizen wurden ohne Verbindung geändert, der gemeinsame Zustand gilt nicht mehr. */
-    neuAufbauen(html: string, vorher: string) {
+    /**
+     * Neu aufbauen: Die Notizen wurden ohne Verbindung geändert, der gemeinsame Zustand gilt nicht mehr.
+     *
+     * `vorher` = Notizen vor dieser Speicherung (`null`, wenn der Server sie nicht kennt). Eigene Eingaben, die dort
+     * noch nicht stehen, werden mit den neuen Notizen zusammengeführt; ein älterer Stand derselben Eingabe ergibt
+     * keinen Konflikt mehr (Issue #1166).
+     */
+    neuAufbauen(html: string, vorher: string | null) {
       if (!element || beendet) return
       const eigene = editor && gueltig ? editor.getHTML() : this.getippt()
-      const basis = vorher || zuletztGespeichert
-      const offen = Boolean(eigene) && text(eigene) !== text(basis) && text(eigene) !== text(html)
-      const ausgang = offen ? `${html}${KONFLIKT_MARKE}${eigene}` : html
+      const ergebnis = eigene ? zusammenfuehren(eigene, html, vorher ?? basisFassung) : { html, konflikt: false }
+      const offen = ergebnis.html !== html
+      basisFassung = html
       window.clearTimeout(timer)
       window.clearTimeout(wartenTimer)
       const altEditor = editor
@@ -394,7 +423,7 @@ export const sitzungsNotizen = defineComponent(() => {
       altCollab?.destroy()
       altEditor?.destroy()
       ausstehend = offen
-      this.liveStarten(ausgang, offen)
+      this.liveStarten(ergebnis.html, offen, ergebnis.konflikt)
     },
 
     /** Ohne Verbindung: wie bisher über das Formular speichern (aktueller Inhalt bleibt im Editor). */
@@ -409,6 +438,9 @@ export const sitzungsNotizen = defineComponent(() => {
       altCollab?.destroy()
       altEditor?.destroy()
       this.anwesende = []
+      nachholen = null
+      if (konfliktNachAufbau) this.konflikt = true
+      konfliktNachAufbau = false
       this.formularStarten(inhalt)
       if (ausstehend) this.geaendert()
     },
@@ -496,7 +528,7 @@ export const sitzungsNotizen = defineComponent(() => {
       const lauf = (async () => {
         const ok = await verbindung.flush(4000)
         if (ok) {
-          zuletztGespeichert = html
+          basisFassung = html
           this.status = ausstehend ? 'ungespeichert' : 'gespeichert'
           return
         }
@@ -525,34 +557,52 @@ export const sitzungsNotizen = defineComponent(() => {
             keepalive,
           )
           let daten = (await res.json()) as Antwort
+          let gesendet = html
           if (res.status === 409 && editor && this.art === 'live') {
-            // Live ohne Verbindung: beide Fassungen sofort zusammen speichern (der Editor wird danach neu aufgebaut)
-            this.konflikt = true
-            const beide = `${daten.html ?? ''}${KONFLIKT_MARKE}${html}`
+            // Live ohne Verbindung: beide Fassungen zusammenführen und sofort speichern (der Editor wird danach neu
+            // aufgebaut). Steht auf dem Server schon alles (gleicher oder neuerer Stand), bleibt es dabei.
+            const server = daten.html ?? ''
+            const ergebnis = zusammenfuehren(html, server, basisFassung)
+            if (ergebnis.konflikt) this.konflikt = true
+            if (ergebnis.html === server) {
+              this.stand = daten.stand ?? this.stand
+              this.gespeichertUm = daten.gespeichert_um ?? this.gespeichertUm
+              basisFassung = server
+              this.status = verbunden && this.status !== 'getrennt' ? 'gespeichert' : 'getrennt'
+              return
+            }
+            gesendet = ergebnis.html
             res = await aktion(
-              { action: 'notizen', item_id: config?.itemId ?? '', html: beide, stand: daten.stand ?? '' },
+              { action: 'notizen', item_id: config?.itemId ?? '', html: gesendet, stand: daten.stand ?? '' },
               keepalive,
             )
             daten = (await res.json()) as Antwort
-            if (res.ok) zuletztGespeichert = beide
           }
           if (res.ok) {
             this.stand = daten.stand ?? this.stand
             this.gespeichertUm = daten.gespeichert_um ?? ''
+            basisFassung = gesendet
             if (this.art === 'live') {
-              zuletztGespeichert = zuletztGespeichert || html
               this.status = verbunden && this.status !== 'getrennt' ? 'gespeichert' : 'getrennt'
             } else {
               this.status = ausstehend ? 'ungespeichert' : 'gespeichert'
             }
           } else if (res.status === 409 && editor) {
-            // Gleichzeitig gespeichert: beide Fassungen behalten (der aktuelle Editorinhalt, nicht nur der
-            // gesendete Stand – sonst gingen Eingaben während der Anfrage verloren)
-            this.konflikt = true
-            this.stand = daten.stand ?? ''
+            // Gleichzeitig gespeichert: mit dem aktuellen Editorinhalt zusammenführen (nicht nur mit dem gesendeten
+            // Stand, sonst gingen Eingaben während der Anfrage verloren). Nur echte Abweichungen stehen untereinander.
+            const server = daten.html ?? ''
             const eigene = editor.getHTML()
-            editor.commands.setContent(`${daten.html ?? ''}${KONFLIKT_MARKE}${eigene}`, { emitUpdate: false })
-            ausstehend = true
+            const ergebnis = zusammenfuehren(eigene, server, basisFassung)
+            this.stand = daten.stand ?? ''
+            basisFassung = server
+            if (ergebnis.konflikt) this.konflikt = true
+            if (ergebnis.html !== eigene) editor.commands.setContent(ergebnis.html, { emitUpdate: false })
+            if (ergebnis.html === server) {
+              this.gespeichertUm = daten.gespeichert_um ?? this.gespeichertUm
+              this.status = ausstehend ? 'ungespeichert' : 'gespeichert'
+            } else {
+              ausstehend = true
+            }
           } else {
             this.status = 'fehler'
             ausstehend = true
