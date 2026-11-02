@@ -88,6 +88,12 @@ pruefe('Marken stapeln sich nicht, wenn der Server die zusammengeführte Fassung
   assert.deepEqual(zusammenfuehren(p('Eigene Notiz'), beide, null), { html: beide, konflikt: false })
 })
 
+pruefe('kurze eigene Eingabe mitten im fremden Text fällt nicht weg (Konflikt statt verschlucken)', () => {
+  const ergebnis = zusammenfuehren(p('Vertagt'), p('Antrag 4: Vertagt auf Mai, Antrag 5 abgelehnt'), '')
+  assert.equal(ergebnis.konflikt, true)
+  assert.ok(ergebnis.html.endsWith(p('Vertagt')))
+})
+
 pruefe('Text ohne Tags, Leerraum und Zeichen-Entitäten vereinheitlicht', () => {
   assert.equal(notizText('<p>a&nbsp;&amp;  b</p><ul><li>c</li></ul>'), 'a & b c')
   assert.equal(notizText('<p>&#228;&#xFC;</p>'), 'äü')

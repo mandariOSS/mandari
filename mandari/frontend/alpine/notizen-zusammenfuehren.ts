@@ -12,7 +12,9 @@
  *    Server unverändert → eigene Fassung.
  * 3. Gleicher Text (nur die Formatierung weicht ab) → eigene Fassung.
  * 4. Eine Seite leer → die andere.
- * 5. Enthält eine Fassung den ganzen Text der anderen → die längere (die kürzere ist ein älterer Stand).
+ * 5. Ist eine Fassung Anfang oder Ende der anderen, gilt die längere (die kürzere ist ein älterer Stand: es wurde
+ *    weitergetippt, oder die andere hat schon zusammengeführt). Steht sie nur irgendwo mittendrin, ist es ein
+ *    Konflikt, damit eine kurze eigene Eingabe nicht unbemerkt wegfällt.
  * 6. Sonst stehen beide untereinander, getrennt durch die Konfliktmarke.
  *
  * Reine Funktionen ohne DOM, damit sie unter Node getestet werden können (`frontend/js/test/`).
@@ -75,7 +77,7 @@ export function zusammenfuehren(eigene: string, server: string, basis: string | 
   if (e === s) return ohneKonflikt(eigene)
   if (!hatInhalt(eigene, e)) return ohneKonflikt(server)
   if (!hatInhalt(server, s)) return ohneKonflikt(eigene)
-  if (s.includes(e)) return ohneKonflikt(server)
-  if (e.includes(s)) return ohneKonflikt(eigene)
+  if (s.startsWith(e) || s.endsWith(e)) return ohneKonflikt(server)
+  if (e.startsWith(s) || e.endsWith(s)) return ohneKonflikt(eigene)
   return { html: `${server}${KONFLIKT_MARKE}${eigene}`, konflikt: true }
 }
