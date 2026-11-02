@@ -678,9 +678,13 @@ services:
       # Der Sync erkennt den Text selbst (TEXT_EXTRACTION_ENABLED): Adressraum je Tesseract-Unterprozess
       # deutlich unter dem Speicherlimit des Containers (512 MB) halten (#817)
       OCR_MEMORY_LIMIT_MB: ${OCR_MEMORY_LIMIT_MB:-384}
-      # Die Textebene (pypdf) liest je Datei ein eigener Prozess mit dieser Grenze des Adressraums, nie der Sync selbst;
-      # er meldet sich dem Speicherwächter als Erster, reicht das Limit des Containers nicht, trifft es ihn
-      TEXT_LAYER_MEMORY_LIMIT_MB: ${TEXT_LAYER_MEMORY_LIMIT_MB:-384}
+      # Die Textebene (pypdf) eines PDFs liest ein eigener Prozess mit Grenze des Adressraums (MB) und Zeitgrenze (s),
+      # nie der Sync selbst; höchstens INGESTOR_TEXT_LAYER_CONCURRENCY zugleich. Eigene Variablen: TEXT_LAYER_* in der
+      # .env gilt der Anwendung (1 GB). Reicht das Limit des Containers nicht, trifft der Speicherwächter zuerst diese
+      # Prozesse (DEPLOYMENT.md, „Texterkennung“)
+      TEXT_LAYER_MEMORY_LIMIT_MB: ${INGESTOR_TEXT_LAYER_MEMORY_LIMIT_MB:-384}
+      TEXT_LAYER_TIMEOUT: ${INGESTOR_TEXT_LAYER_TIMEOUT:-120}
+      TEXT_LAYER_CONCURRENCY: ${INGESTOR_TEXT_LAYER_CONCURRENCY:-2}
       # worker: die Aufträge der Anwendung (worker-heavy) erkennen den Text, Sync und OCR-Worker ruhen und laden
       # keine Dateien mehr (gleicher Wert wie bei der Anwendung)
       TEXT_EXTRACTION_RUNNER: ${TEXT_EXTRACTION_RUNNER:-ingestor}

@@ -42,7 +42,7 @@ from typing import Final
 
 from .mistral import MistralConfig, MistralError, extract_text_with_mistral
 from .ocr import MEMORY_LIMIT_REASON, OcrLimits, OcrMemoryLimitError, ocr_pdf
-from .textebene import TextLayer, read_text_layer
+from .textebene import MAX_TEXT_CHARS, TextLayer, plausible_page_count, read_text_layer
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +158,10 @@ def _clean(result: ExtractionResult) -> ExtractionResult:
 
 
 def _from_layer(layer: TextLayer) -> ExtractionResult:
-    notes = (f"Textebene gekürzt nach {len(layer.pages)} von {layer.page_count} Seiten",) if layer.truncated else ()
+    notes: tuple[str, ...] = ()
+    if layer.truncated:
+        gesamt = f" von {layer.page_count}" if layer.page_count is not None else ""
+        notes = (f"Textebene gekürzt nach {len(layer.pages)}{gesamt} Seiten",)
     return ExtractionResult(layer.text, METHOD_PYPDF, layer.page_count, notes)
 
 
@@ -259,9 +262,18 @@ LAYER_ERROR: Final = "fehler"
 EXIT_MEMORY: Final = 3
 #: Beendet vom Speicherwächter (SIGKILL), direkt oder über die Shell
 _KILLED: Final = frozenset({-9, 137})
+#: Höchstens so viel Ausgabe (JSON, Byte) liest der Aufrufer vom Prozess der ersten Stufe; mehr gilt als Fehler. Reicht
+#: für ``MAX_TEXT_CHARS`` Zeichen mit Umlauten und Maskierungen.
+MAX_LAYER_OUTPUT_BYTES: Final = 4 * MAX_TEXT_CHARS
+#: Von stderr genügt der Anfang (Speichergrenze erkennen)
+_MAX_STDERR_BYTES: Final = 64 * 1024
 
 #: Aufruf des Prozesses: (Befehl, Zeitgrenze, Speichergrenze in MB, Umgebung); in Tests ersetzbar
 IsolatedRunner = Callable[[Sequence[str], float, int, dict[str, str]], "subprocess.CompletedProcess[bytes]"]
+
+
+class LayerOutputLimitError(Exception):
+    """Die Ausgabe des Prozesses der ersten Stufe ist größer als ``MAX_LAYER_OUTPUT_BYTES``."""
 
 
 @dataclass(frozen=True)
@@ -283,6 +295,9 @@ def run_isolated(
     (``nice``). Er meldet sich dem Speicherwächter als Erster (``oom_score_adj`` 1000): Reicht der Speicher des
     Containers nicht, trifft es diesen Prozess, nicht den Worker. Ohne ``/bin/sh`` (Windows, Entwicklung) läuft der
     Befehl ohne diese Grenzen.
+
+    Die Ausgabe landet in temporären Dateien; gelesen werden höchstens ``MAX_LAYER_OUTPUT_BYTES`` von stdout (sonst
+    ``LayerOutputLimitError``) und der Anfang von stderr.
     """
     argv = list(command)
     if os.name == "posix" and Path("/bin/sh").exists():
@@ -292,7 +307,14 @@ def run_isolated(
             'if command -v nice >/dev/null 2>&1; then exec nice -n 10 "$@"; fi; exec "$@"'
         )
         argv = ["/bin/sh", "-c", skript, grenze, *argv]
-    return subprocess.run(argv, capture_output=True, timeout=timeout, env=env, check=False)
+    with tempfile.TemporaryFile() as ausgabe, tempfile.TemporaryFile() as fehler:
+        lauf = subprocess.run(argv, stdout=ausgabe, stderr=fehler, timeout=timeout, env=env, check=False)
+        groesse = ausgabe.seek(0, os.SEEK_END)
+        if groesse > MAX_LAYER_OUTPUT_BYTES:
+            raise LayerOutputLimitError(f"{groesse} Byte Ausgabe")
+        ausgabe.seek(0)
+        fehler.seek(0)
+        return subprocess.CompletedProcess(argv, lauf.returncode, ausgabe.read(), fehler.read(_MAX_STDERR_BYTES))
 
 
 def extract_text_layer_isolated(
@@ -313,7 +335,13 @@ def extract_text_layer_isolated(
     ein Prozess mit Speichergrenze endet daran mit ``LAYER_MEMORY``, nie mit einem Teil des Textes.
 
     Reicht die Textebene nicht (``LAYER_NEEDS_OCR``), trägt ``layer`` die im Prozess gelesene Textebene.
+
+    Dateien, die keine PDFs sind, erkennt sie ohne eigenen Prozess wie ``extract_text`` (ohne pypdf, höchstens
+    ``MAX_TEXT_BYTES``): Der Prozess brächte nichts und reichte ihren Text nur als JSON durch.
     """
+    mime = _mime(mime_type)
+    if not _is_pdf(source, mime, file_name):
+        return TextLayerOutcome(_clean(_extract_other(source, mime, file_name)), LAYER_OK)
     limits = limits or IsolationLimits()
     # Werte mit "=": ein Dateiname, der mit "-" beginnt, gilt sonst als Option
     command = [
@@ -337,6 +365,12 @@ def extract_text_layer_isolated(
     except subprocess.TimeoutExpired:
         logger.warning("Textebene %s: Zeitgrenze (%.0f s), weiter mit der Texterkennung", file_name, limits.timeout)
         return TextLayerOutcome(None, LAYER_TIMEOUT)
+    except LayerOutputLimitError as exc:
+        logger.warning("Textebene %s: Ausgabe zu groß (%s), weiter mit der Texterkennung", file_name, exc)
+        return TextLayerOutcome(None, LAYER_ERROR)
+    if len(lauf.stdout or b"") > MAX_LAYER_OUTPUT_BYTES:
+        logger.warning("Textebene %s: Ausgabe zu groß, weiter mit der Texterkennung", file_name)
+        return TextLayerOutcome(None, LAYER_ERROR)
     if lauf.returncode != 0:
         speicher = (
             lauf.returncode == EXIT_MEMORY or lauf.returncode in _KILLED or b"MemoryError" in (lauf.stderr or b"")
@@ -349,7 +383,7 @@ def extract_text_layer_isolated(
         )
         return TextLayerOutcome(None, LAYER_MEMORY if speicher else LAYER_ERROR)
     try:
-        daten = json.loads((lauf.stdout or b"").decode("utf-8"))
+        daten = json.loads(lauf.stdout or b"")
     except (UnicodeDecodeError, ValueError):
         logger.warning("Textebene %s: Ausgabe nicht lesbar, weiter mit der Texterkennung", file_name)
         return TextLayerOutcome(None, LAYER_ERROR)
@@ -357,11 +391,10 @@ def extract_text_layer_isolated(
         return TextLayerOutcome(None, LAYER_NEEDS_OCR)
     if daten.get("needs_ocr", True):
         return TextLayerOutcome(None, LAYER_NEEDS_OCR, _layer_aus(daten.get("layer")))
-    seiten = daten.get("page_count")
     result = ExtractionResult(
         str(daten.get("text") or ""),
         str(daten.get("method") or METHOD_NONE),
-        seiten if isinstance(seiten, int) else None,
+        plausible_page_count(daten.get("page_count")),
         tuple(str(note) for note in daten.get("notes") or ()),
     )
     return TextLayerOutcome(_clean(result), LAYER_OK)
@@ -426,13 +459,8 @@ def _layer_aus(daten: object) -> TextLayer | None:
         scans = tuple(int(nummer) for nummer in daten.get("scan_pages") or ())
     except (TypeError, ValueError):
         return None
-    seitenzahl = daten.get("page_count")
     return TextLayer(
-        seiten,
-        seitenzahl if isinstance(seitenzahl, int) else None,
-        groessen,
-        scans,
-        bool(daten.get("truncated")),
+        seiten, plausible_page_count(daten.get("page_count")), groessen, scans, bool(daten.get("truncated"))
     )
 
 

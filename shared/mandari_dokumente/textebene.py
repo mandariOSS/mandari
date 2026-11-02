@@ -19,9 +19,9 @@ dieselbe Methode ``TextLayer.sufficient``; die Anwendung führt die Stufe als ei
 Betrachtet werden wie bei Tesseract höchstens ``max_pages`` Seiten; den Text liefert die Textebene für alle, höchstens
 aber ``MAX_TEXT_PAGES`` Seiten mit zusammen ``MAX_TEXT_CHARS`` Zeichen (``TextLayer.truncated``).
 
-**Speicher und Zeit** begrenzt nur ein eigener Prozess (``texterkennung.extract_text_layer_isolated``): pypdf hält die
-entpackten Inhalte aller gelesenen Seiten, solange der Leser lebt, und eine kleine, stark komprimierte Datei kann so
-ein Vielfaches ihrer Größe belegen. ``MemoryError`` geht deshalb an den Aufrufer, statt als Teilergebnis zu enden.
+**Speicher und Zeit** begrenzt ein eigener Prozess (``texterkennung.extract_text_layer_isolated``): pypdf hält die
+entpackten Inhalte aller gelesenen Seiten, solange der Leser lebt. ``MemoryError`` geht deshalb an den Aufrufer, statt
+als Teilergebnis zu enden.
 """
 
 from __future__ import annotations
@@ -46,8 +46,10 @@ _MAX_FORM_DEPTH: Final = 3
 #: Text liefern höchstens so viele Seiten; die Seitenzahl bleibt die der Datei
 MAX_TEXT_PAGES: Final = 3000
 #: Höchstens so viele Zeichen liest die Textebene insgesamt (rund 1500 dicht beschriebene Seiten). Hält auch die
-#: Ausgabe des eigenen Prozesses klein, die der Aufrufer ganz in seinen Speicher liest.
+#: Ausgabe des eigenen Prozesses klein, die der Aufrufer in seinen Speicher liest.
 MAX_TEXT_CHARS: Final = 5_000_000
+#: Größte plausible Seitenzahl (wie die Grenze des Seitenbaums in pypdf); darüber gilt sie als unbekannt
+MAX_PAGE_COUNT: Final = 100_000
 
 
 @dataclass(frozen=True)
@@ -91,14 +93,14 @@ def read_text_layer(
     leere Textebene: Die Datei geht dann wie bisher an die Erkennung aus dem Bild.
 
     Text liefern höchstens ``max_text_pages`` Seiten mit zusammen höchstens ``max_chars`` Zeichen; danach endet das
-    Lesen (``truncated``), ``page_count`` bleibt die Seitenzahl der Datei. ``MemoryError`` geht an den Aufrufer:
-    An einer Speichergrenze gibt es kein Teilergebnis, das wie eine vollständige Textebene aussähe.
+    Lesen (``truncated``), ``page_count`` bleibt die Seitenzahl der Datei, sofern sie plausibel ist (``_seitenzahl``).
+    ``MemoryError`` geht an den Aufrufer: An einer Speichergrenze gibt es kein Teilergebnis, das wie eine vollständige
+    Textebene aussähe.
     """
     if PdfReader is None:
         return TextLayer()
     try:
         reader = PdfReader(BytesIO(source) if isinstance(source, bytes) else source)
-        seitenzahl = len(reader.pages)
         seiten: list[str] = []
         groessen: list[tuple[float, float] | None] = []
         scans: list[int] = []
@@ -117,11 +119,12 @@ def read_text_layer(
                 groessen.append(_page_size(page))
                 if _zeichen(text) < MIN_PAGE_CHARS and _has_image(page):
                     scans.append(nummer)
+        seitenzahl = _seitenzahl(reader, len(seiten)) if gekuerzt else len(seiten)
         if gekuerzt:
             logger.warning(
-                "pypdf: Textebene gekürzt nach %d von %d Seiten (Grenzen %d Seiten, %d Zeichen)",
+                "pypdf: Textebene gekürzt nach %d von %s Seiten (Grenzen %d Seiten, %d Zeichen)",
                 len(seiten),
-                seitenzahl,
+                seitenzahl if seitenzahl is not None else "?",
                 max_text_pages,
                 max_chars,
             )
@@ -131,6 +134,28 @@ def read_text_layer(
     except Exception as exc:  # noqa: BLE001 - kaputte Textebene: weiter mit der Erkennung aus dem Bild
         logger.warning("pypdf: Textebene nicht lesbar (%s)", type(exc).__name__)
         return TextLayer()
+
+
+def plausible_page_count(wert: object) -> int | None:
+    """Seitenzahl, wenn sie eine ganze Zahl von 0 bis ``MAX_PAGE_COUNT`` ist; sonst ``None`` (unbekannt)."""
+    if isinstance(wert, bool) or not isinstance(wert, int):
+        return None
+    return wert if 0 <= wert <= MAX_PAGE_COUNT else None
+
+
+def _seitenzahl(reader: Any, gelesen: int) -> int | None:
+    """
+    Seitenzahl einer gekürzten Textebene. pypdf übernimmt sie teils ungeprüft aus ``/Count`` (verschlüsselte Dateien);
+    weniger als die gelesenen Seiten oder mehr als ``MAX_PAGE_COUNT`` gelten deshalb als unbekannt.
+    """
+    try:
+        zahl = len(reader.pages)
+    except MemoryError:
+        raise
+    except Exception:  # noqa: BLE001 - ohne Seitenzahl erkennt Tesseract bis zur ersten nicht renderbaren Seite
+        return None
+    gesamt = plausible_page_count(zahl)
+    return gesamt if gesamt is not None and gesamt >= gelesen else None
 
 
 def _page_text(page: Any) -> str:

@@ -155,10 +155,14 @@ class Settings(BaseSettings):
     ocr_page_timeout: float = 120.0
     ocr_file_budget_seconds: float = 1200.0
     ocr_max_pages: int = 100
-    # Die Textebene (pypdf) liest ein eigener Prozess mit dieser Grenze des Adressraums in MB (0 = ohne) und 120 s
-    # Zeitgrenze, nie der Ingestor selbst; wie TEXT_LAYER_MEMORY_LIMIT_MB der Anwendung (Issue #1107). Deutlich unter
-    # dem Speicherlimit des Containers halten. Darüber geht die Datei an die Erkennung aus dem Bild.
+    # Die Textebene (pypdf) eines PDFs liest ein eigener Prozess mit Grenze des Adressraums in MB (0 = ohne) und
+    # Zeitgrenze in Sekunden, nie der Ingestor selbst (wie die erste Stufe der Anwendung, Issue #1107). Darüber geht
+    # die Datei an die Erkennung aus dem Bild. Höchstens TEXT_LAYER_CONCURRENCY solche Prozesse laufen zugleich, über
+    # alle Quellen und Plätze: Anzahl × Grenze plus Grundbedarf (rund 200 MB) unter dem Speicherlimit des Containers
+    # halten (Compose: INGESTOR_TEXT_LAYER_*, DEPLOYMENT.md).
     text_layer_memory_limit_mb: int = 384
+    text_layer_timeout: float = 120.0
+    text_layer_concurrency: int = 2
     # Dateien in "processing", deren Bearbeitung länger zurückliegt, gelten als abgebrochen (Worker beendet):
     # zurück nach "pending", nach TEXT_EXTRACTION_MAX_ATTEMPTS abgebrochenen Versuchen "failed" (Speichergrenze)
     text_extraction_stale_minutes: int = 60
