@@ -30,6 +30,7 @@ from django.template.loader import get_template
 from apps.accounts.forms import PasswordResetForm
 from apps.common import mail as mail_dienst
 from apps.common.email import drop_empty_preheader, html_to_text, render_email
+from apps.work.organization.views.invitations import MAX_INVITATION_MESSAGE_LENGTH
 
 SNAPSHOT_DIR = Path(__file__).parent / "snapshots" / "emails"
 BASE_TEMPLATE = "emails/base_email.html"
@@ -875,6 +876,26 @@ def test_render_email_mit_langem_leerraum_im_freitext(org: Any, make_member: Any
     dauer = time.perf_counter() - beginn
     assert "Hallo" in html and "Ende" in html
     assert "Hallo" in text and "Ende" in text
+    assert dauer < _ZEITGRENZE_MAIL, f"render_email brauchte {dauer:.3f} s"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("laenge", [MAX_INVITATION_MESSAGE_LENGTH, 200_000], ids=["grenze", "weit-darueber"])
+def test_render_email_mit_zeilenumbruechen_im_freitext(org: Any, make_member: Any, laenge: int) -> None:
+    """Folgen von ``\\r\\n`` in der Notiz, über html2text: an der Grenze der Einladungsnachricht und weit darüber.
+
+    Die Ansicht kürzt die Notiz auf ``MAX_INVITATION_MESSAGE_LENGTH``; der Renderer bleibt auch ohne Kürzung linear.
+    """
+    note = "Hallo" + "\r\n" * ((laenge - len("HalloEnde")) // 2) + "Ende"
+    assert len(note) <= laenge
+    kontext = work_org_guest_access(org, make_member)
+    kontext["note"] = note
+    beginn = time.perf_counter()
+    html, text = render_email("work/organization/email/guest_access.html", kontext)
+    dauer = time.perf_counter() - beginn
+    assert "Hallo" in html and "Ende" in html
+    assert "Hallo" in text and "Ende" in text
+    assert "\n\n\n" not in text
     assert dauer < _ZEITGRENZE_MAIL, f"render_email brauchte {dauer:.3f} s"
 
 

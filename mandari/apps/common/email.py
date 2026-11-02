@@ -39,6 +39,23 @@ _EMPTY_PREHEADER_RE = re.compile(
 _BLANK_LINES_RE = re.compile(r"\n{3,}")
 # html2text maskiert Markdown-Sonderzeichen (z. B. "\-"); in einer reinen Textmail stören die Backslashes.
 _MD_ESCAPE_RE = re.compile(r"\\([\\`*_{}\[\]()#+\-.!])")
+_WHITESPACE_RE = re.compile(r"\s+")
+
+
+class _Html2Text(html2text.HTML2Text):
+    """html2text, das Leerraum im Fließtext vor dem Maskieren zusammenfasst.
+
+    html2text maskiert Markdown-Zeichen am Zeilenanfang mit Ausdrücken der Form ``^(\\s*)…`` (MULTILINE). In einer
+    langen Folge von Zeilenumbrüchen setzen sie an jedem Zeilenanfang neu an und laufen bis zum Ende der Folge,
+    quadratisch in ihrer Länge. Außerhalb von ``<pre>`` fasst html2text Leerraum danach ohnehin zu einem Leerzeichen
+    zusammen; hier geschieht das vorher. Die Textfassung bleibt gleich, denn die Maskierungen am Zeilenanfang
+    (``\\.``, ``\\+``, ``\\-``) entfernt ``html_to_text`` anschließend wieder.
+    """
+
+    def handle_data(self, data: str, entity_char: bool = False) -> None:
+        if not self.pre:
+            data = _WHITESPACE_RE.sub(" ", data)
+        super().handle_data(data, entity_char)
 
 
 def get_from_email() -> str:
@@ -70,7 +87,7 @@ def inline_css(html: str) -> str:
 
 def html_to_text(html: str) -> str:
     """Text-Alternative aus HTML erzeugen (Links bleiben als ``[Text](URL)`` erhalten)."""
-    converter = html2text.HTML2Text()
+    converter = _Html2Text()
     converter.body_width = 0  # kein Zeilenumbruch, Links bleiben intakt
     converter.ignore_images = True
     converter.ignore_emphasis = True
