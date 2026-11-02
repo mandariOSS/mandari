@@ -26,15 +26,14 @@ import uuid
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
 from django.db.models.functions import Substr
 from django.utils import timezone
-from mandari_dokumente import MAX_TEXT_CHARS
 
 from hub.ris import vorlagennummer
-from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension
+from hub.ris.canonical import implementation_extension, roll_call_extension, vote_extension, with_limited_text
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -1073,23 +1072,15 @@ def public_files_by_ids(bodies: Bodies, file_ids: Iterable[object]) -> dict[uuid
 
 def public_file_with_text(bodies: Bodies, file_id: object) -> OParlFile | None:
     """
-    Eine öffentliche Datei der Kommunen samt erkanntem Text; sonst ``None``. Der Text ist höchstens
-    ``MAX_TEXT_CHARS`` Zeichen lang, auch wenn ein älterer, längerer gespeichert ist (gekürzt in der Datenbank).
+    Eine öffentliche Datei der Kommunen samt erkanntem Text; sonst ``None``. Den Text liest
+    ``hub.ris.canonical.file_text``: höchstens ``MAX_TEXT_CHARS`` Zeichen, auch wenn ein älterer, längerer
+    gespeichert ist (gekürzt in der Datenbank, ``with_limited_text``); ``text_content`` selbst ist nicht geladen.
     """
     pk = _uuid(file_id)
     if not pk:
         return None
-    datei = (
-        _public_files(bodies)
-        .filter(pk=pk)
-        .defer("text_content", "raw_json")
-        .annotate(text_begrenzt=Substr("text_content", 1, MAX_TEXT_CHARS))
-        .select_related("paper")
-        .first()
-    )
-    if datei is not None:
-        datei.text_content = datei.text_begrenzt
-    return datei
+    dateien = with_limited_text(_public_files(bodies).filter(pk=pk).defer("raw_json"))
+    return cast(OParlFile | None, dateien.select_related("paper").first())
 
 
 def public_organizations(bodies: Bodies, text: str = "", *, on: date | None = None) -> QuerySet[OParlOrganization]:

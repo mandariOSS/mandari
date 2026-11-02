@@ -27,6 +27,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from hub.ris import selectors as ris
+from hub.ris.canonical import file_text
 
 if TYPE_CHECKING:
     from insight_core.models import OParlMeeting, OParlOrganization, OParlPaper
@@ -693,7 +694,8 @@ def dokument_abschnitt(ctx: ToolContext, args: Mapping[str, Any]) -> dict[str, A
     elif datei.meeting_id:
         url = ctx.link("meeting_detail", datei.meeting_id)
         ctx.note(url, datei.name or "Sitzung", "meeting", detail=True)
-    text = datei.text_content or ""
+    # Höchstens bis zur Obergrenze der Texterkennung, in der Datenbank gekürzt (``public_file_with_text``)
+    text = file_text(datei) or ""
     kopf = {
         "name": _short(datei.name or datei.file_name, 120),
         "vorgang": _short(paper.name, 120) if paper else None,

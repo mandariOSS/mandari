@@ -28,8 +28,8 @@ from mandari_dokumente import ExtractionResult, extract_text
 from mandari_dokumente import texterkennung as bibliothek
 
 from apps.session.api import oparl as session_ausgabe
-from apps.session.models import SessionFile
-from hub.ris import erkennung
+from apps.session.models import SessionFile, SessionMeeting, SessionOrganization, SessionTenant
+from hub.ris import canonical, erkennung
 from hub.ris import selectors as ris
 from hub.ris.mapping import bestand
 from insight_core.models import OParlBody, OParlFile, OParlMeeting, OParlPaper, OParlSource
@@ -295,6 +295,69 @@ def test_einzelne_datei_mit_text_hoechstens_bis_zur_obergrenze() -> None:
 
     assert antwort.status_code == 200
     assert len(antwort.json()["text"]) == grenze
-    # Dokumentabschnitte des KI-Assistenten lesen über dieselbe Grenze
+    # Dokumentabschnitte des KI-Assistenten lesen über dieselbe Grenze, ohne den gespeicherten Text zu laden
     mit_text = ris.public_file_with_text([vorgang.body_id], datei.pk)
-    assert mit_text is not None and len(mit_text.text_content or "") == grenze
+    assert mit_text is not None and _volltext_geladen([mit_text]) == []
+    assert len(canonical.file_text(mit_text) or "") == grenze
+
+
+@pytest.mark.django_db
+def test_session_schnittstelle_gibt_text_hoechstens_bis_zur_obergrenze_aus() -> None:
+    grenze = getattr(bibliothek, "MAX_TEXT_CHARS", 5_000_000)
+    tenant = SessionTenant.objects.create(name="Stadt Muster", slug="text-grenze", oparl_public_since=timezone.now())
+    rat = SessionOrganization.objects.create(tenant=tenant, name="Rat", organization_type="council")
+    sitzung = SessionMeeting.objects.create(
+        tenant=tenant, organization=rat, name="Ratssitzung", start=timezone.now(), is_public=True
+    )
+    datei = SessionFile.objects.create(
+        tenant=tenant, meeting=sitzung, name="Anlage.pdf", is_public=True, text_content="x" * (grenze + 100)
+    )
+    cache.clear()
+
+    with override_settings(OPARL_API_RATE_LIMIT=0, OPARL_API_CACHE_SECONDS=0):
+        objekt = Client().get(f"/session/{tenant.slug}/api/oparl/file/{datei.pk}/")
+        sitzungen = Client().get(f"/session/{tenant.slug}/api/oparl/meetings/")
+
+    assert objekt.status_code == 200 and len(objekt.json()["text"]) == grenze
+    assert sitzungen.status_code == 200 and "x" * 100 not in sitzungen.content.decode()
+    # Die eingebettete Niederschrift einer Sitzung kommt ohne Text
+    session: Any = session_ausgabe
+    vorbereitet = session.OBJECT_SPECS["meeting"][1](SessionMeeting.objects.all(), tenant)
+    assert "protocol__public_file__text_content" in vorbereitet.query.deferred_loading[0]
+
+
+# =============================================================================
+# Anzeige: Unterlagen der Fraktionssitzung und KI-Zusammenfassung
+# =============================================================================
+
+
+@pytest.mark.django_db
+def test_unterlage_der_fraktionssitzung_zeigt_nur_den_anfang() -> None:
+    from django.template.loader import render_to_string
+
+    from apps.work.faction import sitzung
+    from apps.work.faction.views.session import unterlage_kontext
+
+    vorgang = _vorgang([WORT * 30_000])
+    datei = OParlFile.objects.defer("text_content", "raw_json").get(paper=vorgang)
+
+    kontext = unterlage_kontext(sitzung.Unterlage(f"r-{datei.pk}", "ris_datei", "Anlage", datei, vorgang))
+
+    assert _volltext_geladen([datei]) == []
+    je_datei = getattr(ris, "TEXTANFANG_ZEICHEN", 100_000)
+    assert 0 < len(kontext["text"]) <= je_datei and kontext.get("text_gekuerzt") is True
+    html = render_to_string("work/faction/sitzung/_unterlage.html", {**kontext, "org_slug": "fraktion"})
+    assert "Hier gekürzt" in html and html.count(WORT.strip()) <= je_datei // len(WORT) + 1
+
+
+@pytest.mark.django_db
+def test_ki_zusammenfassung_liest_hoechstens_ein_festes_budget() -> None:
+    from insight_ai.services import summarizer
+
+    vorgang = _vorgang([WORT * 15_000] * 3 + ["Kurzer Antrag zum Radweg."])  # 450.000 Zeichen und ein kurzer Text
+
+    text = summarizer.SummaryService(provider=object())._collect_text_content(vorgang)
+
+    budget = getattr(summarizer, "TEXT_BUDGET_CHARS", 200_000)
+    assert len(text) <= budget + 1_000
+    assert "Kurzer Antrag zum Radweg." in text and "gekürzt" in text

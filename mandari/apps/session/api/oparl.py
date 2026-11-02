@@ -58,6 +58,7 @@ from apps.session.services.insight_service import oparl_id_base, oparl_system_ur
 from hub.api import changes, snapshot
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import Gone, MergedEntries, TimeFilters, list_response, single_page
+from hub.ris.canonical import with_limited_text
 from hub.ris.mapping.session import SessionMapping, SessionSource
 
 
@@ -152,17 +153,22 @@ def _public_files_qs():
 def _prepare_meetings(qs, tenant):
     # tenant__state_profile: Sitzungsformat (Erweiterung der Abbildung) ohne Abfrage je Sitzung
     # protocol__approval_meeting: Genehmigung der Niederschrift (Issue #525) ohne Abfrage je Sitzung
-    return qs.select_related(
-        "protocol__public_file__meeting", "protocol__approval_meeting", "tenant__state_profile"
-    ).prefetch_related(
-        "joint_organizations",
-        Prefetch(
-            "agenda_items",
-            queryset=pub.visible_agenda_items(tenant).select_related("consultation__paper").order_by("order", "number"),
-        ),
-        Prefetch("agenda_items__files", queryset=_public_files_qs()),
-        "agenda_items__votes__person",
-        Prefetch("files", queryset=_public_files_qs()),
+    # Die Niederschrift ist eingebettet und kommt ohne Text (er steht nur am Objekt-Endpunkt)
+    return (
+        qs.select_related("protocol__public_file__meeting", "protocol__approval_meeting", "tenant__state_profile")
+        .defer("protocol__public_file__text_content")
+        .prefetch_related(
+            "joint_organizations",
+            Prefetch(
+                "agenda_items",
+                queryset=pub.visible_agenda_items(tenant)
+                .select_related("consultation__paper")
+                .order_by("order", "number"),
+            ),
+            Prefetch("agenda_items__files", queryset=_public_files_qs()),
+            "agenda_items__votes__person",
+            Prefetch("files", queryset=_public_files_qs()),
+        )
     )
 
 
@@ -205,6 +211,11 @@ def _prepare_file_list(qs, tenant):
     return _prepare_files(qs, tenant).defer("text_content")
 
 
+def _prepare_file_object(qs, tenant):
+    # Objekt-Endpunkt: Text höchstens bis zur Obergrenze, gekürzt in der Datenbank
+    return with_limited_text(_prepare_files(qs, tenant))
+
+
 # Segment -> (Queryset-Funktion, prepare, Abbildung, Objekttyp)
 LIST_SPECS = {
     "organizations": (pub.visible_organizations, _prepare_organizations, SessionMapping.organization, "organization"),
@@ -228,7 +239,7 @@ OBJECT_SPECS = {
     "paper": (pub.visible_papers, _prepare_papers, SessionMapping.paper),
     "consultation": (pub.visible_consultations, _prepare_consultations, SessionMapping.consultation),
     # Der erkannte Text nur am Objekt-Endpunkt, nicht in Listen und Einbettungen
-    "file": (pub.visible_files, _prepare_files, SessionMapping.file_with_text),
+    "file": (pub.visible_files, _prepare_file_object, SessionMapping.file_with_text),
     "legislativeterm": (pub.visible_legislative_terms, None, SessionMapping.legislative_term),
 }
 

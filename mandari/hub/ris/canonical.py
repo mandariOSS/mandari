@@ -3,7 +3,8 @@
 Bausteine des kanonischen RIS-Modells (OParl 1.1).
 
 Eine Stelle für das, was jede Abbildung und jede Ausgabe gleich machen muss: Typ-URLs, Datum und
-Zeitpunkt, leere Felder weglassen, gekürzte Objekte für Gelöschtes. Die Abbildungen des RIS-Bestands
+Zeitpunkt, leere Felder weglassen, gekürzte Objekte für Gelöschtes, der erkannte Text einer Datei höchstens bis zur
+Obergrenze der Texterkennung. Die Abbildungen des RIS-Bestands
 (``hub.ris.mapping.bestand``) und der Session-Objekte (``hub.ris.mapping.session``) nutzen dieselben
 Funktionen.
 """
@@ -13,7 +14,10 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from typing import Any, Final
 
+from django.db.models import QuerySet
+from django.db.models.functions import Substr
 from django.utils import timezone
+from mandari_dokumente import MAX_TEXT_CHARS
 from mandari_oparl.extensions import (
     IMPLEMENTATION_LABELS,
     RESULT_LABELS,
@@ -89,6 +93,24 @@ def iso_day(dt: datetime | None) -> str | None:
 def clean(data: Objekt) -> Objekt:
     """Leere optionale Felder entfernen (``None``, leere Listen, leere Texte)."""
     return {key: value for key, value in data.items() if value is not None and value != [] and value != ""}
+
+
+def with_limited_text(queryset: QuerySet[Any]) -> QuerySet[Any]:
+    """
+    Dateien für den Objekt-Endpunkt ``file`` (beide Abbildungen): Der erkannte Text kommt höchstens mit
+    ``MAX_TEXT_CHARS`` Zeichen, gekürzt in der Datenbank (Attribut ``text_begrenzt``), auch wenn ein älterer, längerer
+    gespeichert ist; den Volltext lädt die Abfrage nicht. Ausgegeben wird er mit ``file_text``.
+    """
+    begrenzt: QuerySet[Any] = queryset.defer("text_content").annotate(
+        text_begrenzt=Substr("text_content", 1, MAX_TEXT_CHARS)
+    )
+    return begrenzt
+
+
+def file_text(file_obj: Any) -> str | None:
+    """``File.text``: höchstens ``MAX_TEXT_CHARS`` Zeichen; vorgeladen mit ``with_limited_text``, sonst hier gekürzt."""
+    text = getattr(file_obj, "text_begrenzt", None) if hasattr(file_obj, "text_begrenzt") else file_obj.text_content
+    return text[:MAX_TEXT_CHARS] if text else None
 
 
 def as_list(value: Any) -> list[Any] | None:
