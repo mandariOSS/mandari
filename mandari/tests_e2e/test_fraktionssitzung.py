@@ -7,6 +7,7 @@ Beschluss in der Leiste unten erfassen; Aufgabe für eine Personengruppe anlegen
 Zwei Personen schreiben gleichzeitig Notizen zum selben TOP: Keine Eingabe geht verloren.
 Dazu axe-core (auch am Handy und mit offenem Anhängen-Dialog) und Bildschirmfotos (390, 1280, 1440, 1920, 2560)
 für die Sichtprüfung, mit Vorlage aus dem RIS, „Im Beratungsverlauf“ und einem bisherigen Wortbeitrag.
+Kopf und Leiste unten überlappen bei keiner üblichen Breite (Issue #1166, Prüfung über die Lage der Elemente).
 """
 
 from __future__ import annotations
@@ -336,6 +337,99 @@ def test_sitzungsansicht_am_handy(
     page.locator("#fs-tagesordnung").get_by_text("Sonstiges").click()
     expect(page.locator("#fs-top-titel")).to_contain_text("Sonstiges")
     expect(page.locator("#fs-tagesordnung")).to_be_hidden()
+
+
+#: Lage der sichtbaren Teile in Kopf und Leiste unten: Paare, die sich überdecken, Teile außerhalb ihres Bereichs,
+#: Breite des Beschlusstext-Felds gegenüber seinem Platzhalter. Versteckte Beschriftungen für Vorleser sind 1 px groß.
+LAGE = """() => {
+  const sichtbar = (el) => { const r = el.getBoundingClientRect(); return r.width > 1 && r.height > 1; };
+  const rechteck = (el) => {
+    if (!el.classList.contains('name')) return el.getBoundingClientRect();
+    const bereich = document.createRange(); bereich.selectNodeContents(el); return bereich.getBoundingClientRect();
+  };
+  const name = (el) => `${el.className || el.tagName} „${(el.textContent || el.placeholder || '').trim().slice(0, 30)}“`;
+  const ueberlappungen = (auswahl) => {
+    const teile = [...document.querySelectorAll(auswahl)].filter(sichtbar).map((el) => [el, rechteck(el)]);
+    const paare = [];
+    teile.forEach(([a, ra], i) => teile.slice(i + 1).forEach(([b, rb]) => {
+      if (ra.left < rb.right - 0.5 && rb.left < ra.right - 0.5 && ra.top < rb.bottom - 0.5 && rb.top < ra.bottom - 0.5)
+        paare.push(`${name(a)} / ${name(b)}`);
+    }));
+    return paare;
+  };
+  const ausserhalb = (auswahl) => {
+    const bereich = document.querySelector(auswahl); const r = bereich.getBoundingClientRect();
+    return [...bereich.querySelectorAll('*')].filter((el) => sichtbar(el) && el.type !== 'hidden')
+      .filter((el) => { const e = el.getBoundingClientRect(); return e.left < r.left - 0.5 || e.right > r.right + 0.5; })
+      .map(name);
+  };
+  const feld = document.querySelector('#fs-bes-text');
+  let platzhalter = null;
+  if (feld && sichtbar(feld)) {
+    const s = getComputedStyle(feld); const mass = document.createElement('canvas').getContext('2d'); mass.font = s.font;
+    const noetig = mass.measureText(feld.placeholder).width + parseFloat(s.paddingLeft) + parseFloat(s.paddingRight);
+    platzhalter = { breite: feld.getBoundingClientRect().width, noetig };
+  }
+  return {
+    kopf: ueberlappungen('.fs-kopf > a, .fs-titel, .fs-stufen .kreis, .fs-stufen .name, .fs-stufen .linie, .fs-kopf-aktionen > *'),
+    kopfRaus: ausserhalb('.fs-kopf'),
+    unten: ueberlappungen('.fs-beschluss > :not(.fs-bes-abschluss), .fs-bes-abschluss > *, .fs-nav > *'),
+    untenRaus: ausserhalb('.fs-unten'),
+    platzhalter,
+  };
+}"""
+
+
+def test_kopf_und_leiste_ohne_ueberlappung(page: Any, live_server: Any, login: Any, org: Any, sitzung: Any) -> None:
+    """
+    Issue #1166: Bei langem Titel und Ort und „nicht beschlussfähig“ liefen die Linien der Ablaufleiste durch die
+    Beschriftungen, „Protokoll“ lag unter den Knöpfen, der Platzhalter des Beschlusstexts war abgeschnitten und
+    am Handy ragte der Beschluss über den Rand. 1.536 px mit schmaler Seitenleiste entspricht 1.920 px bei 125 %.
+    """
+    vorsitz, meeting, tops = sitzung
+    meeting.title = "Ordentliche Fraktionssitzung Nr. 24 mit Beratung des Haushaltsentwurfs 2027"
+    meeting.location = "Rathaus Musterstadt, Sitzungsraum 2.14 (2. Obergeschoss), Platz des Westfälischen Friedens 1"
+    meeting.invitation_sent_at = timezone.now() - timedelta(days=6)
+    meeting.save(update_fields=["title", "location", "invitation_sent_at"])
+    login(vorsitz.user.email, PASSWORD)
+
+    def pruefen(wo: str) -> None:
+        lage = page.evaluate(LAGE)
+        assert not lage["kopf"], f"{wo}: Kopf überlappt: {lage['kopf']}"
+        assert not lage["kopfRaus"], f"{wo}: im Kopf außerhalb: {lage['kopfRaus']}"
+        assert not lage["unten"], f"{wo}: Leiste unten überlappt: {lage['unten']}"
+        assert not lage["untenRaus"], f"{wo}: in der Leiste unten außerhalb: {lage['untenRaus']}"
+        feld = lage["platzhalter"]
+        assert feld and feld["breite"] >= feld["noetig"], f"{wo}: Platzhalter des Beschlusstexts abgeschnitten: {feld}"
+
+    for schmal, breiten in ((False, (1280, 1366, 1440, 1920, 2560)), (True, (1280, 1536))):
+        page.set_viewport_size({"width": breiten[0], "height": 900})
+        page.evaluate(f"() => localStorage.setItem('sidebarCollapsed', '{str(schmal).lower()}')")
+        oeffnen(page, live_server, org, meeting, tops[1])
+        expect(page.locator(".fs-stufen [aria-current=step]")).to_contain_text("nicht beschlussfähig")
+        for breite in breiten:
+            page.set_viewport_size({"width": breite, "height": 900})
+            page.wait_for_timeout(100)
+            pruefen(f"{breite} px, Seitenleiste {'schmal' if schmal else 'breit'}")
+
+    # Schriftgrößen: Protokoll größer als die Unterlagen, Beschreibung des TOPs als Text, Aufgabenzeile kompakt
+    page.set_viewport_size({"width": 1440, "height": 900})
+    groessen = page.evaluate(
+        "() => ({ notiz: getComputedStyle(document.querySelector('#fs-notiz')).fontSize,"
+        " dok: getComputedStyle(document.querySelector('.fs-dok-text')).fontSize,"
+        " beschreibung: getComputedStyle(document.querySelector('.fs-top-zeile2')).fontSize,"
+        " aufgabe: document.querySelector('#fs-auf-titel').getBoundingClientRect().height })"
+    )
+    assert float(groessen["notiz"][:-2]) > float(groessen["dok"][:-2]) >= 16, groessen
+    assert float(groessen["beschreibung"][:-2]) >= 15, groessen
+    assert groessen["aufgabe"] <= 28, groessen
+
+    # Handy: Der geöffnete Beschluss bricht um und bleibt innerhalb der Breite
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.wait_for_timeout(100)
+    page.locator("#fs-unten").get_by_role("button", name="Beschluss", exact=True).click()
+    expect(page.locator("#fs-bes-text")).to_be_visible()
+    pruefen("390 px, Beschluss geöffnet")
 
 
 @pytest.fixture
