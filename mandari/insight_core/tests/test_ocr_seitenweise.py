@@ -42,3 +42,12 @@ def test_speichergrenze_ergibt_leeren_text_statt_abbruch() -> None:
         ergebnis = document_extraction.extract_text_from_file(b"%PDF-1.4", "application/pdf", "plan.pdf")
 
     assert ergebnis == ("", False, None, "none")
+
+
+@override_settings(MISTRAL_API_KEY="")
+def test_speichermangel_der_textebene_ergibt_leeren_text_statt_abbruch() -> None:
+    """Die Textebene gibt an einer Speichergrenze kein Teilergebnis aus; die Aufrufer brechen trotzdem nie ab."""
+    with mock.patch("mandari_dokumente.texterkennung.read_text_layer", side_effect=MemoryError):
+        ergebnis = document_extraction.extract_text_from_file(b"%PDF-1.4", "application/pdf", "plan.pdf")
+
+    assert ergebnis == ("", False, None, "none")

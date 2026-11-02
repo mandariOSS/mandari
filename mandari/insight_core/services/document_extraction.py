@@ -299,6 +299,10 @@ def extract_text_from_file(
     except OcrMemoryLimitError:
         logger.warning("Texterkennung an der Speichergrenze für %s", file_name or "Datei")
         return "", False, None, METHOD_NONE
+    except MemoryError:
+        # Die Textebene meldet Speichermangel, statt ein Teilergebnis auszugeben: hier wie die Speichergrenze
+        logger.warning("Textebene ohne Speicher für %s", file_name or "Datei")
+        return "", False, None, METHOD_NONE
     finally:
         path.unlink(missing_ok=True)
     return result.text, result.ocr_performed, result.page_count, result.method

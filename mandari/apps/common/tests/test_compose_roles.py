@@ -211,6 +211,36 @@ def test_erste_stufe_der_texterkennung_im_hauptworker() -> None:
     assert anwendung["TEXT_EXTRACTION_OCR_MIXED_PAGES"] == "${TEXT_EXTRACTION_OCR_MIXED_PAGES:-true}"
 
 
+def test_textebene_im_ingestor_mit_eigenen_variablen() -> None:
+    """
+    Der Ingestor liest die Textebene in eigenen Prozessen. Ihre Grenzen haben eigene Variablen: Eine für die Anwendung
+    angehobene TEXT_LAYER_MEMORY_LIMIT_MB trifft ihn nicht. Anzahl × Grenze plus Grundbedarf (200 MB) passt unter das
+    Limit des Ingestors in Helm, wo der Speicherwächter den ganzen Container beendet.
+    """
+    import yaml
+
+    modul = _lade_skript()
+    umgebung = modul._lade(modul.BASIS)["services"]["ingestor"]["environment"]
+    for name in ("TEXT_LAYER_MEMORY_LIMIT_MB", "TEXT_LAYER_TIMEOUT", "TEXT_LAYER_CONCURRENCY"):
+        assert umgebung[name].startswith(f"${{INGESTOR_{name}:-"), name
+    text = (SKRIPT.parents[1] / ".env.example").read_text(encoding="utf-8")
+    for name in (
+        "INGESTOR_TEXT_LAYER_MEMORY_LIMIT_MB",
+        "INGESTOR_TEXT_LAYER_TIMEOUT",
+        "INGESTOR_TEXT_LAYER_CONCURRENCY",
+    ):
+        assert f"# {name}=" in text, name
+
+    werte = yaml.safe_load(
+        (SKRIPT.parents[1] / "deploy" / "kubernetes" / "helm" / "mandari" / "values.yaml").read_text(encoding="utf-8")
+    )
+    helm = werte["ingestor"]["resources"]["limits"]["memory"]
+    assert helm == "1Gi"
+    grenze = int(_vorgabe(umgebung["TEXT_LAYER_MEMORY_LIMIT_MB"]))
+    anzahl = int(_vorgabe(umgebung["TEXT_LAYER_CONCURRENCY"]))
+    assert anzahl * grenze + 200 <= 1024
+
+
 def test_env_beispiel_nennt_die_grenzen_des_worker_heavy() -> None:
     text = (SKRIPT.parents[1] / ".env.example").read_text(encoding="utf-8")
     for name in (

@@ -1147,6 +1147,14 @@ Seite, nicht den Prozess. Wer sie ausführt, wählt `TEXT_EXTRACTION_RUNNER` –
 gleich setzen**, sonst arbeiten beide oder keiner:
 
 - `ingestor` (Standard): der OCR-Worker des Ingestors (`python -m src.main extract-daemon`, Ingestor-Image).
+  Die Textebene eines PDFs liest er wie die erste Stufe der Aufträge in einem eigenen Prozess mit Speicher- und
+  Zeitgrenze, nie im Prozess des Syncs; endet dieser Prozess an einer Grenze, erkennt der Ingestor die Datei aus dem
+  Bild. Höchstens `TEXT_LAYER_CONCURRENCY` solcher Prozesse laufen zugleich. Anzahl × `TEXT_LAYER_MEMORY_LIMIT_MB`
+  plus rund 200 MB Grundbedarf unter dem Speicherlimit des Containers halten, wo der Speicherwächter den ganzen
+  Container beendet (Kubernetes mit cgroup v2; Helm: 1 GiB, 2 × 384 MB). Docker beendet bei Speichermangel zuerst
+  diese Prozesse (`oom_score_adj`). In Compose heißen die Variablen `INGESTOR_TEXT_LAYER_MEMORY_LIMIT_MB`,
+  `INGESTOR_TEXT_LAYER_TIMEOUT` und `INGESTOR_TEXT_LAYER_CONCURRENCY`, damit ein Wert für die Anwendung den Ingestor
+  nicht mit trifft.
 - `worker`: Aufträge in zwei Stufen (Issue #1107); der OCR-Worker des Ingestors ruht dann.
   `file.read_text_layer` (Warteschlange `text`, Dienst `worker`) liest nur die Textebene, in einem eigenen Prozess
   mit Speicher- und Zeitgrenze; reicht sie, ist die Datei fertig (rund 90 % der Dateien). Sonst geht sie an
@@ -1173,6 +1181,9 @@ Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 | `OCR_PAGE_TIMEOUT` | `120` | Sekunden je Seite und Schritt |
 | `OCR_FILE_BUDGET_SECONDS` | `1200` | Zeitbudget je Datei; danach gilt der bis dahin erkannte Text |
 | `OCR_MAX_PAGES` | `100` | höchstens so viele Seiten je Datei |
+| `TEXT_LAYER_MEMORY_LIMIT_MB` | `512` (Anwendung), `384` (Ingestor, Compose: `INGESTOR_TEXT_LAYER_MEMORY_LIMIT_MB`) | Adressraum je Prozess, der die Textebene (pypdf) liest; darüber geht die Datei an die Erkennung aus dem Bild. Unter dem Speicherlimit des Containers halten. Die Textebene liefert höchstens 3000 Seiten und 5 Mio. Zeichen Text |
+| `TEXT_LAYER_TIMEOUT` | `120` | nur Ingestor (Compose: `INGESTOR_TEXT_LAYER_TIMEOUT`): Sekunden je Prozess der Textebene |
+| `TEXT_LAYER_CONCURRENCY` | `2` | nur Ingestor (Compose: `INGESTOR_TEXT_LAYER_CONCURRENCY`): Prozesse der Textebene zugleich, über alle Quellen und Plätze |
 | `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
 | `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
 | `TEXT_EXTRACTION_MAX_SIZE_MB` | `50` | größere Dateien werden übersprungen |
