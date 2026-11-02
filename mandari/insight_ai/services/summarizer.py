@@ -147,11 +147,16 @@ class SummaryService:
         # Get organizations from consultations via meetings
         organizations = set()
         try:
+            from hub.ris.selectors import consultation_meeting_in_source
             from insight_core.models import OParlMeeting, withdrawn_q
 
-            # Get meeting external IDs from consultations (ohne von Session zurückgenommene)
+            # Get meeting external IDs from consultations (ohne von Session zurückgenommene, nur Sitzungen aus der
+            # Quelle der Beratung)
             meeting_ext_ids = (
-                paper.consultations.exclude(withdrawn_q()).values_list("meeting_external_id", flat=True).distinct()[:10]
+                paper.consultations.exclude(withdrawn_q())
+                .filter(consultation_meeting_in_source())
+                .values_list("meeting_external_id", flat=True)
+                .distinct()[:10]
             )
 
             # Find meetings and their organizations

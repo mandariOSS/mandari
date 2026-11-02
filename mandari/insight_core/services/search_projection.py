@@ -282,11 +282,16 @@ def context_file_ids(aggregate_type: str, ids: Iterable[uuid.UUID]) -> list[tupl
     beratungen = OParlConsultation.objects.filter(paper_id__isnull=False)
     if aggregate_type == "Consultation":
         return _files_of_papers(_pairs(beratungen, "pk", kennungen, ("pk", "paper_id")))
+    from hub.ris.selectors import consultation_agenda_item_in_source, consultation_meeting_in_source
+
     modell: type[OParlMeeting] | type[OParlAgendaItem]
+    # Nur Beratungen aus der Quelle der Sitzung bzw. des Punkts
     if aggregate_type == "Meeting":
         modell, feld = OParlMeeting, "meeting_external_id"
+        beratungen = beratungen.filter(consultation_meeting_in_source())
     elif aggregate_type == "AgendaItem":
         modell, feld = OParlAgendaItem, "agenda_item_external_id"
+        beratungen = beratungen.filter(consultation_agenda_item_in_source())
     else:
         return []
     objekt_je_kennung = dict(_pairs(modell.objects.all(), "pk", kennungen, ("external_id", "pk")))

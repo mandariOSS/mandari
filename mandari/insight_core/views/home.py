@@ -80,10 +80,13 @@ def zuletzt_beschlossen(body: OParlBody, anzahl: int = BESCHLUESSE_ANZAHL) -> li
     punkte = [punkt for punkt in kandidaten[: anzahl * 8] if ist_beschluss(punkt.result)][:anzahl]
     vorgaenge: dict[str, OParlPaper] = {}
     if punkte:
+        from hub.ris.selectors import consultation_agenda_item_in_source
+
         beratungen = (
             OParlConsultation.objects.filter(
                 agenda_item_external_id__in=[p.external_id for p in punkte], paper__isnull=False, paper__deleted=False
             )
+            .filter(consultation_agenda_item_in_source())
             .exclude(withdrawn_q())
             .exclude(withdrawn_q("paper"))
             .select_related("paper")

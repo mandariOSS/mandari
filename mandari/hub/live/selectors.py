@@ -25,6 +25,7 @@ from datetime import datetime
 from django.conf import settings
 from django.utils import timezone
 
+from hub.ris.selectors import consultation_agenda_item_in_source
 from insight_core.models import OParlConsultation, OParlMeeting
 
 from .anbieter import anbieter
@@ -115,6 +116,7 @@ def _vorlagen(abschnitte: list[BroadcastSection]) -> dict[uuid.UUID, uuid.UUID]:
         OParlConsultation.objects.filter(
             agenda_item_external_id__in=list(externe), deleted=False, paper__isnull=False, paper__deleted=False
         )
+        .filter(consultation_agenda_item_in_source())
         .order_by("agenda_item_external_id", "created_at")
         .values_list("agenda_item_external_id", "paper_id")
     ):

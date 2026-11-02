@@ -381,7 +381,11 @@ def _ziel_tagesordnungspunkt(item: FactionAgendaItem) -> Any:
     from hub.ris import selectors as ris
 
     for paper in item.related_papers.all().order_by("-date")[:3]:
-        beratungen = list(ris.consultations_of_paper(paper).exclude(agenda_item_external_id__isnull=True))
+        beratungen = list(
+            ris.consultations_of_paper(paper)
+            .exclude(agenda_item_external_id__isnull=True)
+            .filter(ris.consultation_agenda_item_in_source())
+        )
         beratungen = [b for b in beratungen if b.agenda_item_external_id]
         if not beratungen:
             continue
