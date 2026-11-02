@@ -27,14 +27,16 @@ pytestmark = pytest.mark.django_db
 
 
 def _standardrolle(org: Any, key: str) -> Any:
-    """Standardrolle aus ``DEFAULT_ROLES`` mit ihren Rechten (die Organisation legt sie meist schon an)."""
-    from apps.tenants.models import Role
+    """
+    Rolle mit den Rechten der Standardrolle aus ``DEFAULT_ROLES``.
 
+    Immer neu angelegt (eigener Name): Eine von der Organisation schon angelegte Standardrolle kann ohne Rechte dastehen,
+    wenn ein Test mit ``transaction=True`` vorher die Rechtetabelle geleert hat (Reihenfolge in der CI).
+    """
     definition = DEFAULT_ROLES[key]
-    vorhanden = Role.objects.filter(organization=org, name=definition["name"]).first()
-    return vorhanden or cast(Any, RoleFactory)(
+    return cast(Any, RoleFactory)(
         organization=org,
-        name=definition["name"],
+        name=f"{definition['name']} (Test)",
         permissions=list(cast(list[str], definition["permissions"])),
         is_admin=bool(definition.get("is_admin")),
     )
