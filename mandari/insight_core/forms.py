@@ -9,6 +9,16 @@ from django import forms
 
 from .models import PublicQuestion
 
+#: Höchstlängen der Freitexte in Zeichen, wie im Eingabefeld angekündigt. Sie gelten auch serverseitig: Die Texte
+#: werden gespeichert und in die Moderationsmail gerendert.
+QUESTION_TEXT_MAX_LENGTH = 2000
+ANSWER_TEXT_MAX_LENGTH = 5000
+
+
+def _zeichen(text: str) -> int:
+    """Länge wie im Browser: ``maxlength`` zählt einen Zeilenumbruch als ein Zeichen, gesendet wird ``\\r\\n``."""
+    return len(text) - text.count("\r\n")
+
 
 class PublicQuestionForm(forms.ModelForm):
     """Formular für öffentliche Fragen an Ratsmitglieder."""
@@ -69,7 +79,7 @@ class PublicQuestionForm(forms.ModelForm):
             "question_text": forms.Textarea(
                 attrs={
                     "rows": 6,
-                    "maxlength": 2000,
+                    "maxlength": QUESTION_TEXT_MAX_LENGTH,
                     "placeholder": "Formulieren Sie Ihre Frage...",
                 }
             ),
@@ -83,6 +93,8 @@ class PublicQuestionForm(forms.ModelForm):
         text = self.cleaned_data["question_text"]
         if len(text) < 50:
             raise forms.ValidationError("Die Frage muss mindestens 50 Zeichen lang sein.")
+        if _zeichen(text) > QUESTION_TEXT_MAX_LENGTH:
+            raise forms.ValidationError(f"Die Frage darf höchstens {QUESTION_TEXT_MAX_LENGTH} Zeichen lang sein.")
         return text
 
     def clean(self):
@@ -101,7 +113,7 @@ class PublicAnswerForm(forms.Form):
         widget=forms.Textarea(
             attrs={
                 "rows": 8,
-                "maxlength": 5000,
+                "maxlength": ANSWER_TEXT_MAX_LENGTH,
                 "placeholder": "Verfassen Sie Ihre Antwort...",
             }
         ),
@@ -110,3 +122,9 @@ class PublicAnswerForm(forms.Form):
             "min_length": "Die Antwort muss mindestens 20 Zeichen lang sein.",
         },
     )
+
+    def clean_answer_text(self):
+        text = self.cleaned_data["answer_text"]
+        if _zeichen(text) > ANSWER_TEXT_MAX_LENGTH:
+            raise forms.ValidationError(f"Die Antwort darf höchstens {ANSWER_TEXT_MAX_LENGTH} Zeichen lang sein.")
+        return text

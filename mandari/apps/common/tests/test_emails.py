@@ -14,6 +14,7 @@ from __future__ import annotations
 import difflib
 import os
 import re
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -835,6 +836,46 @@ def test_drop_empty_preheader_laesst_preheader_mit_inhalt_stehen() -> None:
     assert drop_empty_preheader(leer) == "<body>\n    <p>x</p>"
     voll = '<body>\n    <!-- text:skip -->\n    <span class="preheader">Vorschau</span>\n    <!-- /text:skip -->\n'
     assert drop_empty_preheader(voll) == voll
+
+
+def test_drop_empty_preheader_mit_einzug_und_ohne_zeilenumbruch() -> None:
+    """Einzug mit Tabs, Windows-Zeilenenden und ein Marker direkt hinter einem Tag: Entfernt wird wie bisher."""
+    crlf = '<body>\r\n\t<!-- text:skip -->\r\n\t<span class="preheader"></span>\r\n\t<!-- /text:skip -->\r\n<p>x</p>'
+    assert drop_empty_preheader(crlf) == "<body>\r\n<p>x</p>"
+    eine_zeile = '<body><!-- text:skip --><span class="preheader"></span><!-- /text:skip --><p>x</p>'
+    assert drop_empty_preheader(eine_zeile) == "<body><p>x</p>"
+
+
+#: Großzügige Obergrenzen in Sekunden; linear sind es Millisekunden, vor der Korrektur waren es viele Sekunden
+_ZEITGRENZE_PREHEADER = 0.5
+_ZEITGRENZE_MAIL = 1.0
+
+
+def test_drop_empty_preheader_linear_bei_langem_leerraum() -> None:
+    """Leerraum aus einem Freitext verlängert das Entfernen des Preheaders nur linear."""
+    leerraum = " \t" * 50_000
+    html = (
+        '<body>\n    <!-- text:skip -->\n    <span class="preheader"></span>\n    <!-- /text:skip -->\n'
+        f"    <p>{leerraum}</p>"
+    )
+    beginn = time.perf_counter()
+    ergebnis = drop_empty_preheader(html)
+    dauer = time.perf_counter() - beginn
+    assert ergebnis == f"<body>\n    <p>{leerraum}</p>"
+    assert dauer < _ZEITGRENZE_PREHEADER, f"drop_empty_preheader brauchte {dauer:.3f} s"
+
+
+@pytest.mark.django_db
+def test_render_email_mit_langem_leerraum_im_freitext(org: Any, make_member: Any) -> None:
+    """Eine Gastzugangs-Mail (ohne Textvorlage, also mit html2text) mit langem Leerraum in der Notiz."""
+    kontext = work_org_guest_access(org, make_member)
+    kontext["note"] = "Hallo" + " " * 100_000 + "Ende"
+    beginn = time.perf_counter()
+    html, text = render_email("work/organization/email/guest_access.html", kontext)
+    dauer = time.perf_counter() - beginn
+    assert "Hallo" in html and "Ende" in html
+    assert "Hallo" in text and "Ende" in text
+    assert dauer < _ZEITGRENZE_MAIL, f"render_email brauchte {dauer:.3f} s"
 
 
 @pytest.mark.django_db
