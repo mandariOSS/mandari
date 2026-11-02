@@ -19,6 +19,7 @@ import sys
 import tomllib
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 import pytest
 import yaml
@@ -32,6 +33,7 @@ UV_LOCK = REPO / "mandari" / "uv.lock"
 DEPENDABOT = REPO / ".github" / "dependabot.yml"
 EXPORT = REPO / "scripts" / "export_requirements.sh"
 VERSIONSPRUEFUNG = REPO / "scripts" / "check_version_consistency.py"
+HASHPRUEFUNG = REPO / "scripts" / "check_image_hashes.py"
 
 # Lokales Paket aus ../shared: steht in uv.lock, wird aber getrennt installiert
 LOKAL = {"mandari-oparl"}
@@ -231,6 +233,130 @@ def test_projekt_ist_kein_paket_und_nutzt_das_lokale_shared_paket() -> None:
     assert uv["package"] is False, "mandari ist eine Anwendung; uv darf sie nicht als Paket bauen"
     quelle = uv["sources"]["mandari-oparl"]
     assert quelle["path"] == "../shared", "mandari-oparl muss aus dem Repo kommen, nicht aus einer Paketquelle"
+
+
+# --- Images: nichts ohne Hash-Prüfung (scripts/check_image_hashes.py) ------------------------------------------
+#
+# Die Images installieren die Abhängigkeiten mit --require-hashes aus uv.lock. Die lokalen Pakete (shared/,
+# ingestor/) brauchen beim Bau ihr Build-Backend; in einer isolierten Build-Umgebung holte der Installer es frisch
+# aus dem Paketindex, ohne Version und Hash. Jetzt kommt es aus der Gruppe build-backend der Lock-Datei, und die
+# lokalen Pakete entstehen ohne Netz.
+
+
+@pytest.fixture(scope="module")
+def hashpruefung() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("check_image_hashes", HASHPRUEFUNG)
+    assert spec is not None and spec.loader is not None
+    modul = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = modul
+    spec.loader.exec_module(modul)
+    return modul
+
+
+def test_images_installieren_nur_hash_gepruefte_pakete(hashpruefung: ModuleType) -> None:
+    """Beide Dockerfiles und die Gruppe build-backend in mandari/uv.lock und ingestor/uv.lock."""
+    probleme = hashpruefung.pruefe()
+    assert not probleme, "\n".join(probleme)
+
+
+EXPORT_DER_GRUPPE = (
+    "RUN uv export --quiet --locked --only-group build-backend --no-emit-project \\\n"
+    "        --format requirements.txt -o /tmp/build-backend.lock \\\n"
+    "    && pip install --no-cache-dir --only-binary :all: --require-hashes -r /tmp/build-backend.lock\n"
+)
+
+
+def test_hashpruefung_laesst_gesperrten_und_netzlosen_bau_durch(hashpruefung: ModuleType) -> None:
+    dockerfile = (
+        "FROM python:3.14-slim AS builder\n" + EXPORT_DER_GRUPPE + "# Kommentar zwischen den Anweisungen\n"
+        "RUN --network=none pip install --no-cache-dir --prefix=/install --no-deps --no-build-isolation \\\n"
+        "    # Kommentar mitten in der Fortsetzung\n"
+        "        --no-index /tmp/shared/\n"
+        "RUN uv pip install --system --no-build --require-hashes -r /tmp/requirements.lock\n"
+        "RUN --network=none uv pip install --system --no-deps --offline /tmp/wheels/*.whl\n"
+    )
+    assert hashpruefung.pruefe_dockerfile(dockerfile) == []
+
+
+@pytest.mark.parametrize(
+    ("anweisung", "meldung"),
+    [
+        # Stand vor der Änderung: lokale Pakete mit Build-Isolation
+        ("RUN pip install --no-cache-dir --prefix=/install --no-deps /tmp/shared/", "ohne `--require-hashes`"),
+        (
+            "RUN uv pip install --system --no-deps /build/shared/ \\\n"
+            "    && uv pip install --system --no-deps --no-sources /build/ingestor/",
+            "ohne `--require-hashes`",
+        ),
+        # Ohne Hash nur ohne Netz und ohne Index, nicht eines von beiden
+        ("RUN pip install --no-index --no-build-isolation /tmp/shared/", "ohne `--require-hashes`"),
+        ("RUN --network=none pip install --no-build-isolation /tmp/shared/", "ohne `--require-hashes`"),
+        ('RUN ["pip", "install", "/tmp/shared/"]', "ohne `--require-hashes`"),
+        ("RUN uv sync --locked --no-dev", "ohne `--require-hashes`"),
+        # Hash-geprüft, aber ein Quelltextpaket würde mit frisch geladenem Build-Backend gebaut
+        ("RUN pip install --prefix=/install --require-hashes -r /tmp/requirements.lock", "Quelltextpakete"),
+        ("RUN uv pip install --system --require-hashes -r /tmp/requirements.lock", "Quelltextpakete"),
+        ("RUN uv pip install --system --no-build-isolation --require-hashes -r /tmp/r.lock", "Quelltextpakete"),
+    ],
+)
+def test_hashpruefung_meldet_installation_ohne_hash(hashpruefung: ModuleType, anweisung: str, meldung: str) -> None:
+    dockerfile = "FROM python:3.14-slim AS builder\n" + EXPORT_DER_GRUPPE + anweisung + "\n"
+    probleme = hashpruefung.pruefe_dockerfile(dockerfile)
+    assert probleme, "nicht erkannt"
+    assert all(meldung in problem for problem in probleme), probleme
+
+
+def test_hashpruefung_verlangt_den_export_der_gruppe(hashpruefung: ModuleType) -> None:
+    """Ein Kommentar mit dem Befehl zählt nicht."""
+    dockerfile = "FROM python:3.14-slim\n# uv export --only-group build-backend\nRUN echo ok\n"
+    (problem,) = hashpruefung.pruefe_dockerfile(dockerfile)
+    assert "exportiert die Gruppe `build-backend` nicht" in problem
+
+
+def _lock_paket(name: str, *abhaengigkeiten: str, wheels: bool = True) -> dict[str, Any]:
+    paket: dict[str, Any] = {"name": name, "version": "1.0", "source": {"registry": "https://pypi.org/simple"}}
+    paket["dependencies"] = [{"name": abhaengigkeit} for abhaengigkeit in abhaengigkeiten]
+    if wheels:
+        paket["wheels"] = [{"url": f"https://example.invalid/{name}-1.0-py3-none-any.whl", "hash": "sha256:00"}]
+    else:
+        paket["sdist"] = {"url": f"https://example.invalid/{name}-1.0.tar.gz", "hash": "sha256:00"}
+    return paket
+
+
+def test_hashpruefung_meldet_build_backend_ausserhalb_der_gruppe(hashpruefung: ModuleType) -> None:
+    pyproject = {"project": {"name": "mandari"}}
+    lock = {"package": [{"name": "mandari", "source": {"virtual": "."}}]}
+    lokal = {"shared": {"build-system": {"requires": ["hatchling"]}}}
+    (problem,) = hashpruefung.pruefe_build_backend(pyproject, lock, lokal, "mandari")
+    assert "`hatchling` von shared fehlt in [dependency-groups] build-backend" in problem
+
+
+def test_hashpruefung_meldet_abhaengigkeit_des_build_backends_ohne_wheel(hashpruefung: ModuleType) -> None:
+    pyproject = {"project": {"name": "mandari"}, "dependency-groups": {"build-backend": ["hatchling"]}}
+    projekt = {
+        "name": "mandari",
+        "source": {"virtual": "."},
+        "dev-dependencies": {"build-backend": [{"name": "hatchling"}]},
+    }
+    lock = {"package": [projekt, _lock_paket("hatchling", "pluggy"), _lock_paket("pluggy", wheels=False)]}
+    lokal = {"shared": {"build-system": {"requires": ["hatchling>=1.26"]}}}
+    assert hashpruefung.pruefe_build_backend(pyproject, lock, lokal, "mandari") == [
+        "mandari/uv.lock: `pluggy` (Gruppe build-backend) ohne Wheels mit Hash"
+    ]
+
+
+def test_hashpruefung_laeuft_in_der_ci_und_vor_dem_bau_der_release_images() -> None:
+    """Der Job „Test“ läuft bei einer reinen Dockerfile-Änderung nicht, der Job „Qualität“ schon."""
+    workflows = REPO / ".github" / "workflows"
+    pr_check = yaml.safe_load((workflows / "pr-check.yml").read_text(encoding="utf-8"))
+    qualitaet = [str(schritt.get("run", "")) for schritt in pr_check["jobs"]["qualitaet"]["steps"]]
+    assert any("scripts/check_image_hashes.py" in run for run in qualitaet), "Schritt im Job qualitaet fehlt"
+
+    release = yaml.safe_load((workflows / "release.yml").read_text(encoding="utf-8"))
+    schritte = release["jobs"]["build"]["steps"]
+    pruefung = [i for i, s in enumerate(schritte) if "scripts/check_image_hashes.py" in str(s.get("run", ""))]
+    bauten = [i for i, s in enumerate(schritte) if str(s.get("uses", "")).startswith("docker/build-push-action")]
+    assert pruefung and bauten and pruefung[0] < bauten[0], "Release prüft vor dem ersten Image-Bau"
 
 
 @pytest.fixture(scope="module")

@@ -83,6 +83,14 @@ uv sync --extra dev              # lokale Umgebung nachziehen
 `pyproject.toml` und `uv.lock` gehören in denselben Commit; die CI prüft mit `uv lock --check`,
 dass beide zusammenpassen. Dependabot pflegt beide Dateien selbst.
 
+Die Images installieren kein Paket ohne Hash-Prüfung. Das gilt auch für das Build-Backend der
+lokalen Pakete `shared/` und `ingestor/` (`[build-system] requires`, derzeit `hatchling`): Es steht
+in der Abhängigkeitsgruppe `build-backend` beider `pyproject.toml`, wird mit Hashes aus der
+`uv.lock` installiert, und die lokalen Pakete entstehen danach ohne Netz. Gesperrte Abhängigkeiten
+kommen nur als fertige Wheels ins Image. Wer das Build-Backend wechselt oder eine Abhängigkeit
+aufnimmt, die es nur als Quelltext gibt, passt Gruppe bzw. Dockerfile an;
+`python scripts/check_image_hashes.py` prüft das (auch in der CI und vor jedem Release-Bau).
+
 ## Tests und Prüfungen
 
 Alle Prüfungen laufen auch in der CI und müssen grün sein.

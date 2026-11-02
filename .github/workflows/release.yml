@@ -104,6 +104,11 @@ jobs:
         if: github.event_name == 'release'
         run: python scripts/check_version_consistency.py --tag "${{ github.event.release.tag_name }}"
 
+      # Vor dem ersten Bau: Die Images installieren nichts ohne Hash-Prüfung, auch nicht das Build-Backend der
+      # lokalen Pakete (scripts/check_image_hashes.py).
+      - name: Images installieren nur hash-geprüfte Pakete
+        run: python3 scripts/check_image_hashes.py
+
       - name: Determine image tags
         id: tags
         run: |

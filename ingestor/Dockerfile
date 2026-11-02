@@ -19,19 +19,31 @@ COPY --from=uv /uv /bin/uv
 # Ohne Lock-Datei zog ein Neubau ungeprüfte neue Versionen (SQLAlchemy 2.1 ohne greenlet: Ingestor
 # startete nicht). Verzeichnisse wie im Repo, damit der Pfad ../shared aus [tool.uv.sources] aufgeht.
 # --locked: Build bricht ab, wenn uv.lock nicht mehr zu pyproject.toml passt (dann `uv lock` im Ordner ingestor).
-# Export mit Hashes, die Installation prüft sie (--require-hashes).
+# Export mit Hashes, die Installation prüft sie (--require-hashes). --no-build lässt nur fertige Wheels zu: Ein
+# Quelltextpaket bräuchte zum Bauen ein Build-Backend, das uv ohne Hash-Prüfung nachladen würde.
+# scripts/check_image_hashes.py prüft diese Regeln.
 COPY shared/pyproject.toml /build/shared/pyproject.toml
 COPY ingestor/pyproject.toml ingestor/uv.lock ingestor/README.md /build/ingestor/
 WORKDIR /build/ingestor
 RUN uv export --quiet --locked --no-dev --no-emit-project --no-emit-package mandari-oparl \
         --format requirements.txt -o /tmp/requirements.lock \
-    && uv pip install --system --require-hashes -r /tmp/requirements.lock
+    && uv pip install --system --no-build --require-hashes -r /tmp/requirements.lock
 
-# Lokale Pakete ohne eigene Abhängigkeitsauflösung (alle Abhängigkeiten kommen aus der Lock-Datei).
-# --no-sources: [tool.uv.sources] (lokales ../shared) gilt nur für uv lock/sync.
+# Build-Backend der lokalen Pakete (Gruppe build-backend: hatchling) ebenso mit Hashes aus uv.lock, aber in einer
+# eigenen Umgebung: /usr/local geht vollständig ins fertige Image, das Build-Backend nicht.
+RUN uv export --quiet --locked --only-group build-backend --no-emit-project \
+        --format requirements.txt -o /tmp/build-backend.lock \
+    && python -m venv /opt/build-backend \
+    && /opt/build-backend/bin/pip install --no-cache-dir --only-binary :all: --require-hashes \
+        -r /tmp/build-backend.lock
+
+# Lokale Pakete ohne eigene Abhängigkeitsauflösung (alle Abhängigkeiten kommen aus der Lock-Datei) und ohne Netz:
+# Wheels mit dem Build-Backend von oben bauen (--no-build-isolation), dann ins System installieren.
+# [tool.uv.sources] (lokales ../shared) gilt nur für uv lock/sync und spielt hier keine Rolle.
 COPY shared/ /build/shared/
-RUN uv pip install --system --no-deps /build/shared/ \
-    && uv pip install --system --no-deps --no-sources /build/ingestor/
+RUN --network=none /opt/build-backend/bin/pip wheel --no-cache-dir --no-deps --no-build-isolation --no-index \
+        --wheel-dir /tmp/wheels /build/shared/ /build/ingestor/ \
+    && uv pip install --system --no-deps --no-index /tmp/wheels/*.whl
 
 # --- Final stage ---
 FROM python:3.14-slim

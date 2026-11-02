@@ -26,17 +26,26 @@ COPY --from=uv /uv /bin/uv
 # Reproduzierbarer Build aus mandari/uv.lock (wie das Ingestor-Image). Verzeichnisse wie im Repo, damit der
 # Pfad ../shared aus [tool.uv.sources] aufgeht.
 # --locked: Build bricht ab, wenn uv.lock nicht mehr zu pyproject.toml passt (dann `uv lock` im Ordner mandari).
-# Export mit Hashes, pip prüft sie bei der Installation (--require-hashes).
+# Export mit Hashes, pip prüft sie bei der Installation (--require-hashes). --only-binary :all: lässt nur fertige
+# Wheels zu: Ein Quelltextpaket bräuchte zum Bauen ein Build-Backend, das pip ohne Hash-Prüfung nachladen würde.
+# Das Build-Backend von ../shared (Gruppe build-backend: hatchling) kommt ebenso mit Hashes aus uv.lock, aber in
+# die System-Python des Builders statt nach /install: Ins fertige Image geht nur /install.
+# scripts/check_image_hashes.py prüft diese Regeln.
 COPY shared/pyproject.toml /build/shared/pyproject.toml
 COPY mandari/pyproject.toml mandari/uv.lock /build/mandari/
 WORKDIR /build/mandari
 RUN uv export --quiet --locked --no-dev --no-emit-project --no-emit-package mandari-oparl \
         --format requirements.txt -o /tmp/requirements.lock \
-    && pip install --no-cache-dir --prefix=/install --require-hashes -r /tmp/requirements.lock
+    && uv export --quiet --locked --only-group build-backend --no-emit-project \
+        --format requirements.txt -o /tmp/build-backend.lock \
+    && pip install --no-cache-dir --prefix=/install --only-binary :all: --require-hashes -r /tmp/requirements.lock \
+    && pip install --no-cache-dir --only-binary :all: --require-hashes -r /tmp/build-backend.lock
 
-# Shared package ohne eigene Abhängigkeitsauflösung (pydantic kommt aus der Lock-Datei)
+# Shared package ohne eigene Abhängigkeitsauflösung (pydantic kommt aus der Lock-Datei) und ohne Netz:
+# --no-build-isolation nimmt das Build-Backend aus dem Schritt davor, --no-index und --network=none verhindern,
+# dass pip etwas nachlädt.
 COPY shared/ /tmp/shared/
-RUN pip install --no-cache-dir --prefix=/install --no-deps /tmp/shared/
+RUN --network=none pip install --no-cache-dir --prefix=/install --no-deps --no-build-isolation --no-index /tmp/shared/
 
 # =============================================================================
 # Stage 2: Frontend assets bauen
