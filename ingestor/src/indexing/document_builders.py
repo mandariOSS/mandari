@@ -38,6 +38,12 @@ def _with_name(doc: dict[str, Any], name: str | None) -> dict[str, Any]:
 #: So viele Zeichen je Datei fließen in die Gewichtung eines Vorgangs ein (``file_contents_preview``)
 FILE_PREVIEW_CHARS = 5000
 
+#: Höchstens so viele Zeichen des Volltexts einer Datei kommen in den Suchindex (``text_content``); derselbe
+#: Wert wie ``INDEX_TEXT_MAX_CHARS`` in Django (``insight_core/services/search_documents.py``), damit beide
+#: Wege dasselbe Dokument schreiben. Hervorheben kann Elasticsearch ohnehin nur die erste Million Zeichen
+#: (``index.highlight.max_analyzed_offset``). Die Grenze hält jedes Dokument und damit jede Bulk-Anfrage klein.
+FILE_TEXT_MAX_CHARS = 1_000_000
+
 
 def paper_to_doc(paper, files=None) -> dict[str, Any]:
     """Convert a Paper SQLAlchemy row to a partial Elasticsearch document (organization_names kommt von Django).
@@ -130,13 +136,15 @@ def file_to_doc(file) -> dict[str, Any]:
     """Convert a File SQLAlchemy row to a partial Elasticsearch document.
 
     access_url, paper_name/paper_reference und der Kontext (Gremien, Sitzung, TOP)
-    kommen von Django und bleiben beim partiellen Update erhalten.
+    kommen von Django und bleiben beim partiellen Update erhalten. Der Volltext ist auf
+    ``FILE_TEXT_MAX_CHARS`` Zeichen gekürzt.
     """
     text_preview = ""
     if file.text_content:
         text_preview = file.text_content[:500].strip()
         if len(file.text_content) > 500:
             text_preview += "..."
+    text_content = (file.text_content or "")[:FILE_TEXT_MAX_CHARS]
 
     return {
         "id": str(file.id),
@@ -145,7 +153,7 @@ def file_to_doc(file) -> dict[str, Any]:
         "name": file.name or "",
         "file_name": file.file_name or "",
         "mime_type": file.mime_type or "",
-        "text_content": file.text_content or "",
+        "text_content": text_content,
         "text_preview": text_preview,
         "paper_id": str(file.paper_id) if file.paper_id else None,
         "meeting_id": str(file.meeting_id) if file.meeting_id else None,
