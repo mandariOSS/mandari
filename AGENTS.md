@@ -126,7 +126,7 @@ Membership (Verknüpfung User ↔ Organization)
 - Sachkundige/r Bürger/in (beratend)
 - Bezirksvertreter/in (beratend)
 - Fraktionspersonal (administrativ)
-- Administrator (System)
+- Administrator (System; alle Rechte außer dem Stimmrecht, das kommt über eine weitere Rolle oder als Einzelrecht)
 
 ---
 

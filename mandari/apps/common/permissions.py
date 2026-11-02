@@ -121,6 +121,18 @@ PERMISSIONS = {
 }
 
 
+#: Stimmrecht bei Abstimmungen: Beschlussfähigkeit, Anwesenheitsliste, Niederschrift und Antragsabstimmung zählen danach
+STIMMRECHT = "voting.participate"
+
+#: Rechte, die eine Administrator-Rolle NICHT automatisch gibt (Issue #1166): Administration ist Verwaltung, kein
+#: Mandat. Wer abstimmen darf, bekommt das Recht über eine Rolle, die es selbst enthält (z. B. Fraktionsmitglied,
+#: Fraktionsvorsitz), oder als Einzelrecht. Ausdrücklich verweigerte Rechte gehen wie immer vor.
+NICHT_DURCH_ADMIN: frozenset[str] = frozenset({STIMMRECHT})
+
+#: Was eine Administrator-Rolle gibt: alle Rechte außer ``NICHT_DURCH_ADMIN``
+ADMIN_RECHTE: tuple[str, ...] = tuple(code for code in PERMISSIONS if code not in NICHT_DURCH_ADMIN)
+
+
 # =============================================================================
 # PERMISSION CATEGORIES (for UI grouping)
 # =============================================================================
@@ -297,8 +309,12 @@ DEFAULT_ROLES = {
     # -------------------------------------------------------------------------
     "admin": {
         "name": "Administrator",
-        "description": "Vollständiger Zugriff auf alle Funktionen der Organisation.",
-        "permissions": list(PERMISSIONS.keys()),
+        "description": (
+            "Vollständiger Zugriff auf alle Funktionen der Organisation. Stimmrecht gehört nicht dazu: "
+            "Es kommt über eine weitere Rolle oder als Einzelrecht."
+        ),
+        # Alle Rechte außer dem Stimmrecht (NICHT_DURCH_ADMIN, Issue #1166)
+        "permissions": list(ADMIN_RECHTE),
         "is_system_role": True,
         "is_admin": True,
         "priority": 100,
@@ -1063,8 +1079,9 @@ class PermissionChecker:
         for role in self.membership.roles.all():
             if role.is_admin:
                 self._admin = True
-                # Admin role grants all permissions
-                for perm_code in PERMISSIONS:
+                # Die Admin-Rolle gibt alle Rechte außer NICHT_DURCH_ADMIN (Stimmrecht, Issue #1166). Gespeicherte
+                # Rechte einer Admin-Rolle zählen wie bisher nicht (ältere Admin-Rollen speichern auch das Stimmrecht).
+                for perm_code in ADMIN_RECHTE:
                     if perm_code not in self._denied:
                         self._permissions.add(perm_code)
             else:
@@ -1086,8 +1103,9 @@ class PermissionChecker:
         if permission in self.denied_permissions:
             return False
 
-        # Admin (alle Rechte) – beim Laden der Rollen ermittelt statt je Prüfung neu abgefragt
-        if self.is_admin():
+        # Admin (alle Rechte außer NICHT_DURCH_ADMIN) – beim Laden der Rollen ermittelt statt je Prüfung neu abgefragt.
+        # Stimmrecht nur über eine Rolle, die es enthält, oder als Einzelrecht (Issue #1166).
+        if self.is_admin() and permission not in NICHT_DURCH_ADMIN:
             return True
 
         return permission in self.permissions
@@ -1117,7 +1135,7 @@ class PermissionChecker:
         return all(self.has_permission(p) for p in permissions)
 
     def is_admin(self) -> bool:
-        """Check if the user is an admin (Gäste nie, siehe _load_permissions)."""
+        """Check if the user is an admin (Gäste nie, siehe _load_permissions); Stimmrecht folgt daraus nicht."""
         if self._admin is None:
             self._load_permissions()
         return bool(self._admin)

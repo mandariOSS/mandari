@@ -158,11 +158,11 @@ def _is_admin(membership: Membership | None) -> bool:
 
 
 def _role_codes(role: Role) -> set[str]:
-    """Rechte einer Rolle; eine Administrator-Rolle umfasst alle."""
+    """Rechte einer Rolle; eine Administrator-Rolle umfasst alle außer dem Stimmrecht (Issue #1166)."""
     if role.is_admin:
-        from apps.common.permissions import PERMISSIONS
+        from apps.common.permissions import ADMIN_RECHTE
 
-        return set(PERMISSIONS)
+        return set(ADMIN_RECHTE)
     return selectors.role_permission_codes(role)
 
 

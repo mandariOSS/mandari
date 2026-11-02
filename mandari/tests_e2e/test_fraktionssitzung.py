@@ -276,15 +276,16 @@ def test_sitzungsansicht_kernpfade(
     page.keyboard.press("j")
     expect(page.locator("#fs-top-titel")).to_contain_text("Sonstiges")
 
-    # Anwesenheit: Mitglied online anwesend
+    # Anwesenheit: Mitglied mit einem Klick online anwesend, der Fokus bleibt auf dem Knopf (Issue #1166)
     page.locator(".fs-kopf-aktionen").get_by_role("button", name=re.compile("von 2")).click()
     anw = page.locator("#fs-anwesenheit")
-    anw.get_by_role("checkbox").nth(1).check()
-    expect(anw.get_by_role("button", name="online").nth(1)).to_be_visible()
-    anw.get_by_role("button", name="online").nth(1).click()
-    expect(anw.get_by_role("button", name="online").nth(1)).to_have_attribute("aria-pressed", "true")
-    expect(page.locator(".fs-kopf-aktionen")).to_contain_text("2 von 2")
     mitglied_teilnahme = meeting.attendances.exclude(membership=vorsitz).get()
+    online = anw.get_by_role("button", name=f"{mitglied_teilnahme.get_display_name()} online", exact=True)
+    online.click()
+    expect(online).to_have_attribute("aria-pressed", "true")
+    expect(online).to_be_focused()
+    expect(page.locator(".fs-kopf-aktionen")).to_contain_text("2 von 2")
+    mitglied_teilnahme.refresh_from_db()
     assert (mitglied_teilnahme.status, mitglied_teilnahme.participation_type) == ("present", "online")
 
 
@@ -306,8 +307,10 @@ def test_anwesenheit_als_spalte_auf_breiten_bildschirmen(
     # Klick in die Notizen schließt die Spalte nicht; Bedienen tauscht sie aus und sie bleibt stehen
     page.locator(NOTIZ).click()
     expect(anw).to_be_visible()
-    anw.get_by_role("checkbox").nth(1).check()
-    expect(page.locator("#fs-anwesenheit").get_by_role("button", name="online").nth(1)).to_be_visible()
+    mitglied_name = meeting.attendances.exclude(membership=vorsitz).get().get_display_name()
+    vor_ort = anw.get_by_role("button", name=f"{mitglied_name} vor Ort", exact=True)
+    vor_ort.click()
+    expect(vor_ort).to_have_attribute("aria-pressed", "true")
     result = axe()
     assert not result.failing, result.describe()
     screenshot("fraktionssitzung-2560")

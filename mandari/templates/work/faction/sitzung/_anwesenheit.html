@@ -1,5 +1,5 @@
-{% load permission_tags %}
 {# Anwesenheit vor Ort und online, Sitzungsleitung und Schriftführung (Issue #874); Komponente anwesenheitsListe #}
+{# Gruppen Stimmberechtigt, Weitere Mitglieder, Gäste; je Person ein Klick: vor Ort, online, entschuldigt (Issue #1166) #}
 {# Kontext: meeting, anw, quorum, rechte, rollen_auswahl, sitzung_urls, oob_kopf (Antwort einer Aktion: Kopf mit austauschen) #}
 <aside class="fs-anw" id="fs-anwesenheit" aria-labelledby="fs-anw-h" x-show="anwesenheitOffen || breit" x-cloak x-data="anwesenheitsListe"
        @click.outside="anwesenheitAussen($event)">
@@ -29,32 +29,28 @@
         <p>Sitzungsleitung: {{ meeting.chaired_by_name|default:"nicht festgelegt" }}. Schriftführung: {{ meeting.minute_taker_name|default:"nicht festgelegt" }}.</p>
         {% endif %}
     </div>
-    <ul class="fs-anw-liste">
-        {% for a in anw.teilnahmen %}
+    {% if rechte.anwesenheit and anw.gesamt %}<p class="fs-anw-hinweis">Ein Klick setzt die Teilnahme, ein zweiter Klick auf dieselbe Angabe setzt auf abwesend.</p>{% endif %}
+    {% for gruppe in anw.gruppen %}
+    <h3 class="wf-tl-gruppe" id="fs-anw-{{ gruppe.schluessel }}">{{ gruppe.titel }} · {{ gruppe.teilnahmen|length }}</h3>
+    <ul class="fs-anw-liste" aria-labelledby="fs-anw-{{ gruppe.schluessel }}">
+        {% for a in gruppe.teilnahmen %}
+        {% with name=a.get_display_name %}
         <li>
+            <span class="fs-anw-name">{{ name }}<small>{% if a.is_guest %}Gast{% else %}{% for rolle in a.membership.roles.all %}{{ rolle.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if a.membership_id and a.membership_id == meeting.minute_taker_id %}, Schriftführung{% endif %}{% endif %}</small></span>
             {% if rechte.anwesenheit and not a.is_guest %}
-            <label>
-                <input type="checkbox" data-id="{{ a.pk }}"{% if a.status == 'present' %} checked{% endif %} @change="anwesend($el)">
-                <span>{{ a.get_display_name }}<small>{% for rolle in a.membership.roles.all %}{{ rolle.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% if a.membership and a.membership|has_perm:"voting.participate" %}, stimmberechtigt{% endif %}{% if a.membership_id and a.membership_id == meeting.minute_taker_id %}, Schriftführung{% endif %}</small></span>
-            </label>
-            {% if a.status == 'present' %}
-            <span class="fs-art" role="group" aria-label="Teilnahme von {{ a.get_display_name }}">
-                <button type="button" data-id="{{ a.pk }}" data-art="onsite" @click="art($el)" aria-pressed="{% if a.participation_type == 'onsite' %}true{% else %}false{% endif %}">vor Ort</button>
-                <button type="button" data-id="{{ a.pk }}" data-art="online" @click="art($el)" aria-pressed="{% if a.participation_type == 'online' %}true{% else %}false{% endif %}">online</button>
+            <span class="fs-art" role="group" aria-label="Anwesenheit von {{ name }}">
+                <button type="button" data-id="{{ a.pk }}" data-wahl="onsite" @click="waehlen($el)" aria-label="{{ name }} vor Ort" aria-pressed="{% if a.status == 'present' and a.participation_type != 'online' %}true{% else %}false{% endif %}">vor Ort</button>
+                <button type="button" data-id="{{ a.pk }}" data-wahl="online" @click="waehlen($el)" aria-label="{{ name }} online" aria-pressed="{% if a.status == 'present' and a.participation_type == 'online' %}true{% else %}false{% endif %}">online</button>
+                <button type="button" data-id="{{ a.pk }}" data-wahl="excused" @click="waehlen($el)" aria-label="{{ name }} entschuldigt" aria-pressed="{% if a.status == 'excused' or a.status == 'declined' %}true{% else %}false{% endif %}">entschuldigt</button>
             </span>
             {% else %}
-            <select class="wf-eingabe wf-auswahl klein" data-id="{{ a.pk }}" @change="grund($el)" aria-label="Grund für {{ a.get_display_name }}">
-                <option value="absent"{% if a.status != 'excused' %} selected{% endif %}>abwesend</option>
-                <option value="excused"{% if a.status == 'excused' %} selected{% endif %}>entschuldigt</option>
-            </select>
-            {% endif %}
-            {% else %}
-            <span>{{ a.get_display_name }}<small>{% if a.is_guest %}Gast{% else %}{% for rolle in a.membership.roles.all %}{{ rolle.name }}{% if not forloop.last %}, {% endif %}{% endfor %}{% endif %}</small></span>
             <span class="fs-meta">{% if a.status == 'present' %}{% if a.is_guest %}anwesend{% else %}{{ a.get_participation_type_display|lower }}{% endif %}{% else %}{{ a.get_status_display|lower }}{% endif %}</span>
             {% endif %}
         </li>
+        {% endwith %}
         {% endfor %}
     </ul>
+    {% endfor %}
     {% if rechte.anwesenheit %}
     <form class="fs-anw-fuss" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-anwesenheit" hx-swap="outerHTML" autocomplete="off">
         <input type="hidden" name="action" value="gast">

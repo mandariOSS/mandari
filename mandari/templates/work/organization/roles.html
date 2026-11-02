@@ -61,7 +61,7 @@
                         {% endif %}
                     </h3>
                     <p class="text-sm text-gray-500">
-                        {% if role.is_admin %}Alle Berechtigungen{% else %}{{ role.permissions.count }} Berechtigungen{% endif %}
+                        {% if role.is_admin %}Alle Berechtigungen außer Stimmrecht{% else %}{{ role.permissions.count }} Berechtigungen{% endif %}
                         &middot; {{ role.member_count }} Mitglied{{ role.member_count|pluralize:"er" }}
                     </p>
                 </div>

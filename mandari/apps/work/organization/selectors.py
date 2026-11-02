@@ -141,14 +141,15 @@ def permission_matrix(member: Membership) -> dict[str, Any]:
     Effektive Berechtigungen eines Mitglieds mit Herkunft.
 
     Drei Zustände je Berechtigung: aus Rollen (mit Rollennamen), individuell
-    hinzugefügt, explizit verweigert (schlägt Rollen).
+    hinzugefügt, explizit verweigert (schlägt Rollen). Eine Administrator-Rolle gibt alle Rechte außer dem
+    Stimmrecht (``ADMIN_RECHTE``, Issue #1166).
     """
-    from apps.common.permissions import PERMISSIONS
+    from apps.common.permissions import ADMIN_RECHTE
 
     role_permission_sources: dict[str, list[str]] = {}
     for role in member.roles.all():
         if role.is_admin:
-            for code in PERMISSIONS:
+            for code in ADMIN_RECHTE:
                 role_permission_sources.setdefault(code, []).append(f"{role.name} (Administrator)")
         else:
             for perm in role.permissions.all():

@@ -9,7 +9,8 @@
  * - `sitzungsUnterlagen`: Reiter der Unterlagen (Überlauf in „n weitere“), Schriftgröße, Pfeiltasten
  * - `unterlageAnhaengen`: Unterlage in der Sitzung anhängen (Datei, RIS-Vorlage, eigenes Dokument)
  * - `beschlussLeiste`: Stimmenzähler der Leiste unten
- * - `anwesenheitsListe`: Anwesenheit vor Ort/online, Sitzungsleitung und Schriftführung
+ * - `anwesenheitsListe`: Anwesenheit je Person mit einem Klick (vor Ort, online, entschuldigt), Sitzungsleitung und
+ *   Schriftführung
  * - `zustaendigAuswahl`: Personen und Personengruppen für Aufgaben (Suche und Auswahl kombiniert)
  *
  * Markup: `templates/work/faction/sitzung/`. Server-Daten per `json_script` (`fs-sitzung-config`,
@@ -441,29 +442,28 @@ export const anwesenheitsListe = defineComponent(() => ({
     const aktiv = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const id = aktiv?.dataset.id
     if (id) {
-      const art = aktiv?.dataset.art ? `[data-art="${CSS.escape(aktiv.dataset.art)}"]` : ''
+      const wahl = aktiv?.dataset.wahl ? `[data-wahl="${CSS.escape(aktiv.dataset.wahl)}"]` : ''
       const feld = aktiv?.dataset.feld ? `[data-feld="${CSS.escape(aktiv.dataset.feld)}"]` : ''
-      fokusNachAustausch = `${aktiv?.tagName.toLowerCase()}[data-id="${CSS.escape(id)}"]${art}${feld}`
+      fokusNachAustausch = `${aktiv?.tagName.toLowerCase()}[data-id="${CSS.escape(id)}"]${wahl}${feld}`
     } else if (aktiv?.dataset.feld) {
       fokusNachAustausch = `select[data-feld="${CSS.escape(aktiv.dataset.feld)}"]`
     }
     void window.htmx.ajax('post', urls().aktion, { target: '#fs-anwesenheit', swap: 'outerHTML', values: werte })
   },
 
-  anwesend(el: HTMLInputElement) {
-    this.senden({
-      action: 'anwesenheit',
-      attendance_id: el.dataset.id ?? '',
-      status: el.checked ? 'present' : 'absent',
-    })
-  },
-
-  grund(el: HTMLSelectElement) {
-    this.senden({ action: 'anwesenheit', attendance_id: el.dataset.id ?? '', status: el.value })
-  },
-
-  art(el: HTMLElement) {
-    this.senden({ action: 'anwesenheit', attendance_id: el.dataset.id ?? '', participation_type: el.dataset.art ?? '' })
+  /**
+   * Ein Klick je Person (Issue #1166): „vor Ort“ und „online“ setzen anwesend samt Teilnahmeart, „entschuldigt“ den
+   * Status; ein Klick auf die schon gewählte Angabe setzt auf abwesend.
+   */
+  waehlen(el: HTMLElement) {
+    const id = el.dataset.id ?? ''
+    const wahl = el.dataset.wahl ?? ''
+    if (!id || !wahl) return
+    let werte: Record<string, string>
+    if (el.getAttribute('aria-pressed') === 'true') werte = { status: 'absent' }
+    else if (wahl === 'excused') werte = { status: 'excused' }
+    else werte = { status: 'present', participation_type: wahl }
+    this.senden({ action: 'anwesenheit', attendance_id: id, ...werte })
   },
 
   rolle(el: HTMLSelectElement) {

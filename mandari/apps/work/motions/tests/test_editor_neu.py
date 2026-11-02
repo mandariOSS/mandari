@@ -133,7 +133,8 @@ def test_stimmberechtigte_nach_rechten(org: Any, make_member: Any) -> None:
 
     ids = ablauf.stimmberechtigte_ids(org)
     assert mit.id in ids
-    assert admin.id in ids
+    # Die Administrator-Rolle allein gibt kein Stimmrecht (Issue #1166)
+    assert admin.id not in ids
     assert ohne.id not in ids
     assert verweigert.id not in ids
     assert gast.id not in ids
