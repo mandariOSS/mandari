@@ -3,8 +3,8 @@
 Sitzungsansicht der laufenden Fraktionssitzung (Issue #874).
 
 Seite (über :class:`FactionMeetingDetailView`, wenn der Schalter der Organisation an ist), TOP-Wechsel und
-Unterlagen als HTMX-Teile sowie ein Aktions-Endpunkt für Notizen, Beschluss, Aufgaben, Unterlagen und
-Anwesenheit. Fachlogik und Datenzugriffe in :mod:`apps.work.faction.sitzung`.
+Unterlagen als HTMX-Teile sowie ein Aktions-Endpunkt für Notizen, Beschluss, Aufgaben, Unterlagen,
+Anwesenheit und neue TOPs (Issue #1166). Fachlogik und Datenzugriffe in :mod:`apps.work.faction.sitzung`.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 from django.utils import timezone
 from django.views.generic import View
+from django_htmx.http import HttpResponseClientRedirect
 
 from apps.common.mixins import WorkViewMixin
 from apps.common.uploads import DOCUMENTS, MB, is_embeddable, validate_upload
@@ -48,6 +49,7 @@ ANWESENHEIT = "work/faction/sitzung/_anwesenheit.html"
 #: Feste Meldungen (nie Ausnahmetexte an den Browser)
 KEINE_BERECHTIGUNG = "Keine Berechtigung für diese Aktion."
 UNGUELTIG = "Ungültige Eingabe."
+SITZUNG_LAEUFT_NICHT = "Die Sitzung läuft nicht mehr. TOPs ergänzen Sie hier nur während der Sitzung."
 
 ERGEBNISSE = dict(FactionDecision.RESULT_CHOICES)
 PUNKT_ERGEBNIS = {"accepted": "zustimmung", "modified": "zustimmung", "rejected": "ablehnung", "postponed": "andere"}
@@ -109,6 +111,7 @@ def _rechte(membership: Any, meeting: FactionMeeting) -> dict[str, bool]:
         "anhaengen": sitzung.darf_unterlagen_anhaengen(membership, meeting),
         "beenden": membership.has_permission("faction.start"),
         "intern": can_view_internal(membership),
+        "top_neu": sitzung.darf_top_hinzufuegen(membership, meeting),
     }
 
 
@@ -162,6 +165,8 @@ def top_kontext(
     kontext = {
         "item": item,
         "intern": intern,
+        # Mit dem TOP kommt die Tagesordnung neu (oob): Neue TOPs anderer erscheinen beim nächsten TOP-Wechsel
+        "ordnung": ordnung,
         "vor": vor,
         "nach": nach,
         "unterlagen": unterlagen,
@@ -296,7 +301,7 @@ def _mit_meldung(antwort: HttpResponse, meldung: str) -> HttpResponse:
 
 
 class FactionSessionActionView(_SitzungsView):
-    """POST: Notizen, Beschluss, Aufgaben, Unterlagen, Anwesenheit und Rollen der laufenden Sitzung."""
+    """POST: Notizen, Beschluss, Aufgaben, Unterlagen, Anwesenheit, Rollen und neue TOPs der laufenden Sitzung."""
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         meeting = _sitzung_oder_404(self, kwargs["meeting_id"])
@@ -314,6 +319,7 @@ class FactionSessionActionView(_SitzungsView):
             "anwesenheit": self._anwesenheit,
             "gast": self._gast,
             "rollen": self._rollen,
+            "top_neu": self._top_neu,
         }
         handler = handlers.get(_wert(request, "action"))
         if handler is None:
@@ -520,3 +526,38 @@ class FactionSessionActionView(_SitzungsView):
         if not sitzung.rollen_setzen(meeting, werte):
             return HttpResponse(UNGUELTIG, status=400)
         return self._anwesenheit_antwort(request, meeting)
+
+    # -- TOP ergänzen (Issue #1166) --------------------------------------------
+
+    def _top_neu(self, request: HttpRequest, meeting: FactionMeeting) -> HttpResponse:
+        """
+        TOP in der laufenden Sitzung ergänzen. Antwort wie ein TOP-Wechsel auf den neuen TOP (TOP, Leiste unten und
+        Tagesordnung, dazu der Kopf mit der Zahl der TOPs); die Notizen des offenen TOPs sichert der Browser vorher
+        (``data-sichern-vorher``). Ohne TOP auf der Seite (leere Tagesordnung) lädt der Browser die Seite neu.
+        """
+        if meeting.status != "ongoing":
+            return HttpResponse(SITZUNG_LAEUFT_NICHT, status=409)
+        if not sitzung.darf_top_hinzufuegen(self.mitglied, meeting):
+            return HttpResponse(KEINE_BERECHTIGUNG, status=403)
+        try:
+            neu = sitzung.top_hinzufuegen(
+                meeting,
+                self.mitglied,
+                titel=_wert(request, "title"),
+                teil=_wert(request, "visibility") or "public",
+                eltern_id=_wert(request, "parent_id"),
+                beschreibung=_wert(request, "description"),
+            )
+        except sitzung.TopNeuError as abgelehnt:
+            return HttpResponse(abgelehnt.meldung, status=abgelehnt.status)
+        adresse = f"{_urls(meeting)['seite']}?top={neu.pk}"
+        if _wert(request, "neu_laden"):
+            return HttpResponseClientRedirect(adresse)
+        item = _top_oder_404(self, meeting, neu.pk)
+        ordnung = sitzung.tagesordnung(meeting, self.mitglied)
+        kontext = _basis(self, meeting)
+        kontext |= _kopf_kontext(meeting, ordnung, kontext["quorum"])
+        kontext |= top_kontext(self, meeting, item, ordnung=ordnung) | {"oob": True, "oob_kopf": True}
+        antwort = self._render(request, TOP, kontext)
+        antwort["HX-Push-Url"] = adresse
+        return _mit_meldung(antwort, f"TOP {item.number} hinzugefügt")

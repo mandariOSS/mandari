@@ -1,0 +1,38 @@
+{% comment %}
+Dialog „TOP hinzufügen“ der laufenden Sitzung (Issue #1166), etwa wenn unter TOP 1 eine geänderte Tagesordnung
+beschlossen wird. Öffnen über den Eintrag unter der Tagesordnung (_tagesordnung.html); Bausteine wie in der
+Vorbereitung (c-ui.modal, wf-dialog). Der Dialog steht außerhalb der Tagesordnung und bleibt beim TOP-Wechsel stehen,
+nur die Auswahl „Als Unterpunkt von“ kommt neu (_top_neu_eltern.html).
+Aktion top_neu (views.session): Antwort wie ein TOP-Wechsel auf den neuen TOP; data-sichern-vorher sichert vorher die
+Notizen des offenen TOPs (faction-session.ts). Mit der Antwort schließt der Dialog (vor dem Austausch, damit der Fokus
+auf den neuen TOP gehen kann); nach Erfolg ist das Formular leer, nach einem Fehler bleiben die Eingaben für die Meldung
+stehen. Ohne TOP auf der Seite (neu_laden) lädt der Browser die Seite danach neu.
+Kontext: ordnung (sitzung.Tagesordnung), item, rechte, sitzung_urls.
+{% endcomment %}
+<c-ui.modal id="fs-top-neu" title="TOP hinzufügen" size="sm">
+    <form class="wf-dialog" hx-post="{{ sitzung_urls.aktion }}" hx-target="#fs-fokus" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]"
+          data-sichern-vorher data-testid="fs-top-neu-form"
+          @htmx:before-on-load="$el.closest('dialog').close(); if ($event.detail.xhr.status < 400) $el.reset()">
+        <input type="hidden" name="action" value="top_neu">
+        {% if not item %}<input type="hidden" name="neu_laden" value="1">{% endif %}
+        <p class="fs-meta">Der neue TOP steht am Ende seines Teils, ein Unterpunkt am Ende seines TOPs.</p>
+        <label class="fs-feldname" for="fs-top-neu-titel">Titel</label>
+        <input id="fs-top-neu-titel" class="wf-eingabe w-full" type="text" name="title" required maxlength="500" autocomplete="off">
+        {% if rechte.intern %}
+        <label class="fs-feldname" for="fs-top-neu-teil">Teil</label>
+        <select id="fs-top-neu-teil" class="wf-eingabe wf-auswahl w-full" name="visibility">
+            <option value="public">öffentlich</option>
+            <option value="internal">nichtöffentlich</option>
+        </select>
+        {% else %}
+        <input type="hidden" name="visibility" value="public">
+        {% endif %}
+        {% include "work/faction/sitzung/_top_neu_eltern.html" %}
+        <label class="fs-feldname" for="fs-top-neu-beschreibung">Beschreibung <span class="fs-meta">freiwillig</span></label>
+        <textarea id="fs-top-neu-beschreibung" class="wf-eingabe" name="description" rows="2" maxlength="5000"></textarea>
+        <div class="wf-dialog-fuss">
+            <button type="button" class="wf-knopf" data-close-modal>Abbrechen</button>
+            <button type="submit" class="wf-knopf wf-haupt">Hinzufügen</button>
+        </div>
+    </form>
+</c-ui.modal>

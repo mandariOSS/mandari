@@ -546,34 +546,15 @@ class FactionActionView(WorkViewMixin, View):
             if visibility == "internal" and not can_view_internal(self.membership):
                 return HttpResponse(status=403)
 
-        # Auto-generate number — offene und abgelehnte Vorschläge zählen nicht mit (Issue #872). Die Sitzung ist
-        # bis zum Speichern gesperrt, damit gleichzeitige Einträge verschiedene Nummern erhalten.
-        with transaction.atomic():
-            agenda.lock_meeting(meeting)
-            if parent:
-                child_count = parent.children.count() + 1
-                number = f"{parent.number}.{child_count}"
-            else:
-                number = agenda.next_number(meeting, visibility)
-
-            item = FactionAgendaItem(
-                meeting=meeting,
-                title=title,
-                number=number,
-                visibility=visibility,
-                order=agenda.next_order(meeting),
-                parent=parent,
-            )
-            item.save()
-            if parent is None:
-                # Gleicht Altbestand aus, in dem offene oder abgelehnte Vorschläge noch mitgezählt wurden
-                agenda.renumber(meeting, visibility)
-                item.refresh_from_db(fields=["number"])
-
-        description = request.POST.get("description", "").strip()
-        if description:
-            item.set_description_encrypted(description)
-            item.save()
+        # Nummer und Reihenfolge wie in der laufenden Sitzung (Issue #1166): offene und abgelehnte Vorschläge zählen
+        # nicht mit (Issue #872), gleichzeitige Einträge erhalten verschiedene Nummern
+        item = agenda.add_item(
+            meeting,
+            title=title,
+            visibility=visibility,
+            parent=parent,
+            description=request.POST.get("description", "").strip(),
+        )
 
         if self.is_htmx:
             html = self._render_agenda(request, meeting)

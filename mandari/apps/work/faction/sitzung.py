@@ -120,6 +120,18 @@ def darf_unterlagen_anhaengen(membership: Membership, meeting: FactionMeeting) -
     )
 
 
+def darf_top_hinzufuegen(membership: Membership, meeting: FactionMeeting) -> bool:
+    """
+    TOP in der laufenden Sitzung ergänzen (Issue #1166), etwa wenn unter TOP 1 eine geänderte Tagesordnung beschlossen
+    wird: dieselben Rechte wie „TOP eintragen“ in der Vorbereitung (``can_add_items``), also wer die Sitzung verwaltet
+    oder ``agenda.create`` hat. Nur solange die Sitzung läuft: Nach dem Beenden bietet auch die Vorbereitung das
+    Eintragen nicht mehr an, die Tagesordnung gehört dann zum Protokoll.
+    """
+    if meeting.status != "ongoing" or meeting.protocol_approved:
+        return False
+    return darf_verwalten(membership, meeting) or membership.has_permission("agenda.create")
+
+
 # =============================================================================
 # Tagesordnung
 # =============================================================================
@@ -146,6 +158,15 @@ class Tagesordnung:
     def zeilen(self) -> list[TopZeile]:
         return [*self.oeffentlich, *self.intern]
 
+    @property
+    def eltern_oeffentlich(self) -> list[TopZeile]:
+        """TOPs des öffentlichen Teils, unter die ein neuer Unterpunkt kann (wie in der Vorbereitung, Issue #1166)."""
+        return _eltern(self.oeffentlich)
+
+    @property
+    def eltern_intern(self) -> list[TopZeile]:
+        return _eltern(self.intern)
+
     def finde(self, item_id: Any) -> TopZeile | None:
         key = str(item_id)
         return next((z for z in self.zeilen if str(z.item.pk) == key), None)
@@ -157,6 +178,11 @@ class Tagesordnung:
             return None, None
         i = ids.index(str(item_id))
         return (zeilen[i - 1] if i > 0 else None), (zeilen[i + 1] if i + 1 < len(zeilen) else None)
+
+
+def _eltern(zeilen: list[TopZeile]) -> list[TopZeile]:
+    """TOPs der obersten Ebene ohne den Genehmigungs-TOP (Auswahl „Als Unterpunkt von“)."""
+    return [z for z in zeilen if not z.unter and not z.item.is_approval_item]
 
 
 def _besprochen(item: FactionAgendaItem) -> bool:
@@ -734,6 +760,62 @@ def top_laden(meeting: FactionMeeting, item_id: Any) -> FactionAgendaItem | None
         .filter(id=pk, meeting=meeting, proposal_status="active")
         .first()
     )
+
+
+#: Längen wie in der Vorbereitung (Titel wie ``FactionAgendaItem.title``, Beschreibung wie die Begründung eines Vorschlags)
+TOP_TITEL_MAX = 500
+TOP_BESCHREIBUNG_MAX = 5000
+
+
+class TopNeuError(Exception):
+    """Neuer TOP abgelehnt: ``meldung`` für den Browser, ``status`` 400 (Eingabe) oder 403 (Nichtöffentliches)."""
+
+    def __init__(self, meldung: str, status: int = 400) -> None:
+        super().__init__(meldung)
+        self.meldung = meldung
+        self.status = status
+
+
+def top_hinzufuegen(
+    meeting: FactionMeeting,
+    membership: Membership,
+    *,
+    titel: str,
+    teil: str,
+    eltern_id: str = "",
+    beschreibung: str = "",
+) -> FactionAgendaItem:
+    """
+    TOP in der laufenden Sitzung eintragen (Issue #1166), auf demselben Weg wie in der Vorbereitung
+    (:func:`apps.work.faction.agenda.add_item`): ans Ende des gewählten Teils oder als letzter Unterpunkt eines TOPs.
+
+    Unterpunkte stehen unter einem TOP der obersten Ebene (nicht unter dem Genehmigungs-TOP). Unter einem
+    nichtöffentlichen TOP ist jeder Unterpunkt nichtöffentlich; wer „nichtöffentlich“ wählt, bekommt auch unter einem
+    öffentlichen TOP einen nichtöffentlichen Unterpunkt, damit nichts ungewollt öffentlich wird. Nichtöffentliches nur
+    für Vereidigte (Issue #64). Das Recht (:func:`darf_top_hinzufuegen`) prüft der Aufrufer.
+    """
+    from . import agenda
+
+    if not titel:
+        raise TopNeuError("Bitte geben Sie einen Titel an.")
+    if len(titel) > TOP_TITEL_MAX:
+        raise TopNeuError("Der Titel ist zu lang.")
+    if len(beschreibung) > TOP_BESCHREIBUNG_MAX:
+        raise TopNeuError("Die Beschreibung ist zu lang.")
+    if teil not in ("public", "internal"):
+        raise TopNeuError("Ungültige Eingabe.")
+    eltern = None
+    if eltern_id:
+        eltern = top_laden(meeting, eltern_id)
+        if eltern is None or eltern.parent_id is not None or eltern.is_approval_item:
+            raise TopNeuError("Den gewählten TOP gibt es nicht mehr. Bitte laden Sie die Seite neu.")
+        if not darf_top_sehen(eltern, membership):
+            raise TopNeuError("Gesperrte Information", status=403)
+        if eltern.visibility == "internal":
+            teil = "internal"
+    if teil == "internal" and not can_view_internal(membership):
+        raise TopNeuError("Gesperrte Information", status=403)
+    return agenda.add_item(meeting, title=titel, visibility=teil, parent=eltern, description=beschreibung)
 
 
 def protokolleintraege(item: FactionAgendaItem) -> list[Any]:
