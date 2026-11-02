@@ -1173,7 +1173,9 @@ gleich setzen**, sonst arbeiten beide oder keiner:
 
 Je Datei speichern beide Wege höchstens 5.000.000 Zeichen Text (feste Grenze `MAX_TEXT_CHARS` in
 `shared/mandari_dokumente`); was darüber hinausgeht, wird verworfen und in `text_extraction_error` vermerkt.
-Dokumentzeilen der Vorgangs- und Sitzungsseiten zeigen davon nur den Anfang.
+Dokumentzeilen der Vorgangs- und Sitzungsseiten zeigen davon nur den Anfang. Ältere, längere Texte zählt
+`python manage.py texte_begrenzen` (nur lesend); mit `--ausfuehren` kürzt er sie stapelweise auf die Grenze
+(`oparl_files` mit demselben Vermerk, `session_files`); den Suchindex der betroffenen Dateien bei Bedarf neu aufbauen.
 
 Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 
