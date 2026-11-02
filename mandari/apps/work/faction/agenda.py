@@ -123,7 +123,7 @@ def add_item(
             parent=parent,
         )
         if description:
-            item.set_description_encrypted(description)
+            cast(Any, item).set_description_encrypted(description)
         item.save()
         if parent is None:
             # Gleicht Altbestand aus, in dem offene oder abgelehnte Vorschläge noch mitgezählt wurden

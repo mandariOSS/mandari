@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from datetime import timedelta
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from django.urls import reverse
@@ -104,7 +104,7 @@ def test_oeffentlicher_top_kommt_ans_ende_und_oeffnet_sich(
     item = angelegt(sitzung_laeuft, "Dringlichkeitsantrag Schulbau")
     assert (item.number, item.visibility, item.parent_id, item.proposal_status) == ("4", "public", None, "active")
     assert item.order > tops["noe"].order
-    assert item.get_description_decrypted() == "Unter TOP 1 neu aufgenommen"
+    assert cast(Any, item).get_description_decrypted() == "Unter TOP 1 neu aufgenommen"
     # Bestehende Nummern bleiben, wie sie sind
     assert [FactionAgendaItem.objects.get(pk=t.pk).number for t in tops.values()] == ["1", "2", "3", "NÖ 1"]
 
