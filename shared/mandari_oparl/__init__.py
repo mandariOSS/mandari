@@ -20,12 +20,17 @@ from .entities import (
     ProcessedPerson,
 )
 from .enums import OPARL_TYPE_MAP, OParlType
+from .limits import MAX_TEXT_CHARS, limit_text, truncation_note
 from .utils import generate_uuid, parse_date, parse_datetime
 
 __all__ = [
     # Enums
     "OParlType",
     "OPARL_TYPE_MAP",
+    # Grenzen
+    "MAX_TEXT_CHARS",
+    "limit_text",
+    "truncation_note",
     # Base
     "ProcessedEntity",
     # Entities

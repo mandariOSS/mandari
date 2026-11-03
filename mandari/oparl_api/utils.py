@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
 Hilfsfunktionen der OParl-API: URL-Bau, JSON-Antworten, Zeitstempel-Parsing,
-Rate-Limiting.
+Rate-Limiting, erkannter Text einer Datei höchstens bis zur Obergrenze.
 
 Alle Objekt-IDs der API werden aus ``settings.OPARL_BASE_URL`` gebaut
 (host-unabhängig, konfigurierbar per Umgebungsvariable ``OPARL_BASE_URL``).
@@ -14,8 +14,10 @@ from functools import wraps
 
 from django.conf import settings
 from django.core.cache import cache
+from django.db.models.functions import Substr
 from django.http import HttpResponse
 from django.utils import timezone
+from mandari_oparl import MAX_TEXT_CHARS
 
 # Schema-Basis der OParl-1.1-Spezifikation
 SCHEMA_BASE = "https://schema.oparl.org/1.1"
@@ -100,6 +102,26 @@ def iso(dt):
 def iso_date(d):
     """Date -> ISO 8601 (None-sicher)."""
     return d.isoformat() if d else None
+
+
+# =============================================================================
+# Erkannter Text einer Datei
+# =============================================================================
+
+
+def with_limited_text(queryset):
+    """
+    Dateien für den Objekt-Endpunkt ``file`` (Insight und Session): Der erkannte Text kommt höchstens mit
+    ``MAX_TEXT_CHARS`` Zeichen, gekürzt in der Datenbank (Attribut ``text_begrenzt``), auch wenn ein älterer, längerer
+    gespeichert ist; den Volltext lädt die Abfrage nicht. Ausgegeben wird er mit ``file_text``.
+    """
+    return queryset.defer("text_content").annotate(text_begrenzt=Substr("text_content", 1, MAX_TEXT_CHARS))
+
+
+def file_text(file_obj):
+    """``File.text``: höchstens ``MAX_TEXT_CHARS`` Zeichen; vorgeladen mit ``with_limited_text``, sonst hier gekürzt."""
+    text = file_obj.text_begrenzt if hasattr(file_obj, "text_begrenzt") else file_obj.text_content
+    return text[:MAX_TEXT_CHARS] if text else None
 
 
 def parse_client_datetime(value, param):

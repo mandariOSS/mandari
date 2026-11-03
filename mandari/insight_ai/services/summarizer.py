@@ -9,6 +9,8 @@ Includes on-demand text extraction from PDFs if text_content is not available.
 import logging
 from typing import TYPE_CHECKING
 
+from django.db.models.functions import Substr
+
 from apps.common.db_connections import release_idle_thread_connections
 from insight_ai.providers import NebiusProvider
 from insight_ai.providers.base import ChatMessage
@@ -22,6 +24,15 @@ logger = logging.getLogger(__name__)
 
 #: Höchstens so viele Anlagen werden bei Bedarf heruntergeladen und ausgelesen (Dauer, OCR-Kosten)
 MAX_ON_DEMAND_EXTRACTIONS = 3
+#: Text aller Anlagen zusammen höchstens so viele Zeichen (rund 60.000 Token); jede Anlage bekommt denselben Anteil
+TEXT_BUDGET_CHARS = 200_000
+
+
+def _budget(text: str, zeichen: int) -> str:
+    """Höchstens ``zeichen`` Zeichen des Texts (ohne Rand), mit Vermerk, wenn er weitergeht."""
+    gekuerzt = len(text) > zeichen
+    text = text[:zeichen].strip()
+    return f"{text}\n[… gekürzt]" if text and gekuerzt else text
 
 
 class SummaryError(Exception):
@@ -207,7 +218,8 @@ class SummaryService:
         """
         Collect text content from all files, extracting on-demand if needed.
 
-        If a file doesn't have text_content, attempts to download and extract it.
+        If a file doesn't have text_content, attempts to download and extract it. Je Anlage nur der Anfang, zusammen
+        höchstens ``TEXT_BUDGET_CHARS`` Zeichen; gekürzte Anlagen tragen einen Vermerk.
 
         Args:
             paper: OParlPaper instance
@@ -218,11 +230,20 @@ class SummaryService:
         texts = []
         files_to_extract = []
 
-        # First pass: collect existing text and identify files needing extraction
-        for file in self._current_files(paper):
-            if file.text_content and file.text_content.strip():
+        # First pass: collect existing text and identify files needing extraction. Gekürzt wird in der Datenbank, die
+        # Volltexte (je Datei bis zu Millionen Zeichen) kommen nicht in den Speicher
+        mit_text = self._current_files(paper).filter(text_content__isnull=False).exclude(text_content="").count()
+        je_datei = max(1, TEXT_BUDGET_CHARS // max(1, mit_text))
+        dateien = (
+            self._current_files(paper)
+            .defer("text_content", "raw_json")
+            .annotate(text_anfang=Substr("text_content", 1, je_datei + 1))
+        )
+        for file in dateien:
+            text = _budget(file.text_anfang or "", je_datei)
+            if text:
                 file_name = file.name or file.file_name or "Dokument"
-                texts.append(f"### {file_name}\n{file.text_content.strip()}")
+                texts.append(f"### {file_name}\n{text}")
             elif file.download_url or file.access_url:
                 files_to_extract.append(file)
 
@@ -230,8 +251,9 @@ class SummaryService:
         if files_to_extract and not texts:
             files_to_extract = files_to_extract[:MAX_ON_DEMAND_EXTRACTIONS]
             logger.info(f"Extracting text from {len(files_to_extract)} files on-demand")
+            je_datei = max(1, TEXT_BUDGET_CHARS // len(files_to_extract))
             for file in files_to_extract:
-                extracted_text = self._extract_text_from_file(file)
+                extracted_text = _budget(self._extract_text_from_file(file), je_datei)
                 if extracted_text:
                     file_name = file.name or file.file_name or "Dokument"
                     texts.append(f"### {file_name}\n{extracted_text}")
@@ -274,9 +296,13 @@ class SummaryService:
             )
 
             if result.text and result.text.strip():
-                # Save extracted text to file for future use
+                # Save extracted text to file for future use (höchstens MAX_TEXT_CHARS Zeichen, Schnitt vermerkt)
                 file.text_content = result.text
-                file.save(update_fields=["text_content"])
+                felder = ["text_content"]
+                if result.notes:
+                    file.text_extraction_error = "; ".join(result.notes)
+                    felder.append("text_extraction_error")
+                file.save(update_fields=felder)
                 logger.info(f"Extracted {len(result.text)} chars from file {file.id} (OCR: {result.ocr_performed})")
                 return result.text
 

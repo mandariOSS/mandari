@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Prefetch, Q, QuerySet
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -187,7 +187,10 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
         OParlConsultation.objects.filter(agenda_item_external_id__in=external_ids)
         .filter(consultation_agenda_item_in_source())
         .select_related("paper")
-        .prefetch_related("paper__files", "paper__consultations")
+        # Dateien ohne erkannten Text: Die Vorbereitung zeigt nur Name, Art und Größe
+        .prefetch_related(
+            Prefetch("paper__files", queryset=OParlFile.objects.defer("text_content")), "paper__consultations"
+        )
     )
 
     paper_ids = {consultation.paper.id for consultation in consultations if consultation.paper}

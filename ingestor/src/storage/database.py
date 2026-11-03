@@ -26,6 +26,7 @@ from mandari_oparl import (
     ProcessedOrganization,
     ProcessedPaper,
     ProcessedPerson,
+    limit_text,
 )
 from rich.console import Console
 from sqlalchemy import and_, func, literal_column, or_, select, text, update
@@ -1875,7 +1876,12 @@ class DatabaseStorage:
         page_count: int | None = None,
         sha256_hash: str | None = None,
     ) -> None:
-        """Update a file with text extraction results."""
+        """
+        Update a file with text extraction results.
+
+        Gespeichert werden höchstens ``mandari_oparl.MAX_TEXT_CHARS`` Zeichen Text; der Schnitt steht dann in
+        ``text_extraction_error`` (nach einem schon vorhandenen Hinweis).
+        """
         from datetime import datetime
 
         # PostgreSQL lehnt Null-Bytes in Textfeldern ab („invalid byte sequence for encoding UTF8:
@@ -1884,7 +1890,9 @@ class DatabaseStorage:
         # wieder neu verarbeitet (Sept. 2026: ~14 000 Fehlversuche am Tag).
         # Gespeichert werden höchstens TEXT_CONTENT_MAX_CHARS Zeichen je Datei.
         if text_content is not None:
-            text_content = text_content[:TEXT_CONTENT_MAX_CHARS].replace("\x00", "")
+            text_content, vermerk = limit_text(text_content.replace("\x00", ""))
+            if vermerk:
+                error = "; ".join(teil for teil in (error, vermerk) if teil)
         if error is not None:
             error = error.replace("\x00", "")
 

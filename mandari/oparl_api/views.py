@@ -57,6 +57,7 @@ from .utils import (
     parse_client_datetime,
     sub_list_url,
     system_url,
+    with_limited_text,
 )
 
 # Query-Parameter -> ORM-Lookup (auf den Coalesce-Annotationen, damit die
@@ -73,17 +74,22 @@ FILTER_LOOKUPS = {
 # (Tombstones erscheinen nur als Top-Level-Objekte, nie eingebettet).
 
 
+def _embedded_files():
+    # Eingebettete Dateien ohne erkannten Text: Er steht nur am Objekt-Endpunkt und kann Millionen Zeichen lang sein
+    return OParlFile.objects.filter(deleted=False).defer("text_content")
+
+
 def _prepare_meetings(qs):
     return qs.prefetch_related(
         Prefetch("organizations", queryset=OParlOrganization.objects.filter(deleted=False).only("id")),
         Prefetch("agenda_items", queryset=OParlAgendaItem.objects.filter(deleted=False)),
-        Prefetch("files", queryset=OParlFile.objects.filter(deleted=False)),
+        Prefetch("files", queryset=_embedded_files()),
     )
 
 
 def _prepare_papers(qs):
     return qs.prefetch_related(
-        Prefetch("files", queryset=OParlFile.objects.filter(deleted=False)),
+        Prefetch("files", queryset=_embedded_files()),
         Prefetch("consultations", queryset=OParlConsultation.objects.filter(deleted=False)),
     )
 
@@ -135,10 +141,11 @@ OBJECT_TYPES = {
     "agendaitem": (OParlAgendaItem, s.serialize_agenda_item, None, s.RefContext.for_agenda_items),
     "paper": (OParlPaper, s.serialize_paper, _prepare_papers, s.RefContext.for_papers),
     "consultation": (OParlConsultation, s.serialize_consultation, None, s.RefContext.for_consultations),
+    # Text höchstens bis zur Obergrenze, gekürzt in der Datenbank
     "file": (
         OParlFile,
         lambda obj, ctx: s.serialize_file(obj, ctx, include_text=True),
-        None,
+        with_limited_text,
         s.RefContext.empty,
     ),
     "location": (OParlLocation, s.serialize_location, None, s.RefContext.empty),

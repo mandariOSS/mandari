@@ -232,7 +232,7 @@
                                         {{ file.name|default:file.file_name }}
                                     </p>
                                     <p class="text-xs text-gray-500 dark:text-gray-400">
-                                        {{ file.text_content|length|floatformat:0 }} Zeichen
+                                        {{ file.text_laenge|floatformat:0 }} Zeichen
                                     </p>
                                 </div>
                             </div>
@@ -244,8 +244,11 @@
                         </div>
                         <div x-show="expanded" x-collapse>
                             <div class="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 max-h-96 overflow-y-auto">
-                                <pre class="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-mono leading-relaxed">{{ file.text_content }}</pre>
+                                <pre class="whitespace-pre-wrap text-sm text-gray-700 dark:text-gray-300 font-mono leading-relaxed">{{ file.text_anfang }}{% if file.text_gekuerzt %} …{% endif %}</pre>
                             </div>
+                            {% if file.text_gekuerzt %}
+                            <p class="mt-2 text-xs text-gray-500 dark:text-gray-400">Hier gekürzt, den vollständigen Text enthält das Dokument.</p>
+                            {% endif %}
                         </div>
                     </div>
                     {% endfor %}

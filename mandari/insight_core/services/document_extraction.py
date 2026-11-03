@@ -22,6 +22,7 @@ from io import BytesIO
 import httpx
 from django.conf import settings
 from django.utils.encoding import force_str
+from mandari_oparl import limit_text
 
 try:
     from pypdf import PdfReader
@@ -66,6 +67,8 @@ class ExtractedDocument:
     ocr_performed: bool = False
     page_count: int | None = None
     extraction_method: str = "none"  # pypdf, mistral, tesseract, none
+    #: Hinweise ohne Inhalte, etwa wenn der Text an der Obergrenze gekürzt wurde
+    notes: tuple[str, ...] = ()
 
 
 class DocumentDownloadError(RuntimeError):
@@ -217,14 +220,17 @@ def extract_text_from_file(
     data: bytes,
     mime_type: str | None = None,
     file_name: str = "",
+    *,
+    notes: list[str] | None = None,
 ) -> tuple[str, bool, int | None, str]:
     """
-    Extrahiert Text aus Binärdaten basierend auf MIME-Typ.
+    Extrahiert Text aus Binärdaten basierend auf MIME-Typ, höchstens ``mandari_oparl.MAX_TEXT_CHARS`` Zeichen.
 
     Args:
         data: Binärdaten der Datei
         mime_type: MIME-Typ der Datei
         file_name: Optionaler Dateiname für Fallback-Erkennung
+        notes: Wird um Hinweise ohne Inhalte ergänzt, etwa wenn der Text an der Obergrenze gekürzt wurde
 
     Returns:
         Tuple mit (text, ocr_performed, page_count, extraction_method)
@@ -261,6 +267,12 @@ def extract_text_from_file(
 
     # PostgreSQL speichert keine Null-Bytes in Textfeldern; manche PDFs enthalten sie im Textstrom
     text = force_str(text or "").replace("\x00", "").strip()
+    # Obergrenze je Datei: Eine kleine Datei kann sehr viel Text ergeben, jeder Leseweg müsste ihn sonst ganz lesen
+    text, vermerk = limit_text(text)
+    if vermerk:
+        logger.info("Erkannter Text von '%s' an der Obergrenze gekürzt", file_name)
+        if notes is not None:
+            notes.append(vermerk)
     return text, ocr_used, page_count, extraction_method
 
 
@@ -289,10 +301,12 @@ def download_and_extract(
     resolved_mime = mime_type or response.headers.get("Content-Type", "").split(";")[0]
     checksum = hashlib.sha256(binary).hexdigest()
 
+    hinweise: list[str] = []
     text, ocr_used, page_count, extraction_method = extract_text_from_file(
         binary,
         mime_type=resolved_mime,
         file_name=original_name or url.split("/")[-1],
+        notes=hinweise,
     )
 
     return ExtractedDocument(
@@ -305,4 +319,5 @@ def download_and_extract(
         ocr_performed=ocr_used,
         page_count=page_count,
         extraction_method=extraction_method,
+        notes=tuple(hinweise),
     )

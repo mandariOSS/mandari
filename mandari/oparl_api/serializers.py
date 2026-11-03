@@ -38,7 +38,17 @@ from insight_core.models import (
     with_reference_checks,
 )
 
-from .utils import body_list_url, iso, iso_date, obj_url, schema_type, site_url, sub_list_url, system_url
+from .utils import (
+    body_list_url,
+    file_text,
+    iso,
+    iso_date,
+    obj_url,
+    schema_type,
+    site_url,
+    sub_list_url,
+    system_url,
+)
 
 
 def _clean(data):
@@ -453,7 +463,8 @@ def serialize_file(file_obj, ctx=None, include_text=False):
             # stabil auch wenn der Quellserver offline ist)
             "accessUrl": proxy_url,
             "downloadUrl": f"{proxy_url}?download=1",
-            "text": (file_obj.text_content or None) if include_text else None,
+            # Höchstens bis zur Obergrenze der Texterkennung (``with_limited_text``)
+            "text": file_text(file_obj) if include_text else None,
             "paper": [obj_url("paper", file_obj.paper_id)] if file_obj.paper_id else None,
             "meeting": [obj_url("meeting", file_obj.meeting_id)] if file_obj.meeting_id else None,
             **_timestamps(file_obj),

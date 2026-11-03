@@ -42,6 +42,36 @@ def _truncate_to_tokens(text: str, max_tokens: int) -> str:
     return text[:max_chars] + "\n[...]"
 
 
+#: Text je Dokument im Kontext (Token)
+DOC_TOKENS = 4000
+#: Treffer aus dem Dateiindex (``type`` bzw. Index)
+FILE_TYPES = ("file", "files")
+
+
+def _file_text_starts(file_ids: list[Any]) -> dict[str, str]:
+    """
+    Anfang des erkannten Texts je Datei, ein Zeichen mehr als der Kontext je Dokument fasst (``DOC_TOKENS``), in der
+    Datenbank gekürzt: Der Volltext kann Millionen Zeichen lang sein und gehört nicht in den Speicher.
+    """
+    from django.core.exceptions import ValidationError
+    from django.db.models.functions import Substr
+
+    from insight_core.models import OParlFile
+
+    ids = [str(file_id) for file_id in file_ids if file_id]
+    if not ids:
+        return {}
+    try:
+        zeilen = (
+            OParlFile.objects.filter(pk__in=ids, deleted=False)
+            .annotate(text_anfang=Substr("text_content", 1, DOC_TOKENS * CHARS_PER_TOKEN + 1))
+            .values_list("pk", "text_anfang")
+        )
+        return {str(pk): anfang for pk, anfang in zeilen if anfang}
+    except (ValueError, ValidationError):
+        return {}
+
+
 def build_rag_context(query: str, body_id: str | None) -> tuple[str, list[dict]]:
     """
     Search relevant documents via Elasticsearch and build RAG context.
@@ -70,6 +100,9 @@ def build_rag_context(query: str, body_id: str | None) -> tuple[str, list[dict]]
     hits = result.get("results", [])
     if not hits:
         return "", []
+
+    # Text der Dateien: nur der Anfang, in der Datenbank gekürzt (die Suche liefert den Volltext nicht)
+    anfaenge = _file_text_starts([hit.get("id") for hit in hits if hit.get("type", hit.get("_index")) in FILE_TYPES])
 
     context_parts = []
     sources = []
@@ -104,10 +137,10 @@ def build_rag_context(query: str, body_id: str | None) -> tuple[str, list[dict]]
             snippet_parts.append(f"Datum: {hit.get('date') or hit.get('start', '')}")
 
         # Add text content (from file or cropped content)
-        text_content = hit.get("text_content") or hit.get("text_preview") or ""
+        text_content = anfaenge.get(str(hit_id)) or hit.get("text_content") or hit.get("text_preview") or ""
         if text_content:
             # Limit per-document text to ~4000 tokens
-            text_content = _truncate_to_tokens(text_content, 4000)
+            text_content = _truncate_to_tokens(text_content, DOC_TOKENS)
             snippet_parts.append(f"\n{text_content}")
 
         context_parts.append("\n".join(snippet_parts))
