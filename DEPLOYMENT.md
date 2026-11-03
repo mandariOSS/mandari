@@ -11,7 +11,7 @@
 
 Die Images baut `.github/workflows/release.yml` und legt sie in der GitHub Container Registry ab
 (`ghcr.io/mandarioss/mandari`, `ghcr.io/mandarioss/ingestor`): `dev` → `:dev`, `main` → `:latest`,
-ein Release → `:<version>` und `:latest`. Ein Push deployt nichts; umgeschaltet wird auf dem Server
+ein Release → `:<version>`, dazu `:vX.Y` (z. B. `:v0.11`) für das neueste Patch-Release seiner Linie und `:latest` nur für das neueste Release überhaupt. Wer auf einer älteren Linie bleibt, aktualisiert mit `--tag v0.11` statt auf `latest`. Ein Push deployt nichts; umgeschaltet wird auf dem Server
 mit `update.sh` oder `deploy/scripts/deploy.sh`.
 
 ---

@@ -57,7 +57,7 @@ COPY ingestor/src/ src/
 # (ohne Datenbank und Netz; kein Modul baut beim Import eine Verbindung auf).
 # Ein fehlendes Paket laesst so den Build scheitern statt den Start in Produktion.
 RUN python -m pip check \
-    && python -B -c "import importlib, pkgutil, src; import sqlalchemy.ext.asyncio; \
+    && python -B -c "import importlib, pkgutil, src; import greenlet, sqlalchemy.ext.asyncio; \
 [importlib.import_module(m.name) for m in pkgutil.walk_packages(src.__path__, 'src.') if not m.name.endswith('__main__')]"
 
 # Create data directory and non-root user
