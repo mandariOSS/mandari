@@ -28,6 +28,9 @@ INDEX_FILES = "files"
 
 ALL_INDEXES = [INDEX_MEETINGS, INDEX_PAPERS, INDEX_PERSONS, INDEX_ORGANIZATIONS, INDEX_FILES]
 
+#: Volltext einer Datei im Suchindex: nie aus ``_source`` laden (Treffer zeigen Hervorhebung oder ``text_preview``)
+LARGE_TEXT_FIELDS = ["text_content"]
+
 
 class ElasticsearchService:
     """Service für Elasticsearch-Integration in Django."""
@@ -109,6 +112,9 @@ class ElasticsearchService:
                         "query": es_query,
                         "size": page_size * 2,  # Mehr laden für Merge
                         "from": 0,
+                        # Ohne Volltexte (je Datei bis zu Millionen Zeichen): Ausschnitte liefert die Hervorhebung,
+                        # den kurzen Anfang einer Datei ``text_preview``
+                        "_source": {"excludes": LARGE_TEXT_FIELDS},
                         "highlight": {
                             "pre_tags": [HIGHLIGHT_PRE],
                             "post_tags": [HIGHLIGHT_POST],

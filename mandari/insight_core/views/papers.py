@@ -6,6 +6,7 @@ Server-Side Rendering mit Django Templates + HTMX.
 """
 
 from django.db.models import Q
+from django.db.models.functions import Length, Substr
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
@@ -15,6 +16,7 @@ from apps.common.mixins import HTMXMixin
 
 from ..models import (
     OParlAgendaItem,
+    OParlFile,
     OParlMeeting,
     OParlPaper,
     with_reference_checks,
@@ -26,6 +28,40 @@ from ._withdrawn import withdrawn_response
 # =============================================================================
 # Vorgänge (Papers)
 # =============================================================================
+
+#: Rohtext-Reiter: Anfang des erkannten Texts, höchstens so viele Zeichen je Datei …
+TEXTANFANG_ZEICHEN = 100_000
+#: … und alle Dateien eines Vorgangs zusammen höchstens so viele (bei vielen Dateien bekommt jede denselben Anteil)
+TEXTANFANG_JE_SEITE = 1_000_000
+
+
+def _with_text_start(files):
+    """
+    Dateien mit erkanntem Text für den Rohtext-Reiter, ohne den Volltext zu laden (er kann Millionen Zeichen lang
+    sein): setzt ``text_anfang`` (höchstens ``TEXTANFANG_ZEICHEN`` Zeichen, alle zusammen höchstens
+    ``TEXTANFANG_JE_SEITE``), ``text_gekuerzt`` (der Text geht weiter) und ``text_laenge``. Eine Abfrage; gekürzt
+    wird in der Datenbank.
+    """
+    if not files:
+        return []
+    je_datei = max(1, min(TEXTANFANG_ZEICHEN, TEXTANFANG_JE_SEITE // len(files)))
+    # Ein Zeichen mehr: zeigt, ob der Text weitergeht
+    texte = {
+        pk: (anfang or "", laenge or 0)
+        for pk, anfang, laenge in OParlFile.objects.filter(pk__in=[f.pk for f in files])
+        .annotate(anfang=Substr("text_content", 1, je_datei + 1), laenge=Length("text_content"))
+        .values_list("pk", "anfang", "laenge")
+    }
+    with_text = []
+    for file in files:
+        anfang, laenge = texte.get(file.pk, ("", 0))
+        if not anfang.strip():
+            continue
+        file.text_anfang = anfang[:je_datei]
+        file.text_gekuerzt = len(anfang) > je_datei
+        file.text_laenge = laenge
+        with_text.append(file)
+    return with_text
 
 
 class PaperListView(HTMXMixin, ActiveBodyRequiredMixin, ListView):
@@ -105,12 +141,12 @@ class PaperDetailView(DetailView):
         context = super().get_context_data(**kwargs)
         paper = self.object
 
-        # Alle Dateien (zurückgenommene Anlagen aus Session nie)
-        files = [f for f in paper.files.all() if not f.withdrawn_by_publisher]
+        # Alle Dateien (zurückgenommene Anlagen aus Session nie), ohne Volltext geladen
+        files = [f for f in paper.files.defer("text_content", "raw_json") if not f.withdrawn_by_publisher]
         context["files"] = files
 
-        # Dateien mit extrahiertem Text für Rohtext-Tab
-        context["files_with_text"] = [f for f in files if f.text_content and f.text_content.strip()]
+        # Dateien mit extrahiertem Text für Rohtext-Tab: nur der Anfang, je Datei und Seite begrenzt
+        context["files_with_text"] = _with_text_start(files)
 
         # Beratungsverlauf (Consultations mit Meeting-Info)
         consultations = self._get_consultations_with_meetings(paper)

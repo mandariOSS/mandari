@@ -171,12 +171,15 @@ class Command(BaseCommand):
 
             # Text speichern
             if result.text:
+                # Höchstens MAX_TEXT_CHARS Zeichen (download_and_extract); ein Schnitt steht im Fehlerfeld
                 file.text_content = result.text
                 file.text_extraction_status = "completed"
                 file.text_extraction_method = "ocr" if result.ocr_performed else "pypdf"
-                file.save(
-                    update_fields=["text_content", "text_extraction_status", "text_extraction_method", "updated_at"]
-                )
+                felder = ["text_content", "text_extraction_status", "text_extraction_method", "updated_at"]
+                if result.notes:
+                    file.text_extraction_error = "; ".join(result.notes)
+                    felder.append("text_extraction_error")
+                file.save(update_fields=felder)
 
                 if verbose:
                     self.stdout.write(

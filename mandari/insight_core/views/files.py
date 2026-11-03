@@ -173,9 +173,11 @@ class FileListView(HTMXMixin, ActiveBodyRequiredMixin, TemplateView):
         page_num = page_number(self.request, maximum=100_000)
 
         if body:
+            # Ohne erkannten Text und Rohdaten: Die Liste zeigt Name, Art und Größe
             qs = (
                 OParlFile.objects.filter(body=body, deleted=False)
                 .select_related("paper")
+                .defer("text_content", "raw_json")
                 .order_by("-file_date", "-created_at")
             )
 

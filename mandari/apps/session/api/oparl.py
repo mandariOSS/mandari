@@ -43,12 +43,14 @@ from apps.session.services import file_service
 from oparl_api.utils import (
     OParlBadRequestError,
     error_response,
+    file_text,
     iso,
     iso_date,
     json_response,
     oparl_endpoint,
     parse_client_datetime,
     schema_type,
+    with_limited_text,
 )
 
 
@@ -437,7 +439,8 @@ def serialize_file(api, file_obj, include_text=False):
             "date": iso(file_obj.created_at),
             "accessUrl": download,
             "downloadUrl": f"{download}?download=1",
-            "text": (file_obj.text_content or None) if include_text else None,
+            # Höchstens bis zur Obergrenze der Texterkennung (``with_limited_text``)
+            "text": file_text(file_obj) if include_text else None,
             **refs,
             **_timestamps(file_obj),
             "mandari:version": file_obj.version,
@@ -476,19 +479,31 @@ def serialize_tombstone(api, tombstone):
 
 
 def _public_files_qs():
-    return SessionFile.objects.filter(is_public=True).select_related("paper", "meeting", "agenda_item__meeting")
+    # Eingebettete Dateien ohne Text: Er steht nur am Objekt-Endpunkt
+    return (
+        SessionFile.objects.filter(is_public=True)
+        .select_related("paper", "meeting", "agenda_item__meeting")
+        .defer("text_content")
+    )
 
 
 def _prepare_meetings(qs, tenant):
-    return qs.select_related("protocol__public_file__meeting").prefetch_related(
-        "joint_organizations",
-        Prefetch(
-            "agenda_items",
-            queryset=pub.visible_agenda_items(tenant).select_related("consultation__paper").order_by("order", "number"),
-        ),
-        Prefetch("agenda_items__files", queryset=_public_files_qs()),
-        "agenda_items__votes__person",
-        Prefetch("files", queryset=_public_files_qs()),
+    # Die Niederschrift ist eingebettet und kommt ohne Text (er steht nur am Objekt-Endpunkt)
+    return (
+        qs.select_related("protocol__public_file__meeting")
+        .defer("protocol__public_file__text_content")
+        .prefetch_related(
+            "joint_organizations",
+            Prefetch(
+                "agenda_items",
+                queryset=pub.visible_agenda_items(tenant)
+                .select_related("consultation__paper")
+                .order_by("order", "number"),
+            ),
+            Prefetch("agenda_items__files", queryset=_public_files_qs()),
+            "agenda_items__votes__person",
+            Prefetch("files", queryset=_public_files_qs()),
+        )
     )
 
 
@@ -525,6 +540,16 @@ def _prepare_files(qs, tenant):
     return qs.select_related("paper", "meeting", "agenda_item__meeting")
 
 
+def _prepare_file_list(qs, tenant):
+    # Die Liste gibt den Text nicht aus (nur der Objekt-Endpunkt)
+    return _prepare_files(qs, tenant).defer("text_content")
+
+
+def _prepare_file_object(qs, tenant):
+    # Objekt-Endpunkt: Text höchstens bis zur Obergrenze, gekürzt in der Datenbank
+    return with_limited_text(_prepare_files(qs, tenant))
+
+
 # Segment -> (Queryset-Funktion, prepare, Serializer, Objekttyp)
 LIST_SPECS = {
     "organizations": (pub.visible_organizations, _prepare_organizations, serialize_organization, "organization"),
@@ -534,7 +559,7 @@ LIST_SPECS = {
     "agendaitems": (pub.visible_agenda_items, _prepare_agenda_items, serialize_agenda_item, "agendaitem"),
     "papers": (pub.visible_papers, _prepare_papers, serialize_paper, "paper"),
     "consultations": (pub.visible_consultations, _prepare_consultations, serialize_consultation, "consultation"),
-    "files": (pub.visible_files, _prepare_files, serialize_file, "file"),
+    "files": (pub.visible_files, _prepare_file_list, serialize_file, "file"),
     "legislativeterms": (pub.visible_legislative_terms, None, serialize_legislative_term, "legislativeterm"),
 }
 
@@ -547,7 +572,7 @@ OBJECT_SPECS = {
     "agendaitem": (pub.visible_agenda_items, _prepare_agenda_items, serialize_agenda_item),
     "paper": (pub.visible_papers, _prepare_papers, serialize_paper),
     "consultation": (pub.visible_consultations, _prepare_consultations, serialize_consultation),
-    "file": (pub.visible_files, _prepare_files, lambda api, obj: serialize_file(api, obj, include_text=True)),
+    "file": (pub.visible_files, _prepare_file_object, lambda api, obj: serialize_file(api, obj, include_text=True)),
     "legislativeterm": (pub.visible_legislative_terms, None, serialize_legislative_term),
 }
 

@@ -97,6 +97,21 @@ docker exec mandari python manage.py migrate
 richtet dafür einen täglichen Cron-Lauf ein. Verschlüsselte Sicherung an zwei Standorten mit
 restic: [docs/BACKUP.md](docs/BACKUP.md).
 
+### Erkannte Texte begrenzen
+
+Je Datei speichern Anwendung und Ingestor höchstens 5.000.000 Zeichen erkannten Text (`MAX_TEXT_CHARS` in
+`shared/mandari_oparl`); was darüber hinausgeht, wird verworfen und bei RIS-Dateien in `text_extraction_error`
+vermerkt. Ältere, längere Texte findet `texte_begrenzen`: Ohne Schalter zählt er nur und nennt jede betroffene Datei
+mit Kennung und Länge, getrennt nach `oparl_files` und `session_files`. `--ausfuehren` kürzt sie in Stapeln
+(`--stapel`, Vorgabe 10 Dateien je Transaktion); die Bedingung „länger als die Grenze“ steht im `UPDATE` selbst.
+Gekürzte RIS-Dateien schreibt der Befehl danach neu in den Suchindex. Erst zählen, dann ausführen; ein zweiter Lauf
+findet nichts mehr.
+
+```bash
+docker exec mandari python manage.py texte_begrenzen               # nur zählen
+docker exec mandari python manage.py texte_begrenzen --ausfuehren  # kürzen
+```
+
 ---
 
 ## 🐘 PostgreSQL: Grundeinstellungen

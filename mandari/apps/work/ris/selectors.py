@@ -325,9 +325,9 @@ def paper_files(paper: OParlPaper) -> tuple[QuerySet[OParlFile] | list[dict[str,
 
     Bevorzugt die Datenbank-Relation; ist sie leer, werden ``mainFile`` und
     ``auxiliaryFile`` aus ``raw_json`` gelesen. Zweiter Rückgabewert: ``True``,
-    wenn die Dateien aus ``raw_json`` stammen.
+    wenn die Dateien aus ``raw_json`` stammen. Dateien aus der Datenbank ohne erkannten Text.
     """
-    db_files = paper.files.all()
+    db_files = paper.files.defer("text_content")
     if db_files.exists():
         return db_files, False
     raw_json = paper.raw_json or {}
@@ -401,8 +401,13 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
 
 
 def files_queryset(bodies: Bodies, *, search: str = "") -> QuerySet[OParlFile]:
-    """Dokumente der Kommunen, neueste zuerst; Suche über Name, Dateiname und Vorgang."""
-    files = OParlFile.objects.filter(body__in=bodies).select_related("paper").order_by("-file_date", "-created_at")
+    """Dokumente der Kommunen, neueste zuerst; Suche über Name, Dateiname und Vorgang. Ohne erkannten Text."""
+    files = (
+        OParlFile.objects.filter(body__in=bodies)
+        .select_related("paper")
+        .defer("text_content")
+        .order_by("-file_date", "-created_at")
+    )
     if search:
         files = files.filter(
             Q(name__icontains=search) | Q(file_name__icontains=search) | Q(paper__name__icontains=search)
