@@ -21,6 +21,8 @@ on:
     branches:
       - dev
       - main
+      # Backports auf Release-Linien (z. B. release/v0.11) bekommen dieselben Prüfungen
+      - 'release/**'
     paths-ignore:
       - 'docs/**'
       - '**/*.md'
