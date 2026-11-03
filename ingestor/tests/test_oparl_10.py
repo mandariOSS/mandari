@@ -109,10 +109,10 @@ class FakeStorage:
     async def get_entity_content_hashes(self, entity_type, external_ids):
         return {eid: self.hashes.get(eid) for eid in external_ids}
 
-    async def get_person_ids_by_external_ids(self, ids):
+    async def get_person_ids_by_external_ids(self, ids, body_id):
         return {}
 
-    async def get_organization_ids_by_external_ids(self, ids):
+    async def get_organization_ids_by_external_ids(self, ids, body_id):
         return {}
 
 

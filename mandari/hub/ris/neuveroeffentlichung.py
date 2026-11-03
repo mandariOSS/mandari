@@ -47,6 +47,7 @@ from typing import Any
 from django.db.models import Max
 from django.db.models.fields.json import KeyTransform
 
+from hub.ris.selectors import consultation_agenda_item_in_source
 from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, OParlPaper
 
 #: Ergebnisse einer Zuordnung
@@ -172,9 +173,11 @@ def _vorlagen_je_top(external_ids: Iterable[str]) -> dict[str, list[tuple[str, s
     ids = [e for e in external_ids if e]
     if not ids:
         return result
-    rows = OParlConsultation.objects.filter(
-        agenda_item_external_id__in=ids, paper__isnull=False, deleted=False
-    ).values_list("agenda_item_external_id", "paper_id", "paper__reference")
+    rows = (
+        OParlConsultation.objects.filter(agenda_item_external_id__in=ids, paper__isnull=False, deleted=False)
+        .filter(consultation_agenda_item_in_source())
+        .values_list("agenda_item_external_id", "paper_id", "paper__reference")
+    )
     for external_id, paper_id, reference in rows:
         if external_id:
             result.setdefault(external_id, []).append((str(paper_id), reference_key(reference)))

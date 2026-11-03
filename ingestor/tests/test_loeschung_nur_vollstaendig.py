@@ -534,7 +534,7 @@ async def test_oparl_abgleich_markiert_nur_per_loeschsignal(fall: str) -> None:
     marked: list[str] = []
     stored: list[str] = []
 
-    async def mark(item: dict[str, Any], entity_type: str, es_deletions: Any) -> bool:
+    async def mark(item: dict[str, Any], entity_type: str, es_deletions: Any, *, body_id: UUID) -> bool:
         marked.append(item["id"])
         return True
 

@@ -375,7 +375,7 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
     OParl verknüpft Consultation → Meeting/AgendaItem nur über ``external_id``-Strings;
     beide werden gebündelt nachgeladen. Ergebnis chronologisch (älteste zuerst).
     """
-    consultations: list[OParlConsultation] = list(paper.consultations.exclude(withdrawn_q()))
+    consultations: list[OParlConsultation] = list(ris.with_reference_checks(paper.consultations.exclude(withdrawn_q())))
     if not consultations:
         return []
 
@@ -396,8 +396,11 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
 
     result: list[dict[str, Any]] = []
     for consultation in consultations:
-        meeting = meetings_by_id.get(consultation.meeting_external_id or "")
-        agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id or "")
+        # Sitzung und Punkt einer anderen Quelle gelten als unbekannt
+        sitzung_in_quelle = consultation.meeting_in_source  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
+        punkt_in_quelle = consultation.agenda_item_in_source  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
+        meeting = meetings_by_id.get(consultation.meeting_external_id or "") if sitzung_in_quelle else None
+        agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id or "") if punkt_in_quelle else None
         org_name = None
         if meeting:
             orgs = list(meeting.organizations.all())

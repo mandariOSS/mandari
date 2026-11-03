@@ -87,8 +87,11 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
         if org_refs:
             from insight_core.models import OParlOrganization
 
+            # Nur Gremien aus der Quelle der Vorlage: Die Beratungen nennen sie nur als Kennung (Text)
             organization_names = list(
-                OParlOrganization.objects.filter(external_id__in=org_refs).values_list("name", flat=True).distinct()
+                OParlOrganization.objects.filter(external_id__in=org_refs, body__source__bodies__id=paper.body_id)
+                .values_list("name", flat=True)
+                .distinct()
             )
     except Exception:
         organization_names = []
@@ -265,6 +268,7 @@ def file_contexts(files: Iterable[Any]) -> dict[Any, dict[str, Any]]:
     """
     from django.db.models import Q
 
+    from hub.ris.selectors import with_reference_checks
     from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, withdrawn_q
 
     dateien = list(files)
@@ -272,10 +276,16 @@ def file_contexts(files: Iterable[Any]) -> dict[Any, dict[str, Any]]:
     beratung_je_vorgang: dict[Any, Any] = {}
     if vorgaenge:
         beratungen = list(
-            OParlConsultation.objects.filter(paper_id__in=vorgaenge)
+            with_reference_checks(OParlConsultation.objects.filter(paper_id__in=vorgaenge))
             .exclude(withdrawn_q())
             .only("pk", "paper_id", "external_id", "authoritative", "meeting_external_id", "agenda_item_external_id")
         )
+        # Sitzung und Punkt einer anderen Quelle gelten als unbekannt
+        for beratung in beratungen:
+            if not beratung.meeting_in_source:
+                beratung.meeting_external_id = None
+            if not beratung.agenda_item_in_source:
+                beratung.agenda_item_external_id = None
         verweise = {b.meeting_external_id for b in beratungen if b.meeting_external_id}
         vorhanden: set[str] = set()
         if verweise:

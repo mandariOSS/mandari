@@ -52,6 +52,20 @@ Die Statistik steht im Feld *Letzter Fehler* der Quelle und in den Details des S
 (`error_kind`, `host_findings`). Nicht abrufbare Objektlisten (etwa die Sitzungsliste einer
 Kommune) tauchen seit #123 als Fehler des Laufs auf, auch wenn der Rest der Quelle durchkam.
 
+Eine Quelle schreibt nur Objekte ihrer eigenen Kommunen (Kommune → `oparl_bodies.source_id`). Liefert sie
+eine Kennung, die im Bestand unter einer Kommune einer anderen Quelle steht, bleibt das Objekt unverändert:
+kein Upsert, keine Löschmarkierung, kein Verweis darauf. Die Details des Sync-Protokolls zählen solche
+Kennungen je Art unter `foreign` (etwa `paper`, `paper (Löschung)`, `meeting (Verweis)`,
+`consultation (Verweis)`), das Log des Ingestors nennt die ersten fünf je Art. Nennt das Body-Objekt einer
+Quelle die Kennung einer Kommune, die zu einer anderen Quelle gehört, bricht ihr Abgleich mit einem Fehler im
+Sync-Protokoll ab. Die Anwendung verbindet Beratungen nur mit Sitzungen und Tagesordnungspunkten derselben
+Quelle (`hub/ris/selectors.py`).
+
+Gehört eine Kommune tatsächlich zu der Quelle, die sie abgleicht (etwa nach einer doppelt angelegten Quelle),
+wird sie im Admin bei der Kommune der richtigen Quelle zugeordnet; ihre Objekte folgen ihr. Vorher prüfen,
+welche Quelle die Objekte der Kommune bisher geschrieben hat (Sync-Protokolle beider Quellen, Adressen der
+Objekte), und nur umhängen, wenn beide Quellen dasselbe Ratsinformationssystem sind.
+
 Ist ein Wert mit dem Betreiber vereinbart, lässt sich der User-Agent **je Quelle** im Admin
 setzen (Feld *User-Agent*, leer = Standard). Den Standard beschreibt
 `docs/SCRAPER_SOURCES.md`, Abschnitt Politeness. Die Vergleichsanfrage lässt sich mit

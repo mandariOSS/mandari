@@ -408,7 +408,7 @@ class Speicher(FakeStorage):
         return list(self.punkte.get(meeting_external_id, []))
 
     async def rename_agenda_items(
-        self, meeting_external_id: str, renames: dict[str, str], keep_previous: bool = True
+        self, meeting_external_id: str, renames: dict[str, str], *, source_id: uuid.UUID, keep_previous: bool = True
     ) -> int:
         self.protokoll.append(("umgestellt", meeting_external_id))
         self.umgestellt[meeting_external_id] = dict(renames)
@@ -683,7 +683,9 @@ class RueckwegSpeicher:
     async def get_agenda_items_of_meeting(self, meeting_external_id: str) -> list[dict[str, Any]]:
         return self.rows
 
-    async def rename_agenda_items(self, meeting: str, renames: dict[str, str], *, keep_previous: bool = True) -> int:
+    async def rename_agenda_items(
+        self, meeting: str, renames: dict[str, str], *, source_id: uuid.UUID, keep_previous: bool = True
+    ) -> int:
         self.geschrieben.append((dict(renames), keep_previous))
         return len(renames)
 

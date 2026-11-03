@@ -57,6 +57,11 @@ from hub.ris.canonical import (
     with_limited_text,
 )
 from hub.ris.mapping.session import ORGANIZATION_TYPES as SESSION_ORGANIZATION_TYPES
+from hub.ris.selectors import (
+    consultation_agenda_item_in_source,
+    consultation_references_in_source,
+    with_reference_checks,
+)
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -199,7 +204,8 @@ def prepare_meetings(queryset: QuerySet[OParlMeeting]) -> QuerySet[OParlMeeting]
 def prepare_papers(queryset: QuerySet[OParlPaper]) -> QuerySet[OParlPaper]:
     return queryset.prefetch_related(
         Prefetch("files", queryset=_embedded_files()),
-        Prefetch("consultations", queryset=OParlConsultation.objects.filter(deleted=False)),
+        # Quellenprüfung der Bezüge gleich in der Abfrage der Beratungen (RefContext.for_consultations)
+        Prefetch("consultations", queryset=with_reference_checks(OParlConsultation.objects.filter(deleted=False))),
     )
 
 
@@ -260,6 +266,9 @@ class RefContext:
         self.location_by_ext: dict[str, OParlLocation] = {}
         # Kennung des Tagesordnungspunkts in der Quelle -> Kennungen seiner Beratungen
         self.consultations_by_agenda_ext: dict[str, list[Any]] = {}
+        # Beratungen, deren Sitzung bzw. Tagesordnungspunkt zu ihrer Quelle gehört (sonst nennt sie keinen)
+        self.consultations_with_meeting: set[Any] = set()
+        self.consultations_with_agenda_item: set[Any] = set()
         # Vorgang -> antragstellende Fraktionen (Issue #1138)
         self.urheber_by_paper: dict[Any, list[VorgangUrheber]] = {}
 
@@ -307,9 +316,25 @@ class RefContext:
 
     @classmethod
     def for_consultations(cls, consultations: Iterable[OParlConsultation]) -> RefContext:
-        """Für Beratungen: Sitzung und Tagesordnungspunkt kennt der Bestand nur über die Kennung der Quelle."""
+        """
+        Für Beratungen: Sitzung und Tagesordnungspunkt kennt der Bestand nur über die Kennung der Quelle. Sie gelten
+        nur, wenn sie zur Quelle der Beratung gehören (``consultation_references_in_source``).
+        """
         ctx = cls()
         consultations = list(consultations)
+        mit_bezug = [c for c in consultations if c.meeting_external_id or c.agenda_item_external_id]
+        if all(hasattr(c, "meeting_in_source") and hasattr(c, "agenda_item_in_source") for c in mit_bezug):
+            # Schon mit with_reference_checks geladen (prepare_papers): keine weitere Abfrage
+            ctx.consultations_with_meeting = {c.pk for c in mit_bezug if c.meeting_in_source}  # type: ignore[attr-defined]
+            ctx.consultations_with_agenda_item = {
+                c.pk
+                for c in mit_bezug
+                if c.agenda_item_in_source  # type: ignore[attr-defined]
+            }
+        else:
+            ctx.consultations_with_meeting, ctx.consultations_with_agenda_item = consultation_references_in_source(
+                c.pk for c in mit_bezug
+            )
         meeting_exts = {c.meeting_external_id for c in consultations if c.meeting_external_id}
         agenda_exts = {c.agenda_item_external_id for c in consultations if c.agenda_item_external_id}
         if meeting_exts:
@@ -338,8 +363,10 @@ class RefContext:
     def _load_consultations(self, agenda_exts: set[str]) -> None:
         if not agenda_exts:
             return
-        pairs = OParlConsultation.objects.filter(agenda_item_external_id__in=agenda_exts, deleted=False).values_list(
-            "agenda_item_external_id", "id"
+        pairs = (
+            OParlConsultation.objects.filter(agenda_item_external_id__in=agenda_exts, deleted=False)
+            .filter(consultation_agenda_item_in_source())
+            .values_list("agenda_item_external_id", "id")
         )
         for agenda_ext, consultation_id in pairs:
             if agenda_ext is not None:
@@ -704,8 +731,12 @@ class BestandMapping:
         }
 
     def consultation(self, consultation: OParlConsultation, ctx: RefContext) -> Objekt:
-        meeting_id = ctx.meeting_by_ext.get(consultation.meeting_external_id or "")
-        agenda_item_id = ctx.agenda_item_by_ext.get(consultation.agenda_item_external_id or "")
+        meeting_id = None
+        if consultation.pk in ctx.consultations_with_meeting:
+            meeting_id = ctx.meeting_by_ext.get(consultation.meeting_external_id or "")
+        agenda_item_id = None
+        if consultation.pk in ctx.consultations_with_agenda_item:
+            agenda_item_id = ctx.agenda_item_by_ext.get(consultation.agenda_item_external_id or "")
         return clean(
             {
                 "id": self.uris.obj("consultation", consultation.id),

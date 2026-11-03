@@ -29,7 +29,7 @@ from datetime import date, datetime
 from typing import Any, Final, cast
 
 from django.db.models import Exists, F, OuterRef, Q, QuerySet, Subquery
-from django.db.models.functions import Length, Substr
+from django.db.models.functions import Coalesce, Length, Substr
 from django.utils import timezone
 from mandari_dokumente import MAX_TEXT_CHARS
 
@@ -75,6 +75,81 @@ def active_source(source_id: object) -> OParlSource | None:
     """Aktive RIS-Quelle (Sync-Auslöser im Admin, Issue #1026); sonst ``None``."""
     pk = _uuid(source_id)
     return OParlSource.objects.filter(pk=pk, is_active=True).first() if pk else None
+
+
+# =============================================================================
+# Beratungen: Bezüge nur innerhalb einer Quelle
+# =============================================================================
+#
+# Eine Beratung nennt ihre Sitzung und ihren Tagesordnungspunkt nur als Kennung der Quelle (Text), nicht als
+# Fremdschlüssel. Ein solcher Bezug gilt nur, wenn Sitzung bzw. Punkt zur selben Quelle gehören wie die Kommune der
+# Beratung (``body__source_id``); Beratungen ohne Kommune (Altbestand) schränkt das nicht ein. Jede Abfrage, die
+# Beratungen über diese Kennungen mit Sitzungen oder Punkten verbindet, nimmt eine der Bedingungen hier.
+
+
+def meeting_in_consultation_source() -> Q:
+    """
+    Bedingung auf ``OParlMeeting`` in einer Unterabfrage je Beratung (``OuterRef`` auf ``OParlConsultation``): Die
+    Sitzung gehört zur Quelle der Kommune der Beratung; bei einer Beratung ohne Kommune gilt jede Sitzung.
+    """
+    return Q(body__source_id=Coalesce(OuterRef("body__source_id"), F("body__source_id")))
+
+
+def agenda_item_in_consultation_source() -> Q:
+    """Wie ``meeting_in_consultation_source`` für ``OParlAgendaItem`` (Quelle über die Sitzung des Punkts)."""
+    return Q(meeting__body__source_id=Coalesce(OuterRef("body__source_id"), F("meeting__body__source_id")))
+
+
+def consultation_meeting_in_source() -> Exists:
+    """
+    Bedingung auf ``OParlConsultation``: Die Sitzung aus ``meeting_external_id`` steht im Bestand und gehört zur
+    Quelle der Beratung (``meeting_in_consultation_source``). Eine Abfrage, je Beratung ein Indexzugriff.
+    """
+    return Exists(
+        OParlMeeting.objects.filter(meeting_in_consultation_source(), external_id=OuterRef("meeting_external_id"))
+    )
+
+
+def consultation_agenda_item_in_source() -> Exists:
+    """Wie ``consultation_meeting_in_source`` für den Tagesordnungspunkt aus ``agenda_item_external_id``."""
+    return Exists(
+        OParlAgendaItem.objects.filter(
+            agenda_item_in_consultation_source(), external_id=OuterRef("agenda_item_external_id")
+        )
+    )
+
+
+def with_reference_checks(consultations: QuerySet[OParlConsultation]) -> QuerySet[OParlConsultation]:
+    """
+    Beratungen mit ``meeting_in_source`` und ``agenda_item_in_source`` (bool): Sitzung bzw. Tagesordnungspunkt
+    gehören zur Quelle der Beratung. Für Aufrufer, die die Bezüge selbst über ihre Kennung nachschlagen: Ist das Feld
+    falsch, gilt der Bezug als unbekannt.
+    """
+    return consultations.annotate(
+        meeting_in_source=consultation_meeting_in_source(),
+        agenda_item_in_source=consultation_agenda_item_in_source(),
+    )
+
+
+def consultation_references_in_source(consultation_ids: Iterable[object]) -> tuple[set[uuid.UUID], set[uuid.UUID]]:
+    """
+    Kennungen der Beratungen, deren Sitzung bzw. Tagesordnungspunkt zu ihrer Quelle gehört (``with_reference_checks``),
+    für schon geladene Beratungen. Eine Abfrage.
+    """
+    ids = [pk for pk in (_uuid(value) for value in consultation_ids) if pk is not None]
+    sitzungen: set[uuid.UUID] = set()
+    punkte: set[uuid.UUID] = set()
+    if not ids:
+        return sitzungen, punkte
+    rows = with_reference_checks(OParlConsultation.objects.filter(pk__in=ids)).values_list(  # type: ignore[misc]
+        "pk", "meeting_in_source", "agenda_item_in_source"
+    )
+    for pk, sitzung, punkt in rows:
+        if sitzung:
+            sitzungen.add(pk)
+        if punkt:
+            punkte.add(pk)
+    return sitzungen, punkte
 
 
 # =============================================================================
@@ -246,6 +321,7 @@ def papers_of_agenda_item(agenda_item: OParlAgendaItem) -> QuerySet[OParlPaper]:
     """Vorlagen, die unter einem Tagesordnungspunkt beraten werden (ohne zurückgenommene Beratungen)."""
     consultations = (
         OParlConsultation.objects.filter(agenda_item_external_id=agenda_item.external_id, paper__isnull=False)
+        .filter(consultation_agenda_item_in_source())
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("paper"))
     )
@@ -268,6 +344,7 @@ def paper_ids_of_agenda_items(agenda_item_ids: Iterable[object], *, public_only:
         items = items.filter(public=True)
     return set(
         OParlConsultation.objects.filter(agenda_item_external_id__in=items.values("external_id"), paper__isnull=False)
+        .filter(consultation_agenda_item_in_source())
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("paper"))
         .values_list("paper_id", flat=True)
@@ -282,6 +359,7 @@ def paper_ids_on_upcoming_agendas(bodies: Bodies, *, until: datetime, limit: int
     sitzungen = upcoming_meetings(bodies).filter(start__lte=until).values("external_id")
     return set(
         OParlConsultation.objects.filter(meeting_external_id__in=sitzungen, paper__isnull=False)
+        .filter(consultation_meeting_in_source())
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("paper"))
         .values_list("paper_id", flat=True)[:limit]
@@ -321,6 +399,7 @@ def agenda_overview(meeting_ids: Iterable[object]) -> dict[uuid.UUID, AgendaOver
         return {}
     mit_vorlage = (
         OParlConsultation.objects.filter(agenda_item_external_id=OuterRef("external_id"), paper__isnull=False)
+        .filter(consultation_agenda_item_in_source())
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("paper"))
     )
@@ -358,6 +437,7 @@ def papers_on_agendas(
         return []
     beratungen = (
         OParlConsultation.objects.filter(meeting_external_id__in=list(sitzungen), paper__isnull=False)
+        .filter(consultation_meeting_in_source())
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("paper"))
         .exclude(paper_id__in=list(exclude_papers))
@@ -597,7 +677,7 @@ def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
 
     Grundlage der Vorgangsseiten von Insight und Work (Issue #853, vorher je eine eigene Abfrage).
     """
-    consultations = list(OParlConsultation.objects.filter(paper=paper).exclude(withdrawn_q()))
+    consultations = list(with_reference_checks(OParlConsultation.objects.filter(paper=paper).exclude(withdrawn_q())))
     if not consultations:
         return []
     meeting_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
@@ -620,8 +700,9 @@ def consultation_history(paper: OParlPaper) -> list[dict[str, Any]]:
         }
     verlauf: list[dict[str, Any]] = []
     for consultation in consultations:
-        sitzung = sitzungen.get(consultation.meeting_external_id or "")
-        punkt = punkte.get(consultation.agenda_item_external_id or "")
+        # Sitzung bzw. Punkt einer anderen Quelle gilt als unbekannt
+        sitzung = sitzungen.get(consultation.meeting_external_id or "") if consultation.meeting_in_source else None  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
+        punkt = punkte.get(consultation.agenda_item_external_id or "") if consultation.agenda_item_in_source else None  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
         verlauf.append(
             {
                 "consultation": consultation,
@@ -652,6 +733,7 @@ def agenda_items_of_papers(paper_ids: Iterable[object]) -> dict[uuid.UUID, set[u
         return {}
     beratungen = (
         OParlConsultation.objects.filter(paper_id__in=ids)
+        .filter(consultation_agenda_item_in_source())
         .exclude(withdrawn_q())
         .exclude(agenda_item_external_id__isnull=True)
         .exclude(agenda_item_external_id="")
@@ -680,6 +762,7 @@ def papers_of_agenda_items(agenda_items: Iterable[OParlAgendaItem]) -> dict[uuid
         return {}
     beratungen = (
         OParlConsultation.objects.filter(agenda_item_external_id__in=list(punkte), paper__isnull=False)
+        .filter(consultation_agenda_item_in_source())
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("paper"))
         .select_related("paper")
@@ -894,6 +977,7 @@ def public_agenda(meeting: OParlMeeting) -> list[AgendaEntry]:
                 paper__isnull=False,
                 paper__deleted=False,
             )
+            .filter(consultation_agenda_item_in_source())
             .exclude(withdrawn_q())
             .select_related("paper")
         )
@@ -957,8 +1041,10 @@ def search_public_papers(
         found = found.filter(date__lte=date_to)
     if organizations is not None:
         sitzungen = OParlMeeting.objects.filter(organizations__in=list(organizations)).values("external_id")
-        beraten = OParlConsultation.objects.filter(paper=OuterRef("pk"), meeting_external_id__in=sitzungen).exclude(
-            withdrawn_q()
+        beraten = (
+            OParlConsultation.objects.filter(paper=OuterRef("pk"), meeting_external_id__in=sitzungen)
+            .filter(consultation_meeting_in_source())
+            .exclude(withdrawn_q())
         )
         found = found.filter(Exists(beraten))
     return vorlagennummer.suchen(found, text, bedingung=woerter)
@@ -991,9 +1077,15 @@ def public_consultation_history(paper_ids: Iterable[object]) -> dict[uuid.UUID, 
     ids = [pk for pk in (_uuid(value) for value in paper_ids) if pk is not None]
     if not ids:
         return {}
-    sitzungen = OParlMeeting.objects.filter(external_id=OuterRef("meeting_external_id"), deleted=False)
+    # Sitzung und Punkt nur aus der Quelle der Beratung
+    sitzungen = OParlMeeting.objects.filter(
+        meeting_in_consultation_source(), external_id=OuterRef("meeting_external_id"), deleted=False
+    )
     punkte = OParlAgendaItem.objects.filter(
-        external_id=OuterRef("agenda_item_external_id"), deleted=False, meeting__deleted=False
+        agenda_item_in_consultation_source(),
+        external_id=OuterRef("agenda_item_external_id"),
+        deleted=False,
+        meeting__deleted=False,
     )
     rows = (
         OParlConsultation.objects.filter(paper_id__in=ids)

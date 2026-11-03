@@ -64,5 +64,7 @@ async def revert_agenda_item_ids(storage: Any, source: Any, *, apply: bool, new_
         report.restore += len(plan.restore)
         report.translate += len(plan.translate) if new_items else 0
         if apply:
-            report.written += await storage.rename_agenda_items(meeting_id, renames, keep_previous=False)
+            report.written += await storage.rename_agenda_items(
+                meeting_id, renames, source_id=source.id, keep_previous=False
+            )
     return report

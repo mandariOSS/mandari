@@ -164,6 +164,7 @@ def get_primary_paper_for_item(agenda_item: OParlAgendaItem | None) -> OParlPape
         return None
     consultation = (
         OParlConsultation.objects.filter(agenda_item_external_id=agenda_item.external_id, paper__isnull=False)
+        .filter(ris.consultation_agenda_item_in_source())
         .select_related("paper")
         .first()
     )
@@ -186,6 +187,7 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
 
     consultations = (
         OParlConsultation.objects.filter(agenda_item_external_id__in=external_ids)
+        .filter(ris.consultation_agenda_item_in_source())
         .select_related("paper")
         # Dateien ohne Volltext und Rohdaten: Die Vorbereitung zeigt nur Namen, Art und Größe
         .prefetch_related(
@@ -655,7 +657,7 @@ def resolve_consultations(paper_ids: set[Any], current_meeting: OParlMeeting) ->
     if not paper_ids:
         return {}
 
-    consults = list(OParlConsultation.objects.filter(paper_id__in=paper_ids))
+    consults = list(ris.with_reference_checks(OParlConsultation.objects.filter(paper_id__in=paper_ids)))
     meeting_ext_ids = {c.meeting_external_id for c in consults if c.meeting_external_id}
     meetings_by_ext = {
         m.external_id: m
@@ -664,7 +666,9 @@ def resolve_consultations(paper_ids: set[Any], current_meeting: OParlMeeting) ->
 
     consultations_by_paper: dict[Any, list[dict[str, Any]]] = {}
     for c in consults:
-        m = meetings_by_ext.get(c.meeting_external_id) if c.meeting_external_id else None
+        # Sitzung einer anderen Quelle gilt als unbekannt
+        in_quelle = c.meeting_in_source  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
+        m = meetings_by_ext.get(c.meeting_external_id) if c.meeting_external_id and in_quelle else None
         org_names = ", ".join(o.short_name or o.name or "" for o in m.organizations.all()) if m else ""
         consultations_by_paper.setdefault(c.paper_id, []).append(
             {

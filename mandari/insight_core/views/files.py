@@ -51,8 +51,17 @@ def _annotate_files_with_context(files):
     # 1. Consultations für alle Papers (von mandari Session zurückgenommenes bleibt überall außen vor)
     consultations_by_paper = {}
     if paper_ids:
-        consultations = OParlConsultation.objects.filter(paper_id__in=paper_ids).exclude(withdrawn_q())
+        from hub.ris.selectors import with_reference_checks
+
+        consultations = with_reference_checks(OParlConsultation.objects.filter(paper_id__in=paper_ids)).exclude(
+            withdrawn_q()
+        )
         for c in consultations:
+            # Sitzung und Punkt einer anderen Quelle gelten als unbekannt
+            if not c.meeting_in_source:
+                c.meeting_external_id = None
+            if not c.agenda_item_in_source:
+                c.agenda_item_external_id = None
             consultations_by_paper.setdefault(c.paper_id, []).append(c)
 
     # 2. Meetings (aus Consultations + direkte FKs)

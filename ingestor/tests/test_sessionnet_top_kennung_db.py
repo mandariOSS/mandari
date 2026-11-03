@@ -20,6 +20,7 @@ import copy
 import os
 import uuid
 from collections.abc import AsyncIterator, Iterator
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -164,6 +165,8 @@ class Abruf:
 
     async def anlegen(self) -> Abruf:
         source_id = await self.storage.upsert_source(f"{KOERPERSCHAFT}si0040.php", "Eschweiler")
+        self.source_id = source_id
+        self.runner.source = SimpleNamespace(id=source_id)
         body = self.processor.process_body(
             {"id": KOERPERSCHAFT, "type": "https://schema.oparl.org/1.1/Body", "name": "Eschweiler"}, KOERPERSCHAFT
         )
@@ -308,9 +311,14 @@ async def test_umschreiben_nur_eindeutig_und_nur_in_der_sitzung(storage: Databas
         vierter.legacy_id: vierter.item_id,
         fuenfter.legacy_id: vierter.legacy_id,
     }
-    assert await storage.rename_agenda_items(meeting["id"], renames) == 1
+    # Andere Quelle: nichts, auch nicht an ihren Beratungen
+    assert await storage.rename_agenda_items(meeting["id"], renames, source_id=uuid.uuid4()) == 0
+    assert await storage.rename_agenda_items(meeting["id"], renames, source_id=abruf.source_id) == 1
     # Andere Sitzung: nichts
-    assert await storage.rename_agenda_items(f"{meeting['id']}0", {zweiter.legacy_id: zweiter.item_id}) == 0
+    andere = f"{meeting['id']}0"
+    assert (
+        await storage.rename_agenda_items(andere, {zweiter.legacy_id: zweiter.item_id}, source_id=abruf.source_id) == 0
+    )
 
     alle = await punkte(storage)
     assert erster.legacy_id not in alle
