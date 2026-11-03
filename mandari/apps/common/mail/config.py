@@ -12,7 +12,8 @@ mit dem Absendernamen der Systemeinstellungen.
 **Organisation (Work):** Hat sie den Versand über ihr eigenes SMTP gewählt und einen Server eingetragen,
 geht die Mail darüber, mit ihrem Absender. Scheitert er und erlaubt die Organisation den Ersatzweg
 (``smtp_fallback_to_mandari``), geht sie über die Plattform. Links, mit denen sich ein Passwort setzen
-lässt, laufen nie über fremde Server (``via_organization=False``).
+oder eine Adresse bestätigen lässt (Einladung, Bestätigung, Passwort-Link), laufen nie über fremde Server
+(``via_organization=False``).
 
 Die Systemeinstellungen (``SiteSettings.get_email_config``) und das Backend für Djangos eigenen
 Versand (``SiteSettingsEmailBackend``) lesen dieselbe Auflösung.

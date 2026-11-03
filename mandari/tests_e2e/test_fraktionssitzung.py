@@ -7,6 +7,7 @@ Beschluss in der Leiste unten erfassen; Aufgabe für eine Personengruppe anlegen
 Zwei Personen schreiben gleichzeitig Notizen zum selben TOP: Keine Eingabe geht verloren.
 Dazu axe-core (auch am Handy und mit offenem Anhängen-Dialog) und Bildschirmfotos (390, 1280, 1440, 1920, 2560)
 für die Sichtprüfung, mit Vorlage aus dem RIS, „Im Beratungsverlauf“ und einem bisherigen Wortbeitrag.
+Kopf und Leiste unten überlappen bei keiner üblichen Breite (Issue #1166, Prüfung über die Lage der Elemente).
 """
 
 from __future__ import annotations
@@ -276,15 +277,16 @@ def test_sitzungsansicht_kernpfade(
     page.keyboard.press("j")
     expect(page.locator("#fs-top-titel")).to_contain_text("Sonstiges")
 
-    # Anwesenheit: Mitglied online anwesend
+    # Anwesenheit: Mitglied mit einem Klick online anwesend, der Fokus bleibt auf dem Knopf (Issue #1166)
     page.locator(".fs-kopf-aktionen").get_by_role("button", name=re.compile("von 2")).click()
     anw = page.locator("#fs-anwesenheit")
-    anw.get_by_role("checkbox").nth(1).check()
-    expect(anw.get_by_role("button", name="online").nth(1)).to_be_visible()
-    anw.get_by_role("button", name="online").nth(1).click()
-    expect(anw.get_by_role("button", name="online").nth(1)).to_have_attribute("aria-pressed", "true")
-    expect(page.locator(".fs-kopf-aktionen")).to_contain_text("2 von 2")
     mitglied_teilnahme = meeting.attendances.exclude(membership=vorsitz).get()
+    online = anw.get_by_role("button", name=f"{mitglied_teilnahme.get_display_name()} online", exact=True)
+    online.click()
+    expect(online).to_have_attribute("aria-pressed", "true")
+    expect(online).to_be_focused()
+    expect(page.locator(".fs-kopf-aktionen")).to_contain_text("2 von 2")
+    mitglied_teilnahme.refresh_from_db()
     assert (mitglied_teilnahme.status, mitglied_teilnahme.participation_type) == ("present", "online")
 
 
@@ -306,8 +308,10 @@ def test_anwesenheit_als_spalte_auf_breiten_bildschirmen(
     # Klick in die Notizen schließt die Spalte nicht; Bedienen tauscht sie aus und sie bleibt stehen
     page.locator(NOTIZ).click()
     expect(anw).to_be_visible()
-    anw.get_by_role("checkbox").nth(1).check()
-    expect(page.locator("#fs-anwesenheit").get_by_role("button", name="online").nth(1)).to_be_visible()
+    mitglied_name = meeting.attendances.exclude(membership=vorsitz).get().get_display_name()
+    vor_ort = anw.get_by_role("button", name=f"{mitglied_name} vor Ort", exact=True)
+    vor_ort.click()
+    expect(vor_ort).to_have_attribute("aria-pressed", "true")
     result = axe()
     assert not result.failing, result.describe()
     screenshot("fraktionssitzung-2560")
@@ -336,6 +340,190 @@ def test_sitzungsansicht_am_handy(
     page.locator("#fs-tagesordnung").get_by_text("Sonstiges").click()
     expect(page.locator("#fs-top-titel")).to_contain_text("Sonstiges")
     expect(page.locator("#fs-tagesordnung")).to_be_hidden()
+
+
+#: Lage der sichtbaren Teile in Kopf und Leiste unten: Paare, die sich überdecken, Teile außerhalb ihres Bereichs,
+#: Breite des Beschlusstext-Felds gegenüber seinem Platzhalter. Versteckte Beschriftungen für Vorleser sind 1 px groß.
+LAGE = """() => {
+  const sichtbar = (el) => { const r = el.getBoundingClientRect(); return r.width > 1 && r.height > 1; };
+  const rechteck = (el) => {
+    if (!el.classList.contains('name')) return el.getBoundingClientRect();
+    const bereich = document.createRange(); bereich.selectNodeContents(el); return bereich.getBoundingClientRect();
+  };
+  const name = (el) => `${el.className || el.tagName} „${(el.textContent || el.placeholder || '').trim().slice(0, 30)}“`;
+  const ueberlappungen = (auswahl) => {
+    const teile = [...document.querySelectorAll(auswahl)].filter(sichtbar).map((el) => [el, rechteck(el)]);
+    const paare = [];
+    teile.forEach(([a, ra], i) => teile.slice(i + 1).forEach(([b, rb]) => {
+      if (ra.left < rb.right - 0.5 && rb.left < ra.right - 0.5 && ra.top < rb.bottom - 0.5 && rb.top < ra.bottom - 0.5)
+        paare.push(`${name(a)} / ${name(b)}`);
+    }));
+    return paare;
+  };
+  const ausserhalb = (auswahl) => {
+    const bereich = document.querySelector(auswahl); const r = bereich.getBoundingClientRect();
+    return [...bereich.querySelectorAll('*')].filter((el) => sichtbar(el) && el.type !== 'hidden')
+      .filter((el) => { const e = el.getBoundingClientRect(); return e.left < r.left - 0.5 || e.right > r.right + 0.5; })
+      .map(name);
+  };
+  const feld = document.querySelector('#fs-bes-text');
+  let platzhalter = null;
+  if (feld && sichtbar(feld)) {
+    const s = getComputedStyle(feld); const mass = document.createElement('canvas').getContext('2d'); mass.font = s.font;
+    const noetig = mass.measureText(feld.placeholder).width + parseFloat(s.paddingLeft) + parseFloat(s.paddingRight);
+    platzhalter = { breite: feld.getBoundingClientRect().width, noetig };
+  }
+  return {
+    kopf: ueberlappungen('.fs-kopf > a, .fs-titel, .fs-stufen .kreis, .fs-stufen .name, .fs-stufen .linie, .fs-kopf-aktionen > *'),
+    kopfRaus: ausserhalb('.fs-kopf'),
+    unten: ueberlappungen('.fs-beschluss > :not(.fs-bes-abschluss), .fs-bes-abschluss > *, .fs-nav > *'),
+    untenRaus: ausserhalb('.fs-unten'),
+    platzhalter,
+  };
+}"""
+
+
+def test_kopf_und_leiste_ohne_ueberlappung(page: Any, live_server: Any, login: Any, org: Any, sitzung: Any) -> None:
+    """
+    Issue #1166: Bei langem Titel und Ort und „nicht beschlussfähig“ liefen die Linien der Ablaufleiste durch die
+    Beschriftungen, „Protokoll“ lag unter den Knöpfen, der Platzhalter des Beschlusstexts war abgeschnitten und
+    am Handy ragte der Beschluss über den Rand. 1.536 px mit schmaler Seitenleiste entspricht 1.920 px bei 125 %.
+    """
+    vorsitz, meeting, tops = sitzung
+    meeting.title = "Ordentliche Fraktionssitzung Nr. 24 mit Beratung des Haushaltsentwurfs 2027"
+    meeting.location = "Rathaus Musterstadt, Sitzungsraum 2.14 (2. Obergeschoss), Platz des Westfälischen Friedens 1"
+    meeting.invitation_sent_at = timezone.now() - timedelta(days=6)
+    meeting.save(update_fields=["title", "location", "invitation_sent_at"])
+    login(vorsitz.user.email, PASSWORD)
+
+    def pruefen(wo: str) -> None:
+        lage = page.evaluate(LAGE)
+        assert not lage["kopf"], f"{wo}: Kopf überlappt: {lage['kopf']}"
+        assert not lage["kopfRaus"], f"{wo}: im Kopf außerhalb: {lage['kopfRaus']}"
+        assert not lage["unten"], f"{wo}: Leiste unten überlappt: {lage['unten']}"
+        assert not lage["untenRaus"], f"{wo}: in der Leiste unten außerhalb: {lage['untenRaus']}"
+        feld = lage["platzhalter"]
+        assert feld and feld["breite"] >= feld["noetig"], f"{wo}: Platzhalter des Beschlusstexts abgeschnitten: {feld}"
+
+    for schmal, breiten in ((False, (1280, 1366, 1440, 1920, 2560)), (True, (1280, 1536))):
+        page.set_viewport_size({"width": breiten[0], "height": 900})
+        page.evaluate(f"() => localStorage.setItem('sidebarCollapsed', '{str(schmal).lower()}')")
+        oeffnen(page, live_server, org, meeting, tops[1])
+        expect(page.locator(".fs-stufen [aria-current=step]")).to_contain_text("nicht beschlussfähig")
+        for breite in breiten:
+            page.set_viewport_size({"width": breite, "height": 900})
+            page.wait_for_timeout(100)
+            pruefen(f"{breite} px, Seitenleiste {'schmal' if schmal else 'breit'}")
+
+    # Schriftgrößen: Protokoll größer als die Unterlagen, Beschreibung des TOPs als Text, Aufgabenzeile kompakt
+    page.set_viewport_size({"width": 1440, "height": 900})
+    groessen = page.evaluate(
+        "() => ({ notiz: getComputedStyle(document.querySelector('#fs-notiz')).fontSize,"
+        " dok: getComputedStyle(document.querySelector('.fs-dok-text')).fontSize,"
+        " beschreibung: getComputedStyle(document.querySelector('.fs-top-zeile2')).fontSize,"
+        " aufgabe: document.querySelector('#fs-auf-titel').getBoundingClientRect().height })"
+    )
+    assert float(groessen["notiz"][:-2]) > float(groessen["dok"][:-2]) >= 16, groessen
+    assert float(groessen["beschreibung"][:-2]) >= 15, groessen
+    assert groessen["aufgabe"] <= 28, groessen
+
+    # Handy: Der geöffnete Beschluss bricht um und bleibt innerhalb der Breite
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.wait_for_timeout(100)
+    page.locator("#fs-unten").get_by_role("button", name="Beschluss", exact=True).click()
+    expect(page.locator("#fs-bes-text")).to_be_visible()
+    pruefen("390 px, Beschluss geöffnet")
+
+
+def test_nichtoeffentlicher_teil_erst_nach_dem_einblenden_lesbar(
+    page: Any, live_server: Any, login: Any, org: Any, sitzung: Any, axe: Any, screenshot: Any
+) -> None:
+    """
+    Sichtschutz (Issue #1166): Auch mit Rechten sind NÖ-Titel in Tagesordnung, Kopf und „Nächster TOP“ weichgezeichnet
+    und Unterlagen und Protokoll abgedeckt, bis der Teil eingeblendet ist. Der Zustand gilt je Sitzung im Browser-Tab
+    (TOP-Wechsel, Neuladen); ein neuer Tab beginnt wieder verdeckt.
+    """
+    vorsitz, meeting, tops = sitzung
+    titel = "Anfrage Hitzeschutz an Schulen"
+    noe = FactionAgendaItem.objects.create(
+        meeting=meeting, number="NÖ 1", title=titel, visibility="internal", order=len(tops)
+    )
+    page.set_viewport_size({"width": 1440, "height": 900})
+    login(vorsitz.user.email, PASSWORD)
+    page.goto(f"{live_server.url}/work/{org.slug}/faction/{meeting.pk}/?top={noe.pk}")
+    wait_for_bundle(page)
+    zeile = page.locator(f"#fs-tl-{noe.pk} .fs-noe")
+    kopf = page.locator("#fs-top-titel .fs-noe")
+    abdeckung = page.locator(".fs-noe-abdeckung")
+    schalter = page.locator("#fs-tagesordnung .fs-noe-schalter")
+
+    # Verdeckt: Nummer lesbar, Titel weichgezeichnet und für Vorleser ersetzt, Abdeckung statt Protokoll
+    expect(page.locator(f"#fs-tl-{noe.pk} .nr")).to_have_text("NÖ 1")
+    for verdeckt in (zeile, kopf):
+        expect(verdeckt).to_have_css("filter", re.compile(r"^blur\("))
+        expect(verdeckt).to_have_attribute("aria-hidden", "true")
+    expect(page.locator(f"#fs-tl-{noe.pk} a")).to_have_accessible_name("NÖ 1 Nichtöffentlicher TOP, ausgeblendet")
+    expect(abdeckung).to_be_visible()
+    expect(page.locator("#fs-notiz")).to_be_hidden()
+    expect(page.locator("#fs-unten")).to_contain_text("Nichtöffentlich, ausgeblendet")
+    expect(schalter).to_have_attribute("aria-pressed", "false")
+    result = axe()
+    assert not result.failing, result.describe()
+    screenshot("fraktionssitzung-noe-verdeckt-1440")
+
+    # Einblenden über die Abdeckung: lesbar, Fokus auf der Überschrift, Protokoll beschreibbar
+    abdeckung.get_by_role("button", name="Nichtöffentlichen Teil einblenden").click()
+    expect(abdeckung).to_be_hidden()
+    expect(kopf).to_have_css("filter", "none")
+    expect(kopf).not_to_have_attribute("aria-hidden", "true")
+    expect(page.locator("#fs-top-titel")).to_be_focused()
+    expect(schalter).to_have_attribute("aria-pressed", "true")
+    expect(schalter).to_have_attribute("title", "Nichtöffentlichen Teil wieder verdecken")
+    page.locator(NOTIZ).click()
+    page.keyboard.type("Messwerte liegen vor.")
+    expect(page.locator(".fs-status")).to_contain_text(re.compile(r"Automatisch gespeichert um"), timeout=10000)
+    screenshot("fraktionssitzung-noe-eingeblendet-1440")
+
+    # TOP-Wechsel per HTMX und Neuladen: bleibt eingeblendet, „Nächster TOP“ nennt den Titel
+    page.locator("#fs-tagesordnung").get_by_text("Sonstiges").click()
+    expect(page.locator("#fs-top-titel")).to_contain_text("Sonstiges")
+    nach = page.locator('#fs-unten [data-nav="nach"]')
+    expect(nach).to_have_attribute("title", f"Nächster TOP: NÖ 1 {titel} (Taste J)")
+    page.reload()
+    wait_for_bundle(page)
+    expect(zeile).to_have_css("filter", "none")
+
+    # Neuer Tab: wieder verdeckt
+    tab = page.context.new_page()
+    tab.goto(page.url)
+    wait_for_bundle(tab)
+    expect(tab.locator(f"#fs-tl-{noe.pk} .fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
+    expect(tab.locator('#fs-unten [data-nav="nach"]')).to_have_attribute("title", "Nächster TOP: NÖ 1 (Taste J)")
+    # Wie ein duplizierter Tab (gleicher sessionStorage, aber kein Neuladen): ebenfalls verdeckt
+    tab.evaluate("([k, v]) => sessionStorage.setItem(k, v)", [f"fs-noe-sichtbar:{meeting.pk}", "1"])
+    tab.goto(page.url)
+    wait_for_bundle(tab)
+    expect(tab.locator(f"#fs-tl-{noe.pk} .fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
+    tab.close()
+
+    # Wieder verdecken über den Schalter an „Nichtöffentlicher Teil“
+    schalter.click()
+    expect(schalter).to_have_attribute("aria-pressed", "false")
+    expect(zeile).to_have_css("filter", re.compile(r"^blur\("))
+    expect(nach).to_have_attribute("title", "Nächster TOP: NÖ 1 (Taste J)")
+
+    # Breit: „Nächster TOP“ mit weichgezeichnetem Titel; am Handy die Abdeckung im NÖ-TOP
+    page.set_viewport_size({"width": 1920, "height": 1080})
+    expect(nach.locator(".fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
+    screenshot("fraktionssitzung-noe-naechster-1920")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.locator("#fs-top-titel").click()
+    page.keyboard.press("j")
+    expect(page.locator("#fs-top-titel")).to_contain_text("NÖ 1")
+    expect(abdeckung).to_be_visible()
+    result = axe()
+    assert not result.failing, result.describe()
+    screenshot("fraktionssitzung-noe-verdeckt-390")
 
 
 @pytest.fixture

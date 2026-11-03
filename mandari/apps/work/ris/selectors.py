@@ -352,11 +352,11 @@ def paper_files(paper: OParlPaper) -> tuple[QuerySet[OParlFile] | list[dict[str,
 
     Bevorzugt die Datenbank-Relation; ist sie leer, werden ``mainFile`` und
     ``auxiliaryFile`` aus ``raw_json`` gelesen. Zweiter Rückgabewert: ``True``,
-    wenn die Dateien aus ``raw_json`` stammen.
+    wenn die Dateien aus ``raw_json`` stammen. Dateien aus der Datenbank ohne Volltext und Rohdaten.
     """
     if paper.files.exists():
         # Zurückgenommene Dateien fallen weg; ``raw_json`` nennt sie womöglich noch und gilt deshalb nicht als Ersatz
-        return paper.files.exclude(withdrawn_q()), False
+        return paper.files.exclude(withdrawn_q()).defer("text_content", "raw_json"), False
     raw_json = paper.raw_json or {}
     raw_files: list[dict[str, Any]] = []
     main_file = raw_json.get("mainFile")
@@ -375,7 +375,7 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
     OParl verknüpft Consultation → Meeting/AgendaItem nur über ``external_id``-Strings;
     beide werden gebündelt nachgeladen. Ergebnis chronologisch (älteste zuerst).
     """
-    consultations: list[OParlConsultation] = list(paper.consultations.exclude(withdrawn_q()))
+    consultations: list[OParlConsultation] = list(ris.with_reference_checks(paper.consultations.exclude(withdrawn_q())))
     if not consultations:
         return []
 
@@ -396,8 +396,11 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
 
     result: list[dict[str, Any]] = []
     for consultation in consultations:
-        meeting = meetings_by_id.get(consultation.meeting_external_id or "")
-        agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id or "")
+        # Sitzung und Punkt einer anderen Quelle gelten als unbekannt
+        sitzung_in_quelle = consultation.meeting_in_source  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
+        punkt_in_quelle = consultation.agenda_item_in_source  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
+        meeting = meetings_by_id.get(consultation.meeting_external_id or "") if sitzung_in_quelle else None
+        agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id or "") if punkt_in_quelle else None
         org_name = None
         if meeting:
             orgs = list(meeting.organizations.all())
@@ -429,12 +432,13 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
 
 
 def files_queryset(bodies: Bodies, *, search: str = "") -> QuerySet[OParlFile]:
-    """Dokumente der Kommunen, neueste zuerst; Suche über Name, Dateiname und Vorgang."""
+    """Dokumente der Kommunen, neueste zuerst; Suche über Name, Dateiname und Vorgang. Ohne Volltext und Rohdaten."""
     files = (
         OParlFile.objects.filter(body__in=bodies)
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("paper"))
         .select_related("paper")
+        .defer("text_content", "raw_json")
         .order_by("-file_date", "-created_at")
     )
     if search:

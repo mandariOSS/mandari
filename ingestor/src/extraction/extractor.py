@@ -8,6 +8,10 @@ Implementierung nutzt der Auftrag ``file.extract_text`` der Anwendung; welcher W
 
 Async-capable: PDF downloads via httpx, sync extraction via asyncio.to_thread().
 
+Die Textebene (pypdf) eines PDFs liest ein eigener Prozess mit Speicher- und Zeitgrenze (``TEXT_LAYER_*``), nie der
+Ingestor selbst, und höchstens ``TEXT_LAYER_CONCURRENCY`` davon zugleich; Rendern und Tesseract laufen ohnehin als
+begrenzte Unterprozesse (``TextExtractor._extract_text``).
+
 Downloads laufen gestreamt in eine temporäre Datei, die beim Schreiben gehasht wird; die Größengrenze
 greift schon während des Downloads, nie liegt eine ganze Datei im Arbeitsspeicher (Issue #788). Ist die
 Dokumentablage eingerichtet (``OPARL_FILES_ROOT``), legt der Ingestor die Datei danach gleich unter
@@ -37,9 +41,11 @@ import hashlib
 import logging
 import os
 import shutil
+import subprocess
 import tempfile
+import threading
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from pathlib import Path
@@ -50,11 +56,15 @@ import httpx
 from mandari_dokumente import (
     MEMORY_LIMIT_REASON,
     ExtractionConfig,
+    IsolationLimits,
     MistralConfig,
     OcrLimits,
     OcrMemoryLimitError,
+    TextLayer,
     erlaubte_hosts_aus_umgebung,
     extract_text,
+    extract_text_layer_isolated,
+    texterkennung,
 )
 from mandari_oparl.abgleich import looks_like_html
 from mandari_oparl.robots import KIND_FILES, RETRY_UNREACHABLE_SECONDS
@@ -514,7 +524,7 @@ class TextExtractor:
 
         # Extract text
         try:
-            text, page_count, method = await asyncio.to_thread(
+            text, page_count, method, notes = await asyncio.to_thread(
                 self._extract_text, downloaded.path, mime_type, file_name
             )
         except OcrMemoryLimitError as e:
@@ -538,6 +548,9 @@ class TextExtractor:
             await self._store(file_row, downloaded, mime_type)
             return False
         await self._store(file_row, downloaded, mime_type)
+        # Hinweise der Erkennung (etwa Text an der Obergrenze gekürzt) wie bei den Aufträgen der Anwendung vermerken;
+        # ohne Hinweis bleibt das Feld wie bisher unberührt
+        hinweise = "; ".join(notes)[:500] or None
 
         if text.strip():
             await self.storage.update_file_text(
@@ -545,6 +558,7 @@ class TextExtractor:
                 text_content=text.strip(),
                 method=method,
                 status="completed",
+                error=hinweise,
                 page_count=page_count,
                 sha256_hash=sha256_hash,
             )
@@ -553,6 +567,7 @@ class TextExtractor:
             file_id=file_id,
             method=method or "none",
             status="completed",
+            error=hinweise,
             page_count=page_count,
             sha256_hash=sha256_hash,
         )
@@ -724,17 +739,63 @@ class TextExtractor:
         return stored
 
     @staticmethod
-    def _extract_text(source: Path, mime_type: str, file_name: str) -> tuple[str, int | None, str]:
+    def _extract_text(source: Path, mime_type: str, file_name: str) -> tuple[str, int | None, str, tuple[str, ...]]:
         """
         Text der geladenen Datei mit der gemeinsamen Texterkennung (läuft in einem Thread).
+
+        Die Textebene eines PDFs liest ein eigener Prozess mit Speicher- und Zeitgrenze
+        (``extract_text_layer_isolated``, wie der Auftrag ``file.read_text_layer`` der Anwendung), nie dieser Prozess,
+        der alle Abgleiche trägt; pypdf hält die entpackten Inhalte aller gelesenen Seiten. Höchstens
+        ``TEXT_LAYER_CONCURRENCY`` solcher Prozesse laufen zugleich (``_run_text_layer``). Reicht die Textebene nicht,
+        geht die Datei mit der dort gelesenen Textebene (Seitenzahl, Seitengrößen) an die Erkennung aus dem Bild;
+        endet der Prozess an einer Grenze, mit einer leeren (Tesseract dann ohne bekannte Seitenzahl). Andere Dateien
+        als PDFs erkennt die Bibliothek wie bisher ohne eigenen Prozess.
 
         ``OcrMemoryLimitError`` geht an den Aufrufer (Datei gilt als gescheitert, Grund „Speichergrenze“).
 
         Returns:
-            (text, page_count, extraction_method)
+            (text, page_count, extraction_method, Hinweise ohne Inhalte)
         """
-        result = extract_text(source, mime_type, file_name, extraction_config())
-        return result.text, result.page_count, result.method
+        config = extraction_config()
+        stufe = extract_text_layer_isolated(
+            source, mime_type, file_name, config, text_layer_limits(), runner=_run_text_layer
+        )
+        if stufe.result is not None:
+            return stufe.result.text, stufe.result.page_count, stufe.result.method, stufe.result.notes
+        layer = stufe.layer if stufe.layer is not None else TextLayer()
+        result = extract_text(source, mime_type, file_name, config, layer=layer)
+        return result.text, result.page_count, result.method, result.notes
+
+
+def text_layer_limits() -> IsolationLimits:
+    """Grenzen des Prozesses, der die Textebene liest (``TEXT_LAYER_MEMORY_LIMIT_MB``, ``TEXT_LAYER_TIMEOUT``)."""
+    return IsolationLimits(memory_limit_mb=settings.text_layer_memory_limit_mb, timeout=settings.text_layer_timeout)
+
+
+#: Plätze für Prozesse der Textebene in diesem Ingestor-Prozess, über alle Quellen und Extraktoren
+#: (``TEXT_LAYER_CONCURRENCY``); beim ersten Gebrauch angelegt
+_text_layer_slots: threading.BoundedSemaphore | None = None
+_text_layer_slots_lock = threading.Lock()
+
+
+def _text_layer_slot() -> threading.BoundedSemaphore:
+    global _text_layer_slots
+    with _text_layer_slots_lock:
+        if _text_layer_slots is None:
+            _text_layer_slots = threading.BoundedSemaphore(max(1, settings.text_layer_concurrency))
+        return _text_layer_slots
+
+
+def _run_text_layer(
+    command: Sequence[str], timeout: float, memory_limit_mb: int, env: dict[str, str]
+) -> subprocess.CompletedProcess[bytes]:
+    """
+    Prozess der Textebene, höchstens ``TEXT_LAYER_CONCURRENCY`` zugleich: Ihr Speicher zusammen mit dem Grundbedarf
+    des Ingestors bleibt so unter dem Limit des Containers (unter Kubernetes beendet der Speicherwächter sonst den
+    ganzen Container). Die Zeitgrenze beginnt erst mit dem Start.
+    """
+    with _text_layer_slot():
+        return texterkennung.run_isolated(command, timeout, memory_limit_mb, env)
 
 
 def runs_elsewhere() -> bool:

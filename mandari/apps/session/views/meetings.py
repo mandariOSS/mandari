@@ -441,7 +441,8 @@ class MeetingDetailView(SessionViewMixin, DetailView):
             context["attendance_roles"] = SessionAttendance._meta.get_field("role").choices
 
         # Files — NÖ-Anlagen nur für Berechtigte sichtbar
-        files = meeting.files.order_by("name")
+        # Ohne erkannten Text: Die Liste zeigt Name, Art und Größe
+        files = meeting.files.defer("text_content").order_by("name")
         if not self.has_permission("view_non_public_meetings"):
             files = files.filter(is_public=True)
         context["files"] = list(files)

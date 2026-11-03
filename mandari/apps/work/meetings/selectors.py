@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
-from django.db.models import Count, Q, QuerySet
+from django.db.models import Count, Prefetch, Q, QuerySet
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -22,6 +22,7 @@ from django.utils import timezone
 from apps.work.organization import selectors as organization_selectors
 from apps.work.organization.selectors import MyCommittees
 from apps.work.ris.verknuepfungen import Hinweis, hinweise_fuer_tops
+from hub.ris import selectors as ris
 from insight_core.models import (
     OParlAgendaItem,
     OParlBody,
@@ -163,6 +164,7 @@ def get_primary_paper_for_item(agenda_item: OParlAgendaItem | None) -> OParlPape
         return None
     consultation = (
         OParlConsultation.objects.filter(agenda_item_external_id=agenda_item.external_id, paper__isnull=False)
+        .filter(ris.consultation_agenda_item_in_source())
         .select_related("paper")
         .first()
     )
@@ -185,8 +187,13 @@ def prefetch_papers_for_agenda_items(agenda_items: list[OParlAgendaItem]) -> dic
 
     consultations = (
         OParlConsultation.objects.filter(agenda_item_external_id__in=external_ids)
+        .filter(ris.consultation_agenda_item_in_source())
         .select_related("paper")
-        .prefetch_related("paper__files", "paper__consultations")
+        # Dateien ohne Volltext und Rohdaten: Die Vorbereitung zeigt nur Namen, Art und Größe
+        .prefetch_related(
+            Prefetch("paper__files", queryset=ris.files_without_text()),
+            "paper__consultations",
+        )
     )
 
     paper_ids = {consultation.paper.id for consultation in consultations if consultation.paper}
@@ -471,9 +478,10 @@ def resolve_file_anchor(organization: Organization | None, anchor_type: str | No
         if bodies is None:
             raise Http404
         file_obj = get_object_or_404(
-            OParlFile.objects.filter(
-                Q(body__in=bodies) | Q(paper__body__in=bodies) | Q(meeting__body__in=bodies)
-            ).distinct(),
+            # Die Anmerkung braucht nur die Datei, nicht ihren Text
+            OParlFile.objects.filter(Q(body__in=bodies) | Q(paper__body__in=bodies) | Q(meeting__body__in=bodies))
+            .defer("text_content", "raw_json")
+            .distinct(),
             id=file_id,
         )
         return {"oparl_file": file_obj}
@@ -649,7 +657,7 @@ def resolve_consultations(paper_ids: set[Any], current_meeting: OParlMeeting) ->
     if not paper_ids:
         return {}
 
-    consults = list(OParlConsultation.objects.filter(paper_id__in=paper_ids))
+    consults = list(ris.with_reference_checks(OParlConsultation.objects.filter(paper_id__in=paper_ids)))
     meeting_ext_ids = {c.meeting_external_id for c in consults if c.meeting_external_id}
     meetings_by_ext = {
         m.external_id: m
@@ -658,7 +666,9 @@ def resolve_consultations(paper_ids: set[Any], current_meeting: OParlMeeting) ->
 
     consultations_by_paper: dict[Any, list[dict[str, Any]]] = {}
     for c in consults:
-        m = meetings_by_ext.get(c.meeting_external_id) if c.meeting_external_id else None
+        # Sitzung einer anderen Quelle gilt als unbekannt
+        in_quelle = c.meeting_in_source  # type: ignore[attr-defined]  # Annotation aus with_reference_checks
+        m = meetings_by_ext.get(c.meeting_external_id) if c.meeting_external_id and in_quelle else None
         org_names = ", ".join(o.short_name or o.name or "" for o in m.organizations.all()) if m else ""
         consultations_by_paper.setdefault(c.paper_id, []).append(
             {

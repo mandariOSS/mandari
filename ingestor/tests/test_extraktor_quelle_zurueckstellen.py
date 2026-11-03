@@ -95,7 +95,7 @@ def _download(tmp_path: Path, ergebnisse: list[BaseException | None], geladen: l
 
 @pytest.fixture
 def ohne_texterkennung(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(TextExtractor, "_extract_text", staticmethod(lambda *a: ("Beschluss", 1, "pypdf")))
+    monkeypatch.setattr(TextExtractor, "_extract_text", staticmethod(lambda *a: ("Beschluss", 1, "pypdf", ())))
 
 
 @pytest.mark.parametrize(

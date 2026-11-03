@@ -241,7 +241,7 @@ async def test_ohne_schalter_schreibt_der_ingestor_kein_ereignis(bestand: Bestan
         body_id = await aus.upsert_body(body, bestand.source_id)
         await aus.upsert_paper(bestand.processor.process_paper({"id": PAPER, "name": "Bänke"}, BODY), body_id)
         await aus.upsert_paper(bestand.processor.process_paper({"id": PAPER, "name": "Mehr Bänke"}, BODY), body_id)
-        assert await aus.mark_entity_deleted("paper", PAPER) is not None
+        assert await aus.mark_entity_deleted("paper", PAPER, body_id=body_id) is not None
     finally:
         await aus.close()
     assert await bestand.wert("SELECT count(*) FROM oparl_papers") == 1
@@ -297,8 +297,8 @@ async def test_ausgenommene_quelle_schreibt_keine_ereignisse(bestand: Bestand, m
     await bestand.meeting(agendaItem=[top()], invitation=datei())
     await bestand.paper(consultation=[{"id": CONSULTATION, "type": "https://schema.oparl.org/1.1/Consultation"}])
     await bestand.paper(name="Mehr Bänke")
-    assert await speicher.mark_entity_deleted("agendaitem", ITEM) is not None
-    assert await speicher.mark_entity_deleted("paper", PAPER) is not None
+    assert await speicher.mark_entity_deleted("agendaitem", ITEM, body_id=bestand.body_id) is not None
+    assert await speicher.mark_entity_deleted("paper", PAPER, body_id=bestand.body_id) is not None
     # Wie ausgeschaltet: geschrieben wird, aber ohne Ereignis und ohne Abfrage des bisherigen Stands.
     assert await bestand.ereignisse() == [kommune]
     assert gelesen == []
@@ -840,7 +840,10 @@ async def test_datei_erst_einzeln_dann_an_der_vorlage(bestand: Bestand) -> None:
 async def test_loeschmarkierung_meldet_die_ruecknahme_in_derselben_transaktion(bestand: Bestand) -> None:
     paper_id = await bestand.paper()
     geloescht_am = datetime.fromisoformat("2026-09-03T12:00:00+02:00")
-    assert await bestand.storage.mark_entity_deleted("paper", PAPER, modified=geloescht_am) == paper_id
+    assert (
+        await bestand.storage.mark_entity_deleted("paper", PAPER, modified=geloescht_am, body_id=bestand.body_id)
+        == paper_id
+    )
 
     _, ereignis = await bestand.ereignisse()
     assert (ereignis["type"], ereignis["operation"], ereignis["visibility"]) == (
@@ -855,7 +858,7 @@ async def test_loeschmarkierung_meldet_die_ruecknahme_in_derselben_transaktion(b
     assert await bestand.wert("SELECT xmin::text FROM oparl_papers WHERE id = :id", id=paper_id) == ereignis["xid_text"]
 
     # Schon markiert: keine zweite Meldung
-    assert await bestand.storage.mark_entity_deleted("paper", PAPER) is None
+    assert await bestand.storage.mark_entity_deleted("paper", PAPER, body_id=bestand.body_id) is None
     assert len(await bestand.ereignisse()) == 2
 
     # Die Quelle liefert das Objekt wieder: Es ist erneut veröffentlicht.
@@ -868,7 +871,7 @@ async def test_loeschmarkierung_eines_tagesordnungspunkts_findet_die_kommune_ueb
 ) -> None:
     await bestand.meeting(agendaItem=[top()])
     bestand.storage.clear_uuid_caches()
-    assert await bestand.storage.mark_entity_deleted("agendaitem", ITEM) == canonical_id(ITEM)
+    assert await bestand.storage.mark_entity_deleted("agendaitem", ITEM, body_id=bestand.body_id) == canonical_id(ITEM)
 
     ereignis = (await bestand.ereignisse())[-1]
     assert ereignis["payload"] == {
@@ -884,7 +887,7 @@ async def test_loeschmarkierung_eines_nichtoeffentlichen_punkts_wird_nicht_oeffe
 ) -> None:
     """Öffentliche Empfänger haben den Punkt nie gesehen; seine Kennung steht in keinem öffentlichen Ereignis."""
     meeting_id = await bestand.meeting(agendaItem=[top(public=False, name="Personalangelegenheit")])
-    assert await bestand.storage.mark_entity_deleted("agendaitem", ITEM) == canonical_id(ITEM)
+    assert await bestand.storage.mark_entity_deleted("agendaitem", ITEM, body_id=bestand.body_id) == canonical_id(ITEM)
 
     ereignisse = await bestand.ereignisse()
     assert [(e["type"], e["visibility"], e["operation"]) for e in ereignisse] == [
@@ -928,7 +931,7 @@ async def test_loeschmarkierung_von_gremium_person_und_mitgliedschaft(bestand: B
     ]
 
     for typ, url in (("membership", mitgliedschaft_url), ("person", person_url), ("organization", org_url)):
-        assert await bestand.storage.mark_entity_deleted(typ, url) == canonical_id(url)
+        assert await bestand.storage.mark_entity_deleted(typ, url, body_id=bestand.body_id) == canonical_id(url)
 
     ereignisse = (await bestand.ereignisse())[3:]
     assert [e["payload"]["object_type"] for e in ereignisse] == ["Membership", "Person", "Organization"]
@@ -972,7 +975,7 @@ async def test_gremium_und_person_melden_neu_geaendert_und_wieder_geliefert(best
     assert {e["tenant_ref"] for e in (umbenannt, geaendert)} == {f"source:{bestand.source_id}"}
 
     # Nach der Löschmarkierung wieder geliefert: für Empfänger wieder neu
-    await bestand.storage.mark_entity_deleted("organization", ORG)
+    await bestand.storage.mark_entity_deleted("organization", ORG, body_id=bestand.body_id)
     await gremium(membership=mitglieder, name="Rat der Stadt")
     *_, depubliziert, wieder = await bestand.ereignisse()
     assert depubliziert["type"] == "ris.object.depublished"
@@ -1034,7 +1037,7 @@ async def test_mitgliedschaft_meldet_neu_geaendert_und_wieder_geliefert(bestand:
     *_, geaendert = await bestand.ereignisse()
     assert (geaendert["payload"]["change"], geaendert["payload"]["changed"]) == ("changed", ["endDate", "role"])
 
-    await bestand.storage.mark_entity_deleted("membership", mitgliedschaft_url)
+    await bestand.storage.mark_entity_deleted("membership", mitgliedschaft_url, body_id=bestand.body_id)
     await mitgliedschaft(role="Vorsitz", endDate="2026-09-30")
     *_, depubliziert, wieder = await bestand.ereignisse()
     assert depubliziert["type"] == "ris.object.depublished"

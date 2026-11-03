@@ -195,10 +195,10 @@ class Speicher:
     async def get_entity_content_hashes(self, entity_type: str, external_ids: list[str]) -> dict[str, str | None]:
         return {}
 
-    async def get_person_ids_by_external_ids(self, ids: list[str]) -> dict[str, UUID]:
+    async def get_person_ids_by_external_ids(self, ids: list[str], body_id: UUID) -> dict[str, UUID]:
         return {}
 
-    async def get_organization_ids_by_external_ids(self, ids: list[str]) -> dict[str, UUID]:
+    async def get_organization_ids_by_external_ids(self, ids: list[str], body_id: UUID) -> dict[str, UUID]:
         return {}
 
 
@@ -610,7 +610,7 @@ async def test_nicht_gespeicherte_im_log_und_sync_log(capsys):
 
 async def test_tagesordnungspunkt_ohne_sitzung_gilt_als_nicht_gespeichert():
     class Bestand:
-        async def get_meeting_uuid(self, external_id: str) -> UUID | None:
+        async def get_meeting_uuid(self, external_id: str, body_id: UUID) -> UUID | None:
             return None
 
     orchestrator = SyncOrchestrator.__new__(SyncOrchestrator)

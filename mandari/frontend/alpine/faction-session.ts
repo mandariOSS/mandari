@@ -3,13 +3,14 @@
  *
  * Komponenten (registriert im Editor-Bundle `frontend/editor/index.ts`):
  * - `fraktionssitzung`: Seite – aktueller TOP, Anwesenheit (ab 2200 px als Spalte), Tagesordnung am Handy, Tasten J/K,
- *   Fehlermeldungen
+ *   Fehlermeldungen, Sichtschutz für den nichtöffentlichen Teil (`noeSichtbar`, Issue #1166)
  * - `sitzungsMenue`: Menü „Weitere Aktionen“ im Kopf
  * - `topKopf`: Kopf des TOPs, „Mehr“ nur, wenn eine Zeile gekürzt ist
  * - `sitzungsUnterlagen`: Reiter der Unterlagen (Überlauf in „n weitere“), Schriftgröße, Pfeiltasten
  * - `unterlageAnhaengen`: Unterlage in der Sitzung anhängen (Datei, RIS-Vorlage, eigenes Dokument)
  * - `beschlussLeiste`: Stimmenzähler der Leiste unten
- * - `anwesenheitsListe`: Anwesenheit vor Ort/online, Sitzungsleitung und Schriftführung
+ * - `anwesenheitsListe`: Anwesenheit je Person mit einem Klick (vor Ort, online, entschuldigt), Sitzungsleitung und
+ *   Schriftführung
  * - `zustaendigAuswahl`: Personen und Personengruppen für Aufgaben (Suche und Auswahl kombiniert)
  *
  * Markup: `templates/work/faction/sitzung/`. Server-Daten per `json_script` (`fs-sitzung-config`,
@@ -112,14 +113,60 @@ interface HtmxDetail {
 /** Ab dieser Breite steht die Anwesenheit als eigene Spalte rechts (Prototyp Fassung 2), darunter klappt sie auf */
 const BREIT = '(min-width: 2200px)'
 
+// ---- Sichtschutz für den nichtöffentlichen Teil (Issue #1166) --------------------------------------
+//
+// Titel, Beschreibung und Inhalte nichtöffentlicher TOPs sind in der Sitzungsansicht verdeckt, bis jemand den Teil
+// aktiv einblendet (etwa beim Teilen des Bildschirms oder am Beamer). Der Server liefert die Seite verdeckt (Klasse
+// `noe-verdeckt` an `.fs-sitzung`, Vorleser-Ersatz und `aria-hidden` im Markup); diese Komponente nimmt das nur weg.
+// Der Zustand gilt je Sitzung im Browser-Tab: Er übersteht TOP-Wechsel und Neuladen. Ein neuer Tab beginnt verdeckt,
+// auch ein duplizierter oder wiederhergestellter (die Browser kopieren dabei den sessionStorage; gemerkt wird deshalb
+// nur bei echtem Neuladen, etwa nicht beim Duplizieren für den Beamer).
+// Nur Sichtschutz: Wer keine Rechte für den Teil hat, bekommt ihn vom Server gar nicht.
+
+const NOE_SCHLUESSEL = 'fs-noe-sichtbar:'
+
+/** Wurde die Seite neu geladen (nicht neu geöffnet, dupliziert oder wiederhergestellt)? */
+function neuGeladen(): boolean {
+  try {
+    const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
+    return navigation?.type === 'reload'
+  } catch {
+    return false
+  }
+}
+
+function noeGemerkt(sitzung: string): boolean {
+  try {
+    return !!sitzung && window.sessionStorage.getItem(NOE_SCHLUESSEL + sitzung) === '1'
+  } catch {
+    return false
+  }
+}
+
+function noeMerken(sitzung: string, sichtbar: boolean): void {
+  if (!sitzung) return
+  try {
+    if (sichtbar) window.sessionStorage.setItem(NOE_SCHLUESSEL + sitzung, '1')
+    else window.sessionStorage.removeItem(NOE_SCHLUESSEL + sitzung)
+  } catch {
+    // Gesperrter Speicher: Der Zustand gilt dann nur bis zum Neuladen
+  }
+}
+
 export const fraktionssitzung = defineComponent(() => ({
   aktuell: '',
   anwesenheitOffen: false,
   tagesordnungOffen: false,
   breit: false,
+  sitzung: '',
+  noeSichtbar: false,
 
   init() {
     this.aktuell = this.$el.dataset.aktuell ?? ''
+    this.sitzung = this.$el.dataset.sitzung ?? ''
+    this.noeSichtbar = neuGeladen() && noeGemerkt(this.sitzung)
+    // Kopierter Zustand eines duplizierten Tabs gilt hier nicht (der Tab, aus dem er stammt, behält seinen)
+    if (!this.noeSichtbar) noeMerken(this.sitzung, false)
     const breite = window.matchMedia(BREIT)
     this.breit = breite.matches
     breite.addEventListener('change', (event) => {
@@ -171,6 +218,8 @@ export const fraktionssitzung = defineComponent(() => ({
   /** J: nächster TOP, K: voriger TOP (nicht beim Schreiben) */
   taste(event: KeyboardEvent) {
     if (event.altKey || event.ctrlKey || event.metaKey || tippt(event.target)) return
+    // Offener Dialog (etwa „TOP hinzufügen“): kein TOP-Wechsel dahinter, sonst ginge die Auswahl im Dialog verloren
+    if (document.querySelector('dialog[open]')) return
     const richtung =
       event.key === 'j' || event.key === 'J' ? 'nach' : event.key === 'k' || event.key === 'K' ? 'vor' : ''
     if (!richtung) return
@@ -179,6 +228,24 @@ export const fraktionssitzung = defineComponent(() => ({
       event.preventDefault()
       link.click()
     }
+  },
+
+  /** Schalter an „Nichtöffentlicher Teil“ und im Kopf eines NÖ-TOPs: einblenden oder wieder verdecken */
+  noeUmschalten() {
+    this.noeSichtbar = !this.noeSichtbar
+    noeMerken(this.sitzung, this.noeSichtbar)
+  },
+
+  /** Knopf in der Abdeckung: einblenden; die Abdeckung verschwindet, der Fokus geht auf die Überschrift des TOPs */
+  noeEinblenden() {
+    this.noeSichtbar = true
+    noeMerken(this.sitzung, true)
+    this.$nextTick(() => document.getElementById('fs-top-titel')?.focus({ preventScroll: true }))
+  },
+
+  /** Kurzinfo eines Links zu einem NÖ-TOP: mit Titel nur, wenn der Teil eingeblendet ist */
+  noeTitel(el: HTMLElement): string {
+    return (this.noeSichtbar ? el.dataset.noeTitel : el.dataset.noeKurz) ?? ''
   },
 }))
 
@@ -432,38 +499,40 @@ let fokusNachAustausch = ''
 export const anwesenheitsListe = defineComponent(() => ({
   init() {
     if (!fokusNachAustausch) return
-    const ziel = this.$el.querySelector<HTMLElement>(fokusNachAustausch)
+    const auswahl = fokusNachAustausch
     fokusNachAustausch = ''
-    ziel?.focus({ preventScroll: true })
+    // Erst nach dem Aufbau fokussieren: Beim Einfügen ist die Liste noch verborgen (x-cloak, x-show), focus() ginge
+    // sonst ins Leere
+    const liste = this.$el
+    window.requestAnimationFrame(() => liste.querySelector<HTMLElement>(auswahl)?.focus({ preventScroll: true }))
   },
 
   senden(werte: Record<string, string>) {
     const aktiv = document.activeElement instanceof HTMLElement ? document.activeElement : null
     const id = aktiv?.dataset.id
     if (id) {
-      const art = aktiv?.dataset.art ? `[data-art="${CSS.escape(aktiv.dataset.art)}"]` : ''
+      const wahl = aktiv?.dataset.wahl ? `[data-wahl="${CSS.escape(aktiv.dataset.wahl)}"]` : ''
       const feld = aktiv?.dataset.feld ? `[data-feld="${CSS.escape(aktiv.dataset.feld)}"]` : ''
-      fokusNachAustausch = `${aktiv?.tagName.toLowerCase()}[data-id="${CSS.escape(id)}"]${art}${feld}`
+      fokusNachAustausch = `${aktiv?.tagName.toLowerCase()}[data-id="${CSS.escape(id)}"]${wahl}${feld}`
     } else if (aktiv?.dataset.feld) {
       fokusNachAustausch = `select[data-feld="${CSS.escape(aktiv.dataset.feld)}"]`
     }
     void window.htmx.ajax('post', urls().aktion, { target: '#fs-anwesenheit', swap: 'outerHTML', values: werte })
   },
 
-  anwesend(el: HTMLInputElement) {
-    this.senden({
-      action: 'anwesenheit',
-      attendance_id: el.dataset.id ?? '',
-      status: el.checked ? 'present' : 'absent',
-    })
-  },
-
-  grund(el: HTMLSelectElement) {
-    this.senden({ action: 'anwesenheit', attendance_id: el.dataset.id ?? '', status: el.value })
-  },
-
-  art(el: HTMLElement) {
-    this.senden({ action: 'anwesenheit', attendance_id: el.dataset.id ?? '', participation_type: el.dataset.art ?? '' })
+  /**
+   * Ein Klick je Person (Issue #1166): „vor Ort“ und „online“ setzen anwesend samt Teilnahmeart, „entschuldigt“ den
+   * Status; ein Klick auf die schon gewählte Angabe setzt auf abwesend.
+   */
+  waehlen(el: HTMLElement) {
+    const id = el.dataset.id ?? ''
+    const wahl = el.dataset.wahl ?? ''
+    if (!id || !wahl) return
+    let werte: Record<string, string>
+    if (el.getAttribute('aria-pressed') === 'true') werte = { status: 'absent' }
+    else if (wahl === 'excused') werte = { status: 'excused' }
+    else werte = { status: 'present', participation_type: wahl }
+    this.senden({ action: 'anwesenheit', attendance_id: id, ...werte })
   },
 
   rolle(el: HTMLSelectElement) {

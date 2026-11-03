@@ -44,7 +44,7 @@ from uuid import UUID
 from django.core.exceptions import ObjectDoesNotExist
 from mandari_oparl.ids import canonical_id, canonical_uri
 
-from hub.ris.canonical import Objekt, as_list, clean, iso, iso_date, iso_day, schema_type, tombstone
+from hub.ris.canonical import Objekt, as_list, clean, file_text, iso, iso_date, iso_day, schema_type, tombstone
 
 #: Version der Abbildung (2: Umsetzungsstand und Genehmigung der Niederschrift, Issue #525)
 VERSION: Final = 2
@@ -642,7 +642,8 @@ class SessionMapping:
                 "date": iso_day(file_obj.created_at),
                 "accessUrl": download,
                 "downloadUrl": f"{download}?download=1",
-                "text": (file_obj.text_content or None) if include_text else None,
+                # Höchstens bis zur Obergrenze der Texterkennung (``with_limited_text``)
+                "text": file_text(file_obj) if include_text else None,
                 **refs,
                 **_timestamps(file_obj),
                 "mandari:version": file_obj.version,

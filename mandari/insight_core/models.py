@@ -1094,9 +1094,15 @@ class OParlAgendaItem(SourceDeletionModel):
         ).distinct()
 
     def get_consultations(self):
-        """Liefert die Consultations für diesen TOP – ohne die von mandari Session zurückgenommenen."""
+        """
+        Liefert die Consultations für diesen TOP – ohne die von mandari Session zurückgenommenen und nur aus der Quelle
+        dieses TOPs (``hub.ris.selectors.consultation_agenda_item_in_source``).
+        """
+        from hub.ris.selectors import consultation_agenda_item_in_source
+
         return (
             OParlConsultation.objects.filter(agenda_item_external_id=self.external_id)
+            .filter(consultation_agenda_item_in_source())
             .exclude(withdrawn_q())
             .exclude(withdrawn_q("paper"))
             .select_related("paper")

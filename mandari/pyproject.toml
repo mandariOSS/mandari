@@ -135,6 +135,12 @@ dev = [
     "moto[s3]>=5.1",  # lokaler S3-Ersatz für die Tests des Objektspeichers (insight_core/tests/test_dokumentablage.py)
 ]
 
+[dependency-groups]
+# Build-Backend des lokalen Pakets ../shared ([build-system] requires dort). Das Image installiert es aus uv.lock
+# mit Hashes und baut shared ohne Netz und ohne Build-Isolation; sonst holte der Installer es ungeprüft aus dem
+# Paketindex. Wechselt das Build-Backend, hier mitziehen (scripts/check_image_hashes.py prüft das).
+build-backend = ["hatchling"]
+
 [tool.uv]
 # Anwendung, kein installierbares Paket: uv sperrt und installiert nur die Abhängigkeiten.
 package = false

@@ -28,8 +28,8 @@
     </c-ui.alert>
     {% endif %}
     <p class="text-sm text-gray-600 dark:text-gray-400 mb-3 max-w-sm mx-auto">
-        Wir haben dir eine E-Mail an <strong>{{ email }}</strong> geschickt. Klicke auf den Link darin, um die
-        Registrierung abzuschließen.
+        Wir haben dir eine E-Mail an <strong>{{ email }}</strong> geschickt. Klicke auf den Link darin und melde
+        dich mit deinem Passwort an, um die Registrierung abzuschließen.
         {% if org.registration_auto_approve %}Danach ist dein Zugang zu {{ org.name }} sofort aktiv.{% else %}Danach prüft {{ org.name }} deine Anfrage.{% endif %}
     </p>
     <p class="text-xs text-gray-500 dark:text-gray-400 mb-6 max-w-sm mx-auto">

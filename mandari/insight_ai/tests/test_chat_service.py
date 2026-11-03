@@ -24,7 +24,7 @@ from apps.common.ki_anbieter import KiEndpunkt, endpunkt_fuer_insight
 from apps.common.models import AISettings
 from apps.common.tests.verbindungsprobe import Verbindungsprobe, pool_erschoepft
 from insight_ai.providers import OpenAIKompatiblerProvider
-from insight_ai.services import chat_service
+from insight_ai.services import chat_filters, chat_service
 from insight_core.models import ChatUsage
 
 from .anbieter import (
@@ -312,6 +312,26 @@ def test_endpunkt_protokolliert_verbrauch_und_zaehlt_eine_anfrage(
     assert nutzung.rounds == 2
     assert nutzung.prompt_tokens > 0 and nutzung.completion_tokens > 0
     assert nutzung.tokens_used == nutzung.prompt_tokens + nutzung.completion_tokens
+
+
+def test_zu_lange_nachricht_endet_vor_den_filtern(monkeypatch: pytest.MonkeyPatch, stadt: Musterstadt) -> None:
+    """Eine Nachricht bis zur Körpergrenze der Anfrage endet mit 422, bevor ein regulärer Ausdruck sie sieht."""
+    fake = anbieter(monkeypatch)
+    gesehen: list[int] = []
+    monkeypatch.setattr(chat_filters, "_check_pii", lambda message: gesehen.append(len(message)))
+    client, _endpunkt = _besucher_mit_einwilligung(stadt)
+
+    antwort = _fragen(client, "a" * 2_600_000)
+
+    assert antwort.status_code == 422
+    daten = antwort.json()
+    assert daten["reason"] == "spam"
+    assert daten["remaining_today"] == 5
+    assert gesehen == []
+    assert fake.endpunkte == []
+    nutzung = ChatUsage.objects.get()
+    assert nutzung.filter_result == "spam_blocked"
+    assert len(nutzung.message) == 500
 
 
 @pytest.mark.django_db(transaction=True)

@@ -240,6 +240,15 @@ def test_notizen_werden_bereinigt_gespeichert_und_konflikte_erkannt(
     item.refresh_from_db()
     assert sitzung.notizen(item) == gespeichert
 
+    # Derselbe Text mit veraltetem Stand (zwei Speicherungen kurz hintereinander) ist kein Konflikt (Issue #1166)
+    doppelt = client.post(
+        aktion_url(org, sitzung_laeuft),
+        {"action": "notizen", "item_id": item.pk, "html": gespeichert, "stand": sitzung.fingerabdruck("")},
+    )
+    assert doppelt.status_code == 200 and doppelt.json()["stand"] == stand
+    item.refresh_from_db()
+    assert sitzung.notizen(item) == gespeichert
+
     # Mit aktuellem Stand gelingt das Speichern
     weiter = client.post(
         aktion_url(org, sitzung_laeuft),
@@ -927,7 +936,8 @@ def test_nichtoeffentlicher_top_fragt_rechte_nicht_je_person_ab(
     assert html.count("vereidigt-") >= 12
     with django_assert_max_num_queries(len(seite_vorher)):
         html = client.get(ganze_seite).content.decode()
-    assert html.count(", stimmberechtigt") >= 12
+    # Alle stehen in der Gruppe „Stimmberechtigt“ (Vorsitz, Mitglied und zwölf Vereidigte, Issue #1166)
+    assert "Stimmberechtigt · 14" in html
 
 
 def test_beschluss_ueberschreibt_gleichzeitig_gespeicherte_notizen_nicht(

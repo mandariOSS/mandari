@@ -1,0 +1,7 @@
+{# Schalter für den Sichtschutz des nichtöffentlichen Teils (Issue #1166): an „Nichtöffentlicher Teil“ und im Kopf eines NÖ-TOPs #}
+{# Zustand noeSichtbar der Komponente fraktionssitzung; gedrückt heißt eingeblendet, die Kurzinfo nennt den nächsten Schritt #}
+<button type="button" class="wf-knopf wf-leise wf-klein wf-ik fs-noe-schalter" aria-pressed="false" :aria-pressed="noeSichtbar ? 'true' : 'false'"
+        aria-label="Nichtöffentlichen Teil einblenden" title="Nichtöffentlichen Teil einblenden" @click="noeUmschalten()"
+        :title="noeSichtbar ? 'Nichtöffentlichen Teil wieder verdecken' : 'Nichtöffentlichen Teil einblenden'">
+    <i data-lucide="eye-off" aria-hidden="true" x-show="!noeSichtbar"></i><i data-lucide="eye" aria-hidden="true" x-show="noeSichtbar" x-cloak></i>
+</button>

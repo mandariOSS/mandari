@@ -1147,6 +1147,14 @@ Seite, nicht den Prozess. Wer sie ausführt, wählt `TEXT_EXTRACTION_RUNNER` –
 gleich setzen**, sonst arbeiten beide oder keiner:
 
 - `ingestor` (Standard): der OCR-Worker des Ingestors (`python -m src.main extract-daemon`, Ingestor-Image).
+  Die Textebene eines PDFs liest er wie die erste Stufe der Aufträge in einem eigenen Prozess mit Speicher- und
+  Zeitgrenze, nie im Prozess des Syncs; endet dieser Prozess an einer Grenze, erkennt der Ingestor die Datei aus dem
+  Bild. Höchstens `TEXT_LAYER_CONCURRENCY` solcher Prozesse laufen zugleich. Anzahl × `TEXT_LAYER_MEMORY_LIMIT_MB`
+  plus rund 200 MB Grundbedarf unter dem Speicherlimit des Containers halten, wo der Speicherwächter den ganzen
+  Container beendet (Kubernetes mit cgroup v2; Helm: 1 GiB, 2 × 384 MB). Docker beendet bei Speichermangel zuerst
+  diese Prozesse (`oom_score_adj`). In Compose heißen die Variablen `INGESTOR_TEXT_LAYER_MEMORY_LIMIT_MB`,
+  `INGESTOR_TEXT_LAYER_TIMEOUT` und `INGESTOR_TEXT_LAYER_CONCURRENCY`, damit ein Wert für die Anwendung den Ingestor
+  nicht mit trifft.
 - `worker`: Aufträge in zwei Stufen (Issue #1107); der OCR-Worker des Ingestors ruht dann.
   `file.read_text_layer` (Warteschlange `text`, Dienst `worker`) liest nur die Textebene, in einem eigenen Prozess
   mit Speicher- und Zeitgrenze; reicht sie, ist die Datei fertig (rund 90 % der Dateien). Sonst geht sie an
@@ -1163,6 +1171,18 @@ gleich setzen**, sonst arbeiten beide oder keiner:
   3 GB und eine eigene Seitengrenze (`WORKER_HEAVY_OCR_MEMORY_LIMIT_MB`, Standard 2048), Anwendung und `worker`
   (1 GB) haben `512`.
 
+Je Datei speichern beide Wege höchstens 5.000.000 Zeichen Text (feste Grenze `MAX_TEXT_CHARS` in
+`shared/mandari_dokumente`); was darüber hinausgeht, wird verworfen und in `text_extraction_error` vermerkt.
+Dokumentzeilen der Vorgangs- und Sitzungsseiten zeigen davon nur den Anfang.
+
+Ältere, längere Texte (vor der Grenze gespeichert) findet `python manage.py texte_begrenzen`: Ohne Schalter zählt er
+nur und nennt jede betroffene Datei mit Kennung und Länge, getrennt nach `oparl_files` und `session_files`.
+`--ausfuehren` kürzt sie in Stapeln (`--stapel`, Standard 10 Dateien je Transaktion) auf die Grenze; die Bedingung
+„länger als die Grenze“ steht im `UPDATE` selbst. RIS-Dateien bekommen denselben Vermerk wie bei der Texterkennung
+und werden danach vom Befehl selbst neu in den Suchindex geschrieben (Signal der Texterkennung, eine Datei nach der
+anderen); Anlagen in Session stehen nicht im Suchindex. Erst zählen, dann nach Freigabe ausführen; ein zweiter Lauf
+findet nichts mehr.
+
 Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 
 | Variable | Standard | Wirkung |
@@ -1173,6 +1193,9 @@ Grenzen und Regeln (gleiche Variablen in Anwendung und Ingestor):
 | `OCR_PAGE_TIMEOUT` | `120` | Sekunden je Seite und Schritt |
 | `OCR_FILE_BUDGET_SECONDS` | `1200` | Zeitbudget je Datei; danach gilt der bis dahin erkannte Text |
 | `OCR_MAX_PAGES` | `100` | höchstens so viele Seiten je Datei |
+| `TEXT_LAYER_MEMORY_LIMIT_MB` | `512` (Anwendung), `384` (Ingestor, Compose: `INGESTOR_TEXT_LAYER_MEMORY_LIMIT_MB`) | Adressraum je Prozess, der die Textebene (pypdf) liest; darüber geht die Datei an die Erkennung aus dem Bild. Unter dem Speicherlimit des Containers halten. Die Textebene liefert höchstens 3000 Seiten und 5 Mio. Zeichen Text |
+| `TEXT_LAYER_TIMEOUT` | `120` | nur Ingestor (Compose: `INGESTOR_TEXT_LAYER_TIMEOUT`): Sekunden je Prozess der Textebene |
+| `TEXT_LAYER_CONCURRENCY` | `2` | nur Ingestor (Compose: `INGESTOR_TEXT_LAYER_CONCURRENCY`): Prozesse der Textebene zugleich, über alle Quellen und Plätze |
 | `TEXT_EXTRACTION_STALE_MINUTES` | `60` | Dateien, die länger in `processing` stehen, gelten als abgebrochen (Worker beendet) und werden zurückgestellt; auch in der Anwendung setzen (Prüfung `texterkennung`) |
 | `TEXT_EXTRACTION_MAX_ATTEMPTS` | `3` | nach so vielen Abbrüchen wird die Datei `failed` mit dem Grund „Speichergrenze“ statt erneut zu laufen |
 | `TEXT_EXTRACTION_MAX_SIZE_MB` | `50` | größere Dateien werden übersprungen |

@@ -405,7 +405,7 @@ class FakeStorage:
     async def get_agenda_items_of_meeting(self, meeting_external_id) -> list[dict[str, Any]]:
         return []
 
-    async def rename_agenda_items(self, meeting_external_id, renames, keep_previous=True) -> int:
+    async def rename_agenda_items(self, meeting_external_id, renames, *, source_id, keep_previous=True) -> int:
         raise AssertionError(f"unerwartete Umstellung: {renames}")
 
     async def get_active_agenda_item_ids(self, meeting_external_ids) -> dict[str, set[str]]:
@@ -432,7 +432,7 @@ class FakeOrchestrator:
     async def _record_source_failure(self, *args, **kwargs) -> None:
         raise AssertionError(f"unerwarteter Quellenfehler: {args}")
 
-    async def _mark_deleted(self, entity, entity_type, es_deletions) -> bool:
+    async def _mark_deleted(self, entity, entity_type, es_deletions, *, body_id) -> bool:
         self.marked.append(entity["id"])
         es_deletions.setdefault(entity_type, []).append(entity["id"])
         return True

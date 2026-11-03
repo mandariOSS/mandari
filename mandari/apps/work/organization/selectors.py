@@ -141,14 +141,15 @@ def permission_matrix(member: Membership) -> dict[str, Any]:
     Effektive Berechtigungen eines Mitglieds mit Herkunft.
 
     Drei Zustände je Berechtigung: aus Rollen (mit Rollennamen), individuell
-    hinzugefügt, explizit verweigert (schlägt Rollen).
+    hinzugefügt, explizit verweigert (schlägt Rollen). Eine Administrator-Rolle gibt alle Rechte außer dem
+    Stimmrecht (``ADMIN_RECHTE``, Issue #1166).
     """
-    from apps.common.permissions import PERMISSIONS
+    from apps.common.permissions import ADMIN_RECHTE
 
     role_permission_sources: dict[str, list[str]] = {}
     for role in member.roles.all():
         if role.is_admin:
-            for code in PERMISSIONS:
+            for code in ADMIN_RECHTE:
                 role_permission_sources.setdefault(code, []).append(f"{role.name} (Administrator)")
         else:
             for perm in role.permissions.all():
@@ -307,8 +308,14 @@ def find_membership(organization: Organization, user: User) -> Membership | None
 
 
 def find_user_by_email(email: str) -> User | None:
-    """Benutzerkonto zu einer E-Mail-Adresse (Einladungsfluss)."""
-    return User.objects.filter(email=email).first()
+    """
+    Benutzerkonto zu einer E-Mail-Adresse (Einladungsfluss), ohne Beachtung der Groß-/Kleinschreibung.
+
+    So findet eine Einladung an ``otto.gross@…`` auch das Konto ``Otto.Gross@…`` und legt kein zweites
+    an. Gibt es (aus der Zeit vor dieser Regel) mehrere Schreibweisen, gilt die exakte, sonst die älteste.
+    """
+    konten = User.objects.filter(email__iexact=email)
+    return konten.filter(email=email).first() or konten.order_by("date_joined").first()
 
 
 def admin_members(organization: Organization, *, exclude: Membership) -> list[Membership]:

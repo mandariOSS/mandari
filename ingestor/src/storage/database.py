@@ -7,7 +7,9 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 
 import logging
 import os
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections import Counter
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
@@ -15,6 +17,7 @@ from pathlib import Path
 from typing import Any, Final
 from uuid import UUID
 
+from mandari_dokumente import MAX_TEXT_CHARS, truncation_note
 from mandari_oparl import (
     IdBases,
     ProcessedAgendaItem,
@@ -30,10 +33,11 @@ from mandari_oparl import (
     ProcessedPerson,
 )
 from mandari_oparl.extensions import AGENDA_ITEM_COLUMNS, MEETING_COLUMNS
-from sqlalchemy import Text, and_, bindparam, func, literal, or_, select, text, update
+from sqlalchemy import Text, and_, bindparam, func, literal, literal_column, or_, select, text, update
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 
 from src.client.filter_notes import (
     LEGACY_HOSTS_KEY,
@@ -83,19 +87,123 @@ _ENTITY_MODEL_MAP: dict[str, type] = {
 }
 
 
+# ========== Bindung an die Quelle ==========
+#
+# Die Kennung eines Objekts ist die Adresse, die die Quelle liefert, und ``external_id`` ist über alle Quellen
+# eindeutig. Eine Quelle schreibt, markiert und verknüpft deshalb nur Objekte, die im Bestand unter einer Kommune
+# derselben Quelle stehen: Die Upserts tragen die Bedingung im ON-CONFLICT-Teil, Löschmarkierung und Auflösung von
+# Verweisen in ihrem WHERE. Neue Kennungen legt die Quelle unter ihrer eigenen Kommune an.
+
+
+class ForeignObjectError(Exception):
+    """
+    Die Kennung steht im Bestand unter einer Kommune einer anderen Quelle; das Objekt wurde nicht geschrieben.
+
+    Der Abgleich überspringt das Objekt (es zählt zu den nicht gespeicherten) und nennt es im Sync-Log unter
+    ``foreign``; eingebettete Objekte überspringt der Speicher selbst.
+    """
+
+    def __init__(self, entity_type: str, external_id: str) -> None:
+        super().__init__(f"{entity_type} {external_id}: Kennung gehört einer anderen Quelle, nicht geschrieben")
+        self.entity_type = entity_type
+        self.external_id = external_id
+
+
+#: Zusatz zur Art im Sync-Log (``foreign``): abgewiesene Löschmarkierung bzw. abgewiesener Verweis
+FOREIGN_DELETION: Final = " (Löschung)"
+FOREIGN_REFERENCE: Final = " (Verweis)"
+#: So viele abgewiesene Kennungen je Art nennt das Log in einem Abgleich, danach zählt es nur noch
+FOREIGN_IDS_LOGGED: Final = 5
+
+#: Abgewiesene Kennungen des laufenden Abgleichs (Art -> Anzahl), siehe ``start_foreign_rejections``
+_foreign_rejections: ContextVar[Counter[str] | None] = ContextVar("ingestor_foreign_rejections", default=None)
+
+
+def start_foreign_rejections() -> Counter[str]:
+    """
+    Beginnt die Zählung abgewiesener Kennungen, etwa für den Abgleich einer Kommune: Upserts, Löschmarkierungen und
+    Verweise auf Objekte anderer Quellen. Gilt wie die Korrelations-ID der Ereignisse für die laufende asyncio-Aufgabe
+    und alle, die sie danach startet. Rückgabe: Art -> Anzahl, für das Sync-Log (``foreign``).
+    """
+    counts: Counter[str] = Counter()
+    _foreign_rejections.set(counts)
+    return counts
+
+
+def _note_foreign(kind: str, external_id: str) -> None:
+    """Abgewiesene Kennung zählen und die ersten je Art protokollieren (nur Art und Kennung, keine Inhalte)."""
+    counts = _foreign_rejections.get()
+    seen = 0
+    if counts is not None:
+        counts[kind] += 1
+        seen = counts[kind]
+    if seen <= FOREIGN_IDS_LOGGED:
+        logger.warning("Kennung einer anderen Quelle abgewiesen (%s): %s", kind, external_id)
+
+
+def _bodies_of_source_of(body_column: Any, body_id: UUID | None) -> Any:
+    """``body_column`` nennt eine Kommune derselben Quelle wie ``body_id``; eine leere Spalte erfüllt das nie."""
+    owner = aliased(OParlBody)
+    writer = aliased(OParlBody)
+    return body_column.in_(
+        select(owner.id).join(writer, writer.source_id == owner.source_id).where(writer.id == body_id)
+    )
+
+
+def _row_column(model: type, name: str) -> Any:
+    """
+    Spalte der Bestandszeile in einer Unterabfrage. Im ON-CONFLICT-Teil eines Upserts bezöge SQLAlchemy die Tabelle
+    nicht auf die vorhandene Zeile, sondern nähme sie ein zweites Mal ins FROM der Unterabfrage. PostgreSQL löst den
+    Tabellennamen dort auf die vorhandene Zeile auf, in UPDATE und SELECT auf die Zeile der äußeren Abfrage.
+    """
+    return literal_column(f"{model.__tablename__}.{name}")
+
+
+def _owned_by_source_of(model: type, body_id: UUID | None) -> Any:
+    """
+    Bedingung auf eine Bestandszeile von ``model``: Sie gehört einer Kommune derselben Quelle wie ``body_id``, der
+    Kommune des Abgleichs.
+
+    Gebunden wird an die Quelle, nicht an die Kommune: Kommunen einer Quelle teilen sich Objekte (Personen, Orte,
+    Dateien), und die Upserts schreiben die Kommune einer vorhandenen Zeile nicht um. Tagesordnungspunkte gehören über
+    ihre Sitzung, Mitgliedschaften über ihr Gremium zu einer Kommune. Eine Zeile ohne Kommune gehört keiner Quelle.
+    """
+    if model is OParlAgendaItem:
+        return (
+            select(OParlMeeting.id)
+            .where(
+                OParlMeeting.id == _row_column(OParlAgendaItem, "meeting_id"),
+                _bodies_of_source_of(OParlMeeting.body_id, body_id),
+            )
+            .exists()
+        )
+    if model is OParlMembership:
+        return (
+            select(OParlOrganization.id)
+            .where(
+                OParlOrganization.id == _row_column(OParlMembership, "organization_id"),
+                _bodies_of_source_of(OParlOrganization.body_id, body_id),
+            )
+            .exists()
+        )
+    return _bodies_of_source_of(model.body_id, body_id)  # type: ignore[attr-defined]
+
+
 #: Abgelöste Kennung eines Tagesordnungspunkts in ``raw_json`` (Umstellung der Kennungen aus Sitzungsseiten,
 #: Issue #863). Der Abruf schreibt sie bei jedem Speichern wieder an den Punkt, der Rückweg findet die Zeile daran.
 PREVIOUS_ID_FIELD: Final = "mandari:previousId"
 
 #: Verweis einer Beratung auf einen umgeschriebenen Tagesordnungspunkt nachziehen (Spalte und ``raw_json``). Über
-#: ``raw_json`` nur unter den Beratungen der Sitzung suchen: Beide Spalten haben einen Index, ``raw_json`` nicht.
+#: ``raw_json`` nur unter den Beratungen der Sitzung suchen: Beide Spalten haben einen Index, ``raw_json`` nicht. Nur
+#: Beratungen derselben Quelle (``:source``) und solche ohne Kommune (Altbestand).
 _RENAME_CONSULTATION_REFERENCE = text(
     "UPDATE oparl_consultations SET"
     " agenda_item_external_id = CASE WHEN agenda_item_external_id = :old THEN :new ELSE agenda_item_external_id END,"
     " raw_json = CASE WHEN raw_json->>'agendaItem' = :old"
     " THEN jsonb_set(raw_json, '{agendaItem}', to_jsonb(CAST(:new AS text))) ELSE raw_json END,"
     " updated_at = now()"
-    " WHERE agenda_item_external_id = :old OR (meeting_external_id = :meeting AND raw_json->>'agendaItem' = :old)"
+    " WHERE (agenda_item_external_id = :old OR (meeting_external_id = :meeting AND raw_json->>'agendaItem' = :old))"
+    " AND (body_id IS NULL OR body_id IN (SELECT id FROM oparl_bodies WHERE source_id = :source))"
 )
 
 
@@ -395,6 +503,30 @@ def _assert_no_enrichment_overwrite(update_set: dict) -> None:
         )
 
 
+def _pages_by_text_bytes(heads: list[Any], budget: int, max_chars: int | None) -> Iterator[list[UUID]]:
+    """
+    Teilt eine Seite (Kennung und ``text_bytes`` je Datei) in Teilseiten von höchstens ``budget`` Bytes Text.
+
+    Ein Text, der nicht mehr passt, beginnt die nächste Teilseite; nur ein einzelner Text kann allein darüber
+    liegen. Mit ``max_chars`` zählt je Text höchstens, was nach der Kürzung bleiben kann (UTF-8: bis zu vier
+    Bytes je Zeichen).
+    """
+    per_text = None if max_chars is None else 4 * max_chars
+    ids: list[UUID] = []
+    total = 0
+    for head in heads:
+        text_bytes = int(head.text_bytes or 0)
+        if per_text is not None:
+            text_bytes = min(text_bytes, per_text)
+        if ids and total + text_bytes > budget:
+            yield ids
+            ids, total = [], 0
+        ids.append(head.id)
+        total += text_bytes
+    if ids:
+        yield ids
+
+
 class DatabaseStorage:
     """
     High-performance async PostgreSQL storage for OParl data.
@@ -447,10 +579,12 @@ class DatabaseStorage:
 
         # Cache for body UUIDs (external_id -> UUID)
         self._body_uuid_cache: dict[str, UUID] = {}
-        self._meeting_uuid_cache: dict[str, UUID] = {}
-        self._paper_uuid_cache: dict[str, UUID] = {}
-        self._person_uuid_cache: dict[str, UUID] = {}
-        self._organization_uuid_cache: dict[str, UUID] = {}
+        # Aufgelöste Verweise je Kommune des Abgleichs: (Kommune, external_id) -> UUID. Ein Eintrag entsteht nur für
+        # Objekte derselben Quelle (Upsert oder gebundene Abfrage), siehe ``_owned_by_source_of``.
+        self._meeting_uuid_cache: dict[tuple[UUID, str], UUID] = {}
+        self._paper_uuid_cache: dict[tuple[UUID, str], UUID] = {}
+        self._person_uuid_cache: dict[tuple[UUID, str], UUID] = {}
+        self._organization_uuid_cache: dict[tuple[UUID, str], UUID] = {}
         # Herkunft der Ereignisse: Kommune -> Quelle (tenant_ref, Ausnahme) und Sitzung -> Kommune
         self._origin_cache: dict[UUID, _Origin] = {}
         self._meeting_body_cache: dict[UUID, UUID | None] = {}
@@ -1180,6 +1314,29 @@ class DatabaseStorage:
             self._meeting_body_cache[meeting_id] = result.scalar_one_or_none()
         return self._meeting_body_cache[meeting_id]
 
+    # ========== Bindung an die Quelle ==========
+
+    @staticmethod
+    async def _upserted(session: AsyncSession, stmt: Any, entity_type: str, external_id: str) -> Any:
+        """
+        Upsert ausführen, dessen ON-CONFLICT-Teil an die Quelle gebunden ist (``_owned_by_source_of``), und die Zeile
+        aus RETURNING liefern. Ohne Zeile steht die Kennung unter einer anderen Quelle: Nichts wurde geschrieben, die
+        Transaktion endet ohne Commit, ``ForeignObjectError``.
+        """
+        row = (await session.execute(stmt)).first()
+        if row is None:
+            _note_foreign(entity_type, external_id)
+            raise ForeignObjectError(entity_type, external_id)
+        return row
+
+    @staticmethod
+    async def _note_foreign_reference(session: AsyncSession, model: type, entity_type: str, external_id: str) -> None:
+        """Verweis, der in der eigenen Quelle nicht auflöst: als abgewiesen zählen, wenn eine andere Quelle ihn hat."""
+        stmt = select(model.id).where(model.external_id == external_id).limit(1)  # type: ignore[attr-defined]
+        found = await session.execute(stmt)
+        if found.first() is not None:
+            _note_foreign(f"{entity_type}{FOREIGN_REFERENCE}", external_id)
+
     # ========== Body Operations ==========
 
     async def upsert_body(
@@ -1199,6 +1356,9 @@ class DatabaseStorage:
         Admin bewusst gelistet ist. Ausnahme ist die eigene Session-Schnittstelle eines Mandanten
         (``lists_new_bodies``): Ihre Kommune ist gleich gelistet. Bei einer vorhandenen Kommune bleibt
         ``is_listed`` unverändert.
+
+        Eine vorhandene Kommune schreibt nur ihre eigene Quelle (``source_id``); unter einer anderen Quelle bleibt sie
+        unverändert, und der Abgleich bricht mit ``ForeignObjectError`` ab, statt ihre Listen zu lesen.
         """
         async with self.get_session() as session:
             sync_config = await self._source_config(session, source_id)
@@ -1256,10 +1416,10 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=OParlBody.source_id == source_id,
             ).returning(OParlBody.id)
 
-            result = await session.execute(stmt)
-            body_id = result.scalar_one()
+            body_id = (await self._upserted(session, stmt, "body", body.external_id))[0]
             if emit and await self._events_for(session, body_id):
                 drafts = ris_events.body_events(body_id, body.raw_json or {}, prior)
                 await self._emit(session, body_id, drafts, body.oparl_modified)
@@ -1268,10 +1428,13 @@ class DatabaseStorage:
             # Cache the UUID
             self._body_uuid_cache[body.external_id] = body_id
 
-            # Process nested legislative terms
+            # Process nested legislative terms; eine Wahlperiode einer anderen Quelle bleibt aus (gezählt)
             for nested in body.nested_entities:
                 if isinstance(nested, ProcessedLegislativeTerm):
-                    await self.upsert_legislative_term(nested, body_id)
+                    try:
+                        await self.upsert_legislative_term(nested, body_id)
+                    except ForeignObjectError:
+                        continue
 
             return body_id
 
@@ -1337,6 +1500,8 @@ class DatabaseStorage:
         entity_type: str,
         external_id: str,
         modified: datetime | None = None,
+        *,
+        body_id: UUID,
     ) -> UUID | None:
         """
         Mark an entity as deleted by the source (OParl tombstone).
@@ -1354,14 +1519,18 @@ class DatabaseStorage:
         the detection time) so incremental clients of our OParl API pick up
         the deletion via ``modified_since``.
 
+        Markiert wird nur ein Objekt derselben Quelle wie ``body_id`` (``_owned_by_source_of``); die
+        Löschmarkierung einer anderen Quelle zählt als abgewiesen (Sync-Log ``foreign``).
+
         Args:
             entity_type: Type of entity
             external_id: The OParl external ID
             modified: ``modified`` timestamp of the source tombstone, if any
+            body_id: Kommune des Abgleichs, dessen Quelle den Tombstone liefert
 
         Returns:
             The internal UUID if the entity was newly marked, else None
-            (not found or already marked).
+            (not found, already marked or belonging to another source).
         """
         model_map = {
             "meeting": OParlMeeting,
@@ -1395,7 +1564,11 @@ class DatabaseStorage:
         async with self.get_session() as session:
             stmt = (
                 update(model)
-                .where(model.external_id == external_id, model.deleted == False)  # noqa: E712
+                .where(
+                    model.external_id == external_id,
+                    model.deleted == False,  # noqa: E712
+                    _owned_by_source_of(model, body_id),
+                )
                 .values(
                     deleted=True,
                     deleted_at=now,
@@ -1408,6 +1581,13 @@ class DatabaseStorage:
             result = await session.execute(stmt)
             row = result.first()
             entity_id = row[0] if row is not None else None
+            if row is None:
+                # Nichts markiert: unbekannt, schon markiert oder ein Objekt einer anderen Quelle
+                found = await session.execute(
+                    select(model.id).where(model.external_id == external_id, model.deleted == False).limit(1)  # noqa: E712
+                )
+                if found.first() is not None:
+                    _note_foreign(f"{entity_type}{FOREIGN_DELETION}", external_id)
             if row is not None and self.events_enabled:
                 # Rücknahme melden, in derselben Transaktion wie die Markierung
                 public, meeting_id = True, None
@@ -1439,13 +1619,17 @@ class DatabaseStorage:
 
         Zeile, Zuordnung der Gremien und Ereignis entstehen in einer Transaktion: Wer auf das
         Ereignis hin beim Bestand nachliest, sieht die Sitzung mit ihren Gremien.
+
+        Nur an die eigene Quelle gebunden (``_owned_by_source_of``): Eine Sitzung einer anderen Quelle bleibt
+        unverändert (``ForeignObjectError``), zugeordnet werden nur Gremien der eigenen Quelle, und eingebettete
+        Objekte einer anderen Quelle bleiben aus.
         """
         # Gremien vorab auflösen (eigene Lesesitzung), damit die Zuordnung in die Transaktion des
         # Upserts passt. Batched lookup (cache-first, DB fallback).
         org_ids: list[UUID] = []
         org_urls = _normalized_urls((meeting.raw_json or {}).get("organization"))
         if org_urls:
-            org_map = await self.get_organization_ids_by_external_ids(org_urls)
+            org_map = await self.get_organization_ids_by_external_ids(org_urls, body_id)
             org_ids = [org_map[url] for url in org_urls if url in org_map]
 
         async with self.get_session() as session:
@@ -1491,10 +1675,10 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlMeeting, body_id),
             ).returning(OParlMeeting.id)
 
-            result = await session.execute(stmt)
-            meeting_id = result.scalar_one()
+            meeting_id = (await self._upserted(session, stmt, "meeting", meeting.external_id))[0]
             # Link M2M organizations from raw_json, vor dem Commit
             organizations_changed = await self._link_meeting_organizations(
                 session, meeting_id, org_ids, compare=prior is not None
@@ -1510,17 +1694,20 @@ class DatabaseStorage:
                 await self._emit(session, body_id, drafts, meeting.oparl_modified)
             await session.commit()
 
-            self._meeting_uuid_cache[meeting.external_id] = meeting_id
+            self._meeting_uuid_cache[(body_id, meeting.external_id)] = meeting_id
             self._meeting_body_cache[meeting_id] = body_id
 
-            # Process nested entities
+            # Process nested entities; Objekte einer anderen Quelle bleiben aus (gezählt), die übrigen laufen weiter
             for nested in meeting.nested_entities:
-                if isinstance(nested, ProcessedAgendaItem):
-                    await self.upsert_agenda_item(nested, meeting_id)
-                elif isinstance(nested, ProcessedFile):
-                    await self.upsert_file(nested, body_id, meeting_id=meeting_id)
-                elif isinstance(nested, ProcessedLocation):
-                    await self.upsert_location(nested, body_id)
+                try:
+                    if isinstance(nested, ProcessedAgendaItem):
+                        await self.upsert_agenda_item(nested, meeting_id)
+                    elif isinstance(nested, ProcessedFile):
+                        await self.upsert_file(nested, body_id, meeting_id=meeting_id)
+                    elif isinstance(nested, ProcessedLocation):
+                        await self.upsert_location(nested, body_id)
+                except ForeignObjectError:
+                    continue
 
             return meeting_id
 
@@ -1574,17 +1761,25 @@ class DatabaseStorage:
             )
         return changed
 
-    async def get_meeting_uuid(self, external_id: str) -> UUID | None:
-        """Get a meeting's UUID by external ID (cached)."""
-        if external_id in self._meeting_uuid_cache:
-            return self._meeting_uuid_cache[external_id]
+    async def get_meeting_uuid(self, external_id: str, body_id: UUID) -> UUID | None:
+        """
+        UUID einer Sitzung derselben Quelle wie die Kommune ``body_id`` (zwischengespeichert). Eine Sitzung einer
+        anderen Quelle löst nicht auf; der Verweis zählt als abgewiesen (Sync-Log ``foreign``).
+        """
+        key = (body_id, external_id)
+        if key in self._meeting_uuid_cache:
+            return self._meeting_uuid_cache[key]
 
         async with self.get_session() as session:
-            stmt = select(OParlMeeting.id).where(OParlMeeting.external_id == external_id)
+            stmt = select(OParlMeeting.id).where(
+                OParlMeeting.external_id == external_id, _owned_by_source_of(OParlMeeting, body_id)
+            )
             result = await session.execute(stmt)
             uuid = result.scalar_one_or_none()
             if uuid:
-                self._meeting_uuid_cache[external_id] = uuid
+                self._meeting_uuid_cache[key] = uuid
+            else:
+                await self._note_foreign_reference(session, OParlMeeting, "meeting", external_id)
             return uuid
 
     # ========== Paper Operations ==========
@@ -1599,12 +1794,17 @@ class DatabaseStorage:
 
         Zeile, Zuordnung der Orte und Ereignis entstehen in einer Transaktion: Wer auf das Ereignis
         hin beim Bestand nachliest, sieht die Vorlage mit ihren Orten.
+
+        Nur an die eigene Quelle gebunden wie ``upsert_meeting`` (Vorlage, Orte, eingebettete Objekte).
         """
         # Eingebettete Orte zuerst (eigene Transaktion je Ort, kein Bezug auf die Vorlage): Die
-        # Verknüpfung unten findet sie dann im Bestand.
+        # Verknüpfung unten findet sie dann im Bestand. Ein Ort einer anderen Quelle bleibt aus (gezählt).
         for nested in paper.nested_entities:
             if isinstance(nested, ProcessedLocation):
-                await self.upsert_location(nested, body_id)
+                try:
+                    await self.upsert_location(nested, body_id)
+                except ForeignObjectError:
+                    continue
 
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
@@ -1641,13 +1841,15 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlPaper, body_id),
             ).returning(OParlPaper.id)
 
-            result = await session.execute(stmt)
-            paper_id = result.scalar_one()
+            paper_id = (await self._upserted(session, stmt, "paper", paper.external_id))[0]
             # Link official OParl locations (M2M table managed by Django), vor dem Commit. Auch ohne Orte:
             # Nennt die Quelle keinen mehr, wird die bisherige Zuordnung entfernt (Issue #553).
-            locations_changed = await self._link_paper_locations(session, paper_id, paper.location_external_ids)
+            locations_changed = await self._link_paper_locations(
+                session, paper_id, paper.location_external_ids, body_id
+            )
             if emit:
                 drafts = ris_events.paper_events(
                     paper_id, paper.raw_json or {}, prior, locations_changed=locations_changed
@@ -1655,14 +1857,18 @@ class DatabaseStorage:
                 await self._emit(session, body_id, drafts, paper.oparl_modified)
             await session.commit()
 
-            self._paper_uuid_cache[paper.external_id] = paper_id
+            self._paper_uuid_cache[(body_id, paper.external_id)] = paper_id
 
-            # Process nested entities (Orte stehen schon im Bestand, siehe oben)
+            # Process nested entities (Orte stehen schon im Bestand, siehe oben); Objekte einer anderen Quelle bleiben
+            # aus (gezählt), die übrigen laufen weiter
             for nested in paper.nested_entities:
-                if isinstance(nested, ProcessedFile):
-                    await self.upsert_file(nested, body_id, paper_id=paper_id)
-                elif isinstance(nested, ProcessedConsultation):
-                    await self.upsert_consultation(nested, body_id, paper_id)
+                try:
+                    if isinstance(nested, ProcessedFile):
+                        await self.upsert_file(nested, body_id, paper_id=paper_id)
+                    elif isinstance(nested, ProcessedConsultation):
+                        await self.upsert_consultation(nested, body_id, paper_id)
+                except ForeignObjectError:
+                    continue
 
             return paper_id
 
@@ -1671,6 +1877,7 @@ class DatabaseStorage:
         session: AsyncSession,
         paper_id: UUID,
         location_external_ids: list[str],
+        body_id: UUID,
     ) -> bool:
         """
         Link a paper to its official OParl locations via oparl_papers_locations, in der Transaktion
@@ -1690,6 +1897,8 @@ class DatabaseStorage:
         übernommenen Koordinaten (``OParlPaper.locations``, Herkunft ``oparl``) räumt Django danach
         auf (``apply_oparl_locations`` im Georef-Lauf); der Ingestor schreibt dieses Feld nie.
 
+        Zugeordnet werden nur Orte derselben Quelle wie die Kommune ``body_id`` (``_owned_by_source_of``).
+
         Rückgabe ``True``, wenn ein Ort neu zugeordnet oder entfernt wurde (für das Ereignis).
         """
         if self._paper_locations_table is None:
@@ -1702,7 +1911,9 @@ class DatabaseStorage:
 
         location_ids: list[UUID] = []
         if location_external_ids:
-            stmt = select(OParlLocation.id).where(OParlLocation.external_id.in_(location_external_ids))
+            stmt = select(OParlLocation.id).where(
+                OParlLocation.external_id.in_(location_external_ids), _owned_by_source_of(OParlLocation, body_id)
+            )
             location_ids = [row[0] for row in (await session.execute(stmt)).fetchall()]
         # Entfernen, was die Quelle nicht mehr nennt (Index über oparlpaper_id, oparllocation_id)
         if location_ids:
@@ -1728,17 +1939,25 @@ class DatabaseStorage:
             changed = inserted.first() is not None or changed
         return changed
 
-    async def get_paper_uuid(self, external_id: str) -> UUID | None:
-        """Get a paper's UUID by external ID (cached)."""
-        if external_id in self._paper_uuid_cache:
-            return self._paper_uuid_cache[external_id]
+    async def get_paper_uuid(self, external_id: str, body_id: UUID) -> UUID | None:
+        """
+        UUID einer Vorlage derselben Quelle wie die Kommune ``body_id`` (zwischengespeichert). Eine Vorlage einer
+        anderen Quelle löst nicht auf; der Verweis zählt als abgewiesen (Sync-Log ``foreign``).
+        """
+        key = (body_id, external_id)
+        if key in self._paper_uuid_cache:
+            return self._paper_uuid_cache[key]
 
         async with self.get_session() as session:
-            stmt = select(OParlPaper.id).where(OParlPaper.external_id == external_id)
+            stmt = select(OParlPaper.id).where(
+                OParlPaper.external_id == external_id, _owned_by_source_of(OParlPaper, body_id)
+            )
             result = await session.execute(stmt)
             uuid = result.scalar_one_or_none()
             if uuid:
-                self._paper_uuid_cache[external_id] = uuid
+                self._paper_uuid_cache[key] = uuid
+            else:
+                await self._note_foreign_reference(session, OParlPaper, "paper", external_id)
             return uuid
 
     # ========== Person Operations ==========
@@ -1790,16 +2009,16 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlPerson, body_id),
             ).returning(OParlPerson.id)
 
-            result = await session.execute(stmt)
-            person_id = result.scalar_one()
+            person_id = (await self._upserted(session, stmt, "person", person.external_id))[0]
             if emit:
                 drafts = ris_events.person_events(person_id, person.raw_json or {}, prior)
                 await self._emit(session, body_id, drafts, person.oparl_modified)
             await session.commit()
 
-            self._person_uuid_cache[person.external_id] = person_id
+            self._person_uuid_cache[(body_id, person.external_id)] = person_id
             return person_id
 
     # ========== Organization Operations ==========
@@ -1851,21 +2070,22 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlOrganization, body_id),
             ).returning(OParlOrganization.id)
 
-            result = await session.execute(stmt)
-            org_id = result.scalar_one()
+            org_id = (await self._upserted(session, stmt, "organization", org.external_id))[0]
             if emit:
                 drafts = ris_events.organization_events(org_id, org.raw_json or {}, prior)
                 await self._emit(session, body_id, drafts, org.oparl_modified)
             await session.commit()
 
-            self._organization_uuid_cache[org.external_id] = org_id
+            self._organization_uuid_cache[(body_id, org.external_id)] = org_id
             return org_id
 
     async def get_person_ids_by_external_ids(
         self,
         external_ids: list[str],
+        body_id: UUID,
     ) -> dict[str, UUID]:
         """
         Resolve person external_ids to UUIDs with one batched SELECT.
@@ -1874,44 +2094,41 @@ class DatabaseStorage:
         persons into memory). Resolved IDs are added to the instance cache
         so subsequent lookups (e.g. upsert_membership) are free.
 
+        Nur Personen derselben Quelle wie die Kommune ``body_id`` (``_owned_by_source_of``); Personen anderer
+        Quellen fehlen im Ergebnis wie unbekannte.
+
         Returns:
             Dict mapping external_id -> UUID. External IDs not found in the
             database are absent from the result.
         """
-        result_map: dict[str, UUID] = {}
-        missing: list[str] = []
-        for ext_id in external_ids:
-            cached = self._person_uuid_cache.get(ext_id)
-            if cached is not None:
-                result_map[ext_id] = cached
-            else:
-                missing.append(ext_id)
-
-        if missing:
-            async with self.get_session() as session:
-                stmt = select(OParlPerson.external_id, OParlPerson.id).where(OParlPerson.external_id.in_(missing))
-                result = await session.execute(stmt)
-                for ext_id, uuid in result.all():
-                    self._person_uuid_cache[ext_id] = uuid
-                    result_map[ext_id] = uuid
-
-        return result_map
+        return await self._resolve_ids(OParlPerson, self._person_uuid_cache, external_ids, body_id)
 
     async def get_organization_ids_by_external_ids(
         self,
         external_ids: list[str],
+        body_id: UUID,
     ) -> dict[str, UUID]:
         """
         Resolve organization external_ids to UUIDs with one batched SELECT.
 
         Same contract as get_person_ids_by_external_ids: cached-first,
         missing IDs resolved in a single WHERE external_id IN (...) query,
-        results cached; not-found IDs are absent from the result dict.
+        results cached; not-found IDs are absent from the result dict. Nur Gremien derselben Quelle wie ``body_id``.
         """
+        return await self._resolve_ids(OParlOrganization, self._organization_uuid_cache, external_ids, body_id)
+
+    async def _resolve_ids(
+        self,
+        model: type,
+        cache: dict[tuple[UUID, str], UUID],
+        external_ids: list[str],
+        body_id: UUID,
+    ) -> dict[str, UUID]:
+        """Kennungen derselben Quelle wie ``body_id`` auflösen: erst Zwischenspeicher, dann eine Abfrage."""
         result_map: dict[str, UUID] = {}
         missing: list[str] = []
         for ext_id in external_ids:
-            cached = self._organization_uuid_cache.get(ext_id)
+            cached = cache.get((body_id, ext_id))
             if cached is not None:
                 result_map[ext_id] = cached
             else:
@@ -1919,12 +2136,13 @@ class DatabaseStorage:
 
         if missing:
             async with self.get_session() as session:
-                stmt = select(OParlOrganization.external_id, OParlOrganization.id).where(
-                    OParlOrganization.external_id.in_(missing)
+                stmt = select(model.external_id, model.id).where(  # type: ignore[attr-defined]
+                    model.external_id.in_(missing),  # type: ignore[attr-defined]
+                    _owned_by_source_of(model, body_id),
                 )
                 result = await session.execute(stmt)
                 for ext_id, uuid in result.all():
-                    self._organization_uuid_cache[ext_id] = uuid
+                    cache[(body_id, ext_id)] = uuid
                     result_map[ext_id] = uuid
 
         return result_map
@@ -1991,7 +2209,7 @@ class DatabaseStorage:
         return [(external_id, agenda if isinstance(agenda, list) else []) for external_id, agenda in rows]
 
     async def rename_agenda_items(
-        self, meeting_external_id: str, renames: Mapping[str, str], *, keep_previous: bool = True
+        self, meeting_external_id: str, renames: Mapping[str, str], *, source_id: UUID, keep_previous: bool = True
     ) -> int:
         """
         Schreibt die Kennung (``external_id``) von Tagesordnungspunkten einer Sitzung in place um; ``id`` bleibt.
@@ -2006,6 +2224,9 @@ class DatabaseStorage:
         ``False`` entfernt sie (Rückweg). Nur Punkte dieser Sitzung; ein Ziel, das schon vergeben ist, und Ketten
         (Ziel einer Umschreibung ist Quelle einer anderen) bleiben unberührt. Eine Transaktion. Rückgabe: Zahl der
         umgeschriebenen Punkte.
+
+        ``source_id``: Quelle, deren Abruf umschreibt. Gehört die Sitzung zu einer anderen Quelle, geschieht nichts;
+        nachgezogen werden nur Beratungen dieser Quelle (und solche ohne Kommune).
         """
         targets = set(renames.values())
         pairs = [(old, new) for old, new in renames.items() if old != new and old not in targets]
@@ -2014,9 +2235,9 @@ class DatabaseStorage:
         async with self.get_session() as session:
             meeting = (
                 await session.execute(
-                    select(OParlMeeting.id, OParlMeeting.raw_json).where(
-                        OParlMeeting.external_id == meeting_external_id
-                    )
+                    select(OParlMeeting.id, OParlMeeting.raw_json)
+                    .join(OParlBody, OParlBody.id == OParlMeeting.body_id)
+                    .where(OParlMeeting.external_id == meeting_external_id, OParlBody.source_id == source_id)
                 )
             ).first()
             if meeting is None:
@@ -2054,7 +2275,8 @@ class DatabaseStorage:
                 if row is None:
                     continue
                 await session.execute(
-                    _RENAME_CONSULTATION_REFERENCE, {"old": old, "new": new, "meeting": meeting_external_id}
+                    _RENAME_CONSULTATION_REFERENCE,
+                    {"old": old, "new": new, "meeting": meeting_external_id, "source": source_id},
                 )
                 taken.add(new)
                 done[old] = new
@@ -2079,9 +2301,15 @@ class DatabaseStorage:
         item: ProcessedAgendaItem,
         meeting_id: UUID,
     ) -> UUID:
-        """Insert or update an agenda item."""
+        """
+        Insert or update an agenda item.
+
+        Ein vorhandener Punkt wird nur geschrieben, wenn seine Sitzung derselben Quelle gehört wie ``meeting_id``
+        (``_owned_by_source_of``), sonst ``ForeignObjectError``.
+        """
         async with self.get_session() as session:
-            body_id = await self._body_of_meeting(session, meeting_id) if self.events_enabled else None
+            # Kommune der Sitzung: Herkunft der Ereignisse und Quelle, an die der Upsert gebunden ist
+            body_id = await self._body_of_meeting(session, meeting_id)
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlAgendaItem, item.external_id) if emit else None
             stmt = pg_insert(OParlAgendaItem).values(
@@ -2123,10 +2351,10 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlAgendaItem, body_id),
             ).returning(OParlAgendaItem.id)
 
-            result = await session.execute(stmt)
-            item_id = result.scalar_one()
+            item_id = (await self._upserted(session, stmt, "agendaitem", item.external_id))[0]
             if emit:
                 drafts = ris_events.agenda_item_events(
                     item_id, item.raw_json or {}, prior, meeting_id=meeting_id, public=item.public is not False
@@ -2144,7 +2372,12 @@ class DatabaseStorage:
         paper_id: UUID | None = None,
         meeting_id: UUID | None = None,
     ) -> UUID:
-        """Insert or update a file."""
+        """
+        Insert or update a file.
+
+        Eine vorhandene Datei schreibt nur ihre eigene Quelle (``_owned_by_source_of``), sonst ``ForeignObjectError``.
+        ``paper_id`` und ``meeting_id`` kommen aus Verweisen, die nur in der eigenen Quelle auflösen.
+        """
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlFile, file.external_id) if emit else None
@@ -2201,10 +2434,10 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlFile, body_id),
             ).returning(OParlFile.id)
 
-            result = await session.execute(stmt)
-            file_id = result.scalar_one()
+            file_id = (await self._upserted(session, stmt, "file", file.external_id))[0]
             if emit:
                 drafts = ris_events.file_events(
                     file_id, file.raw_json or {}, prior, paper_id=paper_id, meeting_id=meeting_id, ids=self.id_bases
@@ -2260,10 +2493,10 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlLocation, body_id),
             ).returning(OParlLocation.id)
 
-            result = await session.execute(stmt)
-            location_id = result.scalar_one()
+            location_id = (await self._upserted(session, stmt, "location", location.external_id))[0]
             if emit:
                 drafts = ris_events.location_events(location_id, location.raw_json or {}, prior)
                 await self._emit(session, body_id, drafts, location.oparl_modified)
@@ -2278,7 +2511,12 @@ class DatabaseStorage:
         body_id: UUID,
         paper_id: UUID | None = None,
     ) -> UUID:
-        """Insert or update a consultation."""
+        """
+        Insert or update a consultation.
+
+        Eine vorhandene Beratung schreibt nur ihre eigene Quelle (``_owned_by_source_of``), sonst
+        ``ForeignObjectError``; ``paper_id`` kommt aus einem Verweis, der nur in der eigenen Quelle auflöst.
+        """
         async with self.get_session() as session:
             emit = await self._events_for(session, body_id)
             prior = await self._prior(session, OParlConsultation, consultation.external_id) if emit else None
@@ -2325,20 +2563,24 @@ class DatabaseStorage:
             }
             _assert_no_enrichment_overwrite(update_set)
             # Für das Ereignis die Zeile des Punkts im Bestand, nicht die Kennung aus seiner Adresse (umgeschriebene
-            # Punkte, Issue #863); im selben Befehl, ohne eigene Abfrage
+            # Punkte, Issue #863); im selben Befehl, ohne eigene Abfrage, nur ein Punkt der eigenen Quelle
             agenda_ref = consultation.agenda_item_external_id if emit else None
             returning: list[Any] = [OParlConsultation.id]
             if agenda_ref:
                 returning.append(
-                    select(OParlAgendaItem.id).where(OParlAgendaItem.external_id == agenda_ref).scalar_subquery()
+                    select(OParlAgendaItem.id)
+                    .where(OParlAgendaItem.external_id == agenda_ref, _owned_by_source_of(OParlAgendaItem, body_id))
+                    .scalar_subquery()
                 )
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlConsultation, body_id),
             ).returning(*returning)
 
-            row = (await session.execute(stmt)).one()
+            row = await self._upserted(session, stmt, "consultation", consultation.external_id)
             consultation_id = row[0]
+            await self._note_foreign_consultation_references(session, consultation, body_id)
             if emit:
                 agenda_item_id = row[1] if agenda_ref else None
                 drafts = ris_events.consultation_events(
@@ -2354,6 +2596,39 @@ class DatabaseStorage:
             await session.commit()
             return consultation_id
 
+    @staticmethod
+    async def _note_foreign_consultation_references(
+        session: AsyncSession, consultation: ProcessedConsultation, body_id: UUID
+    ) -> None:
+        """
+        Beratung, die eine Sitzung oder einen Tagesordnungspunkt einer anderen Quelle nennt: als abgewiesenen Verweis
+        zählen (``consultation (Verweis)``). Die Beratung nennt beide nur als Kennung (Text); gespeichert bleibt sie,
+        die Anwendung wertet solche Bezüge nur innerhalb einer Quelle aus (``hub.ris.selectors``). Eine Abfrage.
+        """
+        checks = []
+        if consultation.meeting_external_id:
+            checks.append(
+                select(OParlMeeting.id)
+                .where(
+                    OParlMeeting.external_id == consultation.meeting_external_id,
+                    ~_owned_by_source_of(OParlMeeting, body_id),
+                )
+                .exists()
+            )
+        if consultation.agenda_item_external_id:
+            checks.append(
+                select(OParlAgendaItem.id)
+                .where(
+                    OParlAgendaItem.external_id == consultation.agenda_item_external_id,
+                    ~_owned_by_source_of(OParlAgendaItem, body_id),
+                )
+                .exists()
+            )
+        if not checks:
+            return
+        if (await session.execute(select(or_(*checks)))).scalar():
+            _note_foreign(f"consultation{FOREIGN_REFERENCE}", consultation.external_id)
+
     # ========== Membership Operations ==========
 
     async def upsert_membership(
@@ -2366,6 +2641,9 @@ class DatabaseStorage:
 
         Zeile und Ereignis (``ris.membership.changed``) entstehen in einer Transaktion; die Kommune der
         Ereignisse ist ``body_id`` (die Tabelle selbst hat keine).
+
+        Person und Gremium lösen nur in der Quelle von ``body_id`` auf; eine vorhandene Mitgliedschaft, deren Gremium
+        einer anderen Quelle gehört, bleibt unverändert (``ForeignObjectError``).
         """
         # Resolve person and organization UUIDs (both required by Django schema).
         # Cache-first with targeted DB fallback (no global cache pre-load).
@@ -2373,11 +2651,11 @@ class DatabaseStorage:
         organization_id = None
 
         if membership.person_external_id:
-            person_map = await self.get_person_ids_by_external_ids([membership.person_external_id])
+            person_map = await self.get_person_ids_by_external_ids([membership.person_external_id], body_id)
             person_id = person_map.get(membership.person_external_id)
 
         if membership.organization_external_id:
-            org_map = await self.get_organization_ids_by_external_ids([membership.organization_external_id])
+            org_map = await self.get_organization_ids_by_external_ids([membership.organization_external_id], body_id)
             organization_id = org_map.get(membership.organization_external_id)
 
         # Both FKs are NOT NULL in Django schema - skip if unresolved
@@ -2422,10 +2700,10 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlMembership, body_id),
             ).returning(OParlMembership.id)
 
-            result = await session.execute(stmt)
-            membership_id = result.scalar_one()
+            membership_id = (await self._upserted(session, stmt, "membership", membership.external_id))[0]
             if emit:
                 drafts = ris_events.membership_events(
                     membership_id,
@@ -2479,10 +2757,10 @@ class DatabaseStorage:
             stmt = stmt.on_conflict_do_update(
                 index_elements=["external_id"],
                 set_=update_set,
+                where=_owned_by_source_of(OParlLegislativeTerm, body_id),
             ).returning(OParlLegislativeTerm.id)
 
-            result = await session.execute(stmt)
-            term_id = result.scalar_one()
+            term_id = (await self._upserted(session, stmt, "legislativeterm", term.external_id))[0]
             if emit:
                 drafts = ris_events.legislative_term_events(term_id, term.raw_json or {}, prior)
                 await self._emit(session, body_id, drafts, term.oparl_modified)
@@ -2718,6 +2996,9 @@ class DatabaseStorage:
 
         Liegt ein Text vor (``completed`` mit ``text_content``), meldet ``ris.file.text_extracted`` das in
         derselben Transaktion (Issue #821): Wer auf das Ereignis hin den Bestand liest, sieht den Text.
+
+        Gespeichert werden höchstens ``MAX_TEXT_CHARS`` Zeichen; die Texterkennung kürzt schon selbst, hier gilt die
+        Grenze auch für Texte, die an ihr vorbei kommen (Schnitt vermerkt in ``text_extraction_error``).
         """
         from datetime import datetime
 
@@ -2727,6 +3008,9 @@ class DatabaseStorage:
         # wieder neu verarbeitet (Sept. 2026: ~14 000 Fehlversuche am Tag).
         if text_content is not None:
             text_content = text_content.replace("\x00", "")
+            if len(text_content) > MAX_TEXT_CHARS:
+                text_content = text_content[:MAX_TEXT_CHARS]
+                error = "; ".join(teil for teil in (error, truncation_note(MAX_TEXT_CHARS)) if teil)
         if error is not None:
             error = error.replace("\x00", "")
 
@@ -2926,8 +3210,24 @@ class DatabaseStorage:
                 return
             last_id = rows[-1].id
 
-    def _files_with_text(self, body_id: UUID) -> Any:
-        return select(OParlFile).where(
+    #: Höchstens so viele Bytes Dateitext (UTF-8, wie in der Datenbank) je Teilseite beim Aufbau des Suchindex;
+    #: dieselbe Grenze wie je Bulk-Anfrage (``indexing.elasticsearch.BULK_MAX_BYTES``)
+    INDEX_TEXT_PAGE_BYTES: Final = 8 * 1024 * 1024
+
+    #: Spalten einer Datei, die das Suchdokument braucht (``document_builders.file_to_doc``), ohne den Text
+    _FILE_INDEX_COLUMNS: Final = (
+        OParlFile.id,
+        OParlFile.body_id,
+        OParlFile.paper_id,
+        OParlFile.meeting_id,
+        OParlFile.name,
+        OParlFile.file_name,
+        OParlFile.mime_type,
+        OParlFile.oparl_modified,
+    )
+
+    def _files_with_text(self, body_id: UUID, *columns: Any) -> Any:
+        return select(*columns).where(
             OParlFile.body_id == body_id,
             OParlFile.deleted == False,  # noqa: E712
             # In der Quelle nicht mehr abrufbar (Löschabgleich, #787): nicht wieder indexieren
@@ -2937,29 +3237,58 @@ class DatabaseStorage:
         )
 
     async def iter_files_with_text(
-        self, body_id: UUID, page_size: int | None = None, *, updated_since: datetime | None = None
-    ) -> AsyncIterator[list[OParlFile]]:
+        self,
+        body_id: UUID,
+        page_size: int | None = None,
+        *,
+        updated_since: datetime | None = None,
+        max_chars: int | None = None,
+        max_bytes: int | None = None,
+    ) -> AsyncIterator[list[Any]]:
         """
-        Dateien eines Bodies mit extrahiertem Text, seitenweise nach ``id`` (Volltexte sind groß).
-        ``updated_since``: nur seitdem geschriebene Dateien (inkrementeller Abgleich).
+        Dateien eines Bodies mit extrahiertem Text für den Suchindex, nach ``id``.
+
+        Volltexte können groß sein; eine Seite nach Zeilenzahl hielte dann viele davon zugleich im Speicher.
+        Deshalb liest jede Seite (``page_size`` Dateien, Keyset nach ``id``) zuerst nur Kennung und Textgröße,
+        dann die Texte in Teilseiten von höchstens ``max_bytes`` Bytes (Vorgabe ``INDEX_TEXT_PAGE_BYTES``); ein
+        einzelner größerer Text kommt allein. ``max_chars``: nur so viele Zeichen je Text aus der Datenbank
+        (Kürzung für den Index, ``document_builders.FILE_TEXT_MAX_CHARS``). ``updated_since``: nur seitdem
+        geschriebene Dateien (inkrementeller Abgleich).
+
+        Geliefert werden Zeilen mit den Feldern, die ``document_builders.file_to_doc`` liest.
         """
         size = max(1, page_size or self.INDEX_PAGE_SIZE)
+        budget = max(1, max_bytes or self.INDEX_TEXT_PAGE_BYTES)
+        text_content: Any = OParlFile.text_content
+        if max_chars is not None:
+            text_content = func.substr(OParlFile.text_content, 1, max_chars)
         last_id: UUID | None = None
         while True:
             async with self.get_session() as session:
-                stmt = self._files_with_text(body_id)
+                stmt = self._files_with_text(
+                    body_id, OParlFile.id, func.octet_length(OParlFile.text_content).label("text_bytes")
+                )
                 if updated_since is not None:
                     stmt = stmt.where(OParlFile.updated_at >= updated_since)
                 if last_id is not None:
                     stmt = stmt.where(OParlFile.id > last_id)
-                result = await session.execute(stmt.order_by(OParlFile.id).limit(size))
-                rows: list[OParlFile] = list(result.scalars().all())
-            if not rows:
+                heads = list((await session.execute(stmt.order_by(OParlFile.id).limit(size))).all())
+            if not heads:
                 return
-            yield rows
-            if len(rows) < size:
+            for ids in _pages_by_text_bytes(heads, budget, max_chars):
+                async with self.get_session() as session:
+                    stmt = (
+                        self._files_with_text(body_id, *self._FILE_INDEX_COLUMNS, text_content.label("text_content"))
+                        .where(OParlFile.id.in_(ids))
+                        .order_by(OParlFile.id)
+                    )
+                    rows = list((await session.execute(stmt)).all())
+                if rows:
+                    yield rows
+                del rows
+            if len(heads) < size:
                 return
-            last_id = rows[-1].id
+            last_id = heads[-1].id
 
     async def get_files_with_text_for_papers(
         self, body_id: UUID, paper_ids: list[UUID], max_chars: int | None = None

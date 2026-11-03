@@ -18,8 +18,9 @@ Editor-Bundle frontend/editor/index.ts.
 
 {% block work_content %}
 {{ sitzung_urls|json_script:"fs-sitzung-config" }}
-<div class="fs-sitzung wf" x-data="fraktionssitzung" data-aktuell="{{ item.pk|default:'' }}"
-     @keydown.window="taste($event)" @keydown.escape.window="schliessen()">
+{# noe-verdeckt: Sichtschutz für den nichtöffentlichen Teil (Issue #1166), Alpine nimmt die Klasse erst nach dem Einblenden weg #}
+<div class="fs-sitzung wf noe-verdeckt" x-data="fraktionssitzung" data-aktuell="{{ item.pk|default:'' }}" data-sitzung="{{ meeting.pk }}"
+     :class="{ 'noe-verdeckt': !noeSichtbar }" @keydown.window="taste($event)" @keydown.escape.window="schliessen()">
     {% include "work/faction/sitzung/_kopf.html" %}
     <div class="fs-flaeche">
         <nav class="fs-tl" id="fs-tagesordnung" aria-label="Tagesordnung" :class="{ 'offen': tagesordnungOffen }">
@@ -30,12 +31,18 @@ Editor-Bundle frontend/editor/index.ts.
         {% else %}
         <section class="fs-fokus" id="fs-fokus">
             <div class="fs-top-kopf">
+                {% if rechte.top_neu %}
+                <p class="fs-meta">Diese Sitzung hat noch keine Tagesordnung. Den ersten TOP fügen Sie über „TOP hinzufügen“ in der Tagesordnung ein.</p>
+                <button type="button" class="wf-knopf wf-klein fs-mobil-nur" @click="tagesordnungOffen = true" aria-controls="fs-tagesordnung"><i data-lucide="list" aria-hidden="true"></i>Tagesordnung</button>
+                {% else %}
                 <p class="fs-meta">Diese Sitzung hat noch keine Tagesordnung. TOPs tragen Sie in der <c-suche.textlink href="?ansicht=bisher">bisherigen Ansicht</c-suche.textlink> ein.</p>
+                {% endif %}
             </div>
         </section>
         {% endif %}
         {% include "work/faction/sitzung/_anwesenheit.html" %}
     </div>
     {% if item %}{% include "work/faction/sitzung/_unten.html" %}{% endif %}
+    {% if rechte.top_neu %}{% include "work/faction/sitzung/_top_neu.html" %}{% endif %}
 </div>
 {% endblock %}

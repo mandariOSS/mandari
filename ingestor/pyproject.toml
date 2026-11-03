@@ -49,6 +49,12 @@ dev = [
     "mypy>=1.13.0",
 ]
 
+[dependency-groups]
+# Build-Backend der lokalen Pakete ../shared und ingestor ([build-system] requires). Das Image installiert es aus
+# uv.lock mit Hashes und baut beide ohne Netz und ohne Build-Isolation; sonst holte der Installer es ungeprüft aus
+# dem Paketindex. Wechselt das Build-Backend, hier mitziehen (scripts/check_image_hashes.py prüft das).
+build-backend = ["hatchling"]
+
 [project.scripts]
 mandari-ingestor = "src.main:app"
 

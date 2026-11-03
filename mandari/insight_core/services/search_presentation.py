@@ -177,15 +177,22 @@ def statuses_for_papers(paper_ids: Iterable[str]) -> dict[str, Any]:
     """
     from django.db.models import OuterRef, Subquery
 
+    from hub.ris.selectors import agenda_item_in_consultation_source, meeting_in_consultation_source
+
     from ..models import OParlAgendaItem, OParlConsultation, OParlMeeting, withdrawn_q
     from .paper_status import paper_status
 
     ids = [uuid.UUID(str(pk)) for pk in paper_ids if _is_uuid(pk)]
     if not ids:
         return {}
-    meetings = OParlMeeting.objects.filter(external_id=OuterRef("meeting_external_id")).exclude(withdrawn_q())
+    # Sitzung und Punkt nur aus der Quelle der Beratung
+    meetings = OParlMeeting.objects.filter(
+        meeting_in_consultation_source(), external_id=OuterRef("meeting_external_id")
+    ).exclude(withdrawn_q())
     items = (
-        OParlAgendaItem.objects.filter(external_id=OuterRef("agenda_item_external_id"))
+        OParlAgendaItem.objects.filter(
+            agenda_item_in_consultation_source(), external_id=OuterRef("agenda_item_external_id")
+        )
         .exclude(withdrawn_q())
         .exclude(withdrawn_q("meeting"))
     )

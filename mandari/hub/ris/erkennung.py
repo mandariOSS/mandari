@@ -91,6 +91,7 @@ from mandari_dokumente import (
     OcrMemoryLimitError,
     extract_text,
     extract_text_layer_isolated,
+    limit_text,
 )
 
 from insight_core.models import OParlFile
@@ -750,11 +751,14 @@ def _speichern(datei: OParlFile, ergebnis: ExtractionResult, sha256: str) -> boo
     Ergebnis bedingt speichern: nur, wenn ``sha256`` noch der Inhalt der Datei ist, sie noch beansprucht und nicht
     ausgeschlossen ist. Mit Text meldet ``ris.file.text_extracted`` das Ergebnis in derselben Transaktion; scheitert nur
     das Ereignis, gilt das Ergebnis trotzdem (eigener Sicherungspunkt). Der Suchindex folgt nach dem Commit
-    (Signal ``index_file``). Liefert eine Neuerkennung keinen Text, bleibt der bisherige stehen.
+    (Signal ``index_file``). Liefert eine Neuerkennung keinen Text, bleibt der bisherige stehen. Gespeichert werden
+    höchstens ``mandari_dokumente.MAX_TEXT_CHARS`` Zeichen (``limit_text``, mit Vermerk), auch wenn das Ergebnis nicht
+    aus der Bibliothek kommt.
     Rückgabe: gespeichert?
     """
     from hub.ris.text_extraction import report_text_extracted
 
+    ergebnis = limit_text(ergebnis)
     jetzt = timezone.now()
     werte: dict[str, Any] = {
         "text_extraction_status": COMPLETED,

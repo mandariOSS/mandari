@@ -49,7 +49,7 @@ RoleEditView.
                 <c-rahmen.abschnitt titel="Administrator" titel_id="admin-titel">
                     <div class="mt-3">
                         <c-form.checkbox name="is_admin" id="is_admin" label="Administrator-Rolle" modell="isAdmin" checked="{% if role.is_admin %}1{% endif %}" disabled="{% if is_edit and role.is_system_role %}1{% endif %}" dicht />
-                        <c-form.hinweis einzug>Administratoren haben automatisch alle Berechtigungen; die Auswahl darunter gilt dann nicht.{% if is_edit and role.is_system_role %} Bei Systemrollen fest.{% endif %}</c-form.hinweis>
+                        <c-form.hinweis einzug>Administratoren haben automatisch alle Berechtigungen außer dem Stimmrecht; die Auswahl darunter gilt dann nicht. Stimmrecht bekommen sie über eine weitere Rolle oder als Einzelrecht.{% if is_edit and role.is_system_role %} Bei Systemrollen fest.{% endif %}</c-form.hinweis>
                     </div>
                 </c-rahmen.abschnitt>
 

@@ -6,6 +6,8 @@ Dokumentzeile im Bürgerportal (Vorgang, Sitzung): Name, Art und Größe, dazu d
   Herunterladen – Datei über den Dateiabruf des Portals.
   <ul><c-insight.document-row :file="file" meta="Rat · A-S/0011/2009" /></ul>
 Parameter: file (OParlFile), meta (Zeile unter dem Titel der Dokumentansicht).
+Text: nur file.text_anfang (Anfang des Texts) und file.text_gekuerzt aus hub.ris.selectors.with_text_start, nie
+file.text_content: Der Volltext kann Millionen Zeichen lang sein und würde sonst je Datei nachgeladen.
 Steht „nicht barrierefrei“ im Namen, kommt „Text“ zuerst: Der ausgelesene Text ist dann die zugängliche Fassung.
 Zustand des Aufklappens: Alpine-Komponente documentText (frontend/alpine/insight.ts).
 
@@ -54,19 +56,19 @@ titel: Name der Datei (sonst aus file.name/file_name). ansehen/herunterladen: ei
             </div>
         </div>
         <div class="flex flex-wrap items-center gap-x-1 -ml-2 sm:ml-0 text-sm font-medium">
-            {% if file.text_content.strip and "nicht barrierefrei" in name|lower %}{% partial text-button %}{% endif %}
+            {% if file.text_anfang.strip and "nicht barrierefrei" in name|lower %}{% partial text-button %}{% endif %}
             {% if ansehen %}{% with ansehen_url=ansehen %}{% partial ansehen-button %}{% endwith %}
             {% elif not herunterladen and file.download_url or not herunterladen and file.access_url %}{% with ansehen_url=abruf %}{% partial ansehen-button %}{% endwith %}{% endif %}
-            {% if file.text_content.strip and "nicht barrierefrei" not in name|lower %}{% partial text-button %}{% endif %}
+            {% if file.text_anfang.strip and "nicht barrierefrei" not in name|lower %}{% partial text-button %}{% endif %}
             {% if herunterladen %}{% with herunterladen_url=herunterladen %}{% partial herunterladen-link %}{% endwith %}
             {% elif not ansehen and file.download_url or not ansehen and file.access_url %}{% with herunterladen_url=abruf|add:"?download=1" %}{% partial herunterladen-link %}{% endwith %}{% endif %}
         </div>
     </div>
-    {% if file.text_content.strip %}
+    {% if file.text_anfang.strip %}
     <div id="text-{{ file.id }}" x-show="open" x-collapse x-cloak class="mt-2 sm:ml-8">
-        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Automatisch aus {% if "pdf" in is_pdf %}dem PDF{% else %}dem Dokument{% endif %} ausgelesen, Lesefehler sind möglich.</p>
+        <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400">Automatisch aus {% if "pdf" in is_pdf %}dem PDF{% else %}dem Dokument{% endif %} ausgelesen, Lesefehler sind möglich.{% if file.text_gekuerzt %} Hier gekürzt, den vollständigen Text enthält das Dokument.{% endif %}</p>
         <div tabindex="0" role="region" aria-label="Text: {{ name }}"
-             class="mt-2 max-h-[22rem] overflow-y-auto rounded-lg bg-gray-100 dark:bg-gray-800 px-5 py-4 text-[0.95rem] leading-relaxed whitespace-pre-line break-words text-gray-800 dark:text-gray-200">{{ file.text_content }}</div>
+             class="mt-2 max-h-[22rem] overflow-y-auto rounded-lg bg-gray-100 dark:bg-gray-800 px-5 py-4 text-[0.95rem] leading-relaxed whitespace-pre-line break-words text-gray-800 dark:text-gray-200">{{ file.text_anfang }}{% if file.text_gekuerzt %} …{% endif %}</div>
     </div>
     {% endif %}
 </li>

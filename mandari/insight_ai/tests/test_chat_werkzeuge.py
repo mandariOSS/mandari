@@ -312,6 +312,20 @@ def test_dokument_abschnitt_laedt_nur_den_passenden_teil(ctx: ToolContext, stadt
     assert "480.000 Euro" in " ".join(abschnitt["text"] for abschnitt in kosten["abschnitte"])
 
 
+def test_dokument_abschnitt_liest_nur_einen_begrenzten_anfang(
+    ctx: ToolContext, stadt: Musterstadt, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Gelesen (und durchsucht) wird nur der Anfang bis zur Grenze, in der Datenbank gekürzt
+    monkeypatch.setattr(chat_tools, "ABSCHNITT_SUCHE_ZEICHEN", 40, raising=False)
+
+    ergebnis = rufe(ctx, "dokument_abschnitt", id=str(stadt.datei.pk), frage="Was kostet die Maßnahme?")
+
+    texte = " ".join(abschnitt["text"] for abschnitt in ergebnis["abschnitte"])
+    assert 0 < len(texte) <= 40 and "480.000 Euro" not in texte
+    assert ergebnis["laenge_zeichen"] == len(stadt.datei.text_content or "")
+    assert ergebnis.get("hinweis") == "Durchsucht wurden die ersten 40 Zeichen."
+
+
 def test_dokument_abschnitt_nur_oeffentliche_dateien_der_kommune(ctx: ToolContext, stadt: Musterstadt) -> None:
     nicht_gefunden = {"fehler": "Dokument nicht gefunden."}
     assert rufe(ctx, "dokument_abschnitt", id=str(stadt.fremde_datei.pk), frage="x") == nicht_gefunden

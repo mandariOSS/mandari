@@ -1,0 +1,6 @@
+{% if noe %}<span class="fs-noe" aria-hidden="true" :aria-hidden="!noeSichtbar">{{ text }}</span><span class="sr-only fs-noe-ersatz">Nichtöffentlicher TOP, ausgeblendet</span>{% else %}{{ text }}{% endif %}{% comment %}
+Text eines nichtöffentlichen TOPs mit Sichtschutz (Issue #1166): weichgezeichnet und für Vorleser ersetzt, bis der Teil
+eingeblendet ist (noeSichtbar der Komponente fraktionssitzung). Kontext: text, noe (TOP ist nichtöffentlich); ohne noe
+nur der Text. Der Kommentar steht hinten, damit das Einbinden keine Leerzeilen in Titel und Links bringt.
+Gestaltung .fs-noe und .fs-noe-ersatz in static/css/fraktionssitzung.css.
+{% endcomment %}

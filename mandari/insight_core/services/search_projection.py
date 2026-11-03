@@ -17,7 +17,8 @@ was das Ereignis selbst meldet, und ein wiederholtes oder verspätetes Ereignis 
 Vorgänge werden mit ihren Beratungen und der Textvorschau ihrer Dateien vorgeladen (nur die ersten
 Zeichen, die ``paper_to_doc`` nutzt), damit ein Batch nicht je Vorgang mehrere Abfragen stellt. Dateien
 lösen ihren Kontext (Sitzung, Gremien, Tagesordnungspunkt) je Block von bis zu 200 Dateien gemeinsam auf
-(``search_documents.file_contexts``, Issue #821); ihre Texte werden danach in kleinen Abschnitten geladen.
+(``search_documents.file_contexts``, Issue #821); ihre Texte werden danach in kleinen Abschnitten geladen,
+schon in der Datenbank auf ``INDEX_TEXT_MAX_CHARS`` Zeichen gekürzt.
 
 Welche Dokumente eine Änderung außer dem eigenen betrifft, bestimmen ``related_paper_ids``,
 ``related_file_ids``, ``context_file_ids``, ``meetings_of_organizations`` und ``papers_of_organizations``.
@@ -51,6 +52,7 @@ from insight_core.models import (
     OParlPerson,
 )
 from insight_core.services.search_documents import (
+    INDEX_TEXT_MAX_CHARS,
     PREVIEW_CHARS_PER_FILE,
     file_contexts,
     file_to_doc,
@@ -68,6 +70,8 @@ _CHUNK_FILES: Final = 10
 
 #: Vorgeladene Textvorschau der Dateien eines Vorgangs (Attribut am Vorgang)
 _VORSCHAU: Final = "suchindex_dateien"
+#: Vorgeladener, auf ``INDEX_TEXT_MAX_CHARS`` gekürzter Text einer Datei (Attribut an der Datei)
+_SUCHTEXT: Final = "suchindex_text"
 
 
 class _DateiVorschau(NamedTuple):
@@ -113,8 +117,21 @@ def _vorgeladen(index: str, abfrage: QuerySet[Any]) -> QuerySet[Any]:
     if index == "meetings":
         return abfrage.prefetch_related("organizations")
     if index == "files":
-        return abfrage.select_related("paper")
+        # Vom Text nur, was in den Index kommt: Ein Abschnitt hält so nie mehrere große Volltexte im Speicher
+        gekuerzt: QuerySet[Any] = (
+            abfrage.select_related("paper")
+            .defer("text_content")
+            .annotate(**{_SUCHTEXT: Substr("text_content", 1, INDEX_TEXT_MAX_CHARS)})
+        )
+        return gekuerzt
     return abfrage
+
+
+def _mit_suchtext(datei: Any) -> Any:
+    """Den vorgeladenen, gekürzten Text als ``text_content`` setzen (sonst lüde Django den vollen Text nach)."""
+    if hasattr(datei, _SUCHTEXT):
+        datei.text_content = getattr(datei, _SUCHTEXT)
+    return datei
 
 
 def build(index: str, obj: Any) -> dict[str, Any]:
@@ -131,7 +148,7 @@ def build(index: str, obj: Any) -> dict[str, Any]:
     if index == "organizations":
         return organization_to_doc(obj)
     if index == "files":
-        return file_to_doc(obj)
+        return file_to_doc(_mit_suchtext(obj))
     raise ValueError(f"Unbekannter Suchindex: {index}")
 
 
@@ -179,7 +196,7 @@ def _iter_files(kennungen: list[uuid.UUID]) -> Iterator[tuple[uuid.UUID, dict[st
                     kontext = file_contexts([obj]).get(kennung, {})
                 else:
                     kontext = kontexte.get(kennung, {})
-                yield kennung, file_to_doc(obj, context_info=kontext)
+                yield kennung, file_to_doc(_mit_suchtext(obj), context_info=kontext)
 
 
 def related_paper_ids(aggregate_type: str, ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, uuid.UUID]:
@@ -265,11 +282,16 @@ def context_file_ids(aggregate_type: str, ids: Iterable[uuid.UUID]) -> list[tupl
     beratungen = OParlConsultation.objects.filter(paper_id__isnull=False)
     if aggregate_type == "Consultation":
         return _files_of_papers(_pairs(beratungen, "pk", kennungen, ("pk", "paper_id")))
+    from hub.ris.selectors import consultation_agenda_item_in_source, consultation_meeting_in_source
+
     modell: type[OParlMeeting] | type[OParlAgendaItem]
+    # Nur Beratungen aus der Quelle der Sitzung bzw. des Punkts
     if aggregate_type == "Meeting":
         modell, feld = OParlMeeting, "meeting_external_id"
+        beratungen = beratungen.filter(consultation_meeting_in_source())
     elif aggregate_type == "AgendaItem":
         modell, feld = OParlAgendaItem, "agenda_item_external_id"
+        beratungen = beratungen.filter(consultation_agenda_item_in_source())
     else:
         return []
     objekt_je_kennung = dict(_pairs(modell.objects.all(), "pk", kennungen, ("external_id", "pk")))

@@ -173,10 +173,11 @@ class SessionSearchView(SessionViewMixin, TemplateView):
                 if filters["term"]:
                     # Wie der Jahresfilter: Zeitpunkt des Hochladens
                     files = files.filter(term_date_filter(filters["term"], "created_at__date"))
+                # Gesucht wird im Text, angezeigt wird er nicht
                 results["files"] = list(
-                    files.select_related("paper", "meeting", "agenda_item__meeting", "application").order_by(
-                        "-created_at"
-                    )[:RESULT_LIMIT]
+                    files.select_related("paper", "meeting", "agenda_item__meeting", "application")
+                    .defer("text_content")
+                    .order_by("-created_at")[:RESULT_LIMIT]
                 )
 
             # Anträge

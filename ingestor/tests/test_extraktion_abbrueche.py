@@ -101,7 +101,7 @@ async def test_versuch_wird_vor_dem_download_gezaehlt(tmp_path: Path, monkeypatc
         return _geladen(tmp_path)
 
     monkeypatch.setattr(extractor, "_download_to_file", download)
-    monkeypatch.setattr(TextExtractor, "_extract_text", staticmethod(lambda *a: ("Beschluss", 1, "pypdf")))
+    monkeypatch.setattr(TextExtractor, "_extract_text", staticmethod(lambda *a: ("Beschluss", 1, "pypdf", ())))
 
     assert await extractor._process_file(_datei("a")) is True
     assert speicher.ablauf == ["start a", "download"]
