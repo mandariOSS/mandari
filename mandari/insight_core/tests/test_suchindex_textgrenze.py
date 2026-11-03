@@ -82,7 +82,7 @@ def _datei_ohne_bestand(text_content: str) -> SimpleNamespace:
     )
 
 
-KONTEXT = {"organization_names": []}
+KONTEXT: dict[str, Any] = {"organization_names": []}
 
 
 def test_volltext_je_datei_gekuerzt() -> None:
