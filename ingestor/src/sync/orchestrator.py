@@ -1092,6 +1092,8 @@ class SyncOrchestrator:
         total_tombstoned = sum(len(ids) for ids in es_deletions.values())
         try:
             from src.indexing.document_builders import (
+                FILE_PREVIEW_CHARS,
+                FILE_TEXT_MAX_CHARS,
                 file_to_doc,
                 meeting_to_doc,
                 organization_to_doc,
@@ -1138,20 +1140,17 @@ class SyncOrchestrator:
                             f"[yellow]  Removed {total_tombstoned} tombstoned documents from Elasticsearch[/yellow]"
                         )
 
-                    # Index papers (with file contents for paper-boosting)
+                    # Index papers (with file contents for paper-boosting): je Seite von Vorgängen nur die
+                    # Dateien dieser Vorgänge und von ihrem Text nur den Anfang, den paper_to_doc nutzt
                     papers = await self.storage.get_all_for_body(body_id, PaperModel)
-                    # Build paper_id → files lookup from already-loaded files
-                    files_with_text = await self.storage.get_files_with_text(body_id)
-                    files_by_paper: dict[str, list] = {}
-                    for f in files_with_text:
-                        if f.paper_id:
-                            pid = str(f.paper_id)
-                            files_by_paper.setdefault(pid, []).append(f)
-
                     for i in range(0, len(papers), batch_size):
-                        docs = [
-                            paper_to_doc(p, files=files_by_paper.get(str(p.id), [])) for p in papers[i : i + batch_size]
-                        ]
+                        batch = papers[i : i + batch_size]
+                        files_by_paper: dict[str, list] = {}
+                        for f in await self.storage.get_files_with_text_for_papers(
+                            body_id, [p.id for p in batch], max_chars=FILE_PREVIEW_CHARS
+                        ):
+                            files_by_paper.setdefault(str(f.paper_id), []).append(f)
+                        docs = [paper_to_doc(p, files=files_by_paper.get(str(p.id), [])) for p in batch]
                         await indexer.index_documents("papers", docs)
                         indexed_total += len(docs)
 
@@ -1176,12 +1175,15 @@ class SyncOrchestrator:
                         await indexer.index_documents("organizations", docs)
                         indexed_total += len(docs)
 
-                    # Index files with text content
-                    files = await self.storage.get_files_with_text(body_id)
-                    for i in range(0, len(files), batch_size):
-                        docs = [file_to_doc(f) for f in files[i : i + batch_size]]
+                    # Index files with text content: Seiten nach Bytes, Texte schon in der Datenbank gekürzt
+                    async for files in self.storage.iter_files_with_text(
+                        body_id, batch_size, max_chars=FILE_TEXT_MAX_CHARS
+                    ):
+                        docs = [file_to_doc(f) for f in files]
                         await indexer.index_documents("files", docs)
                         indexed_total += len(docs)
+                        # Texte nicht über das Laden der nächsten Seite hinaus festhalten
+                        del files, docs
 
                     stats["indexed"] = indexed_total
                     console.print(f"[green]  Indexed {indexed_total} documents in Elasticsearch[/green]")
