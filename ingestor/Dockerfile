@@ -11,20 +11,26 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv for faster package management
-RUN pip install --no-cache-dir uv
+# uv mit fester Version
+RUN pip install --no-cache-dir uv==0.12.21
 
-# Install shared package first (mandari-oparl)
-COPY shared/ /tmp/shared/
-RUN uv pip install --system /tmp/shared/
+# Abhängigkeiten reproduzierbar aus ingestor/uv.lock, also dieselben Versionen wie in CI und pip-audit.
+# Ohne Lock-Datei zog ein Neubau ungeprüfte neue Versionen (SQLAlchemy 2.1 ohne greenlet: Ingestor
+# startete nicht). Verzeichnisse wie im Repo, damit der Pfad ../shared aus [tool.uv.sources] aufgeht.
+# --locked: Build bricht ab, wenn uv.lock nicht mehr zu pyproject.toml passt (dann `uv lock` im Ordner ingestor).
+# Export mit Hashes, die Installation prüft sie (--require-hashes).
+COPY shared/pyproject.toml /build/shared/pyproject.toml
+COPY ingestor/pyproject.toml ingestor/uv.lock ingestor/README.md /build/ingestor/
+WORKDIR /build/ingestor
+RUN uv export --quiet --locked --no-dev --no-emit-project --no-emit-package mandari-oparl \
+        --format requirements.txt -o /tmp/requirements.lock \
+    && uv pip install --system --require-hashes -r /tmp/requirements.lock
 
-# Copy only dependency files (for caching)
-COPY ingestor/pyproject.toml ingestor/README.md ./
-
-# Install dependencies (without editable mode for faster install)
-# --no-sources: [tool.uv.sources] (lokales ../shared für uv lock) hier ignorieren,
-# das Shared-Paket ist bereits aus /tmp/shared installiert
-RUN uv pip install --system --no-sources .
+# Lokale Pakete ohne eigene Abhängigkeitsauflösung (alle Abhängigkeiten kommen aus der Lock-Datei).
+# --no-sources: [tool.uv.sources] (lokales ../shared) gilt nur für uv lock/sync.
+COPY shared/ /build/shared/
+RUN uv pip install --system --no-deps /build/shared/ \
+    && uv pip install --system --no-deps --no-sources /build/ingestor/
 
 # --- Final stage ---
 FROM python:3.14-slim
@@ -46,6 +52,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # Copy application code
 COPY ingestor/src/ src/
+
+# Build-Pruefung: Abhaengigkeiten vollstaendig und jedes Modul unter src/ importierbar
+# (ohne Datenbank und Netz; kein Modul baut beim Import eine Verbindung auf).
+# Ein fehlendes Paket laesst so den Build scheitern statt den Start in Produktion.
+RUN python -m pip check \
+    && python -B -c "import importlib, pkgutil, src; import sqlalchemy.ext.asyncio; \
+[importlib.import_module(m.name) for m in pkgutil.walk_packages(src.__path__, 'src.') if not m.name.endswith('__main__')]"
 
 # Create data directory and non-root user
 RUN mkdir -p /app/data && \
