@@ -31,6 +31,7 @@ from insight_core.models import (
     OParlOrganization,
     OParlPaper,
     OParlPerson,
+    with_reference_checks,
 )
 
 Bodies = QuerySet[OParlBody]
@@ -347,7 +348,7 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
     OParl verknüpft Consultation → Meeting/AgendaItem nur über ``external_id``-Strings;
     beide werden gebündelt nachgeladen. Ergebnis chronologisch (älteste zuerst).
     """
-    consultations: list[OParlConsultation] = list(paper.consultations.all())
+    consultations: list[OParlConsultation] = list(with_reference_checks(paper.consultations.all()))
     if not consultations:
         return []
 
@@ -364,8 +365,11 @@ def enriched_consultations(paper: OParlPaper) -> list[dict[str, Any]]:
 
     result: list[dict[str, Any]] = []
     for consultation in consultations:
-        meeting = meetings_by_id.get(consultation.meeting_external_id or "")
-        agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id or "")
+        # Sitzung und TOP einer anderen Quelle gelten als unbekannt
+        sitzung_in_quelle = consultation.meeting_in_source  # type: ignore[attr-defined]  # aus with_reference_checks
+        punkt_in_quelle = consultation.agenda_item_in_source  # type: ignore[attr-defined]  # aus with_reference_checks
+        meeting = meetings_by_id.get(consultation.meeting_external_id or "") if sitzung_in_quelle else None
+        agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id or "") if punkt_in_quelle else None
         org_name = None
         if meeting:
             orgs = list(meeting.organizations.all())

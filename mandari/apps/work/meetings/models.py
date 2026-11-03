@@ -241,8 +241,9 @@ class AgendaItemPosition(EncryptionMixin, models.Model):
         """
         from django.db.models import Q
 
-        from insight_core.models import OParlConsultation
+        from insight_core.models import OParlConsultation, consultation_agenda_item_in_source
 
+        # Beratungen verbinden Vorlagen und Tagesordnungspunkte nur innerhalb einer Quelle
         item_ids_by_ext = {item.external_id: item.id for item in agenda_items if item.external_id}
         if not item_ids_by_ext:
             return {}
@@ -252,7 +253,7 @@ class AgendaItemPosition(EncryptionMixin, models.Model):
         for cons in OParlConsultation.objects.filter(
             agenda_item_external_id__in=item_ids_by_ext.keys(),
             paper__isnull=False,
-        ):
+        ).filter(consultation_agenda_item_in_source()):
             paper_items.setdefault(cons.paper_id, set()).add(item_ids_by_ext[cons.agenda_item_external_id])
 
         if not paper_items:
@@ -262,6 +263,7 @@ class AgendaItemPosition(EncryptionMixin, models.Model):
         sibling_papers = {}  # sibling external_id -> {paper ids}
         sibling_consultations = (
             OParlConsultation.objects.filter(paper_id__in=paper_items.keys())
+            .filter(consultation_agenda_item_in_source())
             .exclude(agenda_item_external_id__isnull=True)
             .exclude(agenda_item_external_id="")
             .exclude(agenda_item_external_id__in=item_ids_by_ext.keys())
@@ -570,8 +572,9 @@ class AgendaItemNote(EncryptionMixin, models.Model):
             dict: {agenda_item_id des aktuellen TOPs: [AgendaItemNote, ...]}
             Jede Notiz trägt ``origin_meeting`` (OParlMeeting des Herkunfts-TOPs).
         """
-        from insight_core.models import OParlConsultation
+        from insight_core.models import OParlConsultation, consultation_agenda_item_in_source
 
+        # Beratungen verbinden Vorlagen und Tagesordnungspunkte nur innerhalb einer Quelle
         item_ids_by_ext = {item.external_id: item.id for item in agenda_items if item.external_id}
         if not item_ids_by_ext:
             return {}
@@ -581,7 +584,7 @@ class AgendaItemNote(EncryptionMixin, models.Model):
         for cons in OParlConsultation.objects.filter(
             agenda_item_external_id__in=item_ids_by_ext.keys(),
             paper__isnull=False,
-        ):
+        ).filter(consultation_agenda_item_in_source()):
             paper_items.setdefault(cons.paper_id, set()).add(item_ids_by_ext[cons.agenda_item_external_id])
 
         if not paper_items:
@@ -591,6 +594,7 @@ class AgendaItemNote(EncryptionMixin, models.Model):
         sibling_papers = {}  # sibling external_id -> {paper ids}
         sibling_consultations = (
             OParlConsultation.objects.filter(paper_id__in=paper_items.keys())
+            .filter(consultation_agenda_item_in_source())
             .exclude(agenda_item_external_id__isnull=True)
             .exclude(agenda_item_external_id="")
             .exclude(agenda_item_external_id__in=item_ids_by_ext.keys())
@@ -929,14 +933,15 @@ class PaperComment(EncryptionMixin, models.Model):
         if self.visibility == "organization":
             return membership.organization == self.organization
         if self.visibility == "consulting":
-            from insight_core.models import OParlMeeting
+            from insight_core.models import OParlMeeting, consultation_meeting_in_source
 
             user_committees = membership.oparl_committees.all()
             if not user_committees.exists():
                 return membership.organization == self.organization
 
             committee_external_ids = {c.external_id for c in user_committees if c.external_id}
-            consultations = self.paper.consultations.all()
+            # Nur Sitzungen aus der Quelle der jeweiligen Beratung
+            consultations = self.paper.consultations.filter(consultation_meeting_in_source())
             meeting_external_ids = [c.meeting_external_id for c in consultations if c.meeting_external_id]
 
             if meeting_external_ids:

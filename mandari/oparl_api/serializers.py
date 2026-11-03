@@ -34,6 +34,8 @@ from insight_core.models import (
     OParlConsultation,
     OParlLocation,
     OParlMeeting,
+    consultation_agenda_item_in_source,
+    with_reference_checks,
 )
 
 from .utils import body_list_url, iso, iso_date, obj_url, schema_type, site_url, sub_list_url, system_url
@@ -96,6 +98,9 @@ class RefContext:
         self.location_by_ext = {}
         # external_id des TOP -> [Consultation-UUIDs]
         self.consultations_by_agenda_ext = {}
+        # Beratungen, deren Sitzung bzw. TOP zu ihrer Quelle gehört (sonst nennt sie keinen)
+        self.consultations_with_meeting = set()
+        self.consultations_with_agenda_item = set()
 
     @classmethod
     def empty(cls, objects):
@@ -129,8 +134,22 @@ class RefContext:
 
     @classmethod
     def for_consultations(cls, consultations):
-        """Für Consultations: meeting/agendaItem sind nur als external_id gespeichert."""
+        """
+        Für Consultations: meeting/agendaItem sind nur als external_id gespeichert. Sie gelten nur, wenn sie zur
+        Quelle der Beratung gehören (``with_reference_checks``, eine Abfrage).
+        """
         ctx = cls()
+        consultations = list(consultations)
+        mit_bezug = [c.pk for c in consultations if c.meeting_external_id or c.agenda_item_external_id]
+        if mit_bezug:
+            rows = with_reference_checks(OParlConsultation.objects.filter(pk__in=mit_bezug)).values_list(
+                "pk", "meeting_in_source", "agenda_item_in_source"
+            )
+            for pk, sitzung, punkt in rows:
+                if sitzung:
+                    ctx.consultations_with_meeting.add(pk)
+                if punkt:
+                    ctx.consultations_with_agenda_item.add(pk)
         meeting_exts = {c.meeting_external_id for c in consultations if c.meeting_external_id}
         agenda_exts = {c.agenda_item_external_id for c in consultations if c.agenda_item_external_id}
         if meeting_exts:
@@ -156,8 +175,11 @@ class RefContext:
     def _load_consultations(self, agenda_exts):
         if not agenda_exts:
             return
-        pairs = OParlConsultation.objects.filter(agenda_item_external_id__in=agenda_exts, deleted=False).values_list(
-            "agenda_item_external_id", "id"
+        # Nur Beratungen aus der Quelle des jeweiligen TOPs
+        pairs = (
+            OParlConsultation.objects.filter(agenda_item_external_id__in=agenda_exts, deleted=False)
+            .filter(consultation_agenda_item_in_source())
+            .values_list("agenda_item_external_id", "id")
         )
         for agenda_ext, consultation_id in pairs:
             self.consultations_by_agenda_ext.setdefault(agenda_ext, []).append(consultation_id)
@@ -394,8 +416,13 @@ def serialize_paper(paper, ctx):
 
 
 def serialize_consultation(consultation, ctx):
-    meeting_id = ctx.meeting_by_ext.get(consultation.meeting_external_id)
-    agenda_item_id = ctx.agenda_item_by_ext.get(consultation.agenda_item_external_id)
+    # Sitzung und TOP einer anderen Quelle nennt die Beratung nicht (RefContext.for_consultations)
+    meeting_id = None
+    if consultation.pk in ctx.consultations_with_meeting:
+        meeting_id = ctx.meeting_by_ext.get(consultation.meeting_external_id)
+    agenda_item_id = None
+    if consultation.pk in ctx.consultations_with_agenda_item:
+        agenda_item_id = ctx.agenda_item_by_ext.get(consultation.agenda_item_external_id)
     return _clean(
         {
             "id": obj_url("consultation", consultation.id),

@@ -27,6 +27,7 @@ from src.metrics import metrics
 from src.scrapers import get_adapter
 from src.scrapers.base import CrawlWindow, ScraperConfig
 from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError
+from src.storage.database import ForeignObjectError, start_foreign_rejections
 
 if TYPE_CHECKING:
     from src.storage.models import OParlSource
@@ -93,6 +94,8 @@ class ScraperSyncRunner:
         seen: dict[str, set[str]] = {}
         skipped_unchanged = 0
         crawl_completed = False
+        # Kennungen anderer Quellen, die der Speicher in diesem Crawl abweist (Sync-Log ``foreign``)
+        foreign = start_foreign_rejections()
 
         async with PoliteFetcher(
             rate_limit_seconds=config.rate_limit_seconds,
@@ -115,7 +118,7 @@ class ScraperSyncRunner:
                 return result
             state.pop("robots_disallowed", None)
 
-            # Body anlegen/aktualisieren
+            # Body anlegen/aktualisieren (eine Kommune einer anderen Quelle bricht hier ab: ForeignObjectError)
             body_dict = adapter.build_body()
             processed_body = self.processor.process_body(body_dict, body_dict["id"])
             body_id = await self.storage.upsert_body(processed_body, self.source.id)
@@ -135,9 +138,14 @@ class ScraperSyncRunner:
                         processed = self.processor.process(item, body_dict["id"])
                         if processed is None:
                             continue
-                        stored = await self.orchestrator._store_entity(
-                            processed, body_id, entity_type, self.source.name
-                        )
+                        try:
+                            stored = await self.orchestrator._store_entity(
+                                processed, body_id, entity_type, self.source.name
+                            )
+                        except ForeignObjectError:
+                            # Kennung einer anderen Quelle: nicht geschrieben, gezählt (Sync-Log ``foreign``), der
+                            # Crawl läuft mit den übrigen Objekten weiter
+                            continue
                         if stored:
                             stats[entity_type] = stats.get(entity_type, 0) + 1
                 crawl_completed = True
@@ -215,6 +223,7 @@ class ScraperSyncRunner:
             field_name = _RESULT_FIELD_BY_TYPE.get(entity_type)
             if field_name:
                 setattr(result, field_name, getattr(result, field_name) + count)
+        result.foreign.update(foreign)
         result.success = crawl_completed
         result.duration_seconds = (datetime.now(UTC) - start_time).total_seconds()
 
@@ -248,6 +257,9 @@ class ScraperSyncRunner:
         N aufeinanderfolgenden Full-Crawls ohne Sichtung (Default 3).
         Wieder auftauchende Objekte werden vom Upsert-Pfad automatisch
         reaktiviert (deleted=False im update_set).
+
+        Markiert werden nur Objekte dieser Quelle: Die Löschmarkierung ist an die Quelle der Kommune gebunden
+        (``mark_entity_deleted``).
         """
         threshold = max(1, settings.scraper_tombstone_full_crawls)
         missing_state: dict[str, dict[str, int]] = {k: dict(v) for k, v in (state.get("missing") or {}).items()}
@@ -269,7 +281,9 @@ class ScraperSyncRunner:
             for external_id in candidates - seen_ids:
                 counters[external_id] = counters.get(external_id, 0) + 1
                 if counters[external_id] >= threshold:
-                    marked = await self.orchestrator._mark_deleted({"id": external_id}, entity_type, es_deletions)
+                    marked = await self.orchestrator._mark_deleted(
+                        {"id": external_id}, entity_type, es_deletions, body_id=body_id
+                    )
                     if marked:
                         deleted_count += 1
                         console.print(

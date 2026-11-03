@@ -11,6 +11,7 @@ Coordinates the complete OParl synchronization process with:
 """
 
 import asyncio
+from collections import Counter
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -56,7 +57,7 @@ from src.config import settings
 from src.events import EventEmitter
 from src.metrics import metrics
 from src.scrapers.base import CONTENT_HASH_FIELD, content_hash
-from src.storage.database import DatabaseStorage
+from src.storage.database import DatabaseStorage, ForeignObjectError, start_foreign_rejections
 from src.sync.processor import OParlProcessor
 
 # Quellen-Schonung (Issue #89): ab BACKOFF_AFTER_FAILURES Fehlversuchen in Folge
@@ -122,6 +123,9 @@ class SyncResult:
     # Sperr-/Störungsbefund des Laufs (Issue #123): Fehlerklasse und Statistik je Host
     error_kind: str | None = None
     host_findings: list[dict[str, Any]] = field(default_factory=list)
+    # Abgewiesene Kennungen anderer Quellen je Art über alle Kommunen (Upsert, Löschung, Verweis), im Sync-Log unter
+    # ``foreign`` (``start_foreign_rejections``)
+    foreign: Counter[str] = field(default_factory=Counter)
 
 
 class SyncOrchestrator:
@@ -454,6 +458,7 @@ class SyncOrchestrator:
                     result.agenda_items_synced += body_result.get("agenda_items", 0)
                     result.consultations_synced += body_result.get("consultations", 0)
                     result.errors.extend(body_result.get("errors", []))
+                    result.foreign.update(body_result.get("foreign") or {})
 
                 # Update sync timestamp
                 await self.storage.update_source_sync_time(source_id, full_sync=full)
@@ -714,6 +719,7 @@ class SyncOrchestrator:
                     result.agenda_items_synced += body_result.get("agenda_items", 0)
                     result.consultations_synced += body_result.get("consultations", 0)
                     result.errors.extend(body_result.get("errors", []))
+                    result.foreign.update(body_result.get("foreign") or {})
 
                 # Update sync timestamp
                 await self.storage.update_source_sync_time(source_id, full_sync=full)
@@ -767,6 +773,7 @@ class SyncOrchestrator:
                             "agenda_items": result.agenda_items_synced,
                             "consultations": result.consultations_synced,
                             **self._finding_details(result),
+                            **({"foreign": dict(sorted(result.foreign.items()))} if result.foreign else {}),
                         },
                         triggered_by="daemon",
                     )
@@ -832,7 +839,10 @@ class SyncOrchestrator:
         console.print(f"[bold cyan]Syncing: {body_name}[/bold cyan]")
         console.print(f"[bold cyan]{'=' * 50}[/bold cyan]")
 
-        # Process and store body
+        # Kennungen anderer Quellen, die der Speicher in diesem Abgleich abweist (Sync-Log ``foreign``)
+        foreign = start_foreign_rejections()
+
+        # Process and store body; eine Kommune einer anderen Quelle bricht hier ab (ForeignObjectError)
         processed_body = self.processor.process_body(body_data, body_external_id)
         body_id = await self.storage.upsert_body(processed_body, source_id)
 
@@ -1008,6 +1018,11 @@ class SyncOrchestrator:
             else:
                 stats["consultations"] = consultation_result
                 progress.update(task9, completed=consultation_result, total=consultation_result)
+
+        if foreign:
+            stats["foreign"] = dict(sorted(foreign.items()))
+            summary = ", ".join(f"{name}: {count}" for name, count in sorted(foreign.items()))
+            console.print(f"[yellow]  Kennungen anderer Quellen abgewiesen, nicht geschrieben ({summary})[/yellow]")
 
         # Update body sync time
         await self.storage.update_body_sync_time(body_id)
@@ -1189,10 +1204,14 @@ class SyncOrchestrator:
         item: dict[str, Any],
         entity_type: str,
         es_deletions: dict[str, list[str]] | None,
+        *,
+        body_id: UUID,
     ) -> bool:
         """
         Handle an OParl tombstone (deleted: true): mark the row as deleted
         (never physically delete) and queue its search document for removal.
+
+        Markiert werden nur Objekte derselben Quelle wie die Kommune ``body_id`` des Abgleichs.
 
         Returns True if the entity was newly marked.
         """
@@ -1200,7 +1219,7 @@ class SyncOrchestrator:
         if not external_id:
             return False
         modified = self.processor.parse_datetime(item.get("modified"))
-        entity_id = await self.storage.mark_entity_deleted(entity_type, external_id, modified=modified)
+        entity_id = await self.storage.mark_entity_deleted(entity_type, external_id, modified=modified, body_id=body_id)
         if entity_id is None:
             return False
         index_name = self._ES_INDEX_BY_ENTITY_TYPE.get(entity_type)
@@ -1265,9 +1284,9 @@ class SyncOrchestrator:
                 person_refs = {ref for ref in (item.get("person") for item in page) if isinstance(ref, str) and ref}
                 org_refs = {ref for ref in (item.get("organization") for item in page) if isinstance(ref, str) and ref}
                 if person_refs:
-                    await self.storage.get_person_ids_by_external_ids(list(person_refs))
+                    await self.storage.get_person_ids_by_external_ids(list(person_refs), body_id)
                 if org_refs:
-                    await self.storage.get_organization_ids_by_external_ids(list(org_refs))
+                    await self.storage.get_organization_ids_by_external_ids(list(org_refs), body_id)
 
             new_on_page = 0
             updated_on_page = 0
@@ -1282,7 +1301,7 @@ class SyncOrchestrator:
                         # markieren statt upserten (sonst wuerde ein geloeschtes
                         # Objekt wieder als aktiv eingespielt).
                         if item.get("deleted") is True:
-                            if await self._mark_deleted(item, entity_type, es_deletions):
+                            if await self._mark_deleted(item, entity_type, es_deletions, body_id=body_id):
                                 deleted_count += 1
                             continue
                         # Content-Hash mitschreiben, damit der nächste inkrementelle
@@ -1294,6 +1313,9 @@ class SyncOrchestrator:
                             stored = await self._store_entity(processed, body_id, entity_type, body_name)
                             if stored:
                                 count += 1
+                    except ForeignObjectError:
+                        # Kennung einer anderen Quelle: nicht geschrieben, gezählt (Sync-Log ``foreign``)
+                        continue
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
 
@@ -1320,7 +1342,7 @@ class SyncOrchestrator:
                         # Handle deleted items (Bonn/Aachen/Köln/ITK send deleted
                         # flag): mark as tombstone instead of physically deleting
                         if item.get("deleted") is True:
-                            if await self._mark_deleted(item, entity_type, es_deletions):
+                            if await self._mark_deleted(item, entity_type, es_deletions, body_id=body_id):
                                 deleted_on_page += 1
                                 deleted_count += 1
                             continue
@@ -1369,6 +1391,9 @@ class SyncOrchestrator:
                             unchanged_on_page += 1
                             skipped_count += 1
 
+                    except ForeignObjectError:
+                        # Kennung einer anderen Quelle: nicht geschrieben, gezählt (Sync-Log ``foreign``)
+                        continue
                     except Exception as e:
                         console.print(f"[red]Error processing {entity_type}: {e}[/red]")
 
@@ -1416,12 +1441,15 @@ class SyncOrchestrator:
 
         Returns True if the entity was actually stored, False if skipped
         (e.g. membership with unresolvable FK references).
+
+        Geschrieben und verknüpft werden nur Objekte derselben Quelle wie ``body_id``: Steht die Kennung unter einer
+        anderen Quelle, wirft der Speicher ``ForeignObjectError`` (der Lauf überspringt das Objekt), und Verweise auf
+        Sitzungen und Vorlagen anderer Quellen lösen nicht auf.
         """
         entity_id: str | None = None
 
         if isinstance(entity, ProcessedMeeting):
             entity_id = str(await self.storage.upsert_meeting(entity, body_id))
-            meeting_uuid = UUID(entity_id)
             # Emit high-priority event for new meetings
             if self._event_emitter and entity_id:
                 await self._event_emitter.emit_new_meeting(
@@ -1431,17 +1459,15 @@ class SyncOrchestrator:
                     body_name=body_name,
                     start_time=entity.start,
                 )
-            # Process nested entities (files, agenda items) with meeting_id
+            # Eingebettete Dateien und TOPs speichert upsert_meeting selbst (Objekte anderer Quellen bleiben dort
+            # aus); hier nur zählen
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedFile):
-                    await self.storage.upsert_file(nested, body_id, meeting_id=meeting_uuid)
                     metrics.record_entity_synced("file", body_name or "unknown")
                 elif isinstance(nested, ProcessedAgendaItem):
-                    await self.storage.upsert_agenda_item(nested, meeting_uuid)
                     metrics.record_entity_synced("agendaitem", body_name or "unknown")
         elif isinstance(entity, ProcessedPaper):
             entity_id = str(await self.storage.upsert_paper(entity, body_id))
-            paper_uuid = UUID(entity_id)
             # Emit high-priority event for new papers
             if self._event_emitter and entity_id:
                 await self._event_emitter.emit_new_paper(
@@ -1451,21 +1477,24 @@ class SyncOrchestrator:
                     body_name=body_name,
                     paper_type=entity.paper_type,
                 )
-            # Process nested entities (files, consultations) with paper_id
+            # Eingebettete Dateien und Beratungen speichert upsert_paper selbst (Objekte anderer Quellen bleiben dort
+            # aus); hier nur zählen
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedFile):
-                    await self.storage.upsert_file(nested, body_id, paper_id=paper_uuid)
                     metrics.record_entity_synced("file", body_name or "unknown")
                 elif isinstance(nested, ProcessedConsultation):
-                    await self.storage.upsert_consultation(nested, body_id, paper_uuid)
                     metrics.record_entity_synced("consultation", body_name or "unknown")
         elif isinstance(entity, ProcessedPerson):
             await self.storage.upsert_person(entity, body_id)
             metrics.record_entity_synced("person", body_name or "unknown")
-            # Process nested memberships (OParl 1.0: embedded in Person objects)
+            # Process nested memberships (OParl 1.0: embedded in Person objects); eine Mitgliedschaft einer anderen
+            # Quelle bleibt aus (gezählt), die Person ist gespeichert
             for nested in entity.nested_entities:
                 if isinstance(nested, ProcessedMembership):
-                    await self.storage.upsert_membership(nested, body_id)
+                    try:
+                        await self.storage.upsert_membership(nested, body_id)
+                    except ForeignObjectError:
+                        continue
                     metrics.record_entity_synced("membership", body_name or "unknown")
         elif isinstance(entity, ProcessedOrganization):
             await self.storage.upsert_organization(entity, body_id)
@@ -1482,11 +1511,11 @@ class SyncOrchestrator:
             # AgendaItems need meeting_id - try to look it up
             meeting_id = None
             if entity.meeting_external_id:
-                meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_id)
+                meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_id, body_id)
             if meeting_id:
                 await self.storage.upsert_agenda_item(entity, meeting_id)
                 metrics.record_entity_synced("agendaitem", body_name or "unknown")
-            # If no meeting_id found, skip (item likely from nested sync already)
+            # If no meeting_id found (or a meeting of another source), skip (item likely from nested sync already)
         elif isinstance(entity, ProcessedFile):
             # Files can belong to papers or meetings
             # Try to resolve paper_id from back-references (OParl spec: standalone files have these)
@@ -1494,16 +1523,16 @@ class SyncOrchestrator:
             meeting_id = None
             if entity.paper_external_ids:
                 # Use first paper reference (files can belong to multiple papers)
-                paper_id = await self.storage.get_paper_uuid(entity.paper_external_ids[0])
+                paper_id = await self.storage.get_paper_uuid(entity.paper_external_ids[0], body_id)
             if entity.meeting_external_ids:
-                meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_ids[0])
+                meeting_id = await self.storage.get_meeting_uuid(entity.meeting_external_ids[0], body_id)
             await self.storage.upsert_file(entity, body_id, paper_id=paper_id, meeting_id=meeting_id)
             metrics.record_entity_synced("file", body_name or "unknown")
         elif isinstance(entity, ProcessedConsultation):
             # Consultations can belong to papers - try to look it up
             paper_id = None
             if entity.paper_external_id:
-                paper_id = await self.storage.get_paper_uuid(entity.paper_external_id)
+                paper_id = await self.storage.get_paper_uuid(entity.paper_external_id, body_id)
             await self.storage.upsert_consultation(entity, body_id, paper_id)
             metrics.record_entity_synced("consultation", body_name or "unknown")
         else:
@@ -1706,6 +1735,7 @@ class SyncOrchestrator:
                 "papers": result.papers_synced,
                 "files": result.files_synced,
                 **self._finding_details(result),
+                **({"foreign": dict(sorted(result.foreign.items()))} if result.foreign else {}),
             }
 
         status = "success" if not all_errors or total_entities > 0 else "failed"

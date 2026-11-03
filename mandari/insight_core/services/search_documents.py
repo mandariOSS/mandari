@@ -63,8 +63,11 @@ def paper_to_doc(paper, files=None) -> dict[str, Any]:
         if org_refs:
             from insight_core.models import OParlOrganization
 
+            # Nur Gremien aus der Quelle der Vorlage: Die Beratungen nennen sie nur als Kennung (Text)
             organization_names = list(
-                OParlOrganization.objects.filter(external_id__in=org_refs).values_list("name", flat=True).distinct()
+                OParlOrganization.objects.filter(external_id__in=org_refs, body__source__bodies__id=paper.body_id)
+                .values_list("name", flat=True)
+                .distinct()
             )
     except Exception:
         organization_names = []
@@ -195,21 +198,25 @@ def file_to_doc(file, context_info: dict[str, Any] | None = None) -> dict[str, A
 def _resolve_file_context(file, doc: dict[str, Any]) -> None:
     """Resolve file context (organization, meeting, agenda) from DB."""
     try:
-        from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting
+        from insight_core.models import OParlAgendaItem, OParlConsultation, OParlMeeting, with_reference_checks
 
         meeting = None
         agenda_number = None
 
         if file.paper_id:
-            # File → Paper → Consultation → Meeting
-            consultation = OParlConsultation.objects.filter(paper_id=file.paper_id).order_by("-authoritative").first()
-            if consultation and consultation.meeting_external_id:
+            # File → Paper → Consultation → Meeting; Sitzung und TOP nur aus der Quelle der Beratung
+            consultation = (
+                with_reference_checks(OParlConsultation.objects.filter(paper_id=file.paper_id))
+                .order_by("-authoritative")
+                .first()
+            )
+            if consultation and consultation.meeting_external_id and consultation.meeting_in_source:
                 meeting = (
                     OParlMeeting.objects.filter(external_id=consultation.meeting_external_id)
                     .prefetch_related("organizations")
                     .first()
                 )
-                if consultation.agenda_item_external_id:
+                if consultation.agenda_item_external_id and consultation.agenda_item_in_source:
                     ai = OParlAgendaItem.objects.filter(external_id=consultation.agenda_item_external_id).first()
                     if ai:
                         agenda_number = ai.number

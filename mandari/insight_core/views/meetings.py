@@ -24,6 +24,7 @@ from ..models import (
     OParlFile,
     OParlMeeting,
     OParlOrganization,
+    consultation_agenda_item_in_source,
     withdrawn_q,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
@@ -317,8 +318,10 @@ class MeetingDetailView(DetailView):
             ext_ids = [item.external_id for item in agenda_items]
             # Alle Consultations + Papers in 1 Query laden; von Session zurückgenommene Vorlagen
             # und Beratungen erscheinen nicht mehr
+            # Nur Beratungen aus der Quelle des jeweiligen TOPs
             consultations = (
                 OParlConsultation.objects.filter(agenda_item_external_id__in=ext_ids)
+                .filter(consultation_agenda_item_in_source())
                 .exclude(withdrawn_q())
                 .exclude(withdrawn_q("paper"))
                 .select_related("paper")
