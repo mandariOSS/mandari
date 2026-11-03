@@ -2,7 +2,9 @@
 """
 Management Command: OParl-Quelle hinzufügen.
 
-Registriert eine neue OParl-Datenquelle und legt die zugehörigen Bodies an.
+Registriert eine neue OParl-Datenquelle und legt die zugehörigen Bodies an. Hängt eine Kommune aus der Antwort
+schon an einer anderen Quelle, bricht der Befehl ab, bevor er etwas schreibt: Eine Kommune wechselt ihre Quelle nur
+bewusst im Admin.
 
 Usage:
     python manage.py add_oparl_source "https://example.com/oparl/v1.1/system"
@@ -10,6 +12,7 @@ Usage:
 """
 
 import re
+from typing import Any
 
 import httpx
 from django.core.management.base import BaseCommand, CommandError
@@ -20,6 +23,9 @@ _NAMESPACE_VERSION = re.compile(r"^https?://schema\.oparl\.org/(1\.[01])/")
 
 # Obergrenze für paginierte Body-Listen (Verbandsgemeinden haben Dutzende Bodies)
 MAX_BODY_PAGES = 20
+
+#: Höchstens so viele Kommunen nennt der Abbruch, wenn sie schon an einer anderen Quelle hängen
+FOREIGN_BODIES_SHOWN = 5
 
 
 def is_oparl_error(data) -> bool:
@@ -130,6 +136,34 @@ class Command(BaseCommand):
                     next_url = None
         return bodies
 
+    def _abort_on_foreign_bodies(self, url: str, system_data: dict[str, Any], bodies: list[dict]) -> None:
+        """
+        Eine vorhandene Kommune bleibt an ihrer Quelle.
+
+        Sonst hinge eine Kommune nach dem Aufruf mit einer anderen oder fremden Adresse an der neuen Quelle, und deren
+        Abgleich dürfte ihre Objekte schreiben. Die Adresse selbst kann eine Kommune oder eine Kommunenliste sein,
+        dann steht die Kommune nur in der Antwort. Läuft vor dem ersten Schreiben: Beim Abbruch bleibt alles
+        unverändert.
+        """
+        listed = system_data.get("data")
+        answer = [system_data, *(listed if isinstance(listed, list) else []), *bodies]
+        ids = {item["id"] for item in answer if isinstance(item, dict) and isinstance(item.get("id"), str)}
+        foreign = list(
+            OParlBody.objects.filter(external_id__in=ids)
+            .exclude(source__url=url)
+            .select_related("source")
+            .order_by("external_id")
+        )
+        if not foreign:
+            return
+        shown = "; ".join(f"{b.name} ({b.external_id}) an {b.source.url}" for b in foreign[:FOREIGN_BODIES_SHOWN])
+        more = len(foreign) - FOREIGN_BODIES_SHOWN
+        suffix = f" und {more} weitere" if more > 0 else ""
+        raise CommandError(
+            f"Nichts geändert: Kommune hängt schon an einer anderen Quelle: {shown}{suffix}. Bitte die registrierte "
+            "Adresse verwenden. Zieht eine Quelle um, wird ihre Adresse an der vorhandenen Quelle geändert."
+        )
+
     def handle(self, *args, **options):
         url = options["url"]
 
@@ -158,6 +192,15 @@ class Command(BaseCommand):
         self.stdout.write(f"  Contact: {system_data.get('contactEmail', 'N/A')}")
         self.stdout.write(f"  Website: {system_data.get('website', 'N/A')}")
 
+        # Bodies verarbeiten: "body" ist laut Spec eine Listen-URL; manche
+        # Server liefern stattdessen eine Liste von Body-URLs oder eingebettete
+        # Body-Objekte. Listen-URLs (auch 1.0: /oparl/Body) werden paginiert.
+        bodies = self.resolve_bodies(system_data.get("body", []))
+
+        self.stdout.write(f"\nFound {len(bodies)} body/bodies")
+
+        self._abort_on_foreign_bodies(url, system_data, bodies)
+
         # Quelle erstellen oder aktualisieren
         source, created = OParlSource.objects.update_or_create(
             url=url,
@@ -176,13 +219,6 @@ class Command(BaseCommand):
             self.stdout.write(self.style.SUCCESS(f"\nSource created: {source.name}"))
         else:
             self.stdout.write(self.style.SUCCESS(f"\nSource updated: {source.name}"))
-
-        # Bodies verarbeiten: "body" ist laut Spec eine Listen-URL; manche
-        # Server liefern stattdessen eine Liste von Body-URLs oder eingebettete
-        # Body-Objekte. Listen-URLs (auch 1.0: /oparl/Body) werden paginiert.
-        bodies = self.resolve_bodies(system_data.get("body", []))
-
-        self.stdout.write(f"\nFound {len(bodies)} body/bodies")
 
         for i, body_data in enumerate(bodies):
             body_url = body_data.get("id", "?")
