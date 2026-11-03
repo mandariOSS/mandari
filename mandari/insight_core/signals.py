@@ -177,12 +177,8 @@ def index_file(sender, instance, **kwargs):
             paper = OParlPaper.objects.get(id=instance.paper_id)
             if paper.deleted:
                 return
-            files = paper.files.filter(
-                deleted=False,
-                text_content__isnull=False,
-                text_extraction_status="completed",
-            )
-            paper_doc = _paper_to_doc(paper, files=files)
+            # paper_to_doc lädt die indexierbaren Dateien selbst, vom Text nur den Anfang für die Vorschau
+            paper_doc = _paper_to_doc(paper)
             _index_document("papers", str(paper.id), paper_doc)
         except OParlPaper.DoesNotExist:
             pass

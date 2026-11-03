@@ -7,6 +7,7 @@ Uses PostgreSQL ON CONFLICT for efficient insert-or-update operations.
 
 import logging
 from collections import Counter
+from collections.abc import AsyncIterator, Iterator
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from datetime import date as date_type
@@ -243,6 +244,35 @@ def _assert_no_enrichment_overwrite(update_set: dict) -> None:
             "src/storage/database.py — these columns must never be part of "
             "an ON CONFLICT update-set."
         )
+
+
+#: Höchstens so viele Zeichen erkannten Text speichert ``update_file_text`` je Datei; derselbe Wert wie
+#: ``FILE_TEXT_MAX_CHARS`` für den Suchindex (``indexing/document_builders.py``)
+TEXT_CONTENT_MAX_CHARS: Final = 5_000_000
+
+
+def _pages_by_text_bytes(heads: list[Any], budget: int, max_chars: int | None) -> Iterator[list[UUID]]:
+    """
+    Teilt eine Seite (Kennung und ``text_bytes`` je Datei) in Teilseiten von höchstens ``budget`` Bytes Text.
+
+    Ein Text, der nicht mehr passt, beginnt die nächste Teilseite; nur ein einzelner Text kann allein darüber
+    liegen. Mit ``max_chars`` zählt je Text höchstens, was nach der Kürzung bleiben kann (UTF-8: bis zu vier
+    Bytes je Zeichen).
+    """
+    per_text = None if max_chars is None else 4 * max_chars
+    ids: list[UUID] = []
+    total = 0
+    for head in heads:
+        text_bytes = int(head.text_bytes or 0)
+        if per_text is not None:
+            text_bytes = min(text_bytes, per_text)
+        if ids and total + text_bytes > budget:
+            yield ids
+            ids, total = [], 0
+        ids.append(head.id)
+        total += text_bytes
+    if ids:
+        yield ids
 
 
 class DatabaseStorage:
@@ -1852,8 +1882,9 @@ class DatabaseStorage:
         # 0x00“). Manche PDFs enthalten sie im Textstrom; ohne diese Bereinigung scheiterte das
         # Speichern, die Datei blieb in „processing“ und wurde nach PROCESSING_STALE_AFTER immer
         # wieder neu verarbeitet (Sept. 2026: ~14 000 Fehlversuche am Tag).
+        # Gespeichert werden höchstens TEXT_CONTENT_MAX_CHARS Zeichen je Datei.
         if text_content is not None:
-            text_content = text_content.replace("\x00", "")
+            text_content = text_content[:TEXT_CONTENT_MAX_CHARS].replace("\x00", "")
         if error is not None:
             error = error.replace("\x00", "")
 
@@ -1900,14 +1931,102 @@ class DatabaseStorage:
             result = await session.execute(stmt)
             return list(result.scalars().all())
 
-    async def get_files_with_text(self, body_id: UUID) -> list[OParlFile]:
-        """Get files that have extracted text content."""
+    #: Seitengröße (Dateien) beim Aufbau des Suchindex, wenn der Aufrufer keine nennt
+    INDEX_PAGE_SIZE: Final = 500
+
+    #: Höchstens so viele Bytes Dateitext (UTF-8, wie in der Datenbank) je Teilseite beim Aufbau des Suchindex;
+    #: dieselbe Grenze wie je Bulk-Anfrage (``indexing.elasticsearch.BULK_MAX_BYTES``)
+    INDEX_TEXT_PAGE_BYTES: Final = 8 * 1024 * 1024
+
+    #: Spalten einer Datei, die das Suchdokument braucht (``document_builders.file_to_doc``), ohne den Text
+    _FILE_INDEX_COLUMNS: Final = (
+        OParlFile.id,
+        OParlFile.body_id,
+        OParlFile.paper_id,
+        OParlFile.meeting_id,
+        OParlFile.name,
+        OParlFile.file_name,
+        OParlFile.mime_type,
+        OParlFile.oparl_modified,
+    )
+
+    def _files_with_text(self, body_id: UUID, *columns: Any) -> Any:
+        return select(*columns).where(
+            OParlFile.body_id == body_id,
+            OParlFile.deleted == False,  # noqa: E712
+            OParlFile.text_content.isnot(None),
+            OParlFile.text_extraction_status == "completed",
+        )
+
+    async def iter_files_with_text(
+        self,
+        body_id: UUID,
+        page_size: int | None = None,
+        *,
+        max_chars: int | None = None,
+        max_bytes: int | None = None,
+    ) -> AsyncIterator[list[Any]]:
+        """
+        Dateien eines Bodies mit extrahiertem Text für den Suchindex, nach ``id``.
+
+        Volltexte können groß sein; alle Dateien oder eine Seite nach Zeilenzahl hielte dann viele davon zugleich
+        im Speicher. Deshalb liest jede Seite (``page_size`` Dateien, Keyset nach ``id``) zuerst nur Kennung und
+        Textgröße, dann die Texte in Teilseiten von höchstens ``max_bytes`` Bytes (Vorgabe
+        ``INDEX_TEXT_PAGE_BYTES``); ein einzelner größerer Text kommt allein. ``max_chars``: nur so viele Zeichen
+        je Text aus der Datenbank (Kürzung für den Index, ``document_builders.FILE_TEXT_MAX_CHARS``).
+
+        Geliefert werden Zeilen mit den Feldern, die ``document_builders.file_to_doc`` liest.
+        """
+        size = max(1, page_size or self.INDEX_PAGE_SIZE)
+        budget = max(1, max_bytes or self.INDEX_TEXT_PAGE_BYTES)
+        text_content: Any = OParlFile.text_content
+        if max_chars is not None:
+            text_content = func.substr(OParlFile.text_content, 1, max_chars)
+        last_id: UUID | None = None
+        while True:
+            async with self.get_session() as session:
+                stmt = self._files_with_text(
+                    body_id, OParlFile.id, func.octet_length(OParlFile.text_content).label("text_bytes")
+                )
+                if last_id is not None:
+                    stmt = stmt.where(OParlFile.id > last_id)
+                heads = list((await session.execute(stmt.order_by(OParlFile.id).limit(size))).all())
+            if not heads:
+                return
+            for ids in _pages_by_text_bytes(heads, budget, max_chars):
+                async with self.get_session() as session:
+                    stmt = (
+                        self._files_with_text(body_id, *self._FILE_INDEX_COLUMNS, text_content.label("text_content"))
+                        .where(OParlFile.id.in_(ids))
+                        .order_by(OParlFile.id)
+                    )
+                    rows = list((await session.execute(stmt)).all())
+                if rows:
+                    yield rows
+                del rows
+            if len(heads) < size:
+                return
+            last_id = heads[-1].id
+
+    async def get_files_with_text_for_papers(
+        self, body_id: UUID, paper_ids: list[UUID], max_chars: int | None = None
+    ) -> list[Any]:
+        """
+        Dateien mit extrahiertem Text zu einer Seite von Vorgängen, für die Gewichtung im Suchindex: nur
+        ``paper_id``, ``file_name`` und die ersten ``max_chars`` Zeichen des Textes (mehr nutzt der Vorgang nicht;
+        die Volltexte lädt nur die Indexierung der Dateien selbst).
+        """
+        if not paper_ids:
+            return []
+        text_content: Any = OParlFile.text_content
+        if max_chars is not None:
+            text_content = func.substr(OParlFile.text_content, 1, max_chars)
         async with self.get_session() as session:
-            stmt = select(OParlFile).where(
-                OParlFile.body_id == body_id,
-                OParlFile.deleted == False,  # noqa: E712
-                OParlFile.text_content.isnot(None),
-                OParlFile.text_extraction_status == "completed",
+            stmt = (
+                self._files_with_text(
+                    body_id, OParlFile.paper_id, OParlFile.file_name, text_content.label("text_content")
+                )
+                .where(OParlFile.paper_id.in_(paper_ids))
+                .order_by(OParlFile.id)
             )
-            result = await session.execute(stmt)
-            return list(result.scalars().all())
+            return list((await session.execute(stmt)).all())

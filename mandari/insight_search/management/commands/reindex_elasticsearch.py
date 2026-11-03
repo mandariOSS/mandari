@@ -7,14 +7,22 @@ Usage:
     python manage.py reindex_elasticsearch --index files # Nur Files
     python manage.py reindex_elasticsearch --body <uuid> # Nur eine Kommune
     python manage.py reindex_elasticsearch --clear       # Index leeren + rebuild
+
+Dateitexte kommen in kleinen Abschnitten und schon in der Datenbank gekürzt (``INDEX_TEXT_MAX_CHARS``), von den
+Dateien eines Vorgangs nur der Anfang (``paper_to_doc``). Die Bulk-Anfragen sind nach Anzahl (``BATCH_SIZE``) und
+Bytes (``BULK_MAX_BYTES``) begrenzt, sodass der Speicherbedarf nicht von der Größe einzelner Texte abhängt.
 """
 
 from __future__ import annotations
 
 import time
+from collections.abc import Iterator, Sequence
+from typing import Any
 
 from django.conf import settings
 from django.core.management.base import BaseCommand
+from django.db.models import QuerySet
+from django.db.models.functions import Substr
 
 from insight_core.models import (
     OParlBody,
@@ -25,6 +33,7 @@ from insight_core.models import (
     OParlPerson,
 )
 from insight_core.services.search_documents import (
+    INDEX_TEXT_MAX_CHARS,
     file_to_doc,
     meeting_to_doc,
     organization_to_doc,
@@ -33,12 +42,18 @@ from insight_core.services.search_documents import (
 )
 
 BATCH_SIZE = 500
+#: Dateien samt Text lädt der Neuaufbau in Abschnitten von so vielen Dateien
+FILE_CHUNK_SIZE = 10
+#: Höchstens so viele Bytes je Bulk-Anfrage (wie im Ingestor, ``BULK_MAX_BYTES``); ein Dokument, das nicht mehr
+#: passt, beginnt eine neue Anfrage
+BULK_MAX_BYTES = 8 * 1024 * 1024
 
 INDEX_CONFIG = {
     "papers": {
         "model": OParlPaper,
+        # paper_to_doc lädt die Dateien je Vorgang selbst, vom Text nur den Anfang für die Vorschau
         "builder": paper_to_doc,
-        "queryset_filter": lambda qs: qs.prefetch_related("files"),
+        "queryset_filter": None,
     },
     "meetings": {
         "model": OParlMeeting,
@@ -64,6 +79,20 @@ INDEX_CONFIG = {
         ).select_related("paper"),
     },
 }
+
+
+def _files_with_index_text(qs: QuerySet[Any], ids: Sequence[Any]) -> Iterator[Any]:
+    """Dateien zu ``ids`` in Abschnitten von ``FILE_CHUNK_SIZE``, ihr Text schon in der Datenbank gekürzt."""
+    for start in range(0, len(ids), FILE_CHUNK_SIZE):
+        chunk = (
+            qs.filter(pk__in=ids[start : start + FILE_CHUNK_SIZE])
+            .defer("text_content")
+            .annotate(suchindex_text=Substr("text_content", 1, INDEX_TEXT_MAX_CHARS))
+        )
+        for obj in chunk:
+            # Den gekürzten Text als text_content setzen (sonst lüde Django den vollen Text nach)
+            obj.text_content = obj.suchindex_text
+            yield obj
 
 
 class Command(BaseCommand):
@@ -156,44 +185,40 @@ class Command(BaseCommand):
 
             indexed = 0
 
-            # Process in batches
+            # Process in batches; Dateien mit Text in kleinen Abschnitten, Anfragen nach Anzahl und Bytes begrenzt
             for offset in range(0, count, BATCH_SIZE):
-                batch = list(qs[offset : offset + BATCH_SIZE])
-                actions = []
-                for obj in batch:
-                    try:
-                        if index_name == "papers":
-                            files = obj.files.filter(
-                                deleted=False,
-                                text_content__isnull=False,
-                                text_extraction_status="completed",
-                            )
-                            doc = builder(obj, files=files)
-                        else:
-                            doc = builder(obj)
-
-                        actions.append(
-                            {
-                                "_index": index_name,
-                                "_id": doc["id"],
-                                "_source": doc,
-                            }
-                        )
-                    except Exception as e:
-                        self.stderr.write(self.style.WARNING(f"  Error building doc for {obj.id}: {e}"))
-
-                if actions:
-                    try:
-                        success, errors = bulk(client, actions, raise_on_error=False)
-                        indexed += success
-                        if errors:
-                            for err in errors[:3]:
-                                self.stderr.write(self.style.WARNING(f"  Bulk error: {err}"))
-                    except Exception as e:
-                        self.stderr.write(self.style.ERROR(f"  Error indexing batch: {e}"))
+                if index_name == "files":
+                    ids = list(qs.order_by("pk").values_list("pk", flat=True)[offset : offset + BATCH_SIZE])
+                    batch: Any = _files_with_index_text(qs, ids)
+                else:
+                    batch = qs[offset : offset + BATCH_SIZE]
+                try:
+                    success, errors = bulk(
+                        client,
+                        self._actions(index_name, builder, batch),
+                        chunk_size=BATCH_SIZE,
+                        max_chunk_bytes=BULK_MAX_BYTES,
+                        raise_on_error=False,
+                    )
+                    indexed += success
+                    if errors:
+                        for err in errors[:3]:
+                            self.stderr.write(self.style.WARNING(f"  Bulk error: {err}"))
+                except Exception as e:
+                    self.stderr.write(self.style.ERROR(f"  Error indexing batch: {e}"))
 
             self.stdout.write(self.style.SUCCESS(f"  {index_name}: {indexed}/{count} indexed"))
             total_indexed += indexed
 
         elapsed = time.monotonic() - start_time
         self.stdout.write(self.style.SUCCESS(f"\nDone! {total_indexed} documents indexed in {elapsed:.1f}s"))
+
+    def _actions(self, index_name: str, builder: Any, objs: Any) -> Iterator[dict[str, Any]]:
+        """Bulk-Aktionen zu ``objs``, eine nach der anderen (die Bulk-Hilfe liest sie abschnittsweise)."""
+        for obj in objs:
+            try:
+                doc = builder(obj)
+            except Exception as e:
+                self.stderr.write(self.style.WARNING(f"  Error building doc for {obj.id}: {e}"))
+                continue
+            yield {"_index": index_name, "_id": doc["id"], "_source": doc}
