@@ -171,6 +171,16 @@ jobs:
           echo "ingestor_tags=$INGESTOR_TAGS" >> $GITHUB_OUTPUT
           echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
 
+          # Website (eigenes Repository mandariOSS/marketing-website): docker-compose.yml zieht alle drei Images
+          # mit EINEM Tag (IMAGE_TAG). Bei Release und manuellem Lauf bekommt sie deshalb dieselben Tags wie
+          # mandari, als Kopie von website:main ohne Neubau (wie main, Issue #698).
+          WEBSITE_TAGS=""
+          if [ "${{ github.event_name }}" == "release" ] || [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            WEBSITE_TAGS=$(echo "$MANDARI_TAGS" | sed "s#/${{ env.IMAGE_OWNER }}/mandari:#/${{ env.IMAGE_OWNER }}/website:#g")
+          fi
+          echo "website_tags=$WEBSITE_TAGS" >> $GITHUB_OUTPUT
+          echo "Website tags: ${WEBSITE_TAGS:-keine}"
+
           # Scan-Tag: erstes Tag aus der komma-separierten Liste (für Trivy)
           SCAN_TAG=$(echo "$MANDARI_TAGS" | cut -d',' -f1 | rev | cut -d':' -f1 | rev)
           echo "scan_tag=$SCAN_TAG" >> $GITHUB_OUTPUT
@@ -230,8 +240,39 @@ jobs:
           exit-code: '0'
           format: 'table'
 
-      # NOTE: The website image is built from the separate marketing-website
-      # repository and has its own release workflow. See ../marketing-website/.
+      # Die Website baut mandariOSS/marketing-website. Hier bekommt ihr aktueller Stand (website:main) nur die
+      # Tags des Releases, damit update.sh --tag vX.Y.Z alle drei Images findet. Vorhandene unveränderliche Tags
+      # mit anderem Inhalt bleiben stehen. Scheitert der Schritt, läuft der Rest weiter.
+      - name: Website-Image mit denselben Tags versehen
+        if: steps.tags.outputs.website_tags != ''
+        continue-on-error: true
+        env:
+          WEBSITE_SOURCE: ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/website:main
+          WEBSITE_TAGS: ${{ steps.tags.outputs.website_tags }}
+        run: |
+          set -eu
+          echo "Quelle: $WEBSITE_SOURCE"
+          quelle=$(docker buildx imagetools inspect --raw "$WEBSITE_SOURCE")
+          args=""
+          for ziel in $(echo "$WEBSITE_TAGS" | tr ',' ' '); do
+            case "${ziel##*:}" in
+              latest|dev) ;;
+              *)
+                vorhanden=$(docker buildx imagetools inspect --raw "$ziel" 2>/dev/null || true)
+                if [ -n "$vorhanden" ] && [ "$vorhanden" != "$quelle" ]; then
+                  echo "::warning title=Website-Tag nicht überschrieben::$ziel gibt es schon mit anderem Inhalt; es bleibt unverändert."
+                  continue
+                fi
+                ;;
+            esac
+            args="$args --tag $ziel"
+          done
+          if [ -z "$args" ]; then
+            echo "Keine Website-Tags zu setzen."
+            exit 0
+          fi
+          # shellcheck disable=SC2086  # Tag-Liste bewusst aufgeteilt
+          docker buildx imagetools create $args "$WEBSITE_SOURCE"
 
       # =====================================================================
       # Make packages public (required for unauthenticated pulls)
