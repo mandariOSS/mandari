@@ -6,6 +6,8 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+## [0.12.0] – 2026-11-03
+
 ### Hinzugefügt
 - Work, Fraktionssitzungen: In der laufenden Sitzung lassen sich TOPs über „TOP hinzufügen …“ unter der Tagesordnung ergänzen, etwa wenn unter TOP 1 eine geänderte Tagesordnung beschlossen wird: öffentlich, nichtöffentlich (nur Vereidigte) oder als Unterpunkt, mit denselben Rechten wie beim Eintragen in der Vorbereitung und nur bis zum Ende der Sitzung. Der neue TOP öffnet sich sofort, die Notizen des offenen TOPs werden vorher gesichert. Andere sehen ihn beim nächsten TOP-Wechsel, der jetzt die Tagesordnung mitbringt (Teil von #1166).
 - Work, Fraktionssitzungen: TOPs lassen sich in der Planung per Ziehen zwischen öffentlichem und nichtöffentlichem Teil verschieben, auch in einen leeren Teil. In den nichtöffentlichen Teil dürfen das nur Vereidigte; aus ihm heraus erst nach einer Rückfrage (#1160).
@@ -317,6 +319,7 @@ Release in Produktion. Selbst-Hoster lesen vor dem Update den Abschnitt „Brech
 Erste öffentliche Beta: Bürgerportal (Insight) mit OParl-Ingestor, mandari work für
 Fraktionen, mandari session für Verwaltungen.
 
-[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.11.0...dev
+[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.12.0...dev
+[0.12.0]: https://github.com/mandariOSS/mandari/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/mandariOSS/mandari/compare/v0.9.0-beta...v0.11.0
 [0.9.0-beta]: https://github.com/mandariOSS/mandari/releases/tag/v0.9.0-beta
