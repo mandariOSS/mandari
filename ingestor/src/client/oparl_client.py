@@ -172,14 +172,21 @@ class ListMissingError(Exception):
         super().__init__(f"Liste {list_url} {text} ({reason})")
 
 
+#: Fehlertext einer Liste, die am Ende des Zeitfensters der Quelle offen blieb (``FetchWindowClosedError``)
+WINDOW_CLOSED_ERROR = "Zeitfenster der Quelle abgelaufen"
+
+
 class FetchWindowClosedError(ListFetchError):
-    """Das Zeitfenster des Vollabgleichs ist abgelaufen (``sync_config["full_sync_window"]``): keine weitere Seite."""
+    """
+    Das Zeitfenster des Laufs ist abgelaufen: Ende des Abruffensters der Quelle (``sync_config["sync_window"]``, Issue
+    #1186) oder des Fensters ihres Vollabgleichs (``full_sync_window``). Keine weitere Seite.
+    """
 
     def __init__(self, list_url: str, page_url: str) -> None:
         super().__init__(
             list_url,
             page_url,
-            FetchResult(url=page_url, data=None, status_code=0, error="Zeitfenster für den Vollabgleich abgelaufen"),
+            FetchResult(url=page_url, data=None, status_code=0, error=WINDOW_CLOSED_ERROR),
         )
 
 
@@ -376,7 +383,8 @@ class OParlClient:
         # Vermerke „filtert nicht“ der Quelle, je Liste und für Server, deren Filter sie ganz ignoriert (Issue #1041).
         # Gehören der Quelle dieses Clients; der Orchestrator lädt sie aus ihrer sync_config und speichert sie dort.
         self.filter_notes = filter_notes if filter_notes is not None else FilterNotes()
-        # Ende des Zeitfensters eines Vollabgleichs (UTC): danach holt fetch_list keine Seite mehr
+        # Ende des Zeitfensters des Laufs (UTC; Abruffenster der Quelle oder Fenster ihres Vollabgleichs): danach holt
+        # fetch_list keine Seite mehr und die Prüfung des Filters unterbleibt (``deadline_passed``)
         self.fetch_deadline = fetch_deadline
         self.timeout = timeout or settings.oparl_request_timeout
         # Wartezeit je Abrufplatz vor jeder Anfrage (OPARL_WAIT_TIME); bei max_concurrent Plätzen bis zu
@@ -877,6 +885,10 @@ class OParlClient:
         host = urlparse(self._with_list_params(url, self.list_params)).netloc
         return not self.filter_notes.unfiltered(url, host, carry=self.carry_modified_since)
 
+    def deadline_passed(self) -> bool:
+        """Ist das Zeitfenster des Laufs abgelaufen (``fetch_deadline``)? Dann geht keine Seite mehr an die Quelle."""
+        return self.fetch_deadline is not None and datetime.now(UTC) >= self.fetch_deadline
+
     async def fetch_list(
         self,
         url: str,
@@ -977,8 +989,8 @@ class OParlClient:
                 console.print(f"[dim]{url}: Liste ohne Filter vermerkt, tägliche Prüfung mit modified_since[/dim]")
 
         while current_url:
-            if self.fetch_deadline is not None and datetime.now(UTC) >= self.fetch_deadline:
-                console.print(f"[yellow]{url}: Zeitfenster des Vollabgleichs abgelaufen, Liste bleibt offen[/yellow]")
+            if self.deadline_passed():
+                console.print(f"[yellow]{url}: {WINDOW_CLOSED_ERROR}, Liste bleibt offen[/yellow]")
                 raise FetchWindowClosedError(url, current_url)
             result = await self.fetch(current_url, use_cache=False)
 
@@ -1205,6 +1217,8 @@ class OParlClient:
         400/401/403), ``ignored`` (Filter fehlt in den Listen-Links oder die erste Seite enthält Objekte, die vor
         ``since`` zuletzt geändert wurden) oder ``inconclusive``.
         """
+        if self.deadline_passed():
+            return MODIFIED_SINCE_INCONCLUSIVE  # Zeitfenster der Quelle abgelaufen: keine Anfrage mehr
         url = self._append_modified_since(self._with_list_params(list_url, self.list_params), since)
         result = await self.fetch(url, use_cache=False)
         if result.error_kind is not None:

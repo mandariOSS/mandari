@@ -32,6 +32,9 @@ Folge, höchstens ``MAX_DEFER_SECONDS``; ``Retry-After`` gilt mindestens). Die D
 allen anderen Dateien der Quelle als gescheitert zu enden, solange die Quelle uns abweist. Erst nach
 ``MAX_TRANSIENT_FAILURES`` solchen Fehlschlägen derselben Datei in Folge gilt sie als gescheitert; je
 Zurückstellung zählt nur der Fehlschlag, der sie auslöst, und der begonnene Versuch zählt nicht als Abbruch.
+
+Abruffenster (Issue #1186): Hat die Quelle ein ``sync_config["sync_window"]``, lädt die Texterkennung ihre Dateien
+nur darin. Außerhalb beansprucht sie nichts; eine schon beanspruchte Datei bleibt ``pending``, ohne Anfrage.
 """
 
 from __future__ import annotations
@@ -47,7 +50,7 @@ import threading
 import time
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -218,11 +221,17 @@ class TextExtractor:
     with the results.
     """
 
-    def __init__(self, storage, clock: Callable[[], float] = time.monotonic) -> None:
+    def __init__(
+        self,
+        storage,
+        clock: Callable[[], float] = time.monotonic,
+        wall_clock: Callable[[], datetime] | None = None,
+    ) -> None:
         """
         Args:
             storage: DatabaseStorage instance for querying/updating files.
             clock: Uhr für Zwischenspeicher und Zurückstellen (Tests)
+            wall_clock: Uhrzeit (UTC) für das Abruffenster der Quelle (Tests)
         """
         self.storage = storage
         self.max_size_bytes = settings.text_extraction_max_size_mb * 1024 * 1024
@@ -230,6 +239,7 @@ class TextExtractor:
         self.timeout = settings.text_extraction_timeout
         self.batch_size = settings.text_extraction_batch_size
         self._clock = clock
+        self._wall_clock = wall_clock or (lambda: datetime.now(UTC))
         # Je Body: (Wert, geladen um); gültig SOURCE_OPTIONS_TTL_SECONDS
         self._header_cache: dict[Any, tuple[dict[str, str], float]] = {}
         self._options_cache: dict[Any, tuple[SourceFetchOptions, float]] = {}
@@ -291,6 +301,11 @@ class TextExtractor:
         if not await self._file_downloads_enabled(body_id):
             logger.debug("Dateiabruf für Body %s abgeschaltet (sync_config der Quelle)", body_id)
             return 0
+        # Außerhalb des Abruffensters der Quelle (sync_config["sync_window"], Issue #1186): nichts beanspruchen, die
+        # Dateien bleiben "pending" bis zum nächsten Fenster
+        if await self._outside_window(body_id):
+            logger.debug("Body %s außerhalb des Abruffensters der Quelle", body_id)
+            return 0
         # Die robots.txt der Quelle war eben nicht erreichbar: Dateien bleiben "pending", bis der neue Versuch
         # fällig ist, statt sie in jeder Runde zu beanspruchen und wieder zurückzustellen
         if self._deferred(body_id):
@@ -303,7 +318,7 @@ class TextExtractor:
         extracted = 0
         portion = max(1, self.concurrency) * CLAIM_PER_SLOT
         # 1. Dateien ohne Abbruch, parallel
-        while claimed < self.batch_size and not self._deferred(body_id):
+        while claimed < self.batch_size and await self._may_fetch(body_id):
             requested = min(portion, self.batch_size - claimed)
             files = await self.storage.get_pending_files(
                 body_id=body_id,
@@ -319,7 +334,7 @@ class TextExtractor:
                 break  # keine weiteren wartenden Dateien ohne Abbruch
         # 2. Dateien, deren Bearbeitung schon einmal abbrach: zuletzt, einzeln beansprucht und allein
         # bearbeitet. Stirbt der Worker wieder, zählt der Abbruch nur bei der Datei, die ihn auslöst.
-        while claimed < self.batch_size and not self._deferred(body_id):
+        while claimed < self.batch_size and await self._may_fetch(body_id):
             files = await self.storage.get_pending_files(
                 body_id=body_id, batch_size=1, max_size_bytes=self.max_size_bytes, retried=True
             )
@@ -337,6 +352,17 @@ class TextExtractor:
     def _deferred(self, body_id: Any) -> bool:
         """Ist die Kommune zurückgestellt (robots.txt oder Quelle eben nicht erreichbar)?"""
         return self._backoff.deferred(body_id, self._clock())
+
+    async def _outside_window(self, body_id: Any) -> bool:
+        """Liegt jetzt außerhalb des Abruffensters der Quelle (``sync_window``, Issue #1186)? Ohne Fenster nie."""
+        if body_id is None:
+            return False
+        options = await self._fetch_options(body_id)
+        return options.outside_sync_window(self._wall_clock())
+
+    async def _may_fetch(self, body_id: Any) -> bool:
+        """Darf die nächste Portion beansprucht werden: Quelle nicht zurückgestellt und im Abruffenster?"""
+        return not self._deferred(body_id) and not await self._outside_window(body_id)
 
     async def _process_claimed(self, files: list[Any]) -> int:
         """
@@ -394,6 +420,10 @@ class TextExtractor:
         # Quelle eben zurückgestellt (etwa nach dem Downloadfehler einer Datei derselben Portion, Issue #1121):
         # nicht anfragen, noch nicht begonnen, die Datei bleibt "pending"
         if file_row.body_id is not None and self._deferred(file_row.body_id):
+            await self.storage.update_file_text(file_id=file_id, status="pending", reset_attempts=False)
+            return False
+        # Abruffenster der Quelle inzwischen zu (Issue #1186): nicht anfragen, die Datei bleibt "pending"
+        if await self._outside_window(file_row.body_id):
             await self.storage.update_file_text(file_id=file_id, status="pending", reset_attempts=False)
             return False
 

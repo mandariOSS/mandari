@@ -175,6 +175,9 @@ def sync(
     Eine Adresse, die keine registrierte Quelle ist, lehnen --body und --source ohne Abruf ab (Issue #555): Neue
     Quellen legt ``manage.py add_oparl_source`` an. Registrierte Adressen zeigt ``list-sources``.
 
+    Eine Quelle mit Abruffenster (``sync_config["sync_window"]``, Issue #1186) gleicht der Befehl außerhalb des
+    Fensters nicht ab, ohne Übersteuerung: Meldung mit dem nächsten Fenster, kein Sync-Protokoll, Rückgabewert 1.
+
     Examples:
 
         # Sync a source by its base URL (as registered)
@@ -226,6 +229,8 @@ def sync(
                     return 1
 
             results = []
+            # Quellen außerhalb ihres Abruffensters (sync_window, Issue #1186): nichts abgerufen, kein Protokoll
+            outside_window = False
             if all_sources:
                 console.print("[blue]Syncing all registered sources...[/blue]")
                 results = await orchestrator.sync_all(full=full)
@@ -239,6 +244,11 @@ def sync(
                         full=full,
                         max_concurrent=max_concurrent,
                     )
+                    if result.outside_window:
+                        outside_window = True
+                        for error in result.errors:
+                            console.print(error, style="red", markup=False, soft_wrap=True)
+                        continue
                     orchestrator.print_result(result)
                     results.append(result)
             else:
@@ -250,7 +260,7 @@ def sync(
                     max_concurrent=max_concurrent,
                     body_filter=body_filter,
                 )
-                if result.filter_without_match:
+                if result.filter_without_match or result.outside_window:
                     # Kein Lauf und damit kein Sync-Protokoll; die Quelle blieb unverändert
                     for error in result.errors:
                         console.print(error, style="red", markup=False, soft_wrap=True)
@@ -266,7 +276,7 @@ def sync(
                     sync_type,
                     triggered_by="cli",
                 )
-        return 0
+        return 1 if outside_window else 0
 
     try:
         code = asyncio.run(run_sync())

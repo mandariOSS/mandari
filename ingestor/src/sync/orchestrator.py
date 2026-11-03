@@ -50,6 +50,7 @@ from src.client.oparl_client import (
     MODIFIED_SINCE_INCONCLUSIVE,
     MODIFIED_SINCE_SUPPORTED,
     MODIFIED_SINCE_UNSUPPORTED,
+    FetchWindowClosedError,
     ListFetchError,
     ListMissingError,
     OParlClient,
@@ -478,6 +479,15 @@ def source_status_label(source: object, now: datetime | None = None) -> str:
     return "aktiv"
 
 
+def outside_window_note(name: str, window: FullSyncWindow, now: datetime | None = None) -> str:
+    """Meldung, wenn eine Quelle außerhalb ihres Abruffensters (``sync_window``) abgerufen werden soll (Issue #1186)."""
+    opens = window.next_open(now).astimezone(window.tz)
+    return (
+        f"{name}: außerhalb des Abruffensters {window.label()}, nichts abgerufen; nächstes Fenster ab "
+        f"{opens:%d.%m. %H:%M} Uhr"
+    )
+
+
 def source_backoff_until(source, now: datetime | None = None) -> datetime | None:
     """Zeitpunkt, bis zu dem eine mehrfach gescheiterte Quelle in Ruhe gelassen wird (sonst None)."""
     failures = getattr(source, "consecutive_failures", 0) or 0
@@ -535,6 +545,9 @@ class SyncResult:
     slice_details: dict[str, Any] = field(default_factory=dict)
     # sync --source --filter: Keine Kommune passt, nichts abgeglichen, die Quelle blieb unverändert (Issue #555)
     filter_without_match: bool = False
+    # Außerhalb des Abruffensters der Quelle (``sync_window``, Issue #1186): kein Lauf, nichts abgerufen, die Quelle
+    # blieb unverändert; die Meldung steht unter ``errors``
+    outside_window: bool = False
 
 
 def merge_slice_details(target: dict[str, Any], body_result: dict[str, Any]) -> None:
@@ -664,7 +677,8 @@ class SyncOrchestrator:
         ``ScraperSyncRunner`` für eine Scraper-Quelle (``sync_config["source_type"] = "scraper:<vendor>"``), sonst None.
 
         Scraper-Quellen laufen über den Runner statt über den OParl-Client; Zeitfenster und Mindestabstand des
-        Vollabgleichs (``_full_sync_plan``) gelten für sie nur im geplanten Vollabgleich des Daemons. Zeitscheiben,
+        Vollabgleichs (``_full_sync_plan``) gelten für sie nur im geplanten Vollabgleich des Daemons, das Abruffenster
+        (``sync_window``, Issue #1186) dagegen immer, mit Ende des Crawls am Fensterende. Zeitscheiben,
         langsame Listen (``_slice_run``) und Vermerke „filtert nicht“ (``_filter_notes``) gibt es bei ihnen nicht.
         "bridge:*"-Quellen (z. B. oparl-bridge vor ALLRIS) sind normale OParl-Quellen und nehmen den Standardpfad.
         """
@@ -904,6 +918,11 @@ class SyncOrchestrator:
                 endet der Lauf ohne Abgleich und ohne Änderung an der Quelle (``filter_without_match``). Nicht für
                 Scraper-Quellen.
 
+        Außerhalb des Abruffensters der Quelle (``sync_config["sync_window"]``, Issue #1186) ruft der Lauf nichts ab,
+        auf keinem Weg und ohne Übersteuerung: Er endet sofort mit ``outside_window`` und der Meldung unter ``errors``,
+        ohne Änderung an der Quelle (kein Fehlversuch). Im Fenster endet jeder Abruf mit dem Fenster
+        (``fetch_deadline``): danach keine weitere Seite, offene Listen bleiben Lücken.
+
         Returns:
             SyncResult with statistics
         """
@@ -911,6 +930,13 @@ class SyncOrchestrator:
         result = SyncResult(source_url=url, source_name="", success=False)
         source_row = await self.storage.get_source_by_url(url)
         self._register_id_base(url, source_row)
+        options = SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None))
+        if options.sync_window is not None and options.outside_sync_window(start_time):
+            result.source_name = str(getattr(source_row, "name", "") or url)
+            result.outside_window = True
+            # Die Meldung gibt der Aufrufer aus (Daemon, Kommandozeile)
+            result.errors.append(outside_window_note(result.source_name, options.sync_window, start_time))
+            return result
         runner = self._scraper_runner(source_row)
         if runner is not None:
             if body_filter:
@@ -918,18 +944,24 @@ class SyncOrchestrator:
                     "[yellow]Der Filter nach Kommune gilt nicht für Scraper-Quellen; abgeglichen wird die ganze "
                     "Quelle.[/yellow]"
                 )
-            return await runner.run(full=full)
+            return await runner.run(full=full, fetch_deadline=options.fetch_deadline(start_time))
 
         # Vermerke „filtert nicht“ dieser Quelle (Issue #1041), alte Einträge je Server übernommen
         filter_notes = self._filter_notes(url, source_row)
-        options = SourceFetchOptions.from_sync_config(getattr(source_row, "sync_config", None))
         full, fetch_deadline = self._full_sync_plan(url, options, full, source_row, default_window)
         full, slice_run, slice_note = await self._slice_run(
             url, options, full, getattr(source_row, "sync_config", None)
         )
         if slice_note is not None:
-            fetch_deadline = None  # nur Änderungsabgleich: das Zeitfenster gilt nur für den Vollabgleich
+            fetch_deadline = None  # nur Änderungsabgleich: das Fenster des Vollabgleichs gilt nicht
             result.errors.append(slice_note)
+        # Das Abruffenster der Quelle begrenzt jeden Lauf, auch den Änderungsabgleich (Issue #1186)
+        fetch_deadline = options.fetch_deadline(start_time, fetch_deadline)
+        if options.sync_window is not None and fetch_deadline is not None:
+            console.print(
+                f"[dim]{url}: Abruf bis {fetch_deadline.astimezone(options.sync_window.tz):%H:%M} Uhr "
+                f"(Abruffenster {options.sync_window.label()})[/dim]"
+            )
         result.full = full
 
         client: OParlClient | None = None
@@ -1070,6 +1102,12 @@ class SyncOrchestrator:
 
                 metrics.record_entities_batch(result.source_name, total_synced)
 
+        except FetchWindowClosedError as e:
+            # Fensterende schon beim Lesen der Kommunen: abgebrochen, aber kein Fehlversuch der Quelle (Issue #1186)
+            result.errors.append(str(e))
+            console.print(f"[yellow]Sync abgebrochen: {e}[/yellow]")
+            if client is not None:
+                self._collect_host_findings(result, client)
         except Exception as e:
             result.errors.append(str(e))
             console.print(f"[red]Sync failed: {e}[/red]")
@@ -1167,6 +1205,8 @@ class SyncOrchestrator:
         """
         if not settings.oparl_modified_since_enabled:
             return None
+        if client.deadline_passed():
+            return None  # Zeitfenster der Quelle abgelaufen: keine Anfrage mehr (Issue #1186)
         list_url = next(
             (
                 body.get(key)
@@ -1183,7 +1223,7 @@ class SyncOrchestrator:
         try:
             since = datetime.now(UTC) - timedelta(days=self.MODIFIED_SINCE_PROBE_DAYS)
             verdict = await client.probe_modified_since(list_url, since)
-            if verdict == MODIFIED_SINCE_INCONCLUSIVE:
+            if verdict == MODIFIED_SINCE_INCONCLUSIVE and not client.deadline_passed():
                 # Einzelne Störung (langsame Antwort, 5xx) soll einen veralteten Befund nicht bis zum nächsten
                 # Vollabgleich festschreiben: einmal nach kurzer Pause wiederholen
                 await asyncio.sleep(self.MODIFIED_SINCE_RETRY_SECONDS)
@@ -1224,7 +1264,7 @@ class SyncOrchestrator:
             last_full_sync=getattr(source_row, "last_successful_full_sync", None),
             default_window=default_window,
         )
-        if full and not planned_full and options.full_sync_slices is not None and options.sync_window() is None:
+        if full and not planned_full and options.full_sync_slices is not None and options.full_window() is None:
             if default_window is None:
                 console.print(
                     f"[yellow]{url}: Vollabgleich in Zeitscheiben nur in einem Zeitfenster (full_sync_window oder "
@@ -2712,12 +2752,15 @@ class SyncOrchestrator:
             )
             return []
 
-        # Quellen in Schonung überspringen (Issue #89)
+        # Quellen in Schonung (Issue #89) und außerhalb ihres Abruffensters (Issue #1186) überspringen
         now = datetime.now(UTC)
         due = []
         for source in sources:
             until = source_backoff_until(source, now)
-            if until is None:
+            window = SourceFetchOptions.from_sync_config(getattr(source, "sync_config", None)).sync_window
+            if until is None and window is not None and window.closes_at(now) is None:
+                console.print(f"[yellow]{outside_window_note(source.name, window, now)}[/yellow]")
+            elif until is None:
                 due.append(source)
             else:
                 reason = ERROR_KIND_LABELS.get(
