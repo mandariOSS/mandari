@@ -11,7 +11,8 @@
 #   dev    → :dev, :dev-<sha>
 #   beta   → :beta, :beta-<sha>
 #   main   → :latest, :<sha>
-#   release → :<version>, :latest
+#   release → :<version>, dazu :vX.Y und :latest nur, wenn das Release dort das neueste ist
+#             (siehe Schritt "Determine image tags")
 #   manual → :<input>
 # =============================================================================
 
@@ -97,15 +98,45 @@ jobs:
 
       - name: Determine image tags
         id: tags
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
         run: |
           SHORT_SHA=$(git rev-parse --short HEAD)
           BRANCH="${GITHUB_REF_NAME}"
 
           if [ "${{ github.event_name }}" == "release" ]; then
-            # Release: version tag + latest
-            VERSION="${{ github.event.release.tag_name }}"
-            MANDARI_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:latest"
-            INGESTOR_TAGS="${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${VERSION},${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:latest"
+            # Release: immer das Versions-Tag (v0.11.1). Dazu
+            #   :vX.Y   (z. B. v0.11), wenn es das höchste Patch-Release seiner Linie ist,
+            #   :latest nur, wenn es die höchste stabile Version überhaupt ist UND sein Commit in main liegt.
+            # latest folgt main (jeder Push auf main setzt es). Ein Patch einer älteren Linie (v0.11.1 nach
+            # 0.12) oder ein Release vor dem Merge nach main würde Installationen auf latest sonst auf einen
+            # älteren Stand zurücksetzen. Ist etwas nicht feststellbar, bleiben vX.Y und latest unverändert.
+            VERSION="$RELEASE_TAG"
+            RELEASE_TAGS="$VERSION"
+            STABIL='^v[0-9]+\.[0-9]+\.[0-9]+$'
+            if echo "$VERSION" | grep -Eq "$STABIL"; then
+              VERSIONEN=$( (git ls-remote --tags --refs origin 'v*' || true) | sed 's#.*refs/tags/##' | (grep -E "$STABIL" || true) | sort -V)
+              LINIE="${VERSION%.*}"
+              HOECHSTE=$(printf '%s\n' "$VERSIONEN" | tail -n1)
+              HOECHSTE_LINIE=$(printf '%s\n' "$VERSIONEN" | (grep -E "^${LINIE//./\\.}\.[0-9]+$" || true) | tail -n1)
+              STAND_MAIN=$(gh api "repos/${GITHUB_REPOSITORY}/compare/main...${GITHUB_SHA}" --jq .status 2>/dev/null || echo unbekannt)
+              echo "Höchste Version: ${HOECHSTE:-unbekannt}, höchste der Linie ${LINIE}: ${HOECHSTE_LINIE:-unbekannt}, Commit gegenüber main: ${STAND_MAIN}"
+              if [ "$HOECHSTE_LINIE" = "$VERSION" ]; then
+                RELEASE_TAGS="$RELEASE_TAGS $LINIE"
+              fi
+              if [ "$HOECHSTE" = "$VERSION" ] && { [ "$STAND_MAIN" = "identical" ] || [ "$STAND_MAIN" = "behind" ]; }; then
+                RELEASE_TAGS="$RELEASE_TAGS latest"
+              else
+                echo "::notice title=latest bleibt unverändert::$VERSION ist nicht das neueste Release in main (höchste Version: ${HOECHSTE:-unbekannt}, Commit gegenüber main: ${STAND_MAIN})."
+              fi
+            fi
+            MANDARI_TAGS=""
+            INGESTOR_TAGS=""
+            for TAG in $RELEASE_TAGS; do
+              MANDARI_TAGS="${MANDARI_TAGS:+$MANDARI_TAGS,}${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/mandari:${TAG}"
+              INGESTOR_TAGS="${INGESTOR_TAGS:+$INGESTOR_TAGS,}${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/ingestor:${TAG}"
+            done
 
           elif [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
             # Manual: custom tag
@@ -210,6 +241,9 @@ jobs:
           format: cyclonedx-json
           artifact-name: mandari-sbom-cyclonedx.json
           upload-artifact: true
+          # Ans Release hängt der Job „SBOM (CycloneDX)“ die SBOMs; dieser Job darf nur lesen
+          # (contents: read) und scheiterte beim Release-Ereignis am Hochladen (v0.11.0).
+          upload-release-assets: false
 
       - name: Make container packages public
         continue-on-error: true
