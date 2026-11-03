@@ -114,6 +114,13 @@ class Settings(BaseSettings):
     text_extraction_concurrency: int = 4
     text_extraction_timeout: float = 120.0
     text_extraction_batch_size: int = 500
+    # Die Textebene (pypdf) eines PDFs liest ein eigener Prozess mit Grenze des Adressraums in MB (0 = ohne; wirkt
+    # unter Linux) und Zeitgrenze in Sekunden, nie der Ingestor selbst. Darüber geht die Datei an die Erkennung aus
+    # dem Bild. Höchstens TEXT_LAYER_CONCURRENCY solche Prozesse laufen zugleich, über alle Quellen: Anzahl × Grenze
+    # plus Grundbedarf (rund 200 MB) unter dem Speicherlimit des Containers halten (DEPLOYMENT.md).
+    text_layer_memory_limit_mb: int = 384
+    text_layer_timeout: float = 120.0
+    text_layer_concurrency: int = 2
 
     # Mistral OCR (optional): wenn ein API-Key gesetzt ist, laeuft OCR fuer
     # Scan-PDFs ueber die Mistral-API statt lokal per Tesseract (deutlich
