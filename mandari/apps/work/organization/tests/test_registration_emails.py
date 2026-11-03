@@ -4,7 +4,7 @@ Registrierung und Zugangs-Mails.
 
 Geprüft werden die Selbstregistrierung mit E-Mail-Bestätigung, Freischalten und Ablehnen samt
 Benachrichtigung, die Trennung offener Anfragen von deaktivierten Mitgliedern sowie der Versand
-über das SMTP der Organisation (Passwort-Links ausgenommen).
+über das SMTP der Organisation (Einladungs-, Bestätigungs- und Passwort-Links ausgenommen).
 """
 
 from __future__ import annotations
@@ -237,16 +237,17 @@ def use_own_smtp(org: Any) -> None:
     org.save()
 
 
-def test_einladung_laeuft_ueber_smtp_der_organisation(org: Any, reviewer: Any) -> None:
+def test_einladung_laeuft_auch_bei_eigenem_smtp_ueber_mandari(org: Any, reviewer: Any) -> None:
+    # Der Annahme-Link setzt ein Passwort und bestätigt die Adresse – nie über fremde Mailserver
     use_own_smtp(org)
     with mock.patch(
         "apps.common.org_email.get_organization_connection",
         return_value=build_backend("django.core.mail.backends.locmem.EmailBackend"),
     ) as connection:
         services.invite_member(org, reviewer.user, "eingeladen@example.org", [], "Hallo <script>")
-    connection.assert_called_once()
+    connection.assert_not_called()
     message = mails_to("eingeladen@example.org")[0]
-    assert message.from_email == "Fraktion Test <fraktion@example.org>"
+    assert "fraktion@example.org" not in message.from_email
     html = message.alternatives[0][0]
     assert "&lt;script&gt;" in html
     assert "<script>" not in html

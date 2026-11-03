@@ -18,6 +18,10 @@ Fehlerverhalten konfigurierbar (``smtp_fallback_to_mandari``):
 - False: Der Versand schlägt sichtbar fehl (:class:`OrgMailError` bzw.
   ``False`` bei ``fail_silently=True``).
 
+Links, mit denen sich ein Passwort setzen oder eine Adresse bestätigen lässt (Einladung in die
+Organisation, Bestätigung der Selbstregistrierung, Passwort-Links), laufen nie über diesen Weg,
+sondern immer über mandari (``via_organization=False`` in ``apps.work.organization.emails``).
+
 SPF/DKIM für die eigene Absender-Domain verantwortet die Organisation —
 darauf weist die Einstellungs-UI ausdrücklich hin.
 """
