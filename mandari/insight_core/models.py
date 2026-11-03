@@ -10,7 +10,8 @@ from typing import Any
 
 from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
-from django.db.models import Q
+from django.db.models import Exists, F, OuterRef, Q
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from apps.common.formatting import human_size
@@ -32,6 +33,60 @@ def withdrawn_q(prefix: str = "") -> Q:
     for marker in SESSION_OPARL_MARKERS:
         bedingung &= Q(**{f"{feld}external_id__contains": marker})
     return bedingung
+
+
+# Beratungen: Bezüge nur innerhalb einer Quelle
+#
+# Eine Beratung nennt ihre Sitzung und ihren Tagesordnungspunkt nur als Kennung der Quelle (Text), nicht als
+# Fremdschlüssel. Ein solcher Bezug gilt nur, wenn Sitzung bzw. Punkt zur selben Quelle gehören wie die Kommune der
+# Beratung (``body__source_id``); Beratungen ohne Kommune (Altbestand) schränkt das nicht ein. Jede Abfrage, die
+# Beratungen über diese Kennungen mit Sitzungen oder Punkten verbindet, nimmt eine der Bedingungen hier.
+
+
+def meeting_in_consultation_source() -> Q:
+    """
+    Bedingung auf ``OParlMeeting`` in einer Unterabfrage je Beratung (``OuterRef`` auf ``OParlConsultation``): Die
+    Sitzung gehört zur Quelle der Kommune der Beratung; bei einer Beratung ohne Kommune gilt jede Sitzung.
+    """
+    return Q(body__source_id=Coalesce(OuterRef("body__source_id"), F("body__source_id")))
+
+
+def agenda_item_in_consultation_source() -> Q:
+    """Wie ``meeting_in_consultation_source`` für ``OParlAgendaItem`` (Quelle über die Sitzung des Punkts)."""
+    return Q(meeting__body__source_id=Coalesce(OuterRef("body__source_id"), F("meeting__body__source_id")))
+
+
+def consultation_meeting_in_source() -> Exists:
+    """
+    Bedingung auf ``OParlConsultation``: Die Sitzung aus ``meeting_external_id`` steht im Bestand und gehört zur
+    Quelle der Beratung (``meeting_in_consultation_source``).
+    """
+    return Exists(
+        OParlMeeting.objects.filter(meeting_in_consultation_source(), external_id=OuterRef("meeting_external_id"))
+    )
+
+
+def consultation_agenda_item_in_source() -> Exists:
+    """Wie ``consultation_meeting_in_source`` für den Tagesordnungspunkt aus ``agenda_item_external_id``."""
+    return Exists(
+        OParlAgendaItem.objects.filter(
+            agenda_item_in_consultation_source(), external_id=OuterRef("agenda_item_external_id")
+        )
+    )
+
+
+def with_reference_checks(
+    consultations: "models.QuerySet[OParlConsultation]",
+) -> "models.QuerySet[OParlConsultation]":
+    """
+    Beratungen mit ``meeting_in_source`` und ``agenda_item_in_source`` (bool): Sitzung bzw. Tagesordnungspunkt
+    gehören zur Quelle der Beratung. Für Aufrufer, die die Bezüge selbst über ihre Kennung nachschlagen: Ist das Feld
+    falsch, gilt der Bezug als unbekannt.
+    """
+    return consultations.annotate(
+        meeting_in_source=consultation_meeting_in_source(),
+        agenda_item_in_source=consultation_agenda_item_in_source(),
+    )
 
 
 class SourceDeletionModel(models.Model):
@@ -836,9 +891,13 @@ class OParlAgendaItem(SourceDeletionModel):
         ).distinct()
 
     def get_consultations(self):
-        """Liefert die Consultations für diesen TOP – ohne die von mandari Session zurückgenommenen."""
+        """
+        Liefert die Consultations für diesen TOP – ohne die von mandari Session zurückgenommenen und nur aus der Quelle
+        dieses TOPs (``consultation_agenda_item_in_source``).
+        """
         return (
             OParlConsultation.objects.filter(agenda_item_external_id=self.external_id)
+            .filter(consultation_agenda_item_in_source())
             .exclude(withdrawn_q())
             .exclude(withdrawn_q("paper"))
             .select_related("paper")

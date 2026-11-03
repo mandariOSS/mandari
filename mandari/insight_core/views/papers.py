@@ -17,6 +17,7 @@ from ..models import (
     OParlAgendaItem,
     OParlMeeting,
     OParlPaper,
+    with_reference_checks,
     withdrawn_q,
 )
 from ._helpers import ActiveBodyRequiredMixin, get_active_body
@@ -151,7 +152,7 @@ class PaperDetailView(DetailView):
         """
         # Von mandari Session zurückgenommene Beratungen, Sitzungen und TOPs (z. B. nicht-öffentlich
         # gestellt) erscheinen nicht – wie in der Session-OParl-API, die solche Verweise auslässt.
-        consultations = list(paper.consultations.exclude(withdrawn_q()))
+        consultations = list(with_reference_checks(paper.consultations.exclude(withdrawn_q())))
         if not consultations:
             return []
 
@@ -182,8 +183,13 @@ class PaperDetailView(DetailView):
         # Baue angereicherte Consultation-Liste
         result = []
         for consultation in consultations:
-            meeting = meetings_by_id.get(consultation.meeting_external_id)
-            agenda_item = agenda_items_by_id.get(consultation.agenda_item_external_id)
+            # Sitzung und TOP einer anderen Quelle gelten als unbekannt (with_reference_checks)
+            meeting = meetings_by_id.get(consultation.meeting_external_id) if consultation.meeting_in_source else None
+            agenda_item = (
+                agenda_items_by_id.get(consultation.agenda_item_external_id)
+                if consultation.agenda_item_in_source
+                else None
+            )
 
             result.append(
                 {
