@@ -6,6 +6,24 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+## [0.11.1] – 2026-11-04
+
+Patch-Release der Linie 0.11 mit Sicherheitskorrekturen, ohne neue Funktionen.
+Dieselben Korrekturen enthält 0.12.0.
+
+### Behoben
+- Ingestor-Image: Die Abhängigkeiten kommen mit Hash-Prüfung aus `ingestor/uv.lock`, also in denselben Versionen wie in CI und Abhängigkeitsprüfung. Bisher wurden sie bei jedem Bau neu aufgelöst; ein Neubau hätte SQLAlchemy 2.1 ohne greenlet gezogen, mit dem der Ingestor nicht auf die Datenbank zugreifen kann. Der Bau prüft jetzt, dass alle Abhängigkeiten vorhanden und alle Module importierbar sind.
+- Container-Images: Ein Release setzt `latest` nur noch, wenn es das neueste Release ist. Ein Patch-Release einer älteren Linie bekommt sein Versions-Tag (`v0.11.1`) und das Tag seiner Linie (`v0.11`), `latest` bleibt unverändert.
+
+### Sicherheit
+- Zugangsmails: Einladungs- und Bestätigungslinks gehen immer über den Versandweg der Plattform, auch wenn eine Organisation einen eigenen SMTP-Server eingetragen hat. Der Bestätigungslink der Selbstregistrierung wirkt nur für das angemeldete Konto, für das er ausgestellt wurde (GHSA-qv9h-xqpv-rg2c, GHSA-h9wq-g8rg-24p3).
+- Ingestor: Gespeicherte Objekte sind an die Quelle der abgeglichenen Kommune gebunden (GHSA-8mvp-4q64-6mp3).
+- Suchindex: Sammelanfragen an den Suchindex haben eine Bytegrenze (GHSA-x38r-74hq-j739).
+- Chat-Filter: Die Längengrenze greift vor den regulären Ausdrücken (GHSA-5q8m-hr6v-6qrp).
+- Texterkennung: Obergrenze für den erkannten Text je Datei; öffentliche Seiten laden den erkannten Text nur begrenzt (GHSA-2fv5-mj8h-xghc).
+- Ingestor: Die Textebene von PDFs wird mit Speicher- und Zeitgrenze gelesen (GHSA-3j9r-rfvx-w373).
+- Abhängigkeiten mit bekannten Sicherheitslücken auf korrigierte Versionen gehoben. Anwendung: pypdf 6.21.4, Pillow 13.0.0, Twisted 26.10.0, autobahn 26.10.2, aiohttp 3.14.5, multidict 6.9.1, urllib3 2.8.0, certifi 2026.10.19, msgpack 1.2.4, pyasn1 0.6.5, OpenTelemetry 1.45.1 (Instrumentierung 0.66b1). Ingestor: pypdf 6.21.4, Pillow 13.0.0, aiohttp 3.14.5, multidict 6.9.1, urllib3 2.8.0, certifi 2026.10.19, OpenTelemetry 1.45.1. Frontend-Werkzeuge: Vite 6.4.5, concurrently 9.2.5 (shell-quote 1.12.0), source-map-js 1.2.2, postcss-selector-parser 6.1.5. `pip-audit` und `npm audit` melden danach keine bekannten Lücken.
+
 ## [0.11.0] – 2026-09-27
 
 Erstes Release seit 0.9.0-beta. Die Version 0.10.0 war vorbereitet, wurde aber nicht als
@@ -130,6 +148,7 @@ Release in Produktion. Selbst-Hoster lesen vor dem Update den Abschnitt „Brech
 Erste öffentliche Beta: Bürgerportal (Insight) mit OParl-Ingestor, mandari work für
 Fraktionen, mandari session für Verwaltungen.
 
-[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.11.0...dev
+[Unreleased]: https://github.com/mandariOSS/mandari/compare/v0.11.1...release/v0.11
+[0.11.1]: https://github.com/mandariOSS/mandari/compare/v0.11.0...v0.11.1
 [0.11.0]: https://github.com/mandariOSS/mandari/compare/v0.9.0-beta...v0.11.0
 [0.9.0-beta]: https://github.com/mandariOSS/mandari/releases/tag/v0.9.0-beta
