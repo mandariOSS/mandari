@@ -4,8 +4,12 @@ Pre-LLM content filters for the chat service.
 
 Three filter stages, all executed BEFORE the LLM call:
 1. PII detection (email, phone, IBAN, etc.)
-2. Spam/abuse detection (length, duplicates, gibberish)
+2. Spam/abuse detection (too short, duplicates, gibberish)
 3. Prompt injection detection (role override attempts)
+
+Vorab prüft ``check_message`` die Länge, ohne regulären Ausdruck: Die Filter sehen höchstens
+``MAX_MESSAGE_LENGTH`` Zeichen. Ein regulärer Ausdruck läuft in C und gibt die GIL nicht ab; eine lange
+Nachricht darf den Prozess deshalb nicht erreichen.
 """
 
 import logging
@@ -13,13 +17,18 @@ import re
 
 logger = logging.getLogger(__name__)
 
+#: Höchstlänge einer Nachricht in Zeichen, geprüft vor allen Filtern
+MAX_MESSAGE_LENGTH = 2000
+
 # =============================================================================
 # PII Patterns
 # =============================================================================
 
 PII_PATTERNS = [
-    # Email addresses
-    (re.compile(r"[\w.+-]+@[\w.-]+\.\w{2,}", re.IGNORECASE), "E-Mail-Adresse"),
+    # Email addresses. Der Lookbehind lässt die Suche nur am Anfang einer Zeichenfolge beginnen: Ohne ihn setzt
+    # sie an jeder Stelle einer langen Folge von Wortzeichen neu an und läuft bis zu deren Ende (quadratisch).
+    # Gefunden wird dasselbe, denn ein Treffer mitten in einer Folge ist auch einer ab ihrem Anfang.
+    (re.compile(r"(?<![\w.+-])[\w.+-]+@[\w.-]+\.\w{2,}", re.IGNORECASE), "E-Mail-Adresse"),
     # German phone numbers
     (re.compile(r"(\+49|0)\s?\d{2,4}[\s/\-]?\d{3,}", re.IGNORECASE), "Telefonnummer"),
     # German postal codes + city (5 digits followed by word)
@@ -51,6 +60,18 @@ INJECTION_PATTERNS = [
 ]
 
 
+def _check_length(message: str) -> dict | None:
+    """Zu lange Nachrichten abweisen, nur über ``len()`` und ohne regulären Ausdruck."""
+    if len(message) > MAX_MESSAGE_LENGTH:
+        return {
+            "blocked": True,
+            "reason": "spam",
+            "filter_result": "spam_blocked",
+            "message": f"Ihre Nachricht ist zu lang. Bitte kürzen Sie sie auf maximal {MAX_MESSAGE_LENGTH} Zeichen.",
+        }
+    return None
+
+
 def _check_pii(message: str) -> dict | None:
     """Check for personally identifiable information."""
     for pattern, pii_type in PII_PATTERNS:
@@ -80,14 +101,7 @@ def _check_spam(message: str, session_key: str) -> dict | None:
             "message": "Bitte geben Sie eine vollständige Frage ein.",
         }
 
-    # Too long
-    if len(message) > 2000:
-        return {
-            "blocked": True,
-            "reason": "spam",
-            "filter_result": "spam_blocked",
-            "message": "Ihre Nachricht ist zu lang. Bitte kürzen Sie sie auf maximal 2000 Zeichen.",
-        }
+    # Zu lang: schon vorab in check_message (_check_length)
 
     # No letters at all (only special chars/numbers)
     if not re.search(r"[a-zA-ZäöüÄÖÜß]", message):
@@ -139,7 +153,7 @@ def check_message(message: str, session_key: str = "") -> dict:
     """
     Run all content filters on a message.
 
-    Checks PII, spam, and injection filters in order.
+    Zuerst die Länge (ohne regulären Ausdruck), dann PII, Spam und Injection in dieser Reihenfolge.
 
     Args:
         message: The user message to check
@@ -149,6 +163,11 @@ def check_message(message: str, session_key: str = "") -> dict:
         {"blocked": False} if all checks pass, or
         {"blocked": True, "reason": str, "filter_result": str, "message": str}
     """
+    # 0. Länge: Kein Filter danach sieht mehr als MAX_MESSAGE_LENGTH Zeichen
+    result = _check_length(message)
+    if result:
+        return result
+
     # 1. PII check
     result = _check_pii(message)
     if result:
