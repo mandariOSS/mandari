@@ -150,7 +150,9 @@ def test_bestaetigungslink_der_selbstregistrierung(org: Any) -> None:
     for falsch in (new_token(), bestaetigung.token):
         assert org_selectors.find_registration_token(falsch) is None
 
-    antwort = Client().post(reverse("accounts:self_register_confirm", kwargs={"org_slug": org.slug, "token": token}))
+    client = Client()
+    client.force_login(person)
+    antwort = client.post(reverse("accounts:self_register_confirm", kwargs={"org_slug": org.slug, "token": token}))
     assert antwort.status_code in (200, 302)
     bestaetigung.refresh_from_db()
     assert bestaetigung.verified_at is not None

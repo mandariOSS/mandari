@@ -113,6 +113,8 @@ def test_registrierung_verlangt_bestaetigung_und_informiert_freigebende(
     assert client.get(path).status_code == 200
     assert not Membership.objects.filter(user=user, organization=org).exists()
 
+    # Bestätigen kann nur, wer mit dem Konto angemeldet ist
+    client.force_login(user)
     response = client.post(path)
     assert response.status_code == 200
     membership = Membership.objects.get(user=user, organization=org)
@@ -139,9 +141,10 @@ def test_automatische_freischaltung_nach_bestaetigung(client: Client, org: Any, 
     path = confirm_path(mails_to("neu@example.org")[0])
     mail.outbox.clear()
 
+    client.force_login(User.objects.get(email="neu@example.org"))
     response = client.post(path)
     assert response.status_code == 302
-    assert response["Location"].startswith(reverse("accounts:login"))
+    assert response["Location"] == reverse("work:dashboard", kwargs={"org_slug": org.slug})
     membership = Membership.objects.get(user__email="neu@example.org", organization=org)
     assert membership.is_active is True
     assert membership.registration_requested_at is None
