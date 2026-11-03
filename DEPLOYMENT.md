@@ -355,6 +355,28 @@ Der Ingestor darf mit 30 Verbindungen mehr als die Anwendung. Das ist historisch
 und nicht gemessen — wer hier Luft braucht, kürzt zuerst dort
 (`ingestor/src/storage/database.py`, `pool_size` und `max_overflow`).
 
+## 📄 Texterkennung im Ingestor: Grenzen
+
+Die Textebene eines PDFs (pypdf) liest der Ingestor nie im eigenen Prozess, der alle
+Abgleiche trägt, sondern je Datei in einem eigenen Prozess mit Grenze des Adressraums
+und Zeitgrenze. Endet dieser Prozess an einer Grenze, erkennt der Ingestor die Datei aus
+dem Bild (Mistral, falls eingerichtet, sonst Tesseract), ohne die Textebene selbst zu
+lesen. Die Textebene liefert höchstens 3000 Seiten und 5 Mio. Zeichen; gespeichert und
+in den Suchindex geschrieben werden höchstens 5 Mio. Zeichen je Datei.
+
+| Variable | Vorgabe | Bedeutung |
+|---|---|---|
+| `TEXT_LAYER_MEMORY_LIMIT_MB` | `384` | Adressraum je Prozess der Textebene in MB (`0` = ohne Grenze); wirkt unter Linux |
+| `TEXT_LAYER_TIMEOUT` | `120` | Sekunden je Prozess der Textebene |
+| `TEXT_LAYER_CONCURRENCY` | `2` | So viele Prozesse der Textebene laufen höchstens zugleich, über alle Quellen |
+
+Anzahl × Grenze plus rund 200 MB Grundbedarf unter dem Speicherlimit des Ingestors
+halten, wo der Speicherwächter den ganzen Container beendet (Kubernetes mit cgroup v2;
+Helm-Vorgabe 1 GiB). Unter Docker trifft der Speicherwächter bei Speichermangel zuerst
+diese Prozesse (`oom_score_adj` 1000), nicht den Ingestor. Die Compose-Datei reicht die
+Variablen nicht durch; wer sie ändern will, ergänzt sie unter `environment:` des Dienstes
+`ingestor`.
+
 ## 🧾 Protokolle
 
 Container-Logs laufen auf Produktionshosts über `journald` (90 Tage, höchstens 2 GB,

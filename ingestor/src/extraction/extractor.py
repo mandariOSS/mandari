@@ -7,25 +7,30 @@ Downloads PDF files and extracts text using a fallback chain:
 3. AI OCR (placeholder for future Mistral integration)
 
 Async-capable: PDF downloads via httpx, sync extraction via asyncio.to_thread().
+
+Die Textebene (pypdf) eines PDFs liest ein eigener Prozess mit Speicher- und Zeitgrenze (``textebene.py``,
+``TEXT_LAYER_*``), nie der Ingestor selbst, und höchstens ``TEXT_LAYER_CONCURRENCY`` davon zugleich.
 """
 
 from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import logging
-from io import BytesIO
-from typing import Any
+import os
+import subprocess
+import sys
+import tempfile
+import threading
+from pathlib import Path
+from typing import Any, Final
 from uuid import UUID
 
 import httpx
 
 from src.config import settings
-
-try:
-    from pypdf import PdfReader
-except ImportError:
-    PdfReader = None  # type: ignore[assignment, misc]
+from src.extraction.textebene import EXIT_MEMORY, MAX_TEXT_CHARS
 
 try:
     from pdf2image import convert_from_bytes
@@ -247,37 +252,110 @@ class TextExtractor:
         return "", None, "none"
 
 
+#: Skript des eigenen Prozesses, der die Textebene liest (nur Standardbibliothek und pypdf)
+_TEXT_LAYER_SCRIPT = Path(__file__).with_name("textebene.py")
+#: Höchstens so viel Ausgabe (JSON, Byte) liest der Ingestor von diesem Prozess; mehr gilt als Fehler. Reicht für
+#: ``MAX_TEXT_CHARS`` Zeichen mit maskierten Zeichen (bis sechs Byte je Zeichen).
+_MAX_LAYER_OUTPUT_BYTES: Final = 6 * MAX_TEXT_CHARS + 64 * 1024
+#: Von stderr genügt der Anfang (für die Meldung)
+_MAX_STDERR_BYTES: Final = 4096
+#: Größte plausible Seitenzahl; darüber gilt sie als unbekannt
+_MAX_PAGE_COUNT: Final = 100_000
+
+#: Plätze für Prozesse der Textebene in diesem Ingestor-Prozess, über alle Quellen und Extraktoren
+#: (``TEXT_LAYER_CONCURRENCY``); beim ersten Gebrauch angelegt
+_text_layer_slots: threading.BoundedSemaphore | None = None
+_text_layer_slots_lock = threading.Lock()
+
+
+def _text_layer_slot() -> threading.BoundedSemaphore:
+    global _text_layer_slots
+    with _text_layer_slots_lock:
+        if _text_layer_slots is None:
+            _text_layer_slots = threading.BoundedSemaphore(max(1, settings.text_layer_concurrency))
+        return _text_layer_slots
+
+
+def _read_text_layer_isolated(data: bytes, file_name: str = "") -> tuple[str, int | None] | None:
+    """
+    Text und Seitenzahl der Textebene, gelesen von einem eigenen Prozess (``textebene.py``) mit Grenze des Adressraums
+    (``TEXT_LAYER_MEMORY_LIMIT_MB``) und Zeitgrenze (``TEXT_LAYER_TIMEOUT``); höchstens ``TEXT_LAYER_CONCURRENCY``
+    solcher Prozesse laufen zugleich, ihr Speicher bleibt so zusammen mit dem Grundbedarf des Ingestors begrenzt.
+
+    ``None``, wenn der Prozess an einer Grenze oder mit einem Fehler endet: Die Datei geht dann an die Erkennung aus
+    dem Bild, ohne dass dieser Prozess die Textebene liest. Die Ausgabe landet in temporären Dateien und wird nur bis
+    ``_MAX_LAYER_OUTPUT_BYTES`` gelesen.
+    """
+    command = [sys.executable, "-I", str(_TEXT_LAYER_SCRIPT), str(settings.text_layer_memory_limit_mb)]
+    with tempfile.TemporaryFile() as ausgabe, tempfile.TemporaryFile() as fehler:
+        try:
+            with _text_layer_slot():
+                lauf = subprocess.run(
+                    command,
+                    input=data,
+                    stdout=ausgabe,
+                    stderr=fehler,
+                    timeout=settings.text_layer_timeout,
+                    check=False,
+                )
+        except subprocess.TimeoutExpired:
+            logger.warning(
+                "Textebene %s: Zeitgrenze (%.0f s), weiter mit der Texterkennung",
+                file_name,
+                settings.text_layer_timeout,
+            )
+            return None
+        except (OSError, subprocess.SubprocessError) as exc:
+            logger.warning("Textebene %s: Prozess nicht startbar (%s)", file_name, type(exc).__name__)
+            return None
+        groesse = ausgabe.seek(0, os.SEEK_END)
+        fehler.seek(0)
+        meldung = fehler.read(_MAX_STDERR_BYTES).decode("utf-8", "replace").strip()
+        if lauf.returncode != 0:
+            speicher = lauf.returncode in (EXIT_MEMORY, -9) or "MemoryError" in meldung
+            logger.warning(
+                "Textebene %s: %s (Rückgabe %s), weiter mit der Texterkennung",
+                file_name,
+                "Speichergrenze" if speicher else "Fehler",
+                lauf.returncode,
+            )
+            return None
+        if groesse > _MAX_LAYER_OUTPUT_BYTES:
+            logger.warning("Textebene %s: Ausgabe zu groß (%d Byte), weiter mit der Texterkennung", file_name, groesse)
+            return None
+        ausgabe.seek(0)
+        try:
+            daten = json.loads(ausgabe.read())
+        except ValueError:
+            daten = None
+    if not isinstance(daten, dict) or not isinstance(daten.get("text"), str):
+        logger.warning("Textebene %s: Ausgabe nicht lesbar, weiter mit der Texterkennung", file_name)
+        return None
+    seiten = daten.get("page_count")
+    plausibel = isinstance(seiten, int) and not isinstance(seiten, bool) and 0 <= seiten <= _MAX_PAGE_COUNT
+    return daten["text"][:MAX_TEXT_CHARS], seiten if plausibel else None
+
+
 def _extract_text_from_pdf(data: bytes, file_name: str = "") -> tuple[str, int | None, str]:
     """
     Extract text from a PDF using the fallback chain: pypdf -> Tesseract.
+
+    Die Textebene (pypdf) liest ein eigener Prozess mit Speicher- und Zeitgrenze (``_read_text_layer_isolated``),
+    nie dieser Prozess, der alle Abgleiche trägt; pypdf hält die entpackten Inhalte aller gelesenen Seiten. Endet
+    er an einer Grenze, geht die Datei ohne Seitenzahl an die Erkennung aus dem Bild.
 
     Returns:
         (text, page_count, extraction_method)
     """
     page_count = None
 
-    # 1. Try pypdf (fast, for text-based PDFs)
-    if PdfReader is not None:
-        try:
-            reader = PdfReader(BytesIO(data))
-            page_count = len(reader.pages)
-
-            text_fragments: list[str] = []
-            for page in reader.pages:
-                try:
-                    page_text = page.extract_text() or ""
-                except Exception:
-                    page_text = ""
-                text_fragments.append(page_text.strip())
-
-            text = "\n\n".join(f for f in text_fragments if f)
-
-            if text.strip():
-                logger.debug("pypdf extraction ok: %d chars", len(text))
-                return text, page_count, "pypdf"
-
-        except Exception as exc:
-            logger.warning("pypdf extraction failed: %s", exc)
+    # 1. Try pypdf (fast, for text-based PDFs), in einem eigenen Prozess
+    layer = _read_text_layer_isolated(data, file_name)
+    if layer is not None:
+        text, page_count = layer
+        if text.strip():
+            logger.debug("pypdf extraction ok: %d chars", len(text))
+            return text, page_count, "pypdf"
 
     # 2. Mistral OCR (API, optional) — schneller als lokales Tesseract
     from src.config import settings as _settings
