@@ -402,6 +402,25 @@ jobs:
   ingestor-tests:
     name: Ingestor Tests
     runs-on: ubuntu-latest
+
+    services:
+      # Tests mit PostgreSQL (ON CONFLICT, Quellenbindung, Suchindex) legen ein eigenes Schema aus der
+      # Tabellenbeschreibung des Ingestors an; ohne INGESTOR_TEST_DATABASE_URL werden sie übersprungen.
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --tmpfs /var/lib/postgresql/data:rw
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v5
@@ -410,6 +429,8 @@ jobs:
       - name: Abhängigkeiten
         run: cd ingestor && uv sync --frozen --extra dev
       - name: pytest
+        env:
+          INGESTOR_TEST_DATABASE_URL: postgresql://test:test@localhost:5432/test
         run: cd ingestor && uv run pytest -q
       - name: mypy (Ingestor ist bereits strikt typisiert)
         # Informativ, bis die Allowlist steht (Issue zu mypy im Epic Code-Qualität)

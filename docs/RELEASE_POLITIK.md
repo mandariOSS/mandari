@@ -22,7 +22,7 @@ mandari folgt **Semantic Versioning 2.0** (`MAJOR.MINOR.PATCH`):
 Die Version steht an genau einer Stelle je Sprache (`mandari/pyproject.toml`,
 `mandari/package.json`) und wird von `scripts/check_version_consistency.py` gegen
 den Git-Tag geprüft. Container-Images tragen die Version als Tag (`v0.10.0`),
-zusätzlich `latest` für das jüngste Release und `dev-<commit>` für Entwicklungsstände.
+zusätzlich `vX.Y` für das jüngste Patch-Release einer Linie (`v0.11` → `v0.11.1`), `latest` nur für das jüngste Release überhaupt und `dev-<commit>` für Entwicklungsstände. Ein Patch-Release einer älteren Linie verändert `latest` nicht.
 Entwicklungsstände sind keine Releases und tragen keine Zusage.
 
 **Vor 1.0** (heute): Wir halten uns bereits an die Regeln oben; MINOR-Versionen können

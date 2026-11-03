@@ -8,8 +8,14 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [0.11.1] – 2026-11-04
 
-Patch-Release der Linie 0.11 mit Sicherheitskorrekturen, ohne neue Funktionen.
-Dieselben Korrekturen enthält 0.12.0.
+Patch-Release der Linie 0.11 mit Sicherheitskorrekturen, ohne neue Funktionen und ohne Migration.
+Dieselben Sicherheitskorrekturen enthält 0.12.0. Wer mandari 0.11 selbst betreibt, sollte zügig aktualisieren.
+
+### Vor dem Update lesen
+- **Selbstregistrierung:** Wer sich bei einer Organisation selbst registriert, meldet sich vor der Bestätigung mit dem neuen Konto an; der Bestätigungslink führt dazu über die Anmeldung. Offene Einladungen, die über einen eigenen SMTP-Server einer Organisation verschickt wurden, neu ausstellen („Einladung erneut senden“).
+- **Nach dem Update einmal ausführen:** `python manage.py texte_begrenzen` zählt gespeicherte Texte über der neuen Obergrenze von 5.000.000 Zeichen je Datei; mit `--ausfuehren` kürzt es sie und schreibt die betroffenen Einträge im Suchindex neu (`DEPLOYMENT.md`, „Erkannte Texte begrenzen“). Durchsucht werden höchstens die ersten 5.000.000 Zeichen einer Datei.
+- **Ingestor, neue Einstellungen mit Vorgaben:** `TEXT_LAYER_MEMORY_LIMIT_MB` (384), `TEXT_LAYER_TIMEOUT` (120 Sekunden) und `TEXT_LAYER_CONCURRENCY` (2) in der Umgebung des Ingestors. Die mitgelieferte Compose-Datei reicht sie nicht durch, die Vorgaben gelten also ohne Zutun. Unter Docker beendet der Speicherwächter bei Speichermangel zuerst diese Prozesse, nicht den Ingestor; die Datei geht dann an die Erkennung aus dem Bild. Unter Kubernetes Anzahl × Grenze plus rund 200 MB unter dem Speicherlimit halten (`DEPLOYMENT.md`, „Texterkennung im Ingestor: Grenzen“).
+- **Ingestor, Quellenbindung:** Liefert eine Quelle Kennungen, die im Bestand einer Kommune einer anderen Quelle stehen, überspringt der Abgleich diese Objekte und zählt sie im Sync-Protokoll unter `foreign`. Nennt das Body-Objekt einer Quelle eine Kommune einer anderen Quelle, bricht nur deren Abgleich mit einem Fehler ab. `add_oparl_source` bricht ab, ohne etwas zu schreiben, wenn eine Kommune aus der Antwort schon an einer anderen Quelle hängt (`docs/MONITORING.md`).
 
 ### Behoben
 - Ingestor-Image: Die Abhängigkeiten kommen mit Hash-Prüfung aus `ingestor/uv.lock`, also in denselben Versionen wie in CI und Abhängigkeitsprüfung. Bisher wurden sie bei jedem Bau neu aufgelöst; ein Neubau hätte SQLAlchemy 2.1 ohne greenlet gezogen, mit dem der Ingestor nicht auf die Datenbank zugreifen kann. Der Bau prüft jetzt, dass alle Abhängigkeiten vorhanden und alle Module importierbar sind.
