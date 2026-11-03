@@ -680,10 +680,7 @@ class RegisterView(View):
             request.session.pop("pending_invitation_token", None)
             return redirect("accounts:login")
 
-        # Check if email already has an account
-        from .models import User
-
-        if User.objects.filter(email=invitation.email).exists():
+        if self.account_exists(invitation):
             messages.info(request, "Ein Konto mit dieser E-Mail existiert bereits. Bitte melden Sie sich an.")
             return redirect("accounts:login")
 
@@ -712,10 +709,16 @@ class RegisterView(View):
             request.session.pop("pending_invitation_token", None)
             return redirect("accounts:login")
 
+        # Ein vorhandenes Konto (in jeder Schreibweise der Adresse) nimmt die Einladung nach der Anmeldung an
+        if self.account_exists(invitation):
+            messages.info(request, "Ein Konto mit dieser E-Mail existiert bereits. Bitte melden Sie sich an.")
+            return redirect("accounts:login")
+
         form = RegistrationForm(request.POST, email=invitation.email)
 
         if form.is_valid():
-            # Konto anlegen – der Einladungslink kam per E-Mail, die Adresse ist damit bestätigt
+            # Konto anlegen – der Einladungslink kam per E-Mail über mandari (nie über das SMTP der
+            # Organisation), die Adresse ist damit bestätigt
             user = form.save()
             user.email_verified = True
             user.save(update_fields=["email_verified"])
@@ -739,6 +742,13 @@ class RegisterView(View):
                 "invitation": invitation,
             },
         )
+
+    @staticmethod
+    def account_exists(invitation) -> bool:
+        """Gibt es schon ein Konto zur eingeladenen Adresse, ohne Beachtung der Groß-/Kleinschreibung?"""
+        from .models import User
+
+        return User.objects.filter(email__iexact=invitation.email).exists()
 
     def get_invitation(self, token):
         """Get and validate the invitation."""

@@ -4,8 +4,10 @@ Zugangs-Mails einer Organisation: Einladungen, Gastzugänge, Selbstregistrierung
 
 Versand über den Weg, den die Organisation in den E-Mail-Einstellungen gewählt hat
 (:func:`apps.common.org_email.send_org_email`): eigenes SMTP, sonst der mandari-Standardversand.
-Links, mit denen sich ein Passwort setzen lässt, gehen immer über mandari. Antworten landen bei der
-Kontaktadresse der Organisation, sofern hinterlegt. Jede Mail geht an genau eine Adresse, damit
+Links, mit denen sich ein Passwort setzen oder eine Adresse bestätigen lässt (Einladung, Bestätigung der
+Selbstregistrierung, Gastzugang für neue Konten), gehen immer über mandari (``via_organization=False``):
+Den Server einer Organisation trägt deren Verwaltung selbst ein, wer ihn betreibt, liest die Links mit.
+Antworten landen bei der Kontaktadresse der Organisation, sofern hinterlegt. Jede Mail geht an genau eine Adresse, damit
 Empfänger einander nicht sehen. Ein Versandfehler bricht den fachlichen Ablauf nie ab – er wird
 protokolliert und als ``False`` gemeldet.
 """
@@ -93,7 +95,7 @@ def organization_start_url(membership: Membership) -> str:
 
 
 def send_registration_confirmation(organization: Organization, user: User, token: str, valid_hours: int) -> bool:
-    """Bestätigungslink: Erst nach dem Klick entsteht eine Mitgliedschaft oder Anfrage."""
+    """Bestätigungslink über mandari: Erst nach dem Klick entsteht eine Mitgliedschaft oder Anfrage."""
     confirm_url = absolute_url(
         reverse("accounts:self_register_confirm", kwargs={"org_slug": organization.slug, "token": token})
     )
@@ -103,6 +105,8 @@ def send_registration_confirmation(organization: Organization, user: User, token
         subject=f"Bitte bestätige deine Registrierung bei {organization.name}",
         to=user.email,
         context={"user": user, "confirm_url": confirm_url, "valid_hours": valid_hours},
+        # Der Link bestätigt die Adresse – nie über fremde Mailserver
+        via_organization=False,
     )
 
 
