@@ -6,7 +6,7 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
-## [0.11.1] – 2026-11-04
+## [0.11.1] – 2026-11-03
 
 Patch-Release der Linie 0.11 mit Sicherheitskorrekturen, ohne neue Funktionen und ohne Migration.
 Dieselben Sicherheitskorrekturen enthält 0.12.0. Wer mandari 0.11 selbst betreibt, sollte zügig aktualisieren.
@@ -19,7 +19,7 @@ Dieselben Sicherheitskorrekturen enthält 0.12.0. Wer mandari 0.11 selbst betrei
 
 ### Behoben
 - Ingestor-Image: Die Abhängigkeiten kommen mit Hash-Prüfung aus `ingestor/uv.lock`, also in denselben Versionen wie in CI und Abhängigkeitsprüfung. Bisher wurden sie bei jedem Bau neu aufgelöst; ein Neubau hätte SQLAlchemy 2.1 ohne greenlet gezogen, mit dem der Ingestor nicht auf die Datenbank zugreifen kann. Der Bau prüft jetzt, dass alle Abhängigkeiten vorhanden und alle Module importierbar sind.
-- Container-Images: Ein Release setzt `latest` nur noch, wenn es das neueste Release ist. Ein Patch-Release einer älteren Linie bekommt sein Versions-Tag (`v0.11.1`) und das Tag seiner Linie (`v0.11`), `latest` bleibt unverändert.
+- Container-Images: Ein Release setzt `latest` nur noch, wenn es das neueste Release ist. Ein Patch-Release einer älteren Linie bekommt sein Versions-Tag (`v0.11.1`) und das Tag seiner Linie (`v0.11`), `latest` bleibt unverändert. Das Website-Image bekommt bei einem Release dieselben Tags, damit `./update.sh --tag v0.11.1` alle drei Images findet.
 
 ### Sicherheit
 - Zugangsmails: Einladungs- und Bestätigungslinks gehen immer über den Versandweg der Plattform, auch wenn eine Organisation einen eigenen SMTP-Server eingetragen hat. Der Bestätigungslink der Selbstregistrierung wirkt nur für das angemeldete Konto, für das er ausgestellt wurde (GHSA-qv9h-xqpv-rg2c, GHSA-h9wq-g8rg-24p3).
