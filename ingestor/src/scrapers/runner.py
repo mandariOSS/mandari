@@ -39,7 +39,12 @@ from src.metrics import metrics
 from src.redaction import MaskingConsole
 from src.scrapers import get_adapter
 from src.scrapers.base import CrawlWindow, ScraperConfig, ScrapeStats
-from src.scrapers.politeness import PoliteFetcher, RobotsDisallowedError, RobotsUnreachableError
+from src.scrapers.politeness import (
+    CrawlWindowClosedError,
+    PoliteFetcher,
+    RobotsDisallowedError,
+    RobotsUnreachableError,
+)
 from src.storage.database import PREVIOUS_ID_FIELD, ForeignObjectError, start_foreign_rejections
 from src.storage.events import start_correlation
 
@@ -79,7 +84,12 @@ class ScraperSyncRunner:
         self.source = source
         self.source_type = str((source.sync_config or {}).get("source_type") or "")
 
-    async def run(self, full: bool = False) -> SyncResult:
+    async def run(self, full: bool = False, fetch_deadline: datetime | None = None) -> SyncResult:
+        """
+        Ein Crawl der Quelle. ``fetch_deadline``: Ende des Abruffensters der Quelle (``sync_window``, Issue #1186).
+        Danach geht keine Anfrage mehr hinaus; der Crawl endet unvollständig, ohne Fehlversuch der Quelle, und die
+        Monatsübersichten dieses Crawls zählen nicht für das Listen-Diffing (der nächste Lauf liest sie wieder ganz).
+        """
         from src.sync.orchestrator import SyncResult
 
         start_time = datetime.now(UTC)
@@ -111,12 +121,14 @@ class ScraperSyncRunner:
         seen: dict[str, set[str]] = {}
         skipped_unchanged = 0
         crawl_completed = False
+        window_closed = False
 
         async with PoliteFetcher(
             rate_limit_seconds=config.rate_limit_seconds,
             source_name=self.source.name,
             user_agent=getattr(self.source, "user_agent", None) or None,
             robots_override=robots_override(getattr(self.source, "sync_config", None)),
+            fetch_deadline=fetch_deadline,
         ) as fetcher:
             adapter = get_adapter(self.source_type, config, fetcher)
             # Listen-Diffing: bekannte Monats-Snapshots aus dem letzten Lauf
@@ -175,6 +187,12 @@ class ScraperSyncRunner:
                         if stored:
                             stats[entity_type] = stats.get(entity_type, 0) + 1
                 crawl_completed = True
+            except CrawlWindowClosedError as e:
+                # Ende des Abruffensters: abgebrochen, aber kein Fehlversuch der Quelle (Issue #1186)
+                window_closed = True
+                message = f"Abruffenster der Quelle abgelaufen, Crawl vor {e} abgebrochen"
+                result.errors.append(message)
+                console.print(f"[yellow]Scraper {self.source.name}: {message}[/yellow]")
             except RobotsDisallowedError as e:
                 message = f"robots.txt verbietet {e}"
                 result.errors.append(message)
@@ -233,9 +251,11 @@ class ScraperSyncRunner:
                     agenda_braked=agenda_braked,
                 )
 
-            # Zustand persistieren
+            # Zustand persistieren. Endete der Crawl mit dem Abruffenster, stand ein Monat vielleicht schon in der
+            # Übersicht, ohne dass seine Detailseiten gelesen waren: dann die bisherigen Übersichten behalten
             snapshots = dict(state.get("list_snapshots") or {})
-            snapshots.update(getattr(adapter, "list_snapshots", {}))
+            if not window_closed:
+                snapshots.update(getattr(adapter, "list_snapshots", {}))
             state["list_snapshots"] = snapshots
             state["adapter_schema_version"] = adapter.schema_version
             state["last_run"] = {

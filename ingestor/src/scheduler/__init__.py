@@ -15,6 +15,13 @@ Platz für einen Vollabgleich bekommt die Quelle, deren letzter begonnener Volla
 Der Admin-Auslöser „Jetzt synchronisieren“ (Redis-Kanal ``mandari:sync:trigger``) macht alle Quellen oder eine
 einzelne (``source_id`` bzw. ``source_url``) sofort fällig. Die Schonung bei Fehlern geht immer vor.
 
+Abruffenster je Quelle (``sync_config["sync_window"]``, Issue #1186): Außerhalb startet die Quelle nicht, weder nach
+Takt noch als erster Lauf, nach einer Schonung oder für einen Vollabgleich; ihr nächster Lauf ist zu Beginn des
+nächsten Fensters fällig (``SyncState.after_run``). Ein Auslöser für eine Quelle außerhalb ihres Fensters verfällt mit
+Meldung im Protokoll des Daemons, wie in der Schonung; eine Übersteuerung gibt es nicht. Ein laufender Abgleich endet
+mit dem Fenster (``SyncOrchestrator.sync_body_url``). Status und Metrik (``mandari_ingestor_sync_window_open``) zeigen
+das Fenster, ``sync_state["reason"]`` und das Sync-Protokoll (``details.takt``) den Grund für den späteren Lauf.
+
 Jeder Lauf schreibt sein eigenes Sync-Protokoll (``insight_sync_synclog`` mit ``source_id``) und Metriken je Quelle.
 """
 
@@ -31,19 +38,26 @@ from typing import Any
 
 from rich.panel import Panel
 
-from src.client.source_options import SourceFetchOptions
+from src.client.source_options import FullSyncWindow, SourceFetchOptions
 from src.config import settings
 from src.metrics import metrics
 from src.observability import trigger_context
 from src.redaction import MaskingConsole
 from src.scheduler.takt import (
+    REASON_WINDOW,
     STATE_KEY,
     SyncSchedule,
     SyncState,
     default_full_sync_window,
     full_sync_due,
 )
-from src.sync.orchestrator import ERROR_KIND_LABELS, SyncOrchestrator, SyncResult, source_backoff_until
+from src.sync.orchestrator import (
+    ERROR_KIND_LABELS,
+    SyncOrchestrator,
+    SyncResult,
+    outside_window_note,
+    source_backoff_until,
+)
 
 logger = logging.getLogger(__name__)
 console = MaskingConsole()
@@ -163,6 +177,8 @@ class SyncScheduler:
         self._loop_task: asyncio.Task[None] | None = None
         self._listener_task: asyncio.Task[None] | None = None
         self._backoff_shown: dict[str, datetime] = {}
+        #: Je Quelle der Beginn des Abruffensters, auf das sie zuletzt gemeldet wartete (eine Meldung je Fenster)
+        self._window_shown: dict[str, datetime] = {}
         self._last_cache_clear = self._clock()
         self._overview: dict[str, tuple[str, datetime | None]] = {}
         self._last_runs: dict[str, dict[str, Any]] = {}
@@ -196,6 +212,7 @@ class SyncScheduler:
                 "[bold green]Starting Sync Scheduler (Takt je Quelle)[/bold green]\n"
                 f"[dim]Grundtakt werktags 07–19 Uhr: {self.sync_interval} min, sonst nach sync_schedule[/dim]\n"
                 f"[dim]Vollabgleich: Standardfenster {window} (Europe/Berlin), je Quelle full_sync_window[/dim]\n"
+                "[dim]Abruffenster je Quelle: sync_window (außerhalb kein Abruf)[/dim]\n"
                 f"[dim]Pool: {self.pool_size} Läufe, davon höchstens {self.full_slots} Vollabgleiche[/dim]",
                 border_style="green",
             )
@@ -364,7 +381,7 @@ class SyncScheduler:
         deren letzter begonnener Vollabgleich am längsten zurückliegt (ohne zuerst, angeforderte vorweg); sie starten
         vor den übrigen ohne Auslöser. So verdrängen lange Vollabgleiche nicht Nacht für Nacht dieselben Quellen aus
         dem Fenster. Eine Quelle in Schonung startet nie, auch nicht auf einen Auslöser hin (der Auslöser entfällt
-        dann).
+        dann). Ebenso eine Quelle außerhalb ihres Abruffensters (``sync_window``, Issue #1186).
         """
         now = now or self._clock()
         sources = list(await self.orchestrator.storage.get_all_sources())
@@ -379,8 +396,10 @@ class SyncScheduler:
         for source in sources:
             key = str(source.id)
             state = self._state_of(source)
+            options = SourceFetchOptions.from_sync_config(source.sync_config)
+            window = options.sync_window
             until = source_backoff_until(source, now)
-            self._publish_schedule(source, state, until)
+            self._publish_schedule(source, state, until, window)
             if until is not None:
                 self._note_backoff(source, until)
                 if self._triggers.pop(key, None) is not None:
@@ -389,10 +408,17 @@ class SyncScheduler:
                         "[/yellow]"
                     )
                 continue
+            if window is not None and window.closes_at(now) is None:
+                # Außerhalb des Abruffensters: kein Start, weder nach Takt noch auf einen Auslöser hin
+                self._note_window(source, window, now)
+                if self._triggers.pop(key, None) is not None:
+                    console.print(
+                        f"[yellow]Sync-Auslöser verworfen: {outside_window_note(source.name, window, now)}[/yellow]"
+                    )
+                continue
             if key in self._tasks:
                 continue  # höchstens ein Lauf je Quelle; ein Auslöser wartet auf das Ende
             trigger = self._triggers.get(key)
-            options = SourceFetchOptions.from_sync_config(source.sync_config)
             full_due = full_sync_due(
                 options,
                 self.default_window,
@@ -447,18 +473,41 @@ class SyncScheduler:
             "[/yellow]"
         )
 
-    def _publish_schedule(self, source: Any, state: SyncState, until: datetime | None) -> None:
-        """Nächsten Lauf (nach Schonung), Abstand und Ruhe der Quelle als Metrik und für den Status festhalten."""
+    def _note_window(self, source: Any, window: FullSyncWindow, now: datetime) -> None:
+        """Wartet eine Quelle auf ihr Abruffenster, einmal je Fenster melden, nicht in jedem Durchlauf."""
+        key = str(source.id)
+        opens = window.next_open(now)
+        if self._window_shown.get(key) == opens:
+            return
+        self._window_shown[key] = opens
+        console.print(
+            f"[dim]Quelle {source.name}: außerhalb des Abruffensters {window.label()}, nächster Lauf ab "
+            f"{opens.astimezone(window.tz):%d.%m. %H:%M} Uhr[/dim]"
+        )
+
+    def _publish_schedule(
+        self, source: Any, state: SyncState, until: datetime | None, window: FullSyncWindow | None = None
+    ) -> None:
+        """
+        Nächsten Lauf (nach Schonung und Abruffenster), Abstand und Ruhe der Quelle als Metrik und für den Status
+        festhalten. Liegt der fällige Lauf außerhalb des Abruffensters, gilt der Beginn des nächsten Fensters.
+        """
+        now = self._clock()
         due = state.next_due
         if until is not None and (due is None or until > due):
             due = until
+        if window is not None:
+            base = due if due is not None else now
+            if window.closes_at(base) is None:
+                due = window.next_open(max(base, now))
         self._overview[str(source.id)] = (source.name, due)
         metrics.record_source_schedule(
             source.name,
-            due.timestamp() if due is not None else self._clock().timestamp(),
+            due.timestamp() if due is not None else now.timestamp(),
             float((state.interval_minutes or 0) * 60),
             state.idle_runs,
         )
+        metrics.record_source_window(source.name, None if window is None else window.closes_at(now) is not None)
 
     # ========== Lauf einer Quelle ==========
 
@@ -506,6 +555,20 @@ class SyncScheduler:
                 full=full,
             )
         finished = self._clock()
+        window = SourceFetchOptions.from_sync_config(source.sync_config).sync_window
+        if result.outside_window and window is not None:
+            # Das Abruffenster schloss zwischen Durchlauf und Beginn des Laufs: nichts abgerufen, kein Protokoll und
+            # kein Lauf in den Metriken; fällig zu Beginn des nächsten Fensters (Issue #1186). Zeigt die Uhr des
+            # Daemons noch das alte Fenster, gilt das Fenster danach
+            reopens = window.next_open(finished)
+            closes = window.closes_at(finished)
+            if reopens <= finished and closes is not None:
+                reopens = window.next_open(closes)
+            skipped = replace(state, next_due=reopens, reason=REASON_WINDOW)
+            await self._save_state(source, skipped)
+            self._publish_schedule(source, skipped, None, window)
+            console.print(f"[yellow]{'; '.join(result.errors) or outside_window_note(source.name, window)}[/yellow]")
+            return
         changes = entities_of(result) if result.success else 0
 
         schedule = SyncSchedule.from_sync_config(source.sync_config, self.sync_interval)
@@ -517,6 +580,7 @@ class SyncScheduler:
             changes=changes,
             full=result.full,
             meeting_days=meeting_days,
+            window=window,
         )
         await self._save_state(source, new_state)
 
@@ -524,10 +588,10 @@ class SyncScheduler:
         duration = max(0.0, (finished - started).total_seconds())
         status = "success" if result.success else "failed"
         sync_type = "full" if result.full else "incremental"
-        await self._write_log(source, result, started, finished, triggered_by, new_state, requests)
+        await self._write_log(source, result, started, finished, triggered_by, new_state, requests, window)
         metrics.record_source_run(source.name, sync_type, status, duration, requests, finished.timestamp())
         # Eine neue Schonung nach diesem Lauf steht erst in der Datenbank; der nächste Durchlauf zeigt sie
-        self._publish_schedule(source, new_state, None)
+        self._publish_schedule(source, new_state, None, window)
         self._last_runs[str(source.id)] = {
             "source": source.name,
             "type": sync_type,
@@ -537,14 +601,16 @@ class SyncScheduler:
             "requests": requests,
             "changes": changes,
             "next_due": new_state.next_due.isoformat(timespec="seconds") if new_state.next_due else None,
+            **({"reason": new_state.reason} if new_state.reason else {}),
         }
 
         self.orchestrator.print_result(result)
         next_local = new_state.next_due.astimezone(schedule.tz) if new_state.next_due else None
+        held = f"; Abruffenster {window.label()}" if window is not None and new_state.reason == REASON_WINDOW else ""
         console.print(
             f"[green]{source.name}: {art} fertig in {duration:.1f}s, {requests} Abrufe, {changes} Änderungen; "
             f"nächster Lauf {next_local:%d.%m. %H:%M} ({new_state.interval_minutes} min, {new_state.period}, "
-            f"{new_state.idle_runs} Läufe ohne Änderung)[/green]"
+            f"{new_state.idle_runs} Läufe ohne Änderung{held})[/green]"
             if next_local is not None
             else f"[green]{source.name}: {art} fertig in {duration:.1f}s[/green]"
         )
@@ -596,8 +662,22 @@ class SyncScheduler:
         triggered_by: str,
         state: SyncState,
         requests: int,
+        window: FullSyncWindow | None = None,
     ) -> None:
-        """Ein Sync-Protokoll je Lauf und Quelle (``insight_sync_synclog``)."""
+        """
+        Ein Sync-Protokoll je Lauf und Quelle (``insight_sync_synclog``). Unter ``details.takt`` stehen mit Abruffenster
+        auch das Fenster (``window``) und, wenn es den nächsten Lauf verschoben hat, der Grund (``reason``).
+        """
+        takt: dict[str, Any] = {
+            "period": state.period,
+            "interval_minutes": state.interval_minutes,
+            "idle_runs": state.idle_runs,
+            "next_due": state.next_due.isoformat(timespec="seconds") if state.next_due else None,
+        }
+        if state.reason:
+            takt["reason"] = state.reason
+        if window is not None:
+            takt["window"] = window.label()
         details: dict[str, Any] = {
             "organizations": result.organizations_synced,
             "persons": result.persons_synced,
@@ -609,12 +689,7 @@ class SyncScheduler:
             "agenda_items": result.agenda_items_synced,
             "consultations": result.consultations_synced,
             "requests": requests,
-            "takt": {
-                "period": state.period,
-                "interval_minutes": state.interval_minutes,
-                "idle_runs": state.idle_runs,
-                "next_due": state.next_due.isoformat(timespec="seconds") if state.next_due else None,
-            },
+            "takt": takt,
             **SyncOrchestrator._finding_details(result),
         }
         if result.unstored:

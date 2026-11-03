@@ -8,12 +8,15 @@ Höflicher HTML-Fetcher für Scraper-Adapter.
 - robots.txt-Respekt nach RFC 9309 mit Platzhaltern (src/client/robots.py, 24-h-Cache je Host), auch für das
   Ziel jeder Weiterleitung, die zudem im Takt läuft (src/client/redirects.py)
 - Transparenter User-Agent (settings.user_agent, je Quelle überschreibbar)
+- Ende des Abruffensters der Quelle (``sync_config["sync_window"]``, Issue #1186): danach keine Anfrage mehr
+  (``CrawlWindowClosedError``)
 """
 
 from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -37,6 +40,10 @@ class RobotsUnreachableError(Exception):
     """robots.txt des Hosts nicht erreichbar (5xx, 408, 429, Netzfehler): Abruf zurückgestellt, keine Sperre."""
 
 
+class CrawlWindowClosedError(Exception):
+    """Abruffenster der Quelle abgelaufen (``sync_config["sync_window"]``, Issue #1186): keine weitere Seite."""
+
+
 class PoliteFetcher:
     """
     Async-HTML-Fetcher mit Politeness-Garantien.
@@ -54,6 +61,7 @@ class PoliteFetcher:
         source_name: str = "scraper",
         respect_robots: bool = True,
         robots_override: RobotsOverride | None = None,
+        fetch_deadline: datetime | None = None,
     ) -> None:
         self.rate_limit_seconds = max(0.0, rate_limit_seconds)
         self.timeout = timeout
@@ -62,6 +70,8 @@ class PoliteFetcher:
         self.source_name = source_name
         self.respect_robots = respect_robots
         self.robots_override = robots_override
+        #: Ende des Abruffensters der Quelle (UTC, Issue #1186): danach wirft ``fetch_text`` ohne Anfrage
+        self.fetch_deadline = fetch_deadline
 
         self._client: httpx.AsyncClient | None = None
         self._lock = asyncio.Lock()  # max_concurrent=1: serialisiert alle Requests
@@ -118,6 +128,11 @@ class PoliteFetcher:
         """Prüft, ob robots.txt den Abruf der URL für unseren User-Agent erlaubt (RFC 9309)."""
         return (await self.decide(url, kind)).allowed
 
+    def _check_deadline(self, url: str) -> None:
+        """Nach dem Ende des Abruffensters geht keine Anfrage mehr an die Quelle (Issue #1186)."""
+        if self.fetch_deadline is not None and datetime.now(UTC) >= self.fetch_deadline:
+            raise CrawlWindowClosedError(url)
+
     # ------------------------------------------------------------------
     # Fetch
     # ------------------------------------------------------------------
@@ -127,11 +142,13 @@ class PoliteFetcher:
         Holt eine Seite als Text (None bei nicht behebbarem Fehler).
 
         Wirft RobotsDisallowedError, wenn robots.txt den Pfad verbietet, und RobotsUnreachableError, wenn
-        die robots.txt nicht erreichbar ist (dann später erneut versuchen, keine Sperre).
+        die robots.txt nicht erreichbar ist (dann später erneut versuchen, keine Sperre). Nach dem Ende des
+        Abruffensters der Quelle wirft sie ``CrawlWindowClosedError``, ohne anzufragen, auch vor einem neuen Versuch.
         """
         if not self._client:
             raise RuntimeError("PoliteFetcher nicht initialisiert — 'async with' verwenden.")
 
+        self._check_deadline(url)
         decision = await self.decide(url)
         if decision.unreachable:
             raise RobotsUnreachableError(f"{url}: {decision.reason}")
@@ -146,6 +163,8 @@ class PoliteFetcher:
                 # Drossel je Host über alle Quellen und Prozesse (src/client/host_pacing.py); je Host höchstens
                 # host_max_concurrent offene Anfragen im Prozess, der Platz zieht bei Weiterleitungen mit
                 await self._pace(url)
+                # Nach dem Warten auf Platz und Takt: Ist das Abruffenster inzwischen zu, geht nichts mehr raus
+                self._check_deadline(url)
 
                 try:
                     response = await redirects.send(

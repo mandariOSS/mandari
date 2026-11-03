@@ -315,7 +315,8 @@ Issue #1026, `docs/ABRUFREGELN.md`, „Rhythmus“):
 | `mandari_ingestor_sync_runs_total` | `source`, `sync_type`, `status` | Läufe des Daemons (`incremental`/`full`, `success`/`failed`) |
 | `mandari_ingestor_sync_duration_seconds` (Histogramm) | `source`, `sync_type` | Dauer der Läufe |
 | `mandari_ingestor_sync_requests_total` | `source`, `sync_type` | HTTP-Abrufe der Läufe |
-| `mandari_ingestor_sync_next_run_timestamp_seconds` | `source` | Unix-Zeit des nächsten fälligen Laufs, nach der Schonung |
+| `mandari_ingestor_sync_next_run_timestamp_seconds` | `source` | Unix-Zeit des nächsten fälligen Laufs, nach der Schonung und dem Abruffenster |
+| `mandari_ingestor_sync_window_open` | `source` | nur Quellen mit Abruffenster (`sync_window`): 1 offen, 0 zu (kein Abruf bis zum Beginn des nächsten Fensters) |
 | `mandari_ingestor_sync_last_run_timestamp_seconds` | `source` | Unix-Zeit, zu der der letzte Lauf endete |
 | `mandari_ingestor_sync_interval_seconds` | `source` | aktueller Abstand zwischen zwei Läufen (Grundtakt, nach Ruhe verlängert) |
 | `mandari_ingestor_sync_idle_runs` | `source` | Läufe ohne Änderung in Folge |

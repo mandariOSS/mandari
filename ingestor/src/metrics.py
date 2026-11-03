@@ -22,6 +22,7 @@ Usage:
 """
 
 import asyncio
+import contextlib
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -209,6 +210,14 @@ class MetricsCollector:
         self.sync_idle_runs = Gauge(
             "mandari_ingestor_sync_idle_runs",
             "Consecutive incremental runs of the source without changes",
+            ["source"],
+            registry=self.registry,
+        )
+
+        # Abruffenster je Quelle (sync_config["sync_window"], Issue #1186); nur Quellen mit Fenster
+        self.sync_window_open = Gauge(
+            "mandari_ingestor_sync_window_open",
+            "1 if the fetch window of the source (sync_window) is open, 0 if closed (no fetches until it opens)",
             ["source"],
             registry=self.registry,
         )
@@ -437,6 +446,16 @@ class MetricsCollector:
         self.sync_next_run.labels(source=source).set(next_run_at)
         self.sync_interval.labels(source=source).set(interval_seconds)
         self.sync_idle_runs.labels(source=source).set(idle_runs)
+
+    def record_source_window(self, source: str, is_open: bool | None) -> None:
+        """Abruffenster einer Quelle offen (``True``) oder zu (``False``); ``None``: kein Fenster (Issue #1186)."""
+        if not self.enabled or not self._prometheus_enabled:
+            return
+        if is_open is None:
+            with contextlib.suppress(KeyError):  # Quelle ohne Fenster: keine Reihe
+                self.sync_window_open.remove(source)
+            return
+        self.sync_window_open.labels(source=source).set(1 if is_open else 0)
 
     def set_active_syncs(self, count: int) -> None:
         """Zahl der laufenden Abgleiche im Daemon."""

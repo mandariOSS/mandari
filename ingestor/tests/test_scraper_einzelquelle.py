@@ -51,7 +51,7 @@ class _Runner:
         self.orchestrator = orchestrator
         self.source = source
 
-    async def run(self, full: bool = False) -> SyncResult:
+    async def run(self, full: bool = False, fetch_deadline: Any = None) -> SyncResult:
         _Runner.laeufe.append((self.source, full))
         return SyncResult(source_url=self.source.url, source_name="Scraper", success=True, full=full)
 
