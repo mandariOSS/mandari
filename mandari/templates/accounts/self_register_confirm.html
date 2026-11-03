@@ -20,6 +20,23 @@
 <p class="text-center text-sm">
     <a href="{% url 'accounts:login' %}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">Zur Anmeldung</a>
 </p>
+{% elif other_account %}
+<c-ui.alert variant="warning" class="mb-6">
+    Du bist mit einem anderen Konto angemeldet. Melde dich ab und mit dem Konto für <strong>{{ email }}</strong>
+    wieder an, um die Registrierung zu bestätigen.
+</c-ui.alert>
+<p class="text-center text-sm">
+    <a href="{% url 'accounts:logout' %}" class="font-medium text-primary-600 hover:underline dark:text-primary-400">Abmelden</a>
+</p>
+{% elif needs_login %}
+<p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
+    Melde dich mit <strong>{{ email }}</strong> und dem Passwort an, das du bei der Registrierung gewählt
+    hast. Danach bestätigst du hier deine Registrierung bei {{ org.name }}.
+</p>
+<c-ui.button href="{{ login_url }}" size="lg" full>Anmelden und bestätigen</c-ui.button>
+<p class="mt-6 text-xs text-gray-500 dark:text-gray-400">
+    Du hast dich nicht selbst registriert? Dann ignoriere diesen Link. Ohne Bestätigung erhält niemand Zugang.
+</p>
 {% else %}
 <p class="mb-6 text-sm text-gray-600 dark:text-gray-400">
     Bestätige, dass die Adresse <strong>{{ email }}</strong> dir gehört, um deine Registrierung bei

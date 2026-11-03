@@ -817,9 +817,9 @@ class SelfRegisterView(View):
     Selbstregistrierung für Organisationen mit aktivierter Registrierung.
 
     URL: /accounts/register/<org_slug>/
-    Ablauf: Formular → Bestätigungslink per E-Mail → erst nach dem Klick entsteht die Mitgliedschaft
-    (sofort aktiv oder als offene Anfrage). Die Registrierung meldet nicht an; bereits angemeldete
-    Konten mit bestätigter Adresse treten direkt bei.
+    Ablauf: Formular → Bestätigungslink per E-Mail → erst nach dem Klick, angemeldet mit dem neuen Konto,
+    entsteht die Mitgliedschaft (sofort aktiv oder als offene Anfrage; ``SelfRegisterConfirmView``). Die
+    Registrierung meldet nicht an; bereits angemeldete Konten mit bestätigter Adresse treten direkt bei.
     """
 
     template_name = "accounts/self_register.html"
@@ -908,8 +908,12 @@ class SelfRegisterConfirmView(View):
     Bestätigungslink der Selbstregistrierung.
 
     GET zeigt nur die Bestätigung – Link-Scanner in Mailprogrammen rufen Links vorab auf. Erst POST
-    legt die Mitgliedschaft an. Der Link meldet nicht an; die Anmeldung läuft wie immer über Passwort
-    und gegebenenfalls zweiten Faktor.
+    bestätigt die Adresse und legt die Mitgliedschaft an, und nur für die Person, die mit dem Konto des
+    Links angemeldet ist: Der Link beweist die Kontrolle über das Postfach, die Anmeldung (Passwort und
+    gegebenenfalls zweiter Faktor) die über das Konto. Ohne Anmeldung führt der Link zur Anmeldung und
+    danach hierher zurück; der Link selbst meldet nie an. Wem eine Adresse gehört, die jemand anderes
+    registriert hat, übernimmt das Konto über „Passwort vergessen“ – das ersetzt das fremde Passwort und
+    beendet dessen Sitzungen.
     """
 
     template_name = "accounts/self_register_confirm.html"
@@ -924,21 +928,40 @@ class SelfRegisterConfirmView(View):
             return render(request, self.template_name, {"org": self.org, "invalid": True}, status=404)
         return super().dispatch(request, *args, **kwargs)
 
+    def login_url(self, request) -> str:
+        """Anmeldung, die danach zu diesem Link zurückführt."""
+        return f"{reverse('accounts:login')}?next={quote(request.path)}"
+
+    def page_context(self, request) -> dict:
+        signed_in = request.user.is_authenticated
+        return {
+            "org": self.org,
+            "email": self.token.email,
+            "login_url": self.login_url(request),
+            "needs_login": not signed_in,
+            "other_account": signed_in and request.user.pk != self.token.user_id,
+        }
+
     def get(self, request, **kwargs):
-        return render(request, self.template_name, {"org": self.org, "email": self.token.email})
+        return render(request, self.template_name, self.page_context(request))
 
     def post(self, request, **kwargs):
         from apps.work.organization import services as organization_services
 
+        # Bestätigt wird nur das Konto, mit dem die Person angemeldet ist (siehe Klassendokumentation)
+        if not request.user.is_authenticated:
+            return redirect(self.login_url(request))
+        if request.user.pk != self.token.user_id:
+            return render(request, self.template_name, self.page_context(request), status=403)
+
         try:
-            membership = organization_services.confirm_self_registration(self.org, self.token)
+            membership = organization_services.confirm_self_registration(self.org, self.token, request.user)
         except organization_services.ServiceError as exc:
             return render(request, self.template_name, {"org": self.org, "error": str(exc)}, status=400)
 
+        # Die neue Mitgliedschaft kann einen zweiten Faktor verlangen: Richtlinie sofort neu prüfen
+        request.session.pop(POLICY_CACHE_SESSION_KEY, None)
         if not membership.is_active:
             return registration_state_response(request, self.org, membership)
         messages.success(request, f"Deine E-Mail-Adresse ist bestätigt – willkommen bei {self.org.name}!")
-        dashboard = reverse("work:dashboard", kwargs={"org_slug": self.org.slug})
-        if request.user.is_authenticated and request.user.pk == membership.user_id:
-            return redirect(dashboard)
-        return redirect(f"{reverse('accounts:login')}?next={quote(dashboard)}")
+        return redirect("work:dashboard", org_slug=self.org.slug)
