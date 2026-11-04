@@ -22,6 +22,7 @@ Jahresübersicht:
   der Berechtigung ``manage_allowances`` verwendet.
 """
 
+import copy
 import io
 import logging
 import re
@@ -238,6 +239,13 @@ def cancel_obsolete_allowances(tenant: Any, period_start: date, period_end: date
     return cancel_allowances(obsolete, note=AUTO_CANCEL_NOTE)
 
 
+#: Positionen je Schreibzugriff, wenn der Abrechnungslauf gesammelt speichert (Issue #715)
+BULK_BATCH_SIZE = 500
+
+#: Felder, die eine wieder aufgenommene Position neu festsetzt
+REVIVED_FIELDS = ("amount", "currency", "status", "created_by", "approved_by", "approved_at", "notes", "updated_at")
+
+
 def generate_allowances(tenant, period_start, period_end, *, organization=None, created_by=None) -> dict:
     """
     Abrechnungslauf: Sitzungsgeld-Positionen aus Anwesenheiten erzeugen und vorhandene abgleichen.
@@ -247,9 +255,16 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
     ist, storniert der Lauf (``cancelled``); kehrt die Grundlage zurück, lebt eine so stornierte Position
     als „ausstehend“ wieder auf (``reactivated``) und muss erneut genehmigt werden.
 
+    Neue und wieder aufgenommene Positionen speichert der Lauf gesammelt (Issue #715): ein Schreibzugriff je
+    Stapel statt je Position und ein Anhängen an die Hash-Kette des Mandantenprotokolls für alle Einträge. Jede
+    Position behält ihren eigenen Eintrag („Entschädigung festgesetzt“ bzw. die Änderung bei der Wiederaufnahme),
+    in derselben Reihenfolge und mit demselben Inhalt wie beim Speichern einzeln; Positionen und Einträge
+    entstehen in einer Transaktion.
+
     Returns:
         dict: created, reactivated, cancelled, skipped_existing, skipped_zero, total (Decimal)
     """
+    from apps.session import audit
     from apps.session.models import SessionAllowance, SessionAllowanceRate, SessionAttendance
 
     stats = {
@@ -284,6 +299,10 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
         for allowance in existing.filter(status="cancelled", notes=AUTO_CANCEL_NOTE, export_reference="")
     }
 
+    new: list[Any] = []
+    revived_list: list[Any] = []
+    entries: list[Any] = []  # Protokolleinträge in der Reihenfolge der Positionen
+    now = timezone.now()
     for attendance in attendances:
         if attendance.pk in existing_ids and attendance.pk not in revivable:
             stats["skipped_existing"] += 1
@@ -296,6 +315,8 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
         revived = revivable.get(attendance.pk)
         if revived is not None:
             # Grundlage wieder da: neu festsetzen, die Genehmigung gilt nicht mehr (Vier-Augen-Prinzip)
+            before = copy.copy(revived)  # gespeicherter Stand für die Änderung im Protokoll
+            revived.attendance = attendance  # dieselbe Anwesenheit, mit Person – ohne Abfrage für den Eintrag
             revived.amount = amount
             revived.currency = org.allowance_currency or "EUR"
             revived.status = "pending"
@@ -303,29 +324,28 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
             revived.approved_by = None
             revived.approved_at = None
             revived.notes = ""
-            revived.save(
-                update_fields=[
-                    "amount",
-                    "currency",
-                    "status",
-                    "created_by",
-                    "approved_by",
-                    "approved_at",
-                    "notes",
-                    "updated_at",
-                ]
-            )
+            revived.updated_at = now  # bulk_update setzt auto_now nicht selbst
+            revived_list.append(revived)
+            entries.append(audit.changed_event(before, revived, tenant=tenant))
             stats["reactivated"] += 1
         else:
-            SessionAllowance.objects.create(
+            allowance = SessionAllowance(
                 attendance=attendance,
                 amount=amount,
                 currency=org.allowance_currency or "EUR",
                 status="pending",
                 created_by=created_by,
             )
+            new.append(allowance)
+            entries.append(audit.created_event(allowance, tenant=tenant))
             stats["created"] += 1
         stats["total"] += amount
+
+    if new or revived_list:
+        with transaction.atomic():
+            SessionAllowance.objects.bulk_create(new, batch_size=BULK_BATCH_SIZE)
+            SessionAllowance.objects.bulk_update(revived_list, REVIVED_FIELDS, batch_size=BULK_BATCH_SIZE)
+            audit.log_events(entries)
 
     return stats
 

@@ -273,10 +273,14 @@ eintrafen.
   viele zugleich ein, halten sie Datenbankverbindungen, bis der Pool leer ist;
   die Anwendung antwortet dann mit 503 statt zu hängen (gewollt). Die
   Laufparameter verteilen den Anlauf deshalb (2 Nutzer/s bei `mittel` und `gross`).
-- **Sitzungsgeldlauf**: Die Positionen werden einzeln gespeichert, je
+- **Sitzungsgeldlauf**: Die Positionen wurden einzeln gespeichert, je
   Position rund acht Abfragen samt Eintrag in die Hash-Kette des Protokolls.
-  Ein Monat dauert bei `klein` 0,3 bis 2,6 s, bei `mittel` unter Last 45 bis
-  52 s, bei `gross` unter Last bis 82 s. Issue #715.
+  Ein Monat dauerte bei `klein` 0,3 bis 2,6 s, bei `mittel` unter Last 45 bis
+  52 s, bei `gross` unter Last bis 82 s. Seit #715 gesammelt gespeichert, mit
+  einer Sperre des Kettenkopfs für alle Einträge: Ein Jahreslauf `klein`
+  (570 Positionen, Entwicklerrechner, SQLite) braucht 15 statt 4.565 Abfragen
+  und 0,23 statt 1,3 bis 1,5 s; die Abfragen hängen nicht mehr von der Zahl der
+  Positionen ab.
 - **OParl, Sitzungsliste der Session-Schnittstelle**: 100 Sitzungen je Seite
   mit eingebetteten Tagesordnungspunkten und Einzelstimmen (Profil `klein`
   rund 600 KB je Seite, p95 570 bis 830 ms). Bedingte Anfragen sparen die

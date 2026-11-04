@@ -26,6 +26,7 @@ import hashlib
 import logging
 import threading
 import time
+from collections.abc import Iterable
 from contextlib import contextmanager
 from typing import Any
 
@@ -156,6 +157,51 @@ def log_event(
         on_behalf_of: Vertretene Person (sonst aus :func:`in_vertretung`), Issue #222
         object_repr: Objekt-Beschreibung statt ``str(instance)`` (Lesezugriffe: nur Referenz, Issue #221)
     """
+    entry = build_event(
+        action,
+        instance,
+        tenant=tenant,
+        user=user,
+        changes=changes,
+        request=request,
+        on_behalf_of=on_behalf_of,
+        object_repr=object_repr,
+    )
+    if entry is not None:
+        # Schreiben über die Hash-Kette des Mandanten (SessionAuditLog.save, Issue #221)
+        entry.save()
+    return entry
+
+
+def log_events(entries: Iterable[Any]) -> list[Any]:
+    """
+    Vorbereitete Einträge (:func:`build_event`) eines Mandanten gesammelt an seine Hash-Kette hängen (Issue #715).
+
+    Jeder Eintrag behält seine eigene laufende Nummer und seinen Hash, in der gegebenen Reihenfolge – wie
+    nacheinander mit :func:`log_event` geschrieben, aber mit einer Sperre des Kettenkopfs statt einer je Eintrag.
+    ``None`` (nichts zu protokollieren) wird übersprungen.
+    """
+    from apps.common import audit_chain
+
+    return audit_chain.append_many(audit_chain.SESSION, [entry for entry in entries if entry is not None])
+
+
+def build_event(
+    action: str,
+    instance: Any,
+    *,
+    tenant: Any = None,
+    user: Any = None,
+    changes: Any = None,
+    request: Any = None,
+    on_behalf_of: Any = None,
+    object_repr: str | None = None,
+) -> Any:
+    """
+    Audit-Eintrag wie :func:`log_event` aufbauen, ohne ihn zu speichern (für :func:`log_events`).
+
+    ``None``, wenn nichts zu protokollieren ist (kein Mandant, Mandant wird gerade gelöscht).
+    """
     from apps.session.models import SessionAuditLog
 
     tenant = tenant or resolve_tenant(instance)
@@ -178,8 +224,7 @@ def log_event(
     if on_behalf_of is not None and on_behalf_of.tenant_id != tenant.pk:
         on_behalf_of = None
 
-    # Schreiben über die Hash-Kette des Mandanten (SessionAuditLog.save, Issue #221)
-    return SessionAuditLog.objects.create(
+    return SessionAuditLog(
         tenant=tenant,
         user=user,
         on_behalf_of=on_behalf_of,
@@ -460,25 +505,42 @@ def audit_pre_save(sender, instance, **kwargs):
     audit_core.capture_old_state(sender, instance)
 
 
+def created_event(instance: Any, *, tenant: Any = None) -> Any:
+    """
+    Eintrag für ein neu angelegtes Objekt, wie ihn :func:`audit_post_save` schreibt – ungespeichert.
+
+    Für gesammelt angelegte Objekte (``bulk_create`` löst keine Signale aus, Issue #715); schreiben mit
+    :func:`log_events`.
+    """
+    action = "allowance_created" if instance.__class__.__name__ in ALLOWANCE_MODELS else "create"
+    return build_event(action, instance, tenant=tenant)
+
+
+def changed_event(old_instance: Any, instance: Any, *, tenant: Any = None) -> Any:
+    """
+    Eintrag für eine Änderung (inkl. Spezial-Ereignisse), wie ihn :func:`audit_post_save` schreibt – ungespeichert.
+
+    ``old_instance`` ist der gespeicherte Stand vor der Änderung. ``None``, wenn sich nichts geändert hat.
+    Für gesammelt gespeicherte Änderungen (``bulk_update``, Issue #715); schreiben mit :func:`log_events`.
+    """
+    changes = build_changes(old_instance, instance)
+    if not changes:
+        return None
+    action = _special_action(old_instance, instance) or "update"
+    return build_event(action, instance, tenant=tenant, changes=changes)
+
+
 def audit_post_save(sender, instance, created, **kwargs):
     """create/update (inkl. Spezial-Ereignisse) protokollieren."""
     if kwargs.get("raw"):
         return
     if created:
-        created_action = "allowance_created" if instance.__class__.__name__ in ALLOWANCE_MODELS else "create"
-        log_event(created_action, instance)
-        return
-
-    old_instance = getattr(instance, "_audit_old", None)
-    if old_instance is None:
-        log_event("update", instance)
-        return
-
-    changes = build_changes(old_instance, instance)
-    if not changes:
-        return
-    action = _special_action(old_instance, instance) or "update"
-    log_event(action, instance, changes=changes)
+        entry = created_event(instance)
+    else:
+        old_instance = getattr(instance, "_audit_old", None)
+        entry = build_event("update", instance) if old_instance is None else changed_event(old_instance, instance)
+    if entry is not None:
+        entry.save()
 
 
 def audit_post_delete(sender, instance, **kwargs):
