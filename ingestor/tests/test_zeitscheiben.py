@@ -1119,7 +1119,7 @@ def test_vollabgleich_in_zeitscheiben_endet_mit_dem_standardfenster():
     scheiben = SourceFetchOptions.from_sync_config({"full_sync_slices": SCHEIBEN})
 
     # Ohne eigenes Fenster: das Standardfenster des Daemons, mit seinem Ende
-    assert scheiben.sync_window(standard) == standard
+    assert scheiben.full_window(standard) == standard
     assert scheiben.full_sync_plan(True, now=_berlin(2), default_window=standard) == (True, _berlin(6))
     # Außerhalb des Fensters (Auslöser am Tag) nur Änderungsabgleich
     assert scheiben.full_sync_plan(True, now=_berlin(10), default_window=standard) == (False, None)
@@ -1132,12 +1132,12 @@ def test_vollabgleich_in_zeitscheiben_endet_mit_dem_standardfenster():
     eigenes = SourceFetchOptions.from_sync_config(
         {"full_sync_slices": SCHEIBEN, "full_sync_window": {"start": "00:00", "end": "04:00"}}
     )
-    assert eigenes.sync_window(standard) == FullSyncWindow.parse({"start": "00:00", "end": "04:00"})
+    assert eigenes.full_window(standard) == FullSyncWindow.parse({"start": "00:00", "end": "04:00"})
     assert eigenes.full_sync_plan(True, now=_berlin(2), default_window=standard) == (True, _berlin(4))
     assert eigenes.full_sync_plan(True, now=_berlin(2)) == (True, _berlin(4))
 
     # Ohne Zeitscheiben bleibt es, wie es war: ohne eigenes Fenster ohne Ende
     ohne = SourceFetchOptions()
-    assert ohne.sync_window(standard) is None
+    assert ohne.full_window(standard) is None
     assert ohne.full_sync_plan(True, now=_berlin(2), default_window=standard) == (True, None)
     assert ohne.full_sync_plan(True, now=_berlin(10)) == (True, None)

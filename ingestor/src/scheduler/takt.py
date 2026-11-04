@@ -29,6 +29,14 @@ Alle Abstände sind ganze Minuten von 5 bis 1440; kleinere Werte gelten als 5 Mi
 Abstand nach dem Ende des letzten fällig, früher nur, wenn vorher ein kürzerer Grundtakt beginnt: Dann ist er zu
 dessen Beginn fällig (etwa um 07:00 Uhr statt um 07:40 Uhr). Die Schonung bei Fehlern
 (``src/sync/orchestrator.py``, ``source_backoff_until``) geht allem vor.
+
+Abruffenster (``sync_config["sync_window"]``, Issue #1186, ``src/client/source_options.py``): Eine Quelle mit Fenster
+startet nur darin. Liegt der nach dem Takt berechnete nächste Lauf außerhalb, ist er zu Beginn des nächsten Fensters
+fällig (``SyncState.after_run``, Grund ``abruffenster`` in ``sync_state["reason"]``). Dasselbe gilt für den ersten Lauf
+(ohne ``next_due``), nach dem Ende einer Schonung und für Auslöser aus dem Admin, die außerhalb verfallen
+(``src/scheduler/__init__.py``). Der Vollabgleich beginnt im Fenster des Vollabgleichs, das mit Abruffenster immer in
+diesem liegt (``SourceFetchOptions.from_sync_config``: eigenes ``full_sync_window`` begrenzt auf die Schnittmenge,
+sonst das Abruffenster, nie das Standardfenster ab ``--full-sync-hour``).
 """
 
 from __future__ import annotations
@@ -69,6 +77,9 @@ PERIOD_MEETING = "sitzungstag"
 PERIOD_WORKDAY = "arbeitszeit"
 PERIOD_OFF_HOURS = "ausserhalb"
 PERIOD_WEEKEND = "wochenende"
+
+#: Grund für einen späteren nächsten Lauf als nach dem Takt (``SyncState.reason``, Protokoll und Status)
+REASON_WINDOW = "abruffenster"
 
 
 def _minutes(value: Any) -> int | None:
@@ -245,6 +256,8 @@ class SyncState:
     last_run: datetime | None = None
     last_changes: int | None = None
     full_attempted: datetime | None = None
+    #: Warum ``next_due`` später liegt als nach dem Takt: ``REASON_WINDOW`` (Abruffenster), sonst ``None``
+    reason: str | None = None
 
     @classmethod
     def from_sync_config(cls, sync_config: Any) -> SyncState:
@@ -264,6 +277,7 @@ class SyncState:
             last_run=_stamp(value.get("last_run")),
             last_changes=changes if isinstance(changes, int) and not isinstance(changes, bool) else None,
             full_attempted=_stamp(value.get("full_attempted")),
+            reason=value.get("reason") if isinstance(value.get("reason"), str) else None,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -279,6 +293,7 @@ class SyncState:
             "last_run": iso(self.last_run),
             "last_changes": self.last_changes,
             "full_attempted": iso(self.full_attempted),
+            "reason": self.reason,
         }
 
     def after_run(
@@ -290,6 +305,7 @@ class SyncState:
         changes: int,
         full: bool,
         meeting_days: frozenset[date] = frozenset(),
+        window: FullSyncWindow | None = None,
     ) -> SyncState:
         """
         Zustand nach einem Lauf: Zähler der Läufe ohne Änderung, Abstand und nächster fälliger Lauf.
@@ -297,12 +313,19 @@ class SyncState:
         Nur ein erfolgreicher inkrementeller Lauf zählt für die Ruhe: ohne Änderung +1, mit Änderung 0. Ein
         Vollabgleich schreibt jedes Objekt und sagt über Änderungen nichts; ein gescheiterter Lauf bleibt der
         Schonung überlassen. Wechselt der Grundtakt, beginnt der Zähler neu.
+
+        ``window``: Abruffenster der Quelle (``sync_window``, Issue #1186). Liegt der nächste Lauf nach dem Takt
+        außerhalb, ist er zu Beginn des nächsten Fensters fällig (``reason`` = ``REASON_WINDOW``); der Abstand
+        (``interval_minutes``) bleibt der des Takts.
         """
         base_minutes, period = schedule.base(finished, meeting_days)
         idle = self.idle_runs if self.base_minutes == base_minutes else 0
         if success and not full:
             idle = 0 if changes > 0 else idle + 1
         next_due, interval = schedule.next_due(finished, meeting_days, idle)
+        reason: str | None = None
+        if window is not None and window.closes_at(next_due) is None:
+            next_due, reason = window.next_open(next_due), REASON_WINDOW
         return replace(
             self,
             next_due=next_due,
@@ -312,6 +335,7 @@ class SyncState:
             period=period,
             last_run=finished,
             last_changes=changes,
+            reason=reason,
         )
 
 
@@ -340,7 +364,8 @@ def full_sync_due(
     Ja, wenn ``now`` im Fenster liegt (eigenes ``full_sync_window`` der Quelle, sonst das Standardfenster), in diesem
     Fenster noch keiner begonnen hat und ``full_sync_every_days`` ihn zulässt. Ohne Standardfenster (Vollabgleich
     abgeschaltet) nie. Ein begonnener Vollabgleich zählt auch, wenn er scheitert: Er wird im nächsten Fenster
-    wiederholt, nicht mehrmals in derselben Nacht.
+    wiederholt, nicht mehrmals in derselben Nacht. Mit Abruffenster (``sync_window``) ist ``full_sync_window`` immer
+    gesetzt und liegt darin (``SourceFetchOptions.from_sync_config``).
     """
     if default_window is None:
         return False

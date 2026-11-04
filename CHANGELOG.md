@@ -6,6 +6,9 @@ Alle nennenswerten Änderungen an mandari stehen hier, nach
 
 ## [Unreleased]
 
+### Hinzugefügt
+- Ingestor: Abruffenster je Quelle für alle Abgleiche, `sync_config["sync_window"]` (etwa `{"start": "23:00", "end": "01:00", "tz": "Europe/Berlin"}`, Format wie `full_sync_window`). Außerhalb des Fensters ruft der Ingestor bei der Quelle nichts ab: Der Daemon startet sie erst zu Beginn des nächsten Fensters, auch für den ersten Lauf, nach einer Schonung und für den Vollabgleich; Auslöser aus dem Admin verfallen mit Meldung, `sync --source`/`--body` endet ohne Abruf mit Rückgabewert 1, `sync --all` überspringt die Quelle; eine Übersteuerung gibt es nicht. Ein laufender Abgleich, ob Änderungs- oder Vollabgleich, in Zeitscheiben oder als Scraper, holt nach dem Fensterende keine Seite mehr (offene Listen bleiben Lücken, kein Fehlversuch), und die Texterkennung des Ingestors lädt Dateien der Quelle nur im Fenster. Der Vollabgleich bleibt im Abruffenster: ein eigenes `full_sync_window` nur in der Schnittmenge, sonst das Abruffenster, nie das Standardfenster ab `--full-sync-hour`. Grund im Takt (`sync_state.reason`, Sync-Protokoll `details.takt`), neue Metrik `mandari_ingestor_sync_window_open`. Ersetzt das zeitgesteuerte An- und Abschalten der Quelle der Stadt Köln (`docs/ABRUFREGELN.md`, „Abruffenster“) (#1186).
+
 ## [0.12.0] – 2026-11-03
 
 ### Hinzugefügt

@@ -20,6 +20,7 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
 | Gleichzeitig | höchstens zwei offene Anfragen je Server und Ingestor-Prozess, auch am Ziel einer Weiterleitung |
 | Weiterleitungen | höchstens fünf je Abruf, jede erst nach der robots.txt ihres Ziels und mit eigenem Zeitpunkt im Takt |
 | Abgleich | je Quelle nach Bedarf: werktags 7–19 Uhr alle 10 Minuten, sonst stündlich, am Wochenende alle 2 Stunden, an Sitzungstagen und am Vortag (7–22 Uhr) alle 5 Minuten; nach Läufen ohne Änderung seltener, an Sitzungstagen bis alle 10 Minuten, sonst bis alle 2 Stunden; gefragt wird nur nach Änderungen (`modified_since`) |
+| Abruffenster | je Quelle auf Wunsch: Abrufe nur in einem festen Zeitfenster, etwa 23:00 bis 01:00 Uhr; außerhalb ruft der Ingestor bei dieser Quelle nichts ab (siehe [Abruffenster](#abruffenster)) |
 | Vollabgleich | geplant je Quelle einmal je Nacht in ihrem Zeitfenster, je Quelle auch seltener; für Server, deren vollständige Listen abbrechen, nur in Zeitscheiben (`modified_since`/`modified_until`); im Admin von Hand angefordert sofort, auch tagsüber, außer eine Quelle mit OParl-Schnittstelle hat ein eigenes Zeitfenster, Zeitscheiben oder einen noch nicht erreichten Mindestabstand (`full_sync_every_days`) (siehe [Vollabgleich](#vollabgleich)) |
 | Langsame Listen | eine optionale Liste, die in eine Zeitüberschreitung läuft, ruht 1 Stunde, danach jeweils doppelt so lange, höchstens 24 Stunden |
 | Neue Quellen | inaktiv angelegt; regelmäßig abgefragt wird eine Quelle erst, wenn sie aktiv ist. Ausnahme: die eigene Schnittstelle eines Session-Mandanten. Neu entdeckte Kommunen bleiben ungelistet, bis wir sie listen (siehe [Neue Quellen und Kommunen](#neue-quellen-und-kommunen)) |
@@ -33,10 +34,10 @@ ersten Deploy, der diese Änderungen enthält; bis dahin läuft dort noch ein ä
 - **Ausschließen:** per robots.txt, ganz oder nur für Dokumente (Beispiele im Abschnitt [robots.txt](#robotstxt)).
   Änderungen wirken spätestens nach 24 Stunden.
 - **Langsamer oder zu anderen Zeiten:** Schreiben Sie uns. Wir können für Ihre Quelle den Abstand je Anfrage
-  erhöhen (`request_interval`, bis 30 Sekunden), seltener abgleichen (`sync_schedule`), den Vollabgleich in ein
-  Zeitfenster legen (`full_sync_window`), seltener ausführen (`full_sync_every_days`), nur in Zeitscheiben ausführen
-  (`full_sync_slices`) oder den Dateiabruf abschalten (`file_downloads`). Liegen mehrere Quellen auf Ihrem Server,
-  setzen wir den Abstand bei allen.
+  erhöhen (`request_interval`, bis 30 Sekunden), seltener abgleichen (`sync_schedule`), alle Abrufe des Ingestors in
+  ein Zeitfenster legen (`sync_window`), den Vollabgleich in ein Zeitfenster legen (`full_sync_window`), seltener
+  ausführen (`full_sync_every_days`), nur in Zeitscheiben ausführen (`full_sync_slices`) oder den Dateiabruf
+  abschalten (`file_downloads`). Liegen mehrere Quellen auf Ihrem Server, setzen wir den Abstand bei allen.
 - **Kontakt:** support@mandari.de. Infoseite: <https://mandari.de/ingestor/>.
 
 ## Abruf-Adresse
@@ -355,6 +356,8 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   Zeitpunkt ist sofort fällig.
 - **Schonung geht vor:** Eine Quelle in Schonung startet nicht, auch nicht auf einen Auslöser hin (siehe
   [Fehler und Schonung](#fehler-und-schonung)). Danach gilt der spätere von Schonungsende und nächstem Lauf.
+- **Abruffenster:** Eine Quelle mit `sync_window` startet nur in ihrem Fenster; liegt der nächste Lauf außerhalb,
+  ist er zu Beginn des nächsten Fensters fällig (siehe [Abruffenster](#abruffenster)).
 - **Ohne Änderung** sind das je Quelle am Wochenende 12 Läufe am Tag, werktags von 19 bis 7 Uhr 7 Läufe (19, 20,
   21, 23, 1, 3 und 5 Uhr) und in der Arbeitszeit 14 Läufe, in einer Woche 131 statt 1008 im bisherigen
   10-Minuten-Takt (`ingestor/tests/test_takt.py`).
@@ -396,7 +399,8 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   `ScraperSyncRunner.run(full=full)` ab (`SyncOrchestrator._scraper_runner`); Zeitfenster und
   `full_sync_every_days` gelten für sie nur im geplanten Vollabgleich (`full_sync_due`). Auslöser für
   unbekannte oder inaktive Quellen verwirft der Daemon (`mandari/insight_sync/daemon.py`, `trigger_sync`;
-  `SyncScheduler._expand_triggers`).
+  `SyncScheduler._expand_triggers`), ebenso Auslöser für eine Quelle außerhalb ihres Abruffensters, für alle
+  Abgleiche, auch Scraper-Quellen (siehe [Abruffenster](#abruffenster)).
 - **Nur über den Ingestor:** Einen Rückfall auf den Worker der Anwendung gibt es seit Issue
   [#554](https://github.com/mandariOSS/mandari/issues/554) nicht mehr. Nimmt kein Daemon den Auslöser an, meldet der
   Admin einen Fehler: bei „Jetzt synchronisieren“, wenn die Nachricht keinen Empfänger fand
@@ -422,14 +426,15 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
   `--filter` (nur mit `--source`) beschränkt den Abgleich auf Kommunen, deren Name oder Kennung passt; er gilt dann
   nicht als vollständig. Passt keine Kommune, endet der Befehl mit einem Fehler (Rückgabewert 1), und die Quelle bleibt
   unverändert, auch ihr Fehlerzustand und damit eine laufende [Schonung](#fehler-und-schonung). Für Scraper-Quellen wirkt
-  der Filter nicht.
+  der Filter nicht. Das [Abruffenster](#abruffenster) gilt auch von Hand: Außerhalb ruft der Befehl nichts ab.
   `python -m src.main sync --all` gleicht alle aktiven Quellen einmal ab, höchstens 2 zugleich
-  (`SYNC_SOURCE_CONCURRENCY`), mit Schonung, aber ohne den Abgleichrhythmus der Quelle (`sync_schedule`); Abstand je
-  Quelle (`request_interval`) und Takt je Server gelten.
+  (`SYNC_SOURCE_CONCURRENCY`), mit Schonung und Abruffenster, aber ohne den Abgleichrhythmus der Quelle
+  (`sync_schedule`); Abstand je Quelle (`request_interval`) und Takt je Server gelten.
 - **Protokoll und Metriken:** Jeder Lauf des Daemons schreibt ein Sync-Protokoll für seine Quelle
   (`insight_sync_synclog` mit `source_id`, `triggered_by` `daemon` oder `admin` und `sync_type` so, wie der Lauf
   tatsächlich lief) mit den Zählern, höchstens 20 Fehlern, der Zahl der Abrufe (`details.requests`) und dem Takt
-  (`details.takt`: Art, Abstand, Läufe ohne Änderung, nächster Lauf), dazu gegebenenfalls ausgesetzte Listen
+  (`details.takt`: Art, Abstand, Läufe ohne Änderung, nächster Lauf, mit Abruffenster auch `window` und, wenn es den
+  nächsten Lauf verschoben hat, `reason` = `abruffenster`), dazu gegebenenfalls ausgesetzte Listen
   (`details.suspended_lists`) und den Stand der Zeitscheiben (`details.full_sync_slices`; `SyncScheduler._write_log`).
   Ein Lauf über die Kommandozeile schreibt eines für den ganzen Aufruf, ohne `source_id`, mit `triggered_by` `cli`,
   dem angeforderten `sync_type` und höchstens 20 Fehlern (`write_results_to_synclog`); `sync --source` schreibt seit
@@ -438,6 +443,59 @@ Kommando `manage.py sync_daemon` und der Abgleich im Worker sind entfallen.
 - **Lebenszeichen:** Der Daemon schreibt bei jeder Prüfung `mandari:ingestor:heartbeat` in Redis (läuft nach
   180 Sekunden ab, `HEARTBEAT_TTL_SECONDS`). Daran erkennt die Anwendung, dass er läuft, auch wenn nachts eine Stunde
   lang kein Lauf beginnt (`mandari/insight_sync/daemon.py`, `is_ingestor_active`).
+
+### Abruffenster
+
+Manche Kommunen erlauben Abrufe nur zu bestimmten Zeiten; die Stadt Köln etwa nur zwischen 23:00 und 01:00 Uhr. Dafür
+gibt es je Quelle `sync_config["sync_window"]`, etwa `{"start": "23:00", "end": "01:00"}`, im selben Format wie
+`full_sync_window`: Ortszeit, Standard `Europe/Berlin`, abweichend mit `"tz"`, über Mitternacht erlaubt, Beginn und
+Ende verschieden; ungültige Werte gelten als nicht gesetzt (`ingestor/src/client/source_options.py`,
+`FullSyncWindow`; Issue [#1186](https://github.com/mandariOSS/mandari/issues/1186)). Das Fenster gilt für alle
+Abgleiche der Quelle, Änderungs- und Vollabgleiche, in Zeitscheiben und als Scraper:
+
+- **Ränder:** Der Beginn gehört zum Fenster, das Ende nicht. Bei 23:00 bis 01:00 Uhr startet ein Lauf um 23:00 Uhr,
+  um 00:59 Uhr noch, um 01:00 Uhr nicht mehr. Das Fenster gilt in seiner Ortszeit, auch über die Zeitumstellung.
+- **Start nur im Fenster:** Der Daemon startet die Quelle nur im Fenster. Liegt der nach dem
+  [Rhythmus](#rhythmus) berechnete nächste Lauf außerhalb, ist er zu Beginn des nächsten Fensters fällig
+  (`SyncState.after_run`); der Abstand des Takts bleibt dabei stehen. Dasselbe gilt für den ersten Lauf einer Quelle
+  (ohne `next_due`), nach dem Ende einer [Schonung](#fehler-und-schonung) und für Vollabgleiche. Beispiel Köln an
+  einem Werktag: Lauf um 23:00 Uhr, nach dem Takt (nachts 60 Minuten) wieder um 00:00 Uhr, der nächste wäre um
+  01:00 Uhr fällig und ist deshalb um 23:00 Uhr des nächsten Tages fällig. Mehr Läufe im Fenster gibt es nur mit
+  kürzerem Takt (`sync_schedule`, etwa `{"off_hours_minutes": 20, "weekend_minutes": 20}`).
+- **Vollabgleich:** Mit Abruffenster beginnt der Vollabgleich nie im Standardfenster des Daemons
+  (`--full-sync-hour`), sondern einmal je Abruffenster in dessen Fenster. Ein eigenes `full_sync_window` muss im
+  Abruffenster liegen; sonst begrenzt der Ingestor es auf die Schnittmenge: Köln mit `full_sync_window`
+  00:00 bis 06:00 Uhr gleicht von 00:00 bis 01:00 Uhr vollständig ab, von 23:00 bis 00:00 Uhr nur Änderungen.
+  Liegt es ganz außerhalb oder in einer anderen Zeitzone, gilt es als nicht gesetzt und das Abruffenster gilt.
+  Zerfällt die Schnittmenge in zwei Stücke (etwa `full_sync_window` 22:00 bis 06:00 Uhr in einem Abruffenster von
+  05:00 bis 23:00 Uhr), gilt das längere, bei gleicher Länge das, das nach dem Beginn des Abruffensters zuerst beginnt
+  (`FullSyncWindow.within`, `SourceFetchOptions.from_sync_config`).
+- **Ende mit dem Fenster:** Ein laufender Abgleich holt nach dem Ende des Fensters keine weitere Seite; der Ingestor
+  prüft das vor jeder Seite (`OParlClient.fetch_list`, `FetchWindowClosedError`; Frist aus
+  `SourceFetchOptions.fetch_deadline`, das frühere Ende von Abruffenster und Fenster des Vollabgleichs). Offene Listen
+  gelten als Lücke: Der Lauf zählt nicht als vollständig, das Änderungsfenster rückt nicht vor, der nächste Lauf holt
+  die Änderungen nach. Die Prüfung des Filters nach einem Vollabgleich unterbleibt dann. Ein Scraper-Crawl bricht am
+  Fensterende ab (`PoliteFetcher`, `CrawlWindowClosedError`); er zählt nicht als Abgleich und nicht als Fehlversuch, und
+  seine Monatsübersichten zählen nicht für den Vergleich im nächsten Lauf. Ein Fensterende zählt nie als Fehlversuch
+  der Quelle.
+- **Auslöser und Kommandozeile:** Ein Auslöser aus dem Admin für eine Quelle außerhalb ihres Fensters verfällt, wie
+  in der Schonung; der Daemon schreibt die Meldung mit dem Beginn des nächsten Fensters in sein Protokoll
+  (`SyncScheduler.tick`). `sync --source` und `sync --body` rufen außerhalb nichts ab, melden das nächste Fenster,
+  schreiben kein Sync-Protokoll und enden mit Rückgabewert 1; `sync --all` überspringt die Quelle mit Meldung
+  (`SyncResult.outside_window`, `SyncOrchestrator.sync_body_url`, `sync_all`). Eine Übersteuerung gibt es nicht, wie
+  bei der Schonung und beim Fenster des Vollabgleichs.
+- **Texterkennung im Ingestor:** Dateien der Quelle lädt sie nur im Fenster. Außerhalb beansprucht sie nichts; eine
+  schon beanspruchte Datei bleibt `pending`, ohne Anfrage (`ingestor/src/extraction/extractor.py`). Das gilt auch für
+  den getrennt betriebenen `extract-daemon`. Die Abrufe der Anwendung (Texterkennung mit
+  `TEXT_EXTRACTION_RUNNER=worker`, Dokument-Cache, Vorschau, Löschabgleich, Personenfotos, siehe
+  [Dokumente](#dokumente)) richten sich derzeit nicht nach dem Abruffenster; für eine Quelle mit Abruffenster bei
+  Bedarf `file_downloads` abschalten.
+- **Protokoll und Metriken:** `sync_config["sync_state"]["reason"]` ist `abruffenster`, wenn das Fenster den nächsten
+  Lauf verschoben hat; das Sync-Protokoll nennt Fenster und Grund unter `details.takt`. Die Metrik
+  `mandari_ingestor_sync_next_run_timestamp_seconds` zeigt den Beginn des nächsten Fensters,
+  `mandari_ingestor_sync_window_open` (nur Quellen mit Fenster), ob es offen ist (siehe
+  [`MONITORING.md`](MONITORING.md#metriken)). Wartet eine Quelle auf ihr Fenster, meldet der Daemon das einmal je
+  Fenster in seinem Protokoll.
 
 ### Änderungsfenster
 
@@ -601,7 +659,9 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
   `full_sync_every_days` ein (`SourceFetchOptions.full_sync_plan`, `SyncOrchestrator._full_sync_plan`); bei
   Scraper-Quellen gelten beide nur für den geplanten Vollabgleich. Ohne eigenes Fenster beginnt er sofort, auch
   tagsüber, und läuft zu Ende; das Standardfenster bindet nur den Vollabgleich in Zeitscheiben (siehe „Auslöser“
-  unter [Rhythmus](#rhythmus) und [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)).
+  unter [Rhythmus](#rhythmus) und [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)). Hat die Quelle ein
+  [Abruffenster](#abruffenster), verfällt ein Auslöser außerhalb davon; im Abruffenster, aber außerhalb des Fensters
+  des Vollabgleichs läuft er als Änderungsabgleich.
 - **Einmal je Fenster:** Den Beginn hält der Daemon in `sync_config["sync_state"]["full_attempted"]` fest. Ein
   abgebrochener oder unvollständiger Vollabgleich wird im nächsten Fenster wiederholt, nicht in derselben Nacht;
   auch ein Neustart des Ingestors startet ihn nicht ein zweites Mal.
@@ -634,10 +694,11 @@ Anfragen, verhindert aber, dass unveränderte Objekte in jedem Lauf neu geschrie
 - **Nach dem Ende des eigenen Fensters** holt ein laufender Vollabgleich keine weitere Seite; der Ingestor prüft das
   vor jeder Seite (`FetchWindowClosedError`). Offene Listen gelten als Lücke: Der Vollabgleich zählt nicht als
   vollständig, das Änderungsfenster rückt nicht vor, und die Listen kommen beim nächsten Vollabgleich wieder dran.
-  Scraper-Quellen kennen diese Frist derzeit nicht (`ScraperSyncRunner.run` ohne `fetch_deadline`): Ein begonnener
-  Vollabgleich läuft bei ihnen zu Ende, auch nach dem Ende ihres eigenen Fensters.
+  Scraper-Quellen kennen diese Frist des Vollabgleichs nicht: Ein begonnener Vollabgleich läuft bei ihnen zu Ende,
+  auch nach dem Ende ihres eigenen Fensters; nur das [Abruffenster](#abruffenster) beendet einen Crawl.
 - Das Zeitfenster begrenzt nur die Listen des Vollabgleichs. Inkrementelle Läufe, Dateiabrufe der Texterkennung
-  und die Abrufe der Anwendung richten sich nicht danach.
+  und die Abrufe der Anwendung richten sich nicht danach. Alle Abrufe des Ingestors einer Quelle begrenzt das
+  [Abruffenster](#abruffenster) (`sync_window`); mit ihm liegt auch das Fenster des Vollabgleichs immer darin.
 
 ### Vollabgleich in Zeitscheiben
 
@@ -675,8 +736,9 @@ Sekunden (gemessen am 15.10.2026). Für solche Quellen gibt es `full_sync_slices
   Fortschritt, fertige fragen im nächsten Vollabgleich nur ihre letzte Scheibe noch einmal an, und die ausgesetzte setzt
   nach ihrer Aussetzung an ihrer letzten vollständigen Scheibe fort.
 - **Zeitfenster:** Ein Vollabgleich in Zeitscheiben endet immer mit dem Zeitfenster der Quelle: dem eigenen
-  `full_sync_window`, sonst dem Standardfenster des Daemons (ab `--full-sync-hour` für 5 Stunden,
-  `SourceFetchOptions.sync_window`). Weil jede Scheibe mindestens eine Anfrage kostet, kann ein Durchgang mehrere
+  `full_sync_window` (mit [Abruffenster](#abruffenster) darauf begrenzt, sonst dem Abruffenster), sonst dem
+  Standardfenster des Daemons (ab `--full-sync-hour` für 5 Stunden, `SourceFetchOptions.full_window`). Weil jede
+  Scheibe mindestens eine Anfrage kostet, kann ein Durchgang mehrere
   Fenster brauchen; der Fortschritt bleibt dazwischen erhalten. Außerhalb des Fensters, und wenn kein Fenster bekannt
   ist (Aufruf über die Kommandozeile ohne eigenes `full_sync_window`,
   geplanter Vollabgleich abgeschaltet), läuft statt seiner ein Änderungsabgleich (`SourceFetchOptions.full_sync_plan`).
@@ -727,6 +789,7 @@ einem Opt-out (`mandari/insight_core/views/files.py`, `_deliver_file`).
   (`TEXT_EXTRACTION_MAX_ATTEMPTS`). Ein fehlgeschlagener Download wird hier nicht wiederholt.
 - Sperrt die robots.txt die Datei, überspringt er sie. Ist die robots.txt nicht erreichbar, bleibt die Datei offen,
   und er stellt die Dateien der Kommune 15 Minuten zurück (`ingestor/src/extraction/extractor.py`).
+- Hat die Quelle ein [Abruffenster](#abruffenster), lädt er ihre Dateien nur darin; außerhalb bleiben sie offen.
 - Mit `TEXT_EXTRACTION_RUNNER=worker` lädt der Ingestor keine Dateien mehr; dann holt sie nur die Anwendung
   ([`FILE_CACHE.md`](FILE_CACHE.md)).
 
@@ -831,8 +894,8 @@ Die Pausen der Tabelle gelten für den Abgleich samt Texterkennung und für die 
 obigen Sinn (`INSIGHT_SOURCE_BACKOFF_FAILURES`) und bis ein Lauf den Zähler wieder zurücksetzt. Bei OParl-Quellen
 ruhen sie wegen einer User-Agent-Sperre oder 5xx-Serie also nur, wenn auch Adresse oder Kommunenliste betroffen sind
 oder der Lauf abbricht. Eine Sperre per robots.txt beachten sie unabhängig davon bei jedem Abruf. Der getrennt betriebene OCR-Worker
-`extract-daemon` richtet sich nur nach `file_downloads` und der robots.txt, nicht nach der Schonung und nicht danach,
-ob die Quelle abgeschaltet ist.
+`extract-daemon` richtet sich nur nach `file_downloads`, der robots.txt und dem [Abruffenster](#abruffenster), nicht
+nach der Schonung und nicht danach, ob die Quelle abgeschaltet ist.
 
 ## Einstellungen je Quelle
 
@@ -844,7 +907,8 @@ es zu Beginn jedes Laufs der Quelle, die Texterkennung spätestens nach 5 Minute
 |---|---|---|
 | `request_interval` | Abstand der Abrufe dieser Quelle in Sekunden, 1 bis 30; nur langsamer als der Standard, kleinere Werte gelten als 1 | `2.0` |
 | `sync_schedule` | Takt der Quelle (siehe [Rhythmus](#rhythmus)): `workday_minutes`, `off_hours_minutes`, `weekend_minutes`, `meeting_minutes`, `idle_max_minutes`, `meeting_idle_max_minutes` (ganze Minuten von 5 bis 1440, kleinere gelten als 5), `workday_hours`, `meeting_hours` (`{"start": "07:00", "end": "19:00"}`, Beginn vor Ende am selben Tag), `meeting_days_before` (0 bis 7), `idle_runs` (0 bis 100, 0 = nie verlängern), `tz` | `{"weekend_minutes": 240}` |
-| `full_sync_window` | Zeitfenster des Vollabgleichs (Ortszeit, optional `tz`) | `{"start": "00:00", "end": "06:00"}` |
+| `sync_window` | Abruffenster für alle Abgleiche und die Texterkennung des Ingestors (Ortszeit, optional `tz`, siehe [Abruffenster](#abruffenster)) | `{"start": "23:00", "end": "01:00"}` |
+| `full_sync_window` | Zeitfenster des Vollabgleichs (Ortszeit, optional `tz`); mit `sync_window` nur, soweit es darin liegt | `{"start": "00:00", "end": "06:00"}` |
 | `full_sync_every_days` | Mindestabstand zwischen vollständigen Vollabgleichen in Tagen, ganze Zahl von 1 bis 365 | `7` |
 | `full_sync_slices` | Vollabgleich nur in Zeitscheiben (siehe [Vollabgleich in Zeitscheiben](#vollabgleich-in-zeitscheiben)): `since` (Pflicht), `days` (1 bis 366, Standard 30), optional `lists` | `{"days": 30, "since": "2010-01-01"}` |
 | `modified_since_margin_minutes` | Sicherheitsabstand des Änderungsfensters in Minuten, ganze Zahl von 0 bis 10080 | `60` |
@@ -874,7 +938,7 @@ Befund zurückzusetzen:
 
 | Schlüssel | Inhalt |
 |---|---|
-| `sync_state` | Takt der Quelle: nächster fälliger Lauf (`next_due`), Läufe ohne Änderung in Folge (`idle_runs`), Abstand und Art des Grundtakts (`interval_minutes`, `base_minutes`, `period`), letzter Lauf und seine Änderungen (`last_run`, `last_changes`), Beginn des letzten Vollabgleichs (`full_attempted`); Zeitpunkte in UTC. Löschen macht die Quelle sofort fällig und erlaubt einen Vollabgleich im laufenden Fenster |
+| `sync_state` | Takt der Quelle: nächster fälliger Lauf (`next_due`), Läufe ohne Änderung in Folge (`idle_runs`), Abstand und Art des Grundtakts (`interval_minutes`, `base_minutes`, `period`), letzter Lauf und seine Änderungen (`last_run`, `last_changes`), Beginn des letzten Vollabgleichs (`full_attempted`), Grund für einen späteren nächsten Lauf (`reason`, `abruffenster`); Zeitpunkte in UTC. Löschen macht die Quelle sofort fällig und erlaubt einen Vollabgleich im laufenden Fenster |
 | `body_sync_started` | Beginn des letzten vollständig erfolgreichen Abgleichs je Kommune (UTC), Anfang des Änderungsfensters; nach nicht gespeicherten Objekten höchstens deren ältestes `modified`. Löschen setzt das Änderungsfenster auf sieben Tage zurück |
 | `timed_lists` | Listen, deren `modified` nachweislich eine Uhrzeit trägt, mit dem Zeitpunkt des Nachweises (Adresse → Zeitpunkt UTC); nur sie bekommen das kurze Fenster. Löschen lässt die Listen ab Tagesbeginn laufen, bis ein Lauf die Uhrzeit wieder nachweist |
 | `missing_lists` | Optionale Listen, die es bei der Quelle nicht gibt, und Listen, die sie nicht freigibt (HTTP 403 für alle), mit Zeitpunkt der letzten Prüfung und Grund (Adresse → `checked_at` UTC, `reason`; ältere Einträge Adresse → Zeitpunkt UTC). Löschen lässt den nächsten Lauf die Listen wieder anfragen |
@@ -1012,7 +1076,9 @@ Diese Seite beschreibt den Code auf `dev` nach den Änderungen für
 - [#1033](https://github.com/mandariOSS/mandari/issues/1033): Vollabgleich in Zeitscheiben, langsame Listen aussetzen
   ([#1040](https://github.com/mandariOSS/mandari/pull/1040));
 - [#1041](https://github.com/mandariOSS/mandari/issues/1041): Vermerk „filtert nicht“ je Liste und nur für die eigene
-  Quelle, mit täglicher Prüfung ([#1044](https://github.com/mandariOSS/mandari/pull/1044)).
+  Quelle, mit täglicher Prüfung ([#1044](https://github.com/mandariOSS/mandari/pull/1044));
+- [#1186](https://github.com/mandariOSS/mandari/issues/1186): Abruffenster je Quelle für alle Abgleiche
+  (`sync_window`, siehe [Abruffenster](#abruffenster)).
 
 Die von uns betriebene Instanz (mandari.de) folgt diesen Regeln ab dem ersten Deploy, der diese Änderungen enthält;
 bis dahin läuft dort noch ein älterer Stand.

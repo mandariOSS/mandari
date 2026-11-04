@@ -34,12 +34,25 @@ mehr Schonung oder haben Eigenheiten, die sich nicht automatisch erkennen lassen
     ``false``: Dateien dieser Quelle nicht automatisch abrufen (Textextraktion im Ingestor, Dateicache und
     Vorschau in Django). Für Quellen, die Dokumente nur hinter einer Zugangsprüfung für Menschen ausliefern;
     die Dateien bleiben in der Warteschlange und werden nachgeholt, sobald der Schalter fällt.
+``sync_window``
+    Abruffenster für alle Abgleiche der Quelle (Issue #1186), z. B. ``{"start": "23:00", "end": "01:00"}``
+    (Ortszeit, Standard ``Europe/Berlin``, abweichend über ``"tz"``; über Mitternacht erlaubt; Format wie
+    ``full_sync_window``). Außerhalb des Fensters ruft der Ingestor bei der Quelle nichts ab: Der Daemon startet sie
+    erst zu Beginn des nächsten Fensters (``src/scheduler/takt.py``), Auslöser aus dem Admin verwirft er, und
+    ``sync`` auf der Kommandozeile endet ohne Abruf (``SyncResult.outside_window``). Eine Übersteuerung gibt es
+    nicht. Ein laufender Abgleich, ob Änderungs- oder Vollabgleich, in Zeitscheiben oder als Scraper, holt nach dem
+    Ende des Fensters keine weitere Seite mehr; offene Listen gelten als unvollständig. Die Texterkennung des
+    Ingestors lädt außerhalb des Fensters keine Datei der Quelle. Mit ``sync_window`` gilt für den Vollabgleich
+    nie das Standardfenster des Daemons, sondern das eigene ``full_sync_window``, begrenzt auf die Schnittmenge mit
+    dem Abruffenster (``FullSyncWindow.within``), sonst das Abruffenster selbst.
 ``full_sync_window``
     Zeitfenster für Vollabgleiche, z. B. ``{"start": "00:00", "end": "06:00"}`` (Ortszeit, Standard
     ``Europe/Berlin``, abweichend über ``"tz"``; über Mitternacht erlaubt). Ein Vollabgleich außerhalb des
     Fensters, ob geplant, aus dem Admin oder per ``sync --full``, läuft als inkrementeller Abgleich. Ein
     laufender Vollabgleich holt nach dem Ende des Fensters keine weitere Seite mehr; die offenen Listen gelten
-    als unvollständig und kommen beim nächsten Vollabgleich wieder dran.
+    als unvollständig und kommen beim nächsten Vollabgleich wieder dran. Mit ``sync_window`` gilt nur der Teil
+    innerhalb des Abruffensters (siehe dort); liegt es ganz außerhalb oder in einer anderen Zeitzone, gilt es als
+    nicht gesetzt.
 ``full_sync_every_days``
     Mindestabstand in Tagen (1 bis 365) zwischen zwei vollständig erfolgreichen Vollabgleichen
     (``last_successful_full_sync``). Für Quellen, die zuverlässig mit ``modified_since`` filtern: Der
@@ -87,6 +100,7 @@ from src.config import settings
 LIST_PARAMS_KEY = "list_params"
 CARRY_MODIFIED_SINCE_KEY = "carry_modified_since"
 FILE_DOWNLOADS_KEY = "file_downloads"
+SYNC_WINDOW_KEY = "sync_window"
 FULL_SYNC_WINDOW_KEY = "full_sync_window"
 FULL_SYNC_EVERY_DAYS_KEY = "full_sync_every_days"
 MAX_FULL_SYNC_EVERY_DAYS = 365
@@ -141,9 +155,26 @@ def _margin_minutes(value: Any) -> int | None:
     return value if 0 <= value <= MAX_MODIFIED_SINCE_MARGIN_MINUTES else None
 
 
+#: Minuten eines Tages (Schnittmenge zweier Fenster, ``FullSyncWindow.within``)
+_DAY_MINUTES = 24 * 60
+
+
+def _minute(clock: time) -> int:
+    return clock.hour * 60 + clock.minute
+
+
+def _clock_of(minute: int) -> time:
+    minute %= _DAY_MINUTES
+    return time(minute // 60, minute % 60)
+
+
 @dataclass(frozen=True)
 class FullSyncWindow:
-    """Zeitfenster für Vollabgleiche einer Quelle (``sync_config["full_sync_window"]``)."""
+    """
+    Zeitfenster einer Quelle in Ortszeit: für Vollabgleiche (``sync_config["full_sync_window"]``) und für alle Abrufe
+    (``sync_config["sync_window"]``, Issue #1186). Der Beginn gehört zum Fenster, das Ende nicht; liegt das Ende vor
+    dem Beginn, reicht das Fenster über Mitternacht.
+    """
 
     start: time
     end: time
@@ -185,6 +216,59 @@ class FullSyncWindow:
         # Über Mitternacht und nach Mitternacht: Das Fenster hat am Vortag begonnen
         start_day = now.date() - timedelta(days=1) if self.start > self.end and clock < self.end else now.date()
         return datetime.combine(start_day, self.start, tzinfo=self.tz).astimezone(UTC)
+
+    def next_open(self, at: datetime | None = None) -> datetime:
+        """
+        ``at`` (UTC), wenn es im Fenster liegt, sonst der Beginn des nächsten Fensters (UTC, Issue #1186). Ein Beginn,
+        den es wegen der Zeitumstellung nicht gibt, rechnet wie ``opened_at`` mit der Zeitzone vor der Umstellung.
+        """
+        at = (at or datetime.now(UTC)).astimezone(UTC)
+        if self.closes_at(at) is not None:
+            return at
+        day = at.astimezone(self.tz).date()
+        # Heute oder morgen; der dritte Tag ist nur Reserve für die Zeitumstellung
+        starts = (
+            datetime.combine(day + timedelta(days=offset), self.start, tzinfo=self.tz).astimezone(UTC)
+            for offset in range(3)
+        )
+        return next(start for start in starts if start > at)
+
+    def within(self, outer: FullSyncWindow) -> FullSyncWindow | None:
+        """
+        Dieses Fenster, begrenzt auf ``outer`` (Schnittmenge der Uhrzeiten, Issue #1186). ``None``, wenn die
+        Schnittmenge leer ist oder die Zeitzonen verschieden sind. Zerfällt sie in zwei Stücke (etwa 22:00 bis 06:00
+        Uhr in 05:00 bis 23:00 Uhr), gilt das längere, bei gleicher Länge das, das nach dem Beginn von ``outer`` zuerst
+        beginnt.
+        """
+        if str(self.tz) != str(outer.tz):
+            return None
+        pieces = [
+            (max(lo, outer_lo), min(hi, outer_hi))
+            for lo, hi in self._spans()
+            for outer_lo, outer_hi in outer._spans()
+            if max(lo, outer_lo) < min(hi, outer_hi)
+        ]
+        # Ein Stück bis Mitternacht und eines ab Mitternacht ergeben ein Fenster über Mitternacht
+        late = next((piece for piece in pieces if piece[1] == _DAY_MINUTES), None)
+        early = next((piece for piece in pieces if piece[0] == 0), None)
+        if late is not None and early is not None:
+            pieces = [piece for piece in pieces if piece not in (late, early)] + [(late[0], early[1] + _DAY_MINUTES)]
+        if not pieces:
+            return None
+        origin = _minute(outer.start)
+        lo, hi = min(pieces, key=lambda piece: (piece[0] - piece[1], (piece[0] - origin) % _DAY_MINUTES))
+        return FullSyncWindow(start=_clock_of(lo), end=_clock_of(hi), tz=outer.tz)
+
+    def _spans(self) -> list[tuple[int, int]]:
+        """Minuten des Tages im Fenster als halboffene Strecken ``[von, bis)``."""
+        start, end = _minute(self.start), _minute(self.end)
+        if start < end:
+            return [(start, end)]
+        return [(start, _DAY_MINUTES)] + ([(0, end)] if end > 0 else [])
+
+    def label(self) -> str:
+        """Für Meldungen, z. B. ``23:00–01:00 Uhr (Europe/Berlin)``."""
+        return f"{self.start:%H:%M}–{self.end:%H:%M} Uhr ({self.tz})"
 
 
 def _slice_since(value: Any) -> datetime | None:
@@ -240,6 +324,9 @@ class SourceFetchOptions:
     carry_modified_since: bool = False
     file_downloads: bool = True
     robots_override: RobotsOverride | None = None
+    #: Abruffenster für alle Abgleiche (``sync_window``, Issue #1186)
+    sync_window: FullSyncWindow | None = None
+    #: Fenster des Vollabgleichs, wie es gilt: mit ``sync_window`` auf die Schnittmenge begrenzt, sonst das Abruffenster
     full_sync_window: FullSyncWindow | None = None
     full_sync_every_days: int | None = None
     modified_since_margin_minutes: int | None = None
@@ -249,6 +336,12 @@ class SourceFetchOptions:
     def from_sync_config(cls, sync_config: Any) -> SourceFetchOptions:
         if not isinstance(sync_config, Mapping):
             return cls()
+        sync_window = FullSyncWindow.parse(sync_config.get(SYNC_WINDOW_KEY))
+        full_sync_window = FullSyncWindow.parse(sync_config.get(FULL_SYNC_WINDOW_KEY))
+        if sync_window is not None:
+            # Der Vollabgleich bleibt im Abruffenster: eigenes Fenster nur, soweit es darin liegt, sonst das
+            # Abruffenster selbst, nie das Standardfenster des Daemons
+            full_sync_window = (full_sync_window.within(sync_window) if full_sync_window else None) or sync_window
         return cls(
             request_interval=_request_interval(sync_config.get(REQUEST_INTERVAL_KEY)),
             list_params=_list_params(sync_config.get(LIST_PARAMS_KEY)),
@@ -256,11 +349,25 @@ class SourceFetchOptions:
             # Nur ein ausdrückliches false schaltet ab
             file_downloads=sync_config.get(FILE_DOWNLOADS_KEY) is not False,
             robots_override=robots_override(sync_config),
-            full_sync_window=FullSyncWindow.parse(sync_config.get(FULL_SYNC_WINDOW_KEY)),
+            sync_window=sync_window,
+            full_sync_window=full_sync_window,
             full_sync_every_days=_every_days(sync_config.get(FULL_SYNC_EVERY_DAYS_KEY)),
             modified_since_margin_minutes=_margin_minutes(sync_config.get(MODIFIED_SINCE_MARGIN_KEY)),
             full_sync_slices=FullSyncSlices.parse(sync_config.get(FULL_SYNC_SLICES_KEY)),
         )
+
+    def outside_sync_window(self, now: datetime | None = None) -> bool:
+        """Liegt ``now`` außerhalb des Abruffensters der Quelle (Issue #1186)? Ohne ``sync_window`` nie."""
+        return self.sync_window is not None and self.sync_window.closes_at(now) is None
+
+    def fetch_deadline(self, now: datetime | None = None, full_deadline: datetime | None = None) -> datetime | None:
+        """
+        Ende des Abrufs für einen Lauf, der ``now`` beginnt: das frühere von ``full_deadline`` (Ende des Fensters des
+        Vollabgleichs, ``full_sync_plan``) und dem Ende des Abruffensters (``sync_window``). ``None``: ohne Ende.
+        """
+        window_end = self.sync_window.closes_at(now) if self.sync_window is not None else None
+        ends = [end for end in (full_deadline, window_end) if end is not None]
+        return min(ends) if ends else None
 
     def modified_since_margin(self) -> timedelta:
         """Sicherheitsabstand des Änderungsfensters: Wert der Quelle, sonst der Standard des Ingestors."""
@@ -269,11 +376,12 @@ class SourceFetchOptions:
             minutes = max(0, settings.modified_since_margin_minutes)
         return timedelta(minutes=minutes)
 
-    def sync_window(self, default_window: FullSyncWindow | None = None) -> FullSyncWindow | None:
+    def full_window(self, default_window: FullSyncWindow | None = None) -> FullSyncWindow | None:
         """
-        Zeitfenster, das den Vollabgleich begrenzt: das eigene ``full_sync_window``. Ein Vollabgleich in Zeitscheiben
-        läuft über Stunden und braucht immer ein Ende; ohne eigenes Fenster gilt für ihn das Standardfenster des
-        Daemons (``default_window``, ab ``--full-sync-hour``, Issue #1033).
+        Zeitfenster, das den Vollabgleich begrenzt: das eigene ``full_sync_window`` (mit ``sync_window`` immer gesetzt,
+        siehe ``from_sync_config``). Ein Vollabgleich in Zeitscheiben läuft über Stunden und braucht immer ein Ende;
+        ohne eigenes Fenster gilt für ihn das Standardfenster des Daemons (``default_window``, ab
+        ``--full-sync-hour``, Issue #1033).
         """
         if self.full_sync_window is not None:
             return self.full_sync_window
@@ -291,7 +399,8 @@ class SourceFetchOptions:
         vollständige Vollabgleich jünger als ``full_sync_every_days`` ist oder ``now`` außerhalb des Fensters
         liegt; im Fenster ``(True, Fensterende)``. Ohne Optionen oder für inkrementelle Läufe bleibt es dabei.
 
-        Mit ``full_sync_slices`` gilt ohne eigenes Fenster das Standardfenster ``default_window`` (``sync_window``).
+        Mit ``full_sync_slices`` gilt ohne eigenes Fenster das Standardfenster ``default_window`` (``full_window``).
+        Das Ende des Abruffensters (``sync_window``) für jeden Lauf liefert ``fetch_deadline``.
         Ist auch das nicht bekannt (Aufruf ohne Daemon, geplanter Vollabgleich abgeschaltet), läuft kein Vollabgleich
         in Zeitscheiben, sondern ein inkrementeller: ohne Fensterende liefe er bis in den Tag (Issue #1033).
         """
@@ -304,7 +413,7 @@ class SourceFetchOptions:
             # Eine Stunde Spielraum, damit ein nächtlicher Lauf nicht an Minuten Laufzeitunterschied scheitert
             if now - last_full_sync < timedelta(days=self.full_sync_every_days) - timedelta(hours=1):
                 return False, None
-        window = self.sync_window(default_window)
+        window = self.full_window(default_window)
         if window is None:
             return self.full_sync_slices is None, None
         closes_at = window.closes_at(now)
