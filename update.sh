@@ -106,6 +106,35 @@ get_env_var() {
     echo "${val:-$default}"
 }
 
+# Zeilen der .env, die die laufende Anwendung nicht mit diesem Wert kennt. Seit Anwendung und Worker die .env
+# über env_file lesen (Issue #962), gelten auch Zeilen, die vorher wirkungslos dort standen (etwa
+# ADMIN_ALLOWED_NETWORKS, EMAIL_*). Nur ein Hinweis vor dem Update; geändert wird nichts.
+warn_newly_effective_env() {
+    local laufend zeile key wert neu=""
+    laufend=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$APP_CONTAINER" 2>/dev/null) || return 0
+    [ -n "$laufend" ] || return 0
+    while IFS= read -r zeile; do
+        key="${zeile%%=*}"
+        wert="${zeile#*=}"
+        case "$key" in
+            # Liest nur Compose oder ein Skript, oder Compose setzt den Wert im Container selbst
+            DOMAIN|ACME_EMAIL|TZ|IMAGE_TAG|REDIS_PASSWORD|REDIS_MAXMEMORY|WORKER_SERVICES|S3_BACKUP_BUCKET) continue ;;
+            DATABASE_URL|REDIS_URL|ELASTICSEARCH_URL|DEBUG|SITE_URL) continue ;;
+            POSTGRES_*|WEBSITE_*|COMPOSE_*|INGESTOR_*|MANDARI_*|PGBOUNCER_*|WORKER_HEAVY_*|BACKUP_*|DATA_*|DEV_*) continue ;;
+        esac
+        # Werte mit Ersetzungen (${…}) lassen sich hier nicht vergleichen
+        case "$wert" in *'$'*) continue ;; esac
+        wert="${wert%\"}"; wert="${wert#\"}"; wert="${wert%\'}"; wert="${wert#\'}"
+        grep -qxF -- "$key=$wert" <<< "$laufend" || neu="$neu $key"
+    done < <(grep -E '^[A-Z][A-Z0-9_]*=' .env 2>/dev/null || true)
+    if [ -n "$neu" ]; then
+        warn "Diese Zeilen der .env gelten nach dem Update (bisher ohne Wirkung oder mit anderem Wert):"
+        warn " $neu"
+        warn "  Bitte vorher prüfen, z. B. sperrt ADMIN_ALLOWED_NETWORKS den Admin auf die genannten Netze."
+    fi
+    return 0
+}
+
 # Run a command with spinner, output goes to log file
 # Usage: run_step "Description" command arg1 arg2 ...
 run_step() {
@@ -709,9 +738,10 @@ fi
 case "$(get_env_var ACME_EMAIL "" | tr '[:upper:]' '[:lower:]')" in
     *@example.com|*@example.org|*@example.net)
         warn "ACME_EMAIL in .env ist eine Platzhalteradresse, Let's Encrypt lehnt sie ab. Eine echte Adresse"
-        warn "  eintragen oder die Zeile leeren (ACME_EMAIL=), danach: docker compose up -d caddy"
+        warn "  eintragen oder die Zeile leeren (ACME_EMAIL=), danach: docker compose up -d --no-deps caddy"
         ;;
 esac
+warn_newly_effective_env
 
 # =============================================================================
 # Update-Konfiguration sichern

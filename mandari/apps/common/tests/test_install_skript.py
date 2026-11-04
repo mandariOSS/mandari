@@ -57,6 +57,10 @@ case "$1" in
     esac
     ;;
   exec)
+    # Das Admin-Passwort kommt über die Umgebung (-e ohne Wert), nicht über die Kommandozeile
+    case "$*" in
+      *DJANGO_SUPERUSER_PASSWORD*) echo "passwort-in-umgebung=${DJANGO_SUPERUSER_PASSWORD:+ja}" >> "$DOCKER_LOG" ;;
+    esac
     # FAKE_PASSWORT_ABGELEHNT: die Passwortprüfung der Anwendung lehnt ab
     case "$*" in
       *validate_password*)
@@ -330,6 +334,9 @@ def test_unbeaufsichtigte_installation_bis_zum_ende(tmp_path: Path) -> None:
     pruefung = protokoll.index("mandari python manage.py shell -c")
     assert "validate_password" in protokoll[pruefung:]
     assert pruefung < protokoll.index("mandari python manage.py createsuperuser --noinput")
+    # Das Passwort steht nie in den Argumenten (Prozessliste), docker bekommt es über die Umgebung
+    assert ADMIN["ADMIN_PASSWORD"] not in protokoll
+    assert protokoll.count("passwort-in-umgebung=ja") == 2, protokoll
 
     # Die Prüfung am Ende nennt jeden Dienst außer dem optionalen PgBouncer, auch den Orchestrator
     geprueft = {z.split()[-1] for z in lauf.aufrufe if z.startswith("inspect --format={{.State.Status}}")}

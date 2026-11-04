@@ -789,11 +789,15 @@ create_superuser() {
         return
     fi
 
+    # Das Passwort geht nur über die Umgebung an docker (-e ohne Wert), nie über die Kommandozeile: Deren
+    # Argumente stehen in der Prozessliste
+    export DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASSWORD"
+
     # createsuperuser --noinput prüft die Passwortrichtlinie nicht: vorher mit den Prüfungen der Anwendung
     # (Länge, häufige Passwörter, Ähnlichkeit zur Adresse, nur Ziffern)
     if ! run_step "Admin-Passwort prüfen" docker exec \
         -e DJANGO_SUPERUSER_EMAIL="$ADMIN_EMAIL" \
-        -e DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASSWORD" \
+        -e DJANGO_SUPERUSER_PASSWORD \
         "$APP_CONTAINER" python manage.py shell -c "
 import os
 from django.contrib.auth import get_user_model
@@ -803,14 +807,14 @@ validate_password(os.environ['DJANGO_SUPERUSER_PASSWORD'], get_user_model()(emai
         warn "Das Admin-Passwort erfüllt die Passwortrichtlinie nicht, kein Admin-Account angelegt:"
         warn "  $(grep -a 'ValidationError' "$INSTALL_LOG" | tail -n 1)"
         warn "  Anlegen mit: docker exec -it $APP_CONTAINER python manage.py createsuperuser"
-        unset ADMIN_PASSWORD
+        unset ADMIN_PASSWORD DJANGO_SUPERUSER_PASSWORD
         ADMIN_EMAIL=""
         return
     fi
 
     if ! run_step "Admin-Account erstellen" docker exec \
         -e DJANGO_SUPERUSER_EMAIL="$ADMIN_EMAIL" \
-        -e DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASSWORD" \
+        -e DJANGO_SUPERUSER_PASSWORD \
         "$APP_CONTAINER" python manage.py createsuperuser --noinput; then
         warn "Admin-Account nicht angelegt (etwa: Adresse schon vergeben). Details: $INSTALL_LOG"
         warn "  Anlegen mit: docker exec -it $APP_CONTAINER python manage.py createsuperuser"
@@ -818,7 +822,7 @@ validate_password(os.environ['DJANGO_SUPERUSER_PASSWORD'], get_user_model()(emai
     fi
 
     # Passwort aus dem Speicher löschen
-    unset ADMIN_PASSWORD
+    unset ADMIN_PASSWORD DJANGO_SUPERUSER_PASSWORD
 }
 
 # =============================================================================

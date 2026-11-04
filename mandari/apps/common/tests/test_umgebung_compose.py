@@ -3,8 +3,9 @@
 ``.env.example``, ``docker-compose.yml`` und Code passen zusammen (Issue #962).
 
 Früher reichte Compose nur einen Teil der Variablen an die Container weiter; ``EMAIL_*``, ``PORTAL_HOSTS``,
-``TWO_FACTOR_*`` und weitere standen in ``.env.example`` und blieben ohne Wirkung. Jetzt lesen die
-Anwendungsdienste die ``.env`` über ``env_file``. Geprüft wird:
+``TWO_FACTOR_*`` und weitere standen in ``.env.example`` und blieben ohne Wirkung. Jetzt lesen die Anwendung und
+die drei Worker die ``.env`` über ``env_file``. Ingestor und Protokoll-Orchestrator bekommen bewusst nur die
+Variablen, die sie lesen: Schlüssel und Zugänge der Anwendung erbten sonst auch ihre Unterprozesse. Geprüft wird:
 
 - Jede Variable aus ``.env.example`` liest der Code, Compose oder ein Skript (keine toten Einträge).
 - Was nur Compose oder nur ein Skript liest, ist in ihrem Kommentar mit ``[Compose]`` bzw. ``[Skript]``
@@ -13,6 +14,8 @@ Anwendungsdienste die ``.env`` über ``env_file``. Geprüft wird:
 - Ein ausdrücklicher Wert unter ``environment:`` hat Vorrang vor ``env_file``. Setzt ein Anwendungsdienst
   eine Variable aus ``.env.example`` dort fest, ohne sie selbst einzusetzen, bliebe der Wert aus der ``.env``
   wirkungslos (so war es mit ``CSRF_TRUSTED_ORIGINS``).
+- Der Ingestor bekommt genau die Variablen, die ``ingestor/src/config.py`` und ``observability.py`` lesen; Ingestor
+  und Orchestrator bekommen keine fremden Schlüssel.
 """
 
 from __future__ import annotations
@@ -39,8 +42,28 @@ CODE = (WURZEL / "mandari", WURZEL / "ingestor" / "src", WURZEL / "shared")
 INGESTOR_EINSTELLUNGEN = WURZEL / "ingestor" / "src" / "config.py"
 NICHT_DURCHSUCHEN = {".venv", "node_modules", "__pycache__", "tests", "tests_e2e", "static", "staticfiles"}
 
-#: Dienste aus den Anwendungs-Images: Sie lesen die .env über env_file
-ANWENDUNGSDIENSTE = ("mandari", "worker", "worker-heavy", "worker-live", "minutes-orchestrator", "ingestor")
+#: Dienste aus den Anwendungs-Images, die die .env über env_file lesen
+MIT_ENV_FILE = ("mandari", "worker", "worker-heavy", "worker-live")
+#: Dienste aus den Anwendungs-Images mit ausdrücklicher Liste ihrer Variablen
+OHNE_ENV_FILE = ("minutes-orchestrator", "ingestor")
+ANWENDUNGSDIENSTE = MIT_ENV_FILE + OHNE_ENV_FILE
+#: Schlüssel und Zugänge der Anwendung, die Ingestor und Orchestrator nicht brauchen
+FREMDE_GEHEIMNISSE = {
+    "WEBSITE_SECRET_KEY",
+    "EMAIL_HOST_PASSWORD",
+    "EMAIL_HOST_USER",
+    "OBJ_KEY",
+    "OBJ_SECRET",
+    "POSTGRES_PASSWORD",
+    "REDIS_PASSWORD",
+    "PROVISIONING_API_KEY",
+    "PROVISIONING_V2_API_KEY",
+    "METRICS_TOKEN",
+    "WORKER_PUSH_TOKEN",
+    "INDEXNOW_KEY",
+}
+#: Nur die Anwendung braucht sie; der Orchestrator entschlüsselt die Zugangsdaten der Rechenknoten
+SCHLUESSEL_DER_ANWENDUNG = {"SECRET_KEY", "ENCRYPTION_MASTER_KEY", "ENCRYPTION_MASTER_KEY_PREVIOUS"}
 #: Variablen, die Compose selbst auswertet
 COMPOSE_EIGENE = {"COMPOSE_PROJECT_NAME", "COMPOSE_FILE", "COMPOSE_PROFILES", "COMPOSE_PATH_SEPARATOR"}
 #: Bewusst je Dienst anders gesetzt (eigene Variable in der .env), mit Grund
@@ -113,12 +136,55 @@ def _dienste() -> dict[str, Any]:
 
 def test_anwendungsdienste_lesen_die_env() -> None:
     dienste = _dienste()
-    for name in ANWENDUNGSDIENSTE:
+    for name in MIT_ENV_FILE:
         env_file = dienste[name].get("env_file")
         dateien = [env_file] if isinstance(env_file, str) else list(env_file or [])
         assert ".env" in dateien, f"{name}: env_file mit .env fehlt, Variablen aus der .env kämen nicht an"
-    # Die Website (anderes Repository, eigene Einstellungen) bekommt nur ihre ausdrücklichen Werte
-    assert "env_file" not in dienste["website"]
+    # Ingestor, Orchestrator und Website (anderes Repository) bekommen nur ihre ausdrücklichen Werte
+    for name in (*OHNE_ENV_FILE, "website"):
+        assert "env_file" not in dienste[name], f"{name}: env_file gäbe ihm alle Schlüssel der .env"
+
+
+def _ingestor_liest() -> set[str]:
+    """Variablen, die der Ingestor liest: Felder der Einstellungen (pydantic, samt Aliasen) und os.environ."""
+    namen: set[str] = set()
+    baum = ast.parse(INGESTOR_EINSTELLUNGEN.read_text(encoding="utf-8"))
+    klasse = next(k for k in ast.walk(baum) if isinstance(k, ast.ClassDef) and k.name == "Settings")
+    for feld in klasse.body:
+        if not (isinstance(feld, ast.AnnAssign) and isinstance(feld.target, ast.Name)):
+            continue
+        aliase = [
+            arg.value
+            for knoten in ast.walk(feld)
+            if isinstance(knoten, ast.Call) and getattr(knoten.func, "id", "") == "AliasChoices"
+            for arg in knoten.args
+            if isinstance(arg, ast.Constant) and isinstance(arg.value, str) and arg.value[:1].isupper()
+        ]
+        namen.update(aliase or [feld.target.id.upper()])
+    for pfad in _python_dateien(WURZEL / "ingestor" / "src"):
+        namen.update(re.findall(r"os\.environ\.get\(\s*[\"']([A-Z][A-Z0-9_]*)[\"']", pfad.read_text(encoding="utf-8")))
+    # Positivliste der KI-Hosts (shared/mandari_dokumente/ki_hosts.py)
+    namen.add("KI_ERLAUBTE_HOSTS")
+    return namen
+
+
+def test_ingestor_bekommt_genau_seine_variablen() -> None:
+    umgebung = _dienste()["ingestor"]["environment"]
+    liest = _ingestor_liest()
+    assert {"INGESTOR_REQUEST_INTERVAL", "INGESTOR_USER_AGENT", "TEXT_LAYER_TIMEOUT", "LOG_LEVEL"} <= liest
+    fehlt = sorted(liest - set(umgebung))
+    assert not fehlt, f"Der Ingestor liest sie, docker-compose.yml reicht sie nicht durch: {fehlt}"
+    fremd = sorted(set(umgebung) - liest - {"TZ"})
+    assert not fremd, f"Der Ingestor liest sie nicht: {fremd}"
+
+
+def test_ingestor_und_orchestrator_ohne_fremde_schluessel() -> None:
+    dienste = _dienste()
+    ingestor = set(dienste["ingestor"]["environment"])
+    assert not ingestor & (FREMDE_GEHEIMNISSE | SCHLUESSEL_DER_ANWENDUNG), ingestor & FREMDE_GEHEIMNISSE
+    orchestrator = set(dienste["minutes-orchestrator"]["environment"])
+    assert not orchestrator & FREMDE_GEHEIMNISSE, orchestrator & FREMDE_GEHEIMNISSE
+    assert {"SECRET_KEY", "ENCRYPTION_MASTER_KEY"} <= orchestrator, "Django und die Zugangsdaten der Rechenknoten"
 
 
 def test_jede_variable_aus_dem_beispiel_wirkt() -> None:
@@ -154,6 +220,8 @@ def test_compose_ueberschreibt_keine_variable_aus_dem_beispiel() -> None:
         if name in beispiel
         and name not in entwicklung
         and (dienst, name) not in EIGENE_WERTE_JE_DIENST
+        # Ohne Wert reicht Compose die Zeile aus der .env durch
+        and wert is not None
         and "${" + name not in str(wert)
     )
     assert not fest, f"environment: setzt den Wert fest, die Zeile in der .env bliebe wirkungslos: {fest}"
