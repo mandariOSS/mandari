@@ -22,6 +22,7 @@ import pytest
 
 WURZEL = Path(__file__).resolve().parents[4]
 SKRIPT = WURZEL / "install.sh"
+COMPOSE = WURZEL / "docker-compose.yml"
 RELEASE_WORKFLOW = WURZEL / ".github" / "workflows" / "release.yml"
 ENV_BEISPIEL = WURZEL / ".env.example"
 CHANGELOG = WURZEL / "CHANGELOG.md"
@@ -48,9 +49,38 @@ case "$1" in
       *" $3 "*) echo "manifest unknown" >&2; exit 1 ;;
     esac
     ;;
+  # Jeder Container läuft und ist gesund (Installation bis zum Ende)
+  inspect)
+    case "$*" in
+      *"{{.State.Status}}"*) echo "running" ;;
+      *) echo "healthy" ;;
+    esac
+    ;;
+  exec)
+    # FAKE_PASSWORT_ABGELEHNT: die Passwortprüfung der Anwendung lehnt ab
+    case "$*" in
+      *validate_password*)
+        if [ -n "${FAKE_PASSWORT_ABGELEHNT:-}" ]; then
+          echo "django.core.exceptions.ValidationError: ['Dieses Passwort ist zu üblich.']" >&2
+          exit 1
+        fi
+        ;;
+    esac
+    ;;
 esac
 exit 0
 """
+
+# crontab nur nachgebaut: Der Test darf die Crontab des Rechners nie ändern
+FAKE_CRONTAB = """#!/usr/bin/env bash
+case "$1" in
+  -l) exit 1 ;;
+  -) cat > "$CRONTAB_DATEI" ;;
+esac
+"""
+
+#: Umgebung des Installers, die der Test selbst setzt (nie aus dem Rechner übernehmen)
+INSTALLER_UMGEBUNG = {"COMPOSE_PROJECT_NAME", "IMAGE_TAG", "DOMAIN", "ACME_EMAIL", "ADMIN_EMAIL", "ADMIN_PASSWORD"}
 
 
 def _bash() -> str | None:
@@ -72,7 +102,15 @@ class Lauf:
     arbeit: Path
 
 
-def _lauf(tmp_path: Path, *args: str, fehlt: str = "", env_datei: str | None = None, eingabe: str = "") -> Lauf:
+def _lauf(
+    tmp_path: Path,
+    *args: str,
+    fehlt: str = "",
+    env_datei: str | None = None,
+    eingabe: str = "",
+    umgebung: dict[str, str] | None = None,
+    dateien: dict[str, str] | None = None,
+) -> Lauf:
     if BASH is None:
         pytest.skip("bash nicht vorhanden")
     arbeit = tmp_path / "mandari"
@@ -81,16 +119,27 @@ def _lauf(tmp_path: Path, *args: str, fehlt: str = "", env_datei: str | None = N
     (arbeit / "install.sh").write_bytes(SKRIPT.read_bytes().replace(b"\r\n", b"\n"))
     if env_datei is not None:
         (arbeit / ".env").write_text(env_datei, encoding="utf-8")
+    for name, inhalt in (dateien or {}).items():
+        (arbeit / name).write_text(inhalt, encoding="utf-8")
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    docker = bin_dir / "docker"
-    docker.write_bytes(FAKE_DOCKER.encode())
-    docker.chmod(0o755)
+    for name, inhalt in (("docker", FAKE_DOCKER), ("crontab", FAKE_CRONTAB)):
+        programm = bin_dir / name
+        programm.write_bytes(inhalt.encode())
+        programm.chmod(0o755)
     log = tmp_path / "docker.log"
     log.touch()
 
-    env = {k: v for k, v in os.environ.items() if k not in {"COMPOSE_PROJECT_NAME", "IMAGE_TAG"}}
-    env.update({"PATH": f"{bin_dir}{os.pathsep}{env['PATH']}", "DOCKER_LOG": str(log), "FAKE_FEHLT": fehlt})
+    env = {k: v for k, v in os.environ.items() if k not in INSTALLER_UMGEBUNG}
+    env.update(
+        {
+            "PATH": f"{bin_dir}{os.pathsep}{env['PATH']}",
+            "DOCKER_LOG": str(log),
+            "CRONTAB_DATEI": str(tmp_path / "crontab"),
+            "FAKE_FEHLT": fehlt,
+            **(umgebung or {}),
+        }
+    )
     ergebnis = subprocess.run(  # noqa: S603 — fester Aufruf im Test
         [BASH, "install.sh", *args],
         cwd=arbeit,
@@ -228,3 +277,118 @@ def test_beispielversionen_sind_veroeffentlicht() -> None:
         if version not in veroeffentlicht
     )
     assert not erfundene, f"Beispiel-Tag ohne Release (siehe CHANGELOG.md): {erfundene}"
+
+
+# --- Unbeaufsichtigte Installation bis zum Ende (Issue #962) -------------------------------------------------------
+
+ADMIN = {"ADMIN_EMAIL": "admin@ris.meine-kommune.de", "ADMIN_PASSWORD": "EinLangesPasswort"}
+
+
+def _env_zeile(arbeit: Path, name: str) -> str | None:
+    for zeile in (arbeit / ".env").read_text(encoding="utf-8").splitlines():
+        if zeile.startswith(f"{name}="):
+            return zeile.split("=", 1)[1]
+    return None
+
+
+def _compose_container() -> set[str]:
+    namen = re.findall(r"container_name:\s*\$\{COMPOSE_PROJECT_NAME:-mandari\}(\S*)", COMPOSE.read_text("utf-8"))
+    return {f"mandari{rest}" for rest in namen}
+
+
+@pytest.mark.parametrize(
+    ("acme", "erwartet"),
+    [
+        ("", ""),
+        ("admin@example.com", ""),
+        ("noreply@EXAMPLE.org", ""),
+        ("betrieb@ris.meine-kommune.de", "betrieb@ris.meine-kommune.de"),
+    ],
+)
+def test_acme_adresse_ohne_platzhalter(tmp_path: Path, acme: str, erwartet: str) -> None:
+    """Ohne Eingabe schrieb der Installer noreply@example.com; Let's Encrypt lehnt solche Adressen ab."""
+    lauf = _lauf(tmp_path, "--unattended", umgebung={"DOMAIN": "localhost", "ACME_EMAIL": acme, **ADMIN})
+
+    assert lauf.rc == 0, lauf.ausgabe
+    assert _env_zeile(lauf.arbeit, "ACME_EMAIL") == erwartet
+
+
+def test_unbeaufsichtigte_installation_bis_zum_ende(tmp_path: Path) -> None:
+    lauf = _lauf(tmp_path, "--unattended", umgebung={"DOMAIN": "localhost", **ADMIN})
+
+    assert lauf.rc == 0, lauf.ausgabe
+    # Sicherung mit Konfiguration: backup.sh liest die Passphrase aus ./.backup-passphrase
+    passphrase = (lauf.arbeit / ".backup-passphrase").read_text(encoding="utf-8").strip()
+    assert len(passphrase) >= 32, "Passphrase zu kurz"
+    if os.name != "nt":
+        assert (lauf.arbeit / ".backup-passphrase").stat().st_mode & 0o077 == 0, "nur für den Eigentümer lesbar"
+    assert passphrase not in (lauf.arbeit / ".env").read_text(encoding="utf-8")
+    assert ".backup-passphrase" in lauf.ausgabe and "außerhalb des Servers" in lauf.ausgabe
+
+    # Das Passwort prüft die Anwendung vor createsuperuser, Fehler werden nicht verschluckt
+    protokoll = "\n".join(lauf.aufrufe)
+    pruefung = protokoll.index("mandari python manage.py shell -c")
+    assert "validate_password" in protokoll[pruefung:]
+    assert pruefung < protokoll.index("mandari python manage.py createsuperuser --noinput")
+
+    # Die Prüfung am Ende nennt jeden Dienst außer dem optionalen PgBouncer, auch den Orchestrator
+    geprueft = {z.split()[-1] for z in lauf.aufrufe if z.startswith("inspect --format={{.State.Status}}")}
+    assert geprueft == _compose_container() - {"mandari-pgbouncer"}, geprueft
+    assert "Orchestrator" in lauf.ausgabe
+    # Hinweise für den ersten Login
+    assert "Zwei-Faktor" in lauf.ausgabe and "Mailversand" in lauf.ausgabe
+
+
+def test_vorhandene_passphrase_bleibt(tmp_path: Path) -> None:
+    """Ältere Sicherungen brauchen die bisherige Passphrase: Eine vorhandene Datei wird nie ersetzt."""
+    lauf = _lauf(
+        tmp_path,
+        "--unattended",
+        umgebung={"DOMAIN": "localhost", **ADMIN},
+        dateien={".backup-passphrase": "bisherige-passphrase-mit-genug-zeichen\n"},
+    )
+
+    assert lauf.rc == 0, lauf.ausgabe
+    inhalt = (lauf.arbeit / ".backup-passphrase").read_text(encoding="utf-8")
+    assert inhalt == "bisherige-passphrase-mit-genug-zeichen\n"
+
+
+def test_zu_kurzes_admin_passwort_bricht_vor_jeder_aenderung_ab(tmp_path: Path) -> None:
+    """Die Passwortrichtlinie verlangt 12 Zeichen; createsuperuser --noinput prüft das nicht."""
+    lauf = _lauf(
+        tmp_path,
+        "--unattended",
+        "--reinstall-destroy-data",
+        umgebung={"DOMAIN": "localhost", "ADMIN_EMAIL": "a@ris.meine-kommune.de", "ADMIN_PASSWORD": "elfZeichen1"},
+        env_datei="IMAGE_TAG=latest\n",
+    )
+
+    assert lauf.rc == 1, lauf.ausgabe
+    assert "12 Zeichen" in lauf.ausgabe and "nichts verändert" in lauf.ausgabe
+    assert lauf.aufrufe == [], "vor jedem Aufruf von docker"
+    assert (lauf.arbeit / ".env").read_text(encoding="utf-8") == "IMAGE_TAG=latest\n"
+
+
+def test_abgelehntes_passwort_legt_keinen_admin_an_und_sagt_es(tmp_path: Path) -> None:
+    lauf = _lauf(
+        tmp_path,
+        "--unattended",
+        umgebung={"DOMAIN": "localhost", "FAKE_PASSWORT_ABGELEHNT": "1", **ADMIN},
+    )
+
+    assert lauf.rc == 0, lauf.ausgabe
+    assert not any("createsuperuser --noinput" in z for z in lauf.aufrufe)
+    assert "Passwortrichtlinie" in lauf.ausgabe and "zu üblich" in lauf.ausgabe
+    assert "createsuperuser" in lauf.ausgabe, "der Weg von Hand steht in der Meldung"
+
+
+def test_installer_nennt_die_zahl_der_quellen() -> None:
+    """Die Kommunenauswahl nennt so viele Quellen, wie import_oparl_sources anlegt, und nur vorhandene Großstädte."""
+    from insight_core.management.commands.import_oparl_sources import OPARL_SOURCES
+
+    text = SKRIPT.read_text(encoding="utf-8")
+    namen = {name for name, _url in OPARL_SOURCES}
+    zahlen = {int(z) for z in re.findall(r"(\d+) Kommunen", text[text.index("configure_oparl_sources() {") :])}
+    grossstaedte = re.findall(r"'([^']+)'", text[text.index("names = [") : text.index("]", text.index("names = ["))])
+    assert zahlen == {len(OPARL_SOURCES), len(grossstaedte)}, zahlen
+    assert set(grossstaedte) <= namen, set(grossstaedte) - namen

@@ -52,7 +52,47 @@ Suchindex, Zertifikate) und erzeugt neue Schlüssel. Die bisherige `.env` bleibt
 den ältere Sicherungen nicht mehr lesbar sind. Die Datei nach Gebrauch sicher verwahren oder löschen.
 Interaktiv (`./install.sh` ohne `--unattended`) fragt der Installer wie bisher nach.
 
+`ADMIN_PASSWORD` braucht mindestens 12 Zeichen; ein kürzeres bricht den Lauf vor jeder Änderung ab. Die übrigen
+Regeln der Passwortrichtlinie (häufige Passwörter, Ähnlichkeit zur Adresse, nur Ziffern) prüft der Installer mit
+der Anwendung, bevor er das Konto anlegt; scheitert das, nennt er den Grund und legt kein Konto an. `ACME_EMAIL`
+ist optional: Ohne Adresse holt Caddy die Zertifikate ohne Kontaktadresse. Platzhalter wie `admin@example.com`
+übernimmt der Installer nicht, Let's Encrypt lehnt sie ab.
+
 `./install.sh --help` zeigt alle Optionen.
+
+### Ohne install.sh
+
+Wer nur `docker-compose.yml`, `Caddyfile`, `scripts/init-website-db.sh` und eine `.env` herunterlädt (Kopf von
+`docker-compose.yml`, „Download Only“), richtet die Datenbank selbst ein. Die Anwendung migriert beim Start
+bewusst nicht (`mandari/docker-entrypoint.sh`, Abschnitt „Datenbank-Migration“): Worker, Ingestor und
+Orchestrator liefen sonst gegen ein leeres Schema. `scripts/init-website-db.sh` legt beim ersten Start von
+PostgreSQL die Datenbank der Website an; fehlt die Datei, legt Docker an ihrer Stelle ein Verzeichnis an, und
+PostgreSQL bricht die Einrichtung ab.
+
+```bash
+mkdir -p mandari/scripts && cd mandari
+base=https://raw.githubusercontent.com/mandariOSS/mandari/main
+curl -LO $base/docker-compose.yml
+curl -LO $base/Caddyfile
+curl -Lo scripts/init-website-db.sh $base/scripts/init-website-db.sh
+curl -Lo .env $base/.env.example
+chmod 600 .env
+# .env bearbeiten: DOMAIN, POSTGRES_PASSWORD, SECRET_KEY, ENCRYPTION_MASTER_KEY, REDIS_PASSWORD
+# (Befehle zum Erzeugen am Ende der Datei), optional ACME_EMAIL und EMAIL_*
+
+docker compose up -d postgres redis elasticsearch
+docker compose run --rm mandari python manage.py migrate --noinput
+docker compose run --rm mandari python manage.py setup_roles
+docker compose run --rm website python manage.py migrate --noinput
+docker compose up -d
+docker compose exec mandari python manage.py createsuperuser
+(umask 077; openssl rand -base64 32 > .backup-passphrase)   # nur, wenn backup.sh dazukommt
+```
+
+`docker compose run` wartet, bis PostgreSQL, Redis und Elasticsearch gesund sind. Kommunen importiert
+`docker compose exec mandari python manage.py import_oparl_sources` (alle inaktiv, im Admin einzeln aktivieren).
+Für Aktualisierungen und Sicherungen braucht es `update.sh` und `backup.sh`; beide setzen das ganze Repository
+voraus. Wer bei den Einzeldateien bleibt, aktualisiert wie unter „Datenbank-Migration“ beschrieben.
 
 ---
 
@@ -184,15 +224,18 @@ kann `GITHUB_TOKEN` ein Token ohne jede Berechtigung enthalten.
 
 ### Vor der Installation
 
-- [ ] Linux-Server mit mindestens 4 GB Arbeitsspeicher (siehe [README](README.md#installation))
+- [ ] Linux-Server mit mindestens 8 GB Arbeitsspeicher, 16 GB für mittlere Kommunen (siehe
+  [README](README.md#installation) und [docs/LASTTESTS.md](docs/LASTTESTS.md)); die Speichergrenzen aller Dienste
+  in `docker-compose.yml` ergeben zusammen rund 10,5 GB
 - [ ] Domain, deren DNS auf den Server zeigt
 
 ### Nach der Installation
 
 - [ ] `https://<domain>/health/ready/` meldet `"status": "ok"`
 - [ ] Tägliche Sicherung eingetragen (`crontab -l`), Probelauf mit `./backup.sh --verify`
-- [ ] Passphrase für die Konfiguration in der Sicherung eingerichtet und außerhalb des Servers verwahrt
-  (Abschnitt „Sicherung“)
+- [ ] Passphrase für die Konfiguration in der Sicherung (`.backup-passphrase`, legt `install.sh` an) außerhalb
+  des Servers verwahrt (Abschnitt „Sicherung“)
+- [ ] Erster Login als Administrator mit Zwei-Faktor-Anmeldung (Pflicht, [docs/ACCOUNT_SECURITY.md](docs/ACCOUNT_SECURITY.md))
 - [ ] Worker läuft (`docker compose ps worker` „healthy“), `python manage.py events_scheduler --list`
   zeigt die Zeitpläne (Abschnitt „Geplante Aufgaben“); in der Crontab nur Aufgaben des Betriebssystems
 - [ ] Testmail aus den Systemeinstellungen: Message-ID endet auf die eigene Domain, nicht auf eine
@@ -220,13 +263,15 @@ Zustand.
 ### Datenbank-Migration
 
 Migrationen laufen beim Update, nicht im Entrypoint: verträgliche vor dem Umschalten
-(`safemigrate`), `update.sh` spielt die übrigen danach ein. Ingestor und Protokoll-Orchestrator
-stehen dabei, damit kein Durchlauf gegen ein Schema läuft, das sich gerade ändert. Von Hand ebenso
-(Containername folgt `COMPOSE_PROJECT_NAME`, Vorgabe `mandari`):
+(`safemigrate`), `update.sh` spielt die übrigen danach ein. Ingestor, Protokoll-Orchestrator und die
+drei Worker stehen dabei, damit kein Durchlauf und kein Auftrag gegen ein Schema läuft, das sich gerade
+ändert; die Worker starten danach vor dem Ingestor. Von Hand ebenso (Containername folgt
+`COMPOSE_PROJECT_NAME`, Vorgabe `mandari`):
 
 ```bash
-docker compose stop ingestor minutes-orchestrator
+docker compose stop ingestor minutes-orchestrator worker worker-heavy worker-live
 docker exec mandari python manage.py migrate
+docker compose up -d worker worker-heavy worker-live
 docker compose up -d ingestor minutes-orchestrator
 ```
 
@@ -263,7 +308,8 @@ Zurück-Entschlüsseln. Die Passphrase kommt aus `BACKUP_PASSPHRASE` (nur Umgebu
 ersten Zeile der Datei `BACKUP_PASSPHRASE_FILE` (Umgebung oder `.env`, Vorgabe
 `./.backup-passphrase`). Ohne Passphrase fehlt die Konfiguration im Archiv, und jeder Lauf warnt.
 
-Einrichtung, damit auch der Cron-Lauf und `update.sh` die Passphrase finden:
+`install.sh` legt `./.backup-passphrase` bei der Installation an (eine vorhandene Datei bleibt). Für ältere
+Installationen von Hand, damit auch der Cron-Lauf und `update.sh` die Passphrase finden:
 
 ```bash
 (umask 077; openssl rand -base64 32 > .backup-passphrase)
@@ -610,7 +656,7 @@ python manage.py events_worker --heartbeat-file /tmp/mandari-worker.heartbeat
 Die Einzelbefehle `events_sequencer`, `events_dispatch`, `events_tasks` und `events_scheduler`
 bleiben für Fehlersuche und Handbetrieb (`--once`, `--list`, geparkte Ereignisse).
 
-### Betrieb als Dienste `worker` und `worker-heavy`
+### Betrieb als Dienste `worker`, `worker-heavy` und `worker-live`
 
 Jede Installationsart bringt die Worker als eigene Dienste aus dem Anwendungs-Image mit, mit
 derselben Umgebung und denselben Volumes wie die Anwendung (auch Dokumentablage und `OBJ_*`):
@@ -629,11 +675,11 @@ nicht: Dort `live` in `worker.queues` aufnehmen, bevor `LIVE_UEBERTRAGUNG_AKTIV`
 
 | Installation | Wo | Lebenszeichen |
 |---|---|---|
-| Ein Server (Compose) | Dienste `worker` und `worker-heavy` in `docker-compose.yml` | Healthcheck über die Heartbeat-Datei (jünger als 60 s); `restart-unhealthy.sh` startet sie neu (Label `mandari.autoheal`) |
+| Ein Server (Compose) | Dienste `worker`, `worker-heavy` und `worker-live` in `docker-compose.yml` | Healthcheck über die Heartbeat-Datei (jünger als 60 s); `restart-unhealthy.sh` startet sie neu (Label `mandari.autoheal`) |
 | Mehrere Server | Rolle `worker` (`deploy/roles/worker.yml`), `worker` mit `EVENTS_DB_DIRECT_URL` direkt zu PostgreSQL | wie oben |
 | Kubernetes (Helm) | `templates/worker.yaml`, Werte unter `worker.*` und `worker.heavy.*` (`worker.heavy.enabled: false`: ein Worker für alles, so in `values-minimal.yaml`) | Start- und Liveness-Probe auf `/health` (Port 9091) |
 
-`install.sh` startet beide nach den Migrationen; `update.sh` und `deploy/scripts/deploy.sh` halten
+`install.sh` startet alle drei nach den Migrationen; `update.sh` und `deploy/scripts/deploy.sh` halten
 sie während der Migrationen an und starten sie danach vor der Anwendung (Migration → Worker →
 Web). Mit Helm läuft der Migrations-Job vor jedem Upgrade; Worker und Anwendung rollen danach
 gemeinsam aus. Mit Helm und `persistence.accessMode: ReadWriteOnce` müssen Anwendung, Ingestor und
@@ -1607,10 +1653,17 @@ Obergrenze der Datenbank.
 | Sicherung (`pg_dump`) | 2 | nur während des Laufs |
 | Reserve für Superuser | 3 | `superuser_reserved_connections`, Postgres-Vorgabe |
 | **Summe** | **141** | |
-| **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb (Vorgabe der `docker-compose.yml`: 100) |
+| **`max_connections`** | **200** | `POSTGRES_MAX_CONNECTIONS` im eigenen Betrieb |
 
-Reserve: rund 60 Verbindungen. Wer einen Dienst hinzufügt, trägt ihn hier ein
-**und** prüft die Summe. Mit PgBouncer vor der Anwendung ändert sich nur deren Zeile, siehe
+Reserve im eigenen Betrieb: rund 60 Verbindungen.
+
+Die mitgelieferte `docker-compose.yml` hat keinen OCR-Worker und kein Kundenportal; dort ergeben die Zeilen
+zusammen 101, davon 3 nur mit `TEXT_EXTRACTION_RUNNER=worker` (Plätze in `text`), sonst 98. Ihre Vorgabe
+`POSTGRES_MAX_CONNECTIONS=100` reicht also nur ohne die Dokumentkette knapp. Wer `TEXT_EXTRACTION_RUNNER=worker`,
+mehrere Anwendungsprozesse oder größere Pools einschaltet, erhöht `POSTGRES_MAX_CONNECTIONS` (etwa auf 150) und
+zieht `POSTGRES_MEM_LIMIT` mit (Abschnitt „PostgreSQL: Grundeinstellungen“, „Die Falle bei `work_mem`“).
+
+Wer einen Dienst hinzufügt, trägt ihn hier ein **und** prüft die Summe. Mit PgBouncer vor der Anwendung ändert sich nur deren Zeile, siehe
 „PgBouncer für die Webanwendung“ unten.
 
 ### Worker
@@ -2027,8 +2080,8 @@ Inhalte liegen (z. B. eine Demo-Instanz).
 | Variable | Pflicht | Wirkung |
 |----------|---------|---------|
 | `SITE_URL` | ja | Öffentliche Adresse mit Schema (`https://mandari.example.com`). Gilt immer als vertrauenswürdiger Ursprung; mit `https://` und `DEBUG=false` tragen Sitzungs- und CSRF-Cookie das Präfix `__Host-`. |
-| `ALLOWED_HOSTS` | ja | Hosts, die die Anwendung beantwortet. Der Host aus `SITE_URL` und dessen Subdomains (`.mandari.example.com`) kommen automatisch hinzu – nötig für die Weiterleitung von Organisations-Subdomains. Daraus folgt **kein** Vertrauen für Formulare oder WebSockets. |
-| `CSRF_TRUSTED_ORIGINS` | nein | Weitere vertrauenswürdige Ursprünge, kommagetrennt mit Schema, **ohne Platzhalter** (`*`). Nur nötig, wenn Formulare von einem anderen Host an die Anwendung gesendet werden oder ein vorgeschalteter Dienst den `Origin` umschreibt. Organisations-Subdomains und `PORTAL_HOSTS` brauchen keinen Eintrag, weil Anfragen an den eigenen Host immer zulässig sind. |
+| `ALLOWED_HOSTS` | ja | Hosts, die die Anwendung beantwortet; `docker-compose.yml` setzt `DOMAIN`, eine Zeile `ALLOWED_HOSTS=` in der `.env` ersetzt das (etwa für `PORTAL_HOSTS`). Der Host aus `SITE_URL` und dessen Subdomains (`.mandari.example.com`) kommen automatisch hinzu – nötig für die Weiterleitung von Organisations-Subdomains. Daraus folgt **kein** Vertrauen für Formulare oder WebSockets. |
+| `CSRF_TRUSTED_ORIGINS` | nein | Weitere vertrauenswürdige Ursprünge, kommagetrennt mit Schema, **ohne Platzhalter** (`*`); mit `docker-compose.yml` aus der `.env`, sonst `https://${DOMAIN}`. Nur nötig, wenn Formulare von einem anderen Host an die Anwendung gesendet werden oder ein vorgeschalteter Dienst den `Origin` umschreibt. Organisations-Subdomains und `PORTAL_HOSTS` brauchen keinen Eintrag, weil Anfragen an den eigenen Host immer zulässig sind. |
 
 Sitzungs- und CSRF-Cookie gelten nur für genau den Host, der sie gesetzt hat (kein `Domain`-Attribut).
 Mit HTTPS heißen sie `__Host-sessionid` und `__Host-csrftoken`; Browser nehmen solche Cookies nur ohne

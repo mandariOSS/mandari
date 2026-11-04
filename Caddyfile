@@ -17,8 +17,10 @@
 	# Disable admin API (security: prevents config changes at runtime)
 	admin off
 
-	# Email for Let's Encrypt certificate notifications
-	email {$EMAIL:admin@example.com}
+	# Kontaktadresse für Let's Encrypt: die ganze Zeile „email <adresse>“ aus ACME_EMAIL (docker-compose.yml),
+	# ohne ACME_EMAIL leer, dann ohne Adresse. Caddy setzt {$…} vor dem Einlesen ein, auch als ganze Zeile.
+	# Keine Platzhalter wie admin@example.com: Let's Encrypt lehnt sie ab (Issue #962).
+	{$ACME_EMAIL_OPTION}
 }
 
 # =============================================================================

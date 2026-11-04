@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# =============================================================================
+# Entwicklung: PostgreSQL, Redis und Elasticsearch für eine lokale Anwendung (CONTRIBUTING.md)
+# =============================================================================
+# Ergänzt docker-compose.yml um Ports, nur auf 127.0.0.1. Nie auf einem Server verwenden.
+# Bewusst nicht docker-compose.override.yml: Diese Datei läse Compose überall von selbst, auch bei
+# install.sh und update.sh.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis elasticsearch
+#
+# Belegt ein anderer Dienst den Port, in der .env DEV_POSTGRES_PORT usw. setzen und DATABASE_URL usw.
+# im Block „Entwicklung“ der .env anpassen.
+# =============================================================================
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${DEV_POSTGRES_PORT:-5432}:5432"
+  redis:
+    ports:
+      - "127.0.0.1:${DEV_REDIS_PORT:-6379}:6379"
+  elasticsearch:
+    ports:
+      - "127.0.0.1:${DEV_ELASTICSEARCH_PORT:-9200}:9200"

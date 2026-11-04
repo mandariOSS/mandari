@@ -9,19 +9,25 @@
 #     git clone https://github.com/mandariOSS/mandari.git && cd mandari
 #     ./install.sh
 #
-#   Option 2 - Download Only:
-#     mkdir mandari && cd mandari
+#   Option 2 - Download Only (ohne install.sh; Ablauf und Erklärung: DEPLOYMENT.md, „Ohne install.sh“):
+#     mkdir -p mandari/scripts && cd mandari
 #     curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/docker-compose.yml
 #     curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/Caddyfile
+#     curl -Lo scripts/init-website-db.sh https://raw.githubusercontent.com/mandariOSS/mandari/main/scripts/init-website-db.sh
 #     curl -Lo .env https://raw.githubusercontent.com/mandariOSS/mandari/main/.env.example
-#     # Edit .env with your settings, then:
+#     # .env bearbeiten (Pflichtwerte unter REQUIRED CONFIGURATION), dann – die Anwendung migriert beim Start nicht:
+#     docker compose up -d postgres redis elasticsearch
+#     docker compose run --rm mandari python manage.py migrate --noinput
+#     docker compose run --rm mandari python manage.py setup_roles
+#     docker compose run --rm website python manage.py migrate --noinput
 #     docker compose up -d
+#     docker compose exec mandari python manage.py createsuperuser
 #
 # Docker Images: ghcr.io/mandarioss/mandari (GitHub Container Registry)
 # =============================================================================
 
-# Projektname bestimmt Container- und Volume-Namen. Für eine zweite Installation auf
-# demselben Host: COMPOSE_PROJECT_NAME=mandari-zweit docker compose up -d
+# Projektname bestimmt die Container-Namen. Die Volumes heißen fest mandari_*_data (unten): Eine zweite
+# Installation auf demselben Host teilte sie mit der ersten (Issue #443).
 name: ${COMPOSE_PROJECT_NAME:-mandari}
 
 # =============================================================================
@@ -37,7 +43,12 @@ x-logging: &default-logging
 # Umgebung der Anwendung: für die Anwendung (mandari) und den Worker gleich, damit
 # Aufträge im Worker dieselbe Konfiguration sehen wie die Webprozesse. Einzige Ausnahme:
 # die Datenbankverbindung der Anwendung (optional über PgBouncer, siehe Dienst mandari);
-# DATABASE_URL hier bleibt die Direktverbindung für Worker, worker-heavy und worker-live
+# DATABASE_URL hier bleibt die Direktverbindung für Worker, worker-heavy und worker-live.
+#
+# Alle übrigen Variablen der .env (EMAIL_*, PORTAL_HOSTS, TWO_FACTOR_* usw.) lesen die Dienste aus den
+# Anwendungs-Images über env_file (Issue #962). Ein Wert hier unter environment hat Vorrang vor env_file:
+# Was die .env einstellen soll, wird hier nur über dieselbe Variable eingesetzt (${…:-Vorgabe}), nie fest
+# überschrieben (apps/common/tests/test_umgebung_compose.py).
 # =============================================================================
 x-app-environment: &app-environment
   # Database
@@ -53,8 +64,9 @@ x-app-environment: &app-environment
   ENCRYPTION_MASTER_KEY_PREVIOUS: ${ENCRYPTION_MASTER_KEY_PREVIOUS:-}
   # Application
   DEBUG: "false"
-  ALLOWED_HOSTS: ${DOMAIN:-localhost}
-  CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
+  # Weitere Hosts bzw. Ursprünge aus der .env (etwa für PORTAL_HOSTS); DOMAIN gilt über SITE_URL immer
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-${DOMAIN:-localhost}}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-https://${DOMAIN:-localhost}}
   SITE_URL: https://${DOMAIN:-localhost}
   # IndexNow (siehe .env.example), leer = aus
   INDEXNOW_KEY: ${INDEXNOW_KEY:-}
@@ -214,7 +226,9 @@ services:
       - "443:443"
     environment:
       DOMAIN: ${DOMAIN:-localhost}
-      EMAIL: ${ACME_EMAIL:-admin@example.com}
+      # Kontaktadresse für Let's Encrypt als ganze Zeile „email …“ im Caddyfile; ohne ACME_EMAIL leer, dann
+      # ohne Adresse (Let's Encrypt lehnt Platzhalter wie example.com ab, Issue #962)
+      ACME_EMAIL_OPTION: ${ACME_EMAIL:+email ${ACME_EMAIL}}
       # Ablage der Dokumente, nur lesend (Auslieferung per X-Accel-Redirect, FILE_ACCEL_REDIRECT)
       OPARL_FILES_MOUNT: /srv/mandari-files
     volumes:
@@ -284,6 +298,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
       POSTGRES_DB: ${POSTGRES_DB:-mandari}
+      # Name der Website-Datenbank, die scripts/init-website-db.sh beim ersten Start anlegt (wie im Dienst website)
+      WEBSITE_DB: ${WEBSITE_DB:-mandari_website}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-website-db.sh:/docker-entrypoint-initdb.d/init-website-db.sh:ro
@@ -412,6 +428,8 @@ services:
     labels:
       # deploy/scripts/restart-unhealthy.sh startet den Dienst neu, wenn die Liveness rot ist (#344)
       mandari.autoheal: "true"
+    # Die übrigen Variablen der .env (siehe x-app-environment); environment hat Vorrang
+    env_file: .env
     environment:
       <<: *app-environment
       # Nur die Webanwendung geht über PgBouncer (Profil pgbouncer, Issue #1060); Worker, Ingestor und
@@ -486,6 +504,8 @@ services:
     labels:
       # deploy/scripts/restart-unhealthy.sh startet ihn neu, wenn eine Rolle hängt
       mandari.autoheal: "true"
+    # Wie die Anwendung; gilt auch für worker-heavy und worker-live
+    env_file: .env
     environment: *app-environment
     volumes:
       - mandari_media:/app/media
@@ -589,6 +609,8 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}-minutes-orchestrator
     restart: unless-stopped
     command: ["python", "manage.py", "minutes_orchestrator"]
+    # Die übrigen Variablen der .env wie bei der Anwendung; environment hat Vorrang
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
@@ -596,7 +618,7 @@ services:
       ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
       ENCRYPTION_MASTER_KEY_PREVIOUS: ${ENCRYPTION_MASTER_KEY_PREVIOUS:-}
       DEBUG: "false"
-      ALLOWED_HOSTS: ${DOMAIN:-localhost}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-${DOMAIN:-localhost}}
       SITE_URL: https://${DOMAIN:-localhost}
       TZ: ${TZ:-Europe/Berlin}
     depends_on:
@@ -662,6 +684,9 @@ services:
       --interval ${INGESTOR_INTERVAL:-10}
       --full-sync-hour ${INGESTOR_FULL_SYNC_HOUR:-3}
       --concurrent ${INGESTOR_CONCURRENT:-10}
+    # Weitere Einstellungen des Ingestors aus der .env (etwa INGESTOR_REQUEST_INTERVAL, INGESTOR_USER_AGENT,
+    # docs/ABRUFREGELN.md); environment hat Vorrang
+    env_file: .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379

@@ -981,8 +981,8 @@ Ingestor (`ingestor/src/config.py`; Groß- und Kleinschreibung egal):
 Daemon (Argumente von `python -m src.main daemon`, in `docker-compose.yml` aus der `.env`): `--interval`
 (`INGESTOR_INTERVAL`, Grundtakt werktags 07–19 Uhr), `--full-sync-hour` (`INGESTOR_FULL_SYNC_HOUR`, Beginn des
 Standardfensters für Vollabgleiche), `--concurrent` (`INGESTOR_CONCURRENT`, Abrufplätze je Quelle; je Server gilt
-trotzdem `INGESTOR_HOST_MAX_CONCURRENT`), `--pool` (Standard `INGESTOR_SYNC_POOL_SIZE`). `docker-compose.yml` reicht
-`INGESTOR_SYNC_POOL_SIZE` durch und setzt die Speichergrenze des Dienstes über `INGESTOR_MEM_LIMIT` (Standard
+trotzdem `INGESTOR_HOST_MAX_CONCURRENT`), `--pool` (Standard `INGESTOR_SYNC_POOL_SIZE`). Der Dienst `ingestor` in
+`docker-compose.yml` liest die übrigen Variablen dieser Tabelle aus der `.env` (`env_file`) und setzt die Speichergrenze des Dienstes über `INGESTOR_MEM_LIMIT` (Standard
 `512m`).
 
 Anwendung (`mandari/mandari/settings.py`):

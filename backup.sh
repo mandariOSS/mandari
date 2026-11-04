@@ -287,7 +287,8 @@ verify_installation() {
         "${COMPOSE_PROJECT_NAME}-ingestor:Ingestor" \
         "${COMPOSE_PROJECT_NAME}-worker:Worker" \
         "${COMPOSE_PROJECT_NAME}-worker-heavy:Worker OCR/KI" \
-        "${COMPOSE_PROJECT_NAME}-worker-live:Worker Live"; do
+        "${COMPOSE_PROJECT_NAME}-worker-live:Worker Live" \
+        "${COMPOSE_PROJECT_NAME}-minutes-orchestrator:Orchestrator"; do
         container="${entry%%:*}"
         label="${entry#*:}"
         local status
@@ -502,8 +503,8 @@ Optionen:
   --restore DATEI  Aus einem Archiv wiederherstellen (ersetzt die aktuellen Daten)
   -h, --help       Diese Hilfe anzeigen
 
-Umgebungsvariablen (BACKUP_NO_MEDIA, BACKUP_NO_FILES und BACKUP_PASSPHRASE_FILE auch als
-Zeile in .env):
+Umgebungsvariablen (BACKUP_NO_MEDIA, BACKUP_NO_FILES, BACKUP_PASSPHRASE_FILE und S3_BACKUP_BUCKET auch
+als Zeile in .env):
   BACKUP_PASSPHRASE       Passphrase für die Konfiguration im Archiv (nur Umgebung)
   BACKUP_PASSPHRASE_FILE  Datei mit der Passphrase in der ersten Zeile
                           (Vorgabe: ./.backup-passphrase, falls vorhanden)
@@ -1093,7 +1094,9 @@ fi
 # =============================================================================
 # Optional: S3 Upload
 # =============================================================================
-if [ -n "${S3_BACKUP_BUCKET:-}" ]; then
+# Bucket aus der Umgebung oder der .env (wie BACKUP_PASSPHRASE_FILE); Zugangsdaten wie bei der AWS CLI üblich
+S3_BACKUP_BUCKET="$(setting S3_BACKUP_BUCKET)"
+if [ -n "$S3_BACKUP_BUCKET" ]; then
     if command -v aws &>/dev/null; then
         run_step "S3-Upload" aws s3 cp "$ARCHIVE_FILE" "s3://$S3_BACKUP_BUCKET/mandari/" || \
             warn "  S3-Upload fehlgeschlagen"

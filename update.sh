@@ -424,9 +424,10 @@ verify_installation() {
     local all_ok=true
 
     local containers="mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor"
-    # Die Worker nur prüfen, wenn die Installation sie definiert (ältere Compose-Dateien ohne sie)
+    # Worker und Protokoll-Orchestrator nur prüfen, wenn die Installation sie definiert (ältere Compose-Dateien
+    # ohne sie)
     local svc
-    for svc in $(defined_services "worker worker-heavy worker-live"); do
+    for svc in $(defined_services "worker worker-heavy worker-live minutes-orchestrator"); do
         containers="$containers mandari-$svc"
     done
 
@@ -448,6 +449,7 @@ verify_installation() {
             mandari-worker)      label="Worker" ;;
             mandari-worker-heavy) label="Worker OCR/KI" ;;
             mandari-worker-live) label="Worker Live" ;;
+            mandari-minutes-orchestrator) label="Orchestrator" ;;
         esac
 
         printf "  %-14s " "$label"
@@ -701,6 +703,15 @@ if [ "$SKIP_BACKUP" = false ]; then
 else
     info "Backup übersprungen (--no-backup)"
 fi
+
+# Platzhalter aus früheren Installationen (install.sh schrieb ohne Eingabe noreply@example.com, Issue #962):
+# Let's Encrypt lehnt solche Adressen ab
+case "$(get_env_var ACME_EMAIL "" | tr '[:upper:]' '[:lower:]')" in
+    *@example.com|*@example.org|*@example.net)
+        warn "ACME_EMAIL in .env ist eine Platzhalteradresse, Let's Encrypt lehnt sie ab. Eine echte Adresse"
+        warn "  eintragen oder die Zeile leeren (ACME_EMAIL=), danach: docker compose up -d caddy"
+        ;;
+esac
 
 # =============================================================================
 # Update-Konfiguration sichern

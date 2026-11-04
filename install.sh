@@ -39,6 +39,13 @@ WORKER_CONTAINER="${COMPOSE_PROJECT_NAME}-worker"
 WORKER_HEAVY_CONTAINER="${COMPOSE_PROJECT_NAME}-worker-heavy"
 WORKER_LIVE_CONTAINER="${COMPOSE_PROJECT_NAME}-worker-live"
 
+# Passwortrichtlinie der Anwendung (AUTH_PASSWORD_VALIDATORS in mandari/settings.py): mindestens 12 Zeichen.
+# createsuperuser --noinput prüft das nicht, deshalb prüft der Installer selbst (Issue #962).
+ADMIN_PASSWORD_MIN_LENGTH=12
+
+# Passphrase, mit der backup.sh die .env verschlüsselt mitsichert (Vorgabe von backup.sh, Issue #962)
+BACKUP_PASSPHRASE_DEFAULT_FILE=".backup-passphrase"
+
 # Anwendungs-Images (siehe docker-compose.yml): Alle drei laufen mit demselben IMAGE_TAG
 APP_IMAGES="ghcr.io/mandarioss/mandari ghcr.io/mandarioss/ingestor ghcr.io/mandarioss/website"
 RELEASES_URL="https://github.com/mandariOSS/mandari/releases"
@@ -123,6 +130,22 @@ generate_secret() {
 generate_password() {
     local length=${1:-32}
     generate_secret 48 | tr -dc 'a-zA-Z0-9' | head -c "$length"
+}
+
+# Platzhalteradresse? Let's Encrypt lehnt Adressen unter example.com/.org/.net und localhost ab (Issue #962)
+is_placeholder_email() {
+    case "${1,,}" in
+        *@example.com|*@example.org|*@example.net|*@*.example.com|*@*.example.org|*@*.example.net|*@localhost) return 0 ;;
+    esac
+    return 1
+}
+
+# Adresse für Let's Encrypt übernehmen: Platzhalter fallen weg (Caddy arbeitet dann ohne Adresse)
+accept_acme_email() {
+    if [ -n "$ACME_EMAIL" ] && is_placeholder_email "$ACME_EMAIL"; then
+        warn "ACME_EMAIL=$ACME_EMAIL ist eine Platzhalteradresse; Let's Encrypt lehnt sie ab. Zertifikate ohne Adresse."
+        ACME_EMAIL=""
+    fi
 }
 
 # =============================================================================
@@ -400,15 +423,18 @@ configure_interactively() {
     read -p "Domain (e.g., mandari.example.com) [localhost]: " input_domain
     DOMAIN="${input_domain:-localhost}"
 
-    # Email for Let's Encrypt
+    # Kontaktadresse für Let's Encrypt (optional; ohne Adresse holt Caddy die Zertifikate trotzdem)
     ACME_EMAIL=""
     if [ "$DOMAIN" != "localhost" ]; then
-        read -p "Email for SSL certificate (Let's Encrypt): " input_email
-        ACME_EMAIL="$input_email"
-
-        if [ -z "$ACME_EMAIL" ]; then
-            warn "No email provided. SSL certificates may fail to renew."
-        fi
+        while true; do
+            read -p "E-Mail für Let's Encrypt (optional, leer = ohne): " input_email
+            ACME_EMAIL="$input_email"
+            if [ -n "$ACME_EMAIL" ] && is_placeholder_email "$ACME_EMAIL"; then
+                warn "Platzhalteradressen lehnt Let's Encrypt ab. Bitte eine echte Adresse oder leer lassen."
+                continue
+            fi
+            break
+        done
     fi
 
     # Timezone
@@ -425,10 +451,10 @@ configure_interactively() {
     done
 
     while true; do
-        read -sp "Admin Passwort (min. 8 Zeichen): " ADMIN_PASSWORD
+        read -sp "Admin Passwort (min. ${ADMIN_PASSWORD_MIN_LENGTH} Zeichen): " ADMIN_PASSWORD
         echo ""
-        if [ ${#ADMIN_PASSWORD} -lt 8 ]; then
-            warn "Passwort muss mindestens 8 Zeichen lang sein."
+        if [ ${#ADMIN_PASSWORD} -lt "$ADMIN_PASSWORD_MIN_LENGTH" ]; then
+            warn "Passwort muss mindestens ${ADMIN_PASSWORD_MIN_LENGTH} Zeichen lang sein."
             continue
         fi
         read -sp "Passwort bestätigen: " admin_password_confirm
@@ -497,7 +523,8 @@ create_env_file() {
 # Domain & SSL
 # =============================================================================
 DOMAIN=${DOMAIN}
-ACME_EMAIL=${ACME_EMAIL:-noreply@example.com}
+# Kontaktadresse für Let's Encrypt; leer = ohne Adresse (keine Platzhalter, Let's Encrypt lehnt sie ab)
+ACME_EMAIL=${ACME_EMAIL}
 
 # =============================================================================
 # Timezone
@@ -540,7 +567,8 @@ IMAGE_TAG=${IMAGE_TAG}
 # =============================================================================
 # Optional: Email Configuration
 # =============================================================================
-# Uncomment and configure to enable email notifications
+# Ohne Mailserver verschickt mandari keine Mails. Hier einkommentieren oder im Admin unter den
+# Systemeinstellungen eintragen (dort hat der Eintrag Vorrang). Weitere Variablen: .env.example
 # EMAIL_HOST=smtp.example.com
 # EMAIL_PORT=587
 # EMAIL_HOST_USER=
@@ -587,9 +615,31 @@ wait_for_healthy() {
 }
 
 # =============================================================================
+# Passphrase für die Konfiguration in der Sicherung
+# =============================================================================
+# backup.sh sichert die .env (mit ENCRYPTION_MASTER_KEY) nur verschlüsselt und liest die Passphrase
+# vorgabemäßig aus ./.backup-passphrase. Ohne sie fehlte die Konfiguration in jeder nächtlichen
+# Sicherung (Issue #962). Eine vorhandene Datei bleibt unverändert: Ältere Sicherungen brauchen sie.
+setup_backup_passphrase() {
+    if [ -f "$BACKUP_PASSPHRASE_DEFAULT_FILE" ]; then
+        info "Passphrase für die Sicherung vorhanden: $SCRIPT_DIR/$BACKUP_PASSPHRASE_DEFAULT_FILE"
+        return 0
+    fi
+    local passphrase
+    passphrase="$(generate_password 40)"
+    if [ "${#passphrase}" -lt 32 ] || ! (umask 077 && printf '%s\n' "$passphrase" > "$BACKUP_PASSPHRASE_DEFAULT_FILE"); then
+        warn "Passphrase für die Sicherung nicht angelegt; die Konfiguration fehlt in den Sicherungen (DEPLOYMENT.md, „Sicherung“)."
+        return 0
+    fi
+    chmod 600 "$BACKUP_PASSPHRASE_DEFAULT_FILE" 2>/dev/null || true
+    log "Passphrase für die Sicherung angelegt: $SCRIPT_DIR/$BACKUP_PASSPHRASE_DEFAULT_FILE"
+}
+
+# =============================================================================
 # Setup Automatic Daily Backup
 # =============================================================================
 setup_cron_backup() {
+    setup_backup_passphrase
     if [ -x "./backup.sh" ]; then
         mkdir -p "$SCRIPT_DIR/logs"
         local cron_line="0 2 * * * cd $SCRIPT_DIR && ./backup.sh --quiet >> $SCRIPT_DIR/logs/backup.log 2>&1"
@@ -607,12 +657,12 @@ setup_cron_backup() {
 # Start Services (correct order to avoid race conditions)
 # =============================================================================
 #
-# The ingestor creates oparl_* tables on startup. If it starts before
-# Django migrations run, we get "DuplicateTable" errors. So we must:
+# Die Anwendung migriert beim Start nicht (docker-entrypoint.sh); Worker, Ingestor und
+# Protokoll-Orchestrator brauchen aber das migrierte Schema. Deshalb:
 #   1. Start infrastructure (postgres, redis, elasticsearch)
 #   2. Start mandari (Django) and run migrations
 #   3. Start the worker (events, tasks, schedules) – it needs the migrated schema
-#   4. THEN start ingestor and caddy
+#   4. THEN start ingestor, minutes-orchestrator and caddy
 # =============================================================================
 start_services() {
     mkdir -p "$SCRIPT_DIR/logs"
@@ -718,8 +768,8 @@ create_superuser() {
         read -p "  Admin E-Mail: " ADMIN_EMAIL
         if [ -n "$ADMIN_EMAIL" ]; then
             while true; do
-                read -s -p "  Admin Passwort (min. 8 Zeichen): " ADMIN_PASSWORD; echo ""
-                if [ "${#ADMIN_PASSWORD}" -lt 8 ]; then
+                read -s -p "  Admin Passwort (min. ${ADMIN_PASSWORD_MIN_LENGTH} Zeichen): " ADMIN_PASSWORD; echo ""
+                if [ "${#ADMIN_PASSWORD}" -lt "$ADMIN_PASSWORD_MIN_LENGTH" ]; then
                     echo "  Passwort zu kurz, bitte erneut."
                     continue
                 fi
@@ -735,14 +785,37 @@ create_superuser() {
 
     if [ -z "${ADMIN_EMAIL:-}" ] || [ -z "${ADMIN_PASSWORD:-}" ]; then
         info "Kein Admin-Account konfiguriert. Erstelle manuell:"
-        info "  docker exec -it mandari python manage.py createsuperuser"
+        info "  docker exec -it $APP_CONTAINER python manage.py createsuperuser"
         return
     fi
 
-    run_step "Admin-Account erstellen" docker exec \
+    # createsuperuser --noinput prüft die Passwortrichtlinie nicht: vorher mit den Prüfungen der Anwendung
+    # (Länge, häufige Passwörter, Ähnlichkeit zur Adresse, nur Ziffern)
+    if ! run_step "Admin-Passwort prüfen" docker exec \
         -e DJANGO_SUPERUSER_EMAIL="$ADMIN_EMAIL" \
         -e DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASSWORD" \
-        mandari python manage.py createsuperuser --noinput || true
+        "$APP_CONTAINER" python manage.py shell -c "
+import os
+from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
+validate_password(os.environ['DJANGO_SUPERUSER_PASSWORD'], get_user_model()(email=os.environ['DJANGO_SUPERUSER_EMAIL']))
+"; then
+        warn "Das Admin-Passwort erfüllt die Passwortrichtlinie nicht, kein Admin-Account angelegt:"
+        warn "  $(grep -a 'ValidationError' "$INSTALL_LOG" | tail -n 1)"
+        warn "  Anlegen mit: docker exec -it $APP_CONTAINER python manage.py createsuperuser"
+        unset ADMIN_PASSWORD
+        ADMIN_EMAIL=""
+        return
+    fi
+
+    if ! run_step "Admin-Account erstellen" docker exec \
+        -e DJANGO_SUPERUSER_EMAIL="$ADMIN_EMAIL" \
+        -e DJANGO_SUPERUSER_PASSWORD="$ADMIN_PASSWORD" \
+        "$APP_CONTAINER" python manage.py createsuperuser --noinput; then
+        warn "Admin-Account nicht angelegt (etwa: Adresse schon vergeben). Details: $INSTALL_LOG"
+        warn "  Anlegen mit: docker exec -it $APP_CONTAINER python manage.py createsuperuser"
+        ADMIN_EMAIL=""
+    fi
 
     # Passwort aus dem Speicher löschen
     unset ADMIN_PASSWORD
@@ -841,7 +914,7 @@ for i, s in enumerate(OParlSource.objects.order_by('name'), 1):
 
     echo ""
     # Activate selected sources via environment variable (safe from injection)
-    docker exec -e SELECTION="$source_selection" mandari python manage.py shell -c "
+    docker exec -e SELECTION="$source_selection" "$APP_CONTAINER" python manage.py shell -c "
 import os
 from insight_core.models import OParlSource
 
@@ -881,26 +954,26 @@ verify_installation() {
 
     local all_ok=true
 
-    # Check each container
-    for container in mandari-postgres mandari-redis mandari-elasticsearch mandari mandari-website mandari-caddy mandari-ingestor mandari-worker mandari-worker-heavy mandari-worker-live; do
+    # Check each container (Namen folgen dem Projektnamen, wie in backup.sh)
+    local entry container label
+    for entry in \
+        "${DB_CONTAINER}:PostgreSQL" \
+        "${REDIS_CONTAINER}:Redis" \
+        "${SEARCH_CONTAINER}:Elasticsearch" \
+        "${APP_CONTAINER}:Mandari" \
+        "${WEBSITE_CONTAINER}:Website" \
+        "${PROXY_CONTAINER}:Caddy" \
+        "${COMPOSE_PROJECT_NAME}-ingestor:Ingestor" \
+        "${WORKER_CONTAINER}:Worker" \
+        "${WORKER_HEAVY_CONTAINER}:Worker OCR/KI" \
+        "${WORKER_LIVE_CONTAINER}:Worker Live" \
+        "${COMPOSE_PROJECT_NAME}-minutes-orchestrator:Orchestrator"; do
+        container="${entry%%:*}"
+        label="${entry#*:}"
         local status
         local health
         status=$(docker inspect --format='{{.State.Status}}' "$container" 2>/dev/null || echo "missing")
         health=$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "$container" 2>/dev/null || echo "no-healthcheck")
-
-        local label
-        case "$container" in
-            mandari-postgres)   label="PostgreSQL" ;;
-            mandari-redis)      label="Redis" ;;
-            mandari-elasticsearch) label="Elasticsearch" ;;
-            mandari)            label="Mandari" ;;
-            mandari-website)    label="Website" ;;
-            mandari-caddy)      label="Caddy" ;;
-            mandari-ingestor)   label="Ingestor" ;;
-            mandari-worker)     label="Worker" ;;
-            mandari-worker-heavy) label="Worker OCR/KI" ;;
-            mandari-worker-live) label="Worker Live" ;;
-        esac
 
         printf "  %-14s " "$label"
         if [ "$status" = "running" ]; then
@@ -989,6 +1062,17 @@ show_summary() {
     echo ""
     echo -e "  ${YELLOW}WICHTIG: .env-Datei sicher aufbewahren!${NC}"
     echo -e "  ${YELLOW}         Enthält Verschlüsselungs-Keys.${NC}"
+    if [ -f "$BACKUP_PASSPHRASE_DEFAULT_FILE" ]; then
+        echo -e "  ${YELLOW}         Ebenso $BACKUP_PASSPHRASE_DEFAULT_FILE außerhalb des Servers verwahren:${NC}"
+        echo -e "  ${YELLOW}         Ohne sie lässt sich die Konfiguration aus keiner Sicherung zurückholen.${NC}"
+    fi
+    echo ""
+    echo "  Erste Schritte:"
+    echo "    Anmeldung:       Beim ersten Login als Administrator richtet mandari die"
+    echo "                     Zwei-Faktor-Anmeldung ein (Pflicht, docs/ACCOUNT_SECURITY.md)."
+    echo "    Mailversand:     Ohne Mailserver gehen keine Mails raus (Einladungen, Passwort"
+    echo "                     vergessen). Im Admin unter den Systemeinstellungen oder EMAIL_* in .env."
+    echo "    Kommunen:        https://${DOMAIN}/admin/insight_core/oparlsource/ (einzeln prüfen und aktivieren)"
     echo ""
     info "Detaillierte Logs: cat $INSTALL_LOG"
     echo ""
@@ -1011,7 +1095,8 @@ Optionen:
                              bevor er etwas verändert.
   --unattended               Ohne Rückfragen; Werte aus Umgebungsvariablen (DOMAIN, ACME_EMAIL,
                              ADMIN_EMAIL, ADMIN_PASSWORD, TZ, ...). Bricht mit Exit-Code 1 ab,
-                             wenn in diesem Verzeichnis bereits eine Installation liegt.
+                             wenn in diesem Verzeichnis bereits eine Installation liegt oder
+                             ADMIN_PASSWORD kürzer als 12 Zeichen ist. ACME_EMAIL ist optional.
   --reinstall-destroy-data   Nur mit --unattended: eine bestehende Installation verwerfen und
                              neu aufsetzen. LÖSCHT ALLE DATEN (Datenbank, Uploads, Dokument-Cache,
                              Suchindex, Zertifikate) und erzeugt neue Schlüssel. Interaktiv
@@ -1064,6 +1149,11 @@ main() {
     # Unbeaufsichtigt steht die Version vor der Prüfung der Voraussetzungen fest (dort wird sie geprüft)
     if [ "$UNATTENDED" = "true" ]; then
         IMAGE_TAG="${IMAGE_TAG:-latest}"
+        # Vor jeder Änderung (auch vor --reinstall-destroy-data): ein zu kurzes Passwort legte sonst
+        # später keinen Admin-Account an
+        if [ -n "${ADMIN_PASSWORD:-}" ] && [ "${#ADMIN_PASSWORD}" -lt "$ADMIN_PASSWORD_MIN_LENGTH" ]; then
+            error "ADMIN_PASSWORD ist kürzer als ${ADMIN_PASSWORD_MIN_LENGTH} Zeichen (Passwortrichtlinie). Es wurde nichts verändert."
+        fi
     fi
 
     show_banner
@@ -1073,6 +1163,7 @@ main() {
     if [ "$UNATTENDED" = "true" ]; then
         DOMAIN="${DOMAIN:-localhost}"
         ACME_EMAIL="${ACME_EMAIL:-}"
+        accept_acme_email
         TIMEZONE="${TZ:-Europe/Berlin}"
         POSTGRES_USER="${POSTGRES_USER:-mandari}"
         POSTGRES_DB="${POSTGRES_DB:-mandari}"
