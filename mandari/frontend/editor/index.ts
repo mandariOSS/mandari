@@ -77,10 +77,21 @@ export interface CollaborativeEditorOptions extends EditorOptions {
   onStatusChange?: (status: 'connecting' | 'connected' | 'disconnected') => void
   /** Called when server sends initial state (hasState=true means server had saved Yjs state) */
   onInitialState?: (hasState: boolean) => void
+  /**
+   * Der Anfangsstand steht im Editor: Zustand vom Server eingespielt bzw. aus dem gespeicherten Text aufgefüllt (oder
+   * ein anderes Fenster war schneller). Bis dahin soll der Editor nicht bearbeitbar sein: Eine Eingabe in das noch
+   * leere Dokument verhinderte das Auffüllen, und die nächste Sicherung ersetzte den gespeicherten Text (#1018).
+   */
+  onAnfangsstandGeladen?: () => void
   /** Called when the server requests a document reload (e.g. after revision restore) */
   onReloadRequired?: (reason?: ReloadReason) => void
-  /** Server persisted a yjs_save; fingerprint of the stored HTML for conflict detection (#184). */
-  onPersisted?: (contentHash: string) => void
+  /**
+   * Server persisted a yjs_save; fingerprint of the stored HTML for conflict detection (#184). ``marke``: was
+   * ``sicherungsMarke`` beim Senden dieser Sicherung lieferte (#1018).
+   */
+  onPersisted?: (contentHash: string, marke?: number) => void
+  /** Kennzeichen des Stands beim Senden einer Sicherung (yjs_save), siehe ``CollabOptions.sicherungsMarke`` */
+  sicherungsMarke?: () => number
 }
 
 /** Kennzeichen der Transaktion, die den gespeicherten Text in ein frisches Kollaborationsdokument füllt (#1018) */
@@ -382,6 +393,12 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
   // Bis der gespeicherte Stand vom Server da ist, bringt die Verbindung nur diesen Stand (und das erste Zeichnen des
   // leeren Dokuments): keine Eingabe dieses Fensters (#1018). Der Provider meldet onInitialState nach dem Einspielen.
   let anfangsstandGeladen = false
+  // Erst wenn der Anfangsstand im Editor steht (nach dem Auffüllen), darf gesichert werden (#1018)
+  let anfangsstandFertig = false
+  const anfangsstandMelden = () => {
+    anfangsstandFertig = true
+    options.onAnfangsstandGeladen?.()
+  }
 
   const collab = initCollaboration({
     wsUrl: options.wsUrl,
@@ -397,6 +414,8 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
     },
     onReloadRequired: options.onReloadRequired,
     onPersisted: options.onPersisted,
+    sicherungsMarke: options.sicherungsMarke,
+    sicherungBereit: () => anfangsstandFertig,
     onInitialState: (hasState: boolean) => {
       anfangsstandGeladen = true
       if (!hasState && options.content) {
@@ -405,11 +424,15 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
         // Client seinen Zustand gesynct hat (verhindert doppelten Inhalt
         // bei nahezu gleichzeitigem Öffnen eines frischen Dokuments).
         setTimeout(() => {
-          if (editor && !editor.isDestroyed && editor.isEmpty) {
+          if (!editor || editor.isDestroyed) return
+          if (editor.isEmpty) {
             // Der gespeicherte Text ist keine Eingabe: als Anfangsstand kennzeichnen (#1018)
             editor.chain().setMeta(ANFANGSSTAND_META, true).setContent(options.content).run()
           }
+          anfangsstandMelden()
         }, 400)
+      } else {
+        anfangsstandMelden()
       }
       // Forward to caller if they want to know
       options.onInitialState?.(hasState)

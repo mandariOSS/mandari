@@ -49,9 +49,22 @@ export interface CollabOptions {
   /**
    * Called after the server persisted a yjs_save (content_hash of the stored
    * HTML). The editor keeps it as the base for conflict detection when it
-   * later saves via POST without a connection (#184).
+   * later saves via POST without a connection (#184). ``marke``: was ``sicherungsMarke`` beim Senden dieser
+   * Sicherung lieferte (#1018).
    */
-  onPersisted?: (contentHash: string) => void
+  onPersisted?: (contentHash: string, marke?: number) => void
+  /**
+   * Beim Senden einer Sicherung (yjs_save): Kennzeichen des Stands, den sie enthält, etwa der Änderungszähler des
+   * Editors. Die Bestätigung gibt es an ``onPersisted`` zurück. So gelten Eingaben, die zwischen Senden und
+   * Bestätigung dazukommen, nicht als gesichert (#1018).
+   */
+  sicherungsMarke?: () => number
+  /**
+   * Darf jetzt gesichert werden? Vor dem Anfangsstand enthält das Dokument nur, was bisher geladen ist (oft nichts):
+   * Eine Sicherung ersetzte dann den gespeicherten Stand. ``flush()`` meldet bis dahin „nichts zu sichern“ (#1018).
+   * Ohne Angabe immer.
+   */
+  sicherungBereit?: () => boolean
   /**
    * Jede JSON-Nachricht des Servers, bevor der Provider sie auswertet (eigene Nachrichtentypen, etwa Anwesenheit
    * und Neuaufbau bei den Live-Notizen der Fraktionssitzung, Issue #874).
@@ -123,7 +136,15 @@ class DjangoYjsProvider {
   private onInitialState?: (hasState: boolean) => void
   private getHtml?: () => string
   private onReloadRequired?: (reason?: ReloadReason) => void
-  private onPersisted?: (contentHash: string) => void
+  private onPersisted?: (contentHash: string, marke?: number) => void
+  private sicherungsMarke?: () => number
+  private sicherungBereit?: () => boolean
+  /**
+   * Marken der gesendeten, noch unbestätigten Sicherungen in Sendereihenfolge (#1018). Der Server antwortet je
+   * Verbindung der Reihe nach; bleibt eine Antwort aus (Fehler beim Speichern), gilt eine spätere Bestätigung für eine
+   * ältere Marke: Dann zählt weniger als gesichert, nie mehr.
+   */
+  private offeneSicherungen: Array<number | undefined> = []
   private onJsonMessage?: (msg: any) => void
   private autoSave = true
   private _beforeUnloadHandler: (() => void) | null = null
@@ -139,9 +160,11 @@ class DjangoYjsProvider {
     onInitialState?: (hasState: boolean) => void,
     getHtml?: () => string,
     onReloadRequired?: (reason?: ReloadReason) => void,
-    onPersisted?: (contentHash: string) => void,
+    onPersisted?: (contentHash: string, marke?: number) => void,
     onJsonMessage?: (msg: any) => void,
     autoSave = true,
+    sicherungsMarke?: () => number,
+    sicherungBereit?: () => boolean,
   ) {
     this.wsUrl = wsUrl
     this.ydoc = ydoc
@@ -151,6 +174,8 @@ class DjangoYjsProvider {
     this.getHtml = getHtml
     this.onReloadRequired = onReloadRequired
     this.onPersisted = onPersisted
+    this.sicherungsMarke = sicherungsMarke
+    this.sicherungBereit = sicherungBereit
     this.onJsonMessage = onJsonMessage
     this.autoSave = autoSave
 
@@ -219,6 +244,8 @@ class DjangoYjsProvider {
 
       this.ws.onclose = () => {
         this.connected = false
+        // Bestätigungen kommen nur über die Verbindung, auf der gesendet wurde
+        this.offeneSicherungen = []
         // Das Schließen nach destroy() ist kein Verbindungsabbruch: Sonst wiche der neu aufgebaute Editor sofort auf
         // das Formular aus (Notizen der Fraktionssitzung, Issue #1166)
         if (this.destroyed) return
@@ -268,10 +295,13 @@ class DjangoYjsProvider {
       }
     } else if (msg.type === 'yjs_saved' && typeof msg.content_hash === 'string') {
       // Server persisted our yjs_save; remember the fingerprint of the stored HTML (#184).
-      this.onPersisted?.(msg.content_hash)
+      this.onPersisted?.(msg.content_hash, this.offeneSicherungen.shift())
       const wartende = this.persistWaiters
       this.persistWaiters = []
       for (const fertig of wartende) fertig(true)
+    } else if (msg.type === 'yjs_save_rejected') {
+      // Antwort auf eine Sicherung, die der Server verworfen hat: Ihre Marke ist erledigt, gesichert ist nichts (#1018)
+      this.offeneSicherungen.shift()
     } else if (msg.type === 'reload') {
       // Server requests a full document reload (e.g. after revision restore or a POST
       // save by someone without connection). Our Yjs state is now stale: a late yjs_save
@@ -350,6 +380,8 @@ class DjangoYjsProvider {
     if (this.reloadRequested || !this.ws || !this.connected || this.ws.readyState !== WebSocket.OPEN) {
       return Promise.resolve(false)
     }
+    // Vor dem Anfangsstand gibt es nichts aus diesem Fenster zu sichern; gespeichert ist der Stand des Servers (#1018)
+    if (this.sicherungBereit && !this.sicherungBereit()) return Promise.resolve(true)
     return new Promise((resolve) => {
       const fertig = (ok: boolean) => {
         clearTimeout(timer)
@@ -367,8 +399,12 @@ class DjangoYjsProvider {
   /** Send full Yjs state to server for persistence (via yjs_save message). */
   private _saveFullState() {
     if (this.reloadRequested) return
+    // Vor dem Anfangsstand nicht sichern: Das (noch leere) Dokument ersetzte den gespeicherten Stand (#1018)
+    if (this.sicherungBereit && !this.sicherungBereit()) return
     if (!this.ws || !this.connected || this.ws.readyState !== WebSocket.OPEN) return
     try {
+      // Stand dieser Sicherung: Eingaben danach sind erst mit einer späteren Bestätigung gesichert (#1018)
+      const marke = this.sicherungsMarke?.()
       const state = Y.encodeStateAsUpdate(this.ydoc)
       const message: { type: string; data: string; html?: string } = {
         type: 'yjs_save',
@@ -385,6 +421,7 @@ class DjangoYjsProvider {
         }
       }
       this.ws.send(JSON.stringify(message))
+      this.offeneSicherungen.push(marke)
     } catch (e) {
       console.warn('Failed to save Yjs state:', e)
     }
@@ -495,6 +532,8 @@ export function initCollaboration(options: CollabOptions): CollabResult {
     options.onPersisted,
     options.onJsonMessage,
     options.autoSave ?? true,
+    options.sicherungsMarke,
+    options.sicherungBereit,
   )
 
   // Build TipTap extensions

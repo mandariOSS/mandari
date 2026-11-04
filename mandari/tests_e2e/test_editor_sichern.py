@@ -31,6 +31,8 @@ from apps.work.motions.models import Motion, MotionApproval, MotionType, Organiz
 from tests_e2e.conftest import login_via_form, wait_for_bundle
 from tests_e2e.test_editor import ALPINE_EDITOR, PASSWORD, PERMISSIONS, PROSEMIRROR
 from tests_e2e.test_editor_kollaboration import (
+    CONNECTED,
+    WS_DOCUMENTS,
     decrypted_content,
     editor_oeffnen,
     editor_url,
@@ -79,6 +81,33 @@ GESICHERT_OHNE_STOERUNG = (
     f"() => {ALPINE_EDITOR}.hasUnsavedChanges() === false && {ALPINE_EDITOR}.speicherStoerung === ''"
     f" && {ALPINE_EDITOR}.saveError === false"
 )
+#: Der Provider sichert beim Verbergen des Tabs (yjs_save); der Zustand wird kurz vorgetäuscht
+TAB_KURZ_VERBORGEN = """() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    delete document.visibilityState
+}"""
+#: Der Text lässt sich bearbeiten (contenteditable)
+EDITOR_BEARBEITBAR = f"() => document.querySelector('{PROSEMIRROR}')?.isContentEditable === true"
+#: Die Kollaborationsverbindung kommt nie zustande: Der Provider bleibt bei „Verbindung wird hergestellt“
+WEBSOCKET_OHNE_VERBINDUNG = """
+(() => {
+    const Original = window.WebSocket
+    function Haengend(url, protocols) {
+        if (!String(url).includes('/ws/documents/')) return new Original(url, protocols)
+        this.url = String(url)
+        this.readyState = 0
+        this.binaryType = 'blob'
+        this.send = () => {}
+        this.close = () => {}
+    }
+    Haengend.CONNECTING = 0
+    Haengend.OPEN = 1
+    Haengend.CLOSING = 2
+    Haengend.CLOSED = 3
+    window.WebSocket = Haengend
+})()
+"""
 
 
 @pytest.fixture(autouse=True)
@@ -213,6 +242,40 @@ class PostAbbruch:
         antwort = route.fetch()
         assert antwort.ok, f"Der Server hat den zurückgehaltenen POST nicht angenommen: {antwort.status}"
         route.abort("timedout")
+
+
+class ServerNachrichtenHalten:
+    """
+    Hält JSON-Nachrichten der Kollaborationsverbindung vom Server an die Seite zurück, deren Typ in ``typen`` steht,
+    bis ``freigeben``. Alles andere geht in beide Richtungen durch. Im Handler wird nur gemerkt oder weitergereicht
+    (``send`` wartet nicht auf Playwright).
+    """
+
+    def __init__(self, page: Any, typen: set[str]) -> None:
+        self.typen = set(typen)
+        self.gehalten: list[tuple[Any, str]] = []
+        page.route_web_socket(WS_DOCUMENTS, self._route)
+
+    def _route(self, ws: Any) -> None:
+        server = ws.connect_to_server()
+        server.on_message(lambda nachricht: self._vom_server(ws, nachricht))
+
+    def _vom_server(self, ws: Any, nachricht: Any) -> None:
+        if isinstance(nachricht, str) and self.typen:
+            try:
+                typ = json.loads(nachricht).get("type")
+            except (ValueError, AttributeError):
+                typ = None
+            if typ in self.typen:
+                self.gehalten.append((ws, nachricht))
+                return
+        ws.send(nachricht)
+
+    def freigeben(self) -> None:
+        self.typen = set()
+        gehalten, self.gehalten = self.gehalten, []
+        for ws, nachricht in gehalten:
+            ws.send(nachricht)
 
 
 def solo_oeffnen(page: Any, url: str) -> None:
@@ -489,6 +552,103 @@ class TestMitVerbindung:
         dokument.refresh_from_db()
         assert dokument.title == "Antrag Radweg", "der Server behielt den Zwischenwert"
 
+    def test_eingabe_gleich_nach_dem_anfangsstand_bleibt_ungesichert(
+        self, page: Any, asgi_server: Any, org: Any, anna: Any, dokument: Motion
+    ) -> None:
+        """
+        Eine Eingabe direkt nach dem Anfangsstand gilt als ungesichert, bis der Server sie bestätigt. Der frühere
+        Ausgleich 600 ms nach dem Anfangsstand zählte sie als gesichert (#1018).
+        """
+        vorbereiten(page)
+        login_via_form(page, asgi_server.url, anna.user.email, PASSWORD)
+        url = editor_url(asgi_server, org, dokument)
+        # Mit gespeichertem Yjs-Stand: Der Text steht mit dem Anfangsstand sofort da
+        editor_oeffnen(page, url, "Alt")
+        kollab_stand_sichern(page)
+        warten_bis_yjs_gesichert(page, dokument)
+
+        halten = ServerNachrichtenHalten(page, {"yjs_state"})
+        page.goto(url)
+        wait_for_bundle(page)
+        page.wait_for_function(CONNECTED, timeout=15000)
+        warten_bis(page, lambda: bool(halten.gehalten), "Anfangsstand zurückgehalten")
+        halten.freigeben()
+        page.wait_for_function(
+            f"() => {{ const el = document.querySelector('{PROSEMIRROR}');"
+            " return !!el && el.isContentEditable && el.textContent.includes('Alt') }",
+            timeout=15000,
+        )
+        tippen(page, " Sofort")
+        page.wait_for_timeout(1200)
+        assert unsaved_changes(page) is True, "die Eingabe gleich nach dem Anfangsstand galt als gesichert"
+        kollab_stand_sichern(page)
+        assert "Alt Sofort" in decrypted_content(dokument)
+
+    def test_vor_dem_anfangsstand_keine_eingabe_und_keine_sicherung(
+        self, page: Any, asgi_server: Any, org: Any, anna: Any, dokument: Motion
+    ) -> None:
+        """
+        Ohne gespeicherten Yjs-Stand war der Editor bis zum Anfangsstand leer und bearbeitbar. Eine Eingabe verhinderte
+        das Auffüllen aus dem gespeicherten Text, und die nächste Sicherung ersetzte ihn. Eine Sicherung in dieser
+        Zeit (Tab verborgen, Strg+S) ersetzte ihn ebenso, auch ohne Eingabe (#1018).
+        """
+        vorbereiten(page)
+        login_via_form(page, asgi_server.url, anna.user.email, PASSWORD)
+        halten = ServerNachrichtenHalten(page, {"yjs_state"})
+        page.goto(editor_url(asgi_server, org, dokument))
+        wait_for_bundle(page)
+        page.wait_for_selector(PROSEMIRROR, timeout=15000)
+        page.wait_for_function(CONNECTED, timeout=15000)
+        warten_bis(page, lambda: bool(halten.gehalten), "Anfangsstand zurückgehalten")
+
+        # Eingabe vor dem Anfangsstand: wird nicht angenommen
+        page.locator(PROSEMIRROR).click()
+        page.keyboard.type("Zu früh")
+        assert "Zu früh" not in page.locator(PROSEMIRROR).inner_text()
+        assert unsaved_changes(page) is False
+        # Sichern vor dem Anfangsstand: ersetzt den gespeicherten Text nicht
+        page.evaluate(TAB_KURZ_VERBORGEN)
+        page.keyboard.press("Control+s")
+        page.wait_for_timeout(1000)
+        assert decrypted_content(dokument) == "<p>Alt</p>"
+        dokument.refresh_from_db()
+        assert cast(Any, dokument).get_yjs_state() is None, "ein leerer Stand wurde als gemeinsamer Stand gespeichert"
+
+        halten.freigeben()
+        expect(page.locator(PROSEMIRROR)).to_contain_text("Alt", timeout=15000)
+        page.wait_for_function(EDITOR_BEARBEITBAR, timeout=15000)
+        expect(page.locator(PROSEMIRROR)).not_to_contain_text("Zu früh")
+        tippen(page, " Neu")
+        kollab_stand_sichern(page)
+        inhalt = decrypted_content(dokument)
+        assert "Alt Neu" in inhalt and "Zu früh" not in inhalt
+
+    def test_eingabe_waehrend_des_sicherns_bleibt_ungesichert(
+        self, page: Any, asgi_server: Any, org: Any, anna: Any, dokument: Motion
+    ) -> None:
+        """
+        Die Bestätigung einer Sicherung gilt für den Stand beim Senden. Eingaben zwischen Senden und Bestätigung zählten
+        als gesichert (#1018).
+        """
+        vorbereiten(page)
+        login_via_form(page, asgi_server.url, anna.user.email, PASSWORD)
+        halten = ServerNachrichtenHalten(page, set())
+        editor_oeffnen(page, editor_url(asgi_server, org, dokument), "Alt")
+        tippen(page, " Erster")
+        stand_vorher = page.evaluate(f"() => {ALPINE_EDITOR}.contentHash")
+
+        halten.typen = {"yjs_saved"}
+        page.evaluate(TAB_KURZ_VERBORGEN)
+        warten_bis(page, lambda: bool(halten.gehalten), "Bestätigung der Sicherung zurückgehalten")
+        tippen(page, " Zweiter")
+        halten.freigeben()
+        page.wait_for_function(f"() => {ALPINE_EDITOR}.contentHash !== {json.dumps(stand_vorher)}", timeout=15000)
+        assert unsaved_changes(page) is True, "die Eingabe nach dem Senden galt mit der Bestätigung als gesichert"
+        assert "Zweiter" not in decrypted_content(dokument)
+
+        kollab_stand_sichern(page)
+        assert "Alt Erster Zweiter" in decrypted_content(dokument)
+
 
 class TestOhneVerbindung:
     """Seitenleiste und Infozeile im Solo-Modus: Ohne Sichern gingen die Eingaben beim Neuladen verloren."""
@@ -599,3 +759,43 @@ class TestOhneVerbindung:
         assert any('name="title"' in post and "Antrag Radweg" in post for post in abbruch.weitere), abbruch.weitere
         dokument.refresh_from_db()
         assert dokument.title == "Antrag Radweg", "der Server behielt den Zwischenwert"
+
+    def test_ohne_anfangsstand_nach_zeitlimit_solo_mit_gespeichertem_text(
+        self, page: Any, live_server: Any, org: Any, anna: Any, dokument: Motion
+    ) -> None:
+        """
+        Kommt die Verbindung nicht zustande, bleibt der Editor nicht dauerhaft gesperrt: Nach dem Zeitlimit wechselt er
+        mit dem gespeicherten Text in den Solo-Modus. Strg+S vorher schickt nicht den leeren Text (#1018).
+        """
+        page.set_viewport_size(DESKTOP)
+        page.add_init_script(WEBSOCKET_OHNE_VERBINDUNG)
+        login_via_form(page, live_server.url, anna.user.email, PASSWORD)
+        posts: list[str] = []
+        page.on(
+            "request",
+            lambda r: posts.append(r.post_data or "")
+            if r.method == "POST" and r.url.endswith(f"/documents/{dokument.id}/")
+            else None,
+        )
+        page.goto(f"{live_server.url}/work/{org.slug}/documents/{dokument.id}/")
+        wait_for_bundle(page)
+        page.wait_for_selector(PROSEMIRROR, timeout=15000)
+        page.wait_for_function(
+            f"() => {ALPINE_EDITOR}.collabEnabled === true && {ALPINE_EDITOR}.collabStatus === 'connecting'",
+            timeout=15000,
+        )
+        page.locator(PROSEMIRROR).click()
+        page.keyboard.type("Zu früh")
+        page.keyboard.press("Control+s")
+        page.wait_for_timeout(1000)
+        assert not any('name="content"' in post for post in posts), "der leere Text ging an den Server"
+        assert decrypted_content(dokument) == "<p>Alt</p>"
+
+        page.wait_for_function(f"() => {ALPINE_EDITOR}.collabEnabled === false", timeout=20000)
+        expect(page.locator(PROSEMIRROR)).to_contain_text("Alt", timeout=15000)
+        expect(page.locator(PROSEMIRROR)).not_to_contain_text("Zu früh")
+        page.wait_for_function(EDITOR_BEARBEITBAR, timeout=15000)
+        tippen(page, " Solo.")
+        page.keyboard.press("Control+s")
+        page.wait_for_function(GESICHERT_OHNE_STOERUNG, timeout=15000)
+        assert "Alt Solo." in decrypted_content(dokument)
