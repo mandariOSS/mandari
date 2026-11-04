@@ -62,6 +62,11 @@ export interface EditorOptions {
 }
 
 export interface CollaborativeEditorOptions extends EditorOptions {
+  /**
+   * Inhalt geändert. ``anfangsstand``: Die Änderung lädt nur den gespeicherten Stand (Zustand vom Server, das erste
+   * Zeichnen vor dessen Eintreffen oder das Auffüllen aus dem gespeicherten Text) und ist keine Eingabe (#1018).
+   */
+  onUpdate?: (html: string, anfangsstand?: boolean) => void
   /** WebSocket URL for collaboration */
   wsUrl: string
   /** Current user info */
@@ -77,6 +82,9 @@ export interface CollaborativeEditorOptions extends EditorOptions {
   /** Server persisted a yjs_save; fingerprint of the stored HTML for conflict detection (#184). */
   onPersisted?: (contentHash: string) => void
 }
+
+/** Kennzeichen der Transaktion, die den gespeicherten Text in ein frisches Kollaborationsdokument füllt (#1018) */
+const ANFANGSSTAND_META = 'mandariAnfangsstand'
 
 export interface FormatState {
   bold: boolean
@@ -371,6 +379,9 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
   // By the time the async callback fires, editor will be assigned.
   // biome-ignore lint/style/useConst: wird erst nach initCollaboration() zugewiesen, Closure braucht die Bindung
   let editor: Editor
+  // Bis der gespeicherte Stand vom Server da ist, bringt die Verbindung nur diesen Stand (und das erste Zeichnen des
+  // leeren Dokuments): keine Eingabe dieses Fensters (#1018). Der Provider meldet onInitialState nach dem Einspielen.
+  let anfangsstandGeladen = false
 
   const collab = initCollaboration({
     wsUrl: options.wsUrl,
@@ -387,6 +398,7 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
     onReloadRequired: options.onReloadRequired,
     onPersisted: options.onPersisted,
     onInitialState: (hasState: boolean) => {
+      anfangsstandGeladen = true
       if (!hasState && options.content) {
         // Server has no saved Yjs state — seed from HTML content.
         // Kurz warten und nur seeden, wenn nicht inzwischen ein anderer
@@ -394,7 +406,8 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
         // bei nahezu gleichzeitigem Öffnen eines frischen Dokuments).
         setTimeout(() => {
           if (editor && !editor.isDestroyed && editor.isEmpty) {
-            editor.commands.setContent(options.content)
+            // Der gespeicherte Text ist keine Eingabe: als Anfangsstand kennzeichnen (#1018)
+            editor.chain().setMeta(ANFANGSSTAND_META, true).setContent(options.content).run()
           }
         }, 400)
       }
@@ -421,9 +434,11 @@ export function createCollaborativeEditor(options: CollaborativeEditorOptions): 
       ...collab.extensions,
       YjsUndo,
     ],
-    onUpdate({ editor }) {
+    onUpdate({ editor, transaction }) {
       if (options.onUpdate) {
-        options.onUpdate(editor.getHTML())
+        const anfangsstand =
+          transaction.getMeta(ANFANGSSTAND_META) === true || (!anfangsstandGeladen && isChangeOrigin(transaction))
+        options.onUpdate(editor.getHTML(), anfangsstand)
       }
     },
     onTransaction({ editor }) {

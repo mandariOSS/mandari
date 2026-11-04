@@ -296,12 +296,15 @@ export const documentEditor = defineComponent(() => {
   // und Briefpapier mit Verbindung (#1018)
   let speicherLauf: Promise<boolean> | null = null
   let metaTimer: number | null = null
-  // Zuletzt gesicherte Werte von Titel, Dokumenttyp und Briefpapier (mit Verbindung gehen nur Änderungen per POST)
+  // Zuletzt gesicherte Werte von Titel, Dokumenttyp und Briefpapier (per POST gehen nur Änderungen, #1018)
   let metaGesichert: MetaWerte = {
     title: config.title,
     document_type_id: config.documentTypeId,
     letterhead_id: config.letterheadId,
   }
+  // Felder, die ein Versuch ohne Bestätigung geschickt hat: Ob der Server sie geschrieben hat, ist offen. Sie gehen
+  // beim nächsten Sichern mit, auch wenn sie wieder dem gesicherten Wert gleichen (#1018).
+  const metaOffen = new Set<keyof MetaWerte>()
   const fensterId = neueFensterKennung()
   // Stellen offener Änderungsvorschläge im Text anders hervorheben als Kommentare (die Marke selbst kennt den
   // Unterschied nicht): eigenes Stylesheet mit den Marken-IDs, ohne Inline-Stil im Template
@@ -734,9 +737,11 @@ export const documentEditor = defineComponent(() => {
             name: this.collabUserName,
             color: this.collabUserColor,
           },
-          onUpdate: () => {
+          onUpdate: (_html, anfangsstand) => {
             this.updatedAt = Date.now()
-            this._markChanged()
+            // Der Anfangsstand (Zustand vom Server, Auffüllen aus dem gespeicherten Text) ist gespeichert: keine
+            // Änderung, keine Rückfrage beim Verlassen. Eingaben zählen vom ersten Zeichen an (#1018).
+            if (!anfangsstand) this._markChanged()
             this.updateWordCount()
             this._nachAenderung()
           },
@@ -765,14 +770,6 @@ export const documentEditor = defineComponent(() => {
               // Erste Verbindung fehlgeschlagen → stabiler Solo-Fallback
               this._switchToSoloMode('Echtzeit-Kollaboration nicht verfügbar — Solo-Modus aktiv.')
             }
-          },
-          onInitialState: () => {
-            // Der Anfangsstand kommt vom Server (bzw. aus dem gespeicherten Text): Er ist gespeichert und darf beim
-            // Verlassen keine Rückfrage auslösen. Ohne gespeicherten Yjs-Stand füllt der Editor nach 400 ms aus dem
-            // gespeicherten Text auf (createCollaborativeEditor) – erst danach gleichziehen.
-            window.setTimeout(() => {
-              this._savedSeq = this._changeSeq
-            }, 600)
           },
           onPersisted: (contentHash) => {
             // Der Server hat unseren Kollaborationsstand gespeichert: Das ist ab jetzt
@@ -1586,16 +1583,18 @@ export const documentEditor = defineComponent(() => {
           return true
         }
 
-        // Mit Verbindung nur die Felder schicken, die sich seit dem letzten Sichern in diesem Fenster geändert haben:
-        // Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs, andere Fenster kennen deren Änderungen erst nach
-        // dem Neuladen. Sonst setzte ein anderes Fenster beim Wechsel des Briefpapiers den neuen Titel zurück (#1018).
+        // Mit und ohne Verbindung nur die Felder schicken, die sich seit dem letzten Sichern in diesem Fenster
+        // geändert haben: Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs, andere Fenster kennen deren
+        // Änderungen erst nach dem Neuladen. Sonst setzte ein anderes Fenster beim Wechsel des Briefpapiers oder beim
+        // Sichern des Textes den neuen Titel zurück. Felder eines Versuchs ohne Bestätigung gehen in jedem Fall mit:
+        // Der Server kann sie geschrieben haben, auch wenn sie inzwischen wieder auf dem alten Wert stehen (#1018).
         const metaWerte: MetaWerte = {
           title: this.title,
           document_type_id: this.documentTypeId,
           letterhead_id: this.letterheadId,
         }
         const metaFelder = (Object.keys(metaWerte) as Array<keyof MetaWerte>).filter(
-          (feld) => mitText || metaWerte[feld] !== metaGesichert[feld],
+          (feld) => metaOffen.has(feld) || metaWerte[feld] !== metaGesichert[feld],
         )
         if (!mitText && !metaFelder.length) {
           // Zurückgeändert: nichts zu senden
@@ -1638,12 +1637,15 @@ export const documentEditor = defineComponent(() => {
           this._gespeichertMelden()
           this._metaSavedSeq = metaSeq
           metaGesichert = { ...metaGesichert, ...metaWerte }
+          for (const feld of metaFelder) metaOffen.delete(feld)
           if (mitText) {
             this._savedSeq = seq
             if (typeof antwort.daten.content_hash === 'string') this.contentHash = antwort.daten.content_hash
           }
           return true
         }
+        // Ohne Bestätigung ist offen, ob der Server die Felder geschrieben hat (Zeitüberschreitung nach dem Speichern)
+        for (const feld of metaFelder) metaOffen.add(feld)
         if (antwort.art === 'konflikt') {
           this.saveConflict = true
           this.saveError = true
@@ -2173,8 +2175,8 @@ export const documentEditor = defineComponent(() => {
     /**
      * Vor einem Neuladen oder Verlassen sichern (Statuswechsel, Seitenleiste, Links, Teilen, Herunterladen): mit
      * Kollaborationsverbindung den gemeinsamen Stand über Yjs und Titel, Dokumenttyp und Briefpapier per POST, ohne
-     * Verbindung alles per POST (#1018). false: nicht gesichert, der Schritt soll unterbleiben; ``meldung`` erscheint
-     * dann als Hinweis (null: keiner, der Aufrufer fragt selbst).
+     * Verbindung den Text und diese Felder per POST, jeweils nur die geänderten (#1018). false: nicht gesichert, der
+     * Schritt soll unterbleiben; ``meldung`` erscheint dann als Hinweis (null: keiner, der Aufrufer fragt selbst).
      */
     async _vorNeuladenSichern(
       meldung: string | null = 'Ihre Änderungen ließen sich nicht speichern. Der Schritt wurde nicht ausgeführt.',

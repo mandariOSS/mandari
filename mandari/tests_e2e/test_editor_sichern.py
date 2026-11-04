@@ -34,8 +34,11 @@ from tests_e2e.test_editor_kollaboration import (
     decrypted_content,
     editor_oeffnen,
     editor_url,
+    kollab_stand_sichern,
     tippen,
+    unsaved_changes,
     warte_auf_editor_text,
+    warten_bis_yjs_gesichert,
 )
 
 playwright_sync = pytest.importorskip("playwright.sync_api")
@@ -52,6 +55,30 @@ OHNE_REGELMAESSIGES_SICHERN = """
 })()
 """
 GESPEICHERT_ANZEIGE = ".ke-gespeichert"
+#: Schreibt alle 10 ms mit, ob der Editor ungesicherte Änderungen meldet (Millisekunden seit dem Laden). Daran hängt die
+#: Rückfrage „Website verlassen?“; ein echtes beforeunload ließe den Provider sichern und verdeckte den Befund.
+UNGESICHERT_MITSCHREIBEN = """
+(() => {
+    window.__ungesichert = []
+    const start = performance.now()
+    window.setInterval(() => {
+        const el = document.querySelector('.editor-wrapper')
+        if (!el || !window.Alpine) return
+        try {
+            if (window.Alpine.$data(el).hasUnsavedChanges()) {
+                window.__ungesichert.push(Math.round(performance.now() - start))
+            }
+        } catch {
+            // Komponente noch nicht bereit
+        }
+    }, 10)
+})()
+"""
+#: Gespeichert und keine Störung (auch kein wartender Versuch)
+GESICHERT_OHNE_STOERUNG = (
+    f"() => {ALPINE_EDITOR}.hasUnsavedChanges() === false && {ALPINE_EDITOR}.speicherStoerung === ''"
+    f" && {ALPINE_EDITOR}.saveError === false"
+)
 
 
 @pytest.fixture(autouse=True)
@@ -158,6 +185,42 @@ def warten_bis(page: Any, bedingung: Callable[[], bool], beschreibung: str, seku
 def datei_menue(page: Any, punkt: str) -> Any:
     page.locator(".ke-kopf [data-menue-knopf=datei]").click()
     return page.locator(".ke-kopf").get_by_role("menuitem", name=punkt)
+
+
+class PostAbbruch:
+    """
+    Der erste POST an den Editor kommt beim Server an, die Antwort aber nicht beim Browser (wie bei einer
+    Zeitüberschreitung). Bis zum Aufruf von ``annehmen_und_abbrechen`` bleibt er zurückgehalten; alle weiteren POSTs
+    gehen durch und werden mitgeschrieben.
+    """
+
+    def __init__(self, page: Any, dokument: Motion) -> None:
+        self.gehalten: list[Any] = []
+        self.weitere: list[str] = []
+        page.route(f"**/documents/{dokument.id}/", self._route)
+
+    def _route(self, route: Any) -> None:
+        if route.request.method != "POST":
+            route.continue_()
+        elif not self.gehalten:
+            self.gehalten.append(route)
+        else:
+            self.weitere.append(route.request.post_data or "")
+            route.continue_()
+
+    def annehmen_und_abbrechen(self) -> None:
+        route = self.gehalten[0]
+        antwort = route.fetch()
+        assert antwort.ok, f"Der Server hat den zurückgehaltenen POST nicht angenommen: {antwort.status}"
+        route.abort("timedout")
+
+
+def solo_oeffnen(page: Any, url: str) -> None:
+    """Editor ohne Verbindung (WSGI-Live-Server) laden und auf den Solo-Modus warten."""
+    page.goto(url)
+    wait_for_bundle(page)
+    page.wait_for_selector(PROSEMIRROR, timeout=15000)
+    page.wait_for_function(f"() => {ALPINE_EDITOR}.collabEnabled === false", timeout=15000)
 
 
 def docx_text(pfad: Path) -> str:
@@ -370,6 +433,62 @@ class TestMitVerbindung:
         assert "Vor dem Teilen." in decrypted_content(dokument)
         assert dialoge == []
 
+    @pytest.mark.parametrize("mit_yjs_stand", [False, True], ids=["erstes-oeffnen", "gespeicherter-yjs-stand"])
+    def test_anfangsstand_gilt_nicht_als_aenderung(
+        self, page: Any, asgi_server: Any, org: Any, anna: Any, dokument: Motion, mit_yjs_stand: bool
+    ) -> None:
+        """
+        Wer den Editor gleich nach dem Aufbau ohne Eingabe verlässt, bekommt keine Rückfrage. Der Anfangsstand (Zustand
+        vom Server bzw. das Auffüllen aus dem gespeicherten Text) zählte rund 0,2 bis 0,6 s als Änderung (#1018).
+        """
+        vorbereiten(page)
+        login_via_form(page, asgi_server.url, anna.user.email, PASSWORD)
+        url = editor_url(asgi_server, org, dokument)
+        if mit_yjs_stand:
+            editor_oeffnen(page, url, "Alt")
+            kollab_stand_sichern(page)
+            warten_bis_yjs_gesichert(page, dokument)
+        page.add_init_script(UNGESICHERT_MITSCHREIBEN)
+
+        editor_oeffnen(page, url, "Alt")
+        # Auffüllen nach 0,4 s und den früheren Ausgleich nach 0,6 s sicher abwarten
+        page.wait_for_timeout(1500)
+        ungesichert = page.evaluate("() => window.__ungesichert")
+        assert ungesichert == [], f"Ohne Eingabe galt der Stand als ungesichert (ms nach dem Laden): {ungesichert}"
+
+        # Eine Eingabe zählt weiter vom ersten Zeichen an, bis der Server sie bestätigt
+        tippen(page, " Neu")
+        assert unsaved_changes(page) is True
+        page.wait_for_timeout(1000)
+        assert unsaved_changes(page) is True, "die Eingabe darf nicht von selbst als gesichert gelten"
+        kollab_stand_sichern(page)
+        assert "Alt Neu" in decrypted_content(dokument)
+
+    def test_abgebrochenes_sichern_des_titels_wird_wiederholt(
+        self, page: Any, asgi_server: Any, org: Any, anna: Any, dokument: Motion
+    ) -> None:
+        """
+        Der Server hat den neuen Titel angenommen, die Antwort kam aber nicht an. Setzt die Person den Titel vor dem
+        nächsten Versuch zurück, muss der Editor ihn trotzdem schicken; sonst behielte der Server den Zwischenwert
+        (#1018).
+        """
+        vorbereiten(page)
+        login_via_form(page, asgi_server.url, anna.user.email, PASSWORD)
+        editor_oeffnen(page, editor_url(asgi_server, org, dokument), "Alt")
+        abbruch = PostAbbruch(page, dokument)
+
+        page.fill("#ke-titel", "Zwischentitel")
+        warten_bis(page, lambda: bool(abbruch.gehalten), "POST mit dem Titel")
+        page.fill("#ke-titel", "Antrag Radweg")
+        abbruch.annehmen_und_abbrechen()
+        dokument.refresh_from_db()
+        assert dokument.title == "Zwischentitel", "Vorbedingung: Der Server hat den Zwischenwert"
+
+        page.wait_for_function(GESICHERT_OHNE_STOERUNG, timeout=15000)
+        assert any('name="title"' in post and "Antrag Radweg" in post for post in abbruch.weitere), abbruch.weitere
+        dokument.refresh_from_db()
+        assert dokument.title == "Antrag Radweg", "der Server behielt den Zwischenwert"
+
 
 class TestOhneVerbindung:
     """Seitenleiste und Infozeile im Solo-Modus: Ohne Sichern gingen die Eingaben beim Neuladen verloren."""
@@ -411,3 +530,72 @@ class TestOhneVerbindung:
         assert anfrage.approved is True
         assert "Vor der Zustimmung." in decrypted_content(dokument)
         assert dialoge == [], "nach dem Sichern darf der Browser nicht nach dem Verlassen fragen"
+
+    def test_nur_geaenderte_felder_gehen_mit(
+        self, page: Any, live_server: Any, org: Any, anna: Any, dokument: Motion
+    ) -> None:
+        """
+        Ohne Verbindung gingen Titel, Dokumenttyp und Briefpapier mit jedem Sichern mit, mit dem Stand dieses Fensters.
+        Ein anderes Fenster hatte sie inzwischen geändert; das Sichern des Textes setzte sie zurück (#1018).
+        """
+        typ = MotionType.objects.create(organization=org, name="Anfrage", slug="anfrage")
+        briefkopf = OrganizationLetterhead.objects.create(organization=org, name="Fraktion", kind="generated")
+        page.set_viewport_size(DESKTOP)
+        login_via_form(page, live_server.url, anna.user.email, PASSWORD)
+        solo_oeffnen(page, f"{live_server.url}/work/{org.slug}/documents/{dokument.id}/")
+        posts: list[str] = []
+        page.on(
+            "request",
+            lambda r: posts.append(r.post_data or "")
+            if r.method == "POST" and r.url.endswith(f"/documents/{dokument.id}/")
+            else None,
+        )
+
+        # Ein anderes Fenster ändert Titel, Dokumenttyp und Briefpapier
+        Motion.objects.filter(pk=dokument.pk).update(
+            title="Titel aus dem anderen Fenster", document_type=typ, letterhead=briefkopf
+        )
+        tippen(page, " Ohne Verbindung.")
+        page.keyboard.press("Control+s")
+        page.wait_for_function(GESICHERT_OHNE_STOERUNG, timeout=15000)
+        assert 'name="content"' in posts[-1]
+        for feld in ("title", "document_type_id", "letterhead_id"):
+            assert f'name="{feld}"' not in posts[-1], f"{feld} hat sich in diesem Fenster nicht geändert"
+        dokument.refresh_from_db()
+        assert dokument.title == "Titel aus dem anderen Fenster"
+        assert dokument.document_type_id == typ.id
+        assert dokument.letterhead_id == briefkopf.id
+        assert "Alt Ohne Verbindung." in decrypted_content(dokument)
+
+        # Was dieses Fenster ändert, geht mit
+        page.fill("#ke-titel", "Eigener Titel")
+        page.keyboard.press("Control+s")
+        page.wait_for_function(GESICHERT_OHNE_STOERUNG, timeout=15000)
+        assert 'name="title"' in posts[-1] and "Eigener Titel" in posts[-1]
+        assert 'name="document_type_id"' not in posts[-1] and 'name="letterhead_id"' not in posts[-1]
+        dokument.refresh_from_db()
+        assert dokument.title == "Eigener Titel"
+        assert dokument.document_type_id == typ.id
+        assert dokument.letterhead_id == briefkopf.id
+
+    def test_abgebrochenes_sichern_des_titels_wird_wiederholt(
+        self, page: Any, live_server: Any, org: Any, anna: Any, dokument: Motion
+    ) -> None:
+        """Wie mit Verbindung: Felder eines unbeantworteten Versuchs gehen beim nächsten Sichern mit (#1018)."""
+        page.set_viewport_size(DESKTOP)
+        login_via_form(page, live_server.url, anna.user.email, PASSWORD)
+        solo_oeffnen(page, f"{live_server.url}/work/{org.slug}/documents/{dokument.id}/")
+        abbruch = PostAbbruch(page, dokument)
+
+        page.fill("#ke-titel", "Zwischentitel")
+        page.keyboard.press("Control+s")
+        warten_bis(page, lambda: bool(abbruch.gehalten), "POST mit dem Titel")
+        page.fill("#ke-titel", "Antrag Radweg")
+        abbruch.annehmen_und_abbrechen()
+        dokument.refresh_from_db()
+        assert dokument.title == "Zwischentitel", "Vorbedingung: Der Server hat den Zwischenwert"
+
+        page.wait_for_function(GESICHERT_OHNE_STOERUNG, timeout=15000)
+        assert any('name="title"' in post and "Antrag Radweg" in post for post in abbruch.weitere), abbruch.weitere
+        dokument.refresh_from_db()
+        assert dokument.title == "Antrag Radweg", "der Server behielt den Zwischenwert"
