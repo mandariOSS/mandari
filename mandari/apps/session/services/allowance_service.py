@@ -259,7 +259,19 @@ def generate_allowances(tenant, period_start, period_end, *, organization=None, 
     Stapel statt je Position und ein Anhängen an die Hash-Kette des Mandantenprotokolls für alle Einträge. Jede
     Position behält ihren eigenen Eintrag („Entschädigung festgesetzt“ bzw. die Änderung bei der Wiederaufnahme),
     in derselben Reihenfolge und mit demselben Inhalt wie beim Speichern einzeln; Positionen und Einträge
-    entstehen in einer Transaktion.
+    entstehen in einer Transaktion. Scheitert sie, bleibt keine neue oder geänderte Position zurück und die
+    Kette ist unverändert.
+
+    Die Stornierungen laufen vorab und außerhalb dieser Transaktion einzeln (:func:`cancel_obsolete_allowances`,
+    je Position ein eigener Eintrag mit kurzer Sperre des Kettenkopfs); sie bleiben auch bestehen, wenn das
+    gesammelte Speichern danach scheitert.
+
+    Sperrreihenfolge in der Transaktion: erst die Datensätze (neue Positionen, Fremdschlüssel auf die
+    Anwesenheiten, wieder aufgenommene Positionen), dann der Kettenkopf, der bis zum Commit gesperrt bleibt.
+    Eine gleichzeitige Löschkaskade (etwa eine gelöschte Sitzung), die erst den Kettenkopf sperrt und dann
+    dieselben Anwesenheiten oder Positionen löscht, kann sich mit dem Lauf verklemmen. PostgreSQL erkennt die
+    Verklemmung und bricht eine der beiden Transaktionen ab; trifft es den Lauf, schlägt er ohne Teilergebnis
+    fehl und lässt sich wiederholen.
 
     Returns:
         dict: created, reactivated, cancelled, skipped_existing, skipped_zero, total (Decimal)

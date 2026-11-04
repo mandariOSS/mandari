@@ -324,12 +324,17 @@ def append_many(spec: ChainSpec, entries: Iterable[models.Model], *, batch_size:
     Ergebnis wie :func:`append` für jeden Eintrag in der gegebenen Reihenfolge: Jeder Eintrag bekommt
     seine eigene laufende Nummer, den Hash seines Vorgängers und seinen Zeitpunkt unter der Sperre.
     Statt dreier Abfragen je Eintrag sperrt der Aufruf den Kettenkopf einmal, schreibt die Einträge
-    stapelweise und schreibt den Kopf einmal fort. Alle Einträge gehören zum selben Bereich; wie bei
-    :func:`append` bleibt bei einem Fehler die Kette unverändert.
+    stapelweise und schreibt den Kopf einmal fort. Alle Einträge gehören zum selben Bereich und sind
+    noch nicht gespeichert; wie bei :func:`append` bleibt bei einem Fehler die Kette unverändert.
+
+    Der Kettenkopf bleibt wie bei :func:`append` bis zum Ende der umgebenden Transaktion gesperrt –
+    bei einem großen Sammelschreiben entsprechend länger als bei einem einzelnen Eintrag.
     """
     records: list[Any] = list(entries)  # Protokollmodelle haben seq/prev_hash/entry_hash/created_at
     if not records:
         return []
+    if any(not record._state.adding for record in records):
+        raise ChainError("Bereits gespeicherte Einträge lassen sich nicht noch einmal an die Kette hängen.")
     scopes = {spec.scope_of(record) for record in records}
     if len(scopes) != 1:
         raise ChainError("Gesammelt werden nur Einträge desselben Bereichs an die Kette gehängt.")

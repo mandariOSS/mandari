@@ -112,24 +112,99 @@ def _pruefen(tenant: SessionTenant) -> None:
     call_command("verify_audit_chain", tenant=tenant.slug, stdout=io.StringIO())
 
 
-def test_abfragen_wachsen_nicht_mit_der_zahl_der_positionen() -> None:
-    """10 und 100 Positionen kosten gleich viele Abfragen (vorher rund acht je Position)."""
+def _haelfte_wieder_aufnehmen(welt: Welt) -> int:
+    """
+    Erste Hälfte festgesetzt und automatisch storniert, zweite Hälfte noch ohne Position; danach sind alle
+    Anwesenheiten wieder anrechenbar. Der nächste Lauf nimmt die erste Hälfte wieder auf und setzt die zweite fest.
+    """
+    haelfte = len(welt.anwesenheiten) // 2
+    erste = [a.pk for a in welt.anwesenheiten[:haelfte]]
+    zweite = [a.pk for a in welt.anwesenheiten[haelfte:]]
+    SessionAttendance.objects.filter(pk__in=zweite).update(status="excused")
+    assert welt.lauf()["created"] == haelfte
+    SessionAttendance.objects.filter(pk__in=erste).update(status="absent")
+    assert welt.lauf()["cancelled"] == haelfte
+    SessionAttendance.objects.filter(pk__in=erste + zweite).update(status="present")
+    return haelfte
+
+
+@pytest.mark.parametrize("wiederaufnahme", [False, True], ids=["neu", "mit-wiederaufnahme"])
+def test_abfragen_wachsen_nicht_mit_der_zahl_der_positionen(wiederaufnahme: bool) -> None:
+    """10 und 100 Positionen kosten gleich viele Abfragen (vorher rund acht je Position), auch mit Wiederaufnahmen."""
     klein, gross = _welt("zehn", 10), _welt("hundert", 100)
+    wieder = [_haelfte_wieder_aufnehmen(welt) if wiederaufnahme else 0 for welt in (klein, gross)]
 
     with CaptureQueriesContext(connection) as zehn:
         ergebnis_zehn = klein.lauf()
     with CaptureQueriesContext(connection) as hundert:
         ergebnis_hundert = gross.lauf()
 
-    assert (ergebnis_zehn["created"], ergebnis_hundert["created"]) == (10, 100)
+    assert (ergebnis_zehn["reactivated"], ergebnis_hundert["reactivated"]) == (wieder[0], wieder[1])
+    assert (ergebnis_zehn["created"], ergebnis_hundert["created"]) == (10 - wieder[0], 100 - wieder[1])
     assert len(hundert.captured_queries) == len(zehn.captured_queries), (
         len(zehn.captured_queries),
         len(hundert.captured_queries),
     )
     assert len(hundert.captured_queries) <= 20
-    assert len(_positionseintraege(gross.tenant)) == 100
+    assert SessionAllowance.objects.filter(attendance__meeting__tenant=gross.tenant, status="pending").count() == 100
     _pruefen(klein.tenant)
     _pruefen(gross.tenant)
+
+
+def test_fehler_beim_protokollieren_rollt_den_lauf_zurueck(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scheitert das Anhängen an die Kette, bleibt keine neue oder geänderte Position zurück, die Kette unverändert."""
+    welt = _welt("rueckrollen", 4)
+    _haelfte_wieder_aufnehmen(welt)
+    positionen = SessionAllowance.objects.filter(attendance__meeting__tenant=welt.tenant)
+    felder = ("pk", "status", "notes", "amount", "created_by_id", "approved_by_id", "updated_at")
+    vorher = list(positionen.order_by("pk").values_list(*felder))
+    kopf = AuditChainHead.objects.get(scope=audit_chain.SESSION.scope_key(welt.tenant.pk))
+    eintraege = SessionAuditLog.objects.filter(tenant=welt.tenant).count()
+
+    def kaputt(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("Datenbank weg")
+
+    monkeypatch.setattr(audit_chain, "append_many", kaputt)
+    with pytest.raises(RuntimeError, match="Datenbank weg"):
+        welt.lauf()
+
+    assert list(positionen.order_by("pk").values_list(*felder)) == vorher
+    assert len(vorher) == 2 and all(status == "cancelled" for _, status, *_ in vorher)
+    nachher = AuditChainHead.objects.get(pk=kopf.pk)
+    assert (nachher.last_seq, nachher.last_hash) == (kopf.last_seq, kopf.last_hash)
+    assert SessionAuditLog.objects.filter(tenant=welt.tenant).count() == eintraege
+    _pruefen(welt.tenant)
+
+
+def test_wiederaufnahme_hebt_eine_fruehere_genehmigung_auf() -> None:
+    """Genehmigt, dann storniert, dann wieder aufgenommen: Genehmigung leer, Änderung im Protokoll (Vier Augen)."""
+    welt = _welt("genehmigt", 2)
+    welt.lauf()
+    pruefer = _konto(welt, "pruefer")
+    anwesenheit = welt.anwesenheiten[0]
+    position = SessionAllowance.objects.get(attendance=anwesenheit)
+    assert allowance_service.approve_allowances([position], pruefer)["approved"] == 1
+
+    anwesenheit.status = "absent"
+    anwesenheit.save()
+    assert welt.lauf()["cancelled"] == 1
+    position.refresh_from_db()
+    assert position.status == "cancelled" and position.approved_by_id == pruefer.pk
+    assert position.approved_at is not None
+
+    anwesenheit.status = "present"
+    anwesenheit.save()
+    assert welt.lauf()["reactivated"] == 1
+
+    position.refresh_from_db()
+    assert position.status == "pending"
+    assert position.approved_by_id is None and position.approved_at is None
+    eintrag = _positionseintraege(welt.tenant)[-1]
+    assert (eintrag.action, eintrag.object_id) == ("update", position.pk)
+    assert eintrag.changes["status"] == {"alt": "cancelled", "neu": "pending"}
+    assert eintrag.changes["approved_by"] == {"alt": str(pruefer.pk), "neu": None}
+    assert eintrag.changes["approved_at"]["alt"] and eintrag.changes["approved_at"]["neu"] is None
+    _pruefen(welt.tenant)
 
 
 def test_jede_position_mit_eigenem_eintrag_ueber_die_oberflaeche() -> None:
@@ -241,3 +316,16 @@ def test_gesammelt_nur_eintraege_eines_mandanten() -> None:
     with CaptureQueriesContext(connection) as ctx:
         assert audit.log_events([None]) == []
     assert not ctx.captured_queries
+
+
+def test_gespeicherte_eintraege_nicht_noch_einmal() -> None:
+    welt = _welt("gespeichert", 0)
+    eintrag = audit.log_event("update", welt.tenant, tenant=welt.tenant)
+    kopf = AuditChainHead.objects.get(scope=audit_chain.SESSION.scope_key(welt.tenant.pk))
+
+    with pytest.raises(audit_chain.ChainError, match="Bereits gespeicherte"):
+        audit.log_events([eintrag])
+
+    nachher = AuditChainHead.objects.get(pk=kopf.pk)
+    assert (nachher.last_seq, nachher.last_hash) == (kopf.last_seq, kopf.last_hash)
+    _pruefen(welt.tenant)
