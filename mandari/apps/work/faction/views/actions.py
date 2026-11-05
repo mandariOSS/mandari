@@ -29,7 +29,7 @@ from ..models import (
 )
 
 logger = logging.getLogger(__name__)
-from ..visibility import can_view_internal, can_view_item
+from ..visibility import can_view_internal, can_view_item, is_item_internal
 from ._helpers import (
     VIDEO_LINK_MAX_LENGTH,
     VIDEO_LINK_TOO_LONG,
@@ -643,6 +643,8 @@ class FactionActionView(WorkViewMixin, View):
         context = {
             "meeting": meeting,
             "item": item,
+            # Nichtöffentlicher TOP: Titel im Dialog weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Issue #1201)
+            "noe": is_item_internal(item),
             "impact": impact,
             "phrases_json": deletion.phrases_json(deletion.item_phrases(item) if impact.has_content else []),
             "organization": self.organization,

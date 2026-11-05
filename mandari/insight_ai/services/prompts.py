@@ -22,6 +22,7 @@ FORMAT:
 - Schreibe einen zusammenhängenden Fließtext in vollständigen Sätzen
 - KEINE Stichpunkte oder Aufzählungen (außer bei Auflistungen von z.B. Beträgen)
 - KEINE Überschriften oder Abschnittsnummerierungen
+- Reiner Text ohne Markdown (keine Sternchen, Rauten oder Tabellen); Absätze durch Leerzeilen trennen
 - Der Text soll sich flüssig lesen lassen
 
 REGELN:

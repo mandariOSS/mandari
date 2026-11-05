@@ -783,6 +783,18 @@ export const preparationApp = defineComponent(() => {
       return null
     },
 
+    // ---------- Sichtschutz für Nichtöffentliches (Issue #1201) ----------
+    /** Nichtöffentlicher TOP, solange Nichtöffentliches verdeckt ist (Store `noe`, gilt für ganz Work) */
+    noeVerdeckt(item: PreparedItem | null | undefined): boolean {
+      const sichtschutz = this.$store.noe as { sichtbar?: boolean } | undefined
+      return !!item && item.isPublic === false && sichtschutz?.sichtbar !== true
+    },
+    /** „TOP 3: Titel“ für Kurzinfos und Vorleser; bei verdecktem nichtöffentlichem TOP nur die Nummer */
+    topBeschriftung(item: PreparedItem | null | undefined, trenner = ': '): string {
+      if (!item) return ''
+      return this.noeVerdeckt(item) ? `TOP ${item.number}` : `TOP ${item.number}${trenner}${item.name}`
+    },
+
     // ---------- Position & Ergebnis ----------
     posLabel(code: string): string {
       return this.positionLabels[code] || code

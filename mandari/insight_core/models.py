@@ -176,9 +176,10 @@ class SourceDeletionModel(CanonicalIdModel):
         """
         paper_id = self.pk if isinstance(self, OParlPaper) else getattr(self, "paper_id", None)
         if isinstance(self, OParlPaper | OParlFile) and paper_id:
-            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(summary=None)
+            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(summary=None, summary_hinweis="")
             if isinstance(self, OParlPaper):
                 self.summary = None
+                self.summary_hinweis = ""
 
     @property
     def depublished(self) -> bool:
@@ -955,6 +956,16 @@ class OParlPaper(SourceDeletionModel):
 
     # KI-generierte Felder
     summary = models.TextField(blank=True, null=True)
+    # Anbieter, Modell und Verarbeitungsort der Zusammenfassung (Hinweis unter dem Text); Datenbank-Standardwert,
+    # damit Ingestor und ein älteres Image nach einem Rückfall weiter Vorgänge anlegen können
+    summary_hinweis = models.CharField(
+        max_length=300,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="KI-Anbieter der Zusammenfassung",
+        help_text="Anbieter, Modell und Verarbeitungsort, mit denen die gespeicherte Zusammenfassung entstand.",
+    )
     locations = models.JSONField(blank=True, null=True)
 
     # Offizielle OParl-Locations (Feld `paper.location`, vom Ingestor verknüpft)

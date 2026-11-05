@@ -14,6 +14,12 @@ Ein Anbieterwechsel ist damit reine Konfiguration: Host in ``KI_ERLAUBTE_HOSTS``
 eigener Endpunkt, Modell und Schlüssel im Admin oder mit ``manage.py ki_anbieter einrichten`` (Issue #1046).
 ``pruefe_ki_einstellungen()`` stellt je Modell einen Testaufruf mit höchstens einem Token Antwort an den
 eingerichteten Endpunkt (Befehl ``ki_anbieter pruefen``, Admin „Speichern und Verbindung prüfen“).
+
+Nur die Zusammenfassungen im Bürgerportal können einen eigenen Anbieter haben: die Claude API von Anthropic
+(``claude_fuer_zusammenfassung()``, Einzelaufruf und Message Batches, ``insight_ai.providers.claude``). Auch sie
+wirkt nur mit „KI im Bürgerportal aktiviert“, eigenem Schlüssel und dem Host ``ANTHROPIC_HOST`` in der
+Positivliste; KI-Assistent und KI-Verortung bleiben beim OpenAI-kompatiblen Endpunkt. Die Verarbeitung findet
+auch außerhalb der EU statt (USA); verarbeitet werden nur öffentliche Dokumente der Ratsinformationssysteme.
 """
 
 from __future__ import annotations
@@ -23,6 +29,7 @@ import json
 import logging
 import ssl
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlsplit
 
@@ -41,6 +48,25 @@ logger = logging.getLogger(__name__)
 
 #: Schlüssel der Vorlage für einen frei eingetragenen OpenAI-kompatiblen Endpunkt
 EIGENER = "eigener"
+
+#: Anbieter der Zusammenfassungen: Claude API von Anthropic (nur Zusammenfassungen öffentlicher Dokumente)
+ANTHROPIC = "anthropic"
+#: Host der Claude API. Einzige Stelle mit dieser Adresse (Wächter ``test_keine_nicht_eu_endpunkte``); wirksam nur,
+#: wenn er in ``KI_ERLAUBTE_HOSTS`` steht. Das SDK bekommt die Adresse ausdrücklich, ``ANTHROPIC_BASE_URL`` gilt nicht
+ANTHROPIC_HOST = "api.anthropic.com"
+#: Anzeige in Hinweisen unter der Zusammenfassung
+ANTHROPIC_ANZEIGENAME = "Claude von Anthropic"
+#: Anthropic verarbeitet standardmäßig weltweit (``inference_geo`` „global“, sonst nur „us“); eine Region nur in der
+#: EU gibt es nicht
+ANTHROPIC_VERARBEITUNGSORT = "weltweit, auch in den USA (außerhalb der EU)"
+#: Auswahl „Anbieter der Zusammenfassungen“ (leer: wie das Bürgerportal)
+ZUSAMMENFASSUNG_AUSWAHL: list[tuple[str, str]] = [
+    ("", "Wie KI-Assistent und KI-Verortung (Anbieter oben)"),
+    (ANTHROPIC, "Claude API (Anthropic) – nur öffentliche Dokumente, Verarbeitung auch in den USA"),
+]
+#: Standardmodell und Monatsbudget (USD) der Zusammenfassungen mit der Claude API
+STANDARD_MODELL_ZUSAMMENFASSUNG = "claude-haiku-5-5"
+STANDARD_MONATSBUDGET_USD = 100
 
 #: Hinweis bei einer Adresse, deren Host nicht in der Positivliste steht
 NICHT_FREIGEGEBEN = "nicht freigegebener Endpunkt (KI_ERLAUBTE_HOSTS)"
@@ -166,12 +192,22 @@ def auswahl_organisation() -> list[tuple[str, str]]:
     return [("", "Plattform-Einstellung"), *ANBIETER_AUSWAHL]
 
 
-def erlaubte_hosts() -> tuple[str, ...]:
-    """Positivliste aus den Einstellungen (``KI_ERLAUBTE_HOSTS``); leer ist nichts erlaubt."""
+def positivliste() -> tuple[str, ...]:
+    """Positivliste aus den Einstellungen (``KI_ERLAUBTE_HOSTS``) wie eingetragen; leer ist nichts erlaubt."""
     eingestellt: Any = getattr(settings, "KI_ERLAUBTE_HOSTS", None) or ()
     if isinstance(eingestellt, str):
         eingestellt = eingestellt.split(",")
     return tuple(dict.fromkeys(normalisiere_host(host) for host in eingestellt if str(host).strip()))
+
+
+def erlaubte_hosts() -> tuple[str, ...]:
+    """
+    Freigegebene Hosts für OpenAI-kompatible Endpunkte und OCR: die Positivliste ohne den Host der Claude API.
+
+    Der Claude-Host gilt nur für die Zusammenfassungen im Bürgerportal (``claude_host_freigegeben``). KI-Assistent,
+    KI-Verortung, Organisationen und OCR können ihn nicht nutzen, auch wenn er in ``KI_ERLAUBTE_HOSTS`` steht.
+    """
+    return tuple(host for host in positivliste() if host != ANTHROPIC_HOST)
 
 
 def vorlage_nutzbar(anbieter: str) -> bool:
@@ -516,6 +552,143 @@ def endpunkt_fuer_insight() -> KiEndpunkt | None:
 
 
 # =============================================================================
+# Zusammenfassungen mit der Claude API (Anthropic)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class ClaudeEndpunkt:
+    """
+    Geprüfter Zugang zur Claude API für die Zusammenfassungen. ``repr`` und ``str`` nennen den Schlüssel nie.
+
+    ``batch``: neue Vorgänge vorab über die Message Batches API zusammenfassen (``batch_tage`` zurück);
+    ``monatsbudget_usd``: Obergrenze der Kosten je Kalendermonat (``insight_ai.kosten``).
+    """
+
+    api_key: str = field(repr=False)
+    modell: str
+    max_output_tokens: int
+    batch: bool
+    batch_tage: int
+    monatsbudget_usd: Decimal
+    anbieter: str = ANTHROPIC
+    anzeigename: str = ANTHROPIC_ANZEIGENAME
+    verarbeitungsort: str = ANTHROPIC_VERARBEITUNGSORT
+
+    def __repr__(self) -> str:
+        return (
+            f"ClaudeEndpunkt(host={self.host!r}, modell={self.modell!r}, batch={self.batch}, "
+            f"monatsbudget_usd={self.monatsbudget_usd})"
+        )
+
+    __str__ = __repr__
+
+    @property
+    def host(self) -> str:
+        return ANTHROPIC_HOST
+
+    @property
+    def base_url(self) -> str:
+        """Adresse für das SDK; ausdrücklich gesetzt, damit keine Umgebungsvariable sie umlenkt."""
+        return f"https://{ANTHROPIC_HOST}"
+
+    def hinweis(self) -> KiHinweis:
+        return KiHinweis(
+            anbieter=self.anbieter, anzeigename=self.anzeigename, verarbeitungsort=self.verarbeitungsort, host=self.host
+        )
+
+    @property
+    def zusammenfassung_hinweis(self) -> str:
+        """Angabe unter jeder damit erstellten Zusammenfassung (gespeichert in ``OParlPaper.summary_hinweis``)."""
+        return zusammenfassung_hinweis(self.anzeigename, self.modell, self.verarbeitungsort)
+
+
+def zusammenfassung_hinweis(anzeigename: str, modell: str, verarbeitungsort: str) -> str:
+    """Anbieter, Modell und Verarbeitungsort einer Zusammenfassung, wie sie unter dem Text steht."""
+    return f"{anzeigename} ({modell}); Verarbeitungsort: {verarbeitungsort}"
+
+
+def claude_host_freigegeben() -> bool:
+    """Steht der Host der Claude API in der Positivliste ``KI_ERLAUBTE_HOSTS``? (nur für Zusammenfassungen)"""
+    return ist_erlaubter_host(f"https://{ANTHROPIC_HOST}", positivliste())
+
+
+def claude_der_einstellungen(ki: AISettings | None = None) -> ClaudeEndpunkt | str | None:
+    """
+    Claude-Zugang der KI-Einstellungen unabhängig vom Schalter „KI im Bürgerportal“, sonst der Grund.
+
+    ``None``: Die Zusammenfassungen nutzen keinen eigenen Anbieter (Auswahl leer). Für Übersicht und
+    Verbindungsprüfung; es gelten dieselben Prüfungen wie bei jedem Aufruf (Positivliste, Schlüssel, Modell).
+    """
+    if ki is None:
+        from .models import AISettings
+
+        ki = AISettings.get_settings()
+    if (getattr(ki, "summary_provider", "") or "") != ANTHROPIC:
+        return None
+    if getattr(settings, "DEMO_INSTANCE", False):
+        return "öffentliche Demo: KI immer aus"
+    if not claude_host_freigegeben():
+        return f"Claude API gesperrt, Host {ANTHROPIC_HOST} steht nicht in KI_ERLAUBTE_HOSTS"
+    if not ki.summary_api_key_encrypted:
+        return "kein Schlüssel für die Claude API gespeichert"
+    key = ki.get_summary_api_key()
+    if not key:
+        return "Schlüssel der Claude API nicht lesbar (ENCRYPTION_MASTER_KEY prüfen)"
+    modell = (ki.summary_model or "").strip()
+    if not modell:
+        return "kein Modell für die Zusammenfassungen eingetragen"
+    return ClaudeEndpunkt(
+        api_key=key,
+        modell=modell,
+        max_output_tokens=int(ki.insight_max_output_tokens or 0),
+        batch=bool(ki.summary_batch_enabled),
+        batch_tage=max(1, int(ki.summary_batch_days or 1)),
+        monatsbudget_usd=Decimal(ki.summary_monthly_budget_usd or 0),
+    )
+
+
+def claude_fuer_zusammenfassung() -> ClaudeEndpunkt | None:
+    """
+    Claude-Zugang für die Zusammenfassungen, nur mit „KI im Bürgerportal aktiviert“; sonst ``None``.
+
+    Ist Claude gewählt, aber nicht nutzbar (Host gesperrt, Schlüssel fehlt), gibt es keinen stillen Rückfall auf
+    einen anderen Anbieter: ``zusammenfassung_nutzt_claude()`` bleibt wahr, die Zusammenfassungen sind aus.
+    """
+    from .models import AISettings
+
+    ki = AISettings.get_settings()
+    if not ki.insight_enabled:
+        return None
+    ergebnis = claude_der_einstellungen(ki)
+    if isinstance(ergebnis, str):
+        logger.warning("Zusammenfassungen mit Claude aus: %s", ergebnis)
+        return None
+    return ergebnis
+
+
+def zusammenfassung_nutzt_claude() -> bool:
+    """Ist für die Zusammenfassungen die Claude API gewählt (auch wenn sie gerade nicht nutzbar ist)?"""
+    from .models import AISettings
+
+    return (AISettings.get_settings().summary_provider or "") == ANTHROPIC
+
+
+def claude_client(endpunkt: ClaudeEndpunkt, *, timeout: float = 300.0, max_retries: int = 2) -> Any:
+    """
+    SDK-Client für die Claude API mit Schlüssel und Adresse aus dem geprüften Endpunkt.
+
+    Schlüssel und Basis-URL gehen ausdrücklich mit: Umgebungsvariablen (``ANTHROPIC_API_KEY``,
+    ``ANTHROPIC_BASE_URL``) und Profile auf der Festplatte gelten nicht.
+    """
+    import anthropic
+
+    return anthropic.Anthropic(
+        api_key=endpunkt.api_key, base_url=endpunkt.base_url, timeout=timeout, max_retries=max_retries
+    )
+
+
+# =============================================================================
 # Verbindungsprüfung (Issue #1046)
 # =============================================================================
 
@@ -664,10 +837,64 @@ def pruefe_ki_einstellungen(
         from .models import AISettings
 
         ki = AISettings.get_settings()
+    ergebnisse: list[Pruefergebnis] = []
     endpunkt = endpunkt_der_einstellungen(ki)
     if isinstance(endpunkt, str):
-        return [Pruefergebnis(ok=False, art="nicht_eingerichtet", meldung=endpunkt)]
-    return [
-        pruefe_verbindung(endpunkt, modell=modell, zweck=zweck, zeitgrenze=zeitgrenze, transport=transport)
-        for modell, zweck in _zu_pruefende_modelle(ki)
-    ]
+        ergebnisse.append(Pruefergebnis(ok=False, art="nicht_eingerichtet", meldung=endpunkt))
+    else:
+        ergebnisse.extend(
+            pruefe_verbindung(endpunkt, modell=modell, zweck=zweck, zeitgrenze=zeitgrenze, transport=transport)
+            for modell, zweck in _zu_pruefende_modelle(ki)
+        )
+    claude = claude_der_einstellungen(ki)
+    if isinstance(claude, str):
+        ergebnisse.append(
+            Pruefergebnis(ok=False, art="nicht_eingerichtet", meldung=f"Zusammenfassungen (Claude): {claude}")
+        )
+    elif claude is not None:
+        ergebnisse.append(pruefe_claude(claude, zeitgrenze=zeitgrenze))
+    return ergebnisse
+
+
+def pruefe_claude(
+    endpunkt: ClaudeEndpunkt, *, zeitgrenze: float = PRUEF_ZEITGRENZE, client: Any = None
+) -> Pruefergebnis:
+    """
+    Verbindungsprüfung der Claude API ohne Kosten: das eingetragene Modell abrufen (Models API).
+
+    Prüft Erreichbarkeit, Schlüssel und Modellnamen. Ins Ergebnis gehen nur Host, Modell und Art, nie Schlüssel oder
+    Antworttext. ``client`` nur für Tests.
+    """
+    import anthropic
+
+    release_idle_thread_connections()
+    try:
+        (client or claude_client(endpunkt, timeout=zeitgrenze, max_retries=0)).models.retrieve(endpunkt.modell)
+        art, meldung = "ok", "Verbindung in Ordnung"
+    except anthropic.AuthenticationError:
+        art, meldung = "schluessel", "Schlüssel abgelehnt (HTTP 401)"
+    except anthropic.PermissionDeniedError:
+        art, meldung = "schluessel", "Schlüssel ohne Berechtigung (HTTP 403)"
+    except anthropic.NotFoundError:
+        art, meldung = "nicht_gefunden", "Modell nicht gefunden (HTTP 404): Modellnamen prüfen"
+    except anthropic.RateLimitError:
+        art, meldung = "limit", "Ratenlimit beim Anbieter (HTTP 429)"
+    except anthropic.APITimeoutError:
+        art, meldung = "zeit", f"Keine Antwort innerhalb von {zeitgrenze:g} s"
+    except anthropic.APIConnectionError:
+        art, meldung = "verbindung", "Keine Verbindung zum Host (DNS, Netz oder Firewall)"
+    except anthropic.APIStatusError as fehler:
+        status = int(getattr(fehler, "status_code", 0) or 0)
+        if status >= 500:
+            art, meldung = "anbieter", f"Fehler beim Anbieter (HTTP {status})"
+        else:
+            art, meldung = "unerwartet", f"Unerwartete Antwort (HTTP {status})"
+    logger.info("KI-Verbindungsprüfung: Host %s, Modell %s: %s", endpunkt.host, endpunkt.modell, art)
+    return Pruefergebnis(
+        ok=art == "ok",
+        art=art,
+        meldung=meldung,
+        host=endpunkt.host,
+        modell=endpunkt.modell,
+        zweck="Zusammenfassungen (Claude)",
+    )

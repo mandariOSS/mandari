@@ -3,7 +3,7 @@
  *
  * Komponenten (registriert im Editor-Bundle `frontend/editor/index.ts`):
  * - `fraktionssitzung`: Seite – aktueller TOP, Anwesenheit (ab 2200 px als Spalte), Tagesordnung am Handy, Tasten J/K,
- *   Fehlermeldungen, Sichtschutz für den nichtöffentlichen Teil (`noeSichtbar`, Issue #1166)
+ *   Fehlermeldungen, Einblenden des nichtöffentlichen Teils (Zustand im Store `noe`, Issues #1166, #1201)
  * - `sitzungsMenue`: Menü „Weitere Aktionen“ im Kopf
  * - `topKopf`: Kopf des TOPs, „Mehr“ nur, wenn eine Zeile gekürzt ist
  * - `sitzungsUnterlagen`: Reiter der Unterlagen (Überlauf in „n weitere“), Schriftgröße, Pfeiltasten
@@ -21,6 +21,7 @@ import { defineComponent } from '../js/alpine/component'
 import { showToast } from '../js/alpine/toast'
 import { csrfToken } from '../js/csrf'
 import { readJsonScript } from '../js/json-script'
+import type { NoeStore } from './noe-sichtschutz'
 
 interface SitzungUrls {
   aktion: string
@@ -113,44 +114,14 @@ interface HtmxDetail {
 /** Ab dieser Breite steht die Anwesenheit als eigene Spalte rechts (Prototyp Fassung 2), darunter klappt sie auf */
 const BREIT = '(min-width: 2200px)'
 
-// ---- Sichtschutz für den nichtöffentlichen Teil (Issue #1166) --------------------------------------
+// ---- Sichtschutz für den nichtöffentlichen Teil (Issues #1166, #1201) ------------------------------
 //
-// Titel, Beschreibung und Inhalte nichtöffentlicher TOPs sind in der Sitzungsansicht verdeckt, bis jemand den Teil
-// aktiv einblendet (etwa beim Teilen des Bildschirms oder am Beamer). Der Server liefert die Seite verdeckt (Klasse
-// `noe-verdeckt` an `.fs-sitzung`, Vorleser-Ersatz und `aria-hidden` im Markup); diese Komponente nimmt das nur weg.
-// Der Zustand gilt je Sitzung im Browser-Tab: Er übersteht TOP-Wechsel und Neuladen. Ein neuer Tab beginnt verdeckt,
-// auch ein duplizierter oder wiederhergestellter (die Browser kopieren dabei den sessionStorage; gemerkt wird deshalb
-// nur bei echtem Neuladen, etwa nicht beim Duplizieren für den Beamer).
-// Nur Sichtschutz: Wer keine Rechte für den Teil hat, bekommt ihn vom Server gar nicht.
+// Titel, Beschreibung und Inhalte nichtöffentlicher TOPs sind verdeckt, bis jemand Nichtöffentliches aktiv einblendet.
+// Der Zustand gilt für ganz Work (Alpine-Store `noe`, frontend/alpine/noe-sichtschutz.ts): Die Schalter der
+// Sitzungsansicht schalten denselben Zustand wie der Knopf in der Kopfleiste.
 
-const NOE_SCHLUESSEL = 'fs-noe-sichtbar:'
-
-/** Wurde die Seite neu geladen (nicht neu geöffnet, dupliziert oder wiederhergestellt)? */
-function neuGeladen(): boolean {
-  try {
-    const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined
-    return navigation?.type === 'reload'
-  } catch {
-    return false
-  }
-}
-
-function noeGemerkt(sitzung: string): boolean {
-  try {
-    return !!sitzung && window.sessionStorage.getItem(NOE_SCHLUESSEL + sitzung) === '1'
-  } catch {
-    return false
-  }
-}
-
-function noeMerken(sitzung: string, sichtbar: boolean): void {
-  if (!sitzung) return
-  try {
-    if (sichtbar) window.sessionStorage.setItem(NOE_SCHLUESSEL + sitzung, '1')
-    else window.sessionStorage.removeItem(NOE_SCHLUESSEL + sitzung)
-  } catch {
-    // Gesperrter Speicher: Der Zustand gilt dann nur bis zum Neuladen
-  }
+function noeStore(stores: Record<string | symbol, unknown>): NoeStore {
+  return stores.noe as NoeStore
 }
 
 export const fraktionssitzung = defineComponent(() => ({
@@ -158,15 +129,9 @@ export const fraktionssitzung = defineComponent(() => ({
   anwesenheitOffen: false,
   tagesordnungOffen: false,
   breit: false,
-  sitzung: '',
-  noeSichtbar: false,
 
   init() {
     this.aktuell = this.$el.dataset.aktuell ?? ''
-    this.sitzung = this.$el.dataset.sitzung ?? ''
-    this.noeSichtbar = neuGeladen() && noeGemerkt(this.sitzung)
-    // Kopierter Zustand eines duplizierten Tabs gilt hier nicht (der Tab, aus dem er stammt, behält seinen)
-    if (!this.noeSichtbar) noeMerken(this.sitzung, false)
     const breite = window.matchMedia(BREIT)
     this.breit = breite.matches
     breite.addEventListener('change', (event) => {
@@ -230,22 +195,15 @@ export const fraktionssitzung = defineComponent(() => ({
     }
   },
 
-  /** Schalter an „Nichtöffentlicher Teil“ und im Kopf eines NÖ-TOPs: einblenden oder wieder verdecken */
-  noeUmschalten() {
-    this.noeSichtbar = !this.noeSichtbar
-    noeMerken(this.sitzung, this.noeSichtbar)
-  },
-
   /** Knopf in der Abdeckung: einblenden; die Abdeckung verschwindet, der Fokus geht auf die Überschrift des TOPs */
   noeEinblenden() {
-    this.noeSichtbar = true
-    noeMerken(this.sitzung, true)
+    noeStore(this.$store).einblenden()
     this.$nextTick(() => document.getElementById('fs-top-titel')?.focus({ preventScroll: true }))
   },
 
-  /** Kurzinfo eines Links zu einem NÖ-TOP: mit Titel nur, wenn der Teil eingeblendet ist */
+  /** Kurzinfo eines Links zu einem NÖ-TOP: mit Titel nur, wenn Nichtöffentliches eingeblendet ist */
   noeTitel(el: HTMLElement): string {
-    return (this.noeSichtbar ? el.dataset.noeTitel : el.dataset.noeKurz) ?? ''
+    return (noeStore(this.$store).sichtbar ? el.dataset.noeTitel : el.dataset.noeKurz) ?? ''
   },
 }))
 

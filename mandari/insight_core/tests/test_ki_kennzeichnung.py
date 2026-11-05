@@ -79,7 +79,7 @@ def test_vorgangsseite_ohne_zusammenfassung_ohne_merkmal(paper: OParlPaper) -> N
 
 
 def test_neu_erstellte_zusammenfassung_ist_gekennzeichnet(paper: OParlPaper, monkeypatch: Any) -> None:
-    monkeypatch.setattr("insight_ai.services.summarizer.get_insight_provider", lambda: _Provider())
+    monkeypatch.setattr("insight_ai.services.summarizer.get_summary_provider", lambda: _Provider())
 
     antwort = Client().post(f"/insight/vorgaenge/{paper.id}/zusammenfassung/", HTTP_HX_REQUEST="true")
 

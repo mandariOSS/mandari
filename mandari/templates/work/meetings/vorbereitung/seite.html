@@ -36,8 +36,12 @@ Zustand, Speichern und Echtzeit: Alpine-Komponente `vorbereitung` (frontend/alpi
         <section class="vb-fokus" aria-labelledby="top-titel">
             {% include "work/meetings/vorbereitung/_top_kopf.html" %}
             <div class="vb-arbeit" :class="unterlagen.length === 0 && 'ohne-unterlagen'">
+                {# Nichtöffentlicher TOP: Unterlagen, Position und Notizen hinter der Abdeckung, bis Nichtöffentliches eingeblendet ist (Issue #1201) #}
+                {% include "work/faction/sitzung/_noe_abdeckung.html" with was="Unterlagen, Position, Notizen und Diskussion" zeigen="selectedItem && selectedItem.isPublic === false" %}
+                <div class="noe-huelle" :class="{ 'fs-noe-inhalt': selectedItem && selectedItem.isPublic === false }">
                 {% include "work/meetings/vorbereitung/_unterlagen.html" %}
                 {% include "work/meetings/vorbereitung/_feld.html" %}
+                </div>
             </div>
         </section>
     </div>

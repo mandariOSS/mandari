@@ -89,6 +89,7 @@ jobs:
       ereignisse: ${{ steps.ergebnis.outputs.ereignisse }}
       smoke: ${{ steps.ergebnis.outputs.smoke }}
       oparl: ${{ steps.ergebnis.outputs.oparl }}
+      schnittstelle: ${{ steps.ergebnis.outputs.schnittstelle }}
       e2e: ${{ steps.ergebnis.outputs.e2e }}
       ingestor: ${{ steps.ergebnis.outputs.ingestor }}
       audit: ${{ steps.ergebnis.outputs.audit }}
@@ -199,6 +200,13 @@ jobs:
               - '!mandari/tests_e2e/**'
               - '!mandari/Dockerfile'
               - '!mandari/docker-entrypoint.sh'
+            # Eine OpenAPI-Beschreibung aller Bereiche (Issue #1205): Ob die eingecheckte Datei zum Code passt,
+            # prüft der Job "Test"; hier zählt nur, was die Datei, die Befehle und die Ausnahmeliste ändert
+            schnittstelle:
+              - 'docs/schnittstelle/**'
+              - 'mandari/hub/api/openapi/befehle_ohne_endpunkt.json'
+              - 'mandari/hub/contracts/schemas/**'
+              - 'scripts/check_schnittstelle.py'
             # Beide OParl-Ausgaben samt allem, woraus sie ihre Objekte bauen (Modelle, Sichtbarkeit,
             # Demo-Daten der Testinstanz, Prüfskript)
             oparl:
@@ -393,7 +401,7 @@ jobs:
               wert "$1"
             fi
           }
-          for bereich in qualitaet verweise python vertrag templates frontend test migrationen journal ereignisse smoke oparl e2e ingestor audit docker kubernetes; do
+          for bereich in qualitaet verweise python vertrag templates frontend test migrationen journal ereignisse smoke oparl schnittstelle e2e ingestor audit docker kubernetes; do
             e=$(ergebnis "$bereich")
             echo "$bereich=$e" >> "$GITHUB_OUTPUT"
             echo "| $bereich | $e |" >> "$GITHUB_STEP_SUMMARY"
@@ -1318,6 +1326,82 @@ jobs:
           python scripts/dcat_shacl.py --ablage "$RUNNER_TEMP/dcat-ablage"
 
   # ===========================================================================
+  # Schnittstelle (Issue #1205): eine OpenAPI-Beschreibung, keine brechenden Änderungen gegenüber der Basis
+  # ===========================================================================
+  # docs/schnittstelle/openapi.json entsteht aus dem Code (manage.py schnittstelle_beschreibung); dass die Datei
+  # aktuell ist, prüft der Job "Test" (hub/api/tests/test_schnittstelle.py). Dieser Job prüft die Datei selbst:
+  # gültiges OpenAPI 3.1, jeder registrierte Befehl mit Endpunkt (Ausnahmeliste darf nur kürzer werden) und keine
+  # brechende Änderung gegenüber dem Basisstand des Pull Requests bzw. der Merge-Queue (oasdiff). Gibt es die Datei
+  # im Basisstand noch nicht oder keinen Basisstand (Wochenlauf, push auf main), entfällt der Vergleich.
+  schnittstelle:
+    name: Schnittstelle (OpenAPI 3.1, brechende Änderungen, Befehlsparität)
+    needs: changes
+    if: needs.changes.outputs.schnittstelle == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.14'
+
+      # Die Beschreibung der Basis liegt im Arbeitsverzeichnis: Die Action läuft in einem Container, der nur
+      # dieses Verzeichnis sieht.
+      - name: Beschreibung des Basisstands holen
+        id: basis
+        env:
+          BASIS: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          EREIGNIS: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          echo "ref=${BASIS}" >> "$GITHUB_OUTPUT"
+          if [ -z "$BASIS" ]; then
+            echo "::notice::Kein Basisstand (Ereignis $EREIGNIS): Vergleich entfällt."
+            echo "vorhanden=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git fetch --no-tags --depth=1 origin "$BASIS"
+          if git show "$BASIS:docs/schnittstelle/openapi.json" > openapi-basis.json 2>/dev/null; then
+            echo "vorhanden=true" >> "$GITHUB_OUTPUT"
+          else
+            rm -f openapi-basis.json
+            echo "::notice::docs/schnittstelle/openapi.json gibt es im Basisstand noch nicht: Vergleich entfällt."
+            echo "vorhanden=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Gültiges OpenAPI 3.1
+        run: |
+          pip install "openapi-spec-validator==0.9.0"
+          openapi-spec-validator docs/schnittstelle/openapi.json
+
+      - name: Befehlsparität (Ausnahmeliste darf nur kürzer werden)
+        env:
+          BASIS: ${{ steps.basis.outputs.ref }}
+        run: |
+          if [ -n "$BASIS" ]; then
+            python scripts/check_schnittstelle.py --basis "$BASIS"
+          else
+            python scripts/check_schnittstelle.py
+          fi
+
+      # Drittanbieter-Action auf den Commit gepinnt. review: false – die Beschreibungen verlassen die CI nicht;
+      # github-token leer – kein Kommentar im Pull Request, die Befunde stehen im Protokoll.
+      - name: Keine brechenden Änderungen gegenüber dem Basisstand (oasdiff)
+        if: steps.basis.outputs.vorhanden == 'true'
+        uses: oasdiff/oasdiff-action/breaking@9e56cf8b3aff7edb326d5767d3d23f96127e20c3 # v0.1.21
+        with:
+          base: openapi-basis.json
+          revision: docs/schnittstelle/openapi.json
+          fail-on: ERR
+          review: 'false'
+          github-token: ''
+
+  # ===========================================================================
   # Abhängigkeiten: bekannte Schwachstellen, Lockfile-Abgleich
   # ===========================================================================
   # Läuft bei geänderten Abhängigkeitsdateien (Sicherheitsnetz), in der Merge-Queue, bei jedem push auf main
@@ -1625,6 +1709,7 @@ jobs:
       - events-pgbouncer
       - smoke
       - oparl-validator
+      - schnittstelle
       - e2e
       - ingestor-tests
       - dependency-audit

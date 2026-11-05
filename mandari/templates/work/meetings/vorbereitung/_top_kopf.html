@@ -2,7 +2,8 @@
 Kopf des TOPs: Nummer und Titel, Vorlage mit Art und Rolle dieser Sitzung, darunter „Im Beratungsverlauf“ – die
 Positionen der eigenen Organisation aus anderen Gremien zur selben Vorlage (Datum lesbar, Link zur dortigen
 Vorbereitung). „Mehr“ zeigt alle Einträge und die Beratungsfolge. Am Handy darüber die Leiste mit Tagesordnung und
-Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt).
+Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt). Nichtöffentlicher TOP: Titel weichgezeichnet und für
+Vorleser ersetzt, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Work, Issue #1201).
 {% endcomment %}
 <div class="vb-mobil-nav">
     <button type="button" class="wf-knopf wf-leise" @click="oeffneBlatt('tagesordnung')" aria-haspopup="dialog">
@@ -15,7 +16,7 @@ Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt).
     <div class="vb-topkopf-text">
         <h2 class="wf-top-h" id="top-titel" tabindex="-1">
             <span class="wf-top-nr" x-text="selectedItem ? 'TOP ' + selectedItem.number : ''"></span>
-            <span x-text="selectedItem ? selectedItem.name : ''"></span>
+            <span x-text="selectedItem ? selectedItem.name : ''" :class="{ 'fs-noe': selectedItem && selectedItem.isPublic === false }" :aria-hidden="noeVerdeckt(selectedItem) ? 'true' : 'false'"></span><span class="sr-only fs-noe-ersatz" x-show="selectedItem && selectedItem.isPublic === false" x-cloak>Nichtöffentlicher TOP, ausgeblendet</span>
         </h2>
         <p class="vb-top-zeile2">
             <span class="vb-warn" x-show="selectedItem && selectedItem.withdrawn" x-text="selectedItem ? selectedItem.withdrawn : ''"></span>
@@ -65,7 +66,7 @@ Stand, darunter die Unterlagen als Knöpfe (öffnen das Blatt).
     <button type="button" class="wf-textlink vb-mehr" x-show="kopfHatMehr" @click="kopfOffen = !kopfOffen"
             :aria-expanded="kopfOffen ? 'true' : 'false'" x-text="kopfOffen ? 'Weniger' : 'Mehr'"></button>
 </header>
-<div class="vb-mobil-unterlagen" x-show="unterlagen.length > 0">
+<div class="vb-mobil-unterlagen" x-show="unterlagen.length > 0" :class="{ 'fs-noe': selectedItem && selectedItem.isPublic === false }" :inert="noeVerdeckt(selectedItem)">
     <template x-for="(u, ui) in unterlagen" :key="u.schluessel">
         <button type="button" class="wf-knopf" @click="unterlageAlsBlatt(ui)" aria-haspopup="dialog">
             <i :data-lucide="u.istLink ? 'link' : 'file-text'" aria-hidden="true"></i><span x-text="u.name"></span>

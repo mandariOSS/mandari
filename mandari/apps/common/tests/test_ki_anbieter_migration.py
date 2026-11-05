@@ -96,8 +96,10 @@ def test_migrationen_vor_und_zurueck(org: Organization) -> None:
         executor = MigrationExecutor(connection)
         executor.migrate(NACHHER)
         cache.clear()
-        assert AISettings.objects.values_list("provider", flat=True).get(pk=1) == ""
-        ki = AISettings.objects.get(pk=1)
+        # Modell im Stand nach diesen Migrationen: spätere Migrationen fügen Spalten hinzu (common/0014)
+        nachher = executor.loader.project_state(NACHHER).apps.get_model("common", "AISettings")
+        assert nachher.objects.values_list("provider", flat=True).get(pk=1) == ""
+        ki = nachher.objects.get(pk=1)
         assert (ki.insight_enabled, ki.insight_max_output_tokens, ki.fallback_model) == (False, 8192, "")
         assert _nebius_spalten() == (None, "")
         assert Organization.objects.values_list("ai_provider", flat=True).get(pk=org.pk) == ""

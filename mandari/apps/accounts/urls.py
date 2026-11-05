@@ -5,6 +5,7 @@ URL configuration for accounts app (authentication).
 
 from django.urls import path
 
+from .oidc.views import ConnectedApplicationsView
 from .views import (
     LoggedOutView,
     LoginTwoFactorView,
@@ -44,6 +45,8 @@ urlpatterns = [
     path("sicherheitsschluessel/registrieren/", RegistrationVerifyView.as_view(), name="webauthn_register"),
     path("login/sicherheitsschluessel/optionen/", LoginOptionsView.as_view(), name="webauthn_login_options"),
     path("login/sicherheitsschluessel/", LoginVerifyView.as_view(), name="webauthn_login"),
+    # OpenID-Connect-Anbieter (Issue #1206): Anwendungen, die im eigenen Namen handeln, mit Widerruf
+    path("verbundene-anwendungen/", ConnectedApplicationsView.as_view(), name="connected_applications"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("logged-out/", LoggedOutView.as_view(), name="logged_out"),
     # Registration (for invited users)

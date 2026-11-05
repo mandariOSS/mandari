@@ -32,8 +32,9 @@ repos:
       - id: check-yaml
       - id: check-json
       - id: end-of-file-fixer
-        # Der Textlink steht mitten im Satz: ohne Zeilenumbruch am Ende kein Leerzeichen vor Satzzeichen
-        exclude: (\.(min\.js|min\.css|svg)$|^mandari/templates/cotton/ui/textlink\.html$)
+        # Der Textlink und der verdeckte NÖ-Text stehen mitten im Satz: ohne Zeilenumbruch am Ende kein Leerzeichen vor
+        # Satzzeichen
+        exclude: (\.(min\.js|min\.css|svg)$|^mandari/templates/cotton/ui/textlink\.html$|^mandari/templates/work/faction/sitzung/_noe_text\.html$)
       - id: trailing-whitespace
         exclude: \.(min\.js|min\.css|md)$
       - id: check-merge-conflict

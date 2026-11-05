@@ -1,0 +1,14 @@
+{% comment %}
+Knopf „Nichtöffentliches einblenden“ in der Kopfleiste beider Rahmen (Issue #1201): ein Schalter für ganz Work, Zustand im
+Alpine-Store noe (frontend/alpine/noe-sichtschutz.ts, Cookie der Anmeldung), Anfangswert vom Server (noe_sichtbar, apps/work/sichtschutz.py).
+Nur für Personen, die in dieser Organisation Nichtöffentliches sehen dürfen (noe_schutz.knopf). Gedrückt heißt
+eingeblendet, die Kurzinfo nennt den nächsten Schritt. Kontext: klasse (Knopf), icon (Größe der Icons) wie die
+Nachbarknöpfe des jeweiligen Rahmens.
+{% endcomment %}
+{% if noe_schutz.knopf %}<button type="button" class="{{ klasse }}" data-testid="noe-knopf" @click="$store.noe.umschalten()"
+        aria-label="Nichtöffentliches einblenden" aria-pressed="{{ noe_sichtbar|yesno:'true,false' }}" :aria-pressed="$store.noe.sichtbar.toString()"
+        title="{% if noe_sichtbar %}Nichtöffentliches verdecken{% else %}Nichtöffentliches einblenden{% endif %}"
+        :title="$store.noe.sichtbar ? 'Nichtöffentliches verdecken' : 'Nichtöffentliches einblenden'">
+    <i data-lucide="eye-off" class="{{ icon }}" aria-hidden="true" x-show="!$store.noe.sichtbar"{% if noe_sichtbar %} x-cloak{% endif %}></i>
+    <i data-lucide="eye" class="{{ icon }}" aria-hidden="true" x-show="$store.noe.sichtbar"{% if not noe_sichtbar %} x-cloak{% endif %}></i>
+</button>{% endif %}

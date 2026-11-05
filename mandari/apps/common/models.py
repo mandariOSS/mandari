@@ -11,7 +11,13 @@ from typing import Any
 from django.core.cache import cache
 from django.db import models
 
-from .ki_anbieter import ANBIETER_VORLAGEN, auswahl_ki_einstellungen
+from .ki_anbieter import (
+    ANBIETER_VORLAGEN,
+    STANDARD_MODELL_ZUSAMMENFASSUNG,
+    STANDARD_MONATSBUDGET_USD,
+    ZUSAMMENFASSUNG_AUSWAHL,
+    auswahl_ki_einstellungen,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -330,6 +336,60 @@ class AISettings(models.Model):
             "openai/gpt-oss-120b 8192; größere Werte lehnt der Anbieter ab (HTTP 400)."
         ),
     )
+    # --- Zusammenfassungen im Bürgerportal: eigener Anbieter möglich (Claude API, auch als Message Batch) ---
+    summary_provider = models.CharField(
+        max_length=20,
+        choices=ZUSAMMENFASSUNG_AUSWAHL,
+        default="",
+        db_default="",
+        blank=True,
+        verbose_name="Anbieter der Zusammenfassungen",
+        help_text=(
+            "Leer: wie KI-Assistent und KI-Verortung der Anbieter oben. „Claude API (Anthropic)“ nur für die "
+            "Zusammenfassungen öffentlicher Dokumente; Verarbeitung auch außerhalb der EU (USA). Wirksam nur mit "
+            "„KI im Bürgerportal aktiviert“, eigenem Schlüssel und dem Host der Claude API in KI_ERLAUBTE_HOSTS."
+        ),
+    )
+    summary_model = models.CharField(
+        max_length=100,
+        default=STANDARD_MODELL_ZUSAMMENFASSUNG,
+        db_default=STANDARD_MODELL_ZUSAMMENFASSUNG,
+        verbose_name="Modell der Zusammenfassungen",
+        help_text="Modell bei der Claude API, etwa claude-haiku-5-5.",
+    )
+    summary_api_key_encrypted = models.BinaryField(
+        blank=True,
+        null=True,
+        editable=False,
+        verbose_name="Claude-API-Key (verschlüsselt)",
+        help_text="AES-256-GCM verschlüsselt mit dem ENCRYPTION_MASTER_KEY; nur für die Zusammenfassungen.",
+    )
+    summary_batch_enabled = models.BooleanField(
+        default=True,
+        db_default=True,
+        verbose_name="Zusammenfassungen vorab im Batch erstellen",
+        help_text=(
+            "Neue Vorgänge mit Text gesammelt über die Message Batches API zusammenfassen (halber Preis, Ergebnis "
+            "meist binnen einer Stunde). Ein Klick auf „Zusammenfassen“ erstellt weiterhin sofort."
+        ),
+    )
+    summary_batch_days = models.PositiveIntegerField(
+        default=30,
+        db_default=30,
+        verbose_name="Batch: Vorgänge der letzten Tage",
+        help_text="Vorab zusammengefasst werden Vorgänge, deren Datum höchstens so viele Tage zurückliegt.",
+    )
+    summary_monthly_budget_usd = models.DecimalField(
+        max_digits=8,
+        decimal_places=2,
+        default=STANDARD_MONATSBUDGET_USD,
+        db_default=STANDARD_MONATSBUDGET_USD,
+        verbose_name="Monatsbudget der Zusammenfassungen (USD)",
+        help_text=(
+            "Obergrenze der Kosten bei der Claude API je Kalendermonat, gerechnet aus den Token (Batch zum halben "
+            "Preis). Ist sie erreicht, ruht der Batch und „Zusammenfassen“ ist bis zum Monatsende nicht verfügbar."
+        ),
+    )
     default_org_monthly_token_limit = models.PositiveIntegerField(
         default=3000000,
         verbose_name="Standard-Monatslimit pro Organisation (Tokens)",
@@ -383,6 +443,26 @@ class AISettings(models.Model):
             return ""
         try:
             return decrypt_key(bytes(self.api_key_encrypted)).decode("utf-8")
+        except Exception:
+            return ""
+
+    def set_summary_api_key(self, api_key: str) -> None:
+        """Schlüssel der Claude API für die Zusammenfassungen verschlüsseln und speichern (leer: löschen)."""
+        from apps.common.encryption import encrypt_key
+
+        if not api_key:
+            self.summary_api_key_encrypted = None
+            return
+        self.summary_api_key_encrypted = encrypt_key(api_key.encode("utf-8"))
+
+    def get_summary_api_key(self) -> str:
+        """Schlüssel der Claude API für die Zusammenfassungen; leer, wenn keiner gespeichert oder nicht lesbar."""
+        from apps.common.encryption import decrypt_key
+
+        if not self.summary_api_key_encrypted:
+            return ""
+        try:
+            return decrypt_key(bytes(self.summary_api_key_encrypted)).decode("utf-8")
         except Exception:
             return ""
 

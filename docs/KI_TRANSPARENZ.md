@@ -18,9 +18,11 @@ ist eine Einschätzung aus der Entwicklung. Die Bestätigung durch die Kanzlei s
 
 ## Rollen
 
-mandari baut die KI-Funktionen selbst. Dazu nutzt mandari ein Sprachmodell eines Anbieters aus der EU über eine
-OpenAI-kompatible Schnittstelle (`apps.common.ki_anbieter`). mandari ist damit **Anbieter** der KI-Funktionen
-nach Abs. 1 und 2. Das gilt auch für die quelloffene Software, die Dritte selbst betreiben.
+mandari baut die KI-Funktionen selbst. Dazu nutzt mandari das Sprachmodell eines Anbieters, das über eine
+OpenAI-kompatible Schnittstelle angebunden ist (`apps.common.ki_anbieter`). Nur für die Zusammenfassungen
+öffentlicher Dokumente kann der Betreiber stattdessen die Claude API von Anthropic wählen (Issue #1208). Dort
+erfolgt die Verarbeitung auch außerhalb der EU (USA). mandari ist damit **Anbieter** der KI-Funktionen nach
+Abs. 1 und 2. Das gilt auch für die quelloffene Software, die Dritte selbst betreiben.
 
 **Betreiber** nach Abs. 4 ist, wer die Plattform einsetzt und KI-Text veröffentlicht. Auf mandari.de ist das für
 Insight mandari selbst. Bei Work ist es die Fraktion bzw. Organisation. Betreibt eine Kommune oder Partei mandari
@@ -31,7 +33,7 @@ nachrüsten müssen.
 
 | Funktion | Code | Wer sieht den Text | Menschliche Prüfung | Rolle mandari | Kennzeichnung |
 |----------|------|--------------------|---------------------|---------------|---------------|
-| Zusammenfassung eines Vorgangs (Insight) | `insight_ai/services/summarizer.py`, `insight_core/views/papers.py`, `templates/partials/paper_summary.html` | **öffentlich:** Vorgangsseite, Description und JSON-LD der Seite, OParl-API, MCP-Werkzeug `vorgang` | keine; entsteht auf Abruf durch Besucher und wird gespeichert | Anbieter (Abs. 2) und auf mandari.de Betreiber (Abs. 4) | sichtbar: „Mit KI aus den Dokumenten erstellt. Die Zusammenfassung kann Fehler enthalten.“ und „KI-Zusammenfassung:“ in Description/JSON-LD; maschinenlesbar: `data-ai-generated="true"`, `mandari:summaryAiGenerated`, `zusammenfassung_ki_erzeugt` |
+| Zusammenfassung eines Vorgangs (Insight) | `insight_ai/services/summarizer.py`, `insight_core/views/papers.py`, `templates/partials/paper_summary.html` | **öffentlich:** Vorgangsseite, Description und JSON-LD der Seite, OParl-API, MCP-Werkzeug `vorgang` | keine; entsteht auf Abruf durch Besucher oder vorab im Batch (Claude API, #1208) und wird gespeichert | Anbieter (Abs. 2) und auf mandari.de Betreiber (Abs. 4) | sichtbar: „Mit KI aus den Dokumenten erstellt. Die Zusammenfassung kann Fehler enthalten.“, dazu „KI-Anbieter: …“ mit Anbieter, Modell und Verarbeitungsort (`OParlPaper.summary_hinweis`), und „KI-Zusammenfassung:“ in Description/JSON-LD; maschinenlesbar: `data-ai-generated="true"`, `mandari:summaryAiGenerated`, `zusammenfassung_ki_erzeugt` |
 | Dieselbe Zusammenfassung in Work | `templates/work/ris/neu/vorgang.html`, `templates/work/ris/paper_detail.html` | intern: Mitglieder der Organisation | keine | Anbieter (Abs. 2) | sichtbar wie oben (seit #938 auch im bisherigen Rahmen); `data-ai-generated="true"` |
 | KI-Assistent (Insight) | `insight_core/views/chat.py`, `insight_ai/services/chat_service.py`, `templates/partials/chat_nachrichten.html` | nur die fragende Person; Antworten werden nicht gespeichert | keine (Antwort an eine Person, keine Veröffentlichung) | Anbieter (Abs. 1 und 2) | sichtbar: Seitentitel „KI-Assistent“, Einwilligung mit Anbieter und Ort, Satz „Antworten erstellt eine KI aus öffentlichen Ratsdokumenten. Sie können Fehler enthalten.“; maschinenlesbar: `data-ai-generated="true"` an jeder Antwort, Feld `ai_generated: true` in `POST /insight/chat/api/message/` |
 | Fragen an die Ratsdaten (Work) | `apps/work/ris/fragen.py`, `templates/work/ris/partials/frage_antwort.html` | intern: die fragende Person | keine (nur für die eigene Recherche) | Anbieter (Abs. 1 und 2) | sichtbar: „KI-Antwort aus den öffentlichen Ratsdaten – maßgeblich sind die Quellen.“; `data-ai-generated="true"` |

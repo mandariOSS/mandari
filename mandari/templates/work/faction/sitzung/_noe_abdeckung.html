@@ -1,6 +1,13 @@
-{# Abdeckung über Unterlagen und Protokoll eines nichtöffentlichen TOPs, solange der Teil verdeckt ist (Issue #1166) #}
-<div class="fs-noe-abdeckung fs-noe-ersatz">
+{% comment %}
+Abdeckung über Inhalten eines nichtöffentlichen TOPs, solange Nichtöffentliches verdeckt ist (Issues #1166, #1201). Steht
+vor einem <div class="fs-noe-inhalt"> mit den Inhalten; beides schaltet der Zustand für ganz Work (Klasse noe-verdeckt am
+body; die Klasse wf bringt Farben und Knopf auch in Ansichten ohne Arbeitsfläche mit). Kontext (alles freiwillig): was (verdeckte Inhalte in der Mehrzahl, Standard „Unterlagen, Protokoll und Beschluss“), klein (für
+Zeilen, Seitenpanels und Formulare), einblenden (Alpine-Ausdruck; Standard $store.noe.einblenden(), die Sitzungsansicht
+setzt noeEinblenden(), das zusätzlich die Überschrift fokussiert), zeigen (Alpine-Ausdruck für Seiten, die den TOP im
+Browser wechseln, etwa die Vorbereitung der Ratssitzung).
+{% endcomment %}
+<div class="fs-noe-abdeckung fs-noe-ersatz wf{% if klein %} klein{% endif %}"{% if zeigen %} x-show="{{ zeigen }}" x-cloak{% endif %}>
     <p><b>Nichtöffentlicher TOP, ausgeblendet</b></p>
-    <p class="fs-meta">Unterlagen, Protokoll und Beschluss sind verdeckt, damit beim Teilen des Bildschirms nichts zu sehen ist.</p>
-    <button type="button" class="wf-knopf" @click="noeEinblenden()"><i data-lucide="eye" aria-hidden="true"></i>Nichtöffentlichen Teil einblenden</button>
+    <p class="fs-meta">{{ was|default:"Unterlagen, Protokoll und Beschluss" }} sind verdeckt, damit beim Teilen des Bildschirms nichts zu sehen ist.</p>
+    <button type="button" class="wf-knopf{% if klein %} wf-klein{% endif %}" @click="{{ einblenden|default:'$store.noe.einblenden()' }}"><i data-lucide="eye" aria-hidden="true"></i>Nichtöffentliches einblenden</button>
 </div>

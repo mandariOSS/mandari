@@ -248,6 +248,7 @@ ENRICHMENT_FIELDS: frozenset[str] = frozenset(
         "text_ocr_needed_sha256",
         # OParlPaper: AI enrichment + georeferencing (Django-managed)
         "summary",
+        "summary_hinweis",
         "locations",
         "georef_status",
         # OParlBody: Sichtbarkeit im Portal (Django-managed); der Ingestor setzt sie nur beim Anlegen (Issue #555)

@@ -574,8 +574,13 @@ def _admin_daten(ki: AISettings, **werte: Any) -> dict[str, Any]:
         "max_output_tokens": ki.max_output_tokens,
         "insight_max_output_tokens": ki.insight_max_output_tokens,
         "default_org_monthly_token_limit": ki.default_org_monthly_token_limit,
+        "summary_provider": ki.summary_provider,
+        "summary_model": ki.summary_model,
+        "summary_api_key": "",
+        "summary_batch_days": ki.summary_batch_days,
+        "summary_monthly_budget_usd": ki.summary_monthly_budget_usd,
     }
-    for feld in ("enabled", "insight_enabled"):
+    for feld in ("enabled", "insight_enabled", "summary_batch_enabled"):
         if getattr(ki, feld):
             daten[feld] = "on"
     return {**daten, **werte}

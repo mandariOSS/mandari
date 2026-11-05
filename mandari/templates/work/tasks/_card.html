@@ -22,13 +22,14 @@
     {% endif %}
 
     <!-- Title -->
+    {# Aufgabe aus einem nichtöffentlichen TOP: Titel und Beschreibung mit Sichtschutz (Issue #1201) #}
     <h4 class="text-sm font-medium text-gray-900 dark:text-white line-clamp-2 {% if task.is_completed %}line-through opacity-60{% endif %}">
-        {{ task.title|truncatechars:80 }}
+        {% include "work/faction/sitzung/_noe_text.html" with text=task.title|truncatechars:80 noe=task.noe_top %}
     </h4>
 
     <!-- Description -->
     {% if task.description %}
-    <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 mt-1 mb-2">
+    <p class="text-xs text-gray-500 dark:text-gray-400 line-clamp-1 mt-1 mb-2{% if task.noe_top %} fs-noe{% endif %}"{% if task.noe_top %} aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar"{% endif %}>
         {{ task.description|truncatechars:60 }}
     </p>
     {% endif %}

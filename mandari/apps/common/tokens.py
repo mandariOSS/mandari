@@ -133,6 +133,9 @@ HASHED_TOKEN_FIELDS: frozenset[str] = frozenset(
         "work.CalendarFeedToken.token",
         "work.AdministrationConnection.token_hash",
         "minutes.GpuNode.token_hash",
+        # OpenID-Connect-Anbieter (Issue #1206): SHA-256-Prüfsumme der Bibliothek, gesucht wird nur über sie
+        "accounts.OAuthAccessToken.token_checksum",
+        "accounts.OAuthRefreshToken.token_checksum",
     }
 )
 
@@ -165,6 +168,18 @@ PLAINTEXT_TOKEN_FIELDS: dict[str, str] = {
     "work.AdministrationConnection.token_prefix": (
         "Nur die ersten 8 von 64 Zeichen, damit Verwaltung und Fraktion ein Token wiedererkennen; "
         "224 Bit bleiben geheim."
+    ),
+    "accounts.OAuthAccessToken.token": (
+        "Bleibt leer: Mit COMPLIANT_BCP_RFC9700_TOKEN_STORAGE speichert django-oauth-toolkit nur die Prüfsumme "
+        "(token_checksum); apps/accounts/tests/test_oidc_anbieter.py prüft das."
+    ),
+    "accounts.OAuthRefreshToken.token": (
+        "Bleibt leer: Mit COMPLIANT_BCP_RFC9700_TOKEN_STORAGE speichert django-oauth-toolkit nur die Prüfsumme "
+        "(token_checksum); apps/accounts/tests/test_oidc_anbieter.py prüft das."
+    ),
+    "accounts.OAuthRefreshToken.token_family": (
+        "Kein Token: Kennung der Kette rotierter Refresh-Tokens, mit der die Bibliothek bei erneuter Nutzung eines "
+        "alten Tokens die ganze Kette widerruft."
     ),
     "session.SessionInvitationRecipient.response_nonce": (
         "Kein Token: fließt in den mit SECRET_KEY signierten Rückmeldelink ein. Ohne den Schlüssel, der "

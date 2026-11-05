@@ -21,7 +21,7 @@ from typing import Any
 
 import httpx
 
-from apps.common.ki_anbieter import KiEndpunkt, laengenlimit_hinweis
+from apps.common.ki_anbieter import KiEndpunkt, laengenlimit_hinweis, zusammenfassung_hinweis
 
 from .base import AbstractAIProvider, ChatMessage, ChatResponse, ToolCall, ToolChatResponse
 
@@ -89,6 +89,11 @@ class OpenAIKompatiblerProvider(AbstractAIProvider):
     @property
     def max_output_tokens(self) -> int:
         return self.endpunkt.max_output_tokens or super().max_output_tokens
+
+    @property
+    def zusammenfassung_hinweis(self) -> str:
+        """Anbieter, zuletzt verwendetes Modell (auch das Ausweichmodell) und Verarbeitungsort."""
+        return zusammenfassung_hinweis(self.endpunkt.anzeigename, self._model, self.endpunkt.verarbeitungsort)
 
     def chat_completion(
         self,

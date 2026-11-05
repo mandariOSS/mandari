@@ -36,12 +36,14 @@ mandari steht auf den Schultern von Giganten. Ohne die fantastische Arbeit der O
 | **elasticsearch** | Elasticsearch Python Client | Apache 2.0 | [GitHub](https://github.com/elastic/elasticsearch-py) |
 | **Pillow** | Bildverarbeitung | HPND | [Docs](https://pillow.readthedocs.io/) |
 | **cryptography** | Verschlüsselung (AES-256-GCM) | BSD/Apache 2.0 | [Docs](https://cryptography.io/) |
+| **django-oauth-toolkit** | mandari als OpenID-Connect-Anbieter (Anmeldung für Anwendungen) | BSD-3-Clause | [GitHub](https://github.com/django-oauth/django-oauth-toolkit) |
 | **pypdfium2** | PDF-Seitenanalyse und Rendern (PDFium, Karten und Pläne) | Apache 2.0 / BSD-3-Clause | [GitHub](https://github.com/pypdfium2-team/pypdfium2) |
 | **xhtml2pdf** | PDF-Generierung | Apache 2.0 | [GitHub](https://github.com/xhtml2pdf/xhtml2pdf) |
 | **segno** | QR-Code-Erzeugung (reines Python) | BSD-3-Clause | [GitHub](https://github.com/heuer/segno) |
 | **jsonschema** | Prüfung der Verträge für Ereignisse und Befehle (JSON Schema 2020-12) | MIT | [GitHub](https://github.com/python-jsonschema/jsonschema) |
 | **rdflib** | Datenkatalog nach DCAT-AP.de als Turtle, RDF/XML und JSON-LD | BSD-3-Clause | [GitHub](https://github.com/RDFLib/rdflib) |
 | **boto3** | S3-kompatibler Objektspeicher für die Dokumentablage (optional, Standard aus) | Apache 2.0 | [GitHub](https://github.com/boto/boto3) |
+| **anthropic** | Claude API für die Zusammenfassungen im Bürgerportal, auch als Message Batch (optional, Standard aus) | MIT | [GitHub](https://github.com/anthropics/anthropic-sdk-python) |
 
 Vollständige Liste: [mandari/pyproject.toml](mandari/pyproject.toml) (direkte Abhängigkeiten), gesperrte
 Versionen in [mandari/uv.lock](mandari/uv.lock)

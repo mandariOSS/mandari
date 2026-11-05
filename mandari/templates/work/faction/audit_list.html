@@ -64,6 +64,8 @@
                         </span>
                         {% endif %}
                     </div>
+                    {# Nichtöffentlich und sichtbar (Vereidigte): weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issue #1201) #}
+                    {% if row.noe %}<span class="sr-only fs-noe-ersatz">Nichtöffentlicher Eintrag, ausgeblendet</span><div class="fs-noe" aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar">{% endif %}
                     <p class="text-sm {% if row.locked %}text-amber-700 dark:text-amber-400 italic{% else %}text-gray-900 dark:text-white{% endif %} mt-1 truncate">
                         {{ row.object_repr }}
                     </p>
@@ -86,6 +88,7 @@
                         {% endfor %}
                     </div>
                     {% endif %}
+                    {% if row.noe %}</div>{% endif %}
                 </div>
                 <div class="text-right flex-shrink-0">
                     <p class="text-xs font-medium text-gray-700 dark:text-gray-300">

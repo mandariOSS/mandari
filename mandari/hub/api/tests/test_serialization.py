@@ -17,13 +17,13 @@ from django.db import connection
 from django.test import RequestFactory, override_settings
 from django.test.utils import CaptureQueriesContext
 
+from apps.common.api.pages import list_envelope
 from hub.api.http import BadRequestError
 from hub.api.serialization import (
     TIME_FILTERS,
     Gone,
     MergedEntries,
     TimeFilters,
-    list_envelope,
     list_response,
     page_number,
     single_page,

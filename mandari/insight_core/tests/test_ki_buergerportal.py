@@ -151,7 +151,9 @@ class TestAnbieterAusDerKonfiguration:
     def test_kein_fester_anbieter_in_den_diensten(self) -> None:
         for modul in (summarizer, chat_service):
             assert not hasattr(modul, "NebiusProvider")
-            assert hasattr(modul, "get_insight_provider")
+        # Die Zusammenfassung fragt den Anbieter der Zusammenfassungen (ggf. Claude), der Chat den des Bürgerportals
+        assert hasattr(summarizer, "get_summary_provider")
+        assert hasattr(chat_service, "get_insight_provider")
 
 
 class TestOhneFreigabeliste:

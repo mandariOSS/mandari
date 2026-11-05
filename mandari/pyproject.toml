@@ -53,6 +53,9 @@ dependencies = [
 
     # AI / HTTP
     "httpx>=0.28.0",
+    # Claude API (Anthropic) nur für die Zusammenfassungen im Bürgerportal, auch als Message Batch
+    # (insight_ai/providers/claude.py); wirkt nur mit Schlüssel und Host in KI_ERLAUBTE_HOSTS
+    "anthropic>=1.0.0",
     # S3-kompatibler Objektspeicher für die Dokumentablage (#788); nur geladen, wenn OBJ_ENABLED gesetzt ist
     "boto3>=1.40",
 
@@ -64,6 +67,9 @@ dependencies = [
     "cryptography>=50.0.1",
     # Sicherheitsschlüssel/Passkeys (WebAuthn/FIDO2)
     "webauthn>=3.0.1",
+    # mandari als OpenID-Connect-Anbieter (apps/accounts/oidc, #1206), BSD-3-Clause. Die Nebenversion wird von Hand
+    # gehoben: 3.4 nennt Django nur bis 6.0, die Verträglichkeit mit 6.1 belegen apps/accounts/tests/test_oidc_*.py.
+    "django-oauth-toolkit>=3.4.1,<3.5",
 
     # E-Mail: CSS-Inliner (Rust-Wheel, keine Systemabhängigkeiten) und Text-Alternative (Issue #175)
     "css-inline>=0.21.3",

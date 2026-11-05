@@ -19,8 +19,11 @@ from unfold.decorators import action
 from .admin_mixins import SingletonAdminMixin
 from .ki_anbieter import (
     ANBIETER_VORLAGEN,
+    ANTHROPIC,
+    ANTHROPIC_HOST,
     EIGENER,
     FREMDER_HOST,
+    claude_host_freigegeben,
     erlaubte_hosts,
     fremder_host_fuer_vorlage,
     pruefe_basis_url,
@@ -305,6 +308,17 @@ class AISettingsAdminForm(forms.ModelForm):
         label="API Key löschen",
         help_text="Entfernt den gespeicherten Key; die KI bleibt dann aus, bis ein neuer eingetragen ist.",
     )
+    summary_api_key = forms.CharField(
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "new-password"}),
+        required=False,
+        label="Claude-API-Key",
+        help_text="Nur für die Zusammenfassungen. Wird verschlüsselt gespeichert (AES-256-GCM, Master-Key).",
+    )
+    summary_api_key_loeschen = forms.BooleanField(
+        required=False,
+        label="Claude-API-Key löschen",
+        help_text="Entfernt den gespeicherten Key; mit gewählter Claude API sind die Zusammenfassungen dann aus.",
+    )
 
     class Meta:
         model = AISettings
@@ -316,6 +330,10 @@ class AISettingsAdminForm(forms.ModelForm):
             self.fields[
                 "api_key"
             ].help_text = "Ein Key ist gesetzt. Für Rotation neuen Key eintragen, sonst leer lassen."
+        if self.instance and self.instance.pk and self.instance.summary_api_key_encrypted:
+            self.fields[
+                "summary_api_key"
+            ].help_text = "Ein Claude-API-Key ist gesetzt. Für Rotation neuen Key eintragen, sonst leer lassen."
         self.fields["provider"].choices = anbieter_auswahl_mit_freigabe(list(self.fields["provider"].choices))
 
     def clean(self):
@@ -336,7 +354,36 @@ class AISettingsAdminForm(forms.ModelForm):
             gespeichert=bool(self.instance.pk and self.instance.api_key_encrypted),
             ohne_anbieter="Anbieter wählen oder den API Key löschen.",
         )
+        self._pruefe_zusammenfassungen()
         return cleaned_data
+
+    def _pruefe_zusammenfassungen(self) -> None:
+        """
+        Claude API für die Zusammenfassungen: Host freigegeben, Schlüssel vorhanden (neu oder gespeichert).
+
+        Wie beim Anbieter oben gibt die Auswahl keinen Host frei; ohne Eintrag in KI_ERLAUBTE_HOSTS wird nicht
+        gespeichert. Ein Schlüssel ohne gewählte Claude API darf stehen bleiben (Umschalten ohne Neueingabe).
+        """
+        data = self.cleaned_data
+        neu = bool((data.get("summary_api_key") or "").strip())
+        loeschen = bool(data.get("summary_api_key_loeschen"))
+        if neu and loeschen:
+            self.add_error(
+                "summary_api_key_loeschen", "Entweder einen neuen Key eintragen oder den gespeicherten löschen."
+            )
+            return
+        if (data.get("summary_provider") or "") != ANTHROPIC:
+            return
+        if not claude_host_freigegeben():
+            self.add_error(
+                "summary_provider",
+                f"Host {ANTHROPIC_HOST} steht nicht in KI_ERLAUBTE_HOSTS; erst nach Freigabe des Hosts wählbar.",
+            )
+        gespeichert = bool(self.instance.pk and self.instance.summary_api_key_encrypted)
+        if not neu and (loeschen or not gespeichert):
+            self.add_error("summary_api_key", "Für die Claude API einen API-Key eintragen.")
+        if not (data.get("summary_model") or "").strip():
+            self.add_error("summary_model", "Modell eintragen, etwa claude-haiku-5-5.")
 
     def save(self, commit=True):
         obj = super().save(commit=False)
@@ -345,6 +392,11 @@ class AISettingsAdminForm(forms.ModelForm):
             obj.set_api_key(api_key)
         elif self.cleaned_data.get("api_key_loeschen"):
             obj.set_api_key("")
+        summary_api_key = (self.cleaned_data.get("summary_api_key") or "").strip()
+        if summary_api_key:
+            obj.set_summary_api_key(summary_api_key)
+        elif self.cleaned_data.get("summary_api_key_loeschen"):
+            obj.set_summary_api_key("")
         if commit:
             obj.save()
         return obj
@@ -392,6 +444,27 @@ class AISettingsAdmin(SingletonAdminMixin, ModelAdmin):
             {
                 "fields": ("insight_enabled", "insight_model", "fallback_model"),
                 "description": "Zusammenfassungen, KI-Assistent und KI-Verortung im Bürgerportal.",
+            },
+        ),
+        (
+            "Zusammenfassungen",
+            {
+                "fields": (
+                    "summary_provider",
+                    "summary_model",
+                    "summary_api_key",
+                    "summary_api_key_loeschen",
+                    "summary_batch_enabled",
+                    "summary_batch_days",
+                    "summary_monthly_budget_usd",
+                ),
+                "description": (
+                    "Nur die Zusammenfassungen öffentlicher Dokumente können einen eigenen Anbieter nutzen: die "
+                    "Claude API von Anthropic. Verarbeitet wird dann auch außerhalb der EU (USA); unter jeder "
+                    "Zusammenfassung steht, mit welchem Anbieter und Modell sie entstand. KI-Assistent und "
+                    "KI-Verortung bleiben beim Anbieter oben. Batches und Verbrauch: Insight AI → "
+                    "Zusammenfassungs-Batches, KI-Verbrauch."
+                ),
             },
         ),
         (

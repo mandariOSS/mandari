@@ -2,10 +2,10 @@
 TOP löschen (Issue #897) – Inhalt von #delete-item-modal, beim Öffnen geladen (Aktion delete_item_preview). Nennt die
 Folgen; verschwinden Inhalte mit (Unterpunkte, Protokoll, Beschluss, Anhänge), verlangt der Dialog die Nummer des TOPs
 (der Titel geht auch). Nach dem Löschen tauscht die Antwort die Tagesordnung und der Dialog schließt sich.
-Kontext: meeting, item, impact, phrases_json, org_slug.
+Kontext: meeting, item, noe (nichtöffentlich: Titel mit Sichtschutz, Issue #1201), impact, phrases_json, org_slug.
 {% endcomment %}
 <p class="text-sm text-gray-700 dark:text-gray-300">
-    {% if item.number %}TOP {{ item.number }} {% endif %}„{{ item.title }}“ wird
+    {% if item.number %}TOP {{ item.number }} {% endif %}„{% include "work/faction/sitzung/_noe_text.html" with text=item.title %}“ wird
     {% if impact.has_content %}mit allem gelöscht, was dazugehört. Das lässt sich nicht rückgängig machen.{% else %}gelöscht.{% endif %}
 </p>
 {% include "work/faction/partials/_delete_impact.html" %}
