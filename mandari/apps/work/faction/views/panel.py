@@ -89,8 +89,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
             meeting=meeting,
         )
 
-        # NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs NICHTS —
-        # auch nicht über das Panel (serverseitig)
+        # NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs nichts, auch nicht über das Panel (serverseitig)
         if not can_view_item(item, self.membership):
             raise PermissionDenied("Gesperrte Information")
 
@@ -138,8 +137,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
         context.update(
             {
                 "item": item,
-                # Nichtöffentlicher TOP (auch als Unterpunkt): Titel und Inhalte mit Sichtschutz (Issue #1201)
-                "noe": is_item_internal(item),
+                "noe": is_item_internal(item),  # NÖ-TOP, auch als Unterpunkt: Sichtschutz (Issue #1201)
                 "meeting": meeting,
                 "decision": decision,
                 "can_edit": can_edit,
