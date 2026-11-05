@@ -182,6 +182,9 @@ const ANMELDUNG_WARTEZEIT_MS = 30000
 const ZEITLIMIT_MS = 30000
 const VORUEBERGEHEND = new Set([408, 425, 429, 502, 503, 504])
 const VERSUCHE_BEI_500 = 3
+// Kommt der gespeicherte Stand nicht über die Verbindung, wechselt der Editor nach dieser Zeit in den Solo-Modus mit
+// dem gespeicherten Text: Bis zum Anfangsstand ist er nicht bearbeitbar, niemand soll dauerhaft gesperrt sein (#1018)
+const ANFANGSSTAND_ZEITLIMIT_MS = 10000
 
 type SpeicherAntwort =
   | { art: 'ok'; daten: JsonResponse }
@@ -296,12 +299,17 @@ export const documentEditor = defineComponent(() => {
   // und Briefpapier mit Verbindung (#1018)
   let speicherLauf: Promise<boolean> | null = null
   let metaTimer: number | null = null
-  // Zuletzt gesicherte Werte von Titel, Dokumenttyp und Briefpapier (mit Verbindung gehen nur Änderungen per POST)
+  // Wartezeit auf den Anfangsstand der Kollaboration (#1018)
+  let anfangsstandTimer: number | null = null
+  // Zuletzt gesicherte Werte von Titel, Dokumenttyp und Briefpapier (per POST gehen nur Änderungen, #1018)
   let metaGesichert: MetaWerte = {
     title: config.title,
     document_type_id: config.documentTypeId,
     letterhead_id: config.letterheadId,
   }
+  // Felder, die ein Versuch ohne Bestätigung geschickt hat: Ob der Server sie geschrieben hat, ist offen. Sie gehen
+  // beim nächsten Sichern mit, auch wenn sie wieder dem gesicherten Wert gleichen (#1018).
+  const metaOffen = new Set<keyof MetaWerte>()
   const fensterId = neueFensterKennung()
   // Stellen offener Änderungsvorschläge im Text anders hervorheben als Kommentare (die Marke selbst kennt den
   // Unterschied nicht): eigenes Stylesheet mit den Marken-IDs, ohne Inline-Stil im Template
@@ -474,6 +482,9 @@ export const documentEditor = defineComponent(() => {
     ablaufFehler: '',
     _editorInitialized: false,
     _collabFailed: false,
+    // Kollaboration: Der Anfangsstand (Zustand vom Server bzw. gespeicherter Text) steht noch nicht im Editor. Bis
+    // dahin ist er nicht bearbeitbar (#1018)
+    _anfangsstandOffen: false,
     _recoveringEditor: false,
 
     init(): void {
@@ -689,6 +700,12 @@ export const documentEditor = defineComponent(() => {
     },
 
     _initSoloEditor(editorEl: HTMLElement, initialContent: string): void {
+      // Der Solo-Editor beginnt mit dem Text: kein Warten auf einen Anfangsstand (#1018)
+      this._anfangsstandOffen = false
+      if (anfangsstandTimer) {
+        window.clearTimeout(anfangsstandTimer)
+        anfangsstandTimer = null
+      }
       editor = window.MandariEditor.createEditor({
         element: editorEl,
         content: initialContent,
@@ -723,20 +740,32 @@ export const documentEditor = defineComponent(() => {
 
     _initCollabEditor(editorEl: HTMLElement, initialContent: string, wsUrl: string): void {
       this._everConnected = false
+      // Bis zum Anfangsstand nicht bearbeitbar: Eine Eingabe in das noch leere Dokument verhinderte das Auffüllen aus
+      // dem gespeicherten Text, und die nächste Sicherung ersetzte ihn (#1018)
+      this._anfangsstandOffen = true
+      if (anfangsstandTimer) window.clearTimeout(anfangsstandTimer)
+      anfangsstandTimer = window.setTimeout(() => {
+        anfangsstandTimer = null
+        if (this._anfangsstandOffen && this.collabEnabled) {
+          this._switchToSoloMode('Der gespeicherte Stand kam nicht über die Verbindung. Solo-Modus aktiv.')
+        }
+      }, ANFANGSSTAND_ZEITLIMIT_MS)
       try {
         const result = window.MandariEditor.createCollaborativeEditor({
           element: editorEl,
           content: initialContent,
-          editable: true,
+          editable: false,
           placeholder: PLACEHOLDER,
           wsUrl: wsUrl,
           user: {
             name: this.collabUserName,
             color: this.collabUserColor,
           },
-          onUpdate: () => {
+          onUpdate: (_html, anfangsstand) => {
             this.updatedAt = Date.now()
-            this._markChanged()
+            // Der Anfangsstand (Zustand vom Server, Auffüllen aus dem gespeicherten Text) ist gespeichert: keine
+            // Änderung, keine Rückfrage beim Verlassen. Eingaben zählen vom ersten Zeichen an (#1018).
+            if (!anfangsstand) this._markChanged()
             this.updateWordCount()
             this._nachAenderung()
           },
@@ -766,20 +795,16 @@ export const documentEditor = defineComponent(() => {
               this._switchToSoloMode('Echtzeit-Kollaboration nicht verfügbar — Solo-Modus aktiv.')
             }
           },
-          onInitialState: () => {
-            // Der Anfangsstand kommt vom Server (bzw. aus dem gespeicherten Text): Er ist gespeichert und darf beim
-            // Verlassen keine Rückfrage auslösen. Ohne gespeicherten Yjs-Stand füllt der Editor nach 400 ms aus dem
-            // gespeicherten Text auf (createCollaborativeEditor) – erst danach gleichziehen.
-            window.setTimeout(() => {
-              this._savedSeq = this._changeSeq
-            }, 600)
-          },
-          onPersisted: (contentHash) => {
+          onAnfangsstandGeladen: () => this._anfangsstandDa(),
+          // Stand beim Senden einer Sicherung; die Bestätigung gilt nur für ihn (#1018)
+          sicherungsMarke: () => this._changeSeq,
+          onPersisted: (contentHash, marke) => {
             // Der Server hat unseren Kollaborationsstand gespeichert: Das ist ab jetzt
             // der Stand, von dem ein späteres Speichern ohne Verbindung ausgeht (#184).
             this.contentHash = contentHash
             this.saveConflict = false
-            this._savedSeq = this._changeSeq
+            // Gesichert ist der Stand beim Senden; Eingaben danach erst mit einer späteren Bestätigung (#1018)
+            if (marke !== undefined) this._savedSeq = marke
           },
           onReloadRequired: (reason) => {
             // Server hat einen neuen Stand (Versions-Wiederherstellung oder Speichern
@@ -821,6 +846,10 @@ export const documentEditor = defineComponent(() => {
         window.clearInterval(autoSaveInterval)
         autoSaveInterval = null
       }
+      if (anfangsstandTimer) {
+        window.clearTimeout(anfangsstandTimer)
+        anfangsstandTimer = null
+      }
       if (this.collabDestroy) {
         this.collabDestroy()
         this.collabDestroy = null
@@ -837,8 +866,10 @@ export const documentEditor = defineComponent(() => {
       if (this._collabFailed) return
       this._collabFailed = true
 
+      // Vor dem Anfangsstand war der Editor gesperrt: Er enthält keine Eingabe, nur Geladenes. Dann den gespeicherten
+      // Text nehmen, nicht den reinen Text des Editors (#1018)
       let currentText = ''
-      if (editor && !editor.isDestroyed) {
+      if (editor && !editor.isDestroyed && !this._anfangsstandOffen) {
         try {
           currentText = editor.getText() || ''
         } catch {
@@ -1568,7 +1599,11 @@ export const documentEditor = defineComponent(() => {
         // Bestätigung warten. Per POST gehen dann nur Titel, Dokumenttyp und Briefpapier (#1018). Ein POST mit dem
         // Text forderte alle Fenster – auch dieses – zum Neuladen auf, sobald er vom gespeicherten Stand abwich.
         let mitText = true
-        if (this._verbunden() && this.collabFlush) {
+        if (this._anfangsstandOffen) {
+          // Vor dem Anfangsstand enthält der Editor keine Eingabe, nur Geladenes (oft nichts): Der Text bleibt, wie er
+          // gespeichert ist. Titel, Dokumenttyp und Briefpapier gehen trotzdem (#1018).
+          mitText = false
+        } else if (this._verbunden() && this.collabFlush) {
           if (await this.collabFlush()) {
             mitText = false
           } else if (this._verbunden()) {
@@ -1586,16 +1621,18 @@ export const documentEditor = defineComponent(() => {
           return true
         }
 
-        // Mit Verbindung nur die Felder schicken, die sich seit dem letzten Sichern in diesem Fenster geändert haben:
-        // Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs, andere Fenster kennen deren Änderungen erst nach
-        // dem Neuladen. Sonst setzte ein anderes Fenster beim Wechsel des Briefpapiers den neuen Titel zurück (#1018).
+        // Mit und ohne Verbindung nur die Felder schicken, die sich seit dem letzten Sichern in diesem Fenster
+        // geändert haben: Titel, Dokumenttyp und Briefpapier laufen nicht über Yjs, andere Fenster kennen deren
+        // Änderungen erst nach dem Neuladen. Sonst setzte ein anderes Fenster beim Wechsel des Briefpapiers oder beim
+        // Sichern des Textes den neuen Titel zurück. Felder eines Versuchs ohne Bestätigung gehen in jedem Fall mit:
+        // Der Server kann sie geschrieben haben, auch wenn sie inzwischen wieder auf dem alten Wert stehen (#1018).
         const metaWerte: MetaWerte = {
           title: this.title,
           document_type_id: this.documentTypeId,
           letterhead_id: this.letterheadId,
         }
         const metaFelder = (Object.keys(metaWerte) as Array<keyof MetaWerte>).filter(
-          (feld) => mitText || metaWerte[feld] !== metaGesichert[feld],
+          (feld) => metaOffen.has(feld) || metaWerte[feld] !== metaGesichert[feld],
         )
         if (!mitText && !metaFelder.length) {
           // Zurückgeändert: nichts zu senden
@@ -1638,12 +1675,15 @@ export const documentEditor = defineComponent(() => {
           this._gespeichertMelden()
           this._metaSavedSeq = metaSeq
           metaGesichert = { ...metaGesichert, ...metaWerte }
+          for (const feld of metaFelder) metaOffen.delete(feld)
           if (mitText) {
             this._savedSeq = seq
             if (typeof antwort.daten.content_hash === 'string') this.contentHash = antwort.daten.content_hash
           }
           return true
         }
+        // Ohne Bestätigung ist offen, ob der Server die Felder geschrieben hat (Zeitüberschreitung nach dem Speichern)
+        for (const feld of metaFelder) metaOffen.add(feld)
         if (antwort.art === 'konflikt') {
           this.saveConflict = true
           this.saveError = true
@@ -2173,8 +2213,8 @@ export const documentEditor = defineComponent(() => {
     /**
      * Vor einem Neuladen oder Verlassen sichern (Statuswechsel, Seitenleiste, Links, Teilen, Herunterladen): mit
      * Kollaborationsverbindung den gemeinsamen Stand über Yjs und Titel, Dokumenttyp und Briefpapier per POST, ohne
-     * Verbindung alles per POST (#1018). false: nicht gesichert, der Schritt soll unterbleiben; ``meldung`` erscheint
-     * dann als Hinweis (null: keiner, der Aufrufer fragt selbst).
+     * Verbindung den Text und diese Felder per POST, jeweils nur die geänderten (#1018). false: nicht gesichert, der
+     * Schritt soll unterbleiben; ``meldung`` erscheint dann als Hinweis (null: keiner, der Aufrufer fragt selbst).
      */
     async _vorNeuladenSichern(
       meldung: string | null = 'Ihre Änderungen ließen sich nicht speichern. Der Schritt wurde nicht ausgeführt.',
@@ -2307,13 +2347,27 @@ export const documentEditor = defineComponent(() => {
       this._modusAnwenden()
     },
 
-    /** Nur „Bearbeiten“ ändert den Text direkt; „Vorschlagen“ und „Ansehen“ lassen markieren, aber nicht tippen */
+    /**
+     * Nur „Bearbeiten“ ändert den Text direkt; „Vorschlagen“ und „Ansehen“ lassen markieren, aber nicht tippen. Vor dem
+     * Anfangsstand der Kollaboration ist der Editor nicht bearbeitbar (#1018).
+     */
     _modusAnwenden(): void {
+      const bearbeitbar = this.modus === 'bearbeiten' && !this._anfangsstandOffen
       // Ohne Update-Ereignis: Der Moduswechsel ist keine Änderung am Text (sonst gälte der Text als ungespeichert
       // und würde beim nächsten Speichern neu geschrieben)
-      if (editor && !editor.isDestroyed && editor.isEditable !== (this.modus === 'bearbeiten')) {
-        editor.setEditable(this.modus === 'bearbeiten', false)
+      if (editor && !editor.isDestroyed && editor.isEditable !== bearbeitbar) {
+        editor.setEditable(bearbeitbar, false)
       }
+    },
+
+    /** Der Anfangsstand steht im Editor: ab jetzt bearbeitbar (#1018) */
+    _anfangsstandDa(): void {
+      if (anfangsstandTimer) {
+        window.clearTimeout(anfangsstandTimer)
+        anfangsstandTimer = null
+      }
+      this._anfangsstandOffen = false
+      this._modusAnwenden()
     },
 
     /** Änderung zur markierten Stelle vorschlagen (Werkzeugleiste, Menü „Einfügen“, Knopf an der Auswahl) */
