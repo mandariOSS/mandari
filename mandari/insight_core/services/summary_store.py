@@ -59,7 +59,9 @@ def ohne_zusammenfassung(*, seit: date, limit: int, ausser: Iterable[Any] = ()) 
     """
     from insight_core import publication
 
-    gesperrt = [kennung for kennung, stand in publication.states().items() if stand.paused or stand.withdrawn]
+    gesperrt = [
+        uuid.UUID(kennung) for kennung, stand in publication.states().items() if stand.paused or stand.withdrawn
+    ]
     mit_text = _aktuelle_dateien_mit_text().filter(paper_id=OuterRef("pk"))
     auswahl = (
         OParlPaper.objects.filter(
