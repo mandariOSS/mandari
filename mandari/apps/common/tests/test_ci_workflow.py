@@ -438,10 +438,18 @@ def test_reuse_workflow_prueft_blockierend() -> None:
         ("ingestor/src/storage/events.py", {"qualitaet", "vertrag", "ingestor", "journal", "codeql_python"}),
         ("ingestor/src/storage/database.py", {"qualitaet", "vertrag", "ingestor", "codeql_python"}),
         ("ingestor/tests/test_loeschmarkierung.py", {"qualitaet", "ingestor", "codeql_python"}),
-        # Ereignisverträge sind JSON: Sie lösen die Prüfung der Verträge aus (Issue #519)
+        # Ereignisverträge sind JSON: Sie lösen die Prüfung der Verträge aus (Issue #519), dazu die Befehlsparität
+        # der Schnittstelle, weil im Register auch die Befehle stehen (Issue #1205)
         (
             "mandari/hub/contracts/schemas/ris.paper.changed/v1.json",
-            {"qualitaet", "vertrag", "test", "smoke", "oparl"},
+            {"qualitaet", "vertrag", "test", "smoke", "oparl", "schnittstelle"},
+        ),
+        # Eingecheckte OpenAPI-Beschreibung, Prüfskript und Ausnahmeliste: Job "Schnittstelle" (Issue #1205)
+        ("docs/schnittstelle/openapi.json", {"qualitaet", "test", "schnittstelle"}),
+        ("scripts/check_schnittstelle.py", {"qualitaet", "test", "schnittstelle", "codeql_python"}),
+        (
+            "mandari/hub/api/openapi/befehle_ohne_endpunkt.json",
+            {"qualitaet", "test", "smoke", "oparl", "schnittstelle"},
         ),
         ("scripts/check_event_contracts.py", {"qualitaet", "vertrag", "test", "codeql_python"}),
         ("scripts/smoke_tombstones.py", {"qualitaet", "test", "smoke", "codeql_python"}),

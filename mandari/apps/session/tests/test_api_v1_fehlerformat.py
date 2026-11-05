@@ -8,13 +8,18 @@ Meldung und Header der Probleme, wie die API v1 sie seit #163 ausliefert.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import pytest
-from django.test import Client
+from django.test import Client, RequestFactory
 from django.utils import timezone
+from ninja.errors import HttpError
 
+from apps.session.api.v1.api import api as session_api_v1
+from apps.session.api.v1.endpoints import command_problem
 from apps.session.models import SessionTenant
+from hub.commands import CommandError
 
 pytestmark = pytest.mark.django_db
 
@@ -30,7 +35,7 @@ def tenant() -> SessionTenant:
 def _problem(response: Any, status: int) -> dict[str, Any]:
     assert response.status_code == status
     assert response["Content-Type"] == "application/problem+json; charset=utf-8"
-    body: dict[str, Any] = response.json()
+    body: dict[str, Any] = json.loads(response.content)
     return body
 
 
@@ -74,7 +79,33 @@ def test_ungueltiger_inhalt_beim_einreichen(client: Client, tenant: SessionTenan
     assert {tuple(error["loc"]) for error in body["errors"]} >= {("body", "payload", "title")}
 
 
+@pytest.mark.parametrize(
+    ("status", "titel"),
+    [(404, "Nicht gefunden"), (410, "Fehler"), (413, "Fehler"), (501, "Fehler"), (503, "Fehler"), (504, "Fehler")],
+)
+def test_titel_wie_bisher(status: int, titel: str) -> None:
+    """
+    Die API v1 behält ihre Titel aus #163, auch für Status, die die gemeinsame Tabelle kennt. Der Befehl
+    ``submission.submit`` meldet etwa 503 (Anlagen nicht abgelegt) und 501 (Befehl nicht verfügbar).
+    """
+    request = RequestFactory().post(f"{BASE}/musterstadt/applications/submit/")
+    fehler = command_problem(CommandError.of(status, "beispiel", "Meldung des Befehls."))
+    body = _problem(session_api_v1.on_exception(request, fehler), status)
+    assert list(body) == ["type", "title", "status", "detail", "instance", "request_id"]
+    assert body["title"] == titel
+    assert body["type"] == f"{TYPE}beispiel"
+    assert body["detail"] == "Meldung des Befehls."
+
+
+def test_titel_ohne_art() -> None:
+    body = _problem(session_api_v1.on_exception(RequestFactory().get(f"{BASE}/x/"), HttpError(503, "Weg.")), 503)
+    assert body["type"] == "about:blank"
+    assert body["title"] == "Fehler"
+
+
 def test_eigene_beschreibung_bleibt(client: Client) -> None:
     body = client.get(f"{BASE}/openapi.json").json()
     assert body["info"]["title"] == "mandari Session-API"
-    assert f"{BASE}/{{tenant_slug}}/applications/submit/" in body["paths"]
+    submit = body["paths"][f"{BASE}/{{tenant_slug}}/applications/submit/"]["post"]
+    # Der Befehl steht nur in der gemeinsamen Beschreibung (/api/openapi.json), nicht in der eigenen
+    assert not any(key.startswith("x-") for key in submit)

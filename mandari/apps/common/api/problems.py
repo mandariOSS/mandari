@@ -9,6 +9,8 @@ Fehler nach RFC 9457 („Problem Details for HTTP APIs“) für alle Schnittstel
 - ``problem_response``: die Antwort ``application/problem+json``. Felder in fester Reihenfolge: ``type``,
   ``title``, ``status``, ``detail``, ``instance``, ``request_id`` (Korrelation mit den Logs, siehe
   ``apps.common.observability``), ``errors`` und weitere Erweiterungen.
+- ``TITLES``: Titel je Status. Eine veröffentlichte Schnittstelle mit eigener, kleinerer Tabelle gibt diese als
+  ``titles`` mit, damit sich ihre Antworten nicht ändern (Session-API v1).
 
 Meldungen sind feste Texte oder stammen vom Eigentümer, nie aus dem Text einer Ausnahme.
 """
@@ -58,8 +60,13 @@ RETRYABLE_STATUS: Final = frozenset({409, 429, 502, 503, 504})
 _STANDARD: Final = frozenset({"type", "title", "status", "detail", "instance", "errors"})
 
 
-def title_for(status: int) -> str:
-    return TITLES.get(status, "Fehler")
+#: Titel eines Status, den die Tabelle nicht kennt
+FALLBACK_TITLE: Final = "Fehler"
+
+
+def title_for(status: int, titles: Mapping[int, str] | None = None) -> str:
+    """Titel des Status aus ``titles`` (ohne Angabe: ``TITLES``), sonst ``FALLBACK_TITLE``."""
+    return (TITLES if titles is None else titles).get(status, FALLBACK_TITLE)
 
 
 @dataclass(frozen=True)
@@ -84,13 +91,16 @@ class Problem:
     def retryable(self) -> bool:
         return self.status in RETRYABLE_STATUS
 
-    def to_dict(self, *, instance: str | None = None, request_id: bool = False) -> dict[str, Any]:
+    def to_dict(
+        self, *, instance: str | None = None, request_id: bool = False, titles: Mapping[int, str] | None = None
+    ) -> dict[str, Any]:
         """
-        Inhalt der Antwort. Mit ``request_id`` steht die Kennung der Anfrage hinter ``instance`` (leer: ``null``).
+        Inhalt der Antwort. Mit ``request_id`` steht die Kennung der Anfrage hinter ``instance`` (leer: ``null``);
+        ``titles`` ersetzt die Tabelle der Titel (``title_for``).
         """
         data: dict[str, Any] = {
             "type": self.type,
-            "title": self.title,
+            "title": title_for(self.status, titles),
             "status": self.status,
             "detail": self.detail,
         }
@@ -160,10 +170,11 @@ def problem_response(
     instance: str | None = None,
     request_id: bool = True,
     headers: Mapping[str, str] | None = None,
+    titles: Mapping[int, str] | None = None,
 ) -> HttpResponse:
-    """``application/problem+json`` mit dem Status des Problems; ``headers`` kommen dazu."""
+    """``application/problem+json`` mit dem Status des Problems; ``headers`` kommen dazu, ``titles`` wie ``to_dict``."""
     response = JsonResponse(
-        problem.to_dict(instance=instance, request_id=request_id),
+        problem.to_dict(instance=instance, request_id=request_id, titles=titles),
         status=problem.status,
         json_dumps_params={"ensure_ascii": False},
     )

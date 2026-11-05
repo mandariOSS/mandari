@@ -43,6 +43,9 @@ class Area:
     openapi: Callable[[], Description]
     #: Reihenfolge im Einstieg und in der Beschreibung (aufsteigend, dann nach Kennung)
     order: int = 100
+    #: Adresse des Einstiegs, wenn sie nicht aus ``SITE_URL`` und ``entry`` entsteht (der Aggregator geht von
+    #: ``OPARL_BASE_URL`` aus); erst beim Abruf des Einstiegs ermittelt
+    entry_url: Callable[[], str] | None = None
 
     def __post_init__(self) -> None:
         if not _KEY.fullmatch(self.key):

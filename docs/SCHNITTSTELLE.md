@@ -71,4 +71,13 @@ cd mandari && python manage.py schnittstelle_beschreibung --pruefen
   und eine Abkündigung nach [RELEASE_POLITIK.md](RELEASE_POLITIK.md), Abschnitt 5.
 - **Befehlsparität:** Jeder Befehl im Register (`hub/contracts/schemas`) braucht einen Endpunkt, der ihn in
   `x-mandari-command` nennt. Ausnahmen stehen in `mandari/hub/api/openapi/befehle_ohne_endpunkt.json`; die Liste
-  darf nur kürzer werden (`scripts/check_schnittstelle.py --basis <stand>`).
+  darf nur kürzer werden (`scripts/check_schnittstelle.py --basis <stand>`). Die Session-API v1 setzt die
+  Erweiterung erst für die gemeinsame Beschreibung (`SESSION_V1_COMMANDS` in `apps/session/api/schnittstelle.py`),
+  ihre eigene unter `/api/v1/session/openapi.json` bleibt unverändert.
+
+## Bestehende Bereiche bleiben unverändert
+
+Die Session-API v1 nutzt die gemeinsamen Bausteine, ihre Antworten bleiben aber wie seit #163: Sie behält ihre
+Titel je Status (`TITLES` in `apps/session/api/v1/problems.py`), Status außerhalb davon heißen weiter „Fehler“,
+auch 501 und 503 aus dem Befehl `submission.submit`. Neue Bereiche nutzen die gemeinsame Tabelle
+(`apps/common/api/problems.py`).

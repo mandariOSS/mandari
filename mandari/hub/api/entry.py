@@ -40,8 +40,8 @@ from django.views.decorators.http import require_safe
 from hub.api.http import endpoint, json_response
 from hub.api.oparl_types import SCHEMA
 from hub.api.openapi import Area, Description, areas, build_description
+from hub.api.openapi.aggregator import system_url
 from hub.api.openapi.build import TITLE
-from hub.ris.mapping.bestand import BestandUris
 
 #: Fassung von kommParl, nach der sich die OParl-Ausgaben richten (Entwurf 0.1, kommParl Kapitel 5)
 KOMMPARL_VERSION: Final = "https://schema.kommparl.de/0.1/"
@@ -65,18 +65,23 @@ def _site(path: str) -> str:
     return f"{str(settings.SITE_URL).rstrip('/')}{path}"
 
 
+def _entry(area: Area) -> str:
+    """Einstieg eines Bereichs: eigene Adresse (der Aggregator: sein System) oder ``SITE_URL`` mit Pfad."""
+    return area.entry_url() if area.entry_url else _site(area.entry)
+
+
 def entry_document() -> dict[str, Any]:
     """Inhalt des Einstiegs ``/api/``."""
     return {
         "name": NAME,
         "description": DESCRIPTION,
         "oparlVersion": SCHEMA,
-        "system": BestandUris(settings.OPARL_BASE_URL, settings.SITE_URL).system(),
+        "system": system_url(),
         "kommparl:conformsTo": conforms_to(),
         "openapi": _site(reverse("schnittstelle:openapi")),
         "documentation": _site(reverse("schnittstelle:docs")),
         "areas": [
-            {"key": area.key, "title": area.title, "description": area.description, "entry": _site(area.entry)}
+            {"key": area.key, "title": area.title, "description": area.description, "entry": _entry(area)}
             for area in areas()
         ],
     }

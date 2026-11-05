@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Final
 
+from django.conf import settings
 from django.urls import reverse
 
 from .oparl import KINDS, REF, component_schemas, oparl_paths
@@ -18,6 +19,13 @@ from .registry import Area, Description
 KEY: Final = "oparl"
 
 OVERVIEW: Final = "OParlOverview"
+
+
+def system_url() -> str:
+    """Kennung des OParl-Systems der Installation; geht wie alle Adressen des Aggregators von ``OPARL_BASE_URL`` aus."""
+    from hub.ris.mapping.bestand import BestandUris
+
+    return BestandUris(settings.OPARL_BASE_URL, settings.SITE_URL).system()
 
 
 def _route(name: str) -> str:
@@ -81,4 +89,6 @@ AREA: Final = Area(
     entry="/oparl/v1/system",
     openapi=description,
     order=10,
+    # Der Einstieg ist das System selbst, auch wenn OPARL_BASE_URL nicht unter SITE_URL liegt
+    entry_url=system_url,
 )

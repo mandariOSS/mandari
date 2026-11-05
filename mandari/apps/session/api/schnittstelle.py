@@ -9,17 +9,26 @@ Die Drehscheibe kennt Session nicht (A1); Session meldet seine Bereiche deshalb 
   ``apps/session/api/oparl.py``, beschrieben mit den OParl-Bausteinen der Drehscheibe
   (``hub.api.openapi.oparl``). Die Endpunkte selbst bleiben unverändert.
 - **Session-API v1** (``/api/v1/session/``): die Beschreibung, die django-ninja aus den Endpunkten erzeugt –
-  dieselbe wie unter ``/api/v1/session/openapi.json``.
+  dieselbe wie unter ``/api/v1/session/openapi.json``. Erst hier kommt an jedem Endpunkt, der einen Befehl
+  annimmt, ``x-mandari-command`` dazu (``SESSION_V1_COMMANDS``); die eigene Beschreibung der API v1 bleibt so
+  unverändert.
 """
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Final
 
+from django.core.exceptions import ImproperlyConfigured
 from django.urls import reverse
 
-from hub.api.openapi import Area, Description, register_area
+from hub.api.openapi import COMMAND_EXTENSION, Area, Description, register_area
 from hub.api.openapi.oparl import KINDS, component_schemas, oparl_paths
+
+#: Endpunkte der Session-API v1, die einen Befehl annehmen: ``operationId`` -> Name des Befehls
+SESSION_V1_COMMANDS: Final[dict[str, str]] = {
+    "apps_session_api_v1_endpoints_submit_application": "submission.submit",
+}
 
 #: Platzhalter für den Mandanten in Adressen (ein gültiger Slug, der in keiner echten Adresse vorkommt)
 _TENANT: Final = "mandant-platzhalter-1205"
@@ -98,10 +107,20 @@ def tenant_oparl_description() -> Description:
 
 
 def session_v1_description() -> Description:
-    """Beschreibung der Session-API v1, wie django-ninja sie erzeugt."""
+    """Beschreibung der Session-API v1, wie django-ninja sie erzeugt, mit den Befehlen der Endpunkte."""
     from apps.session.api.v1.api import api
 
-    return dict(api.get_openapi_schema())
+    document: dict[str, Any] = copy.deepcopy(dict(api.get_openapi_schema()))
+    found: set[str] = set()
+    for item in document.get("paths", {}).values():
+        for operation in item.values():
+            command = SESSION_V1_COMMANDS.get(operation.get("operationId", "")) if isinstance(operation, dict) else None
+            if command:
+                operation[COMMAND_EXTENSION] = command
+                found.add(operation["operationId"])
+    if missing := sorted(set(SESSION_V1_COMMANDS) - found):
+        raise ImproperlyConfigured(f"Session-API v1 hat keine Endpunkte {missing} (SESSION_V1_COMMANDS anpassen)")
+    return document
 
 
 TENANT_OPARL: Final = Area(

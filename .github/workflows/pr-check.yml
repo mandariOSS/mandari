@@ -200,8 +200,6 @@ jobs:
               - '!mandari/tests_e2e/**'
               - '!mandari/Dockerfile'
               - '!mandari/docker-entrypoint.sh'
-            # Beide OParl-Ausgaben samt allem, woraus sie ihre Objekte bauen (Modelle, Sichtbarkeit,
-            # Demo-Daten der Testinstanz, Prüfskript)
             # Eine OpenAPI-Beschreibung aller Bereiche (Issue #1205): Ob die eingecheckte Datei zum Code passt,
             # prüft der Job "Test"; hier zählt nur, was die Datei, die Befehle und die Ausnahmeliste ändert
             schnittstelle:
@@ -209,6 +207,8 @@ jobs:
               - 'mandari/hub/api/openapi/befehle_ohne_endpunkt.json'
               - 'mandari/hub/contracts/schemas/**'
               - 'scripts/check_schnittstelle.py'
+            # Beide OParl-Ausgaben samt allem, woraus sie ihre Objekte bauen (Modelle, Sichtbarkeit,
+            # Demo-Daten der Testinstanz, Prüfskript)
             oparl:
               - 'mandari/hub/**'
               - 'mandari/apps/session/api/oparl.py'

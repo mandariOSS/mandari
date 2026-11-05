@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from django.conf import settings
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 from django.test import Client, override_settings
@@ -26,6 +27,7 @@ from django.urls import Resolver404, resolve
 from django.utils import timezone
 from jsonschema import Draft202012Validator
 
+from apps.session.api.schnittstelle import SESSION_V1_COMMANDS, session_v1_description
 from apps.session.api.v1.api import api as session_api_v1
 from apps.session.models import SessionMeeting, SessionOrganization, SessionPaper, SessionTenant
 from hub.api.entry import KOMMPARL_VERSION, description
@@ -84,6 +86,15 @@ class TestEinstieg:
         assert bereiche["oparl"]["entry"] == f"{SITE}/oparl/v1/system"
         assert bereiche["oparl-mandant"]["entry"] == f"{SITE}/session/{{tenant_slug}}/api/oparl/"
         assert bereiche["session-v1"]["entry"] == f"{SITE}/api/v1/session/{{tenant_slug}}/"
+
+    def test_aggregator_einstieg_ist_das_system_auch_mit_eigener_oparl_adresse(self, client: Client) -> None:
+        with override_settings(OPARL_BASE_URL="https://oparl.example/ris"):
+            body = client.get("/api/").json()
+        bereiche = {bereich["key"]: bereich["entry"] for bereich in body["areas"]}
+        assert body["system"] == "https://oparl.example/ris/v1/system"
+        assert bereiche["oparl"] == body["system"]
+        # Die übrigen Bereiche gehen weiter von SITE_URL aus
+        assert bereiche["session-v1"] == f"{SITE}/api/v1/session/{{tenant_slug}}/"
 
     def test_ist_kein_zweites_oparl_system(self, client: Client) -> None:
         body = client.get("/api/").json()
@@ -148,17 +159,26 @@ class TestBeschreibung:
             assert path in paths, path
 
     def test_session_api_v1_unveraendert_enthalten(self, beschreibung: dict[str, Any]) -> None:
-        """Pfade und Schemas der Session-API v1 sind dieselben wie in ihrer eigenen Beschreibung (nur das Schlagwort)."""
+        """
+        Pfade und Schemas der Session-API v1 sind dieselben wie in ihrer eigenen Beschreibung; dazu kommen nur das
+        Schlagwort und der Befehl (``x-mandari-command``), die eigene Beschreibung bleibt ohne.
+        """
         eigene = session_api_v1.get_openapi_schema()
         for path, item in eigene["paths"].items():
             gesamt = beschreibung["paths"][path]
             for method, operation in item.items():
-                assert {**operation, "tags": None} == {**gesamt[method], "tags": None}
+                assert COMMAND_EXTENSION not in operation
+                ohne_befehl = {key: value for key, value in gesamt[method].items() if key != COMMAND_EXTENSION}
+                assert {**operation, "tags": None} == {**ohne_befehl, "tags": None}
         for name, schema in eigene["components"]["schemas"].items():
             assert beschreibung["components"]["schemas"][name] == schema
-        assert eigene["paths"]["/api/v1/session/{tenant_slug}/applications/submit/"]["post"][COMMAND_EXTENSION] == (
-            "submission.submit"
-        )
+        submit = beschreibung["paths"]["/api/v1/session/{tenant_slug}/applications/submit/"]["post"]
+        assert submit[COMMAND_EXTENSION] == "submission.submit"
+
+    def test_befehl_ohne_endpunkt_in_der_session_api_v1_faellt_auf(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setitem(SESSION_V1_COMMANDS, "gibt_es_nicht", "submission.submit")
+        with pytest.raises(ImproperlyConfigured, match="gibt_es_nicht"):
+            session_v1_description()
 
     def test_verweise_aufloesbar(self, beschreibung: dict[str, Any]) -> None:
         def refs(node: Any) -> Iterator[str]:
@@ -188,8 +208,11 @@ class TestBeschreibung:
             parameter = {p["name"] for p in operation.get("parameters", []) if p.get("in") == "path"}
             assert im_pfad == parameter, path
 
-    def test_unabhaengig_vom_host(self, beschreibung: dict[str, Any]) -> None:
-        text = render(beschreibung)
+    def test_unabhaengig_vom_host(self) -> None:
+        # Unter den Einstellungen dieses Tests neu bauen: Die Fixture ``beschreibung`` gilt für das Modul und
+        # entsteht vor ``_einstellungen``, also noch mit dem Standardwert von SITE_URL.
+        assert settings.SITE_URL == SITE
+        text = render(description())
         assert SITE not in text
         assert "testserver" not in text
 

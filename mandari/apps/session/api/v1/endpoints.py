@@ -28,7 +28,6 @@ from apps.session.models import (
     SessionTenant,
 )
 from apps.session.oparl_publication import visible_papers
-from hub.api.openapi.build import COMMAND_EXTENSION
 from hub.commands import CommandError
 
 from .auth import BearerOrSession, Principal, client_ip, resolve_principal
@@ -294,13 +293,13 @@ def _api_error(item: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
+# Nimmt den Befehl submission.submit an; die gemeinsame Beschreibung nennt ihn in x-mandari-command
+# (SESSION_V1_COMMANDS in apps/session/api/schnittstelle.py, Issue #1205)
 @router.post(
     "/{tenant_slug}/applications/submit/",
     response={201: ApplicationCreated},
     url_name="submit_application",
     summary="Antrag einreichen (API-Token)",
-    # Nimmt den Befehl submission.submit an (Befehlsparität der Schnittstelle, Issue #1205)
-    openapi_extra={COMMAND_EXTENSION: "submission.submit"},
 )
 def submit_application(
     request: HttpRequest,
