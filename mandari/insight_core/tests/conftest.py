@@ -27,6 +27,16 @@ def _drosselung_zuruecksetzen() -> Any:
     cache.clear()
 
 
+@pytest.fixture(autouse=True)
+def _kein_festplattenschutz(settings: Any) -> None:
+    """Der Dateicache lehnt unter FILE_CACHE_MIN_FREE_GB freiem Platz ab (``disk_full``, Standard 15 GB).
+
+    Ohne diese Vorgabe hingen Tests, die ``fetch_and_cache`` aufrufen, vom freien Platz des CI-Runners ab
+    (#1213). Tests, die den Schutz selbst prüfen, setzen ihren Wert weiterhin im Test.
+    """
+    settings.FILE_CACHE_MIN_FREE_GB = 0
+
+
 @pytest.fixture
 def geo_body(db: Any) -> OParlBody:
     source = OParlSource.objects.create(name="Beispielquelle", url="https://ris.beispielstadt.example/oparl/system")
