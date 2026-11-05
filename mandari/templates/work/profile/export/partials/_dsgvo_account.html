@@ -31,6 +31,9 @@
     <tr><td>Aktiv</td><td>{% if data.membership.is_active %}Ja{% else %}Nein{% endif %}</td></tr>
     <tr><td>Rollen</td><td>{% for r in data.membership.roles %}{{ r }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</td></tr>
     <tr><td>Gremien</td><td>{% for c in data.membership.committees %}{{ c }}{% if not forloop.last %}, {% endif %}{% empty %}&mdash;{% endfor %}</td></tr>
+    {% if data.membership.meeting_types %}
+    <tr><td>Teilnehmend in Sitzungsarten</td><td>{% for t in data.membership.meeting_types %}{{ t }}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
+    {% endif %}
     {% if data.membership.individual_permissions %}
     <tr><td>Individuelle Berechtigungen</td><td>{% for p in data.membership.individual_permissions %}{{ p }}{% if not forloop.last %}, {% endif %}{% endfor %}</td></tr>
     {% endif %}
