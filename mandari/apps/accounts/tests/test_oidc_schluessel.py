@@ -63,7 +63,8 @@ def test_fehlende_datei(tmp_path: Path) -> None:
     [
         ("kein schluessel", "kein lesbarer"),
         (_pem(ec.generate_private_key(ec.SECP256R1())), "RSA-Schlüssel"),
-        (_pem(rsa.generate_private_key(public_exponent=65537, key_size=1024)), "1024 Bit"),
+        # Zu kurz: halbe Mindestlänge (1024 Bit)
+        (_pem(rsa.generate_private_key(public_exponent=65537, key_size=signing_keys.MIN_BITS // 2)), "1024 Bit"),
         (_pem(rsa.generate_private_key(public_exponent=65537, key_size=2048), b"passwort"), "unverschlüsselter"),
     ],
 )

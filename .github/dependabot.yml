@@ -55,6 +55,11 @@ updates:
       # (docker-compose.yml liefert Elasticsearch 8.x aus); Wechsel nur zusammen mit dem Server.
       - dependency-name: elasticsearch
         update-types: ["version-update:semver-major"]
+      # OpenID-Connect-Anbieter (apps/accounts/oidc): Nebenversionen von django-oauth-toolkit bringen
+      # Migrationen der Bibliothek und ändern Ansichten und Prüfregeln, die mandari überschreibt; gehoben
+      # wird von Hand nach Durchsicht der Release Notes. Patch-Versionen kommen weiter über die Gruppen.
+      - dependency-name: django-oauth-toolkit
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
       # Werkzeuge mit fester Version: Dieselbe Version steht in pr-check.yml und teils in
       # .pre-commit-config.yaml. Ein PR, der nur pyproject.toml anhebt, ließe die Stellen
       # auseinanderlaufen; diese Versionen werden an allen Stellen zusammen von Hand gehoben.

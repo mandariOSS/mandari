@@ -5,7 +5,7 @@ Stand: 2026-11-05 (Issue #1206, Teil von Epic #1203). Grundlage ist das ADR
 
 Anwendungen melden Personen über mandari an und erhalten ein begrenztes, widerrufbares Token. Die Anmeldung
 selbst bleibt die von mandari, einschließlich des zweiten Faktors. Dienste ohne Person bekommen ihr Token über
-Client Credentials. Umgesetzt ist das mit [django-oauth-toolkit](https://github.com/django-oauth-toolkit/django-oauth-toolkit)
+Client Credentials. Umgesetzt ist das mit [django-oauth-toolkit](https://github.com/django-oauth/django-oauth-toolkit)
 in der Plattform (`mandari/apps/accounts/oidc/`).
 
 > **Standardmäßig aus.** Ohne `OIDC_PROVIDER_ENABLED=true` antworten alle Endpunkte mit 404, auch die Discovery,
@@ -66,7 +66,8 @@ werden und kommen ohne Zustimmungsseite aus. Fremde Anwendungen fragen die Perso
 
 Ein Token im Namen einer Person darf nie mehr als die Person selbst. Nichtöffentliche Inhalte gibt es über Tokens
 nicht, bis das Zugriffsmodell abgestimmt und geprüft ist (#565). Nimmt die Plattform-Administration einer
-Anwendung einen Scope weg, gilt er auch für ihre bestehenden Tokens sofort nicht mehr.
+Anwendung einen Scope weg, gilt er auch für ihre bestehenden Tokens sofort nicht mehr, ebenso bei `userinfo` und
+in neuen Tokens aus bestehenden Refresh-Tokens. Für gesperrte Konten gibt es keine neuen Tokens.
 
 ## Code-Ablauf Schritt für Schritt
 
@@ -101,8 +102,10 @@ Weitere Parameter:
 
 - `prompt=none`: ohne jede Anzeige. Gelingt nur, wenn die Person angemeldet ist und die Anwendung
   vertrauenswürdig ist; sonst `error=login_required` bzw. `error=consent_required`.
-- `prompt=login` oder `max_age=<sekunden>`: Die Person meldet sich erneut an (auch mit zweitem Faktor). Der
-  Zeitpunkt steht im ID-Token als `auth_time`.
+- `prompt=login` oder `max_age=<sekunden>`: Die Person meldet sich erneut an (auch mit zweitem Faktor). Bis
+  dahin gibt mandari für diese Anfrage (gleiche `client_id` und gleicher `state`) keinen Code aus. Der Zeitpunkt
+  der Anmeldung steht im ID-Token als `auth_time`; wer eine frische Anmeldung braucht, prüft ihn.
+- `approval_prompt` beachtet mandari nicht: Bei fremden Anwendungen stimmt die Person jedes Mal zu.
 
 **3. Code einlösen** (der Code gilt 60 Sekunden und nur einmal):
 

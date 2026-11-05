@@ -7,8 +7,9 @@ Die Ansichten von django-oauth-toolkit, ergänzt um:
 - Schalter ``OIDC_PROVIDER_ENABLED``: aus → jeder Endpunkt antwortet mit 404, auch die Discovery
 - ``authorize``: läuft über die Anmeldung von mandari. Wer eine offene Pflicht zum zweiten Faktor oder zum
   Sicherheitsschlüssel hat, gilt nicht als angemeldet und muss sie erst erfüllen. ``prompt=login`` und ein
-  überschrittenes ``max_age`` führen zur erneuten Anmeldung, ``prompt=none`` meldet nur Anwendungen ohne
-  Zustimmungsseite still an.
+  überschrittenes ``max_age`` führen zur erneuten Anmeldung; bis dahin gibt es für die Anfrage keinen Code
+  (:mod:`.reauth`). ``prompt=none`` meldet nur Anwendungen ohne Zustimmungsseite still an. ``approval_prompt``
+  der Anfrage gilt nicht: Fremde Anwendungen fragen jedes Mal (``REQUEST_APPROVAL_PROMPT``).
 - ``token``: Ratenbegrenzung je Adresse; Gerätefreigabe (RFC 8628) gibt es nicht
 - ``introspect`` (RFC 7662): nur für die Anwendung selbst, mit Client-Authentifizierung und nur über eigene Tokens
 - Discovery: nennt nur, was mandari tatsächlich anbietet
@@ -27,7 +28,7 @@ from urllib.parse import urlencode, urlsplit
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin
-from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase, JsonResponse
+from django.http import Http404, HttpRequest, HttpResponse, HttpResponseBase, JsonResponse, QueryDict
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
@@ -43,7 +44,7 @@ from oauthlib.common import Request as OAuthlibRequest
 from .. import security_audit
 from ..middleware import REQUIREMENT_TARGETS, open_requirement
 from ..views import REAUTH_PARAM
-from . import provider_enabled, selectors, services, throttle
+from . import provider_enabled, reauth, selectors, services, throttle
 from .validator import signed_in_as
 
 ViewFunction = Callable[..., HttpResponseBase]
@@ -81,6 +82,24 @@ def _login_too_old(request: HttpRequest) -> bool:
     return bool((timezone.now() - last_login).total_seconds() > int(raw))
 
 
+def _request_ids(request: HttpRequest) -> tuple[str, str]:
+    """Client-ID und ``state`` der Anfrage; beim Formular der Zustimmungsseite die Werte, aus denen der Code entsteht."""
+    data = request.POST if request.method == "POST" else request.GET
+    return str(data.get("client_id", "")), str(data.get("state", ""))
+
+
+def _reauth_pending(request: HttpRequest) -> bool:
+    return reauth.pending(request, *_request_ids(request))
+
+
+def _ignore_approval_prompt(request: HttpRequest) -> None:
+    """``approval_prompt`` der Anfrage nicht beachten, sonst wählte die Anwendung selbst ``auto`` statt Zustimmung."""
+    if "approval_prompt" in request.GET:
+        query = request.GET.copy()
+        del query["approval_prompt"]
+        request.GET = QueryDict(query.urlencode())
+
+
 class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibliothek ohne Typen
     """Autorisierungs-Endpunkt mit der Anmeldung von mandari und einer schlichten Zustimmungsseite."""
 
@@ -99,14 +118,15 @@ class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibli
                     return cast(HttpResponseBase, self.handle_no_permission())
                 target = reverse(REQUIREMENT_TARGETS[requirement])
                 return redirect(f"{target}?{urlencode({'next': request.get_full_path()})}")
-            if not _login_too_old(request):
+            if not _login_too_old(request) and not _reauth_pending(request):
                 signed_in = user
         with signed_in_as(signed_in):
             return cast(HttpResponseBase, super().dispatch(request, *args, **kwargs))
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
+        _ignore_approval_prompt(request)
         prompt = _prompt(request)
-        if "none" not in prompt and "login" not in prompt and _login_too_old(request):
+        if "none" not in prompt and "login" not in prompt and (_login_too_old(request) or _reauth_pending(request)):
             # Erst prüfen, ob die Anfrage zu einer bekannten Anwendung und Redirect-URI passt
             try:
                 self.validate_authorization_request(request)
@@ -115,8 +135,21 @@ class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibli
             return self.handle_prompt_login()
         return cast(HttpResponseBase, super().get(request, *args, **kwargs))
 
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
+        # Formular der Zustimmungsseite: Steht für die Anfrage noch eine erneute Anmeldung aus, erst diese
+        if _reauth_pending(request):
+            return self.handle_prompt_login()
+        return cast(HttpResponseBase, super().post(request, *args, **kwargs))
+
     def handle_prompt_login(self) -> HttpResponseBase:
-        """Erneut anmelden (auch mit zweitem Faktor), danach weiter ohne ``prompt`` und ``max_age``."""
+        """
+        Erneut anmelden (auch mit zweitem Faktor), danach weiter ohne ``prompt`` und ``max_age``.
+
+        Bis zur nächsten Anmeldung in dieser Sitzung gibt es für die Anfrage keinen Code (:mod:`.reauth`): Wer das
+        Ziel der Weiterleitung ohne Anmeldung aufruft, landet wieder hier.
+        """
+        if self.request.user.is_authenticated:
+            reauth.require(self.request, *_request_ids(self.request))
         query = self.request.GET.copy()
         query.pop("prompt", None)
         query.pop("max_age", None)

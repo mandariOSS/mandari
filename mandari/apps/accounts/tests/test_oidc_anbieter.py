@@ -15,6 +15,7 @@ import time
 from collections.abc import Iterator
 from datetime import timedelta
 from typing import Any
+from urllib.parse import urlencode
 
 import pytest
 from django.core.cache import cache
@@ -26,7 +27,7 @@ from django.utils import timezone
 from jwcrypto import jwk, jwt
 
 from apps.accounts.models import SecurityAuditLog, User
-from apps.accounts.oidc import access
+from apps.accounts.oidc import access, reauth
 from apps.accounts.oidc.models import OAuthAccessToken, OAuthApplication, OAuthGrant, OAuthRefreshToken
 from apps.accounts.tests import oidc_hilfen as h
 from apps.accounts.tests.test_login_2fa import PASSWORD, enable_2fa, make_user, password_step
@@ -153,7 +154,8 @@ class TestCodeAblauf:
         assert seite.status_code == 200
         inhalt = seite.content.decode()
         assert "Ratsapp" in inhalt and "Zulassen" in inhalt and "Deine E-Mail-Adresse" in inhalt
-        assert "app.example.org" in inhalt
+        assert seite.context["redirect_host"] == "app.example.org"
+        assert f">{seite.context['redirect_host']}</strong>" in inhalt
 
         code = h.code_holen(client, app, challenge, scope="openid profile email")
         tokens = h.tokens_holen(Client(), app, secret, code, verifier)
@@ -439,8 +441,68 @@ class TestPrompt:
         User.objects.filter(pk=person.pk).update(last_login=timezone.now() - timedelta(hours=2))
         response = client.get("/oauth/authorize/", h.autorisierung(app, challenge, max_age="600"))
         assert response["Location"].startswith(reverse("accounts:login") + "?erneut=1")
-        frisch = client.get("/oauth/authorize/", h.autorisierung(app, challenge, max_age="86400"))
+        frisch = client.get("/oauth/authorize/", h.autorisierung(app, challenge, max_age="86400", state="neue-anfrage"))
         assert h.rueckweg(frisch["Location"])["code"]
+
+    @pytest.mark.parametrize("verlangt", [{"prompt": "login"}, {"max_age": "600"}])
+    def test_weiterleitung_ohne_erneute_anmeldung_gibt_keinen_code(
+        self, anbieter: None, person: User, verlangt: dict[str, str]
+    ) -> None:
+        """Das Ziel der Weiterleitung führt erst nach einer Anmeldung in dieser Sitzung zum Code."""
+        app, _secret = h.anwendung(vertrauenswuerdig=True)
+        _verifier, challenge = h.pkce()
+        client = _angemeldet(person)
+        User.objects.filter(pk=person.pk).update(last_login=timezone.now() - timedelta(hours=2))
+        response = client.get("/oauth/authorize/", h.autorisierung(app, challenge, **verlangt))
+        weiter = h.parse_qs_first(response["Location"], "next")
+
+        nochmal = client.get(weiter)
+        assert nochmal.status_code == 302
+        assert nochmal["Location"].startswith(reverse("accounts:login") + "?erneut=1")
+        still = client.get(f"{weiter}&prompt=none")
+        assert h.rueckweg(still["Location"])["error"] == "login_required"
+        assert not OAuthGrant.objects.exists()
+
+        client.force_login(person)  # die erneute Anmeldung
+        assert h.rueckweg(client.get(weiter)["Location"])["code"]
+
+    def test_zustimmung_ohne_erneute_anmeldung_gibt_keinen_code(self, anbieter: None, person: User) -> None:
+        """Auch das Formular der Zustimmungsseite gibt bis zur erneuten Anmeldung keinen Code."""
+        app, _secret = h.anwendung()
+        _verifier, challenge = h.pkce()
+        client = _angemeldet(person)
+        werte = h.autorisierung(app, challenge)
+        form = client.get("/oauth/authorize/", werte).context["form"]
+        daten = {name: form[name].value() or "" for name in form.fields if name != "allow"}
+        client.get("/oauth/authorize/", {**werte, "prompt": "login"})
+
+        response = client.post(f"/oauth/authorize/?{urlencode(werte)}", {**daten, "allow": "on"})
+        assert response.status_code == 302
+        assert response["Location"].startswith(reverse("accounts:login") + "?erneut=1")
+        assert not OAuthGrant.objects.exists()
+
+    def test_viele_offene_wuensche_sperren_alles_bis_zur_anmeldung(self, anbieter: None, person: User) -> None:
+        """Wer die Sitzung mit Wünschen flutet, verdrängt keinen: Dann gibt es gar keinen Code mehr."""
+        app, _secret = h.anwendung(vertrauenswuerdig=True)
+        _verifier, challenge = h.pkce()
+        client = _angemeldet(person)
+        for nummer in range(reauth.MAX_PENDING + 5):
+            client.get("/oauth/authorize/", h.autorisierung(app, challenge, prompt="login", state=f"s{nummer}"))
+        response = client.get("/oauth/authorize/", h.autorisierung(app, challenge, state="ganz-neu"))
+        assert response["Location"].startswith(reverse("accounts:login") + "?erneut=1")
+        assert not OAuthGrant.objects.exists()
+        client.force_login(person)
+        response = client.get("/oauth/authorize/", h.autorisierung(app, challenge, state="s0"))
+        assert h.rueckweg(response["Location"])["code"]
+
+    def test_approval_prompt_der_anfrage_gilt_nicht(self, anbieter: None, person: User) -> None:
+        """Fremde Anwendungen fragen jedes Mal, auch mit ``approval_prompt=auto`` und gültigem Token."""
+        app, _secret, _tokens = _code_tokens(person)
+        _verifier, challenge = h.pkce()
+        response = _angemeldet(person).get("/oauth/authorize/", h.autorisierung(app, challenge, approval_prompt="auto"))
+        assert response.status_code == 200
+        assert "Zulassen" in response.content.decode()
+        assert not OAuthGrant.objects.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -540,19 +602,46 @@ class TestWiderruf:
         assert _refresh(app, secret, tokens["refresh_token"]).status_code in (400, 401)
 
     def test_gesperrtes_konto_verliert_seine_tokens(self, anbieter: None, person: User) -> None:
-        _app, _secret, tokens = _code_tokens(person)
+        app, secret, tokens = _code_tokens(person)
         User.objects.filter(pk=person.pk).update(is_active=False)
         with pytest.raises(access.InvalidAccessToken):
             access.authenticate(tokens["access_token"])
         assert (
             Client().get("/oauth/userinfo/", HTTP_AUTHORIZATION=f"Bearer {tokens['access_token']}").status_code == 401
         )
+        ausgaben = len(_ereignisse("oidc_token"))
+        response = _refresh(app, secret, tokens["refresh_token"])
+        assert response.status_code == 400 and response.json()["error"] == "invalid_grant"
+        assert len(_ereignisse("oidc_token")) == ausgaben
 
     def test_entzogener_scope_gilt_sofort_nicht_mehr(self, anbieter: None, person: User) -> None:
-        app, _secret, tokens = _code_tokens(person)
+        app, secret = h.anwendung()
+        verifier, challenge = h.pkce()
+        code = h.code_holen(_angemeldet(person), app, challenge, scope="openid profile email ratsdaten:lesen")
+        tokens = h.tokens_holen(Client(), app, secret, code, verifier)
         assert access.authenticate(tokens["access_token"]).has_scope("ratsdaten:lesen")
         OAuthApplication.objects.filter(pk=app.pk).update(allowed_scopes=["openid"])
         assert not access.authenticate(tokens["access_token"]).has_scope("ratsdaten:lesen")
+        nur_sub = {"sub": str(person.pk)}
+        assert Client().get("/oauth/userinfo/", HTTP_AUTHORIZATION=f"Bearer {tokens['access_token']}").json() == nur_sub
+
+        # Auch die Refresh-Kette behält den Scope nicht
+        neu = _refresh(app, secret, tokens["refresh_token"]).json()
+        assert neu["scope"] == "openid"
+        assert Client().get("/oauth/userinfo/", HTTP_AUTHORIZATION=f"Bearer {neu['access_token']}").json() == nur_sub
+        ausdruecklich = Client().post(
+            "/oauth/token/",
+            {"grant_type": "refresh_token", "refresh_token": neu["refresh_token"], "scope": "openid profile"},
+            **h.basic(app, secret),
+        )
+        assert ausdruecklich.status_code == 400 and ausdruecklich.json()["error"] == "invalid_scope"
+
+        # Ohne openid gibt userinfo nichts mehr heraus
+        OAuthApplication.objects.filter(pk=app.pk).update(allowed_scopes=[])
+        assert Client().get("/oauth/userinfo/", HTTP_AUTHORIZATION=f"Bearer {neu['access_token']}").status_code in (
+            401,
+            403,
+        )
 
 
 class TestIntrospektion:
