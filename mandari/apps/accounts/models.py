@@ -359,6 +359,9 @@ class SecurityAuditLog(models.Model):
     (Issue #366, :func:`apps.accounts.security_audit.record_throttled`). Dazu kommen Eingriffe der
     Plattform-Administration in den Betrieb (``betrieb``, etwa ein Abonnement der Ereignistechnik
     pausieren oder ein geparktes Ereignis verwerfen) mit Aktion und Kennungen in ``details``.
+    Der OpenID-Connect-Anbieter (Issue #1206) schreibt hier die Ausgabe von Tokens (``oidc_token``), jeden
+    Widerruf (``oidc_widerruf``) und Änderungen an Anwendungen (``oidc_anwendung``), mit Client-ID und Scopes,
+    nie mit einem Token oder Secret.
 
     Datensparsam: kein Passwort, keine eingegebene Kennung im Klartext. Für Fehlversuche mit
     unbekannter Kennung steht nur ein geheimer, schlüsselgebundener Hash (HMAC-SHA-256) darin –
@@ -375,6 +378,10 @@ class SecurityAuditLog(models.Model):
         ("login_failed", "Anmeldung fehlgeschlagen"),
         ("login_throttled", "Anmeldung durch Drosselung abgewiesen"),
         ("betrieb", "Eingriff in den Betrieb"),
+        # OpenID-Connect-Anbieter (Issue #1206, apps/accounts/oidc/audit.py)
+        ("oidc_token", "Token für eine Anwendung ausgegeben"),
+        ("oidc_widerruf", "Zugang einer Anwendung widerrufen"),
+        ("oidc_anwendung", "Anwendung (OIDC-Client) geändert"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -422,3 +429,32 @@ class SecurityAuditLog(models.Model):
     def delete(self, *args: Any, **kwargs: Any) -> Any:
         """Revisionssicherheit: Einträge verschwinden nur über die fristgerechte Löschung mit Archiv."""
         raise ValueError("Protokolleinträge sind unveränderbar und können nicht gelöscht werden.")
+
+
+# OpenID-Connect-Anbieter (Issue #1206): eigene Modelle für django-oauth-toolkit, siehe apps/accounts/oidc/models.py
+from .oidc.models import (  # noqa: E402
+    OAuthAccessToken,
+    OAuthApplication,
+    OAuthDeviceGrant,
+    OAuthGrant,
+    OAuthIDToken,
+    OAuthRefreshToken,
+)
+
+__all__ = [
+    "EmailVerificationToken",
+    "LoginAttempt",
+    "OAuthAccessToken",
+    "OAuthApplication",
+    "OAuthDeviceGrant",
+    "OAuthGrant",
+    "OAuthIDToken",
+    "OAuthRefreshToken",
+    "SecurityAuditLog",
+    "SecurityNotification",
+    "TwoFactorDevice",
+    "User",
+    "UserManager",
+    "UserSession",
+    "WebAuthnCredential",
+]

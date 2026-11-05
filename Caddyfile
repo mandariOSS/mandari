@@ -87,6 +87,8 @@
 		path /ladung/*
 		# Katalog der offenen Ratsinformationen nach DCAT-AP.de für Datenportale (#104)
 		path /data/dcat/*
+		# OpenID-Connect-Anbieter (#1206), ohne OIDC_PROVIDER_ENABLED antwortet die Anwendung mit 404
+		path /oauth/* /.well-known/openid-configuration
 		path /static/* /media/*
 		path /sitemap-insight-*
 		# PWA (mandari work): Manifest, Service Worker (Root-Scope), Offline-Fallback

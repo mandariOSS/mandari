@@ -96,6 +96,9 @@ urlpatterns = [
     path("data/dcat/", include("hub.adapters.dcat.urls", namespace="dcat")),
     # Authentication (login, logout, password reset)
     path("accounts/", include("apps.accounts.urls", namespace="accounts")),
+    # OpenID-Connect-Anbieter (Issue #1206): /oauth/… und /.well-known/openid-configuration; ohne
+    # OIDC_PROVIDER_ENABLED antworten alle mit 404
+    path("", include("apps.accounts.oidc.urls")),
     # Session RIS (administrative portal)
     path("session/", include("apps.session.urls", namespace="session")),
     # Work module (portal for organizations)
