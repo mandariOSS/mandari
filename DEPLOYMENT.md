@@ -133,10 +133,20 @@ sh deploy/scripts/deploy.sh plan   v0.11.0   # Images ziehen, migrate --plan, ch
 sh deploy/scripts/deploy.sh apply  v0.11.0   # Sicherung, Migration, Umschalten, Prüfung, ggf. Rückfall
 sh deploy/scripts/deploy.sh verify           # nur die Prüfungen (Seiten + Worker) gegen den laufenden Stand
 sh deploy/scripts/deploy.sh rollback <tag>   # von Hand zurück auf ein früheres Tag
+sh deploy/scripts/deploy.sh prune           # Vor-Deploy-Sicherungen auf Anzahl und Höchstalter kürzen
+```
+
+Die Sicherung vor jedem Deploy (`BACKUP_DIR`) bleibt höchstens `BACKUP_KEEP` Stück (Standard 5) und höchstens
+`BACKUP_MAX_AGE_DAYS` Tage (Standard 30) liegen, wie die Offsite-Sicherungen (`docs/BACKUP.md`). Gelöschte Daten
+verschwinden so mit der Zeit auch aus diesen Sicherungen. Damit die Grenze auch ohne Deploy greift, täglich
+`deploy.sh prune` aufrufen, etwa per Cron:
+
+```cron
+15 4 * * * set -a; . /opt/mandari/deploy.env; set +a; cd /opt/mandari && sh deploy/scripts/deploy.sh prune
 ```
 
 Alle Parameter (`MANDARI_DIR`, `COMPOSE_FILES`, `APP_SERVICE`, `WORKER_SERVICES`,
-`WORKER_CHECK_SECONDS`, `DB_SERVICE`, `BACKUP_DIR`, `NOTIFY_EMAIL`, `VERIFY_*`) stehen im Kopf
+`WORKER_CHECK_SECONDS`, `DB_SERVICE`, `BACKUP_DIR`, `BACKUP_KEEP`, `BACKUP_MAX_AGE_DAYS`, `NOTIFY_EMAIL`, `VERIFY_*`) stehen im Kopf
 des Skripts.
 Migrationen müssen abwärtskompatibel sein: Der Rückfall rollt Code zurück, keine
 Migrationen (`django-safemigrate` spielt nur verträgliche Migrationen vor dem Umschalten ein).
