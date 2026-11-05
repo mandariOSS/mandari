@@ -2,10 +2,20 @@
 """
 Bestehende Sitzungsreihe bearbeiten (Issue #1071, Muster einstellungen.html „Sitzungsreihe bearbeiten“).
 
-Geändert werden Name, Wiederholung, Wochentag, Beginn, Dauer, Ort und Videolink. Die Änderung wirkt nur auf künftige,
-noch nicht eingeladene Termine der Reihe; eingeladene, laufende, abgeschlossene und vergangene Sitzungen bleiben, wie
-sie sind. Vorher zeigt die Seite, wie viele Termine sich ändern (:func:`plan` und :meth:`Plan.satz`, dieselbe
+Geändert werden Name, Wiederholung, Wochentag, Beginn, Dauer, Ort und Videolink. Die Änderung wirkt auf künftige,
+noch nicht eingeladene Termine der Reihe; laufende, abgeschlossene, vergangene und von Hand abgesagte Sitzungen bleiben,
+wie sie sind. Vorher zeigt die Seite, wie viele Termine sich ändern (:func:`plan` und :meth:`Plan.satz`, dieselbe
 Rechnung wie beim Übernehmen in :func:`apply`).
+
+Eingeladene Sitzungen (Issue #1227, Häkchen „Auch Sitzungen ändern, zu denen schon eingeladen wurde“, standardmäßig an):
+Noch nicht begonnene, eingeladene Sitzungen ändern sich nach denselben Regeln mit, und wer eingeladen ist, erfährt die
+Änderung per Benachrichtigung und E-Mail (:func:`apps.work.faction.invitations.notify_invitees_of_change`), ohne Inhalte
+nichtöffentlicher TOPs. Zu- und Absagen bleiben stehen; ändert sich der Termin, bittet die Nachricht, sie zu prüfen.
+Eingeladene Sitzungen sagt Work nie selbst ab und löscht sie nie: Nach einem Rhythmuswechsel wandern sie nur auf einen
+freien Tag ohne Pause oder Ausfallregel; gibt es keinen, bleiben sie am bisherigen Tag. Läuft für eine Sitzung der Reihe gerade
+der Einladungsversand (beansprucht, nicht abgeschlossen), übernimmt Work die Änderung nicht und bittet, es nach dem
+Versand noch einmal zu versuchen (:data:`VERSAND_LAEUFT`): Die Einladung ginge sonst mit dem alten Stand hinaus, und die
+Sitzung behielte ihn, weil die Reihe danach schon die neuen Werte hat. Ohne Häkchen bleibt es beim bisherigen Verhalten.
 
 Regeln je betroffenem Termin:
 
@@ -25,22 +35,29 @@ Regeln je betroffenem Termin:
 from __future__ import annotations
 
 import copy
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
 from typing import TYPE_CHECKING, Any, cast
 
 from django.db import transaction
+from django.db.models import F, Q
 from django.utils import timezone
 
-from apps.common.formatting import count_label
+from apps.common.formatting import WEEKDAY_CHOICES, count_label
 
 from . import generation
 
 if TYPE_CHECKING:
     from .models import FactionMeeting, FactionMeetingSchedule
 
+logger = logging.getLogger(__name__)
+
 #: Felder der Reihe, die sich bearbeiten lassen
 FELDER = ("name", "recurrence", "weekday", "time", "duration_minutes", "default_location", "default_video_link")
+
+#: Formularfeld des Häkchens „Auch Sitzungen ändern, zu denen schon eingeladen wurde“ (Issue #1227)
+EINGELADENE_FELD = "eingeladene"
 
 #: Was ein leerer, automatisch angelegter Termin beim Löschen höchstens mitnimmt (deletion.DELETED_LABELS)
 _LEER_ERLAUBT = {"Tagesordnungspunkte", "Anwesenheiten und Zusagen"}
@@ -50,6 +67,29 @@ RHYTHMUS_GRUND = "Entfällt: Rhythmus der Sitzungsreihe geändert"
 
 #: Feste Meldungen
 GESPERRT = "Die Reihe legt gerade Termine an. Bitte versuchen Sie es in einer Minute noch einmal."
+VERSAND_LAEUFT = (
+    "Zur Sitzung am {tag} wird gerade eingeladen. Bitte übernehmen Sie die Änderung noch einmal, wenn der Versand "
+    "fertig ist (meist nach einer Minute)."
+)
+
+#: Kurze Wochentage für Vorschau und Nachricht, 0 = Montag
+_TAGE = {nummer: name[:2] for nummer, name in WEEKDAY_CHOICES}
+
+
+def mit_eingeladenen(form: Any) -> bool:
+    """Ist das Häkchen „Auch Sitzungen ändern, zu denen schon eingeladen wurde“ gesetzt? Ohne Feld: nein (bisher)."""
+    return (form.get(EINGELADENE_FELD) or "") in ("1", "on", "true")
+
+
+def _wann(zeitpunkt: datetime) -> str:
+    """„Mo 10.11.2026, 18:00 Uhr“ in der Ortszeit der Installation."""
+    lokal = timezone.localtime(zeitpunkt, timezone.get_default_timezone())
+    return f"{_TAGE[lokal.weekday()]} {lokal:%d.%m.%Y}, {lokal:%H:%M} Uhr"
+
+
+def _eingeladen(meeting: FactionMeeting) -> bool:
+    """Ist zur Sitzung eingeladen (Versand abgeschlossen)?"""
+    return bool(meeting.invitation_sent and meeting.invitation_sent_at is not None)
 
 
 class ReiheError(ValueError):
@@ -119,6 +159,11 @@ class Schritt:
     meeting: FactionMeeting
     datum: Any
     felder: dict[str, Any] = field(default_factory=dict)
+    #: Nur eingeladene Sitzungen (Issue #1227): bisheriger Beginn, was sich ändert (Sätze für Vorschau und Nachricht)
+    #: und ob sich Tag oder Uhrzeit ändern (dann bittet die Nachricht, die Zu- oder Absage zu prüfen)
+    vorher: str = ""
+    hinweise: list[str] = field(default_factory=list)
+    termin_geaendert: bool = False
 
     @property
     def verschoben(self) -> bool:
@@ -131,6 +176,12 @@ class Plan:
 
     reihe_felder: dict[str, Any]
     rhythmus_geaendert: bool
+    #: Häkchen „Auch Sitzungen ändern, zu denen schon eingeladen wurde“ (Issue #1227)
+    mit_eingeladenen: bool = False
+    #: Eingeladene Sitzungen, die sich ändern; wer eingeladen ist, erhält eine Nachricht (Issue #1227)
+    informiert: list[Schritt] = field(default_factory=list)
+    #: Sitzungen, zu denen gerade eingeladen wird (Versand beansprucht, nicht abgeschlossen): Übernehmen wartet
+    versand_laeuft: list[Any] = field(default_factory=list)
     angepasst: list[Schritt] = field(default_factory=list)
     verschoben: list[Schritt] = field(default_factory=list)
     #: Geplante Termine ohne Tag im neuen Rhythmus: abgesagt („Entfällt“, ``RHYTHMUS_GRUND``), Inhalte bleiben
@@ -150,7 +201,8 @@ class Plan:
     def zahl(self) -> int:
         """Termine, die sich ändern."""
         return (
-            len(self.angepasst)
+            len(self.informiert)
+            + len(self.angepasst)
             + len(self.verschoben)
             + len(self.abgesagt)
             + len(self.wieder)
@@ -158,9 +210,19 @@ class Plan:
             + self.neu
         )
 
+    @property
+    def sperre(self) -> str:
+        """Warum sich die Änderung gerade nicht übernehmen lässt (Einladungsversand läuft), sonst leer."""
+        if not self.versand_laeuft:
+            return ""
+        return VERSAND_LAEUFT.format(tag=_wann(self.versand_laeuft[0].start).split(",")[0])
+
     def satz(self) -> str:
         """„Ändert 6 kommende Termine: 4 angepasst, 2 verschoben. …“ für Vorschau und Meldung."""
         teile = []
+        if self.informiert:
+            anzahl = count_label(len(self.informiert), "eingeladene Sitzung", "eingeladene Sitzungen")
+            teile.append(f"{anzahl} mit Nachricht an die Eingeladenen")
         if self.angepasst:
             teile.append(f"{len(self.angepasst)} angepasst")
         if self.verschoben:
@@ -183,13 +245,19 @@ class Plan:
             satz += (
                 f" {count_label(len(self.bleiben), 'Termin', 'Termine')} mit Inhalten "
                 f"{'bleibt' if len(self.bleiben) == 1 else 'bleiben'} am bisherigen Tag, weil es im neuen Rhythmus "
-                "keinen freien Tag gibt."
+                "keinen passenden freien Tag gibt."
             )
-        if self.eingeladen:
+        if self.eingeladen and self.mit_eingeladenen:
+            satz += (
+                f" {count_label(self.eingeladen, 'weitere Sitzung bleibt', 'weitere Sitzungen bleiben')} unverändert."
+            )
+        elif self.eingeladen:
             satz += (
                 f" {count_label(self.eingeladen, 'eingeladene Sitzung bleibt', 'eingeladene Sitzungen bleiben')} "
                 "unverändert."
             )
+        if self.sperre:
+            satz += f" {self.sperre}"
         return satz
 
 
@@ -348,10 +416,14 @@ def _naechster_tag(frei: set[Any], datum: Any) -> Any:
 
 def _art(meeting: FactionMeeting, alt: FactionMeetingSchedule) -> str | None:
     """
-    Wie der Termin bei einer Änderung der Reihe behandelt wird: ``inhalt`` (geplant, bearbeitet), ``leer`` (geplant,
-    unverändert), ``rhythmus`` (von einem früheren Rhythmuswechsel abgesagt), ``platzhalter`` (automatisch als
-    „Entfällt“ angelegt und nie berührt) oder ``None`` (bleibt außen vor, etwa von Hand abgesagt).
+    Wie der Termin bei einer Änderung der Reihe behandelt wird: ``eingeladen`` (eingeladen, noch nicht begonnen; wie
+    ``inhalt``, aber nie abgesagt, Issue #1227), ``inhalt`` (geplant, bearbeitet), ``leer`` (geplant, unverändert),
+    ``rhythmus`` (von einem früheren Rhythmuswechsel abgesagt), ``platzhalter`` (automatisch als „Entfällt“ angelegt und
+    nie berührt) oder ``None`` (bleibt außen vor, etwa von Hand abgesagt).
     """
+    if meeting.invitation_sent:
+        eingeladen = _eingeladen(meeting) and meeting.status in ("draft", "planned", "invited")
+        return "eingeladen" if eingeladen else None
     if meeting.status in ("draft", "planned"):
         return "leer" if _unveraendert(meeting, alt) else "inhalt"
     if meeting.cancellation_reason == RHYTHMUS_GRUND:
@@ -366,28 +438,68 @@ def _art(meeting: FactionMeeting, alt: FactionMeetingSchedule) -> str | None:
     return None
 
 
-def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = None) -> Plan:
-    """Was die Änderung mit den kommenden Terminen macht (ohne zu schreiben)."""
+def _hinweise(schritt: Schritt) -> list[str]:
+    """
+    Was sich an einer eingeladenen Sitzung ändert, als kurze Angaben für Vorschau und Nachricht (Issue #1227): Termin,
+    Ende, Ort, Videolink, Titel. Nur Angaben der Sitzung selbst, nie Inhalte von TOPs.
+    """
+    meeting, felder = schritt.meeting, schritt.felder
+    hinweise: list[str] = []
+    if "start" in felder:
+        if schritt.verschoben:
+            hinweise.append(f"neuer Termin {_wann(felder['start'])}")
+        else:
+            hinweise.append(f"neuer Beginn {timezone.localtime(felder['start']):%H:%M} Uhr")
+    # Das Ende nur, wenn sich die Dauer ändert; sonst wandert es mit dem Beginn
+    start = felder.get("start", meeting.start)
+    if (
+        felder.get("end") is not None
+        and meeting.end is not None
+        and felder["end"] - start != meeting.end - meeting.start
+    ):
+        hinweise.append(f"neues Ende {timezone.localtime(felder['end']):%H:%M} Uhr")
+    if "location" in felder:
+        hinweise.append(f"neuer Ort: {felder['location']}" if felder["location"] else "ohne Ortsangabe")
+    if "video_link" in felder:
+        hinweise.append(f"neuer Videolink: {felder['video_link']}" if felder["video_link"] else "ohne Videolink")
+    if "title" in felder and felder["title"] != meeting.title:
+        hinweise.append(f"neuer Titel: {felder['title']}")
+    return hinweise
+
+
+def plan(
+    schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = None, *, eingeladene: bool = False
+) -> Plan:
+    """
+    Was die Änderung mit den kommenden Terminen macht (ohne zu schreiben). ``eingeladene``: auch Sitzungen ändern, zu
+    denen schon eingeladen wurde (Issue #1227).
+    """
     from .models import FactionMeeting
 
     now = now or timezone.now()
     reihe_felder = {name: getattr(werte, name) for name in FELDER if getattr(schedule, name) != getattr(werte, name)}
     rhythmus = "recurrence" in reihe_felder or "weekday" in reihe_felder
-    ergebnis = Plan(reihe_felder=reihe_felder, rhythmus_geaendert=rhythmus)
+    ergebnis = Plan(reihe_felder=reihe_felder, rhythmus_geaendert=rhythmus, mit_eingeladenen=eingeladene)
 
     neu = copy.copy(schedule)
     for name in FELDER:
         setattr(neu, name, getattr(werte, name))
 
     kuenftig = FactionMeeting.objects.filter(schedule=schedule, start__gt=now)
-    kandidaten = list(
-        kuenftig.filter(
-            invitation_sent=False,
-            invitation_claimed_at__isnull=True,
-            scheduled_date__isnull=False,
-            status__in=["draft", "planned", "cancelled"],
-        ).order_by("scheduled_date")
-    )
+    offen_q = Q(invitation_sent=False, invitation_claimed_at__isnull=True, status__in=["draft", "planned", "cancelled"])
+    if eingeladene:
+        # Eingeladen und noch nicht begonnen; laufende, abgeschlossene und abgesagte bleiben außen vor
+        offen_q |= Q(invitation_sent=True, invitation_sent_at__isnull=False, status__in=["draft", "planned", "invited"])
+        # Versand beansprucht, aber nicht abgeschlossen: Die Einladung geht gerade mit dem bisherigen Stand hinaus
+        ergebnis.versand_laeuft = list(
+            kuenftig.filter(
+                invitation_sent=True,
+                invitation_sent_at__isnull=True,
+                invitation_claimed_at__isnull=False,
+                status__in=["draft", "planned"],
+            ).order_by("start")
+        )
+    kandidaten = list(kuenftig.filter(offen_q, scheduled_date__isnull=False).order_by("scheduled_date"))
     betroffen: list[FactionMeeting] = []
     art: dict[Any, str] = {}
     for meeting in kandidaten:
@@ -395,7 +507,11 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
         if einordnung is not None:
             betroffen.append(meeting)
             art[meeting.pk] = einordnung
-    ergebnis.eingeladen = kuenftig.exclude(pk__in=[m.pk for m in betroffen]).exclude(status="cancelled").count()
+    ergebnis.eingeladen = (
+        kuenftig.exclude(pk__in=[m.pk for m in [*betroffen, *ergebnis.versand_laeuft]])
+        .exclude(status="cancelled")
+        .count()
+    )
 
     if not reihe_felder:
         return ergebnis
@@ -407,7 +523,8 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
         .filter(scheduled_date__isnull=False)
         .values_list("scheduled_date", flat=True)
     )
-    geloescht = generation.deleted_occurrence_dates(list(schedule.exceptions.all()))
+    ausnahmen = list(schedule.exceptions.all())
+    geloescht = generation.deleted_occurrence_dates(ausnahmen)
     # Tage betroffener Termine zählen mit, auch wenn der neue Beginn heute schon vorbei wäre (sie bleiben dann)
     eigene = {m.scheduled_date for m in betroffen}
     erzeugung = cast(Any, generation)
@@ -417,6 +534,17 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
         if tag not in belegt and tag not in geloescht and (tag in eigene or erzeugung._occurrence_start(neu, tag) > now)
     ]
     frei = set(tage)
+    ausfall: dict[Any, bool] = {}
+    regeln: list[Any] | None = None
+
+    def ohne_ausfall(tag: Any) -> bool:
+        """Liegt auf dem Tag weder Pause noch Ausfallregel? Eingeladene Sitzungen sagt Work nie selbst ab."""
+        nonlocal regeln
+        if regeln is None:
+            regeln = list(schedule.suspension_rules.filter(is_active=True).select_related("ris_organization"))
+        if tag not in ausfall:
+            ausfall[tag] = bool(generation.evaluate_cancellation(neu, tag, exceptions=ausnahmen, rules=regeln))
+        return not ausfall[tag]
 
     schritte: list[Schritt] = []
     offen: list[FactionMeeting] = []
@@ -427,12 +555,14 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
             (ergebnis.wieder if art[meeting.pk] == "rhythmus" else schritte).append(schritt)
         else:
             offen.append(meeting)
-    # Termine mit Inhalten auf den nächstgelegenen freien Tag (bei Gleichstand den späteren), sonst bleiben sie
-    for meeting in [m for m in offen if art[m.pk] == "inhalt"]:
-        if not frei:
+    # Termine mit Inhalten (auch eingeladene) auf den nächstgelegenen freien Tag (bei Gleichstand den späteren), sonst
+    # bleiben sie; eingeladene nur auf einen Tag ohne Pause oder Ausfallregel
+    for meeting in [m for m in offen if art[m.pk] in ("eingeladen", "inhalt")]:
+        moeglich = frei if art[meeting.pk] == "inhalt" else {tag for tag in frei if ohne_ausfall(tag)}
+        if not moeglich:
             ergebnis.bleiben.append(meeting)
             continue
-        ziel = _naechster_tag(frei, meeting.scheduled_date)
+        ziel = _naechster_tag(moeglich, meeting.scheduled_date)
         frei.discard(ziel)
         schritte.append(Schritt(meeting, ziel))
     # Unveränderte Termine der Reihe nach auf die übrigen Tage (Nummern bleiben in Folge); ohne Tag: absagen, nie löschen
@@ -449,7 +579,13 @@ def plan(schedule: FactionMeetingSchedule, werte: Werte, now: datetime | None = 
     for schritt in [*schritte, *ergebnis.wieder]:
         schritt.felder = _felder(schritt.meeting, schedule, neu, schritt.datum, now)
     for schritt in schritte:
-        if schritt.verschoben:
+        if art[schritt.meeting.pk] == "eingeladen":
+            if schritt.verschoben or schritt.felder:
+                schritt.vorher = _wann(schritt.meeting.start)
+                schritt.hinweise = _hinweise(schritt)
+                schritt.termin_geaendert = schritt.verschoben or "start" in schritt.felder
+                ergebnis.informiert.append(schritt)
+        elif schritt.verschoben:
             (ergebnis.verschoben if art[schritt.meeting.pk] == "inhalt" else ergebnis.angepasst).append(schritt)
         elif schritt.felder:
             ergebnis.angepasst.append(schritt)
@@ -469,12 +605,16 @@ def _speichern(meeting: FactionMeeting, felder: dict[str, Any], extra: dict[str,
         meeting.create_approval_agenda_item()
 
 
-def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None) -> Plan:
+def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None, *, eingeladene: bool = False) -> Plan:
     """
     Änderung übernehmen: Reihe speichern, Termine nach :func:`plan` anpassen, verschieben, absagen oder wieder
     ansetzen, danach fehlende Tage anlegen und die Nummern ordnen. Gelöscht werden nur nie berührte
     „Entfällt“-Platzhalter. Unter der Sperre der Reihe und mit gesperrten Terminen: Was gerade eingeladen wird, ist nach
     der Sperre nicht mehr betroffen.
+
+    ``eingeladene`` (Issue #1227): Eingeladene Sitzungen ändern sich mit; nach dem Speichern erfahren die Eingeladenen
+    je Sitzung, was sich geändert hat. Läuft für eine Sitzung der Reihe gerade der Einladungsversand, übernimmt Work
+    nichts (:data:`VERSAND_LAEUFT`).
     """
     from django.core.cache import cache
 
@@ -493,12 +633,14 @@ def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None
                 .filter(schedule=schedule, start__gt=timezone.now())
                 .values_list("pk", flat=True)
             )
-            ergebnis = plan(schedule, werte)
+            ergebnis = plan(schedule, werte, eingeladene=eingeladene)
             if not ergebnis.reihe_felder:
                 return ergebnis
+            if ergebnis.sperre:
+                raise ReiheError(ergebnis.sperre)
             for meeting in ergebnis.entfernt:
                 deletion._delete_with_audit(meeting, deletion.impact_of(meeting))
-            schritte = ergebnis.angepasst + ergebnis.verschoben
+            schritte = ergebnis.informiert + ergebnis.angepasst + ergebnis.verschoben
             # Erst alle wandernden Termine vom alten Tag lösen (eindeutig je Reihe und Tag), dann neu setzen
             wandernd = [s.meeting.pk for s in schritte if s.verschoben]
             if wandernd:
@@ -520,9 +662,16 @@ def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None
                 extra: dict[str, Any] = {}
                 if schritt.verschoben:
                     extra["scheduled_date"] = schritt.datum
-                    if schritt.meeting.status in ("draft", "planned") and grund(schritt.datum):
+                    # Eingeladene Sitzungen sagt Work nie selbst ab (plan() wählt für sie nur Tage ohne Ausfall)
+                    absagbar = schritt.meeting.status in ("draft", "planned") and not _eingeladen(schritt.meeting)
+                    if absagbar and grund(schritt.datum):
                         extra.update(status="cancelled", cancellation_reason=grund(schritt.datum))
                 _speichern(schritt.meeting, schritt.felder, extra)
+            # Kalender erkennen die Änderung eingeladener Sitzungen an der höheren ICS-SEQUENCE (Abo und nächste Mail)
+            if ergebnis.informiert:
+                FactionMeeting.objects.filter(pk__in=[s.meeting.pk for s in ergebnis.informiert]).update(
+                    invitation_sequence=F("invitation_sequence") + 1
+                )
             for schritt in ergebnis.wieder:
                 ausfall = grund(schritt.datum)
                 extra = (
@@ -538,6 +687,10 @@ def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None
                 schedule,
                 membership=membership,
                 changes={
+                    "Eingeladene Sitzungen geändert (Eingeladene informiert)": {
+                        "alt": 0,
+                        "neu": len(ergebnis.informiert),
+                    },
                     "Termine angepasst": {"alt": 0, "neu": len(ergebnis.angepasst)},
                     "Termine mit Inhalten verschoben": {"alt": 0, "neu": len(ergebnis.verschoben)},
                     "Termine wieder angesetzt": {"alt": 0, "neu": len(ergebnis.wieder)},
@@ -549,10 +702,34 @@ def apply(schedule: FactionMeetingSchedule, werte: Werte, membership: Any = None
     finally:
         cache.delete(key)
     organization = schedule.organization
+    nachrichten = [(s.meeting.pk, s.vorher, s.hinweise, s.termin_geaendert) for s in ergebnis.informiert]
 
     def danach() -> None:
         generation.generate_meetings_now(schedule)
         cast(Any, generation).renumber_upcoming(organization)
 
+    if nachrichten:
+        # Erst nach dem Speichern und unabhängig vom Anlegen der Termine: Die Nachricht nennt nur gespeicherte Werte
+        transaction.on_commit(lambda: _informieren(schedule, nachrichten, membership), robust=True)
     transaction.on_commit(danach)
     return ergebnis
+
+
+def _informieren(
+    schedule: FactionMeetingSchedule, nachrichten: list[tuple[Any, str, list[str], bool]], actor: Any
+) -> None:
+    """Eingeladene je geänderter Sitzung informieren (Issue #1227); nach dem Speichern, eine Sitzung hält keine auf."""
+    from .invitations import notify_invitees_of_change
+    from .models import FactionMeeting
+
+    sitzungen = FactionMeeting.objects.select_related("organization").in_bulk([pk for pk, *_ in nachrichten])
+    for pk, vorher, hinweise, termin_geaendert in nachrichten:
+        meeting = sitzungen.get(pk)
+        if meeting is None:
+            continue
+        try:
+            notify_invitees_of_change(
+                meeting, schedule.name, vorher, hinweise, date_changed=termin_geaendert, actor=actor
+            )
+        except Exception:
+            logger.exception("Eingeladene nicht informiert (meeting=%s)", pk)

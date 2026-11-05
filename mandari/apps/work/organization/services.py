@@ -2379,13 +2379,14 @@ def _schedule_or_error(organization: Organization, schedule_id: Any) -> FactionM
 def plan_schedule_change(organization: Organization, form: Mapping[str, str]) -> Any:
     """
     Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): was die Änderung mit den kommenden Terminen macht
-    (``apps.work.faction.reihe.Plan``), ohne zu speichern.
+    (``apps.work.faction.reihe.Plan``), ohne zu speichern; mit Häkchen ``eingeladene`` auch eingeladene Sitzungen
+    (Issue #1227).
     """
     from apps.work.faction import reihe
 
     schedule = _schedule_or_error(organization, form.get("schedule_id"))
     try:
-        return reihe.plan(schedule, reihe.werte_aus(form))
+        return reihe.plan(schedule, reihe.werte_aus(form), eingeladene=reihe.mit_eingeladenen(form))
     except reihe.ReiheError as exc:
         raise ServiceError(str(exc)) from exc
 
@@ -2393,13 +2394,15 @@ def plan_schedule_change(organization: Organization, form: Mapping[str, str]) ->
 def update_schedule(organization: Organization, membership: Membership, form: Mapping[str, str]) -> tuple[Any, Any]:
     """
     Bestehende Sitzungsreihe bearbeiten (Issue #1071): Name, Wiederholung, Wochentag, Beginn, Dauer, Ort, Videolink.
-    Wirkt auf künftige, noch nicht eingeladene Termine (``apps.work.faction.reihe``). Liefert Reihe und Plan.
+    Wirkt auf künftige, noch nicht eingeladene Termine (``apps.work.faction.reihe``); mit Häkchen ``eingeladene`` auch
+    auf eingeladene, deren Eingeladene Work informiert (Issue #1227). Liefert Reihe und Plan.
     """
     from apps.work.faction import reihe
 
     schedule = _schedule_or_error(organization, form.get("schedule_id"))
     try:
-        return schedule, reihe.apply(schedule, reihe.werte_aus(form), membership)
+        werte = reihe.werte_aus(form)
+        return schedule, reihe.apply(schedule, werte, membership, eingeladene=reihe.mit_eingeladenen(form))
     except reihe.ReiheError as exc:
         raise ServiceError(str(exc)) from exc
 

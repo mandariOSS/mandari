@@ -1,7 +1,8 @@
 {% comment %}
 Eine Sitzungsreihe nach dem Muster (Issue #1071, Muster einstellungen.html „Sitzungsreihe“): Satz zu Rhythmus, Zeit
-und Ort, „Sitzungsreihe bearbeiten …“ (section=update_schedule, Vorschau der betroffenen Termine per htmx mit
-vorschau=1, _fraktion_reihe_vorschau.html), die Automatik (sofort gespeichert, section=update_schedule_automation),
+und Ort, Knopf „Bearbeiten“ (Issue #1227, section=update_schedule, Häkchen „eingeladene“ für schon eingeladene
+Sitzungen, standardmäßig an; Vorschau der betroffenen Termine per htmx mit vorschau=1, _fraktion_reihe_vorschau.html),
+die Automatik (sofort gespeichert, section=update_schedule_automation),
 Vorlauf, Pausen und gelöschte Termine, darunter „Pausen, gelöschte Termine und Ausfallregeln …“ mit Ausnahmen,
 gelöschten Terminen (Wiederherstellen: section=restore_deleted_date) und RIS-Ausfallregeln (je eigene Formulare).
 Pausieren bzw. Aktivieren und Löschen (Dialog, nur mit faction.delete) wie bisher. Kontext: schedule (mit angaben),
@@ -14,7 +15,7 @@ nur_lesen.
 
     {% if not nur_lesen %}
     <details class="fs-einst-unter" data-testid="fs-reihe-bearbeiten">
-        <summary class="wf-textlink">Sitzungsreihe bearbeiten …</summary>
+        <summary class="wf-knopf wf-klein">Bearbeiten<span class="sr-only">: Sitzungsreihe {{ schedule.name }}</span></summary>
         <form method="post" hx-post="{{ request.path }}" hx-vals='{"vorschau": "1"}' hx-trigger="input delay:500ms, change"
               hx-target="#reihe-vorschau-{{ schedule.id }}" hx-swap="innerHTML" hx-sync="this:replace">
             {% csrf_token %}
@@ -41,7 +42,12 @@ nur_lesen.
                 <label>Ort <span class="fs-meta">optional</span><input class="wf-eingabe" type="text" name="default_location" id="reihe-ort-{{ schedule.id }}" value="{{ schedule.default_location }}" maxlength="500"></label>
                 <label>Videolink <span class="fs-meta">optional</span><input class="wf-eingabe" type="url" name="default_video_link" id="reihe-video-{{ schedule.id }}" value="{{ schedule.default_video_link }}" placeholder="https://" maxlength="200"></label>
             </div>
-            <p class="fs-meta" id="reihe-vorschau-{{ schedule.id }}" aria-live="polite" data-testid="fs-reihe-vorschau">Änderungen gelten für Termine, die noch nicht eingeladen sind. Eingeladene, laufende und vergangene Sitzungen bleiben, wie sie sind; Termine mit Inhalten verschiebt Work, statt sie zu löschen.</p>
+            <div class="fs-einst-unter">
+                {% with key=schedule.id|stringformat:"s" %}
+                {% include "work/organization/neu/_haken.html" with name="eingeladene" id="reihe-eingeladene-"|add:key label="Auch Sitzungen ändern, zu denen schon eingeladen wurde, und die Eingeladenen informieren" an=True wert="1" hilfe="Einzeln geänderte Angaben einer Sitzung bleiben. Zu- und Absagen bleiben bestehen; ändert sich der Termin, bittet die Nachricht, sie zu prüfen." %}
+                {% endwith %}
+            </div>
+            <div id="reihe-vorschau-{{ schedule.id }}" aria-live="polite" data-testid="fs-reihe-vorschau"><p class="fs-meta">Änderungen gelten für alle kommenden Termine der Reihe. Laufende, vergangene und von Hand abgesagte Sitzungen bleiben, wie sie sind; Termine mit Inhalten verschiebt Work, statt sie zu löschen.</p></div>
             <p><button type="submit" class="wf-knopf wf-klein">Übernehmen</button></p>
         </form>
     </details>
