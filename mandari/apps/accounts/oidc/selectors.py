@@ -66,8 +66,9 @@ def own_access_token(application: Any, raw: str) -> OAuthAccessToken | None:
     """Access-Token zu ``raw``, aber nur, wenn es dieser Anwendung gehört (Introspektion, RFC 7662)."""
     if not raw or len(raw) > access.MAX_TOKEN_LENGTH:
         return None
-    return (
+    token: OAuthAccessToken | None = (
         OAuthAccessToken.objects.select_related("application", "user")
         .filter(token_checksum=access.checksum(raw), application_id=application.pk)
         .first()
     )
+    return token
