@@ -17,8 +17,14 @@ from django.http import HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase
 from django.utils.cache import get_conditional_response
 
-#: Header einer Antwort, die auch eine ``304`` tragen muss (CORS und Blätter-Links).
-CARRIED_HEADERS: Final = ("Access-Control-Allow-Origin", "Access-Control-Expose-Headers", "Link")
+#: Header einer Antwort, die auch eine ``304`` tragen muss (CORS, Blätter-Links und Nachfolger, Abkündigung).
+CARRIED_HEADERS: Final = (
+    "Access-Control-Allow-Origin",
+    "Access-Control-Expose-Headers",
+    "Link",
+    "Deprecation",
+    "Sunset",
+)
 
 
 def etag_for(content: bytes) -> str:

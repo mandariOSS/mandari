@@ -3,7 +3,7 @@
   "info": {
     "title": "mandari-Schnittstelle",
     "version": "1",
-    "description": "Eine Schnittstelle für alle Bereiche von mandari. Einstieg: `GET /api/`.\n\n- Ratsdaten kommen als OParl 1.1; offene Erweiterungen tragen das Präfix `kommparl:`, Erweiterungen nur für\n  mandari das Präfix `mandari:`.\n- Die Adressen der OParl-Objekte sind ihre Kennungen und ändern sich nicht.\n- Fehler kommen als `application/problem+json` (RFC 9457); die OParl-Ausgaben melden einfache Fehler als\n  `{\"error\", \"status\"}`.\n- Bedingte Abrufe über `ETag` und `If-None-Match`; abgekündigte Endpunkte tragen `Deprecation` (RFC 9745) und\n  `Sunset` (RFC 8594).\n- Schreibende Aufrufe sind Befehle mit `Idempotency-Key`."
+    "description": "Eine Schnittstelle für alle Bereiche von mandari. Einstieg: `GET /api/`.\n\n- Ratsdaten kommen als OParl 1.1; offene Erweiterungen tragen das Präfix `kommparl:`, Erweiterungen nur für\n  mandari das Präfix `mandari:`.\n- Die Adressen der OParl-Objekte sind ihre Kennungen und ändern sich nicht.\n- Fehler kommen als `application/problem+json` (RFC 9457); die OParl-Ausgaben melden einfache Fehler als\n  `{\"error\", \"status\"}`.\n- Bedingte Abrufe über `ETag` und `If-None-Match`; abgekündigte Endpunkte tragen `Deprecation` (RFC 9745) und\n  `Sunset` (RFC 8594).\n- Schreibende Aufrufe sind Befehle mit `Idempotency-Key`.\n\nSchemas der OParl- und kommParl-Typen aus kommParl 0.1 (https://github.com/mandariOSS/kommParl, Commit 0d538716d576 vom 2026-10-18), einer Bearbeitung der OParl-Spezifikation 1.1 (https://github.com/OParl/spec), Lizenz CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). Für die Beschreibung in JSON Schema 2020-12 umgewandelt."
   },
   "tags": [
     {
@@ -812,6 +812,24 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
@@ -851,6 +869,175 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen; Retry-After nennt die Wartezeit in Sekunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Körperschaft",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "description": "Cursor der vorigen Antwort",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Höchstzahl der Einträge (Standard 100, höchstens 1000)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        ],
+        "deprecated": true,
+        "x-sunset": "2027-12-01",
+        "description": "Abgekündigt, entfällt frühestens am 01.12.2027. Nachfolger: kommparl:changes (Profil von kommParl 0.1); die Antworten nennen ihn im Header Link.",
+        "tags": [
+          "OParl-Aggregator"
+        ]
+      }
+    },
+    "/oparl/v1/body/{id}/kommparl/changes": {
+      "get": {
+        "operationId": "oparl_kommparl_changes",
+        "summary": "Änderungsfeed (kommParl)",
+        "responses": {
+          "200": {
+            "description": "Seite des Änderungsfeeds nach dem Profil https://schema.kommparl.de/0.1/profile/changes (kommparl:changes am Body, je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlChangeList"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Cursor abgelaufen (mit kommparl:snapshot) oder Kommune zurückgenommen; Bestand neu aufbauen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlCursorExpired"
                 }
               }
             }
@@ -922,6 +1109,102 @@
             }
           }
         ],
+        "tags": [
+          "OParl-Aggregator"
+        ]
+      }
+    },
+    "/oparl/v1/body/{id}/kommparl/snapshot": {
+      "get": {
+        "operationId": "oparl_kommparl_snapshot",
+        "summary": "Snapshot (kommParl)",
+        "description": "Gesamtstand der Körperschaft nach dem Profil https://schema.kommparl.de/0.1/profile/snapshot als NDJSON: die Kopfzeile (KommparlSnapshotHeader) nennt den Cursor, mit dem der Änderungsfeed fortsetzt, danach je Zeile ein Objekt (der Body und jedes öffentliche Objekt der Körperschaft genau einmal, ohne Gelöschtes), zuletzt die Schlusszeile (KommparlSnapshotEnd) mit der Zahl der Objektzeilen. Fehlt sie oder stimmt die Zahl nicht, ist der Snapshot unvollständig.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Kennung der Körperschaft",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot",
+            "headers": {
+              "Snapshot-Cursor": {
+                "description": "Cursor der Kopfzeile",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden oder nicht eingeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Kommune zurückgenommen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlCursorExpired"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen; Retry-After nennt die Wartezeit in Sekunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
         "tags": [
           "OParl-Aggregator"
         ]
@@ -1701,7 +1984,7 @@
       "get": {
         "operationId": "oparl_snapshot",
         "summary": "Snapshot",
-        "description": "Gesamtstand der Körperschaft als NDJSON: die erste Zeile nennt snapshot_cursor und die Zahl der Objekte, danach je Zeile ein Objekt. Fortsetzung über den Änderungsfeed ab snapshot_cursor.",
+        "description": "Abgekündigt, entfällt frühestens am 01.12.2027. Nachfolger: kommparl:snapshot (Profil von kommParl 0.1); die Antworten nennen ihn im Header Link. Gesamtstand der Körperschaft als NDJSON: die erste Zeile nennt snapshot_cursor und die Zahl der Objekte, danach je Zeile ein Objekt. Fortsetzung über den Änderungsfeed ab snapshot_cursor.",
         "parameters": [
           {
             "name": "id",
@@ -1719,6 +2002,26 @@
             "description": "Snapshot",
             "content": {
               "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "headers": {
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
                 "schema": {
                   "type": "string"
                 }
@@ -1741,6 +2044,26 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
                 }
               }
             }
@@ -1776,10 +2099,30 @@
                 "schema": {
                   "type": "integer"
                 }
+              },
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
               }
             }
           }
         },
+        "deprecated": true,
+        "x-sunset": "2027-12-01",
         "tags": [
           "OParl-Aggregator"
         ]
@@ -3269,6 +3612,24 @@
                 "schema": {
                   "type": "string"
                 }
+              },
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "content": {
@@ -3308,6 +3669,174 @@
               "application/problem+json": {
                 "schema": {
                   "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen; Retry-After nennt die Wartezeit in Sekunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "description": "Cursor der vorigen Antwort",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "description": "Höchstzahl der Einträge (Standard 100, höchstens 1000)",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            }
+          }
+        ],
+        "deprecated": true,
+        "x-sunset": "2027-12-01",
+        "description": "Abgekündigt, entfällt frühestens am 01.12.2027. Nachfolger: kommparl:changes (Profil von kommParl 0.1); die Antworten nennen ihn im Header Link.",
+        "tags": [
+          "OParl je Mandant"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/body/kommparl/changes/": {
+      "get": {
+        "operationId": "oparl_mandant_kommparl_changes",
+        "summary": "Änderungsfeed (kommParl)",
+        "responses": {
+          "200": {
+            "description": "Seite des Änderungsfeeds nach dem Profil https://schema.kommparl.de/0.1/profile/changes (kommparl:changes am Body, je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen",
+            "headers": {
+              "ETag": {
+                "description": "Kennung des Inhalts für bedingte Abrufe",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlChangeList"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Unverändert (If-None-Match passt zum ETag)"
+          },
+          "404": {
+            "description": "Nicht gefunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Ungültiger Parameter",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Cursor abgelaufen (mit kommparl:snapshot) oder Kommune zurückgenommen; Bestand neu aufbauen",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KommparlCursorExpired"
                 }
               }
             }
@@ -3383,11 +3912,11 @@
         ]
       }
     },
-    "/session/{tenant_slug}/api/oparl/body/snapshot/": {
+    "/session/{tenant_slug}/api/oparl/body/kommparl/snapshot/": {
       "get": {
-        "operationId": "oparl_mandant_snapshot",
-        "summary": "Snapshot",
-        "description": "Gesamtstand der Körperschaft als NDJSON: die erste Zeile nennt snapshot_cursor und die Zahl der Objekte, danach je Zeile ein Objekt. Fortsetzung über den Änderungsfeed ab snapshot_cursor.",
+        "operationId": "oparl_mandant_kommparl_snapshot",
+        "summary": "Snapshot (kommParl)",
+        "description": "Gesamtstand der Körperschaft nach dem Profil https://schema.kommparl.de/0.1/profile/snapshot als NDJSON: die Kopfzeile (KommparlSnapshotHeader) nennt den Cursor, mit dem der Änderungsfeed fortsetzt, danach je Zeile ein Objekt (der Body und jedes öffentliche Objekt der Körperschaft genau einmal, ohne Gelöschtes), zuletzt die Schlusszeile (KommparlSnapshotEnd) mit der Zahl der Objektzeilen. Fehlt sie oder stimmt die Zahl nicht, ist der Snapshot unvollständig.",
         "parameters": [
           {
             "name": "tenant_slug",
@@ -3402,6 +3931,14 @@
         "responses": {
           "200": {
             "description": "Snapshot",
+            "headers": {
+              "Snapshot-Cursor": {
+                "description": "Cursor der Kopfzeile",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
             "content": {
               "application/x-ndjson": {
                 "schema": {
@@ -3423,9 +3960,9 @@
           "410": {
             "description": "Kommune zurückgenommen",
             "content": {
-              "application/problem+json": {
+              "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Problem"
+                  "$ref": "#/components/schemas/KommparlCursorExpired"
                 }
               }
             }
@@ -3465,6 +4002,153 @@
             }
           }
         },
+        "tags": [
+          "OParl je Mandant"
+        ]
+      }
+    },
+    "/session/{tenant_slug}/api/oparl/body/snapshot/": {
+      "get": {
+        "operationId": "oparl_mandant_snapshot",
+        "summary": "Snapshot",
+        "description": "Abgekündigt, entfällt frühestens am 01.12.2027. Nachfolger: kommparl:snapshot (Profil von kommParl 0.1); die Antworten nennen ihn im Header Link. Gesamtstand der Körperschaft als NDJSON: die erste Zeile nennt snapshot_cursor und die Zahl der Objekte, danach je Zeile ein Objekt. Fortsetzung über den Änderungsfeed ab snapshot_cursor.",
+        "parameters": [
+          {
+            "name": "tenant_slug",
+            "in": "path",
+            "required": true,
+            "description": "Kurzname des Mandanten (Kommune)",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Snapshot",
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "headers": {
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Nicht gefunden oder nicht eingeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "Kommune zurückgenommen",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "headers": {
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Zu viele Anfragen; Retry-After nennt die Wartezeit in Sekunden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Die Kommune hat die Veröffentlichung vorübergehend abgeschaltet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OParlError"
+                }
+              }
+            },
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "integer"
+                }
+              },
+              "Deprecation": {
+                "description": "Zeitpunkt der Abkündigung nach RFC 9745 (@ und Unix-Sekunden)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Sunset": {
+                "description": "Zeitpunkt des Wegfalls nach RFC 8594 (HTTP-Datum)",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "Link": {
+                "description": "Nachfolger nach RFC 8288 (rel=\"successor-version\"): die Adresse nach dem kommParl-Profil",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "deprecated": true,
+        "x-sunset": "2027-12-01",
         "tags": [
           "OParl je Mandant"
         ]
@@ -6387,6 +7071,261 @@
         "title": "FeedbackStation",
         "type": "object"
       },
+      "KommparlChangeList": {
+        "title": "ChangeList",
+        "description": "Seite des Änderungsfeeds einer Körperschaft (Profil Änderungsfeed, Entwurf).",
+        "type": "object",
+        "required": [
+          "data",
+          "cursor",
+          "links"
+        ],
+        "properties": {
+          "data": {
+            "description": "Die Einträge in der Reihenfolge, in der der Server die Änderungen festgehalten hat.",
+            "type": "array",
+            "items": {
+              "description": "Eintrag des Änderungsfeeds.",
+              "type": "object",
+              "required": [
+                "cursor",
+                "operation",
+                "type",
+                "id",
+                "modified"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._~-]{1,512}$",
+                  "description": "Position hinter diesem Eintrag."
+                },
+                "operation": {
+                  "description": "Art der Änderung.",
+                  "enum": [
+                    "upsert",
+                    "delete",
+                    "redact"
+                  ]
+                },
+                "type": {
+                  "type": "string",
+                  "pattern": "^https?://[^\\s]+$",
+                  "description": "Typ-URL des betroffenen Objekts."
+                },
+                "id": {
+                  "type": "string",
+                  "pattern": "^https?://[^\\s]+$",
+                  "description": "Die id des betroffenen Objekts."
+                },
+                "modified": {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$",
+                  "description": "Zeitpunkt, zu dem der Server die Änderung festgehalten hat."
+                },
+                "reason": {
+                  "description": "Grund der Änderung. Zwingend bei delete und redact, sonst nicht vorhanden.",
+                  "type": "string"
+                }
+              },
+              "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+              },
+              "additionalProperties": false,
+              "allOf": [
+                {
+                  "if": {
+                    "required": [
+                      "operation"
+                    ],
+                    "properties": {
+                      "operation": {
+                        "const": "upsert"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "reason": false
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "operation"
+                    ],
+                    "properties": {
+                      "operation": {
+                        "const": "delete"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "reason"
+                    ],
+                    "properties": {
+                      "reason": {
+                        "enum": [
+                          "deleted",
+                          "withdrawn",
+                          "nonPublic"
+                        ]
+                      }
+                    }
+                  }
+                },
+                {
+                  "if": {
+                    "required": [
+                      "operation"
+                    ],
+                    "properties": {
+                      "operation": {
+                        "const": "redact"
+                      }
+                    }
+                  },
+                  "then": {
+                    "required": [
+                      "reason"
+                    ],
+                    "properties": {
+                      "reason": {
+                        "enum": [
+                          "privacy"
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "cursor": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]{1,512}$",
+            "description": "Position hinter dem letzten Eintrag dieser Seite."
+          },
+          "links": {
+            "type": "object",
+            "properties": {
+              "next": {
+                "type": "string",
+                "pattern": "^https?://[^\\s]+$",
+                "description": "URL der folgenden Seite. Fehlt auf der letzten Seite."
+              },
+              "self": {
+                "type": "string",
+                "pattern": "^https?://[^\\s]+$",
+                "description": "URL dieser Seite."
+              }
+            },
+            "patternProperties": {
+              "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/changes/ChangeList.json"
+      },
+      "KommparlCursorExpired": {
+        "title": "CursorExpired",
+        "description": "Fehlerobjekt der Antwort mit dem Statuscode 410 auf einen abgelaufenen Cursor (Profil Änderungsfeed, Entwurf). Es entspricht dem Fehlerobjekt aus dem Kapitel Ausnahmebehandlung.",
+        "type": "object",
+        "required": [
+          "type",
+          "message"
+        ],
+        "properties": {
+          "type": {
+            "const": "https://schema.oparl.org/1.1/Error"
+          },
+          "message": {
+            "description": "Fehlermeldung zur Anzeige für eine Nutzerin oder einen Nutzer.",
+            "type": "string"
+          },
+          "debug": {
+            "description": "Zusätzliche Informationen über den Fehler.",
+            "type": "string"
+          },
+          "kommparl:snapshot": {
+            "description": "URL des Snapshots der Körperschaft, wenn der Server das Profil Snapshot anbietet.",
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/changes/CursorExpired.json"
+      },
+      "KommparlSnapshotEnd": {
+        "title": "SnapshotEnd",
+        "description": "Schlusszeile eines Snapshots (Profil Snapshot, Entwurf).",
+        "type": "object",
+        "required": [
+          "type",
+          "count"
+        ],
+        "properties": {
+          "type": {
+            "const": "https://schema.kommparl.de/0.1/SnapshotEnd"
+          },
+          "count": {
+            "description": "Anzahl der Objektzeilen des Snapshots.",
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/snapshot/SnapshotEnd.json"
+      },
+      "KommparlSnapshotHeader": {
+        "title": "SnapshotHeader",
+        "description": "Kopfzeile eines Snapshots (Profil Snapshot, Entwurf).",
+        "type": "object",
+        "required": [
+          "type",
+          "body",
+          "cursor",
+          "generated"
+        ],
+        "properties": {
+          "type": {
+            "const": "https://schema.kommparl.de/0.1/SnapshotHeader"
+          },
+          "body": {
+            "description": "Die id der Körperschaft.",
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+          },
+          "cursor": {
+            "description": "Position im Änderungsfeed der Körperschaft, an der der Client nach dem Snapshot fortsetzt.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]{1,512}$"
+          },
+          "generated": {
+            "description": "Zeitpunkt, zu dem der Server den Snapshot erzeugt hat.",
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+          }
+        },
+        "patternProperties": {
+          "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+        },
+        "additionalProperties": false,
+        "x-kommparl-schema": "https://schema.kommparl.de/0.1/profile/snapshot/SnapshotHeader.json"
+      },
       "ListMeta": {
         "properties": {
           "total": {
@@ -6528,7 +7467,7 @@
       },
       "OParlAgendaItem": {
         "title": "AgendaItem",
-        "description": "Objekttyp AgendaItem nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp AgendaItem nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -6542,32 +7481,6 @@
           },
           "type": {
             "const": "https://schema.oparl.org/1.1/AgendaItem"
-          },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
           },
           "meeting": {
             "type": "string",
@@ -6615,6 +7528,32 @@
           "end": {
             "type": "string",
             "format": "date-time"
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {
@@ -6654,7 +7593,7 @@
       },
       "OParlBody": {
         "title": "Body",
-        "description": "Objekttyp Body nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp Body nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -6674,32 +7613,6 @@
           "type": {
             "const": "https://schema.oparl.org/1.1/Body"
           },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
-          },
           "system": {
             "type": "string",
             "format": "uri"
@@ -6713,6 +7626,10 @@
             "minLength": 1
           },
           "website": {
+            "type": "string",
+            "format": "uri"
+          },
+          "license": {
             "type": "string",
             "format": "uri"
           },
@@ -6803,6 +7720,50 @@
           "mainOrganization": {
             "type": "string",
             "format": "uri"
+          },
+          "kommparl:changes": {
+            "type": "string",
+            "format": "uri"
+          },
+          "kommparl:snapshot": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
+          },
+          "mandari:changes": {
+            "type": "string",
+            "format": "uri",
+            "deprecated": true,
+            "x-sunset": "2027-12-01",
+            "description": "Abgekündigt, entfällt frühestens am 01.12.2027: Adresse des Änderungsfeeds in der älteren Form. Nachfolger ist kommparl:changes (Profil von kommParl 0.1)."
+          },
+          "mandari:snapshot": {
+            "type": "string",
+            "format": "uri",
+            "deprecated": true,
+            "x-sunset": "2027-12-01",
+            "description": "Abgekündigt, entfällt frühestens am 01.12.2027: Adresse des Snapshots in der älteren Form. Nachfolger ist kommparl:snapshot (Profil von kommParl 0.1)."
           }
         },
         "patternProperties": {
@@ -6842,7 +7803,7 @@
       },
       "OParlChangeList": {
         "title": "Änderungsfeed",
-        "description": "Eine Seite des Änderungsfeeds einer Körperschaft (Erweiterung mandari:changes, Entwurf des kommParl-Profils Änderungsfeed): Einträge ohne Inhalte, Cursor für die nächste Anfrage.",
+        "description": "Eine Seite des Änderungsfeeds einer Körperschaft in der älteren Form (mandari:changes, abgekündigt, entfällt frühestens am 01.12.2027; Nachfolger: kommparl:changes, Schema KommparlChangeList): Einträge ohne Inhalte, Cursor für die nächste Anfrage.",
         "type": "object",
         "required": [
           "data",
@@ -6942,7 +7903,7 @@
       },
       "OParlConsultation": {
         "title": "Consultation",
-        "description": "Objekttyp Consultation nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp Consultation nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -6955,32 +7916,6 @@
           },
           "type": {
             "const": "https://schema.oparl.org/1.1/Consultation"
-          },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
           },
           "paper": {
             "type": "string",
@@ -7007,6 +7942,32 @@
           "role": {
             "type": "string",
             "minLength": 1
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {
@@ -7095,7 +8056,7 @@
       },
       "OParlFile": {
         "title": "File",
-        "description": "Objekttyp File nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp File nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -7109,32 +8070,6 @@
           },
           "type": {
             "const": "https://schema.oparl.org/1.1/File"
-          },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
           },
           "name": {
             "type": "string",
@@ -7218,6 +8153,32 @@
               "type": "string",
               "format": "uri"
             }
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {
@@ -7257,7 +8218,7 @@
       },
       "OParlLegislativeTerm": {
         "title": "LegislativeTerm",
-        "description": "Objekttyp LegislativeTerm nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp LegislativeTerm nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -7270,6 +8231,22 @@
           },
           "type": {
             "const": "https://schema.oparl.org/1.1/LegislativeTerm"
+          },
+          "body": {
+            "type": "string",
+            "format": "uri"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1
+          },
+          "startDate": {
+            "type": "string",
+            "format": "date"
+          },
+          "endDate": {
+            "type": "string",
+            "format": "date"
           },
           "license": {
             "type": "string",
@@ -7296,22 +8273,6 @@
           },
           "deleted": {
             "type": "boolean"
-          },
-          "body": {
-            "type": "string",
-            "format": "uri"
-          },
-          "name": {
-            "type": "string",
-            "minLength": 1
-          },
-          "startDate": {
-            "type": "string",
-            "format": "date"
-          },
-          "endDate": {
-            "type": "string",
-            "format": "date"
           }
         },
         "patternProperties": {
@@ -7376,7 +8337,7 @@
       },
       "OParlLocation": {
         "title": "Location",
-        "description": "Objekttyp Location nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp Location nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -7390,39 +8351,12 @@
           "type": {
             "const": "https://schema.oparl.org/1.1/Location"
           },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
-          },
           "description": {
             "type": "string",
             "minLength": 1
           },
           "geojson": {
-            "type": "object",
-            "description": "GeoJSON (RFC 7946)"
+            "type": "object"
           },
           "streetAddress": {
             "type": "string",
@@ -7478,6 +8412,32 @@
               "type": "string",
               "format": "uri"
             }
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {
@@ -7517,7 +8477,7 @@
       },
       "OParlMeeting": {
         "title": "Meeting",
-        "description": "Objekttyp Meeting nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp Meeting nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -7530,32 +8490,6 @@
           },
           "type": {
             "const": "https://schema.oparl.org/1.1/Meeting"
-          },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
           },
           "name": {
             "type": "string",
@@ -7613,6 +8547,32 @@
             "items": {
               "$ref": "#/components/schemas/OParlAgendaItem"
             }
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {
@@ -7652,7 +8612,7 @@
       },
       "OParlMembership": {
         "title": "Membership",
-        "description": "Objekttyp Membership nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp Membership nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -7665,32 +8625,6 @@
           },
           "type": {
             "const": "https://schema.oparl.org/1.1/Membership"
-          },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
           },
           "person": {
             "type": "string",
@@ -7718,6 +8652,32 @@
           "onBehalfOf": {
             "type": "string",
             "format": "uri"
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {
@@ -7757,7 +8717,7 @@
       },
       "OParlOrganization": {
         "title": "Organization",
-        "description": "Objekttyp Organization nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp Organization nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -7770,32 +8730,6 @@
           },
           "type": {
             "const": "https://schema.oparl.org/1.1/Organization"
-          },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
           },
           "body": {
             "type": "string",
@@ -7875,6 +8809,32 @@
           },
           "votingMemberCount": {
             "type": "integer"
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {
@@ -7973,7 +8933,7 @@
       },
       "OParlPaper": {
         "title": "Paper",
-        "description": "Objekttyp Paper nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp Paper nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -7986,32 +8946,6 @@
           },
           "type": {
             "const": "https://schema.oparl.org/1.1/Paper"
-          },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
           },
           "body": {
             "type": "string",
@@ -8095,6 +9029,32 @@
             "items": {
               "$ref": "#/components/schemas/OParlConsultation"
             }
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {
@@ -8134,7 +9094,7 @@
       },
       "OParlPerson": {
         "title": "Person",
-        "description": "Objekttyp Person nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp Person nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -8147,32 +9107,6 @@
           },
           "type": {
             "const": "https://schema.oparl.org/1.1/Person"
-          },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
           },
           "body": {
             "type": "string",
@@ -8253,6 +9187,32 @@
           "lifeSource": {
             "type": "string",
             "minLength": 1
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {
@@ -8292,7 +9252,7 @@
       },
       "OParlSystem": {
         "title": "System",
-        "description": "Objekttyp System nach OParl 1.1 (https://oparl.org/spezifikation/). Eigene Felder tragen einen Namensraum.",
+        "description": "Objekttyp System nach OParl 1.1 (https://oparl.org/spezifikation/) mit den Ergänzungen von kommParl 0.1. Eigene Felder tragen einen Namensraum.",
         "type": "object",
         "required": [
           "id",
@@ -8308,34 +9268,9 @@
           "type": {
             "const": "https://schema.oparl.org/1.1/System"
           },
-          "license": {
-            "type": "string",
-            "format": "uri"
-          },
-          "keyword": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
-          },
-          "created": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "modified": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "web": {
-            "type": "string",
-            "format": "uri"
-          },
-          "deleted": {
-            "type": "boolean"
-          },
           "oparlVersion": {
             "type": "string",
+            "pattern": "^https://schema\\.oparl\\.org/1\\.(0|1)/$",
             "minLength": 1
           },
           "otherOparlVersions": {
@@ -8344,6 +9279,17 @@
               "type": "string",
               "format": "uri"
             }
+          },
+          "kommparl:conformsTo": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "license": {
+            "type": "string",
+            "format": "uri"
           },
           "body": {
             "type": "string",
@@ -8372,6 +9318,21 @@
           "product": {
             "type": "string",
             "format": "uri"
+          },
+          "created": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modified": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "web": {
+            "type": "string",
+            "format": "uri"
+          },
+          "deleted": {
+            "type": "boolean"
           }
         },
         "patternProperties": {

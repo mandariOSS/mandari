@@ -13,8 +13,10 @@ Endpunkte (alle rein lesend, anonym, JSON, CORS offen):
 - ``/oparl/v1/body/<uuid>/meetings``
 - ``/oparl/v1/body/<uuid>/papers``
 - ``/oparl/v1/body/<uuid>/locations``
-- ``/oparl/v1/body/<uuid>/changes``               Änderungsfeed (wenn eingeschaltet, ``hub.api.changes``)
-- ``/oparl/v1/body/<uuid>/snapshot``              Snapshot mit Cursor-Übergabe (``hub.api.snapshot``)
+- ``/oparl/v1/body/<uuid>/kommparl/changes``      Änderungsfeed nach kommParl (wenn eingeschaltet, ``hub.api.changes``)
+- ``/oparl/v1/body/<uuid>/kommparl/snapshot``     Snapshot nach kommParl mit Cursor-Übergabe (``hub.api.snapshot``)
+- ``/oparl/v1/body/<uuid>/changes``               Änderungsfeed in der älteren Form (abgekündigt)
+- ``/oparl/v1/body/<uuid>/snapshot``              Snapshot in der älteren Form (abgekündigt)
 - ``/oparl/v1/<typ>/<uuid>``                      Objekt-Endpunkte aller Typen
 
 Dieses Modul wählt aus, was sichtbar ist (Kommune, Veröffentlichungsstand, Gelöschtes), und reicht es
@@ -37,12 +39,12 @@ from typing import Any, Final
 
 from django.conf import settings
 from django.core.cache import cache
-from django.db.models import Model, QuerySet
+from django.db.models import Model, Q, QuerySet
 from django.db.models.functions import Coalesce
 from django.http import HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase
 
-from hub.api import changes, snapshot
+from hub.api import changes, kommparl, snapshot
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import TimeFilters, list_cache_key, list_response, page_number
 from hub.ris import selectors as ris
@@ -130,11 +132,13 @@ def mapping() -> BestandMapping:
     Abbildung mit den Adressen dieser Installation (``OPARL_BASE_URL`` und ``SITE_URL``, nicht der Host
     der Anfrage).
     """
+    offered = changes.enabled()
     return BestandMapping(
         settings.OPARL_BASE_URL,
         settings.SITE_URL,
         license_url=getattr(settings, "OPARL_LICENSE_URL", ""),
-        changes=changes.enabled(),
+        changes=offered,
+        conforms_to=kommparl.conforms_to(feed_offered=offered),
     )
 
 
@@ -268,8 +272,14 @@ def _existing(kind: str, ids: Collection[uuid.UUID]) -> set[uuid.UUID]:
 
 
 def _feed(
-    output: BestandMapping, pk: uuid.UUID, epoch: str, freshness: changes.Freshness | None = None
+    output: BestandMapping,
+    pk: uuid.UUID,
+    epoch: str,
+    freshness: changes.Freshness | None = None,
+    *,
+    profile: bool = False,
 ) -> changes.Feed:
+    """Feed einer Kommune mit den Adressen nach den Profilen von kommParl (``profile``) oder der älteren Form."""
     uris = output.uris
 
     def addresses(kind: str, ids: Collection[uuid.UUID]) -> dict[uuid.UUID, str]:
@@ -280,8 +290,8 @@ def _feed(
 
     return changes.Feed(
         body_id=pk,
-        url=uris.changes(pk),
-        snapshot_url=uris.snapshot(pk),
+        url=uris.kommparl_changes(pk) if profile else uris.changes(pk),
+        snapshot_url=uris.kommparl_snapshot(pk) if profile else uris.snapshot(pk),
         addresses=addresses,
         epoch=epoch,
         freshness=freshness,
@@ -289,7 +299,7 @@ def _feed(
 
 
 def _feed_or_unavailable(
-    request: HttpRequest, output: BestandMapping, pk: uuid.UUID, segment: str
+    request: HttpRequest, output: BestandMapping, pk: uuid.UUID, segment: str, *, profile: bool = False
 ) -> changes.Feed | HttpResponse:
     """
     Feed einer Kommune – oder die Antwort, warum es für sie weder Feed noch Snapshot gibt.
@@ -305,7 +315,8 @@ def _feed_or_unavailable(
     - nicht gelistet (etwa die Demo-Kommune oder eine Kommune im Aufbau): Die Adressen gibt es nicht, wie
       bei ausgeschaltetem Feed; der Body nennt sie nicht.
 
-    Alle Absagen sind feste Antworten: Sie hängen nicht davon ab, was im Journal steht.
+    Alle Absagen sind feste Antworten: Sie hängen nicht davon ab, was im Journal steht. Nach den Profilen von
+    kommParl (``profile``) ist die Rücknahme ein Fehlerobjekt nach OParl 1.1, sonst ein Problem nach RFC 9457.
     """
     if not changes.enabled():
         # Ausgeschaltet gibt es die Adresse nicht
@@ -315,7 +326,7 @@ def _feed_or_unavailable(
         return paused
     state = publication.body_state(pk)
     if state is not None and state.withdrawn:
-        return changes.withdrawn_response(request)
+        return changes.kommparl_withdrawn_response() if profile else changes.withdrawn_response(request)
     found = (
         OParlBody.objects.filter(pk=pk)
         .values_list(
@@ -334,34 +345,97 @@ def _feed_or_unavailable(
         return _unknown_list(segment)
     # Aktualität der Quelle (Issue #556): Der Feed ist nur so aktuell wie ihr letzter vollständiger Abgleich
     freshness = None if source_id is None else changes.Freshness(synced_at=synced_at, full_synced_at=full_synced_at)
-    return _feed(output, pk, publication.retracted_at(config), freshness)
+    return _feed(output, pk, publication.retracted_at(config), freshness, profile=profile)
+
+
+def _deprecated(response: HttpResponse, successor: str) -> HttpResponse:
+    """Ältere Form von Feed und Snapshot: abgekündigt (``changes.deprecated``), außer wo es die Adresse nicht gibt."""
+    if response.status_code != 404:
+        changes.deprecated(response, successor)
+    return response
 
 
 @endpoint
 def body_changes(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
-    """Änderungsfeed einer Kommune (``hub.api.changes``)."""
-    feed = _feed_or_unavailable(request, mapping(), pk, "changes")
+    """Änderungsfeed einer Kommune in der älteren Form (abgekündigt, Nachfolger ``body_kommparl_changes``)."""
+    output = mapping()
+    feed = _feed_or_unavailable(request, output, pk, "changes")
+    response = feed if isinstance(feed, HttpResponse) else changes.changes_response(request, feed)
+    return _deprecated(response, output.uris.kommparl_changes(pk))
+
+
+@endpoint
+def body_kommparl_changes(request: HttpRequest, pk: uuid.UUID) -> HttpResponse:
+    """Änderungsfeed einer Kommune nach dem Profil von kommParl (``kommparl:changes``, ``hub.api.changes``)."""
+    feed = _feed_or_unavailable(request, mapping(), pk, "changes", profile=True)
     if isinstance(feed, HttpResponse):
         return feed
-    return changes.changes_response(request, feed)
+    return changes.kommparl_changes_response(request, feed)
 
 
-def _section(output: BestandMapping, spec: Spec, pk: uuid.UUID) -> snapshot.Section:
+def _section(output: BestandMapping, spec: Spec, queryset: QuerySet[Any]) -> snapshot.Section:
     def render(objects: list[Any]) -> list[Objekt]:
         ctx = spec.context(objects)
         return [spec.render(output, obj, ctx) for obj in objects]
 
-    return snapshot.Section(queryset=spec.queryset(body_id=pk, deleted=False), render=render)
+    return snapshot.Section(queryset=queryset, render=render)
 
 
-def _snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed) -> snapshot.Snapshot:
+def _body(output: BestandMapping, pk: uuid.UUID) -> Callable[[], Objekt]:
     def body() -> Objekt:
         obj = _BODY.queryset(pk=pk).get()
         # Eine zurückgenommene Kommune steht auch im Snapshot nur als gekürztes Objekt
         return output.tombstone("body", obj) if obj.deleted else output.body(obj)
 
-    sections = [_section(output, spec, pk) for spec in BODY_LISTS.values()]
-    return snapshot.Snapshot(feed, body, sections)
+    return body
+
+
+def _snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed) -> snapshot.Snapshot:
+    """Snapshot in der älteren Form: der Body und die Objekte der externen Listen mit ihren Einbettungen."""
+    sections = [_section(output, spec, spec.queryset(body_id=pk, deleted=False)) for spec in BODY_LISTS.values()]
+    return snapshot.Snapshot(feed, _body(output, pk), sections)
+
+
+#: Dateien im Snapshot nach kommParl: wie in den Listen ohne den erkannten Text. Dateiinhalte gehören nach dem Profil
+#: nicht in den Snapshot; der Abnehmer ruft sie über ``accessUrl`` ab, den Text am Objekt-Endpunkt.
+_SNAPSHOT_FILE = Spec("file", OParlFile, BestandMapping.file, lambda queryset: queryset.defer("text_content"))
+
+
+def _derived_locations(output: BestandMapping, pk: uuid.UUID) -> snapshot.Section:
+    """Sitzungsorte ohne eigenes Location-Objekt der Quelle (``…/location/<Kennung der Sitzung>``)."""
+
+    def render(meetings: list[Any]) -> list[Objekt]:
+        ctx = RefContext.for_meetings(meetings)
+        return [data for meeting in meetings if (data := output.derived_location(meeting, ctx)) is not None]
+
+    return snapshot.Section(queryset=OParlMeeting.objects.filter(body_id=pk, deleted=False), render=render)
+
+
+def _kommparl_snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed) -> snapshot.Snapshot:
+    """
+    Snapshot nach dem Profil von kommParl: der Body und jedes Objekt der Kommune in einer eigenen Zeile, wie unter
+    seiner Adresse (eingebettete Objekte stehen zusätzlich in ihren Trägern), ohne Gelöschtes.
+    """
+
+    def section(spec: Spec, condition: Q) -> snapshot.Section:
+        queryset = spec.model._default_manager.filter(condition, deleted=False)
+        return _section(output, spec, spec.prepare(queryset) if spec.prepare else queryset)
+
+    own = Q(body_id=pk)
+    sections = [
+        section(OBJECT_TYPES["legislativeterm"], own),
+        section(_ORGANIZATION, own),
+        section(_PERSON, own),
+        section(OBJECT_TYPES["membership"], Q(person__body_id=pk) | Q(organization__body_id=pk)),
+        section(_MEETING, own),
+        section(OBJECT_TYPES["agendaitem"], Q(meeting__body_id=pk)),
+        section(_PAPER, own),
+        section(OBJECT_TYPES["consultation"], own),
+        section(_SNAPSHOT_FILE, own),
+        section(_LOCATION, own),
+        _derived_locations(output, pk),
+    ]
+    return snapshot.Snapshot(feed, _body(output, pk), sections)
 
 
 def snapshot_for_measurement(pk: uuid.UUID) -> snapshot.Snapshot:
@@ -373,17 +447,28 @@ def snapshot_for_measurement(pk: uuid.UUID) -> snapshot.Snapshot:
     """
     output = mapping()
     found = OParlBody.objects.filter(pk=pk).values_list("source__sync_config", flat=True).first()
-    return _snapshot(output, pk, _feed(output, pk, publication.retracted_at(found)))
+    return _kommparl_snapshot(output, pk, _feed(output, pk, publication.retracted_at(found), profile=True))
 
 
 @endpoint
 def body_snapshot(request: HttpRequest, pk: uuid.UUID) -> HttpResponseBase:
-    """Snapshot einer Kommune mit Cursor-Übergabe (``hub.api.snapshot``): dieselben Objekte wie die Listen."""
+    """Snapshot einer Kommune in der älteren Form (abgekündigt): dieselben Objekte wie die Listen."""
     output = mapping()
+    successor = output.uris.kommparl_snapshot(pk)
     feed = _feed_or_unavailable(request, output, pk, "snapshot")
     if isinstance(feed, HttpResponse):
+        return _deprecated(feed, successor)
+    return changes.deprecated(snapshot.snapshot_response(request, _snapshot(output, pk, feed)), successor)
+
+
+@endpoint
+def body_kommparl_snapshot(request: HttpRequest, pk: uuid.UUID) -> HttpResponseBase:
+    """Snapshot einer Kommune nach dem Profil von kommParl (``kommparl:snapshot``, ``hub.api.snapshot``)."""
+    output = mapping()
+    feed = _feed_or_unavailable(request, output, pk, "snapshot", profile=True)
+    if isinstance(feed, HttpResponse):
         return feed
-    return snapshot.snapshot_response(request, _snapshot(output, pk, feed))
+    return snapshot.kommparl_snapshot_response(request, _kommparl_snapshot(output, pk, feed))
 
 
 def _meeting_location_response(output: BestandMapping, pk: uuid.UUID) -> HttpResponse:

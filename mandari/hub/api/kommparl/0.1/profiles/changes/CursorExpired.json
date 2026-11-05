@@ -1,0 +1,33 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/changes/CursorExpired.json",
+    "title": "CursorExpired",
+    "description": "Fehlerobjekt der Antwort mit dem Statuscode 410 auf einen abgelaufenen Cursor (Profil Änderungsfeed, Entwurf). Es entspricht dem Fehlerobjekt aus dem Kapitel Ausnahmebehandlung.",
+    "type": "object",
+    "required": [
+        "type",
+        "message"
+    ],
+    "properties": {
+        "type": {
+            "const": "https://schema.oparl.org/1.1/Error"
+        },
+        "message": {
+            "description": "Fehlermeldung zur Anzeige für eine Nutzerin oder einen Nutzer.",
+            "type": "string"
+        },
+        "debug": {
+            "description": "Zusätzliche Informationen über den Fehler.",
+            "type": "string"
+        },
+        "kommparl:snapshot": {
+            "description": "URL des Snapshots der Körperschaft, wenn der Server das Profil Snapshot anbietet.",
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false
+}

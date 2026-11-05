@@ -1,0 +1,82 @@
+{
+    "title": "Consultation",
+    "type": "object",
+    "description": "{{ Consultation.description }}",
+    "required": [
+        "id",
+        "type"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/Consultation$"
+        },
+        "paper": {
+            "type": "string",
+            "format": "url",
+            "description": "{{ Consultation.properties.paper.description }}",
+            "references": "Paper"
+        },
+        "agendaItem": {
+            "description": "{{ Consultation.properties.agendaItem.description }}",
+            "references": "AgendaItem",
+            "backreference": "consultation",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "meeting": {
+            "description": "{{ Consultation.properties.meeting.description }}",
+            "references": "Meeting",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "organization": {
+            "description": "{{ Consultation.properties.organization.description }}",
+            "references": "Organization",
+            "cardinality": "n:m",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "authoritative": {
+            "description": "{{ Consultation.properties.authoritative.description }}",
+            "type": "boolean"
+        },
+        "role": {
+            "description": "{{ Consultation.properties.role.description }}",
+            "type": "string"
+        },
+        "license": {
+            "type": "string"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

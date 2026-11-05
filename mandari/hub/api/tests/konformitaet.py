@@ -1,129 +1,163 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Testhilfe: prüft OParl-Objekte gegen die Feldtypen von OParl 1.1.
+Testhilfe: prüft Ausgaben gegen die Schemas der kommParl-Spezifikation (Issue #1216).
 
-Die Tabelle ``FELDER`` nennt je Objekttyp die Eigenschaften der Spezifikation mit ihrem Typ, ``PFLICHT``
-die zwingenden Eigenschaften (beide in ``hub.api.oparl_types``, dieselbe Quelle wie die Schemas der
-OpenAPI-Beschreibung). ``pruefe`` läuft ein Objekt samt eingebetteter Objekte ab und liefert die
-Abweichungen als Liste von Sätzen; eine leere Liste heißt konform. Beide Ausgaben (Aggregator und
-Session-Schnittstelle) prüfen ihre Antworten damit.
+Eine Quelle für Beschreibung und Prüfung: Die Schemas der Objekttypen sind dieselben wie in der OpenAPI-Beschreibung
+(``hub.api.openapi.oparl.component_schemas``), also aus kommParl übernommen und umgewandelt (``hub.api.kommparl``);
+die Profile Änderungsfeed und Snapshot prüfen unverändert mit den übernommenen Profilschemas. Beide Ausgaben
+(Aggregator und Session-Schnittstelle) prüfen ihre Antworten damit, ebenso der OParl-Validator der CI
+(``scripts/oparl_validator.py``).
 
-Geprüft wird:
+- ``pruefe(objekt, typ)``: ein OParl-Objekt samt eingebetteter Objekte; ein gelöschtes gegen ``OParlDeleted``.
+- ``pruefe_liste(liste, typ)``: eine externe Liste (``data``, ``pagination``, ``links``) und alle ihre Objekte.
+- ``pruefe_profil(daten, profil, name)``: gegen ein Profilschema, etwa ``("changes", "ChangeList")``.
+- ``pruefe_snapshot(zeilen)``: ein Snapshot nach dem Profil Snapshot (Kopfzeile, Objektzeilen, Schlusszeile).
 
-- Pflichtfelder vorhanden, ``type`` passt zum Objekttyp
-- Typen: URL, Text, Datum (``yyyy-mm-dd``), Zeitpunkt mit Zeitzone, Wahrheitswert, Ganzzahl, Listen,
-  eingebettete Objekte
-- keine leeren Texte, keine unbekannten Eigenschaften ohne Namensraum (eigene Felder heißen ``präfix:name``)
-- ``organizationType`` ist einer der sieben Werte der Spezifikation
-- gelöschte Objekte tragen nur ``id``, ``type``, ``created``, ``modified``, ``deleted``
+Alle liefern die Abweichungen als Liste von Sätzen; eine leere Liste heißt konform. Formate:
+
+- ``uri``: URL mit ``http`` oder ``https``, ohne Leerraum (Format ``url`` der Spezifikation),
+- ``date``: ``yyyy-mm-dd`` und ein gültiger Tag,
+- ``date-time``: Datum und Uhrzeit mit Zeitzone. Sekundenbruchteile lässt die Prüfung der Objekte noch zu, obwohl
+  OParl 1.1 (Kapitel „JSON-Ausgabe“) die Form ``yyyy-mm-ddThh:mm:ss±hh:mm`` verlangt; die Profilschemas sind mit
+  ihrem Muster strenger.
 """
 
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable, Sequence
 from datetime import date, datetime
+from functools import cache
 from typing import Any
 
-from hub.api.oparl_types import ALLGEMEIN, FELDER, ORGANIZATION_TYPES, PFLICHT, SCHEMA, TOMBSTONE
+from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema.exceptions import ValidationError
 
-__all__ = ["FELDER", "ORGANIZATION_TYPES", "PFLICHT", "SCHEMA", "pruefe", "pruefe_liste"]
+from hub.api import kommparl
+from hub.api.openapi.oparl import DELETED, LINKS, PAGINATION, component_schemas, schema_name
+from hub.ris.canonical import ORGANIZATION_TYPES
 
-_DATUM = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+__all__ = ["ORGANIZATION_TYPES", "pruefe", "pruefe_liste", "pruefe_profil", "pruefe_snapshot"]
 
-
-def _ist_url(wert: Any) -> bool:
-    return isinstance(wert, str) and wert.startswith(("http://", "https://")) and " " not in wert
-
-
-def _ist_datum(wert: Any) -> bool:
-    if not isinstance(wert, str) or not _DATUM.match(wert):
-        return False
-    try:
-        date.fromisoformat(wert)
-    except ValueError:
-        return False
-    return True
+_OPARL = kommparl.OPARL_VERSION
+_URL = re.compile(r"https?://\S+")
+_DATUM = re.compile(r"\d{4}-\d{2}-\d{2}")
 
 
-def _ist_zeitpunkt(wert: Any) -> bool:
-    if not isinstance(wert, str) or "T" not in wert:
-        return False
-    try:
-        return datetime.fromisoformat(wert).tzinfo is not None
-    except ValueError:
-        return False
+def _ist_url(wert: object) -> bool:
+    return not isinstance(wert, str) or bool(_URL.fullmatch(wert))
 
 
-def _pruefe_wert(pfad: str, art: str, wert: Any, probleme: list[str]) -> None:
-    if art.startswith("objekt:"):
-        if isinstance(wert, dict):
-            probleme.extend(pruefe(wert, art.split(":", 1)[1], pfad=pfad))
-        else:
-            probleme.append(f"{pfad}: eingebettetes Objekt erwartet, erhalten {wert!r}")
-        return
-    if art.startswith("objekte:"):
-        if not isinstance(wert, list) or not all(isinstance(eintrag, dict) for eintrag in wert):
-            probleme.append(f"{pfad}: Liste eingebetteter Objekte erwartet, erhalten {wert!r}")
-            return
-        for nummer, eintrag in enumerate(wert):
-            probleme.extend(pruefe(eintrag, art.split(":", 1)[1], pfad=f"{pfad}[{nummer}]"))
-        return
-    pruefungen = {
-        "url": _ist_url(wert),
-        "text": isinstance(wert, str) and wert != "",
-        "datum": _ist_datum(wert),
-        "zeitpunkt": _ist_zeitpunkt(wert),
-        "bool": isinstance(wert, bool),
-        "zahl": isinstance(wert, int) and not isinstance(wert, bool),
-        "urls": isinstance(wert, list) and all(_ist_url(eintrag) for eintrag in wert),
-        "texte": isinstance(wert, list) and all(isinstance(e, str) and e != "" for e in wert),
-        "geojson": isinstance(wert, dict),
-    }
-    if not pruefungen[art]:
-        probleme.append(f"{pfad}: {art} erwartet, erhalten {wert!r}")
+def _ist_datum(wert: object) -> bool:
+    if not isinstance(wert, str):
+        return True
+    return bool(_DATUM.fullmatch(wert)) and date.fromisoformat(wert) is not None
+
+
+def _ist_zeitpunkt(wert: object) -> bool:
+    if not isinstance(wert, str):
+        return True
+    return "T" in wert and datetime.fromisoformat(wert).tzinfo is not None
+
+
+#: Formate der Spezifikation (Kapitel „JSON-Ausgabe“) in der Schreibweise von JSON Schema
+FORMATE = FormatChecker(formats=())
+for _name, _pruefung, _fehler in (
+    ("uri", _ist_url, ()),
+    ("date", _ist_datum, ValueError),
+    ("date-time", _ist_zeitpunkt, ValueError),
+):
+    FORMATE.checks(_name, raises=_fehler)(_pruefung)
+
+
+@cache
+def _schemas() -> dict[str, Any]:
+    """
+    Die Schemas der Beschreibung, mit dem Muster der Spezifikation für eigene Felder: Eigenschaften mit dem Präfix
+    ``kommparl:`` sind nur erlaubt, wenn das Schema sie nennt (die Beschreibung lässt jeden Namensraum zu).
+    """
+    schemas = component_schemas()
+    for typ in kommparl.object_types():
+        schemas[schema_name(typ)]["patternProperties"] = {kommparl.VENDOR_PROPERTY: {}}
+    return schemas
+
+
+@cache
+def _validator(name: str) -> Draft202012Validator:
+    root = {"$ref": f"#/components/schemas/{name}", "components": {"schemas": _schemas()}}
+    return Draft202012Validator(root, format_checker=FORMATE)
+
+
+@cache
+def _profil(profil: str, name: str) -> Draft202012Validator:
+    schema = kommparl.profile_schema(profil, name)
+    return Draft202012Validator(schema, format_checker=FORMATE)
+
+
+def _saetze(fehler: Iterable[ValidationError], pfad: str) -> list[str]:
+    saetze = []
+    for error in sorted(fehler, key=lambda e: [str(teil) for teil in e.absolute_path]):
+        stelle = "".join(f"[{teil}]" if isinstance(teil, int) else f".{teil}" for teil in error.absolute_path)
+        saetze.append(f"{pfad}{stelle}: {error.message}")
+    return saetze
 
 
 def pruefe(objekt: dict[str, Any], typ: str, *, pfad: str = "") -> list[str]:
     """Abweichungen eines OParl-Objekts vom Typ ``typ`` (samt eingebetteter Objekte); leer = konform."""
     pfad = pfad or typ
-    probleme: list[str] = []
-    if objekt.get("type") != f"{SCHEMA}{typ}":
-        probleme.append(f"{pfad}.type: {SCHEMA}{typ} erwartet, erhalten {objekt.get('type')!r}")
     if objekt.get("deleted") is True:
-        ueberzaehlig = sorted(set(objekt) - TOMBSTONE)
-        if ueberzaehlig:
-            probleme.append(f"{pfad}: gelöschtes Objekt trägt weitere Eigenschaften {ueberzaehlig}")
-        pflicht: tuple[str, ...] = ("id", "type")
-    else:
-        pflicht = PFLICHT.get(typ, ("id", "type"))
-    for name in pflicht:
-        if name not in objekt:
-            probleme.append(f"{pfad}.{name}: Pflichtfeld fehlt")
-    felder = {**ALLGEMEIN, **FELDER[typ]}
-    for name, wert in objekt.items():
-        if ":" in name:
-            continue  # eigene Felder im Namensraum eines Herstellers
-        art = felder.get(name)
-        if art is None:
-            probleme.append(f"{pfad}.{name}: unbekannte Eigenschaft ohne Namensraum")
-            continue
-        if wert is None:
-            continue
-        _pruefe_wert(f"{pfad}.{name}", art, wert, probleme)
-    if typ == "Organization" and "organizationType" in objekt and objekt["organizationType"] not in ORGANIZATION_TYPES:
-        probleme.append(f"{pfad}.organizationType: kein Wert der Spezifikation: {objekt['organizationType']!r}")
-    return probleme
+        probleme = []
+        if objekt.get("type") != f"{_OPARL}{typ}":
+            probleme.append(f"{pfad}.type: {_OPARL}{typ} erwartet, erhalten {objekt.get('type')!r}")
+        return probleme + _saetze(_validator(DELETED).iter_errors(objekt), pfad)
+    return _saetze(_validator(schema_name(typ)).iter_errors(objekt), pfad)
 
 
 def pruefe_liste(liste: dict[str, Any], typ: str) -> list[str]:
     """Abweichungen einer externen Objektliste (Hülle ``data``/``pagination``/``links`` und alle Objekte)."""
-    probleme: list[str] = []
-    for name in ("data", "pagination", "links"):
-        if name not in liste:
-            probleme.append(f"Liste {typ}: {name} fehlt")
+    pfad = f"Liste {typ}"
+    probleme = [f"{pfad}: {name} fehlt" for name in ("data", "pagination", "links") if name not in liste]
+    if not isinstance(liste.get("data", []), list):
+        return [*probleme, f"{pfad}.data: keine Liste"]
+    probleme += _saetze(_validator(PAGINATION).iter_errors(liste.get("pagination", {})), f"{pfad}.pagination")
+    probleme += _saetze(_validator(LINKS).iter_errors(liste.get("links", {})), f"{pfad}.links")
     for nummer, objekt in enumerate(liste.get("data", [])):
-        probleme.extend(pruefe(objekt, typ, pfad=f"{typ}[{nummer}]"))
-    for name, wert in liste.get("links", {}).items():
-        if not _ist_url(wert):
-            probleme.append(f"Liste {typ}: links.{name} ist keine URL: {wert!r}")
+        probleme += pruefe(objekt, typ, pfad=f"{typ}[{nummer}]")
+    return probleme
+
+
+def pruefe_profil(daten: Any, profil: str, name: str) -> list[str]:
+    """Abweichungen vom Schema ``name`` des Profils ``profil`` (unverändert aus kommParl)."""
+    return _saetze(_profil(profil, name).iter_errors(daten), f"{profil}/{name}")
+
+
+def pruefe_snapshot(zeilen: Sequence[dict[str, Any]], body: str | None = None) -> list[str]:
+    """
+    Abweichungen eines Snapshots vom Profil Snapshot: Kopfzeile und Schlusszeile nach ihren Schemas, ``count`` gleich
+    der Zahl der Objektzeilen, jede Objektzeile ein konformes, nicht gelöschtes OParl-Objekt, jede Kennung nur einmal
+    und genau ein Body, der in der Kopfzeile genannte (``body``: dessen Kennung, wenn bekannt).
+    """
+    if len(zeilen) < 2:
+        return ["Snapshot: Kopfzeile oder Schlusszeile fehlt"]
+    kopf, *objekte, ende = zeilen
+    probleme = pruefe_profil(kopf, "snapshot", "SnapshotHeader") + pruefe_profil(ende, "snapshot", "SnapshotEnd")
+    if ende.get("count") != len(objekte):
+        probleme.append(f"Snapshot: count ist {ende.get('count')!r}, es folgen {len(objekte)} Objektzeilen")
+    gesehen: set[str] = set()
+    bodies: list[Any] = []
+    for nummer, objekt in enumerate(objekte, start=2):
+        typ = str(objekt.get("type", "")).removeprefix(_OPARL)
+        if typ not in kommparl.object_types():
+            probleme.append(f"Snapshot, Zeile {nummer}: kein Objekttyp von OParl 1.1 ({objekt.get('type')!r})")
+            continue
+        if objekt.get("deleted"):
+            probleme.append(f"Snapshot, Zeile {nummer}: gelöschtes Objekt {objekt.get('id')}")
+        probleme += pruefe(objekt, typ, pfad=f"Snapshot, Zeile {nummer} ({typ})")
+        if objekt.get("id") in gesehen:
+            probleme.append(f"Snapshot, Zeile {nummer}: {objekt.get('id')} kommt mehrfach vor")
+        gesehen.add(str(objekt.get("id")))
+        if typ == "Body":
+            bodies.append(objekt.get("id"))
+    if bodies != [kopf.get("body")] or (body is not None and kopf.get("body") != body):
+        probleme.append(f"Snapshot: genau ein Body erwartet, der der Kopfzeile ({kopf.get('body')}); gefunden {bodies}")
     return probleme

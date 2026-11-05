@@ -109,3 +109,15 @@ path = "mandari/static/vendor/sortablejs/**"
 precedence = "override"
 SPDX-FileCopyrightText = "2019 Lebedev Konstantin and SortableJS contributors"
 SPDX-License-Identifier = "MIT"
+
+# --- kommParl-Spezifikation: übernommene Schemas, unverändert (Herkunft in HERKUNFT.json daneben) ---
+# kommParl ist eine Bearbeitung der OParl-Spezifikation; beide stehen unter CC BY-SA 4.0
+# (https://github.com/mandariOSS/kommParl/blob/main/HERKUNFT.md). Erneuern: scripts/kommparl_schemas.py.
+[[annotations]]
+path = ["mandari/hub/api/kommparl/*/schema/*.json", "mandari/hub/api/kommparl/*/profiles/**/*.json"]
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "kommParl-Beitragende (https://github.com/mandariOSS/kommParl)",
+  "OParl-Initiative und Mitwirkende der OParl-Spezifikation (https://github.com/OParl/spec)",
+]
+SPDX-License-Identifier = "CC-BY-SA-4.0"

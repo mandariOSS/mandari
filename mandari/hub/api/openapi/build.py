@@ -29,6 +29,7 @@ from typing import Any, Final
 from django.core.exceptions import ImproperlyConfigured
 
 from apps.common.api.problems import PROBLEM_SCHEMA
+from hub.api import kommparl
 
 from .registry import Area, Description, areas
 
@@ -68,7 +69,7 @@ def build_description(*, extra: Iterable[tuple[Area, Description]] = ()) -> dict
         "info": {
             "title": TITLE,
             "version": DESCRIPTION_VERSION,
-            "description": DESCRIPTION,
+            "description": f"{DESCRIPTION}\n\n{kommparl.attribution()}",
         },
         "tags": [],
         "paths": {},

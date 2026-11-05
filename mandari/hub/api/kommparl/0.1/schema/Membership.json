@@ -1,0 +1,81 @@
+{
+    "title": "Membership",
+    "description": "{{ Membership.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/Membership$"
+        },
+        "person": {
+            "type": "string",
+            "format": "url",
+            "description": "{{ Membership.properties.person.description }}",
+            "references": "Person"
+        },
+        "organization": {
+            "description": "{{ Membership.properties.organization.description }}",
+            "references": "Organization",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "role": {
+            "description": "{{ Membership.properties.role.description }}",
+            "type": "string"
+        },
+        "votingRight": {
+            "description": "{{ Membership.properties.votingRight.description }}",
+            "type": "boolean"
+        },
+        "startDate": {
+            "description": "{{ Membership.properties.startDate.description }}",
+            "type": "string",
+            "format": "date"
+        },
+        "endDate": {
+            "description": "{{ Membership.properties.endDate.description }}",
+            "type": "string",
+            "format": "date"
+        },
+        "onBehalfOf": {
+            "description": "{{ Membership.properties.onBehalfOf.description }}",
+            "references": "Organization",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "license": {
+            "type": "string"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

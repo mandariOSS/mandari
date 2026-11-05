@@ -1,0 +1,37 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/snapshot/SnapshotHeader.json",
+    "title": "SnapshotHeader",
+    "description": "Kopfzeile eines Snapshots (Profil Snapshot, Entwurf).",
+    "type": "object",
+    "required": [
+        "type",
+        "body",
+        "cursor",
+        "generated"
+    ],
+    "properties": {
+        "type": {
+            "const": "https://schema.kommparl.de/0.1/SnapshotHeader"
+        },
+        "body": {
+            "description": "Die id der Körperschaft.",
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        },
+        "cursor": {
+            "description": "Position im Änderungsfeed der Körperschaft, an der der Client nach dem Snapshot fortsetzt.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9._~-]{1,512}$"
+        },
+        "generated": {
+            "description": "Zeitpunkt, zu dem der Server den Snapshot erzeugt hat.",
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false
+}
