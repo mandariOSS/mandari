@@ -16,12 +16,14 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `OPARL_API.md` | [Insight → OParl-Aggregations-API](https://docs.mandari.de/insight/oparl-api/) |
 | `DCAT_KATALOG.md` | Insight → Datenkatalog für Datenportale (DCAT-AP.de, Seite folgt) |
 | `SESSION_OPARL_API.md` | [Session → OParl-API je Kommune](https://docs.mandari.de/session/oparl-api/), [Veröffentlichung im Bürgerportal](https://docs.mandari.de/session/buergerportal/) |
+| `API_V1_SESSION.md` | [Session → Session-API v1](https://docs.mandari.de/session/api-v1/) |
 | `FACTION_PUBLIC_API.md` | [Work → Öffentliche Fraktions-API](https://docs.mandari.de/work/fraktions-api/) |
 | `PROVISIONING_API.md` | – (Provisioning-API v1 und v2: Work-Organisationen aus einem System des Betreibers anlegen und abgleichen; Betrieb) |
 | `WORK_SESSION_SUBMISSION.md` | [Work → Anträge digital einreichen](https://docs.mandari.de/work/antraege-einreichen/) |
 | `SESSION_BESCHLUSSKONTROLLE.md` | [Session → Beschlusskontrolle](https://docs.mandari.de/session/beschlusskontrolle/) |
 | `INSIGHT_DECISION_TRACKING.md` | [Insight → Beschlüsse verfolgen](https://docs.mandari.de/insight/beschluesse/) |
 | `INSIGHT_GEO.md` | Insight → Nachbarschaft und Verortung (Seite folgt) |
+| `INSIGHT_KARTENANALYSE.md` | – (Karten und Pläne in Anlagen mit `analyze_maps` messen, nur aus dem Dokument-Cache, ohne Abruf beim RIS; Entwicklung) |
 | `INSIGHT_KOMMUNENWECHSEL.md` | Insight → Kommunenwechsel und Kommunenverzeichnis (Seite folgt) |
 | `INSIGHT_QUESTIONS.md` | [Insight → Ratsfragen](https://docs.mandari.de/insight/ratsfragen/) |
 | `INSIGHT_FRAKTIONEN.md` | Insight → Fraktionen ohne OParl-Fraktion (Seite folgt) |
@@ -31,11 +33,13 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `KI_TRANSPARENZ.md` | Datenschutz → KI-Transparenz nach EU AI Act Art. 50 (Seite folgt) |
 | `SESSION_REMINDERS.md` | [Session → Fristen-Erinnerungen](https://docs.mandari.de/session/fristen-erinnerungen/) |
 | `PROTOKOLLIERUNG.md` | [Datenschutz → Protokollierungskonzept](https://docs.mandari.de/datenschutz/) (Seite folgt) |
+| `PROTOKOLLE.md` | – (Protokollarten der Installation, Aufbewahrung, Ablage, Sicherung und Überwachung nach BSI OPS.1.1.5; Betrieb) |
 | `SESSION_MANDANT_ANLEGEN.md` | Session → Mandanten anlegen und Bürgerportal je Körperschaft (Seite folgt) |
 | `SESSION_VIER_AUGEN_VERTRETUNG.md` | Session → Vier-Augen-Prinzip und Vertretungen (Seite folgt) |
 | `SESSION_LEITSTELLE.md` | Session → Leitstelle und gemeinsame Sitzungen (Seite folgt) |
 | `SESSION_SITZUNGSFORMAT_LANDESRECHT.md` | Session → Sitzungsformate und Landesrecht (Seite folgt) |
 | `SESSION_SITZUNGSCOCKPIT.md` | Session → Sitzungscockpit (Seite folgt) |
+| `SESSION_NUMMERNKREISE.md` | Session → Nummernkreise für Vorlagen und Drucksachen (Seite folgt) |
 | `SESSION_EREIGNISSE.md` | – (Session meldet Ereignisse an die Datendrehscheibe; Entwicklung und Betrieb) |
 | `DREHSCHEIBE_UMSTELLUNG.md` | – (Checkliste je Umstellung eines Weges auf die Datendrehscheibe: Schatten, Vergleich, Umschalten, Aufräumen, Abbruchkriterien; Betrieb) |
 | `EREIGNISKATALOG.md` | – (aus dem Vertragsregister erzeugt: alle Ereignisse und Befehle der Datendrehscheibe) |
@@ -45,6 +49,10 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `MONITORING.md` | [Betrieb → Betriebsmonitor](https://docs.mandari.de/betrieb/monitoring/) |
 | `BACKUP.md` | [Betrieb → Updates und Backups](https://docs.mandari.de/betrieb/updates-backups/) |
 | `LASTTESTS.md` | Betrieb → Größenempfehlungen und Lasttests (Seite folgt) |
+| `MEHR_SERVER_BETRIEB.md` | – (Compose-Rollen `data`, `web` und `worker` unter `deploy/roles/`: dieselben Images auf mehrere Server verteilen; Betrieb) |
+| `SKALIERUNG_UND_VERFUEGBARKEIT.md` | – (heutiger Betrieb, Ausfallpunkte nach Tragweite und Stufenkonzept zu ihrer Auflösung; Betrieb) |
+| `HOCHVERFUEGBARKEIT.md` | – (Zielarchitektur ohne einzelne Ausfallpunkte, mit automatischem Umschalten und ohne Datenverlust; offene Entscheidungen; Betrieb) |
+| `SLA.md` | – (Vertragsanlage „Service Level“ für Managed Hosting: Verfügbarkeit, Wartungsfenster, Störungsklassen, RPO und RTO, Gutschriften) |
 | `EREIGNISTECHNIK_NACHWEISE.md` | – (Zusagen der Ereignistechnik: Absturz-, Doppelzustellungs- und Lasttests mit Messwerten; Entwicklung und Betrieb) |
 | `SCRAPER_SOURCES.md` | [Betrieb → Quellen anbinden](https://docs.mandari.de/betrieb/quellen-anbinden/) |
 | `ABRUFREGELN.md` | Datenschutz → Ingestor und Opt-out (Seite folgt mit mandariOSS/docs#9 unter `https://docs.mandari.de/datenschutz/ingestor/`), Infoseite `https://mandari.de/ingestor/` (folgt) |
@@ -52,7 +60,16 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 | `DEMO_PRAESENTATION.md` | – (Drehbuch für Produktvorstellungen, nur intern) |
 | `ACCOUNT_SECURITY.md` | [Work → Konto und Sicherheit](https://docs.mandari.de/work/konto-und-sicherheit/); Betrieb → Anmeldesicherheit (Seite folgt) |
 | `WORK_REGISTRATION.md` | Work → Registrierung und Zugangs-Mails (Seite folgt) |
+| `WORK_NEUES_DESIGN.md` | – (neues Work-Design ausrollen: Schalter je Organisation, Befehl `work_neues_design`, Prüfung und Rückweg; Betrieb) |
+| `KRYPTOKONZEPT.md` | – (Kryptokonzept nach BSI CON.1 und TR-02102: Schutzbedarf, Verfahren, Schlüsselhierarchie, Schlüsselwechsel, Hinweise für Selbst-Hoster) |
+| `UPLOADS.md` | – (erlaubte Dateitypen und Größen je Upload-Profil, zentral in `apps/common/uploads.py`; Entwicklung) |
 | `DSGVO_TOM.md`, `DSGVO_LOESCHKONZEPT.md`, `DSGVO_AVV_MUSTER.md` | [Datenschutz](https://docs.mandari.de/datenschutz/) |
 | `SBOM.md` | [Entwicklung → Abhängigkeiten](https://docs.mandari.de/entwicklung/sbom/) |
+| `RELEASE_POLITIK.md` | [Entwicklung → Release- und Support-Politik](https://docs.mandari.de/entwicklung/release-politik/) |
+| `SICHERHEITSMELDUNGEN.md` | – (Umgang mit Sicherheitslücken: privates Advisory, CVSS, CVE, erst der Fix, dann die Veröffentlichung; Meldewege in `SECURITY.md`) |
+| `SICHERHEITSNACHWEISE.md` | – (Fahrplan Sicherheitsnachweise: heutige Belege, Penetrationstest, Grundschutz-Selbstbewertung, ISO 27001 und C5) |
+| `ENGINEERING_STANDARDS.md` | – (Regeln für neuen und angefassten Code: Schichten, Typisierung, Tests, Sicherheit, Frontend, API, Betrieb; Entwicklung) |
+| `BARRIEREFREIHEIT_PRUEFPROTOKOLL.md` | – (automatisch und manuell geprüfte Komponenten und Kernpfade, offene Punkte; Grundlage der Barrierefreiheitserklärung) |
+| `PROJEKTSTEUERUNG.md` | – (wie Arbeit geplant, verfolgt und ausgeliefert wird: Issues, Epics, Meilensteine, Projekt-Board; Beitragende) |
 | `CSP.md` | – (Content-Security-Policy: Stand, Muster ohne Inline-Code, Bewertung Alpine-CSP-Build; Entwicklung) |
 | `cla/README.md` | – (Beitragsvereinbarung: Stand, Prüfung im Pull Request, Pflege; Entwicklung) |

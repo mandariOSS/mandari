@@ -9,19 +9,25 @@
 #     git clone https://github.com/mandariOSS/mandari.git && cd mandari
 #     ./install.sh
 #
-#   Option 2 - Download Only:
-#     mkdir mandari && cd mandari
+#   Option 2 - Download Only (ohne install.sh; Ablauf und Erklärung: DEPLOYMENT.md, „Ohne install.sh“):
+#     mkdir -p mandari/scripts && cd mandari
 #     curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/docker-compose.yml
 #     curl -LO https://raw.githubusercontent.com/mandariOSS/mandari/main/Caddyfile
+#     curl -Lo scripts/init-website-db.sh https://raw.githubusercontent.com/mandariOSS/mandari/main/scripts/init-website-db.sh
 #     curl -Lo .env https://raw.githubusercontent.com/mandariOSS/mandari/main/.env.example
-#     # Edit .env with your settings, then:
+#     # .env bearbeiten (Pflichtwerte unter REQUIRED CONFIGURATION), dann – die Anwendung migriert beim Start nicht:
+#     docker compose up -d postgres redis elasticsearch
+#     docker compose run --rm mandari python manage.py migrate --noinput
+#     docker compose run --rm mandari python manage.py setup_roles
+#     docker compose run --rm website python manage.py migrate --noinput
 #     docker compose up -d
+#     docker compose exec mandari python manage.py createsuperuser
 #
 # Docker Images: ghcr.io/mandarioss/mandari (GitHub Container Registry)
 # =============================================================================
 
-# Projektname bestimmt Container- und Volume-Namen. Für eine zweite Installation auf
-# demselben Host: COMPOSE_PROJECT_NAME=mandari-zweit docker compose up -d
+# Projektname bestimmt die Container-Namen. Die Volumes heißen fest mandari_*_data (unten): Eine zweite
+# Installation auf demselben Host teilte sie mit der ersten (Issue #443).
 name: ${COMPOSE_PROJECT_NAME:-mandari}
 
 # =============================================================================
@@ -37,7 +43,13 @@ x-logging: &default-logging
 # Umgebung der Anwendung: für die Anwendung (mandari) und den Worker gleich, damit
 # Aufträge im Worker dieselbe Konfiguration sehen wie die Webprozesse. Einzige Ausnahme:
 # die Datenbankverbindung der Anwendung (optional über PgBouncer, siehe Dienst mandari);
-# DATABASE_URL hier bleibt die Direktverbindung für Worker, worker-heavy und worker-live
+# DATABASE_URL hier bleibt die Direktverbindung für Worker, worker-heavy und worker-live.
+#
+# Alle übrigen Variablen der .env (EMAIL_*, PORTAL_HOSTS, TWO_FACTOR_* usw.) lesen Anwendung und Worker über
+# env_file (Issue #962); Ingestor und Orchestrator bewusst nicht. Ein Wert hier unter environment hat
+# Vorrang vor env_file:
+# Was die .env einstellen soll, wird hier nur über dieselbe Variable eingesetzt (${…:-Vorgabe}), nie fest
+# überschrieben (apps/common/tests/test_umgebung_compose.py).
 # =============================================================================
 x-app-environment: &app-environment
   # Database
@@ -53,8 +65,9 @@ x-app-environment: &app-environment
   ENCRYPTION_MASTER_KEY_PREVIOUS: ${ENCRYPTION_MASTER_KEY_PREVIOUS:-}
   # Application
   DEBUG: "false"
-  ALLOWED_HOSTS: ${DOMAIN:-localhost}
-  CSRF_TRUSTED_ORIGINS: https://${DOMAIN:-localhost}
+  # Weitere Hosts bzw. Ursprünge aus der .env (etwa für PORTAL_HOSTS); DOMAIN gilt über SITE_URL immer
+  ALLOWED_HOSTS: ${ALLOWED_HOSTS:-${DOMAIN:-localhost}}
+  CSRF_TRUSTED_ORIGINS: ${CSRF_TRUSTED_ORIGINS:-https://${DOMAIN:-localhost}}
   SITE_URL: https://${DOMAIN:-localhost}
   # IndexNow (siehe .env.example), leer = aus
   INDEXNOW_KEY: ${INDEXNOW_KEY:-}
@@ -214,7 +227,9 @@ services:
       - "443:443"
     environment:
       DOMAIN: ${DOMAIN:-localhost}
-      EMAIL: ${ACME_EMAIL:-admin@example.com}
+      # Kontaktadresse für Let's Encrypt als ganze Zeile „email …“ im Caddyfile; ohne ACME_EMAIL leer, dann
+      # ohne Adresse (Let's Encrypt lehnt Platzhalter wie example.com ab, Issue #962)
+      ACME_EMAIL_OPTION: ${ACME_EMAIL:+email ${ACME_EMAIL}}
       # Ablage der Dokumente, nur lesend (Auslieferung per X-Accel-Redirect, FILE_ACCEL_REDIRECT)
       OPARL_FILES_MOUNT: /srv/mandari-files
     volumes:
@@ -284,6 +299,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-mandari}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password required}
       POSTGRES_DB: ${POSTGRES_DB:-mandari}
+      # Name der Website-Datenbank, die scripts/init-website-db.sh beim ersten Start anlegt (wie im Dienst website)
+      WEBSITE_DB: ${WEBSITE_DB:-mandari_website}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./scripts/init-website-db.sh:/docker-entrypoint-initdb.d/init-website-db.sh:ro
@@ -412,6 +429,8 @@ services:
     labels:
       # deploy/scripts/restart-unhealthy.sh startet den Dienst neu, wenn die Liveness rot ist (#344)
       mandari.autoheal: "true"
+    # Die übrigen Variablen der .env (siehe x-app-environment); environment hat Vorrang
+    env_file: .env
     environment:
       <<: *app-environment
       # Nur die Webanwendung geht über PgBouncer (Profil pgbouncer, Issue #1060); Worker, Ingestor und
@@ -486,6 +505,8 @@ services:
     labels:
       # deploy/scripts/restart-unhealthy.sh startet ihn neu, wenn eine Rolle hängt
       mandari.autoheal: "true"
+    # Wie die Anwendung; gilt auch für worker-heavy und worker-live
+    env_file: .env
     environment: *app-environment
     volumes:
       - mandari_media:/app/media
@@ -589,6 +610,9 @@ services:
     container_name: ${COMPOSE_PROJECT_NAME:-mandari}-minutes-orchestrator
     restart: unless-stopped
     command: ["python", "manage.py", "minutes_orchestrator"]
+    # Bewusst ohne env_file: nur was der Orchestrator braucht. Den Hauptschlüssel braucht er für die
+    # verschlüsselten Zugangsdaten der Rechenknoten (apps/minutes/models_compute.py), Mail- und
+    # Objektspeicher-Zugänge nicht (Issue #962)
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
@@ -596,9 +620,12 @@ services:
       ENCRYPTION_MASTER_KEY: ${ENCRYPTION_MASTER_KEY:?Encryption key required}
       ENCRYPTION_MASTER_KEY_PREVIOUS: ${ENCRYPTION_MASTER_KEY_PREVIOUS:-}
       DEBUG: "false"
-      ALLOWED_HOSTS: ${DOMAIN:-localhost}
+      ALLOWED_HOSTS: ${ALLOWED_HOSTS:-${DOMAIN:-localhost}}
       SITE_URL: https://${DOMAIN:-localhost}
       TZ: ${TZ:-Europe/Berlin}
+      # Ohne Wert: aus der .env, wenn dort gesetzt, sonst gar nicht (Vorgabe der Anwendung)
+      LOG_FORMAT:
+      LOG_LEVEL:
     depends_on:
       postgres:
         condition: service_healthy
@@ -662,6 +689,9 @@ services:
       --interval ${INGESTOR_INTERVAL:-10}
       --full-sync-hour ${INGESTOR_FULL_SYNC_HOUR:-3}
       --concurrent ${INGESTOR_CONCURRENT:-10}
+    # Bewusst ohne env_file: Der Ingestor und seine PDF- und OCR-Unterprozesse bekommen nur die Variablen, die
+    # ingestor/src/config.py und observability.py lesen, keine Schlüssel und Zugänge der Anwendung (Issue #962,
+    # apps/common/tests/test_umgebung_compose.py gleicht die Liste mit dem Code ab)
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-mandari}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mandari}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
@@ -692,6 +722,60 @@ services:
       KI_ERLAUBTE_HOSTS: ${KI_ERLAUBTE_HOSTS:-}
       MISTRAL_API_KEY: ${MISTRAL_API_KEY:-}
       MISTRAL_BASE_URL: ${MISTRAL_BASE_URL:-}
+      # Übrige Einstellungen ohne Wert: aus der .env, wenn dort gesetzt, sonst gar nicht (dann gilt die Vorgabe
+      # in ingestor/src/config.py; docs/ABRUFREGELN.md, „Einstellungen per Umgebungsvariable“)
+      OPARL_REQUEST_TIMEOUT:
+      OPARL_MAX_RETRIES:
+      OPARL_RETRY_BACKOFF:
+      OPARL_WAIT_TIME:
+      OPARL_ETAG_CACHE_ENABLED:
+      OPARL_MODIFIED_SINCE_ENABLED:
+      OPARL_MAX_CONCURRENT:
+      OPARL_UA_PROBE_ENABLED:
+      OPARL_SERVER_ERROR_SERIES_THRESHOLD:
+      INGESTOR_REQUEST_INTERVAL:
+      INGESTOR_HOST_MAX_CONCURRENT:
+      INGESTOR_MODIFIED_SINCE_MARGIN_MINUTES:
+      INGESTOR_USER_AGENT:
+      SCRAPER_USER_AGENT:
+      MAX_WORKERS:
+      SYNC_BODY_CONCURRENCY:
+      SYNC_SOURCE_CONCURRENCY:
+      SYNC_ENTITY_CONCURRENCY:
+      SYNC_INTERVAL_MINUTES:
+      FULL_SYNC_INTERVAL_HOURS:
+      SYNC_ENABLED:
+      FILE_STORAGE_PATH:
+      DOWNLOAD_FILES:
+      METRICS_ENABLED:
+      METRICS_PORT:
+      CIRCUIT_BREAKER_ENABLED:
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD:
+      CIRCUIT_BREAKER_RECOVERY_TIMEOUT:
+      CIRCUIT_BREAKER_SUCCESS_THRESHOLD:
+      TEXT_EXTRACTION_ENABLED:
+      TEXT_EXTRACTION_MAX_SIZE_MB:
+      TEXT_EXTRACTION_CONCURRENCY:
+      TEXT_EXTRACTION_TIMEOUT:
+      TEXT_EXTRACTION_BATCH_SIZE:
+      TEXT_EXTRACTION_STALE_MINUTES:
+      TEXT_EXTRACTION_MAX_ATTEMPTS:
+      OCR_DPI:
+      OCR_MAX_MEGAPIXELS:
+      OCR_PAGE_TIMEOUT:
+      OCR_FILE_BUDGET_SECONDS:
+      OCR_MAX_PAGES:
+      MISTRAL_OCR_MODEL:
+      MISTRAL_OCR_RATE_LIMIT:
+      ELASTICSEARCH_INDEXING_ENABLED:
+      ELASTICSEARCH_BATCH_SIZE:
+      SCRAPER_PARSE_QUOTA_WARN:
+      SCRAPER_TOMBSTONE_FULL_CRAWLS:
+      SCRAPER_TOMBSTONE_MAX_MISSING:
+      LOG_FORMAT:
+      LOG_LEVEL:
+      OTEL_EXPORTER_OTLP_ENDPOINT:
+      OTEL_SERVICE_NAME:
     volumes:
       - ingestor_data:/app/data
       - mandari_files:/app/files

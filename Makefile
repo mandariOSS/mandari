@@ -1,109 +1,109 @@
 # =============================================================================
-# Mandari 2.0 - Makefile
+# mandari - Makefile
 # =============================================================================
-# Convenience commands for development
+# Kurzbefehle für die Entwicklung (Einrichtung und Tests: CONTRIBUTING.md)
 # Betrieb (Installation, Update, Sicherung): install.sh, update.sh, backup.sh, siehe DEPLOYMENT.md
 #
-# Usage:
-#   make help          - Show available commands
+# Aufruf:
+#   make help          - verfügbare Befehle anzeigen
 # =============================================================================
 
 .PHONY: help install dev test lint format migrate makemigrations shell \
         docker-build docker-up docker-down docker-logs secrets-generate
 
-# Default target
+# Standardziel
 .DEFAULT_GOAL := help
 
-# Colors
+# Entwicklungsdienste: Ports nur auf 127.0.0.1 (docker-compose.dev.yml)
+COMPOSE_DEV := docker compose -f docker-compose.yml -f docker-compose.dev.yml
+DEV_SERVICES := postgres redis elasticsearch
+
+# Farben
 BLUE := \033[0;34m
 GREEN := \033[0;32m
 YELLOW := \033[1;33m
 NC := \033[0m
 
 # =============================================================================
-# Help
+# Hilfe
 # =============================================================================
 
-help: ## Show this help
+help: ## Diese Hilfe anzeigen
 	@echo ""
-	@echo "$(BLUE)Mandari 2.0 - Available Commands$(NC)"
+	@echo "$(BLUE)mandari - verfügbare Befehle$(NC)"
 	@echo ""
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  $(GREEN)%-20s$(NC) %s\n", $$1, $$2}'
 	@echo ""
 
 # =============================================================================
-# Development
+# Entwicklung (Befehle in mandari/ über uv run)
 # =============================================================================
 
-install: ## Install all dependencies
-	@echo "$(BLUE)Installing Python dependencies...$(NC)"
+install: ## Abhängigkeiten installieren (Python mit Entwicklungswerkzeugen, Node)
+	@echo "$(BLUE)Python-Abhängigkeiten aus uv.lock...$(NC)"
 	cd mandari && uv sync --extra dev
-	@echo "$(BLUE)Installing Node dependencies...$(NC)"
-	cd mandari && npm install
-	@echo "$(GREEN)Dependencies installed!$(NC)"
+	@echo "$(BLUE)Node-Abhängigkeiten aus package-lock.json...$(NC)"
+	cd mandari && npm ci
+	@echo "$(GREEN)Abhängigkeiten installiert.$(NC)"
 
-dev: ## Start development server
-	cd mandari && python manage.py runserver
+dev: ## Entwicklungsserver starten
+	cd mandari && uv run python manage.py runserver
 
-test: ## Run tests
-	cd mandari && pytest -v
+test: ## Tests ausführen
+	cd mandari && uv run pytest
 
-lint: ## Run linters
-	cd mandari && ruff check .
-	cd mandari && black --check .
+lint: ## Ruff prüfen wie die CI (check und format --check)
+	cd mandari && uv run ruff check .
+	cd mandari && uv run ruff format --check .
 
-format: ## Format code
-	cd mandari && black .
-	cd mandari && isort .
-	cd mandari && ruff check --fix .
+format: ## Code formatieren und Ruff-Befunde beheben
+	cd mandari && uv run ruff format .
+	cd mandari && uv run ruff check --fix .
 
-migrate: ## Run database migrations
-	cd mandari && python manage.py migrate
+migrate: ## Datenbankmigrationen ausführen
+	cd mandari && uv run python manage.py migrate
 
-makemigrations: ## Create new migrations
-	cd mandari && python manage.py makemigrations
+makemigrations: ## Neue Migrationen anlegen
+	cd mandari && uv run python manage.py makemigrations
 
-shell: ## Open Django shell
-	cd mandari && python manage.py shell_plus
-
-# =============================================================================
-# Docker (Local)
-# =============================================================================
-
-docker-build: ## Build Docker images locally
-	@echo "$(BLUE)Building Docker images...$(NC)"
-	docker build -t mandari-api:local ./mandari
-	docker build -t mandari-ingestor:local ./apps/ingestor
-	@echo "$(GREEN)Images built!$(NC)"
-
-docker-up: ## Start local Docker environment
-	docker compose -f docker-compose.yml up -d
-
-docker-down: ## Stop local Docker environment
-	docker compose -f docker-compose.yml down
-
-docker-logs: ## Show Docker logs
-	docker compose -f docker-compose.yml logs -f
+shell: ## Django-Shell öffnen
+	cd mandari && uv run python manage.py shell
 
 # =============================================================================
-# Secrets
+# Docker (lokal)
 # =============================================================================
 
-secrets-generate: ## Generate new secrets
-	@echo "$(BLUE)Generating secrets...$(NC)"
+docker-build: ## Images lokal bauen (Tag local, für IMAGE_TAG=local)
+	@echo "$(BLUE)Images bauen (Kontext: Repository-Wurzel)...$(NC)"
+	docker build -f mandari/Dockerfile -t ghcr.io/mandarioss/mandari:local .
+	docker build -f ingestor/Dockerfile -t ghcr.io/mandarioss/ingestor:local .
+	@echo "$(GREEN)Images gebaut.$(NC)"
+
+docker-up: ## Entwicklungsdienste starten (PostgreSQL, Redis, Elasticsearch)
+	$(COMPOSE_DEV) up -d $(DEV_SERVICES)
+
+docker-down: ## Entwicklungsdienste anhalten
+	$(COMPOSE_DEV) stop $(DEV_SERVICES)
+
+docker-logs: ## Protokolle der Entwicklungsdienste anzeigen
+	$(COMPOSE_DEV) logs -f $(DEV_SERVICES)
+
+# =============================================================================
+# Geheimnisse
+# =============================================================================
+
+secrets-generate: ## Neue Geheimnisse für die .env erzeugen
+	@echo "$(BLUE)Geheimnisse erzeugen...$(NC)"
 	@echo ""
 	@echo "SECRET_KEY:"
-	@python -c "import secrets; print(secrets.token_urlsafe(64))"
+	@python3 -c "import secrets; print(secrets.token_urlsafe(64))"
 	@echo ""
 	@echo "ENCRYPTION_MASTER_KEY:"
-	@python -c "import secrets; import base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
-	@echo ""
-	@echo "MEILISEARCH_KEY:"
-	@python -c "import secrets; print(secrets.token_urlsafe(32))"
+	@python3 -c "import secrets; import base64; print(base64.b64encode(secrets.token_bytes(32)).decode())"
 	@echo ""
 	@echo "POSTGRES_PASSWORD:"
-	@python -c "import secrets; print(secrets.token_urlsafe(24))"
+	@python3 -c "import secrets, string; a = string.ascii_letters + string.digits; print(''.join(secrets.choice(a) for _ in range(32)))"
 	@echo ""
-	@echo "REPLICATION_PASSWORD:"
-	@python -c "import secrets; print(secrets.token_urlsafe(24))"
+	@echo "REDIS_PASSWORD:"
+	@python3 -c "import secrets, string; a = string.ascii_letters + string.digits; print(''.join(secrets.choice(a) for _ in range(32)))"

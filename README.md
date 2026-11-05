@@ -56,9 +56,10 @@ OParl-Schnittstelle — die Daten bleiben offen und maschinenlesbar.
 
 ### Ein Server mit Docker (empfohlen)
 
-Voraussetzung: Linux-Server (Ubuntu 22.04 oder neuer, Debian 12, Rocky 9), 4 GB
-Arbeitsspeicher, eine Domain, die auf den Server zeigt. Docker installiert der Installer
-bei Bedarf mit.
+Voraussetzung: Linux-Server (Ubuntu 22.04 oder neuer, Debian 12, Rocky 9) mit mindestens 8 GB
+Arbeitsspeicher (16 GB für mittlere Kommunen, Größenklassen in [docs/LASTTESTS.md](docs/LASTTESTS.md)), eine
+Domain, die auf den Server zeigt. Die Speichergrenzen aller Dienste in `docker-compose.yml` ergeben zusammen
+rund 10,5 GB; ausgeschöpft werden sie selten gleichzeitig. Docker installiert der Installer bei Bedarf mit.
 
 ```bash
 git clone https://github.com/mandariOSS/mandari.git
@@ -68,7 +69,18 @@ cd mandari
 
 Der Installer fragt Domain, Zeitzone und Administrationskonto ab, erzeugt alle Schlüssel,
 startet die Dienste in der richtigen Reihenfolge, führt die Migrationen aus und richtet ein
-nächtliches Backup ein. HTTPS-Zertifikate holt Caddy automatisch.
+nächtliches Backup ein, samt Passphrase (`.backup-passphrase`), mit der die Sicherung die
+Konfiguration verschlüsselt mitnimmt. `.env` und `.backup-passphrase` gehören zusätzlich außerhalb
+des Servers verwahrt. HTTPS-Zertifikate holt Caddy automatisch; eine Kontaktadresse für Let's Encrypt
+ist optional.
+
+Nach der Installation:
+
+- Beim ersten Login als Administrator richtet mandari die Zwei-Faktor-Anmeldung ein (Pflicht,
+  [docs/ACCOUNT_SECURITY.md](docs/ACCOUNT_SECURITY.md)).
+- Ohne Mailserver verschickt mandari keine Mails. Einzutragen im Admin unter den Systemeinstellungen oder
+  als `EMAIL_*` in der `.env` ([`.env.example`](.env.example)).
+- Kommunen einzeln im Admin prüfen und aktivieren; abgerufen wird nach [docs/ABRUFREGELN.md](docs/ABRUFREGELN.md).
 
 Ohne Rückfragen:
 
@@ -77,15 +89,19 @@ DOMAIN=ris.meine-kommune.de ADMIN_EMAIL=admin@meine-kommune.de \
 ADMIN_PASSWORD='EinLangesPasswort' ./install.sh --unattended
 ```
 
+Das Passwort braucht mindestens 12 Zeichen (Passwortrichtlinie), sonst bricht der Lauf vorher ab.
+`ACME_EMAIL` ist optional.
+
 Liegt im Verzeichnis bereits eine Installation, bricht der Lauf ohne Änderung ab (Exit-Code 1);
 aktualisiert wird mit `./update.sh`. Neu aufsetzen lässt sie sich ohne Rückfragen nur ausdrücklich
 mit `--reinstall-destroy-data` – das löscht alle Daten (siehe [DEPLOYMENT.md](DEPLOYMENT.md#installation-ohne-rückfragen)).
 
-Mehrere Installationen auf einem Host brauchen unterschiedliche Projektnamen:
+Mehrere Installationen auf einem Host sind derzeit nicht vorgesehen: Die Volumes tragen feste Namen
+(`mandari_*_data`, [Issue #443](https://github.com/mandariOSS/mandari/issues/443)).
 
-```bash
-COMPOSE_PROJECT_NAME=mandari-zweit ./install.sh
-```
+Ohne Installer, nur mit `docker-compose.yml`, `Caddyfile`, `scripts/init-website-db.sh` und `.env`: Ablauf in
+[DEPLOYMENT.md](DEPLOYMENT.md#ohne-installsh). Die Anwendung migriert beim Start nicht; der Ablauf dort
+legt das Schema vor dem ersten `docker compose up -d` an.
 
 ### Kubernetes
 
@@ -123,20 +139,36 @@ Vollständige Betriebsanleitung: <https://docs.mandari.de/betrieb/>
 ```
 mandari/
 ├── mandari/          Django-Anwendung (Insight, Work, Session)
-│   ├── apps/         Fachmodule: accounts, tenants, work, session, common
+│   ├── apps/         Fachmodule: accounts, tenants, work, session, events, minutes,
+│   │                 provisioning, common
+│   ├── hub/          Datendrehscheibe: Verträge, Befehle, RIS-Modell, Adapter
 │   ├── insight_core/ OParl-Datenmodelle, Suche, SEO
 │   ├── frontend/     TypeScript (Vite), Alpine-Komponenten
 │   └── templates/    Django-Templates und Komponentenbibliothek
 ├── ingestor/         OParl-Synchronisation (httpx, SQLAlchemy, asyncio)
-├── deploy/kubernetes/ Helm-Chart und Manifeste
+├── shared/           Gemeinsame Pakete von Anwendung und Ingestor (OParl, Texterkennung)
+├── deploy/           Helm-Chart, Compose-Rollen für mehrere Server, Betriebsskripte
 ├── docs/             Technische Notizen, Standards, Architekturentscheidungen
 └── scripts/          Qualitätsprüfungen und Werkzeuge
 ```
 
-Der Compose-Stack umfasst Caddy (TLS), PostgreSQL 16, Redis 7, Elasticsearch 8 und drei
-Anwendungscontainer: `ghcr.io/mandarioss/mandari`, `.../website`, `.../ingestor`. Alle
-Dienste laufen hinter einer Domain; Caddy verteilt `/insight/`, `/work/`, `/session/`,
-`/accounts/`, `/admin/` und `/api/` an die Anwendung, alles Übrige an die Marketing-Website.
+Der Compose-Stack umfasst Caddy (TLS), PostgreSQL 16, Redis 7, Elasticsearch 8 und Dienste aus drei
+Anwendungs-Images:
+
+| Dienst | Image | Aufgabe |
+|--------|-------|---------|
+| `mandari` | `ghcr.io/mandarioss/mandari` | Webanwendung (Insight, Work, Session, Admin, APIs) |
+| `worker` | `ghcr.io/mandarioss/mandari` | Aufträge, Zeitpläne (früher Cron) und Datendrehscheibe (`manage.py events_worker`) |
+| `worker-heavy` | `ghcr.io/mandarioss/mandari` | Texterkennung und KI (Warteschlangen `ocr`, `ai`) |
+| `worker-live` | `ghcr.io/mandarioss/mandari` | Live-Übertragungen von Gremiensitzungen (Warteschlange `live`) |
+| `minutes-orchestrator` | `ghcr.io/mandarioss/mandari` | GPU-Rechenknoten der Protokollierung, ruht ohne Einschalten im Admin |
+| `ingestor` | `ghcr.io/mandarioss/ingestor` | Abgleich mit den Ratsinformationssystemen (OParl) |
+| `website` | `ghcr.io/mandarioss/website` | Marketing-Website (Wagtail) |
+
+Alle Dienste laufen hinter einer Domain. Caddy leitet die Pfade der Anwendung an `mandari` (`/insight/`,
+`/work/`, `/session/`, `/accounts/`, `/admin/`, `/api/`, `/oparl/`, `/ws/`, `/static/`, `/media/` und
+weitere, vollständig im Matcher `@mandari` im [`Caddyfile`](Caddyfile)), alles Übrige an die Website. Einzelheiten
+zu Workern und Zeitplänen: [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Der Betriebsstatus ist öffentlich einsehbar: <https://status.mandari.de>.
 
@@ -171,13 +203,14 @@ selbst betriebenen Installationen entsteht also keine zusätzliche Angriffsfläc
 | Frontend | Django-Templates, HTMX, Alpine.js, Tailwind CSS, Vite |
 | Ingestor | Python 3.14 (httpx, SQLAlchemy, asyncio) |
 | Datenbank | PostgreSQL 16 |
-| Suche | Elasticsearch 8 (abschaltbar) |
+| Suche | Elasticsearch 8 (im Helm-Chart abschaltbar, mit Docker Compose fest dabei) |
+| Hintergrundarbeit | Worker aus dem Anwendungs-Image: Aufträge, Zeitpläne, Datendrehscheibe |
 | Cache und Kanäle | Redis 7 |
 | Proxy | Caddy 2 (Docker) oder Ingress (Kubernetes) |
 
 ### Qualitätssicherung
 
-Jede Änderung durchläuft dieselben Prüfungen: über 5.000 Tests mit Coverage-Schwelle, mypy
+Jede Änderung durchläuft dieselben Prüfungen: über 13.000 Tests mit Coverage-Schwelle, mypy
 im strikten Modus mit schrumpfender Ausnahmeliste, ruff, djlint, TypeScript, Biome,
 End-to-End-Tests im Browser mit axe-core für Barrierefreiheit, ein Schema-Abgleich zwischen
 Anwendung und Ingestor, `pip-audit` gegen das Lockfile, die REUSE-Lizenzprüfung, eine
