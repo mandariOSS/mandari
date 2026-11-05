@@ -112,6 +112,8 @@ INSTALLED_APPS = [
     "django_vite",  # Frontend-Assets über Vite-Manifest (static/dist/)
     "ninja",  # Session-API v1: OpenAPI + Swagger UI (lokale Assets, kein CDN)
     "django_safemigrate",
+    # OpenID-Connect-Anbieter (Issue #1206): Modelle, Endpunkte und Admin in apps/accounts/oidc
+    "oauth2_provider",
     # Mandari Insight apps (OSS)
     "insight_core",
     "insight_sync",
@@ -278,6 +280,103 @@ WEBAUTHN_RP_NAME = os.environ.get("WEBAUTHN_RP_NAME", "mandari")
 TWO_FACTOR_REQUIRE_SECURITY_KEY_FOR_SUPERUSERS = os.environ.get(
     "TWO_FACTOR_REQUIRE_SECURITY_KEY_FOR_SUPERUSERS", "false"
 ).lower() in ("1", "true", "yes")
+
+# =============================================================================
+# OpenID-Connect-Anbieter (Issue #1206, apps/accounts/oidc, docs/schnittstelle/anmeldung.md)
+# =============================================================================
+# Standard aus: Dann antworten alle Endpunkte (auch /.well-known/openid-configuration) mit 404 und kein
+# Access-Token wird angenommen. Eingeschaltet braucht der Anbieter einen RSA-Signaturschlüssel aus der Umgebung
+# (OIDC_RSA_PRIVATE_KEY_FILE oder OIDC_RSA_PRIVATE_KEY, nie im Repository). Vor dem Einschalten in Produktion
+# steht eine Sicherheitsprüfung an.
+from apps.accounts.oidc import catalog as _oidc_catalog  # noqa: E402
+from apps.accounts.oidc import signing_keys as _oidc_signing_keys  # noqa: E402
+
+OIDC_PROVIDER_ENABLED = os.environ.get("OIDC_PROVIDER_ENABLED", "false").strip().lower() in ("1", "true", "yes")
+_OIDC_KEY: str = ""
+_OIDC_KEYS_PREVIOUS: list[str] = []
+if OIDC_PROVIDER_ENABLED:
+    from django.core.exceptions import ImproperlyConfigured
+
+    try:
+        _OIDC_KEY, _OIDC_KEYS_PREVIOUS = _oidc_signing_keys.load(os.environ)
+    except _oidc_signing_keys.SigningKeyError as _fehler:
+        raise ImproperlyConfigured(str(_fehler)) from None
+    if not _OIDC_KEY:
+        raise ImproperlyConfigured(
+            "OIDC_PROVIDER_ENABLED braucht einen Signaturschlüssel (OIDC_RSA_PRIVATE_KEY_FILE oder OIDC_RSA_PRIVATE_KEY)."
+        )
+# Lebensdauer: Access-Token kurz, Refresh-Token mit Rotation; ein Refresh-Token verfällt so viele Tage nach dem
+# Ablauf seines Access-Tokens, wenn es nicht genutzt wird
+OIDC_ACCESS_TOKEN_SECONDS = int(os.environ.get("OIDC_ACCESS_TOKEN_SECONDS", "900"))
+OIDC_REFRESH_TOKEN_DAYS = int(os.environ.get("OIDC_REFRESH_TOKEN_DAYS", "30"))
+# Ratenbegrenzung am Token-Endpunkt: Anfragen je Minute und Adresse (IPv6 je /64-Netz), 0 = aus
+OIDC_TOKEN_RATE_LIMIT = int(os.environ.get("OIDC_TOKEN_RATE_LIMIT", "30"))
+
+# Austauschbare Modelle der Bibliothek: von Anfang an eigene Modelle der Plattform (apps/accounts/oidc/models.py)
+OAUTH2_PROVIDER_APPLICATION_MODEL = "accounts.OAuthApplication"
+OAUTH2_PROVIDER_ACCESS_TOKEN_MODEL = "accounts.OAuthAccessToken"
+OAUTH2_PROVIDER_REFRESH_TOKEN_MODEL = "accounts.OAuthRefreshToken"
+OAUTH2_PROVIDER_ID_TOKEN_MODEL = "accounts.OAuthIDToken"
+OAUTH2_PROVIDER_GRANT_MODEL = "accounts.OAuthGrant"
+OAUTH2_PROVIDER_DEVICE_GRANT_MODEL = "accounts.OAuthDeviceGrant"
+
+OAUTH2_PROVIDER = {
+    "OIDC_ENABLED": True,
+    # Aussteller = SITE_URL; Discovery unter <SITE_URL>/.well-known/openid-configuration
+    "OIDC_ISS_ENDPOINT": SITE_URL.rstrip("/"),
+    "OIDC_RSA_PRIVATE_KEY": _OIDC_KEY,
+    # Schlüsselwechsel: bisherige Schlüssel nur noch im JWKS, signiert wird mit dem aktiven
+    "OIDC_RSA_PRIVATE_KEYS_INACTIVE": _OIDC_KEYS_PREVIOUS,
+    "OIDC_RESPONSE_TYPES_SUPPORTED": ["code"],
+    "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": ["client_secret_basic", "client_secret_post", "none"],
+    "OAUTH2_RESPONSE_TYPES_SUPPORTED": ["code"],
+    "OAUTH2_GRANT_TYPES_SUPPORTED": ["authorization_code", "refresh_token", "client_credentials"],
+    "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": ["client_secret_basic", "client_secret_post", "none"],
+    "SCOPES": _oidc_catalog.DESCRIPTIONS,
+    "DEFAULT_SCOPES": [],
+    "SCOPES_BACKEND_CLASS": "apps.accounts.oidc.scopes.CatalogScopes",
+    "OAUTH2_VALIDATOR_CLASS": "apps.accounts.oidc.validator.MandariOAuth2Validator",
+    # Präfix mandari_at_/mandari_rt_: erkennbar für Secret-Scanner und unterscheidbar von SessionAPIToken
+    "ACCESS_TOKEN_GENERATOR": "apps.accounts.oidc.access.generate_access_token",
+    "REFRESH_TOKEN_GENERATOR": "apps.accounts.oidc.access.generate_refresh_token",
+    "ACCESS_TOKEN_EXPIRE_SECONDS": OIDC_ACCESS_TOKEN_SECONDS,
+    "ID_TOKEN_EXPIRE_SECONDS": OIDC_ACCESS_TOKEN_SECONDS,
+    "AUTHORIZATION_CODE_EXPIRE_SECONDS": 60,
+    "REFRESH_TOKEN_EXPIRE_SECONDS": OIDC_REFRESH_TOKEN_DAYS * 24 * 60 * 60,
+    "ROTATE_REFRESH_TOKEN": True,
+    "REFRESH_TOKEN_GRACE_PERIOD_SECONDS": 0,
+    # Ein schon rotiertes Refresh-Token noch einmal benutzt: die ganze Kette wird widerrufen
+    "REFRESH_TOKEN_REUSE_PROTECTION": True,
+    "PKCE_REQUIRED": True,
+    # Redirect-URIs nur mit https; http nur bei DEBUG und nur für localhost (apps/accounts/oidc/models.py)
+    "ALLOWED_REDIRECT_URI_SCHEMES": ["https", "http"] if DEBUG else ["https"],
+    "ALLOWED_SCHEMES": ["https"],
+    "ALLOW_URI_WILDCARDS": False,
+    # Fremde Anwendungen: jedes Mal zustimmen; eigene, vertrauenswürdige überspringen das (skip_authorization)
+    "REQUEST_APPROVAL_PROMPT": "force",
+    # Keine dynamische Registrierung, keine Client-Metadaten von außen, keine Abmeldung durch Anwendungen
+    "DCR_ENABLED": False,
+    "CIMD_ENABLED": False,
+    "OIDC_RP_INITIATED_LOGOUT_ENABLED": False,
+    "OIDC_RP_INITIATED_REGISTRATION_ENABLED": False,
+    # RFC 9700 (OAuth 2.0 Security BCP) vollständig: kein Implicit- und kein Password-Grant, PKCE nur S256,
+    # Access-Token nie in der URL, iss in der Autorisierungsantwort, Tokens nur als Prüfsumme in der Datenbank
+    "COMPLIANT_BCP_RFC9700_IMPLICIT_GRANT": True,
+    "COMPLIANT_BCP_RFC9700_PASSWORD_GRANT": True,
+    "COMPLIANT_BCP_RFC9700_PKCE_METHOD": True,
+    "COMPLIANT_BCP_RFC9700_ACCESS_TOKEN_TRANSPORT": True,
+    "COMPLIANT_BCP_RFC9700_AUTHZ_RESPONSE_ISS": True,
+    "COMPLIANT_BCP_RFC9700_TOKEN_STORAGE": True,
+    "COMPLIANT_BCP_RFC9700_REFRESH_TOKEN": True,
+    "COMPLIANT_BCP_RFC9700_REDIRECT_URI_SCHEME": not DEBUG,
+    "COMPLIANT_BCP_RFC9700_REDIRECT_URI_MATCHING": True,
+    "COMPLIANT_BCP_RFC9700_PKCE_REQUIRED": True,
+    "APPLICATION_ADMIN_CLASS": "apps.accounts.oidc.admin.OAuthApplicationAdmin",
+    "ACCESS_TOKEN_ADMIN_CLASS": "apps.accounts.oidc.admin.OAuthAccessTokenAdmin",
+    "REFRESH_TOKEN_ADMIN_CLASS": "apps.accounts.oidc.admin.OAuthRefreshTokenAdmin",
+    "ID_TOKEN_ADMIN_CLASS": "apps.accounts.oidc.admin.OAuthIDTokenAdmin",
+    "GRANT_ADMIN_CLASS": "apps.accounts.oidc.admin.OAuthGrantAdmin",
+}
 
 ROOT_URLCONF = "mandari.urls"
 

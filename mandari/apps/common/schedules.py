@@ -79,6 +79,10 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     # Anmeldeversuche der Drosselung nach LOGIN_ATTEMPT_RETENTION_DAYS löschen (Issue #366)
     befehl_als_zeitplan("purge_login_attempts", crontab="35 4 * * *", zeitgrenze=1800, ziel=ziel)
     befehl_als_zeitplan("session_privacy_purge", crontab="0 5 1 * *", zeitgrenze=3000, ziel=ziel)
+    # OpenID-Connect-Anbieter (Issue #1206): abgelaufene Tokens, widerrufene Refresh-Tokens nach ihrer Frist und
+    # abgelaufene Codes löschen (Befehl der Bibliothek django-oauth-toolkit); nur bei eingeschaltetem Anbieter
+    if getattr(settings, "OIDC_PROVIDER_ENABLED", False):
+        befehl_als_zeitplan("cleartokens", crontab="15 4 * * *", zeitgrenze=1800, ziel=ziel)
 
     # Sitzungsmappen (Issue #218): Anforderungen aus der Oberfläche minütlich abarbeiten
     befehl_als_zeitplan(

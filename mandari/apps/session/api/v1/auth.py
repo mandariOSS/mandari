@@ -13,6 +13,12 @@ Zwei Wege, beide ergeben ein ``Principal``:
 - **Angemeldete Sitzung** (Cookie): für Nutzer des Session-RIS mit dem Recht „API-Zugang“
   (``access_api``); weitere Rechte über ``SessionUser``-Rollen. Ohne „API-Zugang“ gilt die Person in
   der Schnittstelle als anonym.
+- **Access-Token des OpenID-Connect-Anbieters** (``Authorization: Bearer mandari_at_…``, Issue #1206), nur bei
+  eingeschaltetem Anbieter und nur mit dem Scope ``ratsdaten:lesen``. Im Namen einer Person liest das Token
+  höchstens, was die Person mit eigener Anmeldung über die Schnittstelle lesen dürfte (also nur mit „API-Zugang“),
+  aber nie Nichtöffentliches, auch keine Anträge, und es reicht nichts ein (bis #565 bzw. zum Profil Einreichung).
+  Ein Token eines Dienstes (Client Credentials) liest nur, was anonym lesbar ist. Bestehende API-Tokens
+  (64 Zeichen ohne Präfix, mandantengebunden) erkennt die Schnittstelle wie bisher.
 
 Ohne beides ist der Aufrufer anonym und sieht nur öffentliche Daten – und auch die erst nach der
 Freischaltung der OParl-Schnittstelle. Vorher lesen Sitzungen bzw. Vorlagen nur Token mit dem
@@ -29,6 +35,7 @@ from django.core.cache import cache
 from django.http import HttpRequest
 from ninja.security.base import AuthBase
 
+from apps.accounts.oidc import access as oidc_access
 from apps.session.models import SessionAPIToken, SessionTenant, SessionUser
 from apps.session.permissions import SessionPermissionChecker
 
@@ -52,6 +59,12 @@ READ_RIGHTS: dict[str, tuple[str, str]] = {
 #: Recht der Rolle, die Schnittstelle mit der eigenen Anmeldung zu nutzen („API-Zugang“)
 API_ACCESS = "access_api"
 
+#: Scope, ohne den ein Access-Token des OpenID-Connect-Anbieters die Schnittstelle nicht nutzt (Issue #1206)
+OIDC_SCOPE = "ratsdaten:lesen"
+#: Rechte, die ein Access-Token im Namen einer Person höchstens nutzt: Lesen öffentlicher Bereiche (``READ_RIGHTS``).
+#: Nichtöffentliches (``view_non_public_*``), Anträge und Einreichung gibt es über diese Tokens nicht (bis #565).
+OIDC_PERSON_RIGHTS = frozenset(user_right for user_right, _token_flag in READ_RIGHTS.values())
+
 
 def client_ip(request: HttpRequest) -> str:
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR")
@@ -62,17 +75,21 @@ def client_ip(request: HttpRequest) -> str:
 
 @dataclass
 class Principal:
-    """Aufrufer einer Anfrage: anonym, Sitzungsnutzer oder API-Token."""
+    """Aufrufer einer Anfrage: anonym, Sitzungsnutzer, API-Token oder Access-Token des OIDC-Anbieters."""
 
     session_user: SessionUser | None = None
     token: SessionAPIToken | None = None
+    #: Access-Token des OIDC-Anbieters (Issue #1206). Im Namen einer Person steht deren Session-Nutzer in
+    #: ``session_user``, sofern sie „API-Zugang“ hat; ein Dienst-Token (oder eine Person ohne dieses Recht) liest
+    #: wie ein anonymer Aufruf.
+    oidc: oidc_access.OAuthAccess | None = None
 
     @property
     def kind(self) -> str:
         if self.token is not None:
             return "token"
         if self.session_user is not None:
-            return "user"
+            return "oidc" if self.oidc is not None else "user"
         return "anonymous"
 
     @property
@@ -83,6 +100,9 @@ class Principal:
         if self.token is not None:
             flag = TOKEN_PERMISSIONS.get(permission)
             return bool(flag and getattr(self.token, flag, False))
+        if self.oidc is not None and permission not in OIDC_PERSON_RIGHTS:
+            # Nie mehr als Lesen öffentlicher Bereiche, auch wenn die Person selbst mehr darf
+            return False
         if self.session_user is not None:
             checker = cast(Any, SessionPermissionChecker)(self.session_user)  # permissions.py ist noch untypisiert
             return bool(checker.has_permission(permission))
@@ -157,7 +177,46 @@ def _throttle(token: SessionAPIToken) -> None:
         )
 
 
+def _bearer(request: HttpRequest) -> str:
+    header = str(request.META.get("HTTP_AUTHORIZATION", ""))
+    return header[7:].strip() if header.startswith("Bearer ") else ""
+
+
+def _oidc_from_request(request: HttpRequest) -> oidc_access.OAuthAccess | None:
+    """
+    Access-Token des OIDC-Anbieters aus dem Header (Issue #1206), sonst ``None``.
+
+    Nur Tokens mit dem Präfix und nur bei eingeschaltetem Anbieter; alles andere prüft :func:`_token_from_request`
+    unverändert. Ungültig → 401, ohne Scope ``ratsdaten:lesen`` → 403, beide mit ``WWW-Authenticate`` (RFC 6750).
+    """
+    raw = _bearer(request)
+    if not oidc_access.looks_like_access_token(raw):
+        return None
+    try:
+        access = oidc_access.authenticate(raw, resource_uri=request.build_absolute_uri(request.path))
+    except oidc_access.InvalidAccessToken:
+        raise Problem(
+            401,
+            "Das Zugriffstoken ist ungültig, abgelaufen oder widerrufen.",
+            kind="nicht-authentifiziert",
+            headers={"WWW-Authenticate": 'Bearer realm="mandari", error="invalid_token"'},
+        ) from None
+    if not access.has_scope(OIDC_SCOPE):
+        raise Problem(
+            403,
+            f"Dem Zugriffstoken fehlt der Scope „{OIDC_SCOPE}“.",
+            kind="keine-berechtigung",
+            headers={"WWW-Authenticate": f'Bearer realm="mandari", error="insufficient_scope", scope="{OIDC_SCOPE}"'},
+        )
+    return access
+
+
 def resolve_principal(request: HttpRequest, tenant: SessionTenant) -> Principal:
+    oidc = _oidc_from_request(request)
+    if oidc is not None:
+        # Dienst: liest wie anonym. Person: wie mit eigener Anmeldung, aber nur Öffentliches (Principal.has_permission)
+        session_user = _session_user_with_api_access(oidc.user, tenant) if oidc.acts_for_person else None
+        return Principal(session_user=session_user, oidc=oidc)
     token = _token_from_request(request, tenant)
     if token is not None:
         return Principal(token=token)
@@ -175,6 +234,11 @@ def api_session_user(request: HttpRequest, tenant: SessionTenant) -> SessionUser
     user = getattr(request, "user", None)
     if user is None or not getattr(user, "is_authenticated", False):
         return None
+    return _session_user_with_api_access(user, tenant)
+
+
+def _session_user_with_api_access(user: Any, tenant: SessionTenant) -> SessionUser | None:
+    """Aktiver Session-Nutzer des Kontos im Mandanten mit „API-Zugang“, sonst ``None``."""
     session_user = (
         SessionUser.objects.filter(user=user, tenant=tenant, is_active=True).prefetch_related("roles").first()
     )

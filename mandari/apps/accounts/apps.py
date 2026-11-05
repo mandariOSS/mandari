@@ -19,3 +19,7 @@ class AccountsConfig(AppConfig):
         from .security_audit import connect
 
         connect()
+        # Ausgabe von Tokens des OpenID-Connect-Anbieters protokollieren (Issue #1206)
+        from .oidc import audit as oidc_audit
+
+        oidc_audit.connect()

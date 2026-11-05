@@ -32,6 +32,7 @@
 | channels | ≥ 4.2.0 | BSD-3-Clause | WebSocket-/Echtzeit-Unterstützung |
 | channels-redis | ≥ 4.2.0 | BSD-3-Clause | Redis-Channel-Layer für Channels |
 | django-safemigrate | ≥ 4.3 | BSD-3-Clause | Zero-Downtime-Migrationen |
+| django-oauth-toolkit | ≥ 3.4.1, < 3.5 | BSD-3-Clause | OpenID-Connect-Anbieter (#1206); bringt oauthlib (BSD-3-Clause) und jwcrypto (LGPL-3.0-or-later) mit |
 
 ### Datenbank & Cache
 
