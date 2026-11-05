@@ -36,7 +36,7 @@ from insight_ai.providers import get_summary_provider
 from insight_ai.providers.base import STANDARD_MAX_AUSGABE, ChatMessage
 from insight_ai.providers.claude import BudgetErschoepftError
 
-from .prompts import PAPER_SUMMARY_SYSTEM_PROMPT, build_paper_summary_user_prompt
+from .prompts import PAPER_SUMMARY_SYSTEM_PROMPT, anlage_block, build_paper_summary_user_prompt
 
 if TYPE_CHECKING:
     from insight_core.models import OParlPaper
@@ -304,8 +304,8 @@ class SummaryService:
             if text:
                 file_name = file.name or file.file_name or "Dokument"
                 gekuerzt = "\n[… gekürzt]" if len(file.anfang) > je_datei else ""
-                texts.append(f"### {file_name}\n{text}{gekuerzt}")
-        return "\n\n---\n\n".join(texts)
+                texts.append(anlage_block(file_name, f"{text}{gekuerzt}"))
+        return "\n\n".join(texts)
 
     def _text_pending(self, paper: "OParlPaper") -> bool:
         """
