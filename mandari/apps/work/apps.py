@@ -21,6 +21,11 @@ class WorkConfig(AppConfig):
 
         faction_audit.register()
 
+        # Neue Organisation bekommt ihre Standard-Sitzungsart „Fraktionssitzung“ (Issue #1231)
+        from apps.work.faction import sitzungsarten
+
+        sitzungsarten.register()
+
         # Dokument-Freigaben beim Entfernen einer Mitgliedschaft aufräumen
         from apps.work.motions import signals as motion_signals
 

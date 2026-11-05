@@ -21,6 +21,7 @@ from apps.work.stats_text import faction_meetings_sentence
 from ..models import (
     FactionAttendance,
     FactionMeeting,
+    FactionMeetingType,
 )
 
 logger = logging.getLogger(__name__)
@@ -211,9 +212,11 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             messages.error(request, "Bitte einen gültigen Videolink angeben (https://…).")
             return redirect("work:faction", org_slug=self.organization.slug)
 
-        # Create meeting
+        # Create meeting: von Hand angelegt in der Standardart, Nummer und vorherige Sitzung in ihr (Issue #1231)
+        meeting_type = FactionMeetingType.default_for(self.organization)
         meeting = FactionMeeting(
             organization=self.organization,
+            meeting_type=meeting_type,
             created_by=self.membership,
             title=title,
             start=start_datetime,
@@ -224,12 +227,12 @@ class FactionMeetingListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             status="draft" if request.POST.get("save_as") == "draft" else "planned",
             # Zu- und Absagen sind standardmäßig aus und je Sitzung einschaltbar (Issue #871)
             rsvp_enabled=request.POST.get("rsvp_enabled") == "on",
-            meeting_number=FactionMeeting.get_next_meeting_number(self.organization),
+            meeting_number=FactionMeeting.get_next_meeting_number(self.organization, meeting_type),
         )
 
         # Find and link previous meeting — nur wenn die Vorsitzung noch
         # nicht verkettet ist (OneToOne; Muster aus der Sitzungserzeugung #61)
-        previous = FactionMeeting.find_previous_meeting(self.organization, before_date=meeting.start)
+        previous = FactionMeeting.find_previous_meeting(self.organization, meeting.start, meeting_type=meeting_type)
         if previous is not None and FactionMeeting.objects.filter(previous_meeting=previous).exists():
             previous = None
         meeting.previous_meeting = previous

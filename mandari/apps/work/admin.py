@@ -16,7 +16,7 @@ from unfold.admin import ModelAdmin, StackedInline, TabularInline
 
 from apps.common.admin_mixins import NoAddAdminMixin, ReadOnlyAdminMixin
 
-from .faction.models import FactionAgendaItemAttachment
+from .faction.models import FactionAgendaItemAttachment, FactionMeetingType
 from .motions.models import OrganizationAITokenUsage
 from .support.models import (
     ArticleFeedback,
@@ -851,3 +851,30 @@ class FactionAgendaItemAttachmentAdmin(ReadOnlyAdminMixin, ModelAdmin):
         return obj.size_human
 
     file_size_display.short_description = "Größe"
+
+
+# =============================================================================
+# Sitzungsarten (Issue #1231)
+# =============================================================================
+
+
+@admin.register(FactionMeetingType)
+class FactionMeetingTypeAdmin(NoAddAdminMixin, ModelAdmin):
+    """
+    Sitzungsarten ansehen und anpassen. Anlegen geht nur über Work (Standardart beim Anlegen der Organisation), die
+    Standardart lässt sich nicht löschen; andere Arten nur, solange keine Reihe, Sitzung oder Standard-TOP auf sie
+    verweist.
+    """
+
+    list_display = ("name", "organization", "is_default", "is_active", "number_start", "position")
+    list_filter = ("is_default", "is_active", "participants_mode", "visibility", "agenda_mode")
+    search_fields = ("name", "organization__name", "organization__slug")
+    list_select_related = ("organization",)
+    raw_id_fields = ("participants_role", "participants_committee", "participants")
+    readonly_fields = ("id", "organization", "is_default", "created_at")
+    ordering = ("organization__name", "position", "name")
+
+    def has_delete_permission(self, request, obj=None):
+        if obj is None or obj.is_default:
+            return False
+        return super().has_delete_permission(request, obj)
