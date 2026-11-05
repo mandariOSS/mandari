@@ -13,13 +13,14 @@ die Profile Änderungsfeed und Snapshot prüfen unverändert mit den übernommen
 - ``pruefe_profil(daten, profil, name)``: gegen ein Profilschema, etwa ``("changes", "ChangeList")``.
 - ``pruefe_snapshot(zeilen)``: ein Snapshot nach dem Profil Snapshot (Kopfzeile, Objektzeilen, Schlusszeile).
 
-Alle liefern die Abweichungen als Liste von Sätzen; eine leere Liste heißt konform. Formate:
+Alle liefern die Abweichungen als Liste von Sätzen; eine leere Liste heißt konform. Die Formate prüft sie mit den
+Mustern der Prüfung von kommParl (``FORMAT_PATTERNS`` in ``scripts/validate.py``, Kapitel „JSON-Ausgabe“), ohne
+Ausnahme:
 
 - ``uri``: URL mit ``http`` oder ``https``, ohne Leerraum (Format ``url`` der Spezifikation),
 - ``date``: ``yyyy-mm-dd`` und ein gültiger Tag,
-- ``date-time``: Datum und Uhrzeit mit Zeitzone. Sekundenbruchteile lässt die Prüfung der Objekte noch zu, obwohl
-  OParl 1.1 (Kapitel „JSON-Ausgabe“) die Form ``yyyy-mm-ddThh:mm:ss±hh:mm`` verlangt; die Profilschemas sind mit
-  ihrem Muster strenger.
+- ``date-time``: ``yyyy-mm-ddThh:mm:ss±hh:mm`` und ein gültiger Zeitpunkt; keine Sekundenbruchteile, kein ``Z``,
+  nicht ohne Sekunden.
 """
 
 from __future__ import annotations
@@ -37,11 +38,17 @@ from hub.api import kommparl
 from hub.api.openapi.oparl import DELETED, LINKS, PAGINATION, component_schemas, schema_name
 from hub.ris.canonical import ORGANIZATION_TYPES
 
-__all__ = ["ORGANIZATION_TYPES", "pruefe", "pruefe_liste", "pruefe_profil", "pruefe_snapshot"]
+__all__ = ["MUSTER", "ORGANIZATION_TYPES", "pruefe", "pruefe_liste", "pruefe_profil", "pruefe_snapshot"]
 
 _OPARL = kommparl.OPARL_VERSION
-_URL = re.compile(r"https?://\S+")
-_DATUM = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+#: Muster der Formate wie in der Prüfung von kommParl (``FORMAT_PATTERNS`` in ``scripts/validate.py``)
+MUSTER = {
+    "url": r"^https?://[^\s]+$",
+    "date": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+    "date-time": r"^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$",
+}
+_URL, _DATUM, _ZEITPUNKT = (re.compile(MUSTER[name]) for name in ("url", "date", "date-time"))
 
 
 def _ist_url(wert: object) -> bool:
@@ -57,7 +64,7 @@ def _ist_datum(wert: object) -> bool:
 def _ist_zeitpunkt(wert: object) -> bool:
     if not isinstance(wert, str):
         return True
-    return "T" in wert and datetime.fromisoformat(wert).tzinfo is not None
+    return bool(_ZEITPUNKT.fullmatch(wert)) and datetime.fromisoformat(wert) is not None
 
 
 #: Formate der Spezifikation (Kapitel „JSON-Ausgabe“) in der Schreibweise von JSON Schema

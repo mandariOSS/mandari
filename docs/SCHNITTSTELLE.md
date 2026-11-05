@@ -31,6 +31,10 @@ der Fall: Ändert sich ein eingebettetes Objekt (ein Tagesordnungspunkt in einer
 Änderungsfeed, Abschnitt „Vollständigkeit und Reihenfolge“). Das Profil Snapshot setzt das Profil Änderungsfeed
 voraus.
 
+Die Fassung verlangt unter anderem jeden Zeitpunkt als `yyyy-mm-ddThh:mm:ss±hh:mm` (Kapitel „JSON-Ausgabe“). Beide
+Ausgaben geben Zeitpunkte deshalb auf die Sekunde aus (`hub.ris.canonical.iso`), und die Konformitätsprüfung der Tests
+prüft die Formate mit den Mustern der Spezifikation, ohne Ausnahme.
+
 ## OParl-Ausgaben nach kommParl (#1216)
 
 Beide OParl-Ausgaben stehen mit den Schemas der kommParl-Spezifikation in der Beschreibung.
@@ -96,6 +100,8 @@ cd mandari && python manage.py schnittstelle_beschreibung --pruefen
 ```
 
 - **Aktualität:** `hub/api/tests/test_schnittstelle.py` vergleicht die Datei mit der erzeugten Beschreibung.
+- **Lizenz:** Die Datei enthält die umgewandelten Schemas aus kommParl und steht deshalb unter `CC0-1.0 AND CC-BY-SA-4.0`
+  (`REUSE.toml`, mit den Urhebern der übernommenen Teile).
 - **Brechende Änderungen:** Der CI-Job „Schnittstelle“ vergleicht die Datei mit dem Stand der Basis (oasdiff,
   Stufe `ERR`) und prüft sie gegen OpenAPI 3.1. Eine brechende Änderung braucht eine neue Hauptversion im Pfad
   und eine Abkündigung nach [RELEASE_POLITIK.md](RELEASE_POLITIK.md), Abschnitt 5.

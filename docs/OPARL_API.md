@@ -57,6 +57,7 @@ Objekte eingebettet; alle übrigen Referenzen sind URLs auf diese API.
 | Eigenschaft | Ausgabe |
 |---|---|
 | `Organization.organizationType` | einer der sieben Werte der Spezifikation (`Gremium`, `Partei`, `Fraktion`, `Verwaltungsbereich`, `externes Gremium`, `Institution`, `Sonstiges`). Angaben der Quelle werden zugeordnet (Tabelle unten); Unbekanntes gilt als `Sonstiges`. Weicht die Angabe der Quelle ab, steht sie zusätzlich in `mandari:originalOrganizationType` |
+| Zeitpunkte (`created`, `modified`, `start`, `end`, `licenseValidSince` …) | `yyyy-mm-ddThh:mm:ss±hh:mm`, auf die Sekunde (OParl 1.1 und kommParl, Kapitel „JSON-Ausgabe“); Sekundenbruchteile der Quelle oder der eigenen Zeitstempel entfallen |
 | `File.date` | Datum `yyyy-mm-dd`: der Tag, den die Quelle nennt. Nennt sie einen Zeitpunkt, gilt dessen Tag in der Zeitzone der Installation; der Zeitpunkt der Quelle steht in `created` |
 | `Meeting.location` | immer ein Location-Objekt: das der Quelle oder, wenn der Ort im Bestand nur als Text an der Sitzung steht, eines mit der Kennung der Sitzung (`…/v1/location/<Kennung der Sitzung>`, `description` aus Ort und Anschrift). Das gilt für Quellen, die den Ort nur als Text nennen, und für Session-Mandanten (siehe „Orte aus Text“) |
 | `Body.locationList` | URL der Orte-Liste (Standardfeld; zuvor nur `mandari:locationList`) |
@@ -229,6 +230,7 @@ mit seinem Cursor fort.
 | Eintrag `reason` | `deleted`, `withdrawn`, `nonPublic` (bei `delete`), `privacy` (bei `redact`) | `quelle_geloescht`, `zurueckgenommen`, `nichtoeffentlich`, `datenschutz` |
 | Eintrag `modified` | auf die Sekunde, `yyyy-mm-ddThh:mm:ss+00:00` | mit Sekundenbruchteilen |
 | `links` | `self`; `next` nur, solange weitere Einträge vorliegen | `self`, `next` (immer), `snapshot` |
+| Abruf ohne `after` | ab dem ältesten aufbewahrten Eintrag, auch nach dem Aufräumen des Journals | von vorn; `410`, sobald das Journal aufgeräumt ist |
 | Aktualität einer Quelle | `mandari:freshness` | `freshness` |
 | `410` (abgelaufener Cursor, zurückgenommene Kommune) | Fehlerobjekt nach OParl 1.1 (`type` `https://schema.oparl.org/1.1/Error`, `message`, `debug`), beim Cursor mit `kommparl:snapshot` | Problem nach RFC 9457 (`application/problem+json`), beim Cursor mit `snapshot` |
 | Snapshot | Kopfzeile `SnapshotHeader`, jedes öffentliche Objekt der Kommune in einer eigenen Zeile, Schlusszeile `SnapshotEnd` | Kopfzeile mit `snapshot_cursor` und `objects`, danach die Objekte der externen Listen |
@@ -301,6 +303,7 @@ und in `/oparl/v1/bodies` listet. Es gelten dieselben Stände wie für die Seite
 | nicht gelistet (etwa die Demo-Kommune) | `404` wie bei ausgeschaltetem Feed; der Body nennt die Adressen nicht | bleibt gültig, wenn sie wieder gelistet wird |
 | vorübergehend abgeschaltet | `503` mit `Retry-After` | bleibt gültig: Es wird nichts gelöscht, Änderungen aus der Zwischenzeit folgen hinter dem Cursor |
 | dauerhaft zurückgenommen | `410` (`application/problem+json`, Typ `…/kommune-zurueckgenommen`, ohne Snapshot): ihre Einträge gelten als gelöscht | gilt nicht mehr: nach der Wiederveröffentlichung `410` mit Verweis auf den Snapshot |
+| Body in der Quelle gelöscht | Feed wird geliefert und nennt die Löschung; Snapshot nach kommParl `410` (Fehlerobjekt nach OParl 1.1, `debug` `kommune-geloescht`), weil er keine gelöschten Objekte enthält; die ältere Form liefert den Body gekürzt | bleibt gültig |
 
 Rücknahme und Wiederherstellung einer ganzen Kommune ändern den Bestand, ohne dass der Feed sie
 nachzeichnen kann. Wer auf das `410` hin seine Kopie gelöscht hat, bekäme die wiederhergestellten

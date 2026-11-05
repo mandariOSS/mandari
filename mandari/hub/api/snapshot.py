@@ -256,7 +256,7 @@ def snapshot_response(request: HttpRequest, snapshot: Snapshot) -> HttpResponseB
             "snapshot_cursor": cursor,
             "body": body.get("id"),
             "changes": f"{feed.url}?after={cursor}",
-            "created": iso(created),
+            "created": iso(created, fractions=True),
             "objects": count,
         }
 

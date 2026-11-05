@@ -69,7 +69,8 @@ das Feld nicht.
 kommParl aus (``kommparl:changes`` am Body; Schema ``profiles/changes/ChangeList.json``): Gründe mit den Werten des
 Profils (``deleted``, ``withdrawn``, ``nonPublic``, ``privacy``), ``links.next`` nur, solange weitere Einträge
 vorliegen, ``modified`` auf die Sekunde, die Aktualität als ``mandari:freshness`` und ein abgelaufener Cursor als
-Fehlerobjekt nach OParl 1.1 mit ``kommparl:snapshot``. ``changes_response`` gibt die ältere Form aus
+Fehlerobjekt nach OParl 1.1 mit ``kommparl:snapshot``. Ohne ``after`` beginnt sie beim ältesten aufbewahrten
+Eintrag, auch nach dem Aufräumen (Abschnitt „Abruf“). ``changes_response`` gibt die ältere Form aus
 (``mandari:changes``), unverändert bis zum Wegfall (``MANDARI_FEED_DEPRECATION``); ihre Antworten tragen
 ``Deprecation``, ``Sunset`` und den Nachfolger im Header ``Link`` (``deprecated``). Cursor gelten in beiden Formen.
 
@@ -397,7 +398,7 @@ def _entry(event: Event, kind: str, address: str, operation: str, reason: str | 
         "operation": operation,
         "type": schema_type(kind),
         "id": address,
-        "modified": iso(event.occurred_at),
+        "modified": iso(event.occurred_at, fractions=True),
     }
     if reason:
         entry["reason"] = reason
@@ -572,14 +573,43 @@ def kommparl_withdrawn_response() -> HttpResponse:
     return _oparl_error(410, _WITHDRAWN_DETAIL, "kommune-zurueckgenommen")
 
 
-def _position(request: HttpRequest, feed: Feed, expired: Callable[[], HttpResponse]) -> int | HttpResponse:
+_DELETED_DETAIL: Final = (
+    "Die Kommune (Body) ist in ihrer Quelle gelöscht. Ein Snapshot enthält keine gelöschten Objekte, deshalb gibt "
+    "es keinen; die Löschung nennt der Änderungsfeed."
+)
+
+
+def kommparl_deleted_response() -> HttpResponse:
+    """``410 Gone`` für den Snapshot nach dem Profil von kommParl, wenn der Body selbst gelöscht ist."""
+    return _oparl_error(410, _DELETED_DETAIL, "kommune-geloescht")
+
+
+def _oldest_retained() -> int:
+    """
+    Folgenummer, hinter der der älteste aufbewahrte Eintrag steht: hinter dem zuletzt Aufgeräumten (``0``, solange
+    nie etwas gelöscht wurde).
+    """
+    horizon = pruning.horizon()
+    return 0 if horizon is None else horizon.through_seq
+
+
+def _position(
+    request: HttpRequest, feed: Feed, expired: Callable[[], HttpResponse], *, profile: bool = False
+) -> int | HttpResponse:
     """
     Folgenummer, ab der gelesen wird: aus dem Cursor ``after`` oder von vorn – oder die Antwort ``expired``, wenn
-    der Cursor abgelaufen ist oder der Anfang des Journals fehlt.
+    der Cursor abgelaufen ist.
+
+    Ohne ``after`` unterscheiden sich die Formen: Nach dem Profil Änderungsfeed (``profile``, Abschnitt „Abruf“)
+    beginnt die Antwort beim ältesten Eintrag, den der Server noch aufbewahrt; ``410`` gibt es dort nur für einen
+    Cursor, dessen Folgeeinträge fehlen. Die ältere Form antwortet ohne Cursor mit ``410``, sobald der Anfang des
+    Journals aufgeräumt ist, und bleibt so.
     """
     days = retention_days()
     token = request.GET.get("after")
     if not token:
+        if profile:
+            return _oldest_retained()
         # Ohne Cursor von vorn – nur solange der Anfang des Journals noch da ist
         return expired() if _beginning_missing() else 0
     try:
@@ -618,8 +648,8 @@ def changes_response(request: HttpRequest, feed: Feed) -> HttpResponse:
     }
     if feed.freshness is not None:
         page["freshness"] = {
-            "synced_at": iso(feed.freshness.synced_at),
-            "full_synced_at": iso(feed.freshness.full_synced_at),
+            "synced_at": iso(feed.freshness.synced_at, fractions=True),
+            "full_synced_at": iso(feed.freshness.full_synced_at, fractions=True),
         }
     return json_response(page)
 
@@ -635,7 +665,7 @@ def kommparl_changes_response(request: HttpRequest, feed: Feed) -> HttpResponse:
     """
     limit = _limit(request)
     day = today()
-    after = _position(request, feed, lambda: kommparl_expired_response(feed))
+    after = _position(request, feed, lambda: kommparl_expired_response(feed), profile=True)
     if isinstance(after, HttpResponse):
         return after
 

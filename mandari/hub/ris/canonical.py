@@ -63,13 +63,17 @@ def schema_type(kind: str) -> str:
     return f"{SCHEMA_BASE}/{TYPE_SCHEMA[kind]}"
 
 
-def iso(dt: datetime | None) -> str | None:
-    """Zeitpunkt -> ISO 8601 mit Zeitzone (None-sicher)."""
+def iso(dt: datetime | None, *, fractions: bool = False) -> str | None:
+    """
+    Zeitpunkt -> ``yyyy-mm-ddThh:mm:ss±hh:mm`` (None-sicher): auf die Sekunde, wie OParl 1.1 und kommParl (Kapitel
+    „JSON-Ausgabe“) es für jeden Zeitpunkt verlangen. ``fractions`` behält Sekundenbruchteile, nur für die ältere
+    Form von Änderungsfeed und Snapshot (``mandari:changes``, ``mandari:snapshot``), die unverändert bleibt.
+    """
     if dt is None:
         return None
     if timezone.is_naive(dt):
         dt = dt.replace(tzinfo=UTC)
-    return dt.isoformat()
+    return dt.isoformat() if fractions else dt.replace(microsecond=0).isoformat()
 
 
 def iso_date(d: date | None) -> str | None:

@@ -121,3 +121,16 @@ SPDX-FileCopyrightText = [
   "OParl-Initiative und Mitwirkende der OParl-Spezifikation (https://github.com/OParl/spec)",
 ]
 SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# --- Beschreibung der Schnittstelle: enthält die umgewandelten kommParl-Schemas (Objekttypen und Profile) ---
+# Erzeugt (manage.py schnittstelle_beschreibung); eigener Anteil CC0-1.0, übernommener Anteil CC BY-SA 4.0 wie die
+# Schemas oben. Muss nach der Regel für **/*.json stehen: Es gilt die letzte passende Zuordnung.
+[[annotations]]
+path = "docs/schnittstelle/openapi.json"
+precedence = "override"
+SPDX-FileCopyrightText = [
+  "2025-2026 Sven Konopka",
+  "kommParl-Beitragende (https://github.com/mandariOSS/kommParl)",
+  "OParl-Initiative und Mitwirkende der OParl-Spezifikation (https://github.com/OParl/spec)",
+]
+SPDX-License-Identifier = "CC0-1.0 AND CC-BY-SA-4.0"

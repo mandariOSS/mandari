@@ -428,7 +428,7 @@ def _feed_paths(
                         "content": {"application/x-ndjson": {"schema": {"type": "string"}}},
                     },
                     "404": _error("Nicht gefunden oder nicht eingeschaltet"),
-                    "410": _oparl_error("Kommune zurückgenommen"),
+                    "410": _oparl_error("Kommune zurückgenommen oder ihr Body gelöscht"),
                     "429": _RATE_LIMITED,
                     **_PAUSED,
                 },

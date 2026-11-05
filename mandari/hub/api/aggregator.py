@@ -314,6 +314,8 @@ def _feed_or_unavailable(
       (``Feed.epoch`` aus ``publication.retracted_at``), der Abnehmer steigt über den Snapshot neu ein.
     - nicht gelistet (etwa die Demo-Kommune oder eine Kommune im Aufbau): Die Adressen gibt es nicht, wie
       bei ausgeschaltetem Feed; der Body nennt sie nicht.
+    - in der Quelle gelöscht: Der Snapshot nach dem Profil ist ``410`` (``changes.kommparl_deleted_response``),
+      denn er enthält keine gelöschten Objekte, auch nicht den Body. Der Feed bleibt und nennt die Löschung.
 
     Alle Absagen sind feste Antworten: Sie hängen nicht davon ab, was im Journal steht. Nach den Profilen von
     kommParl (``profile``) ist die Rücknahme ein Fehlerobjekt nach OParl 1.1, sonst ein Problem nach RFC 9457.
@@ -331,6 +333,7 @@ def _feed_or_unavailable(
         OParlBody.objects.filter(pk=pk)
         .values_list(
             "is_listed",
+            "deleted",
             "source__sync_config",
             "source_id",
             "source__last_successful_sync",
@@ -340,9 +343,12 @@ def _feed_or_unavailable(
     )
     if found is None:
         return error_response(404, "Kommune (Body) nicht gefunden.")
-    listed, config, source_id, synced_at, full_synced_at = found
+    listed, deleted, config, source_id, synced_at, full_synced_at = found
     if not listed:
         return _unknown_list(segment)
+    if deleted and profile and segment == "snapshot":
+        # Profil Snapshot: „Gelöschte Objekte sind nicht enthalten“ – ohne Body gäbe es keinen gültigen Snapshot
+        return changes.kommparl_deleted_response()
     # Aktualität der Quelle (Issue #556): Der Feed ist nur so aktuell wie ihr letzter vollständiger Abgleich
     freshness = None if source_id is None else changes.Freshness(synced_at=synced_at, full_synced_at=full_synced_at)
     return _feed(output, pk, publication.retracted_at(config), freshness, profile=profile)

@@ -132,6 +132,10 @@ def conforms_to(*, feed_offered: bool) -> list[str]:
     """
     Kennungen für ``kommparl:conformsTo`` (Einstieg ``/api/`` und ``System`` beider Ausgaben): die Fassung und die
     Profile aus ``PROFILES_FULFILLED`` – diese nur, wenn die Installation Änderungsfeed und Snapshot anbietet.
+
+    Die Fassung setzt unter anderem voraus, dass jeder Zeitpunkt die Form ``yyyy-mm-ddThh:mm:ss±hh:mm`` hat (Kapitel
+    „JSON-Ausgabe“, muss); dafür sorgt ``hub.ris.canonical.iso``. Die Konformitätsprüfung der Tests prüft die Formate
+    mit den Mustern der Spezifikation, ohne Ausnahme.
     """
     return [VERSION, *(PROFILES_FULFILLED if feed_offered else ())]
 

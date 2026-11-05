@@ -24,11 +24,13 @@ from django.core.cache import cache
 from django.test import Client, override_settings
 from jsonschema import Draft202012Validator
 
+from apps.events import pruning
+from apps.events.models import Event
 from hub.api import changes, kommparl
 from hub.api.entry import description
 from hub.api.openapi import oparl as oparl_openapi
 from hub.api.tests.ereignisse import T0
-from hub.api.tests.konformitaet import pruefe, pruefe_profil, pruefe_snapshot
+from hub.api.tests.konformitaet import MUSTER, pruefe, pruefe_profil, pruefe_snapshot
 from hub.api.tests.test_changes import ereignis, ruecknahme
 from insight_core import publication
 from insight_core.models import (
@@ -278,6 +280,39 @@ class TestKoerperschaftUndSystem:
             assert _json(f"{API}/system")["kommparl:conformsTo"] == [kommparl.VERSION]
             assert _json(f"{SITE}/api/")["kommparl:conformsTo"] == [kommparl.VERSION]
 
+    def test_conforms_to_nur_mit_zeitpunkten_nach_der_spezifikation(self, kommune: OParlBody) -> None:
+        """
+        Kapitel 5: ``kommparl:conformsTo`` nennt nur vollständig erfüllte Kennungen. Die Fassung verlangt Zeitpunkte als
+        ``yyyy-mm-ddThh:mm:ss±hh:mm`` (Kapitel „JSON-Ausgabe“, muss): Sekundenbruchteile der eigenen Zeitstempel und
+        der Quelle entfallen, und die Prüfung lässt keine Abweichung durch.
+        """
+        bruchteil = datetime(2026, 9, 30, 8, 15, 10, 123456, tzinfo=UTC)
+        OParlBody.objects.filter(pk=kommune.pk).update(updated_at=bruchteil, oparl_created=bruchteil)
+        sitzung = OParlMeeting.objects.create(
+            external_id=f"{RIS}/meeting/9", body=kommune, name="Rat", start=bruchteil, oparl_modified=bruchteil
+        )
+
+        system = _json(f"{API}/system")
+        body = _json(f"{API}/body/{kommune.pk}")
+        termin = _json(f"{API}/meeting/{sitzung.pk}")
+
+        assert kommparl.VERSION in system["kommparl:conformsTo"]
+        assert (body["created"], body["modified"]) == ("2026-09-30T08:15:10+00:00", "2026-09-30T08:15:10+00:00")
+        assert (termin["start"], termin["modified"]) == ("2026-09-30T08:15:10+00:00", "2026-09-30T08:15:10+00:00")
+        for objekt, typ in ((system, "System"), (body, "Body"), (termin, "Meeting")):
+            assert pruefe(objekt, typ) == [], typ
+        # Die Prüfung ist so streng wie die der Spezifikation (Muster wie im Profil Änderungsfeed)
+        eintrag = kommparl.profile_component("changes", "ChangeList")["properties"]["data"]["items"]
+        assert MUSTER["date-time"] == eintrag["properties"]["modified"]["pattern"]
+        for falsch in (
+            "2026-09-30T08:15:10.123456+00:00",
+            "2026-09-30T08:15:10Z",
+            "2026-09-30T08:15+00:00",
+            "2026-09-30 08:15:10+00:00",
+            "2026-09-30T08:15:10",
+        ):
+            assert pruefe({**body, "modified": falsch}, "Body"), falsch
+
     def test_heute_kein_profil_genannt(self) -> None:
         """Der Feed nennt einbettende Objekte nicht (Profil Änderungsfeed, „Vollständigkeit“); siehe PROFILES_FULFILLED."""
         assert kommparl.conforms_to(feed_offered=True) == [kommparl.VERSION]
@@ -375,6 +410,23 @@ class TestFeed:
             assert pruefe_profil(fehler, "changes", "CursorExpired") == []
             assert "kommparl:snapshot" not in fehler
 
+    def test_ohne_after_ab_dem_aeltesten_aufbewahrten_eintrag(self, kommune: OParlBody) -> None:
+        """
+        Profil Änderungsfeed, „Abruf“: Ohne ``after`` beginnt die Antwort beim ältesten Eintrag, den der Server noch
+        aufbewahrt – auch wenn das Journal aufgeräumt ist. Die ältere Form antwortet dann weiter mit ``410``.
+        """
+        erste = ereignis("ris.paper.changed", kommune.pk, zeit=T0)
+        zweite = ereignis("ris.paper.changed", kommune.pk, zeit=T0 + timedelta(hours=1))
+        Event.objects.filter(pk=erste.pk).delete()
+        pruning.record(erste.seq or 0, datetime(2026, 6, 1, tzinfo=UTC))
+
+        seite = _feed(kommune)
+
+        assert pruefe_profil(seite, "changes", "ChangeList") == []
+        assert [eintrag["id"] for eintrag in seite["data"]] == [f"{API}/paper/{zweite.aggregate_id}"]
+        assert _feed(kommune, after=seite["cursor"])["data"] == []
+        assert _get(f"{API}/body/{kommune.pk}/changes").status_code == 410
+
     def test_ungueltige_parameter(self, kommune: OParlBody) -> None:
         assert _get(f"{API}/body/{kommune.pk}/kommparl/changes", after="kein-cursor").status_code == 400
         assert _get(f"{API}/body/{kommune.pk}/kommparl/changes", limit="0").status_code == 400
@@ -454,6 +506,22 @@ class TestSnapshot:
         assert _feed(kommune, after=zeilen[0]["cursor"])["data"] == []
         ereignis("ris.paper.changed", kommune.pk)
         assert len(_feed(kommune, after=zeilen[0]["cursor"])["data"]) == 1
+
+    def test_geloeschter_body_hat_keinen_snapshot(self, kommune: OParlBody, bestand: dict[str, Any]) -> None:
+        """Profil Snapshot: Gelöschte Objekte sind nicht enthalten. Ist der Body selbst gelöscht, gibt es keinen."""
+        ereignis("ris.body.changed", kommune.pk, kommune.pk, operation="delete")
+        OParlBody.objects.filter(pk=kommune.pk).update(deleted=True)
+
+        antwort = _get(f"{API}/body/{kommune.pk}/kommparl/snapshot")
+
+        assert antwort.status_code == 410
+        assert antwort["Cache-Control"] == "no-store"
+        fehler = antwort.json()
+        assert pruefe_profil(fehler, "changes", "CursorExpired") == []
+        assert (fehler["type"], fehler["debug"]) == (kommparl.OPARL_ERROR, "kommune-geloescht")
+        # Der Feed nennt die Löschung weiter; die ältere Form bleibt, wie sie war
+        assert [e["operation"] for e in _feed(kommune)["data"]] == ["delete"]
+        assert _get(f"{API}/body/{kommune.pk}/snapshot").status_code == 200
 
     def test_head_ohne_bestand(self, kommune: OParlBody) -> None:
         antwort = Client().head(f"/oparl/v1/body/{kommune.pk}/kommparl/snapshot")

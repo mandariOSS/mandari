@@ -1161,7 +1161,7 @@
             }
           },
           "410": {
-            "description": "Kommune zurückgenommen",
+            "description": "Kommune zurückgenommen oder ihr Body gelöscht",
             "content": {
               "application/json": {
                 "schema": {
@@ -3958,7 +3958,7 @@
             }
           },
           "410": {
-            "description": "Kommune zurückgenommen",
+            "description": "Kommune zurückgenommen oder ihr Body gelöscht",
             "content": {
               "application/json": {
                 "schema": {
