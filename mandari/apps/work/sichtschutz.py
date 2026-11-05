@@ -12,8 +12,9 @@ Seiten und Tabs der angemeldeten Sitzung. Standard ist verdeckt, und jede Anmeld
 (``bei_anmeldung_verdecken``). Der Kontextprozessor ``sichtschutz_kontext`` gibt den Zustand allen Vorlagen, damit
 der Server jede Seite schon richtig ausliefert (Klasse ``noe-verdeckt`` am ``<body>`` der beiden Work-Rahmen, kein
 Aufblitzen). Umschalten: Knopf in der Kopfleiste und die Schalter der Sitzungsansicht, Alpine-Store ``noe``
-(``frontend/alpine/noe-sichtschutz.ts``), der den Endpunkt ``sichtschutz_setzen`` aufruft und offene Tabs per
-BroadcastChannel mitnimmt.
+(``frontend/alpine/noe-sichtschutz.ts``), der den Endpunkt ``SichtschutzView`` aufruft und offene Tabs per
+BroadcastChannel mitnimmt. Der Endpunkt liegt unter der Organisation der Seite (Mitgliedschaft und Gastsperre wie
+überall in Work), der Zustand gilt trotzdem für die ganze Anmeldung.
 
 Nur Sichtschutz gegen Mitlesen: Wer den nichtöffentlichen Teil nicht sehen darf, bekommt ihn wie bisher gar nicht vom
 Server (``apps.work.faction.visibility``). Darstellung: Abschnitt „Sichtschutz“ in ``static/css/fraktionssitzung.css``.
@@ -24,10 +25,10 @@ from __future__ import annotations
 from functools import cached_property
 from typing import Any
 
-from django.contrib.auth.decorators import login_required
 from django.http import HttpRequest, HttpResponse, JsonResponse
-from django.urls import reverse
-from django.views.decorators.http import require_http_methods
+from django.views import View
+
+from apps.common.mixins import OrganizationMixin
 
 #: Schlüssel in der Django-Session; fehlt er, ist Nichtöffentliches verdeckt
 SITZUNGS_SCHLUESSEL = "work_noe_sichtbar"
@@ -66,10 +67,6 @@ class Sichtschutz:
 
         return can_view_internal(getattr(self._request, "membership", None))
 
-    @cached_property
-    def url(self) -> str:
-        return reverse("work:noe_sichtschutz")
-
 
 def sichtschutz_kontext(request: HttpRequest) -> dict[str, Any]:
     """
@@ -84,15 +81,24 @@ def sichtschutz_kontext(request: HttpRequest) -> dict[str, Any]:
     return kontext
 
 
-@login_required
-@require_http_methods(["GET", "POST"])
-def sichtschutz_setzen(request: HttpRequest) -> HttpResponse:
+class SichtschutzView(OrganizationMixin, View):
     """
     GET: Zustand abfragen (Abgleich nach „Zurück“ aus dem Browser-Cache). POST ``sichtbar=1`` blendet ein, jeder andere
-    Wert verdeckt. Unabhängig von der Organisation, CSRF-geschützt; die Rechte ändert das nicht.
+    Wert verdeckt. Nur für Mitglieder der Organisation aus der Adresse, Gäste leitet ``OrganizationMixin`` wie überall
+    auf ihre Übersicht um; CSRF-geschützt. Der Zustand gilt für die ganze Anmeldung, die Rechte ändert er nicht.
     """
-    if request.method == "POST":
+
+    http_method_names = ["get", "post"]
+
+    def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
+        return _antwort(request)
+
+    def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponse:
         setzen(request, request.POST.get("sichtbar") == "1")
+        return _antwort(request)
+
+
+def _antwort(request: HttpRequest) -> HttpResponse:
     antwort = JsonResponse({"sichtbar": ist_sichtbar(request)})
     antwort["Cache-Control"] = "no-store"
     return antwort

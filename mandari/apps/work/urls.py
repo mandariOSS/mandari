@@ -51,11 +51,14 @@ urlpatterns = [
         motions_views.SubmissionConfirmView.as_view(),
         name="submission_confirm",
     ),
-    # Sichtschutz für Nichtöffentliches, gilt für die ganze Anmeldung (Issue #1201) – zweites Segment ist kein
-    # Organisationspfad
-    path("nichtoeffentlich/sichtschutz/", sichtschutz.sichtschutz_setzen, name="noe_sichtschutz"),
     # Dashboard
     path("<slug:org_slug>/", dashboard_views.DashboardView.as_view(), name="dashboard"),
+    # Sichtschutz für Nichtöffentliches: unter der Organisation (Gastsperre), Zustand gilt für die ganze Anmeldung (#1201)
+    path(
+        "<slug:org_slug>/nichtoeffentlich/sichtschutz/",
+        sichtschutz.SichtschutzView.as_view(),
+        name="noe_sichtschutz",
+    ),
     path(
         "<slug:org_slug>/dashboard/",
         dashboard_views.DashboardView.as_view(),

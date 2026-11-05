@@ -54,7 +54,7 @@
 
 {# data-konto: Sicherungen anderer Konten im Browser löschen (frontend/js/main.ts, #854) #}
 {# noe-verdeckt, data-noe-url: Sichtschutz für Nichtöffentliches, Zustand der Anmeldung vom Server (apps/work/sichtschutz.py, #1201) #}
-<body class="min-h-screen bg-band-hell print:bg-white text-gray-900 dark:text-gray-100{% if not noe_sichtbar %} noe-verdeckt{% endif %}" data-org-slug="{{ organization.slug }}"{% if user.is_authenticated %} data-konto="{{ user.pk }}"{% endif %} data-noe-url="{% url 'work:noe_sichtschutz' %}">
+<body class="min-h-screen bg-band-hell print:bg-white text-gray-900 dark:text-gray-100{% if not noe_sichtbar %} noe-verdeckt{% endif %}" data-org-slug="{{ organization.slug }}"{% if user.is_authenticated %} data-konto="{{ user.pk }}"{% endif %}{% if organization %} data-noe-url="{% url 'work:noe_sichtschutz' org_slug=organization.slug %}"{% endif %}>
     {% if demo_instance %}{% include "partials/demo_hinweis.html" with ueber_leiste=True %}{% endif %}
     <a href="#inhalt" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white">Zum Inhalt springen</a>
 
