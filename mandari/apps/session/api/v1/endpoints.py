@@ -19,6 +19,7 @@ from django.http import HttpRequest
 from django.urls import reverse
 from ninja import Header, Query, Router
 
+from apps.common.api.idempotency import IDEMPOTENCY_HEADER, parse_idempotency_key
 from apps.session import audit
 from apps.session.models import (
     SessionApplication,
@@ -292,14 +293,8 @@ def _api_error(item: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
-def _idempotency_key(raw: str | None) -> str | None:
-    """Wert des Headers ``Idempotency-Key``, als String (in Anführungszeichen) oder Token."""
-    value = (raw or "").strip()
-    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
-        value = value[1:-1]
-    return value or None
-
-
+# Nimmt den Befehl submission.submit an; die gemeinsame Beschreibung nennt ihn in x-mandari-command
+# (SESSION_V1_COMMANDS in apps/session/api/schnittstelle.py, Issue #1205)
 @router.post(
     "/{tenant_slug}/applications/submit/",
     response={201: ApplicationCreated},
@@ -313,7 +308,7 @@ def submit_application(
     idempotency_key: Annotated[
         str | None,
         Header(
-            alias="Idempotency-Key",
+            alias=IDEMPOTENCY_HEADER,
             description=(
                 "Optional, empfohlen: Wiederholungen mit demselben Schlüssel und demselben Inhalt liefern dieselbe "
                 "Quittung, ohne erneut einzureichen; derselbe Schlüssel mit anderem Inhalt ergibt 422."
@@ -343,7 +338,7 @@ def submit_application(
 
     try:
         receipt = submit_with_token(
-            tenant, principal.token, payload.model_dump(), idempotency_key=_idempotency_key(idempotency_key)
+            tenant, principal.token, payload.model_dump(), idempotency_key=parse_idempotency_key(idempotency_key)
         )
     except CommandError as exc:
         raise command_problem(exc) from None

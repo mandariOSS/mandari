@@ -93,10 +93,10 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 
+from apps.common.api.problems import Problem
 from apps.events import pruning
 from apps.events.models import Event, Operation, Visibility
-from hub.api.http import BadRequestError, json_response
-from hub.commands.problems import Problem
+from hub.api.http import BadRequestError, json_response, problem_response
 from hub.ris.canonical import TYPE_SCHEMA, Objekt, iso, schema_type
 
 logger = logging.getLogger(__name__)
@@ -461,7 +461,7 @@ def expired_response(request: HttpRequest, feed: Feed) -> HttpResponse:
         ),
         extensions={"snapshot": feed.snapshot_url},
     )
-    return _problem_response(request, problem)
+    return problem_response(request, problem)
 
 
 def withdrawn_response(request: HttpRequest) -> HttpResponse:
@@ -479,14 +479,7 @@ def withdrawn_response(request: HttpRequest) -> HttpResponse:
             "Abgleich mit dem Snapshot."
         ),
     )
-    return _problem_response(request, problem)
-
-
-def _problem_response(request: HttpRequest, problem: Problem) -> HttpResponse:
-    response = json_response(problem.to_dict(instance=request.path), status=problem.status)
-    response["Content-Type"] = "application/problem+json; charset=utf-8"
-    response["Cache-Control"] = "no-store"
-    return response
+    return problem_response(request, problem)
 
 
 def changes_response(request: HttpRequest, feed: Feed) -> HttpResponse:

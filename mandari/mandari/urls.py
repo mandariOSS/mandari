@@ -87,6 +87,9 @@ urlpatterns = [
     path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),
     # Provisioning-API v2, deklarativ (nur aktiv wenn PROVISIONING_V2_API_KEY gesetzt, Issue #1132)
     path("api/provisioning/v2/", include("apps.provisioning.v2.urls", namespace="provisioning_v2")),
+    # Einstieg der Schnittstelle (Issue #1205): /api/, /api/openapi.json (eine Beschreibung aller Bereiche) und
+    # /api/docs/. Nach den Bereichen unter /api/, die genau drei Adressen fangen keine von deren Pfaden ab.
+    path("api/", include("hub.api.entry_urls", namespace="schnittstelle")),
     # Offene Schnittstelle der Drehscheibe: Aggregator über den RIS-Bestand aller Kommunen (OParl 1.1)
     path("oparl/", include("hub.api.urls", namespace="oparl_api")),
     # Katalog der offenen Ratsinformationen nach DCAT-AP.de für Datenportale (Issue #104)

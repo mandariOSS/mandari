@@ -188,3 +188,27 @@ Epic #1203 in Etappen:
 6. Oberfläche bereichsweise
 
 Unter-Issues entstehen, wenn die Arbeit an einer Etappe beginnt.
+
+## Nachtrag zur Umsetzung (#1205)
+
+Die Entscheidung bleibt. Etappe 1 legt beim Einstieg Folgendes fest
+([SCHNITTSTELLE.md](../SCHNITTSTELLE.md)).
+
+- **Der Einstieg `/api/` ist kein zweites `System`.** Er ist ein eigenes Dokument ohne `id` und `type` und
+  verweist mit `system` auf das OParl-System der Installation (`/oparl/v1/system`, ausgehend von
+  `OPARL_BASE_URL`). Daneben nennt er `oparlVersion`, `kommparl:conformsTo`, die Beschreibung (`openapi`),
+  ihre Dokumentation und die Bereiche (`areas`). Grund ist A7: Die Adresse eines OParl-Objekts ist seine
+  Kennung. Ein `System` unter `/api/` hätte entweder zwei Adressen für ein Objekt oder eine zweite Kennung
+  für dasselbe System. Bestehende OParl-Anwendungen starten weiter bei `/oparl/v1/system` und
+  `/session/<mandant>/api/oparl/`.
+- **`kommparl:conformsTo` nennt nur, was vollständig erfüllt ist** (kommParl, Kapitel 5), heute die Fassung
+  `https://schema.kommparl.de/0.1/`. Die Profile Änderungsfeed und Snapshot kommen hinzu, sobald die
+  Körperschaften `kommparl:changes` und `kommparl:snapshot` neben den `mandari:`-Feldern nennen (Regel 2,
+  Etappe 3). Ab dann trägt auch das `System`-Objekt `kommparl:conformsTo`.
+- **Schemas der OParl-Typen** stammen vorerst aus den Typtabellen der Konformitätsprüfung (#560,
+  `hub/api/oparl_types.py`), damit Prüfung und Beschreibung eine Quelle haben. Die Schemas der
+  kommParl-Spezifikation lösen sie in Etappe 3 ab.
+- **Befehlsparität:** Ein Endpunkt nennt seinen Befehl in der Beschreibung unter `x-mandari-command`.
+  Ausnahmen stehen in `mandari/hub/api/openapi/befehle_ohne_endpunkt.json`.
+- **Bestehende Bereiche ändern sich nicht.** Die Session-API v1 behält ihre Fehlertitel und ihre eigene
+  Beschreibung unter `/api/v1/session/openapi.json`; `x-mandari-command` steht nur in der gemeinsamen.

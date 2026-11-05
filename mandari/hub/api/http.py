@@ -3,8 +3,9 @@
 HTTP-Hülle der offenen Schnittstelle: eine für alle Endpunkte beider Ausgaben.
 
 - ``json_response``: JSON mit offenem CORS, ``ETag`` über den Inhalt und ``Cache-Control: no-cache``
-- ``conditional``: ``If-None-Match`` ergibt ``304 Not Modified``
+- ``conditional``: ``If-None-Match`` ergibt ``304 Not Modified`` (``apps.common.api.conditional``)
 - ``error_response``: Fehler als JSON (auch 404 und 429 – Abnehmer erwarten kein HTML)
+- ``problem_response``: Fehler nach RFC 9457, wo eine Absage einen Problemtyp braucht
 - ``endpoint``: Dekorator jedes Endpunkts – nur lesende Methoden, Ratenbegrenzung je Adresse (429 mit
   ``Retry-After``),
   ``BadRequestError`` als 400, bedingte Anfragen
@@ -15,20 +16,21 @@ geschickt hat; nie den Text einer Ausnahme.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import time
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from functools import wraps
-from typing import Any, cast
+from typing import Any
 
 from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase
-from django.utils.cache import get_conditional_response
+
+from apps.common.api.conditional import conditional, etag_for
+from apps.common.api.problems import PROBLEM_CONTENT_TYPE, Problem
 
 #: Ein Endpunkt: Anfrage und URL-Parameter hinein, Antwort heraus
 View = Callable[..., HttpResponseBase]
@@ -102,7 +104,7 @@ def json_response(data: Any, status: int = 200, headers: Mapping[str, str] | Non
     response = HttpResponse(payload, status=status, content_type="application/json; charset=utf-8")
     response["Access-Control-Allow-Origin"] = "*"
     if status == 200:
-        response["ETag"] = f'"{hashlib.sha256(payload).hexdigest()[:32]}"'
+        response["ETag"] = etag_for(payload)
         response["Cache-Control"] = "no-cache"
         # Browser-Clients anderer Herkunft dürfen ETag und Blätter-Links lesen
         response["Access-Control-Expose-Headers"] = "ETag, Link"
@@ -111,28 +113,20 @@ def json_response(data: Any, status: int = 200, headers: Mapping[str, str] | Non
     return response
 
 
-def conditional(request: HttpRequest, response: HttpResponseBase) -> HttpResponseBase:
-    """
-    Bedingte Anfrage beantworten: ``304 Not Modified`` ohne Inhalt, wenn ``If-None-Match`` zum ``ETag``
-    der Antwort passt – sonst die Antwort unverändert.
-    """
-    etag = response.get("ETag")
-    if response.status_code != 200 or not etag:
-        return response
-    # Auch gestreamte Antworten (Datei-Abruf) laufen hier durch; Django liest nur Status und Header
-    not_modified = get_conditional_response(request, etag=etag, response=cast("HttpResponse", response))
-    if not_modified is None or not_modified is response:
-        return response
-    # Django übernimmt nur die Cache-Header; CORS und Blätter-Links gehören auch zur 304
-    for header in ("Access-Control-Allow-Origin", "Access-Control-Expose-Headers", "Link"):
-        if header in response:
-            not_modified[header] = response[header]
-    return not_modified
-
-
 def error_response(status: int, message: str) -> HttpResponse:
     """Fehler als JSON (auch 404 und 429 – Abnehmer erwarten kein HTML)."""
     return json_response({"error": message, "status": status}, status=status)
+
+
+def problem_response(request: HttpRequest, problem: Problem) -> HttpResponse:
+    """
+    Fehler nach RFC 9457 (``apps.common.api.problems``) mit offenem CORS wie jede Antwort der Schnittstelle;
+    nie zwischengespeichert. Für Absagen, die einen Problemtyp brauchen (Änderungsfeed, Datenkatalog).
+    """
+    response = json_response(problem.to_dict(instance=request.path), status=problem.status)
+    response["Content-Type"] = PROBLEM_CONTENT_TYPE
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 # =============================================================================
