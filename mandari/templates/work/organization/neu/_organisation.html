@@ -1,7 +1,8 @@
 {% comment %}
-Einstellungen › Organisation: Name, Beschreibung, Logo und Primärfarbe (Formular update_general, Issue #951). Logo über
-das gemeinsame Dateifeld mit Vorschau (logoPreview: handleFile, removeLogo, Ref logoInput), Farbe mit colorPicker
-(Farbfeld nativePicker, Hex-Eingabe). Ohne organization.edit nur die Angaben. Kontext: organization, can_edit.
+Einstellungen › Organisation › Profil: Name, Beschreibung, Logo, Primär- und Zweitfarbe (Formular update_general, Issue
+#951; Zweitfarbe seit Issue #1230, Logo und Farben stehen nur hier). Logo über das gemeinsame Dateifeld mit Vorschau
+(logoPreview: handleFile, removeLogo, Ref logoInput), Farben mit colorPicker (Farbfeld nativePicker, Hex-Eingabe).
+Ohne organization.edit nur die Angaben. Kontext: organization, can_edit.
 {% endcomment %}
 <c-rahmen.abschnitt titel="Organisation und Erscheinungsbild" titel_id="organisation-titel">
     {% if can_edit %}
@@ -35,7 +36,8 @@ das gemeinsame Dateifeld mit Vorschau (logoPreview: handleFile, removeLogo, Ref 
             {% endif %}
         </div>
 
-        {% include "work/organization/neu/_farbwahl.html" with name="primary_color" id="org-farbe" label="Primärfarbe" farbe=organization.primary_color vorgabe="#6366f1" hilfe="Kennfarbe der Organisation in der Seitenleiste." %}
+        {% include "work/organization/neu/_farbwahl.html" with name="primary_color" id="org-farbe" label="Primärfarbe" farbe=organization.primary_color vorgabe="#6366f1" hilfe="Kennfarbe der Organisation in der Seitenleiste und in Dokumenten." %}
+        {% include "work/organization/neu/_farbwahl.html" with name="secondary_color" id="org-zweitfarbe" label="Zweitfarbe" farbe=organization.secondary_color vorgabe="#8b5cf6" hilfe="Ergänzende Farbe der Organisation." %}
 
         <c-ui.button type="submit" size="sm" variant="secondary">Speichern</c-ui.button>
     </form>
@@ -51,6 +53,8 @@ das gemeinsame Dateifeld mit Vorschau (logoPreview: handleFile, removeLogo, Ref 
             <dd class="whitespace-pre-line">{{ organization.description|default:"Keine" }}</dd>
             <dt>Primärfarbe</dt>
             <dd class="flex items-center gap-2">{% include "work/organization/neu/_farbpunkt.html" with farbe=organization.primary_color %}<span class="font-mono">{{ organization.primary_color }}</span></dd>
+            <dt>Zweitfarbe</dt>
+            <dd class="flex items-center gap-2">{% include "work/organization/neu/_farbpunkt.html" with farbe=organization.secondary_color %}<span class="font-mono">{{ organization.secondary_color }}</span></dd>
         </c-ui.angaben>
     </div>
     {% endif %}

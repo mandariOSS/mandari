@@ -526,6 +526,14 @@ CASES: list[Case] = [
     Case("document_type_edit", path={"type_id": "doctype"}, data={"name": "Antrag geändert", "slug": "antrag"}),
     Case("document_type_delete", path={"type_id": "doctype"}),
     Case("document_topic_list", data={"name": "Neues Thema", "color": "green"}),
+    # Aufgaben-Labels unter Organisation › Themen und Labels (Issue #1230)
+    Case("document_topic_list", "add_label", data={"action": "add_label", "name": "Neu", "color": "green"}),
+    Case(
+        "document_topic_list",
+        "delete_label",
+        data={"action": "delete_label", "label_id": "{label}"},
+        foreign={"label": {"label_id": "{a_label}"}},
+    ),
     Case("document_topic_update", path={"topic_id": "topic"}, data={"name": "Thema neu", "color": "red"}),
     Case("document_topic_delete", path={"topic_id": "topic"}),
     Case(
@@ -929,6 +937,18 @@ CASES: list[Case] = [
         foreign={"partei": {"party_id": "{a_party}"}},
     ),
     _rat("delete_party", party_id="{party}", foreign={"partei": {"party_id": "{a_party}"}}),
+    # Verwaltungskontakte auf eigener Seite (Issue #1230)
+    Case(
+        "organization_admin_contacts",
+        "add_admin_contact",
+        data={"action": "add_admin_contact", "contact_label": "Ratsbüro", "contact_email": "rat@example.org"},
+    ),
+    Case(
+        "organization_admin_contacts",
+        "delete_admin_contact",
+        data={"action": "delete_admin_contact", "contact_id": "{contact}"},
+        foreign={"kontakt": {"contact_id": "{a_contact}"}},
+    ),
     # --- Support ---
     Case(
         "support_create",

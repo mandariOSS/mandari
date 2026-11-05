@@ -3,6 +3,8 @@
 Einstellungen › Dokumente › Übersicht im neuen Erscheinungsbild (Issue #951): Dokumenttypen, Vorlagen und Briefköpfe
 als Listen mit Linien (Zeilen aus work/motions/settings/neu/_*.html), Themen als Weg zur Themenliste. Links, Löschen
 mit Rückfrage und Rechte wie bisher (work/organization/documents.html); der Hinweiskasten wird der Satz im Kopfband.
+Seit Issue #1230 die einzige Übersicht: Die Dokumenteinstellungen (document_settings) leiten hierher weiter, ihr
+Abschnitt „Erscheinungsbild“ steht hier und verweist für Logo und Farben auf Organisation › Profil.
 Kontext: OrganizationDocumentsView.
 {% endcomment %}
 
@@ -52,8 +54,16 @@ Kontext: OrganizationDocumentsView.
             {% endif %}
         </c-rahmen.abschnitt>
 
+        <c-rahmen.abschnitt titel="Erscheinungsbild" titel_id="erscheinung-titel">
+            <c-ui.angaben class="mt-3">
+                <dt>Briefkopf</dt>
+                <dd>{{ letterhead_status }}{% if primary_letterhead %} ({{ primary_letterhead.name }}){% endif %}</dd>
+            </c-ui.angaben>
+            <c-rahmen.satz>Logo und Farben gelten auch für Dokumente und stehen unter Organisation › Profil. <c-ui.textlink href="{% url 'work:organization' org_slug=organization.slug %}">Logo und Farben pflegen</c-ui.textlink></c-rahmen.satz>
+        </c-rahmen.abschnitt>
+
         <c-rahmen.abschnitt titel="Themen" titel_id="themen-titel">
-            <c-rahmen.satz eng>Der Themenkatalog ordnet Dokumente und die Fachgebiete der Mitglieder.</c-rahmen.satz>
+            <c-rahmen.satz eng>Der Themenkatalog ordnet Dokumente und die Fachgebiete der Mitglieder. Er steht unter Organisation › Themen und Labels.</c-rahmen.satz>
             <p class="mt-3 text-sm"><c-ui.textlink href="{% url 'work:document_topic_list' org_slug=organization.slug %}">Themen verwalten</c-ui.textlink></p>
         </c-rahmen.abschnitt>
     </div>

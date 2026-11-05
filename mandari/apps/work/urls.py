@@ -713,6 +713,11 @@ urlpatterns = [
         name="organization_documents",
     ),
     path(
+        "<slug:org_slug>/organization/verwaltungskontakte/",
+        organization_views.AdministrationContactListView.as_view(),
+        name="organization_admin_contacts",
+    ),
+    path(
         "<slug:org_slug>/organization/email-settings/",
         organization_views.OrganizationEmailSettingsView.as_view(),
         name="organization_email_settings",

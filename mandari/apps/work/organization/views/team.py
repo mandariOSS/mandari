@@ -74,6 +74,10 @@ class TeamMemberProfileView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         return context
 
 
+#: Textfelder des Formulars update_general (Profil)
+_ALLGEMEIN_FELDER = ("name", "description", "primary_color", "secondary_color")
+
+
 class OrganizationSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
     """Organization settings page."""
 
@@ -99,6 +103,10 @@ class OrganizationSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         context["org_parties"] = selectors.org_parties(self.organization)
         context["available_parties"] = selectors.available_parties()
         context["org_party_ids"] = [str(p.id) for p in context["org_parties"]]
+        # Anmeldesicherheit (Issue #1230): alle Rollen mit ihrer Zwei-Faktor-Pflicht
+        if einstellungen.ist_sicherheit(self.request):
+            context["rollen_zweiter_faktor"] = selectors.roles_two_factor(self.organization)
+            context["can_manage_roles"] = checker.has_permission("organization.manage_roles")
         return context
 
     def post(self, request, *args, **kwargs):
@@ -118,15 +126,15 @@ class OrganizationSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
                 handler(request)
             except ServiceError as exc:
                 flash_error(request, exc)
-        # Reiter „Sicherheit“ im neuen Erscheinungsbild bleibt nach dem Speichern offen (Issue #951)
+        # Die Anmeldesicherheit im neuen Erscheinungsbild bleibt nach dem Speichern offen (Issue #951)
         return redirect(einstellungen.ziel_nach_speichern(request, self.organization))
 
     def _update_general(self, request):
+        # Zweitfarbe seit Issue #1230; die bisherige Vorlage schickt sie nicht mit, dann bleibt sie unverändert
+        texte = {feld: request.POST.get(feld, "").strip() for feld in _ALLGEMEIN_FELDER}
         services.update_general_settings(
             self.organization,
-            name=request.POST.get("name", "").strip(),
-            description=request.POST.get("description", "").strip(),
-            primary_color=request.POST.get("primary_color", "").strip(),
+            **texte,
             logo=request.FILES.get("logo"),
             remove_logo=request.POST.get("remove_logo") == "1",
         )
@@ -429,7 +437,10 @@ class OrganizationFactionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateV
 
 
 class OrganizationDocumentsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
-    """Document settings tab for organization (Anträge & Vorgänge)."""
+    """
+    Einstellungen › Dokumente › Übersicht. Im neuen Erscheinungsbild die einzige Übersicht der Dokumente; die
+    Dokumenteinstellungen (``document_settings``) leiten seit Issue #1230 hierher weiter.
+    """
 
     template_name = "work/organization/documents.html"
     neue_vorlage = "work/organization/neu/dokumente.html"
@@ -441,4 +452,6 @@ class OrganizationDocumentsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         context["active_tab"] = "documents"
         context["can_manage_faction"] = selectors.permission_checker(self.membership).has_permission("faction.manage")
         context.update(selectors.document_settings_context(self.organization))
+        # Seit Issue #1230 die einzige Übersicht: dazu der Briefkopf aus den bisherigen Dokumenteinstellungen
+        context.update(selectors.letterhead_overview(self.organization))
         return context

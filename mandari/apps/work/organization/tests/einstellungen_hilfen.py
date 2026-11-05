@@ -90,7 +90,8 @@ def unterpunkte_anderer_reiter(org: Any, seite: str) -> set[str]:
     """
     Bisherige Reiter, die jetzt Unterpunkt eines anderen Reiters sind (E-Mail, Registrierung, API, Rollen,
     Ratsfraktionen …): Die alte Leiste verlinkte sie auf jeder Seite, die neue über ihren Reiter. Dass jeder dieser
-    Unterpunkte dort steht, prüft test_jede_bisherige_reiterseite_bleibt_erreichbar.
+    Unterpunkte dort steht, prüft test_jede_bisherige_reiterseite_bleibt_erreichbar. Dazu die Dokumenteinstellungen:
+    Sie leiten im neuen Erscheinungsbild auf die eine Übersicht weiter (Issue #1230, test_dokumenteinstellungen_*).
     """
     eigener = next(r for r in einstellungen.REITER if any(s.key == seite for s in r.seiten))
     return {
@@ -98,7 +99,29 @@ def unterpunkte_anderer_reiter(org: Any, seite: str) -> set[str]:
         for r in einstellungen.REITER
         if r is not eigener
         for s in r.seiten[1:]
+    } | {f"link:{url('document_settings', org)}"}
+
+
+def ohne_zugriff(org: Any, membership: Any) -> set[str]:
+    """
+    Links der bisherigen Leiste auf Seiten, die die Person nicht öffnen darf: Seit Issue #1230 zeigt die neue
+    Navigation sie nicht mehr (bisher endeten sie mit 403). Dass sie fehlen, prüft test_reiter_nur_mit_zugriff.
+    """
+    return {
+        f"link:{reverse(s.url_name, kwargs={'org_slug': org.slug})}"
+        for r in einstellungen.REITER
+        for s in r.seiten
+        if not einstellungen.seite_sichtbar(s.key, membership)
     }
+
+
+#: Aktionen der Verwaltungskontakte, die seit Issue #1230 auf ihrer eigenen Unterseite stehen
+KONTAKT_AKTIONEN = ("action=add_admin_contact", "action=delete_admin_contact")
+
+
+def kontakte(funktionen_der_seite: set[str]) -> set[str]:
+    """Kennungen der Formulare für Verwaltungskontakte (bisher auf der Seite der Ratsfraktionen)."""
+    return {k for k in funktionen_der_seite if any(aktion in k for aktion in KONTAKT_AKTIONEN)}
 
 
 def vergleich(client: Any, pfad: str, *weitere: str) -> tuple[set[str], set[str]]:
@@ -120,14 +143,16 @@ def rechte_wie_bisher(
 ) -> dict[str, int]:
     """
     Für jede Rolle: derselbe Antwortcode in der neuen und der bisherigen Vorlage, und wo die Seite sich öffnet, fehlt
-    der neuen keine Funktion der bisherigen (was die bisherige je Recht zeigt, zeigt die neue genauso). ``weitere``
-    sind Ansichten derselben Seite in der neuen Vorlage (etwa der Reiter „Sicherheit“), die zusammen den Umfang der
+    der neuen keine Funktion der bisherigen (was die bisherige je Recht zeigt, zeigt die neue genauso; ausgenommen
+    Links auf Seiten ohne Zugriff, die die Navigation seit Issue #1230 nicht mehr zeigt, ``ohne_zugriff``). ``weitere``
+    sind Ansichten derselben Seite in der neuen Vorlage (etwa die Anmeldesicherheit), die zusammen den Umfang der
     bisherigen Seite tragen. Liefert die Antwortcodes je Rolle, damit der Test sie zusätzlich festhalten kann.
     """
     trenner = "&" if "?" in pfad else "?"
     codes: dict[str, int] = {}
     for name, person in rollen.items():
         client = client_for(person.user)
+        ausnahmen_person = set(ausnahmen) | ohne_zugriff(person.organization, person)
         antworten = [(ansicht, client.get(ansicht)) for ansicht in (pfad, *weitere)]
         alt = client.get(f"{pfad}{trenner}ansicht=bisher")
         assert [a.status_code for _, a in antworten] == [alt.status_code] * len(antworten), (name, alt.status_code)
@@ -135,7 +160,7 @@ def rechte_wie_bisher(
             neu: set[str] = set()
             for ansicht, antwort in antworten:
                 neu |= funktionen(html(antwort), ansicht)
-            luecken = fehlend(funktionen(html(alt), pfad), neu, ausnahmen)
+            luecken = fehlend(funktionen(html(alt), pfad), neu, ausnahmen_person)
             assert luecken == [], (name, luecken)
         codes[name] = alt.status_code
     return codes

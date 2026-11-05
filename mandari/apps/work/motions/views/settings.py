@@ -6,7 +6,7 @@ Motion/Antrag views for the Work module.
 import logging
 
 from django.contrib import messages
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.generic import TemplateView, View
 
@@ -16,10 +16,10 @@ logger = logging.getLogger("apps.work.motions")
 import contextlib
 
 from apps.common.mixins import WorkViewMixin
-from apps.common.params import int_param
+from apps.common.params import int_param, uuid_param
 from apps.common.uploads import MB, PDF, validate_upload
 from apps.work.files import attachment_response
-from apps.work.rahmen import NeueVorlageMixin
+from apps.work.rahmen import NeueVorlageMixin, neues_design
 from apps.work.sanitize import safe_editor_html
 
 from ..forms import (
@@ -57,14 +57,23 @@ def _letterhead_numbers(post) -> dict[str, int]:
 # =============================================================================
 
 
-class MotionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
-    """Overview of motion/document settings."""
+class MotionSettingsView(WorkViewMixin, TemplateView):
+    """
+    Dokumenteinstellungen im bisherigen Erscheinungsbild. Im neuen gibt es seit Issue #1230 nur noch eine Übersicht
+    (Einstellungen › Dokumente › Übersicht, ``organization_documents``); diese Adresse leitet dorthin weiter.
+    """
 
     template_name = "work/motions/settings/index.html"
-    neue_vorlage = "work/motions/settings/neu/index.html"
     permission_required = "organization.edit"
 
+    def get(self, request, *args, **kwargs):
+        if neues_design(self.organization) and request.GET.get("ansicht") != "bisher":
+            return redirect("work:organization_documents", org_slug=self.organization.slug)
+        return super().get(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
+        from apps.work.organization.selectors import letterhead_overview
+
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
         context["settings_tab"] = "documents"
@@ -78,20 +87,7 @@ class MotionSettingsView(NeueVorlageMixin, WorkViewMixin, TemplateView):
         context["topic_count"] = Topic.objects.filter(organization=self.organization).count()
 
         # Branding-Kachel: Logo/Farben aus tenants + Briefkopf-Status
-        primary_letterhead = (
-            OrganizationLetterhead.objects.filter(organization=self.organization, is_active=True)
-            .order_by("-is_default", "name")
-            .first()
-        )
-        if primary_letterhead is None:
-            letterhead_status = "keiner"
-        elif primary_letterhead.is_generated:
-            letterhead_status = "generiert"
-        else:
-            letterhead_status = "PDF"
-        context["primary_letterhead"] = primary_letterhead
-        context["letterhead_status"] = letterhead_status
-
+        context.update(letterhead_overview(self.organization))
         return context
 
 
@@ -235,24 +231,53 @@ class MotionTypeDeleteView(WorkViewMixin, View):
 
 
 class TopicListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
-    """List and manage the organization's topic catalog (Themenkatalog)."""
+    """
+    Einstellungen › Organisation › Themen und Labels (Issue #1230): der Themenkatalog (``organization.edit``), der
+    Dokumente ordnet und die Fachgebiete der Mitglieder stellt, und im neuen Erscheinungsbild die Aufgaben-Labels
+    (``tasks.manage``, Formular und Dienste der Aufgaben; im Aufgaben-Panel bleibt die Pflege erhalten). Die bisherige
+    Vorlage zeigt nur die Themen und bleibt ``organization.edit`` vorbehalten. Jede Aktion prüft ihr eigenes Recht.
+    """
 
     template_name = "work/motions/settings/topics.html"
     neue_vorlage = "work/motions/settings/neu/themen.html"
-    permission_required = "organization.edit"
+    permission_required = ["organization.edit", "tasks.manage"]
+    permission_require_all = False
+
+    def _darf(self, recht: str) -> bool:
+        return bool(self.membership.has_permission(recht))
 
     def get_context_data(self, **kwargs):
         from apps.tenants.models import Topic
+        from apps.work.tasks.models import TaskLabel
+        from apps.work.tasks.selectors import labels_for_organization
 
+        darf_themen = self._darf("organization.edit")
+        if not darf_themen and not self.neue_ansicht():
+            raise PermissionDenied("Fehlende Berechtigung")
         context = super().get_context_data(**kwargs)
         context["active_nav"] = "organization"
         context["settings_tab"] = "topics"
-        context["topics"] = Topic.objects.filter(organization=self.organization)
+        context["darf_themen"] = darf_themen
+        context["darf_labels"] = self._darf("tasks.manage")
+        context["topics"] = Topic.objects.filter(organization=self.organization) if darf_themen else []
         context["color_choices"] = Topic.COLOR_CHOICES
+        if context["darf_labels"]:
+            context["labels"] = labels_for_organization(self.organization)
+            context["label_farben"] = TaskLabel.COLOR_CHOICES
         return context
 
     def post(self, request, *args, **kwargs):
-        """Create a new topic (inline form on the list page)."""
+        """Neues Thema (Formular ohne ``action``, wie bisher) oder Aufgaben-Label anlegen bzw. löschen."""
+        handler, recht = {
+            "add_label": (self._add_label, "tasks.manage"),
+            "delete_label": (self._delete_label, "tasks.manage"),
+        }.get(request.POST.get("action", ""), (self._add_topic, "organization.edit"))
+        if not self._darf(recht):
+            raise PermissionDenied("Fehlende Berechtigung")
+        handler(request)
+        return redirect("work:document_topic_list", org_slug=self.organization.slug)
+
+    def _add_topic(self, request):
         from apps.tenants.models import Topic
 
         name = request.POST.get("name", "").strip()
@@ -269,7 +294,32 @@ class TopicListView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             Topic.objects.create(organization=self.organization, name=name, color=color, sort_order=sort_order)
             messages.success(request, f"Thema '{name}' erstellt.")
 
-        return redirect("work:document_topic_list", org_slug=self.organization.slug)
+    def _add_label(self, request):
+        from apps.work.tasks import selectors as task_selectors
+        from apps.work.tasks import services as task_services
+        from apps.work.tasks.forms import TaskLabelForm
+
+        form = TaskLabelForm(request.POST)
+        if not form.is_valid():
+            messages.error(request, "Bitte Name und Farbe des Labels angeben.")
+            return
+        label = form.save(commit=False)
+        if label.name.lower() in task_selectors.labels_by_name(self.organization):
+            messages.error(request, f"Das Label „{label.name}“ gibt es bereits.")
+            return
+        task_services.save_label(self.organization, label)
+        messages.success(request, f"Label „{label.name}“ angelegt.")
+
+    def _delete_label(self, request):
+        from apps.work.tasks import services as task_services
+        from apps.work.tasks.models import TaskLabel
+
+        label = get_object_or_404(
+            TaskLabel, id=uuid_param(request.POST.get("label_id")), organization=self.organization
+        )
+        name = label.name
+        task_services.delete_label(label)
+        messages.success(request, f"Label „{name}“ gelöscht. Aufgaben verlieren nur die Zuordnung.")
 
 
 class TopicUpdateView(WorkViewMixin, View):
