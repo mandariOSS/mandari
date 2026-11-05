@@ -176,9 +176,10 @@ class SourceDeletionModel(CanonicalIdModel):
         """
         paper_id = self.pk if isinstance(self, OParlPaper) else getattr(self, "paper_id", None)
         if isinstance(self, OParlPaper | OParlFile) and paper_id:
-            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(summary=None)
+            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(summary=None, summary_hinweis="")
             if isinstance(self, OParlPaper):
                 self.summary = None
+                self.summary_hinweis = ""
 
     @property
     def depublished(self) -> bool:

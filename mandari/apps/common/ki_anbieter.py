@@ -192,12 +192,22 @@ def auswahl_organisation() -> list[tuple[str, str]]:
     return [("", "Plattform-Einstellung"), *ANBIETER_AUSWAHL]
 
 
-def erlaubte_hosts() -> tuple[str, ...]:
-    """Positivliste aus den Einstellungen (``KI_ERLAUBTE_HOSTS``); leer ist nichts erlaubt."""
+def positivliste() -> tuple[str, ...]:
+    """Positivliste aus den Einstellungen (``KI_ERLAUBTE_HOSTS``) wie eingetragen; leer ist nichts erlaubt."""
     eingestellt: Any = getattr(settings, "KI_ERLAUBTE_HOSTS", None) or ()
     if isinstance(eingestellt, str):
         eingestellt = eingestellt.split(",")
     return tuple(dict.fromkeys(normalisiere_host(host) for host in eingestellt if str(host).strip()))
+
+
+def erlaubte_hosts() -> tuple[str, ...]:
+    """
+    Freigegebene Hosts für OpenAI-kompatible Endpunkte und OCR: die Positivliste ohne den Host der Claude API.
+
+    Der Claude-Host gilt nur für die Zusammenfassungen im Bürgerportal (``claude_host_freigegeben``). KI-Assistent,
+    KI-Verortung, Organisationen und OCR können ihn nicht nutzen, auch wenn er in ``KI_ERLAUBTE_HOSTS`` steht.
+    """
+    return tuple(host for host in positivliste() if host != ANTHROPIC_HOST)
 
 
 def vorlage_nutzbar(anbieter: str) -> bool:
@@ -599,8 +609,8 @@ def zusammenfassung_hinweis(anzeigename: str, modell: str, verarbeitungsort: str
 
 
 def claude_host_freigegeben() -> bool:
-    """Steht der Host der Claude API in der Positivliste ``KI_ERLAUBTE_HOSTS``?"""
-    return ist_erlaubter_host(f"https://{ANTHROPIC_HOST}", erlaubte_hosts())
+    """Steht der Host der Claude API in der Positivliste ``KI_ERLAUBTE_HOSTS``? (nur für Zusammenfassungen)"""
+    return ist_erlaubter_host(f"https://{ANTHROPIC_HOST}", positivliste())
 
 
 def claude_der_einstellungen(ki: AISettings | None = None) -> ClaudeEndpunkt | str | None:

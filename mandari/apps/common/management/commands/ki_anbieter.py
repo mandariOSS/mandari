@@ -43,6 +43,7 @@ from apps.common.ki_anbieter import (
     claude_host_freigegeben,
     endpunkt_der_einstellungen,
     erlaubte_hosts,
+    positivliste,
     pruefe_ki_einstellungen,
     vorlage_host,
     vorlage_nutzbar,
@@ -194,7 +195,7 @@ class Command(BaseCommand):
     # ------------------------------------------------------------------ Übersicht
 
     def _liste(self) -> None:
-        hosts = erlaubte_hosts()
+        hosts = positivliste()
         self.stdout.write(f"KI_ERLAUBTE_HOSTS: {', '.join(hosts) if hosts else 'leer, jeder KI-Aufruf ist gesperrt'}")
         self.stdout.write("")
         self.stdout.write("Vorlagen (eine Vorlage gibt keinen Host frei):")

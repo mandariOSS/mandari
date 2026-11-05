@@ -1138,6 +1138,8 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
 
 1. Host freigeben: `api.anthropic.com` zusätzlich in `KI_ERLAUBTE_HOSTS` eintragen und Anwendung, Worker und
    Ingestor neu anlegen. Ohne diesen Eintrag lehnen Admin und Befehl die Auswahl ab, und es geht keine Anfrage hinaus.
+   Der Eintrag gilt nur für die Zusammenfassungen: KI-Assistent, KI-Verortung, Organisationen und OCR lehnen den
+   Claude-Host weiter ab.
 2. Einrichten. Der Schlüssel kommt nur aus einer benannten Umgebungsvariable:
 
    ```bash
@@ -1155,8 +1157,10 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
 3. Batch: Die Zeitpläne `zusammenfassungen_einreichen` (alle 30 Minuten) und `zusammenfassungen_abholen` (alle 10
    Minuten) laufen im Worker mit der Rolle `scheduler` (`TASKS_BACKEND=journal`). Eingereicht werden Vorgänge ohne
    Zusammenfassung aus den letzten `summary_batch_days` Tagen, neueste zuerst, höchstens 500 je Batch und nur ein
-   Batch zur Zeit. Abschalten lässt sich der Batch mit dem Häkchen in den KI-Einstellungen oder mit
-   `EVENTS_SCHEDULES_DISABLED`.
+   Batch zur Zeit. Kommunen mit pausierter oder zurückgenommener Veröffentlichung fallen heraus. Ein Batch, dessen
+   Ergebnisse nicht mehr abrufbar sind (HTTP 404 oder älter als 29 Tage), wird als „verloren“ abgeschlossen; seine
+   Schätzung zählt dann als Verbrauch. Abschalten lässt sich der Batch mit dem Häkchen in den KI-Einstellungen oder
+   mit `EVENTS_SCHEDULES_DISABLED`.
 4. Kosten: Jede Antwort wird mit ihren Token verbucht. Das Monatsbudget (Standard 100 USD je Kalendermonat)
    reserviert offene Batches mit ihrer Schätzung. Ist es erreicht, ruht der Batch, und „Zusammenfassen“ meldet
    „derzeit nicht verfügbar“. Stand im Admin unter „KI-Verbrauch (Claude)“. Das Ausgabenlimit in der Konsole von

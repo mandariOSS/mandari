@@ -42,6 +42,14 @@ class BudgetErschoepftError(KiAnbieterError):
     """Das Monatsbudget der Zusammenfassungen ist ausgeschöpft: kein Aufruf."""
 
 
+class ClaudeApiError(KiAnbieterError):
+    """Fehler der Claude API mit HTTP-Status (``None``: kein Status, etwa Zeitüberschreitung)."""
+
+    def __init__(self, meldung: str, status_code: int | None = None) -> None:
+        super().__init__(meldung)
+        self.status_code = status_code
+
+
 @dataclass(frozen=True)
 class BatchErgebnis:
     """Ergebnis einer Anfrage aus einem Message Batch."""
@@ -77,17 +85,21 @@ def antwort_text(nachricht: Any) -> str:
     return text
 
 
-def _fehler(fehler: Exception) -> KiAnbieterError:
+def _fehler(fehler: Exception) -> ClaudeApiError:
     """Feste Meldung zu einer Ausnahme des SDK (nur Art und Status, nie deren Text)."""
     import anthropic
 
     if isinstance(fehler, anthropic.APIStatusError):
-        return KiAnbieterError(f"Claude API meldet HTTP {getattr(fehler, 'status_code', '?')}")
+        status = getattr(fehler, "status_code", None)
+        return ClaudeApiError(
+            f"Claude API meldet HTTP {status if status is not None else '?'}",
+            status if isinstance(status, int) else None,
+        )
     if isinstance(fehler, anthropic.APITimeoutError):
-        return KiAnbieterError("Claude API: Zeitüberschreitung")
+        return ClaudeApiError("Claude API: Zeitüberschreitung")
     if isinstance(fehler, anthropic.APIConnectionError):
-        return KiAnbieterError("Claude API nicht erreichbar")
-    return KiAnbieterError(f"Claude API: {type(fehler).__name__}")
+        return ClaudeApiError("Claude API nicht erreichbar")
+    return ClaudeApiError(f"Claude API: {type(fehler).__name__}")
 
 
 class ClaudeZusammenfassung(AbstractAIProvider):
@@ -192,6 +204,13 @@ class ClaudeZusammenfassung(AbstractAIProvider):
         except Exception as fehler:
             raise _fehler(fehler) from fehler
         return str(batch.id)
+
+    def batch_abbrechen(self, batch_id: str) -> None:
+        """Bricht einen Batch ab (noch nicht bearbeitete Anfragen werden nicht berechnet)."""
+        try:
+            self.client.messages.batches.cancel(batch_id)
+        except Exception as fehler:
+            raise _fehler(fehler) from fehler
 
     def batch_stand(self, batch_id: str) -> str:
         """``processing_status`` des Batches (``in_progress``, ``canceling`` oder ``ended``)."""

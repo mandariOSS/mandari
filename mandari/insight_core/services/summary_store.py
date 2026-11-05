@@ -38,7 +38,7 @@ def discard_for_files(file_ids: Iterable[uuid.UUID], *, dry_run: bool = False) -
         return 0
     vorgaenge = OParlFile.objects.filter(pk__in=kennungen, paper_id__isnull=False).values("paper_id")
     betroffen = OParlPaper.objects.filter(pk__in=vorgaenge, summary__isnull=False)
-    return betroffen.count() if dry_run else betroffen.update(summary=None)
+    return betroffen.count() if dry_run else betroffen.update(summary=None, summary_hinweis="")
 
 
 def _aktuelle_dateien_mit_text() -> QuerySet[OParlFile]:
@@ -53,8 +53,13 @@ def ohne_zusammenfassung(*, seit: date, limit: int, ausser: Iterable[Any] = ()) 
     Vorgänge für eine Zusammenfassung vorab (Batch): neueste zuerst, höchstens ``limit``.
 
     Nur Vorgänge ohne Zusammenfassung, nicht gelöscht, aus einer gelisteten Kommune, mit Datum ab ``seit`` und mit
-    mindestens einer aktuellen Anlage mit gespeichertem Text; ``ausser`` (Kennungen) entfällt.
+    mindestens einer aktuellen Anlage mit gespeichertem Text; ``ausser`` (Kennungen) entfällt. Kommunen, deren
+    Veröffentlichung pausiert oder zurückgenommen ist (``publication``), fallen ganz heraus: Ihre Seiten antworten
+    mit 503 bzw. 410, also geht auch nichts an einen KI-Anbieter.
     """
+    from insight_core import publication
+
+    gesperrt = [kennung for kennung, stand in publication.states().items() if stand.paused or stand.withdrawn]
     mit_text = _aktuelle_dateien_mit_text().filter(paper_id=OuterRef("pk"))
     auswahl = (
         OParlPaper.objects.filter(
@@ -62,6 +67,7 @@ def ohne_zusammenfassung(*, seit: date, limit: int, ausser: Iterable[Any] = ()) 
         )
         .filter(Exists(mit_text))
         .exclude(pk__in=list(ausser))
+        .exclude(body_id__in=gesperrt)
         .select_related("body", "body__source")
         .order_by("-date", "-pk")
     )

@@ -187,6 +187,11 @@ class SummaryService:
             if self._withdrawn_since(paper, started):
                 raise SummaryRevokedError("Vorgang oder Anlage wurde während der Erstellung zurückgenommen.")
 
+            # Wer sie erstellt hat (Hinweis unter dem Text, auch wenn sie unten nicht gespeichert wird);
+            # Ersatz-Anbieter in Tests haben keinen
+            hinweis = getattr(self.provider, "zusammenfassung_hinweis", "")
+            paper.summary_hinweis = (hinweis if isinstance(hinweis, str) else "")[:300]
+
             # Save to paper if requested – nicht, wenn inzwischen neuer Text vorliegt: Das Abonnement hätte die
             # Zusammenfassung verworfen, sie stammt aus dem älteren Text
             if save:
@@ -194,9 +199,6 @@ class SummaryService:
                     logger.info(f"Summary for paper {paper.id} not saved: new text since the start")
                 else:
                     paper.summary = summary
-                    # Wer sie erstellt hat (Hinweis unter dem Text); Ersatz-Anbieter in Tests haben keinen
-                    hinweis = getattr(self.provider, "zusammenfassung_hinweis", "")
-                    paper.summary_hinweis = (hinweis if isinstance(hinweis, str) else "")[:300]
                     paper.save(update_fields=["summary", "summary_hinweis"])
                     logger.info(f"Summary saved to paper {paper.id}")
 

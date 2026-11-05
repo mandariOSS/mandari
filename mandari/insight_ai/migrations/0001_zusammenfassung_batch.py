@@ -110,6 +110,7 @@ class Migration(migrations.Migration):
                         choices=[
                             ("eingereicht", "Eingereicht"),
                             ("abgeholt", "Ergebnisse übernommen"),
+                            ("verloren", "Ergebnisse nicht mehr abrufbar"),
                         ],
                         db_index=True,
                         default="eingereicht",

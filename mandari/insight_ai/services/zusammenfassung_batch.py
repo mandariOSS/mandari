@@ -12,7 +12,10 @@ Zwei Zeitpläne im Worker (``insight_ai/schedules.py``):
 - ``abholen()``: Ist ein offener Batch beendet, übernimmt sie die Ergebnisse in einer Transaktion: Kosten verbuchen,
   Zusammenfassung über ``summary_store.speichern`` speichern, sofern sie noch passt (keine Rücknahme, kein neuer
   Text seit dem Einreichen, noch keine Zusammenfassung). Abgelehnte, abgeschnittene und fehlerhafte Anfragen werden
-  eine Woche lang nicht erneut eingereicht; abgelaufene und abgebrochene beim nächsten Lauf wieder.
+  eine Woche lang nicht erneut eingereicht; abgelaufene und abgebrochene beim nächsten Lauf wieder. Ist ein Batch
+  nicht mehr abrufbar (HTTP 404, etwa nach einem Schlüssel aus einem anderen Workspace, oder älter als
+  ``ERGEBNIS_TAGE``), gilt er als verloren: Seine Schätzung wird als Verbrauch verbucht (das Budget bleibt vorsichtig),
+  und der nächste Batch kann kommen.
 
 Ein Klick auf „Zusammenfassen“ erstellt weiterhin sofort (Einzelaufruf); kommt das Batch-Ergebnis danach, bleibt die
 vorhandene Zusammenfassung stehen. Den Prompt baut für beide Wege ``SummaryService.vorbereiten``.
@@ -43,7 +46,9 @@ logger = logging.getLogger(__name__)
 MAX_JE_BATCH: Final = 500
 #: Sperre gegen parallele Läufe (Cache)
 SPERRE: Final = "insight:summary:batch:sperre"
-SPERRE_SEKUNDEN: Final = 15 * 60
+SPERRE_SEKUNDEN: Final = 60 * 60
+#: So lange hält die Claude API die Ergebnisse eines Batches bereit (Tage ab dem Einreichen)
+ERGEBNIS_TAGE: Final = 29
 #: So lange wird ein Vorgang nach einer abgelehnten oder fehlerhaften Anfrage nicht erneut eingereicht
 FEHLER_PAUSE_SEKUNDEN: Final = 7 * 24 * 60 * 60
 #: Ergebnisarten, nach denen erst nach der Pause erneut eingereicht wird (abgelaufen/abgebrochen: beim nächsten Lauf)
@@ -59,11 +64,12 @@ def einreichen(*, provider: Any = None) -> int:
     endpunkt = claude_fuer_zusammenfassung()
     if endpunkt is None or not endpunkt.batch:
         return 0
-    if ZusammenfassungsBatch.objects.filter(status=ZusammenfassungsBatch.Status.EINGEREICHT).exists():
-        return 0
     if not cache.add(SPERRE, 1, timeout=SPERRE_SEKUNDEN):
         return 0
     try:
+        # Erst unter der Sperre prüfen: Ein paralleler Lauf hat sonst womöglich gerade eingereicht
+        if ZusammenfassungsBatch.objects.filter(status=ZusammenfassungsBatch.Status.EINGEREICHT).exists():
+            return 0
         return _einreichen(endpunkt, provider or ClaudeZusammenfassung(endpunkt))
     finally:
         cache.delete(SPERRE)
@@ -121,14 +127,24 @@ def _einreichen(endpunkt: ClaudeEndpunkt, provider: Any) -> int:
         endpunkt.modell,
         geschaetzt.quantize(Decimal("0.0001")),
     )
-    ZusammenfassungsBatch.objects.create(
-        batch_id=batch_id,
-        modell=endpunkt.modell,
-        eingereicht_am=beginn,
-        anfragen=eintraege,
-        anzahl=len(anfragen),
-        geschaetzt_usd=geschaetzt,
-    )
+    try:
+        ZusammenfassungsBatch.objects.create(
+            batch_id=batch_id,
+            modell=endpunkt.modell,
+            eingereicht_am=beginn,
+            anfragen=eintraege,
+            anzahl=len(anfragen),
+            geschaetzt_usd=geschaetzt,
+        )
+    except Exception:
+        # Ohne Eintrag würde der Batch nie abgeholt und nicht im Budget gezählt, die Vorgänge gingen erneut hinaus:
+        # abbrechen (noch nicht bearbeitete Anfragen werden nicht berechnet)
+        logger.exception("Zusammenfassungs-Batch %s eingereicht, aber nicht gespeichert: wird abgebrochen", batch_id)
+        try:
+            provider.batch_abbrechen(batch_id)
+        except KiAnbieterError as fehler:
+            logger.error("Zusammenfassungs-Batch %s nicht abgebrochen: %s", batch_id, fehler)
+        return 0
     return len(anfragen)
 
 
@@ -155,10 +171,34 @@ def abholen(*, provider: Any = None) -> int:
             # Erst alles abrufen, dann in einer Transaktion übernehmen (kein Netz in der Transaktion)
             ergebnisse = list(provider.batch_ergebnisse(batch.batch_id))
         except KiAnbieterError as fehler:
-            logger.warning("Zusammenfassungs-Batch %s nicht abgerufen: %s", batch.batch_id, fehler)
+            zu_alt = batch.eingereicht_am < timezone.now() - timedelta(days=ERGEBNIS_TAGE)
+            if getattr(fehler, "status_code", None) == 404 or zu_alt:
+                _verloren(batch.pk, str(fehler))
+            else:
+                logger.warning("Zusammenfassungs-Batch %s nicht abgerufen: %s", batch.batch_id, fehler)
             continue
         gespeichert += _uebernehmen(batch.pk, ergebnisse, provider)
     return gespeichert
+
+
+def _verloren(batch_pk: Any, grund: str) -> None:
+    """Batch nicht mehr abrufbar: als verloren abschließen und seine Schätzung als Verbrauch verbuchen."""
+    with transaction.atomic():
+        batch = ZusammenfassungsBatch.objects.select_for_update().get(pk=batch_pk)
+        if batch.status != ZusammenfassungsBatch.Status.EINGEREICHT:
+            return
+        # Ob und wie viel Anthropic berechnet hat, ist unbekannt: vorsichtshalber die Schätzung
+        KiVerbrauch.objects.create(art=KiVerbrauch.Art.BATCH, modell=batch.modell, kosten_usd=batch.geschaetzt_usd)
+        batch.status = ZusammenfassungsBatch.Status.VERLOREN
+        batch.abgeholt_am = timezone.now()
+        batch.kosten_usd = batch.geschaetzt_usd
+        batch.save(update_fields=["status", "abgeholt_am", "kosten_usd"])
+    logger.warning(
+        "Zusammenfassungs-Batch %s nicht mehr abrufbar (%s): als verloren abgeschlossen, Schätzung %s USD verbucht",
+        batch.batch_id,
+        grund,
+        batch.geschaetzt_usd,
+    )
 
 
 def _uebernehmen(batch_pk: Any, ergebnisse: list[BatchErgebnis], provider: Any) -> int:

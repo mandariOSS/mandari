@@ -42,8 +42,10 @@ BATCH_FAKTOR: Final = Decimal("0.5")
 #: Gelesener Cache kostet ein Zehntel, geschriebener (5 Minuten) das 1,25-Fache der Eingabe
 CACHE_LESEN_FAKTOR: Final = Decimal("0.1")
 CACHE_SCHREIBEN_FAKTOR: Final = Decimal("1.25")
-#: Schätzung vor dem Einreichen: höchstens so viele Zeichen deutscher Text je Token (eher zu viele Token)
-ZEICHEN_JE_TOKEN: Final = 3
+#: Schätzung vor dem Einreichen: höchstens so viele Zeichen je Token. Bewusst niedrig (eher zu viele Token): Zahlen,
+#: Tabellen und OCR-Rauschen brauchen mehr Token als Fließtext, und ab ``GRENZE_LANGER_PROMPT`` rechnet auch die
+#: Schätzung mit dem höheren Preis
+ZEICHEN_JE_TOKEN: Final = 2
 #: Zuschlag für Rollen und Formatierung der Anfrage (Token)
 GRUNDLAST_TOKEN: Final = 200
 _MILLION: Final = Decimal(1_000_000)

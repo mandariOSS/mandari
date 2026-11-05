@@ -24,6 +24,7 @@ import anthropic
 import httpx2
 import pytest
 from django.core.cache import cache
+from django.core.exceptions import ValidationError
 from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
@@ -34,6 +35,9 @@ from apps.common.ki_anbieter import (
     ANTHROPIC_HOST,
     ClaudeEndpunkt,
     claude_fuer_zusammenfassung,
+    claude_host_freigegeben,
+    erlaubte_hosts,
+    pruefe_basis_url,
     pruefe_claude,
     pruefe_ki_einstellungen,
 )
@@ -46,6 +50,7 @@ from insight_ai.providers.claude import BudgetErschoepftError, ClaudeZusammenfas
 from insight_ai.providers.openai_kompatibel import KiAnbieterError, OpenAIKompatiblerProvider
 from insight_ai.services import zusammenfassung_batch
 from insight_ai.services.summarizer import BudgetExhaustedError, SummaryService
+from insight_core import publication
 from insight_core.models import OParlBody, OParlFile, OParlPaper, OParlSource
 
 pytestmark = pytest.mark.django_db
@@ -75,14 +80,23 @@ def _nachricht(text: str = "Kurzfassung des Vorgangs.", *, stop: str = "end_turn
 class _Batches:
     def __init__(self) -> None:
         self.eingereicht: list[list[Any]] = []
+        self.abgebrochen: list[str] = []
         self.stand = "in_progress"
         self.ergebnisse: list[Any] = []
+        #: Ausnahme beim Abruf des Stands (``None``: keine)
+        self.fehler: Exception | None = None
 
     def create(self, *, requests: list[Any]) -> SimpleNamespace:
         self.eingereicht.append(list(requests))
         return SimpleNamespace(id=f"msgbatch_{len(self.eingereicht)}")
 
+    def cancel(self, batch_id: str) -> SimpleNamespace:
+        self.abgebrochen.append(batch_id)
+        return SimpleNamespace(id=batch_id, processing_status="canceling")
+
     def retrieve(self, batch_id: str) -> SimpleNamespace:
+        if self.fehler is not None:
+            raise self.fehler
         return SimpleNamespace(id=batch_id, processing_status=self.stand)
 
     def results(self, batch_id: str) -> list[Any]:
@@ -189,6 +203,14 @@ class TestAufloesung:
         assert anbieter.model_name == "claude-haiku-5-5"
         # KI-Assistent und KI-Verortung bleiben beim OpenAI-kompatiblen Endpunkt
         assert isinstance(get_insight_provider(), OpenAIKompatiblerProvider)
+
+    def test_claude_host_gilt_nur_fuer_zusammenfassungen(self, settings: Any) -> None:
+        # Steht der Claude-Host in der Positivliste, nutzen ihn trotzdem weder Assistent, Verortung noch OCR
+        settings.KI_ERLAUBTE_HOSTS = [ANTHROPIC_HOST, "api.mistral.ai"]
+        assert erlaubte_hosts() == ("api.mistral.ai",)
+        assert claude_host_freigegeben()
+        with pytest.raises(ValidationError):
+            pruefe_basis_url(f"https://{ANTHROPIC_HOST}/v1")
 
     def test_host_nicht_freigegeben_kein_rueckfall(self, settings: Any) -> None:
         settings.KI_ERLAUBTE_HOSTS = ["api.openai-compat.model-serving.eu01.onstackit.cloud"]
@@ -390,6 +412,30 @@ class TestBatchEinreichen:
         anbieter, sdk = _batch_anbieter()
         assert zusammenfassung_batch.einreichen(provider=anbieter) == 0 and sdk.batches.eingereicht == []
 
+    @pytest.mark.parametrize("stand", [publication.PAUSED, publication.WITHDRAWN])
+    def test_pausierte_kommune_nicht(self, body: OParlBody, stand: str) -> None:
+        _vorgang(body)
+        publication.set_source_state(body.source, stand)
+        anbieter, sdk = _batch_anbieter()
+        assert zusammenfassung_batch.einreichen(provider=anbieter) == 0 and sdk.batches.eingereicht == []
+
+    def test_archivierte_kommune_schon(self, body: OParlBody) -> None:
+        _vorgang(body)
+        publication.set_source_state(body.source, publication.ARCHIVED)
+        anbieter, sdk = _batch_anbieter()
+        assert zusammenfassung_batch.einreichen(provider=anbieter) == 1
+
+    def test_nicht_gespeichert_wird_abgebrochen(self, body: OParlBody, monkeypatch: Any) -> None:
+        _vorgang(body)
+        anbieter, sdk = _batch_anbieter()
+
+        def kaputt(**_werte: Any) -> None:
+            raise RuntimeError("Datenbank nicht erreichbar")
+
+        monkeypatch.setattr(ZusammenfassungsBatch.objects, "create", kaputt)
+        assert zusammenfassung_batch.einreichen(provider=anbieter) == 0
+        assert sdk.batches.abgebrochen == ["msgbatch_1"]
+
     def test_kein_zweiter_batch_solange_einer_offen(self, body: OParlBody) -> None:
         _vorgang(body)
         anbieter, sdk = _batch_anbieter()
@@ -480,6 +526,33 @@ class TestBatchAbholen:
         assert zusammenfassung_batch.abholen(provider=anbieter) == 0
         vorgang.refresh_from_db()
         assert vorgang.summary == "Per Klick erstellt."
+
+    def test_nicht_mehr_abrufbar_verloren(self, eingereicht: Any) -> None:
+        anbieter, sdk, _ = eingereicht
+        sdk.batches.fehler = anthropic.NotFoundError(
+            "nf", response=httpx2.Response(404, request=httpx2.Request("GET", "https://beispiel.example")), body=None
+        )
+        cent = Decimal("0.000001")
+        geschaetzt = ZusammenfassungsBatch.objects.get().geschaetzt_usd
+        assert geschaetzt > 0 and kosten.reserviert().quantize(cent) == geschaetzt
+        assert zusammenfassung_batch.abholen(provider=anbieter) == 0
+        batch = ZusammenfassungsBatch.objects.get()
+        assert batch.status == ZusammenfassungsBatch.Status.VERLOREN and batch.kosten_usd == geschaetzt
+        # Budget vorsichtig: die Schätzung gilt als verbraucht, reserviert ist nichts mehr
+        assert kosten.reserviert() == 0 and kosten.monatsverbrauch().quantize(cent) == geschaetzt
+        # Der nächste Batch kann kommen
+        sdk.batches.fehler = None
+        assert zusammenfassung_batch.einreichen(provider=anbieter) == 4
+
+    def test_voruebergehender_fehler_bleibt_offen(self, eingereicht: Any) -> None:
+        anbieter, sdk, _ = eingereicht
+        sdk.batches.fehler = anthropic.APIConnectionError(request=httpx2.Request("GET", "https://beispiel.example"))
+        assert zusammenfassung_batch.abholen(provider=anbieter) == 0
+        assert ZusammenfassungsBatch.objects.get().status == ZusammenfassungsBatch.Status.EINGEREICHT
+        # Nach der Aufbewahrungsfrist der Ergebnisse gilt er als verloren
+        ZusammenfassungsBatch.objects.update(eingereicht_am=timezone.now() - timedelta(days=30))
+        assert zusammenfassung_batch.abholen(provider=anbieter) == 0
+        assert ZusammenfassungsBatch.objects.get().status == ZusammenfassungsBatch.Status.VERLOREN
 
     def test_abgelaufen_ohne_pause(self, eingereicht: Any) -> None:
         anbieter, sdk, (vorgang, *_rest) = eingereicht

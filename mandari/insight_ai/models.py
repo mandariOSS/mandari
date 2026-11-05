@@ -20,6 +20,7 @@ class ZusammenfassungsBatch(models.Model):
     class Status(models.TextChoices):
         EINGEREICHT = "eingereicht", "Eingereicht"
         ABGEHOLT = "abgeholt", "Ergebnisse übernommen"
+        VERLOREN = "verloren", "Ergebnisse nicht mehr abrufbar"
 
     batch_id = models.CharField("Batch-Kennung", max_length=100, unique=True)
     modell = models.CharField("Modell", max_length=100)
