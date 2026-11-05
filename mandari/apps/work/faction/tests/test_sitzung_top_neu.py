@@ -4,7 +4,8 @@ TOP in der laufenden Fraktionssitzung hinzufügen (Issue #1166).
 
 Wie „TOP eintragen“ in der Vorbereitung (#855, Teil wählbar seit #1160): öffentlich, nichtöffentlich oder als
 Unterpunkt, am Ende seines Teils bzw. seines TOPs nummeriert, mit Änderungsverlauf. Rechte wie in der Vorbereitung
-(Verwaltung der Sitzung oder ``agenda.create``), Nichtöffentliches nur für Vereidigte, nach dem Beenden nicht mehr.
+(Verwaltung der Sitzung oder ``agenda.create``), dazu die Schriftführung der Sitzung; Nichtöffentliches nur für
+Vereidigte, nach dem Beenden nicht mehr.
 Die Antwort öffnet den neuen TOP wie ein TOP-Wechsel; andere sehen ihn beim nächsten TOP-Wechsel.
 """
 
@@ -203,14 +204,33 @@ def test_ohne_recht_403_und_kein_eintrag(
     antwort = neu(client, org, sitzung_laeuft, title="Eigener Punkt", visibility="public")
     assert antwort.status_code == 403
     assert FactionAgendaItem.objects.count() == vorher
-    # Die Schriftführung allein gibt das Recht nicht (wie in der Vorbereitung)
-    sitzung_laeuft.minute_taker = mitglied
-    sitzung_laeuft.save(update_fields=["minute_taker"])
-    assert neu(client, org, sitzung_laeuft, title="Eigener Punkt", visibility="public").status_code == 403
     # Wer die Sitzung verwaltet, sieht den Eintrag
     assert (
         'data-testid="fs-top-neu-oeffnen"' in client_for(vorsitz.user).get(seite(org, sitzung_laeuft)).content.decode()
     )
+
+
+def test_schriftfuehrung_ergaenzt_tops_nichtoeffentlich_nur_vereidigt(
+    org: Any, mitglied: Any, sitzung_laeuft: Any, tops: Any, client_for: Any
+) -> None:
+    # Die Schriftführung trägt eine geänderte Tagesordnung allein nach, auch ohne ``agenda.create``
+    sitzung_laeuft.minute_taker = mitglied
+    sitzung_laeuft.save(update_fields=["minute_taker"])
+    client = client_for(mitglied.user)
+    html = client.get(seite(org, sitzung_laeuft)).content.decode()
+    assert 'data-testid="fs-top-neu-oeffnen"' in html
+    assert neu(client, org, sitzung_laeuft, title="Eigener Punkt", visibility="public").status_code == 200
+    assert angelegt(sitzung_laeuft, "Eigener Punkt").number == "4"
+    # Nicht vereidigt: nichts Nichtöffentliches, auch nicht als Unterpunkt
+    vorher = FactionAgendaItem.objects.count()
+    assert neu(client, org, sitzung_laeuft, title="Geheim", visibility="internal").status_code == 403
+    antwort = neu(client, org, sitzung_laeuft, title="Geheim", visibility="public", parent_id=str(tops["noe"].pk))
+    assert antwort.status_code == 403
+    assert FactionAgendaItem.objects.count() == vorher
+    # Wer nicht mehr Schriftführung ist, verliert das Recht wieder
+    sitzung_laeuft.minute_taker = None
+    sitzung_laeuft.save(update_fields=["minute_taker"])
+    assert neu(client, org, sitzung_laeuft, title="Noch einer", visibility="public").status_code == 403
 
 
 def test_agenda_create_darf_eintragen_nichtoeffentlich_nur_vereidigt(
