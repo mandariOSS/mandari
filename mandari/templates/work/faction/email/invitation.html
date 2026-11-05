@@ -50,7 +50,7 @@
     <tr>
         <td class="key"><span class="badge">TOP {{ item.number }}</span></td>
         <td>
-            <strong>{{ item.title }}</strong>
+            <strong>{{ item.title }}</strong>{% if item.visibility == "internal" %} <span class="muted small">🔒 nicht-öffentlich</span>{% endif %}
             {% if item.get_description_decrypted %}
             <br><span class="muted small">{{ item.get_description_decrypted|truncatewords:30 }}</span>
             {% endif %}

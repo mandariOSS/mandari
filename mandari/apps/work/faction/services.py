@@ -48,6 +48,35 @@ def not_sent_invitation_count(meeting, *, update: bool = False) -> int:
     return attendances.exclude(invitation_error="").count()
 
 
+def invitation_agenda(meeting, *, include_internal: bool) -> tuple[list, list]:
+    """
+    TOPs der Einladungsmail in der Reihenfolge der Tagesordnung, als flache Listen.
+
+    Unterpunkte (TOP 3.1, 3.2 …) stehen direkt unter ihrem TOP, auch wenn sie erst nach den übrigen
+    TOPs angelegt wurden und deshalb eine höhere ``order`` haben. Sichtbarkeit wie im Tagesordnungs-PDF:
+    im öffentlichen Teil NÖ-Unterpunkte nur mit ``include_internal``, den NÖ-Teil nur mit ``include_internal``.
+    """
+    from .visibility import visible_children
+
+    top_level = (
+        meeting.agenda_items.filter(proposal_status="active", parent__isnull=True)
+        .prefetch_related("children")
+        .order_by("order", "number")
+    )
+    public_items: list = []
+    internal_items: list = []
+    for item in top_level:
+        if item.visibility == "public":
+            target, children = public_items, visible_children(item, include_internal=include_internal)
+        elif include_internal:
+            target, children = internal_items, visible_children(item, include_internal=True)
+        else:
+            continue
+        target.append(item)
+        target.extend(child for child in children if child.proposal_status == "active")
+    return public_items, internal_items
+
+
 def _invitation_error_text(error: Exception, address: str) -> str:
     """Grund, warum eine Einladung nicht rausging, als Satz für das Versandergebnis (ohne Interna des Servers)."""
     import smtplib
@@ -288,15 +317,7 @@ class FactionMeetingEmailService:
             from .invitations import get_invitation_settings
 
             invitation_mode = get_invitation_settings(meeting.organization)["invitation_mode"]
-        public_items = meeting.agenda_items.filter(visibility="public", proposal_status="active").order_by(
-            "order", "number"
-        )
-
-        internal_items = []
-        if include_internal:
-            internal_items = meeting.agenda_items.filter(visibility="internal", proposal_status="active").order_by(
-                "order", "number"
-            )
+        public_items, internal_items = invitation_agenda(meeting, include_internal=include_internal)
 
         meeting_url = self.get_meeting_url(meeting)
         context = {
@@ -381,7 +402,8 @@ class FactionMeetingEmailService:
         if public_items:
             lines.extend(["", "TAGESORDNUNG", ""])
             for item in public_items:
-                lines.append(f"TOP {item.number}: {item.title}")
+                zusatz = " (nicht-öffentlich)" if item.visibility == "internal" else ""
+                lines.append(f"TOP {item.number}: {item.title}{zusatz}")
 
         if internal_items:
             lines.extend(["", "NICHT-ÖFFENTLICHER TEIL", ""])
