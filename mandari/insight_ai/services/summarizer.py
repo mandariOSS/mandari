@@ -13,11 +13,17 @@ sofort ausführenden Backend liefe die Erkennung sonst in der Webanfrage; mit ``
 des Ingestors den Text, ein Auftrag wäre ein zweiter Weg zur Quelle.
 
 Neuer Text verwirft eine gespeicherte Zusammenfassung (Abonnement ``insight.zusammenfassung``,
-``insight_ai/abonnement.py``); erzeugt wird sie wie bisher erst auf Abruf. Kommt während der Erstellung neuer Text
-hinzu, wird das Ergebnis ausgegeben, aber nicht gespeichert.
+``insight_ai/abonnement.py``); erzeugt wird sie auf Abruf und, mit der Claude API, vorab im Message Batch
+(``insight_ai.services.zusammenfassung_batch``, gleicher Prompt über ``vorbereiten``). Kommt während der Erstellung
+neuer Text hinzu, wird das Ergebnis ausgegeben, aber nicht gespeichert.
+
+Den Anbieter liefert ``get_summary_provider()``: nur für die Zusammenfassungen ggf. die Claude API, sonst der
+Endpunkt des Bürgerportals. Mit der Zusammenfassung wird gespeichert, wer sie erstellt hat
+(``OParlPaper.summary_hinweis``: Anbieter, Modell, Verarbeitungsort), damit der Hinweis darunter stimmt.
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from typing import TYPE_CHECKING, Any, Final
 
@@ -26,8 +32,9 @@ from django.db.models.functions import Substr
 from django.utils import timezone
 
 from apps.common.db_connections import release_idle_thread_connections
-from insight_ai.providers import get_insight_provider
+from insight_ai.providers import get_summary_provider
 from insight_ai.providers.base import STANDARD_MAX_AUSGABE, ChatMessage
+from insight_ai.providers.claude import BudgetErschoepftError
 
 from .prompts import PAPER_SUMMARY_SYSTEM_PROMPT, build_paper_summary_user_prompt
 
@@ -79,11 +86,25 @@ class TextPendingError(SummaryError):
     """Noch kein Text, aber die Texterkennung mindestens einer Anlage steht aus: später erneut versuchen."""
 
 
+class BudgetExhaustedError(SummaryError):
+    """Das Monatsbudget der Zusammenfassungen (Claude API) ist ausgeschöpft."""
+
+
+@dataclass(frozen=True)
+class Vorbereitung:
+    """Prompt einer Zusammenfassung aus dem gespeicherten Text, mit den verwendeten Anlagen."""
+
+    nachrichten: list[ChatMessage]
+    datei_ids: list[Any]
+    #: Zeichen aller Nachrichten zusammen (Schätzung der Kosten vor einem Batch)
+    zeichen: int
+
+
 class SummaryService:
     """
     Service for generating AI summaries of OParl documents.
 
-    Nutzt den KI-Endpunkt des Bürgerportals aus der zentralen KI-Konfiguration (``get_insight_provider``).
+    Nutzt den Anbieter der Zusammenfassungen aus der zentralen KI-Konfiguration (``get_summary_provider``).
     Liest nur gespeicherten Text; lädt und erkennt nichts selbst (siehe Moduldokumentation).
     """
 
@@ -92,9 +113,9 @@ class SummaryService:
         Initialize the summary service.
 
         Args:
-            provider: Optional AI provider. Standard: ``get_insight_provider()`` (KI-Einstellungen).
+            provider: Optional AI provider. Standard: ``get_summary_provider()`` (KI-Einstellungen).
         """
-        self.provider = provider or get_insight_provider()
+        self.provider = provider or get_summary_provider()
 
     def generate_summary(self, paper: "OParlPaper", save: bool = True) -> str:
         """
@@ -113,6 +134,7 @@ class SummaryService:
             TextPendingError: No text yet, but text recognition of a file is pending (planned with priority)
             NoTextContentError: If no text content is available
             APINotConfiguredError: If the API is not configured
+            BudgetExhaustedError: Monthly budget of the summaries (Claude API) used up
             SummaryError: For other generation errors
         """
         # Check if API is available
@@ -129,15 +151,79 @@ class SummaryService:
         started_at = timezone.now()
 
         # Nur gespeicherter Text; der Dienst lädt und erkennt nichts selbst
-        text_content = self._collect_text_content(paper)
+        vorbereitung = self.vorbereiten(paper)
 
-        if not text_content:
+        if vorbereitung is None:
             if self._text_pending(paper):
                 raise TextPendingError("Die Texterkennung der Anlagen steht noch aus.")
             raise NoTextContentError(
                 "Keine Textinhalte verfügbar. Das Dokument enthält keine "
                 "Dateien oder die Textextraktion ist fehlgeschlagen."
             )
+
+        try:
+            logger.info(f"Generating summary for paper {paper.id} ({paper.reference})")
+
+            # Der KI-Aufruf dauert Minuten: Datenbankverbindung solange an den Pool zurückgeben
+            release_idle_thread_connections()
+
+            # Modelle mit Reasoning brauchen viel Platz vor der eigentlichen Antwort: Obergrenze aus der
+            # KI-Konfiguration (AISettings.insight_max_output_tokens)
+            max_tokens = getattr(self.provider, "max_output_tokens", 0) or STANDARD_MAX_AUSGABE
+            response = self.provider.chat_completion(
+                messages=vorbereitung.nachrichten,
+                max_tokens=max_tokens,
+                temperature=0.3,
+            )
+
+            summary = response.content
+
+            logger.info(
+                f"Summary generated for {paper.id}: "
+                f"{response.input_tokens} input, {response.output_tokens} output tokens"
+            )
+
+            # Während der Erstellung zurückgenommen (Vorgang oder Anlage)? Dann nichts ausgeben
+            if self._withdrawn_since(paper, started):
+                raise SummaryRevokedError("Vorgang oder Anlage wurde während der Erstellung zurückgenommen.")
+
+            # Save to paper if requested – nicht, wenn inzwischen neuer Text vorliegt: Das Abonnement hätte die
+            # Zusammenfassung verworfen, sie stammt aus dem älteren Text
+            if save:
+                if self._text_changed_since(paper, started_at):
+                    logger.info(f"Summary for paper {paper.id} not saved: new text since the start")
+                else:
+                    paper.summary = summary
+                    # Wer sie erstellt hat (Hinweis unter dem Text); Ersatz-Anbieter in Tests haben keinen
+                    hinweis = getattr(self.provider, "zusammenfassung_hinweis", "")
+                    paper.summary_hinweis = (hinweis if isinstance(hinweis, str) else "")[:300]
+                    paper.save(update_fields=["summary", "summary_hinweis"])
+                    logger.info(f"Summary saved to paper {paper.id}")
+
+            return summary
+
+        except (NoTextContentError, APINotConfiguredError, SummaryRevokedError):
+            raise
+        except BudgetErschoepftError as e:
+            logger.warning("Summary for paper %s not generated: monthly budget of the summaries used up", paper.id)
+            raise BudgetExhaustedError("Monatsbudget der Zusammenfassungen ausgeschöpft.") from e
+        except Exception as e:
+            logger.exception(f"Summary generation failed for paper {paper.id}: {e}")
+            # Feste Meldung: Anbieter-Ausnahmen können Adressen, Schlüssel oder Interna enthalten
+            raise SummaryError(
+                "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
+            ) from e
+
+    def vorbereiten(self, paper: "OParlPaper") -> Vorbereitung | None:
+        """
+        Prompt der Zusammenfassung aus dem gespeicherten Text und den Metadaten; ``None`` ohne Text.
+
+        Einzelaufruf (``generate_summary``) und Batch nutzen denselben Prompt. Lädt und erkennt nichts.
+        """
+        datei_ids = list(self._current_files(paper).values_list("pk", flat=True))
+        text_content = self._collect_text_content(paper)
+        if not text_content:
+            return None
 
         # Collect metadata
         body_name = None
@@ -190,53 +276,7 @@ class SummaryService:
             ChatMessage(role="system", content=system_prompt),
             ChatMessage(role="user", content=user_prompt),
         ]
-
-        try:
-            logger.info(f"Generating summary for paper {paper.id} ({paper.reference})")
-
-            # Der KI-Aufruf dauert Minuten: Datenbankverbindung solange an den Pool zurückgeben
-            release_idle_thread_connections()
-
-            # Modelle mit Reasoning brauchen viel Platz vor der eigentlichen Antwort: Obergrenze aus der
-            # KI-Konfiguration (AISettings.insight_max_output_tokens)
-            max_tokens = getattr(self.provider, "max_output_tokens", 0) or STANDARD_MAX_AUSGABE
-            response = self.provider.chat_completion(
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=0.3,
-            )
-
-            summary = response.content
-
-            logger.info(
-                f"Summary generated for {paper.id}: "
-                f"{response.input_tokens} input, {response.output_tokens} output tokens"
-            )
-
-            # Während der Erstellung zurückgenommen (Vorgang oder Anlage)? Dann nichts ausgeben
-            if self._withdrawn_since(paper, started):
-                raise SummaryRevokedError("Vorgang oder Anlage wurde während der Erstellung zurückgenommen.")
-
-            # Save to paper if requested – nicht, wenn inzwischen neuer Text vorliegt: Das Abonnement hätte die
-            # Zusammenfassung verworfen, sie stammt aus dem älteren Text
-            if save:
-                if self._text_changed_since(paper, started_at):
-                    logger.info(f"Summary for paper {paper.id} not saved: new text since the start")
-                else:
-                    paper.summary = summary
-                    paper.save(update_fields=["summary"])
-                    logger.info(f"Summary saved to paper {paper.id}")
-
-            return summary
-
-        except (NoTextContentError, APINotConfiguredError, SummaryRevokedError):
-            raise
-        except Exception as e:
-            logger.exception(f"Summary generation failed for paper {paper.id}: {e}")
-            # Feste Meldung: Anbieter-Ausnahmen können Adressen, Schlüssel oder Interna enthalten
-            raise SummaryError(
-                "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
-            ) from e
+        return Vorbereitung(nachrichten=messages, datei_ids=datei_ids, zeichen=len(system_prompt) + len(user_prompt))
 
     def _collect_text_content(self, paper: "OParlPaper") -> str:
         """

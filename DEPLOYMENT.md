@@ -1130,6 +1130,38 @@ mit Host und Freigabe und die Einrichtung ohne Schlüssel, nur „Schlüssel ges
    Antwort“, einen TLS-Fehler oder unzulässige Zeichen im Schlüssel. Im Admin tut „Speichern und Verbindung
    prüfen“ in den KI-Einstellungen dasselbe, nach dem Speichern.
 
+**Zusammenfassungen mit der Claude API (Anthropic, Issue #1208):** Nur die Zusammenfassungen im Bürgerportal
+können statt des Endpunkts oben die Claude API nutzen (Standardmodell `claude-haiku-5-5`). KI-Assistent und
+KI-Verortung bleiben beim Endpunkt oben. Anthropic verarbeitet auch außerhalb der EU (USA). Deshalb eignet sich der
+Weg nur für öffentliche Dokumente, und unter jeder damit erstellten Zusammenfassung stehen Anbieter, Modell und
+Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als Empfänger nennen.
+
+1. Host freigeben: `api.anthropic.com` zusätzlich in `KI_ERLAUBTE_HOSTS` eintragen und Anwendung, Worker und
+   Ingestor neu anlegen. Ohne diesen Eintrag lehnen Admin und Befehl die Auswahl ab, und es geht keine Anfrage hinaus.
+2. Einrichten. Der Schlüssel kommt nur aus einer benannten Umgebungsvariable:
+
+   ```bash
+   read -rs CLAUDE_SCHLUESSEL && export CLAUDE_SCHLUESSEL
+   docker exec -e CLAUDE_SCHLUESSEL mandari python manage.py ki_anbieter zusammenfassung --claude \
+     --schluessel-aus-umgebung CLAUDE_SCHLUESSEL --pruefen
+   unset CLAUDE_SCHLUESSEL
+   ```
+
+   Optional sind `--modell` (Standard `claude-haiku-5-5`), `--budget` (USD je Monat, Standard 100),
+   `--batch-tage` (Standard 30) und `--ohne-batch`. Die Prüfung ruft nur das Modell über die Models API ab und
+   kostet nichts. Zurück zum Endpunkt oben:
+   `ki_anbieter zusammenfassung --wie-buergerportal`. Im Admin stehen dieselben Felder unter „KI-Einstellungen →
+   Zusammenfassungen“.
+3. Batch: Die Zeitpläne `zusammenfassungen_einreichen` (alle 30 Minuten) und `zusammenfassungen_abholen` (alle 10
+   Minuten) laufen im Worker mit der Rolle `scheduler` (`TASKS_BACKEND=journal`). Eingereicht werden Vorgänge ohne
+   Zusammenfassung aus den letzten `summary_batch_days` Tagen, neueste zuerst, höchstens 500 je Batch und nur ein
+   Batch zur Zeit. Abschalten lässt sich der Batch mit dem Häkchen in den KI-Einstellungen oder mit
+   `EVENTS_SCHEDULES_DISABLED`.
+4. Kosten: Jede Antwort wird mit ihren Token verbucht. Das Monatsbudget (Standard 100 USD je Kalendermonat)
+   reserviert offene Batches mit ihrer Schätzung. Ist es erreicht, ruht der Batch, und „Zusammenfassen“ meldet
+   „derzeit nicht verfügbar“. Stand im Admin unter „KI-Verbrauch (Claude)“. Das Ausgabenlimit in der Konsole von
+   Anthropic sollte zusätzlich gesetzt sein.
+
 **Nebius nach `common/0011` weiter nutzen:** Die Migration setzt den Anbieter auf „nicht eingerichtet“. Der
 Schlüssel stand bisher in `NEBIUS_API_KEY`; die Anwendung liest ihn nicht mehr (Compose reicht ihn nicht weiter).
 

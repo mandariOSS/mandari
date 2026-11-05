@@ -99,6 +99,7 @@ ENCRYPTED_FIELDS: tuple[EncryptedField, ...] = (
     # Früherer Nebius-Schlüssel: ungenutzt, von common/0011 geleert (#950); bleibt, solange die Spalte besteht
     EncryptedField("common.SiteSettings", "nebius_api_key_encrypted", KeyKind.MASTER),
     EncryptedField("common.AISettings", "api_key_encrypted", KeyKind.MASTER),
+    EncryptedField("common.AISettings", "summary_api_key_encrypted", KeyKind.MASTER),
     EncryptedField("minutes.ComputeSettings", "client_secret_encrypted", KeyKind.MASTER),
     EncryptedField("minutes.ComputeSettings", "s3_secret_key_encrypted", KeyKind.MASTER),
     # Postausgang des Mail-Dienstes (Issue #528): Mails der Plattform bis zum Versand

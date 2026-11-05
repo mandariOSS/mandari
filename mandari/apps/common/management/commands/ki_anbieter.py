@@ -8,6 +8,9 @@ KI-Anbieter auf der Kommandozeile (Issue #1046): Übersicht, Einrichten in einem
     python manage.py ki_anbieter einrichten --basis-url https://<host>/v1 --name "<Anbieter>" \\
         --ort "<Verarbeitungsort>" --modell <modell> --schluessel-aus-umgebung <VARIABLE>
     python manage.py ki_anbieter pruefen               # Testaufruf je eingetragenem Modell
+    python manage.py ki_anbieter zusammenfassung --claude --schluessel-aus-umgebung CLAUDE_SCHLUESSEL \
+        [--modell claude-haiku-5-5] [--budget 100] [--batch|--ohne-batch] [--batch-tage 30]
+    python manage.py ki_anbieter zusammenfassung --wie-buergerportal   # Zusammenfassungen wieder wie oben
 
 Einrichten geht durch das Formular der KI-Einstellungen im Admin (``AISettingsAdminForm``): dieselben Prüfungen
 (Positivliste, Vorlage nur für ihren Host, Pflichtangaben beim eigenen Endpunkt, Schlüssel bei Anbieterwechsel)
@@ -22,6 +25,7 @@ import hmac
 import math
 import os
 import re
+from decimal import Decimal, InvalidOperation
 from typing import Any, cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
@@ -31,8 +35,12 @@ from mandari_dokumente.ki_hosts import gepruefter_host
 from apps.common.admin import AISettingsAdminForm
 from apps.common.ki_anbieter import (
     ANBIETER_VORLAGEN,
+    ANTHROPIC,
+    ANTHROPIC_HOST,
     EIGENER,
     PRUEF_ZEITGRENZE,
+    claude_der_einstellungen,
+    claude_host_freigegeben,
     endpunkt_der_einstellungen,
     erlaubte_hosts,
     pruefe_ki_einstellungen,
@@ -52,8 +60,8 @@ _NAME_IN_MELDUNG = 40
 #: Anzeige einer Basis-URL, die so nie durch das Formular gekommen wäre (Altbestand, direkt in der Datenbank)
 _UNZULAESSIG = "unzulässig, nicht angezeigt"
 
-#: Felder des Schlüssels im Formular; alle übrigen Formularfelder kommen aus der gespeicherten Einrichtung
-_SCHLUESSELFELDER = ("api_key", "api_key_loeschen")
+#: Felder der Schlüssel im Formular; alle übrigen Formularfelder kommen aus der gespeicherten Einrichtung
+_SCHLUESSELFELDER = ("api_key", "api_key_loeschen", "summary_api_key", "summary_api_key_loeschen")
 
 #: Modellfelder und ihre Optionen
 _MODELLE = (("model_name", "modell"), ("insight_model", "modell_buergerportal"), ("fallback_model", "ausweichmodell"))
@@ -83,7 +91,7 @@ class Command(BaseCommand):
     )
 
     def add_arguments(self, parser: CommandParser) -> None:
-        aktionen = parser.add_subparsers(dest="aktion", metavar="{liste,einrichten,pruefen}")
+        aktionen = parser.add_subparsers(dest="aktion", metavar="{liste,einrichten,pruefen,zusammenfassung}")
         aktionen.add_parser("liste", help="Vorlagen mit Host und Freigabe, aktuelle Einrichtung (Standard).")
 
         einrichten = aktionen.add_parser(
@@ -131,6 +139,33 @@ class Command(BaseCommand):
         pruefen = aktionen.add_parser("pruefen", help="Testaufruf je eingetragenem Modell (höchstens ein Token).")
         self._zeitgrenze(pruefen)
 
+        zusammenfassung = aktionen.add_parser(
+            "zusammenfassung",
+            help="Anbieter der Zusammenfassungen: Claude API (Anthropic) oder wie das Bürgerportal.",
+        )
+        wahl = zusammenfassung.add_mutually_exclusive_group(required=True)
+        wahl.add_argument(
+            "--claude",
+            action="store_true",
+            help="Zusammenfassungen über die Claude API (nur öffentliche Dokumente, Verarbeitung auch in den USA).",
+        )
+        wahl.add_argument(
+            "--wie-buergerportal", action="store_true", help="Zusammenfassungen wie KI-Assistent und KI-Verortung."
+        )
+        zusammenfassung.add_argument("--modell", help="Modell bei der Claude API (Standard claude-haiku-5-5).")
+        zusammenfassung.add_argument(
+            "--schluessel-aus-umgebung",
+            metavar="VARIABLE",
+            help="Name der Umgebungsvariable mit dem Claude-API-Key, nie den Schlüssel selbst.",
+        )
+        zusammenfassung.add_argument("--budget", metavar="USD", help="Monatsbudget in USD (Standard 100).")
+        batch = zusammenfassung.add_mutually_exclusive_group()
+        batch.add_argument("--batch", dest="batch", action="store_const", const=True, help="Vorab im Batch an.")
+        batch.add_argument("--ohne-batch", dest="batch", action="store_const", const=False, help="Batch aus.")
+        zusammenfassung.add_argument("--batch-tage", type=int, metavar="TAGE", help="Vorgänge der letzten TAGE.")
+        zusammenfassung.add_argument("--pruefen", action="store_true", help="Danach die Verbindung prüfen.")
+        self._zeitgrenze(zusammenfassung)
+
     @staticmethod
     def _zeitgrenze(parser: CommandParser) -> None:
         parser.add_argument(
@@ -149,6 +184,8 @@ class Command(BaseCommand):
             raise CommandError("--zeitgrenze muss eine Zahl größer als 0 sein.")
         if aktion == "einrichten":
             self._einrichten(options)
+        elif aktion == "zusammenfassung":
+            self._zusammenfassung(options)
         elif aktion == "pruefen":
             self._pruefen(options["zeitgrenze"])
         else:
@@ -205,6 +242,21 @@ class Command(BaseCommand):
             ("KI im Bürgerportal", "an" if ki.insight_enabled else "aus"),
             ("Zustand", f"aus: {zustand}" if isinstance(zustand, str) else "bereit (Schalter siehe oben)"),
         ]
+        claude = claude_der_einstellungen(ki)
+        if (ki.summary_provider or "") == ANTHROPIC:
+            zeilen += [
+                ("Zusammenfassungen", f"Claude API (Anthropic), Modell {ki.summary_model or '–'}"),
+                ("Claude-Host", f"{ANTHROPIC_HOST}, freigegeben: {_ja(claude_host_freigegeben())}"),
+                ("Claude-Schlüssel", _ja(bool(ki.summary_api_key_encrypted))),
+                (
+                    "Batch",
+                    f"an, Vorgänge der letzten {ki.summary_batch_days} Tage" if ki.summary_batch_enabled else "aus",
+                ),
+                ("Monatsbudget", f"{ki.summary_monthly_budget_usd} USD"),
+                ("Zustand Claude", f"aus: {claude}" if isinstance(claude, str) else "bereit (Schalter Bürgerportal)"),
+            ]
+        else:
+            zeilen.append(("Zusammenfassungen", "wie KI-Assistent und KI-Verortung"))
         self.stdout.write("Einrichtung (KI-Einstellungen, ohne Schlüssel):")
         for name, wert in zeilen:
             self.stdout.write(f"  {name + ':':<23} {wert}")
@@ -317,6 +369,57 @@ class Command(BaseCommand):
             self._pruefen(optionen["zeitgrenze"])
         else:
             self.stdout.write("Verbindung prüfen: python manage.py ki_anbieter pruefen")
+
+    # ------------------------------------------------------------------ Zusammenfassungen
+
+    def _zusammenfassung(self, optionen: dict[str, Any]) -> None:
+        """Anbieter der Zusammenfassungen setzen, durch das Formular des Admins (gleiche Prüfungen)."""
+        schluessel = self._schluessel(optionen["schluessel_aus_umgebung"])
+        ki, _ = AISettings.objects.get_or_create(pk=1)
+        vorher = model_to_dict(ki)
+        felder = [name for name in AISettingsAdminForm.base_fields if name not in _SCHLUESSELFELDER]
+        daten = {name: wert for name, wert in model_to_dict(ki, fields=felder).items() if wert is not None}
+        daten["summary_provider"] = ANTHROPIC if optionen["claude"] else ""
+        if optionen["modell"] is not None:
+            daten["summary_model"] = optionen["modell"].strip()
+        if optionen["budget"] is not None:
+            try:
+                budget = Decimal(str(optionen["budget"]).replace(",", "."))
+            except InvalidOperation as fehler:
+                raise CommandError("--budget erwartet einen Betrag in USD, etwa 100.") from fehler
+            if not budget.is_finite() or budget < 0:
+                raise CommandError("--budget erwartet einen Betrag von mindestens 0 USD.")
+            daten["summary_monthly_budget_usd"] = budget
+        if optionen["batch"] is not None:
+            daten["summary_batch_enabled"] = optionen["batch"]
+        if optionen["batch_tage"] is not None:
+            daten["summary_batch_days"] = optionen["batch_tage"]
+        daten["summary_api_key"] = schluessel
+        form: Any = cast(Any, AISettingsAdminForm)(data=daten, instance=ki)
+        if not form.is_valid():
+            zeilen = ["Nicht gespeichert:"]
+            for feld, meldungen in form.errors.as_data().items():
+                name = form.fields[feld].label if feld in form.fields else "Einrichtung"
+                zeilen.extend(f"  {name}: {' '.join(e.messages)}" for e in meldungen)
+            raise CommandError("\n".join(zeilen))
+        geaendert = [name for name in form.cleaned_data if name in vorher and form.cleaned_data[name] != vorher[name]]
+        bisher = ki.get_summary_api_key()
+        neuer_schluessel = bool(schluessel) and not hmac.compare_digest(
+            schluessel.encode("utf-8"), bisher.encode("utf-8")
+        )
+        if not geaendert and not neuer_schluessel:
+            self.stdout.write("Keine Änderung: Die Zusammenfassungen entsprechen schon diesen Angaben.")
+        else:
+            if not neuer_schluessel:
+                form.cleaned_data["summary_api_key"] = ""
+            form.save()
+            teile = [f"geändert: {', '.join(geaendert)}"] if geaendert else []
+            if neuer_schluessel:
+                teile.append("Claude-Schlüssel neu gesetzt")
+            self.stdout.write(self.style.SUCCESS(f"Gespeichert ({'; '.join(teile)})."))
+        self._zeige_einrichtung(AISettings.objects.get(pk=1))
+        if optionen["pruefen"]:
+            self._pruefen(optionen["zeitgrenze"])
 
     # ------------------------------------------------------------------ Prüfen
 
