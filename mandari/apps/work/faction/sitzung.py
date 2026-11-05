@@ -124,12 +124,17 @@ def darf_top_hinzufuegen(membership: Membership, meeting: FactionMeeting) -> boo
     """
     TOP in der laufenden Sitzung ergänzen (Issue #1166), etwa wenn unter TOP 1 eine geänderte Tagesordnung beschlossen
     wird: dieselben Rechte wie „TOP eintragen“ in der Vorbereitung (``can_add_items``), also wer die Sitzung verwaltet
-    oder ``agenda.create`` hat. Nur solange die Sitzung läuft: Nach dem Beenden bietet auch die Vorbereitung das
-    Eintragen nicht mehr an, die Tagesordnung gehört dann zum Protokoll.
+    oder ``agenda.create`` hat, dazu die Schriftführung der Sitzung, die eine geänderte Tagesordnung allein nachtragen
+    kann. Nichtöffentliches nur für Vereidigte (prüft :func:`top_hinzufuegen`). Nur solange die Sitzung läuft: Nach
+    dem Beenden bietet auch die Vorbereitung das Eintragen nicht mehr an, die Tagesordnung gehört dann zum Protokoll.
     """
     if meeting.status != "ongoing" or meeting.protocol_approved:
         return False
-    return darf_verwalten(membership, meeting) or membership.has_permission("agenda.create")
+    return (
+        darf_verwalten(membership, meeting)
+        or membership.has_permission("agenda.create")
+        or ist_schriftfuehrung(membership, meeting)
+    )
 
 
 # =============================================================================
