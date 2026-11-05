@@ -6,12 +6,14 @@ Festgehalten werden:
 
 - ``oidc_token``: jede Ausgabe eines Access-Tokens am Token-Endpunkt (Code, Refresh-Token oder Client Credentials)
 - ``oidc_widerruf``: jeder Widerruf, ob durch die Anwendung (RFC 7009), die Person („Verbundene Anwendungen“)
-  oder die Plattform-Administration
-- ``oidc_anwendung``: Anlegen, Ändern und Löschen einer Anwendung im Admin
+  oder die Plattform-Administration (auch beim Sperren einer Anwendung, dann mit Anzahl)
+- ``oidc_anwendung``: Anlegen, Ändern und Löschen einer Anwendung im Admin, Anlegen, Sperren und Entsperren mit
+  ``manage.py oidc_anwendung`` (``durch``: der Befehl)
 
 Ein Eintrag nennt die Client-ID, den Ablauf und die Scopes, das Konto nur als Referenz. Tokens, Codes und
 Secrets stehen nie darin. Ausgabe und Widerruf durch die Anwendung scheitern nicht am Protokoll (wie die
-Anmeldung); Änderungen im Admin laufen mit dem Eintrag in einer Transaktion und scheitern mit ihm.
+Anmeldung); Änderungen im Admin und mit dem Befehl laufen mit dem Eintrag in einer Transaktion und scheitern mit
+ihm.
 """
 
 from __future__ import annotations
@@ -34,6 +36,8 @@ EVENT_APPLICATION = "oidc_anwendung"
 BY_APPLICATION = "Anwendung"
 BY_PERSON = "Person"
 BY_ADMINISTRATION = "Plattform-Administration"
+#: Herkunft von Änderungen auf der Kommandozeile (``details["durch"]`` bei ``oidc_anwendung``)
+BY_COMMAND = "manage.py oidc_anwendung"
 
 
 def http_request_of(oauthlib_request: Any) -> Any:

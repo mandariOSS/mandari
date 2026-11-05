@@ -294,17 +294,22 @@ from apps.accounts.oidc import signing_keys as _oidc_signing_keys  # noqa: E402
 OIDC_PROVIDER_ENABLED = os.environ.get("OIDC_PROVIDER_ENABLED", "false").strip().lower() in ("1", "true", "yes")
 _OIDC_KEY: str = ""
 _OIDC_KEYS_PREVIOUS: list[str] = []
-if OIDC_PROVIDER_ENABLED:
+# Ein eingestellter Schlüssel wird auch bei ausgeschaltetem Anbieter gelesen: So lassen sich Anwendungen vor dem
+# Einschalten anlegen (manage.py oidc_anwendung) und alles prüfen (manage.py oidc_pruefen). Einen untauglichen oder
+# fehlenden Schlüssel weist der Start nur bei eingeschaltetem Anbieter ab; ausgeschaltet meldet ihn oidc_pruefen.
+try:
+    _OIDC_KEY, _OIDC_KEYS_PREVIOUS = _oidc_signing_keys.load(os.environ)
+except _oidc_signing_keys.SigningKeyError as _fehler:
+    if OIDC_PROVIDER_ENABLED:
+        from django.core.exceptions import ImproperlyConfigured
+
+        raise ImproperlyConfigured(str(_fehler)) from None
+if OIDC_PROVIDER_ENABLED and not _OIDC_KEY:
     from django.core.exceptions import ImproperlyConfigured
 
-    try:
-        _OIDC_KEY, _OIDC_KEYS_PREVIOUS = _oidc_signing_keys.load(os.environ)
-    except _oidc_signing_keys.SigningKeyError as _fehler:
-        raise ImproperlyConfigured(str(_fehler)) from None
-    if not _OIDC_KEY:
-        raise ImproperlyConfigured(
-            "OIDC_PROVIDER_ENABLED braucht einen Signaturschlüssel (OIDC_RSA_PRIVATE_KEY_FILE oder OIDC_RSA_PRIVATE_KEY)."
-        )
+    raise ImproperlyConfigured(
+        "OIDC_PROVIDER_ENABLED braucht einen Signaturschlüssel (OIDC_RSA_PRIVATE_KEY_FILE oder OIDC_RSA_PRIVATE_KEY)."
+    )
 # Lebensdauer: Access-Token kurz, Refresh-Token mit Rotation; ein Refresh-Token verfällt so viele Tage nach dem
 # Ablauf seines Access-Tokens, wenn es nicht genutzt wird
 OIDC_ACCESS_TOKEN_SECONDS = int(os.environ.get("OIDC_ACCESS_TOKEN_SECONDS", "900"))
@@ -398,6 +403,8 @@ TEMPLATES = [
                 "apps.common.seitenhinweis.seitenhinweis_context",  # Betriebshinweis aus der Umgebung
                 "apps.work.rahmen.rahmen_kontext",  # neues Erscheinungsbild von Work je Organisation (Issue #852)
                 "apps.work.sichtschutz.sichtschutz_kontext",  # Sichtschutz für Nichtöffentliches (Issue #1201)
+                # Verweise auf „Verbundene Anwendungen“ nur bei eingeschaltetem OIDC-Anbieter (Issue #1215)
+                "apps.accounts.oidc.context_processors.oidc_kontext",
             ],
         },
     },

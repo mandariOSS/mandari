@@ -1,6 +1,7 @@
 {% comment %}
-Person unten in der Leiste (Issue #852): Name und Rolle, Menü mit Profil, Sicherheit, Benachrichtigungen, App
-installieren (nur wenn der Browser es anbietet) und Abmelden. Escape und Klick daneben schließen das Menü.
+Person unten in der Leiste (Issue #852): Name und Rolle, Menü mit Profil, Sicherheit, Verbundene Anwendungen (nur bei
+eingeschaltetem OIDC-Anbieter, #1215), Benachrichtigungen, App installieren (nur wenn der Browser es anbietet) und
+Abmelden. Escape und Klick daneben schließen das Menü.
 {% endcomment %}
 <div x-data="workPerson" class="relative" @keydown.escape="schliessen()" @click.outside="schliessen(false)"
      @pwa-installable.window="canInstall = true" @pwa-installed.window="canInstall = false">
@@ -19,6 +20,7 @@ installieren (nur wenn der Browser es anbietet) und Abmelden. Escape und Klick d
         <p class="px-3.5 pt-1 pb-2 text-xs text-gray-600 dark:text-gray-400 truncate">{{ request.user.email }}</p>
         <a role="menuitem" href="{% url 'work:profile' org_slug=organization.slug %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="user" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Profil</a>
         <a role="menuitem" href="{% url 'work:security' org_slug=organization.slug %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="shield" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Sicherheit</a>
+        {% if oidc_provider_enabled %}<a role="menuitem" href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="plug" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Verbundene Anwendungen</a>{% endif %}
         <a role="menuitem" href="{% url 'work:profile_notifications' org_slug=organization.slug %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="bell" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Benachrichtigungen einstellen</a>
         <div x-show="canInstall && !installHidden" x-cloak class="flex items-center">
             <button type="button" role="menuitem" @click="installApp()" class="flex-1 flex items-center gap-3 h-9 px-3.5 text-left text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="download" class="w-4 h-4 shrink-0" aria-hidden="true"></i>App installieren</button>

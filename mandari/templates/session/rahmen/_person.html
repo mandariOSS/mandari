@@ -1,6 +1,7 @@
 {% comment %}
-Person unten in der Leiste (Issue #944, wie Work): Name und Rollen im Mandanten, Menü mit E-Mail-Adresse und Abmelden
-(wie das bisherige Benutzermenü). Escape und Klick daneben schließen das Menü (Komponente workPerson).
+Person unten in der Leiste (Issue #944, wie Work): Name und Rollen im Mandanten, Menü mit E-Mail-Adresse, Verbundene
+Anwendungen (nur bei eingeschaltetem OIDC-Anbieter, #1215) und Abmelden (wie das bisherige Benutzermenü). Escape und
+Klick daneben schließen das Menü (Komponente workPerson).
 {% endcomment %}
 <div x-data="workPerson" class="relative" @keydown.escape="schliessen()" @click.outside="schliessen(false)">
     <button type="button" x-ref="knopf" @click="umschalten()" aria-haspopup="menu" aria-controls="person-menue" :aria-expanded="offen.toString()" aria-expanded="false"
@@ -17,6 +18,7 @@ Person unten in der Leiste (Issue #944, wie Work): Name und Rollen im Mandanten,
          class="person-menue [&_svg]:text-gray-500 fixed left-2.5 bottom-[calc(3.75rem+env(safe-area-inset-bottom))] w-64 rounded-lg bg-band-hell py-1.5 shadow-xl ring-1 ring-gray-900/10 dark:ring-white/10 z-50">
         <p class="px-3.5 pt-1 pb-0.5 text-xs text-gray-600 dark:text-gray-400 truncate">{{ request.user.email }}</p>
         <p class="px-3.5 pb-2 text-xs text-gray-600 dark:text-gray-400">{% for role in session_user.roles.all %}{{ role.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+        {% if oidc_provider_enabled %}<a role="menuitem" href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="plug" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Verbundene Anwendungen</a>{% endif %}
         <a role="menuitem" href="{% url 'accounts:logout' %}" class="flex items-center gap-3 min-h-9 py-1.5 px-3.5 text-sm text-gray-800 dark:text-gray-200 hover:bg-band-grau"><i data-lucide="log-out" class="w-4 h-4 shrink-0" aria-hidden="true"></i>Abmelden</a>
     </div>
 </div>

@@ -12,7 +12,7 @@ Was mandari ergänzt:
 - :class:`OAuthApplication` trägt die erlaubten Scopes je Client (``allowed_scopes``) und einen Schalter
   ``is_active``. Erlaubt sind nur der Code-Ablauf (im Namen einer Person, PKCE S256) und Client Credentials
   (Dienste), Redirect-URIs nur mit https (http nur für localhost bei ``DEBUG``), Signatur nur RS256, das
-  Client-Secret immer gehasht.
+  Client-Secret immer gehasht, bei vertraulichen Anwendungen nie leer (#1215).
 - Access- und Refresh-Token stehen nicht im Klartext in der Datenbank: Mit
   ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE`` bleibt ``token`` leer, nachgeschlagen wird über die SHA-256-Prüfsumme
   ``token_checksum`` (``apps/common/tokens.py``, Verzeichnis der Token-Felder).
@@ -26,8 +26,10 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from django.conf import settings
+from django.contrib.auth.hashers import check_password, identify_hasher
 from django.core.exceptions import ValidationError
 from django.db import models
+from oauth2_provider.generators import generate_client_secret
 from oauth2_provider.models import (
     AbstractAccessToken,
     AbstractApplication,
@@ -44,6 +46,29 @@ from . import catalog
 ALLOWED_GRANT_TYPES = (AbstractApplication.GRANT_AUTHORIZATION_CODE, AbstractApplication.GRANT_CLIENT_CREDENTIALS)
 #: Hosts, für die bei ``DEBUG`` auch http-Redirects gelten (Entwicklung auf dem eigenen Rechner)
 LOOPBACK_HOSTS = ("localhost", "127.0.0.1", "::1")
+#: Mindestlänge eines neu eingetragenen Client-Secrets (erzeugt werden 128 Zeichen)
+MIN_SECRET_LENGTH = 32
+
+
+def client_secret_problem(secret: str) -> str:
+    """
+    Grund, aus dem ein Client-Secret einer vertraulichen Anwendung nicht taugt, sonst ``""``.
+
+    Ein leeres Secret wird gehasht gespeichert und gilt danach für jede Anfrage ohne Secret: Die Bibliothek prüft
+    eine fehlende Angabe als leeren Text gegen den Hash. Eine vertrauliche Anwendung wäre damit ohne Secret nutzbar.
+    """
+    if not secret:
+        return "Vertrauliche Anwendungen brauchen ein Client-Secret."
+    try:
+        identify_hasher(secret)
+    except ValueError:
+        # Klartext, also ein neu eingetragenes Secret
+        if len(secret) < MIN_SECRET_LENGTH:
+            return f"Das Client-Secret braucht mindestens {MIN_SECRET_LENGTH} Zeichen."
+        return ""
+    if check_password("", secret):
+        return "Das gespeicherte Client-Secret ist leer. Bitte ein neues eintragen."
+    return ""
 
 
 def redirect_uri_problem(uri: str, *, debug: bool) -> str:
@@ -67,8 +92,8 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
     """
     Eine Anwendung (Client), die sich bei mandari Tokens holt.
 
-    Angelegt wird sie nur im Admin, eine dynamische Registrierung gibt es nicht. Vertrauenswürdige eigene
-    Anwendungen überspringen die Zustimmungsseite (``skip_authorization``).
+    Angelegt wird sie im Admin oder mit ``manage.py oidc_anwendung``, eine dynamische Registrierung gibt es nicht.
+    Vertrauenswürdige eigene Anwendungen überspringen die Zustimmungsseite (``skip_authorization``).
     """
 
     allowed_scopes = models.JSONField(
@@ -84,6 +109,9 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
     )
 
     objects = ApplicationManager()
+
+    #: Feld der Bibliothek (``ClientSecretField``, ohne Typangaben); die Angabe nennt mypy nur den Typ
+    client_secret: str
 
     class Meta(AbstractApplication.Meta):  # type: ignore[misc]
         verbose_name = "OIDC-Anwendung"
@@ -147,6 +175,10 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
         elif self.authorization_grant_type == AbstractApplication.GRANT_AUTHORIZATION_CODE:
             if self.algorithm != AbstractApplication.RS256_ALGORITHM:
                 errors.setdefault("algorithm", []).append("ID-Tokens signiert mandari nur mit RS256.")
+        if self.client_type == AbstractApplication.CLIENT_CONFIDENTIAL:
+            problem = client_secret_problem(str(self.client_secret or ""))
+            if problem:
+                errors.setdefault("client_secret", []).append(problem)
         if errors:
             raise ValidationError(errors)
 
@@ -154,6 +186,10 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
         # Unabhängig vom Formular: Secret immer gehasht, Herkunft immer „von Hand angelegt“
         self.hash_client_secret = True
         self.registration_source = AbstractApplication.RegistrationSource.MANUAL
+        if not self.client_secret:
+            # Öffentliche Anwendungen nutzen kein Secret; ein zufälliges, nie angezeigtes statt eines leeren, das
+            # sonst jede Anfrage ohne Secret als Client-Authentifizierung durchgehen ließe
+            self.client_secret = str(generate_client_secret())
         super().save(*args, **kwargs)
 
 

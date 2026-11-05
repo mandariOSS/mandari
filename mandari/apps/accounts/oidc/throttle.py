@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Ratenbegrenzung am Token-Endpunkt (Issue #1206).
+Ratenbegrenzung an Token-, Widerrufs- und Introspektions-Endpunkt (Issue #1206, #1215).
 
 Derselbe Mechanismus wie bei OParl-Schnittstelle und Anmeldung: ein Zähler je Adresse und fester Minute im
-Django-Cache, IPv6 je /64-Netz (ein Anschluss verfügt meist über ein ganzes /64). Eine Abweisung steht wie eine
-gedrosselte Anmeldung im Sicherheitsprotokoll, höchstens einmal je Adresse und Fenster
-(:func:`apps.accounts.security_audit.record_throttled`).
+Django-Cache, IPv6 je /64-Netz (ein Anschluss verfügt meist über ein ganzes /64). Jeder Endpunkt zählt für sich.
+Widerruf und Introspektion prüfen wie der Token-Endpunkt ein Client-Secret gegen seinen Passwort-Hash; ohne Grenze
+ließe sich darüber Rechenzeit binden. Eine Abweisung steht wie eine gedrosselte Anmeldung im Sicherheitsprotokoll,
+höchstens einmal je Adresse und Fenster (:func:`apps.accounts.security_audit.record_throttled`).
 """
 
 from __future__ import annotations
@@ -21,8 +22,10 @@ from django.http import HttpRequest
 from ..two_factor_policy import client_ip
 
 WINDOW_SECONDS = 60
-#: Schritt im Sicherheitsprotokoll
+#: Schritte im Sicherheitsprotokoll, zugleich Name des Zählers je Endpunkt
 STEP_TOKEN_ENDPOINT = "OIDC-Token-Endpunkt"
+STEP_REVOKE_ENDPOINT = "OIDC-Widerruf"
+STEP_INTROSPECT_ENDPOINT = "OIDC-Introspektion"
 
 
 def limit_per_minute() -> int:
@@ -47,13 +50,13 @@ def seconds_until_next_window() -> int:
     return WINDOW_SECONDS - int(time.time()) % WINDOW_SECONDS
 
 
-def exceeded(request: HttpRequest) -> bool:
-    """Diese Anfrage zählen; ``True``, wenn die Adresse ihr Kontingent der laufenden Minute überschreitet."""
+def exceeded(request: HttpRequest, endpoint: str = STEP_TOKEN_ENDPOINT) -> bool:
+    """Anfrage an ``endpoint`` zählen; ``True``, wenn die Adresse ihr Kontingent dieser Minute überschreitet."""
     limit = limit_per_minute()
     if limit <= 0:
         return False
     window = int(time.time() // WINDOW_SECONDS)
-    marker = f"{scope_of(client_ip(request))}|{window}"
+    marker = f"{endpoint}|{scope_of(client_ip(request))}|{window}"
     key = "oidc-token:rl:" + hashlib.sha256(marker.encode()).hexdigest()
     if cache.add(key, 1, timeout=WINDOW_SECONDS * 2):
         return False
