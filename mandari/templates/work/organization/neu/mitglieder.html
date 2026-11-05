@@ -88,7 +88,7 @@ Kontext: MemberListView.
                         <a href="{% url 'work:member_detail' org_slug=organization.slug member_id=member.id %}" class="text-sm font-medium text-gray-900 dark:text-white hover:underline underline-offset-4 break-words">{{ member.user.get_full_name|default:member.user.email }}</a>
                         <p class="text-[0.8125rem] text-gray-600 dark:text-gray-400 truncate">{{ member.user.email }}</p>
                     </div>
-                    <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% include "work/organization/neu/_status.html" %}Deaktiviert</span>
+                    <span class="text-[0.8125rem] text-gray-600 dark:text-gray-400">{% include "work/organization/neu/_status.html" %}{% if member.deletion_pending %}Löschung am {{ member.deletion_scheduled_at|date:"d.m.Y" }}{% else %}Deaktiviert{% endif %}</span>
                 </li>
                 {% endfor %}
             </ul>

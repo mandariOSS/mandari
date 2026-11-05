@@ -730,6 +730,9 @@ def _restore_membership(organization: Organization, member: Membership, actor: M
     before = _access_text(member)
     member.is_active = True
     member.registration_requested_at = None
+    # Auch aus dem Auslauf „Nur Lesen“ zurück: Die geplante Löschung entfällt (Issue #1237)
+    member.deletion_scheduled_at = None
+    member.deletion_reminder_days = None
     member.save()
     audit.log_member_access(member, before, "aktiv", roles_after=_pending_roles(member, before), actor=actor)
 
@@ -738,9 +741,13 @@ PENDING_TEXT = "Registrierungsanfrage offen"
 
 
 def _access_text(member: Membership) -> str:
-    """Zugang für die Änderungshistorie: aktiv, deaktiviert oder offene Registrierungsanfrage."""
+    """Zugang für die Änderungshistorie: aktiv, deaktiviert, im Auslauf oder offene Registrierungsanfrage."""
     if member.is_active:
         return "aktiv"
+    if member.deletion_scheduled_at is not None:
+        from .auslauf import access_text
+
+        return access_text(member)
     return PENDING_TEXT if member.registration_requested_at else "deaktiviert"
 
 

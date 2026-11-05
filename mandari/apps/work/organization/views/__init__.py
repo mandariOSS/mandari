@@ -11,6 +11,7 @@ from .activity import (
     ProfileActivityView,
 )
 from .api_settings import OrganizationApiSettingsView
+from .auslauf import MembershipExpiryExportDownloadView, MembershipExpiryView
 from .change_requests import (
     ProfileChangeRequestsView,
 )
@@ -86,6 +87,8 @@ __all__ = [
     "MemberInviteView",
     "MemberListView",
     "MemberRejectView",
+    "MembershipExpiryExportDownloadView",
+    "MembershipExpiryView",
     "OrganizationDocumentsView",
     "OrganizationEmailSettingsView",
     "OrganizationApiSettingsView",

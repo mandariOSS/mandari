@@ -698,6 +698,7 @@ Auftrag an, auch mit mehreren Workern; ein verpasster Termin wird einmal nachgeh
 | `apps.work.schedules.fraktionssitzungen_erzeugen` | alle `FACTION_SCHEDULE_INTERVAL_MINUTES` (60) min | Sitzungen aus Sitzungsreihen |
 | `apps.work.schedules.ris_verknuepfungen_abgleichen` | alle `WORK_RIS_RELINK_INTERVAL_MINUTES` (15) min | Work-Daten nach Neuveröffentlichung im RIS umhängen (`WORK_RIS_RELINK`, Standard aus) |
 | `apps.work.schedules.fraktionsprotokolle_versenden` | alle `FACTION_PROTOCOL_INTERVAL_MINUTES` (15) min | automatischer Protokollversand, wenn die Organisation ihn eingeschaltet hat |
+| `apps.work.schedules.mitgliedschaften_auslaufen` | alle `WORK_MEMBER_EXPIRY_INTERVAL_MINUTES` (60) min | Mitgliedschaften „Nur Lesen, Löschung nach 30 Tagen“: Erinnerungen 7 und 3 Tage vorher, Löschung am Löschtag (Issue #1237) |
 | `apps.events.schedules.idempotenzschluessel_aufraeumen` | täglich 03:40 | Idempotenzschlüssel nach `EVENTS_IDEMPOTENCY_RETENTION_DAYS` |
 | `apps.events.schedules.auftraege_aufraeumen` | täglich 03:50 | beendete Aufträge: erledigte nach `EVENTS_TASKS_DONE_RETENTION_DAYS` (14), tote und fehlgeschlagene nach `EVENTS_TASKS_DEAD_RETENTION_DAYS` (90) Tagen |
 | `befehl:events_purge` | täglich 04:10, nur mit `EVENTS_JOURNAL_PURGE_ENABLED` (Standard aus) | Journal nach `EVENTS_JOURNAL_RETENTION_DAYS` (90), nie über den kleinsten Cursor; `docs/MONITORING.md`, „Nachspielen und Aufräumen des Journals“ |

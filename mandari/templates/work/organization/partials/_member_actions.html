@@ -1,4 +1,4 @@
-{# Mitglied-Detail: Aktionen (deaktivieren, reaktivieren, entfernen, Eigentümerschaft übertragen) #}
+{# Mitglied-Detail: Aktionen (deaktivieren, reaktivieren, Nur Lesen mit Löschung, entfernen, Eigentum übertragen) #}
 {# Kontext: member, organization, is_self, is_owner, can_remove, request #}
 <c-ui.card title="Aktionen">
     <div class="space-y-4">
@@ -27,6 +27,34 @@
                         <p class="text-sm text-green-600 dark:text-green-400">Das Mitglied kann sich wieder anmelden.</p>
                     </div>
                     <i data-lucide="user-check" class="w-5 h-5 text-green-500"></i>
+                </button>
+            </form>
+            {% endif %}
+
+            {% if can_remove and member.deletion_pending %}
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="cancel_deletion">
+                <button type="submit"
+                        class="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left">
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white">Löschung zurücknehmen</p>
+                        <p class="text-sm text-gray-500">Geplant für den {{ member.deletion_scheduled_at|date:"d.m.Y" }}. Danach ist das Mitglied deaktiviert.</p>
+                    </div>
+                    <i data-lucide="undo-2" class="w-5 h-5 text-gray-400"></i>
+                </button>
+            </form>
+            {% elif can_remove and not member.is_guest and not member.registration_requested_at %}
+            <form method="post" x-data @submit.prevent="confirmAction({title: 'Nur Lesen, Löschung nach 30 Tagen', message: 'Die Person sieht ab sofort keine Inhalte mehr und kann nichts ändern. 30 Tage lang kann sie sich noch anmelden und ihre eigenen Daten herunterladen; sie erhält dazu eine E-Mail und Erinnerungen 7 und 3 Tage vorher. Danach wird die Mitgliedschaft gelöscht: Beiträge für die Fraktion bleiben als „Ehemaliges Mitglied“, Namen in Protokollen und Anwesenheitslisten bleiben; persönliche Daten, private Dokumente und Entwürfe werden gelöscht, das Konto ebenfalls, wenn es sonst nirgends gebraucht wird. Bis dahin können Sie die Löschung zurücknehmen.', confirmText: 'Löschung planen', variant: 'danger'}).then(ok => ok && $el.submit())">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="schedule_deletion">
+                <button type="submit"
+                        class="w-full flex items-center justify-between p-4 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left">
+                    <div>
+                        <p class="font-medium text-gray-900 dark:text-white">Nur Lesen, Löschung nach 30 Tagen</p>
+                        <p class="text-sm text-gray-500">Die Person kann nur noch ihre eigenen Daten herunterladen; nach 30 Tagen wird die Mitgliedschaft gelöscht.</p>
+                    </div>
+                    <i data-lucide="clock" class="w-5 h-5 text-gray-400"></i>
                 </button>
             </form>
             {% endif %}
