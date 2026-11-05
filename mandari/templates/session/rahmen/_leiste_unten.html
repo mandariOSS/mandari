@@ -1,8 +1,9 @@
 {% comment %}
 Am Handy und Tablet (unter lg) die Leiste unten mit Start, Sitzungen, Vorlagen, Beschlüsse und „Mehr“ (Issue #944,
 Kernabläufe des Sitzungsdienstes) sowie das Blatt „Mehr“ mit den übrigen Bereichen, Leitstellen, Verwaltung,
-Einstellungen, Mandant wechseln, Dunkelmodus und Abmelden. Das Blatt ist ein modaler Dialog: Fokusfalle, Escape
-schließt, der Fokus kehrt auf „Mehr“ zurück. Bausteine wie Work und Insight (c-rahmen.tab, c-rahmen.blatt-link).
+Einstellungen, Mandant wechseln, Dunkelmodus, Verbundene Anwendungen (nur bei eingeschaltetem OIDC-Anbieter, #1215)
+und Abmelden. Das Blatt ist ein modaler Dialog: Fokusfalle, Escape schließt, der Fokus kehrt auf „Mehr“ zurück.
+Bausteine wie Work und Insight (c-rahmen.tab, c-rahmen.blatt-link).
 {% endcomment %}
 {% with n=session_rahmen.leiste_unten|length %}
 <nav aria-label="Hauptbereiche" class="lg:hidden print:!hidden fixed inset-x-0 bottom-0 z-40 bg-band-hell/95 backdrop-blur-sm border-t border-gray-200 dark:border-gray-800 pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
@@ -65,6 +66,7 @@ schließt, der Fokus kehrt auf „Mehr“ zurück. Bausteine wie Work und Insigh
                     <span class="flex-1 min-w-0">Dunkler Modus</span>
                 </button>
             </li>
+            {% if oidc_provider_enabled %}<li><c-rahmen.blatt-link href="{% url 'accounts:connected_applications' %}?next={{ request.path|urlencode }}" icon="plug">Verbundene Anwendungen</c-rahmen.blatt-link></li>{% endif %}
             <li><c-rahmen.blatt-link href="{% url 'accounts:logout' %}" icon="log-out">Abmelden</c-rahmen.blatt-link></li>
         </ul>
     </div>

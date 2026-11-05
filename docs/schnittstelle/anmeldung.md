@@ -10,6 +10,7 @@ in der Plattform (`mandari/apps/accounts/oidc/`).
 
 > **Standardmäßig aus.** Ohne `OIDC_PROVIDER_ENABLED=true` antworten alle Endpunkte mit 404, auch die Discovery,
 > und kein Access-Token wird angenommen. Vor dem Einschalten in Produktion steht eine Sicherheitsprüfung an.
+> Einschalten, Schlüssel, Proxy und das Anlegen von Anwendungen beschreibt [Betrieb](anmeldung-betrieb.md).
 
 ## Endpunkte
 
@@ -40,7 +41,8 @@ Header `Authorization: Bearer …` angenommen, nie in der Adresse.
 
 ## Anwendung eintragen lassen
 
-Anwendungen trägt die Plattform-Administration im Admin unter „OIDC-Anwendungen“ ein. Dafür braucht sie:
+Anwendungen trägt die Plattform-Administration im Admin unter „OIDC-Anwendungen“ oder mit
+`manage.py oidc_anwendung` ein ([Betrieb](anmeldung-betrieb.md#6-anwendungen-anlegen)). Dafür braucht sie:
 
 - **Name**, wie er auf der Zustimmungsseite und unter „Verbundene Anwendungen“ erscheinen soll
 - **Ablauf**: Code-Ablauf oder Client Credentials
@@ -50,8 +52,8 @@ Anwendungen trägt die Plattform-Administration im Admin unter „OIDC-Anwendung
 - **Erlaubte Scopes**: mehr kann die Anwendung nicht anfordern
 
 Die Anwendung erhält Client-ID und gegebenenfalls Client-Secret. Das Secret steht nur beim Anlegen im Klartext
-im Formular; gespeichert wird es gehasht. Eigene Anwendungen von mandari können als vertrauenswürdig markiert
-werden und kommen ohne Zustimmungsseite aus. Fremde Anwendungen fragen die Person jedes Mal.
+im Formular bzw. in der Ausgabe des Befehls; gespeichert wird es gehasht. Eigene Anwendungen von mandari können als
+vertrauenswürdig markiert werden und kommen ohne Zustimmungsseite aus. Fremde Anwendungen fragen die Person jedes Mal.
 
 ## Scopes
 
@@ -104,7 +106,12 @@ Weitere Parameter:
   vertrauenswürdig ist; sonst `error=login_required` bzw. `error=consent_required`.
 - `prompt=login` oder `max_age=<sekunden>`: Die Person meldet sich erneut an (auch mit zweitem Faktor). Bis
   dahin gibt mandari für diese Anfrage (gleiche `client_id` und gleicher `state`) keinen Code aus. Der Zeitpunkt
-  der Anmeldung steht im ID-Token als `auth_time`; wer eine frische Anmeldung braucht, prüft ihn.
+  der Anmeldung steht im ID-Token als `auth_time`; wer eine frische Anmeldung braucht, prüft ihn. Gemeint ist die
+  Anmeldung in der Browsersitzung, aus der der Code stammt, nicht die letzte Anmeldung auf irgendeinem Gerät.
+  ID-Tokens aus einem Refresh tragen denselben Zeitpunkt. Ist er nicht bekannt (Sitzung von vor dieser Regel),
+  fehlt `auth_time`, und `max_age` führt immer zur erneuten Anmeldung.
+- `id_token_hint`: ein früheres ID-Token von mandari, auch abgelaufen. Gehört es zu einer anderen Person als der
+  angemeldeten oder ist es nicht von mandari signiert, kommt `error=login_required` statt eines Codes.
 - `approval_prompt` beachtet mandari nicht: Bei fremden Anwendungen stimmt die Person jedes Mal zu.
 
 **3. Code einlösen** (der Code gilt 60 Sekunden und nur einmal):
@@ -139,8 +146,9 @@ kann sich ändern und taugt nicht als Kennung.
 - **Access-Token** gelten 15 Minuten (`OIDC_ACCESS_TOKEN_SECONDS`) und beginnen mit `mandari_at_`.
 - **Refresh-Token** beginnen mit `mandari_rt_` und werden bei jeder Nutzung ersetzt (Rotation). Wird ein schon
   ersetztes Refresh-Token noch einmal benutzt, widerruft mandari die ganze Kette; die Person muss sich dann neu
-  anmelden. Ein Refresh-Token verfällt 30 Tage nach dem Ablauf seines letzten Access-Tokens
-  (`OIDC_REFRESH_TOKEN_DAYS`).
+  anmelden. Das gilt auch für zwei gleichzeitige Refreshes mit demselben Token: Anwendungen erneuern nacheinander,
+  nie parallel (etwa aus mehreren Tabs). Ein Refresh-Token verfällt 30 Tage nach dem Ablauf seines letzten
+  Access-Tokens (`OIDC_REFRESH_TOKEN_DAYS`).
 
 ```bash
 curl -u '<client-id>:<client-secret>' https://mandari.example.org/oauth/token/ \
@@ -158,7 +166,10 @@ curl -u '<client-id>:<client-secret>' https://mandari.example.org/oauth/revoke/ 
   `client_id`, `exp`, `iat`, `iss` und bei Personen `sub`; fremde Tokens sind `{"active": false}`.
 
 Personen sehen und widerrufen ihre Anwendungen im Konto unter **„Verbundene Anwendungen“**
-(`/accounts/verbundene-anwendungen/`). Gesperrte Konten und ausgeschaltete Anwendungen verlieren ihre Tokens sofort.
+(`/accounts/verbundene-anwendungen/`), erreichbar über das Personenmenü in Work, Session und Insight und über die
+Seite „Sicherheit“ in Work. Gesperrte Konten und ausgeschaltete Anwendungen verlieren ihre Tokens sofort. Beendet
+eine Person alle anderen Sitzungen oder ändert sie ihr Passwort, verlieren alle Anwendungen ihren Zugang und fragen
+erneut.
 
 ## Client Credentials
 
@@ -199,40 +210,13 @@ funktionieren unverändert.
 | `invalid_scope` | Scope nicht für die Anwendung freigegeben |
 | `unauthorized_client` | Ablauf für die Anwendung nicht freigegeben |
 | `unsupported_grant_type` | Ablauf gibt es bei mandari nicht |
-| `rate_limited` (429) | zu viele Anfragen von dieser Adresse; `Retry-After` beachten |
+| `rate_limited` (429) | zu viele Anfragen von dieser Adresse; `Retry-After` beachten (gilt auch für Widerruf und Introspektion) |
 
 Passt bei der Autorisierung die Redirect-URI oder Client-ID nicht, leitet mandari nicht weiter, sondern zeigt
 der Person eine Fehlerseite.
 
 ## Betrieb
 
-**Schalter und Schlüssel** (alle Variablen in `.env.example`):
-
-```bash
-openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:3072 -out oidc.pem
-```
-
-Die Datei gehört wie die übrigen Geheimnisse nicht ins Repository und nicht in Sicherungen der Anwendungsdaten.
-Sie wird in den Container eingebunden und mit `OIDC_RSA_PRIVATE_KEY_FILE` benannt; alternativ steht der PEM-Text in
-`OIDC_RSA_PRIVATE_KEY` (Zeilenumbrüche als `\n`). Verlangt ist RSA mit mindestens 2048 Bit, unverschlüsselt.
-Ist der Anbieter eingeschaltet und der Schlüssel fehlt oder taugt nicht, startet die Anwendung nicht.
-
-**Schlüsselwechsel:** neuen Schlüssel erzeugen und als aktiven Schlüssel setzen, den bisherigen als
-`OIDC_RSA_PRIVATE_KEY_PREVIOUS_FILE`. Das JWKS nennt dann beide, signiert wird nur mit dem neuen. Nach der
-Lebensdauer der ID-Tokens (15 Minuten) und einem Puffer für zwischengespeicherte JWKS (eine Stunde) den bisherigen
-Schlüssel wieder entfernen.
-
-**Prüfprotokoll:** Das Sicherheitsprotokoll (`SecurityAuditLog`) hält jede Ausgabe eines Tokens (`oidc_token`),
-jeden Widerruf (`oidc_widerruf`, durch Anwendung, Person oder Plattform-Administration) und jede Änderung an
-Anwendungen im Admin (`oidc_anwendung`) fest. Es nennt Client-ID, Ablauf und Scopes, nie ein Token oder Secret.
-
-**Ratenbegrenzung:** `OIDC_TOKEN_RATE_LIMIT` Anfragen je Minute und Adresse (IPv6 je /64-Netz) am Token-Endpunkt,
-Standard 30. Abgewiesene Anfragen stehen wie gedrosselte Anmeldungen im Sicherheitsprotokoll.
-
-**Speicherung:** Access- und Refresh-Tokens stehen nur als SHA-256-Prüfsumme in der Datenbank, Client-Secrets
-nur als Passwort-Hash. Autorisierungscodes bleiben im Klartext: Sie gelten 60 Sekunden, nur einmal und sind
-ohne den nie gespeicherten `code_verifier` wertlos. Der Zeitplan `cleartokens` löscht abgelaufene Tokens und
-Codes täglich.
-
-**Reverse Proxy:** Der mitgelieferte `Caddyfile` leitet `/oauth/*` und `/.well-known/openid-configuration` an die
-Anwendung weiter.
+Schlüssel erzeugen, Umgebungsvariablen, Proxy-Routen, Prüfung mit `manage.py oidc_pruefen`, Einschalten, Anwendungen
+mit `manage.py oidc_anwendung` anlegen, Schlüsselwechsel, Widerruf, Prüfprotokoll und Speicherung:
+[Anmeldung für Anwendungen: Betrieb](anmeldung-betrieb.md).

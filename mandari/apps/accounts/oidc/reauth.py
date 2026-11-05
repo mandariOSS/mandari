@@ -10,17 +10,26 @@ an Client-ID und ``state``. Erfüllt ist er erst mit der nächsten Anmeldung in 
 
 Gemerkt werden höchstens :data:`MAX_PENDING` Wünsche. Kommen mehr zusammen, verdrängt keiner einen anderen:
 Dann gilt bis zur nächsten Anmeldung jede Anfrage als offen.
+
+Ob eine Anmeldung jung genug ist (``max_age``) und welcher Zeitpunkt als ``auth_time`` ins ID-Token kommt, richtet
+sich nach der Anmeldung in dieser Sitzung (:func:`login_time`), nicht nach ``User.last_login``: Den setzt jede
+Anmeldung auf irgendeinem Gerät neu, eine alte, unbeaufsichtigte Sitzung würde damit wieder „frisch“ (#1215).
+Eine Sitzung ohne gemerkten Zeitpunkt (angemeldet vor dieser Regel) gilt für ``max_age`` als zu alt.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from typing import Any
 
 from django.contrib.auth.signals import user_logged_in
+from django.utils import timezone
 
 SESSION_KEY = "oidc_erneute_anmeldung"
+#: Zeitpunkt der letzten Anmeldung in dieser Sitzung (Unix-Sekunden)
+LOGIN_TIME_KEY = "oidc_anmeldezeit"
 #: Höchstzahl gemerkter Wünsche je Sitzung
 MAX_PENDING = 20
 #: Steht für „jede Anfrage“, sobald mehr als :data:`MAX_PENDING` Wünsche offen sind
@@ -53,11 +62,21 @@ def pending(request: Any, client_id: str, state: str) -> bool:
     return ALL in waiting or _key(client_id, state) in waiting
 
 
+def login_time(request: Any) -> datetime | None:
+    """Wann hat sich die Person in dieser Sitzung zuletzt angemeldet? ``None``: unbekannt."""
+    session = getattr(request, "session", None)
+    value = session.get(LOGIN_TIME_KEY) if session is not None else None
+    if not isinstance(value, int) or isinstance(value, bool):
+        return None
+    return datetime.fromtimestamp(value, tz=UTC)
+
+
 def on_user_logged_in(sender: Any, request: Any = None, user: Any = None, **kwargs: Any) -> None:
-    """Signal ``user_logged_in``: Die Anmeldung erfüllt alle offenen Wünsche dieser Sitzung."""
+    """Signal ``user_logged_in``: Die Anmeldung erfüllt alle offenen Wünsche dieser Sitzung und gilt ab jetzt."""
     session = getattr(request, "session", None)
     if session is not None:
         session.pop(SESSION_KEY, None)
+        session[LOGIN_TIME_KEY] = int(timezone.now().timestamp())
 
 
 def connect() -> None:

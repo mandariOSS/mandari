@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import time
 from collections.abc import Iterator
-from datetime import timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -23,7 +22,6 @@ from django.db import connection
 from django.db.migrations.loader import MigrationLoader
 from django.test import Client, override_settings
 from django.urls import reverse
-from django.utils import timezone
 from jwcrypto import jwk, jwt
 
 from apps.accounts.models import SecurityAuditLog, User
@@ -438,7 +436,7 @@ class TestPrompt:
         app, _secret = h.anwendung(vertrauenswuerdig=True)
         _verifier, challenge = h.pkce()
         client = _angemeldet(person)
-        User.objects.filter(pk=person.pk).update(last_login=timezone.now() - timedelta(hours=2))
+        h.anmeldung_zurueckdatieren(client, 2 * 60 * 60)
         response = client.get("/oauth/authorize/", h.autorisierung(app, challenge, max_age="600"))
         assert response["Location"].startswith(reverse("accounts:login") + "?erneut=1")
         frisch = client.get("/oauth/authorize/", h.autorisierung(app, challenge, max_age="86400", state="neue-anfrage"))
@@ -452,7 +450,7 @@ class TestPrompt:
         app, _secret = h.anwendung(vertrauenswuerdig=True)
         _verifier, challenge = h.pkce()
         client = _angemeldet(person)
-        User.objects.filter(pk=person.pk).update(last_login=timezone.now() - timedelta(hours=2))
+        h.anmeldung_zurueckdatieren(client, 2 * 60 * 60)
         response = client.get("/oauth/authorize/", h.autorisierung(app, challenge, **verlangt))
         weiter = h.parse_qs_first(response["Location"], "next")
 

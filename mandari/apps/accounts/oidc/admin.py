@@ -5,9 +5,10 @@ Admin des OpenID-Connect-Anbieters (Issue #1206).
 Die Bibliothek registriert ihre Modelle selbst und nimmt dafür die Klassen aus ``OAUTH2_PROVIDER``
 (``APPLICATION_ADMIN_CLASS`` usw.); deshalb steht hier keine eigene Registrierung.
 
-- Anwendungen werden nur hier angelegt. Erlaubt sind Code-Ablauf und Client Credentials, Scopes aus dem
-  Katalog, Signatur RS256. Das Client-Secret wird beim Speichern gehasht und ist danach nicht mehr lesbar.
-  Anlegen, Ändern und Löschen stehen im Sicherheitsprotokoll.
+- Anwendungen werden hier oder mit ``manage.py oidc_anwendung`` angelegt (dasselbe Formular, #1215). Erlaubt sind
+  Code-Ablauf und Client Credentials, Scopes aus dem Katalog, Signatur RS256. Das Client-Secret wird beim Speichern
+  gehasht und ist danach nicht mehr lesbar. Anlegen, Ändern und Löschen stehen im Sicherheitsprotokoll; wird eine
+  Anwendung ausgeschaltet, sind alle ihre Tokens widerrufen.
 - Tokens, Codes und ID-Tokens sind nur lesbar; Tokens lassen sich widerrufen (mit Eintrag im Protokoll).
   Tokens stehen ohnehin nur als Prüfsumme in der Datenbank.
 """
@@ -33,7 +34,7 @@ from unfold.admin import ModelAdmin
 
 from apps.common.admin_mixins import ReadOnlyAdminMixin
 
-from . import audit, catalog
+from . import audit, catalog, services
 from .models import ALLOWED_GRANT_TYPES, OAuthApplication
 
 
@@ -126,6 +127,9 @@ class OAuthApplicationAdmin(ApplicationAdmin, ModelAdmin):  # type: ignore[misc]
             # Nur Feldnamen, nie Werte (ein neues Secret erscheint als „client_secret“)
             felder=sorted(form.changed_data) if change else None,
         )
+        if change and "is_active" in form.changed_data and not obj.is_active:
+            # Ausgeschaltet: alle Tokens widerrufen, damit beim Wiedereinschalten kein alter Zugang auflebt (#1215)
+            services.revoke_application(request, obj, admin=str(getattr(request.user, "pk", "")))
 
     def delete_model(self, request: HttpRequest, obj: Any) -> None:
         client_id, name = obj.client_id, obj.name

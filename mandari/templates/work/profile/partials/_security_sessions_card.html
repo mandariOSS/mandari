@@ -6,7 +6,7 @@ Kontext: sessions (mit is_current)
     {% if sessions|length > 1 %}
     <c-slot name="actions">
         <form method="post" x-data
-              @submit.prevent="confirmAction({ title: 'Alle Sitzungen beenden', message: 'Alle anderen Sitzungen werden sofort beendet. Sie bleiben nur auf diesem Gerät angemeldet.', confirmText: 'Alle beenden', variant: 'warning' }).then(ok => ok && $el.submit())">
+              @submit.prevent="confirmAction({ title: 'Alle Sitzungen beenden', message: 'Alle anderen Sitzungen werden sofort beendet, verbundene Anwendungen müssen Sie erneut fragen. Sie bleiben nur auf diesem Gerät angemeldet.', confirmText: 'Alle beenden', variant: 'warning' }).then(ok => ok && $el.submit())">
             {% csrf_token %}
             <input type="hidden" name="action" value="revoke_all_sessions">
             <button type="submit"
