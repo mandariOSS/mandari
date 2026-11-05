@@ -53,6 +53,9 @@ dependencies = [
 
     # AI / HTTP
     "httpx>=0.28.0",
+    # Claude API (Anthropic) nur für die Zusammenfassungen im Bürgerportal, auch als Message Batch
+    # (insight_ai/providers/claude.py); wirkt nur mit Schlüssel und Host in KI_ERLAUBTE_HOSTS
+    "anthropic>=1.0.0",
     # S3-kompatibler Objektspeicher für die Dokumentablage (#788); nur geladen, wenn OBJ_ENABLED gesetzt ist
     "boto3>=1.40",
 

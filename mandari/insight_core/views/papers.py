@@ -268,6 +268,7 @@ def paper_summary(request, pk):
 def _generate_summary(request, paper):
     from insight_ai.services.summarizer import (
         APINotConfiguredError,
+        BudgetExhaustedError,
         NoTextContentError,
         SummaryError,
         SummaryService,
@@ -289,6 +290,9 @@ def _generate_summary(request, paper):
         error, retry = NO_TEXT_MESSAGE, False
     except APINotConfiguredError:
         error = "Die KI-Zusammenfassung ist derzeit nicht verfügbar."
+    except BudgetExhaustedError:
+        # Monatsbudget der Claude API ausgeschöpft: bis Monatsende kein Einzelaufruf, erneuter Versuch zwecklos
+        error, retry = "Die KI-Zusammenfassung ist derzeit nicht verfügbar.", False
     except SummaryError:
         error = RETRY_MESSAGE
     except Exception:

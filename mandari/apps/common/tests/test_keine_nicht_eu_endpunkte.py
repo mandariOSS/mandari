@@ -5,8 +5,9 @@ Wächter (Issue #950): kein fest eingebauter KI-Endpunkt außerhalb der freigege
 Durchsucht den Code der Anwendung (ohne Migrationen und Tests), die gemeinsame Bibliothek, den Ingestor, die
 Templates, Skripte, Betriebsdateien unter ``deploy/``, die Dokumentation unter ``docs/``, ``docker-compose.yml`` und
 ``.env.example`` nach Adressen und Variablen früherer Anbieter. Erwartet werden null Treffer: KI-Anbieter kommen
-nur aus Admin und ``KI_ERLAUBTE_HOSTS``. Einzige Ausnahme ist der Host der Vorlage „Nebius Token Factory“ in den
-Vorlagen selbst (Issue #1046); eine Vorlage gibt keinen Host frei.
+nur aus Admin und ``KI_ERLAUBTE_HOSTS``. Ausnahmen sind der Host der Vorlage „Nebius Token Factory“ in den
+Vorlagen selbst (Issue #1046) und der Host der Claude API für die Zusammenfassungen (``ANTHROPIC_HOST``) in der
+zentralen KI-Konfiguration; beide geben keinen Host frei.
 
 Strukturtest: Die Adresse einer Chat-Schnittstelle (``/chat/completions``) bilden nur die zentrale
 KI-Konfiguration, der OpenAI-kompatible Anbieter des Bürgerportals und die Texterkennung. Ein neuer KI-Aufruf an
@@ -28,8 +29,12 @@ REPO = Path(__file__).resolve().parents[4]
 VERBOTEN = ("tokenfactory.nebius", "NEBIUS_API_KEY", "api.anthropic.com", "api.openai.com", "api.mistral.ai")
 
 #: Einzige Fundstellen, an denen eine verbotene Zeichenkette stehen darf: der Host der Nebius-Vorlage nur in den
-#: Vorlagen (Issue #1046), die keinen Host freigeben
-AUSNAHMEN = {"tokenfactory.nebius": {"mandari/apps/common/ki_anbieter.py"}}
+#: Vorlagen (Issue #1046) und der Host der Claude API nur als ``ANTHROPIC_HOST`` (Zusammenfassungen); beide geben
+#: keinen Host frei, wirksam sind sie nur über ``KI_ERLAUBTE_HOSTS``
+AUSNAHMEN = {
+    "tokenfactory.nebius": {"mandari/apps/common/ki_anbieter.py"},
+    "api.anthropic.com": {"mandari/apps/common/ki_anbieter.py"},
+}
 
 #: Durchsuchte Bereiche (Verzeichnisse rekursiv, Dateien einzeln)
 BEREICHE = ("mandari", "shared", "ingestor/src", "scripts", "deploy", "docs", "docker-compose.yml", ".env.example")
