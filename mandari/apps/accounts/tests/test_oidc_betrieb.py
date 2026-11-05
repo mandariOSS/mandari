@@ -31,7 +31,7 @@ from django.core.management import CommandError, call_command
 from django.test import Client, RequestFactory, override_settings
 
 from apps.accounts.models import SecurityAuditLog
-from apps.accounts.oidc import access, readiness
+from apps.accounts.oidc import access, readiness, signing_keys
 from apps.accounts.oidc.admin import OAuthApplicationAdmin
 from apps.accounts.oidc.models import OAuthApplication, OAuthRefreshToken
 from apps.accounts.tests import oidc_hilfen as h
@@ -311,7 +311,7 @@ class TestPruefen:
         ("schluessel", "meldung"),
         [
             (_pem(ec.generate_private_key(ec.SECP256R1())), "RS256 braucht einen RSA-Schlüssel"),
-            (_pem(rsa.generate_private_key(public_exponent=65537, key_size=1024)), "1024 Bit"),
+            (_pem(rsa.generate_private_key(public_exponent=65537, key_size=signing_keys.MIN_BITS // 2)), "1024 Bit"),
             ("kein schluessel", "kein lesbarer"),
         ],
     )
@@ -324,7 +324,7 @@ class TestPruefen:
         assert "PRIVATE KEY" not in ausgabe
 
     def test_untauglicher_bisheriger_schluessel(self) -> None:
-        kurz = _pem(rsa.generate_private_key(public_exponent=65537, key_size=1024))
+        kurz = _pem(rsa.generate_private_key(public_exponent=65537, key_size=signing_keys.MIN_BITS // 2))
         with _an(provider={"OIDC_RSA_PRIVATE_KEYS_INACTIVE": [kurz]}):
             ausgabe = _pruefen_scheitert()
         assert "Bisheriger Schlüssel 1" in ausgabe and "1024 Bit" in ausgabe

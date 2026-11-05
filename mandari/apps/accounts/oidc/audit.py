@@ -5,8 +5,9 @@ Prüfprotokoll des OpenID-Connect-Anbieters im Sicherheitsprotokoll (``SecurityA
 Festgehalten werden:
 
 - ``oidc_token``: jede Ausgabe eines Access-Tokens am Token-Endpunkt (Code, Refresh-Token oder Client Credentials)
-- ``oidc_widerruf``: jeder Widerruf, ob durch die Anwendung (RFC 7009), die Person („Verbundene Anwendungen“)
-  oder die Plattform-Administration (auch beim Sperren einer Anwendung, dann mit Anzahl)
+- ``oidc_widerruf``: jeder Widerruf, ob durch die Anwendung (RFC 7009), die Person („Verbundene Anwendungen“,
+  „Alle Sitzungen beenden“), einen Passwortwechsel oder die Plattform-Administration (auch beim Sperren einer
+  Anwendung, dann mit Anzahl)
 - ``oidc_anwendung``: Anlegen, Ändern und Löschen einer Anwendung im Admin, Anlegen, Sperren und Entsperren mit
   ``manage.py oidc_anwendung`` (``durch``: der Befehl)
 
@@ -36,6 +37,8 @@ EVENT_APPLICATION = "oidc_anwendung"
 BY_APPLICATION = "Anwendung"
 BY_PERSON = "Person"
 BY_ADMINISTRATION = "Plattform-Administration"
+#: Passwort geändert oder über den Link aus der E-Mail neu gesetzt
+BY_PASSWORD_CHANGE = "Passwortwechsel"
 #: Herkunft von Änderungen auf der Kommandozeile (``details["durch"]`` bei ``oidc_anwendung``)
 BY_COMMAND = "manage.py oidc_anwendung"
 

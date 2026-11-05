@@ -106,7 +106,12 @@ Weitere Parameter:
   vertrauenswürdig ist; sonst `error=login_required` bzw. `error=consent_required`.
 - `prompt=login` oder `max_age=<sekunden>`: Die Person meldet sich erneut an (auch mit zweitem Faktor). Bis
   dahin gibt mandari für diese Anfrage (gleiche `client_id` und gleicher `state`) keinen Code aus. Der Zeitpunkt
-  der Anmeldung steht im ID-Token als `auth_time`; wer eine frische Anmeldung braucht, prüft ihn.
+  der Anmeldung steht im ID-Token als `auth_time`; wer eine frische Anmeldung braucht, prüft ihn. Gemeint ist die
+  Anmeldung in der Browsersitzung, aus der der Code stammt, nicht die letzte Anmeldung auf irgendeinem Gerät.
+  ID-Tokens aus einem Refresh tragen denselben Zeitpunkt. Ist er nicht bekannt (Sitzung von vor dieser Regel),
+  fehlt `auth_time`, und `max_age` führt immer zur erneuten Anmeldung.
+- `id_token_hint`: ein früheres ID-Token von mandari, auch abgelaufen. Gehört es zu einer anderen Person als der
+  angemeldeten oder ist es nicht von mandari signiert, kommt `error=login_required` statt eines Codes.
 - `approval_prompt` beachtet mandari nicht: Bei fremden Anwendungen stimmt die Person jedes Mal zu.
 
 **3. Code einlösen** (der Code gilt 60 Sekunden und nur einmal):
@@ -141,8 +146,9 @@ kann sich ändern und taugt nicht als Kennung.
 - **Access-Token** gelten 15 Minuten (`OIDC_ACCESS_TOKEN_SECONDS`) und beginnen mit `mandari_at_`.
 - **Refresh-Token** beginnen mit `mandari_rt_` und werden bei jeder Nutzung ersetzt (Rotation). Wird ein schon
   ersetztes Refresh-Token noch einmal benutzt, widerruft mandari die ganze Kette; die Person muss sich dann neu
-  anmelden. Ein Refresh-Token verfällt 30 Tage nach dem Ablauf seines letzten Access-Tokens
-  (`OIDC_REFRESH_TOKEN_DAYS`).
+  anmelden. Das gilt auch für zwei gleichzeitige Refreshes mit demselben Token: Anwendungen erneuern nacheinander,
+  nie parallel (etwa aus mehreren Tabs). Ein Refresh-Token verfällt 30 Tage nach dem Ablauf seines letzten
+  Access-Tokens (`OIDC_REFRESH_TOKEN_DAYS`).
 
 ```bash
 curl -u '<client-id>:<client-secret>' https://mandari.example.org/oauth/token/ \
@@ -161,7 +167,9 @@ curl -u '<client-id>:<client-secret>' https://mandari.example.org/oauth/revoke/ 
 
 Personen sehen und widerrufen ihre Anwendungen im Konto unter **„Verbundene Anwendungen“**
 (`/accounts/verbundene-anwendungen/`), erreichbar über das Personenmenü in Work, Session und Insight und über die
-Seite „Sicherheit“ in Work. Gesperrte Konten und ausgeschaltete Anwendungen verlieren ihre Tokens sofort.
+Seite „Sicherheit“ in Work. Gesperrte Konten und ausgeschaltete Anwendungen verlieren ihre Tokens sofort. Beendet
+eine Person alle anderen Sitzungen oder ändert sie ihr Passwort, verlieren alle Anwendungen ihren Zugang und fragen
+erneut.
 
 ## Client Credentials
 

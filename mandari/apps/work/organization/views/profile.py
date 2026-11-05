@@ -148,7 +148,7 @@ class SecurityView(NeueVorlageMixin, WorkViewMixin, TemplateView):
             messages.error(request, "Die Passwörter stimmen nicht überein.")
             return self._redirect()
 
-        success, message = PasswordService.change_password(user, old_password, new_password)
+        success, message = PasswordService.change_password(user, old_password, new_password, request=request)
         if success:
             update_session_auth_hash(request, user)  # nach Passwortwechsel eingeloggt bleiben
             messages.success(request, message)
@@ -235,7 +235,7 @@ class SecurityView(NeueVorlageMixin, WorkViewMixin, TemplateView):
 
     def _revoke_all_sessions(self, request, user):
         """Revoke all other sessions."""
-        count = SessionService.revoke_all_sessions(user, except_current=request.session.session_key)
+        count = SessionService.revoke_all_sessions(user, except_current=request.session.session_key, request=request)
         if count > 0:
             messages.success(request, f"{count} Sitzung(en) wurden beendet.")
         else:

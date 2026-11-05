@@ -24,7 +24,7 @@ from django.test import Client, override_settings
 from django.utils import timezone
 from oauth2_provider.models import set_token_value
 
-from apps.accounts.oidc import access, catalog
+from apps.accounts.oidc import access, catalog, reauth
 from apps.accounts.oidc.models import OAuthAccessToken, OAuthApplication
 
 REDIRECT_URI = "https://app.example.org/rueckweg"
@@ -88,6 +88,15 @@ def access_token(
     set_token_value(token, raw)
     token.save()
     return raw
+
+
+def anmeldung_zurueckdatieren(client: Client, sekunden: int) -> int:
+    """Die Anmeldung in der Sitzung von ``client`` liegt ``sekunden`` zurück; Ergebnis: der Zeitpunkt (Unix)."""
+    zeitpunkt = int((timezone.now() - timedelta(seconds=sekunden)).timestamp())
+    session = client.session
+    session[reauth.LOGIN_TIME_KEY] = zeitpunkt
+    session.save()
+    return zeitpunkt
 
 
 def pkce() -> tuple[str, str]:

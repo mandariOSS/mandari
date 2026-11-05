@@ -8,8 +8,10 @@ Die Ansichten von django-oauth-toolkit, ergänzt um:
 - ``authorize``: läuft über die Anmeldung von mandari. Wer eine offene Pflicht zum zweiten Faktor oder zum
   Sicherheitsschlüssel hat, gilt nicht als angemeldet und muss sie erst erfüllen. ``prompt=login`` und ein
   überschrittenes ``max_age`` führen zur erneuten Anmeldung; bis dahin gibt es für die Anfrage keinen Code
-  (:mod:`.reauth`). ``prompt=none`` meldet nur Anwendungen ohne Zustimmungsseite still an. ``approval_prompt``
-  der Anfrage gilt nicht: Fremde Anwendungen fragen jedes Mal (``REQUEST_APPROVAL_PROMPT``).
+  (:mod:`.reauth`). ``max_age`` und ``auth_time`` beziehen sich auf die Anmeldung in dieser Sitzung.
+  ``prompt=none`` meldet nur Anwendungen ohne Zustimmungsseite still an, ein ``id_token_hint`` muss zur
+  angemeldeten Person passen. ``approval_prompt`` der Anfrage gilt nicht: Fremde Anwendungen fragen jedes Mal
+  (``REQUEST_APPROVAL_PROMPT``).
 - ``token``: Ratenbegrenzung je Adresse; Gerätefreigabe (RFC 8628) gibt es nicht
 - ``revoke`` (RFC 7009): Ratenbegrenzung je Adresse wie am Token-Endpunkt (#1215)
 - ``introspect`` (RFC 7662): nur für die Anwendung selbst, mit Client-Authentifizierung und nur über eigene Tokens,
@@ -76,14 +78,19 @@ def _prompt(request: HttpRequest) -> set[str]:
 
 
 def _login_too_old(request: HttpRequest) -> bool:
-    """Verlangt die Anwendung mit ``max_age`` eine jüngere Anmeldung, als die Person hat?"""
+    """
+    Verlangt die Anwendung mit ``max_age`` eine jüngere Anmeldung, als die Person in dieser Sitzung hat?
+
+    Maßgeblich ist die Anmeldung in dieser Sitzung (:func:`.reauth.login_time`), nicht ``User.last_login``: Eine
+    Anmeldung auf einem anderen Gerät macht eine alte Sitzung nicht wieder jung.
+    """
     raw = request.GET.get("max_age", "").strip()
     if not raw.isdigit():
         return False
-    last_login = getattr(request.user, "last_login", None)
-    if last_login is None:
+    logged_in = reauth.login_time(request)
+    if logged_in is None:
         return True
-    return bool((timezone.now() - last_login).total_seconds() > int(raw))
+    return bool((timezone.now() - logged_in).total_seconds() > int(raw))
 
 
 def _request_ids(request: HttpRequest) -> tuple[str, str]:
@@ -124,7 +131,8 @@ class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibli
                 return redirect(f"{target}?{urlencode({'next': request.get_full_path()})}")
             if not _login_too_old(request) and not _reauth_pending(request):
                 signed_in = user
-        with signed_in_as(signed_in):
+        # Der Code trägt den Anmeldezeitpunkt dieser Sitzung (auth_time im ID-Token)
+        with signed_in_as(signed_in, reauth.login_time(request)):
             return cast(HttpResponseBase, super().dispatch(request, *args, **kwargs))
 
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:

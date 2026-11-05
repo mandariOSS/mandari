@@ -52,7 +52,7 @@ from .second_factor import (
     log_attempt,
     recent_failures,
 )
-from .services import SessionService, TwoFactorService
+from .services import SessionService, TwoFactorService, revoke_oidc_after_password_change
 from .two_factor_policy import (
     POLICY_CACHE_SESSION_KEY,
     security_key_required,
@@ -655,6 +655,7 @@ class PasswordResetConfirmView(DjangoPasswordResetConfirmView):
         response = super().form_valid(form)
         # Der Link kam per E-Mail – wer ihn einlöst, kontrolliert das Postfach
         user = form.user
+        revoke_oidc_after_password_change(self.request, user)
         if not user.email_verified:
             user.email_verified = True
             user.save(update_fields=["email_verified"])

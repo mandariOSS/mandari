@@ -16,6 +16,9 @@ Was mandari ergänzt:
 - Access- und Refresh-Token stehen nicht im Klartext in der Datenbank: Mit
   ``COMPLIANT_BCP_RFC9700_TOKEN_STORAGE`` bleibt ``token`` leer, nachgeschlagen wird über die SHA-256-Prüfsumme
   ``token_checksum`` (``apps/common/tokens.py``, Verzeichnis der Token-Felder).
+- Code und Refresh-Token tragen den Zeitpunkt der Anmeldung in der Sitzung, aus der sie stammen (``auth_time``).
+  Daraus entsteht ``auth_time`` im ID-Token, auch nach einem Refresh; ``User.last_login`` gilt dafür nicht, weil
+  jede Anmeldung auf irgendeinem Gerät ihn neu setzt.
 
 Die Modelle werden in ``apps/accounts/models.py`` eingebunden und gehören damit zur App ``accounts``.
 """
@@ -204,6 +207,13 @@ class OAuthAccessToken(AbstractAccessToken):  # type: ignore[misc]  # Bibliothek
 class OAuthRefreshToken(AbstractRefreshToken):  # type: ignore[misc]  # Bibliothek ohne Typen
     """Refresh-Token mit Rotation; in der Datenbank steht nur die SHA-256-Prüfsumme (``token`` bleibt leer)."""
 
+    auth_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Anmeldezeitpunkt",
+        help_text="Anmeldung der Person in der Sitzung, aus der die Kette stammt (auth_time im ID-Token).",
+    )
+
     class Meta(AbstractRefreshToken.Meta):  # type: ignore[misc]
         verbose_name = "OIDC-Refresh-Token"
         verbose_name_plural = "OIDC-Refresh-Tokens"
@@ -224,6 +234,13 @@ class OAuthGrant(AbstractGrant):  # type: ignore[misc]  # Bibliothek ohne Typen
     Bleibt im Klartext: Er gilt 60 Sekunden, nur einmal, und ist an PKCE (S256) gebunden. Ohne den
     ``code_verifier``, der nie gespeichert wird, ist er wertlos.
     """
+
+    auth_time = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Anmeldezeitpunkt",
+        help_text="Anmeldung der Person in der Sitzung, in der der Code entstand (auth_time im ID-Token).",
+    )
 
     class Meta(AbstractGrant.Meta):  # type: ignore[misc]
         verbose_name = "OIDC-Autorisierungscode"

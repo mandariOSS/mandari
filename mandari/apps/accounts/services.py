@@ -457,8 +457,16 @@ class SessionService:
             return False
 
     @classmethod
-    def revoke_all_sessions(cls, user, except_current: str = None):
-        """Revoke all sessions for a user except optionally the current one."""
+    def revoke_all_sessions(cls, user, except_current: str = None, request=None):
+        """
+        Revoke all sessions for a user except optionally the current one.
+
+        Auch die Zugänge verbundener Anwendungen (OpenID Connect) enden: Wer eine der Sitzungen zeitweise hatte,
+        kann sich darüber Tokens geholt haben (Issue #1215).
+        """
+        from .oidc import audit as oidc_audit
+        from .oidc import services as oidc_services
+
         sessions = UserSession.objects.filter(user=user)
         if except_current:
             sessions = sessions.exclude(session_key=except_current)
@@ -468,6 +476,7 @@ class SessionService:
 
         count = sessions.count()
         sessions.delete()
+        oidc_services.revoke_all_for_user(request, user, by=oidc_audit.BY_PERSON)
 
         if count > 0:
             security_notifications.notify(
@@ -478,6 +487,14 @@ class SessionService:
             )
 
         return count
+
+
+def revoke_oidc_after_password_change(request, user) -> int:
+    """Nach Passwortwechsel oder -rücksetzung: alle Zugänge verbundener Anwendungen widerrufen (Issue #1215)."""
+    from .oidc import audit as oidc_audit
+    from .oidc import services as oidc_services
+
+    return oidc_services.revoke_all_for_user(request, user, by=oidc_audit.BY_PASSWORD_CHANGE)
 
 
 class PasswordService:
@@ -543,9 +560,12 @@ class PasswordService:
         }
 
     @classmethod
-    def change_password(cls, user, old_password: str, new_password: str) -> tuple[bool, str]:
+    def change_password(cls, user, old_password: str, new_password: str, request=None) -> tuple[bool, str]:
         """
         Change user password.
+
+        Verbundene Anwendungen (OpenID Connect) verlieren ihren Zugang und müssen die Person erneut fragen
+        (Issue #1215).
 
         Returns (success, message).
         """
@@ -566,6 +586,7 @@ class PasswordService:
         # Set new password
         user.set_password(new_password)
         user.save()
+        revoke_oidc_after_password_change(request, user)
 
         security_notifications.notify(
             user,

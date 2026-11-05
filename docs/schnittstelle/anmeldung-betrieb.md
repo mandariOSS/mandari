@@ -206,6 +206,7 @@ Anwendungen (siehe unten) und entsperrt sie danach.
 | Wer | Wie | Wirkung |
 |---|---|---|
 | Person | Seite „Verbundene Anwendungen“ (`/accounts/verbundene-anwendungen/`), erreichbar im Personenmenü von Work, Session und Insight und auf der Seite „Sicherheit“ in Work | alle Tokens dieser Anwendung für diese Person |
+| Person | „Alle anderen Sitzungen beenden“, Passwort ändern oder über den Link aus der E-Mail neu setzen | alle Tokens und offenen Codes der Person bei allen Anwendungen |
 | Anwendung | `/oauth/revoke/` (RFC 7009), etwa beim Abmelden | das Token und seine Kette |
 | Betrieb | `python manage.py oidc_anwendung sperren <client-id> --grund "…"` | Anwendung aus, alle ihre Tokens widerrufen |
 | Betrieb | Admin, „OIDC-Access-Tokens“ bzw. „OIDC-Refresh-Tokens“, Aktion „widerrufen“ | einzelne Tokens |
@@ -218,10 +219,10 @@ schaltet sie wieder ein; alte Tokens leben dabei nicht auf, Personen stimmen ern
 ## Prüfprotokoll, Ratenbegrenzung, Speicherung
 
 - **Prüfprotokoll:** Das Sicherheitsprotokoll (`SecurityAuditLog`) hält jede Ausgabe eines Tokens (`oidc_token`),
-  jeden Widerruf (`oidc_widerruf`, durch Anwendung, Person oder Plattform-Administration, beim Sperren mit Anzahl)
-  und jede Änderung an Anwendungen fest (`oidc_anwendung`: im Admin mit Konto, mit dem Befehl als
-  `manage.py oidc_anwendung`, beim Sperren mit Anlass). Es nennt Client-ID, Ablauf und Scopes, nie ein Token oder
-  Secret.
+  jeden Widerruf (`oidc_widerruf`, durch Anwendung, Person, Passwortwechsel oder Plattform-Administration, beim
+  Sperren mit Anzahl) und jede Änderung an Anwendungen fest (`oidc_anwendung`: im Admin mit Konto, mit dem Befehl
+  als `manage.py oidc_anwendung`, beim Sperren mit Anlass). Es nennt Client-ID, Ablauf und Scopes, nie ein Token
+  oder Secret.
 - **Ratenbegrenzung:** `OIDC_TOKEN_RATE_LIMIT` Anfragen je Minute und Adresse, je Endpunkt gezählt (Token, Widerruf,
   Introspektion). Darüber antwortet mandari mit 429 und `Retry-After`. Abweisungen stehen wie gedrosselte Anmeldungen
   im Sicherheitsprotokoll.
