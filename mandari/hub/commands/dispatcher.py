@@ -47,7 +47,8 @@ from typing import Any, Final, TypeVar
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
 
-from apps.events.idempotency import MAX_KEY_LENGTH, IdempotencyConflictError, NestedTransactionError, run_once
+from apps.common.api.idempotency import KEY_MISSING, KEY_MISSING_KIND, valid_idempotency_key
+from apps.events.idempotency import IdempotencyConflictError, NestedTransactionError, run_once
 from apps.events.publishing import event_context
 from hub.contracts import COMMAND, ContractViolationError, Registry, UnknownContractError, get_registry
 
@@ -60,10 +61,8 @@ logger = logging.getLogger("hub.commands")
 Handler = Callable[[Command], HandlerResult]
 H = TypeVar("H", bound=Handler)
 
-#: Feste Meldungen (nie aus Ausnahmen, nie mit Werten aus dem Inhalt)
-KEY_MISSING: Final = (
-    "Idempotenzschlüssel fehlt oder ist ungültig (1 bis 255 sichtbare ASCII-Zeichen, ohne Anführungszeichen)."
-)
+#: Feste Meldungen (nie aus Ausnahmen, nie mit Werten aus dem Inhalt); ``KEY_MISSING`` und die Prüfung des
+#: Schlüssels (``valid_idempotency_key``) sind gemeinsame Bausteine aller Schnittstellen.
 UNKNOWN_COMMAND: Final = "Diesen Befehl in dieser Version gibt es nicht."
 NOT_AVAILABLE: Final = "Diese Installation führt den Befehl nicht aus."
 KEY_REUSED: Final = "Der Idempotenzschlüssel wurde schon für einen anderen Befehl oder Inhalt verwendet."
@@ -78,15 +77,6 @@ UNREPRESENTABLE: Final = (
 _SQLSTATE = re.compile(r"[0-9A-Z]{5}")
 #: So viele Ursachen einer Ausnahme nennt das Log höchstens.
 _MAX_CAUSES: Final = 5
-
-
-def valid_idempotency_key(key: object) -> bool:
-    """1 bis 255 sichtbare ASCII-Zeichen ohne Anführungszeichen und Rückstrich (IETF-Entwurf: String)."""
-    return (
-        isinstance(key, str)
-        and 0 < len(key) <= MAX_KEY_LENGTH
-        and all(0x21 <= ord(char) <= 0x7E and char not in '"\\' for char in key)
-    )
 
 
 def checked_content_hash(body: Mapping[str, Any]) -> str:
@@ -202,7 +192,7 @@ class Dispatcher:
 
     def _dispatch(self, command: Command) -> tuple[Receipt, bool]:
         if not valid_idempotency_key(command.idempotency_key):
-            raise CommandError.of(400, "idempotenzschluessel-fehlt", KEY_MISSING)
+            raise CommandError.of(400, KEY_MISSING_KIND, KEY_MISSING)
         # Vor allem anderen, wie im HttpClient: Ein Inhalt ohne kanonische Darstellung hat keinen
         # Hash; ohne diese Prüfung endete er nach der Schemaprüfung als 500.
         body_hash = checked_content_hash(command.body)

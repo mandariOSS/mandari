@@ -14,12 +14,13 @@ import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, connection, connections, transaction
 
+from apps.common.api.idempotency import valid_idempotency_key
 from apps.events import CanonicalRef, publish
 from apps.events.idempotency import NestedTransactionError
 from apps.events.models import Event, IdempotencyKey
 from apps.events.publishing import current_context
 from hub.commands import Command, CommandError, Dispatcher, HandlerResult, Receipt, command_handler, get_dispatcher
-from hub.commands.dispatcher import call_sites, error_types, scope, valid_idempotency_key
+from hub.commands.dispatcher import call_sites, error_types, scope
 from hub.commands.tests.hilfen import (
     ACTOR,
     DOCUMENT,

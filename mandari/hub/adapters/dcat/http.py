@@ -27,9 +27,9 @@ from django.conf import settings
 from django.core.cache import cache
 from django.http import HttpRequest, HttpResponse
 
+from apps.common.api.problems import Problem
 from hub.adapters.dcat.katalog import Katalog
-from hub.api.http import error_response, json_response
-from hub.commands.problems import Problem
+from hub.api.http import error_response, problem_response
 
 #: Version des Cache-Schlüssels; steigt, wenn sich die Ausgabe für dieselben Daten ändert
 CACHE_VERSION: Final = 1
@@ -85,10 +85,7 @@ def unbekanntes_format(endung: str) -> HttpResponse:
 
 def problem_antwort(request: HttpRequest, status: int, kind: str, detail: str) -> HttpResponse:
     """Absage als Problem nach RFC 9457 (feste Texte, nie der Text einer Ausnahme)."""
-    response = json_response(Problem(status=status, kind=kind, detail=detail).to_dict(instance=request.path), status)
-    response["Content-Type"] = "application/problem+json; charset=utf-8"
-    response["Cache-Control"] = "no-store"
-    return response
+    return problem_response(request, Problem(status=status, kind=kind, detail=detail))
 
 
 def ausgeschaltet() -> HttpResponse:

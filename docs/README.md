@@ -13,6 +13,7 @@ dokumentiert, ergänzt bitte auch die passende Seite im Docs-Repository
 
 | Notiz | Öffentliche Seite |
 |-------|-------------------|
+| `SCHNITTSTELLE.md` | Schnittstelle → Einstieg `/api/`, eine OpenAPI-Beschreibung, gemeinsame Regeln (Seite folgt) |
 | `OPARL_API.md` | [Insight → OParl-Aggregations-API](https://docs.mandari.de/insight/oparl-api/) |
 | `DCAT_KATALOG.md` | Insight → Datenkatalog für Datenportale (DCAT-AP.de, Seite folgt) |
 | `SESSION_OPARL_API.md` | [Session → OParl-API je Kommune](https://docs.mandari.de/session/oparl-api/), [Veröffentlichung im Bürgerportal](https://docs.mandari.de/session/buergerportal/) |

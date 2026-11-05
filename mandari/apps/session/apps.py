@@ -40,3 +40,8 @@ class SessionConfig(AppConfig):
 
         # Befehle beim Dispatcher der Installation registrieren (submission.submit, Issue #540)
         from . import commands  # noqa: F401 – der Import registriert die Handler
+
+        # Bereiche der gemeinsamen Schnittstelle anmelden: OParl je Mandant, Session-API v1 (Issue #1205)
+        from .api import schnittstelle
+
+        schnittstelle.register()

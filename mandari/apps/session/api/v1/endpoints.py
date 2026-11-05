@@ -19,6 +19,7 @@ from django.http import HttpRequest
 from django.urls import reverse
 from ninja import Header, Query, Router
 
+from apps.common.api.idempotency import IDEMPOTENCY_HEADER, parse_idempotency_key
 from apps.session import audit
 from apps.session.models import (
     SessionApplication,
@@ -27,6 +28,7 @@ from apps.session.models import (
     SessionTenant,
 )
 from apps.session.oparl_publication import visible_papers
+from hub.api.openapi.build import COMMAND_EXTENSION
 from hub.commands import CommandError
 
 from .auth import BearerOrSession, Principal, client_ip, resolve_principal
@@ -292,19 +294,13 @@ def _api_error(item: Mapping[str, str]) -> dict[str, Any]:
     }
 
 
-def _idempotency_key(raw: str | None) -> str | None:
-    """Wert des Headers ``Idempotency-Key``, als String (in Anführungszeichen) oder Token."""
-    value = (raw or "").strip()
-    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
-        value = value[1:-1]
-    return value or None
-
-
 @router.post(
     "/{tenant_slug}/applications/submit/",
     response={201: ApplicationCreated},
     url_name="submit_application",
     summary="Antrag einreichen (API-Token)",
+    # Nimmt den Befehl submission.submit an (Befehlsparität der Schnittstelle, Issue #1205)
+    openapi_extra={COMMAND_EXTENSION: "submission.submit"},
 )
 def submit_application(
     request: HttpRequest,
@@ -313,7 +309,7 @@ def submit_application(
     idempotency_key: Annotated[
         str | None,
         Header(
-            alias="Idempotency-Key",
+            alias=IDEMPOTENCY_HEADER,
             description=(
                 "Optional, empfohlen: Wiederholungen mit demselben Schlüssel und demselben Inhalt liefern dieselbe "
                 "Quittung, ohne erneut einzureichen; derselbe Schlüssel mit anderem Inhalt ergibt 422."
@@ -343,7 +339,7 @@ def submit_application(
 
     try:
         receipt = submit_with_token(
-            tenant, principal.token, payload.model_dump(), idempotency_key=_idempotency_key(idempotency_key)
+            tenant, principal.token, payload.model_dump(), idempotency_key=parse_idempotency_key(idempotency_key)
         )
     except CommandError as exc:
         raise command_problem(exc) from None

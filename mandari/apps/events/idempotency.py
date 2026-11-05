@@ -40,9 +40,11 @@ from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
+# Höchstlänge eines Schlüssels: gemeinsam mit der Prüfung des Headers
+from apps.common.api.idempotency import MAX_KEY_LENGTH
+
 from .models import IdempotencyKey
 
-MAX_KEY_LENGTH = 255
 #: Aufbewahrung in Tagen, wenn ``EVENTS_IDEMPOTENCY_RETENTION_DAYS`` fehlt
 DEFAULT_RETENTION_DAYS: Final = 30
 NESTED: Final = (

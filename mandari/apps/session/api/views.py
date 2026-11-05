@@ -17,6 +17,7 @@ from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 
+from apps.common.api.deprecation import Deprecation
 from apps.common.params import date_param, uuid_param
 from apps.session.models import (
     SessionAPIToken,
@@ -116,16 +117,22 @@ class APIRootView(OParlMixin, View):
 # =============================================================================
 
 
-#: Abschaltdatum der alten Session-API-Pfade (Release-Politik §5: mindestens 6 Monate Ankündigung; dasselbe
-#: Datum steht im CHANGELOG unter „Abgekündigt“ und in docs/API_V1_SESSION.md)
-SESSION_API_SUNSET = "Mon, 31 May 2027 00:00:00 GMT"
+#: Abkündigung der alten Session-API-Pfade (Release-Politik §5: mindestens 6 Monate Ankündigung): abgekündigt mit
+#: Release 0.11.0 am 27.09.2026 (Issue #482), Wegfall am 31.05.2027 – dasselbe Datum steht im CHANGELOG unter
+#: „Abgekündigt“ und in docs/API_V1_SESSION.md. Header nach RFC 9745 und RFC 8594 (``apps.common.api.deprecation``).
+SESSION_API_DEPRECATION_INFO = Deprecation(
+    deprecated_at=datetime(2026, 9, 27, tzinfo=UTC), sunset=datetime(2027, 5, 31, tzinfo=UTC)
+)
 
 #: Zeitpunkt der Abkündigung: Release 0.11.0 am 27.09.2026 (Issue #482)
-SESSION_API_DEPRECATED_AT = datetime(2026, 9, 27, tzinfo=UTC)
+SESSION_API_DEPRECATED_AT = SESSION_API_DEPRECATION_INFO.deprecated_at
+
+#: Wert des ``Sunset``-Headers (RFC 8594): ``Mon, 31 May 2027 00:00:00 GMT``
+SESSION_API_SUNSET = SESSION_API_DEPRECATION_INFO.sunset_header
 
 #: Wert des ``Deprecation``-Headers nach RFC 9745: Structured-Field-Date (RFC 9651), also „@“ und die
 #: Unix-Sekunden des Abkündigungszeitpunkts. Bis 0.11.x stand hier ``true``.
-SESSION_API_DEPRECATION = f"@{int(SESSION_API_DEPRECATED_AT.timestamp())}"
+SESSION_API_DEPRECATION = SESSION_API_DEPRECATION_INFO.deprecation_header
 
 
 class SessionAPIMixin(OParlMixin):
@@ -141,12 +148,11 @@ class SessionAPIMixin(OParlMixin):
 
     def json_response(self, data: Any, status: int = 200) -> JsonResponse:
         response = super().json_response(data, status=status)
-        response["Deprecation"] = SESSION_API_DEPRECATION
-        response["Sunset"] = SESSION_API_SUNSET
         tenant_slug = getattr(self, "_tenant_slug", None)
+        successor = None
         if self.successor_url_name and tenant_slug:
             successor = reverse(self.successor_url_name, kwargs={"tenant_slug": tenant_slug})
-            response["Link"] = f'<{successor}>; rel="successor-version"'
+        SESSION_API_DEPRECATION_INFO.apply(response, successor=successor)
         return response
 
     def get_tenant(self, tenant_slug: str) -> SessionTenant:
