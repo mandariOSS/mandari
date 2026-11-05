@@ -69,6 +69,8 @@ def tenant_oparl_description() -> Description:
         object_path=object_path,
         feed=relative(_path("oparl_changes")),
         snapshot=relative(_path("oparl_snapshot")),
+        kommparl_feed=relative(_path("oparl_kommparl_changes")),
+        kommparl_snapshot=relative(_path("oparl_kommparl_snapshot")),
         parameters=[_TENANT_PARAMETER],
     )
     download = _path("oparl_file_download", pk=marker).replace(marker, "{id}")

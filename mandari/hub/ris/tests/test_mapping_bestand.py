@@ -19,7 +19,7 @@ from django.db import connection
 from django.test import Client, override_settings
 from django.test.utils import CaptureQueriesContext
 
-from hub.api import aggregator
+from hub.api import aggregator, kommparl
 from hub.api.tests.konformitaet import pruefe
 from hub.ris.mapping import bestand
 from hub.ris.mapping.bestand import BestandMapping, BestandUris, RefContext
@@ -146,17 +146,30 @@ def test_uris_sind_die_adressen_der_schnittstelle() -> None:
     assert uris.web("termine/7/") == f"{SITE}/insight/termine/7/"
     assert uris.changes(7) == f"{API}/body/7/changes"
     assert uris.snapshot(7) == f"{API}/body/7/snapshot"
+    assert uris.kommparl_changes(7) == f"{API}/body/7/kommparl/changes"
+    assert uris.kommparl_snapshot(7) == f"{API}/body/7/kommparl/snapshot"
 
 
 def test_body_nennt_den_aenderungsfeed_nur_wenn_die_ausgabe_ihn_anbietet(welt: dict[str, Any]) -> None:
     ohne = _abbildung().body(welt["body"])
     mit = BestandMapping(f"{SITE}/oparl", SITE, changes=True).body(welt["body"])
 
-    assert "mandari:changes" not in ohne and "mandari:snapshot" not in ohne
+    feed = ("kommparl:changes", "kommparl:snapshot", "mandari:changes", "mandari:snapshot")
+    assert not set(feed) & set(ohne)
+    assert mit["kommparl:changes"] == f"{API}/body/{welt['body'].pk}/kommparl/changes"
+    assert mit["kommparl:snapshot"] == f"{API}/body/{welt['body'].pk}/kommparl/snapshot"
+    # Abgekündigt, mit den bisherigen Adressen
     assert mit["mandari:changes"] == f"{API}/body/{welt['body'].pk}/changes"
     assert mit["mandari:snapshot"] == f"{API}/body/{welt['body'].pk}/snapshot"
-    assert {name: wert for name, wert in mit.items() if name not in ("mandari:changes", "mandari:snapshot")} == ohne
+    assert {name: wert for name, wert in mit.items() if name not in feed} == ohne
     assert pruefe(mit, "Body") == []
+
+
+def test_system_nennt_die_erfuellten_kennungen_aus_kommparl() -> None:
+    assert "kommparl:conformsTo" not in _abbildung().system()
+    mit = BestandMapping(f"{SITE}/oparl", SITE, conforms_to=["https://schema.kommparl.de/0.1/"]).system()
+    assert mit["kommparl:conformsTo"] == ["https://schema.kommparl.de/0.1/"]
+    assert pruefe(mit, "System") == []
 
 
 def test_system_nennt_die_lizenz_nur_wenn_der_betreiber_sie_festlegt() -> None:
@@ -223,7 +236,9 @@ def test_system_und_body_aus_der_abbildung(welt: dict[str, Any]) -> None:
     abbildung = _abbildung()
     body = abbildung.body(welt["body"])
 
-    assert _json("/oparl/v1/system") == abbildung.system()
+    # Das System nennt dazu die erfüllten Kennungen aus kommParl (``hub.api.kommparl.conforms_to``)
+    system = BestandMapping(f"{SITE}/oparl", SITE, conforms_to=kommparl.conforms_to(feed_offered=False)).system()
+    assert _json("/oparl/v1/system") == system
     assert _json(f"/oparl/v1/body/{welt['body'].pk}") == body
     assert _json("/oparl/v1/bodies")["data"] == [body]
     assert body["legislativeTerm"] == [abbildung.legislative_term(welt["legislativeterm"])]

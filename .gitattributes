@@ -5,3 +5,5 @@ mandari/*.ts text eol=lf
 mandari/biome.json text eol=lf
 # Eingecheckte OpenAPI-Beschreibung: so, wie manage.py schnittstelle_beschreibung sie schreibt
 docs/schnittstelle/*.json text eol=lf
+# Übernommene Schemas der kommParl-Spezifikation: Bytes wie im Original (Prüfsummen in HERKUNFT.json)
+mandari/hub/api/kommparl/[0-9]*/** -text

@@ -32,11 +32,13 @@ Blättern, Listen-Hülle, ETag, Fehler –, steht in ``hub.api`` und gilt für b
 - **Öffentliche Niederschrift** (Issue #318): ``Meeting.resultsProtocol`` verweist auf die beim
   Veröffentlichen erzeugte Datei (nur öffentlicher Teil, nur öffentliche Sitzungen). Personen ohne geschützte Daten —
   verschlüsselte Felder (Telefon, Adresse, Bankdaten) werden nie gelesen, die E-Mail nur mit Einwilligung (Issue #319).
-- **Änderungsfeed** (``…/api/oparl/body/changes/``, wenn in der Installation eingeschaltet): dieselbe
-  Ausgabe wie beim Aggregator (``hub.api.changes``). Einträge gibt es nur für Objekte, die öffentlich
-  sind oder es waren (``_addresses``).
-- **Snapshot** (``…/api/oparl/body/snapshot/``): Gesamtstand als NDJSON mit dem Cursor, ab dem der Feed
-  fortsetzt (``hub.api.snapshot``) – dieselben Objekte wie die Listen.
+- **Änderungsfeed** (``…/api/oparl/body/kommparl/changes/``, wenn in der Installation eingeschaltet): dieselbe
+  Ausgabe wie beim Aggregator, nach dem Profil von kommParl (``hub.api.changes``). Einträge gibt es nur für
+  Objekte, die öffentlich sind oder es waren (``_addresses``).
+- **Snapshot** (``…/api/oparl/body/kommparl/snapshot/``): Gesamtstand als NDJSON mit dem Cursor, ab dem der Feed
+  fortsetzt (``hub.api.snapshot``) – jedes öffentliche Objekt in einer eigenen Zeile.
+- Die älteren Formen ``…/body/changes/`` und ``…/body/snapshot/`` (``mandari:changes``, ``mandari:snapshot``)
+  bleiben bis zu ihrem Wegfall und sind abgekündigt.
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
 
@@ -55,7 +57,7 @@ from apps.session.models import (
 )
 from apps.session.services import file_service, meeting_format_service
 from apps.session.services.insight_service import oparl_id_base, oparl_system_url
-from hub.api import changes, snapshot
+from hub.api import changes, kommparl, snapshot
 from hub.api.http import endpoint, error_response, json_response
 from hub.api.serialization import Gone, MergedEntries, TimeFilters, list_response, single_page
 from hub.ris.canonical import with_limited_text
@@ -132,7 +134,12 @@ def _mapping(tenant):
     Abbildung erst, wenn sie Kennungen braucht (Änderungsfeed, Snapshot).
     """
     return SessionMapping(
-        tenant, oparl_system_url(tenant), SOURCE, changes=changes.enabled(), id_base=partial(oparl_id_base, tenant)
+        tenant,
+        oparl_system_url(tenant),
+        SOURCE,
+        changes=changes.enabled(),
+        id_base=partial(oparl_id_base, tenant),
+        conforms_to=kommparl.conforms_to(feed_offered=changes.enabled()),
     )
 
 
@@ -452,16 +459,20 @@ def _addresses(mapping):
     return addresses
 
 
-def _feed(tenant_slug):
-    """Feed des Mandanten samt Abbildung; ausgeschaltet gibt es die Adressen nicht."""
+def _feed(tenant_slug, *, profile=False):
+    """
+    Feed des Mandanten samt Abbildung, mit den Adressen nach den Profilen von kommParl (``profile``) oder der
+    älteren Form; ausgeschaltet gibt es die Adressen nicht.
+    """
     if not changes.enabled():
         raise Http404("Diese Adresse gibt es nicht.")
     mapping = _mapping(_get_tenant(tenant_slug))
+    uris = mapping.uris
     feed = changes.Feed(
         # Kommune im Journal: die kanonische Kennung des Body dieser Schnittstelle
-        body_id=mapping.uris.canonical_id(mapping.uris.body()),
-        url=mapping.uris.changes(),
-        snapshot_url=mapping.uris.snapshot(),
+        body_id=uris.canonical_id(uris.body()),
+        url=uris.kommparl_changes() if profile else uris.changes(),
+        snapshot_url=uris.kommparl_snapshot() if profile else uris.snapshot(),
         addresses=_addresses(mapping),
     )
     return mapping, feed
@@ -469,9 +480,16 @@ def _feed(tenant_slug):
 
 @session_oparl_endpoint
 def changes_view(request, tenant_slug):
-    """Änderungsfeed des Mandanten (``hub.api.changes``)."""
-    _, feed = _feed(tenant_slug)
-    return changes.changes_response(request, feed)
+    """Änderungsfeed des Mandanten in der älteren Form (``mandari:changes``, abgekündigt)."""
+    mapping, feed = _feed(tenant_slug)
+    return changes.deprecated(changes.changes_response(request, feed), mapping.uris.kommparl_changes())
+
+
+@session_oparl_endpoint
+def kommparl_changes_view(request, tenant_slug):
+    """Änderungsfeed des Mandanten nach dem Profil von kommParl (``kommparl:changes``, ``hub.api.changes``)."""
+    _, feed = _feed(tenant_slug, profile=True)
+    return changes.kommparl_changes_response(request, feed)
 
 
 #: Objektarten des Snapshots: die Listen, deren Objekte alle übrigen einbetten (Mitgliedschaften in
@@ -479,21 +497,45 @@ def changes_view(request, tenant_slug):
 SNAPSHOT_SEGMENTS = ("organizations", "people", "meetings", "papers")
 
 
+def _section(mapping, segment):
+    """Objektart des Snapshots: die Objekte einer externen Liste, wie die Liste sie ausgibt."""
+    qs_fn, prepare, serializer, _ = LIST_SPECS[segment]
+    queryset = qs_fn(mapping.tenant)
+    if prepare:
+        queryset = prepare(queryset, mapping.tenant)
+    return snapshot.Section(queryset=queryset, render=lambda page: [serializer(mapping, obj) for obj in page])
+
+
+def _locations(mapping):
+    """Sitzungsorte öffentlicher Sitzungen: Sie gehören zur Sitzung und tragen deren Kennung."""
+    meetings = pub.visible_meetings(mapping.tenant).filter(is_public=True)
+    return snapshot.Section(
+        queryset=meetings,
+        render=lambda page: [data for meeting in page if (data := mapping.location(meeting)) is not None],
+    )
+
+
 @session_oparl_endpoint
 def snapshot_view(request, tenant_slug):
-    """Snapshot des Mandanten mit Cursor-Übergabe (``hub.api.snapshot``): dieselben Objekte wie die Listen."""
+    """
+    Snapshot des Mandanten in der älteren Form (``mandari:snapshot``, abgekündigt): dieselben Objekte wie die
+    Listen, deren Objekte alle übrigen einbetten.
+    """
     mapping, feed = _feed(tenant_slug)
-    tenant = mapping.tenant
+    sections = [_section(mapping, segment) for segment in SNAPSHOT_SEGMENTS]
+    response = snapshot.snapshot_response(request, snapshot.Snapshot(feed, mapping.body, sections))
+    return changes.deprecated(response, mapping.uris.kommparl_snapshot())
 
-    def section(segment):
-        qs_fn, prepare, serializer, _ = LIST_SPECS[segment]
-        queryset = qs_fn(tenant)
-        if prepare:
-            queryset = prepare(queryset, tenant)
-        return snapshot.Section(queryset=queryset, render=lambda page: [serializer(mapping, obj) for obj in page])
 
-    sections = [section(segment) for segment in SNAPSHOT_SEGMENTS]
-    return snapshot.snapshot_response(request, snapshot.Snapshot(feed, mapping.body, sections))
+@session_oparl_endpoint
+def kommparl_snapshot_view(request, tenant_slug):
+    """
+    Snapshot des Mandanten nach dem Profil von kommParl (``kommparl:snapshot``, ``hub.api.snapshot``): der Body und
+    jedes öffentliche Objekt in einer eigenen Zeile – die Objekte aller externen Listen und die Sitzungsorte.
+    """
+    mapping, feed = _feed(tenant_slug, profile=True)
+    sections = [*(_section(mapping, segment) for segment in LIST_SPECS), _locations(mapping)]
+    return snapshot.kommparl_snapshot_response(request, snapshot.Snapshot(feed, mapping.body, sections))
 
 
 @session_oparl_endpoint

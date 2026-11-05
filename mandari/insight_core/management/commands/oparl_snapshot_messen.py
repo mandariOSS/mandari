@@ -3,7 +3,8 @@
 Management Command: Bauzeit und Größe des Snapshots messen, bevor der Änderungsfeed eingeschaltet wird
 (Issue #707, ``docs/OPARL_API.md``, Abschnitt „Betrieb“).
 
-Ein Snapshot (``…/body/<uuid>/snapshot``) entsteht vollständig in einer temporären Datei, bevor das erste Byte
+Ein Snapshot (``…/body/<uuid>/kommparl/snapshot``, nach dem Profil von kommParl mit jedem Objekt in einer eigenen
+Zeile; die ältere Form ``…/snapshot`` ist kleiner) entsteht vollständig in einer temporären Datei, bevor das erste Byte
 zum Abnehmer fließt. Für die größte Kommune einer Installation muss das in die Zeitlimits vorgeschalteter
 Proxys und in den Platz des temporären Verzeichnisses passen. Dieser Befehl baut den Snapshot auf demselben
 Weg (``hub.api.snapshot.write``) in eine temporäre Datei, misst und verwirft sie. Er braucht und ändert

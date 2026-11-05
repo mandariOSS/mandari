@@ -16,8 +16,10 @@ Je Ausgabe laufen zwei Prüfungen:
    Apache-2.0): Pflichtfelder, Feldtypen, leere Texte, externe Listen mit Blättern und die Abrufbarkeit
    verlinkter Objekte. Er wird nur ausgeführt, nicht mitgeliefert. Ohne ``--validator`` entfällt er mit
    einem Hinweis (Exit-Code 0); die CI übergibt ihn immer.
-2. **Eigene Typprüfung** (``mandari/hub/api/tests/konformitaet.py``): Datums- und Zeitformate,
-   ``organizationType``, unbekannte Eigenschaften, gelöschte Objekte – über alle externen Listen.
+2. **Eigene Typprüfung** (``mandari/hub/api/tests/konformitaet.py``) gegen die Schemas der kommParl-Spezifikation:
+   Datums- und Zeitformate, ``organizationType``, unbekannte Eigenschaften, gelöschte Objekte – über alle externen
+   Listen. Dazu Änderungsfeed und Snapshot nach den Profilen von kommParl (``kommparl:changes``,
+   ``kommparl:snapshot``) gegen die Profilschemas und die ältere Form (``mandari:changes``, ``mandari:snapshot``).
 
 Die Instanz läuft über HTTP auf dem eigenen Rechner. Den Hinweis des Validators auf „unsicheres HTTP“
 werten wir deshalb nicht als Fehler – er dient als Zählung der besuchten Objekte: Sieht der Validator
@@ -38,6 +40,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Any
@@ -176,16 +179,59 @@ def eigene_pruefung(system_url: str) -> tuple[int, list[str]]:
     return objekte, probleme
 
 
+def _zeilen(adresse: str) -> list[dict[str, Any]]:
+    with urllib.request.urlopen(adresse, timeout=120) as antwort:  # noqa: S310 – eigene Testinstanz
+        return [json.loads(zeile) for zeile in antwort.read().decode("utf-8").splitlines()]
+
+
+def kommparl_pruefung(body: dict[str, Any]) -> list[str]:
+    """
+    Änderungsfeed und Snapshot nach den Profilen von kommParl: jede Seite des Feeds, ein abgelaufener Cursor und
+    der Snapshot (Kopfzeile, Objektzeilen, Schlusszeile) gegen die Schemas der Profile; der Feed setzt am Cursor des
+    Snapshots ohne Lücke fort.
+    """
+    from hub.api.tests.konformitaet import pruefe_profil, pruefe_snapshot
+
+    feed, snapshot = body.get("kommparl:changes"), body.get("kommparl:snapshot")
+    if not feed or not snapshot:
+        return [f"Body {body.get('id')}: kommparl:changes oder kommparl:snapshot fehlt (Änderungsfeed eingeschaltet)."]
+    probleme: list[str] = []
+    adresse: str | None = feed
+    seiten = 0
+    while adresse and seiten < 100:
+        seite = abruf(adresse)
+        probleme += [f"{adresse}: {problem}" for problem in pruefe_profil(seite, "changes", "ChangeList")]
+        adresse = seite.get("links", {}).get("next")
+        seiten += 1
+    try:
+        abruf(f"{feed}?after={'A' * 38}")
+        probleme.append(f"Änderungsfeed {feed}: Ein fremder Cursor ergibt nicht 410.")
+    except urllib.error.HTTPError as fehler:
+        if fehler.code != 410:
+            probleme.append(f"Änderungsfeed {feed}: Ein fremder Cursor ergibt {fehler.code} statt 410.")
+        else:
+            probleme += pruefe_profil(json.loads(fehler.read().decode("utf-8")), "changes", "CursorExpired")
+    zeilen = _zeilen(snapshot)
+    probleme += [f"{snapshot}: {problem}" for problem in pruefe_snapshot(zeilen, body=body.get("id"))]
+    if zeilen and "cursor" in zeilen[0] and abruf(f"{feed}?after={zeilen[0]['cursor']}").get("data") != []:
+        probleme.append(f"Snapshot {snapshot}: Der Feed ab dem Cursor ist nicht leer.")
+    return probleme
+
+
 def feed_pruefung(body: dict[str, Any]) -> list[str]:
-    """Der Body nennt seinen Änderungsfeed (kompatible Erweiterung), und der Feed antwortet in seiner Form."""
+    """
+    Der Body nennt seinen Änderungsfeed nach kommParl und in der älteren Form (abgekündigt); beide antworten in ihrer
+    Form.
+    """
+    probleme = kommparl_pruefung(body)
     adresse = body.get("mandari:changes")
     if not adresse:
-        return [f"Body {body.get('id')}: mandari:changes fehlt (Änderungsfeed eingeschaltet)."]
+        return [*probleme, f"Body {body.get('id')}: mandari:changes fehlt (Änderungsfeed eingeschaltet)."]
     seite = abruf(adresse)
     fehlend = [feld for feld in ("data", "cursor", "links") if feld not in seite]
     if fehlend or not isinstance(seite.get("data"), list):
-        return [f"Änderungsfeed {adresse}: Felder fehlen ({', '.join(fehlend) or 'data'})."]
-    return snapshot_pruefung(body, seite["links"].get("snapshot"))
+        return [*probleme, f"Änderungsfeed {adresse}: Felder fehlen ({', '.join(fehlend) or 'data'})."]
+    return probleme + snapshot_pruefung(body, seite["links"].get("snapshot"))
 
 
 def snapshot_pruefung(body: dict[str, Any], adresse: str | None) -> list[str]:
@@ -194,8 +240,7 @@ def snapshot_pruefung(body: dict[str, Any], adresse: str | None) -> list[str]:
 
     if not adresse or body.get("mandari:snapshot") != adresse:
         return [f"Body {body.get('id')}: mandari:snapshot fehlt oder weicht vom Verweis des Feeds ab."]
-    with urllib.request.urlopen(adresse, timeout=120) as antwort:  # noqa: S310 – eigene Testinstanz
-        zeilen = [json.loads(zeile) for zeile in antwort.read().decode("utf-8").splitlines()]
+    zeilen = _zeilen(adresse)
     if not zeilen or "snapshot_cursor" not in zeilen[0]:
         return [f"Snapshot {adresse}: Die erste Zeile nennt keinen snapshot_cursor."]
     probleme = []

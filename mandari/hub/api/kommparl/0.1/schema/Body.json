@@ -1,0 +1,241 @@
+{
+    "title": "Body",
+    "description": "{{ Body.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type",
+        "name",
+        "organization",
+        "person",
+        "meeting",
+        "paper",
+        "legislativeTerm"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/Body$"
+        },
+        "system": {
+            "description": "{{ Body.properties.system.description }}",
+            "references": "System",
+            "backreference": "bodies",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "shortName": {
+            "description": "{{ Body.properties.shortName.description }}",
+            "type": "string"
+        },
+        "name": {
+            "description": "{{ Body.properties.name.description }}",
+            "type": "string"
+        },
+        "website": {
+            "description": "{{ Body.properties.website.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "license": {
+            "description": "{{ Body.properties.license.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "licenseValidSince": {
+            "description": "{{ Body.properties.licenseValidSince.description }}",
+            "type": "string",
+            "format": "date-time"
+        },
+        "oparlSince": {
+            "description": "{{ Body.properties.oparlSince.description }}",
+            "type": "string",
+            "format": "date-time"
+        },
+        "ags": {
+            "description": "{{ Body.properties.ags.description }}",
+            "type": "string"
+        },
+        "rgs": {
+            "description": "{{ Body.properties.rgs.description }}",
+            "type": "string"
+        },
+        "equivalent": {
+            "description": "{{ Body.properties.equivalent.description }}",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "contactEmail": {
+            "description": "{{ Body.properties.contactEmail.description }}",
+            "type": "string"
+        },
+        "contactName": {
+            "description": "{{ Body.properties.contactName.description }}",
+            "type": "string"
+        },
+        "organization": {
+            "description": "{{ Body.properties.organization.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Organization.json"
+            }
+        },
+        "person": {
+            "description": "{{ Body.properties.person.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Person.json"
+            }
+        },
+        "meeting": {
+            "description": "{{ Body.properties.meeting.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Meeting.json"
+            }
+        },
+        "paper": {
+            "description": "{{ Body.properties.paper.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Paper.json"
+            }
+        },
+        "legislativeTerm": {
+            "description": "{{ Body.properties.legislativeTerm.description }}",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "schema": "LegislativeTerm.json"
+            }
+        },
+        "agendaItem": {
+            "description": "{{ Body.properties.agendaItem.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "AgendaItem.json"
+            }
+        },
+        "consultation": {
+            "description": "{{ Body.properties.consultation.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Consultation.json"
+            }
+        },
+        "file": {
+            "description": "{{ Body.properties.file.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "File.json"
+            }
+        },
+        "locationList": {
+            "description": "{{ Body.properties.locationList.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Location.json"
+            }
+        },
+        "legislativeTermList": {
+            "description": "{{ Body.properties.legislativeTermList.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "LegislativeTerm.json"
+            }
+        },
+        "membership": {
+            "description": "{{ Body.properties.membership.description }}",
+            "type": "string",
+            "format": "url",
+            "references": "externalList",
+            "items": {
+                "type": "object",
+                "schema": "Membership.json"
+            }
+        },
+        "classification": {
+            "description": "{{ Body.properties.classification.description }}",
+            "type": "string"
+        },
+        "location": {
+            "description": "{{ Body.properties.location.description }}",
+            "type": "object",
+            "schema": "Location.json"
+        },
+        "mainOrganization": {
+            "description": "{{ Body.properties.mainOrganization.description }}",
+            "type": "string",
+            "format": "url",
+            "schema": "Organization",
+            "references": "Organization",
+            "cardinality": "1:1"
+        },
+        "kommparl:changes": {
+            "description": "{{ Body.properties.kommparl:changes.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "kommparl:snapshot": {
+            "description": "{{ Body.properties.kommparl:snapshot.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

@@ -1,0 +1,116 @@
+{
+    "title": "Location",
+    "description": "{{ Location.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/Location$"
+        },
+        "description": {
+            "description": "{{ Location.properties.description.description }}",
+            "type": "string"
+        },
+        "geojson": {
+            "description": "{{ Location.properties.geojson.description }}",
+            "type": "object"
+        },
+        "streetAddress": {
+            "description": "{{ Location.properties.streetAddress.description }}",
+            "type": "string"
+        },
+        "room": {
+            "description": "{{ Location.properties.room.description }}",
+            "type": "string"
+        },
+        "postalCode": {
+            "description": "{{ Location.properties.postalCode.description }}",
+            "type": "string"
+        },
+        "subLocality": {
+            "description": "{{ Location.properties.subLocality.description }}",
+            "type": "string"
+        },
+        "locality": {
+            "description": "{{ Location.properties.locality.description }}",
+            "type": "string"
+        },
+        "bodies": {
+            "description": "{{ Location.properties.bodies.description }}",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url",
+                "references": "Body"
+            }
+        },
+        "organizations": {
+            "description": "{{ Location.properties.organizations.description }}",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url",
+                "references": "Organization"
+            }
+        },
+        "persons": {
+            "description": "{{ Location.properties.persons.description }}",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url",
+                "references": "Person"
+            }
+        },
+        "meetings": {
+            "description": "{{ Location.properties.meetings.description }}",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url",
+                "references": "Meeting"
+            }
+        },
+        "papers": {
+            "description": "{{ Location.properties.papers.description }}",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url",
+                "references": "Paper"
+            }
+        },
+        "license": {
+            "type": "string"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

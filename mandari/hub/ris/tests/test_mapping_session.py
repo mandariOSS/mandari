@@ -41,6 +41,7 @@ from apps.session.models import (
     SessionPerson,
     SessionTenant,
 )
+from hub.api import kommparl
 from hub.api.tests.konformitaet import pruefe
 from hub.ris.canonical import ORGANIZATION_TYPES
 from hub.ris.mapping import session as mapping
@@ -499,9 +500,10 @@ def test_schnittstelle_gibt_die_abbildung_aus(welt: dict[str, Any], art: str) ->
 
 
 def test_system_und_body_aus_der_abbildung(welt: dict[str, Any]) -> None:
-    abbildung = SessionMapping(welt["tenant"], BASIS, schnittstelle.SOURCE)
+    abbildung = SessionMapping(welt["tenant"], BASIS, schnittstelle.SOURCE, conforms_to=[kommparl.VERSION])
 
     assert _json("/session/musterstadt/api/oparl/") == abbildung.system()
+    assert abbildung.system()["kommparl:conformsTo"] == [kommparl.VERSION]
     body = abbildung.body()
     assert _json("/session/musterstadt/api/oparl/body/") == body
     assert _json("/session/musterstadt/api/oparl/bodies/")["data"] == [body]

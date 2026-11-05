@@ -1,0 +1,157 @@
+{
+    "title": "Paper",
+    "description": "{{ Paper.description }}",
+    "type": "object",
+    "required": [
+        "id",
+        "type"
+    ],
+    "properties": {
+        "id": {
+            "type": "string",
+            "format": "url"
+        },
+        "type": {
+            "type": "string",
+            "pattern": "^https\\:\\/\\/schema\\.oparl\\.org\\/1\\.1\\/Paper$"
+        },
+        "body": {
+            "description": "{{ Paper.properties.body.description }}",
+            "references": "Body",
+            "backreference": "meeting",
+            "cardinality": "n:1",
+            "type": "string",
+            "format": "url"
+        },
+        "name": {
+            "description": "{{ Paper.properties.name.description }}",
+            "type": "string"
+        },
+        "reference": {
+            "description": "{{ Paper.properties.reference.description }}",
+            "type": "string"
+        },
+        "date": {
+            "description": "{{ Paper.properties.date.description }}",
+            "type": "string",
+            "format": "date"
+        },
+        "paperType": {
+            "description": "{{ Paper.properties.paperType.description }}",
+            "type": "string"
+        },
+        "relatedPaper": {
+            "description": "{{ Paper.properties.relatedPaper.description }}",
+            "references": "Paper",
+            "cardinality": "1:n",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "superordinatedPaper": {
+            "description": "{{ Paper.properties.superordinatedPaper.description }}",
+            "references": "Paper",
+            "cardinality": "1:n",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "subordinatedPaper": {
+            "description": "{{ Paper.properties.subordinatedPaper.description }}",
+            "references": "Paper",
+            "cardinality": "1:n",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "mainFile": {
+            "description": "{{ Paper.properties.mainFile.description }}",
+            "type": "object",
+            "schema": "File.json"
+        },
+        "auxiliaryFile": {
+            "description": "{{ Paper.properties.auxiliaryFile.description }}",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "schema": "File.json"
+            }
+        },
+        "location": {
+            "description": "{{ Paper.properties.location.description }}",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "schema": "Location.json"
+            }
+        },
+        "originatorPerson": {
+            "description": "{{ Paper.properties.originatorPerson.description }}",
+            "references": "Person",
+            "cardinality": "n:m",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "underDirectionOf": {
+            "description": "{{ Paper.properties.underDirectionOf.description }}",
+            "references": "Organization",
+            "cardinality": "n:m",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "originatorOrganization": {
+            "description": "{{ Paper.properties.originatorOrganization.description }}",
+            "references": "Organization",
+            "cardinality": "n:m",
+            "type": "array",
+            "items": {
+                "type": "string",
+                "format": "url"
+            }
+        },
+        "consultation": {
+            "description": "{{ Paper.properties.consultation.description }}",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "schema": "Consultation.json"
+            }
+        },
+        "license": {
+            "type": "string"
+        },
+        "keyword": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "created": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "modified": {
+            "type": "string",
+            "format": "date-time"
+        },
+        "web": {
+            "type": "string",
+            "format": "url"
+        },
+        "deleted": {
+            "type": "boolean"
+        }
+    }
+}

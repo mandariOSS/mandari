@@ -207,8 +207,29 @@ Die Entscheidung bleibt. Etappe 1 legt beim Einstieg Folgendes fest
   Etappe 3). Ab dann trägt auch das `System`-Objekt `kommparl:conformsTo`.
 - **Schemas der OParl-Typen** stammen vorerst aus den Typtabellen der Konformitätsprüfung (#560,
   `hub/api/oparl_types.py`), damit Prüfung und Beschreibung eine Quelle haben. Die Schemas der
-  kommParl-Spezifikation lösen sie in Etappe 3 ab.
+  kommParl-Spezifikation lösen sie in Etappe 3 ab (erledigt mit #1216, Nachtrag unten).
 - **Befehlsparität:** Ein Endpunkt nennt seinen Befehl in der Beschreibung unter `x-mandari-command`.
   Ausnahmen stehen in `mandari/hub/api/openapi/befehle_ohne_endpunkt.json`.
 - **Bestehende Bereiche ändern sich nicht.** Die Session-API v1 behält ihre Fehlertitel und ihre eigene
   Beschreibung unter `/api/v1/session/openapi.json`; `x-mandari-command` steht nur in der gemeinsamen.
+
+## Nachtrag zur Umsetzung (#1216)
+
+Die Entscheidung bleibt. Etappe 3 legt Folgendes fest ([SCHNITTSTELLE.md](../SCHNITTSTELLE.md), Abschnitt
+„OParl-Ausgaben nach kommParl“).
+
+- **Schemas aus kommParl:** Die Schemas der Objekttypen und der Profile liegen unverändert mit ihrer Herkunft
+  (Commit, Lizenz CC BY-SA 4.0) unter `mandari/hub/api/kommparl/<Fassung>/`; ein Skript erneuert sie. Die Beschreibung
+  wandelt sie im Code in JSON Schema 2020-12 um, die Konformitätsprüfung nutzt dieselben Schemas.
+  `hub/api/oparl_types.py` entfällt. Was die Spezifikation nur im Text nennt (`organizationType`, `license` als URL),
+  ergänzt eine kleine Tabelle.
+- **Eigene Adressen für die Profile:** Änderungsfeed und Snapshot nach den Profilen liegen unter `…/kommparl/changes`
+  und `…/kommparl/snapshot`; die Körperschaften nennen sie in `kommparl:changes` und `kommparl:snapshot`. Die ältere
+  Form ließ sich nicht additiv anpassen (Felder ohne Namensraum, andere Gründe, `next` immer, keine Schlusszeile,
+  Fehler nach RFC 9457). Sie bleibt mit `mandari:changes` und `mandari:snapshot` unter ihren Adressen und ist
+  abgekündigt (Wegfall frühestens am 01.12.2027). Cursor gelten in beiden Formen.
+- **`kommparl:conformsTo`** steht jetzt auch am `System` beider Ausgaben, mit derselben Liste wie der Einstieg. Sie
+  nennt weiter nur die Fassung: Die Profile kommen hinzu, wenn der Feed auch das einbettende Objekt nennt, sobald
+  sich ein eingebettetes ändert (Profil Änderungsfeed, „Vollständigkeit und Reihenfolge“), und die Installation den
+  Feed anbietet. Damit ändert sich die Aussage des vorigen Nachtrags: Dass die Körperschaften `kommparl:changes` und
+  `kommparl:snapshot` nennen, genügt allein nicht.

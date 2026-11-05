@@ -36,6 +36,13 @@ komprimiert, lässt sie weg.
   ``Retry-After``), und je Client-Adresse höchstens einer (sonst ``429`` mit ``Retry-After``). Ein
   Client kann die Plätze also nicht allein belegen – auch nicht mit abgebrochenen Abrufen, deren
   Aufbau noch läuft.
+
+**Zwei Formen (Issue #1216):** ``kommparl_snapshot_response`` gibt den Snapshot nach dem Profil Snapshot von
+kommParl aus (``kommparl:snapshot`` am Body): Kopfzeile ``SnapshotHeader`` mit ``type``, ``body``, ``cursor`` und
+``generated``, danach die Objektzeilen, zuletzt die Schlusszeile ``SnapshotEnd`` mit der Zahl der Objektzeilen
+(``count``). Fehlt sie, ist der Abruf abgebrochen. Die Ausgabe legt fest, welche Objekte darin stehen; nach dem
+Profil jedes öffentliche Objekt der Körperschaft in einer eigenen Zeile, gleich welchen Typs.
+``snapshot_response`` gibt die ältere Form aus (``mandari:snapshot``, abgekündigt).
 """
 
 from __future__ import annotations
@@ -56,7 +63,7 @@ from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse, StreamingHttpResponse
 from django.http.response import HttpResponseBase
 
-from hub.api import changes
+from hub.api import changes, kommparl
 from hub.api.http import client_ip, error_response
 from hub.ris.canonical import Objekt, iso
 
@@ -199,21 +206,25 @@ def _busy(status: int, message: str) -> HttpResponse:
 # =============================================================================
 
 
-def _blocks(first: bytes, spool: IO[bytes]) -> Iterator[bytes]:
+def _blocks(first: bytes, spool: IO[bytes], last: bytes = b"") -> Iterator[bytes]:
     try:
         yield first
         while block := spool.read(BLOCK_SIZE):
             yield block
+        if last:
+            yield last
     finally:
         spool.close()
 
 
-async def _async_blocks(first: bytes, spool: IO[bytes]) -> AsyncIterator[bytes]:
+async def _async_blocks(first: bytes, spool: IO[bytes], last: bytes = b"") -> AsyncIterator[bytes]:
     """Blöcke der Datei für ASGI; das Lesen blockiert den Ereignis-Loop nicht."""
     try:
         yield first
         while block := await asyncio.to_thread(spool.read, BLOCK_SIZE):
             yield block
+        if last:
+            yield last
     finally:
         spool.close()
 
@@ -226,14 +237,59 @@ def _headers(response: HttpResponseBase, cursor: str) -> None:
     response["Cache-Control"] = "no-store"
 
 
+#: Kopfzeile aus Body, Cursor, Zeitpunkt des Cursors und Zahl der Objektzeilen
+Header = Callable[[Objekt, str, datetime, int], Objekt]
+
+
 def snapshot_response(request: HttpRequest, snapshot: Snapshot) -> HttpResponseBase:
     """
-    Snapshot als NDJSON. Erste Zeile: ``snapshot_cursor``, Adresse des Body, fertige Adresse für den
-    Feed (``changes``), Zeitpunkt des Cursors (``created``) und die Zahl der folgenden Zeilen
-    (``objects``); danach je Zeile ein Objekt.
+    Snapshot als NDJSON in der älteren Form (``mandari:snapshot``). Erste Zeile: ``snapshot_cursor``, Adresse des
+    Body, fertige Adresse für den Feed (``changes``), Zeitpunkt des Cursors (``created``) und die Zahl der folgenden
+    Zeilen (``objects``); danach je Zeile ein Objekt.
 
     ``HEAD`` liefert nur die Kopfzeilen mit dem Cursor, ohne den Bestand zu lesen.
     """
+    feed = snapshot.feed
+
+    def header(body: Objekt, cursor: str, created: datetime, count: int) -> Objekt:
+        return {
+            "snapshot_cursor": cursor,
+            "body": body.get("id"),
+            "changes": f"{feed.url}?after={cursor}",
+            "created": iso(created, fractions=True),
+            "objects": count,
+        }
+
+    return _response(request, snapshot, header)
+
+
+def kommparl_snapshot_response(request: HttpRequest, snapshot: Snapshot) -> HttpResponseBase:
+    """
+    Snapshot als NDJSON nach dem Profil Snapshot von kommParl: Kopfzeile (``profiles/snapshot/SnapshotHeader.json``)
+    mit dem Cursor, ab dem der Änderungsfeed fortsetzt, und dem Zeitpunkt auf die Sekunde, danach je Zeile ein
+    Objekt, zuletzt die Schlusszeile (``profiles/snapshot/SnapshotEnd.json``) mit der Zahl der Objektzeilen.
+
+    ``HEAD`` liefert nur die Kopfzeilen mit dem Cursor, ohne den Bestand zu lesen.
+    """
+
+    def header(body: Objekt, cursor: str, created: datetime, count: int) -> Objekt:
+        return {
+            "type": kommparl.SNAPSHOT_HEADER,
+            "body": body.get("id"),
+            "cursor": cursor,
+            "generated": changes.seconds(created),
+        }
+
+    def end(count: int) -> Objekt:
+        return {"type": kommparl.SNAPSHOT_END, "count": count}
+
+    return _response(request, snapshot, header, end)
+
+
+def _response(
+    request: HttpRequest, snapshot: Snapshot, header: Header, end: Callable[[int], Objekt] | None = None
+) -> HttpResponseBase:
+    """Snapshot schreiben und übertragen: Kopfzeile, Objektzeilen und – wenn ``end`` – eine Schlusszeile."""
     feed = snapshot.feed
     # Vor dem Lesen: Stand des Feeds festhalten. Alles, was sich ab jetzt ändert, steht dahinter.
     cursor = changes.encode_cursor(feed.body_id, changes.head(feed.body_id), changes.today(), feed.epoch)
@@ -259,17 +315,10 @@ def snapshot_response(request: HttpRequest, snapshot: Snapshot) -> HttpResponseB
     finally:
         _release(slots)
 
-    first = _line(
-        {
-            "snapshot_cursor": cursor,
-            "body": body.get("id"),
-            "changes": f"{feed.url}?after={cursor}",
-            "created": iso(created),
-            "objects": count,
-        }
-    )
-    content = _async_blocks(first, spool) if isinstance(request, ASGIRequest) else _blocks(first, spool)
+    first = _line(header(body, cursor, created, count))
+    last = _line(end(count)) if end else b""
+    content = _async_blocks(first, spool, last) if isinstance(request, ASGIRequest) else _blocks(first, spool, last)
     response = StreamingHttpResponse(content, content_type=CONTENT_TYPE)
-    response["Content-Length"] = str(len(first) + size)
+    response["Content-Length"] = str(len(first) + size + len(last))
     _headers(response, cursor)
     return response
