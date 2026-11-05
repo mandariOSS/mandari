@@ -484,6 +484,60 @@ def _notify_invitations(meeting, *, update: bool) -> None:
         logger.exception("In-App-Benachrichtigung zum Einladungsversand fehlgeschlagen (meeting=%s)", meeting.id)
 
 
+def change_notice_recipients(meeting, *, date_changed: bool) -> list:
+    """
+    Wer von der Änderung einer eingeladenen Sitzung erfährt (Issue #1227): eingeladene aktive Mitglieder ohne
+    Gastzugänge (sie erhalten auch keine Einladung). Ändert sich der Termin, auch wer abgesagt hat – am neuen Termin
+    kann es passen; sonst wie bei der aktualisierten Einladung alle außer Absagen.
+    """
+    attendances = meeting.attendances.filter(
+        membership__isnull=False, membership__is_active=True, membership__is_guest=False
+    )
+    if not date_changed:
+        attendances = attendances.exclude(status="declined")
+    return [a.membership for a in attendances.select_related("membership__user")]
+
+
+def notify_invitees_of_change(
+    meeting, series_name: str, before: str, changes: list[str], *, date_changed: bool, actor=None
+) -> int:
+    """
+    Eingeladene über die Änderung einer Sitzung durch ihre Reihe informieren (Issue #1227): In-App-Benachrichtigung
+    und E-Mail über den Benachrichtigungsweg (Art „Fraktionssitzung aktualisiert“, je Person in den
+    Benachrichtigungseinstellungen abschaltbar, Ruhezeiten und Sammelmails wie dort eingestellt; Vertretung bei
+    Abwesenheit). Die Nachricht nennt Reihe, bisherigen Termin und die Änderungen – Angaben der Sitzung selbst, nie
+    Inhalte von TOPs, also auch nichts Nichtöffentliches. Zu- und Absagen bleiben stehen; ändert sich der Termin, bittet
+    die Nachricht, sie zu prüfen.
+
+    Returns:
+        Anzahl angelegter Benachrichtigungen (ohne Vertretungen).
+    """
+    from apps.work.notifications.models import NotificationType
+    from apps.work.notifications.services import NotificationHub
+
+    recipients = change_notice_recipients(meeting, date_changed=date_changed)
+    if not recipients or not changes:
+        return 0
+    message = f"Die Sitzungsreihe „{series_name}“ wurde geändert. Für die Sitzung am {before} gilt jetzt: "
+    message += "; ".join(changes) + "."
+    if date_changed:
+        if meeting.rsvp_enabled:
+            message += " Bitte prüfen Sie Ihre Zu- oder Absage; sie bleibt bestehen, bis Sie sie ändern."
+        else:
+            message += " Bitte prüfen Sie, ob Sie zum neuen Termin teilnehmen können."
+    notifications = NotificationHub.send_bulk(
+        recipients=recipients,
+        notification_type=NotificationType.FACTION_MEETING_UPDATED,
+        title=f"Sitzung geändert: {meeting.title}"[:255],
+        message=message,
+        link=f"/work/{meeting.organization.slug}/faction/{meeting.id}/",
+        actor=actor,
+        metadata={"meeting_id": str(meeting.id), "reihe": True, "termin": date_changed},
+        send_email=True,
+    )
+    return len(notifications)
+
+
 def release_invitations(meeting, membership) -> bool:
     """
     Einladungsversand freigeben (Freigabe-Modus, Issue #62).

@@ -1,5 +1,15 @@
 {% comment %}
-Vorschau „Sitzungsreihe bearbeiten“ (Issue #1071): wie viele kommende Termine sich ändern (apps/work/faction/reihe.py,
-Plan.satz) oder warum die Eingabe nicht passt. Kontext: plan oder fehler.
+Vorschau „Sitzungsreihe bearbeiten“ (Issues #1071, #1227): wie viele kommende Termine sich ändern (apps/work/faction/reihe.py,
+Plan.satz), darunter die eingeladenen Sitzungen, die sich ändern, einzeln mit bisherigem Termin und Änderungen
+(Plan.informiert; ihre Eingeladenen erhalten eine Nachricht), oder warum die Eingabe nicht passt. Kontext: plan oder
+fehler.
 {% endcomment %}
-{% if fehler %}<span class="fehler">{{ fehler }}</span>{% else %}{{ plan.satz }}{% endif %}
+<p class="fs-meta">{% if fehler %}<span class="fehler">{{ fehler }}</span>{% else %}{{ plan.satz }}{% endif %}</p>
+{% if plan.informiert %}
+<p class="fs-meta">Diese eingeladenen Sitzungen ändern sich; die Eingeladenen erhalten eine Nachricht:</p>
+<ul class="fs-pausen" data-testid="fs-reihe-eingeladene">
+    {% for schritt in plan.informiert %}
+    <li><span><b>{{ schritt.vorher }}</b>: {{ schritt.hinweise|join:"; " }}</span></li>
+    {% endfor %}
+</ul>
+{% endif %}
