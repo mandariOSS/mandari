@@ -29,11 +29,16 @@ Docker (für PostgreSQL, Redis und Elasticsearch), [uv](https://github.com/astra
 git clone https://github.com/mandariOSS/mandari.git
 cd mandari
 
-# Datenbank, Cache und Suche starten
-docker compose up -d postgres redis elasticsearch
+# Konfiguration im Wurzelverzeichnis: Compose und die Anwendung lesen beide diese Datei
+cp .env.example .env
+# In .env: POSTGRES_PASSWORD, REDIS_PASSWORD, SECRET_KEY und ENCRYPTION_MASTER_KEY eintragen
+# (Befehle zum Erzeugen am Ende der Datei) und im Block „DEVELOPMENT SETTINGS“ DEBUG, DATABASE_URL,
+# REDIS_URL und ELASTICSEARCH_URL einkommentieren
+
+# Datenbank, Cache und Suche starten, Ports nur auf 127.0.0.1 (docker-compose.dev.yml)
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres redis elasticsearch
 
 cd mandari
-cp ../.env.example .env          # SECRET_KEY und ENCRYPTION_MASTER_KEY eintragen
 uv sync --extra dev              # Python-Abhängigkeiten aus uv.lock, mit Test- und Lint-Werkzeugen
 npm ci && npm run build          # Frontend bauen
 
@@ -44,6 +49,15 @@ uv run python manage.py runserver
 ```
 
 Die Anwendung läuft dann unter <http://localhost:8000>.
+
+Die Werte im Block „DEVELOPMENT SETTINGS“ setzen die Verbindungen aus `POSTGRES_*` und `REDIS_PASSWORD`
+zusammen, passend zu den Diensten aus `docker-compose.yml`; die Vorgaben der Anwendung (`postgres:postgres`,
+Redis ohne Passwort) passen dazu nicht. In den Containern setzt Compose diese Variablen selbst. Belegt ein
+anderer Dienst einen der Ports 5432, 6379 oder 9200, setzt `DEV_POSTGRES_PORT` usw. in der `.env` einen anderen
+und die Adressen im selben Block ziehen mit. `docker-compose.dev.yml` heißt bewusst nicht
+`docker-compose.override.yml`: Diese Datei läse Compose sonst auch bei `install.sh` und `update.sh` mit. Die
+Tests brauchen das alles nicht: `pytest` läuft mit SQLite, solange `DATABASE_URL` nicht in der Umgebung des
+Prozesses steht (`mandari/settings_test.py`; die Zeile in der `.env` zählt dafür nicht).
 
 Für die Frontend-Entwicklung mit Hot Reload:
 
@@ -57,14 +71,15 @@ Vite-Manifest.
 
 ### Vollständiger Stack
 
-Wer die Installation als Ganzes braucht (mit Caddy, Website und Ingestor), nutzt den
-Installer:
+Wer die Installation als Ganzes braucht (mit Caddy, Website, Ingestor und Workern), nutzt den
+Installer in einem eigenen Klon:
 
 ```bash
 COMPOSE_PROJECT_NAME=mandari-dev ./install.sh
 ```
 
-Der Projektname trennt diese Installation von anderen auf demselben Rechner.
+Der Projektname trennt nur die Container. Die Volumes heißen fest `mandari_*_data`; neben einer
+anderen Installation auf demselben Rechner teilten sich beide die Daten (Issue #443).
 
 ### Python-Abhängigkeiten ändern
 
@@ -139,7 +154,7 @@ erwartet und blockiert nichts.
 
 ```bash
 cd mandari
-uv run pytest                                    # über 10.000 Tests, auch die Migrationstests
+uv run pytest                                    # über 13.000 Tests, auch die Migrationstests
 uv run pytest -n auto -m "not migrationen"       # wie ein Teil der CI: parallel, ohne Migrationstests
 uv run pytest apps/work/tasks -q                 # einzelne App
 ```

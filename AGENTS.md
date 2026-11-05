@@ -21,6 +21,9 @@ Mandari ist eine Open-Source-Plattform für kommunalpolitische Transparenz in De
 | **Frontend** | Django Templates + HTMX + Alpine.js |
 | **CSS** | Tailwind CSS |
 | **Datenbank** | PostgreSQL 16 |
+| **Cache, Sessions, WebSocket** | Redis 7 (Cache, `cached_db`-Sessions, Channel Layer, Drossel je Host) |
+| **Volltextsuche** | Elasticsearch 8 |
+| **Hintergrundarbeit** | `manage.py events_worker` in den Diensten `worker`, `worker-heavy` (Warteschlangen `ocr`, `ai`) und `worker-live` (`live`); `minutes-orchestrator` für die GPU-Rechenknoten der Protokollierung; Ingestor als eigener Dienst |
 | **Admin** | django-unfold |
 | **Static Files** | WhiteNoise |
 | **Verschlüsselung** | AES-256-GCM (tenant-spezifisch) |
@@ -35,6 +38,9 @@ mandari/
 │   ├── apps/                   # Django Apps
 │   │   ├── accounts/           # Benutzer-Authentifizierung
 │   │   ├── common/             # Shared Utilities
+│   │   ├── events/             # Ereignistechnik: Journal, Aufträge, Zeitpläne, Worker (events_worker)
+│   │   ├── minutes/            # Aufzeichnung, Transkription, KI-Protokoll (GPU-Rechenknoten)
+│   │   ├── provisioning/       # Provisioning-API (Work-Organisationen anlegen und abgleichen)
 │   │   ├── session/            # Verwaltungs-RIS
 │   │   ├── tenants/            # Multi-Tenant & RBAC
 │   │   └── work/               # Fraktions-Arbeitsbereich
@@ -47,15 +53,20 @@ mandari/
 │   │       ├── ris/            # RIS-Datenansicht
 │   │       ├── support/        # Support-Tickets
 │   │       └── tasks/          # Aufgabenverwaltung
+│   ├── hub/                    # Datendrehscheibe: Verträge, Befehle, RIS-Modell, Sichten, Adapter, offene API
 │   ├── insight_core/           # OParl-Datenmodelle & Services
 │   │   └── services/           # Text-Extraktion, OCR, Suche
 │   ├── insight_sync/           # Sync-Steuerung (Watchdog, Protokoll); der Sync läuft im Ingestor
 │   ├── insight_search/         # Elasticsearch-Integration
 │   ├── insight_ai/             # KI-Pipelines
+│   ├── frontend/               # TypeScript-Quellen (Alpine-Komponenten, Editor), gebaut mit Vite
 │   ├── templates/              # Django Templates
 │   ├── static/                 # Statische Dateien
 │   └── mandari/settings.py     # Django-Einstellungen
 ├── ingestor/                   # Python-basierter OParl-Ingestor (httpx, SQLAlchemy)
+├── shared/                     # Gemeinsame Pakete für Anwendung und Ingestor
+│   ├── mandari_oparl/          # OParl-Typen, Kennungen, robots.txt, Drossel je Host
+│   └── mandari_dokumente/      # Texterkennung (pypdf, optional Mistral, Tesseract)
 ├── AGENTS.md                   # Diese Datei (gemeinsamer Kontext)
 ├── CLAUDE.md                   # Claude-spezifische Ergänzungen
 └── LICENSE                     # AGPL-3.0-or-later
@@ -600,7 +611,7 @@ python manage.py fix_permissions   # Probelauf: zeigt, was fehlt
 python manage.py fix_permissions --fix  # ergänzt fehlende Rechte/Standardrollen, ändert keine vorhandenen
 
 # OParl-Daten (Sync läuft im Ingestor, siehe oben)
-python manage.py extract_texts      # Texterkennung einplanen (Aufträge file.extract_text, lädt nicht)
+python manage.py extract_texts      # Texterkennung einplanen (Aufträge file.read_text_layer/file.extract_text, nur mit TEXT_EXTRACTION_RUNNER=worker, lädt nicht)
 
 # Elasticsearch konfigurieren (Synonyme, Typo-Toleranz)
 python manage.py setup_elasticsearch
@@ -645,9 +656,12 @@ OTEL_SERVICE_NAME=mandari-web
 ELASTICSEARCH_URL=http://localhost:9200
 ELASTICSEARCH_AUTO_INDEX=True
 
-# Text-Extraktion (liest nur der Ingestor)
-TEXT_EXTRACTION_ENABLED=True
-TEXT_EXTRACTION_MAX_SIZE_MB=50
+# Texterkennung der RIS-Dateien (DEPLOYMENT.md, „Texterkennung“), in Anwendung und Ingestor gleich setzen:
+# ingestor (Standard) = OCR-Worker bzw. Sync des Ingestors; worker = Aufträge file.read_text_layer (Warteschlange
+# text, Dienst worker) und file.extract_text (ocr, Dienst worker-heavy), braucht TASKS_BACKEND=journal
+TEXT_EXTRACTION_RUNNER=ingestor
+TEXT_EXTRACTION_ENABLED=True       # nur Ingestor: Erkennung im Sync-Lauf
+TEXT_EXTRACTION_MAX_SIZE_MB=50     # Ingestor und Anwendung
 
 # KI (Issue #950): Anbieter, Basis-URL, Modell und Schlüssel im Admin (KI-Einstellungen), kein fester Anbieter
 # im Code. Jeder KI-Aufruf nur an Hosts dieser Positivliste; leer ist nichts erlaubt (KI aus, kein Standard).

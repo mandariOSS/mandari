@@ -13,6 +13,7 @@ Außerdem (Issue #698): Fehlt für die Zielversion ein Image, bricht das Skript 
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from dataclasses import dataclass
@@ -310,3 +311,62 @@ def test_rueckfall_setzt_auch_den_worker_zurueck(tmp_path: Path) -> None:
 
     assert rc == 0, "\n".join(aufrufe)
     assert any("compose up -d --no-deps ingestor minutes-orchestrator worker" in z for z in aufrufe)
+
+
+# --- Hinweis auf Zeilen der .env, die nach dem Update gelten (Issue #962) -----------------------------------------
+
+FAKE_DOCKER_UMGEBUNG = """#!/usr/bin/env bash
+# docker inspect --format '{{range .Config.Env}}…' <container>: Umgebung des laufenden Containers
+printf '%s\\n' SECRET_KEY=geheim DEBUG=false TASKS_BACKEND=journal ALLOWED_HOSTS=ris.example.net
+"""
+
+ENV_VOR_DEM_UPDATE = """SECRET_KEY=geheim
+TASKS_BACKEND='journal'
+POSTGRES_PASSWORD=pw
+DEBUG=true
+DOMAIN=ris.example.net
+ADMIN_ALLOWED_NETWORKS=10.0.0.0/24
+EMAIL_HOST=smtp.example.net
+ALLOWED_HOSTS=portal.example.net
+DATABASE_URL=postgresql://${POSTGRES_USER}:x@localhost/mandari
+"""
+
+
+def _funktion(name: str) -> str:
+    """Quelltext einer Shell-Funktion aus ``update.sh`` (bis zur schließenden Klammer am Zeilenanfang)."""
+    text = SKRIPT.read_text(encoding="utf-8").replace("\r\n", "\n")
+    treffer = re.search(rf"^{name}\(\) \{{\n.*?^\}}\n", text, re.MULTILINE | re.DOTALL)
+    assert treffer is not None, f"{name} fehlt in update.sh"
+    return treffer.group(0)
+
+
+def _hinweis(tmp_path: Path, env_datei: str, docker: str) -> subprocess.CompletedProcess[str]:
+    assert BASH is not None
+    (tmp_path / ".env").write_text(env_datei, encoding="utf-8")
+    skript = tmp_path / "pruefung.sh"
+    kopf = f'set -euo pipefail\n{docker}\nAPP_CONTAINER=mandari\nwarn() {{ echo "$1"; }}\n'
+    skript.write_bytes(f"{kopf}{_funktion('warn_newly_effective_env')}warn_newly_effective_env\necho fertig\n".encode())
+    return subprocess.run(  # noqa: S603 — fester Aufruf im Test
+        [BASH, str(skript)], cwd=tmp_path, capture_output=True, text=True, timeout=60, check=False
+    )
+
+
+def test_hinweis_auf_zeilen_die_nach_dem_update_gelten(tmp_path: Path) -> None:
+    """Bisher wirkungslose Zeilen (ADMIN_ALLOWED_NETWORKS, EMAIL_*, fest überschriebene Hosts) nennt update.sh vorab."""
+    fake = tmp_path / "fake-docker"
+    fake.write_bytes(FAKE_DOCKER_UMGEBUNG.encode())
+    fake.chmod(0o755)
+
+    ergebnis = _hinweis(tmp_path, ENV_VOR_DEM_UPDATE, f'docker() {{ "{fake.as_posix()}" "$@"; }}')
+
+    assert ergebnis.returncode == 0, ergebnis.stderr
+    assert ergebnis.stdout.rstrip().endswith("fertig")
+    genannt = set(next(z for z in ergebnis.stdout.splitlines() if z.startswith(" ")).split())
+    assert genannt == {"ADMIN_ALLOWED_NETWORKS", "EMAIL_HOST", "ALLOWED_HOSTS"}, ergebnis.stdout
+
+
+def test_ohne_laufende_anwendung_kein_hinweis(tmp_path: Path) -> None:
+    ergebnis = _hinweis(tmp_path, ENV_VOR_DEM_UPDATE, "docker() { return 1; }")
+
+    assert ergebnis.returncode == 0, ergebnis.stderr
+    assert ergebnis.stdout.strip() == "fertig"

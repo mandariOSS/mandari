@@ -18,6 +18,8 @@ Nebenläufigkeit: Neue Einträge sperren den Kettenkopf des Bereichs (``SELECT �
 :class:`~apps.common.models.AuditChainHead`) bis zum Ende ihrer Transaktion. Zusätzlich verhindert
 ein eindeutiger Index auf (Bereich, ``seq``) eine Verzweigung, selbst wenn die Sperre einmal fehlen
 sollte. Kosten je Eintrag: Kopf lesen, Eintrag schreiben, Kopf fortschreiben – drei Abfragen.
+Viele Einträge auf einmal (etwa ein Abrechnungslauf) hängt :func:`append_many` mit einer Sperre,
+gesammelten Schreibzugriffen und einem Fortschreiben des Kopfs an.
 
 Altbestand: Einträge aus der Zeit vor der Kette haben ``seq = NULL``. Solange ein Bereich solche
 Einträge hat, bleibt seine Kette „nicht initialisiert“ und neue Einträge kommen ebenfalls ohne
@@ -36,7 +38,7 @@ import hashlib
 import ipaddress
 import json
 import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any
@@ -269,15 +271,9 @@ def lock_head(spec: ChainSpec, scope_id: Any) -> Any:
     return head
 
 
-def append(spec: ChainSpec, entry: models.Model) -> None:
-    """Eintrag an die Kette seines Bereichs hängen und speichern.
-
-    Setzt ``created_at`` unter der Sperre, damit Zeit und laufende Nummer dieselbe Reihenfolge
-    haben. Läuft in einer (Sub-)Transaktion: scheitert das Schreiben, bleiben Kopf und Kette
-    unverändert und eine umgebende Transaktion bleibt benutzbar.
-    """
-    record: Any = entry  # Protokollmodelle haben seq/prev_hash/entry_hash/created_at
-    scope_id = spec.scope_of(entry)
+def _prepare(spec: ChainSpec, entry: models.Model) -> None:
+    """Felder vor dem Hashen so aufbereiten, wie sie nach der Rundreise durch die Datenbank zurückkommen."""
+    record: Any = entry
     for ref_name, source_name in spec.legacy_refs:
         if getattr(record, ref_name, None) is None:
             setattr(record, ref_name, getattr(record, source_name, None))
@@ -291,6 +287,18 @@ def append(spec: ChainSpec, entry: models.Model) -> None:
             text = getattr(record, name)
             if isinstance(text, str) and "\x00" in text:
                 setattr(record, name, text.replace("\x00", ""))
+
+
+def append(spec: ChainSpec, entry: models.Model) -> None:
+    """Eintrag an die Kette seines Bereichs hängen und speichern.
+
+    Setzt ``created_at`` unter der Sperre, damit Zeit und laufende Nummer dieselbe Reihenfolge
+    haben. Läuft in einer (Sub-)Transaktion: scheitert das Schreiben, bleiben Kopf und Kette
+    unverändert und eine umgebende Transaktion bleibt benutzbar.
+    """
+    record: Any = entry  # Protokollmodelle haben seq/prev_hash/entry_hash/created_at
+    scope_id = spec.scope_of(entry)
+    _prepare(spec, entry)
 
     with transaction.atomic():
         head = lock_head(spec, scope_id)
@@ -308,6 +316,51 @@ def append(spec: ChainSpec, entry: models.Model) -> None:
             _head_model()._default_manager.filter(pk=head.pk).update(
                 last_seq=record.seq, last_hash=record.entry_hash, updated_at=timezone.now()
             )
+
+
+def append_many(spec: ChainSpec, entries: Iterable[models.Model], *, batch_size: int = 500) -> list[models.Model]:
+    """Mehrere Einträge eines Bereichs in einem Zug an die Kette hängen (Issue #715).
+
+    Ergebnis wie :func:`append` für jeden Eintrag in der gegebenen Reihenfolge: Jeder Eintrag bekommt
+    seine eigene laufende Nummer, den Hash seines Vorgängers und seinen Zeitpunkt unter der Sperre.
+    Statt dreier Abfragen je Eintrag sperrt der Aufruf den Kettenkopf einmal, schreibt die Einträge
+    stapelweise und schreibt den Kopf einmal fort. Alle Einträge gehören zum selben Bereich und sind
+    noch nicht gespeichert; wie bei :func:`append` bleibt bei einem Fehler die Kette unverändert.
+
+    Der Kettenkopf bleibt wie bei :func:`append` bis zum Ende der umgebenden Transaktion gesperrt –
+    bei einem großen Sammelschreiben entsprechend länger als bei einem einzelnen Eintrag.
+    """
+    records: list[Any] = list(entries)  # Protokollmodelle haben seq/prev_hash/entry_hash/created_at
+    if not records:
+        return []
+    if any(not record._state.adding for record in records):
+        raise ChainError("Bereits gespeicherte Einträge lassen sich nicht noch einmal an die Kette hängen.")
+    scopes = {spec.scope_of(record) for record in records}
+    if len(scopes) != 1:
+        raise ChainError("Gesammelt werden nur Einträge desselben Bereichs an die Kette gehängt.")
+    (scope_id,) = scopes
+    for record in records:
+        _prepare(spec, record)
+
+    with transaction.atomic():
+        head = lock_head(spec, scope_id)
+        seq = head.last_seq
+        prev = head.last_hash or GENESIS_HASH
+        for record in records:
+            record.created_at = timezone.now()
+            if head.initialized:
+                seq += 1
+                record.seq = seq
+                record.prev_hash = prev
+                record.entry_hash = compute_hash(spec, record)
+                prev = record.entry_hash
+        # bulk_create umgeht Model.save() der Protokollmodelle; Nummer und Hashes stehen bereits fest
+        spec.model._default_manager.bulk_create(records, batch_size=batch_size)
+        if head.initialized:
+            _head_model()._default_manager.filter(pk=head.pk).update(
+                last_seq=seq, last_hash=prev, updated_at=timezone.now()
+            )
+    return records
 
 
 def is_chain_insert(entry: models.Model) -> bool:
