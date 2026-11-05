@@ -1817,23 +1817,27 @@
 }
 
 /* =====================================================================================================
-   Sichtschutz für den nichtöffentlichen Teil der laufenden Sitzung (Issue #1166, Spur noe). Titel, Beschreibung
-   und Beratungsverlauf nichtöffentlicher TOPs sind weichgezeichnet (.fs-noe); Unterlagen, Protokoll und Beschluss
-   (.fs-noe-inhalt) ersetzt eine Abdeckung (.fs-noe-ersatz), bis jemand den Teil einblendet, etwa vor dem Teilen
-   des Bildschirms. Der Server liefert die Seite mit der Klasse noe-verdeckt an .fs-sitzung (kein Aufblitzen beim
-   Laden), faction-session.ts nimmt sie erst nach dem Einblenden weg und merkt den Zustand je Sitzung im Browser-Tab.
-   Templates: _noe_text.html, _noe_schalter.html, _noe_abdeckung.html. Nur Sichtschutz, die Rechte prüft der Server.
+   Sichtschutz für Nichtöffentliches in ganz Work (Issues #1166, #1201). Titel, Beschreibung und Beratungsverlauf
+   nichtöffentlicher TOPs sind weichgezeichnet (.fs-noe); Unterlagen, Protokoll, Beschluss und Bearbeitungsfelder
+   (.fs-noe-inhalt) ersetzt eine Abdeckung (.fs-noe-ersatz), bis jemand Nichtöffentliches einblendet, etwa vor dem
+   Teilen des Bildschirms. Ein Zustand für die ganze Anmeldung: Der Server liefert jede Work-Seite mit der Klasse
+   noe-verdeckt am body (kein Aufblitzen beim Laden), der Alpine-Store noe (frontend/alpine/noe-sichtschutz.ts) nimmt
+   sie nach dem Einblenden weg, in allen offenen Tabs. Gilt deshalb global, nicht nur in .fs-sitzung.
+   Templates: work/faction/sitzung/_noe_text.html, _noe_schalter.html, _noe_abdeckung.html, Knopf in der Kopfleiste
+   work/rahmen/_noe_knopf.html. .noe-huelle: Hülle, die erst im Browser zu .fs-noe-inhalt wird (Ratssitzung vorbereiten).
+   Nur Sichtschutz, die Rechte prüft der Server.
    ===================================================================================================== */
 @layer components {
-  .fs-noe-inhalt {
+  .fs-noe-inhalt,
+  .noe-huelle {
     display: contents;
   }
-  .fs-sitzung.noe-verdeckt .fs-noe-inhalt,
-  .fs-sitzung:not(.noe-verdeckt) .fs-noe-ersatz {
+  .noe-verdeckt .fs-noe-inhalt,
+  body:not(.noe-verdeckt) .fs-noe-ersatz {
     display: none !important;
   }
   /* Weichzeichnen mit der Schriftgröße: Tagesordnung und Leiste etwa 5 px, Überschrift des TOPs etwa 7 px */
-  .fs-sitzung.noe-verdeckt .fs-noe {
+  .noe-verdeckt .fs-noe {
     filter: blur(0.4em);
     user-select: none;
   }
@@ -1867,5 +1871,13 @@
   }
   .fs-noe-abdeckung .wf-knopf {
     margin-top: 8px;
+  }
+  /* In Zeilen, Seitenpanels und Formularen: dieselbe Abdeckung mit weniger Rand */
+  .fs-noe-abdeckung.klein {
+    gap: 4px;
+    padding: 16px;
+  }
+  .fs-noe-abdeckung.klein .wf-knopf {
+    margin-top: 4px;
   }
 }

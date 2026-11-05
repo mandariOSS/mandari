@@ -6,6 +6,8 @@ Dialog nach #897. Verschieben mit move_item (oberste Ebene, nicht der Genehmigun
 Griff oder Menü „Nach oben“/„Nach unten“; in den anderen Teil ziehen oder im Panel wählen (Issue #1160). Titel und Beschreibung speichern beim Verlassen des Felds (fsTagesordnung,
 frontend/alpine/fs-tagesordnung.ts); das Formular mit edit_item bleibt der Weg ohne Skript.
 Kontext: z (vorbereiten.Zeile), meeting, org_slug, can_edit.
+Nichtöffentlich (z.intern): Titel und Bezug weichgezeichnet, die aufgeklappten Angaben (Felder, Unterlagen, Verlauf) hinter
+der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz für ganz Work, Issue #1201).
 {% endcomment %}
 {% with item=z.item %}
 <li class="fs-top{% if z.unter %} unter{% endif %}{% if z.offen %} offen{% endif %}" id="top-{{ item.pk }}" data-testid="fs-top" data-id="{{ item.pk }}" data-titel="{{ item.title }}"{% if can_edit and z.verschiebbar %} data-verschiebbar{% endif %}>
@@ -19,12 +21,16 @@ Kontext: z (vorbereiten.Zeile), meeting, org_slug, can_edit.
         <span class="nr">{{ item.number }}</span>
         {% if z.offen %}
         <a class="fs-top-titel" href="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung" aria-expanded="true" aria-controls="d-{{ item.pk }}"
-           hx-get="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung" hx-select="#agenda-container" hx-target="#agenda-container" hx-swap="outerHTML">{{ item.title }}</a>
+           hx-get="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung" hx-select="#agenda-container" hx-target="#agenda-container" hx-swap="outerHTML">{% include "work/faction/sitzung/_noe_text.html" with text=item.title noe=z.intern %}</a>
         {% else %}
         <a class="fs-top-titel" href="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung&amp;top={{ item.pk }}#top-{{ item.pk }}" aria-expanded="false"
-           hx-get="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung&amp;top={{ item.pk }}" hx-select="#agenda-container" hx-target="#agenda-container" hx-swap="outerHTML">{{ item.title }}</a>
+           hx-get="{% url 'work:faction_detail' org_slug=org_slug meeting_id=meeting.id %}?ansicht=tagesordnung&amp;top={{ item.pk }}" hx-select="#agenda-container" hx-target="#agenda-container" hx-swap="outerHTML">{% include "work/faction/sitzung/_noe_text.html" with text=item.title noe=z.intern %}</a>
         {% endif %}
+        {% if z.intern and z.bezug %}
+        <span class="fs-top-bezug fs-noe" aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar"{% if noe_sichtbar %} title="{{ z.bezug }}"{% endif %} data-noe-titel="{{ z.bezug }}" :title="$store.noe.sichtbar ? $el.dataset.noeTitel : ''">{{ z.bezug }}</span>
+        {% else %}
         <span class="fs-top-bezug" title="{{ z.bezug }}">{{ z.bezug }}</span>
+        {% endif %}
         <span class="fs-top-anh">{% if z.unterlagen %}<i data-lucide="paperclip" aria-hidden="true"></i>{{ z.unterlagen|length }}<span class="sr-only"> Unterlagen</span>{% endif %}</span>
         {% if can_edit %}
         <div class="wf-menue-anker" x-data="{ offen: false }" @click.outside="offen = false" @keydown.escape="offen = false">
@@ -53,6 +59,7 @@ Kontext: z (vorbereiten.Zeile), meeting, org_slug, can_edit.
     </div>
     {% if z.offen %}
     <div class="fs-top-detail" id="d-{{ item.pk }}">
+        {% if z.intern %}{% include "work/faction/sitzung/_noe_abdeckung.html" with klein=True was="Titel, Beschreibung, Unterlagen und Beratungsverlauf" %}<div class="fs-noe-inhalt">{% endif %}
         {% if can_edit and not item.is_approval_item %}
         <form class="fs-top-bearbeiten" method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}" @submit.prevent="feldSpeichern($el.querySelector('[data-top-feld=title]'))">
             {% csrf_token %}
@@ -100,6 +107,7 @@ Kontext: z (vorbereiten.Zeile), meeting, org_slug, can_edit.
             {% endif %}
         </div>
         {% endif %}
+        {% if z.intern %}</div>{% endif %}
     </div>
     {% endif %}
 </li>

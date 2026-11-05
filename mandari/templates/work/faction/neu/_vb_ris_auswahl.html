@@ -3,7 +3,8 @@ Inhalt des Dialogs „Aus Ratssitzung übernehmen“ (Issue #1071, Muster risDia
 Kommunen wählen, Punkte ankreuzen, wahlweise als Unterpunkte eines TOPs einordnen. Schon übernommene Punkte stehen
 angehakt und gesperrt da; nichtöffentliche Punkte nur für Vereidigte (sonst nur ihre Zahl). Aktionen ris_auswahl
 (Sitzung wechseln) und ris_uebernehmen (antwortet mit der neuen Tagesordnung). Kontext: meeting, org_slug, moeglich,
-angebot (apps.work.faction.ratssitzung.Angebot).
+angebot (apps.work.faction.ratssitzung.Angebot). Titel nichtöffentlicher Punkte weichgezeichnet, bis Nichtöffentliches
+eingeblendet ist (Sichtschutz, Issue #1201).
 {% endcomment %}
 {% if not moeglich %}
 <p>Ihre Organisation ist mit keiner Kommune verknüpft. Verknüpfen Sie sie in den Einstellungen der Organisation, dann können Sie TOPs aus dem Ratsinformationssystem übernehmen.</p>
@@ -41,7 +42,7 @@ angebot (apps.work.faction.ratssitzung.Angebot).
             <label>
                 <input type="checkbox" name="punkt" value="{{ p.item.pk }}"{% if p.schon_als %} checked disabled{% endif %}>
                 <span class="nr">{{ p.nummer }}</span>
-                <span>{% if p.intern %}<i data-lucide="lock" aria-hidden="true"></i><span class="sr-only">Nichtöffentlich: </span>{% endif %}{{ p.titel }}
+                <span>{% if p.intern %}<i data-lucide="lock" aria-hidden="true"></i><span class="sr-only">Nichtöffentlich: </span>{% include "work/faction/sitzung/_noe_text.html" with text=p.titel noe=True %}{% else %}{{ p.titel }}{% endif %}
                     <small>{% if p.schon_als %}schon übernommen als TOP {{ p.schon_als }}{% elif p.vorlage %}Vorlage {{ p.vorlage }}{% else %}ohne Vorlage{% endif %}{% if p.intern and not p.schon_als %}, kommt in den nichtöffentlichen Teil{% endif %}</small>
                 </span>
             </label>

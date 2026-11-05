@@ -615,17 +615,24 @@ def aufgaben(d: Dokument) -> list[tuple[sitzung.AufgabenZeile, ProtTop]]:
 
 
 def eigene_aufgaben(meeting: FactionMeeting, membership: Membership, d: Dokument) -> list[Any]:
-    """Aufgaben aus den sichtbaren TOPs, für die das Mitglied zuständig ist."""
+    """
+    Aufgaben aus den sichtbaren TOPs, für die das Mitglied zuständig ist. ``noe`` an jeder Aufgabe: Sie gehört zu einem
+    nichtöffentlichen TOP, ihr Titel steht dann mit Sichtschutz (Issue #1201).
+    """
     from apps.work.tasks.models import Task
 
     ids = [t.item.pk for t in d.tops]
     if not ids:
         return []
-    return list(
+    intern = {t.item.pk for t in d.tops if t.intern}
+    aufgaben = list(
         cast(Any, Task)
         .objects.filter(related_faction_agenda_item_id__in=ids, assigned_to=membership)
         .order_by("is_completed", "due_date", "created_at")
     )
+    for aufgabe in aufgaben:
+        aufgabe.noe = aufgabe.related_faction_agenda_item_id in intern
+    return aufgaben
 
 
 def eigene_teilnahme(meeting: FactionMeeting, membership: Membership) -> dict[str, Any] | None:

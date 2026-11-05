@@ -222,7 +222,7 @@ class DashboardView(WorkViewMixin, TemplateView):
                 assigned_to=self.membership,
                 status__in=["todo", "in_progress"],
             )
-            .select_related("assigned_to__user", "created_by__user")
+            .select_related("assigned_to__user", "created_by__user", "related_faction_agenda_item__parent")
             .order_by("-priority", "due_date", "-created_at")[:5]
         )
 

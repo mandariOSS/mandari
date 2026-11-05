@@ -125,7 +125,7 @@
                     <i data-lucide="circle" class="w-4 h-4 mt-0.5 shrink-0 text-gray-400 dark:text-gray-500" aria-hidden="true"></i>
                     {% endif %}
                     <div class="min-w-0 flex-1">
-                        <span class="block text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-400 truncate">{{ task.title }}</span>
+                        <span class="block text-sm font-semibold text-gray-900 dark:text-white group-hover:text-primary-700 dark:group-hover:text-primary-400 truncate">{% include "work/faction/sitzung/_noe_text.html" with text=task.title noe=task.noe_top %}</span>
                         <span class="flex flex-wrap gap-x-2 text-xs text-gray-600 dark:text-gray-400 mt-0.5">
                             <span>{{ task.get_status_display }}</span>
                             {% if task.priority == "urgent" or task.priority == "high" %}<span>Priorität {{ task.get_priority_display|lower }}</span>{% endif %}

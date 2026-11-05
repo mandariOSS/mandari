@@ -1,5 +1,5 @@
 {# TOP-Panel: Auto-Save-Formular mit Kopf (Nummer, Titel, Sichtbarkeit, Badges, Schließen) #}
-{# Kontext: item, meeting, org_slug, can_edit; Zustand saving/saved/saveFehler aus x-data="agendaItemPanel" #}
+{# Kontext: item, noe (nichtöffentlich), meeting, org_slug, can_edit; Zustand saving/saved/saveFehler aus x-data="agendaItemPanel" #}
 {# autosave-erneut: erneutes Senden nach einem Fehler (frontend/js/htmx-setup.ts) #}
 <form id="agenda-item-update-form"
       hx-post="{% url 'work:faction_item_panel_action' org_slug=org_slug meeting_id=meeting.id item_id=item.id %}"
@@ -22,13 +22,14 @@
                 {{ item.number }}
             </span>
 
-            {# Titel (editierbar) #}
+            {# Titel (editierbar); nichtöffentlich: weichgezeichnet und erst nach dem Einblenden bedienbar (Sichtschutz, Issue #1201) #}
             <div class="flex-1 min-w-0">
                 {% if can_edit and not item.is_approval_item %}
-                <input type="text" name="title" value="{{ item.title }}"
-                       class="w-full text-lg font-semibold text-gray-900 dark:text-white bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-primary-500 focus:ring-0 outline-none px-0 py-0.5 transition-colors">
+                {% if noe %}<span class="sr-only fs-noe-ersatz">Nichtöffentlicher TOP, ausgeblendet</span>{% endif %}
+                <input type="text" name="title" value="{{ item.title }}" aria-label="Titel des TOPs"{% if noe %}{% if not noe_sichtbar %} inert{% endif %} x-bind:inert="!$store.noe.sichtbar"{% endif %}
+                       class="w-full text-lg font-semibold text-gray-900 dark:text-white bg-transparent border-0 border-b border-transparent hover:border-gray-300 focus:border-primary-500 focus:ring-0 outline-none px-0 py-0.5 transition-colors{% if noe %} fs-noe{% endif %}">
                 {% else %}
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ item.title }}</h2>
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{% include "work/faction/sitzung/_noe_text.html" with text=item.title %}</h2>
                 {% endif %}
             </div>
 

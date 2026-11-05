@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Sichtschutz für den nichtöffentlichen Teil der laufenden Sitzung (Issue #1166).
+Sichtschutz für den nichtöffentlichen Teil in der Sitzungsansicht der laufenden Sitzung (Issues #1166, #1201).
 
-Auch wer den nichtöffentlichen Teil sehen darf, bekommt ihn in der Sitzungsansicht zunächst verdeckt: Die Seite und
-jede HTMX-Antwort kommen mit der Klasse ``noe-verdeckt`` am Container, NÖ-Titel und -Beschreibung weichgezeichnet und
-für Vorleser ersetzt, Unterlagen, Protokoll und Beschluss hinter einer Abdeckung. Erst der Browser blendet den Teil
-auf Wunsch ein (frontend/alpine/faction-session.ts). Die Rechteprüfung des Servers bleibt unverändert: Wer keine Rechte
-hat, bekommt den Teil wie bisher gar nicht.
+Auch wer den nichtöffentlichen Teil sehen darf, bekommt ihn in der Sitzungsansicht zunächst verdeckt: Die Seite kommt
+mit der Klasse ``noe-verdeckt`` am ``<body>`` (ein Zustand für ganz Work, ``apps/work/sichtschutz.py``), NÖ-Titel und
+-Beschreibung weichgezeichnet und für Vorleser ersetzt, Unterlagen, Protokoll und Beschluss hinter einer Abdeckung.
+Eingeblendet wird über den Alpine-Store ``noe`` (frontend/alpine/noe-sichtschutz.ts). Die Rechteprüfung des Servers
+bleibt unverändert: Wer keine Rechte hat, bekommt den Teil wie bisher gar nicht. Der Zustand selbst und die übrigen
+Ansichten: ``apps/work/tests/test_noe_sichtschutz_global.py``.
 """
 
 from __future__ import annotations
@@ -37,7 +38,7 @@ TITEL = "Anfrage Hitzeschutz an Schulen"
 BESCHREIBUNG = "Messwerte aus drei Grundschulen, Antwort der Verwaltung liegt vor."
 #: So steht ein NÖ-Titel überall in der Ansicht: weichgezeichnet, für Vorleser ausgeblendet und ersetzt
 VERDECKT = (
-    f'<span class="fs-noe" aria-hidden="true" :aria-hidden="!noeSichtbar">{TITEL}</span>'
+    f'<span class="fs-noe" aria-hidden="true" :aria-hidden="!$store.noe.sichtbar">{TITEL}</span>'
     '<span class="sr-only fs-noe-ersatz">Nichtöffentlicher TOP, ausgeblendet</span>'
 )
 
@@ -101,10 +102,9 @@ def test_nichtoeffentlicher_top_kommt_verdeckt(org: Any, vorsitz: Any, sitzung: 
     meeting, tops = sitzung
     html = client_for(vorsitz.user).get(_seite(org, meeting, tops["noe"])).content.decode()
 
-    # Ohne Klick verdeckt: Klasse am Container, Alpine nimmt sie erst nach dem Einblenden weg
-    assert 'class="fs-sitzung wf noe-verdeckt"' in html
-    assert ":class=\"{ 'noe-verdeckt': !noeSichtbar }\"" in html
-    assert f'data-sitzung="{meeting.pk}"' in html
+    # Ohne Klick verdeckt: Klasse am body (ein Zustand für ganz Work), nicht mehr je Sitzung am Container
+    assert re.search(r'<body class="[^"]* noe-verdeckt"', html)
+    assert 'class="fs-sitzung wf"' in html and "noeSichtbar" not in html
     # Tagesordnung: NÖ-Titel verdeckt, Nummer lesbar, Schalter an der Überschrift; öffentliche Titel unverändert
     zeile = re.search(rf'<li id="fs-tl-{tops["noe"].pk}">.*?</li>', html, flags=re.S)
     assert zeile and '<span class="nr">NÖ 1</span>' in zeile.group(0) and VERDECKT in zeile.group(0)
@@ -116,14 +116,14 @@ def test_nichtoeffentlicher_top_kommt_verdeckt(org: Any, vorsitz: Any, sitzung: 
     # Kopf des TOPs: Nummer lesbar, Titel und Beschreibung verdeckt, Schalter daneben
     assert f'<span class="wf-top-nr">TOP NÖ 1</span> {VERDECKT}' in html
     assert re.search(
-        rf'<p class="fs-top-zeile2 fs-noe" x-ref="zeile" aria-hidden="true" :aria-hidden="!noeSichtbar">'
+        rf'<p class="fs-top-zeile2 fs-noe" x-ref="zeile" aria-hidden="true" :aria-hidden="!\$store\.noe\.sichtbar">'
         rf"\s*{re.escape(BESCHREIBUNG)}</p>",
         html,
     )
     assert html.count("fs-noe-schalter") == 2
     # Unterlagen und Protokoll hinter der Abdeckung, der Beschluss in der Leiste unten ebenso
     assert html.index("fs-noe-abdeckung") < html.index('<div class="fs-noe-inhalt">') < html.index('id="fs-notiz"')
-    assert "Nichtöffentlichen Teil einblenden</button>" in html
+    assert "Nichtöffentliches einblenden</button>" in html and '@click="noeEinblenden()"' in html
     assert '<div class="fs-beschluss fs-noe-ersatz">' in html
     # Nirgends sonst lesbar
     rest = _ohne_verdecktes(html)
@@ -186,7 +186,7 @@ def test_beratungsverlauf_eines_noe_tops_ist_verdeckt_und_nicht_bedienbar(org: A
     )
     kontext = {"item": tops["noe"], "verlauf": [eintrag], "org_slug": org.slug, "beschreibung": BESCHREIBUNG}
     html = render_to_string("work/faction/sitzung/_top_kopf.html", kontext | {"intern": True})
-    assert '<ul x-ref="verlauf" class="fs-noe" inert x-bind:inert="!noeSichtbar">' in html
+    assert '<ul x-ref="verlauf" class="fs-noe" inert x-bind:inert="!$store.noe.sichtbar">' in html
     assert "Schulausschuss, 12.10.2026" in html and "fs-noe-schalter" in html
     # Öffentlicher TOP: unverändert, ohne Schalter
     html = render_to_string("work/faction/sitzung/_top_kopf.html", kontext | {"intern": False})

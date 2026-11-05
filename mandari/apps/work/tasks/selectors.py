@@ -34,6 +34,8 @@ def _base_queryset() -> QuerySet[Task]:
         "related_meeting",
         "related_motion",
         "related_faction_meeting",
+        # Sichtschutz für Aufgaben aus nichtöffentlichen TOPs (Task.noe_top, Issue #1201)
+        "related_faction_agenda_item__parent",
     )
 
 

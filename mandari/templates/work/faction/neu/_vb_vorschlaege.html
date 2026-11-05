@@ -2,7 +2,8 @@
 Vorschläge, die auf Genehmigung warten (Issue #872, Muster vorschlaegeHtml): Aufnehmen oder mit Begründung ablehnen
 (accept_proposal, reject_proposal; Recht agenda.approve, serverseitig geprüft). Vereidigte wählen beim Aufnehmen den
 Teil der Tagesordnung (Issue #1160). Nichtöffentliche Vorschläge fehlen für Nicht-Vereidigte schon im Kontext.
-Kontext: can_approve_proposals, can_view_internal, pending_proposals, meeting, org_slug.
+Kontext: can_approve_proposals, can_view_internal, pending_proposals, meeting, org_slug. Nichtöffentliche Vorschläge mit
+Sichtschutz (Titel und Beschreibung weichgezeichnet, bis Nichtöffentliches eingeblendet ist, Issue #1201).
 {% endcomment %}
 {% if can_approve_proposals and pending_proposals %}
 <section class="fs-vorschlaege" aria-labelledby="vs-h" data-testid="fs-vorschlaege">
@@ -11,9 +12,9 @@ Kontext: can_approve_proposals, can_view_internal, pending_proposals, meeting, o
         {% for vorschlag in pending_proposals %}
         <li x-data="{ ablehnen: false }">
             <span class="vs-was">
-                <b>{{ vorschlag.title }}{% if vorschlag.visibility == 'internal' %} <span class="fs-meta">(nichtöffentlich)</span>{% endif %}</b>
+                <b>{% if vorschlag.visibility == 'internal' %}{% include "work/faction/sitzung/_noe_text.html" with text=vorschlag.title noe=True %} <span class="fs-meta">(nichtöffentlich)</span>{% else %}{{ vorschlag.title }}{% endif %}</b>
                 <small>{% if vorschlag.proposed_by %}von {{ vorschlag.proposed_by.user.get_display_name }}{% for rolle in vorschlag.proposed_by.roles.all %}{% if forloop.first %}, {{ rolle.name }}{% endif %}{% endfor %}, {% endif %}{{ vorschlag.proposed_at|date:"D d.m., H:i" }}</small>
-                {% with beschreibung=vorschlag.get_description_decrypted %}{% if beschreibung %}<small>{{ beschreibung|truncatewords:40 }}</small>{% endif %}{% endwith %}
+                {% with beschreibung=vorschlag.get_description_decrypted %}{% if beschreibung %}<small{% if vorschlag.visibility == 'internal' %} class="fs-noe" aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar"{% endif %}>{{ beschreibung|truncatewords:40 }}</small>{% endif %}{% endwith %}
             </span>
             <span class="vs-akt">
                 <form method="post" action="{% url 'work:faction_action' org_slug=org_slug meeting_id=meeting.id %}">

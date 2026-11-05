@@ -12,7 +12,8 @@
         {% for number, item in standard_agenda_rows %}
         <li class="flex items-center gap-3 py-1.5">
             <span class="w-10 text-gray-500 tabular-nums">{{ number }}</span>
-            <span class="flex-1 text-gray-900 dark:text-white">{{ item.title }}</span>
+            {# Nichtöffentliche Standardpunkte weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issue #1201) #}
+            <span class="flex-1 text-gray-900 dark:text-white">{% if item.visibility == "internal" %}{% include "work/faction/sitzung/_noe_text.html" with text=item.title noe=True %}{% else %}{{ item.title }}{% endif %}</span>
             <form method="post" class="flex items-center">
                 {% csrf_token %}
                 <input type="hidden" name="section" value="move_standard_item">

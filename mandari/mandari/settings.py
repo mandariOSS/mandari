@@ -298,6 +298,7 @@ TEMPLATES = [
                 "apps.common.demo.demo_context",  # Hinweis in der Demo-Instanz (Issue #99)
                 "apps.common.seitenhinweis.seitenhinweis_context",  # Betriebshinweis aus der Umgebung
                 "apps.work.rahmen.rahmen_kontext",  # neues Erscheinungsbild von Work je Organisation (Issue #852)
+                "apps.work.sichtschutz.sichtschutz_kontext",  # Sichtschutz für Nichtöffentliches (Issue #1201)
             ],
         },
     },

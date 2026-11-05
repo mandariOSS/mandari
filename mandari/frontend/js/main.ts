@@ -15,6 +15,7 @@ import { insightShell } from '../alpine/insight-shell'
 import { kommunenWahl } from '../alpine/kommunen-wahl'
 import { meetingCockpit } from '../alpine/meeting-cockpit'
 import { neighborhoodApp } from '../alpine/neighborhood'
+import { nachAbmeldungVerdecken } from '../alpine/noe-sichtschutz'
 import { workGruppe, workPerson, workRahmen } from '../alpine/work-rahmen'
 import { installActions } from './actions'
 import { confirmAction, confirmDialog } from './alpine/confirm-dialog'
@@ -41,8 +42,11 @@ installFormBehaviors()
 // ---- Sicherung ungespeicherter Eingaben im Browser (#854) ---------------------------
 // Nach dem Abmelden (Seite „Abgemeldet“) alle Sicherungen löschen, sonst die abgelaufenen (älter als 24 Stunden);
 // angemeldet (Kennung des Kontos am body, Work) auch die Sicherungen anderer Konten
-if (document.querySelector('[data-eingaben-loeschen]')) alleLoeschen()
-else aufraeumen(undefined, Date.now(), document.body?.dataset.konto || '')
+// Nach dem Abmelden auch offene Tabs mit eingeblendetem Nichtöffentlichem sofort verdecken (#1201)
+if (document.querySelector('[data-eingaben-loeschen]')) {
+  alleLoeschen()
+  nachAbmeldungVerdecken()
+} else aufraeumen(undefined, Date.now(), document.body?.dataset.konto || '')
 
 // ---- Globals für Templates ----------------------------------------------------
 window.Alpine = Alpine
