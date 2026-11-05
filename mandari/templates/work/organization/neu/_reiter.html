@@ -1,7 +1,8 @@
 {% load work_einstellungen %}
 {% comment %}
-Reiter der Einstellungen im neuen Erscheinungsbild (Issue #951): sechs Reiter unter dem Kopfband statt der bisherigen
-Leiste work/organization/_tabs.html, Baustein c-rahmen.reiter. Aufruf im Block work_header nach dem Kopfband:
+Reiter der Einstellungen im neuen Erscheinungsbild (Issue #951, fünf Bereiche seit Issue #1230) unter dem Kopfband
+statt der bisherigen Leiste work/organization/_tabs.html, Baustein c-rahmen.reiter; nur Reiter mit einer Seite, die
+die Person öffnen darf. Aufruf im Block work_header nach dem Kopfband:
   {% include "work/organization/neu/_reiter.html" with seite="email" %}
 ``seite`` ist der Schlüssel der geöffneten Seite, ``aktuell="true"`` für Detail- und Formularseiten darunter.
 Sichtbarkeit und Adressen: apps/work/organization/einstellungen.py.

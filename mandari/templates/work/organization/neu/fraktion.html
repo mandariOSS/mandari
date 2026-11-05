@@ -1,6 +1,6 @@
 {% extends "work/base_work.html" %}
 {% comment %}
-Einstellungen › Fraktionssitzungen nach dem Muster (Issue #1071, Schritt 4; Muster einstellungen.html, Bilder
+Einstellungen › Sitzungen › Fraktionssitzungen (Unterpunkte seit Issue #1230) nach dem Muster (Issue #1071, Schritt 4; Muster einstellungen.html, Bilder
 einstellungen_vorsitz_* und einstellungen_mitglied_1440): zwei Spalten. Links die Sitzungsreihen mit Automatik, Pausen
 und Ausfallregeln, die Standard-Tagesordnung und wer TOPs einbringt (je eigene Formulare section=…, wie bisher).
 Rechts das Hauptformular (ohne section, wie bisher) mit Einladung, Erinnerung an die Sitzung, Erinnerung zum
@@ -35,7 +35,9 @@ steht alles gesperrt im fieldset, mit Hinweis wie im Muster. Kontext: Organizati
 {% endblock %}
 
 {% block work_content %}
-<div class="wf fs-einst" data-testid="fs-einstellungen">
+<div class="lg:flex lg:gap-10">
+{% include "work/organization/neu/_unterpunkte.html" with seite="fraktion" %}
+<div class="wf fs-einst min-w-0 flex-1" data-testid="fs-einstellungen">
     {% if nur_lesen %}
     <p class="fs-einst-hinweis" role="note">Diese Einstellungen ändern Vorsitz, Stellvertretung und Geschäftsführung. Sie sehen sie zur Information.</p>
     {% endif %}
@@ -56,5 +58,6 @@ steht alles gesperrt im fieldset, mit Hinweis wie im Muster. Kontext: Organizati
             {% endif %}
         </form>
     </fieldset>
+</div>
 </div>
 {% endblock %}

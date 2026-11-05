@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """
-Einstellungen im neuen Erscheinungsbild, Teil 3c (Issue #951): Fraktionssitzungen, Dokumente (Übersicht,
-Dokumenteinstellungen, Typen, Themen, Vorlagen, Briefköpfe samt Formularen) und Verwaltung (Einreichung,
-Ratsfraktionen).
+Einstellungen im neuen Erscheinungsbild, Teil 3c (Issue #951): Fraktionssitzungen, Dokumente (Übersicht, Typen,
+Themen, Vorlagen, Briefköpfe samt Formularen) und Verwaltung (Einreichung, Ratsfraktionen). Die Dokumenteinstellungen
+leiten seit Issue #1230 auf die Übersicht weiter, die Verwaltungskontakte haben eine eigene Seite
+(test_einstellungen_1230.py).
 
 Gleichstand je Seite (gleichstand.py) mit allen POST-Wegen (section=…/action=…), versteckten Werten, Rückfragen,
 Sperren und den Alpine-Komponenten factionTitlePreview, deleteConfirmation, letterheadForm und partyManager; dieselben
@@ -25,6 +26,8 @@ from apps.work.rahmen import einordnen
 from .einstellungen_hilfen import (
     fixtures_uebernehmen,
     html,
+    kontakte,
+    ohne_zugriff,
     rechte_wie_bisher,
     unterpunkte_anderer_reiter,
     url,
@@ -73,7 +76,6 @@ def bestand(org: Any, admin: Any) -> dict[str, Any]:
 SEITEN = {
     "organization_faction_settings": ("work/organization/neu/fraktion.html", "fraktion"),
     "organization_documents": ("work/organization/neu/dokumente.html", "uebersicht"),
-    "document_settings": ("work/motions/settings/neu/index.html", "uebersicht"),
     "document_type_list": ("work/motions/settings/neu/typen.html", "typen"),
     "document_type_create": ("work/motions/settings/neu/typ.html", "typen"),
     "document_topic_list": ("work/motions/settings/neu/themen.html", "themen"),
@@ -103,10 +105,15 @@ def test_schalter_waehlt_die_neue_vorlage(org: Any, admin: Any, client_for: Any,
     assert vorlage not in vorlagen(client.get(url(name, org)))
 
 
+def _umgezogen(name: str, alt: set[str]) -> set[str]:
+    """Die Verwaltungskontakte stehen seit Issue #1230 auf eigener Seite (test_kontakte_tragen_die_bisherigen_formulare)."""
+    return kontakte(alt) if name == "council_parties" else set()
+
+
 @pytest.mark.parametrize("name", SEITEN)
 def test_gleichstand(org: Any, admin: Any, client_for: Any, bestand: dict[str, Any], name: str) -> None:
     alt, neu = vergleich(client_for(admin.user), url(name, org))
-    assert fehlend(alt, neu, unterpunkte_anderer_reiter(org, SEITEN[name][1])) == []
+    assert fehlend(alt, neu, unterpunkte_anderer_reiter(org, SEITEN[name][1]) | _umgezogen(name, alt)) == []
 
 
 @pytest.mark.parametrize("name", BEARBEITEN)
@@ -124,7 +131,7 @@ def test_gleichstand_leere_listen(org: Any, admin: Any, client_for: Any) -> None
     client = client_for(admin.user)
     for name, (_vorlage, seite) in SEITEN.items():
         alt, neu = vergleich(client, url(name, org))
-        assert fehlend(alt, neu, unterpunkte_anderer_reiter(org, seite)) == [], name
+        assert fehlend(alt, neu, unterpunkte_anderer_reiter(org, seite) | _umgezogen(name, alt)) == [], name
 
 
 def test_fraktionssitzungen_mit_allen_wegen(org: Any, admin: Any, client_for: Any, bestand: dict[str, Any]) -> None:
@@ -151,14 +158,13 @@ def test_veroeffentlichen_ohne_recht_gesperrt(org: Any, make_member: Any, client
     alt, neu = vergleich(client_for(leitung.user), url("organization_faction_settings", org))
     gesperrt = {k for k in alt if k.startswith("gesperrt:") and "publish_protocols" in k}
     assert gesperrt and gesperrt <= neu
-    assert fehlend(alt, neu, unterpunkte_anderer_reiter(org, "fraktion")) == []
+    assert fehlend(alt, neu, unterpunkte_anderer_reiter(org, "fraktion") | ohne_zugriff(org, leitung)) == []
 
 
 #: Antwortcodes je Rolle (einstellungen_hilfen.ROLLEN) für die Seiten mit eigenem Recht, unverändert gegenüber bisher
 CODES = {
     "organization_faction_settings": {"admin": 200, "leser": 403, "bearbeitung": 403, "fraktionsleitung": 200},
     "organization_documents": {"admin": 200, "leser": 200, "bearbeitung": 200, "mitglied": 403},
-    "document_settings": {"admin": 200, "leser": 403, "bearbeitung": 200, "fraktionsleitung": 403},
     "organization_ris_settings": {"admin": 200, "bearbeitung": 403, "fraktionsleitung": 200},
     "council_parties": {"admin": 200, "leser": 403, "bearbeitung": 200, "fraktionsleitung": 403},
 }
@@ -175,7 +181,10 @@ def test_rechte_und_gleichstand_je_rolle(
     else:
         seite = SEITEN[name][1]
         pfad = url(name, org)
-    codes = rechte_wie_bisher(client_for, rollen, pfad, unterpunkte_anderer_reiter(org, seite))
+    ausnahmen = unterpunkte_anderer_reiter(org, seite)
+    if name == "council_parties":
+        ausnahmen |= kontakte(vergleich(client_for(rollen["admin"].user), pfad)[0])
+    codes = rechte_wie_bisher(client_for, rollen, pfad, ausnahmen)
     erwartet = CODES.get(name, {"admin": 200, "leser": 403, "bearbeitung": 200, "fraktionsleitung": 403})
     assert {rolle: codes[rolle] for rolle in erwartet} == erwartet
 
@@ -202,6 +211,7 @@ def test_fraktion_vorschau_ohne_inline_skript(org: Any, admin: Any, client_for: 
     "name",
     [
         "document_settings",
+        "organization_admin_contacts",
         "document_type_list",
         "document_topic_list",
         "document_template_edit",

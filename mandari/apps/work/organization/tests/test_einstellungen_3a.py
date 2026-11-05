@@ -9,7 +9,8 @@ work/organization/neu/ bzw. work/motions/settings/neu/; ausgeschaltet bleibt all
 - Gleichstand der Funktionen je Seite und Rolle (gleichstand.py): Formulare mit Methode, Ziel, Feldern, Pflichtfeldern
   und Rückfragen, Work-Links, Aktionen und Alpine-Komponenten der bisherigen Vorlage stehen auch in der neuen.
   Ausnahmen stehen begründet in AUSNAHMEN.
-- Rechte: dieselben Antwortcodes je Rolle in beiden Vorlagen; Reiter nur mit den Rechten der bisherigen Leiste.
+- Rechte: dieselben Antwortcodes je Rolle in beiden Vorlagen; Reiter nur, wo die Person die Seite öffnen darf
+  (Issue #1230, test_einstellungen_1230.py).
 - Bausteine statt Hand-Markup: keine Kästen, kein Inline-Stil, keine Inline-Handler.
 """
 
@@ -27,6 +28,7 @@ from apps.work.organization import einstellungen
 
 from .einstellungen_hilfen import fixtures_uebernehmen
 from .einstellungen_hilfen import html as _html
+from .einstellungen_hilfen import ohne_zugriff as _ohne_zugriff
 from .einstellungen_hilfen import rechte_wie_bisher as _rechte_wie_bisher
 from .einstellungen_hilfen import unterpunkte_anderer_reiter as _unterpunkte_anderer_reiter
 from .einstellungen_hilfen import url as _url
@@ -93,7 +95,8 @@ def test_gleichstand_allgemein_nur_lesend(org: Any, leser: Any, client_for: Any)
     client = client_for(leser.user)
     pfad = _url("organization", org)
     alt, neu = _vergleich(client, pfad, f"{pfad}?bereich=sicherheit")
-    assert fehlend(alt, neu, AUSNAHMEN["organization"] | _unterpunkte_anderer_reiter(org, "organisation")) == []
+    ausnahmen = AUSNAHMEN["organization"] | _unterpunkte_anderer_reiter(org, "organisation") | _ohne_zugriff(org, leser)
+    assert fehlend(alt, neu, ausnahmen) == []
     html = _html(client.get(pfad))
     assert 'name="action"' not in html
     assert "Ändern darf, wer die Organisation bearbeiten darf" in html
@@ -114,13 +117,15 @@ def test_rechte_und_gleichstand_je_rolle_3a(org: Any, rollen: dict[str, Any], cl
     FactionPublicApiAccess.for_organization(org)
     ausnahmen = AUSNAHMEN.get(name, set()) | _unterpunkte_anderer_reiter(org, SEITE_3A[name])
     pfad = _url(name, org)
-    # Die bisherige Seite „Allgemein“ trug auch die Anmeldesicherheit, jetzt der Reiter „Sicherheit“
+    # Die bisherige Seite „Allgemein“ trug auch die Anmeldesicherheit, jetzt Mitglieder und Rechte › Anmeldesicherheit
     weitere = (f"{pfad}?bereich=sicherheit",) if name == "organization" else ()
     codes = _rechte_wie_bisher(client_for, rollen, pfad, ausnahmen, weitere)
     assert {rolle: codes[rolle] for rolle in CODES_3A[name]} == CODES_3A[name]
 
 
-def test_sicherheit_ist_eigener_reiter_und_bleibt_nach_dem_speichern(org: Any, admin: Any, client_for: Any) -> None:
+def test_anmeldesicherheit_ist_eigene_seite_und_bleibt_nach_dem_speichern(
+    org: Any, admin: Any, client_for: Any
+) -> None:
     client = client_for(admin.user)
     pfad = _url("organization", org)
     html = _html(client.get(f"{pfad}?bereich=sicherheit"))
@@ -157,22 +162,19 @@ def _reiter(html: str) -> list[str]:
 
 
 def test_reiter_fuer_die_administration(org: Any, admin: Any, client_for: Any) -> None:
+    """Fünf Bereiche (Issue #1230); E-Mail-Versand ist Unterpunkt von „Organisation“."""
     html = _html(client_for(admin.user).get(_url("organization_email_settings", org)))
-    assert _reiter(html) == ["Allgemein", "Mitglieder", "Fraktionssitzungen", "Dokumente", "Verwaltung", "Sicherheit"]
+    assert _reiter(html) == ["Organisation", "Mitglieder und Rechte", "Sitzungen", "Dokumente", "Rat und Verwaltung"]
     unterpunkte = html.split('data-testid="einstellungen-unterpunkte"', 1)[1].split("</nav>", 1)[0]
-    for name in (
-        "organization",
-        "organization_email_settings",
-        "organization_registration",
-        "organization_api_settings",
-    ):
-        assert f'href="{_url(name, org)}"' in unterpunkte
+    gefunden = re.findall(r'<a href="([^"]+)"', unterpunkte)
+    assert gefunden == [_url(n, org) for n in ("organization", "organization_email_settings", "document_topic_list")]
     aktuell = re.findall(r'<a href="([^"]+)" aria-current="page"', unterpunkte)
     assert aktuell == [_url("organization_email_settings", org)]
 
 
 def test_jede_bisherige_reiterseite_bleibt_erreichbar(org: Any, admin: Any, client_for: Any) -> None:
-    """Jedes Ziel der bisherigen Leiste steht als Reiter oder als Unterpunkt auf der Seite seines Reiters."""
+    """Jedes Ziel der bisherigen Leiste und jede neue Unterseite steht als Reiter oder als Unterpunkt auf der Seite
+    seines Reiters."""
     client = client_for(admin.user)
     bisher = [
         "organization",
@@ -185,6 +187,8 @@ def test_jede_bisherige_reiterseite_bleibt_erreichbar(org: Any, admin: Any, clie
         "members",
         "roles",
         "organization_registration",
+        "document_topic_list",
+        "organization_admin_contacts",
     ]
     reiterseiten = {r["url"] for r in einstellungen.navigation(org, admin, "organisation")["reiter"]}
     erreichbar: set[str] = set()
@@ -194,14 +198,22 @@ def test_jede_bisherige_reiterseite_bleibt_erreichbar(org: Any, admin: Any, clie
     assert [name for name in bisher if _url(name, org) not in erreichbar] == []
 
 
-def test_reiter_ohne_fraktionsrechte_wie_bisher(org: Any, leser: Any, client_for: Any) -> None:
-    """Fraktionssitzungen, API und Einreichung nur mit faction.manage, Rollen nur mit organization.manage_roles."""
+def test_reiter_fuer_leserinnen(org: Any, leser: Any, client_for: Any) -> None:
+    """Ohne organization.edit, faction.* und organization.manage_roles: keine Reiter, die auf 403 führen."""
     html = _html(client_for(leser.user).get(_url("organization", org)))
-    assert _reiter(html) == ["Allgemein", "Mitglieder", "Dokumente", "Verwaltung", "Sicherheit"]
-    for name in ("organization_faction_settings", "organization_api_settings", "organization_ris_settings", "roles"):
-        assert f'href="{_url(name, org)}"' not in html
-    # „Verwaltung“ führt ohne faction.manage direkt zu den Ratsfraktionen (wie die bisherige Leiste)
-    assert f'href="{_url("council_parties", org)}"' in html
+    assert _reiter(html) == ["Organisation", "Mitglieder und Rechte", "Dokumente"]
+    for name in (
+        "organization_faction_settings",
+        "organization_api_settings",
+        "organization_ris_settings",
+        "roles",
+        "organization_email_settings",
+        "organization_registration",
+        "council_parties",
+        "organization_admin_contacts",
+        "document_topic_list",
+    ):
+        assert f'href="{_url(name, org)}"' not in html, name
 
 
 # ---------------------------------------------------------------------------

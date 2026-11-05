@@ -1,0 +1,48 @@
+{% extends "work/base_work.html" %}
+{% comment %}
+Einstellungen › Rat und Verwaltung › Verwaltungskontakte (Issue #1230, bisher auf der Seite der Ratsfraktionen):
+Empfänger von Anträgen, die ohne Verbindung zu mandari Session per E-Mail an die Verwaltung gehen. Aktionen
+add_admin_contact und delete_admin_contact wie bisher (work/organization/parties.html), jetzt an die eigene Adresse.
+Kontext: AdministrationContactListView.
+{% endcomment %}
+
+{% block page_title %}Verwaltungskontakte{% endblock %}
+{% block gestaltung %}neu{% endblock %}
+
+{% block work_header %}
+<c-rahmen.kopfband titel="Verwaltungskontakte" dicht
+    text="Empfänger in der Verwaltung, wenn Anträge ohne Verbindung zu mandari Session per E-Mail eingereicht werden. Bei der Einreichung wählen Sie, wer den Antrag erhält." />
+{% include "work/organization/neu/_reiter.html" with seite="kontakte" %}
+{% endblock %}
+
+{% block work_content %}
+<div class="lg:flex lg:gap-10">
+    {% include "work/organization/neu/_unterpunkte.html" with seite="kontakte" %}
+    <div class="min-w-0 flex-1 max-w-3xl">
+        {% if admin_contacts %}
+        <ul class="divide-y divide-gray-200 dark:divide-gray-800 border-y border-gray-200 dark:border-gray-800 text-sm" data-testid="kontakte-liste">
+            {% for contact in admin_contacts %}
+            <li class="flex items-center justify-between gap-3 py-1.5">
+                <span class="min-w-0"><span class="font-medium text-gray-900 dark:text-white">{{ contact.label }}</span> <span class="text-gray-600 dark:text-gray-400 break-all">{{ contact.email }}</span></span>
+                <form method="post" action="">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete_admin_contact">
+                    <input type="hidden" name="contact_id" value="{{ contact.id }}">
+                    <c-ui.button type="submit" size="sm" variant="ghost" icon="x" class="text-red-700 dark:text-red-400">Entfernen<span class="sr-only">: {{ contact.label }}</span></c-ui.button>
+                </form>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-sm text-gray-700 dark:text-gray-300">Noch keine Verwaltungskontakte.</p>
+        {% endif %}
+        <form method="post" action="" class="mt-4 flex flex-wrap items-end gap-3">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_admin_contact">
+            <c-form.field name="contact_label" id="kontakt-bezeichnung" label="Bezeichnung" placeholder="z. B. Ratsbüro" dicht required class="flex-1 min-w-[10rem]" />
+            <c-form.field name="contact_email" id="kontakt-email" type="email" label="E-Mail" placeholder="ratsbuero@stadt.de" dicht required class="flex-1 min-w-[12rem]" />
+            <c-ui.button type="submit" size="sm" variant="secondary" icon="plus">Hinzufügen</c-ui.button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1935,14 +1935,20 @@ def update_general_settings(
     primary_color: str,
     logo: UploadedFile[Any] | None,
     remove_logo: bool,
+    secondary_color: str = "",
 ) -> None:
-    """Name, Beschreibung, Farbe und Logo (JPG/PNG/WebP, max. 5 MB) speichern."""
+    """
+    Name, Beschreibung, Farben und Logo (JPG/PNG/WebP, max. 5 MB) speichern. Leere oder ungültige Farben lassen die
+    bisherige stehen (die Zweitfarbe ist seit Issue #1230 in Work bearbeitbar, die bisherige Vorlage schickt sie nicht).
+    """
     if not name:
         raise ServiceError("Der Name darf nicht leer sein.")
     organization.name = name
     organization.description = description
     if primary_color and HEX_COLOR_RE.match(primary_color):
         organization.primary_color = primary_color
+    if secondary_color and HEX_COLOR_RE.match(secondary_color):
+        organization.secondary_color = secondary_color
     if logo is not None:
         _pruefe_bild(logo, "Logo")
         if organization.logo:

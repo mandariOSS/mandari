@@ -15,6 +15,7 @@ from .change_requests import (
     ProfileChangeRequestsView,
 )
 from .council import (
+    AdministrationContactListView,
     CouncilPartyListView,
 )
 from .email_settings import (
@@ -73,6 +74,7 @@ from .visibility import (
 
 __all__ = [
     "AcceptInvitationView",
+    "AdministrationContactListView",
     "CouncilPartyListView",
     "DataExportDeleteView",
     "DataExportDownloadView",

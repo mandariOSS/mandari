@@ -98,6 +98,58 @@ def roles_with_member_count(organization: Organization) -> QuerySet[Role]:
     )
 
 
+@dataclass(frozen=True)
+class RolleZweiterFaktor:
+    """Eine Rolle mit ihrer Zwei-Faktor-Pflicht für die Seite „Anmeldesicherheit“ (Issue #1230)."""
+
+    role: Role
+    pflicht: bool
+    grund: str
+
+
+def roles_two_factor(organization: Organization) -> list[RolleZweiterFaktor]:
+    """
+    Alle Rollen der Organisation mit ihrer Zwei-Faktor-Pflicht nach ``apps.accounts.two_factor_policy``: Die
+    Administration und Rollen mit Verwaltungsrechten (``WORK_VERWALTUNGSRECHTE``) verlangen ihn immer, sonst die
+    Einstellung der Rolle („2FA erforderlich“) oder die Pflicht für die ganze Organisation.
+    """
+    from apps.accounts.two_factor_policy import WORK_VERWALTUNGSRECHTE
+
+    ergebnis: list[RolleZweiterFaktor] = []
+    for role in roles_with_member_count(organization):
+        rechte = {permission.codename for permission in role.permissions.all()}
+        if role.is_admin:
+            eintrag = RolleZweiterFaktor(role, True, "Immer, Administration")
+        elif rechte & set(WORK_VERWALTUNGSRECHTE):
+            eintrag = RolleZweiterFaktor(role, True, "Immer, die Rolle verwaltet Mitglieder, Rollen oder Einstellungen")
+        elif role.require_2fa:
+            eintrag = RolleZweiterFaktor(role, True, "Verlangt, in der Rolle eingestellt")
+        elif organization.require_2fa:
+            eintrag = RolleZweiterFaktor(role, True, "Verlangt, gilt für alle Mitglieder")
+        else:
+            eintrag = RolleZweiterFaktor(role, False, "Freiwillig")
+        ergebnis.append(eintrag)
+    return ergebnis
+
+
+def letterhead_overview(organization: Organization) -> dict[str, Any]:
+    """Wichtigster aktiver Briefkopf und seine Art (generiert, PDF oder keiner) für die Dokument-Übersicht."""
+    from apps.work.motions.models import OrganizationLetterhead
+
+    primary_letterhead = (
+        OrganizationLetterhead.objects.filter(organization=organization, is_active=True)
+        .order_by("-is_default", "name")
+        .first()
+    )
+    if primary_letterhead is None:
+        letterhead_status = "keiner"
+    elif primary_letterhead.is_generated:
+        letterhead_status = "generiert"
+    else:
+        letterhead_status = "PDF"
+    return {"primary_letterhead": primary_letterhead, "letterhead_status": letterhead_status}
+
+
 def get_role_or_404(organization: Organization, role_id: Any) -> Role:
     """Rolle der Organisation oder 404."""
     return get_object_or_404(Role, id=role_id, organization=organization)
