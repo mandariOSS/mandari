@@ -136,7 +136,6 @@ SELBSTBEDIENUNG: dict[str, str] = {
     "profile_visibility": "Sichtbarkeit des eigenen Profils",
     "profile_committees": "eigene Gremien und Fachgebiete",
     "session_invitation_respond": "eigene Ladung der Verwaltung beantworten",
-    "noe_sichtschutz": "Sichtschutz für Nichtöffentliches der eigenen Anmeldung (nur Session, Issue #1201)",
 }
 
 #: Aktionen auf Selbstbedienungs-Seiten, die Daten anderer ändern und deshalb voll geprüft werden
@@ -943,7 +942,6 @@ CASES: list[Case] = [
     Case("notifications_mark_all_read"),
     Case("notification_mark_read", path={"notification_id": "notification"}, same_org=True),
     Case("two_factor_hint_later"),
-    Case("noe_sichtschutz", data={"sichtbar": "1"}),
     Case("profile", "update_profile", data={"action": "update_profile", "first_name": "Erika", "last_name": "Muster"}),
     Case("profile", "remove_avatar", data={"action": "remove_avatar"}),
     Case("profile", "regenerate_calendar_feed", data={"action": "regenerate_calendar_feed"}),

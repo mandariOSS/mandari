@@ -2,10 +2,10 @@
 """
 Sichtschutz für Nichtöffentliches als ein Schalter für ganz Work (Issue #1201).
 
-- Zustand in der Django-Session (``apps/work/sichtschutz.py``): Standard verdeckt, jede Anmeldung beginnt verdeckt,
-  POST-Endpunkt mit CSRF unter der Organisation (nur Mitglieder, keine Gäste); der Zustand gilt für die ganze Anmeldung.
-- Jede Work-Seite kommt schon richtig vom Server: Klasse ``noe-verdeckt`` am ``<body>`` beider Rahmen, Adresse des
-  Endpunkts für den Alpine-Store ``noe``; Knopf in der Kopfleiste nur für Personen, die Nichtöffentliches sehen dürfen.
+- Zustand als Cookie mit der Marke der Anmeldung (``apps/work/sichtschutz.py``): Standard verdeckt, jede Anmeldung
+  beginnt verdeckt (neue Kennung), fremde oder falsche Marken gelten nicht.
+- Jede Work-Seite kommt schon richtig vom Server: Klasse ``noe-verdeckt`` am ``<body>`` beider Rahmen, Marke der
+  Anmeldung für den Alpine-Store ``noe``; Knopf in der Kopfleiste nur für Personen, die Nichtöffentliches sehen dürfen.
 - Die übrigen Ansichten mit nichtöffentlichen TOPs: weichgezeichnete Titel mit Ersatz für Vorleser, Inhalte hinter der
   Abdeckung. Die Sitzungsansicht prüft ``apps/work/faction/tests/test_noe_sichtschutz.py``.
 
@@ -14,7 +14,6 @@ Nur Sichtschutz: Wer keine Rechte hat, bekommt die Inhalte wie bisher nicht (die
 
 from __future__ import annotations
 
-import json
 import re
 from datetime import timedelta
 from typing import Any, cast
@@ -24,7 +23,6 @@ from django.test import Client
 from django.urls import reverse
 from django.utils import timezone
 
-from apps.common.tests.factories import OrganizationFactory
 from apps.work import sichtschutz
 from apps.work.faction.models import FactionAgendaItem, FactionAttendance, FactionMeeting
 from apps.work.tasks.models import Task
@@ -51,8 +49,6 @@ VERDECKT = (
     f'<span class="fs-noe" aria-hidden="true" :aria-hidden="!$store.noe.sichtbar">{TITEL}</span>'
     '<span class="sr-only fs-noe-ersatz">Nichtöffentlicher TOP, ausgeblendet</span>'
 )
-#: Endpunkt unter der Organisation aus ``conftest.org``
-URL = "/work/fraktion-test/nichtoeffentlich/sichtschutz/"
 
 
 @pytest.fixture
@@ -114,80 +110,73 @@ def _detail(org: Any, meeting: FactionMeeting) -> str:
 # ---------------------------------------------------------------------------
 
 
-def test_endpunkt_unter_der_organisation_nur_fuer_mitglieder(org: Any, make_member: Any, client_for: Any) -> None:
-    assert reverse("work:noe_sichtschutz", kwargs={"org_slug": org.slug}) == URL
-    # Gäste: wie überall in Work auf ihre Übersicht, ohne den Zustand zu ändern
-    gast = make_member(org, [], email="gast-1201@example.org")
-    gast.is_guest = True
-    gast.save(update_fields=["is_guest"])
-    client = client_for(gast.user)
-    for antwort in (client.get(URL), client.post(URL, {"sichtbar": "1"})):
-        assert antwort.status_code == 302 and antwort["Location"].endswith("/freigaben/")
-    assert sichtschutz.SITZUNGS_SCHLUESSEL not in client.session
-    # Ohne Mitgliedschaft in dieser Organisation: gesperrt
-    andere = OrganizationFactory(slug="andere-fraktion-1201")  # type: ignore[no-untyped-call]
-    fremd = make_member(andere, [], email="fremd-1201@example.org")
-    assert client_for(fremd.user).post(URL, {"sichtbar": "1"}).status_code == 403
+def _einblenden(client: Client) -> None:
+    """Wie der Store im Browser: Cookie mit der Marke der Anmeldung setzen."""
+    session = client.session
+    assert session.session_key
+    client.cookies[sichtschutz.COOKIE] = sichtschutz.marke_fuer(session.session_key, session[sichtschutz.ANMELDUNG])
 
 
-def test_standard_verdeckt_und_umschalten(org: Any, neu: Any, vorsitz: Any, client_for: Any) -> None:
+def test_standard_verdeckt_und_einblenden_per_cookie(org: Any, neu: Any, vorsitz: Any, client_for: Any) -> None:
     client = client_for(vorsitz.user)
     dashboard = reverse("work:dashboard", kwargs={"org_slug": org.slug})
-    assert client.get(URL).json() == {"sichtbar": False}
     body = _body(_seite(client, dashboard))
-    assert "noe-verdeckt" in body and f'data-noe-url="{URL}"' in body
+    marke = sichtschutz.marke_fuer(cast(str, client.session.session_key), client.session[sichtschutz.ANMELDUNG])
+    assert "noe-verdeckt" in body and f'data-noe-marke="{marke}"' in body
+    assert re.fullmatch(r"[0-9a-f]{64}", marke)
 
-    antwort = client.post(URL, {"sichtbar": "1"})
-    assert antwort.status_code == 200 and antwort.json() == {"sichtbar": True}
-    assert antwort["Cache-Control"] == "no-store"
+    _einblenden(client)
     html = _seite(client, dashboard)
     assert "noe-verdeckt" not in _body(html)
     # Knopf vom Server schon im richtigen Zustand: gedrückt, Kurzinfo nennt den nächsten Schritt
     knopf = re.search(r'<button[^>]*data-testid="noe-knopf"[^>]*>', html, flags=re.S)
     assert knopf and 'aria-pressed="true"' in knopf.group(0) and 'title="Nichtöffentliches verdecken"' in knopf.group(0)
 
-    # Jeder andere Wert verdeckt (fail-safe)
-    assert client.post(URL, {"sichtbar": "ja"}).json() == {"sichtbar": False}
+    # Falscher Wert oder gelöschtes Cookie: verdeckt
+    client.cookies[sichtschutz.COOKIE] = "0" * len(marke)
+    assert "noe-verdeckt" in _body(_seite(client, dashboard))
+    _einblenden(client)
+    del client.cookies[sichtschutz.COOKIE]
     assert "noe-verdeckt" in _body(_seite(client, dashboard))
 
 
 def test_jede_anmeldung_beginnt_verdeckt(org: Any, neu: Any, vorsitz: Any, client_for: Any) -> None:
     client = client_for(vorsitz.user)
-    client.post(URL, {"sichtbar": "1"})
-    assert client.session.get(sichtschutz.SITZUNGS_SCHLUESSEL) is True
-    # Erneute Anmeldung desselben Kontos: Django führt die Session weiter, der Zustand nicht
+    dashboard = reverse("work:dashboard", kwargs={"org_slug": org.slug})
+    _einblenden(client)
+    assert "noe-verdeckt" not in _body(_seite(client, dashboard))
+    # Erneute Anmeldung desselben Kontos (Django behält dabei den Sitzungsschlüssel): neue Kennung, neue Marke
+    schluessel = client.session.session_key
     client.force_login(vorsitz.user)
-    assert client.get(URL).json() == {"sichtbar": False}
+    assert client.session.session_key == schluessel
+    assert sichtschutz.COOKIE in client.cookies
+    assert "noe-verdeckt" in _body(_seite(client, dashboard))
     # Abmelden und wieder anmelden ebenso
-    client.post(URL, {"sichtbar": "1"})
+    _einblenden(client)
     client.logout()
     client.force_login(vorsitz.user)
-    assert client.get(URL).json() == {"sichtbar": False}
+    assert "noe-verdeckt" in _body(_seite(client, dashboard))
 
 
-def test_endpunkt_braucht_anmeldung_und_csrf(vorsitz: Any) -> None:
-    anonym = Client()
-    for antwort in (anonym.get(URL), anonym.post(URL, {"sichtbar": "1"})):
-        assert antwort.status_code == 302 and "/login/" in antwort["Location"]
-
-    client = Client(enforce_csrf_checks=True)
-    client.force_login(vorsitz.user)
-    assert client.post(URL, {"sichtbar": "1"}).status_code == 403
-    assert client.get(URL).json() == {"sichtbar": False}
-    # Mit Token (wie der Store aus dem Meta-Tag bzw. Cookie)
-    client.get(reverse("work:dashboard", kwargs={"org_slug": vorsitz.organization.slug}))
-    token = client.cookies.get("csrftoken") or client.cookies.get("__Host-csrftoken")
-    assert token is not None
-    antwort = client.post(URL, {"sichtbar": "1"}, HTTP_X_CSRFTOKEN=token.value)
-    assert antwort.status_code == 200 and json.loads(antwort.content) == {"sichtbar": True}
+def test_marke_einer_fremden_anmeldung_gilt_nicht(org: Any, neu: Any, vorsitz: Any, client_for: Any) -> None:
+    dashboard = reverse("work:dashboard", kwargs={"org_slug": org.slug})
+    andere = client_for(vorsitz.user)
+    client = client_for(vorsitz.user)
+    client.cookies[sichtschutz.COOKIE] = sichtschutz.marke_fuer(
+        cast(str, andere.session.session_key), andere.session[sichtschutz.ANMELDUNG]
+    )
+    assert "noe-verdeckt" in _body(_seite(client, dashboard))
+    # Ohne Anmeldung keine Marke
+    assert sichtschutz.marke(None) == "" and not sichtschutz.ist_sichtbar(None)
 
 
-def test_endpunkt_aendert_keine_rechte(org: Any, neu: Any, mitglied: Any, vorsitz: Any, client_for: Any) -> None:
+def test_einblenden_aendert_keine_rechte(org: Any, neu: Any, mitglied: Any, vorsitz: Any, client_for: Any) -> None:
     """Auch eingeblendet bekommt, wer keine Rechte hat, den nichtöffentlichen Teil nicht."""
     meeting, _noe = _sitzung(org, vorsitz, "ongoing")
     client = client_for(mitglied.user)
-    assert client.post(URL, {"sichtbar": "1"}).json() == {"sichtbar": True}
+    _einblenden(client)
     html = _seite(client, _detail(org, meeting), ansicht="bisher")
+    assert "noe-verdeckt" not in _body(html)
     assert TITEL not in html and BESCHREIBUNG not in html
 
 
@@ -213,8 +202,8 @@ def test_knopf_nur_mit_recht(
     assert 'aria-label="Nichtöffentliches einblenden"' in knopf_html
     assert 'title="Nichtöffentliches einblenden"' in knopf_html
     assert 'data-lucide="eye-off"' in knopf_html and 'data-lucide="eye"' in knopf_html
-    # Beide Rahmen: Klasse und Adresse am body
-    assert "noe-verdeckt" in _body(html) and f'data-noe-url="{URL}"' in _body(html)
+    # Beide Rahmen: Klasse und Marke am body
+    assert "noe-verdeckt" in _body(html) and 'data-noe-marke="' in _body(html)
 
     # Ohne Recht auf Nichtöffentliches: kein Knopf (der Zustand gilt trotzdem)
     assert 'data-testid="noe-knopf"' not in _seite(client_for(mitglied.user), dashboard)
@@ -249,7 +238,7 @@ def test_bisherige_ansicht(org: Any, neu: Any, vorsitz: Any, client_for: Any) ->
     assert panel.index("fs-noe-abdeckung") < panel.index('<div class="fs-noe-inhalt">')
 
     # Eingeblendet: dieselben Seiten ohne inert (der Server kennt den Zustand)
-    client.post(URL, {"sichtbar": "1"})
+    _einblenden(client)
     panel = _seite(
         client,
         reverse("work:faction_item_panel", kwargs={"org_slug": org.slug, "meeting_id": meeting.pk, "item_id": noe.pk}),
