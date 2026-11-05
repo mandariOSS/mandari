@@ -1,5 +1,6 @@
 {# Dialog „Neue Sitzung“: Tagesordnung, die die Sitzung erhält – erster TOP und Standard-TOPs (Issue #872) #}
 {# Kontext: preview (approval_item, approval_title, public, internal, locked_internal, count), organization, membership #}
+{# Nichtöffentliche Standardpunkte weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issue #1201) #}
 {% load permission_tags %}
 {% if preview.approval_item or preview.count %}
 <fieldset class="space-y-2">
@@ -12,7 +13,7 @@
         <li><span class="text-gray-500 tabular-nums">{% if preview.approval_item %}{{ forloop.counter|add:1 }}{% else %}{{ forloop.counter }}{% endif %}</span> {{ item.title }}</li>
         {% endfor %}
         {% for item in preview.internal %}
-        <li><span class="text-gray-500 tabular-nums">NÖ {{ forloop.counter }}</span> {{ item.title }}</li>
+        <li><span class="text-gray-500 tabular-nums">NÖ {{ forloop.counter }}</span> {% include "work/faction/sitzung/_noe_text.html" with text=item.title noe=True %}</li>
         {% endfor %}
         {% if preview.locked_internal %}
         <li class="text-gray-500">+ {{ preview.locked_internal }} nicht-öffentliche{{ preview.locked_internal|pluralize:"r Punkt, Punkte" }} (nur für Vereidigte sichtbar)</li>

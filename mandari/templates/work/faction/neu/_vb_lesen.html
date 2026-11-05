@@ -77,7 +77,7 @@ to_oeffentlich, to_intern, to_gesperrt, to_eltern, to_eltern_intern, can_view_in
         <select id="tf-unter" class="wf-eingabe wf-auswahl" name="parent_id">
             <option value="">als eigener TOP</option>
             {% for z in to_eltern %}<option value="{{ z.item.pk }}">unter {{ z.item.number }} {{ z.item.title|truncatechars:40 }}</option>{% endfor %}
-            {% if to_eltern_intern %}<optgroup label="Nichtöffentlicher Teil">{% for z in to_eltern_intern %}<option value="{{ z.item.pk }}">unter {{ z.nummer }} {{ z.item.title|truncatechars:40 }}</option>{% endfor %}</optgroup>{% endif %}
+            {% if to_eltern_intern %}<optgroup label="Nichtöffentlicher Teil">{% for z in to_eltern_intern %}<option value="{{ z.item.pk }}" data-voll="unter {{ z.nummer }} {{ z.item.title|truncatechars:40 }}" data-kurz="unter {{ z.nummer }}" x-text="$store.noe.sichtbar ? $el.dataset.voll : $el.dataset.kurz">unter {{ z.nummer }}{% if noe_sichtbar %} {{ z.item.title|truncatechars:40 }}{% endif %}</option>{% endfor %}</optgroup>{% endif %}
         </select>
         {% endif %}
         <button type="submit" class="wf-knopf">{% if can_add_items %}Eintragen{% else %}Vorschlagen{% endif %}</button>
@@ -89,14 +89,14 @@ to_oeffentlich, to_intern, to_gesperrt, to_eltern, to_eltern_intern, can_view_in
     {% if my_proposals %}
     <ul class="fs-meine-vs" data-testid="fs-meine-vorschlaege">
         {% for v in my_proposals %}
-        <li data-top-titel="{{ v.title }}">Ihr Vorschlag „{{ v.title }}“ {% if v.is_rejected %}wurde abgelehnt{% if v.rejection_reason %}: {{ v.rejection_reason }}{% else %}.{% endif %}{% else %}wartet auf Genehmigung.{% endif %}</li>
+        <li data-top-titel="{{ v.title }}">Ihr Vorschlag „{% if v.visibility == 'internal' %}{% include "work/faction/sitzung/_noe_text.html" with text=v.title noe=True %}{% else %}{{ v.title }}{% endif %}“ {% if v.is_rejected %}wurde abgelehnt{% if v.rejection_reason %}: {{ v.rejection_reason }}{% else %}.{% endif %}{% else %}wartet auf Genehmigung.{% endif %}</li>
         {% endfor %}
     </ul>
     {% endif %}
 </form>
 {% elif my_proposals %}
 <ul class="fs-meine-vs" data-testid="fs-meine-vorschlaege">
-    {% for v in my_proposals %}<li>Ihr Vorschlag „{{ v.title }}“ {% if v.is_rejected %}wurde abgelehnt{% if v.rejection_reason %}: {{ v.rejection_reason }}{% else %}.{% endif %}{% else %}wartet auf Genehmigung.{% endif %}</li>{% endfor %}
+    {% for v in my_proposals %}<li>Ihr Vorschlag „{% if v.visibility == 'internal' %}{% include "work/faction/sitzung/_noe_text.html" with text=v.title noe=True %}{% else %}{{ v.title }}{% endif %}“ {% if v.is_rejected %}wurde abgelehnt{% if v.rejection_reason %}: {{ v.rejection_reason }}{% else %}.{% endif %}{% else %}wartet auf Genehmigung.{% endif %}</li>{% endfor %}
 </ul>
 {% endif %}
 

@@ -439,15 +439,17 @@ def test_nichtoeffentlicher_teil_erst_nach_dem_einblenden_lesbar(
     page: Any, live_server: Any, login: Any, org: Any, sitzung: Any, axe: Any, screenshot: Any
 ) -> None:
     """
-    Sichtschutz (Issue #1166): Auch mit Rechten sind NÖ-Titel in Tagesordnung, Kopf und „Nächster TOP“ weichgezeichnet
-    und Unterlagen und Protokoll abgedeckt, bis der Teil eingeblendet ist. Der Zustand gilt je Sitzung im Browser-Tab
-    (TOP-Wechsel, Neuladen); ein neuer Tab beginnt wieder verdeckt.
+    Sichtschutz (Issues #1166, #1201): Auch mit Rechten sind NÖ-Titel in Tagesordnung, Kopf und „Nächster TOP“
+    weichgezeichnet und Unterlagen und Protokoll abgedeckt, bis Nichtöffentliches eingeblendet ist. Ein Zustand für
+    ganz Work und die ganze Anmeldung: Er übersteht TOP-Wechsel und Neuladen, gilt auf anderen Seiten (Bisherige
+    Ansicht) und in jedem Tab; offene Tabs folgen sofort, ohne Neuladen. Knopf dafür in der Kopfleiste.
     """
     vorsitz, meeting, tops = sitzung
     titel = "Anfrage Hitzeschutz an Schulen"
     noe = FactionAgendaItem.objects.create(
         meeting=meeting, number="NÖ 1", title=titel, visibility="internal", order=len(tops)
     )
+    blur = re.compile(r"^blur\(")
     page.set_viewport_size({"width": 1440, "height": 900})
     login(vorsitz.user.email, PASSWORD)
     page.goto(f"{live_server.url}/work/{org.slug}/faction/{meeting.pk}/?top={noe.pk}")
@@ -456,35 +458,42 @@ def test_nichtoeffentlicher_teil_erst_nach_dem_einblenden_lesbar(
     kopf = page.locator("#fs-top-titel .fs-noe")
     abdeckung = page.locator(".fs-noe-abdeckung")
     schalter = page.locator("#fs-tagesordnung .fs-noe-schalter")
+    knopf = page.locator('[data-testid="noe-knopf"]')
 
-    # Verdeckt: Nummer lesbar, Titel weichgezeichnet und für Vorleser ersetzt, Abdeckung statt Protokoll
+    # Nach der Anmeldung verdeckt: Nummer lesbar, Titel weichgezeichnet und für Vorleser ersetzt, Abdeckung statt Protokoll
+    expect(page.locator("body")).to_have_class(re.compile(r"noe-verdeckt"))
     expect(page.locator(f"#fs-tl-{noe.pk} .nr")).to_have_text("NÖ 1")
     for verdeckt in (zeile, kopf):
-        expect(verdeckt).to_have_css("filter", re.compile(r"^blur\("))
+        expect(verdeckt).to_have_css("filter", blur)
         expect(verdeckt).to_have_attribute("aria-hidden", "true")
     expect(page.locator(f"#fs-tl-{noe.pk} a")).to_have_accessible_name("NÖ 1 Nichtöffentlicher TOP, ausgeblendet")
     expect(abdeckung).to_be_visible()
     expect(page.locator("#fs-notiz")).to_be_hidden()
     expect(page.locator("#fs-unten")).to_contain_text("Nichtöffentlich, ausgeblendet")
     expect(schalter).to_have_attribute("aria-pressed", "false")
+    expect(knopf).to_be_visible()
+    expect(knopf).to_have_attribute("aria-pressed", "false")
+    expect(knopf).to_have_attribute("title", "Nichtöffentliches einblenden")
     result = axe()
     assert not result.failing, result.describe()
     screenshot("fraktionssitzung-noe-verdeckt-1440")
 
-    # Einblenden über die Abdeckung: lesbar, Fokus auf der Überschrift, Protokoll beschreibbar
-    abdeckung.get_by_role("button", name="Nichtöffentlichen Teil einblenden").click()
+    # Einblenden über die Abdeckung: lesbar, Fokus auf der Überschrift, Protokoll beschreibbar; der Knopf folgt
+    abdeckung.get_by_role("button", name="Nichtöffentliches einblenden").click()
     expect(abdeckung).to_be_hidden()
     expect(kopf).to_have_css("filter", "none")
     expect(kopf).not_to_have_attribute("aria-hidden", "true")
     expect(page.locator("#fs-top-titel")).to_be_focused()
     expect(schalter).to_have_attribute("aria-pressed", "true")
-    expect(schalter).to_have_attribute("title", "Nichtöffentlichen Teil wieder verdecken")
+    expect(schalter).to_have_attribute("title", "Nichtöffentliches verdecken")
+    expect(knopf).to_have_attribute("aria-pressed", "true")
+    expect(knopf).to_have_attribute("title", "Nichtöffentliches verdecken")
     page.locator(NOTIZ).click()
     page.keyboard.type("Messwerte liegen vor.")
     expect(page.locator(".fs-status")).to_contain_text(re.compile(r"Automatisch gespeichert um"), timeout=10000)
     screenshot("fraktionssitzung-noe-eingeblendet-1440")
 
-    # TOP-Wechsel per HTMX und Neuladen: bleibt eingeblendet, „Nächster TOP“ nennt den Titel
+    # TOP-Wechsel per HTMX und Neuladen: bleibt eingeblendet (Zustand der Anmeldung), „Nächster TOP“ nennt den Titel
     page.locator("#fs-tagesordnung").get_by_text("Sonstiges").click()
     expect(page.locator("#fs-top-titel")).to_contain_text("Sonstiges")
     nach = page.locator('#fs-unten [data-nav="nach"]')
@@ -492,35 +501,57 @@ def test_nichtoeffentlicher_teil_erst_nach_dem_einblenden_lesbar(
     page.reload()
     wait_for_bundle(page)
     expect(zeile).to_have_css("filter", "none")
+    expect(page.locator("body")).not_to_have_class(re.compile(r"noe-verdeckt"))
 
-    # Neuer Tab: wieder verdeckt
+    # Zweiter Tab (etwa fürs Fenster am Beamer): derselbe Zustand; Verdecken im ersten Tab gilt dort sofort
     tab = page.context.new_page()
     tab.goto(page.url)
     wait_for_bundle(tab)
-    expect(tab.locator(f"#fs-tl-{noe.pk} .fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
-    expect(tab.locator('#fs-unten [data-nav="nach"]')).to_have_attribute("title", "Nächster TOP: NÖ 1 (Taste J)")
-    # Wie ein duplizierter Tab (gleicher sessionStorage, aber kein Neuladen): ebenfalls verdeckt
-    tab.evaluate("([k, v]) => sessionStorage.setItem(k, v)", [f"fs-noe-sichtbar:{meeting.pk}", "1"])
-    tab.goto(page.url)
-    wait_for_bundle(tab)
-    expect(tab.locator(f"#fs-tl-{noe.pk} .fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
-    tab.close()
-
-    # Wieder verdecken über den Schalter an „Nichtöffentlicher Teil“
+    tab_zeile = tab.locator(f"#fs-tl-{noe.pk} .fs-noe")
+    expect(tab_zeile).to_have_css("filter", "none")
     schalter.click()
     expect(schalter).to_have_attribute("aria-pressed", "false")
-    expect(zeile).to_have_css("filter", re.compile(r"^blur\("))
+    expect(zeile).to_have_css("filter", blur)
+    expect(nach).to_have_attribute("title", "Nächster TOP: NÖ 1 (Taste J)")
+    expect(tab_zeile).to_have_css("filter", blur)
+    expect(tab_zeile).to_have_attribute("aria-hidden", "true")
+    expect(tab.locator('#fs-unten [data-nav="nach"]')).to_have_attribute("title", "Nächster TOP: NÖ 1 (Taste J)")
+    expect(tab.locator('[data-testid="noe-knopf"]')).to_have_attribute("aria-pressed", "false")
+
+    # Umgekehrt: Einblenden im zweiten Tab über den Knopf in der Kopfleiste, der erste Tab folgt
+    tab.locator('[data-testid="noe-knopf"]').click()
+    expect(tab_zeile).to_have_css("filter", "none")
+    expect(zeile).to_have_css("filter", "none")
+    expect(knopf).to_have_attribute("aria-pressed", "true")
+
+    # Andere Seite: Die bisherige Ansicht kommt vom Server schon eingeblendet; der Knopf verdeckt dort und hier
+    tab.goto(f"{live_server.url}/work/{org.slug}/faction/{meeting.pk}/?ansicht=bisher")
+    wait_for_bundle(tab)
+    expect(tab.locator("body")).not_to_have_class(re.compile(r"noe-verdeckt"))
+    titel_bisher = tab.locator("#agenda-container .fs-noe", has_text=titel).first
+    expect(titel_bisher).to_have_css("filter", "none")
+    tab.locator('[data-testid="noe-knopf"]').click()
+    expect(titel_bisher).to_have_css("filter", blur)
+    expect(zeile).to_have_css("filter", blur)
+    expect(schalter).to_have_attribute("aria-pressed", "false")
+    tab.close()
+
+    # Neuladen nach dem Verdecken: bleibt verdeckt (der Server hat es übernommen)
+    page.reload()
+    wait_for_bundle(page)
+    expect(zeile).to_have_css("filter", blur)
     expect(nach).to_have_attribute("title", "Nächster TOP: NÖ 1 (Taste J)")
 
     # Breit: „Nächster TOP“ mit weichgezeichnetem Titel; am Handy die Abdeckung im NÖ-TOP
     page.set_viewport_size({"width": 1920, "height": 1080})
-    expect(nach.locator(".fs-noe")).to_have_css("filter", re.compile(r"^blur\("))
+    expect(nach.locator(".fs-noe")).to_have_css("filter", blur)
     screenshot("fraktionssitzung-noe-naechster-1920")
     page.set_viewport_size({"width": 390, "height": 844})
     page.locator("#fs-top-titel").click()
     page.keyboard.press("j")
     expect(page.locator("#fs-top-titel")).to_contain_text("NÖ 1")
     expect(abdeckung).to_be_visible()
+    expect(knopf).to_be_visible()
     result = axe()
     assert not result.failing, result.describe()
     screenshot("fraktionssitzung-noe-verdeckt-390")

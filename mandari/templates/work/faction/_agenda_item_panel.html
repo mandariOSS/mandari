@@ -2,6 +2,7 @@
 {# Kontext: item, meeting, org_slug, membership, decision, can_edit, is_protocol_phase, can_protocol, attendances, protocol_entries, #}
 {#   attachments, tasks, linked_motions, available_motions, linked_papers, available_members, reference_links, panel_config #}
 {# Zustand und Vorlagensuche: Alpine-Komponente `agendaItemPanel` (frontend/alpine/agenda-item-panel.ts), Konfiguration per json_script. #}
+{# noe: nichtöffentlicher TOP; Inhalte und Bearbeitung hinter der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issue #1201) #}
 {{ panel_config|json_script:"agenda-item-panel-config" }}
 <div x-data="agendaItemPanel"
      @panel-autosaved.window="markSaved($event.detail)"
@@ -14,6 +15,7 @@
 
     {# Scrollbarer Inhalt #}
     <div class="flex-1 overflow-y-auto">
+        {% if noe %}{% include "work/faction/sitzung/_noe_abdeckung.html" with klein=True was="Protokoll, Beschluss, Aufgaben, Anhänge und Verweise" %}<div class="fs-noe-inhalt">{% endif %}
         {% include "work/faction/partials/_agenda_item_panel_records.html" %}
         {% include "work/faction/partials/_agenda_item_panel_work.html" %}
         {% include "work/faction/partials/_agenda_item_panel_references.html" %}
@@ -33,15 +35,18 @@
             </div>
         </c-ui.panel-section>
         {% endif %}
+        {% if noe %}</div>{% endif %}
     </div>
 
     {# Fuß #}
     {% if can_edit and not item.is_approval_item %}
+    {% if noe %}<div class="fs-noe-inhalt">{% endif %}
     <div class="px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 flex items-center justify-between flex-shrink-0">
         <c-ui.text-button variant="muted" icon="plus"
                           @click="$dispatch('open-add-sub', { parent_id: '{{ item.id }}', visibility: '{{ item.visibility }}' }); $dispatch('close-item-panel')">Unterpunkt</c-ui.text-button>
         <c-ui.text-button variant="danger" icon="trash-2"
                           @click="$dispatch('open-delete-item', { id: '{{ item.id }}', title: '{{ item.title|escapejs }}' }); $dispatch('close-item-panel')">TOP löschen</c-ui.text-button>
     </div>
+    {% if noe %}</div>{% endif %}
     {% endif %}
 </div>

@@ -7,6 +7,7 @@ All URLs are prefixed with /work/<org_slug>/
 
 from django.urls import path
 
+from apps.work import sichtschutz
 from apps.work.dashboard import views as dashboard_views
 from apps.work.faction import views as faction_views
 from apps.work.meetings import views as meetings_views
@@ -50,6 +51,9 @@ urlpatterns = [
         motions_views.SubmissionConfirmView.as_view(),
         name="submission_confirm",
     ),
+    # Sichtschutz für Nichtöffentliches, gilt für die ganze Anmeldung (Issue #1201) – zweites Segment ist kein
+    # Organisationspfad
+    path("nichtoeffentlich/sichtschutz/", sichtschutz.sichtschutz_setzen, name="noe_sichtschutz"),
     # Dashboard
     path("<slug:org_slug>/", dashboard_views.DashboardView.as_view(), name="dashboard"),
     path(

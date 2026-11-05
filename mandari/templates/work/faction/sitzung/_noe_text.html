@@ -1,6 +1,8 @@
-{% if noe %}<span class="fs-noe" aria-hidden="true" :aria-hidden="!noeSichtbar">{{ text }}</span><span class="sr-only fs-noe-ersatz">Nichtöffentlicher TOP, ausgeblendet</span>{% else %}{{ text }}{% endif %}{% comment %}
-Text eines nichtöffentlichen TOPs mit Sichtschutz (Issue #1166): weichgezeichnet und für Vorleser ersetzt, bis der Teil
-eingeblendet ist (noeSichtbar der Komponente fraktionssitzung). Kontext: text, noe (TOP ist nichtöffentlich); ohne noe
-nur der Text. Der Kommentar steht hinten, damit das Einbinden keine Leerzeilen in Titel und Links bringt.
-Gestaltung .fs-noe und .fs-noe-ersatz in static/css/fraktionssitzung.css.
+{% if noe %}<span class="fs-noe" aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar">{{ text }}</span><span class="sr-only fs-noe-ersatz">Nichtöffentlicher TOP, ausgeblendet</span>{% else %}{{ text }}{% endif %}{% comment %}
+Text eines nichtöffentlichen TOPs mit Sichtschutz (Issues #1166, #1201): weichgezeichnet und für Vorleser ersetzt, bis
+Nichtöffentliches eingeblendet ist (ein Zustand für ganz Work: noe_sichtbar vom Server, danach Alpine-Store noe). Gilt in
+allen Ansichten von Work, nicht nur in der Sitzung. Kontext: text, noe (TOP ist nichtöffentlich); ohne noe nur der Text.
+Der Kommentar steht hinten und die Datei endet ohne Zeilenumbruch (Ausnahme in .pre-commit-config.yaml), damit das
+Einbinden keine Leerzeilen in Titel und Links und kein Leerzeichen vor Satzzeichen wie „“ bringt.
+Gestaltung .fs-noe und .fs-noe-ersatz in static/css/fraktionssitzung.css (Abschnitt „Sichtschutz“, global).
 {% endcomment %}

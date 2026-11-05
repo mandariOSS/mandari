@@ -26,6 +26,8 @@
     </div>
 
     <div class="flex items-center gap-2">
+        {# Sichtschutz für Nichtöffentliches, ein Schalter für ganz Work (Issue #1201) #}
+        {% include "work/rahmen/_noe_knopf.html" with klasse="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800" icon="w-5 h-5" %}
         <!-- Dark Mode Toggle -->
         <button type="button" @click="darkMode = !darkMode"
                 class="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800"

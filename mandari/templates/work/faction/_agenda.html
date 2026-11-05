@@ -1,5 +1,6 @@
 {# Agenda partial — rendered via HTMX into #agenda-container #}
 {# Variables: meeting, public_agenda_items, internal_agenda_items, can_edit, can_add_items, can_view_internal, attendances, org_slug #}
+{# Nichtöffentliche TOPs und Vorschläge mit Sichtschutz (weichgezeichnet, Inhalte abgedeckt) bis zum Einblenden, Issue #1201 #}
 {% load permission_tags %}
 
 {# Agenda card #}
@@ -117,7 +118,7 @@
         {% for item in my_proposals %}
         <li class="text-sm">
             <div class="flex items-center justify-between gap-2">
-                <span class="text-gray-700 dark:text-gray-300 truncate">{{ item.title }}</span>
+                <span class="text-gray-700 dark:text-gray-300 truncate">{% if item.visibility == 'internal' %}{% include "work/faction/sitzung/_noe_text.html" with text=item.title noe=True %}{% else %}{{ item.title }}{% endif %}</span>
                 {% if item.is_rejected %}
                 <c-ui.badge color="red">Abgelehnt</c-ui.badge>
                 {% else %}
@@ -143,9 +144,10 @@
     <div class="divide-y divide-amber-100 dark:divide-amber-800/50">
         {% for item in pending_proposals %}
         <div class="p-4">
-            <h5 class="font-medium text-gray-900 dark:text-white">{{ item.title }}{% if item.visibility == 'internal' %} <c-ui.badge color="amber">Nicht-öffentlich</c-ui.badge>{% endif %}</h5>
+            {# Nichtöffentlicher Vorschlag: Titel und Beschreibung weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issue #1201) #}
+            <h5 class="font-medium text-gray-900 dark:text-white">{% if item.visibility == 'internal' %}{% include "work/faction/sitzung/_noe_text.html" with text=item.title noe=True %} <c-ui.badge color="amber">Nicht-öffentlich</c-ui.badge>{% else %}{{ item.title }}{% endif %}</h5>
             {% with desc=item.get_description_decrypted %}
-            {% if desc %}<p class="text-sm text-gray-600 dark:text-gray-400 mt-1">{{ desc|truncatewords:40 }}</p>{% endif %}
+            {% if desc %}<p class="text-sm text-gray-600 dark:text-gray-400 mt-1{% if item.visibility == 'internal' %} fs-noe{% endif %}"{% if item.visibility == 'internal' %} aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar"{% endif %}>{{ desc|truncatewords:40 }}</p>{% endif %}
             {% endwith %}
             {% if item.proposed_by %}
             <p class="text-xs text-gray-500 mt-1">

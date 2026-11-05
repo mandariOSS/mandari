@@ -2,13 +2,14 @@
 Nur-Lesen-Ansicht des Aufgaben-Panels (ohne Bearbeitungsrecht): Kopf mit Status/Priorität, Details,
 Checkliste, Anhänge, Aktivität mit Kommentar-Formular. Alpine-Scope: kanbanBoard (closePanel, copyTaskLink).
 Kontext: task, organization, membership, shared_members, checklist_items, attachments, activities
+Aufgabe aus einem nichtöffentlichen TOP (task.noe_top): Titel weichgezeichnet, Inhalte hinter der Abdeckung (Issue #1201).
 {% endcomment %}
 {# Header #}
 <div class="px-6 pt-5 pb-4 bg-gray-50 dark:bg-gray-900/50">
     <div class="flex items-start gap-3">
         <div class="flex-1 min-w-0">
             <h2 class="text-lg font-semibold text-gray-900 dark:text-white leading-tight {% if task.is_completed %}line-through opacity-60{% endif %}">
-                {{ task.title }}
+                {% include "work/faction/sitzung/_noe_text.html" with text=task.title noe=task.noe_top %}
             </h2>
             <div class="flex items-center gap-1.5 mt-3 flex-wrap">
                 <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold
@@ -36,6 +37,7 @@ Kontext: task, organization, membership, shared_members, checklist_items, attach
 
 {# Body #}
 <div id="task-panel-body" class="flex-1 overflow-y-auto">
+    {% if task.noe_top %}{% include "work/faction/sitzung/_noe_abdeckung.html" with klein=True was="Beschreibung, Checkliste, Anhänge und Aktivität" %}<div class="fs-noe-inhalt">{% endif %}
     {# Beschreibung #}
     <div class="px-6 py-4">
         {% if task.description %}
@@ -149,6 +151,7 @@ Kontext: task, organization, membership, shared_members, checklist_items, attach
         {# Kommentar-Input #}
         {% include "work/tasks/partials/_panel_comment_form.html" with form_class="mt-4" %}
     </div>
+    {% if task.noe_top %}</div>{% endif %}
 </div>
 
 {# Footer (read-only) #}

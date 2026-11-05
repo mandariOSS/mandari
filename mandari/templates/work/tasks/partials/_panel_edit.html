@@ -23,9 +23,17 @@ Kontext: task, form, organization, membership, shared_members, activities
         {# ── Header ── #}
         <div class="px-6 pt-5 pb-4 bg-gray-50 dark:bg-gray-900/50">
             <div class="flex items-start gap-3">
+                {# Aufgabe aus einem nichtöffentlichen TOP: Titel weichgezeichnet und erst nach dem Einblenden bedienbar (Issue #1201) #}
+                {% if task.noe_top %}
+                <div class="flex-1 min-w-0 fs-noe"{% if not noe_sichtbar %} inert{% endif %} x-bind:inert="!$store.noe.sichtbar">
+                    {{ form.title }}
+                </div>
+                <span class="sr-only fs-noe-ersatz">Nichtöffentlicher TOP, ausgeblendet</span>
+                {% else %}
                 <div class="flex-1 min-w-0">
                     {{ form.title }}
                 </div>
+                {% endif %}
                 <div class="flex items-center gap-1 flex-shrink-0 pt-1">
                     {# Autosave-Indikator #}
                     <span x-cloak x-show="saving"
@@ -73,6 +81,7 @@ Kontext: task, form, organization, membership, shared_members, activities
 
         {# ── Scrollable Body ── #}
         <div id="task-panel-body" class="flex-1 overflow-y-auto">
+            {% if task.noe_top %}{% include "work/faction/sitzung/_noe_abdeckung.html" with klein=True was="Beschreibung, Details, Checkliste, Anhänge und Aktivität" %}<div class="fs-noe-inhalt">{% endif %}
             {# Beschreibung #}
             <div class="px-6 py-4">
                 {{ form.description }}
@@ -165,6 +174,7 @@ Kontext: task, form, organization, membership, shared_members, activities
                     {% include "work/tasks/_panel_activity.html" %}
                 </div>
             </div>
+            {% if task.noe_top %}</div>{% endif %}
         </div>{# /scrollable #}
     </form>
 

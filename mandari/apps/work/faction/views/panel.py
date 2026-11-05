@@ -26,7 +26,7 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
-from ..visibility import can_view_item, can_view_item_with_parents
+from ..visibility import can_view_item, can_view_item_with_parents, is_item_internal
 
 
 def _visible_children(item, membership) -> list:
@@ -138,6 +138,8 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
         context.update(
             {
                 "item": item,
+                # Nichtöffentlicher TOP (auch als Unterpunkt): Titel und Inhalte mit Sichtschutz (Issue #1201)
+                "noe": is_item_internal(item),
                 "meeting": meeting,
                 "decision": decision,
                 "can_edit": can_edit,

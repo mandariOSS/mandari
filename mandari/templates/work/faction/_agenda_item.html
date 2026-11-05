@@ -1,5 +1,6 @@
 {# Single agenda item with accordion, protocol entries, and inline forms #}
 {# Variables: item, meeting, can_edit, can_protocol, membership, can_view_internal, attendances, is_internal, is_first, is_last #}
+{# Nichtöffentlich (is_internal): Titel und Beschreibung weichgezeichnet, aufgeklappter Inhalt hinter der Abdeckung, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issue #1201) #}
 {% load permission_tags %}
 
 <div class="group border-b border-gray-200 dark:border-gray-700 last:border-b-0 {% if is_internal %}bg-amber-50/30 dark:bg-amber-900/10{% endif %}"
@@ -45,7 +46,7 @@
         <div class="flex-1 min-w-0">
             <div class="flex items-start justify-between gap-2">
                 <div>
-                    <h4 class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{{ item.title }}</h4>
+                    <h4 class="font-medium text-gray-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400 transition-colors">{% include "work/faction/sitzung/_noe_text.html" with text=item.title noe=is_internal %}</h4>
                     {% if item.is_approval_item and item.approves_meeting %}
                     <p class="text-xs text-primary-600 dark:text-primary-400 mt-0.5">
                         Genehmigt: {{ item.approves_meeting.title }} ({{ item.approves_meeting.start|date:"d.m.Y" }})
@@ -53,7 +54,7 @@
                     {% endif %}
                     {% with desc=item.get_description_decrypted %}
                     {% if desc %}
-                    <p class="text-sm text-gray-500 mt-0.5">{{ desc|truncatewords:20 }}</p>
+                    <p class="text-sm text-gray-500 mt-0.5{% if is_internal %} fs-noe{% endif %}"{% if is_internal %} aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar"{% endif %}>{{ desc|truncatewords:20 }}</p>
                     {% endif %}
                     {% endwith %}
                 </div>
@@ -94,6 +95,7 @@
 
     {# Expanded content #}
     <div x-show="expanded" x-transition:enter="transition ease-out duration-200" x-transition:enter-start="opacity-0 -translate-y-1" x-transition:enter-end="opacity-100 translate-y-0" x-transition:leave="transition ease-in duration-150" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0" class="border-t {% if is_internal %}border-amber-100 dark:border-amber-800 bg-amber-50/20 dark:bg-amber-900/5{% else %}border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50{% endif %}">
+        {% if is_internal %}{% include "work/faction/sitzung/_noe_abdeckung.html" with klein=True was="Unterpunkte, Protokoll und Bearbeitung" %}<div class="fs-noe-inhalt">{% endif %}
 
         {# Sub-items #}
         {% for child in item.visible_children %}
@@ -106,16 +108,26 @@
                         {{ child.number }}
                     </span>
                     <div class="flex-1 min-w-0">
+                        {# Nichtöffentlicher Unterpunkt eines öffentlichen TOPs: weichgezeichnet (unter NÖ-TOPs deckt die Abdeckung alles ab) #}
+                        {% if not is_internal and child.visibility == 'internal' %}
+                        <p class="text-sm text-gray-800 dark:text-gray-200 hover:text-primary-600 transition-colors">{% include "work/faction/sitzung/_noe_text.html" with text=child.title noe=True %}</p>
+                        {% with desc=child.get_description_decrypted %}
+                        {% if desc %}
+                        <p class="text-xs text-gray-500 mt-0.5 fs-noe" aria-hidden="{{ noe_sichtbar|yesno:'false,true' }}" :aria-hidden="!$store.noe.sichtbar">{{ desc|truncatewords:20 }}</p>
+                        {% endif %}
+                        {% endwith %}
+                        {% else %}
                         <p class="text-sm text-gray-800 dark:text-gray-200 hover:text-primary-600 transition-colors">{{ child.title }}</p>
                         {% with desc=child.get_description_decrypted %}
                         {% if desc %}
                         <p class="text-xs text-gray-500 mt-0.5">{{ desc|truncatewords:20 }}</p>
                         {% endif %}
                         {% endwith %}
+                        {% endif %}
                     </div>
                 </div>
                 {% if can_edit %}
-                <div class="flex items-center gap-1 flex-shrink-0" @click.stop>
+                <div class="flex items-center gap-1 flex-shrink-0{% if not is_internal and child.visibility == 'internal' %} fs-noe{% endif %}" @click.stop{% if not is_internal and child.visibility == 'internal' %}{% if not noe_sichtbar %} inert{% endif %} x-bind:inert="!$store.noe.sichtbar"{% endif %}>
                     <button type="button" @click="$dispatch('open-edit-item', { id: '{{ child.id }}', title: '{{ child.title|escapejs }}', description: '{{ child.get_description_decrypted|default:""|escapejs }}' })"
                             class="p-1 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Bearbeiten">
                         <i data-lucide="edit-2" class="w-3 h-3"></i>
@@ -235,5 +247,6 @@
             </button>
         </div>
         {% endif %}
+        {% if is_internal %}</div>{% endif %}
     </div>
 </div>

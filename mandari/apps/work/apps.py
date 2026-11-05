@@ -40,3 +40,8 @@ class WorkConfig(AppConfig):
         from apps.work.ris import verknuepfungen
 
         verknuepfungen.register()
+
+        # Sichtschutz für Nichtöffentliches: jede Anmeldung beginnt verdeckt (Issue #1201)
+        from apps.work import sichtschutz
+
+        sichtschutz.register()

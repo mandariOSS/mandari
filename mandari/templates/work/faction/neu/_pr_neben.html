@@ -34,7 +34,7 @@ can_export_attendance, darf_einstellungen, darf_intern, membership.
 <c-work.neben-abschnitt titel="Aufgaben aus der Sitzung" kennung="auf-h">
     <ul class="fs-pr-aufgaben">
         {% for a, t in aufgaben_sitzung %}
-        <li><a class="wf-textlink" href="{% url 'work:tasks' org_slug=org_slug %}?open={{ a.erste_id }}">{{ a.titel }}</a><span class="fs-meta">{% if a.zustaendig %}{{ a.zustaendig|join:", " }}{% else %}TOP {{ t.item.number }}{% endif %}{% if a.faellig %}, bis {{ a.faellig|date:"d.m." }}{% endif %}{% if a.gesamt > 1 %}, {{ a.erledigt }} von {{ a.gesamt }} erledigt{% elif a.erledigt %}, erledigt{% endif %}</span></li>
+        <li><a class="wf-textlink" href="{% url 'work:tasks' org_slug=org_slug %}?open={{ a.erste_id }}">{% include "work/faction/sitzung/_noe_text.html" with text=a.titel noe=t.intern %}</a><span class="fs-meta">{% if a.zustaendig %}{{ a.zustaendig|join:", " }}{% else %}TOP {{ t.item.number }}{% endif %}{% if a.faellig %}, bis {{ a.faellig|date:"d.m." }}{% endif %}{% if a.gesamt > 1 %}, {{ a.erledigt }} von {{ a.gesamt }} erledigt{% elif a.erledigt %}, erledigt{% endif %}</span></li>
         {% endfor %}
     </ul>
 </c-work.neben-abschnitt>
@@ -52,7 +52,7 @@ can_export_attendance, darf_einstellungen, darf_intern, membership.
 <c-work.neben-abschnitt titel="Ihre Aufgaben" kennung="ea-h">
     <ul class="fs-pr-aufgaben">
         {% for task in eigene_aufgaben %}
-        <li><a class="wf-textlink" href="{% url 'work:tasks' org_slug=org_slug %}?open={{ task.pk }}">{{ task.title }}</a>{% if task.due_date or task.is_completed %}<span class="fs-meta">{% if task.due_date %}bis {{ task.due_date|date:"d.m." }}{% endif %}{% if task.is_completed %}{% if task.due_date %}, {% endif %}erledigt{% endif %}</span>{% endif %}</li>
+        <li><a class="wf-textlink" href="{% url 'work:tasks' org_slug=org_slug %}?open={{ task.pk }}">{% include "work/faction/sitzung/_noe_text.html" with text=task.title noe=task.noe %}</a>{% if task.due_date or task.is_completed %}<span class="fs-meta">{% if task.due_date %}bis {{ task.due_date|date:"d.m." }}{% endif %}{% if task.is_completed %}{% if task.due_date %}, {% endif %}erledigt{% endif %}</span>{% endif %}</li>
         {% endfor %}
     </ul>
 </c-work.neben-abschnitt>

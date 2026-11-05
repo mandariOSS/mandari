@@ -53,7 +53,8 @@
 </head>
 
 {# data-konto: Sicherungen anderer Konten im Browser löschen (frontend/js/main.ts, #854) #}
-<body class="min-h-screen bg-band-hell print:bg-white text-gray-900 dark:text-gray-100" data-org-slug="{{ organization.slug }}"{% if user.is_authenticated %} data-konto="{{ user.pk }}"{% endif %}>
+{# noe-verdeckt, data-noe-url: Sichtschutz für Nichtöffentliches, Zustand der Anmeldung vom Server (apps/work/sichtschutz.py, #1201) #}
+<body class="min-h-screen bg-band-hell print:bg-white text-gray-900 dark:text-gray-100{% if not noe_sichtbar %} noe-verdeckt{% endif %}" data-org-slug="{{ organization.slug }}"{% if user.is_authenticated %} data-konto="{{ user.pk }}"{% endif %} data-noe-url="{% url 'work:noe_sichtschutz' %}">
     {% if demo_instance %}{% include "partials/demo_hinweis.html" with ueber_leiste=True %}{% endif %}
     <a href="#inhalt" class="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-[100] focus:rounded-md focus:bg-primary-600 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white">Zum Inhalt springen</a>
 
@@ -61,7 +62,7 @@
 
     {# Seitliche Safe-Area (Querformat mit Aussparung); unten Platz für die Leiste am Handy; im Druck nur der Inhalt #}
     <div class="work-main min-h-screen flex flex-col pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)] lg:pl-60 pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 print:!p-0 print:min-h-0">
-        {% comment %}Kopfzeile: Brotkrumen, Suche (Strg+K), Glocke, Dunkelmodus; am Handy Raum, Suche und Glocke. Seiten mit
+        {% comment %}Kopfzeile: Brotkrumen, Suche (Strg+K), Sichtschutz, Glocke, Dunkelmodus; am Handy Raum, Suche, Sichtschutz und Glocke. Seiten mit
         eigener Kopfzeile (Antragseditor, #856) ersetzen den Block und bringen Glocke, Suche und Dunkelmodus selbst mit.{% endcomment %}
         {% block rahmen_kopf %}
         <header class="sticky top-0 z-30 shrink-0 print:hidden pt-[env(safe-area-inset-top)] bg-band-hell/95 backdrop-blur-sm border-b border-gray-200 dark:border-gray-800">
@@ -99,6 +100,7 @@
                     <i data-lucide="search" class="w-5 h-5" aria-hidden="true"></i>
                 </a>
                 {% endif %}
+                {% include "work/rahmen/_noe_knopf.html" with klasse="inline-flex items-center justify-center w-11 h-11 lg:w-9 lg:h-9 rounded-md text-gray-700 dark:text-gray-300 hover:bg-band-grau" icon="w-5 h-5 lg:w-[18px] lg:h-[18px]" %}
                 {% include "work/rahmen/_glocke.html" %}
                 <button type="button" @click="darkMode = !darkMode"
                         class="hidden lg:inline-flex items-center justify-center w-9 h-9 rounded-md text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-band-grau"

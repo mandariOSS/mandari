@@ -74,6 +74,11 @@ Alpine.data('ticketForm', ticketForm)
 Alpine.data('ticketVerlauf', ticketVerlauf)
 Alpine.data('assignmentHandler', assignmentHandler)
 
+// ---- Sichtschutz für Nichtöffentliches in ganz Work (#1201): Store `noe`, Knopf in der Kopfleiste ------------------
+import { registerNoeStore } from '../alpine/noe-sichtschutz'
+
+registerNoeStore(Alpine)
+
 // ---- Neuer Rahmen (#852): Leiste, Raum-Dialog, Blatt „Mehr“, Glocke, Personenmenü -----------------
 import { workGlocke, workGruppe, workPerson, workRahmen } from '../alpine/work-rahmen'
 
