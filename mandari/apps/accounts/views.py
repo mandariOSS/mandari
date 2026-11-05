@@ -60,6 +60,9 @@ from .two_factor_policy import (
     two_factor_required,
 )
 
+# Anmeldeseite auch für Angemeldete zeigen: erneute Anmeldung auf Wunsch einer Anwendung (OIDC, Issue #1206)
+REAUTH_PARAM = "erneut"
+
 # Zweiter Anmeldeschritt: Passwort ist geprüft, angemeldet wird erst nach gültigem Code
 PENDING_2FA_SESSION_KEY = "auth_2fa_pending"
 PENDING_2FA_MAX_AGE_SECONDS = 300
@@ -114,8 +117,9 @@ class LoginView(View):
     template_name = "accounts/login.html"
 
     def get(self, request):
-        # If already authenticated, redirect
-        if request.user.is_authenticated:
+        # Angemeldet: weiter zum Ziel. Ausnahme: Eine Anwendung verlangt eine erneute Anmeldung
+        # (OpenID Connect ``prompt=login`` bzw. ``max_age``, apps/accounts/oidc/views.py, Issue #1206).
+        if request.user.is_authenticated and not request.GET.get(REAUTH_PARAM):
             return redirect(self.get_success_url(request))
 
         form = LoginForm()

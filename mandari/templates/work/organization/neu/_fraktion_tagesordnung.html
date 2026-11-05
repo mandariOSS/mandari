@@ -5,6 +5,7 @@ automatische erste TOP („fest“), danach die Standardpunkte mit nach oben, na
 move_standard_item (direction up/down), delete_standard_item, add_standard_item (nicht-öffentlich nur für
 Vereidigte), add_standard_suggestion. Kontext: faction_settings, standard_agenda_approval_title, standard_agenda_rows,
 standard_agenda_empty, standard_agenda_locked, standard_agenda_may_internal, standard_agenda_suggestion, nur_lesen.
+Nichtöffentliche Standardpunkte weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issue #1201).
 {% endcomment %}
 <section aria-labelledby="e-std">
     <h2 id="e-std">Standard-Tagesordnung</h2>
@@ -17,7 +18,7 @@ standard_agenda_empty, standard_agenda_locked, standard_agenda_may_internal, sta
         {% for number, item in standard_agenda_rows %}
         <li>
             <span class="nr">{{ number }}</span>
-            <span class="t">{{ item.title }}{% if item.visibility == "internal" %}<small>nichtöffentlich</small>{% endif %}</span>
+            <span class="t">{% if item.visibility == "internal" %}{% include "work/faction/sitzung/_noe_text.html" with text=item.title noe=True %}<small>nichtöffentlich</small>{% else %}{{ item.title }}{% endif %}</span>
             <span class="akt">
                 <form method="post">
                     {% csrf_token %}

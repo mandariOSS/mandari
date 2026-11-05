@@ -224,6 +224,19 @@ class Task(models.Model):
         return self.due_date < timezone.localdate()
 
     @property
+    def noe_top(self) -> bool:
+        """
+        Aufgabe aus einem nichtöffentlichen TOP einer Fraktionssitzung: Titel und Inhalte stehen mit Sichtschutz, bis
+        Nichtöffentliches eingeblendet ist (Issue #1201). Ohne Fraktions-TOP keine Abfrage; die Listen laden den TOP
+        samt übergeordnetem TOP mit (``selectors._base_queryset``).
+        """
+        if not self.related_faction_agenda_item_id:
+            return False
+        from apps.work.faction.visibility import is_item_internal
+
+        return is_item_internal(self.related_faction_agenda_item)
+
+    @property
     def is_personal(self) -> bool:
         """Check if this is a personal task (assigned to creator)."""
         return self.assigned_to == self.created_by or self.assigned_to is None

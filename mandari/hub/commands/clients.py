@@ -19,8 +19,10 @@ from typing import Any, Final, Protocol
 
 import httpx
 
-from .dispatcher import KEY_MISSING, Dispatcher, checked_content_hash, get_dispatcher, valid_idempotency_key
-from .http import CORRELATION_HEADER, IDEMPOTENCY_HEADER, TENANT_HEADER
+from apps.common.api.idempotency import IDEMPOTENCY_HEADER, KEY_MISSING, KEY_MISSING_KIND, valid_idempotency_key
+
+from .dispatcher import Dispatcher, checked_content_hash, get_dispatcher
+from .http import CORRELATION_HEADER, TENANT_HEADER
 from .problems import CommandError, Problem
 from .types import Command, Receipt
 
@@ -75,7 +77,7 @@ class HttpClient:
     def send(self, command: Command) -> Receipt:
         # Ein ungültiger Schlüssel ließe sich nicht einmal als Header senden; gleiches Problem wie beim Dispatcher.
         if not valid_idempotency_key(command.idempotency_key):
-            raise CommandError.of(400, "idempotenzschluessel-fehlt", KEY_MISSING)
+            raise CommandError.of(400, KEY_MISSING_KIND, KEY_MISSING)
         # Ebenso ein Inhalt, der sich nicht als JSON darstellen lässt: dasselbe 422 wie beim Dispatcher.
         checked_content_hash(command.body)
         # Anlagen gehen bisher nur im selben Prozess mit; ohne sie käme beim Eigentümer ein unvollständiger

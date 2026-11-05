@@ -26,7 +26,7 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 
-from ..visibility import can_view_item, can_view_item_with_parents
+from ..visibility import can_view_item, can_view_item_with_parents, is_item_internal
 
 
 def _visible_children(item, membership) -> list:
@@ -89,8 +89,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
             meeting=meeting,
         )
 
-        # NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs NICHTS —
-        # auch nicht über das Panel (serverseitig)
+        # NÖ strikt (Issue #64): Nicht-Vereidigte sehen von NÖ-TOPs nichts, auch nicht über das Panel (serverseitig)
         if not can_view_item(item, self.membership):
             raise PermissionDenied("Gesperrte Information")
 
@@ -138,6 +137,7 @@ class FactionItemPanelView(WorkViewMixin, TemplateView):
         context.update(
             {
                 "item": item,
+                "noe": is_item_internal(item),  # NÖ-TOP, auch als Unterpunkt: Sichtschutz (Issue #1201)
                 "meeting": meeting,
                 "decision": decision,
                 "can_edit": can_edit,

@@ -1,7 +1,7 @@
-{# Schalter für den Sichtschutz des nichtöffentlichen Teils (Issue #1166): an „Nichtöffentlicher Teil“ und im Kopf eines NÖ-TOPs #}
-{# Zustand noeSichtbar der Komponente fraktionssitzung; gedrückt heißt eingeblendet, die Kurzinfo nennt den nächsten Schritt #}
-<button type="button" class="wf-knopf wf-leise wf-klein wf-ik fs-noe-schalter" aria-pressed="false" :aria-pressed="noeSichtbar ? 'true' : 'false'"
-        aria-label="Nichtöffentlichen Teil einblenden" title="Nichtöffentlichen Teil einblenden" @click="noeUmschalten()"
-        :title="noeSichtbar ? 'Nichtöffentlichen Teil wieder verdecken' : 'Nichtöffentlichen Teil einblenden'">
-    <i data-lucide="eye-off" aria-hidden="true" x-show="!noeSichtbar"></i><i data-lucide="eye" aria-hidden="true" x-show="noeSichtbar" x-cloak></i>
+{# Schalter für den Sichtschutz an „Nichtöffentlicher Teil“ und im Kopf eines NÖ-TOPs (Issues #1166, #1201) #}
+{# Schaltet denselben Zustand wie der Knopf in der Kopfleiste (Alpine-Store noe); gedrückt heißt eingeblendet, die Kurzinfo nennt den nächsten Schritt #}
+<button type="button" class="wf-knopf wf-leise wf-klein wf-ik fs-noe-schalter" aria-pressed="{{ noe_sichtbar|yesno:'true,false' }}" :aria-pressed="$store.noe.sichtbar ? 'true' : 'false'"
+        aria-label="Nichtöffentliches einblenden" title="{% if noe_sichtbar %}Nichtöffentliches verdecken{% else %}Nichtöffentliches einblenden{% endif %}" @click="$store.noe.umschalten()"
+        :title="$store.noe.sichtbar ? 'Nichtöffentliches verdecken' : 'Nichtöffentliches einblenden'">
+    <i data-lucide="eye-off" aria-hidden="true" x-show="!$store.noe.sichtbar"{% if noe_sichtbar %} x-cloak{% endif %}></i><i data-lucide="eye" aria-hidden="true" x-show="$store.noe.sichtbar"{% if not noe_sichtbar %} x-cloak{% endif %}></i>
 </button>

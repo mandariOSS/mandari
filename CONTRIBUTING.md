@@ -195,7 +195,11 @@ python scripts/mypy_allowlist.py                 # Typen (strict, schrumpfende A
 python scripts/check_frontend_ratchet.py         # Inline-Code und Template-Größe
 python scripts/check_view_orm_ratio.py           # Datenbankzugriffe in Views
 python scripts/check_schema_contract.py          # Anwendung gegen Ingestor-Schema
+python scripts/check_schnittstelle.py            # Befehlsparität der Schnittstelle (docs/SCHNITTSTELLE.md)
 ```
+
+Wer einen Endpunkt der Schnittstelle ändert, schreibt die eingecheckte OpenAPI-Beschreibung neu und committet sie mit:
+`cd mandari && python manage.py schnittstelle_beschreibung` (sonst scheitert `hub/api/tests/test_schnittstelle.py`).
 
 Am bequemsten übernimmt das pre-commit:
 

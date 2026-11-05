@@ -3,7 +3,7 @@
 <div class="wf-leiste fs-unten" id="fs-unten" role="region" aria-label="Beschluss und TOP wechseln" data-meldungen-darueber x-data="beschlussLeiste"
      data-ja="{{ decision.votes_yes|default:0 }}" data-nein="{{ decision.votes_no|default:0 }}" data-enthaltung="{{ decision.votes_abstain|default:0 }}"
      :class="{ 'beschluss-offen': offen }"{% if oob %} hx-swap-oob="true"{% endif %}>
-    {# Nichtöffentlich: Beschluss verdeckt, Titel der Nachbarn weichgezeichnet, bis der Teil eingeblendet ist (Sichtschutz, Issue #1166) #}
+    {# Nichtöffentlich: Beschluss verdeckt, Titel der Nachbarn weichgezeichnet, bis Nichtöffentliches eingeblendet ist (Sichtschutz, Issues #1166, #1201) #}
     {% if intern %}<div class="fs-beschluss fs-noe-ersatz"><span class="beschriftung">Beschluss</span><span class="fs-meta">Nichtöffentlich, ausgeblendet</span></div><div class="fs-noe-inhalt">{% endif %}
     {% if decision and not aendern %}
     <div class="fs-beschluss">

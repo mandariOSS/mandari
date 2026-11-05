@@ -189,6 +189,7 @@ def test_knopfnamen_enthalten_den_sichtbaren_text(
     """
     WCAG 2.5.3 (axe label-content-name-mismatch): „A−“/„A+“ stehen am Anfang des Namens; die TOP-Knöpfe nennen
     Nummer und Titel, die sie zeigen (am Handy nur die Nummer), und trennen „… TOP“ und Nummer auch im Text.
+    Nichtöffentliche TOPs nur mit Nummer, solange Nichtöffentliches verdeckt ist (``topBeschriftung``, Issue #1201).
     """
     member = make_member(org, ["meetings.prepare"], email="namen@example.org")
     html = _seite(client_for(member.user), org, sitzung).content.decode()
@@ -198,7 +199,7 @@ def test_knopfnamen_enthalten_den_sichtbaren_text(
     for richtung, top in (("Voriger", "vorigerTop"), ("Nächster", "naechsterTop")):
         tag = re.search(r'<button[^>]*@click="zuTop\(' + top + r'\)"[^>]*>', html)
         assert tag, top
-        name = f":aria-label=\"{top} ? '{richtung} TOP ' + {top}.number + ' ' + {top}.name : '{richtung} TOP'\""
+        name = f":aria-label=\"{top} ? '{richtung} ' + topBeschriftung({top}, ' ') : '{richtung} TOP'\""
         assert name in tag.group(0)
         assert f"<small>{richtung} TOP</small> <b>" in html
 

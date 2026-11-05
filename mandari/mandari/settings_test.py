@@ -90,3 +90,6 @@ ADMIN_ALLOWED_NETWORKS = []
 PROVISIONING_V2_API_KEY = ""
 PROVISIONING_V2_ALLOWED_NETWORKS = []
 WEBAUTHN_RP_ID = "testserver"
+# OpenID-Connect-Anbieter in Tests aus, unabhängig von einer lokalen .env; die Tests schalten ihn mit Schlüssel selbst
+# ein (apps/accounts/tests/oidc_hilfen.py)
+OIDC_PROVIDER_ENABLED = False

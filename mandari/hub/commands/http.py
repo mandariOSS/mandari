@@ -23,7 +23,7 @@ import json
 import logging
 import uuid
 from collections.abc import Callable, Collection
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Final
 
 from django.core.exceptions import RequestDataTooBig
@@ -31,15 +31,15 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.urls import URLPattern, path
 from django.views.decorators.csrf import csrf_exempt
 
-from apps.common.observability import current_request_id
+from apps.common.api.idempotency import IDEMPOTENCY_HEADER, KEY_MISSING, KEY_MISSING_KIND, parse_idempotency_key
+from apps.common.api.problems import problem_response
 
-from .dispatcher import KEY_MISSING, Dispatcher, get_dispatcher
+from .dispatcher import Dispatcher, get_dispatcher
 from .problems import CommandError, Problem
 from .types import ACTOR_REF_RE, TENANT_REF_RE, TOO_DEEP, Command, exceeds_depth
 
 logger = logging.getLogger("hub.commands")
 
-IDEMPOTENCY_HEADER: Final = "Idempotency-Key"
 TENANT_HEADER: Final = "Mandari-Tenant"
 CORRELATION_HEADER: Final = "X-Correlation-ID"
 ALL_COMMANDS: Final = "*"
@@ -100,9 +100,9 @@ class CommandView:
             raise CommandError.of(
                 401, "nicht-authentifiziert", "Gültige Anmeldung erforderlich (Authorization: Bearer)."
             )
-        key = _idempotency_key(request.headers.get(IDEMPOTENCY_HEADER))
+        key = parse_idempotency_key(request.headers.get(IDEMPOTENCY_HEADER))
         if key is None:
-            raise CommandError.of(400, "idempotenzschluessel-fehlt", KEY_MISSING)
+            raise CommandError.of(400, KEY_MISSING_KIND, KEY_MISSING)
         tenant = request.headers.get(TENANT_HEADER)
         if (tenant and tenant != principal.tenant_ref) or not principal.may(name):
             raise CommandError.of(403, "keine-berechtigung", "Diese Anmeldung darf den Befehl hier nicht senden.")
@@ -117,27 +117,14 @@ class CommandView:
         )
 
     def _problem(self, request: HttpRequest, problem: Problem) -> HttpResponse:
-        data = problem.to_dict(instance=request.path)
-        allow = data.pop("allow", None)
-        data["request_id"] = current_request_id() or None
-        response = JsonResponse(data, status=problem.status, json_dumps_params={"ensure_ascii": False})
-        response["Content-Type"] = "application/problem+json; charset=utf-8"
-        response["Cache-Control"] = "no-store"
+        headers = {"Cache-Control": "no-store"}
         if problem.status == 401:
-            response["WWW-Authenticate"] = f'Bearer realm="{self.realm}"'
+            headers["WWW-Authenticate"] = f'Bearer realm="{self.realm}"'
+        allow = problem.extensions.get("allow")
         if allow:
-            response["Allow"] = str(allow)
-        return response
-
-
-def _idempotency_key(raw: str | None) -> str | None:
-    """Wert des Headers; ein String nach RFC 8941 kommt in Anführungszeichen, ein Token ohne."""
-    if raw is None:
-        return None
-    value = raw.strip()
-    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
-        value = value[1:-1]
-    return value or None
+            headers["Allow"] = str(allow)
+            problem = replace(problem, extensions={k: v for k, v in problem.extensions.items() if k != "allow"})
+        return problem_response(problem, instance=request.path, headers=headers)
 
 
 def _json_object(request: HttpRequest) -> dict[str, Any]:

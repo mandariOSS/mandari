@@ -35,7 +35,7 @@ Die bisherige Seite bleibt unter ?ansicht=bisher (work/faction/detail.html). Kon
         {% if dok.tops %}
         <nav class="fs-gl" aria-label="Gliederung des Protokolls">
             <h2 class="fs-gl-h">Gliederung</h2>
-            <ul>{% for t in dok.tops %}<li{% if t.unter %} class="unter"{% endif %}><a class="wf-textlink" href="#p-{{ t.item.pk }}">{{ t.item.number }} {{ t.item.title }}</a></li>{% endfor %}</ul>
+            <ul>{% for t in dok.tops %}<li{% if t.unter %} class="unter"{% endif %}><a class="wf-textlink" href="#p-{{ t.item.pk }}">{{ t.item.number }} {% include "work/faction/sitzung/_noe_text.html" with text=t.item.title noe=t.intern %}</a></li>{% endfor %}</ul>
         </nav>
         {% endif %}
         {# data-sichern-vorher: Neuaufbau nach Panel-Aktionen erst, wenn alle Notizen gespeichert sind (faction-session.ts) #}

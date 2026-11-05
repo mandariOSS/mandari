@@ -19,3 +19,10 @@ class AccountsConfig(AppConfig):
         from .security_audit import connect
 
         connect()
+        # Ausgabe von Tokens des OpenID-Connect-Anbieters protokollieren (Issue #1206)
+        from .oidc import audit as oidc_audit
+        from .oidc import reauth as oidc_reauth
+
+        oidc_audit.connect()
+        # Erneute Anmeldung auf Wunsch einer Anwendung: erst die Anmeldung erfüllt ihn
+        oidc_reauth.connect()

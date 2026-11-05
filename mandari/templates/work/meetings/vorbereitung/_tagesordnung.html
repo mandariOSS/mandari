@@ -26,10 +26,10 @@ mittel eine schmale Leiste aus Nummern und Stand (ausklappbar mit Titeln), am Ha
                     <li>
                         <button type="button" class="wf-tl-zeile" :id="'nav-item-' + item.id" @click="selectItem(item.id)"
                                 :aria-current="selectedItemId === item.id ? 'true' : null" :class="!item.paper && 'formal'"
-                                :title="'TOP ' + item.number + ': ' + item.name">
+                                :title="topBeschriftung(item)">
                             <span class="nr" x-text="item.number"></span>
                             <span class="vb-tl-text">
-                                <span class="titel" x-text="item.name"></span>
+                                <span class="titel" x-text="item.name" :class="{ 'fs-noe': item.isPublic === false }" :aria-hidden="noeVerdeckt(item) ? 'true' : 'false'"></span><span class="sr-only fs-noe-ersatz" x-show="item.isPublic === false">Nichtöffentlicher TOP, ausgeblendet</span>
                                 <span class="vb-tl-meta" x-show="item.withdrawn || item.isFinal || item.hasSpeechNote || item.speechLinkedDocument || (item.privateNote && item.privateNote.trim()) || item.notesCount > 0">
                                     <span class="vb-warn" x-show="item.withdrawn" x-text="item.withdrawn" :title="item.withdrawnHint"></span>
                                     <span x-show="item.isFinal" title="Position endgültig"><i data-lucide="lock" aria-hidden="true"></i><span class="sr-only">endgültig</span></span>

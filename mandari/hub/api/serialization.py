@@ -8,9 +8,9 @@ Modell ab und geben sie hier aus. Was eine externe Liste ist, steht deshalb an g
 - **Zeitfilter** (``TimeFilters``): ``created_since``, ``created_until``, ``modified_since`` und
   ``modified_until`` mit Pflicht zur Zeitzone. Eine Liste mit ``modified_since`` ist *inkrementell*
   und enthält auch Gelöschtes als gekürzte Objekte (OParl 1.1 §2.8); alle anderen Listen nicht.
-- **Blättern** (``page_number``, ``page_size``) und **Listen-Hülle** (``list_envelope``):
-  ``data``/``pagination``/``links`` samt ``Link``-Header; die Filter der Anfrage bleiben in den
-  Blätter-Links erhalten.
+- **Blättern** (``page_number``, ``page_size``) und **Listen-Hülle** (``list_envelope`` aus
+  ``apps.common.api.pages``, gemeinsam für alle Bereiche): ``data``/``pagination``/``links`` samt
+  ``Link``-Header; die Filter der Anfrage bleiben in den Blätter-Links erhalten.
 - **Gelöschtes neben Bestehendem** (``MergedEntries``): Führt eine Ausgabe Gelöschtes in einer eigenen
   Tabelle, entsteht die inkrementelle Liste durch Zusammenführen nach ``modified`` – geladen werden nur
   die Objekte der Seite.
@@ -26,14 +26,14 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final
-from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.cache import cache
-from django.core.paginator import Page, Paginator
+from django.core.paginator import Paginator
 from django.db.models import QuerySet
 from django.http import HttpRequest, HttpResponse
 
+from apps.common.api.pages import list_envelope
 from hub.api.http import BadRequestError, error_response, json_response, parse_client_datetime, restore_offset_plus
 from hub.ris.canonical import Objekt
 
@@ -107,43 +107,6 @@ def page_number(request: HttpRequest) -> int:
 def page_size() -> int:
     """Objekte je Listen-Seite (``OPARL_API_PAGE_SIZE``)."""
     return int(getattr(settings, "OPARL_API_PAGE_SIZE", 100))
-
-
-def list_envelope(
-    base_url: str, filters: Mapping[str, str], paginator: Paginator[Any], page: Page[Any], data: Sequence[Objekt]
-) -> tuple[Objekt, dict[str, str]]:
-    """
-    Hülle einer externen Objektliste samt ``Link``-Header: ``(envelope, headers)``.
-
-    ``filters`` sind die Zeitfilter der Anfrage, wie der Abnehmer sie geschickt hat; sie bleiben in den
-    Blätter-Links erhalten. Seite 1 hat keinen ``page``-Parameter (eine Schreibweise je Adresse).
-    """
-
-    def page_link(number: int) -> str:
-        params: dict[str, Any] = dict(filters)
-        if number > 1:
-            params["page"] = number
-        return f"{base_url}?{urlencode(params)}" if params else base_url
-
-    links = {"first": page_link(1), "self": page_link(page.number)}
-    if page.has_previous():
-        links["prev"] = page_link(page.number - 1)
-    if page.has_next():
-        links["next"] = page_link(page.number + 1)
-    links["last"] = page_link(paginator.num_pages)
-
-    envelope = {
-        "data": data,
-        "pagination": {
-            "totalElements": paginator.count,
-            "elementsPerPage": paginator.per_page,
-            "currentPage": page.number,
-            "totalPages": paginator.num_pages,
-        },
-        "links": links,
-    }
-    headers = {"Link": ", ".join(f'<{url}>; rel="{rel}"' for rel, url in links.items() if rel != "self")}
-    return envelope, headers
 
 
 def single_page(base_url: str, data: Sequence[Objekt]) -> Objekt:

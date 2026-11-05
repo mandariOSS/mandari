@@ -27,5 +27,6 @@ Dateiname `JJJJMMTT-kurztitel.md`. Status: vorgeschlagen, angenommen, abgelöst.
 | [20261004-texterkennung-shared.md](20261004-texterkennung-shared.md) | Texterkennung als eine Bibliothek in `shared/` und als Auftrag `file.extract_text` | angenommen, teilweise abgelöst |
 | [20261007-live-uebertragung.md](20261007-live-uebertragung.md) | Live-Übertragungen: Anbieter-Adapter, Einblendungsprofile als Daten, keine Bild- und Tonspeicherung | angenommen |
 | [20261007-dokumentkette.md](20261007-dokumentkette.md) | Dokumentkette: Abruf, Ablage und Texterkennung als Aufträge über Ereignisse | angenommen |
+| [20261105-eine-schnittstelle-api-first.md](20261105-eine-schnittstelle-api-first.md) | Eine Schnittstelle: API-first auf OParl, kommParl und OpenAPI | angenommen |
 
 Die Einträge „Datendrehscheibe A1–A11“ gehören zusammen (Epic #476); die Reihenfolge der Nummern entspricht den Abhängigkeiten.

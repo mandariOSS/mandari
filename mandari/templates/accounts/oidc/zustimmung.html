@@ -1,0 +1,57 @@
+{% extends "accounts/base_auth.html" %}
+{% comment %}
+Zustimmungsseite des OpenID-Connect-Anbieters (Issue #1206, apps/accounts/oidc/views.py AuthorizeView).
+Nur für fremde Anwendungen; vertrauenswürdige (skip_authorization) kommen ohne sie aus.
+Kontext der Bibliothek: application, scopes_descriptions, form (versteckte Felder), redirect_host; bei einem
+Fehler ohne Rücksprung nur error.
+{% endcomment %}
+
+{% block title %}{% if error %}Anmeldung nicht möglich{% else %}Zugriff erlauben{% endif %}{% endblock %}
+
+{% block header_title %}{% if error %}Anmeldung nicht möglich{% else %}{{ application.name|default:"Eine Anwendung" }}{% endif %}{% endblock %}
+{% block header_subtitle %}{% if error %}Die Anwendung hat eine ungültige Anfrage geschickt{% else %}möchte auf dein mandari-Konto zugreifen{% endif %}{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+    <p>Die Anfrage passt nicht zu einer bei mandari eingetragenen Anwendung oder Rücksprungadresse. Es wurden keine Daten weitergegeben.</p>
+    <p class="text-gray-500 dark:text-gray-400">Technische Angabe: <code>{{ error.error }}</code>{% if error.description %} – {{ error.description }}{% endif %}</p>
+</div>
+{% else %}
+<form method="post" class="space-y-6">
+    {% csrf_token %}
+    {% for field in form %}{% if field.is_hidden %}{{ field }}{% endif %}{% endfor %}
+
+    <p class="text-sm text-gray-700 dark:text-gray-300">
+        Angemeldet als <strong class="font-medium text-gray-900 dark:text-white">{{ request.user.email }}</strong>.
+    </p>
+
+    {% if scopes_descriptions %}
+    <div>
+        <h2 id="zugriff-titel" class="mb-2 text-sm font-semibold text-gray-900 dark:text-white">Die Anwendung erhält</h2>
+        <ul aria-labelledby="zugriff-titel" class="list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-300">
+            {% for description in scopes_descriptions %}<li>{{ description }}</li>{% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <p class="text-sm text-gray-500 dark:text-gray-400">
+        Danach geht es zurück zu <strong class="font-medium">{{ redirect_host }}</strong>. Den Zugang kannst du jederzeit unter
+        „Verbundene Anwendungen“ widerrufen.
+    </p>
+
+    {% if form.errors %}
+    <div role="alert" class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">
+        Die Anfrage ist unvollständig. Bitte starte die Anmeldung in der Anwendung neu.
+    </div>
+    {% endif %}
+
+    <div class="flex flex-col gap-3 sm:flex-row-reverse">
+        <c-ui.button type="submit" name="allow" value="on" full>Zulassen</c-ui.button>
+        <c-ui.button type="submit" variant="secondary" full>Ablehnen</c-ui.button>
+    </div>
+</form>
+{% endif %}
+{% endblock %}
+
+{% block footer %}{% endblock %}

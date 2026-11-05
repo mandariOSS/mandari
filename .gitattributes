@@ -3,3 +3,5 @@ mandari/frontend/**/*.ts text eol=lf
 mandari/frontend/**/*.mjs text eol=lf
 mandari/*.ts text eol=lf
 mandari/biome.json text eol=lf
+# Eingecheckte OpenAPI-Beschreibung: so, wie manage.py schnittstelle_beschreibung sie schreibt
+docs/schnittstelle/*.json text eol=lf

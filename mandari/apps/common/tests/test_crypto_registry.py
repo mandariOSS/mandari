@@ -69,6 +69,9 @@ GEHEIMNIS_NAME = re.compile(r"passw|secret|api_?key|private_?key", re.IGNORECASE
 #: Solche Felder, die bewusst kein verschlüsseltes Binärfeld sind – jeweils mit Begründung
 KEIN_KLARTEXT_GEHEIMNIS: dict[str, str] = {
     "accounts.User.password": "Passwort-Hash (PBKDF2), nicht umkehrbar",
+    # OpenID-Connect-Anbieter (Issue #1206): OAuthApplication.save() erzwingt das Hashen
+    "accounts.OAuthApplication.client_secret": "Client-Secret als Passwort-Hash (Django-Hasher), nicht umkehrbar",
+    "accounts.OAuthApplication.hash_client_secret": "Schalter der Bibliothek, kein Geheimnis; immer an",
     "common.SiteSettings.email_host_password_legacy": "frühere Klartextspalte, von Migration common/0006 geleert",
     "common.SiteSettings.nebius_api_key_legacy": "frühere Klartextspalte, von common/0006 und common/0011 geleert",
     "session.SessionStateProfile.remote_secret_votes": "Regel des Landesprofils zu geheimen Abstimmungen, kein Geheimnis",

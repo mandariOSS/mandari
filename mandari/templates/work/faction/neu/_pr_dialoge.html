@@ -46,7 +46,7 @@ Kontext: meeting, org_slug, rechte, angaben, genehmigung, versand, darf_einstell
         <label class="fs-feldname" for="fs-nachtrag-top">Zu TOP</label>
         <select class="wf-auswahl" id="fs-nachtrag-top" name="agenda_item_id">
             <option value="">Ohne TOP (nur für Vereidigte sichtbar)</option>
-            {% for t in dok.tops %}<option value="{{ t.item.pk }}">{{ t.item.number }} {{ t.item.title|truncatechars:70 }}</option>{% endfor %}
+            {% for t in dok.tops %}{% if t.intern %}<option value="{{ t.item.pk }}" data-voll="{{ t.item.number }} {{ t.item.title|truncatechars:70 }}" data-kurz="{{ t.item.number }}" x-text="$store.noe.sichtbar ? $el.dataset.voll : $el.dataset.kurz">{{ t.item.number }}{% if noe_sichtbar %} {{ t.item.title|truncatechars:70 }}{% endif %}</option>{% else %}<option value="{{ t.item.pk }}">{{ t.item.number }} {{ t.item.title|truncatechars:70 }}</option>{% endif %}{% endfor %}
         </select>
         <label class="fs-feldname" for="fs-nachtrag-text">Text des Nachtrags</label>
         <textarea class="wf-eingabe" id="fs-nachtrag-text" name="content" rows="4" required></textarea>

@@ -40,8 +40,11 @@ Kontext: meeting, organization, dok, angaben, genehmigung, rechte, notizen_editi
     {% if dok.allgemein %}
     {# Einträge ohne TOP gehören wie im PDF zur internen Fassung: der Kontext enthält sie nur für Vereidigte #}
     <h3 class="fs-prot-teil"><i data-lucide="lock" aria-hidden="true"></i>Einträge ohne TOP und Nachträge</h3>
+    {# Nur für Vereidigte wie der nichtöffentliche Teil: hinter derselben Abdeckung (Sichtschutz, Issue #1201) #}
     <div class="fs-prot-inhalt fs-prot-allgemein">
+        {% include "work/faction/sitzung/_noe_abdeckung.html" with klein=True was="Einträge ohne TOP und Nachträge" %}<div class="fs-noe-inhalt">
         {% for e in dok.allgemein %}{% include "work/faction/neu/_pr_eintrag.html" %}{% endfor %}
+        </div>
     </div>
     {% endif %}
 </article>

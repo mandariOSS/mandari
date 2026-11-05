@@ -26,6 +26,8 @@ Beide gehen denselben Weg::
 - ``hub.api.snapshot``: der Snapshot einer Kommune als NDJSON mit dem Cursor, ab dem der Feed fortsetzt.
 - ``hub.api.http``: die HTTP-Hülle aller Endpunkte – JSON mit ``ETag``, bedingte Anfragen (``304``),
   Fehler als JSON, CORS, Ratenbegrenzung, nur lesende Methoden.
+- ``hub.api.entry`` und ``hub.api.openapi``: der Einstieg ``/api/`` und die eine OpenAPI-Beschreibung aller
+  Bereiche (``/api/openapi.json``, ``docs/SCHNITTSTELLE.md``). Bereiche der Fachmodule melden sich beim Start an.
 
 Eine Ausgabe legt nur noch fest, welche Objekte sichtbar sind und unter welchen Adressen sie stehen.
 Adressen und Kennungen bestehender Objekte ändern sich nicht; abweichende Schreibweisen einer Adresse

@@ -87,12 +87,18 @@ urlpatterns = [
     path("api/provisioning/", include("apps.provisioning.urls", namespace="provisioning")),
     # Provisioning-API v2, deklarativ (nur aktiv wenn PROVISIONING_V2_API_KEY gesetzt, Issue #1132)
     path("api/provisioning/v2/", include("apps.provisioning.v2.urls", namespace="provisioning_v2")),
+    # Einstieg der Schnittstelle (Issue #1205): /api/, /api/openapi.json (eine Beschreibung aller Bereiche) und
+    # /api/docs/. Nach den Bereichen unter /api/, die genau drei Adressen fangen keine von deren Pfaden ab.
+    path("api/", include("hub.api.entry_urls", namespace="schnittstelle")),
     # Offene Schnittstelle der Drehscheibe: Aggregator über den RIS-Bestand aller Kommunen (OParl 1.1)
     path("oparl/", include("hub.api.urls", namespace="oparl_api")),
     # Katalog der offenen Ratsinformationen nach DCAT-AP.de für Datenportale (Issue #104)
     path("data/dcat/", include("hub.adapters.dcat.urls", namespace="dcat")),
     # Authentication (login, logout, password reset)
     path("accounts/", include("apps.accounts.urls", namespace="accounts")),
+    # OpenID-Connect-Anbieter (Issue #1206): /oauth/… und /.well-known/openid-configuration; ohne
+    # OIDC_PROVIDER_ENABLED antworten alle mit 404
+    path("", include("apps.accounts.oidc.urls")),
     # Session RIS (administrative portal)
     path("session/", include("apps.session.urls", namespace="session")),
     # Work module (portal for organizations)
