@@ -13,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from hub.contracts.registry import get_registry
 from hub.ris.mapping.session import SessionUris
 from hub.ris.session_events import (
     DATE_ONLY,
@@ -228,6 +229,55 @@ def test_anlage_ersetzt_und_umbenannt(events: SessionEvents) -> None:
     assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage(version=(2, "b"))})[0].payload["change"] == "replaced"
     assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage(name="Plan.pdf")})[0].payload["change"] == "renamed"
     assert events.file_drafts({DATEI: anlage()}, {DATEI: anlage()}) == []
+
+
+def test_anlage_an_anderer_vorlage_nennt_die_fruehere(events: SessionEvents) -> None:
+    """Die frühere Vorlage gibt die Anlage nicht mehr aus; der Änderungsfeed nennt auch sie (Issue #1229)."""
+    neue = uuid.UUID("00000000-0000-4000-8000-000000000009")
+    drafts = events.file_drafts({DATEI: anlage()}, {DATEI: anlage(paper=neue)})
+
+    assert kurz(drafts) == [("ris.file.changed", "File", "oeffentlich")]
+    assert drafts[0].payload == {
+        "file": str(events.ref("file", DATEI)),
+        "change": "added",
+        "paper": str(events.ref("paper", neue)),
+        "previous_paper": str(events.ref("paper", VORLAGE)),
+    }
+    get_registry().validate_payload("ris.file.changed", 1, drafts[0].payload)
+    # Ohne neue Zugehörigkeit nennt die Nutzlast keine früheren Bezüge
+    umbenannt = events.file_drafts({DATEI: anlage()}, {DATEI: anlage(name="Plan.pdf")})[0].payload
+    assert not any(name.startswith("previous_") for name in umbenannt)
+
+
+def test_anlage_vom_tagesordnungspunkt_an_die_sitzung(events: SessionEvents) -> None:
+    def zustand(**felder: Any) -> FileState:
+        werte = {"name": "plan.pdf", "version": (1, "a"), "paper": None, "meeting": None, "agendaItem": None}
+        werte.update(felder)
+        return FileState(id=DATEI, published=True, fields=werte, meeting_public=True, item_public=True)
+
+    drafts = events.file_drafts({DATEI: zustand(agendaItem=TOP)}, {DATEI: zustand(meeting=SITZUNG)})
+
+    payload = drafts[0].payload
+    assert payload["meeting"] == str(events.ref("meeting", SITZUNG))
+    assert payload["previous_agenda_item"] == str(events.ref("agendaitem", TOP))
+    assert "agenda_item" not in payload and "previous_meeting" not in payload
+
+
+def test_nie_oeffentlicher_frueherer_bezug_bleibt_ungenannt(events: SessionEvents) -> None:
+    """Hing die Anlage an einem nichtöffentlichen Tagesordnungspunkt, nennt das öffentliche Ereignis ihn nicht."""
+    vorher = FileState(
+        id=DATEI,
+        published=True,
+        fields={"name": "plan.pdf", "version": (1, "a"), "paper": VORLAGE, "meeting": None, "agendaItem": TOP},
+        paper_published=True,
+        item_public=False,
+    )
+    nachher = anlage()
+
+    drafts = events.file_drafts({DATEI: vorher}, {DATEI: nachher})
+
+    assert kurz(drafts) == [("ris.file.changed", "File", "nichtoeffentlich")]
+    assert all(not name.startswith("previous_") for name in drafts[0].payload)
 
 
 # -- Niederschrift (Issue #535) ---------------------------------------------------------------------------------

@@ -386,10 +386,12 @@ class TestTagesordnung:
             ("ris.object.depublished", "AgendaItem", "oeffentlich", "delete"),
         ]
         assert events[0].payload["change"] == "deleted"
+        # Die Rücknahme nennt die Sitzung, die den Punkt einbettete: Der Änderungsfeed nennt auch sie (Issue #1229)
         assert events[1].payload == {
             "object_type": "AgendaItem",
             "object": kennung("agendaitem", oeffentlich.pk),
             "reason": "quelle_geloescht",
+            "meeting": kennung("meeting", sitzung.pk),
         }
 
     def test_top_verschieben_meldet_beide_punkte(self, welt: Welt) -> None:

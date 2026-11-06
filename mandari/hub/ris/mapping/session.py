@@ -50,6 +50,19 @@ from hub.ris.canonical import Objekt, as_list, clean, file_text, iso, iso_date, 
 #: 3: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216)
 VERSION: Final = 3
 
+#: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
+#: Der Änderungsfeed nennt danach auch das einbettende Objekt (``hub.api.changes``, Issue #1229); ein Test prüft die
+#: Tabelle an den abgebildeten Objekten. Kommune, Gremium und Vorlage geben keinen Ort aus; der Sitzungsort gehört zur
+#: Sitzung und trägt ihre Kennung (``SessionMapping.location``).
+EMBEDDINGS: Final[dict[str, frozenset[str]]] = {
+    "legislativeterm": frozenset({"body"}),
+    "membership": frozenset({"person"}),
+    "agendaitem": frozenset({"meeting"}),
+    "consultation": frozenset({"paper"}),
+    "file": frozenset({"meeting", "agendaitem", "paper"}),
+    "location": frozenset({"meeting"}),
+}
+
 #: Genehmigungsweg der Niederschrift (``mandari:protocolApproval``, wie ``ris.protocol.approved``)
 FOLLOW_UP: Final = "follow_up"
 DIRECT: Final = "direct"
