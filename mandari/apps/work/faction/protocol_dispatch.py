@@ -76,10 +76,14 @@ def protocol_due_at(meeting: Any, settings: dict[str, Any]) -> datetime | None:
 
 
 def protocol_recipients(meeting: Any) -> list[tuple[Any, bool]]:
-    """Empfänger mit Fassung: ``(membership, intern)`` – wie beim PDF-Download der Niederschrift."""
+    """
+    Empfänger mit Fassung: ``(membership, intern)`` – wie beim PDF-Download der Niederschrift. Empfänger sind die
+    Teilnehmenden der Sitzungsart und die Eingeladenen (Issue #1239), bei der Standardart alle Mitglieder.
+    """
+    from .sitzungsarten import empfaenger
     from .visibility import can_view_internal
 
-    memberships = meeting.organization.memberships.filter(is_active=True, is_guest=False).select_related("user")
+    memberships = empfaenger(meeting).select_related("user")
     recipients = []
     for membership in memberships:
         if not membership.has_permission("faction.view_public"):

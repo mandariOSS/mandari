@@ -33,6 +33,7 @@ from .. import sitzung
 from ..models import FactionAgendaItem, FactionDecision, FactionMeeting
 from ..quorum import quorum_der_sitzung
 from ..regeln import ABSTIMMUNGEN_AUS
+from ..sitzungsarten import darf_sehen
 from ..visibility import can_view_internal, is_item_internal
 
 if TYPE_CHECKING:
@@ -253,7 +254,8 @@ def unterlage_kontext(unterlage: sitzung.Unterlage) -> dict[str, Any]:
 
 def _sitzung_oder_404(view: Any, meeting_id: Any) -> FactionMeeting:
     meeting = sitzung.sitzung_laden(view.organization, meeting_id)
-    if meeting is None or not neues_design(meeting.organization):
+    # Sitzungsarten (Issue #1239): unsichtbare Sitzungen wie unbekannte
+    if meeting is None or not neues_design(meeting.organization) or not darf_sehen(view.membership, meeting):
         raise Http404
     return meeting
 

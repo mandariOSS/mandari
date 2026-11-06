@@ -1293,11 +1293,10 @@ class ProtocolApprovalService:
             from apps.work.notifications.models import NotificationType
             from apps.work.notifications.services import NotificationHub
 
-            recipients = list(
-                meeting.organization.memberships.filter(is_active=True, is_guest=False)
-                .exclude(id=approved_by.id)
-                .select_related("user")
-            )
+            from .sitzungsarten import empfaenger
+
+            # Teilnehmende der Art und Eingeladene (Issue #1239), bei der Standardart alle Mitglieder
+            recipients = list(empfaenger(meeting).exclude(id=approved_by.id).select_related("user"))
             if not recipients:
                 return
 

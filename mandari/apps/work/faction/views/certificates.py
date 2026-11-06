@@ -110,7 +110,8 @@ class FactionAttendanceExportView(WorkViewMixin, View):
         from ..audit import log_event
         from ..certificates import build_bulk_export_csv, build_bulk_export_pdf, bulk_confirmed_attendances
 
-        attendances = list(bulk_confirmed_attendances(self.organization, period_start, period_end))
+        # Nur Sitzungen, die die exportierende Person sieht (Sitzungsarten, Issue #1239)
+        attendances = list(bulk_confirmed_attendances(self.organization, period_start, period_end, self.membership))
 
         log_event(
             "attendance_exported",

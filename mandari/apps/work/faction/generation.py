@@ -270,8 +270,10 @@ def create_occurrence(schedule, date, *, exceptions=None, rules=None):
     meeting._audit_created_action = "generated"
     meeting.save()
 
-    # Anwesenheiten für alle aktiven Mitglieder (wie manuelle Anlage)
-    for member in organization.memberships.filter(is_active=True, is_guest=False):
+    # Anwesenheiten für die Teilnehmenden der Art (Issue #1239, wie manuelle Anlage)
+    from apps.work.faction.sitzungsarten import teilnehmende
+
+    for member in teilnehmende(meeting_type):
         FactionAttendance.objects.create(meeting=meeting, membership=member, status="invited")
 
     # Automatischer erster TOP (Genehmigung TO/Protokoll)

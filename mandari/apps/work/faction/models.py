@@ -46,7 +46,8 @@ class FactionMeetingType(models.Model):
     Einstellungen der Organisation (``organization.settings["faction"]``) feldweise; leer oder ohne ein Feld heißt
     „wie die Organisation“ (Issue #1240, :mod:`apps.work.faction.regeln`). Je Art gelten außerdem die
     Standard-Tagesordnung (``agenda_mode``), der nichtöffentliche Teil (``non_public_enabled``) und Abstimmungen samt
-    Beschlussfähigkeit (``voting_enabled``).
+    Beschlussfähigkeit (``voting_enabled``). Teilnehmende und Sichtbarkeit setzt Work durch (Issue #1239, nur über
+    :mod:`apps.work.faction.sitzungsarten`).
     """
 
     DEFAULT_NAME = "Fraktionssitzung"

@@ -89,15 +89,28 @@ def visible_tasks(
     Alle Aufgaben der Organisation, die das Mitglied sehen darf.
 
     Sichtbar sind organisationsweite Aufgaben sowie eigene, zugewiesene und
-    explizit geteilte Aufgaben.
+    explizit geteilte Aufgaben. Organisationsweite Aufgaben aus einer Fraktionssitzung
+    nur, wenn das Mitglied die Sitzung sieht (Sitzungsarten, Issue #1239).
     """
     qs = base if base is not None else Task.objects.filter(organization=organization)
+    sitzungen = _sichtbare_sitzungen(organization, membership)
+    aus_sichtbarer_sitzung = (Q(related_faction_meeting__isnull=True) | Q(related_faction_meeting__in=sitzungen)) & (
+        Q(related_faction_agenda_item__isnull=True) | Q(related_faction_agenda_item__meeting__in=sitzungen)
+    )
     return qs.filter(
-        Q(visibility="organization")
+        (Q(visibility="organization") & aus_sichtbarer_sitzung)
         | Q(created_by=membership)
         | Q(assigned_to=membership)
         | Q(shares__membership=membership)
     ).distinct()
+
+
+def _sichtbare_sitzungen(organization: Organization, membership: Membership) -> QuerySet[Any]:
+    """Kennungen der Fraktionssitzungen der Organisation, die das Mitglied sieht (Unterabfrage)."""
+    from apps.work.faction.models import FactionMeeting
+    from apps.work.faction.sitzungsarten import sichtbar_fuer
+
+    return sichtbar_fuer(membership, FactionMeeting.objects.filter(organization=organization)).values("pk")
 
 
 def tasks_for_motion(organization: Organization, membership: Membership, motion: Motion) -> QuerySet[Task]:
@@ -324,7 +337,10 @@ def _visible_protocol_entries(organization: Organization, membership: Membership
     from apps.work.faction.models import FactionProtocolEntry
     from apps.work.faction.visibility import can_view_internal
 
-    qs = FactionProtocolEntry.objects.filter(meeting__organization=organization)
+    # Nur aus Sitzungen, die das Mitglied sieht (Sitzungsarten, Issue #1239)
+    qs = FactionProtocolEntry.objects.filter(
+        meeting__organization=organization, meeting__in=_sichtbare_sitzungen(organization, membership)
+    )
     if not can_view_internal(membership):
         qs = qs.exclude(Q(agenda_item__visibility="internal") | Q(agenda_item__parent__visibility="internal"))
     return qs

@@ -877,6 +877,7 @@ def get_absence_or_404(organization: Organization, membership: Membership, absen
 def activity_statistics(organization: Organization, membership: Membership) -> dict[str, int]:
     """Kennzahlen des Mitglieds: Aufgaben, Anträge, Kommentare, Fraktionssitzungen, Vorbereitungen."""
     from apps.work.faction.models import FactionAttendance, FactionMeeting
+    from apps.work.faction.sitzungsarten import sichtbar_fuer
     from apps.work.meetings.models import AgendaItemNote, MeetingPreparation
     from apps.work.motions.models import Motion, MotionComment
     from apps.work.tasks.models import Task
@@ -894,7 +895,10 @@ def activity_statistics(organization: Organization, membership: Membership) -> d
         "meetings_present": attendance.filter(status="present").count(),
         "meetings_excused": attendance.filter(status="excused").count(),
         "meetings_absent": attendance.filter(status="absent").count(),
-        "meetings_total": FactionMeeting.objects.filter(organization=organization, status="completed").count(),
+        # Nur Sitzungen, die das Mitglied sieht (Sitzungsarten, Issue #1239)
+        "meetings_total": sichtbar_fuer(
+            membership, FactionMeeting.objects.filter(organization=organization, status="completed")
+        ).count(),
         "preparations": MeetingPreparation.objects.filter(organization=organization, membership=membership).count(),
         "agenda_notes": AgendaItemNote.objects.filter(organization=organization, author=membership).count(),
     }

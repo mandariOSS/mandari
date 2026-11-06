@@ -30,6 +30,7 @@ from ..models import (
 
 logger = logging.getLogger(__name__)
 from ..regeln import ABSTIMMUNGEN_AUS, NOE_AUS
+from ..sitzungsarten import sitzung_oder_404
 from ..visibility import can_view_internal, can_view_item, is_item_internal
 from ._helpers import (
     VIDEO_LINK_MAX_LENGTH,
@@ -51,7 +52,7 @@ class FactionActionView(WorkViewMixin, View):
         return redirect("work:faction_detail", org_slug=self.organization.slug, meeting_id=kwargs["meeting_id"])
 
     def post(self, request, *args, **kwargs):
-        meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
+        meeting = sitzung_oder_404(self.membership, self.organization, kwargs.get("meeting_id"))
 
         action = request.POST.get("action")
 

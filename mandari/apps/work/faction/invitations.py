@@ -586,7 +586,10 @@ def _send_release_notice(meeting, dispatch_at, *, final: bool) -> int:
     from apps.work.notifications.services import NotificationHub
 
     organization = meeting.organization
-    board = get_board_members(organization)
+    # Sitzungsarten (Issue #1239): nur, wer die Sitzung sehen darf
+    from .sitzungsarten import nur_sichtbar
+
+    board = nur_sichtbar(meeting, get_board_members(organization))
     if not board:
         logger.warning("Keine Freigabe-Berechtigten für Organisation %s gefunden", organization.slug)
         return 0

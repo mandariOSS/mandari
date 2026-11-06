@@ -151,7 +151,8 @@ def _eigene_antraege(membership: Any) -> set[str]:
 
 
 def _bearbeitet(organization: Any, membership: Any) -> set[str]:
-    from apps.work.faction.models import FactionAgendaItem
+    from apps.work.faction.models import FactionAgendaItem, FactionMeeting
+    from apps.work.faction.sitzungsarten import sichtbar_fuer
     from apps.work.meetings.models import AgendaItemNote, AgendaItemPosition, AgendaPrivateNote, PaperComment
 
     tops: set[Any] = set()
@@ -172,7 +173,10 @@ def _bearbeitet(organization: Any, membership: Any) -> set[str]:
         .values_list("agenda_item_id", flat=True)[:MAX_KENNUNGEN]
     )
     oeffentlich = Q(visibility="public") & (Q(parent__isnull=True) | Q(parent__visibility="public"))
-    fraktion = FactionAgendaItem.objects.filter(oeffentlich, meeting__organization=organization)
+    # Nur Sitzungen, die das Mitglied sieht (Sitzungsarten, Issue #1239): sonst verriete „Von der Fraktion bearbeitet“
+    # Themen einer Sitzung nur für Teilnehmende
+    sichtbar = sichtbar_fuer(membership, FactionMeeting.objects.filter(organization=organization)).values("pk")
+    fraktion = FactionAgendaItem.objects.filter(oeffentlich, meeting__organization=organization, meeting__in=sichtbar)
     tops.update(
         fraktion.exclude(related_agenda_item__isnull=True)
         .order_by("-meeting__start")

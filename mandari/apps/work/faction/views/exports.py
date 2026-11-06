@@ -13,12 +13,11 @@ Dazu der Termin einer Sitzung als Kalenderdatei (Issue #1071, „In Kalender üb
 import logging
 
 from django.http import HttpResponse
-from django.shortcuts import get_object_or_404
 from django.views.generic import View
 
 from apps.common.mixins import WorkViewMixin
 
-from ..models import FactionMeeting
+from ..sitzungsarten import sitzung_oder_404
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +28,7 @@ class FactionProtocolPdfView(WorkViewMixin, View):
     permission_required = "faction.view_public"
 
     def get(self, request, *args, **kwargs):
-        meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
+        meeting = sitzung_oder_404(self.membership, self.organization, kwargs.get("meeting_id"))
 
         variant = kwargs.get("variant", "oeffentlich")
         if variant not in ("oeffentlich", "intern"):
@@ -68,7 +67,7 @@ class FactionMeetingIcsView(WorkViewMixin, View):
     permission_required = "faction.view_public"
 
     def get(self, request, *args, **kwargs):
-        meeting = get_object_or_404(FactionMeeting, id=kwargs.get("meeting_id"), organization=self.organization)
+        meeting = sitzung_oder_404(self.membership, self.organization, kwargs.get("meeting_id"))
 
         from ..services import FactionMeetingEmailService
 

@@ -1744,15 +1744,21 @@ def _parse_absence_dates(data: AbsenceInput) -> tuple[date, date]:
 
 
 def _auto_decline_meetings(organization: Organization, membership: Membership, start: date, end: date) -> None:
-    """Fraktionssitzungen im Abwesenheitszeitraum als entschuldigt eintragen."""
+    """
+    Fraktionssitzungen im Abwesenheitszeitraum als entschuldigt eintragen: Sitzungen der Arten, zu deren Teilnehmenden
+    das Mitglied gehört, und Sitzungen, zu denen es eingeladen ist (Sitzungsarten, Issue #1239). Eine neue Anwesenheit
+    machte sonst eine Sitzung „nur für Teilnehmende“ für das Mitglied sichtbar.
+    """
     try:
         from apps.work.faction.models import FactionAttendance, FactionMeeting
+        from apps.work.faction.sitzungsarten import arten_mit_teilnahme
 
         meetings = FactionMeeting.objects.filter(
+            Q(meeting_type__in=arten_mit_teilnahme(membership).values("pk")) | Q(attendances__membership=membership),
             organization=organization,
             start__date__range=(start, end),
             status__in=["draft", "planned", "invited"],
-        )
+        ).distinct()
         for meeting in meetings:
             FactionAttendance.objects.update_or_create(
                 meeting=meeting, membership=membership, defaults={"status": "excused"}

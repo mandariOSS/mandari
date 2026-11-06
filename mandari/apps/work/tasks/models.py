@@ -267,7 +267,7 @@ class Task(models.Model):
         Access is granted if:
         - User is the creator
         - User is assigned to the task
-        - Task visibility is 'organization'
+        - Task visibility is 'organization' (aus einer Fraktionssitzung nur, wenn die Sitzung sichtbar ist, Issue #1239)
         - Task visibility is 'shared' and user is in shares
         """
         # Creator always has access
@@ -283,12 +283,26 @@ class Task(models.Model):
             return False
 
         if self.visibility == "organization":
-            return membership.organization == self.organization
+            return membership.organization == self.organization and self._sitzung_sichtbar(membership)
 
         if self.visibility == "shared":
             return self.shares.filter(membership=membership).exists()
 
         return False
+
+    def _sitzung_sichtbar(self, membership) -> bool:
+        """Sieht das Mitglied die Fraktionssitzung, aus der die Aufgabe stammt (Sitzungsarten, Issue #1239)?"""
+        from apps.work.faction.models import FactionMeeting
+        from apps.work.faction.sitzungsarten import darf_sehen
+
+        ids = {self.related_faction_meeting_id}
+        if self.related_faction_agenda_item_id is not None:
+            ids.add(self.related_faction_agenda_item.meeting_id)
+        ids.discard(None)
+        if not ids:
+            return True
+        sitzungen = FactionMeeting.objects.select_related("meeting_type").filter(pk__in=ids)
+        return all(darf_sehen(membership, meeting) for meeting in sitzungen)
 
     def can_edit(self, membership) -> bool:
         """Check if membership can edit this task."""

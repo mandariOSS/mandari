@@ -104,6 +104,32 @@ def resolve_is_internal(instance) -> bool:
     return False
 
 
+def unsichtbare_eintraege(organization: Any, membership: Any) -> Any:
+    """
+    Bedingung (``Q``) für Einträge zu Sitzungen (``meeting_id_ref``) sowie zu Reihen samt Ausnahmen und Ausfallregeln
+    (``object_id``), die das Mitglied nicht sieht (Sitzungsarten, Issue #1239); die Historie lässt sie ganz weg.
+    Gelöschte Sitzungen lassen sich keiner Art mehr zuordnen; ihre Einträge bleiben wie bisher.
+    """
+    from django.db.models import Q
+
+    from .models import FactionMeeting, FactionMeetingException, FactionMeetingSchedule, FactionSuspensionRule
+    from .sitzungsarten import sichtbar_fuer, sichtbare_arten
+
+    sitzungen = FactionMeeting.objects.filter(organization=organization)
+    unsichtbar = sitzungen.exclude(pk__in=sichtbar_fuer(membership, sitzungen).values("pk"))
+    reihen = FactionMeetingSchedule.objects.filter(organization=organization).exclude(
+        meeting_type__in=sichtbare_arten(membership).values("pk")
+    )
+    ausnahmen = FactionMeetingException.objects.filter(schedule__in=reihen.values("pk"))
+    regeln = FactionSuspensionRule.objects.filter(schedule__in=reihen.values("pk"))
+    return (
+        Q(meeting_id_ref__in=unsichtbar.values("pk"))
+        | Q(model_name="FactionMeetingSchedule", object_id__in=reihen.values("pk"))
+        | Q(model_name="FactionMeetingException", object_id__in=ausnahmen.values("pk"))
+        | Q(model_name="FactionSuspensionRule", object_id__in=regeln.values("pk"))
+    )
+
+
 def locked_object_ids(organization: Any, object_ids: set[Any]) -> set[Any]:
     """
     Objekte mit mindestens einem gesperrten Eintrag (Issue #1160).
