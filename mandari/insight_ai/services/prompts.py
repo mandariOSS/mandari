@@ -18,7 +18,7 @@ PAPER_SUMMARY_SYSTEM_PROMPT = """Du fasst öffentliche Dokumente aus dem Ratsinf
 AUFBAU:
 - Der erste Satz sagt in einfachen Worten, worum es geht und was entschieden werden soll oder entschieden wurde.
 - Danach die wichtigsten Einzelheiten: was sich für die Menschen vor Ort ändert, Kosten und Beträge (mit Einheit), Fristen und nächste Schritte, betroffene Orte oder Stadtteile.
-- Länge nach Umfang der Dokumente: etwa 120 bis 350 Wörter.
+- Länge: etwa 80 bis 180 Wörter in höchstens drei kurzen Absätzen, bei kleinen Vorgängen weniger. Lieber das Wichtigste knapp als jede Einzelheit.
 
 FORMAT:
 - Zusammenhängender Fließtext in vollständigen Sätzen, Absätze durch Leerzeilen getrennt
@@ -58,6 +58,7 @@ def build_paper_summary_user_prompt(
     body_name: str | None = None,
     organizations: list[str] | None = None,
     orte: str | None = None,
+    einfach: bool = False,
 ) -> str:
     """
     Nutzerprompt der Zusammenfassung: Metadaten und Dokumente in eigenen Blöcken.
@@ -71,6 +72,7 @@ def build_paper_summary_user_prompt(
         body_name: Kommune (z. B. „Stadt Münster“)
         organizations: beratende Gremien
         orte: Block der zu prüfenden Orte (``orte_block``, Tagesbatch mit Verortung); ``None``: ohne
+        einfach: zusätzlich in Einfacher Sprache (``EINFACH_SYSTEM_ZUSATZ``)
     """
     zeilen = []
     if body_name:
@@ -86,7 +88,10 @@ def build_paper_summary_user_prompt(
     zeilen.append(f"Titel: {paper_name}")
     metadaten = ohne_rahmen_tags("\n".join(zeilen))
     zusatz = f"\n{orte}\n" if orte else ""
-    auftrag = "Fasse diesen Vorgang zusammen und prüfe die Orte." if orte else "Fasse diesen Vorgang zusammen."
+    auftrag = "Fasse diesen Vorgang zusammen"
+    if einfach:
+        auftrag += ", auch in Einfacher Sprache"
+    auftrag += ", und prüfe die Orte." if orte else "."
 
     return f"""<metadaten>
 {metadaten}
@@ -100,8 +105,29 @@ def build_paper_summary_user_prompt(
 
 
 # =============================================================================
-# Tagesbatch: Zusammenfassung und Prüfung der Verortung in einer Anfrage (Issues #1220, #1222)
+# Einfache Sprache und Tagesbatch: strukturierte Antwort (Issues #1220, #1222)
 # =============================================================================
+
+#: Zusatz zum Systemprompt: dieselbe Zusammenfassung in Einfacher Sprache (Antwort als JSON nach Schema). „Leichte
+#: Sprache“ nennen wir es bewusst nicht: Die verlangt feste Regeln und eine Prüfung durch Menschen der Zielgruppe.
+EINFACH_SYSTEM_ZUSATZ = """EINFACHE SPRACHE:
+Schreibe dieselbe Zusammenfassung zusätzlich in Einfacher Sprache (Feld einfache_sprache), höchstens 120 Wörter:
+- Kurze Sätze mit höchstens 15 Wörtern, ein Gedanke pro Satz
+- Bekannte Alltagswörter; ein nötiges Fachwort sofort in einfachen Worten erklären
+- Keine Abkürzungen, keine Klammern, keine Fremdwörter
+- Aktiv statt Passiv, direkte Aussagen
+- Zahlen als Ziffern, große Beträge gerundet (rund 2 Millionen Euro)
+- Inhaltlich gleich: nichts dazuerfinden, nichts Wichtiges für die Menschen vor Ort weglassen
+- Auch hier gilt: Ein Vorschlag ist noch kein Beschluss
+Antworte ausschließlich im vorgegebenen JSON-Format: zusammenfassung nach den Regeln oben, einfache_sprache nach diesen Regeln."""
+
+#: Antwortformat mit Fassung in Einfacher Sprache (Klick mit Claude und Tagesbatch ohne Prüfung der Verortung)
+ZUSAMMENFASSUNG_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"zusammenfassung": {"type": "string"}, "einfache_sprache": {"type": "string"}},
+    "required": ["zusammenfassung", "einfache_sprache"],
+    "additionalProperties": False,
+}
 
 #: Zusatz zum Systemprompt, wenn Claude im Tagesbatch auch die Verortung prüft (Antwort als JSON nach Schema)
 VERORTUNG_SYSTEM_ZUSATZ = """ZWEITE AUFGABE – VERORTUNG PRÜFEN:
@@ -119,6 +145,7 @@ TAGESBATCH_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
         "zusammenfassung": {"type": "string"},
+        "einfache_sprache": {"type": "string"},
         "orte": {
             "type": "array",
             "items": {
@@ -143,7 +170,7 @@ TAGESBATCH_SCHEMA: dict[str, Any] = {
             },
         },
     },
-    "required": ["zusammenfassung", "orte", "fehlende_orte"],
+    "required": ["zusammenfassung", "einfache_sprache", "orte", "fehlende_orte"],
     "additionalProperties": False,
 }
 

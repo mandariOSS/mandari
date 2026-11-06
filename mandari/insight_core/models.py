@@ -176,10 +176,13 @@ class SourceDeletionModel(CanonicalIdModel):
         """
         paper_id = self.pk if isinstance(self, OParlPaper) else getattr(self, "paper_id", None)
         if isinstance(self, OParlPaper | OParlFile) and paper_id:
-            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(summary=None, summary_hinweis="")
+            OParlPaper.objects.filter(pk=paper_id, summary__isnull=False).update(
+                summary=None, summary_hinweis="", summary_einfach=None
+            )
             if isinstance(self, OParlPaper):
                 self.summary = None
                 self.summary_hinweis = ""
+                self.summary_einfach = None
 
     @property
     def depublished(self) -> bool:
@@ -966,6 +969,8 @@ class OParlPaper(SourceDeletionModel):
         verbose_name="KI-Anbieter der Zusammenfassung",
         help_text="Anbieter, Modell und Verarbeitungsort, mit denen die gespeicherte Zusammenfassung entstand.",
     )
+    # Dieselbe Zusammenfassung in Einfacher Sprache (Claude, Issue #1220); verfällt mit der Zusammenfassung
+    summary_einfach = models.TextField(blank=True, null=True, verbose_name="Zusammenfassung in Einfacher Sprache")
     locations = models.JSONField(blank=True, null=True)
 
     # Offizielle OParl-Locations (Feld `paper.location`, vom Ingestor verknüpft)

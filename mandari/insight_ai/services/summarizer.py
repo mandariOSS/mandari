@@ -37,9 +37,11 @@ from insight_ai.providers.base import STANDARD_MAX_AUSGABE, ChatMessage
 from insight_ai.providers.claude import BudgetErschoepftError
 
 from .prompts import (
+    EINFACH_SYSTEM_ZUSATZ,
     PAPER_SUMMARY_SYSTEM_PROMPT,
     TAGESBATCH_SCHEMA,
     VERORTUNG_SYSTEM_ZUSATZ,
+    ZUSAMMENFASSUNG_SCHEMA,
     anlage_block,
     build_paper_summary_user_prompt,
     orte_block,
@@ -63,6 +65,28 @@ FILE_DOWNLOADS_KEY: Final = "file_downloads"
 EVICTED: Final = "evicted"
 #: Text aller Anlagen zusammen höchstens so viele Zeichen (rund 60.000 Token); jede Anlage bekommt denselben Anteil
 TEXT_BUDGET_CHARS: Final = 200_000
+#: Zusätzliche Ausgabe-Token für die Fassung in Einfacher Sprache
+ZUSATZ_AUSGABE_EINFACH: Final = 800
+
+
+def zerlegen(antwort: str, *, json_pflicht: bool = False) -> tuple[str, str]:
+    """
+    Strukturierte Antwort (``ZUSAMMENFASSUNG_SCHEMA``, ``TAGESBATCH_SCHEMA``) in Zusammenfassung und Fassung in
+    Einfacher Sprache; reiner Text (ältere Anfragen, andere Anbieter) bleibt die Zusammenfassung, außer die Anfrage
+    verlangte JSON (``json_pflicht``). Unlesbar: leer.
+    """
+    import json
+
+    text = (antwort or "").strip()
+    if not text.startswith("{"):
+        return ("", "") if json_pflicht else (text, "")
+    try:
+        daten = json.loads(text)
+    except ValueError:
+        return "", ""
+    if not isinstance(daten, dict):
+        return "", ""
+    return str(daten.get("zusammenfassung") or "").strip(), str(daten.get("einfache_sprache") or "").strip()
 
 
 class SummaryError(Exception):
@@ -161,8 +185,10 @@ class SummaryService:
         # deshalb nicht gespeichert
         started_at = timezone.now()
 
-        # Nur gespeicherter Text; der Dienst lädt und erkennt nichts selbst
-        vorbereitung = self.vorbereiten(paper)
+        # Nur gespeicherter Text; der Dienst lädt und erkennt nichts selbst. Anbieter mit strukturierter Antwort
+        # (Claude) schreiben zusätzlich die Fassung in Einfacher Sprache
+        strukturiert = bool(getattr(self.provider, "strukturiert", False))
+        vorbereitung = self.vorbereiten(paper, einfach=strukturiert)
 
         if vorbereitung is None:
             if self._text_pending(paper):
@@ -181,13 +207,23 @@ class SummaryService:
             # Modelle mit Reasoning brauchen viel Platz vor der eigentlichen Antwort: Obergrenze aus der
             # KI-Konfiguration (AISettings.insight_max_output_tokens)
             max_tokens = getattr(self.provider, "max_output_tokens", 0) or STANDARD_MAX_AUSGABE
-            response = self.provider.chat_completion(
-                messages=vorbereitung.nachrichten,
-                max_tokens=max_tokens,
-                temperature=0.3,
-            )
-
-            summary = response.content
+            if vorbereitung.schema is not None:
+                response = self.provider.chat_completion(
+                    messages=vorbereitung.nachrichten,
+                    max_tokens=max_tokens + ZUSATZ_AUSGABE_EINFACH,
+                    temperature=0.3,
+                    schema=vorbereitung.schema,
+                )
+                summary, einfach = zerlegen(response.content, json_pflicht=True)
+                if not summary:
+                    raise SummaryError("Antwort ohne Zusammenfassung")
+            else:
+                response = self.provider.chat_completion(
+                    messages=vorbereitung.nachrichten,
+                    max_tokens=max_tokens,
+                    temperature=0.3,
+                )
+                summary, einfach = response.content, ""
 
             logger.info(
                 f"Summary generated for {paper.id}: "
@@ -210,7 +246,8 @@ class SummaryService:
                     logger.info(f"Summary for paper {paper.id} not saved: new text since the start")
                 else:
                     paper.summary = summary
-                    paper.save(update_fields=["summary", "summary_hinweis"])
+                    paper.summary_einfach = einfach or None
+                    paper.save(update_fields=["summary", "summary_hinweis", "summary_einfach"])
                     logger.info(f"Summary saved to paper {paper.id}")
 
             return summary
@@ -227,7 +264,9 @@ class SummaryService:
                 "Die Zusammenfassung konnte gerade nicht erstellt werden. Bitte später erneut versuchen."
             ) from e
 
-    def vorbereiten(self, paper: "OParlPaper", orte: list[Any] | None = None) -> Vorbereitung | None:
+    def vorbereiten(
+        self, paper: "OParlPaper", orte: list[Any] | None = None, einfach: bool = False
+    ) -> Vorbereitung | None:
         """
         Prompt der Zusammenfassung aus dem gespeicherten Text und den Metadaten; ``None`` ohne Text.
 
@@ -235,7 +274,8 @@ class SummaryService:
 
         Mit ``orte`` (``verortung_pruefung.orte_fuer_pruefung``, auch leer) prüft Claude in derselben Anfrage die
         Verortung (Tagesbatch, Issue #1222): Zusatz im Systemprompt, Orte im Nutzerprompt, Antwort als JSON nach
-        ``TAGESBATCH_SCHEMA``.
+        ``TAGESBATCH_SCHEMA``. Mit ``einfach`` (oder ``orte``) schreibt Claude dieselbe Zusammenfassung zusätzlich in
+        Einfacher Sprache (``EINFACH_SYSTEM_ZUSATZ``, ohne Orte nach ``ZUSAMMENFASSUNG_SCHEMA``).
         """
         datei_ids = list(self._current_files(paper).values_list("pk", flat=True))
         text_content = self._collect_text_content(paper)
@@ -277,7 +317,10 @@ class SummaryService:
             logger.debug(f"Could not get organizations: {e}")
 
         # Build prompts
+        einfach = einfach or orte is not None
         system_prompt = PAPER_SUMMARY_SYSTEM_PROMPT
+        if einfach:
+            system_prompt = f"{system_prompt}\n\n{EINFACH_SYSTEM_ZUSATZ}"
         if orte is not None:
             system_prompt = f"{system_prompt}\n\n{VERORTUNG_SYSTEM_ZUSATZ}"
         user_prompt = build_paper_summary_user_prompt(
@@ -289,6 +332,7 @@ class SummaryService:
             body_name=body_name,
             organizations=list(organizations) if organizations else None,
             orte=orte_block(orte) if orte is not None else None,
+            einfach=einfach,
         )
 
         # Create messages
@@ -301,7 +345,7 @@ class SummaryService:
             datei_ids=datei_ids,
             zeichen=len(system_prompt) + len(user_prompt),
             orte_ids=[ort.pk for ort in orte] if orte is not None else None,
-            schema=TAGESBATCH_SCHEMA if orte is not None else None,
+            schema=TAGESBATCH_SCHEMA if orte is not None else (ZUSAMMENFASSUNG_SCHEMA if einfach else None),
         )
 
     def _collect_text_content(self, paper: "OParlPaper") -> str:

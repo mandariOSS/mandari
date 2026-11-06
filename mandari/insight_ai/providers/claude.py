@@ -157,21 +157,29 @@ class ClaudeZusammenfassung(AbstractAIProvider):
             "output_config": ausgabe,
         }
         if system:
-            params["system"] = system
+            # Der Systemprompt ist für alle Zusammenfassungen gleich (je nach Zusatz drei Fassungen, über 512 Token):
+            # als Cache-Präfix markiert, folgende Anfragen lesen ihn zum Zehntel des Preises. Die Dokumente sind je
+            # Vorgang andere und werden nicht gecacht.
+            params["system"] = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
         return params
+
+    #: Antwortet auf Wunsch als JSON nach Schema (``SummaryService`` fragt dann auch die Einfache Sprache an)
+    strukturiert = True
 
     def chat_completion(
         self,
         messages: list[ChatMessage],
         max_tokens: int = 1500,
         temperature: float = 0.3,
+        schema: dict[str, Any] | None = None,
     ) -> ChatResponse:
         """
-        Einzelaufruf (Klick auf „Zusammenfassen“). ``temperature`` wird nicht gesendet (vom Modell nicht angenommen).
+        Einzelaufruf (Klick auf „Zusammenfassen“). ``temperature`` wird nicht gesendet (vom Modell nicht angenommen);
+        mit ``schema`` antwortet Claude als JSON danach.
         """
         if self.budget_rest() <= 0:
             raise BudgetErschoepftError("Monatsbudget der Zusammenfassungen ausgeschöpft")
-        params = self.parameter(messages, max_tokens)
+        params = self.parameter(messages, max_tokens, schema)
         try:
             antwort = self.client.messages.create(**params)
         except Exception as fehler:
