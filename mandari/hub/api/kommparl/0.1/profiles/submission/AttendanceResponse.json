@@ -1,0 +1,99 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/submission/AttendanceResponse.json",
+    "title": "AttendanceResponse",
+    "description": "Stand der Rückmeldung der angemeldeten Person zu einer Sitzung (Profil Einreichung, Entwurf).",
+    "type": "object",
+    "required": [
+        "type",
+        "meeting",
+        "response",
+        "acceptsResponses"
+    ],
+    "properties": {
+        "type": {
+            "const": "https://schema.kommparl.de/0.1/AttendanceResponse"
+        },
+        "meeting": {
+            "description": "Sitzung (id des oparl:Meeting).",
+            "$ref": "#/$defs/url"
+        },
+        "response": {
+            "description": "pending: noch keine Rückmeldung, attending: Teilnahme, notAttending: Absage.",
+            "enum": [
+                "pending",
+                "attending",
+                "notAttending"
+            ]
+        },
+        "substituteRequested": {
+            "description": "Bei notAttending: Vertretung erbeten.",
+            "type": "boolean"
+        },
+        "respondedAt": {
+            "description": "Zeitpunkt der letzten Rückmeldung.",
+            "$ref": "#/$defs/dateTime"
+        },
+        "acknowledgedAt": {
+            "description": "Zeitpunkt, zu dem die Person den Empfang der Ladung bestätigt hat.",
+            "$ref": "#/$defs/dateTime"
+        },
+        "acceptsResponses": {
+            "description": "Der Server nimmt zu dieser Sitzung noch Rückmeldungen an.",
+            "type": "boolean"
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false,
+    "allOf": [
+        {
+            "if": {
+                "required": [
+                    "response"
+                ],
+                "properties": {
+                    "response": {
+                        "const": "pending"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "respondedAt": false,
+                    "substituteRequested": false
+                }
+            }
+        },
+        {
+            "if": {
+                "required": [
+                    "response"
+                ],
+                "properties": {
+                    "response": {
+                        "const": "attending"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "substituteRequested": {
+                        "const": false
+                    }
+                }
+            }
+        }
+    ],
+    "$defs": {
+        "dateTime": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+        },
+        "url": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        }
+    }
+}

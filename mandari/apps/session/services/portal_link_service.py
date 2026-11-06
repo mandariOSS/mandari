@@ -64,6 +64,37 @@ def person_for_user(user: Any, organization: Organization) -> SessionPerson | No
     return persons[0] if len(persons) == 1 else None
 
 
+#: Recht in Work, Sitzungen zu sehen; ohne es zeigt das Portal keine Ladungen (``apps.common.permissions``)
+MEETINGS_VIEW = "meetings.view"
+
+
+def person_for_user_in_tenant(user: Any, tenant: SessionTenant) -> SessionPerson | None:
+    """
+    Session-Person eines Kontos bei einer Verwaltung, ohne Auswahl einer Fraktion (Profil Einreichung, Issue #1228).
+
+    Dieselben Bedingungen wie im Portal (:func:`person_for_user`): Konto aktiv, E-Mail-Adresse bestätigt, genau eine
+    aktive Person des Mandanten mit dieser Adresse, und das Konto gehört als Mitglied (kein Gast, mit dem Recht
+    „Sitzungen ansehen“) zu einer Organisation, die aktiv und mit gültigem Token mit der Verwaltung verbunden ist.
+    """
+    from apps.tenants.models import Membership
+    from apps.work.motions.models import AdministrationConnection
+
+    if user is None or not getattr(user, "is_active", False) or not getattr(user, "email_verified", False):
+        return None
+    email = str(getattr(user, "email", "") or "").strip()
+    if not email or not tenant.is_active:
+        return None
+    connections = AdministrationConnection.objects.filter(tenant=tenant, is_active=True)
+    organization_ids = [connection.organization_id for connection in connections if _token_valid(connection)]
+    memberships = Membership.objects.filter(
+        user=user, organization_id__in=organization_ids, is_active=True, is_guest=False
+    )
+    if not any(membership.has_permission(MEETINGS_VIEW) for membership in memberships):
+        return None
+    persons = list(SessionPerson.objects.filter(tenant=tenant, is_active=True, email__iexact=email)[:2])
+    return persons[0] if len(persons) == 1 else None
+
+
 def portal_person_ids(tenant: SessionTenant) -> set[Any]:
     """
     IDs aller Personen des Mandanten, die ihre Ladungen in mandari Work abrufen können.

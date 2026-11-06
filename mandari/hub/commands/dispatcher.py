@@ -16,6 +16,11 @@ Ablauf je Befehl:
 3. Wiederholung mit gleichem Schlüssel und gleichem Befehl: dieselbe Quittung, ohne den Handler
    erneut auszuführen; gleicher Schlüssel mit anderem Befehl oder Inhalt: 422.
 
+**Personenbezogene Befehle** (``x-visibility: personenbezogen``, etwa ``attendance.respond``): Hash der Anfrage
+und Inhalts-Hash der Quittung sind ein HMAC mit einem Schlüssel der Installation (``keyed_content_hash``). Sie
+bestätigen Gleichheit, lassen sich aber nicht aus bekannten Kennungen und einem kurzen Grund erraten; der
+Idempotenzspeicher hält so auch bei wenig Inhalt nichts Lesbares fest (Nachtrag #1228 zu A6).
+
 Handler registriert der Eigentümer, meist in ``<modul>/commands.py`` und geladen aus
 ``AppConfig.ready``:
 
@@ -52,7 +57,7 @@ from apps.events.idempotency import IdempotencyConflictError, NestedTransactionE
 from apps.events.publishing import event_context
 from hub.contracts import COMMAND, ContractViolationError, Registry, UnknownContractError, get_registry
 
-from .canonical import content_hash
+from .canonical import content_hash, keyed_content_hash
 from .problems import CommandError, Problem, validation_problem
 from .types import Command, HandlerResult, Receipt
 
@@ -69,6 +74,8 @@ KEY_REUSED: Final = "Der Idempotenzschlüssel wurde schon für einen anderen Bef
 INTERNAL: Final = (
     "Der Befehl konnte nicht ausgeführt werden. Bitte später mit demselben Idempotenzschlüssel wiederholen."
 )
+#: Sichtbarkeitsklasse personenbezogener Befehle: Hashes mit Schlüssel der Installation (``keyed_content_hash``)
+PERSONAL: Final = "personenbezogen"
 #: Verstoß in der Schreibweise der Vertragsprüfung (``$.pfad: regel``); ``$`` ist der ganze Inhalt.
 UNREPRESENTABLE: Final = (
     "$: nicht als JSON darstellbar (einzelnes Surrogat, Ganzzahl außerhalb von ±(2^53 − 1) oder kein JSON-Wert)"
@@ -212,7 +219,12 @@ class Dispatcher:
         except ContractViolationError as exc:
             raise CommandError(validation_problem(exc.problems)) from None
 
-        request_hash = content_hash({"command": name, "version": version, "content_hash": body_hash})
+        digest = content_hash
+        if PERSONAL in contract.visibility:
+            # Wenig Entropie (Kennungen, ein kurzer Grund): ungesalzene Hashes ließen den Inhalt erraten
+            digest = keyed_content_hash
+            body_hash = keyed_content_hash(command.body)
+        request_hash = digest({"command": name, "version": version, "content_hash": body_hash})
         received_at = timezone.now()
 
         def execute() -> dict[str, Any]:

@@ -1,0 +1,282 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/submission/Submission.json",
+    "title": "Submission",
+    "description": "Eine Einreichung mit Eingangsbestätigung und Bearbeitungsstand (Profil Einreichung, Entwurf).",
+    "type": "object",
+    "required": [
+        "id",
+        "type",
+        "body",
+        "submissionType",
+        "name",
+        "proposalText",
+        "status",
+        "statusHistory",
+        "receiptNumber",
+        "receivedAt",
+        "withdraw",
+        "created",
+        "modified"
+    ],
+    "properties": {
+        "id": {
+            "description": "URL der Einreichung.",
+            "$ref": "#/$defs/url"
+        },
+        "type": {
+            "const": "https://schema.kommparl.de/0.1/Submission"
+        },
+        "body": {
+            "description": "Körperschaft (id des oparl:Body).",
+            "$ref": "#/$defs/url"
+        },
+        "submissionType": {
+            "description": "Art der Einreichung.",
+            "$ref": "#/$defs/submissionType"
+        },
+        "name": {
+            "description": "Titel.",
+            "$ref": "#/$defs/text"
+        },
+        "proposalText": {
+            "description": "Beschlussvorschlag; bei Anfragen die Fragen.",
+            "$ref": "#/$defs/text"
+        },
+        "reasoningText": {
+            "description": "Begründung.",
+            "$ref": "#/$defs/text"
+        },
+        "financialImpactText": {
+            "description": "Finanzielle Auswirkungen.",
+            "$ref": "#/$defs/text"
+        },
+        "urgent": {
+            "description": "Als dringlich eingereicht.",
+            "type": "boolean"
+        },
+        "urgencyReason": {
+            "description": "Begründung der Dringlichkeit.",
+            "$ref": "#/$defs/text"
+        },
+        "targetOrganization": {
+            "description": "Zuständiges Gremium (id eines oparl:Organization).",
+            "$ref": "#/$defs/url"
+        },
+        "targetDate": {
+            "description": "Gewünschter Beratungstermin.",
+            "$ref": "#/$defs/date"
+        },
+        "originator": {
+            "description": "Einreichende Stelle.",
+            "$ref": "#/$defs/uri"
+        },
+        "originatorName": {
+            "description": "Name der einreichenden Stelle.",
+            "$ref": "#/$defs/text"
+        },
+        "coSigner": {
+            "description": "Mitunterzeichnende.",
+            "type": "array",
+            "items": {
+                "$ref": "#/$defs/text"
+            }
+        },
+        "contact": {
+            "description": "Ansprechperson für Rückfragen der Verwaltung.",
+            "$ref": "#/$defs/contact"
+        },
+        "attachment": {
+            "description": "Angenommene Anlagen.",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "name",
+                    "size",
+                    "contentDigest"
+                ],
+                "properties": {
+                    "name": {
+                        "description": "Dateiname.",
+                        "$ref": "#/$defs/text"
+                    },
+                    "mediaType": {
+                        "description": "Medientyp, vom Server bestimmt.",
+                        "$ref": "#/$defs/text"
+                    },
+                    "size": {
+                        "description": "Größe in Bytes.",
+                        "type": "integer",
+                        "minimum": 0
+                    },
+                    "contentDigest": {
+                        "description": "Prüfsumme der Datei im Format des Felds Content-Digest (RFC 9530).",
+                        "$ref": "#/$defs/contentDigest"
+                    }
+                },
+                "patternProperties": {
+                    "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+                },
+                "additionalProperties": false
+            }
+        },
+        "rejectedUpload": {
+            "description": "Nur in der Antwort auf das Einreichen: Anlagen, die der Server nicht angenommen hat.",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "upload",
+                    "reason"
+                ],
+                "properties": {
+                    "upload": {
+                        "description": "URL der hochgeladenen Datei aus upload der Anfrage.",
+                        "$ref": "#/$defs/url"
+                    },
+                    "reason": {
+                        "description": "Grund als Code: mediaType, size, scan oder ein anderer Code des Servers.",
+                        "$ref": "#/$defs/text"
+                    }
+                },
+                "patternProperties": {
+                    "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+                },
+                "additionalProperties": false
+            }
+        },
+        "status": {
+            "description": "Bearbeitungsstand.",
+            "$ref": "#/$defs/status"
+        },
+        "statusHistory": {
+            "description": "Verlauf des Bearbeitungsstands, soweit der Server ihn festhält, ältester Eintrag zuerst. Der letzte Eintrag entspricht status.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "required": [
+                    "status"
+                ],
+                "properties": {
+                    "status": {
+                        "description": "Bearbeitungsstand.",
+                        "$ref": "#/$defs/status"
+                    },
+                    "date": {
+                        "description": "Seit wann dieser Stand gilt, soweit bekannt.",
+                        "$ref": "#/$defs/dateTime"
+                    }
+                },
+                "patternProperties": {
+                    "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+                },
+                "additionalProperties": false
+            }
+        },
+        "receiptNumber": {
+            "description": "Eingangsnummer.",
+            "$ref": "#/$defs/text"
+        },
+        "receivedAt": {
+            "description": "Eingangszeit: Zeitpunkt, zu dem der Server die Einreichung angenommen hat.",
+            "$ref": "#/$defs/dateTime"
+        },
+        "contentDigest": {
+            "description": "Prüfsumme des Inhalts der Anfrage, mit der eingereicht wurde, im Format des Felds Content-Digest (RFC 9530). Zwingend in der Antwort auf das Einreichen; kann bei Einreichungen fehlen, die nicht über dieses Profil kamen.",
+            "$ref": "#/$defs/contentDigest"
+        },
+        "paper": {
+            "description": "Vorlage, die aus der Einreichung entstanden ist (id eines oparl:Paper), soweit die Person sie sehen darf.",
+            "$ref": "#/$defs/url"
+        },
+        "withdraw": {
+            "description": "URL für die Rücknahme.",
+            "$ref": "#/$defs/url"
+        },
+        "created": {
+            "$ref": "#/$defs/dateTime"
+        },
+        "modified": {
+            "$ref": "#/$defs/dateTime"
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "contact": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "description": "Name der Ansprechperson.",
+                    "$ref": "#/$defs/text"
+                },
+                "email": {
+                    "description": "E-Mail-Adresse.",
+                    "$ref": "#/$defs/text"
+                },
+                "phone": {
+                    "description": "Telefonnummer.",
+                    "$ref": "#/$defs/text"
+                }
+            },
+            "patternProperties": {
+                "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+            },
+            "additionalProperties": false
+        },
+        "contentDigest": {
+            "type": "string",
+            "pattern": "^sha-256=:[A-Za-z0-9+/]{43}=:$"
+        },
+        "date": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "dateTime": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+        },
+        "status": {
+            "enum": [
+                "submitted",
+                "registered",
+                "inReview",
+                "accepted",
+                "rejected",
+                "converted",
+                "withdrawn",
+                "closed"
+            ]
+        },
+        "submissionType": {
+            "enum": [
+                "motion",
+                "amendment",
+                "question",
+                "majorQuestion",
+                "agendaRequest",
+                "resolution",
+                "other"
+            ]
+        },
+        "text": {
+            "type": "string",
+            "minLength": 1
+        },
+        "uri": {
+            "type": "string",
+            "pattern": "^[A-Za-z][A-Za-z0-9+.-]*:[^\\s]+$"
+        },
+        "url": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        }
+    }
+}

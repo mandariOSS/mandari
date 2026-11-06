@@ -1,0 +1,39 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/submission/InvitationReceipt.json",
+    "title": "InvitationReceipt",
+    "description": "Bestätigung, dass die angemeldete Person die Ladung zu einer Sitzung erhalten hat (Profil Einreichung, Entwurf).",
+    "type": "object",
+    "required": [
+        "type",
+        "meeting",
+        "acknowledgedAt"
+    ],
+    "properties": {
+        "type": {
+            "const": "https://schema.kommparl.de/0.1/InvitationReceipt"
+        },
+        "meeting": {
+            "description": "Sitzung (id des oparl:Meeting).",
+            "$ref": "#/$defs/url"
+        },
+        "acknowledgedAt": {
+            "description": "Zeitpunkt der ersten Bestätigung; spätere Bestätigungen ändern ihn nicht.",
+            "$ref": "#/$defs/dateTime"
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "dateTime": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+        },
+        "url": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        }
+    }
+}

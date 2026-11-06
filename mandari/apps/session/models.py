@@ -3549,6 +3549,12 @@ class SessionApplication(EncryptionMixin, models.Model):
     submitted_at = models.DateTimeField(auto_now_add=True, verbose_name="Eingereicht am")
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Profil Einreichung (Issue #1228): Prüfsumme des Inhalts der Anfrage im Format von Content-Digest (RFC 9530),
+    # wie sie die Eingangsbestätigung nennt. Leer bei Einreichungen über andere Wege.
+    content_digest = models.CharField(
+        max_length=100, blank=True, default="", db_default="", verbose_name="Prüfsumme der Einreichung"
+    )
+
     class Meta:
         db_table = "session_applications"
         verbose_name = "Antrag"
@@ -3602,6 +3608,66 @@ class SessionApplication(EncryptionMixin, models.Model):
                 continue
             max_num = max(max_num, num)
         return f"{prefix}{max_num + 1:04d}"
+
+
+class SessionSubmissionUpload(models.Model):
+    """
+    Anlage, die eine Person über das Profil Einreichung vorab hochgeladen hat (Issue #1228).
+
+    Geprüft wird beim Hochladen wie bei Antrags-Anhängen (Dateityp, Größe, Virenprüfung). Die Datei gehört der
+    Person, die sie hochgeladen hat, und nur bei diesem Mandanten; sie lässt sich bis ``expires_at`` in einer
+    Einreichung verwenden. Beim Einreichen übernimmt der Befehl ``submission.submit`` sie in die Ablage der
+    Anlagen; danach wird der Inhalt hier gelöscht, die Angaben (Name, Größe, SHA-256) bleiben für Wiederholungen
+    mit demselben Idempotenzschlüssel bis zum Aufräumen erhalten.
+
+    Die Dateien liegen unter ``session/files/`` und sind nie über /media/ abrufbar (PROTECTED_MEDIA_PREFIXES); das
+    Profil liefert ihren Inhalt nie aus.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    tenant = models.ForeignKey(
+        SessionTenant,
+        on_delete=models.CASCADE,
+        related_name="submission_uploads",
+        verbose_name="Mandant",
+    )
+    # Beim Löschen des Kontos bleibt die Zeile ohne Person zurück, bis das Aufräumen auch die Datei löscht
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="+",
+        verbose_name="Hochgeladen von",
+    )
+    client_id = models.CharField(max_length=100, blank=True, verbose_name="Anwendung (Client-ID)")
+    name = models.CharField(max_length=255, verbose_name="Dateiname")
+    mime_type = models.CharField(max_length=100, verbose_name="MIME-Typ")
+    size = models.PositiveBigIntegerField(verbose_name="Größe (Bytes)")
+    sha256 = models.CharField(max_length=64, verbose_name="SHA-256")
+    file = models.FileField(upload_to="session/files/einreichungen/%Y/%m/", blank=True, verbose_name="Datei")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="Hochgeladen am")
+    expires_at = models.DateTimeField(verbose_name="Verwendbar bis")
+    used_at = models.DateTimeField(null=True, blank=True, verbose_name="Verwendet am")
+    application = models.ForeignKey(
+        SessionApplication,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        verbose_name="Einreichung",
+    )
+
+    class Meta:
+        db_table = "session_submission_uploads"
+        verbose_name = "Hochgeladene Anlage (Einreichung)"
+        verbose_name_plural = "Hochgeladene Anlagen (Einreichung)"
+        indexes = [
+            models.Index(fields=["tenant", "user"], name="session_sub_upload_owner_idx"),
+            models.Index(fields=["expires_at"], name="session_sub_upload_exp_idx"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Anlage {self.name}"
 
 
 # =============================================================================

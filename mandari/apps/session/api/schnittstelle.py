@@ -8,6 +8,9 @@ Die Drehscheibe kennt Session nicht (A1); Session meldet seine Bereiche deshalb 
 - **OParl je Mandant** (``/session/<mandant>/api/oparl/``): Pfade aus den Routen und Listen von
   ``apps/session/api/oparl.py``, beschrieben mit den OParl-Bausteinen der Drehscheibe
   (``hub.api.openapi.oparl``). Die Endpunkte selbst bleiben unverändert.
+- **Profil Einreichung** (``…/api/oparl/body/kommparl/submissions/`` und weitere, Issue #1228): Pfade, Schemas aus
+  kommParl und Sicherheitsschema in ``apps/session/api/einreichung_beschreibung.py``; jeder Endpunkt, der einen
+  Befehl annimmt, nennt ihn in ``x-mandari-command``.
 - **Session-API v1** (``/api/v1/session/``): die Beschreibung, die django-ninja aus den Endpunkten erzeugt –
   dieselbe wie unter ``/api/v1/session/openapi.json``. Erst hier kommt an jedem Endpunkt, der einen Befehl
   annimmt, ``x-mandari-command`` dazu (``SESSION_V1_COMMANDS``); die eigene Beschreibung der API v1 bleibt so
@@ -152,5 +155,8 @@ SESSION_V1: Final = Area(
 
 def register() -> None:
     """Bereiche von Session anmelden (aus ``SessionConfig.ready``)."""
+    from .einreichung_beschreibung import EINREICHUNG
+
     register_area(TENANT_OPARL)
+    register_area(EINREICHUNG)
     register_area(SESSION_V1)

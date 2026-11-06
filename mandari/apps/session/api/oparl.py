@@ -39,6 +39,9 @@ Blättern, Listen-Hülle, ETag, Fehler –, steht in ``hub.api`` und gilt für b
   fortsetzt (``hub.api.snapshot``) – jedes öffentliche Objekt in einer eigenen Zeile.
 - Die älteren Formen ``…/body/changes/`` und ``…/body/snapshot/`` (``mandari:changes``, ``mandari:snapshot``)
   bleiben bis zu ihrem Wegfall und sind abgekündigt.
+- **Profil Einreichung** (Issue #1228, ``apps/session/api/einreichung.py``): Mit eingeschaltetem OpenID-Connect-Anbieter
+  nennen Body und Sitzungen die Adressen des Profils, und ``kommparl:conformsTo`` nennt seine Kennung. Die Endpunkte
+  verlangen eine Anmeldung; die Objekte dieser Ausgabe bleiben anonym abrufbar.
 - Anonym, lesend, CORS offen, Rate-Limit wie der Aggregator.
 """
 
@@ -48,6 +51,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Prefetch
 from django.http import Http404
 
+from apps.accounts.oidc import provider_enabled
 from apps.session import oparl_publication as pub
 from apps.session.models import (
     SessionAgendaItem,
@@ -142,7 +146,9 @@ def _mapping(tenant):
         SOURCE,
         changes=changes.enabled(),
         id_base=partial(oparl_id_base, tenant),
-        conforms_to=kommparl.conforms_to(feed_offered=changes.enabled()),
+        conforms_to=kommparl.conforms_to(feed_offered=changes.enabled(), submission_offered=provider_enabled()),
+        # Profil Einreichung (Issue #1228): nur mit eingeschaltetem OpenID-Connect-Anbieter, nur in dieser Ausgabe
+        submission=provider_enabled(),
     )
 
 

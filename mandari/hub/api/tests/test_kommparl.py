@@ -126,6 +126,16 @@ class TestUebernommeneSchemas:
             ("changes", "CursorExpired"),
             ("snapshot", "SnapshotEnd"),
             ("snapshot", "SnapshotHeader"),
+            # Profil Einreichung (#1228)
+            ("submission", "AttendanceResponse"),
+            ("submission", "AttendanceResponseRequest"),
+            ("submission", "InvitationReceipt"),
+            ("submission", "Problem"),
+            ("submission", "Submission"),
+            ("submission", "SubmissionList"),
+            ("submission", "SubmissionRequest"),
+            ("submission", "SubmissionRules"),
+            ("submission", "SubmissionUpload"),
         }
 
     def test_lizenz_in_reuse_toml(self) -> None:

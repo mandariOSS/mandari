@@ -189,6 +189,26 @@ Die Entscheidung bleibt unverändert; die Umsetzung in `hub/commands/` legt Folg
 - **Inhalts-Hash gewollt.** Die offene Frage zu HMAC und abschaltbarem Inhalts-Hash (#541) betrifft erst
   personenbezogene Befehle mit wenig Entropie; für Anträge bleibt der Hash der Nachweis für Einreichende.
 
+## Nachtrag: Profil Einreichung und personenbezogene Befehle (#1228)
+
+- **HMAC für personenbezogene Befehle (entschieden).** Für Befehle der Sichtbarkeit `personenbezogen`
+  (`attendance.respond`, `invitation.acknowledge`) bildet der Dispatcher den Hash der Anfrage und den Inhalts-Hash
+  der Quittung als HMAC-SHA-256 mit einem Schlüssel der Installation (`hub.commands.canonical.keyed_content_hash`,
+  abgeleitet aus `SECRET_KEY`). Gleiche Inhalte ergeben weiter denselben Wert, Wiederholungen und Konflikte erkennt
+  der Speicher wie bisher; aus Kennungen und einem kurzen Grund lässt sich der Inhalt aber nicht mehr erraten. Der
+  Inhalts-Hash solcher Quittungen ist damit für Aufrufende nicht nachrechenbar, was bei Rückmeldungen nicht gebraucht
+  wird. Ein Wechsel von `SECRET_KEY` lässt Wiederholungen offener Schlüssel als neuen Inhalt erscheinen (422); das
+  betrifft höchstens Rückmeldungen innerhalb der Aufbewahrungsfrist. Alle anderen Befehle behalten den ungesalzenen
+  Hash; bei `submission.submit` bleibt er der Nachweis für Einreichende.
+- **Handler** für `submission.withdraw`, `attendance.respond` und `invitation.acknowledge` liegen in
+  `apps/session/commands.py`. Auslöser sind Personen (`user:<id>`); die Rechte entsprechen dem Einreichen aus Work
+  und der Rückmeldung im Portal. Rücknahme nur in den Ständen eingereicht, eingegangen, in Prüfung und angenommen,
+  sonst 409.
+- **HTTP-Ebene des Profils:** Die Endpunkte nach dem Profil Einreichung von kommParl liegen an der OParl-Ausgabe je
+  Mandant (`…/api/oparl/body/kommparl/submissions/` und weitere), nicht unter `/api/v1/einreichung/antraege`
+  ([Nachtrag #1228 zum ADR „Eine Schnittstelle“](20261105-eine-schnittstelle-api-first.md)). Dort ist
+  `Idempotency-Key` Pflicht.
+
 ## Bezug
 
 - [A5 Verträge](20260929-ereignisvertraege.md), [A2 Ereignistechnik](20260929-ereignistechnik-postgres.md)

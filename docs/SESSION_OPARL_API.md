@@ -131,6 +131,7 @@ DSGVO kann sie die Veröffentlichung so beschreiben:
 | `GET …/api/oparl/body/kommparl/snapshot/` | Snapshot nach dem kommParl-Profil (NDJSON, Einstieg in den Änderungsfeed) |
 | `GET …/api/oparl/body/changes/` | Änderungsfeed in der älteren Form, abgekündigt (Wegfall frühestens am 01.12.2027) |
 | `GET …/api/oparl/body/snapshot/` | Snapshot in der älteren Form, abgekündigt (Wegfall frühestens am 01.12.2027) |
+| `…/api/oparl/body/kommparl/submissions/`, `…/uploads/`, `…/submission-rules/`, `…/api/oparl/meeting/<uuid>/kommparl/attendance/` und `…/invitation-receipt/` | Profil Einreichung von kommParl (Issue #1228): nur mit eingeschaltetem OpenID-Connect-Anbieter und Access-Token im Namen einer Person; [SCHNITTSTELLE.md](SCHNITTSTELLE.md#profil-einreichung-1228) |
 
 Objekttypen für `<typ>`: `organization`, `person`, `membership`, `meeting`,
 `agendaitem`, `paper`, `consultation`, `file`, `legislativeterm`, `location`.
