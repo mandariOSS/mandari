@@ -107,6 +107,7 @@ def test_quittung_mit_eingangsnummer_eingangszeit_und_inhalts_hash(
     assert antrag.title == TITEL and antrag.submitter_email == "fraktion@example.org"
     assert antrag.co_signers == "Max Mustermann\nLea Beispiel"
     assert str(antrag.deadline) == "2026-11-15" and antrag.submitted_via_token == token[0]
+    assert antrag.submitted_by_user is None, "Mit API-Token gibt es keine einreichende Person"
     assert antrag.files.count() == 0  # Antragsfassung nur auf Wunsch
 
 
@@ -176,6 +177,8 @@ def test_work_mitglied_reicht_fuer_die_verbundene_organisation_ein(
 
     antrag = SessionApplication.objects.get(pk=cast(Any, quittung.aggregate_id))
     assert antrag.submitting_organization == fraktion and antrag.submitted_via_token == token[0]
+    # Die Person gehört zur Einreichung: Nur sie sieht sie im Profil Einreichung und nimmt sie zurück (#1228)
+    assert antrag.submitted_by_user_id == fraktion.member.user_id
     token[0].refresh_from_db()
     assert token[0].usage_count == 1
 

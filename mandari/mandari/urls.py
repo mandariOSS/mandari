@@ -17,6 +17,7 @@ from apps.common import csp, health, metrics
 from apps.common.db_connections import releases_db_connections
 from apps.common.views_dev import ui_kit
 from apps.common.views_feedback import ProblemReportDoneView, ProblemReportView
+from apps.session.api import nichtoeffentlich as session_noe
 from apps.session.api.v1.api import api as session_api_v1
 from apps.session.views.invitation_responses import InvitationResponseView
 from apps.work.faction.views.certificates import CertificateVerifyView
@@ -99,6 +100,13 @@ urlpatterns = [
     # OpenID-Connect-Anbieter (Issue #1206): /oauth/… und /.well-known/openid-configuration; ohne
     # OIDC_PROVIDER_ENABLED antworten alle mit 404
     path("", include("apps.accounts.oidc.urls")),
+    # Metadaten der nichtöffentlichen Ausgabe als geschützte Ressource (RFC 9728, Issue #565); ohne
+    # OPARL_NONPUBLIC_ENABLED 404. Die Adresse bildet RFC 9728 aus der Adresse der Ausgabe.
+    path(
+        ".well-known/oauth-protected-resource/session/<slug:tenant_slug>/api/oparl/nichtoeffentlich/",
+        session_noe.metadata_view,
+        name="oparl_noe_metadata",
+    ),
     # Session RIS (administrative portal)
     path("session/", include("apps.session.urls", namespace="session")),
     # Work module (portal for organizations)

@@ -66,6 +66,8 @@ KOMMPARL_SNAPSHOT_HEADER: Final = kommparl.profile_component_name("SnapshotHeade
 KOMMPARL_SNAPSHOT_END: Final = kommparl.profile_component_name("SnapshotEnd")
 
 SPECIFICATION: Final = "https://oparl.org/spezifikation/"
+#: Methoden, die die OParl-Pfade beschreiben (nur lesend)
+METHODS_GET: Final = ("get",)
 
 _URL: Final[dict[str, Any]] = {"type": "string", "format": "uri"}
 _DATE_TIME: Final[dict[str, Any]] = {"type": "string", "format": "date-time"}
@@ -391,7 +393,9 @@ def _feed_paths(
             "Änderungsfeed (kommParl)",
             _ok(
                 f"Seite des Änderungsfeeds nach dem Profil {kommparl.PROFILE_CHANGES} (kommparl:changes am Body, "
-                "je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen",
+                "je Installation einzuschalten); links.next nur, solange weitere Einträge vorliegen. Ändert sich "
+                "ein eingebettetes Objekt, folgt ein Eintrag für das einbettende (etwa die Sitzung eines "
+                "Tagesordnungspunkts); in einer Seite steht jeder Eintrag zu einem Objekt höchstens einmal",
                 ref(KOMMPARL_CHANGES),
             ),
             parameters=[*parameters, *_FEED_PARAMETERS],

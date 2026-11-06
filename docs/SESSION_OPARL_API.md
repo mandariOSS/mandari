@@ -79,6 +79,12 @@ Beweis-Suite: `python scripts/smoke_session_oparl.py` (Ö/NÖ-Beweis über
 die gesamte API-Oberfläche) sowie die pytest-Suite
 `mandari/apps/session/tests/test_security_matrix.py`.
 
+Nichtöffentliches gibt es nur in der getrennten nichtöffentlichen Ausgabe unter
+`…/api/oparl/nichtoeffentlich/` mit Anmeldung (Profil Nichtöffentliches von kommParl, Issue #565,
+[Anmeldung](schnittstelle/anmeldung.md#nichtöffentliches-die-nichtöffentliche-ausgabe)). Diese Ausgabe liest kein
+Token und bleibt unverändert; ist die nichtöffentliche Ausgabe eingeschaltet, nennt nur das `System` das Profil in
+`kommparl:conformsTo` und ihre Adresse in `kommparl:nonPublicSystem`.
+
 ## Kontaktdaten nur mit Einwilligung (Issue #319)
 
 `Person.email` erscheint nur, wenn an der Person das Kennzeichen **„Kontaktdaten veröffentlichen“**
@@ -131,6 +137,7 @@ DSGVO kann sie die Veröffentlichung so beschreiben:
 | `GET …/api/oparl/body/kommparl/snapshot/` | Snapshot nach dem kommParl-Profil (NDJSON, Einstieg in den Änderungsfeed) |
 | `GET …/api/oparl/body/changes/` | Änderungsfeed in der älteren Form, abgekündigt (Wegfall frühestens am 01.12.2027) |
 | `GET …/api/oparl/body/snapshot/` | Snapshot in der älteren Form, abgekündigt (Wegfall frühestens am 01.12.2027) |
+| `…/api/oparl/body/kommparl/submissions/`, `…/uploads/`, `…/submission-rules/`, `…/api/oparl/meeting/<uuid>/kommparl/attendance/` und `…/invitation-receipt/` | Profil Einreichung von kommParl (Issue #1228): nur mit eingeschaltetem OpenID-Connect-Anbieter und Access-Token im Namen einer Person; [SCHNITTSTELLE.md](SCHNITTSTELLE.md#profil-einreichung-1228) |
 
 Objekttypen für `<typ>`: `organization`, `person`, `membership`, `meeting`,
 `agendaitem`, `paper`, `consultation`, `file`, `legislativeterm`, `location`.
@@ -356,6 +363,13 @@ Wegfall frühestens am 01.12.2027 und ist abgekündigt. Format, Cursor, Aufbewah
 beim Aggregator – beide Ausgaben nutzen dieselbe Serialisierung (`mandari/hub/api/changes.py`, Unterschiede der
 Formen in `OPARL_API.md`, Abschnitt „Zwei Formen“). Das System nennt in `kommparl:conformsTo` die Fassung von
 kommParl, nach der sich die Ausgabe richtet.
+
+Nach kommParl nennt der Feed auch die einbettenden Objekte (#1229, `OPARL_API.md`, „Einbettende Objekte“). Anders
+als im Aggregator gibt der Tagesordnungspunkt hier seine Anlagen aus: Ändert sich eine Anlage eines
+Tagesordnungspunkts, folgen Einträge für den Punkt und seine Sitzung. Rücknahmen nennen das Objekt, in das das
+zurückgenommene eingebettet war (`docs/SESSION_EREIGNISSE.md`). Hängt eine Anlage woanders, bekommt auch das Objekt
+einen Eintrag, an dem sie vorher hing. Gremien, Personen, Mitgliedschaften und Wahlperioden meldet Session noch
+nicht als Ereignis; ihre Änderungen fehlen im Feed.
 
 - **Kommune im Journal:** die kanonische Kennung des Body, `uuid5` über `…/api/oparl/body/`.
   Ereignisse nennen Objekte ebenfalls mit ihrer kanonischen Kennung (`uuid5` über die Adresse des

@@ -81,3 +81,34 @@ class KiVerbrauch(models.Model):
 
     def __str__(self) -> str:
         return f"{self.get_art_display()} {self.modell}: {self.kosten_usd} USD"
+
+
+class TagesbatchKommune(models.Model):
+    """
+    Kommune im täglichen Batch der Zusammenfassungen (Issue #1220): Vorgänge ab ``ab`` bekommen ihre Zusammenfassung
+    automatisch, sobald der Text aller Anlagen erkannt ist; mit ``verortung_pruefen`` prüft Claude in derselben
+    Anfrage die Verortung auf der Karte (Issue #1222). Ohne Eintrag reicht der Batch nichts ein.
+    """
+
+    # PROTECT: Verweise auf den RIS-Bestand nie mit CASCADE (hub/ris/tests/test_loeschsemantik.py)
+    body = models.OneToOneField(
+        "insight_core.OParlBody",
+        on_delete=models.PROTECT,
+        related_name="tagesbatch",
+        verbose_name="Kommune",
+    )
+    ab = models.DateField("Vorgänge ab", help_text="Datum des Vorgangs; ältere bleiben beim Klick „Zusammenfassen“.")
+    verortung_pruefen = models.BooleanField(
+        "Verortung prüfen",
+        default=True,
+        help_text="Claude prüft in derselben Anfrage die gefundenen Orte und nennt fehlende (öffentliche Daten).",
+    )
+    angelegt_am = models.DateTimeField("Angelegt am", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Kommune im Tagesbatch"
+        verbose_name_plural = "Kommunen im Tagesbatch"
+        ordering = ("ab",)
+
+    def __str__(self) -> str:
+        return f"{self.body} ab {self.ab:%d.%m.%Y}"

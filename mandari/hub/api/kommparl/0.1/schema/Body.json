@@ -216,11 +216,31 @@
             "type": "string",
             "format": "url"
         },
+        "kommparl:submission": {
+            "description": "{{ Body.properties.kommparl:submission.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "kommparl:submissionUpload": {
+            "description": "{{ Body.properties.kommparl:submissionUpload.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "kommparl:submissionRules": {
+            "description": "{{ Body.properties.kommparl:submissionRules.description }}",
+            "type": "string",
+            "format": "url"
+        },
         "keyword": {
             "type": "array",
             "items": {
                 "type": "string"
             }
+        },
+        "kommparl:publicId": {
+            "description": "{{ Body.properties.kommparl:publicId.description }}",
+            "type": "string",
+            "format": "url"
         },
         "created": {
             "type": "string",

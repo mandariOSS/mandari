@@ -11,12 +11,15 @@ Die Ansichten von django-oauth-toolkit, ergänzt um:
   (:mod:`.reauth`). ``max_age`` und ``auth_time`` beziehen sich auf die Anmeldung in dieser Sitzung.
   ``prompt=none`` meldet nur Anwendungen ohne Zustimmungsseite still an, ein ``id_token_hint`` muss zur
   angemeldeten Person passen. ``approval_prompt`` der Anfrage gilt nicht: Fremde Anwendungen fragen jedes Mal
-  (``REQUEST_APPROVAL_PROMPT``).
+  (``REQUEST_APPROVAL_PROMPT``). Verlangt die Anwendung einen geschützten Scope (``catalog.PROTECTED``, #565),
+  braucht das Konto einen zweiten Faktor (sonst geht es zur Einrichtung), die Anmeldung in der Sitzung muss mit
+  diesem Faktor gewesen sein (:func:`.reauth.login_with_second_factor`) und darf höchstens
+  ``catalog.PROTECTED_MAX_LOGIN_AGE`` zurückliegen; sonst erneute Anmeldung wie bei ``max_age``.
 - ``token``: Ratenbegrenzung je Adresse; Gerätefreigabe (RFC 8628) gibt es nicht
 - ``revoke`` (RFC 7009): Ratenbegrenzung je Adresse wie am Token-Endpunkt (#1215)
 - ``introspect`` (RFC 7662): nur für die Anwendung selbst, mit Client-Authentifizierung und nur über eigene Tokens,
   Ratenbegrenzung je Adresse
-- Discovery: nennt nur, was mandari tatsächlich anbietet
+- Discovery: nennt nur, was mandari tatsächlich anbietet, auch ``private_key_jwt`` (RFC 7523, #565)
 - „Verbundene Anwendungen“: Kontoseite mit Widerruf
 """
 
@@ -50,7 +53,9 @@ from apps.common.next_url import safe_next_url
 from .. import security_audit
 from ..middleware import REQUIREMENT_TARGETS, open_requirement
 from ..views import REAUTH_PARAM
-from . import provider_enabled, reauth, selectors, services, throttle
+from . import catalog, provider_enabled, reauth, selectors, services, throttle
+from .access import has_second_factor
+from .client_assertion import ALGORITHMS
 from .validator import signed_in_as
 
 ViewFunction = Callable[..., HttpResponseBase]
@@ -77,20 +82,33 @@ def _prompt(request: HttpRequest) -> set[str]:
     return set(request.GET.get("prompt", "").split())
 
 
+def _requests_protected_scope(request: HttpRequest) -> bool:
+    """Verlangt die Anfrage einen geschützten Scope (``catalog.PROTECTED``, #565)?"""
+    data = request.POST if request.method == "POST" else request.GET
+    return catalog.protected_in(str(data.get("scope", "")))
+
+
 def _login_too_old(request: HttpRequest) -> bool:
     """
     Verlangt die Anwendung mit ``max_age`` eine jüngere Anmeldung, als die Person in dieser Sitzung hat?
 
     Maßgeblich ist die Anmeldung in dieser Sitzung (:func:`.reauth.login_time`), nicht ``User.last_login``: Eine
-    Anmeldung auf einem anderen Gerät macht eine alte Sitzung nicht wieder jung.
+    Anmeldung auf einem anderen Gerät macht eine alte Sitzung nicht wieder jung. Ein geschützter Scope (#565) wirkt
+    wie ``max_age`` mit ``catalog.PROTECTED_MAX_LOGIN_AGE`` und verlangt dazu, dass diese Anmeldung mit zweitem Faktor
+    war: Ein Faktor, der erst nach einer Anmeldung nur mit Passwort eingerichtet wurde, genügt nicht.
     """
     raw = request.GET.get("max_age", "").strip()
-    if not raw.isdigit():
+    limits = [int(raw)] if raw.isdigit() else []
+    if _requests_protected_scope(request):
+        if not reauth.login_with_second_factor(request):
+            return True
+        limits.append(int(catalog.PROTECTED_MAX_LOGIN_AGE.total_seconds()))
+    if not limits:
         return False
     logged_in = reauth.login_time(request)
     if logged_in is None:
         return True
-    return bool((timezone.now() - logged_in).total_seconds() > int(raw))
+    return bool((timezone.now() - logged_in).total_seconds() > min(limits))
 
 
 def _request_ids(request: HttpRequest) -> tuple[str, str]:
@@ -129,6 +147,12 @@ class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibli
                     return cast(HttpResponseBase, self.handle_no_permission())
                 target = reverse(REQUIREMENT_TARGETS[requirement])
                 return redirect(f"{target}?{urlencode({'next': request.get_full_path()})}")
+            if _requests_protected_scope(request) and not has_second_factor(user):
+                # Geschützter Scope (#565): ohne zweiten Faktor gibt es keinen Code; erst einrichten
+                if "none" in _prompt(request):
+                    return cast(HttpResponseBase, self.handle_no_permission())
+                target = reverse(REQUIREMENT_TARGETS["totp"])
+                return redirect(f"{target}?{urlencode({'next': request.get_full_path()})}")
             if not _login_too_old(request) and not _reauth_pending(request):
                 signed_in = user
         # Der Code trägt den Anmeldezeitpunkt dieser Sitzung (auth_time im ID-Token)
@@ -148,8 +172,9 @@ class AuthorizeView(dot_views.AuthorizationView):  # type: ignore[misc]  # Bibli
         return cast(HttpResponseBase, super().get(request, *args, **kwargs))
 
     def post(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
-        # Formular der Zustimmungsseite: Steht für die Anfrage noch eine erneute Anmeldung aus, erst diese
-        if _reauth_pending(request):
+        # Formular der Zustimmungsseite: Steht für die Anfrage noch eine erneute Anmeldung aus oder reicht die
+        # Anmeldung nicht (zu alt, für einen geschützten Scope ohne zweiten Faktor), erst diese
+        if _reauth_pending(request) or _login_too_old(request):
             return self.handle_prompt_login()
         return cast(HttpResponseBase, super().post(request, *args, **kwargs))
 
@@ -265,15 +290,35 @@ class DiscoveryView(dot_views.ConnectDiscoveryInfoView):  # type: ignore[misc]  
     def get(self, request: HttpRequest, *args: Any, **kwargs: Any) -> HttpResponseBase:
         response = cast(HttpResponse, super().get(request, *args, **kwargs))
         data = json.loads(response.content)
+        signing = list(ALGORITHMS)
         data.update(
             {
                 "grant_types_supported": ["authorization_code", "refresh_token", "client_credentials"],
                 "id_token_signing_alg_values_supported": ["RS256"],
                 "code_challenge_methods_supported": ["S256"],
+                # private_key_jwt (RFC 7523) für Anwendungen mit öffentlichen Schlüsseln (#565)
+                "token_endpoint_auth_methods_supported": [
+                    "client_secret_basic",
+                    "client_secret_post",
+                    "private_key_jwt",
+                    "none",
+                ],
+                "token_endpoint_auth_signing_alg_values_supported": signing,
                 "revocation_endpoint": self._get_endpoint_url(request, "revoke-token", required=True),
-                "revocation_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post", "none"],
+                "revocation_endpoint_auth_methods_supported": [
+                    "client_secret_basic",
+                    "client_secret_post",
+                    "private_key_jwt",
+                    "none",
+                ],
+                "revocation_endpoint_auth_signing_alg_values_supported": signing,
                 "introspection_endpoint": self._get_endpoint_url(request, "introspect", required=True),
-                "introspection_endpoint_auth_methods_supported": ["client_secret_basic", "client_secret_post"],
+                "introspection_endpoint_auth_methods_supported": [
+                    "client_secret_basic",
+                    "client_secret_post",
+                    "private_key_jwt",
+                ],
+                "introspection_endpoint_auth_signing_alg_values_supported": signing,
                 "request_parameter_supported": False,
                 "request_uri_parameter_supported": False,
             }

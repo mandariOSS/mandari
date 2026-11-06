@@ -15,6 +15,10 @@ Ob eine Anmeldung jung genug ist (``max_age``) und welcher Zeitpunkt als ``auth_
 sich nach der Anmeldung in dieser Sitzung (:func:`login_time`), nicht nach ``User.last_login``: Den setzt jede
 Anmeldung auf irgendeinem Gerät neu, eine alte, unbeaufsichtigte Sitzung würde damit wieder „frisch“ (#1215).
 Eine Sitzung ohne gemerkten Zeitpunkt (angemeldet vor dieser Regel) gilt für ``max_age`` als zu alt.
+
+Ebenso merkt sich die Sitzung, ob die letzte Anmeldung mit zweitem Faktor war (:func:`mark_second_factor`, aus
+``apps.accounts.views.complete_login``). Geschützte Scopes (#565) verlangen das von der Anmeldung selbst: Ein Konto,
+das den Faktor erst nach einer Anmeldung nur mit Passwort einrichtet, meldet sich dafür erneut an.
 """
 
 from __future__ import annotations
@@ -30,6 +34,8 @@ from django.utils import timezone
 SESSION_KEY = "oidc_erneute_anmeldung"
 #: Zeitpunkt der letzten Anmeldung in dieser Sitzung (Unix-Sekunden)
 LOGIN_TIME_KEY = "oidc_anmeldezeit"
+#: Die letzte Anmeldung in dieser Sitzung war mit zweitem Faktor (Code, Backup-Code oder Sicherheitsschlüssel)
+SECOND_FACTOR_KEY = "oidc_anmeldung_zweiter_faktor"
 #: Höchstzahl gemerkter Wünsche je Sitzung
 MAX_PENDING = 20
 #: Steht für „jede Anfrage“, sobald mehr als :data:`MAX_PENDING` Wünsche offen sind
@@ -71,11 +77,28 @@ def login_time(request: Any) -> datetime | None:
     return datetime.fromtimestamp(value, tz=UTC)
 
 
+def login_with_second_factor(request: Any) -> bool:
+    """War die letzte Anmeldung in dieser Sitzung mit zweitem Faktor?"""
+    session = getattr(request, "session", None)
+    return bool(session is not None and session.get(SECOND_FACTOR_KEY) is True)
+
+
+def mark_second_factor(request: Any) -> None:
+    """Die eben abgeschlossene Anmeldung war mit zweitem Faktor (nach ``login``, das den Vermerk zurücksetzt)."""
+    session = getattr(request, "session", None)
+    if session is not None:
+        session[SECOND_FACTOR_KEY] = True
+
+
 def on_user_logged_in(sender: Any, request: Any = None, user: Any = None, **kwargs: Any) -> None:
-    """Signal ``user_logged_in``: Die Anmeldung erfüllt alle offenen Wünsche dieser Sitzung und gilt ab jetzt."""
+    """
+    Signal ``user_logged_in``: Die Anmeldung erfüllt alle offenen Wünsche dieser Sitzung und gilt ab jetzt. Ob sie mit
+    zweitem Faktor war, vermerkt erst der Anmeldeschritt selbst (:func:`mark_second_factor`).
+    """
     session = getattr(request, "session", None)
     if session is not None:
         session.pop(SESSION_KEY, None)
+        session.pop(SECOND_FACTOR_KEY, None)
         session[LOGIN_TIME_KEY] = int(timezone.now().timestamp())
 
 

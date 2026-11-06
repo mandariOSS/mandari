@@ -12,8 +12,8 @@ Georeferenzierungs-Pipeline: Ortsextraktion + Geocoding für Papers.
 Ist kein Straßenverzeichnis importiert (import_streets), fällt Pass 1 auf
 das alte Verhalten (Photon-Geocoding + Blocklist) zurück.
 
-`locations`-Einträge tragen `source` (oparl|address_match|street_match|ai|manual)
-und `confidence`. Einträge mit source oparl/manual werden bei Re-Runs nie
+`locations`-Einträge tragen `source` (oparl|address_match|street_match|ai|manual|plan_boundary|ai_check)
+und `confidence`. Einträge mit source oparl/manual/plan_boundary/ai_check werden bei Re-Runs nie
 überschrieben (siehe update_paper_georef). Treffer mit Hausnummer werden auf den
 OSM-Adresspunkt (Address-Modell) verfeinert, sofern importiert (Issue #54).
 Jeder Lauf spiegelt das JSON zusätzlich in die Tabelle PaperLocation
@@ -1000,9 +1000,9 @@ def _split_house_number(address: str) -> tuple[str, str | None]:
     return strip_house_number(address)
 
 
-# Verortungen, die ein neuer Georef-Lauf nicht ersetzt: offizielle OParl-Orte, manuelle Einträge und
-# der Punkt im amtlichen Umring eines Bebauungsplans (sync_plan_boundaries, #598)
-PRESERVED_SOURCES = ("oparl", "manual", "plan_boundary")
+# Verortungen, die ein neuer Georef-Lauf nicht ersetzt: offizielle OParl-Orte, manuelle Einträge, der Punkt im
+# amtlichen Umring eines Bebauungsplans (sync_plan_boundaries, #598) und von der KI-Prüfung ergänzte Orte (#1222)
+PRESERVED_SOURCES = ("oparl", "manual", "plan_boundary", "ai_check")
 
 
 def update_paper_georef(paper, result: dict) -> None:

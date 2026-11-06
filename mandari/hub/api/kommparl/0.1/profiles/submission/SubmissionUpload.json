@@ -1,0 +1,72 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/submission/SubmissionUpload.json",
+    "title": "SubmissionUpload",
+    "description": "Eine hochgeladene Anlage, die noch zu keiner Einreichung gehört (Profil Einreichung, Entwurf).",
+    "type": "object",
+    "required": [
+        "id",
+        "type",
+        "name",
+        "mediaType",
+        "size",
+        "contentDigest",
+        "created",
+        "expires"
+    ],
+    "properties": {
+        "id": {
+            "description": "URL der hochgeladenen Datei; sie steht in upload einer Einreichung.",
+            "$ref": "#/$defs/url"
+        },
+        "type": {
+            "const": "https://schema.kommparl.de/0.1/SubmissionUpload"
+        },
+        "name": {
+            "description": "Dateiname.",
+            "$ref": "#/$defs/text"
+        },
+        "mediaType": {
+            "description": "Medientyp, vom Server bestimmt.",
+            "$ref": "#/$defs/text"
+        },
+        "size": {
+            "description": "Größe in Bytes.",
+            "type": "integer",
+            "minimum": 0
+        },
+        "contentDigest": {
+            "description": "Prüfsumme der Datei im Format des Felds Content-Digest (RFC 9530).",
+            "$ref": "#/$defs/contentDigest"
+        },
+        "created": {
+            "$ref": "#/$defs/dateTime"
+        },
+        "expires": {
+            "description": "Bis zu diesem Zeitpunkt lässt sich die Datei in einer Einreichung verwenden.",
+            "$ref": "#/$defs/dateTime"
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false,
+    "$defs": {
+        "contentDigest": {
+            "type": "string",
+            "pattern": "^sha-256=:[A-Za-z0-9+/]{43}=:$"
+        },
+        "dateTime": {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"
+        },
+        "text": {
+            "type": "string",
+            "minLength": 1
+        },
+        "url": {
+            "type": "string",
+            "pattern": "^https?://[^\\s]+$"
+        }
+    }
+}

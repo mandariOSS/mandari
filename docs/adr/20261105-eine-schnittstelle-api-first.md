@@ -233,3 +233,62 @@ Die Entscheidung bleibt. Etappe 3 legt Folgendes fest ([SCHNITTSTELLE.md](../SCH
   sich ein eingebettetes ändert (Profil Änderungsfeed, „Vollständigkeit und Reihenfolge“), und die Installation den
   Feed anbietet. Damit ändert sich die Aussage des vorigen Nachtrags: Dass die Körperschaften `kommparl:changes` und
   `kommparl:snapshot` nennen, genügt allein nicht.
+
+## Nachtrag zur Umsetzung (#1229)
+
+- Der Feed nach dem Profil nennt jetzt auch die einbettenden Objekte (Nachtrag #1229 in
+  [A10](20260929-aenderungsfeed-format.md)). `kommparl:conformsTo` nennt die Profile trotzdem noch nicht: Die
+  Prüfung aller Muss-Anforderungen hat weitere offene gefunden (Ereignisse für Gremien, Personen, Mitgliedschaften und
+  Wahlperioden aus Session, `modified` ohne öffentliches Ereignis, Übernahme gespiegelter Mandanten, nichtöffentlich
+  gewordene Tagesordnungspunkte des Bestands, Wechsel der Vorlage einer Datei im Bestand). Sie bleiben unter #1229
+  offen. Die Regel bleibt: Die Profile kommen erst hinzu, wenn alle erfüllt sind, und nur, wenn die Installation den
+  Feed anbietet.
+
+## Nachtrag zur Umsetzung (#1228)
+
+Die Entscheidung bleibt. Etappe 4 setzt das Profil Einreichung um ([SCHNITTSTELLE.md](../SCHNITTSTELLE.md), Abschnitt
+„Profil Einreichung“; Spezifikation im Repository `mandariOSS/kommParl`, Kapitel „Profil Einreichung“).
+
+- **Adressen an der OParl-Ausgabe je Mandant, nicht unter `/api/v1/einreichung/`.** Das Profil hängt seine Endpunkte
+  wie Änderungsfeed und Snapshot an Body und Sitzung (`kommparl:submission`, `kommparl:attendanceResponse` …). Die
+  Adresse aus A6 (`POST /api/v1/einreichung/antraege`) entsteht deshalb nicht. Nur die Session-Ausgabe nennt das
+  Profil, der Aggregator nimmt keine Einreichungen an; `kommparl:conformsTo` nennt es deshalb nur am `System` dieser
+  Ausgabe und nur mit eingeschaltetem OpenID-Connect-Anbieter, nicht am Einstieg `/api/`.
+- **Nur Tokens im Namen einer Person.** Das Profil nimmt nur Access-Tokens mit `einreichung:schreiben` an. Der Katalog
+  erlaubt den Scope auch Diensten; ohne Person bleibt er wirkungslos (403). Das API-Token der Session-API v1 reicht dort
+  weiter ein, bis die v1 abgekündigt wird.
+- **Befehlsparität erreicht.** Mit `submission.withdraw`, `attendance.respond` und `invitation.acknowledge` hat jeder
+  registrierte Befehl einen Endpunkt; die Ausnahmeliste ist leer. Die Rückmeldewege der Oberfläche (Link, Portal,
+  Sitzungsdienst) nutzen die Befehle noch nicht (#541).
+- **Herkunft der Schemas:** Die Profilschemas sind mit `scripts/kommparl_schemas.py` vom Merge-Commit des Profils in
+  kommParl übernommen (`HERKUNFT.json`).
+- **Nur eigene Einreichungen.** Lesen und Rücknahme gelten nur für Einreichungen, die die Person selbst eingereicht
+  hat (`SessionApplication.submitted_by_user`, aus Work und aus dem Profil), solange sie für deren Organisation
+  einreichen darf. Das Recht, für dieselbe Organisation einzureichen, öffnet die Einreichungen anderer Mitglieder
+  nicht: Sie enthalten Kontaktdaten und Texte, die Work nur nach seiner Sichtbarkeit zeigt. Anlagen hochladen kann
+  nur, wer bei der Verwaltung einreichen darf.
+
+## Nachtrag zur Umsetzung (#565)
+
+Die Entscheidung bleibt. Das Zugriffsmodell für Nichtöffentliches ist am 05.11.2026 abgestimmt (Issue #565) und ändert
+eine Aussage des Abschnitts „Ein Login für alle Zugänge“:
+
+- **Dienste je Mandant lesen Nichtöffentliches.** Statt „nur für einen Auftrag, den eine berechtigte Person gestartet
+  hat“ gilt: Ein Dienst, der an genau einen Session-Mandanten gebunden ist und sich mit `private_key_jwt` (RFC 7523)
+  ausweist, liest mit dem Scope `sitzung:lesen` alles Nichtöffentliche dieses Mandanten, nie das eines anderen. Die
+  Bindung ist eine fachfreie Kennung an der Anwendung (`session-mandant:<Kennung>`), die Session auswertet; die
+  Plattform importiert Session dafür nicht (A1).
+- **Personen** lesen mit `ratsdaten:nichtoeffentlich` (nur Code-Ablauf, einzeln freigegeben, Anmeldung mit zweitem
+  Faktor, höchstens sieben Tage danach) genau, was sie in Session sehen; geprüft bei jedem Abruf mit derselben Regel
+  wie die Oberfläche (`apps/session/visibility.py`, `Sicht`), einschließlich Rechten mit Geltungsbereich, befristeten
+  Zuweisungen und Mitwirkungsverbot (auch für die am Tagesordnungspunkt beratenen Vorlagen). Wie in der Session-API v1
+  braucht die Person im Mandanten das Recht „API-Zugang“; die Freigabe einer Anwendung durch die Plattform ersetzt es
+  nicht, der Mandant behält so die Entscheidung über den Abruf über Schnittstellen.
+- **Eigene Ausgabe statt mehr Inhalt unter denselben Adressen.** Nichtöffentliches steht in einer eigenen OParl-Ausgabe
+  mit eigenen Kennungen (`/session/<mandant>/api/oparl/nichtoeffentlich/`), nach dem Profil Nichtöffentliches von
+  kommParl. So bleiben die öffentlichen Antworten unabhängig vom Token gleich und dürfen weiter von jedem
+  zwischengespeichert werden; Antworten der nichtöffentlichen Ausgabe sind `private, no-store`. Änderungsfeed und
+  Snapshot bleiben öffentlich.
+- **Prüfprotokoll:** Jeder Abruf mit Nichtöffentlichem steht im Protokoll des Mandanten; ohne Eintrag gibt es keine
+  Inhalte.
+- **Einschalten** (`OPARL_NONPUBLIC_ENABLED`) erst nach einem externen Penetrationstest.

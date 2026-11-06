@@ -14,6 +14,7 @@ Kein Netz: Der SDK-Client ist ein Ersatz. Nur erfundene Namen.
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 from decimal import Decimal
 from itertools import count
@@ -43,7 +44,7 @@ from apps.common.ki_anbieter import (
 )
 from apps.common.models import AISettings
 from insight_ai import kosten
-from insight_ai.models import KiVerbrauch, ZusammenfassungsBatch
+from insight_ai.models import KiVerbrauch, TagesbatchKommune, ZusammenfassungsBatch
 from insight_ai.providers import NichtEingerichtet, get_insight_provider, get_summary_provider
 from insight_ai.providers.base import ChatMessage
 from insight_ai.providers.claude import BudgetErschoepftError, ClaudeZusammenfassung, antwort_text
@@ -75,6 +76,19 @@ def _nachricht(text: str = "Kurzfassung des Vorgangs.", *, stop: str = "end_turn
         model="claude-haiku-5-5",
         usage=_usage(**usage),
     )
+
+
+def _als_json(nachricht: Any) -> Any:
+    """Antwort auf eine Anfrage mit Schema: der Text als JSON (Zusammenfassung, leere Einfache Sprache)."""
+    bloecke = list(getattr(nachricht, "content", None) or [])
+    if not any(getattr(b, "type", "") == "text" and getattr(b, "text", "").startswith("{") for b in bloecke):
+        bloecke = [
+            SimpleNamespace(type="text", text=json.dumps({"zusammenfassung": b.text, "einfache_sprache": ""}))
+            if getattr(b, "type", "") == "text" and getattr(b, "text", "")
+            else b
+            for b in bloecke
+        ]
+    return SimpleNamespace(**{**vars(nachricht), "content": bloecke})
 
 
 class _Batches:
@@ -115,6 +129,8 @@ class _Client:
         self.anfragen.append(params)
         if isinstance(self.antwort, Exception):
             raise self.antwort
+        if "format" in (params.get("output_config") or {}):
+            return _als_json(self.antwort)
         return self.antwort
 
 
@@ -155,8 +171,13 @@ def _endpunkt(**werte: Any) -> ClaudeEndpunkt:
 
 @pytest.fixture
 def body() -> OParlBody:
+    """Kommune im Tagesbatch (Vorgänge der letzten 30 Tage, ohne Prüfung der Verortung; die prüft test_tagesbatch)."""
     quelle = OParlSource.objects.create(name="Quelle", url="https://ris.example.org/oparl/system")
-    return OParlBody.objects.create(external_id="https://ris.example.org/oparl/body/1", source=quelle, name="Stadt")
+    kommune = OParlBody.objects.create(external_id="https://ris.example.org/oparl/body/1", source=quelle, name="Stadt")
+    TagesbatchKommune.objects.create(
+        body=kommune, ab=timezone.localdate() - timedelta(days=30), verortung_pruefen=False
+    )
+    return kommune
 
 
 def _vorgang(
@@ -258,7 +279,8 @@ class TestEinzelaufruf:
         antwort = ClaudeZusammenfassung(_endpunkt(), client=client).chat_completion(self.NACHRICHTEN, max_tokens=2048)
         assert antwort.content == "Kurzfassung des Vorgangs."
         (anfrage,) = client.anfragen
-        assert anfrage["system"] == "Systemprompt"
+        # Systemprompt als Cache-Präfix (Prompt Caching)
+        assert anfrage["system"] == [{"type": "text", "text": "Systemprompt", "cache_control": {"type": "ephemeral"}}]
         assert anfrage["messages"] == [{"role": "user", "content": "Text"}]
         assert anfrage["model"] == "claude-haiku-5-5" and anfrage["max_tokens"] == 2048
         assert anfrage["output_config"] == {"effort": "low"}
@@ -349,10 +371,9 @@ class TestVorgangsseite:
         assert vorgang.summary == "Kurzfassung des Vorgangs."
         assert vorgang.summary_hinweis.startswith("Claude von Anthropic (claude-haiku-5-5)")
         html = antwort.content.decode()
-        assert "Mit KI aus den Dokumenten erstellt. Die Zusammenfassung kann Fehler enthalten." in html
-        assert (
-            "KI-Anbieter: Claude von Anthropic (claude-haiku-5-5); Verarbeitungsort: weltweit, auch in den USA" in html
-        )
+        assert "Die Zusammenfassung wurde mit Hilfe von KI erstellt. Sie kann Fehler enthalten." in html
+        # Anbieter und Verarbeitungsort stehen in der Datenschutzerklärung, nicht unter dem Text
+        assert "KI-Anbieter" not in html and "Verarbeitungsort" not in html
 
     def test_ohne_hinweis_wie_bisher(self, body: OParlBody, client: Client) -> None:
         vorgang = _vorgang(body, summary="Ältere Zusammenfassung.")
@@ -475,7 +496,9 @@ class TestBatchAbholen:
             return SimpleNamespace(custom_id=str(vorgang.pk), result=SimpleNamespace(type=art))
         return SimpleNamespace(
             custom_id=str(vorgang.pk),
-            result=SimpleNamespace(type=art, message=nachricht or _nachricht(f"Kurzfassung {vorgang.name}.")),
+            result=SimpleNamespace(
+                type=art, message=_als_json(nachricht or _nachricht(f"Kurzfassung {vorgang.name}."))
+            ),
         )
 
     def test_laeuft_noch(self, eingereicht: Any) -> None:

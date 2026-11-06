@@ -166,6 +166,6 @@ class LoginVerifyView(View):
             return _error(str(exc))
         request.session.pop(PENDING_2FA_SESSION_KEY, None)
         step._log(request, user, success=True)
-        complete_login(request, user, bool(data.get("remember")))
+        complete_login(request, user, bool(data.get("remember")), second_factor=True)
         success_url = LoginView().get_success_url(request, data.get("next") or None)  # type: ignore[no-untyped-call]
         return JsonResponse({"redirect": success_url})

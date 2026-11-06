@@ -43,6 +43,10 @@ VERSION: Final = f"https://schema.kommparl.de/{FASSUNG}/"
 #: Kennungen der Profile
 PROFILE_CHANGES: Final = f"{VERSION}profile/changes"
 PROFILE_SNAPSHOT: Final = f"{VERSION}profile/snapshot"
+#: Profil Einreichung (#1228): Anträge und Rückmeldungen je Session-Mandant, nur mit eingeschaltetem OIDC-Anbieter
+PROFILE_SUBMISSION: Final = f"{VERSION}profile/submission"
+#: Profil Nichtöffentliches (#565): geschützte Ausgabe nichtöffentlicher Inhalte je Session-Mandant
+PROFILE_NONPUBLIC: Final = f"{VERSION}profile/nonpublic"
 #: Typ-URLs der Kopf- und Schlusszeile eines Snapshots
 SNAPSHOT_HEADER: Final = f"{VERSION}SnapshotHeader"
 SNAPSHOT_END: Final = f"{VERSION}SnapshotEnd"
@@ -53,10 +57,23 @@ OPARL_ERROR: Final = "https://schema.oparl.org/1.1/Error"
 
 #: Profile, deren Anforderungen beide OParl-Ausgaben vollständig erfüllen, wenn die Installation Änderungsfeed und
 #: Snapshot anbietet (``OPARL_CHANGES_ENABLED``). Nur sie nennt ``kommparl:conformsTo`` (Kapitel 5: nur vollständig
-#: erfüllte Kennungen). Heute keines: Ändert sich ein eingebettetes Objekt (ein Tagesordnungspunkt in einer Sitzung,
-#: eine Datei an einer Vorlage), verlangt das Profil Änderungsfeed auch einen Eintrag für das einbettende Objekt
-#: (Abschnitt „Vollständigkeit und Reihenfolge“). Der Feed nennt nur das Objekt, zu dem es ein Ereignis gibt. Das
-#: Profil Snapshot setzt das Profil Änderungsfeed voraus.
+#: erfüllte Kennungen). Heute keines. Die einbettenden Objekte nennt der Feed seit #1229 (``hub.api.changes``), aber
+#: Muss-Anforderungen des Profils Änderungsfeed sind noch offen (Abschnitt „Vollständigkeit und Reihenfolge“). Sie
+#: bleiben unter #1229 offen (Epic #1203):
+#:
+#: - Session meldet Gremien, Personen, Mitgliedschaften, Wahlperioden und die Körperschaft nicht als Ereignis; ihre
+#:   Änderungen fehlen im Feed der Session-Schnittstelle.
+#: - ``modified`` eines Objekts kann sich ändern, ohne dass ein öffentliches Ereignis entsteht: Der Abgleich übernimmt
+#:   den Zeitstempel der Quelle auch ohne inhaltliche Änderung, Session stempelt interne Änderungen, die Texterkennung
+#:   ergänzt ``File.text`` mit einem internen Ereignis.
+#: - Der Aggregator nennt Änderungen gespiegelter Session-Mandanten, bevor der Abgleich sie übernommen hat.
+#: - Ein nichtöffentlich gewordener Tagesordnungspunkt des Bestands erscheint als ``delete``, bleibt unter seiner
+#:   Adresse aber ohne ``deleted: true`` abrufbar.
+#: - Hängt eine Datei des Bestands an einer anderen Vorlage, meldet der Abgleich das nicht (``file_events`` im
+#:   Ingestor); die frühere Vorlage gibt sie nicht mehr aus und bekommt keinen Eintrag. Session nennt die früheren
+#:   Bezüge (``previous_paper`` usw. in ``ris.file.changed``).
+#:
+#: Das Profil Snapshot setzt das Profil Änderungsfeed voraus.
 PROFILES_FULFILLED: Final[tuple[str, ...]] = ()
 
 #: Eigenschaften mit Herstellerpräfix, z. B. ``mandari:slug``. ``kommparl:`` ist kein Herstellerpräfix: Solche
@@ -128,16 +145,24 @@ def profile_schema(profile: str, name: str) -> dict[str, Any]:
     return copy.deepcopy(_profile_schemas()[(profile, name)])
 
 
-def conforms_to(*, feed_offered: bool) -> list[str]:
+def conforms_to(*, feed_offered: bool, submission_offered: bool = False, nonpublic: bool = False) -> list[str]:
     """
     Kennungen für ``kommparl:conformsTo`` (Einstieg ``/api/`` und ``System`` beider Ausgaben): die Fassung und die
     Profile aus ``PROFILES_FULFILLED`` – diese nur, wenn die Installation Änderungsfeed und Snapshot anbietet.
+    ``submission_offered`` nennt zusätzlich das Profil Einreichung; das gilt nur für eine Ausgabe, die es anbietet
+    (OParl je Session-Mandant mit eingeschaltetem OpenID-Connect-Anbieter, Issue #1228), nie für den Aggregator. Das
+    Profil Nichtöffentliches (``nonpublic``, #565) nennt nur die Session-Ausgabe, und nur, wenn sie es anbietet.
 
     Die Fassung setzt unter anderem voraus, dass jeder Zeitpunkt die Form ``yyyy-mm-ddThh:mm:ss±hh:mm`` hat (Kapitel
     „JSON-Ausgabe“, muss); dafür sorgt ``hub.ris.canonical.iso``. Die Konformitätsprüfung der Tests prüft die Formate
     mit den Mustern der Spezifikation, ohne Ausnahme.
     """
-    return [VERSION, *(PROFILES_FULFILLED if feed_offered else ())]
+    return [
+        VERSION,
+        *(PROFILES_FULFILLED if feed_offered else ()),
+        *((PROFILE_SUBMISSION,) if submission_offered else ()),
+        *((PROFILE_NONPUBLIC,) if nonpublic else ()),
+    ]
 
 
 def attribution() -> str:

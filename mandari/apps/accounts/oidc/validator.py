@@ -19,6 +19,11 @@ Ergänzt den Validator von django-oauth-toolkit um:
 - Refresh: Beim Speichern wird das Refresh-Token gesperrt neu gelesen. Wurde es inzwischen widerrufen oder
   rotiert, gibt es ``invalid_grant`` und die ganze Kette wird widerrufen, wie bei einer erneuten Nutzung (#1215)
 - Widerruf durch die Anwendung (RFC 7009) im Prüfprotokoll
+- Anmeldung der Anwendung mit ``private_key_jwt`` (RFC 7523, :mod:`.client_assertion`, #565): Anwendungen mit
+  öffentlichen Schlüsseln (``jwks``) melden sich nur so an, nie mit Client-Secret
+- Geschützte Scopes (``catalog.PROTECTED``, etwa ``ratsdaten:nichtoeffentlich``, #565): Tokens gibt es nur mit zweitem
+  Faktor und höchstens ``catalog.PROTECTED_MAX_LOGIN_AGE`` nach der Anmeldung; danach endet der Refresh mit
+  ``invalid_grant``. Das Access-Token läuft spätestens zu diesem Zeitpunkt ab.
 """
 
 from __future__ import annotations
@@ -32,6 +37,7 @@ from typing import Any
 
 from django.contrib.auth import get_user_model
 from django.db import router, transaction
+from django.utils import timezone
 from jwcrypto import jwt
 from jwcrypto.common import JWException
 from oauth2_provider.oauth2_validators import OAuth2Validator
@@ -40,8 +46,8 @@ from oauth2_provider.utils import jwk_from_pem
 from oauthlib.oauth2.rfc6749.errors import InvalidGrantError
 from oauthlib.oauth2.rfc6749.utils import scope_to_list
 
-from . import audit
-from .access import checksum
+from . import audit, catalog, client_assertion
+from .access import checksum, has_second_factor
 
 #: Person, die in dieser Anfrage am Autorisierungs-Endpunkt angemeldet ist (für ``prompt=none``)
 _session_user: ContextVar[Any] = ContextVar("oidc_session_user", default=None)
@@ -86,6 +92,30 @@ class RefreshNoLongerValidError(InvalidGrantError):  # type: ignore[misc]  # Bib
     @property
     def headers(self) -> dict[str, str]:
         return {"Content-Type": "application/json", "Cache-Control": "no-store", "Pragma": "no-cache"}
+
+
+class ProtectedScopeError(InvalidGrantError):  # type: ignore[misc]  # Bibliothek ohne Typen
+    """
+    ``invalid_grant`` für einen geschützten Scope (#565): Die Anmeldung liegt zu lange zurück, ihr Zeitpunkt ist
+    unbekannt, oder das Konto hat keinen zweiten Faktor. Die Anwendung muss die Person erneut anmelden lassen.
+    """
+
+    description = "Für diesen Scope ist eine neue Anmeldung mit zweitem Faktor nötig."
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {"Content-Type": "application/json", "Cache-Control": "no-store", "Pragma": "no-cache"}
+
+
+def _protected_seconds_left(request: Any, auth_time: datetime | None) -> int | None:
+    """
+    Sekunden, die ein Token mit geschütztem Scope noch gelten darf; ``None``: keins mehr (zu alt, Zeitpunkt unbekannt,
+    kein zweiter Faktor).
+    """
+    if auth_time is None or not has_second_factor(getattr(request, "user", None)):
+        return None
+    left = int((auth_time + catalog.PROTECTED_MAX_LOGIN_AGE - timezone.now()).total_seconds())
+    return left if left > 0 else None
 
 
 def _inactive(user: Any) -> bool:
@@ -227,11 +257,38 @@ class MandariOAuth2Validator(OAuth2Validator):  # type: ignore[misc]  # Biblioth
             claims["auth_time"] = int(auth_time.timestamp())
         return claims, expiration_time
 
+    def authenticate_client(self, request: Any, *args: Any, **kwargs: Any) -> bool:
+        # private_key_jwt (RFC 7523, #565): mit Assertion nur so, Anwendungen mit Schlüsseln nie mit Client-Secret
+        if getattr(request, "client_assertion", None) or getattr(request, "client_assertion_type", None):
+            return client_assertion.authenticate(request, self._load_application)
+        if not super().authenticate_client(request, *args, **kwargs):
+            return False
+        client = getattr(request, "client", None)
+        if client is not None and getattr(client, "uses_private_key_jwt", False):
+            request.client = None
+            return False
+        return True
+
+    def client_authentication_required(self, request: Any, *args: Any, **kwargs: Any) -> bool:
+        # Mit Assertion ist die Anmeldung der Anwendung immer verlangt (sonst ginge sie als öffentlicher Client durch)
+        if getattr(request, "client_assertion", None) or getattr(request, "client_assertion_type", None):
+            return True
+        return bool(super().client_authentication_required(request, *args, **kwargs))
+
     def save_bearer_token(self, token: Any, request: Any, *args: Any, **kwargs: Any) -> Any:
         from .models import OAuthAccessToken, OAuthIDToken, OAuthRefreshToken
 
         # Vorher lesen: Beim Speichern wird das bisherige Refresh-Token widerrufen
         auth_time = _auth_time(request)
+        if catalog.protected_in(str(token.get("scope", ""))):
+            # Geschützter Scope (#565): nur mit zweitem Faktor und höchstens sieben Tage nach der Anmeldung
+            left = _protected_seconds_left(request, auth_time)
+            if left is None:
+                id_token = getattr(request, "id_token", None)
+                if isinstance(id_token, OAuthIDToken):
+                    id_token.delete()
+                raise ProtectedScopeError(request=request)
+            token["expires_in"] = min(int(token.get("expires_in") or oauth2_settings.ACCESS_TOKEN_EXPIRE_SECONDS), left)
         with transaction.atomic(using=router.db_for_write(OAuthAccessToken)):
             valid, family = _refresh_still_valid(request)
             if valid:

@@ -94,6 +94,16 @@
                 "schema": "AgendaItem.json"
             }
         },
+        "kommparl:attendanceResponse": {
+            "description": "{{ Meeting.properties.kommparl:attendanceResponse.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "kommparl:invitationReceipt": {
+            "description": "{{ Meeting.properties.kommparl:invitationReceipt.description }}",
+            "type": "string",
+            "format": "url"
+        },
         "license": {
             "type": "string"
         },
@@ -102,6 +112,15 @@
             "items": {
                 "type": "string"
             }
+        },
+        "kommparl:nonPublic": {
+            "description": "{{ Meeting.properties.kommparl:nonPublic.description }}",
+            "type": "boolean"
+        },
+        "kommparl:publicId": {
+            "description": "{{ Meeting.properties.kommparl:publicId.description }}",
+            "type": "string",
+            "format": "url"
         },
         "created": {
             "type": "string",

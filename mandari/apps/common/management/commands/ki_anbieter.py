@@ -163,7 +163,9 @@ class Command(BaseCommand):
         batch = zusammenfassung.add_mutually_exclusive_group()
         batch.add_argument("--batch", dest="batch", action="store_const", const=True, help="Vorab im Batch an.")
         batch.add_argument("--ohne-batch", dest="batch", action="store_const", const=False, help="Batch aus.")
-        zusammenfassung.add_argument("--batch-tage", type=int, metavar="TAGE", help="Vorgänge der letzten TAGE.")
+        zusammenfassung.add_argument(
+            "--batch-tage", type=int, metavar="TAGE", help="Ohne Wirkung seit dem Tagesbatch (manage.py tagesbatch)."
+        )
         zusammenfassung.add_argument("--pruefen", action="store_true", help="Danach die Verbindung prüfen.")
         self._zeitgrenze(zusammenfassung)
 
@@ -251,7 +253,9 @@ class Command(BaseCommand):
                 ("Claude-Schlüssel", _ja(bool(ki.summary_api_key_encrypted))),
                 (
                     "Batch",
-                    f"an, Vorgänge der letzten {ki.summary_batch_days} Tage" if ki.summary_batch_enabled else "aus",
+                    "an, täglich für die Kommunen aus `manage.py tagesbatch liste`"
+                    if ki.summary_batch_enabled
+                    else "aus",
                 ),
                 ("Monatsbudget", f"{ki.summary_monthly_budget_usd} USD"),
                 ("Zustand Claude", f"aus: {claude}" if isinstance(claude, str) else "bereit (Schalter Bürgerportal)"),

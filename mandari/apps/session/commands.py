@@ -25,6 +25,24 @@ und der abgekündigte Pfad der alten Session-API senden denselben Befehl; geprü
 Die Quittung nennt Eingangsnummer, Eingangszeit (``submitted_at``) und Inhalts-Hash; ``data`` enthält den Status
 und die nicht angenommenen Anlagen als Stelle im Inhalt und Code, nie mit Namen. Alle Meldungen sind feste Texte
 ohne Inhalte, das Protokoll nennt nur Kennungen und Typen von Ausnahmen.
+
+Seit dem Profil Einreichung (Issue #1228) führt Session drei weitere Befehle aus. Auslöser ist dort eine Person
+(``user:<id>``, angemeldet über ein Access-Token mit dem Scope ``einreichung:schreiben``):
+
+- ``submission.withdraw``: Die Person hat die Einreichung selbst eingereicht (``submitted_by_user``, aus Work oder
+  über das Profil), und sie darf für deren Organisation weiter einreichen
+  (``application_service.submission_originators``, dieselbe Regel wie beim Einreichen), sonst 404. Andere Mitglieder
+  der Organisation nehmen fremde Einreichungen nicht zurück. Zurückgenommen wird nur in ``WITHDRAWABLE_STATUSES``,
+  sonst 409. Ein API-Token (``system:session.api-token.<id>``) darf Einreichungen seiner Organisation zurücknehmen.
+- ``attendance.respond``: Die Person des Kontos (``portal_link_service.person_for_user_in_tenant``, dieselben
+  Bedingungen wie im Portal) ist die im Inhalt genannte und zu der Sitzung geladen, sonst 403 bzw. 404; die Sitzung
+  nimmt noch Rückmeldungen an, sonst 409. Gespeichert wird wie im Portal (Herkunft „portal“): Rückmeldung, Grund
+  verschlüsselt, Vertretungsanfrage, Empfangsbestätigung aller Versände der Sitzung.
+- ``invitation.acknowledge``: Der Ladungsempfänger gehört zur Person des Kontos, sonst 404; zugestellt, sonst 409.
+  Bestätigt werden wie im Portal alle zugestellten Versände der Sitzung an die Person.
+
+Beide Rückmeldebefehle sind personenbezogen: Der Dispatcher bildet ihre Hashes mit einem Schlüssel der Installation.
+Die Wege über Rückmeldelink, Portal und Sitzungsdienst nutzen die Befehle noch nicht (#541).
 """
 
 from __future__ import annotations
@@ -35,7 +53,7 @@ import uuid
 from collections.abc import Mapping, Sequence
 from datetime import date
 from pathlib import PurePosixPath
-from typing import Any, Final
+from typing import Any, Final, cast
 
 from django.core.files import File
 from django.db import transaction
@@ -43,11 +61,30 @@ from django.db import transaction
 from hub.commands import Command, CommandError, HandlerResult, Problem, command_handler
 from hub.commands.problems import validation_problem
 
-from .models import SessionAPIToken, SessionApplication, SessionOrganization, SessionTenant
+from .models import (
+    SessionAPIToken,
+    SessionApplication,
+    SessionInvitationRecipient,
+    SessionMeeting,
+    SessionOrganization,
+    SessionPerson,
+    SessionTenant,
+)
 
 logger = logging.getLogger(__name__)
 
 SUBMIT: Final = "submission.submit"
+WITHDRAW: Final = "submission.withdraw"
+RESPOND: Final = "attendance.respond"
+ACKNOWLEDGE: Final = "invitation.acknowledge"
+#: Stände, in denen eine Einreichung zurückgenommen werden kann: solange sie nicht abgelehnt, zur Vorlage gemacht oder
+#: schon zurückgenommen ist (Vertrag ``submission.withdraw``)
+WITHDRAWABLE_STATUSES: Final = frozenset({"submitted", "received", "in_review", "accepted"})
+WITHDRAWN: Final = "withdrawn"
+#: Herkunft einer Rückmeldung oder Empfangsbestätigung, die eine angemeldete Person selbst abgibt
+PORTAL: Final = "portal"
+#: Versände, deren Empfang sich bestätigen lässt (zugestellt bzw. als Brief versandt)
+DELIVERED: Final = ("sent", "letter_sent")
 #: Auslöser einer Einreichung mit API-Token: ``system:session.api-token.<Kennung des Tokens>``
 TOKEN_ACTOR_PREFIX: Final = "system:session.api-token."
 USER_ACTOR_PREFIX: Final = "user:"
@@ -67,6 +104,14 @@ ATTACHMENTS_FAILED: Final = (
     "Die Anhänge konnten nicht an die Verwaltung übergeben werden. Der Antrag wurde nicht eingereicht – "
     "bitte später erneut versuchen."
 )
+SUBMISSION_UNKNOWN: Final = "Die Einreichung ist nicht bekannt."
+NOT_WITHDRAWABLE: Final = "In diesem Bearbeitungsstand lässt sich die Einreichung nicht mehr zurücknehmen."
+MEETING_UNKNOWN: Final = "Die Sitzung ist nicht bekannt, oder die Person ist zu ihr nicht geladen."
+NOT_THIS_PERSON: Final = "Diese Anmeldung darf nur für die eigene Person zurückmelden."
+RESPONSES_CLOSED: Final = "Die Sitzung hat begonnen oder ist abgesagt; Rückmeldungen sind nicht mehr möglich."
+CONFIRM_WITH_SUBSTITUTE: Final = "Eine Zusage kann keine Vertretung und keinen Grund enthalten."
+INVITATION_UNKNOWN: Final = "Die Ladung ist nicht bekannt."
+NOT_DELIVERED: Final = "Die Ladung ist noch nicht zugestellt; ihr Empfang lässt sich noch nicht bestätigen."
 
 
 def tenant_ref(tenant: SessionTenant) -> str:
@@ -88,6 +133,9 @@ def submit(command: Command) -> HandlerResult:
     tenant = _tenant(command.tenant_ref)
     token, organization, via_work = _authorize(command, tenant)
     target, attachments = _check(command, tenant)
+    # Auslöser ``user:<id>`` (Work, Profil Einreichung): Die Person gehört zur Einreichung (Sicht und Rücknahme)
+    actor = command.actor_ref or ""
+    submitted_by = _uuid(actor.removeprefix(USER_ACTOR_PREFIX)) if via_work else None
 
     submitter = body["submitter"]
     application = SessionApplication.objects.create(
@@ -107,6 +155,7 @@ def submit(command: Command) -> HandlerResult:
         urgency_reason=(body.get("urgency_reason") or "").strip(),
         deadline=date.fromisoformat(body["deadline"]) if body.get("deadline") else None,
         submitted_via_token=token,
+        submitted_by_user_id=submitted_by,
         status="submitted",
     )
 
@@ -136,8 +185,156 @@ def submit(command: Command) -> HandlerResult:
     )
 
 
+@command_handler(WITHDRAW)
+def withdraw(command: Command) -> HandlerResult:
+    """Einreichung zurücknehmen (siehe Moduldokumentation)."""
+    body = command.body
+    tenant = _tenant(command.tenant_ref)
+    # Nur die Zeile des Antrags sperren: PostgreSQL sperrt keine Zeilen auf der leeren Seite eines äußeren Joins
+    application = (
+        SessionApplication.objects.select_for_update(of=("self",)).filter(pk=body["submission"], tenant=tenant).first()
+    )
+    if application is None or not _may_withdraw(command, tenant, application):
+        raise CommandError.of(404, "nicht-gefunden", SUBMISSION_UNKNOWN)
+    claimed = body.get("submitting_organization")
+    if claimed and str(claimed) != str(application.submitting_organization_id):
+        raise CommandError.of(404, "nicht-gefunden", SUBMISSION_UNKNOWN)
+    if application.status not in WITHDRAWABLE_STATUSES:
+        raise CommandError.of(409, "ruecknahme-nicht-zulaessig", NOT_WITHDRAWABLE)
+    previous = application.status
+    application.status = WITHDRAWN
+    # save() statt update(): Das Protokoll des Mandanten hält den Wechsel des Stands fest (Signal)
+    cast(Any, application).save(update_fields=["status", "updated_at"])  # save() des Modells ist untypisiert
+    return HandlerResult(
+        reference=application.reference or str(application.pk),
+        aggregate_id=application.pk,
+        data={"status": WITHDRAWN, "previous_status": previous},
+    )
+
+
+@command_handler(RESPOND)
+def respond(command: Command) -> HandlerResult:
+    """Zu- oder Absage einer geladenen Person (siehe Moduldokumentation)."""
+    from .services import invitation_response_service
+
+    body = command.body
+    tenant = _tenant(command.tenant_ref)
+    person = _acting_person(command, tenant)
+    if str(person.pk) != str(body["person"]):
+        raise CommandError.of(403, "keine-berechtigung", NOT_THIS_PERSON)
+    meeting = SessionMeeting.objects.filter(pk=body["meeting"], tenant=tenant).first()
+    if meeting is None or not _invited(meeting, person):
+        raise CommandError.of(404, "nicht-gefunden", MEETING_UNKNOWN)
+    if not invitation_response_service.is_open_for_responses(meeting):
+        raise CommandError.of(409, "rueckmeldung-geschlossen", RESPONSES_CLOSED)
+    confirmed = body["response"] == "confirmed"
+    if confirmed and (body.get("substitute_requested") or (body.get("reason") or "").strip()):
+        errors = validation_problem(("$.substitute_requested: nur bei einer Absage",)).errors
+        raise CommandError(Problem(status=422, kind="validierung", detail=CONFIRM_WITH_SUBSTITUTE, errors=errors))
+    result = invitation_response_service.record_response(
+        meeting,
+        person,
+        decision="confirm" if confirmed else "decline",
+        source=PORTAL,
+        reason=str(body.get("reason") or ""),
+        substitute_requested=bool(body.get("substitute_requested")),
+    )
+    invitation_response_service.acknowledge_meeting(person, meeting, via=PORTAL)
+    attendance = result.attendance
+    return HandlerResult(
+        reference=str(attendance.pk),
+        aggregate_id=attendance.pk,
+        received_at=attendance.responded_at,
+        data={"status": attendance.status},
+    )
+
+
+@command_handler(ACKNOWLEDGE)
+def acknowledge(command: Command) -> HandlerResult:
+    """Empfang einer Ladung bestätigen (siehe Moduldokumentation)."""
+    from .services import invitation_response_service
+
+    body = command.body
+    tenant = _tenant(command.tenant_ref)
+    person = _acting_person(command, tenant)
+    recipient = (
+        SessionInvitationRecipient.objects.filter(pk=body["recipient"], person=person, dispatch__meeting__tenant=tenant)
+        .select_related("dispatch__meeting")
+        .first()
+    )
+    if recipient is None or (body.get("meeting") and str(body["meeting"]) != str(recipient.dispatch.meeting_id)):
+        raise CommandError.of(404, "nicht-gefunden", INVITATION_UNKNOWN)
+    meeting = recipient.dispatch.meeting
+    if recipient.acknowledged_at is None and recipient.status not in DELIVERED:
+        raise CommandError.of(409, "ladung-nicht-zugestellt", NOT_DELIVERED)
+    invitation_response_service.acknowledge_meeting(person, meeting, via=PORTAL)
+    first = (
+        SessionInvitationRecipient.objects.filter(
+            dispatch__meeting=meeting, person=person, acknowledged_at__isnull=False
+        )
+        .order_by("acknowledged_at")
+        .values_list("acknowledged_at", flat=True)
+        .first()
+    )
+    return HandlerResult(reference=str(recipient.pk), aggregate_id=recipient.pk, received_at=first)
+
+
 # =============================================================================
-# Prüfungen
+# Prüfungen der Rücknahme und der Rückmeldungen
+# =============================================================================
+
+
+def _actor_user(command: Command) -> Any:
+    """Konto des Auslösers ``user:<id>`` (aktiv), sonst ``None``."""
+    actor = command.actor_ref or ""
+    user_id = _uuid(actor.removeprefix(USER_ACTOR_PREFIX)) if actor.startswith(USER_ACTOR_PREFIX) else None
+    if user_id is None:
+        return None
+    from apps.accounts.models import User
+
+    return User.objects.filter(pk=user_id, is_active=True).first()
+
+
+def _may_withdraw(command: Command, tenant: SessionTenant, application: SessionApplication) -> bool:
+    """Darf der Auslöser die Einreichung zurücknehmen? (Person: eigene Einreichung, Organisation weiter erlaubt)"""
+    from .services.application_service import submission_originators, submitting_organization_for_token
+
+    actor = command.actor_ref or ""
+    if actor.startswith(TOKEN_ACTOR_PREFIX):
+        token_id = _uuid(actor.removeprefix(TOKEN_ACTOR_PREFIX))
+        token = SessionAPIToken.objects.filter(pk=token_id, tenant=tenant).first() if token_id else None
+        if token is None or not token.is_valid() or not token.can_submit_applications:
+            return False
+        bound = submitting_organization_for_token(token)
+        return application.submitted_via_token_id == token.pk or (
+            bound is not None and application.submitting_organization_id == bound.pk
+        )
+    user = _actor_user(command)
+    if user is None or application.submitting_organization_id is None or application.submitted_by_user_id != user.pk:
+        return False
+    return any(
+        organization.pk == application.submitting_organization_id
+        for organization in submission_originators(tenant, user)
+    )
+
+
+def _acting_person(command: Command, tenant: SessionTenant) -> SessionPerson:
+    """Session-Person des Auslösers ``user:<id>``; andere Auslöser und Konten ohne Zuordnung: 403."""
+    from .services.portal_link_service import person_for_user_in_tenant
+
+    user = _actor_user(command)
+    person = person_for_user_in_tenant(user, tenant) if user is not None else None
+    if person is None:
+        raise CommandError.of(403, "keine-berechtigung", NOT_THIS_PERSON)
+    return person
+
+
+def _invited(meeting: SessionMeeting, person: SessionPerson) -> bool:
+    return SessionInvitationRecipient.objects.filter(dispatch__meeting=meeting, person=person).exists()
+
+
+# =============================================================================
+# Prüfungen der Einreichung
 # =============================================================================
 
 

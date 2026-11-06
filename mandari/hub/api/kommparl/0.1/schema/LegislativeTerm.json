@@ -44,6 +44,11 @@
                 "type": "string"
             }
         },
+        "kommparl:publicId": {
+            "description": "{{ LegislativeTerm.properties.kommparl:publicId.description }}",
+            "type": "string",
+            "format": "url"
+        },
         "created": {
             "type": "string",
             "format": "date-time"

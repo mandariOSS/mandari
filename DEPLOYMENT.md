@@ -1167,15 +1167,27 @@ Verarbeitungsort. Die Datenschutzerklärung des Betreibers sollte Anthropic als 
    unset CLAUDE_SCHLUESSEL
    ```
 
-   Optional sind `--modell` (Standard `claude-haiku-5-5`), `--budget` (USD je Monat, Standard 100),
-   `--batch-tage` (Standard 30) und `--ohne-batch`. Die Prüfung ruft nur das Modell über die Models API ab und
+   Optional sind `--modell` (Standard `claude-haiku-5-5`), `--budget` (USD je Monat, Standard 100) und
+   `--ohne-batch` (`--batch-tage` wirkt seit dem Tagesbatch nicht mehr). Die Prüfung ruft nur das Modell über die Models API ab und
    kostet nichts. Zurück zum Endpunkt oben:
    `ki_anbieter zusammenfassung --wie-buergerportal`. Im Admin stehen dieselben Felder unter „KI-Einstellungen →
    Zusammenfassungen“.
-3. Batch: Die Zeitpläne `zusammenfassungen_einreichen` (alle 30 Minuten) und `zusammenfassungen_abholen` (alle 10
-   Minuten) laufen im Worker mit der Rolle `scheduler` (`TASKS_BACKEND=journal`). Eingereicht werden Vorgänge ohne
-   Zusammenfassung aus den letzten `summary_batch_days` Tagen, neueste zuerst, höchstens 500 je Batch und nur ein
-   Batch zur Zeit. Kommunen mit pausierter oder zurückgenommener Veröffentlichung fallen heraus. Ein Batch, dessen
+3. Tagesbatch (#1220): Die Zeitpläne `zusammenfassungen_nacharbeiten` (täglich 20:00 Uhr),
+   `zusammenfassungen_einreichen` (täglich 06:30 Uhr) und `zusammenfassungen_abholen` (alle 10 Minuten) laufen im
+   Worker mit der Rolle `scheduler` (`TASKS_BACKEND=journal`). Eingereicht werden nur Vorgänge der ausgewählten
+   Kommunen ab ihrem Stichtag, ohne Auswahl nichts:
+
+   ```bash
+   docker exec mandari python manage.py tagesbatch kommune "Stadt Münster" --ab 2026-08-05
+   docker exec mandari python manage.py tagesbatch liste
+   ```
+
+   Ein Vorgang kommt erst, wenn der Text aller aktuellen Anlagen erkannt ist (Texterkennung ist Pflicht); am Abruf
+   gescheiterte Anlagen dieser Kommunen reiht der Lauf um 20:00 Uhr neu ein. Mit Prüfung der Verortung (Standard,
+   `--ohne-verortung` schaltet sie ab, #1222) prüft Claude in derselben Anfrage die gefundenen Orte; Fehltreffer
+   verschwinden von der Karte und stehen im Admin unter „Verortungen“, Filter „KI-Prüfung“. Neueste zuerst,
+   höchstens 500 je Batch und nur ein Batch zur Zeit. Kommunen mit pausierter oder zurückgenommener Veröffentlichung
+   fallen heraus. Ein Batch, dessen
    Ergebnisse nicht mehr abrufbar sind (HTTP 404 oder älter als 29 Tage), wird als „verloren“ abgeschlossen; seine
    Schätzung zählt dann als Verbrauch. Abschalten lässt sich der Batch mit dem Häkchen in den KI-Einstellungen oder
    mit `EVENTS_SCHEDULES_DISABLED`.
@@ -1537,6 +1549,7 @@ Ausgabe steht im Protokoll des Workers (`docker compose logs worker`).
 | `befehl:purge_login_attempts` | täglich 04:35 | Anmeldeversuche der Drosselung nach `LOGIN_ATTEMPT_RETENTION_DAYS` (30 Tage, festgelegt durch den Betreiber am 16.10.2026, Issue #366) |
 | `befehl:purge_security_audit_log` | täglich 04:40 | Sicherheitsprotokoll nach Frist |
 | `befehl:session_privacy_purge` | am 1. um 05:00 | DSGVO-Löschlauf mit Archivpaket |
+| `befehl:einreichung_aufraeumen` | stündlich :25 | nicht eingereichte Anlagen des Profils Einreichung nach ihrem Ablauf löschen (Issue #1228) |
 | `befehl:build_meeting_packages` | jede Minute | Sitzungsmappen (Issue #218): `--limit 5 --max-seconds 240` |
 
 Dazu die Zeitpläne aus dem Abschnitt „Worker“ (Fraktionssitzungen, Verortung, Aufräumen).
@@ -1586,7 +1599,7 @@ läuft ohne Doppelläufe und ohne Lücke:
 
    ```bash
    crontab -l > ~/crontab-vor-zeitplaenen-$(date +%Y%m%d).txt
-   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|build_meeting_packages)' | crontab -
+   crontab -l | grep -v -E 'manage\.py (send_session_reminders|send_task_due_reminders|send_question_reminders|fetch_person_photos|sync_plan_boundaries|cleanup_orphaned_accounts|sitzungen_aufraeumen|cache_files|loeschabgleich|dokumentablage|generate_alerts|send_digest|check_source_health|check_service_levels|availability_report|verify_audit_chain|purge_login_attempts|purge_security_audit_log|session_privacy_purge|einreichung_aufraeumen|build_meeting_packages)' | crontab -
    crontab -l | grep 'manage\.py' || echo "keine Verwaltungsbefehle mehr in der Crontab"
    ```
 

@@ -25,11 +25,14 @@ verweist mit `system` auf das System des Aggregators (`/oparl/v1/system`).
 `kommparl:conformsTo` nennt nur Kennungen, deren Anforderungen die Installation vollständig erfüllt (kommParl,
 Kapitel 5): heute `https://schema.kommparl.de/0.1/`. Dieselbe Liste steht seit #1216 am `System` beider OParl-Ausgaben
 (`hub.api.kommparl.conforms_to`). Die Profile Änderungsfeed und Snapshot kämen hinzu, sobald die Installation den
-Feed anbietet (`OPARL_CHANGES_ENABLED`) und sie vollständig erfüllt sind (`PROFILES_FULFILLED`). Das ist noch nicht
-der Fall: Ändert sich ein eingebettetes Objekt (ein Tagesordnungspunkt in einer Sitzung), verlangt das Profil
-Änderungsfeed auch einen Eintrag für das einbettende Objekt; der Feed nennt nur das geänderte Objekt (Profil
-Änderungsfeed, Abschnitt „Vollständigkeit und Reihenfolge“). Das Profil Snapshot setzt das Profil Änderungsfeed
-voraus.
+Feed anbietet (`OPARL_CHANGES_ENABLED`) und sie vollständig erfüllt sind (`PROFILES_FULFILLED`). Seit #1229 nennt der
+Feed auch das einbettende Objekt, wenn sich ein eingebettetes ändert (Profil Änderungsfeed, Abschnitt
+„Vollständigkeit und Reihenfolge“; ADR A10, Nachtrag #1229). Erfüllt ist das Profil damit noch nicht: Session meldet
+Gremien, Personen, Mitgliedschaften, Wahlperioden und die Körperschaft nicht als Ereignis, `modified` kann sich ohne
+öffentliches Ereignis ändern, der Aggregator nennt Änderungen gespiegelter Session-Mandanten vor ihrer Übernahme,
+ein nichtöffentlich gewordener Tagesordnungspunkt des Bestands bleibt ohne `deleted: true` abrufbar, und hängt eine
+Datei des Bestands an einer anderen Vorlage, bekommt die frühere keinen Eintrag. Diese Punkte bleiben unter #1229
+offen. Das Profil Snapshot setzt das Profil Änderungsfeed voraus.
 
 Die Fassung verlangt unter anderem jeden Zeitpunkt als `yyyy-mm-ddThh:mm:ss±hh:mm` (Kapitel „JSON-Ausgabe“). Beide
 Ausgaben geben Zeitpunkte deshalb auf die Sekunde aus (`hub.ris.canonical.iso`), und die Konformitätsprüfung der Tests
@@ -60,6 +63,83 @@ Beide OParl-Ausgaben stehen mit den Schemas der kommParl-Spezifikation in der Be
   Eigenschaften mit `deprecated` und `x-sunset`, die Antworten tragen `Deprecation`, `Sunset` und den Nachfolger im
   Header `Link`. Die Beschreibung bleibt ohne brechende Änderung (oasdiff).
 
+## Profil Einreichung (#1228)
+
+Anträge, Änderungsanträge und Anfragen einreichen, den Bearbeitungsstand abrufen, zurücknehmen und sich zur Ladung
+zurückmelden: nach dem Profil Einreichung von kommParl (`https://schema.kommparl.de/0.1/profile/submission`, Kapitel
+„Profil Einreichung“), je Session-Mandant. Code: `apps/session/api/einreichung.py`, Beschreibung
+`apps/session/api/einreichung_beschreibung.py` (Bereich „Profil Einreichung“).
+
+| Adresse unter `/session/<mandant>/api/oparl/` | am Objekt | Befehl |
+|---|---|---|
+| `GET body/kommparl/submission-rules/` | Body `kommparl:submissionRules` | |
+| `POST body/kommparl/uploads/`, `GET …/uploads/<id>/` | Body `kommparl:submissionUpload` | |
+| `GET body/kommparl/submissions/` (Liste), `POST` (einreichen) | Body `kommparl:submission` | `submission.submit` |
+| `GET body/kommparl/submissions/<id>/` | `id` der Einreichung | |
+| `POST body/kommparl/submissions/<id>/withdraw/` | `withdraw` der Einreichung | `submission.withdraw` |
+| `GET`/`POST meeting/<id>/kommparl/attendance/` | Sitzung `kommparl:attendanceResponse` | `attendance.respond` |
+| `POST meeting/<id>/kommparl/invitation-receipt/` | Sitzung `kommparl:invitationReceipt` | `invitation.acknowledge` |
+
+- **Nur Session:** Body und Sitzungen der OParl-Ausgabe je Mandant nennen die Adressen, und ihr `System` nennt das
+  Profil in `kommparl:conformsTo`, sobald der OpenID-Connect-Anbieter eingeschaltet ist (`OIDC_PROVIDER_ENABLED`);
+  sonst antworten die Endpunkte mit 404. Der Aggregator und der Einstieg `/api/` nennen das Profil nicht, weil der
+  Aggregator keine Einreichungen annimmt. Die Endpunkte gelten wie die übrige Ausgabe erst nach der Freischaltung der
+  OParl-Schnittstelle des Mandanten.
+- **Anmeldung:** nur Access-Tokens im Namen einer Person mit `einreichung:schreiben`
+  ([Anmeldung](schnittstelle/anmeldung.md#einreichen-profil-einreichung)). Dienst-Tokens 403, API-Tokens der
+  Session-API 401, Sitzungscookies zählen nicht, deshalb ohne CSRF.
+- **Ein Weg:** Geschrieben wird nur über die Befehle mit dem Auslöser `user:<id>`. Ihre Handler in
+  `apps/session/commands.py` prüfen die Rechte wie die bisherigen Wege: Einreichen und Zurücknehmen für Organisationen,
+  in denen die Person „Anträge ans RIS übermitteln“ darf und die mit der Verwaltung verbunden sind (wie aus Work);
+  Rückmelden und Empfang bestätigen nur für die eigene Person, die wie im Portal über die bestätigte E-Mail-Adresse
+  zugeordnet wird. Lesen und zurücknehmen darf eine Person nur ihre eigenen Einreichungen
+  (`SessionApplication.submitted_by_user`, gesetzt aus dem Auslöser `user:<id>` in Work und im Profil), solange sie
+  für deren Organisation einreichen darf. Einreichungen anderer Mitglieder derselben Organisation ergeben 404: Sie
+  enthalten Kontaktdaten und Texte, die Work nur nach seiner Sichtbarkeit zeigt.
+- **Gemeinsame Bausteine:** Probleme nach RFC 9457 (`apps/common/api/problems.py`), `Idempotency-Key` Pflicht bei
+  jedem `POST` außer dem Hochladen (Speicher und Prüfung im Dispatcher, derselbe Schlüssel mit anderem Inhalt 422),
+  `ETag` mit `If-None-Match` bei jedem `GET`, Seiten wie in OParl für die Liste.
+- **Eingangsbestätigung:** Eingangsnummer und Eingangszeit aus der Quittung des Befehls, `contentDigest` nach RFC 9530
+  über den Inhalt der Anfrage, wie er angekommen ist (gespeichert am Antrag, `SessionApplication.content_digest`). Ein
+  mitgesendeter Header `Content-Digest` wird nachgerechnet (sha-256, sha-512), Abweichung 400.
+- **Anlagen:** hochladen nur mit Einreichungsrecht bei der Verwaltung (sonst 403, bevor der Inhalt gelesen wird), als
+  `multipart/form-data`, geprüft wie Antrags-Anhänge (Dateityp, Größe, Virenprüfung) und mit `validate_upload`
+  ([Uploads](UPLOADS.md)), bis zum Einreichen 24 Stunden in `SessionSubmissionUpload` unter `session/files/` (nie über
+  `/media/`). Je Person über alle Mandanten höchstens 50 offene Dateien und 500 MB (429). Eine Datei lässt sich in
+  genau einer Einreichung verwenden: Vor dem Befehl wird sie für den `Idempotency-Key` vorgemerkt, eine andere
+  Einreichung bekommt 422. Beim Einreichen übernimmt der Befehl die Datei in die Ablage der Anlagen; der Inhalt des
+  Uploads wird danach gelöscht, die Angaben bleiben 30 Tage für Wiederholungen. Nicht eingereichte Dateien löscht der
+  Zeitplan `befehl:einreichung_aufraeumen` stündlich. Hochgeladene Inhalte liefert das Profil nie aus.
+- **Rückmeldung zur Ladung:** Herkunft „portal“ wie im Portal; der Grund einer Absage wird verschlüsselt gespeichert
+  und erscheint in keiner Antwort. Die Rückmeldung bestätigt zugleich den Empfang aller Versände der Sitzung.
+- **Prüfprotokoll:** Jede schreibende Handlung und jeder Abruf von Einreichungen steht im Protokoll des Mandanten mit
+  Person (`user:<id>`) und Client-ID der Anwendung, ohne Inhalte.
+- **Konformität:** Die Tests prüfen jede Antwort gegen die Schemas des Profils (`hub/api/kommparl/0.1/profiles/submission/`)
+  und Body und Sitzung gegen die Objekttypen aus kommParl.
+
+## Nichtöffentliche Ausgabe nach kommParl (#565)
+
+Umsetzung des Profils Nichtöffentliches (kommParl, Kapitel 7, `https://schema.kommparl.de/0.1/profile/nonpublic`) je
+Session-Mandant. Anleitung für Anwendungen: [Anmeldung](schnittstelle/anmeldung.md#nichtöffentliches-die-nichtöffentliche-ausgabe).
+
+- **Eigene Ausgabe, eigene Kennungen:** `/session/<mandant>/api/oparl/nichtoeffentlich/` ist ein eigenes OParl-System.
+  Die Abbildung (`hub/ris/mapping/session.py`) bildet mit einer `SessionSicht` ab, was der Aufrufer sieht; alle Verweise
+  zeigen in diese Ausgabe, `kommparl:publicId` nennt die öffentliche Adresse. Die öffentliche Ausgabe liest kein Token
+  und bleibt Byte für Byte gleich; nur ihr `System` nennt bei eingeschalteter Ausgabe das Profil und
+  `kommparl:nonPublicSystem` (A7: Adressen öffentlicher Objekte bleiben ihre Kennungen).
+  Die Adressen des Profils Einreichung (#1228) stehen nur in der öffentlichen Ausgabe; die nichtöffentliche nennt
+  das Profil nicht.
+- **Eine Regel für Sichtbarkeit:** `apps/session/visibility.py` (`Sicht`, `sicht_fuer_person`, `sicht_fuer_dienst`)
+  baut auf denselben Bausteinen auf wie die Oberfläche und ergänzt Rechte mit Geltungsbereich, befristete Zuweisungen
+  und das Mitwirkungsverbot. Die Oberfläche stellt mit #773 auf dieselbe Prüfung um.
+- **Anmeldung in der Plattform:** Scopes `ratsdaten:nichtoeffentlich` (Person, Anmeldung mit zweitem Faktor,
+  höchstens sieben Tage danach; Session verlangt dazu „API-Zugang“ im Mandanten) und `sitzung:lesen` (gebundener
+  Dienst), `private_key_jwt` mit dem Aussteller als `aud` und die Bindung einer Anwendung an einen Bereich
+  (`apps/accounts/oidc/bindings.py`, fachfreie Kennung `session-mandant:<Kennung>`, ausgewertet von Session).
+- **Endpunkte:** `apps/session/api/nichtoeffentlich.py`, Metadaten nach RFC 9728 unter
+  `/.well-known/oauth-protected-resource/session/<mandant>/api/oparl/nichtoeffentlich/`, in der Beschreibung als Bereich
+  „OParl je Mandant, nichtöffentlich“ mit `securitySchemes`. Schalter `OPARL_NONPUBLIC_ENABLED` (Standard aus).
+
 ## Bereiche anmelden
 
 Die Drehscheibe kennt die Fachmodule nicht (A1). Jeder Bereich meldet sich deshalb beim Start an:
@@ -73,7 +153,7 @@ register_area(Area(key="session-v1", title="Session-API v1", description="…",
 
 `openapi` liefert die Beschreibung des Bereichs (`paths`, `components`) und wird erst beim Abruf gebaut.
 Heute angemeldet: der OParl-Aggregator (`hub/api/openapi/aggregator.py`), OParl je Mandant und die Session-API v1
-(`apps/session/api/schnittstelle.py`). Die OParl-Pfade stammen aus den Routen der Ausgaben, die Schemas der
+(`apps/session/api/schnittstelle.py`) sowie das Profil Einreichung (`apps/session/api/einreichung_beschreibung.py`). Die OParl-Pfade stammen aus den Routen der Ausgaben, die Schemas der
 OParl-Typen aus der kommParl-Spezifikation (`hub/api/kommparl/`), denselben Schemas wie die Typprüfung des
 OParl-Validators.
 

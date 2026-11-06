@@ -2,26 +2,40 @@
 """
 Zeitpläne der KI-Funktionen (``apps.events.schedule``).
 
-- ``zusammenfassungen_einreichen``: alle 30 Minuten einen Message Batch mit Vorgängen ohne Zusammenfassung bei der
-  Claude API einreichen, sofern sie für die Zusammenfassungen eingerichtet, der Batch eingeschaltet, kein Batch offen
-  und Budget übrig ist (``insight_ai.services.zusammenfassung_batch.einreichen``). Sonst endet der Lauf ohne Aufruf.
+- ``zusammenfassungen_nacharbeiten``: täglich um 20:00 Uhr (``TIME_ZONE``) am Abruf gescheiterte Anlagen der
+  Kommunen im Tagesbatch neu einreihen (``zusammenfassung_batch.nacharbeiten``), damit die Texterkennung über Nacht
+  läuft und ihr Text zum nächsten Tagesbatch vorliegt (Issue #1220).
+- ``zusammenfassungen_einreichen``: täglich um 06:30 Uhr der Tagesbatch: Vorgänge der ausgewählten Kommunen ohne
+  Zusammenfassung, deren Text vollständig erkannt ist, als Message Batch bei der Claude API einreichen, sofern sie
+  für die Zusammenfassungen eingerichtet, der Batch eingeschaltet, kein Batch offen und Budget übrig ist
+  (``insight_ai.services.zusammenfassung_batch.einreichen``). Sonst endet der Lauf ohne Aufruf. Ein verpasster
+  Termin wird einmal nachgeholt.
 - ``zusammenfassungen_abholen``: alle 10 Minuten offene Batches prüfen und beendete übernehmen. Ohne offenen Batch
   bleibt es bei einer Datenbankabfrage.
 
-Beide sind idempotent; abschaltbar mit ``EVENTS_SCHEDULES_DISABLED``.
+Alle sind idempotent; abschaltbar mit ``EVENTS_SCHEDULES_DISABLED``.
 """
 
 from __future__ import annotations
 
 from django.tasks import task
 
-from apps.events.schedule import every
+from apps.events.schedule import cron, every
 
 
-@every(minutes=30)
+@cron("0 20 * * *")
+@task
+def zusammenfassungen_nacharbeiten() -> int:
+    """Am Abruf gescheiterte Anlagen der Kommunen im Tagesbatch neu einreihen; Rückgabe: ihre Zahl."""
+    from .services.zusammenfassung_batch import nacharbeiten
+
+    return nacharbeiten()
+
+
+@cron("30 6 * * *")
 @task
 def zusammenfassungen_einreichen() -> int:
-    """Batch mit Zusammenfassungen einreichen; Rückgabe: Zahl der Anfragen."""
+    """Tagesbatch mit Zusammenfassungen einreichen; Rückgabe: Zahl der Anfragen."""
     from .services.zusammenfassung_batch import einreichen
 
     return einreichen()

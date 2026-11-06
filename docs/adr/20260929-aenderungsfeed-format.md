@@ -228,6 +228,62 @@ Delta-Dateien von Lokaal Beslist in Flandern.
   vollständigen Abgleich und damit auch der `ETag`; Nichtöffentliches bleibt unsichtbar, weil der
   Abgleich unabhängig davon läuft, was er findet.
 
+## Nachtrag zur Umsetzung (#1229, einbettende Objekte)
+
+Die Entscheidung bleibt. Das Profil Änderungsfeed von kommParl verlangt („Vollständigkeit und Reihenfolge“): Ändert
+sich ein Objekt, das ein anderes intern ausgibt, nennt der Feed auch das einbettende. Umgesetzt nur in der Form nach
+dem Profil (`kommparl:changes`); die ältere Form (`mandari:changes`) bleibt bei einem Eintrag je Ereignis.
+
+- **Einbettungen je Ausgabe:** Jede Abbildung nennt ihre Einbettungen als Tabelle (`EMBEDDINGS` in
+  `hub/ris/mapping/bestand.py` und `session.py`); ein Test gleicht sie mit dem ab, was die Ausgabe tatsächlich
+  ausgibt. Beide: Wahlperiode in der Körperschaft, Mitgliedschaft in der Person, Tagesordnungspunkt in der Sitzung,
+  Beratung in der Vorlage, Datei in Sitzung und Vorlage, Ort in der Sitzung. Nur Session: Datei im
+  Tagesordnungspunkt. Körperschaft, Gremium und Vorlage geben in keiner Ausgabe einen Ort aus, obwohl OParl 1.1 das
+  vorsieht.
+- **Herkunft des einbettenden Objekts, beim Lesen:** die Nutzlast des Ereignisses (Sitzung und frühere Sitzung
+  eines Tagesordnungspunkts, Vorlage einer Beratung, Vorlage, Sitzung und Tagesordnungspunkt einer Datei und die,
+  an denen sie nicht mehr hängt, Person einer Mitgliedschaft, Sitzung einer Abstimmung, die Körperschaft einer
+  Wahlperiode aus `body_id`) und die Ausgabe (`Feed.related`), zusammengeführt und ohne Doppel. Die Nutzlast allein
+  genügt nicht: Eine Datei des Bestands kann an Vorlage und Sitzung hängen, ihr Ereignis nennt oft nur eines. Die
+  Ausgabe allein genügt nicht: Sie kennt weder frühere Bezüge noch die gelöschter Zeilen. Je Abschnitt des Journals
+  eine Abfrage je Typ und Stufe: Der Bestand behält gelöschte Zeilen und findet die Sitzungen eines Orts über die
+  Kennung der Quelle, Session die Zeilen über die Suche nach Adressen. Bis zu drei Stufen (Datei im
+  Tagesordnungspunkt in der Sitzung). Das Journal wird nicht umgeschrieben.
+- **Rücknahmen nennen das einbettende Objekt:** Session löscht Zeilen; danach kennt die Ausgabe das einbettende
+  Objekt nicht mehr. `ris.object.depublished` hat deshalb optionale Felder `meeting`, `paper`, `agenda_item` und
+  `person` (additiv in v1). Session füllt sie bei Tagesordnungspunkten, Beratungen und Anlagen, nur mit Objekten,
+  die öffentlich waren. Ältere Rücknahmen ohne diese Angabe und ohne Zeile ergeben keinen Eintrag für das
+  einbettende Objekt; das betrifft nur Ereignisse innerhalb der Aufbewahrung.
+- **Nur, was ausgeliefert wird:** Ein einbettendes Objekt bekommt einen Eintrag `upsert` nur, solange die Ausgabe es
+  ausliefert (`Feed.current`, ohne Gelöschtes und ohne nie Öffentliches). Wird eine Sitzung mit ihren Punkten
+  gelöscht, folgt so kein `upsert` hinter ihrem `delete`, und ein Ereignis, das eine nichtöffentliche Sitzung nennt,
+  verrät sie nicht.
+- **Mitgeänderte Objekte:** Der Sitzungsort ohne eigenes Objekt trägt die Kennung der Sitzung und ihre Zeitstempel.
+  Er ändert sich mit ihr und bekommt bei jedem Ereignis der Sitzung einen Eintrag mit derselben Operation. Entfällt
+  er (die Sitzung nennt keinen Ort mehr, das Ereignis nennt `location` in `changed`), ein `delete`. Session meldet
+  das Entfallen weiterhin selbst. Ebenso bekommt die öffentliche Fassung einer Niederschrift, die
+  `ris.protocol.published` an der Sitzung nennt (`file`), einen eigenen Eintrag: Sie ist eine neue Datei.
+- **Reihenfolge und Cursor:** Die Einträge eines Ereignisses stehen zusammen: das geänderte Objekt, dann mitgeänderte,
+  dann einbettende, jeweils nach Typ und Kennung. Jeder Eintrag hat einen eigenen Cursor. Der des letzten Eintrags
+  eines Ereignisses ist derselbe wie bisher (38 Zeichen); die übrigen nennen zusätzlich Typ und Kennung des Eintrags
+  (60 Zeichen), und eine Seite, die dort endet, setzt dahinter fort. Ein solcher Cursor gilt auch in der älteren
+  Form, als wäre das Ereignis ganz gesehen.
+- **Keine Doppelungen in einer Seite:** Folgt in einer Seite ein gleicher Eintrag (Operation und Grund) zum selben
+  Objekt, ohne dass dazwischen ein anderer zu ihm steht, entfällt der frühere. Der Abnehmer ruft das Objekt einmal
+  ab, an der spätesten Stelle; die Seite endet mit ihrem letzten Eintrag. Dieselbe Anfrage ergibt dieselbe Antwort.
+- **Snapshot:** Der Sitzungsort unter der Kennung einer Sitzung steht im Snapshot nach dem Profil, sobald der
+  Objekt-Endpunkt ihn ausliefert, auch wenn die Sitzung daneben einen Ort der Quelle einbettet (vorher fehlte er
+  dann).
+- **Noch nicht im Konformitätsnachweis:** `kommparl:conformsTo` nennt die Profile weiterhin nicht
+  (`hub.api.kommparl.PROFILES_FULFILLED`). Offen sind Muss-Anforderungen, die nicht am Feed liegen: Session meldet
+  Gremien, Personen, Mitgliedschaften, Wahlperioden und die Körperschaft nicht; `modified` kann sich ohne öffentliches
+  Ereignis ändern (Abgleich ohne inhaltliche Änderung, interne Änderungen in Session, erkannter Text); der Aggregator
+  nennt Änderungen gespiegelter Session-Mandanten vor ihrer Übernahme; ein nichtöffentlich gewordener
+  Tagesordnungspunkt des Bestands bleibt ohne `deleted: true` abrufbar; hängt eine Datei des Bestands an einer
+  anderen Vorlage, meldet der Abgleich das nicht, und die frühere Vorlage bekommt keinen Eintrag (Session nennt
+  frühere Bezüge einer Datei als `previous_paper`, `previous_meeting`, `previous_agenda_item` in `ris.file.changed`,
+  additiv in v1). Diese Punkte bleiben unter #1229 offen.
+
 ## Bezug
 
 - [A3 Sequenzierer](20260929-sequenzierer.md), [A7 Kanonisches Modell](20260929-kanonisches-modell.md),

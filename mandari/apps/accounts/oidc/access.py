@@ -3,8 +3,12 @@
 Access-Tokens des OpenID-Connect-Anbieters erzeugen und prüfen (Issue #1206).
 
 Ressourcen wie die Session-API rufen :func:`authenticate` auf und bekommen ein :class:`OAuthAccess`: wer
-handelt (eine Person oder ein Dienst), für welche Anwendung, mit welchen Scopes. Was daraus an Rechten folgt,
-entscheidet die Ressource; die Plattform kennt keine Fachbegriffe.
+handelt (eine Person oder ein Dienst), für welche Anwendung, mit welchen Scopes und, bei einem gebundenen Dienst,
+mit welcher Bindung (:mod:`.bindings`). Was daraus an Rechten folgt, entscheidet die Ressource; die Plattform kennt
+keine Fachbegriffe.
+
+Geschützte Scopes (``catalog.PROTECTED``, #565) wirken nur, solange die Person einen zweiten Faktor hat; das prüft
+:func:`authenticate` bei jedem Abruf.
 
 Tokens tragen ein Präfix (``mandari_at_`` bzw. ``mandari_rt_``). So erkennen Secret-Scanner sie, und die
 Session-API unterscheidet sie ohne Datenbankzugriff von ihren eigenen API-Tokens (64 Zeichen ohne Präfix).
@@ -18,7 +22,7 @@ import secrets
 from dataclasses import dataclass
 from typing import Any
 
-from . import provider_enabled
+from . import catalog, provider_enabled
 
 ACCESS_TOKEN_PREFIX = "mandari_at_"
 REFRESH_TOKEN_PREFIX = "mandari_rt_"
@@ -57,6 +61,8 @@ class OAuthAccess:
     #: die Person, in deren Namen die Anwendung handelt; ``None`` bei einem Dienst (Client Credentials)
     user: Any | None
     scopes: frozenset[str]
+    #: Bindung der Anwendung an genau einen Bereich (``OAuthApplication.binding``), sonst ``""``
+    binding: str = ""
 
     @property
     def acts_for_person(self) -> bool:
@@ -64,6 +70,16 @@ class OAuthAccess:
 
     def has_scope(self, scope: str) -> bool:
         return scope in self.scopes
+
+
+def has_second_factor(user: Any) -> bool:
+    """Hat das Konto einen zweiten Faktor (bestätigter TOTP-Generator oder Sicherheitsschlüssel)?"""
+    if user is None or not getattr(user, "is_authenticated", False):
+        return False
+    from ..services import TwoFactorService
+    from ..webauthn_service import has_credentials
+
+    return bool(TwoFactorService().is_2fa_enabled(user) or has_credentials(user))
 
 
 def looks_like_access_token(raw: str) -> bool:
@@ -97,10 +113,15 @@ def authenticate(raw: str, *, resource_uri: str = "") -> OAuthAccess:
         raise InvalidAccessToken
     if token.resource and not (resource_uri and token.allows_audience(resource_uri)):
         raise InvalidAccessToken
+    scopes = frozenset(str(token.scope).split()) & frozenset(application.scope_list)
+    if scopes & catalog.PROTECTED and not has_second_factor(user):
+        # Zweiter Faktor entfernt: geschützte Scopes gelten ab sofort nicht mehr (#565)
+        scopes -= catalog.PROTECTED
     return OAuthAccess(
         token_id=int(token.pk),
         client_id=str(application.client_id),
         application_name=str(application.name or application.client_id),
         user=user,
-        scopes=frozenset(str(token.scope).split()) & frozenset(application.scope_list),
+        scopes=scopes,
+        binding=str(application.binding or ""),
     )

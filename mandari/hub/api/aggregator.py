@@ -271,6 +271,68 @@ def _existing(kind: str, ids: Collection[uuid.UUID]) -> set[uuid.UUID]:
     return found
 
 
+def _current(kind: str, ids: Collection[uuid.UUID]) -> set[uuid.UUID]:
+    """
+    Kennungen, unter denen der Bestand derzeit ein Objekt ausliefert, ohne Gelöschtes (``_existing`` ohne gekürzte
+    Objekte). Ein Ort ohne eigenes Objekt der Quelle ist der einer Sitzung mit Ortsangabe.
+    """
+    spec = OBJECT_TYPES.get(kind)
+    if spec is None or not ids:
+        return set()
+    found: set[uuid.UUID] = set(
+        spec.model._default_manager.filter(pk__in=ids, deleted=False).values_list("pk", flat=True)
+    )
+    if kind == "location" and len(found) < len(ids):
+        rest = [object_id for object_id in ids if object_id not in found]
+        found.update(bestand.meetings_with_own_location(rest, deleted=False))
+    return found
+
+
+#: Eingebettete Typen -> (Modell, (Fremdschlüssel, Typ des einbettenden Objekts) …) im Bestand
+_EMBEDDED_IN: Final[dict[str, tuple[type[Model], tuple[tuple[str, str], ...]]]] = {
+    "agendaitem": (OParlAgendaItem, (("meeting_id", "meeting"),)),
+    "consultation": (OParlConsultation, (("paper_id", "paper"),)),
+    "file": (OParlFile, (("paper_id", "paper"), ("meeting_id", "meeting"))),
+    "membership": (OParlMembership, (("person_id", "person"),)),
+}
+
+
+def _related(pk: uuid.UUID) -> changes.Related:
+    """
+    Was der Bestand über die Einbettungen weiß und die Ereignisse nicht nennen (``changes.Related``, Issue #1229), je
+    Aufruf eine Abfrage:
+
+    - der Sitzungsort einer Sitzung, der ihre Kennung trägt (``BestandMapping.meeting_location``): ändert sich mit
+      ihr; ohne Ortsangabe gibt es ihn nicht (mehr),
+    - die Sitzungen der Kommune, die einen Ort einbetten (``bestand.meetings_embedding_locations``),
+    - Sitzung, Vorlage bzw. Person eines Tagesordnungspunkts, einer Beratung, Datei oder Mitgliedschaft; der Bestand
+      behält auch gelöschte Zeilen.
+    """
+
+    def related(kind: str, ids: Collection[uuid.UUID]) -> dict[uuid.UUID, list[changes.Link]]:
+        found: dict[uuid.UUID, list[changes.Link]] = {}
+        if kind == "meeting":
+            located = bestand.meetings_with_own_location(ids)
+            for object_id in ids:
+                link = changes.Link("location", object_id, shared=True, removed=object_id not in located)
+                found[object_id] = [link]
+        elif kind == "location":
+            for location_id, meetings in bestand.meetings_embedding_locations(pk, ids).items():
+                found[location_id] = [changes.Link("meeting", meeting_id) for meeting_id in meetings]
+        elif kind in _EMBEDDED_IN:
+            model, references = _EMBEDDED_IN[kind]
+            fields = [name for name, _ in references]
+            for object_id, *parents in model._default_manager.filter(pk__in=ids).values_list("pk", *fields):
+                found[object_id] = [
+                    changes.Link(parent_kind, parent)
+                    for (_, parent_kind), parent in zip(references, parents, strict=True)
+                    if parent is not None
+                ]
+        return found
+
+    return related
+
+
 def _feed(
     output: BestandMapping,
     pk: uuid.UUID,
@@ -279,7 +341,10 @@ def _feed(
     *,
     profile: bool = False,
 ) -> changes.Feed:
-    """Feed einer Kommune mit den Adressen nach den Profilen von kommParl (``profile``) oder der älteren Form."""
+    """
+    Feed einer Kommune mit den Adressen nach den Profilen von kommParl (``profile``) oder der älteren Form, dazu die
+    Einbettungen des Bestands (``bestand.EMBEDDINGS``, nur nach dem Profil genutzt).
+    """
     uris = output.uris
 
     def addresses(kind: str, ids: Collection[uuid.UUID]) -> dict[uuid.UUID, str]:
@@ -288,6 +353,9 @@ def _feed(
         # Eintrag – wie bei der Session-Schnittstelle
         return {object_id: uris.obj(kind, object_id) for object_id in _existing(kind, ids)}
 
+    def current(kind: str, ids: Collection[uuid.UUID]) -> dict[uuid.UUID, str]:
+        return {object_id: uris.obj(kind, object_id) for object_id in _current(kind, ids)}
+
     return changes.Feed(
         body_id=pk,
         url=uris.kommparl_changes(pk) if profile else uris.changes(pk),
@@ -295,6 +363,9 @@ def _feed(
         addresses=addresses,
         epoch=epoch,
         freshness=freshness,
+        embeds=bestand.EMBEDDINGS,
+        related=_related(pk),
+        current=current,
     )
 
 
@@ -407,12 +478,15 @@ def _snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed) -> snap
 _SNAPSHOT_FILE = Spec("file", OParlFile, BestandMapping.file, lambda queryset: queryset.defer("text_content"))
 
 
-def _derived_locations(output: BestandMapping, pk: uuid.UUID) -> snapshot.Section:
-    """Sitzungsorte ohne eigenes Location-Objekt der Quelle (``…/location/<Kennung der Sitzung>``)."""
+def _meeting_locations(output: BestandMapping, pk: uuid.UUID) -> snapshot.Section:
+    """
+    Sitzungsorte unter der Kennung ihrer Sitzung (``…/location/<Kennung der Sitzung>``): jeder, den der Objekt-Endpunkt
+    ausliefert (``_meeting_location_response``), also jede Sitzung mit Ortsangabe – auch wenn sie daneben ein eigenes
+    Location-Objekt der Quelle einbettet. Das Profil Snapshot verlangt jedes öffentliche Objekt (Issue #1229).
+    """
 
     def render(meetings: list[Any]) -> list[Objekt]:
-        ctx = RefContext.for_meetings(meetings)
-        return [data for meeting in meetings if (data := output.derived_location(meeting, ctx)) is not None]
+        return [data for meeting in meetings if (data := output.meeting_location(meeting)) is not None]
 
     return snapshot.Section(queryset=OParlMeeting.objects.filter(body_id=pk, deleted=False), render=render)
 
@@ -439,7 +513,7 @@ def _kommparl_snapshot(output: BestandMapping, pk: uuid.UUID, feed: changes.Feed
         section(OBJECT_TYPES["consultation"], own),
         section(_SNAPSHOT_FILE, own),
         section(_LOCATION, own),
-        _derived_locations(output, pk),
+        _meeting_locations(output, pk),
     ]
     return snapshot.Snapshot(feed, _body(output, pk), sections)
 

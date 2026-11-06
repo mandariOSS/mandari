@@ -83,6 +83,9 @@ def registrieren(ziel: ScheduleRegistry | None = None) -> None:
     # abgelaufene Codes löschen (Befehl der Bibliothek django-oauth-toolkit); nur bei eingeschaltetem Anbieter
     if getattr(settings, "OIDC_PROVIDER_ENABLED", False):
         befehl_als_zeitplan("cleartokens", crontab="15 4 * * *", zeitgrenze=1800, ziel=ziel)
+    # Profil Einreichung (Issue #1228): nicht eingereichte Anlagen nach ihrem Ablauf löschen, in allen Mandanten.
+    # Immer, damit nach dem Abschalten des Anbieters nichts liegen bleibt.
+    befehl_als_zeitplan("einreichung_aufraeumen", crontab="25 * * * *", zeitgrenze=1500, ziel=ziel)
 
     # Sitzungsmappen (Issue #218): Anforderungen aus der Oberfläche minütlich abarbeiten
     befehl_als_zeitplan(

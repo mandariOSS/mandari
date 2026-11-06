@@ -477,7 +477,7 @@ Beispiel 2:
 
 ### ris.file.changed v1
 
-**Anlage geändert.** Eine Datei (Anlage) wurde hinzugefügt, ersetzt, umbenannt oder entfernt. Aggregat: File. Die Zugehörigkeit nennt, woran die Datei hängt. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
+**Anlage geändert.** Eine Datei (Anlage) wurde hinzugefügt, ersetzt, umbenannt oder entfernt. Aggregat: File. Die Zugehörigkeit nennt, woran die Datei hängt; bei neuer Zugehörigkeit nennen previous_paper, previous_meeting und previous_agenda_item, woran sie nicht mehr hängt. Die Nutzlast enthält nur Kennungen, Codes und Feldnamen; Inhalte liest der Empfänger über die Lese-Fassade des RIS-Bestands.
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`
@@ -491,6 +491,9 @@ Beispiel 2:
 | `paper` | nein | Zeichenkette (uuid) | Vorlage, an der die Datei hängt. |
 | `meeting` | nein | Zeichenkette (uuid) | Sitzung, an der die Datei hängt. |
 | `agenda_item` | nein | Zeichenkette (uuid) | Tagesordnungspunkt, an dem die Datei hängt. |
+| `previous_paper` | nein | Zeichenkette (uuid) | Vorlage, an der die Datei vor der Änderung hing und jetzt nicht mehr (neue Zugehörigkeit); optional. Der Änderungsfeed nennt damit auch sie. |
+| `previous_meeting` | nein | Zeichenkette (uuid) | Sitzung, an der die Datei vor der Änderung hing und jetzt nicht mehr; optional. |
+| `previous_agenda_item` | nein | Zeichenkette (uuid) | Tagesordnungspunkt, an dem die Datei vor der Änderung hing und jetzt nicht mehr; optional. |
 
 Beispiel 1:
 
@@ -509,6 +512,17 @@ Beispiel 2:
   "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
   "change": "removed",
   "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
+}
+```
+
+Beispiel 3:
+
+```json
+{
+  "file": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
+  "change": "added",
+  "agenda_item": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+  "previous_agenda_item": "3e4f5a6b-7c8d-5e9f-8a0b-1c2d3e4f5a6b"
 }
 ```
 
@@ -787,7 +801,7 @@ Beispiel 2:
 
 ### ris.object.depublished v1
 
-**Objekt zurückgenommen.** Ein Objekt des RIS-Bestands ist nicht mehr öffentlich: in der Quelle gelöscht, zurückgenommen, nichtöffentlich geworden oder aus Datenschutzgründen entfernt. Aggregat: das betroffene Objekt. Die Hülle trägt operation delete, beim Grund datenschutz redact (docs/adr/20260929-aenderungsfeed-format.md).
+**Objekt zurückgenommen.** Ein Objekt des RIS-Bestands ist nicht mehr öffentlich: in der Quelle gelöscht, zurückgenommen, nichtöffentlich geworden oder aus Datenschutzgründen entfernt. Aggregat: das betroffene Objekt. Die Hülle trägt operation delete, beim Grund datenschutz redact (docs/adr/20260929-aenderungsfeed-format.md). War das Objekt in ein anderes eingebettet, kann die Nutzlast dieses nennen (meeting, paper, agenda_item, person).
 
 - Art: Ereignis
 - Eigentümer: `hub.ris`
@@ -799,6 +813,10 @@ Beispiel 2:
 | `object_type` | ja | Code: `Body`, `Organization`, `Person`, `Membership`, `LegislativeTerm`, `Meeting`, `AgendaItem`, `Paper`, `Consultation`, `File`, `Location`, `Voting` | Kanonischer Typ des Objekts. |
 | `object` | ja | Zeichenkette (uuid) | Kanonische Kennung des Objekts. |
 | `reason` | ja | Code: `quelle_geloescht`, `zurueckgenommen`, `nichtoeffentlich`, `datenschutz` | Grund: quelle_geloescht, zurueckgenommen, nichtoeffentlich, datenschutz. |
+| `meeting` | nein | Zeichenkette (uuid) | Sitzung, in die das Objekt eingebettet war (Tagesordnungspunkt, Datei), wenn sie öffentlich war; optional. Der Änderungsfeed nennt damit auch sie, wenn das Objekt nicht mehr besteht. |
+| `paper` | nein | Zeichenkette (uuid) | Vorlage, in die das Objekt eingebettet war (Beratung, Datei), wenn sie öffentlich war; optional. |
+| `agenda_item` | nein | Zeichenkette (uuid) | Tagesordnungspunkt, in den das Objekt eingebettet war (Datei), wenn er öffentlich war; optional. |
+| `person` | nein | Zeichenkette (uuid) | Person, in die das Objekt eingebettet war (Mitgliedschaft); optional. |
 
 Beispiel 1:
 
@@ -817,6 +835,17 @@ Beispiel 2:
   "object_type": "File",
   "object": "f1e2d3c4-b5a6-5978-8a9b-0c1d2e3f4a5b",
   "reason": "datenschutz"
+}
+```
+
+Beispiel 3:
+
+```json
+{
+  "object_type": "AgendaItem",
+  "object": "9a6f2c3e-5b1d-5c7a-8e2f-3d4c5b6a7e8f",
+  "reason": "quelle_geloescht",
+  "meeting": "7c9e6679-7425-50de-944b-e07fc1f90ae7"
 }
 ```
 

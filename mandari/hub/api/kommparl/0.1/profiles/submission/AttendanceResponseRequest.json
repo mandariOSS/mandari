@@ -1,0 +1,59 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/submission/AttendanceResponseRequest.json",
+    "title": "AttendanceResponseRequest",
+    "description": "Rückmeldung zur Ladung, die der Client per POST an kommparl:attendanceResponse sendet (Profil Einreichung, Entwurf).",
+    "type": "object",
+    "required": [
+        "response"
+    ],
+    "properties": {
+        "response": {
+            "description": "attending: Teilnahme, notAttending: Absage.",
+            "enum": [
+                "attending",
+                "notAttending"
+            ]
+        },
+        "substituteRequested": {
+            "description": "Nur bei notAttending: Die Person bittet um Vertretung.",
+            "type": "boolean"
+        },
+        "reason": {
+            "description": "Nur bei notAttending: Grund der Absage, nur für die Verwaltung bestimmt.",
+            "$ref": "#/$defs/text"
+        }
+    },
+    "patternProperties": {
+        "^(?!kommparl:)[A-Za-z][A-Za-z0-9_.-]*:.+$": {}
+    },
+    "additionalProperties": false,
+    "allOf": [
+        {
+            "if": {
+                "required": [
+                    "response"
+                ],
+                "properties": {
+                    "response": {
+                        "const": "attending"
+                    }
+                }
+            },
+            "then": {
+                "properties": {
+                    "substituteRequested": {
+                        "const": false
+                    },
+                    "reason": false
+                }
+            }
+        }
+    ],
+    "$defs": {
+        "text": {
+            "type": "string",
+            "minLength": 1
+        }
+    }
+}

@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Final
@@ -76,6 +77,8 @@ REASON_DELETED_AT_SOURCE: Final = "quelle_geloescht"
 REASON_WITHDRAWN: Final = "zurueckgenommen"
 REASON_NOT_PUBLIC: Final = "nichtoeffentlich"
 REASONS: Final = frozenset({REASON_DELETED_AT_SOURCE, REASON_WITHDRAWN, REASON_NOT_PUBLIC})
+#: Felder des Vertrags für die Objekte, in die ein zurückgenommenes eingebettet war (Issue #1229)
+EMBEDDING_FIELDS: Final = frozenset({"meeting", "paper", "agenda_item", "person"})
 
 #: Schlüssel in ``OParlSource.sync_config``, mit dem eine Quelle von den Ereignissen ausgenommen ist
 #: (gleichlautend mit ``SYNC_CONFIG_EVENTS_KEY`` in ``ingestor/src/storage/database.py``)
@@ -116,12 +119,18 @@ def drafts(
     *,
     public: bool = True,
     meeting_id: uuid.UUID | None = None,
+    embedded_in: Mapping[str, uuid.UUID | None] | None = None,
 ) -> list[Draft]:
     """
     Ereignisse zur Rücknahme eines Objekts (wie ``ris_events.depublished_events`` des Ingestors).
 
     ``public`` und ``meeting_id`` gelten für Tagesordnungspunkte: Einen nichtöffentlichen Punkt haben
     öffentliche Empfänger nie gesehen; eine öffentliche Rücknahme nennte ihnen erstmals seine Kennung.
+
+    ``embedded_in``: Objekte, in die das zurückgenommene eingebettet war (Felder ``meeting``, ``paper``,
+    ``agenda_item``, ``person`` des Vertrags; ``None`` entfällt), damit der Änderungsfeed auch sie nennt, wenn die
+    Zeile danach nicht mehr besteht (Issue #1229). Nur Objekte, die öffentlich waren: Ein öffentliches Ereignis nennt
+    keine Kennung eines Objekts, das nie öffentlich war. Der Bestand behält seine Zeilen und braucht die Angabe nicht.
     """
     if reason not in REASONS:
         raise ValueError(f"Unbekannter Grund einer Rücknahme; erlaubt: {', '.join(sorted(REASONS))}")
@@ -133,6 +142,11 @@ def drafts(
             Draft(AGENDA_ITEM_CHANGED, "AgendaItem", object_id, Visibility.NICHTOEFFENTLICH, Operation.DELETE, payload)
         ]
     payload = {"object_type": aggregate_type, "object": str(object_id), "reason": reason}
+    for name, parent in (embedded_in or {}).items():
+        if name not in EMBEDDING_FIELDS:
+            raise ValueError(f"Unbekanntes Feld für das einbettende Objekt: {name}")
+        if parent is not None:
+            payload[name] = str(parent)
     return [Draft(DEPUBLISHED, aggregate_type, object_id, Visibility.OEFFENTLICH, Operation.DELETE, payload)]
 
 

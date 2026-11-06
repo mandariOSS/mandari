@@ -127,8 +127,13 @@ class TestDiscovery:
             "ratsdaten:lesen",
             "einreichung:schreiben",
             "mandari:bereitstellung",
+            "ratsdaten:nichtoeffentlich",
+            "sitzung:lesen",
         }
         assert {"sub", "name", "email", "email_verified"} <= set(data["claims_supported"])
+        # private_key_jwt (RFC 7523) für Anwendungen mit öffentlichen Schlüsseln (#565)
+        assert "private_key_jwt" in data["token_endpoint_auth_methods_supported"]
+        assert data["token_endpoint_auth_signing_alg_values_supported"] == ["RS256", "ES256"]
 
     def test_jwks_mit_aktivem_und_bisherigem_schluessel(self, anbieter: None) -> None:
         keys = Client().get("/oauth/jwks/").json()["keys"]

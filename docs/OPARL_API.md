@@ -237,9 +237,20 @@ mit seinem Cursor fort.
 
 Feed-Seite, Fehlerobjekt sowie Kopf- und Schlusszeile des Snapshots entsprechen den Schemas der Profile
 (`mandari/hub/api/kommparl/0.1/profiles/`); die Tests und der OParl-Validator der CI prüfen das. Das System nennt in
-`kommparl:conformsTo` bisher nur die Fassung `https://schema.kommparl.de/0.1/`, nicht die Profile: Ändert sich ein
-eingebettetes Objekt, verlangt das Profil Änderungsfeed auch einen Eintrag für das einbettende Objekt; der Feed
-nennt nur das geänderte Objekt (Einschränkungen unten).
+`kommparl:conformsTo` bisher nur die Fassung `https://schema.kommparl.de/0.1/`, nicht die Profile: Einige
+Muss-Anforderungen des Profils Änderungsfeed sind noch offen (Einschränkungen unten, `docs/SCHNITTSTELLE.md`).
+
+**Einbettende Objekte (nur nach kommParl, #1229):** Ändert sich ein Objekt, das ein anderes intern ausgibt, folgt
+im Feed nach kommParl ein Eintrag `upsert` für das einbettende Objekt: die Sitzung zu einem Tagesordnungspunkt (bei
+einem verschobenen beide Sitzungen), die Vorlage zu einer Beratung, Vorlage und Sitzung zu einer Datei, die Person
+zu einer Mitgliedschaft, die Kommune zu einer Wahlperiode, die Sitzungen zu einem Ort. Das gilt auch für
+Rücknahmen und Abstimmungen (die Sitzung ihres Tagesordnungspunkts). Der Sitzungsort unter der Kennung einer
+Sitzung (`…/location/<Kennung der Sitzung>`) ändert sich mit ihr und bekommt einen Eintrag mit derselben Operation;
+entfällt er, ein `delete`. Ein einbettendes Objekt, das gelöscht ist, bekommt keinen Eintrag. Die Einträge eines
+Ereignisses stehen zusammen, zuerst das geänderte Objekt. Jeder hat einen eigenen Cursor: Endet eine Seite innerhalb
+eines Ereignisses, ist er länger (60 statt 38 Zeichen) und die nächste Seite setzt dahinter fort. In einer Seite
+steht ein gleicher Eintrag zu einem Objekt höchstens einmal, an der spätesten Stelle. Die ältere Form nennt
+weiterhin nur das geänderte Objekt.
 
 ```bash
 curl "https://mandari.de/oparl/v1/body/<uuid>/kommparl/changes?limit=100"
@@ -414,8 +425,14 @@ leitet weiter.
   erfährt so nicht, dass Einzelstimmen aus seinen Kopien zu entfernen sind; er ruft den
   Tagesordnungspunkt bei seiner nächsten Änderung neu ab.
 - Eingebettete Objekte: Ändert sich ein Tagesordnungspunkt, eine Beratung oder eine Datei, nennt der
-  Feed dieses Objekt. Wer Sitzungen oder Vorlagen samt Einbettungen speichert, ruft das einbettende
-  Objekt (`AgendaItem.meeting`, `Consultation.paper`, `File.paper`/`meeting`) mit ab.
+  Feed nach kommParl auch das einbettende Objekt (oben). Die ältere Form nennt nur das geänderte Objekt; wer sie
+  nutzt und Sitzungen oder Vorlagen samt Einbettungen speichert, ruft das einbettende Objekt
+  (`AgendaItem.meeting`, `Consultation.paper`, `File.paper`/`meeting`) mit ab.
+- Noch offen für das Profil Änderungsfeed: Ändert sich `modified` eines Objekts, ohne dass sich sein Inhalt in der
+  Quelle geändert hat (manche Quellen stempeln bei jedem Abruf neu), oder ergänzt die Texterkennung `File.text`,
+  gibt es keinen Eintrag. Ein Tagesordnungspunkt, den die Quelle nichtöffentlich stellt, erscheint als `delete`
+  (`nonPublic`), bleibt unter seiner Adresse aber ohne `deleted: true` abrufbar. Hängt eine Datei in der Quelle an
+  einer anderen Vorlage, gibt es keinen Eintrag, auch nicht für die frühere Vorlage.
 - Gespiegelte Session-Mandanten: Der Aggregator nennt nur Objekte, die sein Bestand kennt. Meldet ein
   Session-Mandant eine Änderung, bevor der Abgleich sie übernommen hat, fehlt ein neues Objekt im Feed,
   und `id` eines bekannten liefert kurz noch den alten Stand. Die Übernahme erscheint verlässlich erst,

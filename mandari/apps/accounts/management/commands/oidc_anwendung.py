@@ -6,7 +6,10 @@ Anwendungen (Clients) des OpenID-Connect-Anbieters auf der Kommandozeile (Issue 
         --redirect-uri https://app.example.org/rueckweg --scope openid --scope ratsdaten:lesen
     python manage.py oidc_anwendung anlegen --name "Datendienst" --typ vertraulich --grant client-credentials \\
         --scope ratsdaten:lesen
+    python manage.py oidc_anwendung anlegen --name "Fachverfahren" --typ vertraulich --grant client-credentials \\
+        --mandant musterstadt --jwks dienst-jwks.json --scope sitzung:lesen
     python manage.py oidc_anwendung liste
+    python manage.py oidc_anwendung schluessel <client-id> --jwks neue-jwks.json
     python manage.py oidc_anwendung sperren <client-id> [--grund "…"]
     python manage.py oidc_anwendung entsperren <client-id>
 
@@ -16,6 +19,12 @@ Scopes nur aus dem Katalog und passend zum Ablauf, Signatur RS256 für den Code-
 vertraulichen Anwendung erscheint genau einmal in der Ausgabe; gespeichert ist nur sein Hash. Öffentliche
 Anwendungen bekommen kein nutzbares Secret.
 
+Profil Nichtöffentliches (#565): ``--jwks`` trägt öffentliche Schlüssel (JWK Set als Datei) ein; die Anwendung weist
+sich dann mit ``private_key_jwt`` (RFC 7523) aus und hat kein nutzbares Client-Secret. ``--mandant`` bindet einen
+Dienst an genau einen Session-Mandanten (Kurzname); die Plattform speichert nur die fachfreie Kennung
+(``apps.accounts.oidc.bindings``), Session wertet sie aus. Gebundene Dienste brauchen ``--jwks``. ``schluessel``
+ersetzt die Schlüssel einer Anwendung (Schlüsselwechsel).
+
 Sperren schaltet die Anwendung aus und widerruft alle ihre Tokens; Entsperren schaltet sie wieder ein, alte Tokens
 leben dabei nicht auf. Anlegen, Sperren und Entsperren stehen im Sicherheitsprotokoll (``oidc_anwendung``), nie mit
 Secret. Anleitung: ``docs/schnittstelle/anmeldung-betrieb.md``.
@@ -23,15 +32,18 @@ Secret. Anleitung: ``docs/schnittstelle/anmeldung-betrieb.md``.
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import Any
 
+from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import transaction
 from django.utils import timezone
 from oauth2_provider.generators import generate_client_id, generate_client_secret
 from oauth2_provider.settings import oauth2_settings
 
-from apps.accounts.oidc import audit, catalog, provider_enabled, services
+from apps.accounts.oidc import audit, bindings, catalog, provider_enabled, services
 from apps.accounts.oidc.admin import OAuthApplicationForm
 from apps.accounts.oidc.models import OAuthApplication
 
@@ -61,6 +73,21 @@ def _words(values: list[str] | None) -> list[str]:
     return list(seen)
 
 
+def _jwks(path: str) -> dict[str, Any]:
+    """JWK Set aus einer Datei; ein einzelner Schlüssel wird zum Set mit einem Schlüssel."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise CommandError(f"--jwks: Datei nicht lesbar ({exc.strerror or exc}).") from None
+    except ValueError:
+        raise CommandError("--jwks: Die Datei enthält kein gültiges JSON.") from None
+    if isinstance(data, dict) and "keys" not in data and "kty" in data:
+        data = {"keys": [data]}
+    if not isinstance(data, dict):
+        raise CommandError('--jwks: Erwartet wird ein JWK Set ({"keys": [ … ]}) oder ein einzelner Schlüssel.')
+    return data
+
+
 def _type(value: str) -> str:
     key = value.strip().lower()
     if key not in TYPES:
@@ -72,7 +99,9 @@ class Command(BaseCommand):
     help = "OIDC-Anwendungen anlegen, auflisten, sperren und entsperren (dieselben Regeln wie im Admin)."
 
     def add_arguments(self, parser: CommandParser) -> None:
-        aktionen = parser.add_subparsers(dest="aktion", metavar="{anlegen,liste,sperren,entsperren}", required=True)
+        aktionen = parser.add_subparsers(
+            dest="aktion", metavar="{anlegen,liste,schluessel,sperren,entsperren}", required=True
+        )
 
         anlegen = aktionen.add_parser("anlegen", help="Anwendung anlegen; das Client-Secret erscheint nur jetzt.")
         anlegen.add_argument("--name", required=True, help="Name auf der Zustimmungsseite und in der Kontoseite.")
@@ -104,8 +133,22 @@ class Command(BaseCommand):
             action="store_true",
             help="Ohne Zustimmungsseite (nur für eigene Anwendungen von mandari, nur Code-Ablauf).",
         )
+        anlegen.add_argument(
+            "--jwks",
+            metavar="DATEI",
+            help="Öffentliche Schlüssel (JWK Set) für private_key_jwt; dann gibt es kein Client-Secret.",
+        )
+        anlegen.add_argument(
+            "--mandant",
+            metavar="KURZNAME",
+            help="Dienst an genau diesen Session-Mandanten binden (nur client-credentials, braucht --jwks).",
+        )
 
         aktionen.add_parser("liste", help="Alle Anwendungen mit Ablauf, Scopes und Redirect-URIs (ohne Secret).")
+
+        schluessel = aktionen.add_parser("schluessel", help="Öffentliche Schlüssel (JWKS) einer Anwendung ersetzen.")
+        schluessel.add_argument("client_id", help="Client-ID der Anwendung")
+        schluessel.add_argument("--jwks", metavar="DATEI", required=True, help="Neues JWK Set (nur öffentliche Teile).")
 
         sperren = aktionen.add_parser("sperren", help="Anwendung ausschalten und alle ihre Tokens widerrufen.")
         sperren.add_argument("client_id", help="Client-ID der Anwendung")
@@ -121,6 +164,8 @@ class Command(BaseCommand):
             self._anlegen(options)
         elif aktion == "liste":
             self._liste()
+        elif aktion == "schluessel":
+            self._schluessel(options["client_id"], str(options["jwks"]))
         else:
             self._sperren(options["client_id"], gesperrt=aktion == "sperren", grund=str(options["grund"]).strip())
 
@@ -151,6 +196,20 @@ class Command(BaseCommand):
             raise CommandError(
                 f"Unbekannte Scopes: {', '.join(unknown)}. Der Katalog: {', '.join(s.name for s in catalog.CATALOG)}."
             )
+        jwks = _jwks(str(options["jwks"])) if options.get("jwks") else None
+        binding = ""
+        if options.get("mandant"):
+            if person:
+                raise CommandError("--mandant gilt nur für Dienste (client-credentials).")
+            binding = bindings.resolve(bindings.TENANT, str(options["mandant"])) or ""
+            if not binding:
+                raise CommandError(
+                    f"--mandant: Keinen aktiven Session-Mandanten mit dem Kurznamen {options['mandant']}."
+                )
+            if jwks is None:
+                raise CommandError("Gebundene Dienste weisen sich mit private_key_jwt aus; bitte --jwks angeben.")
+        if jwks is not None and client_type != OAuthApplication.CLIENT_CONFIDENTIAL:
+            raise CommandError("--jwks gilt nur für vertrauliche Anwendungen (--typ vertraulich).")
         if person and not oauth2_settings.OIDC_RSA_PRIVATE_KEY:
             raise CommandError(
                 "Für den Code-Ablauf braucht mandari einen Signaturschlüssel (OIDC_RSA_PRIVATE_KEY_FILE oder "
@@ -170,6 +229,8 @@ class Command(BaseCommand):
                 "skip_authorization": bool(options["skip_authorization"]),
                 "algorithm": OAuthApplication.RS256_ALGORITHM if person else OAuthApplication.NO_ALGORITHM,
                 "is_active": True,
+                "binding": binding,
+                "jwks": json.dumps(jwks) if jwks is not None else "",
             }
         )
         if not form.is_valid():
@@ -189,11 +250,17 @@ class Command(BaseCommand):
                 anwendung=application.client_id,
                 name=application.name,
                 durch=audit.BY_COMMAND,
+                bindung=application.binding or None,
+                anmeldung="private_key_jwt" if application.uses_private_key_jwt else None,
             )
 
         self.stdout.write(self.style.SUCCESS(f"Anwendung „{application.name}“ angelegt."))
         self._details(application)
-        if client_type == OAuthApplication.CLIENT_CONFIDENTIAL:
+        if application.uses_private_key_jwt:
+            self.stdout.write(
+                "  Client-Secret: keins (Anmeldung mit private_key_jwt und dem eigenen privaten Schlüssel)"
+            )
+        elif client_type == OAuthApplication.CLIENT_CONFIDENTIAL:
             self.stdout.write(f"  Client-Secret: {secret}")
             self.stdout.write(
                 self.style.WARNING(
@@ -227,12 +294,43 @@ class Command(BaseCommand):
         self.stdout.write(f"  Ablauf:        {GRANT_LABELS.get(application.authorization_grant_type, '?')}")
         self.stdout.write(f"  Typ:           {TYPE_LABELS.get(application.client_type, '?')}")
         self.stdout.write(f"  Scopes:        {' '.join(application.scope_list) or '–'}")
+        if application.binding:
+            ziel = bindings.describe(application.binding) or "Bereich nicht gefunden"
+            self.stdout.write(f"  Bindung:       {application.binding} ({ziel})")
+        if application.uses_private_key_jwt:
+            kids = [str(key.get("kid") or "ohne kid") for key in (application.jwks or {}).get("keys", [])]
+            self.stdout.write(f"  Anmeldung:     private_key_jwt, Schlüssel: {', '.join(kids)}")
         if application.acts_for_person:
             self.stdout.write(f"  Redirect-URIs: {' '.join(application.redirect_uris.split()) or '–'}")
             zustimmung = "nein (vertrauenswürdig)" if application.skip_authorization else "ja, jedes Mal"
             self.stdout.write(f"  Zustimmung:    {zustimmung}")
         created = timezone.localtime(application.created).strftime("%d.%m.%Y %H:%M")
         self.stdout.write(f"  Angelegt:      {created}")
+
+    # ------------------------------------------------------------------ schluessel
+
+    def _schluessel(self, client_id: str, path: str) -> None:
+        application = OAuthApplication.objects.filter(client_id=client_id).first()
+        if application is None:
+            raise CommandError(f"Keine Anwendung mit der Client-ID {client_id}. „oidc_anwendung liste“ zeigt alle.")
+        application.jwks = _jwks(path)
+        try:
+            application.full_clean(exclude=["client_secret"])
+        except ValidationError as exc:
+            meldungen = [f"- {meldung}" for meldungen in exc.message_dict.values() for meldung in meldungen]
+            raise CommandError("Schlüssel nicht übernommen:\n" + "\n".join(meldungen)) from None
+        with transaction.atomic():
+            application.save(update_fields=["jwks", "updated"])
+            audit.write(
+                audit.EVENT_APPLICATION,
+                None,
+                aktion="Schlüssel ersetzt",
+                anwendung=application.client_id,
+                name=application.name,
+                durch=audit.BY_COMMAND,
+            )
+        self.stdout.write(self.style.SUCCESS(f"Schlüssel der Anwendung „{application.name}“ ersetzt."))
+        self._details(application)
 
     # ------------------------------------------------------------------ sperren / entsperren
 

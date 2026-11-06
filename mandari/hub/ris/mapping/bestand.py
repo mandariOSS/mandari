@@ -37,7 +37,7 @@ from collections.abc import Iterable, Sequence
 from datetime import date
 from typing import Any, Final
 
-from django.db.models import Prefetch, QuerySet
+from django.db.models import Prefetch, Q, QuerySet
 
 from hub.ris.canonical import (
     ORGANIZATION_TYPES,
@@ -84,6 +84,20 @@ from insight_core.services.vorgang_urheber import urheber_je_vorgang
 #: 4: antragstellende Fraktionen ``originatorOrganization``, ``mandari:originator…``, Issue #1138;
 #: 5: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216)
 VERSION: Final = 5
+
+#: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
+#: Der Änderungsfeed nennt danach auch das einbettende Objekt (``hub.api.changes``, Issue #1229); ein Test prüft die
+#: Tabelle an den abgebildeten Objekten. Anders als in OParl 1.1 vorgesehen geben Kommune, Gremium und Vorlage keinen
+#: Ort aus und der Tagesordnungspunkt keine Dateien. Der Sitzungsort ohne eigenes Objekt der Quelle gehört zur Sitzung
+#: und trägt ihre Kennung (``meeting_location``).
+EMBEDDINGS: Final[dict[str, frozenset[str]]] = {
+    "legislativeterm": frozenset({"body"}),
+    "membership": frozenset({"person"}),
+    "agendaitem": frozenset({"meeting"}),
+    "consultation": frozenset({"paper"}),
+    "file": frozenset({"meeting", "paper"}),
+    "location": frozenset({"meeting"}),
+}
 
 # Verbreitete Angaben fremder Quellen, die keiner der sieben Werte sind, aber eindeutig dazugehören.
 # Manche RIS ordnen nach dem Kommunalrecht: Hauptorgan (Rat, Kreistag) und Hilfsorgan (Ausschüsse,
@@ -242,6 +256,48 @@ def prepare_bodies(queryset: QuerySet[OParlBody]) -> QuerySet[OParlBody]:
     return queryset.prefetch_related(
         Prefetch("legislative_terms", queryset=OParlLegislativeTerm.objects.filter(deleted=False)),
     )
+
+
+# =============================================================================
+# Einbettungen für den Änderungsfeed (Issue #1229): je Aufruf eine Abfrage
+# =============================================================================
+
+
+def meetings_embedding_locations(body_id: Any, location_ids: Iterable[Any]) -> dict[Any, list[Any]]:
+    """
+    Sitzungen einer Kommune, die einen der Orte einbetten (ohne Gelöschte): Ort -> Sitzungen.
+
+    Wie ``RefContext.for_meetings``: Die Sitzung nennt ihren Ort in den Rohdaten mit der Kennung der Quelle, als
+    Adresse oder als eingebettetes Objekt.
+    """
+    by_ext = dict(OParlLocation.objects.filter(pk__in=list(location_ids)).values_list("external_id", "pk"))
+    if not by_ext:
+        return {}
+    refs = list(by_ext)
+    meetings = (
+        OParlMeeting.objects.filter(body_id=body_id, deleted=False)
+        .filter(Q(raw_json__location__in=refs) | Q(raw_json__location__id__in=refs))
+        .values_list("pk", "raw_json__location")
+        .order_by("pk")
+    )
+    found: dict[Any, list[Any]] = {}
+    for meeting_id, value in meetings:
+        location_id = by_ext.get(_reference(value) or "")
+        if location_id is not None:
+            found.setdefault(location_id, []).append(meeting_id)
+    return found
+
+
+def meetings_with_own_location(meeting_ids: Iterable[Any], *, deleted: bool | None = None) -> set[Any]:
+    """
+    Sitzungen mit Ortsangabe: Ihr Ort ist unter ihrer eigenen Kennung abrufbar (``meeting_location``), solange sie
+    nicht gelöscht sind. ``deleted``: nur gelöschte bzw. nicht gelöschte Sitzungen; ``None``: alle.
+    """
+    meetings = OParlMeeting.objects.filter(pk__in=list(meeting_ids))
+    if deleted is not None:
+        meetings = meetings.filter(deleted=deleted)
+    located = meetings.filter(Q(location_name__gt="") | Q(location_address__gt=""))
+    return set(located.values_list("pk", flat=True))
 
 
 # =============================================================================
@@ -668,16 +724,6 @@ class BestandMapping:
                 **_timestamps(meeting),
             }
         )
-
-    def derived_location(self, meeting: OParlMeeting, ctx: RefContext) -> Objekt | None:
-        """
-        Der Sitzungsort, den ``meeting`` als eigenes Objekt einbettet, weil die Quelle kein Location-Objekt
-        geliefert hat (``meeting_location``); ``None``, wenn es eines gibt oder keine Ortsangabe. ``ctx`` wie für
-        ``meeting`` (``RefContext.for_meetings``).
-        """
-        if ctx.location_by_ext.get(_location_ext(meeting.raw_json or {}) or ""):
-            return None
-        return self.meeting_location(meeting)
 
     def agenda_item(self, item: OParlAgendaItem, ctx: RefContext) -> Objekt:
         consultation_ids = ctx.consultations_by_agenda_ext.get(item.external_id, [])

@@ -1,0 +1,57 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/submission/Problem.json",
+    "title": "Problem",
+    "description": "Fehler nach RFC 9457 (application/problem+json) (Profil Einreichung, Entwurf). Weitere Eigenschaften sind als Erweiterungen nach RFC 9457 erlaubt.",
+    "type": "object",
+    "required": [
+        "type",
+        "title",
+        "status"
+    ],
+    "properties": {
+        "type": {
+            "description": "Art des Problems als URI, sonst about:blank.",
+            "type": "string",
+            "minLength": 1
+        },
+        "title": {
+            "description": "Kurzbeschreibung der Art des Problems.",
+            "type": "string",
+            "minLength": 1
+        },
+        "status": {
+            "description": "HTTP-Statuscode.",
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+        },
+        "detail": {
+            "description": "Erklärung zu diesem Fall, zur Anzeige für die Person.",
+            "type": "string"
+        },
+        "instance": {
+            "description": "Adresse der Anfrage.",
+            "type": "string"
+        },
+        "errors": {
+            "description": "Bei 422: einzelne Verstöße mit der Stelle im Inhalt der Anfrage als JSON-Pointer (RFC 6901).",
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": [
+                    "detail"
+                ],
+                "properties": {
+                    "pointer": {
+                        "type": "string"
+                    },
+                    "detail": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                }
+            }
+        }
+    }
+}

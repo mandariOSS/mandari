@@ -117,7 +117,9 @@ def _forget_summary(file_obj: Any) -> None:
     from ..models import OParlPaper
 
     if file_obj.paper_id:
-        OParlPaper.objects.filter(pk=file_obj.paper_id, summary__isnull=False).update(summary=None, summary_hinweis="")
+        OParlPaper.objects.filter(pk=file_obj.paper_id, summary__isnull=False).update(
+            summary=None, summary_hinweis="", summary_einfach=None
+        )
 
 
 def _drop_from_index(file_obj: Any) -> None:

@@ -1,8 +1,4 @@
 {
   "beschreibung": "Befehle im Register (hub/contracts/schemas), die noch keinen Endpunkt mit x-mandari-command in der Schnittstelle haben. Die Liste darf nur kürzer werden (scripts/check_schnittstelle.py); bekommt ein Befehl einen Endpunkt, fällt er heraus (hub/api/tests/test_schnittstelle.py).",
-  "befehle": [
-    "attendance.respond",
-    "invitation.acknowledge",
-    "submission.withdraw"
-  ]
+  "befehle": []
 }

@@ -823,6 +823,8 @@ class SessionEvents:
             assert after is not None
             return [self._item_draft(after, "added", None, after.published)]
         item = self.ref("agendaitem", before.id)
+        # Die Rücknahme nennt die Sitzung, in die der Punkt eingebettet war (Änderungsfeed, Issue #1229)
+        embedded_in = {"meeting": self.ref("meeting", before.meeting_id)}
         if after is None:
             return retraction.drafts(
                 "AgendaItem",
@@ -830,6 +832,7 @@ class SessionEvents:
                 retraction.REASON_DELETED_AT_SOURCE,
                 public=before.published,
                 meeting_id=self.ref("meeting", before.meeting_id),
+                embedded_in=embedded_in,
             )
 
         changed = _changed(AGENDA_ITEM_FIELDS, before.fields, after.fields)
@@ -849,7 +852,7 @@ class SessionEvents:
             # Für die Öffentlichkeit ist der Punkt neu; die übrigen Empfänger lesen ihn darauf ebenfalls neu
             return [self._item_draft(after, "added", None, True)]
         if before.published and not after.published:
-            drafts = retraction.drafts("AgendaItem", item, retraction.REASON_NOT_PUBLIC)
+            drafts = retraction.drafts("AgendaItem", item, retraction.REASON_NOT_PUBLIC, embedded_in=embedded_in)
             if changed or moved:
                 drafts.append(self._item_draft(after, change, changed or None, False, previous=before, moved=moved))
             return drafts
@@ -974,7 +977,12 @@ class SessionEvents:
         consultation = self.ref("consultation", before.id)
         if after is None:
             if before.published:
-                return retraction.drafts("Consultation", consultation, retraction.REASON_DELETED_AT_SOURCE)
+                return retraction.drafts(
+                    "Consultation",
+                    consultation,
+                    retraction.REASON_DELETED_AT_SOURCE,
+                    embedded_in={"paper": self.ref("paper", before.paper_id)},
+                )
             return [_deleting(self._consultation_draft(before, "removed", None, False))]
 
         changed = _changed(CONSULTATION_FIELDS, before.fields, after.fields)
@@ -987,7 +995,12 @@ class SessionEvents:
             return [self._consultation_draft(after, "added", None, True)]
         if before.published and not after.published:
             # Die Vorlage wurde zurückgenommen bzw. nichtöffentlich: die Station mit ihr
-            drafts = retraction.drafts("Consultation", consultation, after.withdrawal_reason)
+            drafts = retraction.drafts(
+                "Consultation",
+                consultation,
+                after.withdrawal_reason,
+                embedded_in={"paper": self.ref("paper", before.paper_id)},
+            )
             if changed:
                 drafts.append(self._consultation_draft(after, change, changed, False))
             return drafts
@@ -1040,13 +1053,17 @@ class SessionEvents:
         file_id = self.ref("file", before.id)
         if after is None:
             if before.published:
-                return retraction.drafts("File", file_id, retraction.REASON_DELETED_AT_SOURCE)
+                return retraction.drafts(
+                    "File", file_id, retraction.REASON_DELETED_AT_SOURCE, embedded_in=self._file_embedded_in(before)
+                )
             return [_deleting(self._file_draft(before, "removed", False))]
         if not before.published and after.published:
             return [self._file_draft(after, "added", True)]
         if before.published and not after.published:
             # Wer die Anlage öffentlich kannte, erfährt die Rücknahme; Anlagen haben kein „geändert“ ohne Inhalt
-            return retraction.drafts("File", file_id, after.withdrawal_reason)
+            return retraction.drafts(
+                "File", file_id, after.withdrawal_reason, embedded_in=self._file_embedded_in(before)
+            )
         changed = _changed(FILE_FIELDS, before.fields, after.fields)
         if not after.published:
             return [self._file_draft(after, self._file_change(changed), False)] if changed else []
@@ -1054,10 +1071,18 @@ class SessionEvents:
         internal = [name for name in changed if name not in public]
         drafts = []
         if public:
-            drafts.append(self._file_draft(after, self._file_change(public), True))
+            drafts.append(self._file_draft(after, self._file_change(public), True, previous=before))
         if internal:
             drafts.append(self._file_draft(after, self._file_change(internal), False))
         return drafts
+
+    def _file_embedded_in(self, state: FileState) -> dict[str, uuid.UUID | None]:
+        """
+        Objekte, in die eine öffentliche Anlage eingebettet war (nur öffentliche): Die Rücknahme nennt sie, damit der
+        Änderungsfeed auch sie nennt, wenn die Anlage danach nicht mehr besteht (Issue #1229).
+        """
+        found = {key: (kind, state.public_ref(name)) for name, kind, key in FILE_REFS}
+        return {key: self.ref(kind, pk) if pk is not None else None for key, (kind, pk) in found.items()}
 
     @staticmethod
     def _file_change(names: list[str]) -> str:
@@ -1068,13 +1093,22 @@ class SessionEvents:
         # Neue Zugehörigkeit: Die Datei hängt jetzt (auch) woanders
         return "added"
 
-    def _file_draft(self, state: FileState, change: str, public: bool) -> Draft:
+    def _file_draft(self, state: FileState, change: str, public: bool, *, previous: FileState | None = None) -> Draft:
+        """
+        Ereignis zu einer Anlage. ``previous``: Zustand vor der Änderung eines öffentlichen Ereignisses. Hing die
+        Anlage öffentlich an einem Objekt, an dem sie jetzt nicht mehr hängt, nennt die Nutzlast es als
+        ``previous_paper``, ``previous_meeting`` bzw. ``previous_agenda_item``: Es gibt die Anlage nicht mehr aus,
+        und der Änderungsfeed nennt auch es (Issue #1229).
+        """
         file_id = self.ref("file", state.id)
         payload: dict[str, Any] = {"file": str(file_id), "change": change}
         for name, kind, key in FILE_REFS:
             found = state.public_ref(name) if public else state.fields.get(name)
             if found is not None:
                 payload[key] = str(self.ref(kind, found))
+            earlier = previous.public_ref(name) if public and previous is not None else None
+            if earlier is not None and earlier != found:
+                payload[f"previous_{key}"] = str(self.ref(kind, earlier))
         visibility = Visibility.OEFFENTLICH if public else Visibility.NICHTOEFFENTLICH
         return Draft(FILE_CHANGED, "File", file_id, visibility, Operation.UPSERT, payload)
 

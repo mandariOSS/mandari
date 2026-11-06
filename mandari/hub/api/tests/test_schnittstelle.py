@@ -3,8 +3,9 @@
 Einstieg ``/api/`` und die eine OpenAPI-Beschreibung (Issue #1205).
 
 - Einstieg, Beschreibung und Dokumentationsseite sind erreichbar; der Einstieg ist kein zweites OParl-System.
-- Die Beschreibung umfasst Einstieg, OParl-Aggregator, OParl je Mandant und Session-API v1, ist gültig (alle
-  Verweise auflösbar, Schemas nach JSON Schema 2020-12) und passt zu den echten Antworten der OParl-Ausgaben.
+- Die Beschreibung umfasst Einstieg, OParl-Aggregator, OParl je Mandant (öffentlich und nichtöffentlich), Profil
+  Einreichung und Session-API v1, ist gültig (alle Verweise auflösbar, Schemas nach JSON Schema 2020-12) und passt
+  zu den echten Antworten der OParl-Ausgaben.
 - Die eingecheckte Datei ist aktuell, jeder registrierte Befehl hat einen Endpunkt oder steht in der
   Ausnahmeliste.
 - Die bestehenden Adressen unter ``/api/`` führen weiter zu denselben Endpunkten.
@@ -82,9 +83,21 @@ class TestEinstieg:
         assert body["openapi"] == f"{SITE}/api/openapi.json"
         assert body["documentation"] == f"{SITE}/api/docs/"
         bereiche = {bereich["key"]: bereich for bereich in body["areas"]}
-        assert list(bereiche) == ["oparl", "oparl-mandant", "session-v1"]
+        assert list(bereiche) == [
+            "oparl",
+            "oparl-mandant",
+            "oparl-mandant-nichtoeffentlich",
+            "einreichung",
+            "session-v1",
+        ]
+        assert bereiche["oparl-mandant-nichtoeffentlich"]["entry"] == (
+            f"{SITE}/session/{{tenant_slug}}/api/oparl/nichtoeffentlich/"
+        )
         assert bereiche["oparl"]["entry"] == f"{SITE}/oparl/v1/system"
         assert bereiche["oparl-mandant"]["entry"] == f"{SITE}/session/{{tenant_slug}}/api/oparl/"
+        assert bereiche["einreichung"]["entry"] == (
+            f"{SITE}/session/{{tenant_slug}}/api/oparl/body/kommparl/submissions/"
+        )
         assert bereiche["session-v1"]["entry"] == f"{SITE}/api/v1/session/{{tenant_slug}}/"
 
     def test_aggregator_einstieg_ist_das_system_auch_mit_eigener_oparl_adresse(self, client: Client) -> None:
@@ -136,7 +149,14 @@ class TestBeschreibungAbrufen:
 class TestBeschreibung:
     def test_alle_bereiche_als_schlagworte(self, beschreibung: dict[str, Any]) -> None:
         tags = [tag["name"] for tag in beschreibung["tags"]]
-        assert tags == ["Einstieg", "OParl-Aggregator", "OParl je Mandant", "Session-API v1"]
+        assert tags == [
+            "Einstieg",
+            "OParl-Aggregator",
+            "OParl je Mandant",
+            "OParl je Mandant, nichtöffentlich",
+            "Profil Einreichung",
+            "Session-API v1",
+        ]
         for method, path, operation in operations(beschreibung):
             assert len(operation["tags"]) == 1 and operation["tags"][0] in tags, (method, path)
 
@@ -239,8 +259,20 @@ class TestBefehlsparitaet:
         assert not veraltet, f"Aus der Ausnahmeliste streichen: {sorted(veraltet)}"
 
     def test_einreichung_ist_abgedeckt(self, beschreibung: dict[str, Any]) -> None:
-        assert commands_with_endpoint(beschreibung)["submission.submit"] == [
-            "POST /api/v1/session/{tenant_slug}/applications/submit/"
+        befehle = commands_with_endpoint(beschreibung)
+        assert sorted(befehle["submission.submit"]) == [
+            "POST /api/v1/session/{tenant_slug}/applications/submit/",
+            "POST /session/{tenant_slug}/api/oparl/body/kommparl/submissions/",
+        ]
+        # Profil Einreichung (#1228): Rücknahme, Rückmeldung zur Ladung und Empfangsbestätigung
+        assert befehle["submission.withdraw"] == [
+            "POST /session/{tenant_slug}/api/oparl/body/kommparl/submissions/{id}/withdraw/"
+        ]
+        assert befehle["attendance.respond"] == [
+            "POST /session/{tenant_slug}/api/oparl/meeting/{id}/kommparl/attendance/"
+        ]
+        assert befehle["invitation.acknowledge"] == [
+            "POST /session/{tenant_slug}/api/oparl/meeting/{id}/kommparl/invitation-receipt/"
         ]
 
 

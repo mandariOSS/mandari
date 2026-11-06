@@ -100,9 +100,17 @@ def normalize_code(code: str) -> str:
     return "".join((code or "").split())
 
 
-def complete_login(request, user, remember: bool) -> None:
-    """Anmeldung abschließen: Session-Rotation, Laufzeit, Geräteliste."""
+def complete_login(request, user, remember: bool, *, second_factor: bool = False) -> None:
+    """
+    Anmeldung abschließen: Session-Rotation, Laufzeit, Geräteliste. ``second_factor``: Die Anmeldung war mit zweitem
+    Faktor (Code, Backup-Code oder Sicherheitsschlüssel); geschützte Scopes des OpenID-Connect-Anbieters verlangen das
+    (#565). Das Einrichten eines Faktors bei der Anmeldung zählt nicht dazu.
+    """
+    from .oidc import reauth as oidc_reauth
+
     auth_login(request, user)
+    if second_factor:
+        oidc_reauth.mark_second_factor(request)
     # Ohne „Angemeldet bleiben" endet die Session mit dem Browser, sonst nach 30 Tagen
     request.session.set_expiry(60 * 60 * 24 * 30 if remember else 0)
     if request.session.session_key:
@@ -407,7 +415,7 @@ class LoginTwoFactorView(View):
         if TwoFactorService().verify_2fa(user, code):
             request.session.pop(PENDING_2FA_SESSION_KEY, None)
             self._log(request, user, success=True)
-            complete_login(request, user, bool(data.get("remember")))
+            complete_login(request, user, bool(data.get("remember")), second_factor=True)
             messages.success(request, "Erfolgreich angemeldet.")
             return redirect(LoginView().get_success_url(request, data.get("next") or None))
 

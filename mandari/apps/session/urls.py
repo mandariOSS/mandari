@@ -9,6 +9,8 @@ from django.urls import path
 
 from . import views
 from .api import dcat as dcat_views
+from .api import einreichung as einreichung_views
+from .api import nichtoeffentlich as oparl_noe_views
 from .api import oparl as oparl_api_views
 from .api import views as api_views
 from .views import approvals as approval_views
@@ -1028,6 +1030,79 @@ urlpatterns = [
         "<slug:tenant_slug>/api/oparl/body/kommparl/snapshot/",
         oparl_api_views.kommparl_snapshot_view,
         name="oparl_kommparl_snapshot",
+    ),
+    # Profil Einreichung von kommParl (Issue #1228): nur mit Access-Token im Namen einer Person
+    path(
+        "<slug:tenant_slug>/api/oparl/body/kommparl/submissions/",
+        einreichung_views.submissions_view,
+        name="oparl_kommparl_submissions",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/body/kommparl/submissions/<uuid:pk>/",
+        einreichung_views.submission_view,
+        name="oparl_kommparl_submission",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/body/kommparl/submissions/<uuid:pk>/withdraw/",
+        einreichung_views.withdraw_view,
+        name="oparl_kommparl_submission_withdraw",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/body/kommparl/uploads/",
+        einreichung_views.uploads_view,
+        name="oparl_kommparl_uploads",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/body/kommparl/uploads/<uuid:pk>/",
+        einreichung_views.upload_view,
+        name="oparl_kommparl_upload",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/body/kommparl/submission-rules/",
+        einreichung_views.rules_view,
+        name="oparl_kommparl_submission_rules",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/meeting/<uuid:pk>/kommparl/attendance/",
+        einreichung_views.attendance_view,
+        name="oparl_kommparl_attendance",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/meeting/<uuid:pk>/kommparl/invitation-receipt/",
+        einreichung_views.invitation_receipt_view,
+        name="oparl_kommparl_invitation_receipt",
+    ),
+    # Nichtöffentliche Ausgabe nach dem Profil Nichtöffentliches von kommParl (Issue #565): vor der allgemeinen Liste,
+    # deren Muster sonst …/nichtoeffentlich/ als Liste läse
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/",
+        oparl_noe_views.system_view,
+        name="oparl_noe_system",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/bodies/",
+        oparl_noe_views.bodies_view,
+        name="oparl_noe_bodies",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/body/",
+        oparl_noe_views.body_view,
+        name="oparl_noe_body",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/file/<uuid:pk>/download/",
+        oparl_noe_views.file_download_view,
+        name="oparl_noe_file_download",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/<str:segment>/",
+        oparl_noe_views.list_view,
+        name="oparl_noe_list",
+    ),
+    path(
+        "<slug:tenant_slug>/api/oparl/nichtoeffentlich/<str:kind>/<uuid:pk>/",
+        oparl_noe_views.object_view,
+        name="oparl_noe_object",
     ),
     path(
         "<slug:tenant_slug>/api/oparl/file/<uuid:pk>/download/",

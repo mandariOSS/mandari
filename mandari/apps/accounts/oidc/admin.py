@@ -7,7 +7,8 @@ Die Bibliothek registriert ihre Modelle selbst und nimmt dafür die Klassen aus 
 
 - Anwendungen werden hier oder mit ``manage.py oidc_anwendung`` angelegt (dasselbe Formular, #1215). Erlaubt sind
   Code-Ablauf und Client Credentials, Scopes aus dem Katalog, Signatur RS256. Das Client-Secret wird beim Speichern
-  gehasht und ist danach nicht mehr lesbar. Anlegen, Ändern und Löschen stehen im Sicherheitsprotokoll; wird eine
+  gehasht und ist danach nicht mehr lesbar. Dienste können an genau einen Bereich gebunden sein und sich mit
+  ``private_key_jwt`` ausweisen (öffentliche Schlüssel als JWKS, #565); gebundene Dienste nur so. Anlegen, Ändern und Löschen stehen im Sicherheitsprotokoll; wird eine
   Anwendung ausgeschaltet, sind alle ihre Tokens widerrufen.
 - Tokens, Codes und ID-Tokens sind nur lesbar; Tokens lassen sich widerrufen (mit Eintrag im Protokoll).
   Tokens stehen ohnehin nur als Prüfsumme in der Datenbank.
@@ -45,8 +46,19 @@ class OAuthApplicationForm(ApplicationForm):  # type: ignore[misc]  # Bibliothek
         choices=[(scope.name, f"{scope.name} – {scope.description}") for scope in catalog.CATALOG],
         widget=forms.CheckboxSelectMultiple,
         help_text=(
-            "Im Namen einer Person: openid, profile, email, ratsdaten:lesen, einreichung:schreiben. "
-            "Für Dienste: ratsdaten:lesen, einreichung:schreiben, mandari:bereitstellung."
+            "Im Namen einer Person: openid, profile, email, ratsdaten:lesen, einreichung:schreiben, "
+            "ratsdaten:nichtoeffentlich (zweiter Faktor Pflicht, höchstens 7 Tage nach der Anmeldung). "
+            "Für Dienste: ratsdaten:lesen, einreichung:schreiben, mandari:bereitstellung; "
+            "sitzung:lesen nur mit Bindung an einen Mandanten."
+        ),
+    )
+    jwks = forms.JSONField(
+        label="Öffentliche Schlüssel (JWKS)",
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 6}),
+        help_text=(
+            "Für private_key_jwt (RFC 7523): JWK Set mit den öffentlichen Schlüsseln der Anwendung, nur RS256 "
+            "(RSA ab 2048 Bit) oder ES256 (P-256). Dann gilt kein Client-Secret. Leer: Anmeldung mit Client-Secret."
         ),
     )
 
@@ -63,6 +75,8 @@ class OAuthApplicationForm(ApplicationForm):  # type: ignore[misc]  # Bibliothek
             "skip_authorization",
             "algorithm",
             "is_active",
+            "binding",
+            "jwks",
         )
         labels = {
             "name": "Name",
@@ -73,6 +87,7 @@ class OAuthApplicationForm(ApplicationForm):  # type: ignore[misc]  # Bibliothek
             "redirect_uris": "Redirect-URIs",
             "skip_authorization": "Vertrauenswürdig (ohne Zustimmungsseite)",
             "algorithm": "Signatur des ID-Tokens",
+            "binding": "Bindung",
         }
         help_texts = {
             "name": "Erscheint auf der Zustimmungsseite und unter „Verbundene Anwendungen“.",
@@ -80,6 +95,10 @@ class OAuthApplicationForm(ApplicationForm):  # type: ignore[misc]  # Bibliothek
             "redirect_uris": "Durch Leerzeichen getrennt; sie müssen exakt passen. Nur https.",
             "skip_authorization": "Nur für eigene Anwendungen von mandari. Fremde Anwendungen fragen immer nach.",
             "algorithm": "RS256 für den Code-Ablauf, leer für Dienste.",
+            "binding": (
+                "Nur für Dienste: genau ein Bereich, etwa „session-mandant:<Kennung des Mandanten>“. Am einfachsten mit "
+                "manage.py oidc_anwendung anlegen --mandant <Kurzname>."
+            ),
         }
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -110,8 +129,8 @@ class OAuthApplicationAdmin(ApplicationAdmin, ModelAdmin):  # type: ignore[misc]
     readonly_fields = ("created", "updated")
     fieldsets = (
         ("Anwendung", {"fields": ("name", "is_active", "skip_authorization")}),
-        ("Zugangsdaten", {"fields": ("client_id", "client_secret", "client_type")}),
-        ("Ablauf", {"fields": ("authorization_grant_type", "redirect_uris", "allowed_scopes", "algorithm")}),
+        ("Zugangsdaten", {"fields": ("client_id", "client_secret", "client_type", "jwks")}),
+        ("Ablauf", {"fields": ("authorization_grant_type", "redirect_uris", "allowed_scopes", "algorithm", "binding")}),
         ("Info", {"fields": ("created", "updated"), "classes": ("collapse",)}),
     )
 

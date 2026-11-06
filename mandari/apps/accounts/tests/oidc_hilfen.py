@@ -99,6 +99,13 @@ def anmeldung_zurueckdatieren(client: Client, sekunden: int) -> int:
     return zeitpunkt
 
 
+def zweiter_faktor(client: Client) -> None:
+    """Die Anmeldung in der Sitzung von ``client`` war mit zweitem Faktor (wie nach dem Code-Schritt, #565)."""
+    session = client.session
+    session[reauth.SECOND_FACTOR_KEY] = True
+    session.save()
+
+
 def pkce() -> tuple[str, str]:
     """``code_verifier`` und ``code_challenge`` (S256)."""
     verifier = secrets.token_urlsafe(48)

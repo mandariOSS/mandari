@@ -93,3 +93,5 @@ WEBAUTHN_RP_ID = "testserver"
 # OpenID-Connect-Anbieter in Tests aus, unabhängig von einer lokalen .env; die Tests schalten ihn mit Schlüssel selbst
 # ein (apps/accounts/tests/oidc_hilfen.py)
 OIDC_PROVIDER_ENABLED = False
+# Nichtöffentliche Ausgabe (Issue #565) in Tests aus; die Tests schalten sie selbst ein
+OPARL_NONPUBLIC_ENABLED = False

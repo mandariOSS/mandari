@@ -97,6 +97,15 @@
                 "type": "string"
             }
         },
+        "kommparl:nonPublic": {
+            "description": "{{ Location.properties.kommparl:nonPublic.description }}",
+            "type": "boolean"
+        },
+        "kommparl:publicId": {
+            "description": "{{ Location.properties.kommparl:publicId.description }}",
+            "type": "string",
+            "format": "url"
+        },
         "created": {
             "type": "string",
             "format": "date-time"

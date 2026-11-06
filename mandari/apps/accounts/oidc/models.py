@@ -19,6 +19,11 @@ Was mandari ergänzt:
 - Code und Refresh-Token tragen den Zeitpunkt der Anmeldung in der Sitzung, aus der sie stammen (``auth_time``).
   Daraus entsteht ``auth_time`` im ID-Token, auch nach einem Refresh; ``User.last_login`` gilt dafür nicht, weil
   jede Anmeldung auf irgendeinem Gerät ihn neu setzt.
+- Profil Nichtöffentliches (#565): Ein Dienst kann an genau einen Bereich gebunden sein (``binding``, eine fachfreie
+  Kennung, die die Fachschicht auswertet, :mod:`.bindings`), und eine vertrauliche Anwendung kann sich statt mit
+  Client-Secret mit ``private_key_jwt`` (RFC 7523) ausweisen; ihre öffentlichen Schlüssel stehen in ``jwks``. Gebundene
+  Dienste weisen sich nur so aus. Angenommene Client-Assertions sperren ihre Kennung ``jti`` bis zum Ablauf
+  (:class:`OAuthClientAssertion`).
 
 Die Modelle werden in ``apps/accounts/models.py`` eingebunden und gehören damit zur App ``accounts``.
 """
@@ -43,7 +48,7 @@ from oauth2_provider.models import (
     ApplicationManager,
 )
 
-from . import catalog
+from . import bindings, catalog
 
 #: Abläufe, die eine Anwendung haben darf
 ALLOWED_GRANT_TYPES = (AbstractApplication.GRANT_AUTHORIZATION_CODE, AbstractApplication.GRANT_CLIENT_CREDENTIALS)
@@ -110,6 +115,27 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
         verbose_name="Aktiv",
         help_text="Ausgeschaltet bekommt die Anwendung keine Tokens mehr, und ihre Tokens gelten nicht mehr.",
     )
+    binding = models.CharField(
+        max_length=128,
+        blank=True,
+        default="",
+        db_default="",
+        verbose_name="Bindung",
+        help_text=(
+            "Nur für Dienste: genau ein Bereich, an den die Anwendung gebunden ist, etwa ein Session-Mandant "
+            "(„session-mandant:<Kennung>“). Leer: keine Bindung."
+        ),
+    )
+    jwks = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        verbose_name="Öffentliche Schlüssel (JWKS)",
+        help_text=(
+            "Für die Anmeldung mit private_key_jwt (RFC 7523): öffentliche Schlüssel der Anwendung als JWK Set, "
+            "nur RS256 (RSA ab 2048 Bit) und ES256 (P-256). Dann gilt kein Client-Secret."
+        ),
+    )
 
     objects = ApplicationManager()
 
@@ -130,9 +156,14 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
 
     @property
     def scope_list(self) -> list[str]:
-        """Erlaubte Scopes, die es im Katalog gibt und die zum Ablauf der Anwendung passen."""
+        """Erlaubte Scopes, die es im Katalog gibt und die zum Ablauf und zur Bindung der Anwendung passen."""
         names = self.allowed_scopes if isinstance(self.allowed_scopes, list) else []
-        return catalog.allowed_for([str(name) for name in names], person=self.acts_for_person)
+        return catalog.allowed_for([str(name) for name in names], person=self.acts_for_person, bound=bool(self.binding))
+
+    @property
+    def uses_private_key_jwt(self) -> bool:
+        """Weist sich die Anwendung mit ``private_key_jwt`` aus (öffentliche Schlüssel in ``jwks``)?"""
+        return bool(self.jwks)
 
     def get_allowed_schemes(self) -> list[str]:
         return ["https", "http"] if settings.DEBUG else ["https"]
@@ -164,11 +195,21 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
             unknown = sorted(str(name) for name in names if catalog.get(str(name)) is None)
             if unknown:
                 errors.setdefault("allowed_scopes", []).append(f"Unbekannte Scopes: {', '.join(unknown)}.")
-            unfit = sorted(str(name) for name in names if catalog.get(str(name)) and str(name) not in self.scope_list)
+            unbound = sorted(str(name) for name in names if self._needs_binding(str(name)))
+            if unbound:
+                errors.setdefault("allowed_scopes", []).append(
+                    f"Nur für Dienste mit Bindung an einen Bereich: {', '.join(unbound)}."
+                )
+            unfit = sorted(
+                str(name)
+                for name in names
+                if catalog.get(str(name)) and str(name) not in self.scope_list and str(name) not in unbound
+            )
             if unfit:
                 errors.setdefault("allowed_scopes", []).append(
                     f"Passen nicht zum Ablauf der Anwendung: {', '.join(unfit)}."
                 )
+        self._clean_binding_and_keys(errors)
 
         if self.authorization_grant_type == AbstractApplication.GRANT_CLIENT_CREDENTIALS:
             if self.client_type != AbstractApplication.CLIENT_CONFIDENTIAL:
@@ -178,12 +219,41 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
         elif self.authorization_grant_type == AbstractApplication.GRANT_AUTHORIZATION_CODE:
             if self.algorithm != AbstractApplication.RS256_ALGORITHM:
                 errors.setdefault("algorithm", []).append("ID-Tokens signiert mandari nur mit RS256.")
-        if self.client_type == AbstractApplication.CLIENT_CONFIDENTIAL:
+        if self.client_type == AbstractApplication.CLIENT_CONFIDENTIAL and not self.uses_private_key_jwt:
             problem = client_secret_problem(str(self.client_secret or ""))
             if problem:
                 errors.setdefault("client_secret", []).append(problem)
         if errors:
             raise ValidationError(errors)
+
+    def _needs_binding(self, name: str) -> bool:
+        """Passt der Scope zum Ablauf, verlangt aber eine Bindung, die die Anwendung nicht hat?"""
+        scope = catalog.get(name)
+        if scope is None or not scope.bound or self.binding:
+            return False
+        return bool(scope.person if self.acts_for_person else scope.service)
+
+    def _clean_binding_and_keys(self, errors: dict[str, list[str]]) -> None:
+        """Bindung nur für Dienste mit ``private_key_jwt``; Schlüssel nur öffentlich, RS256 oder ES256 (#565)."""
+        from .client_assertion import jwks_problems
+
+        if self.jwks not in (None, {}, ""):
+            problems = list(jwks_problems(self.jwks))
+            if self.client_type != AbstractApplication.CLIENT_CONFIDENTIAL:
+                problems.insert(0, "Öffentliche Schlüssel gibt es nur für vertrauliche Anwendungen.")
+            if problems:
+                errors.setdefault("jwks", []).extend(problems)
+        if not self.binding:
+            return
+        problem = bindings.problem(str(self.binding))
+        if problem:
+            errors.setdefault("binding", []).append(problem)
+        if self.authorization_grant_type != AbstractApplication.GRANT_CLIENT_CREDENTIALS:
+            errors.setdefault("binding", []).append("Gebunden werden nur Dienste (Client Credentials).")
+        if not self.uses_private_key_jwt:
+            errors.setdefault("jwks", []).append(
+                "Gebundene Dienste weisen sich mit private_key_jwt aus; bitte öffentliche Schlüssel (JWKS) eintragen."
+            )
 
     def save(self, *args: Any, **kwargs: Any) -> None:
         # Unabhängig vom Formular: Secret immer gehasht, Herkunft immer „von Hand angelegt“
@@ -194,6 +264,30 @@ class OAuthApplication(AbstractApplication):  # type: ignore[misc]  # Bibliothek
             # sonst jede Anfrage ohne Secret als Client-Authentifizierung durchgehen ließe
             self.client_secret = str(generate_client_secret())
         super().save(*args, **kwargs)
+
+
+class OAuthClientAssertion(models.Model):
+    """
+    Angenommene Client-Assertion (``private_key_jwt``, RFC 7523, Abschnitt 3): ihre Kennung ``jti`` ist bis zum Ablauf
+    gesperrt, eine zweite Nutzung wird abgelehnt.
+
+    Ohne Fremdschlüssel (nur die Client-ID): Ein älteres Image, das die Tabelle nicht kennt, kann Anwendungen weiter
+    löschen. Abgelaufene Einträge räumt das Annehmen neuer Assertions weg.
+    """
+
+    client_id = models.CharField(max_length=100, verbose_name="Client-ID")
+    jti = models.CharField(max_length=255, verbose_name="Kennung (jti)")
+    expires = models.DateTimeField(verbose_name="Gesperrt bis")
+    created = models.DateTimeField(auto_now_add=True, verbose_name="Angenommen am")
+
+    class Meta:
+        verbose_name = "OIDC-Client-Assertion"
+        verbose_name_plural = "OIDC-Client-Assertions"
+        constraints = [models.UniqueConstraint(fields=["client_id", "jti"], name="oidc_assertion_jti_einmal")]
+        indexes = [models.Index(fields=["expires"], name="oidc_assertion_ablauf")]
+
+    def __str__(self) -> str:
+        return f"{self.client_id}: {self.jti}"
 
 
 class OAuthAccessToken(AbstractAccessToken):  # type: ignore[misc]  # Bibliothek ohne Typen
