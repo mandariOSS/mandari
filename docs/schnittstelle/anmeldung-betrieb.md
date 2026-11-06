@@ -1,6 +1,6 @@
 # Anmeldung für Anwendungen: Betrieb
 
-Stand: 2026-11-05 (Issue #1215, Teil von Epic #1203). Für Betreiber einer mandari-Installation. Wie Anwendungen den
+Stand: 2026-11-06 (Issues #1215 und #565, Teil von Epic #1203). Für Betreiber einer mandari-Installation. Wie Anwendungen den
 Anbieter nutzen, steht in [Anmeldung für Anwendungen](anmeldung.md).
 
 mandari ist OpenID-Connect-Anbieter, aber standardmäßig ausgeschaltet. Diese Anleitung führt durch das Einschalten
@@ -50,6 +50,7 @@ chmod 400 oidc.pem
 | `OIDC_REFRESH_TOKEN_DAYS` | Tage, die ein ungenutztes Refresh-Token nach Ablauf seines Access-Tokens gilt | `30` |
 | `OIDC_TOKEN_RATE_LIMIT` | Anfragen je Minute und Adresse an Token-Endpunkt, Widerruf und Introspektion (IPv6 je /64), `0` = aus | `30` |
 | `SITE_URL` | Aussteller (`iss`): `https://<host>` ohne Pfad. Bei Docker Compose aus `DOMAIN` gesetzt | – |
+| `OPARL_NONPUBLIC_ENABLED` | Nichtöffentliche Ausgabe je Session-Mandant (Profil Nichtöffentliches, #565); wirkt nur mit eingeschaltetem Anbieter. Vorher externer Penetrationstest | `false` |
 
 **Ein Schlüssel für alle Dienste mit den Einstellungen der Anwendung.** Bei Docker Compose lesen die Anwendung und die
 drei Worker (`worker`, `worker-heavy`, `worker-live`) dieselbe `.env`. Ist der Anbieter eingeschaltet, startet keiner
@@ -89,6 +90,7 @@ Der Anbieter braucht zwei Pfade an der Wurzel des Ausstellers:
 
 - `/oauth/*`: Autorisierung, Token, Widerruf, Introspektion, Angaben zur Person, JWKS
 - `/.well-known/openid-configuration`: Discovery
+- `/.well-known/oauth-protected-resource/*`: Metadaten der nichtöffentlichen Ausgabe (RFC 9728, #565)
 
 Der mitgelieferte `Caddyfile` leitet beide an die Anwendung weiter, ebenso `/accounts/*` mit Anmeldung und der Seite
 „Verbundene Anwendungen“. Wer einen anderen Proxy nutzt, leitet dieselben Pfade weiter und reicht `Host` sowie
@@ -172,6 +174,22 @@ Die Ausgabe nennt Client-ID und bei vertraulichen Anwendungen das Client-Secret.
 eine Mal**; gespeichert ist nur sein Hash. Es geht auf einem sicheren Weg an die Anwendung. Geht es verloren, bekommt
 die Anwendung im Admin ein neues.
 
+**Ein Dienst eines Mandanten mit Zugriff auf Nichtöffentliches** (#565): an genau einen Session-Mandanten gebunden,
+Anmeldung mit `private_key_jwt`. Die Anwendung erzeugt ihr Schlüsselpaar selbst und gibt nur den öffentlichen Schlüssel
+als JWK Set (oder einzelnen JWK) heraus; private Teile lehnt der Befehl ab:
+
+```bash
+python manage.py oidc_anwendung anlegen --name "Fachverfahren" --typ vertraulich --grant client-credentials \
+    --mandant musterstadt --jwks dienst-jwks.json --scope sitzung:lesen
+```
+
+Es gibt kein Client-Secret. `--jwks` geht auch ohne `--mandant` für jeden vertraulichen Dienst. Neue Schlüssel
+(Schlüsselwechsel des Dienstes) ersetzt `python manage.py oidc_anwendung schluessel <client-id> --jwks neue.json`;
+während eines Wechsels enthält das Set beide Schlüssel mit eigener `kid`.
+
+**Eine App für nichtöffentliche Unterlagen** im Namen von Personen: wie oben, mit `--scope ratsdaten:nichtoeffentlich`.
+Den Scope erhält nur, wer ihn ausdrücklich bekommt; Personen brauchen einen zweiten Faktor.
+
 `--skip-authorization` lässt die Zustimmungsseite weg. Das ist nur für eigene Anwendungen von mandari gedacht; fremde
 Anwendungen fragen die Person jedes Mal.
 
@@ -218,6 +236,9 @@ schaltet sie wieder ein; alte Tokens leben dabei nicht auf, Personen stimmen ern
 
 ## Prüfprotokoll, Ratenbegrenzung, Speicherung
 
+- **Nichtöffentliche Ausgabe:** Jeder Abruf mit Nichtöffentlichem steht im Prüfprotokoll des Session-Mandanten
+  (Person oder Dienst, Client-ID, Kennungen der Objekte). Die Ausgabe von Tokens nennt im Sicherheitsprotokoll auch
+  `anmeldung: private_key_jwt` und die Bindung eines Dienstes.
 - **Prüfprotokoll:** Das Sicherheitsprotokoll (`SecurityAuditLog`) hält jede Ausgabe eines Tokens (`oidc_token`),
   jeden Widerruf (`oidc_widerruf`, durch Anwendung, Person, Passwortwechsel oder Plattform-Administration, beim
   Sperren mit Anzahl) und jede Änderung an Anwendungen fest (`oidc_anwendung`: im Admin mit Konto, mit dem Befehl

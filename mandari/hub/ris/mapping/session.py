@@ -8,7 +8,10 @@ bauen darauf auf. Eigene Erweiterungen tragen den Namensraum ``mandari:``.
 
 Grundsätze:
 
-- **Nur Öffentliches.** Abgebildet werden die öffentlichen Felder öffentlicher Objekte.
+- **Nur Öffentliches – außer in der nichtöffentlichen Ausgabe.** Abgebildet werden die öffentlichen Felder
+  öffentlicher Objekte. Nur mit einer ``SessionSicht`` (Profil Nichtöffentliches von kommParl, Issue #565) bildet die
+  Abbildung zusätzlich ab, was die Sicht zeigt; welche Person oder welcher Dienst was sieht, entscheidet das
+  Fachmodul. Ohne Sicht ist jede Ausgabe unverändert.
   Verschlüsselte Felder (Telefon, Adresse, Bankdaten, nichtöffentliche Beschlusstexte) liest die
   Abbildung nie; die E-Mail einer Person nur über ``published_email`` (Einwilligung). Verweise auf
   nichtöffentliche Sitzungen, Tagesordnungspunkte und Vorlagen entfallen.
@@ -29,6 +32,12 @@ Grundsätze:
 - **Keine Abfragen je Objekt.** Wer Listen abbildet, lädt die Beziehungen vorher (``select_related``,
   ``prefetch_related``); die Abbildung greift auf ``.all()`` der vorgeladenen Beziehungen zu.
 
+**Nichtöffentliche Ausgabe** (``SessionSicht``): eigene Adressen unter ``base`` (die Adresse der nichtöffentlichen
+Ausgabe), alle Verweise zeigen dorthin. Nichtöffentliche Objekte tragen ``kommparl:nonPublic``, Objekte, die auch
+öffentlich abrufbar sind, in ``kommparl:publicId`` ihre öffentliche Adresse (``SessionSicht.public``). Nichtöffentliche
+Tagesordnungspunkte stehen mit ``public: false`` in ``agendaItem`` ihrer Sitzung, nichtöffentliche Anlagen in
+``auxiliaryFile``; der nichtöffentliche Teil eines Beschlusstexts steht in ``kommparl:nonPublicResolutionText``.
+
 ``VERSION`` steigt, wenn sich für dasselbe Session-Objekt die Abbildung ändert.
 """
 
@@ -48,8 +57,9 @@ from hub.ris.canonical import Objekt, as_list, clean, file_text, iso, iso_date, 
 
 #: Version der Abbildung (2: Umsetzungsstand und Genehmigung der Niederschrift, Issue #525;
 #: 3: ``kommparl:changes``/``kommparl:snapshot`` am Body und ``kommparl:conformsTo`` am System, Issue #1216;
-#: 4: Adressen des Profils Einreichung an Body und Sitzung, wenn die Ausgabe es anbietet, Issue #1228)
-VERSION: Final = 4
+#: 4: Adressen des Profils Einreichung an Body und Sitzung, wenn die Ausgabe es anbietet, Issue #1228;
+#: 5: nichtöffentliche Ausgabe mit ``SessionSicht`` und ``kommparl:nonPublicSystem`` am System, Issue #565)
+VERSION: Final = 5
 
 #: Einbettungen dieser Abbildung: eingebetteter Typ -> Typen, die ihn intern ausgeben (OParl 1.1, Kapitel „Schema“).
 #: Der Änderungsfeed nennt danach auch das einbettende Objekt (``hub.api.changes``, Issue #1229); ein Test prüft die
@@ -122,6 +132,32 @@ class SessionSource:
     meeting_format: Callable[[Any], Any]
     results_protocol: Callable[[Any], Any]
     implementation_public: Callable[[Any], bool] | None = None
+
+
+@dataclass(frozen=True)
+class SessionSicht:
+    """
+    Nichtöffentliche Ausgabe (Profil Nichtöffentliches, Issue #565): was über das Öffentliche hinaus abgebildet wird.
+
+    Wer was sieht, legt das Fachmodul fest (Rechte der Person mit Geltungsbereich, Mitwirkungsverbot, Bindung eines
+    Dienstes); die Abbildung fragt nur. Der Aufrufer reicht nur Objekte herein, die die Sicht zeigt (Querysets); die
+    Abbildung verlässt sich darauf nicht und prüft eingebettete Objekte und Verweise selbst.
+
+    - ``meeting(sitzung)``: Sitzung vollständig, auch wenn sie nichtöffentlich ist (Ort, Tagesordnung, Anlagen)
+    - ``agenda_item(top)``: Tagesordnungspunkt, auch nichtöffentlich, samt nichtöffentlichem Beschlusstext
+    - ``paper(vorlage)``: Vorlage, auch nichtöffentlich
+    - ``file(anlage)``: Anlage, auch nichtöffentlich; ein sichtbares Bezugsobjekt braucht sie zusätzlich
+    - ``nonpublic_resolution_text(top)``: nichtöffentlicher Teil des Beschlusstexts (leer: keiner)
+    - ``public``: Adressen der öffentlichen Ausgabe desselben Mandanten (``kommparl:publicId``); ``None``, wenn der
+      Mandant keine öffentliche Ausgabe hat
+    """
+
+    meeting: Callable[[Any], bool]
+    agenda_item: Callable[[Any], bool]
+    paper: Callable[[Any], bool]
+    file: Callable[[Any], bool]
+    nonpublic_resolution_text: Callable[[Any], str]
+    public: SessionUris | None
 
 
 class SessionUris:
@@ -237,6 +273,8 @@ class SessionMapping:
         id_base: str | Callable[[], str] | None = None,
         conforms_to: Sequence[str] = (),
         submission: bool = False,
+        nonpublic_system: str | None = None,
+        sicht: SessionSicht | None = None,
     ) -> None:
         self.tenant = tenant
         #: Adressen aus ``base``, kanonische Kennungen aus ``id_base`` (``SessionUris``)
@@ -248,6 +286,50 @@ class SessionMapping:
         self.submission = submission
         #: Kennungen aus kommParl, die die Ausgabe vollständig erfüllt (``System``, ``kommparl:conformsTo``)
         self.conforms_to = list(conforms_to)
+        #: Öffentliche Ausgabe: Adresse der nichtöffentlichen (``kommparl:nonPublicSystem``), wenn sie angeboten wird
+        self.nonpublic_system = nonpublic_system
+        #: Nichtöffentliche Ausgabe (#565): was über das Öffentliche hinaus abgebildet wird; ``None``: nur Öffentliches
+        self.sicht = sicht
+
+    # -- Sichtbarkeit: öffentlich oder in der nichtöffentlichen Sicht ----------------------------------------------
+
+    def _meeting_full(self, meeting: Any) -> bool:
+        """Sitzung vollständig abbilden (öffentlich oder in der Sicht), nicht nur den Termin?"""
+        return bool(meeting.is_public) or (self.sicht is not None and self.sicht.meeting(meeting))
+
+    @staticmethod
+    def _item_public(item: Any) -> bool:
+        return bool(item.is_public and item.meeting.is_public)
+
+    def _item_visible(self, item: Any) -> bool:
+        return self._item_public(item) or (self.sicht is not None and self.sicht.agenda_item(item))
+
+    def _paper_visible(self, paper: Any) -> bool:
+        return bool(self.source.is_published(paper)) or (self.sicht is not None and self.sicht.paper(paper))
+
+    def _file_flag_visible(self, file_obj: Any) -> bool:
+        """Anlage an einem abgebildeten Objekt zeigen? Öffentlich oder in der Sicht (Bezugsobjekt prüft ``file``)."""
+        return bool(file_obj.is_public) or (self.sicht is not None and self.sicht.file(file_obj))
+
+    def _public_url(self, kind: str, pk: Any = None) -> str | None:
+        """Adresse desselben Objekts in der öffentlichen Ausgabe (``kommparl:publicId``), nur in der Sicht."""
+        public = self.sicht.public if self.sicht is not None else None
+        if public is None:
+            return None
+        if kind == "system":
+            return public.system()
+        if kind == "body":
+            return public.body()
+        return public.obj(kind, pk)
+
+    def _marks(self, public_url: str | None, *, non_public: bool) -> Objekt:
+        """
+        Kennzeichen der nichtöffentlichen Ausgabe (#565): ``kommparl:nonPublic`` für Nichtöffentliches,
+        ``kommparl:publicId`` für Objekte, die auch öffentlich abrufbar sind. Ohne Sicht nichts.
+        """
+        if self.sicht is None:
+            return {}
+        return clean({"kommparl:nonPublic": True if non_public else None, "kommparl:publicId": public_url})
 
     # -- System, Körperschaft, Wahlperiode -------------------------------------------------------
 
@@ -259,6 +341,8 @@ class SessionMapping:
                 "type": schema_type("system"),
                 "oparlVersion": "https://schema.oparl.org/1.1/",
                 "kommparl:conformsTo": self.conforms_to,
+                # Profil Nichtöffentliches (#565): der einzige Verweis der öffentlichen auf die nichtöffentliche Ausgabe
+                "kommparl:nonPublicSystem": self.nonpublic_system,
                 # Lizenz der offenen Daten, sofern die Verwaltung eine festgelegt hat (Einstellungen)
                 "license": tenant.oparl_license or None,
                 "body": self.uris.bodies(),
@@ -269,6 +353,7 @@ class SessionMapping:
                 "vendor": "https://mandari.de",
                 "product": "https://github.com/mandariOSS/mandari",
                 **_timestamps(tenant),
+                **self._marks(self._public_url("system"), non_public=False),
             }
         )
 
@@ -307,11 +392,16 @@ class SessionMapping:
                 "kommparl:submission": self.uris.submissions() if self.submission else None,
                 "kommparl:submissionUpload": self.uris.submission_uploads() if self.submission else None,
                 "kommparl:submissionRules": self.uris.submission_rules() if self.submission else None,
+                **self._marks(self._public_url("body"), non_public=False),
             }
         )
         # Pflichtfeld in OParl 1.1: auch ohne Wahlperiode vorhanden (leere Liste)
         body["legislativeTerm"] = [self.legislative_term(term) for term in tenant.legislative_terms.all()]
         return body
+
+    def _public_mark(self, kind: str, pk: Any) -> Objekt:
+        """``kommparl:publicId`` eines Objekts, das immer öffentlich ist (nur in der Sicht)."""
+        return self._marks(self._public_url(kind, pk), non_public=False)
 
     def legislative_term(self, term: Any) -> Objekt:
         return clean(
@@ -323,6 +413,7 @@ class SessionMapping:
                 "startDate": iso_date(term.start_date),
                 "endDate": iso_date(term.end_date),
                 **_timestamps(term),
+                **self._public_mark("legislativeterm", term.id),
             }
         )
 
@@ -343,6 +434,7 @@ class SessionMapping:
                 "subOrganizationOf": self.uris.obj("organization", org.parent_id) if org.parent_id else None,
                 "membership": [self.uris.obj("membership", m.id) for m in org.memberships.all()],
                 **_timestamps(org),
+                **self._public_mark("organization", org.id),
             }
         )
 
@@ -366,6 +458,7 @@ class SessionMapping:
                 # OParl 1.1 bettet Memberships in Person ein
                 "membership": [self.membership(m) for m in person.memberships.all()],
                 **_timestamps(person),
+                **self._public_mark("person", person.id),
             }
         )
 
@@ -381,20 +474,27 @@ class SessionMapping:
                 "startDate": iso_date(membership.start_date),
                 "endDate": iso_date(membership.end_date),
                 **_timestamps(membership),
+                **self._public_mark("membership", membership.id),
             }
         )
 
     # -- Sitzung, Ort, Tagesordnung ------------------------------------------------------------------
 
+    def _meeting_public_url(self, meeting: Any) -> str | None:
+        """Öffentliche Adresse der Sitzung (auch nur mit Termin), nur in der Sicht."""
+        if not (meeting.is_public or getattr(meeting, "date_public", False)):
+            return None
+        return self._public_url("meeting", meeting.id)
+
     def meeting(self, meeting: Any) -> Objekt:
-        if not meeting.is_public:
+        if not self._meeting_full(meeting):
             # Termin einer nichtöffentlichen Sitzung (Issue #757): nur Termin und Gremien, nie Ort oder Inhalte
             _require_public("meeting", meeting, bool(getattr(meeting, "date_public", False)))
             return self._meeting_date(meeting)
         protocol_file = self.source.results_protocol(meeting)
         protocol_file_id = protocol_file.pk if protocol_file is not None else None
-        files = [f for f in meeting.files.all() if f.is_public and f.pk != protocol_file_id]
-        items = [i for i in meeting.agenda_items.all() if i.is_public]
+        files = [f for f in meeting.files.all() if self._file_flag_visible(f) and f.pk != protocol_file_id]
+        items = [i for i in meeting.agenda_items.all() if self._item_visible(i)]
         items.sort(key=lambda i: (i.order, i.number))
         return clean(
             {
@@ -415,9 +515,10 @@ class SessionMapping:
                 # Genehmigung dieser Fassung (Issue #525): nur, wenn sie veröffentlicht ist
                 "mandari:protocolApproval": self._protocol_approval(meeting) if protocol_file is not None else None,
                 "auxiliaryFile": [self.file(f) for f in files],
-                # OParl 1.1 bettet Tagesordnungspunkte in Meeting ein (nur der öffentliche Teil)
+                # OParl 1.1 bettet Tagesordnungspunkte in Meeting ein (nur der öffentliche Teil, in der Sicht mehr)
                 "agendaItem": [self.agenda_item(item) for item in items],
                 **_timestamps(meeting),
+                **self._marks(self._meeting_public_url(meeting), non_public=not meeting.is_public),
                 # Abgekündigt: Der Ort steht als Location-Objekt in ``location`` (docs/SESSION_OPARL_API.md)
                 "mandari:locationName": meeting.location or None,
                 "mandari:locationRoom": meeting.room or None,
@@ -459,6 +560,7 @@ class SessionMapping:
                 "agendaItem": [],
                 **_timestamps(meeting),
                 "mandari:nonPublic": True,
+                **self._marks(self._meeting_public_url(meeting), non_public=True),
                 # Geladene melden sich auch zu nichtöffentlichen Sitzungen zurück (Profil Einreichung)
                 **self._submission_extension(meeting),
             }
@@ -472,7 +574,7 @@ class SessionMapping:
         deren Kennung (``…/location/<Kennung der Sitzung>/``). Abgebildet wird es nur für öffentliche
         Sitzungen.
         """
-        _require_public("location", meeting, meeting.is_public)
+        _require_public("location", meeting, self._meeting_full(meeting))
         fields = {
             "description": meeting.location,
             "room": meeting.room,
@@ -490,6 +592,10 @@ class SessionMapping:
                 "bodies": [self.uris.body()],
                 "meetings": [self.uris.obj("meeting", meeting.id)],
                 **_timestamps(meeting),
+                **self._marks(
+                    self._public_url("location", meeting.id) if meeting.is_public else None,
+                    non_public=not meeting.is_public,
+                ),
             }
         )
 
@@ -520,10 +626,11 @@ class SessionMapping:
         }
 
     def agenda_item(self, item: Any) -> Objekt:
-        # Nur der öffentliche Teil öffentlicher Sitzungen
-        _require_public("agendaitem", item, item.is_public and item.meeting.is_public)
+        # Nur der öffentliche Teil öffentlicher Sitzungen, in der nichtöffentlichen Sicht auch mehr
+        _require_public("agendaitem", item, self._item_visible(item))
+        public = self._item_public(item)
         consultation = self._visible_consultation(item)
-        files = [f for f in item.files.all() if f.is_public]
+        files = [f for f in item.files.all() if self._file_flag_visible(f)]
         return clean(
             {
                 "id": self.uris.obj("agendaitem", item.id),
@@ -532,13 +639,24 @@ class SessionMapping:
                 "number": item.number,
                 "order": item.order,
                 "name": item.name,
-                "public": True,  # nichtöffentliche TOPs werden nie abgebildet
+                # Öffentlich abgebildet werden nur öffentliche TOPs; in der Sicht auch nichtöffentliche (false)
+                "public": public,
                 "consultation": self.uris.obj("consultation", consultation.id) if consultation else None,
                 "result": item.get_vote_result_display() if item.vote_result != "pending" else None,
                 # Nur der öffentliche Beschlusstext – das verschlüsselte Feld nie
                 "resolutionText": item.resolution_text or None,
                 "auxiliaryFile": [self.file(f) for f in files],
+                # Nichtöffentlicher Teil des Beschlusstexts, nur in der Sicht und nur mit Zugang zum TOP (#565)
+                "kommparl:nonPublicResolutionText": (
+                    self.sicht.nonpublic_resolution_text(item) or None
+                    if self.sicht is not None and self.sicht.agenda_item(item)
+                    else None
+                ),
                 **_timestamps(item),
+                **self._marks(
+                    self._public_url("agendaitem", item.id) if public else None,
+                    non_public=not public,
+                ),
                 "mandari:resolutionNumber": item.resolution_number or None,
                 "mandari:vote": self._vote(item),
                 "mandari:rollCall": self._roll_call(item),
@@ -599,7 +717,7 @@ class SessionMapping:
             consultation = item.consultation
         except ObjectDoesNotExist:
             return None
-        if consultation is None or not self.source.is_published(consultation.paper):
+        if consultation is None or not self._paper_visible(consultation.paper):
             return None
         return consultation
 
@@ -641,8 +759,9 @@ class SessionMapping:
     # -- Vorlage, Beratung, Datei -----------------------------------------------------------------
 
     def paper(self, paper: Any) -> Objekt:
-        _require_public("paper", paper, self.source.is_published(paper))
-        files = sorted((f for f in paper.files.all() if f.is_public), key=lambda f: f.created_at)
+        _require_public("paper", paper, self._paper_visible(paper))
+        published = bool(self.source.is_published(paper))
+        files = sorted((f for f in paper.files.all() if self._file_flag_visible(f)), key=lambda f: f.created_at)
         main_file = files[0] if files else None
         consultations = sorted(paper.consultations.all(), key=lambda c: (c.order, c.created_at))
         return clean(
@@ -668,17 +787,22 @@ class SessionMapping:
                 if paper.main_organization_id
                 else None,
                 **_timestamps(paper),
+                **self._marks(
+                    self._public_url("paper", paper.id) if published else None,
+                    non_public=not published,
+                ),
             }
         )
 
     def consultation(self, consultation: Any) -> Objekt:
         # Eine Beratung ist so öffentlich wie ihre Vorlage
-        _require_public("consultation", consultation, self.source.is_published(consultation.paper))
+        _require_public("consultation", consultation, self._paper_visible(consultation.paper))
+        published = bool(self.source.is_published(consultation.paper))
         meeting = consultation.meeting
         item = consultation.agenda_item
-        # Verweise auf nichtöffentliche Sitzungen und TOPs entfallen
-        meeting_visible = meeting is not None and meeting.is_public
-        item_visible = item is not None and item.is_public and item.meeting.is_public
+        # Verweise auf nichtöffentliche Sitzungen und TOPs entfallen (in der Sicht: auf solche, die sie nicht zeigt)
+        meeting_visible = meeting is not None and self._meeting_full(meeting)
+        item_visible = item is not None and self._item_visible(item)
         # Eine Station in einer nichtöffentlichen Sitzung bzw. auf einem nichtöffentlichen TOP nennt auch
         # Gremium und Rolle nicht – öffentlich bleibt nur, dass die Vorlage dort beraten wird
         non_public = (meeting is not None and not meeting_visible) or (item is not None and not item_visible)
@@ -693,6 +817,10 @@ class SessionMapping:
                 "authoritative": None if non_public else consultation.authoritative,
                 "role": None if non_public else consultation.get_role_display(),
                 **_timestamps(consultation),
+                **self._marks(
+                    self._public_url("consultation", consultation.id) if published else None,
+                    non_public=not published,
+                ),
             }
         )
 
@@ -700,14 +828,16 @@ class SessionMapping:
         download = self.uris.file_download(file_obj.id)
         file_name = self.source.download_name(file_obj)
         refs: Objekt = {}
-        if file_obj.paper_id and self.source.is_published(file_obj.paper):
+        if file_obj.paper_id and self._paper_visible(file_obj.paper):
             refs["paper"] = [self.uris.obj("paper", file_obj.paper_id)]
-        if file_obj.meeting_id and file_obj.meeting.is_public:
+        if file_obj.meeting_id and self._meeting_full(file_obj.meeting):
             refs["meeting"] = [self.uris.obj("meeting", file_obj.meeting_id)]
-        if file_obj.agenda_item_id and file_obj.agenda_item.is_public and file_obj.agenda_item.meeting.is_public:
+        if file_obj.agenda_item_id and self._item_visible(file_obj.agenda_item):
             refs["agendaItem"] = [self.uris.obj("agendaitem", file_obj.agenda_item_id)]
-        # Öffentlich ist eine Datei nur mit mindestens einem öffentlichen Bezugsobjekt (Vorlage, Sitzung, TOP)
-        _require_public("file", file_obj, bool(file_obj.is_public and refs))
+        # Öffentlich ist eine Datei nur mit mindestens einem öffentlichen Bezugsobjekt (Vorlage, Sitzung, TOP); in der
+        # Sicht genügt ein Bezugsobjekt, das die Sicht zeigt
+        _require_public("file", file_obj, bool(self._file_flag_visible(file_obj) and refs))
+        public = self.sicht is not None and self._file_public(file_obj)
         return clean(
             {
                 "id": self.uris.obj("file", file_obj.id),
@@ -726,8 +856,22 @@ class SessionMapping:
                 "text": file_text(file_obj) if include_text else None,
                 **refs,
                 **_timestamps(file_obj),
+                **self._marks(
+                    self._public_url("file", file_obj.id) if public else None,
+                    non_public=not public,
+                ),
                 "mandari:version": file_obj.version,
             }
+        )
+
+    def _file_public(self, file_obj: Any) -> bool:
+        """Ist die Anlage auch öffentlich abrufbar (öffentlich mit mindestens einem öffentlichen Bezugsobjekt)?"""
+        if not file_obj.is_public:
+            return False
+        return bool(
+            (file_obj.paper_id and self.source.is_published(file_obj.paper))
+            or (file_obj.meeting_id and file_obj.meeting.is_public)
+            or (file_obj.agenda_item_id and self._item_public(file_obj.agenda_item))
         )
 
     def file_with_text(self, file_obj: Any) -> Objekt:

@@ -267,3 +267,26 @@ Die Entscheidung bleibt. Etappe 4 setzt das Profil Einreichung um ([SCHNITTSTELL
   einreichen darf. Das Recht, für dieselbe Organisation einzureichen, öffnet die Einreichungen anderer Mitglieder
   nicht: Sie enthalten Kontaktdaten und Texte, die Work nur nach seiner Sichtbarkeit zeigt. Anlagen hochladen kann
   nur, wer bei der Verwaltung einreichen darf.
+
+## Nachtrag zur Umsetzung (#565)
+
+Die Entscheidung bleibt. Das Zugriffsmodell für Nichtöffentliches ist am 05.11.2026 abgestimmt (Issue #565) und ändert
+eine Aussage des Abschnitts „Ein Login für alle Zugänge“:
+
+- **Dienste je Mandant lesen Nichtöffentliches.** Statt „nur für einen Auftrag, den eine berechtigte Person gestartet
+  hat“ gilt: Ein Dienst, der an genau einen Session-Mandanten gebunden ist und sich mit `private_key_jwt` (RFC 7523)
+  ausweist, liest mit dem Scope `sitzung:lesen` alles Nichtöffentliche dieses Mandanten, nie das eines anderen. Die
+  Bindung ist eine fachfreie Kennung an der Anwendung (`session-mandant:<Kennung>`), die Session auswertet; die
+  Plattform importiert Session dafür nicht (A1).
+- **Personen** lesen mit `ratsdaten:nichtoeffentlich` (nur Code-Ablauf, einzeln freigegeben, zweiter Faktor, höchstens
+  sieben Tage nach der Anmeldung) genau, was sie in Session sehen; geprüft bei jedem Abruf mit derselben Regel wie die
+  Oberfläche (`apps/session/visibility.py`, `Sicht`), einschließlich Rechten mit Geltungsbereich, befristeten
+  Zuweisungen und Mitwirkungsverbot.
+- **Eigene Ausgabe statt mehr Inhalt unter denselben Adressen.** Nichtöffentliches steht in einer eigenen OParl-Ausgabe
+  mit eigenen Kennungen (`/session/<mandant>/api/oparl/nichtoeffentlich/`), nach dem Profil Nichtöffentliches von
+  kommParl. So bleiben die öffentlichen Antworten unabhängig vom Token gleich und dürfen weiter von jedem
+  zwischengespeichert werden; Antworten der nichtöffentlichen Ausgabe sind `private, no-store`. Änderungsfeed und
+  Snapshot bleiben öffentlich.
+- **Prüfprotokoll:** Jeder Abruf mit Nichtöffentlichem steht im Protokoll des Mandanten; ohne Eintrag gibt es keine
+  Inhalte.
+- **Einschalten** (`OPARL_NONPUBLIC_ENABLED`) erst nach einem externen Penetrationstest.

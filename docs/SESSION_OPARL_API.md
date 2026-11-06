@@ -79,6 +79,12 @@ Beweis-Suite: `python scripts/smoke_session_oparl.py` (Ö/NÖ-Beweis über
 die gesamte API-Oberfläche) sowie die pytest-Suite
 `mandari/apps/session/tests/test_security_matrix.py`.
 
+Nichtöffentliches gibt es nur in der getrennten nichtöffentlichen Ausgabe unter
+`…/api/oparl/nichtoeffentlich/` mit Anmeldung (Profil Nichtöffentliches von kommParl, Issue #565,
+[Anmeldung](schnittstelle/anmeldung.md#nichtöffentliches-die-nichtöffentliche-ausgabe)). Diese Ausgabe liest kein
+Token und bleibt unverändert; ist die nichtöffentliche Ausgabe eingeschaltet, nennt nur das `System` das Profil in
+`kommparl:conformsTo` und ihre Adresse in `kommparl:nonPublicSystem`.
+
 ## Kontaktdaten nur mit Einwilligung (Issue #319)
 
 `Person.email` erscheint nur, wenn an der Person das Kennzeichen **„Kontaktdaten veröffentlichen“**

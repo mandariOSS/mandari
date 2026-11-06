@@ -117,6 +117,28 @@ zurückmelden: nach dem Profil Einreichung von kommParl (`https://schema.kommpar
 - **Konformität:** Die Tests prüfen jede Antwort gegen die Schemas des Profils (`hub/api/kommparl/0.1/profiles/submission/`)
   und Body und Sitzung gegen die Objekttypen aus kommParl.
 
+## Nichtöffentliche Ausgabe nach kommParl (#565)
+
+Umsetzung des Profils Nichtöffentliches (kommParl, Kapitel 7, `https://schema.kommparl.de/0.1/profile/nonpublic`) je
+Session-Mandant. Anleitung für Anwendungen: [Anmeldung](schnittstelle/anmeldung.md#nichtöffentliches-die-nichtöffentliche-ausgabe).
+
+- **Eigene Ausgabe, eigene Kennungen:** `/session/<mandant>/api/oparl/nichtoeffentlich/` ist ein eigenes OParl-System.
+  Die Abbildung (`hub/ris/mapping/session.py`) bildet mit einer `SessionSicht` ab, was der Aufrufer sieht; alle Verweise
+  zeigen in diese Ausgabe, `kommparl:publicId` nennt die öffentliche Adresse. Die öffentliche Ausgabe liest kein Token
+  und bleibt Byte für Byte gleich; nur ihr `System` nennt bei eingeschalteter Ausgabe das Profil und
+  `kommparl:nonPublicSystem` (A7: Adressen öffentlicher Objekte bleiben ihre Kennungen).
+  Die Adressen des Profils Einreichung (#1228) stehen nur in der öffentlichen Ausgabe; die nichtöffentliche nennt
+  das Profil nicht.
+- **Eine Regel für Sichtbarkeit:** `apps/session/visibility.py` (`Sicht`, `sicht_fuer_person`, `sicht_fuer_dienst`)
+  baut auf denselben Bausteinen auf wie die Oberfläche und ergänzt Rechte mit Geltungsbereich, befristete Zuweisungen
+  und das Mitwirkungsverbot. Die Oberfläche stellt mit #773 auf dieselbe Prüfung um.
+- **Anmeldung in der Plattform:** Scopes `ratsdaten:nichtoeffentlich` (Person, zweiter Faktor, höchstens sieben Tage)
+  und `sitzung:lesen` (gebundener Dienst), `private_key_jwt` und die Bindung einer Anwendung an einen Bereich
+  (`apps/accounts/oidc/bindings.py`, fachfreie Kennung `session-mandant:<Kennung>`, ausgewertet von Session).
+- **Endpunkte:** `apps/session/api/nichtoeffentlich.py`, Metadaten nach RFC 9728 unter
+  `/.well-known/oauth-protected-resource/session/<mandant>/api/oparl/nichtoeffentlich/`, in der Beschreibung als Bereich
+  „OParl je Mandant, nichtöffentlich“ mit `securitySchemes`. Schalter `OPARL_NONPUBLIC_ENABLED` (Standard aus).
+
 ## Bereiche anmelden
 
 Die Drehscheibe kennt die Fachmodule nicht (A1). Jeder Bereich meldet sich deshalb beim Start an:

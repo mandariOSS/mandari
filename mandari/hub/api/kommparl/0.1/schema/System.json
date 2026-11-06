@@ -39,6 +39,11 @@
                 "format": "url"
             }
         },
+        "kommparl:nonPublicSystem": {
+            "description": "{{ System.properties.kommparl:nonPublicSystem.description }}",
+            "type": "string",
+            "format": "url"
+        },
         "license": {
             "description": "{{ System.properties.license.description }}",
             "type": "string",
@@ -78,6 +83,11 @@
         },
         "product": {
             "description": "{{ System.properties.product.description }}",
+            "type": "string",
+            "format": "url"
+        },
+        "kommparl:publicId": {
+            "description": "{{ System.properties.kommparl:publicId.description }}",
             "type": "string",
             "format": "url"
         },

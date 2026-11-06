@@ -453,6 +453,55 @@ def log_api_reads(
     )
 
 
+#: Vermerk in Abrufen über die nichtöffentliche Ausgabe (Profil Nichtöffentliches von kommParl, Issue #565)
+API_READ_NONPUBLIC = "Nichtöffentliche Ausgabe (kommParl)"
+#: Höchstzahl der Kennungen je Eintrag; darüber nennt der Eintrag nur die Anzahl der übrigen
+NONPUBLIC_MAX_IDS = 1000
+
+
+def log_nonpublic_read(
+    request: Any,
+    *,
+    tenant: Any,
+    user: Any,
+    anwendung: str,
+    anwendung_name: str,
+    dienst: bool,
+    abruf: str,
+    objekte: list[str],
+    action: str = "view",
+) -> Any:
+    """
+    Abruf mit nichtöffentlichen Inhalten über die nichtöffentliche Ausgabe protokollieren (Issue #565): **jeder**
+    Abruf, ohne Zusammenfassung und unabhängig von der Einstellung für Lesezugriffe, mit Person (``user``, das
+    Session-Konto) oder Dienst, Anwendung (Client-ID) und den Kennungen der nichtöffentlichen Objekte, nie Inhalte.
+
+    Anders als :func:`log_read` scheitert der Abruf, wenn der Eintrag nicht geschrieben werden kann: Nichtöffentliches
+    ohne Eintrag im Prüfprotokoll gibt es nicht. Der Aufrufer fängt den Fehler und antwortet ohne Inhalte.
+    """
+    kennungen = list(dict.fromkeys(objekte))
+    changes = {
+        "zugriff": API_READ_NONPUBLIC,
+        "abruf": abruf,
+        "anwendung": anwendung,
+        "anwendung_name": anwendung_name,
+        "handelnd": "Dienst" if dienst else "Person",
+        "anzahl": len(kennungen),
+        "kennungen": kennungen[:NONPUBLIC_MAX_IDS],
+    }
+    if len(kennungen) > NONPUBLIC_MAX_IDS:
+        changes["weitere"] = len(kennungen) - NONPUBLIC_MAX_IDS
+    return log_event(
+        action,
+        tenant,
+        tenant=tenant,
+        user=user,
+        changes=changes,
+        request=request,
+        object_repr=f"{abruf} ({API_READ_NONPUBLIC}, {anwendung_name})",
+    )
+
+
 # =============================================================================
 # Signal-Receiver (in signals.py registriert)
 # =============================================================================

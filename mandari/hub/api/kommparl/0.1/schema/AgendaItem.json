@@ -86,6 +86,19 @@
                 "type": "string"
             }
         },
+        "kommparl:nonPublic": {
+            "description": "{{ AgendaItem.properties.kommparl:nonPublic.description }}",
+            "type": "boolean"
+        },
+        "kommparl:nonPublicResolutionText": {
+            "description": "{{ AgendaItem.properties.kommparl:nonPublicResolutionText.description }}",
+            "type": "string"
+        },
+        "kommparl:publicId": {
+            "description": "{{ AgendaItem.properties.kommparl:publicId.description }}",
+            "type": "string",
+            "format": "url"
+        },
         "created": {
             "type": "string",
             "format": "date-time"

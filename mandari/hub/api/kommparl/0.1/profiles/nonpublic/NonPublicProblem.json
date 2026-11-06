@@ -1,0 +1,38 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://schema.kommparl.de/0.1/profile/nonpublic/NonPublicProblem.json",
+    "title": "NonPublicProblem",
+    "description": "Fehler der nichtöffentlichen Ausgabe als Problem nach RFC 9457, Medientyp application/problem+json (Profil Nichtöffentliches, Entwurf). Weitere Angaben sind erlaubt.",
+    "type": "object",
+    "required": [
+        "type",
+        "title",
+        "status"
+    ],
+    "properties": {
+        "type": {
+            "description": "Art des Problems als URI; about:blank, wenn der Status genügt.",
+            "type": "string",
+            "minLength": 1
+        },
+        "title": {
+            "description": "Kurze Zusammenfassung der Art des Problems.",
+            "type": "string",
+            "minLength": 1
+        },
+        "status": {
+            "description": "HTTP-Statuscode der Antwort.",
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+        },
+        "detail": {
+            "description": "Erklärung zu diesem Fall. Sie nennt keine Inhalte, die der Aufrufer nicht sehen darf.",
+            "type": "string"
+        },
+        "instance": {
+            "description": "Adresse, auf die sich das Problem bezieht.",
+            "type": "string"
+        }
+    }
+}

@@ -333,10 +333,20 @@ OAUTH2_PROVIDER = {
     # Schlüsselwechsel: bisherige Schlüssel nur noch im JWKS, signiert wird mit dem aktiven
     "OIDC_RSA_PRIVATE_KEYS_INACTIVE": _OIDC_KEYS_PREVIOUS,
     "OIDC_RESPONSE_TYPES_SUPPORTED": ["code"],
-    "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": ["client_secret_basic", "client_secret_post", "none"],
+    "OIDC_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
+        "client_secret_basic",
+        "client_secret_post",
+        "private_key_jwt",
+        "none",
+    ],
     "OAUTH2_RESPONSE_TYPES_SUPPORTED": ["code"],
     "OAUTH2_GRANT_TYPES_SUPPORTED": ["authorization_code", "refresh_token", "client_credentials"],
-    "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": ["client_secret_basic", "client_secret_post", "none"],
+    "OAUTH2_TOKEN_ENDPOINT_AUTH_METHODS_SUPPORTED": [
+        "client_secret_basic",
+        "client_secret_post",
+        "private_key_jwt",
+        "none",
+    ],
     "SCOPES": _oidc_catalog.DESCRIPTIONS,
     "DEFAULT_SCOPES": [],
     "SCOPES_BACKEND_CLASS": "apps.accounts.oidc.scopes.CatalogScopes",
@@ -1080,6 +1090,10 @@ OPARL_CHANGES_ENABLED = os.environ.get("OPARL_CHANGES_ENABLED", "false").lower()
 OPARL_CHANGES_RETENTION_DAYS = int(os.environ.get("OPARL_CHANGES_RETENTION_DAYS", "90"))
 # Snapshots (…/snapshot), die gleichzeitig entstehen dürfen; weitere Anfragen erhalten 503 mit Retry-After
 OPARL_SNAPSHOT_PARALLEL = int(os.environ.get("OPARL_SNAPSHOT_PARALLEL", "2"))
+# Nichtöffentliche Ausgabe je Session-Mandant nach dem Profil Nichtöffentliches von kommParl (Issue #565,
+# docs/schnittstelle/anmeldung.md). Standard aus; wirkt nur zusammen mit OIDC_PROVIDER_ENABLED. Vor dem
+# Einschalten in Produktion steht ein externer Penetrationstest an.
+OPARL_NONPUBLIC_ENABLED = os.environ.get("OPARL_NONPUBLIC_ENABLED", "false").strip().lower() in ("1", "true", "yes")
 if OPARL_CHANGES_RETENTION_DAYS < 30:
     from django.core.exceptions import ImproperlyConfigured
 

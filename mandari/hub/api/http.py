@@ -163,6 +163,12 @@ def _rate_limited(request: HttpRequest) -> bool:
     return int(count) > limit
 
 
+def is_rate_limited(request: HttpRequest) -> bool:
+    """Anfrage zählen; ``True``, wenn die Adresse ihr Kontingent dieser Minute überschreitet (auch für geschützte
+    Ausgaben wie die nichtöffentliche der Session-Mandanten, die eigene Antworten brauchen)."""
+    return _rate_limited(request)
+
+
 def endpoint(view: View) -> View:
     """Dekorator jedes Endpunkts: nur GET/HEAD, Ratenbegrenzung, 400 für ``BadRequestError``, CORS, ETag/304."""
 
