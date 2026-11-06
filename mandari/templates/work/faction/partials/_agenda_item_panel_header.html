@@ -57,7 +57,7 @@
 
         {# Sichtbarkeit + Badges #}
         <div class="flex items-center gap-2 mt-2">
-            {% if can_edit and not item.is_approval_item %}
+            {% if can_edit and not item.is_approval_item and meeting.nichtoeffentlich_erlaubt %}
             <select name="visibility" class="text-xs px-2 py-1 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 rounded-lg focus:border-primary-500 focus:ring-1 focus:ring-primary-500/20 outline-none">
                 <option value="public" {% if item.visibility == 'public' %}selected{% endif %}>Öffentlich</option>
                 <option value="internal" {% if item.visibility == 'internal' %}selected{% endif %}>Nicht-öffentlich</option>

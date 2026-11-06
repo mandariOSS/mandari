@@ -17,9 +17,14 @@ Datenfeld/Erweiterungspunkt (Default "majority").
 from apps.common.quorum import DEFAULT_QUORUM_RULE, quorum_status
 
 
-def get_quorum_rule(organization) -> str:
-    """Quorum-Regel der Organisation (Erweiterungspunkt, Default Mehrheitsregel)."""
-    return ((organization.settings or {}).get("faction", {})).get("quorum_rule", DEFAULT_QUORUM_RULE)
+def get_quorum_rule(ziel) -> str:
+    """
+    Quorum-Regel einer Sitzung oder Sitzungsart, je Art übersteuerbar (Issue #1240); mit einer Organisation die der
+    Organisation selbst (Erweiterungspunkt, Default Mehrheitsregel).
+    """
+    from .regeln import einstellungen
+
+    return einstellungen(ziel).get("quorum_rule", DEFAULT_QUORUM_RULE)
 
 
 def stimmberechtigt(membership) -> bool:
@@ -62,5 +67,17 @@ def faction_quorum_status(meeting) -> dict:
         voting_total=len(voting),
         voting_present=len(present),
         has_list=bool(attendances),
-        rule=get_quorum_rule(meeting.organization),
+        rule=get_quorum_rule(meeting),
     )
+
+
+def quorum_der_sitzung(meeting) -> dict | None:
+    """
+    Beschlussfähigkeit zur Anzeige: ``None`` in einer Sitzungsart ohne Abstimmungen und Beschlussfähigkeit
+    (Issue #1240), sonst :func:`faction_quorum_status`.
+    """
+    from .regeln import abstimmungen_erlaubt
+
+    if not abstimmungen_erlaubt(meeting):
+        return None
+    return faction_quorum_status(meeting)

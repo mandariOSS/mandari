@@ -76,7 +76,9 @@
             <i data-lucide="plus" class="w-4 h-4"></i>
             Öffentlicher TOP
         </button>
-        {% if can_view_internal %}
+        {% if not meeting.nichtoeffentlich_erlaubt %}
+        {# Sitzungsart ohne nichtöffentlichen Teil (Issue #1240) #}
+        {% elif can_view_internal %}
         <button type="button" @click="$dispatch('open-add-item', { visibility: 'internal' })"
                 class="py-3 text-sm font-medium text-amber-600 bg-amber-50 dark:bg-amber-900/20 hover:bg-amber-100 rounded-lg flex items-center justify-center gap-2">
             <i data-lucide="plus" class="w-4 h-4"></i>
@@ -160,7 +162,7 @@
                     {% csrf_token %}
                     <input type="hidden" name="action" value="accept_proposal">
                     <input type="hidden" name="item_id" value="{{ item.id }}">
-                    {% if can_view_internal %}
+                    {% if can_view_internal and meeting.nichtoeffentlich_erlaubt %}
                     <c-form.select name="visibility" id="annehmen-teil-{{ item.id }}" label="Teil" dicht zeile class="mb-2">
                         <option value="public"{% if item.visibility != 'internal' %} selected{% endif %}>Öffentlich</option>
                         <option value="internal"{% if item.visibility == 'internal' %} selected{% endif %}>Nichtöffentlich</option>

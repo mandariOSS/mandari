@@ -18,7 +18,7 @@ Kontext: ordnung (sitzung.Tagesordnung), item, rechte, sitzung_urls.
         <p class="fs-meta">Der neue TOP steht am Ende seines Teils, ein Unterpunkt am Ende seines TOPs.</p>
         <label class="fs-feldname" for="fs-top-neu-titel">Titel</label>
         <input id="fs-top-neu-titel" class="wf-eingabe w-full" type="text" name="title" required maxlength="500" autocomplete="off">
-        {% if rechte.intern %}
+        {% if rechte.noe_neu %}
         <label class="fs-feldname" for="fs-top-neu-teil">Teil</label>
         <select id="fs-top-neu-teil" class="wf-eingabe wf-auswahl w-full" name="visibility">
             <option value="public">öffentlich</option>

@@ -316,7 +316,7 @@ class FactionMeetingEmailService:
         if invitation_mode is None:
             from .invitations import get_invitation_settings
 
-            invitation_mode = get_invitation_settings(meeting.organization)["invitation_mode"]
+            invitation_mode = get_invitation_settings(meeting)["invitation_mode"]
         public_items, internal_items = invitation_agenda(meeting, include_internal=include_internal)
 
         meeting_url = self.get_meeting_url(meeting)
@@ -641,11 +641,14 @@ def _claim_reminder(meeting, now) -> bool:
     return True
 
 
-def meeting_reminder_hours(organization) -> int | None:
-    """Vorlauf der Erinnerung an die Sitzung in Stunden, ``None`` wenn ausgeschaltet (Einstellung, Issue #1071)."""
+def meeting_reminder_hours(ziel) -> int | None:
+    """
+    Vorlauf der Erinnerung an die Sitzung in Stunden, ``None`` wenn ausgeschaltet (Einstellung, Issue #1071), für
+    eine Sitzung oder Sitzungsart je Art (Issue #1240).
+    """
     from .invitations import get_invitation_settings
 
-    einstellungen = get_invitation_settings(organization)
+    einstellungen = get_invitation_settings(ziel)
     if not einstellungen["meeting_reminder_enabled"]:
         return None
     return int(einstellungen["meeting_reminder_hours"])
@@ -685,14 +688,15 @@ def run_faction_reminder_pass(now=None) -> dict:
             reminder_sent_at__isnull=True,
             start__gt=now,
             start__lte=window_end,
-        ).select_related("organization")
+        ).select_related("organization", "meeting_type")
 
         service = FactionMeetingEmailService()
+        # Vorlauf je Sitzungsart (Issue #1240), einmal je Art gelesen
         vorlauf: dict = {}
         for meeting in meetings:
-            if meeting.organization_id not in vorlauf:
-                vorlauf[meeting.organization_id] = meeting_reminder_hours(meeting.organization)
-            stunden = vorlauf[meeting.organization_id]
+            if meeting.meeting_type_id not in vorlauf:
+                vorlauf[meeting.meeting_type_id] = meeting_reminder_hours(meeting)
+            stunden = vorlauf[meeting.meeting_type_id]
             if stunden is None or meeting.start > now + timedelta(hours=stunden):
                 continue
             # Einmalig je Sitzung — auch bei 0 Empfängern oder einem Fehler nicht erneut versuchen
@@ -785,8 +789,13 @@ def record_decision(
 
     Hält die Kopie am TOP (``has_decision``/``votes_*``) aktuell und genehmigt über den Genehmigungs-TOP das
     Vorprotokoll. ``notes=None`` lässt vorhandene Anmerkungen unverändert (die Sitzungsansicht hat kein Feld dafür).
+    In einer Sitzungsart ohne Abstimmungen meldet sie ``regeln.AbstimmungenAusError`` (Issue #1240); die Wege der
+    Oberfläche prüfen das vorher selbst.
     """
     from .models import FactionDecision
+    from .regeln import pruefe_abstimmung
+
+    pruefe_abstimmung(item.meeting)
 
     defaults = {
         "votes_yes": votes_yes,
@@ -1135,6 +1144,11 @@ class AgendaProposalService:
 
             # Vor der Annahme setzen: Ihr Eintrag im Änderungsverlauf gilt schon für den gewählten Teil
             if visibility:
+                if visibility != current.visibility:
+                    # Art ohne nichtöffentlichen Teil (Issue #1240): nichts in den NÖ-Teil
+                    from .regeln import pruefe_nichtoeffentlich
+
+                    pruefe_nichtoeffentlich(item.meeting, visibility)
                 current.visibility = visibility
 
             # Nummer und Platz am Ende des jeweiligen Teils — ermittelt, solange der Vorschlag noch nicht mitzählt

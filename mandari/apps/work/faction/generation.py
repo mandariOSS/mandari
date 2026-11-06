@@ -225,9 +225,11 @@ def create_occurrence(schedule, date, *, exceptions=None, rules=None):
     Standard-Tagesordnung. Prüft nicht, ob es den Termin schon gibt (das tut der Aufrufer).
     """
     from apps.work.faction.models import FactionAttendance, FactionMeeting
+    from apps.work.faction.regeln import einstellungen
 
     organization = schedule.organization
-    faction_settings = (organization.settings or {}).get("faction", {})
+    # Regeln der Sitzungsart der Reihe (Issue #1240): Organisation, darüber die Übersteuerung der Art
+    faction_settings = einstellungen(schedule.meeting_type)
     start = _occurrence_start(schedule, date)
     reason = evaluate_cancellation(schedule, date, exceptions=exceptions, rules=rules)
 
